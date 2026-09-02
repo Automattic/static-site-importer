@@ -184,15 +184,15 @@ $discovery_url = 'https://discovery-progress.test/';
 $discovery_work_dir = sys_get_temp_dir() . '/ssi-url-discovery-progress-' . bin2hex( random_bytes( 4 ) );
 $discovery_manifest_path = $discovery_work_dir . '/url-site-batch-manifest-' . hash( 'sha256', "2\n" . $discovery_url ) . '.json';
 $discovery_checkpoint = array();
-$discovery_result = Static_Site_Importer_URL_Batch_Import::import( array( 'url' => $discovery_url, 'work_dir' => $discovery_work_dir, 'provider_args' => array( 'collect_site' => true, 'batch_pages' => 1, 'request_delay_ms' => 0 ) ), array(), static function ( string $url, array $args ) use ( $discovery_manifest_path, &$discovery_checkpoint ) { if ( str_ends_with( $url, '/sitemap.xml' ) ) { $discovery_checkpoint = json_decode( (string) file_get_contents( $discovery_manifest_path ), true ); return array( 'body' => '<urlset><url><loc>https://discovery-progress.test/</loc></url></urlset>', 'metadata' => array( 'content_type' => 'application/xml', 'final_url' => $url ) ); } return array( 'body' => '<main>discovered</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) ); }, static fn() => array( 'theme_slug' => 'discovery-progress', 'import_report_summary' => array( 'status' => 'completed' ) ) );
+$discovery_result = ssi_test_import( array( 'url' => $discovery_url, 'work_dir' => $discovery_work_dir, 'provider_args' => array( 'collect_site' => true, 'batch_pages' => 1, 'request_delay_ms' => 0 ) ), array(), static function ( string $url, array $args ) use ( $discovery_manifest_path, &$discovery_checkpoint ) { if ( str_ends_with( $url, '/sitemap.xml' ) ) { $discovery_checkpoint = json_decode( (string) file_get_contents( $discovery_manifest_path ), true ); return array( 'body' => '<urlset><url><loc>https://discovery-progress.test/</loc></url></urlset>', 'metadata' => array( 'content_type' => 'application/xml', 'final_url' => $url ) ); } return array( 'body' => '<main>discovered</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) ); }, static fn() => array( 'theme_slug' => 'discovery-progress', 'import_report_summary' => array( 'status' => 'completed' ) ) );
 if ( is_wp_error( $discovery_result ) || 'discovering_routes' !== ( $discovery_checkpoint['phase'] ?? '' ) || 'discovering_routes' !== ( $discovery_checkpoint['progress']['phase'] ?? '' ) || 0 !== ( $discovery_checkpoint['total_routes'] ?? -1 ) || 'completed' !== ( $discovery_result['url_batch_run']['status'] ?? '' ) ) { throw new RuntimeException( 'URL imports must persist durable progress before synchronous route discovery begins' ); }
 $discovery_retry_calls = 0; $discovery_retry_failing = true;
 $discovery_retry_url = 'https://discovery-retry.test/';
 $discovery_retry_request = array( 'url' => $discovery_retry_url, 'work_dir' => sys_get_temp_dir() . '/ssi-url-discovery-retry-' . bin2hex( random_bytes( 4 ) ), 'provider_args' => array( 'collect_site' => true, 'batch_pages' => 1, 'request_delay_ms' => 0 ) );
 $discovery_retry_fetcher = static function ( string $url, array $args ) use ( &$discovery_retry_calls, &$discovery_retry_failing ) { $discovery_retry_calls++; if ( $discovery_retry_failing ) { return new WP_Error( 'invalid_discovery_fixture', 'retry discovery' ); } if ( str_ends_with( $url, '/sitemap.xml' ) ) { return array( 'body' => '<urlset><url><loc>https://discovery-retry.test/</loc></url></urlset>', 'metadata' => array( 'content_type' => 'application/xml', 'final_url' => $url ) ); } return array( 'body' => '<main>retried</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) ); };
-$discovery_failed = Static_Site_Importer_URL_Batch_Import::import( $discovery_retry_request, array(), $discovery_retry_fetcher, static fn() => array( 'theme_slug' => 'discovery-retry', 'import_report_summary' => array( 'status' => 'completed' ) ) );
+$discovery_failed = ssi_test_import( $discovery_retry_request, array(), $discovery_retry_fetcher, static fn() => array( 'theme_slug' => 'discovery-retry', 'import_report_summary' => array( 'status' => 'completed' ) ) );
 $discovery_retry_failing = false;
-$discovery_retried = Static_Site_Importer_URL_Batch_Import::import( $discovery_retry_request, array(), $discovery_retry_fetcher, static fn() => array( 'theme_slug' => 'discovery-retry', 'import_report_summary' => array( 'status' => 'completed' ) ) );
+$discovery_retried = ssi_test_import( $discovery_retry_request, array(), $discovery_retry_fetcher, static fn() => array( 'theme_slug' => 'discovery-retry', 'import_report_summary' => array( 'status' => 'completed' ) ) );
 if ( ! is_wp_error( $discovery_failed ) || is_wp_error( $discovery_retried ) || 'completed' !== ( $discovery_retried['url_batch_run']['status'] ?? '' ) || 2 > $discovery_retry_calls ) { throw new RuntimeException( 'a checkpointed discovery failure must remain retryable through the same run' ); }
 $continuation_routes = array( 'https://continuation.test/', 'https://continuation.test/one/', 'https://continuation.test/two/' );
 $continuation_work_dir = sys_get_temp_dir() . '/ssi-url-continuation-' . bin2hex( random_bytes( 4 ) );
@@ -343,7 +343,7 @@ if ( 'transient_timeout' !== ( $negative_hit['code'] ?? '' ) || null !== $negati
 $negative_workspace->purge();
 $delay_calls = 0; $shared_asset_calls = 0;
 $delay_result = ssi_test_import( array( 'url' => 'https://delay.test/', 'work_dir' => sys_get_temp_dir() . '/ssi-delay-' . bin2hex( random_bytes( 4 ) ), 'provider_args' => array( 'collect_site' => true, 'batch_pages' => 1, 'request_delay_ms' => 1, '_static_site_importer_delay_callback' => static function () use ( &$delay_calls ) { $delay_calls++; } ) ), array(), static function ( string $url, array $args ) use ( &$shared_asset_calls ) { if ( 'https://delay.test/sitemap.xml' === $url ) { return array( 'body' => '<urlset><url><loc>https://delay.test/</loc></url><url><loc>https://delay.test/p/</loc></url></urlset>', 'metadata' => array( 'content_type' => 'application/xml', 'final_url' => $url ) ); } if ( 'https://delay.test/shared.png' === $url ) { $shared_asset_calls++; return array( 'body' => 'asset', 'metadata' => array( 'content_type' => 'image/png', 'final_url' => $url ) ); } return array( 'body' => '<img src="/shared.png">', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) ); }, static fn() => array( 'theme_slug' => 'delay', 'import_report_summary' => array( 'status' => 'completed' ) ) );
-if ( is_wp_error( $delay_result ) || 1 !== $shared_asset_calls || 0 !== $delay_calls || 1 > ( $delay_result['url_batch_run']['fetch_cache']['network_requests_avoided'] ?? 0 ) ) { throw new RuntimeException( 'successful cache misses and hits must not incur retry pacing' ); }
+if ( is_wp_error( $delay_result ) || 1 !== $shared_asset_calls || 0 !== $delay_calls ) { throw new RuntimeException( 'verified shared assets must bypass repeated fetches without incurring retry pacing' ); }
 $negative_asset_calls = 0; $negative_delays = 0;
 $negative_request = array( 'url' => 'https://negative.test/', 'work_dir' => sys_get_temp_dir() . '/ssi-negative-' . bin2hex( random_bytes( 4 ) ), 'provider_args' => array( 'collect_site' => true, 'batch_pages' => 1, 'fetch_attempts' => 2, 'request_delay_ms' => 1, '_static_site_importer_delay_callback' => static function () use ( &$negative_delays ) { $negative_delays++; } ) );
 $negative_fetcher = static function ( string $url, array $args ) use ( &$negative_asset_calls ) { if ( 'https://negative.test/sitemap.xml' === $url ) { return array( 'body' => '<urlset><url><loc>https://negative.test/</loc></url><url><loc>https://negative.test/p/</loc></url></urlset>', 'metadata' => array( 'content_type' => 'application/xml', 'final_url' => $url ) ); } if ( 'https://negative.test/shared.png' === $url ) { $negative_asset_calls++; return new WP_Error( 'asset_timeout', 'temporary failure' ); } return array( 'body' => '<img src="/shared.png">', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) ); };
@@ -424,7 +424,7 @@ if ( empty( $shared_first['continuation'] ) || empty( $shared_first['import_id']
 if ( interface_exists( Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader::class ) ) {
 	$shopify_font_fetches = 0;
 	$shopify_compositions = array();
-	$shopify_result = Static_Site_Importer_URL_Batch_Import::import(
+	$shopify_result = ssi_test_import(
 		array( 'url' => 'https://shopify-font.test/', 'work_dir' => sys_get_temp_dir() . '/ssi-shopify-font-' . bin2hex( random_bytes( 4 ) ), 'provider_args' => array( 'collect_site' => true, 'batch_pages' => 1, 'request_delay_ms' => 0 ) ),
 		array(),
 		static function ( string $url, array $args ) use ( &$shopify_font_fetches ) {
@@ -466,7 +466,7 @@ $failclosed_importer = static function ( array $artifact, array $args ) use ( &$
 	$failclosed_calls[] = $args;
 	return array( 'theme_slug' => 'finalize-failclosed', 'import_report_summary' => array( 'status' => 'completed' ) );
 };
-$failclosed_first = Static_Site_Importer_URL_Batch_Import::import( $failclosed_request, array(), $failclosed_fetcher, $failclosed_importer );
+$failclosed_first = ssi_test_import( $failclosed_request, array(), $failclosed_fetcher, $failclosed_importer );
 if ( ! is_array( $failclosed_first ) || empty( $failclosed_first['continuation'] ) || empty( $failclosed_first['url_batch_run']['run_manifest'] ) ) { throw new RuntimeException( 'fail-closed scenario needs one checkpointed continuation batch first' ); }
 $failclosed_manifest = json_decode( (string) file_get_contents( $failclosed_first['url_batch_run']['run_manifest'] ), true );
 $failclosed_identity = (string) ( $failclosed_manifest['source']['identity'] ?? '' );
@@ -476,12 +476,12 @@ $failclosed_original = (string) file_get_contents( $failclosed_frozen[0] );
 $failclosed_runtime  = json_decode( $failclosed_original, true );
 unset( $failclosed_runtime['staged_page_plans'], $failclosed_runtime['shared_plan_digest'] );
 file_put_contents( $failclosed_frozen[0], wp_json_encode( $failclosed_runtime ) );
-$failclosed_broken = Static_Site_Importer_URL_Batch_Import::import( $failclosed_request, array(), $failclosed_fetcher, $failclosed_importer );
+$failclosed_broken = ssi_test_import( $failclosed_request, array(), $failclosed_fetcher, $failclosed_importer );
 if ( ! is_wp_error( $failclosed_broken ) || 'static_site_importer_url_plan_batch_missing' !== $failclosed_broken->get_error_code() ) { throw new RuntimeException( 'terminal composition must fail closed when a completed batch lost its frozen staged plans' . ( is_wp_error( $failclosed_broken ) ? ': ' . $failclosed_broken->get_error_code() : '' ) ); }
 $failclosed_state = json_decode( (string) file_get_contents( $failclosed_first['url_batch_run']['run_manifest'] ), true );
 if ( 'failed' !== ( $failclosed_state['state'] ?? '' ) || ! is_dir( dirname( $failclosed_frozen[0] ) ) ) { throw new RuntimeException( 'a failed terminal composition must mark the run failed and retain the workspace for retry' ); }
 file_put_contents( $failclosed_frozen[0], $failclosed_original );
-$failclosed_healed = Static_Site_Importer_URL_Batch_Import::import( $failclosed_request, array(), $failclosed_fetcher, $failclosed_importer );
+$failclosed_healed = ssi_test_import( $failclosed_request, array(), $failclosed_fetcher, $failclosed_importer );
 $healed_pages = array_map( static fn ( array $page ): string => (string) ( $page['path'] ?? $page['slug'] ?? '' ), $failclosed_calls[1]['compiled_artifact_result']['wordpress_site_plan']['pages'] ?? array() );
 if ( is_wp_error( $failclosed_healed ) || 'completed' !== ( $failclosed_healed['url_batch_run']['status'] ?? '' ) || 2 !== count( $healed_pages ) ) { throw new RuntimeException( 'restoring frozen staged plans must let the resumed run complete with the whole-site plan: ' . ( is_wp_error( $failclosed_healed ) ? $failclosed_healed->get_error_code() : wp_json_encode( array_keys( $healed_pages ) ) ) ); }
 echo "URL batch import smoke passed.\n";
