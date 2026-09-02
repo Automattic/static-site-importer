@@ -87,10 +87,10 @@ test('accepts a completed v2 materialization receipt identity', () => {
 test('pins an immutable WP Codebox release package, commit, and checksum together', () => {
   const workflow = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion.yml'), 'utf8');
   const caller = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion-pr.yml'), 'utf8');
-  assert.match(workflow, /WP_CODEBOX_VERSION: v0\.26\.3/);
-  assert.match(workflow, /WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0\.26\.3\.tgz/);
-  assert.match(workflow, /WP_CODEBOX_SHA256: 68d69ba0a97f81761c52845b1a9330beba28aa2b57f29013441bb6c40fedebcf/);
-  assert.match(workflow, /WP_CODEBOX_SHA: 619914f3fed52ae84a2589092803cf8007a527b8/);
+  assert.match(workflow, /WP_CODEBOX_VERSION: v0\.26\.7/);
+  assert.match(workflow, /WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0\.26\.7\.tgz/);
+  assert.match(workflow, /WP_CODEBOX_SHA256: c9d4b524ee1e1f8328b1f7bb530d905c64fc910b75318dffe5b516e5292e18f0/);
+  assert.match(workflow, /WP_CODEBOX_SHA: e05936aceef8ef103249c75ad5e1f4c2f297b928/);
   assert.match(workflow, /releases\/download\/\$\{WP_CODEBOX_VERSION\}\/\$\{WP_CODEBOX_WORKSPACE_ASSET\}/);
   assert.match(workflow, /sha256sum --check --status/);
   assert.doesNotMatch(workflow, /Checkout WP Codebox candidate|npm pack --pack-destination|wp-codebox-sha:/);
@@ -110,6 +110,27 @@ test('resolves uniquely named durable copies of transient runtime evidence', () 
   write(input.paths.matrix, input.matrix);
   const receipt = verifySolvedSitePromotion(input.options);
   assert.ok(receipt.evidence.artifacts.some((row) => row.path === 'uuid-editor.png'));
+});
+
+test('resolves fixture-specific Homeboy artifacts when canonical paths are absent', () => {
+  const input = fixture();
+  const expected = 'files/browser/editor-open/solved/presentation-frontend.png';
+  const selected = path.join(input.root, 'uuid-selected-presentation-frontend.png');
+  const other = path.join(input.root, 'uuid-other-presentation-frontend.png');
+  fs.writeFileSync(selected, 'selected fixture');
+  fs.writeFileSync(other, 'other fixture');
+  input.matrix.fixtures[0].editor_presentation.matched_rendering.frontend_screenshot = expected;
+  write(input.paths.matrix, input.matrix);
+  write(path.join(input.root, 'homeboy-bench-result.json'), {
+    data: { payload: { artifacts: [
+      { name: 'editor_canvas_solved_editor-open-screenshots-1', path: selected },
+      { name: 'editor_canvas_other_editor-open-screenshots-1', path: other },
+    ] } },
+  });
+
+  const receipt = verifySolvedSitePromotion(input.options);
+  assert.ok(receipt.evidence.artifacts.some((row) => row.path === path.basename(selected)));
+  assert.ok(!receipt.evidence.artifacts.some((row) => row.path === path.basename(other)));
 });
 
 test('materializes host runtime evidence into the durable artifact root', () => {

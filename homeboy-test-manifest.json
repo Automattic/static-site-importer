@@ -36,6 +36,7 @@
     "tests/smoke-owner-handoff-evidence.php": { "environment": "standalone-php" },
     "tests/smoke-product-handoff-contract.php": { "environment": "standalone-php" },
     "tests/smoke-quality-budget-admission.php": { "environment": "standalone-php" },
+    "tests/smoke-provider-entity-decline.php": { "environment": "standalone-php" },
     "tests/smoke-provider-presentation.php": { "environment": "standalone-php" },
     "tests/smoke-site-identity.php": { "environment": "standalone-php" },
     "tests/smoke-url-import-runtime.php": { "environment": "standalone-php" },
