@@ -44,6 +44,9 @@ class Static_Site_Importer_Companion_Plugin {
 	/** SSI-owned renderer available to typed responsive-layout blocks. */
 	private const RESPONSIVE_LAYOUT_RENDERER = 'blocks-engine/responsive-layout/v1';
 
+	/** SSI-owned renderer available to typed inline SVG artwork blocks. */
+	private const SVG_ARTWORK_RENDERER = 'blocks-engine/svg-artwork/v1';
+
 	/**
 	 * Payload schema identifier consumed by the scaffolder.
 	 */
@@ -123,9 +126,10 @@ class Static_Site_Importer_Companion_Plugin {
 				if ( array_key_exists( 'render', $block ) ) {
 					return new WP_Error( 'static_site_importer_companion_plugin_renderer_conflict', sprintf( 'Block %s cannot declare both render markup and a typed renderer.', $name ) );
 				}
-				$content_schema = $block['block_json']['attributes']['content'] ?? null;
+				$attribute_name = self::SVG_ARTWORK_RENDERER === $renderer ? 'svg' : 'content';
+				$content_schema = $block['block_json']['attributes'][ $attribute_name ] ?? null;
 				if ( ! is_array( $content_schema ) || 'string' !== ( $content_schema['type'] ?? null ) ) {
-					return new WP_Error( 'static_site_importer_companion_plugin_renderer_attributes_invalid', sprintf( 'Block %s typed renderer requires a string content attribute.', $name ) );
+					return new WP_Error( 'static_site_importer_companion_plugin_renderer_attributes_invalid', sprintf( 'Block %s typed renderer requires a string %s attribute.', $name, $attribute_name ) );
 				}
 			}
 			if ( isset( $block['render'] ) && is_scalar( $block['render'] ) && Static_Site_Importer_Content_Policy::contains_server_code( (string) $block['render'] ) ) {
@@ -914,13 +918,16 @@ class Static_Site_Importer_Companion_Plugin {
 	 * passes it through safe_markup_boundary(), and echoes the sanitized
 	 * $output.
 	 *
-	 * @param string $kind Renderer label for the generated doc comment.
+	 * @param string $kind      Renderer label for the generated doc comment.
+	 * @param string $attribute String attribute containing the bounded markup.
 	 * @return string
 	 */
-	private static function safe_markup_renderer( string $kind ): string {
+	private static function safe_markup_renderer( string $kind, string $attribute = 'content' ): string {
 		$prologue = sprintf(
-			"<?php\n/** Generated %s companion block render. */\n\n\$content = is_string( \$attributes['content'] ?? null ) ? \$attributes['content'] : '';\n",
-			$kind
+			"<?php\n/** Generated %s companion block render. */\n\n\$content = is_string( \$attributes['%s'] ?? null ) ? \$attributes['%s'] : '';\n",
+			$kind,
+			$attribute,
+			$attribute
 		);
 		$epilogue = 'echo $output; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- KSES-sanitized bounded markup through the shared audited safe-markup boundary.';
 		return $prologue . self::safe_markup_boundary() . "\n" . $epilogue;
@@ -1098,7 +1105,7 @@ $global = array(
 $flow = array_merge( $global, array( 'align' => true ) );
 $svg_global = array(
 	'aria-hidden' => true, 'aria-label' => true, 'aria-labelledby' => true, 'class' => true, 'data-*' => true,
-	'id' => true, 'role' => true, 'style' => true, 'title' => true,
+	'filter' => true, 'id' => true, 'role' => true, 'style' => true, 'title' => true,
 );
 // KSES supports data-* but not aria-* wildcards. Admit syntactically valid
 // producer attributes explicitly so SVG accessibility metadata survives.
@@ -1135,15 +1142,19 @@ $output = wp_kses(
 		'audio' => array_merge( $global, array( 'autoplay' => true, 'controls' => true, 'loop' => true, 'muted' => true, 'preload' => true, 'src' => true ) ),
 		'svg' => array_merge( $svg_global, array( 'fill' => true, 'focusable' => true, 'height' => true, 'preserveaspectratio' => true, 'stroke' => true, 'viewbox' => true, 'width' => true, 'xmlns' => true, 'xmlns:xlink' => true ) ),
 		'defs' => $svg_global, 'symbol' => array_merge( $svg_global, array( 'viewbox' => true ) ), 'lineargradient' => array_merge( $svg_global, array( 'gradientunits' => true, 'x1' => true, 'x2' => true, 'y1' => true, 'y2' => true ) ), 'radialgradient' => array_merge( $svg_global, array( 'cx' => true, 'cy' => true, 'r' => true ) ), 'stop' => array_merge( $svg_global, array( 'offset' => true, 'stop-color' => true, 'stop-opacity' => true ) ), 'clippath' => $svg_global, 'mask' => $svg_global, 'use' => array_merge( $svg_global, array( 'href' => true, 'xlink:href' => true ) ),
+		'filter' => array_merge( $svg_global, array( 'filterunits' => true, 'height' => true, 'primitiveunits' => true, 'width' => true, 'x' => true, 'y' => true ) ),
+		'fegaussianblur' => array_merge( $svg_global, array( 'height' => true, 'in' => true, 'result' => true, 'stddeviation' => true, 'width' => true, 'x' => true, 'y' => true ) ),
+		'femerge' => array_merge( $svg_global, array( 'height' => true, 'result' => true, 'width' => true, 'x' => true, 'y' => true ) ),
+		'femergenode' => array_merge( $svg_global, array( 'in' => true ) ),
 		'g' => array_merge( $svg_global, array( 'clip-path' => true, 'fill' => true, 'fill-opacity' => true, 'opacity' => true, 'stroke' => true, 'stroke-width' => true, 'transform' => true ) ),
 		'path' => array_merge( $svg_global, array( 'd' => true, 'fill' => true, 'fill-rule' => true, 'opacity' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'stroke-width' => true, 'transform' => true ) ),
 		'circle' => array_merge( $svg_global, array( 'cx' => true, 'cy' => true, 'fill' => true, 'opacity' => true, 'r' => true, 'stroke' => true, 'stroke-width' => true ) ),
 		'ellipse' => array_merge( $svg_global, array( 'cx' => true, 'cy' => true, 'fill' => true, 'opacity' => true, 'rx' => true, 'ry' => true, 'stroke' => true, 'stroke-width' => true ) ),
-		'line' => array_merge( $svg_global, array( 'fill' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-width' => true, 'x1' => true, 'x2' => true, 'y1' => true, 'y2' => true ) ),
+		'line' => array_merge( $svg_global, array( 'fill' => true, 'opacity' => true, 'stroke' => true, 'stroke-dasharray' => true, 'stroke-linecap' => true, 'stroke-width' => true, 'x1' => true, 'x2' => true, 'y1' => true, 'y2' => true ) ),
 		'polygon' => array_merge( $svg_global, array( 'fill' => true, 'points' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'stroke-width' => true ) ),
 		'polyline' => array_merge( $svg_global, array( 'fill' => true, 'points' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'stroke-width' => true ) ),
-		'rect' => array_merge( $svg_global, array( 'fill' => true, 'height' => true, 'opacity' => true, 'rx' => true, 'ry' => true, 'stroke' => true, 'stroke-width' => true, 'width' => true, 'x' => true, 'y' => true ) ),
-		'text' => array_merge( $svg_global, array( 'fill' => true, 'font-family' => true, 'font-size' => true, 'font-weight' => true, 'text-anchor' => true, 'x' => true, 'y' => true ) ),
+		'rect' => array_merge( $svg_global, array( 'fill' => true, 'height' => true, 'opacity' => true, 'rx' => true, 'ry' => true, 'stroke' => true, 'stroke-dasharray' => true, 'stroke-width' => true, 'width' => true, 'x' => true, 'y' => true ) ),
+		'text' => array_merge( $svg_global, array( 'fill' => true, 'font-family' => true, 'font-size' => true, 'font-weight' => true, 'letter-spacing' => true, 'text-anchor' => true, 'x' => true, 'y' => true ) ),
 		'tspan' => array_merge( $svg_global, array( 'dx' => true, 'dy' => true, 'fill' => true, 'x' => true, 'y' => true ) ), 'title' => $svg_global, 'desc' => $svg_global,
 	)
 );
@@ -1153,9 +1164,13 @@ foreach ( $data_images as $placeholder => $data_image ) {
 	$output = str_replace( "src='" . $placeholder . "'", "src='" . esc_attr( $data_image ) . "'", $output );
 }
 $output = preg_replace_callback(
-	'#<svg\b[^>]*>#i',
+	'#<(?:svg|filter|fegaussianblur|femerge|femergenode)\b[^>]*>#i',
 	static function ( array $match ): string {
-		return preg_replace( array( '/\bviewbox\b/i', '/\bpreserveaspectratio\b/i' ), array( 'viewBox', 'preserveAspectRatio' ), $match[0] ) ?? $match[0];
+		return preg_replace(
+			array( '/\bviewbox\b/i', '/\bpreserveaspectratio\b/i', '/\bfilterunits\b/i', '/\bprimitiveunits\b/i', '/\bstddeviation\b/i', '/<fegaussianblur\b/i', '/<femerge(?=\s|>)/i', '/<femergenode\b/i' ),
+			array( 'viewBox', 'preserveAspectRatio', 'filterUnits', 'primitiveUnits', 'stdDeviation', '<feGaussianBlur', '<feMerge', '<feMergeNode' ),
+			$match[0]
+		) ?? $match[0];
 	},
 	$output
 ) ?? '';
@@ -1170,6 +1185,7 @@ PHP;
 	 */
 	private static function typed_renderer( string $renderer ): string {
 		$layout = self::safe_markup_renderer( 'responsive-layout' );
+		$svg    = self::safe_markup_renderer( 'svg-artwork', 'svg' );
 		$media  = <<<'PHP'
 <?php
 /** Generated responsive-media companion block render. */
@@ -1290,6 +1306,7 @@ PHP;
 		$renderers = array(
 			self::RESPONSIVE_MEDIA_RENDERER  => $media,
 			self::RESPONSIVE_LAYOUT_RENDERER => $layout,
+			self::SVG_ARTWORK_RENDERER       => $svg,
 		);
 		if ( function_exists( 'apply_filters' ) ) {
 			$renderers = apply_filters( 'static_site_importer_companion_renderers', $renderers );
