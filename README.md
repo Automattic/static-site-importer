@@ -200,7 +200,7 @@ This materializer is intentionally generic: WooCommerce is the first plugin-back
 
 ## CLI Usage
 
-The canonical ability uses `source.type` (`html`, `files`, `zip`, or `url`) and `operation` (`plan` or `apply`). Planning returns the canonical WordPress site plan, diagnostics, quality evidence, and source provenance without writing to the destination. Reference-backed sources use opaque `source.ref` values resolved only by the server-side `static_site_importer_resolve_source_reference` filter; ability callers never provide filesystem paths.
+The canonical ability uses `source.type` (`html`, `files`, `zip`, `url`, or `figma`) and `operation` (`plan` or `apply`). Figma sources accept a raw `figma_file`, scenegraph, or artifact bundle and normalize through the Blocks Engine Figma transformer before canonical materialization. Planning returns the canonical WordPress site plan, diagnostics, quality evidence, and source provenance without writing to the destination. Reference-backed sources use opaque `source.ref` values resolved only by the server-side `static_site_importer_resolve_source_reference` filter; ability callers never provide filesystem paths.
 
 `static-site-importer import` is the canonical host command. Its request file is the exact `static-site-importer/import` ability input, so every source type and option has one contract across PHP, REST, and WP-CLI. The command owns bounded continuation: it relaunches the same import step in fresh WordPress runtimes, passes SSI's opaque `import_id`, and prints only the terminal JSON result. A terminal failure prints the same machine-readable envelope and exits nonzero.
 

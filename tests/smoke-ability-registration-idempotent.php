@@ -60,21 +60,21 @@ $expected_abilities = array(
 	'static-site-importer/export-theme',
 	'static-site-importer/materialize-wordpress-site-plan',
 	'static-site-importer/import',
-	'static-site-importer/import-figma',
 	'static-site-importer/validate-artifact',
 );
 
 assert( array( STATIC_SITE_IMPORTER_ABILITY_CATEGORY ) === array_keys( $GLOBALS['ssi_ability_categories'] ) );
 assert( $expected_abilities === array_keys( $GLOBALS['ssi_abilities'] ) );
-foreach ( array( 'static-site-importer/import', 'static-site-importer/import-figma' ) as $ability ) {
+foreach ( array( 'static-site-importer/import' ) as $ability ) {
 	$properties = $GLOBALS['ssi_abilities'][ $ability ]['input_schema']['properties'];
 	assert( 'string' === $properties['site_title']['type'] );
 	assert( array( 'report_only', 'draft' ) === $properties['stale_page_action']['enum'] );
 }
 $import_properties = $GLOBALS['ssi_abilities']['static-site-importer/import']['input_schema']['properties'];
 assert( array( 'plan', 'apply' ) === $import_properties['operation']['enum'] );
-assert( array( 'html', 'files', 'zip', 'url' ) === $import_properties['source']['properties']['type']['enum'] );
-assert( ! isset( $GLOBALS['ssi_abilities']['static-site-importer/import-url'] ) && ! isset( $GLOBALS['ssi_abilities']['static-site-importer/import-website-artifact'] ) );
+assert( array( 'html', 'files', 'zip', 'url', 'figma' ) === $import_properties['source']['properties']['type']['enum'] );
+assert( isset( $import_properties['source']['properties']['figma_file'], $import_properties['artifact_bundle'], $import_properties['scenegraph'] ) );
+assert( ! isset( $GLOBALS['ssi_abilities']['static-site-importer/import-url'] ) && ! isset( $GLOBALS['ssi_abilities']['static-site-importer/import-website-artifact'] ) && ! isset( $GLOBALS['ssi_abilities']['static-site-importer/import-figma'] ) );
 $manifest_result = static_site_importer_ability_get_runtime_package_manifest();
 assert( true === $manifest_result['success'] );
 assert( 'static-site-importer/runtime-package-manifest/v1' === $manifest_result['manifest']['schema'] );
