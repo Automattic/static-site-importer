@@ -183,7 +183,7 @@ $continuation_second = Static_Site_Importer_URL_Batch_Import::import( $continuat
 $continuation_final = Static_Site_Importer_URL_Batch_Import::import( $continuation_request, array(), $continuation_fetcher, $continuation_importer );
 if ( is_wp_error( $continuation_second ) || true !== ( $continuation_second['continuation'] ?? false ) || is_wp_error( $continuation_final ) || 'completed' !== ( $continuation_final['url_batch_run']['status'] ?? '' ) || 3 !== ( $continuation_final['url_batch_run']['completed_routes'] ?? 0 ) || 3 !== $continuation_imports || 1 !== ( $continuation_final['url_batch_run']['stage_counters']['compiler_shared_prepares'] ?? 0 ) || 3 !== ( $continuation_final['url_batch_run']['stage_counters']['compiler_page_prepares'] ?? 0 ) || 3 !== ( $continuation_final['url_batch_run']['stage_counters']['compiler_compositions'] ?? 0 ) || ! isset( $continuation_final['url_batch_run']['stage_timing']['shared_plan_seconds'] ) ) { throw new RuntimeException( 'cooperative continuation calls must retain one shared compiler plan and page-only plans across three restarted URL batches' ); }
 // finalize.test — the terminal apply batch must compose every frozen page plan into one whole-site artifact (issue #991).
-$plan_pages_of = static function ( array $args ): array { return array_map( static fn ( array $page ): string => (string) ( $page['path'] ?? $page['slug'] ?? '' ), $args['compiled_artifact_result']['source_reports']['wordpress_site_plan']['pages'] ?? array() ); };
+$plan_pages_of = static function ( array $args ): array { return array_map( static fn ( array $page ): string => (string) ( $page['path'] ?? $page['slug'] ?? '' ), $args['compiled_artifact_result']['wordpress_site_plan']['pages'] ?? array() ); };
 if ( 3 !== count( $continuation_calls ) || 1 !== count( $plan_pages_of( $continuation_calls[0] ?? array() ) ) || 1 !== count( $plan_pages_of( $continuation_calls[1] ?? array() ) ) ) { throw new RuntimeException( 'intermediate apply batches must stay page-local in their composed site plans' ); }
 $finalized_pages = $plan_pages_of( $continuation_calls[2] ?? array() );
 if ( 3 !== count( $finalized_pages ) || array_diff( array( 'index', 'one', 'two' ), $finalized_pages ) ) { throw new RuntimeException( 'terminal apply batch must compose every persisted page plan with the retained shared plan: ' . wp_json_encode( $finalized_pages ) ); }
@@ -420,7 +420,7 @@ if ( interface_exists( Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\P
 	);
 	$shopify_terminal = $shopify_compositions[1] ?? array();
 	$shopify_json     = wp_json_encode( $shopify_terminal );
-	$shopify_plan_pages = $shopify_terminal['source_reports']['wordpress_site_plan']['pages'] ?? array();
+	$shopify_plan_pages = $shopify_terminal['wordpress_site_plan']['pages'] ?? array();
 	$shopify_probe = '';
 	if ( is_wp_error( $shopify_result ) ) { $shopify_probe = 'error: ' . $shopify_result->get_error_code() . ' ' . $shopify_result->get_error_message(); }
 	elseif ( 1 !== $shopify_font_fetches ) { $shopify_probe = 'font fetches: ' . $shopify_font_fetches; }
@@ -457,6 +457,6 @@ $failclosed_state = json_decode( (string) file_get_contents( $failclosed_first['
 if ( 'failed' !== ( $failclosed_state['state'] ?? '' ) || ! is_dir( dirname( $failclosed_frozen[0] ) ) ) { throw new RuntimeException( 'a failed terminal composition must mark the run failed and retain the workspace for retry' ); }
 file_put_contents( $failclosed_frozen[0], $failclosed_original );
 $failclosed_healed = Static_Site_Importer_URL_Batch_Import::import( $failclosed_request, array(), $failclosed_fetcher, $failclosed_importer );
-$healed_pages = array_map( static fn ( array $page ): string => (string) ( $page['path'] ?? $page['slug'] ?? '' ), $failclosed_calls[1]['compiled_artifact_result']['source_reports']['wordpress_site_plan']['pages'] ?? array() );
+$healed_pages = array_map( static fn ( array $page ): string => (string) ( $page['path'] ?? $page['slug'] ?? '' ), $failclosed_calls[1]['compiled_artifact_result']['wordpress_site_plan']['pages'] ?? array() );
 if ( is_wp_error( $failclosed_healed ) || 'completed' !== ( $failclosed_healed['url_batch_run']['status'] ?? '' ) || 2 !== count( $healed_pages ) ) { throw new RuntimeException( 'restoring frozen staged plans must let the resumed run complete with the whole-site plan: ' . ( is_wp_error( $failclosed_healed ) ? $failclosed_healed->get_error_code() : wp_json_encode( array_keys( $healed_pages ) ) ) ); }
 echo "URL batch import smoke passed.\n";
