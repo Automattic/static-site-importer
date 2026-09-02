@@ -82,6 +82,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-provider-layout-overlay.php',
 	'class-static-site-importer-woo-product-seeder.php',
 	'class-static-site-importer-form-seeder.php',
+	'class-static-site-importer-provider-submission-evidence.php',
 	'class-static-site-importer-product-handoff-contract.php',
 	'class-static-site-importer-diagnostic-loss-classes.php',
 	'class-static-site-importer-import-report.php',

@@ -9,6 +9,7 @@ import {
   produceAcceptanceHandoff,
   validateAcceptanceHandoff,
 } from '../lib/fixture-matrix/acceptance-handoff.mjs';
+import { sha256 } from '../lib/fixture-matrix/provider-submission-evidence.mjs';
 
 function completeInput(directory, overrides = {}) {
   const source = path.join(directory, 'source.txt');
@@ -68,5 +69,18 @@ test('acceptance handoff preserves failed materialization as failed', () => {
     const document = produceAcceptanceHandoff(completeInput(directory, { materializationReceipt: { schema: 'static-site-importer/materialization-receipt/v2', status: 'failed' } }));
     assert.equal(document.disposition, 'failed');
     assert.deepEqual(consumeAcceptanceHandoff(path.join(directory, 'handoff'), document).reasons, [{ code: 'materialization_failed' }]);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('acceptance handoff copies and validates required provider submission evidence', () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'ssi-handoff-'));
+  try {
+    const input = completeInput(directory);
+    input.materializationReceipt.plan_hash = 'b'.repeat(64);
+    input.providerSubmissionRequirements = [{ required: true, page_route: '/', form_identity: 'a'.repeat(64), provider_id: 'wordpress/forms', provider_owner: 'wordpress' }];
+    input.providerSubmissionEvidence = [{ schema: 'static-site-importer/provider-submission-evidence/v1', fixture_id: input.fixtureId, page: { route: '/', wordpress_entity_id: '7' }, form_identity: 'a'.repeat(64), provider: { id: 'wordpress/forms', version: '1.0.0', ownership: 'wordpress', submission_endpoint: { scope: 'wordpress-local', source_endpoint_contacted: false } }, network: { external_request_origins: [] }, plan_hash: 'b'.repeat(64), materialization_receipt_sha256: sha256(input.materializationReceipt), behaviors: { required_field_failure: { status: 'passed', ui: 'validation_error', local_receipt_count: 0 }, valid_submission: { status: 'passed', ui: 'success', local_receipt: { id: 'local-1', sha256: 'c'.repeat(64), storage: 'wordpress-local' } }, provider_failure: { status: 'passed', ui: 'provider_error', local_receipt_count: 0 }, duplicate_submit: { status: 'passed', ui: 'success', local_receipt_count: 1, receipt_sha256: 'c'.repeat(64) } }, notification: { capability: 'separate', attempted: false }, artifact_ref: { path: 'runtime/provider.json' } }];
+    const document = produceAcceptanceHandoff(input);
+    assert.equal(document.disposition, 'passed');
+    assert.equal(validateAcceptanceHandoff(path.join(directory, 'handoff'), document).valid, true);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });

@@ -8,6 +8,7 @@ The receipt is emitted only when:
 - the selected and solved corpora are non-empty;
 - every registry decision is `solved_candidate`;
 - every import has a completed materialization receipt;
+- every fixture form declaring `provider_submissions[].required` has runtime-owned submission evidence bound to its exact page, form, provider version, plan, and materialization receipt;
 - every imported block is native and editor-valid through WP Codebox's loaded-post `wp.blocks.validateBlock` browser artifact, with registered block types and one complete recursive result per block;
 - every edited post has complete generated-stylesheet coverage in the editor canvas, an idle modal-free capture, and passing matched frontend/editor content rendering at equivalent canvas widths with no unresolved assets, hidden or unreadable content, or major geometry drift;
 - editor selection, text mutation, block movement, save, reload, and clean post-save validation are proven by typed WP Codebox action evidence;
