@@ -15,9 +15,10 @@ class Static_Site_Importer_Portable_Source_Manifest {
 
 	/**
 	 * @param array<string,mixed> $artifact Normalized website artifact.
+	 * @param object|null         $payload_reader Opaque payload reference reader.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	public static function project( array $artifact ) {
+	public static function project( array $artifact, ?object $payload_reader = null ) {
 		$files   = isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? $artifact['files'] : array();
 		$by_path = array();
 		foreach ( $files as $file ) {
@@ -49,7 +50,7 @@ class Static_Site_Importer_Portable_Source_Manifest {
 		$manifest_path = $manifest_paths[0];
 		$manifest_base = str_contains( $manifest_path, '/' ) ? dirname( $manifest_path ) : '';
 
-		$manifest_bytes = self::bytes( $by_path[ $manifest_path ] );
+		$manifest_bytes = self::bytes( $by_path[ $manifest_path ], $payload_reader );
 		if ( is_wp_error( $manifest_bytes ) ) {
 			return $manifest_bytes;
 		}
@@ -91,7 +92,7 @@ class Static_Site_Importer_Portable_Source_Manifest {
 			if ( $manifest_path === $transport_path || ! isset( $by_path[ $transport_path ] ) ) {
 				return self::error( 'static_site_importer_portable_source_file_missing', 'A declared portable source file is missing from the transported payload.', array( 'path' => $relative ) );
 			}
-			$file_hash = self::sha256( $by_path[ $transport_path ] );
+			$file_hash = self::sha256( $by_path[ $transport_path ], $payload_reader );
 			if ( is_wp_error( $file_hash ) ) {
 				return $file_hash;
 			}
@@ -119,7 +120,7 @@ class Static_Site_Importer_Portable_Source_Manifest {
 	}
 
 	/** @return string|WP_Error */
-	private static function bytes( array $file ) {
+	private static function bytes( array $file, ?object $payload_reader ) {
 		if ( isset( $file['content'] ) && is_scalar( $file['content'] ) ) {
 			return (string) $file['content'];
 		}
@@ -129,12 +130,23 @@ class Static_Site_Importer_Portable_Source_Manifest {
 				return $decoded;
 			}
 		}
+		$reference = isset( $file['payload_reference'] ) && is_array( $file['payload_reference'] ) ? $file['payload_reference'] : null;
+		if ( null !== $reference && is_object( $payload_reader ) && is_callable( array( $payload_reader, 'read' ) ) ) {
+			try {
+				$bytes = $payload_reader->read( $reference );
+			} catch ( Throwable ) {
+				$bytes = null;
+			}
+			if ( is_string( $bytes ) ) {
+				return $bytes;
+			}
+		}
 		return self::error( 'static_site_importer_portable_source_payload_unreadable', 'A portable source payload could not be read.', array( 'path' => (string) ( $file['path'] ?? '' ) ) );
 	}
 
 	/** @return string|WP_Error */
-	private static function sha256( array $file ) {
-		$bytes = self::bytes( $file );
+	private static function sha256( array $file, ?object $payload_reader ) {
+		$bytes = self::bytes( $file, $payload_reader );
 		if ( ! is_wp_error( $bytes ) ) {
 			return hash( 'sha256', $bytes );
 		}

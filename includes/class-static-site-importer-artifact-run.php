@@ -10,6 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class Static_Site_Importer_Artifact_Run_Workspace {
+	private const CLAIM_TTL = 900;
 	private string $root;
 	private string $directory;
 	private array $record;
@@ -210,6 +211,62 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 
 		$bytes = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads importer-owned workspace bytes.
 		return is_string( $bytes ) ? $bytes : null;
+	}
+
+	/**
+	 * Claim a workspace effect with exclusive file creation.
+	 *
+	 * @return array<string,mixed>|WP_Error
+	 */
+	public function claim( string $relative, string $owner, array $metadata = array() ) {
+		$path = $this->path( $relative );
+		if ( ! is_string( $path ) ) {
+			return $path;
+		}
+		$parent = dirname( $path );
+		if ( ! is_dir( $parent ) && ! mkdir( $parent, 0700, true ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir -- Creates importer-owned claim directory.
+			return new WP_Error( 'static_site_importer_artifact_workspace_unavailable', 'Workspace directory is unavailable.' );
+		}
+		if ( is_link( $parent ) || ! str_starts_with( (string) realpath( $parent ) . '/', $this->directory . '/' ) ) {
+			return new WP_Error( 'static_site_importer_artifact_workspace_symlink', 'Workspace claims must remain in owned directories.' );
+		}
+		$handle = @fopen( $path, 'x' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Exclusive creation provides claim ownership; existing claims are expected contention.
+		if ( false === $handle ) {
+			$existing       = $this->read_raw( $relative );
+			$data           = is_string( $existing ) ? json_decode( $existing, true ) : null;
+			$claimed        = is_array( $data ) ? strtotime( (string) ( $data['claimed_at'] ?? '' ) ) : false;
+			$stale_relative = $relative . '.stale-' . bin2hex( random_bytes( 8 ) );
+			$stale_path     = $this->path( $stale_relative );
+			if ( false !== $claimed && time() - $claimed > self::CLAIM_TTL && is_string( $stale_path ) && rename( $path, $stale_path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Atomic same-directory rename prevents competing workers from reclaiming one expired lease.
+				$this->delete( $stale_relative );
+				$handle = @fopen( $path, 'x' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Reclaims expired importer-owned leases before exclusive creation.
+			}
+			if ( false === $handle ) {
+				return new WP_Error( 'static_site_importer_artifact_claim_owned', 'Artifact effect is already claimed.', is_array( $data ) ? $data : array() );
+			}
+		}
+		$claim = array_merge(
+			$metadata,
+			array(
+				'owner'      => $owner,
+				'claimed_at' => gmdate( 'c' ),
+			)
+		);
+		$json  = wp_json_encode( $claim );
+		$ok    = is_string( $json ) && strlen( $json ) === fwrite( $handle, $json ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Writes the exclusively-created lease before it becomes observable to competing workers.
+		fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the exclusively-created lease after its complete contents are written.
+		if ( ! $ok ) {
+			unlink( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes failed importer-owned claim.
+			return new WP_Error( 'static_site_importer_artifact_claim_write_failed', 'Artifact effect claim could not be written.' );
+		}
+		return $claim;
+	}
+
+	/** Release claim only when owner matches. */
+	public function release_claim( string $relative, string $owner ): bool {
+		$claim = $this->read_raw( $relative );
+		$data  = is_string( $claim ) ? json_decode( $claim, true ) : null;
+		return is_array( $data ) && ( $data['owner'] ?? '' ) === $owner && $this->delete( $relative );
 	}
 
 	public function delete( string $relative ): bool {

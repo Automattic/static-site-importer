@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "static-site-importer/provider-submission-evidence/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "fixture_id", "page", "form_identity", "provider", "network", "plan_hash", "materialization_receipt_sha256", "behaviors", "notification", "artifact_ref"],
+  "properties": {
+    "schema": { "const": "static-site-importer/provider-submission-evidence/v1" },
+    "fixture_id": { "type": "string", "minLength": 1 },
+    "page": { "type": "object", "additionalProperties": false, "required": ["route", "wordpress_entity_id"], "properties": { "route": { "type": "string", "minLength": 1 }, "wordpress_entity_id": { "type": "string", "minLength": 1 } } },
+    "form_identity": { "$ref": "#/$defs/sha256" },
+    "provider": { "type": "object", "additionalProperties": false, "required": ["id", "version", "ownership", "submission_endpoint"], "properties": { "id": { "type": "string", "minLength": 1 }, "version": { "type": "string", "minLength": 1 }, "ownership": { "const": "wordpress" }, "submission_endpoint": { "type": "object", "additionalProperties": false, "required": ["scope", "source_endpoint_contacted"], "properties": { "scope": { "const": "wordpress-local" }, "source_endpoint_contacted": { "const": false } } } } },
+    "network": { "type": "object", "additionalProperties": false, "required": ["external_request_origins"], "properties": { "external_request_origins": { "type": "array", "maxItems": 0 } } },
+    "plan_hash": { "$ref": "#/$defs/sha256" },
+    "materialization_receipt_sha256": { "$ref": "#/$defs/sha256" },
+    "behaviors": { "type": "object", "additionalProperties": false, "required": ["required_field_failure", "valid_submission", "provider_failure", "duplicate_submit"], "properties": {
+      "required_field_failure": { "$ref": "#/$defs/noReceiptBehavior" },
+      "valid_submission": { "type": "object", "additionalProperties": false, "required": ["status", "ui", "local_receipt"], "properties": { "status": { "const": "passed" }, "ui": { "const": "success" }, "local_receipt": { "type": "object", "additionalProperties": false, "required": ["id", "sha256", "storage"], "properties": { "id": { "type": "string", "minLength": 1 }, "sha256": { "$ref": "#/$defs/sha256" }, "storage": { "const": "wordpress-local" } } } } },
+      "provider_failure": { "type": "object", "additionalProperties": false, "required": ["status", "ui", "local_receipt_count"], "properties": { "status": { "const": "passed" }, "ui": { "const": "provider_error" }, "local_receipt_count": { "const": 0 } } },
+      "duplicate_submit": { "type": "object", "additionalProperties": false, "required": ["status", "ui", "local_receipt_count", "receipt_sha256"], "properties": { "status": { "const": "passed" }, "ui": { "const": "success" }, "local_receipt_count": { "const": 1 }, "receipt_sha256": { "$ref": "#/$defs/sha256" } } }
+    } },
+    "notification": { "type": "object", "additionalProperties": false, "required": ["capability", "attempted"], "properties": { "capability": { "const": "separate" }, "attempted": { "const": false } } },
+    "artifact_ref": { "type": "object", "additionalProperties": false, "required": ["path"], "properties": { "path": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+" } } }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "noReceiptBehavior": { "type": "object", "additionalProperties": false, "required": ["status", "ui", "local_receipt_count"], "properties": { "status": { "const": "passed" }, "ui": { "const": "validation_error" }, "local_receipt_count": { "const": 0 } } }
+  }
+}

@@ -596,6 +596,7 @@ class Static_Site_Importer_Theme_Generator {
 			'dependencies' => $dependencies,
 		);
 		$diagnostics = array_merge( $diagnostics, $lifecycle['diagnostics'] ?? array() );
+		$diagnostics = array_merge( $diagnostics, Static_Site_Importer_Report_Diagnostics::provider_entity_decline_diagnostics( $entities ) );
 		$gutenberg_gaps = isset( $receipt['extensions']['gutenberg_gaps'] ) && is_array( $receipt['extensions']['gutenberg_gaps'] ) ? $receipt['extensions']['gutenberg_gaps'] : array();
 		$diagnostics = array_merge( $diagnostics, $gutenberg_gaps );
 		if ( isset( $args['missing_author_stylesheet_diagnostics'] ) && is_array( $args['missing_author_stylesheet_diagnostics'] ) ) {

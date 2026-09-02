@@ -364,8 +364,8 @@ if ( ! function_exists( 'static_site_importer_cli_prepare_request_bundle' ) ) {
 			return $input;
 		}
 		$type = (string) ( $source['type'] ?? '' );
-		if ( ! in_array( $type, array( 'files', 'zip' ), true ) ) {
-			return new WP_Error( 'static_site_importer_cli_request_bundle_type_invalid', 'Request-bundle references support files and zip sources.' );
+		if ( ! in_array( $type, array( 'files', 'zip', 'figma' ), true ) ) {
+			return new WP_Error( 'static_site_importer_cli_request_bundle_type_invalid', 'Request-bundle references support files, zip, and figma sources.' );
 		}
 		$resolved_path = static_site_importer_cli_request_bundle_path( $request_path, $reference );
 		if ( is_wp_error( $resolved_path ) ) {
@@ -375,8 +375,8 @@ if ( ! function_exists( 'static_site_importer_cli_prepare_request_bundle' ) ) {
 		if ( is_wp_error( $bundle ) ) {
 			return $bundle;
 		}
-		if ( 'zip' === $type && ! is_file( $resolved_path ) ) {
-			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'A zip request-bundle reference must resolve to a regular file.' );
+		if ( in_array( $type, array( 'zip', 'figma' ), true ) && ! is_file( $resolved_path ) ) {
+			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'A zip or figma request-bundle reference must resolve to a regular file.' );
 		}
 		if ( function_exists( 'add_filter' ) ) {
 			add_filter(
@@ -394,6 +394,18 @@ if ( ! function_exists( 'static_site_importer_cli_prepare_request_bundle' ) ) {
 							),
 							'payload_reader' => $bundle['payload_reader'],
 							'provenance'     => array( 'transport' => 'cli-request-bundle' ),
+						);
+					}
+					if ( 'figma' === $type ) {
+						return array(
+							'source'     => array(
+								'type'       => 'figma',
+								'figma_file' => array(
+									'name'        => basename( $resolved_path ),
+									'staged_path' => $resolved_path,
+								),
+							),
+							'provenance' => array( 'transport' => 'cli-request-bundle' ),
 						);
 					}
 					return array(
@@ -523,8 +535,8 @@ if ( ! function_exists( 'static_site_importer_cli_import_input' ) ) {
 			return $input;
 		}
 		$source = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array();
-		if ( ! in_array( (string) ( $source['type'] ?? '' ), array( 'html', 'files', 'zip', 'url' ), true ) ) {
-			return new WP_Error( 'static_site_importer_invalid_import_source', 'source.type must be html, files, zip, or url.' );
+		if ( ! in_array( (string) ( $source['type'] ?? '' ), array( 'html', 'files', 'zip', 'url', 'figma' ), true ) ) {
+			return new WP_Error( 'static_site_importer_invalid_import_source', 'source.type must be html, files, zip, url, or figma.' );
 		}
 		return $input;
 	}
@@ -662,9 +674,9 @@ if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 	 * @return array<string,mixed>
 	 */
 	function static_site_importer_cli_run_import_host( array $input, ?callable $invoke = null, int $max_steps = 0, ?callable $emit_progress = null, string $resume_command = '' ): array {
-		$invoke    = $invoke ?? 'static_site_importer_cli_import_run_fresh_runtime';
-		$max_steps = min( 1024, max( 1, $max_steps > 0 ? $max_steps : static_site_importer_cli_import_max_steps() ) );
-		$steps     = 0;
+		$invoke     = $invoke ?? 'static_site_importer_cli_import_run_fresh_runtime';
+		$max_steps  = min( 1024, max( 1, $max_steps > 0 ? $max_steps : static_site_importer_cli_import_max_steps() ) );
+		$steps      = 0;
 		$started_at = microtime( true );
 		$previous   = null;
 		while ( $steps < $max_steps ) {
@@ -776,7 +788,7 @@ if ( ! function_exists( 'static_site_importer_cli_import_command' ) ) {
 			static_site_importer_cli_emit_import_step( static_site_importer_cli_import( $input ) );
 			return;
 		}
-		$max_steps = isset( $assoc_args['max-steps'] ) ? (int) $assoc_args['max-steps'] : 0;
+		$max_steps      = isset( $assoc_args['max-steps'] ) ? (int) $assoc_args['max-steps'] : 0;
 		$resume_command = static_site_importer_cli_import_resume_command( $assoc_args, '<import-id>' );
 		static_site_importer_cli_emit_import_receipt(
 			static_site_importer_cli_run_import_host(

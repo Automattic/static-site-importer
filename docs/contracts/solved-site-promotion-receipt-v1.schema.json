@@ -45,11 +45,12 @@
     "gates": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["matrix", "solved_candidate", "materialization_receipts", "editor", "editor_presentation", "editor_interaction", "visual", "native_blocks", "artifacts"],
+      "required": ["matrix", "solved_candidate", "materialization_receipts", "provider_submissions", "editor", "editor_presentation", "editor_interaction", "visual", "native_blocks", "artifacts"],
       "properties": {
         "matrix": { "const": "passed" },
         "solved_candidate": { "const": "passed" },
         "materialization_receipts": { "const": "passed" },
+        "provider_submissions": { "const": "passed" },
         "editor": { "const": "passed" },
         "editor_presentation": { "const": "passed" },
         "editor_interaction": { "const": "passed" },

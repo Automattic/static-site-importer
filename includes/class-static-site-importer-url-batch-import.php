@@ -7,6 +7,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Artifact_Run_Workspace' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-artifact-run.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Final_Hydration_Effects' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-final-hydration-effects.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Shared_Resource_Plan' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-shared-resource-plan.php';
 }
@@ -14,7 +17,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 
 	private const VERSION         = 2;
 	private const MAX_BATCH_PAGES = 100;
-	public static function import( array $request, array $input, ?callable $fetcher = null, ?callable $importer = null ) {
+	public static function import( array $request, array $input, ?callable $fetcher = null, ?callable $importer = null, ?Static_Site_Importer_Final_Hydration_Adapter $final_hydration_adapter = null ) {
 		$args        = is_array( $request['provider_args'] ?? null ) ? $request['provider_args'] : array();
 		$batch_pages = (int) ( $args['batch_pages'] ?? 0 );
 		if ( $batch_pages < 1 ) {
@@ -194,7 +197,18 @@ final class Static_Site_Importer_URL_Batch_Import {
 			$manifest['final_result']['url_batch_run']['fetch_cache'] = $manifest['fetch_cache'];
 			$cache->cleanup_adopted();
 			return $manifest['final_result'];
-		}$importer         = $importer ?? static fn ( array $artifact, array $import_args ) => Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
+		}
+		$importer                = $importer ?? static fn ( array $artifact, array $import_args ) => Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
+		$final_hydration_adapter = $final_hydration_adapter ?? new Static_Site_Importer_Default_Final_Hydration_Adapter();
+		$adapter_descriptor      = array(
+			'id'                     => $final_hydration_adapter->id(),
+			'contract_version'       => $final_hydration_adapter->contract_version(),
+			'implementation_version' => $final_hydration_adapter->implementation_version(),
+			'capabilities'           => $final_hydration_adapter->capabilities(),
+		);
+		if ( array_diff( array( 'verify_result', 'reconcile_verified_result' ), $adapter_descriptor['capabilities'] ) ) {
+			return new WP_Error( 'static_site_importer_final_effect_unsupported', 'Final hydration adapter cannot verify and reconcile durable effect receipts.' );
+		}
 		$shared_plan       = new Static_Site_Importer_Shared_Resource_Plan( $workspace );
 		$payload_reader    = self::payload_reader( $workspace );
 		$cursor            = Static_Site_Importer_Artifact_Batch_Cursor::hydrate( $manifest['batches'] );
@@ -469,13 +483,23 @@ final class Static_Site_Importer_URL_Batch_Import {
 				if ( is_wp_error( $write ) ) {
 					return $write;
 				}
-				$compiled_staged = self::compose_staged_plans( $staged, $payload_reader );
-				if ( is_wp_error( $compiled_staged ) ) {
-					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $compiled_staged, $cache );
+				$terminal = array_key_last( $cursor ) === $index;
+				if ( $terminal ) {
+					// The terminal batch finalizes the whole run, so it composes every frozen page plan with the retained shared plan.
+					$complete = self::compose_complete_plan( $workspace, $cursor, $payload_reader );
+					if ( is_wp_error( $complete ) ) {
+						return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $complete, $cache );
+					}
+					$compiled_staged = $complete['compiled_artifact_result'];
+				} else {
+					$compiled_staged = self::compose_staged_plans( $staged, $payload_reader );
+					if ( is_wp_error( $compiled_staged ) ) {
+						return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $compiled_staged, $cache );
+					}
 				}
 				$manifest['stage_counters']['compiler_compositions'] = (int) ( $manifest['stage_counters']['compiler_compositions'] ?? 0 ) + 1;
 				$import_args                                      = Static_Site_Importer_URL_Import_Runtime::batch_import_args( $input, $runtime );
-				$import_args['activate']                          = array_key_last( $cursor ) === $index && ! empty( $input['activate'] );
+				$import_args['activate']                          = $terminal && ! empty( $input['activate'] );
 				$import_args['batch_import']                      = true;
 				$import_args['preserve_existing_theme_bootstrap'] = $index > 0;
 				$import_args['import_run_id']                     = $identity;
@@ -483,9 +507,69 @@ final class Static_Site_Importer_URL_Batch_Import {
 				$import_args['_static_site_importer_precompiled_source'] = null !== $payload_reader;
 				// This reader is invocation-local workspace access, never plan state.
 				$import_args['_static_site_importer_payload_reader'] = $payload_reader;
-				$result = $importer( $runtime['artifact'], $import_args );
-				if ( is_wp_error( $result ) ) {
-					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $result, $cache );
+
+				$batch_id        = (string) ( $batch['batch_id'] ?? $index );
+				$snapshot_hash   = (string) ( $runtime['source_metadata']['snapshot']['sha256'] ?? '' );
+				$plan_hash       = hash( 'sha256', (string) wp_json_encode( $compiled_staged ) );
+				$receipt_id      = Static_Site_Importer_Final_Hydration_Effects::identity( $identity, $batch_id, $snapshot_hash, $plan_hash, $adapter_descriptor );
+				$effect_receipts = new Static_Site_Importer_Final_Hydration_Effects( $workspace );
+				$claim_owner     = hash( 'sha256', $identity . ':' . $batch_id . ':' . microtime( true ) . ':' . bin2hex( random_bytes( 8 ) ) );
+				$claim           = $workspace->claim(
+					'effects/' . $receipt_id . '.claim',
+					$claim_owner,
+					array(
+						'receipt_id' => $receipt_id,
+						'adapter'    => $adapter_descriptor,
+					)
+				);
+				if ( is_wp_error( $claim ) ) {
+					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $claim, $cache );
+				}
+				$release_claim = static function () use ( $workspace, $receipt_id, $claim_owner ): bool {
+					return $workspace->release_claim( 'effects/' . $receipt_id . '.claim', $claim_owner );
+				};
+				try {
+					$receipt = $effect_receipts->begin( $receipt_id, $identity, $batch_id, $snapshot_hash, $plan_hash, $adapter_descriptor );
+					if ( is_wp_error( $receipt ) && 'static_site_importer_final_effect_needs_recovery' === $receipt->get_error_code() ) {
+						$ambiguous  = $receipt->get_error_data();
+						$reconciled = is_array( $ambiguous ) ? $final_hydration_adapter->reconcile( $ambiguous, $runtime['artifact'], $import_args ) : new WP_Error( 'static_site_importer_final_effect_reconciliation_unavailable', 'Final hydration effect receipt could not be loaded for reconciliation.' );
+						if ( is_wp_error( $reconciled ) ) {
+							return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $reconciled, $cache );
+						}
+						$receipt = $effect_receipts->recover( $receipt_id, $reconciled );
+					}
+					if ( is_wp_error( $receipt ) ) {
+						return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $receipt, $cache );
+					}
+					if ( 'verified' === ( $receipt['state'] ?? '' ) && is_array( $receipt['effect']['result'] ?? null ) ) {
+						$result = $receipt['effect']['result'];
+						if ( ! $final_hydration_adapter->verify( $result, $runtime['artifact'], $import_args ) ) {
+							return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, new WP_Error( 'static_site_importer_final_effect_result_unverified', 'Verified final hydration result failed adapter verification.' ), $cache );
+						}
+					} else {
+						$result = $final_hydration_adapter->apply( $runtime['artifact'], $import_args );
+						if ( is_wp_error( $result ) ) {
+							$effect_receipts->fail( $receipt_id, $result );
+							return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $result, $cache );
+						}
+						if ( ! is_array( $result ) || ! $final_hydration_adapter->verify( $result, $runtime['artifact'], $import_args ) ) {
+							$unverified = new WP_Error( 'static_site_importer_final_effect_result_unverified', 'Final hydration adapter returned an unverifiable result.' );
+							$effect_receipts->fail( $receipt_id, $unverified );
+							return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $unverified, $cache );
+						}
+						$receipt = $effect_receipts->complete( $receipt_id, $result );
+						if ( is_wp_error( $receipt ) ) {
+							return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $receipt, $cache );
+						}
+					}
+				} catch ( Throwable $throwable ) {
+					$thrown = new WP_Error( 'static_site_importer_final_effect_threw', $throwable->getMessage() );
+					$effect_receipts->fail( $receipt_id, $thrown );
+					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $thrown, $cache );
+				} finally {
+					if ( ! $release_claim() ) {
+						$manifest['diagnostics'][] = 'final_effect_claim_release_failed';
+					}
 				}
 			}
 			$cursor                     = Static_Site_Importer_Artifact_Batch_Cursor::complete( $cursor, $index );
@@ -655,7 +739,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 		return new class( $workspace ) implements \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader {
 			public function __construct( private Static_Site_Importer_Artifact_Run_Workspace $workspace ) {}
 			public function read( array $reference ): string {
-				$bytes = $this->workspace->read_raw( (string) $reference['id'] );
+				$bytes = $this->workspace->read_raw( $reference['id'] );
 				if ( ! is_string( $bytes ) ) {
 					throw new RuntimeException( 'A retained artifact payload is unavailable.' );
 				}
@@ -737,12 +821,14 @@ final class Static_Site_Importer_URL_Batch_Import {
 				}
 			}
 
-			$batch_digest = (string) ( $runtime['shared_plan_digest'] ?? '' );
-			if ( '' === $batch_digest && ! empty( $runtime['staged_page_plans'] ) ) {
-				$batch_digest = (string) ( $runtime['staged_page_plans'][0]['shared_digest'] ?? '' );
-			}
+			// The binding check lives in the compiler plan domain: each staged page plan carries the
+			// shared compiler plan digest it was prepared against, and the vendor composer rejects
+			// page plans that bind to a different shared plan. A mismatch (or a missing binding)
+			// means the shared plan was rebuilt since the batch was staged, so the frozen page
+			// plans must be reprepared against the plan that is actually being composed.
+			$batch_binding = (string) ( $runtime['staged_page_plans'][0]['shared_digest'] ?? '' );
 
-			if ( '' !== $current_digest && ! hash_equals( $current_digest, $batch_digest ) ) {
+			if ( '' === $batch_binding || ! hash_equals( $current_digest, $batch_binding ) ) {
 				if ( ! is_array( $runtime['artifact']['files'] ?? null ) ) {
 					return new WP_Error( 'static_site_importer_url_plan_batch_artifact_missing', 'The frozen URL run cannot reprepare a stale staged batch without its retained artifact.' );
 				}

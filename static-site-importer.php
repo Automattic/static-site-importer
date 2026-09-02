@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Static Site Importer
  * Description: Materialize compiled website artifacts into WordPress block and classic themes.
- * Version: 1.8.6
+ * Version: 1.9.2
  * Author: Chris Huber
  * Requires at least: 6.9
  * Requires PHP: 8.2
@@ -17,7 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 define( 'STATIC_SITE_IMPORTER_PATH', plugin_dir_path( __FILE__ ) );
 define( 'STATIC_SITE_IMPORTER_URL', plugin_dir_url( __FILE__ ) );
-define( 'STATIC_SITE_IMPORTER_VERSION', '1.8.6' );
+define( 'STATIC_SITE_IMPORTER_VERSION', '1.9.2' );
 
 $static_site_importer_autoload = STATIC_SITE_IMPORTER_PATH . 'vendor/autoload.php';
 if ( is_readable( $static_site_importer_autoload ) ) {
@@ -65,6 +65,10 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-ip-classifier.php',
 	'class-static-site-importer-url-fetcher.php',
 	'class-static-site-importer-artifact-run.php',
+	'class-static-site-importer-final-hydration-adapter.php',
+	'class-static-site-importer-default-final-hydration-adapter.php',
+	'class-static-site-importer-callable-final-hydration-adapter.php',
+	'class-static-site-importer-final-hydration-effects.php',
 	'class-static-site-importer-source-normalizer.php',
 	'class-static-site-importer-portable-source-manifest.php',
 	'class-static-site-importer-content-policy.php',
@@ -82,6 +86,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-provider-layout-overlay.php',
 	'class-static-site-importer-woo-product-seeder.php',
 	'class-static-site-importer-form-seeder.php',
+	'class-static-site-importer-provider-submission-evidence.php',
 	'class-static-site-importer-product-handoff-contract.php',
 	'class-static-site-importer-diagnostic-loss-classes.php',
 	'class-static-site-importer-import-report.php',

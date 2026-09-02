@@ -860,8 +860,10 @@ $overlay            = array(
 	'bytes'  => strlen( $overlay_css ),
 );
 $collect_overlays   = new ReflectionMethod( Static_Site_Importer_Entity_Materializer_Registry::class, 'provider_layout_overlays' );
-$collected_overlays = $collect_overlays->invoke( null, array( array( 'forms' => array( array( 'provider_layout_overlay_css' => array() ), array( 'provider_layout_overlay_css' => $overlay ), array( 'provider_layout_overlay_css' => array( 'malformed' => true ) ) ) ) ) );
+$collected_overlays = $collect_overlays->invoke( null, array( array( 'forms' => array( array( 'runtime_mapped' => true, 'provider_layout_overlay_css' => array() ), array( 'runtime_mapped' => true, 'provider_layout_overlay_css' => $overlay ), array( 'runtime_mapped' => true, 'provider_layout_overlay_css' => array( 'malformed' => true ) ) ) ) ) );
 $assert( array( $overlay, array( 'malformed' => true ) ) === $collected_overlays, 'provider layout collection omits empty absence sentinels without hiding non-empty overlays from strict validation' );
+$declined_overlays = $collect_overlays->invoke( null, array( array( 'forms' => array( array( 'status' => 'skipped', 'reason' => 'form_receipt_loss_unaccepted', 'runtime_mapped' => false, 'provider_layout_overlay_css' => $overlay ) ) ) ) );
+$assert( array() === $declined_overlays, 'a declined form contributes no provider layout overlay because no provider block was materialized' );
 $overlay_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$plan,
 	array(
@@ -967,7 +969,7 @@ $font_result          = ( new ArtifactCompiler() )->compile(
 	)
 )->toArray();
 $font_plan            = $font_result['source_reports']['wordpress_site_plan'];
-$font_materialization = $font_result['source_reports']['materialization_plan']['theme']['font_materialization'];
+$font_materialization = $font_result['source_reports']['font_materialization'];
 $font_receipt         = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$font_plan,
 	array(
@@ -1221,7 +1223,7 @@ $font_without_svg_receipt = Static_Site_Importer_WordPress_Site_Plan_Materialize
 	$font_without_svg_result['source_reports']['wordpress_site_plan'],
 	array(
 		'slug'                 => 'font-site-plan-without-svg',
-		'font_materialization' => $font_without_svg_result['source_reports']['materialization_plan']['theme']['font_materialization'],
+		'font_materialization' => $font_without_svg_result['source_reports']['font_materialization'],
 	)
 );
 $font_without_svg_root    = $GLOBALS['ssi_plan_root'] . '/font-site-plan-without-svg';

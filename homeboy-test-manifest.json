@@ -3,6 +3,7 @@
   "tests": {
     "tests/form-materializer-smoke.php": { "environment": "standalone-php" },
     "tests/provider-adapter-runtime-smoke.php": { "environment": "standalone-php" },
+    "tests/smoke-provider-submission-evidence.php": { "environment": "standalone-php" },
     "tests/smoke-ability-error-report-summary.php": { "environment": "standalone-php" },
     "tests/smoke-ability-import-success-diagnostics.php": { "environment": "standalone-php" },
     "tests/smoke-ability-registration-idempotent.php": { "environment": "standalone-php" },
@@ -36,6 +37,7 @@
     "tests/smoke-owner-handoff-evidence.php": { "environment": "standalone-php" },
     "tests/smoke-product-handoff-contract.php": { "environment": "standalone-php" },
     "tests/smoke-quality-budget-admission.php": { "environment": "standalone-php" },
+    "tests/smoke-provider-entity-decline.php": { "environment": "standalone-php" },
     "tests/smoke-provider-presentation.php": { "environment": "standalone-php" },
     "tests/smoke-site-identity.php": { "environment": "standalone-php" },
     "tests/smoke-url-import-runtime.php": { "environment": "standalone-php" },
@@ -56,6 +58,7 @@
     "tests/smoke-wordpress-site-plan-materializer.php": { "environment": "standalone-php" },
     "tests/smoke-woo-product-seeder-rollback.php": { "environment": "standalone-php" },
     "tests/smoke-artifact-run-primitives.php": { "environment": "standalone-php" },
+    "tests/smoke-final-hydration-effects.php": { "environment": "standalone-php" },
     "tests/smoke-shared-resource-plan.php": { "environment": "standalone-php" },
     "tests/smoke-figma-workspace-lifecycle.php": { "environment": "standalone-php" },
     "tests/smoke-url-batch-import.php": { "environment": "standalone-php" },

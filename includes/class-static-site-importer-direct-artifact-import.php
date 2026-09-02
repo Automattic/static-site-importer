@@ -139,7 +139,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		if ( ! preg_match( '/^[a-f0-9]{64}$/', $import_id ) ) {
 			return new WP_Error( 'static_site_importer_invalid_direct_artifact_import_id', 'The direct artifact import_id is invalid.' );
 		}
-		foreach ( array( 'html', 'files', 'entrypoint', 'ref', 'zip', 'metadata' ) as $field ) {
+		foreach ( array( 'html', 'files', 'entrypoint', 'ref', 'zip', 'figma_file', 'figma', 'scenegraph', 'artifact_bundle', 'metadata' ) as $field ) {
 			if ( array_key_exists( $field, $source ) ) {
 				return new WP_Error( 'static_site_importer_direct_artifact_source_mismatch', 'A retained direct artifact run must be resumed without replacement source data.' );
 			}

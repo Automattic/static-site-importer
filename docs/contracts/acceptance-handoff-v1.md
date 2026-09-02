@@ -11,6 +11,12 @@ resolved route/entity mapping, route-and-viewport visual evidence, route-bound
 editor evidence, and the quality-admission projection. It never fills absent
 facts from aggregate status.
 
+Fixtures may declare required provider submissions in `fixture.json`. Their
+runtime-owned evidence envelopes are copied into the handoff and verified
+against the exact fixture, route, form identity, pinned WordPress-owned provider,
+site-plan hash, and terminal materialization receipt. Notification is a separate
+capability and must remain unattempted by this submission proof.
+
 `passed` requires all references to verify, a valid site plan, a completed
 materialization receipt, complete route evidence, and a passed quality projection.
 `failed` retains a failed materialization or quality disposition. All other cases

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { verifySolvedSitePromotion } from './verify-solved-site-promotion.mjs';
+import { sha256 } from '../lib/fixture-matrix/provider-submission-evidence.mjs';
 
 const SSI_SHA = '1'.repeat(40);
 const BE_SHA = '2'.repeat(40);
@@ -53,6 +54,34 @@ test('issues an accepted immutable promotion receipt', () => {
   assert.ok(receipt.evidence.artifacts.every((row) => /^[a-f0-9]{64}$/.test(row.sha256)));
 });
 
+test('gates declared provider submission evidence and includes its runtime artifact', () => {
+  const input = fixture();
+  const row = input.matrix.fixtures[0];
+  const planHash = 'a'.repeat(64);
+  row.matrix_evidence.materialization_receipt.plan_hash = planHash;
+  row.provider_submissions = [{ required: true, page_route: '/contact', form_identity: 'b'.repeat(64), provider_id: 'wordpress/forms', provider_owner: 'wordpress' }];
+  row.surface_lineage = [{ surface: { source_entry: '/contact' }, materialized_document: { post_id: 7 } }];
+  row.provider_submission_evidence = [{
+    schema: 'static-site-importer/provider-submission-evidence/v1', fixture_id: 'solved', page: { route: '/contact', wordpress_entity_id: '7' }, form_identity: 'b'.repeat(64),
+    provider: { id: 'wordpress/forms', version: '1.2.3', ownership: 'wordpress', submission_endpoint: { scope: 'wordpress-local', source_endpoint_contacted: false } }, network: { external_request_origins: [] },
+    plan_hash: planHash, materialization_receipt_sha256: sha256(row.matrix_evidence.materialization_receipt),
+    behaviors: { required_field_failure: { status: 'passed', ui: 'validation_error', local_receipt_count: 0 }, valid_submission: { status: 'passed', ui: 'success', local_receipt: { id: 'local-1', sha256: 'c'.repeat(64), storage: 'wordpress-local' } }, provider_failure: { status: 'passed', ui: 'provider_error', local_receipt_count: 0 }, duplicate_submit: { status: 'passed', ui: 'success', local_receipt_count: 1, receipt_sha256: 'c'.repeat(64) } },
+    notification: { capability: 'separate', attempted: false }, artifact_ref: { path: 'provider-submission.json' },
+  }];
+  fs.writeFileSync(path.join(input.root, 'provider-submission.json'), JSON.stringify(row.provider_submission_evidence[0]));
+  write(input.paths.matrix, input.matrix);
+  const receipt = verifySolvedSitePromotion(input.options);
+  assert.equal(receipt.gates.provider_submissions, 'passed');
+  assert.ok(receipt.evidence.artifacts.some((artifact) => artifact.path === 'provider-submission.json'));
+});
+
+test('fails closed when a required provider submission has no evidence', () => {
+  const input = fixture();
+  input.matrix.fixtures[0].provider_submissions = [{ required: true, page_route: '/contact', form_identity: 'b'.repeat(64), provider_id: 'wordpress/forms', provider_owner: 'wordpress' }];
+  write(input.paths.matrix, input.matrix);
+  assert.throws(() => verifySolvedSitePromotion(input.options), /provider submission evidence failed/);
+});
+
 test('rejects legacy stylesheet-only presentation evidence despite complete raw plan provenance', () => {
   const input = fixture();
   const presentation = input.matrix.fixtures[0].editor_presentation;
@@ -87,10 +116,10 @@ test('accepts a completed v2 materialization receipt identity', () => {
 test('pins an immutable WP Codebox release package, commit, and checksum together', () => {
   const workflow = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion.yml'), 'utf8');
   const caller = fs.readFileSync(path.resolve('.github/workflows/solved-site-promotion-pr.yml'), 'utf8');
-  assert.match(workflow, /WP_CODEBOX_VERSION: v0\.26\.3/);
-  assert.match(workflow, /WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0\.26\.3\.tgz/);
-  assert.match(workflow, /WP_CODEBOX_SHA256: 68d69ba0a97f81761c52845b1a9330beba28aa2b57f29013441bb6c40fedebcf/);
-  assert.match(workflow, /WP_CODEBOX_SHA: 619914f3fed52ae84a2589092803cf8007a527b8/);
+  assert.match(workflow, /WP_CODEBOX_VERSION: v0\.26\.7/);
+  assert.match(workflow, /WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0\.26\.7\.tgz/);
+  assert.match(workflow, /WP_CODEBOX_SHA256: c9d4b524ee1e1f8328b1f7bb530d905c64fc910b75318dffe5b516e5292e18f0/);
+  assert.match(workflow, /WP_CODEBOX_SHA: e05936aceef8ef103249c75ad5e1f4c2f297b928/);
   assert.match(workflow, /releases\/download\/\$\{WP_CODEBOX_VERSION\}\/\$\{WP_CODEBOX_WORKSPACE_ASSET\}/);
   assert.match(workflow, /sha256sum --check --status/);
   assert.doesNotMatch(workflow, /Checkout WP Codebox candidate|npm pack --pack-destination|wp-codebox-sha:/);
@@ -110,6 +139,27 @@ test('resolves uniquely named durable copies of transient runtime evidence', () 
   write(input.paths.matrix, input.matrix);
   const receipt = verifySolvedSitePromotion(input.options);
   assert.ok(receipt.evidence.artifacts.some((row) => row.path === 'uuid-editor.png'));
+});
+
+test('resolves fixture-specific Homeboy artifacts when canonical paths are absent', () => {
+  const input = fixture();
+  const expected = 'files/browser/editor-open/solved/presentation-frontend.png';
+  const selected = path.join(input.root, 'uuid-selected-presentation-frontend.png');
+  const other = path.join(input.root, 'uuid-other-presentation-frontend.png');
+  fs.writeFileSync(selected, 'selected fixture');
+  fs.writeFileSync(other, 'other fixture');
+  input.matrix.fixtures[0].editor_presentation.matched_rendering.frontend_screenshot = expected;
+  write(input.paths.matrix, input.matrix);
+  write(path.join(input.root, 'homeboy-bench-result.json'), {
+    data: { payload: { artifacts: [
+      { name: 'editor_canvas_solved_editor-open-screenshots-1', path: selected },
+      { name: 'editor_canvas_other_editor-open-screenshots-1', path: other },
+    ] } },
+  });
+
+  const receipt = verifySolvedSitePromotion(input.options);
+  assert.ok(receipt.evidence.artifacts.some((row) => row.path === path.basename(selected)));
+  assert.ok(!receipt.evidence.artifacts.some((row) => row.path === path.basename(other)));
 });
 
 test('materializes host runtime evidence into the durable artifact root', () => {
