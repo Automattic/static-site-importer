@@ -28,16 +28,12 @@
           "path": "includes/"
         },
         {
-          "type": "file",
-          "path": "vendor/autoload.php"
-        },
-        {
-          "type": "prefix",
-          "path": "vendor/composer/"
-        },
-        {
           "type": "prefix",
           "path": "vendor/automattic/blocks-engine-php-transformer/"
+        },
+        {
+          "type": "file",
+          "path": "build-provenance.json"
         }
       ],
       "required_files": [
@@ -51,8 +47,6 @@
         "includes/class-static-site-importer-url-site-collector.php",
         "includes/class-static-site-importer-validation-runtime.php",
         "includes/class-static-site-importer-wordpress-site-plan-materializer.php",
-        "vendor/autoload.php",
-        "vendor/composer/autoload_real.php",
         "vendor/automattic/blocks-engine-php-transformer/php-transformer.php"
       ]
     },
@@ -108,6 +102,10 @@
         {
           "type": "prefix",
           "path": "vendor/symfony/"
+        },
+        {
+          "type": "file",
+          "path": "build-provenance.json"
         }
       ],
       "required_files": [

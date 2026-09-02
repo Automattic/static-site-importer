@@ -65,7 +65,7 @@ export function runtimeProfileSettings(profile) {
   return profile ? { manifest: "runtime-package-manifest.json", profile } : {}
 }
 
-export function buildIdentity({ ssiSha, ssiDiff, blocksEngineSha, blocksEngineRef, composerLock }) {
+export function buildIdentity({ ssiSha, ssiDiff, blocksEngineSha, blocksEngineRef, composerLock, runtimeProfile = "website-artifact-import" }) {
   return {
     schema,
     command: "npm run build:dev-package",
@@ -76,6 +76,7 @@ export function buildIdentity({ ssiSha, ssiDiff, blocksEngineSha, blocksEngineRe
     },
     blocks_engine: { ref: blocksEngineRef, sha: blocksEngineSha },
     composer_lock_sha256: digest(composerLock),
+    runtime_profile: runtimeProfile,
   }
 }
 
@@ -156,7 +157,7 @@ export async function buildDevelopmentPackage(options, dependencies = {}) {
     await run("composer", ["update", "automattic/blocks-engine-php-transformer", ...(includeFigma ? ["automattic/blocks-engine-figma-transformer"] : []), "--with-all-dependencies", "--no-dev", "--no-interaction", "--prefer-dist"], { cwd: snapshot })
 
     const composerLock = await readFile(join(snapshot, "composer.lock"))
-    const identity = { ssiSha, ssiDiff, blocksEngineSha, blocksEngineRef: options.blocksEngineRef, composerLock }
+    const identity = { ssiSha, ssiDiff, blocksEngineSha, blocksEngineRef: options.blocksEngineRef, composerLock, runtimeProfile: options.runtimeProfile ?? "website-artifact-import" }
     await writeFile(join(snapshot, packagedIdentityFile), `${JSON.stringify(buildIdentity(identity), null, 2)}\n`)
 
     const homeboyPath = join(snapshot, "homeboy.json")

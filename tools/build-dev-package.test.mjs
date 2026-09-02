@@ -69,10 +69,18 @@ test("packaged build identity carries the source identity the ZIP digest cannot"
   assert.equal(identity.schema, "static-site-importer/development-package-provenance/v1")
   assert.deepEqual(identity.static_site_importer, { head: "a".repeat(40), dirty: false, diff_sha256: null })
   assert.deepEqual(identity.blocks_engine, { ref: "origin/trunk", sha: "c".repeat(40) })
+  assert.equal(identity.runtime_profile, "website-artifact-import")
   assert.ok(!("zip" in identity), "the identity shipped inside the package cannot digest the package")
   const { zip, ...receiptIdentity } = provenance({ ...inputs, zip: { path: "/tmp/package.zip", bytes: Buffer.from("zip fixture") } })
   assert.deepEqual(receiptIdentity, identity)
   assert.equal(zip.file, "package.zip")
+})
+
+test("development provenance identifies the selected runtime composition", () => {
+  const identity = buildIdentity({
+    ssiSha: "a".repeat(40), ssiDiff: null, blocksEngineSha: "c".repeat(40), blocksEngineRef: "origin/trunk", composerLock: Buffer.from("lock fixture"), runtimeProfile: "html-site-import",
+  })
+  assert.equal(identity.runtime_profile, "html-site-import")
 })
 
 test("orchestration packages modified and untracked source bytes without changing the caller", async () => {
@@ -136,6 +144,7 @@ test("orchestration packages modified and untracked source bytes without changin
   assert.equal(packagedIdentity.blocks_engine.sha, "b".repeat(40), "the build identity is packaged before Homeboy builds the ZIP")
   assert.equal(packagedIdentity.static_site_importer.diff_sha256, result.receipt.static_site_importer.diff_sha256)
   assert.equal(packagedIdentity.composer_lock_sha256, result.receipt.composer_lock_sha256)
+  assert.equal(packagedIdentity.runtime_profile, "website-artifact-import")
   await rm(fixture, { recursive: true, force: true })
 })
 

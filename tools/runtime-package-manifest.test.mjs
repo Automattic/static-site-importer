@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { readdir, readFile, stat } from "node:fs/promises"
+import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import { dirname, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 import test from "node:test"
@@ -76,7 +77,14 @@ test("website artifact import profile is complete and capability scoped", async 
   const bootstrap = await readFile(join(root, "static-site-importer.php"), "utf8")
   assert.doesNotMatch(bootstrap, /includes\/block\.php|static_site_importer_register_block/, "runtime bootstrap must remain UI-free")
 
+})
+
+test("supplied archive matches its selected runtime profile", async () => {
   if (process.env.STATIC_SITE_IMPORTER_PACKAGE_ZIP) {
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"))
+    const profileName = process.env.STATIC_SITE_IMPORTER_RUNTIME_PROFILE || "website-artifact-import"
+    const profile = manifest.profiles?.[profileName]
+    assert.ok(profile, `unknown runtime profile: ${profileName}`)
     const archive = execFileSync("unzip", ["-Z1", process.env.STATIC_SITE_IMPORTER_PACKAGE_ZIP], { encoding: "utf8" })
       .trim().split("\n").filter((path) => path && !path.endsWith("/"))
       .map((path) => {
@@ -84,7 +92,37 @@ test("website artifact import profile is complete and capability scoped", async 
         assert.ok(path.startsWith(prefix), `archive entry escaped package root: ${path}`)
         return path.slice(prefix.length)
       }).sort()
-    assert.deepEqual(archive, selected, "release archive must contain exactly the website-artifact-import profile")
+    const selected = await selectedFiles(profile)
+    if (archive.includes("build-provenance.json")) selected.push("build-provenance.json")
+    assert.deepEqual(archive, selected.sort(), `archive must contain exactly the ${profileName} profile`)
+  }
+})
+
+test("supplied HTML archive boots its local transformer without optional dependencies", async () => {
+  if (!process.env.STATIC_SITE_IMPORTER_PACKAGE_ZIP || (process.env.STATIC_SITE_IMPORTER_RUNTIME_PROFILE || "website-artifact-import") !== "html-site-import") return
+
+  const directory = await mkdtemp(join(tmpdir(), "ssi-html-runtime-"))
+  try {
+    execFileSync("unzip", ["-q", process.env.STATIC_SITE_IMPORTER_PACKAGE_ZIP, "-d", directory])
+    const packageRoot = join(directory, "static-site-importer")
+    const script = String.raw`
+      $root = $argv[1];
+      foreach (array('vendor/autoload.php', 'vendor/composer', 'vendor/league', 'vendor/symfony', 'vendor/automattic/blocks-engine-figma-transformer') as $path) {
+        if (file_exists($root . '/' . $path)) throw new RuntimeException('unexpected dependency: ' . $path);
+      }
+      require $root . '/vendor/automattic/blocks-engine-php-transformer/php-transformer.php';
+      $plan = (new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler())->compile(array('entrypoint' => 'index.html', 'files' => array('index.html' => '<h1>Lean runtime</h1>')))->toWordPressSitePlanView();
+      if (!str_contains(json_encode($plan), 'Lean runtime')) throw new RuntimeException('HTML was not converted to blocks');
+      define('ABSPATH', $root . '/');
+      class WP_Error { public function __construct(private $code = '', private $message = '') {} public function get_error_code() { return $this->code; } }
+      require $root . '/includes/class-static-site-importer-runtime-capabilities.php';
+      require $root . '/includes/class-static-site-importer-content-policy.php';
+      $markdown = Static_Site_Importer_Content_Policy::validate_artifact(array('files' => array(array('path' => 'notes.md', 'content' => '# unavailable'))));
+      if (!($markdown instanceof WP_Error) || 'static_site_importer_source_format_unsupported' !== $markdown->get_error_code()) throw new RuntimeException('Markdown availability was not reported');
+    `
+    execFileSync("php", ["-r", script, packageRoot], { stdio: "pipe" })
+  } finally {
+    await rm(directory, { recursive: true, force: true })
   }
 })
 
@@ -98,6 +136,9 @@ test("HTML site import profile excludes optional conversion dependencies", async
   const selected = await selectedFiles(profile)
   for (const required of profile.required_files) assert.ok(selected.includes(required), `missing required HTML runtime file: ${required}`)
   assert.ok(selected.some((path) => path.startsWith("vendor/automattic/blocks-engine-php-transformer/")))
+  for (const excluded of ["vendor/autoload.php", "vendor/composer/"]) {
+    assert.equal(selected.some((path) => path === excluded || path.startsWith(excluded)), false, `HTML profile leaked root Composer runtime: ${excluded}`)
+  }
   for (const excluded of ["vendor/automattic/blocks-engine-figma-transformer/", "vendor/league/", "vendor/dflydev/", "vendor/nette/", "vendor/psr/", "vendor/symfony/"]) {
     assert.equal(selected.some((path) => path.startsWith(excluded)), false, `HTML profile leaked excluded dependency: ${excluded}`)
   }
