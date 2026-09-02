@@ -933,10 +933,11 @@ class Static_Site_Importer_Companion_Plugin {
 	 * Consumes the string $content variable and produces the sanitized $output
 	 * variable: executable and animation vectors (script, style, iframe,
 	 * object, embed, foreignObject, animate, animateMotion, animateTransform,
-	 * set), custom elements, and on* / data-wp-* attributes are removed in
-	 * paired, self-closing, and bare attribute forms, URL-bearing attributes
-	 * are protocol-checked, and the result is KSES-filtered against an
-	 * SVG-aware allowlist so inline SVG structure survives while nothing
+	 * set) and on* / data-wp-* attributes are removed in paired, self-closing,
+	 * and bare attribute forms. Custom elements become inert div wrappers so
+	 * their safe selector identity and presentation survive. URL-bearing
+	 * attributes are protocol-checked, and the result is KSES-filtered against
+	 * an SVG-aware allowlist so inline SVG structure survives while nothing
 	 * executable reaches the frontend.
 	 *
 	 * @return string
@@ -945,7 +946,18 @@ class Static_Site_Importer_Companion_Plugin {
 		return <<<'PHP'
 $content = preg_replace( '#<\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\b[^>]*>.*?</\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\s*>#is', '', $content ) ?? '';
 $content = preg_replace( '#<\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\b[^>]*/?\s*>#is', '', $content ) ?? '';
-$content = preg_replace( '#</?\s*[a-z][a-z0-9]*-[a-z0-9-]+\b[^>]*>#i', '', $content ) ?? '';
+$content = preg_replace_callback(
+	'#<\s*(/?)\s*([a-z][a-z0-9]*-[a-z0-9-]+)\b([^>]*)>#i',
+	static function ( array $match ): string {
+		if ( '/' === $match[1] ) {
+			return '</div>';
+		}
+		$self_closing = (bool) preg_match( '#/\s*$#', $match[3] );
+		$attributes   = preg_replace( '#/\s*$#', '', $match[3] ) ?? '';
+		return '<div' . $attributes . '>' . ( $self_closing ? '</div>' : '' );
+	},
+	$content
+) ?? '';
 $content = preg_replace_callback(
 	'#<[a-z](?:"[^"]*"|\'[^\']*\'|=>|[^>])*>#i',
 	static function ( array $match ): string {
@@ -1085,8 +1097,8 @@ $global = array(
 );
 $flow = array_merge( $global, array( 'align' => true ) );
 $svg_global = array(
-	'aria-hidden' => true, 'aria-label' => true, 'aria-labelledby' => true, 'class' => true, 'id' => true,
-	'role' => true, 'title' => true,
+	'aria-hidden' => true, 'aria-label' => true, 'aria-labelledby' => true, 'class' => true, 'data-*' => true,
+	'id' => true, 'role' => true, 'style' => true, 'title' => true,
 );
 // KSES supports data-* but not aria-* wildcards. Admit syntactically valid
 // producer attributes explicitly so SVG accessibility metadata survives.

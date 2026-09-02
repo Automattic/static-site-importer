@@ -560,7 +560,7 @@ if ( is_array( $layout_descriptor ) ) {
 	foreach ( array( '<main class="story"', '<nav>', '<h1>Story</h1>', '<button type="button">Read more</button>', '<img src="data:image/png;base64,aGVybw==" alt="Hero" decoding="async" fetchpriority="high">', '<svg viewBox="0 0 10 10" preserveAspectRatio="xMidYMid slice" focusable="false" role="img" aria-label="Mark">', '<path d="M0 0L10 10" stroke="#000"></path>' ) as $fragment ) {
 		$assert( str_contains( $layout_output, $fragment ), 'layout-renderer-preserves-' . $fragment );
 	}
-	$assert( ! str_contains( $layout_output, '<wow-image' ), 'layout-renderer-unwraps-potentially-active-custom-elements' );
+	$assert( ! str_contains( $layout_output, '<wow-image' ) && str_contains( $layout_output, '<div data-hook="hero"><img' ), 'layout-renderer-neutralizes-custom-elements-without-dropping-safe-wrapper-attributes' );
 	$assert( str_contains( $layout_output, 'position:absolute' ) && str_contains( $layout_output, 'width:405px' ) && str_contains( $layout_output, 'height:516.812px' ) && str_contains( $layout_output, 'overflow:hidden' ), 'layout-renderer-preserves-quoted-inline-geometry', $layout_output );
 	$assert( str_contains( $layout_output, 'overflow-x:visible' ) && str_contains( $layout_output, 'overflow-y:clip' ), 'layout-renderer-preserves-axis-specific-overflow', $layout_output );
 	$assert( str_contains( $layout_render, "add_filter( 'safe_style_css', \$safe_style_css )" ) && str_contains( $layout_render, "remove_filter( 'safe_style_css', \$safe_style_css )" ), 'layout-renderer-bounds-axis-overflow-css-filter', $layout_render );
@@ -570,6 +570,11 @@ if ( is_array( $layout_descriptor ) ) {
 	$ordinary_on_text_output = strtolower( (string) ob_get_clean() );
 	$assert( str_contains( $ordinary_on_text_output, 'report in one section with online notes only once.' ), 'layout-renderer-preserves-ordinary-on-text', $ordinary_on_text_output );
 	$assert( ! str_contains( $ordinary_on_text_output, 'onclick' ) && ! str_contains( $ordinary_on_text_output, 'onmouseover' ) && ! str_contains( $ordinary_on_text_output, 'data-wp-' ), 'layout-renderer-still-removes-executable-attributes-from-tags', $ordinary_on_text_output );
+	$attributes = array( 'content' => '<svg data-dom-store style="display:none"><defs id="dom-store-defs"></defs></svg>' );
+	ob_start();
+	eval( '?>' . $layout_render );
+	$hidden_svg_output = (string) ob_get_clean();
+	$assert( str_contains( $hidden_svg_output, 'data-dom-store' ) && str_contains( $hidden_svg_output, 'style="display:none"' ), 'layout-renderer-preserves-safe-hidden-svg-carrier-attributes', $hidden_svg_output );
 
 	$busy_bears_contract = json_decode( (string) file_get_contents( __DIR__ . '/fixtures/busy-bears-responsive-layout-contract.json' ), true );
 	$assert( 'static-site-importer/frozen-responsive-layout-contract/v1' === ( $busy_bears_contract['schema'] ?? '' ) && 2 === count( $busy_bears_contract['pages'] ?? array() ), 'busy-bears-frozen-layout-contract-loads' );
