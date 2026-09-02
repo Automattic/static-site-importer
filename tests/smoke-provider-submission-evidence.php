@@ -46,7 +46,11 @@ if ( ! function_exists( 'apply_filters' ) ) {
 	}
 }
 
-require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-submission-evidence.php';
+$provider_evidence = defined( 'WP_PLUGIN_DIR' ) ? WP_PLUGIN_DIR . '/static-site-importer/includes/class-static-site-importer-provider-submission-evidence.php' : '';
+if ( ! is_file( $provider_evidence ) ) {
+	$provider_evidence = dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-submission-evidence.php';
+}
+require_once $provider_evidence;
 
 $failures   = array();
 $assertions = 0;
@@ -65,10 +69,6 @@ $receipt = array(
 $sidecar = sys_get_temp_dir() . '/ssi-provider-submission-sidecar-' . bin2hex( random_bytes( 4 ) ) . '.json';
 $output  = sys_get_temp_dir() . '/ssi-provider-submission-evidence-' . bin2hex( random_bytes( 4 ) ) . '.json';
 file_put_contents( $sidecar, wp_json_encode( array( 'schema' => 'static-site-importer/materialization-runtime-sidecar/v2', 'receipt' => $receipt ) ) . "\n" );
-
-add_filter( 'static_site_importer_provider_submission_adapter', static fn() => Static_Site_Importer_Provider_Submission_Evidence::wordpress_owned_adapter() );
-add_filter( 'static_site_importer_provider_submission_page_entity_id', static fn() => '42' );
-add_filter( 'static_site_importer_provider_submission_provider_version', static fn() => '1.4.2' );
 
 $form_identity = str_repeat( 'a', 64 );
 $envelopes     = Static_Site_Importer_Provider_Submission_Evidence::verify_runtime(
@@ -93,22 +93,21 @@ $assert( 1 === count( $envelopes ), 'one-form-envelope' );
 $row = $envelopes[0] ?? array();
 $assert( Static_Site_Importer_Provider_Submission_Evidence::SCHEMA === ( $row['schema'] ?? '' ), 'schema' );
 $assert( 'nimbus' === ( $row['fixture_id'] ?? '' ), 'fixture-id' );
-$assert( '/contact' === ( $row['page']['route'] ?? '' ) && '42' === ( $row['page']['wordpress_entity_id'] ?? '' ), 'page-identity' );
+$assert( '/contact' === ( $row['page']['route'] ?? '' ) && '' === ( $row['page']['wordpress_entity_id'] ?? '' ), 'page-identity-unresolved-without-provider-runtime' );
 $assert( $form_identity === ( $row['form_identity'] ?? '' ), 'form-identity' );
 $assert( 'wordpress' === ( $row['provider']['ownership'] ?? '' ) && 'wordpress-local' === ( $row['provider']['submission_endpoint']['scope'] ?? '' ), 'wordpress-owned-endpoint' );
 $assert( false === ( $row['provider']['submission_endpoint']['source_endpoint_contacted'] ?? true ), 'no-source-endpoint' );
 $assert( array() === ( $row['network']['external_request_origins'] ?? null ), 'no-external-requests' );
 $assert( false === ( $row['notification']['attempted'] ?? true ) && 'separate' === ( $row['notification']['capability'] ?? '' ), 'notification-separate-and-unattempted' );
-$assert( 'passed' === ( $row['behaviors']['required_field_failure']['status'] ?? '' ) && 'validation_error' === ( $row['behaviors']['required_field_failure']['ui'] ?? '' ) && 0 === ( $row['behaviors']['required_field_failure']['local_receipt_count'] ?? -1 ), 'required-field-failure' );
-$assert( 'passed' === ( $row['behaviors']['valid_submission']['status'] ?? '' ) && 'success' === ( $row['behaviors']['valid_submission']['ui'] ?? '' ) && 'wordpress-local' === ( $row['behaviors']['valid_submission']['local_receipt']['storage'] ?? '' ), 'valid-success-local-receipt' );
-$assert( '' !== ( $row['behaviors']['valid_submission']['local_receipt']['id'] ?? '' ) && 64 === strlen( (string) ( $row['behaviors']['valid_submission']['local_receipt']['sha256'] ?? '' ) ), 'receipt-identity' );
-$assert( 'passed' === ( $row['behaviors']['provider_failure']['status'] ?? '' ) && 'provider_error' === ( $row['behaviors']['provider_failure']['ui'] ?? '' ), 'provider-failure-ui' );
-$assert( 'passed' === ( $row['behaviors']['duplicate_submit']['status'] ?? '' ) && 1 === ( $row['behaviors']['duplicate_submit']['local_receipt_count'] ?? 0 ) && ( $row['behaviors']['valid_submission']['local_receipt']['sha256'] ?? '' ) === ( $row['behaviors']['duplicate_submit']['receipt_sha256'] ?? 'x' ), 'duplicate-keeps-one-receipt' );
+$assert( 'failed' === ( $row['behaviors']['required_field_failure']['status'] ?? '' ), 'required-field-failure-without-provider' );
+$assert( 'failed' === ( $row['behaviors']['valid_submission']['status'] ?? '' ) && 'wordpress-local' === ( $row['behaviors']['valid_submission']['local_receipt']['storage'] ?? '' ), 'valid-submission-fails-closed-without-provider' );
+$assert( '' === ( $row['behaviors']['valid_submission']['local_receipt']['id'] ?? '' ) && '' === ( $row['behaviors']['valid_submission']['local_receipt']['sha256'] ?? '' ), 'no-synthetic-receipt' );
+$assert( 'failed' === ( $row['behaviors']['provider_failure']['status'] ?? '' ), 'provider-failure-without-provider' );
+$assert( 'failed' === ( $row['behaviors']['duplicate_submit']['status'] ?? '' ) && 0 === ( $row['behaviors']['duplicate_submit']['local_receipt_count'] ?? -1 ), 'duplicate-fails-closed-without-provider' );
 $assert( str_repeat( 'b', 64 ) === ( $row['plan_hash'] ?? '' ), 'plan-hash' );
 $assert( Static_Site_Importer_Provider_Submission_Evidence::canonical_sha256( $receipt ) === ( $row['materialization_receipt_sha256'] ?? '' ), 'receipt-hash' );
 $assert( is_file( $output ), 'artifact-written' );
 
-$GLOBALS['ssi_test_hooks']['static_site_importer_provider_submission_adapter'] = array();
 $unavailable = Static_Site_Importer_Provider_Submission_Evidence::verify_runtime(
 	array(
 		'fixture_id'   => 'nimbus',

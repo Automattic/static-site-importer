@@ -19,9 +19,6 @@ class Static_Site_Importer_Provider_Submission_Evidence {
 	/** @var array<int,mixed> */
 	private static array $mail_attempts = array();
 
-	/** @var array<string,array<string,mixed>> */
-	private static array $records = array();
-
 	/**
 	 * Verify required provider forms in the current WordPress runtime.
 	 *
@@ -138,69 +135,6 @@ class Static_Site_Importer_Provider_Submission_Evidence {
 				'path' => '' !== $artifact_path ? $artifact_path : 'provider-submission-evidence.json',
 			),
 		);
-	}
-
-	/**
-	 * @return array<string,mixed>
-	 */
-	public static function wordpress_owned_adapter(): array {
-		return array(
-			'can_accept' => true,
-			'submit'     => array( self::class, 'submit_wordpress_owned' ),
-			'cleanup'    => array( self::class, 'cleanup_local_record' ),
-		);
-	}
-
-	/**
-	 * @param array<string,mixed> $form Form.
-	 * @param string              $mode Mode.
-	 * @return array<string,mixed>
-	 */
-	public static function submit_wordpress_owned( array $form, string $mode ): array {
-		if ( 'required_field_failure' === $mode ) {
-			return array(
-				'ok'                  => false,
-				'ui'                  => 'validation_error',
-				'local_receipt_count' => 0,
-			);
-		}
-		if ( 'provider_failure' === $mode ) {
-			return array(
-				'ok'                  => false,
-				'ui'                  => 'provider_error',
-				'local_receipt_count' => 0,
-			);
-		}
-		$token = hash( 'sha256', (string) ( $form['form_id'] ?? 'form' ) . "\nssi-provider-submission-evidence" );
-		if ( 'duplicate' === $mode && isset( self::$records[ $token ] ) ) {
-			return array(
-				'ok'                  => false,
-				'ui'                  => 'success',
-				'local_receipt_count' => 1,
-				'receipt_sha256'      => (string) self::$records[ $token ]['sha256'],
-				'receipt_id'          => (string) self::$records[ $token ]['id'],
-			);
-		}
-		$id = 'feedback-' . substr( $token, 0, 12 );
-		self::$records[ $token ] = array(
-			'id'     => $id,
-			'sha256' => $token,
-		);
-		return array(
-			'ok'                  => true,
-			'ui'                  => 'success',
-			'receipt_id'          => $id,
-			'receipt_sha256'      => $token,
-			'local_receipt_count' => 1,
-		);
-	}
-
-	public static function cleanup_local_record( string $receipt_id ): void {
-		foreach ( self::$records as $token => $record ) {
-			if ( (string) ( $record['id'] ?? '' ) === $receipt_id ) {
-				unset( self::$records[ $token ] );
-			}
-		}
 	}
 
 	/**
