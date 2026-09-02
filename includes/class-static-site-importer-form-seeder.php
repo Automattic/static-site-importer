@@ -11,6 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 require_once __DIR__ . '/class-static-site-importer-computed-layout-strategy.php';
 require_once __DIR__ . '/class-static-site-importer-provider-layout-overlay.php';
+require_once __DIR__ . '/class-static-site-importer-provider-form-runtime.php';
 
 /**
  * Turns preserved <form> fallback metadata into working Jetpack Form blocks.
@@ -59,38 +60,18 @@ class Static_Site_Importer_Form_Seeder {
 			add_action( 'jetpack_loaded', array( __CLASS__, 'bootstrap_jetpack_forms_runtime' ) );
 		}
 		if ( function_exists( 'add_filter' ) ) {
-			add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_provider_wrapper_classes' ) );
+			Static_Site_Importer_Provider_Form_Runtime::register();
 		}
 	}
 
-	/** Project source wrapper classes onto Jetpack's existing field wrapper. */
+	/** Move source submit presentation from Core's wrapper onto its button control. */
+	public static function project_provider_submit_presentation( string $html, array $block = array() ): string {
+		return Static_Site_Importer_Provider_Form_Runtime::project_submit_presentation( $html, $block );
+	}
+
+	/** Rebuild source input-only wrapper layers inside Jetpack's field shell. */
 	public static function project_provider_wrapper_classes( string $html ): string {
-		$projected = preg_replace_callback(
-			'/\bclass=(["\'])(.*?)\1/s',
-			static function ( array $matches ): string {
-				$classes = preg_split( '/\s+/', trim( $matches[2] ) );
-				if ( false === $classes ) {
-					$classes = array();
-				}
-				$is_wrapper = (bool) array_filter( $classes, static fn ( string $class_name ): bool => 1 === preg_match( '/^grunion-field-[A-Za-z0-9_-]+-wrap$/D', $class_name ) );
-				$output     = array();
-				foreach ( $classes as $class ) {
-					if ( str_starts_with( $class, 'ssi-source-wrapper--' ) ) {
-						if ( $is_wrapper && str_ends_with( $class, '-wrap' ) ) {
-							$source_class = substr( $class, strlen( 'ssi-source-wrapper--' ), -strlen( '-wrap' ) );
-							if ( 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $source_class ) ) {
-								$output[] = $source_class;
-							}
-						}
-						continue;
-					}
-					$output[] = $class;
-				}
-				return 'class=' . $matches[1] . implode( ' ', array_values( array_unique( $output ) ) ) . $matches[1];
-			},
-			$html
-		);
-		return is_string( $projected ) ? $projected : $html;
+		return Static_Site_Importer_Provider_Form_Runtime::project_wrapper_classes( $html );
 	}
 
 	/**
@@ -450,6 +431,13 @@ class Static_Site_Importer_Form_Seeder {
 				$text              = self::control_text( $control );
 				$submit_text       = '' !== $text ? $text : $submit_text;
 				$has_source_submit = true;
+				if ( isset( $control['presentation']['style'] ) && is_array( $control['presentation']['style'] ) ) {
+					$submit_presentation['block_attrs']['style'] = $control['presentation']['style'];
+				}
+				if ( empty( $submit_presentation['classes'] ) && isset( $control['class'] ) && is_scalar( $control['class'] ) ) {
+					$submit_classes                 = preg_split( '/\s+/', trim( (string) $control['class'] ) );
+					$submit_presentation['classes'] = false === $submit_classes ? array() : $submit_classes;
+				}
 				if ( $has_topology ) {
 					$presentation_class             = isset( $presentation_roles[ $control_index ]['control'] ) ? self::presentation_node_class( $scope, $control_index, 'control' ) : '';
 					$field_blocks[ $control_index ] = self::submit_button_block( $submit_text, trim( self::layout_node_class( $scope, 'control-' . $control_index ) . ' ' . $presentation_class ), $submit_presentation );
@@ -541,10 +529,24 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		self::append_receipt_entries( $layout['receipt'], 'operations', array_merge( $radio_groups['operations'], $topology['operations'] ) );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $control_attribute_losses );
-		$inner_blocks              = $layout['blocks'];
-		$form_attrs                = self::contact_form_attributes( $form, $scope );
-		$overlay_graph             = $provider_graph;
-		$overlay_graph['nodes']    = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
+		$inner_blocks           = $layout['blocks'];
+		$form_attrs             = self::contact_form_attributes( $form, $scope, $topology['form_classes'] );
+		$overlay_graph          = $provider_graph;
+		$overlay_graph['nodes'] = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
+		foreach ( $topology['overlay_node_targets'] as $target ) {
+			$merged = false;
+			foreach ( $overlay_graph['nodes'] as &$overlay_node ) {
+				if ( is_array( $overlay_node ) && ( $overlay_node['id'] ?? null ) === ( $target['id'] ?? null ) ) {
+					$overlay_node['layout'] = array_merge( is_array( $overlay_node['layout'] ?? null ) ? $overlay_node['layout'] : array(), $target['layout'] );
+					$merged                 = true;
+					break;
+				}
+			}
+			unset( $overlay_node );
+			if ( ! $merged ) {
+				$overlay_graph['nodes'][] = $target;
+			}
+		}
 		$overlay_graph['variants'] = array_merge( $overlay_graph['variants'] ?? array(), $topology['responsive_variant_targets'] );
 		$overlay_node_ids          = array_fill_keys( array_map( static fn( array $node ): string => (string) $node['id'], $overlay_graph['nodes'] ), true );
 		foreach ( $topology['responsive_variant_targets'] as $variant ) {
@@ -838,7 +840,7 @@ class Static_Site_Importer_Form_Seeder {
 	 *
 	 * @param array<int,array<string,mixed>> $field_blocks
 	 * @param array<int,array<string,mixed>> $controls
-	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>}|null
+	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,overlay_node_targets:array<int,array<string,mixed>>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>}|null
 	 */
 	private static function topology_inner_blocks( array $form, array $field_blocks, array $controls, array $suppressed_controls = array() ): ?array {
 		if ( ! isset( $form['control_topology'] ) ) {
@@ -848,8 +850,10 @@ class Static_Site_Importer_Form_Seeder {
 				'operations'                 => array(),
 				'represented_layout_nodes'   => array(),
 				'represented_topology_nodes' => array(),
+				'overlay_node_targets'       => array(),
 				'responsive_variant_targets' => array(),
 				'native_visibility_targets'  => array(),
+				'form_classes'               => array(),
 			);
 		}
 		$nodes = $form['control_topology']['nodes'] ?? null;
@@ -882,11 +886,13 @@ class Static_Site_Importer_Form_Seeder {
 		$operations                 = array();
 		$represented_layout_nodes   = array();
 		$represented_topology_nodes = array();
+		$overlay_node_targets       = array();
 		$responsive_variant_targets = array();
 		$native_visibility_targets  = array();
 		$layout_by_node             = array();
 		$layout_nodes_by_id         = array();
 		$variants_by_node           = array();
+		$form_classes               = array();
 		foreach ( $form['layout_graph']['nodes'] ?? array() as $layout_node ) {
 			if ( is_array( $layout_node ) && is_string( $layout_node['id'] ?? null ) ) {
 				$layout_by_node[ $layout_node['id'] ]     = is_array( $layout_node['layout'] ?? null ) ? $layout_node['layout'] : array();
@@ -898,15 +904,25 @@ class Static_Site_Importer_Form_Seeder {
 				$variants_by_node[ $variant['node'] ][] = $variant;
 			}
 		}
+		$collect_controls = static function ( array $node ) use ( &$collect_controls, $children ): array {
+			if ( 'control' === ( $node['kind'] ?? null ) ) {
+				return is_int( $node['control'] ?? null ) ? array( $node['control'] ) : array();
+			}
+			$controls = array();
+			foreach ( $children[ $node['id'] ?? '' ] ?? array() as $child ) {
+				$controls = array_merge( $controls, $collect_controls( $child ) );
+			}
+			return $controls;
+		};
 		foreach ( $nodes as $node ) {
 			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? null ) || ! is_string( $node['id'] ?? null ) ) {
 				continue;
 			}
-			$direct_children = $children[ $node['id'] ] ?? array();
-			if ( 1 !== count( $direct_children ) || 'control' !== ( $direct_children[0]['kind'] ?? null ) ) {
+			$branch_controls = $collect_controls( $node );
+			if ( 1 !== count( $branch_controls ) ) {
 				continue;
 			}
-			$control_index = $direct_children[0]['control'] ?? null;
+			$control_index = $branch_controls[0];
 			$source_class  = trim( (string) ( $node['class'] ?? '' ) );
 			if ( ! is_int( $control_index ) || '' === $source_class || ! isset( $field_blocks[ $control_index ] ) || 'core/button' === ( $field_blocks[ $control_index ]['name'] ?? '' ) ) {
 				continue;
@@ -916,7 +932,8 @@ class Static_Site_Importer_Form_Seeder {
 			if ( false === $wrapper_classes ) {
 				$wrapper_classes = array();
 			}
-			$wrapper_markers                                      = implode( ' ', array_map( static fn ( string $class_name ): string => 'ssi-source-wrapper--' . $class_name, $wrapper_classes ) );
+			$layer           = min( 99, max( 0, (int) ( $node['depth'] ?? 0 ) ) );
+			$wrapper_markers = implode( ' ', array_map( static fn ( string $class_name ): string => 'ssi-source-wrapper-' . $layer . '--' . $class_name, $wrapper_classes ) );
 			$field_blocks[ $control_index ]['attrs']['className'] = trim( (string) ( $field_blocks[ $control_index ]['attrs']['className'] ?? '' ) . ' ' . $wrapper_markers . ' ' . $generated_class );
 			$operations[] = array(
 				'dimension'   => 'topology',
@@ -950,17 +967,45 @@ class Static_Site_Importer_Form_Seeder {
 				$represented_layout_nodes[] = $node['id'];
 			}
 		}
-		$collect_controls = static function ( array $node ) use ( &$collect_controls, $children ): array {
-			if ( 'control' === ( $node['kind'] ?? null ) ) {
-				return is_int( $node['control'] ?? null ) ? array( $node['control'] ) : array();
+		$mapped_controls = array_keys( $field_blocks );
+		sort( $mapped_controls );
+		foreach ( $nodes as $node ) {
+			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? null ) || '' === trim( (string) ( $node['class'] ?? '' ) ) ) {
+				continue;
 			}
-			$controls = array();
-			foreach ( $children[ $node['id'] ?? '' ] ?? array() as $child ) {
-				$controls = array_merge( $controls, $collect_controls( $child ) );
+			$branch_controls = $collect_controls( $node );
+			sort( $branch_controls );
+			if ( $mapped_controls !== $branch_controls || count( $children[ $node['id'] ] ?? array() ) < 2 ) {
+				continue;
 			}
-			return $controls;
-		};
-		$topology_by_id   = array();
+			$source_class = trim( (string) $node['class'] );
+			$class_tokens = preg_split( '/\s+/', $source_class );
+			if ( false === $class_tokens ) {
+				$class_tokens = array();
+			}
+			$facts       = array_merge( $layout_nodes_by_id[ $node['id'] ]['provenance'] ?? array(), ...array_map( static fn ( array $variant ): array => is_array( $variant['provenance'] ?? null ) ? $variant['provenance'] : array(), $variants_by_node[ $node['id'] ] ?? array() ) );
+			$class_owned = ! empty( $facts );
+			foreach ( $facts as $fact ) {
+				$selector = is_array( $fact ) && is_string( $fact['selector'] ?? null ) ? $fact['selector'] : '';
+				if ( ! preg_match( '/^(?:[a-z][a-z0-9-]*)?(?:\.[a-zA-Z][a-zA-Z0-9_-]*)+$/D', $selector ) || ! array_filter( $class_tokens, static fn ( string $class_name ): bool => '' !== $class_name && (bool) preg_match( '/\.' . preg_quote( $class_name, '/' ) . '(?![a-zA-Z0-9_-])/', $selector ) ) ) {
+					$class_owned = false;
+					break;
+				}
+			}
+			if ( ! $class_owned ) {
+				continue;
+			}
+			$form_classes                 = array_merge( $form_classes, $class_tokens );
+			$represented_layout_nodes[]   = $node['id'];
+			$represented_topology_nodes[] = $node['id'];
+			$operations[]                 = array(
+				'dimension'   => 'topology',
+				'strategy'    => 'provider_field_list_class_projection',
+				'target_hash' => hash( 'sha256', $node['id'] ),
+			);
+			break;
+		}
+		$topology_by_id = array();
 		foreach ( $nodes as $node ) {
 			if ( is_array( $node ) && is_string( $node['id'] ?? null ) ) {
 				$topology_by_id[ $node['id'] ] = $node;
@@ -981,6 +1026,7 @@ class Static_Site_Importer_Form_Seeder {
 				if ( ! is_array( $variant ) || ! is_array( $variant['condition'] ?? null ) || 'media' !== ( $variant['condition']['kind'] ?? null ) || ! is_string( $variant['condition']['query'] ?? null ) || 1 !== preg_match( '/^\((?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)\)$/D', $variant['condition']['query'] ) || ! is_string( $width ) || 1 !== preg_match( '/^(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)%$/D', $width ) || ( array( 'width' ) !== array_keys( $patch ) && array( 'display', 'width' ) !== array_keys( $patch ) ) || ( isset( $patch['display'] ) && 'block' !== $patch['display'] ) ) {
 					return false;
 				}
+
 				$proven = false;
 				foreach ( $variant['provenance'] ?? array() as $fact ) {
 					if ( is_array( $fact ) && ( $fact['condition'] ?? null ) === $variant['condition'] && is_string( $fact['source_path'] ?? null ) && is_string( $fact['source_sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ) && is_string( $fact['selector'] ?? null ) && ! array_diff( array_keys( $patch ), $fact['properties'] ?? array() ) ) {
@@ -992,8 +1038,63 @@ class Static_Site_Importer_Form_Seeder {
 					return false;
 				}
 			}
+
 			return true;
 		};
+
+		$grid_span_width = static function ( mixed $columns, mixed $column ): ?string {
+			$columns = preg_replace( '/\s+/', '', is_string( $columns ) ? $columns : '' );
+			$column  = preg_replace( '/\s+/', '', is_string( $column ) ? $column : '' );
+			if ( ! is_string( $columns ) || ! is_string( $column ) || ! preg_match( '/^repeat\(([1-9][0-9]*),1fr\)$/D', $columns, $column_count ) || ! preg_match( '/^span([1-9][0-9]*)$/D', $column, $span ) || (int) $span[1] > (int) $column_count[1] ) {
+				return null;
+			}
+			return rtrim( rtrim( number_format( 100 * (int) $span[1] / (int) $column_count[1], 3, '.', '' ), '0' ), '.' ) . '%';
+		};
+		foreach ( $nodes as $node ) {
+			$id              = is_array( $node ) && 'wrapper' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
+			$branch_controls = '' !== $id ? $collect_controls( $node ) : array();
+			$control_index   = 1 === count( $branch_controls ) ? $branch_controls[0] : null;
+			$layout_node     = $layout_nodes_by_id[ $id ] ?? null;
+			$layout_parent   = is_array( $layout_node ) && is_string( $layout_node['parent'] ?? null ) ? $layout_nodes_by_id[ $layout_node['parent'] ] ?? null : null;
+			$width           = is_array( $layout_node ) && is_array( $layout_parent ) ? $grid_span_width( $layout_parent['layout']['columns'] ?? null, $layout_node['layout']['column'] ?? null ) : null;
+			if ( ! is_int( $control_index ) || 'core/button' !== ( $field_blocks[ $control_index ]['name'] ?? '' ) || null === $width || ! $has_unconditional_proven_property( $layout_node, 'grid-column' ) || ! $has_unconditional_proven_property( $layout_parent, 'grid-template-columns' ) ) {
+				continue;
+			}
+			$target_variants = array();
+			$variants_safe   = true;
+			foreach ( $variants_by_node[ $id ] ?? array() as $variant ) {
+				$patch         = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+				$variant_width = array( 'column' ) === array_keys( $patch ) ? $grid_span_width( $layout_parent['layout']['columns'] ?? null, $patch['column'] ) : null;
+				$proven        = false;
+				foreach ( $variant['provenance'] ?? array() as $fact ) {
+					if ( is_array( $fact ) && ( $fact['condition'] ?? null ) === ( $variant['condition'] ?? null ) && is_string( $fact['source_path'] ?? null ) && is_string( $fact['source_sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ) && in_array( 'grid-column', $fact['properties'] ?? array(), true ) ) {
+						$proven = true;
+						break;
+					}
+				}
+				if ( null === $variant_width || ! is_array( $variant['condition'] ?? null ) || 'media' !== ( $variant['condition']['kind'] ?? null ) || ! $proven ) {
+					$variants_safe = false;
+					break;
+				}
+				$variant['node']         = 'control-' . $control_index;
+				$variant['layout_patch'] = array( 'width' => $variant_width );
+				$target_variants[]       = $variant;
+			}
+			if ( ! $variants_safe ) {
+				continue;
+			}
+			$overlay_node_targets[]     = array(
+				'id'     => 'control-' . $control_index,
+				'layout' => array( 'width' => $width ),
+			);
+			$responsive_variant_targets = array_merge( $responsive_variant_targets, $target_variants );
+			$represented_layout_nodes[] = $id;
+			$operations[]               = array(
+				'dimension'   => 'layout',
+				'strategy'    => 'provider_grid_span_submit',
+				'target_hash' => hash( 'sha256', $id ),
+			);
+		}
 		foreach ( $nodes as $node ) {
 			$id = is_array( $node ) && 'control' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
 			if ( '' === $id || 'none' !== ( $layout_by_node[ $id ]['display'] ?? null ) ) {
@@ -1224,8 +1325,10 @@ class Static_Site_Importer_Form_Seeder {
 			'operations'                 => $operations,
 			'represented_layout_nodes'   => array_values( array_unique( array_map( 'strval', $represented_layout_nodes ) ) ),
 			'represented_topology_nodes' => array_values( array_unique( array_map( 'strval', $represented_topology_nodes ) ) ),
+			'overlay_node_targets'       => $overlay_node_targets,
 			'responsive_variant_targets' => $responsive_variant_targets,
 			'native_visibility_targets'  => array_values( array_unique( array_map( 'strval', $native_visibility_targets ) ) ),
+			'form_classes'               => array_values( array_unique( $form_classes ) ),
 		);
 	}
 
@@ -1309,15 +1412,12 @@ class Static_Site_Importer_Form_Seeder {
 			);
 		} elseif ( ! in_array( $lookup, array( 'checkbox', 'radio' ), true ) ) {
 			$input_attrs  = array(
-				'style'     => array( 'border' => array( 'style' => 'solid' ) ),
-				'className' => $control_class,
+				'style' => array( 'border' => array( 'style' => 'solid' ) ),
 			);
 			$source_class = isset( $control['class'] ) && is_scalar( $control['class'] ) ? trim( (string) $control['class'] ) : '';
 			$input_class  = trim( $source_class . ' ' . $control_class );
 			if ( '' !== $input_class ) {
 				$input_attrs['className'] = $input_class;
-			} else {
-				unset( $input_attrs['className'] );
 			}
 			if ( '' !== $placeholder ) {
 				$input_attrs['placeholder'] = $placeholder;
@@ -1412,19 +1512,26 @@ class Static_Site_Importer_Form_Seeder {
 	 * @return array<string, mixed>
 	 */
 	private static function submit_button_block( string $text, string $class_name = '', array $presentation = array() ): array {
-		$source_classes = isset( $presentation['classes'] ) && is_array( $presentation['classes'] ) ? implode( ' ', array_filter( $presentation['classes'], 'is_string' ) ) : '';
-		$class_name     = trim( 'form-button-submit is-submit ' . $source_classes . ' ' . $class_name );
+		$source_classes = isset( $presentation['classes'] ) && is_array( $presentation['classes'] ) ? array_filter( $presentation['classes'], 'is_string' ) : array();
+		$source_markers = implode( ' ', array_map( static fn ( string $source_class ): string => 'ssi-source-submit--' . $source_class, $source_classes ) );
+		$block_style    = isset( $presentation['block_attrs']['style'] ) && is_array( $presentation['block_attrs']['style'] ) ? $presentation['block_attrs']['style'] : array();
+		$class_name     = trim( 'form-button-submit is-submit ' . $source_markers . ' ' . ( empty( $block_style ) ? '' : 'ssi-provider-submit-presentation' ) . ' ' . $class_name );
+		$attrs          = array(
+			'tagName'   => 'button',
+			'type'      => 'submit',
+			'lock'      => array(
+				'remove' => true,
+			),
+			'className' => $class_name,
+			'metadata'  => array( 'name' => 'Submit button' ),
+		);
+		// The source governs this button through its own classes and stylesheet,
+		// so the block does not claim those styles as attributes. Claiming them
+		// made the saved markup disagree with core's save() output, which is
+		// what marked every imported form dirty in the editor.
 		return array(
 			'name'    => 'core/button',
-			'attrs'   => array(
-				'tagName'   => 'button',
-				'type'      => 'submit',
-				'lock'      => array(
-					'remove' => true,
-				),
-				'className' => $class_name,
-				'metadata'  => array( 'name' => 'Submit button' ),
-			),
+			'attrs'   => $attrs,
 			'content' => '' !== trim( $text ) ? trim( $text ) : 'Submit',
 			'wrapper' => 'submit',
 		);
@@ -1454,13 +1561,13 @@ class Static_Site_Importer_Form_Seeder {
 	 * @param array<string, mixed> $form Validated form row.
 	 * @return array<string, mixed>
 	 */
-	private static function contact_form_attributes( array $form, string $scope = '' ): array {
+	private static function contact_form_attributes( array $form, string $scope = '', array $topology_classes = array() ): array {
 		$attrs    = array();
 		$metadata = isset( $form['form'] ) && is_array( $form['form'] ) ? $form['form'] : array();
 		$action   = isset( $metadata['action'] ) && is_scalar( $metadata['action'] ) ? trim( (string) $metadata['action'] ) : '';
 		$class    = isset( $metadata['class'] ) && is_scalar( $metadata['class'] ) ? trim( (string) $metadata['class'] ) : '';
 
-		$attrs['className'] = trim( $class . ' ' . $scope );
+		$attrs['className'] = implode( ' ', array_filter( array( $class, implode( ' ', array_filter( $topology_classes, 'is_string' ) ), $scope ), static fn ( string $value ): bool => '' !== trim( $value ) ) );
 
 		if ( '' !== $action && 0 === stripos( $action, 'mailto:' ) ) {
 			$recipient = trim( substr( $action, 7 ) );

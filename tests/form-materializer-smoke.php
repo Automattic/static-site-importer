@@ -266,7 +266,7 @@ namespace {
 					array( 'tag' => 'input', 'type' => 'radio', 'name' => 'format', 'label' => 'In person', 'options' => array( 'In person', 'Online' ) ),
 					array( 'tag' => 'input', 'type' => 'checkbox', 'name' => 'updates', 'label' => 'Send me updates' ),
 					array( 'tag' => 'textarea', 'type' => 'textarea', 'name' => 'message', 'label' => 'Message' ),
-					array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send message' ),
+					array( 'tag' => 'button', 'type' => 'submit', 'class' => 'source-submit', 'label' => 'Send message', 'presentation' => array( 'style' => array( 'spacing' => array( 'padding' => array( 'top' => '11px', 'bottom' => '11px' ) ) ) ) ),
 				),
 			),
 		),
@@ -290,6 +290,23 @@ namespace {
 	$assert( str_contains( $markup, 'wp:jetpack/field-textarea' ), 'markup-field-textarea' );
 	$assert( str_contains( $markup, 'wp:button' ) && ! str_contains( $markup, 'wp:jetpack/button' ), 'markup-canonical-core-submit-button' );
 	$assert( 1 === substr_count( $markup, '<!-- wp:button ' ) && str_contains( $markup, '<button type="submit" class="wp-block-button__link wp-element-button">Send message</button>' ), 'source-submit-control-emits-one-canonical-button' );
+	$assert( str_contains( $markup, 'form-button-submit is-submit ssi-source-submit--source-submit ssi-provider-submit-presentation' ), 'source-submit-control-presentation-projects-onto-core-button' );
+	// The source stylesheet governs this button, so the block claims no style
+	// attribute it would then have to reproduce in saved markup. That agreement
+	// with core's save() output is what keeps imported forms clean in the editor.
+	$submit_attrs = array();
+	foreach ( parse_blocks( $markup ) as $parsed_form ) {
+		$collect = static function ( array $blocks, callable $collect ) use ( &$submit_attrs ): void {
+			foreach ( $blocks as $parsed ) {
+				if ( 'core/button' === ( $parsed['blockName'] ?? '' ) ) {
+					$submit_attrs[] = $parsed['attrs'] ?? array();
+				}
+				$collect( $parsed['innerBlocks'] ?? array(), $collect );
+			}
+		};
+		$collect( array( $parsed_form ), $collect );
+	}
+	$assert( 1 === count( $submit_attrs ) && ! array_key_exists( 'style', $submit_attrs[0] ), 'source-submit-block-claims-no-unrenderable-style-attribute', wp_json_encode( $submit_attrs ) );
 	$assert( str_contains( $markup, 'hello@example.com' ), 'markup-mailto-recipient' );
 	$assert( str_contains( $markup, '"options":["Sales","Support"]' ), 'markup-select-options' );
 	$assert( 1 === preg_match( '/<div class="wp-block-jetpack-contact-form form contact ssi-form-[a-f0-9]{12}">/', $markup ), 'markup-contact-form-wrapper-and-source-classes' );
@@ -404,6 +421,44 @@ namespace {
 	$assert( ! empty( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unsafe_presentation )['errors'] ) && ! empty( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $oversized_presentation )['errors'] ), 'form-presentation-contract-rejects-unsafe-or-unbounded-input' );
 	$topology_seed_repeat = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_topology['forms'] ) );
 	$assert( $topology_markup === (string) ( $topology_seed_repeat['forms'][0]['block_markup'] ?? '' ), 'provider-layout-classes-are-stable-for-identical-source-form' );
+	$field_list_form = $topology_form['forms'][0];
+	foreach ( $field_list_form['control_topology']['nodes'] as &$field_list_node ) {
+		++$field_list_node['depth'];
+		if ( null === ( $field_list_node['parent'] ?? null ) ) {
+			$field_list_node['parent'] = 'wrapper-4';
+		}
+	}
+	unset( $field_list_node );
+	array_unshift( $field_list_form['control_topology']['nodes'], array( 'id' => 'wrapper-4', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div', 'class' => 'field-list' ) );
+	$field_list_form['layout_graph']['nodes'][0]['parent'] = 'wrapper-4';
+	array_unshift( $field_list_form['layout_graph']['nodes'], array( 'id' => 'wrapper-4', 'kind' => 'container', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'div', 'classes' => array( 'field-list' ) ), 'layout' => array(), 'provenance' => array() ) );
+	$field_list_form['layout_graph']['variants'][] = array( 'node' => 'wrapper-4', 'condition' => array( 'kind' => 'media', 'query' => '(max-width: 48rem)' ), 'layout_patch' => array( 'display' => 'flex', 'direction' => 'column', 'gap' => '2rem' ), 'precedence' => array( 'display' => array( 'source_order' => 1, 'specificity' => 10, 'important' => false ), 'flex-direction' => array( 'source_order' => 1, 'specificity' => 10, 'important' => false ), 'gap' => array( 'source_order' => 1, 'specificity' => 10, 'important' => false ) ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'f', 64 ), 'selector' => '.field-list', 'condition' => array( 'kind' => 'media', 'query' => '(max-width: 48rem)' ), 'properties' => array( 'display', 'flex-direction', 'gap' ) ) ) );
+	$field_list_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $field_list_form ) ) );
+	$field_list_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $field_list_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( str_contains( (string) ( $field_list_row['block_markup'] ?? '' ), 'form contact field-list ssi-form-' ) && in_array( 'provider_field_list_class_projection', array_column( $field_list_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ) && ! in_array( 'responsive_layout_ownership', array_column( $field_list_row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' ), true ), 'class-owned-field-list-wrapper-projects-onto-provider-container', wp_json_encode( array( 'validation' => $field_list_validation, 'row' => $field_list_row ) ) );
+
+	$grid_submit_form = array(
+		'selector' => 'form.grid-submit',
+		'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ),
+		'control_topology' => array(
+			'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false,
+			'nodes' => array(
+				array( 'id' => 'control-0', 'kind' => 'control', 'parent' => null, 'order' => 0, 'depth' => 0, 'control' => 0 ),
+				array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 1, 'depth' => 0, 'tag' => 'div' ),
+				array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'control' => 1 ),
+			),
+		),
+		'layout_graph' => $v2_layout_graph( array(
+			array( 'id' => 'form', 'kind' => 'container', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'form', 'classes' => array( 'grid-submit' ) ), 'layout' => array( 'display' => 'grid', 'columns' => 'repeat(12, 1fr)' ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.grid-submit', 'condition' => null, 'properties' => array( 'display', 'grid-template-columns' ) ) ) ),
+			array( 'id' => 'wrapper-0', 'kind' => 'container', 'parent' => 'form', 'order' => 1, 'source' => array( 'tag' => 'div', 'classes' => array( 'submit-cell' ) ), 'layout' => array( 'column' => 'span 4' ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.submit-cell', 'condition' => null, 'properties' => array( 'grid-column' ) ) ) ),
+		) ),
+	);
+	$grid_submit_condition = array( 'kind' => 'media', 'query' => '(max-width: 767px)' );
+	$grid_submit_form['layout_graph']['variants'][] = array( 'node' => 'wrapper-0', 'condition' => $grid_submit_condition, 'layout_patch' => array( 'column' => 'span 12' ), 'precedence' => array( 'grid-column' => array( 'source_order' => 2, 'specificity' => 10, 'important' => false ) ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'b', 64 ), 'selector' => '.submit-cell', 'condition' => $grid_submit_condition, 'properties' => array( 'grid-column' ) ) ) );
+	$grid_submit_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $grid_submit_form ) ) );
+	$grid_submit_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $grid_submit_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$grid_submit_css = (string) ( $grid_submit_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert( empty( $grid_submit_validation['errors'] ) && 'mapped' === ( $grid_submit_row['status'] ?? '' ) && in_array( 'provider_grid_span_submit', array_column( $grid_submit_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ) && str_contains( $grid_submit_css, 'width:33.333%' ) && str_contains( $grid_submit_css, '@media (max-width: 767px)' ) && str_contains( $grid_submit_css, 'width:100%' ), 'proven-grid-span-submit-transposes-to-responsive-provider-width', wp_json_encode( array( 'validation' => $grid_submit_validation, 'row' => $grid_submit_row ) ) );
 
 	// V2 percentage facts replace only a complete, provenance-backed sibling row.
 	$deep_width_form = array(
@@ -571,9 +626,16 @@ namespace {
 	$class_owned_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $class_owned_form ) ) );
 	$class_owned_losses = $class_owned_seed['forms'][0]['computed_layout_receipt']['losses'] ?? array();
 	$class_owned_markup = (string) ( $class_owned_seed['forms'][0]['block_markup'] ?? '' );
-	$assert( ! in_array( 'provider_wrapper_layout_unrepresentable', array_column( $class_owned_losses, 'reason_code' ), true ) && str_contains( $class_owned_markup, 'ssi-source-wrapper\u002d\u002dfield' ), 'class-owned-single-field-layout-projects-with-its-provider-wrapper-hook', $class_owned_markup );
+	$assert( ! in_array( 'provider_wrapper_layout_unrepresentable', array_column( $class_owned_losses, 'reason_code' ), true ) && str_contains( $class_owned_markup, 'ssi-source-wrapper-1\u002d\u002dfield' ), 'class-owned-single-field-layout-projects-with-its-provider-wrapper-hook', $class_owned_markup );
 	$projected_wrapper = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-text-wrap ssi-source-wrapper--field-wrap"><input class="ssi-source-wrapper--field source-input"></div>' );
-	$assert( '<div class="grunion-field-text-wrap field"><input class="source-input"></div>' === $projected_wrapper, 'provider-runtime-projects-source-class-onto-existing-wrapper-only', $projected_wrapper );
+	$assert( '<div class="grunion-field-text-wrap"><div class="field"><input class="source-input"></div></div>' === $projected_wrapper, 'provider-runtime-rebuilds-source-wrapper-inside-field-shell', $projected_wrapper );
+	$layered_wrapper = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-text-wrap ssi-source-wrapper-6--carrier-wrap ssi-source-wrapper-8--input-shell-wrap"><label>Name</label><input class="source-input"></div>' );
+	$assert( '<div class="grunion-field-text-wrap"><label>Name</label><div class="carrier"><div class="input-shell"><input class="source-input"></div></div></div>' === $layered_wrapper, 'provider-runtime-preserves-ordered-input-wrapper-carriers-below-label', $layered_wrapper );
+	$projected_submit = Static_Site_Importer_Form_Seeder::project_provider_submit_presentation(
+		'<div class="wp-block-button ssi-source-submit--source-submit"><button class="wp-block-button__link">Send</button></div>',
+		array( 'attrs' => array( 'className' => 'wp-block-button ssi-source-submit--source-submit' ) )
+	);
+	$assert( '<div class="wp-block-button"><button class="wp-block-button__link source-submit" style="min-height:0">Send</button></div>' === $projected_submit, 'provider-runtime-projects-submit-classes-and-neutralizes-provider-minimum-height', $projected_submit );
 	$unproven_class_form = $class_owned_form;
 	$unproven_class_form['layout_graph']['nodes'][1]['provenance'] = array();
 	$unproven_class_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $unproven_class_form ) ) );
@@ -904,7 +966,7 @@ namespace {
 	$assert( 'woocommerce' === Static_Site_Importer_Entity_Materializer_Registry::provider_for( 'shop' ), 'shop-provider-unaffected-by-form-override' );
 
 	if ( empty( $failures ) && in_array( '--emit-topology-markup', $argv ?? array(), true ) ) {
-		echo wp_json_encode( array( 'markup' => $topology_markup, 'depth_markup' => $deep_topology_markup, 'deep_width_markup' => $deep_width_markup, 'cara_markup' => $cara_grafted ) ) . "\n";
+		echo wp_json_encode( array( 'markup' => $topology_markup, 'styled_markup' => $markup, 'depth_markup' => $deep_topology_markup, 'deep_width_markup' => $deep_width_markup, 'cara_markup' => $cara_grafted ) ) . "\n";
 		exit( 0 );
 	}
 
