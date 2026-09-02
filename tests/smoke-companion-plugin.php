@@ -680,11 +680,12 @@ $svg_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $svg_renderer
 $assert( is_array( $svg_descriptor ), 'svg-artwork-renderer-scaffold-returns-descriptor' );
 if ( is_array( $svg_descriptor ) ) {
 	$svg_render = $svg_descriptor['files']['ssi-example-site/blocks/custom-hero/render.php'] ?? '';
-	$attributes = array( 'svg' => '<svg viewBox="0 0 20 20" aria-hidden="true"><path class="s1" d="M10 18V2"></path><script>alert(1)</script></svg>' );
+	$attributes = array( 'svg' => '<svg viewBox="0 0 20 20" aria-hidden="true"><defs><filter id="glow"><feGaussianBlur stdDeviation="3" result="blur"></feGaussianBlur><feMerge><feMergeNode in="blur"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge></filter></defs><path class="s1" d="M10 18V2" filter="url(#glow)"></path><script>alert(1)</script></svg>' );
 	ob_start();
 	eval( '?>' . $svg_render );
 	$svg_artwork_output = (string) ob_get_clean();
-	$assert( str_contains( $svg_render, 'Generated svg-artwork companion block render' ) && str_contains( $svg_artwork_output, '<path class="s1" d="M10 18V2">' ), 'svg-artwork-renderer-preserves-safe-inline-artwork' );
+	$assert( str_contains( $svg_render, 'Generated svg-artwork companion block render' ) && str_contains( $svg_artwork_output, '<path class="s1" d="M10 18V2"' ), 'svg-artwork-renderer-preserves-safe-inline-artwork' );
+	$assert( str_contains( $svg_artwork_output, '<filter id="glow">' ) && str_contains( $svg_artwork_output, '<feGaussianBlur stdDeviation="3" result="blur">' ) && str_contains( $svg_artwork_output, '<feMergeNode in="SourceGraphic">' ) && str_contains( $svg_artwork_output, 'filter="url(#glow)"' ), 'svg-artwork-renderer-preserves-safe-local-filter' );
 	$assert( ! str_contains( strtolower( $svg_artwork_output ), '<script' ), 'svg-artwork-renderer-strips-executable-content' );
 }
 

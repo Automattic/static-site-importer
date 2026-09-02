@@ -1105,7 +1105,7 @@ $global = array(
 $flow = array_merge( $global, array( 'align' => true ) );
 $svg_global = array(
 	'aria-hidden' => true, 'aria-label' => true, 'aria-labelledby' => true, 'class' => true, 'data-*' => true,
-	'id' => true, 'role' => true, 'style' => true, 'title' => true,
+	'filter' => true, 'id' => true, 'role' => true, 'style' => true, 'title' => true,
 );
 // KSES supports data-* but not aria-* wildcards. Admit syntactically valid
 // producer attributes explicitly so SVG accessibility metadata survives.
@@ -1142,6 +1142,10 @@ $output = wp_kses(
 		'audio' => array_merge( $global, array( 'autoplay' => true, 'controls' => true, 'loop' => true, 'muted' => true, 'preload' => true, 'src' => true ) ),
 		'svg' => array_merge( $svg_global, array( 'fill' => true, 'focusable' => true, 'height' => true, 'preserveaspectratio' => true, 'stroke' => true, 'viewbox' => true, 'width' => true, 'xmlns' => true, 'xmlns:xlink' => true ) ),
 		'defs' => $svg_global, 'symbol' => array_merge( $svg_global, array( 'viewbox' => true ) ), 'lineargradient' => array_merge( $svg_global, array( 'gradientunits' => true, 'x1' => true, 'x2' => true, 'y1' => true, 'y2' => true ) ), 'radialgradient' => array_merge( $svg_global, array( 'cx' => true, 'cy' => true, 'r' => true ) ), 'stop' => array_merge( $svg_global, array( 'offset' => true, 'stop-color' => true, 'stop-opacity' => true ) ), 'clippath' => $svg_global, 'mask' => $svg_global, 'use' => array_merge( $svg_global, array( 'href' => true, 'xlink:href' => true ) ),
+		'filter' => array_merge( $svg_global, array( 'filterunits' => true, 'height' => true, 'primitiveunits' => true, 'width' => true, 'x' => true, 'y' => true ) ),
+		'fegaussianblur' => array_merge( $svg_global, array( 'height' => true, 'in' => true, 'result' => true, 'stddeviation' => true, 'width' => true, 'x' => true, 'y' => true ) ),
+		'femerge' => array_merge( $svg_global, array( 'height' => true, 'result' => true, 'width' => true, 'x' => true, 'y' => true ) ),
+		'femergenode' => array_merge( $svg_global, array( 'in' => true ) ),
 		'g' => array_merge( $svg_global, array( 'clip-path' => true, 'fill' => true, 'fill-opacity' => true, 'opacity' => true, 'stroke' => true, 'stroke-width' => true, 'transform' => true ) ),
 		'path' => array_merge( $svg_global, array( 'd' => true, 'fill' => true, 'fill-rule' => true, 'opacity' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'stroke-width' => true, 'transform' => true ) ),
 		'circle' => array_merge( $svg_global, array( 'cx' => true, 'cy' => true, 'fill' => true, 'opacity' => true, 'r' => true, 'stroke' => true, 'stroke-width' => true ) ),
@@ -1160,9 +1164,13 @@ foreach ( $data_images as $placeholder => $data_image ) {
 	$output = str_replace( "src='" . $placeholder . "'", "src='" . esc_attr( $data_image ) . "'", $output );
 }
 $output = preg_replace_callback(
-	'#<svg\b[^>]*>#i',
+	'#<(?:svg|filter|fegaussianblur|femerge|femergenode)\b[^>]*>#i',
 	static function ( array $match ): string {
-		return preg_replace( array( '/\bviewbox\b/i', '/\bpreserveaspectratio\b/i' ), array( 'viewBox', 'preserveAspectRatio' ), $match[0] ) ?? $match[0];
+		return preg_replace(
+			array( '/\bviewbox\b/i', '/\bpreserveaspectratio\b/i', '/\bfilterunits\b/i', '/\bprimitiveunits\b/i', '/\bstddeviation\b/i', '/<fegaussianblur\b/i', '/<femerge(?=\s|>)/i', '/<femergenode\b/i' ),
+			array( 'viewBox', 'preserveAspectRatio', 'filterUnits', 'primitiveUnits', 'stdDeviation', '<feGaussianBlur', '<feMerge', '<feMergeNode' ),
+			$match[0]
+		) ?? $match[0];
 	},
 	$output
 ) ?? '';
