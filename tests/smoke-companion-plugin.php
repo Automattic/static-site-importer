@@ -451,6 +451,14 @@ $missing_dependency_asset = $payload;
 unset( $missing_dependency_asset['blocks'][0]['assets']['index.js'] );
 $assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $missing_dependency_asset ) ), 'script-dependency-asset-must-exist-and-be-referenced' );
 $invalid_dependency_handle = $payload;
+$module_dependency = $payload;
+$module_dependency['blocks'][0]['script_dependencies']['view.js'] = array( '@wordpress/interactivity' );
+$assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $module_dependency ), 'script-module-import-specifier-is-a-valid-dependency' );
+
+$invalid_module_specifier = $payload;
+$invalid_module_specifier['blocks'][0]['script_dependencies']['view.js'] = array( '@wordpress/interactivity/../evil' );
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $invalid_module_specifier ) ), 'traversal-in-a-module-specifier-is-rejected' );
+
 $invalid_dependency_handle['blocks'][0]['script_dependencies']['index.js'] = array( 'wp-blocks', 'wp blocks' );
 $assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $invalid_dependency_handle ) ), 'script-dependency-handle-must-be-safe' );
 

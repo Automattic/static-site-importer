@@ -1362,8 +1362,11 @@ PHP;
 			}
 			$seen = array();
 			foreach ( $handles as $handle ) {
-				if ( ! is_string( $handle ) || ! preg_match( '/^[a-z0-9_-]+$/', $handle ) || isset( $seen[ $handle ] ) ) {
-					return new WP_Error( 'static_site_importer_companion_plugin_script_dependency_handle_invalid', 'Script dependency handles must be unique safe WordPress handles.' );
+				// A classic script depends on a registered handle; a script module
+				// depends on an import specifier such as `@wordpress/interactivity`,
+				// which block metadata resolves through the generated manifest.
+				if ( ! is_string( $handle ) || ! preg_match( '#^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$#', $handle ) || isset( $seen[ $handle ] ) ) {
+					return new WP_Error( 'static_site_importer_companion_plugin_script_dependency_handle_invalid', 'Script dependency handles must be unique safe WordPress handles or module specifiers.' );
 				}
 				$seen[ $handle ] = true;
 			}
