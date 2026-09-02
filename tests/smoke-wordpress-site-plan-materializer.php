@@ -969,7 +969,7 @@ $font_result          = ( new ArtifactCompiler() )->compile(
 	)
 )->toArray();
 $font_plan            = $font_result['source_reports']['wordpress_site_plan'];
-$font_materialization = $font_result['source_reports']['materialization_plan']['theme']['font_materialization'];
+$font_materialization = $font_result['source_reports']['font_materialization'];
 $font_receipt         = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$font_plan,
 	array(
@@ -1223,7 +1223,7 @@ $font_without_svg_receipt = Static_Site_Importer_WordPress_Site_Plan_Materialize
 	$font_without_svg_result['source_reports']['wordpress_site_plan'],
 	array(
 		'slug'                 => 'font-site-plan-without-svg',
-		'font_materialization' => $font_without_svg_result['source_reports']['materialization_plan']['theme']['font_materialization'],
+		'font_materialization' => $font_without_svg_result['source_reports']['font_materialization'],
 	)
 );
 $font_without_svg_root    = $GLOBALS['ssi_plan_root'] . '/font-site-plan-without-svg';

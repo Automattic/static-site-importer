@@ -52,7 +52,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 
 		return array(
 			$theme_dir . '/style.css'                   => self::style_css( $theme_name, $css . $provider_layout_css, $visual_repair_styles ),
-			$theme_dir . '/assets/css/editor-style.css' => self::editor_style_css( $css . $provider_layout_css, $visual_repair_styles ),
+			$theme_dir . '/assets/css/editor-style.css' => self::editor_style_css( $css . $provider_layout_css, $visual_repair_styles, '' !== $provider_layout_css ),
 		);
 	}
 
@@ -179,12 +179,14 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 *
 	 * @param string                          $css                  Source CSS.
 	 * @param array<string,array<int,string>> $visual_repair_styles Visual repair CSS content by target.
+	 * @param bool                            $has_provider_layout  Whether a validated provider layout was materialized.
 	 * @return string
 	 */
-	private static function editor_style_css( string $css, array $visual_repair_styles = array() ): string {
-		$repair_css = self::visual_repair_css_for_target( $visual_repair_styles, 'editor' );
+	private static function editor_style_css( string $css, array $visual_repair_styles = array(), bool $has_provider_layout = false ): string {
+		$repair_css               = self::visual_repair_css_for_target( $visual_repair_styles, 'editor' );
+		$provider_placeholder_css = $has_provider_layout ? ".static-site-importer-empty-visual-group.wp-block-group__placeholder>.components-placeholder{display:none!important}\n" : '';
 
-		return "/*\nStatic Site Importer editor styles.\nGenerated separately from frontend style.css so editor wrapper repairs do not leak to public rendering.\n*/\n\n" . $css . "\n" . $repair_css;
+		return "/*\nStatic Site Importer editor styles.\nGenerated separately from frontend style.css so editor wrapper repairs do not leak to public rendering.\n*/\n\n" . $css . "\n" . $provider_placeholder_css . $repair_css;
 	}
 
 	/**

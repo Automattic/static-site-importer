@@ -31,6 +31,7 @@ $GLOBALS['ssi_companion_options']     = array();
 $GLOBALS['static_site_importer_companion_block_owners'] = array();
 $GLOBALS['ssi_companion_actions']     = array();
 $GLOBALS['ssi_companion_filters']     = array();
+$GLOBALS['ssi_companion_registered_filters'] = array();
 
 if ( ! class_exists( 'WP_Error' ) ) {
 	class WP_Error {
@@ -168,7 +169,9 @@ if ( ! function_exists( 'add_action' ) ) {
 }
 
 if ( ! function_exists( 'add_filter' ) ) {
-	function add_filter( string $hook, callable|string $callback ): void {}
+	function add_filter( string $hook, callable|string|array $callback, int $priority = 10, int $accepted_args = 1 ): void {
+		$GLOBALS['ssi_companion_registered_filters'][ $hook ][] = array( $callback, $priority, $accepted_args );
+	}
 }
 
 if ( ! function_exists( 'remove_filter' ) ) {
@@ -475,10 +478,12 @@ if ( is_array( $descriptor ) ) {
 	$assert( str_contains( $main, 'Plugin Name:' ), 'main-file-has-plugin-header' );
 	$assert( str_contains( $main, "add_filter( 'render_block'" ), 'main-file-scopes-island-enqueue' );
 	$assert( str_contains( $main, 'wp_enqueue_script' ), 'main-file-enqueues-island-js' );
+	$assert( str_contains( $main, "require_once __DIR__ . '/includes/class-static-site-importer-provider-form-runtime.php'" ) && str_contains( $main, 'Static_Site_Importer_Provider_Form_Runtime::register();' ), 'main-file-registers-carried-provider-form-runtime' );
+	$assert( isset( $files['ssi-example-site/includes/class-static-site-importer-provider-form-runtime.php'] ), 'provider-form-runtime-file-emitted' );
 
 	$assert( str_contains( $main, "register_block_type( SSI_EXAMPLE_SITE_" ) && str_contains( $main, "_DIR . 'blocks/' . \$block_dir )" ), 'main-file-registers-metadata-block-directory' );
 	$assert( str_contains( $main, "\$registered instanceof WP_Block_Type" ) && str_contains( $main, "static_site_importer_companion_block_owners" ) && str_contains( $main, "'plugin_file' => 'ssi-example-site/ssi-example-site.php'" ), 'main-file-records-owner-after-metadata-registration' );
-	$assert( ! str_contains( $main, 'Requires Plugins:' ) && ! str_contains( $main, 'Static_Site_Importer_' ) && ! str_contains( $main, 'Automattic\\BlocksEngine' ), 'generated-plugin-declares-no-importer-or-compiler-runtime-dependency' );
+	$assert( ! str_contains( $main, 'Requires Plugins:' ) && ! str_contains( $main, 'Automattic\\BlocksEngine' ), 'generated-plugin-declares-no-importer-or-compiler-runtime-dependency' );
 	$assert( ! str_contains( $main, 'block_specs' ) && ! str_contains( $main, 'render_callback' ) && ! str_contains( $main, "register_block_type( (string)" ), 'main-file-has-no-php-only-registration-fallback' );
 	$block_json = $files['ssi-example-site/blocks/custom-hero/block.json'] ?? '';
 	$assert( '' !== $block_json, 'metadata-block-json-emitted' );
@@ -780,6 +785,18 @@ $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' )
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/render.php' ), 'install-writes-render-php-to-disk' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/block.json' ), 'install-emits-block-json' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/index.js' ), 'install-emits-declared-editor-asset' );
+$assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/includes/class-static-site-importer-provider-form-runtime.php' ), 'install-writes-provider-form-runtime' );
+$assert( isset( $GLOBALS['ssi_companion_registered_filters']['grunion_contact_form_field_html'], $GLOBALS['ssi_companion_registered_filters']['render_block_core/button'] ), 'installed-companion-registers-provider-form-runtime-hooks' );
+$submit_filter = $GLOBALS['ssi_companion_registered_filters']['render_block_core/button'][0][0] ?? null;
+$projected_submit = is_callable( $submit_filter ) ? call_user_func(
+	$submit_filter,
+	'<div class="wp-block-button ssi-source-submit--source-submit"><button class="wp-block-button__link">Send</button></div>',
+	array( 'attrs' => array( 'className' => 'ssi-source-submit--source-submit' ) )
+) : '';
+$assert( str_contains( $projected_submit, 'class="wp-block-button"' ) && str_contains( $projected_submit, 'class="wp-block-button__link source-submit"' ), 'installed-companion-projects-submit-presentation-at-runtime' );
+$wrapper_filter = $GLOBALS['ssi_companion_registered_filters']['grunion_contact_form_field_html'][0][0] ?? null;
+$projected_wrapper = is_callable( $wrapper_filter ) ? call_user_func( $wrapper_filter, '<div class="grunion-field-text-wrap ssi-source-wrapper-2--source-box-wrap"><input type="text"></div>' ) : '';
+$assert( str_contains( $projected_wrapper, '<div class="source-box"><input type="text"></div>' ) && ! str_contains( $projected_wrapper, 'ssi-source-wrapper-' ), 'installed-companion-rebuilds-provider-input-wrapper-at-runtime' );
 $standalone_bootstrap = <<<'PHP'
 define( 'ABSPATH', __DIR__ . '/' );
 class WP_Block_Type {

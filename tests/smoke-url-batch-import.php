@@ -56,7 +56,7 @@ $responses = array(
 	'https://batch.test/one.xml' => array( 'application/xml', '<urlset><url><loc>https://batch.test/</loc></url><url><loc>https://batch.test/about/</loc></url></urlset>' ),
 	'https://batch.test/two.xml' => array( 'application/xml', '<urlset><url><loc>https://batch.test/about/team/</loc></url></urlset>' ),
 	'https://batch.test/' => array( 'text/html', '<main><a href="/about/">About</a><link rel="stylesheet" href="/empty.css"></main>' ),
-	'https://batch.test/about/' => array( 'text/html', '<main><a href="/about/team/">Team</a></main>' ),
+	'https://batch.test/about/' => array( 'text/html', '<main><a href="https://batch.test/about/team/">Team</a></main>' ),
 	'https://batch.test/about/team/' => array( 'text/html', '<main>Team</main>' ),
 	'https://batch.test/empty.css' => array( 'text/css', '' ),
 );
@@ -90,15 +90,63 @@ $manifest_path = $first->get_error_data()['run_manifest'] ?? '';
 $manifest = json_decode( (string) file_get_contents( $manifest_path ), true );
 if ( 'failed' !== ( $manifest['state'] ?? '' ) || 'completed' !== ( $manifest['batches'][0]['state'] ?? '' ) || 3 !== ( $manifest['total_routes'] ?? 0 ) ) { throw new RuntimeException( 'manifest must checkpoint discovery and completed batches' ); }
 if ( ! preg_match( '/^batch-[a-f0-9]{16}$/', (string) ( $manifest['batches'][0]['batch_id'] ?? '' ) ) || 64 !== strlen( (string) ( $manifest['batches'][0]['result']['snapshot_sha256'] ?? '' ) ) ) { throw new RuntimeException( 'checkpointed batches must retain stable identities and source snapshot evidence' ); }
-$legacy_cache = $work_dir . '/url-response-cache-' . $manifest['source']['identity']; wp_mkdir_p( $legacy_cache ); foreach ( glob( $work_dir . '/.ssi-artifact-run-url-' . $manifest['source']['identity'] . '/cache/http-response/*.entry' ) ?: array() as $entry ) { copy( $entry, $legacy_cache . '/' . basename( $entry ) ); } $legacy_workspace = new Static_Site_Importer_Artifact_Run_Workspace( $work_dir, 'url-' . $manifest['source']['identity'] ); $legacy_workspace->purge();
+$legacy_cache = $work_dir . '/url-response-cache-' . $manifest['source']['identity']; wp_mkdir_p( $legacy_cache ); foreach ( glob( $work_dir . '/.ssi-artifact-run-url-' . $manifest['source']['identity'] . '/cache/http-response/*.entry' ) ?: array() as $entry ) { copy( $entry, $legacy_cache . '/' . basename( $entry ) ); }
+// Completed batches must carry their frozen staged plans and content-addressed payloads through legacy cache migration so the terminal batch can finalize from the whole site plan.
+$run_dir = $work_dir . '/.ssi-artifact-run-url-' . $manifest['source']['identity'];
+$completed_batch_ids = array_fill_keys( array_column( array_filter( $manifest['batches'], static fn ( array $batch ): bool => 'completed' === ( $batch['state'] ?? '' ) ), 'batch_id' ), true );
+$kept_run_files = array();
+foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $run_dir, FilesystemIterator::SKIP_DOTS ) ) as $file_info ) {
+	if ( ! $file_info->isFile() || false !== strpos( $file_info->getPath(), '/cache/' ) ) { continue; }
+	$relative = ltrim( str_replace( $run_dir, '', (string) $file_info->getPathname() ), '/' );
+	// The interrupted batch restarts from scratch and the shared plan is rebuilt, so only completed-batch state survives the migration.
+	if ( 'staged-compiler-shared.json' === $relative || str_starts_with( $relative, 'collection-cursors/' ) ) { continue; }
+	if ( str_starts_with( $relative, 'batches/' ) ) {
+		$stem = basename( $relative );
+		foreach ( array( '.staged-pages.json', '.json' ) as $runtime_suffix ) {
+			if ( str_ends_with( $stem, $runtime_suffix ) ) { $stem = substr( $stem, 0, -strlen( $runtime_suffix ) ); break; }
+		}
+		if ( ! isset( $completed_batch_ids[ $stem ] ) ) { continue; }
+	}
+	$kept_run_files[ $relative ] = (string) file_get_contents( (string) $file_info->getPathname() );
+}
+$legacy_cache = $work_dir . '/url-response-cache-' . $manifest['source']['identity'];
+wp_mkdir_p( $legacy_cache );
+foreach ( glob( $run_dir . '/cache/http-response/*.entry' ) ?: array() as $entry ) { copy( $entry, $legacy_cache . '/' . basename( $entry ) ); }
+$legacy_workspace = new Static_Site_Importer_Artifact_Run_Workspace( $work_dir, 'url-' . $manifest['source']['identity'] ); $legacy_workspace->purge();
+foreach ( $kept_run_files as $relative => $kept_bytes ) {
+	wp_mkdir_p( dirname( $run_dir . '/' . $relative ) );
+	file_put_contents( $run_dir . '/' . $relative, $kept_bytes );
+}
 $resumed = Static_Site_Importer_URL_Batch_Import::import( $request, $input, $fetcher, static fn( array $artifact, array $args ) => array( 'theme_slug' => 'batch-site', 'artifact' => $artifact, 'args' => $args, 'quality' => array( 'pass' => true, 'status' => 'success', 'metrics' => array( 'fallback_count' => 0 ), 'fallbacks' => array() ), 'import_report_summary' => array( 'status' => 'completed' ) ) );
 if ( is_wp_error( $resumed ) || true !== ( $resumed['terminal_batch_result']['args']['activate'] ?? false ) || isset( $resumed['pages'] ) || 2 !== ( $resumed['url_batch_run']['completed_batches'] ?? 0 ) || 3 !== ( $resumed['import_report_summary']['completed_routes'] ?? 0 ) ) { throw new RuntimeException( 'aggregate results must retain terminal output explicitly without misrepresenting it as whole-site output' . ( is_wp_error( $resumed ) ? ': ' . $resumed->get_error_code() . ' ' . $resumed->get_error_message() : ': ' . wp_json_encode( $resumed ) ) ); }
 $batch_quality = $resumed['url_batch_run']['batch_quality'] ?? array();
 if ( 2 !== count( $batch_quality ) || 1 !== ( $batch_quality[0]['fallback_count'] ?? -1 ) || isset( $batch_quality[0]['fallbacks'] ) || true !== ( $batch_quality[0]['pass'] ?? null ) || true !== ( $batch_quality[1]['pass'] ?? null ) ) { throw new RuntimeException( 'resumed aggregates must derive bounded quality evidence for every completed batch without retaining fallback payloads' ); }
 $first_files = array_column( $artifacts[0]['artifact']['files'], null, 'path' );
 $second_files = array_column( $artifacts[1]['artifact']['files'], null, 'path' );
+$canonical_absolute_route = false;
+foreach ( $artifacts as $captured ) {
+	if ( ! str_starts_with( (string) ( $captured['artifact']['provenance']['source_url'] ?? '' ), 'https://batch.test/' ) ) { throw new RuntimeException( 'URL artifacts must retain their final source URL as compiler provenance' ); }
+	foreach ( $captured['args']['compiled_artifact_result']['wordpress_site_plan']['pages'] ?? array() as $page ) {
+		if ( 'website/about/index.html' === ( $page['source_path'] ?? '' ) && str_contains( (string) ( $page['canonical_block_markup'] ?? '' ), 'href="/about/team/"' ) ) { $canonical_absolute_route = true; }
+	}
+}
+if ( ! $canonical_absolute_route ) { throw new RuntimeException( 'staged URL compilation must canonicalize proven same-origin absolute links to materialized routes' ); }
 $reference_backed = interface_exists( Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader::class );
-if ( ! str_contains( (string) ( $artifacts[0]['content']['website/about/index.html'] ?? '' ), 'href="/about/team/"' ) || ( $reference_backed && ( isset( $first_files['website/about/index.html']['content'] ) || 'blocks-engine/payload-reference/v1' !== ( $first_files['website/about/index.html']['payload_reference']['schema'] ?? '' ) ) ) || ! isset( $first_files['website/empty.css'] ) || 2 < count( array_filter( $artifacts[0]['artifact']['files'], static fn( array $file ) => str_ends_with( $file['path'], 'index.html' ) ) ) || isset( $second_files['website/index.html'] ) || ! isset( $second_files['website/about/team/index.html'] ) || empty( $artifacts[1]['args']['preserve_existing_theme_bootstrap'] ) || 2 !== count( array_keys( $requests, 'https://batch.test/about/team/', true ) ) || 1 > ( $resumed['url_batch_run']['fetch_cache']['hits'] ?? 0 ) || is_dir( $legacy_cache ) ) { throw new RuntimeException( 'later batches must retain opaque verified payloads, exclude the unrelated root page, and preserve response reuse' ); }
+$probe = static function () use ( $artifacts, $first_files, $second_files, $reference_backed, &$requests, $resumed, $legacy_cache ): string {
+	if ( ! str_contains( (string) ( $artifacts[0]['content']['website/about/index.html'] ?? '' ), 'href="/about/team/"' ) ) { return 'link rewrite'; }
+	if ( $reference_backed && ( isset( $first_files['website/about/index.html']['content'] ) || 'blocks-engine/payload-reference/v1' !== ( $first_files['website/about/index.html']['payload_reference']['schema'] ?? '' ) ) ) { return 'opaque payload'; }
+	if ( ! isset( $first_files['website/empty.css'] ) ) { return 'empty css'; }
+	if ( 2 < count( array_filter( $artifacts[0]['artifact']['files'], static fn( array $file ) => str_ends_with( $file['path'], 'index.html' ) ) ) ) { return 'first index count'; }
+	if ( isset( $second_files['website/index.html'] ) ) { return 'second has root'; }
+	if ( ! isset( $second_files['website/about/team/index.html'] ) ) { return 'second missing team'; }
+	if ( empty( $artifacts[1]['args']['preserve_existing_theme_bootstrap'] ) ) { return 'bootstrap flag'; }
+	if ( 2 !== count( array_keys( $requests, 'https://batch.test/about/team/', true ) ) ) { return 'team fetch count: ' . count( array_keys( $requests, 'https://batch.test/about/team/', true ) ); }
+	if ( 1 > ( $resumed['url_batch_run']['fetch_cache']['hits'] ?? 0 ) ) { return 'cache hits: ' . wp_json_encode( $resumed['url_batch_run']['fetch_cache'] ?? array() ); }
+	if ( is_dir( $legacy_cache ) ) { return 'legacy cache dir remains'; }
+	return '';
+};
+$probe_reason = $probe();
+if ( '' !== $probe_reason ) { throw new RuntimeException( 'later batches must retain opaque verified payloads, exclude the unrelated root page, and preserve response reuse [' . $probe_reason . ']' ); }
 $again = Static_Site_Importer_URL_Batch_Import::import( $request, $input, $fetcher, static fn() => new WP_Error( 'should_not_run' ) );
 if ( is_wp_error( $again ) || 'batch-site' !== ( $again['theme_slug'] ?? '' ) ) { throw new RuntimeException( 'terminal runs must return their saved SSI result without reimporting' ); }
 $mismatch = Static_Site_Importer_URL_Batch_Import::import( $request, array( 'activate' => true, 'slug' => 'other-target' ), $fetcher, static fn() => new WP_Error( 'should_not_run' ) );
@@ -126,13 +174,19 @@ $continuation_work_dir = sys_get_temp_dir() . '/ssi-url-continuation-' . bin2hex
 $continuation_request = array( 'url' => 'https://continuation.test/', 'work_dir' => $continuation_work_dir, 'provider_args' => array( 'collect_site' => true, 'batch_pages' => 1, 'max_effective_batches_per_invocation' => 1, 'request_delay_ms' => 0 ) );
 $continuation_imports = 0;
 $continuation_fetcher = static function ( string $url, array $args ) use ( $continuation_routes ) { if ( 'https://continuation.test/sitemap.xml' === $url ) { return array( 'body' => '<urlset>' . implode( '', array_map( static fn( string $route ): string => '<url><loc>' . $route . '</loc></url>', $continuation_routes ) ) . '</urlset>', 'metadata' => array( 'content_type' => 'application/xml', 'final_url' => $url ) ); } return array( 'body' => '<main>' . $url . '</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) ); };
-$continuation_importer = static function () use ( &$continuation_imports ) { $continuation_imports++; return array( 'theme_slug' => 'continuation', 'import_report_summary' => array( 'status' => 'completed' ) ); };
+$continuation_calls = array();
+$continuation_importer = static function ( array $artifact, array $args ) use ( &$continuation_imports, &$continuation_calls ) { $continuation_imports++; $continuation_calls[] = $args; return array( 'theme_slug' => 'continuation', 'import_report_summary' => array( 'status' => 'completed' ) ); };
 $continuation_first = Static_Site_Importer_URL_Batch_Import::import( $continuation_request, array(), $continuation_fetcher, $continuation_importer );
 $continuation_manifest = json_decode( (string) file_get_contents( $continuation_first['url_batch_run']['run_manifest'] ?? '' ), true );
 if ( is_wp_error( $continuation_first ) || true !== ( $continuation_first['continuation'] ?? false ) || 'continuing' !== ( $continuation_first['url_batch_run']['status'] ?? '' ) || 'importing_batches' !== ( $continuation_first['url_batch_run']['phase'] ?? '' ) || 1 !== ( $continuation_first['url_batch_run']['effective_batches_processed'] ?? 0 ) || 1 !== ( $continuation_first['url_batch_run']['completed_routes'] ?? 0 ) || empty( $continuation_first['url_batch_run']['next_work']['batch_id'] ) || 'running' !== ( $continuation_manifest['state'] ?? '' ) || 1 !== $continuation_imports ) { throw new RuntimeException( 'cooperative imports must checkpoint and return after their configured effective batch budget' ); }
 $continuation_second = Static_Site_Importer_URL_Batch_Import::import( $continuation_request, array(), $continuation_fetcher, $continuation_importer );
 $continuation_final = Static_Site_Importer_URL_Batch_Import::import( $continuation_request, array(), $continuation_fetcher, $continuation_importer );
 if ( is_wp_error( $continuation_second ) || true !== ( $continuation_second['continuation'] ?? false ) || is_wp_error( $continuation_final ) || 'completed' !== ( $continuation_final['url_batch_run']['status'] ?? '' ) || 3 !== ( $continuation_final['url_batch_run']['completed_routes'] ?? 0 ) || 3 !== $continuation_imports || 1 !== ( $continuation_final['url_batch_run']['stage_counters']['compiler_shared_prepares'] ?? 0 ) || 3 !== ( $continuation_final['url_batch_run']['stage_counters']['compiler_page_prepares'] ?? 0 ) || 3 !== ( $continuation_final['url_batch_run']['stage_counters']['compiler_compositions'] ?? 0 ) || ! isset( $continuation_final['url_batch_run']['stage_timing']['shared_plan_seconds'] ) ) { throw new RuntimeException( 'cooperative continuation calls must retain one shared compiler plan and page-only plans across three restarted URL batches' ); }
+// finalize.test — the terminal apply batch must compose every frozen page plan into one whole-site artifact (issue #991).
+$plan_pages_of = static function ( array $args ): array { return array_map( static fn ( array $page ): string => (string) ( $page['path'] ?? $page['slug'] ?? '' ), $args['compiled_artifact_result']['wordpress_site_plan']['pages'] ?? array() ); };
+if ( 3 !== count( $continuation_calls ) || 1 !== count( $plan_pages_of( $continuation_calls[0] ?? array() ) ) || 1 !== count( $plan_pages_of( $continuation_calls[1] ?? array() ) ) ) { throw new RuntimeException( 'intermediate apply batches must stay page-local in their composed site plans' ); }
+$finalized_pages = $plan_pages_of( $continuation_calls[2] ?? array() );
+if ( 3 !== count( $finalized_pages ) || array_diff( array( 'index', 'one', 'two' ), $finalized_pages ) ) { throw new RuntimeException( 'terminal apply batch must compose every persisted page plan with the retained shared plan: ' . wp_json_encode( $finalized_pages ) ); }
 $deadline_now = 0; $deadline_fetches = array(); $deadline_imports = 0;
 $deadline_request = array( 'url' => 'https://deadline.test/', 'work_dir' => sys_get_temp_dir() . '/ssi-url-deadline-' . bin2hex( random_bytes( 4 ) ), 'provider_args' => array( 'collect_site' => true, 'batch_pages' => 2, 'max_invocation_seconds' => 1, '_static_site_importer_clock' => static function () use ( &$deadline_now ) { return $deadline_now; }, 'request_delay_ms' => 0 ) );
 $deadline_fetcher = static function ( string $url, array $args ) use ( &$deadline_now, &$deadline_fetches ) { $deadline_fetches[ $url ] = ( $deadline_fetches[ $url ] ?? 0 ) + 1; if ( 'https://deadline.test/sitemap.xml' === $url ) { return array( 'body' => '<urlset><url><loc>https://deadline.test/</loc></url><url><loc>https://deadline.test/p/</loc></url></urlset>', 'metadata' => array( 'content_type' => 'application/xml', 'final_url' => $url ) ); } if ( 'https://deadline.test/' === $url ) { $deadline_now = 2; } return array( 'body' => '<main>' . $url . '</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) ); };
@@ -366,6 +420,43 @@ if ( interface_exists( Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\P
 	);
 	$shopify_terminal = $shopify_compositions[1] ?? array();
 	$shopify_json     = wp_json_encode( $shopify_terminal );
-	if ( is_wp_error( $shopify_result ) || 1 !== $shopify_font_fetches || 2 !== count( $shopify_compositions ) || ! str_contains( (string) $shopify_json, 'asset_reference' ) || str_contains( (string) $shopify_json, 'unresolved_local_url' ) ) { throw new RuntimeException( 'retained Shopify font preloads must refetch once, inject their payload reference, and compose without unresolved local URLs' ); }
+	$shopify_plan_pages = $shopify_terminal['wordpress_site_plan']['pages'] ?? array();
+	$shopify_probe = '';
+	if ( is_wp_error( $shopify_result ) ) { $shopify_probe = 'error: ' . $shopify_result->get_error_code() . ' ' . $shopify_result->get_error_message(); }
+	elseif ( 1 !== $shopify_font_fetches ) { $shopify_probe = 'font fetches: ' . $shopify_font_fetches; }
+	elseif ( 2 !== count( $shopify_compositions ) ) { $shopify_probe = 'compositions: ' . count( $shopify_compositions ); }
+	elseif ( ! str_contains( (string) $shopify_json, 'asset_reference' ) ) { $shopify_probe = 'no asset_reference'; }
+	elseif ( str_contains( (string) $shopify_json, 'unresolved_local_url' ) ) { $shopify_probe = 'unresolved_local_url'; }
+	$shopify_document_pages = array_map( static fn ( array $page ): string => (string) ( $page['source_path'] ?? '' ), array_filter( $shopify_plan_pages, static fn ( array $page ): bool => str_starts_with( (string) ( $page['source_path'] ?? '' ), 'website/' ) ) );
+	if ( 2 !== count( $shopify_document_pages ) || ! in_array( 'website/index.html', $shopify_document_pages, true ) || ! in_array( 'website/blogs/news/index.html', $shopify_document_pages, true ) ) { $shopify_probe = 'document plan pages: ' . wp_json_encode( array_values( $shopify_document_pages ) ); }
+	if ( '' !== $shopify_probe ) { throw new RuntimeException( 'retained Shopify font preloads must refetch once, inject their payload reference, compose without unresolved local URLs, and finalize the terminal batch from the whole-site plan (issue #991) [' . $shopify_probe . ']' ); }
 }
+// finalize-failclosed.test — a completed batch losing its frozen staged plans must fail closed on terminal composition (issue #991).
+$failclosed_routes = array( 'https://finalize-failclosed.test/', 'https://finalize-failclosed.test/about/' );
+$failclosed_work_dir = sys_get_temp_dir() . '/ssi-url-finalize-failclosed-' . bin2hex( random_bytes( 4 ) );
+$failclosed_request = array( 'url' => 'https://finalize-failclosed.test/', 'work_dir' => $failclosed_work_dir, 'provider_args' => array( 'collect_site' => true, 'batch_pages' => 1, 'max_effective_batches_per_invocation' => 1, 'request_delay_ms' => 0 ) );
+$failclosed_fetcher = static function ( string $url, array $args ) use ( $failclosed_routes ) { if ( str_ends_with( $url, '/sitemap.xml' ) ) { return array( 'body' => '<urlset>' . implode( '', array_map( static fn ( string $route ): string => '<url><loc>' . $route . '</loc></url>', $failclosed_routes ) ) . '</urlset>', 'metadata' => array( 'content_type' => 'application/xml', 'final_url' => $url ) ); } return array( 'body' => '<main>' . $url . '</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) ); };
+$failclosed_calls    = array();
+$failclosed_importer = static function ( array $artifact, array $args ) use ( &$failclosed_calls ): array {
+	$failclosed_calls[] = $args;
+	return array( 'theme_slug' => 'finalize-failclosed', 'import_report_summary' => array( 'status' => 'completed' ) );
+};
+$failclosed_first = Static_Site_Importer_URL_Batch_Import::import( $failclosed_request, array(), $failclosed_fetcher, $failclosed_importer );
+if ( ! is_array( $failclosed_first ) || empty( $failclosed_first['continuation'] ) || empty( $failclosed_first['url_batch_run']['run_manifest'] ) ) { throw new RuntimeException( 'fail-closed scenario needs one checkpointed continuation batch first' ); }
+$failclosed_manifest = json_decode( (string) file_get_contents( $failclosed_first['url_batch_run']['run_manifest'] ), true );
+$failclosed_identity = (string) ( $failclosed_manifest['source']['identity'] ?? '' );
+$failclosed_frozen   = glob( $failclosed_work_dir . '/.ssi-artifact-run-url-' . $failclosed_identity . '/batches/*.json' ) ?: array();
+usort( $failclosed_frozen, static fn ( string $a, string $b ): int => strcmp( basename( $a ), basename( $b ) ) );
+$failclosed_original = (string) file_get_contents( $failclosed_frozen[0] );
+$failclosed_runtime  = json_decode( $failclosed_original, true );
+unset( $failclosed_runtime['staged_page_plans'], $failclosed_runtime['shared_plan_digest'] );
+file_put_contents( $failclosed_frozen[0], wp_json_encode( $failclosed_runtime ) );
+$failclosed_broken = Static_Site_Importer_URL_Batch_Import::import( $failclosed_request, array(), $failclosed_fetcher, $failclosed_importer );
+if ( ! is_wp_error( $failclosed_broken ) || 'static_site_importer_url_plan_batch_missing' !== $failclosed_broken->get_error_code() ) { throw new RuntimeException( 'terminal composition must fail closed when a completed batch lost its frozen staged plans' . ( is_wp_error( $failclosed_broken ) ? ': ' . $failclosed_broken->get_error_code() : '' ) ); }
+$failclosed_state = json_decode( (string) file_get_contents( $failclosed_first['url_batch_run']['run_manifest'] ), true );
+if ( 'failed' !== ( $failclosed_state['state'] ?? '' ) || ! is_dir( dirname( $failclosed_frozen[0] ) ) ) { throw new RuntimeException( 'a failed terminal composition must mark the run failed and retain the workspace for retry' ); }
+file_put_contents( $failclosed_frozen[0], $failclosed_original );
+$failclosed_healed = Static_Site_Importer_URL_Batch_Import::import( $failclosed_request, array(), $failclosed_fetcher, $failclosed_importer );
+$healed_pages = array_map( static fn ( array $page ): string => (string) ( $page['path'] ?? $page['slug'] ?? '' ), $failclosed_calls[1]['compiled_artifact_result']['wordpress_site_plan']['pages'] ?? array() );
+if ( is_wp_error( $failclosed_healed ) || 'completed' !== ( $failclosed_healed['url_batch_run']['status'] ?? '' ) || 2 !== count( $healed_pages ) ) { throw new RuntimeException( 'restoring frozen staged plans must let the resumed run complete with the whole-site plan: ' . ( is_wp_error( $failclosed_healed ) ? $failclosed_healed->get_error_code() : wp_json_encode( array_keys( $healed_pages ) ) ) ); }
 echo "URL batch import smoke passed.\n";
