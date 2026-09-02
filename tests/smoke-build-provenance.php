@@ -22,7 +22,7 @@ if ( ! function_exists( 'blocks_engine_php_transformer_version' ) ) {
 
 if ( ! function_exists( 'blocks_engine_figma_transformer_version' ) ) {
 	function blocks_engine_figma_transformer_version(): string {
-		return '0.1.3';
+		return '0.2.0';
 	}
 }
 
@@ -47,7 +47,7 @@ $released = Static_Site_Importer_Build_Provenance::describe();
 $assert( Static_Site_Importer_Build_Provenance::SCHEMA === ( $released['schema'] ?? '' ), 'provenance-declares-schema' );
 $assert( '1.8.1' === ( $released['static_site_importer']['version'] ?? '' ), 'provenance-records-importer-version' );
 $assert( '0.8.0' === ( $released['blocks_engine']['php_transformer'] ?? '' ), 'provenance-records-php-transformer-version' );
-$assert( '0.1.3' === ( $released['blocks_engine']['figma_transformer'] ?? '' ), 'provenance-records-figma-transformer-version' );
+$assert( '0.2.0' === ( $released['blocks_engine']['figma_transformer'] ?? '' ), 'provenance-records-figma-transformer-version' );
 $assert(
 	1 === preg_match( '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', (string) ( $released['imported_at'] ?? '' ) ),
 	'provenance-records-utc-import-timestamp',
