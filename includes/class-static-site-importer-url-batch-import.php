@@ -200,14 +200,11 @@ final class Static_Site_Importer_URL_Batch_Import {
 		}
 		$importer                = $importer ?? static fn ( array $artifact, array $import_args ) => Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
 		$final_hydration_adapter = $final_hydration_adapter ?? new Static_Site_Importer_Default_Final_Hydration_Adapter();
-		if ( ! $final_hydration_adapter instanceof Static_Site_Importer_Final_Hydration_Adapter ) {
-			return new WP_Error( 'static_site_importer_final_effect_unsupported', 'Final hydration adapter does not implement the durable adapter contract.' );
-		}
-		$adapter_descriptor = array(
-			'id'                    => $final_hydration_adapter->id(),
-			'contract_version'      => $final_hydration_adapter->contract_version(),
+		$adapter_descriptor      = array(
+			'id'                     => $final_hydration_adapter->id(),
+			'contract_version'       => $final_hydration_adapter->contract_version(),
 			'implementation_version' => $final_hydration_adapter->implementation_version(),
-			'capabilities'          => $final_hydration_adapter->capabilities(),
+			'capabilities'           => $final_hydration_adapter->capabilities(),
 		);
 		if ( array_diff( array( 'verify_result', 'reconcile_verified_result' ), $adapter_descriptor['capabilities'] ) ) {
 			return new WP_Error( 'static_site_importer_final_effect_unsupported', 'Final hydration adapter cannot verify and reconcile durable effect receipts.' );
@@ -517,7 +514,14 @@ final class Static_Site_Importer_URL_Batch_Import {
 				$receipt_id      = Static_Site_Importer_Final_Hydration_Effects::identity( $identity, $batch_id, $snapshot_hash, $plan_hash, $adapter_descriptor );
 				$effect_receipts = new Static_Site_Importer_Final_Hydration_Effects( $workspace );
 				$claim_owner     = hash( 'sha256', $identity . ':' . $batch_id . ':' . microtime( true ) . ':' . bin2hex( random_bytes( 8 ) ) );
-				$claim           = $workspace->claim( 'effects/' . $receipt_id . '.claim', $claim_owner, array( 'receipt_id' => $receipt_id, 'adapter' => $adapter_descriptor ) );
+				$claim           = $workspace->claim(
+					'effects/' . $receipt_id . '.claim',
+					$claim_owner,
+					array(
+						'receipt_id' => $receipt_id,
+						'adapter'    => $adapter_descriptor,
+					)
+				);
 				if ( is_wp_error( $claim ) ) {
 					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $claim, $cache );
 				}
@@ -527,7 +531,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				try {
 					$receipt = $effect_receipts->begin( $receipt_id, $identity, $batch_id, $snapshot_hash, $plan_hash, $adapter_descriptor );
 					if ( is_wp_error( $receipt ) && 'static_site_importer_final_effect_needs_recovery' === $receipt->get_error_code() ) {
-						$ambiguous   = $receipt->get_error_data();
+						$ambiguous  = $receipt->get_error_data();
 						$reconciled = is_array( $ambiguous ) ? $final_hydration_adapter->reconcile( $ambiguous, $runtime['artifact'], $import_args ) : new WP_Error( 'static_site_importer_final_effect_reconciliation_unavailable', 'Final hydration effect receipt could not be loaded for reconciliation.' );
 						if ( is_wp_error( $reconciled ) ) {
 							return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $reconciled, $cache );

@@ -232,12 +232,12 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		}
 		$handle = @fopen( $path, 'x' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Exclusive creation provides claim ownership; existing claims are expected contention.
 		if ( false === $handle ) {
-			$existing = $this->read_raw( $relative );
-			$data     = is_string( $existing ) ? json_decode( $existing, true ) : null;
-			$claimed  = is_array( $data ) ? strtotime( (string) ( $data['claimed_at'] ?? '' ) ) : false;
+			$existing       = $this->read_raw( $relative );
+			$data           = is_string( $existing ) ? json_decode( $existing, true ) : null;
+			$claimed        = is_array( $data ) ? strtotime( (string) ( $data['claimed_at'] ?? '' ) ) : false;
 			$stale_relative = $relative . '.stale-' . bin2hex( random_bytes( 8 ) );
 			$stale_path     = $this->path( $stale_relative );
-			if ( false !== $claimed && time() - $claimed > self::CLAIM_TTL && is_string( $stale_path ) && rename( $path, $stale_path ) ) {
+			if ( false !== $claimed && time() - $claimed > self::CLAIM_TTL && is_string( $stale_path ) && rename( $path, $stale_path ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename -- Atomic same-directory rename prevents competing workers from reclaiming one expired lease.
 				$this->delete( $stale_relative );
 				$handle = @fopen( $path, 'x' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Reclaims expired importer-owned leases before exclusive creation.
 			}
@@ -245,10 +245,16 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 				return new WP_Error( 'static_site_importer_artifact_claim_owned', 'Artifact effect is already claimed.', is_array( $data ) ? $data : array() );
 			}
 		}
-		$claim = array_merge( $metadata, array( 'owner' => $owner, 'claimed_at' => gmdate( 'c' ) ) );
+		$claim = array_merge(
+			$metadata,
+			array(
+				'owner'      => $owner,
+				'claimed_at' => gmdate( 'c' ),
+			)
+		);
 		$json  = wp_json_encode( $claim );
-		$ok    = is_string( $json ) && strlen( $json ) === fwrite( $handle, $json );
-		fclose( $handle );
+		$ok    = is_string( $json ) && strlen( $json ) === fwrite( $handle, $json ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Writes the exclusively-created lease before it becomes observable to competing workers.
+		fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the exclusively-created lease after its complete contents are written.
 		if ( ! $ok ) {
 			unlink( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes failed importer-owned claim.
 			return new WP_Error( 'static_site_importer_artifact_claim_write_failed', 'Artifact effect claim could not be written.' );

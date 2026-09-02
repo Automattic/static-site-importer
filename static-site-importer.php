@@ -66,6 +66,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-url-fetcher.php',
 	'class-static-site-importer-artifact-run.php',
 	'class-static-site-importer-final-hydration-adapter.php',
+	'class-static-site-importer-default-final-hydration-adapter.php',
 	'class-static-site-importer-callable-final-hydration-adapter.php',
 	'class-static-site-importer-final-hydration-effects.php',
 	'class-static-site-importer-source-normalizer.php',

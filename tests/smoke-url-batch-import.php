@@ -25,6 +25,7 @@ require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-site-collector.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-import-runtime.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-final-hydration-adapter.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-default-final-hydration-adapter.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-callable-final-hydration-adapter.php';
 class Static_Site_Importer_Theme_Generator {
 	public static function import_website_artifact( array $artifact, array $args ): array {
