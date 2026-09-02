@@ -21,14 +21,6 @@
           "path": "static-site-importer.php"
         },
         {
-          "type": "file",
-          "path": "build-provenance.json"
-        },
-        {
-          "type": "prefix",
-          "path": "blocks/"
-        },
-        {
           "type": "prefix",
           "path": "includes/"
         },

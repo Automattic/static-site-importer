@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { editorPresentationEvidenceComplete } from '../lib/fixture-matrix/gutenberg-incompatibility-registry.mjs';
+import { editorInteractionEvidenceComplete, editorPresentationEvidenceComplete } from '../lib/fixture-matrix/gutenberg-incompatibility-registry.mjs';
 import { validateProviderSubmissionEvidence } from '../lib/fixture-matrix/provider-submission-evidence.mjs';
 
 export const RECEIPT_SCHEMA = 'static-site-importer/solved-site-promotion-receipt/v1';
@@ -87,6 +87,8 @@ export function verifySolvedSitePromotion(input) {
       materialization_receipts: 'passed',
       provider_submissions: 'passed',
       editor: 'passed',
+      editor_presentation: 'passed',
+      editor_interaction: 'passed',
       visual: 'passed',
       native_blocks: 'passed',
       artifacts: 'passed',
@@ -132,12 +134,17 @@ function verifyFixture(fixture, decision, options, requiredFiles) {
   assert(editor.results_complete === true && Number(editor.result_count) === Number(editor.total_blocks), `${id}: editor validation must include one complete recursive result per block.`);
   assert(Number(editor.total_blocks) > 0 && editor.valid_blocks === editor.total_blocks && Number(editor.invalid_blocks) === 0, `${id}: editor validation is incomplete or invalid.`);
   assert(fixture.editor_canvas?.status === 'captured', `${id}: editor canvas evidence is missing.`);
-  addRequiredFile(requiredFiles, fixture.editor_canvas?.screenshot, `${id}: editor screenshot`, options.artifactRoot);
+  addRequiredFile(requiredFiles, fixture.editor_canvas?.screenshot, `${id}: editor screenshot`, options.artifactRoot, id);
   const editorPresentation = fixture.editor_presentation || {};
-  assert(['static-site-importer/editor-presentation-evidence/v1', 'static-site-importer/editor-presentation-evidence/v2'].includes(editorPresentation.schema), `${id}: editor presentation evidence is missing.`);
+  assert(editorPresentation.schema === 'static-site-importer/editor-presentation-evidence/v3', `${id}: matched editor presentation evidence is missing.`);
   assert(editorPresentation.provider_schema === 'wp-codebox/editor-presentation/v1', `${id}: editor presentation must use WP Codebox canvas evidence.`);
   assert(Number(editorPresentation.expected_identity_count) > 0, `${id}: editor presentation has no expected generated styles.`);
-  assert(editorPresentationEvidenceComplete(editorPresentation, fixture), `${id}: editor presentation stylesheet coverage is incomplete or contradictory.`);
+  assert(editorPresentationEvidenceComplete(editorPresentation, fixture), `${id}: editor presentation evidence is incomplete or contradictory.`);
+  const matchedRendering = editorPresentation.matched_rendering || {};
+  for (const [slot, label] of [['frontend_screenshot', 'matched frontend screenshot'], ['editor_screenshot', 'matched editor screenshot'], ['diff_screenshot', 'matched editor diff']]) {
+    addRequiredFile(requiredFiles, matchedRendering[slot], `${id}: ${label}`, options.artifactRoot, id);
+  }
+  assert(editorInteractionEvidenceComplete(fixture.editor_interaction), `${id}: editor interaction evidence is incomplete.`);
   const visual = fixture.visual_parity_artifacts || {};
   const visualMetrics = visual.metrics || {};
   assertFiniteMetric(visualMetrics, 'mismatch_ratio', id);
@@ -146,7 +153,7 @@ function verifyFixture(fixture, decision, options, requiredFiles) {
   for (const slot of ['source_screenshot', 'imported_screenshot', 'diff_screenshot', 'visual_diff']) {
     const artifact = visual.artifacts?.[slot];
     assert(artifact?.status === 'captured', `${id}: ${slot} evidence is missing.`);
-    addRequiredFile(requiredFiles, artifact?.ref?.path, `${id}: ${slot}`, options.artifactRoot);
+    addRequiredFile(requiredFiles, artifact?.ref?.path, `${id}: ${slot}`, options.artifactRoot, id, artifact?.ref?.artifact_id);
   }
   const evidence = fixture.matrix_evidence || {};
   assert(evidence.readiness === 'verified' && (evidence.missing || []).length === 0, `${id}: runtime evidence is incomplete.`);
@@ -190,11 +197,12 @@ function artifactManifest(files, root) {
   }).sort((left, right) => left.path.localeCompare(right.path));
 }
 
-function addRequiredFile(files, value, label, root) {
+function addRequiredFile(files, value, label, root, fixtureId = '', artifactId = '') {
   assert(typeof value === 'string' && value, `${label} path is missing.`);
   const resolved = path.isAbsolute(value) ? value : path.join(root, value);
   const relative = path.relative(root, resolved);
-  if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) {
+  if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)
+    && fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
     files.push(resolved);
     return;
   }
@@ -208,9 +216,40 @@ function addRequiredFile(files, value, label, root) {
     return;
   }
   const basename = path.basename(value);
-  const matches = filesBelow(root).filter((file) => path.basename(file) === basename || path.basename(file).endsWith(`-${basename}`));
-  assert(matches.length === 1, `${label} must resolve to exactly one durable evidence file; found ${matches.length}.`);
-  files.push(matches[0]);
+  let matches = filesBelow(root).filter((file) => path.basename(file) === basename || path.basename(file).endsWith(`-${basename}`));
+  if (matches.length !== 1 && fixtureId) {
+    const artifacts = homeboyArtifacts(root);
+    matches = artifactId
+      ? artifacts.filter((artifact) => artifact.name === artifactId)
+      : artifacts.filter((artifact) => artifact.name.includes(`_${fixtureId}_`)
+        && (path.basename(artifact.path) === basename || path.basename(artifact.path).endsWith(`-${basename}`)));
+  }
+  assert(matches.length === 1, `${label} evidence file is missing or ambiguous; found ${matches.length} durable matches.`);
+  files.push(typeof matches[0] === 'string' ? matches[0] : matches[0].path);
+}
+
+function homeboyArtifacts(root) {
+  const durableFiles = filesBelow(root);
+  return durableFiles
+    .filter((file) => path.basename(file) === 'homeboy-bench-result.json')
+    .flatMap((file) => {
+      try {
+        return readJson(file, 'Homeboy bench result').data?.payload?.artifacts || [];
+      } catch {
+        return [];
+      }
+    })
+    .filter((artifact) => typeof artifact?.name === 'string' && typeof artifact?.path === 'string')
+    .map((artifact) => {
+      const relative = path.relative(root, artifact.path);
+      if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)
+        && fs.existsSync(artifact.path) && fs.statSync(artifact.path).isFile()) {
+        return artifact;
+      }
+      const matches = durableFiles.filter((file) => path.basename(file).startsWith(`${artifact.observation_artifact_id}-`));
+      return matches.length === 1 ? { ...artifact, path: matches[0] } : null;
+    })
+    .filter(Boolean);
 }
 
 function filesBelow(directory) {

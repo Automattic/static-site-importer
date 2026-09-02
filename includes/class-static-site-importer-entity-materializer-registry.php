@@ -285,101 +285,6 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		);
 	}
 
-	/**
-	 * Ensure adapter plugin dependencies are installed and active.
-	 *
-	 * @param array<string,mixed> $adapter Adapter definition.
-	 * @return array<string,array<string,mixed>>
-	 */
-	public static function materialize_plugin_dependencies( array $adapter, bool $overwrite = false ): array {
-		$reports = array();
-		foreach ( self::plugin_dependencies( $adapter ) as $dependency ) {
-			$slug = (string) ( $dependency['slug'] ?? '' );
-			if ( '' === $slug ) {
-				continue;
-			}
-
-			$reports[ $slug ] = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
-				$slug,
-				(string) ( $dependency['plugin_file'] ?? '' ),
-				$dependency['availability_callback'] ?? null,
-				$dependency['preparation_callback'] ?? null
-			);
-		}
-
-		foreach ( self::companion_dependencies( $adapter ) as $dependency ) {
-			$slug = (string) ( $dependency['slug'] ?? '' );
-			if ( '' === $slug ) {
-				continue;
-			}
-
-			$reports[ $slug ] = self::materialize_companion_dependency( $dependency, $overwrite );
-		}
-
-		return $reports;
-	}
-
-	/**
-	 * Project prepared runtime declarations to transport-neutral package artifacts.
-	 *
-	 * This is deliberately a registry projection: callers do not map providers to
-	 * packages. A host runtime may resolve these entries before a network-denied
-	 * WordPress process starts.
-	 *
-	 * @param array<string,mixed> $lifecycle Prepared runtime lifecycle.
-	 * @param string              $artifact_sha256 Canonical artifact digest.
-	 * @return array<string,mixed>
-	 */
-	public static function dependency_plan( array $lifecycle, string $artifact_sha256 ): array {
-		$entries = array();
-		foreach ( $lifecycle['dependencies'] ?? array() as $declaration_id => $prepared ) {
-			if ( ! is_array( $prepared ) || empty( $prepared['required'] ) || ! isset( $prepared['adapter'] ) || ! is_array( $prepared['adapter'] ) ) {
-				continue;
-			}
-			$adapter = $prepared['adapter'];
-			foreach ( self::plugin_dependencies( $adapter ) as $dependency ) {
-				$slug        = (string) ( $dependency['slug'] ?? '' );
-				$plugin_file = (string) ( $dependency['plugin_file'] ?? '' );
-				if ( '' === $slug || '' === $plugin_file ) {
-					continue;
-				}
-				$key = 'wp-org:' . $slug;
-				if ( ! isset( $entries[ $key ] ) ) {
-					$entries[ $key ] = array(
-						'source_kind'        => 'wordpress.org-plugin',
-						'package'            => $slug,
-						'slug'               => $slug,
-						'version_policy'     => 'wordpress.org-latest-stable',
-						'reference_policy'   => 'resolver-recorded-immutable-package-digest',
-						'plugin_entrypoint'  => $plugin_file,
-						'activation'         => 'required',
-						'integrity'          => array(
-							'entrypoint_sha256' => '',
-							'provenance'        => 'registry-declared',
-						),
-						'provenance'         => array(
-							'adapter_id'      => (string) ( $adapter['id'] ?? '' ),
-							'provider'        => (string) ( $adapter['provider'] ?? '' ),
-							'entity_type'     => (string) ( $adapter['entity_type'] ?? '' ),
-							'declaration_ids' => array(),
-						),
-						'provider_readiness' => array_merge(
-							$dependency['provider_readiness'] ?? array(),
-							array( 'preparation_callback' => $dependency['preparation_callback'] ?? null )
-						),
-					);
-				}
-				$entries[ $key ]['provenance']['declaration_ids'][] = (string) $declaration_id;
-			}
-		}
-		ksort( $entries, SORT_STRING );
-		return array(
-			'schema'          => 'static-site-importer/runtime-dependency-plan/v1',
-			'artifact_sha256' => $artifact_sha256,
-			'entries'         => array_values( $entries ),
-		);
-	}
-
 	/** Normalize typed runtime declarations into validated provider lifecycle entries. */
 	public static function plan_runtime_lifecycle( array $plan, array $args ) {
 		$lifecycle    = array(
@@ -524,48 +429,6 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$lifecycle['status'] = 'runtime_declarations';
 		}
 		return $lifecycle;
-	}
-
-	/** Defer only quality findings backed by materializable typed form declarations. */
-	public static function can_defer_form_quality_admission( array $plan, array $lifecycle ): bool {
-		$quality         = isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array();
-		$metrics         = isset( $quality['metrics'] ) && is_array( $quality['metrics'] ) ? $quality['metrics'] : $quality;
-		$fallback_count  = isset( $metrics['fallback_count'] ) && is_numeric( $metrics['fallback_count'] ) ? (int) $metrics['fallback_count'] : 0;
-		$failure_reasons = isset( $quality['failure_reasons'] ) && is_array( $quality['failure_reasons'] ) ? $quality['failure_reasons'] : array();
-		$diagnostics     = isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array();
-		if ( $fallback_count < 1 || empty( $failure_reasons ) || array_diff( $failure_reasons, array( 'unsupported_html_fallback' ) ) ) {
-			return false;
-		}
-		$materializable = array();
-		foreach ( $lifecycle['entities'] ?? array() as $prepared ) {
-			if ( ! is_array( $prepared ) || 'form' !== ( $prepared['adapter']['capability'] ?? null ) || 'generic/forms/v1' !== ( $prepared['declaration']['payload']['schema'] ?? null ) ) {
-				continue;
-			}
-			foreach ( $prepared['manifest']['forms'] ?? array() as $form ) {
-				if ( is_array( $form ) && ! empty( $form['bindings'] ) ) {
-					$materializable[ (string) ( $form['source_path'] ?? '' ) . "\n" . (string) ( $form['selector'] ?? '' ) ] = true;
-				}
-			}
-		}
-		$forms = 0;
-		foreach ( $diagnostics as $diagnostic ) {
-			if ( ! is_array( $diagnostic ) ) {
-				continue;
-			}
-			$is_form = 'html_form_fallback' === ( $diagnostic['diagnostic_code'] ?? $diagnostic['code'] ?? $diagnostic['reason_code'] ?? null );
-			if ( ! $is_form && 'unsupported_html_fallback' === ( $diagnostic['type'] ?? null ) ) {
-				return false;
-			}
-			if ( ! $is_form ) {
-				continue;
-			}
-			$key = (string) ( $diagnostic['source_path'] ?? $diagnostic['source'] ?? '' ) . "\n" . (string) ( $diagnostic['selector'] ?? '' );
-			if ( ! isset( $materializable[ $key ] ) ) {
-				return false;
-			}
-			++$forms;
-		}
-		return $forms === $fallback_count;
 	}
 
 	private static function runtime_declaration_is_required( array $declaration, array $declarations ): bool {
@@ -716,59 +579,6 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return false;
 	}
 
-	/** Materialize all prepared provider dependencies. */
-	public static function materialize_lifecycle_dependencies( array $lifecycle, array $args ) {
-		$reports = array();
-		foreach ( $lifecycle['dependencies'] ?? array() as $id => $prepared ) {
-			$adapter  = $prepared['adapter'];
-			$required = ! empty( $prepared['required'] ) || self::lifecycle_entity_has_bindings( $lifecycle['entities'][ $id ] ?? array() );
-			$waived   = ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? '' ) ] );
-			if ( $waived ) {
-				$reports[ $id ] = array(
-					'status'   => 'waived',
-					'provider' => $adapter['provider'] ?? '',
-				);
-				continue;
-			}
-			if ( empty( $args['materialize_dependencies'] ) && ! self::dependencies_available( $adapter ) && $required ) {
-				return new WP_Error(
-					'static_site_importer_required_runtime_dependency_missing',
-					'A required runtime dependency is unavailable and dependency materialization is disabled.',
-					array(
-						'status'         => 'rejected',
-						'declaration_id' => $id,
-					)
-				);
-			}
-			$reports[ $id ] = ! empty( $args['materialize_dependencies'] ) ? self::materialize_plugin_dependencies( $adapter, ! empty( $args['overwrite'] ) ) : array( 'status' => 'available' );
-			foreach ( $reports[ $id ] as $plugin_report ) {
-				if ( is_array( $plugin_report ) && 'failed' === ( $plugin_report['status'] ?? '' ) ) {
-					return new WP_Error(
-						'static_site_importer_required_runtime_dependency_failed',
-						'SSI could not install or activate a required runtime dependency.',
-						array(
-							'status'         => 'partial',
-							'declaration_id' => $id,
-							'dependency'     => $plugin_report,
-						)
-					);
-				}
-			}
-			if ( 'prepare' !== ( $args['runtime_lifecycle_phase'] ?? '' ) && ! self::dependencies_available( $adapter ) && $required ) {
-				return new WP_Error(
-					'static_site_importer_required_runtime_dependency_missing',
-					'SSI could not prepare a required runtime dependency.',
-					array(
-						'status'                    => 'partial',
-						'completed_declaration_ids' => array_keys( $reports ),
-						'dependency_reports'        => $reports,
-					)
-				);
-			}
-		}
-		return $reports;
-	}
-
 	/** Materialize all prepared provider entities and retain their receipts. */
 	public static function materialize_lifecycle_entities( array $lifecycle, array $args ): array {
 		$reports  = array();
@@ -805,8 +615,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$reports[ $id ] = $report;
 			$counts         = is_array( $report['counts'] ?? null ) ? $report['counts'] : array();
 			$expected       = count( is_array( $prepared['manifest']['products'] ?? null ) ? $prepared['manifest']['products'] : ( $prepared['manifest']['forms'] ?? array() ) );
-			$completed_keys = self::lifecycle_entity_has_bindings( $prepared ) ? array( 'created', 'updated', 'mapped' ) : array( 'created', 'updated', 'mapped', 'skipped' );
-			$completed      = array_sum( array_map( 'intval', array_intersect_key( $counts, array_flip( $completed_keys ) ) ) );
+			// A provider that declines one entity reports it as skipped. The compiled
+			// source fallback stays at that binding anchor, so the declaration is
+			// accounted for whether or not the entity carries a page binding.
+			$completed = array_sum( array_map( 'intval', array_intersect_key( $counts, array_flip( array( 'created', 'updated', 'mapped', 'skipped' ) ) ) ) );
 			if ( in_array( $report['status'] ?? '', array( 'failed', 'error' ), true ) || ! empty( $counts['failed'] ) || ! empty( $counts['error'] ) || ( ( ! empty( $prepared['required'] ) || self::lifecycle_entity_has_bindings( $prepared ) ) && $completed < $expected ) ) {
 				$code    = isset( $report['code'] ) && is_scalar( $report['code'] ) ? (string) $report['code'] : 'static_site_importer_entity_materialization_failed';
 				$message = isset( $report['error'] ) && is_scalar( $report['error'] ) ? (string) $report['error'] : ( isset( $report['reason'] ) && is_scalar( $report['reason'] ) && '' !== (string) $report['reason'] ? (string) $report['reason'] : 'Runtime entity materialization failed for declaration: ' . $id . '.' );
@@ -823,6 +635,21 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'reports' => $reports,
 			'error'   => null,
 		);
+	}
+
+	/**
+	 * Report whether a provider declined to represent one entity.
+	 *
+	 * A declined row is a deliberate provider decision -- an unsupported control
+	 * topology, or a layout the provider cannot carry without losing fidelity --
+	 * not a materialization failure. The page keeps the compiled source markup at
+	 * that binding anchor, so the binding is dropped instead of failing the import.
+	 * A result row that is absent entirely is still unresolved and stays fatal.
+	 *
+	 * @param array<string,mixed> $result Provider result row for one entity.
+	 */
+	public static function entity_result_declined( array $result ): bool {
+		return 'skipped' === ( $result['status'] ?? '' );
 	}
 
 	/** A canonical page binding makes its provider entity part of materialization. */
@@ -860,8 +687,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				if ( ! is_array( $entity ) || empty( $entity['bindings'] ) ) {
 					continue;
 				}
-				$key         = 'products' === $entity_key ? (string) ( $entity['slug'] ?? '' ) : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
-				$replacement = self::binding_block_markup( $prepared['adapter'], $entity, $results[ $key ] ?? array() );
+				$key    = 'products' === $entity_key ? (string) ( $entity['slug'] ?? '' ) : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
+				$result = is_array( $results[ $key ] ?? null ) ? $results[ $key ] : array();
+				if ( self::entity_result_declined( $result ) ) {
+					continue;
+				}
+				$replacement = self::binding_block_markup( $prepared['adapter'], $entity, $result );
 				if ( '' === $replacement ) {
 					return new WP_Error(
 						'static_site_importer_runtime_binding_unresolved',
@@ -918,9 +749,13 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					continue;
 				}
 				$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
-				$render     = self::binding_classic_render( $prepared['adapter'], $entity, $results[ $entity_key ] ?? array() );
-				$source     = (string) ( $entity['source_path'] ?? '' );
-				$selectors  = array_filter( array( $entity['selector'] ?? '' ) );
+				$result     = is_array( $results[ $entity_key ] ?? null ) ? $results[ $entity_key ] : array();
+				if ( self::entity_result_declined( $result ) ) {
+					continue;
+				}
+				$render    = self::binding_classic_render( $prepared['adapter'], $entity, $result );
+				$source    = (string) ( $entity['source_path'] ?? '' );
+				$selectors = array_filter( array( $entity['selector'] ?? '' ) );
 				if ( empty( $render ) || '' === $source || empty( $selectors ) ) {
 					return new WP_Error( 'static_site_importer_classic_html_binding_unresolved', 'A required provider entity lacks adapter-owned server render output or a canonical HTML source selector.', array( 'declaration_id' => $declaration_id ) );
 				}
@@ -952,186 +787,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$overlays = array();
 		foreach ( $reports as $report ) {
 			foreach ( is_array( $report['forms'] ?? null ) ? $report['forms'] : array() as $form ) {
-				if ( is_array( $form['provider_layout_overlay_css'] ?? null ) && ! empty( $form['provider_layout_overlay_css'] ) ) {
+				// A declined form leaves no provider block in the page, so its overlay
+				// would target selectors that were never materialized.
+				if ( ! empty( $form['runtime_mapped'] ) && is_array( $form['provider_layout_overlay_css'] ?? null ) && ! empty( $form['provider_layout_overlay_css'] ) ) {
 					$overlays[] = $form['provider_layout_overlay_css'];
 				}
 			}
 		}
 		return $overlays;
-	}
-
-	/**
-	 * Build a generated companion-plugin dependency definition from a payload.
-	 *
-	 * Companion plugins are per-site and generated at import time, so they are not
-	 * static adapter entries like the WooCommerce/Jetpack directory slugs. This
-	 * builder produces a dependency definition of type `companion_plugin` that the
-	 * install path and diagnostics treat as a first-class declared dependency,
-	 * distinct from directory slugs.
-	 *
-	 * @param array<string,mixed> $payload Generated companion-plugin payload.
-	 * @return array<string,mixed>
-	 */
-	public static function companion_plugin_dependency( array $payload ): array {
-		$slug        = Static_Site_Importer_Companion_Plugin::plugin_slug( $payload );
-		$plugin_file = Static_Site_Importer_Companion_Plugin::plugin_file( $payload );
-		$mu_plugin   = ! empty( $payload['mu_plugin'] );
-
-		$dependency = array(
-			'type'        => 'companion_plugin',
-			'slug'        => $slug,
-			'plugin_file' => $plugin_file,
-			'mu_plugin'   => $mu_plugin,
-			'payload'     => $payload,
-		);
-
-		$dependency['availability_callback'] = static function () use ( $dependency ): bool {
-			return self::companion_plugin_available( $dependency );
-		};
-
-		return $dependency;
-	}
-
-	/**
-	 * Determine whether a generated companion plugin is installed and active.
-	 *
-	 * @param array<string,mixed> $dependency Companion dependency definition.
-	 * @return bool
-	 */
-	public static function companion_plugin_available( array $dependency ): bool {
-		$plugin_file = (string) ( $dependency['plugin_file'] ?? '' );
-		if ( '' === $plugin_file ) {
-			return false;
-		}
-
-		if ( ! empty( $dependency['mu_plugin'] ) ) {
-			if ( ! defined( 'WPMU_PLUGIN_DIR' ) ) {
-				return false;
-			}
-			return file_exists( rtrim( (string) WPMU_PLUGIN_DIR, '/' ) . '/' . $plugin_file );
-		}
-
-		return function_exists( 'is_plugin_active' ) && is_plugin_active( $plugin_file );
-	}
-
-	/**
-	 * Materialize a generated companion-plugin dependency.
-	 *
-	 * @param array<string,mixed> $dependency Companion dependency definition.
-	 * @return array<string,mixed>
-	 */
-	public static function materialize_companion_dependency( array $dependency, bool $overwrite = false ): array {
-		$payload = isset( $dependency['payload'] ) && is_array( $dependency['payload'] ) ? $dependency['payload'] : array();
-		return Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin(
-			$payload,
-			$dependency['availability_callback'] ?? null,
-			$overwrite
-		);
-	}
-
-	/**
-	 * Build the dependency report row for a generated companion plugin.
-	 *
-	 * Mirrors the directory-plugin dependency row shape so the gate/diagnostics
-	 * surface a companion the same way they surface WooCommerce/Jetpack, but keys
-	 * it by the namespaced companion slug and flags its `generated` source.
-	 *
-	 * @param array<string,mixed> $dependency Companion dependency definition.
-	 * @param bool                $waived     Whether enforcement is waived.
-	 * @return array<string,mixed>
-	 */
-	public static function companion_dependency_row( array $dependency, bool $waived ): array {
-		$active = self::companion_plugin_available( $dependency );
-
-		$block_names     = array();
-		$island_handles  = array();
-		$runtime_scripts = array();
-		$payload         = isset( $dependency['payload'] ) && is_array( $dependency['payload'] ) ? $dependency['payload'] : array();
-		$scaffold        = empty( $payload ) ? null : Static_Site_Importer_Companion_Plugin::scaffold( $payload );
-		if ( is_array( $scaffold ) && isset( $scaffold['block_names'] ) && is_array( $scaffold['block_names'] ) ) {
-			$block_names = array_values( array_map( 'strval', $scaffold['block_names'] ) );
-		}
-		if ( is_array( $scaffold ) && isset( $scaffold['island_handles'] ) && is_array( $scaffold['island_handles'] ) ) {
-			$island_handles = array_values( array_map( 'strval', $scaffold['island_handles'] ) );
-		}
-		if ( is_array( $scaffold ) && isset( $scaffold['runtime_scripts'] ) && is_array( $scaffold['runtime_scripts'] ) ) {
-			$runtime_scripts = array_values( $scaffold['runtime_scripts'] );
-		}
-
-		return array(
-			'type'            => 'companion_plugin',
-			'source'          => 'generated',
-			'slug'            => (string) ( $dependency['slug'] ?? '' ),
-			'plugin_file'     => (string) ( $dependency['plugin_file'] ?? '' ),
-			'mu_plugin'       => ! empty( $dependency['mu_plugin'] ),
-			'required'        => true,
-			'active'          => $active,
-			'waived'          => $waived,
-			'block_names'     => $block_names,
-			// Preserved island JS handles this companion carries + enqueues
-			// scoped; lets the gate/diagnostics treat preserved island JS as
-			// companion-plugin-carried instead of theme-coupled.
-			'island_handles'  => $island_handles,
-			'runtime_scripts' => $runtime_scripts,
-		);
-	}
-
-	/**
-	 * Build the commerce dependency report rows for an adapter.
-	 *
-	 * @param array<string,mixed> $adapter Adapter definition.
-	 * @param array<string,mixed> $intent  Detected commerce intent.
-	 * @param bool                $waived  Whether dependency enforcement is waived.
-	 * @return array<string,array<string,mixed>>
-	 */
-	public static function dependency_rows( array $adapter, array $intent, bool $waived ): array {
-		$rows = array();
-		foreach ( self::plugin_dependencies( $adapter ) as $dependency ) {
-			$slug = (string) ( $dependency['slug'] ?? '' );
-			if ( '' === $slug ) {
-				continue;
-			}
-
-			$active        = self::dependency_available( $dependency );
-			$rows[ $slug ] = array(
-				'required'      => true,
-				'active'        => $active,
-				'sources'       => isset( $intent['sources'] ) && is_array( $intent['sources'] ) ? $intent['sources'] : array(),
-				'product_count' => (int) ( $intent['product_count'] ?? 0 ),
-				'waived'        => $waived,
-				'missing_apis'  => $active ? array() : self::missing_apis( $dependency ),
-			);
-		}
-
-		return $rows;
-	}
-
-	/**
-	 * Check whether every required plugin dependency is available.
-	 *
-	 * @param array<string,mixed> $adapter Adapter definition.
-	 * @return bool
-	 */
-	public static function dependencies_available( array $adapter ): bool {
-		foreach ( self::plugin_dependencies( $adapter ) as $dependency ) {
-			if ( ! self::dependency_available( $dependency ) ) {
-				return false;
-			}
-		}
-
-		return true;
-	}
-
-	/**
-	 * Return the first plugin dependency slug for legacy report compatibility.
-	 *
-	 * @param array<string,mixed> $adapter Adapter definition.
-	 * @return string
-	 */
-	public static function primary_dependency_slug( array $adapter ): string {
-		$dependencies = self::plugin_dependencies( $adapter );
-		$dependency   = reset( $dependencies );
-		return is_array( $dependency ) && isset( $dependency['slug'] ) ? (string) $dependency['slug'] : '';
 	}
 
 	/**
@@ -1524,6 +1187,24 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 				$row['layout_graph'] = $graph['graph'];
 			}
+			if ( array_key_exists( 'presentation_graph', $form ) ) {
+				$presentation = self::normalize_form_presentation_graph( $form['presentation_graph'] );
+				if ( isset( $presentation['error'] ) ) {
+					$errors[] = array(
+						'path'    => $path_prefix . '.presentation_graph',
+						'message' => $presentation['error'],
+					);
+					continue;
+				}
+				if ( ! array_key_exists( 'graph', $presentation ) ) {
+					$errors[] = array(
+						'path'    => $path_prefix . '.presentation_graph',
+						'message' => 'Form presentation normalization did not produce a graph.',
+					);
+					continue;
+				}
+				$row['presentation_graph'] = $presentation['graph'];
+			}
 			$form_key = $row['source_path'] . "\n" . $row['selector'];
 			if ( isset( $seen_forms[ $form_key ] ) ) {
 				$errors[] = array(
@@ -1571,8 +1252,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/** @return array{graph?:array<string,mixed>,error?:string} */
 	private static function normalize_computed_layout_graph( mixed $candidate ): array {
-		if ( ! is_array( $candidate ) || 'generic/computed-layout-graph/v1' !== ( $candidate['schema'] ?? null ) || 'source_css_cascade' !== ( $candidate['basis'] ?? null ) || ! is_bool( $candidate['truncated'] ?? null ) || ! is_array( $candidate['limits'] ?? null ) || ! is_int( $candidate['limits']['nodes'] ?? null ) || ! is_int( $candidate['limits']['depth'] ?? null ) || ! is_int( $candidate['limits']['rules_per_node'] ?? null ) || $candidate['limits']['nodes'] < 1 || $candidate['limits']['nodes'] > 128 || $candidate['limits']['depth'] < 0 || $candidate['limits']['depth'] > 8 || $candidate['limits']['rules_per_node'] < 1 || $candidate['limits']['rules_per_node'] > 16 || ! is_array( $candidate['nodes'] ?? null ) || ! array_is_list( $candidate['nodes'] ) || count( $candidate['nodes'] ) > $candidate['limits']['nodes'] || ! is_array( $candidate['variants'] ?? null ) || ! is_array( $candidate['diagnostics'] ?? null ) ) {
-			return array( 'error' => 'layout_graph must be a bounded canonical generic/computed-layout-graph/v1 graph.' );
+		$schema         = is_array( $candidate ) ? ( $candidate['schema'] ?? null ) : null;
+		$is_v2          = 'generic/computed-layout-graph/v2' === $schema;
+		$expected_depth = $is_v2 ? 16 : 8;
+		if ( ! is_array( $candidate ) || ( ! $is_v2 && 'generic/computed-layout-graph/v1' !== $schema ) || 'source_css_cascade' !== ( $candidate['basis'] ?? null ) || ! is_bool( $candidate['truncated'] ?? null ) || ! is_array( $candidate['limits'] ?? null ) || ! is_int( $candidate['limits']['nodes'] ?? null ) || ! is_int( $candidate['limits']['depth'] ?? null ) || ! is_int( $candidate['limits']['rules_per_node'] ?? null ) || $candidate['limits']['nodes'] < 1 || $candidate['limits']['nodes'] > 128 || $expected_depth !== $candidate['limits']['depth'] || $candidate['limits']['rules_per_node'] < 1 || $candidate['limits']['rules_per_node'] > 16 || ! is_array( $candidate['nodes'] ?? null ) || ! array_is_list( $candidate['nodes'] ) || count( $candidate['nodes'] ) > $candidate['limits']['nodes'] || ! is_array( $candidate['variants'] ?? null ) || ! is_array( $candidate['diagnostics'] ?? null ) ) {
+			return array( 'error' => 'layout_graph must use a bounded canonical computed-layout graph schema with its exact versioned depth.' );
 		}
 		if ( ! self::has_only_keys( $candidate, array( 'schema', 'basis', 'truncated', 'limits', 'nodes', 'variants', 'diagnostics' ) ) || ! self::has_only_keys( $candidate['limits'], array( 'nodes', 'depth', 'rules_per_node' ) ) ) {
 			return array( 'error' => 'layout_graph contains unknown canonical keys.' );
@@ -1596,8 +1280,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			$layout      = $node['layout'];
 			$layout_keys = array( 'display', 'columns', 'rows', 'gap', 'row_gap', 'column_gap', 'direction', 'wrap', 'align_items', 'align_content', 'justify_content', 'align_self', 'justify_self', 'order', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis', 'column', 'row', 'area', 'item_placement' );
+			if ( $is_v2 ) {
+				$layout_keys[] = 'width';
+			}
 			foreach ( $layout as $field => $value ) {
-				if ( ! in_array( $field, $layout_keys, true ) || ( ! is_scalar( $value ) && ! is_array( $value ) ) ) {
+				if ( ! in_array( $field, $layout_keys, true ) || ( ! is_scalar( $value ) && ! is_array( $value ) ) || ( 'width' === $field && ( ! is_string( $value ) || '' === trim( $value ) ) ) ) {
 					return array( 'error' => 'layout_graph layout facts must use only producer-supported keys.' );
 				}
 			}
@@ -1622,17 +1309,17 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				return array( 'error' => 'layout_graph contains an unsupported canonical variant.' );
 			}
 			foreach ( $variant['layout_patch'] as $property => $value ) {
-				if ( ! isset( self::layout_property_map()[ $property ] ) || ! is_string( $value ) || '' === trim( $value ) || ! isset( $variant['precedence'][ self::layout_property_map()[ $property ] ] ) ) {
+				if ( ! isset( self::layout_property_map( $is_v2 )[ $property ] ) || ! is_string( $value ) || '' === trim( $value ) || ! isset( $variant['precedence'][ self::layout_property_map( $is_v2 )[ $property ] ] ) ) {
 					return array( 'error' => 'layout_graph variant layout facts are malformed.' );
 				}
 			}
 			foreach ( $variant['precedence'] as $property => $precedence ) {
-				if ( ! isset( self::layout_producer_property_map()[ $property ] ) || ! isset( $variant['layout_patch'][ self::layout_producer_property_map()[ $property ] ] ) || ! is_array( $precedence ) || ! self::has_only_keys( $precedence, array( 'source_order', 'specificity', 'important' ) ) || ! is_int( $precedence['source_order'] ?? null ) || ! is_int( $precedence['specificity'] ?? null ) || ! is_bool( $precedence['important'] ?? null ) ) {
+				if ( ! isset( self::layout_producer_property_map( $is_v2 )[ $property ] ) || ! isset( $variant['layout_patch'][ self::layout_producer_property_map( $is_v2 )[ $property ] ] ) || ! is_array( $precedence ) || ! self::has_only_keys( $precedence, array( 'source_order', 'specificity', 'important' ) ) || ! is_int( $precedence['source_order'] ?? null ) || ! is_int( $precedence['specificity'] ?? null ) || ! is_bool( $precedence['important'] ?? null ) ) {
 					return array( 'error' => 'layout_graph variant precedence is malformed.' );
 				}
 			}
 			foreach ( $variant['provenance'] as $fact ) {
-				if ( ! is_array( $fact ) || ! self::has_only_keys( $fact, array( 'source_path', 'source_sha256', 'selector', 'condition', 'properties' ) ) || ! is_string( $fact['source_path'] ?? null ) || ! preg_match( '~^(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9._/-]+$~D', $fact['source_path'] ) || ! preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ?? '' ) || ! is_string( $fact['selector'] ?? null ) || '' === trim( $fact['selector'] ) || strlen( $fact['selector'] ) > 1024 || $fact['condition'] !== $variant['condition'] || ! is_array( $fact['properties'] ?? null ) || array() === $fact['properties'] || count( $fact['properties'] ) > 19 || array_filter( $fact['properties'], static fn( $property ): bool => ! is_string( $property ) || ! isset( self::layout_producer_property_map()[ $property ] ) || ! isset( $variant['layout_patch'][ self::layout_producer_property_map()[ $property ] ] ) ) ) {
+				if ( ! is_array( $fact ) || ! self::has_only_keys( $fact, array( 'source_path', 'source_sha256', 'selector', 'condition', 'properties' ) ) || ! is_string( $fact['source_path'] ?? null ) || ! preg_match( '~^(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9._/-]+$~D', $fact['source_path'] ) || ! preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ?? '' ) || ! is_string( $fact['selector'] ?? null ) || '' === trim( $fact['selector'] ) || strlen( $fact['selector'] ) > 1024 || $fact['condition'] !== $variant['condition'] || ! is_array( $fact['properties'] ?? null ) || array() === $fact['properties'] || count( $fact['properties'] ) > ( $is_v2 ? 20 : 19 ) || array_filter( $fact['properties'], static fn( $property ): bool => ! is_string( $property ) || ! isset( self::layout_producer_property_map( $is_v2 )[ $property ] ) || ! isset( $variant['layout_patch'][ self::layout_producer_property_map( $is_v2 )[ $property ] ] ) ) ) {
 					return array( 'error' => 'layout_graph variant provenance is malformed.' );
 				}
 			}
@@ -1640,7 +1327,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		}
 		return array(
 			'graph' => array(
-				'schema'      => 'generic/computed-layout-graph/v1',
+				'schema'      => $schema,
 				'basis'       => $candidate['basis'],
 				'truncated'   => false,
 				'limits'      => array_intersect_key( $candidate['limits'], array_flip( array( 'nodes', 'depth', 'rules_per_node' ) ) ),
@@ -1649,6 +1336,108 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'diagnostics' => array_slice( $candidate['diagnostics'], 0, 32 ),
 			),
 		);
+	}
+
+	/** @return array{graph?:array<string,mixed>,error?:string} */
+	private static function normalize_form_presentation_graph( mixed $candidate ): array {
+		if ( ! is_array( $candidate ) || 'generic/computed-form-presentation/v1' !== ( $candidate['schema'] ?? null ) || 'source_css_cascade' !== ( $candidate['basis'] ?? null ) || true === ( $candidate['truncated'] ?? null ) || ! is_bool( $candidate['truncated'] ?? null ) || ! self::has_only_keys( $candidate, array( 'schema', 'basis', 'truncated', 'limits', 'controls', 'variants', 'diagnostics' ) ) || ! is_array( $candidate['limits'] ?? null ) || ! self::has_only_keys( $candidate['limits'], array( 'controls', 'rules_per_role' ) ) || 128 !== ( $candidate['limits']['controls'] ?? null ) || 32 !== ( $candidate['limits']['rules_per_role'] ?? null ) || ! is_array( $candidate['controls'] ?? null ) || ! array_is_list( $candidate['controls'] ) || count( $candidate['controls'] ) > 128 || ! is_array( $candidate['variants'] ?? null ) || ! array_is_list( $candidate['variants'] ) || count( $candidate['variants'] ) > 256 || ! is_array( $candidate['diagnostics'] ?? null ) || ! array_is_list( $candidate['diagnostics'] ) || count( $candidate['diagnostics'] ) > 32 || array_filter( $candidate['diagnostics'], static fn( $diagnostic ): bool => ! is_string( $diagnostic ) || '' === trim( $diagnostic ) || strlen( $diagnostic ) > 1100 ) ) {
+			return array( 'error' => 'presentation_graph must be a complete bounded generic/computed-form-presentation/v1 graph.' );
+		}
+		$properties = self::form_presentation_properties();
+		$seen       = array();
+		$controls   = array();
+		foreach ( $candidate['controls'] as $row ) {
+			if ( ! is_array( $row ) || ! self::has_only_keys( $row, array( 'index', 'control', 'label' ) ) || ! is_int( $row['index'] ?? null ) || $row['index'] < 0 || $row['index'] >= 128 || isset( $seen[ $row['index'] ] ) || ( ! isset( $row['control'] ) && ! isset( $row['label'] ) ) ) {
+				return array( 'error' => 'presentation_graph contains an unsupported control row.' );
+			}
+			$clean = array( 'index' => $row['index'] );
+			foreach ( array( 'control', 'label' ) as $role ) {
+				if ( ! isset( $row[ $role ] ) ) {
+					continue;
+				}
+				$normalized = self::normalize_form_presentation_role( $row[ $role ], $properties, null );
+				if ( isset( $normalized['error'] ) ) {
+					return $normalized;
+				}
+				$clean[ $role ] = $normalized['role'];
+			}
+			$seen[ $row['index'] ] = true;
+			$controls[]            = $clean;
+		}
+		$variants = array();
+		foreach ( $candidate['variants'] as $variant ) {
+			if ( ! is_array( $variant ) || ! self::has_only_keys( $variant, array( 'index', 'role', 'condition', 'style_patch', 'precedence', 'provenance' ) ) || ! is_int( $variant['index'] ?? null ) || $variant['index'] < 0 || $variant['index'] >= 128 || ! in_array( $variant['role'] ?? null, array( 'control', 'label' ), true ) || ! self::valid_layout_condition( $variant['condition'] ?? null ) || ! is_array( $variant['style_patch'] ?? null ) || empty( $variant['style_patch'] ) || ! is_array( $variant['precedence'] ?? null ) || ! is_array( $variant['provenance'] ?? null ) ) {
+				return array( 'error' => 'presentation_graph contains an unsupported variant.' );
+			}
+			$role = self::normalize_form_presentation_role(
+				array(
+					'styles'     => $variant['style_patch'],
+					'provenance' => $variant['provenance'],
+				),
+				$properties,
+				$variant['condition']
+			);
+			if ( isset( $role['error'] ) ) {
+				return $role;
+			}
+			foreach ( $variant['precedence'] as $property => $precedence ) {
+				$key = str_replace( '-', '_', (string) $property );
+				if ( ! isset( $properties[ $key ], $role['role']['styles'][ $key ] ) || ! is_array( $precedence ) || ! self::has_only_keys( $precedence, array( 'source_order', 'specificity', 'important' ) ) || ! is_int( $precedence['source_order'] ?? null ) || ! is_int( $precedence['specificity'] ?? null ) || ! is_bool( $precedence['important'] ?? null ) ) {
+					return array( 'error' => 'presentation_graph variant precedence is malformed.' );
+				}
+			}
+			$variants[] = array(
+				'index'       => $variant['index'],
+				'role'        => $variant['role'],
+				'condition'   => $variant['condition'],
+				'style_patch' => $role['role']['styles'],
+				'precedence'  => $variant['precedence'],
+				'provenance'  => $role['role']['provenance'],
+			);
+		}
+		return array(
+			'graph' => array(
+				'schema'      => 'generic/computed-form-presentation/v1',
+				'basis'       => 'source_css_cascade',
+				'truncated'   => false,
+				'limits'      => array(
+					'controls'       => 128,
+					'rules_per_role' => 32,
+				),
+				'controls'    => $controls,
+				'variants'    => $variants,
+				'diagnostics' => $candidate['diagnostics'],
+			),
+		);
+	}
+
+	/** @param array<string,string> $properties @return array{role?:array<string,mixed>,error?:string} */
+	private static function normalize_form_presentation_role( mixed $candidate, array $properties, ?array $condition ): array {
+		if ( ! is_array( $candidate ) || count( $candidate ) !== 2 || ! self::has_only_keys( $candidate, array( 'styles', 'provenance' ) ) || ! is_array( $candidate['styles'] ?? null ) || empty( $candidate['styles'] ) || ! is_array( $candidate['provenance'] ?? null ) || count( $candidate['provenance'] ) > 16 ) {
+			return array( 'error' => 'presentation_graph role facts are malformed.' );
+		}
+		foreach ( $candidate['styles'] as $key => $value ) {
+			if ( ! isset( $properties[ $key ] ) || ! is_string( $value ) || '' === trim( $value ) || strlen( $value ) > 160 ) {
+				return array( 'error' => 'presentation_graph contains an unsupported style fact.' );
+			}
+		}
+		foreach ( $candidate['provenance'] as $fact ) {
+			if ( ! is_array( $fact ) || ! self::has_only_keys( $fact, array( 'source_path', 'source_sha256', 'selector', 'condition', 'properties' ) ) || ! is_string( $fact['source_path'] ?? null ) || ! preg_match( '~^(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9._/-]+$~D', $fact['source_path'] ) || ! preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ?? '' ) || ! is_string( $fact['selector'] ?? null ) || '' === trim( $fact['selector'] ) || strlen( $fact['selector'] ) > 1024 || ( $fact['condition'] ?? null ) !== $condition || ! is_array( $fact['properties'] ?? null ) || empty( $fact['properties'] ) || array_filter( $fact['properties'], static fn( $property ): bool => ! is_string( $property ) || ! isset( $properties[ str_replace( '-', '_', $property ) ], $candidate['styles'][ str_replace( '-', '_', $property ) ] ) ) ) {
+				return array( 'error' => 'presentation_graph provenance is malformed.' );
+			}
+		}
+		return array(
+			'role' => array(
+				'styles'     => $candidate['styles'],
+				'provenance' => $candidate['provenance'],
+			),
+		);
+	}
+
+	/** @return array<string,string> */
+	private static function form_presentation_properties(): array {
+		$properties = array( 'appearance', 'background', 'background_color', 'border', 'border_color', 'border_style', 'border_width', 'border_top_color', 'border_right_color', 'border_bottom_color', 'border_left_color', 'border_top_style', 'border_right_style', 'border_bottom_style', 'border_left_style', 'border_top_width', 'border_right_width', 'border_bottom_width', 'border_left_width', 'border_radius', 'border_top_left_radius', 'border_top_right_radius', 'border_bottom_right_radius', 'border_bottom_left_radius', 'box_sizing', 'color', 'display', 'font_family', 'font_size', 'font_style', 'font_variant', 'font_weight', 'height', 'letter_spacing', 'line_height', 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'max_width', 'min_height', 'min_width', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block_start', 'padding_block_end', 'padding_inline_start', 'padding_inline_end', 'text_align', 'text_decoration', 'text_indent', 'text_transform', 'vertical_align', 'width' );
+		return array_combine( $properties, array_map( static fn( string $property ): string => str_replace( '_', '-', $property ), $properties ) );
 	}
 
 	private static function valid_layout_condition( mixed $condition, int $depth = 0 ): bool {
@@ -1766,8 +1555,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	}
 
 	/** @return array<string,string> */
-	private static function layout_property_map(): array {
-		return array(
+	private static function layout_property_map( bool $include_width = false ): array {
+		$map = array(
 			'display'         => 'display',
 			'columns'         => 'grid-template-columns',
 			'rows'            => 'grid-template-rows',
@@ -1790,11 +1579,15 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'flex_shrink'     => 'flex-shrink',
 			'flex_basis'      => 'flex-basis',
 		);
+		if ( $include_width ) {
+			$map['width'] = 'width';
+		}
+		return $map;
 	}
 
 	/** @return array<string,string> */
-	private static function layout_producer_property_map(): array {
-		return array_flip( self::layout_property_map() );
+	private static function layout_producer_property_map( bool $include_width = false ): array {
+		return array_flip( self::layout_property_map( $include_width ) );
 	}
 
 	/** @param array<int,string> $allowed */
@@ -1830,60 +1623,6 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$normalized['superseded_runtime_selectors'] = $selectors;
 		}
 		return $normalized;
-	}
-
-	/**
-	 * Return plugin dependency definitions.
-	 *
-	 * @param array<string,mixed> $adapter Adapter definition.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function plugin_dependencies( array $adapter ): array {
-		$dependencies = isset( $adapter['dependencies'] ) && is_array( $adapter['dependencies'] ) ? $adapter['dependencies'] : array();
-		return array_values(
-			array_filter(
-				$dependencies,
-				static fn ( mixed $dependency ): bool => is_array( $dependency ) && 'wp_org_plugin' === (string) ( $dependency['type'] ?? '' )
-			)
-		);
-	}
-
-	/**
-	 * Return generated companion-plugin dependency definitions for an adapter.
-	 *
-	 * @param array<string,mixed> $adapter Adapter definition.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function companion_dependencies( array $adapter ): array {
-		$dependencies = isset( $adapter['dependencies'] ) && is_array( $adapter['dependencies'] ) ? $adapter['dependencies'] : array();
-		return array_values(
-			array_filter(
-				$dependencies,
-				static fn ( mixed $dependency ): bool => is_array( $dependency ) && 'companion_plugin' === (string) ( $dependency['type'] ?? '' )
-			)
-		);
-	}
-
-	/**
-	 * Check one plugin dependency availability callback.
-	 *
-	 * @param array<string,mixed> $dependency Dependency definition.
-	 * @return bool
-	 */
-	private static function dependency_available( array $dependency ): bool {
-		$callback = $dependency['availability_callback'] ?? null;
-		return is_callable( $callback ) && true === (bool) call_user_func( $callback );
-	}
-
-	/**
-	 * Return missing API labels for a dependency.
-	 *
-	 * @param array<string,mixed> $dependency Dependency definition.
-	 * @return array<int,string>
-	 */
-	private static function missing_apis( array $dependency ): array {
-		$apis = isset( $dependency['missing_apis'] ) && is_array( $dependency['missing_apis'] ) ? $dependency['missing_apis'] : array();
-		return array_values( array_filter( array_map( 'strval', $apis ) ) );
 	}
 
 	/**

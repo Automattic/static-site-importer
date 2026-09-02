@@ -78,7 +78,7 @@ test( 'provider-constrained topology emits nested fields and an editor-valid cor
 		cwd: process.cwd(),
 		encoding: 'utf8',
 	} );
-	const { markup, depth_markup: depthMarkup, cara_markup: caraMarkup } = JSON.parse( output );
+	const { markup, depth_markup: depthMarkup, deep_width_markup: deepWidthMarkup, cara_markup: caraMarkup } = JSON.parse( output );
 	const warnings = [];
 	const originalWarn = console.warn;
 	const originalError = console.error;
@@ -101,6 +101,8 @@ test( 'provider-constrained topology emits nested fields and an editor-valid cor
 	assert.match( markup, /<button type="submit" class="wp-block-button__link wp-element-button">Send<\/button>/ );
 	assert.doesNotMatch( depthMarkup, /<!-- wp:group/ );
 	assert.match( depthMarkup, /wp:jetpack\/field-text/ );
+	assert.equal( ( deepWidthMarkup.match( /"width":33\.333/g ) || [] ).length, 3 );
+	assert.doesNotMatch( deepWidthMarkup, /<table|<!-- wp:group/ );
 	assert.deepEqual( warnings, [], 'core block parsing emitted no warnings' );
 	const coreButtons = [];
 	const collectCoreButtons = ( generatedBlocks ) => {

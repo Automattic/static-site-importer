@@ -42,6 +42,8 @@ namespace {
 
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-plugin-materializer.php';
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-manager.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 
 	$failures   = array();
@@ -60,17 +62,22 @@ namespace {
 		'product_count' => 1,
 	);
 
-	$dependencies = Static_Site_Importer_Entity_Materializer_Registry::dependency_rows( $adapter, $intent, false );
+	$dependencies = Static_Site_Importer_Dependency_Manager::dependency_rows( $adapter, $intent, false );
 	$assert( isset( $dependencies['woocommerce'] ), 'woocommerce-dependency-row-key-preserved' );
 	$assert( false === ( $dependencies['woocommerce']['active'] ?? true ), 'missing-woocommerce-reports-inactive' );
 	$assert( false === ( $dependencies['woocommerce']['waived'] ?? true ), 'missing-woocommerce-not-waived-by-default' );
 	$assert( array( 'WC_Product_Simple', 'product_post_type', 'product_cat_taxonomy' ) === ( $dependencies['woocommerce']['missing_apis'] ?? array() ), 'missing-woocommerce-api-list-preserved' );
 	$assert( array( 'products_manifest' ) === ( $dependencies['woocommerce']['sources'] ?? array() ), 'dependency-sources-preserved' );
 	$assert( 1 === ( $dependencies['woocommerce']['product_count'] ?? 0 ), 'dependency-product-count-preserved' );
-	$assert( false === Static_Site_Importer_Entity_Materializer_Registry::dependencies_available( $adapter ), 'adapter-dependencies-not-available-without-woo' );
+	$assert( false === Static_Site_Importer_Dependency_Manager::dependencies_available( $adapter ), 'adapter-dependencies-not-available-without-woo' );
 
-	$waived_dependencies = Static_Site_Importer_Entity_Materializer_Registry::dependency_rows( $adapter, $intent, true );
+	$waived_dependencies = Static_Site_Importer_Dependency_Manager::dependency_rows( $adapter, $intent, true );
 	$assert( true === ( $waived_dependencies['woocommerce']['waived'] ?? false ), 'waived-row-records-waiver' );
+	$dependency_plan = Static_Site_Importer_Dependency_Manager::dependency_plan(
+		array( 'dependencies' => array( 'products' => array( 'adapter' => $adapter, 'required' => true ) ) ),
+		str_repeat( 'a', 64 )
+	);
+	$assert( 'woocommerce' === ( $dependency_plan['entries'][0]['slug'] ?? '' ) && array( 'products' ) === ( $dependency_plan['entries'][0]['provenance']['declaration_ids'] ?? array() ), 'dependency-manager-projects-adapter-declarations-to-runtime-plan' );
 
 	$seeding = Static_Site_Importer_Entity_Materializer_Registry::materialize(
 		$adapter,
@@ -137,7 +144,7 @@ namespace {
 			'forms' => array( 'adapter' => $form_adapter, 'manifest' => $bound_forms, 'required' => false ),
 		),
 	);
-	$missing_provider = Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_dependencies( $missing_provider_lifecycle, array( 'materialize_dependencies' => false ) );
+	$missing_provider = Static_Site_Importer_Dependency_Manager::materialize_lifecycle_dependencies( $missing_provider_lifecycle, array( 'materialize_dependencies' => false ) );
 	$assert( is_wp_error( $missing_provider ) && 'static_site_importer_required_runtime_dependency_missing' === $missing_provider->get_error_code(), 'bound-entity-missing-provider-rejects-admission' );
 
 	if ( $failures ) {

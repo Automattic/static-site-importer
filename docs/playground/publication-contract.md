@@ -11,10 +11,14 @@ from that tag and publishes these immutable files:
 - `https://automattic.github.io/static-site-importer/playground/extensions/<tag>/static-site-importer-zstd-php8.5-jspi.manifest.json`
 - `https://automattic.github.io/static-site-importer/playground/extensions/<tag>/static-site-importer-zstd-php8.5-jspi.so`
 - `https://automattic.github.io/static-site-importer/playground/<tag>.blueprint.json`
+- `https://automattic.github.io/static-site-importer/playground/<tag>/static-site-importer-playground-demo.zip`
 
-The versioned blueprint installs `static-site-importer.zip` from the same GitHub
-Release tag. `docs/playground/blueprint.json` is a release template: the
-workflow replaces `{{RELEASE_TAG}}` while publishing it. README uses the safe
+The versioned blueprint installs the infrastructure-only `static-site-importer.zip`
+from the same GitHub Release tag and the demo-only importer block ZIP from GitHub
+Pages. The workflow builds the demo ZIP from `demos/playground-importer/` and
+pins both packages by SHA-256. `docs/playground/blueprint.json` is a release
+template: the workflow replaces `{{RELEASE_TAG}}`, `{{PACKAGE_SHA256}}`, and
+`{{DEMO_PACKAGE_SHA256}}` while publishing it. README uses the safe
 `playground/latest/blueprint.json` convenience URL without loading an optional
 side module. Reproducible consumers use the tagged blueprint URL.
 

@@ -1,0 +1,10 @@
+{
+  "apiVersion": 3,
+  "name": "static-site-importer/importer",
+  "title": "Static Site Importer",
+  "category": "widgets",
+  "description": "Capture a public site or import static site files into a WordPress block theme.",
+  "textdomain": "static-site-importer",
+  "viewScript": "file:./view.js",
+  "style": "file:./style.css"
+}

@@ -5,7 +5,6 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
@@ -407,9 +406,6 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     entrypoint: matrix.entrypoint,
     fixtures,
   });
-  // Discovery is deliberately a separate, short-lived Codebox runtime. It only
-  // asks SSI for its registry-derived plan; package resolution happens on the
-  // host while assembling the following fresh import runtime.
   const dependencyOverlays = normalizeFixtureMatrixDependencyOverlays({
     staticSiteImporterPath,
     staticSiteImporterPlugin: options.staticSiteImporterPlugin,
@@ -421,15 +417,11 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
   const codeboxArtifactsDirectory = batchCodeboxArtifactsDirectory(outputDirectory, batchSuffix);
   const artifactRefs = batchArtifactRefs({ outputDirectory, batchSuffix, batchRecipeFile, outputFile, codeboxArtifactsDirectory });
 
-  let dependencyPlan = null;
-  let resolvedDependencyPlan = null;
   let batchRecipe = null;
   let batchError = null;
   let childCommandFailure = null;
 
   try {
-    dependencyPlan = await discoverFixtureDependencyPlan({ fixtures, outputDirectory, staticSiteImporterPath, options, dependencyOverlays, batchSuffix });
-    resolvedDependencyPlan = await resolveHostDependencyPlan(dependencyPlan, path.join(outputDirectory, 'dependency-cache'));
     batchRecipe = buildFixtureMatrixRecipe({
       matrix: batchMatrix,
       runId: batchMatrix.id,
@@ -440,7 +432,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
       staticSiteImporterPath,
       staticSiteImporterPlugin: options.staticSiteImporterPlugin,
       staticSiteImporterSlug: options.staticSiteImporterSlug,
-      dependencyPlan: resolvedDependencyPlan,
+      phasedDependencyPlanning: true,
       dependencyOverrides,
       dependencyOverlays,
       svgFontEvidence: true,
@@ -451,7 +443,6 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     });
     writeJsonArtifact(batchRecipeFile, batchRecipe);
   } catch (error) {
-    const failureStage = !dependencyPlan ? 'dependency_discovery' : !resolvedDependencyPlan ? 'dependency_resolution' : 'recipe_build';
     batchError = error;
     childCommandFailure = buildWpCodeboxChildCommandFailure({
       error,
@@ -464,7 +455,7 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
       artifactsDir: codeboxArtifactsDirectory,
       wpCodeboxBin: options.wpCodeboxBin,
       artifactRefs,
-      failureStage,
+      failureStage: 'recipe_build',
     });
   }
 
@@ -577,9 +568,8 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     };
   }
 
-  // Dependency discovery, host resolution, and recipe build failures are
-  // planning failures, not sandbox corruption. Re-running each fixture
-  // individually would fail identically — return the typed failure directly.
+  // Recipe-build failures are deterministic planning failures, not sandbox
+  // corruption. Re-running each fixture individually would fail identically.
   if (childCommandFailure?.failure_stage && childCommandFailure.failure_stage !== 'recipe_run') {
     return {
       batchRun,
@@ -620,105 +610,6 @@ export async function runFixtureMatrixBatch({ fixtures, batchIndex, matrix, outp
     error: recoveryErrors[0] || null,
     childCommandFailures: recoveryOutcomes.flatMap((outcome) => outcome.childCommandFailures || []),
   };
-}
-
-export async function resolveHostDependencyPlan(plan, cacheDirectory, fetcher = fetch) {
-  const entries = [];
-  for (const entry of plan.entries) {
-    if (entry.source_kind !== 'wordpress.org-plugin' || !/^[a-z0-9][a-z0-9-_]*$/i.test(entry.slug || '')) throw new Error('Host dependency resolver received an invalid plugin declaration.');
-    const infoUrl = new URL('https://api.wordpress.org/plugins/info/1.2/');
-    infoUrl.searchParams.set('action', 'plugin_information');
-    infoUrl.searchParams.set('request[slug]', entry.slug);
-    const infoResponse = await fetcher(infoUrl, { redirect: 'error' });
-    if (!infoResponse.ok || !/^application\/json\b/i.test(infoResponse.headers.get('content-type') || '')) throw new Error(`WordPress.org plugin info failed for ${entry.slug}.`);
-    const info = await infoResponse.json();
-    const version = String(info?.version || '');
-    const source = String(info?.download_link || '');
-    const url = new URL(source);
-    if (!/^https:$/.test(url.protocol) || url.hostname !== 'downloads.wordpress.org' || !version || !/^\d[0-9A-Za-z._+-]*$/.test(version)) throw new Error(`WordPress.org plugin info returned an invalid immutable package for ${entry.slug}.`);
-    const cacheKey = `${entry.slug}-${version}`;
-    const cachePath = path.join(cacheDirectory, cacheKey, 'package.zip');
-    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-    let bytes;
-    if (fs.existsSync(cachePath)) bytes = fs.readFileSync(cachePath);
-    else {
-      const download = await fetcher(url, { redirect: 'error' });
-      const contentLength = Number(download.headers.get('content-length') || 0);
-      if (!download.ok || !/^application\/(zip|octet-stream)\b/i.test(download.headers.get('content-type') || '') || (contentLength && contentLength > 100 * 1024 * 1024)) throw new Error(`WordPress.org package download failed policy validation for ${entry.slug}.`);
-      bytes = Buffer.from(await download.arrayBuffer());
-      if (!bytes.length || bytes.length > 100 * 1024 * 1024) throw new Error(`WordPress.org package exceeds host size policy for ${entry.slug}.`);
-      fs.writeFileSync(cachePath, bytes);
-    }
-    const sha256 = createHash('sha256').update(bytes).digest('hex');
-    entries.push({ ...entry, host_resolution: { schema: 'static-site-importer/host-package-resolution/v1', slug: entry.slug, version, source_url: url.toString(), archive_sha256: sha256, archive_path: cachePath } });
-  }
-  return { ...plan, entries };
-}
-
-async function discoverFixtureDependencyPlan({ fixtures, outputDirectory, staticSiteImporterPath, options, dependencyOverlays = [], batchSuffix }) {
-  const plans = [];
-  for (const fixture of fixtures) {
-    const fixtureDirectory = path.join(outputDirectory, fixture.id);
-    const runtimeDirectory = `/wordpress/wp-content/uploads/static-site-importer-fixture-matrix/${fixture.id}`;
-    const planName = `dependency-plan-${batchSuffix}.json`;
-    const artifactsDir = path.join(outputDirectory, 'dependency-discovery', `${batchSuffix}-${fixture.id}`);
-    const recipeFile = path.join(artifactsDir, 'recipe.json');
-    const outputFile = path.join(artifactsDir, 'output.json');
-    fs.mkdirSync(artifactsDir, { recursive: true });
-    const recipe = {
-      schema: 'wp-codebox/workspace-recipe/v1',
-      runtime: { wp: options.wordpressVersion || 'latest', blueprint: {} },
-      inputs: {
-        stagedFiles: [{ source: path.join(fixtureDirectory, 'artifact.json'), target: path.join(runtimeDirectory, 'artifact.json') }],
-        extra_plugins: [{ source: staticSiteImporterPath, slug: options.staticSiteImporterSlug || 'static-site-importer', activate: true }],
-        ...(dependencyOverlays.length ? { dependency_overlays: dependencyOverlays } : {}),
-      },
-      workflow: { steps: [
-        { command: 'wordpress.wp-cli', args: [`command=plugin activate ${(options.staticSiteImporterPlugin || 'static-site-importer/static-site-importer.php')}`] },
-        { command: 'wordpress.wp-cli', args: [`command=static-site-importer plan-artifact-dependencies --artifact=${path.join(runtimeDirectory, 'artifact.json')} --slug=${fixture.id} --name=${JSON.stringify(fixture.label)} --output=${path.join(runtimeDirectory, planName)}`] },
-      ] },
-      artifacts: { directory: artifactsDir, typed: [{ name: 'dependency-plan', type: 'static-site-importer/runtime-dependency-plan', path: path.join(runtimeDirectory, planName), required: true, parseJson: true, contentType: 'application/json', payloadSchema: 'static-site-importer/runtime-dependency-plan/v1' }] },
-    };
-    writeJsonArtifact(recipeFile, recipe);
-    const discovery = await runWpCodeboxRecipe({ recipeFile, artifactsDir, outputFile, wpCodeboxBin: options.wpCodeboxBin, inactivityTimeoutMs: batchInactivityTimeoutMs(options) });
-    const plan = findDependencyPlan(artifactsDir);
-    if (!plan) throw new Error(`Dependency discovery did not persist a valid plan for fixture ${fixture.id}.`);
-    // Discovery only mounts SSI and its declared transformer overlays. Provider
-    // packages are resolved and activated by the final recipe's extra_plugins
-    // setup, before its workflow begins; asking this runtime for a provider
-    // receipt would incorrectly require Jetpack/Woo during planning.
-    plans.push(plan);
-  }
-  const entries = new Map();
-  for (let index = 0; index < plans.length; index += 1) {
-    const fixtureId = fixtures[index].id;
-    for (const entry of plans[index].entries) {
-      const key = `${entry.source_kind}:${entry.slug}:${entry.plugin_entrypoint}`;
-      const existing = entries.get(key);
-      entries.set(key, {
-        ...(existing || entry),
-        fixture_ids: [...new Set([...(existing?.fixture_ids || []), fixtureId])].sort(),
-      });
-    }
-  }
-  return { schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: plans.map((plan) => plan.artifact_sha256).sort().join(','), entries: [...entries.values()] };
-}
-
-function findDependencyPlan(directory) {
-  const visit = (current) => {
-    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
-      const child = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        const found = visit(child);
-        if (found) return found;
-      } else if (entry.isFile() && entry.name.endsWith('.json')) {
-        const parsed = parseJsonText(fs.readFileSync(child, 'utf8'));
-        if (parsed?.schema === 'static-site-importer/runtime-dependency-plan/v1' && Array.isArray(parsed.entries)) return parsed;
-      }
-    }
-    return null;
-  };
-  return visit(directory);
 }
 
 function createFixtureMatrixProgress(matrix, options) {
@@ -844,13 +735,16 @@ function materializeFixtureEditorCanvasArtifacts({ fixture, outputDirectory, cod
 }
 
 function rewriteEditorEvidencePaths(value, rewrites) {
+  if (typeof value === 'string') {
+    return rewritePath(value, rewrites);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => rewriteEditorEvidencePaths(item, rewrites));
+  }
   if (!value || typeof value !== 'object') {
     return value;
   }
-  const files = value.files && typeof value.files === 'object'
-    ? Object.fromEntries(Object.entries(value.files).map(([key, filePath]) => [key, rewritePath(filePath, rewrites)]))
-    : undefined;
-  return { ...value, ...(files ? { files } : {}), ...(value.screenshot ? { screenshot: rewritePath(value.screenshot, rewrites) } : {}) };
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, rewriteEditorEvidencePaths(item, rewrites)]));
 }
 
 export function materializeVisualCompareArtifacts(input = {}) {

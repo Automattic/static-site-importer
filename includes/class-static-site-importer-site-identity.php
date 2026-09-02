@@ -3,7 +3,7 @@
  * Site-identity primitive.
  *
  * Single source of truth for deriving a site's { name, slug, title } from an
- * import source. Every consumer (REST playground fallback, theme generator,
+ * import source. Every consumer (REST adapter, theme generator,
  * companion plugin, page materializer) resolves identity through this class so
  * the human-facing name, the theme/plugin slug, and the extracted document
  * title stay consistent instead of drifting toward a generic constant.

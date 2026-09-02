@@ -32,4 +32,12 @@ $assert( 'passed' === $resolved_fallbacks['production_status'] && 0 === $resolve
 $unresolved_fallbacks = Static_Site_Importer_Quality_Budget_Admission::evaluate( $source_fallback_plan, array(), array( 'quality_budget' => array( 'mode' => 'production', 'max_fallback_count' => 0 ) ) );
 $assert( 'failed' === $unresolved_fallbacks['production_status'] && 2 === $unresolved_fallbacks['evidence']['fallback_count'], 'unresolved provider-materializable fallbacks fail zero-fallback admission' );
 
+$materialized_counts = Static_Site_Importer_Quality_Budget_Admission::evaluate(
+	array( 'quality' => array( 'metrics' => array( 'block_count' => 12, 'fallback_count' => 4 ) ) ),
+	array(),
+	array(),
+	array( 'quality' => array( 'metrics' => array( 'block_count' => 12, 'fallback_count' => 4 ), 'block_count' => 18, 'core_html_block_count' => 3, 'fallback_count' => 2 ) )
+);
+$assert( 18 === $materialized_counts['evidence']['native_block_count'] && 3 === $materialized_counts['evidence']['core_html_block_count'] && 2 === $materialized_counts['evidence']['fallback_count'], 'materialized report counts override nested compiler estimates' );
+
 print "quality budget admission smoke passed\n";

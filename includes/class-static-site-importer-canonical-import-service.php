@@ -12,6 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Direct_Artifact_Import' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-direct-artifact-import.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Portable_Source_Manifest' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-portable-source-manifest.php';
+}
 
 class Static_Site_Importer_Canonical_Import_Service {
 	private static string $cli_report_destination = '';
@@ -71,6 +74,9 @@ class Static_Site_Importer_Canonical_Import_Service {
 			}
 			$source     = array_merge( $source, $resolved_source, array( 'type' => $type ) );
 			$provenance = array_merge( $provenance, array( 'ref' => $reference ), isset( $resolved['provenance'] ) && is_array( $resolved['provenance'] ) ? $resolved['provenance'] : array() );
+			if ( isset( $resolved['payload_reader'] ) && is_object( $resolved['payload_reader'] ) ) {
+				$payload_reader = $resolved['payload_reader'];
+			}
 		}
 		if ( 'url' === $type ) {
 			if ( 'apply' === $operation ) {
@@ -106,7 +112,25 @@ class Static_Site_Importer_Canonical_Import_Service {
 		if ( is_wp_error( $runtime ) ) {
 			return self::error( (string) $runtime->get_error_code(), $runtime->get_error_message(), $runtime->get_error_data() );
 		}
-		$artifact = $runtime['artifact'];
+		$runtime_artifact = $runtime['artifact'];
+		$source_path      = is_string( $input['source_metadata']['source_path'] ?? null ) ? trim( $input['source_metadata']['source_path'] ) : '';
+		$source_parts     = '' !== $source_path ? ( function_exists( 'wp_parse_url' ) ? wp_parse_url( $source_path ) : parse_url( $source_path ) ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Standalone import smoke tests run without WordPress URL helpers.
+		if (
+			! isset( $runtime_artifact['provenance']['source_url'] ) &&
+			is_array( $source_parts ) &&
+			in_array( strtolower( (string) ( $source_parts['scheme'] ?? '' ) ), array( 'http', 'https' ), true ) &&
+			'' !== (string) ( $source_parts['host'] ?? '' ) &&
+			! isset( $source_parts['user'], $source_parts['pass'] )
+		) {
+			$runtime_artifact['provenance'] = array_merge(
+				is_array( $runtime_artifact['provenance'] ?? null ) ? $runtime_artifact['provenance'] : array(),
+				array( 'source_url' => $source_path )
+			);
+		}
+		$artifact = Static_Site_Importer_Portable_Source_Manifest::project( $runtime_artifact );
+		if ( is_wp_error( $artifact ) ) {
+			return self::error( (string) $artifact->get_error_code(), $artifact->get_error_message(), $artifact->get_error_data() );
+		}
 		if ( empty( $artifact ) ) {
 			return self::error( 'static_site_importer_missing_website_artifact', 'The source did not normalize to a website artifact.' );
 		}
@@ -122,6 +146,10 @@ class Static_Site_Importer_Canonical_Import_Service {
 			$args['_static_site_importer_payload_reader'] = $payload_reader;
 		}
 		if ( self::direct_artifact_continuation_available() && in_array( $type, array( 'html', 'files', 'zip' ), true ) && 'resume' !== $args['runtime_lifecycle_phase'] && self::artifact_html_page_count( $artifact ) > 1 ) {
+			if ( 'apply' === $operation && '' === $args['runtime_lifecycle_phase'] ) {
+				$args['runtime_lifecycle_phase']         = 'prepare';
+				$args['runtime_lifecycle_invocation_id'] = wp_generate_uuid4();
+			}
 			$result = Static_Site_Importer_Direct_Artifact_Import::start( $artifact, $args, $type, $operation, $provenance, $payload_reader ?? null );
 			return is_wp_error( $result ) ? self::error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() ) : $result;
 		}

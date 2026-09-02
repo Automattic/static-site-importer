@@ -41,10 +41,10 @@ jobs:
       HOMEBOY_VERSION: v0.298.1
       HOMEBOY_SHA256: 543a1eb7348a9dcde3bee671dbbeaabb9486781d350792bed8a77424fdad60d5
       HOMEBOY_EXTENSIONS_REF: 615fe3632d0cd30e9a70d5aea82be80460d733d5
-      WP_CODEBOX_VERSION: v0.21.0
-      WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0.21.0.tgz
-      WP_CODEBOX_SHA256: 8f5fdd58ff4c78186155e29de2dec07004ac2eacba93131bb39d32f466272990
-      WP_CODEBOX_SHA: b1ef4aa66a34924c3760d5176c58a497d7eaabcd
+      WP_CODEBOX_VERSION: v0.26.7
+      WP_CODEBOX_WORKSPACE_ASSET: wp-codebox-workspace-0.26.7.tgz
+      WP_CODEBOX_SHA256: c9d4b524ee1e1f8328b1f7bb530d905c64fc910b75318dffe5b516e5292e18f0
+      WP_CODEBOX_SHA: e05936aceef8ef103249c75ad5e1f4c2f297b928
       WORDPRESS_VERSION: ${{ inputs.wordpress-version }}
 
     steps:
@@ -139,9 +139,34 @@ jobs:
           curl --fail --location --retry 3 --retry-all-errors --output "$RUNNER_TEMP/wp-codebox/workspace.tgz" "https://github.com/Automattic/wp-codebox/releases/download/${WP_CODEBOX_VERSION}/${WP_CODEBOX_WORKSPACE_ASSET}"
           echo "${WP_CODEBOX_SHA256}  $RUNNER_TEMP/wp-codebox/workspace.tgz" | sha256sum --check --status
           npm install --global --prefix "$RUNNER_TEMP/wp-codebox" "$RUNNER_TEMP/wp-codebox/workspace.tgz"
-          node "$RUNNER_TEMP/wp-codebox/lib/node_modules/wp-codebox-workspace/node_modules/playwright/cli.js" install --with-deps chromium
           "$RUNNER_TEMP/wp-codebox/bin/wp-codebox" commands --json
           echo "WP_CODEBOX_BIN=$RUNNER_TEMP/wp-codebox/bin/wp-codebox" >> "$GITHUB_ENV"
+
+      - name: Validate solved-site recipe contract
+        working-directory: static-site-importer
+        env:
+          CONTRACT_RECIPE: ${{ runner.temp }}/solved-site-recipe-contract.json
+          STATIC_SITE_IMPORTER_PATH: ${{ github.workspace }}/static-site-importer
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import { buildFixtureMatrixRecipe } from './lib/fixture-matrix/steps/recipe-builder.mjs';
+
+          const recipe = buildFixtureMatrixRecipe({
+            matrix: { id: 'solved-site-contract', fixtures: [{ id: 'solved-site', label: 'solved-site', directory: '/fixtures/solved-site', entrypoint: 'index.html' }] },
+            staticSiteImporterPath: process.env.STATIC_SITE_IMPORTER_PATH,
+            artifactsDirectory: process.env.RUNNER_TEMP,
+            phasedDependencyPlanning: true,
+            editorValidation: false,
+            visualParity: false,
+            attemptId: 'contract',
+          });
+          fs.writeFileSync(process.env.CONTRACT_RECIPE, `${JSON.stringify(recipe, null, 2)}\n`);
+          NODE
+          "$WP_CODEBOX_BIN" recipe validate --recipe "$CONTRACT_RECIPE" --json
+
+      - name: Install pinned WP Codebox browser
+        run: node "$RUNNER_TEMP/wp-codebox/lib/node_modules/wp-codebox-workspace/node_modules/playwright/cli.js" install --with-deps chromium
 
       - name: Record pinned runtime inputs
         env:

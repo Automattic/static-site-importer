@@ -441,11 +441,11 @@ class Static_Site_Importer_URL_Site_Collector {
 			}
 
 			$file = array(
-				'path'      => $path,
+				'path'       => $path,
 				'source_url' => $resource_url,
-				'mime_type' => $resource['content_type'],
-				'body'      => $body,
-				'is_text'   => self::is_text( $resource['content_type'], $path ),
+				'mime_type'  => $resource['content_type'],
+				'body'       => $body,
+				'is_text'    => self::is_text( $resource['content_type'], $path ),
 			);
 			if ( 'html' === $resource['kind'] ) {
 				$file['metadata'] = array( 'route_path' => $route_paths[ $resource_url ] );
@@ -561,6 +561,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			'artifact'        => array(
 				'schema'          => 'blocks-engine/php-transformer/site-artifact/v1',
 				'entrypoint'      => $paths[ $entry_resource_url ],
+				'provenance'      => array( 'source_url' => $site_url ),
 				'compiler_limits' => $compiler_limits,
 				'metadata'        => array( 'snapshot' => $snapshot ),
 				'files'           => $files,

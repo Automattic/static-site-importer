@@ -66,7 +66,9 @@ import {
   normalizeLiveWpParityReport,
   selectFixtureSurfaces,
   buildFixtureArtifact,
+  buildFixturePolicyArtifact,
   createFixtureMatrix,
+  pathinfoExtension,
   editorBlockValidationStep,
   EDITOR_VALIDATE_BLOCKS_COMMAND,
   EDITOR_VALIDATION_METHOD,
@@ -100,11 +102,11 @@ import {
 
 import { materializeGeneratedArtifactFixtures } from '../lib/artifact-intake.mjs';
 import { collectQualityMetrics } from '../lib/fixture-matrix/collectors/quality-metrics.mjs';
-import { collectEditorPresentation, collectSurfaceRecords } from '../lib/fixture-matrix/collectors/run-intake.mjs';
+import { collectEditorInteraction, collectEditorPresentation, collectSurfaceRecords } from '../lib/fixture-matrix/collectors/run-intake.mjs';
 import { runWpCodeboxRecipe, wpCodeboxBin } from './wp-codebox/recipe.mjs';
 
 const completeEditorPresentation = {
-  schema: 'static-site-importer/editor-presentation-evidence/v2',
+  schema: 'static-site-importer/editor-presentation-evidence/v3',
   provider_schema: 'wp-codebox/editor-presentation/v1',
   canvas_document_type: 'iframe',
   iframe_count: 1,
@@ -115,6 +117,19 @@ const completeEditorPresentation = {
   missing_identities: [],
   expected_identities_complete: true,
   coverage_complete: true,
+  idle_canvas: { schema: 'wp-codebox/editor-idle-canvas/v1', status: 'captured', onboarding_modal_count: 0 },
+  matched_rendering: { schema: 'wp-codebox/editor-presentation-match/v1', status: 'passed', equivalent_canvas_widths: true, major_geometry_drift: false, unreadable_content: false, hidden_content: false, unresolved_asset_count: 0, frontend_screenshot: 'matched/frontend.png', editor_screenshot: 'matched/editor.png', diff_screenshot: 'matched/diff.png' },
+};
+
+const completeEditorInteraction = {
+  schema: 'static-site-importer/editor-interaction-evidence/v1',
+  provider_schema: 'wp-codebox/editor-actions/v1',
+  selection: { status: 'ok' },
+  text_mutation: { status: 'ok', mutation_status: 'applied' },
+  block_movement: { status: 'ok', mutation_status: 'applied' },
+  save: { schema: 'wp-codebox/editor-save/v1', status: 'saved', marker_present: true },
+  reload: { status: 'ok' },
+  post_save_validation: { schema: 'wp-codebox/editor-validity/v1', status: 'clean' },
 };
 
 const completeEditorValidation = {
@@ -134,7 +149,7 @@ const packageRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fixtureRoot = path.join(packageRoot, 'tests', 'fixtures', 'fixture-matrix');
 const syntheticFixtureCount = 3;
 
-test('editor presentation intake compares inspected iframe identities with front-page CSS assets', () => {
+test('editor presentation intake compares provider-resolved expected and observed identities', () => {
   const globalIdentity = 'a'.repeat(64);
   const frontPageIdentity = 'b'.repeat(64);
   const otherRouteIdentity = 'c'.repeat(64);
@@ -145,6 +160,10 @@ test('editor presentation intake compares inspected iframe identities with front
         canvasDocumentType: 'iframe',
         iframeCount: 1,
         generatedPresentationIdentities: [frontPageIdentity, globalIdentity, globalIdentity.toUpperCase()],
+        expectedGeneratedPresentationIdentities: [globalIdentity, frontPageIdentity],
+        expectedGeneratedPresentationIdentitiesComplete: true,
+        idleCanvas: { schema: 'wp-codebox/editor-idle-canvas/v1', status: 'captured', onboardingModalCount: 0 },
+        matchedRendering: { schema: 'wp-codebox/editor-presentation-match/v1', status: 'passed', equivalentCanvasWidths: true, majorGeometryDrift: false, unreadableContent: false, hiddenContent: false, unresolvedAssetCount: 0, frontendScreenshot: 'front.png', editorScreenshot: 'editor.png', diffScreenshot: 'diff.png' },
       },
     },
     import_report: {
@@ -159,7 +178,7 @@ test('editor presentation intake compares inspected iframe identities with front
       },
     },
   }), {
-    schema: 'static-site-importer/editor-presentation-evidence/v2',
+    schema: 'static-site-importer/editor-presentation-evidence/v3',
     provider_schema: 'wp-codebox/editor-presentation/v1',
     canvas_document_type: 'iframe',
     iframe_count: 1,
@@ -170,18 +189,38 @@ test('editor presentation intake compares inspected iframe identities with front
     missing_identities: [],
     expected_identities_complete: true,
     coverage_complete: true,
+    idle_canvas: { schema: 'wp-codebox/editor-idle-canvas/v1', status: 'captured', onboarding_modal_count: 0 },
+    matched_rendering: { schema: 'wp-codebox/editor-presentation-match/v1', status: 'passed', equivalent_canvas_widths: true, major_geometry_drift: false, unreadable_content: false, hidden_content: false, unresolved_asset_count: 0, frontend_screenshot: 'front.png', editor_screenshot: 'editor.png', diff_screenshot: 'diff.png' },
   });
 });
 
-test('editor presentation intake uses bounded site-plan hashes when the import report is an artifact ref', () => {
+test('editor interaction intake requires typed state transitions without retaining step bulk', () => {
+  assert.deepEqual(collectEditorInteraction([{ command: 'wordpress.editor-actions', metadata: { recipe_phase: 'editor-persistence' } }, {
+    command: 'wordpress.editor-actions',
+    steps: [
+      { index: 0, kind: 'navigate', status: 'ok' },
+      { index: 2, kind: 'insertBlock', status: 'ok', editorMutation: { status: 'applied', before: { contentSha256: 'before' }, after: { contentSha256: 'after' } } },
+      { index: 3, kind: 'selectBlock', status: 'ok' },
+      { index: 4, kind: 'moveBlock', status: 'ok', editorMutation: { status: 'applied' } },
+      { index: 5, kind: 'savePost', status: 'ok' },
+      { index: 6, kind: 'reload', status: 'ok' },
+    ],
+    summary: {
+      editorSave: { schema: 'wp-codebox/editor-save/v1', status: 'saved', markerPresent: true, contentSha256: 'saved' },
+      editorValidity: { schema: 'wp-codebox/editor-validity/v1', status: 'clean', warningCount: 0 },
+    },
+  }]), completeEditorInteraction);
+});
+
+test('editor presentation intake does not reconstruct expected identities from bounded site-plan data', () => {
   const identity = 'd'.repeat(64);
   assert.deepEqual(collectEditorPresentation({
-    editor_open: { summary: { editorPresentation: { schema: 'wp-codebox/editor-presentation/v1', canvasDocumentType: 'iframe', iframeCount: 1, generatedPresentationIdentities: [] } } },
+    editor_open: { summary: { editorPresentation: { schema: 'wp-codebox/editor-presentation/v1', canvasDocumentType: 'iframe', iframeCount: 1, generatedPresentationIdentities: [], expectedGeneratedPresentationIdentities: [identity], expectedGeneratedPresentationIdentitiesComplete: true } } },
     import_report: { artifact_ref: 'import-report.json' },
   }, {
     wordpress_site_plan: { assets: [{ kind: 'css', payload_sha256: identity }] },
   }), {
-    schema: 'static-site-importer/editor-presentation-evidence/v2',
+    schema: 'static-site-importer/editor-presentation-evidence/v3',
     provider_schema: 'wp-codebox/editor-presentation/v1',
     canvas_document_type: 'iframe',
     iframe_count: 1,
@@ -192,6 +231,8 @@ test('editor presentation intake uses bounded site-plan hashes when the import r
     missing_identities: [identity],
     expected_identities_complete: true,
     coverage_complete: false,
+    idle_canvas: { schema: '', status: '', onboarding_modal_count: -1 },
+    matched_rendering: { schema: '', status: '', equivalent_canvas_widths: false, major_geometry_drift: null, unreadable_content: null, hidden_content: null, unresolved_asset_count: -1, frontend_screenshot: '', editor_screenshot: '', diff_screenshot: '' },
   });
 });
 
@@ -215,7 +256,7 @@ test('bounded site-plan fallback retains scopes and cannot certify truncated pre
   assert.equal(evidence.wordpress_site_plan.assets_truncated, true);
   assert.deepEqual(evidence.wordpress_site_plan.assets[0].scopes, [{ kind: 'page', route_path: 'about' }]);
   assert.equal(presentation.expected_identities.includes(identity(0)), false);
-  assert.equal(presentation.expected_identities.includes(identity(1)), true);
+  assert.equal(presentation.expected_identities.includes(identity(1)), false);
   assert.equal(presentation.expected_identities_complete, false);
   assert.equal(presentation.coverage_complete, false);
 });
@@ -262,7 +303,7 @@ test('matrix evidence requires and summarizes the canonical materialization rece
 
 test('matrix evidence fails closed when the materialization receipt is absent', () => {
   const evidence = collectMatrixEvidence({ import_report: { blocks_engine: { transformer: { package: 'package', version: '1.0.0', reference: 'a'.repeat(40) }, wordpress_site_plan: { schema: 'blocks-engine/wordpress-site-plan/v2', assets: [] } } } });
-  assert.equal(evidence.readiness, 'legacy_evidence_missing');
+  assert.equal(evidence.readiness, 'runtime_evidence_incomplete');
   assert.ok(evidence.missing.includes('materialization_receipt'));
 });
 
@@ -480,6 +521,7 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
         status: 'passed',
         artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/cv/screenshot.png' }],
         editor_presentation: completeEditorPresentation,
+        editor_interaction: completeEditorInteraction,
         visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
         block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
         editor_validation: completeEditorValidation,
@@ -490,6 +532,7 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
         status: 'failed',
         artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/artist/screenshot.png' }],
         editor_presentation: completeEditorPresentation,
+        editor_interaction: completeEditorInteraction,
         block_composition: { block_total: 10, native_block_count: 9, core_html_block_count: 1 },
         editor_validation: completeEditorValidation,
         editor_quality: { editor_validated_block_total: 10, editor_invalid_count: 0, core_html_block_count: 1 },
@@ -500,6 +543,7 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
         status: 'failed',
         artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/coffee/screenshot.png' }],
         editor_presentation: completeEditorPresentation,
+        editor_interaction: completeEditorInteraction,
         editor_validation: completeEditorValidation,
         editor_quality: { editor_validated_block_total: 12, editor_invalid_count: 0, core_html_block_count: 0 },
         visual_diff_regions: [{ dominant_cause: 'font_metric_drift', pixel_count: 900 }],
@@ -509,6 +553,7 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
         status: 'failed',
         artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/saas/screenshot.png' }],
         editor_presentation: completeEditorPresentation,
+        editor_interaction: completeEditorInteraction,
         visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
         editor_validation: completeEditorValidation,
         editor_quality: { editor_validated_block_total: 6, editor_invalid_count: 1, core_html_block_count: 0 },
@@ -561,7 +606,7 @@ test('gutenberg incompatibility registry separates fixture decision axes', () =>
   assert.equal(decisions.cv.native_editability_status, 'native_editable');
   assert.equal(decisions.cv.solved_candidate, true);
   assert.equal(decisions.cv.acceptance_status, 'solved_candidate');
-  assert.equal(decisions.cv.solved_candidate_reason, 'passed frontend visual parity, editor presentation coverage, block validity, and native editability without limitation patterns');
+  assert.equal(decisions.cv.solved_candidate_reason, 'passed frontend visual parity, matched editor presentation and interaction, block validity, and native editability without limitation patterns');
   assert.equal(decisions.artist.native_editability_status, 'custom_block_candidate');
   assert.equal(decisions.artist.frontend_visual_status, 'visual_mismatch');
   assert.equal(decisions.artist.editor_canvas_status, 'visible');
@@ -771,6 +816,30 @@ test('fixture matrix run config projects an explicit visual viewport into browse
   assert.deepEqual(input.visualParityViewport, { width: 390, height: 844 });
   assert.equal(fixtureMatrixHomeboySettings(config).SSI_FIXTURE_MATRIX_VISUAL_PARITY_VIEWPORT_WIDTH, '390');
   assert.equal(fixtureMatrixHomeboySettings(config).SSI_FIXTURE_MATRIX_VISUAL_PARITY_VIEWPORT_HEIGHT, '844');
+});
+
+test('fixture matrix selects classic materialization without duplicating the visual parity lane', () => {
+  const config = normalizeFixtureMatrixRunConfig({
+    fixtureRoot: '/tmp/fixtures',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+    themeMaterialization: 'classic',
+  });
+  assert.equal(fixtureMatrixRecipeInput(config).themeMaterialization, 'classic');
+  assert.equal(fixtureMatrixHomeboySettings(config).SSI_FIXTURE_MATRIX_THEME_MATERIALIZATION, 'classic');
+
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot });
+  const classicRecipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: '/tmp/artifacts', staticSiteImporterPath: '/tmp/static-site-importer', themeMaterialization: 'classic' });
+  const classicImport = classicRecipe.workflow.steps.find((step) => /static-site-importer validate-artifact/.test(step.args?.[0] || ''));
+  assert.match(classicImport.args[0], /--theme-materialization=classic(?: |$)/);
+  assert.ok(classicRecipe.workflow.steps.some((step) => step.command === 'wordpress.visual-compare'));
+
+  const defaultRecipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: '/tmp/artifacts', staticSiteImporterPath: '/tmp/static-site-importer' });
+  const defaultImport = defaultRecipe.workflow.steps.find((step) => /static-site-importer validate-artifact/.test(step.args?.[0] || ''));
+  assert.doesNotMatch(defaultImport.args[0], /--theme-materialization=/);
+  assert.throws(
+    () => normalizeFixtureMatrixRunConfig({ fixtureRoot: '/tmp/fixtures', staticSiteImporterPath: '/tmp/static-site-importer', themeMaterialization: 'hybrid' }),
+    /themeMaterialization must be one of: block, classic/,
+  );
 });
 
 test('configured pixelmatch colour threshold reaches the comparator and the pixel-count gate stays host-side', () => {
@@ -1592,10 +1661,10 @@ test('fixture matrix labels reports without runtime provenance and materializati
     codeboxOutput: { fixture_id: 'simple-site', status: 'passed', import_report: { blocks_engine: { available: true } } },
   });
 
-  assert.equal(result.fixtures[0].matrix_evidence.readiness, 'legacy_evidence_missing');
+  assert.equal(result.fixtures[0].matrix_evidence.readiness, 'runtime_evidence_incomplete');
   assert.deepEqual(result.fixtures[0].matrix_evidence.missing, ['transformer_package', 'transformer_version', 'transformer_reference', 'wordpress_site_plan', 'materialization_receipt']);
   assert.equal(result.summary.matrix_evidence_readiness.status, 'incomplete');
-  assert.equal(result.summary.matrix_evidence_readiness.counts.legacy_evidence_missing, 1);
+  assert.equal(result.summary.matrix_evidence_readiness.counts.runtime_evidence_incomplete, 1);
 });
 
 test('materialization sidecars retain bounded evidence after oversized import stdout', () => {
@@ -1992,7 +2061,7 @@ test('fixture attribution records missing lineage as a blind spot instead of def
     results: [{
       fixture_id: 'simple-site',
       status: 'failed',
-      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'legacy_evidence_missing', missing: ['transformer_reference', 'wordpress_site_plan', 'materialization_receipt'] },
+      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'runtime_evidence_incomplete', missing: ['transformer_reference', 'wordpress_site_plan', 'materialization_receipt'] },
       diagnostics: [{ kind: 'visual_parity_mismatch', message: 'Visual mismatch has no lineage.' }],
     }],
   });
@@ -2009,7 +2078,7 @@ test('materialization attribution reports missing transformer provenance as a bo
     results: [{
       fixture_id: 'simple-site',
       status: 'failed',
-      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'legacy_evidence_missing', missing: ['transformer_package', 'transformer_version', 'transformer_reference'] },
+      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'runtime_evidence_incomplete', missing: ['transformer_package', 'transformer_version', 'transformer_reference'] },
       diagnostics: [{ kind: 'missing_asset', attribution_boundary: 'materialization', candidate_repo: 'static-site-importer', message: 'Materialization omitted a stylesheet.' }],
     }],
   });
@@ -2039,7 +2108,7 @@ test('versioned fixture evidence replaces an unproven caller-supplied owner', ()
     results: [{
       fixture_id: 'simple-site',
       status: 'failed',
-      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'legacy_evidence_missing', missing: ['transformer_reference'] },
+      matrix_evidence: { schema: 'static-site-importer/fixture-matrix-runtime-evidence/v1', readiness: 'runtime_evidence_incomplete', missing: ['transformer_reference'] },
       diagnostics: [{ kind: 'layout_shift', candidate_repo: 'blocks-engine', message: 'Strict contract lacks ownership evidence.' }],
     }],
   });
@@ -3374,6 +3443,11 @@ test('fixture matrix intake consumes native editor-open output as canvas evidenc
           screenshot: 'files/browser/editor-screenshot.png',
           editorState: 'files/browser/editor-state.json',
           editorValidity: 'files/browser/editor-validity.json',
+          screenshots: [
+            'files/browser/presentation-frontend.png',
+            'files/browser/presentation-editor.png',
+            'files/browser/presentation-diff.png',
+          ],
         },
         summary: { editor: { blockCount: 4 } },
       },
@@ -3390,6 +3464,9 @@ test('fixture matrix intake consumes native editor-open output as canvas evidenc
     'files/browser/editor-screenshot.png',
     'files/browser/editor-state.json',
     'files/browser/editor-validity.json',
+    'files/browser/presentation-frontend.png',
+    'files/browser/presentation-editor.png',
+    'files/browser/presentation-diff.png',
   ]);
   assert.equal(decision.editor_canvas_status, 'visible');
 });
@@ -3417,6 +3494,9 @@ test('editor canvas artifacts are persisted in the matrix artifact root and refs
   mkdirSync(sourceDirectory, { recursive: true });
   writeFileSync(path.join(sourceDirectory, 'editor-screenshot.png'), 'screenshot');
   writeFileSync(path.join(sourceDirectory, 'editor-state.json'), '{"blocks":3}');
+  writeFileSync(path.join(sourceDirectory, 'presentation-frontend.png'), 'frontend');
+  writeFileSync(path.join(sourceDirectory, 'presentation-editor.png'), 'editor');
+  writeFileSync(path.join(sourceDirectory, 'presentation-diff.png'), 'diff');
   const result = materializeEditorCanvasArtifacts({
     outputDirectory,
     codeboxArtifactsDirectory,
@@ -3426,9 +3506,27 @@ test('editor canvas artifacts are persisted in the matrix artifact root and refs
         artifact_refs: [
           { artifact_id: 'editor-open-screenshot', kind: 'editor-canvas', path: 'files/browser/editor-screenshot.png' },
           { artifact_id: 'editor-open-editorState', kind: 'editor-canvas', path: 'files/browser/editor-state.json' },
+          { artifact_id: 'editor-open-screenshots-1', kind: 'editor-canvas', path: 'files/browser/presentation-frontend.png' },
+          { artifact_id: 'editor-open-screenshots-2', kind: 'editor-canvas', path: 'files/browser/presentation-editor.png' },
+          { artifact_id: 'editor-open-screenshots-3', kind: 'editor-canvas', path: 'files/browser/presentation-diff.png' },
         ],
         editor_canvas: { screenshot: 'files/browser/editor-screenshot.png' },
-        editor_open: { files: { screenshot: 'files/browser/editor-screenshot.png', editorState: 'files/browser/editor-state.json' } },
+        editor_open: {
+          files: {
+            screenshot: 'files/browser/editor-screenshot.png',
+            editorState: 'files/browser/editor-state.json',
+            screenshots: ['files/browser/presentation-frontend.png', 'files/browser/presentation-editor.png', 'files/browser/presentation-diff.png'],
+          },
+          summary: {
+            editorPresentation: {
+              matchedRendering: {
+                frontendScreenshot: 'files/browser/presentation-frontend.png',
+                editorScreenshot: 'files/browser/presentation-editor.png',
+                diffScreenshot: 'files/browser/presentation-diff.png',
+              },
+            },
+          },
+        },
         surfaces: [{
           surface_id: 'front-page',
           artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'editor-canvas', path: 'files/browser/editor-screenshot.png' }],
@@ -3440,20 +3538,31 @@ test('editor canvas artifacts are persisted in the matrix artifact root and refs
   const fixture = result.result.fixtures[0];
   const screenshotPath = path.join(outputDirectory, 'editor-canvas', 'simple-site', 'editor-screenshot.png');
   const statePath = path.join(outputDirectory, 'editor-canvas', 'simple-site', 'editor-state.json');
+  const frontendPath = path.join(outputDirectory, 'editor-canvas', 'simple-site', 'presentation-frontend.png');
+  const editorPath = path.join(outputDirectory, 'editor-canvas', 'simple-site', 'presentation-editor.png');
+  const diffPath = path.join(outputDirectory, 'editor-canvas', 'simple-site', 'presentation-diff.png');
 
   assert.equal(existsSync(screenshotPath), true);
   assert.equal(existsSync(statePath), true);
   assert.equal(fixture.editor_canvas.screenshot, screenshotPath);
   assert.equal(fixture.editor_open.files.editorState, statePath);
+  assert.deepEqual(fixture.editor_open.files.screenshots, [frontendPath, editorPath, diffPath]);
+  assert.equal(fixture.editor_open.summary.editorPresentation.matchedRendering.diffScreenshot, diffPath);
   assert.equal(fixture.surfaces[0].editor_open.files.screenshot, screenshotPath);
-  assert.deepEqual(fixture.artifact_refs.map((ref) => ref.path), [screenshotPath, statePath]);
+  assert.deepEqual(fixture.artifact_refs.map((ref) => ref.path), [screenshotPath, statePath, frontendPath, editorPath, diffPath]);
   assert.deepEqual(fixture.artifact_refs.map((ref) => ref.artifact_id), [
     'editor_canvas_simple-site_editor-open-screenshot',
     'editor_canvas_simple-site_editor-open-editorState',
+    'editor_canvas_simple-site_editor-open-screenshots-1',
+    'editor_canvas_simple-site_editor-open-screenshots-2',
+    'editor_canvas_simple-site_editor-open-screenshots-3',
   ]);
   assert.deepEqual(result.artifacts, {
     'editor_canvas_simple-site_editor-open-screenshot': { path: screenshotPath },
     'editor_canvas_simple-site_editor-open-editorState': { path: statePath },
+    'editor_canvas_simple-site_editor-open-screenshots-1': { path: frontendPath },
+    'editor_canvas_simple-site_editor-open-screenshots-2': { path: editorPath },
+    'editor_canvas_simple-site_editor-open-screenshots-3': { path: diffPath },
   });
 });
 
@@ -3613,6 +3722,120 @@ test('materializes generated artifact roots into matrix-compatible fixtures', ()
   assert.equal(betaArtifact.files.some((file) => file.path.includes('generated-artifact-metadata')), false);
 });
 
+test('positive matrix artifacts retain compiled static output and receipt build-source exclusions', () => {
+  const fixtureRoot = mkdtempSync(path.join(tmpdir(), 'ssi-compiled-static-output-'));
+  const fixtureDirectory = path.join(fixtureRoot, 'compiled-site');
+  mkdirSync(path.join(fixtureDirectory, 'css'), { recursive: true });
+  mkdirSync(path.join(fixtureDirectory, 'js'), { recursive: true });
+  writeFileSync(path.join(fixtureDirectory, 'index.html'), '<main>Compiled static output</main>');
+  writeFileSync(path.join(fixtureDirectory, 'css', 'site.css'), 'main { color: green; }');
+  writeFileSync(path.join(fixtureDirectory, 'js', 'site.js'), 'console.log("static");');
+  writeFileSync(path.join(fixtureDirectory, 'quartz.config.ts'), 'export default {};');
+
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot });
+  const artifact = buildFixtureArtifact(matrix.fixtures[0]);
+
+  assert.deepEqual(matrix.fixtures.map((fixture) => fixture.id), ['compiled-site']);
+  assert.deepEqual(artifact.files.map((file) => file.path), [
+    'website/css/site.css',
+    'website/index.html',
+    'website/js/site.js',
+  ]);
+  assert.deepEqual(artifact.source_metadata.artifact_exclusions, [{
+    schema: 'static-site-importer/fixture-artifact-exclusion/v1',
+    source_path: realpathSync(path.join(fixtureDirectory, 'quartz.config.ts')),
+    artifact_path: 'website/quartz.config.ts',
+    reason: 'not_static_import_content',
+  }]);
+  const policyArtifact = buildFixturePolicyArtifact(matrix.fixtures[0]);
+  assert.deepEqual(policyArtifact.files.map((file) => file.path), ['website/quartz.config.ts']);
+  assert.equal(policyArtifact.files[0].source_path, realpathSync(path.join(fixtureDirectory, 'quartz.config.ts')));
+  assert.equal(stageFixtureSource(matrix.fixtures[0], mkdtempSync(path.join(tmpdir(), 'ssi-compiled-static-stage-'))).includes('quartz.config.ts'), false);
+});
+
+test('generated negative policy lane gates unexpected acceptance while expected rejection preserves the positive lane', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-negative-policy-'));
+  try {
+    const fixture = path.join(root, 'site');
+    mkdirSync(fixture, { recursive: true });
+    writeFileSync(path.join(fixture, 'index.html'), '<main>Safe</main>');
+    writeFileSync(path.join(fixture, '.config.ts'), 'export default {};');
+    const matrix = createFixtureMatrix({ fixture_root: root });
+    const recipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: '/tmp/artifacts', staticSiteImporterPath: '/tmp/ssi', editorValidation: false, visualParity: false });
+    const lane = recipe.workflow.steps.find((step) => step.metadata?.phase === 'negative-policy');
+    assert.equal(buildFixtureArtifact(matrix.fixtures[0]).files.some((file) => file.path === 'website/.config.ts'), false);
+    assert.ok(lane);
+    assert.equal(lane.metadata.phase, 'negative-policy');
+    assert.equal(lane.metadata.classification, 'expected_policy_rejection');
+    assert.match(lane.args[0], /static-site-importer validate-artifact/);
+    assert.match(lane.args[0], /policy-rejection-artifact\.json/);
+    assert.match(lane.args[0], /--format=fixture-matrix/);
+    assert.match(lane.args[0], /--allow-failure/);
+    assert.doesNotMatch(lane.args[0], /Static_Site_Importer_Content_Policy/);
+    const outputDirectory = path.join(root, 'output');
+    mkdirSync(path.join(outputDirectory, 'site'), { recursive: true });
+    writeFileSync(path.join(outputDirectory, 'site', 'policy-rejection-artifact.json'), JSON.stringify(buildFixturePolicyArtifact(matrix.fixtures[0])));
+    const expectedRejection = collectFixtureMatrixRunResults({
+      matrix,
+      outputDirectory,
+      codeboxOutput: [
+        {
+          fixture_id: 'site',
+          metadata: lane.metadata,
+          status: 'failed',
+          success: false,
+          summary: { error_code: 'static_site_importer_executable_source_rejected' },
+          diagnostics: [{ code: 'static_site_importer_executable_source_rejected' }],
+        },
+        { fixture_id: 'site', status: 'passed', success: true },
+      ],
+    });
+    assert.equal(expectedRejection.fixtures[0].status, 'passed');
+    assert.equal(expectedRejection.summary.failed, 0);
+    assert.equal(expectedRejection.fixtures[0].policy_rejections.classification, 'expected_policy_rejection');
+    assert.equal(expectedRejection.fixtures[0].policy_rejections.receipts[0].status, 'rejected');
+
+    const unexpectedAcceptance = collectFixtureMatrixRunResults({
+      matrix,
+      outputDirectory,
+      codeboxOutput: [
+        { fixture_id: 'site', metadata: lane.metadata, status: 'passed', success: true },
+        { fixture_id: 'site', status: 'passed', success: true },
+      ],
+    });
+    assert.equal(unexpectedAcceptance.fixtures[0].status, 'failed');
+    assert.equal(unexpectedAcceptance.fixtures[0].success, false);
+    assert.equal(unexpectedAcceptance.summary.failed, 1);
+    assert.equal(unexpectedAcceptance.fixtures[0].policy_rejections.receipts[0].status, 'unexpectedly_accepted');
+    assert.deepEqual(unexpectedAcceptance.fixtures[0].diagnostics, [
+      {
+        kind: 'fixture_policy_unexpected_acceptance',
+        loss_class: 'fixture_policy_unexpected_acceptance',
+        gate: true,
+        fixture_scoped: true,
+        message: 'Fixture policy probe accepted excluded non-static source content.',
+      },
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('matrix extension handling matches PHP PATHINFO semantics and counts mjs as JavaScript', () => {
+  assert.equal(pathinfoExtension('.env'), 'env');
+  assert.equal(pathinfoExtension('.config.ts'), 'ts');
+  assert.equal(pathinfoExtension('assets/app.MJS'), 'mjs');
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-mjs-artifact-'));
+  try {
+    mkdirSync(path.join(root, 'site'), { recursive: true });
+    writeFileSync(path.join(root, 'site', 'index.html'), '<main>MJS</main>');
+    writeFileSync(path.join(root, 'site', 'app.mjs'), 'export {};');
+    const artifact = buildFixtureArtifact(createFixtureMatrix({ fixture_root: root }).fixtures[0]);
+    assert.equal(artifact.summary.has_js, true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 test('keeps a generated multi-page website as one matrix fixture', async () => {
   const sourceRoot = mkdtempSync(path.join(tmpdir(), 'ssi-generated-multi-page-artifact-'));
   const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-generated-multi-page-output-'));
@@ -4029,6 +4252,7 @@ test('result evidence writes the derived coverage into summary and finding packe
 function fixtureMatrixRunConfigTestValue(key, field) {
   if (field.boolean) return key === 'editorValidation' || key === 'visualParityGate' ? 'false' : 'true';
   if (field.list) return [`${key}-one`, ` ${key}-two `, `${key}-one`];
+  if (field.enum) return field.enum.at(-1);
   if (field.string) return `/${key}`;
   if (field.integer) return String(field.integer.min === 0 ? 2 : 3);
   return '1.5';
@@ -4037,6 +4261,7 @@ function fixtureMatrixRunConfigTestValue(key, field) {
 function fixtureMatrixRunConfigFallbackValue(key, field) {
   if (field.boolean) return 'false';
   if (field.list) return `${key}-fallback`;
+  if (field.enum) return field.enum[0];
   if (field.string) return `/fallback-${key}`;
   if (field.integer) return String(field.integer.min === 0 ? 1 : 2);
   return '2.5';
@@ -4525,12 +4750,6 @@ test('fixture matrix records generic child command failures for failed WP Codebo
 function wpCodeboxBin() { return '/tmp/wp-codebox'; }
 function wpCodeboxCommand(bin) { return { command: bin, args: [] }; }
 async function runWpCodeboxRecipe(options) {
-  const recipe = require('node:fs').readFileSync(options.recipeFile, 'utf8');
-  if (recipe.includes('plan-artifact-dependencies')) {
-    require('node:fs').mkdirSync(options.artifactsDir, { recursive: true });
-    require('node:fs').writeFileSync(require('node:path').join(options.artifactsDir, 'dependency-plan.json'), JSON.stringify({ schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: 'a'.repeat(64), entries: [] }));
-    return { exitCode: 0, outputFile: options.outputFile, json: {} };
-  }
   if (options.cwd !== require('node:path').dirname(options.outputFile)) {
     throw new Error('recipe-run did not receive the matrix output directory as cwd');
   }
@@ -4651,14 +4870,6 @@ import { join } from 'node:path';
 const outputIndex = process.argv.indexOf('--output');
 const outputFile = outputIndex >= 0 ? process.argv[outputIndex + 1] : '';
 const fixtureId = process.env.SSI_TEST_FAKE_WP_CODEBOX_FIXTURE_ID || 'large-output-fixture';
-const recipeFile = process.argv[process.argv.indexOf('--recipe') + 1];
-if (readFileSync(recipeFile, 'utf8').includes('plan-artifact-dependencies')) {
-  const artifacts = process.argv[process.argv.indexOf('--artifacts') + 1];
-  mkdirSync(artifacts, { recursive: true });
-  writeFileSync(join(artifacts, 'dependency-plan.json'), JSON.stringify({ schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: 'a'.repeat(64), entries: [] }));
-  if (outputFile) writeFileSync(outputFile, '{}');
-  process.exit(0);
-}
 if (outputFile) {
   writeFileSync(outputFile, JSON.stringify({ cwd: process.cwd(), results: [{ fixture_id: fixtureId, status: 'succeeded' }] }));
 }
@@ -5388,29 +5599,6 @@ async function runWpCodeboxRecipe(options = {}) {
     captured.push(JSON.parse(recipe));
     fs.writeFileSync(capturedRecipes, JSON.stringify(captured));
   }
-  if (recipe.includes('plan-artifact-dependencies')) {
-    // Parse batch number from the discovery artifacts path (e.g. .../discovery/001-fixture-01/).
-    const discoveryMatch = String(options.recipeFile).match(/discovery\\/(\\d{3})/);
-    const discoveryBatch = discoveryMatch ? Number(discoveryMatch[1]) : 0;
-    inFlight += 1;
-    peakInFlight = Math.max(peakInFlight, inFlight);
-    recordPeak();
-    const unit = Number(process.env.SSI_TEST_RECIPE_UNIT_MS || '15');
-    const delay = discoveryBatch * unit;
-    await new Promise((resolve) => setTimeout(resolve, Math.max(1, delay)));
-    inFlight -= 1;
-    const throwDiscoveryBatch = Number(process.env.SSI_TEST_RECIPE_DISCOVERY_THROW_BATCH || '0');
-    if (throwDiscoveryBatch && throwDiscoveryBatch === discoveryBatch) {
-      const error = new Error('discovery failed for batch ' + discoveryBatch);
-      error.code = 19;
-      error.stdout = '';
-      error.stderr = 'discovery boom';
-      throw error;
-    }
-    fs.mkdirSync(options.artifactsDir, { recursive: true });
-    fs.writeFileSync(require('node:path').join(options.artifactsDir, 'dependency-plan.json'), JSON.stringify({ schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: 'a'.repeat(64), entries: [] }));
-    return { exitCode: 0, outputFile: options.outputFile, json: {} };
-  }
   const batchNumber = batchNumberFromOutput(options.outputFile);
   inFlight += 1;
   peakInFlight = Math.max(peakInFlight, inFlight);
@@ -5474,7 +5662,6 @@ const CONCURRENCY_ENV_KEYS = [
   'SSI_TEST_RECIPE_BATCH_COUNT',
   'SSI_TEST_RECIPE_UNIT_MS',
   'SSI_TEST_RECIPE_THROW_BATCH',
-  'SSI_TEST_RECIPE_DISCOVERY_THROW_BATCH',
   'SSI_TEST_RECIPE_CAPTURE_FILE',
 ];
 
@@ -5529,7 +5716,7 @@ test('runFixtureMatrix caps WP Codebox batches in flight at the configured concu
   }
 });
 
-test('runFixtureMatrix uses the same candidate transformer overlay for dependency discovery and final import', async () => {
+test('runFixtureMatrix uses the candidate transformer overlay for planning and import in one recipe', async () => {
   const snapshot = snapshotConcurrencyEnv();
   const workspace = setupConcurrencyWorkspace('ssi-discovery-overlay-', 1);
   const transformerPath = path.join(workspace.root, 'blocks-engine', 'php-transformer');
@@ -5556,7 +5743,8 @@ test('runFixtureMatrix uses the same candidate transformer overlay for dependenc
 
     assert.equal(runtimeError, null);
     const recipes = JSON.parse(readFileSync(captureFile, 'utf8'));
-    const discoveryRecipe = recipes.find((recipe) => recipe.workflow.steps.some((step) => step.args?.some((arg) => arg.includes('plan-artifact-dependencies'))));
+    assert.equal(recipes.length, 1, 'planning and import execute in one WP Codebox runtime');
+    const combinedRecipe = recipes[0];
     const importRecipe = JSON.parse(readFileSync(summary.runtime.batches[0].recipe_file, 'utf8'));
     const expectedOverlay = {
       kind: 'composer-package',
@@ -5566,7 +5754,9 @@ test('runFixtureMatrix uses the same candidate transformer overlay for dependenc
       reference,
     };
 
-    assert.deepEqual(discoveryRecipe.inputs.dependency_overlays, [expectedOverlay]);
+    assert.ok(combinedRecipe.workflow.steps.some((step) => step.args?.some((arg) => arg.includes('plan-artifact-dependencies'))));
+    assert.ok(combinedRecipe.workflow.steps.some((step) => step.metadata?.phase === 'import'));
+    assert.deepEqual(combinedRecipe.inputs.dependency_overlays, [expectedOverlay]);
     assert.deepEqual(importRecipe.inputs.dependency_overlays, [expectedOverlay]);
   } finally {
     restoreConcurrencyEnv(snapshot);
@@ -5665,49 +5855,6 @@ test('runFixtureMatrix isolates a throwing batch so sibling batches still comple
   }
 });
 
-test('runFixtureMatrix isolates a dependency-discovery failure so sibling batches still complete', async () => {
-  const snapshot = snapshotConcurrencyEnv();
-  const workspace = setupConcurrencyWorkspace('ssi-discovery-isolation-', 4);
-  process.env.HOMEBOY_WP_CODEBOX_RECIPE_HELPER = workspace.helperPath;
-  process.env.SSI_TEST_RECIPE_BATCH_COUNT = '4';
-  process.env.SSI_TEST_RECIPE_UNIT_MS = '5';
-  process.env.SSI_TEST_RECIPE_DISCOVERY_THROW_BATCH = '2';
-
-  try {
-    const { summary, runtimeError } = await runFixtureMatrix({
-      id: 'discovery-isolation-matrix',
-      fixtureRoot: workspace.fixtureRoot,
-      outputDirectory: workspace.outputDirectory,
-      staticSiteImporterPath: workspace.staticSiteImporter,
-      run: true,
-      batchSize: 1,
-      concurrency: 4,
-      visualParity: false,
-    });
-
-    // The discovery failure surfaces as the runtime error + exit code, but the
-    // run still produced a full summary rather than rejecting.
-    assert.ok(runtimeError);
-    assert.match(runtimeError.message, /discovery failed/);
-    assert.equal(summary.runtime.exit_code, 19);
-
-    // Exactly one child-command failure with the correct stage.
-    const failures = summary.runtime.child_command_failures;
-    assert.equal(failures.length, 1);
-    assert.equal(failures[0].batch_id, 'batch-002');
-    assert.equal(failures[0].failure_stage, 'dependency_discovery');
-    assert.equal(failures[0].exit_status, 19);
-
-    // All four batches still ran; the three non-throwing siblings succeeded,
-    // proving one batch's discovery failure did not sink the others.
-    assert.equal(summary.runtime.batches.length, 4);
-    assert.equal(summary.result_summary.succeeded, 3);
-    assert.equal(summary.result_summary.failed, 1);
-  } finally {
-    restoreConcurrencyEnv(snapshot);
-  }
-});
-
 test('runFixtureMatrix recovers healthy fixtures from a poisoned batch sandbox', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'ssi-fixture-recovery-'));
   const staticSiteImporter = path.join(root, 'static-site-importer');
@@ -5728,12 +5875,6 @@ function fixtureIds(recipeFile) {
 function wpCodeboxBin() { return '/tmp/wp-codebox'; }
 function wpCodeboxCommand(bin) { return { command: bin, args: [] }; }
 async function runWpCodeboxRecipe(options) {
-  const recipe = fs.readFileSync(options.recipeFile, 'utf8');
-  if (recipe.includes('plan-artifact-dependencies')) {
-    fs.mkdirSync(options.artifactsDir, { recursive: true });
-    fs.writeFileSync(require('node:path').join(options.artifactsDir, 'dependency-plan.json'), JSON.stringify({ schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: 'a'.repeat(64), entries: [] }));
-    return { exitCode: 0, outputFile: options.outputFile, json: {} };
-  }
   const ids = fixtureIds(options.recipeFile);
   if (ids.includes('hanging')) {
     const error = new Error('fixture hanging exceeded its deadline');
@@ -5788,14 +5929,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const recipePath = process.argv[process.argv.indexOf('--recipe') + 1];
 const recipe = fs.readFileSync(recipePath, 'utf8');
-if (recipe.includes('plan-artifact-dependencies')) {
-  const artifacts = process.argv[process.argv.indexOf('--artifacts') + 1];
-  const output = process.argv[process.argv.indexOf('--output') + 1];
-  fs.mkdirSync(artifacts, { recursive: true });
-  fs.writeFileSync(path.join(artifacts, 'dependency-plan.json'), JSON.stringify({ schema: 'static-site-importer/runtime-dependency-plan/v1', artifact_sha256: 'a'.repeat(64), entries: [] }));
-  fs.writeFileSync(output, '{}');
-  process.exit(0);
-}
 const recovery = path.basename(recipePath).match(/-recovery-(.+)\\.json$/);
 const ids = recovery ? [recovery[1]] : [...new Set(recipe.split('--slug=').slice(1).map((part) => part.split(' ')[0]))];
 if (ids.includes('hanging')) {
@@ -6044,6 +6177,14 @@ test('recipe runs editor-validate-blocks against imported content after each imp
   const preflightStep = recipe.workflow.steps.find((step) => step.metadata?.phase === 'editor-preflight');
   assert.equal(preflightStep.command, 'wordpress.wp-cli');
   assert.match(preflightStep.args[0], /woocommerce_onboarding_profile/);
+  assert.match(preflightStep.args[0], /persisted_preferences/);
+  assert.match(preflightStep.args[0], /welcomeGuide/);
+  const transportedEval = preflightStep.args[0]
+    .replace(/^command=eval '/, '')
+    .replace(/'$/, '')
+    .replace(/'\\''/g, "'");
+  const preflightLint = spawnSync('php', ['-l'], { input: `<?php\n${transportedEval}`, encoding: 'utf8' });
+  assert.equal(preflightLint.status, 0, preflightLint.stderr);
   const identityStep = recipe.workflow.steps.find((step) => step.metadata?.phase === 'materialized-surface-identity');
   assert.equal(identityStep.command, 'wordpress.wp-cli');
   assert.equal(identityStep.metadata.phase, 'materialized-surface-identity');
@@ -6051,6 +6192,8 @@ test('recipe runs editor-validate-blocks against imported content after each imp
   assert.equal(editorOpenStep.command, 'wordpress.editor-open');
   assert.ok(editorOpenStep.args.includes('target=front-page'));
   assert.ok(editorOpenStep.args.includes('capture=screenshot,editor-state,editor-validity'));
+  assert.ok(editorOpenStep.args.includes('presentation-url=/'));
+  assert.ok(editorOpenStep.args.includes('presentation-frontend-selector=.wp-block-post-content'));
   assert.ok(editorOpenStep.args.includes('artifact-prefix=files/browser/editor-open/simple-site'));
   const editorStep = recipe.workflow.steps.find((step) => step.command === EDITOR_VALIDATE_BLOCKS_COMMAND);
   assert.equal(editorStep.command, EDITOR_VALIDATE_BLOCKS_COMMAND);
@@ -6072,6 +6215,9 @@ test('recipe runs editor-validate-blocks against imported content after each imp
   assert.equal(persistenceStep.command, 'wordpress.editor-actions');
   assert.ok(persistenceStep.args.includes('target=front-page'));
   assert.ok(persistenceStep.args.some((arg) => arg.includes('"kind":"savePost"') && arg.includes('ssi-solved-editability-simple-site')));
+  assert.ok(persistenceStep.args.some((arg) => arg.includes('"kind":"insertBlock"') && arg.includes('ssi-solved-editability-simple-site')));
+  assert.ok(persistenceStep.args.some((arg) => arg.includes('"kind":"selectBlock"')));
+  assert.ok(persistenceStep.args.some((arg) => arg.includes('"kind":"moveBlock"') && arg.includes('"position":1')));
   assert.ok(persistenceStep.args.some((arg) => arg.includes('"kind":"reload"')));
   assert.ok(persistenceStep.args.some((arg) => arg.includes('"kind":"inspectState"')));
   const persistenceVerifyStep = solvedCandidateRecipe.workflow.steps.find((step) => step.metadata?.phase === 'editor-persistence-verify');
@@ -6141,6 +6287,7 @@ test('fixture matrix browser surfaces default to front page and opt into bounded
   assert.ok(editorOpenSteps[0].args.includes('artifact-prefix=files/browser/editor-open/artist'));
   assert.ok(editorOpenSteps[1].args.includes('post-type=page'));
   assert.ok(editorOpenSteps[1].args.includes('post-slug=about'));
+  assert.ok(editorOpenSteps[1].args.includes('presentation-url=/about/'));
   assert.equal(editorOpenSteps[1].args.some((arg) => arg.startsWith('url=')), false);
   assert.ok(editorOpenSteps[1].args.includes('artifact-prefix=files/browser/editor-open/artist/about'));
   assert.ok(editorOpenSteps[2].args.includes('post-type=page'));
@@ -9249,6 +9396,7 @@ test('solved fixture that stays solved_candidate keeps solved_candidate status',
         status: 'passed',
         artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: 'files/browser/editor-open/cv/screenshot.png' }],
         editor_presentation: completeEditorPresentation,
+        editor_interaction: completeEditorInteraction,
         visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
         block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
         editor_validation: completeEditorValidation,
@@ -9278,6 +9426,7 @@ test('solved-candidate gate hard-fails regressions while preserving acceptance e
     status: 'passed',
     artifact_refs: [{ artifact_id: 'editor-open-screenshot', kind: 'screenshot', path: `files/browser/editor-open/${fixtureId}/screenshot.png` }],
     editor_presentation: completeEditorPresentation,
+    editor_interaction: completeEditorInteraction,
     visual_parity_artifacts: { comparison: { mismatch_ratio: 0 } },
     block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
     editor_validation: completeEditorValidation,
@@ -9322,6 +9471,7 @@ test('solved-candidate registry rejects counts-only editor validation and contra
     block_composition: { block_total: 8, native_block_count: 8, core_html_block_count: 0 },
     editor_validation: completeEditorValidation,
     editor_presentation: completeEditorPresentation,
+    editor_interaction: completeEditorInteraction,
   };
   const countsOnly = buildGutenbergIncompatibilityRegistry({
     fixtures: [{ ...base, editor_validation: { total_blocks: 8, valid_blocks: 8, invalid_blocks: 0 } }], findings: [],
@@ -9331,10 +9481,10 @@ test('solved-candidate registry rejects counts-only editor validation and contra
   }).fixture_decisions[0];
 
   assert.equal(countsOnly.acceptance_status, 'evidence_gap');
-  assert.equal(contradictoryPresentation.acceptance_status, 'editor_blocker');
+  assert.equal(contradictoryPresentation.acceptance_status, 'evidence_gap');
 });
 
-test('solved-candidate registry accepts complete v1 presentation evidence only with complete raw plan provenance', () => {
+test('solved-candidate registry rejects legacy stylesheet-only presentation evidence', () => {
   const identity = 'e'.repeat(64);
   const fixture = {
     fixture_id: 'legacy',
@@ -9349,6 +9499,7 @@ test('solved-candidate registry accepts complete v1 presentation evidence only w
       expected_identities: [identity],
       observed_identities: [identity],
     },
+    editor_interaction: completeEditorInteraction,
     import_report: { blocks_engine: { wordpress_site_plan: { asset_count: 1, assets: [{ kind: 'css', content_hash: identity, scopes: [{ kind: 'global' }] }] } } },
   };
   const complete = buildGutenbergIncompatibilityRegistry({ fixtures: [fixture], findings: [] }).fixture_decisions[0];
@@ -9356,6 +9507,6 @@ test('solved-candidate registry accepts complete v1 presentation evidence only w
     fixtures: [{ ...fixture, import_report: { blocks_engine: { wordpress_site_plan: { asset_count: 2, assets: fixture.import_report.blocks_engine.wordpress_site_plan.assets } } } }], findings: [],
   }).fixture_decisions[0];
 
-  assert.equal(complete.acceptance_status, 'solved_candidate');
-  assert.equal(ambiguous.acceptance_status, 'editor_blocker');
+  assert.equal(complete.acceptance_status, 'evidence_gap');
+  assert.equal(ambiguous.acceptance_status, 'evidence_gap');
 });
