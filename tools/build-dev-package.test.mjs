@@ -3,17 +3,19 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import test from "node:test"
-import { buildDevelopmentPackage, buildIdentity, commandFailureMessage, developmentComposerManifest, overlayWorkingTree, packagedIdentityFile, parseArguments, provenance, worktreeIdentity } from "./build-dev-package.mjs"
+import { buildDevelopmentPackage, buildIdentity, commandFailureMessage, developmentComposerManifest, overlayWorkingTree, packagedIdentityFile, parseArguments, provenance, runtimeProfileSettings, worktreeIdentity } from "./build-dev-package.mjs"
 
 test("parses explicit Blocks Engine inputs and sensible defaults", () => {
   const defaults = parseArguments([], "/workspace/static-site-importer")
   assert.equal(defaults.blocksEnginePath, "/workspace/blocks-engine")
   assert.equal(defaults.blocksEngineRef, "origin/trunk")
   assert.equal(defaults.outputDir, "/workspace/static-site-importer/build")
+  assert.equal(defaults.runtimeProfile, null)
   assert.deepEqual(parseArguments(["--blocks-engine-path", "../engine", "--blocks-engine-ref", "feature/head", "--output-dir", "artifacts"], "/workspace/static-site-importer"), {
     blocksEnginePath: "/workspace/engine",
     blocksEngineRef: "feature/head",
     outputDir: "/workspace/static-site-importer/artifacts",
+    runtimeProfile: null,
   })
 })
 
@@ -27,6 +29,20 @@ test("development Composer metadata uses isolated, non-symlinked transformer sna
   ])
   assert.equal(overridden.require["automattic/blocks-engine-php-transformer"], "*@dev")
   assert.equal(overridden.require["automattic/blocks-engine-figma-transformer"], "*@dev")
+  const htmlOnly = developmentComposerManifest(original, "/tmp/package", false)
+  assert.equal(htmlOnly.repositories.length, 2)
+  assert.equal(htmlOnly.require["automattic/blocks-engine-figma-transformer"], undefined)
+})
+
+test("runtime profile arguments retain the canonical Homeboy package selector", () => {
+  assert.deepEqual(parseArguments(["--runtime-profile", "html-site-import"], "/workspace/static-site-importer"), {
+    blocksEnginePath: "/workspace/blocks-engine",
+    blocksEngineRef: "origin/trunk",
+    outputDir: "/workspace/static-site-importer/build",
+    runtimeProfile: "html-site-import",
+  })
+  assert.deepEqual(runtimeProfileSettings(null), {})
+  assert.deepEqual(runtimeProfileSettings("html-site-import"), { manifest: "runtime-package-manifest.json", profile: "html-site-import" })
 })
 
 test("provenance binds immutable refs, the dirty identity, lock, and ZIP", async () => {

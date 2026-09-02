@@ -32,6 +32,7 @@
     { "path": "tests/smoke-missing-author-stylesheet-diagnostics.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-permission-filter.php", "environment": "standalone-php" },
     { "path": "tests/smoke-current-site-capabilities.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-html-runtime-capabilities.php", "environment": "standalone-php" },
     { "path": "tests/smoke-default-content.php", "environment": "standalone-php" },
     { "path": "tests/smoke-direct-artifact-import.php", "environment": "standalone-php" },
     { "path": "tests/smoke-rest-import.php", "environment": "standalone-php" },

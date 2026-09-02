@@ -54,6 +54,10 @@ test("website artifact import profile is complete and capability scoped", async 
     }
   }
   candidates.add("runtime-package-manifest.json")
+  for (const path of profile.required_files) {
+    assert.ok((await stat(join(root, path))).isFile(), `required runtime file is absent: ${path}`)
+    candidates.add(path)
+  }
   for (const path of await listFiles(join(root, "vendor"))) candidates.add(path)
   const selected = [...candidates].filter((path) => profile.selectors.some((selector) => selector.type === "file" ? path === selector.path : path.startsWith(selector.path))).sort()
 
@@ -83,6 +87,39 @@ test("website artifact import profile is complete and capability scoped", async 
     assert.deepEqual(archive, selected, "release archive must contain exactly the website-artifact-import profile")
   }
 })
+
+test("HTML site import profile excludes optional conversion dependencies", async () => {
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"))
+  const profile = manifest.profiles?.["html-site-import"]
+  assert.ok(profile)
+  assert.deepEqual(profile.capabilities, ["html-site-import"])
+  assert.deepEqual(profile.abilities, manifest.profiles["website-artifact-import"].abilities)
+
+  const selected = await selectedFiles(profile)
+  for (const required of profile.required_files) assert.ok(selected.includes(required), `missing required HTML runtime file: ${required}`)
+  assert.ok(selected.some((path) => path.startsWith("vendor/automattic/blocks-engine-php-transformer/")))
+  for (const excluded of ["vendor/automattic/blocks-engine-figma-transformer/", "vendor/league/", "vendor/dflydev/", "vendor/nette/", "vendor/psr/", "vendor/symfony/"]) {
+    assert.equal(selected.some((path) => path.startsWith(excluded)), false, `HTML profile leaked excluded dependency: ${excluded}`)
+  }
+})
+
+async function selectedFiles(profile) {
+  const candidates = new Set(execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" }).trim().split("\n").filter(Boolean))
+  for (const path of candidates) {
+    try {
+      if (!(await stat(join(root, path))).isFile()) candidates.delete(path)
+    } catch {
+      candidates.delete(path)
+    }
+  }
+  candidates.add("runtime-package-manifest.json")
+  for (const path of profile.required_files) {
+    assert.ok((await stat(join(root, path))).isFile(), `required runtime file is absent: ${path}`)
+    candidates.add(path)
+  }
+  for (const path of await listFiles(join(root, "vendor"))) candidates.add(path)
+  return [...candidates].filter((path) => profile.selectors.some((selector) => selector.type === "file" ? path === selector.path : path.startsWith(selector.path))).sort()
+}
 
 async function listFiles(directory) {
   const files = []

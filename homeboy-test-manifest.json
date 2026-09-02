@@ -25,6 +25,7 @@
     "tests/smoke-missing-author-stylesheet-diagnostics.php": { "environment": "standalone-php" },
     "tests/smoke-import-permission-filter.php": { "environment": "standalone-php" },
     "tests/smoke-current-site-capabilities.php": { "environment": "standalone-php" },
+    "tests/smoke-html-runtime-capabilities.php": { "environment": "standalone-php" },
     "tests/smoke-default-content.php": { "environment": "standalone-php" },
     "tests/smoke-direct-artifact-import.php": { "environment": "standalone-php" },
     "tests/smoke-rest-import.php": { "environment": "standalone-php" },

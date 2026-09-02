@@ -79,6 +79,7 @@ $manifest_result = static_site_importer_ability_get_runtime_package_manifest();
 assert( true === $manifest_result['success'] );
 assert( 'static-site-importer/runtime-package-manifest/v1' === $manifest_result['manifest']['schema'] );
 assert( isset( $manifest_result['manifest']['profiles']['website-artifact-import'] ) );
+assert( isset( $manifest_result['manifest']['profiles']['html-site-import'] ) );
 assert( true === static_site_importer_ability_read_runtime_manifest_permission_callback() );
 
 echo "Ability registration idempotency smoke passed.\n";

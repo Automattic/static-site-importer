@@ -17,12 +17,14 @@ export function parseArguments(argv, cwd = process.cwd()) {
     blocksEnginePath: resolve(cwd, "../blocks-engine"),
     blocksEngineRef: "origin/trunk",
     outputDir: resolve(cwd, "build"),
+    runtimeProfile: null,
   }
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index]
     if (value === "--blocks-engine-path") options.blocksEnginePath = resolve(cwd, requiredValue(argv, ++index, value))
     else if (value === "--blocks-engine-ref") options.blocksEngineRef = requiredValue(argv, ++index, value)
     else if (value === "--output-dir") options.outputDir = resolve(cwd, requiredValue(argv, ++index, value))
+    else if (value === "--runtime-profile") options.runtimeProfile = requiredValue(argv, ++index, value)
     else if (value === "--help") options.help = true
     else throw new Error(`Unknown argument: ${value}`)
   }
@@ -34,10 +36,12 @@ function requiredValue(argv, index, flag) {
   return argv[index]
 }
 
-export function developmentComposerManifest(manifest, packageRoot) {
+export function developmentComposerManifest(manifest, packageRoot, includeFigma = true) {
+  const requirements = { ...manifest.require }
+  if (!includeFigma) delete requirements["automattic/blocks-engine-figma-transformer"]
   const packages = [
     ["php-transformer", "automattic/blocks-engine-php-transformer"],
-    ["figma-transformer", "automattic/blocks-engine-figma-transformer"],
+    ...(includeFigma ? [["figma-transformer", "automattic/blocks-engine-figma-transformer"]] : []),
   ]
   return {
     ...manifest,
@@ -50,11 +54,15 @@ export function developmentComposerManifest(manifest, packageRoot) {
       ...(manifest.repositories ?? []),
     ],
     require: {
-      ...manifest.require,
+      ...requirements,
       "automattic/blocks-engine-php-transformer": "*@dev",
-      "automattic/blocks-engine-figma-transformer": "*@dev",
+      ...(includeFigma ? { "automattic/blocks-engine-figma-transformer": "*@dev" } : {}),
     },
   }
+}
+
+export function runtimeProfileSettings(profile) {
+  return profile ? { manifest: "runtime-package-manifest.json", profile } : {}
 }
 
 export function buildIdentity({ ssiSha, ssiDiff, blocksEngineSha, blocksEngineRef, composerLock }) {
@@ -132,15 +140,20 @@ export async function buildDevelopmentPackage(options, dependencies = {}) {
     await extractArchive(ssiArchive, snapshot)
     await overlayWorkingTree(sourceRoot, snapshot, sourcePaths)
 
+    const runtimeManifest = options.runtimeProfile ? JSON.parse(await readFile(join(snapshot, "runtime-package-manifest.json"), "utf8")) : null
+    const runtimeProfile = options.runtimeProfile ? runtimeManifest.profiles?.[options.runtimeProfile] : null
+    if (options.runtimeProfile && !runtimeProfile) throw new Error(`Unknown declared runtime profile: ${options.runtimeProfile}`)
+    const includeFigma = !runtimeProfile || runtimeProfile.selectors.some((selector) => selector.path === "vendor/automattic/blocks-engine-figma-transformer/")
+
     await mkdir(blocksEngine, { recursive: true })
     const blocksArchive = join(temporaryDirectory, "blocks-engine.tar")
-    await run("git", ["archive", "--format=tar", `--output=${blocksArchive}`, blocksEngineSha, "php-transformer", "figma-transformer"], { cwd: options.blocksEnginePath })
+    await run("git", ["archive", "--format=tar", `--output=${blocksArchive}`, blocksEngineSha, "php-transformer", ...(includeFigma ? ["figma-transformer"] : [])], { cwd: options.blocksEnginePath })
     await extractArchive(blocksArchive, blocksEngine)
 
     const composerPath = join(snapshot, "composer.json")
     const manifest = JSON.parse(await readFile(composerPath, "utf8"))
-    await writeFile(composerPath, `${JSON.stringify(developmentComposerManifest(manifest, temporaryDirectory), null, 2)}\n`)
-    await run("composer", ["update", "automattic/blocks-engine-php-transformer", "automattic/blocks-engine-figma-transformer", "--with-all-dependencies", "--no-dev", "--no-interaction", "--prefer-dist"], { cwd: snapshot })
+    await writeFile(composerPath, `${JSON.stringify(developmentComposerManifest(manifest, temporaryDirectory, includeFigma), null, 2)}\n`)
+    await run("composer", ["update", "automattic/blocks-engine-php-transformer", ...(includeFigma ? ["automattic/blocks-engine-figma-transformer"] : []), "--with-all-dependencies", "--no-dev", "--no-interaction", "--prefer-dist"], { cwd: snapshot })
 
     const composerLock = await readFile(join(snapshot, "composer.lock"))
     const identity = { ssiSha, ssiDiff, blocksEngineSha, blocksEngineRef: options.blocksEngineRef, composerLock }
@@ -148,7 +161,7 @@ export async function buildDevelopmentPackage(options, dependencies = {}) {
 
     const homeboyPath = join(snapshot, "homeboy.json")
     const homeboy = JSON.parse(await readFile(homeboyPath, "utf8"))
-    homeboy.extensions.wordpress.settings.package_profile = {}
+    homeboy.extensions.wordpress.settings.package_profile = runtimeProfileSettings(options.runtimeProfile)
     await writeFile(homeboyPath, `${JSON.stringify(homeboy, null, 2)}\n`)
 
     await run("homeboy", ["review", "--placement", "local", "build", "static-site-importer", "--path", snapshot], { cwd: snapshot })
@@ -218,7 +231,7 @@ async function exists(path) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const options = parseArguments(process.argv.slice(2), root)
   if (options.help) {
-    console.log("Usage: npm run build:dev-package -- [--blocks-engine-path <path>] [--blocks-engine-ref <ref>] [--output-dir <path>]")
+    console.log("Usage: npm run build:dev-package -- [--blocks-engine-path <path>] [--blocks-engine-ref <ref>] [--output-dir <path>] [--runtime-profile <declared-profile>]")
   } else {
     buildDevelopmentPackage(options).then(({ zip, provenance: receipt }) => console.log(`Built ${zip}\nProvenance ${receipt}`)).catch((error) => {
       console.error(`Development package build failed: ${error.message}`)
