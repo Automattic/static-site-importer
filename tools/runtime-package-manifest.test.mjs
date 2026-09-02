@@ -79,7 +79,7 @@ test("website artifact import profile is complete and capability scoped", async 
 
 })
 
-test("supplied archive matches its selected runtime profile", async () => {
+test("supplied archive obeys its selected runtime profile", async () => {
   if (process.env.STATIC_SITE_IMPORTER_PACKAGE_ZIP) {
     const manifest = JSON.parse(await readFile(manifestPath, "utf8"))
     const profileName = process.env.STATIC_SITE_IMPORTER_RUNTIME_PROFILE || "website-artifact-import"
@@ -92,9 +92,16 @@ test("supplied archive matches its selected runtime profile", async () => {
         assert.ok(path.startsWith(prefix), `archive entry escaped package root: ${path}`)
         return path.slice(prefix.length)
       }).sort()
-    const selected = await selectedFiles(profile)
-    if (archive.includes("build-provenance.json")) selected.push("build-provenance.json")
-    assert.deepEqual(archive, selected.sort(), `archive must contain exactly the ${profileName} profile`)
+    const packagedFiles = archive.filter((path) => path !== "build-provenance.json")
+    for (const path of packagedFiles) {
+      assert.ok(matchesProfile(path, profile), `archive entry is outside the ${profileName} profile: ${path}`)
+    }
+    for (const path of profile.required_files) assert.ok(packagedFiles.includes(path), `archive is missing required runtime file: ${path}`)
+
+    // Development packages may resolve a different dependency ref than the local vendor tree.
+    const sourceFiles = packagedFiles.filter((path) => !path.startsWith("vendor/"))
+    const selectedSourceFiles = (await selectedFiles(profile)).filter((path) => !path.startsWith("vendor/"))
+    assert.deepEqual(sourceFiles, selectedSourceFiles, `archive must contain exactly the selected ${profileName} source files`)
   }
 })
 
@@ -159,7 +166,11 @@ async function selectedFiles(profile) {
     candidates.add(path)
   }
   for (const path of await listFiles(join(root, "vendor"))) candidates.add(path)
-  return [...candidates].filter((path) => profile.selectors.some((selector) => selector.type === "file" ? path === selector.path : path.startsWith(selector.path))).sort()
+  return [...candidates].filter((path) => matchesProfile(path, profile)).sort()
+}
+
+function matchesProfile(path, profile) {
+  return profile.selectors.some((selector) => selector.type === "file" ? path === selector.path : path.startsWith(selector.path))
 }
 
 async function listFiles(directory) {
