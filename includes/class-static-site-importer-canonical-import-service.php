@@ -143,7 +143,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 					array( 'source_url' => $source_path )
 				);
 			}
-			$artifact = Static_Site_Importer_Portable_Source_Manifest::project( $runtime_artifact );
+			$artifact = Static_Site_Importer_Portable_Source_Manifest::project( $runtime_artifact, $payload_reader ?? null );
 			if ( is_wp_error( $artifact ) ) {
 				return self::error( (string) $artifact->get_error_code(), $artifact->get_error_message(), $artifact->get_error_data() );
 			}
