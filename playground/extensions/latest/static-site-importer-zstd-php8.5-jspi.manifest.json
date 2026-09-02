@@ -5,7 +5,7 @@
   "artifacts": [
     {
       "phpVersion": "8.5",
-      "sourcePath": "https://automattic.github.io/static-site-importer/playground/extensions/v1.9.0/static-site-importer-zstd-php8.5-jspi.so"
+      "sourcePath": "https://automattic.github.io/static-site-importer/playground/extensions/v1.9.1/static-site-importer-zstd-php8.5-jspi.so"
     }
   ]
 }
