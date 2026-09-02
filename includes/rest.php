@@ -104,24 +104,20 @@ function static_site_importer_rest_import_figma_preflight( WP_REST_Request $requ
  * @return WP_REST_Response|WP_Error
  */
 function static_site_importer_rest_import_figma( WP_REST_Request $request ) {
-	$input = $request->get_json_params();
-
-	$artifact = Static_Site_Importer_Figma_Import::website_artifact_from_input( $input );
-	if ( is_wp_error( $artifact ) ) {
-		return $artifact;
-	}
-
-	$params       = array_merge(
+	$input           = $request->get_json_params();
+	$input           = array_merge(
 		$input,
 		array(
 			'activate'  => array_key_exists( 'activate', $input ) ? ! empty( $input['activate'] ) : true,
 			'overwrite' => array_key_exists( 'overwrite', $input ) ? ! empty( $input['overwrite'] ) : true,
 		)
 	);
-	$import_input = Static_Site_Importer_Figma_Import::import_input( $params, $artifact );
-	$result       = static_site_importer_rest_execute_import_ability(
+	$source          = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array();
+	$source['type']  = 'figma';
+	$input['source'] = $source;
+	$result          = static_site_importer_rest_execute_import_ability(
 		'static-site-importer/import',
-		array_merge( $import_input, array( 'source' => static_site_importer_ability_files_source( $artifact ) ) ),
+		$input,
 		'static_site_importer_ability_import'
 	);
 	if ( is_wp_error( $result ) ) {
@@ -163,13 +159,20 @@ function static_site_importer_rest_import_figma_file( WP_REST_Request $request )
 		return $artifact;
 	}
 
-	$input['artifact'] = $artifact;
-
+	$input              = Static_Site_Importer_Figma_Import::import_input( $input, $artifact );
 	$input['activate']  = array_key_exists( 'activate', $request->get_params() ) ? ! empty( $request->get_param( 'activate' ) ) : true;
 	$input['overwrite'] = array_key_exists( 'overwrite', $request->get_params() ) ? ! empty( $request->get_param( 'overwrite' ) ) : true;
+	$input['source']    = array(
+		'type'            => 'figma',
+		'artifact_bundle' => array(
+			'root'       => 'website',
+			'entrypoint' => $artifact['entrypoint'] ?? '',
+			'files'      => $artifact['files'] ?? array(),
+		),
+	);
 	$result             = static_site_importer_rest_execute_import_ability(
 		'static-site-importer/import',
-		array_merge( $input, array( 'source' => static_site_importer_ability_files_source( $artifact ) ) ),
+		$input,
 		'static_site_importer_ability_import'
 	);
 	if ( is_wp_error( $result ) ) {
@@ -372,6 +375,12 @@ function static_site_importer_rest_apply_to_current_site( array $source, array $
 
 		return $result;
 	};
+	if ( 'figma' === (string) ( $source['type'] ?? '' ) || isset( $source['figma_file'] ) || isset( $source['figma'] ) || isset( $source['scenegraph'] ) || isset( $source['artifact_bundle'] ) ) {
+		$source['type']  = 'figma';
+		$input['source'] = $source;
+
+		return $decorate_current_site_preview( static_site_importer_rest_execute_import_ability( 'static-site-importer/import', $input, 'static_site_importer_ability_import' ) );
+	}
 
 	$runtime = static_site_importer_rest_source_runtime( $source, $input );
 	if ( is_wp_error( $runtime ) ) {

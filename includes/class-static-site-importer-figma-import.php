@@ -78,16 +78,29 @@ class Static_Site_Importer_Figma_Import {
 	}
 
 	/**
-	 * Import a Figma request through the existing website artifact import ability.
+	 * Compatibility adapter for canonical Figma imports.
 	 *
 	 * @param array<string,mixed> $input Figma import input.
 	 * @return array<string,mixed>
 	 */
 	public static function import( array $input ): array {
+		$source          = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array();
+		$source['type']  = 'figma';
+		$input['source'] = $source;
+
+		return static_site_importer_ability_import( $input );
+	}
+
+	/**
+	 * Normalize a Figma source for the canonical import service.
+	 *
+	 * @param array<string,mixed> $input Canonical import input.
+	 * @return array{artifact:array<string,mixed>,input:array<string,mixed>}|WP_Error
+	 */
+	public static function prepare_import( array $input ) {
 		$artifact = self::website_artifact_from_input( $input );
 		if ( is_wp_error( $artifact ) ) {
-			/** @var WP_Error $artifact */
-			return static_site_importer_ability_error( (string) $artifact->get_error_code(), $artifact->get_error_message(), $artifact->get_error_data() );
+			return $artifact;
 		}
 
 		$import_input         = self::import_input( $input, $artifact );
@@ -95,18 +108,10 @@ class Static_Site_Importer_Figma_Import {
 		if ( ! empty( $validation_artifacts ) ) {
 			$import_input['validation_artifacts'] = $validation_artifacts;
 		}
-		$result                 = static_site_importer_ability_import(
-			array_merge(
-				$import_input,
-				array( 'source' => static_site_importer_ability_files_source( $artifact ) )
-			)
+		return array(
+			'artifact' => $artifact,
+			'input'    => $import_input,
 		);
-		$figma_transform_report = self::figma_transform_report_from_metadata( isset( $import_input['source_metadata'] ) && is_array( $import_input['source_metadata'] ) ? $import_input['source_metadata'] : array() );
-		if ( ! empty( $figma_transform_report ) ) {
-			$result['figma_transform_report'] = $figma_transform_report;
-		}
-
-		return $result;
 	}
 
 	/**
@@ -269,6 +274,7 @@ class Static_Site_Importer_Figma_Import {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public static function website_artifact_from_input( array $input ) {
+		$source     = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array();
 		$figma_file = self::figma_file_from_input( $input );
 		if ( ! empty( $figma_file ) ) {
 			return self::website_artifact_from_figma_file( $figma_file, $input );
@@ -282,8 +288,9 @@ class Static_Site_Importer_Figma_Import {
 			}
 		}
 
-		if ( isset( $input['artifact_bundle'] ) && is_array( $input['artifact_bundle'] ) ) {
-			return self::website_artifact_from_bundle( $input['artifact_bundle'], $input );
+		$artifact_bundle = isset( $input['artifact_bundle'] ) && is_array( $input['artifact_bundle'] ) ? $input['artifact_bundle'] : ( isset( $source['artifact_bundle'] ) && is_array( $source['artifact_bundle'] ) ? $source['artifact_bundle'] : array() );
+		if ( ! empty( $artifact_bundle ) ) {
+			return self::website_artifact_from_bundle( $artifact_bundle, $input );
 		}
 
 		return new WP_Error( 'static_site_importer_figma_source_missing', 'Figma imports require an artifact_bundle or a Figma scenegraph.', array( 'status' => 400 ) );
@@ -948,6 +955,13 @@ class Static_Site_Importer_Figma_Import {
 			}
 
 			return $figma;
+		}
+		$source = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array();
+		if ( isset( $source['scenegraph'] ) && is_array( $source['scenegraph'] ) ) {
+			return $source['scenegraph'];
+		}
+		if ( isset( $source['figma'] ) && is_array( $source['figma'] ) ) {
+			return isset( $source['figma']['scenegraph'] ) && is_array( $source['figma']['scenegraph'] ) ? $source['figma']['scenegraph'] : $source['figma'];
 		}
 
 		return array();
