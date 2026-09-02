@@ -1418,8 +1418,6 @@ class Static_Site_Importer_Form_Seeder {
 			$input_class  = trim( $source_class . ' ' . $control_class );
 			if ( '' !== $input_class ) {
 				$input_attrs['className'] = $input_class;
-			} else {
-				unset( $input_attrs['className'] );
 			}
 			if ( '' !== $placeholder ) {
 				$input_attrs['placeholder'] = $placeholder;
