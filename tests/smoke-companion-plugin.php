@@ -441,6 +441,14 @@ $layout_renderer = $typed_renderer;
 $layout_renderer['blocks'][0]['renderer'] = 'blocks-engine/responsive-layout/v1';
 $layout_renderer['blocks'][0]['block_json']['name'] = 'example/responsive-layout';
 $assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $layout_renderer ), 'known-layout-renderer-validates' );
+$svg_renderer = $typed_renderer;
+$svg_renderer['blocks'][0]['renderer'] = 'blocks-engine/svg-artwork/v1';
+$svg_renderer['blocks'][0]['block_json']['name'] = 'example/svg-artwork';
+$svg_renderer['blocks'][0]['block_json']['attributes'] = array( 'svg' => array( 'type' => 'string', 'default' => '', 'role' => 'content' ) );
+$assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $svg_renderer ), 'known-svg-artwork-renderer-validates' );
+$invalid_svg_renderer = $svg_renderer;
+$invalid_svg_renderer['blocks'][0]['block_json']['attributes'] = array( 'content' => array( 'type' => 'string' ) );
+$assert( 'static_site_importer_companion_plugin_renderer_attributes_invalid' === Static_Site_Importer_Companion_Plugin::validate_payload( $invalid_svg_renderer )->get_error_code(), 'svg-artwork-renderer-requires-declared-string-svg' );
 $malformed_dependencies = $payload;
 $malformed_dependencies['blocks'][0]['script_dependencies'] = array( array( 'wp-blocks' ) );
 $assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $malformed_dependencies ) ), 'script-dependency-map-must-be-an-object' );
@@ -666,6 +674,18 @@ if ( is_array( $layout_descriptor ) ) {
 	// so the two paths cannot diverge in safety or supported markup (#1361).
 	$shared_policy_input = array( 'content' => $svg_markup . $hostile_markup );
 	$assert( $render_frontend( $render, $shared_policy_input ) === $render_frontend( $layout_render, $shared_policy_input ), 'editable-and-layout-renderers-share-one-sanitization-policy' );
+}
+
+$svg_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $svg_renderer );
+$assert( is_array( $svg_descriptor ), 'svg-artwork-renderer-scaffold-returns-descriptor' );
+if ( is_array( $svg_descriptor ) ) {
+	$svg_render = $svg_descriptor['files']['ssi-example-site/blocks/custom-hero/render.php'] ?? '';
+	$attributes = array( 'svg' => '<svg viewBox="0 0 20 20" aria-hidden="true"><path class="s1" d="M10 18V2"></path><script>alert(1)</script></svg>' );
+	ob_start();
+	eval( '?>' . $svg_render );
+	$svg_artwork_output = (string) ob_get_clean();
+	$assert( str_contains( $svg_render, 'Generated svg-artwork companion block render' ) && str_contains( $svg_artwork_output, '<path class="s1" d="M10 18V2">' ), 'svg-artwork-renderer-preserves-safe-inline-artwork' );
+	$assert( ! str_contains( strtolower( $svg_artwork_output ), '<script' ), 'svg-artwork-renderer-strips-executable-content' );
 }
 
 WP_Block_Type_Registry::$registered[] = 'example/custom-hero';

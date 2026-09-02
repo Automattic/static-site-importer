@@ -44,6 +44,9 @@ class Static_Site_Importer_Companion_Plugin {
 	/** SSI-owned renderer available to typed responsive-layout blocks. */
 	private const RESPONSIVE_LAYOUT_RENDERER = 'blocks-engine/responsive-layout/v1';
 
+	/** SSI-owned renderer available to typed inline SVG artwork blocks. */
+	private const SVG_ARTWORK_RENDERER = 'blocks-engine/svg-artwork/v1';
+
 	/**
 	 * Payload schema identifier consumed by the scaffolder.
 	 */
@@ -123,9 +126,10 @@ class Static_Site_Importer_Companion_Plugin {
 				if ( array_key_exists( 'render', $block ) ) {
 					return new WP_Error( 'static_site_importer_companion_plugin_renderer_conflict', sprintf( 'Block %s cannot declare both render markup and a typed renderer.', $name ) );
 				}
-				$content_schema = $block['block_json']['attributes']['content'] ?? null;
+				$attribute_name = self::SVG_ARTWORK_RENDERER === $renderer ? 'svg' : 'content';
+				$content_schema = $block['block_json']['attributes'][ $attribute_name ] ?? null;
 				if ( ! is_array( $content_schema ) || 'string' !== ( $content_schema['type'] ?? null ) ) {
-					return new WP_Error( 'static_site_importer_companion_plugin_renderer_attributes_invalid', sprintf( 'Block %s typed renderer requires a string content attribute.', $name ) );
+					return new WP_Error( 'static_site_importer_companion_plugin_renderer_attributes_invalid', sprintf( 'Block %s typed renderer requires a string %s attribute.', $name, $attribute_name ) );
 				}
 			}
 			if ( isset( $block['render'] ) && is_scalar( $block['render'] ) && Static_Site_Importer_Content_Policy::contains_server_code( (string) $block['render'] ) ) {
@@ -914,13 +918,16 @@ class Static_Site_Importer_Companion_Plugin {
 	 * passes it through safe_markup_boundary(), and echoes the sanitized
 	 * $output.
 	 *
-	 * @param string $kind Renderer label for the generated doc comment.
+	 * @param string $kind      Renderer label for the generated doc comment.
+	 * @param string $attribute String attribute containing the bounded markup.
 	 * @return string
 	 */
-	private static function safe_markup_renderer( string $kind ): string {
+	private static function safe_markup_renderer( string $kind, string $attribute = 'content' ): string {
 		$prologue = sprintf(
-			"<?php\n/** Generated %s companion block render. */\n\n\$content = is_string( \$attributes['content'] ?? null ) ? \$attributes['content'] : '';\n",
-			$kind
+			"<?php\n/** Generated %s companion block render. */\n\n\$content = is_string( \$attributes['%s'] ?? null ) ? \$attributes['%s'] : '';\n",
+			$kind,
+			$attribute,
+			$attribute
 		);
 		$epilogue = 'echo $output; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- KSES-sanitized bounded markup through the shared audited safe-markup boundary.';
 		return $prologue . self::safe_markup_boundary() . "\n" . $epilogue;
@@ -1170,6 +1177,7 @@ PHP;
 	 */
 	private static function typed_renderer( string $renderer ): string {
 		$layout = self::safe_markup_renderer( 'responsive-layout' );
+		$svg    = self::safe_markup_renderer( 'svg-artwork', 'svg' );
 		$media  = <<<'PHP'
 <?php
 /** Generated responsive-media companion block render. */
@@ -1290,6 +1298,7 @@ PHP;
 		$renderers = array(
 			self::RESPONSIVE_MEDIA_RENDERER  => $media,
 			self::RESPONSIVE_LAYOUT_RENDERER => $layout,
+			self::SVG_ARTWORK_RENDERER       => $svg,
 		);
 		if ( function_exists( 'apply_filters' ) ) {
 			$renderers = apply_filters( 'static_site_importer_companion_renderers', $renderers );
