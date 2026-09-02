@@ -600,6 +600,46 @@ $mismatched_form_report['diagnostics'] = array( $normalized_form_fallback );
 Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $mismatched_form_report, array( $mismatched_receipt ) );
 $assert( 1 === ( $mismatched_form_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $mismatched_form_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'normalized-form-diagnostic-rejects-mismatched-provider-receipt' );
 
+// Producer-owned identities distinguish responsive copies even when their
+// source selector and form metadata are otherwise identical.
+$desktop_form_fallback                            = $normalized_form_fallback;
+$desktop_form_fallback['source_fallback_identity'] = hash( 'sha256', 'blocks-engine-form-desktop' );
+$mobile_form_fallback                             = $normalized_form_fallback;
+$mobile_form_fallback['source_fallback_identity']  = hash( 'sha256', 'blocks-engine-form-mobile' );
+$desktop_receipt                                  = $provider_receipt;
+$desktop_receipt['fallback_reconciliation_identity'] = $desktop_form_fallback['source_fallback_identity'];
+$mobile_receipt                                   = $provider_receipt;
+$mobile_receipt['fallback_reconciliation_identity']  = $mobile_form_fallback['source_fallback_identity'];
+$responsive_form_report                           = Static_Site_Importer_Import_Report::from_array(
+	array(
+		'quality'                 => array( 'fallback_count' => 2 ),
+		'diagnostics'             => array( $desktop_form_fallback, $mobile_form_fallback ),
+		'materialization_receipt' => $normalized_form_report['materialization_receipt'],
+	)
+);
+Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $responsive_form_report, array( $desktop_receipt, $mobile_receipt ) );
+$assert( 0 === ( $responsive_form_report['quality']['fallback_count'] ?? -1 ) && 2 === ( $responsive_form_report['quality_resolutions']['resolved_by_provider'] ?? 0 ) && $desktop_form_fallback['source_fallback_identity'] === ( $responsive_form_report['quality_resolutions']['resolutions'][0]['fallback_reconciliation_identity'] ?? '' ) && $mobile_form_fallback['source_fallback_identity'] === ( $responsive_form_report['quality_resolutions']['resolutions'][1]['fallback_reconciliation_identity'] ?? '' ), 'responsive-form-duplicates-resolve-by-distinct-producer-identities' );
+
+$partial_form_report = Static_Site_Importer_Import_Report::from_array(
+	array(
+		'quality'                 => array( 'fallback_count' => 2 ),
+		'diagnostics'             => array( $desktop_form_fallback, $mobile_form_fallback ),
+		'materialization_receipt' => $normalized_form_report['materialization_receipt'],
+	)
+);
+Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $partial_form_report, array( $desktop_receipt ) );
+$assert( 1 === ( $partial_form_report['quality']['fallback_count'] ?? 0 ) && 1 === ( $partial_form_report['quality_resolutions']['resolved_by_provider'] ?? 0 ) && 'unresolved' === ( $partial_form_report['quality_resolutions']['resolutions'][1]['state'] ?? '' ), 'partial-form-projection-leaves-unconsumed-source-identity-unresolved' );
+
+$ambiguous_form_report = Static_Site_Importer_Import_Report::from_array(
+	array(
+		'quality'                 => array( 'fallback_count' => 1 ),
+		'diagnostics'             => array( $desktop_form_fallback ),
+		'materialization_receipt' => $normalized_form_report['materialization_receipt'],
+	)
+);
+Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $ambiguous_form_report, array( $desktop_receipt, $desktop_receipt ) );
+$assert( 1 === ( $ambiguous_form_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $ambiguous_form_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'ambiguous-form-projection-does-not-consume-source-identity' );
+
 $safe_runtime_report = Static_Site_Importer_Import_Report::from_array(
 	array(
 	'quality' => array( 'fallback_count' => 1 ),
