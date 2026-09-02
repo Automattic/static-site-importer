@@ -561,6 +561,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			'artifact'        => array(
 				'schema'          => 'blocks-engine/php-transformer/site-artifact/v1',
 				'entrypoint'      => $paths[ $entry_resource_url ],
+				'provenance'      => array( 'source_url' => $site_url ),
 				'compiler_limits' => $compiler_limits,
 				'metadata'        => array( 'snapshot' => $snapshot ),
 				'files'           => $files,

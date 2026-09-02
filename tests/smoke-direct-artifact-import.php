@@ -216,6 +216,7 @@ foreach ( array( 'index.html', 'about.html', 'contact.html', 'styles.css' ) as $
 $input = static fn ( string $operation = 'apply' ): array => array(
 	'operation'               => $operation,
 	'slug'                    => 'direct-artifact-fixture',
+	'source_metadata'         => array( 'source_path' => 'https://source.example.test/' ),
 	'source'                  => array(
 		'type'       => 'files',
 		'entrypoint' => 'website/index.html',
@@ -225,6 +226,7 @@ $input = static fn ( string $operation = 'apply' ): array => array(
 $resume = static fn ( string $id, string $operation = 'apply' ): array => array(
 	'operation'                    => $operation,
 	'slug'                         => 'direct-artifact-fixture',
+	'source_metadata'              => array( 'source_path' => 'https://source.example.test/' ),
 	'source'                       => array(
 		'type'      => 'files',
 		'import_id' => $id,
@@ -266,6 +268,9 @@ $assert( ! empty( $frozen_resumed['success'] ) && ! empty( $frozen_resumed['cont
 $first = Static_Site_Importer_Canonical_Import_Service::import( $input() );
 $assert( ! empty( $first['success'] ) && ! empty( $first['continuation'] ) && 'pages_remaining' === ( $first['continuation_reason'] ?? '' ) && 3 === ( $first['artifact_run']['progress']['prepared_count'] ?? 0 ) && 1 === ( $first['artifact_run']['progress']['receipt_count'] ?? -1 ) && 'continuing' === ( $first['import_report_summary']['status'] ?? '' ), 'the first invocation must durably prepare all page plans in one partition, compile one bounded receipt batch, and explicitly continue' );
 $import_id = (string) $first['import_id'];
+$frozen_workspace = new Static_Site_Importer_Artifact_Run_Workspace( $test_root . '/static-site-importer/direct-artifact-imports', 'direct-' . $import_id );
+$frozen_artifact  = json_decode( (string) $frozen_workspace->read_raw( 'artifact.json' ), true );
+$assert( 'https://source.example.test/' === ( $frozen_artifact['payload']['artifact']['provenance']['source_url'] ?? '' ), 'direct artifact intake must project its explicit source metadata URL into the immutable compiler artifact' );
 $mismatch = $resume( $import_id );
 $mismatch['slug'] = 'different-frozen-contract';
 $mismatch = Static_Site_Importer_Canonical_Import_Service::import( $mismatch );
@@ -621,6 +626,7 @@ $assert( 'injected_run_publication_failure' === ( $run_failed['error']['code'] ?
 $run_recovered = Static_Site_Importer_Canonical_Import_Service::import( $resume( (string) $run_failure_data['import_id'], 'plan' ) );
 $assert( ! empty( $run_recovered['success'] ) && array( 1, 1, 1 ) === ( $run_recovered['artifact_run']['work']['page_compile_counts'] ?? null ), 'resume must adopt the immutable receipt and never recompile completed page work' );
 $source_artifact = static_site_importer_source_runtime( $input( 'plan' )['source'] )['artifact'];
+$source_artifact['provenance'] = array( 'source_url' => 'https://source.example.test/' );
 $assert( hash( 'sha256', (string) wp_json_encode( $source_artifact ) ) === ( $run_recovered['source']['identity'] ?? '' ), 'staged planning must preserve the canonical normalized source identity from before script policy transforms' );
 
 $fail_receipt = true;

@@ -9,7 +9,7 @@ namespace {
 	$case = $argv[1] ?? '';
 	if ( '' === $case ) {
 		$failures = array();
-		foreach ( array( 'supported-late', 'already-active-late', 'fresh-frontend', 'init-pending', 'activation-failed', 'missing-lifecycle', 'missing-loader', 'missing-init', 'partial-blocks' ) as $child_case ) {
+		foreach ( array( 'supported-late', 'already-active-late', 'forms-active-blocks-inactive', 'fresh-frontend', 'init-pending', 'activation-failed', 'missing-lifecycle', 'missing-loader', 'missing-init', 'partial-blocks' ) as $child_case ) {
 			$command = escapeshellarg( PHP_BINARY ) . ' ' . escapeshellarg( __FILE__ ) . ' ' . escapeshellarg( $child_case );
 			exec( $command, $output, $status );
 			if ( 0 !== $status ) {
@@ -67,9 +67,10 @@ namespace {
 	} else {
 		class Jetpack {
 			public static int $default_activations = 0;
-			public static bool $contact_form_active = false;
+			public static array $active_modules = array();
+			public static array $last_activated_modules = array();
 			public static function is_module_active( string $module ): bool {
-				return 'contact-form' === $module && self::$contact_form_active;
+				return in_array( $module, self::$active_modules, true );
 			}
 			public static function activate_default_modules( int $min, int $max, array $modules, bool $network_wide, bool $reactivate ): void {
 				unset( $network_wide, $reactivate );
@@ -77,8 +78,12 @@ namespace {
 				if ( 'activation-failed' === $GLOBALS['ssi_provider_adapter_case'] ) {
 					return;
 				}
-				self::$contact_form_active = 999 === $min && 1 === $max && array( 'contact-form' ) === $modules;
-				if ( self::$contact_form_active && class_exists( 'Automattic\\Jetpack\\Forms\\Jetpack_Forms' ) ) {
+				if ( 999 !== $min || 1 !== $max ) {
+					return;
+				}
+				self::$last_activated_modules = $modules;
+				self::$active_modules = array_values( array_unique( array_merge( self::$active_modules, $modules ) ) );
+				if ( in_array( 'contact-form', $modules, true ) && class_exists( 'Automattic\\Jetpack\\Forms\\Jetpack_Forms' ) ) {
 					\Automattic\Jetpack\Forms\Jetpack_Forms::load_contact_form();
 				}
 			}
@@ -128,10 +133,13 @@ namespace {
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
 
 	if ( 'already-active-late' === $case ) {
-		Jetpack::$contact_form_active = true;
+		Jetpack::$active_modules = array( 'blocks', 'contact-form' );
+	}
+	if ( 'forms-active-blocks-inactive' === $case ) {
+		Jetpack::$active_modules = array( 'contact-form' );
 	}
 	if ( 'fresh-frontend' === $case ) {
-		Jetpack::$contact_form_active = true;
+		Jetpack::$active_modules = array( 'contact-form' );
 		Static_Site_Importer_Form_Seeder::register_runtime_bootstrap();
 		ssi_run_hook( 'jetpack_loaded' );
 		ssi_run_hook( 'init' );
@@ -147,7 +155,7 @@ namespace {
 
 	if ( 'supported-late' === $case ) {
 		$assert( true === $result, 'late preparation succeeds' );
-		$assert( 1 === Jetpack::$default_activations, 'only the explicit default module is activated' );
+		$assert( 1 === Jetpack::$default_activations && array( 'blocks', 'contact-form' ) === Jetpack::$last_activated_modules, 'only the explicit editor and Forms modules are activated' );
 		$assert( 1 === \Automattic\Jetpack\Forms\Jetpack_Forms::$loads, 'module lifecycle loads Forms once' );
 		$assert( 1 === \Automattic\Jetpack\Forms\ContactForm\Contact_Form_Plugin::$initializations, 'late singleton init runs once' );
 		$assert( true === Static_Site_Importer_Form_Seeder::prepare_jetpack_forms_runtime(), 'repeated preparation succeeds' );
@@ -157,6 +165,11 @@ namespace {
 		$assert( true === $result, 'active module is prepared' );
 		$assert( 0 === Jetpack::$default_activations, 'active module is not reactivated' );
 		$assert( 1 === \Automattic\Jetpack\Forms\Jetpack_Forms::$loads, 'missing package hook is installed once' );
+	}
+	if ( 'forms-active-blocks-inactive' === $case ) {
+		$assert( true === $result, 'active Forms runtime gains its missing editor bootstrap' );
+		$assert( 1 === Jetpack::$default_activations && array( 'blocks' ) === Jetpack::$last_activated_modules, 'only the missing Blocks module is activated' );
+		$assert( 1 === \Automattic\Jetpack\Forms\Jetpack_Forms::$loads, 'active Forms package remains initialized after editor bootstrap activation' );
 	}
 	if ( 'fresh-frontend' === $case ) {
 		$assert( true === $result, 'fresh frontend request registers the persisted Forms runtime' );
