@@ -7482,8 +7482,10 @@ test('stageFixtureSource copies the normalized fixture source into the served so
   assert.match(stagedHtml, /hasDocumentAnimation/);
   assert.match(stagedHtml, /animationName !== 'none'/);
   assert.match(stagedHtml, /svg\.getAnimations\(\{ subtree: true \}\)/);
-  assert.match(stagedHtml, /animation\.finish\(\)/);
+  assert.match(stagedHtml, /animation\.currentTime = 0/);
   assert.match(stagedHtml, /animation\.pause\(\)/);
+  assert.match(stagedHtml, /animation\.effect\.getKeyframes\(\)/);
+  assert.match(stagedHtml, /target\.style\.setProperty\('animation', 'none', 'important'\)/);
   assert.match(stagedHtml, /clone\.style\.setProperty\('color', computed\.color\)/);
   assert.match(stagedHtml, /new XMLSerializer\(\)\.serializeToString\(clone\)/);
   // The import payload (artifact.json) is still written alongside, unchanged.
