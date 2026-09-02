@@ -1,10 +1,20 @@
 # Static Site Importer
 
-Import a static site or generated website artifact into WordPress pages and a companion block theme.
+Import a static site or generated website artifact into WordPress pages and an intentional companion block or classic theme.
 
 [![Try Static Site Importer in WordPress Playground](https://img.shields.io/badge/Try_Static_Site_Importer_in-WordPress_Playground-3858e9?style=for-the-badge&logo=wordpress&logoColor=white)](https://playground.wordpress.net/?php=8.5&blueprint-url=https%3A%2F%2Fautomattic.github.io%2Fstatic-site-importer%2Fplayground%2Flatest%2Fblueprint.json)
 
 Static Site Importer is a WordPress plugin. It requires the [Blocks Engine PHP transformer](https://github.com/Automattic/blocks-engine/tree/trunk/php-transformer) Composer package and calls that package's canonical helper functions for generic artifact compilation and format conversion.
+
+## Development packages
+
+Build a production-shaped development ZIP using immutable Blocks Engine source without changing this checkout's Composer files:
+
+```bash
+npm run build:dev-package -- --blocks-engine-path ../blocks-engine --blocks-engine-ref origin/trunk
+```
+
+The command resolves the requested ref once, archives `php-transformer/` and `figma-transformer/` from that commit into an isolated temporary snapshot, installs production dependencies there, and delegates ZIP assembly to `homeboy review build`. The ZIP and adjacent provenance JSON are written to `build/`. Use `--output-dir <path>` to select another destination. The receipt records SSI `HEAD`, a dirty worktree identity when present, the Blocks Engine ref and SHA, Composer lock digest, ZIP digest, and schema version.
 
 ## Runtime package profiles
 
@@ -12,15 +22,9 @@ Static Site Importer is a WordPress plugin. It requires the [Blocks Engine PHP t
 
 The initial `website-artifact-import` profile provides the artifact import, validation, WordPress site-plan materialization, and manifest-inspection abilities. It includes SSI's WordPress/PHP runtime and the Blocks Engine PHP transformer dependency while excluding Figma, tests, tools, docs, Node dependencies, and other development-only trees. The same immutable contract is available from `static-site-importer/get-runtime-package-manifest` for runtime discovery.
 
-## Playground package integrity
-
-Generated Playground previews accept an SSI package only when it declares `url`, `version`, and a SHA-256 `sha256` (or `digest`) value. Production selection accepts either the exact GitHub release asset URL for that version or a content-addressed URL containing the declared digest. Playground downloads the archive to its virtual filesystem, verifies its SHA-256 before `installPlugin`, and records the version, digest, and URL in the preview request provenance.
-
-Hosts provide the package through the `static_site_importer_playground_package` filter or the public blueprint primitive's explicit `package` option. A bundled runtime passes `install => false`; this remains the WordPress Build content-addressed package flow and never downloads a second SSI archive. Development-only package URLs require an explicit `development => true` selection and still require a valid digest. Mutable aliases such as `releases/latest` are rejected.
-
 ## Canonical Site Plans
 
-`static-site-importer/materialize-wordpress-site-plan` is the generic plan-only boundary for a `blocks-engine/wordpress-site-plan/v2` produced by Blocks Engine 0.4.4. SSI calls the package's canonical validator and resolver, then owns WordPress/filesystem preflight, materialization, reconciliation, and the `static-site-importer/materialization-receipt/v1` response. It accepts no source HTML or transformer result envelope.
+`static-site-importer/materialize-wordpress-site-plan` is the generic plan-only boundary for a `blocks-engine/wordpress-site-plan/v2` produced by Blocks Engine. SSI calls the package's canonical validator and resolver, then owns WordPress/filesystem preflight, materialization, reconciliation, and the `static-site-importer/materialization-receipt/v2` response. Plan, report, classic handoff, and receipt bindings use the producer's `blocks-engine/wordpress-site-plan-identity/v1`; the materializer keeps its `prepared_resolved_projection_hash` separate for prepare-to-write TOCTOU detection. It accepts no source HTML or transformer result envelope.
 
 For an isolated runtime matrix, invoke the ability with `plan`, `slug`, and optional `overwrite`, or use:
 
@@ -43,7 +47,7 @@ Static Site Importer is the WordPress materialization layer for static website i
 
 The conversion stack is split by responsibility:
 
-- **Static Site Importer** owns WordPress intake, safety checks, page/theme creation, asset placement, import reports, quality gates, and block-theme materialization.
+- **Static Site Importer** owns WordPress intake, safety checks, page/theme creation, asset placement, import reports, quality gates, and intentional block or classic theme materialization.
 - **Blocks Engine PHP transformer** owns the generic `ArtifactCompiler`, its diagnostics, and the `source_reports.wordpress_site_plan` v2 output. SSI materializes that plan into WordPress and returns the receipt and import report.
 
 ## Content-Only Security Boundary
@@ -54,10 +58,9 @@ When a generated artifact contains full-document HTML, Static Site Importer rout
 
 ## What It Does
 
-- Adds an **Import Static Site** button on the **Appearance -> Themes** screen.
 - Accepts pasted HTML, one public HTML URL, a direct `.html` / `.htm` upload, or a ZIP containing a static-site folder with an `index.html` shell/chrome entry point.
 - Allows ZIP/CLI source-site imports to include nested `.md` / `.markdown` content documents; `.mdx` is skipped with explicit diagnostics because MDX runtime components are not supported.
-- Provides a WP-CLI importer for a local HTML entry file or one public HTML URL; the local source file does not need to be named `index.html` unless you want automatic front-page assignment.
+- Provides one WP-CLI importer, `wp static-site-importer import`, for pasted HTML, website files, ZIP archives, and public URLs through the canonical `static-site-importer/import` ability.
 - Discovers readable sibling `*.html` files beside the selected entry file and recursive Markdown content documents under the source tree, then imports them as WordPress pages.
 - Compiles static HTML fragments and Markdown content through the Blocks Engine PHP transformer package helpers.
 - Stores converted page bodies on the imported WordPress pages as `post_content`.
@@ -66,11 +69,13 @@ When a generated artifact contains full-document HTML, Static Site Importer rout
 - Creates deterministic `wp_navigation` posts for supported header/footer navigation and references them from generated template parts.
 - Keeps imported pages native and editor-visible; page content belongs to WordPress pages while the generated theme owns shared chrome, background decoration, styles, scripts, and template wrappers.
 - Optionally activates the generated theme and assigns the imported `index.html` page as the front page when that page exists.
+- Names the generated theme from the resolved imported site title unless the caller supplies an explicit name.
+- Removes untouched WordPress installation content (`Hello world!`, `Sample Page`, and the sample comment) from fresh sites by default.
 
 ## Requirements
 
 - WordPress 6.6 or later.
-- PHP 8.1 or later.
+- PHP 8.2 or later.
 - Composer dependencies installed with `composer install`.
 - Node dependencies installed only when running the JavaScript block-validation smoke tests.
 
@@ -78,108 +83,34 @@ SSI requires `automattic/blocks-engine-php-transformer:^0.4.3`. Until the packag
 
 At runtime, SSI loads the transformer package from `vendor/` and calls `blocks_engine_php_transformer_compile_artifact()` and `blocks_engine_php_transformer_convert_format()` directly.
 
-## Admin Usage
+## Runtime Interfaces
 
-1. Open **Appearance -> Themes** and click **Import Static Site** beside the standard **Add Theme** button.
-2. Paste a single HTML document, enter a public `http` / `https` URL, upload a single `.html` / `.htm` file, or upload a ZIP containing a static-site folder with an `index.html` entry point and optional `.md` / `.markdown` content documents.
-3. Optionally provide a theme name and slug.
-4. Leave **Activate imported theme** checked if the generated theme should become active immediately.
-
-The admin path always overwrites an existing generated theme with the same slug. Pasted HTML, fetched URL HTML, and direct HTML uploads are copied into a generated upload work directory as `index.html` and imported as a single-page site. ZIP uploads are for multi-page static sites or bundled source-site exports; they are extracted to an upload work directory, the selected `index.html` is used as the entry file, sibling HTML files from that extracted site directory are imported, and nested `.md` / `.markdown` files are imported as content pages. The importer does not require the original source model to be a single `index.html`; it needs one selected HTML entry file for shared shell/chrome and imports the source content documents it can read.
-
-## Theming The Importer Block
-
-The `static-site-importer/importer` block ships neutral, standalone-friendly defaults, and is fully themeable by a host so it can match the host's design system — without forking the block, patching its stylesheet, or using forced style overrides. There are three complementary, additive seams. Standalone consumers who set nothing still get the default importer.
-
-### 1. Design tokens (CSS custom properties)
-
-The block's every color, radius, spacing, and typography decision reads from a `--ssi-importer-*` custom property declared on the `.ssi-importer` root. Override the tokens on `.ssi-importer` (or any ancestor) to reskin the importer to your palette. Because they are ordinary custom properties, a later, equal-or-higher-specificity rule wins on the cascade — no `!important` needed.
-
-```css
-/* Host theme: map the importer onto your own design system. */
-.ssi-importer {
-	--ssi-importer-surface: var( --my-surface );
-	--ssi-importer-fg: var( --my-fg );
-	--ssi-importer-fg-muted: var( --my-muted );
-	--ssi-importer-accent: var( --my-accent );
-	--ssi-importer-accent-fg: var( --my-accent-contrast );
-	--ssi-importer-border: var( --my-border );
-	--ssi-importer-radius: 12px;
-}
-```
-
-Token surface (each declared with a default and consumed via `var()`):
-
-| Token | Controls |
-| --- | --- |
-| `--ssi-importer-surface` | Panel background |
-| `--ssi-importer-surface-muted` | Dropzone background |
-| `--ssi-importer-surface-dragging` | Dropzone background while dragging |
-| `--ssi-importer-fg` | Primary text |
-| `--ssi-importer-fg-muted` | Secondary/help text |
-| `--ssi-importer-accent` | Button background |
-| `--ssi-importer-accent-fg` | Button text |
-| `--ssi-importer-accent-hover` | Button hover background |
-| `--ssi-importer-border` | Field borders |
-| `--ssi-importer-border-subtle` | Panel border |
-| `--ssi-importer-dropzone-border` | Dropzone dashed border |
-| `--ssi-importer-dropzone-border-dragging` | Dropzone border while dragging |
-| `--ssi-importer-success` | Success/status text |
-| `--ssi-importer-radius` | Panel corner radius |
-| `--ssi-importer-radius-field` | Field corner radius |
-| `--ssi-importer-radius-dropzone` | Dropzone corner radius |
-| `--ssi-importer-radius-pill` | Button (pill) radius |
-| `--ssi-importer-shadow` | Panel elevation |
-| `--ssi-importer-max-width` | Panel max width |
-| `--ssi-importer-gap` | Vertical rhythm |
-| `--ssi-importer-padding` | Panel padding |
-| `--ssi-importer-font` | Font family |
-| `--ssi-importer-title-size` | Title font size |
-
-### 2. Wrapper classes (`static_site_importer_block_wrapper_classes`)
-
-Append a scoping class to the block wrapper — for example to bound your token overrides to your own surface. The base `ssi-importer` class is always re-asserted, so the defaults and base styles keep applying.
-
-```php
-add_filter(
-	'static_site_importer_block_wrapper_classes',
-	static function ( string $classes ): string {
-		return $classes . ' my-theme-importer';
-	}
-);
-```
-
-### 3. Wrapper attributes (`static_site_importer_block_wrapper_attributes`)
-
-Attach extra attributes to the wrapper — most usefully an inline `style` that projects your design tokens onto the importer's custom properties from PHP, or `data-`/`aria-` hooks. Attribute names are sanitized and values are escaped; the block's own `data-static-site-importer*` hooks and its `class` cannot be overridden through this filter.
-
-```php
-add_filter(
-	'static_site_importer_block_wrapper_attributes',
-	static function ( array $attrs ): array {
-		$attrs['style'] = '--ssi-importer-accent:#3858e9;--ssi-importer-surface:#101517';
-		return $attrs;
-	}
-);
-```
+Static Site Importer is an infrastructure plugin. Its supported runtime surfaces are WordPress abilities, WP-CLI commands, REST endpoints, and PHP consumer APIs. It does not register an admin screen or ship an end-user Gutenberg block.
 
 ## Browser Playground Demo
 
-Open Static Site Importer in a disposable WordPress Playground site:
+Open the separate demo interface in a disposable WordPress Playground site:
 
 [![Try Static Site Importer in WordPress Playground](https://img.shields.io/badge/Try_Static_Site_Importer_in-WordPress_Playground-3858e9?style=for-the-badge&logo=wordpress&logoColor=white)](https://playground.wordpress.net/?php=8.5&blueprint-url=https%3A%2F%2Fautomattic.github.io%2Fstatic-site-importer%2Fplayground%2Flatest%2Fblueprint.json)
 
-The blueprint installs and activates the packaged Static Site Importer release, logs the visitor in, and opens `/import/` with the `static-site-importer/importer` block configured to generate a WordPress website. Testers can enter one public URL to collect and liberate a site into editable WordPress blocks, upload site files, choose a folder, upload a ZIP, or paste HTML. The canonical demo boots without optional PHP side modules. Figma upload is enabled only when the active runtime provides a zstd decoder; otherwise the importer explains that the capability is unavailable while keeping every other source type usable.
+The release blueprint installs the infrastructure-only Static Site Importer package and a separate demo plugin built from `demos/playground-importer/`. The demo plugin owns the `static-site-importer/importer` block and consumes SSI's public REST contract to import into the disposable Playground site. The SSI plugin and its runtime package contain no demo UI or demo registration.
 
-The optional extension manifest, side module, and safe launch blueprint are published to the repository's GitHub Pages site. Each release gets immutable versioned assets. The safe `playground/latest/blueprint.json` alias advances and is browser-verified independently; optional extension aliases advance only after their own runtime proof passes. This keeps an experimental side module from taking down the canonical demo while GitHub Pages supplies the CORS headers required by Playground. The extension is produced from pinned `php-ext-zstd` and vendored `libzstd` source by the release workflow; no unpublished branch, localhost URL, PECL installation, or host `zstd` executable is used.
+Testers can enter one public URL, upload static site files, choose a folder, upload a ZIP, or paste HTML. Figma upload is enabled only when the Playground runtime provides the optional zstd extension; all other source types remain available without it. Tagged blueprints and demo packages are published through the [Playground publication contract](docs/playground/publication-contract.md), while the README uses the browser-verified `playground/latest/blueprint.json` alias.
 
-### Direct Playground Previews
+## Site Identity and Default Content
 
-`POST /wp-json/static-site-importer/v1/imports` builds a website artifact from `source` (`url`, `html`, `files`, `archive`, or `artifact`). It opens a disposable Playground by default; set `apply_to_current_site: true` to import into the installed WordPress site instead.
+The imported site's resolved title is also the generated theme name, so a producer's generic package name does not replace the site identity. Callers can still pass `name` and `slug`. Developers can customize the final values with `static_site_importer_theme_name` and `static_site_importer_theme_slug`:
 
-The default response has `mode: "playground"`, `provider: "static-site-importer/direct-playground-blueprint"`, and `preview.url`. `preview.url` and `preview.playground.blueprint_url` are direct `https://playground.wordpress.net/#...` URLs; `preview.playground.preview_url` is `/` and `preview.playground.ref` identifies the generated blueprint.
+```php
+add_filter( 'static_site_importer_theme_name', static fn ( string $name ): string => $name . ' Theme' );
+add_filter( 'static_site_importer_theme_slug', static fn ( string $slug ): string => 'custom-' . $slug );
+```
 
-PHP consumers can build the same blueprint with `static_site_importer_playground_import_steps()` or `static_site_importer_playground_import_blueprint()`, and create a direct preview response with `static_site_importer_build_playground_preview()`. For normalized website artifacts, call `static_site_importer_import_website_artifact_with_disposition()`; consumers can claim that flow through the `static_site_importer_import_disposition` filter, or return `null` to use the built-in non-destructive Playground preview.
+Imports remove untouched core seed content on sites where WordPress still reports `fresh_site`. Records are fingerprinted before page materialization and checked again before deletion, so edited or replaced content is preserved. Set the canonical import argument `remove_default_content` to `false`, pass `--keep-default-content` to WP-CLI import commands, or use the `static_site_importer_remove_default_content` filter to disable cleanup.
+
+## REST Imports
+
+`POST /wp-json/static-site-importer/v1/imports` normalizes `source` (`url`, `html`, `files`, `archive`, or `artifact`) and executes the canonical `static-site-importer/import` ability in the installed WordPress runtime. Product-specific interfaces and disposable preview orchestration belong in their owning product layers and consume the same ability contract.
 
 URL intake rules:
 
@@ -192,6 +123,7 @@ URL intake rules:
 - External assets must be directly referenced by fetched HTML or CSS and pass the same public-IP and redirect validation as page URLs.
 - Only `http` and `https` URLs are accepted.
 - Localhost, loopback, link-local, private, and otherwise reserved IP targets are rejected before connecting.
+- Address classification is owned by SSI and behaves identically on every supported PHP version. Addresses are compared as packed bytes against an explicit RFC 6890 block table, IPv4-in-IPv6 encodings such as `::ffff:127.0.0.1` are unmapped so the classified address is the address the transport connects to, and shared address space (`100.64.0.0/10`) is treated as non-public.
 - Redirect targets are revalidated with the same policy and capped.
 - Requests use a timeout and maximum response size, require an HTML-like content type, and do not forward cookies, authorization headers, or embedded URL credentials.
 - Import reports include source URL, final URL, status code, content type, fetch timestamps, response size, and redirect history.
@@ -268,39 +200,50 @@ This materializer is intentionally generic: WooCommerce is the first plugin-back
 
 ## CLI Usage
 
-The canonical ability uses `source.type` (`artifact`, `url`, or `upload`) and `operation` (`plan` or `apply`). Artifact planning returns the canonical WordPress site plan, diagnostics, quality evidence, and source provenance without writing to the destination. Upload sources contain an opaque `upload_ref` resolved only by the server-side `static_site_importer_resolve_upload_reference` filter; callers never provide filesystem paths.
+The canonical ability uses `source.type` (`html`, `files`, `zip`, or `url`) and `operation` (`plan` or `apply`). Planning returns the canonical WordPress site plan, diagnostics, quality evidence, and source provenance without writing to the destination. Reference-backed sources use opaque `source.ref` values resolved only by the server-side `static_site_importer_resolve_source_reference` filter; ability callers never provide filesystem paths.
+
+`static-site-importer import` is the canonical host command. Its request file is the exact `static-site-importer/import` ability input, so every source type and option has one contract across PHP, REST, and WP-CLI. The command owns bounded continuation: it relaunches the same import step in fresh WordPress runtimes, passes SSI's opaque `import_id`, and prints only the terminal JSON result. A terminal failure prints the same machine-readable envelope and exits nonzero.
 
 ```bash
-wp static-site-importer import-theme /path/to/site/index.html \
-  --slug=wordpress-is-dead \
-  --name="WordPress Is Dead" \
-  --activate \
-  --overwrite
-
-wp static-site-importer import-theme \
-  --url=https://example.com/ \
-  --slug=example-import \
-  --keep-source \
-  --report=report.json
-
-wp static-site-importer import-url https://example.com/ \
-  --slug=example-import \
-  --keep-source \
-  --report=report.json
-
-wp static-site-importer import-url https://example.com/ \
-  --slug=example-site \
-  --activate \
-  --overwrite
-
-# Commerce-bearing import on a host without WooCommerce: skip seeding and continue.
-wp static-site-importer import-theme /path/to/store/index.html \
-  --slug=store-no-woo \
-  --allow-missing-woocommerce \
-  --keep-source
+wp static-site-importer import --request=/absolute/path/to/import-request.json
 ```
 
-The CLI path imports all readable sibling `*.html` files in the same directory as the provided entry file plus recursive `.md` / `.markdown` content documents under the source tree. The entry file supplies the theme title, shared source chrome, background decoration, styles, and inline scripts; each source content file supplies a WordPress page body. `.mdx` files are unsupported and reported as skipped diagnostics.
+```json
+{
+  "operation": "apply",
+  "source": {
+    "type": "files",
+    "entrypoint": "index.html",
+    "files": [
+      {
+        "path": "index.html",
+        "content": "<main><h1>Portable site</h1></main>"
+      }
+    ]
+  },
+  "slug": "portable-site",
+  "name": "Portable Site",
+  "activate": true,
+  "overwrite": true
+}
+```
+
+The host prints one `static-site-importer/import-cli-receipt/v1` object. Use `--report=/absolute/path/to/import-report.json` for the operator-owned report destination and `--max-steps=<count>` to bound continuation (default 256). `--single-step` is the internal fresh-runtime seam; host integrations invoke the command without it. `--url=` is a minimal ergonomic source argument.
+
+Use `--theme-materialization=block|classic`; `block` is the default. Use `--operation=plan` or `"operation": "plan"` in the request to emit a plan without writes. Apply a saved response with `--plan=/absolute/path/to/plan-response.json`. A classic plan response includes a versioned, hashed normalized artifact, projection, and complete normalized arguments bundle. Apply verifies every digest and requires the immutable `theme_materialization=classic` strategy before running the full classic lifecycle.
+
+```bash
+wp static-site-importer import --url=https://example.com/ \
+  --operation=plan \
+  --slug=example-site \
+  > url-plan-receipt.json
+
+jq '.response' url-plan-receipt.json > url-plan.json
+wp static-site-importer import --plan=/absolute/path/to/url-plan.json
+
+# Commerce-bearing import: put allow_missing_woocommerce in the request JSON.
+wp static-site-importer import --request=/absolute/path/to/store-request.json
+```
 
 `index.html` has special front-page behavior: it becomes the `home` page slug and, when `--activate` is used, is assigned as the site's static front page. If the imported directory has no `index.html`, the pages are still imported, but the importer does not assign `page_on_front` automatically.
 
@@ -353,6 +296,8 @@ The default root is `website` with `entrypoint: "website/index.html"`. Callers c
 ## Product Handoff Contract
 
 The product handoff contract is defined in `docs/product-handoff-contract.md` and locked by `tests/fixtures/product-handoff-contract/v1.json` plus `tests/smoke-product-handoff-contract.php`.
+
+Owner readiness after materialization uses `static-site-importer/owner-handoff-evidence/v1`. It binds the canonical plan identity and materialization receipt hashes, composes existing parity/editability/media/provider/metadata/runtime receipts, and renders the same envelope as a user-facing report card. Missing mandatory evidence is an `evidence_gap`; it is never treated as a pass. `accepted_built_allowed` is false when the report contains hard failures or evidence gaps. See `docs/contracts/owner-handoff-evidence-v1.md`.
 
 The handoff path is:
 
@@ -413,15 +358,7 @@ npm run test:validation -- --json
 
 ### PHP Smokes
 
-PHP smokes run inside WordPress with SSI's Composer dependencies installed:
-
-```bash
-wp eval-file tests/smoke-admin-import-html-entry.php
-wp eval-file tests/smoke-url-import-entry.php
-wp eval-file tests/smoke-editor-style-support.php
-wp eval-file tests/smoke-wordpress-is-dead-fixture.php
-wp eval-file tests/smoke-mixed-source-fixture.php
-```
+PHP smokes are declared in `test-manifest.json`; run the standalone lane with `npm test` or the complete configured lanes with `npm run test:all`.
 
 `php tests/smoke-wordpress-site-plan-materializer.php` runs outside WordPress and verifies that Blocks Engine's direct `ArtifactCompiler` output is consumed through `source_reports.wordpress_site_plan` v2 and materialized into the stable receipt contract.
 
@@ -435,7 +372,7 @@ The `wordpress-is-dead` smoke verifies the multi-page fixture, generated block-t
 homeboy test static-site-importer --path /path/to/static-site-importer
 ```
 
-The GitHub workflow runs `Extra-Chill/homeboy-action@v2` with the `test` command across PHP 8.1, 8.2, 8.3, and 8.4.
+The GitHub workflow runs `Extra-Chill/homeboy-action@v2` with the `test` command across PHP 8.2, 8.3, 8.4, and 8.5.
 
 ### JavaScript Block Validation
 

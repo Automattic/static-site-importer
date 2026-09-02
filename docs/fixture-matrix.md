@@ -243,10 +243,10 @@ type/placement, `defer`/`async`, and payload presence, SHA-256, and byte count;
 payload source is never retained in the matrix output.
 
 `summary.matrix_evidence_readiness` aggregates the fixture states. `verified`
-means provenance and a current materialization plan were captured. Historical or
-otherwise incomplete outputs are explicitly `legacy_evidence_missing` (with the
-missing fields listed), so they cannot be read as evidence of current released
-transformer behavior. A dry, unexecuted matrix is `not_captured`.
+means provenance and a current materialization plan were captured. Incomplete
+outputs are explicitly `runtime_evidence_incomplete` (with the missing fields
+listed), so they cannot be read as evidence of current released transformer
+behavior. A dry, unexecuted matrix is `not_captured`.
 
 Every matrix run also writes `visual-parity-evidence-report.json` and
 `visual-parity-evidence-report.md`. These artifacts make the staged-output proof
@@ -439,6 +439,23 @@ complete solved corpus. The replayable plan and operator summary identify this
 lane as `fixtures-solved-only/v1` and include active, solved, and selected corpus
 counts plus the full coverage inventory so CI artifacts prove the exact selection.
 
+### Editor Presentation Evidence
+
+New matrix runs emit `static-site-importer/editor-presentation-evidence/v3`.
+Its `expected_identities_complete` field records whether the expected generated
+stylesheet identities came from the complete Blocks Engine editor-presentation
+asset contract. SSI compares those identities without reconstructing route policy.
+A declared asset-count mismatch, upstream truncation marker, local evidence bound,
+or missing stylesheet coverage prevents promotion.
+
+The v3 evidence also requires an idle editor canvas without onboarding modals and
+matched frontend/editor content rendering at equivalent canvas widths. It does not
+require exact whole-window pixel equality because Gutenberg chrome and selection
+affordances differ. It fails closed for major editor-content geometry drift,
+unreadable or hidden content, unresolved assets, or missing comparison artifacts.
+Legacy stylesheet-only evidence is insufficient; rerun the matrix to produce v3
+evidence.
+
 The solved-candidate gate also proves persisted Gutenberg editability. After
 visual parity capture, it inserts a fixture-specific paragraph through
 `wordpress.editor-actions`, saves with `core/editor.savePost`, reloads the editor,
@@ -482,6 +499,11 @@ SSI-specific behavior remains here: plugin slug/defaults, fixture artifact
 packing, `static-site-importer validate-artifact` command construction,
 artifact expectations, and diagnostic-to-repair grouping.
 
+Use `--theme-materialization classic` on the operator wrapper, or set
+`SSI_FIXTURE_MATRIX_THEME_MATERIALIZATION=classic`, to run the same runtime and
+visual-parity evidence lane against SSI's managed classic-theme projection.
+`block` remains the default.
+
 ## Editor Block Validity Gate
 
 The PHP `validate-artifact` step proves blocks *serialize* (PHP
@@ -495,6 +517,11 @@ After each fixture's import step, `buildFixtureMatrixRecipe` appends a
 `{ name, isValid, issues }` results plus `total_blocks`/`valid_blocks`/
 `invalid_blocks`. This reuses the existing wp-codebox editor-validation command
 rather than rebuilding a validator.
+
+Solved-site promotion additionally requires the WP Codebox artifact schema,
+`wordpress-block-editor` provider, `edited-post-content` source, a nonzero
+registered block-type count, and one complete recursive result per reported
+block. Counts-only or detached-content validation cannot satisfy promotion.
 
 The default `front-page` target resolves at runtime to the imported
 `page_on_front`, so validation exercises real imported content even though its

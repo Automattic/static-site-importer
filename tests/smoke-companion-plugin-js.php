@@ -62,6 +62,8 @@ if ( ! function_exists( 'sanitize_key' ) ) {
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-product-handoff-contract.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-diagnostics-adapter.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-companion-plugin.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-plugin-materializer.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-manager.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
 
@@ -150,6 +152,47 @@ $unsafe_effect = $payload;
 $unsafe_effect['runtime_effects']['retained_modules'][0]['unit_id'] = 'effect_shared';
 $assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $unsafe_effect ) ), 'shared-runtime-unit-fails-closed' );
 
+$theme_owned_payload = $payload;
+$theme_owned_payload['preserved_js'][0]['block'] = '';
+$theme_owned_payload['runtime_effects']['retained_modules'][0]['block'] = '';
+$theme_owned_payload = Static_Site_Importer_Companion_Plugin::without_theme_owned_scripts(
+	$theme_owned_payload,
+	array(
+		array( 'kind' => 'js', 'target_path' => 'assets/site.js', 'content' => $island_body ),
+		array( 'kind' => 'mjs', 'target_path' => 'assets/carousel.mjs', 'content_base64' => base64_encode( 'document.querySelector(".carousel").classList.add("active");' ) ),
+		array( 'kind' => 'css', 'target_path' => 'assets/not-a-script.css', 'content' => $island_body ),
+	)
+);
+$assert( array() === ( $theme_owned_payload['preserved_js'] ?? null ), 'theme-owned-preserved-script-is-removed-from-companion' );
+$assert( array() === ( $theme_owned_payload['runtime_effects']['retained_modules'] ?? null ), 'theme-owned-runtime-module-is-removed-from-companion' );
+$theme_owned_script_only = $theme_owned_payload;
+$theme_owned_script_only['blocks'] = array();
+$assert( false === Static_Site_Importer_Companion_Plugin::has_materializable_content( $theme_owned_script_only ), 'fully-deduplicated-script-only-payload-needs-no-companion' );
+$block_scoped_payload = Static_Site_Importer_Companion_Plugin::without_theme_owned_scripts(
+	$payload,
+	array(
+		array( 'kind' => 'js', 'content_hash' => hash( 'sha256', $island_body ) ),
+		array( 'kind' => 'js', 'content_hash' => hash( 'sha256', 'document.querySelector(".carousel").classList.add("active");' ) ),
+	)
+);
+$assert( 1 === count( $block_scoped_payload['preserved_js'] ?? array() ) && 1 === count( $block_scoped_payload['runtime_effects']['retained_modules'] ?? array() ), 'block-scoped-scripts-remain-companion-owned' );
+
+$companion_only_payload = $payload;
+$companion_only_payload['preserved_js'][] = array(
+	'handle'      => 'companion-only',
+	'content'     => 'window.__ssiCompanionOnly=true;',
+	'block'       => 'ssi-example-site/custom-hero',
+	'selector'    => '.companion-only',
+	'source_path' => 'index.html',
+);
+$companion_only_payload = Static_Site_Importer_Companion_Plugin::without_theme_owned_scripts(
+	$companion_only_payload,
+	array( array( 'kind' => 'script', 'content_hash' => hash( 'sha256', $island_body ) ) )
+);
+$assert( 2 === count( $companion_only_payload['preserved_js'] ?? array() ) && 'companion-only' === ( $companion_only_payload['preserved_js'][1]['handle'] ?? '' ), 'unmatched-block-scoped-script-remains-companion-owned' );
+$companion_only_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $companion_only_payload );
+$assert( is_array( $companion_only_descriptor ) && in_array( 'window.__ssiCompanionOnly=true;', $companion_only_descriptor['files'] ?? array(), true ), 'companion-only-script-remains-materialized' );
+
 $script_only = $payload;
 $script_only['blocks'] = array();
 $script_only['preserved_js'][0]['block'] = '';
@@ -170,22 +213,24 @@ if ( ! function_exists( 'is_plugin_active' ) ) {
 	}
 }
 
-$dependency = Static_Site_Importer_Entity_Materializer_Registry::companion_plugin_dependency( $payload );
-$row        = Static_Site_Importer_Entity_Materializer_Registry::companion_dependency_row( $dependency, false );
+$dependency = Static_Site_Importer_Dependency_Manager::companion_plugin_dependency( $payload );
+$row        = Static_Site_Importer_Dependency_Manager::companion_dependency_row( $dependency, false );
 $assert( array( 'hero-island', 'runtime-unit-effect-carousel' ) === ( $row['island_handles'] ?? null ), 'dependency-row-carries-island-handles' );
 
 // Active companion: present diagnostic flags JS as runtime-carried theme-independently.
 $GLOBALS['ssi_companion_js_active'] = true;
-$report                            = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );
-$report['quality']['fallback_count'] = 1;
-$report['diagnostics'][] = array(
-	'code'       => 'html_script_fallback',
-	'kind'       => 'unsupported_html_fallback',
-	'type'       => 'unsupported_html_fallback',
-	'tag'        => 'script',
-	'selector'   => 'script:nth-of-type(1)',
-	'source_path' => 'index.html',
-);
+	$report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );
+	$report->merge_quality( array( 'fallback_count' => 1 ) );
+	$report->append_diagnostic(
+		array(
+			'code'        => 'html_script_fallback',
+			'kind'        => 'unsupported_html_fallback',
+			'type'        => 'unsupported_html_fallback',
+			'tag'         => 'script',
+			'selector'    => 'script:nth-of-type(1)',
+			'source_path' => 'index.html',
+		)
+	);
 Static_Site_Importer_Report_Diagnostics::record_companion_plugin_dependency( $report, $dependency, false );
 $present = array_values( array_filter( $report['diagnostics'] ?? array(), static fn ( array $d ): bool => 'companion_plugin_present' === ( $d['code'] ?? '' ) ) );
 $assert( 1 === count( $present ), 'present-diagnostic-emitted-when-active' );
@@ -195,14 +240,16 @@ $materialized = array_values( array_filter( $report['diagnostics'] ?? array(), s
 $assert( 1 === count( $materialized ), 'companion-materialization-resolves-script-fallback' );
 $assert( 'native_conversion' === ( $materialized[0]['loss_class'] ?? '' ), 'materialized-script-is-native-conversion-outcome' );
 $assert( 0 === ( $report['quality']['fallback_count'] ?? -1 ), 'materialized-script-no-longer-counts-as-fallback' );
-$report['diagnostics'][] = array(
-	'code'        => 'html_script_fallback',
-	'kind'        => 'html',
-	'tag'         => 'script',
-	'selector'    => 'script:nth-of-type(1)',
-	'source_path' => 'index.html',
-	'reason'      => 'script_requires_runtime',
-);
+	$report->append_diagnostic(
+		array(
+			'code'        => 'html_script_fallback',
+			'kind'        => 'html',
+			'tag'         => 'script',
+			'selector'    => 'script:nth-of-type(1)',
+			'source_path' => 'index.html',
+			'reason'      => 'script_requires_runtime',
+		)
+	);
 Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $report, array() );
 $unresolved = array_filter( $report['diagnostics'], static fn ( array $d ): bool => 'html_script_fallback' === ( $d['code'] ?? '' ) );
 $assert( empty( $unresolved ), 'finalization-reconciles-late-script-fallback-rows' );

@@ -46,6 +46,10 @@ class Static_Site_Importer_Theme_Exporter {
 		if ( null !== $stylesheet ) {
 			$files[] = $stylesheet;
 		}
+		$global_stylesheet = self::export_global_stylesheet_file( $root );
+		if ( null !== $global_stylesheet ) {
+			$files[] = $global_stylesheet;
+		}
 
 		$pages      = self::export_pages( $include_pages );
 		$post_count = 0;
@@ -57,7 +61,7 @@ class Static_Site_Importer_Theme_Exporter {
 			);
 			$files[]       = self::export_file_entry(
 				$entrypoint,
-				self::export_html_document( '', self::export_theme_chrome_html( $theme_dir, 'front-page' ), $theme_slug, null !== $stylesheet ),
+				self::export_html_document( '', self::export_theme_chrome_html( $theme_dir, 'front-page' ), $theme_slug, null !== $stylesheet, null !== $global_stylesheet ),
 				'document',
 				'entrypoint'
 			);
@@ -111,11 +115,20 @@ class Static_Site_Importer_Theme_Exporter {
 				$is_front  = $plan['is_front'];
 				$page_id   = isset( $page->ID ) ? (int) $page->ID : 0;
 				$template  = $is_front ? 'front-page' : 'page';
-				$page_html = self::blocks_to_html( isset( $page->post_content ) ? (string) $page->post_content : '' );
+				$page_html = self::export_resolved_template_html( $page, $theme_slug, $is_front );
+				$chrome    = '' === $page_html
+					? self::export_theme_chrome_html( $theme_dir, $template )
+					: array(
+						'before' => '',
+						'after'  => '',
+					);
+				if ( '' === $page_html ) {
+					$page_html = self::blocks_to_html( isset( $page->post_content ) ? (string) $page->post_content : '' );
+				}
 
 				$files[] = self::export_file_entry(
 					$path,
-					self::export_html_document( $page_html, self::export_theme_chrome_html( $theme_dir, $template ), self::export_page_title( $page, $theme_slug ), null !== $stylesheet ),
+					self::export_html_document( $page_html, $chrome, self::export_page_title( $page, $theme_slug ), null !== $stylesheet, null !== $global_stylesheet ),
 					'document',
 					$is_front ? 'entrypoint' : 'page',
 					array(
@@ -357,6 +370,87 @@ class Static_Site_Importer_Theme_Exporter {
 	}
 
 	/**
+	 * Render the template WordPress resolves for a document.
+	 *
+	 * get_block_template() and resolve_block_template() apply WordPress's normal
+	 * database-over-theme source precedence. do_blocks() then expands nested
+	 * template parts through core's template-part renderer.
+	 *
+	 * @param object $page       Document being exported.
+	 * @param string $theme_slug Active theme stylesheet.
+	 * @param bool   $is_front   Whether this is the front page.
+	 * @return string
+	 */
+	private static function export_resolved_template_html( object $page, string $theme_slug, bool $is_front ): string {
+		if ( ! function_exists( 'get_block_template' ) || ! function_exists( 'do_blocks' ) ) {
+			return '';
+		}
+
+		$template = null;
+		$slug     = '';
+		if ( function_exists( 'get_page_template_slug' ) && isset( $page->ID ) ) {
+			$slug = (string) get_page_template_slug( (int) $page->ID );
+		}
+		if ( '' !== $slug && 'default' !== $slug ) {
+			$template = get_block_template( $theme_slug . '//' . $slug );
+		}
+
+		if ( null === $template && function_exists( 'resolve_block_template' ) ) {
+			$hierarchy = self::export_template_hierarchy( $page, $is_front );
+			$template  = resolve_block_template( $hierarchy[0], $hierarchy, '' );
+		}
+		if ( null === $template || '' === $template->content ) {
+			return '';
+		}
+
+		global $post;
+		$previous_post = $post ?? null;
+		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Dynamic block rendering reads the exported document from the global post context.
+		$post = $page;
+		if ( function_exists( 'setup_postdata' ) ) {
+			setup_postdata( $page );
+		}
+		$html = do_blocks( (string) $template->content );
+		if ( function_exists( 'wp_reset_postdata' ) ) {
+			wp_reset_postdata();
+		}
+		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restore the caller's global post after rendering the exported document.
+		$post = $previous_post;
+
+		return $html;
+	}
+
+	/**
+	 * Build the standard block-template candidates for an exported singular post.
+	 *
+	 * @param object $page     Document being exported.
+	 * @param bool   $is_front Whether this is the front page.
+	 * @return array<int,string>
+	 */
+	private static function export_template_hierarchy( object $page, bool $is_front ): array {
+		$slug      = isset( $page->post_name ) ? sanitize_title( (string) $page->post_name ) : '';
+		$id        = isset( $page->ID ) ? (int) $page->ID : 0;
+		$post_type = isset( $page->post_type ) ? sanitize_key( (string) $page->post_type ) : 'page';
+		$hierarchy = $is_front ? array( 'front-page', 'home' ) : array();
+		if ( 'page' === $post_type ) {
+			if ( '' !== $slug ) {
+				$hierarchy[] = 'page-' . $slug;
+			}
+			if ( $id > 0 ) {
+				$hierarchy[] = 'page-' . $id;
+			}
+			$hierarchy[] = 'page';
+		} else {
+			$hierarchy[] = 'single-' . $post_type;
+			$hierarchy[] = 'single';
+		}
+		$hierarchy[] = 'singular';
+		$hierarchy[] = 'index';
+
+		return array_values( array_unique( $hierarchy ) );
+	}
+
+	/**
 	 * Convert a block markup file to HTML.
 	 *
 	 * @param string $path File path.
@@ -403,11 +497,15 @@ class Static_Site_Importer_Theme_Exporter {
 	 * @param bool                              $include_styles  Whether to link exported CSS.
 	 * @return string
 	 */
-	private static function export_html_document( string $page_html, array $chrome, string $title, bool $include_styles ): string {
+	private static function export_html_document( string $page_html, array $chrome, string $title, bool $include_styles, bool $include_global_styles = false ): string {
 		$head = '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">';
 		if ( $include_styles ) {
 			// phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedStylesheet -- This method emits standalone static HTML, not a WordPress-rendered page.
 			$head .= '<link rel="stylesheet" href="style.css">';
+		}
+		if ( $include_global_styles ) {
+			// phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedStylesheet -- This method emits standalone static HTML, not a WordPress-rendered page.
+			$head .= '<link rel="stylesheet" href="global-styles.css">';
 		}
 
 		return '<!doctype html>' . "\n"
@@ -516,6 +614,25 @@ class Static_Site_Importer_Theme_Exporter {
 		}
 
 		return self::export_file_entry( $root . '/style.css', $content, 'asset', 'stylesheet' );
+	}
+
+	/**
+	 * Export the merged theme.json, style variation, and user Global Styles CSS.
+	 *
+	 * @param string $root Artifact root.
+	 * @return array<string,mixed>|null
+	 */
+	private static function export_global_stylesheet_file( string $root ): ?array {
+		if ( ! function_exists( 'wp_get_global_stylesheet' ) ) {
+			return null;
+		}
+
+		$stylesheet = wp_get_global_stylesheet();
+		if ( '' === trim( $stylesheet ) ) {
+			return null;
+		}
+
+		return self::export_file_entry( $root . '/global-styles.css', $stylesheet, 'asset', 'stylesheet' );
 	}
 
 	/**

@@ -20,6 +20,12 @@ if ( ! function_exists( 'sanitize_key' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_json_encode' ) ) {
+	function wp_json_encode( $value ) {
+		return json_encode( $value );
+	}
+}
+
 if ( ! function_exists( 'doing_action' ) ) {
 	function doing_action( $hook_name = null ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 		return false;
@@ -218,10 +224,12 @@ $assert( 0 === ( $clean_quality_contract['quality_counts']['fallback_count'] ?? 
 $assert( true === ( $clean_quality_contract['quality_counts']['consistent'] ?? false ), 'quality-reconciliation-keeps-clean-layers-consistent' );
 $assert( 0 === ( $clean_quality_contract['diagnostic_summary']['total'] ?? null ), 'quality-reconciliation-does-not-diagnose-clean-layers' );
 
-$partial_quality_report = array(
+$partial_quality_report = Static_Site_Importer_Import_Report::from_array(
+	array(
 	'blocks_engine' => array( 'wordpress_site_plan' => array( 'quality' => array( 'metrics' => array( 'fallback_count' => 2 ) ) ) ),
 	'quality'       => array( 'metrics' => array( 'block_count' => 1 ) ),
 	'diagnostics'   => array( array( 'type' => 'unsupported_html_fallback', 'severity' => 'warning' ) ),
+	)
 );
 $partial_quality_warning_handler = set_error_handler(
 	static function ( int $severity, string $message, string $file, int $line ): never {
@@ -478,6 +486,159 @@ $assert( 'accepted_runtime_preservation' === ( $runtime_preservation_diagnostic[
 $assert( 'client_script_execution' === ( $runtime_preservation_diagnostic['runtime_requirement'] ?? '' ), 'contract-preserves-runtime-requirement' );
 $assert( 'preserve' === ( $runtime_preservation_diagnostic['disposition'] ?? '' ), 'contract-preserves-runtime-disposition' );
 $assert( 'preserve_verbatim' === ( $runtime_preservation_diagnostic['js_handling'] ?? '' ), 'contract-preserves-runtime-js-handling' );
+
+$finalized_report = Static_Site_Importer_Import_Report::from_array(
+	array(
+	'schema'      => 'static-site-importer/import-report/v1',
+	'version'     => 1,
+	'theme_slug'  => 'finalized-diagnostic-source',
+	'quality'     => array( 'fallback_count' => 0 ),
+	'diagnostics' => array(
+		array(
+			'type'        => 'invalid_block_content',
+			'source_path' => 'templates/front-page.html',
+		),
+	),
+	'blocks_engine' => array(
+		'conversion_report' => array(
+			'diagnostics' => array(
+				array(
+					'type'        => 'stale_nested_diagnostic',
+					'source_path' => 'legacy-report.html',
+				),
+			),
+		),
+	),
+	)
+);
+$finalized_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $finalized_report, array() );
+$finalized_report['materialization_receipt'] = array(
+	'schema'    => 'static-site-importer/materialization-receipt/v2',
+	'status'    => 'completed',
+	'completed' => array( 'pages' => array( 1 ) ),
+);
+$cached_contract = Static_Site_Importer_Report_Diagnostics::refresh_projections( $finalized_report, $finalized_quality );
+$assert( 1 === ( $cached_contract['diagnostic_summary']['total'] ?? 0 ), 'finalized-report-is-sole-diagnostic-source' );
+$assert( 'invalid_block_content' === ( $cached_contract['diagnostics'][0]['type'] ?? '' ), 'finalized-report-builds-fixture-projection' );
+$assert( $cached_contract === Static_Site_Importer_Canonical_Import_Service::success_diagnostics_contract( array( 'fixture_diagnostics' => $cached_contract, 'import_report' => $finalized_report->to_array() ) ), 'canonical-service-reuses-finalized-fixture-projection' );
+$assert( 'completed' === ( $cached_contract['materialization_receipt']['status'] ?? '' ), 'projection-refresh-includes-final-receipt' );
+$assert( ( $finalized_report['compact_summary']['status'] ?? '' ) === ( $cached_contract['status'] ?? '' ), 'projection-refresh-keeps-statuses-aligned' );
+
+$normalized_form_fallback = array(
+	'type'        => 'unsupported_html_fallback',
+	'code'        => 'html_form_fallback',
+	'reason_code' => 'html_form_fallback',
+	'source_path' => 'index.html',
+	'selector'    => 'form.newsletter',
+	'form'        => array( 'class' => 'newsletter' ),
+	'controls'    => array(
+		array(
+			'tag'  => 'input',
+			'type' => 'email',
+			'name' => 'email',
+		),
+	),
+);
+$hidden_response_iframe = array(
+	'type'                => 'unsupported_html_fallback',
+	'code'                => 'html_form_fallback',
+	'reason_code'         => 'html_form_fallback',
+	'source_path'         => 'index.html',
+	'selector'            => 'iframe.form-response',
+	'source_html_preview' => '<iframe class="form-response" hidden></iframe>',
+);
+$reordered_form_entity = array(
+	'selector'    => 'form.newsletter',
+	'source_path' => 'index.html',
+	'form'        => array( 'class' => 'newsletter' ),
+	'controls'    => array(
+		array(
+			'name' => 'email',
+			'type' => 'email',
+			'tag'  => 'input',
+		),
+	),
+);
+$form_identity    = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_identity( $reordered_form_entity );
+$form_hash        = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $reordered_form_entity );
+$assert( $form_hash === Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $normalized_form_fallback ) && $form_identity === Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_identity( $normalized_form_fallback ), 'form-fallback-reconciliation-canonicalizes-associative-key-order' );
+$block_hash       = hash( 'sha256', '<!-- wp:jetpack/contact-form -->newsletter<!-- /wp:jetpack/contact-form -->' );
+$page_hash        = hash( 'sha256', '<!-- wp:group -->materialized page<!-- /wp:group -->' );
+$provider_receipt = array(
+	'schema'                           => 'static-site-importer/quality-resolution-receipt/v1',
+	'status'                           => 'completed',
+	'fallback_reconciliation_identity' => $form_identity,
+	'fallback_hash'                    => $form_hash,
+	'binding_reconciliation_identity'  => hash( 'sha256', 'form-fallback-binding' ),
+	'materialized_block_hash'          => $block_hash,
+	'persisted_fragment_hash'          => $block_hash,
+	'materialized_content_hash'        => $page_hash,
+	'provider'                         => 'jetpack',
+);
+$normalized_form_report = Static_Site_Importer_Import_Report::from_array(
+	array(
+	'quality'                 => array( 'fallback_count' => 2 ),
+	'diagnostics'             => array( $normalized_form_fallback, $hidden_response_iframe ),
+	'materialization_receipt' => array(
+		'completed' => array(
+			'materialized_pages' => array(
+				'index.html' => array( 'content_hash' => $page_hash ),
+			),
+		),
+	),
+	)
+);
+Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $normalized_form_report, array( $provider_receipt ) );
+$assert( 1 === ( $normalized_form_report['quality']['fallback_count'] ?? 0 ) && 2 === ( $normalized_form_report['quality']['source_fallback_count'] ?? 0 ) && 1 === ( $normalized_form_report['quality_resolutions']['resolved_by_provider'] ?? 0 ), 'normalized-form-diagnostic-reconciles-exact-provider-receipt' );
+$assert( 'resolved_by_provider' === ( $normalized_form_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ) && 'unresolved' === ( $normalized_form_report['quality_resolutions']['resolutions'][1]['state'] ?? '' ), 'unreceipted-hidden-response-iframe-remains-unresolved' );
+
+$mismatched_receipt                  = $provider_receipt;
+$mismatched_receipt['fallback_hash'] = hash( 'sha256', 'mismatched fallback' );
+$mismatched_form_report                = Static_Site_Importer_Import_Report::from_array( $normalized_form_report->to_array() );
+$mismatched_form_report['quality']     = array( 'fallback_count' => 1 );
+$mismatched_form_report['diagnostics'] = array( $normalized_form_fallback );
+Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $mismatched_form_report, array( $mismatched_receipt ) );
+$assert( 1 === ( $mismatched_form_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $mismatched_form_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'normalized-form-diagnostic-rejects-mismatched-provider-receipt' );
+
+$safe_runtime_report = Static_Site_Importer_Import_Report::from_array(
+	array(
+	'quality' => array( 'fallback_count' => 1 ),
+	'diagnostics' => array(
+		array(
+			'type'                  => 'unsupported_html_fallback',
+			'loss_class'            => 'runtime_island_preserved',
+			'acceptability'         => 'acceptable_preservation',
+			'source_path'           => 'contact.html',
+			'selector'              => 'iframe.contact-form',
+			'reason_code'           => 'preserved_runtime_embed',
+			'source_html_preview'   => '<iframe class="contact-form" src="https://forms.hsforms.com/embed/contact" title="Contact form"></iframe>',
+			'preservation_strategy' => 'sanitized_embed_markup',
+			'runtime_requirement'   => 'third_party_embed_runtime',
+			'materialization_path'  => 'runtime_island_registry',
+		),
+	),
+	)
+);
+$safe_runtime_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $safe_runtime_report, array( 'fail_on_quality' => true ) );
+$assert( true === ( $safe_runtime_quality['pass'] ?? false ) && false === ( $safe_runtime_quality['fail_import'] ?? true ), 'bounded-safe-runtime-iframe-passes-quality-admission' );
+$assert( 1 === ( $safe_runtime_quality['accepted_preserved_runtime_island_count'] ?? 0 ) && 0 === ( $safe_runtime_quality['unsupported_fallback_count'] ?? -1 ), 'runtime-island-counts-are-separated-from-unsupported-fallbacks' );
+$assert( 1 === ( $safe_runtime_report['import_validation_result']['counts']['accepted_preserved_runtime_islands'] ?? 0 ) && 'passed' === ( $safe_runtime_report['import_validation_result']['quality_gates']['fallback_blocks']['status'] ?? '' ), 'validation-result-reports-accepted-runtime-island-without-fallback-failure' );
+$assert( 'sanitized_embed_markup' === ( $safe_runtime_report['finding_packets']['packets'][0]['preservation']['strategy'] ?? '' ) && 'runtime_island_registry' === ( $safe_runtime_report['finding_packets']['packets'][0]['preservation']['materialization_path'] ?? '' ), 'finding-packet-preserves-runtime-island-contract-evidence' );
+
+$unsafe_runtime_report = Static_Site_Importer_Import_Report::from_array( $safe_runtime_report->to_array() );
+$unsafe_diagnostics    = $unsafe_runtime_report->diagnostics();
+$unsafe_diagnostics[0]['source_html_preview'] = '<iframe srcdoc="<script>alert(1)</script>"></iframe>';
+$unsafe_runtime_report->set_diagnostics( $unsafe_diagnostics );
+$unsafe_runtime_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $unsafe_runtime_report, array( 'fail_on_quality' => true ) );
+$assert( false === ( $unsafe_runtime_quality['pass'] ?? true ) && true === ( $unsafe_runtime_quality['fail_import'] ?? false ), 'unsafe-runtime-iframe-remains-fail-closed' );
+$assert( 0 === ( $unsafe_runtime_quality['accepted_preserved_runtime_island_count'] ?? -1 ) && 1 === ( $unsafe_runtime_quality['unsupported_fallback_count'] ?? 0 ), 'unsafe-runtime-iframe-is-counted-as-unsupported-fallback' );
+
+$incomplete_runtime_report = Static_Site_Importer_Import_Report::from_array( $safe_runtime_report->to_array() );
+$incomplete_diagnostics    = $incomplete_runtime_report->diagnostics();
+unset( $incomplete_diagnostics[0]['materialization_path'] );
+$incomplete_runtime_report->set_diagnostics( $incomplete_diagnostics );
+$incomplete_runtime_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $incomplete_runtime_report, array( 'fail_on_quality' => true ) );
+$assert( false === ( $incomplete_runtime_quality['pass'] ?? true ) && true === ( $incomplete_runtime_quality['fail_import'] ?? false ), 'missing-runtime-materialization-contract-remains-fail-closed' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );

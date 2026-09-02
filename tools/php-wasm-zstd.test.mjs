@@ -58,7 +58,9 @@ test( 'release publication keeps immutable assets and blueprints separate from t
 	assert.match( workflow, /playground\/extensions\/latest/ );
 	assert.match( workflow, /releases\/download\/\$RELEASE_TAG/ );
 	assert.match( workflow, /access-control-allow-origin/ );
-	assert.match( workflow, /git -C "\$pages_dir" add \.nojekyll "playground\/\$RELEASE_TAG\.blueprint\.json"/ );
+	assert.match( workflow, /playground\/\$RELEASE_TAG\/static-site-importer-playground-demo\.zip/ );
+	assert.match( workflow, /DEMO_PACKAGE_SHA256/ );
+	assert.match( workflow, /git -C "\$pages_dir" add \.nojekyll "playground\/\$RELEASE_TAG\.blueprint\.json" "playground\/\$RELEASE_TAG\/static-site-importer-playground-demo\.zip"/ );
 	assert.match( workflow, /git -C "\$pages_dir" diff --cached --quiet/ );
 	assert.doesNotMatch( workflow, /gh release upload/ );
 	assert.ok(
@@ -74,5 +76,6 @@ test( 'release publication keeps immutable assets and blueprints separate from t
 		'extension aliases must advance only after their browser verification',
 	);
 	assert.match( publication, /\{\{RELEASE_TAG\}\}/ );
+	assert.match( publication, /\{\{DEMO_PACKAGE_SHA256\}\}/ );
 	assert.match( publication, /Homeboy remains the sole\s+release owner/ );
 } );

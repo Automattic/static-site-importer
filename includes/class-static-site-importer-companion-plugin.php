@@ -3,15 +3,11 @@
  * Companion-plugin scaffolder.
  *
  * Generates a standalone, theme-independent WordPress plugin that houses a
- * site's typed metadata blocks, legacy PHP-only dynamic blocks, and preserved
- * island JS scoped to where it is used.
+ * site's metadata blocks and preserved island JS scoped to where it is used.
  *
  * Typed blocks carry their block.json metadata and are registered from their
  * directory, allowing WordPress to resolve declared editor and frontend assets.
- * Legacy PHP-only dynamic blocks remain supported through register_block_type()
- * arguments and a render callback.
- *
- * The compiled artifact owns the block spec + render + preserved-JS payload;
+ * The compiled artifact owns the block metadata + render + preserved-JS payload;
  * this class is the deterministic destination that turns that payload into an
  * installable plugin file set.
  *
@@ -39,10 +35,19 @@ if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
  */
 class Static_Site_Importer_Companion_Plugin {
 
+	/** Maximum declared script files and dependency handles per block. */
+	private const MAX_SCRIPT_DEPENDENCIES = 32;
+
+	/** SSI-owned renderer available to typed responsive-media blocks. */
+	private const RESPONSIVE_MEDIA_RENDERER = 'blocks-engine/responsive-media/v1';
+
+	/** SSI-owned renderer available to typed responsive-layout blocks. */
+	private const RESPONSIVE_LAYOUT_RENDERER = 'blocks-engine/responsive-layout/v1';
+
 	/**
 	 * Payload schema identifier consumed by the scaffolder.
 	 */
-	public const PAYLOAD_SCHEMA = 'static-site-importer/companion-plugin/v1';
+	public const PAYLOAD_SCHEMA = 'blocks-engine/wordpress-companion-plugin/v1';
 
 	/**
 	 * Validate a canonical compiled companion payload before any WordPress writes.
@@ -52,7 +57,7 @@ class Static_Site_Importer_Companion_Plugin {
 	 */
 	public static function validate_payload( array $payload ) {
 		if ( self::PAYLOAD_SCHEMA !== ( $payload['schema'] ?? null ) ) {
-			return new WP_Error( 'static_site_importer_companion_plugin_schema_invalid', 'Companion-plugin payload must use static-site-importer/companion-plugin/v1.' );
+			return new WP_Error( 'static_site_importer_companion_plugin_schema_invalid', 'Companion-plugin payload must use blocks-engine/wordpress-companion-plugin/v1.' );
 		}
 		if ( '' === self::site_slug( $payload ) ) {
 			return new WP_Error( 'static_site_importer_companion_plugin_site_slug_missing', 'Companion-plugin payload must declare a non-empty site_slug.' );
@@ -97,25 +102,46 @@ class Static_Site_Importer_Companion_Plugin {
 				return new WP_Error( 'static_site_importer_companion_plugin_block_json_name_invalid', sprintf( 'Block %s resolves to a duplicate WordPress block name.', $name ) );
 			}
 			$block_names[ $effective_name ] = true;
-			$assets                         = $block['assets'] ?? array();
-			if ( ! is_array( $assets ) || ( ! empty( $assets ) && array_is_list( $assets ) ) ) {
+			$declared_assets                = $block['assets'] ?? array();
+			if ( ! is_array( $declared_assets ) || ( ! empty( $declared_assets ) && array_is_list( $declared_assets ) ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_assets_invalid', sprintf( 'Block %s assets must be an object.', $name ) );
 			}
+			$assets = self::block_assets( $block );
+			if ( is_wp_error( $assets ) ) {
+				return $assets;
+			}
 			foreach ( $assets as $path => $content ) {
-				if ( ! is_string( $path ) || self::sanitize_relative_path( $path ) !== $path || ! Static_Site_Importer_Content_Policy::is_companion_asset_path( $path ) || ! is_scalar( $content ) || Static_Site_Importer_Content_Policy::contains_server_code( (string) $content ) ) {
+				if ( self::sanitize_relative_path( $path ) !== $path || ! Static_Site_Importer_Content_Policy::is_companion_asset_path( $path ) || ! is_scalar( $content ) || Static_Site_Importer_Content_Policy::contains_server_code( (string) $content ) ) {
 					return new WP_Error( 'static_site_importer_companion_plugin_asset_path_invalid', sprintf( 'Block %s has an unsafe asset path.', $name ) );
+				}
+			}
+			$renderer = $block['renderer'] ?? null;
+			if ( null !== $renderer ) {
+				if ( ! is_string( $renderer ) || '' === self::typed_renderer( $renderer ) ) {
+					return new WP_Error( 'static_site_importer_companion_plugin_renderer_invalid', sprintf( 'Block %s must declare a supported typed renderer.', $name ) );
+				}
+				if ( array_key_exists( 'render', $block ) ) {
+					return new WP_Error( 'static_site_importer_companion_plugin_renderer_conflict', sprintf( 'Block %s cannot declare both render markup and a typed renderer.', $name ) );
+				}
+				$content_schema = $block['block_json']['attributes']['content'] ?? null;
+				if ( ! is_array( $content_schema ) || 'string' !== ( $content_schema['type'] ?? null ) ) {
+					return new WP_Error( 'static_site_importer_companion_plugin_renderer_attributes_invalid', sprintf( 'Block %s typed renderer requires a string content attribute.', $name ) );
 				}
 			}
 			if ( isset( $block['render'] ) && is_scalar( $block['render'] ) && Static_Site_Importer_Content_Policy::contains_server_code( (string) $block['render'] ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_render_invalid', sprintf( 'Block %s render markup must be static HTML.', $name ) );
 			}
 			$metadata = $block['block_json'];
-			if ( isset( $block['render'] ) && is_scalar( $block['render'] ) ) {
+			if ( ( isset( $block['render'] ) && is_scalar( $block['render'] ) ) || null !== $renderer ) {
 				$metadata['render'] = 'file:./render.php';
+			}
+			$script_dependencies = self::validate_script_dependencies( $block, $assets, $metadata );
+			if ( is_wp_error( $script_dependencies ) ) {
+				return $script_dependencies;
 			}
 			$references = self::metadata_file_references( $metadata );
 			foreach ( $references as $path ) {
-				if ( ! array_key_exists( $path, $assets ) && ! ( 'render.php' === $path && isset( $block['render'] ) && is_scalar( $block['render'] ) ) ) {
+				if ( ! array_key_exists( $path, $assets ) && ! ( 'render.php' === $path && ( ( isset( $block['render'] ) && is_scalar( $block['render'] ) ) || null !== $renderer ) ) ) {
 					return new WP_Error( 'static_site_importer_companion_plugin_metadata_asset_missing', sprintf( 'Block %s metadata references undeclared asset %s.', $name, $path ) );
 				}
 			}
@@ -176,9 +202,9 @@ class Static_Site_Importer_Companion_Plugin {
 		$mu_plugin = ! empty( $payload['mu_plugin'] );
 		$site_name = self::site_name( $payload, $site_slug );
 
-		$files       = array();
-		$block_names = array();
-		$block_specs = array();
+		$files             = array();
+		$block_names       = array();
+		$block_directories = array();
 
 		foreach ( $blocks as $block ) {
 			$built = self::build_block( $block, $block_namespace );
@@ -186,8 +212,8 @@ class Static_Site_Importer_Companion_Plugin {
 				return $built;
 			}
 
-			$block_names[] = $built['block_name'];
-			$block_specs[] = $built['spec'];
+			$block_names[]       = $built['block_name'];
+			$block_directories[] = $built['dir'];
 			foreach ( $built['files'] as $relative => $content ) {
 				$files[ $plugin_slug . '/blocks/' . $built['dir'] . '/' . $relative ] = $content;
 			}
@@ -197,34 +223,34 @@ class Static_Site_Importer_Companion_Plugin {
 			$files[ $plugin_slug . '/' . $island['relative_src'] ] = $island['content'];
 		}
 
-		$inventory_hash        = substr( hash( 'sha256', (string) wp_json_encode( array( $block_specs, $preserved ) ) ), 0, 16 );
+		$inventory_hash        = substr( hash( 'sha256', (string) wp_json_encode( array( $block_names, $preserved ) ) ), 0, 16 );
 		$registration_callback = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash . '_register_blocks';
 		$main_file             = $plugin_slug . '/' . $plugin_slug . '.php';
-		$files     = array_merge(
+		$files                 = array_merge(
 			array(
-				$main_file => self::main_plugin_file( $plugin_slug, $block_namespace, $site_name, $block_specs, $preserved, $main_file, $inventory_hash ),
+				$main_file => self::main_plugin_file( $plugin_slug, $block_namespace, $site_name, $block_directories, $preserved, $main_file, $inventory_hash ),
 			),
 			$files
 		);
 
 		$descriptor = array(
-			'schema'          => self::PAYLOAD_SCHEMA,
-			'slug'            => $plugin_slug,
-			'namespace'       => $block_namespace,
-			'site_slug'       => $site_slug,
-			'plugin_file'     => $main_file,
+			'schema'                => self::PAYLOAD_SCHEMA,
+			'slug'                  => $plugin_slug,
+			'namespace'             => $block_namespace,
+			'site_slug'             => $site_slug,
+			'plugin_file'           => $main_file,
 			'registration_callback' => $registration_callback,
-			'mu_plugin'       => $mu_plugin,
-			'block_names'     => $block_names,
+			'mu_plugin'             => $mu_plugin,
+			'block_names'           => $block_names,
 			// Handles of preserved island scripts the plugin carries + enqueues
 			// scoped. Exposed so the gate/diagnostics can account for preserved
 			// island JS as companion-plugin-carried (theme-independent) rather
 			// than theme-coupled.
-			'island_handles'  => array_map(
+			'island_handles'        => array_map(
 				static fn ( array $island ): string => (string) $island['handle'],
 				$preserved
 			),
-			'runtime_scripts' => array_map(
+			'runtime_scripts'       => array_map(
 				static fn ( array $island ): array => array(
 					'handle'          => (string) $island['handle'],
 					'block'           => (string) $island['block'],
@@ -234,8 +260,8 @@ class Static_Site_Importer_Companion_Plugin {
 				),
 				$preserved
 			),
-			'loader_file'     => '',
-			'files'           => $files,
+			'loader_file'           => '',
+			'files'                 => $files,
 		);
 
 		if ( $mu_plugin ) {
@@ -273,6 +299,100 @@ class Static_Site_Importer_Companion_Plugin {
 	public static function plugin_file( array $payload ): string {
 		$slug = self::plugin_slug( $payload );
 		return '' === $slug ? '' : $slug . '/' . $slug . '.php';
+	}
+
+	/**
+	 * Remove companion scripts already delivered by the generated theme.
+	 *
+	 * @param array<string,mixed>            $payload Companion-plugin payload.
+	 * @param array<int,array<string,mixed>> $assets  WordPress site-plan assets.
+	 * @return array<string,mixed>
+	 */
+	public static function without_theme_owned_scripts( array $payload, array $assets ): array {
+		$theme_hashes = self::theme_script_hashes( $assets );
+		if ( empty( $theme_hashes ) ) {
+			return $payload;
+		}
+
+		if ( isset( $payload['preserved_js'] ) && is_array( $payload['preserved_js'] ) ) {
+			$payload['preserved_js'] = array_values(
+				array_filter(
+					$payload['preserved_js'],
+					static fn( $entry ): bool => ! is_array( $entry ) || '' !== (string) ( $entry['block'] ?? '' ) || ! isset( $entry['content'] ) || ! is_scalar( $entry['content'] ) || ! isset( $theme_hashes[ hash( 'sha256', (string) $entry['content'] ) ] )
+				)
+			);
+		}
+
+		if ( isset( $payload['runtime_effects']['retained_modules'] ) && is_array( $payload['runtime_effects']['retained_modules'] ) ) {
+			$payload['runtime_effects']['retained_modules'] = array_values(
+				array_filter(
+					$payload['runtime_effects']['retained_modules'],
+					static fn( $module ): bool => ! is_array( $module ) || '' !== (string) ( $module['block'] ?? '' ) || ! isset( $module['content'] ) || ! is_scalar( $module['content'] ) || ! isset( $theme_hashes[ hash( 'sha256', (string) $module['content'] ) ] )
+				)
+			);
+		}
+
+		return $payload;
+	}
+
+	/** Whether a deduplicated payload still requires a companion plugin. */
+	public static function has_materializable_content( array $payload ): bool {
+		if ( ! empty( self::payload_blocks( $payload ) ) ) {
+			return true;
+		}
+
+		foreach ( is_array( $payload['preserved_js'] ?? null ) ? $payload['preserved_js'] : array() as $entry ) {
+			if ( is_array( $entry ) && isset( $entry['content'] ) && is_scalar( $entry['content'] ) && '' !== (string) $entry['content'] ) {
+				return true;
+			}
+		}
+		foreach ( is_array( $payload['runtime_effects']['retained_modules'] ?? null ) ? $payload['runtime_effects']['retained_modules'] : array() as $module ) {
+			if ( is_array( $module ) && isset( $module['content'] ) && is_scalar( $module['content'] ) && '' !== (string) $module['content'] ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/** @param array<int,array<string,mixed>> $assets @return array<string,true> */
+	private static function theme_script_hashes( array $assets ): array {
+		$hashes = array();
+		foreach ( $assets as $asset ) {
+			$path = '';
+			foreach ( array( 'target_path', 'path', 'source_path' ) as $field ) {
+				if ( isset( $asset[ $field ] ) && is_scalar( $asset[ $field ] ) && '' !== trim( (string) $asset[ $field ] ) ) {
+					$path = (string) $asset[ $field ];
+					break;
+				}
+			}
+			$kind = isset( $asset['kind'] ) && is_scalar( $asset['kind'] ) ? strtolower( (string) $asset['kind'] ) : '';
+			if ( ! in_array( $kind, array( 'js', 'mjs', 'javascript', 'script' ), true ) && ! preg_match( '/\.m?js(?:$|[?#])/i', $path ) ) {
+				continue;
+			}
+
+			$content = null;
+			if ( isset( $asset['content'] ) && is_scalar( $asset['content'] ) ) {
+				$content = (string) $asset['content'];
+			} elseif ( isset( $asset['content_base64'] ) && is_string( $asset['content_base64'] ) ) {
+				// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decode the compiler's declared asset payload.
+				$decoded = base64_decode( $asset['content_base64'], true );
+				$content = false === $decoded ? null : $decoded;
+			}
+			if ( is_string( $content ) ) {
+				$hashes[ hash( 'sha256', $content ) ] = true;
+				continue;
+			}
+			foreach ( array( 'content_hash', 'hash' ) as $field ) {
+				$hash = isset( $asset[ $field ] ) && is_scalar( $asset[ $field ] ) ? strtolower( (string) $asset[ $field ] ) : '';
+				if ( preg_match( '/^[a-f0-9]{64}$/', $hash ) ) {
+					$hashes[ $hash ] = true;
+					break;
+				}
+			}
+		}
+
+		return $hashes;
 	}
 
 	/**
@@ -327,39 +447,12 @@ class Static_Site_Importer_Companion_Plugin {
 	}
 
 	/**
-	 * Block.json keys (camelCase) mapped to register_block_type() argument keys
-	 * (the snake_case WP_Block_Type properties) that the PHP-only registration
-	 * carries into the generated plugin. Anything outside this list belongs to
-	 * the JS-build editor representation we deliberately no longer emit.
-	 */
-	private const BLOCK_SPEC_FIELDS = array(
-		'apiVersion'      => 'api_version',
-		'title'           => 'title',
-		'category'        => 'category',
-		'parent'          => 'parent',
-		'ancestor'        => 'ancestor',
-		'description'     => 'description',
-		'keywords'        => 'keywords',
-		'textdomain'      => 'textdomain',
-		'icon'            => 'icon',
-		'attributes'      => 'attributes',
-		'providesContext' => 'provides_context',
-		'usesContext'     => 'uses_context',
-		'supports'        => 'supports',
-		'styles'          => 'styles',
-		'example'         => 'example',
-	);
-
-	private const JSON_SCHEMA_TYPES = array( 'array', 'object', 'string', 'number', 'integer', 'boolean', 'null' );
-
-	/**
-	 * Build one block directory and its registration spec. Typed blocks retain
-	 * block.json and declared assets; blocks with a render payload also receive a
-	 * normalized render.php. Legacy schema-less entries use PHP registration.
+	 * Build one metadata block directory. Blocks with a render payload also
+	 * receive a normalized render.php.
 	 *
 	 * @param array<string,mixed> $block           Block payload entry.
 	 * @param string              $block_namespace Plugin block namespace.
-	 * @return array{block_name:string,dir:string,spec:array<string,mixed>,files:array<string,string>}|WP_Error
+	 * @return array{block_name:string,dir:string,files:array<string,string>}|WP_Error
 	 */
 	private static function build_block( array $block, string $block_namespace ) {
 		$name = isset( $block['name'] ) && is_scalar( $block['name'] ) ? self::sanitize_slug( (string) $block['name'] ) : '';
@@ -372,22 +465,25 @@ class Static_Site_Importer_Companion_Plugin {
 
 		$declared_name = is_string( $block['block_json']['name'] ?? null ) ? $block['block_json']['name'] : '';
 		$block_name    = preg_match( '/^[a-z0-9-]+\/[a-z0-9-]+$/', $declared_name ) ? $declared_name : $block_namespace . '/' . $name;
-		$args          = self::block_args( $block, $block_name );
-		if ( is_wp_error( $args ) ) {
-			return $args;
-		}
-
-		$has_render = isset( $block['render'] ) && is_scalar( $block['render'] );
-		$render     = $has_render ? (string) $block['render'] : '';
-		$files      = array();
-		if ( $has_render ) {
+		$renderer      = isset( $block['renderer'] ) && is_string( $block['renderer'] ) ? $block['renderer'] : '';
+		$has_render    = ( isset( $block['render'] ) && is_scalar( $block['render'] ) ) || '' !== $renderer;
+		$render        = isset( $block['render'] ) && is_scalar( $block['render'] ) ? (string) $block['render'] : '';
+		$files         = array();
+		if ( '' !== $renderer ) {
+			$files['render.php'] = self::typed_renderer( $renderer );
+		} elseif ( self::has_editable_content_render( $block ) ) {
+			$files['render.php'] = self::editable_content_renderer();
+		} elseif ( $has_render ) {
 			$files['render.php'] = self::normalize_render( $render );
 		}
 
 		// Carried static assets (e.g. block stylesheets or a hand-written
 		// Interactivity API view module) ride alongside render.php. These are
 		// pass-through files, not generated JS build output.
-		$assets = isset( $block['assets'] ) && is_array( $block['assets'] ) ? $block['assets'] : array();
+		$assets = self::block_assets( $block );
+		if ( is_wp_error( $assets ) ) {
+			return $assets;
+		}
 		foreach ( $assets as $relative => $content ) {
 			$relative = self::sanitize_relative_path( (string) $relative );
 			if ( '' === $relative || ! is_scalar( $content ) ) {
@@ -395,151 +491,51 @@ class Static_Site_Importer_Companion_Plugin {
 			}
 			$files[ $relative ] = (string) $content;
 		}
-		$metadata = isset( $block['block_json'] ) && is_array( $block['block_json'] ) && ! array_is_list( $block['block_json'] );
-		if ( $metadata ) {
-			$block_json         = $block['block_json'];
-			$block_json['name'] = $block_name;
-			if ( $has_render ) {
-				$block_json['render'] = 'file:./render.php';
-			}
-			$json = wp_json_encode( $block_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
-			if ( false === $json ) {
-				return new WP_Error( 'static_site_importer_companion_plugin_block_json_invalid', sprintf( 'Block %s block_json could not be encoded.', $block_name ) );
-			}
-			$files['block.json'] = $json . "\n";
+		foreach ( self::script_dependencies( $block ) as $relative => $dependencies ) {
+			$files[ self::asset_manifest_path( $relative ) ] = self::asset_manifest( $dependencies, (string) $assets[ $relative ] );
 		}
+		$block_json         = $block['block_json'];
+		$block_json['name'] = $block_name;
+		if ( $has_render ) {
+			$block_json['render'] = 'file:./render.php';
+		}
+		$json = wp_json_encode( $block_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+		if ( false === $json ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_block_json_invalid', sprintf( 'Block %s block_json could not be encoded.', $block_name ) );
+		}
+		$files['block.json'] = $json . "\n";
 
 		return array(
 			'block_name' => $block_name,
 			'dir'        => $name,
-			'spec'       => array(
-				'name'     => $block_name,
-				'dir'      => $name,
-				'args'     => $args,
-				'metadata' => $metadata,
-			),
 			'files'      => $files,
 		);
 	}
 
 	/**
-	 * Resolve the register_block_type() argument array for a block.
+	 * Normalize producer-owned dedicated assets into the metadata file map.
 	 *
-	 * Accepts the existing block_json payload slot (object or JSON string) as the
-	 * source of the editor-facing metadata, but emits only the server-side
-	 * registration arguments WP_Block_Type understands. The fully-qualified name
-	 * is owned by the companion plugin namespace and passed separately to
-	 * register_block_type(), so it is intentionally not part of the args.
+	 * Blocks Engine carries a generated block's audited frontend script in the
+	 * established `view_js` slot. WordPress block metadata addresses that payload
+	 * as `file:./view.js`, so validation and scaffolding must see one canonical
+	 * asset regardless of which producer representation supplied it.
 	 *
-	 * @param array<string,mixed> $block      Block payload entry.
-	 * @param string              $block_name Fully-qualified block name.
-	 * @return array<string,mixed>|WP_Error
+	 * @return array<array-key,mixed>|WP_Error
 	 */
-	private static function block_args( array $block, string $block_name ) {
-		$raw = $block['block_json'] ?? null;
-		if ( is_string( $raw ) ) {
-			$decoded = json_decode( $raw, true );
-		} elseif ( is_array( $raw ) ) {
-			$decoded = $raw;
-		} elseif ( null === $raw ) {
-			$decoded = array();
-		} else {
-			$decoded = null;
+	private static function block_assets( array $block ) {
+		$assets = isset( $block['assets'] ) && is_array( $block['assets'] ) ? $block['assets'] : array();
+		if ( ! array_key_exists( 'view_js', $block ) ) {
+			return $assets;
 		}
-
-		if ( ! is_array( $decoded ) ) {
-			return new WP_Error(
-				'static_site_importer_companion_plugin_block_json_invalid',
-				sprintf( 'Block %s must declare block_json as a JSON object or string.', $block_name )
-			);
+		if ( ! is_scalar( $block['view_js'] ) || Static_Site_Importer_Content_Policy::contains_server_code( (string) $block['view_js'] ) ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_view_script_invalid', 'Companion block view_js must contain safe JavaScript.' );
 		}
-
-		$args = array();
-		foreach ( self::BLOCK_SPEC_FIELDS as $json_key => $arg_key ) {
-			if ( array_key_exists( $json_key, $decoded ) ) {
-				$args[ $arg_key ] = $decoded[ $json_key ];
-			}
+		$view_js = (string) $block['view_js'];
+		if ( isset( $assets['view.js'] ) && (string) $assets['view.js'] !== $view_js ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_view_script_conflict', 'Companion block view_js conflicts with its declared view.js asset.' );
 		}
-
-		// Server-rendered dynamic block: api_version >= 2 enables the new block
-		// wrapper, and we default to the current API version when unspecified.
-		if ( ! isset( $args['api_version'] ) ) {
-			$args['api_version'] = 3;
-		}
-
-		// Attributes must be a map for WP_Block_Type::prepare_attributes_for_render.
-		if ( isset( $args['attributes'] ) && ! is_array( $args['attributes'] ) ) {
-			unset( $args['attributes'] );
-		} elseif ( isset( $args['attributes'] ) ) {
-			$args['attributes'] = self::normalize_attribute_schemas( $args['attributes'] );
-		}
-
-		return $args;
-	}
-
-	/**
-	 * Normalize generated block attribute schemas before WordPress REST validates them.
-	 *
-	 * @param array<string,mixed> $attributes Block attribute schema map.
-	 * @return array<string,mixed>
-	 */
-	private static function normalize_attribute_schemas( array $attributes ): array {
-		foreach ( $attributes as $name => $schema ) {
-			if ( is_array( $schema ) ) {
-				$attributes[ $name ] = self::normalize_json_schema_types( $schema );
-			}
-		}
-
-		return $attributes;
-	}
-
-	/**
-	 * Convert semantic producer type labels into valid JSON Schema types.
-	 *
-	 * @param array<string,mixed> $schema JSON Schema fragment.
-	 * @return array<string,mixed>
-	 */
-	private static function normalize_json_schema_types( array $schema ): array {
-		if ( isset( $schema['type'] ) ) {
-			if ( is_string( $schema['type'] ) && ! in_array( $schema['type'], self::JSON_SCHEMA_TYPES, true ) ) {
-				$schema['type'] = 'string';
-			} elseif ( is_array( $schema['type'] ) ) {
-				$types          = array_values( array_intersect( $schema['type'], self::JSON_SCHEMA_TYPES ) );
-				$schema['type'] = ! empty( $types ) ? $types : 'string';
-			}
-		}
-
-		foreach ( array( 'properties', 'patternProperties' ) as $key ) {
-			if ( ! isset( $schema[ $key ] ) || ! is_array( $schema[ $key ] ) ) {
-				continue;
-			}
-
-			foreach ( $schema[ $key ] as $property => $property_schema ) {
-				if ( is_array( $property_schema ) ) {
-					$schema[ $key ][ $property ] = self::normalize_json_schema_types( $property_schema );
-				}
-			}
-		}
-
-		foreach ( array( 'items', 'additionalProperties' ) as $key ) {
-			if ( isset( $schema[ $key ] ) && is_array( $schema[ $key ] ) ) {
-				$schema[ $key ] = self::normalize_json_schema_types( $schema[ $key ] );
-			}
-		}
-
-		foreach ( array( 'oneOf', 'anyOf', 'allOf' ) as $key ) {
-			if ( ! isset( $schema[ $key ] ) || ! is_array( $schema[ $key ] ) ) {
-				continue;
-			}
-
-			foreach ( $schema[ $key ] as $index => $nested_schema ) {
-				if ( is_array( $nested_schema ) ) {
-					$schema[ $key ][ $index ] = self::normalize_json_schema_types( $nested_schema );
-				}
-			}
-		}
-
-		return $schema;
+		$assets['view.js'] = $view_js;
+		return $assets;
 	}
 
 	/**
@@ -639,7 +635,7 @@ class Static_Site_Importer_Companion_Plugin {
 	 * @param string                          $plugin_slug     Plugin slug.
 	 * @param string                          $block_namespace Block namespace.
 	 * @param string                          $site_name       Human-readable site name.
-	 * @param array<int,array<string,mixed>>  $block_specs     PHP-only block registration specs.
+	 * @param array<int,string>                $block_directories Block directories registered from metadata.
 	 * @param array<int,array<string,string>> $preserved       Preserved island descriptors.
 	 * @param string                          $plugin_file     Generated plugin basename.
 	 * @param string                          $inventory_hash  Deterministic generated inventory hash.
@@ -649,29 +645,28 @@ class Static_Site_Importer_Companion_Plugin {
 		string $plugin_slug,
 		string $block_namespace,
 		string $site_name,
-		array $block_specs,
+		array $block_directories,
 		array $preserved,
 		string $plugin_file,
 		string $inventory_hash
 	): string {
-		$header_name  = sprintf( 'SSI Companion: %s', $site_name );
-		$fn_prefix    = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash;
-		$const_prefix = strtoupper( $fn_prefix );
-		$islands_php  = self::export_islands_php( $preserved );
-		$specs_php    = self::export_block_specs_php( $block_specs );
+		$header_name     = sprintf( 'SSI Companion: %s', $site_name );
+		$fn_prefix       = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash;
+		$const_prefix    = strtoupper( $fn_prefix );
+		$islands_php     = self::export_islands_php( $preserved );
+		$directories_php = self::export_php_value( array_values( $block_directories ), 1 );
 
 		$lines   = array();
 		$lines[] = '<?php';
 		$lines[] = '/**';
 		$lines[] = ' * Plugin Name: ' . $header_name;
-		$lines[] = ' * Description: Generated companion plugin housing typed blocks and preserved island JS for ' . $site_name . '. Generated by Static Site Importer.';
+		$lines[] = ' * Description: Generated companion plugin housing metadata blocks and preserved island JS for ' . $site_name . '. Generated by Static Site Importer.';
 		$lines[] = ' * Version: 1.0.0';
 		$lines[] = ' * Requires at least: 6.9';
 		$lines[] = ' * Requires PHP: 8.1';
 		$lines[] = ' * Text Domain: ' . $plugin_slug;
 		$lines[] = ' *';
-		$lines[] = ' * Typed blocks register from block.json directories. Legacy dynamic blocks use';
-		$lines[] = ' * PHP args and a render_callback for backward compatibility.';
+		$lines[] = ' * Blocks register from block.json directories.';
 		$lines[] = ' *';
 		$lines[] = ' * @package StaticSiteImporterCompanion';
 		$lines[] = ' */';
@@ -684,58 +679,20 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = sprintf( "define( '%s_URL', plugin_dir_url( __FILE__ ) );", $const_prefix );
 		$lines[] = '';
 		$lines[] = '/**';
-		$lines[] = ' * Generated block registration specs for this site.';
-		$lines[] = ' *';
-		$lines[] = ' * Metadata blocks register from their directory; legacy PHP-only blocks carry';
-		$lines[] = ' * register_block_type() arguments and a render callback.';
-		$lines[] = ' *';
-		$lines[] = ' * @return array<int,array<string,mixed>>';
-		$lines[] = ' */';
-		$lines[] = sprintf( 'function %s_block_specs() {', $fn_prefix );
-		$lines[] = "\treturn " . $specs_php . ';';
-		$lines[] = '}';
-		$lines[] = '';
-		$lines[] = '/**';
-		$lines[] = ' * Build a render_callback that server-renders a block from its render.php.';
-		$lines[] = ' *';
-		$lines[] = ' * render.php receives $attributes, $content, and $block in scope, mirroring the';
-		$lines[] = ' * block.json `render` template contract without needing a block.json file.';
-		$lines[] = ' *';
-		$lines[] = ' * @param string $block_dir Block directory under blocks/.';
-		$lines[] = ' * @return callable';
-		$lines[] = ' */';
-		$lines[] = sprintf( 'function %s_render_callback( $block_dir ) {', $fn_prefix );
-		$lines[] = "\treturn static function ( \$attributes, \$content, \$block ) use ( \$block_dir ) {";
-		$lines[] = sprintf( "\t\t\$render = %s_DIR . 'blocks/' . \$block_dir . '/render.php';", $const_prefix );
-		$lines[] = "\t\tif ( ! is_readable( \$render ) ) {";
-		$lines[] = "\t\t\treturn '';";
-		$lines[] = "\t\t}";
-		$lines[] = "\t\tob_start();";
-		$lines[] = "\t\tinclude \$render;";
-		$lines[] = "\t\treturn (string) ob_get_clean();";
-		$lines[] = "\t};";
-		$lines[] = '}';
-		$lines[] = '';
-		$lines[] = '/**';
-		$lines[] = ' * Register generated metadata blocks and legacy PHP-only dynamic blocks.';
+		$lines[] = ' * Register generated blocks from their metadata directories.';
 		$lines[] = ' */';
 		$lines[] = sprintf( 'function %s_register_blocks() {', $fn_prefix );
 		$lines[] = "\tif ( ! function_exists( 'register_block_type' ) ) {";
 		$lines[] = "\t\treturn;";
 		$lines[] = "\t}";
 		$lines[] = '';
-		$lines[] = sprintf( "\tforeach ( %s_block_specs() as \$spec ) {", $fn_prefix );
-		$lines[] = sprintf( "\t\t\$registered = ! empty( \$spec['metadata'] ) ? register_block_type( %s_DIR . 'blocks/' . (string) \$spec['dir'] ) : null;", $const_prefix );
-		$lines[] = "\t\tif ( empty( \$spec['metadata'] ) ) {";
-		$lines[] = "\t\t\t\$args                    = isset( \$spec['args'] ) && is_array( \$spec['args'] ) ? \$spec['args'] : array();";
-		$lines[] = sprintf( "\t\t\t\$args['render_callback'] = %s_render_callback( (string) \$spec['dir'] );", $fn_prefix );
-		$lines[] = "\t\t\t\$registered              = register_block_type( (string) \$spec['name'], \$args );";
-		$lines[] = "\t\t}";
-		$lines[] = "\t\tif ( \$registered instanceof WP_Block_Type && (string) \$spec['name'] === \$registered->name ) {";
+		$lines[] = "\tforeach ( " . $directories_php . ' as $block_dir ) {';
+		$lines[] = sprintf( "\t\t\$registered = register_block_type( %s_DIR . 'blocks/' . \$block_dir );", $const_prefix );
+		$lines[] = "\t\tif ( \$registered instanceof WP_Block_Type ) {";
 		$lines[] = "\t\t\tif ( ! isset( \$GLOBALS['static_site_importer_companion_block_owners'] ) || ! is_array( \$GLOBALS['static_site_importer_companion_block_owners'] ) ) {";
 		$lines[] = "\t\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'] = array();";
 		$lines[] = "\t\t\t}";
-		$lines[] = sprintf( "\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'][ (string) \$spec['name'] ] = array( 'plugin_file' => '%s', 'plugin_path' => __FILE__ );", self::php_single_quote( $plugin_file ) );
+		$lines[] = sprintf( "\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'][ \$registered->name ] = array( 'plugin_file' => '%s', 'plugin_path' => __FILE__ );", self::php_single_quote( $plugin_file ) );
 		$lines[] = "\t\t}";
 		$lines[] = "\t}";
 		$lines[] = '}';
@@ -853,25 +810,9 @@ class Static_Site_Importer_Companion_Plugin {
 	}
 
 	/**
-	 * Export the PHP-only block registration specs as a PHP array literal.
-	 *
-	 * @param array<int,array<string,mixed>> $block_specs Block registration specs.
-	 * @return string
-	 */
-	private static function export_block_specs_php( array $block_specs ): string {
-		if ( empty( $block_specs ) ) {
-			return 'array()';
-		}
-
-		return self::export_php_value( array_values( $block_specs ), 1 );
-	}
-
-	/**
 	 * Export an arbitrary scalar/array value as deterministic, lint-clean PHP.
 	 *
-	 * Used to embed register_block_type() argument arrays (api_version,
-	 * attributes, supports, ...) directly into the generated plugin file so the
-	 * companion plugin needs no block.json to describe its blocks.
+	 * Used to embed generated asset dependency manifests and block directory lists.
 	 *
 	 * @param mixed $value  Value to export.
 	 * @param int   $indent Current indentation depth (tabs).
@@ -945,6 +886,401 @@ class Static_Site_Importer_Companion_Plugin {
 		return "<?php\n/** Generated companion block render. */\n\necho '" . self::php_single_quote( $render ) . "'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static source markup was validated before compilation.\n";
 	}
 
+	/** Whether static payload markup represents an editable per-instance content attribute. */
+	private static function has_editable_content_render( array $block ): bool {
+		$content_schema = $block['block_json']['attributes']['content'] ?? null;
+		return isset( $block['render'] ) && is_scalar( $block['render'] ) && is_array( $content_schema ) && 'string' === ( $content_schema['type'] ?? null );
+	}
+
+	/** Build the SSI-owned safe boundary for generic editable companion content. */
+	private static function editable_content_renderer(): string {
+		return self::safe_markup_renderer( 'editable-content' );
+	}
+
+	/**
+	 * Compose a companion render template on the shared audited safe-markup
+	 * boundary, so editable-content and typed layout blocks sanitize through
+	 * one policy instead of duplicated divergent logic.
+	 *
+	 * The template reads the block's string content attribute into $content,
+	 * passes it through safe_markup_boundary(), and echoes the sanitized
+	 * $output.
+	 *
+	 * @param string $kind Renderer label for the generated doc comment.
+	 * @return string
+	 */
+	private static function safe_markup_renderer( string $kind ): string {
+		$prologue = sprintf(
+			"<?php\n/** Generated %s companion block render. */\n\n\$content = is_string( \$attributes['content'] ?? null ) ? \$attributes['content'] : '';\n",
+			$kind
+		);
+		$epilogue = 'echo $output; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- KSES-sanitized bounded markup through the shared audited safe-markup boundary.';
+		return $prologue . self::safe_markup_boundary() . "\n" . $epilogue;
+	}
+
+	/**
+	 * The audited safe-markup boundary shared by every content-rendering
+	 * companion template.
+	 *
+	 * Consumes the string $content variable and produces the sanitized $output
+	 * variable: executable and animation vectors (script, style, iframe,
+	 * object, embed, foreignObject, animate, animateMotion, animateTransform,
+	 * set), custom elements, and on* / data-wp-* attributes are removed in
+	 * paired, self-closing, and bare attribute forms, URL-bearing attributes
+	 * are protocol-checked, and the result is KSES-filtered against an
+	 * SVG-aware allowlist so inline SVG structure survives while nothing
+	 * executable reaches the frontend.
+	 *
+	 * @return string
+	 */
+	private static function safe_markup_boundary(): string {
+		return <<<'PHP'
+$content = preg_replace( '#<\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\b[^>]*>.*?</\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\s*>#is', '', $content ) ?? '';
+$content = preg_replace( '#<\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\b[^>]*/?\s*>#is', '', $content ) ?? '';
+$content = preg_replace( '#</?\s*[a-z][a-z0-9]*-[a-z0-9-]+\b[^>]*>#i', '', $content ) ?? '';
+$content = preg_replace_callback(
+	'#<[a-z](?:"[^"]*"|\'[^\']*\'|=>|[^>])*>#i',
+	static function ( array $match ): string {
+		return preg_replace(
+			array(
+				'/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)/i',
+				'/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)\s*=\s*(?=\/?>)/i',
+				'/\s+(?:on[a-z0-9_-]+|data-wp-[a-z0-9_-]+)(?=\s|\/?>)/i',
+			),
+			'',
+			$match[0]
+		) ?? '';
+	},
+	$content
+) ?? '';
+
+$safe_url = static function ( string $url, bool $image = false ): bool {
+	$normalized = strtolower( preg_replace( '/[\x00-\x20\x7f]+/', '', html_entity_decode( $url, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) ?? '' );
+	$normalized = rawurldecode( rawurldecode( $normalized ) );
+	if ( '' === $normalized || ! preg_match( '/^([a-z][a-z0-9+.-]*):/i', $normalized, $scheme ) ) {
+		return '' !== $normalized;
+	}
+	if ( in_array( strtolower( $scheme[1] ), array( 'http', 'https' ), true ) ) {
+		return true;
+	}
+	return $image && (bool) preg_match( '#^data:image/(?:avif|gif|jpeg|png|webp);base64,[a-z0-9+/=]+$#i', $normalized );
+};
+$sanitize_srcset = static function ( string $srcset ) use ( $safe_url ): string {
+	$candidates = array();
+	for ( $offset = 0, $length = strlen( $srcset ); $offset < $length; ) {
+		while ( $offset < $length && ( ctype_space( $srcset[ $offset ] ) || ',' === $srcset[ $offset ] ) ) {
+			++$offset;
+		}
+		$url_start = $offset;
+		while ( $offset < $length && ! ctype_space( $srcset[ $offset ] ) ) {
+			++$offset;
+		}
+		$url = substr( $srcset, $url_start, $offset - $url_start );
+		while ( $offset < $length && ctype_space( $srcset[ $offset ] ) ) {
+			++$offset;
+		}
+		$descriptor_start = $offset;
+		for ( $parentheses = 0; $offset < $length; ++$offset ) {
+			if ( '(' === $srcset[ $offset ] ) {
+				++$parentheses;
+			} elseif ( ')' === $srcset[ $offset ] && $parentheses > 0 ) {
+				--$parentheses;
+			} elseif ( ',' === $srcset[ $offset ] && 0 === $parentheses ) {
+				break;
+			}
+		}
+		$descriptor = trim( substr( $srcset, $descriptor_start, $offset - $descriptor_start ) );
+		if ( '' !== $url && $safe_url( $url, true ) ) {
+			$candidates[] = $url . ( '' === $descriptor ? '' : ' ' . $descriptor );
+		}
+	}
+	return implode( ', ', $candidates );
+};
+$content = preg_replace_callback(
+	'/\bsrcset\s*=\s*(?:("|\')(.*?)\1|([^\s>]+))/is',
+	static function ( array $match ) use ( $sanitize_srcset ): string {
+		$srcset = $sanitize_srcset( '' !== ( $match[2] ?? '' ) ? $match[2] : ( $match[3] ?? '' ) );
+		return '' === $srcset ? '' : 'srcset="' . esc_attr( $srcset ) . '"';
+	},
+	$content
+) ?? '';
+$content = preg_match( '#<svg\b[^>]*>(?:(?!</svg\s*>).)*<svg\b#is', $content ) ? ( preg_replace( '#<svg\b[^>]*>.*</svg\s*>#is', '', $content ) ?? '' ) : $content;
+$content = preg_replace( '#<svg\b[^>]*/\s*>#is', '', $content ) ?? '';
+$content = preg_replace( '#<svg\b[^>]*>(?:(?!</svg\s*>).)*$#is', '', $content ) ?? '';
+$content = preg_replace_callback(
+	'#<svg\b[^>]*>.*?</svg\s*>#is',
+	static function ( array $match ): string {
+		$svg = $match[0];
+		$ids = array();
+		if ( preg_match_all( '/\bid\s*=\s*(?:"([^"\s]+)"|\'([^\'\s]+)\'|([^\s>]+))/i', $svg, $id_matches ) ) {
+			foreach ( $id_matches[1] as $index => $double_quoted ) {
+				$id = '' !== $double_quoted ? $double_quoted : ( '' !== $id_matches[2][ $index ] ? $id_matches[2][ $index ] : $id_matches[3][ $index ] );
+				if ( preg_match( '/^[A-Za-z][A-Za-z0-9_.:-]*$/', $id ) ) {
+					$ids[ $id ] = true;
+				}
+			}
+		}
+		$svg = preg_replace_callback(
+			'/url\(\s*(["\']?)([^\s)"\']+)\1\s*\)/i',
+			static function ( array $url_match ) use ( $ids ): string {
+				$reference = $url_match[2];
+				return str_starts_with( $reference, '#' ) && isset( $ids[ substr( $reference, 1 ) ] ) ? $url_match[0] : '';
+			},
+			$svg
+		) ?? '';
+		$svg = preg_replace_callback(
+			'/\s+(?:href|xlink:href)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))/i',
+			static function ( array $href_match ) use ( $ids ): string {
+				$reference = '' !== ( $href_match[1] ?? '' ) ? $href_match[1] : ( '' !== ( $href_match[2] ?? '' ) ? $href_match[2] : ( $href_match[3] ?? '' ) );
+				return str_starts_with( $reference, '#' ) && isset( $ids[ substr( $reference, 1 ) ] ) ? ' href="' . esc_attr( $reference ) . '"' : '';
+			},
+			$svg
+		) ?? '';
+		return preg_replace( '#<use\b(?![^>]*(?:href|xlink:href)=)[^>]*(?:/>|>.*?</use\s*>)#is', '', $svg ) ?? '';
+	},
+	$content
+) ?? '';
+$content = preg_replace_callback(
+	'/\bstyle\s*=\s*(?:("|\')(.*?)\1|([^\s>]+))/is',
+	static function ( array $match ) use ( $safe_url ): string {
+		$value = '' !== ( $match[2] ?? '' ) ? $match[2] : ( $match[3] ?? '' );
+		if ( preg_match_all( '/url\(\s*["\']?([^\s)"\']+)/i', $value, $urls ) ) {
+			foreach ( $urls[1] as $url ) {
+				if ( ! $safe_url( $url, true ) ) {
+					return '';
+				}
+			}
+		}
+		return 'style="' . esc_attr( $value ) . '"';
+	},
+	$content
+) ?? '';
+
+// Preserve audited raster data URLs through KSES's protocol filter without
+// allowing the data scheme for links or other URL-bearing attributes.
+$data_images = array();
+$content     = preg_replace_callback(
+	'/\bsrc\s*=\s*(["\'])(data:image\/(?:avif|gif|jpeg|png|webp);base64,[a-z0-9+\/=]+)\1/i',
+	static function ( array $match ) use ( &$data_images ): string {
+		$placeholder                 = '/ssi-data-image-' . hash( 'sha256', $match[2] ) . '.invalid';
+		$data_images[ $placeholder ] = $match[2];
+		return 'src=' . $match[1] . $placeholder . $match[1];
+	},
+	$content
+) ?? '';
+
+$global = array(
+	'aria-controls' => true, 'aria-current' => true, 'aria-describedby' => true, 'aria-details' => true,
+	'aria-disabled' => true, 'aria-expanded' => true, 'aria-hidden' => true, 'aria-label' => true, 'aria-labelledby' => true,
+	'aria-live' => true, 'class' => true, 'data-*' => true, 'dir' => true, 'hidden' => true, 'id' => true,
+	'lang' => true, 'role' => true, 'style' => true, 'tabindex' => true, 'title' => true, 'xml:lang' => true,
+);
+$flow = array_merge( $global, array( 'align' => true ) );
+$svg_global = array(
+	'aria-hidden' => true, 'aria-label' => true, 'aria-labelledby' => true, 'class' => true, 'id' => true,
+	'role' => true, 'title' => true,
+);
+// KSES supports data-* but not aria-* wildcards. Admit syntactically valid
+// producer attributes explicitly so SVG accessibility metadata survives.
+if ( preg_match_all( '/\s+(aria-[a-z][a-z0-9-]*)\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)/i', $content, $aria_names ) ) {
+	foreach ( $aria_names[1] as $aria_name ) {
+		$svg_global[ strtolower( $aria_name ) ] = true;
+	}
+}
+$safe_style_css = static function ( array $properties ): array {
+	return array_values( array_unique( array_merge( $properties, array( 'overflow-x', 'overflow-y' ) ) ) );
+};
+add_filter( 'safe_style_css', $safe_style_css );
+$output = wp_kses(
+	$content,
+	array(
+		'main' => $flow, 'article' => $flow, 'aside' => $flow, 'section' => $flow, 'header' => $flow,
+		'footer' => $flow, 'nav' => $flow, 'div' => $flow, 'span' => $global, 'p' => $flow,
+		'h1' => $flow, 'h2' => $flow, 'h3' => $flow, 'h4' => $flow, 'h5' => $flow, 'h6' => $flow,
+		'ul' => $flow, 'ol' => $flow, 'li' => $flow, 'dl' => $flow, 'dt' => $flow, 'dd' => $flow,
+		'strong' => $global, 'b' => $global, 'em' => $global, 'i' => $global, 'small' => $global, 'br' => $global,
+		'a' => array_merge( $global, array( 'download' => true, 'href' => true, 'rel' => true, 'target' => true ) ),
+		'button' => array_merge( $global, array( 'disabled' => true, 'name' => true, 'type' => true, 'value' => true ) ),
+		'form' => array_merge( $flow, array( 'action' => true, 'method' => true ) ),
+		'fieldset' => array_merge( $flow, array( 'disabled' => true, 'name' => true ) ), 'legend' => $global,
+		'label' => array_merge( $global, array( 'for' => true ) ),
+		'input' => array_merge( $global, array( 'autocomplete' => true, 'checked' => true, 'disabled' => true, 'max' => true, 'maxlength' => true, 'min' => true, 'minlength' => true, 'multiple' => true, 'name' => true, 'pattern' => true, 'placeholder' => true, 'readonly' => true, 'required' => true, 'step' => true, 'type' => true, 'value' => true ) ),
+		'textarea' => array_merge( $global, array( 'cols' => true, 'disabled' => true, 'maxlength' => true, 'minlength' => true, 'name' => true, 'placeholder' => true, 'readonly' => true, 'required' => true, 'rows' => true ) ),
+		'select' => array_merge( $global, array( 'disabled' => true, 'multiple' => true, 'name' => true, 'required' => true, 'size' => true ) ),
+		'option' => array_merge( $global, array( 'disabled' => true, 'label' => true, 'selected' => true, 'value' => true ) ),
+		'figure' => $flow, 'figcaption' => $flow, 'picture' => $flow,
+		'source' => array_merge( $global, array( 'media' => true, 'sizes' => true, 'src' => true, 'srcset' => true, 'type' => true ) ),
+		'img' => array_merge( $global, array( 'alt' => true, 'decoding' => true, 'fetchpriority' => true, 'height' => true, 'loading' => true, 'longdesc' => true, 'sizes' => true, 'src' => true, 'srcset' => true, 'usemap' => true, 'width' => true ) ),
+		'video' => array_merge( $global, array( 'autoplay' => true, 'controls' => true, 'height' => true, 'loop' => true, 'muted' => true, 'playsinline' => true, 'poster' => true, 'preload' => true, 'src' => true, 'width' => true ) ),
+		'audio' => array_merge( $global, array( 'autoplay' => true, 'controls' => true, 'loop' => true, 'muted' => true, 'preload' => true, 'src' => true ) ),
+		'svg' => array_merge( $svg_global, array( 'fill' => true, 'focusable' => true, 'height' => true, 'preserveaspectratio' => true, 'stroke' => true, 'viewbox' => true, 'width' => true, 'xmlns' => true, 'xmlns:xlink' => true ) ),
+		'defs' => $svg_global, 'symbol' => array_merge( $svg_global, array( 'viewbox' => true ) ), 'lineargradient' => array_merge( $svg_global, array( 'gradientunits' => true, 'x1' => true, 'x2' => true, 'y1' => true, 'y2' => true ) ), 'radialgradient' => array_merge( $svg_global, array( 'cx' => true, 'cy' => true, 'r' => true ) ), 'stop' => array_merge( $svg_global, array( 'offset' => true, 'stop-color' => true, 'stop-opacity' => true ) ), 'clippath' => $svg_global, 'mask' => $svg_global, 'use' => array_merge( $svg_global, array( 'href' => true, 'xlink:href' => true ) ),
+		'g' => array_merge( $svg_global, array( 'clip-path' => true, 'fill' => true, 'fill-opacity' => true, 'opacity' => true, 'stroke' => true, 'stroke-width' => true, 'transform' => true ) ),
+		'path' => array_merge( $svg_global, array( 'd' => true, 'fill' => true, 'fill-rule' => true, 'opacity' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'stroke-width' => true, 'transform' => true ) ),
+		'circle' => array_merge( $svg_global, array( 'cx' => true, 'cy' => true, 'fill' => true, 'opacity' => true, 'r' => true, 'stroke' => true, 'stroke-width' => true ) ),
+		'ellipse' => array_merge( $svg_global, array( 'cx' => true, 'cy' => true, 'fill' => true, 'opacity' => true, 'rx' => true, 'ry' => true, 'stroke' => true, 'stroke-width' => true ) ),
+		'line' => array_merge( $svg_global, array( 'fill' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-width' => true, 'x1' => true, 'x2' => true, 'y1' => true, 'y2' => true ) ),
+		'polygon' => array_merge( $svg_global, array( 'fill' => true, 'points' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'stroke-width' => true ) ),
+		'polyline' => array_merge( $svg_global, array( 'fill' => true, 'points' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'stroke-width' => true ) ),
+		'rect' => array_merge( $svg_global, array( 'fill' => true, 'height' => true, 'opacity' => true, 'rx' => true, 'ry' => true, 'stroke' => true, 'stroke-width' => true, 'width' => true, 'x' => true, 'y' => true ) ),
+		'text' => array_merge( $svg_global, array( 'fill' => true, 'font-family' => true, 'font-size' => true, 'font-weight' => true, 'text-anchor' => true, 'x' => true, 'y' => true ) ),
+		'tspan' => array_merge( $svg_global, array( 'dx' => true, 'dy' => true, 'fill' => true, 'x' => true, 'y' => true ) ), 'title' => $svg_global, 'desc' => $svg_global,
+	)
+);
+remove_filter( 'safe_style_css', $safe_style_css );
+foreach ( $data_images as $placeholder => $data_image ) {
+	$output = str_replace( 'src="' . $placeholder . '"', 'src="' . esc_attr( $data_image ) . '"', $output );
+	$output = str_replace( "src='" . $placeholder . "'", "src='" . esc_attr( $data_image ) . "'", $output );
+}
+$output = preg_replace_callback(
+	'#<svg\b[^>]*>#i',
+	static function ( array $match ): string {
+		return preg_replace( array( '/\bviewbox\b/i', '/\bpreserveaspectratio\b/i' ), array( 'viewBox', 'preserveAspectRatio' ), $match[0] ) ?? $match[0];
+	},
+	$output
+) ?? '';
+PHP;
+	}
+
+	/**
+	 * Build an SSI-owned render template for an audited renderer identifier.
+	 *
+	 * @param string $renderer Validated renderer identifier.
+	 * @return string
+	 */
+	private static function typed_renderer( string $renderer ): string {
+		$layout = self::safe_markup_renderer( 'responsive-layout' );
+		$media  = <<<'PHP'
+<?php
+/** Generated responsive-media companion block render. */
+
+$content    = is_string( $attributes['content'] ?? null ) ? $attributes['content'] : '';
+$normalized = strtolower( preg_replace( '/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]+/', '', html_entity_decode( $content, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) ?? '' );
+if ( preg_match( '/<\s*(?:script|style|iframe|object|embed|svg)\b|\son[a-z]+\s*=/i', $normalized ) ) {
+	return;
+}
+
+$safe_url = static function ( string $url ): bool {
+	$normalized_url = strtolower( preg_replace( '/[\x00-\x20\x7f]+/', '', html_entity_decode( $url, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) ?? '' );
+	$normalized_url = rawurldecode( rawurldecode( $normalized_url ) );
+	if ( '' === $normalized_url || ! preg_match( '/^([a-z][a-z0-9+.-]*):/i', $normalized_url, $scheme ) ) {
+		return '' !== $normalized_url;
+	}
+	if ( in_array( strtolower( $scheme[1] ), array( 'http', 'https' ), true ) ) {
+		return true;
+	}
+	return (bool) preg_match( '#^data:image/(?:avif|gif|jpeg|png|webp);base64,[a-z0-9+/=]+$#i', $normalized_url );
+};
+
+$sanitize_srcset = static function ( string $srcset ) use ( $safe_url ): string {
+	$candidates = array();
+	for ( $offset = 0, $length = strlen( $srcset ); $offset < $length; ) {
+		while ( $offset < $length && ( ctype_space( $srcset[ $offset ] ) || ',' === $srcset[ $offset ] ) ) {
+			++$offset;
+		}
+		$url_start = $offset;
+		while ( $offset < $length && ! ctype_space( $srcset[ $offset ] ) ) {
+			++$offset;
+		}
+		$url = substr( $srcset, $url_start, $offset - $url_start );
+		while ( $offset < $length && ctype_space( $srcset[ $offset ] ) ) {
+			++$offset;
+		}
+		$descriptor_start = $offset;
+		for ( $parentheses = 0; $offset < $length; ++$offset ) {
+			if ( '(' === $srcset[ $offset ] ) {
+				++$parentheses;
+			} elseif ( ')' === $srcset[ $offset ] && $parentheses > 0 ) {
+				--$parentheses;
+			} elseif ( ',' === $srcset[ $offset ] && 0 === $parentheses ) {
+				break;
+			}
+		}
+		$descriptor = trim( substr( $srcset, $descriptor_start, $offset - $descriptor_start ) );
+		if ( '' !== $url && $safe_url( $url ) ) {
+			$candidates[] = $url . ( '' === $descriptor ? '' : ' ' . $descriptor );
+		}
+	}
+	return implode( ', ', $candidates );
+};
+
+$content = preg_replace_callback(
+	'/\bsrcset\s*=\s*(?:(["\'])(.*?)\1|([^\s>]+))/is',
+	static function ( array $match ) use ( $sanitize_srcset ): string {
+		$srcset = $sanitize_srcset( '' !== ( $match[2] ?? '' ) ? $match[2] : ( $match[3] ?? '' ) );
+		return '' === $srcset ? '' : 'srcset="' . esc_attr( $srcset ) . '"';
+	},
+	$content
+) ?? '';
+
+// Preserve audited raster data URLs through KSES's protocol filter without
+// allowing the data scheme for links or other URL-bearing attributes.
+$data_images = array();
+$content     = preg_replace_callback(
+	'/\bsrc\s*=\s*(["\'])(data:image\/(?:avif|gif|jpeg|png|webp);base64,[a-z0-9+\/=]+)\1/i',
+	static function ( array $match ) use ( &$data_images ): string {
+		$placeholder                 = '/ssi-data-image-' . hash( 'sha256', $match[2] ) . '.invalid';
+		$data_images[ $placeholder ] = $match[2];
+		return 'src=' . $match[1] . $placeholder . $match[1];
+	},
+	$content
+) ?? '';
+
+$global = array(
+	'aria-controls'    => true,
+	'aria-current'     => true,
+	'aria-describedby' => true,
+	'aria-details'     => true,
+	'aria-disabled'    => true,
+	'aria-expanded'    => true,
+	'aria-hidden'      => true,
+	'aria-label'       => true,
+	'aria-labelledby'  => true,
+	'aria-live'        => true,
+	'class'            => true,
+	'data-*'           => true,
+	'dir'              => true,
+	'hidden'           => true,
+	'id'               => true,
+	'lang'              => true,
+	'role'              => true,
+	'style'             => true,
+	'tabindex'          => true,
+	'title'             => true,
+	'xml:lang'          => true,
+);
+$output = wp_kses(
+	$content,
+	array(
+		'a'          => array_merge( $global, array( 'download' => true, 'href' => true, 'rel' => true, 'target' => true ) ),
+		'figure'     => $global,
+		'figcaption' => $global,
+		'picture'    => $global,
+		'source'     => array_merge( $global, array( 'media' => true, 'sizes' => true, 'srcset' => true, 'type' => true ) ),
+		'img'        => array_merge( $global, array( 'alt' => true, 'height' => true, 'loading' => true, 'longdesc' => true, 'sizes' => true, 'src' => true, 'srcset' => true, 'usemap' => true, 'width' => true ) ),
+	)
+);
+foreach ( $data_images as $placeholder => $data_image ) {
+	$output = str_replace( 'src="' . $placeholder . '"', 'src="' . esc_attr( $data_image ) . '"', $output );
+	$output = str_replace( "src='" . $placeholder . "'", "src='" . esc_attr( $data_image ) . "'", $output );
+}
+echo $output; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- KSES-sanitized bounded media markup.
+PHP;
+
+		$renderers = array(
+			self::RESPONSIVE_MEDIA_RENDERER  => $media,
+			self::RESPONSIVE_LAYOUT_RENDERER => $layout,
+		);
+		if ( function_exists( 'apply_filters' ) ) {
+			$renderers = apply_filters( 'static_site_importer_companion_renderers', $renderers );
+		}
+		if ( ! is_array( $renderers ) ) {
+			return '';
+		}
+		$source = $renderers[ $renderer ] ?? '';
+		return is_string( $source ) && str_starts_with( $source, '<?php' ) ? $source : '';
+	}
+
 	/**
 	 * Sanitize a slug, falling back to a portable regex when WP is unavailable.
 	 *
@@ -991,6 +1327,75 @@ class Static_Site_Importer_Companion_Plugin {
 		}
 
 		return implode( '/', $segments );
+	}
+
+	/**
+	 * Validate compiler-declared WordPress script dependencies before generating
+	 * trusted PHP asset manifests.
+	 *
+	 * @param array<string,mixed> $block    Block payload entry.
+	 * @param array<string,mixed> $assets   Declared static block assets.
+	 * @param array<string,mixed> $metadata Block metadata, including render normalization.
+	 * @return true|WP_Error
+	 */
+	private static function validate_script_dependencies( array $block, array $assets, array $metadata ) {
+		$dependencies = $block['script_dependencies'] ?? array();
+		if ( ! is_array( $dependencies ) || ( ! empty( $dependencies ) && array_is_list( $dependencies ) ) || count( $dependencies ) > self::MAX_SCRIPT_DEPENDENCIES ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_script_dependencies_invalid', 'Block script_dependencies must be a bounded object map.' );
+		}
+
+		$script_references = self::metadata_script_file_references( $metadata );
+		foreach ( $dependencies as $path => $handles ) {
+			if ( ! is_string( $path ) || self::sanitize_relative_path( $path ) !== $path || ! preg_match( '/\.(?:js|mjs)$/', $path ) || ! array_key_exists( $path, $assets ) || ! isset( $script_references[ $path ] ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_script_dependency_path_invalid', 'Block script_dependencies must reference a declared JavaScript asset used by block metadata.' );
+			}
+			if ( ! is_array( $handles ) || ! array_is_list( $handles ) || count( $handles ) > self::MAX_SCRIPT_DEPENDENCIES ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_script_dependencies_invalid', 'Each script dependency declaration must be a bounded list.' );
+			}
+			$seen = array();
+			foreach ( $handles as $handle ) {
+				if ( ! is_string( $handle ) || ! preg_match( '/^[a-z0-9_-]+$/', $handle ) || isset( $seen[ $handle ] ) ) {
+					return new WP_Error( 'static_site_importer_companion_plugin_script_dependency_handle_invalid', 'Script dependency handles must be unique safe WordPress handles.' );
+				}
+				$seen[ $handle ] = true;
+			}
+		}
+
+		return true;
+	}
+
+	/** @return array<string,array<int,string>> */
+	private static function script_dependencies( array $block ): array {
+		return isset( $block['script_dependencies'] ) && is_array( $block['script_dependencies'] ) ? $block['script_dependencies'] : array();
+	}
+
+	/** @return array<string,bool> */
+	private static function metadata_script_file_references( array $block_json ): array {
+		$references = array();
+		foreach ( array( 'editorScript', 'script', 'viewScript', 'viewScriptModule' ) as $key ) {
+			$values = isset( $block_json[ $key ] ) && is_array( $block_json[ $key ] ) ? $block_json[ $key ] : array( $block_json[ $key ] ?? null );
+			foreach ( $values as $value ) {
+				if ( is_string( $value ) && str_starts_with( $value, 'file:./' ) ) {
+					$path = self::sanitize_relative_path( substr( $value, 7 ) );
+					if ( '' !== $path ) {
+						$references[ $path ] = true;
+					}
+				}
+			}
+		}
+
+		return $references;
+	}
+
+	/** @return string */
+	private static function asset_manifest_path( string $script_path ): string {
+		$extension_offset = strrpos( $script_path, '.' );
+		return false === $extension_offset ? $script_path . '.asset.php' : substr( $script_path, 0, $extension_offset ) . '.asset.php';
+	}
+
+	/** @param array<int,string> $dependencies */
+	private static function asset_manifest( array $dependencies, string $content ): string {
+		return "<?php\nreturn array(\n\t'dependencies' => " . self::export_php_value( $dependencies, 1 ) . ",\n\t'version' => '" . hash( 'sha256', $content ) . "',\n);\n";
 	}
 
 	/** @return array<int,string> */

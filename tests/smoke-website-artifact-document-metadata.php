@@ -98,8 +98,10 @@ if ( ! is_wp_error( $result ) ) {
 	}
 	$metadata = $report['generated_theme']['document_metadata'] ?? array();
 	$scripts  = $metadata['scripts'] ?? array();
+	$materialized_documents = $report['materialized_content']['block_documents'] ?? array();
 
 	$assert( array() === $pattern_documents, 'single-document-import-does-not-generate-page-pattern-copy' );
+	$assert( 1 === count( $materialized_documents ) && 'posts/page-home.post_content' === ( $materialized_documents[0]['path'] ?? '' ), 'final-page-post-content-is-analyzed-before-quality-admission' );
 	$assert( str_contains( $content, 'Fire, flour, patience.' ), 'body-content-is-preserved' );
 	$single_template_parts_by_path = array();
 	foreach ( $template_parts as $template_part ) {
@@ -144,9 +146,15 @@ if ( ! is_wp_error( $result ) ) {
 	$provenance = json_decode( (string) get_post_meta( $page_id, '_static_site_importer_provenance', true ), true );
 	$assert( 'ssi-smoke-run-001' === ( $provenance['import_run_id'] ?? '' ), 'page-provenance-meta-includes-import-run-id' );
 	$assert( 'index.html' === ( $provenance['source_path'] ?? '' ), 'page-provenance-meta-includes-source-path' );
+	$assert( 'Ember & Rye' === ( $provenance['document_title'] ?? '' ), 'page-provenance-meta-includes-document-title' );
 	$assert( 'blocks-engine/import-validation-result/v1' === ( $validation_result['schema'] ?? '' ), 'validation-result-schema' );
 	$assert( 'ImportValidationResult' === ( $validation_result['artifact_type'] ?? '' ), 'validation-result-artifact-type' );
 	$assert( 'passed' === ( $validation_result['status'] ?? '' ), 'validation-result-status-passed' );
+	$assert( 1 === ( $validation_result['counts']['source_documents'] ?? 0 ), 'default-validation-result-counts-source-document' );
+	$assert( isset( $validation_result['quality_gates']['fallback_blocks']['diagnostic_refs'] ), 'default-validation-result-includes-quality-gates' );
+	$assert( isset( $validation_result['diagnostic_summary'] ), 'default-validation-result-includes-diagnostic-summary' );
+	$assert( 'import-validation-result.json' === ( $validation_result['artifacts']['import_validation_result']['path'] ?? '' ), 'default-validation-result-includes-artifact-refs' );
+	$assert( ! static_site_importer_smoke_contains_local_path( $validation_result ), 'default-validation-result-contains-no-local-paths' );
 	$visual_parity = $report['visual_parity_artifacts'] ?? array();
 	$visual_parity_validation = $validation_result['visual_parity_artifacts'] ?? array();
 	$assert( 'static-site-importer/visual-parity-artifacts/v1' === ( $visual_parity['schema'] ?? '' ), 'visual-parity-artifact-schema' );
@@ -160,6 +168,7 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( ! static_site_importer_smoke_contains_local_path( $visual_parity ), 'visual-parity-artifacts-contain-no-local-paths' );
 	$assert( 'blocks-engine/finding-packets/v1' === ( $finding_packets['schema'] ?? '' ), 'finding-packets-schema' );
 	$assert( 'FindingPacketSet' === ( $finding_packets['artifact_type'] ?? '' ), 'finding-packets-artifact-type' );
+	$assert( isset( $finding_packets['count'], $finding_packets['packets'] ), 'default-finding-packets-are-complete' );
 	$assert( 'static-site-importer/document-metadata/v1' === ( $metadata['schema'] ?? '' ), 'metadata-contract-is-recorded' );
 	$assert( 'Ember & Rye' === ( $metadata['title'] ?? '' ), 'title-is-preserved-in-metadata' );
 	$assert( 'utf-8' === ( $metadata['meta'][0]['charset'] ?? '' ), 'charset-meta-is-preserved-in-metadata' );
@@ -170,6 +179,11 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( true === ( $scripts[0]['defer'] ?? false ), 'script-defer-is-preserved-in-document-metadata' );
 	$bootstrap = $read( $theme_dir . '/functions.php' );
 	$assert( str_contains( $bootstrap, "get_theme_file_uri( 'assets/assets/site.css' )" ), 'theme-bootstrap-enqueues-the-canonical-stylesheet', $bootstrap );
+	$previous_query       = $GLOBALS['wp_query'] ?? null;
+	$GLOBALS['wp_query']  = new WP_Query( array( 'page_id' => $page_id ) );
+	$rendered_route_title = wp_get_document_title();
+	$GLOBALS['wp_query']  = $previous_query;
+	$assert( 'Ember & Rye' === $rendered_route_title, 'single-page-runtime-title-matches-document-metadata', $rendered_route_title );
 }
 
 $missing_template_parts_result = Static_Site_Importer_Theme_Generator::import_website_artifact(
@@ -234,6 +248,8 @@ $assert( ! is_wp_error( $multi_page_result ), 'multi-page-import-succeeds', is_w
 
 if ( ! is_wp_error( $multi_page_result ) ) {
 	$multi_report    = json_decode( $read( $multi_page_result['report_path'] ), true );
+	$multi_validation = json_decode( $read( $multi_page_result['validation_result_path'] ), true );
+	$multi_findings   = json_decode( $read( $multi_page_result['finding_packets_path'] ), true );
 	$source_docs     = $multi_report['source_documents'] ?? array();
 	$blocks_engine_documents = $source_docs['blocks_engine_documents'] ?? array();
 	$wordpress_site_plan = $multi_report['blocks_engine']['wordpress_site_plan'] ?? array();
@@ -268,6 +284,23 @@ if ( ! is_wp_error( $multi_page_result ) ) {
 	$assert( 'menu' === ( $documents_by_source['website/menu.html']['slug'] ?? '' ), 'menu-page-materializes' );
 	$assert( 'contact' === ( $documents_by_source['website/contact.html']['slug'] ?? '' ), 'contact-page-materializes' );
 	$assert( 'blocks-engine/wordpress-site-plan/v2' === ( $wordpress_site_plan['schema'] ?? '' ), 'wordpress-site-plan-contract-is-recorded' );
+	$multi_page_ids = $multi_page_result['pages'] ?? array();
+	foreach ( array( 'website/index.html' => 'Home Page', 'website/menu.html' => 'Menu Page' ) as $source_path => $expected_title ) {
+		$route_page_id       = (int) ( $multi_page_ids[ $source_path ] ?? 0 );
+		$route_page          = 0 < $route_page_id ? get_post( $route_page_id ) : null;
+		$provenance          = json_decode( (string) get_post_meta( $route_page_id, '_static_site_importer_provenance', true ), true );
+		$previous_query      = $GLOBALS['wp_query'] ?? null;
+		$GLOBALS['wp_query'] = new WP_Query( array( 'page_id' => $route_page_id ) );
+		$rendered_title      = wp_get_document_title();
+		$GLOBALS['wp_query'] = $previous_query;
+		$assert( $expected_title === ( $provenance['document_title'] ?? '' ), 'multi-page-provenance-retains-' . sanitize_key( $source_path ) . '-title' );
+		$assert( $expected_title === $rendered_title, 'multi-page-runtime-renders-' . sanitize_key( $source_path ) . '-title', $rendered_title );
+		$assert( $route_page instanceof WP_Post && $route_page->post_title !== $rendered_title, 'multi-page-editor-title-remains-independent-for-' . sanitize_key( $source_path ) );
+	}
+	$assert( 'blocks-engine/import-validation-result/v1' === ( $multi_report['import_validation_result']['schema'] ?? '' ), 'theme-report-persists-finalized-validation-result' );
+	$assert( $multi_report['import_validation_result'] === $multi_validation, 'theme-validation-sidecar-matches-finalized-report-contract' );
+	$assert( $multi_report['finding_packets'] === $multi_findings, 'theme-findings-sidecar-matches-finalized-report-contract' );
+	$assert( isset( $multi_validation['quality_gates'], $multi_validation['diagnostic_summary'] ), 'theme-validation-sidecar-is-complete' );
 	$assert( 3 === count( $wordpress_site_plan['pages'] ?? array() ), 'wordpress-site-plan-page-count-is-recorded' );
 	$assert( isset( $template_parts_by_path['parts/header.html'] ), 'multi-page-synthesizes-header-template-part' );
 	$assert( isset( $template_parts_by_path['parts/footer.html'] ), 'multi-page-synthesizes-footer-template-part' );
@@ -275,6 +308,45 @@ if ( ! is_wp_error( $multi_page_result ) ) {
 	$assert( str_contains( $read( $multi_page_result['theme_dir'] . '/templates/front-page.html' ), '"slug":"footer"' ), 'multi-page-template-references-synthesized-footer-part' );
 	$assert( array() === $pattern_documents, 'blocks-engine-document-import-does-not-generate-page-pattern-copies' );
 }
+
+$external_report_dir = sys_get_temp_dir() . '/ssi-external-report-' . uniqid( '', true );
+mkdir( $external_report_dir, 0700, true );
+$external_report_dir = (string) realpath( $external_report_dir );
+$external_report_path = $external_report_dir . '/import-report.json';
+$external_result = Static_Site_Importer_Theme_Generator::import_website_artifact(
+	array(
+		'schema' => 'blocks-engine/php-transformer/site-artifact/v1',
+		'files'  => array(
+			array(
+				'path'    => 'index.html',
+				'content' => '<main><h1>External report contract</h1></main>',
+			),
+		),
+	),
+	array(
+		'name'     => 'External Report Contract',
+		'slug'     => 'external-report-contract-smoke',
+		'overwrite' => true,
+		'activate' => false,
+		'report'   => $external_report_path,
+	)
+);
+$assert( ! is_wp_error( $external_result ), 'external-report-import-succeeds', is_wp_error( $external_result ) ? $external_result->get_error_message() : '' );
+if ( ! is_wp_error( $external_result ) ) {
+	$external_report = json_decode( $read( $external_result['external_report_path'] ), true );
+	$external_validation = json_decode( $read( $external_result['external_validation_result_path'] ), true );
+	$external_findings = json_decode( $read( $external_result['external_finding_packets_path'] ), true );
+	$assert( 'blocks-engine/import-validation-result/v1' === ( $external_report['import_validation_result']['schema'] ?? '' ), 'external-report-persists-finalized-validation-result' );
+	$assert( $external_report['import_validation_result'] === $external_validation, 'external-validation-sidecar-matches-finalized-report-contract' );
+	$assert( $external_report['finding_packets'] === $external_findings, 'external-findings-sidecar-matches-finalized-report-contract' );
+	$assert( ! static_site_importer_smoke_contains_local_path( $external_validation ), 'external-validation-result-contains-no-local-paths' );
+}
+foreach ( array( $external_report_path, $external_report_dir . '/import-validation-result.json', $external_report_dir . '/finding-packets.json' ) as $path ) {
+	if ( is_file( $path ) ) {
+		unlink( $path );
+	}
+}
+rmdir( $external_report_dir );
 
 function static_site_importer_smoke_contains_local_path( $value ): bool {
 	if ( is_array( $value ) ) {
@@ -291,7 +363,7 @@ function static_site_importer_smoke_contains_local_path( $value ): bool {
 		return false;
 	}
 
-	return (bool) preg_match( '#^(?:/|[A-Za-z]:\\\\|file://|~[/\\\\]|(?:\.\.?[/\\\\]))#', $value );
+	return (bool) preg_match( '#^(?:/(?:private|var|tmp|Users|home)/|[A-Za-z]:\\\\|file://|~[/\\\\]|(?:\.\.?[/\\\\]))#', $value );
 }
 
 if ( ! empty( $failures ) ) {

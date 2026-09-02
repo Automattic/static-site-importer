@@ -51,6 +51,17 @@ final class Static_Site_Importer_Current_Site_Capabilities {
 		}
 
 		$args = is_array( $state['args'] ?? null ) ? $state['args'] : array();
+		if ( ! empty( $args['remove_default_content'] ) ) {
+			foreach ( $state['default_content']['posts'] ?? array() as $post ) {
+				$required[] = array(
+					'capability' => 'delete_post',
+					'args'       => array( (int) ( $post['id'] ?? 0 ) ),
+				);
+			}
+			if ( ! empty( $state['default_content']['comments'] ) ) {
+				$required[] = array( 'capability' => 'moderate_comments' );
+			}
+		}
 		if ( ! empty( $args['activate'] ) ) {
 			$required[] = array( 'capability' => 'switch_themes' );
 			if ( ! empty( $state['resolved']['operations'] ) || '' !== trim( (string) ( $args['site_title'] ?? '' ) ) || ! isset( $args['disable_smilies'] ) || false !== (bool) $args['disable_smilies'] ) {
@@ -92,6 +103,6 @@ final class Static_Site_Importer_Current_Site_Capabilities {
 	}
 
 	private static function is_cli(): bool {
-		return defined( 'WP_CLI' ) && WP_CLI;
+		return defined( 'WP_CLI' );
 	}
 }

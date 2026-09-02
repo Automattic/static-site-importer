@@ -26,10 +26,17 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		'activate'                             => array( 'type' => 'boolean' ),
 		'overwrite'                            => array( 'type' => 'boolean' ),
 		'disable_smilies'                      => array( 'type' => 'boolean' ),
+		'remove_default_content'               => array( 'type' => 'boolean' ),
 		'fail_on_quality'                      => array( 'type' => 'boolean' ),
 		'allow_missing_woocommerce'            => array( 'type' => 'boolean' ),
 		'allow_missing_jetpack'                => array( 'type' => 'boolean' ),
 		'materialize_dependencies'             => array( 'type' => 'boolean' ),
+		'runtime_lifecycle_phase'              => array(
+			'type' => 'string',
+			'enum' => array( 'prepare', 'resume' ),
+		),
+		'runtime_lifecycle_request_id'         => array( 'type' => 'string' ),
+		'runtime_lifecycle_checkpoint'         => array( 'type' => 'string' ),
 		'require_proven_dynamic_client_assets' => array( 'type' => 'boolean' ),
 		'seed_entities'                        => array( 'type' => 'boolean' ),
 		'products_manifest'                    => array( 'type' => 'object' ),
@@ -43,12 +50,17 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		'compiler_options'                     => array( 'type' => 'object' ),
 		'source_metadata'                      => array( 'type' => 'object' ),
 		'validation_artifacts'                 => array( 'type' => 'object' ),
+		'quality_budget'                       => array( 'type' => 'object' ),
 		'client_script_policy'                 => array(
 			'type' => 'string',
 			'enum' => array( 'inert', 'isolated_preview' ),
 		),
 		'client_script_provenance'             => array( 'type' => 'object' ),
 		'client_script_isolated'               => array( 'type' => 'boolean' ),
+		'theme_materialization'                => array(
+			'type' => 'string',
+			'enum' => array( 'block', 'classic' ),
+		),
 	);
 
 	/**
@@ -68,10 +80,14 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 				'activate'                             => false,
 				'overwrite'                            => false,
 				'disable_smilies'                      => true,
+				'remove_default_content'               => true,
 				'fail_on_quality'                      => false,
 				'allow_missing_woocommerce'            => false,
 				'allow_missing_jetpack'                => false,
 				'materialize_dependencies'             => true,
+				'runtime_lifecycle_phase'              => '',
+				'runtime_lifecycle_request_id'         => '',
+				'runtime_lifecycle_checkpoint'         => '',
 				'require_proven_dynamic_client_assets' => true,
 				'seed_entities'                        => false,
 				'products_manifest'                    => array(),
@@ -82,9 +98,11 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 				'compiler_options'                     => array(),
 				'source_metadata'                      => array(),
 				'validation_artifacts'                 => array(),
+				'quality_budget'                       => array(),
 				'client_script_policy'                 => 'inert',
 				'client_script_provenance'             => array(),
 				'client_script_isolated'               => false,
+				'theme_materialization'                => 'block',
 			),
 			$defaults
 		);
@@ -95,13 +113,13 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 			}
 		}
 
-		foreach ( array( 'slug', 'name', 'site_title', 'stale_page_action', 'asset_materialization_policy', 'client_script_policy' ) as $field ) {
+		foreach ( array( 'slug', 'name', 'site_title', 'stale_page_action', 'runtime_lifecycle_phase', 'runtime_lifecycle_request_id', 'runtime_lifecycle_checkpoint', 'asset_materialization_policy', 'client_script_policy', 'theme_materialization' ) as $field ) {
 			$values[ $field ] = is_scalar( $values[ $field ] ) ? (string) $values[ $field ] : '';
 		}
-		foreach ( array( 'activate', 'overwrite', 'disable_smilies', 'fail_on_quality', 'allow_missing_woocommerce', 'allow_missing_jetpack', 'materialize_dependencies', 'require_proven_dynamic_client_assets', 'seed_entities', 'write_theme_report_artifacts', 'client_script_isolated' ) as $field ) {
+		foreach ( array( 'activate', 'overwrite', 'disable_smilies', 'remove_default_content', 'fail_on_quality', 'allow_missing_woocommerce', 'allow_missing_jetpack', 'materialize_dependencies', 'require_proven_dynamic_client_assets', 'seed_entities', 'write_theme_report_artifacts', 'client_script_isolated' ) as $field ) {
 			$values[ $field ] = (bool) $values[ $field ];
 		}
-		foreach ( array( 'products_manifest', 'commerce_context', 'asset_map', 'compiler_options', 'source_metadata', 'validation_artifacts', 'client_script_provenance' ) as $field ) {
+		foreach ( array( 'products_manifest', 'commerce_context', 'asset_map', 'compiler_options', 'source_metadata', 'validation_artifacts', 'quality_budget', 'client_script_provenance' ) as $field ) {
 			$values[ $field ] = is_array( $values[ $field ] ) ? $values[ $field ] : array();
 		}
 

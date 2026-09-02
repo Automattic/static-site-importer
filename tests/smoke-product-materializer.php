@@ -70,10 +70,27 @@ namespace {
 			return json_encode( $data );
 		}
 	}
+	if ( ! function_exists( 'is_wp_error' ) ) {
+		function is_wp_error( $value ) {
+			return $value instanceof WP_Error; }
+	}
 	if ( ! function_exists( 'wp_strip_all_tags' ) ) {
 		function wp_strip_all_tags( $text ) {
 			return strip_tags( (string) $text );
 		}
+	}
+
+	// Product grafts depend on WordPress Core for canonical anchor serialization.
+	$wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: '/Users/chubes/Studio/intelligence-chubes4';
+	$parser  = rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-parser.php';
+	$blocks  = rtrim( $wp_root, '/\\' ) . '/wp-includes/blocks.php';
+	if ( is_readable( $parser ) && is_readable( $blocks ) ) {
+		require_once $parser;
+		require_once $blocks;
+	}
+	if ( ! function_exists( 'serialize_blocks' ) ) {
+		fwrite( STDERR, "SKIP: WordPress block serialization is unavailable. Set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
+		exit( 0 );
 	}
 
 	// --- WooCommerce runtime mock ------------------------------------------------
@@ -97,6 +114,36 @@ namespace {
 			unset( $path, $output, $post_type );
 			return null;
 		}
+	}
+	if ( ! function_exists( 'term_exists' ) ) {
+		function term_exists( $term, $taxonomy = '' ) {
+			unset( $term, $taxonomy );
+			return null; }
+	}
+	if ( ! function_exists( 'wp_insert_term' ) ) {
+		function wp_insert_term( $term, $taxonomy = '' ) {
+			unset( $term, $taxonomy );
+			return array( 'term_id' => 1 ); }
+	}
+	if ( ! function_exists( 'wp_set_object_terms' ) ) {
+		function wp_set_object_terms( $object_id, $terms, $taxonomy = '' ) {
+			unset( $object_id, $taxonomy );
+			return $terms; }
+	}
+	if ( ! function_exists( 'wp_delete_post' ) ) {
+		function wp_delete_post( $post_id, $force_delete = false ) {
+			unset( $post_id, $force_delete );
+			return true; }
+	}
+	if ( ! function_exists( 'get_term' ) ) {
+		function get_term( $term, $taxonomy = '' ) {
+			unset( $term, $taxonomy );
+			return null; }
+	}
+	if ( ! function_exists( 'wp_delete_term' ) ) {
+		function wp_delete_term( $term, $taxonomy = '' ) {
+			unset( $term, $taxonomy );
+			return true; }
 	}
 
 	if ( ! class_exists( 'WC_Product_Simple' ) ) {
@@ -124,8 +171,8 @@ namespace {
 			public function set_stock_quantity( $value ) {
 				$this->data['stock_quantity'] = $value; }
 			public function save() {
-				$id                                          = $GLOBALS['ssi_next_product_id']++;
-				$this->data['id']                            = $id;
+				$id               = $GLOBALS['ssi_next_product_id']++;
+				$this->data['id'] = $id;
 				$GLOBALS['ssi_seeded_products'][ (string) ( $this->data['slug'] ?? '' ) ] = $this->data;
 				return $id;
 			}
@@ -150,21 +197,21 @@ namespace {
 
 	// --- Price normalization is generic and locale-tolerant -----------------
 	$price_cases = array(
-		'$24'         => '24',
-		'$1,299.00'   => '1299.00',
-		'€18'         => '18',
-		'18.00'       => '18.00',
-		'18'          => '18',
-		'€18,50'      => '18.50',
-		'1,299'       => '1299',
-		'1.299,00 €'  => '1299.00',
-		'$1,234,567'  => '1234567',
-		'  $0.99 '    => '0.99',
-		'12.5'        => '12.50',
-		'1,234.567'   => '1234.57',
-		'49.999'      => '49999',
-		''            => '',
-		'free'        => '',
+		'$24'        => '24',
+		'$1,299.00'  => '1299.00',
+		'€18'        => '18',
+		'18.00'      => '18.00',
+		'18'         => '18',
+		'€18,50'     => '18.50',
+		'1,299'      => '1299',
+		'1.299,00 €' => '1299.00',
+		'$1,234,567' => '1234567',
+		'  $0.99 '   => '0.99',
+		'12.5'       => '12.50',
+		'1,234.567'  => '1234.57',
+		'49.999'     => '49999',
+		''           => '',
+		'free'       => '',
 	);
 	foreach ( $price_cases as $input => $expected ) {
 		$actual = Static_Site_Importer_Report_Diagnostics::normalize_product_price( (string) $input );
@@ -172,8 +219,9 @@ namespace {
 	}
 
 	// --- materialize_product_findings: manifest + seeding + gate-closure -----
-	$report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/shop.html' );
-	$report['diagnostics'][] = array(
+	$report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/shop.html' );
+	$report->append_diagnostic(
+		array(
 		'type'               => 'unsupported_html_fallback',
 		'diagnostic_code'    => 'html_product_grid_fallback',
 		'loss_class'         => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
@@ -186,7 +234,10 @@ namespace {
 				'price'            => '$24',
 				'sale_price'       => null,
 				'description'      => 'Double-walled travel mug.',
-				'image'            => array( 'src' => 'https://cdn.example.com/mug.jpg', 'alt' => 'Aero Mug' ),
+				'image'            => array(
+					'src' => 'https://cdn.example.com/mug.jpg',
+					'alt' => 'Aero Mug',
+				),
 				'has_cart_control' => true,
 				'source_selector'  => 'ul.products li:nth-child(1)',
 			),
@@ -200,6 +251,7 @@ namespace {
 				'source_selector'  => 'ul.products li:nth-child(2)',
 			),
 		),
+		)
 	);
 
 	$seeding = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $report, array() );
@@ -241,12 +293,13 @@ namespace {
 	$assert( is_array( $report['product_finding_seeding'] ?? null ), 'report-records-product-finding-seeding' );
 
 	// --- Plain add-to-cart controls are grafted to Woo-owned shortcodes -------
-	$button_region = '<!-- wp:group --><div class="wp-block-group">'
+	$button_region                 = '<!-- wp:group --><div class="wp-block-group">'
 		. '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button">Add to cart</a></div><!-- /wp:button --></div><!-- /wp:buttons -->'
 		. '<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button">Buy now</a></div><!-- /wp:button --></div><!-- /wp:buttons -->'
 		. '</div><!-- /wp:group -->';
-	$graft_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/shop.html' );
-	$graft_report['diagnostics'][] = array(
+	$graft_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/shop.html' );
+	$graft_report->append_diagnostic(
+		array(
 		'type'               => 'unsupported_html_fallback',
 		'diagnostic_code'    => 'html_product_grid_fallback',
 		'loss_class'         => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
@@ -273,17 +326,44 @@ namespace {
 				'has_cart_control' => true,
 			),
 		),
+		)
 	);
-	$page_contents = array( 'website/shop.html' => $button_region );
-	$graft_seeding = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $graft_report, array(), $page_contents );
+	$graft_diagnostics = $graft_report->diagnostics();
+	$graft_diagnostics[0]['readable_blocks'][0]['attrs'] = array(
+		'backslash' => 'C:\\products\\shop',
+		'delimiter' => 'before -- after',
+		'angle'     => '<cart>',
+		'ampersand' => 'cart & checkout',
+		'quote'     => 'Click "buy"',
+	);
+	$graft_report->set_diagnostics( $graft_diagnostics );
+	$button_region                 = serialize_blocks( $graft_report->diagnostics()[0]['readable_blocks'] );
+	$page_contents                 = array( 'website/shop.html' => $button_region );
+	$graft_seeding                 = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $graft_report, array(), $page_contents );
 	$assert( 1 === ( $graft_seeding['shortcode_grafted_count'] ?? 0 ), 'shortcode-grafted-count' );
 	$assert( true === ( $graft_report['diagnostics'][0]['product_shortcode_grafted'] ?? false ), 'finding-product-shortcode-grafted' );
 	$assert( str_contains( $page_contents['website/shop.html'], '<!-- wp:shortcode -->[add_to_cart id="' ), 'page-content-has-add-to-cart-shortcode' );
 	$assert( ! str_contains( $page_contents['website/shop.html'], '>Add to cart<' ), 'page-content-removes-static-add-to-cart' );
 	$assert( ! str_contains( $page_contents['website/shop.html'], '>Buy now<' ), 'page-content-removes-static-buy-now' );
+	$assert( str_contains( $button_region, '\\u005c' ) && str_contains( $button_region, '\\u002d\\u002d' ) && str_contains( $button_region, '\\u003c' ) && str_contains( $button_region, '\\u003e' ) && str_contains( $button_region, '\\u0026' ) && str_contains( $button_region, '\\u0022' ), 'product-graft-anchor-uses-core-sensitive-attribute-serialization' );
+
+	// A resolvable product finding cannot consume an identical region on another page.
+	$owned_graft_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/owned-shop.html' );
+	$owned_finding      = $graft_report->diagnostics()[0];
+	$owned_finding['source_path'] = 'website/owned-shop.html';
+	$owned_graft_report->append_diagnostic( $owned_finding );
+	$owned_graft_contents = array(
+		'website/owned-shop.html' => '<!-- wp:paragraph --><p>owner anchor is absent</p><!-- /wp:paragraph -->',
+		'website/other-shop.html' => $button_region,
+	);
+	$owned_graft_seeding = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $owned_graft_report, array(), $owned_graft_contents );
+	$owned_graft_diag    = array_values( array_filter( $owned_graft_report['diagnostics'], static fn ( array $diagnostic ): bool => 'product_add_to_cart_graft_unanchorable' === ( $diagnostic['type'] ?? '' ) ) );
+	$assert( 0 === ( $owned_graft_seeding['shortcode_grafted_count'] ?? -1 ) && false === ( $owned_graft_report['diagnostics'][0]['product_shortcode_grafted'] ?? true ), 'product-graft-resolved-source-missing-anchor-is-not-grafted' );
+	$assert( 1 === count( $owned_graft_diag ) && 'fallback_region_not_found_in_post_content' === ( $owned_graft_diag[0]['reason'] ?? '' ) && 'website/owned-shop.html' === ( $owned_graft_diag[0]['source_path'] ?? '' ), 'product-graft-resolved-source-emits-bounded-owner-diagnostic' );
+	$assert( str_contains( $owned_graft_contents['website/other-shop.html'], '>Add to cart<' ) && ! str_contains( $owned_graft_contents['website/other-shop.html'], '[add_to_cart id=' ), 'product-graft-resolved-source-never-mutates-identical-other-page-region' );
 
 	// Grafting requires a seeded Woo product ID; source-only product metadata is not enough.
-	$graft_method = new ReflectionMethod( 'Static_Site_Importer_Report_Diagnostics', 'graft_product_add_to_cart_shortcodes_into_page_contents' );
+	$graft_method   = new ReflectionMethod( 'Static_Site_Importer_Report_Diagnostics', 'graft_product_add_to_cart_shortcodes_into_page_contents' );
 	$no_id_contents = array( 'website/shop.html' => $button_region );
 	$no_id_finding  = $graft_report['diagnostics'][0];
 	$no_id_result   = $graft_method->invokeArgs(
@@ -305,9 +385,10 @@ namespace {
 	$assert( ! str_contains( $no_id_contents['website/shop.html'], '[add_to_cart id=' ), 'no-product-id-no-shortcode' );
 
 	// Quantity/options/custom state stay as honest preserved runtime HTML.
-	$unsafe_report                  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/shop.html' );
-	$unsafe_report['diagnostics'][] = $graft_report['diagnostics'][0];
-	$unsafe_report['diagnostics'][0]['products'][0]['has_quantity_control'] = true;
+	$unsafe_report  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/shop.html' );
+	$unsafe_finding = $graft_report->diagnostics()[0];
+	$unsafe_finding['products'][0]['has_quantity_control'] = true;
+	$unsafe_report->append_diagnostic( $unsafe_finding );
 	$unsafe_contents = array( 'website/shop.html' => str_replace( '<!-- wp:buttons -->', '<button class="qty-btn">+</button><span class="qty-display">1</span><!-- wp:buttons -->', $button_region ) );
 	$unsafe_seeding  = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $unsafe_report, array(), $unsafe_contents );
 	$assert( 0 === ( $unsafe_seeding['shortcode_grafted_count'] ?? -1 ), 'unsafe-shortcode-not-grafted' );

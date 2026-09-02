@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { JSDOM, VirtualConsole } from 'jsdom';
 
 const require = createRequire( import.meta.url );
@@ -25,7 +28,10 @@ const { getBlockType, parse, serialize, validateBlock } = require( '@wordpress/b
 
 registerCoreBlocks();
 
-test( 'shared-row topology materializes through the PHP provider adapter', () => {
+const wpRoot = process.env.STATIC_SITE_IMPORTER_WP_ROOT || join( homedir(), 'Studio', 'intelligence-chubes4' );
+const hasWordPressBlockSerialization = existsSync( `${wpRoot}/wp-includes/class-wp-block-parser.php` ) && existsSync( `${wpRoot}/wp-includes/blocks.php` );
+
+test( 'shared-row topology materializes through the PHP provider adapter', { skip: !hasWordPressBlockSerialization }, () => {
 	const output = execFileSync( 'php', [ 'tests/form-materializer-smoke.php' ], {
 		cwd: process.cwd(),
 		encoding: 'utf8',
@@ -67,12 +73,12 @@ namespace {
 	assert.equal( output, 'static_site_importer_jetpack_forms_loader_missing' );
 } );
 
-test( 'provider-constrained topology emits nested fields and an editor-valid core submit', () => {
+test( 'provider-constrained topology emits nested fields and an editor-valid core submit', { skip: !hasWordPressBlockSerialization }, () => {
 	const output = execFileSync( 'php', [ 'tests/form-materializer-smoke.php', '--emit-topology-markup' ], {
 		cwd: process.cwd(),
 		encoding: 'utf8',
 	} );
-	const { markup, depth_markup: depthMarkup } = JSON.parse( output );
+	const { markup, depth_markup: depthMarkup, deep_width_markup: deepWidthMarkup, cara_markup: caraMarkup } = JSON.parse( output );
 	const warnings = [];
 	const originalWarn = console.warn;
 	const originalError = console.error;
@@ -95,6 +101,8 @@ test( 'provider-constrained topology emits nested fields and an editor-valid cor
 	assert.match( markup, /<button type="submit" class="wp-block-button__link wp-element-button">Send<\/button>/ );
 	assert.doesNotMatch( depthMarkup, /<!-- wp:group/ );
 	assert.match( depthMarkup, /wp:jetpack\/field-text/ );
+	assert.equal( ( deepWidthMarkup.match( /"width":33\.333/g ) || [] ).length, 3 );
+	assert.doesNotMatch( deepWidthMarkup, /<table|<!-- wp:group/ );
 	assert.deepEqual( warnings, [], 'core block parsing emitted no warnings' );
 	const coreButtons = [];
 	const collectCoreButtons = ( generatedBlocks ) => {
@@ -107,6 +115,12 @@ test( 'provider-constrained topology emits nested fields and an editor-valid cor
 	assert.equal( coreButtons.length, 1 );
 	assert.equal( validateBlock( coreButtons[ 0 ] )[ 0 ], true );
 	assert.match( serialize( coreButtons ), /form-button-submit is-submit/ );
+	const caraBlocks = parse( caraMarkup );
+	assert.equal( caraBlocks[ 0 ].name, 'core/heading' );
+	assert.equal( caraBlocks[ 1 ].name, 'core/paragraph' );
+	assert.match( caraMarkup, /"required":true/ );
+	assert.match( caraMarkup, /wsite-button/ );
+	assert.equal( serialize( parse( serialize( caraBlocks ) ) ), serialize( caraBlocks ), 'complete fallback graft is Gutenberg byte-stable after canonical serialization' );
 } );
 
 test( 'Jetpack provider definitions are explicitly unavailable to this core-only validation', () => {

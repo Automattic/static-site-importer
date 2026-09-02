@@ -3,13 +3,13 @@
  * Site-identity primitive.
  *
  * Single source of truth for deriving a site's { name, slug, title } from an
- * import source. Every consumer (REST playground fallback, theme generator,
+ * import source. Every consumer (REST adapter, theme generator,
  * companion plugin, page materializer) resolves identity through this class so
  * the human-facing name, the theme/plugin slug, and the extracted document
  * title stay consistent instead of drifting toward a generic constant.
  *
  * Deterministic priority:
- * - name/title: explicit site_title/name arg -> source document <title>
+ * - name/title: explicit theme name -> explicit site_title -> source document <title>
  *   (extracted + suffix-stripped) -> source URL host -> generic constant.
  * - slug: explicit slug arg -> sanitize_title(name) -> host -> generic constant.
  *
@@ -39,7 +39,8 @@ class Static_Site_Importer_Site_Identity {
 	 * Resolve a canonical site identity from an import context.
 	 *
 	 * Recognized context keys (all optional):
-	 * - site_title / name / title: explicit, highest-priority human name.
+	 * - name: explicit theme name override.
+	 * - site_title / title: site identity used when no theme name is supplied.
 	 * - slug: explicit slug override.
 	 * - document_title: a pre-extracted raw document title (suffix-stripped here).
 	 * - html: raw HTML to extract a <title> from.
@@ -51,7 +52,28 @@ class Static_Site_Importer_Site_Identity {
 	 */
 	public static function resolve( array $context ): array {
 		$name = self::resolve_name( $context );
+		/**
+		 * Filters the human-readable generated theme name.
+		 *
+		 * @param string              $name    Resolved theme name.
+		 * @param array<string,mixed> $context Import identity context.
+		 */
+		$name = self::sanitize_name( (string) ( function_exists( 'apply_filters' ) ? apply_filters( 'static_site_importer_theme_name', $name, $context ) : $name ) );
+		if ( '' === $name ) {
+			$name = self::default_name();
+		}
 		$slug = self::resolve_slug( $context, $name );
+		/**
+		 * Filters the generated theme's filesystem slug.
+		 *
+		 * @param string              $slug    Resolved theme slug.
+		 * @param string              $name    Filtered theme name.
+		 * @param array<string,mixed> $context Import identity context.
+		 */
+		$slug = self::sanitize_slug( (string) ( function_exists( 'apply_filters' ) ? apply_filters( 'static_site_importer_theme_slug', $slug, $name, $context ) : $slug ) );
+		if ( '' === $slug ) {
+			$slug = self::DEFAULT_SLUG;
+		}
 
 		return array(
 			'name'  => $name,
@@ -67,7 +89,7 @@ class Static_Site_Importer_Site_Identity {
 	 * @return string
 	 */
 	private static function resolve_name( array $context ): string {
-		foreach ( array( 'site_title', 'name', 'title' ) as $key ) {
+		foreach ( array( 'name', 'site_title', 'title' ) as $key ) {
 			if ( isset( $context[ $key ] ) && is_scalar( $context[ $key ] ) ) {
 				$explicit = self::sanitize_name( (string) $context[ $key ] );
 				if ( '' !== $explicit ) {

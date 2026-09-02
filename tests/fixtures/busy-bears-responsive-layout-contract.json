@@ -1,0 +1,25 @@
+{
+  "schema": "static-site-importer/frozen-responsive-layout-contract/v1",
+  "source": "https://www.busybearscleaning.com/",
+  "captured_at": "2026-08-24",
+  "pages": [
+    {
+      "path": "website/contact/index.html",
+      "captured_layouts": [
+        { "bytes": 14069, "sha256": "d39d2adaa5550e80d3d997239c4de20c8aadc0f570185f11d24049baa9274ffb" },
+        { "bytes": 14091, "sha256": "317456fbc2718f8fc2230eba16cdb0f11bc603993109c0e0ebe1d90e775cc625" }
+      ],
+      "content": "<section style=\"min-height:559.156px\"><p>If you have any inquiries, please fill out this form and our team will get back to you within 5 business days.</p><form aria-label=\"Contact\"><fieldset><label for=\"first-name\">First name*</label><input id=\"first-name\" name=\"first_name\" required><label for=\"details\">Details*</label><textarea id=\"details\" name=\"details\" required></textarea><button type=\"submit\">Submit</button></fieldset></form><svg viewBox=\"0 0 16 16\" role=\"img\" aria-label=\"Submit\"><path d=\"M2 8h12\"></path></svg></section>",
+      "expected_text": ["If you have any inquiries", "First name", "Details", "Submit"]
+    },
+    {
+      "path": "website/get-a-quote/index.html",
+      "captured_layouts": [
+        { "bytes": 24873, "sha256": "141d79f79178bedf87ff50d28a416843cf7bbfea7bcfb37e5cfa35da6a311fba" },
+        { "bytes": 24895, "sha256": "3b1b2d2cd4c8af7b29b8b9848343dc41235dfb4b8cf6dad4d56661b8a0d5e69e" }
+      ],
+      "content": "<section style=\"min-height:1236.33px\"><h2>Request Your Custom Cleaning Quote</h2><p>Provide your home details below to receive a personalized estimate.</p><form><label for=\"address\">Address*</label><input id=\"address\" name=\"address\" required><label for=\"quote-details\">Details (please include the approximate square footage of the space you need cleaned) *</label><textarea id=\"quote-details\" name=\"details\" required></textarea><button type=\"submit\">Submit</button></form><h3>Why Choose Busy Bears</h3><svg viewBox=\"0 0 16 16\" aria-hidden=\"true\"><circle cx=\"8\" cy=\"8\" r=\"6\"></circle></svg></section>",
+      "expected_text": ["Request Your Custom Cleaning Quote", "Provide your home details", "Address", "approximate square footage", "Why Choose Busy Bears"]
+    }
+  ]
+}

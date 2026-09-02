@@ -58,7 +58,10 @@ if ( ! function_exists( 'wp_strip_all_tags' ) ) {
 }
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-fetcher.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-site-collector.php';
+$candidate_transformer = getenv( 'SSI_BLOCKS_ENGINE_PHP_TRANSFORMER' );
+if ( is_string( $candidate_transformer ) && is_readable( rtrim( $candidate_transformer, '/\\' ) . '/vendor/autoload.php' ) ) { require_once rtrim( $candidate_transformer, '/\\' ) . '/vendor/autoload.php'; class_exists( Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler::class ); class_exists( Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactNormalizer::class ); interface_exists( Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader::class ); }
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
 require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/php-transformer.php';
 
@@ -187,10 +190,34 @@ $shuffled = Static_Site_Importer_URL_Site_Collector::collect(
 );
 $assert( ! is_wp_error( $shuffled ) && ( $snapshot['sha256'] ?? '' ) === ( $shuffled['source_metadata']['snapshot']['sha256'] ?? null ), 'snapshot-hash-independent-of-discovery-order' );
 
+$bounded_transport_starts = 0;
+$bounded_transport        = array(
+	'start'  => static function ( array $target, array $options ) use ( &$bounded_transport_starts ): object {
+		++$bounded_transport_starts;
+		return (object) array( 'target' => $target, 'options' => $options );
+	},
+	'poll'   => static fn ( object $handle ): array => array( 'status_code' => 200, 'headers' => array( 'content-type' => array( 'text/html' ) ), 'body' => '<main>Bounded host transport</main>' ),
+	'cancel' => static function (): void {},
+);
+$bounded_transport_result = Static_Site_Importer_URL_Site_Collector::collect(
+	'http://1.1.1.1/',
+	array(
+		'max_pages'                                      => 1,
+		'max_assets'                                     => 0,
+		'_route_set'                                     => array( 'http://1.1.1.1/' ),
+		'_static_site_importer_fetch_many_transport'     => $bounded_transport,
+		'_static_site_importer_collection_contract'      => 'bounded-transport-test',
+		'_static_site_importer_collection_cursor_save'   => static fn (): bool => true,
+	),
+	static fn ( string $url, array $fetch_args ) => Static_Site_Importer_URL_Fetcher::fetch( $url, $fetch_args + array( 'deadline' => microtime( true ) + 1 ) )
+);
+$assert( 1 === $bounded_transport_starts && ! is_wp_error( $bounded_transport_result ), 'resumable-single-fetch-path-uses-custom-bounded-transport' );
+
 $finalization_cursor = null;
 $retained_bodies     = array();
 $retained_loads      = array();
 $finalization_steps  = array();
+$finalization_saves  = 0;
 $finalization_fetcher = static function ( string $url, array $args ): array {
 	unset( $args );
 	$fixtures = array(
@@ -214,7 +241,10 @@ $finalization_args = array(
 		$body                   = $retained_bodies[ $ref ] ?? null;
 		return is_string( $body ) && hash_equals( (string) ( $retained['sha256'] ?? '' ), hash( 'sha256', $body ) ) ? $body : null;
 	},
-	'_static_site_importer_collection_cursor_save' => static function ( array $cursor ) use ( &$finalization_cursor, &$retained_bodies ) {
+	'_static_site_importer_collection_cursor_save' => static function ( array $cursor ) use ( &$finalization_cursor, &$retained_bodies, &$finalization_saves ) {
+		if ( is_array( $cursor['finalization'] ?? null ) ) {
+			++$finalization_saves;
+		}
 		foreach ( $cursor['resources'] ?? array() as $url => $resource ) {
 			if ( isset( $resource['body'] ) && is_string( $resource['body'] ) ) {
 				$hash                     = hash( 'sha256', $resource['body'] );
@@ -242,7 +272,7 @@ $finalization_args = array(
 	},
 );
 $resumed_finalization = null;
-for ( $attempt = 0; $attempt < 5; ++$attempt ) {
+for ( $attempt = 0; $attempt < 10; ++$attempt ) {
 	$yield_checks = 0;
 	$attempt_args = $finalization_args;
 	$attempt_args['_static_site_importer_collection_should_yield'] = static function () use ( &$yield_checks ): bool {
@@ -250,6 +280,9 @@ for ( $attempt = 0; $attempt < 5; ++$attempt ) {
 	};
 	$resumed_finalization = Static_Site_Importer_URL_Site_Collector::collect( 'https://finalize.test/', $attempt_args, $finalization_fetcher );
 	$finalization_steps[] = (int) ( $finalization_cursor['finalization']['next_resource'] ?? 0 );
+	if ( 0 === $attempt && is_wp_error( $resumed_finalization ) ) {
+		$finalization_cursor['schema'] = 'static-site-importer/url-collection-cursor/v1';
+	}
 	if ( ! is_wp_error( $resumed_finalization ) ) {
 		break;
 	}
@@ -260,10 +293,112 @@ $finalized_refs_verify = array_filter(
 	$finalization_cursor['finalization']['files'] ?? array(),
 	static fn ( array $file ): bool => ! isset( $retained_bodies[ $file['body_ref'] ?? '' ] ) || ! hash_equals( (string) ( $file['sha256'] ?? '' ), hash( 'sha256', $retained_bodies[ $file['body_ref'] ] ) )
 );
-$assert( array( 1, 2, 3, 3 ) === $finalization_steps, 'finalization-cursor-advances-one-resource-per-invocation' );
+$assert( array( 1, 2, 3, 3, 3, 3, 3 ) === $finalization_steps, 'finalization-cursor-advances-one-resource-per-invocation' );
+$assert( 7 === $finalization_saves, 'finalization-and-assembly-persist-once-per-yielded-slice' );
 $assert( 'static-site-importer/url-collection-cursor/v2' === ( $finalization_cursor['schema'] ?? '' ) && array() === $finalized_refs_verify, 'finalization-cursor-retains-hash-verified-payloads' );
 $assert( 2 === count( $source_loads ) && array() === array_filter( $source_loads, static fn ( int $count ): bool => 1 !== $count ), 'resumed-finalization-does-not-reload-completed-source-resources' );
 $assert( ! is_wp_error( $resumed_finalization ) && ! is_wp_error( $clean_finalization ) && wp_json_encode( $clean_finalization['artifact'] ) === wp_json_encode( $resumed_finalization['artifact'] ), 'resumed-finalization-preserves-clean-artifact-bytes' );
+
+$store_failure = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://store-failure.test/',
+	array(
+		'max_pages'                                      => 1,
+		'max_assets'                                     => 0,
+		'_route_set'                                     => array( 'https://store-failure.test/' ),
+		'_static_site_importer_collection_contract'      => 'store-failure-test',
+		'_static_site_importer_collection_resource_store' => static fn ( string $body ) => new WP_Error( 'fixture_payload_store_failed', (string) strlen( $body ) ),
+		'_static_site_importer_collection_cursor_save'   => static fn ( array $cursor ): bool => ! empty( $cursor ),
+	),
+	static fn ( string $url ): array => array( 'body' => '<main>Store failure</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) )
+);
+$assert( is_wp_error( $store_failure ) && 'fixture_payload_store_failed' === $store_failure->get_error_code(), 'payload-storage-errors-preserve-owning-failure-semantics' );
+
+$linear_asset_count = 512;
+$linear_cursor      = null;
+$linear_payloads    = array();
+$linear_store_calls = 0;
+$linear_raw_cursors = 0;
+$linear_finalization_saves = 0;
+$linear_attempts    = 0;
+$linear_fetcher     = static function ( string $url ) use ( $linear_asset_count ) {
+	if ( 'https://linear-finalize.test/' === $url ) {
+		$html = '<main>';
+		for ( $index = 0; $index < $linear_asset_count; ++$index ) {
+			$html .= '<img src="/asset-' . $index . '.png">';
+		}
+		return array( 'body' => $html . '</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) );
+	}
+	return array( 'body' => 'payload-' . basename( $url ), 'metadata' => array( 'content_type' => 'image/png', 'final_url' => $url ) );
+};
+$linear_args        = array(
+	'max_pages'                                      => 1,
+	'max_assets'                                     => $linear_asset_count,
+	'_route_set'                                     => array( 'https://linear-finalize.test/' ),
+	'_static_site_importer_collection_return_payload_references' => true,
+	'_static_site_importer_collection_contract'      => 'linear-finalization-test',
+	'_static_site_importer_collection_cursor_load'   => static function () use ( &$linear_cursor ) {
+		return $linear_cursor;
+	},
+	'_static_site_importer_collection_resource_load' => static function ( array $retained ) use ( &$linear_payloads ) {
+		$body = $linear_payloads[ $retained['body_ref'] ?? '' ] ?? null;
+		return is_string( $body ) && hash_equals( (string) ( $retained['sha256'] ?? '' ), hash( 'sha256', $body ) ) ? $body : null;
+	},
+	'_static_site_importer_collection_resource_store' => static function ( string $body ) use ( &$linear_payloads, &$linear_store_calls ) {
+		++$linear_store_calls;
+		$hash                       = hash( 'sha256', $body );
+		$ref                        = 'linear/' . $hash;
+		$linear_payloads[ $ref ] = $body;
+		return array( 'body_ref' => $ref, 'sha256' => $hash, 'bytes' => strlen( $body ) );
+	},
+	'_static_site_importer_collection_cursor_save'   => static function ( array $cursor ) use ( &$linear_cursor, &$linear_raw_cursors, &$linear_finalization_saves ) {
+		if ( is_array( $cursor['finalization'] ?? null ) ) {
+			++$linear_finalization_saves;
+		}
+		$records = array_merge( $cursor['resources'] ?? array(), $cursor['finalization']['files'] ?? array(), $cursor['finalization']['artifact_files'] ?? array() );
+		if ( array_filter( $records, static fn ( array $record ): bool => isset( $record['body'] ) ) ) {
+			++$linear_raw_cursors;
+		}
+		$linear_cursor = $cursor;
+		return true;
+	},
+);
+$linear_result      = null;
+for ( $attempt = 0; $attempt < 20; ++$attempt ) {
+	++$linear_attempts;
+	$yield_checks = 0;
+	$attempt_args = $linear_args;
+	$attempt_args['_static_site_importer_collection_should_yield'] = static function () use ( &$yield_checks ): bool {
+		return 64 < ++$yield_checks;
+	};
+	$linear_result = Static_Site_Importer_URL_Site_Collector::collect( 'https://linear-finalize.test/', $attempt_args, $linear_fetcher );
+	if ( 0 === $attempt && is_wp_error( $linear_result ) ) {
+		foreach ( array( 'resources', 'finalization' ) as $section ) {
+			$records = 'resources' === $section ? $linear_cursor['resources'] : $linear_cursor['finalization']['files'];
+			$key     = 'resources' === $section ? $linear_cursor['finalization']['resource_urls'][100] : array_key_first( $records );
+			$record  = $records[ $key ];
+			$old_ref = ( 'resources' === $section ? 'collection-resources/' : 'collection-finalized/' ) . $record['sha256'] . '.bin';
+			$linear_payloads[ $old_ref ] = $linear_payloads[ $record['body_ref'] ];
+			$record['body_ref']           = $old_ref;
+			unset( $record['retention_schema'] );
+			if ( 'resources' === $section ) {
+				$linear_cursor['resources'][ $key ] = $record;
+			} else {
+				$linear_cursor['finalization']['files'][ $key ] = $record;
+			}
+		}
+		$linear_cursor['schema'] = 'static-site-importer/url-collection-cursor/v1';
+	}
+	if ( ! is_wp_error( $linear_result ) ) {
+		break;
+	}
+}
+$linear_resource_count = $linear_asset_count + 1;
+$assert( 0 === $linear_raw_cursors, 'retained-cursors-never-rewrite-raw-payloads' );
+$assert( 2 * $linear_resource_count + 2 === $linear_store_calls, 'retained-payload-storage-is-linear-in-produced-resources' );
+$assert( $linear_attempts === $linear_finalization_saves, 'large-finalization-persists-once-per-bounded-slice' );
+$assert( 17 === $linear_attempts && $linear_resource_count === (int) ( $linear_cursor['finalization']['next_resource'] ?? 0 ) && $linear_resource_count === (int) ( $linear_cursor['finalization']['assembly_next'] ?? 0 ), 'large-finalization-and-assembly-resume-in-bounded-linear-chunks' );
+$assert( ! is_wp_error( $linear_result ) && $linear_resource_count === count( $linear_result['artifact']['files'] ?? array() ), 'large-resumed-finalization-produces-the-complete-artifact' );
+$assert( ! is_wp_error( $linear_result ) && array() === array_filter( $linear_result['artifact']['files'], static fn ( array $file ): bool => ! str_starts_with( (string) ( $file['payload_reference']['id'] ?? '' ), 'linear/' ) ), 'legacy-retained-references-migrate-to-canonical-artifact-identities' );
 
 $schedule_calls = array();
 $schedule_delays = array();
@@ -527,6 +662,27 @@ $assert( in_array( 'https://redirect.test/assets/css/theme.css', $redirect_reque
 $assert( in_array( 'https://redirect.test/assets/background.png', $redirect_requests, true ), 'redirected-css-url-uses-final-url' );
 $assert( in_array( 'website/docs/index.html', $redirect_paths, true ) && in_array( 'website/assets/css/style.css', $redirect_paths, true ), 'redirected-resources-use-final-identities' );
 $assert( str_contains( (string) ( $redirect_files['website/index.html']['content'] ?? '' ), 'href="/docs/"' ), 'redirected-page-link-rewritten-to-final-route' );
+
+$srcset_requests = array();
+$srcset_result = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://srcset.test/',
+	array( 'request_delay_ms' => 0 ),
+	static function ( string $url, array $args ) use ( &$srcset_requests ) {
+		unset( $args );
+		$srcset_requests[] = $url;
+		if ( 'https://srcset.test/' === $url ) {
+			return array( 'body' => '<main><img srcset="/images/hero,wide.png 1x, data:image/png;base64,AA== 2x"></main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) );
+		}
+		if ( 'https://srcset.test/images/hero,wide.png' === $url ) {
+			return array( 'body' => "\x89PNGsrcset", 'metadata' => array( 'content_type' => 'image/png', 'final_url' => $url ) );
+		}
+		return new WP_Error( 'unexpected_srcset_request', $url );
+	}
+);
+$srcset_files = array_column( $srcset_result['artifact']['files'] ?? array(), null, 'path' );
+$srcset_html  = (string) ( $srcset_files['website/index.html']['content'] ?? '' );
+$assert( ! is_wp_error( $srcset_result ) && in_array( 'https://srcset.test/images/hero,wide.png', $srcset_requests, true ) && ! in_array( 'https://srcset.test/images/hero', $srcset_requests, true ), 'collector-keeps-url-internal-commas-in-srcset-candidates' );
+$assert( str_contains( $srcset_html, 'data:image/png;base64,AA== 2x' ) && str_contains( $srcset_html, 'hero-wide.png 1x' ), 'collector-preserves-data-url-srcset-candidates-during-rewrite' );
 
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( PHP_EOL, $failures ) . PHP_EOL );

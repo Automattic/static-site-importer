@@ -123,7 +123,8 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 	 * Import validation and finding packet artifacts expose repair-loop contracts.
 	 */
 	public function test_import_validation_result_and_finding_packets_are_machine_readable(): void {
-		$report = array(
+		$report = Static_Site_Importer_Import_Report::from_array(
+			array(
 			'schema'                  => 'static-site-importer/import-report/v1',
 			'entry_file'              => '/tmp/source/index.html',
 			'version'                 => 1,
@@ -181,6 +182,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 					'block_path'             => '0',
 				),
 			),
+			)
 		);
 
 		$quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, array() );
@@ -597,7 +599,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 			'static_site_importer_font_materialization_failed',
 			'Font materialization failed.',
 			array(
-				'schema'      => 'static-site-importer/materialization-receipt/v1',
+				'schema'      => 'static-site-importer/materialization-receipt/v2',
 				'status'      => 'partial',
 				'diagnostics' => array(
 					array(

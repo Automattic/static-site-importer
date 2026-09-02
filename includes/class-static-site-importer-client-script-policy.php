@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Client_Script_Policy_Report' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-client-script-policy-report.php';
+}
+
 /** Applies an explicit, provenance-bound client-script policy before compilation. */
 class Static_Site_Importer_Client_Script_Policy {
 	/**
@@ -20,14 +24,10 @@ class Static_Site_Importer_Client_Script_Policy {
 		$policy     = self::policy_name( $args );
 		$provenance = self::provenance( $args );
 		$preserve   = 'isolated_preview' === $policy && ! empty( $args['client_script_isolated'] ) && '' !== $provenance;
-		$report     = array(
-			'schema'      => 'static-site-importer/client-script-policy-report/v1',
-			'policy'      => $preserve ? 'isolated_preview' : 'inert',
-			'trust'       => 'untrusted_imported_code',
-			'provenance'  => $preserve ? $provenance : '',
-			'dropped'     => array(),
-			'quarantined' => array(),
-			'preserved'   => array(),
+		$report     = new Static_Site_Importer_Client_Script_Policy_Report(
+			$preserve ? 'isolated_preview' : 'inert',
+			'untrusted_imported_code',
+			$preserve ? $provenance : ''
 		);
 		$files      = isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? $artifact['files'] : array();
 		$filtered   = array();
@@ -55,7 +55,7 @@ class Static_Site_Importer_Client_Script_Policy {
 		$artifact['files'] = $filtered;
 		return array(
 			'artifact' => $artifact,
-			'report'   => $report,
+			'report'   => $report->to_array(),
 		);
 	}
 
@@ -86,10 +86,10 @@ class Static_Site_Importer_Client_Script_Policy {
 		return (bool) preg_match( '/\.(?:js|mjs|cjs)$/', $path ) || str_contains( $mime, 'javascript' ) || str_contains( $mime, 'ecmascript' );
 	}
 
-	private static function filter_html( string $html, string $path, bool $preserve, array &$report ): string {
+	private static function filter_html( string $html, string $path, bool $preserve, Static_Site_Importer_Client_Script_Policy_Report $report ): string {
 		$html = (string) preg_replace_callback(
 			'#<script\b([^>]*)>(.*?)</script\s*>#is',
-			static function ( array $matches ) use ( $path, $preserve, &$report ): string {
+			static function ( array $matches ) use ( $path, $preserve, $report ): string {
 				$attributes = $matches[1];
 				$source     = self::attribute( $attributes, 'src' );
 				$type       = strtolower( trim( (string) self::attribute( $attributes, 'type' ) ) );
@@ -113,7 +113,7 @@ class Static_Site_Importer_Client_Script_Policy {
 		);
 		return (string) preg_replace_callback(
 			'#<link\b([^>]*)/?>#is',
-			static function ( array $matches ) use ( $path, $preserve, &$report ): string {
+			static function ( array $matches ) use ( $path, $preserve, $report ): string {
 				$attributes = $matches[1];
 				$relation   = strtolower( trim( (string) self::attribute( $attributes, 'rel' ) ) );
 				$as         = strtolower( trim( (string) self::attribute( $attributes, 'as' ) ) );
@@ -198,7 +198,7 @@ class Static_Site_Importer_Client_Script_Policy {
 		return $file;
 	}
 
-	private static function record( array &$report, string $disposition, array $row ): void {
-		$report[ $disposition ][] = $row;
+	private static function record( Static_Site_Importer_Client_Script_Policy_Report $report, string $disposition, array $row ): void {
+		$report->record( $disposition, $row );
 	}
 }

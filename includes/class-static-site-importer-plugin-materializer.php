@@ -42,25 +42,24 @@ class Static_Site_Importer_Plugin_Materializer {
 			$report['status']    = 'already_available';
 			$report['installed'] = true;
 			$report['active']    = true;
-			self::record_installed_provenance( $report );
-			return $report;
+			return self::record_installed_provenance( $report );
 		}
 
 		$report['attempted'] = true;
-
-		$deps = self::load_admin_dependencies();
-		if ( is_wp_error( $deps ) ) {
-			return self::failed_report( $report, $deps );
-		}
 
 		$plugin_path   = trailingslashit( WP_PLUGIN_DIR ) . $plugin_file;
 		$needs_install = ! self::plugin_entrypoint_exists( $plugin_path );
 		if ( ! $needs_install ) {
 			$report['installed'] = true;
 		} else {
-			$capabilities = Static_Site_Importer_Current_Site_Capabilities::check_plugin_install( true );
+			$report['attempted_actions'][] = 'install';
+			$capabilities                  = Static_Site_Importer_Current_Site_Capabilities::check_plugin_install( true );
 			if ( is_wp_error( $capabilities ) ) {
 				return self::failed_report( $report, $capabilities );
+			}
+			$deps = self::load_admin_dependencies();
+			if ( is_wp_error( $deps ) ) {
+				return self::failed_report( $report, $deps );
 			}
 			$install = self::install_wp_org_plugin( $slug );
 			if ( is_wp_error( $install ) ) {
@@ -75,11 +74,19 @@ class Static_Site_Importer_Plugin_Materializer {
 				$report['installed'] = true;
 				$report['actions'][] = 'installed';
 			}
+			if ( function_exists( 'wp_clean_plugins_cache' ) ) {
+				wp_clean_plugins_cache( false );
+			}
+		}
+		$activation_deps = self::load_activation_dependencies();
+		if ( is_wp_error( $activation_deps ) ) {
+			return self::failed_report( $report, $activation_deps );
 		}
 
 		if ( function_exists( 'is_plugin_active' ) && is_plugin_active( $plugin_file ) ) {
-			$report['active'] = true;
-			$preparation      = self::prepare_plugin_runtime( $slug, $preparation_callback );
+			$report['active']              = true;
+			$report['attempted_actions'][] = 'prepare_runtime';
+			$preparation                   = self::prepare_plugin_runtime( $slug, $preparation_callback );
 			if ( is_wp_error( $preparation ) ) {
 				return self::failed_report( $report, $preparation );
 			}
@@ -88,7 +95,8 @@ class Static_Site_Importer_Plugin_Materializer {
 			if ( is_wp_error( $capabilities ) ) {
 				return self::failed_report( $report, $capabilities );
 			}
-			$lifecycle = self::prepare_activation_lifecycle_replay();
+			$report['attempted_actions'][] = 'activate';
+			$lifecycle                     = self::prepare_activation_lifecycle_replay();
 			try {
 				$activate = activate_plugin( $plugin_file );
 			} catch ( Throwable $error ) {
@@ -102,17 +110,25 @@ class Static_Site_Importer_Plugin_Materializer {
 				if ( ! is_plugin_active( $plugin_file ) ) {
 					return self::failed_report( $report, $activate );
 				}
-				$report['active']    = true;
-				$report['actions'][] = 'reconciled_activated';
-				$preparation = self::prepare_plugin_runtime( $slug, $preparation_callback );
+				$report['active']              = true;
+				$report['actions'][]           = 'reconciled_activated';
+				$report['attempted_actions'][] = 'prepare_runtime';
+				$preparation                   = self::prepare_plugin_runtime( $slug, $preparation_callback );
 				if ( is_wp_error( $preparation ) ) {
 					return self::failed_report( $report, $preparation );
 				}
 			} else {
-				$preparation = self::prepare_plugin_runtime( $slug, $preparation_callback );
+				$report['attempted_actions'][] = 'prepare_runtime';
+				$preparation                   = self::prepare_plugin_runtime( $slug, $preparation_callback );
 				if ( is_wp_error( $preparation ) ) {
 					self::restore_activation_lifecycle_actions( $lifecycle );
-					return self::failed_report( $report, $preparation );
+					if ( ! is_plugin_active( $plugin_file ) ) {
+						return self::failed_report( $report, $preparation );
+					}
+					$report['active']    = true;
+					$report['actions'][] = 'activated';
+					$report['status']    = 'activated_pending_fresh_runtime';
+					return self::record_installed_provenance( $report );
 				}
 				try {
 					$report['lifecycle_replay'] = self::complete_activation_lifecycle_replay( $lifecycle );
@@ -139,8 +155,7 @@ class Static_Site_Importer_Plugin_Materializer {
 		if ( ! self::available( $availability_check ) ) {
 			$report['status'] = 'activated_pending_fresh_runtime';
 		}
-		self::record_installed_provenance( $report );
-		return $report;
+		return self::record_installed_provenance( $report );
 	}
 
 	/** @return true|WP_Error */
@@ -177,7 +192,8 @@ class Static_Site_Importer_Plugin_Materializer {
 	 */
 	public static function ensure_generated_plugin(
 		array $payload,
-		?callable $availability_check = null
+		?callable $availability_check = null,
+		bool $overwrite = false
 	): array {
 		// All compiler output is untrusted until the complete canonical payload has
 		// passed the content-only boundary. Schema-less PHP scaffold input is gone.
@@ -195,7 +211,7 @@ class Static_Site_Importer_Plugin_Materializer {
 		$report                = self::new_generated_report( (string) $descriptor['slug'], (string) $descriptor['plugin_file'] );
 		$report['mu_plugin']   = (bool) $descriptor['mu_plugin'];
 		$report['block_names'] = $descriptor['block_names'];
-		$collision             = self::generated_block_name_collision( $descriptor['block_names'], $descriptor );
+		$collision             = self::generated_block_name_collision( $descriptor['block_names'], $descriptor, $overwrite );
 		if ( is_wp_error( $collision ) ) {
 			return self::failed_report( $report, $collision );
 		}
@@ -230,7 +246,7 @@ class Static_Site_Importer_Plugin_Materializer {
 				return self::failed_report( $report, $registered );
 			}
 			$report['registration'] = $registered;
-			self::replace_active_generated_companion( $plugin_file, $report );
+			$report                 = self::replace_active_generated_companion( $plugin_file, $report );
 			if ( function_exists( 'update_option' ) ) {
 				update_option( self::ACTIVE_COMPANION_OPTION, $plugin_file, false );
 			}
@@ -272,7 +288,7 @@ class Static_Site_Importer_Plugin_Materializer {
 			return self::failed_report( $report, $registered );
 		}
 		$report['registration'] = $registered;
-		self::replace_active_generated_companion( $plugin_file, $report );
+		$report                 = self::replace_active_generated_companion( $plugin_file, $report );
 		if ( function_exists( 'update_option' ) ) {
 			update_option( self::ACTIVE_COMPANION_OPTION, $plugin_file, false );
 		}
@@ -330,7 +346,7 @@ class Static_Site_Importer_Plugin_Materializer {
 	}
 
 	/** Preflight registered block names before generated files are written. */
-	private static function generated_block_name_collision( array $block_names, array $descriptor ) {
+	private static function generated_block_name_collision( array $block_names, array $descriptor, bool $overwrite ) {
 		$registry = class_exists( 'WP_Block_Type_Registry' ) ? WP_Block_Type_Registry::get_instance() : null;
 		foreach ( $block_names as $block_name ) {
 			if ( ! is_string( $block_name ) || '' === $block_name ) {
@@ -341,7 +357,7 @@ class Static_Site_Importer_Plugin_Materializer {
 				/** Filters runtime registry collision detection for generated companion blocks. */
 				$registered = (bool) apply_filters( 'ssi_companion_plugin_block_name_collision', $registered, $block_name, $registry );
 			}
-			if ( $registered && ! self::current_companion_owns_registered_block( $block_name, $descriptor ) ) {
+			if ( $registered && ! self::current_companion_owns_registered_block( $block_name, $descriptor, $overwrite ) ) {
 				return new WP_Error(
 					'static_site_importer_companion_plugin_block_name_collision',
 					sprintf( 'Generated companion block name %s is already registered.', $block_name ),
@@ -362,9 +378,11 @@ class Static_Site_Importer_Plugin_Materializer {
 	 *
 	 * The generated plugin records its exact plugin file and runtime path when it
 	 * registers a block. Both must match the pending descriptor; a matching block
-	 * name or namespace alone never establishes ownership.
+	 * name or namespace alone never establishes ownership. An overwrite may also
+	 * reuse a companion from a prior request when its active entrypoint exactly
+	 * matches the pending deterministic scaffold and no foreign owner is known.
 	 */
-	private static function current_companion_owns_registered_block( string $block_name, array $descriptor ): bool {
+	private static function current_companion_owns_registered_block( string $block_name, array $descriptor, bool $overwrite ): bool {
 		$plugin_file = isset( $descriptor['plugin_file'] ) && is_string( $descriptor['plugin_file'] ) ? $descriptor['plugin_file'] : '';
 		if ( '' === $plugin_file || ! function_exists( 'get_option' ) || (string) get_option( self::ACTIVE_COMPANION_OPTION, '' ) !== $plugin_file ) {
 			return false;
@@ -374,12 +392,35 @@ class Static_Site_Importer_Plugin_Materializer {
 		}
 
 		$owners = $GLOBALS['static_site_importer_companion_block_owners'] ?? array();
-		$owner  = is_array( $owners ) && isset( $owners[ $block_name ] ) && is_array( $owners[ $block_name ] ) ? $owners[ $block_name ] : array();
+		$owner  = is_array( $owners ) && isset( $owners[ $block_name ] ) && is_array( $owners[ $block_name ] ) ? $owners[ $block_name ] : null;
 		$base   = ! empty( $descriptor['mu_plugin'] ) ? ( defined( 'WPMU_PLUGIN_DIR' ) ? (string) WPMU_PLUGIN_DIR : '' ) : ( defined( 'WP_PLUGIN_DIR' ) ? (string) WP_PLUGIN_DIR : '' );
 		$path   = '' === $base ? '' : rtrim( str_replace( '\\', '/', $base ), '/' ) . '/' . $plugin_file;
 
-		return (string) ( $owner['plugin_file'] ?? '' ) === $plugin_file
-			&& str_replace( '\\', '/', (string) ( $owner['plugin_path'] ?? '' ) ) === $path;
+		if ( is_array( $owner ) ) {
+			return (string) ( $owner['plugin_file'] ?? '' ) === $plugin_file
+				&& self::canonical_plugin_path( (string) ( $owner['plugin_path'] ?? '' ) ) === self::canonical_plugin_path( $path );
+		}
+
+		if ( ! $overwrite || '' === $path || ! is_readable( $path ) ) {
+			return false;
+		}
+
+		$files         = isset( $descriptor['files'] ) && is_array( $descriptor['files'] ) ? $descriptor['files'] : array();
+		$expected_main = isset( $files[ $plugin_file ] ) && is_string( $files[ $plugin_file ] ) ? $files[ $plugin_file ] : '';
+		if ( '' === $expected_main ) {
+			return false;
+		}
+
+		// A byte-identical entrypoint proves this is the prior SSI scaffold for the
+		// same destination and payload, rather than a coincidental block namespace.
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local scaffold file from the plugin directory, not a remote URL.
+		return hash_equals( $expected_main, (string) file_get_contents( $path ) );
+	}
+
+	/** Resolve filesystem aliases before comparing an active generated plugin owner. */
+	private static function canonical_plugin_path( string $path ): string {
+		$resolved = '' !== $path ? realpath( $path ) : false;
+		return str_replace( '\\', '/', false !== $resolved ? $resolved : $path );
 	}
 
 	/**
@@ -388,20 +429,26 @@ class Static_Site_Importer_Plugin_Materializer {
 	 * @param string               $plugin_file New generated companion basename.
 	 * @param array<string, mixed> $report      Materialization report.
 	 */
-	private static function replace_active_generated_companion( string $plugin_file, array &$report ): void {
+	/**
+	 * @param array<string,mixed> $report Materialization report.
+	 * @return array<string,mixed>
+	 */
+	private static function replace_active_generated_companion( string $plugin_file, array $report ): array {
 		if ( ! function_exists( 'get_option' ) ) {
-			return;
+			return $report;
 		}
 
 		$previous = (string) get_option( self::ACTIVE_COMPANION_OPTION, '' );
 		if ( '' === $previous || $plugin_file === $previous || ! function_exists( 'deactivate_plugins' ) ) {
-			return;
+			return $report;
 		}
 
 		if ( ! function_exists( 'is_plugin_active' ) || is_plugin_active( $previous ) ) {
 			deactivate_plugins( $previous );
 			$report['actions'][] = 'replaced:' . $previous;
 		}
+
+		return $report;
 	}
 
 	/**
@@ -522,16 +569,17 @@ class Static_Site_Importer_Plugin_Materializer {
 	 */
 	private static function new_report( string $slug, string $plugin_file ): array {
 		return array(
-			'slug'        => $slug,
-			'plugin_file' => $plugin_file,
-			'source'      => 'wordpress.org',
-			'status'      => 'not_run',
-			'attempted'   => false,
-			'installed'   => false,
-			'active'      => false,
-			'actions'     => array(),
-			'error'       => '',
-			'provenance'  => array(
+			'slug'              => $slug,
+			'plugin_file'       => $plugin_file,
+			'source'            => 'wordpress.org',
+			'status'            => 'not_run',
+			'attempted'         => false,
+			'installed'         => false,
+			'active'            => false,
+			'actions'           => array(),
+			'attempted_actions' => array(),
+			'error'             => '',
+			'provenance'        => array(
 				'source'  => 'wordpress.org',
 				'version' => '',
 				'sha256'  => '',
@@ -539,11 +587,16 @@ class Static_Site_Importer_Plugin_Materializer {
 		);
 	}
 
-	/** Record the exact activated plugin entrypoint instead of inferring a package version. */
-	private static function record_installed_provenance( array &$report ): void {
+	/**
+	 * Record the exact activated plugin entrypoint instead of inferring a package version.
+	 *
+	 * @param array<string,mixed> $report Materialization report.
+	 * @return array<string,mixed>
+	 */
+	private static function record_installed_provenance( array $report ): array {
 		$file = trailingslashit( WP_PLUGIN_DIR ) . (string) $report['plugin_file'];
 		if ( ! is_readable( $file ) ) {
-			return;
+			return $report;
 		}
 		$headers              = function_exists( 'get_plugin_data' ) ? get_plugin_data( $file, false, false ) : array();
 		$sha256               = hash_file( 'sha256', $file );
@@ -552,6 +605,7 @@ class Static_Site_Importer_Plugin_Materializer {
 			'version' => (string) ( $headers['Version'] ?? '' ),
 			'sha256'  => false !== $sha256 ? $sha256 : '',
 		);
+		return $report;
 	}
 
 	/** Re-read an upgrader-mutated entrypoint instead of reusing pre-install state. */
@@ -767,19 +821,43 @@ class Static_Site_Importer_Plugin_Materializer {
 	}
 
 	/**
+	 * Load only the WordPress dependency required to activate an installed plugin.
+	 *
+	 * @return true|WP_Error
+	 */
+	private static function load_activation_dependencies() {
+		$file = ABSPATH . 'wp-admin/includes/plugin.php';
+		if ( is_readable( $file ) ) {
+			require_once $file;
+		}
+
+		if ( ! function_exists( 'is_plugin_active' ) || ! function_exists( 'activate_plugin' ) ) {
+			return new WP_Error(
+				'static_site_importer_plugin_activation_unavailable',
+				'WordPress plugin activation functions are unavailable.'
+			);
+		}
+
+		return true;
+	}
+
+	/**
 	 * Install a WordPress.org plugin by slug.
 	 *
 	 * @param string $slug WordPress.org plugin slug.
 	 * @return true|WP_Error
 	 */
 	private static function install_wp_org_plugin( string $slug ) {
-		if ( defined( 'WP_CLI' ) && WP_CLI && class_exists( 'WP_CLI' ) ) {
+		if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 			try {
 				$result = WP_CLI::runcommand(
 					'plugin install ' . escapeshellarg( $slug ),
 					array(
 						'return'        => true,
 						'exit_on_error' => false,
+						// Keep nested WP-CLI plugin discovery out of this request before
+						// activate_plugin() validates the newly written entrypoint.
+						'launch'        => true,
 					)
 				);
 				if ( 0 === $result || null === $result || true === $result ) {

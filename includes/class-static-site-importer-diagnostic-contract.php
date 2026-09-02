@@ -37,15 +37,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 
 		$quality_counts = self::quality_counts( $import_report, $summary, $result );
 
-		$diagnostics = array_merge(
-			self::diagnostic_rows_from_result( $result ),
-			self::diagnostic_rows_from_import_report( $import_report ),
-			self::blocks_engine_conversion_diagnostics( $import_report ),
-			self::runtime_dependency_target_gaps( $import_report ),
-			self::semantic_parity_diagnostics( $import_report ),
-			self::gutenberg_gap_diagnostics( $import_report ),
-			self::quality_count_consistency_diagnostics( $quality_counts )
-		);
+		$diagnostics = array_merge( self::diagnostic_rows( $result, $import_report ), self::quality_count_consistency_diagnostics( $quality_counts ) );
 		$diagnostics = self::dedupe_diagnostics( $diagnostics );
 
 		return array(
@@ -76,18 +68,6 @@ class Static_Site_Importer_Diagnostic_Contract {
 		);
 	}
 
-	/** Extract compiler Gutenberg gaps with their materialization outcome. */
-	private static function gutenberg_gap_diagnostics( array $import_report ): array {
-		$blocks_engine = isset( $import_report['blocks_engine'] ) && is_array( $import_report['blocks_engine'] ) ? $import_report['blocks_engine'] : array();
-		$gaps          = isset( $blocks_engine['gutenberg_gaps'] ) && is_array( $blocks_engine['gutenberg_gaps'] ) ? $blocks_engine['gutenberg_gaps'] : array();
-		foreach ( $gaps as $index => $gap ) {
-			if ( is_array( $gap ) && ! isset( $gap['type'] ) && ! isset( $gap['code'] ) ) {
-				$gaps[ $index ]['type'] = 'gutenberg_gap';
-			}
-		}
-		return self::normalize_diagnostic_rows( $gaps, 'gutenberg_gaps' );
-	}
-
 	/**
 	 * Extract an import report from common provider result slots.
 	 *
@@ -105,49 +85,46 @@ class Static_Site_Importer_Diagnostic_Contract {
 	}
 
 	/**
-	 * Read provider-level diagnostic rows.
+	 * Read one finalized diagnostic set, with a bounded fallback for early failures.
 	 *
-	 * @param array<string,mixed> $result Provider result.
+	 * @param array<string,mixed> $result        Provider result.
+	 * @param array<string,mixed> $import_report Import report.
 	 * @return array<int,array<string,mixed>>
 	 */
-	private static function diagnostic_rows_from_result( array $result ): array {
-		$rows = array();
-		foreach ( array( $result['diagnostics'] ?? array(), $result['artifact_diagnostics']['diagnostics'] ?? array(), $result['import_validation_result']['diagnostics'] ?? array(), $result['materialization_receipt']['diagnostics'] ?? array() ) as $candidate ) {
-			if ( is_array( $candidate ) ) {
-				$rows = array_merge( $rows, self::normalize_diagnostic_rows( $candidate ) );
+	private static function diagnostic_rows( array $result, array $import_report ): array {
+		$finalized = $import_report['import_validation_result']['diagnostics'] ?? null;
+		if ( is_array( $finalized ) ) {
+			return self::normalize_diagnostic_rows( $finalized );
+		}
+
+		$sources    = array(
+			array( $result['diagnostics'] ?? array(), '' ),
+			array( $result['artifact_diagnostics']['diagnostics'] ?? array(), '' ),
+			array( $result['import_validation_result']['diagnostics'] ?? array(), '' ),
+			array( $result['materialization_receipt']['diagnostics'] ?? array(), '' ),
+			array( $import_report['diagnostics'] ?? array(), '' ),
+			array( $import_report['artifact_diagnostics']['diagnostics'] ?? array(), '' ),
+		);
+		$conversion = isset( $import_report['blocks_engine']['conversion_report'] ) && is_array( $import_report['blocks_engine']['conversion_report'] ) ? $import_report['blocks_engine']['conversion_report'] : array();
+		foreach ( array( 'diagnostics', 'fallback_diagnostics', 'fallbacks', 'presentation_gaps', 'interaction_candidates' ) as $field ) {
+			$sources[] = array( $conversion[ $field ] ?? array(), 'blocks_engine_conversion_report' );
+		}
+		$blocks_engine = isset( $import_report['blocks_engine'] ) && is_array( $import_report['blocks_engine'] ) ? $import_report['blocks_engine'] : array();
+		$gaps          = isset( $blocks_engine['gutenberg_gaps'] ) && is_array( $blocks_engine['gutenberg_gaps'] ) ? $blocks_engine['gutenberg_gaps'] : array();
+		foreach ( $gaps as &$gap ) {
+			if ( is_array( $gap ) && ! isset( $gap['type'] ) && ! isset( $gap['code'] ) ) {
+				$gap['type'] = 'gutenberg_gap';
 			}
 		}
+		unset( $gap );
+		$sources[] = array( $gaps, 'gutenberg_gaps' );
+		$sources[] = array( $blocks_engine['semantic_parity']['findings'] ?? array(), 'semantic_parity' );
+		$sources[] = array( self::runtime_dependency_target_gaps( $import_report ), '' );
 
-		return $rows;
-	}
-
-	/**
-	 * Read import-report diagnostic rows.
-	 *
-	 * @param array<string,mixed> $import_report Import report.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function diagnostic_rows_from_import_report( array $import_report ): array {
-		$rows = self::normalize_diagnostic_rows( isset( $import_report['diagnostics'] ) && is_array( $import_report['diagnostics'] ) ? $import_report['diagnostics'] : array() );
-		if ( isset( $import_report['artifact_diagnostics']['diagnostics'] ) && is_array( $import_report['artifact_diagnostics']['diagnostics'] ) ) {
-			$rows = array_merge( $rows, self::normalize_diagnostic_rows( $import_report['artifact_diagnostics']['diagnostics'] ) );
-		}
-
-		return $rows;
-	}
-
-	/**
-	 * Extract Blocks Engine conversion-report diagnostics and fallback rows.
-	 *
-	 * @param array<string,mixed> $import_report Import report.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function blocks_engine_conversion_diagnostics( array $import_report ): array {
-		$conversion_report = isset( $import_report['blocks_engine']['conversion_report'] ) && is_array( $import_report['blocks_engine']['conversion_report'] ) ? $import_report['blocks_engine']['conversion_report'] : array();
-		$rows              = array();
-		foreach ( array( 'diagnostics', 'fallback_diagnostics', 'fallbacks', 'presentation_gaps', 'interaction_candidates' ) as $field ) {
-			if ( isset( $conversion_report[ $field ] ) && is_array( $conversion_report[ $field ] ) ) {
-				$rows = array_merge( $rows, self::normalize_diagnostic_rows( $conversion_report[ $field ], 'blocks_engine_conversion_report' ) );
+		$rows = array();
+		foreach ( $sources as list( $source, $stage ) ) {
+			if ( is_array( $source ) ) {
+				$rows = array_merge( $rows, self::normalize_diagnostic_rows( $source, $stage ) );
 			}
 		}
 
@@ -170,19 +147,6 @@ class Static_Site_Importer_Diagnostic_Contract {
 		}
 
 		return $rows;
-	}
-
-	/**
-	 * Extract semantic parity findings.
-	 *
-	 * @param array<string,mixed> $import_report Import report.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function semantic_parity_diagnostics( array $import_report ): array {
-		$semantic_parity = isset( $import_report['blocks_engine']['semantic_parity'] ) && is_array( $import_report['blocks_engine']['semantic_parity'] ) ? $import_report['blocks_engine']['semantic_parity'] : array();
-		$findings        = isset( $semantic_parity['findings'] ) && is_array( $semantic_parity['findings'] ) ? $semantic_parity['findings'] : array();
-
-		return self::normalize_diagnostic_rows( $findings, 'semantic_parity' );
 	}
 
 	/**
@@ -239,7 +203,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 				$diagnostic['source_diagnostic'] = $source_diagnostic;
 			}
 
-			foreach ( array( 'message', 'reason', 'excerpt', 'source_snippet', 'source_html_preview', 'emitted_block_preview', 'observed_output', 'html_excerpt', 'block_name', 'block_path', 'script_path', 'element', 'tag_name', 'tag', 'src', 'href', 'expected', 'observed', 'suggested_primitive', 'diagnostic_code', 'mapped_provider', 'materialization_status', 'runtime_requirement', 'preservation_status', 'disposition', 'js_handling' ) as $field ) {
+			foreach ( array( 'message', 'reason', 'excerpt', 'source_snippet', 'source_html_preview', 'emitted_block_preview', 'observed_output', 'html_excerpt', 'block_name', 'block_path', 'script_path', 'element', 'tag_name', 'tag', 'src', 'href', 'expected', 'observed', 'suggested_primitive', 'diagnostic_code', 'mapped_provider', 'materialization_status', 'runtime_requirement', 'materialization_path', 'preservation_strategy', 'preservation_status', 'disposition', 'js_handling' ) as $field ) {
 				$value = self::first_scalar( $row, array( $field ), '' );
 				if ( '' !== $value ) {
 					$diagnostic[ $field ] = $value;
@@ -279,11 +243,11 @@ class Static_Site_Importer_Diagnostic_Contract {
 	private static function quality_counts( array $import_report, array $summary, array $result ): array {
 		$keys                              = array( 'block_count', 'fallback_count', 'diagnostic_count', 'content_loss_count', 'empty_conversion_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count', 'unsafe_svg_count', 'svg_materialization_failure_count', 'svg_sprite_reference_failure_count', 'commerce_dependency_failures', 'interaction_candidate_count', 'runtime_dependency_parity_issue_count', 'semantic_parity_failure_count' );
 		$compiler_quality                  = isset( $import_report['blocks_engine']['wordpress_site_plan']['quality'] ) && is_array( $import_report['blocks_engine']['wordpress_site_plan']['quality'] ) ? $import_report['blocks_engine']['wordpress_site_plan']['quality'] : array();
-		$report_quality   = isset( $import_report['quality'] ) && is_array( $import_report['quality'] ) ? $import_report['quality'] : $summary;
-		$source_counts    = self::quality_metric_values( $compiler_quality, $keys );
-		$report_counts    = self::quality_metric_values( $report_quality, $keys );
+		$report_quality                    = isset( $import_report['quality'] ) && is_array( $import_report['quality'] ) ? $import_report['quality'] : $summary;
+		$source_counts                     = self::quality_metric_values( $compiler_quality, $keys );
+		$report_counts                     = self::quality_metric_values( $report_quality, $keys );
 		$compiler_fallback_count_available = isset( $source_counts['fallback_count'] );
-		$provenance       = array();
+		$provenance                        = array();
 
 		foreach ( $keys as $key ) {
 			if ( ! isset( $source_counts[ $key ] ) && isset( $report_counts[ $key ] ) ) {
@@ -306,25 +270,25 @@ class Static_Site_Importer_Diagnostic_Contract {
 			);
 		}
 
-		$receipt                        = isset( $result['materialization_receipt'] ) && is_array( $result['materialization_receipt'] ) ? $result['materialization_receipt'] : ( isset( $import_report['materialization_receipt'] ) && is_array( $import_report['materialization_receipt'] ) ? $import_report['materialization_receipt'] : array() );
-		$reconciliation                 = isset( $import_report['quality_resolutions'] ) && is_array( $import_report['quality_resolutions'] )
+		$receipt                         = isset( $result['materialization_receipt'] ) && is_array( $result['materialization_receipt'] ) ? $result['materialization_receipt'] : ( isset( $import_report['materialization_receipt'] ) && is_array( $import_report['materialization_receipt'] ) ? $import_report['materialization_receipt'] : array() );
+		$reconciliation                  = isset( $import_report['quality_resolutions'] ) && is_array( $import_report['quality_resolutions'] )
 			? $import_report['quality_resolutions']
 			: ( isset( $import_report['fallback_reconciliation'] ) && is_array( $import_report['fallback_reconciliation'] ) ? $import_report['fallback_reconciliation'] : array() );
-		$resolved_counts                = array();
+		$resolved_counts                 = array();
 		$source_fallback_count_available = isset( $reconciliation['source_fallback_count'] ) && is_numeric( $reconciliation['source_fallback_count'] );
 		if ( ! $compiler_fallback_count_available && $source_fallback_count_available ) {
 			$source_counts['fallback_count'] = max( 0, (int) $reconciliation['source_fallback_count'] );
-			$provenance['source_detected'] = array(
+			$provenance['source_detected']   = array(
 				'owner'   => 'static-site-importer',
 				'path'    => 'quality_resolutions.source_fallback_count',
 				'schema'  => isset( $reconciliation['schema'] ) ? (string) $reconciliation['schema'] : '',
 				'metrics' => 'quality_resolutions',
 			);
 		}
-		$verified_resolutions            = self::verified_provider_resolution_count( $reconciliation );
+		$verified_resolutions = self::verified_provider_resolution_count( $reconciliation );
 		if ( ( $compiler_fallback_count_available || $source_fallback_count_available ) && null !== $verified_resolutions ) {
 			$resolved_counts['fallback_count'] = $verified_resolutions;
-			$provenance['materialized'] = array(
+			$provenance['materialized']        = array(
 				'owner'   => 'static-site-importer',
 				'path'    => 'quality_resolutions',
 				'schema'  => isset( $reconciliation['schema'] ) ? (string) $reconciliation['schema'] : '',
@@ -558,7 +522,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 		return array(
 			'schema'                     => isset( $receipt['schema'] ) && is_scalar( $receipt['schema'] ) ? (string) $receipt['schema'] : '',
 			'status'                     => isset( $receipt['status'] ) && is_scalar( $receipt['status'] ) ? (string) $receipt['status'] : '',
-			'plan_hash'                  => isset( $receipt['plan_hash'] ) && is_scalar( $receipt['plan_hash'] ) ? (string) $receipt['plan_hash'] : '',
+			'plan_identity'              => isset( $receipt['plan_identity'] ) && is_array( $receipt['plan_identity'] ) ? $receipt['plan_identity'] : array(),
 			'page_count'                 => isset( $completed['pages'] ) && is_array( $completed['pages'] ) ? count( $completed['pages'] ) : 0,
 			'file_count'                 => isset( $completed['files'] ) && is_array( $completed['files'] ) ? count( $completed['files'] ) : 0,
 			'operation_count'            => isset( $completed['operations'] ) && is_array( $completed['operations'] ) ? count( $completed['operations'] ) : 0,

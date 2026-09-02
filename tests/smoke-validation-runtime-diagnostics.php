@@ -57,7 +57,10 @@ if ( ! function_exists( 'wp_generate_uuid4' ) ) {
 }
 
 if ( ! function_exists( 'wp_json_encode' ) ) {
+	$wp_json_encode_calls = 0;
 	function wp_json_encode( $value ) {
+		global $wp_json_encode_calls;
+		++$wp_json_encode_calls;
 		return json_encode( $value );
 	}
 }
@@ -91,7 +94,8 @@ if ( ! class_exists( 'Static_Site_Importer_Theme_Generator' ) ) {
 			if ( 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
 				return array(
 					'status'        => 'dependencies_prepared',
-					'fresh_runtime' => array( 'request_id' => $args['runtime_lifecycle_invocation_id'] ?? '' ),
+					'fresh_runtime' => array( 'request_id' => $args['runtime_lifecycle_invocation_id'] ?? '', 'lifecycle_checkpoint_id' => 'checkpoint-id' ),
+					'runtime_lifecycle_checkpoint' => 'checkpoint-id',
 				);
 			}
 			if ( 'resume' === ( $args['runtime_lifecycle_phase'] ?? '' ) && ( $args['runtime_lifecycle_request_id'] ?? '' ) === ( $args['runtime_lifecycle_invocation_id'] ?? '' ) ) {
@@ -121,6 +125,18 @@ $assert     = static function ( bool $condition, string $label, string $detail =
 $artifact_dir = sys_get_temp_dir() . '/ssi-validation-runtime-diagnostics-' . uniqid( '', true );
 mkdir( $artifact_dir, 0777, true );
 $report_path = $artifact_dir . '/import-report.json';
+
+$physical_artifact_root = $artifact_dir . '/physical';
+$aliased_artifact_root  = $artifact_dir . '/aliased';
+mkdir( $physical_artifact_root );
+if ( function_exists( 'symlink' ) && symlink( $physical_artifact_root, $aliased_artifact_root ) ) {
+	$artifact_dir_method = new ReflectionMethod( Static_Site_Importer_Validation_Runtime::class, 'artifact_dir' );
+	$resolved_artifact_dir = $artifact_dir_method->invoke( null, array( 'artifact_dir' => $aliased_artifact_root . '/validation' ), 'fixture' );
+	$assert( realpath( $physical_artifact_root . '/validation' ) === $resolved_artifact_dir, 'validation-artifact-directory-resolves-symlinked-ancestor' );
+	rmdir( $physical_artifact_root . '/validation' );
+	unlink( $aliased_artifact_root );
+}
+rmdir( $physical_artifact_root );
 
 file_put_contents(
 	$report_path,
@@ -174,9 +190,9 @@ $result = $method->invoke(
 		'quality'                 => array( 'pass' => false ),
 		'theme_slug'              => 'ssi-fixture-theme',
 		'materialization_receipt' => array(
-			'schema'    => 'static-site-importer/materialization-receipt/v1',
+			'schema'    => 'static-site-importer/materialization-receipt/v2',
 			'status'    => 'completed',
-			'plan_hash' => 'plan-hash',
+			'plan_identity' => array( 'schema' => 'blocks-engine/wordpress-site-plan-identity/v1', 'hash' => str_repeat( 'a', 64 ) ),
 			'completed' => array(
 				'pages'           => array( 'index.html' => 1 ),
 				'files'           => array( array( 'target_path' => 'style.css' ) ),
@@ -248,7 +264,10 @@ $prepare_receipt    = Static_Site_Importer_Validation_Runtime::prepare_artifact_
 	)
 );
 $prepared_invocation = (string) ( $prepare_receipt['fresh_runtime']['request_id'] ?? '' );
+$prepared_metadata   = Static_Site_Importer_Theme_Generator::$last_args['source_metadata'] ?? array();
 $assert( '' !== $prepared_invocation, 'prepare-receipt-carries-invocation' );
+$assert( 'checkpoint-id' === ( $prepare_receipt['fresh_runtime']['lifecycle_checkpoint_id'] ?? '' ) && 'checkpoint-id' === ( $prepare_receipt['runtime_lifecycle_checkpoint'] ?? '' ), 'prepare-receipt-carries-checkpoint-in-fresh-runtime-and-compatibility-field' );
+$assert( 'static-site-importer/current-runtime' === ( $prepared_metadata['validation_provider'] ?? '' ), 'prepare-and-resume-share-validation-provider-metadata' );
 
 $resume_artifact_dir = $artifact_dir . '/persistent-worker-resume';
 $resume_result       = Static_Site_Importer_Validation_Runtime::validate_artifact(
@@ -258,10 +277,12 @@ $resume_result       = Static_Site_Importer_Validation_Runtime::validate_artifac
 		'slug'                         => 'persistent-worker',
 		'runtime_lifecycle_phase'      => 'resume',
 		'runtime_lifecycle_request_id' => $prepare_receipt['fresh_runtime']['request_id'],
+		'runtime_lifecycle_checkpoint' => $prepare_receipt['runtime_lifecycle_checkpoint'],
 	)
 );
 $assert( ! is_wp_error( $resume_result ), 'distinct-invocation-resume-proceeds-in-one-process' );
 $assert( $prepared_invocation !== ( Static_Site_Importer_Theme_Generator::$last_args['runtime_lifecycle_invocation_id'] ?? '' ), 'separate-runtime-calls-receive-distinct-invocations' );
+$assert( $prepared_metadata === ( Static_Site_Importer_Theme_Generator::$last_args['source_metadata'] ?? array() ), 'prepare-and-resume-bind-identical-source-metadata' );
 
 $same_invocation_artifact_dir = $artifact_dir . '/same-invocation-resume';
 $same_invocation_result       = Static_Site_Importer_Validation_Runtime::validate_artifact(
@@ -276,7 +297,33 @@ $same_invocation_result       = Static_Site_Importer_Validation_Runtime::validat
 );
 $assert( is_wp_error( $same_invocation_result ) && 'static_site_importer_fresh_runtime_required' === $same_invocation_result->get_error_code(), 'same-invocation-resume-rejected' );
 
+$lifecycle_artifact_path = $artifact_dir . '/lifecycle-artifact.json';
+$lifecycle_artifact      = array( 'schema' => 'test/website-artifact/v1', 'files' => array( array( 'path' => 'website/index.html', 'content' => str_repeat( 'x', 8192 ) ) ) );
+file_put_contents( $lifecycle_artifact_path, json_encode( $lifecycle_artifact ) );
+$file_digest = Static_Site_Importer_Validation_Runtime::lifecycle_artifact_digest_from_file( $lifecycle_artifact_path );
+$receipt     = array(
+	'artifact_sha256' => hash( 'sha256', wp_json_encode( $lifecycle_artifact ) ),
+	'artifact_digest' => $file_digest,
+);
+$wp_json_encode_calls = 0;
+$assert( Static_Site_Importer_Validation_Runtime::lifecycle_receipt_matches_artifact( $receipt, $lifecycle_artifact_path, $lifecycle_artifact ) && 0 === $wp_json_encode_calls, 'versioned-cli-receipt-uses-streaming-file-digest-without-reencoding-artifact' );
+
+$mismatched_receipt                                = $receipt;
+$mismatched_receipt['artifact_digest']['sha256'] = str_repeat( '0', 64 );
+$wp_json_encode_calls                              = 0;
+$assert( ! Static_Site_Importer_Validation_Runtime::lifecycle_receipt_matches_artifact( $mismatched_receipt, $lifecycle_artifact_path, $lifecycle_artifact ) && 0 === $wp_json_encode_calls, 'mismatched-versioned-digest-is-rejected-without-legacy-fallback' );
+
+$legacy_receipt       = array( 'artifact_sha256' => hash( 'sha256', wp_json_encode( $lifecycle_artifact ) ) );
+$wp_json_encode_calls = 0;
+$assert( Static_Site_Importer_Validation_Runtime::lifecycle_receipt_matches_artifact( $legacy_receipt, $lifecycle_artifact_path, $lifecycle_artifact ) && 1 === $wp_json_encode_calls, 'legacy-receipt-retains-canonical-artifact-sha256-semantics' );
+
+$unknown_digest_receipt = $receipt;
+$unknown_digest_receipt['artifact_digest']['schema'] = 'static-site-importer/lifecycle-artifact-digest/v2';
+$wp_json_encode_calls = 0;
+$assert( ! Static_Site_Importer_Validation_Runtime::lifecycle_receipt_matches_artifact( $unknown_digest_receipt, $lifecycle_artifact_path, $lifecycle_artifact ) && 0 === $wp_json_encode_calls, 'unknown-versioned-digest-is-rejected-without-changing-its-meaning' );
+
 unlink( $report_path );
+unlink( $lifecycle_artifact_path );
 rmdir( $default_artifact_dir );
 rmdir( $override_artifact_dir );
 rmdir( $resume_artifact_dir );

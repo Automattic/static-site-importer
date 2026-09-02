@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "static-site-importer/acceptance-handoff/v1",
+  "type": "object",
+  "required": ["schema", "fixture_id", "input_identity", "compiler_identity", "wordpress_site_plan", "terminal_materialization_receipt", "route_entity_mapping", "visual_evidence", "editor_evidence", "quality_projection", "disposition"],
+  "properties": {
+    "schema": { "const": "static-site-importer/acceptance-handoff/v1" },
+    "fixture_id": { "type": "string", "minLength": 1 },
+    "input_identity": { "$ref": "#/$defs/reference" },
+    "compiler_identity": { "$ref": "#/$defs/reference" },
+    "wordpress_site_plan": { "$ref": "#/$defs/reference" },
+    "terminal_materialization_receipt": { "$ref": "#/$defs/reference" },
+    "route_entity_mapping": { "$ref": "#/$defs/reference" },
+    "visual_evidence": { "type": "array", "items": { "$ref": "#/$defs/routeEvidence" } },
+    "editor_evidence": { "type": "array", "items": { "$ref": "#/$defs/routeEvidence" } },
+    "quality_projection": { "$ref": "#/$defs/reference" },
+    "disposition": { "enum": ["passed", "failed", "not_proven"] },
+    "not_proven": { "type": "array", "items": { "type": "object", "required": ["code"], "properties": { "code": { "enum": ["input_identity_missing", "compiler_identity_missing", "site_plan_missing", "site_plan_invalid", "materialization_receipt_missing", "materialization_failed", "route_entity_mapping_missing", "visual_evidence_missing", "editor_evidence_missing", "quality_projection_missing", "artifact_missing", "hash_mismatch"] } } } }
+  },
+  "$defs": {
+    "reference": { "type": ["object", "null"], "properties": { "path": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+" }, "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }, "required": ["path", "sha256"] },
+    "routeEvidence": { "type": "object", "required": ["route", "entity"], "properties": { "route": { "type": "string" }, "entity": { "type": "string" }, "viewport": { "type": "object" }, "evidence": { "$ref": "#/$defs/reference" }, "source": { "$ref": "#/$defs/reference" }, "candidate": { "$ref": "#/$defs/reference" }, "diff": { "$ref": "#/$defs/reference" } } }
+  }
+}

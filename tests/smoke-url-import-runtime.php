@@ -195,6 +195,8 @@ $server_rendered_diagnostic = Static_Site_Importer_URL_Fetcher::html_source_diag
 $assert( array() === $server_rendered_diagnostic, 'server-rendered-html-not-flagged-as-client-shell' );
 $framework_server_rendered_html = '<!doctype html><html><head>' . str_repeat( '<script src="/framework.js"></script>', 42 ) . str_repeat( ' ', 100000 ) . '</head><body><main><article><h1>Billboard</h1><p>' . str_repeat( 'Server content. ', 50 ) . '</p></article></main></body></html>';
 $assert( array() === Static_Site_Importer_URL_Fetcher::html_source_diagnostic( $framework_server_rendered_html ), 'framework-heavy-server-html-not-flagged-as-client-shell' );
+$image_gallery_html = '<!doctype html><html><head>' . str_repeat( '<script src="/gallery.js"></script>', 25 ) . str_repeat( ' ', 100000 ) . '</head><body>' . str_repeat( '<figure><img src="/photo.jpg" alt=""></figure>', 10 ) . '</body></html>';
+$assert( array() === Static_Site_Importer_URL_Fetcher::html_source_diagnostic( $image_gallery_html ), 'script-heavy-image-gallery-not-flagged-as-client-shell' );
 
 $assert( function_exists( 'static_site_importer_ability_import' ), 'canonical-url-ability-is-available' );
 

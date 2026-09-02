@@ -19,6 +19,8 @@
     "test:php-wasm-zstd": "node --test tools/php-wasm-zstd.test.mjs",
     "test:playground-launch": "node tools/verify-playground-launch.mjs",
     "build:php-wasm-zstd": "bash tools/build-php-wasm-zstd.sh",
+    "build:dev-package": "node tools/build-dev-package.mjs",
+    "test:dev-package": "node --test tools/build-dev-package.test.mjs",
     "test:js-block-validation": "node tests/smoke-generated-theme-block-validation.cjs",
     "test:validation": "node tests/run-validation-harness.cjs",
     "test:form-materializer-topology": "node --test tests/form-materializer-topology.test.mjs"

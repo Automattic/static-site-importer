@@ -29,9 +29,10 @@ namespace {
 
 	if ( ! class_exists( 'WP_Error' ) ) {
 		class WP_Error {
-			public function __construct( private string $code, private string $message ) {}
+			public function __construct( private string $code, private string $message, private $data = null ) {}
 			public function get_error_code(): string { return $this->code; }
 			public function get_error_message(): string { return $this->message; }
+			public function get_error_data() { return $this->data; }
 		}
 	}
 
@@ -41,6 +42,8 @@ namespace {
 
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-plugin-materializer.php';
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-manager.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 
 	$failures   = array();
@@ -59,17 +62,22 @@ namespace {
 		'product_count' => 1,
 	);
 
-	$dependencies = Static_Site_Importer_Entity_Materializer_Registry::dependency_rows( $adapter, $intent, false );
+	$dependencies = Static_Site_Importer_Dependency_Manager::dependency_rows( $adapter, $intent, false );
 	$assert( isset( $dependencies['woocommerce'] ), 'woocommerce-dependency-row-key-preserved' );
 	$assert( false === ( $dependencies['woocommerce']['active'] ?? true ), 'missing-woocommerce-reports-inactive' );
 	$assert( false === ( $dependencies['woocommerce']['waived'] ?? true ), 'missing-woocommerce-not-waived-by-default' );
 	$assert( array( 'WC_Product_Simple', 'product_post_type', 'product_cat_taxonomy' ) === ( $dependencies['woocommerce']['missing_apis'] ?? array() ), 'missing-woocommerce-api-list-preserved' );
 	$assert( array( 'products_manifest' ) === ( $dependencies['woocommerce']['sources'] ?? array() ), 'dependency-sources-preserved' );
 	$assert( 1 === ( $dependencies['woocommerce']['product_count'] ?? 0 ), 'dependency-product-count-preserved' );
-	$assert( false === Static_Site_Importer_Entity_Materializer_Registry::dependencies_available( $adapter ), 'adapter-dependencies-not-available-without-woo' );
+	$assert( false === Static_Site_Importer_Dependency_Manager::dependencies_available( $adapter ), 'adapter-dependencies-not-available-without-woo' );
 
-	$waived_dependencies = Static_Site_Importer_Entity_Materializer_Registry::dependency_rows( $adapter, $intent, true );
+	$waived_dependencies = Static_Site_Importer_Dependency_Manager::dependency_rows( $adapter, $intent, true );
 	$assert( true === ( $waived_dependencies['woocommerce']['waived'] ?? false ), 'waived-row-records-waiver' );
+	$dependency_plan = Static_Site_Importer_Dependency_Manager::dependency_plan(
+		array( 'dependencies' => array( 'products' => array( 'adapter' => $adapter, 'required' => true ) ) ),
+		str_repeat( 'a', 64 )
+	);
+	$assert( 'woocommerce' === ( $dependency_plan['entries'][0]['slug'] ?? '' ) && array( 'products' ) === ( $dependency_plan['entries'][0]['provenance']['declaration_ids'] ?? array() ), 'dependency-manager-projects-adapter-declarations-to-runtime-plan' );
 
 	$seeding = Static_Site_Importer_Entity_Materializer_Registry::materialize(
 		$adapter,
@@ -99,6 +107,45 @@ namespace {
 	$assert( ! empty( $duplicate_products['errors'] ), 'duplicate-product-slugs-reject-provider-result-ambiguity' );
 	$duplicate_forms = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( array( 'source_path' => 'index.html', 'selector' => 'form', 'controls' => array( array( 'tag' => 'input', 'type' => 'email' ) ) ), array( 'source_path' => 'index.html', 'selector' => 'form', 'controls' => array( array( 'tag' => 'input', 'type' => 'email' ) ) ) ) ) );
 	$assert( ! empty( $duplicate_forms['errors'] ), 'duplicate-form-identities-reject-provider-result-ambiguity' );
+
+	$materializer_calls = 0;
+	$bound_adapter      = array(
+		'provider'     => 'test-provider',
+		'waiver_arg'   => 'allow_missing_test_provider',
+		'materializer' => static function ( array $manifest ) use ( &$materializer_calls ): array {
+			++$materializer_calls;
+			return array(
+				'status' => 'completed',
+				'counts' => array( 'mapped' => count( $manifest['forms'] ?? array() ) ),
+				'forms'  => $manifest['forms'] ?? array(),
+			);
+		},
+	);
+	$bound_forms = array(
+		'forms' => array(
+			array( 'source_path' => 'about.html', 'selector' => 'form.desktop', 'bindings' => array( array( 'role' => 'form' ) ) ),
+			array( 'source_path' => 'contact.html', 'selector' => 'form.mobile', 'bindings' => array( array( 'role' => 'form' ) ) ),
+		),
+	);
+	$bound_lifecycle = array(
+		'entities' => array(
+			'forms' => array( 'adapter' => $bound_adapter, 'manifest' => $bound_forms, 'required' => false ),
+		),
+	);
+	$bound_result = Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $bound_lifecycle, array( 'seed_entities' => false ) );
+	$assert( 1 === $materializer_calls && 2 === ( $bound_result['reports']['forms']['counts']['mapped'] ?? 0 ), 'bound-entities-materialize-without-opt-in-seeding' );
+
+	$form_adapter = Static_Site_Importer_Entity_Materializer_Registry::form_adapter();
+	$missing_provider_lifecycle = array(
+		'dependencies' => array(
+			'forms' => array( 'adapter' => $form_adapter, 'required' => false ),
+		),
+		'entities' => array(
+			'forms' => array( 'adapter' => $form_adapter, 'manifest' => $bound_forms, 'required' => false ),
+		),
+	);
+	$missing_provider = Static_Site_Importer_Dependency_Manager::materialize_lifecycle_dependencies( $missing_provider_lifecycle, array( 'materialize_dependencies' => false ) );
+	$assert( is_wp_error( $missing_provider ) && 'static_site_importer_required_runtime_dependency_missing' === $missing_provider->get_error_code(), 'bound-entity-missing-provider-rejects-admission' );
 
 	if ( $failures ) {
 		fwrite( STDERR, implode( "\n", $failures ) . "\n" );

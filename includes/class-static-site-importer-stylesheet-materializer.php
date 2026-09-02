@@ -10,6 +10,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 require_once __DIR__ . '/class-static-site-importer-provider-layout-overlay.php';
+if ( ! class_exists( '\\Automattic\\BlocksEngine\\PhpTransformer\\AssetAnalysis\\CssUrlRewriter' ) ) {
+	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/AssetAnalysis/CssUrlRewriter.php';
+}
 
 /**
  * Builds generated theme stylesheet write payloads.
@@ -49,7 +52,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 
 		return array(
 			$theme_dir . '/style.css'                   => self::style_css( $theme_name, $css . $provider_layout_css, $visual_repair_styles ),
-			$theme_dir . '/assets/css/editor-style.css' => self::editor_style_css( $css . $provider_layout_css, $visual_repair_styles ),
+			$theme_dir . '/assets/css/editor-style.css' => self::editor_style_css( $css . $provider_layout_css, $visual_repair_styles, '' !== $provider_layout_css ),
 		);
 	}
 
@@ -100,22 +103,21 @@ class Static_Site_Importer_Stylesheet_Materializer {
 			return $css;
 		}
 
-		return (string) preg_replace_callback(
-			'#url\(\s*(["\']?)([^)"\']+)\1\s*\)#i',
-			static function ( array $matches ) use ( $replacements ): string {
-				$raw = trim( (string) $matches[2] );
+		return \Automattic\BlocksEngine\PhpTransformer\AssetAnalysis\CssUrlRewriter::rewrite(
+			$css,
+			static function ( string $raw ) use ( $replacements ): string {
+				$raw = trim( $raw );
 				if ( '' === $raw || preg_match( '#^(?:data:|https?://|//)#i', $raw ) ) {
-					return $matches[0];
+					return $raw;
 				}
 
 				$key = self::normalize_css_asset_ref( $raw );
 				if ( '' === $key || ! isset( $replacements[ $key ] ) ) {
-					return $matches[0];
+					return $raw;
 				}
 
-				return 'url("' . esc_url_raw( $replacements[ $key ] ) . '")';
-			},
-			$css
+				return esc_url_raw( $replacements[ $key ] );
+			}
 		);
 	}
 
@@ -153,7 +155,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		$ref = preg_replace( '#/+#', '/', (string) $ref );
 		$ref = trim( (string) $ref, '/' );
 
-		return preg_match( '#^[A-Za-z0-9_./-]+$#', $ref ) ? $ref : '';
+		return preg_match( '#^[A-Za-z0-9_./,-]+$#', $ref ) ? $ref : '';
 	}
 
 	/**
@@ -177,12 +179,14 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 *
 	 * @param string                          $css                  Source CSS.
 	 * @param array<string,array<int,string>> $visual_repair_styles Visual repair CSS content by target.
+	 * @param bool                            $has_provider_layout  Whether a validated provider layout was materialized.
 	 * @return string
 	 */
-	private static function editor_style_css( string $css, array $visual_repair_styles = array() ): string {
-		$repair_css = self::visual_repair_css_for_target( $visual_repair_styles, 'editor' );
+	private static function editor_style_css( string $css, array $visual_repair_styles = array(), bool $has_provider_layout = false ): string {
+		$repair_css               = self::visual_repair_css_for_target( $visual_repair_styles, 'editor' );
+		$provider_placeholder_css = $has_provider_layout ? ".static-site-importer-empty-visual-group.wp-block-group__placeholder>.components-placeholder{display:none!important}\n" : '';
 
-		return "/*\nStatic Site Importer editor styles.\nGenerated separately from frontend style.css so editor wrapper repairs do not leak to public rendering.\n*/\n\n" . $css . "\n" . $repair_css;
+		return "/*\nStatic Site Importer editor styles.\nGenerated separately from frontend style.css so editor wrapper repairs do not leak to public rendering.\n*/\n\n" . $css . "\n" . $provider_placeholder_css . $repair_css;
 	}
 
 	/**

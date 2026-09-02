@@ -16,7 +16,11 @@ if ( ! function_exists( 'trailingslashit' ) ) {
 if ( ! function_exists( 'wp_json_encode' ) ) {
 	function wp_json_encode( mixed $value, int $flags = 0 ): string|false { return json_encode( $value, $flags ); }
 }
+if ( ! function_exists( 'esc_url_raw' ) ) {
+	function esc_url_raw( string $url ): string { return $url; }
+}
 
+require_once dirname( __DIR__ ) . '/vendor/autoload.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-layout-overlay.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-stylesheet-materializer.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
@@ -37,6 +41,7 @@ $overlay = array( 'schema' => Static_Site_Importer_Provider_Layout_Overlay::OVER
 $writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/tmp/visual-repair-smoke', 'Visual Repair Smoke', '.hero{display:grid}', array(), $styles, array( $overlay, $overlay ) );
 $style = (string) ( $writes['/tmp/visual-repair-smoke/style.css'] ?? '' );
 $editor = (string) ( $writes['/tmp/visual-repair-smoke/assets/css/editor-style.css'] ?? '' );
+$assert( str_contains( $editor, '.static-site-importer-empty-visual-group.wp-block-group__placeholder>.components-placeholder{display:none!important}' ), 'provider empty runtime wrappers receive scoped editor-only placeholder suppression' );
 $assert( str_contains( $style, '.hero-shell { gap: 0; }' ) && str_contains( $style, '.compiled-site-repair { display: block; }' ), 'Frontend visual repair CSS is materialized.' );
 $assert( ! str_contains( $style, '.glow-orb' ), 'Editor repair CSS is excluded from the frontend stylesheet.' );
 $assert( str_contains( $editor, '.glow-orb { opacity: 1; }' ) && str_contains( $editor, '.compiled-site-repair { display: block; }' ), 'Editor visual repair CSS is materialized.' );
@@ -45,5 +50,13 @@ $forged = $overlay;
 $forged['css'] = "/* Static Site Importer provider layout overlay: abcdef123456 */\nbody{background:url(https://example.test/x)}\n";
 $forged_writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/tmp/visual-repair-smoke', 'Visual Repair Smoke', '.hero{}', array(), array(), array( $forged ) );
 $assert( ! str_contains( $forged_writes['/tmp/visual-repair-smoke/style.css'], 'example.test' ), 'Forged provider overlay CSS is rejected at stylesheet admission.' );
+$asset_writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes(
+	'/tmp/visual-repair-smoke',
+	'Visual Repair Smoke',
+	'.hero{background:url("images/hero,wide.png")} .data{background:url(data:image/png;base64,AA==)}',
+	array( 'images/hero,wide.png' => array( 'final_url' => 'https://example.test/hero.png' ) ),
+	array()
+);
+$assert( str_contains( $asset_writes['/tmp/visual-repair-smoke/style.css'], 'url("https://example.test/hero.png")' ) && str_contains( $asset_writes['/tmp/visual-repair-smoke/style.css'], 'url(data:image/png;base64,AA==)' ), 'stylesheet URL rewriter preserves data URLs and rewrites comma-bearing asset paths.' );
 
 echo 'PASS smoke-visual-repair-css.php (' . $assertions . " assertions)\n";

@@ -5,9 +5,11 @@ class WP_Error { public function __construct( private string $code, private stri
 function is_wp_error( $value ): bool { return $value instanceof WP_Error; }
 function wp_mkdir_p( string $path ): bool { return is_dir( $path ) || mkdir( $path, 0777, true ); }
 function wp_json_encode( $value, int $options = 0 ) { return json_encode( $value, $options ); }
+function apply_filters( string $hook, $value, ...$args ) { return isset( $GLOBALS['ssi_artifact_filters'][ $hook ] ) ? $GLOBALS['ssi_artifact_filters'][ $hook ]( $value, ...$args ) : $value; }
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-run.php';
 $root = sys_get_temp_dir() . '/ssi-artifact-primitives-' . bin2hex( random_bytes( 4 ) ); wp_mkdir_p( $root ); file_put_contents( $root . '/unrelated.txt', 'keep' );
 $workspace = new Static_Site_Importer_Artifact_Run_Workspace( $root, 'test', array( 'on_success' => 'purge_on_success' ) );
+$released = null; $GLOBALS['ssi_artifact_filters']['static_site_importer_artifact_workspace_lock'] = static function ( $value, string $operation, string $path, $token ) use ( &$released ) { if ( 'acquire' === $operation ) { return 'provider-token'; } $released = array( $path, $token ); return true; }; $provided_lock = $workspace->acquire_lock( 'provided.lock' ); $workspace->release_lock( $provided_lock ); unset( $GLOBALS['ssi_artifact_filters']['static_site_importer_artifact_workspace_lock'] ); if ( ! is_array( $provided_lock ) || 'provider-token' !== ( $provided_lock['token'] ?? '' ) || array( $workspace->directory() . '/provided.lock', 'provider-token' ) !== $released ) { throw new RuntimeException( 'workspace locks must support an opaque runtime-owned acquire and release contract' ); }
 if ( ! is_wp_error( $workspace->path( '../escape' ) ) || ! is_wp_error( $workspace->publish_raw( '/escape', 'x' ) ) ) { throw new RuntimeException( 'workspace must reject path traversal and absolute paths' ); }
 if ( is_wp_error( $workspace->publish_raw( 'nested/evidence.bin', 'evidence' ) ) ) { throw new RuntimeException( 'workspace must atomically publish owned bytes' ); }
 $cache = new Static_Site_Importer_Artifact_Byte_Cache( $workspace, 'payload', 1, 1024 ); $cache->put( 'one', 'body', array( 'kind' => 'test' ) ); $hit = $cache->get( 'one' ); $cache->hit();
