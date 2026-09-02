@@ -156,7 +156,7 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 					'type'       => 'object',
 					'properties' => array_merge(
 						array(
-							'operation' => array(
+							'operation'         => array(
 								'type' => 'string',
 								'enum' => array( 'plan', 'apply' ),
 							),
@@ -168,28 +168,28 @@ if ( ! function_exists( 'static_site_importer_register_abilities' ) ) {
 							'transform_options' => array( 'type' => 'object' ),
 							'validation'        => array( 'type' => 'object' ),
 							'frame_id'          => array( 'type' => 'string' ),
-							'source'    => array(
+							'source'            => array(
 								'type'       => 'object',
 								'properties' => array(
-									'type'       => array(
+									'type'            => array(
 										'type' => 'string',
 										'enum' => array( 'html', 'files', 'zip', 'url', 'figma' ),
 									),
-									'html'       => array( 'type' => 'string' ),
-									'files'      => array(
+									'html'            => array( 'type' => 'string' ),
+									'files'           => array(
 										'type'  => 'array',
 										'items' => array( 'type' => 'object' ),
 									),
-									'zip'        => array( 'type' => 'object' ),
-									'url'        => array( 'type' => 'string' ),
-									'figma_file' => array( 'type' => 'object' ),
+									'zip'             => array( 'type' => 'object' ),
+									'url'             => array( 'type' => 'string' ),
+									'figma_file'      => array( 'type' => 'object' ),
 									'artifact_bundle' => array( 'type' => 'object' ),
-									'figma'      => array( 'type' => 'object' ),
-									'scenegraph' => array( 'type' => 'object' ),
-									'entrypoint' => array( 'type' => 'string' ),
-									'metadata'   => array( 'type' => 'object' ),
-									'import_id'  => array( 'type' => 'string' ),
-									'ref'        => array( 'type' => 'string' ),
+									'figma'           => array( 'type' => 'object' ),
+									'scenegraph'      => array( 'type' => 'object' ),
+									'entrypoint'      => array( 'type' => 'string' ),
+									'metadata'        => array( 'type' => 'object' ),
+									'import_id'       => array( 'type' => 'string' ),
+									'ref'             => array( 'type' => 'string' ),
 								),
 								'required'   => array( 'type' ),
 							),

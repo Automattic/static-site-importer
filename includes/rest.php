@@ -104,8 +104,8 @@ function static_site_importer_rest_import_figma_preflight( WP_REST_Request $requ
  * @return WP_REST_Response|WP_Error
  */
 function static_site_importer_rest_import_figma( WP_REST_Request $request ) {
-	$input = $request->get_json_params();
-	$input = array_merge(
+	$input           = $request->get_json_params();
+	$input           = array_merge(
 		$input,
 		array(
 			'activate'  => array_key_exists( 'activate', $input ) ? ! empty( $input['activate'] ) : true,
@@ -160,9 +160,9 @@ function static_site_importer_rest_import_figma_file( WP_REST_Request $request )
 	}
 
 	$input              = Static_Site_Importer_Figma_Import::import_input( $input, $artifact );
-	$input['activate']   = array_key_exists( 'activate', $request->get_params() ) ? ! empty( $request->get_param( 'activate' ) ) : true;
-	$input['overwrite']  = array_key_exists( 'overwrite', $request->get_params() ) ? ! empty( $request->get_param( 'overwrite' ) ) : true;
-	$input['source']     = array(
+	$input['activate']  = array_key_exists( 'activate', $request->get_params() ) ? ! empty( $request->get_param( 'activate' ) ) : true;
+	$input['overwrite'] = array_key_exists( 'overwrite', $request->get_params() ) ? ! empty( $request->get_param( 'overwrite' ) ) : true;
+	$input['source']    = array(
 		'type'            => 'figma',
 		'artifact_bundle' => array(
 			'root'       => 'website',
@@ -170,7 +170,7 @@ function static_site_importer_rest_import_figma_file( WP_REST_Request $request )
 			'files'      => $artifact['files'] ?? array(),
 		),
 	);
-	$result              = static_site_importer_rest_execute_import_ability(
+	$result             = static_site_importer_rest_execute_import_ability(
 		'static-site-importer/import',
 		$input,
 		'static_site_importer_ability_import'

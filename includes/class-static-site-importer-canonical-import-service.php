@@ -158,7 +158,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 		if ( empty( $artifact ) ) {
 			return self::error( 'static_site_importer_missing_website_artifact', 'The source did not normalize to a website artifact.' );
 		}
-		$args       = self::direct_artifact_args( $input );
+		$args = self::direct_artifact_args( $input );
 		if ( isset( $payload_reader ) ) {
 			$args['_static_site_importer_payload_reader'] = $payload_reader;
 		}
