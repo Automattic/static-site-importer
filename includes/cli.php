@@ -608,9 +608,9 @@ if ( ! function_exists( 'static_site_importer_cli_import_fresh_runtime_spec' ) )
 	/**
 	 * @return array{command:string,options:array<string,mixed>}
 	 */
-	function static_site_importer_cli_import_fresh_runtime_spec( string $request_path ): array {
+	function static_site_importer_cli_import_fresh_runtime_spec( string $request_path, ?string $memory_limit = null ): array {
 		return array(
-			'command' => 'static-site-importer import --single-step --request=' . escapeshellarg( $request_path ),
+			'command' => static_site_importer_cli_fresh_runtime_bootstrap( $memory_limit ) . 'static-site-importer import --single-step --request=' . escapeshellarg( $request_path ),
 			'options' => array(
 				'launch'     => true,
 				'exit_error' => false,
@@ -655,7 +655,7 @@ if ( ! function_exists( 'static_site_importer_cli_import_run_fresh_runtime' ) ) 
 			$stdout  = is_object( $raw ) ? (string) ( $raw->stdout ?? '' ) : ( is_string( $raw ) ? $raw : '' );
 			$decoded = static_site_importer_cli_decode_import_step( $stdout );
 			if ( ! is_array( $decoded ) ) {
-				return static_site_importer_cli_import_error( 'static_site_importer_cli_step_response_invalid', 'A fresh import runtime did not return JSON.' );
+				return static_site_importer_cli_import_error( 'static_site_importer_cli_step_response_invalid', static_site_importer_cli_invalid_step_message( $raw ) );
 			}
 			return $decoded;
 		} finally {
@@ -1347,4 +1347,17 @@ function static_site_importer_cli_sidecar_lineage_value( $value ): string {
 function static_site_importer_cli_sidecar_route_value( $value ): string {
 	$value = static_site_importer_cli_sidecar_lineage_value( $value );
 	return '/' === substr( $value, 0, 1 ) ? $value : '';
+}
+
+function static_site_importer_cli_fresh_runtime_bootstrap( ?string $memory_limit = null ): string {
+	$memory_limit = trim( null === $memory_limit ? (string) ini_get( 'memory_limit' ) : $memory_limit );
+	return '' === $memory_limit ? '' : '--exec=' . escapeshellarg( 'ini_set( "memory_limit", ' . wp_json_encode( $memory_limit ) . ' );' ) . ' ';
+}
+
+/** Describe a malformed fresh-runtime response with bounded process evidence. */
+function static_site_importer_cli_invalid_step_message( $result ): string {
+	$return_code = is_object( $result ) ? (int) ( $result->return_code ?? 0 ) : 0;
+	$stderr      = is_object( $result ) ? trim( (string) ( $result->stderr ?? '' ) ) : '';
+	$stderr      = substr( preg_replace( '/\s+/', ' ', $stderr ) ?? '', 0, 1000 );
+	return sprintf( 'A fresh import runtime exited with code %d without a JSON response.', $return_code ) . ( '' === $stderr ? '' : ' ' . $stderr );
 }

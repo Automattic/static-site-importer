@@ -456,12 +456,12 @@ $leaked = static_site_importer_cli_import_receipt(
 );
 $assert( 'failed' === ( $leaked['status'] ?? '' ) && 'static_site_importer_cli_nonterminal_receipt' === ( $leaked['response']['error']['code'] ?? '' ), 'receipt-rejects-continuation-as-success' );
 
-$spec = static_site_importer_cli_import_fresh_runtime_spec( '/tmp/ssi-step.json' );
+$spec = static_site_importer_cli_import_fresh_runtime_spec( '/tmp/ssi-step.json', '768M' );
 $assert( true === ( $spec['options']['launch'] ?? null ), 'fresh-runtime-launches-new-process' );
 $assert( false === ( $spec['options']['exit_error'] ?? null ), 'fresh-runtime-does-not-halt-on-child-error' );
 $assert( 'all' === ( $spec['options']['return'] ?? null ), 'fresh-runtime-captures-full-process' );
 $assert( ! array_key_exists( 'parse', $spec['options'] ), 'fresh-runtime-decodes-stdout-locally' );
-$assert( str_contains( $spec['command'], 'static-site-importer import' ) && str_contains( $spec['command'], '--single-step' ), 'fresh-runtime-invokes-single-step-command' );
+$assert( str_contains( $spec['command'], 'static-site-importer import' ) && str_contains( $spec['command'], '--single-step' ) && str_contains( $spec['command'], '--exec=' ) && str_contains( $spec['command'], 'memory_limit' ) && str_contains( $spec['command'], '768M' ), 'fresh-runtime-invokes-single-step-command-with-memory-limit' );
 $assert( str_contains( $spec['command'], escapeshellarg( '/tmp/ssi-step.json' ) ), 'fresh-runtime-passes-request-file' );
 $assert( ! str_contains( $spec['command'], 'content_base64' ) && ! str_contains( $spec['command'], 'website/index.html' ), 'fresh-runtime-command-has-no-source-payload' );
 
@@ -494,7 +494,7 @@ class WP_CLI {
 			'command' => $command,
 			'options' => $options,
 		);
-		return (object) array(
+		return $GLOBALS['ssi_cli_runtime_result'] ?? (object) array(
 			'stdout'      => "notice\n" . wp_json_encode(
 				array(
 					'success' => false,
@@ -546,6 +546,15 @@ $assert( 'materialization_failed' === ( $fresh_fail['error']['code'] ?? '' ), 'f
 $assert( 1 === count( WP_CLI::$commands ), 'fresh-runtime-runcommand-once' );
 $assert( true === ( WP_CLI::$commands[0]['options']['launch'] ?? null ), 'fresh-runtime-runcommand-launch' );
 $assert( str_contains( (string) ( WP_CLI::$commands[0]['command'] ?? '' ), '--single-step' ), 'fresh-runtime-runcommand-single-step' );
+
+$GLOBALS['ssi_cli_runtime_result'] = (object) array(
+	'stdout'      => '',
+	'stderr'      => "PHP Fatal error: Allowed memory size exhausted\n",
+	'return_code' => 255,
+);
+$fresh_invalid = static_site_importer_cli_import_run_fresh_runtime( array( 'source' => array( 'type' => 'html' ) ) );
+$assert( 'static_site_importer_cli_step_response_invalid' === ( $fresh_invalid['error']['code'] ?? '' ), 'fresh-runtime-invalid-response-code' );
+$assert( str_contains( (string) ( $fresh_invalid['error']['message'] ?? '' ), 'code 255' ) && str_contains( (string) ( $fresh_invalid['error']['message'] ?? '' ), 'Allowed memory size exhausted' ), 'fresh-runtime-invalid-response-reports-process-failure' );
 
 if ( $failures ) {
 	fwrite( STDERR, "Unified CLI import smoke failed:\n- " . implode( "\n- ", $failures ) . "\n" );
