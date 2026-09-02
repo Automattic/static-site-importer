@@ -608,9 +608,11 @@ if ( ! function_exists( 'static_site_importer_cli_import_fresh_runtime_spec' ) )
 	/**
 	 * @return array{command:string,options:array<string,mixed>}
 	 */
-	function static_site_importer_cli_import_fresh_runtime_spec( string $request_path ): array {
+	function static_site_importer_cli_import_fresh_runtime_spec( string $request_path, ?string $memory_limit = null ): array {
+		$memory_limit = trim( null === $memory_limit ? (string) ini_get( 'memory_limit' ) : $memory_limit );
+		$bootstrap    = '' === $memory_limit ? '' : '--exec=' . escapeshellarg( 'ini_set( "memory_limit", ' . var_export( $memory_limit, true ) . ' );' ) . ' ';
 		return array(
-			'command' => 'static-site-importer import --single-step --request=' . escapeshellarg( $request_path ),
+			'command' => $bootstrap . 'static-site-importer import --single-step --request=' . escapeshellarg( $request_path ),
 			'options' => array(
 				'launch'     => true,
 				'exit_error' => false,
@@ -655,7 +657,14 @@ if ( ! function_exists( 'static_site_importer_cli_import_run_fresh_runtime' ) ) 
 			$stdout  = is_object( $raw ) ? (string) ( $raw->stdout ?? '' ) : ( is_string( $raw ) ? $raw : '' );
 			$decoded = static_site_importer_cli_decode_import_step( $stdout );
 			if ( ! is_array( $decoded ) ) {
-				return static_site_importer_cli_import_error( 'static_site_importer_cli_step_response_invalid', 'A fresh import runtime did not return JSON.' );
+				$return_code = is_object( $raw ) ? (int) ( $raw->return_code ?? 0 ) : 0;
+				$stderr      = is_object( $raw ) ? trim( (string) ( $raw->stderr ?? '' ) ) : '';
+				$stderr      = substr( preg_replace( '/\s+/', ' ', $stderr ) ?? '', 0, 1000 );
+				$message     = sprintf( 'A fresh import runtime exited with code %d without a JSON response.', $return_code );
+				if ( '' !== $stderr ) {
+					$message .= ' ' . $stderr;
+				}
+				return static_site_importer_cli_import_error( 'static_site_importer_cli_step_response_invalid', $message );
 			}
 			return $decoded;
 		} finally {
