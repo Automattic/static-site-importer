@@ -461,8 +461,7 @@ $assert( true === ( $spec['options']['launch'] ?? null ), 'fresh-runtime-launche
 $assert( false === ( $spec['options']['exit_error'] ?? null ), 'fresh-runtime-does-not-halt-on-child-error' );
 $assert( 'all' === ( $spec['options']['return'] ?? null ), 'fresh-runtime-captures-full-process' );
 $assert( ! array_key_exists( 'parse', $spec['options'] ), 'fresh-runtime-decodes-stdout-locally' );
-$assert( str_contains( $spec['command'], 'static-site-importer import' ) && str_contains( $spec['command'], '--single-step' ), 'fresh-runtime-invokes-single-step-command' );
-$assert( str_contains( $spec['command'], '--exec=' ) && str_contains( $spec['command'], 'memory_limit' ) && str_contains( $spec['command'], '768M' ), 'fresh-runtime-preserves-memory-limit' );
+$assert( str_contains( $spec['command'], 'static-site-importer import' ) && str_contains( $spec['command'], '--single-step' ) && str_contains( $spec['command'], '--exec=' ) && str_contains( $spec['command'], 'memory_limit' ) && str_contains( $spec['command'], '768M' ), 'fresh-runtime-invokes-single-step-command-with-memory-limit' );
 $assert( str_contains( $spec['command'], escapeshellarg( '/tmp/ssi-step.json' ) ), 'fresh-runtime-passes-request-file' );
 $assert( ! str_contains( $spec['command'], 'content_base64' ) && ! str_contains( $spec['command'], 'website/index.html' ), 'fresh-runtime-command-has-no-source-payload' );
 
@@ -480,7 +479,6 @@ class WP_CLI {
 	public static array $lines = array();
 	public static ?int $halt   = null;
 	public static array $commands = array();
-	public static ?object $result = null;
 	public static function line( string $text ): void {
 		self::$lines[] = $text;
 	}
@@ -496,7 +494,7 @@ class WP_CLI {
 			'command' => $command,
 			'options' => $options,
 		);
-		return self::$result ?? (object) array(
+		return $GLOBALS['ssi_cli_runtime_result'] ?? (object) array(
 			'stdout'      => "notice\n" . wp_json_encode(
 				array(
 					'success' => false,
@@ -549,7 +547,7 @@ $assert( 1 === count( WP_CLI::$commands ), 'fresh-runtime-runcommand-once' );
 $assert( true === ( WP_CLI::$commands[0]['options']['launch'] ?? null ), 'fresh-runtime-runcommand-launch' );
 $assert( str_contains( (string) ( WP_CLI::$commands[0]['command'] ?? '' ), '--single-step' ), 'fresh-runtime-runcommand-single-step' );
 
-WP_CLI::$result = (object) array(
+$GLOBALS['ssi_cli_runtime_result'] = (object) array(
 	'stdout'      => '',
 	'stderr'      => "PHP Fatal error: Allowed memory size exhausted\n",
 	'return_code' => 255,
