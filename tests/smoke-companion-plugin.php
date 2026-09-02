@@ -608,10 +608,11 @@ if ( is_array( $layout_descriptor ) ) {
 		'path' => array( 'd' => 'M0 0', 'fill' => 'url(#node-lineargradient)', 'stroke' => 'blue', 'stroke-width' => '2', 'stroke-linecap' => 'round', 'stroke-linejoin' => 'bevel' ),
 		'circle' => array( 'cx' => '1', 'cy' => '2', 'r' => '3', 'fill' => 'red', 'stroke' => 'blue', 'stroke-width' => '2' ),
 		'ellipse' => array( 'cx' => '1', 'cy' => '2', 'rx' => '3', 'ry' => '4', 'fill' => 'red', 'stroke' => 'blue', 'stroke-width' => '2' ),
-		'line' => array( 'x1' => '1', 'x2' => '2', 'y1' => '3', 'y2' => '4', 'stroke' => 'blue', 'stroke-width' => '2', 'stroke-linecap' => 'round' ),
+		'line' => array( 'x1' => '1', 'x2' => '2', 'y1' => '3', 'y2' => '4', 'opacity' => '0.5', 'stroke' => 'blue', 'stroke-dasharray' => '3 3', 'stroke-width' => '2', 'stroke-linecap' => 'round' ),
 		'polyline' => array( 'points' => '0,0 1,1', 'fill' => 'red', 'stroke' => 'blue', 'stroke-width' => '2', 'stroke-linecap' => 'round', 'stroke-linejoin' => 'bevel' ),
 		'polygon' => array( 'points' => '0,0 1,1 2,0', 'fill' => 'red', 'stroke' => 'blue', 'stroke-width' => '2', 'stroke-linecap' => 'round', 'stroke-linejoin' => 'bevel' ),
-		'rect' => array( 'x' => '1', 'y' => '2', 'width' => '3', 'height' => '4', 'rx' => '1', 'ry' => '2', 'fill' => 'red', 'stroke' => 'blue', 'stroke-width' => '2' ),
+		'rect' => array( 'x' => '1', 'y' => '2', 'width' => '3', 'height' => '4', 'rx' => '1', 'ry' => '2', 'fill' => 'red', 'stroke' => 'blue', 'stroke-dasharray' => '3 3', 'stroke-width' => '2' ),
+		'text' => array( 'x' => '1', 'y' => '2', 'fill' => 'red', 'font-family' => 'monospace', 'font-size' => '8', 'font-weight' => '600', 'letter-spacing' => '0.1em', 'text-anchor' => 'middle' ),
 		'defs' => array(),
 		'lineargradient' => array( 'gradientunits' => 'userSpaceOnUse', 'x1' => '0', 'x2' => '1', 'y1' => '0', 'y2' => '1' ),
 		'radialgradient' => array( 'cx' => '1', 'cy' => '2', 'r' => '3' ),
@@ -626,7 +627,7 @@ if ( is_array( $layout_descriptor ) ) {
 	};
 	$svg_content = '<svg ' . $svg_attributes( 'svg', $svg_shapes['svg'] ) . '>';
 	$svg_content .= '<defs ' . $svg_attributes( 'defs', $svg_shapes['defs'] ) . '><linearGradient ' . $svg_attributes( 'lineargradient', $svg_shapes['lineargradient'] ) . '><stop ' . $svg_attributes( 'stop', $svg_shapes['stop'] ) . '></stop></linearGradient><radialGradient ' . $svg_attributes( 'radialgradient', $svg_shapes['radialgradient'] ) . '></radialGradient></defs>';
-	foreach ( array( 'g', 'path', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'rect' ) as $tag ) {
+	foreach ( array( 'g', 'path', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'rect', 'text' ) as $tag ) {
 		$svg_content .= '<' . $tag . ' ' . $svg_attributes( $tag, $svg_shapes[ $tag ] ) . '></' . $tag . '>';
 	}
 	$svg_content .= '</svg>';

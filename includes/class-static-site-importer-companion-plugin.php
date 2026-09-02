@@ -1150,11 +1150,11 @@ $output = wp_kses(
 		'path' => array_merge( $svg_global, array( 'd' => true, 'fill' => true, 'fill-rule' => true, 'opacity' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'stroke-width' => true, 'transform' => true ) ),
 		'circle' => array_merge( $svg_global, array( 'cx' => true, 'cy' => true, 'fill' => true, 'opacity' => true, 'r' => true, 'stroke' => true, 'stroke-width' => true ) ),
 		'ellipse' => array_merge( $svg_global, array( 'cx' => true, 'cy' => true, 'fill' => true, 'opacity' => true, 'rx' => true, 'ry' => true, 'stroke' => true, 'stroke-width' => true ) ),
-		'line' => array_merge( $svg_global, array( 'fill' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-width' => true, 'x1' => true, 'x2' => true, 'y1' => true, 'y2' => true ) ),
+		'line' => array_merge( $svg_global, array( 'fill' => true, 'opacity' => true, 'stroke' => true, 'stroke-dasharray' => true, 'stroke-linecap' => true, 'stroke-width' => true, 'x1' => true, 'x2' => true, 'y1' => true, 'y2' => true ) ),
 		'polygon' => array_merge( $svg_global, array( 'fill' => true, 'points' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'stroke-width' => true ) ),
 		'polyline' => array_merge( $svg_global, array( 'fill' => true, 'points' => true, 'stroke' => true, 'stroke-linecap' => true, 'stroke-linejoin' => true, 'stroke-width' => true ) ),
-		'rect' => array_merge( $svg_global, array( 'fill' => true, 'height' => true, 'opacity' => true, 'rx' => true, 'ry' => true, 'stroke' => true, 'stroke-width' => true, 'width' => true, 'x' => true, 'y' => true ) ),
-		'text' => array_merge( $svg_global, array( 'fill' => true, 'font-family' => true, 'font-size' => true, 'font-weight' => true, 'text-anchor' => true, 'x' => true, 'y' => true ) ),
+		'rect' => array_merge( $svg_global, array( 'fill' => true, 'height' => true, 'opacity' => true, 'rx' => true, 'ry' => true, 'stroke' => true, 'stroke-dasharray' => true, 'stroke-width' => true, 'width' => true, 'x' => true, 'y' => true ) ),
+		'text' => array_merge( $svg_global, array( 'fill' => true, 'font-family' => true, 'font-size' => true, 'font-weight' => true, 'letter-spacing' => true, 'text-anchor' => true, 'x' => true, 'y' => true ) ),
 		'tspan' => array_merge( $svg_global, array( 'dx' => true, 'dy' => true, 'fill' => true, 'x' => true, 'y' => true ) ), 'title' => $svg_global, 'desc' => $svg_global,
 	)
 );
