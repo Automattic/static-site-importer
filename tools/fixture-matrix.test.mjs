@@ -7479,6 +7479,8 @@ test('stageFixtureSource copies the normalized fixture source into the served so
   assert.match(stagedHtml, /animation-duration: 0\.001ms !important/);
   assert.ok(stagedHtml.includes(VISUAL_PARITY_DETERMINISTIC_CSS.trim()));
   assert.match(stagedHtml, /data-ssi-visual-parity-svg-normalization/);
+  assert.match(stagedHtml, /hasDocumentAnimation/);
+  assert.match(stagedHtml, /animationName !== 'none'/);
   assert.match(stagedHtml, /clone\.style\.setProperty\('color', computed\.color\)/);
   assert.match(stagedHtml, /new XMLSerializer\(\)\.serializeToString\(clone\)/);
   // The import payload (artifact.json) is still written alongside, unchanged.
