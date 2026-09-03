@@ -743,6 +743,16 @@ if ( is_array( $typed_descriptor ) ) {
 	foreach ( array( 'javascript:', '%6a%61vascript:', 'data:image/svg+xml' ) as $fragment ) {
 		$assert( ! str_contains( $typed_output, $fragment ), 'typed-renderer-removes-' . $fragment );
 	}
+	$attributes = array(
+		'kind'    => 'media',
+		'content' => '<div class="masked-video"><svg viewBox="0 0 100 40"><defs><clipPath id="media-mask"><text x="0" y="20">Play</text></clipPath></defs></svg><video src="footer.mp4" autoplay muted loop style="clip-path:url(#media-mask)"></video></div>',
+	);
+	ob_start();
+	eval( '?>' . $typed_render );
+	$masked_video_output = strtolower( (string) ob_get_clean() );
+	foreach ( array( '<svg', '<clippath id="media-mask">', '<video src="footer.mp4" autoplay muted loop', 'clip-path:url(#media-mask)' ) as $fragment ) {
+		$assert( str_contains( $masked_video_output, $fragment ), 'typed-renderer-preserves-masked-video-' . sanitize_key( $fragment ) );
+	}
 	foreach ( array( '<script>alert(1)</script>', '<img src=x onerror=alert(1)>', '<a href="data:text/html;base64,PHNjcmlwdD4=">x</a>', '<img srcset=javascript:alert(1)>' ) as $unsafe_content ) {
 		$attributes = array( 'kind' => 'media', 'content' => $unsafe_content );
 		ob_start();

@@ -1176,7 +1176,7 @@ PHP;
 
 $content    = is_string( $attributes['content'] ?? null ) ? $attributes['content'] : '';
 $normalized = strtolower( preg_replace( '/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]+/', '', html_entity_decode( $content, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) ?? '' );
-if ( preg_match( '/<\s*(?:script|style|iframe|object|embed|svg)\b|\son[a-z]+\s*=/i', $normalized ) ) {
+if ( preg_match( '/<\s*(?:script|style|iframe|object|embed|foreignobject|animate|animatemotion|animatetransform|set)\b|\son[a-z]+\s*=/i', $normalized ) ) {
 	return;
 }
 
@@ -1273,11 +1273,23 @@ $output = wp_kses(
 	$content,
 	array(
 		'a'          => array_merge( $global, array( 'download' => true, 'href' => true, 'rel' => true, 'target' => true ) ),
+		'div'        => $global,
+		'span'       => $global,
 		'figure'     => $global,
 		'figcaption' => $global,
 		'picture'    => $global,
-		'source'     => array_merge( $global, array( 'media' => true, 'sizes' => true, 'srcset' => true, 'type' => true ) ),
+		'source'     => array_merge( $global, array( 'media' => true, 'sizes' => true, 'src' => true, 'srcset' => true, 'type' => true ) ),
 		'img'        => array_merge( $global, array( 'alt' => true, 'height' => true, 'loading' => true, 'longdesc' => true, 'sizes' => true, 'src' => true, 'srcset' => true, 'usemap' => true, 'width' => true ) ),
+		'video'      => array_merge( $global, array( 'autoplay' => true, 'controls' => true, 'height' => true, 'loop' => true, 'muted' => true, 'playsinline' => true, 'poster' => true, 'preload' => true, 'src' => true, 'width' => true ) ),
+		'svg'        => array_merge( $global, array( 'fill' => true, 'focusable' => true, 'height' => true, 'preserveaspectratio' => true, 'stroke' => true, 'viewbox' => true, 'width' => true, 'xmlns' => true ) ),
+		'defs'       => $global,
+		'clippath'   => $global,
+		'mask'       => $global,
+		'g'          => array_merge( $global, array( 'clip-path' => true, 'fill' => true, 'opacity' => true, 'stroke' => true, 'stroke-width' => true, 'transform' => true ) ),
+		'path'       => array_merge( $global, array( 'd' => true, 'fill' => true, 'fill-rule' => true, 'opacity' => true, 'stroke' => true, 'stroke-width' => true, 'transform' => true ) ),
+		'rect'       => array_merge( $global, array( 'fill' => true, 'height' => true, 'rx' => true, 'ry' => true, 'stroke' => true, 'stroke-width' => true, 'width' => true, 'x' => true, 'y' => true ) ),
+		'text'       => array_merge( $global, array( 'fill' => true, 'font-family' => true, 'font-size' => true, 'font-weight' => true, 'text-anchor' => true, 'x' => true, 'y' => true ) ),
+		'tspan'      => array_merge( $global, array( 'dx' => true, 'dy' => true, 'fill' => true, 'x' => true, 'y' => true ) ),
 	)
 );
 foreach ( $data_images as $placeholder => $data_image ) {
