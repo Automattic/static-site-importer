@@ -71,6 +71,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-final-hydration-effects.php',
 	'class-static-site-importer-source-normalizer.php',
 	'class-static-site-importer-portable-source-manifest.php',
+	'class-static-site-importer-runtime-capabilities.php',
 	'class-static-site-importer-content-policy.php',
 	'class-static-site-importer-url-site-collector.php',
 	'class-static-site-importer-url-import-runtime.php',

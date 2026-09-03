@@ -3,17 +3,19 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import test from "node:test"
-import { buildDevelopmentPackage, buildIdentity, commandFailureMessage, developmentComposerManifest, overlayWorkingTree, packagedIdentityFile, parseArguments, provenance, worktreeIdentity } from "./build-dev-package.mjs"
+import { buildDevelopmentPackage, buildIdentity, commandFailureMessage, developmentComposerManifest, overlayWorkingTree, packagedIdentityFile, parseArguments, provenance, runtimeProfileSettings, worktreeIdentity } from "./build-dev-package.mjs"
 
 test("parses explicit Blocks Engine inputs and sensible defaults", () => {
   const defaults = parseArguments([], "/workspace/static-site-importer")
   assert.equal(defaults.blocksEnginePath, "/workspace/blocks-engine")
   assert.equal(defaults.blocksEngineRef, "origin/trunk")
   assert.equal(defaults.outputDir, "/workspace/static-site-importer/build")
+  assert.equal(defaults.runtimeProfile, null)
   assert.deepEqual(parseArguments(["--blocks-engine-path", "../engine", "--blocks-engine-ref", "feature/head", "--output-dir", "artifacts"], "/workspace/static-site-importer"), {
     blocksEnginePath: "/workspace/engine",
     blocksEngineRef: "feature/head",
     outputDir: "/workspace/static-site-importer/artifacts",
+    runtimeProfile: null,
   })
 })
 
@@ -27,6 +29,20 @@ test("development Composer metadata uses isolated, non-symlinked transformer sna
   ])
   assert.equal(overridden.require["automattic/blocks-engine-php-transformer"], "*@dev")
   assert.equal(overridden.require["automattic/blocks-engine-figma-transformer"], "*@dev")
+  const htmlOnly = developmentComposerManifest(original, "/tmp/package", false)
+  assert.equal(htmlOnly.repositories.length, 2)
+  assert.equal(htmlOnly.require["automattic/blocks-engine-figma-transformer"], undefined)
+})
+
+test("runtime profile arguments retain the canonical Homeboy package selector", () => {
+  assert.deepEqual(parseArguments(["--runtime-profile", "html-site-import"], "/workspace/static-site-importer"), {
+    blocksEnginePath: "/workspace/blocks-engine",
+    blocksEngineRef: "origin/trunk",
+    outputDir: "/workspace/static-site-importer/build",
+    runtimeProfile: "html-site-import",
+  })
+  assert.deepEqual(runtimeProfileSettings(null), {})
+  assert.deepEqual(runtimeProfileSettings("html-site-import"), { manifest: "runtime-package-manifest.json", profile: "html-site-import" })
 })
 
 test("provenance binds immutable refs, the dirty identity, lock, and ZIP", async () => {
@@ -53,10 +69,18 @@ test("packaged build identity carries the source identity the ZIP digest cannot"
   assert.equal(identity.schema, "static-site-importer/development-package-provenance/v1")
   assert.deepEqual(identity.static_site_importer, { head: "a".repeat(40), dirty: false, diff_sha256: null })
   assert.deepEqual(identity.blocks_engine, { ref: "origin/trunk", sha: "c".repeat(40) })
+  assert.equal(identity.runtime_profile, "website-artifact-import")
   assert.ok(!("zip" in identity), "the identity shipped inside the package cannot digest the package")
   const { zip, ...receiptIdentity } = provenance({ ...inputs, zip: { path: "/tmp/package.zip", bytes: Buffer.from("zip fixture") } })
   assert.deepEqual(receiptIdentity, identity)
   assert.equal(zip.file, "package.zip")
+})
+
+test("development provenance identifies the selected runtime composition", () => {
+  const identity = buildIdentity({
+    ssiSha: "a".repeat(40), ssiDiff: null, blocksEngineSha: "c".repeat(40), blocksEngineRef: "origin/trunk", composerLock: Buffer.from("lock fixture"), runtimeProfile: "html-site-import",
+  })
+  assert.equal(identity.runtime_profile, "html-site-import")
 })
 
 test("orchestration packages modified and untracked source bytes without changing the caller", async () => {
@@ -120,6 +144,7 @@ test("orchestration packages modified and untracked source bytes without changin
   assert.equal(packagedIdentity.blocks_engine.sha, "b".repeat(40), "the build identity is packaged before Homeboy builds the ZIP")
   assert.equal(packagedIdentity.static_site_importer.diff_sha256, result.receipt.static_site_importer.diff_sha256)
   assert.equal(packagedIdentity.composer_lock_sha256, result.receipt.composer_lock_sha256)
+  assert.equal(packagedIdentity.runtime_profile, "website-artifact-import")
   await rm(fixture, { recursive: true, force: true })
 })
 

@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	return;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Runtime_Capabilities' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-runtime-capabilities.php';
+}
+
 final class Static_Site_Importer_Content_Policy {
 	/** Files that can be copied from an untrusted static-site artifact. */
 	private const STATIC_EXTENSIONS = array(
@@ -61,7 +65,18 @@ final class Static_Site_Importer_Content_Policy {
 			if ( ! is_array( $file ) || ! isset( $file['path'] ) || ! is_scalar( $file['path'] ) ) {
 				return new WP_Error( 'static_site_importer_artifact_file_invalid', 'Website artifacts must declare a path for every file.' );
 			}
-			$path = (string) $file['path'];
+			$path   = (string) $file['path'];
+			$format = self::source_format( $path );
+			if ( null !== $format && ! Static_Site_Importer_Runtime_Capabilities::supports_source_format( $format ) ) {
+				return new WP_Error(
+					'static_site_importer_source_format_unsupported',
+					sprintf( 'The current runtime does not include the %s conversion capability required by %s.', $format, $path ),
+					array(
+						'path'   => $path,
+						'format' => $format,
+					)
+				);
+			}
 			if ( ! self::is_static_path( $path ) ) {
 				return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s is not static content.', $path ), array( 'path' => $path ) );
 			}
@@ -71,6 +86,15 @@ final class Static_Site_Importer_Content_Policy {
 			}
 		}
 		return true;
+	}
+
+	private static function source_format( string $path ): ?string {
+		$extension = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
+		return match ( $extension ) {
+			'md', 'markdown' => 'markdown',
+			'mdx'            => 'mdx',
+			default          => null,
+		};
 	}
 
 	public static function is_static_path( string $path ): bool {
