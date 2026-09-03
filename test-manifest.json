@@ -49,6 +49,7 @@
     { "path": "tests/smoke-provider-entity-decline.php", "environment": "standalone-php" },
     { "path": "tests/smoke-provider-presentation.php", "environment": "standalone-php" },
     { "path": "tests/smoke-site-identity.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-source-normalizer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-url-import-runtime.php", "environment": "standalone-php" },
     { "path": "tests/smoke-rest-url-import-helpers.php", "environment": "standalone-php" },
     { "path": "tests/smoke-url-concurrent-fetcher.php", "environment": "standalone-php" },

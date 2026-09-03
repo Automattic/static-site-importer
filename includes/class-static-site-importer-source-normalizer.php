@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 final class Static_Site_Importer_Source_Normalizer {
 
 	/**
-	 * Remove registered source-platform chrome while retaining immutable receipts.
+	 * Remove verified provider-specific source chrome while retaining immutable receipts.
 	 *
 	 * @param string              $html       Source HTML.
 	 * @param string              $source_url Source document URL or path.
@@ -33,7 +33,8 @@ final class Static_Site_Importer_Source_Normalizer {
 			);
 		}
 
-		if ( array_key_exists( 'exclude_platform_chrome', $args ) && ! $args['exclude_platform_chrome'] ) {
+		$provider = self::verified_source_provider( $args );
+		if ( '' === $provider ) {
 			return array(
 				'html'        => $html,
 				'exclusions'  => array(),
@@ -52,7 +53,7 @@ final class Static_Site_Importer_Source_Normalizer {
 		$original   = $html;
 		$exclusions = array();
 		foreach ( $rules as $rule ) {
-			if ( ! is_array( $rule ) || ! str_starts_with( (string) ( $rule['selector'] ?? '' ), '#' ) ) {
+			if ( ! is_array( $rule ) || strtolower( (string) ( $rule['provider'] ?? '' ) ) !== $provider || ! str_starts_with( (string) ( $rule['selector'] ?? '' ), '#' ) ) {
 				continue;
 			}
 			$selector = (string) $rule['selector'];
@@ -94,6 +95,16 @@ final class Static_Site_Importer_Source_Normalizer {
 			'exclusions'  => $exclusions,
 			'diagnostics' => $diagnostics,
 		);
+	}
+
+	/** Return a provider only when the caller has verified its source attribution. */
+	private static function verified_source_provider( array $args ): string {
+		$policy = $args['source_provider_policy'] ?? null;
+		if ( ! is_array( $policy ) || true !== ( $policy['verified'] ?? false ) ) {
+			return '';
+		}
+		$provider = strtolower( trim( (string) ( $policy['provider'] ?? '' ) ) );
+		return preg_match( '/^[a-z0-9][a-z0-9_-]*$/', $provider ) ? $provider : '';
 	}
 
 	private static function normalize_cloudflare_email_links( string $html, int &$count ): string {

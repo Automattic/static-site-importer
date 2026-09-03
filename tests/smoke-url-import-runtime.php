@@ -167,6 +167,7 @@ $result = Static_Site_Importer_URL_Import_Runtime::import_url(
 		'stale_page_action' => 'draft',
 		'require_proven_dynamic_client_assets' => false,
 		'source_metadata' => array( 'requested_by' => 'external-caller' ),
+		'source_provider_policy' => array( 'provider' => 'weebly', 'verified' => true ),
 	)
 );
 
@@ -177,6 +178,7 @@ $assert( 'private-import' === ( $result['theme_slug'] ?? '' ), 'result-passes-th
 $assert( 'website/index.html' === ( Static_Site_Importer_Theme_Generator::$last_artifact['files'][0]['path'] ?? '' ), 'provider-artifact-imported' );
 $assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['overwrite'] ?? null ), 'import-args-preserved' );
 $assert( false === ( Static_Site_Importer_Theme_Generator::$last_args['require_proven_dynamic_client_assets'] ?? null ), 'url-import-forwards-dynamic-client-policy' );
+$assert( array( 'provider' => 'weebly', 'verified' => true ) === ( Static_Site_Importer_Theme_Generator::$last_args['source_provider_policy'] ?? null ), 'url-import-forwards-source-provider-policy' );
 $assert( 'external-caller' === ( Static_Site_Importer_Theme_Generator::$last_args['source_metadata']['requested_by'] ?? '' ), 'caller-metadata-preserved' );
 $assert( 'private' === ( Static_Site_Importer_Theme_Generator::$last_args['source_metadata']['visibility'] ?? '' ), 'provider-metadata-merged' );
 $assert( 'test-private-runtime' === ( Static_Site_Importer_Theme_Generator::$last_args['source_metadata']['url_import_provider'] ?? '' ), 'provider-recorded' );
