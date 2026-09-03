@@ -96,6 +96,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-validation-runtime.php',
 	'class-static-site-importer-report-diagnostics.php',
 	'class-static-site-importer-failed-plan-validation.php',
+	'class-static-site-importer-viewport-metadata-materializer.php',
 	'class-static-site-importer-font-materializer.php',
 	'class-static-site-importer-document-type-classifier.php',
 	'class-static-site-importer-current-site-capabilities.php',

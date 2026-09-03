@@ -296,6 +296,7 @@ function wp_parse_args( $args, array $defaults = array() ): array {
 require_once __DIR__ . '/support/wordpress-block-registry.inc';
 
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-font-materializer.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-viewport-metadata-materializer.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-document-type-classifier.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-diagnostics-adapter.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-site-plan-materializer.php';

@@ -46,7 +46,7 @@ $result = Static_Site_Importer_Theme_Generator::import_website_artifact(
 		'files'  => array(
 			array(
 				'path'    => 'index.html',
-				'content' => '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ember & Rye</title><meta name="description" content="Wood-fired bakery"><link rel="stylesheet" href="/assets/site.css"></head><body><header class="site-header"><a href="/">Ember & Rye</a></header><main><section class="hero"><h1>Fire, flour, patience.</h1><p>Small-batch loaves.</p><div class="contact-actions"><a class="btn btn-ghost" href="/contact">Visit us</a></div><div class="hours-table"><div><span>Tue</span><strong>4–10pm</strong></div></div><figure><img class="rounded-photo reveal" src="assets/logo.svg" alt="Bakery mark"></figure><div class="glow-orb"></div></section></main><script src="assets/js/main.js" defer></script></body></html>',
+				'content' => '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=320, user-scalable=yes"><title>Ember & Rye</title><meta name="description" content="Wood-fired bakery"><link rel="stylesheet" href="/assets/site.css"></head><body><header class="site-header"><a href="/">Ember & Rye</a></header><main><section class="hero"><h1>Fire, flour, patience.</h1><p>Small-batch loaves.</p><div class="contact-actions"><a class="btn btn-ghost" href="/contact">Visit us</a></div><div class="hours-table"><div><span>Tue</span><strong>4–10pm</strong></div></div><figure><img class="rounded-photo reveal" src="assets/logo.svg" alt="Bakery mark"></figure><div class="glow-orb"></div></section></main><script src="assets/js/main.js" defer></script></body></html>',
 			),
 			array(
 				'path'    => 'assets/site.css',
@@ -179,6 +179,9 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( true === ( $scripts[0]['defer'] ?? false ), 'script-defer-is-preserved-in-document-metadata' );
 	$bootstrap = $read( $theme_dir . '/functions.php' );
 	$assert( str_contains( $bootstrap, "get_theme_file_uri( 'assets/assets/site.css' )" ), 'theme-bootstrap-enqueues-the-canonical-stylesheet', $bootstrap );
+	$assert( str_contains( $bootstrap, 'Static Site Importer authored viewport metadata' ) && str_contains( $bootstrap, "'width=320, user-scalable=yes'" ) && str_contains( $bootstrap, "remove_action( 'wp_head', '_block_template_viewport_meta_tag', 0 )" ), 'theme-bootstrap-materializes-authored-viewport', $bootstrap );
+	$viewport_receipt = $result['materialization_receipt']['completed']['viewport_metadata'] ?? array();
+	$assert( 'completed' === ( $viewport_receipt['status'] ?? '' ) && 'width=320, user-scalable=yes' === ( $viewport_receipt['declaration'] ?? '' ), 'viewport-materialization-is-recorded-in-receipt' );
 	$previous_query       = $GLOBALS['wp_query'] ?? null;
 	$GLOBALS['wp_query']  = new WP_Query( array( 'page_id' => $page_id ) );
 	$rendered_route_title = wp_get_document_title();
