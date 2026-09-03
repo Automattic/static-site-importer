@@ -94,6 +94,8 @@ test("orchestration packages modified and untracked source bytes without changin
   await writeFile(join(source, "composer.json"), JSON.stringify({ require: { php: "^8.1" } }))
   await writeFile(join(source, "composer.lock"), "caller lock")
   await writeFile(join(source, "homeboy.json"), JSON.stringify({ extensions: { wordpress: { settings: { package_profile: { manifest: "runtime-package-manifest.json", profile: "website-artifact-import" } } } } }))
+  const runtimeManifest = { profiles: { "website-artifact-import": { selectors: [{ type: "prefix", path: "vendor/automattic/blocks-engine-figma-transformer/" }], required_files: [] } } }
+  await writeFile(join(source, "runtime-package-manifest.json"), JSON.stringify(runtimeManifest))
   await writeFile(join(source, "tracked.txt"), "modified tracked bytes")
   await writeFile(join(source, "untracked.txt"), "untracked bytes")
   await mkdir(join(source, "vendor"), { recursive: true })
@@ -101,7 +103,7 @@ test("orchestration packages modified and untracked source bytes without changin
   const commands = []
   let extracted = 0
   let packagedIdentity = null
-  const result = await buildDevelopmentPackage({ blocksEnginePath: engine, blocksEngineRef: "candidate", outputDir: output }, {
+  const result = await buildDevelopmentPackage({ blocksEnginePath: engine, blocksEngineRef: "candidate", outputDir: output, runtimeProfile: "website-artifact-import" }, {
     sourceRoot: source,
     temporaryDirectory: temporary,
     cleanup: async () => {},
@@ -109,13 +111,16 @@ test("orchestration packages modified and untracked source bytes without changin
       commands.push({ command, args, context })
       if (command === "git" && args[0] === "rev-parse") return Buffer.from(context.cwd === source ? `${"a".repeat(40)}\n` : `${"b".repeat(40)}\n`)
       if (command === "git" && args[0] === "status") return Buffer.from(" M tracked.txt\0?? untracked.txt\0")
-      if (command === "git" && args[0] === "ls-files") return Buffer.from("composer.json\0composer.lock\0tracked.txt\0untracked.txt\0")
+      if (command === "git" && args[0] === "ls-files") return Buffer.from("composer.json\0composer.lock\0homeboy.json\0runtime-package-manifest.json\0tracked.txt\0untracked.txt\0")
       if (command === "composer") return writeFile(join(context.cwd, "composer.lock"), "temporary lock")
-      if (command === "homeboy" && args[0] === "review") return Promise.all([readFile(join(context.cwd, "tracked.txt"), "utf8"), readFile(join(context.cwd, "untracked.txt"), "utf8"), readFile(join(context.cwd, packagedIdentityFile), "utf8")]).then(([tracked, untracked, identity]) => {
+      if (command === "homeboy" && args[0] === "review") return Promise.all([readFile(join(context.cwd, "tracked.txt"), "utf8"), readFile(join(context.cwd, "untracked.txt"), "utf8"), readFile(join(context.cwd, packagedIdentityFile), "utf8"), readFile(join(context.cwd, "runtime-package-manifest.json"), "utf8")]).then(([tracked, untracked, identity, manifest]) => {
         packagedIdentity = JSON.parse(identity)
+        const profile = JSON.parse(manifest).profiles["website-artifact-import"]
+        assert.deepEqual(profile.selectors.at(-1), { type: "file", path: packagedIdentityFile })
+        assert.equal(profile.required_files.includes(packagedIdentityFile), true)
         return readFile(join(context.cwd, "homeboy.json"), "utf8").then((homeboy) => {
-          assert.deepEqual(JSON.parse(homeboy).extensions.wordpress.settings.package_profile, {})
-          return mkdir(join(context.cwd, "build"), { recursive: true }).then(() => writeFile(join(context.cwd, "build/static-site-importer.zip"), `${tracked}|${untracked}`))
+          assert.deepEqual(JSON.parse(homeboy).extensions.wordpress.settings.package_profile, { manifest: "runtime-package-manifest.json", profile: "website-artifact-import" })
+          return mkdir(join(context.cwd, "build"), { recursive: true }).then(() => writeFile(join(context.cwd, "build/static-site-importer.zip"), `${tracked}|${untracked}|${identity}`))
         })
       })
       return Buffer.from("")
@@ -125,6 +130,7 @@ test("orchestration packages modified and untracked source bytes without changin
       if (extracted === 1) {
         await writeFile(join(destination, "composer.json"), JSON.stringify({ require: { php: "^8.1" } }))
         await writeFile(join(destination, "homeboy.json"), JSON.stringify({ extensions: { wordpress: { settings: { package_profile: { manifest: "runtime-package-manifest.json", profile: "website-artifact-import" } } } } }))
+        await writeFile(join(destination, "runtime-package-manifest.json"), JSON.stringify(runtimeManifest))
       }
       else await mkdir(join(destination, "php-transformer"), { recursive: true })
     },
@@ -137,8 +143,8 @@ test("orchestration packages modified and untracked source bytes without changin
   assert.ok(commands.some(({ command, args }) => command === "git" && args.join(" ") === `archive --format=tar --output=${join(temporary, "blocks-engine.tar")} ${"b".repeat(40)} php-transformer figma-transformer`))
   assert.ok(commands.some(({ command, args }) => command === "homeboy" && args.join(" ") === `review --placement local build static-site-importer --path ${join(temporary, "static-site-importer")}`))
   assert.equal(basename(result.zip), `static-site-importer-dev-${"a".repeat(12)}-dirty-${result.receipt.static_site_importer.diff_sha256.slice(0, 12)}-blocks-engine-${"b".repeat(12)}.zip`)
-  assert.equal(await readFile(result.zip, "utf8"), "modified tracked bytes|untracked bytes")
-  assert.equal(result.receipt.static_site_importer.diff_sha256, await worktreeIdentity(source, ["composer.json", "composer.lock", "tracked.txt", "untracked.txt"]))
+  assert.equal((await readFile(result.zip, "utf8")).endsWith(`|${JSON.stringify(packagedIdentity, null, 2)}\n`), true, "the generated package contains the development identity bytes")
+  assert.equal(result.receipt.static_site_importer.diff_sha256, await worktreeIdentity(source, ["composer.json", "composer.lock", "homeboy.json", "runtime-package-manifest.json", "tracked.txt", "untracked.txt"]))
   await assert.rejects(() => readFile(join(temporary, "static-site-importer", "vendor", "ignored.txt"), "utf8"), /ENOENT/)
   assert.equal((await readFile(result.provenance, "utf8")).includes("candidate"), true)
   assert.equal(packagedIdentity.blocks_engine.sha, "b".repeat(40), "the build identity is packaged before Homeboy builds the ZIP")

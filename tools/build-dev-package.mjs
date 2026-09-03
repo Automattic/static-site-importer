@@ -141,9 +141,15 @@ export async function buildDevelopmentPackage(options, dependencies = {}) {
     await extractArchive(ssiArchive, snapshot)
     await overlayWorkingTree(sourceRoot, snapshot, sourcePaths)
 
-    const runtimeManifest = options.runtimeProfile ? JSON.parse(await readFile(join(snapshot, "runtime-package-manifest.json"), "utf8")) : null
+    const runtimeManifestPath = join(snapshot, "runtime-package-manifest.json")
+    const runtimeManifest = options.runtimeProfile ? JSON.parse(await readFile(runtimeManifestPath, "utf8")) : null
     const runtimeProfile = options.runtimeProfile ? runtimeManifest.profiles?.[options.runtimeProfile] : null
     if (options.runtimeProfile && !runtimeProfile) throw new Error(`Unknown declared runtime profile: ${options.runtimeProfile}`)
+    if (runtimeProfile) {
+      runtimeProfile.selectors = [...runtimeProfile.selectors, { type: "file", path: packagedIdentityFile }]
+      runtimeProfile.required_files = [...new Set([...runtimeProfile.required_files, packagedIdentityFile])]
+      await writeFile(runtimeManifestPath, `${JSON.stringify(runtimeManifest, null, 2)}\n`)
+    }
     const includeFigma = !runtimeProfile || runtimeProfile.selectors.some((selector) => selector.path === "vendor/automattic/blocks-engine-figma-transformer/")
 
     await mkdir(blocksEngine, { recursive: true })
