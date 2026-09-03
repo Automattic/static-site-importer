@@ -2121,6 +2121,20 @@ class Static_Site_Importer_Report_Diagnostics {
 			$report['product_finding_seeding'] = $seeding;
 			return $seeding;
 		}
+		if ( empty( $adapter ) ) {
+			$seeding = array(
+				'status'        => 'skipped',
+				'reason'        => 'configured_shop_provider_unsupported',
+				'provider'      => Static_Site_Importer_Entity_Materializer_Registry::provider_for( 'shop' ),
+				'finding_count' => count( $indexes ),
+				'product_count' => 0,
+				'mapped_count'  => 0,
+				'counts'        => array( 'created' => 0, 'updated' => 0, 'skipped' => 0, 'error' => 0 ),
+				'products'      => array(),
+			);
+			$report['product_finding_seeding'] = $seeding;
+			return $seeding;
+		}
 
 		$manifest_products = array();
 		$finding_slugs     = array();
@@ -2167,7 +2181,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			);
 		}
 
-		$seeding['provider']      = Static_Site_Importer_Entity_Materializer_Registry::provider_for( 'shop' );
+		$seeding['provider']      = (string) ( $adapter['provider'] ?? '' );
 		$seeding['finding_count'] = count( $indexes );
 		$seeding['product_count'] = count( $manifest_products );
 		$seeding['mapped_count']  = 0;
@@ -2203,7 +2217,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			}
 
 			if ( ! empty( $page_contents ) ) {
-				$graft = self::graft_product_add_to_cart_shortcodes_into_page_contents( $report->diagnostics()[ $index ], $seeded_products_by_slug, $page_contents );
+				$graft = self::graft_product_add_to_cart_shortcodes_into_page_contents( $adapter, $report->diagnostics()[ $index ], $seeded_products_by_slug, $page_contents );
 				$report->replace_diagnostic( $index, $graft['finding'] );
 				if ( $graft['grafted'] ) {
 					++$seeding['shortcode_grafted_count'];
@@ -2219,7 +2233,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
-	 * Replace plain static product-card add-to-cart buttons with Woo shortcode blocks.
+	 * Replace plain static product-card add-to-cart buttons with adapter-owned markup.
 	 *
 	 * This prototype only rewrites serialized Gutenberg button fallbacks. Raw HTML
 	 * runtime controls are left in place so SSI never embeds block markup inside an
@@ -2230,7 +2244,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @param array<string,string>       $page_contents           Materialized page post_content keyed by source filename.
 	 * @return array{grafted:bool,finding:array<string,mixed>,diagnostic:?array<string,mixed>}
 	 */
-	private static function graft_product_add_to_cart_shortcodes_into_page_contents( array $finding, array $seeded_products_by_slug, array &$page_contents ): array {
+	private static function graft_product_add_to_cart_shortcodes_into_page_contents( array $adapter, array $finding, array $seeded_products_by_slug, array &$page_contents ): array {
 		$source_path = self::first_scalar( $finding, array( 'graft_source_path', 'source_path', 'source' ) );
 		$selector    = isset( $finding['selector'] ) && is_scalar( $finding['selector'] ) ? (string) $finding['selector'] : '';
 
@@ -2246,12 +2260,12 @@ class Static_Site_Importer_Report_Diagnostics {
 					'selector'        => $selector,
 					'diagnostic_code' => 'html_product_add_to_cart_graft_unanchorable',
 					'loss_class'      => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
-					'message'         => 'Woo add-to-cart shortcode markup could not be safely anchored to plain serialized button controls; the static controls were left in place.',
+					'message'         => 'Provider add-to-cart markup could not be safely anchored to plain serialized button controls; the static controls were left in place.',
 				),
 			);
 		};
 
-		$products = self::shortcode_graft_products( $finding, $seeded_products_by_slug );
+		$products = self::shortcode_graft_products( $adapter, $finding, $seeded_products_by_slug );
 		if ( empty( $products ) ) {
 			return $unanchorable( 'no_safe_plain_add_to_cart_products' );
 		}
@@ -2294,10 +2308,11 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * Resolve products eligible for plain add-to-cart shortcode grafting.
 	 *
 	 * @param array<string,mixed>        $finding                 Product-grid finding.
-	 * @param array<string,array<mixed>> $seeded_products_by_slug Seeded Woo rows keyed by slug.
-	 * @return array<int,array{id:int,slug:string}>
+	 * @param array<string,mixed>        $adapter                 Selected shop adapter.
+	 * @param array<string,array<mixed>> $seeded_products_by_slug Seeded provider rows keyed by slug.
+	 * @return array<int,array{binding_markup:string,slug:string}>
 	 */
-	private static function shortcode_graft_products( array $finding, array $seeded_products_by_slug ): array {
+	private static function shortcode_graft_products( array $adapter, array $finding, array $seeded_products_by_slug ): array {
 		$products = isset( $finding['products'] ) && is_array( $finding['products'] ) ? $finding['products'] : array();
 		$eligible = array();
 		foreach ( $products as $product ) {
@@ -2307,14 +2322,15 @@ class Static_Site_Importer_Report_Diagnostics {
 
 			$row  = self::product_finding_manifest_row( $product, '' );
 			$slug = is_array( $row ) ? (string) ( $row['slug'] ?? '' ) : '';
-			$id   = isset( $seeded_products_by_slug[ $slug ]['id'] ) ? (int) $seeded_products_by_slug[ $slug ]['id'] : 0;
-			if ( '' === $slug || $id <= 0 ) {
+			$result = is_array( $seeded_products_by_slug[ $slug ] ?? null ) ? $seeded_products_by_slug[ $slug ] : array();
+			$markup = Static_Site_Importer_Entity_Materializer_Registry::binding_block_markup( $adapter, $row, $result );
+			if ( '' === $slug || '' === $markup ) {
 				return array();
 			}
 
 			$eligible[] = array(
-				'id'   => $id,
-				'slug' => $slug,
+				'binding_markup' => $markup,
+				'slug'           => $slug,
 			);
 		}
 
@@ -2351,7 +2367,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * Replace one serialized core/buttons add-to-cart control per product.
 	 *
 	 * @param string                   $region   Serialized fallback block region.
-	 * @param array<int,array{id:int}> $products Eligible seeded products in card order.
+	 * @param array<int,array{binding_markup:string}> $products Eligible seeded products in card order.
 	 * @return string|null
 	 */
 	private static function replace_plain_cart_button_blocks_with_shortcodes( string $region, array $products ): ?string {
@@ -2376,21 +2392,11 @@ class Static_Site_Importer_Report_Diagnostics {
 			$block      = (string) $control_match[0];
 			$position   = (int) $control_match[1];
 			$rewritten .= substr( $region, $cursor, $position - $cursor );
-			$rewritten .= self::add_to_cart_shortcode_block( (int) $products[ $index ]['id'] );
+			$rewritten .= $products[ $index ]['binding_markup'];
 			$cursor     = $position + strlen( $block );
 		}
 
 		return $rewritten . substr( $region, $cursor );
-	}
-
-	/**
-	 * Build a Woo-owned add-to-cart shortcode block for a seeded product.
-	 *
-	 * @param int $product_id WooCommerce product post ID.
-	 * @return string
-	 */
-	private static function add_to_cart_shortcode_block( int $product_id ): string {
-		return '<!-- wp:shortcode -->[add_to_cart id="' . $product_id . '"]<!-- /wp:shortcode -->';
 	}
 
 	/**

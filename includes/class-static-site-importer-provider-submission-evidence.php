@@ -87,8 +87,14 @@ class Static_Site_Importer_Provider_Submission_Evidence {
 			),
 			'form_identity'                  => (string) ( $requirement['form_identity'] ?? '' ),
 			'provider'                       => array(
-				'id'                  => (string) ( $requirement['provider_id'] ?? '' ),
-				'version'             => self::provider_version( (string) ( $requirement['provider_id'] ?? '' ) ),
+				'id'                  => (string) ( $adapter['provider'] ?? '' ),
+				'adapter_id'          => (string) ( $adapter['id'] ?? '' ),
+				'requested_id'        => (string) ( $requirement['provider_id'] ?? '' ),
+				'execution'           => array(
+					'status'     => (string) ( $adapter['status'] ?? 'unsupported' ),
+					'diagnostic' => (string) ( $adapter['diagnostic'] ?? 'selected_provider_unsupported' ),
+				),
+				'version'             => self::provider_version( (string) ( $adapter['provider'] ?? '' ) ),
 				'ownership'           => 'wordpress',
 				'submission_endpoint' => array(
 					'scope'                     => 'wordpress-local',
@@ -142,13 +148,43 @@ class Static_Site_Importer_Provider_Submission_Evidence {
 	 * @return array<string,mixed>
 	 */
 	private static function adapter( array $form ): array {
-		$default = array(
-			'can_accept' => class_exists( 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form' ) && method_exists( 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form', 'process_submission' ),
-			'submit'     => array( self::class, 'submit_jetpack' ),
-			'cleanup'    => array( self::class, 'cleanup_feedback' ),
+		$selected = class_exists( 'Static_Site_Importer_Entity_Materializer_Registry' ) ? Static_Site_Importer_Entity_Materializer_Registry::submission_evidence_adapter() : array();
+		$requested = (string) ( $form['provider'] ?? '' );
+		if ( empty( $selected ) ) {
+			return array(
+				'status'     => 'unsupported',
+				'diagnostic' => 'selected_provider_unsupported',
+			);
+		}
+		if ( $requested !== (string) ( $selected['provider'] ?? '' ) ) {
+			return array(
+				'status'     => 'rejected',
+				'diagnostic' => 'provider_executor_mismatch',
+			);
+		}
+		$evidence = is_array( $selected['submission_evidence'] ?? null ) ? $selected['submission_evidence'] : array();
+		if ( ! is_callable( $evidence['submit'] ?? null ) ) {
+			return array(
+				'status'     => 'unsupported',
+				'diagnostic' => 'selected_provider_submission_unsupported',
+			);
+		}
+		$can_accept = $evidence['can_accept_callback'] ?? null;
+		$available  = is_callable( $can_accept ) && (bool) call_user_func( $can_accept );
+		return array(
+			'id'         => (string) ( $selected['id'] ?? '' ),
+			'provider'   => (string) ( $selected['provider'] ?? '' ),
+			'status'     => $available ? 'ready' : 'unavailable',
+			'diagnostic' => $available ? '' : 'selected_provider_submission_unavailable',
+			'can_accept' => $available,
+			'submit'     => $evidence['submit'],
+			'cleanup'    => $evidence['cleanup'] ?? null,
 		);
-		$adapter = function_exists( 'apply_filters' ) ? apply_filters( 'static_site_importer_provider_submission_adapter', $default, $form ) : $default;
-		return is_array( $adapter ) ? $adapter : $default;
+	}
+
+	public static function jetpack_can_accept(): bool {
+		$class = 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form';
+		return class_exists( $class ) && method_exists( $class, 'process_submission' );
 	}
 
 	/**
