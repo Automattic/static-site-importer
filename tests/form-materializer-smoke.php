@@ -965,6 +965,51 @@ namespace {
 	// Shop capability stays on the default provider despite the form override.
 	$assert( 'woocommerce' === Static_Site_Importer_Entity_Materializer_Registry::provider_for( 'shop' ), 'shop-provider-unaffected-by-form-override' );
 
+	// --- Real source boxes keep their own elements and their own layout ------
+	// These entities are the retained materialization evidence from a Wix import whose
+	// forms were previously declined outright. Each field sits inside nested source
+	// boxes addressed by ancestor-dependent selectors, and the source drives display
+	// through its own custom properties.
+	$kmr = array();
+	foreach ( array( 0, 1, 2, 3 ) as $kmr_index ) {
+		$kmr_fixture = json_decode( (string) file_get_contents( __DIR__ . '/fixtures/kmr-form-' . $kmr_index . '.json' ), true );
+		$kmr_valid   = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $kmr_fixture ) ) );
+		$assert( empty( $kmr_valid['errors'] ), 'kmr-source-form-' . $kmr_index . '-validates', wp_json_encode( $kmr_valid['errors'] ?? array() ) );
+		$kmr[ $kmr_index ] = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $kmr_valid['forms'] ?? array() ) )['forms'][0] ?? array();
+	}
+	foreach ( array( 0 => 8, 1 => 8, 2 => 2 ) as $kmr_index => $expected_fields ) {
+		$kmr_row    = $kmr[ $kmr_index ];
+		$kmr_fields = array_values( array_filter( $kmr_row['field_blocks'] ?? array(), static fn( string $name ): bool => 'core/button' !== $name ) );
+		$assert(
+			'mapped' === ( $kmr_row['status'] ?? '' ) && true === ( $kmr_row['runtime_mapped'] ?? false ) && array() === ( $kmr_row['form_receipt_unaccepted_losses'] ?? array() ),
+			'kmr-source-form-' . $kmr_index . '-materializes-natively',
+			wp_json_encode( array_column( $kmr_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ) )
+		);
+		$assert( $expected_fields === count( $kmr_fields ), 'kmr-source-form-' . $kmr_index . '-preserves-every-field', wp_json_encode( $kmr_fields ) );
+		$assert( str_contains( (string) ( $kmr_row['block_markup'] ?? '' ), '<!-- wp:jetpack/contact-form' ), 'kmr-source-form-' . $kmr_index . '-is-a-native-provider-block' );
+	}
+	$assert( 'Send' === ( $kmr[0]['submit_text'] ?? '' ) && 'JOIN' === ( $kmr[2]['submit_text'] ?? '' ), 'kmr-source-forms-preserve-their-submit-labels' );
+	$kmr_css = (string) ( $kmr[2]['provider_layout_overlay_css']['css'] ?? '' );
+	$kmr_map = array_column( $kmr[2]['provider_layout_target_map']['targets'] ?? array(), 'selector', 'node' );
+	$kmr_scope = (string) ( $kmr[2]['provider_layout_target_map']['scope'] ?? '' );
+	$assert( $kmr_scope === ( $kmr_map['form-box'] ?? '' ) && str_contains( $kmr_css, $kmr_scope . '{align-self:start;grid-area:4 / 1 / 5 / 2' ) === false && str_contains( $kmr_css, $kmr_scope . '{align-self:start;grid-area:1 / 1 / 2 / 2;justify-self:start}' ), 'source-form-box-placement-lands-on-the-provider-block-wrapper', $kmr_css );
+	$assert( str_contains( $kmr_css, ' > form.jetpack-contact-form__form{grid-template-columns:100%;display:grid}' ), 'all-controls-source-box-establishes-the-provider-form-container', $kmr_css );
+	$assert( 1 === preg_match( '/\.ssi-node-[a-f0-9]{12}-wrap\{[^}]*grid-area:4 \/ 1 \/ 5 \/ 2[^}]*width:156px\}/', $kmr_css ), 'single-field-source-box-keeps-its-own-grid-placement', $kmr_css );
+	$assert( str_contains( $kmr_css, 'display:var(--display)' ) && str_contains( $kmr_css, 'justify-content:var(--label-align)' ), 'source-owned-custom-properties-survive-transposition', $kmr_css );
+	$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $kmr[2]['provider_layout_overlay_css'] ?? null ), 'kmr-overlay-passes-stylesheet-admission' );
+	// A source box chain deeper than the provider's own element pair cannot keep every
+	// box, so it stays a decline instead of claiming an equivalence it cannot hold.
+	$assert(
+		'skipped' === ( $kmr[3]['status'] ?? '' ) && in_array( 'provider_wrapper_layout_unrepresentable', array_column( $kmr[3]['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true ),
+		'source-box-chain-deeper-than-the-provider-shape-fails-closed',
+		wp_json_encode( array_column( $kmr[3]['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ) )
+	);
+	$unsafe_custom_property = Static_Site_Importer_Provider_Layout_Overlay::compile(
+		$layout_graph( array( $layout_node( 'form', array( 'display' => 'var(--display); color:red' ), 'form' ) ) ),
+		$root_map
+	);
+	$assert( '' === $unsafe_custom_property['css'] && 'unsafe_layout_value' === ( $unsafe_custom_property['losses'][0]['reason_code'] ?? '' ), 'custom-property-passthrough-still-rejects-injected-declarations' );
+
 	if ( empty( $failures ) && in_array( '--emit-topology-markup', $argv ?? array(), true ) ) {
 		echo wp_json_encode( array( 'markup' => $topology_markup, 'styled_markup' => $markup, 'depth_markup' => $deep_topology_markup, 'deep_width_markup' => $deep_width_markup, 'cara_markup' => $cara_grafted ) ) . "\n";
 		exit( 0 );
