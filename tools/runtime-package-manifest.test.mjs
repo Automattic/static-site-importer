@@ -22,6 +22,11 @@ test("website artifact import profile is complete and capability scoped", async 
     manifest: "runtime-package-manifest.json",
     profile: "website-artifact-import",
   })
+  assert.deepEqual(homeboy.extensions?.wordpress?.settings?.additional_package_profiles, [{
+    manifest: "runtime-package-manifest.json",
+    profile: "html-site-import",
+    artifact: "static-site-importer-html-site-import.zip",
+  }])
   assert.deepEqual(
     homeboy.scopes?.release?.include,
     [],

@@ -30,10 +30,6 @@
         {
           "type": "prefix",
           "path": "vendor/automattic/blocks-engine-php-transformer/"
-        },
-        {
-          "type": "file",
-          "path": "build-provenance.json"
         }
       ],
       "required_files": [
@@ -102,10 +98,6 @@
         {
           "type": "prefix",
           "path": "vendor/symfony/"
-        },
-        {
-          "type": "file",
-          "path": "build-provenance.json"
         }
       ],
       "required_files": [

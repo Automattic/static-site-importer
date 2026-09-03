@@ -25,6 +25,13 @@
           "manifest": "runtime-package-manifest.json",
           "profile": "website-artifact-import"
         },
+        "additional_package_profiles": [
+          {
+            "manifest": "runtime-package-manifest.json",
+            "profile": "html-site-import",
+            "artifact": "static-site-importer-html-site-import.zip"
+          }
+        ],
         "validation_dependencies": [],
         "wordpress_runtime_post_steps": [
           {
