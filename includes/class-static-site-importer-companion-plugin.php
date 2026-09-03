@@ -1115,7 +1115,7 @@ if ( preg_match_all( '/\s+(aria-[a-z][a-z0-9-]*)\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\
 	}
 }
 $safe_style_css = static function ( array $properties ): array {
-	return array_values( array_unique( array_merge( $properties, array( 'overflow-x', 'overflow-y' ) ) ) );
+	return array_values( array_unique( array_merge( $properties, array( 'box-sizing', 'inset', 'overflow-x', 'overflow-y', 'transition' ) ) ) );
 };
 add_filter( 'safe_style_css', $safe_style_css );
 $output = wp_kses(
