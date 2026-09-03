@@ -14,21 +14,21 @@
     },
     {
       "step": "writeFile",
-      "path": "/tmp/static-site-importer-39cb8cdc3e6b3fd6c8f62e4ca2b5cd83ca2edf643d8381e93f712b6eaca7420f.zip",
+      "path": "/tmp/static-site-importer-0a926b76831f90320b329949cafb1d2f9823fe72a715cd310c1650a88c51c8c6.zip",
       "data": {
         "resource": "url",
-        "url": "https://github.com/Automattic/static-site-importer/releases/download/v1.9.3/static-site-importer.zip"
+        "url": "https://github.com/Automattic/static-site-importer/releases/download/v1.9.4/static-site-importer.zip"
       }
     },
     {
       "step": "runPHP",
-      "code": "<?php if ( ! hash_equals( '39cb8cdc3e6b3fd6c8f62e4ca2b5cd83ca2edf643d8381e93f712b6eaca7420f', hash_file( 'sha256', '/tmp/static-site-importer-39cb8cdc3e6b3fd6c8f62e4ca2b5cd83ca2edf643d8381e93f712b6eaca7420f.zip' ) ) ) { throw new RuntimeException( 'Static Site Importer package integrity verification failed.' ); } ?>"
+      "code": "<?php if ( ! hash_equals( '0a926b76831f90320b329949cafb1d2f9823fe72a715cd310c1650a88c51c8c6', hash_file( 'sha256', '/tmp/static-site-importer-0a926b76831f90320b329949cafb1d2f9823fe72a715cd310c1650a88c51c8c6.zip' ) ) ) { throw new RuntimeException( 'Static Site Importer package integrity verification failed.' ); } ?>"
     },
     {
       "step": "installPlugin",
       "pluginData": {
         "resource": "vfs",
-        "path": "/tmp/static-site-importer-39cb8cdc3e6b3fd6c8f62e4ca2b5cd83ca2edf643d8381e93f712b6eaca7420f.zip"
+        "path": "/tmp/static-site-importer-0a926b76831f90320b329949cafb1d2f9823fe72a715cd310c1650a88c51c8c6.zip"
       },
       "options": {
         "activate": true,
@@ -37,21 +37,21 @@
     },
     {
       "step": "writeFile",
-      "path": "/tmp/static-site-importer-playground-demo-15be3044f5c326e3b2dc7aa466c9e8c2436bb90e2a60d99f79cc4d4940d2866f.zip",
+      "path": "/tmp/static-site-importer-playground-demo-eb5922ddd131ded7f68ce81552f91dbc82fdb5dcc32cbf751ef26d10d73cf756.zip",
       "data": {
         "resource": "url",
-        "url": "https://automattic.github.io/static-site-importer/playground/v1.9.3/static-site-importer-playground-demo.zip"
+        "url": "https://automattic.github.io/static-site-importer/playground/v1.9.4/static-site-importer-playground-demo.zip"
       }
     },
     {
       "step": "runPHP",
-      "code": "<?php if ( ! hash_equals( '15be3044f5c326e3b2dc7aa466c9e8c2436bb90e2a60d99f79cc4d4940d2866f', hash_file( 'sha256', '/tmp/static-site-importer-playground-demo-15be3044f5c326e3b2dc7aa466c9e8c2436bb90e2a60d99f79cc4d4940d2866f.zip' ) ) ) { throw new RuntimeException( 'Static Site Importer Playground demo package integrity verification failed.' ); } ?>"
+      "code": "<?php if ( ! hash_equals( 'eb5922ddd131ded7f68ce81552f91dbc82fdb5dcc32cbf751ef26d10d73cf756', hash_file( 'sha256', '/tmp/static-site-importer-playground-demo-eb5922ddd131ded7f68ce81552f91dbc82fdb5dcc32cbf751ef26d10d73cf756.zip' ) ) ) { throw new RuntimeException( 'Static Site Importer Playground demo package integrity verification failed.' ); } ?>"
     },
     {
       "step": "installPlugin",
       "pluginData": {
         "resource": "vfs",
-        "path": "/tmp/static-site-importer-playground-demo-15be3044f5c326e3b2dc7aa466c9e8c2436bb90e2a60d99f79cc4d4940d2866f.zip"
+        "path": "/tmp/static-site-importer-playground-demo-eb5922ddd131ded7f68ce81552f91dbc82fdb5dcc32cbf751ef26d10d73cf756.zip"
       },
       "options": {
         "activate": true,
