@@ -233,7 +233,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( preg_match( '/^@(?:media|container) (\((?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)\))\{(.+)\}$/D', $rule, $matches ) ) {
 			return self::safe_compiled_rule( $matches[2] );
 		}
-		if ( ! preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?: > \.wp-block-button__link)?)?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
+		if ( ! preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-wrap)?(?: > \.wp-block-button__link)?)?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
 		$layout_allowed       = array( 'display', 'width', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'position', 'z-index', 'pointer-events' );
@@ -247,7 +247,11 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	private static function safe_selector( string $selector, string $scope ): bool {
-		return (bool) preg_match( '/^' . preg_quote( $scope, '/' ) . '(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?: > \.wp-block-button__link)?)$/D', $selector );
+		// The bare scope is the block wrapper the provider renders at the source form's
+		// own position, so it carries the form box's placement inside the page.
+		// A generated node hook resolves to the control, and its provider `-wrap` copy
+		// resolves to that control's field shell.
+		return (bool) preg_match( '/^' . preg_quote( $scope, '/' ) . '(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-wrap)?(?: > \.wp-block-button__link)?)?$/D', $selector );
 	}
 	private static function safe_condition( mixed $condition ): bool {
 		if ( ! is_array( $condition ) ) {
@@ -314,7 +318,11 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			return false;
 		}
 		if ( in_array( $fact, array( 'display', 'direction', 'wrap', 'align_items', 'align_content', 'justify_content', 'align_self', 'justify_self' ), true ) ) {
-			return (bool) preg_match( '/^(?:flex|grid|block|inline-flex|row|row-reverse|column|column-reverse|wrap|nowrap|wrap-reverse|flex-start|flex-end|center|stretch|baseline|space-between|space-around|space-evenly|start|end)$/D', $value );
+			// Source stylesheets drive these keywords through their own custom properties.
+			// The overlay references the property the preserved source CSS already defines
+			// rather than resolving it to a guessed keyword, exactly as lengths already do.
+			$keyword = '(?:flex|grid|block|inline-flex|row|row-reverse|column|column-reverse|wrap|nowrap|wrap-reverse|flex-start|flex-end|center|stretch|baseline|space-between|space-around|space-evenly|start|end)';
+			return (bool) preg_match( '/^(?:' . $keyword . '|var\(--[a-zA-Z][a-zA-Z0-9_-]{0,79}(?:, ?' . $keyword . ')?\))$/D', $value );
 		}
 		if ( in_array( $fact, array( 'order', 'flex_grow', 'flex_shrink' ), true ) ) {
 			return (bool) preg_match( '/^-?[0-9]+(?:\.[0-9]+)?$/D', $value );
