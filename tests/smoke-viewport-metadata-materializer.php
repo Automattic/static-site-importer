@@ -2,6 +2,9 @@
 declare(strict_types=1);
 
 define( 'ABSPATH', __DIR__ . '/' );
+function wp_json_encode( mixed $value ): string|false {
+	return json_encode( $value );
+}
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-viewport-metadata-materializer.php';
 
 $assert = static function ( bool $condition, string $message ): void {

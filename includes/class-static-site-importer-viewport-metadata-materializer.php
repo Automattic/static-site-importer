@@ -68,7 +68,7 @@ final class Static_Site_Importer_Viewport_Metadata_Materializer {
 		$bootstrap = self::bootstrap_content( $resolved_plan, $bootstrap_overlay );
 		$marker    = '/* Static Site Importer authored viewport metadata. */';
 		if ( ! str_contains( $bootstrap, $marker ) ) {
-			$literal    = var_export( $viewport, true );
+			$literal    = (string) wp_json_encode( $viewport );
 			$bootstrap .= "\n{$marker}\nadd_filter( 'template_include', static function ( \$template ) {\n\tremove_action( 'wp_head', '_block_template_viewport_meta_tag', 0 );\n\tadd_action( 'wp_head', static function (): void {\n\t\techo '<meta name=\"viewport\" content=\"' . esc_attr( {$literal} ) . '\" />' . \"\\n\";\n\t}, 0 );\n\treturn \$template;\n}, PHP_INT_MAX );\n";
 		}
 
@@ -80,7 +80,7 @@ final class Static_Site_Importer_Viewport_Metadata_Materializer {
 					'content'     => $bootstrap,
 					'encoding'    => 'utf8',
 					'source_path' => 'static-site-importer/viewport-metadata',
-				)
+				),
 			),
 			array(),
 			$viewport
@@ -139,6 +139,7 @@ final class Static_Site_Importer_Viewport_Metadata_Materializer {
 			if ( ! is_array( $write ) || 'functions.php' !== ( $write['target_path'] ?? null ) || ! is_array( $write['payload'] ?? null ) ) {
 				continue;
 			}
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes a declared plan payload encoding.
 			$content = 'base64' === ( $write['payload']['encoding'] ?? 'utf8' ) ? base64_decode( (string) ( $write['payload']['data'] ?? '' ), true ) : $write['payload']['data'] ?? null;
 			if ( is_string( $content ) && str_starts_with( ltrim( $content ), '<?php' ) ) {
 				return $content;
@@ -170,7 +171,7 @@ final class Static_Site_Importer_Viewport_Metadata_Materializer {
 					'reason_code'  => $reason_code,
 					'message'      => $message,
 					'source_paths' => array_values( $source_paths ),
-				)
+				),
 			)
 		);
 	}

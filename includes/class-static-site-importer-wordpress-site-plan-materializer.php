@@ -643,12 +643,12 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			return self::failed_receipt_from_error( $state, $font_materialization );
 		}
 		$state['applied']['font_materialization'] = $font_materialization;
-		$viewport_materialization                = self::apply_viewport_overlay( $state, $viewport_overlay );
+		$viewport_materialization                 = self::apply_viewport_overlay( $state, $viewport_overlay );
 		if ( is_wp_error( $viewport_materialization ) ) {
 			return self::failed_receipt_from_error( $state, $viewport_materialization );
 		}
 		$state['applied']['viewport_metadata'] = $viewport_materialization;
-		$svg_receipts                             = self::verify_svg_font_materialization( $state );
+		$svg_receipts                          = self::verify_svg_font_materialization( $state );
 		if ( is_wp_error( $svg_receipts ) ) {
 			return self::failed_receipt( $state, $svg_receipts->get_error_code() );
 		}
@@ -932,7 +932,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$state['preflight_error'] = $font_overlay;
 			throw new InvalidArgumentException( sanitize_key( (string) $font_overlay->get_error_code() ) );
 		}
-		$viewport_overlay = isset( $state['viewport_overlay'] ) && is_array( $state['viewport_overlay'] )
+		$viewport_overlay               = isset( $state['viewport_overlay'] ) && is_array( $state['viewport_overlay'] )
 			? $state['viewport_overlay']
 			: Static_Site_Importer_Viewport_Metadata_Materializer::prepare_overlay( $font_resolved, $font_overlay );
 		$state['font_overlay']          = $font_overlay;
@@ -1780,7 +1780,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				array(
 					'target_path'             => $target,
 					'source_path'             => (string) ( $write['source_path'] ?? $target ),
-					'payload'                 => array( 'encoding' => 'utf8', 'data' => $content ),
+					'payload'                 => array(
+						'encoding' => 'utf8',
+						'data'     => $content,
+					),
 					'payload_hash'            => hash( 'sha256', $content ),
 					'reconciliation_identity' => hash( 'sha256', "viewport-metadata\n" . $target ),
 				)
