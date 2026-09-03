@@ -342,7 +342,7 @@ namespace {
 	$graft_seeding                 = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $graft_report, array(), $page_contents );
 	$assert( 1 === ( $graft_seeding['shortcode_grafted_count'] ?? 0 ), 'shortcode-grafted-count' );
 	$assert( true === ( $graft_report['diagnostics'][0]['product_shortcode_grafted'] ?? false ), 'finding-product-shortcode-grafted' );
-	$assert( str_contains( $page_contents['website/shop.html'], '<!-- wp:shortcode -->[add_to_cart id="' ), 'page-content-has-add-to-cart-shortcode' );
+	$assert( str_contains( $page_contents['website/shop.html'], '<!-- wp:shortcode -->[add_to_cart id="' ) && str_contains( $page_contents['website/shop.html'], 'class="ssi-commerce-control"' ), 'page-content-has-marked-add-to-cart-shortcode' );
 	$assert( ! str_contains( $page_contents['website/shop.html'], '>Add to cart<' ), 'page-content-removes-static-add-to-cart' );
 	$assert( ! str_contains( $page_contents['website/shop.html'], '>Buy now<' ), 'page-content-removes-static-buy-now' );
 	$assert( str_contains( $button_region, '\\u005c' ) && str_contains( $button_region, '\\u002d\\u002d' ) && str_contains( $button_region, '\\u003c' ) && str_contains( $button_region, '\\u003e' ) && str_contains( $button_region, '\\u0026' ) && str_contains( $button_region, '\\u0022' ), 'product-graft-anchor-uses-core-sensitive-attribute-serialization' );

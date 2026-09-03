@@ -533,7 +533,7 @@ $form = Static_Site_Importer_Form_Seeder::binding_classic_render(
 $assert(
 	array(
 		'kind'    => 'shortcode',
-		'content' => '[add_to_cart id="42"]',
+		'content' => '[add_to_cart id="42" class="ssi-commerce-control"]',
 	) === $woo && 'blocks' === ( $form['kind'] ?? '' ) && str_contains( $form['content'] ?? '', 'jetpack/contact-form' ),
 	'Woo and Jetpack adapters expose actual provider-owned classic server render contracts'
 );

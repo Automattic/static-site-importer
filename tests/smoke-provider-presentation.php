@@ -144,12 +144,20 @@ namespace {
 	SSI_Test_Presentation::enqueue();
 	$assert( array() === $GLOBALS['ssi_test_registered'], 'empty-css-registers-no-handle' );
 
-	// The refactored commerce presentation preserves its own handle + CSS.
+	// Commerce CSS only matches the importer-owned marker emitted by its binding.
 	$reset();
 	SSI_Test_Presentation::$out = '.demo{color:red}';
 	\Static_Site_Importer_Commerce_Presentation::enqueue();
+	$commerce_css = $GLOBALS['ssi_test_inline_styles']['static-site-importer-commerce'] ?? '';
 	$assert( isset( $GLOBALS['ssi_test_inline_styles']['static-site-importer-commerce'] ), 'commerce-attaches-to-own-handle-name' );
-	$assert( false !== strpos( $GLOBALS['ssi_test_inline_styles']['static-site-importer-commerce'] ?? '', 'add_to_cart_inline' ), 'commerce-css-preserved' );
+	preg_match_all( '/([^{}]+)\\{/', $commerce_css, $commerce_rules );
+	$selectors = array_filter( array_map( 'trim', explode( ',', implode( ',', $commerce_rules[1] ?? array() ) ) ) );
+	$all_selectors_are_marked = ! empty( $selectors ) && count( $selectors ) === count( array_filter( $selectors, static fn( string $selector ): bool => str_contains( $selector, 'ssi-commerce-control' ) ) );
+	$assert( $all_selectors_are_marked, 'commerce-css-is-scoped-to-importer-marker' );
+	$ordinary_woo_inline_cart = '<p class="product woocommerce add_to_cart_inline"><span class="woocommerce-Price-amount">$24</span><a class="button add_to_cart_button">Add to cart</a></p>';
+	$assert( ! str_contains( $ordinary_woo_inline_cart, 'ssi-commerce-control' ) && $all_selectors_are_marked, 'ordinary-woo-inline-cart-receives-no-ssi-styling' );
+	$binding = \Static_Site_Importer_Woo_Product_Seeder::binding_block_markup( array(), array( 'id' => 42 ) );
+	$assert( str_contains( $binding, '[add_to_cart id="42" class="ssi-commerce-control"]' ) && str_contains( $commerce_css, 'ssi-commerce-control' ), 'materialized-commerce-binding-receives-ssi-styling' );
 
 	if ( $failures ) {
 		fwrite( STDERR, implode( "\n", $failures ) . "\n" );

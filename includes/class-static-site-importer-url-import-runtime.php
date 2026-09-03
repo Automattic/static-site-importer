@@ -184,7 +184,13 @@ class Static_Site_Importer_URL_Import_Runtime {
 	private static function run_batch_import( array $record, array $input ) {
 		$request                  = self::provider_request( (string) $record['contract']['url'], $input );
 		$request['work_dir']      = (string) $record['workspace'];
-		$request['provider_args'] = self::batch_args();
+		$request['provider_args'] = array_merge(
+			self::batch_args(),
+			array_intersect_key(
+				Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input ),
+				array_flip( array( 'source_provider_policy' ) )
+			)
+		);
 		$fetcher                  = apply_filters( 'static_site_importer_url_batch_import_fetcher', null, $request, $input );
 		$importer                 = apply_filters( 'static_site_importer_url_batch_importer', null, $request, $input );
 		$importer_callback        = is_callable( $importer ) ? $importer : null;
