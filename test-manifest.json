@@ -60,6 +60,7 @@
     { "path": "tests/smoke-url-tls-context.php", "environment": "standalone-php" },
     { "path": "tests/smoke-validation-runtime-diagnostics.php", "environment": "standalone-php" },
     { "path": "tests/smoke-visual-repair-css.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-viewport-metadata-materializer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-webfont-producer-consumer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-google-fonts-cap-fallback.php", "environment": "standalone-php" },
     { "path": "tests/smoke-google-fonts-retry-determinism.php", "environment": "standalone-php" },

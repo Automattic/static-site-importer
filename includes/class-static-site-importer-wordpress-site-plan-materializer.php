@@ -530,8 +530,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$state['failure_reason'] = $error->getMessage();
 			return self::receipt( 'rejected', $state );
 		}
-		$args         = $state['args'];
-		$font_overlay = $state['font_overlay'];
+		$args             = $state['args'];
+		$font_overlay     = $state['font_overlay'];
+		$viewport_overlay = $state['viewport_overlay'];
 
 		foreach ( $state['ordered_pages'] as $page ) {
 			if ( ! empty( $page['skip_materialization'] ) ) {
@@ -642,7 +643,12 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			return self::failed_receipt_from_error( $state, $font_materialization );
 		}
 		$state['applied']['font_materialization'] = $font_materialization;
-		$svg_receipts                             = self::verify_svg_font_materialization( $state );
+		$viewport_materialization                 = self::apply_viewport_overlay( $state, $viewport_overlay );
+		if ( is_wp_error( $viewport_materialization ) ) {
+			return self::failed_receipt_from_error( $state, $viewport_materialization );
+		}
+		$state['applied']['viewport_metadata'] = $viewport_materialization;
+		$svg_receipts                          = self::verify_svg_font_materialization( $state );
 		if ( is_wp_error( $svg_receipts ) ) {
 			return self::failed_receipt( $state, $svg_receipts->get_error_code() );
 		}
@@ -787,6 +793,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'args'                              => $args,
 			'payload_reader'                    => $payload_reader,
 			'font_overlay'                      => isset( $prepared['font_overlay'] ) && is_array( $prepared['font_overlay'] ) ? $prepared['font_overlay'] : null,
+			'viewport_overlay'                  => isset( $prepared['viewport_overlay'] ) && is_array( $prepared['viewport_overlay'] ) ? $prepared['viewport_overlay'] : null,
 			'default_content'                   => isset( $prepared['default_content'] ) && is_array( $prepared['default_content'] ) ? $prepared['default_content'] : array(),
 			'rollback'                          => array(
 				'posts'   => array(),
@@ -925,8 +932,12 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$state['preflight_error'] = $font_overlay;
 			throw new InvalidArgumentException( sanitize_key( (string) $font_overlay->get_error_code() ) );
 		}
+		$viewport_overlay               = isset( $state['viewport_overlay'] ) && is_array( $state['viewport_overlay'] )
+			? $state['viewport_overlay']
+			: Static_Site_Importer_Viewport_Metadata_Materializer::prepare_overlay( $font_resolved, $font_overlay );
 		$state['font_overlay']          = $font_overlay;
-		$state['composed_theme_writes'] = array_merge( $overlay_writes, self::font_overlay_writes( $state['theme_dir'], $font_overlay ) );
+		$state['viewport_overlay']      = $viewport_overlay;
+		$state['composed_theme_writes'] = array_merge( $overlay_writes, self::font_overlay_writes( $state['theme_dir'], $font_overlay ), self::viewport_overlay_writes( $state['theme_dir'], $viewport_overlay ) );
 		foreach ( $state['resolved']['writes'] as $write ) {
 			if ( null !== self::payload_reference( $write ) && ! self::valid_payload_reference( self::payload_reference( $write ) ) ) {
 				throw new InvalidArgumentException( 'payload_reference_invalid' );
@@ -1745,6 +1756,69 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return $writes;
 	}
 
+	/** @param array<string,mixed> $overlay */
+	private static function apply_viewport_overlay( array &$state, array $overlay ) {
+		if ( 'materialized' !== ( $overlay['status'] ?? '' ) ) {
+			return array(
+				'status'      => (string) ( $overlay['status'] ?? 'not_requested' ),
+				'declaration' => '',
+				'files'       => array(),
+				'diagnostics' => $overlay['diagnostics'] ?? array(),
+			);
+		}
+		$reports = array();
+		foreach ( $overlay['writes'] ?? array() as $write ) {
+			$target  = (string) ( $write['target_path'] ?? '' );
+			$content = (string) ( $write['content'] ?? '' );
+			if ( ! self::safe_destination( $state['theme_dir'], $target ) || ! str_starts_with( ltrim( $content ), '<?php' ) ) {
+				return new WP_Error( 'static_site_importer_viewport_metadata_materialization_invalid' );
+			}
+			$path = $state['theme_dir'] . '/' . $target;
+			self::journal_file( $state, $path );
+			$result = self::write_file(
+				$state['theme_dir'],
+				array(
+					'target_path'             => $target,
+					'source_path'             => (string) ( $write['source_path'] ?? $target ),
+					'payload'                 => array(
+						'encoding' => 'utf8',
+						'data'     => $content,
+					),
+					'payload_hash'            => hash( 'sha256', $content ),
+					'reconciliation_identity' => hash( 'sha256', "viewport-metadata\n" . $target ),
+				)
+			);
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+			$reports[] = $result;
+			foreach ( $state['applied']['files'] as $index => $file ) {
+				if ( ( $file['target_path'] ?? null ) === $target ) {
+					$state['applied']['files'][ $index ] = $result;
+					continue 2;
+				}
+			}
+			$state['applied']['files'][] = $result;
+		}
+		return array(
+			'status'      => 'completed',
+			'declaration' => (string) ( $overlay['declaration'] ?? '' ),
+			'files'       => $reports,
+			'diagnostics' => $overlay['diagnostics'] ?? array(),
+		);
+	}
+
+	/** @param array<string,mixed> $overlay @return array<string,string> */
+	private static function viewport_overlay_writes( string $theme_dir, array $overlay ): array {
+		$writes = array();
+		foreach ( $overlay['writes'] ?? array() as $write ) {
+			if ( is_array( $write ) && is_string( $write['target_path'] ?? null ) && is_string( $write['content'] ?? null ) ) {
+				$writes[ $theme_dir . '/' . $write['target_path'] ] = $write['content'];
+			}
+		}
+		return $writes;
+	}
+
 	/** Verify every canonical asset publication against its resolved write and references. */
 	private static function verify_asset_publications( array &$state ) {
 		$writes = array();
@@ -2417,7 +2491,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** @param array<string,mixed> $state @return array<string,mixed> */
 	private static function receipt( string $status, array $state ): array {
-		unset( $state['font_overlay'], $state['provider_layout_overlay_writes'], $state['composed_theme_writes'], $state['preflight_error'] );
+		unset( $state['font_overlay'], $state['viewport_overlay'], $state['provider_layout_overlay_writes'], $state['composed_theme_writes'], $state['preflight_error'] );
 		$plan                   = $state['plan'];
 		$resolved_plan          = $state['resolved'] ?? $plan;
 		$materialized_pages     = array();
@@ -2467,6 +2541,12 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'runtime_declarations'       => $state['applied']['runtime_declarations'] ?? array( 'asset_publications' => array() ),
 				'font_materialization'       => $state['applied']['font_materialization'] ?? array(
 					'status'      => 'not_requested',
+					'files'       => array(),
+					'diagnostics' => array(),
+				),
+				'viewport_metadata'          => $state['applied']['viewport_metadata'] ?? array(
+					'status'      => 'not_requested',
+					'declaration' => '',
 					'files'       => array(),
 					'diagnostics' => array(),
 				),
