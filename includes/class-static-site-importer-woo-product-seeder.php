@@ -18,7 +18,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	public static function binding_block_markup( array $entity, array $result ): string {
 		unset( $entity );
 		$id = isset( $result['id'] ) ? (int) $result['id'] : 0;
-		return $id > 0 ? '<!-- wp:shortcode -->[add_to_cart id="' . $id . '"]<!-- /wp:shortcode -->' : '';
+		return $id > 0 ? '<!-- wp:shortcode -->[add_to_cart id="' . $id . '" class="ssi-commerce-control"]<!-- /wp:shortcode -->' : '';
 	}
 
 	/** Return fixed Woo shortcode data for a classic runtime binding. */
@@ -27,7 +27,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		$id = isset( $result['id'] ) ? (int) $result['id'] : 0;
 		return $id > 0 ? array(
 			'kind'    => 'shortcode',
-			'content' => '[add_to_cart id="' . $id . '"]',
+			'content' => '[add_to_cart id="' . $id . '" class="ssi-commerce-control"]',
 		) : array();
 	}
 
