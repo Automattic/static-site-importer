@@ -51,6 +51,11 @@ if ( ! is_file( $provider_evidence ) ) {
 	$provider_evidence = dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-submission-evidence.php';
 }
 require_once $provider_evidence;
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-plugin-materializer.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-manager.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 
 $failures   = array();
 $assertions = 0;
@@ -79,7 +84,7 @@ $envelopes     = Static_Site_Importer_Provider_Submission_Evidence::verify_runti
 				'required'       => true,
 				'page_route'     => '/contact',
 				'form_identity'  => $form_identity,
-				'provider_id'    => 'wordpress/forms',
+				'provider_id'    => 'jetpack',
 				'provider_owner' => 'wordpress',
 			),
 		),
@@ -95,6 +100,7 @@ $assert( Static_Site_Importer_Provider_Submission_Evidence::SCHEMA === ( $row['s
 $assert( 'nimbus' === ( $row['fixture_id'] ?? '' ), 'fixture-id' );
 $assert( '/contact' === ( $row['page']['route'] ?? '' ) && '' === ( $row['page']['wordpress_entity_id'] ?? '' ), 'page-identity-unresolved-without-provider-runtime' );
 $assert( $form_identity === ( $row['form_identity'] ?? '' ), 'form-identity' );
+$assert( 'jetpack' === ( $row['provider']['id'] ?? '' ) && 'jetpack_contact_form' === ( $row['provider']['adapter_id'] ?? '' ), 'selected-jetpack-provider-and-adapter-are-recorded' );
 $assert( 'wordpress' === ( $row['provider']['ownership'] ?? '' ) && 'wordpress-local' === ( $row['provider']['submission_endpoint']['scope'] ?? '' ), 'wordpress-owned-endpoint' );
 $assert( false === ( $row['provider']['submission_endpoint']['source_endpoint_contacted'] ?? true ), 'no-source-endpoint' );
 $assert( array() === ( $row['network']['external_request_origins'] ?? null ), 'no-external-requests' );
@@ -116,7 +122,7 @@ $unavailable = Static_Site_Importer_Provider_Submission_Evidence::verify_runtime
 				'required'      => true,
 				'page_route'    => '/contact',
 				'form_identity' => $form_identity,
-				'provider_id'   => 'wordpress/forms',
+				'provider_id'   => 'jetpack',
 			),
 		),
 		'sidecar_path' => $sidecar,
@@ -124,6 +130,54 @@ $unavailable = Static_Site_Importer_Provider_Submission_Evidence::verify_runtime
 	)
 );
 $assert( 'failed' === ( $unavailable[0]['behaviors']['valid_submission']['status'] ?? '' ), 'missing-provider-fails-closed' );
+$assert( 'unavailable' === ( $unavailable[0]['provider']['execution']['status'] ?? '' ) && 'selected_provider_submission_unavailable' === ( $unavailable[0]['provider']['execution']['diagnostic'] ?? '' ), 'unavailable-provider-has-actionable-execution-diagnostic' );
+
+$mismatched = Static_Site_Importer_Provider_Submission_Evidence::verify_runtime(
+	array(
+		'fixture_id'   => 'nimbus',
+		'requirements' => array( array( 'required' => true, 'page_route' => '/contact', 'form_identity' => $form_identity, 'provider_id' => 'alternate' ) ),
+		'sidecar_path' => $sidecar,
+	)
+);
+$assert( '' === ( $mismatched[0]['provider']['id'] ?? 'unexpected' ) && 'rejected' === ( $mismatched[0]['provider']['execution']['status'] ?? '' ) && 'provider_executor_mismatch' === ( $mismatched[0]['provider']['execution']['diagnostic'] ?? '' ), 'provider-executor-mismatch-fails-closed-without-false-attribution' );
+
+$alternate_submissions = 0;
+$select_alternate       = static fn( string $provider ): string => 'alternate';
+$register_alternate     = static function ( array $adapters ) use ( &$alternate_submissions ): array {
+	$adapters['alternate_contact_form'] = array(
+		'id'                   => 'alternate_contact_form',
+		'capability'           => 'form',
+		'provider'             => 'alternate',
+		'rollback_contract_id' => 'test/alternate-contact-form-rollback/v1',
+		'submission_evidence'  => array(
+			'can_accept_callback' => static fn(): bool => true,
+			'submit'              => static function ( array $form, string $mode ) use ( &$alternate_submissions ): array {
+				unset( $form );
+				++$alternate_submissions;
+				if ( 'required_field_failure' === $mode ) {
+					return array( 'ok' => false, 'ui' => 'validation_error', 'local_receipt_count' => 0 );
+				}
+				if ( 'provider_failure' === $mode ) {
+					return array( 'ok' => false, 'ui' => 'provider_error', 'local_receipt_count' => 0 );
+				}
+				return array( 'ok' => 'valid' === $mode, 'ui' => 'success', 'local_receipt_count' => 1, 'receipt_id' => 'alternate-1', 'receipt_sha256' => str_repeat( 'c', 64 ) );
+			},
+		),
+	);
+	return $adapters;
+};
+add_filter( 'ssi_form_plugin', $select_alternate );
+add_filter( 'static_site_importer_entity_materializers', $register_alternate );
+$alternate = Static_Site_Importer_Provider_Submission_Evidence::verify_runtime(
+	array(
+		'fixture_id'   => 'nimbus',
+		'requirements' => array( array( 'required' => true, 'page_route' => '/contact', 'form_identity' => $form_identity, 'provider_id' => 'alternate' ) ),
+		'sidecar_path' => $sidecar,
+	)
+);
+$assert( 4 === $alternate_submissions, 'alternate-provider-executes-every-evidence-case-without-jetpack-fallback' );
+$assert( 'alternate' === ( $alternate[0]['provider']['id'] ?? '' ) && 'alternate_contact_form' === ( $alternate[0]['provider']['adapter_id'] ?? '' ), 'alternate-evidence-attributes-the-executing-adapter' );
+$assert( 'passed' === ( $alternate[0]['behaviors']['valid_submission']['status'] ?? '' ), 'alternate-provider-evidence-is-verified' );
 
 @unlink( $sidecar );
 @unlink( $output );

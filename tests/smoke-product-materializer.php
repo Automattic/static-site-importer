@@ -369,6 +369,7 @@ namespace {
 	$no_id_result   = $graft_method->invokeArgs(
 		null,
 		array(
+			Static_Site_Importer_Entity_Materializer_Registry::product_adapter(),
 			$no_id_finding,
 			array(
 				'aero-mug'   => array( 'slug' => 'aero-mug' ),
@@ -396,6 +397,42 @@ namespace {
 	$assert( ! str_contains( $unsafe_contents['website/shop.html'], '[add_to_cart id=' ), 'unsafe-no-fake-woo-shortcode' );
 	$assert( str_contains( $unsafe_contents['website/shop.html'], 'class="qty-display">1</span>' ), 'unsafe-quantity-state-preserved' );
 	$assert( false === ( $unsafe_report['diagnostics'][0]['product_shortcode_grafted'] ?? true ), 'unsafe-finding-not-marked-grafted' );
+
+	// Alternate shops own their writes and bindings; Woo is never an implicit fallback.
+	$alternate_shop_calls = 0;
+	$select_shop          = static fn( string $provider ): string => 'alternate-shop';
+	$register_shop        = static function ( array $adapters ) use ( &$alternate_shop_calls ): array {
+		$adapters['alternate_shop'] = array(
+			'id'                   => 'alternate_shop',
+			'capability'           => 'shop',
+			'provider'             => 'alternate-shop',
+			'rollback_contract_id' => 'test/alternate-shop-rollback/v1',
+			'validator'            => static fn( array $manifest ): array => array( 'products' => $manifest['products'] ?? array(), 'errors' => array() ),
+			'materializer'         => static function ( array $manifest ) use ( &$alternate_shop_calls ): array {
+				++$alternate_shop_calls;
+				$products = array_map( static fn( array $product ): array => array( 'slug' => $product['slug'], 'status' => 'created', 'id' => 77 ), $manifest['products'] ?? array() );
+				return array( 'status' => 'completed', 'counts' => array( 'created' => count( $products ) ), 'products' => $products );
+			},
+			'binding_callback'     => static fn( array $entity, array $result ): string => '<!-- wp:paragraph --><p>alternate shop ' . $entity['slug'] . ':' . $result['id'] . '</p><!-- /wp:paragraph -->',
+		);
+		return $adapters;
+	};
+	add_filter( 'ssi_shop_plugin', $select_shop );
+	add_filter( 'static_site_importer_entity_materializers', $register_shop );
+	$alternate_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/alternate.html' );
+	$alternate_report->append_diagnostic( array( 'diagnostic_code' => 'html_product_grid_fallback', 'products' => array( array( 'name' => 'Alternate Mug', 'price' => '$8' ) ) ) );
+	$woo_products_before = count( $GLOBALS['ssi_seeded_products'] );
+	$alternate_seeding   = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $alternate_report );
+	$assert( 1 === $alternate_shop_calls && 'alternate-shop' === ( $alternate_seeding['provider'] ?? '' ), 'alternate-shop-adapter-executes-and-is-attributed' );
+	$assert( $woo_products_before === count( $GLOBALS['ssi_seeded_products'] ), 'alternate-shop-never-executes-woo-seeder' );
+
+	$unsupported_shop = static fn( string $provider ): string => 'unsupported-shop';
+	add_filter( 'ssi_shop_plugin', $unsupported_shop );
+	$unsupported_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/unsupported.html' );
+	$unsupported_report->append_diagnostic( array( 'diagnostic_code' => 'html_product_grid_fallback', 'products' => array( array( 'name' => 'Unsupported Mug', 'price' => '$8' ) ) ) );
+	$unsupported_seeding = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $unsupported_report );
+	$assert( 'configured_shop_provider_unsupported' === ( $unsupported_seeding['reason'] ?? '' ) && 'unsupported-shop' === ( $unsupported_seeding['provider'] ?? '' ), 'unsupported-shop-declines-without-woo-fallback' );
+	$assert( $woo_products_before === count( $GLOBALS['ssi_seeded_products'] ), 'unsupported-shop-does-not-mutate-through-woo' );
 
 	// --- No product findings => skipped report ------------------------------
 	$empty_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/about.html' );

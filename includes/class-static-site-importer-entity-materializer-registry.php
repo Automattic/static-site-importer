@@ -129,8 +129,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 * @return array<string,mixed>
 	 */
 	public static function product_adapter(): array {
-		$adapter = self::adapter_for_capability( 'shop' );
-		return ! empty( $adapter ) ? $adapter : self::adapter( 'woocommerce_simple_product' );
+		return self::adapter_for_capability( 'shop' );
+	}
+
+	/** Resolve submission evidence through the selected form provider adapter. */
+	public static function submission_evidence_adapter(): array {
+		return self::form_adapter();
 	}
 
 	/**
@@ -845,6 +849,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'binding_callback'         => array( 'Static_Site_Importer_Form_Seeder', 'binding_block_markup' ),
 				'classic_binding_callback' => array( 'Static_Site_Importer_Form_Seeder', 'binding_classic_render' ),
 				'report_callback'          => array( 'Static_Site_Importer_Form_Seeder', 'new_report' ),
+				'submission_evidence'      => array(
+					'can_accept_callback' => array( 'Static_Site_Importer_Provider_Submission_Evidence', 'jetpack_can_accept' ),
+					'submit'              => array( 'Static_Site_Importer_Provider_Submission_Evidence', 'submit_jetpack' ),
+					'cleanup'             => array( 'Static_Site_Importer_Provider_Submission_Evidence', 'cleanup_feedback' ),
+				),
 				'dependencies'             => array(
 					array(
 						'type'                  => 'wp_org_plugin',
