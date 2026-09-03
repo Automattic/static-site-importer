@@ -148,7 +148,7 @@ class Static_Site_Importer_Provider_Submission_Evidence {
 	 * @return array<string,mixed>
 	 */
 	private static function adapter( array $form ): array {
-		$selected = class_exists( 'Static_Site_Importer_Entity_Materializer_Registry' ) ? Static_Site_Importer_Entity_Materializer_Registry::submission_evidence_adapter() : array();
+		$selected  = class_exists( 'Static_Site_Importer_Entity_Materializer_Registry' ) ? Static_Site_Importer_Entity_Materializer_Registry::submission_evidence_adapter() : array();
 		$requested = (string) ( $form['provider'] ?? '' );
 		if ( empty( $selected ) ) {
 			return array(
@@ -156,7 +156,7 @@ class Static_Site_Importer_Provider_Submission_Evidence {
 				'diagnostic' => 'selected_provider_unsupported',
 			);
 		}
-		if ( $requested !== (string) ( $selected['provider'] ?? '' ) ) {
+		if ( (string) ( $selected['provider'] ?? '' ) !== $requested ) {
 			return array(
 				'status'     => 'rejected',
 				'diagnostic' => 'provider_executor_mismatch',

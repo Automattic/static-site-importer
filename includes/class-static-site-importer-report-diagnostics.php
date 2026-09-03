@@ -2122,14 +2122,19 @@ class Static_Site_Importer_Report_Diagnostics {
 			return $seeding;
 		}
 		if ( empty( $adapter ) ) {
-			$seeding = array(
+			$seeding                           = array(
 				'status'        => 'skipped',
 				'reason'        => 'configured_shop_provider_unsupported',
 				'provider'      => Static_Site_Importer_Entity_Materializer_Registry::provider_for( 'shop' ),
 				'finding_count' => count( $indexes ),
 				'product_count' => 0,
 				'mapped_count'  => 0,
-				'counts'        => array( 'created' => 0, 'updated' => 0, 'skipped' => 0, 'error' => 0 ),
+				'counts'        => array(
+					'created' => 0,
+					'updated' => 0,
+					'skipped' => 0,
+					'error'   => 0,
+				),
 				'products'      => array(),
 			);
 			$report['product_finding_seeding'] = $seeding;
@@ -2320,8 +2325,8 @@ class Static_Site_Importer_Report_Diagnostics {
 				return array();
 			}
 
-			$row  = self::product_finding_manifest_row( $product, '' );
-			$slug = is_array( $row ) ? (string) ( $row['slug'] ?? '' ) : '';
+			$row    = self::product_finding_manifest_row( $product, '' );
+			$slug   = is_array( $row ) ? (string) ( $row['slug'] ?? '' ) : '';
 			$result = is_array( $seeded_products_by_slug[ $slug ] ?? null ) ? $seeded_products_by_slug[ $slug ] : array();
 			$markup = Static_Site_Importer_Entity_Materializer_Registry::binding_block_markup( $adapter, $row, $result );
 			if ( '' === $slug || '' === $markup ) {
