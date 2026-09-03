@@ -1574,7 +1574,7 @@ $entity_bindings       = $binding_method->invoke(
 		),
 	)
 );
-$assert( ! is_wp_error( $entity_bindings ) && '[add_to_cart id="42"]' === trim( strip_tags( $entity_bindings[0]['replacement_block_markup'] ?? '' ) ), 'provider result resolves into a canonical runtime entity binding' );
+$assert( ! is_wp_error( $entity_bindings ) && '[add_to_cart id="42" class="ssi-commerce-control"]' === trim( strip_tags( $entity_bindings[0]['replacement_block_markup'] ?? '' ) ), 'provider result resolves into a canonical runtime entity binding' );
 $assert( array( '.add-to-cart' ) === ( $entity_bindings[0]['superseded_runtime_selectors'] ?? null ), 'provider binding retains its explicit runtime-selector coverage' );
 $waived_bindings = $binding_method->invoke(
 	null,

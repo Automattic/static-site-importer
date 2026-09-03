@@ -2390,7 +2390,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return string
 	 */
 	private static function add_to_cart_shortcode_block( int $product_id ): string {
-		return '<!-- wp:shortcode -->[add_to_cart id="' . $product_id . '"]<!-- /wp:shortcode -->';
+		return '<!-- wp:shortcode -->[add_to_cart id="' . $product_id . '" class="ssi-commerce-control"]<!-- /wp:shortcode -->';
 	}
 
 	/**

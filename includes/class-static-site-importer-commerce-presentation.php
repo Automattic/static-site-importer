@@ -21,9 +21,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  * default footprint so the materialized control blends with the surrounding
  * theme: the redundant inline price is hidden, and the button drops its filled
  * background/heavy padding to inherit adjacent control styling. All rules are
- * scoped to the inline add-to-cart control so no other WooCommerce surface is
- * affected, and the CSS is only emitted when WooCommerce actually renders on
- * the page.
+ * scoped to the importer-owned `ssi-commerce-control` marker emitted by the
+ * Woo binding paths, so native WooCommerce controls are unaffected.
  *
  * The generic delivery pipeline — hooking, admin/active guards, stylesheet
  * handle resolution, and inline enqueue — lives in the provider presentation
@@ -74,16 +73,16 @@ class Static_Site_Importer_Commerce_Presentation extends Static_Site_Importer_Pr
 				// `<p>` whose default block margins expand the surrounding flex row;
 				// these are neutralized and the control is pinned to the stepper
 				// height so the action row does not inflate the card.
-				'.woocommerce p.product.add_to_cart_inline,p.product.add_to_cart_inline,.add_to_cart_inline{display:inline-flex;align-items:center;align-self:center;gap:.5rem;margin:0;padding:0;min-height:0;height:2rem;font-size:1rem;line-height:1;border:0;background:none;}',
+				'p.product.add_to_cart_inline.ssi-commerce-control{display:inline-flex;align-items:center;align-self:center;gap:.5rem;margin:0;padding:0;min-height:0;height:2rem;font-size:1rem;line-height:1;border:0;background:none;}',
 				// Hide the price that the inline control repeats; the card already
 				// shows the canonical price above the action row.
-				'.add_to_cart_inline .woocommerce-Price-amount,.add_to_cart_inline > .amount{display:none;}',
+				'.ssi-commerce-control .woocommerce-Price-amount,.ssi-commerce-control > .amount{display:none;}',
 				// Reset the default filled button to inherit the surrounding theme
 				// styling instead of WooCommerce's opinionated background/padding.
 				// The button is sized to the quantity stepper height so the whole
 				// action row stays compact; the label is uppercased and shrunk and
 				// the border dimmed so it reads as a slim, theme-consistent control.
-				'.add_to_cart_inline a.button.add_to_cart_button,.add_to_cart_inline a.add_to_cart_button.wp-element-button{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;height:2rem;background:transparent;background-image:none;color:inherit;font-family:inherit;font-size:.62em;font-weight:inherit;text-transform:uppercase;letter-spacing:.08em;padding:0 .9rem;margin:0;min-height:0;min-width:0;line-height:1;border:1px solid;border-color:currentColor;border-color:color-mix(in srgb,currentColor 22%,transparent);border-radius:0;box-shadow:none;white-space:nowrap;}',
+				'.ssi-commerce-control a.button.add_to_cart_button,.ssi-commerce-control a.add_to_cart_button.wp-element-button{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;height:2rem;background:transparent;background-image:none;color:inherit;font-family:inherit;font-size:.62em;font-weight:inherit;text-transform:uppercase;letter-spacing:.08em;padding:0 .9rem;margin:0;min-height:0;min-width:0;line-height:1;border:1px solid;border-color:currentColor;border-color:color-mix(in srgb,currentColor 22%,transparent);border-radius:0;box-shadow:none;white-space:nowrap;}',
 			)
 		);
 	}
