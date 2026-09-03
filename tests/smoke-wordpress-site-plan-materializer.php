@@ -982,7 +982,8 @@ $font_root            = $GLOBALS['ssi_plan_root'] . '/font-site-plan';
 $assert( 'completed' === $font_receipt['status'], 'canonical font materialization completes' );
 $assert( $font_plan['plan_identity'] === ( $font_receipt['plan_identity'] ?? null ), 'font overlay leaves the producer canonical plan identity unchanged' );
 $assert( ! file_exists( $font_root . '/assets/css/fonts.css' ), 'typed font contracts omit the external stylesheet projection' );
-$assert( str_contains( (string) file_get_contents( $font_root . '/assets/css/embedded-fonts.css' ), 'data:font/woff2;base64,' ), 'self-contained font stylesheet is materialized' );
+$font_css = (string) file_get_contents( $font_root . '/assets/css/embedded-fonts.css' );
+$assert( 1 === preg_match( '#src:url\(\.\./fonts/([a-f0-9]{64}\.woff2)\)#', $font_css, $font_asset_match ) && 'font-payload' === file_get_contents( $font_root . '/assets/fonts/' . $font_asset_match[1] ), 'font stylesheet references its materialized local font asset' );
 $assert( str_contains( (string) file_get_contents( $font_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-embedded-fonts'" ) && str_contains( (string) file_get_contents( $font_root . '/functions.php' ), "add_editor_style( 'assets/css/embedded-fonts.css' )" ), 'generated theme loads its self-contained font stylesheet on the frontend and in the editor' );
 $font_svg_files = array_values( array_filter( $font_receipt['completed']['font_materialization']['files'] ?? array(), static fn( array $file ): bool => str_ends_with( (string) ( $file['target_path'] ?? '' ), '.svg' ) ) );
 $assert( ! empty( $font_svg_files ) && array() === array_filter( $font_svg_files, static fn( array $file ): bool => ! str_contains( (string) file_get_contents( $font_root . '/' . $file['target_path'] ), 'data:font/woff2;base64,' ) ), 'legacy font plans retain self-contained generated SVGs when typed consumers are unavailable' );
@@ -1229,7 +1230,8 @@ $font_without_svg_receipt = Static_Site_Importer_WordPress_Site_Plan_Materialize
 );
 $font_without_svg_root    = $GLOBALS['ssi_plan_root'] . '/font-site-plan-without-svg';
 $assert( 'completed' === $font_without_svg_receipt['status'], 'canonical font materialization completes without SVG consumers' );
-$assert( str_contains( (string) file_get_contents( $font_without_svg_root . '/assets/css/embedded-fonts.css' ), 'data:font/woff2;base64,' ), 'page fonts are self-contained without SVG consumers' );
+$font_without_svg_css = (string) file_get_contents( $font_without_svg_root . '/assets/css/embedded-fonts.css' );
+$assert( 1 === preg_match( '#src:url\(\.\./fonts/([a-f0-9]{64}\.woff2)\)#', $font_without_svg_css, $font_without_svg_asset_match ) && 'font-payload' === file_get_contents( $font_without_svg_root . '/assets/fonts/' . $font_without_svg_asset_match[1] ), 'page fonts materialize locally without SVG consumers' );
 $assert( str_contains( (string) file_get_contents( $font_without_svg_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-embedded-fonts'" ), 'page fonts load without SVG consumers' );
 $assert( 9 === count( $GLOBALS['ssi_plan_font_requests'] ), 'each successful and rejected font materialization resolves only its declared stylesheet or typed payload URLs' );
 
