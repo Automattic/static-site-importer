@@ -53,7 +53,7 @@ final class Static_Site_Importer_Source_Normalizer {
 		$original   = $html;
 		$exclusions = array();
 		foreach ( $rules as $rule ) {
-			if ( ! is_array( $rule ) || $provider !== strtolower( (string) ( $rule['provider'] ?? '' ) ) || ! str_starts_with( (string) ( $rule['selector'] ?? '' ), '#' ) ) {
+			if ( ! is_array( $rule ) || strtolower( (string) ( $rule['provider'] ?? '' ) ) !== $provider || ! str_starts_with( (string) ( $rule['selector'] ?? '' ), '#' ) ) {
 				continue;
 			}
 			$selector = (string) $rule['selector'];
