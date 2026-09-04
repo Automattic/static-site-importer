@@ -72,7 +72,6 @@ class Static_Site_Importer_URL_Site_Collector {
 		$resources              = array();
 		$failures               = array();
 		$diagnostics            = array();
-		$source_exclusions      = array();
 		$aliases                = array();
 		$total_bytes            = 0;
 		$truncated              = array();
@@ -110,7 +109,6 @@ class Static_Site_Importer_URL_Site_Collector {
 			$resources          = is_array( $cursor['resources'] ?? null ) ? $cursor['resources'] : array();
 			$failures           = is_array( $cursor['failures'] ?? null ) ? $cursor['failures'] : array();
 			$diagnostics        = is_array( $cursor['diagnostics'] ?? null ) ? $cursor['diagnostics'] : array();
-			$source_exclusions  = is_array( $cursor['source_exclusions'] ?? null ) ? $cursor['source_exclusions'] : array();
 			$script_exclusions  = is_array( $cursor['script_exclusions'] ?? null ) ? $cursor['script_exclusions'] : array();
 			$aliases            = is_array( $cursor['aliases'] ?? null ) ? $cursor['aliases'] : array();
 			$total_bytes        = (int) ( $cursor['total_bytes'] ?? 0 );
@@ -147,7 +145,7 @@ class Static_Site_Importer_URL_Site_Collector {
 		$use_many_fetcher = $use_many_fetcher && null === $cursor_saver;
 		$page_fetcher     = self::prefetched_fetcher( array_slice( $page_queue, 0, $max_pages ), array_merge( $fetch_args, array( 'content_types' => array( 'text/html', 'application/xhtml+xml' ) ) ), $fetcher, $use_many_fetcher, $args );
 		while ( $page_queue && self::resource_count( $resources, 'html' ) < $max_pages ) {
-			$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $source_exclusions, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $external_pages, $critical_assets, $entry_resource_url, $site_url, $sitemap_urls );
+			$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $external_pages, $critical_assets, $entry_resource_url, $site_url, $sitemap_urls );
 			if ( is_wp_error( $checkpoint ) ) {
 				return $checkpoint;
 			}
@@ -196,7 +194,6 @@ class Static_Site_Importer_URL_Site_Collector {
 			$document_base_url = self::html_base_url( $body, $final_url );
 			$scripts           = self::apply_script_policy( $body, $document_base_url, $script_policy );
 			$body              = $scripts['html'];
-			$source_exclusions = array_merge( $source_exclusions, $normalized['exclusions'] );
 			$script_exclusions = array_merge( $script_exclusions, $scripts['exclusions'] );
 			$diagnostics       = array_merge( $diagnostics, $normalized['diagnostics'] );
 			$bytes             = strlen( $body );
@@ -259,7 +256,7 @@ class Static_Site_Importer_URL_Site_Collector {
 
 		$asset_fetcher = self::prefetched_fetcher( array_slice( $asset_queue, 0, $max_assets ), array_merge( $fetch_args, array( 'content_types' => array() ) ), $fetcher, $use_many_fetcher, $args );
 		while ( $asset_queue && self::resource_count( $resources, 'asset' ) < $max_assets ) {
-			$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $source_exclusions, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $external_pages, $critical_assets, $entry_resource_url, $site_url, $sitemap_urls );
+			$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $external_pages, $critical_assets, $entry_resource_url, $site_url, $sitemap_urls );
 			if ( is_wp_error( $checkpoint ) ) {
 				return $checkpoint;
 			}
@@ -347,7 +344,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			$resources[ $final_url ] = $retained;
 		}
 		if ( null === $finalization ) {
-			$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $source_exclusions, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $external_pages, $critical_assets, $entry_resource_url, $site_url, $sitemap_urls );
+			$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $external_pages, $critical_assets, $entry_resource_url, $site_url, $sitemap_urls );
 			if ( is_wp_error( $checkpoint ) ) {
 				return $checkpoint;
 			}
@@ -413,7 +410,7 @@ class Static_Site_Importer_URL_Site_Collector {
 		$resource_count                 = count( $resource_urls );
 		while ( $finalization['next_resource'] < $resource_count ) {
 			if ( null !== $should_yield && call_user_func( $should_yield ) ) {
-				$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $source_exclusions, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $finalization['external_pages'], $critical_assets, $entry_resource_url, $site_url, $sitemap_urls, $finalization );
+				$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $finalization['external_pages'], $critical_assets, $entry_resource_url, $site_url, $sitemap_urls, $finalization );
 				return is_wp_error( $checkpoint ) ? $checkpoint : new WP_Error( 'static_site_importer_invocation_deadline_exceeded', 'The URL batch invocation deadline was reached during artifact finalization.' );
 			}
 			$resource_url = $resource_urls[ $finalization['next_resource'] ];
@@ -467,7 +464,7 @@ class Static_Site_Importer_URL_Site_Collector {
 		$file_count = count( $finalization['files'] );
 		while ( $finalization['assembly_next'] < $file_count ) {
 			if ( null !== $should_yield && call_user_func( $should_yield ) ) {
-				$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $source_exclusions, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $finalization['external_pages'], $critical_assets, $entry_resource_url, $site_url, $sitemap_urls, $finalization );
+				$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $finalization['external_pages'], $critical_assets, $entry_resource_url, $site_url, $sitemap_urls, $finalization );
 				return is_wp_error( $checkpoint ) ? $checkpoint : new WP_Error( 'static_site_importer_invocation_deadline_exceeded', 'The URL batch invocation deadline was reached during artifact assembly.' );
 			}
 			$index         = $finalization['assembly_next'];
@@ -503,7 +500,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			$finalization['artifact_files'][] = $file;
 			++$finalization['assembly_next'];
 		}
-		$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $source_exclusions, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $finalization['external_pages'], $critical_assets, $entry_resource_url, $site_url, $sitemap_urls, $finalization );
+		$checkpoint = self::checkpoint_collection_cursor( $cursor_saver, $cursor_contract, $page_queue, $asset_queue, $queued_pages, $queued_assets, $resources, $failures, $diagnostics, $script_exclusions, $aliases, $total_bytes, $truncated, $external_assets, $finalization['external_pages'], $critical_assets, $entry_resource_url, $site_url, $sitemap_urls, $finalization );
 		if ( is_wp_error( $checkpoint ) ) {
 			return $checkpoint;
 		}
@@ -577,7 +574,6 @@ class Static_Site_Importer_URL_Site_Collector {
 					'bytes'                   => $total_bytes,
 					'failures'                => $failures,
 					'diagnostics'             => $diagnostics,
-					'source_exclusions'       => $source_exclusions,
 					'script_policy'           => array(
 						'name'             => $script_policy,
 						'excluded_count'   => count( $script_exclusions ),
@@ -627,7 +623,7 @@ class Static_Site_Importer_URL_Site_Collector {
 		);
 	}
 
-	private static function checkpoint_collection_cursor( ?callable $saver, string $contract, array $page_queue, array $asset_queue, array $queued_pages, array $queued_assets, array $resources, array $failures, array $diagnostics, array $source_exclusions, array $script_exclusions, array $aliases, int $total_bytes, array $truncated, array $external_assets, array $external_pages, array $critical_assets, string $entry_resource_url, string $site_url, array $sitemap_urls, ?array $finalization = null ) {
+	private static function checkpoint_collection_cursor( ?callable $saver, string $contract, array $page_queue, array $asset_queue, array $queued_pages, array $queued_assets, array $resources, array $failures, array $diagnostics, array $script_exclusions, array $aliases, int $total_bytes, array $truncated, array $external_assets, array $external_pages, array $critical_assets, string $entry_resource_url, string $site_url, array $sitemap_urls, ?array $finalization = null ) {
 		if ( null === $saver ) {
 			return true;
 		}
@@ -643,7 +639,6 @@ class Static_Site_Importer_URL_Site_Collector {
 				'resources'          => $resources,
 				'failures'           => $failures,
 				'diagnostics'        => $diagnostics,
-				'source_exclusions'  => $source_exclusions,
 				'script_exclusions'  => $script_exclusions,
 				'aliases'            => $aliases,
 				'total_bytes'        => $total_bytes,

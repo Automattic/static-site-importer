@@ -160,7 +160,6 @@ $input  = array(
 	'asset_map'                            => array( 'logo.svg' => 'https://example.test/logo.svg' ),
 	'compiler_options'                     => array( 'include_conversion_report' => false ),
 	'source_metadata'                      => array( 'request_id' => 'contract-1' ),
-	'source_provider_policy'               => array( 'provider' => 'weebly', 'verified' => true ),
 	'validation_artifacts'                 => array( 'visual_diff' => array( 'path' => '/tmp/diff.png' ) ),
 	'quality_budget'                       => array( 'mode' => 'production', 'max_core_html_block_count' => 0 ),
 	'client_script_policy'                 => 'isolated_preview',
