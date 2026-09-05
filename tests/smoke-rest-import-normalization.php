@@ -45,7 +45,6 @@ $options = array(
 	'asset_map'                    => array( 'logo.svg' => 'https://example.test/logo.svg' ),
 	'compiler_options'             => array( 'include_conversion_report' => false ),
 	'source_metadata'              => array( 'request_id' => 'rest-normalization-smoke', 'source' => 'caller' ),
-	'source_provider_policy'       => array( 'provider' => 'weebly', 'verified' => true ),
 	'validation_artifacts'         => array( 'visual_diff' => array( 'ref' => 'rest-diff' ) ),
 );
 $artifact = array(

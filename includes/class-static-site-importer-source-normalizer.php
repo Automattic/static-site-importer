@@ -12,14 +12,19 @@ if ( ! defined( 'ABSPATH' ) ) {
 final class Static_Site_Importer_Source_Normalizer {
 
 	/**
-	 * Remove verified provider-specific source chrome while retaining immutable receipts.
+	 * Normalize source HTML without removing authored or platform markup.
+	 *
+	 * All source HTML is preserved. Platform attribution is upstream of this
+	 * importer: capture adapters decide what content is in scope before an
+	 * artifact ever reaches SSI.
 	 *
 	 * @param string              $html       Source HTML.
 	 * @param string              $source_url Source document URL or path.
 	 * @param array<string,mixed> $args       Normalization options.
-	 * @return array{html:string,exclusions:array<int,array<string,string>>,diagnostics:array<int,array<string,string>>}
+	 * @return array{html:string,diagnostics:array<int,array<string,string>>}
 	 */
 	public static function normalize_html( string $html, string $source_url, array $args = array() ): array {
+		unset( $args );
 		$cloudflare_email_links = 0;
 		$html                   = self::normalize_cloudflare_email_links( $html, $cloudflare_email_links );
 		$diagnostics            = array();
@@ -33,78 +38,10 @@ final class Static_Site_Importer_Source_Normalizer {
 			);
 		}
 
-		$provider = self::verified_source_provider( $args );
-		if ( '' === $provider ) {
-			return array(
-				'html'        => $html,
-				'exclusions'  => array(),
-				'diagnostics' => $diagnostics,
-			);
-		}
-
-		$rules = self::rules();
-		if ( function_exists( 'apply_filters' ) ) {
-			$rules = apply_filters( 'static_site_importer_source_exclusion_rules', $rules, $source_url, $args );
-		}
-		if ( ! is_array( $rules ) ) {
-			$rules = array();
-		}
-
-		$original   = $html;
-		$exclusions = array();
-		foreach ( $rules as $rule ) {
-			if ( ! is_array( $rule ) || strtolower( (string) ( $rule['provider'] ?? '' ) ) !== $provider || ! str_starts_with( (string) ( $rule['selector'] ?? '' ), '#' ) ) {
-				continue;
-			}
-			$selector = (string) $rule['selector'];
-			$removed  = self::remove_element_by_id( $html, substr( $selector, 1 ) );
-			if ( null === $removed ) {
-				continue;
-			}
-			$html          = $removed['html'];
-			$receipt       = array(
-				'schema'         => 'static-site-importer/source-exclusion/v1',
-				'action'         => 'removed',
-				'category'       => (string) ( $rule['category'] ?? 'source_chrome' ),
-				'provider'       => (string) ( $rule['provider'] ?? '' ),
-				'rule_id'        => (string) ( $rule['id'] ?? '' ),
-				'selector'       => $selector,
-				'source_path'    => $source_url,
-				'reason_code'    => (string) ( $rule['reason_code'] ?? 'source_chrome_removed' ),
-				'removed_sha256' => hash( 'sha256', $removed['element'] ),
-			);
-			$exclusions[]  = $receipt;
-			$diagnostics[] = array(
-				'type'        => 'source_exclusion',
-				'severity'    => 'info',
-				'reason_code' => $receipt['reason_code'],
-				'source_path' => $source_url,
-				'selector'    => $selector,
-				'provider'    => $receipt['provider'],
-			);
-		}
-
-		foreach ( $exclusions as &$exclusion ) {
-			$exclusion['source_sha256']     = hash( 'sha256', $original );
-			$exclusion['normalized_sha256'] = hash( 'sha256', $html );
-		}
-		unset( $exclusion );
-
 		return array(
 			'html'        => $html,
-			'exclusions'  => $exclusions,
 			'diagnostics' => $diagnostics,
 		);
-	}
-
-	/** Return a provider only when the caller has verified its source attribution. */
-	private static function verified_source_provider( array $args ): string {
-		$policy = $args['source_provider_policy'] ?? null;
-		if ( ! is_array( $policy ) || true !== ( $policy['verified'] ?? false ) ) {
-			return '';
-		}
-		$provider = strtolower( trim( (string) ( $policy['provider'] ?? '' ) ) );
-		return preg_match( '/^[a-z0-9][a-z0-9_-]*$/', $provider ) ? $provider : '';
 	}
 
 	private static function normalize_cloudflare_email_links( string $html, int &$count ): string {
@@ -128,49 +65,5 @@ final class Static_Site_Importer_Source_Normalizer {
 			},
 			$html
 		);
-	}
-
-	/** @return array<int,array<string,string>> */
-	private static function rules(): array {
-		$path = __DIR__ . '/source-exclusion-rules.json';
-		$json = is_readable( $path ) ? file_get_contents( $path ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads an importer-owned static policy file.
-		$data = is_string( $json ) ? json_decode( $json, true ) : null;
-		return is_array( $data ) && is_array( $data['rules'] ?? null ) ? $data['rules'] : array();
-	}
-
-	/** @return null|array{html:string,element:string} */
-	private static function remove_element_by_id( string $html, string $id ): ?array {
-		if ( '' === $id ) {
-			return null;
-		}
-		$quoted_id = preg_quote( $id, '#' );
-		$pattern   = '#<([a-z][a-z0-9:-]*)\b[^>]*\bid\s*=\s*(?:"' . $quoted_id . '"|\'' . $quoted_id . '\'|' . $quoted_id . ')(?:\s|/?>)#is';
-		if ( ! preg_match( $pattern, $html, $opening, PREG_OFFSET_CAPTURE ) ) {
-			return null;
-		}
-		$tag       = strtolower( (string) $opening[1][0] );
-		$start     = (int) $opening[0][1];
-		$remainder = substr( $html, $start );
-		if ( ! preg_match_all( '#</?' . preg_quote( $tag, '#' ) . '\b[^>]*>#is', $remainder, $tags, PREG_OFFSET_CAPTURE ) ) {
-			return null;
-		}
-		$depth = 0;
-		foreach ( $tags[0] as $match ) {
-			$token = (string) $match[0];
-			if ( str_starts_with( $token, '</' ) ) {
-				--$depth;
-			} elseif ( ! str_ends_with( rtrim( $token ), '/>' ) ) {
-				++$depth;
-			}
-			if ( 0 === $depth ) {
-				$length  = (int) $match[1] + strlen( $token );
-				$element = substr( $remainder, 0, $length );
-				return array(
-					'html'    => substr_replace( $html, '', $start, $length ),
-					'element' => $element,
-				);
-			}
-		}
-		return null;
 	}
 }
