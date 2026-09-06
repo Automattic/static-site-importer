@@ -789,27 +789,27 @@ class Static_Site_Importer_Companion_Plugin {
 				),
 				$editor_scripts
 			);
-			$lines[] = '/** Register and enqueue declared editor-only scripts. */';
-			$lines[] = sprintf( 'function %s_enqueue_editor_scripts() {', $fn_prefix );
-			$lines[] = "\tif ( ! function_exists( 'wp_register_script' ) || ! function_exists( 'wp_enqueue_script' ) ) {";
-			$lines[] = "\t\treturn;";
-			$lines[] = "\t}";
-			$lines[] = sprintf( "\tif ( function_exists( 'get_option' ) && '%s' !== (string) get_option( 'static_site_importer_active_companion_plugin', '' ) ) {", self::php_single_quote( $plugin_file ) );
-			$lines[] = "\t\treturn;";
-			$lines[] = "\t}";
-			$lines[] = "\tforeach ( " . self::export_php_value( $editor_export, 1 ) . ' as $script ) {';
-			$lines[] = "\t\t\$handle = isset( \$script['handle'] ) ? (string) \$script['handle'] : '';";
-			$lines[] = "\t\t\$src    = isset( \$script['src'] ) ? (string) \$script['src'] : '';";
-			$lines[] = "\t\tif ( '' === \$handle || '' === \$src ) {";
-			$lines[] = "\t\t\tcontinue;";
-			$lines[] = "\t\t}";
-			$lines[] = "\t\t\$dependencies = isset( \$script['dependencies'] ) && is_array( \$script['dependencies'] ) ? \$script['dependencies'] : array();";
-			$lines[] = sprintf( "\t\twp_register_script( \$handle, %s_URL . \$src, \$dependencies, '1.0.0', true );", $const_prefix );
-			$lines[] = "\t\twp_enqueue_script( \$handle );";
-			$lines[] = "\t}";
-			$lines[] = '}';
-			$lines[] = sprintf( "add_action( 'enqueue_block_editor_assets', '%s_enqueue_editor_scripts' );", $fn_prefix );
-			$lines[] = '';
+			$lines[]       = '/** Register and enqueue declared editor-only scripts. */';
+			$lines[]       = sprintf( 'function %s_enqueue_editor_scripts() {', $fn_prefix );
+			$lines[]       = "\tif ( ! function_exists( 'wp_register_script' ) || ! function_exists( 'wp_enqueue_script' ) ) {";
+			$lines[]       = "\t\treturn;";
+			$lines[]       = "\t}";
+			$lines[]       = sprintf( "\tif ( function_exists( 'get_option' ) && '%s' !== (string) get_option( 'static_site_importer_active_companion_plugin', '' ) ) {", self::php_single_quote( $plugin_file ) );
+			$lines[]       = "\t\treturn;";
+			$lines[]       = "\t}";
+			$lines[]       = "\tforeach ( " . self::export_php_value( $editor_export, 1 ) . ' as $script ) {';
+			$lines[]       = "\t\t\$handle = isset( \$script['handle'] ) ? (string) \$script['handle'] : '';";
+			$lines[]       = "\t\t\$src    = isset( \$script['src'] ) ? (string) \$script['src'] : '';";
+			$lines[]       = "\t\tif ( '' === \$handle || '' === \$src ) {";
+			$lines[]       = "\t\t\tcontinue;";
+			$lines[]       = "\t\t}";
+			$lines[]       = "\t\t\$dependencies = isset( \$script['dependencies'] ) && is_array( \$script['dependencies'] ) ? \$script['dependencies'] : array();";
+			$lines[]       = sprintf( "\t\twp_register_script( \$handle, %s_URL . \$src, \$dependencies, '1.0.0', true );", $const_prefix );
+			$lines[]       = "\t\twp_enqueue_script( \$handle );";
+			$lines[]       = "\t}";
+			$lines[]       = '}';
+			$lines[]       = sprintf( "add_action( 'enqueue_block_editor_assets', '%s_enqueue_editor_scripts' );", $fn_prefix );
+			$lines[]       = '';
 		}
 
 		return implode( "\n", $lines );
