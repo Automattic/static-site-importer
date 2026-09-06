@@ -381,6 +381,32 @@ namespace {
 	$assert( str_contains( $topology_markup, 'First name' ) && str_contains( $topology_markup, 'Email' ) && str_contains( $topology_markup, 'Message' ), 'topology-preserves-labels' );
 	$assert( 1 === substr_count( $topology_markup, '<!-- wp:button ' ), 'topology-submit-control-emits-one-core-button-in-source-position' );
 	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && 5 === ( $topology_receipt['operation_count'] ?? 0 ) && 'provider_equal_width_fields' === ( $topology_receipt['operations'][3]['strategy'] ?? '' ) && 'provider_interaction_carrier' === ( $topology_receipt['operations'][4]['strategy'] ?? '' ), 'computed-layout-equal-grid-applies-with-bounded-receipt' );
+	$popup_form = array(
+		'selector' => 'form.picker',
+		'controls' => array(
+			array( 'tag' => 'input', 'type' => 'text', 'name' => 'appointment', 'label' => 'Appointment', 'label_id' => 'appointment-label', 'readonly' => true ),
+			array( 'tag' => 'button', 'type' => 'button', 'label' => 'Open picker', 'aria_haspopup' => 'dialog', 'aria_describedby' => 'appointment-label' ),
+			array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+		),
+		'control_topology' => array(
+			'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false,
+			'nodes' => array(
+				array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div', 'class' => 'picker-field' ),
+				array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'control' => 0 ),
+				array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 1, 'depth' => 1, 'control' => 1 ),
+				array( 'id' => 'control-2', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 2 ),
+			),
+		),
+	);
+	$popup_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $popup_form ) ) );
+	$popup_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $popup_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$popup_strategies = array_column( $popup_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' );
+	$assert( true === ( $popup_row['runtime_mapped'] ?? false ) && 1 === ( $popup_row['field_count'] ?? 0 ) && in_array( 'provider_auxiliary_popup_control', $popup_strategies, true ) && ! str_contains( (string) ( $popup_row['block_markup'] ?? '' ), 'Open picker' ), 'related-popup-button-is-superseded-by-editable-provider-field', wp_json_encode( $popup_row ) );
+	$unrelated_popup_form = $popup_form;
+	$unrelated_popup_form['control_topology']['nodes'][2]['parent'] = null;
+	$unrelated_popup_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $unrelated_popup_form ) ) );
+	$unrelated_popup_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $unrelated_popup_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( ! in_array( 'provider_auxiliary_popup_control', array_column( $unrelated_popup_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'popup-button-without-shared-field-topology-is-not-superseded', wp_json_encode( $unrelated_popup_row ) );
 	$presentation_form = $topology_form;
 	$presentation_role = static function ( array $styles, array $properties, string $selector ): array {
 		return array(

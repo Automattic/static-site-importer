@@ -874,9 +874,32 @@ class Static_Site_Importer_Form_Seeder {
 			usort( $siblings, static fn ( array $left, array $right ): int => $left['order'] <=> $right['order'] );
 		}
 		unset( $siblings );
-		$provider_controls = array();
+		$control_parents = array();
+		foreach ( $nodes as $node ) {
+			if ( is_array( $node ) && 'control' === ( $node['kind'] ?? null ) && is_int( $node['control'] ?? null ) ) {
+				$control_parents[ $node['control'] ] = isset( $node['parent'] ) && is_string( $node['parent'] ) ? $node['parent'] : '$root';
+			}
+		}
+		$provider_controls        = array();
+		$auxiliary_popup_controls = array();
 		foreach ( $controls as $control_index => $control ) {
 			if ( 'phone' !== strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) ) {
+				$type      = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
+				$tag       = strtolower( trim( (string) ( $control['tag'] ?? '' ) ) );
+				$popup     = strtolower( trim( (string) ( $control['aria_haspopup'] ?? '' ) ) );
+				$described = preg_split( '/\s+/', trim( (string) ( $control['aria_describedby'] ?? '' ) ) );
+				if ( 'button' !== $tag || 'button' !== $type || ! in_array( $popup, array( 'true', 'menu', 'listbox', 'tree', 'grid', 'dialog' ), true ) || false === $described || empty( $described ) ) {
+					continue;
+				}
+				foreach ( $controls as $field_index => $field ) {
+					$label_id = is_array( $field ) ? trim( (string) ( $field['label_id'] ?? '' ) ) : '';
+					if ( $field_index === $control_index || empty( $field['readonly'] ) || '' === $label_id || ! in_array( $label_id, $described, true ) || ( $control_parents[ $field_index ] ?? null ) !== ( $control_parents[ $control_index ] ?? null ) ) {
+						continue;
+					}
+					$provider_controls[ $control_index ]        = true;
+					$auxiliary_popup_controls[ $control_index ] = true;
+					break;
+				}
 				continue;
 			}
 			$previous = $controls[ $control_index - 1 ] ?? null;
@@ -898,6 +921,13 @@ class Static_Site_Importer_Form_Seeder {
 		$layout_nodes_by_id         = array();
 		$variants_by_node           = array();
 		$form_classes               = array();
+		foreach ( array_keys( $auxiliary_popup_controls ) as $control_index ) {
+			$operations[] = array(
+				'dimension'   => 'topology',
+				'strategy'    => 'provider_auxiliary_popup_control',
+				'target_hash' => hash( 'sha256', 'control-' . $control_index ),
+			);
+		}
 		foreach ( $form['layout_graph']['nodes'] ?? array() as $layout_node ) {
 			if ( is_array( $layout_node ) && is_string( $layout_node['id'] ?? null ) ) {
 				$layout_by_node[ $layout_node['id'] ]     = is_array( $layout_node['layout'] ?? null ) ? $layout_node['layout'] : array();
@@ -909,9 +939,10 @@ class Static_Site_Importer_Form_Seeder {
 				$variants_by_node[ $variant['node'] ][] = $variant;
 			}
 		}
-		$collect_controls = static function ( array $node ) use ( &$collect_controls, $children ): array {
+		$collect_controls = static function ( array $node ) use ( &$collect_controls, $children, $provider_controls, $suppressed_controls ): array {
 			if ( 'control' === ( $node['kind'] ?? null ) ) {
-				return is_int( $node['control'] ?? null ) ? array( $node['control'] ) : array();
+				$control_index = $node['control'] ?? null;
+				return is_int( $control_index ) && ! isset( $provider_controls[ $control_index ] ) && ! isset( $suppressed_controls[ $control_index ] ) ? array( $control_index ) : array();
 			}
 			$controls = array();
 			foreach ( $children[ $node['id'] ?? '' ] ?? array() as $child ) {
