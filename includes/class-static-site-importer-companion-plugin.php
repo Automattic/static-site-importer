@@ -159,6 +159,10 @@ class Static_Site_Importer_Companion_Plugin {
 				return new WP_Error( 'static_site_importer_companion_plugin_asset_path_invalid', 'Companion-plugin preserved script has an unsafe asset path.' );
 			}
 		}
+		$editor_scripts = self::validate_editor_scripts( $payload );
+		if ( is_wp_error( $editor_scripts ) ) {
+			return $editor_scripts;
+		}
 		$effects = self::runtime_effects( $payload );
 		foreach ( $effects['retained_modules'] as $module ) {
 			$unit = $effects['units'][ $module['unit_id'] ] ?? array();
@@ -196,10 +200,11 @@ class Static_Site_Importer_Companion_Plugin {
 		$plugin_slug     = 'ssi-' . $site_slug;
 		$block_namespace = $plugin_slug;
 		$preserved       = self::preserved_js( $payload, $block_namespace );
-		if ( empty( $blocks ) && empty( $preserved ) ) {
+		$editor_scripts  = self::editor_scripts( $payload );
+		if ( empty( $blocks ) && empty( $preserved ) && empty( $editor_scripts ) ) {
 			return new WP_Error(
 				'static_site_importer_companion_plugin_content_missing',
-				'Companion-plugin payload must declare at least one block or preserved script.'
+				'Companion-plugin payload must declare at least one block, preserved script, or editor script.'
 			);
 		}
 
@@ -226,18 +231,25 @@ class Static_Site_Importer_Companion_Plugin {
 		foreach ( $preserved as $island ) {
 			$files[ $plugin_slug . '/' . $island['relative_src'] ] = $island['content'];
 		}
+		foreach ( $editor_scripts as $script ) {
+			$files[ $plugin_slug . '/' . $script['src'] ] = $script['content'];
+		}
 		$provider_form_runtime = file_get_contents( __DIR__ . '/class-static-site-importer-provider-form-runtime.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the plugin-owned runtime source carried into generated companions.
 		if ( ! is_string( $provider_form_runtime ) || '' === $provider_form_runtime ) {
 			return new WP_Error( 'static_site_importer_companion_plugin_provider_form_runtime_missing', 'Provider form runtime projection file is unavailable.' );
 		}
 		$files[ $plugin_slug . '/includes/class-static-site-importer-provider-form-runtime.php' ] = $provider_form_runtime;
 
-		$inventory_hash        = substr( hash( 'sha256', (string) wp_json_encode( array( $block_names, $preserved, hash( 'sha256', $provider_form_runtime ) ) ) ), 0, 16 );
+		$inventory_source = array( $block_names, $preserved, hash( 'sha256', $provider_form_runtime ) );
+		if ( ! empty( $editor_scripts ) ) {
+			$inventory_source[] = $editor_scripts;
+		}
+		$inventory_hash        = substr( hash( 'sha256', (string) wp_json_encode( $inventory_source ) ), 0, 16 );
 		$registration_callback = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash . '_register_blocks';
 		$main_file             = $plugin_slug . '/' . $plugin_slug . '.php';
 		$files                 = array_merge(
 			array(
-				$main_file => self::main_plugin_file( $plugin_slug, $block_namespace, $site_name, $block_directories, $preserved, $main_file, $inventory_hash ),
+				$main_file => self::main_plugin_file( $plugin_slug, $block_namespace, $site_name, $block_directories, $preserved, $main_file, $inventory_hash, $editor_scripts ),
 			),
 			$files
 		);
@@ -357,6 +369,11 @@ class Static_Site_Importer_Companion_Plugin {
 		}
 		foreach ( is_array( $payload['runtime_effects']['retained_modules'] ?? null ) ? $payload['runtime_effects']['retained_modules'] : array() as $module ) {
 			if ( is_array( $module ) && isset( $module['content'] ) && is_scalar( $module['content'] ) && '' !== (string) $module['content'] ) {
+				return true;
+			}
+		}
+		foreach ( is_array( $payload['editor_scripts'] ?? null ) ? $payload['editor_scripts'] : array() as $entry ) {
+			if ( is_array( $entry ) && isset( $entry['content'] ) && is_scalar( $entry['content'] ) && '' !== (string) $entry['content'] ) {
 				return true;
 			}
 		}
@@ -648,6 +665,7 @@ class Static_Site_Importer_Companion_Plugin {
 	 * @param array<int,array<string,string>> $preserved       Preserved island descriptors.
 	 * @param string                          $plugin_file     Generated plugin basename.
 	 * @param string                          $inventory_hash  Deterministic generated inventory hash.
+	 * @param array<int,array<string,mixed>>  $editor_scripts  Declared editor-only scripts.
 	 * @return string
 	 */
 	private static function main_plugin_file(
@@ -657,7 +675,8 @@ class Static_Site_Importer_Companion_Plugin {
 		array $block_directories,
 		array $preserved,
 		string $plugin_file,
-		string $inventory_hash
+		string $inventory_hash,
+		array $editor_scripts = array()
 	): string {
 		$header_name     = sprintf( 'SSI Companion: %s', $site_name );
 		$fn_prefix       = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash;
@@ -760,6 +779,38 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = '}';
 		$lines[] = sprintf( "add_action( 'wp_enqueue_scripts', '%s_enqueue_global_islands' );", $fn_prefix );
 		$lines[] = '';
+
+		if ( ! empty( $editor_scripts ) ) {
+			$editor_export = array_map(
+				static fn ( array $script ): array => array(
+					'handle'       => (string) $script['handle'],
+					'src'          => (string) $script['src'],
+					'dependencies' => is_array( $script['dependencies'] ?? null ) ? $script['dependencies'] : array(),
+				),
+				$editor_scripts
+			);
+			$lines[]       = '/** Register and enqueue declared editor-only scripts. */';
+			$lines[]       = sprintf( 'function %s_enqueue_editor_scripts() {', $fn_prefix );
+			$lines[]       = "\tif ( ! function_exists( 'wp_register_script' ) || ! function_exists( 'wp_enqueue_script' ) ) {";
+			$lines[]       = "\t\treturn;";
+			$lines[]       = "\t}";
+			$lines[]       = sprintf( "\tif ( function_exists( 'get_option' ) && '%s' !== (string) get_option( 'static_site_importer_active_companion_plugin', '' ) ) {", self::php_single_quote( $plugin_file ) );
+			$lines[]       = "\t\treturn;";
+			$lines[]       = "\t}";
+			$lines[]       = "\tforeach ( " . self::export_php_value( $editor_export, 1 ) . ' as $script ) {';
+			$lines[]       = "\t\t\$handle = isset( \$script['handle'] ) ? (string) \$script['handle'] : '';";
+			$lines[]       = "\t\t\$src    = isset( \$script['src'] ) ? (string) \$script['src'] : '';";
+			$lines[]       = "\t\tif ( '' === \$handle || '' === \$src ) {";
+			$lines[]       = "\t\t\tcontinue;";
+			$lines[]       = "\t\t}";
+			$lines[]       = "\t\t\$dependencies = isset( \$script['dependencies'] ) && is_array( \$script['dependencies'] ) ? \$script['dependencies'] : array();";
+			$lines[]       = sprintf( "\t\twp_register_script( \$handle, %s_URL . \$src, \$dependencies, '1.0.0', true );", $const_prefix );
+			$lines[]       = "\t\twp_enqueue_script( \$handle );";
+			$lines[]       = "\t}";
+			$lines[]       = '}';
+			$lines[]       = sprintf( "add_action( 'enqueue_block_editor_assets', '%s_enqueue_editor_scripts' );", $fn_prefix );
+			$lines[]       = '';
+		}
 
 		return implode( "\n", $lines );
 	}
@@ -1406,7 +1457,7 @@ PHP;
 				// A classic script depends on a registered handle; a script module
 				// depends on an import specifier such as `@wordpress/interactivity`,
 				// which block metadata resolves through the generated manifest.
-				if ( ! is_string( $handle ) || ! preg_match( '#^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$#', $handle ) || isset( $seen[ $handle ] ) ) {
+				if ( ! is_string( $handle ) || ! self::is_safe_script_dependency( $handle ) || isset( $seen[ $handle ] ) ) {
 					return new WP_Error( 'static_site_importer_companion_plugin_script_dependency_handle_invalid', 'Script dependency handles must be unique safe WordPress handles or module specifiers.' );
 				}
 				$seen[ $handle ] = true;
@@ -1419,6 +1470,104 @@ PHP;
 	/** @return array<string,array<int,string>> */
 	private static function script_dependencies( array $block ): array {
 		return isset( $block['script_dependencies'] ) && is_array( $block['script_dependencies'] ) ? $block['script_dependencies'] : array();
+	}
+
+	/**
+	 * Validate producer-neutral editor-only scripts before any WordPress writes.
+	 *
+	 * @param array<string,mixed> $payload Generated companion-plugin payload.
+	 * @return true|WP_Error
+	 */
+	private static function validate_editor_scripts( array $payload ) {
+		$entries = $payload['editor_scripts'] ?? array();
+		if ( ! is_array( $entries ) || ! array_is_list( $entries ) || count( $entries ) > self::MAX_SCRIPT_DEPENDENCIES ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_editor_scripts_invalid', 'Companion-plugin editor_scripts must be a bounded array.' );
+		}
+
+		$handles = array();
+		$paths   = array();
+		foreach ( $entries as $index => $entry ) {
+			if ( ! is_array( $entry ) || array_is_list( $entry ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_editor_scripts_invalid', sprintf( 'Companion-plugin editor_scripts[%d] must be an object.', $index ) );
+			}
+			$handle = isset( $entry['handle'] ) && is_string( $entry['handle'] ) ? $entry['handle'] : '';
+			if ( ! self::is_safe_wordpress_script_handle( $handle ) || isset( $handles[ $handle ] ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_editor_script_handle_invalid', 'Editor script handles must be unique safe WordPress handles.' );
+			}
+			$handles[ $handle ] = true;
+
+			if ( ! isset( $entry['content'] ) || ! is_scalar( $entry['content'] ) || '' === (string) $entry['content'] || Static_Site_Importer_Content_Policy::contains_server_code( (string) $entry['content'] ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_editor_script_content_invalid', 'Editor scripts must declare safe JavaScript content.' );
+			}
+
+			$path = self::editor_script_path( $entry, $handle );
+			if ( '' === $path || self::sanitize_relative_path( $path ) !== $path || ! preg_match( '/\.(?:js|mjs)$/', $path ) || ! Static_Site_Importer_Content_Policy::is_companion_asset_path( $path ) || isset( $paths[ $path ] ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_editor_script_path_invalid', 'Editor scripts must declare a unique safe JavaScript asset path.' );
+			}
+			$paths[ $path ] = true;
+
+			$dependencies = $entry['dependencies'] ?? array();
+			if ( ! is_array( $dependencies ) || ! array_is_list( $dependencies ) || count( $dependencies ) > self::MAX_SCRIPT_DEPENDENCIES ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_editor_script_dependencies_invalid', 'Editor script dependencies must be a bounded list.' );
+			}
+			$seen = array();
+			foreach ( $dependencies as $dependency ) {
+				if ( ! is_string( $dependency ) || ! self::is_safe_script_dependency( $dependency ) || isset( $seen[ $dependency ] ) ) {
+					return new WP_Error( 'static_site_importer_companion_plugin_editor_script_dependency_handle_invalid', 'Editor script dependency handles must be unique safe WordPress handles or module specifiers.' );
+				}
+				$seen[ $dependency ] = true;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Normalize declared editor-only scripts into a scaffold descriptor list.
+	 *
+	 * @param array<string,mixed> $payload Generated companion-plugin payload.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function editor_scripts( array $payload ): array {
+		$entries = isset( $payload['editor_scripts'] ) && is_array( $payload['editor_scripts'] ) ? $payload['editor_scripts'] : array();
+		$scripts = array();
+		foreach ( $entries as $entry ) {
+			if ( ! is_array( $entry ) ) {
+				continue;
+			}
+			$handle  = isset( $entry['handle'] ) && is_string( $entry['handle'] ) ? $entry['handle'] : '';
+			$content = isset( $entry['content'] ) && is_scalar( $entry['content'] ) ? (string) $entry['content'] : '';
+			if ( '' === $handle || '' === $content ) {
+				continue;
+			}
+			$scripts[] = array(
+				'handle'       => $handle,
+				'src'          => self::editor_script_path( $entry, $handle ),
+				'content'      => $content,
+				'dependencies' => isset( $entry['dependencies'] ) && is_array( $entry['dependencies'] ) ? array_values( $entry['dependencies'] ) : array(),
+			);
+		}
+
+		return $scripts;
+	}
+
+	/** @param array<string,mixed> $entry */
+	private static function editor_script_path( array $entry, string $handle ): string {
+		foreach ( array( 'src', 'path' ) as $field ) {
+			if ( isset( $entry[ $field ] ) && is_scalar( $entry[ $field ] ) && '' !== trim( (string) $entry[ $field ] ) ) {
+				return (string) $entry[ $field ];
+			}
+		}
+
+		return 'editor/' . $handle . '.js';
+	}
+
+	private static function is_safe_wordpress_script_handle( string $handle ): bool {
+		return 1 === preg_match( '/^[a-z0-9][a-z0-9._-]*$/', $handle );
+	}
+
+	private static function is_safe_script_dependency( string $handle ): bool {
+		return 1 === preg_match( '#^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$#', $handle );
 	}
 
 	/** @return array<string,bool> */

@@ -205,6 +205,25 @@ if ( is_array( $script_only_descriptor ) ) {
 	$assert( str_contains( $script_only_main, "get_option( 'static_site_importer_active_companion_plugin', '' )" ), 'global-enqueue-is-limited-to-current-site-companion' );
 }
 
+$editor_and_runtime = $payload;
+$editor_and_runtime['editor_scripts'] = array(
+	array(
+		'handle'       => 'ssi-example-site-editor',
+		'content'      => 'window.ssiExampleEditor = true;',
+		'dependencies' => array( 'wp-element' ),
+	),
+);
+$editor_and_runtime_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $editor_and_runtime );
+$assert( is_array( $editor_and_runtime_descriptor ), 'editor-scripts-do-not-block-runtime-island-scaffold' );
+if ( is_array( $editor_and_runtime_descriptor ) ) {
+	$editor_runtime_main = $editor_and_runtime_descriptor['files']['ssi-example-site/ssi-example-site.php'] ?? '';
+	$assert( str_contains( $editor_runtime_main, "add_filter( 'render_block'" ) && str_contains( $editor_runtime_main, "add_action( 'wp_enqueue_scripts'" ), 'preserved-runtime-scripts-keep-frontend-enqueue-behavior' );
+	$assert( str_contains( $editor_runtime_main, "add_action( 'enqueue_block_editor_assets'" ), 'declared-editor-scripts-enqueue-in-block-editor' );
+	$frontend_enqueue = preg_match( "/function [^(]+_enqueue_global_islands\\(\\) \\{.*?^\\}/ms", $editor_runtime_main, $frontend_match ) ? $frontend_match[0] : '';
+	$assert( '' !== $frontend_enqueue && ! str_contains( $frontend_enqueue, 'ssi-example-site-editor' ), 'editor-scripts-are-excluded-from-public-frontend-enqueue' );
+	$assert( in_array( 'window.ssiExampleEditor = true;', $editor_and_runtime_descriptor['files'] ?? array(), true ) && in_array( $island_body, $editor_and_runtime_descriptor['files'] ?? array(), true ), 'editor-and-runtime-script-bodies-are-both-materialized' );
+}
+
 // 2. Gate/diagnostics account for the JS as companion-plugin-carried.
 $GLOBALS['ssi_companion_js_active'] = false;
 if ( ! function_exists( 'is_plugin_active' ) ) {
