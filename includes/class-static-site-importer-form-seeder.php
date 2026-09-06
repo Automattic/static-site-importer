@@ -892,7 +892,7 @@ class Static_Site_Importer_Form_Seeder {
 					continue;
 				}
 				foreach ( $controls as $field_index => $field ) {
-					$label_id = is_array( $field ) ? trim( (string) ( $field['label_id'] ?? '' ) ) : '';
+					$label_id = trim( (string) ( $field['label_id'] ?? '' ) );
 					if ( $field_index === $control_index || empty( $field['readonly'] ) || '' === $label_id || ! in_array( $label_id, $described, true ) || ( $control_parents[ $field_index ] ?? null ) !== ( $control_parents[ $control_index ] ?? null ) ) {
 						continue;
 					}
