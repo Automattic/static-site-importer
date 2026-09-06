@@ -407,8 +407,9 @@ $failed_policy_plan['quality']['editability_policy']['status']  = 'failed';
 $failed_policy_plan['quality']['editability_policy']['failures'] = array( array( 'metric' => 'max_nesting_depth', 'actual' => 21, 'maximum' => 20, 'source_path' => 'about.html' ) );
 $failed_policy_plan['quality']['editability_report_plan_hash']  = $plan_hash( $failed_policy_plan );
 $failed_policy_plan['plan_identity']                             = WordPressSitePlan::planIdentity( $failed_policy_plan );
+$insert_calls_before_failed_policy                              = $GLOBALS['ssi_plan_insert_calls'];
 $failed_policy_receipt                                          = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $failed_policy_plan, array( 'slug' => 'failed-editability-policy' ) );
-$assert( 'completed' === $failed_policy_receipt['status'] && 'failed' === ( $failed_policy_receipt['editability_report']['status'] ?? '' ) && 'editability_policy_failed' === ( $failed_policy_receipt['editability_report']['diagnostic']['reason_code'] ?? '' ) && 'about.html' === ( $failed_policy_receipt['editability_report']['diagnostic']['threshold_failures'][0]['source_path'] ?? '' ), 'failed producer thresholds remain visible without blocking materialization' );
+$assert( 'rejected' === $failed_policy_receipt['status'] && $insert_calls_before_failed_policy === $GLOBALS['ssi_plan_insert_calls'] && empty( $failed_policy_receipt['wordpress'] ) && empty( $failed_policy_receipt['generated_files'] ) && 'failed' === ( $failed_policy_receipt['editability_report']['status'] ?? '' ) && 'editability_policy_failed' === ( $failed_policy_receipt['editability_report']['diagnostic']['reason_code'] ?? '' ) && 'about.html' === ( $failed_policy_receipt['editability_report']['diagnostic']['threshold_failures'][0]['source_path'] ?? '' ), 'failed required producer thresholds reject before materialization while retaining actionable evidence' );
 
 // Gutenberg gaps are SSI receipt/report extensions and must never alter the
 // compiler-owned plan, whose schema and hash are producer contracts.
@@ -703,7 +704,7 @@ $deferred_quality_prepared     = Static_Site_Importer_WordPress_Site_Plan_Materi
 	$deferred_quality_plan,
 	array( 'slug' => 'deferred-quality-compensation', 'seed_entities' => true, 'font_materialization' => array(), 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
 );
-$assert( 'prepared' === ( $deferred_quality_prepared['status'] ?? '' ) && 'failed' === ( $deferred_quality_prepared['editability_report']['status'] ?? '' ) && 'editability_policy_failed' === ( $deferred_quality_prepared['editability_report']['diagnostic']['reason_code'] ?? '' ) && array() === $deferred_rollback_order && ! $woo_snapshot_restored && $posts_before_deferred_quality === $GLOBALS['ssi_plan_posts'], 'failed canonical editability policy remains visible without blocking materialization preparation' );
+$assert( 'rejected' === ( $deferred_quality_prepared['status'] ?? '' ) && 'failed' === ( $deferred_quality_prepared['receipt']['editability_report']['status'] ?? '' ) && 'editability_policy_failed' === ( $deferred_quality_prepared['receipt']['editability_report']['diagnostic']['reason_code'] ?? '' ) && array() === $deferred_rollback_order && ! $woo_snapshot_restored && $posts_before_deferred_quality === $GLOBALS['ssi_plan_posts'], 'failed canonical editability policy rejects before provider or WordPress materialization' );
 
 $classic_artifact   = array(
 	'entrypoint' => 'index.html',

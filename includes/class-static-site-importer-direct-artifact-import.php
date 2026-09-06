@@ -1075,6 +1075,14 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			'failure'      => self::scrub_failure( $failure ),
 			'resumable'    => ! in_array( $phase, array( 'materialize', 'materialization_claim' ), true ),
 		);
+		// Keep terminal admission evidence visible to the public error projection.
+		if ( is_array( $data ) ) {
+			foreach ( array( 'import_report', 'import_report_summary', 'import_validation_result', 'finding_packets', 'fixture_diagnostics', 'failed_plan_artifacts' ) as $key ) {
+				if ( array_key_exists( $key, $data ) ) {
+					$error_data[ $key ] = $data[ $key ];
+				}
+			}
+		}
 		if ( is_wp_error( $write ) ) {
 			$error_data['checkpoint_error'] = array(
 				'code'    => $write->get_error_code(),
