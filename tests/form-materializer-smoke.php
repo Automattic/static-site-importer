@@ -440,6 +440,27 @@ namespace {
 	$validated_variant_only = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $variant_only_presentation );
 	$variant_only_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_variant_only['forms'] ) )['forms'][0] ?? array();
 	$assert( empty( $validated_variant_only['errors'] ) && str_contains( (string) ( $variant_only_row['block_markup'] ?? '' ), 'ssi-node-' ) && str_contains( (string) ( $variant_only_row['provider_layout_overlay_css']['css'] ?? '' ), '@media (min-width:769px){' ) && str_contains( (string) ( $variant_only_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:40px' ), 'variant-only-form-presentation-creates-provider-targets', wp_json_encode( $variant_only_row ) );
+	$all_controls_presentation = $presentation_form;
+	$all_controls_presentation['forms'][0]['controls'][1] = array( 'tag' => 'select', 'type' => 'select', 'name' => 'topic', 'label' => 'Topic', 'options' => array( array( 'label' => 'One' ) ) );
+	$all_controls_presentation['forms'][0]['presentation_graph']['controls'] = array(
+		array( 'index' => 0, 'control' => $presentation_role( array( 'border' => '1px solid #111', 'padding' => '7px' ), array( 'border', 'padding' ), 'input' ) ),
+		array( 'index' => 1, 'control' => $presentation_role( array( 'border' => '2px solid #222', 'padding' => '8px' ), array( 'border', 'padding' ), 'select' ) ),
+		array( 'index' => 2, 'control' => $presentation_role( array( 'border' => '3px solid #333', 'min_height' => '9rem' ), array( 'border', 'min-height' ), 'textarea' ) ),
+		array( 'index' => 3, 'control' => $presentation_role( array( 'background_color' => '#444', 'padding' => '9px 12px' ), array( 'background-color', 'padding' ), 'button' ) ),
+	);
+	$all_controls_presentation['forms'][0]['presentation_graph']['variants'] = array( array( 'index' => 2, 'role' => 'control', 'condition' => array( 'kind' => 'media', 'query' => '(max-width:48rem)' ), 'style_patch' => array( 'min_height' => '6rem' ), 'precedence' => array( 'min-height' => array( 'source_order' => 2, 'specificity' => 1, 'important' => false ) ), 'provenance' => array() ) );
+	$validated_all_controls = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $all_controls_presentation );
+	$all_controls_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_all_controls['forms'] ?? array() ) )['forms'][0] ?? array();
+	$all_controls_markup    = (string) ( $all_controls_row['block_markup'] ?? '' );
+	$all_controls_css       = (string) ( $all_controls_row['provider_layout_overlay_css']['css'] ?? '' );
+	$all_controls_targets   = $all_controls_row['provider_layout_target_map']['presentation_targets'] ?? array();
+	$all_controls_hooks     = array();
+	foreach ( $all_controls_targets as $target ) {
+		if ( is_array( $target ) && preg_match( '/\.ssi-node-[a-f0-9]{12}/', (string) ( $target['control'] ?? '' ), $hook ) ) {
+			$all_controls_hooks[] = substr( $hook[0], 1 );
+		}
+	}
+	$assert( empty( $validated_all_controls['errors'] ) && 4 === count( $all_controls_hooks ) && empty( array_filter( $all_controls_hooks, static fn( string $hook ): bool => ! str_contains( $all_controls_markup, $hook ) || ! str_contains( $all_controls_css, '.' . $hook ) ) ) && str_contains( $all_controls_css, 'border:1px solid #111;padding:7px' ) && str_contains( $all_controls_css, 'border:2px solid #222;padding:8px' ) && str_contains( $all_controls_css, 'border:3px solid #333;min-height:9rem' ) && str_contains( $all_controls_css, 'background-color:#444;padding:9px 12px' ) && str_contains( $all_controls_css, '@media (max-width:48rem){' ) && str_contains( $all_controls_css, '> .wp-block-button__link{background-color:#444;padding:9px 12px}' ) && ! str_contains( $all_controls_css, 'control-shell' ) && ! str_contains( $all_controls_css, 'control-hook' ), 'presentation-overlay-persists-scoped-input-textarea-select-and-submit-relationships-without-raw-class-leakage', wp_json_encode( array( 'markup' => $all_controls_markup, 'css' => $all_controls_css, 'targets' => $all_controls_targets ) ) );
 	$unsafe_presentation = $presentation_form;
 	$unsafe_presentation['forms'][0]['presentation_graph']['controls'][0]['control']['styles']['background_image'] = 'url(https://example.test/tracker)';
 	$oversized_presentation = $presentation_form;
@@ -652,11 +673,15 @@ namespace {
 	$class_owned_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $class_owned_form ) ) );
 	$class_owned_losses = $class_owned_seed['forms'][0]['computed_layout_receipt']['losses'] ?? array();
 	$class_owned_markup = (string) ( $class_owned_seed['forms'][0]['block_markup'] ?? '' );
-	$assert( ! in_array( 'provider_wrapper_layout_unrepresentable', array_column( $class_owned_losses, 'reason_code' ), true ) && str_contains( $class_owned_markup, 'ssi-source-wrapper-1\u002d\u002dfield' ), 'class-owned-single-field-layout-projects-with-its-provider-wrapper-hook', $class_owned_markup );
+	$assert( ! in_array( 'provider_wrapper_layout_unrepresentable', array_column( $class_owned_losses, 'reason_code' ), true ) && str_contains( $class_owned_markup, 'ssi-source-wrapper-1\u002d\u002dfield-wrap' ), 'class-owned-single-field-layout-projects-with-its-provider-wrapper-hook', $class_owned_markup );
 	$projected_wrapper = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-text-wrap ssi-source-wrapper--field-wrap"><input class="ssi-source-wrapper--field source-input"></div>' );
 	$assert( '<div class="grunion-field-text-wrap"><div class="field"><input class="source-input"></div></div>' === $projected_wrapper, 'provider-runtime-rebuilds-source-wrapper-inside-field-shell', $projected_wrapper );
 	$layered_wrapper = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-text-wrap ssi-source-wrapper-6--carrier-wrap ssi-source-wrapper-8--input-shell-wrap"><label>Name</label><input class="source-input"></div>' );
 	$assert( '<div class="grunion-field-text-wrap"><label>Name</label><div class="carrier"><div class="input-shell"><input class="source-input"></div></div></div>' === $layered_wrapper, 'provider-runtime-preserves-ordered-input-wrapper-carriers-below-label', $layered_wrapper );
+	$projected_controls = implode( '', array_map( array( Static_Site_Importer_Form_Seeder::class, 'project_provider_wrapper_classes' ), array( '<div class="grunion-field-text-wrap ssi-source-wrapper-2--control-shell-wrap"><input class="control-hook"></div>', '<div class="grunion-field-textarea-wrap ssi-source-wrapper-2--control-shell-wrap"><textarea class="control-hook"></textarea></div>', '<div class="grunion-field-select-wrap ssi-source-wrapper-2--control-shell-wrap"><select class="control-hook"><option>One</option></select></div>' ) ) );
+	$assert( 3 === substr_count( $projected_controls, '<div class="control-shell">' ) && 3 === substr_count( $projected_controls, 'class="control-hook"' ) && ! str_contains( $projected_controls, 'ssi-source-wrapper-' ), 'wrapper-projection-preserves-input-textarea-and-select-control-relationships', $projected_controls );
+	$unmarked_provider_shell = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-text-wrap unrelated-wrap"><input class="control-hook"></div>' );
+	$assert( '<div class="grunion-field-text-wrap unrelated-wrap"><input class="control-hook"></div>' === $unmarked_provider_shell, 'wrapper-projection-does-not-rewrite-unmarked-provider-shells', $unmarked_provider_shell );
 	$projected_submit = Static_Site_Importer_Form_Seeder::project_provider_submit_presentation(
 		'<div class="wp-block-button ssi-source-submit--source-submit"><button class="wp-block-button__link">Send</button></div>',
 		array( 'attrs' => array( 'className' => 'wp-block-button ssi-source-submit--source-submit' ) )

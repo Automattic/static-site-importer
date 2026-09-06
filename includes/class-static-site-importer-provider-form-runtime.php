@@ -79,7 +79,15 @@ final class Static_Site_Importer_Provider_Form_Runtime {
 		return is_string( $projected ) ? $projected : $html;
 	}
 
-	/** Rebuild source input-only wrapper layers inside Jetpack's field shell. */
+	/**
+	 * Rebuild explicitly projected wrapper layers inside a provider field shell.
+	 *
+	 * The seeder's `ssi-source-wrapper-N--CLASS-wrap` token is a bounded transport
+	 * contract. It never makes CLASS part of saved provider markup: this filter
+	 * recognizes it only on the provider field shell, then restores the layer
+	 * immediately around its native control. Older depth-qualified tokens remain
+	 * readable because they have already been persisted in imported content.
+	 */
 	public static function project_wrapper_classes( string $html ): string {
 		$wrapper_layers = array();
 		$projected      = preg_replace_callback(
@@ -91,6 +99,12 @@ final class Static_Site_Importer_Provider_Form_Runtime {
 				$output     = array();
 				foreach ( $classes as $class_name ) {
 					if ( preg_match( '/^ssi-source-wrapper-([0-9]{1,2})--([A-Za-z_][A-Za-z0-9_-]{0,79})-wrap$/D', $class_name, $marker ) ) {
+						if ( $is_wrapper ) {
+							$wrapper_layers[ (int) $marker[1] ][] = $marker[2];
+						}
+						continue;
+					}
+					if ( preg_match( '/^ssi-source-wrapper-([0-9]{1,2})--([A-Za-z_][A-Za-z0-9_-]{0,79})$/D', $class_name, $marker ) ) {
 						if ( $is_wrapper ) {
 							$wrapper_layers[ (int) $marker[1] ][] = $marker[2];
 						}
