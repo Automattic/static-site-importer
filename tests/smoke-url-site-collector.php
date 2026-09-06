@@ -72,7 +72,7 @@ $responses = array(
 	),
 	'https://example.test/' => array(
 		'content_type' => 'text/html; charset=utf-8',
-		'body'         => '<!doctype html><html><head><link rel="canonical" href="/"><link rel="stylesheet" href="/files/main.css?v=1"><script src="/platform-runtime.js"></script></head><body style="background-image:url(/uploads/hero.jpg)"><nav><a href="/services.html">Services</a><a href="/cdn-cgi/l/email-protection#127352703c717d">Email</a></nav><img src="/uploads/logo.png" srcset="/uploads/logo.png 1x, /uploads/logo-2x.png 2x"><main><h1>Home</h1></main><script>URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)]));</script><div id="weebly-footer-signup-container-v3"><a href="https://www.weebly.com/signup"><div><img src="https://cdn.example.test/platform-badge.png">Powered by Weebly</div></a></div></body></html>',
+		'body'         => '<!doctype html><html><head><link rel="canonical" href="/"><link rel="stylesheet" href="/files/main.css?v=1"><script src="/platform-runtime.js"></script></head><body style="background-image:url(/uploads/hero.jpg)"><nav><a href="/services.html">Services</a><a href="/cdn-cgi/l/email-protection#127352703c717d">Email</a></nav><img src="/uploads/logo.png" srcset="/uploads/logo.png 1x, /uploads/logo-2x.png 2x"><main><h1>Home</h1></main><script>URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)]));</script><div class="source-footer-signup"><a href="https://signup.example.test/signup"><div><img src="https://cdn.example.test/platform-badge.png">Powered by the source host</div></a></div></body></html>',
 	),
 	'https://example.test/services.html' => array(
 		'content_type' => 'text/html',
@@ -165,57 +165,14 @@ $assert( ! in_array( 'https://example.test/platform-runtime.js', array_column( $
 $assert( ! isset( $files['website/platform-runtime.js'] ) && ! str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'platform-runtime.js' ), 'runtime-script-markup-and-payload-are-omitted' );
 $assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'href="mailto:a@b.co"' ), 'cloudflare-email-link-decoded' );
 $assert( ! in_array( 'https://example.test/cdn-cgi/l/email-protection', array_column( $requests, 'url' ), true ), 'cloudflare-email-action-not-crawled-as-page' );
-$assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'weebly-footer-signup-container-v3' ), 'default-policy-preserves-platform-chrome' );
-$assert( in_array( 'https://cdn.example.test/platform-badge.png', array_column( $requests, 'url' ), true ), 'preserved-platform-assets-are-collected' );
-$source_exclusions = $result['source_metadata']['collection']['source_exclusions'] ?? array();
-$assert( array() === $source_exclusions, 'default-policy-has-no-source-exclusions' );
+$assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'source-footer-signup' ), 'collection-preserves-all-source-html' );
+$assert( in_array( 'https://cdn.example.test/platform-badge.png', array_column( $requests, 'url' ), true ), 'preserved-source-assets-are-collected' );
+$assert( ! isset( $result['source_metadata']['collection']['source_exclusions'] ), 'collection-reports-no-source-exclusions' );
 $assert( 10485760 >= max( array_map( static fn ( array $request ): int => (int) ( $request['args']['max_bytes'] ?? 0 ), $requests ) ), 'configured-response-limit-hard-clamped' );
 $artifact_paths = array_column( $result['artifact']['files'] ?? array(), 'path' );
 $sorted_paths   = $artifact_paths;
 sort( $sorted_paths, SORT_STRING );
 $assert( $sorted_paths === $artifact_paths, 'artifact-file-order-is-canonical' );
-
-$weebly_requests = array();
-$weebly_result = Static_Site_Importer_URL_Site_Collector::collect(
-	'https://example.test/',
-	array(
-		'max_pages'              => 10,
-		'max_assets'             => 20,
-		'max_bytes'              => PHP_INT_MAX,
-		'request_delay_ms'       => 0,
-		'source_provider_policy' => array( 'provider' => 'weebly', 'verified' => true ),
-	),
-	static function ( string $url, array $args ) use ( &$weebly_requests, $responses ) {
-		unset( $args );
-		$weebly_requests[] = $url;
-		if ( ! isset( $responses[ $url ] ) ) {
-			return new WP_Error( 'missing_weebly_fixture', $url );
-		}
-		$response = $responses[ $url ];
-		return array( 'body' => $response['body'], 'metadata' => array( 'content_type' => $response['content_type'], 'final_url' => $url ) );
-	}
-);
-$weebly_files = is_wp_error( $weebly_result ) ? array() : array_column( $weebly_result['artifact']['files'], null, 'path' );
-$weebly_exclusions = is_wp_error( $weebly_result ) ? array() : $weebly_result['source_metadata']['collection']['source_exclusions'];
-$weebly_receipt = $weebly_exclusions[0] ?? array();
-$assert( ! is_wp_error( $weebly_result ) && ! str_contains( (string) ( $weebly_files['website/index.html']['content'] ?? '' ), 'weebly-footer-signup-container-v3' ), 'verified-weebly-policy-removes-platform-chrome' );
-$assert( ! in_array( 'https://cdn.example.test/platform-badge.png', $weebly_requests, true ), 'weebly-policy-excludes-platform-assets-before-collection' );
-$assert( 1 === count( $weebly_exclusions ) && 'weebly' === ( $weebly_receipt['provider'] ?? '' ) && 'platform_attribution_removed' === ( $weebly_receipt['reason_code'] ?? '' ) && 64 === strlen( (string) ( $weebly_receipt['removed_sha256'] ?? '' ) ) && 64 === strlen( (string) ( $weebly_receipt['source_sha256'] ?? '' ) ) && 64 === strlen( (string) ( $weebly_receipt['normalized_sha256'] ?? '' ) ), 'weebly-policy-retains-hash-bound-receipt' );
-
-$unrelated_result = Static_Site_Importer_URL_Site_Collector::collect(
-	'https://example.test/',
-	array( 'max_pages' => 10, 'max_assets' => 20, 'max_bytes' => PHP_INT_MAX, 'request_delay_ms' => 0, 'source_provider_policy' => array( 'provider' => 'squarespace', 'verified' => true ) ),
-	static function ( string $url, array $args ) use ( $responses ) {
-		unset( $args );
-		if ( ! isset( $responses[ $url ] ) ) {
-			return new WP_Error( 'missing_unrelated_provider_fixture', $url );
-		}
-		$response = $responses[ $url ];
-		return array( 'body' => $response['body'], 'metadata' => array( 'content_type' => $response['content_type'], 'final_url' => $url ) );
-	}
-);
-$unrelated_files = is_wp_error( $unrelated_result ) ? array() : array_column( $unrelated_result['artifact']['files'], null, 'path' );
-$assert( ! is_wp_error( $unrelated_result ) && str_contains( (string) ( $unrelated_files['website/index.html']['content'] ?? '' ), 'weebly-footer-signup-container-v3' ) && array() === ( $unrelated_result['source_metadata']['collection']['source_exclusions'] ?? null ), 'unrelated-provider-policy-preserves-platform-chrome' );
 
 $shuffled_responses = $responses;
 $shuffled_responses['https://example.test/sitemap.xml']['body'] = '<?xml version="1.0"?><urlset><url><loc>https://example.test/team.html</loc></url><url><loc>https://example.test/contact.html</loc></url><url><loc>https://example.test/services.html</loc></url><url><loc>https://example.test/index.html</loc></url></urlset>';
@@ -532,7 +489,7 @@ $cached = Static_Site_Importer_URL_Site_Collector::collect(
 );
 $assert( ! is_wp_error( $cached ) && 1 === $cache_calls && array() === $cache_delays, 'cache-hits-never-consume-pacing-budget' );
 
-$compiled         = blocks_engine_php_transformer_compile_artifact( $weebly_result['artifact'] );
+$compiled         = blocks_engine_php_transformer_compile_artifact( $result['artifact'] );
 $site_plan        = $compiled['source_reports']['wordpress_site_plan'] ?? array();
 $site_diagnostics = $compiled['source_reports']['wordpress_site_plan_diagnostics'] ?? array();
 $routes           = array_column( $site_plan['routes'] ?? array(), 'target_path', 'source_path' );

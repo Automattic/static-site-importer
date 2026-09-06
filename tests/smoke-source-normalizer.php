@@ -1,6 +1,6 @@
 <?php
 /**
- * Smoke test: source platform exclusions require verified provider policy.
+ * Smoke test: source normalization preserves all source HTML.
  *
  * Run from the repository root:
  * php tests/smoke-source-normalizer.php
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-source-normalizer.php';
 
-$html = '<main>Authored content</main><div id="weebly-footer-signup-container-v3">Platform chrome</div>';
+$html       = '<main>Authored content</main><div id="footer-signup-container">Source chrome</div>';
 $assertions = 0;
 $failures   = array();
 $assert     = static function ( bool $condition, string $label ) use ( &$assertions, &$failures ): void {
@@ -24,16 +24,22 @@ $assert     = static function ( bool $condition, string $label ) use ( &$asserti
 	}
 };
 
-$default = Static_Site_Importer_Source_Normalizer::normalize_html( $html, 'https://example.test/' );
-$assert( $html === $default['html'] && array() === $default['exclusions'], 'default-policy-preserves-platform-chrome' );
+$normalized = Static_Site_Importer_Source_Normalizer::normalize_html( $html, 'https://example.test/' );
+$assert( $html === $normalized['html'], 'normalization-preserves-source-html' );
+$assert( array() === $normalized['diagnostics'], 'unchanged-source-reports-no-diagnostics' );
+$assert( ! array_key_exists( 'exclusions', $normalized ), 'normalizer-no-longer-emits-exclusion-receipts' );
 
-$weebly = Static_Site_Importer_Source_Normalizer::normalize_html( $html, 'https://example.test/', array( 'source_provider_policy' => array( 'provider' => 'weebly', 'verified' => true ) ) );
-$receipt = $weebly['exclusions'][0] ?? array();
-$assert( ! str_contains( $weebly['html'], 'weebly-footer-signup-container-v3' ), 'verified-weebly-policy-removes-platform-chrome' );
-$assert( 1 === count( $weebly['exclusions'] ) && hash( 'sha256', $html ) === ( $receipt['source_sha256'] ?? '' ) && hash( 'sha256', $weebly['html'] ) === ( $receipt['normalized_sha256'] ?? '' ) && 64 === strlen( (string) ( $receipt['removed_sha256'] ?? '' ) ), 'weebly-removal-retains-hash-bound-receipt' );
+// Arbitrary caller options can never opt into source removal.
+$with_options = Static_Site_Importer_Source_Normalizer::normalize_html( $html, 'https://example.test/', array( 'source_provider_policy' => array( 'provider' => 'anything', 'verified' => true ) ) );
+$assert( $html === $with_options['html'], 'caller-options-cannot-remove-source-html' );
 
-$unrelated = Static_Site_Importer_Source_Normalizer::normalize_html( $html, 'https://example.test/', array( 'source_provider_policy' => array( 'provider' => 'squarespace', 'verified' => true ) ) );
-$assert( $html === $unrelated['html'] && array() === $unrelated['exclusions'], 'unrelated-provider-policy-preserves-platform-chrome' );
+// Cloudflare email obfuscation stays: it decodes an unreadable address into the
+// address the source document intended to publish. Nothing is removed.
+$obfuscated       = bin2hex( "\x10" . ( 'a@b.co' ^ str_repeat( "\x10", 6 ) ) );
+$email_html       = '<a href="/cdn-cgi/l/email-protection#' . $obfuscated . '">Mail</a>';
+$email_normalized = Static_Site_Importer_Source_Normalizer::normalize_html( $email_html, 'https://example.test/' );
+$assert( str_contains( $email_normalized['html'], 'href="mailto:a@b.co"' ), 'cloudflare-email-link-decoded' );
+$assert( 'cloudflare_email_link_decoded' === ( $email_normalized['diagnostics'][0]['reason_code'] ?? '' ), 'cloudflare-decode-is-diagnosed' );
 
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( PHP_EOL, $failures ) . PHP_EOL );

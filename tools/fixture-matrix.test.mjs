@@ -7527,23 +7527,26 @@ test('staged visual source rebases site-root assets without changing the import 
   assert.match(css, /url\(data:image\/png;base64,AA\)/);
 });
 
-test('platform attribution is excluded from both import artifacts and visual baselines', () => {
-  const fixtureDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-platform-chrome-source-'));
+test('source chrome is preserved identically in import artifacts and visual baselines', () => {
+  const fixtureDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-source-chrome-'));
   const sourceDirectory = path.join(fixtureDirectory, 'fixture');
   mkdirSync(sourceDirectory, { recursive: true });
-  writeFileSync(path.join(sourceDirectory, 'index.html'), '<main><h1>Authored page</h1></main><div id="weebly-footer-signup-container-v3"><a href="https://www.weebly.com/signup"><div>Powered by Weebly</div></a></div>');
+  writeFileSync(path.join(sourceDirectory, 'index.html'), '<main><h1>Authored page</h1></main><div id="source-footer-signup-container"><a href="https://signup.example.test/signup"><div>Powered by the source host</div></a></div>');
 
-  const fixture = { id: 'Platform Chrome', directory: sourceDirectory };
+  // SSI has no platform axis: it never decides that a subtree is "not authored".
+  // Whatever the capture produced reaches both the import artifact and the visual
+  // baseline byte-for-byte, so the two sides can never disagree about the source.
+  const fixture = { id: 'Source Chrome', directory: sourceDirectory };
   const artifact = buildFixtureArtifact(fixture);
   const artifactHtml = Buffer.from(artifact.files[0].content_base64, 'base64').toString('utf8');
-  assert.doesNotMatch(artifactHtml, /weebly-footer-signup-container-v3/);
-  assert.equal(artifact.source_metadata.source_exclusions[0].reason_code, 'platform_attribution_removed');
-  assert.match(artifact.source_metadata.source_exclusions[0].removed_sha256, /^[a-f0-9]{64}$/);
+  assert.match(artifactHtml, /source-footer-signup-container/);
+  assert.match(artifactHtml, /Authored page/);
+  assert.equal(artifact.source_metadata.source_exclusions, undefined);
 
   stageFixtureSource(fixture, fixtureDirectory);
   const stagedHtml = readFileSync(path.join(fixtureDirectory, 'source', 'index.html'), 'utf8');
   assert.match(stagedHtml, /Authored page/);
-  assert.doesNotMatch(stagedHtml, /weebly-footer-signup-container-v3/);
+  assert.match(stagedHtml, /source-footer-signup-container/);
 });
 
 test('staged visual source uses the runtime-materialized local font stylesheet', () => {
