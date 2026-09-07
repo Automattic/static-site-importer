@@ -877,10 +877,7 @@ class Static_Site_Importer_Theme_Generator {
 			'manifest_path'                   => $manifest_path,
 			'pages'                           => $receipt['completed']['pages'],
 			'import_report'                   => $report->to_array(),
-			'import_report_summary'           => array(
-				'status'           => $receipt['status'],
-				'diagnostic_count' => count( $diagnostics ),
-			),
+			'import_report_summary'           => $report['compact_summary'],
 			'import_validation_result'        => $validation,
 			'finding_packets'                 => $findings,
 			'fixture_diagnostics'             => $fixture_diagnostics,

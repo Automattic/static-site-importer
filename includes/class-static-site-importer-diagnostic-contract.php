@@ -241,11 +241,12 @@ class Static_Site_Importer_Diagnostic_Contract {
 	 * @return array<string,mixed>
 	 */
 	private static function quality_counts( array $import_report, array $summary, array $result ): array {
-		$keys                              = array( 'block_count', 'fallback_count', 'diagnostic_count', 'content_loss_count', 'empty_conversion_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count', 'unsafe_svg_count', 'svg_materialization_failure_count', 'svg_sprite_reference_failure_count', 'commerce_dependency_failures', 'interaction_candidate_count', 'runtime_dependency_parity_issue_count', 'semantic_parity_failure_count' );
+		$keys                              = array( 'block_count', 'fallback_count', 'unsupported_fallback_count', 'accepted_preserved_runtime_island_count', 'diagnostic_count', 'content_loss_count', 'empty_conversion_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count', 'unsafe_svg_count', 'svg_materialization_failure_count', 'svg_sprite_reference_failure_count', 'commerce_dependency_failures', 'interaction_candidate_count', 'runtime_dependency_parity_issue_count', 'semantic_parity_failure_count' );
 		$compiler_quality                  = isset( $import_report['blocks_engine']['wordpress_site_plan']['quality'] ) && is_array( $import_report['blocks_engine']['wordpress_site_plan']['quality'] ) ? $import_report['blocks_engine']['wordpress_site_plan']['quality'] : array();
 		$report_quality                    = isset( $import_report['quality'] ) && is_array( $import_report['quality'] ) ? $import_report['quality'] : $summary;
 		$source_counts                     = self::quality_metric_values( $compiler_quality, $keys );
 		$report_counts                     = self::quality_metric_values( $report_quality, $keys );
+		$validation_counts                 = self::validation_quality_metric_values( self::import_validation_result( $result, $import_report ) );
 		$compiler_fallback_count_available = isset( $source_counts['fallback_count'] );
 		$provenance                        = array();
 
@@ -253,6 +254,15 @@ class Static_Site_Importer_Diagnostic_Contract {
 			if ( ! isset( $source_counts[ $key ] ) && isset( $report_counts[ $key ] ) ) {
 				$source_counts[ $key ] = $report_counts[ $key ];
 			}
+		}
+		if ( ! empty( $validation_counts ) ) {
+			$source_counts                         = array_merge( $source_counts, $validation_counts );
+			$provenance['materialized_validation'] = array(
+				'owner'   => 'static-site-importer',
+				'path'    => 'import_validation_result.counts',
+				'schema'  => (string) ( self::import_validation_result( $result, $import_report )['schema'] ?? '' ),
+				'metrics' => 'import_validation_result.counts',
+			);
 		}
 		if ( ! empty( $compiler_quality ) ) {
 			$provenance['source_detected'] = array(
@@ -276,7 +286,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 			: ( isset( $import_report['fallback_reconciliation'] ) && is_array( $import_report['fallback_reconciliation'] ) ? $import_report['fallback_reconciliation'] : array() );
 		$resolved_counts                 = array();
 		$source_fallback_count_available = isset( $reconciliation['source_fallback_count'] ) && is_numeric( $reconciliation['source_fallback_count'] );
-		if ( ! $compiler_fallback_count_available && $source_fallback_count_available ) {
+		if ( ! isset( $validation_counts['fallback_count'] ) && ! $compiler_fallback_count_available && $source_fallback_count_available ) {
 			$source_counts['fallback_count'] = max( 0, (int) $reconciliation['source_fallback_count'] );
 			$provenance['source_detected']   = array(
 				'owner'   => 'static-site-importer',
@@ -286,7 +296,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 			);
 		}
 		$verified_resolutions = self::verified_provider_resolution_count( $reconciliation );
-		if ( ( $compiler_fallback_count_available || $source_fallback_count_available ) && null !== $verified_resolutions ) {
+		if ( ! isset( $validation_counts['fallback_count'] ) && ( $compiler_fallback_count_available || $source_fallback_count_available ) && null !== $verified_resolutions ) {
 			$resolved_counts['fallback_count'] = $verified_resolutions;
 			$provenance['materialized']        = array(
 				'owner'   => 'static-site-importer',
@@ -299,7 +309,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 		$counts = array();
 		foreach ( $keys as $key ) {
 			$source         = $source_counts[ $key ] ?? 0;
-			$resolved       = min( $source, $resolved_counts[ $key ] ?? 0 );
+			$resolved       = isset( $validation_counts[ $key ] ) ? 0 : min( $source, $resolved_counts[ $key ] ?? 0 );
 			$counts[ $key ] = $source - $resolved;
 		}
 		if ( $counts['block_count'] <= 0 ) {
@@ -313,9 +323,54 @@ class Static_Site_Importer_Diagnostic_Contract {
 		$counts['materialized']    = array_merge( array_fill_keys( $keys, 0 ), $resolved_counts );
 		$counts['unresolved']      = array_intersect_key( $counts, array_flip( $keys ) );
 		$counts['provenance']      = $provenance;
-		$counts['consistent']      = empty( $compiler_quality ) || empty( $report_quality ) || self::quality_metrics_agree( $source_counts, $report_counts );
+		$counts['consistent']      = ( empty( $compiler_quality ) || empty( $report_quality ) || self::quality_metrics_agree( self::quality_metric_values( $compiler_quality, $keys ), $report_counts ) )
+			&& ( empty( $validation_counts ) || ( empty( $compiler_quality ) || self::quality_metrics_agree( $validation_counts, self::quality_metric_values( $compiler_quality, $keys ) ) ) )
+			&& ( empty( $report_quality ) || self::quality_metrics_agree( $validation_counts, $report_counts ) );
 
 		return $counts;
+	}
+
+	/** @return array<string,mixed> */
+	private static function import_validation_result( array $result, array $import_report ): array {
+		foreach ( array( $result['import_validation_result'] ?? null, $import_report['import_validation_result'] ?? null ) as $candidate ) {
+			if ( is_array( $candidate ) && isset( $candidate['counts'] ) && is_array( $candidate['counts'] ) ) {
+				return $candidate;
+			}
+		}
+
+		return array();
+	}
+
+	/** @return array<string,int> */
+	private static function validation_quality_metric_values( array $validation ): array {
+		$counts  = isset( $validation['counts'] ) && is_array( $validation['counts'] ) ? $validation['counts'] : array();
+		$map     = array(
+			'diagnostics'                        => 'diagnostic_count',
+			'fallback_blocks'                    => 'fallback_count',
+			'unsupported_fallbacks'              => 'unsupported_fallback_count',
+			'accepted_preserved_runtime_islands' => 'accepted_preserved_runtime_island_count',
+			'content_loss'                       => 'content_loss_count',
+			'empty_conversions'                  => 'empty_conversion_count',
+			'core_html_blocks'                   => 'core_html_block_count',
+			'freeform_blocks'                    => 'freeform_block_count',
+			'invalid_blocks'                     => 'invalid_block_count',
+			'invalid_block_documents'            => 'invalid_block_document_count',
+			'unsafe_svgs'                        => 'unsafe_svg_count',
+			'svg_materialization_failures'       => 'svg_materialization_failure_count',
+			'svg_sprite_reference_failures'      => 'svg_sprite_reference_failure_count',
+			'commerce_dependency_failures'       => 'commerce_dependency_failures',
+			'interaction_candidates'             => 'interaction_candidate_count',
+			'runtime_dependency_parity'          => 'runtime_dependency_parity_issue_count',
+			'semantic_parity_failures'           => 'semantic_parity_failure_count',
+		);
+		$metrics = array();
+		foreach ( $map as $validation_key => $quality_key ) {
+			if ( isset( $counts[ $validation_key ] ) && is_numeric( $counts[ $validation_key ] ) ) {
+				$metrics[ $quality_key ] = max( 0, (int) $counts[ $validation_key ] );
+			}
+		}
+
+		return $metrics;
 	}
 
 	/**

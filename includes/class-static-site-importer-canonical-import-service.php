@@ -673,7 +673,10 @@ class Static_Site_Importer_Canonical_Import_Service {
 	/** @param array<string,mixed> $result @return array<string,mixed> */
 	public static function success_diagnostics_contract( array $result ): array {
 		if ( isset( $result['fixture_diagnostics'] ) && is_array( $result['fixture_diagnostics'] ) ) {
-			return $result['fixture_diagnostics'];
+			$validation = isset( $result['import_validation_result'] ) && is_array( $result['import_validation_result'] ) ? $result['import_validation_result'] : array();
+			if ( self::fixture_diagnostics_match_validation_counts( $result['fixture_diagnostics'], $validation ) ) {
+				return $result['fixture_diagnostics'];
+			}
 		}
 		$validation  = isset( $result['import_validation_result'] ) && is_array( $result['import_validation_result'] ) ? $result['import_validation_result'] : array();
 		$quality     = isset( $result['quality'] ) && is_array( $result['quality'] ) ? $result['quality'] : array();
@@ -686,7 +689,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 			);
 		}
 		$input = array(
-			'success'                  => true,
+			'success'                  => empty( $validation['fail_import'] ),
 			'status'                   => isset( $result['import_report_summary']['status'] ) && is_scalar( $result['import_report_summary']['status'] ) ? (string) $result['import_report_summary']['status'] : 'completed',
 			'slug'                     => isset( $result['theme_slug'] ) ? (string) $result['theme_slug'] : '',
 			'name'                     => isset( $result['theme_name'] ) ? (string) $result['theme_name'] : '',
@@ -695,6 +698,38 @@ class Static_Site_Importer_Canonical_Import_Service {
 			'materialization_receipt'  => isset( $result['materialization_receipt'] ) && is_array( $result['materialization_receipt'] ) ? $result['materialization_receipt'] : array(),
 		);
 		return class_exists( 'Static_Site_Importer_Diagnostic_Contract' ) ? Static_Site_Importer_Diagnostic_Contract::build( $input ) : array( 'diagnostics' => $diagnostics );
+	}
+
+	/** Keep cached fixture projections only when they agree with final validation counts. */
+	private static function fixture_diagnostics_match_validation_counts( array $fixture, array $validation ): bool {
+		$validation_counts = isset( $validation['counts'] ) && is_array( $validation['counts'] ) ? $validation['counts'] : array();
+		$quality_counts    = isset( $fixture['quality_counts'] ) && is_array( $fixture['quality_counts'] ) ? $fixture['quality_counts'] : array();
+		$map               = array(
+			'diagnostics'                        => 'diagnostic_count',
+			'fallback_blocks'                    => 'fallback_count',
+			'unsupported_fallbacks'              => 'unsupported_fallback_count',
+			'accepted_preserved_runtime_islands' => 'accepted_preserved_runtime_island_count',
+			'content_loss'                       => 'content_loss_count',
+			'empty_conversions'                  => 'empty_conversion_count',
+			'core_html_blocks'                   => 'core_html_block_count',
+			'freeform_blocks'                    => 'freeform_block_count',
+			'invalid_blocks'                     => 'invalid_block_count',
+			'invalid_block_documents'            => 'invalid_block_document_count',
+			'unsafe_svgs'                        => 'unsafe_svg_count',
+			'svg_materialization_failures'       => 'svg_materialization_failure_count',
+			'svg_sprite_reference_failures'      => 'svg_sprite_reference_failure_count',
+			'commerce_dependency_failures'       => 'commerce_dependency_failures',
+			'interaction_candidates'             => 'interaction_candidate_count',
+			'runtime_dependency_parity'          => 'runtime_dependency_parity_issue_count',
+			'semantic_parity_failures'           => 'semantic_parity_failure_count',
+		);
+		foreach ( $map as $validation_key => $quality_key ) {
+			if ( isset( $validation_counts[ $validation_key ] ) && is_numeric( $validation_counts[ $validation_key ] ) && ( ! isset( $quality_counts[ $quality_key ] ) || (int) $validation_counts[ $validation_key ] !== (int) $quality_counts[ $quality_key ] ) ) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/** @param mixed $data @return array<string,mixed> */
