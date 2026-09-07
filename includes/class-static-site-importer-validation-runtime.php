@@ -12,6 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Website_Artifact_Import_Input' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-website-artifact-import-input.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Run_Storage' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-run-storage.php';
+}
 
 /**
  * Runs SSI import validation in the current WordPress runtime.
@@ -370,9 +373,7 @@ class Static_Site_Importer_Validation_Runtime {
 		if ( isset( $input['artifact_dir'] ) && is_string( $input['artifact_dir'] ) && '' !== $input['artifact_dir'] ) {
 			$directory = $input['artifact_dir'];
 		} else {
-			$upload_dir = function_exists( 'wp_upload_dir' ) ? wp_upload_dir() : array();
-			$base_dir   = isset( $upload_dir['basedir'] ) ? (string) $upload_dir['basedir'] : sys_get_temp_dir();
-			$directory  = trailingslashit( $base_dir ) . 'static-site-importer/validation-' . sanitize_title( $slug ) . '-' . sanitize_key( uniqid( '', true ) );
+			$directory = Static_Site_Importer_Run_Storage::path( 'validation-' . sanitize_title( $slug ) . '-' . sanitize_key( uniqid( '', true ) ) );
 		}
 
 		$created  = function_exists( 'wp_mkdir_p' ) ? wp_mkdir_p( $directory ) : false;

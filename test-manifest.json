@@ -35,6 +35,7 @@
     { "path": "tests/smoke-html-runtime-capabilities.php", "environment": "standalone-php" },
     { "path": "tests/smoke-default-content.php", "environment": "standalone-php" },
     { "path": "tests/smoke-direct-artifact-import.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-run-storage.php", "environment": "standalone-php" },
     { "path": "tests/smoke-rest-import.php", "environment": "standalone-php" },
     { "path": "tests/smoke-lifecycle-compile-checkpoint.php", "environment": "standalone-php" },
     { "path": "tests/smoke-materialized-block-content-validation.php", "environment": "standalone-php" },

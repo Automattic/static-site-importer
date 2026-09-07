@@ -12,6 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Artifact_Run_Workspace' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-artifact-run.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Run_Storage' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-run-storage.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-content-policy.php';
 }
@@ -1315,12 +1318,17 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		if ( wp_mkdir_p( $root ) ) {
 			Static_Site_Importer_Artifact_Run_Workspace::purge_expired_in( $root );
 		}
+		// Sites upgraded from a release that stored run state in the media
+		// library keep their expiry sweep until that tree drains.
+		$legacy = Static_Site_Importer_Run_Storage::legacy_uploads_root() . '/direct-artifact-imports';
+		if ( $legacy !== $root && is_dir( $legacy ) ) {
+			Static_Site_Importer_Artifact_Run_Workspace::purge_expired_in( $legacy );
+		}
 	}
 
-	private static function root(): string {
-		$uploads = function_exists( 'wp_upload_dir' ) ? wp_upload_dir() : array();
-		$base    = isset( $uploads['basedir'] ) ? (string) $uploads['basedir'] : sys_get_temp_dir();
-		$root    = trailingslashit( $base ) . 'static-site-importer/direct-artifact-imports';
+	/** Resolve the importer-owned root that holds retained direct artifact runs. */
+	public static function root(): string {
+		$root = Static_Site_Importer_Run_Storage::path( 'direct-artifact-imports' );
 		return function_exists( 'apply_filters' ) ? (string) apply_filters( 'static_site_importer_direct_artifact_root', $root ) : $root;
 	}
 
