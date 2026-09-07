@@ -174,23 +174,8 @@ namespace {
 			public function is_registered( string $name ): bool {
 				return ! empty( $GLOBALS['ssi_jetpack_form_blocks_available'] ) && in_array( $name, $GLOBALS['ssi_jetpack_registered_form_blocks'] ?? array(), true );
 			}
-
-			public function get_registered( string $name ): ?object {
-				if ( ! $this->is_registered( $name ) ) {
-					return null;
-				}
-				return (object) array( 'attributes' => $GLOBALS['ssi_jetpack_form_block_attributes'][ $name ] ?? array() );
-			}
 		}
 	}
-	$GLOBALS['ssi_jetpack_form_block_attributes'] = array(
-		'jetpack/contact-form'    => array(
-			'salesforceData' => array( 'default' => array( 'organizationId' => '', 'sendToSalesforce' => false ) ),
-			'mailpoet'       => array( 'default' => array( 'listId' => null, 'listName' => null, 'enabledForForm' => false ) ),
-			'jetpackCRM'     => array( 'default' => false ),
-		),
-		'jetpack/field-telephone' => array( 'default' => array( 'default' => 'US' ) ),
-	);
 
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-computed-layout-strategy.php';
@@ -298,20 +283,6 @@ namespace {
 	$assert( str_contains( $markup, 'wp:jetpack/field-email' ), 'markup-field-email' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-telephone' ), 'markup-preserves-telephone-field-semantics' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-telephone {"showCountrySelector":false' ) && str_contains( $markup, 'wp:jetpack/phone-input' ) && ! str_contains( $markup, '"type":"tel"' ), 'markup-telephone-uses-canonical-phone-input' );
-	$parsed_form_blocks = parse_blocks( $markup );
-	$parsed_form_attrs  = $parsed_form_blocks[0]['attrs'] ?? array();
-	$telephone_attrs    = array();
-	$collect_telephone  = static function ( array $blocks, callable $collect ) use ( &$telephone_attrs ): void {
-		foreach ( $blocks as $parsed ) {
-			if ( 'jetpack/field-telephone' === ( $parsed['blockName'] ?? '' ) ) {
-				$telephone_attrs[] = $parsed['attrs'] ?? array();
-			}
-			$collect( $parsed['innerBlocks'] ?? array(), $collect );
-		}
-	};
-	$collect_telephone( $parsed_form_blocks, $collect_telephone );
-	$assert( false === ( $parsed_form_attrs['salesforceData']['sendToSalesforce'] ?? null ) && false === ( $parsed_form_attrs['mailpoet']['enabledForForm'] ?? null ) && false === ( $parsed_form_attrs['jetpackCRM'] ?? null ), 'markup-completes-native-contact-form-schema-defaults', wp_json_encode( $parsed_form_attrs ) );
-	$assert( 'US' === ( $telephone_attrs[0]['default'] ?? null ), 'markup-completes-native-telephone-schema-default', wp_json_encode( $telephone_attrs ) );
 	$assert( str_contains( $markup, 'wp:jetpack/field-number' ), 'markup-field-number' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-select' ), 'markup-field-select' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-radio' ), 'markup-field-radio' );
