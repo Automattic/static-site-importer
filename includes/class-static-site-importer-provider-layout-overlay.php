@@ -148,7 +148,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				}
 				$declarations = self::presentation_declarations( $control[ $role ]['styles'], $control['index'], $role, $losses );
 				if ( ! empty( $declarations ) ) {
-					$rules[]      = $target[ $role ] . '{' . implode( ';', $declarations ) . '}';
+					$rules[]      = self::authoritative_presentation_selector( $target[ $role ] ) . '{' . implode( ';', $declarations ) . '}';
 					$operations[] = self::presentation_operation( $control['index'], $role, $target[ $role ], false );
 				}
 			}
@@ -163,7 +163,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			}
 			$declarations = self::presentation_declarations( $variant['style_patch'], $index, $role, $losses );
 			if ( ! empty( $declarations ) ) {
-				$rules[]      = self::conditional_rule( $variant['condition'], $target . '{' . implode( ';', $declarations ) . '}' );
+				$rules[]      = self::conditional_rule( $variant['condition'], self::authoritative_presentation_selector( $target ) . '{' . implode( ';', $declarations ) . '}' );
 				$operations[] = self::presentation_operation( $index, $role, $target, true );
 			}
 		}
@@ -233,7 +233,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( preg_match( '/^@(?:media|container) (\((?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)\))\{(.+)\}$/D', $rule, $matches ) ) {
 			return self::safe_compiled_rule( $matches[2] );
 		}
-		if ( ! preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-wrap)?(?: > \.wp-block-button__link)?)?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
+		if ( ! preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-wrap)?(?: > \.wp-block-button__link)?)?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
 		$layout_allowed       = array( 'display', 'width', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'position', 'z-index', 'pointer-events' );
@@ -367,6 +367,10 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			$declarations[] = $map[ $key ] . ':' . $value;
 		}
 		return $declarations;
+	}
+
+	private static function authoritative_presentation_selector( string $selector ): string {
+		return preg_replace( '/^(\.ssi-form-[a-f0-9]{12})/', '$1$1', $selector, 1 ) ?? $selector;
 	}
 
 	private static function safe_presentation_value( mixed $value ): bool {

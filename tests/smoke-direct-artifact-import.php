@@ -660,6 +660,11 @@ $recovered_throw = Static_Site_Importer_Canonical_Import_Service::import( $resum
 $assert( ! empty( $recovered_throw['success'] ) && empty( $recovered_throw['continuation'] ), 'a thrown phase failure must resume from durable receipts without recompiling pages' );
 
 $quality_failure_data = array(
+	'import_report_summary' => array(
+		'status'      => 'failed',
+		'quality_pass' => false,
+		'fail_import' => true,
+	),
 	'quality' => array(
 		'status'             => 'failed',
 		'fallbacks'          => array( array( 'pattern_family' => 'inline_svg', 'reason' => 'inline_svg_fallback' ) ),
@@ -678,6 +683,7 @@ $quality_failure_data = $quality_failure['error']['data'] ?? array();
 $quality_failure_evidence = $quality_failure_data['artifact_run']['failures'][0]['error']['data'] ?? array();
 $quality_failure_response = $quality_failure_data['failure']['error']['data'] ?? array();
 $assert( 'inline_svg_fallback' === ( $quality_failure_response['quality']['fallbacks'][0]['reason'] ?? '' ) && 'runtime_dependent_content' === ( $quality_failure_response['quality']['editability_policy']['failures'][0] ?? '' ) && $quality_failure_response === $quality_failure_evidence, 'quality-gate failures must return actionable fallback and editability reasons in both caller and run evidence' );
+$assert( empty( $quality_failure['success'] ) && 'failed' === ( $quality_failure['import_report_summary']['status'] ?? '' ) && true === ( $quality_failure['import_report_summary']['fail_import'] ?? false ), 'direct artifact quality-gate failures cannot be projected as successful imports' );
 $scrubbed_quality = $quality_failure_response['quality'] ?? array();
 $assert( ! isset( $scrubbed_quality['path'], $scrubbed_quality['workspace'], $scrubbed_quality['manifest'] ) && 1000 === strlen( $scrubbed_quality['long_value'] ?? '' ) && true === ( $scrubbed_quality['many']['_truncated'] ?? false ) && '[truncated]' === ( $scrubbed_quality['over_deep']['one']['two']['three']['four'] ?? '' ), 'quality-gate evidence must retain path stripping, string and item caps, and the original depth bound' );
 $GLOBALS['ssi_direct_materialization_error'] = null;

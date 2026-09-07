@@ -32,6 +32,9 @@ if ( ! class_exists( 'Static_Site_Importer_Client_Script_Policy' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Lifecycle_Compile_Checkpoint' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-lifecycle-compile-checkpoint.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Failed_Plan_Validation' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-failed-plan-validation.php';
+}
 
 /**
  * Generates a block theme from a static HTML document.
@@ -106,6 +109,9 @@ class Static_Site_Importer_Theme_Generator {
 		if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
 			$receipt = isset( $prepared['receipt'] ) && is_array( $prepared['receipt'] ) ? $prepared['receipt'] : array();
 			$error   = $receipt['errors'][0] ?? array();
+			if ( 'failed' === ( $receipt['editability_report']['status'] ?? '' ) ) {
+				return self::failed_editability_admission( $plan, $args, $compiled_import, $receipt );
+			}
 			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan destination preflight failed.' ), $receipt );
 		}
 		$args = $prepared['args'];
@@ -159,6 +165,26 @@ class Static_Site_Importer_Theme_Generator {
 			return $result;
 		}
 		return self::project_materialization_result( $result, $args );
+	}
+
+	/** Build the normal failed-import evidence for a producer-required policy rejection. */
+	private static function failed_editability_admission( array $plan, array $args, array $compiled_import, array $receipt ): WP_Error {
+		$artifacts = Static_Site_Importer_Failed_Plan_Validation::build( $plan, $args, is_array( $compiled_import['compiled'] ?? null ) ? $compiled_import['compiled'] : array() );
+		try {
+			Static_Site_Importer_Failed_Plan_Validation::persist( $artifacts, (string) ( $args['failed_plan_report_destination'] ?? '' ) );
+		} catch ( RuntimeException $error ) {
+			return new WP_Error( 'static_site_importer_failed_plan_report_persistence_failed', $error->getMessage(), $receipt );
+		}
+		$prefix = (string) ( $args['failed_plan_artifact_prefix'] ?? '' );
+		$data   = array_merge(
+			$receipt,
+			$artifacts,
+			array(
+				'import_report_summary' => $artifacts['import_report_summary'],
+				'failed_plan_artifacts' => Static_Site_Importer_Failed_Plan_Validation::artifact_refs( $prefix ),
+			)
+		);
+		return new WP_Error( 'static_site_importer_quality_gate_failed', 'Website artifact did not pass the producer-required editability policy.', $data );
 	}
 
 	/** Project one completed canonical lifecycle into the compatibility result envelope. */

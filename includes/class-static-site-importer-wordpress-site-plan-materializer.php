@@ -298,7 +298,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			);
 		}
 		$state['editability_report'] = self::editability_report_admission( $plan );
-		if ( 'rejected' === $state['editability_report']['status'] ) {
+		if ( in_array( $state['editability_report']['status'], array( 'rejected', 'failed' ), true ) ) {
 			$state['diagnostics'][]  = $state['editability_report']['diagnostic'];
 			$state['failure_reason'] = (string) ( $state['editability_report']['diagnostic']['reason_code'] ?? 'editability_report_rejected' );
 			return array(
@@ -1655,7 +1655,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		} else {
 			return new WP_Error( 'provider_layout_stylesheet_missing' );
 		}
-		$bootstrap                                        = "\n/* Static Site Importer provider layout overlay delivery. */\nadd_action( 'wp_enqueue_scripts', static function (): void {\n\twp_enqueue_style( 'static-site-importer-provider-layout-overlay', get_stylesheet_uri(), array(), wp_get_theme()->get( 'Version' ) );\n}, 20 );\n";
+		$bootstrap                                        = "\n/* Static Site Importer provider layout overlay delivery. */\nadd_action( 'wp_enqueue_scripts', static function (): void {\n\twp_enqueue_style( 'static-site-importer-theme', get_stylesheet_uri(), array(), wp_get_theme()->get( 'Version' ) );\n}, 20 );\n";
 		$writes[ $state['theme_dir'] . '/functions.php' ] = str_contains( $functions, $bootstrap ) ? $functions : $functions . $bootstrap;
 		return $writes;
 	}

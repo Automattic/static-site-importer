@@ -1001,8 +1001,12 @@ class Static_Site_Importer_Form_Seeder {
 				} else {
 					$wrapper_classes[] = $generated_class;
 				}
-				$layer                        = min( 99, max( 0, (int) ( $node['depth'] ?? 0 ) ) );
-				$class_names[]                = implode( ' ', array_map( static fn ( string $class_name ): string => 'ssi-source-wrapper-' . $layer . '--' . $class_name, $wrapper_classes ) );
+				$layer = min( 99, max( 0, (int) ( $node['depth'] ?? 0 ) ) );
+				// The suffix is an explicit runtime projection contract: these classes
+				// describe wrapper layers, not provider block classes. The runtime consumes
+				// them only inside a provider field shell and rebuilds the layer at the
+				// native control, leaving source classes out of persisted block markup.
+				$class_names[]                = implode( ' ', array_map( static fn ( string $class_name ): string => 'ssi-source-wrapper-' . $layer . '--' . $class_name . '-wrap', $wrapper_classes ) );
 				$wrapper_hooks[ $node['id'] ] = 0 === $offset ? $generated_class . '-wrap' : $generated_class;
 				$operations[]                 = array(
 					'dimension'   => 'topology',
