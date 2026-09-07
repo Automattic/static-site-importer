@@ -1177,6 +1177,7 @@ class Static_Site_Importer_Form_Seeder {
 			$tracks    = is_array( $container ) ? preg_split( '/\s+/', trim( (string) ( $container['layout']['columns'] ?? '' ) ) ) : false;
 			$column    = is_array( $sizing ) ? trim( (string) ( $sizing['grid_column'] ?? '' ) ) : '';
 			$track     = is_array( $tracks ) && ctype_digit( $column ) ? $tracks[ (int) $column - 1 ] ?? null : null;
+
 			$variant_sensitive = false;
 			foreach ( $variants_by_node[ $id ] ?? array() as $variant ) {
 				if ( isset( $variant['layout_patch']['column'] ) ) {
