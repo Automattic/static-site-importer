@@ -28,6 +28,7 @@
     "tests/smoke-html-runtime-capabilities.php": { "environment": "standalone-php" },
     "tests/smoke-default-content.php": { "environment": "standalone-php" },
     "tests/smoke-direct-artifact-import.php": { "environment": "standalone-php" },
+    "tests/smoke-run-storage.php": { "environment": "standalone-php" },
     "tests/smoke-rest-import.php": { "environment": "standalone-php" },
     "tests/smoke-lifecycle-compile-checkpoint.php": { "environment": "standalone-php" },
     "tests/smoke-materialized-block-content-validation.php": { "environment": "standalone-php" },

@@ -25,6 +25,9 @@ if ( ! class_exists( 'Static_Site_Importer_URL_Batch_Import' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Website_Artifact_Import_Input' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-website-artifact-import-input.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Run_Storage' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-run-storage.php';
+}
 
 /**
  * Imports a source URL through a provider that returns a website artifact.
@@ -249,9 +252,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 	}
 
 	private static function url_import_root(): string {
-		$upload_dir = function_exists( 'wp_upload_dir' ) ? wp_upload_dir() : array();
-		$base_dir   = isset( $upload_dir['basedir'] ) ? (string) $upload_dir['basedir'] : sys_get_temp_dir();
-		return trailingslashit( $base_dir ) . 'static-site-importer/url-imports';
+		return Static_Site_Importer_Run_Storage::path( 'url-imports' );
 	}
 
 	/** @param array<array-key,mixed> $value @return array<array-key,mixed> */
@@ -274,9 +275,6 @@ class Static_Site_Importer_URL_Import_Runtime {
 	 * @return string
 	 */
 	private static function default_work_dir(): string {
-		$upload_dir = function_exists( 'wp_upload_dir' ) ? wp_upload_dir() : array();
-		$base_dir   = isset( $upload_dir['basedir'] ) ? (string) $upload_dir['basedir'] : sys_get_temp_dir();
-
-		return trailingslashit( $base_dir ) . 'static-site-importer/url-import-' . wp_generate_uuid4();
+		return Static_Site_Importer_Run_Storage::path( 'url-import-' . wp_generate_uuid4() );
 	}
 }
