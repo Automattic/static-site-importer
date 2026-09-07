@@ -2058,8 +2058,43 @@ class Static_Site_Importer_Form_Seeder {
 		return serialize_block( self::parsed_block( $name, $attrs, $inner_blocks, $wrapper, $content ) );
 	}
 
+	/** Fill generated attributes from the active block type's native schema defaults. */
+	private static function block_attributes_with_defaults( string $name, array $attrs ): array {
+		if ( ! class_exists( 'WP_Block_Type_Registry' ) ) {
+			return $attrs;
+		}
+
+		$block_type = WP_Block_Type_Registry::get_instance()->get_registered( $name );
+		if ( ! is_object( $block_type ) || ! is_array( $block_type->attributes ?? null ) ) {
+			return $attrs;
+		}
+
+		$defaults = array();
+		foreach ( $block_type->attributes as $attribute => $schema ) {
+			if ( is_array( $schema ) && array_key_exists( 'default', $schema ) ) {
+				$defaults[ $attribute ] = $schema['default'];
+			}
+		}
+
+		return self::merge_block_attribute_defaults( $defaults, $attrs );
+	}
+
+	/** Preserve source values while recursively completing object-shaped defaults. */
+	private static function merge_block_attribute_defaults( array $defaults, array $attrs ): array {
+		foreach ( $defaults as $key => $default ) {
+			if ( ! array_key_exists( $key, $attrs ) ) {
+				$attrs[ $key ] = $default;
+			} elseif ( is_array( $default ) && is_array( $attrs[ $key ] ) ) {
+				$attrs[ $key ] = self::merge_block_attribute_defaults( $default, $attrs[ $key ] );
+			}
+		}
+
+		return $attrs;
+	}
+
 	/** Build a parsed block, keeping Jetpack's required saved markup in innerContent. */
 	private static function parsed_block( string $name, array $attrs, array $inner_blocks = array(), string $wrapper = '', string $content = '' ): array {
+		$attrs    = self::block_attributes_with_defaults( $name, $attrs );
 		$children = array();
 		foreach ( $inner_blocks as $block ) {
 			if ( ! empty( $block['name'] ) ) {
