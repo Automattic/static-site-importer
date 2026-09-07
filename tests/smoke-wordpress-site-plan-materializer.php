@@ -875,7 +875,7 @@ $overlay_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materi
 );
 $overlay_root    = $GLOBALS['ssi_plan_root'] . '/provider-overlay-plan';
 $assert( 'completed' === $overlay_receipt['status'] && 'completed' === ( $overlay_receipt['completed']['provider_layout_overlays']['status'] ?? '' ), 'provider layout receipt is applied only after stylesheet writes complete' );
-$assert( str_contains( (string) file_get_contents( $overlay_root . '/style.css' ), 'provider layout overlay: abcdef123456' ) && str_contains( (string) file_get_contents( $overlay_root . '/assets/css/editor-style.css' ), 'provider layout overlay: abcdef123456' ) && str_contains( (string) file_get_contents( $overlay_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-provider-layout-overlay', get_stylesheet_uri()" ), 'generated frontend and editor stylesheets contain the deduplicated provider overlay and the frontend stylesheet is enqueued' );
+$assert( str_contains( (string) file_get_contents( $overlay_root . '/style.css' ), 'provider layout overlay: abcdef123456' ) && str_contains( (string) file_get_contents( $overlay_root . '/assets/css/editor-style.css' ), 'provider layout overlay: abcdef123456' ) && str_contains( (string) file_get_contents( $overlay_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-theme', get_stylesheet_uri()" ), 'generated frontend and editor stylesheets contain the deduplicated provider overlay and the frontend stylesheet is enqueued' );
 $resumed_overlay_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$plan,
 	array(
@@ -960,7 +960,7 @@ $explicit_styles_writes = $explicit_styles->invoke(
 	),
 	array( $overlay )
 );
-$assert( is_array( $explicit_styles_writes ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/style.css' ] ?? '', 'body{color:black}' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/css/editor-style.css' ] ?? '', '.editor-styles-wrapper{color:black}' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/style.css' ] ?? '', 'provider layout overlay: abcdef123456' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/css/editor-style.css' ] ?? '', 'provider layout overlay: abcdef123456' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/functions.php' ] ?? '', 'static-site-importer-provider-layout-overlay' ), 'explicit canonical frontend and editor stylesheet payloads derive independent overlay-composed writes with frontend delivery' );
+$assert( is_array( $explicit_styles_writes ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/style.css' ] ?? '', 'body{color:black}' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/css/editor-style.css' ] ?? '', '.editor-styles-wrapper{color:black}' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/style.css' ] ?? '', 'provider layout overlay: abcdef123456' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/css/editor-style.css' ] ?? '', 'provider layout overlay: abcdef123456' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/functions.php' ] ?? '', 'static-site-importer-theme' ), 'explicit canonical frontend and editor stylesheet payloads derive independent overlay-composed writes with frontend delivery' );
 
 $font_result          = ( new ArtifactCompiler() )->compile(
 	array(
