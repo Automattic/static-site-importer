@@ -1180,7 +1180,10 @@ class Static_Site_Importer_Form_Seeder {
 			if ( ! is_array( $sizing ) || 'grid_track' !== ( $sizing['kind'] ?? null ) || 'inline' !== ( $sizing['axis'] ?? null ) || ! preg_match( '/^control-([0-9]+)$/D', $id, $control ) || ! isset( $field_blocks[ (int) $control[1] ] ) || ! is_string( $track ) || ! preg_match( '/^(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em)$/D', $track ) ) {
 				continue;
 			}
-			$overlay_node_targets[] = array( 'id' => $id, 'layout' => array( 'width' => $track ) );
+			$overlay_node_targets[] = array(
+				'id'     => $id,
+				'layout' => array( 'width' => $track ),
+			);
 			$operations[]           = array(
 				'dimension'   => 'layout',
 				'strategy'    => 'provider_grid_track_control_width',

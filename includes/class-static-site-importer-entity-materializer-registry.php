@@ -1301,7 +1301,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( null !== $sizing && ( ! $is_v2 || ! is_array( $sizing ) || ! self::has_only_keys( $sizing, array( 'kind', 'axis', 'container', 'grid_column' ) ) || 'control' !== $node['kind'] || 'grid_track' !== ( $sizing['kind'] ?? null ) || 'inline' !== ( $sizing['axis'] ?? null ) || ! is_string( $sizing['container'] ?? null ) || $node['parent'] !== $sizing['container'] || ! is_string( $sizing['grid_column'] ?? null ) || '' === trim( $sizing['grid_column'] ) || isset( $layout['width'] ) || ! isset( $seen[ $sizing['container'] ] ) ) ) {
 				return array( 'error' => 'layout_graph sizing evidence is malformed.' );
 			}
-			$clean               = array(
+			$clean = array(
 				'id'         => $node['id'],
 				'kind'       => $node['kind'],
 				'parent'     => $parent,
