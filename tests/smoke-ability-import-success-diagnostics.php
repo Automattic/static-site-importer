@@ -185,6 +185,7 @@ $assert( 4 === ( $failed_validation_contract['import_report_quality_counts']['un
 $assert( false === ( $failed_validation_contract['quality_counts']['consistent'] ?? true ), 'failed-validation-flags-stale-report-counts' );
 $assert( 'import_validation_result.counts' === ( $failed_validation_contract['quality_counts']['provenance']['materialized_validation']['path'] ?? '' ), 'failed-validation-identifies-authoritative-count-provenance' );
 $assert( 4 === ( $failed_validation_envelope['result']['import_validation_result']['counts']['fallback_blocks'] ?? null ), 'failed-validation-bounded-result-retains-validation-evidence' );
+$assert( true === ( $failed_validation_envelope['success'] ?? false ) && false === ( $failed_validation_contract['success'] ?? true ), 'failed-validation-preserves-materialization-success-without-claiming-quality-acceptance' );
 
 $provider_resolutions = array();
 for ( $index = 1; $index <= 8; ++$index ) {

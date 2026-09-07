@@ -649,7 +649,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 			);
 		}
 		$input = array(
-			'success'                  => true,
+			'success'                  => empty( $validation['fail_import'] ),
 			'status'                   => isset( $result['import_report_summary']['status'] ) && is_scalar( $result['import_report_summary']['status'] ) ? (string) $result['import_report_summary']['status'] : 'completed',
 			'slug'                     => isset( $result['theme_slug'] ) ? (string) $result['theme_slug'] : '',
 			'name'                     => isset( $result['theme_name'] ) ? (string) $result['theme_name'] : '',

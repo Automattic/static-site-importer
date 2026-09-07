@@ -256,7 +256,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 			}
 		}
 		if ( ! empty( $validation_counts ) ) {
-			$source_counts = array_merge( $source_counts, $validation_counts );
+			$source_counts                         = array_merge( $source_counts, $validation_counts );
 			$provenance['materialized_validation'] = array(
 				'owner'   => 'static-site-importer',
 				'path'    => 'import_validation_result.counts',
@@ -324,7 +324,8 @@ class Static_Site_Importer_Diagnostic_Contract {
 		$counts['unresolved']      = array_intersect_key( $counts, array_flip( $keys ) );
 		$counts['provenance']      = $provenance;
 		$counts['consistent']      = ( empty( $compiler_quality ) || empty( $report_quality ) || self::quality_metrics_agree( self::quality_metric_values( $compiler_quality, $keys ), $report_counts ) )
-			&& ( empty( $validation_counts ) || ( empty( $compiler_quality ) || self::quality_metrics_agree( $validation_counts, self::quality_metric_values( $compiler_quality, $keys ) ) ) && ( empty( $report_quality ) || self::quality_metrics_agree( $validation_counts, $report_counts ) ) );
+			&& ( empty( $validation_counts ) || ( empty( $compiler_quality ) || self::quality_metrics_agree( $validation_counts, self::quality_metric_values( $compiler_quality, $keys ) ) ) )
+			&& ( empty( $report_quality ) || self::quality_metrics_agree( $validation_counts, $report_counts ) );
 
 		return $counts;
 	}
@@ -342,8 +343,8 @@ class Static_Site_Importer_Diagnostic_Contract {
 
 	/** @return array<string,int> */
 	private static function validation_quality_metric_values( array $validation ): array {
-		$counts = isset( $validation['counts'] ) && is_array( $validation['counts'] ) ? $validation['counts'] : array();
-		$map    = array(
+		$counts  = isset( $validation['counts'] ) && is_array( $validation['counts'] ) ? $validation['counts'] : array();
+		$map     = array(
 			'diagnostics'                        => 'diagnostic_count',
 			'fallback_blocks'                    => 'fallback_count',
 			'unsupported_fallbacks'              => 'unsupported_fallback_count',

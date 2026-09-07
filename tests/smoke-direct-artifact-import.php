@@ -25,6 +25,7 @@ function is_wp_error( $value ): bool { return $value instanceof WP_Error; }
 function wp_json_encode( $value, int $options = 0 ) { return json_encode( $value, $options ); }
 function wp_mkdir_p( string $path ): bool { return is_dir( $path ) || mkdir( $path, 0777, true ); }
 function trailingslashit( string $path ): string { return rtrim( $path, '/\\' ) . '/'; }
+function sanitize_key( string $key ): string { return strtolower( preg_replace( '/[^a-z0-9_\-]/', '', strtolower( $key ) ) ); }
 function wp_upload_dir(): array { return array( 'basedir' => $GLOBALS['test_root'] ); }
 function get_current_blog_id(): int { return 17; }
 function get_current_user_id(): int { return 827; }
@@ -97,6 +98,7 @@ require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-client-script-policy.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-website-artifact-import-input.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-direct-artifact-import.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
 
 class Static_Site_Importer_Theme_Generator {
 	public static function compile_website_artifact( array $artifact, array $args = array() ) {
@@ -142,8 +144,15 @@ class Static_Site_Importer_Theme_Generator {
 		return array(
 			'theme_slug'            => 'direct-artifact-fixture',
 			'theme_name'            => 'Direct Artifact Fixture',
-			'quality'               => $plan['quality'] ?? array(),
-			'import_report_summary' => array( 'status' => 'completed' ),
+			'quality'               => array( 'fallback_count' => 2, 'unsupported_fallback_count' => 2, 'pass' => false, 'fail_import' => true ),
+			'import_report'         => array( 'quality' => array( 'fallback_count' => 2, 'unsupported_fallback_count' => 2 ) ),
+			'import_report_summary' => array( 'status' => 'failed', 'quality_pass' => false, 'fail_import' => true, 'fallback_count' => 2, 'unsupported_fallback_count' => 2 ),
+			'import_validation_result' => array(
+				'status'       => 'failed',
+				'quality_pass' => false,
+				'fail_import'  => true,
+				'counts'       => array( 'fallback_blocks' => 2, 'unsupported_fallbacks' => 2 ),
+			),
 			'materialization_receipt' => array(
 				'status'     => 'completed',
 				'page_count' => count( $plan['pages'] ?? array() ),
@@ -296,6 +305,10 @@ $terminal = Static_Site_Importer_Canonical_Import_Service::import( $terminal_req
 $work = $terminal['artifact_run']['work'] ?? array();
 $terminal_work = $terminal['artifact_run']['terminal_result_work'] ?? array();
 $assert( ! empty( $terminal['success'] ) && empty( $terminal['continuation'] ) && 1 === $GLOBALS['ssi_direct_mutations'], 'resumed apply must perform exactly one importer mutation' );
+$assert( 'completed' === ( $terminal['result']['materialization_receipt_summary']['status'] ?? '' ), 'terminal direct artifact response preserves completed materialization status' );
+$assert( 'failed' === ( $terminal['result']['import_report_summary']['status'] ?? '' ) && false === ( $terminal['result']['import_report_summary']['quality_pass'] ?? true ) && true === ( $terminal['result']['import_report_summary']['fail_import'] ?? false ), 'terminal direct artifact response reports failed quality status' );
+$assert( 'failed' === ( $terminal['result']['import_validation_result']['status'] ?? '' ) && 2 === ( $terminal['result']['import_validation_result']['counts']['fallback_blocks'] ?? null ), 'terminal direct artifact response retains failed validation evidence' );
+$assert( false === ( $terminal['fixture_diagnostics']['success'] ?? true ) && 2 === ( $terminal['fixture_diagnostics']['quality_counts']['fallback_count'] ?? null ), 'terminal direct artifact response retains nonzero fallback diagnostics without claiming quality acceptance' );
 $assert( array( 1, 1, 1 ) === ( $work['page_compile_counts'] ?? null ) && 3 === count( $terminal['artifact_run']['receipt_identities'] ?? array() ) && 3 === ( $work['pages_compiled'] ?? 0 ), 'durable counters and receipt evidence must prove every page compiled exactly once' );
 $assert( 1 === ( $work['page_prepare_passes'] ?? 0 ) && 3 === ( $work['page_plans_prepared'] ?? 0 ), 'durable counters must prove every page plan was prepared by one whole-artifact partition' );
 $assert( 1 === ( $work['content_policy_applications'] ?? 0 ) && 1 === ( $work['client_script_policy_applications'] ?? 0 ), 'content and client script policy must each run once before the artifact is frozen' );
