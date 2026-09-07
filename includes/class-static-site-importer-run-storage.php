@@ -57,8 +57,8 @@ final class Static_Site_Importer_Run_Storage {
 	 */
 	public static function legacy_uploads_root(): string {
 		$uploads = function_exists( 'wp_upload_dir' ) ? wp_upload_dir() : array();
-		$basedir = isset( $uploads['basedir'] ) && is_string( $uploads['basedir'] ) && '' !== $uploads['basedir'] ? $uploads['basedir'] : sys_get_temp_dir();
-		return rtrim( $basedir, '/\\' ) . '/' . self::DIRECTORY;
+		$basedir = trim( $uploads['basedir'] ?? '' );
+		return rtrim( '' !== $basedir ? $basedir : sys_get_temp_dir(), '/\\' ) . '/' . self::DIRECTORY;
 	}
 
 	/**
@@ -67,7 +67,7 @@ final class Static_Site_Importer_Run_Storage {
 	 * @return string
 	 */
 	private static function default_root(): string {
-		$content = defined( 'WP_CONTENT_DIR' ) && is_string( WP_CONTENT_DIR ) ? rtrim( WP_CONTENT_DIR, '/\\' ) : '';
+		$content = defined( 'WP_CONTENT_DIR' ) ? rtrim( WP_CONTENT_DIR, '/\\' ) : '';
 		if ( '' === $content ) {
 			return self::legacy_uploads_root();
 		}
