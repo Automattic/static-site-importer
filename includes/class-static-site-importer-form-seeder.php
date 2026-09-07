@@ -382,7 +382,7 @@ class Static_Site_Importer_Form_Seeder {
 	 * @return array<string, mixed>
 	 */
 	private static function seed_form( array $form, bool $available ): array {
-		$form = self::normalize_unconditional_layout_variants( $form );
+		$form        = self::normalize_unconditional_layout_variants( $form );
 		$controls    = isset( $form['controls'] ) && is_array( $form['controls'] ) ? $form['controls'] : array();
 		$selector    = isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '';
 		$source_path = isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '';
@@ -657,17 +657,20 @@ class Static_Site_Importer_Form_Seeder {
 				if ( ! is_array( $fact ) ) {
 					continue;
 				}
-				$fact['condition'] = null;
+				$fact['condition']                             = null;
 				$graph['nodes'][ $node_index ]['provenance'][] = $fact;
 			}
 		}
-		$graph['variants']      = $variants;
+		$graph['variants'] = $variants;
 		$form['layout_graph'] = $graph;
 		return $form;
 	}
 
 	private static function is_unconditional_media_variant( mixed $variant ): bool {
-		return is_array( $variant ) && array( 'kind' => 'media', 'query' => 'all' ) === ( $variant['condition'] ?? null );
+		return is_array( $variant ) && array(
+			'kind'  => 'media',
+			'query' => 'all',
+		) === ( $variant['condition'] ?? null );
 	}
 
 	/**
@@ -1115,8 +1118,8 @@ class Static_Site_Importer_Form_Seeder {
 				$markers[] = 'ssi-source-semantic-wrapper-' . min( 99, max( 0, (int) $node['depth'] ) ) . '--p--' . $class;
 			}
 			$field_blocks[ $control_index ]['attrs']['className'] = trim( implode( ' ', array_filter( array_merge( array( (string) ( $field_blocks[ $control_index ]['attrs']['className'] ?? '' ) ), $markers ) ) ) );
-			$represented_topology_nodes[]                       = $node['id'];
-			$operations[]                                        = array(
+			$represented_topology_nodes[]                         = $node['id'];
+			$operations[] = array(
 				'dimension'   => 'topology',
 				'strategy'    => 'provider_paragraph_wrapper_projection',
 				'target_hash' => hash( 'sha256', $node['id'] ),
