@@ -264,6 +264,11 @@ $assert( ! empty( $frozen['success'] ) && ! empty( $frozen['continuation'] ) && 
 array_pop( $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] );
 $frozen_resumed = Static_Site_Importer_Canonical_Import_Service::import( $resume( (string) $frozen['import_id'], 'plan' ) );
 $assert( ! empty( $frozen_resumed['success'] ) && ! empty( $frozen_resumed['continuation'] ) && 3 === ( $frozen_resumed['artifact_run']['progress']['prepared_count'] ?? 0 ) && 1 === ( $frozen_resumed['artifact_run']['progress']['receipt_count'] ?? 0 ), 'source-free resume must hydrate the immutable artifact once, prepare every page in one pass, and compile only its bounded receipt batch' );
+$frozen_terminal = $frozen_resumed;
+for ( $attempt = 0; $attempt < 10 && ! empty( $frozen_terminal['continuation'] ); ++$attempt ) {
+	$frozen_terminal = Static_Site_Importer_Canonical_Import_Service::import( $resume( (string) $frozen['import_id'], 'plan' ) );
+}
+$assert( ! empty( $frozen_terminal['success'] ) && empty( $frozen_terminal['continuation'] ), 'the frozen plan run must drive to its terminal receipt so identical later plan requests own fresh runs' );
 
 $first = Static_Site_Importer_Canonical_Import_Service::import( $input() );
 $assert( ! empty( $first['success'] ) && ! empty( $first['continuation'] ) && 'pages_remaining' === ( $first['continuation_reason'] ?? '' ) && 3 === ( $first['artifact_run']['progress']['prepared_count'] ?? 0 ) && 1 === ( $first['artifact_run']['progress']['receipt_count'] ?? -1 ) && 'continuing' === ( $first['import_report_summary']['status'] ?? '' ), 'the first invocation must durably prepare all page plans in one partition, compile one bounded receipt batch, and explicitly continue' );
@@ -722,6 +727,36 @@ if ( null === $original_argv_zero ) {
 } else {
 	$_SERVER['argv'][0] = $original_argv_zero;
 }
+
+// A host that lost its import_id (crash, kill, reboot) must find and continue its
+// interrupted run from the identical request alone, instead of recompiling from zero.
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array(
+	static fn ( array $policy ): array => array_merge(
+		$policy,
+		array(
+			'compile_in_process_pages' => 1,
+			'compile_fanout_pages'     => 20,
+		)
+	),
+);
+$amnesiac_first = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+$amnesiac_id    = (string) ( $amnesiac_first['import_id'] ?? '' );
+$assert( ! empty( $amnesiac_first['continuation'] ) && preg_match( '/^[a-f0-9]{64}$/', $amnesiac_id ) && 1 === ( $amnesiac_first['artifact_run']['progress']['receipt_count'] ?? 0 ), 'the amnesiac scenario must begin with a fresh interrupted run holding one durable receipt' );
+$amnesiac_second = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+$assert( $amnesiac_id === (string) ( $amnesiac_second['import_id'] ?? '' ) && 2 === ( $amnesiac_second['artifact_run']['progress']['receipt_count'] ?? 0 ), 'an identical request without an import_id must discover and continue the interrupted run instead of recompiling from zero' );
+$divergent         = $input( 'plan' );
+$divergent['slug'] = 'discovery-mismatch-fixture';
+$divergent_run     = Static_Site_Importer_Canonical_Import_Service::import( $divergent );
+$assert( '' !== (string) ( $divergent_run['import_id'] ?? '' ) && $amnesiac_id !== (string) ( $divergent_run['import_id'] ?? '' ), 'a request with different import options must never adopt another request\'s interrupted run' );
+$amnesiac_terminal = $amnesiac_second;
+for ( $attempt = 0; $attempt < 10 && ! empty( $amnesiac_terminal['continuation'] ); ++$attempt ) {
+	$amnesiac_terminal = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+	$assert( $amnesiac_id === (string) ( $amnesiac_terminal['import_id'] ?? '' ), 'every amnesiac re-request must keep continuing the same discovered run' );
+}
+$amnesiac_work = $amnesiac_terminal['artifact_run']['work'] ?? array();
+$assert( ! empty( $amnesiac_terminal['success'] ) && empty( $amnesiac_terminal['continuation'] ) && array( 1, 1, 1 ) === ( $amnesiac_work['page_compile_counts'] ?? null ), 'a run driven only by amnesiac re-requests must complete with every page compiled exactly once' );
+$post_completion = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+$assert( '' !== (string) ( $post_completion['import_id'] ?? '' ) && $amnesiac_id !== (string) ( $post_completion['import_id'] ?? '' ), 'a completed run must never be adopted by discovery; identical new requests start their own run' );
 
 Static_Site_Importer_Artifact_Run_Workspace::purge_expired_in( $test_root );
 $primitive_workspace->purge();
