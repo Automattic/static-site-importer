@@ -1276,7 +1276,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$seen  = array();
 		$nodes = array();
 		foreach ( $candidate['nodes'] as $node ) {
-			if ( ! is_array( $node ) || ! self::has_only_keys( $node, array( 'id', 'kind', 'parent', 'order', 'source', 'layout', 'provenance' ) ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^(?:form|wrapper-[0-9]+|control-[0-9]+)$/D', $node['id'] ) || isset( $seen[ $node['id'] ] ) || ! in_array( $node['kind'] ?? null, array( 'container', 'control' ), true ) || ! is_int( $node['order'] ?? null ) || $node['order'] < 0 || ! is_array( $node['source'] ?? null ) || ! is_array( $node['layout'] ?? null ) || ! is_array( $node['provenance'] ?? null ) ) {
+			if ( ! is_array( $node ) || ! self::has_only_keys( $node, array( 'id', 'kind', 'parent', 'order', 'source', 'layout', 'provenance', 'sizing' ) ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^(?:form|wrapper-[0-9]+|control-[0-9]+)$/D', $node['id'] ) || isset( $seen[ $node['id'] ] ) || ! in_array( $node['kind'] ?? null, array( 'container', 'control' ), true ) || ! is_int( $node['order'] ?? null ) || $node['order'] < 0 || ! is_array( $node['source'] ?? null ) || ! is_array( $node['layout'] ?? null ) || ! is_array( $node['provenance'] ?? null ) ) {
 				return array( 'error' => 'layout_graph contains an unsupported canonical node.' );
 			}
 			$parent = $node['parent'] ?? null;
@@ -1297,7 +1297,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					return array( 'error' => 'layout_graph layout facts must use only producer-supported keys.' );
 				}
 			}
-			$clean               = array(
+			$sizing = $node['sizing'] ?? null;
+			if ( null !== $sizing && ( ! $is_v2 || ! is_array( $sizing ) || ! self::has_only_keys( $sizing, array( 'kind', 'axis', 'container', 'grid_column' ) ) || 'control' !== $node['kind'] || 'grid_track' !== ( $sizing['kind'] ?? null ) || 'inline' !== ( $sizing['axis'] ?? null ) || ! is_string( $sizing['container'] ?? null ) || $node['parent'] !== $sizing['container'] || ! is_string( $sizing['grid_column'] ?? null ) || '' === trim( $sizing['grid_column'] ) || isset( $layout['width'] ) || ! isset( $seen[ $sizing['container'] ] ) ) ) {
+				return array( 'error' => 'layout_graph sizing evidence is malformed.' );
+			}
+			$clean = array(
 				'id'         => $node['id'],
 				'kind'       => $node['kind'],
 				'parent'     => $parent,
@@ -1306,6 +1310,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'layout'     => array_intersect_key( $layout, array_flip( $layout_keys ) ),
 				'provenance' => array_slice( $node['provenance'], 0, 16 ),
 			);
+			if ( is_array( $sizing ) ) {
+				$clean['sizing'] = $sizing;
+			}
 			$seen[ $node['id'] ] = true;
 			$nodes[]             = $clean;
 		}

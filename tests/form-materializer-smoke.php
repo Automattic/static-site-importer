@@ -507,6 +507,34 @@ namespace {
 	$grid_submit_css = (string) ( $grid_submit_row['provider_layout_overlay_css']['css'] ?? '' );
 	$assert( empty( $grid_submit_validation['errors'] ) && 'mapped' === ( $grid_submit_row['status'] ?? '' ) && in_array( 'provider_grid_span_submit', array_column( $grid_submit_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ) && str_contains( $grid_submit_css, 'width:33.333%' ) && str_contains( $grid_submit_css, '@media (max-width: 767px)' ) && str_contains( $grid_submit_css, 'width:100%' ), 'proven-grid-span-submit-transposes-to-responsive-provider-width', wp_json_encode( array( 'validation' => $grid_submit_validation, 'row' => $grid_submit_row ) ) );
 
+	$grid_track_form = array(
+		'selector' => 'form.source-grid',
+		'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ), array( 'tag' => 'input', 'type' => 'text', 'name' => 'cancel_note', 'label' => 'Cancel note' ) ),
+		'control_topology' => array( 'schema' => 'generic/form-control-topology/v1', 'max_depth' => 16, 'max_nodes' => 128, 'truncated' => false, 'nodes' => array( array( 'id' => 'control-0', 'kind' => 'control', 'parent' => null, 'order' => 0, 'depth' => 0, 'control' => 0 ), array( 'id' => 'control-1', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 1 ), array( 'id' => 'control-2', 'kind' => 'control', 'parent' => null, 'order' => 2, 'depth' => 0, 'control' => 2 ) ) ),
+		'layout_graph' => $v2_layout_graph( array(
+			array( 'id' => 'form', 'kind' => 'container', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'form', 'classes' => array( 'source-grid' ) ), 'layout' => array( 'display' => 'grid', 'columns' => '1fr 155.4px' ), 'provenance' => array() ),
+			array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'form', 'order' => 1, 'source' => array( 'tag' => 'button', 'classes' => array() ), 'layout' => array( 'column' => '2' ), 'provenance' => array(), 'sizing' => array( 'kind' => 'grid_track', 'axis' => 'inline', 'container' => 'form', 'grid_column' => '2' ) ),
+			array( 'id' => 'control-2', 'kind' => 'control', 'parent' => 'form', 'order' => 2, 'source' => array( 'tag' => 'input', 'classes' => array() ), 'layout' => array( 'justify_self' => 'start' ), 'provenance' => array() ),
+		) ),
+		'presentation_graph' => array( 'schema' => 'generic/computed-form-presentation/v1', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'controls' => 128, 'rules_per_role' => 32 ), 'variants' => array(), 'diagnostics' => array(), 'controls' => array( array( 'index' => 1, 'control' => array( 'styles' => array( 'padding' => '5%' ), 'provenance' => array() ) ) ) ),
+	);
+	$grid_track_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $grid_track_form ) ) );
+	$grid_track_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $grid_track_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$grid_track_css        = (string) ( $grid_track_row['provider_layout_overlay_css']['css'] ?? '' );
+	$source_control_width  = 155.4;
+	$source_padding        = $source_control_width * 0.05;
+	$content_control_hook  = 'ssi-node-' . substr( hash( 'sha256', 'ssi-form-' . substr( hash( 'sha256', "\nform.source-grid" ), 0, 12 ) . "\ncontrol-2" ), 0, 12 );
+	preg_match( '/width:([0-9.]+)px/', $grid_track_css, $provider_width );
+	$provider_padding = isset( $provider_width[1] ) ? (float) $provider_width[1] * 0.05 : 0.0;
+	$assert( empty( $grid_track_validation['errors'] ) && 'mapped' === ( $grid_track_row['status'] ?? '' ) && in_array( 'provider_grid_track_control_width', array_column( $grid_track_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ) && 1 === substr_count( $grid_track_css, 'width:155.4px' ) && str_contains( $grid_track_css, 'padding:5%' ) && ! str_contains( $grid_track_css, '.' . $content_control_hook . '{width:' ) && abs( $source_padding - $provider_padding ) < 0.001, 'grid-track-submit-keeps-source-width-and-percentage-padding-when-provider-layout-differs', wp_json_encode( array( 'css' => $grid_track_css, 'source_width' => $source_control_width, 'source_padding' => $source_padding, 'provider_padding' => $provider_padding ) ) );
+	$responsive_grid_track_form                                      = $grid_track_form;
+	$responsive_grid_track_condition                                 = array( 'kind' => 'media', 'query' => '(max-width: 48rem)' );
+	$responsive_grid_track_form['layout_graph']['variants'][]        = array( 'node' => 'form', 'condition' => $responsive_grid_track_condition, 'layout_patch' => array( 'columns' => '1fr' ), 'precedence' => array( 'grid-template-columns' => array( 'source_order' => 1, 'specificity' => 1, 'important' => false ) ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'd', 64 ), 'selector' => '.source-grid', 'condition' => $responsive_grid_track_condition, 'properties' => array( 'grid-template-columns' ) ) ) );
+	$responsive_grid_track_validation                                = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $responsive_grid_track_form ) ) );
+	$responsive_grid_track_row                                       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $responsive_grid_track_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$responsive_grid_track_css                                       = (string) ( $responsive_grid_track_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert( empty( $responsive_grid_track_validation['errors'] ) && ! in_array( 'provider_grid_track_control_width', array_column( $responsive_grid_track_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ) && ! str_contains( $responsive_grid_track_css, 'width:155.4px' ), 'grid-track-sizing-skips-conditional-track-or-placement-changes', wp_json_encode( array( 'validation' => $responsive_grid_track_validation, 'row' => $responsive_grid_track_row ) ) );
+
 	// V2 percentage facts replace only a complete, provenance-backed sibling row.
 	$deep_width_form = array(
 		'selector' => 'form.deep-widths',

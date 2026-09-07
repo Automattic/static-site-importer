@@ -1171,6 +1171,39 @@ class Static_Site_Importer_Form_Seeder {
 				'target_hash' => hash( 'sha256', $id ),
 			);
 		}
+		foreach ( $layout_nodes_by_id as $id => $layout_node ) {
+			$sizing    = $layout_node['sizing'] ?? null;
+			$container = is_array( $sizing ) ? $layout_nodes_by_id[ $sizing['container'] ?? '' ] ?? null : null;
+			$tracks    = is_array( $container ) ? preg_split( '/\s+/', trim( (string) ( $container['layout']['columns'] ?? '' ) ) ) : false;
+			$column    = is_array( $sizing ) ? trim( (string) ( $sizing['grid_column'] ?? '' ) ) : '';
+			$track     = is_array( $tracks ) && ctype_digit( $column ) ? $tracks[ (int) $column - 1 ] ?? null : null;
+
+			$variant_sensitive = false;
+			foreach ( $variants_by_node[ $id ] ?? array() as $variant ) {
+				if ( isset( $variant['layout_patch']['column'] ) ) {
+					$variant_sensitive = true;
+					break;
+				}
+			}
+			foreach ( $variants_by_node[ $sizing['container'] ?? '' ] ?? array() as $variant ) {
+				if ( isset( $variant['layout_patch']['columns'] ) ) {
+					$variant_sensitive = true;
+					break;
+				}
+			}
+			if ( ! is_array( $sizing ) || 'grid_track' !== ( $sizing['kind'] ?? null ) || 'inline' !== ( $sizing['axis'] ?? null ) || ! preg_match( '/^control-([0-9]+)$/D', $id, $control ) || ! isset( $field_blocks[ (int) $control[1] ] ) || ! is_string( $track ) || ! preg_match( '/^(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em)$/D', $track ) || $variant_sensitive ) {
+				continue;
+			}
+			$overlay_node_targets[] = array(
+				'id'     => $id,
+				'layout' => array( 'width' => $track ),
+			);
+			$operations[]           = array(
+				'dimension'   => 'layout',
+				'strategy'    => 'provider_grid_track_control_width',
+				'target_hash' => hash( 'sha256', $id ),
+			);
+		}
 		foreach ( $nodes as $node ) {
 			$id = is_array( $node ) && 'control' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
 			if ( '' === $id || 'none' !== ( $layout_by_node[ $id ]['display'] ?? null ) ) {
