@@ -382,6 +382,7 @@ class Static_Site_Importer_Form_Seeder {
 	 * @return array<string, mixed>
 	 */
 	private static function seed_form( array $form, bool $available ): array {
+		$form        = self::normalize_unconditional_layout_variants( $form );
 		$controls    = isset( $form['controls'] ) && is_array( $form['controls'] ) ? $form['controls'] : array();
 		$selector    = isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '';
 		$source_path = isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '';
@@ -615,6 +616,61 @@ class Static_Site_Importer_Form_Seeder {
 			$row['unaccepted_receipt_loss_count']  = count( $unaccepted_losses );
 		}
 		return $row;
+	}
+
+	/**
+	 * Canonicalize the CSS identity condition before provider planning.
+	 *
+	 * A producer may retain a stylesheet's implicit `media="all"` wrapper as a
+	 * graph variant. It has no responsive behavior, so an unconflicted patch can
+	 * safely become a base fact. Conflicting values remain variants and continue
+	 * through the existing fail-closed receipt path.
+	 */
+	private static function normalize_unconditional_layout_variants( array $form ): array {
+		$graph = $form['layout_graph'] ?? null;
+		if ( ! is_array( $graph ) || ! is_array( $graph['nodes'] ?? null ) || ! is_array( $graph['variants'] ?? null ) ) {
+			return $form;
+		}
+
+		$nodes = array();
+		foreach ( $graph['nodes'] as $index => $node ) {
+			if ( is_array( $node ) && is_string( $node['id'] ?? null ) && is_array( $node['layout'] ?? null ) ) {
+				$nodes[ $node['id'] ] = $index;
+			}
+		}
+		$variants = array();
+		foreach ( $graph['variants'] as $variant ) {
+			$node_id = is_array( $variant ) ? $variant['node'] ?? null : null;
+			$patch   = is_array( $variant ) && is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : null;
+			if ( ! is_string( $node_id ) || ! isset( $nodes[ $node_id ] ) || ! is_array( $patch ) || ! self::is_unconditional_media_variant( $variant ) ) {
+				$variants[] = $variant;
+				continue;
+			}
+			$node_index = $nodes[ $node_id ];
+			$layout     = $graph['nodes'][ $node_index ]['layout'];
+			if ( array_intersect_key( $layout, $patch ) && array_diff_assoc( array_intersect_key( $layout, $patch ), $patch ) ) {
+				$variants[] = $variant;
+				continue;
+			}
+			$graph['nodes'][ $node_index ]['layout'] = array_merge( $layout, $patch );
+			foreach ( $variant['provenance'] ?? array() as $fact ) {
+				if ( ! is_array( $fact ) ) {
+					continue;
+				}
+				$fact['condition']                             = null;
+				$graph['nodes'][ $node_index ]['provenance'][] = $fact;
+			}
+		}
+		$graph['variants']    = $variants;
+		$form['layout_graph'] = $graph;
+		return $form;
+	}
+
+	private static function is_unconditional_media_variant( mixed $variant ): bool {
+		return is_array( $variant ) && array(
+			'kind'  => 'media',
+			'query' => 'all',
+		) === ( $variant['condition'] ?? null );
 	}
 
 	/**
@@ -1043,6 +1099,32 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			$field_blocks[ $control_index ]['attrs']['className'] = trim( (string) preg_replace( '/\s+/', ' ', implode( ' ', array_filter( $class_names ) ) ) );
 		}
+		// Jetpack fields own their editable label/control pair. A source paragraph
+		// around exactly that pair can be restored at render time without claiming
+		// that an arbitrary semantic wrapper is a Gutenberg group.
+		foreach ( $nodes as $node ) {
+			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? null ) || 'p' !== ( $node['tag'] ?? null ) || ! is_string( $node['id'] ?? null ) ) {
+				continue;
+			}
+			$branch_controls = array_values( array_filter( $collect_controls( $node ), static fn ( int $index ): bool => isset( $field_blocks[ $index ] ) ) );
+			if ( 1 !== count( $branch_controls ) ) {
+				continue;
+			}
+			$control_index = $branch_controls[0];
+			$classes       = preg_split( '/\s+/', trim( (string) ( $node['class'] ?? '' ) ) );
+			$classes       = false === $classes ? array() : $classes;
+			$markers       = array( 'ssi-source-semantic-wrapper-' . min( 99, max( 0, (int) $node['depth'] ) ) . '--p' );
+			foreach ( $classes as $class ) {
+				$markers[] = 'ssi-source-semantic-wrapper-' . min( 99, max( 0, (int) $node['depth'] ) ) . '--p--' . $class;
+			}
+			$field_blocks[ $control_index ]['attrs']['className'] = trim( implode( ' ', array_filter( array_merge( array( (string) ( $field_blocks[ $control_index ]['attrs']['className'] ?? '' ) ), $markers ) ) ) );
+			$represented_topology_nodes[]                         = $node['id'];
+			$operations[] = array(
+				'dimension'   => 'topology',
+				'strategy'    => 'provider_paragraph_wrapper_projection',
+				'target_hash' => hash( 'sha256', $node['id'] ),
+			);
+		}
 		$mapped_controls = array_keys( $field_blocks );
 		sort( $mapped_controls );
 		foreach ( $nodes as $node ) {
@@ -1463,7 +1545,7 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		foreach ( $nodes as $node ) {
 			$node_id = is_array( $node ) && 'wrapper' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
-			$branch  = '' !== $node_id ? $collect_controls( $node ) : array();
+			$branch  = '' !== $node_id ? array_values( array_filter( $collect_controls( $node ), static fn ( int $index ): bool => isset( $field_blocks[ $index ] ) ) ) : array();
 			sort( $branch );
 			if ( '' === $node_id || count( $mapped_controls ) < 2 || $branch !== $mapped_controls || isset( $wrapper_hooks[ $node_id ] ) ) {
 				continue;

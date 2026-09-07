@@ -31,7 +31,7 @@ final class Static_Site_Importer_Provider_Form_Runtime {
 	/** Move source submit presentation from Core's wrapper onto its button control. */
 	public static function project_submit_presentation( string $html, array $block = array() ): string {
 		$class_name = isset( $block['attrs']['className'] ) && is_string( $block['attrs']['className'] ) ? $block['attrs']['className'] : '';
-		if ( ! str_contains( $class_name, 'ssi-source-submit--' ) ) {
+		if ( ! str_contains( $class_name, 'ssi-source-submit--' ) && ! str_contains( $class_name, 'ssi-source-semantic-wrapper-' ) ) {
 			return $html;
 		}
 		$source_classes = array();
@@ -53,11 +53,12 @@ final class Static_Site_Importer_Provider_Form_Runtime {
 			$html,
 			1
 		);
-		if ( ! is_string( $projected ) || empty( $source_classes ) ) {
+		if ( ! is_string( $projected ) ) {
 			return $html;
 		}
-		$source_classes = array_values( array_unique( $source_classes ) );
-		$projected      = preg_replace_callback(
+		if ( ! empty( $source_classes ) ) {
+			$source_classes = array_values( array_unique( $source_classes ) );
+			$projected      = preg_replace_callback(
 			'/<button\b([^>]*)>/is',
 			static function ( array $matches ) use ( $source_classes ): string {
 				$attributes = $matches[1];
@@ -75,8 +76,9 @@ final class Static_Site_Importer_Provider_Form_Runtime {
 			},
 			$projected,
 			1
-		);
-		return is_string( $projected ) ? $projected : $html;
+			);
+		}
+		return is_string( $projected ) ? self::project_semantic_wrappers( $projected ) : $html;
 	}
 
 	/**
@@ -126,7 +128,7 @@ final class Static_Site_Importer_Provider_Form_Runtime {
 			$html
 		);
 		if ( ! is_string( $projected ) || empty( $wrapper_layers ) ) {
-			return is_string( $projected ) ? $projected : $html;
+			return is_string( $projected ) ? self::project_semantic_wrappers( $projected ) : $html;
 		}
 
 		ksort( $wrapper_layers );
@@ -143,6 +145,38 @@ final class Static_Site_Importer_Provider_Form_Runtime {
 			$projected,
 			1
 		);
-		return is_string( $wrapped ) ? $wrapped : $projected;
+		return self::project_semantic_wrappers( is_string( $wrapped ) ? $wrapped : $projected );
+	}
+
+	/** Restore a bounded source paragraph around a provider-owned field or button. */
+	private static function project_semantic_wrappers( string $html ): string {
+		$wrappers  = array();
+		$projected = preg_replace_callback(
+			'/\bclass=(["\'])(.*?)\1/s',
+			static function ( array $matches ) use ( &$wrappers ): string {
+				$classes = preg_split( '/\s+/', trim( $matches[2] ) );
+				$output  = array();
+				foreach ( false === $classes ? array() : $classes as $class ) {
+					if ( preg_match( '/^ssi-source-semantic-wrapper-([0-9]{1,2})--p(?:--([A-Za-z_][A-Za-z0-9_-]{0,79}))?$/D', $class, $marker ) ) {
+						$wrappers[ (int) $marker[1] ][] = $marker[2] ?? '';
+						continue;
+					}
+					$output[] = $class;
+				}
+				return 'class=' . $matches[1] . implode( ' ', $output ) . $matches[1];
+			},
+			$html,
+			1
+		);
+		if ( ! is_string( $projected ) || empty( $wrappers ) ) {
+			return is_string( $projected ) ? $projected : $html;
+		}
+		ksort( $wrappers );
+		foreach ( array_reverse( $wrappers, true ) as $classes ) {
+			$classes   = array_values( array_filter( array_unique( $classes ) ) );
+			$attribute = empty( $classes ) ? '' : ' class="' . implode( ' ', $classes ) . '"';
+			$projected = '<p' . $attribute . '>' . $projected . '</p>';
+		}
+		return $projected;
 	}
 }
