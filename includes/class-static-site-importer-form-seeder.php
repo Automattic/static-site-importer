@@ -661,7 +661,7 @@ class Static_Site_Importer_Form_Seeder {
 				$graph['nodes'][ $node_index ]['provenance'][] = $fact;
 			}
 		}
-		$graph['variants'] = $variants;
+		$graph['variants']    = $variants;
 		$form['layout_graph'] = $graph;
 		return $form;
 	}
