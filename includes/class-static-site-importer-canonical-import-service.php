@@ -167,6 +167,25 @@ class Static_Site_Importer_Canonical_Import_Service {
 				$args['runtime_lifecycle_phase']         = 'prepare';
 				$args['runtime_lifecycle_invocation_id'] = wp_generate_uuid4();
 			}
+			$resumable = Static_Site_Importer_Direct_Artifact_Import::find_resumable( $artifact, $args, $type, $operation );
+			if ( '' !== $resumable ) {
+				$result = Static_Site_Importer_Direct_Artifact_Import::resume(
+					$resumable,
+					$args,
+					$type,
+					$operation,
+					array(
+						'type'      => $type,
+						'import_id' => $resumable,
+					)
+				);
+				if ( ! is_wp_error( $result ) ) {
+					return $result;
+				}
+				if ( ! self::discovered_resume_may_restart( $result ) ) {
+					return self::error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
+				}
+			}
 			$result = Static_Site_Importer_Direct_Artifact_Import::start( $artifact, $args, $type, $operation, $provenance, $payload_reader ?? null );
 			return is_wp_error( $result ) ? self::error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() ) : $result;
 		}
@@ -216,6 +235,28 @@ class Static_Site_Importer_Canonical_Import_Service {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * Whether a discovered-run resume refusal may safely fall back to a fresh start.
+	 *
+	 * Identity refusals mean the retained run simply is not this request's run,
+	 * so starting fresh matches the pre-discovery behavior. Anything else — the
+	 * materialization-ambiguity fence included — is the run's real outcome and
+	 * must surface instead of being masked by a silent second run.
+	 */
+	private static function discovered_resume_may_restart( WP_Error $error ): bool {
+		return in_array(
+			(string) $error->get_error_code(),
+			array(
+				'static_site_importer_invalid_direct_artifact_import_id',
+				'static_site_importer_direct_artifact_run_not_found',
+				'static_site_importer_direct_artifact_run_mismatch',
+				'static_site_importer_direct_artifact_implementation_changed',
+				'static_site_importer_direct_artifact_run_expired',
+			),
+			true
+		);
 	}
 
 	private static function direct_artifact_continuation_available(): bool {

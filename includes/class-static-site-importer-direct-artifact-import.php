@@ -174,6 +174,63 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		return self::execute( $workspace, $run, $args );
 	}
 
+	/**
+	 * Locate the newest retained, still-running run this request could resume.
+	 *
+	 * Matches the identity resume() re-validates — the normalized artifact
+	 * content hash plus the stored binding (source type, operation, normalized
+	 * args, owner) and the compiler/policy implementation binding — so a
+	 * discovered import_id is safe to hand straight to resume(). Completed and
+	 * failed runs are never matched: a completed run replays its terminal
+	 * receipt only through an explicit import_id, and a failed run restarts
+	 * deliberately.
+	 *
+	 * @param array<string,mixed> $artifact
+	 * @param array<string,mixed> $args
+	 * @return string The resumable import_id, or '' when none matches.
+	 */
+	public static function find_resumable( array $artifact, array $args, string $source_type, string $operation ): string {
+		$root = self::root();
+		if ( ! is_dir( $root ) ) {
+			return '';
+		}
+		$requested = array(
+			'source_type'     => $source_type,
+			'operation'       => $operation,
+			'args'            => self::binding_args( $args ),
+			'owner'           => self::owner(),
+			'source_identity' => self::hash_json( $artifact, false ),
+			'implementation'  => self::implementation_binding(),
+		);
+		$found     = '';
+		$found_at  = 0;
+		$entries   = scandir( $root );
+		foreach ( false === $entries ? array() : $entries as $entry ) {
+			if ( ! preg_match( '/^\.ssi-artifact-run-direct-([a-f0-9]{64})$/D', $entry, $matched ) ) {
+				continue;
+			}
+			$workspace = self::workspace( $matched[1], false );
+			if ( is_wp_error( $workspace ) || $workspace->is_expired() ) {
+				continue;
+			}
+			$run = self::read_run( $workspace, $matched[1] );
+			if ( is_wp_error( $run ) || 'running' !== ( $run['state'] ?? '' ) ) {
+				continue;
+			}
+			foreach ( $requested as $key => $value ) {
+				if ( self::canonical( $value ) !== self::canonical( $run['binding'][ $key ] ?? null ) ) {
+					continue 2;
+				}
+			}
+			$updated = (int) @filemtime( trailingslashit( $root ) . $entry . '/run.json' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- A vanished run.json only demotes the candidate's recency.
+			if ( '' === $found || $updated >= $found_at ) {
+				$found    = $matched[1];
+				$found_at = $updated;
+			}
+		}
+		return $found;
+	}
+
 	/** Compile one isolated page shard and publish only immutable receipt checkpoints. */
 	public static function compile_worker( string $import_id, array $page_ids ) {
 		self::$checkpoint_read_cache = array();
