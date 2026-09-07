@@ -65,7 +65,7 @@ export function runtimeProfileSettings(profile) {
   return profile ? { manifest: "runtime-package-manifest.json", profile } : {}
 }
 
-export function buildIdentity({ ssiSha, ssiDiff, blocksEngineSha, blocksEngineRef, blocksEngineDiff, composerLock, runtimeProfile = "website-artifact-import" }) {
+export function buildIdentity({ ssiSha, ssiDiff, blocksEngineSha, blocksEngineRef, composerLock, runtimeProfile = "website-artifact-import" }) {
   return {
     schema,
     command: "npm run build:dev-package",
@@ -74,7 +74,7 @@ export function buildIdentity({ ssiSha, ssiDiff, blocksEngineSha, blocksEngineRe
       dirty: ssiDiff !== null,
       diff_sha256: ssiDiff,
     },
-    blocks_engine: { ref: blocksEngineRef, sha: blocksEngineSha, dirty: blocksEngineDiff !== null, diff_sha256: blocksEngineDiff },
+    blocks_engine: { ref: blocksEngineRef, sha: blocksEngineSha },
     composer_lock_sha256: digest(composerLock),
     runtime_profile: runtimeProfile,
   }
@@ -151,20 +151,11 @@ export async function buildDevelopmentPackage(options, dependencies = {}) {
       await writeFile(runtimeManifestPath, `${JSON.stringify(runtimeManifest, null, 2)}\n`)
     }
     const includeFigma = !runtimeProfile || runtimeProfile.selectors.some((selector) => selector.path === "vendor/automattic/blocks-engine-figma-transformer/")
-    const blocksEngineStatus = await run("git", ["status", "--porcelain=v1", "-z"], { cwd: options.blocksEnginePath, allowEmpty: true })
-    const blocksEnginePaths = blocksEngineStatus.length
-      ? [...new Set([
-        ...text(await run("git", ["diff", "--name-only", "-z", "HEAD"], { cwd: options.blocksEnginePath })).split("\0"),
-        ...text(await run("git", ["ls-files", "-z", "--others", "--exclude-standard"], { cwd: options.blocksEnginePath })).split("\0"),
-      ])].filter((path) => path.startsWith("php-transformer/") || (includeFigma && path.startsWith("figma-transformer/")))
-      : []
-    const blocksEngineDiff = blocksEnginePaths.length ? await worktreeIdentity(options.blocksEnginePath, blocksEnginePaths) : null
 
     await mkdir(blocksEngine, { recursive: true })
     const blocksArchive = join(temporaryDirectory, "blocks-engine.tar")
     await run("git", ["archive", "--format=tar", `--output=${blocksArchive}`, blocksEngineSha, "php-transformer", ...(includeFigma ? ["figma-transformer"] : [])], { cwd: options.blocksEnginePath })
     await extractArchive(blocksArchive, blocksEngine)
-    await overlayWorkingTree(options.blocksEnginePath, blocksEngine, blocksEnginePaths)
 
     const composerPath = join(snapshot, "composer.json")
     const manifest = JSON.parse(await readFile(composerPath, "utf8"))
@@ -172,7 +163,7 @@ export async function buildDevelopmentPackage(options, dependencies = {}) {
     await run("composer", ["update", "automattic/blocks-engine-php-transformer", ...(includeFigma ? ["automattic/blocks-engine-figma-transformer"] : []), "--with-all-dependencies", "--no-dev", "--no-interaction", "--prefer-dist"], { cwd: snapshot })
 
     const composerLock = await readFile(join(snapshot, "composer.lock"))
-    const identity = { ssiSha, ssiDiff, blocksEngineSha, blocksEngineRef: options.blocksEngineRef, blocksEngineDiff, composerLock, runtimeProfile: options.runtimeProfile ?? "website-artifact-import" }
+    const identity = { ssiSha, ssiDiff, blocksEngineSha, blocksEngineRef: options.blocksEngineRef, composerLock, runtimeProfile: options.runtimeProfile ?? "website-artifact-import" }
     await writeFile(join(snapshot, packagedIdentityFile), `${JSON.stringify(buildIdentity(identity), null, 2)}\n`)
 
     const homeboyPath = join(snapshot, "homeboy.json")

@@ -165,7 +165,7 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 			},
 			$reasons
 		);
-		$reasons = array_values( array_filter( $reasons, static fn( mixed $reason ): bool => is_string( $reason ) && '' !== $reason ) );
+		$reasons = array_values( array_filter( $reasons, static fn( string $reason ): bool => '' !== $reason ) );
 		return empty( $reasons ) ? array( 'canonical_plan_quality_gate_failed' ) : array_slice( $reasons, 0, self::MAX_DIAGNOSTICS );
 	}
 

@@ -1001,7 +1001,7 @@ class Static_Site_Importer_Form_Seeder {
 				} else {
 					$wrapper_classes[] = $generated_class;
 				}
-				$layer                        = min( 99, max( 0, (int) ( $node['depth'] ?? 0 ) ) );
+				$layer = min( 99, max( 0, (int) ( $node['depth'] ?? 0 ) ) );
 				// The suffix is an explicit runtime projection contract: these classes
 				// describe wrapper layers, not provider block classes. The runtime consumes
 				// them only inside a provider field shell and rebuilds the layer at the

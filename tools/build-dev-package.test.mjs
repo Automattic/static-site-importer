@@ -51,25 +51,24 @@ test("provenance binds immutable refs, the dirty identity, lock, and ZIP", async
   await mkdir(directory, { recursive: true })
   await writeFile(zip, "zip fixture")
   const receipt = provenance({
-    ssiSha: "a".repeat(40), ssiDiff: "b".repeat(64), blocksEngineSha: "c".repeat(40), blocksEngineRef: "origin/trunk", blocksEngineDiff: "d".repeat(64),
+    ssiSha: "a".repeat(40), ssiDiff: "b".repeat(64), blocksEngineSha: "c".repeat(40), blocksEngineRef: "origin/trunk",
     composerLock: Buffer.from("lock fixture"), zip: { path: zip, bytes: await readFile(zip) },
   })
   assert.equal(receipt.schema, "static-site-importer/development-package-provenance/v1")
   assert.equal(receipt.static_site_importer.head, "a".repeat(40))
   assert.equal(receipt.static_site_importer.diff_sha256, "b".repeat(64))
   assert.equal(receipt.blocks_engine.sha, "c".repeat(40))
-  assert.equal(receipt.blocks_engine.diff_sha256, "d".repeat(64))
   assert.match(receipt.composer_lock_sha256, /^[a-f0-9]{64}$/)
   assert.match(receipt.zip.sha256, /^[a-f0-9]{64}$/)
   await rm(directory, { recursive: true, force: true })
 })
 
 test("packaged build identity carries the source identity the ZIP digest cannot", () => {
-  const inputs = { ssiSha: "a".repeat(40), ssiDiff: null, blocksEngineSha: "c".repeat(40), blocksEngineRef: "origin/trunk", blocksEngineDiff: null, composerLock: Buffer.from("lock fixture") }
+  const inputs = { ssiSha: "a".repeat(40), ssiDiff: null, blocksEngineSha: "c".repeat(40), blocksEngineRef: "origin/trunk", composerLock: Buffer.from("lock fixture") }
   const identity = buildIdentity(inputs)
   assert.equal(identity.schema, "static-site-importer/development-package-provenance/v1")
   assert.deepEqual(identity.static_site_importer, { head: "a".repeat(40), dirty: false, diff_sha256: null })
-  assert.deepEqual(identity.blocks_engine, { ref: "origin/trunk", sha: "c".repeat(40), dirty: false, diff_sha256: null })
+  assert.deepEqual(identity.blocks_engine, { ref: "origin/trunk", sha: "c".repeat(40) })
   assert.equal(identity.runtime_profile, "website-artifact-import")
   assert.ok(!("zip" in identity), "the identity shipped inside the package cannot digest the package")
   const { zip, ...receiptIdentity } = provenance({ ...inputs, zip: { path: "/tmp/package.zip", bytes: Buffer.from("zip fixture") } })
@@ -79,7 +78,7 @@ test("packaged build identity carries the source identity the ZIP digest cannot"
 
 test("development provenance identifies the selected runtime composition", () => {
   const identity = buildIdentity({
-    ssiSha: "a".repeat(40), ssiDiff: null, blocksEngineSha: "c".repeat(40), blocksEngineRef: "origin/trunk", blocksEngineDiff: null, composerLock: Buffer.from("lock fixture"), runtimeProfile: "html-site-import",
+    ssiSha: "a".repeat(40), ssiDiff: null, blocksEngineSha: "c".repeat(40), blocksEngineRef: "origin/trunk", composerLock: Buffer.from("lock fixture"), runtimeProfile: "html-site-import",
   })
   assert.equal(identity.runtime_profile, "html-site-import")
 })
@@ -111,7 +110,7 @@ test("orchestration packages modified and untracked source bytes without changin
     run(command, args, context) {
       commands.push({ command, args, context })
       if (command === "git" && args[0] === "rev-parse") return Buffer.from(context.cwd === source ? `${"a".repeat(40)}\n` : `${"b".repeat(40)}\n`)
-      if (command === "git" && args[0] === "status") return Buffer.from(context.cwd === source ? " M tracked.txt\0?? untracked.txt\0" : "")
+      if (command === "git" && args[0] === "status") return Buffer.from(" M tracked.txt\0?? untracked.txt\0")
       if (command === "git" && args[0] === "ls-files") return Buffer.from("composer.json\0composer.lock\0homeboy.json\0runtime-package-manifest.json\0tracked.txt\0untracked.txt\0")
       if (command === "composer") return writeFile(join(context.cwd, "composer.lock"), "temporary lock")
       if (command === "homeboy" && args[0] === "review") return Promise.all([readFile(join(context.cwd, "tracked.txt"), "utf8"), readFile(join(context.cwd, "untracked.txt"), "utf8"), readFile(join(context.cwd, packagedIdentityFile), "utf8"), readFile(join(context.cwd, "runtime-package-manifest.json"), "utf8")]).then(([tracked, untracked, identity, manifest]) => {
@@ -160,47 +159,6 @@ test("worktree overlay rejects reconstructable directories", async () => {
   await mkdir(join(directory, "source", "vendor"), { recursive: true })
   await assert.rejects(() => overlayWorkingTree(join(directory, "source"), join(directory, "snapshot"), ["vendor/cache.php"]), /reconstructable path/)
   await rm(directory, { recursive: true, force: true })
-})
-
-test("development package overlays only archived Blocks Engine packages", async () => {
-  const fixture = await mkdtemp(join(tmpdir(), "ssi-dev-package-engine-paths-"))
-  const source = join(fixture, "source")
-  const engine = join(fixture, "blocks-engine")
-  const output = join(fixture, "output")
-  const temporary = join(fixture, "temporary")
-  await mkdir(join(source, "build"), { recursive: true })
-  await mkdir(join(engine, "php-transformer"), { recursive: true })
-  await mkdir(join(engine, "packages", "blocks-engine", "build"), { recursive: true })
-  await writeFile(join(source, "composer.json"), JSON.stringify({ require: { php: "^8.1" } }))
-  await writeFile(join(source, "composer.lock"), "caller lock")
-  await writeFile(join(source, "homeboy.json"), JSON.stringify({ extensions: { wordpress: { settings: { package_profile: {} } } } }))
-  await writeFile(join(engine, "php-transformer", "changed.php"), "changed transformer bytes")
-  await writeFile(join(engine, "php-transformer", "unchanged.php"), "unchanged transformer bytes")
-  await writeFile(join(engine, "packages", "blocks-engine", "build", "stub.cjs"), "unrelated build bytes")
-  await buildDevelopmentPackage({ blocksEnginePath: engine, blocksEngineRef: "candidate", outputDir: output }, {
-    sourceRoot: source,
-    temporaryDirectory: temporary,
-    cleanup: async () => {},
-    run(command, args, context) {
-      if (command === "git" && args[0] === "rev-parse") return Buffer.from(context.cwd === source ? `${"a".repeat(40)}\n` : `${"b".repeat(40)}\n`)
-      if (command === "git" && args[0] === "status") return Buffer.from(context.cwd === engine ? " M php-transformer/changed.php\0 M packages/blocks-engine/build/stub.cjs\0" : "")
-      if (command === "git" && args[0] === "diff") return Buffer.from(context.cwd === engine ? "php-transformer/changed.php\0packages/blocks-engine/build/stub.cjs\0" : "")
-      if (command === "git" && args[0] === "ls-files") return Buffer.from(context.cwd === source ? "composer.json\0composer.lock\0homeboy.json\0" : "")
-      if (command === "composer") return writeFile(join(context.cwd, "composer.lock"), "temporary lock")
-      if (command === "homeboy") return mkdir(join(context.cwd, "build"), { recursive: true }).then(() => writeFile(join(context.cwd, "build", "static-site-importer.zip"), "zip"))
-      return Buffer.from("")
-    },
-    async extractArchive(_archive, destination) {
-      if (destination.endsWith("static-site-importer")) {
-        await writeFile(join(destination, "composer.json"), JSON.stringify({ require: { php: "^8.1" } }))
-        await writeFile(join(destination, "homeboy.json"), JSON.stringify({ extensions: { wordpress: { settings: { package_profile: {} } } } }))
-      } else await mkdir(join(destination, "php-transformer"), { recursive: true })
-    },
-  })
-  assert.equal(await readFile(join(temporary, "blocks-engine", "php-transformer", "changed.php"), "utf8"), "changed transformer bytes")
-  await assert.rejects(() => readFile(join(temporary, "blocks-engine", "php-transformer", "unchanged.php"), "utf8"), /ENOENT/)
-  await assert.rejects(() => readFile(join(temporary, "blocks-engine", "packages", "blocks-engine", "build", "stub.cjs"), "utf8"), /ENOENT/)
-  await rm(fixture, { recursive: true, force: true })
 })
 
 test("nested command failures preserve bounded stdout and stderr evidence", () => {
