@@ -2307,10 +2307,13 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	}
 
 	private static function write_option( string $option, mixed $value ): bool {
-		if ( get_option( $option, null ) === $value ) {
+		// WordPress sanitizes on write ('blogname' runs through esc_html()), so a title containing
+		// & < > " or ' is stored escaped. Verify against what core stores, not the raw value.
+		$stored = function_exists( 'sanitize_option' ) ? sanitize_option( $option, $value ) : $value;
+		if ( get_option( $option, null ) === $stored ) {
 			return true;
 		}
-		return false !== update_option( $option, $value ) && get_option( $option, null ) === $value;
+		return false !== update_option( $option, $value ) && get_option( $option, null ) === $stored;
 	}
 
 	/** @param array<string,mixed> $args @return array<string,mixed> */

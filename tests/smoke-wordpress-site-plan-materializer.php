@@ -128,10 +128,21 @@ function wp_remote_retrieve_body( $response ): string {
 	return (string) ( $response['body'] ?? '' ); }
 function get_option( string $key, mixed $default = false ): mixed {
 	return $GLOBALS['ssi_plan_options'][ $key ] ?? $default; }
+function esc_html( string $value ): string {
+	return htmlspecialchars( $value, ENT_QUOTES, 'UTF-8', false ); }
+function sanitize_option( string $key, mixed $value ): mixed {
+	// Core semantics: blogname/blogdescription are escaped on write, page_on_front is cast to a positive int.
+	if ( 'blogname' === $key || 'blogdescription' === $key ) {
+		return esc_html( (string) $value );
+	}
+	return 'page_on_front' === $key ? absint( $value ) : $value; }
+function absint( mixed $value ): int {
+	return abs( (int) $value ); }
 function update_option( string $key, $value ): bool {
 	if ( isset( $GLOBALS['ssi_plan_rollback_events'] ) ) {
 		$GLOBALS['ssi_plan_rollback_events'][] = 'option:' . $key;
 	}
+	$value = sanitize_option( $key, $value ); // Core semantics: values are sanitized before they are stored.
 	if ( array_key_exists( $key, $GLOBALS['ssi_plan_options'] ) && $GLOBALS['ssi_plan_options'][ $key ] === $value ) {
 		return false; // Core semantics: unchanged value writes no row and returns false.
 	}
@@ -2292,6 +2303,29 @@ $activated = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	)
 );
 $assert( 'site-plan' === $GLOBALS['ssi_plan_options']['stylesheet'] && 'page' === $GLOBALS['ssi_plan_options']['show_on_front'] && 'Activated Plan' === $GLOBALS['ssi_plan_options']['blogname'], 'activate=true applies theme title and reading policy' );
+
+// A site title WordPress escapes on write is still applied: the read-back check must compare against the stored value.
+$escaped_title = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$plan,
+	array(
+		'slug'       => 'site-plan',
+		'overwrite'  => true,
+		'activate'   => true,
+		'site_title' => 'Aagam & Aayushi',
+	)
+);
+$assert( 'completed' === $escaped_title['status'], 'site title containing an ampersand completes materialization' );
+$assert( 'Aagam &amp; Aayushi' === $GLOBALS['ssi_plan_options']['blogname'], 'escaped site title is stored as WordPress sanitizes it' );
+$repeat_escaped_title = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$plan,
+	array(
+		'slug'       => 'site-plan',
+		'overwrite'  => true,
+		'activate'   => true,
+		'site_title' => 'Aagam & Aayushi',
+	)
+);
+$assert( 'completed' === $repeat_escaped_title['status'], 'reapplying the same escaped site title stays idempotent' );
 
 // disable_smilies (issue #780): non-activating import must not touch the global option.
 $GLOBALS['ssi_plan_options'] = array(
