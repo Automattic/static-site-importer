@@ -440,7 +440,7 @@ namespace {
 	$unrelated_popup_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $unrelated_popup_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$assert( ! in_array( 'provider_auxiliary_popup_control', array_column( $unrelated_popup_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'popup-button-without-shared-field-topology-is-not-superseded', wp_json_encode( $unrelated_popup_row ) );
 	$phone_popup_form = $popup_form;
-	$phone_popup_form['controls'][0] = array( 'tag' => 'button', 'type' => 'button', 'label' => 'Select country code', 'aria_haspopup' => 'listbox' );
+	$phone_popup_form['controls'][0] = array( 'tag' => 'button', 'type' => 'button', 'label' => 'Phone. Select a country code', 'aria_haspopup' => 'listbox' );
 	$phone_popup_form['controls'][1] = array( 'tag' => 'input', 'type' => 'phone', 'name' => 'phone', 'label' => 'Phone' );
 	$phone_popup_form['controls'][2] = array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' );
 	$phone_popup_form['control_topology']['nodes'] = array(
@@ -457,7 +457,11 @@ namespace {
 	) );
 	$phone_popup_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $phone_popup_form ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
 	$phone_popup_losses = array_column( $phone_popup_row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' );
-	$assert( 'mapped' === ( $phone_popup_row['status'] ?? '' ) && ! in_array( 'provider_wrapper_layout_unrepresentable', $phone_popup_losses, true ) && str_contains( (string) ( $phone_popup_row['block_markup'] ?? '' ), 'ssi-source-wrapper-1\u002d\u002dcountry-picker' ), 'adjacent-phone-country-popup-projects-onto-the-native-provider-phone-field', wp_json_encode( $phone_popup_row ) );
+	$assert( 'mapped' === ( $phone_popup_row['status'] ?? '' ) && ! in_array( 'provider_wrapper_layout_unrepresentable', $phone_popup_losses, true ) && in_array( 'provider_auxiliary_popup_control', array_column( $phone_popup_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ) && str_contains( (string) ( $phone_popup_row['block_markup'] ?? '' ), 'ssi-source-wrapper-1\u002d\u002dcountry-picker' ), 'owned-phone-country-popup-projects-onto-the-native-provider-phone-field', wp_json_encode( $phone_popup_row ) );
+	$unrelated_adjacent_phone_popup = $phone_popup_form;
+	$unrelated_adjacent_phone_popup['controls'][0]['label'] = 'Open service menu';
+	$unrelated_adjacent_phone_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $unrelated_adjacent_phone_popup ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( 'skipped' === ( $unrelated_adjacent_phone_row['status'] ?? '' ) && in_array( 'unsupported_control_unrepresentable', array_column( $unrelated_adjacent_phone_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true ) && ! in_array( 'provider_auxiliary_popup_control', array_column( $unrelated_adjacent_phone_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'adjacent-non-country-popup-before-phone-remains-unrepresented-and-preserved', wp_json_encode( $unrelated_adjacent_phone_row ) );
 	$presentation_form = $topology_form;
 	$presentation_role = static function ( array $styles, array $properties, string $selector ): array {
 		return array(
