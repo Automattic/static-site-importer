@@ -382,10 +382,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					)
 				);
 			}
-			$normalized_manifest           = 'shop' === $capability ? array(
+			// Dependency preparation intentionally defers provider validation until
+			// resume, but its checkpoint must still retain every declared entity.
+			$normalized_manifest           = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ? $manifest : ( 'shop' === $capability ? array(
 				'schema_version' => 1,
 				'products'       => $validation['products'] ?? array(),
-			) : array( 'forms' => $validation['forms'] ?? array() );
+			) : array( 'forms' => $validation['forms'] ?? array() ) );
 			$lifecycle['entities'][ $key ] = array(
 				'adapter'     => $adapter,
 				'manifest'    => $normalized_manifest,
