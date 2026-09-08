@@ -43,6 +43,7 @@
         "includes/class-static-site-importer-url-site-collector.php",
         "includes/class-static-site-importer-validation-runtime.php",
         "includes/class-static-site-importer-wordpress-site-plan-materializer.php",
+        "includes/class-static-site-importer-prepared-plan-application.php",
         "vendor/automattic/blocks-engine-php-transformer/php-transformer.php"
       ]
     },
@@ -110,6 +111,7 @@
         "includes/class-static-site-importer-url-site-collector.php",
         "includes/class-static-site-importer-validation-runtime.php",
         "includes/class-static-site-importer-wordpress-site-plan-materializer.php",
+        "includes/class-static-site-importer-prepared-plan-application.php",
         "vendor/autoload.php",
         "vendor/composer/autoload_real.php",
         "vendor/automattic/blocks-engine-php-transformer/php-transformer.php"

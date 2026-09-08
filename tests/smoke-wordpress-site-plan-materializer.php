@@ -325,9 +325,29 @@ $assert = static function ( bool $condition, string $message ): void {
 		throw new RuntimeException( $message );
 	}
 };
+$normalize_receipt = static function ( mixed $value ) use ( &$normalize_receipt ): mixed {
+	if ( is_string( $value ) ) {
+		return str_replace( $GLOBALS['ssi_plan_root'], '[temporary-theme-root]', $value );
+	}
+	if ( is_float( $value ) && floor( $value ) === $value ) {
+		return (int) $value;
+	}
+	if ( ! is_array( $value ) ) {
+		return $value;
+	}
+	foreach ( array( 'receipt_instance_id', 'request_id', 'receipt_identity', 'transaction_identity', 'transaction' ) as $volatile_key ) {
+		unset( $value[ $volatile_key ] );
+	}
+	foreach ( $value as $key => $item ) {
+		$value[ $key ] = $normalize_receipt( $item );
+	}
+	if ( ! array_is_list( $value ) ) {
+		ksort( $value );
+	}
+	return $value;
+};
 
 $theme_generator_source = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php' );
-$materializer_source    = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-site-plan-materializer.php' );
 $assert( false === strpos( (string) $theme_generator_source, 'function import_compiled_website_artifact' ), 'canonical import has no legacy compiled-artifact execution path' );
 
 $artifact = array(
@@ -604,9 +624,6 @@ $prepared_for_admission = Static_Site_Importer_WordPress_Site_Plan_Materializer:
 );
 $admitted_prepared      = Static_Site_Importer_WordPress_Site_Plan_Materializer::admit_prepared( $prepared_for_admission );
 $assert( 'prepared' === ( $prepared_for_admission['status'] ?? '' ) && ! empty( $prepared_for_admission['payload_references_admitted'] ) && $prepared_for_admission === $admitted_prepared && ! str_contains( (string) wp_json_encode( $prepared_for_admission['plan'] ), 'payload_references_admitted' ) && ! str_contains( (string) wp_json_encode( Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared_for_admission ) ), 'payload_references_admitted' ), 'materializer lifecycle preparation admits referenced payloads once, before lifecycle work, without adding transient state to plans or receipts' );
-$materializer_companion_assets = strpos( (string) $materializer_source, 'resolve_companion_asset_references( $payload' );
-$materializer_companion        = strpos( (string) $materializer_source, 'Static_Site_Importer_Dependency_Manager::materialize_companion_dependency( $dependency', $materializer_companion_assets + 1 );
-$assert( false !== $materializer_companion_assets && $materializer_companion_assets < $materializer_companion, 'materializer resolves generated companion assets before companion dependency materialization' );
 $rollback_order     = array();
 $block_lifecycle    = array(
 	'dependencies' => array(),
@@ -814,6 +831,7 @@ foreach ( array(
 			unset( $GLOBALS['ssi_plan_posts'][ $id ] ); }
 	}
 }
+$compensated_failure_receipt = $late_receipt;
 $classic_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$classic_plan,
 	array(
@@ -2933,7 +2951,7 @@ $resolved_root_media_plan = ( new \Automattic\BlocksEngine\PhpTransformer\WordPr
 	$root_media_plan,
 	array( 'theme_uri' => 'https://example.test/wp-content/themes/root-media-plan', 'runtime_capabilities' => array( 'asset_materialization' ) )
 );
-$resolve_companion_assets = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'resolve_companion_asset_references' );
+$resolve_companion_assets = new ReflectionMethod( Static_Site_Importer_Prepared_Plan_Application::class, 'resolve_companion_asset_references' );
 $resolved_companion       = $resolve_companion_assets->invoke(
 	null,
 	array( 'blocks' => array( array( 'render' => '<img src="/media/example.jpg"><source srcset="/media/example.jpg 1x">' ) ) ),
@@ -2942,5 +2960,15 @@ $resolved_companion       = $resolve_companion_assets->invoke(
 );
 $resolved_companion_html = (string) ( $resolved_companion['blocks'][0]['render'] ?? '' );
 $assert( str_contains( $resolved_companion_html, 'src="' . $root_media_url . '"' ) && str_contains( $resolved_companion_html, 'srcset="' . $root_media_url . ' 1x"' ) && ! str_contains( $resolved_companion_html, '="/media/example.jpg' ), 'generated companion block renders resolve canonical root-relative assets through the materialized theme map' );
+
+if ( in_array( '--receipt-snapshot', $argv, true ) ) {
+	echo wp_json_encode(
+		array(
+			'success'              => $normalize_receipt( $valid_reference_receipt ),
+			'failed_compensation'  => $normalize_receipt( $compensated_failure_receipt ),
+		)
+	) . "\n";
+	return;
+}
 
 echo "WordPress site plan materializer smoke passed.\n";
