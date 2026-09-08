@@ -87,9 +87,9 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	 * readable because they have already been persisted in imported content.
 	 */
 	public static function project_wrapper_classes( string $html ): string {
-		$wrapper_layers         = array();
+		$wrapper_layers          = array();
 		$provider_layout_classes = array();
-		$projected      = preg_replace_callback(
+		$projected               = preg_replace_callback(
 			'/\bclass=(["\'])(.*?)\1/s',
 			static function ( array $matches ) use ( &$wrapper_layers, &$provider_layout_classes ): string {
 				$classes    = preg_split( '/\s+/', trim( $matches[2] ) );
@@ -140,8 +140,8 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			if ( array_key_first( $wrapper_layers ) === $depth ) {
 				$classes = array_values( array_unique( array_merge( $classes, $provider_layout_classes ) ) );
 			}
-			$open   .= '<div class="' . implode( ' ', $classes ) . '">';
-			$close   = '</div>' . $close;
+			$open .= '<div class="' . implode( ' ', $classes ) . '">';
+			$close = '</div>' . $close;
 		}
 		$wrapped = preg_replace_callback(
 			'/<input\b[^>]*>|<textarea\b[^>]*>.*?<\/textarea>|<select\b[^>]*>.*?<\/select>/is',
