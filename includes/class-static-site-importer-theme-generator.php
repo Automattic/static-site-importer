@@ -651,15 +651,65 @@ class Static_Site_Importer_Theme_Generator {
 			self::write_plan_projection( $validation_path, $validation, $receipt );
 			self::write_plan_projection( $findings_path, $findings, $receipt );
 		}
-		$external_report_path = ''; $external_validation_result_path = ''; $external_finding_packets_path = '';
+		$external_report_path            = '';
+		$external_validation_result_path = '';
+		$external_finding_packets_path   = '';
 		if ( '' !== trim( (string) ( $args['report'] ?? '' ) ) ) {
-			$external_report_path = (string) $args['report']; $external_dir = dirname( $external_report_path ); $external_validation_result_path = trailingslashit( $external_dir ) . 'import-validation-result.json'; $external_finding_packets_path = trailingslashit( $external_dir ) . 'finding-packets.json';
-			foreach ( array( $external_report_path, $external_validation_result_path, $external_finding_packets_path ) as $path ) { if ( ! Static_Site_Importer_WordPress_Site_Plan_Materializer::safe_external_report_destination( $path ) ) { throw new RuntimeException( 'External report destination changed after preflight.' ); } }
-			self::write_plan_projection( $external_report_path, $report->to_array(), $receipt ); self::write_plan_projection( $external_validation_result_path, $validation, $receipt ); self::write_plan_projection( $external_finding_packets_path, $findings, $receipt );
+			$external_report_path            = (string) $args['report'];
+			$external_dir                    = dirname( $external_report_path );
+			$external_validation_result_path = trailingslashit( $external_dir ) . 'import-validation-result.json';
+			$external_finding_packets_path   = trailingslashit( $external_dir ) . 'finding-packets.json';
+			foreach ( array( $external_report_path, $external_validation_result_path, $external_finding_packets_path ) as $path ) {
+				if ( ! Static_Site_Importer_WordPress_Site_Plan_Materializer::safe_external_report_destination( $path ) ) {
+					throw new RuntimeException( 'External report destination changed after preflight.' );
+				}
+			}
+			self::write_plan_projection( $external_report_path, $report->to_array(), $receipt );
+			self::write_plan_projection( $external_validation_result_path, $validation, $receipt );
+			self::write_plan_projection( $external_finding_packets_path, $findings, $receipt );
 		}
-		if ( 'report_persistence' === (string) ( $args['inject_materialization_failure'] ?? '' ) ) { throw new RuntimeException( 'Injected report persistence failure.' ); }
+		if ( 'report_persistence' === (string) ( $args['inject_materialization_failure'] ?? '' ) ) {
+			throw new RuntimeException( 'Injected report persistence failure.' );
+		}
 		Static_Site_Importer_WordPress_Site_Plan_Materializer::commit_receipt( $receipt );
-		return array( 'theme_slug' => $theme['slug'], 'theme_name' => isset( $args['name'] ) ? (string) $args['name'] : $theme['slug'], 'theme_dir' => $theme['dir'], 'report_path' => $report_path, 'validation_result_path' => $validation_path, 'finding_packets_path' => $findings_path, 'external_report_path' => $external_report_path, 'external_validation_result_path' => $external_validation_result_path, 'external_finding_packets_path' => $external_finding_packets_path, 'manifest_path' => $manifest_path, 'pages' => $receipt['completed']['pages'], 'import_report' => $report->to_array(), 'import_report_summary' => $report['compact_summary'], 'import_validation_result' => $validation, 'finding_packets' => $findings, 'fixture_diagnostics' => $final['fixture_diagnostics'], 'quality' => $quality, 'source_of_truth' => $manifest, 'progress_events' => array( array( 'schema' => 'wp-codebox/live-progress-event/v1', 'phase' => 'ssi.materialization.completed', 'progress' => array( 'percent' => 100 ) ), array( 'schema' => 'wp-codebox/live-progress-event/v1', 'phase' => 'ssi.reporting.completed', 'progress' => array( 'percent' => 100 ) ), array( 'schema' => 'wp-codebox/live-progress-event/v1', 'phase' => 'ssi.saved.completed', 'progress' => array( 'percent' => 100 ) ) ), 'materialization_receipt' => $receipt );
+		return array(
+			'theme_slug'                      => $theme['slug'],
+			'theme_name'                      => isset( $args['name'] ) ? (string) $args['name'] : $theme['slug'],
+			'theme_dir'                       => $theme['dir'],
+			'report_path'                     => $report_path,
+			'validation_result_path'          => $validation_path,
+			'finding_packets_path'            => $findings_path,
+			'external_report_path'            => $external_report_path,
+			'external_validation_result_path' => $external_validation_result_path,
+			'external_finding_packets_path'   => $external_finding_packets_path,
+			'manifest_path'                   => $manifest_path,
+			'pages'                           => $receipt['completed']['pages'],
+			'import_report'                   => $report->to_array(),
+			'import_report_summary'           => $report['compact_summary'],
+			'import_validation_result'        => $validation,
+			'finding_packets'                 => $findings,
+			'fixture_diagnostics'             => $final['fixture_diagnostics'],
+			'quality'                         => $quality,
+			'source_of_truth'                 => $manifest,
+			'progress_events'                 => array(
+				array(
+					'schema'   => 'wp-codebox/live-progress-event/v1',
+					'phase'    => 'ssi.materialization.completed',
+					'progress' => array( 'percent' => 100 ),
+				),
+				array(
+					'schema'   => 'wp-codebox/live-progress-event/v1',
+					'phase'    => 'ssi.reporting.completed',
+					'progress' => array( 'percent' => 100 ),
+				),
+				array(
+					'schema'   => 'wp-codebox/live-progress-event/v1',
+					'phase'    => 'ssi.saved.completed',
+					'progress' => array( 'percent' => 100 ),
+				),
+			),
+			'materialization_receipt'         => $receipt,
+		);
 	}
 
 	/** @return array<string,mixed> */
@@ -840,31 +890,6 @@ class Static_Site_Importer_Theme_Generator {
 			}
 		}
 		return true;
-	}
-
-	/** @param array<string,mixed> $plan @return array<string,mixed> */
-	private static function document_metadata_from_plan_receipt( array $plan ): array {
-		foreach ( $plan['pages'] as $page ) {
-			if ( ! empty( $page['entrypoint'] ) && isset( $page['document_metadata'] ) && is_array( $page['document_metadata'] ) ) {
-				$metadata = array_merge( array( 'schema' => 'static-site-importer/document-metadata/v1' ), $page['document_metadata'] );
-				foreach ( array(
-					'links'   => 'href',
-					'scripts' => 'src',
-				) as $kind => $field ) {
-					if ( ! isset( $metadata[ $kind ] ) || ! is_array( $metadata[ $kind ] ) ) {
-						continue;
-					}
-					foreach ( $metadata[ $kind ] as &$declaration ) {
-						if ( is_array( $declaration ) && isset( $declaration['resolved_url'] ) ) {
-							$declaration[ $field ] = $declaration['resolved_url'];
-						}
-					}
-					unset( $declaration );
-				}
-				return $metadata;
-			}
-		}
-		return array( 'schema' => 'static-site-importer/document-metadata/v1' );
 	}
 
 	/** @param array<string,mixed> $payload */
