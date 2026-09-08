@@ -22,6 +22,7 @@
     "build:dev-package": "node tools/build-dev-package.mjs",
     "test:dev-package": "node --test tools/build-dev-package.test.mjs",
     "test:js-block-validation": "node tests/smoke-generated-theme-block-validation.cjs",
+    "test:editor-companion-acceptance": "bash tools/run-editor-companion-acceptance.sh",
     "test:validation": "node tests/run-validation-harness.cjs",
     "test:form-materializer-topology": "node --test tests/form-materializer-topology.test.mjs"
   },
