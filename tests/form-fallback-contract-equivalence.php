@@ -14,25 +14,25 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 if ( ! function_exists( 'wp_json_encode' ) ) {
 	function wp_json_encode( $value ) {
-		return json_encode( $value );
+		return json_encode( $value ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Standalone test shim supplies the unavailable WordPress encoder.
 	}
 }
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
 
-$contract = class_exists( 'Static_Site_Importer_Form_Fallback_Contract' )
+$contract           = class_exists( 'Static_Site_Importer_Form_Fallback_Contract' )
 	? Static_Site_Importer_Form_Fallback_Contract::class
 	: Static_Site_Importer_Report_Diagnostics::class;
-$html     = '<form class="newsletter primary" action="/subscribe" method="post"><h2>Updates</h2><label class="required-note">Required fields</label><input name="email" aria-label="Email address" required><p class="help">We only send useful mail.</p><textarea name="message" style="height: 12rem"></textarea><input type="submit" value="Subscribe" style="display: none"><a class="button primary invalid!" href="#subscribe">Subscribe</a><p class="help">Unsubscribe any time.</p></form>';
-$manifest = call_user_func( array( $contract, str_contains( $contract, 'Form_Fallback_Contract' ) ? 'manifest_from_html' : 'form_manifest_from_html' ), $html );
-$fallback = array(
+$html               = '<form class="newsletter primary" action="/subscribe" method="post"><h2>Updates</h2><label class="required-note">Required fields</label><input name="email" aria-label="Email address" required><p class="help">We only send useful mail.</p><textarea name="message" style="height: 12rem"></textarea><input type="submit" value="Subscribe" style="display: none"><a class="button primary invalid!" href="#subscribe">Subscribe</a><p class="help">Unsubscribe any time.</p></form>';
+$manifest           = call_user_func( array( $contract, str_contains( $contract, 'Form_Fallback_Contract' ) ? 'manifest_from_html' : 'form_manifest_from_html' ), $html );
+$fallback           = array(
 	'source_path' => 'index.html',
 	'selector'    => 'form.newsletter',
 	'form'        => $manifest['form'],
 	'controls'    => $manifest['controls'],
 );
-$entity = $fallback;
+$entity             = $fallback;
 $entity['bindings'] = array(
 	array(
 		'schema'              => 'generic/block-binding/v1',
@@ -42,8 +42,8 @@ $entity['bindings'] = array(
 		'role'                => 'form',
 	),
 );
-$prepared = Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $entity );
-$bindings = Static_Site_Importer_Entity_Materializer_Registry::block_bindings(
+$prepared           = Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $entity );
+$bindings           = Static_Site_Importer_Entity_Materializer_Registry::block_bindings(
 	array(
 		'entities' => array(
 			'forms' => array(
