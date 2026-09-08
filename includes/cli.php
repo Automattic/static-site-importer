@@ -341,7 +341,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				/** @param array<string,string> $paths */
 				public function __construct( private array $paths ) {}
 				public function read( array $reference ): string {
-					$id   = (string) ( $reference['id'] ?? '' );
+					$id   = (string) $reference['id'];
 					$path = $this->paths[ $id ] ?? '';
 					$real = '' !== $path && ! is_link( $path ) ? realpath( $path ) : false;
 					$data = $path === $real ? file_get_contents( $path ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a verified CLI request-bundle payload on demand.
