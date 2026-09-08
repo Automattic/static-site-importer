@@ -329,10 +329,13 @@ $normalize_receipt = static function ( mixed $value ) use ( &$normalize_receipt 
 	if ( is_string( $value ) ) {
 		return str_replace( $GLOBALS['ssi_plan_root'], '[temporary-theme-root]', $value );
 	}
+	if ( is_float( $value ) && floor( $value ) === $value ) {
+		return (int) $value;
+	}
 	if ( ! is_array( $value ) ) {
 		return $value;
 	}
-	foreach ( array( 'receipt_instance_id', 'request_id' ) as $volatile_key ) {
+	foreach ( array( 'receipt_instance_id', 'request_id', 'receipt_identity', 'transaction_identity', 'transaction' ) as $volatile_key ) {
 		unset( $value[ $volatile_key ] );
 	}
 	foreach ( $value as $key => $item ) {
