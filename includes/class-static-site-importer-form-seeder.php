@@ -986,10 +986,10 @@ class Static_Site_Importer_Form_Seeder {
 				}
 				continue;
 			}
-			$previous = $controls[ $control_index - 1 ] ?? null;
+			$previous       = $controls[ $control_index - 1 ] ?? null;
 			$previous_popup = is_array( $previous ) ? strtolower( trim( (string) ( $previous['aria_haspopup'] ?? '' ) ) ) : '';
 			if ( is_array( $previous ) && 'button' === strtolower( trim( (string) ( $previous['tag'] ?? '' ) ) ) && 'button' === strtolower( trim( (string) ( $previous['type'] ?? '' ) ) ) && in_array( $previous_popup, array( 'true', 'menu', 'listbox', 'tree', 'grid', 'dialog' ), true ) ) {
-				$provider_controls[ $control_index - 1 ] = true;
+				$provider_controls[ $control_index - 1 ]   = true;
 				$phone_popup_targets[ $control_index - 1 ] = $control_index;
 			}
 		}
@@ -1048,8 +1048,8 @@ class Static_Site_Importer_Form_Seeder {
 			if ( 1 !== count( $branch_controls ) ) {
 				continue;
 			}
-			$control_index = $branch_controls[0];
-			$source_class  = trim( (string) ( $node['class'] ?? '' ) );
+			$control_index                = $branch_controls[0];
+			$source_class                 = trim( (string) ( $node['class'] ?? '' ) );
 			$is_projectable_classless_box = '' === $source_class
 				&& in_array( $node['tag'] ?? '', array( 'div', 'span' ), true )
 				&& ( ! empty( $layout_by_node[ $node['id'] ] ?? array() ) || ! empty( $variants_by_node[ $node['id'] ] ?? array() ) );
@@ -1121,14 +1121,14 @@ class Static_Site_Importer_Form_Seeder {
 					$class_tokens = array();
 				}
 				$class_tokens = array_values( array_filter( $class_tokens ) );
-				$provenance  = $layout_nodes_by_id[ $node['id'] ]['provenance'] ?? array();
-				$class_owned = ! empty( $layout_by_node[ $node['id'] ] ?? array() ) && ! empty( $provenance );
+				$provenance   = $layout_nodes_by_id[ $node['id'] ]['provenance'] ?? array();
+				$class_owned  = ! empty( $layout_by_node[ $node['id'] ] ?? array() ) && ! empty( $provenance );
 				foreach ( $provenance as $provenance_row ) {
 					$selector      = is_array( $provenance_row ) && is_string( $provenance_row['selector'] ?? null ) ? $provenance_row['selector'] : '';
 					$matches_class = false;
 					if ( preg_match( '/^(?:[a-z][a-z0-9-]*)?(?:\.[a-zA-Z][a-zA-Z0-9_-]*)+$/D', $selector ) ) {
 						foreach ( $class_tokens as $class_token ) {
-							if ( '' !== $class_token && preg_match( '/\.' . preg_quote( $class_token, '/' ) . '(?![a-zA-Z0-9_-])/', $selector ) ) {
+							if ( preg_match( '/\.' . preg_quote( $class_token, '/' ) . '(?![a-zA-Z0-9_-])/', $selector ) ) {
 								$matches_class = true;
 								break;
 							}
@@ -1246,7 +1246,7 @@ class Static_Site_Importer_Form_Seeder {
 			return true;
 		};
 
-		$grid_span_width = static function ( mixed $columns, mixed $column ): ?string {
+		$grid_span_width       = static function ( mixed $columns, mixed $column ): ?string {
 			$columns = preg_replace( '/\s+/', '', is_string( $columns ) ? $columns : '' );
 			$column  = preg_replace( '/\s+/', '', is_string( $column ) ? $column : '' );
 			if ( ! is_string( $columns ) || ! is_string( $column ) || ! preg_match( '/^repeat\(([1-9][0-9]*),1fr\)$/D', $columns, $column_count ) || ! preg_match( '/^span([1-9][0-9]*)$/D', $column, $span ) || (int) $span[1] > (int) $column_count[1] ) {
@@ -1262,13 +1262,13 @@ class Static_Site_Importer_Form_Seeder {
 			return 'span ' . $span[1];
 		};
 		foreach ( $nodes as $node ) {
-			$id              = is_array( $node ) && 'wrapper' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
-			$branch_controls = '' !== $id ? $collect_controls( $node ) : array();
-			$control_index   = 1 === count( $branch_controls ) ? $branch_controls[0] : null;
-			$layout_node     = $layout_nodes_by_id[ $id ] ?? null;
-			$layout_parent   = is_array( $layout_node ) && is_string( $layout_node['parent'] ?? null ) ? $layout_nodes_by_id[ $layout_node['parent'] ] ?? null : null;
-			$column          = is_array( $layout_node ) ? ( $layout_node['layout']['column'] ?? $grid_area_column_span( $layout_node['layout']['area'] ?? null ) ) : null;
-			$width           = is_array( $layout_node ) && is_array( $layout_parent ) ? $grid_span_width( $layout_parent['layout']['columns'] ?? null, $column ) : null;
+			$id               = is_array( $node ) && 'wrapper' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
+			$branch_controls  = '' !== $id ? $collect_controls( $node ) : array();
+			$control_index    = 1 === count( $branch_controls ) ? $branch_controls[0] : null;
+			$layout_node      = $layout_nodes_by_id[ $id ] ?? null;
+			$layout_parent    = is_array( $layout_node ) && is_string( $layout_node['parent'] ?? null ) ? $layout_nodes_by_id[ $layout_node['parent'] ] ?? null : null;
+			$column           = is_array( $layout_node ) ? ( $layout_node['layout']['column'] ?? $grid_area_column_span( $layout_node['layout']['area'] ?? null ) ) : null;
+			$width            = is_array( $layout_node ) && is_array( $layout_parent ) ? $grid_span_width( $layout_parent['layout']['columns'] ?? null, $column ) : null;
 			$placement_proven = is_array( $layout_node ) && ( $has_unconditional_proven_property( $layout_node, 'grid-column' ) || $has_unconditional_proven_property( $layout_node, 'grid-area' ) );
 			$parent_proven    = is_array( $layout_parent ) && $has_unconditional_proven_property( $layout_parent, 'grid-template-columns' );
 			if ( ! is_int( $control_index ) || 'core/button' !== ( $field_blocks[ $control_index ]['name'] ?? '' ) || null === $width || ! $placement_proven || ! $parent_proven ) {
