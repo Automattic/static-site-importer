@@ -564,7 +564,7 @@ class Static_Site_Importer_Form_Seeder {
 			$overlay_variant['layout_patch']['flex'] = '0 1 auto';
 		}
 		unset( $overlay_variant );
-		$overlay_node_ids          = array_fill_keys( array_map( static fn( array $node ): string => (string) $node['id'], $overlay_graph['nodes'] ), true );
+		$overlay_node_ids = array_fill_keys( array_map( static fn( array $node ): string => (string) $node['id'], $overlay_graph['nodes'] ), true );
 		foreach ( $topology['responsive_variant_targets'] as $variant ) {
 			if ( is_string( $variant['node'] ?? null ) && ! isset( $overlay_node_ids[ $variant['node'] ] ) ) {
 				$overlay_graph['nodes'][]             = array(
