@@ -154,6 +154,10 @@ class Static_Site_Importer_Form_Seeder {
 
 		foreach ( $forms as $form ) {
 			$row               = $available ? self::seed_form( $form, true ) : self::unavailable_form_row( $form );
+			$fallback_identity = $form['fallback_identity'] ?? '';
+			if ( is_string( $fallback_identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fallback_identity ) ) {
+				$row['fallback_identity'] = $fallback_identity;
+			}
 			$report['forms'][] = $row;
 
 			$status = $row['status'] ?? 'error';
@@ -2136,6 +2140,10 @@ class Static_Site_Importer_Form_Seeder {
 
 	/** Stable generated classes are provider hooks, never source presentation hooks. */
 	private static function layout_scope( array $form ): string {
+		$identity = $form['fallback_identity'] ?? '';
+		if ( is_string( $identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $identity ) ) {
+			return 'ssi-form-' . substr( $identity, 0, 12 );
+		}
 		return 'ssi-form-' . substr( hash( 'sha256', (string) ( $form['source_path'] ?? '' ) . "\n" . (string) ( $form['selector'] ?? '' ) ), 0, 12 );
 	}
 	private static function layout_node_class( string $scope, string $node ): string {

@@ -180,6 +180,7 @@ namespace {
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-computed-layout-strategy.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-layout-overlay.php';
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-fallback-contract.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-loss-classes.php';
@@ -238,6 +239,13 @@ namespace {
 	);
 	$assert( array() === $submit_only['forms'], 'submit-only-form-rejected' );
 	$assert( ! empty( $submit_only['errors'] ), 'submit-only-form-error-recorded' );
+	$responsive_identity_forms = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest(
+		array( 'forms' => array(
+			array( 'source_path' => 'contact.html', 'selector' => 'form.contact', 'fallback_identity' => str_repeat( 'a', 64 ), 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email' ) ) ),
+			array( 'source_path' => 'contact.html', 'selector' => 'form.contact', 'fallback_identity' => str_repeat( 'b', 64 ), 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email' ) ) ),
+		) )
+	);
+	$assert( empty( $responsive_identity_forms['errors'] ) && 2 === count( $responsive_identity_forms['forms'] ?? array() ), 'responsive-form-identities-remain-distinct-during-validation' );
 
 	// Truncated graphs remain producer fallback evidence, never runtime input.
 	$truncated_css   = str_repeat( '@media (min-width:1px){', 9 ) . '.form{display:grid}' . str_repeat( '}', 9 );
@@ -315,6 +323,24 @@ namespace {
 	$assert( str_contains( $markup, '<!-- wp:jetpack/field-select {"options":["Sales","Support"]' ) && str_contains( $markup, '<!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"type":"dropdown"} /-->' ), 'markup-select-options-and-dropdown-input' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/field-radio {"options":["In person","Online"]' ) && str_contains( $markup, '<!-- wp:jetpack/options {"type":"radio"} -->' ), 'markup-radio-options-on-field-and-child-list' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/field-checkbox ' ) && str_contains( $markup, '<!-- wp:jetpack/option {"label":"Send me updates","isStandalone":true} /-->' ), 'markup-checkbox-uses-standalone-option-child' );
+	$responsive_seed = Static_Site_Importer_Form_Seeder::seed(
+		array( 'forms' => array(
+			array( 'source_path' => 'contact.html', 'selector' => 'form.contact', 'fallback_identity' => str_repeat( 'a', 64 ), 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ) ),
+			array( 'source_path' => 'contact.html', 'selector' => 'form.contact', 'fallback_identity' => str_repeat( 'b', 64 ), 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ) ),
+		) )
+	);
+	$responsive_rows = $responsive_seed['forms'] ?? array();
+	$assert( 2 === ( $responsive_seed['counts']['mapped'] ?? 0 ) && array( str_repeat( 'a', 64 ), str_repeat( 'b', 64 ) ) === array_column( $responsive_rows, 'fallback_identity' ) && 2 === count( array_unique( array_map( static fn( array $row ): string => (string) preg_replace( '/.*\b(ssi-form-[a-f0-9]{12})\b.*/s', '$1', (string) ( $row['block_markup'] ?? '' ) ), $responsive_rows ) ) ), 'responsive-form-identities-produce-distinct-provider-blocks-and-receipts' );
+	$responsive_entities = $responsive_identity_forms['forms'];
+	foreach ( $responsive_entities as $index => &$responsive_entity ) {
+		$responsive_entity['bindings'] = array( array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'contact.html', 'search_block_markup' => '<!-- wp:html --><form class="contact"></form><!-- /wp:html -->', 'occurrence' => $index + 1, 'role' => 'form' ) );
+	}
+	unset( $responsive_entity );
+	$responsive_bindings = Static_Site_Importer_Entity_Materializer_Registry::block_bindings(
+		array( 'entities' => array( 'responsive' => array( 'adapter' => Static_Site_Importer_Entity_Materializer_Registry::form_adapter(), 'manifest' => array( 'forms' => $responsive_entities ) ) ) ),
+		array( 'responsive' => $responsive_seed )
+	);
+	$assert( is_array( $responsive_bindings ) && 2 === count( $responsive_bindings ) && array( str_repeat( 'a', 64 ), str_repeat( 'b', 64 ) ) === array_column( $responsive_bindings, 'fallback_reconciliation_identity' ), 'responsive-form-identities-match-provider-results-to-every-binding' );
 	$checkbox_group = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.preferences', 'controls' => array( array( 'tag' => 'input', 'type' => 'checkbox', 'name' => 'topics', 'label' => 'Topics', 'options' => array( 'Art', 'Events' ) ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Save' ) ) ) ) ) );
 	$checkbox_group_markup = (string) ( $checkbox_group['forms'][0]['block_markup'] ?? '' );
 	$assert( str_contains( $checkbox_group_markup, '<!-- wp:jetpack/field-checkbox-multiple {"options":["Art","Events"]' ) && str_contains( $checkbox_group_markup, '<!-- wp:jetpack/options {"type":"checkbox"} -->' ), 'checkbox-group-uses-provider-multiple-field' );
