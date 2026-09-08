@@ -1301,25 +1301,30 @@ class Static_Site_Importer_Form_Seeder {
 		// control, so copying the grid without that direct-child placement makes fields
 		// shrink to one track. The native field is already full-width in this case.
 		foreach ( $nodes as $node ) {
-			if ( ! is_array( $node ) || 'control' !== ( $node['kind'] ?? null ) || ! is_int( $node['control'] ?? null ) || ! isset( $field_blocks[ $node['control'] ] ) || 'core/button' === ( $field_blocks[ $node['control'] ]['name'] ?? '' ) ) {
+			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) ) {
 				continue;
 			}
-			$control_id                = (string) ( $node['id'] ?? '' );
+			$branch_controls = $collect_controls( $node );
+			$control_index   = 1 === count( $branch_controls ) ? $branch_controls[0] : null;
+			if ( ! is_int( $control_index ) || ! isset( $field_blocks[ $control_index ] ) || 'core/button' === ( $field_blocks[ $control_index ]['name'] ?? '' ) ) {
+				continue;
+			}
+			$branch_id                 = $node['id'];
 			$parent_id                 = is_string( $node['parent'] ?? null ) ? $node['parent'] : '';
 			$parent_topology           = $topology_nodes_by_id[ $parent_id ] ?? null;
 			$parent                    = $layout_nodes_by_id[ $parent_id ] ?? null;
-			$control                   = $layout_nodes_by_id[ $control_id ] ?? null;
+			$branch                    = $layout_nodes_by_id[ $branch_id ] ?? null;
 			$columns                   = is_array( $parent ) ? ( $parent['layout']['columns'] ?? null ) : null;
-			$placement                 = is_array( $control ) ? ( $control['layout']['column'] ?? $grid_area_column_span( $control['layout']['area'] ?? null ) ) : null;
+			$placement                 = is_array( $branch ) ? ( $branch['layout']['column'] ?? $grid_area_column_span( $branch['layout']['area'] ?? null ) ) : null;
 			$width                     = $grid_span_width( $columns, $placement );
 			$parent_layout             = is_array( $parent ) && is_array( $parent['layout'] ?? null ) ? $parent['layout'] : array();
 			$allowed_parent_properties = array( 'display', 'columns', 'width', 'gap', 'row_gap', 'column_gap' );
-			if ( '100%' !== $width || ! is_array( $parent_topology ) || 1 !== count( $collect_controls( $parent_topology ) ) || ! is_array( $parent ) || ! is_array( $control ) || array_diff( array_keys( $parent_layout ), $allowed_parent_properties ) || ! $has_unconditional_proven_property( $parent, 'grid-template-columns' ) || ! ( $has_unconditional_proven_property( $control, 'grid-column' ) || $has_unconditional_proven_property( $control, 'grid-area' ) ) || ! empty( $variants_by_node[ $parent_id ] ) || ! empty( $variants_by_node[ $control_id ] ) ) {
+			if ( '100%' !== $width || ! is_array( $parent_topology ) || 1 !== count( $collect_controls( $parent_topology ) ) || ! is_array( $parent ) || ! is_array( $branch ) || array_diff( array_keys( $parent_layout ), $allowed_parent_properties ) || ! $has_unconditional_proven_property( $parent, 'grid-template-columns' ) || ! ( $has_unconditional_proven_property( $branch, 'grid-column' ) || $has_unconditional_proven_property( $branch, 'grid-area' ) ) || ! empty( $variants_by_node[ $parent_id ] ) || ! empty( $variants_by_node[ $branch_id ] ) ) {
 				continue;
 			}
-			$suppressed_layout_properties[ $parent_id ]  = array_values( array_intersect( array( 'display', 'columns', 'gap', 'row_gap', 'column_gap' ), array_keys( $parent_layout ) ) );
-			$suppressed_layout_properties[ $control_id ] = array_values( array_intersect( array( 'column', 'row', 'area' ), array_keys( $control['layout'] ?? array() ) ) );
-			$operations[]                                = array(
+			$suppressed_layout_properties[ $parent_id ] = array_values( array_intersect( array( 'display', 'columns', 'gap', 'row_gap', 'column_gap' ), array_keys( $parent_layout ) ) );
+			$suppressed_layout_properties[ $branch_id ] = array_values( array_intersect( array( 'column', 'row', 'area' ), array_keys( $branch['layout'] ?? array() ) ) );
+			$operations[]                               = array(
 				'dimension'   => 'layout',
 				'strategy'    => 'provider_full_width_field',
 				'target_hash' => hash( 'sha256', $parent_id ),
