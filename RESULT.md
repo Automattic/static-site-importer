@@ -35,3 +35,9 @@ listing candidates. No cleanup was applied.
 
 The fresh Studio 3952 public-source import and browser screenshots remain pending
 until sufficient capacity is made available.
+
+## Draft PR
+
+- PR: https://github.com/Automattic/static-site-importer/pull/1556
+- Implementation commit: `4ace0c7c`
+- Status: draft, pending the canonical package, Studio import, and browser proof.
