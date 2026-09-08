@@ -24,6 +24,9 @@ if ( ! class_exists( 'Static_Site_Importer_Entity_Materializer_Registry' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Owner_Handoff_Evidence' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-owner-handoff-evidence.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Form_Fallback_Contract' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-form-fallback-contract.php';
+}
 
 /**
  * Builds SSI import reports and normalizes diagnostics for repair loops.
@@ -361,10 +364,10 @@ class Static_Site_Importer_Report_Diagnostics {
 			$entry['block_path'] = (string) $context['path'];
 		}
 		if ( 'form' === strtolower( (string) $entry['tag_name'] ) ) {
-			$manifest                   = self::form_manifest_from_html( $element_html );
+			$manifest                   = Static_Site_Importer_Form_Fallback_Contract::manifest_from_html( $element_html );
 			$entry['form']              = $manifest['form'];
 			$entry['controls']          = $manifest['controls'];
-			$entry['form_presentation'] = self::form_presentation_from_html( $element_html, $selector, (int) ( $context['occurrence'] ?? 0 ) );
+			$entry['form_presentation'] = Static_Site_Importer_Form_Fallback_Contract::presentation_from_html( $element_html, $selector, (int) ( $context['occurrence'] ?? 0 ) );
 		}
 
 		return $entry;
@@ -1730,6 +1733,8 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array<string,mixed>
 	 */
 	public static function form_presentation_from_html( string $html, string $selector = '', int $occurrence = 0 ): array {
+		return Static_Site_Importer_Form_Fallback_Contract::presentation_from_html( $html, $selector, $occurrence );
+
 		$manifest = self::form_manifest_from_html( $html );
 		$form     = self::preserved_form_presentation( $html, $manifest['form'], $manifest['controls'] );
 		$doc      = new DOMDocument();
@@ -1866,6 +1871,8 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array{form:array<string,string>,controls:array<int,array<string,mixed>>}
 	 */
 	public static function form_manifest_from_html( string $html ): array {
+		return Static_Site_Importer_Form_Fallback_Contract::manifest_from_html( $html );
+
 		if ( '' === $html || ! str_contains( strtolower( $html ), '<form' ) ) {
 			return array(
 				'form'     => array(),
@@ -1944,6 +1951,8 @@ class Static_Site_Importer_Report_Diagnostics {
 
 	/** @param array<string,mixed> $fallback */
 	public static function fallback_reconciliation_hash( array $fallback ): string {
+		return Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $fallback );
+
 		$source = isset( $fallback['form'] ) || isset( $fallback['controls'] )
 			? wp_json_encode(
 				self::canonical_fallback_value(
@@ -1973,6 +1982,8 @@ class Static_Site_Importer_Report_Diagnostics {
 
 	/** @param array<string,mixed> $fallback */
 	public static function fallback_reconciliation_identity( array $fallback ): string {
+		return Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $fallback );
+
 		// Blocks Engine assigns this identity at fallback detection, before an
 		// importer-specific provider projection can alter its representation.
 		foreach ( array( 'source_fallback_identity', 'fallback_reconciliation_identity', 'fallback_identity' ) as $field ) {
@@ -2829,8 +2840,8 @@ class Static_Site_Importer_Report_Diagnostics {
 			if ( ! is_array( $diagnostic ) || ! self::is_form_fallback_diagnostic( $diagnostic ) ) {
 				continue;
 			}
-			$identity             = self::fallback_reconciliation_identity( $diagnostic );
-			$fallback_hash        = self::fallback_reconciliation_hash( $diagnostic );
+			$identity             = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $diagnostic );
+			$fallback_hash        = Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $diagnostic );
 			$candidate_receipt    = $receipts_by_fallback[ $identity ] ?? array();
 			$receipt              = is_array( $candidate_receipt ) ? $candidate_receipt : array();
 			$source_path          = self::first_scalar( $diagnostic, array( 'source_path', 'source' ) );

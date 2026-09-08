@@ -470,11 +470,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || 'form' !== ( $binding['role'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > 262144 ) {
 				continue;
 			}
-			$manifest = Static_Site_Importer_Report_Diagnostics::form_manifest_from_html( $binding['search_block_markup'] );
+			$manifest = Static_Site_Importer_Form_Fallback_Contract::manifest_from_html( $binding['search_block_markup'] );
 			if ( self::ordered_form_control_identity( $manifest['controls'] ) !== $control_shape ) {
 				return $entity;
 			}
-			$presentation = Static_Site_Importer_Report_Diagnostics::form_presentation_from_html( $binding['search_block_markup'], is_string( $entity['selector'] ?? null ) ? $entity['selector'] : '', $binding['occurrence'] );
+			$presentation = Static_Site_Importer_Form_Fallback_Contract::presentation_from_html( $binding['search_block_markup'], is_string( $entity['selector'] ?? null ) ? $entity['selector'] : '', $binding['occurrence'] );
 			if ( 'generic/form-presentation/v1' === ( $presentation['schema'] ?? null ) ) {
 				$presentations[] = $presentation;
 			}
@@ -719,8 +719,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						'role'                             => $binding['role'],
 						'declaration_id'                   => $declaration_id,
 						'reconciliation_identity'          => hash( 'sha256', "static-site-importer/runtime-entity-binding/v1\n{$declaration_id}\n{$binding['source_path']}\n{$binding['occurrence']}\n" . hash( 'sha256', $binding['search_block_markup'] ) ),
-						'fallback_reconciliation_identity' => 'form' === $binding['role'] ? Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_identity( $entity ) : '',
-						'fallback_hash'                    => 'form' === $binding['role'] ? Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $entity ) : '',
+						'fallback_reconciliation_identity' => 'form' === $binding['role'] ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $entity ) : '',
+						'fallback_hash'                    => 'form' === $binding['role'] ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $entity ) : '',
 						'materialized_block_hash'          => 'form' === $binding['role'] ? hash( 'sha256', $replacement ) : '',
 						'provider'                         => $prepared['adapter']['provider'] ?? '',
 						'superseded_runtime_selectors'     => $binding['superseded_runtime_selectors'] ?? array(),

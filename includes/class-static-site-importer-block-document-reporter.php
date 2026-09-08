@@ -350,7 +350,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 			$block
 		);
 		if ( 'form' === strtolower( (string) ( $diagnostic['tag_name'] ?? '' ) ) ) {
-			$manifest               = Static_Site_Importer_Report_Diagnostics::form_manifest_from_html( $html );
+			$manifest               = Static_Site_Importer_Form_Fallback_Contract::manifest_from_html( $html );
 			$diagnostic['form']     = $manifest['form'];
 			$diagnostic['controls'] = $manifest['controls'];
 		}

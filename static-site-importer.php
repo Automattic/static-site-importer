@@ -80,6 +80,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-plugin-materializer.php',
 	'class-static-site-importer-dependency-manager.php',
 	'class-static-site-importer-entity-materializer-registry.php',
+	'class-static-site-importer-form-fallback-contract.php',
 	'class-static-site-importer-asset-reporter.php',
 	'class-static-site-importer-document-metadata-reporter.php',
 	'class-static-site-importer-route-document-metadata.php',
