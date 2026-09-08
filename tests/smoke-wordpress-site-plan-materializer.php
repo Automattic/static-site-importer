@@ -316,6 +316,7 @@ require dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.p
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-plugin-materializer.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-manager.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-fallback-contract.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-build-provenance.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
@@ -1874,8 +1875,8 @@ $form_fallback                                    = array(
 		),
 	),
 );
-$form_fallback_identity                           = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_identity( $form_fallback );
-$form_fallback_hash                               = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $form_fallback );
+$form_fallback_identity                           = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $form_fallback );
+$form_fallback_hash                               = Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $form_fallback );
 WP_Block_Type_Registry::get_instance()->register( 'jetpack/contact-form', array() );
 $form_binding                                     = array(
 	'schema'                           => 'static-site-importer/runtime-entity-binding/v1',

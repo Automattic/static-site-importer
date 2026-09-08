@@ -6,6 +6,7 @@
   },
   "tests": [
     { "path": "tests/form-materializer-smoke.php", "environment": "standalone-php" },
+    { "path": "tests/form-fallback-contract-equivalence.php", "environment": "standalone-php" },
     { "path": "tests/provider-adapter-runtime-smoke.php", "environment": "standalone-php" },
     { "path": "tests/smoke-provider-submission-evidence.php", "environment": "standalone-php" },
     { "path": "tests/host-dependency-resolver.test.mjs", "environment": "node" },
@@ -27,6 +28,7 @@
     { "path": "tests/smoke-external-report-destinations.php", "environment": "standalone-php" },
     { "path": "tests/smoke-failed-plan-validation.php", "environment": "standalone-php" },
     { "path": "tests/smoke-export-theme-ability.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-form-fallback-contract.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-diagnostic-contract.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-report.php", "environment": "standalone-php" },
     { "path": "tests/smoke-missing-author-stylesheet-diagnostics.php", "environment": "standalone-php" },

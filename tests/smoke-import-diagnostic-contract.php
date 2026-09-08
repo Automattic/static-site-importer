@@ -46,6 +46,7 @@ if ( ! function_exists( 'add_action' ) ) {
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-diagnostics-adapter.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-fallback-contract.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
 require_once dirname( __DIR__ ) . '/includes/abilities.php';
 
@@ -597,9 +598,9 @@ $reordered_form_entity = array(
 		),
 	),
 );
-$form_identity    = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_identity( $reordered_form_entity );
-$form_hash        = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $reordered_form_entity );
-$assert( $form_hash === Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $normalized_form_fallback ) && $form_identity === Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_identity( $normalized_form_fallback ), 'form-fallback-reconciliation-canonicalizes-associative-key-order' );
+$form_identity    = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $reordered_form_entity );
+$form_hash        = Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $reordered_form_entity );
+$assert( $form_hash === Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $normalized_form_fallback ) && $form_identity === Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $normalized_form_fallback ), 'form-fallback-reconciliation-canonicalizes-associative-key-order' );
 $block_hash       = hash( 'sha256', '<!-- wp:jetpack/contact-form -->newsletter<!-- /wp:jetpack/contact-form -->' );
 $page_hash        = hash( 'sha256', '<!-- wp:group -->materialized page<!-- /wp:group -->' );
 $provider_receipt = array(
