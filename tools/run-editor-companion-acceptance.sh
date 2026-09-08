@@ -47,7 +47,7 @@ wait_for 'WordPress files' "curl --silent --fail http://127.0.0.1:${port}/wp-log
 "${wp[@]}" plugin activate static-site-importer
 "${wp[@]}" plugin install gutenberg --activate
 "${wp[@]}" plugin get gutenberg --field=version | tee "$evidence/gutenberg-version.txt"
-"${wp[@]}" static-site-importer import --request=/work/request.json --report=/work/output/import-report.json
+"${wp[@]}" static-site-importer import --request=/work/request.json --report=/work/output/import-report.json | tee "$evidence/import-result.jsonl"
 for report in import-report import-validation-result finding-packets; do
 	run docker run --rm --user 33:33 --entrypoint cat -v "${work}:/work" "$cli_image" "/work/output/${report}.json" > "$evidence/${report}.json"
 done

@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 
 const required = [ 'SSI_EDITOR_WP_URL', 'SSI_EDITOR_POST_ID', 'SSI_EDITOR_NEGATIVE_POST_ID', 'SSI_EDITOR_USER', 'SSI_EDITOR_PASSWORD', 'SSI_EDITOR_INVENTORY', 'SSI_EDITOR_EVIDENCE_DIR' ];
 const missing = required.filter( ( name ) => ! process.env[ name ] );
@@ -17,7 +17,14 @@ if ( missing.length ) {
 const baseUrl = process.env.SSI_EDITOR_WP_URL.replace( /\/$/, '' );
 const postId = process.env.SSI_EDITOR_POST_ID;
 const negativePostId = process.env.SSI_EDITOR_NEGATIVE_POST_ID;
-const inventory = JSON.parse( await ( await import( 'node:fs/promises' ) ).readFile( process.env.SSI_EDITOR_INVENTORY, 'utf8' ) );
+const inventory = JSON.parse( await readFile( process.env.SSI_EDITOR_INVENTORY, 'utf8' ) );
+const receipt = ( await readFile( `${ process.env.SSI_EDITOR_EVIDENCE_DIR }/import-result.jsonl`, 'utf8' ) ).trim().split( '\n' ).map( ( line ) => JSON.parse( line ) ).at( -1 );
+const validation = JSON.parse( await readFile( `${ process.env.SSI_EDITOR_EVIDENCE_DIR }/import-validation-result.json`, 'utf8' ) );
+assert.equal( receipt.schema, 'static-site-importer/import-cli-receipt/v1', 'public CLI receipt is present' );
+assert.equal( receipt.status, 'completed', 'import completed through the public CLI' );
+assert.equal( receipt.response.fixture_diagnostics.quality_counts.consistent, true, 'public quality counts agree within their owning phases' );
+assert.equal( validation.quality_pass, true, 'persisted validation passed' );
+assert.equal( validation.fail_import, false, 'persisted validation retains no import failure' );
 const expectedBlockNames = [ ...new Set( inventory.documents.flatMap( ( document ) => document.blocks ) ) ];
 const browser = await chromium.launch( { headless: true } );
 const page = await browser.newPage( { viewport: { width: 1440, height: 1000 } } );
