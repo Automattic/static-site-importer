@@ -87,15 +87,20 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	 * readable because they have already been persisted in imported content.
 	 */
 	public static function project_wrapper_classes( string $html ): string {
-		$wrapper_layers = array();
-		$projected      = preg_replace_callback(
+		$wrapper_layers          = array();
+		$provider_layout_classes = array();
+		$projected               = preg_replace_callback(
 			'/\bclass=(["\'])(.*?)\1/s',
-			static function ( array $matches ) use ( &$wrapper_layers ): string {
+			static function ( array $matches ) use ( &$wrapper_layers, &$provider_layout_classes ): string {
 				$classes    = preg_split( '/\s+/', trim( $matches[2] ) );
 				$classes    = false === $classes ? array() : $classes;
 				$is_wrapper = (bool) array_filter( $classes, static fn ( string $class_name ): bool => 1 === preg_match( '/^grunion-field-[A-Za-z0-9_-]+-wrap$/D', $class_name ) );
 				$output     = array();
 				foreach ( $classes as $class_name ) {
+					if ( $is_wrapper && 1 === preg_match( '/^ssi-node-[a-f0-9]{12}-wrap$/D', $class_name ) ) {
+						$provider_layout_classes[] = $class_name;
+						continue;
+					}
 					if ( preg_match( '/^ssi-source-wrapper-([0-9]{1,2})--([A-Za-z_][A-Za-z0-9_-]{0,79})-wrap$/D', $class_name, $marker ) ) {
 						if ( $is_wrapper ) {
 							$wrapper_layers[ (int) $marker[1] ][] = $marker[2];
@@ -130,10 +135,13 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		ksort( $wrapper_layers );
 		$open  = '';
 		$close = '';
-		foreach ( $wrapper_layers as $classes ) {
+		foreach ( $wrapper_layers as $depth => $classes ) {
 			$classes = array_values( array_unique( $classes ) );
-			$open   .= '<div class="' . implode( ' ', $classes ) . '">';
-			$close   = '</div>' . $close;
+			if ( array_key_first( $wrapper_layers ) === $depth ) {
+				$classes = array_values( array_unique( array_merge( $classes, $provider_layout_classes ) ) );
+			}
+			$open .= '<div class="' . implode( ' ', $classes ) . '">';
+			$close = '</div>' . $close;
 		}
 		$wrapped = preg_replace_callback(
 			'/<input\b[^>]*>|<textarea\b[^>]*>.*?<\/textarea>|<select\b[^>]*>.*?<\/select>/is',
