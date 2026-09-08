@@ -957,15 +957,35 @@ class Static_Site_Importer_Form_Seeder {
 			usort( $siblings, static fn ( array $left, array $right ): int => $left['order'] <=> $right['order'] );
 		}
 		unset( $siblings );
-		$control_parents = array();
+		$control_parents  = array();
+		$topology_parents = array();
 		foreach ( $nodes as $node ) {
-			if ( is_array( $node ) && 'control' === ( $node['kind'] ?? null ) && is_int( $node['control'] ?? null ) ) {
-				$control_parents[ $node['control'] ] = isset( $node['parent'] ) && is_string( $node['parent'] ) ? $node['parent'] : '$root';
+			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) ) {
+				continue;
+			}
+			$parent                          = isset( $node['parent'] ) && is_string( $node['parent'] ) ? $node['parent'] : '$root';
+			$topology_parents[ $node['id'] ] = $parent;
+			if ( 'control' === ( $node['kind'] ?? null ) && is_int( $node['control'] ?? null ) ) {
+				$control_parents[ $node['control'] ] = $parent;
 			}
 		}
 		$provider_controls        = array();
 		$auxiliary_popup_controls = array();
 		$phone_popup_targets      = array();
+		$shares_phone_group       = static function ( int $popup_control, int $phone_control ) use ( $control_parents, $topology_parents ): bool {
+			$popup_parent = $control_parents[ $popup_control ] ?? null;
+			$phone_parent = $control_parents[ $phone_control ] ?? null;
+			if ( ! is_string( $popup_parent ) || ! is_string( $phone_parent ) || '$root' === $phone_parent ) {
+				return false;
+			}
+			for ( $depth = 0; $depth < 16 && '$root' !== $popup_parent; ++$depth ) {
+				if ( $phone_parent === $popup_parent ) {
+					return true;
+				}
+				$popup_parent = $topology_parents[ $popup_parent ] ?? '$root';
+			}
+			return false;
+		};
 		foreach ( $controls as $control_index => $control ) {
 			if ( 'phone' !== strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) ) {
 				$type      = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
@@ -986,11 +1006,14 @@ class Static_Site_Importer_Form_Seeder {
 				}
 				continue;
 			}
-			$previous       = $controls[ $control_index - 1 ] ?? null;
-			$previous_popup = is_array( $previous ) ? strtolower( trim( (string) ( $previous['aria_haspopup'] ?? '' ) ) ) : '';
-			if ( is_array( $previous ) && 'button' === strtolower( trim( (string) ( $previous['tag'] ?? '' ) ) ) && 'button' === strtolower( trim( (string) ( $previous['type'] ?? '' ) ) ) && in_array( $previous_popup, array( 'true', 'menu', 'listbox', 'tree', 'grid', 'dialog' ), true ) ) {
-				$provider_controls[ $control_index - 1 ]   = true;
-				$phone_popup_targets[ $control_index - 1 ] = $control_index;
+			$previous            = $controls[ $control_index - 1 ] ?? null;
+			$previous_popup      = is_array( $previous ) ? strtolower( trim( (string) ( $previous['aria_haspopup'] ?? '' ) ) ) : '';
+			$previous_label      = is_array( $previous ) ? strtolower( trim( (string) ( $previous['label'] ?? $previous['text'] ?? '' ) ) ) : '';
+			$is_country_selector = str_contains( $previous_label, 'phone' ) && str_contains( $previous_label, 'country' );
+			if ( is_array( $previous ) && 'button' === strtolower( trim( (string) ( $previous['tag'] ?? '' ) ) ) && 'button' === strtolower( trim( (string) ( $previous['type'] ?? '' ) ) ) && in_array( $previous_popup, array( 'true', 'menu', 'listbox', 'tree', 'grid', 'dialog' ), true ) && $is_country_selector && $shares_phone_group( $control_index - 1, $control_index ) ) {
+				$provider_controls[ $control_index - 1 ]        = true;
+				$phone_popup_targets[ $control_index - 1 ]      = $control_index;
+				$auxiliary_popup_controls[ $control_index - 1 ] = true;
 			}
 		}
 		$losses                     = array();
