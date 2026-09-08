@@ -25,6 +25,7 @@ $result = Static_Site_Importer_Viewport_Metadata_Materializer::prepare_overlay( 
 $bootstrap = (string) ( $result['writes'][0]['content'] ?? '' );
 $assert( 'materialized' === $result['status'] && 'width=320, user-scalable=yes' === $result['declaration'], 'Consistent declarations should materialize in normalized form.' );
 $assert( str_contains( $bootstrap, '// Existing bootstrap.' ) && str_contains( $bootstrap, 'template_include' ) && str_contains( $bootstrap, "remove_action( 'wp_head', '_block_template_viewport_meta_tag', 0 )" ), 'The portable theme bootstrap should replace the block-template viewport callback without dropping prior bootstrap code.' );
+$assert( str_contains( $bootstrap, "add_action( 'wp_head', static function (): void {") && str_contains( $bootstrap, "echo '<meta name=\"viewport\" content=\"' . esc_attr(") && str_contains( $bootstrap, "}, 0 );" ), 'The portable theme bootstrap must emit the authored declaration at wp_head priority zero.' );
 
 $missing = Static_Site_Importer_Viewport_Metadata_Materializer::prepare_overlay( array( 'pages' => array( $page( 'index.html', array( $viewport( 'width=320' ) ) ), $page( 'about.html', array() ) ) ) );
 $assert( 'report_only' === $missing['status'] && 'viewport_metadata_missing_route' === ( $missing['diagnostics'][0]['reason_code'] ?? '' ) && array() === $missing['writes'], 'A declaration missing from one route should remain report-only.' );
