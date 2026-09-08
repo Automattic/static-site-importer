@@ -37,12 +37,16 @@ mkdir( $GLOBALS['ssi_plan_root'], 0777, true );
 
 class WP_Error {
 	private string $code;
+	private string $message;
 	private mixed $data;
 	public function __construct( string $code, string $message = '', mixed $data = null ) {
 		$this->code = $code;
+		$this->message = $message;
 		$this->data = $data; }
 	public function get_error_code(): string {
 		return $this->code; }
+	public function get_error_message(): string {
+		return $this->message; }
 	public function get_error_data(): mixed {
 		return $this->data; }
 }
@@ -1185,6 +1189,40 @@ $projection_path = $GLOBALS['ssi_plan_root'] . '/large-invalid-binary-report.jso
 $projection_payload = array( 'schema' => 'static-site-importer/import-report/v1', 'materialization_receipt' => $typed_font_receipt );
 $projection_receipt = $typed_font_receipt;
 $write_projection = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'write_plan_projection' );
+// The same test file can compare the immutable pre-extraction baseline.
+$document_metadata_projection = class_exists( 'Static_Site_Importer_Receipt_Projection' )
+	? new ReflectionMethod( Static_Site_Importer_Receipt_Projection::class, 'document_metadata' )
+	: new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'document_metadata_from_plan_receipt' );
+$metadata_projection = $document_metadata_projection->invoke(
+	null,
+	array(
+		'pages' => array(
+			array(
+				'entrypoint'        => true,
+				'document_metadata' => array(
+					'links'   => array( array( 'href' => 'source.css', 'resolved_url' => 'https://example.test/assets/site.css' ) ),
+					'scripts' => array( array( 'src' => 'source.js', 'resolved_url' => 'https://example.test/assets/site.js' ) ),
+				),
+			),
+		),
+	)
+);
+$assert( 'https://example.test/assets/site.css' === ( $metadata_projection['links'][0]['href'] ?? '' ) && 'https://example.test/assets/site.js' === ( $metadata_projection['scripts'][0]['src'] ?? '' ), 'report document metadata rewrites resolved link and script URLs on the owned metadata arrays' );
+$malformed_metadata_projection = $document_metadata_projection->invoke(
+	null,
+	array(
+		'pages' => array(
+			array(
+				'entrypoint'        => true,
+				'document_metadata' => array(
+					'links'   => 'not-an-array',
+					'scripts' => array( 'not-an-array-row' ),
+				),
+			),
+		),
+	)
+);
+$assert( 'not-an-array' === ( $malformed_metadata_projection['links'] ?? '' ) && array( 'not-an-array-row' ) === ( $malformed_metadata_projection['scripts'] ?? array() ), 'report document metadata preserves malformed collections without reference iteration warnings or mutation' );
 $write_projection->invokeArgs( null, array( $projection_path, $projection_payload, &$projection_receipt ) );
 $projection_json = (string) file_get_contents( $projection_path );
 $projection = json_decode( $projection_json, true );
@@ -2967,6 +3005,124 @@ $resolved_companion       = $resolve_companion_assets->invoke(
 );
 $resolved_companion_html = (string) ( $resolved_companion['blocks'][0]['render'] ?? '' );
 $assert( str_contains( $resolved_companion_html, 'src="' . $root_media_url . '"' ) && str_contains( $resolved_companion_html, 'srcset="' . $root_media_url . ' 1x"' ) && ! str_contains( $resolved_companion_html, '="/media/example.jpg' ), 'generated companion block renders resolve canonical root-relative assets through the materialized theme map' );
+
+$projection_cases = array();
+$projection_files = static function ( string $directory ): array {
+	$files = array();
+	foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $directory, FilesystemIterator::SKIP_DOTS ) ) as $file ) {
+		if ( $file->isFile() ) {
+			$files[ substr( $file->getPathname(), strlen( $directory ) + 1 ) ] = file_get_contents( $file->getPathname() );
+		}
+	}
+	ksort( $files );
+	return $files;
+};
+foreach ( array( 'success', 'batch', 'stale_cleanup', 'report_persistence', 'external_destination' ) as $projection_case ) {
+	$GLOBALS['ssi_plan_posts'] = array();
+	$GLOBALS['ssi_plan_meta'] = array();
+	$GLOBALS['ssi_plan_options'] = array( 'show_on_front' => 'posts', 'page_on_front' => 0, 'blogname' => 'Before', 'use_smilies' => true, 'stylesheet' => 'before-theme', 'template' => 'before-theme' );
+	$GLOBALS['ssi_plan_rollback_events'] = array();
+	$rollback_order = array();
+	$case_slug = 'projection-proof-' . $projection_case;
+	$case_root = $GLOBALS['ssi_plan_root'] . '/' . $case_slug;
+	mkdir( $case_root, 0777, true );
+	$prior_manifest = array(
+		'schema' => 'static-site-importer/source-of-truth-manifest/v1',
+		'desired' => array(
+			'pages' => array( array( 'source_path' => 'later.html', 'materialized_post_id' => 0 ) ),
+			'files' => array( array( 'path' => 'prior-owned.txt', 'kind' => 'fixture' ) ),
+			'assets' => array( array( 'source_path' => 'prior-owned.txt', 'theme_path' => 'prior-owned.txt' ) ),
+		),
+	);
+	file_put_contents( $case_root . '/prior-owned.txt', 'previous import bytes' );
+	file_put_contents( $case_root . '/static-site-importer-manifest.json', wp_json_encode( $prior_manifest ) );
+	$files_before_projection = $projection_files( $case_root );
+	$options_before_projection = $GLOBALS['ssi_plan_options'];
+	$case_args = array(
+		'slug' => $case_slug,
+		'overwrite' => true,
+		'activate' => true,
+		'seed_entities' => true,
+		'font_materialization' => array(),
+		'import_run_id' => 'projection-equivalence',
+		'write_theme_report_artifacts' => true,
+		'batch_import' => 'batch' === $projection_case,
+	);
+	if ( in_array( $projection_case, array( 'stale_cleanup', 'report_persistence' ), true ) ) {
+		$case_args['inject_materialization_failure'] = $projection_case;
+	}
+	if ( 'external_destination' === $projection_case ) {
+		// Runner TMPDIR may be an alias; this fixture starts with a valid physical
+		// destination and changes it only after preflight has accepted it.
+		$external_parent = realpath( $GLOBALS['ssi_plan_root'] );
+		$assert( false !== $external_parent, 'external projection fixture has a physical parent directory' );
+		$case_args['report'] = $external_parent . '/late-external-report.json';
+	}
+	$register_plan_blocks( $canonical_plan );
+	$case_prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare_for_materialization( $canonical_plan, $case_args );
+	$assert( 'prepared' === ( $case_prepared['status'] ?? '' ), $projection_case . ' projection fixture prepares a real write plan' );
+	$case_materialized = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared_lifecycle( $case_prepared, $block_lifecycle, null, array(), array() );
+	$assert( isset( $case_materialized['receipt']['transaction'] ), $projection_case . ' retains the deferred transaction until projection' );
+	if ( 'external_destination' === $projection_case ) {
+		mkdir( $case_args['report'] );
+	}
+	$case_result = $project_materialization_result->invoke( null, $case_materialized, $case_prepared['args'] );
+	$case_failed = ! in_array( $projection_case, array( 'success', 'batch' ), true );
+	$assert( $case_failed === is_wp_error( $case_result ), $projection_case . ' retains its success/failure outcome' );
+	$case_receipt = $case_failed ? $case_result->get_error_data() : $case_result['materialization_receipt'];
+	$case_files = $projection_files( $case_root );
+	if ( $case_failed ) {
+		$assert( $files_before_projection === $case_files && array() === $GLOBALS['ssi_plan_posts'] && $options_before_projection === $GLOBALS['ssi_plan_options'], $projection_case . ' restores prior files, pages, and options: ' . wp_json_encode( array( 'before_files' => array_keys( $files_before_projection ), 'after_files' => array_keys( $case_files ), 'posts' => $GLOBALS['ssi_plan_posts'], 'before_options' => $options_before_projection, 'after_options' => $GLOBALS['ssi_plan_options'], 'errors' => $case_receipt['errors'] ?? array() ) ) );
+		$assert( array( 'form', 'woo' ) === $rollback_order && ! empty( $case_receipt['transaction']->state['rollback']['done'] ), $projection_case . ' compensates providers in reverse order and rolls back the transaction' );
+	} else {
+		$assert( ! isset( $case_receipt['transaction'] ) && count( $GLOBALS['ssi_plan_posts'] ) > 0 && array() === $rollback_order, $projection_case . ' commits only after successful projection without compensating providers' );
+		$assert( ( 'batch' === $projection_case ) === is_file( $case_root . '/prior-owned.txt' ), $projection_case . ' preserves the batch manifest or cleans stale owned files' );
+		$assert( ( 'batch' === $projection_case ) === in_array( 'later.html', array_column( $case_result['source_of_truth']['desired']['pages'], 'source_path' ), true ) && ( 'batch' === $projection_case ) === in_array( 'prior-owned.txt', array_column( $case_result['source_of_truth']['desired']['assets'], 'source_path' ), true ), $projection_case . ' preserves prior batch page and asset declarations only for partial imports' );
+		$assert( $case_result['import_report']['owner_handoff_evidence']['materialization_receipt_sha256'] === $case_receipt['receipt_instance_id'], $projection_case . ' binds owner handoff evidence to the exact receipt instance' );
+	}
+	$projection_cases[ $projection_case ] = array(
+		'result' => $case_failed ? array( 'error' => $case_result->get_error_code(), 'receipt' => $case_receipt ) : $case_result,
+		'files' => $case_files,
+		'posts' => $GLOBALS['ssi_plan_posts'],
+		'meta' => $GLOBALS['ssi_plan_meta'],
+		'options' => $GLOBALS['ssi_plan_options'],
+		'provider_rollback_order' => $rollback_order,
+		'mutation_events' => $GLOBALS['ssi_plan_rollback_events'],
+	);
+}
+
+if ( in_array( '--projection-snapshot', $argv, true ) ) {
+	// Preserve data/order and transaction state, normalizing only per-run identity
+	// and paths. Apply the same normalization inside persisted JSON file bytes.
+	$normalize_projection = static function ( mixed $value ) use ( &$normalize_projection ): mixed {
+		if ( is_string( $value ) ) {
+			$value = str_replace( $GLOBALS['ssi_plan_root'], '[temporary-theme-root]', $value );
+			if ( str_starts_with( $value, '{' ) || str_starts_with( $value, '[' ) ) {
+				$decoded = json_decode( $value, true );
+				if ( is_array( $decoded ) && JSON_ERROR_NONE === json_last_error() ) {
+					return wp_json_encode( $normalize_projection( $decoded ), JSON_UNESCAPED_SLASHES );
+				}
+			}
+			return $value;
+		}
+		if ( is_object( $value ) ) {
+			$value = get_object_vars( $value );
+		}
+		if ( ! is_array( $value ) ) {
+			return $value;
+		}
+		$normalized = array();
+		foreach ( $value as $key => $item ) {
+			$key = is_string( $key ) ? str_replace( $GLOBALS['ssi_plan_root'], '[temporary-theme-root]', $key ) : $key;
+			$normalized[ $key ] = in_array( $key, array( 'receipt_instance_id', 'request_id', 'receipt_identity', 'transaction_identity', 'materialization_receipt_sha256', 'imported_at' ), true )
+				? '[volatile-' . $key . ']'
+				: $normalize_projection( $item );
+		}
+		return $normalized;
+	};
+	echo wp_json_encode( $normalize_projection( $projection_cases ) ) . "\n";
+	return;
+}
 
 if ( in_array( '--receipt-snapshot', $argv, true ) ) {
 	echo wp_json_encode(
