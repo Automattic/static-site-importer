@@ -249,7 +249,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 		$validation_counts                 = self::validation_quality_metric_values( self::import_validation_result( $result, $import_report ) );
 		$compiler_diagnostic_count         = self::quality_metric_values( $compiler_quality, array( 'diagnostic_count' ) );
 		$report_diagnostic_count           = self::quality_metric_values( $report_quality, array( 'diagnostic_count' ) );
-		$validation_diagnostic_count       = self::validation_quality_metric_values( self::import_validation_result( $result, $import_report ) );
+		$validation_diagnostic_count       = array_intersect_key( $validation_counts, array( 'diagnostic_count' => true ) );
 		$compiler_fallback_count_available = isset( $source_counts['fallback_count'] );
 		$provenance                        = array();
 
@@ -333,8 +333,8 @@ class Static_Site_Importer_Diagnostic_Contract {
 		);
 		$counts['diagnostic_count_provenance'] = array_filter(
 			array(
-				'compiler'                => isset( $compiler_diagnostic_count['diagnostic_count'] ) ? array( 'owner' => 'blocks-engine', 'path' => 'blocks_engine.wordpress_site_plan.quality.metrics.diagnostic_count' ) : null,
-				'import_report'           => isset( $report_diagnostic_count['diagnostic_count'] ) ? array( 'owner' => 'static-site-importer', 'path' => 'quality.diagnostic_count' ) : null,
+				'compiler'                => isset( $compiler_diagnostic_count['diagnostic_count'] ) ? array( 'owner' => 'blocks-engine', 'path' => 'blocks_engine.wordpress_site_plan.quality.' . ( is_array( $compiler_quality['metrics'] ?? null ) ? 'metrics.' : '' ) . 'diagnostic_count' ) : null,
+				'import_report'           => isset( $report_diagnostic_count['diagnostic_count'] ) ? array( 'owner' => 'static-site-importer', 'path' => 'quality.' . ( is_array( $report_quality['metrics'] ?? null ) ? 'metrics.' : '' ) . 'diagnostic_count' ) : null,
 				'materialized_validation' => isset( $validation_diagnostic_count['diagnostic_count'] ) ? array( 'owner' => 'static-site-importer', 'path' => 'import_validation_result.counts.diagnostics' ) : null,
 			)
 		);
