@@ -965,6 +965,7 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		$provider_controls        = array();
 		$auxiliary_popup_controls = array();
+		$phone_popup_targets      = array();
 		foreach ( $controls as $control_index => $control ) {
 			if ( 'phone' !== strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) ) {
 				$type      = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
@@ -985,9 +986,11 @@ class Static_Site_Importer_Form_Seeder {
 				}
 				continue;
 			}
-			$previous = $controls[ $control_index - 1 ] ?? null;
-			if ( is_array( $previous ) && 'button' === strtolower( trim( (string) ( $previous['tag'] ?? '' ) ) ) && 'button' === strtolower( trim( (string) ( $previous['type'] ?? '' ) ) ) ) {
-				$provider_controls[ $control_index - 1 ] = true;
+			$previous       = $controls[ $control_index - 1 ] ?? null;
+			$previous_popup = is_array( $previous ) ? strtolower( trim( (string) ( $previous['aria_haspopup'] ?? '' ) ) ) : '';
+			if ( is_array( $previous ) && 'button' === strtolower( trim( (string) ( $previous['tag'] ?? '' ) ) ) && 'button' === strtolower( trim( (string) ( $previous['type'] ?? '' ) ) ) && in_array( $previous_popup, array( 'true', 'menu', 'listbox', 'tree', 'grid', 'dialog' ), true ) ) {
+				$provider_controls[ $control_index - 1 ]   = true;
+				$phone_popup_targets[ $control_index - 1 ] = $control_index;
 			}
 		}
 		$losses                     = array();
@@ -1022,16 +1025,19 @@ class Static_Site_Importer_Form_Seeder {
 				$variants_by_node[ $variant['node'] ][] = $variant;
 			}
 		}
-		$collect_controls = static function ( array $node ) use ( &$collect_controls, $children, $provider_controls, $suppressed_controls ): array {
+		$collect_controls = static function ( array $node ) use ( &$collect_controls, $children, $provider_controls, $phone_popup_targets, $suppressed_controls ): array {
 			if ( 'control' === ( $node['kind'] ?? null ) ) {
 				$control_index = $node['control'] ?? null;
+				if ( is_int( $control_index ) && isset( $phone_popup_targets[ $control_index ] ) && ! isset( $suppressed_controls[ $phone_popup_targets[ $control_index ] ] ) ) {
+					return array( $phone_popup_targets[ $control_index ] );
+				}
 				return is_int( $control_index ) && ! isset( $provider_controls[ $control_index ] ) && ! isset( $suppressed_controls[ $control_index ] ) ? array( $control_index ) : array();
 			}
 			$controls = array();
 			foreach ( $children[ $node['id'] ?? '' ] ?? array() as $child ) {
 				$controls = array_merge( $controls, $collect_controls( $child ) );
 			}
-			return $controls;
+			return array_values( array_unique( $controls ) );
 		};
 		$wrapper_chains   = array();
 		foreach ( $nodes as $node ) {
@@ -1042,9 +1048,12 @@ class Static_Site_Importer_Form_Seeder {
 			if ( 1 !== count( $branch_controls ) ) {
 				continue;
 			}
-			$control_index = $branch_controls[0];
-			$source_class  = trim( (string) ( $node['class'] ?? '' ) );
-			if ( ! is_int( $control_index ) || '' === $source_class || ! isset( $field_blocks[ $control_index ] ) ) {
+			$control_index                = $branch_controls[0];
+			$source_class                 = trim( (string) ( $node['class'] ?? '' ) );
+			$is_projectable_classless_box = '' === $source_class
+				&& in_array( $node['tag'] ?? '', array( 'div', 'span' ), true )
+				&& ( ! empty( $layout_by_node[ $node['id'] ] ?? array() ) || ! empty( $variants_by_node[ $node['id'] ] ?? array() ) );
+			if ( ! is_int( $control_index ) || ! isset( $field_blocks[ $control_index ] ) || ( '' === $source_class && ! $is_projectable_classless_box ) ) {
 				continue;
 			}
 			$wrapper_chains[ $control_index ][] = $node;
@@ -1071,10 +1080,11 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			foreach ( $chain as $offset => $node ) {
 				$generated_class = self::layout_node_class( self::layout_scope( $form ), $node['id'] );
-				$wrapper_classes = preg_split( '/\s+/', trim( (string) $node['class'] ) );
+				$wrapper_classes = preg_split( '/\s+/', trim( (string) ( $node['class'] ?? '' ) ) );
 				if ( false === $wrapper_classes ) {
 					$wrapper_classes = array();
 				}
+				$wrapper_classes = array_values( array_filter( $wrapper_classes ) );
 				// The outermost source box is the provider's own field shell, and the
 				// runtime rebuilds every deeper box as its own element. Giving each box
 				// its own hook keeps one source element addressable by one target instead
@@ -1092,6 +1102,11 @@ class Static_Site_Importer_Form_Seeder {
 				// Jetpack derives its field-shell classes by adding `-wrap`. Keep the
 				// transport marker unsuffixed so that derivation leaves one recognizable
 				// suffix rather than making it part of the restored source class.
+				// A classless source box can still have proven inline layout. Transport its
+				// generated hook so the runtime can restore a concrete box for the overlay.
+				if ( empty( $wrapper_classes ) ) {
+					$wrapper_classes[] = $generated_class;
+				}
 				$class_names[]                = implode( ' ', array_map( static fn ( string $class_name ): string => 'ssi-source-wrapper-' . $layer . '--' . $class_name, $wrapper_classes ) );
 				$wrapper_hooks[ $node['id'] ] = 0 === $offset ? $generated_class . '-wrap' : $generated_class;
 				$operations[]                 = array(
@@ -1101,18 +1116,19 @@ class Static_Site_Importer_Form_Seeder {
 				);
 				// A source box whose own stylesheet addresses it by class keeps its layout
 				// through the projected classes, so it needs no generated overlay target.
-				$class_tokens = preg_split( '/\s+/', trim( (string) $node['class'] ) );
+				$class_tokens = preg_split( '/\s+/', trim( (string) ( $node['class'] ?? '' ) ) );
 				if ( false === $class_tokens ) {
 					$class_tokens = array();
 				}
-				$provenance  = $layout_nodes_by_id[ $node['id'] ]['provenance'] ?? array();
-				$class_owned = ! empty( $layout_by_node[ $node['id'] ] ?? array() ) && ! empty( $provenance );
+				$class_tokens = array_values( array_filter( $class_tokens ) );
+				$provenance   = $layout_nodes_by_id[ $node['id'] ]['provenance'] ?? array();
+				$class_owned  = ! empty( $layout_by_node[ $node['id'] ] ?? array() ) && ! empty( $provenance );
 				foreach ( $provenance as $provenance_row ) {
 					$selector      = is_array( $provenance_row ) && is_string( $provenance_row['selector'] ?? null ) ? $provenance_row['selector'] : '';
 					$matches_class = false;
 					if ( preg_match( '/^(?:[a-z][a-z0-9-]*)?(?:\.[a-zA-Z][a-zA-Z0-9_-]*)+$/D', $selector ) ) {
 						foreach ( $class_tokens as $class_token ) {
-							if ( '' !== $class_token && preg_match( '/\.' . preg_quote( $class_token, '/' ) . '(?![a-zA-Z0-9_-])/', $selector ) ) {
+							if ( preg_match( '/\.' . preg_quote( $class_token, '/' ) . '(?![a-zA-Z0-9_-])/', $selector ) ) {
 								$matches_class = true;
 								break;
 							}
@@ -1230,7 +1246,7 @@ class Static_Site_Importer_Form_Seeder {
 			return true;
 		};
 
-		$grid_span_width = static function ( mixed $columns, mixed $column ): ?string {
+		$grid_span_width       = static function ( mixed $columns, mixed $column ): ?string {
 			$columns = preg_replace( '/\s+/', '', is_string( $columns ) ? $columns : '' );
 			$column  = preg_replace( '/\s+/', '', is_string( $column ) ? $column : '' );
 			if ( ! is_string( $columns ) || ! is_string( $column ) || ! preg_match( '/^repeat\(([1-9][0-9]*),1fr\)$/D', $columns, $column_count ) || ! preg_match( '/^span([1-9][0-9]*)$/D', $column, $span ) || (int) $span[1] > (int) $column_count[1] ) {
@@ -1238,14 +1254,24 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			return rtrim( rtrim( number_format( 100 * (int) $span[1] / (int) $column_count[1], 3, '.', '' ), '0' ), '.' ) . '%';
 		};
+		$grid_area_column_span = static function ( mixed $area ): ?string {
+			$area = is_string( $area ) ? trim( $area ) : '';
+			if ( ! preg_match( '/^(?:[0-9]+|auto)\s*\/\s*(?:[0-9]+|auto)\s*\/\s*span\s+[0-9]+\s*\/\s*span\s+([1-9][0-9]*)$/D', $area, $span ) ) {
+				return null;
+			}
+			return 'span ' . $span[1];
+		};
 		foreach ( $nodes as $node ) {
-			$id              = is_array( $node ) && 'wrapper' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
-			$branch_controls = '' !== $id ? $collect_controls( $node ) : array();
-			$control_index   = 1 === count( $branch_controls ) ? $branch_controls[0] : null;
-			$layout_node     = $layout_nodes_by_id[ $id ] ?? null;
-			$layout_parent   = is_array( $layout_node ) && is_string( $layout_node['parent'] ?? null ) ? $layout_nodes_by_id[ $layout_node['parent'] ] ?? null : null;
-			$width           = is_array( $layout_node ) && is_array( $layout_parent ) ? $grid_span_width( $layout_parent['layout']['columns'] ?? null, $layout_node['layout']['column'] ?? null ) : null;
-			if ( ! is_int( $control_index ) || 'core/button' !== ( $field_blocks[ $control_index ]['name'] ?? '' ) || null === $width || ! $has_unconditional_proven_property( $layout_node, 'grid-column' ) || ! $has_unconditional_proven_property( $layout_parent, 'grid-template-columns' ) ) {
+			$id               = is_array( $node ) && 'wrapper' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
+			$branch_controls  = '' !== $id ? $collect_controls( $node ) : array();
+			$control_index    = 1 === count( $branch_controls ) ? $branch_controls[0] : null;
+			$layout_node      = $layout_nodes_by_id[ $id ] ?? null;
+			$layout_parent    = is_array( $layout_node ) && is_string( $layout_node['parent'] ?? null ) ? $layout_nodes_by_id[ $layout_node['parent'] ] ?? null : null;
+			$column           = is_array( $layout_node ) ? ( $layout_node['layout']['column'] ?? $grid_area_column_span( $layout_node['layout']['area'] ?? null ) ) : null;
+			$width            = is_array( $layout_node ) && is_array( $layout_parent ) ? $grid_span_width( $layout_parent['layout']['columns'] ?? null, $column ) : null;
+			$placement_proven = is_array( $layout_node ) && ( $has_unconditional_proven_property( $layout_node, 'grid-column' ) || $has_unconditional_proven_property( $layout_node, 'grid-area' ) );
+			$parent_proven    = is_array( $layout_parent ) && $has_unconditional_proven_property( $layout_parent, 'grid-template-columns' );
+			if ( ! is_int( $control_index ) || 'core/button' !== ( $field_blocks[ $control_index ]['name'] ?? '' ) || null === $width || ! $placement_proven || ! $parent_proven ) {
 				continue;
 			}
 			$target_variants = array();
