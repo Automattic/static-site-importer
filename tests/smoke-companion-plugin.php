@@ -561,8 +561,8 @@ if ( is_array( $descriptor ) ) {
 	$assert( str_contains( $main, 'Plugin Name:' ), 'main-file-has-plugin-header' );
 	$assert( str_contains( $main, "add_filter( 'render_block'" ), 'main-file-scopes-island-enqueue' );
 	$assert( str_contains( $main, 'wp_enqueue_script' ), 'main-file-enqueues-island-js' );
-	$assert( str_contains( $main, "require_once __DIR__ . '/includes/class-static-site-importer-provider-form-runtime.php'" ) && str_contains( $main, 'Static_Site_Importer_Provider_Form_Runtime::register();' ), 'main-file-registers-carried-provider-form-runtime' );
-	$assert( isset( $files['ssi-example-site/includes/class-static-site-importer-provider-form-runtime.php'] ), 'provider-form-runtime-file-emitted' );
+	$assert( ! str_contains( $main, 'Static_Site_Importer_Provider_Form_Runtime' ), 'main-file-does-not-load-importer-owned-provider-form-runtime' );
+	$assert( ! isset( $files['ssi-example-site/includes/class-static-site-importer-provider-form-runtime.php'] ), 'provider-form-runtime-is-not-emitted-by-companion' );
 
 	$assert( str_contains( $main, "register_block_type( SSI_EXAMPLE_SITE_" ) && str_contains( $main, "_DIR . 'blocks/' . \$block_dir )" ), 'main-file-registers-metadata-block-directory' );
 	$assert( str_contains( $main, "\$registered instanceof WP_Block_Type" ) && str_contains( $main, "static_site_importer_companion_block_owners" ) && str_contains( $main, "'plugin_file' => 'ssi-example-site/ssi-example-site.php'" ), 'main-file-records-owner-after-metadata-registration' );
@@ -918,18 +918,8 @@ $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/rend
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/block.json' ), 'install-emits-block-json' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/index.js' ), 'install-emits-declared-editor-asset' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/editor/core-enhancement.js' ) && 'window.ssiExampleEditor = true;' === (string) file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/editor/core-enhancement.js' ), 'install-writes-editor-script-asset' );
-$assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/includes/class-static-site-importer-provider-form-runtime.php' ), 'install-writes-provider-form-runtime' );
-$assert( isset( $GLOBALS['ssi_companion_registered_filters']['grunion_contact_form_field_html'], $GLOBALS['ssi_companion_registered_filters']['render_block_core/button'] ), 'installed-companion-registers-provider-form-runtime-hooks' );
-$submit_filter = $GLOBALS['ssi_companion_registered_filters']['render_block_core/button'][0][0] ?? null;
-$projected_submit = is_callable( $submit_filter ) ? call_user_func(
-	$submit_filter,
-	'<div class="wp-block-button ssi-source-submit--source-submit"><button class="wp-block-button__link">Send</button></div>',
-	array( 'attrs' => array( 'className' => 'ssi-source-submit--source-submit' ) )
-) : '';
-$assert( str_contains( $projected_submit, 'class="wp-block-button"' ) && str_contains( $projected_submit, 'class="wp-block-button__link source-submit"' ), 'installed-companion-projects-submit-presentation-at-runtime' );
-$wrapper_filter = $GLOBALS['ssi_companion_registered_filters']['grunion_contact_form_field_html'][0][0] ?? null;
-$projected_wrapper = is_callable( $wrapper_filter ) ? call_user_func( $wrapper_filter, '<div class="grunion-field-text-wrap ssi-source-wrapper-2--source-box-wrap"><input type="text"></div>' ) : '';
-$assert( str_contains( $projected_wrapper, '<div class="source-box"><input type="text"></div>' ) && ! str_contains( $projected_wrapper, 'ssi-source-wrapper-' ), 'installed-companion-rebuilds-provider-input-wrapper-at-runtime' );
+$assert( ! file_exists( WP_PLUGIN_DIR . '/ssi-example-site/includes/class-static-site-importer-provider-form-runtime.php' ), 'install-does-not-write-importer-owned-provider-form-runtime' );
+$assert( ! isset( $GLOBALS['ssi_companion_registered_filters']['grunion_contact_form_field_html'], $GLOBALS['ssi_companion_registered_filters']['render_block_core/button'] ), 'installed-companion-does-not-register-importer-owned-provider-form-runtime-hooks' );
 $standalone_bootstrap = <<<'PHP'
 define( 'ABSPATH', __DIR__ . '/' );
 class WP_Block_Type {

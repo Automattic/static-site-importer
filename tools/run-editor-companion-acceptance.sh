@@ -48,6 +48,11 @@ wait_for 'WordPress files' "curl --silent --fail http://127.0.0.1:${port}/wp-log
 "${wp[@]}" plugin install gutenberg --activate
 "${wp[@]}" plugin get gutenberg --field=version | tee "$evidence/gutenberg-version.txt"
 "${wp[@]}" static-site-importer import --request=/work/request.json --report=/work/output/import-report.json | tee "$evidence/import-result.jsonl"
+companion_plugin="$("${wp[@]}" option get static_site_importer_active_companion_plugin)"
+test -n "$companion_plugin"
+"${wp[@]}" plugin is-active static-site-importer
+"${wp[@]}" plugin is-active "$companion_plugin"
+"${wp[@]}" eval 'echo wp_json_encode( array( "importer_active" => is_plugin_active( "static-site-importer/static-site-importer.php" ), "companion_plugin" => (string) get_option( "static_site_importer_active_companion_plugin", "" ), "companion_active" => is_plugin_active( (string) get_option( "static_site_importer_active_companion_plugin", "" ) ), "provider_runtime_loaded" => class_exists( "Static_Site_Importer_Provider_Form_Runtime", false ), "companion_carries_provider_runtime" => file_exists( WP_PLUGIN_DIR . "/" . dirname( (string) get_option( "static_site_importer_active_companion_plugin", "" ) ) . "/includes/class-static-site-importer-provider-form-runtime.php" ) ) );' | tee "$evidence/provider-runtime-lifecycle.json"
 for report in import-report import-validation-result finding-packets; do
 	run docker run --rm --user 33:33 --entrypoint cat -v "${work}:/work" "$cli_image" "/work/output/${report}.json" > "$evidence/${report}.json"
 done
@@ -59,5 +64,5 @@ test -n "$post_id"
 block_name="$(node -e 'const i=require(process.argv[1]); const n=[...new Set(i.documents.flatMap(d=>d.blocks))].find(n=>n.endsWith("/visual-iframe")); if (!n) process.exit(1); process.stdout.write(n)' "$evidence/inventory.json")"
 negative_markup="<!-- wp:${block_name} {\"src\":\"https://example.test/bad\",\"title\":\"Bad\"} --><iframe title=\"Bad\" src=\"https://example.test/not-matching\"></iframe><!-- /wp:${block_name} -->"
 negative_post_id="$("${wp[@]}" post create --post_type=page --post_status=publish --post_title='Invalid companion acceptance' --post_content="$negative_markup" --porcelain)"
-SSI_EDITOR_WP_URL="http://127.0.0.1:${port}" SSI_EDITOR_POST_ID="$post_id" SSI_EDITOR_NEGATIVE_POST_ID="$negative_post_id" SSI_EDITOR_USER=admin SSI_EDITOR_PASSWORD=password SSI_EDITOR_INVENTORY="$evidence/inventory.json" SSI_EDITOR_EVIDENCE_DIR="$evidence" run node "$root/tests/editor-companion-acceptance.mjs" | tee "$evidence/browser.json"
+SSI_EDITOR_WP_URL="http://127.0.0.1:${port}" SSI_EDITOR_POST_ID="$post_id" SSI_EDITOR_NEGATIVE_POST_ID="$negative_post_id" SSI_EDITOR_USER=admin SSI_EDITOR_PASSWORD=password SSI_EDITOR_INVENTORY="$evidence/inventory.json" SSI_EDITOR_EVIDENCE_DIR="$evidence" SSI_EDITOR_LIFECYCLE="$evidence/provider-runtime-lifecycle.json" run node "$root/tests/editor-companion-acceptance.mjs" | tee "$evidence/browser.json"
 printf 'Evidence retained at %s\n' "$evidence"

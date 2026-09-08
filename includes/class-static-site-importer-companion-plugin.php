@@ -234,13 +234,7 @@ class Static_Site_Importer_Companion_Plugin {
 		foreach ( $editor_scripts as $script ) {
 			$files[ $plugin_slug . '/' . $script['src'] ] = $script['content'];
 		}
-		$provider_form_runtime = file_get_contents( __DIR__ . '/class-static-site-importer-provider-form-runtime.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the plugin-owned runtime source carried into generated companions.
-		if ( ! is_string( $provider_form_runtime ) || '' === $provider_form_runtime ) {
-			return new WP_Error( 'static_site_importer_companion_plugin_provider_form_runtime_missing', 'Provider form runtime projection file is unavailable.' );
-		}
-		$files[ $plugin_slug . '/includes/class-static-site-importer-provider-form-runtime.php' ] = $provider_form_runtime;
-
-		$inventory_source = array( $block_names, $preserved, hash( 'sha256', $provider_form_runtime ) );
+		$inventory_source = array( $block_names, $preserved );
 		if ( ! empty( $editor_scripts ) ) {
 			$inventory_source[] = $editor_scripts;
 		}
@@ -705,9 +699,6 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = '';
 		$lines[] = sprintf( "define( '%s_DIR', plugin_dir_path( __FILE__ ) );", $const_prefix );
 		$lines[] = sprintf( "define( '%s_URL', plugin_dir_url( __FILE__ ) );", $const_prefix );
-		$lines[] = '';
-		$lines[] = "require_once __DIR__ . '/includes/class-static-site-importer-provider-form-runtime.php';";
-		$lines[] = 'Static_Site_Importer_Provider_Form_Runtime::register();';
 		$lines[] = '';
 		$lines[] = '/**';
 		$lines[] = ' * Register generated blocks from their metadata directories.';
