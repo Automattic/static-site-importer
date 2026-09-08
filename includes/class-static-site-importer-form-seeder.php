@@ -1254,14 +1254,24 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			return rtrim( rtrim( number_format( 100 * (int) $span[1] / (int) $column_count[1], 3, '.', '' ), '0' ), '.' ) . '%';
 		};
+		$grid_area_column_span = static function ( mixed $area ): ?string {
+			$area = is_string( $area ) ? trim( $area ) : '';
+			if ( ! preg_match( '/^(?:[0-9]+|auto)\s*\/\s*(?:[0-9]+|auto)\s*\/\s*span\s+[0-9]+\s*\/\s*span\s+([1-9][0-9]*)$/D', $area, $span ) ) {
+				return null;
+			}
+			return 'span ' . $span[1];
+		};
 		foreach ( $nodes as $node ) {
 			$id              = is_array( $node ) && 'wrapper' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
 			$branch_controls = '' !== $id ? $collect_controls( $node ) : array();
 			$control_index   = 1 === count( $branch_controls ) ? $branch_controls[0] : null;
 			$layout_node     = $layout_nodes_by_id[ $id ] ?? null;
 			$layout_parent   = is_array( $layout_node ) && is_string( $layout_node['parent'] ?? null ) ? $layout_nodes_by_id[ $layout_node['parent'] ] ?? null : null;
-			$width           = is_array( $layout_node ) && is_array( $layout_parent ) ? $grid_span_width( $layout_parent['layout']['columns'] ?? null, $layout_node['layout']['column'] ?? null ) : null;
-			if ( ! is_int( $control_index ) || 'core/button' !== ( $field_blocks[ $control_index ]['name'] ?? '' ) || null === $width || ! $has_unconditional_proven_property( $layout_node, 'grid-column' ) || ! $has_unconditional_proven_property( $layout_parent, 'grid-template-columns' ) ) {
+			$column          = is_array( $layout_node ) ? ( $layout_node['layout']['column'] ?? $grid_area_column_span( $layout_node['layout']['area'] ?? null ) ) : null;
+			$width           = is_array( $layout_node ) && is_array( $layout_parent ) ? $grid_span_width( $layout_parent['layout']['columns'] ?? null, $column ) : null;
+			$placement_proven = is_array( $layout_node ) && ( $has_unconditional_proven_property( $layout_node, 'grid-column' ) || $has_unconditional_proven_property( $layout_node, 'grid-area' ) );
+			$parent_proven    = is_array( $layout_parent ) && $has_unconditional_proven_property( $layout_parent, 'grid-template-columns' );
+			if ( ! is_int( $control_index ) || 'core/button' !== ( $field_blocks[ $control_index ]['name'] ?? '' ) || null === $width || ! $placement_proven || ! $parent_proven ) {
 				continue;
 			}
 			$target_variants = array();

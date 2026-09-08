@@ -557,6 +557,12 @@ namespace {
 	$grid_submit_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $grid_submit_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$grid_submit_css = (string) ( $grid_submit_row['provider_layout_overlay_css']['css'] ?? '' );
 	$assert( empty( $grid_submit_validation['errors'] ) && 'mapped' === ( $grid_submit_row['status'] ?? '' ) && in_array( 'provider_grid_span_submit', array_column( $grid_submit_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ) && str_contains( $grid_submit_css, 'width:33.333%' ) && str_contains( $grid_submit_css, '@media (max-width: 767px)' ) && str_contains( $grid_submit_css, 'width:100%' ), 'proven-grid-span-submit-transposes-to-responsive-provider-width', wp_json_encode( array( 'validation' => $grid_submit_validation, 'row' => $grid_submit_row ) ) );
+	$grid_area_submit_form = $grid_submit_form;
+	$grid_area_submit_form['layout_graph']['nodes'][1]['layout'] = array( 'area' => '2 / 1 / span 1 / span 4' );
+	$grid_area_submit_form['layout_graph']['nodes'][1]['provenance'][0]['properties'] = array( 'grid-area' );
+	$grid_area_submit_form['layout_graph']['variants'] = array();
+	$grid_area_submit_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $grid_area_submit_form ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( 'mapped' === ( $grid_area_submit_row['status'] ?? '' ) && str_contains( (string) ( $grid_area_submit_row['provider_layout_overlay_css']['css'] ?? '' ), 'width:33.333%' ) && ! in_array( 'provider_wrapper_layout_unrepresentable', array_column( $grid_area_submit_row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' ), true ), 'proven-grid-area-submit-transposes-to-provider-width-without-claiming-row-placement', wp_json_encode( $grid_area_submit_row ) );
 
 	$grid_track_form = array(
 		'selector' => 'form.source-grid',
