@@ -328,6 +328,8 @@ $assert = static function ( bool $condition, string $message ): void {
 
 $theme_generator_source = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php' );
 $materializer_source    = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-site-plan-materializer.php' );
+$prepared_application_source = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-prepared-plan-application.php' );
+$theme_generator_source = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php' );
 $assert( false === strpos( (string) $theme_generator_source, 'function import_compiled_website_artifact' ), 'canonical import has no legacy compiled-artifact execution path' );
 
 $artifact = array(
@@ -604,9 +606,10 @@ $prepared_for_admission = Static_Site_Importer_WordPress_Site_Plan_Materializer:
 );
 $admitted_prepared      = Static_Site_Importer_WordPress_Site_Plan_Materializer::admit_prepared( $prepared_for_admission );
 $assert( 'prepared' === ( $prepared_for_admission['status'] ?? '' ) && ! empty( $prepared_for_admission['payload_references_admitted'] ) && $prepared_for_admission === $admitted_prepared && ! str_contains( (string) wp_json_encode( $prepared_for_admission['plan'] ), 'payload_references_admitted' ) && ! str_contains( (string) wp_json_encode( Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared_for_admission ) ), 'payload_references_admitted' ), 'materializer lifecycle preparation admits referenced payloads once, before lifecycle work, without adding transient state to plans or receipts' );
-$materializer_companion_assets = strpos( (string) $materializer_source, 'resolve_companion_asset_references( $payload' );
-$materializer_companion        = strpos( (string) $materializer_source, 'Static_Site_Importer_Dependency_Manager::materialize_companion_dependency( $dependency', $materializer_companion_assets + 1 );
-$assert( false !== $materializer_companion_assets && $materializer_companion_assets < $materializer_companion, 'materializer resolves generated companion assets before companion dependency materialization' );
+$application_companion_assets = strpos( (string) $prepared_application_source, 'resolve_companion_asset_references( $payload' );
+$application_companion        = strpos( (string) $prepared_application_source, 'Static_Site_Importer_Dependency_Manager::materialize_companion_dependency( $dependency', $application_companion_assets + 1 );
+$assert( false !== $application_companion_assets && $application_companion_assets < $application_companion, 'prepared-plan application resolves generated companion assets before companion dependency materialization' );
+$assert( false !== strpos( (string) $materializer_source, 'Static_Site_Importer_Prepared_Plan_Application::materialize( $prepared' ) && false !== strpos( (string) $theme_generator_source, 'Static_Site_Importer_Prepared_Plan_Application::materialize( $prepared' ), 'the materializer facade and source import delegate prepared-plan application to one owner' );
 $rollback_order     = array();
 $block_lifecycle    = array(
 	'dependencies' => array(),
