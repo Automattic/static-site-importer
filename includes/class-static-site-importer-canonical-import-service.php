@@ -118,6 +118,14 @@ class Static_Site_Importer_Canonical_Import_Service {
 				if ( is_wp_error( $payload_reader ) ) {
 					return self::error( (string) $payload_reader->get_error_code(), $payload_reader->get_error_message(), $payload_reader->get_error_data() );
 				}
+				// Staged archives normalize into payload references, so the
+				// artifact has to carry the bounded contract those references
+				// were verified against. Without it the compiler applies its own
+				// defaults and rejects entries the staged intake accepted. A
+				// resolver that declares its own contract keeps it.
+				if ( ! isset( $runtime_source['metadata']['compiler_limits'] ) ) {
+					$runtime_source['metadata']['compiler_limits'] = static_site_importer_staged_archive_compiler_limits();
+				}
 			} else {
 				$runtime_source['archive'] = isset( $source['zip'] ) && is_array( $source['zip'] ) ? $source['zip'] : array();
 			}

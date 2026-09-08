@@ -68,10 +68,15 @@ function static_site_importer_source_runtime( array $source ): array {
 		$entrypoint = 'website/index.html';
 	}
 	return array(
-		'artifact' => array(
-			'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
-			'entrypoint' => $entrypoint,
-			'files'      => $files,
+		// Source metadata carries the artifact envelope, compiler contract
+		// included, exactly as the real normalizer merges it.
+		'artifact' => array_merge(
+			is_array( $source['metadata'] ?? null ) ? $source['metadata'] : array(),
+			array(
+				'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
+				'entrypoint' => $entrypoint,
+				'files'      => $files,
+			)
 		),
 		'provider' => 'direct-artifact-smoke',
 		'source_metadata' => array( 'fixture' => 'direct-artifact-multi-page' ),
@@ -79,6 +84,13 @@ function static_site_importer_source_runtime( array $source ): array {
 }
 function static_site_importer_staged_archive_files( array $archive, bool $payload_references = false ): array {
 	return $GLOBALS['ssi_direct_staged_files'];
+}
+function static_site_importer_staged_archive_compiler_limits(): array {
+	return array(
+		'max_files'       => 5000,
+		'max_file_bytes'  => 10485760,
+		'max_total_bytes' => 335544320,
+	);
 }
 function static_site_importer_staged_archive_payload_reader( array $archive ): object {
 	return new class() implements \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader {
@@ -512,7 +524,9 @@ $assert( ! empty( $lifecycle_terminal['success'] ) && empty( $lifecycle_terminal
 $lifecycle_work = $lifecycle_terminal['artifact_run']['work'] ?? array();
 $assert( 1 === ( $lifecycle_work['lifecycle_preparation_claims'] ?? 0 ) && 1 === ( $lifecycle_work['lifecycle_preparations'] ?? 0 ) && 1 === ( $lifecycle_work['materialization_claims'] ?? 0 ) && 1 === ( $lifecycle_work['materializations'] ?? 0 ), 'direct lifecycle evidence must distinguish one dependency preparation from one final materialization' );
 
-$binary = str_repeat( "\x00\xffZIP", 1024 );
+// Larger than the compiler's own per-file default, so the run only reaches
+// prepare_shared if the staged ZIP declared the contract its intake verified.
+$binary = str_repeat( "\x00\xffZIP", 1441792 );
 $binary_ref = array(
 	'schema' => 'blocks-engine/payload-reference/v1',
 	'id'     => 'zip-entry:assets%2Fphoto.png',
@@ -540,10 +554,16 @@ $zip_first = Static_Site_Importer_Canonical_Import_Service::import(
 	)
 );
 $zip_id = (string) ( $zip_first['import_id'] ?? '' );
+$assert( 'A payload reference exceeds the compiler per-file byte limit.' !== ( $zip_first['error']['message'] ?? '' ), 'a staged ZIP payload the intake verified must not be rejected by the compiler per-file default' );
 $assert( ! empty( $zip_first['continuation'] ) && 1 === ( $zip_first['artifact_run']['work']['payloads_retained'] ?? 0 ), 'resolver-owned multi-page ZIP planning must enter the durable phase machine and retain each referenced payload once' );
 $zip_workspace = new Static_Site_Importer_Artifact_Run_Workspace( $test_root . '/static-site-importer/direct-artifact-imports', 'direct-' . $zip_id );
 $assert( $binary === $zip_workspace->read_raw( 'payloads/' . hash( 'sha256', $binary_ref['id'] ) . '.bin' ), 'the direct run must own verified payload bytes without changing their canonical reference id' );
-$zip_artifact = static_site_importer_source_runtime( array( 'files' => $GLOBALS['ssi_direct_staged_files'] ) )['artifact'];
+$zip_artifact = static_site_importer_source_runtime(
+	array(
+		'files'    => $GLOBALS['ssi_direct_staged_files'],
+		'metadata' => array( 'compiler_limits' => static_site_importer_staged_archive_compiler_limits() ),
+	)
+)['artifact'];
 $zip_reader = static_site_importer_staged_archive_payload_reader( array() );
 $zip_compiler = new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler();
 $zip_shared = $zip_compiler->prepareShared( $zip_artifact, $zip_reader );

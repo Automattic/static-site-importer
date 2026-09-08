@@ -101,6 +101,7 @@
     { "path": "tools/runtime-package-manifest.test.mjs", "environment": "node" },
     { "path": "tools/verify-solved-site-promotion.test.mjs", "environment": "node" },
     { "path": "tests/smoke-generated-theme-block-validation.cjs", "environment": "browser-wp-codebox" },
+    { "path": "tests/editor-companion-acceptance.mjs", "environment": "browser-wp-codebox", "command": ["bash", "tools/run-editor-companion-acceptance.sh"] },
     { "path": "tests/run-validation-harness.cjs", "environment": "operator-only", "command": ["node", "tests/run-validation-harness.cjs"] },
     { "path": "tools/run-fixture-matrix.mjs", "environment": "operator-only", "command": ["node", "tools/run-fixture-matrix.mjs"] },
     { "path": "tools/fig-acceptance-provider.mjs", "environment": "operator-only", "command": ["node", "tools/fig-acceptance-provider.mjs"] }

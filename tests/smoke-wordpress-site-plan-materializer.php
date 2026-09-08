@@ -1389,6 +1389,9 @@ $assert( 'runtime_declarations' === ( $entity_lifecycle['status'] ?? '' ), 'v2 e
 $assert( 'woocommerce_simple_product' === ( $entity_lifecycle['entities'][ $entity_plan['runtime_declarations'][1]['reconciliation_identity'] ]['adapter']['id'] ?? '' ) || 'woocommerce_simple_product' === ( reset( $entity_lifecycle['entities'] )['adapter']['id'] ?? '' ), 'product collections resolve through the configured WooCommerce adapter' );
 $prepared_entity = reset( $entity_lifecycle['entities'] );
 $assert( 'Aero Mug' === ( $prepared_entity['manifest']['products'][0]['name'] ?? '' ) && true === ( $prepared_entity['required'] ?? false ), 'v2 product rows validate and retain their required dependency relationship' );
+$prepared_entity_lifecycle = $prepare_lifecycle->invoke( null, $entity_plan, array( 'runtime_lifecycle_phase' => 'prepare' ) );
+$prepared_entity_manifest  = reset( $prepared_entity_lifecycle['entities'] );
+$assert( 'Aero Mug' === ( $prepared_entity_manifest['manifest']['products'][0]['name'] ?? '' ), 'dependency preparation retains declared provider entities until resume validates them' );
 
 // Provider declarations keep portable asset tokens, while resolver output carries
 // destination-specific URLs. Binding preflight must use the latter without
@@ -1519,6 +1522,9 @@ $runtime_form_manifest                     = is_wp_error( $runtime_form_lifecycl
 $assert( 'section' === ( $runtime_form_manifest['control_topology']['nodes'][0]['tag'] ?? '' ), 'runtime declarations retain validated form topology' );
 $assert( 'Contact Me' === ( $runtime_form_manifest['form']['context_before'][0]['text'] ?? '' ) && '* Indicates required field' === ( $runtime_form_manifest['form']['context_before'][1]['text'] ?? '' ), 'canonical form bindings preserve ordered heading and required-note context before provider validation' );
 $assert( '200px' === ( $runtime_form_manifest['controls'][1]['height'] ?? '' ) && 'Send' === ( $runtime_form_manifest['form']['submit_presentation']['text'] ?? '' ) && in_array( 'wsite-button', $runtime_form_manifest['form']['submit_presentation']['classes'] ?? array(), true ), 'canonical form bindings preserve textarea sizing and visible submit presentation before provider validation' );
+$prepared_form_lifecycle = $prepare_lifecycle->invoke( null, $runtime_form_plan, array( 'runtime_lifecycle_phase' => 'prepare' ) );
+$prepared_form_manifest  = is_wp_error( $prepared_form_lifecycle ) ? array() : ( $prepared_form_lifecycle['entities'][ $form_declaration_id ]['manifest']['forms'][0] ?? array() );
+$assert( 'form.contact' === ( $prepared_form_manifest['selector'] ?? '' ) && ! empty( $prepared_form_manifest['bindings'] ) && 'textarea' === ( $prepared_form_manifest['controls'][1]['tag'] ?? '' ), 'dependency preparation retains declared form bindings for the durable resume lifecycle' );
 $presentation_conflicts = array(
 	str_replace( 'Contact Me', 'Write Me', $topology_form['bindings'][0]['search_block_markup'] ),
 	str_replace( '</form>', '<p class="help-note">After</p></form>', $topology_form['bindings'][0]['search_block_markup'] ),
