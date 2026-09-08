@@ -567,6 +567,37 @@ namespace {
 	$grid_area_submit_form['layout_graph']['variants'] = array();
 	$grid_area_submit_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $grid_area_submit_form ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
 	$assert( 'mapped' === ( $grid_area_submit_row['status'] ?? '' ) && str_contains( (string) ( $grid_area_submit_row['provider_layout_overlay_css']['css'] ?? '' ), 'width:33.333%' ) && ! in_array( 'provider_wrapper_layout_unrepresentable', array_column( $grid_area_submit_row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' ), true ), 'proven-grid-area-submit-transposes-to-provider-width-without-claiming-row-placement', wp_json_encode( $grid_area_submit_row ) );
+	$full_width_grid_field_form = array(
+		'forms' => array( array(
+			'selector' => 'form.full-width-grid-field',
+			'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ),
+			'control_topology' => array( 'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false, 'nodes' => array( array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div', 'class' => 'field-shell' ), array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'control' => 0 ), array( 'id' => 'control-1', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 1 ) ) ),
+			'layout_graph' => $v2_layout_graph( array(
+				$layout_node( 'form', array(), 'form' ),
+				array( 'id' => 'wrapper-0', 'kind' => 'container', 'parent' => 'form', 'order' => 0, 'source' => array( 'tag' => 'div', 'classes' => array() ), 'layout' => array( 'display' => 'grid', 'columns' => 'repeat(12, 1fr)', 'gap' => '1rem' ), 'provenance' => array( array( 'source_path' => 'inline-style', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '[style]', 'condition' => null, 'properties' => array( 'display', 'grid-template-columns', 'gap' ) ) ) ),
+				array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 0, 'source' => array( 'tag' => 'input', 'classes' => array() ), 'layout' => array( 'column' => 'span 12' ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.field-shell input', 'condition' => null, 'properties' => array( 'grid-column' ) ) ) ),
+			) ),
+		) ),
+	);
+	$full_width_grid_field_form['forms'][0]['layout_graph']['nodes'][1]['layout']['width'] = '100%';
+	$full_width_grid_field_form['forms'][0]['layout_graph']['nodes'][1]['provenance'][0]['properties'][] = 'width';
+	$full_width_grid_field_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $full_width_grid_field_form )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$full_width_grid_field_css = (string) ( $full_width_grid_field_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert( 'mapped' === ( $full_width_grid_field_row['status'] ?? '' ) && in_array( 'provider_full_width_field', array_column( $full_width_grid_field_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ) && str_contains( $full_width_grid_field_css, 'width:100%' ) && ! str_contains( $full_width_grid_field_css, 'repeat(12, 1fr)' ) && ! str_contains( $full_width_grid_field_css, 'grid-column:span 12' ), 'full-span-single-field-grid-omits-only-unowned-tracks-and-keeps-other-field-layout', wp_json_encode( $full_width_grid_field_row ) );
+	$partial_grid_field_form = $full_width_grid_field_form;
+	$partial_grid_field_form['forms'][0]['layout_graph']['nodes'][2]['layout']['column'] = 'span 6';
+	$partial_grid_field_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $partial_grid_field_form )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( ! in_array( 'provider_full_width_field', array_column( $partial_grid_field_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'partial-span-field-grid-does-not-claim-full-width-provider-ownership', wp_json_encode( $partial_grid_field_row ) );
+	$multi_control_grid_field_form = $full_width_grid_field_form;
+	$multi_control_grid_field_form['forms'][0]['controls'][] = array( 'tag' => 'input', 'type' => 'text', 'name' => 'name', 'label' => 'Name' );
+	array_splice( $multi_control_grid_field_form['forms'][0]['control_topology']['nodes'], 2, 0, array( array( 'id' => 'control-2', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 1, 'depth' => 1, 'control' => 2 ) ) );
+	$multi_control_grid_field_form['forms'][0]['layout_graph']['nodes'][] = array( 'id' => 'control-2', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 1, 'source' => array( 'tag' => 'input', 'classes' => array() ), 'layout' => array( 'column' => 'span 12' ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.field-shell input', 'condition' => null, 'properties' => array( 'grid-column' ) ) ) );
+	$multi_control_grid_field_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $multi_control_grid_field_form )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( ! in_array( 'provider_full_width_field', array_column( $multi_control_grid_field_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'multi-control-full-span-grid-does-not-claim-single-field-provider-ownership', wp_json_encode( $multi_control_grid_field_row ) );
+	$variant_grid_field_form = $full_width_grid_field_form;
+	$variant_grid_field_form['forms'][0]['layout_graph']['variants'][] = array( 'node' => 'wrapper-0', 'condition' => array( 'kind' => 'media', 'query' => '(max-width: 48rem)' ), 'layout_patch' => array( 'columns' => 'repeat(6, 1fr)' ), 'precedence' => array( 'grid-template-columns' => array( 'source_order' => 2, 'specificity' => 10, 'important' => false ) ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.field-shell', 'condition' => array( 'kind' => 'media', 'query' => '(max-width: 48rem)' ), 'properties' => array( 'grid-template-columns' ) ) ) );
+	$variant_grid_field_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $variant_grid_field_form )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( ! in_array( 'provider_full_width_field', array_column( $variant_grid_field_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'responsive-grid-variant-does-not-claim-static-full-width-provider-ownership', wp_json_encode( $variant_grid_field_row ) );
 
 	$grid_track_form = array(
 		'selector' => 'form.source-grid',
