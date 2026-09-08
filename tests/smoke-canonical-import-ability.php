@@ -82,6 +82,13 @@ function static_site_importer_staged_archive_files( $archive ) {
 		),
 	);
 }
+function static_site_importer_staged_archive_compiler_limits() {
+	return array(
+		'max_files'       => 4242,
+		'max_file_bytes'  => 10485760,
+		'max_total_bytes' => 262144000,
+	);
+}
 function static_site_importer_staged_archive_payload_reader( $archive ) {
 	$GLOBALS['ssi_staged_reader_archives'][] = $archive;
 	return new class() {
@@ -373,6 +380,41 @@ $staged_zip = static_site_importer_ability_import(
 );
 if ( empty( $staged_zip['success'] ) || '/srv/private/website.zip' !== ( $GLOBALS['ssi_staged_archives'][0]['staged_path'] ?? '' ) || isset( $GLOBALS['ssi_runtime_sources'][ array_key_last( $GLOBALS['ssi_runtime_sources'] ) ]['archive'] ) ) {
 	throw new RuntimeException( 'resolved staged archives must normalize through files without inline archive bytes' ); }
+if ( static_site_importer_staged_archive_compiler_limits() !== ( Static_Site_Importer_Theme_Generator::$last_artifact['compiler_limits'] ?? null ) ) {
+	throw new RuntimeException( 'staged ZIP artifacts must declare the compiler contract their payload references were verified against' ); }
+$GLOBALS['ssi_filters']['static_site_importer_resolve_source_reference'] = static function ( $value, $reference, $type ) {
+	return 'staged-zip-2' === $reference && 'zip' === $type ? array(
+		'source' => array(
+			'metadata' => array( 'compiler_limits' => array( 'max_files' => 7 ) ),
+			'zip'      => array(
+				'name'        => 'website.zip',
+				'staged_path' => '/srv/private/website.zip',
+			),
+		),
+	) : $value;
+};
+$declared_staged_zip = static_site_importer_ability_import(
+	array(
+		'operation' => 'plan',
+		'source'    => array(
+			'type' => 'zip',
+			'ref'  => 'staged-zip-2',
+		),
+	)
+);
+if ( empty( $declared_staged_zip['success'] ) || array( 'max_files' => 7 ) !== ( Static_Site_Importer_Theme_Generator::$last_artifact['compiler_limits'] ?? null ) ) {
+	throw new RuntimeException( 'a resolver that declares its own compiler contract must keep it' ); }
+$GLOBALS['ssi_filters']['static_site_importer_resolve_source_reference'] = static function ( $value, $reference, $type ) {
+	return 'staged-zip-1' === $reference && 'zip' === $type ? array(
+		'source'     => array(
+			'zip' => array(
+				'name'        => 'website.zip',
+				'staged_path' => '/srv/private/website.zip',
+			),
+		),
+		'provenance' => array( 'owner' => 'server' ),
+	) : $value;
+};
 $approved_staged_zip = static_site_importer_ability_import(
 	array(
 		'operation' => 'apply',
