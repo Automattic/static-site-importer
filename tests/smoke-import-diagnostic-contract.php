@@ -638,6 +638,14 @@ $mismatched_form_report['diagnostics'] = array( $normalized_form_fallback );
 Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $mismatched_form_report, array( $mismatched_receipt ) );
 $assert( 1 === ( $mismatched_form_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $mismatched_form_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'normalized-form-diagnostic-rejects-mismatched-provider-receipt' );
 
+$providerless_receipt = $provider_receipt;
+$providerless_receipt['provider'] = '';
+$providerless_form_report = Static_Site_Importer_Import_Report::from_array( $normalized_form_report->to_array() );
+$providerless_form_report['quality'] = array( 'fallback_count' => 1 );
+$providerless_form_report['diagnostics'] = array( $normalized_form_fallback );
+Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $providerless_form_report, array( $providerless_receipt ) );
+$assert( 1 === ( $providerless_form_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $providerless_form_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'form-fallback-requires-provider-resolved-persisted-receipt' );
+
 // Producer-owned identities distinguish responsive copies even when their
 // source selector and form metadata are otherwise identical.
 $desktop_form_fallback                            = $normalized_form_fallback;

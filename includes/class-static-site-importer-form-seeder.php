@@ -605,7 +605,7 @@ class Static_Site_Importer_Form_Seeder {
 		$unaccepted_losses           = array_values(
 			array_filter(
 				$layout['receipt']['losses'] ?? array(),
-				static fn( $loss ): bool => is_array( $loss ) && self::receipt_loss_requires_gate( $loss ) && ! self::provider_represents_receipt_loss( $loss, $form, $field_blocks ) && true !== apply_filters( 'static_site_importer_form_receipt_loss_accepted', false, $loss, $form, $row )
+				static fn( $loss ): bool => is_array( $loss ) && self::receipt_loss_requires_gate( $loss ) && ! self::provider_represents_receipt_loss( $loss, $form, $field_blocks, $target_map ) && true !== apply_filters( 'static_site_importer_form_receipt_loss_accepted', false, $loss, $form, $row )
 			)
 		);
 		$gate_overflow_count         = (int) ( $layout['receipt']['gate_required_loss_overflow_count'] ?? 0 );
@@ -702,7 +702,20 @@ class Static_Site_Importer_Form_Seeder {
 	}
 
 	/** A source label wrapper is carried by the mapped Jetpack field's label child. */
-	private static function provider_represents_receipt_loss( array $loss, array $form, array $field_blocks ): bool {
+	private static function provider_represents_receipt_loss( array $loss, array $form, array $field_blocks, array $target_map = array() ): bool {
+		if ( 'provider_wrapper_layout_unrepresentable' === ( $loss['reason_code'] ?? '' ) && is_string( $loss['node_hash'] ?? null ) ) {
+			$targets = is_array( $target_map['targets'] ?? null ) ? $target_map['targets'] : array();
+			foreach ( $targets as $target ) {
+				if ( ! is_array( $target ) || ! is_string( $target['node'] ?? null ) || hash( 'sha256', $target['node'] ) !== $loss['node_hash'] || ! is_array( $target['capabilities'] ?? null ) ) {
+					continue;
+				}
+				// A target with all layout capabilities is an adapter-owned replacement
+				// for this exact source wrapper, including its responsive variants.
+				if ( array_diff( array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' ), $target['capabilities'] ) === array() ) {
+					return true;
+				}
+			}
+		}
 		if ( 'unsupported_semantic_wrapper' !== ( $loss['reason_code'] ?? '' ) || ! is_string( $loss['node_hash'] ?? null ) ) {
 			return false;
 		}
