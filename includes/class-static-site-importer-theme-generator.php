@@ -11,6 +11,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Receipt_Projection' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-receipt-projection.php';
+}
+
 if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-site-identity.php';
 }
@@ -605,6 +609,7 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return array<string,mixed>
 	 */
 	private static function public_result_from_wordpress_site_plan_receipt( array $receipt, array $args, array $lifecycle = array(), array $dependencies = array(), array $entities = array() ): array {
+		$plan  = $receipt['plan'];
 		$theme = $receipt['theme'];
 		$projection = Static_Site_Importer_Receipt_Projection::compose(
 			$receipt,
@@ -616,26 +621,35 @@ class Static_Site_Importer_Theme_Generator {
 			self::transformer_provenance(),
 			Static_Site_Importer_Build_Provenance::describe()
 		);
-		$report = $projection['report'];
+		$report   = $projection['report'];
 		$manifest = $projection['manifest'];
 		if ( ! empty( $args['batch_import'] ) ) {
-			$manifest = Static_Site_Importer_Receipt_Projection::merge_previous_manifest( $manifest, self::read_source_of_truth_manifest( $theme['dir'] . '/static-site-importer-manifest.json' ) );
+			$previous_manifest = self::read_source_of_truth_manifest( $theme['dir'] . '/static-site-importer-manifest.json' );
+			$manifest          = Static_Site_Importer_Receipt_Projection::merge_previous_manifest( $manifest, $previous_manifest );
 		}
-		$quality = Static_Site_Importer_Receipt_Projection::finalize_report( $report, $args );
+		$quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, $args );
 		$manifest['existing_matches'] = $receipt['existing_matches'] ?? array( 'pages' => array() );
 		$cleanup = self::cleanup_stale_generated_theme_files( $theme['dir'], $manifest, $args, $receipt );
-		if ( is_wp_error( $cleanup ) ) { throw new RuntimeException( $cleanup->get_error_message() ); } // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The internal cleanup error is propagated as an exception message.
+		if ( is_wp_error( $cleanup ) ) {
+			throw new RuntimeException( $cleanup->get_error_message() ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The internal cleanup error is propagated as an exception message.
+		}
 		$manifest['cleanup'] = $cleanup;
-		$final = Static_Site_Importer_Receipt_Projection::finalize( $report, $manifest, $receipt, $args, $quality );
+		$final = Static_Site_Importer_Receipt_Projection::finalize( $report, $manifest, $plan, $receipt, $args, $quality );
 		$validation = $final['validation'];
 		$findings = $final['findings'];
-		$theme_dir = $theme['dir'];
+		$theme_dir     = $theme['dir'];
 		$manifest_path = $theme_dir . '/static-site-importer-manifest.json';
 		self::write_plan_projection( $manifest_path, $manifest, $receipt );
-		$report_path = ''; $validation_path = ''; $findings_path = '';
+		$report_path     = '';
+		$validation_path = '';
+		$findings_path   = '';
 		if ( ! empty( $args['write_theme_report_artifacts'] ) ) {
-			$report_path = $theme_dir . '/import-report.json'; $validation_path = $theme_dir . '/import-validation-result.json'; $findings_path = $theme_dir . '/finding-packets.json';
-			self::write_plan_projection( $report_path, $report->to_array(), $receipt ); self::write_plan_projection( $validation_path, $validation, $receipt ); self::write_plan_projection( $findings_path, $findings, $receipt );
+			$report_path     = $theme_dir . '/import-report.json';
+			$validation_path = $theme_dir . '/import-validation-result.json';
+			$findings_path   = $theme_dir . '/finding-packets.json';
+			self::write_plan_projection( $report_path, $report->to_array(), $receipt );
+			self::write_plan_projection( $validation_path, $validation, $receipt );
+			self::write_plan_projection( $findings_path, $findings, $receipt );
 		}
 		$external_report_path = ''; $external_validation_result_path = ''; $external_finding_packets_path = '';
 		if ( '' !== trim( (string) ( $args['report'] ?? '' ) ) ) {
@@ -646,305 +660,6 @@ class Static_Site_Importer_Theme_Generator {
 		if ( 'report_persistence' === (string) ( $args['inject_materialization_failure'] ?? '' ) ) { throw new RuntimeException( 'Injected report persistence failure.' ); }
 		Static_Site_Importer_WordPress_Site_Plan_Materializer::commit_receipt( $receipt );
 		return array( 'theme_slug' => $theme['slug'], 'theme_name' => isset( $args['name'] ) ? (string) $args['name'] : $theme['slug'], 'theme_dir' => $theme['dir'], 'report_path' => $report_path, 'validation_result_path' => $validation_path, 'finding_packets_path' => $findings_path, 'external_report_path' => $external_report_path, 'external_validation_result_path' => $external_validation_result_path, 'external_finding_packets_path' => $external_finding_packets_path, 'manifest_path' => $manifest_path, 'pages' => $receipt['completed']['pages'], 'import_report' => $report->to_array(), 'import_report_summary' => $report['compact_summary'], 'import_validation_result' => $validation, 'finding_packets' => $findings, 'fixture_diagnostics' => $final['fixture_diagnostics'], 'quality' => $quality, 'source_of_truth' => $manifest, 'progress_events' => array( array( 'schema' => 'wp-codebox/live-progress-event/v1', 'phase' => 'ssi.materialization.completed', 'progress' => array( 'percent' => 100 ) ), array( 'schema' => 'wp-codebox/live-progress-event/v1', 'phase' => 'ssi.reporting.completed', 'progress' => array( 'percent' => 100 ) ), array( 'schema' => 'wp-codebox/live-progress-event/v1', 'phase' => 'ssi.saved.completed', 'progress' => array( 'percent' => 100 ) ) ), 'materialization_receipt' => $receipt );
-	}
-
-	private static function legacy_public_result_from_wordpress_site_plan_receipt( array $receipt, array $args, array $lifecycle = array(), array $dependencies = array(), array $entities = array() ): array {
-		$plan        = $receipt['plan'];
-		$theme        = $receipt['theme'];
-		$diagnostics  = Static_Site_Importer_Report_Diagnostics::after_completed_entity_bindings( isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array(), $receipt );
-		if ( isset( $args['compiler_options'] ) && is_array( $args['compiler_options'] ) && ! empty( $args['compiler_options'] ) ) {
-			$diagnostics[] = array(
-				'code'    => 'static_site_importer_compiler_options_ignored',
-				'type'    => 'static-site-importer',
-				'message' => 'The compiler_options import argument is accepted for backward compatibility but is no longer honored because the Blocks Engine compiler ignores it at the artifact compile boundary.',
-			);
-		}
-		$quality      = isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array();
-		$entity_lifecycle = array(
-			'status'       => $lifecycle['status'] ?? 'not_requested',
-			'entities'     => $entities,
-			'dependencies' => $dependencies,
-		);
-		$diagnostics = array_merge( $diagnostics, $lifecycle['diagnostics'] ?? array() );
-		$diagnostics = array_merge( $diagnostics, Static_Site_Importer_Report_Diagnostics::provider_entity_decline_diagnostics( $entities ) );
-		$gutenberg_gaps = isset( $receipt['extensions']['gutenberg_gaps'] ) && is_array( $receipt['extensions']['gutenberg_gaps'] ) ? $receipt['extensions']['gutenberg_gaps'] : array();
-		$diagnostics = array_merge( $diagnostics, $gutenberg_gaps );
-		if ( isset( $args['missing_author_stylesheet_diagnostics'] ) && is_array( $args['missing_author_stylesheet_diagnostics'] ) ) {
-			$diagnostics = array_merge( $diagnostics, array_values( array_filter( $args['missing_author_stylesheet_diagnostics'], 'is_array' ) ) );
-		}
-		$envelope     = array(
-			'schema'                           => Static_Site_Importer_Import_Report::SCHEMA,
-			'import_run_id'                    => self::import_run_id( $args ),
-			'plan_identity'                    => $receipt['plan_identity'] ?? array(),
-			'blocks_engine'                    => array(
-				'transformer'         => self::transformer_provenance(),
-				'wordpress_site_plan' => $plan,
-				'gutenberg_gaps'      => $gutenberg_gaps,
-			),
-			'quality'                          => $quality,
-			'client_script_policy'             => $args['client_script_policy_report'] ?? array(),
-			'theme_materialization'            => $receipt['theme_materialization'] ?? array(),
-			'diagnostics'                      => $diagnostics,
-			'entity_lifecycle'                 => $entity_lifecycle,
-			'companion_plugin_materialization' => $receipt['completed']['companion_plugin'] ?? array(
-				'status' => 'skipped',
-				'reason' => 'companion_plugin_payload_absent',
-			),
-			'generated_theme'                  => array(
-				'document_metadata' => self::document_metadata_from_plan_receipt( $plan ),
-				'template_parts'    => array_map(
-					static fn( array $part ): array => array(
-						'path'    => 'parts/' . $part['slug'] . '.html',
-						'content' => $part['resolved_block_markup'],
-					),
-					$plan['template_parts']
-				),
-				'block_documents'   => array_map(
-					static function ( array $page ) use ( $receipt ): array {
-						$materialized = $receipt['completed']['materialized_pages'][ $page['source_path'] ]['block_markup'] ?? $page['resolved_block_markup'] ?? '';
-						$document = array(
-							'path'    => 'posts/page-' . ( ! empty( $page['entrypoint'] ) ? 'home' : $page['slug'] ) . '.post_content',
-							'content' => $materialized,
-						);
-						if ( isset( $page['core_html_block_count'] ) ) {
-							$document['core_html_block_count'] = $page['core_html_block_count'];
-						}
-						return $document;
-					},
-					$plan['pages']
-				),
-			),
-			'source_documents'                 => array(
-				'source'                       => 'blocks_engine',
-				'total_count'                  => count( $plan['pages'] ),
-				'blocks_engine_document_count' => count( $plan['pages'] ),
-				'blocks_engine_documents'      => array_map(
-					static fn( array $page ): array => array(
-						'source_path' => $page['source_path'],
-						'slug'        => ! empty( $page['entrypoint'] ) ? 'home' : $page['slug'],
-						'permalink'   => ! empty( $page['entrypoint'] ) ? '/' : '/' . $page['slug'] . '/',
-					),
-					$plan['pages']
-				),
-				'counts_by_format'             => array(
-					'html'     => count( $plan['pages'] ),
-					'markdown' => 0,
-					'mdx'      => 0,
-				),
-			),
-		);
-		$report       = Static_Site_Importer_Import_Report::from_array( $envelope );
-		$report['source_artifact'] = array( 'hash' => (string) ( $args['artifact_hash'] ?? $plan['source']['source_hash'] ) );
-		$report['materialization_receipt'] = $receipt;
-		Static_Site_Importer_Block_Document_Reporter::analyze_materialized_block_documents( $report['generated_theme']['block_documents'], $report );
-		$artifact = array_merge(
-			isset( $args['source_artifact_reference'] ) && is_array( $args['source_artifact_reference'] ) ? $args['source_artifact_reference'] : array(),
-			array_filter(
-				array(
-					'schema'      => $plan['source']['schema'] ?? null,
-					'source_hash' => $plan['source']['source_hash'] ?? null,
-					'entry_path'  => $plan['source']['entry_path'] ?? null,
-				)
-			)
-		);
-		$artifact['hash'] = (string) ( $args['artifact_hash'] ?? $artifact['hash'] ?? $plan['source']['source_hash'] );
-		// The resolved write plan is authoritative, including files retained from a
-		// previous batch. Applied receipts omit intentionally preserved bootstrap
-		// and scaffold writes, which must remain owned rather than becoming stale.
-		$desired_files = array_map(
-			static fn( array $write ): array => array(
-				'path' => $write['target_path'],
-				'kind' => $write['kind'],
-			),
-			array_values( array_filter( $receipt['plan']['writes'] ?? array(), static fn( $write ): bool => is_array( $write ) && is_scalar( $write['target_path'] ?? null ) && is_scalar( $write['kind'] ?? null ) ) )
-		);
-		$desired_file_paths = array_fill_keys( array_column( $desired_files, 'path' ), true );
-		foreach ( $receipt['completed']['files'] ?? array() as $file ) {
-			$path = is_array( $file ) && is_scalar( $file['target_path'] ?? null ) ? (string) $file['target_path'] : '';
-			if ( '' === $path || isset( $desired_file_paths[ $path ] ) ) {
-				continue;
-			}
-			$desired_file_paths[ $path ] = true;
-			$desired_files[] = array(
-				'path' => $path,
-				'kind' => is_scalar( $file['kind'] ?? null ) ? (string) $file['kind'] : 'materialized_theme_file',
-			);
-		}
-		$desired_assets = array_map(
-			static fn( array $asset ): array => array(
-				'source_path' => $asset['source_path'],
-				'theme_path'  => $asset['target_path'],
-			),
-			$plan['assets']
-		);
-		foreach ( $receipt['completed']['font_materialization']['files'] ?? array() as $file ) {
-			$path = is_array( $file ) && is_scalar( $file['target_path'] ?? null ) ? (string) $file['target_path'] : '';
-			if ( '' === $path || isset( $desired_file_paths[ $path ] ) ) {
-				continue;
-			}
-			$desired_file_paths[ $path ] = true;
-			$desired_files[] = array(
-				'path' => $path,
-				'kind' => 'font_materialization',
-			);
-			$desired_assets[] = array(
-				'source_path' => (string) ( $file['source_path'] ?? 'theme.font_materialization' ),
-				'theme_path'  => $path,
-			);
-		}
-		$manifest = array(
-			'schema'          => 'static-site-importer/source-of-truth-manifest/v1',
-			'version'         => 1,
-			'import_run_id'   => $report['import_run_id'],
-			'build'           => Static_Site_Importer_Build_Provenance::describe(),
-			'artifact'        => array_merge( $artifact, array( 'provenance' => $plan['source']['provenance'] ) ),
-			'manifest_path'   => 'static-site-importer-manifest.json',
-			'generated_theme' => array(
-				'slug' => $theme['slug'],
-				'dir'  => $theme['dir'],
-			),
-			'desired'         => array(
-				'pages'  => array(),
-				'files'  => array_merge(
-					$desired_files,
-					array(
-						array(
-							'path' => 'static-site-importer-manifest.json',
-							'kind' => 'ssi_manifest',
-						),
-					)
-				),
-				'assets' => $desired_assets,
-			),
-		);
-		foreach ( $plan['pages'] as $page ) {
-			$source_path = $page['source_path'];
-			$id = (int) ( $receipt['completed']['pages'][ $source_path ] ?? 0 );
-			$match = null;
-			foreach ( $receipt['existing_matches']['pages'] ?? array() as $candidate ) {
-				if ( ( $candidate['source_path'] ?? '' ) === $source_path ) {
-					$match = $candidate;
-					break;
-				}
-			}
-			$manifest['desired']['pages'][] = array(
-				'source_path'             => $source_path,
-				'materialized_post_id'    => $id,
-				'reconciliation_identity' => $page['reconciliation_identity'],
-				'content_hash'            => $receipt['completed']['materialized_pages'][ $source_path ]['content_hash'] ?? $page['content_hash'],
-				'route'                   => $page['route']['path'],
-				'permalink'               => $match['permalink'] ?? $page['route']['path'],
-				'slug'                    => $page['slug'],
-				'post_type'               => $page['post_type'],
-				'protected'               => ! empty( $match['protected'] ),
-				'provenance_meta_key'     => ! empty( $match['protected'] ) ? '' : '_static_site_importer_provenance',
-			);
-		}
-		if ( ! empty( $args['batch_import'] ) ) {
-			$previous = self::read_source_of_truth_manifest( $theme['dir'] . '/static-site-importer-manifest.json' );
-			if ( is_array( $previous['desired'] ?? null ) ) {
-				foreach ( array( 'pages', 'files', 'assets' ) as $kind ) {
-					$keys = array();
-					foreach ( $manifest['desired'][ $kind ] as $item ) {
-						$keys[ (string) ( $item['source_path'] ?? $item['path'] ?? $item['theme_path'] ?? '' ) ] = true;
-					}
-					foreach ( $previous['desired'][ $kind ] ?? array() as $item ) {
-						$key = (string) ( $item['source_path'] ?? $item['path'] ?? $item['theme_path'] ?? '' );
-						if ( '' !== $key && ! isset( $keys[ $key ] ) ) {
-							$manifest['desired'][ $kind ][] = $item;
-						}
-					}
-				}
-			}
-		}
-		$quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, $args );
-		$manifest['existing_matches'] = $receipt['existing_matches'] ?? array( 'pages' => array() );
-		$cleanup = self::cleanup_stale_generated_theme_files( $theme['dir'], $manifest, $args, $receipt );
-		if ( is_wp_error( $cleanup ) ) {
-			throw new RuntimeException( $cleanup->get_error_message() ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The internal cleanup error is propagated as an exception message.
-		}
-		$manifest['cleanup'] = $cleanup;
-		$report['source_of_truth'] = $manifest;
-		$receipt['quality_budget_admission'] = Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $receipt['plan'] ?? array(), $args, $report );
-		$receipt['quality_budget_admission']['mechanical_status'] = $receipt['status'] ?? 'completed';
-		$report['quality_budget_admission'] = $receipt['quality_budget_admission'];
-		$report['materialization_receipt'] = $receipt;
-		$fixture_diagnostics = Static_Site_Importer_Report_Diagnostics::refresh_projections( $report, $quality );
-		$validation = $report['import_validation_result'];
-		$findings   = $report['finding_packets'];
-		$theme_dir  = $theme['dir'];
-		$manifest_path = $theme_dir . '/static-site-importer-manifest.json';
-		self::write_plan_projection( $manifest_path, $manifest, $receipt );
-		$report_path = '';
-		$validation_path = '';
-		$findings_path = '';
-		if ( ! empty( $args['write_theme_report_artifacts'] ) ) {
-			$report_path = $theme_dir . '/import-report.json';
-			$validation_path = $theme_dir . '/import-validation-result.json';
-			$findings_path = $theme_dir . '/finding-packets.json';
-			self::write_plan_projection( $report_path, $report->to_array(), $receipt );
-			self::write_plan_projection( $validation_path, $validation, $receipt );
-			self::write_plan_projection( $findings_path, $findings, $receipt );
-		}
-		$external_report_path = '';
-		$external_validation_result_path = '';
-		$external_finding_packets_path = '';
-		if ( '' !== trim( (string) ( $args['report'] ?? '' ) ) ) {
-			$external_report_path = (string) $args['report'];
-			$external_dir = dirname( $external_report_path );
-			$external_validation_result_path = trailingslashit( $external_dir ) . 'import-validation-result.json';
-			$external_finding_packets_path = trailingslashit( $external_dir ) . 'finding-packets.json';
-			foreach ( array( $external_report_path, $external_validation_result_path, $external_finding_packets_path ) as $path ) {
-				if ( ! Static_Site_Importer_WordPress_Site_Plan_Materializer::safe_external_report_destination( $path ) ) {
-					throw new RuntimeException( 'External report destination changed after preflight.' );
-				}
-			}
-			self::write_plan_projection( $external_report_path, $report->to_array(), $receipt );
-			self::write_plan_projection( $external_validation_result_path, $validation, $receipt );
-			self::write_plan_projection( $external_finding_packets_path, $findings, $receipt );
-		}
-		if ( 'report_persistence' === (string) ( $args['inject_materialization_failure'] ?? '' ) ) {
-			throw new RuntimeException( 'Injected report persistence failure.' );
-		}
-		Static_Site_Importer_WordPress_Site_Plan_Materializer::commit_receipt( $receipt );
-		return array(
-			'theme_slug'                      => $theme['slug'],
-			'theme_name'                      => isset( $args['name'] ) ? (string) $args['name'] : $theme['slug'],
-			'theme_dir'                       => $theme['dir'],
-			'report_path'                     => $report_path,
-			'validation_result_path'          => $validation_path,
-			'finding_packets_path'            => $findings_path,
-			'external_report_path'            => $external_report_path,
-			'external_validation_result_path' => $external_validation_result_path,
-			'external_finding_packets_path'   => $external_finding_packets_path,
-			'manifest_path'                   => $manifest_path,
-			'pages'                           => $receipt['completed']['pages'],
-			'import_report'                   => $report->to_array(),
-			'import_report_summary'           => $report['compact_summary'],
-			'import_validation_result'        => $validation,
-			'finding_packets'                 => $findings,
-			'fixture_diagnostics'             => $fixture_diagnostics,
-			'quality'                         => $quality,
-			'source_of_truth'                 => $manifest,
-			'progress_events'                 => array(
-				array(
-					'schema'   => 'wp-codebox/live-progress-event/v1',
-					'phase'    => 'ssi.materialization.completed',
-					'progress' => array( 'percent' => 100 ),
-				),
-				array(
-					'schema'   => 'wp-codebox/live-progress-event/v1',
-					'phase'    => 'ssi.reporting.completed',
-					'progress' => array( 'percent' => 100 ),
-				),
-				array(
-					'schema'   => 'wp-codebox/live-progress-event/v1',
-					'phase'    => 'ssi.saved.completed',
-					'progress' => array( 'percent' => 100 ),
-				),
-			),
-			'materialization_receipt'         => $receipt,
-		);
 	}
 
 	/** @return array<string,mixed> */

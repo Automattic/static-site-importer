@@ -318,7 +318,6 @@ require dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-ma
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-fallback-contract.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-build-provenance.php';
-require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-receipt-projection.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
 
@@ -1186,6 +1185,37 @@ $projection_path = $GLOBALS['ssi_plan_root'] . '/large-invalid-binary-report.jso
 $projection_payload = array( 'schema' => 'static-site-importer/import-report/v1', 'materialization_receipt' => $typed_font_receipt );
 $projection_receipt = $typed_font_receipt;
 $write_projection = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'write_plan_projection' );
+$document_metadata_projection = new ReflectionMethod( Static_Site_Importer_Receipt_Projection::class, 'document_metadata' );
+$metadata_projection = $document_metadata_projection->invoke(
+	null,
+	array(
+		'pages' => array(
+			array(
+				'entrypoint'        => true,
+				'document_metadata' => array(
+					'links'   => array( array( 'href' => 'source.css', 'resolved_url' => 'https://example.test/assets/site.css' ) ),
+					'scripts' => array( array( 'src' => 'source.js', 'resolved_url' => 'https://example.test/assets/site.js' ) ),
+				),
+			),
+		),
+	)
+);
+$assert( 'https://example.test/assets/site.css' === ( $metadata_projection['links'][0]['href'] ?? '' ) && 'https://example.test/assets/site.js' === ( $metadata_projection['scripts'][0]['src'] ?? '' ), 'report document metadata rewrites resolved link and script URLs on the owned metadata arrays' );
+$malformed_metadata_projection = $document_metadata_projection->invoke(
+	null,
+	array(
+		'pages' => array(
+			array(
+				'entrypoint'        => true,
+				'document_metadata' => array(
+					'links'   => 'not-an-array',
+					'scripts' => array( 'not-an-array-row' ),
+				),
+			),
+		),
+	)
+);
+$assert( 'not-an-array' === ( $malformed_metadata_projection['links'] ?? '' ) && array( 'not-an-array-row' ) === ( $malformed_metadata_projection['scripts'] ?? array() ), 'report document metadata preserves malformed collections without reference iteration warnings or mutation' );
 $write_projection->invokeArgs( null, array( $projection_path, $projection_payload, &$projection_receipt ) );
 $projection_json = (string) file_get_contents( $projection_path );
 $projection = json_decode( $projection_json, true );

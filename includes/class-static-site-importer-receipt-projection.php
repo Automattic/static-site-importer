@@ -79,15 +79,10 @@ class Static_Site_Importer_Receipt_Projection {
 		return $manifest;
 	}
 
-	/** Finalize report quality before cleanup mutates the receipt. */
-	public static function finalize_report( Static_Site_Importer_Import_Report $report, array $args ): array {
-		return Static_Site_Importer_Report_Diagnostics::finalize_report( $report, $args );
-	}
-
 	/** Refresh report-derived projections after cleanup has updated the receipt. */
-	public static function finalize( Static_Site_Importer_Import_Report $report, array $manifest, array &$receipt, array $args, array $quality ): array {
+	public static function finalize( Static_Site_Importer_Import_Report $report, array $manifest, array $plan, array &$receipt, array $args, array $quality ): array {
 		$report['source_of_truth'] = $manifest;
-		$receipt['quality_budget_admission'] = Static_Site_Importer_Quality_Budget_Admission::evaluate( $receipt['plan'], $receipt['plan'] ?? array(), $args, $report );
+		$receipt['quality_budget_admission'] = Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $receipt['plan'] ?? array(), $args, $report );
 		$receipt['quality_budget_admission']['mechanical_status'] = $receipt['status'] ?? 'completed';
 		$report['quality_budget_admission'] = $receipt['quality_budget_admission'];
 		$report['materialization_receipt'] = $receipt;
@@ -96,9 +91,24 @@ class Static_Site_Importer_Receipt_Projection {
 
 	private static function document_metadata( array $plan ): array {
 		foreach ( $plan['pages'] as $page ) {
-			if ( empty( $page['entrypoint'] ) || ! is_array( $page['document_metadata'] ?? null ) ) { continue; }
+			if ( empty( $page['entrypoint'] ) || ! is_array( $page['document_metadata'] ?? null ) ) {
+				continue;
+			}
 			$metadata = array_merge( array( 'schema' => 'static-site-importer/document-metadata/v1' ), $page['document_metadata'] );
-			foreach ( array( 'links' => 'href', 'scripts' => 'src' ) as $kind => $field ) { foreach ( $metadata[ $kind ] ?? array() as &$declaration ) { if ( is_array( $declaration ) && isset( $declaration['resolved_url'] ) ) { $declaration[ $field ] = $declaration['resolved_url']; } } unset( $declaration ); }
+			foreach ( array(
+				'links'   => 'href',
+				'scripts' => 'src',
+			) as $kind => $field ) {
+				if ( ! isset( $metadata[ $kind ] ) || ! is_array( $metadata[ $kind ] ) ) {
+					continue;
+				}
+				foreach ( $metadata[ $kind ] as &$declaration ) {
+					if ( is_array( $declaration ) && isset( $declaration['resolved_url'] ) ) {
+						$declaration[ $field ] = $declaration['resolved_url'];
+					}
+				}
+				unset( $declaration );
+			}
 			return $metadata;
 		}
 		return array( 'schema' => 'static-site-importer/document-metadata/v1' );
