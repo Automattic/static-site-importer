@@ -157,7 +157,7 @@ class Static_Site_Importer_Theme_Generator {
 				return $claimed;
 			}
 		}
-		$result = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared_lifecycle( $prepared, $lifecycle, $companion_payload, $gutenberg_gaps, $theme_materialization );
+		$result = Static_Site_Importer_Prepared_Plan_Application::materialize( $prepared, $lifecycle, $companion_payload, $gutenberg_gaps, $theme_materialization );
 		if ( is_array( $checkpoint ) ) {
 			$checkpoint['workspace']->cleanup( 'success' );
 		}
