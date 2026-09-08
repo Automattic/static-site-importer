@@ -111,7 +111,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 		$receipt['theme_materialization'] = $theme_materialization;
 		if ( 'completed' !== $receipt['status'] ) {
 			$error = $receipt['errors'][0] ?? array();
-			Static_Site_Importer_Theme_Generator::append_entity_compensation( $receipt, $lifecycle, $entities, 'wordpress_site_plan_materialization', (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ) );
+			Static_Site_Importer_Entity_Compensation::append( $receipt, $lifecycle, $entities, 'wordpress_site_plan_materialization', (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ) );
 			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan materialization failed.' ), $receipt );
 		}
 		return array(
@@ -130,7 +130,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			'dependencies'      => $dependencies,
 			'entities'          => $entities,
 		);
-		Static_Site_Importer_Theme_Generator::append_entity_compensation( $failure, $lifecycle, $entities, $stage, (string) $error['code'] );
+		Static_Site_Importer_Entity_Compensation::append( $failure, $lifecycle, $entities, $stage, (string) $error['code'] );
 		return new WP_Error( (string) $error['code'], (string) $error['message'], $failure );
 	}
 
