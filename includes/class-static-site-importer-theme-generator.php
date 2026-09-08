@@ -605,6 +605,50 @@ class Static_Site_Importer_Theme_Generator {
 	 * @return array<string,mixed>
 	 */
 	private static function public_result_from_wordpress_site_plan_receipt( array $receipt, array $args, array $lifecycle = array(), array $dependencies = array(), array $entities = array() ): array {
+		$theme = $receipt['theme'];
+		$projection = Static_Site_Importer_Receipt_Projection::compose(
+			$receipt,
+			$args,
+			$lifecycle,
+			$dependencies,
+			$entities,
+			self::import_run_id( $args ),
+			self::transformer_provenance(),
+			Static_Site_Importer_Build_Provenance::describe()
+		);
+		$report = $projection['report'];
+		$manifest = $projection['manifest'];
+		if ( ! empty( $args['batch_import'] ) ) {
+			$manifest = Static_Site_Importer_Receipt_Projection::merge_previous_manifest( $manifest, self::read_source_of_truth_manifest( $theme['dir'] . '/static-site-importer-manifest.json' ) );
+		}
+		$quality = Static_Site_Importer_Receipt_Projection::finalize_report( $report, $args );
+		$manifest['existing_matches'] = $receipt['existing_matches'] ?? array( 'pages' => array() );
+		$cleanup = self::cleanup_stale_generated_theme_files( $theme['dir'], $manifest, $args, $receipt );
+		if ( is_wp_error( $cleanup ) ) { throw new RuntimeException( $cleanup->get_error_message() ); } // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The internal cleanup error is propagated as an exception message.
+		$manifest['cleanup'] = $cleanup;
+		$final = Static_Site_Importer_Receipt_Projection::finalize( $report, $manifest, $receipt, $args, $quality );
+		$validation = $final['validation'];
+		$findings = $final['findings'];
+		$theme_dir = $theme['dir'];
+		$manifest_path = $theme_dir . '/static-site-importer-manifest.json';
+		self::write_plan_projection( $manifest_path, $manifest, $receipt );
+		$report_path = ''; $validation_path = ''; $findings_path = '';
+		if ( ! empty( $args['write_theme_report_artifacts'] ) ) {
+			$report_path = $theme_dir . '/import-report.json'; $validation_path = $theme_dir . '/import-validation-result.json'; $findings_path = $theme_dir . '/finding-packets.json';
+			self::write_plan_projection( $report_path, $report->to_array(), $receipt ); self::write_plan_projection( $validation_path, $validation, $receipt ); self::write_plan_projection( $findings_path, $findings, $receipt );
+		}
+		$external_report_path = ''; $external_validation_result_path = ''; $external_finding_packets_path = '';
+		if ( '' !== trim( (string) ( $args['report'] ?? '' ) ) ) {
+			$external_report_path = (string) $args['report']; $external_dir = dirname( $external_report_path ); $external_validation_result_path = trailingslashit( $external_dir ) . 'import-validation-result.json'; $external_finding_packets_path = trailingslashit( $external_dir ) . 'finding-packets.json';
+			foreach ( array( $external_report_path, $external_validation_result_path, $external_finding_packets_path ) as $path ) { if ( ! Static_Site_Importer_WordPress_Site_Plan_Materializer::safe_external_report_destination( $path ) ) { throw new RuntimeException( 'External report destination changed after preflight.' ); } }
+			self::write_plan_projection( $external_report_path, $report->to_array(), $receipt ); self::write_plan_projection( $external_validation_result_path, $validation, $receipt ); self::write_plan_projection( $external_finding_packets_path, $findings, $receipt );
+		}
+		if ( 'report_persistence' === (string) ( $args['inject_materialization_failure'] ?? '' ) ) { throw new RuntimeException( 'Injected report persistence failure.' ); }
+		Static_Site_Importer_WordPress_Site_Plan_Materializer::commit_receipt( $receipt );
+		return array( 'theme_slug' => $theme['slug'], 'theme_name' => isset( $args['name'] ) ? (string) $args['name'] : $theme['slug'], 'theme_dir' => $theme['dir'], 'report_path' => $report_path, 'validation_result_path' => $validation_path, 'finding_packets_path' => $findings_path, 'external_report_path' => $external_report_path, 'external_validation_result_path' => $external_validation_result_path, 'external_finding_packets_path' => $external_finding_packets_path, 'manifest_path' => $manifest_path, 'pages' => $receipt['completed']['pages'], 'import_report' => $report->to_array(), 'import_report_summary' => $report['compact_summary'], 'import_validation_result' => $validation, 'finding_packets' => $findings, 'fixture_diagnostics' => $final['fixture_diagnostics'], 'quality' => $quality, 'source_of_truth' => $manifest, 'progress_events' => array( array( 'schema' => 'wp-codebox/live-progress-event/v1', 'phase' => 'ssi.materialization.completed', 'progress' => array( 'percent' => 100 ) ), array( 'schema' => 'wp-codebox/live-progress-event/v1', 'phase' => 'ssi.reporting.completed', 'progress' => array( 'percent' => 100 ) ), array( 'schema' => 'wp-codebox/live-progress-event/v1', 'phase' => 'ssi.saved.completed', 'progress' => array( 'percent' => 100 ) ) ), 'materialization_receipt' => $receipt );
+	}
+
+	private static function legacy_public_result_from_wordpress_site_plan_receipt( array $receipt, array $args, array $lifecycle = array(), array $dependencies = array(), array $entities = array() ): array {
 		$plan        = $receipt['plan'];
 		$theme        = $receipt['theme'];
 		$diagnostics  = Static_Site_Importer_Report_Diagnostics::after_completed_entity_bindings( isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array(), $receipt );

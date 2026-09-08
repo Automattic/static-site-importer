@@ -105,6 +105,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-quality-budget-admission.php',
 	'class-static-site-importer-owner-handoff-evidence.php',
 	'class-static-site-importer-wordpress-site-plan-materializer.php',
+	'class-static-site-importer-receipt-projection.php',
 	'class-static-site-importer-figma-import.php',
 	'class-static-site-importer-theme-exporter.php',
 	'class-static-site-importer-block-document-reporter.php',

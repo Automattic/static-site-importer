@@ -318,6 +318,7 @@ require dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-ma
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-fallback-contract.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-build-provenance.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-receipt-projection.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
 
