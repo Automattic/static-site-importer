@@ -3052,7 +3052,11 @@ foreach ( array( 'success', 'batch', 'stale_cleanup', 'report_persistence', 'ext
 		$case_args['inject_materialization_failure'] = $projection_case;
 	}
 	if ( 'external_destination' === $projection_case ) {
-		$case_args['report'] = $GLOBALS['ssi_plan_root'] . '/late-external-report.json';
+		// Runner TMPDIR may be an alias; this fixture starts with a valid physical
+		// destination and changes it only after preflight has accepted it.
+		$external_parent = realpath( $GLOBALS['ssi_plan_root'] );
+		$assert( false !== $external_parent, 'external projection fixture has a physical parent directory' );
+		$case_args['report'] = $external_parent . '/late-external-report.json';
 	}
 	$register_plan_blocks( $canonical_plan );
 	$case_prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare_for_materialization( $canonical_plan, $case_args );
