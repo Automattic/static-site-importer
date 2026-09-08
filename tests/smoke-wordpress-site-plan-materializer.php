@@ -2224,6 +2224,65 @@ $ordered_quality_receipt['plan']['diagnostics'] = $deferred_form_receipt['plan']
 $ordered_retry_error = $final_quality_gate->invoke( null, $ordered_quality_receipt, array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ), $ordered_lifecycle, array(), $ordered_reports );
 $assert( ! is_wp_error( $ordered_retry_error ) && $events_before_ordered_retry === $GLOBALS['ssi_plan_rollback_events'] && array() === $ordered_provider_calls, 'repeated quality reporting remains non-destructive' );
 unset( $GLOBALS['ssi_plan_rollback_events'] );
+$compensation_calls    = array();
+$compensation_lifecycle = array(
+	'entities' => array(
+		'first'  => array(
+			'adapter'  => array(
+				'provider'             => 'first-provider',
+				'rollback_contract_id' => 'test/first-provider-rollback/v1',
+				'rollback_callback'    => static function () use ( &$compensation_calls ): array {
+					$compensation_calls[] = 'first';
+					return array( 'status' => 'rolled_back' );
+				},
+			),
+			'manifest' => array( 'entities' => array( array( 'id' => 'first' ) ) ),
+		),
+		'second' => array(
+			'adapter'  => array(
+				'provider'             => 'second-provider',
+				'rollback_contract_id' => 'test/second-provider-rollback/v1',
+				'rollback_callback'    => static function () use ( &$compensation_calls ): array {
+					$compensation_calls[] = 'second';
+					return array( 'status' => 'rolled_back' );
+				},
+			),
+			'manifest' => array( 'entities' => array( array( 'id' => 'second' ) ) ),
+		),
+	),
+);
+$compensation_reports = array(
+	'first'  => array( 'status' => 'mutated', 'mutations' => array( array( 'status' => 'mutated' ) ) ),
+	'second' => array( 'status' => 'mutated', 'mutations' => array( array( 'status' => 'mutated' ) ) ),
+);
+$compensation_receipt = array(
+	'schema'              => 'static-site-importer/materialization-receipt/v2',
+	'status'              => 'partial',
+	'receipt_instance_id' => str_repeat( 'c', 64 ),
+	'plan_identity'       => array( 'schema' => 'test/plan-identity/v1', 'hash' => hash( 'sha256', 'compensation-plan' ) ),
+	'theme'               => array( 'slug' => 'compensation-theme' ),
+	'completed'           => array( 'materialized_pages' => array( array( 'id' => 1 ) ) ),
+	'transaction'         => (object) array( 'state' => array( 'args' => array( 'import_run_id' => 'compensation-run' ), 'applied' => array( 'posts' => array( array( 'id' => 1 ) ) ) ) ),
+);
+Static_Site_Importer_Entity_Compensation::append( $compensation_receipt, $compensation_lifecycle, $compensation_reports, 'test', 'test_failure' );
+Static_Site_Importer_Entity_Compensation::append( $compensation_receipt, $compensation_lifecycle, $compensation_reports, 'test', 'test_failure' );
+$matching_compensation_calls = $compensation_calls;
+$compensation_receipt['receipt_instance_id'] = str_repeat( 'd', 64 );
+Static_Site_Importer_Entity_Compensation::append( $compensation_receipt, $compensation_lifecycle, $compensation_reports, 'test', 'test_failure' );
+$compensation_receipt['transaction']->state['applied']['posts'][] = array( 'id' => 2 );
+Static_Site_Importer_Entity_Compensation::append( $compensation_receipt, $compensation_lifecycle, $compensation_reports, 'test', 'test_failure' );
+$compensation_reports['second']['mutations'][0]['status'] = 'updated';
+Static_Site_Importer_Entity_Compensation::append( $compensation_receipt, $compensation_lifecycle, $compensation_reports, 'test', 'test_failure' );
+$compensation_lifecycle['entities']['second']['manifest']['entities'][0]['id'] = 'second-changed';
+Static_Site_Importer_Entity_Compensation::append( $compensation_receipt, $compensation_lifecycle, $compensation_reports, 'test', 'test_failure' );
+$compensation_lifecycle['entities']['second']['adapter']['rollback_contract_id'] = 'test/second-provider-rollback/v2';
+Static_Site_Importer_Entity_Compensation::append( $compensation_receipt, $compensation_lifecycle, $compensation_reports, 'test', 'test_failure' );
+$assert(
+	array( 'second', 'first' ) === $matching_compensation_calls
+	&& array( 'second', 'first', 'second', 'first', 'second', 'first', 'second', 'first', 'second', 'first', 'second', 'first' ) === $compensation_calls
+	&& true === ( $compensation_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ),
+	'exact provider compensation bindings suppress duplicate rollback while changed receipt, transaction, report, lifecycle manifest, and rollback contract identities rerun callbacks in reverse order'
+);
 $partial_rollback_plan    = ( new ArtifactCompiler() )->compile(
 	array(
 		'entrypoint' => 'partial-rollback/index.html',
