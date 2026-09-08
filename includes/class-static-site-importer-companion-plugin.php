@@ -248,7 +248,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$runtime_class         = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Provider_Form_Runtime_V1';
 		$main_file             = $plugin_slug . '/' . $plugin_slug . '.php';
 		$files[ $plugin_slug . '/includes/provider-form-runtime-v1.php' ] = self::provider_form_runtime_file( $provider_form_runtime, $runtime_class );
-		$files                 = array_merge(
+		$files = array_merge(
 			array(
 				$main_file => self::main_plugin_file( $plugin_slug, $block_namespace, $site_name, $block_directories, $preserved, $main_file, $inventory_hash, $runtime_class, $editor_scripts ),
 			),
