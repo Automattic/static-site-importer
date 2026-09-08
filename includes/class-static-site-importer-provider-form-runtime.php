@@ -9,12 +9,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-if ( class_exists( 'Static_Site_Importer_Provider_Form_Runtime', false ) ) {
-	return;
-}
-
 /** Keeps source form presentation attached to provider-rendered controls. */
-final class Static_Site_Importer_Provider_Form_Runtime {
+final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	/** Whether hooks have already been registered in this request. */
 	private static bool $registered = false;
 

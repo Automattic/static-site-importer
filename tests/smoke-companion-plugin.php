@@ -561,8 +561,8 @@ if ( is_array( $descriptor ) ) {
 	$assert( str_contains( $main, 'Plugin Name:' ), 'main-file-has-plugin-header' );
 	$assert( str_contains( $main, "add_filter( 'render_block'" ), 'main-file-scopes-island-enqueue' );
 	$assert( str_contains( $main, 'wp_enqueue_script' ), 'main-file-enqueues-island-js' );
-	$assert( str_contains( $main, "require_once __DIR__ . '/includes/class-static-site-importer-provider-form-runtime.php'" ) && str_contains( $main, 'Static_Site_Importer_Provider_Form_Runtime::register();' ), 'main-file-registers-carried-provider-form-runtime' );
-	$assert( isset( $files['ssi-example-site/includes/class-static-site-importer-provider-form-runtime.php'] ), 'provider-form-runtime-file-emitted' );
+	$assert( str_contains( $main, "require_once __DIR__ . '/includes/provider-form-runtime-v1.php'" ) && str_contains( $main, 'SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1::register();' ), 'main-file-registers-versioned-companion-provider-form-runtime' );
+	$assert( isset( $files['ssi-example-site/includes/provider-form-runtime-v1.php'] ) && str_contains( $files['ssi-example-site/includes/provider-form-runtime-v1.php'], 'final class SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1' ), 'provider-form-runtime-is-emitted-under-companion-namespace' );
 
 	$assert( str_contains( $main, "register_block_type( SSI_EXAMPLE_SITE_" ) && str_contains( $main, "_DIR . 'blocks/' . \$block_dir )" ), 'main-file-registers-metadata-block-directory' );
 	$assert( str_contains( $main, "\$registered instanceof WP_Block_Type" ) && str_contains( $main, "static_site_importer_companion_block_owners" ) && str_contains( $main, "'plugin_file' => 'ssi-example-site/ssi-example-site.php'" ), 'main-file-records-owner-after-metadata-registration' );
@@ -918,7 +918,7 @@ $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/rend
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/block.json' ), 'install-emits-block-json' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/index.js' ), 'install-emits-declared-editor-asset' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/editor/core-enhancement.js' ) && 'window.ssiExampleEditor = true;' === (string) file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/editor/core-enhancement.js' ), 'install-writes-editor-script-asset' );
-$assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/includes/class-static-site-importer-provider-form-runtime.php' ), 'install-writes-provider-form-runtime' );
+$assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/includes/provider-form-runtime-v1.php' ), 'install-writes-versioned-companion-provider-form-runtime' );
 $assert( isset( $GLOBALS['ssi_companion_registered_filters']['grunion_contact_form_field_html'], $GLOBALS['ssi_companion_registered_filters']['render_block_core/button'] ), 'installed-companion-registers-provider-form-runtime-hooks' );
 $submit_filter = $GLOBALS['ssi_companion_registered_filters']['render_block_core/button'][0][0] ?? null;
 $projected_submit = is_callable( $submit_filter ) ? call_user_func(
@@ -962,6 +962,75 @@ if ( is_resource( $standalone_process ) ) {
 	$standalone_status = proc_close( $standalone_process );
 }
 $assert( 0 === $standalone_status, 'generated-plugin-loads-without-importer-or-compiler', $standalone_output );
+
+// A current companion owns a versioned copy of the projection runtime. Verify
+// it remains functional after SSI is absent, and that it has no class identity
+// collision with SSI, legacy global copies, or a second companion.
+$runtime_process = static function ( array $files, array $classes ) use ( $ssi_companion_tmp ): array {
+	$bootstrap = <<<'PHP'
+define( 'ABSPATH', __DIR__ . '/' );
+class WP_Block_Type { public function __construct( public string $name ) {} }
+function plugin_dir_path( string $file ): string { return dirname( $file ) . '/'; }
+function plugin_dir_url( string $file ): string { return 'https://example.test/plugins/' . basename( dirname( $file ) ) . '/'; }
+function add_action( string $hook, callable|string $callback ): void { if ( 'init' === $hook ) { call_user_func( $callback ); } }
+function add_filter( string $hook, callable|string $callback, int $priority = 10, int $accepted_args = 1 ): void { $GLOBALS['filters'][ $hook ][] = $callback; }
+function register_block_type( string $path, array $args = array() ): WP_Block_Type|false { return new WP_Block_Type( 'test/block' ); }
+function get_option( string $name, mixed $default = false ): mixed { return $default; }
+foreach ( array_slice( $argv, 1, -1 ) as $file ) { require $file; }
+$classes = json_decode( end( $argv ), true );
+$submit = $GLOBALS['filters']['render_block_core/button'][0] ?? null;
+$wrapper = $GLOBALS['filters']['grunion_contact_form_field_html'][0] ?? null;
+$submit_output = is_callable( $submit ) ? $submit( '<div class="wp-block-button ssi-source-submit--source-submit"><button>Send</button></div>', array( 'attrs' => array( 'className' => 'ssi-source-submit--source-submit' ) ) ) : '';
+$wrapper_output = is_callable( $wrapper ) ? $wrapper( '<div class="grunion-field-text-wrap ssi-source-wrapper-2--source-box-wrap"><input></div>' ) : '';
+exit( is_array( $classes ) && ! array_filter( $classes, static fn ( string $class ): bool => ! class_exists( $class, false ) ) && str_contains( $submit_output, 'source-submit' ) && str_contains( $wrapper_output, '<div class="source-box"><input>' ) ? 0 : 1 );
+PHP;
+	$process = proc_open( array( PHP_BINARY, '-r', $bootstrap, ...$files, wp_json_encode( $classes ) ), array( 1 => array( 'pipe', 'w' ), 2 => array( 'pipe', 'w' ) ), $pipes );
+	if ( ! is_resource( $process ) ) {
+		return array( 1, 'Could not start runtime compatibility process.' );
+	}
+	$output = stream_get_contents( $pipes[1] ) . stream_get_contents( $pipes[2] );
+	fclose( $pipes[1] );
+	fclose( $pipes[2] );
+	return array( proc_close( $process ), $output );
+};
+$current_companion = WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php';
+$ssi_runtime       = dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-form-runtime.php';
+list( $runtime_status, $runtime_output ) = $runtime_process( array( $current_companion ), array( 'SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1' ) );
+$assert( 0 === $runtime_status, 'standalone-companion-projects-real-form-markers-without-ssi', $runtime_output );
+list( $runtime_status, $runtime_output ) = $runtime_process( array( $ssi_runtime, $current_companion ), array( 'Static_Site_Importer_Provider_Form_Runtime_V1', 'SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1' ) );
+$assert( 0 === $runtime_status, 'ssi-then-current-companion-loads-distinct-versioned-runtimes', $runtime_output );
+list( $runtime_status, $runtime_output ) = $runtime_process( array( $current_companion, $ssi_runtime ), array( 'Static_Site_Importer_Provider_Form_Runtime_V1', 'SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1' ) );
+$assert( 0 === $runtime_status, 'current-companion-then-ssi-loads-distinct-versioned-runtimes', $runtime_output );
+
+$legacy_runtime = str_replace( 'Static_Site_Importer_Provider_Form_Runtime_V1', 'Static_Site_Importer_Provider_Form_Runtime', (string) file_get_contents( $ssi_runtime ) );
+$legacy_runtime = str_replace( '/** Keeps source form presentation attached to provider-rendered controls. */', "if ( class_exists( 'Static_Site_Importer_Provider_Form_Runtime', false ) ) {\n\treturn;\n}\n\n/** Keeps source form presentation attached to provider-rendered controls. */", $legacy_runtime );
+$legacy_file    = $ssi_companion_tmp . '/legacy-provider-runtime.php';
+file_put_contents( $legacy_file, $legacy_runtime );
+$legacy_main = $ssi_companion_tmp . '/legacy-companion.php';
+file_put_contents( $legacy_main, "<?php\nrequire_once __DIR__ . '/legacy-provider-runtime.php';\nStatic_Site_Importer_Provider_Form_Runtime::register();\n" );
+list( $runtime_status, $runtime_output ) = $runtime_process( array( $legacy_main, $ssi_runtime ), array( 'Static_Site_Importer_Provider_Form_Runtime', 'Static_Site_Importer_Provider_Form_Runtime_V1' ) );
+$assert( 0 === $runtime_status, 'legacy-global-copy-then-ssi-loads-without-class-fatal', $runtime_output );
+list( $runtime_status, $runtime_output ) = $runtime_process( array( $ssi_runtime, $legacy_main ), array( 'Static_Site_Importer_Provider_Form_Runtime', 'Static_Site_Importer_Provider_Form_Runtime_V1' ) );
+$assert( 0 === $runtime_status, 'ssi-then-legacy-global-copy-loads-without-class-fatal', $runtime_output );
+
+$second_payload                                  = $payload;
+$second_payload['site_slug']                     = 'Second Site';
+$second_payload['site_name']                     = 'Second Site';
+$second_payload['blocks'][0]['block_json']['name'] = 'example/second-hero';
+$second_descriptor                               = Static_Site_Importer_Companion_Plugin::scaffold( $second_payload );
+$assert( is_array( $second_descriptor ), 'second-companion-scaffolds-for-runtime-isolation' );
+if ( is_array( $second_descriptor ) ) {
+	foreach ( $second_descriptor['files'] as $relative => $content ) {
+		$target = WP_PLUGIN_DIR . '/' . $relative;
+		wp_mkdir_p( dirname( $target ) );
+		file_put_contents( $target, $content );
+	}
+	list( $runtime_status, $runtime_output ) = $runtime_process(
+		array( $current_companion, WP_PLUGIN_DIR . '/ssi-second-site/ssi-second-site.php' ),
+		array( 'SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1', 'SSI_SECOND_SITE_Provider_Form_Runtime_V1' )
+	);
+	$assert( 0 === $runtime_status, 'multiple-current-companions-load-versioned-isolated-runtimes', $runtime_output );
+}
 $written_asset_manifest = WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/index.asset.php';
 $asset_manifest_value  = file_exists( $written_asset_manifest ) ? include $written_asset_manifest : null;
 $assert( array( 'dependencies' => array( 'wp-blocks', 'wp-block-editor', 'wp-element' ), 'version' => hash( 'sha256', 'window.SSIEditor = true;' ) ) === $asset_manifest_value, 'installed-asset-manifest-executes-with-dependencies-and-content-version' );

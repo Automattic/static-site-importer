@@ -60,18 +60,18 @@ class Static_Site_Importer_Form_Seeder {
 			add_action( 'jetpack_loaded', array( __CLASS__, 'bootstrap_jetpack_forms_runtime' ) );
 		}
 		if ( function_exists( 'add_filter' ) ) {
-			Static_Site_Importer_Provider_Form_Runtime::register();
+			Static_Site_Importer_Provider_Form_Runtime_V1::register();
 		}
 	}
 
 	/** Move source submit presentation from Core's wrapper onto its button control. */
 	public static function project_provider_submit_presentation( string $html, array $block = array() ): string {
-		return Static_Site_Importer_Provider_Form_Runtime::project_submit_presentation( $html, $block );
+		return Static_Site_Importer_Provider_Form_Runtime_V1::project_submit_presentation( $html, $block );
 	}
 
 	/** Rebuild source input-only wrapper layers inside Jetpack's field shell. */
 	public static function project_provider_wrapper_classes( string $html ): string {
-		return Static_Site_Importer_Provider_Form_Runtime::project_wrapper_classes( $html );
+		return Static_Site_Importer_Provider_Form_Runtime_V1::project_wrapper_classes( $html );
 	}
 
 	/**
