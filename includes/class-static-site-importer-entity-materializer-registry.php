@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Form_Fallback_Contract' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-form-fallback-contract.php';
+}
+
 /**
  * Registers import-time entity validators, dependency requirements, and writers.
  */

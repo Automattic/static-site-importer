@@ -18,6 +18,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Import_Report' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-import-report.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Form_Fallback_Contract' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-form-fallback-contract.php';
+}
 
 /**
  * Analyzes generated block documents and routes block-quality diagnostics into the report.
