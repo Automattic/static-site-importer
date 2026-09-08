@@ -2936,7 +2936,7 @@ $resolved_root_media_plan = ( new \Automattic\BlocksEngine\PhpTransformer\WordPr
 	$root_media_plan,
 	array( 'theme_uri' => 'https://example.test/wp-content/themes/root-media-plan', 'runtime_capabilities' => array( 'asset_materialization' ) )
 );
-$resolve_companion_assets = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'resolve_companion_asset_references' );
+$resolve_companion_assets = new ReflectionMethod( Static_Site_Importer_Prepared_Plan_Application::class, 'resolve_companion_asset_references' );
 $resolved_companion       = $resolve_companion_assets->invoke(
 	null,
 	array( 'blocks' => array( array( 'render' => '<img src="/media/example.jpg"><source srcset="/media/example.jpg 1x">' ) ) ),
