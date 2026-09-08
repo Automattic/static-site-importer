@@ -2844,6 +2844,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['materialized_block_hash'] ?? '' ) )
 				&& ( $receipt['persisted_fragment_hash'] ?? null ) === ( $receipt['materialized_block_hash'] ?? null )
 				&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['materialized_content_hash'] ?? '' ) )
+				&& '' !== trim( (string) ( $receipt['provider'] ?? '' ) )
 				&& ( $receipt['materialized_content_hash'] ?? null ) === $page_hash;
 
 			$diagnostic['fallback_reconciliation_identity'] = $identity;
