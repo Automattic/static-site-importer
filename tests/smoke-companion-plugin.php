@@ -1108,7 +1108,7 @@ $page_ready_payload                                         = $payload;
 $page_ready_payload['site_slug']                            = 'page-ready-site';
 $page_ready_payload['site_name']                            = 'Page Ready Site';
 $page_ready_payload['blocks'][0]['block_json']['name'] = 'example/page-ready-control';
-$page_ready_materializer                                    = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'materialize_companion_dependency' );
+$page_ready_materializer                                    = new ReflectionMethod( Static_Site_Importer_Prepared_Plan_Application::class, 'materialize_companion_dependency' );
 $page_ready_report                                          = $page_ready_materializer->invoke(
 	null,
 	$page_ready_payload,
