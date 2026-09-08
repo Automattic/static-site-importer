@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /** Keeps source form presentation attached to provider-rendered controls. */
-final class Static_Site_Importer_Provider_Form_Runtime {
+final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	/** Whether hooks have already been registered in this request. */
 	private static bool $registered = false;
 

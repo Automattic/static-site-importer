@@ -29,7 +29,8 @@ assert.equal( validation.fail_import, false, 'persisted validation retains no im
 assert.equal( lifecycle.importer_active, true, 'SSI is active with the generated companion' );
 assert.equal( lifecycle.companion_active, true, 'generated companion is active with SSI' );
 assert.equal( lifecycle.provider_runtime_loaded, true, 'SSI owns the loaded provider runtime' );
-assert.equal( lifecycle.companion_carries_provider_runtime, false, 'generated companion does not define the provider runtime' );
+assert.equal( lifecycle.companion_provider_runtime_loaded, true, 'generated companion owns a distinct versioned provider runtime' );
+assert.notEqual( lifecycle.provider_runtime_class, lifecycle.companion_provider_runtime_class, 'SSI and companion provider runtimes have distinct class identities' );
 const expectedBlockNames = [ ...new Set( inventory.documents.flatMap( ( document ) => document.blocks ) ) ];
 const browser = await chromium.launch( { headless: true } );
 const page = await browser.newPage( { viewport: { width: 1440, height: 1000 } } );
