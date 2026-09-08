@@ -241,12 +241,15 @@ class Static_Site_Importer_Diagnostic_Contract {
 	 * @return array<string,mixed>
 	 */
 	private static function quality_counts( array $import_report, array $summary, array $result ): array {
-		$keys                              = array( 'block_count', 'fallback_count', 'unsupported_fallback_count', 'accepted_preserved_runtime_island_count', 'diagnostic_count', 'content_loss_count', 'empty_conversion_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count', 'unsafe_svg_count', 'svg_materialization_failure_count', 'svg_sprite_reference_failure_count', 'commerce_dependency_failures', 'interaction_candidate_count', 'runtime_dependency_parity_issue_count', 'semantic_parity_failure_count' );
+		$keys                              = array( 'block_count', 'fallback_count', 'unsupported_fallback_count', 'accepted_preserved_runtime_island_count', 'content_loss_count', 'empty_conversion_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count', 'invalid_block_document_count', 'unsafe_svg_count', 'svg_materialization_failure_count', 'svg_sprite_reference_failure_count', 'commerce_dependency_failures', 'interaction_candidate_count', 'runtime_dependency_parity_issue_count', 'semantic_parity_failure_count' );
 		$compiler_quality                  = isset( $import_report['blocks_engine']['wordpress_site_plan']['quality'] ) && is_array( $import_report['blocks_engine']['wordpress_site_plan']['quality'] ) ? $import_report['blocks_engine']['wordpress_site_plan']['quality'] : array();
 		$report_quality                    = isset( $import_report['quality'] ) && is_array( $import_report['quality'] ) ? $import_report['quality'] : $summary;
 		$source_counts                     = self::quality_metric_values( $compiler_quality, $keys );
 		$report_counts                     = self::quality_metric_values( $report_quality, $keys );
 		$validation_counts                 = self::validation_quality_metric_values( self::import_validation_result( $result, $import_report ) );
+		$compiler_diagnostic_count         = self::quality_metric_values( $compiler_quality, array( 'diagnostic_count' ) );
+		$report_diagnostic_count           = self::quality_metric_values( $report_quality, array( 'diagnostic_count' ) );
+		$validation_diagnostic_count       = self::validation_quality_metric_values( self::import_validation_result( $result, $import_report ) );
 		$compiler_fallback_count_available = isset( $source_counts['fallback_count'] );
 		$provenance                        = array();
 
@@ -318,10 +321,23 @@ class Static_Site_Importer_Diagnostic_Contract {
 				$counts = array_merge( $counts, $document_counts );
 			}
 		}
+		$counts['diagnostic_count'] = $validation_diagnostic_count['diagnostic_count'] ?? $compiler_diagnostic_count['diagnostic_count'] ?? $report_diagnostic_count['diagnostic_count'] ?? 0;
 
-		$counts['source_detected'] = array_merge( array_fill_keys( $keys, 0 ), $source_counts );
-		$counts['materialized']    = array_merge( array_fill_keys( $keys, 0 ), $resolved_counts );
-		$counts['unresolved']      = array_intersect_key( $counts, array_flip( $keys ) );
+		$counts['source_detected'] = array_merge( array_fill_keys( array_merge( $keys, array( 'diagnostic_count' ) ), 0 ), $source_counts, $compiler_diagnostic_count );
+		$counts['materialized']    = array_merge( array_fill_keys( array_merge( $keys, array( 'diagnostic_count' ) ), 0 ), $resolved_counts );
+		$counts['unresolved']      = array_intersect_key( $counts, array_flip( array_merge( $keys, array( 'diagnostic_count' ) ) ) );
+		$counts['diagnostic_counts'] = array(
+			'compiler'                => $compiler_diagnostic_count['diagnostic_count'] ?? null,
+			'import_report'           => $report_diagnostic_count['diagnostic_count'] ?? null,
+			'materialized_validation' => $validation_diagnostic_count['diagnostic_count'] ?? null,
+		);
+		$counts['diagnostic_count_provenance'] = array_filter(
+			array(
+				'compiler'                => isset( $compiler_diagnostic_count['diagnostic_count'] ) ? array( 'owner' => 'blocks-engine', 'path' => 'blocks_engine.wordpress_site_plan.quality.metrics.diagnostic_count' ) : null,
+				'import_report'           => isset( $report_diagnostic_count['diagnostic_count'] ) ? array( 'owner' => 'static-site-importer', 'path' => 'quality.diagnostic_count' ) : null,
+				'materialized_validation' => isset( $validation_diagnostic_count['diagnostic_count'] ) ? array( 'owner' => 'static-site-importer', 'path' => 'import_validation_result.counts.diagnostics' ) : null,
+			)
+		);
 		$counts['provenance']      = $provenance;
 		$counts['consistent']      = ( empty( $compiler_quality ) || empty( $report_quality ) || self::quality_metrics_agree( self::quality_metric_values( $compiler_quality, $keys ), $report_counts ) )
 			&& ( empty( $validation_counts ) || ( empty( $compiler_quality ) || self::quality_metrics_agree( $validation_counts, self::quality_metric_values( $compiler_quality, $keys ) ) ) )

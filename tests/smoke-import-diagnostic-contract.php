@@ -224,6 +224,44 @@ $assert( 0 === ( $clean_quality_contract['quality_counts']['fallback_count'] ?? 
 $assert( true === ( $clean_quality_contract['quality_counts']['consistent'] ?? false ), 'quality-reconciliation-keeps-clean-layers-consistent' );
 $assert( 0 === ( $clean_quality_contract['diagnostic_summary']['total'] ?? null ), 'quality-reconciliation-does-not-diagnose-clean-layers' );
 
+$importer_info_diagnostic_contract = Static_Site_Importer_Diagnostic_Contract::build(
+	array(
+		'import_report' => array(
+			'quality'       => array( 'fallback_count' => 0, 'diagnostic_count' => 1 ),
+			'blocks_engine' => array( 'wordpress_site_plan' => array( 'schema' => 'blocks-engine/wordpress-site-plan/v2', 'quality' => array( 'metrics' => array( 'fallback_count' => 0, 'diagnostic_count' => 1 ) ) ) ),
+			'import_validation_result' => array(
+				'schema'      => 'blocks-engine/import-validation-result/v1',
+				'quality_pass' => true,
+				'counts'      => array( 'fallback_blocks' => 0, 'diagnostics' => 3 ),
+				'diagnostics' => array(
+					array( 'type' => 'preserved_runtime_island', 'severity' => 'info' ),
+					array( 'type' => 'wordpress_site_plan_shell_entry_extracted', 'severity' => 'info' ),
+					array( 'type' => 'wordpress_site_plan_shell_entry_extracted', 'severity' => 'info' ),
+				),
+			),
+		),
+	)
+);
+$assert( true === ( $importer_info_diagnostic_contract['quality_counts']['consistent'] ?? false ), 'quality-reconciliation-keeps-importer-info-diagnostics-out-of-cross-phase-comparison' );
+$assert( 1 === ( $importer_info_diagnostic_contract['quality_counts']['diagnostic_counts']['compiler'] ?? null ), 'quality-reconciliation-retains-compiler-diagnostic-inventory' );
+$assert( 1 === ( $importer_info_diagnostic_contract['quality_counts']['diagnostic_counts']['import_report'] ?? null ), 'quality-reconciliation-retains-report-diagnostic-inventory' );
+$assert( 3 === ( $importer_info_diagnostic_contract['quality_counts']['diagnostic_counts']['materialized_validation'] ?? null ), 'quality-reconciliation-retains-materialized-diagnostic-inventory' );
+$assert( 'import_validation_result.counts.diagnostics' === ( $importer_info_diagnostic_contract['quality_counts']['diagnostic_count_provenance']['materialized_validation']['path'] ?? '' ), 'quality-reconciliation-retains-materialized-diagnostic-provenance' );
+$assert( 3 === ( $importer_info_diagnostic_contract['quality_counts']['diagnostic_count'] ?? null ), 'quality-reconciliation-projects-finalized-diagnostic-inventory' );
+$assert( 0 === count( array_filter( $importer_info_diagnostic_contract['diagnostics'] ?? array(), static fn ( array $diagnostic ): bool => 'quality_count_consistency_failure' === ( $diagnostic['type'] ?? '' ) ) ), 'quality-reconciliation-does-not-gate-importer-info-diagnostics' );
+
+$contradictory_quality_contract = Static_Site_Importer_Diagnostic_Contract::build(
+	array(
+		'import_report' => array(
+			'quality'       => array( 'fallback_count' => 0 ),
+			'blocks_engine' => array( 'wordpress_site_plan' => array( 'quality' => array( 'metrics' => array( 'fallback_count' => 1 ) ) ) ),
+			'import_validation_result' => array( 'counts' => array( 'fallback_blocks' => 1 ) ),
+		),
+	)
+);
+$assert( false === ( $contradictory_quality_contract['quality_counts']['consistent'] ?? true ), 'quality-reconciliation-detects-real-fallback-count-mismatch' );
+$assert( 1 === count( array_filter( $contradictory_quality_contract['diagnostics'] ?? array(), static fn ( array $diagnostic ): bool => 'quality_count_consistency_failure' === ( $diagnostic['type'] ?? '' ) ) ), 'quality-reconciliation-gates-real-fallback-count-mismatch' );
+
 $partial_quality_report = Static_Site_Importer_Import_Report::from_array(
 	array(
 	'blocks_engine' => array( 'wordpress_site_plan' => array( 'quality' => array( 'metrics' => array( 'fallback_count' => 2 ) ) ) ),
