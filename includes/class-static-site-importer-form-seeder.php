@@ -1031,7 +1031,10 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			$control_index = $branch_controls[0];
 			$source_class  = trim( (string) ( $node['class'] ?? '' ) );
-			if ( ! is_int( $control_index ) || '' === $source_class || ! isset( $field_blocks[ $control_index ] ) ) {
+			$is_projectable_classless_box = '' === $source_class
+				&& in_array( $node['tag'] ?? '', array( 'div', 'span' ), true )
+				&& ( ! empty( $layout_by_node[ $node['id'] ] ?? array() ) || ! empty( $variants_by_node[ $node['id'] ] ?? array() ) );
+			if ( ! is_int( $control_index ) || ! isset( $field_blocks[ $control_index ] ) || ( '' === $source_class && ! $is_projectable_classless_box ) ) {
 				continue;
 			}
 			$wrapper_chains[ $control_index ][] = $node;
@@ -1058,10 +1061,11 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			foreach ( $chain as $offset => $node ) {
 				$generated_class = self::layout_node_class( self::layout_scope( $form ), $node['id'] );
-				$wrapper_classes = preg_split( '/\s+/', trim( (string) $node['class'] ) );
+				$wrapper_classes = preg_split( '/\s+/', trim( (string) ( $node['class'] ?? '' ) ) );
 				if ( false === $wrapper_classes ) {
 					$wrapper_classes = array();
 				}
+				$wrapper_classes = array_values( array_filter( $wrapper_classes ) );
 				// The outermost source box is the provider's own field shell, and the
 				// runtime rebuilds every deeper box as its own element. Giving each box
 				// its own hook keeps one source element addressable by one target instead
@@ -1079,6 +1083,11 @@ class Static_Site_Importer_Form_Seeder {
 				// Jetpack derives its field-shell classes by adding `-wrap`. Keep the
 				// transport marker unsuffixed so that derivation leaves one recognizable
 				// suffix rather than making it part of the restored source class.
+				// A classless source box can still have proven inline layout. Transport its
+				// generated hook so the runtime can restore a concrete box for the overlay.
+				if ( empty( $wrapper_classes ) ) {
+					$wrapper_classes[] = $generated_class;
+				}
 				$class_names[]                = implode( ' ', array_map( static fn ( string $class_name ): string => 'ssi-source-wrapper-' . $layer . '--' . $class_name, $wrapper_classes ) );
 				$wrapper_hooks[ $node['id'] ] = 0 === $offset ? $generated_class . '-wrap' : $generated_class;
 				$operations[]                 = array(
@@ -1088,10 +1097,11 @@ class Static_Site_Importer_Form_Seeder {
 				);
 				// A source box whose own stylesheet addresses it by class keeps its layout
 				// through the projected classes, so it needs no generated overlay target.
-				$class_tokens = preg_split( '/\s+/', trim( (string) $node['class'] ) );
+				$class_tokens = preg_split( '/\s+/', trim( (string) ( $node['class'] ?? '' ) ) );
 				if ( false === $class_tokens ) {
 					$class_tokens = array();
 				}
+				$class_tokens = array_values( array_filter( $class_tokens ) );
 				$provenance  = $layout_nodes_by_id[ $node['id'] ]['provenance'] ?? array();
 				$class_owned = ! empty( $layout_by_node[ $node['id'] ] ?? array() ) && ! empty( $provenance );
 				foreach ( $provenance as $provenance_row ) {
