@@ -65,8 +65,6 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return Static_Site_Importer_Dependency_Manager::materialize_lifecycle_dependencies( $lifecycle, $args );
 	}
 
-	/** Return a provider-compensated error before canonical plan mutation begins. */
-
 	/**
 	 * Validate and resolve every destination without mutating WordPress or the filesystem.
 	 *
