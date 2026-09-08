@@ -7,6 +7,8 @@
 
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver;
 
+require_once __DIR__ . '/class-static-site-importer-entity-compensation.php';
+
 final class Static_Site_Importer_Prepared_Plan_Application {
 	/**
 	 * Materialize runtime dependencies, entities, and the prepared plan as one transaction.

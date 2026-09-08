@@ -320,7 +320,6 @@ require dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.p
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-plugin-materializer.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-manager.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
-require dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-compensation.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-fallback-contract.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-build-provenance.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';

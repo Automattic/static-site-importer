@@ -15,6 +15,8 @@ if ( ! class_exists( 'Static_Site_Importer_Receipt_Projection' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-receipt-projection.php';
 }
 
+require_once __DIR__ . '/class-static-site-importer-entity-compensation.php';
+
 if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-site-identity.php';
 }
