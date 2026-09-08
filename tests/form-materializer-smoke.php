@@ -26,7 +26,7 @@ namespace {
 
 	if ( ! function_exists( 'wp_json_encode' ) ) {
 		function wp_json_encode( $value, int $flags = 0, int $depth = 512 ) {
-			return json_encode( $value, $flags, $depth );
+			return json_encode( $value, $flags, max( 1, $depth ) );
 		}
 	}
 	if ( ! function_exists( 'wp_strip_all_tags' ) ) {
@@ -200,6 +200,7 @@ namespace {
 			$failures[] = 'FAIL [' . $label . ']' . ( '' !== $detail ? ': ' . $detail : '' );
 		}
 	};
+	$artifact_compiler = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\ArtifactCompiler';
 	$layout_graph = static function ( array $nodes ): array {
 		return array( 'schema' => 'generic/computed-layout-graph/v1', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'nodes' => 128, 'depth' => 8, 'rules_per_node' => 16 ), 'variants' => array(), 'diagnostics' => array(), 'nodes' => $nodes );
 	};
@@ -245,12 +246,12 @@ namespace {
 			array( 'source_path' => 'contact.html', 'selector' => 'form.contact', 'fallback_identity' => str_repeat( 'b', 64 ), 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email' ) ) ),
 		) )
 	);
-	$assert( empty( $responsive_identity_forms['errors'] ) && 2 === count( $responsive_identity_forms['forms'] ?? array() ), 'responsive-form-identities-remain-distinct-during-validation' );
+	$assert( empty( $responsive_identity_forms['errors'] ) && 2 === count( $responsive_identity_forms['forms'] ), 'responsive-form-identities-remain-distinct-during-validation' );
 
 	// Truncated graphs remain producer fallback evidence, never runtime input.
 	$truncated_css   = str_repeat( '@media (min-width:1px){', 9 ) . '.form{display:grid}' . str_repeat( '}', 9 );
 	$truncated_forms = str_repeat( '<form class="form"><input name="email"><button type="submit">Send</button></form>', 8 );
-	$truncated_result = ( new \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler() )->compile(
+	$truncated_result = ( new $artifact_compiler() )->compile(
 		array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => '<style>' . $truncated_css . '</style>' . $truncated_forms ) )
 	)->toArray();
 	$truncated_fallbacks = array_values( array_filter( $truncated_result['fallbacks'] ?? array(), static fn( mixed $fallback ): bool => true === ( $fallback['layout_graph']['truncated'] ?? false ) ) );
@@ -354,7 +355,7 @@ namespace {
 
 	// --- Composed route forms materialize directly without caller seeding ----
 	$route_form = '<main><form class="contact"><label>Email <input type="email" name="email" required></label><button type="submit">Contact me</button></form></main>';
-	$composed_result = ( new \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler() )->compile(
+	$composed_result = ( new $artifact_compiler() )->compile(
 		array( 'entrypoint' => 'about.html', 'files' => array( 'about.html' => $route_form, 'contact.html' => $route_form ) )
 	)->toArray();
 	$composed_plan = $composed_result['source_reports']['wordpress_site_plan'] ?? array();

@@ -609,7 +609,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				continue;
 			}
 			$report = self::materialize( $adapter, $prepared['manifest'] );
-			if ( is_wp_error( $report ) ) {
+			if ( $report instanceof WP_Error ) {
 				$reports[ $id ] = array(
 					'status' => 'error',
 					'reason' => $report->get_error_code(),
@@ -1170,7 +1170,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				continue;
 			}
 
-			$row = array(
+			$row               = array(
 				'selector'    => isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '',
 				'source_path' => isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '',
 				'form'        => isset( $form['form'] ) && is_array( $form['form'] ) ? $form['form'] : array(),
