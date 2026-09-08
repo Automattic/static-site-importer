@@ -965,6 +965,7 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		$provider_controls        = array();
 		$auxiliary_popup_controls = array();
+		$phone_popup_targets      = array();
 		foreach ( $controls as $control_index => $control ) {
 			if ( 'phone' !== strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) ) {
 				$type      = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
@@ -986,8 +987,10 @@ class Static_Site_Importer_Form_Seeder {
 				continue;
 			}
 			$previous = $controls[ $control_index - 1 ] ?? null;
-			if ( is_array( $previous ) && 'button' === strtolower( trim( (string) ( $previous['tag'] ?? '' ) ) ) && 'button' === strtolower( trim( (string) ( $previous['type'] ?? '' ) ) ) ) {
+			$previous_popup = is_array( $previous ) ? strtolower( trim( (string) ( $previous['aria_haspopup'] ?? '' ) ) ) : '';
+			if ( is_array( $previous ) && 'button' === strtolower( trim( (string) ( $previous['tag'] ?? '' ) ) ) && 'button' === strtolower( trim( (string) ( $previous['type'] ?? '' ) ) ) && in_array( $previous_popup, array( 'true', 'menu', 'listbox', 'tree', 'grid', 'dialog' ), true ) ) {
 				$provider_controls[ $control_index - 1 ] = true;
+				$phone_popup_targets[ $control_index - 1 ] = $control_index;
 			}
 		}
 		$losses                     = array();
@@ -1022,16 +1025,19 @@ class Static_Site_Importer_Form_Seeder {
 				$variants_by_node[ $variant['node'] ][] = $variant;
 			}
 		}
-		$collect_controls = static function ( array $node ) use ( &$collect_controls, $children, $provider_controls, $suppressed_controls ): array {
+		$collect_controls = static function ( array $node ) use ( &$collect_controls, $children, $provider_controls, $phone_popup_targets, $suppressed_controls ): array {
 			if ( 'control' === ( $node['kind'] ?? null ) ) {
 				$control_index = $node['control'] ?? null;
+				if ( is_int( $control_index ) && isset( $phone_popup_targets[ $control_index ] ) && ! isset( $suppressed_controls[ $phone_popup_targets[ $control_index ] ] ) ) {
+					return array( $phone_popup_targets[ $control_index ] );
+				}
 				return is_int( $control_index ) && ! isset( $provider_controls[ $control_index ] ) && ! isset( $suppressed_controls[ $control_index ] ) ? array( $control_index ) : array();
 			}
 			$controls = array();
 			foreach ( $children[ $node['id'] ?? '' ] ?? array() as $child ) {
 				$controls = array_merge( $controls, $collect_controls( $child ) );
 			}
-			return $controls;
+			return array_values( array_unique( $controls ) );
 		};
 		$wrapper_chains   = array();
 		foreach ( $nodes as $node ) {

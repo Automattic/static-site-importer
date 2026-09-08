@@ -439,6 +439,25 @@ namespace {
 	$unrelated_popup_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $unrelated_popup_form ) ) );
 	$unrelated_popup_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $unrelated_popup_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$assert( ! in_array( 'provider_auxiliary_popup_control', array_column( $unrelated_popup_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'popup-button-without-shared-field-topology-is-not-superseded', wp_json_encode( $unrelated_popup_row ) );
+	$phone_popup_form = $popup_form;
+	$phone_popup_form['controls'][0] = array( 'tag' => 'button', 'type' => 'button', 'label' => 'Select country code', 'aria_haspopup' => 'listbox' );
+	$phone_popup_form['controls'][1] = array( 'tag' => 'input', 'type' => 'phone', 'name' => 'phone', 'label' => 'Phone' );
+	$phone_popup_form['controls'][2] = array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' );
+	$phone_popup_form['control_topology']['nodes'] = array(
+		array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div', 'class' => 'phone-shell' ),
+		array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'span', 'class' => 'country-picker' ),
+		array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'control' => 0 ),
+		array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 1, 'depth' => 1, 'control' => 1 ),
+		array( 'id' => 'control-2', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 2 ),
+	);
+	$phone_popup_form['layout_graph'] = $v2_layout_graph( array(
+		$layout_node( 'form', array(), 'form' ),
+		array( 'id' => 'wrapper-0', 'kind' => 'container', 'parent' => 'form', 'order' => 0, 'source' => array( 'tag' => 'div', 'classes' => array( 'phone-shell' ) ), 'layout' => array( 'display' => 'flex', 'align_items' => 'center' ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.phone-shell', 'condition' => null, 'properties' => array( 'display', 'align-items' ) ) ) ),
+		array( 'id' => 'wrapper-1', 'kind' => 'container', 'parent' => 'wrapper-0', 'order' => 0, 'source' => array( 'tag' => 'span', 'classes' => array( 'country-picker' ) ), 'layout' => array( 'display' => 'block' ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.country-picker', 'condition' => null, 'properties' => array( 'display' ) ) ) ),
+	) );
+	$phone_popup_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $phone_popup_form ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$phone_popup_losses = array_column( $phone_popup_row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' );
+	$assert( 'mapped' === ( $phone_popup_row['status'] ?? '' ) && ! in_array( 'provider_wrapper_layout_unrepresentable', $phone_popup_losses, true ) && str_contains( (string) ( $phone_popup_row['block_markup'] ?? '' ), 'ssi-source-wrapper-1\u002d\u002dcountry-picker' ), 'adjacent-phone-country-popup-projects-onto-the-native-provider-phone-field', wp_json_encode( $phone_popup_row ) );
 	$presentation_form = $topology_form;
 	$presentation_role = static function ( array $styles, array $properties, string $selector ): array {
 		return array(
