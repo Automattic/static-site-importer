@@ -1,0 +1,66 @@
+{
+  "$schema": "https://playground.wordpress.net/blueprint-schema.json",
+  "landingPage": "/import/",
+  "preferredVersions": {
+    "php": "8.5",
+    "wp": "latest"
+  },
+  "features": {
+    "networking": true
+  },
+  "steps": [
+    {
+      "step": "login"
+    },
+    {
+      "step": "writeFile",
+      "path": "/tmp/static-site-importer-af2f4d00ada67077a022d65d986db0a65439425b3f40f7f45d74add5f3662f7c.zip",
+      "data": {
+        "resource": "url",
+        "url": "https://github.com/Automattic/static-site-importer/releases/download/v1.9.7/static-site-importer.zip"
+      }
+    },
+    {
+      "step": "runPHP",
+      "code": "<?php if ( ! hash_equals( 'af2f4d00ada67077a022d65d986db0a65439425b3f40f7f45d74add5f3662f7c', hash_file( 'sha256', '/tmp/static-site-importer-af2f4d00ada67077a022d65d986db0a65439425b3f40f7f45d74add5f3662f7c.zip' ) ) ) { throw new RuntimeException( 'Static Site Importer package integrity verification failed.' ); } ?>"
+    },
+    {
+      "step": "installPlugin",
+      "pluginData": {
+        "resource": "vfs",
+        "path": "/tmp/static-site-importer-af2f4d00ada67077a022d65d986db0a65439425b3f40f7f45d74add5f3662f7c.zip"
+      },
+      "options": {
+        "activate": true,
+        "targetFolderName": "static-site-importer"
+      }
+    },
+    {
+      "step": "writeFile",
+      "path": "/tmp/static-site-importer-playground-demo-1132c188757e9a4dbc5719aeb292167b2e850ce58ff528e52fe042870239c97f.zip",
+      "data": {
+        "resource": "url",
+        "url": "https://automattic.github.io/static-site-importer/playground/v1.9.7/static-site-importer-playground-demo.zip"
+      }
+    },
+    {
+      "step": "runPHP",
+      "code": "<?php if ( ! hash_equals( '1132c188757e9a4dbc5719aeb292167b2e850ce58ff528e52fe042870239c97f', hash_file( 'sha256', '/tmp/static-site-importer-playground-demo-1132c188757e9a4dbc5719aeb292167b2e850ce58ff528e52fe042870239c97f.zip' ) ) ) { throw new RuntimeException( 'Static Site Importer Playground demo package integrity verification failed.' ); } ?>"
+    },
+    {
+      "step": "installPlugin",
+      "pluginData": {
+        "resource": "vfs",
+        "path": "/tmp/static-site-importer-playground-demo-1132c188757e9a4dbc5719aeb292167b2e850ce58ff528e52fe042870239c97f.zip"
+      },
+      "options": {
+        "activate": true,
+        "targetFolderName": "static-site-importer-playground-demo"
+      }
+    },
+    {
+      "step": "runPHP",
+      "code": "<?php require_once '/wordpress/wp-load.php';\n$page = get_page_by_path( 'import', OBJECT, 'page' );\n$content = '<!-- wp:static-site-importer/importer /-->';\n$post = array(\n    'post_title' => 'Import Static Site',\n    'post_name' => 'import',\n    'post_type' => 'page',\n    'post_status' => 'publish',\n    'post_content' => $content,\n    'comment_status' => 'closed',\n    'ping_status' => 'closed',\n);\nif ( $page instanceof WP_Post ) {\n    $post['ID'] = $page->ID;\n    wp_update_post( $post );\n} else {\n    wp_insert_post( $post );\n}\nupdate_option( 'static_site_importer_protected_pages', array( 'import' ), false );\n?>"
+    }
+  ]
+}
