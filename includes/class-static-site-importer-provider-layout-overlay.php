@@ -327,6 +327,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( in_array( $fact, array( 'order', 'flex_grow', 'flex_shrink' ), true ) ) {
 			return (bool) preg_match( '/^-?[0-9]+(?:\.[0-9]+)?$/D', $value );
 		}
+		if ( 'flex' === $fact ) {
+			return (bool) preg_match( '/^(?:none|(?:[0-9]+(?:\.[0-9]+)?)(?: [0-9]+(?:\.[0-9]+)?)? (?:auto|0|(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh)))$/D', $value );
+		}
 		if ( 'position' === $fact ) {
 			return 'relative' === $value;
 		}

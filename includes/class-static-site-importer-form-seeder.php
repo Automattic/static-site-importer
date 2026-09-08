@@ -549,6 +549,13 @@ class Static_Site_Importer_Form_Seeder {
 				$overlay_graph['nodes'][] = $target;
 			}
 		}
+		foreach ( $overlay_graph['nodes'] as &$overlay_node ) {
+			if ( ! is_array( $overlay_node ) || ! preg_match( '/^control-[0-9]+$/D', (string) ( $overlay_node['id'] ?? '' ) ) || ! self::fixed_width_uses_default_flex( $overlay_node ) ) {
+				continue;
+			}
+			$overlay_node['layout']['flex'] = '0 1 auto';
+		}
+		unset( $overlay_node );
 		$overlay_graph['variants'] = array_merge( $overlay_graph['variants'] ?? array(), $topology['responsive_variant_targets'] );
 		$overlay_node_ids          = array_fill_keys( array_map( static fn( array $node ): string => (string) $node['id'], $overlay_graph['nodes'] ), true );
 		foreach ( $topology['responsive_variant_targets'] as $variant ) {
@@ -1281,7 +1288,10 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			$overlay_node_targets[] = array(
 				'id'     => $id,
-				'layout' => array( 'width' => $track ),
+				'layout' => array(
+					'width' => $track,
+					'flex'  => '0 1 auto',
+				),
 			);
 			$operations[]           = array(
 				'dimension'   => 'layout',
@@ -2039,6 +2049,21 @@ class Static_Site_Importer_Form_Seeder {
 		ksort( $roles, SORT_NUMERIC );
 		return $roles;
 	}
+	/** Jetpack fields default to flex:1 1 100%; preserve a source fixed width's default flex behavior. */
+	private static function fixed_width_uses_default_flex( array $node ): bool {
+		$layout = is_array( $node['layout'] ?? null ) ? $node['layout'] : array();
+		$width  = $layout['width'] ?? null;
+		if ( ! is_string( $width ) || ! preg_match( '/^(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em)$/D', $width ) || array_intersect( array( 'flex', 'flex_grow', 'flex_shrink', 'flex_basis' ), array_keys( $layout ) ) ) {
+			return false;
+		}
+		foreach ( $node['provenance'] ?? array() as $fact ) {
+			if ( is_array( $fact ) && null === ( $fact['condition'] ?? null ) && is_string( $fact['source_path'] ?? null ) && is_string( $fact['source_sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ) && in_array( 'width', $fact['properties'] ?? array(), true ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private static function provider_layout_target_map( array $form, string $scope, array $box_targets = array() ): array {
 		$selector_scope = '.' . $scope;
 		$targets        = array();
