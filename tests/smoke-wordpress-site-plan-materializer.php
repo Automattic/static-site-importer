@@ -19,6 +19,7 @@ use Automattic\BlocksEngine\PhpTransformer\WordPress\Runtime as Blocks_Engine_Wo
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan;
 
 define( 'OBJECT', 'OBJECT' );
+define( 'ARRAY_A', 'ARRAY_A' );
 $GLOBALS['ssi_plan_root']                 = sys_get_temp_dir() . '/ssi-plan-' . bin2hex( random_bytes( 4 ) );
 $GLOBALS['ssi_plan_posts']                = array();
 $GLOBALS['ssi_plan_meta']                 = array();
@@ -30,6 +31,7 @@ $GLOBALS['ssi_plan_options']              = array(
 );
 $GLOBALS['ssi_plan_fail_after']           = 0;
 $GLOBALS['ssi_plan_insert_calls']         = 0;
+$GLOBALS['ssi_plan_post_status_transitions'] = array();
 $GLOBALS['ssi_plan_font_requests']        = array();
 $GLOBALS['ssi_plan_woo_cleanup_failures'] = false;
 $GLOBALS['ssi_plan_theme_templates']      = array();
@@ -53,9 +55,13 @@ class WP_Error {
 class WP_Post {
 	public int $ID;
 	public string $post_name;
+	public string $post_type;
+	public string $post_status;
 	public function __construct( int $id ) {
-		$this->ID        = $id;
-		$this->post_name = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_name'] ?? '' ); }
+		$this->ID          = $id;
+		$this->post_name   = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_name'] ?? '' );
+		$this->post_type   = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_type'] ?? '' );
+		$this->post_status = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_status'] ?? '' ); }
 }
 function apply_filters( string $hook, $value, ...$args ) {
 	unset( $hook, $args );
@@ -189,6 +195,12 @@ function get_page_by_path( string $slug, $output, string $type ) {
 	}
 	return null;
 }
+function get_post( int $id, $output = OBJECT ) {
+	if ( ! isset( $GLOBALS['ssi_plan_posts'][ $id ] ) ) {
+		return null;
+	}
+	return ARRAY_A === $output ? array_merge( array( 'ID' => $id ), $GLOBALS['ssi_plan_posts'][ $id ] ) : new WP_Post( $id );
+}
 function wp_insert_post( array $post, bool $wp_error ) {
 	++$GLOBALS['ssi_plan_insert_calls'];
 	if ( $GLOBALS['ssi_plan_fail_after'] && count( $GLOBALS['ssi_plan_posts'] ) >= $GLOBALS['ssi_plan_fail_after'] ) {
@@ -202,6 +214,13 @@ function wp_update_post( array $post, bool $wp_error = false ) {
 	$id = (int) ( $post['ID'] ?? 0 );
 	if ( $id <= 0 || ! isset( $GLOBALS['ssi_plan_posts'][ $id ] ) ) {
 		return new WP_Error( 'missing_post' );
+	}
+	if ( isset( $post['post_status'] ) ) {
+		$GLOBALS['ssi_plan_post_status_transitions'][] = array(
+			'id'     => $id,
+			'before' => $GLOBALS['ssi_plan_posts'][ $id ]['post_status'] ?? '',
+			'after'  => $post['post_status'],
+		);
 	}
 	$GLOBALS['ssi_plan_posts'][ $id ] = array_merge( $GLOBALS['ssi_plan_posts'][ $id ], $post );
 	return $id;
@@ -3138,6 +3157,127 @@ $resolved_companion_html = (string) ( $resolved_companion['blocks'][0]['render']
 $assert( str_contains( $resolved_companion_html, 'src="' . $root_media_url . '"' ) && str_contains( $resolved_companion_html, 'srcset="' . $root_media_url . ' 1x"' ) && ! str_contains( $resolved_companion_html, '="/media/example.jpg' ), 'generated companion block renders resolve canonical root-relative assets through the materialized theme map' );
 
 $projection_cases = array();
+$GLOBALS['ssi_plan_posts'] = array(
+	900 => array(
+		'post_name'   => 'stale-owned-page',
+		'post_type'   => 'page',
+		'post_status' => 'publish',
+	),
+	901 => array(
+		'post_name'   => 'protected-stale-page',
+		'post_type'   => 'page',
+		'post_status' => 'publish',
+	),
+	902 => array(
+		'post_name'   => 'unowned-stale-page',
+		'post_type'   => 'page',
+		'post_status' => 'publish',
+	),
+);
+$GLOBALS['ssi_plan_meta']  = array(
+	900 => array(
+		'_static_site_importer_provenance' => wp_json_encode( array( 'schema' => 'static-site-importer/page-provenance/v1' ) ),
+	),
+	901 => array(
+		'_static_site_importer_provenance' => wp_json_encode( array( 'schema' => 'static-site-importer/page-provenance/v1' ) ),
+	),
+);
+$GLOBALS['ssi_plan_options']['static_site_importer_protected_pages'] = array( 'protected-stale-page' );
+$GLOBALS['ssi_plan_post_status_transitions'] = array();
+$draft_rollback_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$canonical_plan,
+	array(
+		'slug'                       => 'draft-rollback-reconciliation',
+		'defer_materialization_commit' => true,
+	)
+);
+$draft_rollback_dir     = $draft_rollback_receipt['theme']['dir'];
+$draft_stale_file        = $draft_rollback_dir . '/prior-owned.txt';
+file_put_contents( $draft_stale_file, 'previous import bytes' );
+file_put_contents(
+	$draft_rollback_dir . '/static-site-importer-manifest.json',
+	wp_json_encode(
+		array(
+			'schema'  => 'static-site-importer/source-of-truth-manifest/v1',
+			'desired' => array(
+				'pages'  => array(
+					array( 'source_path' => 'stale.html', 'materialized_post_id' => 900 ),
+					array( 'source_path' => 'protected.html', 'materialized_post_id' => 901 ),
+					array( 'source_path' => 'unowned.html', 'materialized_post_id' => 902 ),
+				),
+				'files'  => array( array( 'path' => 'prior-owned.txt' ) ),
+				'assets' => array(),
+			),
+		)
+	)
+);
+$draft_rollback_result = $project_materialization_result->invoke(
+	null,
+	array(
+		'receipt'      => $draft_rollback_receipt,
+		'lifecycle'    => array(),
+		'dependencies' => array(),
+		'entities'     => array(),
+	),
+	array(
+		'inject_materialization_failure' => 'report_persistence',
+		'stale_page_action'              => 'draft',
+	)
+);
+$draft_rollback_receipt = $draft_rollback_result->get_error_data();
+$draft_status_transitions = array_values( array_filter( $GLOBALS['ssi_plan_post_status_transitions'], static fn( array $transition ): bool => 900 === $transition['id'] ) );
+$assert(
+	is_wp_error( $draft_rollback_result ) &&
+	'static_site_importer_projection_write_failed' === $draft_rollback_result->get_error_code() &&
+	'report_persistence' === ( $draft_rollback_receipt['failure_context']['stage'] ?? '' ) &&
+	'static_site_importer_projection_write_failed' === ( $draft_rollback_receipt['failure_context']['code'] ?? '' ) &&
+	array( array( 'id' => 900, 'before' => 'publish', 'after' => 'draft' ), array( 'id' => 900, 'before' => 'draft', 'after' => 'publish' ) ) === $draft_status_transitions &&
+	'publish' === ( $GLOBALS['ssi_plan_posts'][900]['post_status'] ?? '' ) &&
+	'publish' === ( $GLOBALS['ssi_plan_posts'][901]['post_status'] ?? '' ) &&
+	'publish' === ( $GLOBALS['ssi_plan_posts'][902]['post_status'] ?? '' ) &&
+	is_file( $draft_stale_file ) &&
+	'previous import bytes' === file_get_contents( $draft_stale_file ) &&
+	! empty( $draft_rollback_receipt['transaction']->state['rollback']['done'] ?? false ),
+	'late report persistence failure observes the publish-to-draft transition, restores the eligible page and owned file, and excludes protected and unowned pages: ' . wp_json_encode( array( 'code' => is_wp_error( $draft_rollback_result ) ? $draft_rollback_result->get_error_code() : '', 'stage' => $draft_rollback_receipt['failure_context']['stage'] ?? '', 'transitions' => $draft_status_transitions, 'after' => $GLOBALS['ssi_plan_posts'][900]['post_status'] ?? '', 'file' => is_file( $draft_stale_file ), 'rollback' => $draft_rollback_receipt['transaction']->state['rollback'] ?? array() ) )
+);
+$report_only_root = $GLOBALS['ssi_plan_root'] . '/report-only-reconciliation';
+mkdir( $report_only_root, 0777, true );
+file_put_contents( $report_only_root . '/current-owned.txt', 'current bytes' );
+file_put_contents( $report_only_root . '/unowned.txt', 'unowned bytes' );
+file_put_contents(
+	$report_only_root . '/static-site-importer-manifest.json',
+	wp_json_encode(
+		array(
+			'schema'  => 'static-site-importer/source-of-truth-manifest/v1',
+			'desired' => array(
+				'pages'  => array(
+					array( 'source_path' => 'stale.html', 'materialized_post_id' => 900 ),
+					array( 'source_path' => 'protected.html', 'materialized_post_id' => 901 ),
+					array( 'source_path' => 'unowned.html', 'materialized_post_id' => 902 ),
+				),
+				'files'  => array( array( 'path' => 'current-owned.txt' ) ),
+				'assets' => array(),
+			)
+		)
+	)
+);
+$report_only_cleanup = Static_Site_Importer_Generated_State_Reconciliation::cleanup_stale_generated_theme_files(
+	$report_only_root,
+	array(
+		'desired' => array(
+			'pages'  => array(),
+			'files'  => array( array( 'path' => 'current-owned.txt' ) ),
+			'assets' => array(),
+		),
+	),
+	array( 'stale_page_action' => 'report_only' )
+);
+$report_only_skips = array_column( $report_only_cleanup['pages']['skipped'] ?? array(), 'reason' );
+$assert( array( 900 ) === array_column( $report_only_cleanup['pages']['stale_pages'], 'post_id' ) && 0 === $report_only_cleanup['pages']['counts']['pages_drafted'], 'report-only retains an eligible stale page without drafting it' );
+$assert( ! is_wp_error( $report_only_cleanup ) && 'report_only' === ( $report_only_cleanup['pages']['action'] ?? '' ) && 'publish' === ( $GLOBALS['ssi_plan_posts'][900]['post_status'] ?? '' ) && 'publish' === ( $GLOBALS['ssi_plan_posts'][901]['post_status'] ?? '' ) && 'publish' === ( $GLOBALS['ssi_plan_posts'][902]['post_status'] ?? '' ) && in_array( 'protected_page', $report_only_skips, true ) && in_array( 'missing_static_site_importer_provenance', $report_only_skips, true ) && is_file( $report_only_root . '/current-owned.txt' ) && is_file( $report_only_root . '/unowned.txt' ), 'report-only reconciliation reports eligible stale pages without mutation and preserves protected, missing-provenance, current, and unowned state' );
+if ( in_array( '--late-rollback-proof', $argv, true ) ) {
+	print 'late-rollback-proof=' . wp_json_encode( array( 'result_code' => $draft_rollback_result->get_error_code(), 'failure_context' => $draft_rollback_receipt['failure_context'] ?? array(), 'transitions' => $draft_status_transitions, 'final_status' => $GLOBALS['ssi_plan_posts'][900]['post_status'] ?? '' ) ) . "\n";
+}
 $projection_files = static function ( string $directory ): array {
 	$files = array();
 	foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $directory, FilesystemIterator::SKIP_DOTS ) ) as $file ) {

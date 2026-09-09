@@ -2195,6 +2195,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'producer_reconciliation_identity'        => get_post_meta( $id, self::PRODUCER_RECONCILIATION_META_KEY, true ),
 				'producer_reconciliation_identity_exists' => metadata_exists( 'post', $id, self::PRODUCER_RECONCILIATION_META_KEY ),
 			);
+			$receipt['transaction']->state['applied']['posts'][]       = array( 'id' => $id );
 		}
 	}
 
