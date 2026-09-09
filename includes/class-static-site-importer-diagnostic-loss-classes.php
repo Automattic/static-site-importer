@@ -26,6 +26,14 @@ if ( ! defined( 'ABSPATH' ) ) {
  *     document routing). These are not producer findings, carry no contract
  *     identifier, and are classified by the legacy heuristic below.
  *
+ * Exception to both paths: the transformer's artifact normalizer drops files at
+ * a declared limit (`file_limit_exceeded`, `artifact_file_too_large`,
+ * `artifact_total_too_large`) and reports each drop as a warning. Those rows do
+ * carry a code, so the contract accepts them, but they name no remediation lane
+ * and land in the generic review bucket -- still an acceptable conversion, even
+ * though the files are gone. Consumers re-own them first via
+ * {@see reown_compiler_file_drop()} and stamp the loss class explicitly.
+ *
  * Keeping those two paths distinct is the point: previously every row went
  * through the heuristic, so an upstream vocabulary change silently rerouted
  * findings into the wrong product bucket instead of failing.
@@ -37,6 +45,23 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	public const PRESERVED_RUNTIME_ISLAND     = 'preserved_runtime_island';
 	public const UNSUPPORTED_LOSS             = 'unsupported_loss';
 	public const IMPORTER_MATERIALIZATION_BUG = 'importer_materialization_bug';
+
+	/** Importer-owned type for files truncated at the compiler's file-count limit. */
+	public const OMITTED_ARTIFACT_FILES_TYPE = 'omitted_artifact_files';
+
+	/** Importer-owned type for a single file dropped at a byte limit. */
+	public const OMITTED_ARTIFACT_FILE_TYPE = 'omitted_artifact_file';
+
+	/**
+	 * Compiler artifact drop code => importer-owned diagnostic type.
+	 *
+	 * @var array<string,string>
+	 */
+	private const COMPILER_FILE_DROP_TYPES = array(
+		'file_limit_exceeded'      => self::OMITTED_ARTIFACT_FILES_TYPE,
+		'artifact_file_too_large'  => self::OMITTED_ARTIFACT_FILE_TYPE,
+		'artifact_total_too_large' => self::OMITTED_ARTIFACT_FILE_TYPE,
+	);
 
 	/**
 	 * Classification provenance markers, returned by {@see classify_with_provenance()}.
@@ -130,6 +155,56 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	 */
 	public static function classify( array $diagnostic ): string {
 		return self::classify_with_provenance( $diagnostic )['class'];
+	}
+
+	/**
+	 * Map a compiler artifact drop code onto the importer-owned diagnostic type.
+	 *
+	 * @param array<string,mixed> $diagnostic Diagnostic row.
+	 * @return string Importer-owned type, or '' when the row is not a file drop.
+	 */
+	public static function compiler_file_drop_type( array $diagnostic ): string {
+		foreach ( array( 'code', 'diagnostic_code' ) as $key ) {
+			if ( isset( $diagnostic[ $key ] ) && is_scalar( $diagnostic[ $key ] ) ) {
+				$code = sanitize_key( (string) $diagnostic[ $key ] );
+				if ( isset( self::COMPILER_FILE_DROP_TYPES[ $code ] ) ) {
+					return self::COMPILER_FILE_DROP_TYPES[ $code ];
+				}
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * Rewrite a compiler file-drop row under an importer-owned identity.
+	 *
+	 * Returns the row unchanged when it is not a file drop. Left as-is, these
+	 * warnings classify as acceptable conversion even though the omitted files
+	 * are gone from the import. The rewrite keeps the producer code as
+	 * `original_code` / `reason_code` and stamps the loss class explicitly so
+	 * classification is deterministic on every consumer path.
+	 *
+	 * @param array<string,mixed> $diagnostic Raw diagnostic row.
+	 * @return array<string,mixed>
+	 */
+	public static function reown_compiler_file_drop( array $diagnostic ): array {
+		$type = self::compiler_file_drop_type( $diagnostic );
+		if ( '' === $type ) {
+			return $diagnostic;
+		}
+
+		$original_code                        = sanitize_key( (string) ( $diagnostic['code'] ?? $diagnostic['diagnostic_code'] ?? '' ) );
+		$diagnostic['original_code']          = $diagnostic['original_code'] ?? $original_code;
+		$diagnostic['code']                   = $type;
+		$diagnostic['diagnostic_code']        = $type;
+		$diagnostic['kind']                   = $type;
+		$diagnostic['type']                   = $type;
+		$diagnostic['reason_code']            = $original_code;
+		$diagnostic['loss_class']             = self::UNSUPPORTED_LOSS;
+		$diagnostic['materialization_status'] = 'not_materialized';
+
+		return $diagnostic;
 	}
 
 	/**

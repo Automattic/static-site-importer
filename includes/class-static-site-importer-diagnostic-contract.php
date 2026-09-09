@@ -166,6 +166,10 @@ class Static_Site_Importer_Diagnostic_Contract {
 				continue;
 			}
 
+			// Compiler file-drop warnings carry no contract identity and would
+			// classify as acceptable conversion here. Re-own them first so every
+			// consumer path agrees with the finalized report.
+			$row                            = Static_Site_Importer_Diagnostic_Loss_Classes::reown_compiler_file_drop( $row );
 			$type                           = self::first_identifier( $row, array( 'type', 'kind', 'code', 'reason_code' ), 'diagnostic' );
 			$reason_code                    = self::first_identifier( $row, array( 'reason_code', 'code', 'reason', 'kind', 'type' ), $type );
 			$source_path                    = self::first_scalar( $row, array( 'source_path', 'path', 'source', 'file', 'script_path' ), '' );

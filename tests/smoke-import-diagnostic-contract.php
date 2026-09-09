@@ -795,6 +795,90 @@ $incomplete_runtime_report->set_diagnostics( $incomplete_diagnostics );
 $incomplete_runtime_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $incomplete_runtime_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $incomplete_runtime_quality['pass'] ?? true ) && true === ( $incomplete_runtime_quality['fail_import'] ?? false ), 'missing-runtime-materialization-contract-remains-fail-closed' );
 
+/*
+ * Issue #1547: the transformer's artifact normalizer drops files at declared
+ * limits and reports each drop as a plain warning. Finalization must re-own
+ * those rows under an importer-owned type so the loss lands in the quality
+ * gate instead of classifying as acceptable conversion.
+ */
+$compiler_drop_report = Static_Site_Importer_Import_Report::from_array(
+	array(
+		'quality'     => array( 'fallback_count' => 0 ),
+		'diagnostics' => array(
+			array(
+				'code'      => 'file_limit_exceeded',
+				'severity'  => 'warning',
+				'source'    => 'artifact_normalization',
+				'message'   => 'Artifact file limit exceeded; remaining files were skipped.',
+				'context'   => array(
+					'declared_limit'     => 500,
+					'source_file_count'  => 612,
+					'truncation_impact'  => array(
+						'schema'             => 'blocks-engine/artifact-truncation-impact/v1',
+						'omitted_file_count' => 112,
+					),
+				),
+			),
+			array(
+				'code'     => 'artifact_file_too_large',
+				'severity' => 'warning',
+				'source'   => 'artifact_normalization',
+				'message'  => 'Artifact file exceeds the per-file byte limit and was skipped.',
+			),
+			array(
+				'type'       => 'svg_materialization_failure',
+				'severity'   => 'warning',
+				'source_path' => 'assets/logo.svg',
+				'reason_code' => 'svg_write_failed',
+			),
+		),
+	)
+);
+$drop_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $compiler_drop_report, array( 'fail_on_quality' => true ) );
+$drop_diagnostics = $compiler_drop_report->diagnostics();
+
+$assert( 'omitted_artifact_files' === ( $drop_diagnostics[0]['type'] ?? '' ) && 'omitted_artifact_files' === ( $drop_diagnostics[0]['code'] ?? '' ), 'compiler-file-limit-row-rewritten-to-importer-type' );
+$assert( 'file_limit_exceeded' === ( $drop_diagnostics[0]['original_code'] ?? '' ) && 'file_limit_exceeded' === ( $drop_diagnostics[0]['reason_code'] ?? '' ), 'compiler-file-limit-row-preserves-producer-code' );
+$assert( 'unsupported_loss' === ( $drop_diagnostics[0]['loss_class'] ?? '' ) && 'unacceptable_imported_output_defect' === ( $drop_diagnostics[0]['acceptability'] ?? '' ), 'compiler-file-limit-row-classifies-as-defect' );
+$assert( 'not_materialized' === ( $drop_diagnostics[0]['materialization_status'] ?? '' ), 'compiler-file-limit-row-reports-not-materialized' );
+$assert( 'omitted_artifact_file' === ( $drop_diagnostics[1]['type'] ?? '' ) && 'unsupported_loss' === ( $drop_diagnostics[1]['loss_class'] ?? '' ), 'compiler-byte-limit-row-rewritten-to-importer-type' );
+$assert( 'svg_materialization_failure' === ( $drop_diagnostics[2]['type'] ?? '' ) && 'importer_materialization_bug' === ( $drop_diagnostics[2]['loss_class'] ?? '' ), 'unrelated-diagnostics-untouched-by-drop-rewrite' );
+
+$assert( 2 === ( $drop_quality['omitted_file_count'] ?? -1 ), 'quality-counts-omitted-artifact-files' );
+$assert( false === ( $drop_quality['pass'] ?? true ) && in_array( 'dropped_artifact_files', $drop_quality['failure_reasons'] ?? array(), true ), 'dropped-artifact-files-fail-quality' );
+$assert( true === ( $drop_quality['fail_import'] ?? false ), 'dropped-artifact-files-fail-import-under-fail-on-quality' );
+$assert( 2 === count( $drop_quality['diagnostic_refs']['omitted_file_count'] ?? array() ), 'quality-refs-link-omitted-file-diagnostics' );
+
+$drop_validation = $compiler_drop_report['import_validation_result'] ?? array();
+$assert( 'failed' === ( $drop_validation['status'] ?? '' ), 'validation-result-marks-drop-import-failed' );
+$assert( 2 === ( $drop_validation['counts']['omitted_artifact_files'] ?? 0 ), 'validation-result-counts-omitted-artifact-files' );
+$assert( 'reported' === ( $drop_validation['quality_gates']['omitted_artifact_files']['status'] ?? '' ) && 2 === count( $drop_validation['quality_gates']['omitted_artifact_files']['diagnostic_refs'] ?? array() ), 'validation-result-gates-omitted-artifact-files' );
+$drop_report_packets = $compiler_drop_report['finding_packets']['packets'] ?? array();
+$drop_packet_types   = array_column( $drop_report_packets, 'type' );
+$assert( in_array( 'omitted_artifact_files', $drop_packet_types, true ) && in_array( 'omitted_artifact_file', $drop_packet_types, true ), 'finding-packets-include-omitted-file-diagnostics' );
+$first_omitted_packet = $drop_report_packets[ array_search( 'omitted_artifact_files', $drop_packet_types, true ) ] ?? array();
+$assert( 'raise_compiler_file_limit' === ( $first_omitted_packet['repair_class'] ?? '' ) && 'unsupported_loss' === ( $first_omitted_packet['loss_class'] ?? '' ), 'finding-packet-routes-omitted-files-to-compiler-limit-repair' );
+
+// The diagnostic-contract envelope, which is what the canonical service reads on
+// error paths where the finalized report is absent, must agree with the report.
+$drop_envelope = Static_Site_Importer_Diagnostic_Contract::build(
+	array(
+		'import_report' => array(
+			'diagnostics' => array(
+				array(
+					'code'     => 'artifact_total_too_large',
+					'severity' => 'warning',
+					'source'   => 'artifact_normalization',
+					'message'  => 'Artifact bundle exceeds the total byte limit; remaining files were skipped.',
+				),
+			),
+		),
+	)
+);
+$envelope_row = $drop_envelope['diagnostics'][0] ?? array();
+$assert( 'omitted_artifact_file' === ( $envelope_row['type'] ?? '' ) && 'unsupported_loss' === ( $envelope_row['loss_class'] ?? '' ) && 'unacceptable_imported_output_defect' === ( $envelope_row['acceptability'] ?? '' ), 'contract-envelope-reowns-byte-limit-drop' );
+$assert( 'unsupported_loss' === ( $drop_envelope['by_loss_class']['unsupported_loss'][0]['type'] ?? null ) || in_array( 'omitted_artifact_file', array_column( $drop_envelope['by_loss_class']['unsupported_loss'] ?? array(), 'type' ), true ), 'contract-envelope-loss-summary-includes-omitted-files' );
+
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );
