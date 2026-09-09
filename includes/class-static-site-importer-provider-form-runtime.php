@@ -88,25 +88,25 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	 */
 	public static function project_wrapper_classes( string $html ): string {
 		$wrapper_layers            = array();
-		$prefix_layers             = array();
+		$composite_layers          = array();
 		$provider_layout_classes   = array();
 		$phone_destination_classes = array();
 		$projected                 = preg_replace_callback(
 			'/\bclass=(["\'])(.*?)\1/s',
-			static function ( array $matches ) use ( &$wrapper_layers, &$prefix_layers, &$provider_layout_classes, &$phone_destination_classes ): string {
+			static function ( array $matches ) use ( &$wrapper_layers, &$composite_layers, &$provider_layout_classes, &$phone_destination_classes ): string {
 				$classes        = preg_split( '/\s+/', trim( $matches[2] ) );
 				$classes        = false === $classes ? array() : $classes;
 				$is_wrapper     = (bool) array_filter( $classes, static fn ( string $class_name ): bool => 1 === preg_match( '/^grunion-field-[A-Za-z0-9_-]+-wrap$/D', $class_name ) );
 				$is_phone_shell = in_array( 'jetpack-field__input-phone-wrapper', $classes, true );
 				$output         = array();
 				foreach ( $classes as $class_name ) {
-					if ( preg_match( '/^ssi-source-wrapper-prefix-([0-9]{1,2})--([A-Za-z_][A-Za-z0-9_-]{0,79})-wrap$/D', $class_name, $marker ) ) {
+					if ( preg_match( '/^ssi-source-wrapper-(prefix|shell)-([0-9]{1,2})--([A-Za-z_][A-Za-z0-9_-]{0,79})-wrap$/D', $class_name, $marker ) ) {
 						if ( $is_wrapper ) {
-							$prefix_layers[ (int) $marker[1] ][] = $marker[2];
+							$composite_layers[ $marker[1] ][ (int) $marker[2] ][] = $marker[3];
 						}
 						continue;
 					}
-					if ( preg_match( '/^ssi-source-wrapper-prefix-[0-9]{1,2}--[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) {
+					if ( preg_match( '/^ssi-source-wrapper-(?:prefix|shell)-[0-9]{1,2}--[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) {
 						continue;
 					}
 					if ( $is_phone_shell && 1 === preg_match( '/^ssi-node-[a-f0-9]{12}-destination-(?:primary|carrier)$/D', $class_name ) ) {
@@ -144,7 +144,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			},
 			$html
 		);
-		if ( ! is_string( $projected ) || ( empty( $wrapper_layers ) && empty( $phone_destination_classes ) ) ) {
+		if ( ! is_string( $projected ) || ( empty( $wrapper_layers ) && empty( $composite_layers ) && empty( $phone_destination_classes ) ) ) {
 			return is_string( $projected ) ? self::project_semantic_wrappers( $projected ) : $html;
 		}
 
@@ -190,29 +190,36 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			1
 		);
 		$wrapped  = is_string( $wrapped ) ? $wrapped : $projected;
-		if ( ! empty( $prefix_layers ) ) {
+		if ( ! empty( $composite_layers ) ) {
 			$document        = new \DOMDocument();
 			$previous_errors = libxml_use_internal_errors( true );
 			$loaded          = $document->loadHTML( '<?xml encoding="utf-8" ?><body>' . $wrapped . '</body>', LIBXML_NONET );
 			libxml_clear_errors();
 			libxml_use_internal_errors( $previous_errors );
 			if ( $loaded ) {
-				$xpath    = new \DOMXPath( $document );
-				$prefixes = $xpath->query( '//*[contains(concat(" ", normalize-space(@class), " "), " jetpack-field__input-prefix ")]' );
-				$prefix   = false === $prefixes ? null : $prefixes->item( 0 );
-				if ( $prefix instanceof \DOMElement && null !== $prefix->parentNode ) {
-					ksort( $prefix_layers );
-					foreach ( $prefix_layers as $classes ) {
+				$xpath = new \DOMXPath( $document );
+				foreach ( array(
+					'shell'  => 'jetpack-field__input-phone-wrapper',
+					'prefix' => 'jetpack-field__input-prefix',
+				) as $role => $class ) {
+					$targets = $xpath->query( '//*[contains(concat(" ", normalize-space(@class), " "), " ' . $class . ' ")]' );
+					$target  = false === $targets ? null : $targets->item( 0 );
+					$layers  = $composite_layers[ $role ] ?? array();
+					if ( ! $target instanceof \DOMElement || null === $target->parentNode || empty( $layers ) ) {
+						continue;
+					}
+					ksort( $layers );
+					foreach ( $layers as $classes ) {
 						$layer = $document->createElement( 'div' );
 						$layer->setAttribute( 'class', implode( ' ', array_unique( $classes ) ) );
-						$prefix->parentNode->insertBefore( $layer, $prefix );
-						$layer->appendChild( $prefix );
+						$target->parentNode->insertBefore( $layer, $target );
+						$layer->appendChild( $target );
 					}
-					$body    = $document->getElementsByTagName( 'body' )->item( 0 );
-					$wrapped = '';
-					foreach ( $body->childNodes as $child ) {
-						$wrapped .= $document->saveHTML( $child );
-					}
+				}
+				$body    = $document->getElementsByTagName( 'body' )->item( 0 );
+				$wrapped = '';
+				foreach ( $body->childNodes as $child ) {
+					$wrapped .= $document->saveHTML( $child );
 				}
 			}
 		}

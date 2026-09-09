@@ -462,6 +462,9 @@ class Static_Site_Importer_Form_Seeder {
 				$skipped[] = '' !== $type ? $type : $tag;
 				continue;
 			}
+			// Source responsive documents can repeat IDs. Provider state is keyed by
+			// field ID, so its identity must belong to this materialized form instance.
+			$field_block['attrs']['id'] = $scope . '-field-' . $control_index;
 			if ( ! empty( $phone_destinations ) ) {
 				foreach ( $field_block['innerBlocks'] as &$inner_block ) {
 					if ( 'jetpack/phone-input' === ( $inner_block['name'] ?? '' ) ) {
@@ -1074,7 +1077,7 @@ class Static_Site_Importer_Form_Seeder {
 				$variants_by_node[ $variant['node'] ][] = $variant;
 			}
 		}
-		$collect_controls = static function ( array $node, bool $include_auxiliary = true ) use ( &$collect_controls, $children, $provider_controls, $phone_popup_targets, $suppressed_controls ): array {
+		$collect_controls   = static function ( array $node, bool $include_auxiliary = true ) use ( &$collect_controls, $children, $provider_controls, $phone_popup_targets, $suppressed_controls ): array {
 			if ( 'control' === ( $node['kind'] ?? null ) ) {
 				$control_index = $node['control'] ?? null;
 				if ( $include_auxiliary && is_int( $control_index ) && isset( $phone_popup_targets[ $control_index ] ) && ! isset( $suppressed_controls[ $phone_popup_targets[ $control_index ] ] ) ) {
@@ -1088,7 +1091,15 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			return array_values( array_unique( $controls ) );
 		};
-		$wrapper_chains   = array();
+		$wrapper_chains     = array();
+		$compound_ancestors = array();
+		foreach ( $phone_popup_targets as $auxiliary => $primary ) {
+			$parent = $control_parents[ $auxiliary ] ?? '$root';
+			for ( $depth = 0; $depth < 16 && '$root' !== $parent; ++$depth ) {
+				$compound_ancestors[ $parent ][ $primary ] = true;
+				$parent                                    = $topology_parents[ $parent ] ?? '$root';
+			}
+		}
 		foreach ( $nodes as $node ) {
 			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? null ) || ! is_string( $node['id'] ?? null ) ) {
 				continue;
@@ -1103,7 +1114,10 @@ class Static_Site_Importer_Form_Seeder {
 			if ( 1 !== count( $branch_controls ) ) {
 				continue;
 			}
-			$control_index                = $branch_controls[0];
+			$control_index = $branch_controls[0];
+			if ( isset( $compound_ancestors[ $node['id'] ][ $control_index ] ) && ! isset( $node['destination_role'] ) ) {
+				$node['destination_role'] = 'shell';
+			}
 			$source_class                 = trim( (string) ( $node['class'] ?? '' ) );
 			$is_projectable_classless_box = '' === $source_class
 				&& in_array( $node['tag'] ?? '', array( 'div', 'span' ), true )
@@ -1144,7 +1158,7 @@ class Static_Site_Importer_Form_Seeder {
 				// runtime rebuilds every deeper box as its own element. Giving each box
 				// its own hook keeps one source element addressable by one target instead
 				// of collapsing a nested chain onto a single element.
-				$is_primary_wrapper = 'prefix' !== ( $node['destination_role'] ?? '' );
+				$is_primary_wrapper = ! isset( $node['destination_role'] );
 				if ( 0 === $offset && $is_primary_wrapper ) {
 					$class_names[] = $generated_class;
 				} else {
@@ -1163,7 +1177,7 @@ class Static_Site_Importer_Form_Seeder {
 				if ( empty( $wrapper_classes ) ) {
 					$wrapper_classes[] = $generated_class;
 				}
-				$wrapper_role                 = $is_primary_wrapper ? '' : 'prefix-';
+				$wrapper_role                 = $is_primary_wrapper ? '' : $node['destination_role'] . '-';
 				$class_names[]                = implode( ' ', array_map( static fn ( string $class_name ): string => 'ssi-source-wrapper-' . $wrapper_role . $layer . '--' . $class_name, $wrapper_classes ) );
 				$wrapper_hooks[ $node['id'] ] = 0 === $offset && $is_primary_wrapper ? $generated_class . '-wrap' : $generated_class;
 				$operations[]                 = array(
@@ -1907,7 +1921,10 @@ class Static_Site_Importer_Form_Seeder {
 				) ),
 			);
 		} elseif ( '' !== $label ) {
-			$label_attrs        = array( 'label' => $label );
+			$label_attrs = array( 'label' => $label );
+			if ( ! empty( $attrs['required'] ) && is_string( $control['required_text'] ?? null ) && strlen( $control['required_text'] ) <= 32 ) {
+				$label_attrs['requiredText'] = wp_strip_all_tags( $control['required_text'] );
+			}
 			$source_label_class = isset( $control['label_class'] ) && is_scalar( $control['label_class'] ) ? trim( (string) $control['label_class'] ) : '';
 			$label_class        = trim( $source_label_class . ' ' . $label_class );
 			if ( '' !== $label_class ) {
