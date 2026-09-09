@@ -2975,8 +2975,8 @@ class Static_Site_Importer_Report_Diagnostics {
 			'semantic_parity_navigation_mismatch'        => 'semantic_parity',
 			'semantic_parity_landmark_missing'           => 'semantic_parity',
 			'semantic_parity_failure'                    => 'semantic_parity',
-			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE            => 'unresolved_asset',
-			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE             => 'unresolved_asset',
+			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE => 'unresolved_asset',
+			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE => 'unresolved_asset',
 		);
 
 		return $categories[ $type ] ?? 'import_quality';
@@ -3015,8 +3015,8 @@ class Static_Site_Importer_Report_Diagnostics {
 			'semantic_parity_navigation_mismatch'        => 'repair_core_navigation_items',
 			'semantic_parity_landmark_missing'           => 'generate_semantic_landmark_parity',
 			'semantic_parity_failure'                    => 'repair_semantic_structure',
-			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE            => 'raise_compiler_file_limit',
-			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE             => 'raise_compiler_file_limit',
+			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE => 'raise_compiler_file_limit',
+			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE => 'raise_compiler_file_limit',
 		);
 
 		return $classes[ $type ] ?? 'inspect_import_diagnostic';
