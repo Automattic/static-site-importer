@@ -1025,7 +1025,8 @@ class Static_Site_Importer_Form_Seeder {
 			$previous_popup      = is_array( $previous ) ? strtolower( trim( (string) ( $previous['aria_haspopup'] ?? '' ) ) ) : '';
 			$previous_label      = is_array( $previous ) ? strtolower( trim( (string) ( $previous['label'] ?? $previous['text'] ?? '' ) ) ) : '';
 			$is_country_selector = str_contains( $previous_label, 'phone' ) && str_contains( $previous_label, 'country' );
-			if ( is_array( $previous ) && 'button' === strtolower( trim( (string) ( $previous['tag'] ?? '' ) ) ) && 'button' === strtolower( trim( (string) ( $previous['type'] ?? '' ) ) ) && in_array( $previous_popup, array( 'true', 'menu', 'listbox', 'tree', 'grid', 'dialog' ), true ) && $is_country_selector && $shares_phone_group( $control_index - 1, $control_index ) ) {
+			$popup_is_compatible = '' === $previous_popup || in_array( $previous_popup, array( 'true', 'menu', 'listbox', 'tree', 'grid', 'dialog' ), true );
+			if ( is_array( $previous ) && 'button' === strtolower( trim( (string) ( $previous['tag'] ?? '' ) ) ) && 'button' === strtolower( trim( (string) ( $previous['type'] ?? '' ) ) ) && $popup_is_compatible && $is_country_selector && $shares_phone_group( $control_index - 1, $control_index ) ) {
 				$provider_controls[ $control_index - 1 ]        = true;
 				$phone_popup_targets[ $control_index - 1 ]      = $control_index;
 				$auxiliary_popup_controls[ $control_index - 1 ] = true;

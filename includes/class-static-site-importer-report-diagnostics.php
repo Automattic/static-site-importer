@@ -2471,7 +2471,8 @@ class Static_Site_Importer_Report_Diagnostics {
 				);
 			}
 		}
-		$receipts_by_fallback = array();
+		$receipts_by_fallback    = array();
+		$receipts_by_source_hash = array();
 		foreach ( $receipts as $receipt ) {
 			if ( ! is_array( $receipt ) || ! is_string( $receipt['fallback_reconciliation_identity'] ?? null ) ) {
 				continue;
@@ -2483,6 +2484,18 @@ class Static_Site_Importer_Report_Diagnostics {
 				continue;
 			}
 			$receipts_by_fallback[ $identity ] = $receipt;
+
+			$source_path   = self::first_scalar( $receipt, array( 'source_path', 'source' ) );
+			$fallback_hash = $receipt['fallback_hash'] ?? '';
+			if ( '' === $source_path || ! is_string( $fallback_hash ) || 1 !== preg_match( '/^[a-f0-9]{64}$/', $fallback_hash ) ) {
+				continue;
+			}
+			$source_hash_key = $source_path . "\n" . $fallback_hash;
+			if ( isset( $receipts_by_source_hash[ $source_hash_key ] ) ) {
+				$receipts_by_source_hash[ $source_hash_key ] = false;
+				continue;
+			}
+			$receipts_by_source_hash[ $source_hash_key ] = $receipt;
 		}
 		$resolved    = 0;
 		$resolutions = array();
@@ -2490,11 +2503,23 @@ class Static_Site_Importer_Report_Diagnostics {
 			if ( ! is_array( $diagnostic ) || ! self::is_form_fallback_diagnostic( $diagnostic ) ) {
 				continue;
 			}
-			$identity             = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $diagnostic );
-			$fallback_hash        = Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $diagnostic );
-			$candidate_receipt    = $receipts_by_fallback[ $identity ] ?? array();
-			$receipt              = is_array( $candidate_receipt ) ? $candidate_receipt : array();
-			$source_path          = self::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
+			$fallback_hash     = Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $diagnostic );
+			$source_path       = self::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
+			$identity          = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $diagnostic );
+			$candidate_receipt = $receipts_by_fallback[ $identity ] ?? array();
+			$receipt           = is_array( $candidate_receipt ) ? $candidate_receipt : array();
+			if ( empty( $receipt ) && ! self::has_form_fallback_identity( $diagnostic ) ) {
+				// Recover a missing producer identity only from one exact persisted form.
+				$candidate_receipt = $receipts_by_source_hash[ $source_path . "\n" . $fallback_hash ] ?? array();
+				if ( is_array( $candidate_receipt ) ) {
+					$producer_identity = $candidate_receipt['fallback_reconciliation_identity'] ?? '';
+					if ( is_string( $producer_identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $producer_identity ) ) {
+						$diagnostic['source_fallback_identity'] = $producer_identity;
+						$identity                               = $producer_identity;
+						$receipt                                = $candidate_receipt;
+					}
+				}
+			}
 			$page_receipt         = $report['materialization_receipt']['completed']['materialized_pages'][ $source_path ] ?? array();
 			$page_hash            = is_array( $page_receipt ) && is_string( $page_receipt['content_hash'] ?? null ) ? $page_receipt['content_hash'] : '';
 			$resolved_by_provider = 'static-site-importer/quality-resolution-receipt/v1' === ( $receipt['schema'] ?? null )
@@ -2536,6 +2561,17 @@ class Static_Site_Importer_Report_Diagnostics {
 			'resolutions'               => $resolutions,
 		);
 		$report['fallback_reconciliation'] = $report['quality_resolutions'];
+	}
+
+	/** @param array<string,mixed> $fallback */
+	private static function has_form_fallback_identity( array $fallback ): bool {
+		foreach ( array( 'source_fallback_identity', 'fallback_reconciliation_identity', 'fallback_identity' ) as $field ) {
+			$identity = $fallback[ $field ] ?? null;
+			if ( is_string( $identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $identity ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
