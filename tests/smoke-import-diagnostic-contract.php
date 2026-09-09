@@ -689,11 +689,17 @@ $captured_form_report = Static_Site_Importer_Import_Report::from_array(
 					'contact.html' => array( 'content_hash' => hash( 'sha256', 'captured-page-contact.html' ) ),
 					'quote.html'   => array( 'content_hash' => hash( 'sha256', 'captured-page-quote.html' ) ),
 				),
+				'runtime_declarations' => array(
+					'entity_bindings' => array_map(
+						static fn( array $receipt ): array => array_merge( $receipt, array( 'role' => 'form', 'reconciliation_identity' => $receipt['binding_reconciliation_identity'] ) ),
+						$captured_form_receipts
+					),
+				),
 			),
 		),
 	)
 );
-Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $captured_form_report, $captured_form_receipts );
+Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $captured_form_report );
 $captured_resolutions = $captured_form_report['quality_resolutions']['resolutions'] ?? array();
 $assert( 2 === ( $captured_form_report['quality_resolutions']['resolved_by_provider'] ?? 0 ) && 2 === ( $captured_form_report['quality_resolutions']['unresolved_fallback_count'] ?? 0 ) && 'resolved_by_provider' === ( $captured_resolutions[0]['state'] ?? '' ) && 'unresolved' === ( $captured_resolutions[1]['state'] ?? '' ) && 'resolved_by_provider' === ( $captured_resolutions[2]['state'] ?? '' ) && 'unresolved' === ( $captured_resolutions[3]['state'] ?? '' ), 'captured-form-contract-joins-only-persisted-provider-identities' );
 $assert( ( $captured_form_receipts[0]['fallback_reconciliation_identity'] ?? '' ) === ( $captured_resolutions[0]['fallback_reconciliation_identity'] ?? '' ) && ( $captured_form_receipts[1]['fallback_reconciliation_identity'] ?? '' ) === ( $captured_resolutions[2]['fallback_reconciliation_identity'] ?? '' ), 'captured-form-contract-preserves-persisted-producer-identities' );

@@ -2462,6 +2462,7 @@ class Static_Site_Importer_Report_Diagnostics {
 					'schema'                           => 'static-site-importer/quality-resolution-receipt/v1',
 					'status'                           => 'completed',
 					'fallback_reconciliation_identity' => $binding['fallback_reconciliation_identity'] ?? '',
+					'source_path'                      => $binding['source_path'] ?? '',
 					'fallback_hash'                    => $binding['fallback_hash'] ?? '',
 					'binding_reconciliation_identity'  => $binding['reconciliation_identity'] ?? '',
 					'materialized_block_hash'          => $binding['materialized_block_hash'] ?? '',
