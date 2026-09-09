@@ -143,8 +143,14 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			$open .= '<div class="' . implode( ' ', $classes ) . '">';
 			$close = '</div>' . $close;
 		}
-		$wrapped = preg_replace_callback(
-			'/<input\b[^>]*>|<textarea\b[^>]*>.*?<\/textarea>|<select\b[^>]*>.*?<\/select>/is',
+		// A phone field's country search precedes its value input in Jetpack's HTML.
+		// Target the telephone control explicitly, leaving auxiliary controls intact.
+		$is_phone = (bool) preg_match( '/\bclass=(["\'])[^"\']*\bgrunion-field-(?:phone|telephone)-wrap\b[^"\']*\1/i', $projected );
+		$pattern  = $is_phone
+			? '/<input\b(?=[^>]*\btype\s*=\s*(["\'])tel\1)[^>]*>/is'
+			: '/<input\b[^>]*>|<textarea\b[^>]*>.*?<\/textarea>|<select\b[^>]*>.*?<\/select>/is';
+		$wrapped  = preg_replace_callback(
+			$pattern,
 			static fn ( array $control_match ): string => $open . $control_match[0] . $close,
 			$projected,
 			1
