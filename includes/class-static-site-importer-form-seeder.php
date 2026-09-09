@@ -461,6 +461,14 @@ class Static_Site_Importer_Form_Seeder {
 				$skipped[] = '' !== $type ? $type : $tag;
 				continue;
 			}
+			if ( 'phone' === $type ) {
+				foreach ( $field_block['innerBlocks'] as &$inner_block ) {
+					if ( 'jetpack/phone-input' === ( $inner_block['name'] ?? '' ) ) {
+						$inner_block['attrs']['className'] = trim( (string) ( $inner_block['attrs']['className'] ?? '' ) . ' ' . self::phone_value_class( $scope, $control_index ) . ' ' . self::phone_shell_class( $scope, $control_index ) );
+					}
+				}
+				unset( $inner_block );
+			}
 			foreach ( $field_block['losses'] ?? array() as $loss ) {
 				$control_attribute_losses[] = $loss + array( 'control_index' => $control_index );
 			}
@@ -2153,6 +2161,15 @@ class Static_Site_Importer_Form_Seeder {
 	private static function presentation_node_class( string $scope, int $index, string $role ): string {
 		return self::layout_node_class( $scope, 'presentation-' . $index . '-' . $role );
 	}
+	private static function phone_value_class( string $scope, int $index ): string {
+		return 'ssi-phone-value-' . substr( hash( 'sha256', $scope . "\nphone-value-" . $index ), 0, 12 );
+	}
+	private static function phone_shell_class( string $scope, int $index ): string {
+		return 'ssi-phone-shell-' . substr( hash( 'sha256', $scope . "\nphone-value-" . $index ), 0, 12 );
+	}
+	private static function phone_carrier_class( string $scope, int $index ): string {
+		return 'ssi-phone-carrier-' . substr( hash( 'sha256', $scope . "\nphone-value-" . $index ), 0, 12 );
+	}
 	/** @return array<int,array<string,bool>> */
 	private static function presentation_roles( array $graph ): array {
 		$roles = array();
@@ -2229,9 +2246,11 @@ class Static_Site_Importer_Form_Seeder {
 				$type              = strtolower( (string) ( $controls[ $index ]['type'] ?? '' ) );
 				$target['control'] = $selector_scope . ' .' . $class . ( 'submit' === $type ? ' > .wp-block-button__link' : '' );
 				if ( 'phone' === $type ) {
-					// Jetpack renders a phone field through its own shell. Keep source facts
-					// on the generated hook and feed its documented inherited CSS variables.
-					$target['control_provider'] = 'jetpack_phone';
+					// Jetpack's phone field has a shared shell, country picker, and value carrier.
+					$target['control']          = $selector_scope . ' .' . self::phone_value_class( $scope, $index );
+					$target['control_shell']    = $selector_scope . ' .' . self::phone_shell_class( $scope, $index );
+					$target['control_carrier']  = $selector_scope . ' .' . self::phone_carrier_class( $scope, $index );
+					$target['control_provider'] = 'jetpack_phone_composite';
 				}
 			}
 			if ( isset( $roles['label'] ) ) {

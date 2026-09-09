@@ -89,14 +89,20 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	public static function project_wrapper_classes( string $html ): string {
 		$wrapper_layers          = array();
 		$provider_layout_classes = array();
+		$phone_value_classes     = array();
 		$projected               = preg_replace_callback(
 			'/\bclass=(["\'])(.*?)\1/s',
-			static function ( array $matches ) use ( &$wrapper_layers, &$provider_layout_classes ): string {
+			static function ( array $matches ) use ( &$wrapper_layers, &$provider_layout_classes, &$phone_value_classes ): string {
 				$classes    = preg_split( '/\s+/', trim( $matches[2] ) );
 				$classes    = false === $classes ? array() : $classes;
 				$is_wrapper = (bool) array_filter( $classes, static fn ( string $class_name ): bool => 1 === preg_match( '/^grunion-field-[A-Za-z0-9_-]+-wrap$/D', $class_name ) );
+				$is_phone_shell = in_array( 'jetpack-field__input-phone-wrapper', $classes, true );
 				$output     = array();
 				foreach ( $classes as $class_name ) {
+					if ( $is_phone_shell && 1 === preg_match( '/^ssi-phone-value-[a-f0-9]{12}$/D', $class_name ) ) {
+						$phone_value_classes[] = $class_name;
+						continue;
+					}
 					if ( $is_wrapper && 1 === preg_match( '/^ssi-node-[a-f0-9]{12}-wrap$/D', $class_name ) ) {
 						$provider_layout_classes[] = $class_name;
 						continue;
@@ -128,7 +134,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			},
 			$html
 		);
-		if ( ! is_string( $projected ) || empty( $wrapper_layers ) ) {
+		if ( ! is_string( $projected ) || ( empty( $wrapper_layers ) && empty( $phone_value_classes ) ) ) {
 			return is_string( $projected ) ? self::project_semantic_wrappers( $projected ) : $html;
 		}
 
@@ -151,7 +157,19 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			: '/<input\b[^>]*>|<textarea\b[^>]*>.*?<\/textarea>|<select\b[^>]*>.*?<\/select>/is';
 		$wrapped  = preg_replace_callback(
 			$pattern,
-			static fn ( array $control_match ): string => $open . $control_match[0] . $close,
+			static function ( array $control_match ) use ( $open, $close, $is_phone, $phone_value_classes ): string {
+				if ( ! $is_phone || empty( $phone_value_classes ) ) {
+					return $open . $control_match[0] . $close;
+				}
+				$value_classes   = implode( ' ', array_values( array_unique( $phone_value_classes ) ) );
+				$carrier_classes = implode( ' ', array_map( static fn ( string $class_name ): string => str_replace( 'ssi-phone-value-', 'ssi-phone-carrier-', $class_name ), array_values( array_unique( $phone_value_classes ) ) ) );
+				$input           = preg_replace( '/\bclass=(["\'])(.*?)\1/is', 'class=$1$2 ' . $value_classes . '$1', $control_match[0], 1 ) ?? $control_match[0];
+				if ( '' !== $open ) {
+					$carrier_open = preg_replace( '/\bclass=(["\'])(.*?)\1/is', 'class=$1$2 ' . $carrier_classes . '$1', $open, 1 ) ?? $open;
+					return $carrier_open . $input . $close;
+				}
+				return preg_replace( '/\bclass=(["\'])(.*?)\1/is', 'class=$1$2 ' . $carrier_classes . '$1', $input, 1 ) ?? $input;
+			},
 			$projected,
 			1
 		);

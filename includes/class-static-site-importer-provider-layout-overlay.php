@@ -42,11 +42,11 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		$presentation_targets = array();
 		$seen_presentations   = array();
 		foreach ( $map['presentation_targets'] ?? array() as $target ) {
-			if ( ! is_array( $target ) || ! self::has_only_keys( $target, array( 'index', 'control', 'label', 'control_provider' ) ) || ! is_int( $target['index'] ?? null ) || $target['index'] < 0 || $target['index'] >= 128 || isset( $seen_presentations[ $target['index'] ] ) || ( ! isset( $target['control'] ) && ! isset( $target['label'] ) ) || ( isset( $target['control_provider'] ) && ( ! isset( $target['control'] ) || 'jetpack_phone' !== $target['control_provider'] ) ) ) {
+			if ( ! is_array( $target ) || ! self::has_only_keys( $target, array( 'index', 'control', 'label', 'control_shell', 'control_carrier', 'control_provider' ) ) || ! is_int( $target['index'] ?? null ) || $target['index'] < 0 || $target['index'] >= 128 || isset( $seen_presentations[ $target['index'] ] ) || ( ! isset( $target['control'] ) && ! isset( $target['label'] ) ) || ( isset( $target['control_provider'] ) && ( ! isset( $target['control'] ) || 'jetpack_phone_composite' !== $target['control_provider'] || ! isset( $target['control_shell'], $target['control_carrier'] ) ) ) ) {
 				return array( 'error' => 'provider presentation target map contains an unsafe target.' );
 			}
 			$clean = array( 'index' => $target['index'] );
-			foreach ( array( 'control', 'label' ) as $role ) {
+			foreach ( array( 'control', 'label', 'control_shell', 'control_carrier' ) as $role ) {
 				if ( isset( $target[ $role ] ) && ( ! is_string( $target[ $role ] ) || ! self::safe_selector( $target[ $role ], $map['scope'] ) ) ) {
 					return array( 'error' => 'provider presentation target map contains an unsafe selector.' );
 				}
@@ -149,7 +149,16 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					$losses[] = self::presentation_loss( 'provider_structure_mismatch', $control['index'], $role );
 					continue;
 				}
-				$declarations = self::presentation_declarations( $control[ $role ]['styles'], $control['index'], $role, $losses, $target[ $role . '_provider' ] ?? null );
+				if ( 'jetpack_phone_composite' === ( $target['control_provider'] ?? null ) && 'control' === $role ) {
+					$declarations       = self::phone_value_declarations( $control[ $role ]['styles'], $control['index'], $losses );
+					$shell_declarations = self::presentation_declarations( self::phone_shell_styles( $control[ $role ]['styles'] ), $control['index'], $role, $losses, 'jetpack_phone' );
+					if ( ! empty( $shell_declarations ) ) {
+						$rules[] = self::authoritative_presentation_selector( $target['control_shell'] ) . '{' . implode( ';', $shell_declarations ) . '}';
+					}
+					$rules[] = self::authoritative_presentation_selector( $target['control_carrier'] ) . '{flex:1 1 0;min-width:0}';
+				} else {
+					$declarations = self::presentation_declarations( $control[ $role ]['styles'], $control['index'], $role, $losses, $target[ $role . '_provider' ] ?? null );
+				}
 				if ( ! empty( $declarations ) ) {
 					$rules[]      = self::authoritative_presentation_selector( $target[ $role ] ) . '{' . implode( ';', $declarations ) . '}';
 					$operations[] = self::presentation_operation( $control['index'], $role, $target[ $role ], false );
@@ -164,7 +173,16 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				$losses[] = self::presentation_loss( 'responsive_layout_ownership', is_int( $index ) ? $index : 0, is_string( $role ) ? $role : 'control' );
 				continue;
 			}
-			$declarations = self::presentation_declarations( $variant['style_patch'], $index, $role, $losses, $presentation_targets[ $index ][ $role . '_provider' ] ?? null );
+			if ( 'jetpack_phone_composite' === ( $presentation_targets[ $index ]['control_provider'] ?? null ) && 'control' === $role ) {
+				$declarations       = self::phone_value_declarations( $variant['style_patch'], $index, $losses );
+				$shell_declarations = self::presentation_declarations( self::phone_shell_styles( $variant['style_patch'] ), $index, $role, $losses, 'jetpack_phone' );
+				if ( ! empty( $shell_declarations ) ) {
+					$rules[] = self::conditional_rule( $variant['condition'], self::authoritative_presentation_selector( $presentation_targets[ $index ]['control_shell'] ) . '{' . implode( ';', $shell_declarations ) . '}' );
+				}
+				$rules[] = self::conditional_rule( $variant['condition'], self::authoritative_presentation_selector( $presentation_targets[ $index ]['control_carrier'] ) . '{flex:1 1 0;min-width:0}' );
+			} else {
+				$declarations = self::presentation_declarations( $variant['style_patch'], $index, $role, $losses, $presentation_targets[ $index ][ $role . '_provider' ] ?? null );
+			}
 			if ( ! empty( $declarations ) ) {
 				$rules[]      = self::conditional_rule( $variant['condition'], self::authoritative_presentation_selector( $target ) . '{' . implode( ';', $declarations ) . '}' );
 				$operations[] = self::presentation_operation( $index, $role, $target, true );
@@ -236,7 +254,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( preg_match( '/^@(?:media|container) (\((?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)\))\{(.+)\}$/D', $rule, $matches ) ) {
 			return self::safe_compiled_rule( $matches[2] );
 		}
-		if ( ! preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-wrap)?(?: > \.wp-block-button__link)?)?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
+		if ( ! preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-(?:node|phone-(?:value|shell|carrier))-[a-f0-9]{12}(?:-wrap)?(?: > \.wp-block-button__link)?)?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
 		$layout_allowed       = array( 'display', 'width', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'position', 'z-index', 'pointer-events' );
@@ -254,7 +272,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		// own position, so it carries the form box's placement inside the page.
 		// A generated node hook resolves to the control, and its provider `-wrap` copy
 		// resolves to that control's field shell.
-		return (bool) preg_match( '/^' . preg_quote( $scope, '/' ) . '(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-wrap)?(?: > \.wp-block-button__link)?)?$/D', $selector );
+		return (bool) preg_match( '/^' . preg_quote( $scope, '/' ) . '(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-(?:node|phone-(?:value|shell|carrier))-[a-f0-9]{12}(?:-wrap)?(?: > \.wp-block-button__link)?)?$/D', $selector );
 	}
 	private static function safe_condition( mixed $condition ): bool {
 		if ( ! is_array( $condition ) ) {
@@ -376,6 +394,15 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			}
 		}
 		return $declarations;
+	}
+	/** Keep the source's compound chrome on Jetpack's shared phone shell. */
+	private static function phone_shell_styles( array $styles ): array {
+		return array_intersect_key( $styles, array_flip( array( 'background', 'background_color', 'border', 'border_color', 'border_style', 'border_width', 'border_top_color', 'border_right_color', 'border_bottom_color', 'border_left_color', 'border_top_style', 'border_right_style', 'border_bottom_style', 'border_left_style', 'border_top_width', 'border_right_width', 'border_bottom_width', 'border_left_width', 'border_radius', 'border_top_left_radius', 'border_top_right_radius', 'border_bottom_right_radius', 'border_bottom_left_radius', 'padding' ) ) );
+	}
+	/** Keep source text metrics and logical padding on the telephone value, not its country picker. */
+	private static function phone_value_declarations( array $styles, int $index, array &$losses ): array {
+		$shell = array_fill_keys( array_keys( self::phone_shell_styles( $styles ) ), true );
+		return self::presentation_declarations( array_diff_key( $styles, $shell ), $index, 'control', $losses );
 	}
 
 	/** Jetpack's phone shell consumes these inherited provider variables. */
