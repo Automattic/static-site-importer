@@ -19,6 +19,7 @@ use Automattic\BlocksEngine\PhpTransformer\WordPress\Runtime as Blocks_Engine_Wo
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan;
 
 define( 'OBJECT', 'OBJECT' );
+define( 'ARRAY_A', 'ARRAY_A' );
 $GLOBALS['ssi_plan_root']                 = sys_get_temp_dir() . '/ssi-plan-' . bin2hex( random_bytes( 4 ) );
 $GLOBALS['ssi_plan_posts']                = array();
 $GLOBALS['ssi_plan_meta']                 = array();
@@ -53,9 +54,13 @@ class WP_Error {
 class WP_Post {
 	public int $ID;
 	public string $post_name;
+	public string $post_type;
+	public string $post_status;
 	public function __construct( int $id ) {
-		$this->ID        = $id;
-		$this->post_name = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_name'] ?? '' ); }
+		$this->ID          = $id;
+		$this->post_name   = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_name'] ?? '' );
+		$this->post_type   = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_type'] ?? '' );
+		$this->post_status = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_status'] ?? '' ); }
 }
 function apply_filters( string $hook, $value, ...$args ) {
 	unset( $hook, $args );
@@ -189,6 +194,12 @@ function get_page_by_path( string $slug, $output, string $type ) {
 	}
 	return null;
 }
+function get_post( int $id, $output = OBJECT ) {
+	if ( ! isset( $GLOBALS['ssi_plan_posts'][ $id ] ) ) {
+		return null;
+	}
+	return ARRAY_A === $output ? array_merge( array( 'ID' => $id ), $GLOBALS['ssi_plan_posts'][ $id ] ) : new WP_Post( $id );
+}
 function wp_insert_post( array $post, bool $wp_error ) {
 	++$GLOBALS['ssi_plan_insert_calls'];
 	if ( $GLOBALS['ssi_plan_fail_after'] && count( $GLOBALS['ssi_plan_posts'] ) >= $GLOBALS['ssi_plan_fail_after'] ) {
@@ -315,6 +326,8 @@ require dirname( __DIR__ ) . '/includes/class-static-site-importer-viewport-meta
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-document-type-classifier.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-diagnostics-adapter.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-site-plan-materializer.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-protected-page-policy.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-generated-state-reconciliation.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-plugin-materializer.php';
@@ -3138,6 +3151,63 @@ $resolved_companion_html = (string) ( $resolved_companion['blocks'][0]['render']
 $assert( str_contains( $resolved_companion_html, 'src="' . $root_media_url . '"' ) && str_contains( $resolved_companion_html, 'srcset="' . $root_media_url . ' 1x"' ) && ! str_contains( $resolved_companion_html, '="/media/example.jpg' ), 'generated companion block renders resolve canonical root-relative assets through the materialized theme map' );
 
 $projection_cases = array();
+$GLOBALS['ssi_plan_posts'] = array(
+	900 => array(
+		'post_name'   => 'stale-owned-page',
+		'post_type'   => 'page',
+		'post_status' => 'publish',
+	),
+);
+$GLOBALS['ssi_plan_meta']  = array(
+	900 => array(
+		'_static_site_importer_provenance' => wp_json_encode( array( 'schema' => 'static-site-importer/page-provenance/v1' ) ),
+	),
+);
+$draft_rollback_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$canonical_plan,
+	array(
+		'slug'                       => 'draft-rollback-reconciliation',
+		'defer_materialization_commit' => true,
+	)
+);
+$draft_rollback_dir     = $draft_rollback_receipt['theme']['dir'];
+$draft_stale_file        = $draft_rollback_dir . '/prior-owned.txt';
+file_put_contents( $draft_stale_file, 'previous import bytes' );
+file_put_contents(
+	$draft_rollback_dir . '/static-site-importer-manifest.json',
+	wp_json_encode(
+		array(
+			'schema'  => 'static-site-importer/source-of-truth-manifest/v1',
+			'desired' => array(
+				'pages'  => array( array( 'source_path' => 'stale.html', 'materialized_post_id' => 900 ) ),
+				'files'  => array( array( 'path' => 'prior-owned.txt' ) ),
+				'assets' => array(),
+			),
+		)
+	)
+);
+$draft_rollback_result = $project_materialization_result->invoke(
+	null,
+	array(
+		'receipt'      => $draft_rollback_receipt,
+		'lifecycle'    => array(),
+		'dependencies' => array(),
+		'entities'     => array(),
+	),
+	array(
+		'inject_materialization_failure' => 'report_persistence',
+		'stale_page_action'              => 'draft',
+	)
+);
+$draft_rollback_receipt = $draft_rollback_result->get_error_data();
+$assert(
+	is_wp_error( $draft_rollback_result ) &&
+	'publish' === ( $GLOBALS['ssi_plan_posts'][900]['post_status'] ?? '' ) &&
+	is_file( $draft_stale_file ) &&
+	'previous import bytes' === file_get_contents( $draft_stale_file ) &&
+	! empty( $draft_rollback_receipt['transaction']->state['rollback']['done'] ?? false ),
+	'late report persistence failure restores drafted eligible stale pages and stale owned files through the receipt journal: ' . wp_json_encode( array( 'result' => is_wp_error( $draft_rollback_result ), 'status' => $GLOBALS['ssi_plan_posts'][900]['post_status'] ?? '', 'file' => is_file( $draft_stale_file ), 'contents' => is_file( $draft_stale_file ) ? file_get_contents( $draft_stale_file ) : '', 'rollback' => $draft_rollback_receipt['transaction']->state['rollback'] ?? array() ) )
+);
 $projection_files = static function ( string $directory ): array {
 	$files = array();
 	foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $directory, FilesystemIterator::SKIP_DOTS ) ) as $file ) {
