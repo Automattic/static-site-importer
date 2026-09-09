@@ -42,7 +42,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		$presentation_targets = array();
 		$seen_presentations   = array();
 		foreach ( $map['presentation_targets'] ?? array() as $target ) {
-			if ( ! is_array( $target ) || ! self::has_only_keys( $target, array( 'index', 'control', 'label' ) ) || ! is_int( $target['index'] ?? null ) || $target['index'] < 0 || $target['index'] >= 128 || isset( $seen_presentations[ $target['index'] ] ) || ( ! isset( $target['control'] ) && ! isset( $target['label'] ) ) ) {
+			if ( ! is_array( $target ) || ! self::has_only_keys( $target, array( 'index', 'control', 'label', 'control_provider' ) ) || ! is_int( $target['index'] ?? null ) || $target['index'] < 0 || $target['index'] >= 128 || isset( $seen_presentations[ $target['index'] ] ) || ( ! isset( $target['control'] ) && ! isset( $target['label'] ) ) || ( isset( $target['control_provider'] ) && ( ! isset( $target['control'] ) || 'jetpack_phone' !== $target['control_provider'] ) ) ) {
 				return array( 'error' => 'provider presentation target map contains an unsafe target.' );
 			}
 			$clean = array( 'index' => $target['index'] );
@@ -53,6 +53,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				if ( isset( $target[ $role ] ) ) {
 					$clean[ $role ] = $target[ $role ];
 				}
+			}
+			if ( isset( $target['control_provider'] ) ) {
+				$clean['control_provider'] = $target['control_provider'];
 			}
 			$seen_presentations[ $target['index'] ] = true;
 			$presentation_targets[]                 = $clean;
@@ -146,7 +149,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					$losses[] = self::presentation_loss( 'provider_structure_mismatch', $control['index'], $role );
 					continue;
 				}
-				$declarations = self::presentation_declarations( $control[ $role ]['styles'], $control['index'], $role, $losses );
+				$declarations = self::presentation_declarations( $control[ $role ]['styles'], $control['index'], $role, $losses, $target[ $role . '_provider' ] ?? null );
 				if ( ! empty( $declarations ) ) {
 					$rules[]      = self::authoritative_presentation_selector( $target[ $role ] ) . '{' . implode( ';', $declarations ) . '}';
 					$operations[] = self::presentation_operation( $control['index'], $role, $target[ $role ], false );
@@ -161,7 +164,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				$losses[] = self::presentation_loss( 'responsive_layout_ownership', is_int( $index ) ? $index : 0, is_string( $role ) ? $role : 'control' );
 				continue;
 			}
-			$declarations = self::presentation_declarations( $variant['style_patch'], $index, $role, $losses );
+			$declarations = self::presentation_declarations( $variant['style_patch'], $index, $role, $losses, $presentation_targets[ $index ][ $role . '_provider' ] ?? null );
 			if ( ! empty( $declarations ) ) {
 				$rules[]      = self::conditional_rule( $variant['condition'], self::authoritative_presentation_selector( $target ) . '{' . implode( ';', $declarations ) . '}' );
 				$operations[] = self::presentation_operation( $index, $role, $target, true );
@@ -237,7 +240,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			return false;
 		}
 		$layout_allowed       = array( 'display', 'width', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'position', 'z-index', 'pointer-events' );
-		$presentation_allowed = array_values( self::presentation_property_map() );
+		$presentation_allowed = array_merge( array_values( self::presentation_property_map() ), array_values( self::jetpack_phone_presentation_property_map() ) );
 		foreach ( explode( ';', $matches[2] ) as $declaration ) {
 			if ( ! preg_match( '/^([a-z-]+):(.+)$/D', $declaration, $parts ) || ( ! in_array( $parts[1], $layout_allowed, true ) && ! in_array( $parts[1], $presentation_allowed, true ) ) || ( in_array( $parts[1], $presentation_allowed, true ) ? ! self::safe_presentation_value( $parts[2] ) : ! self::safe_value( str_replace( array( 'grid-template-columns', 'grid-template-rows', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area' ), array( 'columns', 'rows', 'direction', 'wrap', 'align_items', 'align_content', 'justify_content', 'align_self', 'justify_self', 'flex_grow', 'flex_shrink', 'flex_basis', 'column', 'row', 'area' ), $parts[1] ), $parts[2] ) ) ) {
 				return false;
@@ -359,7 +362,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		return array_combine( $keys, array_map( static fn( string $key ): string => str_replace( '_', '-', $key ), $keys ) );
 	}
 
-	private static function presentation_declarations( array $styles, int $index, string $role, array &$losses ): array {
+	private static function presentation_declarations( array $styles, int $index, string $role, array &$losses, mixed $provider = null ): array {
 		$map          = self::presentation_property_map();
 		$declarations = array();
 		foreach ( $styles as $key => $value ) {
@@ -368,8 +371,27 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				continue;
 			}
 			$declarations[] = $map[ $key ] . ':' . $value;
+			if ( 'jetpack_phone' === $provider && isset( self::jetpack_phone_presentation_property_map()[ $key ] ) ) {
+				$declarations[] = self::jetpack_phone_presentation_property_map()[ $key ] . ':' . $value;
+			}
 		}
 		return $declarations;
+	}
+
+	/** Jetpack's phone shell consumes these inherited provider variables. */
+	private static function jetpack_phone_presentation_property_map(): array {
+		return array(
+			'background_color'            => '--jetpack--contact-form--input-background',
+			'border_color'                => '--jetpack--contact-form--border-color',
+			'border_style'                => '--jetpack--contact-form--border-style',
+			'border_width'                => '--jetpack--contact-form--border-size',
+			'border_radius'               => '--jetpack--contact-form--border-radius',
+			'color'                       => '--jetpack--contact-form--text-color',
+			'font_family'                 => '--jetpack--contact-form--font-family',
+			'font_size'                   => '--jetpack--contact-form--font-size',
+			'line_height'                 => '--jetpack--contact-form--line-height',
+			'padding'                     => '--jetpack--contact-form--input-padding',
+		);
 	}
 
 	private static function authoritative_presentation_selector( string $selector ): string {

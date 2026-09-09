@@ -2228,6 +2228,11 @@ class Static_Site_Importer_Form_Seeder {
 				$class             = self::presentation_node_class( $scope, $index, 'control' );
 				$type              = strtolower( (string) ( $controls[ $index ]['type'] ?? '' ) );
 				$target['control'] = $selector_scope . ' .' . $class . ( 'submit' === $type ? ' > .wp-block-button__link' : '' );
+				if ( 'phone' === $type ) {
+					// Jetpack renders a phone field through its own shell. Keep source facts
+					// on the generated hook and feed its documented inherited CSS variables.
+					$target['control_provider'] = 'jetpack_phone';
+				}
 			}
 			if ( isset( $roles['label'] ) ) {
 				$target['label'] = $selector_scope . ' .' . self::presentation_node_class( $scope, $index, 'label' );
