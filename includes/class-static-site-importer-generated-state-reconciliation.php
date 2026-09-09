@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Protected_Page_Policy' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-protected-page-policy.php';
+}
+
 final class Static_Site_Importer_Generated_State_Reconciliation {
 	/**
 	 * Remove generated theme files from the previous SSI manifest when absent from the new desired manifest.
