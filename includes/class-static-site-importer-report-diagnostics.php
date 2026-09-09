@@ -483,6 +483,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				'interaction_candidates'             => (int) ( $quality['interaction_candidate_count'] ?? 0 ),
 				'runtime_dependency_parity'          => (int) ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ),
 				'semantic_parity_failures'           => (int) ( $quality['semantic_parity_failure_count'] ?? 0 ),
+				'omitted_artifact_files'             => (int) ( $quality['omitted_file_count'] ?? 0 ),
 			),
 			'quality_gates'            => array(
 				'fallback_blocks'                    => self::validation_gate( 'fallback_blocks', (int) ( $quality['unsupported_fallback_count'] ?? 0 ), $quality ),
@@ -494,6 +495,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				'interaction_candidates'             => self::validation_gate( 'interaction_candidates', (int) ( $quality['interaction_candidate_count'] ?? 0 ), $quality ),
 				'runtime_dependency_parity'          => self::validation_gate( 'runtime_dependency_parity', (int) ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ), $quality ),
 				'semantic_parity'                    => self::validation_gate( 'semantic_parity', (int) ( $quality['semantic_parity_failure_count'] ?? 0 ), $quality ),
+				'omitted_artifact_files'             => self::validation_gate( 'omitted_artifact_files', (int) ( $quality['omitted_file_count'] ?? 0 ), $quality ),
 				'visual_fidelity'                    => array(
 					'status' => (string) ( $report['visual_fidelity']['status'] ?? 'requires_external_render_check' ),
 					'owner'  => (string) ( $report['visual_fidelity']['gate_owner'] ?? 'benchmark_harness' ),
@@ -859,6 +861,7 @@ class Static_Site_Importer_Report_Diagnostics {
 		$fallback_admission = self::fallback_admission_counts( $report['diagnostics'] ?? array(), (int) $quality['fallback_count'] );
 		$quality['accepted_preserved_runtime_island_count'] = $fallback_admission['accepted'];
 		$quality['unsupported_fallback_count']              = $fallback_admission['unsupported'];
+		$quality['omitted_file_count']                      = self::omitted_file_count( $report['diagnostics'] ?? array() );
 		$reasons = array();
 		if ( $quality['unsupported_fallback_count'] > 0 ) {
 			$reasons[] = 'unsupported_html_fallback';
@@ -898,6 +901,9 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 		if ( ( $quality['semantic_parity_failure_count'] ?? 0 ) > 0 ) {
 			$reasons[] = 'semantic_parity_failure';
+		}
+		if ( ( $quality['omitted_file_count'] ?? 0 ) > 0 ) {
+			$reasons[] = 'dropped_artifact_files';
 		}
 
 		$quality['pass']            = empty( $reasons );
@@ -949,6 +955,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'interaction_candidate_count'             => 0,
 			'runtime_dependency_parity_issue_count'   => 0,
 			'semantic_parity_failure_count'           => 0,
+			'omitted_file_count'                      => 0,
 			'failure_reasons'                         => array(),
 		);
 	}
@@ -978,6 +985,27 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		$report['quality'] = $quality;
+	}
+
+	/**
+	 * Count normalized diagnostics that report artifact files the compiler omitted.
+	 *
+	 * The compiler emits no aggregate counter for dropped files, so the count is
+	 * derived from the rewritten rows the same way the fallback admission gate
+	 * derives its split from diagnostics.
+	 *
+	 * @param array<int,mixed> $diagnostics Normalized diagnostics.
+	 * @return int
+	 */
+	private static function omitted_file_count( array $diagnostics ): int {
+		$count = 0;
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( is_array( $diagnostic ) && in_array( $diagnostic['type'] ?? '', array( Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE, Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE ), true ) ) {
+				++$count;
+			}
+		}
+
+		return $count;
 	}
 
 	/**
@@ -1154,6 +1182,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'interaction_candidate_count'             => (int) ( $quality['interaction_candidate_count'] ?? 0 ),
 			'runtime_dependency_parity_issue_count'   => (int) ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ),
 			'semantic_parity_failure_count'           => (int) ( $quality['semantic_parity_failure_count'] ?? 0 ),
+			'omitted_file_count'                      => (int) ( $quality['omitted_file_count'] ?? 0 ),
 			'source_document_count'                   => (int) ( $source_documents['total_count'] ?? 0 ),
 			'unresolved_link_count'                   => (int) ( $source_documents['unresolved_link_count'] ?? 0 ),
 			'commerce'                                => $commerce,
@@ -1190,6 +1219,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'interaction_candidates'             => 'interaction_candidate_count',
 			'runtime_dependency_parity'          => 'runtime_dependency_parity_issue_count',
 			'semantic_parity'                    => 'semantic_parity_failure_count',
+			'omitted_artifact_files'             => 'omitted_file_count',
 		);
 		$ref_key  = $ref_keys[ $name ] ?? $name;
 
@@ -1512,6 +1542,8 @@ class Static_Site_Importer_Report_Diagnostics {
 				'semantic_parity_navigation_mismatch',
 				'semantic_parity_landmark_missing',
 				'semantic_parity_failure',
+				Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE,
+				Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE,
 			),
 			true
 		);
@@ -2613,9 +2645,15 @@ class Static_Site_Importer_Report_Diagnostics {
 				continue;
 			}
 
-			$type        = isset( $diagnostic['type'] ) && is_scalar( $diagnostic['type'] ) ? (string) $diagnostic['type'] : 'import_diagnostic';
 			$source      = isset( $diagnostic['source'] ) && is_scalar( $diagnostic['source'] ) ? (string) $diagnostic['source'] : '';
 			$source_path = isset( $diagnostic['source_path'] ) && is_scalar( $diagnostic['source_path'] ) ? (string) $diagnostic['source_path'] : self::diagnostic_source_path( $source );
+
+			// The compiler reports dropped files as warnings that classify as
+			// acceptable conversion if left untouched. Re-owning gives the row an
+			// importer-owned type and explicit loss class so the loss is counted
+			// and gated instead of filed as a clean conversion.
+			$diagnostic  = Static_Site_Importer_Diagnostic_Loss_Classes::reown_compiler_file_drop( $diagnostic );
+			$type        = isset( $diagnostic['type'] ) && is_scalar( $diagnostic['type'] ) ? (string) $diagnostic['type'] : 'import_diagnostic';
 			$reason_code = self::diagnostic_reason_code( $type, $diagnostic );
 
 			$machine                     = array(
@@ -2775,6 +2813,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'interaction_candidate_count'             => array( 'interaction_candidate' ),
 			'runtime_dependency_parity_issue_count'   => array( 'runtime_dependency_missing_dom_target', 'runtime_dependency_unsupported_element_reference', 'runtime_dependency_parity_issue' ),
 			'semantic_parity_failure_count'           => array( 'semantic_parity_navigation_missing', 'semantic_parity_navigation_mismatch', 'semantic_parity_landmark_missing', 'semantic_parity_failure' ),
+			'omitted_file_count'                      => array( Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE, Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE ),
 		);
 
 		$refs = array();
@@ -2936,6 +2975,8 @@ class Static_Site_Importer_Report_Diagnostics {
 			'semantic_parity_navigation_mismatch'        => 'semantic_parity',
 			'semantic_parity_landmark_missing'           => 'semantic_parity',
 			'semantic_parity_failure'                    => 'semantic_parity',
+			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE            => 'unresolved_asset',
+			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE             => 'unresolved_asset',
 		);
 
 		return $categories[ $type ] ?? 'import_quality';
@@ -2974,6 +3015,8 @@ class Static_Site_Importer_Report_Diagnostics {
 			'semantic_parity_navigation_mismatch'        => 'repair_core_navigation_items',
 			'semantic_parity_landmark_missing'           => 'generate_semantic_landmark_parity',
 			'semantic_parity_failure'                    => 'repair_semantic_structure',
+			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE            => 'raise_compiler_file_limit',
+			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE             => 'raise_compiler_file_limit',
 		);
 
 		return $classes[ $type ] ?? 'inspect_import_diagnostic';
