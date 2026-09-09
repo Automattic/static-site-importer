@@ -1289,6 +1289,15 @@ try {
 	restore_error_handler();
 }
 $assert( isset( $failed_projection_error ) && 'Failed to write a preflighted import artifact.' === $failed_projection_error->getMessage() && is_dir( $failed_projection_path ) && array() === glob( $GLOBALS['ssi_plan_root'] . '/.ssi-projection-*' ) && array( 'exists' => false ) === ( $failed_projection_receipt['transaction']->state['rollback']['files'][ $failed_projection_path ] ?? null ), 'journaled report publication failure preserves its destination, cleans its temporary file, and records the target before writing' );
+$encoding_failure_path = $GLOBALS['ssi_plan_root'] . '/encoding-failure.json';
+file_put_contents( $encoding_failure_path, 'previous report bytes' );
+$encoding_failure_receipt = array( 'transaction' => (object) array( 'state' => array( 'rollback' => array( 'files' => array() ) ) ) );
+try {
+	Static_Site_Importer_Journaled_Report_Writer::write( $encoding_failure_path, array( 'written_first' => 'partial temporary bytes', 'unencodable' => NAN ), $encoding_failure_receipt );
+} catch ( RuntimeException $error ) {
+	$encoding_failure_error = $error;
+}
+$assert( isset( $encoding_failure_error ) && 'Failed to write a preflighted import artifact.' === $encoding_failure_error->getMessage() && 'previous report bytes' === file_get_contents( $encoding_failure_path ) && array() === glob( $GLOBALS['ssi_plan_root'] . '/.ssi-projection-*' ) && 'previous report bytes' === ( $encoding_failure_receipt['transaction']->state['rollback']['files'][ $encoding_failure_path ]['content'] ?? null ), 'partial JSON encoding failure retains prior destination bytes, journals them, and removes temporary output' );
 $deferred_font_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$font_plan,
 	array(
