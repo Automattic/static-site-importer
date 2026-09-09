@@ -3265,7 +3265,7 @@ $report_only_cleanup = Static_Site_Importer_Generated_State_Reconciliation::clea
 	$report_only_root,
 	array(
 		'desired' => array(
-			'pages'  => array( array( 'source_path' => 'current.html', 'materialized_post_id' => 900 ) ),
+			'pages'  => array(),
 			'files'  => array( array( 'path' => 'current-owned.txt' ) ),
 			'assets' => array(),
 		),
@@ -3273,6 +3273,7 @@ $report_only_cleanup = Static_Site_Importer_Generated_State_Reconciliation::clea
 	array( 'stale_page_action' => 'report_only' )
 );
 $report_only_skips = array_column( $report_only_cleanup['pages']['skipped'] ?? array(), 'reason' );
+$assert( array( 900 ) === array_column( $report_only_cleanup['pages']['stale_pages'], 'post_id' ) && 0 === $report_only_cleanup['pages']['counts']['pages_drafted'], 'report-only retains an eligible stale page without drafting it' );
 $assert( ! is_wp_error( $report_only_cleanup ) && 'report_only' === ( $report_only_cleanup['pages']['action'] ?? '' ) && 'publish' === ( $GLOBALS['ssi_plan_posts'][900]['post_status'] ?? '' ) && 'publish' === ( $GLOBALS['ssi_plan_posts'][901]['post_status'] ?? '' ) && 'publish' === ( $GLOBALS['ssi_plan_posts'][902]['post_status'] ?? '' ) && in_array( 'protected_page', $report_only_skips, true ) && in_array( 'missing_static_site_importer_provenance', $report_only_skips, true ) && is_file( $report_only_root . '/current-owned.txt' ) && is_file( $report_only_root . '/unowned.txt' ), 'report-only reconciliation reports eligible stale pages without mutation and preserves protected, missing-provenance, current, and unowned state' );
 if ( in_array( '--late-rollback-proof', $argv, true ) ) {
 	print 'late-rollback-proof=' . wp_json_encode( array( 'result_code' => $draft_rollback_result->get_error_code(), 'failure_context' => $draft_rollback_receipt['failure_context'] ?? array(), 'transitions' => $draft_status_transitions, 'final_status' => $GLOBALS['ssi_plan_posts'][900]['post_status'] ?? '' ) ) . "\n";
