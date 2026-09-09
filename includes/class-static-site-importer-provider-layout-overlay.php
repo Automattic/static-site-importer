@@ -381,16 +381,16 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	/** Jetpack's phone shell consumes these inherited provider variables. */
 	private static function jetpack_phone_presentation_property_map(): array {
 		return array(
-			'background_color'            => '--jetpack--contact-form--input-background',
-			'border_color'                => '--jetpack--contact-form--border-color',
-			'border_style'                => '--jetpack--contact-form--border-style',
-			'border_width'                => '--jetpack--contact-form--border-size',
-			'border_radius'               => '--jetpack--contact-form--border-radius',
-			'color'                       => '--jetpack--contact-form--text-color',
-			'font_family'                 => '--jetpack--contact-form--font-family',
-			'font_size'                   => '--jetpack--contact-form--font-size',
-			'line_height'                 => '--jetpack--contact-form--line-height',
-			'padding'                     => '--jetpack--contact-form--input-padding',
+			'background_color' => '--jetpack--contact-form--input-background',
+			'border_color'     => '--jetpack--contact-form--border-color',
+			'border_style'     => '--jetpack--contact-form--border-style',
+			'border_width'     => '--jetpack--contact-form--border-size',
+			'border_radius'    => '--jetpack--contact-form--border-radius',
+			'color'            => '--jetpack--contact-form--text-color',
+			'font_family'      => '--jetpack--contact-form--font-family',
+			'font_size'        => '--jetpack--contact-form--font-size',
+			'line_height'      => '--jetpack--contact-form--line-height',
+			'padding'          => '--jetpack--contact-form--input-padding',
 		);
 	}
 
