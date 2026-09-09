@@ -198,6 +198,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 				'runtime_dependency_parity'          => (int) ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ),
 				'semantic_parity_failures'           => (int) ( $quality['semantic_parity_failure_count'] ?? 0 ),
 				'unsafe_layout_constraints'          => (int) ( $quality['unsafe_layout_constraint_count'] ?? 0 ),
+				'omitted_artifact_files'             => (int) ( $quality['omitted_file_count'] ?? 0 ),
 			),
 			'quality_gates'            => array(
 				'fallback_blocks'                    => self::validation_gate( 'fallback_blocks', (int) ( $quality['unsupported_fallback_count'] ?? 0 ), $quality ),
@@ -210,6 +211,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 				'runtime_dependency_parity'          => self::validation_gate( 'runtime_dependency_parity', (int) ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ), $quality ),
 				'semantic_parity'                    => self::validation_gate( 'semantic_parity', (int) ( $quality['semantic_parity_failure_count'] ?? 0 ), $quality ),
 				'unsafe_layout_constraints'          => self::validation_gate( 'unsafe_layout_constraints', (int) ( $quality['unsafe_layout_constraint_count'] ?? 0 ), $quality ),
+				'omitted_artifact_files'             => self::validation_gate( 'omitted_artifact_files', (int) ( $quality['omitted_file_count'] ?? 0 ), $quality ),
 				'visual_fidelity'                    => array(
 					'status' => (string) ( $report['visual_fidelity']['status'] ?? 'requires_external_render_check' ),
 					'owner'  => (string) ( $report['visual_fidelity']['gate_owner'] ?? 'benchmark_harness' ),
@@ -706,6 +708,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'runtime_dependency_parity_issue_count'   => (int) ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ),
 			'semantic_parity_failure_count'           => (int) ( $quality['semantic_parity_failure_count'] ?? 0 ),
 			'unsafe_layout_constraint_count'          => (int) ( $quality['unsafe_layout_constraint_count'] ?? 0 ),
+			'omitted_file_count'                      => (int) ( $quality['omitted_file_count'] ?? 0 ),
 			'source_document_count'                   => (int) ( $source_documents['total_count'] ?? 0 ),
 			'unresolved_link_count'                   => (int) ( $source_documents['unresolved_link_count'] ?? 0 ),
 			'commerce'                                => $commerce,
@@ -743,6 +746,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'runtime_dependency_parity'          => 'runtime_dependency_parity_issue_count',
 			'semantic_parity'                    => 'semantic_parity_failure_count',
 			'unsafe_layout_constraints'          => 'unsafe_layout_constraint_count',
+			'omitted_artifact_files'             => 'omitted_file_count',
 		);
 		$ref_key  = $ref_keys[ $name ] ?? $name;
 
@@ -1066,6 +1070,8 @@ final class Static_Site_Importer_Diagnostic_Projection {
 				'semantic_parity_landmark_missing',
 				'semantic_parity_failure',
 				Static_Site_Importer_Report_Diagnostics::UNSAFE_LAYOUT_CONSTRAINT_TYPE,
+				Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE,
+				Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE,
 			),
 			true
 		);
@@ -1254,9 +1260,15 @@ final class Static_Site_Importer_Diagnostic_Projection {
 				continue;
 			}
 
-			$type        = isset( $diagnostic['type'] ) && is_scalar( $diagnostic['type'] ) ? (string) $diagnostic['type'] : 'import_diagnostic';
 			$source      = isset( $diagnostic['source'] ) && is_scalar( $diagnostic['source'] ) ? (string) $diagnostic['source'] : '';
 			$source_path = isset( $diagnostic['source_path'] ) && is_scalar( $diagnostic['source_path'] ) ? (string) $diagnostic['source_path'] : self::diagnostic_source_path( $source );
+
+			// The compiler reports dropped files as warnings that classify as
+			// acceptable conversion if left untouched. Re-owning gives the row an
+			// importer-owned type and explicit loss class so the loss is counted
+			// and gated instead of filed as a clean conversion.
+			$diagnostic  = Static_Site_Importer_Diagnostic_Loss_Classes::reown_compiler_file_drop( $diagnostic );
+			$type        = isset( $diagnostic['type'] ) && is_scalar( $diagnostic['type'] ) ? (string) $diagnostic['type'] : 'import_diagnostic';
 			$reason_code = self::diagnostic_reason_code( $type, $diagnostic );
 
 			$machine                     = array(
@@ -1494,6 +1506,8 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'semantic_parity_navigation_mismatch'        => 'semantic_parity',
 			'semantic_parity_landmark_missing'           => 'semantic_parity',
 			'semantic_parity_failure'                    => 'semantic_parity',
+			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE => 'unresolved_asset',
+			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE => 'unresolved_asset',
 		);
 
 		return $categories[ $type ] ?? 'import_quality';
@@ -1532,6 +1546,8 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'semantic_parity_navigation_mismatch'        => 'repair_core_navigation_items',
 			'semantic_parity_landmark_missing'           => 'generate_semantic_landmark_parity',
 			'semantic_parity_failure'                    => 'repair_semantic_structure',
+			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE => 'raise_compiler_file_limit',
+			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE => 'raise_compiler_file_limit',
 		);
 
 		return $classes[ $type ] ?? 'inspect_import_diagnostic';
