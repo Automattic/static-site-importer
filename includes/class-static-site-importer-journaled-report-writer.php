@@ -21,9 +21,9 @@ class Static_Site_Importer_Journaled_Report_Writer {
 	/**
 	 * Write a journaled JSON projection.
 	 *
-	 * @param string              $path    Projection destination.
-	 * @param array<string,mixed> $payload Projection payload.
-	 * @param array<string,mixed> $receipt Materialization receipt.
+	 * @param string                 $path    Projection destination.
+	 * @param array<string,mixed>    $payload Projection payload.
+	 * @param array<array-key,mixed> $receipt Materialization receipt.
 	 * @throws RuntimeException When the projection cannot be published.
 	 */
 	public static function write( string $path, array $payload, array &$receipt = array() ): void {
