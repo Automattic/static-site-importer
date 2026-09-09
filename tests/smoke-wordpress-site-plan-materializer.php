@@ -322,6 +322,8 @@ require dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-ma
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-fallback-contract.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-build-provenance.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-receipt-projection.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-runtime-entity-binding-validation.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
 
@@ -353,7 +355,9 @@ $normalize_receipt = static function ( mixed $value ) use ( &$normalize_receipt 
 };
 
 $theme_generator_source = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php' );
+$prepared_application_source = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-prepared-plan-application.php' );
 $assert( false === strpos( (string) $theme_generator_source, 'function import_compiled_website_artifact' ), 'canonical import has no legacy compiled-artifact execution path' );
+$assert( false === strpos( (string) $prepared_application_source, 'Static_Site_Importer_Theme_Generator' ), 'prepared application has no theme generator dependency' );
 
 $artifact = array(
 	'entrypoint' => 'index.html',
@@ -450,7 +454,7 @@ $assert( 'rejected' === $failed_policy_receipt['status'] && $insert_calls_before
 // Gutenberg gaps are SSI receipt/report extensions and must never alter the
 // compiler-owned plan, whose schema and hash are producer contracts.
 $canonical_plan = $plan;
-$project_gaps   = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'project_gutenberg_gaps' );
+$project_gaps   = new ReflectionMethod( Static_Site_Importer_Receipt_Projection::class, 'project_gutenberg_gaps' );
 $gaps           = $project_gaps->invoke(
 	null,
 	array(
@@ -751,6 +755,26 @@ $classic_artifact   = array(
 $classic_plan       = ( new ArtifactCompiler() )->compile( $classic_artifact )->toArray()['source_reports']['wordpress_site_plan'];
 $classic_projection = Static_Site_Importer_Classic_Theme_Projection::build( $classic_artifact, $classic_plan );
 $assert( ! is_wp_error( $classic_projection ), 'normalized artifact produces a render-neutral SSI classic projection without block reverse conversion' );
+$classic_binding_preflight_inserts = $GLOBALS['ssi_plan_insert_calls'];
+$classic_binding_preflight = Static_Site_Importer_Prepared_Plan_Application::materialize(
+	array(
+		'args' => array(
+			'theme_materialization'    => 'classic',
+			'classic_theme_projection' => $classic_projection,
+		),
+		'resolved' => $classic_plan,
+	),
+	array(
+		'entities' => array(
+			'first' => array( 'adapter' => array( 'classic_binding_callback' => static fn(): string => '' ), 'manifest' => array( 'products' => array( array( 'source_path' => 'index.html', 'selector' => 'h1' ) ) ) ),
+			'second' => array( 'adapter' => array( 'classic_binding_callback' => static fn(): string => '' ), 'manifest' => array( 'products' => array( array( 'source_path' => 'index.html', 'selector' => 'h1' ) ) ) ),
+		),
+	),
+	null,
+	array(),
+	array()
+);
+$assert( is_wp_error( $classic_binding_preflight ) && 'static_site_importer_classic_html_binding_duplicate' === $classic_binding_preflight->get_error_code() && $classic_binding_preflight_inserts === $GLOBALS['ssi_plan_insert_calls'], 'invalid classic bindings reject before companion, dependency, provider, or WordPress mutation' );
 $woo_late_failure_lifecycle = array(
 	'dependencies' => array(),
 	'entities'     => array(
@@ -1452,12 +1476,44 @@ $resolved_binding_plan     = array(
 	'runtime_declarations' => array( $resolved_declaration ),
 );
 $resolve_binding_manifests = new ReflectionMethod( Static_Site_Importer_Entity_Materializer_Registry::class, 'with_resolved_binding_manifests' );
-$preflight_bindings        = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'preflight_runtime_entity_binding_anchors' );
+$preflight_bindings        = new ReflectionMethod( Static_Site_Importer_Runtime_Entity_Binding_Validation::class, 'preflight_runtime_entity_binding_anchors' );
 $assert( is_wp_error( $preflight_bindings->invoke( null, $resolved_binding_plan, $token_lifecycle, array() ) ), 'canonical token anchors fail against destination-specific resolved page URLs before projection' );
 $resolved_lifecycle = $resolve_binding_manifests->invoke( null, $token_lifecycle, $resolved_binding_plan );
 $assert( $token_anchor === ( $token_lifecycle['entities'][ $token_entity_declaration_id ]['manifest']['products'][0]['bindings'][0]['search_block_markup'] ?? '' ) && $resolved_anchor === ( $resolved_lifecycle['entities'][ $token_entity_declaration_id ]['manifest']['products'][0]['bindings'][0]['search_block_markup'] ?? '' ), 'resolved binding projection changes only lifecycle binding anchors and preserves canonical declarations' );
 $assert( true === $preflight_bindings->invoke( null, $resolved_binding_plan, $resolved_lifecycle, array() ), 'resolved provider binding anchors match the exact page markup consumed by materialization' );
 $assert( $token_lifecycle === $resolve_binding_manifests->invoke( null, $token_lifecycle, array( 'pages' => $resolved_binding_plan['pages'] ) ), 'plans without resolved runtime declarations retain canonical lifecycle behavior' );
+
+$binding_preflight_cases = array(
+	'duplicate' => array(
+		'code' => 'static_site_importer_runtime_binding_claim_conflict',
+		'lifecycle' => array(
+			'entities' => array(
+				'first' => array( 'adapter' => array(), 'manifest' => array( 'products' => array( array( 'bindings' => array( array( 'source_path' => 'index.html', 'search_block_markup' => $resolved_anchor, 'occurrence' => 1 ) ) ) ) ) ),
+				'second' => array( 'adapter' => array(), 'manifest' => array( 'products' => array( array( 'bindings' => array( array( 'source_path' => 'index.html', 'search_block_markup' => $resolved_anchor, 'occurrence' => 1 ) ) ) ) ) ),
+			),
+		),
+	),
+	'missing' => array(
+		'code' => 'static_site_importer_runtime_binding_cardinality_mismatch',
+		'lifecycle' => array( 'entities' => array( 'missing' => array( 'adapter' => array(), 'manifest' => array( 'products' => array( array( 'bindings' => array( array( 'source_path' => 'index.html', 'search_block_markup' => '<!-- wp:paragraph --><p>missing</p><!-- /wp:paragraph -->', 'occurrence' => 1 ) ) ) ) ) ) ) ),
+	),
+	'protected' => array(
+		'code' => 'static_site_importer_runtime_binding_target_protected',
+		'lifecycle' => array( 'entities' => array( 'protected' => array( 'adapter' => array(), 'manifest' => array( 'products' => array( array( 'bindings' => array( array( 'source_path' => 'index.html', 'search_block_markup' => $resolved_anchor, 'occurrence' => 1 ) ) ) ) ) ) ) ),
+	),
+);
+foreach ( $binding_preflight_cases as $case_name => $binding_preflight_case ) {
+	$case_prepared = array(
+		'args' => array(),
+		'resolved' => $resolved_binding_plan,
+	);
+	if ( 'protected' === $case_name ) {
+		$case_prepared['resolved']['pages'][0]['skip_materialization'] = true;
+	}
+	$inserts_before_binding_preflight = $GLOBALS['ssi_plan_insert_calls'];
+	$binding_preflight = Static_Site_Importer_Prepared_Plan_Application::materialize( $case_prepared, $binding_preflight_case['lifecycle'], null, array(), array() );
+	$assert( is_wp_error( $binding_preflight ) && $binding_preflight_case['code'] === $binding_preflight->get_error_code() && $inserts_before_binding_preflight === $GLOBALS['ssi_plan_insert_calls'], $case_name . ' runtime bindings reject before companion, dependency, provider, or WordPress mutation' );
+}
 
 $form_declaration_id                       = 'form-topology-runtime';
 $topology_form                             = array(

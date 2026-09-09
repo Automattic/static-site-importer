@@ -12,6 +12,33 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class Static_Site_Importer_Receipt_Projection {
+	/** Project compiler gap rows into stable materialization diagnostics. */
+	public static function project_gutenberg_gaps( array $gaps, string $materialization_status = 'not_materialized' ): array {
+		$projected = array();
+		foreach ( $gaps as $index => $gap ) {
+			if ( ! is_array( $gap ) ) {
+				continue;
+			}
+			$row = array(
+				'id'                     => isset( $gap['id'] ) && is_scalar( $gap['id'] ) ? (string) $gap['id'] : 'gutenberg-gap-' . ( $index + 1 ),
+				'type'                   => 'gutenberg_gap',
+				'code'                   => 'gutenberg_gap',
+				'materialization_status' => $materialization_status,
+			);
+			foreach ( array( 'block_name', 'source_path', 'path', 'message', 'reason_code' ) as $field ) {
+				if ( isset( $gap[ $field ] ) && is_scalar( $gap[ $field ] ) ) {
+					$row[ $field ] = (string) $gap[ $field ];
+				}
+			}
+			if ( isset( $gap['references'] ) && is_array( $gap['references'] ) ) {
+				$row['references'] = $gap['references'];
+			}
+			$projected[] = $row;
+		}
+
+		return $projected;
+	}
+
 	/** Compose the report and source-of-truth manifest before reconciliation. */
 	public static function compose( array $receipt, array $args, array $lifecycle, array $dependencies, array $entities, string $import_run_id, array $transformer_provenance, array $build ): array {
 		$plan        = $receipt['plan'];
