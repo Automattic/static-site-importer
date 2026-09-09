@@ -482,6 +482,32 @@ or a reviewed demotion back to `fixtures/websites/`.
 
 ## Generic Invocation
 
+## Existing Runtime Review
+
+`npm run review:existing-runtime -- ...` reviews one explicitly supplied running
+WordPress candidate. It does not create a fixture, invoke Homeboy or WP Codebox,
+or modify the supplied candidate post. The required Studio authentication provider
+is named rather than inferred; its auto-login URL is never written to artifacts.
+
+```bash
+npm run review:existing-runtime -- \
+  --source-origin https://example.com \
+  --candidate-origin http://localhost:8886 \
+  --route / \
+  --post-id 42 \
+  --post-type pages \
+  --auth-provider studio-auto-login \
+  --output-directory /tmp/ssi-existing-runtime-review
+```
+
+The result records the supplied origins, route, candidate post target, desktop and
+mobile source/candidate/diff screenshots and pixel metrics, and real Gutenberg
+`wp.blocks.validateBlock` results for persisted candidate content. It creates a
+separate draft solely for edit/save/reload validation and force-deletes that draft
+in `finally`, including after a failed review attempt. Any nonzero pixel mismatch
+or screenshot dimension mismatch is an honest visual-parity failure; editor and
+draft evidence is still retained for the same run.
+
 The workload composes these generic surfaces:
 
 - Homeboy rig package discovery and `bench_workloads.nodejs` registration.
