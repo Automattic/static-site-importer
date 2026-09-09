@@ -485,9 +485,11 @@ or a reviewed demotion back to `fixtures/websites/`.
 ## Existing Runtime Review
 
 `npm run review:existing-runtime -- ...` reviews one explicitly supplied running
-WordPress candidate. It does not create a fixture, invoke Homeboy or WP Codebox,
+WordPress candidate. It is a thin Playwright adapter over the matrix's shared PNG
+comparison primitive; it does not create a fixture, invoke Homeboy or WP Codebox,
 or modify the supplied candidate post. The required Studio authentication provider
-is named rather than inferred; its auto-login URL is never written to artifacts.
+and editor user ID are named rather than inferred; credential-bearing origins and
+auto-login URLs are never written to artifacts.
 
 ```bash
 npm run review:existing-runtime -- \
@@ -496,17 +498,19 @@ npm run review:existing-runtime -- \
   --route / \
   --post-id 42 \
   --post-type pages \
+  --editor-id 7 \
   --auth-provider studio-auto-login \
   --output-directory /tmp/ssi-existing-runtime-review
 ```
 
 The result records the supplied origins, route, candidate post target, desktop and
 mobile source/candidate/diff screenshots and pixel metrics, and real Gutenberg
-`wp.blocks.validateBlock` results for persisted candidate content. It creates a
-separate draft solely for edit/save/reload validation and force-deletes that draft
-in `finally`, including after a failed review attempt. Any nonzero pixel mismatch
-or screenshot dimension mismatch is an honest visual-parity failure; editor and
-draft evidence is still retained for the same run.
+`wp.blocks.validateBlock` results for REST-fetched persisted candidate content.
+It identifies the browser provider as Playwright, not WP Codebox. It creates a
+separate draft solely for edit/save/reload validation, verifies the reloaded REST
+content contains its marker, force-deletes and verifies deletion in `finally`, and
+then verifies the target content hash is unchanged. Any lifecycle cleanup failure,
+nonzero pixel mismatch, or screenshot dimension mismatch fails the review.
 
 The workload composes these generic surfaces:
 
