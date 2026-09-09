@@ -1230,7 +1230,7 @@ $assert( ! empty( $typed_plan_writes ) && array() === array_filter( $typed_plan_
 $projection_path = $GLOBALS['ssi_plan_root'] . '/large-invalid-binary-report.json';
 $projection_payload = array( 'schema' => 'static-site-importer/import-report/v1', 'materialization_receipt' => $typed_font_receipt );
 $projection_receipt = $typed_font_receipt;
-$write_projection = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'write_plan_projection' );
+$write_projection = new ReflectionMethod( Static_Site_Importer_Journaled_Report_Writer::class, 'write' );
 // The same test file can compare the immutable pre-extraction baseline.
 $document_metadata_projection = class_exists( 'Static_Site_Importer_Receipt_Projection' )
 	? new ReflectionMethod( Static_Site_Importer_Receipt_Projection::class, 'document_metadata' )
@@ -1277,6 +1277,27 @@ $json_compatibility_path = $GLOBALS['ssi_plan_root'] . '/json-compatibility.json
 $json_compatibility_receipt = array();
 $write_projection->invokeArgs( null, array( $json_compatibility_path, $json_compatibility_payload, &$json_compatibility_receipt ) );
 $assert( (string) wp_json_encode( $json_compatibility_payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) . "\n" === file_get_contents( $json_compatibility_path ), 'streamed public JSON matches historical WordPress encoding for Unicode, quotes, slashes, and control characters' );
+$failed_projection_path = $GLOBALS['ssi_plan_root'] . '/failed-projection-destination';
+mkdir( $failed_projection_path, 0777, true );
+$failed_projection_receipt = array( 'transaction' => (object) array( 'state' => array( 'rollback' => array( 'files' => array() ) ) ) );
+set_error_handler( static fn(): bool => true );
+try {
+	Static_Site_Importer_Journaled_Report_Writer::write( $failed_projection_path, array( 'status' => 'failed' ), $failed_projection_receipt );
+} catch ( RuntimeException $error ) {
+	$failed_projection_error = $error;
+} finally {
+	restore_error_handler();
+}
+$assert( isset( $failed_projection_error ) && 'Failed to write a preflighted import artifact.' === $failed_projection_error->getMessage() && is_dir( $failed_projection_path ) && array() === glob( $GLOBALS['ssi_plan_root'] . '/.ssi-projection-*' ) && array( 'exists' => false ) === ( $failed_projection_receipt['transaction']->state['rollback']['files'][ $failed_projection_path ] ?? null ), 'journaled report publication failure preserves its destination, cleans its temporary file, and records the target before writing' );
+$encoding_failure_path = $GLOBALS['ssi_plan_root'] . '/encoding-failure.json';
+file_put_contents( $encoding_failure_path, 'previous report bytes' );
+$encoding_failure_receipt = array( 'transaction' => (object) array( 'state' => array( 'rollback' => array( 'files' => array() ) ) ) );
+try {
+	Static_Site_Importer_Journaled_Report_Writer::write( $encoding_failure_path, array( 'written_first' => 'partial temporary bytes', 'unencodable' => NAN ), $encoding_failure_receipt );
+} catch ( RuntimeException $error ) {
+	$encoding_failure_error = $error;
+}
+$assert( isset( $encoding_failure_error ) && 'Failed to write a preflighted import artifact.' === $encoding_failure_error->getMessage() && 'previous report bytes' === file_get_contents( $encoding_failure_path ) && array() === glob( $GLOBALS['ssi_plan_root'] . '/.ssi-projection-*' ) && 'previous report bytes' === ( $encoding_failure_receipt['transaction']->state['rollback']['files'][ $encoding_failure_path ]['content'] ?? null ), 'partial JSON encoding failure retains prior destination bytes, journals them, and removes temporary output' );
 $deferred_font_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$font_plan,
 	array(
@@ -1293,7 +1314,7 @@ $deferred_font_receipt['plan']['assets'][] = array(
 );
 $GLOBALS['ssi_plan_json_array_calls'] = 0;
 $GLOBALS['ssi_plan_count_aggregate_encodes'] = true;
-$production_result = $write_projection->getDeclaringClass()->getMethod( 'public_result_from_wordpress_site_plan_receipt' )->invoke(
+$production_result = ( new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'public_result_from_wordpress_site_plan_receipt' ) )->invoke(
 	null,
 	$deferred_font_receipt,
 	array(
