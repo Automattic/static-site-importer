@@ -647,6 +647,68 @@ $providerless_form_report['diagnostics'] = array( $normalized_form_fallback );
 Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $providerless_form_report, array( $providerless_receipt ) );
 $assert( 1 === ( $providerless_form_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $providerless_form_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'form-fallback-requires-provider-resolved-persisted-receipt' );
 
+// BusyBears' captured contract has four source fallbacks without a producer
+// identity. Two have persisted provider receipts; the two declined forms must
+// remain unresolved rather than receiving a synthetic receipt.
+$captured_form_fallbacks = array();
+$captured_form_receipts  = array();
+foreach ( array( 'contact.html', 'contact.html', 'quote.html', 'quote.html' ) as $index => $source_path ) {
+	$fallback = array(
+		'type'        => 'unsupported_html_fallback',
+		'code'        => 'html_form_fallback',
+		'reason_code' => 'html_form_fallback',
+		'source_path' => $source_path,
+		'selector'    => 'form:nth-of-type(' . ( $index + 1 ) . ')',
+		'form'        => array( 'id' => 'captured-form-' . $index ),
+		'controls'    => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email-' . $index ) ),
+	);
+	$captured_form_fallbacks[] = $fallback;
+	if ( 0 === $index || 2 === $index ) {
+		$captured_hash = Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $fallback );
+		$captured_form_receipts[] = array(
+			'schema'                           => 'static-site-importer/quality-resolution-receipt/v1',
+			'status'                           => 'completed',
+			'source_path'                      => $source_path,
+			'fallback_reconciliation_identity' => hash( 'sha256', 'captured-producer-' . $index ),
+			'fallback_hash'                    => $captured_hash,
+			'binding_reconciliation_identity'  => hash( 'sha256', 'captured-binding-' . $index ),
+			'materialized_block_hash'          => hash( 'sha256', 'captured-block-' . $index ),
+			'persisted_fragment_hash'          => hash( 'sha256', 'captured-block-' . $index ),
+			'materialized_content_hash'        => hash( 'sha256', 'captured-page-' . $source_path ),
+			'provider'                         => 'jetpack',
+		);
+	}
+}
+$captured_form_report = Static_Site_Importer_Import_Report::from_array(
+	array(
+		'quality'                 => array( 'fallback_count' => 4 ),
+		'diagnostics'             => $captured_form_fallbacks,
+		'materialization_receipt' => array(
+			'completed' => array(
+				'materialized_pages' => array(
+					'contact.html' => array( 'content_hash' => hash( 'sha256', 'captured-page-contact.html' ) ),
+					'quote.html'   => array( 'content_hash' => hash( 'sha256', 'captured-page-quote.html' ) ),
+				),
+			),
+		),
+	)
+);
+Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $captured_form_report, $captured_form_receipts );
+$captured_resolutions = $captured_form_report['quality_resolutions']['resolutions'] ?? array();
+$assert( 2 === ( $captured_form_report['quality_resolutions']['resolved_by_provider'] ?? 0 ) && 2 === ( $captured_form_report['quality_resolutions']['unresolved_fallback_count'] ?? 0 ) && 'resolved_by_provider' === ( $captured_resolutions[0]['state'] ?? '' ) && 'unresolved' === ( $captured_resolutions[1]['state'] ?? '' ) && 'resolved_by_provider' === ( $captured_resolutions[2]['state'] ?? '' ) && 'unresolved' === ( $captured_resolutions[3]['state'] ?? '' ), 'captured-form-contract-joins-only-persisted-provider-identities' );
+$assert( ( $captured_form_receipts[0]['fallback_reconciliation_identity'] ?? '' ) === ( $captured_resolutions[0]['fallback_reconciliation_identity'] ?? '' ) && ( $captured_form_receipts[1]['fallback_reconciliation_identity'] ?? '' ) === ( $captured_resolutions[2]['fallback_reconciliation_identity'] ?? '' ), 'captured-form-contract-preserves-persisted-producer-identities' );
+$ambiguous_captured_receipt = $captured_form_receipts[0];
+$ambiguous_captured_receipt['fallback_reconciliation_identity'] = hash( 'sha256', 'captured-producer-duplicate' );
+$ambiguous_captured_report = Static_Site_Importer_Import_Report::from_array(
+	array(
+		'quality'                 => array( 'fallback_count' => 1 ),
+		'diagnostics'             => array( $captured_form_fallbacks[0] ),
+		'materialization_receipt' => $captured_form_report['materialization_receipt'],
+	)
+);
+Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $ambiguous_captured_report, array( $captured_form_receipts[0], $ambiguous_captured_receipt ) );
+$assert( 1 === ( $ambiguous_captured_report['quality_resolutions']['unresolved_fallback_count'] ?? 0 ) && 'unresolved' === ( $ambiguous_captured_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'captured-form-contract-rejects-ambiguous-source-hash-identity-join' );
+
 // Producer-owned identities distinguish responsive copies even when their
 // source selector and form metadata are otherwise identical.
 $desktop_form_fallback                            = $normalized_form_fallback;

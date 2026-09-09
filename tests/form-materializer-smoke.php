@@ -489,6 +489,32 @@ namespace {
 	$unrelated_adjacent_phone_popup['controls'][0]['label'] = 'Open service menu';
 	$unrelated_adjacent_phone_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $unrelated_adjacent_phone_popup ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
 	$assert( 'skipped' === ( $unrelated_adjacent_phone_row['status'] ?? '' ) && in_array( 'unsupported_control_unrepresentable', array_column( $unrelated_adjacent_phone_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true ) && ! in_array( 'provider_auxiliary_popup_control', array_column( $unrelated_adjacent_phone_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'adjacent-non-country-popup-before-phone-remains-unrepresented-and-preserved', wp_json_encode( $unrelated_adjacent_phone_row ) );
+	$mobile_phone_form = $phone_popup_form;
+	$mobile_phone_form['fallback_identity'] = str_repeat( 'c', 64 );
+	$mobile_phone_form['controls'] = array(
+		array( 'tag' => 'input', 'type' => 'text', 'name' => 'name', 'label' => 'Name' ),
+		array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ),
+		array( 'tag' => 'input', 'type' => 'text', 'name' => 'company', 'label' => 'Company' ),
+		array( 'tag' => 'button', 'type' => 'button', 'label' => 'Phone. Phone. Select a country code' ),
+		array( 'tag' => 'input', 'type' => 'phone', 'name' => 'phone', 'label' => 'Phone' ),
+		array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+	);
+	$mobile_phone_form['control_topology']['nodes'] = array(
+		array( 'id' => 'control-0', 'kind' => 'control', 'parent' => null, 'order' => 0, 'depth' => 0, 'control' => 0 ),
+		array( 'id' => 'control-1', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 1 ),
+		array( 'id' => 'control-2', 'kind' => 'control', 'parent' => null, 'order' => 2, 'depth' => 0, 'control' => 2 ),
+		array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 3, 'depth' => 0, 'tag' => 'div', 'class' => 'phone-shell' ),
+		array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'span', 'class' => 'country-picker' ),
+		array( 'id' => 'control-3', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'control' => 3 ),
+		array( 'id' => 'control-4', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 1, 'depth' => 1, 'control' => 4 ),
+		array( 'id' => 'control-5', 'kind' => 'control', 'parent' => null, 'order' => 4, 'depth' => 0, 'control' => 5 ),
+	);
+	$mobile_phone_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $mobile_phone_form ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( 'mapped' === ( $mobile_phone_row['status'] ?? '' ) && true === ( $mobile_phone_row['runtime_mapped'] ?? false ) && str_repeat( 'c', 64 ) === ( $mobile_phone_row['fallback_identity'] ?? '' ) && empty( $mobile_phone_row['form_receipt_unaccepted_losses'] ?? array() ) && in_array( 'provider_auxiliary_popup_control', array_column( $mobile_phone_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'mobile-country-selector-without-popup-metadata-materializes-and-retains-fallback-receipt-identity', wp_json_encode( $mobile_phone_row ) );
+	$incompatible_mobile_phone_form = $mobile_phone_form;
+	$incompatible_mobile_phone_form['controls'][3]['aria_haspopup'] = 'tooltip';
+	$incompatible_mobile_phone_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $incompatible_mobile_phone_form ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( 'skipped' === ( $incompatible_mobile_phone_row['status'] ?? '' ) && in_array( 'unsupported_control_unrepresentable', array_column( $incompatible_mobile_phone_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true ), 'explicitly-incompatible-country-popup-before-phone-remains-unrepresented', wp_json_encode( $incompatible_mobile_phone_row ) );
 	$presentation_form = $topology_form;
 	$presentation_role = static function ( array $styles, array $properties, string $selector ): array {
 		return array(
