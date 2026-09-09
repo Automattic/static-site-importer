@@ -9,6 +9,7 @@ use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanRe
 
 require_once __DIR__ . '/class-static-site-importer-entity-compensation.php';
 require_once __DIR__ . '/class-static-site-importer-runtime-entity-binding-validation.php';
+require_once __DIR__ . '/class-static-site-importer-receipt-projection.php';
 
 final class Static_Site_Importer_Prepared_Plan_Application {
 	/**

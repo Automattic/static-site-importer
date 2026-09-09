@@ -322,8 +322,6 @@ require dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-ma
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-fallback-contract.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-build-provenance.php';
-require dirname( __DIR__ ) . '/includes/class-static-site-importer-receipt-projection.php';
-require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-runtime-entity-binding-validation.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
 
@@ -1485,6 +1483,15 @@ $assert( true === $preflight_bindings->invoke( null, $resolved_binding_plan, $re
 $assert( $token_lifecycle === $resolve_binding_manifests->invoke( null, $token_lifecycle, array( 'pages' => $resolved_binding_plan['pages'] ) ), 'plans without resolved runtime declarations retain canonical lifecycle behavior' );
 
 $binding_preflight_cases = array(
+	'overlap' => array(
+		'code' => 'static_site_importer_runtime_binding_claim_conflict',
+		'lifecycle' => array(
+			'entities' => array(
+				'outer' => array( 'adapter' => array(), 'manifest' => array( 'products' => array( array( 'bindings' => array( array( 'source_path' => 'index.html', 'search_block_markup' => '<div><span>nested</span></div>', 'occurrence' => 1 ) ) ) ) ) ),
+				'inner' => array( 'adapter' => array(), 'manifest' => array( 'products' => array( array( 'bindings' => array( array( 'source_path' => 'index.html', 'search_block_markup' => '<span>nested</span>', 'occurrence' => 1 ) ) ) ) ) ),
+			),
+		),
+	),
 	'duplicate' => array(
 		'code' => 'static_site_importer_runtime_binding_claim_conflict',
 		'lifecycle' => array(
@@ -1515,6 +1522,9 @@ foreach ( $binding_preflight_cases as $case_name => $binding_preflight_case ) {
 	);
 	if ( 'protected' === $case_name ) {
 		$case_prepared['resolved']['pages'][0]['skip_materialization'] = true;
+	}
+	if ( 'overlap' === $case_name ) {
+		$case_prepared['resolved']['pages'][0]['resolved_block_markup'] = '<div><span>nested</span></div>';
 	}
 	$inserts_before_binding_preflight = $GLOBALS['ssi_plan_insert_calls'];
 	$binding_preflight = Static_Site_Importer_Prepared_Plan_Application::materialize( $case_prepared, $binding_preflight_case['lifecycle'], null, array(), array() );

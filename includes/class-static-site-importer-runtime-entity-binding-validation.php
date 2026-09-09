@@ -17,7 +17,7 @@ final class Static_Site_Importer_Runtime_Entity_Binding_Validation {
 	/** Validate every classic source identity before dependencies or seeders run. */
 	public static function preflight_classic_runtime_entity_bindings( array $projection, array $lifecycle, array $args ) {
 		$bindings = array();
-		$claims = array();
+		$claims   = array();
 		foreach ( $lifecycle['entities'] as $declaration_id => $prepared ) {
 			$waiver_arg = (string) ( $prepared['adapter']['waiver_arg'] ?? '' );
 			if ( '' !== $waiver_arg && ! empty( $args[ $waiver_arg ] ) ) {
@@ -27,11 +27,11 @@ final class Static_Site_Importer_Runtime_Entity_Binding_Validation {
 				return new WP_Error( 'static_site_importer_classic_provider_render_unavailable', 'Classic provider entity lacks an adapter-owned server render callback.', array( 'declaration_id' => $declaration_id ) );
 			}
 			$manifest = is_array( $prepared['manifest'] ?? null ) ? $prepared['manifest'] : array();
-			$key = isset( $manifest['products'] ) ? 'products' : 'forms';
+			$key      = isset( $manifest['products'] ) ? 'products' : 'forms';
 			foreach ( $manifest[ $key ] ?? array() as $entity ) {
 				if ( ! is_array( $entity ) ) {
 					continue; }
-				$source = (string) ( $entity['source_path'] ?? '' );
+				$source   = (string) ( $entity['source_path'] ?? '' );
 				$selector = (string) ( $entity['selector'] ?? '' );
 				if ( '' === $source || '' === $selector ) {
 					return new WP_Error( 'static_site_importer_classic_html_binding_invalid', 'Classic provider entity lacks a canonical leaf source selector.' ); }
@@ -46,7 +46,7 @@ final class Static_Site_Importer_Runtime_Entity_Binding_Validation {
 						)
 					); }
 				$claims[ $claim ] = true;
-				$bindings[] = array(
+				$bindings[]       = array(
 					'source_path' => $source,
 					'selector'    => $selector,
 					'occurrence'  => 1,
@@ -91,7 +91,7 @@ final class Static_Site_Importer_Runtime_Entity_Binding_Validation {
 						);
 					}
 					$claims[ $claim ] = true;
-					$page = $pages[ $binding['source_path'] ] ?? array();
+					$page             = $pages[ $binding['source_path'] ] ?? array();
 					if ( ! empty( $page['skip_materialization'] ) ) {
 						return new WP_Error(
 							'static_site_importer_runtime_binding_target_protected',
@@ -113,7 +113,7 @@ final class Static_Site_Importer_Runtime_Entity_Binding_Validation {
 							)
 						);
 					}
-					$content = (string) $page['resolved_block_markup'];
+					$content  = (string) $page['resolved_block_markup'];
 					$position = 0;
 					for ( $occurrence = 0; $occurrence < (int) $binding['occurrence']; ++$occurrence ) {
 						$found = strpos( $content, $binding['search_block_markup'], $position );
