@@ -756,6 +756,7 @@ $classic_plan       = ( new ArtifactCompiler() )->compile( $classic_artifact )->
 $classic_projection = Static_Site_Importer_Classic_Theme_Projection::build( $classic_artifact, $classic_plan );
 $assert( ! is_wp_error( $classic_projection ), 'normalized artifact produces a render-neutral SSI classic projection without block reverse conversion' );
 $classic_binding_preflight_inserts = $GLOBALS['ssi_plan_insert_calls'];
+$classic_binding_preflight_callbacks = 0;
 $classic_binding_preflight = Static_Site_Importer_Prepared_Plan_Application::materialize(
 	array(
 		'args' => array(
@@ -766,15 +767,15 @@ $classic_binding_preflight = Static_Site_Importer_Prepared_Plan_Application::mat
 	),
 	array(
 		'entities' => array(
-			'first' => array( 'adapter' => array( 'classic_binding_callback' => static fn(): string => '' ), 'manifest' => array( 'products' => array( array( 'source_path' => 'index.html', 'selector' => 'h1' ) ) ) ),
-			'second' => array( 'adapter' => array( 'classic_binding_callback' => static fn(): string => '' ), 'manifest' => array( 'products' => array( array( 'source_path' => 'index.html', 'selector' => 'h1' ) ) ) ),
+			'first' => array( 'adapter' => array( 'classic_binding_callback' => static fn(): string => '', 'materializer' => static function () use ( &$classic_binding_preflight_callbacks ): array { ++$classic_binding_preflight_callbacks; return array(); } ), 'manifest' => array( 'products' => array( array( 'source_path' => 'index.html', 'selector' => 'h1' ) ) ) ),
+			'second' => array( 'adapter' => array( 'classic_binding_callback' => static fn(): string => '', 'materializer' => static function () use ( &$classic_binding_preflight_callbacks ): array { ++$classic_binding_preflight_callbacks; return array(); } ), 'manifest' => array( 'products' => array( array( 'source_path' => 'index.html', 'selector' => 'h1' ) ) ) ),
 		),
 	),
 	null,
 	array(),
 	array()
 );
-$assert( is_wp_error( $classic_binding_preflight ) && 'static_site_importer_classic_html_binding_duplicate' === $classic_binding_preflight->get_error_code() && $classic_binding_preflight_inserts === $GLOBALS['ssi_plan_insert_calls'], 'invalid classic bindings reject before companion, dependency, provider, or WordPress mutation' );
+$assert( is_wp_error( $classic_binding_preflight ) && 'static_site_importer_classic_html_binding_duplicate' === $classic_binding_preflight->get_error_code() && 0 === $classic_binding_preflight_callbacks && $classic_binding_preflight_inserts === $GLOBALS['ssi_plan_insert_calls'], 'invalid classic bindings reject before companion, dependency, provider, or WordPress mutation' );
 $woo_late_failure_lifecycle = array(
 	'dependencies' => array(),
 	'entities'     => array(
@@ -1503,6 +1504,11 @@ $binding_preflight_cases = array(
 	),
 );
 foreach ( $binding_preflight_cases as $case_name => $binding_preflight_case ) {
+	$binding_preflight_callbacks = 0;
+	foreach ( $binding_preflight_case['lifecycle']['entities'] as &$binding_preflight_entity ) {
+		$binding_preflight_entity['adapter']['materializer'] = static function () use ( &$binding_preflight_callbacks ): array { ++$binding_preflight_callbacks; return array(); };
+	}
+	unset( $binding_preflight_entity );
 	$case_prepared = array(
 		'args' => array(),
 		'resolved' => $resolved_binding_plan,
@@ -1512,7 +1518,7 @@ foreach ( $binding_preflight_cases as $case_name => $binding_preflight_case ) {
 	}
 	$inserts_before_binding_preflight = $GLOBALS['ssi_plan_insert_calls'];
 	$binding_preflight = Static_Site_Importer_Prepared_Plan_Application::materialize( $case_prepared, $binding_preflight_case['lifecycle'], null, array(), array() );
-	$assert( is_wp_error( $binding_preflight ) && $binding_preflight_case['code'] === $binding_preflight->get_error_code() && $inserts_before_binding_preflight === $GLOBALS['ssi_plan_insert_calls'], $case_name . ' runtime bindings reject before companion, dependency, provider, or WordPress mutation' );
+	$assert( is_wp_error( $binding_preflight ) && $binding_preflight_case['code'] === $binding_preflight->get_error_code() && 0 === $binding_preflight_callbacks && $inserts_before_binding_preflight === $GLOBALS['ssi_plan_insert_calls'], $case_name . ' runtime bindings reject before companion, dependency, provider, or WordPress mutation' );
 }
 
 $form_declaration_id                       = 'form-topology-runtime';
