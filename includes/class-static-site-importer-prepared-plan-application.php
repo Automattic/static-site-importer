@@ -8,6 +8,8 @@
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver;
 
 require_once __DIR__ . '/class-static-site-importer-entity-compensation.php';
+require_once __DIR__ . '/class-static-site-importer-runtime-entity-binding-validation.php';
+require_once __DIR__ . '/class-static-site-importer-receipt-projection.php';
 
 final class Static_Site_Importer_Prepared_Plan_Application {
 	/**
@@ -19,7 +21,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 		$args      = is_array( $prepared['args'] ?? null ) ? $prepared['args'] : array();
 		$lifecycle = Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $lifecycle, is_array( $prepared['resolved'] ?? null ) ? $prepared['resolved'] : array() );
 		$classic   = Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === ( $args['theme_materialization'] ?? null );
-		$preflight = $classic ? Static_Site_Importer_Theme_Generator::preflight_classic_runtime_entity_bindings( $prepared['args']['classic_theme_projection'], $lifecycle, $args ) : Static_Site_Importer_Theme_Generator::preflight_runtime_entity_binding_anchors( $prepared['resolved'] ?? array(), $lifecycle, $args );
+		$preflight = $classic ? Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_classic_runtime_entity_bindings( $prepared['args']['classic_theme_projection'], $lifecycle, $args ) : Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_runtime_entity_binding_anchors( $prepared['resolved'] ?? array(), $lifecycle, $args );
 		if ( is_wp_error( $preflight ) ) {
 			return $preflight;
 		}
@@ -103,7 +105,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 
 		$receipt                                  = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared );
 		$receipt['completed']['companion_plugin'] = $companion;
-		$receipt['extensions']['gutenberg_gaps']  = Static_Site_Importer_Theme_Generator::project_gutenberg_gaps( $gutenberg_gaps, (string) ( $companion['status'] ?? 'not_materialized' ) );
+		$receipt['extensions']['gutenberg_gaps']  = Static_Site_Importer_Receipt_Projection::project_gutenberg_gaps( $gutenberg_gaps, (string) ( $companion['status'] ?? 'not_materialized' ) );
 		$receipt['completed']['runtime_declarations']['dependencies'] = $dependencies;
 		$receipt['completed']['runtime_declarations']['entities']     = $entities;
 		$receipt['runtime_lifecycle']                                 = $lifecycle;

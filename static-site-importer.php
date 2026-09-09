@@ -81,6 +81,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-dependency-manager.php',
 	'class-static-site-importer-entity-materializer-registry.php',
 	'class-static-site-importer-entity-compensation.php',
+	'class-static-site-importer-runtime-entity-binding-validation.php',
 	'class-static-site-importer-form-fallback-contract.php',
 	'class-static-site-importer-asset-reporter.php',
 	'class-static-site-importer-document-metadata-reporter.php',
