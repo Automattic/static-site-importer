@@ -42,20 +42,29 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		$presentation_targets = array();
 		$seen_presentations   = array();
 		foreach ( $map['presentation_targets'] ?? array() as $target ) {
-			if ( ! is_array( $target ) || ! self::has_only_keys( $target, array( 'index', 'control', 'label', 'control_provider' ) ) || ! is_int( $target['index'] ?? null ) || $target['index'] < 0 || $target['index'] >= 128 || isset( $seen_presentations[ $target['index'] ] ) || ( ! isset( $target['control'] ) && ! isset( $target['label'] ) ) || ( isset( $target['control_provider'] ) && ( ! isset( $target['control'] ) || 'jetpack_phone' !== $target['control_provider'] ) ) ) {
+			if ( ! is_array( $target ) || ! is_int( $target['index'] ?? null ) || $target['index'] < 0 || $target['index'] >= 128 || isset( $seen_presentations[ $target['index'] ] ) ) {
 				return array( 'error' => 'provider presentation target map contains an unsafe target.' );
 			}
-			$clean = array( 'index' => $target['index'] );
-			foreach ( array( 'control', 'label' ) as $role ) {
-				if ( isset( $target[ $role ] ) && ( ! is_string( $target[ $role ] ) || ! self::safe_selector( $target[ $role ], $map['scope'] ) ) ) {
-					return array( 'error' => 'provider presentation target map contains an unsafe selector.' );
-				}
-				if ( isset( $target[ $role ] ) ) {
-					$clean[ $role ] = $target[ $role ];
-				}
+			$destinations = $target['destinations'] ?? self::legacy_presentation_destinations( $target );
+			if ( ! self::has_only_keys( $target, array( 'index', 'control', 'label', 'destinations' ) ) || ! is_array( $destinations ) || ! array_is_list( $destinations ) || empty( $destinations ) || count( $destinations ) > 8 ) {
+				return array( 'error' => 'provider presentation target map contains an unsafe target.' );
 			}
-			if ( isset( $target['control_provider'] ) ) {
-				$clean['control_provider'] = $target['control_provider'];
+			$clean = array(
+				'index'        => $target['index'],
+				'destinations' => array(),
+			);
+			foreach ( $destinations as $destination ) {
+				if ( ! is_array( $destination ) || ! self::has_only_keys( $destination, array( 'role', 'selector', 'properties', 'aliases', 'resets', 'priority' ) ) || ! in_array( $destination['priority'] ?? '', array( '', 'important' ), true ) || ! in_array( $destination['role'] ?? null, array( 'control', 'label' ), true ) || ! is_string( $destination['selector'] ?? null ) || ! self::safe_selector( $destination['selector'], $map['scope'] ) || ! is_array( $destination['properties'] ?? null ) || ! array_is_list( $destination['properties'] ) || ( empty( $destination['properties'] ) && empty( $destination['resets'] ) ) || count( $destination['properties'] ) > 64 || array_diff( $destination['properties'], array_keys( self::presentation_property_map() ) ) || ! self::safe_presentation_aliases( $destination['aliases'] ?? array(), $destination['properties'] ) || ! self::safe_presentation_resets( $destination['resets'] ?? array() ) ) {
+					return array( 'error' => 'provider presentation target map contains an unsafe destination.' );
+				}
+				$clean['destinations'][] = array_filter( array(
+					'role'       => $destination['role'],
+					'selector'   => $destination['selector'],
+					'properties' => array_values( array_unique( $destination['properties'] ) ),
+					'aliases'    => empty( $destination['aliases'] ) ? null : $destination['aliases'],
+					'resets'     => empty( $destination['resets'] ) ? null : $destination['resets'],
+					'priority'   => $destination['priority'] ?? null,
+				), static fn( $value ): bool => null !== $value );
 			}
 			$seen_presentations[ $target['index'] ] = true;
 			$presentation_targets[]                 = $clean;
@@ -145,30 +154,23 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				if ( ! isset( $control[ $role ]['styles'] ) || ! is_array( $control[ $role ]['styles'] ) ) {
 					continue;
 				}
-				if ( ! is_string( $target[ $role ] ?? null ) ) {
+				$destinations = array_filter( $target['destinations'] ?? array(), static fn( array $destination ): bool => $role === $destination['role'] );
+				if ( empty( $destinations ) ) {
 					$losses[] = self::presentation_loss( 'provider_structure_mismatch', $control['index'], $role );
 					continue;
 				}
-				$declarations = self::presentation_declarations( $control[ $role ]['styles'], $control['index'], $role, $losses, $target[ $role . '_provider' ] ?? null );
-				if ( ! empty( $declarations ) ) {
-					$rules[]      = self::authoritative_presentation_selector( $target[ $role ] ) . '{' . implode( ';', $declarations ) . '}';
-					$operations[] = self::presentation_operation( $control['index'], $role, $target[ $role ], false );
-				}
+				self::compile_presentation_destinations( $destinations, $control[ $role ]['styles'], $control['index'], $role, null, $rules, $operations, $losses );
 			}
 		}
 		foreach ( $presentation_graph['variants'] ?? array() as $variant ) {
-			$index  = $variant['index'] ?? null;
-			$role   = $variant['role'] ?? null;
-			$target = is_int( $index ) && is_string( $role ) ? ( $presentation_targets[ $index ][ $role ] ?? null ) : null;
-			if ( ! is_int( $index ) || ! in_array( $role, array( 'control', 'label' ), true ) || ! is_string( $target ) || ! self::safe_condition( $variant['condition'] ?? null ) || ! is_array( $variant['style_patch'] ?? null ) ) {
+			$index        = $variant['index'] ?? null;
+			$role         = $variant['role'] ?? null;
+			$destinations = is_int( $index ) && is_string( $role ) ? array_filter( $presentation_targets[ $index ]['destinations'] ?? array(), static fn( array $destination ): bool => $role === $destination['role'] ) : array();
+			if ( ! is_int( $index ) || ! in_array( $role, array( 'control', 'label' ), true ) || empty( $destinations ) || ! self::safe_condition( $variant['condition'] ?? null ) || ! is_array( $variant['style_patch'] ?? null ) ) {
 				$losses[] = self::presentation_loss( 'responsive_layout_ownership', is_int( $index ) ? $index : 0, is_string( $role ) ? $role : 'control' );
 				continue;
 			}
-			$declarations = self::presentation_declarations( $variant['style_patch'], $index, $role, $losses, $presentation_targets[ $index ][ $role . '_provider' ] ?? null );
-			if ( ! empty( $declarations ) ) {
-				$rules[]      = self::conditional_rule( $variant['condition'], self::authoritative_presentation_selector( $target ) . '{' . implode( ';', $declarations ) . '}' );
-				$operations[] = self::presentation_operation( $index, $role, $target, true );
-			}
+			self::compile_presentation_destinations( $destinations, $variant['style_patch'], $index, $role, $variant['condition'], $rules, $operations, $losses );
 		}
 		if ( empty( $losses ) ) {
 			$rules[]      = $validated_map['scope'] . '{position:relative;z-index:1;pointer-events:auto}';
@@ -221,7 +223,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			return null;
 		}
 		$body = substr( $css, strlen( $header[0] ) );
-		if ( ! str_ends_with( $body, "\n" ) || str_contains( $body, 'url(' ) || str_contains( $body, '@import' ) || str_contains( $body, '!important' ) ) {
+		if ( ! str_ends_with( $body, "\n" ) || str_contains( $body, 'url(' ) || str_contains( $body, '@import' ) ) {
 			return null;
 		}
 		foreach ( array_filter( explode( "\n", trim( $body ) ) ) as $rule ) {
@@ -236,12 +238,19 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( preg_match( '/^@(?:media|container) (\((?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)\))\{(.+)\}$/D', $rule, $matches ) ) {
 			return self::safe_compiled_rule( $matches[2] );
 		}
-		if ( ! preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-wrap)?(?: > \.wp-block-button__link)?)?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
+		if ( ! preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link)?)?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
 		$layout_allowed       = array( 'display', 'width', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'position', 'z-index', 'pointer-events' );
-		$presentation_allowed = array_merge( array_values( self::presentation_property_map() ), array_values( self::jetpack_phone_presentation_property_map() ) );
+		$presentation_allowed = array_merge( array_values( self::presentation_property_map() ), array( 'flex' ) );
 		foreach ( explode( ';', $matches[2] ) as $declaration ) {
+			$declaration = preg_replace( '/!important$/D', '', $declaration ) ?? $declaration;
+			if ( preg_match( '/^(--[a-z][a-z0-9-]{0,79}):(.+)$/D', $declaration, $alias ) ) {
+				if ( ! self::safe_presentation_value( $alias[2] ) ) {
+					return false;
+				}
+				continue;
+			}
 			if ( ! preg_match( '/^([a-z-]+):(.+)$/D', $declaration, $parts ) || ( ! in_array( $parts[1], $layout_allowed, true ) && ! in_array( $parts[1], $presentation_allowed, true ) ) || ( in_array( $parts[1], $presentation_allowed, true ) ? ! self::safe_presentation_value( $parts[2] ) : ! self::safe_value( str_replace( array( 'grid-template-columns', 'grid-template-rows', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area' ), array( 'columns', 'rows', 'direction', 'wrap', 'align_items', 'align_content', 'justify_content', 'align_self', 'justify_self', 'flex_grow', 'flex_shrink', 'flex_basis', 'column', 'row', 'area' ), $parts[1] ), $parts[2] ) ) ) {
 				return false;
 			}
@@ -254,7 +263,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		// own position, so it carries the form box's placement inside the page.
 		// A generated node hook resolves to the control, and its provider `-wrap` copy
 		// resolves to that control's field shell.
-		return (bool) preg_match( '/^' . preg_quote( $scope, '/' ) . '(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-wrap)?(?: > \.wp-block-button__link)?)?$/D', $selector );
+		return (bool) preg_match( '/^' . preg_quote( $scope, '/' ) . '(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link)?)?$/D', $selector );
 	}
 	private static function safe_condition( mixed $condition ): bool {
 		if ( ! is_array( $condition ) ) {
@@ -362,7 +371,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		return array_combine( $keys, array_map( static fn( string $key ): string => str_replace( '_', '-', $key ), $keys ) );
 	}
 
-	private static function presentation_declarations( array $styles, int $index, string $role, array &$losses, mixed $provider = null ): array {
+	/** Adapter maps may select only these captured presentation properties. */
+	public static function presentation_property_keys(): array {
+		return self::presentation_property_map();
+	}
+
+	private static function presentation_declarations( array $styles, int $index, string $role, array &$losses, array $properties = array(), array $aliases = array() ): array {
 		$map          = self::presentation_property_map();
 		$declarations = array();
 		foreach ( $styles as $key => $value ) {
@@ -370,28 +384,78 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				$losses[] = self::presentation_loss( 'unsafe_presentation_value', $index, $role );
 				continue;
 			}
+			if ( ! in_array( $key, $properties, true ) ) {
+				continue;
+			}
 			$declarations[] = $map[ $key ] . ':' . $value;
-			if ( 'jetpack_phone' === $provider && isset( self::jetpack_phone_presentation_property_map()[ $key ] ) ) {
-				$declarations[] = self::jetpack_phone_presentation_property_map()[ $key ] . ':' . $value;
+			if ( isset( $aliases[ $key ] ) ) {
+				$declarations[] = $aliases[ $key ] . ':' . $value;
 			}
 		}
 		return $declarations;
 	}
 
-	/** Jetpack's phone shell consumes these inherited provider variables. */
-	private static function jetpack_phone_presentation_property_map(): array {
-		return array(
-			'background_color' => '--jetpack--contact-form--input-background',
-			'border_color'     => '--jetpack--contact-form--border-color',
-			'border_style'     => '--jetpack--contact-form--border-style',
-			'border_width'     => '--jetpack--contact-form--border-size',
-			'border_radius'    => '--jetpack--contact-form--border-radius',
-			'color'            => '--jetpack--contact-form--text-color',
-			'font_family'      => '--jetpack--contact-form--font-family',
-			'font_size'        => '--jetpack--contact-form--font-size',
-			'line_height'      => '--jetpack--contact-form--line-height',
-			'padding'          => '--jetpack--contact-form--input-padding',
-		);
+	/** Compile one adapter-owned destination without knowing its provider or markup. */
+	private static function compile_presentation_destinations( array $destinations, array $styles, int $index, string $role, ?array $condition, array &$rules, array &$operations, array &$losses ): void {
+		$represented = array();
+		foreach ( $destinations as $destination ) {
+			$represented  = array_merge( $represented, $destination['properties'] );
+			$declarations = self::presentation_declarations( $styles, $index, $role, $losses, $destination['properties'], $destination['aliases'] ?? array() );
+			foreach ( $destination['resets'] ?? array() as $property => $value ) {
+				$declarations[] = $property . ':' . $value;
+			}
+			if ( empty( $declarations ) ) {
+				continue;
+			}
+			if ( 'important' === ( $destination['priority'] ?? '' ) ) {
+				$declarations = array_map( static fn( string $declaration ): string => $declaration . '!important', $declarations );
+			}
+			$rule         = self::authoritative_presentation_selector( $destination['selector'] ) . '{' . implode( ';', $declarations ) . '}';
+			$rules[]      = null === $condition ? $rule : self::conditional_rule( $condition, $rule );
+			$operations[] = self::presentation_operation( $index, $role, $destination['selector'], null !== $condition );
+		}
+		if ( array_diff( array_keys( $styles ), $represented ) ) {
+			$losses[] = self::presentation_loss( 'provider_structure_mismatch', $index, $role );
+		}
+	}
+
+	/** Normalize maps produced before destination maps were introduced. */
+	private static function legacy_presentation_destinations( array $target ): array {
+		$destinations = array();
+		foreach ( array( 'control', 'label' ) as $role ) {
+			if ( is_string( $target[ $role ] ?? null ) ) {
+				$destinations[] = array(
+					'role'       => $role,
+					'selector'   => $target[ $role ],
+					'properties' => array_keys( self::presentation_property_map() ),
+				);
+			}
+		}
+		return $destinations;
+	}
+
+	private static function safe_presentation_aliases( mixed $aliases, array $properties ): bool {
+		if ( ! is_array( $aliases ) || ! self::has_only_keys( $aliases, $properties ) ) {
+			return false;
+		}
+		foreach ( $aliases as $property => $alias ) {
+			if ( ! is_string( $property ) || ! is_string( $alias ) || ! preg_match( '/^--[a-z][a-z0-9-]{0,79}$/D', $alias ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static function safe_presentation_resets( mixed $resets ): bool {
+		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'padding', 'border', 'background' ) ) ) {
+			return false;
+		}
+		foreach ( $resets as $property => $value ) {
+			if ( ! is_string( $property ) || ! self::safe_presentation_value( $value ) ) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private static function authoritative_presentation_selector( string $selector ): string {

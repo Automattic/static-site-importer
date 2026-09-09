@@ -87,16 +87,32 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	 * readable because they have already been persisted in imported content.
 	 */
 	public static function project_wrapper_classes( string $html ): string {
-		$wrapper_layers          = array();
-		$provider_layout_classes = array();
-		$projected               = preg_replace_callback(
+		$wrapper_layers            = array();
+		$prefix_layers             = array();
+		$provider_layout_classes   = array();
+		$phone_destination_classes = array();
+		$projected                 = preg_replace_callback(
 			'/\bclass=(["\'])(.*?)\1/s',
-			static function ( array $matches ) use ( &$wrapper_layers, &$provider_layout_classes ): string {
-				$classes    = preg_split( '/\s+/', trim( $matches[2] ) );
-				$classes    = false === $classes ? array() : $classes;
-				$is_wrapper = (bool) array_filter( $classes, static fn ( string $class_name ): bool => 1 === preg_match( '/^grunion-field-[A-Za-z0-9_-]+-wrap$/D', $class_name ) );
-				$output     = array();
+			static function ( array $matches ) use ( &$wrapper_layers, &$prefix_layers, &$provider_layout_classes, &$phone_destination_classes ): string {
+				$classes        = preg_split( '/\s+/', trim( $matches[2] ) );
+				$classes        = false === $classes ? array() : $classes;
+				$is_wrapper     = (bool) array_filter( $classes, static fn ( string $class_name ): bool => 1 === preg_match( '/^grunion-field-[A-Za-z0-9_-]+-wrap$/D', $class_name ) );
+				$is_phone_shell = in_array( 'jetpack-field__input-phone-wrapper', $classes, true );
+				$output         = array();
 				foreach ( $classes as $class_name ) {
+					if ( preg_match( '/^ssi-source-wrapper-prefix-([0-9]{1,2})--([A-Za-z_][A-Za-z0-9_-]{0,79})-wrap$/D', $class_name, $marker ) ) {
+						if ( $is_wrapper ) {
+							$prefix_layers[ (int) $marker[1] ][] = $marker[2];
+						}
+						continue;
+					}
+					if ( preg_match( '/^ssi-source-wrapper-prefix-[0-9]{1,2}--[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) {
+						continue;
+					}
+					if ( $is_phone_shell && 1 === preg_match( '/^ssi-node-[a-f0-9]{12}-destination-(?:primary|carrier)$/D', $class_name ) ) {
+						$phone_destination_classes[] = $class_name;
+						continue;
+					}
 					if ( $is_wrapper && 1 === preg_match( '/^ssi-node-[a-f0-9]{12}-wrap$/D', $class_name ) ) {
 						$provider_layout_classes[] = $class_name;
 						continue;
@@ -128,7 +144,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			},
 			$html
 		);
-		if ( ! is_string( $projected ) || empty( $wrapper_layers ) ) {
+		if ( ! is_string( $projected ) || ( empty( $wrapper_layers ) && empty( $phone_destination_classes ) ) ) {
 			return is_string( $projected ) ? self::project_semantic_wrappers( $projected ) : $html;
 		}
 
@@ -144,18 +160,63 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			$close = '</div>' . $close;
 		}
 		// A phone field's country search precedes its value input in Jetpack's HTML.
-		// Target the telephone control explicitly, leaving auxiliary controls intact.
+		// Target Jetpack's actual telephone control, leaving auxiliary and hidden inputs intact.
 		$is_phone = (bool) preg_match( '/\bclass=(["\'])[^"\']*\bgrunion-field-(?:phone|telephone)-wrap\b[^"\']*\1/i', $projected );
 		$pattern  = $is_phone
 			? '/<input\b(?=[^>]*\btype\s*=\s*(["\'])tel\1)[^>]*>/is'
 			: '/<input\b[^>]*>|<textarea\b[^>]*>.*?<\/textarea>|<select\b[^>]*>.*?<\/select>/is';
 		$wrapped  = preg_replace_callback(
 			$pattern,
-			static fn ( array $control_match ): string => $open . $control_match[0] . $close,
+			static function ( array $control_match ) use ( $open, $close, $is_phone, $phone_destination_classes ): string {
+				if ( ! $is_phone || empty( $phone_destination_classes ) ) {
+					return $open . $control_match[0] . $close;
+				}
+				$value_classes   = implode( ' ', array_filter( $phone_destination_classes, static fn( string $class_name ): bool => str_ends_with( $class_name, '-destination-primary' ) ) );
+				$carrier_classes = implode( ' ', array_filter( $phone_destination_classes, static fn( string $class_name ): bool => str_ends_with( $class_name, '-destination-carrier' ) ) );
+				if ( '' === $value_classes ) {
+					return $open . $control_match[0] . $close;
+				}
+				$input = preg_replace( '/\bclass=(["\'])(.*?)\1/is', 'class=$1$2 ' . $value_classes . '$1', $control_match[0], 1 ) ?? $control_match[0];
+				if ( '' !== $carrier_classes && '' !== $open ) {
+					$carrier_open = preg_replace( '/\bclass=(["\'])(.*?)\1/is', 'class=$1$2 ' . $carrier_classes . '$1', $open, 1 ) ?? $open;
+					return $carrier_open . $input . $close;
+				}
+				if ( '' !== $carrier_classes ) {
+					return '<div class="' . $carrier_classes . '">' . $input . '</div>';
+				}
+				return $open . $input . $close;
+			},
 			$projected,
 			1
 		);
-		return self::project_semantic_wrappers( is_string( $wrapped ) ? $wrapped : $projected );
+		$wrapped  = is_string( $wrapped ) ? $wrapped : $projected;
+		if ( ! empty( $prefix_layers ) ) {
+			$document        = new \DOMDocument();
+			$previous_errors = libxml_use_internal_errors( true );
+			$loaded          = $document->loadHTML( '<?xml encoding="utf-8" ?><body>' . $wrapped . '</body>', LIBXML_NONET );
+			libxml_clear_errors();
+			libxml_use_internal_errors( $previous_errors );
+			if ( $loaded ) {
+				$xpath    = new \DOMXPath( $document );
+				$prefixes = $xpath->query( '//*[contains(concat(" ", normalize-space(@class), " "), " jetpack-field__input-prefix ")]' );
+				$prefix   = false === $prefixes ? null : $prefixes->item( 0 );
+				if ( $prefix instanceof \DOMElement && null !== $prefix->parentNode ) {
+					ksort( $prefix_layers );
+					foreach ( $prefix_layers as $classes ) {
+						$layer = $document->createElement( 'div' );
+						$layer->setAttribute( 'class', implode( ' ', array_unique( $classes ) ) );
+						$prefix->parentNode->insertBefore( $layer, $prefix );
+						$layer->appendChild( $prefix );
+					}
+					$body    = $document->getElementsByTagName( 'body' )->item( 0 );
+					$wrapped = '';
+					foreach ( $body->childNodes as $child ) {
+						$wrapped .= $document->saveHTML( $child );
+					}
+				}
+			}
+		}
+		return self::project_semantic_wrappers( $wrapped );
 	}
 
 	/** Restore a bounded source paragraph around a provider-owned field or button. */

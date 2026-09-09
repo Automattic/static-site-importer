@@ -450,16 +450,25 @@ class Static_Site_Importer_Form_Seeder {
 				continue;
 			}
 
-			$field_block = self::field_block_from_control(
+			$phone_destinations = in_array( $type, array( 'phone', 'tel' ), true ) && isset( $presentation_roles[ $control_index ]['control'] ) ? self::phone_presentation_destinations( $scope, $control_index ) : array();
+			$field_block        = self::field_block_from_control(
 				$tag,
 				$type,
 				$control,
-				isset( $presentation_roles[ $control_index ]['control'] ) ? self::presentation_node_class( $scope, $control_index, 'control' ) : '',
+				empty( $phone_destinations ) && isset( $presentation_roles[ $control_index ]['control'] ) ? self::presentation_node_class( $scope, $control_index, 'control' ) : '',
 				isset( $presentation_roles[ $control_index ]['label'] ) ? self::presentation_node_class( $scope, $control_index, 'label' ) : ''
 			);
 			if ( null === $field_block ) {
 				$skipped[] = '' !== $type ? $type : $tag;
 				continue;
+			}
+			if ( ! empty( $phone_destinations ) ) {
+				foreach ( $field_block['innerBlocks'] as &$inner_block ) {
+					if ( 'jetpack/phone-input' === ( $inner_block['name'] ?? '' ) ) {
+						$inner_block['attrs']['className'] = trim( (string) ( $inner_block['attrs']['className'] ?? '' ) . ' ' . implode( ' ', array_column( $phone_destinations, 'class' ) ) );
+					}
+				}
+				unset( $inner_block );
 			}
 			foreach ( $field_block['losses'] ?? array() as $loss ) {
 				$control_attribute_losses[] = $loss + array( 'control_index' => $control_index );
@@ -1065,17 +1074,17 @@ class Static_Site_Importer_Form_Seeder {
 				$variants_by_node[ $variant['node'] ][] = $variant;
 			}
 		}
-		$collect_controls = static function ( array $node ) use ( &$collect_controls, $children, $provider_controls, $phone_popup_targets, $suppressed_controls ): array {
+		$collect_controls = static function ( array $node, bool $include_auxiliary = true ) use ( &$collect_controls, $children, $provider_controls, $phone_popup_targets, $suppressed_controls ): array {
 			if ( 'control' === ( $node['kind'] ?? null ) ) {
 				$control_index = $node['control'] ?? null;
-				if ( is_int( $control_index ) && isset( $phone_popup_targets[ $control_index ] ) && ! isset( $suppressed_controls[ $phone_popup_targets[ $control_index ] ] ) ) {
+				if ( $include_auxiliary && is_int( $control_index ) && isset( $phone_popup_targets[ $control_index ] ) && ! isset( $suppressed_controls[ $phone_popup_targets[ $control_index ] ] ) ) {
 					return array( $phone_popup_targets[ $control_index ] );
 				}
 				return is_int( $control_index ) && ! isset( $provider_controls[ $control_index ] ) && ! isset( $suppressed_controls[ $control_index ] ) ? array( $control_index ) : array();
 			}
 			$controls = array();
 			foreach ( $children[ $node['id'] ?? '' ] ?? array() as $child ) {
-				$controls = array_merge( $controls, $collect_controls( $child ) );
+				$controls = array_merge( $controls, $collect_controls( $child, $include_auxiliary ) );
 			}
 			return array_values( array_unique( $controls ) );
 		};
@@ -1084,7 +1093,13 @@ class Static_Site_Importer_Form_Seeder {
 			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? null ) || ! is_string( $node['id'] ?? null ) ) {
 				continue;
 			}
-			$branch_controls = $collect_controls( $node );
+			// Provider ownership does not imply DOM containment: a prefix's wrappers
+			// must not be restored around the primary value input.
+			$branch_controls = $collect_controls( $node, false );
+			if ( empty( $branch_controls ) ) {
+				$branch_controls          = $collect_controls( $node );
+				$node['destination_role'] = 'prefix';
+			}
 			if ( 1 !== count( $branch_controls ) ) {
 				continue;
 			}
@@ -1129,7 +1144,8 @@ class Static_Site_Importer_Form_Seeder {
 				// runtime rebuilds every deeper box as its own element. Giving each box
 				// its own hook keeps one source element addressable by one target instead
 				// of collapsing a nested chain onto a single element.
-				if ( 0 === $offset ) {
+				$is_primary_wrapper = 'prefix' !== ( $node['destination_role'] ?? '' );
+				if ( 0 === $offset && $is_primary_wrapper ) {
 					$class_names[] = $generated_class;
 				} else {
 					$wrapper_classes[] = $generated_class;
@@ -1147,8 +1163,9 @@ class Static_Site_Importer_Form_Seeder {
 				if ( empty( $wrapper_classes ) ) {
 					$wrapper_classes[] = $generated_class;
 				}
-				$class_names[]                = implode( ' ', array_map( static fn ( string $class_name ): string => 'ssi-source-wrapper-' . $layer . '--' . $class_name, $wrapper_classes ) );
-				$wrapper_hooks[ $node['id'] ] = 0 === $offset ? $generated_class . '-wrap' : $generated_class;
+				$wrapper_role                 = $is_primary_wrapper ? '' : 'prefix-';
+				$class_names[]                = implode( ' ', array_map( static fn ( string $class_name ): string => 'ssi-source-wrapper-' . $wrapper_role . $layer . '--' . $class_name, $wrapper_classes ) );
+				$wrapper_hooks[ $node['id'] ] = 0 === $offset && $is_primary_wrapper ? $generated_class . '-wrap' : $generated_class;
 				$operations[]                 = array(
 					'dimension'   => 'topology',
 					'strategy'    => 'provider_field_wrapper_class_projection',
@@ -2153,6 +2170,9 @@ class Static_Site_Importer_Form_Seeder {
 	private static function presentation_node_class( string $scope, int $index, string $role ): string {
 		return self::layout_node_class( $scope, 'presentation-' . $index . '-' . $role );
 	}
+	private static function presentation_destination_class( string $scope, int $index, string $role ): string {
+		return self::presentation_node_class( $scope, $index, 'control-' . $role ) . '-destination-' . $role;
+	}
 	/** @return array<int,array<string,bool>> */
 	private static function presentation_roles( array $graph ): array {
 		$roles = array();
@@ -2173,6 +2193,45 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		ksort( $roles, SORT_NUMERIC );
 		return $roles;
+	}
+
+	/**
+		 * Jetpack owns this composite's rendered roles. Captured input presentation
+		 * belongs to its value input; the additional provider shell is structural.
+	 */
+	private static function phone_presentation_destinations( string $scope, int $index ): array {
+		return array(
+			array(
+				'role'       => 'control',
+				'class'      => self::presentation_destination_class( $scope, $index, 'shell' ),
+				'selector'   => '.' . $scope . ' .' . self::presentation_destination_class( $scope, $index, 'shell' ),
+				'properties' => array(),
+				'resets'     => array(
+					'padding'    => '0',
+					'border'     => '0',
+					'background' => 'transparent',
+				),
+				'priority'   => 'important',
+			),
+			array(
+				'role'       => 'control',
+				'class'      => self::presentation_destination_class( $scope, $index, 'primary' ),
+				'selector'   => '.' . $scope . ' .' . self::presentation_destination_class( $scope, $index, 'primary' ),
+				'properties' => array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ),
+				'priority'   => 'important',
+			),
+			array(
+				'role'       => 'control',
+				'class'      => self::presentation_destination_class( $scope, $index, 'carrier' ),
+				'selector'   => '.' . $scope . ' .' . self::presentation_destination_class( $scope, $index, 'carrier' ),
+				'properties' => array(),
+				'resets'     => array(
+					'flex'      => '1 1 0',
+					'min-width' => '0',
+				),
+				'priority'   => 'important',
+			),
+		);
 	}
 	/** Jetpack fields default to flex:1 1 100%; preserve a source fixed width's default flex behavior. */
 	private static function fixed_width_uses_default_flex( array $node ): bool {
@@ -2223,19 +2282,32 @@ class Static_Site_Importer_Form_Seeder {
 		$presentation_targets = array();
 		$controls             = is_array( $form['controls'] ?? null ) ? $form['controls'] : array();
 		foreach ( self::presentation_roles( is_array( $form['presentation_graph'] ?? null ) ? $form['presentation_graph'] : array() ) as $index => $roles ) {
-			$target = array( 'index' => $index );
+			$target = array(
+				'index'        => $index,
+				'destinations' => array(),
+			);
 			if ( isset( $roles['control'] ) ) {
-				$class             = self::presentation_node_class( $scope, $index, 'control' );
-				$type              = strtolower( (string) ( $controls[ $index ]['type'] ?? '' ) );
-				$target['control'] = $selector_scope . ' .' . $class . ( 'submit' === $type ? ' > .wp-block-button__link' : '' );
-				if ( 'phone' === $type ) {
-					// Jetpack renders a phone field through its own shell. Keep source facts
-					// on the generated hook and feed its documented inherited CSS variables.
-					$target['control_provider'] = 'jetpack_phone';
+				$type = strtolower( (string) ( $controls[ $index ]['type'] ?? '' ) );
+				if ( in_array( $type, array( 'phone', 'tel' ), true ) ) {
+					foreach ( self::phone_presentation_destinations( $scope, $index ) as $destination ) {
+						unset( $destination['class'] );
+						$target['destinations'][] = $destination;
+					}
+				} else {
+					$class                    = self::presentation_node_class( $scope, $index, 'control' );
+					$target['destinations'][] = array(
+						'role'       => 'control',
+						'selector'   => $selector_scope . ' .' . $class . ( 'submit' === $type ? ' > .wp-block-button__link' : '' ),
+						'properties' => array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ),
+					);
 				}
 			}
 			if ( isset( $roles['label'] ) ) {
-				$target['label'] = $selector_scope . ' .' . self::presentation_node_class( $scope, $index, 'label' );
+				$target['destinations'][] = array(
+					'role'       => 'label',
+					'selector'   => $selector_scope . ' .' . self::presentation_node_class( $scope, $index, 'label' ),
+					'properties' => array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ),
+				);
 			}
 			$presentation_targets[] = $target;
 		}
