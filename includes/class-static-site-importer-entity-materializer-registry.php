@@ -626,6 +626,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					),
 				);
 			}
+			$report         = self::normalize_failure_rows( $adapter, $prepared['manifest'], $report );
 			$reports[ $id ] = $report;
 			$counts         = is_array( $report['counts'] ?? null ) ? $report['counts'] : array();
 			$expected       = count( is_array( $prepared['manifest']['products'] ?? null ) ? $prepared['manifest']['products'] : ( $prepared['manifest']['forms'] ?? array() ) );
@@ -655,46 +656,48 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/** Build shallow, adapter-neutral evidence for a terminal provider failure. */
 	public static function failure_diagnostics( string $declaration_id, array $adapter, array $manifest, array $report ): array {
-		$entity_key = self::failure_entity_collection( $adapter, $manifest, $report );
-		$entities   = '' !== $entity_key && is_array( $manifest[ $entity_key ] ?? null ) ? $manifest[ $entity_key ] : array();
-		$rows       = '' !== $entity_key && is_array( $report[ $entity_key ] ?? null ) ? $report[ $entity_key ] : array();
+		$rows       = is_array( $report['failure_rows'] ?? null ) ? $report['failure_rows'] : array();
 		$provider   = self::failure_text( $report['provider'] ?? $adapter['provider'] ?? '', 80 );
 		$available  = self::failure_availability( $report );
 		$diagnostics = array();
 		$scanned = 0;
-		foreach ( $rows as $index => $row ) {
+		foreach ( $rows as $row ) {
 			if ( self::FAILURE_DIAGNOSTIC_SCAN_BUDGET <= $scanned++ ) {
 				break;
 			}
-			if ( ! is_array( $row ) || ! in_array( $row['status'] ?? '', array( 'error', 'failed' ), true ) ) {
+			if ( ! is_array( $row ) || ! is_array( $row['result'] ?? null ) || ! in_array( $row['result']['status'] ?? '', array( 'error', 'failed' ), true ) ) {
 				continue;
 			}
-			$diagnostics[] = self::failure_diagnostic_row( $declaration_id, $adapter, $entities[ $index ] ?? array(), $row, $provider, $available );
+			$diagnostics[] = self::failure_diagnostic_row( $declaration_id, $adapter, is_array( $row['entity'] ?? null ) ? $row['entity'] : array(), $row['result'], $provider, $available );
 			if ( self::FAILURE_DIAGNOSTIC_MAX_ROWS <= count( $diagnostics ) ) {
 				break;
 			}
 		}
 		if ( empty( $diagnostics ) && ( in_array( $report['status'] ?? '', array( 'error', 'failed' ), true ) || ! empty( $report['counts']['error'] ) || ! empty( $report['counts']['failed'] ) ) ) {
-			$diagnostics[] = self::failure_diagnostic_row( $declaration_id, $adapter, self::failure_first_entity( $entities ), $report, $provider, $available );
+			$diagnostics[] = self::failure_diagnostic_row( $declaration_id, $adapter, array(), $report, $provider, $available );
 		}
 		return $diagnostics;
 	}
 
-	/** Resolve the provider-declared result collection without assuming a product or form shape. */
-	private static function failure_entity_collection( array $adapter, array $manifest, array $report ): string {
+	/** Normalize adapter-specific result collections into the generic failure row contract. */
+	private static function normalize_failure_rows( array $adapter, array $manifest, array $report ): array {
 		$declared = $adapter['entity_collection'] ?? '';
-		if ( is_string( $declared ) && is_array( $manifest[ $declared ] ?? null ) && is_array( $report[ $declared ] ?? null ) ) {
-			return $declared;
+		if ( ! is_string( $declared ) || ! is_array( $manifest[ $declared ] ?? null ) || ! is_array( $report[ $declared ] ?? null ) ) {
+			return $report;
 		}
-		return '';
-	}
-
-	/** @param array<mixed,mixed> $entities @return array<string,mixed> */
-	private static function failure_first_entity( array $entities ): array {
-		foreach ( $entities as $entity ) {
-			return is_array( $entity ) ? $entity : array();
+		$failure_rows = array();
+		$scanned      = 0;
+		foreach ( $report[ $declared ] as $index => $result ) {
+			if ( self::FAILURE_DIAGNOSTIC_SCAN_BUDGET <= $scanned++ ) {
+				break;
+			}
+			$failure_rows[] = array(
+				'entity' => is_array( $manifest[ $declared ][ $index ] ?? null ) ? $manifest[ $declared ][ $index ] : array(),
+				'result' => $result,
+			);
 		}
-		return array();
+		$report['failure_rows'] = $failure_rows;
+		return $report;
 	}
 
 	/** @param array<int,mixed> $diagnostics @return array<int,array<string,mixed>> */

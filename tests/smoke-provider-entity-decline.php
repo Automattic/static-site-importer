@@ -225,28 +225,38 @@ for ( $index = 0; $index < 11; ++$index ) {
 		'form_receipt_unaccepted_losses' => array( array(), array() ),
 	);
 }
-$generic_diagnostics = Static_Site_Importer_Entity_Materializer_Registry::failure_diagnostics(
-	'declaration-id',
-	array( 'provider' => 'generic-provider', 'entity_type' => 'widget', 'entity_collection' => 'widgets' ),
-	array( 'widgets' => array() ),
-	array( 'status' => 'failed', 'available' => false, 'reason' => 'provider_unavailable', 'widgets' => $generic_rows )
+$generic_lifecycle = array(
+	'entities' => array(
+		'widget-declaration' => array(
+			'adapter'  => array(
+				'provider'          => 'generic-provider',
+				'entity_type'       => 'widget',
+				'entity_collection' => 'widgets',
+				'materializer'      => static fn( array $manifest ): array => array( 'status' => 'failed', 'available' => false, 'reason' => 'provider_unavailable', 'counts' => array( 'error' => 11 ), 'widgets' => $manifest['widgets'] ),
+			),
+			'manifest' => array( 'widgets' => $generic_rows ),
+			'required' => true,
+		),
+	),
 );
+$generic_result      = Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $generic_lifecycle, array( 'seed_entities' => false ) );
+$generic_diagnostics = $generic_result['error']['diagnostics'] ?? array();
 $assert( 10 === count( $generic_diagnostics ) && false === ( $generic_diagnostics[0]['provider_available'] ?? true ) && 'pages/0.html' === ( $generic_diagnostics[0]['source_path'] ?? '' ) && 'pages/9.html' === ( $generic_diagnostics[9]['source_path'] ?? '' ), 'provider-level-failures-project-declared-generic-row-diagnostics' );
 
 $bounded_diagnostics = Static_Site_Importer_Entity_Materializer_Registry::failure_diagnostics(
 	'declaration-id',
-	array( 'provider' => 'generic-provider', 'entity_type' => 'product', 'entity_collection' => 'products' ),
+	array( 'provider' => 'generic-provider', 'entity_type' => 'product' ),
 	array( 'products' => array_fill( 0, 11, array( 'source_path' => 'products.html', 'selector' => '.product' ) ) ),
-	array( 'status' => 'completed', 'products' => $generic_rows )
+	array( 'status' => 'completed', 'failure_rows' => array_map( static fn( $row ): array => array( 'entity' => array(), 'result' => $row ), $generic_rows ) )
 );
 $assert( 10 === count( $bounded_diagnostics ) && 'pages/0.html' === ( $bounded_diagnostics[0]['source_path'] ?? '' ) && 'pages/9.html' === ( $bounded_diagnostics[9]['source_path'] ?? '' ), 'failure-diagnostics-use-the-exact-row-bound-without-provider-specific-shapes' );
 
 $malformed_rows = array_merge( array_fill( 0, 10, 'not-a-row' ), array( array( 'status' => 'error', 'source_path' => 'must-not-be-scanned.html' ) ) );
 $malformed_diagnostics = Static_Site_Importer_Entity_Materializer_Registry::failure_diagnostics(
 	'declaration-id',
-	array( 'provider' => 'generic-provider', 'entity_type' => 'widget', 'entity_collection' => 'widgets' ),
+	array( 'provider' => 'generic-provider', 'entity_type' => 'widget' ),
 	array( 'widgets' => array() ),
-	array( 'status' => 'completed', 'widgets' => $malformed_rows )
+	array( 'status' => 'completed', 'failure_rows' => $malformed_rows )
 );
 $assert( array() === $malformed_diagnostics, 'failure-diagnostic-scan-budget-includes-malformed-rows' );
 

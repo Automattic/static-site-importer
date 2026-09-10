@@ -1148,11 +1148,11 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			'failure'      => self::scrub_failure( $failure ),
 			'resumable'    => ! in_array( $phase, array( 'materialize', 'materialization_claim' ), true ),
 		);
-		// Keep terminal admission evidence visible to the public error projection.
+		// Only the bounded public projection may leave this failure boundary.
 		if ( is_array( $data ) ) {
-			foreach ( array( 'import_report', 'import_report_summary', 'import_validation_result', 'finding_packets', 'fixture_diagnostics', 'failed_plan_artifacts', 'diagnostics' ) as $key ) {
+			foreach ( array( 'import_report_summary', 'import_validation_result', 'diagnostics' ) as $key ) {
 				if ( array_key_exists( $key, $data ) ) {
-					$error_data[ $key ] = 'diagnostics' === $key ? $diagnostics : $data[ $key ];
+					$error_data[ $key ] = $data[ $key ];
 				}
 			}
 		}
