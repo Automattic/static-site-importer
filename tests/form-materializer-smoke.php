@@ -604,6 +604,7 @@ namespace {
 		throw new RuntimeException( 'The required Blocks Engine transformer is unavailable.' );
 	}
 	$candidate_artifact = array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => '<link rel="stylesheet" href="style.css"><main><form><div><button type="button" aria-label="Phone country selector"><svg class="globe" width="24" height="24" viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/></svg><svg class="chevron" width="16" height="16" viewBox="0 0 16 16"><path d="M4 7l4 4 4-4"/></svg></button><input type="tel" name="phone"></div></form></main>', 'style.css' => '.globe{width:24px;color:rgb(30,75,110)}.chevron{width:16px}@media (min-width:769px){.chevron{width:16px}}' ) );
+	$candidate_artifact['files']['style.css'] .= 'button{position:relative;flex-shrink:0;transform:translateX(0)}';
 	$candidate_code = 'require ' . var_export( $candidate_transformer, true ) . '; echo json_encode(blocks_engine_php_transformer_compile_artifact(' . var_export( $candidate_artifact, true ) . '));';
 	$candidate_json = shell_exec( escapeshellarg( PHP_BINARY ) . ' -r ' . escapeshellarg( $candidate_code ) );
 	$candidate_result = is_string( $candidate_json ) ? json_decode( $candidate_json, true ) : null;
