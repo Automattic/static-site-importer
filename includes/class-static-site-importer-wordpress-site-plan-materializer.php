@@ -25,6 +25,9 @@ if ( ! class_exists( 'Static_Site_Importer_Current_Site_Capabilities' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Quality_Budget_Admission' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-quality-budget-admission.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Entity_Materializer_Registry' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-entity-materializer-registry.php';
+}
 require_once __DIR__ . '/class-static-site-importer-prepared-plan-application.php';
 
 final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
