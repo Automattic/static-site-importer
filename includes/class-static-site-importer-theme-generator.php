@@ -278,7 +278,7 @@ class Static_Site_Importer_Theme_Generator {
 			$compiled        = $compiler_result->toWordPressSitePlanView();
 		}
 		$expected_schema = $supplied_compiled ? 'blocks-engine/wordpress-site-plan-view/v2' : 'blocks-engine/wordpress-site-plan-view/v1';
-		if ( $expected_schema !== ( $compiled['schema'] ?? '' ) ) {
+		if ( ( $compiled['schema'] ?? '' ) !== $expected_schema ) {
 			return new WP_Error( 'static_site_importer_invalid_transformer_result', 'Blocks Engine php-transformer returned an invalid WordPress site plan view.' );
 		}
 		if ( $supplied_compiled ) {
