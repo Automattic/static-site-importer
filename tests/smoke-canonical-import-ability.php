@@ -102,6 +102,7 @@ class Static_Site_Importer_Theme_Generator {
 	public static $drift    = false;
 	public static $last_args = array();
 	public static $last_artifact = array();
+	public static $compiler_diagnostics = array();
 	public static function compile_website_artifact( $artifact, $args ) {
 		++self::$compiled;
 		self::$last_artifact = $artifact;
@@ -117,7 +118,11 @@ class Static_Site_Importer_Theme_Generator {
 		);
 		if ( 'classic' === ( $args['theme_materialization'] ?? '' ) ) {
 			$args['classic_theme_projection'] = Static_Site_Importer_Classic_Theme_Projection::build( $artifact, $plan );
-		} return array(
+		}
+		$args['compiler_diagnostics'] = self::$compiler_diagnostics ?: array(
+			array( 'code' => 'normalizer_limit_warning', 'severity' => 'warning', 'message' => 'A normalizer limit was reached after successful compilation.' ),
+		);
+		return array(
 			'artifact'             => $artifact,
 			'args'                 => $args,
 			'compiled'             => array(),
@@ -197,6 +202,30 @@ $plan  = static_site_importer_ability_import(
 );
 if ( empty( $plan['success'] ) || 'blocks-engine/wordpress-site-plan/v2' !== ( $plan['plan']['schema'] ?? '' ) || 1 !== Static_Site_Importer_Theme_Generator::$compiled || 0 !== Static_Site_Importer_Theme_Generator::$applied ) {
 	throw new RuntimeException( 'pasted HTML planning must compile exactly once without materializing' ); }
+if ( 'normalizer_limit_warning' !== ( $plan['diagnostics'][1]['code'] ?? '' ) || 4096 <= strlen( (string) wp_json_encode( $plan ) ) ) {
+	throw new RuntimeException( 'normal-sized compiler warning must remain visible in the bounded canonical plan result' ); }
+Static_Site_Importer_Theme_Generator::$compiler_diagnostics = array();
+for ( $index = 0; $index < 80; ++$index ) {
+	Static_Site_Importer_Theme_Generator::$compiler_diagnostics[] = array(
+		'code'     => 'compiler-' . $index,
+		'severity' => 0 === $index % 7 ? 'error' : 'warning',
+		'message'  => str_repeat( 'message-', 200 ),
+		'context'  => array( 'nested' => array( 'again' => array( 'payload' => str_repeat( 'context-', 1000 ), 'extra' => array( 'discard' => true ) ) ) ),
+	);
+}
+$compiler_duplicate = Static_Site_Importer_Theme_Generator::$compiler_diagnostics[ 79 ];
+Static_Site_Importer_Theme_Generator::$compiler_diagnostics[] = $compiler_duplicate;
+$adversarial_plan = static_site_importer_ability_import(
+	array(
+		'operation' => 'plan',
+		'source'    => array( 'type' => 'html', 'html' => '<h1>Adversarial</h1>' ),
+	)
+);
+$compiler_aggregate = $adversarial_plan['diagnostics'][1] ?? array();
+$compiler_aggregate_context_json = json_encode( $compiler_aggregate['context'] ?? array() );
+if ( 2 !== count( $adversarial_plan['diagnostics'] ?? array() ) || 'compiler_diagnostics_aggregated' !== ( $compiler_aggregate['code'] ?? '' ) || 81 !== ( $compiler_aggregate['context']['diagnostic_count'] ?? 0 ) || 12 !== ( $compiler_aggregate['context']['diagnostic_by_severity']['error'] ?? 0 ) || 69 !== ( $compiler_aggregate['context']['diagnostic_by_severity']['warning'] ?? 0 ) || 61 !== ( $compiler_aggregate['context']['code_occurrences_omitted'] ?? 0 ) || isset( $compiler_aggregate['context']['codes_omitted'] ) || 20 !== count( $compiler_aggregate['context']['diagnostic_by_code'] ?? array() ) || 76 !== ( $compiler_aggregate['context']['samples_omitted'] ?? -1 ) || ! is_string( $compiler_aggregate_context_json ) || 4096 < strlen( $compiler_aggregate_context_json ) ) {
+	throw new RuntimeException( 'canonical plan must retain truthful compiler counts in one bounded aggregate' ); }
+Static_Site_Importer_Theme_Generator::$compiler_diagnostics = array();
 $service_plan = Static_Site_Importer_Canonical_Import_Service::import(
 	array(
 		'operation' => 'plan',
@@ -206,7 +235,7 @@ $service_plan = Static_Site_Importer_Canonical_Import_Service::import(
 		),
 	)
 );
-if ( $plan !== $service_plan || 2 !== Static_Site_Importer_Theme_Generator::$compiled ) {
+if ( $plan !== $service_plan || 3 !== Static_Site_Importer_Theme_Generator::$compiled ) {
 	throw new RuntimeException( 'Ability and canonical service planning must have identical envelopes' ); }
 $wrapper_error = static_site_importer_ability_error( 'canonical-wrapper', 'wrapper' );
 $service_error = Static_Site_Importer_Canonical_Import_Service::error( 'canonical-wrapper', 'wrapper' );
@@ -222,7 +251,7 @@ $files_plan = static_site_importer_ability_import(
 		),
 	)
 );
-if ( empty( $files_plan['success'] ) || $files !== ( $GLOBALS['ssi_runtime_sources'][2]['files'] ?? null ) ) {
+if ( empty( $files_plan['success'] ) || $files !== ( $GLOBALS['ssi_runtime_sources'][3]['files'] ?? null ) ) {
 	throw new RuntimeException( 'file sources must use the canonical source normalizer' ); }
 $figma_plan = static_site_importer_ability_import(
 	array(
