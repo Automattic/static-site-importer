@@ -2236,6 +2236,7 @@ class Static_Site_Importer_Form_Seeder {
 	/** Build only a topology-owned source-captured empty-country group. */
 	private static function empty_country_visual_state( array $form, string $scope, array $phone_popup_targets ): array {
 		$parts    = is_array( $form['presentation_graph']['visual_parts'] ?? null ) ? $form['presentation_graph']['visual_parts'] : array();
+		$groups   = is_array( $form['presentation_graph']['visual_groups'] ?? null ) ? $form['presentation_graph']['visual_groups'] : array();
 		$by_index = array();
 		foreach ( $parts as $part ) {
 			if ( is_array( $part ) && is_int( $part['index'] ?? null ) ) {
@@ -2260,29 +2261,61 @@ class Static_Site_Importer_Form_Seeder {
 					'markup' => $part['markup'],
 				);
 			}
-			$css = self::empty_country_visual_css( $scope, $state_parts, $group, $form['presentation_graph']['variants'] ?? array() );
+			$part_ids    = array_column( $state_parts, 'id' );
+			$state_group = null;
+			foreach ( $groups as $candidate ) {
+				if ( is_array( $candidate ) && $part_ids === ( $candidate['part_ids'] ?? null ) && is_string( $candidate['id'] ?? null ) ) {
+					$state_group = array(
+						'id'    => $candidate['id'],
+						'class' => 'ssi-fvg-' . substr( hash( 'sha256', $scope . "\n" . $candidate['id'] ), 0, 12 ),
+					);
+					break;
+				}
+			}
+			if ( null === $state_group ) {
+				return array( 'diagnostics' => array( 'visual_state_group_geometry_gap' ) );
+			}
+			$css = self::empty_country_visual_css( $scope, $state_group, $state_parts, $group, $groups, $form['presentation_graph']['variants'] ?? array() );
 			return array(
 				'trigger_class' => self::presentation_destination_class( $scope, $auxiliary_index, 'country-trigger' ),
 				'state'         => array(
 					'schema'        => 'static-site-importer/form-visual-state/v1',
 					'field_id'      => $scope . '-field-' . $phone_index,
 					'trigger_class' => self::presentation_destination_class( $scope, $auxiliary_index, 'country-trigger' ),
+					'group'         => $state_group,
 					'parts'         => $state_parts,
 					'css'           => $css,
 				),
-				// Visual-part facts do not establish the provider trigger group's geometry.
-				// Retained control-child layout facts are not currently addressable there.
-				'diagnostics'   => array( 'visual_state_group_geometry_gap' ),
+				'diagnostics'   => array(),
 			);
 		}
 		return array();
 	}
 
 	/** Compile only validated visual-part CSS facts into the declared state wrapper. */
-	private static function empty_country_visual_css( string $scope, array $state_parts, array $parts, array $variants ): string {
+	private static function empty_country_visual_css( string $scope, array $state_group, array $state_parts, array $parts, array $groups, array $variants ): string {
 		$classes = array_column( $state_parts, 'class', 'id' );
 		$rules   = array();
-		$map     = Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys();
+		$map     = Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() + array(
+			'align_items'     => 'align-items',
+			'flex_direction'  => 'flex-direction',
+			'gap'             => 'gap',
+			'justify_content' => 'justify-content',
+		);
+		foreach ( $groups as $group ) {
+			if ( ! is_array( $group ) || ( $state_group['id'] ?? null ) !== ( $group['id'] ?? null ) || ! is_array( $group['source_css']['styles'] ?? null ) ) {
+				continue;
+			}
+			$declarations = array();
+			foreach ( $group['source_css']['styles'] as $key => $value ) {
+				if ( isset( $map[ $key ] ) && is_string( $value ) ) {
+					$declarations[] = $map[ $key ] . ':' . $value . '!important';
+				}
+			}
+			if ( ! empty( $declarations ) ) {
+				$rules[] = '.' . $scope . ' .ssi-form-visual-state:not([hidden]) .' . $state_group['class'] . '{' . implode( ';', $declarations ) . '}';
+			}
+		}
 		foreach ( $parts as $part ) {
 			$styles = $part['source_css']['styles'] ?? array();
 			if ( ! is_array( $styles ) || ! isset( $classes[ $part['id'] ?? '' ] ) ) {
@@ -2299,6 +2332,17 @@ class Static_Site_Importer_Form_Seeder {
 			}
 		}
 		foreach ( $variants as $variant ) {
+			if ( 'visual_group' === ( $variant['role'] ?? null ) && ( $state_group['id'] ?? null ) === ( $variant['group_id'] ?? null ) && is_array( $variant['style_patch'] ?? null ) && is_array( $variant['condition'] ?? null ) && 'media' === ( $variant['condition']['kind'] ?? null ) && is_string( $variant['condition']['query'] ?? null ) ) {
+				$declarations = array();
+				foreach ( $variant['style_patch'] as $key => $value ) {
+					if ( isset( $map[ $key ] ) && is_string( $value ) ) {
+						$declarations[] = $map[ $key ] . ':' . $value . '!important';
+					}
+				}
+				if ( ! empty( $declarations ) ) {
+					$rules[] = '@media ' . $variant['condition']['query'] . '{.' . $scope . ' .ssi-form-visual-state:not([hidden]) .' . $state_group['class'] . '{' . implode( ';', $declarations ) . '}}';
+				}
+			}
 			if ( 'visual_part' !== ( $variant['role'] ?? null ) || ! isset( $classes[ $variant['part_id'] ?? '' ] ) || ! is_array( $variant['style_patch'] ?? null ) || ! is_array( $variant['condition'] ?? null ) || 'media' !== ( $variant['condition']['kind'] ?? null ) || ! is_string( $variant['condition']['query'] ?? null ) ) {
 				continue;
 			}
