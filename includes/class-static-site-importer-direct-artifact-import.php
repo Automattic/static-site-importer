@@ -12,6 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Artifact_Run_Workspace' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-artifact-run.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Run_Storage' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-run-storage.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-content-policy.php';
 }
@@ -172,6 +175,63 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 
 		return self::execute( $workspace, $run, $args );
+	}
+
+	/**
+	 * Locate the newest retained, still-running run this request could resume.
+	 *
+	 * Matches the identity resume() re-validates — the normalized artifact
+	 * content hash plus the stored binding (source type, operation, normalized
+	 * args, owner) and the compiler/policy implementation binding — so a
+	 * discovered import_id is safe to hand straight to resume(). Completed and
+	 * failed runs are never matched: a completed run replays its terminal
+	 * receipt only through an explicit import_id, and a failed run restarts
+	 * deliberately.
+	 *
+	 * @param array<string,mixed> $artifact
+	 * @param array<string,mixed> $args
+	 * @return string The resumable import_id, or '' when none matches.
+	 */
+	public static function find_resumable( array $artifact, array $args, string $source_type, string $operation ): string {
+		$root = self::root();
+		if ( ! is_dir( $root ) ) {
+			return '';
+		}
+		$requested = array(
+			'source_type'     => $source_type,
+			'operation'       => $operation,
+			'args'            => self::binding_args( $args ),
+			'owner'           => self::owner(),
+			'source_identity' => self::hash_json( $artifact, false ),
+			'implementation'  => self::implementation_binding(),
+		);
+		$found     = '';
+		$found_at  = 0;
+		$entries   = scandir( $root );
+		foreach ( false === $entries ? array() : $entries as $entry ) {
+			if ( ! preg_match( '/^\.ssi-artifact-run-direct-([a-f0-9]{64})$/D', $entry, $matched ) ) {
+				continue;
+			}
+			$workspace = self::workspace( $matched[1], false );
+			if ( is_wp_error( $workspace ) || $workspace->is_expired() ) {
+				continue;
+			}
+			$run = self::read_run( $workspace, $matched[1] );
+			if ( is_wp_error( $run ) || 'running' !== ( $run['state'] ?? '' ) ) {
+				continue;
+			}
+			foreach ( $requested as $key => $value ) {
+				if ( self::canonical( $value ) !== self::canonical( $run['binding'][ $key ] ?? null ) ) {
+					continue 2;
+				}
+			}
+			$updated = (int) @filemtime( trailingslashit( $root ) . $entry . '/run.json' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- A vanished run.json only demotes the candidate's recency.
+			if ( '' === $found || $updated >= $found_at ) {
+				$found    = $matched[1];
+				$found_at = $updated;
+			}
+		}
+		return $found;
 	}
 
 	/** Compile one isolated page shard and publish only immutable receipt checkpoints. */
@@ -592,6 +652,10 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				$composed = call_user_func( array( $result, 'toWordPressSitePlanView' ) );
 				if ( ! is_array( $composed ) || 'blocks-engine/wordpress-site-plan-view/v1' !== ( $composed['schema'] ?? '' ) ) {
 					throw new RuntimeException( 'Blocks Engine returned an invalid composed WordPress site plan view.' );
+				}
+				$composed = ( new \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanView() )->compact( $composed );
+				if ( 'blocks-engine/wordpress-site-plan-view/v2' !== ( $composed['schema'] ?? '' ) ) {
+					throw new RuntimeException( 'Blocks Engine did not compact the composed WordPress site plan view.' );
 				}
 				$metrics = is_array( $result->metrics ?? null ) ? $result->metrics : array();
 				if ( 0 !== (int) ( $metrics['html_document_transform_count'] ?? 0 ) || 0 !== (int) ( $metrics['normalization_count'] ?? 0 ) ) {
@@ -1075,6 +1139,14 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			'failure'      => self::scrub_failure( $failure ),
 			'resumable'    => ! in_array( $phase, array( 'materialize', 'materialization_claim' ), true ),
 		);
+		// Keep terminal admission evidence visible to the public error projection.
+		if ( is_array( $data ) ) {
+			foreach ( array( 'import_report', 'import_report_summary', 'import_validation_result', 'finding_packets', 'fixture_diagnostics', 'failed_plan_artifacts' ) as $key ) {
+				if ( array_key_exists( $key, $data ) ) {
+					$error_data[ $key ] = $data[ $key ];
+				}
+			}
+		}
 		if ( is_wp_error( $write ) ) {
 			$error_data['checkpoint_error'] = array(
 				'code'    => $write->get_error_code(),
@@ -1307,12 +1379,17 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		if ( wp_mkdir_p( $root ) ) {
 			Static_Site_Importer_Artifact_Run_Workspace::purge_expired_in( $root );
 		}
+		// Sites upgraded from a release that stored run state in the media
+		// library keep their expiry sweep until that tree drains.
+		$legacy = Static_Site_Importer_Run_Storage::legacy_uploads_root() . '/direct-artifact-imports';
+		if ( $legacy !== $root && is_dir( $legacy ) ) {
+			Static_Site_Importer_Artifact_Run_Workspace::purge_expired_in( $legacy );
+		}
 	}
 
-	private static function root(): string {
-		$uploads = function_exists( 'wp_upload_dir' ) ? wp_upload_dir() : array();
-		$base    = isset( $uploads['basedir'] ) ? (string) $uploads['basedir'] : sys_get_temp_dir();
-		$root    = trailingslashit( $base ) . 'static-site-importer/direct-artifact-imports';
+	/** Resolve the importer-owned root that holds retained direct artifact runs. */
+	public static function root(): string {
+		$root = Static_Site_Importer_Run_Storage::path( 'direct-artifact-imports' );
 		return function_exists( 'apply_filters' ) ? (string) apply_filters( 'static_site_importer_direct_artifact_root', $root ) : $root;
 	}
 
@@ -1518,7 +1595,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 		if ( 'composed' === $kind ) {
 			$work = is_array( $payload['terminal_work'] ?? null ) ? $payload['terminal_work'] : array();
-			return 'blocks-engine/wordpress-site-plan-view/v1' === ( $payload['result']['schema'] ?? '' )
+			return 'blocks-engine/wordpress-site-plan-view/v2' === ( $payload['result']['schema'] ?? '' )
 				&& 0 === (int) ( $work['html_document_transform_count'] ?? -1 )
 				&& 0 === (int) ( $work['normalization_count'] ?? -1 );
 		}

@@ -160,6 +160,33 @@ $assert( ( $fired[0]['args'][0] ?? null ) === $contract, 'hook-arg-contract' );
 $assert( ( $fired[0]['args'][1] ?? null ) === $result, 'hook-arg-result' );
 $assert( ( $fired[0]['args'][2] ?? null ) === $input, 'hook-arg-input' );
 
+$failed_validation_result = array(
+	'theme_slug'               => 'failed-validation-site',
+	'import_report_summary'    => array( 'status' => 'failed' ),
+	'import_report'            => array( 'quality' => array( 'fallback_count' => 0, 'unsupported_fallback_count' => 0 ) ),
+	'import_validation_result' => array(
+		'schema'       => 'blocks-engine/import-validation-result/v1',
+		'status'       => 'failed',
+		'quality_pass' => false,
+		'fail_import'  => true,
+		'counts'       => array( 'fallback_blocks' => 4, 'unsupported_fallbacks' => 4 ),
+	),
+	'fixture_diagnostics'      => array(
+		'quality_counts'               => array( 'fallback_count' => 0, 'unsupported_fallback_count' => 0, 'consistent' => true ),
+		'import_report_quality_counts' => array( 'fallback_count' => 0, 'unsupported_fallback_count' => 0, 'consistent' => true ),
+	),
+);
+$failed_validation_envelope = static_site_importer_ability_import_success( $failed_validation_result, array( 'slug' => 'failed-validation-site' ) );
+$failed_validation_contract = $failed_validation_envelope['fixture_diagnostics'] ?? array();
+$assert( 4 === ( $failed_validation_contract['quality_counts']['fallback_count'] ?? null ), 'failed-validation-authoritatively-reports-fallbacks' );
+$assert( 4 === ( $failed_validation_contract['quality_counts']['unsupported_fallback_count'] ?? null ), 'failed-validation-authoritatively-reports-unsupported-fallbacks' );
+$assert( 4 === ( $failed_validation_contract['import_report_quality_counts']['fallback_count'] ?? null ), 'failed-validation-count-projections-agree' );
+$assert( 4 === ( $failed_validation_contract['import_report_quality_counts']['unsupported_fallback_count'] ?? null ), 'failed-validation-unsupported-count-projections-agree' );
+$assert( false === ( $failed_validation_contract['quality_counts']['consistent'] ?? true ), 'failed-validation-flags-stale-report-counts' );
+$assert( 'import_validation_result.counts' === ( $failed_validation_contract['quality_counts']['provenance']['materialized_validation']['path'] ?? '' ), 'failed-validation-identifies-authoritative-count-provenance' );
+$assert( 4 === ( $failed_validation_envelope['result']['import_validation_result']['counts']['fallback_blocks'] ?? null ), 'failed-validation-bounded-result-retains-validation-evidence' );
+$assert( true === ( $failed_validation_envelope['success'] ?? false ) && false === ( $failed_validation_contract['success'] ?? true ), 'failed-validation-preserves-materialization-success-without-claiming-quality-acceptance' );
+
 $provider_resolutions = array();
 for ( $index = 1; $index <= 8; ++$index ) {
 	$fallback_identity = hash( 'sha256', 'ability-fallback-' . $index );

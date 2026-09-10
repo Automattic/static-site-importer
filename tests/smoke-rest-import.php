@@ -957,6 +957,36 @@ if ( class_exists( 'ZipArchive' ) ) {
 	$hard_staged_limits = static_site_importer_staged_archive_limits();
 	unset( $GLOBALS['ssi_filters']['static_site_importer_staged_archive_limits'] );
 	$assert( 262144000 === $hard_staged_limits['max_archive_bytes'], 'staged-zip-filter-cannot-exceed-hard-ceiling' );
+
+	$compiler_contract = static_site_importer_staged_archive_compiler_limits();
+	$assert(
+		array(
+			'max_files'       => 5000,
+			'max_file_bytes'  => 10485760,
+			'max_total_bytes' => 262144000,
+		) === $compiler_contract,
+		'staged-zip-projects-its-intake-policy-as-a-compiler-contract'
+	);
+
+	// The reason the contract has to be declared: the staged intake accepts
+	// entries several times larger than the compiler assumes by default.
+	$normalizer = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\ArtifactNormalizer';
+	$assert(
+		class_exists( $normalizer )
+			&& $normalizer::DEFAULT_MAX_FILE_BYTES < $hard_staged_limits['max_entry_uncompressed_bytes']
+			&& $compiler_contract['max_file_bytes'] === $normalizer::MAX_FILE_BYTES,
+		'staged-zip-compiler-contract-covers-the-entries-the-intake-accepts'
+	);
+
+	$GLOBALS['ssi_filters']['static_site_importer_staged_archive_limits'] = array(
+		static function ( array $limits ): array {
+			$limits['max_entry_uncompressed_bytes'] = 1024;
+			return $limits;
+		},
+	);
+	$tightened_compiler_limits = static_site_importer_staged_archive_compiler_limits();
+	unset( $GLOBALS['ssi_filters']['static_site_importer_staged_archive_limits'] );
+	$assert( 1024 === $tightened_compiler_limits['max_file_bytes'], 'staged-zip-compiler-contract-follows-a-tightened-intake' );
 }
 
 $artifact = static_site_importer_rest_source_artifact(

@@ -49,8 +49,11 @@ if ( ! function_exists( 'add_filter' ) ) {
 	}
 }
 
+require dirname( __DIR__ ) . '/vendor/autoload.php';
 require dirname( __DIR__ ) . '/includes/cli.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-portable-source-manifest.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';
+require dirname( __DIR__ ) . '/includes/rest.php';
 
 $assertions = 0;
 $failures   = array();
@@ -60,6 +63,9 @@ $assert     = static function ( bool $condition, string $label ) use ( &$asserti
 		$failures[] = $label;
 	}
 };
+
+$compiler_version = \Composer\InstalledVersions::getPrettyVersion( 'automattic/blocks-engine-php-transformer' );
+$assert( is_string( $compiler_version ) && '' !== $compiler_version, 'dla-regression-records-installed-locked-blocks-engine-php-transformer-version' );
 
 $missing = static_site_importer_cli_import_input( array(), array() );
 $assert( is_wp_error( $missing ) && 'static_site_importer_cli_request_invalid' === $missing->get_error_code(), 'malformed-missing-request' );
@@ -181,6 +187,56 @@ foreach ( scandir( $bounded_bundle_dir ) as $entry ) {
 	}
 }
 rmdir( $bounded_bundle_dir );
+
+$dla_bundle_dir = sys_get_temp_dir() . '/ssi-dla-request-bundle-' . bin2hex( random_bytes( 6 ) );
+mkdir( $dla_bundle_dir );
+try {
+	$dla_source_dir          = $dla_bundle_dir . '/dla-source';
+	$dla_request             = $dla_bundle_dir . '/request.json';
+	$dla_stylesheet_content  = 'main{color:#123456}';
+	$dla_stylesheet_path     = 'assets/dla-' . hash( 'sha256', $dla_stylesheet_content ) . '.css';
+	mkdir( $dla_source_dir . '/assets', 0777, true );
+	file_put_contents( $dla_source_dir . '/' . $dla_stylesheet_path, $dla_stylesheet_content );
+	for ( $index = 0; $index < 186; ++$index ) {
+		$path    = 0 === $index ? 'index.html' : 'practice-' . $index . '/index.html';
+		$dirname = dirname( $path );
+		if ( '.' !== $dirname ) {
+			mkdir( $dla_source_dir . '/' . $dirname, 0777, true );
+		}
+		// This is the one remaining unsafe-inline author stylesheet in the export.
+		file_put_contents( $dla_source_dir . '/' . $path, '<html><head><link rel="stylesheet" href="/' . $dla_stylesheet_path . '">' . ( 0 === $index ? '<style>main{display:grid}</style>' : '' ) . '</head><body><main><h1>DLA ' . $index . '</h1></main></body></html>' );
+	}
+	file_put_contents( $dla_request, wp_json_encode( array( 'operation' => 'plan', 'source' => array( 'type' => 'files', 'ref' => 'request-bundle:dla-source' ) ) ) );
+	$dla_input    = static_site_importer_cli_import_input( array(), array( 'request' => $dla_request ) );
+	$dla_resolved = apply_filters( 'static_site_importer_resolve_source_reference', null, 'request-bundle:dla-source', 'files' );
+	$dla_runtime  = is_array( $dla_resolved ) ? static_site_importer_source_runtime( $dla_resolved['source'] ) : new WP_Error( 'static_site_importer_cli_request_bundle_invalid' );
+	$dla_artifact = is_array( $dla_runtime ) ? $dla_runtime['artifact'] : array();
+	$dla_reader   = is_array( $dla_resolved ) ? $dla_resolved['payload_reader'] : null;
+	$dla_files    = is_array( $dla_artifact['files'] ?? null ) ? $dla_artifact['files'] : array();
+	$assert( is_array( $dla_input ) && 187 === count( $dla_files ) && 187 === count( array_filter( $dla_files, static fn( array $file ): bool => isset( $file['payload_reference'] ) && ! isset( $file['content'] ) ) ), 'dla-request-bundle-resolver-hands-canonical-payload-references-to-ssi-source-runtime' );
+	$assert( 188 === ( $dla_artifact['compiler_limits']['max_files'] ?? 0 ), 'dla-request-bundle-resolver-hands-exact-compiler-limits-through-ssi-source-runtime' );
+
+	$dla_compiler   = new \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler();
+	$dla_shared     = $dla_compiler->prepareShared( $dla_artifact, $dla_reader );
+	$dla_page_plans = $dla_compiler->preparePages( $dla_artifact, $dla_shared, $dla_reader );
+	$dla_result     = $dla_compiler->compose( $dla_shared, $dla_page_plans, $dla_reader )->toArray();
+	$dla_plan        = $dla_result['source_reports']['wordpress_site_plan'] ?? array();
+	$dla_diagnostics = $dla_result['source_reports']['wordpress_site_plan_diagnostics'] ?? array();
+	$dla_assets      = $dla_plan['assets'] ?? array();
+	$assert( 186 === count( $dla_plan['pages'] ?? array() ), 'locked-transformer-compiles-every-dla-page-through-referenced-request-bundle-path' );
+	$assert( array() === array_filter( $dla_diagnostics, static fn( array $diagnostic ): bool => 'file_limit_exceeded' === ( $diagnostic['code'] ?? '' ) ), 'locked-transformer-does-not-truncate-dla-export-at-request-bundle-compiler-limit' );
+	$dla_pages_with_styles = count( array_filter( $dla_plan['pages'] ?? array(), static fn( array $page ): bool => str_contains( (string) ( $page['canonical_block_markup'] ?? '' ), '#123456' ) ) );
+	$assert( 186 === $dla_pages_with_styles, 'locked-transformer-applies-the-shared-linked-stylesheet-to-every-dla-document-' . $dla_pages_with_styles );
+	$assert( 1 === count( array_filter( $dla_assets, static fn( array $asset ): bool => 'website/' . $dla_stylesheet_path === ( $asset['source_path'] ?? '' ) ) ), 'locked-transformer-keeps-the-reused-linked-content-addressed-stylesheet-as-one-theme-asset' );
+	$assert( 1 === count( array_filter( $dla_assets, static fn( array $asset ): bool => 'inline-style' === ( $asset['source'] ?? '' ) ) ), 'locked-transformer-materializes-the-remaining-inline-stylesheet' );
+} finally {
+	if ( is_dir( $dla_bundle_dir ) ) {
+		foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $dla_bundle_dir, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST ) as $item ) {
+			$item->isDir() ? rmdir( $item->getPathname() ) : unlink( $item->getPathname() );
+		}
+		rmdir( $dla_bundle_dir );
+	}
+}
 
 $count_limit_dir = sys_get_temp_dir() . '/ssi-request-bundle-count-' . bin2hex( random_bytes( 6 ) );
 mkdir( $count_limit_dir );
@@ -560,4 +616,4 @@ if ( $failures ) {
 	fwrite( STDERR, "Unified CLI import smoke failed:\n- " . implode( "\n- ", $failures ) . "\n" );
 	exit( 1 );
 }
-echo "Unified CLI import continuation smoke passed ({$assertions} assertions).\n";
+echo "Unified CLI import continuation smoke passed ({$assertions} assertions; locked compiler {$compiler_version}).\n";

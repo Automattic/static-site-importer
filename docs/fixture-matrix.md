@@ -482,6 +482,36 @@ or a reviewed demotion back to `fixtures/websites/`.
 
 ## Generic Invocation
 
+## Existing Runtime Review
+
+`npm run review:existing-runtime -- ...` reviews one explicitly supplied running
+WordPress candidate. It is a thin Playwright adapter over the matrix's shared PNG
+comparison primitive; it does not create a fixture, invoke Homeboy or WP Codebox,
+or modify the supplied candidate post. The required Studio authentication provider
+and editor user ID are named rather than inferred; credential-bearing origins and
+auto-login URLs are never written to artifacts.
+
+```bash
+npm run review:existing-runtime -- \
+  --source-origin https://example.com \
+  --candidate-origin http://localhost:8886 \
+  --route / \
+  --post-id 42 \
+  --post-type pages \
+  --editor-id 7 \
+  --auth-provider studio-auto-login \
+  --output-directory /tmp/ssi-existing-runtime-review
+```
+
+The result records the supplied origins, route, candidate post target, desktop and
+mobile source/candidate/diff screenshots and pixel metrics, and real Gutenberg
+`wp.blocks.validateBlock` results for REST-fetched persisted candidate content.
+It identifies the browser provider as Playwright, not WP Codebox. It creates a
+separate draft solely for edit/save/reload validation, verifies the reloaded REST
+content contains its marker, force-deletes and verifies deletion in `finally`, and
+then verifies the target content hash is unchanged. Any lifecycle cleanup failure,
+nonzero pixel mismatch, or screenshot dimension mismatch fails the review.
+
 The workload composes these generic surfaces:
 
 - Homeboy rig package discovery and `bench_workloads.nodejs` registration.

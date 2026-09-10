@@ -337,11 +337,11 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				'max_file_bytes'  => $limits['max_file_bytes'],
 				'max_total_bytes' => min( $limits['compiler_max_total_bytes'], $limits['max_total_bytes'] + min( $limits['generated_bytes_headroom'], $limits['max_total_bytes'] ) ),
 			),
-			'payload_reader'  => new class( $paths ) {
+			'payload_reader'  => new class( $paths ) implements \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader {
 				/** @param array<string,string> $paths */
 				public function __construct( private array $paths ) {}
 				public function read( array $reference ): string {
-					$id   = (string) ( $reference['id'] ?? '' );
+					$id   = (string) $reference['id'];
 					$path = $this->paths[ $id ] ?? '';
 					$real = '' !== $path && ! is_link( $path ) ? realpath( $path ) : false;
 					$data = $path === $real ? file_get_contents( $path ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a verified CLI request-bundle payload on demand.

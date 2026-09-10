@@ -2,6 +2,7 @@
   "schema": "homeboy/test-manifest/v1",
   "tests": {
     "tests/form-materializer-smoke.php": { "environment": "standalone-php" },
+    "tests/form-fallback-contract-equivalence.php": { "environment": "standalone-php" },
     "tests/provider-adapter-runtime-smoke.php": { "environment": "standalone-php" },
     "tests/smoke-provider-submission-evidence.php": { "environment": "standalone-php" },
     "tests/smoke-ability-error-report-summary.php": { "environment": "standalone-php" },
@@ -20,6 +21,7 @@
     "tests/smoke-external-report-destinations.php": { "environment": "standalone-php" },
     "tests/smoke-failed-plan-validation.php": { "environment": "standalone-php" },
     "tests/smoke-export-theme-ability.php": { "environment": "standalone-php" },
+    "tests/smoke-form-fallback-contract.php": { "environment": "standalone-php" },
     "tests/smoke-import-diagnostic-contract.php": { "environment": "standalone-php" },
     "tests/smoke-import-report.php": { "environment": "standalone-php" },
     "tests/smoke-missing-author-stylesheet-diagnostics.php": { "environment": "standalone-php" },
@@ -28,6 +30,7 @@
     "tests/smoke-html-runtime-capabilities.php": { "environment": "standalone-php" },
     "tests/smoke-default-content.php": { "environment": "standalone-php" },
     "tests/smoke-direct-artifact-import.php": { "environment": "standalone-php" },
+    "tests/smoke-run-storage.php": { "environment": "standalone-php" },
     "tests/smoke-rest-import.php": { "environment": "standalone-php" },
     "tests/smoke-lifecycle-compile-checkpoint.php": { "environment": "standalone-php" },
     "tests/smoke-materialized-block-content-validation.php": { "environment": "standalone-php" },

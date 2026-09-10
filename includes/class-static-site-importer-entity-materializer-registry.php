@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Form_Fallback_Contract' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-form-fallback-contract.php';
+}
+
 /**
  * Registers import-time entity validators, dependency requirements, and writers.
  */
@@ -382,10 +386,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					)
 				);
 			}
-			$normalized_manifest           = 'shop' === $capability ? array(
+			// Dependency preparation intentionally defers provider validation until
+			// resume, but its checkpoint must still retain every declared entity.
+			$normalized_manifest           = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ? $manifest : ( 'shop' === $capability ? array(
 				'schema_version' => 1,
 				'products'       => $validation['products'] ?? array(),
-			) : array( 'forms' => $validation['forms'] ?? array() );
+			) : array( 'forms' => $validation['forms'] ?? array() ) );
 			$lifecycle['entities'][ $key ] = array(
 				'adapter'     => $adapter,
 				'manifest'    => $normalized_manifest,
@@ -468,11 +474,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || 'form' !== ( $binding['role'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > 262144 ) {
 				continue;
 			}
-			$manifest = Static_Site_Importer_Report_Diagnostics::form_manifest_from_html( $binding['search_block_markup'] );
+			$manifest = Static_Site_Importer_Form_Fallback_Contract::manifest_from_html( $binding['search_block_markup'] );
 			if ( self::ordered_form_control_identity( $manifest['controls'] ) !== $control_shape ) {
 				return $entity;
 			}
-			$presentation = Static_Site_Importer_Report_Diagnostics::form_presentation_from_html( $binding['search_block_markup'], is_string( $entity['selector'] ?? null ) ? $entity['selector'] : '', $binding['occurrence'] );
+			$presentation = Static_Site_Importer_Form_Fallback_Contract::presentation_from_html( $binding['search_block_markup'], is_string( $entity['selector'] ?? null ) ? $entity['selector'] : '', $binding['occurrence'] );
 			if ( 'generic/form-presentation/v1' === ( $presentation['schema'] ?? null ) ) {
 				$presentations[] = $presentation;
 			}
@@ -539,10 +545,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'entity_schema' => $payload['entity_schema'],
 			);
 		}
-		if ( empty( $manifests ) ) {
-			return $lifecycle;
-		}
 		$resolved_declarations = isset( $resolved['runtime_declarations'] ) && is_array( $resolved['runtime_declarations'] ) ? $resolved['runtime_declarations'] : array();
+		$expanded              = array();
+		if ( ! empty( $manifests ) ) {
 		$resolved_manifests    = array();
 		foreach ( $resolved_declarations as $declaration ) {
 			$payload = is_array( $declaration ) && is_array( $declaration['payload'] ?? null ) ? $declaration['payload'] : null;
@@ -563,7 +568,6 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( ! is_array( $resolutions ) || ! array_is_list( $resolutions ) ) {
 			return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution is missing or malformed.' );
 		}
-		$expanded = array();
 		foreach ( $resolutions as $resolution ) {
 			if ( ! is_array( $resolution ) || array( 'reconciliation_identity', 'kind', 'type', 'entity_schema', 'entities' ) !== array_keys( $resolution ) ) {
 				return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution has an invalid shape.' );
@@ -576,6 +580,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		}
 		if ( count( $manifests ) !== count( $expanded ) || array_diff_key( $manifests, $expanded ) ) {
 			return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution is incomplete.' );
+		}
 		}
 
 		if ( ! is_array( $lifecycle['entities'] ?? null ) ) {
@@ -601,7 +606,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					if ( ! is_array( $entity ) ) {
 						continue;
 					}
-					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
+					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : self::form_entity_key( $entity );
 					if ( '' !== $entity_key ) {
 						$resolved_by_key[ $entity_key ] = $entity;
 					}
@@ -610,7 +615,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					if ( ! is_array( $entity ) ) {
 						continue;
 					}
-					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
+					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : self::form_entity_key( $entity );
 					if ( isset( $resolved_by_key[ $entity_key ]['bindings'] ) && is_array( $resolved_by_key[ $entity_key ]['bindings'] ) ) {
 						$prepared['manifest'][ $key ][ $index ]['bindings'] = $resolved_by_key[ $entity_key ]['bindings'];
 					}
@@ -678,7 +683,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				continue;
 			}
 			$report = self::materialize( $adapter, $prepared['manifest'] );
-			if ( is_wp_error( $report ) ) {
+			if ( $report instanceof WP_Error ) {
 				$reports[ $id ] = array(
 					'status' => 'error',
 					'reason' => $report->get_error_code(),
@@ -758,7 +763,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$results           = array();
 			foreach ( $result_entities as $result ) {
 				if ( is_array( $result ) ) {
-					$key             = 'products' === $entity_key ? (string) ( $result['slug'] ?? '' ) : (string) ( $result['source_path'] ?? '' ) . "\n" . (string) ( $result['selector'] ?? '' );
+					$key             = 'products' === $entity_key ? (string) ( $result['slug'] ?? '' ) : self::form_entity_key( $result );
 					$results[ $key ] = $result;
 				}
 			}
@@ -766,7 +771,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				if ( ! is_array( $entity ) || empty( $entity['bindings'] ) ) {
 					continue;
 				}
-				$key    = 'products' === $entity_key ? (string) ( $entity['slug'] ?? '' ) : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
+				$key    = 'products' === $entity_key ? (string) ( $entity['slug'] ?? '' ) : self::form_entity_key( $entity );
 				$result = is_array( $results[ $key ] ?? null ) ? $results[ $key ] : array();
 				if ( self::entity_result_declined( $result ) ) {
 					continue;
@@ -792,8 +797,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						'role'                             => $binding['role'],
 						'declaration_id'                   => $declaration_id,
 						'reconciliation_identity'          => hash( 'sha256', "static-site-importer/runtime-entity-binding/v1\n{$declaration_id}\n{$binding['source_path']}\n{$binding['occurrence']}\n" . hash( 'sha256', $binding['search_block_markup'] ) ),
-						'fallback_reconciliation_identity' => 'form' === $binding['role'] ? Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_identity( $entity ) : '',
-						'fallback_hash'                    => 'form' === $binding['role'] ? Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $entity ) : '',
+						'fallback_reconciliation_identity' => 'form' === $binding['role'] ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $entity ) : '',
+						'fallback_hash'                    => 'form' === $binding['role'] ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $entity ) : '',
 						'materialized_block_hash'          => 'form' === $binding['role'] ? hash( 'sha256', $replacement ) : '',
 						'provider'                         => $prepared['adapter']['provider'] ?? '',
 						'superseded_runtime_selectors'     => $binding['superseded_runtime_selectors'] ?? array(),
@@ -820,14 +825,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$results = array();
 			foreach ( $report[ $key ] ?? array() as $result ) {
 				if ( is_array( $result ) ) {
-					$results[ 'products' === $key ? (string) ( $result['slug'] ?? '' ) : (string) ( $result['source_path'] ?? '' ) . "\n" . (string) ( $result['selector'] ?? '' ) ] = $result;
+					$results[ 'products' === $key ? (string) ( $result['slug'] ?? '' ) : self::form_entity_key( $result ) ] = $result;
 				}
 			}
 			foreach ( $manifest[ $key ] ?? array() as $entity ) {
 				if ( ! is_array( $entity ) ) {
 					continue;
 				}
-				$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
+				$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : self::form_entity_key( $entity );
 				$result     = is_array( $results[ $entity_key ] ?? null ) ? $results[ $entity_key ] : array();
 				if ( self::entity_result_declined( $result ) ) {
 					continue;
@@ -859,6 +864,15 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 		}
 		return $bindings;
+	}
+
+	/** Return a form's producer identity without collapsing responsive variants. */
+	private static function form_entity_key( array $form ): string {
+		$identity = $form['fallback_identity'] ?? $form['source_fallback_identity'] ?? $form['fallback_reconciliation_identity'] ?? '';
+		if ( is_string( $identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $identity ) ) {
+			return $identity;
+		}
+		return (string) ( $form['source_path'] ?? '' ) . "\n" . (string) ( $form['selector'] ?? '' );
 	}
 
 	/** Collect structured overlays emitted by successful form adapters. */
@@ -1230,12 +1244,16 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				continue;
 			}
 
-			$row = array(
+			$row               = array(
 				'selector'    => isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '',
 				'source_path' => isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '',
 				'form'        => isset( $form['form'] ) && is_array( $form['form'] ) ? $form['form'] : array(),
 				'controls'    => $controls,
 			);
+			$fallback_identity = $form['fallback_identity'] ?? $form['source_fallback_identity'] ?? $form['fallback_reconciliation_identity'] ?? '';
+			if ( is_string( $fallback_identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fallback_identity ) ) {
+				$row['fallback_identity'] = $fallback_identity;
+			}
 			if ( array_key_exists( 'control_topology', $form ) ) {
 				$topology = self::normalize_form_control_topology( $form['control_topology'], count( $controls ) );
 				if ( isset( $topology['error'] ) ) {
@@ -1289,11 +1307,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 				$row['presentation_graph'] = $presentation['graph'];
 			}
-			$form_key = $row['source_path'] . "\n" . $row['selector'];
+			$form_key = self::form_entity_key( $row );
 			if ( isset( $seen_forms[ $form_key ] ) ) {
 				$errors[] = array(
 					'path'    => $path_prefix,
-					'message' => 'source_path and selector must identify one unique form.',
+					'message' => 'fallback identity, or source_path and selector when unavailable, must identify one unique form.',
 				);
 				continue;
 			}
@@ -1351,7 +1369,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$seen  = array();
 		$nodes = array();
 		foreach ( $candidate['nodes'] as $node ) {
-			if ( ! is_array( $node ) || ! self::has_only_keys( $node, array( 'id', 'kind', 'parent', 'order', 'source', 'layout', 'provenance' ) ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^(?:form|wrapper-[0-9]+|control-[0-9]+)$/D', $node['id'] ) || isset( $seen[ $node['id'] ] ) || ! in_array( $node['kind'] ?? null, array( 'container', 'control' ), true ) || ! is_int( $node['order'] ?? null ) || $node['order'] < 0 || ! is_array( $node['source'] ?? null ) || ! is_array( $node['layout'] ?? null ) || ! is_array( $node['provenance'] ?? null ) ) {
+			if ( ! is_array( $node ) || ! self::has_only_keys( $node, array( 'id', 'kind', 'parent', 'order', 'source', 'layout', 'provenance', 'sizing' ) ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^(?:form|wrapper-[0-9]+|control-[0-9]+)$/D', $node['id'] ) || isset( $seen[ $node['id'] ] ) || ! in_array( $node['kind'] ?? null, array( 'container', 'control' ), true ) || ! is_int( $node['order'] ?? null ) || $node['order'] < 0 || ! is_array( $node['source'] ?? null ) || ! is_array( $node['layout'] ?? null ) || ! is_array( $node['provenance'] ?? null ) ) {
 				return array( 'error' => 'layout_graph contains an unsupported canonical node.' );
 			}
 			$parent = $node['parent'] ?? null;
@@ -1372,7 +1390,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					return array( 'error' => 'layout_graph layout facts must use only producer-supported keys.' );
 				}
 			}
-			$clean               = array(
+			$sizing = $node['sizing'] ?? null;
+			if ( null !== $sizing && ( ! $is_v2 || ! is_array( $sizing ) || ! self::has_only_keys( $sizing, array( 'kind', 'axis', 'container', 'grid_column' ) ) || 'control' !== $node['kind'] || 'grid_track' !== ( $sizing['kind'] ?? null ) || 'inline' !== ( $sizing['axis'] ?? null ) || ! is_string( $sizing['container'] ?? null ) || $node['parent'] !== $sizing['container'] || ! is_string( $sizing['grid_column'] ?? null ) || '' === trim( $sizing['grid_column'] ) || isset( $layout['width'] ) || ! isset( $seen[ $sizing['container'] ] ) ) ) {
+				return array( 'error' => 'layout_graph sizing evidence is malformed.' );
+			}
+			$clean = array(
 				'id'         => $node['id'],
 				'kind'       => $node['kind'],
 				'parent'     => $parent,
@@ -1381,6 +1403,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'layout'     => array_intersect_key( $layout, array_flip( $layout_keys ) ),
 				'provenance' => array_slice( $node['provenance'], 0, 16 ),
 			);
+			if ( is_array( $sizing ) ) {
+				$clean['sizing'] = $sizing;
+			}
 			$seen[ $node['id'] ] = true;
 			$nodes[]             = $clean;
 		}

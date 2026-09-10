@@ -25,6 +25,7 @@ function is_wp_error( $value ): bool { return $value instanceof WP_Error; }
 function wp_json_encode( $value, int $options = 0 ) { return json_encode( $value, $options ); }
 function wp_mkdir_p( string $path ): bool { return is_dir( $path ) || mkdir( $path, 0777, true ); }
 function trailingslashit( string $path ): string { return rtrim( $path, '/\\' ) . '/'; }
+function sanitize_key( string $key ): string { return strtolower( preg_replace( '/[^a-z0-9_\-]/', '', strtolower( $key ) ) ); }
 function wp_upload_dir(): array { return array( 'basedir' => $GLOBALS['test_root'] ); }
 function get_current_blog_id(): int { return 17; }
 function get_current_user_id(): int { return 827; }
@@ -67,10 +68,15 @@ function static_site_importer_source_runtime( array $source ): array {
 		$entrypoint = 'website/index.html';
 	}
 	return array(
-		'artifact' => array(
-			'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
-			'entrypoint' => $entrypoint,
-			'files'      => $files,
+		// Source metadata carries the artifact envelope, compiler contract
+		// included, exactly as the real normalizer merges it.
+		'artifact' => array_merge(
+			is_array( $source['metadata'] ?? null ) ? $source['metadata'] : array(),
+			array(
+				'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
+				'entrypoint' => $entrypoint,
+				'files'      => $files,
+			)
 		),
 		'provider' => 'direct-artifact-smoke',
 		'source_metadata' => array( 'fixture' => 'direct-artifact-multi-page' ),
@@ -78,6 +84,13 @@ function static_site_importer_source_runtime( array $source ): array {
 }
 function static_site_importer_staged_archive_files( array $archive, bool $payload_references = false ): array {
 	return $GLOBALS['ssi_direct_staged_files'];
+}
+function static_site_importer_staged_archive_compiler_limits(): array {
+	return array(
+		'max_files'       => 5000,
+		'max_file_bytes'  => 10485760,
+		'max_total_bytes' => 335544320,
+	);
 }
 function static_site_importer_staged_archive_payload_reader( array $archive ): object {
 	return new class() implements \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader {
@@ -97,28 +110,15 @@ require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-client-script-policy.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-website-artifact-import-input.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-direct-artifact-import.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
 
 class Static_Site_Importer_Theme_Generator {
-	public static function compile_website_artifact( array $artifact, array $args = array() ) {
-		$compiled = $args['compiled_artifact_result'] ?? array();
-		$plan = is_array( $compiled['wordpress_site_plan'] ?? null ) ? $compiled['wordpress_site_plan'] : array();
-		if ( empty( $plan ) ) {
-			return new WP_Error( 'missing_precompiled_plan', 'The smoke materializer requires the real staged compiler result.' );
-		}
-		return array(
-			'artifact'              => $artifact,
-			'args'                  => $args,
-			'compiled'              => $compiled,
-			'plan'                  => $plan,
-			'gutenberg_gaps'        => $compiled['gutenberg_gaps'] ?? array(),
-			'companion_payload'     => null,
-			'materialization_plan'  => array( 'theme' => array( 'font_materialization' => $compiled['font_materialization'] ?? array() ) ),
-			'theme_materialization' => array( 'strategy' => 'block' ),
-		);
-	}
 	public static function import_website_artifact( array $artifact, array $args = array() ) {
 		if ( true !== ( $args['_static_site_importer_precompiled_source'] ?? null ) || ! is_array( $args['compiled_artifact_result'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/', (string) ( $args['import_run_id'] ?? '' ) ) ) {
 			throw new RuntimeException( 'Materialization must receive the frozen precompiled result and stable run id.' );
+		}
+		if ( 'blocks-engine/wordpress-site-plan-view/v2' === ( $args['compiled_artifact_result']['schema'] ?? '' ) ) {
+			$args['compiled_artifact_result'] = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanView::materialize( $args['compiled_artifact_result'] );
 		}
 		if ( is_wp_error( $GLOBALS['ssi_direct_materialization_error'] ?? null ) ) {
 			return $GLOBALS['ssi_direct_materialization_error'];
@@ -142,8 +142,15 @@ class Static_Site_Importer_Theme_Generator {
 		return array(
 			'theme_slug'            => 'direct-artifact-fixture',
 			'theme_name'            => 'Direct Artifact Fixture',
-			'quality'               => $plan['quality'] ?? array(),
-			'import_report_summary' => array( 'status' => 'completed' ),
+			'quality'               => array( 'fallback_count' => 2, 'unsupported_fallback_count' => 2, 'pass' => false, 'fail_import' => true ),
+			'import_report'         => array( 'quality' => array( 'fallback_count' => 2, 'unsupported_fallback_count' => 2 ) ),
+			'import_report_summary' => array( 'status' => 'failed', 'quality_pass' => false, 'fail_import' => true, 'fallback_count' => 2, 'unsupported_fallback_count' => 2 ),
+			'import_validation_result' => array(
+				'status'       => 'failed',
+				'quality_pass' => false,
+				'fail_import'  => true,
+				'counts'       => array( 'fallback_blocks' => 2, 'unsupported_fallbacks' => 2 ),
+			),
 			'materialization_receipt' => array(
 				'status'     => 'completed',
 				'page_count' => count( $plan['pages'] ?? array() ),
@@ -264,6 +271,11 @@ $assert( ! empty( $frozen['success'] ) && ! empty( $frozen['continuation'] ) && 
 array_pop( $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] );
 $frozen_resumed = Static_Site_Importer_Canonical_Import_Service::import( $resume( (string) $frozen['import_id'], 'plan' ) );
 $assert( ! empty( $frozen_resumed['success'] ) && ! empty( $frozen_resumed['continuation'] ) && 3 === ( $frozen_resumed['artifact_run']['progress']['prepared_count'] ?? 0 ) && 1 === ( $frozen_resumed['artifact_run']['progress']['receipt_count'] ?? 0 ), 'source-free resume must hydrate the immutable artifact once, prepare every page in one pass, and compile only its bounded receipt batch' );
+$frozen_terminal = $frozen_resumed;
+for ( $attempt = 0; $attempt < 10 && ! empty( $frozen_terminal['continuation'] ); ++$attempt ) {
+	$frozen_terminal = Static_Site_Importer_Canonical_Import_Service::import( $resume( (string) $frozen['import_id'], 'plan' ) );
+}
+$assert( ! empty( $frozen_terminal['success'] ) && empty( $frozen_terminal['continuation'] ), 'the frozen plan run must drive to its terminal receipt so identical later plan requests own fresh runs' );
 
 $first = Static_Site_Importer_Canonical_Import_Service::import( $input() );
 $assert( ! empty( $first['success'] ) && ! empty( $first['continuation'] ) && 'pages_remaining' === ( $first['continuation_reason'] ?? '' ) && 3 === ( $first['artifact_run']['progress']['prepared_count'] ?? 0 ) && 1 === ( $first['artifact_run']['progress']['receipt_count'] ?? -1 ) && 'continuing' === ( $first['import_report_summary']['status'] ?? '' ), 'the first invocation must durably prepare all page plans in one partition, compile one bounded receipt batch, and explicitly continue' );
@@ -296,12 +308,20 @@ $terminal = Static_Site_Importer_Canonical_Import_Service::import( $terminal_req
 $work = $terminal['artifact_run']['work'] ?? array();
 $terminal_work = $terminal['artifact_run']['terminal_result_work'] ?? array();
 $assert( ! empty( $terminal['success'] ) && empty( $terminal['continuation'] ) && 1 === $GLOBALS['ssi_direct_mutations'], 'resumed apply must perform exactly one importer mutation' );
+$assert( 'completed' === ( $terminal['result']['materialization_receipt_summary']['status'] ?? '' ), 'terminal direct artifact response preserves completed materialization status' );
+$assert( 'failed' === ( $terminal['result']['import_report_summary']['status'] ?? '' ) && false === ( $terminal['result']['import_report_summary']['quality_pass'] ?? true ) && true === ( $terminal['result']['import_report_summary']['fail_import'] ?? false ), 'terminal direct artifact response reports failed quality status' );
+$assert( 'failed' === ( $terminal['result']['import_validation_result']['status'] ?? '' ) && 2 === ( $terminal['result']['import_validation_result']['counts']['fallback_blocks'] ?? null ), 'terminal direct artifact response retains failed validation evidence' );
+$assert( false === ( $terminal['fixture_diagnostics']['success'] ?? true ) && 2 === ( $terminal['fixture_diagnostics']['quality_counts']['fallback_count'] ?? null ), 'terminal direct artifact response retains nonzero fallback diagnostics without claiming quality acceptance' );
 $assert( array( 1, 1, 1 ) === ( $work['page_compile_counts'] ?? null ) && 3 === count( $terminal['artifact_run']['receipt_identities'] ?? array() ) && 3 === ( $work['pages_compiled'] ?? 0 ), 'durable counters and receipt evidence must prove every page compiled exactly once' );
 $assert( 1 === ( $work['page_prepare_passes'] ?? 0 ) && 3 === ( $work['page_plans_prepared'] ?? 0 ), 'durable counters must prove every page plan was prepared by one whole-artifact partition' );
 $assert( 1 === ( $work['content_policy_applications'] ?? 0 ) && 1 === ( $work['client_script_policy_applications'] ?? 0 ), 'content and client script policy must each run once before the artifact is frozen' );
 $assert( 1 === ( $work['materialization_claims'] ?? 0 ) && 1 === ( $work['materializations'] ?? 0 ) && true === ( $GLOBALS['ssi_direct_last_args']['_static_site_importer_precompiled_source'] ?? false ), 'apply must claim once and use the precompiled source handoff' );
 $assert( 0 === ( $terminal_work['html_document_transform_count'] ?? -1 ) && 0 === ( $terminal_work['normalization_count'] ?? -1 ), 'terminal composition must perform zero HTML transforms and normalization' );
 $assert( ! str_contains( (string) json_encode( $terminal['artifact_run'] ), $test_root ) && ! str_contains( (string) json_encode( $terminal['artifact_run'] ), 'website/index.html' ), 'public run evidence must remain bounded and path-free' );
+$persisted_composed = json_decode( (string) $frozen_workspace->read_raw( 'composed-result.json' ), true, 512, JSON_THROW_ON_ERROR );
+$persisted_view = $persisted_composed['payload']['result'] ?? array();
+$materialized_view = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanView::materialize( $persisted_view );
+$assert( 'blocks-engine/wordpress-site-plan-view/v2' === ( $persisted_view['schema'] ?? '' ) && \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::canonicalHash( $materialized_view['wordpress_site_plan'] ) === \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::canonicalHash( $GLOBALS['ssi_direct_compiled_results'][0]['wordpress_site_plan'] ?? array() ), 'composed result persists compact v2 JSON and materializes its exact canonical plan before consumption' );
 $composed_plan = $GLOBALS['ssi_direct_compiled_results'][0]['wordpress_site_plan'] ?? array();
 $form_declarations = array_values( array_filter( $composed_plan['runtime_declarations'] ?? array(), static fn( $declaration ): bool => is_array( $declaration ) && 'entity_collection' === ( $declaration['kind'] ?? '' ) && 'forms' === ( $declaration['type'] ?? '' ) ) );
 $form_dependencies = array_values( array_filter( $composed_plan['runtime_declarations'] ?? array(), static fn( $declaration ): bool => is_array( $declaration ) && 'dependency' === ( $declaration['kind'] ?? '' ) && 'form' === ( $declaration['capability'] ?? '' ) ) );
@@ -494,7 +514,9 @@ $assert( ! empty( $lifecycle_terminal['success'] ) && empty( $lifecycle_terminal
 $lifecycle_work = $lifecycle_terminal['artifact_run']['work'] ?? array();
 $assert( 1 === ( $lifecycle_work['lifecycle_preparation_claims'] ?? 0 ) && 1 === ( $lifecycle_work['lifecycle_preparations'] ?? 0 ) && 1 === ( $lifecycle_work['materialization_claims'] ?? 0 ) && 1 === ( $lifecycle_work['materializations'] ?? 0 ), 'direct lifecycle evidence must distinguish one dependency preparation from one final materialization' );
 
-$binary = str_repeat( "\x00\xffZIP", 1024 );
+// Larger than the compiler's own per-file default, so the run only reaches
+// prepare_shared if the staged ZIP declared the contract its intake verified.
+$binary = str_repeat( "\x00\xffZIP", 1441792 );
 $binary_ref = array(
 	'schema' => 'blocks-engine/payload-reference/v1',
 	'id'     => 'zip-entry:assets%2Fphoto.png',
@@ -522,10 +544,16 @@ $zip_first = Static_Site_Importer_Canonical_Import_Service::import(
 	)
 );
 $zip_id = (string) ( $zip_first['import_id'] ?? '' );
+$assert( 'A payload reference exceeds the compiler per-file byte limit.' !== ( $zip_first['error']['message'] ?? '' ), 'a staged ZIP payload the intake verified must not be rejected by the compiler per-file default' );
 $assert( ! empty( $zip_first['continuation'] ) && 1 === ( $zip_first['artifact_run']['work']['payloads_retained'] ?? 0 ), 'resolver-owned multi-page ZIP planning must enter the durable phase machine and retain each referenced payload once' );
 $zip_workspace = new Static_Site_Importer_Artifact_Run_Workspace( $test_root . '/static-site-importer/direct-artifact-imports', 'direct-' . $zip_id );
 $assert( $binary === $zip_workspace->read_raw( 'payloads/' . hash( 'sha256', $binary_ref['id'] ) . '.bin' ), 'the direct run must own verified payload bytes without changing their canonical reference id' );
-$zip_artifact = static_site_importer_source_runtime( array( 'files' => $GLOBALS['ssi_direct_staged_files'] ) )['artifact'];
+$zip_artifact = static_site_importer_source_runtime(
+	array(
+		'files'    => $GLOBALS['ssi_direct_staged_files'],
+		'metadata' => array( 'compiler_limits' => static_site_importer_staged_archive_compiler_limits() ),
+	)
+)['artifact'];
 $zip_reader = static_site_importer_staged_archive_payload_reader( array() );
 $zip_compiler = new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler();
 $zip_shared = $zip_compiler->prepareShared( $zip_artifact, $zip_reader );
@@ -589,7 +617,7 @@ $first_difference = static function ( $left, $right, string $path = '$' ) use ( 
 };
 $zip_uninterrupted_canonical = $canonical_compiled( $zip_uninterrupted_plan );
 $zip_resumed_canonical = $canonical_compiled( $zip_terminal['plan'] );
-$assert( $zip_uninterrupted_canonical === $zip_resumed_canonical, 'resumed ZIP planning must produce the byte-identical canonical plan from uninterrupted staged compilation outside process observations: ' . $first_difference( $zip_uninterrupted_canonical, $zip_resumed_canonical ) );
+$assert( \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::planIdentity( $zip_uninterrupted_canonical ) === \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::planIdentity( $zip_resumed_canonical ), 'resumed ZIP planning must preserve the canonical plan identity outside transport-only view compaction: ' . $first_difference( $zip_uninterrupted_canonical, $zip_resumed_canonical ) );
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array( static fn ( array $policy ): array => array_merge( $policy, array( 'compile_in_process_pages' => 4 ) ) );
 $owned_report_destination = (string) ( $GLOBALS['ssi_direct_last_args']['failed_plan_report_destination'] ?? '' );
 $assert( str_contains( $owned_report_destination, '/static-site-importer/direct-artifact-imports/.ssi-artifact-run-direct-' ) && str_ends_with( $owned_report_destination, '/failed-plan/import-report.json' ) && is_dir( dirname( $owned_report_destination ) ), 'direct Ability runs reserve an importer-owned failed-plan report destination inside the retained workspace' );
@@ -660,6 +688,11 @@ $recovered_throw = Static_Site_Importer_Canonical_Import_Service::import( $resum
 $assert( ! empty( $recovered_throw['success'] ) && empty( $recovered_throw['continuation'] ), 'a thrown phase failure must resume from durable receipts without recompiling pages' );
 
 $quality_failure_data = array(
+	'import_report_summary' => array(
+		'status'      => 'failed',
+		'quality_pass' => false,
+		'fail_import' => true,
+	),
 	'quality' => array(
 		'status'             => 'failed',
 		'fallbacks'          => array( array( 'pattern_family' => 'inline_svg', 'reason' => 'inline_svg_fallback' ) ),
@@ -678,6 +711,7 @@ $quality_failure_data = $quality_failure['error']['data'] ?? array();
 $quality_failure_evidence = $quality_failure_data['artifact_run']['failures'][0]['error']['data'] ?? array();
 $quality_failure_response = $quality_failure_data['failure']['error']['data'] ?? array();
 $assert( 'inline_svg_fallback' === ( $quality_failure_response['quality']['fallbacks'][0]['reason'] ?? '' ) && 'runtime_dependent_content' === ( $quality_failure_response['quality']['editability_policy']['failures'][0] ?? '' ) && $quality_failure_response === $quality_failure_evidence, 'quality-gate failures must return actionable fallback and editability reasons in both caller and run evidence' );
+$assert( empty( $quality_failure['success'] ) && 'failed' === ( $quality_failure['import_report_summary']['status'] ?? '' ) && true === ( $quality_failure['import_report_summary']['fail_import'] ?? false ), 'direct artifact quality-gate failures cannot be projected as successful imports' );
 $scrubbed_quality = $quality_failure_response['quality'] ?? array();
 $assert( ! isset( $scrubbed_quality['path'], $scrubbed_quality['workspace'], $scrubbed_quality['manifest'] ) && 1000 === strlen( $scrubbed_quality['long_value'] ?? '' ) && true === ( $scrubbed_quality['many']['_truncated'] ?? false ) && '[truncated]' === ( $scrubbed_quality['over_deep']['one']['two']['three']['four'] ?? '' ), 'quality-gate evidence must retain path stripping, string and item caps, and the original depth bound' );
 $GLOBALS['ssi_direct_materialization_error'] = null;
@@ -716,6 +750,36 @@ if ( null === $original_argv_zero ) {
 } else {
 	$_SERVER['argv'][0] = $original_argv_zero;
 }
+
+// A host that lost its import_id (crash, kill, reboot) must find and continue its
+// interrupted run from the identical request alone, instead of recompiling from zero.
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array(
+	static fn ( array $policy ): array => array_merge(
+		$policy,
+		array(
+			'compile_in_process_pages' => 1,
+			'compile_fanout_pages'     => 20,
+		)
+	),
+);
+$amnesiac_first = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+$amnesiac_id    = (string) ( $amnesiac_first['import_id'] ?? '' );
+$assert( ! empty( $amnesiac_first['continuation'] ) && preg_match( '/^[a-f0-9]{64}$/', $amnesiac_id ) && 1 === ( $amnesiac_first['artifact_run']['progress']['receipt_count'] ?? 0 ), 'the amnesiac scenario must begin with a fresh interrupted run holding one durable receipt' );
+$amnesiac_second = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+$assert( $amnesiac_id === (string) ( $amnesiac_second['import_id'] ?? '' ) && 2 === ( $amnesiac_second['artifact_run']['progress']['receipt_count'] ?? 0 ), 'an identical request without an import_id must discover and continue the interrupted run instead of recompiling from zero' );
+$divergent         = $input( 'plan' );
+$divergent['slug'] = 'discovery-mismatch-fixture';
+$divergent_run     = Static_Site_Importer_Canonical_Import_Service::import( $divergent );
+$assert( '' !== (string) ( $divergent_run['import_id'] ?? '' ) && $amnesiac_id !== (string) ( $divergent_run['import_id'] ?? '' ), 'a request with different import options must never adopt another request\'s interrupted run' );
+$amnesiac_terminal = $amnesiac_second;
+for ( $attempt = 0; $attempt < 10 && ! empty( $amnesiac_terminal['continuation'] ); ++$attempt ) {
+	$amnesiac_terminal = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+	$assert( $amnesiac_id === (string) ( $amnesiac_terminal['import_id'] ?? '' ), 'every amnesiac re-request must keep continuing the same discovered run' );
+}
+$amnesiac_work = $amnesiac_terminal['artifact_run']['work'] ?? array();
+$assert( ! empty( $amnesiac_terminal['success'] ) && empty( $amnesiac_terminal['continuation'] ) && array( 1, 1, 1 ) === ( $amnesiac_work['page_compile_counts'] ?? null ), 'a run driven only by amnesiac re-requests must complete with every page compiled exactly once' );
+$post_completion = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+$assert( '' !== (string) ( $post_completion['import_id'] ?? '' ) && $amnesiac_id !== (string) ( $post_completion['import_id'] ?? '' ), 'a completed run must never be adopted by discovery; identical new requests start their own run' );
 
 Static_Site_Importer_Artifact_Run_Workspace::purge_expired_in( $test_root );
 $primitive_workspace->purge();

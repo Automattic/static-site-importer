@@ -18,6 +18,12 @@ if ( ! class_exists( 'Static_Site_Importer_Portable_Source_Manifest' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Figma_Import' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-figma-import.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Compiler_Diagnostic_Normalizer' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-compiler-diagnostic-normalizer.php';
+}
+if ( ! class_exists( 'Static_Site_Importer_Compilation_Preparation' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-compilation-preparation.php';
+}
 
 class Static_Site_Importer_Canonical_Import_Service {
 	private static string $cli_report_destination = '';
@@ -118,6 +124,14 @@ class Static_Site_Importer_Canonical_Import_Service {
 				if ( is_wp_error( $payload_reader ) ) {
 					return self::error( (string) $payload_reader->get_error_code(), $payload_reader->get_error_message(), $payload_reader->get_error_data() );
 				}
+				// Staged archives normalize into payload references, so the
+				// artifact has to carry the bounded contract those references
+				// were verified against. Without it the compiler applies its own
+				// defaults and rejects entries the staged intake accepted. A
+				// resolver that declares its own contract keeps it.
+				if ( ! isset( $runtime_source['metadata']['compiler_limits'] ) ) {
+					$runtime_source['metadata']['compiler_limits'] = static_site_importer_staged_archive_compiler_limits();
+				}
 			} else {
 				$runtime_source['archive'] = isset( $source['zip'] ) && is_array( $source['zip'] ) ? $source['zip'] : array();
 			}
@@ -166,6 +180,25 @@ class Static_Site_Importer_Canonical_Import_Service {
 			if ( 'apply' === $operation && '' === $args['runtime_lifecycle_phase'] ) {
 				$args['runtime_lifecycle_phase']         = 'prepare';
 				$args['runtime_lifecycle_invocation_id'] = wp_generate_uuid4();
+			}
+			$resumable = Static_Site_Importer_Direct_Artifact_Import::find_resumable( $artifact, $args, $type, $operation );
+			if ( '' !== $resumable ) {
+				$result = Static_Site_Importer_Direct_Artifact_Import::resume(
+					$resumable,
+					$args,
+					$type,
+					$operation,
+					array(
+						'type'      => $type,
+						'import_id' => $resumable,
+					)
+				);
+				if ( ! is_wp_error( $result ) ) {
+					return $result;
+				}
+				if ( ! self::discovered_resume_may_restart( $result ) ) {
+					return self::error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
+				}
 			}
 			$result = Static_Site_Importer_Direct_Artifact_Import::start( $artifact, $args, $type, $operation, $provenance, $payload_reader ?? null );
 			return is_wp_error( $result ) ? self::error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() ) : $result;
@@ -216,6 +249,28 @@ class Static_Site_Importer_Canonical_Import_Service {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * Whether a discovered-run resume refusal may safely fall back to a fresh start.
+	 *
+	 * Identity refusals mean the retained run simply is not this request's run,
+	 * so starting fresh matches the pre-discovery behavior. Anything else — the
+	 * materialization-ambiguity fence included — is the run's real outcome and
+	 * must surface instead of being masked by a silent second run.
+	 */
+	private static function discovered_resume_may_restart( WP_Error $error ): bool {
+		return in_array(
+			(string) $error->get_error_code(),
+			array(
+				'static_site_importer_invalid_direct_artifact_import_id',
+				'static_site_importer_direct_artifact_run_not_found',
+				'static_site_importer_direct_artifact_run_mismatch',
+				'static_site_importer_direct_artifact_implementation_changed',
+				'static_site_importer_direct_artifact_run_expired',
+			),
+			true
+		);
 	}
 
 	private static function direct_artifact_continuation_available(): bool {
@@ -305,7 +360,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 
 	/** @param array<string,mixed> $artifact @param array<string,mixed> $args @param array<string,mixed> $provenance @return array<string,mixed> */
 	public static function plan_artifact( array $artifact, array $args, string $type, array $provenance ): array {
-		$compiled = Static_Site_Importer_Theme_Generator::compile_website_artifact( $artifact, $args );
+		$compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $artifact, $args );
 		if ( is_wp_error( $compiled ) ) {
 			return self::error( (string) $compiled->get_error_code(), $compiled->get_error_message(), $compiled->get_error_data() );
 		}
@@ -313,7 +368,10 @@ class Static_Site_Importer_Canonical_Import_Service {
 			'success'     => true,
 			'operation'   => 'plan',
 			'plan'        => $compiled['plan'],
-			'diagnostics' => $compiled['plan']['diagnostics'] ?? array(),
+			'diagnostics' => array_merge(
+				is_array( $compiled['plan']['diagnostics'] ?? null ) ? $compiled['plan']['diagnostics'] : array(),
+				Static_Site_Importer_Compiler_Diagnostic_Normalizer::normalize( is_array( $compiled['args']['compiler_diagnostics'] ?? null ) ? $compiled['args']['compiler_diagnostics'] : array() )
+			),
 			'quality'     => $compiled['plan']['quality'] ?? array(),
 			'source'      => array(
 				'type'       => $type,
@@ -335,8 +393,11 @@ class Static_Site_Importer_Canonical_Import_Service {
 				'normalized_args' => $compiled['args'],
 			);
 		}
-		if ( ! empty( $args['source_metadata']['figma_transform_report'] ) ) {
-			$response['figma_transform_report'] = $args['source_metadata']['figma_transform_report'];
+		$figma_transform_report = isset( $args['source_metadata']['figma_transform_report'] ) && is_array( $args['source_metadata']['figma_transform_report'] ) ? $args['source_metadata']['figma_transform_report'] : array();
+		if ( ! empty( $figma_transform_report ) ) {
+			$bounded                            = self::bound_success_result( array(), array( 'figma_transform_report' => $figma_transform_report ) );
+			$response['figma_transform_report'] = self::figma_transform_report_response( $figma_transform_report, $bounded['response_artifacts']['artifacts']['figma_transform_report'] ?? array() );
+			$response['response_artifacts']     = $bounded['response_artifacts'] ?? array();
 		}
 		return $response;
 	}
@@ -437,9 +498,10 @@ class Static_Site_Importer_Canonical_Import_Service {
 
 	/** @param array<string,mixed> $result @param array<string,mixed> $input @return array<string,mixed> */
 	public static function success( array $result, array $input ): array {
-		$contract             = self::success_diagnostics_contract( $result );
-		$result               = self::bound_success_result( $result );
-		$contract_diagnostics = isset( $contract['diagnostics'] ) && is_array( $contract['diagnostics'] ) ? $contract['diagnostics'] : array();
+		$contract               = self::success_diagnostics_contract( $result );
+		$figma_transform_report = isset( $input['source_metadata']['figma_transform_report'] ) && is_array( $input['source_metadata']['figma_transform_report'] ) ? $input['source_metadata']['figma_transform_report'] : array();
+		$result                 = self::bound_success_result( $result, empty( $figma_transform_report ) ? array() : array( 'figma_transform_report' => $figma_transform_report ) );
+		$contract_diagnostics   = isset( $contract['diagnostics'] ) && is_array( $contract['diagnostics'] ) ? $contract['diagnostics'] : array();
 		unset( $contract['diagnostics'] );
 		if ( 25 < count( $contract_diagnostics ) ) {
 			$contract_diagnostics = array_merge( array_slice( $contract_diagnostics, 0, 24 ), array_slice( $contract_diagnostics, -1 ) );
@@ -459,14 +521,14 @@ class Static_Site_Importer_Canonical_Import_Service {
 			'diagnostics'         => $bounded_contract['diagnostics'],
 			'fixture_diagnostics' => $bounded_contract,
 		);
-		if ( ! empty( $input['source_metadata']['figma_transform_report'] ) ) {
-			$response['figma_transform_report'] = $input['source_metadata']['figma_transform_report'];
+		if ( ! empty( $figma_transform_report ) ) {
+			$response['figma_transform_report'] = self::figma_transform_report_response( $figma_transform_report, $result['response_artifacts']['artifacts']['figma_transform_report'] ?? array() );
 		}
 		return $response;
 	}
 
 	/** Persist unbounded success payloads and replace them with durable references. */
-	public static function bound_success_result( array $result ): array {
+	public static function bound_success_result( array $result, array $additional_payloads = array() ): array {
 		$details  = $result;
 		$payloads = array_filter(
 			array(
@@ -475,6 +537,11 @@ class Static_Site_Importer_Canonical_Import_Service {
 			),
 			'is_array'
 		);
+		foreach ( $additional_payloads as $name => $payload ) {
+			if ( is_string( $name ) && is_array( $payload ) && ! isset( $payloads[ $name ] ) ) {
+				$payloads[ $name ] = $payload;
+			}
+		}
 		if ( empty( $payloads ) ) {
 			return $result;
 		}
@@ -542,11 +609,10 @@ class Static_Site_Importer_Canonical_Import_Service {
 			'artifacts' => array(),
 			'errors'    => array(),
 		);
-		$uploads   = function_exists( 'wp_upload_dir' ) ? wp_upload_dir() : array();
-		$basedir   = is_string( $uploads['basedir'] ?? null ) ? rtrim( $uploads['basedir'], '/\\' ) : '';
-		// Share the retained-run root so the existing daily expiry sweep owns these artifacts.
-		$root = $basedir . '/static-site-importer/direct-artifact-imports';
-		if ( '' === $basedir || ! function_exists( 'wp_mkdir_p' ) || ( ! is_dir( $root ) && ! wp_mkdir_p( $root ) ) ) {
+		// Share the retained-run root so the existing daily expiry sweep owns these
+		// artifacts and a host that relocates run state relocates these too.
+		$root = Static_Site_Importer_Direct_Artifact_Import::root();
+		if ( '' === $root || ! function_exists( 'wp_mkdir_p' ) || ( ! is_dir( $root ) && ! wp_mkdir_p( $root ) ) ) {
 			$artifacts['errors'][]        = array(
 				'code'    => 'static_site_importer_import_response_workspace_unavailable',
 				'message' => 'The importer-owned response artifact workspace is unavailable.',
@@ -559,7 +625,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 		$identity      = (string) ( $report['import_run_id'] ?? $receipt['receipt_instance_id'] ?? '' );
 		$plan_identity = is_array( $receipt['plan_identity'] ?? null ) ? $receipt['plan_identity'] : array();
 		if ( '' === $identity ) {
-			$identity = hash( 'sha256', (string) ( $result['theme_slug'] ?? '' ) . "\n" . (string) ( $plan_identity['hash'] ?? '' ) );
+			$identity = hash( 'sha256', (string) ( $result['theme_slug'] ?? '' ) . "\n" . (string) ( $plan_identity['hash'] ?? '' ) . "\n" . (string) wp_json_encode( $payloads ) );
 		}
 		$identity = trim( (string) preg_replace( '/[^A-Za-z0-9_-]/', '-', $identity ), '-' );
 		try {
@@ -607,6 +673,23 @@ class Static_Site_Importer_Canonical_Import_Service {
 		return $result;
 	}
 
+	/** Project a Figma report without placing its full transform diagnostics on the transport. */
+	private static function figma_transform_report_response( array $report, array $artifact ): array {
+		$remaining = 400;
+		$summary   = self::bounded_inline_value( is_array( $report['summary'] ?? null ) ? $report['summary'] : array(), $remaining );
+		$response  = array_filter(
+			array(
+				'schema'   => is_string( $report['schema'] ?? null ) ? $report['schema'] : '',
+				'source'   => is_string( $report['source'] ?? null ) ? $report['source'] : '',
+				'status'   => is_string( $report['status'] ?? null ) ? $report['status'] : '',
+				'summary'  => is_array( $summary ) ? $summary : array(),
+				'artifact' => $artifact,
+			),
+			static fn ( $value ): bool => '' !== $value && array() !== $value
+		);
+		return $response;
+	}
+
 	/** Return a globally bounded transport projection while preserving array shape. */
 	private static function bounded_inline_value( $value, int &$remaining_items, int $depth = 0 ) {
 		if ( 0 >= $remaining_items || 8 <= $depth ) {
@@ -633,7 +716,10 @@ class Static_Site_Importer_Canonical_Import_Service {
 	/** @param array<string,mixed> $result @return array<string,mixed> */
 	public static function success_diagnostics_contract( array $result ): array {
 		if ( isset( $result['fixture_diagnostics'] ) && is_array( $result['fixture_diagnostics'] ) ) {
-			return $result['fixture_diagnostics'];
+			$validation = isset( $result['import_validation_result'] ) && is_array( $result['import_validation_result'] ) ? $result['import_validation_result'] : array();
+			if ( self::fixture_diagnostics_match_validation_counts( $result['fixture_diagnostics'], $validation ) ) {
+				return $result['fixture_diagnostics'];
+			}
 		}
 		$validation  = isset( $result['import_validation_result'] ) && is_array( $result['import_validation_result'] ) ? $result['import_validation_result'] : array();
 		$quality     = isset( $result['quality'] ) && is_array( $result['quality'] ) ? $result['quality'] : array();
@@ -646,7 +732,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 			);
 		}
 		$input = array(
-			'success'                  => true,
+			'success'                  => empty( $validation['fail_import'] ),
 			'status'                   => isset( $result['import_report_summary']['status'] ) && is_scalar( $result['import_report_summary']['status'] ) ? (string) $result['import_report_summary']['status'] : 'completed',
 			'slug'                     => isset( $result['theme_slug'] ) ? (string) $result['theme_slug'] : '',
 			'name'                     => isset( $result['theme_name'] ) ? (string) $result['theme_name'] : '',
@@ -655,6 +741,38 @@ class Static_Site_Importer_Canonical_Import_Service {
 			'materialization_receipt'  => isset( $result['materialization_receipt'] ) && is_array( $result['materialization_receipt'] ) ? $result['materialization_receipt'] : array(),
 		);
 		return class_exists( 'Static_Site_Importer_Diagnostic_Contract' ) ? Static_Site_Importer_Diagnostic_Contract::build( $input ) : array( 'diagnostics' => $diagnostics );
+	}
+
+	/** Keep cached fixture projections only when they agree with final validation counts. */
+	private static function fixture_diagnostics_match_validation_counts( array $fixture, array $validation ): bool {
+		$validation_counts = isset( $validation['counts'] ) && is_array( $validation['counts'] ) ? $validation['counts'] : array();
+		$quality_counts    = isset( $fixture['quality_counts'] ) && is_array( $fixture['quality_counts'] ) ? $fixture['quality_counts'] : array();
+		$map               = array(
+			'diagnostics'                        => 'diagnostic_count',
+			'fallback_blocks'                    => 'fallback_count',
+			'unsupported_fallbacks'              => 'unsupported_fallback_count',
+			'accepted_preserved_runtime_islands' => 'accepted_preserved_runtime_island_count',
+			'content_loss'                       => 'content_loss_count',
+			'empty_conversions'                  => 'empty_conversion_count',
+			'core_html_blocks'                   => 'core_html_block_count',
+			'freeform_blocks'                    => 'freeform_block_count',
+			'invalid_blocks'                     => 'invalid_block_count',
+			'invalid_block_documents'            => 'invalid_block_document_count',
+			'unsafe_svgs'                        => 'unsafe_svg_count',
+			'svg_materialization_failures'       => 'svg_materialization_failure_count',
+			'svg_sprite_reference_failures'      => 'svg_sprite_reference_failure_count',
+			'commerce_dependency_failures'       => 'commerce_dependency_failures',
+			'interaction_candidates'             => 'interaction_candidate_count',
+			'runtime_dependency_parity'          => 'runtime_dependency_parity_issue_count',
+			'semantic_parity_failures'           => 'semantic_parity_failure_count',
+		);
+		foreach ( $map as $validation_key => $quality_key ) {
+			if ( isset( $validation_counts[ $validation_key ] ) && is_numeric( $validation_counts[ $validation_key ] ) && ( ! isset( $quality_counts[ $quality_key ] ) || (int) $validation_counts[ $validation_key ] !== (int) $quality_counts[ $quality_key ] ) ) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/** @param mixed $data @return array<string,mixed> */
