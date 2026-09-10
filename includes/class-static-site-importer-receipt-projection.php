@@ -11,6 +11,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Compiler_Diagnostic_Normalizer' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-compiler-diagnostic-normalizer.php';
+}
+
 class Static_Site_Importer_Receipt_Projection {
 	/** Project compiler gap rows into stable materialization diagnostics. */
 	public static function project_gutenberg_gaps( array $gaps, string $materialization_status = 'not_materialized' ): array {
@@ -44,7 +48,10 @@ class Static_Site_Importer_Receipt_Projection {
 		$plan        = $receipt['plan'];
 		$theme       = $receipt['theme'];
 		$diagnostics = Static_Site_Importer_Report_Diagnostics::after_completed_entity_bindings(
-			is_array( $plan['diagnostics'] ?? null ) ? $plan['diagnostics'] : array(),
+			array_merge(
+				is_array( $plan['diagnostics'] ?? null ) ? $plan['diagnostics'] : array(),
+				Static_Site_Importer_Compiler_Diagnostic_Normalizer::normalize( is_array( $args['compiler_diagnostics'] ?? null ) ? $args['compiler_diagnostics'] : array() )
+			),
 			$receipt
 		);
 		if ( ! empty( $args['compiler_options'] ) && is_array( $args['compiler_options'] ) ) {

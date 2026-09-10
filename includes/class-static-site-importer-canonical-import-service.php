@@ -18,6 +18,9 @@ if ( ! class_exists( 'Static_Site_Importer_Portable_Source_Manifest' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Figma_Import' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-figma-import.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Compiler_Diagnostic_Normalizer' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-compiler-diagnostic-normalizer.php';
+}
 
 class Static_Site_Importer_Canonical_Import_Service {
 	private static string $cli_report_destination = '';
@@ -362,7 +365,10 @@ class Static_Site_Importer_Canonical_Import_Service {
 			'success'     => true,
 			'operation'   => 'plan',
 			'plan'        => $compiled['plan'],
-			'diagnostics' => $compiled['plan']['diagnostics'] ?? array(),
+			'diagnostics' => array_merge(
+				is_array( $compiled['plan']['diagnostics'] ?? null ) ? $compiled['plan']['diagnostics'] : array(),
+				Static_Site_Importer_Compiler_Diagnostic_Normalizer::normalize( is_array( $compiled['args']['compiler_diagnostics'] ?? null ) ? $compiled['args']['compiler_diagnostics'] : array() )
+			),
 			'quality'     => $compiled['plan']['quality'] ?? array(),
 			'source'      => array(
 				'type'       => $type,
