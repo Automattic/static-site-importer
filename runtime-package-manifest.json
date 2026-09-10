@@ -85,6 +85,10 @@
         {
           "type": "prefix",
           "path": "vendor/"
+        },
+        {
+          "type": "prefix",
+          "path": "vendor/automattic/blocks-engine-figma-transformer/"
         }
       ],
       "required_files": [

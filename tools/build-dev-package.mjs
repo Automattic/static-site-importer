@@ -150,7 +150,8 @@ export async function buildDevelopmentPackage(options, dependencies = {}) {
       runtimeProfile.required_files = [...new Set([...runtimeProfile.required_files, packagedIdentityFile])]
       await writeFile(runtimeManifestPath, `${JSON.stringify(runtimeManifest, null, 2)}\n`)
     }
-    const includeFigma = !runtimeProfile || runtimeProfile.selectors.some((selector) => selector.path === "vendor/automattic/blocks-engine-figma-transformer/")
+    const figmaPackagePath = "vendor/automattic/blocks-engine-figma-transformer/"
+    const includeFigma = !runtimeProfile || runtimeProfile.selectors.some((selector) => selector.type === "prefix" && figmaPackagePath.startsWith(selector.path))
 
     await mkdir(blocksEngine, { recursive: true })
     const blocksArchive = join(temporaryDirectory, "blocks-engine.tar")
