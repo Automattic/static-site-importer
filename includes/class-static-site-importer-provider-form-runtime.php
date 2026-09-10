@@ -102,13 +102,14 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		if ( ! is_string( $trigger ) ) {
 			return $html;
 		}
-		$html         = substr_replace( $html, $trigger, $button[0][1], strlen( $button[0][0] ) );
-		$parts        = array_map( static fn( array $part ): string => preg_replace( '/^<svg\b/i', '<svg class="' . $part['class'] . '"', $part['markup'], 1 ) ?? $part['markup'], $state['parts'] );
-		$group        = ( '' === $state['css'] ? '' : '<style>' . $state['css'] . '</style>' ) . '<span class="ssi-form-visual-state" data-wp-bind--hidden="context.selectedCountry.value"><span class="' . $state['group']['class'] . '">' . implode( '', $parts ) . '</span></span>';
-		$html         = substr_replace( $html, $group, $button[0][1] + strlen( $trigger ), 0 );
-		$arrow_offset = $arrow[0][1] + ( $arrow[0][1] > $button[0][1] ? strlen( $trigger ) - strlen( $button[0][0] ) + strlen( $group ) : 0 );
-		$arrow_tag    = $arrow[0][0];
-		$arrow_tag    = preg_replace( '/\sdata-wp-bind--hidden=("|\')[^"\']*\1/i', '', $arrow_tag ) ?? $arrow_tag;
+		$html           = substr_replace( $html, $trigger, $button[0][1], strlen( $button[0][0] ) );
+		$parts          = array_map( static fn( array $part ): string => preg_replace( '/^<svg\b/i', '<svg class="' . $part['class'] . '"', $part['markup'], 1 ) ?? $part['markup'], $state['parts'] );
+		$visibility_css = '.' . $state['trigger_class'] . ' [hidden]{display:none!important}.' . $state['trigger_class'] . ':has(>.ssi-form-visual-state:not([hidden])){gap:0}';
+		$group          = '<style>' . $visibility_css . $state['css'] . '</style><span class="ssi-form-visual-state ' . $state['group']['class'] . '" data-wp-bind--hidden="context.selectedCountry.value">' . implode( '', $parts ) . '</span>';
+		$html           = substr_replace( $html, $group, $button[0][1] + strlen( $trigger ), 0 );
+		$arrow_offset   = $arrow[0][1] + ( $arrow[0][1] > $button[0][1] ? strlen( $trigger ) - strlen( $button[0][0] ) + strlen( $group ) : 0 );
+		$arrow_tag      = $arrow[0][0];
+		$arrow_tag      = preg_replace( '/\sdata-wp-bind--hidden=("|\')[^"\']*\1/i', '', $arrow_tag ) ?? $arrow_tag;
 		return substr_replace( $html, rtrim( substr( $arrow_tag, 0, -1 ) ) . ' data-wp-bind--hidden="!context.selectedCountry.value">', $arrow_offset, strlen( $arrow[0][0] ) );
 	}
 

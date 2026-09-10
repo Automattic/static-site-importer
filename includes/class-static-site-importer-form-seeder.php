@@ -2313,7 +2313,7 @@ class Static_Site_Importer_Form_Seeder {
 				}
 			}
 			if ( ! empty( $declarations ) ) {
-				$rules[] = '.' . $scope . ' .ssi-form-visual-state:not([hidden]) .' . $state_group['class'] . '{' . implode( ';', $declarations ) . '}';
+				$rules[] = '.' . $scope . ' .ssi-form-visual-state:not([hidden]).' . $state_group['class'] . '{' . implode( ';', $declarations ) . '}';
 			}
 		}
 		foreach ( $parts as $part ) {
@@ -2340,7 +2340,7 @@ class Static_Site_Importer_Form_Seeder {
 					}
 				}
 				if ( ! empty( $declarations ) ) {
-					$rules[] = '@media ' . $variant['condition']['query'] . '{.' . $scope . ' .ssi-form-visual-state:not([hidden]) .' . $state_group['class'] . '{' . implode( ';', $declarations ) . '}}';
+					$rules[] = '@media ' . $variant['condition']['query'] . '{.' . $scope . ' .ssi-form-visual-state:not([hidden]).' . $state_group['class'] . '{' . implode( ';', $declarations ) . '}}';
 				}
 			}
 			if ( 'visual_part' !== ( $variant['role'] ?? null ) || ! isset( $classes[ $variant['part_id'] ?? '' ] ) || ! is_array( $variant['style_patch'] ?? null ) || ! is_array( $variant['condition'] ?? null ) || 'media' !== ( $variant['condition']['kind'] ?? null ) || ! is_string( $variant['condition']['query'] ?? null ) ) {
