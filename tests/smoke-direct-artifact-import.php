@@ -115,6 +115,9 @@ require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnost
 class Static_Site_Importer_Theme_Generator {
 	public static function compile_website_artifact( array $artifact, array $args = array() ) {
 		$compiled = $args['compiled_artifact_result'] ?? array();
+		if ( 'blocks-engine/wordpress-site-plan-view/v2' === ( $compiled['schema'] ?? '' ) ) {
+			$compiled = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanView::materialize( $compiled );
+		}
 		$plan = is_array( $compiled['wordpress_site_plan'] ?? null ) ? $compiled['wordpress_site_plan'] : array();
 		if ( empty( $plan ) ) {
 			return new WP_Error( 'missing_precompiled_plan', 'The smoke materializer requires the real staged compiler result.' );
@@ -627,7 +630,7 @@ $first_difference = static function ( $left, $right, string $path = '$' ) use ( 
 };
 $zip_uninterrupted_canonical = $canonical_compiled( $zip_uninterrupted_plan );
 $zip_resumed_canonical = $canonical_compiled( $zip_terminal['plan'] );
-$assert( $zip_uninterrupted_canonical === $zip_resumed_canonical, 'resumed ZIP planning must produce the byte-identical canonical plan from uninterrupted staged compilation outside process observations: ' . $first_difference( $zip_uninterrupted_canonical, $zip_resumed_canonical ) );
+$assert( \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::planIdentity( $zip_uninterrupted_canonical ) === \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::planIdentity( $zip_resumed_canonical ), 'resumed ZIP planning must preserve the canonical plan identity outside transport-only view compaction: ' . $first_difference( $zip_uninterrupted_canonical, $zip_resumed_canonical ) );
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array( static fn ( array $policy ): array => array_merge( $policy, array( 'compile_in_process_pages' => 4 ) ) );
 $owned_report_destination = (string) ( $GLOBALS['ssi_direct_last_args']['failed_plan_report_destination'] ?? '' );
 $assert( str_contains( $owned_report_destination, '/static-site-importer/direct-artifact-imports/.ssi-artifact-run-direct-' ) && str_ends_with( $owned_report_destination, '/failed-plan/import-report.json' ) && is_dir( dirname( $owned_report_destination ) ), 'direct Ability runs reserve an importer-owned failed-plan report destination inside the retained workspace' );

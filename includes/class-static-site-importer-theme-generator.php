@@ -276,8 +276,18 @@ class Static_Site_Importer_Theme_Generator {
 			$compiler_result = ( new $compiler_class() )->compile( $artifact );
 			$compiled        = $compiler_result->toWordPressSitePlanView();
 		}
-		if ( 'blocks-engine/wordpress-site-plan-view/v1' !== ( $compiled['schema'] ?? '' ) ) {
+		if ( ! in_array( $compiled['schema'] ?? '', array( 'blocks-engine/wordpress-site-plan-view/v1', 'blocks-engine/wordpress-site-plan-view/v2' ), true ) ) {
 			return new WP_Error( 'static_site_importer_invalid_transformer_result', 'Blocks Engine php-transformer returned an invalid WordPress site plan view.' );
+		}
+		if ( 'blocks-engine/wordpress-site-plan-view/v2' === ( $compiled['schema'] ?? '' ) ) {
+			if ( ! Static_Site_Importer_WordPress_Site_Plan_View_Capabilities::supports_materialization() ) {
+				return new WP_Error( 'static_site_importer_unsupported_compact_wordpress_site_plan_view', 'This persisted compact WordPress site plan view requires a Blocks Engine php-transformer with materialize() support.' );
+			}
+			try {
+				$compiled = Static_Site_Importer_WordPress_Site_Plan_View_Capabilities::materialize( $compiled );
+			} catch ( Throwable $error ) {
+				return new WP_Error( 'static_site_importer_invalid_transformer_result', $error->getMessage() );
+			}
 		}
 		$plan = is_array( $compiled['wordpress_site_plan'] ?? null ) ? $compiled['wordpress_site_plan'] : array();
 		if ( empty( $plan ) ) {

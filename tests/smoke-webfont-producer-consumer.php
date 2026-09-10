@@ -44,7 +44,8 @@ $assert = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) throw new RuntimeException( $message );
 };
 
-$assert( 'v0.10.1' === \Composer\InstalledVersions::getPrettyVersion( 'automattic/blocks-engine-php-transformer' ), 'producer-consumer integration runs against the locked Blocks Engine php-transformer v0.10.1 dependency' );
+$candidate_transformer = getenv( 'SSI_BLOCKS_ENGINE_PHP_TRANSFORMER' );
+$assert( 'v0.10.1' === \Composer\InstalledVersions::getPrettyVersion( 'automattic/blocks-engine-php-transformer' ) || ( is_string( $candidate_transformer ) && is_dir( $candidate_transformer ) ), 'producer-consumer integration runs against the locked Blocks Engine php-transformer v0.10.1 dependency or an explicit candidate path' );
 
 $fixture_html = '<!doctype html><html><head><link rel="stylesheet" href="css/style.css"></head><body><main>Inter fixture</main></body></html>';
 $fixture_css  = "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');\n:root{--font:'Inter',system-ui,sans-serif}body{font-family:var(--font)}";
