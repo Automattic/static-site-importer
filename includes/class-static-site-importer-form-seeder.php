@@ -2466,13 +2466,22 @@ class Static_Site_Importer_Form_Seeder {
 						$target['destinations'][] = $destination;
 					}
 				} else {
-					$class                    = self::presentation_node_class( $scope, $index, 'control' );
+					$class      = self::presentation_node_class( $scope, $index, 'control' );
+					$properties = array_keys( 'submit' === $type ? Static_Site_Importer_Provider_Layout_Overlay::positioned_control_presentation_property_keys() : Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() );
+					if ( 'submit' === $type ) {
+						$target['destinations'][] = array(
+							'role'       => 'control',
+							'selector'   => $selector_scope . ' .' . $class,
+							'properties' => array( 'width' ),
+						);
+						$properties               = array_values( array_diff( $properties, array( 'width' ) ) );
+					}
 					$target['destinations'][] = array(
 						'role'       => 'control',
 						'selector'   => $selector_scope . ' .' . $class . ( 'submit' === $type ? ' > .wp-block-button__link' : '' ),
 						// Core's rendered button is an actual destination for the source
 						// button's positioning and transform properties; other controls are not.
-						'properties' => array_keys( 'submit' === $type ? Static_Site_Importer_Provider_Layout_Overlay::positioned_control_presentation_property_keys() : Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ),
+						'properties' => $properties,
 					);
 				}
 			}
