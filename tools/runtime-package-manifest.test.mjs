@@ -71,9 +71,10 @@ test("website artifact import profile is complete and capability scoped", async 
   assert.equal(selected.some((path) => path.startsWith("blocks/")), false, "runtime profile must not ship the demo block")
   assert.equal(selected.includes("includes/block.php"), false, "runtime profile must not ship the demo block bootstrap")
   assert.ok(selected.some((path) => path.startsWith("vendor/league/")))
+  assert.ok(selected.some((path) => path.startsWith("vendor/automattic/blocks-engine-figma-transformer/")))
   assert.ok(selected.length > profile.required_files.length)
 
-  for (const excluded of ["bench/", "blocks/", "build/", "demos/", "docs/", "lib/", "node_modules/", "tests/", "tools/", "vendor/automattic/blocks-engine-figma-transformer/"]) {
+  for (const excluded of ["bench/", "blocks/", "build/", "demos/", "docs/", "lib/", "node_modules/", "tests/", "tools/"]) {
     assert.equal(selected.some((path) => path.startsWith(excluded)), false, `profile leaked excluded tree: ${excluded}`)
   }
   for (const excluded of ["homeboy-test-manifest.json", "test-manifest.json"]) assert.equal(selected.includes(excluded), false, `profile leaked test manifest: ${excluded}`)
@@ -138,6 +139,44 @@ test("supplied HTML archive boots its local transformer without optional depende
   }
 })
 
+test("supplied full archive contains Composer dependencies and loads Figma transformers", async () => {
+  if (!process.env.STATIC_SITE_IMPORTER_PACKAGE_ZIP || (process.env.STATIC_SITE_IMPORTER_RUNTIME_PROFILE || "website-artifact-import") !== "website-artifact-import") return
+
+  const directory = await mkdtemp(join(tmpdir(), "ssi-full-runtime-"))
+  try {
+    execFileSync("unzip", ["-q", process.env.STATIC_SITE_IMPORTER_PACKAGE_ZIP, "-d", directory])
+    const packageRoot = join(directory, "static-site-importer")
+    const composer = JSON.parse(await readFile(join(packageRoot, "composer.json"), "utf8"))
+    const installed = JSON.parse(execFileSync("php", ["-r", "echo json_encode(require $argv[1], JSON_THROW_ON_ERROR);", join(packageRoot, "vendor/composer/installed.php")], { encoding: "utf8" }))
+
+    for (const dependency of Object.keys(composer.require ?? {}).filter((name) => !isPlatformRequirement(name))) {
+      const metadata = installed.versions?.[dependency]
+      assert.ok(metadata, `Composer declares ${dependency}, but the archive metadata does not`)
+    }
+    for (const [dependency, metadata] of Object.entries(installed.versions ?? {})) {
+      if (dependency === "__root__" || !metadata.install_path) continue
+      assert.ok((await stat(metadata.install_path)).isDirectory(), `Composer declares ${dependency}, but ${metadata.install_path} is absent from the archive`)
+    }
+
+    const script = String.raw`
+      $root = $argv[1];
+      require $root . '/vendor/autoload.php';
+      foreach (array(
+        $root . '/vendor/automattic/blocks-engine-figma-transformer/figma-transformer/figma-transformer.php',
+        $root . '/vendor/automattic/blocks-engine-figma-transformer/figma-transformer.php',
+      ) as $bootstrap) {
+        if (is_readable($bootstrap)) require_once $bootstrap;
+      }
+      if (!function_exists('blocks_engine_figma_transformer_transform_scenegraph') || !function_exists('blocks_engine_figma_transformer_transform_file')) {
+        throw new RuntimeException('Figma transformer functions did not load from the full archive.');
+      }
+    `
+    execFileSync("php", ["-r", script, packageRoot], { stdio: "pipe" })
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 test("HTML site import profile excludes optional conversion dependencies", async () => {
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"))
   const profile = manifest.profiles?.["html-site-import"]
@@ -172,6 +211,10 @@ async function selectedFiles(profile) {
   }
   for (const path of await listFiles(join(root, "vendor"))) candidates.add(path)
   return [...candidates].filter((path) => matchesProfile(path, profile)).sort()
+}
+
+function isPlatformRequirement(name) {
+  return name === "php" || /^(?:ext|lib|composer(?:-|$))/.test(name)
 }
 
 function matchesProfile(path, profile) {

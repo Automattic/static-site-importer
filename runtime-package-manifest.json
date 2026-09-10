@@ -71,45 +71,27 @@
           "path": "static-site-importer.php"
         },
         {
+          "type": "file",
+          "path": "composer.json"
+        },
+        {
+          "type": "file",
+          "path": "composer.lock"
+        },
+        {
           "type": "prefix",
           "path": "includes/"
         },
         {
-          "type": "file",
-          "path": "vendor/autoload.php"
-        },
-        {
           "type": "prefix",
-          "path": "vendor/composer/"
-        },
-        {
-          "type": "prefix",
-          "path": "vendor/automattic/blocks-engine-php-transformer/"
-        },
-        {
-          "type": "prefix",
-          "path": "vendor/dflydev/"
-        },
-        {
-          "type": "prefix",
-          "path": "vendor/league/"
-        },
-        {
-          "type": "prefix",
-          "path": "vendor/nette/"
-        },
-        {
-          "type": "prefix",
-          "path": "vendor/psr/"
-        },
-        {
-          "type": "prefix",
-          "path": "vendor/symfony/"
+          "path": "vendor/"
         }
       ],
       "required_files": [
         "runtime-package-manifest.json",
         "static-site-importer.php",
+        "composer.json",
+        "composer.lock",
         "includes/abilities.php",
         "includes/class-static-site-importer-form-fallback-contract.php",
         "includes/class-static-site-importer-entity-compensation.php",
