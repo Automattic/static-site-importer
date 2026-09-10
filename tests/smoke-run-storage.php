@@ -82,6 +82,7 @@ require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-direct-artifact-import.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-lifecycle-compile-checkpoint.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-canonical-import-service.php';
+require_once dirname( __DIR__ ) . '/includes/cli.php';
 
 $failures   = array();
 $assertions = 0;
@@ -167,6 +168,37 @@ foreach ( $artifacts as $name => $artifact ) {
 
 $leaked = glob( $uploads_basedir . '/static-site-importer/*' ) ?: array();
 $assert( array() === $leaked, 'import-leaves-no-working-files-in-uploads', implode( ', ', $leaked ) );
+
+// Studio retains only the final MiB of a CLI line, so Figma reports must stay
+// in response artifacts while the receipt keeps a useful, parseable summary.
+$figma_report = array(
+	'schema'         => 'static-site-importer/figma-transform-report/v1',
+	'source'         => 'blocks-engine/figma-transformer',
+	'status'         => 'completed',
+	'summary'        => array( 'page_coverage' => array( 'candidate_count' => 1, 'selected_count' => 1, 'page_count' => 1 ) ),
+	'source_reports' => array( 'figma' => array( 'raw_transform_diagnostics' => str_repeat( 'figma-diagnostic-', 80000 ) ) ),
+);
+$figma_response = Static_Site_Importer_Canonical_Import_Service::success(
+	array(
+		'theme_slug'              => 'figma-bounded-response-smoke',
+		'status'                  => 'completed',
+		'import_report'           => array( 'schema' => 'static-site-importer/import-report/v1', 'import_run_id' => 'figma-bounded-response-smoke', 'diagnostics' => array() ),
+		'materialization_receipt' => array( 'schema' => 'static-site-importer/materialization-receipt/v2', 'status' => 'completed', 'receipt_instance_id' => 'figma-bounded-response-receipt', 'plan_identity' => array( 'hash' => hash( 'sha256', 'figma-plan' ) ) ),
+	),
+	array( 'source_metadata' => array( 'figma_transform_report' => $figma_report ) )
+);
+$cli_receipt = static_site_importer_cli_import_receipt( $figma_response, 1 );
+$serialized   = wp_json_encode( $cli_receipt, JSON_UNESCAPED_SLASHES );
+$studio_tail  = is_string( $serialized ) ? substr( $serialized, -1048576 ) : '';
+$parsed_tail  = json_decode( $studio_tail, true );
+$reference    = $parsed_tail['response']['figma_transform_report']['artifact'] ?? array();
+$stored       = is_array( $reference ) && is_file( (string) ( $reference['path'] ?? '' ) ) ? json_decode( (string) file_get_contents( $reference['path'] ), true ) : null;
+$assert( is_string( $serialized ) && 1048576 > strlen( $serialized ), 'figma-cli-receipt-within-studio-tail-bound', (string) strlen( $serialized ) );
+$assert( is_array( $parsed_tail ), 'figma-cli-receipt-studio-tail-parses' );
+$assert( ! str_contains( $serialized ?: '', 'raw_transform_diagnostics' ), 'figma-cli-receipt-omits-full-transform-report' );
+$assert( 'static-site-importer/figma-transform-report/v1' === ( $parsed_tail['response']['figma_transform_report']['schema'] ?? '' ) && 1 === ( $parsed_tail['response']['figma_transform_report']['summary']['page_coverage']['selected_count'] ?? 0 ), 'figma-cli-receipt-retains-compact-summary' );
+$assert( is_file( (string) ( $reference['path'] ?? '' ) ) && 1048576 < (int) ( $reference['bytes'] ?? 0 ) && hash_file( 'sha256', (string) $reference['path'] ) === ( $reference['sha256'] ?? '' ), 'figma-transform-report-reference-is-verified' );
+$assert( $figma_report === $stored, 'figma-transform-report-reference-retrieves-complete-report' );
 
 // Clean up the smoke's throwaway site tree.
 $remove = static function ( string $directory ) use ( &$remove ): void {
