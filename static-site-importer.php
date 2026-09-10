@@ -98,7 +98,6 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-compiler-diagnostic-normalizer.php',
 	'class-static-site-importer-import-report.php',
 	'class-static-site-importer-diagnostic-contract.php',
-	'class-static-site-importer-public-diagnostic-projection.php',
 	'class-static-site-importer-artifact-diagnostics-adapter.php',
 	'class-static-site-importer-validation-runtime.php',
 	'class-static-site-importer-report-diagnostics.php',

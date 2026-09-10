@@ -26,7 +26,6 @@ if ( ! class_exists( 'Static_Site_Importer_Quality_Budget_Admission' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-quality-budget-admission.php';
 }
 require_once __DIR__ . '/class-static-site-importer-prepared-plan-application.php';
-require_once __DIR__ . '/class-static-site-importer-public-diagnostic-projection.php';
 
 final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	public const RECEIPT_SCHEMA                    = 'static-site-importer/materialization-receipt/v2';
@@ -2058,7 +2057,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$data                    = $error->get_error_data();
 		if ( is_array( $data ) ) {
 			$diagnostics = is_array( $data['diagnostics'] ?? null ) ? $data['diagnostics'] : $data;
-			$diagnostics = 'static_site_importer_entity_materialization_failed' === $error->get_error_code() ? Static_Site_Importer_Public_Diagnostic_Projection::diagnostics( $diagnostics ) : $diagnostics;
+			$diagnostics = 'static_site_importer_entity_materialization_failed' === $error->get_error_code() ? Static_Site_Importer_Entity_Materializer_Registry::project_public_diagnostics( $diagnostics ) : $diagnostics;
 			foreach ( $diagnostics as $diagnostic ) {
 				if ( ! is_array( $diagnostic ) ) {
 					continue;
@@ -2081,7 +2080,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$data                    = $error->get_error_data();
 		if ( is_array( $data ) ) {
 			$diagnostics = is_array( $data['diagnostics'] ?? null ) ? $data['diagnostics'] : $data;
-			$diagnostics = 'static_site_importer_entity_materialization_failed' === $error->get_error_code() ? Static_Site_Importer_Public_Diagnostic_Projection::diagnostics( $diagnostics ) : $diagnostics;
+			$diagnostics = 'static_site_importer_entity_materialization_failed' === $error->get_error_code() ? Static_Site_Importer_Entity_Materializer_Registry::project_public_diagnostics( $diagnostics ) : $diagnostics;
 			foreach ( $diagnostics as $diagnostic ) {
 				if ( ! is_array( $diagnostic ) ) {
 					continue;
@@ -2366,7 +2365,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( isset( $state['failure_reason'] ) && is_string( $state['failure_reason'] ) && '' !== $state['failure_reason'] ) {
 			$errors[] = array(
 				'code'    => $state['failure_reason'],
-				'message' => Static_Site_Importer_Public_Diagnostic_Projection::message( $state['failure_reason'] ),
+				'message' => Static_Site_Importer_Entity_Materializer_Registry::project_public_error_message( $state['failure_reason'] ),
 			);
 		}
 		$receipt = array(

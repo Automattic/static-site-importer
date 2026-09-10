@@ -21,8 +21,8 @@ if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Client_Script_Policy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-client-script-policy.php';
 }
-if ( ! class_exists( 'Static_Site_Importer_Public_Diagnostic_Projection' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-public-diagnostic-projection.php';
+if ( ! class_exists( 'Static_Site_Importer_Entity_Materializer_Registry' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-entity-materializer-registry.php';
 }
 
 final class Static_Site_Importer_Direct_Artifact_Import {
@@ -1116,11 +1116,11 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			$message = $error->getMessage();
 			$data    = null;
 		}
-		$diagnostics = is_array( $data ) && is_array( $data['diagnostics'] ?? null ) ? Static_Site_Importer_Public_Diagnostic_Projection::diagnostics( $data['diagnostics'] ) : array();
+		$diagnostics = is_array( $data ) && is_array( $data['diagnostics'] ?? null ) ? Static_Site_Importer_Entity_Materializer_Registry::project_public_diagnostics( $data['diagnostics'] ) : array();
 
-		$message = Static_Site_Importer_Public_Diagnostic_Projection::message( $code, $diagnostics );
+		$message = Static_Site_Importer_Entity_Materializer_Registry::project_public_error_message( $code, $diagnostics );
 
-		$data = is_array( $data ) ? Static_Site_Importer_Public_Diagnostic_Projection::data( $data ) : $data;
+		$data = is_array( $data ) ? Static_Site_Importer_Entity_Materializer_Registry::project_public_error_data( $data ) : $data;
 
 		$failure                       = array(
 			'phase'              => $phase,
