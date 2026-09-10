@@ -25,9 +25,6 @@ if ( ! class_exists( 'Static_Site_Importer_Current_Site_Capabilities' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Quality_Budget_Admission' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-quality-budget-admission.php';
 }
-if ( ! class_exists( 'Static_Site_Importer_Entity_Materializer_Registry' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-entity-materializer-registry.php';
-}
 require_once __DIR__ . '/class-static-site-importer-prepared-plan-application.php';
 
 final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
@@ -2368,7 +2365,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		if ( isset( $state['failure_reason'] ) && is_string( $state['failure_reason'] ) && '' !== $state['failure_reason'] ) {
 			$errors[] = array(
 				'code'    => $state['failure_reason'],
-				'message' => Static_Site_Importer_Entity_Materializer_Registry::project_public_error_message( $state['failure_reason'] ),
+				'message' => class_exists( 'Static_Site_Importer_Entity_Materializer_Registry' ) ? Static_Site_Importer_Entity_Materializer_Registry::project_public_error_message( $state['failure_reason'] ) : 'Materialization failed.',
 			);
 		}
 		$receipt = array(
