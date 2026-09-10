@@ -66,7 +66,10 @@ class Static_Site_Importer_Theme_Generator {
 			if ( is_wp_error( $checkpoint ) ) {
 				return $checkpoint;
 			}
-			$compiled_import = $checkpoint['payload'];
+			$compiled_import = ! empty( $checkpoint['reference_backed'] ) ? self::compile_website_artifact( $artifact, $args ) : $checkpoint['payload'];
+			if ( is_wp_error( $compiled_import ) ) {
+				return $compiled_import;
+			}
 			if ( ! isset( $compiled_import['artifact'], $compiled_import['args'], $compiled_import['plan'], $compiled_import['gutenberg_gaps'], $compiled_import['materialization_plan'], $compiled_import['theme_materialization'] ) || ! is_array( $compiled_import['artifact'] ) || ! is_array( $compiled_import['args'] ) || ! is_array( $compiled_import['plan'] ) || ! is_array( $compiled_import['gutenberg_gaps'] ) || ! is_array( $compiled_import['materialization_plan'] ) || ! is_array( $compiled_import['theme_materialization'] ) ) {
 				return new WP_Error( 'static_site_importer_lifecycle_checkpoint_invalid', 'The lifecycle compile checkpoint payload is invalid.' );
 			}

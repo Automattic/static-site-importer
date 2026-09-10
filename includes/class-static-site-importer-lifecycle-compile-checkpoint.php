@@ -9,6 +9,7 @@ if ( ! class_exists( 'Static_Site_Importer_Artifact_Run_Workspace' ) ) {
 
 final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 	private const SCHEMA                       = 'static-site-importer/lifecycle-compile-checkpoint/v1';
+	private const DIRECT_ARTIFACT_REFERENCE    = 'static-site-importer/direct-artifact-lifecycle-reference/v1';
 	private const TTL                          = 21600;
 	private const CLEANUP_HOOK                 = 'static_site_importer_purge_lifecycle_compile_checkpoints';
 	private static ?string $runtime_generation = null;
@@ -25,6 +26,21 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 			return $workspace;
 		}
 		$binding = self::binding( $artifact, $request_args, $owner );
+		$reference = self::direct_artifact_reference( $request_args, $materialization );
+		if ( is_array( $reference ) ) {
+			$record = array(
+				'schema'             => self::SCHEMA,
+				'binding'            => $binding,
+				'runtime_generation' => self::runtime_generation(),
+				'reference'          => $reference,
+			);
+			$stored = $workspace->publish_json_once( 'checkpoint.json', $record );
+			if ( is_wp_error( $stored ) ) {
+				$workspace->purge();
+				return $stored;
+			}
+			return $token;
+		}
 		$payload = array(
 			'artifact'              => $materialization['artifact'],
 			'args'                  => $materialization['args'],
@@ -65,15 +81,24 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 		}
 		$raw    = $workspace->read_raw( 'checkpoint.json' );
 		$record = is_string( $raw ) ? json_decode( $raw, true ) : null;
-		if ( ! is_array( $record ) || self::SCHEMA !== ( $record['schema'] ?? '' ) || ! is_array( $record['binding'] ?? null ) || ! is_string( $record['runtime_generation'] ?? null ) || ! self::valid_payload( $record['payload'] ?? null ) || ! is_string( $record['payload_sha256'] ?? null ) ) {
+		if ( ! is_array( $record ) || self::SCHEMA !== ( $record['schema'] ?? '' ) || ! is_array( $record['binding'] ?? null ) || ! is_string( $record['runtime_generation'] ?? null ) ) {
 			return new WP_Error( 'static_site_importer_lifecycle_checkpoint_invalid', 'The lifecycle compile checkpoint is invalid.' );
 		}
 		if ( hash_equals( $record['runtime_generation'], self::runtime_generation() ) ) {
 			return new WP_Error( 'static_site_importer_fresh_runtime_required', 'Provider validation must resume in a fresh WordPress runtime after dependency preparation.' );
 		}
-		$json = wp_json_encode( $record['payload'] );
-		if ( ! is_string( $json ) || ! hash_equals( $record['payload_sha256'], hash( 'sha256', $json ) ) || self::binding( $artifact, $request_args, $owner ) !== $record['binding'] ) {
+		if ( self::binding( $artifact, $request_args, $owner ) !== $record['binding'] ) {
 			return new WP_Error( 'static_site_importer_lifecycle_checkpoint_mismatch', 'The lifecycle compile checkpoint does not match this import request.' );
+		}
+		if ( self::valid_direct_artifact_reference( $record['reference'] ?? null, $request_args ) ) {
+			return array(
+				'workspace'        => $workspace,
+				'reference_backed' => true,
+			);
+		}
+		$json = wp_json_encode( $record['payload'] ?? null );
+		if ( ! self::valid_payload( $record['payload'] ?? null ) || ! is_string( $json ) || ! is_string( $record['payload_sha256'] ?? null ) || ! hash_equals( $record['payload_sha256'], hash( 'sha256', $json ) ) ) {
+			return new WP_Error( 'static_site_importer_lifecycle_checkpoint_invalid', 'The lifecycle compile checkpoint is invalid.' );
 		}
 		return array(
 			'workspace' => $workspace,
@@ -166,7 +191,7 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 	}
 
 	private static function binding( array $artifact, array $args, string $owner ): array {
-		unset( $args['runtime_lifecycle_phase'], $args['runtime_lifecycle_request_id'], $args['runtime_lifecycle_invocation_id'], $args['runtime_lifecycle_checkpoint'], $args['_static_site_importer_lifecycle_checkpoint_root'], $args['report'], $args['failed_plan_report_destination'], $args['failed_plan_artifact_prefix'], $args['client_script_policy_report'], $args['missing_author_stylesheet_diagnostics'], $args['compiled_artifact_result'], $args['_static_site_importer_precompiled_source'], $args['_static_site_importer_payload_reader'], $args['import_run_id'] );
+		unset( $args['runtime_lifecycle_phase'], $args['runtime_lifecycle_request_id'], $args['runtime_lifecycle_invocation_id'], $args['runtime_lifecycle_checkpoint'], $args['_static_site_importer_lifecycle_checkpoint_root'], $args['report'], $args['failed_plan_report_destination'], $args['failed_plan_artifact_prefix'], $args['client_script_policy_report'], $args['missing_author_stylesheet_diagnostics'], $args['compiled_artifact_result'], $args['_static_site_importer_precompiled_source'], $args['_static_site_importer_payload_reader'], $args['_static_site_importer_lifecycle_reference_backed'], $args['import_run_id'] );
 		if ( is_array( $args['source_metadata']['collection'] ?? null ) ) {
 			unset( $args['source_metadata']['collection']['script_policy'] );
 			if ( empty( $args['source_metadata']['collection'] ) ) {
@@ -174,11 +199,71 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 			}
 		}
 		return array(
-			'artifact_sha256' => hash( 'sha256', (string) wp_json_encode( $artifact ) ),
+			'artifact_sha256' => self::hash_json( $artifact ),
 			'args'            => $args,
 			'owner'           => $owner,
 			'implementation'  => self::implementation_binding(),
 		);
+	}
+
+	/** Direct runs already retain immutable source and composed-result checkpoints. */
+	private static function direct_artifact_reference( array $args, array $materialization ): ?array {
+		$import_id = (string) ( $args['import_run_id'] ?? '' );
+		if ( ! preg_match( '/^[a-f0-9]{64}$/', $import_id ) || empty( $args['_static_site_importer_lifecycle_reference_backed'] ) || empty( $args['_static_site_importer_precompiled_source'] ) || ! is_array( $args['compiled_artifact_result'] ?? null ) || ! is_array( $materialization['plan'] ?? null ) ) {
+			return null;
+		}
+		return array(
+			'schema'    => self::DIRECT_ARTIFACT_REFERENCE,
+			'import_id' => $import_id,
+		);
+	}
+
+	private static function valid_direct_artifact_reference( $reference, array $args ): bool {
+		return is_array( $reference )
+			&& self::DIRECT_ARTIFACT_REFERENCE === ( $reference['schema'] ?? '' )
+			&& is_string( $reference['import_id'] ?? null )
+			&& hash_equals( $reference['import_id'], (string) ( $args['import_run_id'] ?? '' ) )
+			&& ! empty( $args['_static_site_importer_lifecycle_reference_backed'] )
+			&& ! empty( $args['_static_site_importer_precompiled_source'] )
+			&& is_array( $args['compiled_artifact_result'] ?? null );
+	}
+
+	/** Stream the request artifact binding without assembling a second artifact-sized JSON string. */
+	private static function hash_json( array $value ): string {
+		$context = hash_init( 'sha256' );
+		self::hash_json_value( $context, $value );
+		return hash_final( $context );
+	}
+
+	private static function hash_json_value( $context, $value ): void {
+		if ( ! is_array( $value ) ) {
+			$encoded = wp_json_encode( $value );
+			hash_update( $context, is_string( $encoded ) ? $encoded : '' );
+			return;
+		}
+		if ( array_is_list( $value ) ) {
+			hash_update( $context, '[' );
+			foreach ( $value as $index => $item ) {
+				if ( 0 !== $index ) {
+					hash_update( $context, ',' );
+				}
+				self::hash_json_value( $context, $item );
+			}
+			hash_update( $context, ']' );
+			return;
+		}
+		hash_update( $context, '{' );
+		$first = true;
+		foreach ( $value as $key => $item ) {
+			if ( ! $first ) {
+				hash_update( $context, ',' );
+			}
+			$first = false;
+			self::hash_json_value( $context, (string) $key );
+			hash_update( $context, ':' );
+			self::hash_json_value( $context, $item );
+		}
+		hash_update( $context, '}' );
 	}
 
 	private static function implementation_binding(): array {
