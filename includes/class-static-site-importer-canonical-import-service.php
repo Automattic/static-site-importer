@@ -395,9 +395,9 @@ class Static_Site_Importer_Canonical_Import_Service {
 		}
 		$figma_transform_report = isset( $args['source_metadata']['figma_transform_report'] ) && is_array( $args['source_metadata']['figma_transform_report'] ) ? $args['source_metadata']['figma_transform_report'] : array();
 		if ( ! empty( $figma_transform_report ) ) {
-			$bounded = self::bound_success_result( array(), array( 'figma_transform_report' => $figma_transform_report ) );
+			$bounded                            = self::bound_success_result( array(), array( 'figma_transform_report' => $figma_transform_report ) );
 			$response['figma_transform_report'] = self::figma_transform_report_response( $figma_transform_report, $bounded['response_artifacts']['artifacts']['figma_transform_report'] ?? array() );
-			$response['response_artifacts']      = $bounded['response_artifacts'] ?? array();
+			$response['response_artifacts']     = $bounded['response_artifacts'] ?? array();
 		}
 		return $response;
 	}
@@ -501,7 +501,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 		$contract               = self::success_diagnostics_contract( $result );
 		$figma_transform_report = isset( $input['source_metadata']['figma_transform_report'] ) && is_array( $input['source_metadata']['figma_transform_report'] ) ? $input['source_metadata']['figma_transform_report'] : array();
 		$result                 = self::bound_success_result( $result, empty( $figma_transform_report ) ? array() : array( 'figma_transform_report' => $figma_transform_report ) );
-		$contract_diagnostics = isset( $contract['diagnostics'] ) && is_array( $contract['diagnostics'] ) ? $contract['diagnostics'] : array();
+		$contract_diagnostics   = isset( $contract['diagnostics'] ) && is_array( $contract['diagnostics'] ) ? $contract['diagnostics'] : array();
 		unset( $contract['diagnostics'] );
 		if ( 25 < count( $contract_diagnostics ) ) {
 			$contract_diagnostics = array_merge( array_slice( $contract_diagnostics, 0, 24 ), array_slice( $contract_diagnostics, -1 ) );
@@ -683,7 +683,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 				'source'   => is_string( $report['source'] ?? null ) ? $report['source'] : '',
 				'status'   => is_string( $report['status'] ?? null ) ? $report['status'] : '',
 				'summary'  => is_array( $summary ) ? $summary : array(),
-				'artifact' => is_array( $artifact ) ? $artifact : array(),
+				'artifact' => $artifact,
 			),
 			static fn ( $value ): bool => '' !== $value && array() !== $value
 		);
