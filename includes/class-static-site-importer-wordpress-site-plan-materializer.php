@@ -758,7 +758,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$font_overlay = isset( $state['font_overlay'] ) && is_array( $state['font_overlay'] )
 			? $state['font_overlay']
 			: Static_Site_Importer_Font_Materializer::prepare_overlay(
-				isset( $state['args']['font_materialization'] ) && is_array( $state['args']['font_materialization'] ) ? $state['args']['font_materialization'] : array(),
+				! empty( $state['args']['page_ready_checkpoint'] ) ? array() : ( is_array( $state['plan']['theme']['font_materialization'] ?? null ) ? $state['plan']['theme']['font_materialization'] : array() ),
 				$font_resolved
 			);
 		if ( is_wp_error( $font_overlay ) ) {

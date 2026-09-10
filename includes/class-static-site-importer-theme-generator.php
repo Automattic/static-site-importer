@@ -98,7 +98,6 @@ class Static_Site_Importer_Theme_Generator {
 		$gutenberg_gaps        = $compiled_import['gutenberg_gaps'];
 		$companion_payload     = $compiled_import['companion_payload'];
 		$theme_materialization = $compiled_import['theme_materialization'];
-		$args['font_materialization'] = isset( $plan['theme']['font_materialization'] ) && is_array( $plan['theme']['font_materialization'] ) ? $plan['theme']['font_materialization'] : array();
 		$lifecycle = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $plan, $args );
 		if ( is_wp_error( $lifecycle ) ) {
 			return $lifecycle;
