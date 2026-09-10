@@ -136,6 +136,7 @@ $lifecycle_for = static function ( array $rows, array $counts ): array {
 	);
 	$adapter  = array(
 		'provider'         => 'jetpack',
+		'entity_collection' => 'forms',
 		'waiver_arg'       => 'allow_missing_jetpack',
 		'binding_callback' => array( 'Static_Site_Importer_Form_Seeder', 'binding_block_markup' ),
 		'materializer'     => static function ( array $seeded ) use ( $rows, $counts ): array {
@@ -205,11 +206,68 @@ $assert( 'about.html' === ( $degraded_bindings[0]['source_path'] ?? '' ), 'the-d
 
 // A provider row that errored, or one that never came back at all, still fails.
 $errored = $lifecycle_for(
-	array( $mapped_row, array( 'source_path' => 'contact.html', 'selector' => 'form.contact', 'status' => 'error', 'reason' => 'provider_exploded' ) ),
+	array( $mapped_row, array( 'source_path' => 'contact.html', 'selector' => 'form.contact', 'status' => 'error', 'reason' => 'provider_exploded', 'unaccepted_receipt_loss_count' => 3 ) ),
 	array( 'mapped' => 1, 'error' => 1 )
 );
 $errored_result = Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $errored['lifecycle'], array( 'seed_entities' => false ) );
 $assert( 'static_site_importer_entity_materialization_failed' === ( $errored_result['error']['code'] ?? '' ), 'a-provider-error-row-still-fails-materialization' );
+$assert( 'contact.html' === ( $errored_result['error']['diagnostics'][0]['source_path'] ?? '' ) && 'form.contact' === ( $errored_result['error']['diagnostics'][0]['selector'] ?? '' ) && 3 === ( $errored_result['error']['diagnostics'][0]['loss_count'] ?? 0 ), 'terminal-error-normalizes-the-failing-provider-row' );
+$assert( str_contains( (string) ( $errored_result['error']['message'] ?? '' ), 'contact.html' ) && ! str_contains( (string) ( $errored_result['error']['message'] ?? '' ), 'contact-forms' ), 'terminal-error-is-readable-without-a-declaration-hash' );
+
+$generic_rows = array();
+for ( $index = 0; $index < 11; ++$index ) {
+	$generic_rows[] = array(
+		'status'                      => 'error',
+		'source_path'                 => 'pages/' . $index . '.html',
+		'selector'                    => 'section[data-item="' . $index . '"]',
+		'reason_code'                 => 'provider_unavailable',
+		'provider_availability_reason' => 'required capability is unavailable',
+		'form_receipt_unaccepted_losses' => array( array(), array() ),
+	);
+}
+$generic_lifecycle = array(
+	'entities' => array(
+		'widget-declaration' => array(
+			'adapter'  => array(
+				'provider'          => 'generic-provider',
+				'entity_type'       => 'widget',
+				'entity_collection' => 'widgets',
+				'materializer'      => static fn( array $manifest ): array => array( 'status' => 'failed', 'available' => false, 'reason' => 'provider_unavailable', 'counts' => array( 'error' => 11 ), 'widgets' => $manifest['widgets'] ),
+			),
+			'manifest' => array( 'widgets' => $generic_rows ),
+			'required' => true,
+		),
+	),
+);
+$generic_result      = Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $generic_lifecycle, array( 'seed_entities' => false ) );
+$generic_diagnostics = $generic_result['error']['diagnostics'] ?? array();
+$assert( 10 === count( $generic_diagnostics ) && false === ( $generic_diagnostics[0]['provider_available'] ?? true ) && 'pages/0.html' === ( $generic_diagnostics[0]['source_path'] ?? '' ) && 'pages/9.html' === ( $generic_diagnostics[9]['source_path'] ?? '' ), 'provider-level-failures-project-declared-generic-row-diagnostics' );
+
+$bounded_diagnostics = Static_Site_Importer_Entity_Materializer_Registry::failure_diagnostics(
+	'declaration-id',
+	array( 'provider' => 'generic-provider', 'entity_type' => 'product' ),
+	array( 'products' => array_fill( 0, 11, array( 'source_path' => 'products.html', 'selector' => '.product' ) ) ),
+	array( 'status' => 'completed', 'failure_rows' => array_map( static fn( $row ): array => array( 'entity' => array(), 'result' => $row ), $generic_rows ) )
+);
+$assert( 10 === count( $bounded_diagnostics ) && 'pages/0.html' === ( $bounded_diagnostics[0]['source_path'] ?? '' ) && 'pages/9.html' === ( $bounded_diagnostics[9]['source_path'] ?? '' ), 'failure-diagnostics-use-the-exact-row-bound-without-provider-specific-shapes' );
+
+$malformed_rows = array_merge( array_fill( 0, 10, 'not-a-row' ), array( array( 'status' => 'error', 'source_path' => 'must-not-be-scanned.html' ) ) );
+$malformed_diagnostics = Static_Site_Importer_Entity_Materializer_Registry::failure_diagnostics(
+	'declaration-id',
+	array( 'provider' => 'generic-provider', 'entity_type' => 'widget' ),
+	array( 'widgets' => array() ),
+	array( 'status' => 'completed', 'failure_rows' => $malformed_rows )
+);
+$assert( array() === $malformed_diagnostics, 'failure-diagnostic-scan-budget-includes-malformed-rows' );
+
+$unicode_diagnostics = Static_Site_Importer_Entity_Materializer_Registry::failure_diagnostics(
+	'declaration-id',
+	array( 'provider' => 'generic-provider', 'entity_type' => 'widget' ),
+	array( 'forms' => array() ),
+	array( 'status' => 'failed', 'available' => true, 'forms' => array( array( 'status' => 'error', 'source_path' => 'pages/' . str_repeat('é', 200) . '.html', 'reason' => 'failed' ) ) )
+);
+$unicode_message = (string) ( $unicode_diagnostics[0]['message'] ?? '' );
+$assert( 256 >= strlen( $unicode_message ) && preg_match( '//u', $unicode_message ) && 256 >= strlen( (string) ( $unicode_diagnostics[0]['source_path'] ?? '' ) ), 'failure-diagnostics-bound-unicode-bytes-without-invalid-utf8' );
 
 $absent = $lifecycle_for( array( $mapped_row ), array( 'mapped' => 2 ) );
 $absent_result   = Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $absent['lifecycle'], array( 'seed_entities' => false ) );
