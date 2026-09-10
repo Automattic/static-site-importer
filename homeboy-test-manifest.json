@@ -33,6 +33,7 @@
     "tests/smoke-run-storage.php": { "environment": "standalone-php" },
     "tests/smoke-rest-import.php": { "environment": "standalone-php" },
     "tests/smoke-lifecycle-compile-checkpoint.php": { "environment": "standalone-php" },
+    "tests/smoke-plan-owned-font-materialization.php": { "environment": "standalone-php" },
     "tests/smoke-materialized-block-content-validation.php": { "environment": "standalone-php" },
     "tests/smoke-managed-classic-theme-materialization.php": { "environment": "standalone-php" },
     "tests/smoke-portable-source-manifest.php": { "environment": "standalone-php" },

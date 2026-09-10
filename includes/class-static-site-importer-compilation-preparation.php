@@ -140,7 +140,6 @@ final class Static_Site_Importer_Compilation_Preparation {
 			$strategy['evidence']['status']            = 'source_artifact_projection';
 			$strategy['evidence']['projection_schema'] = $projection['schema'];
 		}
-		$materialization_plan = array( 'theme' => array( 'font_materialization' => is_array( $compiled['font_materialization'] ?? null ) ? $compiled['font_materialization'] : array() ) );
 		return array(
 			'artifact'              => $artifact,
 			'args'                  => $args,
@@ -148,7 +147,6 @@ final class Static_Site_Importer_Compilation_Preparation {
 			'plan'                  => $plan,
 			'gutenberg_gaps'        => $gutenberg_gaps,
 			'companion_payload'     => $companion_payload,
-			'materialization_plan'  => $materialization_plan,
 			'theme_materialization' => $strategy['evidence'],
 		);
 	}
