@@ -74,9 +74,6 @@ class Static_Site_Importer_Plugin_Materializer {
 				$report['installed'] = true;
 				$report['actions'][] = 'installed';
 			}
-			if ( function_exists( 'wp_clean_plugins_cache' ) ) {
-				wp_clean_plugins_cache( false );
-			}
 		}
 		$activation_deps = self::load_activation_dependencies();
 		if ( is_wp_error( $activation_deps ) ) {
@@ -97,6 +94,7 @@ class Static_Site_Importer_Plugin_Materializer {
 			}
 			$report['attempted_actions'][] = 'activate';
 			$lifecycle                     = self::prepare_activation_lifecycle_replay();
+			self::refresh_plugin_metadata_cache();
 			try {
 				$activate = activate_plugin( $plugin_file );
 			} catch ( Throwable $error ) {
@@ -259,6 +257,7 @@ class Static_Site_Importer_Plugin_Materializer {
 		if ( function_exists( 'is_plugin_active' ) && is_plugin_active( $plugin_file ) ) {
 			$report['active'] = true;
 		} elseif ( function_exists( 'activate_plugin' ) ) {
+			self::refresh_plugin_metadata_cache();
 			$activate = activate_plugin( $plugin_file );
 			if ( is_wp_error( $activate ) ) {
 				return self::failed_report( $report, $activate );
@@ -612,6 +611,23 @@ class Static_Site_Importer_Plugin_Materializer {
 	private static function plugin_entrypoint_exists( string $path ): bool {
 		clearstatcache( true, $path );
 		return file_exists( $path );
+	}
+
+	/**
+	 * Drop this request's cached plugin inventory before activating a plugin.
+	 *
+	 * Core validate_plugin() reads the request-local get_plugins() result, which a
+	 * nested install or an earlier process cannot update. Without this refresh,
+	 * activation of a freshly written entrypoint fails with no_plugin_header.
+	 */
+	private static function refresh_plugin_metadata_cache(): void {
+		if ( function_exists( 'wp_clean_plugins_cache' ) ) {
+			wp_clean_plugins_cache( false );
+			return;
+		}
+		if ( function_exists( 'wp_cache_delete' ) ) {
+			wp_cache_delete( 'plugins', 'plugins' );
+		}
 	}
 
 	/**
