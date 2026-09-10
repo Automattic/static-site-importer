@@ -1,5 +1,6 @@
 <?php
 /** Run: php tests/smoke-direct-artifact-import.php */
+// @phpstan-ignore-file -- This standalone executable uses runtime-loaded test doubles.
 
 define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 define( 'STATIC_SITE_IMPORTER_PATH', dirname( __DIR__ ) . '/' );
