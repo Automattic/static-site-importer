@@ -105,6 +105,7 @@ function static_site_importer_staged_archive_payload_reader( array $archive ): o
 }
 
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-site-plan-view-capabilities.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-run.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-client-script-policy.php';
