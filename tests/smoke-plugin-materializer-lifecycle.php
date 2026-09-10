@@ -44,8 +44,12 @@ class WP_CLI {
 		}
 		mkdir( WP_PLUGIN_DIR . '/absent-plugin', 0777, true );
 		file_put_contents( WP_PLUGIN_DIR . '/absent-plugin/absent-plugin.php', "<?php\n" );
-		// A launched WP-CLI install cannot poison this process's plugin scan.
-		$GLOBALS['ssi_plugin_entrypoint_discoverable'] = true;
+		if ( 'install_reconcile' === $GLOBALS['ssi_install_outcome'] ) {
+			// Upgraders can persist the entrypoint before reporting a terminal failure.
+			return 1;
+		}
+		// A launched WP-CLI install writes to disk only. It cannot update this
+		// process's cached plugin inventory.
 		return 0;
 	}
 }
@@ -66,7 +70,9 @@ $GLOBALS['ssi_activation_attempts'] = 0;
 $GLOBALS['ssi_install_attempts'] = 0;
 $GLOBALS['ssi_install_outcome'] = 'success';
 $GLOBALS['ssi_plugin_cache_cleans'] = 0;
-$GLOBALS['ssi_plugin_entrypoint_discoverable'] = true;
+$GLOBALS['ssi_plugin_cache_deletes'] = 0;
+$GLOBALS['ssi_plugin_inventory_cache'] = null;
+$GLOBALS['ssi_activation_seen_inventory'] = array();
 $GLOBALS['ssi_preparation_calls'] = 0;
 
 function ssi_test_callback_id( callable $callback ): string {
@@ -93,14 +99,52 @@ function plugins_api( string $action, array $args ): object {
 	unset( $action, $args );
 	return (object) array( 'download_link' => 'https://example.test/absent-plugin.zip' );
 }
+/**
+ * Scan plugin entrypoints on disk the way core get_plugins() does.
+ *
+ * @return array<string,array<string,mixed>>
+ */
+function ssi_test_scan_plugins(): array {
+	$found = array();
+	foreach ( (array) glob( WP_PLUGIN_DIR . '/*/*.php' ) as $file ) {
+		$basename = basename( dirname( $file ) ) . '/' . basename( $file );
+		$found[ $basename ] = array( 'Name' => basename( dirname( $file ) ) );
+	}
+	return $found;
+}
+/**
+ * Mirror core get_plugins(): scan once, then serve the request-local inventory.
+ *
+ * @return array<string,array<string,mixed>>
+ */
+function get_plugins( string $plugin_folder = '' ): array {
+	unset( $plugin_folder );
+	if ( null === $GLOBALS['ssi_plugin_inventory_cache'] ) {
+		$GLOBALS['ssi_plugin_inventory_cache'] = ssi_test_scan_plugins();
+	}
+	return $GLOBALS['ssi_plugin_inventory_cache'];
+}
+function wp_cache_delete( string $key, string $group = '' ): bool {
+	if ( 'plugins' === $key && 'plugins' === $group ) {
+		$GLOBALS['ssi_plugin_inventory_cache'] = null;
+	}
+	++$GLOBALS['ssi_plugin_cache_deletes'];
+	return true;
+}
 function wp_clean_plugins_cache( bool $clear_update_cache = true ): void {
 	unset( $clear_update_cache );
 	++$GLOBALS['ssi_plugin_cache_cleans'];
+	wp_cache_delete( 'plugins', 'plugins' );
 }
 function activate_plugin( string $plugin_file ) {
-	unset( $plugin_file );
 	++$GLOBALS['ssi_activation_attempts'];
-	if ( ! $GLOBALS['ssi_plugin_entrypoint_discoverable'] ) {
+	// Core validate_plugin() checks the request-local inventory before loading.
+	$inventory = get_plugins();
+	$GLOBALS['ssi_activation_seen_inventory'][] = array(
+		'plugin_file' => $plugin_file,
+		'known'       => isset( $inventory[ $plugin_file ] ),
+	);
+	if ( ! isset( $inventory[ $plugin_file ] ) ) {
 		return new WP_Error( 'no_plugin_header', 'The plugin does not have a valid header.' );
 	}
 	if ( 'throw_without_state_change' !== $GLOBALS['ssi_activation_outcome'] ) {
@@ -213,9 +257,16 @@ unlink( WP_PLUGIN_DIR . '/late-plugin/late-plugin.php' );
 rmdir( WP_PLUGIN_DIR . '/late-plugin' );
 $GLOBALS['ssi_plugin_active'] = false;
 $GLOBALS['ssi_activation_outcome'] = 'success';
-$GLOBALS['ssi_plugin_entrypoint_discoverable'] = false;
 $GLOBALS['ssi_prepared'] = false;
 $GLOBALS['ssi_preparation_calls'] = 0;
+$GLOBALS['ssi_install_attempts'] = 0;
+$GLOBALS['ssi_plugin_cache_cleans'] = 0;
+$GLOBALS['ssi_activation_seen_inventory'] = array();
+$GLOBALS['ssi_plugin_inventory_cache'] = null;
+// Model a request that scanned the plugin directory before the dependency
+// existed. That pre-install inventory stays request-local until SSI refreshes it.
+$pre_install_inventory = get_plugins();
+$assert( ! isset( $pre_install_inventory['absent-plugin/absent-plugin.php'] ), 'pre-install-inventory-lacks-dependency' );
 $absent_report = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
 	'absent-plugin',
 	'absent-plugin/absent-plugin.php',
@@ -229,9 +280,52 @@ $absent_report = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
 $assert( 'installed_activated' === ( $absent_report['status'] ?? '' ) && 1 === $GLOBALS['ssi_install_attempts'] && in_array( 'install', $absent_report['attempted_actions'] ?? array(), true ) && in_array( 'activate', $absent_report['attempted_actions'] ?? array(), true ), 'absent-provider-installs-then-activates' );
 $assert( 1 === $GLOBALS['ssi_plugin_cache_cleans'], 'newly-installed-provider-refreshes-plugin-cache-before-activation' );
 $assert( true === ( WP_CLI::$commands[0]['options']['launch'] ?? false ), 'wp-cli-install-launches-in-child-process' );
-$assert( true === $GLOBALS['ssi_plugin_entrypoint_discoverable'], 'launched-install-makes-fresh-entrypoint-discoverable' );
+$assert( true === ( $GLOBALS['ssi_activation_seen_inventory'][0]['known'] ?? false ), 'launched-install-refreshes-inventory-before-activation' );
 $assert( true === ( $absent_report['active'] ?? false ), 'fresh-entrypoint-activates-in-same-execution' );
 $assert( 1 === $GLOBALS['ssi_preparation_calls'] && in_array( 'prepare_runtime', $absent_report['attempted_actions'] ?? array(), true ), 'fresh-entrypoint-prepares-in-same-execution' );
+
+unlink( WP_PLUGIN_DIR . '/absent-plugin/absent-plugin.php' );
+rmdir( WP_PLUGIN_DIR . '/absent-plugin' );
+// A prior process installed the plugin: the entrypoint is on disk while this
+// request's inventory predates it. Activation must refresh before validating.
+$GLOBALS['ssi_plugin_active'] = false;
+$GLOBALS['ssi_install_attempts'] = 0;
+$GLOBALS['ssi_plugin_cache_cleans'] = 0;
+$GLOBALS['ssi_activation_seen_inventory'] = array();
+$GLOBALS['ssi_plugin_inventory_cache'] = null;
+$prior_install_inventory = get_plugins();
+$assert( ! isset( $prior_install_inventory['stale-plugin/stale-plugin.php'] ), 'prior-process-inventory-lacks-installed-plugin' );
+mkdir( WP_PLUGIN_DIR . '/stale-plugin', 0777, true );
+file_put_contents( WP_PLUGIN_DIR . '/stale-plugin/stale-plugin.php', "<?php\n" );
+$stale_report = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
+	'stale-plugin',
+	'stale-plugin/stale-plugin.php',
+	static fn (): bool => $GLOBALS['ssi_plugin_active']
+);
+$assert( 'activated' === ( $stale_report['status'] ?? '' ) && 0 === $GLOBALS['ssi_install_attempts'], 'prior-process-install-activates-without-reinstalling' );
+$assert( 1 === $GLOBALS['ssi_plugin_cache_cleans'], 'prior-process-install-refreshes-plugin-cache-before-activation' );
+$assert( true === ( $GLOBALS['ssi_activation_seen_inventory'][0]['known'] ?? false ), 'prior-process-install-refreshes-cached-inventory' );
+
+unlink( WP_PLUGIN_DIR . '/stale-plugin/stale-plugin.php' );
+rmdir( WP_PLUGIN_DIR . '/stale-plugin' );
+// An upgrader can persist the entrypoint before reporting a terminal failure.
+// The reconciled install must still refresh before activating that entrypoint.
+$GLOBALS['ssi_plugin_active'] = false;
+$GLOBALS['ssi_install_attempts'] = 0;
+$GLOBALS['ssi_plugin_cache_cleans'] = 0;
+$GLOBALS['ssi_activation_seen_inventory'] = array();
+$GLOBALS['ssi_plugin_inventory_cache'] = null;
+$GLOBALS['ssi_install_outcome'] = 'install_reconcile';
+$reconciled_pre_install = get_plugins();
+$assert( ! isset( $reconciled_pre_install['absent-plugin/absent-plugin.php'] ), 'reconciled-pre-install-inventory-lacks-dependency' );
+$reconciled_report = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
+	'absent-plugin',
+	'absent-plugin/absent-plugin.php',
+	static fn (): bool => $GLOBALS['ssi_plugin_active']
+);
+$assert( 'activated' === ( $reconciled_report['status'] ?? '' ) && true === ( $reconciled_report['active'] ?? false ) && in_array( 'reconciled_installed', $reconciled_report['actions'] ?? array(), true ), 'reconciled-install-activates-in-same-execution' );
+$assert( 1 === $GLOBALS['ssi_plugin_cache_cleans'], 'reconciled-install-refreshes-plugin-cache-before-activation' );
+$assert( true === ( $GLOBALS['ssi_activation_seen_inventory'][0]['known'] ?? false ), 'reconciled-install-refreshes-cached-inventory' );
 
 unlink( WP_PLUGIN_DIR . '/absent-plugin/absent-plugin.php' );
 rmdir( WP_PLUGIN_DIR . '/absent-plugin' );

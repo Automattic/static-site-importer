@@ -28,6 +28,10 @@ $GLOBALS['ssi_companion_active']      = array();
 $GLOBALS['ssi_companion_activated']   = array();
 $GLOBALS['ssi_companion_deactivated'] = array();
 $GLOBALS['ssi_companion_options']     = array();
+$GLOBALS['ssi_companion_inventory_cache'] = null;
+$GLOBALS['ssi_companion_cache_cleans'] = 0;
+$GLOBALS['ssi_companion_activation_attempts'] = 0;
+$GLOBALS['ssi_companion_activation_inventories'] = array();
 $GLOBALS['static_site_importer_companion_block_owners'] = array();
 $GLOBALS['ssi_companion_actions']     = array();
 $GLOBALS['ssi_companion_filters']     = array();
@@ -219,8 +223,55 @@ if ( ! function_exists( 'is_plugin_active' ) ) {
 	}
 }
 
+/**
+ * Scan plugin entrypoints on disk the way core get_plugins() does.
+ *
+ * @return array<string,array<string,mixed>>
+ */
+function ssi_companion_scan_plugins(): array {
+	$found = array();
+	foreach ( (array) glob( WP_PLUGIN_DIR . '/*/*.php' ) as $file ) {
+		$basename = basename( dirname( $file ) ) . '/' . basename( $file );
+		$found[ $basename ] = array( 'Name' => basename( dirname( $file ) ) );
+	}
+	return $found;
+}
+
+if ( ! function_exists( 'get_plugins' ) ) {
+	/**
+	 * Mirror core get_plugins(): scan once, then serve the request-local inventory.
+	 *
+	 * @return array<string,array<string,mixed>>
+	 */
+	function get_plugins( string $plugin_folder = '' ): array {
+		unset( $plugin_folder );
+		if ( null === $GLOBALS['ssi_companion_inventory_cache'] ) {
+			$GLOBALS['ssi_companion_inventory_cache'] = ssi_companion_scan_plugins();
+		}
+		return $GLOBALS['ssi_companion_inventory_cache'];
+	}
+}
+
+if ( ! function_exists( 'wp_clean_plugins_cache' ) ) {
+	function wp_clean_plugins_cache( bool $clear_update_cache = true ): void {
+		unset( $clear_update_cache );
+		++$GLOBALS['ssi_companion_cache_cleans'];
+		$GLOBALS['ssi_companion_inventory_cache'] = null;
+	}
+}
+
 if ( ! function_exists( 'activate_plugin' ) ) {
 	function activate_plugin( string $plugin_file ) {
+		++$GLOBALS['ssi_companion_activation_attempts'];
+		// Core validate_plugin() checks the request-local inventory before loading.
+		$inventory = get_plugins();
+		$GLOBALS['ssi_companion_activation_inventories'][] = array(
+			'plugin_file' => $plugin_file,
+			'known'       => isset( $inventory[ $plugin_file ] ),
+		);
+		if ( ! isset( $inventory[ $plugin_file ] ) ) {
+			return new WP_Error( 'no_plugin_header', 'The plugin does not have a valid header.' );
+		}
 		$GLOBALS['ssi_companion_active'][]    = $plugin_file;
 		$GLOBALS['ssi_companion_activated'][] = $plugin_file;
 		require_once WP_PLUGIN_DIR . '/' . $plugin_file;
@@ -905,7 +956,17 @@ if ( is_array( $descriptor ) ) {
 }
 
 // 3. Full install/activate path writes the file set and activates it.
+// Warm the request-local plugin inventory before the companion exists on disk.
+// A provider dependency activated earlier in this same request leaves the
+// inventory without the companion, so activation must refresh it (issue #1411).
+$GLOBALS['ssi_companion_inventory_cache'] = null;
+$pre_install_inventory = get_plugins();
+$assert( ! isset( $pre_install_inventory['ssi-example-site/ssi-example-site.php'] ), 'pre-install-inventory-lacks-companion' );
+$GLOBALS['ssi_companion_cache_cleans'] = 0;
+$GLOBALS['ssi_companion_activation_inventories'] = array();
 $report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload );
+$assert( 1 === $GLOBALS['ssi_companion_cache_cleans'], 'companion-activation-refreshes-plugin-cache' );
+$assert( true === ( $GLOBALS['ssi_companion_activation_inventories'][0]['known'] ?? false ), 'companion-activation-sees-refreshed-inventory' );
 $assert( 'installed_activated' === ( $report['status'] ?? '' ), 'install-status-installed-activated', (string) ( $report['status'] ?? '' ) );
 $assert( true === ( $report['installed'] ?? false ), 'install-reports-installed' );
 $assert( true === ( $report['active'] ?? false ), 'install-reports-active' );
