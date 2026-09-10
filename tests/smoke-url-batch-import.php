@@ -18,7 +18,6 @@ function apply_filters( string $hook, mixed $value, mixed ...$args ): mixed { fo
 function did_action( string $hook ): int { return 0; }
 function doing_action( string $hook ): bool { return false; }
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
-require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-site-plan-view-capabilities.php';
 function wp_parse_url( string $url, int $component = -1 ) { return parse_url( $url, $component ); }
 function wp_strip_all_tags( string $text ): string { return strip_tags( $text ); }
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-url-fetcher.php';

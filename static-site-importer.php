@@ -106,7 +106,6 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-current-site-capabilities.php',
 	'class-static-site-importer-quality-budget-admission.php',
 	'class-static-site-importer-owner-handoff-evidence.php',
-	'class-static-site-importer-wordpress-site-plan-view-capabilities.php',
 	'class-static-site-importer-wordpress-site-plan-materializer.php',
 	'class-static-site-importer-journaled-report-writer.php',
 	'class-static-site-importer-generated-state-reconciliation.php',
