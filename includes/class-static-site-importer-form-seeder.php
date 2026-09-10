@@ -1434,6 +1434,60 @@ class Static_Site_Importer_Form_Seeder {
 				'target_hash' => hash( 'sha256', $node['id'] ),
 			);
 		}
+		// A source grid can place a one-control branch rather than the control itself.
+		// The reconstructed branch's first child is the native grid item; retain that
+		// relationship so responsive grid facts stay on their source-owned elements.
+		foreach ( $nodes as $grid_node ) {
+			if ( ! is_array( $grid_node ) || 'wrapper' !== ( $grid_node['kind'] ?? null ) || ! is_string( $grid_node['id'] ?? null ) ) {
+				continue;
+			}
+			$grid_id         = $grid_node['id'];
+			$grid_layout     = $layout_nodes_by_id[ $grid_id ] ?? null;
+			$grid_controls   = array_values( array_filter( $collect_controls( $grid_node ), static fn ( int $index ): bool => isset( $field_blocks[ $index ] ) && 'core/button' !== ( $field_blocks[ $index ]['name'] ?? '' ) ) );
+			$grid_proven     = is_array( $grid_layout ) && $has_unconditional_proven_property( $grid_layout, 'display' ) && $has_unconditional_proven_property( $grid_layout, 'grid-template-columns' );
+			$grid_variants   = $variants_by_node[ $grid_id ] ?? array();
+			$variants_stable = true;
+			foreach ( $grid_variants as $variant ) {
+				$patch = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+				if ( isset( $patch['columns'] ) ) {
+					$variants_stable = false;
+					break;
+				}
+			}
+			if ( 1 !== count( $grid_controls ) || ! $grid_proven || ! $variants_stable || ! isset( $wrapper_hooks[ $grid_id ] ) ) {
+				continue;
+			}
+			foreach ( $children[ $grid_id ] ?? array() as $grid_child ) {
+				$child_id         = is_array( $grid_child ) && 'wrapper' === ( $grid_child['kind'] ?? null ) && is_string( $grid_child['id'] ?? null ) ? $grid_child['id'] : '';
+				$child_layout     = '' !== $child_id ? $layout_nodes_by_id[ $child_id ] ?? null : null;
+				$child_controls   = '' !== $child_id ? array_values( array_filter( $collect_controls( $grid_child ), static fn ( int $index ): bool => isset( $field_blocks[ $index ] ) ) ) : array();
+				$placement        = is_array( $child_layout ) ? ( $child_layout['layout']['column'] ?? $grid_area_column_span( $child_layout['layout']['area'] ?? null ) ) : null;
+				$full_span        = is_array( $grid_layout ) ? $grid_span_width( $grid_layout['layout']['columns'] ?? null, $placement ) : null;
+				$placement_proven = is_array( $child_layout ) && ( $has_unconditional_proven_property( $child_layout, 'grid-column' ) || $has_unconditional_proven_property( $child_layout, 'grid-area' ) );
+				if ( '' === $child_id || $grid_controls !== $child_controls || '100%' !== $full_span || ! $placement_proven || ! isset( $wrapper_hooks[ $child_id ] ) ) {
+					continue;
+				}
+				$child_variants_stable = true;
+				foreach ( $variants_by_node[ $child_id ] ?? array() as $variant ) {
+					$patch = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+					if ( isset( $patch['column'] ) || isset( $patch['area'] ) ) {
+						$child_variants_stable = false;
+						break;
+					}
+				}
+				if ( ! $child_variants_stable ) {
+					continue;
+				}
+				$provider_layout_targets[ $grid_id ]  = $wrapper_hooks[ $grid_id ];
+				$provider_layout_targets[ $child_id ] = $wrapper_hooks[ $child_id ];
+				$operations[]                         = array(
+					'dimension'   => 'layout',
+					'strategy'    => 'provider_fullspan_grid_branch',
+					'target_hash' => hash( 'sha256', $child_id ),
+				);
+				break;
+			}
+		}
 		foreach ( $nodes as $node ) {
 			$id               = is_array( $node ) && 'wrapper' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
 			$branch_controls  = '' !== $id ? $collect_controls( $node ) : array();

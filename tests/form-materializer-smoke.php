@@ -188,7 +188,8 @@ namespace {
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-product-handoff-contract.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
 
-	$transformer_bootstrap = dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/php-transformer.php';
+	$transformer_root      = getenv( 'STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH' ) ?: dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer';
+	$transformer_bootstrap = rtrim( $transformer_root, '/\\' ) . '/php-transformer.php';
 	if ( is_readable( $transformer_bootstrap ) ) {
 		require_once $transformer_bootstrap;
 	}
@@ -754,7 +755,10 @@ namespace {
 	array_splice( $nested_grid_field_form['forms'][0]['layout_graph']['nodes'], 2, 0, array( array( 'id' => 'wrapper-1', 'kind' => 'container', 'parent' => 'wrapper-0', 'order' => 0, 'source' => array( 'tag' => 'div', 'classes' => array() ), 'layout' => array( 'area' => '2 / 1 / span 1 / span 12' ), 'provenance' => array( array( 'source_path' => 'inline-style', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '[style]', 'condition' => null, 'properties' => array( 'grid-area' ) ) ) ) ) );
 	$nested_grid_field_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $nested_grid_field_form )['forms'] ?? array() ) )['forms'][0] ?? array();
 	$nested_grid_field_css = (string) ( $nested_grid_field_row['provider_layout_overlay_css']['css'] ?? '' );
-	$assert( ! in_array( 'provider_fullspan_grid_child', array_column( $nested_grid_field_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ) && str_contains( $nested_grid_field_css, 'repeat(12, 1fr)' ) && str_contains( $nested_grid_field_css, 'grid-area:2 / 1 / span 1 / span 12' ), 'nested-single-field-grid-keeps-proven-wrapper-grid-and-placement', wp_json_encode( $nested_grid_field_row ) );
+	$nested_grid_field_form['forms'][0]['layout_graph']['variants'][] = array( 'node' => 'wrapper-0', 'condition' => array( 'kind' => 'media', 'query' => '(max-width: 48rem)' ), 'layout_patch' => array( 'column_gap' => '1.5rem' ), 'precedence' => array( 'column-gap' => array( 'source_order' => 2, 'specificity' => 10, 'important' => false ) ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.field-shell', 'condition' => array( 'kind' => 'media', 'query' => '(max-width: 48rem)' ), 'properties' => array( 'column-gap' ) ) ) );
+	$nested_grid_field_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $nested_grid_field_form )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$nested_grid_field_css = (string) ( $nested_grid_field_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert( in_array( 'provider_fullspan_grid_branch', array_column( $nested_grid_field_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ) && str_contains( $nested_grid_field_css, 'repeat(12, 1fr)' ) && str_contains( $nested_grid_field_css, 'grid-area:2 / 1 / span 1 / span 12' ) && str_contains( $nested_grid_field_css, '@media (max-width: 48rem)' ) && str_contains( $nested_grid_field_css, 'column-gap:1.5rem' ), 'nested-single-field-grid-keeps-proven-wrapper-grid-placement-and-responsive-gap', wp_json_encode( $nested_grid_field_row ) );
 	$multi_control_grid_field_form = $full_width_grid_field_form;
 	$multi_control_grid_field_form['forms'][0]['controls'][] = array( 'tag' => 'input', 'type' => 'text', 'name' => 'name', 'label' => 'Name' );
 	array_splice( $multi_control_grid_field_form['forms'][0]['control_topology']['nodes'], 2, 0, array( array( 'id' => 'control-2', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 1, 'depth' => 1, 'control' => 2 ) ) );
