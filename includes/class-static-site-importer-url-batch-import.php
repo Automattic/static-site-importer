@@ -725,6 +725,10 @@ final class Static_Site_Importer_URL_Batch_Import {
 			if ( ! is_array( $view ) || 'blocks-engine/wordpress-site-plan-view/v1' !== ( $view['schema'] ?? '' ) ) {
 				return new WP_Error( 'static_site_importer_invalid_staged_compile', 'The Blocks Engine php-transformer returned an invalid staged URL batch plan view.' );
 			}
+			$view = ( new \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanView() )->compact( $view );
+			if ( 'blocks-engine/wordpress-site-plan-view/v2' !== ( $view['schema'] ?? '' ) ) {
+				return new WP_Error( 'static_site_importer_invalid_staged_compile', 'The Blocks Engine php-transformer did not compact the staged URL batch plan view.' );
+			}
 			return $view;
 		} catch ( Throwable $error ) {
 			return new WP_Error( 'static_site_importer_staged_compose_failed', $error->getMessage() );

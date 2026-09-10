@@ -115,6 +115,9 @@ require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnost
 class Static_Site_Importer_Theme_Generator {
 	public static function compile_website_artifact( array $artifact, array $args = array() ) {
 		$compiled = $args['compiled_artifact_result'] ?? array();
+		if ( 'blocks-engine/wordpress-site-plan-view/v2' === ( $compiled['schema'] ?? '' ) ) {
+			$compiled = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanView::materialize( $compiled );
+		}
 		$plan = is_array( $compiled['wordpress_site_plan'] ?? null ) ? $compiled['wordpress_site_plan'] : array();
 		if ( empty( $plan ) ) {
 			return new WP_Error( 'missing_precompiled_plan', 'The smoke materializer requires the real staged compiler result.' );
@@ -133,6 +136,9 @@ class Static_Site_Importer_Theme_Generator {
 	public static function import_website_artifact( array $artifact, array $args = array() ) {
 		if ( true !== ( $args['_static_site_importer_precompiled_source'] ?? null ) || ! is_array( $args['compiled_artifact_result'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/', (string) ( $args['import_run_id'] ?? '' ) ) ) {
 			throw new RuntimeException( 'Materialization must receive the frozen precompiled result and stable run id.' );
+		}
+		if ( 'blocks-engine/wordpress-site-plan-view/v2' === ( $args['compiled_artifact_result']['schema'] ?? '' ) ) {
+			$args['compiled_artifact_result'] = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanView::materialize( $args['compiled_artifact_result'] );
 		}
 		if ( is_wp_error( $GLOBALS['ssi_direct_materialization_error'] ?? null ) ) {
 			return $GLOBALS['ssi_direct_materialization_error'];
@@ -332,6 +338,10 @@ $assert( 1 === ( $work['content_policy_applications'] ?? 0 ) && 1 === ( $work['c
 $assert( 1 === ( $work['materialization_claims'] ?? 0 ) && 1 === ( $work['materializations'] ?? 0 ) && true === ( $GLOBALS['ssi_direct_last_args']['_static_site_importer_precompiled_source'] ?? false ), 'apply must claim once and use the precompiled source handoff' );
 $assert( 0 === ( $terminal_work['html_document_transform_count'] ?? -1 ) && 0 === ( $terminal_work['normalization_count'] ?? -1 ), 'terminal composition must perform zero HTML transforms and normalization' );
 $assert( ! str_contains( (string) json_encode( $terminal['artifact_run'] ), $test_root ) && ! str_contains( (string) json_encode( $terminal['artifact_run'] ), 'website/index.html' ), 'public run evidence must remain bounded and path-free' );
+$persisted_composed = json_decode( (string) $frozen_workspace->read_raw( 'composed-result.json' ), true, 512, JSON_THROW_ON_ERROR );
+$persisted_view = $persisted_composed['payload']['result'] ?? array();
+$materialized_view = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanView::materialize( $persisted_view );
+$assert( 'blocks-engine/wordpress-site-plan-view/v2' === ( $persisted_view['schema'] ?? '' ) && \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::canonicalHash( $materialized_view['wordpress_site_plan'] ) === \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::canonicalHash( $GLOBALS['ssi_direct_compiled_results'][0]['wordpress_site_plan'] ?? array() ), 'composed result persists compact v2 JSON and materializes its exact canonical plan before consumption' );
 $composed_plan = $GLOBALS['ssi_direct_compiled_results'][0]['wordpress_site_plan'] ?? array();
 $form_declarations = array_values( array_filter( $composed_plan['runtime_declarations'] ?? array(), static fn( $declaration ): bool => is_array( $declaration ) && 'entity_collection' === ( $declaration['kind'] ?? '' ) && 'forms' === ( $declaration['type'] ?? '' ) ) );
 $form_dependencies = array_values( array_filter( $composed_plan['runtime_declarations'] ?? array(), static fn( $declaration ): bool => is_array( $declaration ) && 'dependency' === ( $declaration['kind'] ?? '' ) && 'form' === ( $declaration['capability'] ?? '' ) ) );
@@ -627,7 +637,7 @@ $first_difference = static function ( $left, $right, string $path = '$' ) use ( 
 };
 $zip_uninterrupted_canonical = $canonical_compiled( $zip_uninterrupted_plan );
 $zip_resumed_canonical = $canonical_compiled( $zip_terminal['plan'] );
-$assert( $zip_uninterrupted_canonical === $zip_resumed_canonical, 'resumed ZIP planning must produce the byte-identical canonical plan from uninterrupted staged compilation outside process observations: ' . $first_difference( $zip_uninterrupted_canonical, $zip_resumed_canonical ) );
+$assert( \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::planIdentity( $zip_uninterrupted_canonical ) === \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::planIdentity( $zip_resumed_canonical ), 'resumed ZIP planning must preserve the canonical plan identity outside transport-only view compaction: ' . $first_difference( $zip_uninterrupted_canonical, $zip_resumed_canonical ) );
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array( static fn ( array $policy ): array => array_merge( $policy, array( 'compile_in_process_pages' => 4 ) ) );
 $owned_report_destination = (string) ( $GLOBALS['ssi_direct_last_args']['failed_plan_report_destination'] ?? '' );
 $assert( str_contains( $owned_report_destination, '/static-site-importer/direct-artifact-imports/.ssi-artifact-run-direct-' ) && str_ends_with( $owned_report_destination, '/failed-plan/import-report.json' ) && is_dir( dirname( $owned_report_destination ) ), 'direct Ability runs reserve an importer-owned failed-plan report destination inside the retained workspace' );
