@@ -716,6 +716,7 @@ $quality_failure_data = array(
 			'reason_code'                  => 'provider_unavailable',
 			'loss_count'                   => 2,
 			'context'                      => array( 'access_token' => 'private-token', 'temporary_path' => '/private/var/token' ),
+			'message'                      => 'Provider failed at https://user:password@example.test/private?token=secret',
 		),
 	),
 );
@@ -728,7 +729,8 @@ $assert( 'inline_svg_fallback' === ( $quality_failure_response['quality']['fallb
 $assert( empty( $quality_failure['success'] ) && 'failed' === ( $quality_failure['import_report_summary']['status'] ?? '' ) && true === ( $quality_failure['import_report_summary']['fail_import'] ?? false ), 'direct artifact quality-gate failures cannot be projected as successful imports' );
 $scrubbed_quality = $quality_failure_response['quality'] ?? array();
 $assert( '[redacted]' === ( $scrubbed_quality['path'] ?? '' ) && '[redacted]' === ( $scrubbed_quality['workspace'] ?? '' ) && '[redacted]' === ( $scrubbed_quality['manifest'] ?? '' ) && '[redacted]' === ( $scrubbed_quality['nested']['authorization'] ?? '' ) && '[redacted]' === ( $scrubbed_quality['nested']['filesystem_path'] ?? '' ) && 1000 === strlen( $scrubbed_quality['long_value'] ?? '' ) && true === ( $scrubbed_quality['many']['_truncated'] ?? false ) && '[truncated]' === ( $scrubbed_quality['over_deep']['one']['two']['three']['four'] ?? '' ), 'quality-gate evidence must retain redaction, string and item caps, and the original depth bound' );
-$assert( 'website/contact/index.html' === ( $quality_failure_response['diagnostics'][0]['source_path'] ?? '' ) && 'form.contact' === ( $quality_failure['diagnostics'][0]['selector'] ?? '' ) && false === ( $quality_failure['diagnostics'][0]['provider_available'] ?? true ) && '[redacted]' === ( $quality_failure['diagnostics'][0]['context']['access_token'] ?? '' ) && '[redacted]' === ( $quality_failure['diagnostics'][0]['context']['temporary_path'] ?? '' ), 'CLI and API failure receipts retain shallow provider diagnostics with safe source paths and scrub nested secrets' );
+$assert( 'website/contact/index.html' === ( $quality_failure_response['diagnostics'][0]['source_path'] ?? '' ) && 'form.contact' === ( $quality_failure['diagnostics'][0]['selector'] ?? '' ) && false === ( $quality_failure['diagnostics'][0]['provider_available'] ?? true ) && ! isset( $quality_failure['diagnostics'][0]['context'] ), 'CLI and API failure receipts retain safe provider diagnostics without nested secrets' );
+$assert( ! str_contains( (string) ( $quality_failure['error']['message'] ?? '' ), 'password' ) && false !== json_encode( $quality_failure ), 'terminal CLI failure messages are importer-owned and JSON-safe' );
 $GLOBALS['ssi_direct_materialization_error'] = null;
 $cli_report = $test_root . '/cli-import-report.json';
 $drive_apply( $input(), static fn ( array $step ): array => Static_Site_Importer_Canonical_Import_Service::import_with_cli_report( $step, $cli_report ) );

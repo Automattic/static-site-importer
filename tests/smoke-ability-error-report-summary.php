@@ -71,6 +71,34 @@ $assert( $summary === ( $result['import_report_summary'] ?? array() ), 'preserve
 $assert( 'core_html_block' === ( $result['import_report_summary']['failure_reasons'][0] ?? '' ), 'preserves-failure-reason' );
 $assert( true === ( $result['error']['data']['quality']['fail_import'] ?? false ), 'preserves-error-data' );
 
+$hostile = static_site_importer_ability_error(
+	'static_site_importer_entity_materialization_failed',
+	'Provider failed at https://user:password@example.test/private?token=secret.',
+	array(
+		'diagnostics' => array(
+			array(
+				'code'        => 'provider_entity_materialization_failed',
+				'source_path' => 'pages/é.html',
+				'selector'    => 'form.contact',
+				'provider'    => 'generic-provider',
+				'reason_code' => 'provider_unavailable',
+			),
+			array(
+				'code'        => 'provider_entity_materialization_failed',
+				'source_path' => '/private/var/import.html',
+				'selector'    => 'form[data-token="secret"]',
+				'provider'    => 'https://user:password@example.test/?token=secret',
+				'reason_code' => 'authorization: Bearer secret',
+				'message'     => "\xB1broken",
+			),
+		),
+	)
+);
+$hostile_diagnostics = $hostile['diagnostics'] ?? array();
+$hostile_json        = json_encode( $hostile );
+$assert( 'pages/é.html' === ( $hostile_diagnostics[0]['source_path'] ?? '' ) && 'form.contact' === ( $hostile_diagnostics[0]['selector'] ?? '' ), 'canonical-ability-error-retains-safe-relative-unicode-location' );
+$assert( ! isset( $hostile_diagnostics[1]['source_path'], $hostile_diagnostics[1]['selector'], $hostile_diagnostics[1]['provider'], $hostile_diagnostics[1]['reason_code'] ) && ! str_contains( (string) ( $hostile['error']['message'] ?? '' ), 'secret' ) && false !== $hostile_json && ! str_contains( $hostile_json, 'password' ), 'canonical-ability-error-redacts-unsafe-fields-and-emits-valid-json' );
+
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );

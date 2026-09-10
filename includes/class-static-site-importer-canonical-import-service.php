@@ -21,6 +21,9 @@ if ( ! class_exists( 'Static_Site_Importer_Figma_Import' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Compiler_Diagnostic_Normalizer' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-compiler-diagnostic-normalizer.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Public_Diagnostic_Projection' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-public-diagnostic-projection.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Compilation_Preparation' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-compilation-preparation.php';
 }
@@ -751,9 +754,17 @@ class Static_Site_Importer_Canonical_Import_Service {
 
 	/** @param mixed $data @return array<string,mixed> */
 	public static function error( string $code, string $message, $data = null ): array {
-		$summary     = is_array( $data ) && isset( $data['import_report_summary'] ) && is_array( $data['import_report_summary'] ) ? $data['import_report_summary'] : self::failure_report_summary( $code, $message );
+		$data = is_array( $data ) ? Static_Site_Importer_Public_Diagnostic_Projection::data( $data ) : $data;
+
+		$summary = is_array( $data ) && isset( $data['import_report_summary'] ) && is_array( $data['import_report_summary'] ) ? $data['import_report_summary'] : self::failure_report_summary( $code, $message );
+
 		$diagnostics = self::error_diagnostics( $code, $message, $data, $summary );
-		$fixture     = class_exists( 'Static_Site_Importer_Diagnostic_Contract' ) ? Static_Site_Importer_Diagnostic_Contract::build(
+
+		$message = Static_Site_Importer_Public_Diagnostic_Projection::message( $code, $diagnostics );
+		if ( is_array( $summary['error'] ?? null ) ) {
+			$summary['error']['message'] = $message;
+		}
+		$fixture = class_exists( 'Static_Site_Importer_Diagnostic_Contract' ) ? Static_Site_Importer_Diagnostic_Contract::build(
 			array(
 				'success'                  => false,
 				'status'                   => 'failed',
@@ -762,7 +773,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 				'import_report'            => is_array( $data ) && is_array( $data['import_report'] ?? null ) ? $data['import_report'] : array(),
 			)
 		) : array( 'diagnostics' => $diagnostics );
-		$payload     = array(
+		$payload = array(
 			'success'               => false,
 			'error'                 => array(
 				'code'    => $code,
@@ -787,23 +798,25 @@ class Static_Site_Importer_Canonical_Import_Service {
 	public static function error_diagnostics( string $code, string $message, $data, array $summary ): array {
 		$candidates = array( is_array( $data ) && is_array( $data['diagnostics'] ?? null ) ? $data['diagnostics'] : array(), is_array( $data ) && is_array( $data['import_validation_result']['diagnostics'] ?? null ) ? $data['import_validation_result']['diagnostics'] : array(), is_array( $summary['diagnostics'] ?? null ) ? $summary['diagnostics'] : array() );
 		foreach ( $candidates as $candidate ) {
-			$diagnostics = array_values( array_filter( $candidate, array( self::class, 'is_actionable_error_diagnostic' ) ) );
+			$diagnostics = array_values( array_filter( Static_Site_Importer_Public_Diagnostic_Projection::diagnostics( $candidate ), array( self::class, 'is_actionable_error_diagnostic' ) ) );
 			if ( ! empty( $diagnostics ) ) {
 				return $diagnostics;
 			}
 		}
-		return array(
+		return Static_Site_Importer_Public_Diagnostic_Projection::diagnostics(
 			array(
-				'type'        => 'validation_error',
-				'kind'        => 'validation_error',
-				'severity'    => 'error',
-				'code'        => $code,
-				'reason_code' => $code,
-				'reason'      => $code,
-				'message'     => $message,
-				'stage'       => 'validation',
-				'owner'       => 'static-site-importer',
-			),
+				array(
+					'type'        => 'validation_error',
+					'kind'        => 'validation_error',
+					'severity'    => 'error',
+					'code'        => $code,
+					'reason_code' => $code,
+					'reason'      => $code,
+					'message'     => $message,
+					'stage'       => 'validation',
+					'owner'       => 'static-site-importer',
+				),
+			)
 		);
 	}
 

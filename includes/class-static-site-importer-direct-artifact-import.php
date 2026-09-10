@@ -21,6 +21,9 @@ if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Client_Script_Policy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-client-script-policy.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Public_Diagnostic_Projection' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-public-diagnostic-projection.php';
+}
 
 final class Static_Site_Importer_Direct_Artifact_Import {
 	private const RUN_SCHEMA                    = 'static-site-importer/direct-artifact-run/v1';
@@ -1113,6 +1116,12 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			$message = $error->getMessage();
 			$data    = null;
 		}
+		$diagnostics = is_array( $data ) && is_array( $data['diagnostics'] ?? null ) ? Static_Site_Importer_Public_Diagnostic_Projection::diagnostics( $data['diagnostics'] ) : array();
+
+		$message = Static_Site_Importer_Public_Diagnostic_Projection::message( $code, $diagnostics );
+
+		$data = is_array( $data ) ? Static_Site_Importer_Public_Diagnostic_Projection::data( $data ) : $data;
+
 		$failure                       = array(
 			'phase'              => $phase,
 			'exception_class'    => get_class( $error ),
@@ -1143,7 +1152,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		if ( is_array( $data ) ) {
 			foreach ( array( 'import_report', 'import_report_summary', 'import_validation_result', 'finding_packets', 'fixture_diagnostics', 'failed_plan_artifacts', 'diagnostics' ) as $key ) {
 				if ( array_key_exists( $key, $data ) ) {
-					$error_data[ $key ] = 'diagnostics' === $key ? self::scrub_error( $data[ $key ] ) : $data[ $key ];
+					$error_data[ $key ] = 'diagnostics' === $key ? $diagnostics : $data[ $key ];
 				}
 			}
 		}
