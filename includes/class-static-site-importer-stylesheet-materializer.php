@@ -39,11 +39,12 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		?array $existing_stylesheets = null
 	): array {
 		$provider_layout_css = self::provider_layout_overlay_css( $provider_layout_overlays );
+		$provider_editor_css = self::provider_layout_overlay_css( $provider_layout_overlays, 'editor_css' );
 		if ( null !== $existing_stylesheets ) {
 			$writes = array();
 			foreach ( $existing_stylesheets as $path => $content ) {
 				if ( is_string( $path ) && is_string( $content ) ) {
-					$writes[ $path ] = $content . $provider_layout_css;
+					$writes[ $path ] = $content . $provider_layout_css . ( str_ends_with( $path, '/assets/css/editor-style.css' ) ? $provider_editor_css : '' );
 				}
 			}
 			return $writes;
@@ -52,17 +53,17 @@ class Static_Site_Importer_Stylesheet_Materializer {
 
 		return array(
 			$theme_dir . '/style.css'                   => self::style_css( $theme_name, $css . $provider_layout_css, $visual_repair_styles ),
-			$theme_dir . '/assets/css/editor-style.css' => self::editor_style_css( $css . $provider_layout_css, $visual_repair_styles, '' !== $provider_layout_css ),
+			$theme_dir . '/assets/css/editor-style.css' => self::editor_style_css( $css . $provider_layout_css . $provider_editor_css, $visual_repair_styles, '' !== $provider_layout_css ),
 		);
 	}
 
 	/** Return deterministic, content-addressed provider layout overlays once each. */
-	private static function provider_layout_overlay_css( array $overlays ): string {
+	private static function provider_layout_overlay_css( array $overlays, string $field = 'css' ): string {
 		$css = array();
 		foreach ( $overlays as $overlay ) {
 			$validated = Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $overlay );
 			if ( null !== $validated ) {
-				$css[] = $validated['css'];
+				$css[] = $validated[ $field ] ?? '';
 			}
 		}
 		$css = array_values( array_unique( $css ) );

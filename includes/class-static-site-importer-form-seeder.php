@@ -2224,8 +2224,13 @@ class Static_Site_Importer_Form_Seeder {
 				}
 			}
 		}
+		foreach ( $graph['control_containers'] ?? array() as $container ) {
+			if ( is_array( $container ) && is_int( $container['index'] ?? null ) ) {
+				$roles[ $container['index'] ]['control_container'] = true;
+			}
+		}
 		foreach ( $graph['variants'] ?? array() as $variant ) {
-			if ( is_array( $variant ) && is_int( $variant['index'] ?? null ) && in_array( $variant['role'] ?? null, array( 'control', 'label', 'required_marker' ), true ) ) {
+			if ( is_array( $variant ) && is_int( $variant['index'] ?? null ) && in_array( $variant['role'] ?? null, array( 'control', 'label', 'required_marker', 'control_container' ), true ) ) {
 				$roles[ $variant['index'] ][ $variant['role'] ] = true;
 			}
 		}
@@ -2484,6 +2489,14 @@ class Static_Site_Importer_Form_Seeder {
 						'properties' => $properties,
 					);
 				}
+			}
+			if ( isset( $roles['control_container'] ) && ! in_array( strtolower( (string) ( $controls[ $index ]['type'] ?? '' ) ), array( 'phone', 'tel' ), true ) ) {
+				$class                    = self::presentation_node_class( $scope, $index, 'control' );
+				$target['destinations'][] = array(
+					'role'       => 'control_container',
+					'selector'   => $selector_scope . ' .' . $class,
+					'properties' => array( 'background', 'background_color', 'border', 'border_color', 'border_style', 'border_width', 'border_top_color', 'border_right_color', 'border_bottom_color', 'border_left_color', 'border_top_style', 'border_right_style', 'border_bottom_style', 'border_left_style', 'border_top_width', 'border_right_width', 'border_bottom_width', 'border_left_width', 'border_radius', 'border_top_left_radius', 'border_top_right_radius', 'border_bottom_right_radius', 'border_bottom_left_radius' ),
+				);
 			}
 			if ( isset( $roles['label'] ) ) {
 				$target['destinations'][] = array(

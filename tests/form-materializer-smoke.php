@@ -180,6 +180,7 @@ namespace {
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-computed-layout-strategy.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-layout-overlay.php';
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-stylesheet-materializer.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-fallback-contract.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
@@ -600,6 +601,20 @@ namespace {
 	$assert( '0' === ( $phone_destinations[0]['resets']['text-indent'] ?? null ) && str_contains( $phone_presentation_css, 'text-indent:0!important' ) && str_contains( $phone_presentation_css, 'text-indent:4px!important' ), 'phone-text-indentation-belongs-to-value-not-structural-prefix-container' );
 	$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $phone_presentation_row['provider_layout_overlay_css'] ?? array() ), 'composite-provider-destination-overlay-survives-stylesheet-admission' );
 	$assert( empty( $validated_phone_presentation['errors'] ) && 3 === count( $phone_destinations ) && empty( $phone_destinations[0]['properties'] ) && str_contains( (string) ( $phone_destinations[1]['selector'] ?? '' ), '-destination-primary' ) && str_contains( $phone_presentation_css, 'background-color:#fff!important' ) && str_contains( $phone_presentation_css, 'border-color:#1e4b6e!important' ) && str_contains( $phone_presentation_css, 'padding-block-start:8px!important' ) && str_contains( $phone_presentation_css, 'padding-inline-end:8px!important' ) && str_contains( $phone_presentation_css, 'padding:0!important;border:0!important;background:transparent!important' ), 'phone-presentation-keeps-input-styles-on-value-and-neutralizes-provider-added-shell', wp_json_encode( array( 'css' => $phone_presentation_css, 'target' => $phone_presentation_target ) ) );
+	$editor_chrome_graph = array(
+		'schema' => 'generic/computed-form-presentation/v2', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'controls' => 128, 'rules_per_role' => 32 ), 'visual_parts' => array(), 'visual_groups' => array(), 'variants' => array(), 'diagnostics' => array(),
+		'controls' => array( array( 'index' => 0, 'control' => $presentation_role( array( 'border' => '0' ), array( 'border' ), 'input' ) ) ),
+		'control_containers' => array( array( 'index' => 0, 'source_selector' => '.field', 'styles' => array( 'border' => '1px solid rgba(30,75,110,.6)', 'background' => 'rgb(247,249,251)', 'border_radius' => '0' ), 'provenance' => array( array( 'source_path' => 'assets/forms.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.field', 'condition' => null, 'properties' => array( 'border', 'background', 'border-radius' ) ) ) ) ),
+	);
+	$editor_chrome_form = $presentation_form;
+	$editor_chrome_form['forms'][0]['presentation_graph'] = $editor_chrome_graph;
+	$editor_chrome_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $editor_chrome_form );
+	$editor_chrome_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $editor_chrome_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$editor_chrome_overlay = $editor_chrome_row['provider_layout_overlay_css'] ?? array();
+	$editor_chrome_writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/tmp/editor-chrome', 'Editor Chrome', '', array(), array(), array( $editor_chrome_overlay ) );
+	$editor_chrome_frontend = (string) ( $editor_chrome_writes['/tmp/editor-chrome/style.css'] ?? '' );
+	$editor_chrome_editor = (string) ( $editor_chrome_writes['/tmp/editor-chrome/assets/css/editor-style.css'] ?? '' );
+	$assert( empty( $editor_chrome_validation['errors'] ) && str_contains( (string) ( $editor_chrome_overlay['css'] ?? '' ), 'border:0' ) && ! str_contains( (string) ( $editor_chrome_overlay['css'] ?? '' ), '1px solid rgba(30,75,110,.6)' ) && str_contains( (string) ( $editor_chrome_overlay['editor_css'] ?? '' ), '.editor-styles-wrapper ' ) && str_contains( $editor_chrome_editor, 'border:1px solid rgba(30,75,110,.6);background:rgb(247,249,251);border-radius:0' ) && ! str_contains( $editor_chrome_frontend, '1px solid rgba(30,75,110,.6)' ), 'editor-only-control-container-chrome-preserves-a-single-owned-source-wrapper-on-the-editable-control-without-changing-frontend-input-resets', wp_json_encode( $editor_chrome_overlay ) );
 	$unsafe_presentation = $presentation_form;
 	$unsafe_presentation['forms'][0]['presentation_graph']['controls'][0]['control']['styles']['background_image'] = 'url(https://example.test/tracker)';
 	$oversized_presentation = $presentation_form;
@@ -623,6 +638,17 @@ namespace {
 		throw new RuntimeException( 'The required Blocks Engine candidate compilation failed.' );
 	}
 	$candidate_plan = $candidate_result['source_reports']['wordpress_site_plan'] ?? array();
+	$chrome_artifact = array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => '<link rel="stylesheet" href="style.css"><form><div class="field"><input name="email"></div><div class="shared"><input name="first"><input name="last"></div><div class="plain"><input name="plain"></div></form>', 'style.css' => 'input{border:0}.field{border:1px solid rgba(30,75,110,.6);background:rgb(247,249,251);border-radius:0}.shared{border:2px solid #111}' ) );
+	$chrome_code = 'require ' . var_export( $candidate_transformer, true ) . '; echo json_encode(blocks_engine_php_transformer_compile_artifact(' . var_export( $chrome_artifact, true ) . '));';
+	$chrome_json = shell_exec( escapeshellarg( PHP_BINARY ) . ' -r ' . escapeshellarg( $chrome_code ) );
+	$chrome_result = is_string( $chrome_json ) ? json_decode( $chrome_json, true ) : null;
+	$chrome_declaration = is_array( $chrome_result ) ? current( array_filter( $chrome_result['source_reports']['wordpress_site_plan']['runtime_declarations'] ?? array(), static fn( array $declaration ): bool => 'forms' === ( $declaration['type'] ?? null ) ) ) : array();
+	$chrome_entity = $chrome_declaration['payload']['entities'][0] ?? array();
+	$chrome_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $chrome_entity ) ) );
+	$chrome_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $chrome_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$chrome_overlay = $chrome_row['provider_layout_overlay_css'] ?? array();
+	$chrome_writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/tmp/real-be-chrome', 'Real BE Chrome', '', array(), array(), array( $chrome_overlay ) );
+	$assert( is_array( $chrome_result ) && '1px solid rgba(30,75,110,.6)' === ( $chrome_entity['presentation_graph']['control_containers'][0]['styles']['border'] ?? null ) && 1 === count( $chrome_entity['presentation_graph']['control_containers'] ?? array() ) && str_contains( (string) ( $chrome_overlay['css'] ?? '' ), 'border:0' ) && ! str_contains( (string) ( $chrome_overlay['css'] ?? '' ), '1px solid rgba(30,75,110,.6)' ) && str_contains( (string) ( $chrome_writes['/tmp/real-be-chrome/assets/css/editor-style.css'] ?? '' ), 'border:1px solid rgba(30,75,110,.6)' ) && ! str_contains( (string) ( $chrome_writes['/tmp/real-be-chrome/style.css'] ?? '' ), '1px solid rgba(30,75,110,.6)' ), 'real-blocks-engine-artifact-preserves-one-owned-wrapper-as-editor-only-control-chrome-without-assigning-shared-or-borderless-wrappers', wp_json_encode( $chrome_row ) );
 	$candidate_declaration = current( array_filter( $candidate_plan['runtime_declarations'] ?? array(), static fn( array $declaration ): bool => 'forms' === ( $declaration['type'] ?? null ) ) );
 	$visual_state_form = array( 'forms' => $candidate_declaration['payload']['entities'] ?? array() );
 	$validated_visual_state = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $visual_state_form );
@@ -1017,6 +1043,14 @@ namespace {
 	$jetpack_destination_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $root_graph, $jetpack_destination_map, $presentation_graph_fixture );
 	$synthetic_destination_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $root_graph, $synthetic_destination_map, $presentation_graph_fixture );
 	$assert( empty( $jetpack_destination_overlay['losses'] ) && null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $jetpack_destination_overlay['overlay'] ) && null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $synthetic_destination_overlay['overlay'] ), 'partitioned-destinations-account-for-all-source-properties-and-pass-output-admission' );
+	$editor_overlay = array( 'schema' => Static_Site_Importer_Provider_Layout_Overlay::OVERLAY_SCHEMA, 'css' => "/* Static Site Importer provider layout overlay: abcdef123456 */\n.ssi-form-123456789abc{display:flex}\n", 'editor_css' => "/* Static Site Importer editor control chrome: abcdef123456 */\n.editor-styles-wrapper .ssi-form-123456789abc .ssi-node-123456789abc{background:#fff}\n", 'sha256' => '', 'bytes' => 0 );
+	$editor_overlay['sha256'] = hash( 'sha256', $editor_overlay['css'] ); $editor_overlay['bytes'] = strlen( $editor_overlay['css'] );
+	$editor_overlay['editor_sha256'] = hash( 'sha256', $editor_overlay['editor_css'] ); $editor_overlay['editor_bytes'] = strlen( $editor_overlay['editor_css'] );
+	$editor_overlay_writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/tmp/editor-overlay', 'Editor overlay', '', array(), array(), array( $editor_overlay ), array( '/tmp/editor-overlay/style.css' => '/* base */', '/tmp/editor-overlay/assets/css/editor-style.css' => '/* editor */' ) );
+	$malicious_editor_overlay = $editor_overlay; $malicious_editor_overlay['editor_css'] = "/* Static Site Importer editor control chrome: abcdef123456 */\n.editor-styles-wrapper body{background:#fff}\n"; $malicious_editor_overlay['editor_sha256'] = hash( 'sha256', $malicious_editor_overlay['editor_css'] ); $malicious_editor_overlay['editor_bytes'] = strlen( $malicious_editor_overlay['editor_css'] );
+	$invalid_editor_hash = $editor_overlay; $invalid_editor_hash['editor_bytes']++;
+	$oversized_editor_overlay = $editor_overlay; $oversized_editor_overlay['editor_css'] = str_repeat( 'a', 32769 ); $oversized_editor_overlay['editor_sha256'] = hash( 'sha256', $oversized_editor_overlay['editor_css'] ); $oversized_editor_overlay['editor_bytes'] = strlen( $oversized_editor_overlay['editor_css'] );
+	$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $editor_overlay ) && null === Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $malicious_editor_overlay ) && null === Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $invalid_editor_hash ) && null === Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $oversized_editor_overlay ) && str_contains( $editor_overlay_writes['/tmp/editor-overlay/style.css'], 'provider layout overlay' ) && ! str_contains( $editor_overlay_writes['/tmp/editor-overlay/style.css'], 'editor control chrome' ) && str_contains( $editor_overlay_writes['/tmp/editor-overlay/assets/css/editor-style.css'], 'editor control chrome' ), 'editor-only overlays require bounded independently hashed admitted rules and survive existing stylesheet writes without changing frontend CSS' );
 	$incomplete_destination_map = $jetpack_destination_map;
 	array_pop( $incomplete_destination_map['presentation_targets'][0]['destinations'] );
 	$incomplete_destination_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $root_graph, $incomplete_destination_map, $presentation_graph_fixture );

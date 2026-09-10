@@ -54,7 +54,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				'destinations' => array(),
 			);
 			foreach ( $destinations as $destination ) {
-				if ( ! is_array( $destination ) || ! self::has_only_keys( $destination, array( 'role', 'selector', 'properties', 'aliases', 'resets', 'priority' ) ) || ! in_array( $destination['priority'] ?? '', array( '', 'important' ), true ) || ! in_array( $destination['role'] ?? null, array( 'control', 'label', 'required_marker' ), true ) || ! is_string( $destination['selector'] ?? null ) || ! self::safe_selector( $destination['selector'], $map['scope'] ) || ! is_array( $destination['properties'] ?? null ) || ! array_is_list( $destination['properties'] ) || ( empty( $destination['properties'] ) && empty( $destination['resets'] ) ) || count( $destination['properties'] ) > count( self::presentation_property_map() ) || array_diff( $destination['properties'], array_keys( self::presentation_property_map() ) ) || ! self::safe_presentation_aliases( $destination['aliases'] ?? array(), $destination['properties'] ) || ! self::safe_presentation_resets( $destination['resets'] ?? array() ) ) {
+				if ( ! is_array( $destination ) || ! self::has_only_keys( $destination, array( 'role', 'selector', 'properties', 'aliases', 'resets', 'priority' ) ) || ! in_array( $destination['priority'] ?? '', array( '', 'important' ), true ) || ! in_array( $destination['role'] ?? null, array( 'control', 'label', 'required_marker', 'control_container' ), true ) || ! is_string( $destination['selector'] ?? null ) || ! self::safe_selector( $destination['selector'], $map['scope'] ) || ! is_array( $destination['properties'] ?? null ) || ! array_is_list( $destination['properties'] ) || ( empty( $destination['properties'] ) && empty( $destination['resets'] ) ) || count( $destination['properties'] ) > count( self::presentation_property_map() ) || array_diff( $destination['properties'], array_keys( self::presentation_property_map() ) ) || ! self::safe_presentation_aliases( $destination['aliases'] ?? array(), $destination['properties'] ) || ! self::safe_presentation_resets( $destination['resets'] ?? array() ) ) {
 					return array( 'error' => 'provider presentation target map contains an unsafe destination.' );
 				}
 				$clean['destinations'][] = array_filter( array(
@@ -102,9 +102,10 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		foreach ( $validated_map['targets'] as $target ) {
 			$targets[ $target['node'] ] = $target;
 		}
-		$rules      = array();
-		$operations = array();
-		$losses     = array();
+		$rules        = array();
+		$editor_rules = array();
+		$operations   = array();
+		$losses       = array();
 		foreach ( $graph['nodes'] ?? array() as $node ) {
 			if ( ! is_array( $node ) || empty( $node['layout'] ) ) {
 				continue;
@@ -113,7 +114,8 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			$target = $targets[ $id ] ?? null;
 			if ( null === $target ) {
 				$losses[] = self::loss( 'provider_structure_mismatch', $id );
-				continue; }
+				continue;
+			}
 			$declarations = self::declarations( $node['layout'], $target['capabilities'], $id, $losses );
 			if ( ! empty( $declarations ) ) {
 				$rules[]      = $target['selector'] . '{' . implode( ';', $declarations ) . '}';
@@ -145,6 +147,20 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				); }
 		}
 		$presentation_targets = array_column( $validated_map['presentation_targets'] ?? array(), null, 'index' );
+		foreach ( $presentation_graph['control_containers'] ?? array() as $container ) {
+			$index        = $container['index'] ?? null;
+			$destinations = is_int( $index ) ? array_filter( $presentation_targets[ $index ]['destinations'] ?? array(), static fn( array $destination ): bool => 'control_container' === $destination['role'] ) : array();
+			if ( ! is_int( $index ) || empty( $destinations ) || ! is_array( $container['styles'] ?? null ) ) {
+				$losses[] = self::presentation_loss( 'editor_control_container_unsupported', is_int( $index ) ? $index : 0, 'control_container' );
+				continue;
+			}
+			foreach ( $destinations as $destination ) {
+				$declarations = self::presentation_declarations( $container['styles'], $index, 'control_container', $losses, $destination['properties'] );
+				if ( ! empty( $declarations ) ) {
+					$editor_rules[] = '.editor-styles-wrapper ' . self::authoritative_presentation_selector( $destination['selector'] ) . '{' . implode( ';', $declarations ) . '}';
+				}
+			}
+		}
 		foreach ( $presentation_graph['controls'] ?? array() as $control ) {
 			if ( ! is_array( $control ) || ! is_int( $control['index'] ?? null ) ) {
 				continue;
@@ -169,6 +185,20 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			// They retain their source precedence in the validated v2 graph but have no
 			// generic provider CSS destination here.
 			if ( in_array( $role, array( 'visual_part', 'visual_group' ), true ) ) {
+				continue;
+			}
+			if ( 'control_container' === $role ) {
+				$destinations = is_int( $index ) ? array_filter( $presentation_targets[ $index ]['destinations'] ?? array(), static fn( array $destination ): bool => 'control_container' === $destination['role'] ) : array();
+				if ( ! is_int( $index ) || empty( $destinations ) || ! self::safe_condition( $variant['condition'] ?? null ) || ! is_array( $variant['style_patch'] ?? null ) ) {
+					$losses[] = self::presentation_loss( 'editor_control_container_unsupported', is_int( $index ) ? $index : 0, 'control_container' );
+					continue;
+				}
+				foreach ( $destinations as $destination ) {
+					$declarations = self::presentation_declarations( $variant['style_patch'], $index, 'control_container', $losses, $destination['properties'] );
+					if ( ! empty( $declarations ) ) {
+						$editor_rules[] = self::conditional_rule( $variant['condition'], '.editor-styles-wrapper ' . self::authoritative_presentation_selector( $destination['selector'] ) . '{' . implode( ';', $declarations ) . '}' );
+					}
+				}
 				continue;
 			}
 			$destinations = is_int( $index ) && is_string( $role ) ? array_filter( $presentation_targets[ $index ]['destinations'] ?? array(), static fn( array $destination ): bool => $role === $destination['role'] ) : array();
@@ -202,11 +232,15 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				),
 			);
 		}
-		$overlay = '' === $css ? array() : array(
-			'schema' => self::OVERLAY_SCHEMA,
-			'css'    => $css,
-			'sha256' => hash( 'sha256', $css ),
-			'bytes'  => strlen( $css ),
+		$editor_css = empty( $editor_rules ) ? '' : '/* Static Site Importer editor control chrome: ' . substr( hash( 'sha256', implode( "\n", $editor_rules ) ), 0, 12 ) . " */\n" . implode( "\n", array_values( array_unique( $editor_rules ) ) ) . "\n";
+		$overlay    = '' === $css && '' === $editor_css ? array() : array(
+			'schema'        => self::OVERLAY_SCHEMA,
+			'css'           => $css,
+			'editor_css'    => $editor_css,
+			'sha256'        => hash( 'sha256', $css ),
+			'bytes'         => strlen( $css ),
+			'editor_sha256' => hash( 'sha256', $editor_css ),
+			'editor_bytes'  => strlen( $editor_css ),
 		);
 		return array(
 			'overlay'    => $overlay,
@@ -218,26 +252,51 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 
 	/** Validate a compiler-produced overlay before it is admitted to a stylesheet. */
 	public static function validate_overlay( mixed $overlay ): ?array {
-		if ( ! is_array( $overlay ) || array_keys( $overlay ) !== array( 'schema', 'css', 'sha256', 'bytes' ) || self::OVERLAY_SCHEMA !== ( $overlay['schema'] ?? null ) || ! is_string( $overlay['css'] ?? null ) || ! is_string( $overlay['sha256'] ?? null ) || ! is_int( $overlay['bytes'] ?? null ) ) {
+		if ( ! is_array( $overlay ) || ! in_array( array_keys( $overlay ), array( array( 'schema', 'css', 'sha256', 'bytes' ), array( 'schema', 'css', 'editor_css', 'sha256', 'bytes', 'editor_sha256', 'editor_bytes' ) ), true ) || self::OVERLAY_SCHEMA !== ( $overlay['schema'] ?? null ) || ! is_string( $overlay['css'] ?? null ) || ( isset( $overlay['editor_css'] ) && ( ! is_string( $overlay['editor_css'] ) || ! is_string( $overlay['editor_sha256'] ?? null ) || ! is_int( $overlay['editor_bytes'] ?? null ) ) ) || ! is_string( $overlay['sha256'] ?? null ) || ! is_int( $overlay['bytes'] ?? null ) ) {
 			return null;
 		}
 		$css = $overlay['css'];
-		if ( '' === $css || strlen( $css ) !== $overlay['bytes'] || $overlay['bytes'] > self::MAX_OVERLAY_BYTES || ! preg_match( '/^[a-f0-9]{64}$/D', $overlay['sha256'] ) || ! hash_equals( $overlay['sha256'], hash( 'sha256', $css ) ) ) {
+		if ( strlen( $css ) !== $overlay['bytes'] || $overlay['bytes'] > self::MAX_OVERLAY_BYTES || ! preg_match( '/^[a-f0-9]{64}$/D', $overlay['sha256'] ) || ! hash_equals( $overlay['sha256'], hash( 'sha256', $css ) ) ) {
 			return null;
 		}
-		if ( ! preg_match( '/^\/\* Static Site Importer provider layout overlay: [a-f0-9]{12} \*\/\n/', $css, $header ) ) {
+		$editor_css = $overlay['editor_css'] ?? '';
+		if ( '' !== $editor_css && ( strlen( $editor_css ) !== $overlay['editor_bytes'] || $overlay['editor_bytes'] > self::MAX_OVERLAY_BYTES || ! preg_match( '/^[a-f0-9]{64}$/D', $overlay['editor_sha256'] ) || ! hash_equals( $overlay['editor_sha256'], hash( 'sha256', $editor_css ) ) ) ) {
 			return null;
+		}
+		if ( '' === $css && '' === $editor_css ) {
+			return null;
+		}
+		if ( '' !== $css && ! self::safe_compiled_artifact( $css, 'provider layout overlay', false ) ) {
+			return null;
+		}
+		if ( '' !== $editor_css && ! self::safe_compiled_artifact( $editor_css, 'editor control chrome', true ) ) {
+			return null;
+		}
+		return $overlay;
+	}
+
+	private static function safe_compiled_artifact( string $css, string $kind, bool $editor ): bool {
+		if ( ! preg_match( '/^\/\* Static Site Importer ' . preg_quote( $kind, '/' ) . ': [a-f0-9]{12} \*\/\n/', $css, $header ) ) {
+			return false;
 		}
 		$body = substr( $css, strlen( $header[0] ) );
 		if ( ! str_ends_with( $body, "\n" ) || str_contains( $body, 'url(' ) || str_contains( $body, '@import' ) ) {
-			return null;
+			return false;
 		}
 		foreach ( array_filter( explode( "\n", trim( $body ) ) ) as $rule ) {
-			if ( ! self::safe_compiled_rule( $rule ) ) {
-				return null;
+			if ( ! ( $editor ? self::safe_editor_compiled_rule( $rule ) : self::safe_compiled_rule( $rule ) ) ) {
+				return false;
 			}
 		}
-		return $overlay;
+		return true;
+	}
+
+	private static function safe_editor_compiled_rule( string $rule ): bool {
+		if ( preg_match( '/^@(?:media|container) (\((?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)\))\{(.+)\}$/D', $rule, $matches ) ) {
+			return self::safe_editor_compiled_rule( $matches[2] );
+		}
+		$prefix = '.editor-styles-wrapper ';
+		return str_starts_with( $rule, $prefix ) && self::safe_compiled_rule( substr( $rule, strlen( $prefix ) ) );
 	}
 
 	private static function safe_compiled_rule( string $rule ): bool {
