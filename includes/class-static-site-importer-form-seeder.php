@@ -2371,9 +2371,10 @@ class Static_Site_Importer_Form_Seeder {
 				'selector'   => '.' . $scope . ' .' . self::presentation_destination_class( $scope, $index, 'shell' ),
 				'properties' => array(),
 				'resets'     => array(
-					'padding'    => '0',
-					'border'     => '0',
-					'background' => 'transparent',
+					'padding'     => '0',
+					'border'      => '0',
+					'background'  => 'transparent',
+					'text-indent' => '0',
 				),
 				'priority'   => 'important',
 			),
