@@ -122,7 +122,13 @@ class Static_Site_Importer_Theme_Generator {
 			$handle = Static_Site_Importer_Lifecycle_Compile_Checkpoint::create(
 				$request_artifact,
 				$request_args,
-				array_merge( $compiled_import, array( 'artifact' => $artifact, 'args' => $args ) ),
+				array_merge(
+					$compiled_import,
+					array(
+						'artifact' => $artifact,
+						'args'     => $args,
+					)
+				),
 				$checkpoint_owner,
 				(string) ( $args['_static_site_importer_lifecycle_checkpoint_root'] ?? '' )
 			);
