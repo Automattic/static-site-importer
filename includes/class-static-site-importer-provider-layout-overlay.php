@@ -163,8 +163,8 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			}
 		}
 		foreach ( $presentation_graph['variants'] ?? array() as $variant ) {
-			$index        = $variant['index'] ?? null;
-			$role         = $variant['role'] ?? null;
+			$index = $variant['index'] ?? null;
+			$role  = $variant['role'] ?? null;
 			// Inline SVG parts are rendered by the companion's field-state projection.
 			// They retain their source precedence in the validated v2 graph but have no
 			// generic provider CSS destination here.

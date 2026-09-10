@@ -23,7 +23,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		}
 		$document = new \DOMDocument();
 		$previous = libxml_use_internal_errors( true );
-		$loaded = $document->loadXML( $markup, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING | LIBXML_COMPACT );
+		$loaded   = $document->loadXML( $markup, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING | LIBXML_COMPACT );
 		libxml_clear_errors();
 		libxml_use_internal_errors( $previous );
 		if ( ! $loaded || ! $document->documentElement instanceof \DOMElement || 'svg' !== strtolower( $document->documentElement->tagName ) ) {
@@ -31,14 +31,14 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		}
 		$allowed = array_flip( array( 'svg', 'g', 'path', 'circle', 'ellipse', 'rect', 'line', 'polyline', 'polygon', 'text', 'tspan', 'title', 'desc', 'defs', 'lineargradient', 'radialgradient', 'stop', 'clippath', 'mask', 'pattern', 'marker', 'filter', 'feblend', 'fecolormatrix', 'fecomposite', 'fegaussianblur', 'femerge', 'femergenode', 'feoffset', 'feflood', 'feturbulence' ) );
 		$blocked = array_flip( array( 'href', 'xlink:href', 'src', 'style' ) );
-		$nodes = array( $document->documentElement );
+		$nodes   = array( $document->documentElement );
 		while ( ! empty( $nodes ) ) {
 			$element = array_pop( $nodes );
-			if ( ! $element instanceof \DOMElement || ! isset( $allowed[ strtolower( $element->tagName ) ] ) ) {
+			if ( ! isset( $allowed[ strtolower( $element->tagName ) ] ) ) {
 				return false;
 			}
 			foreach ( $element->attributes as $attribute ) {
-				$name = strtolower( $attribute->name );
+				$name  = strtolower( $attribute->name );
 				$value = trim( $attribute->value );
 				if ( str_starts_with( $name, 'on' ) || isset( $blocked[ $name ] ) || ( str_contains( $name, ':' ) && ! in_array( $name, array( 'xmlns', 'xml:lang', 'xml:space' ), true ) ) || preg_match( '/(?:^|[^a-z])url\s*\(/i', $value ) ) {
 					return false;
@@ -97,18 +97,18 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		if ( ! preg_match( '/<button\b(?=[^>]*\bclass=("|\')[^"\']*\bjetpack-combobox-trigger\b[^"\']*\1)[^>]*>/i', $html, $button, PREG_OFFSET_CAPTURE ) || ! preg_match( '/<[^>]*\bclass=("|\')[^"\']*\bjetpack-combobox-trigger-arrow\b[^"\']*\1[^>]*>/i', $html, $arrow, PREG_OFFSET_CAPTURE ) ) {
 			return $html;
 		}
-		$state = self::$visual_states[ $id[1] ];
+		$state   = self::$visual_states[ $id[1] ];
 		$trigger = preg_replace( '/\bclass=("|\')(.*?)\1/is', 'class=$1$2 ' . $state['trigger_class'] . '$1', $button[0][0], 1 );
 		if ( ! is_string( $trigger ) ) {
 			return $html;
 		}
-		$html = substr_replace( $html, $trigger, $button[0][1], strlen( $button[0][0] ) );
-		$parts = array_map( static fn( array $part ): string => preg_replace( '/^<svg\b/i', '<svg class="' . $part['class'] . '"', $part['markup'], 1 ) ?? $part['markup'], $state['parts'] );
-		$group = ( '' === $state['css'] ? '' : '<style>' . $state['css'] . '</style>' ) . '<span class="ssi-form-visual-state" data-wp-bind--hidden="context.selectedCountry.value">' . implode( '', $parts ) . '</span>';
-		$html  = substr_replace( $html, $group, $button[0][1] + strlen( $trigger ), 0 );
+		$html         = substr_replace( $html, $trigger, $button[0][1], strlen( $button[0][0] ) );
+		$parts        = array_map( static fn( array $part ): string => preg_replace( '/^<svg\b/i', '<svg class="' . $part['class'] . '"', $part['markup'], 1 ) ?? $part['markup'], $state['parts'] );
+		$group        = ( '' === $state['css'] ? '' : '<style>' . $state['css'] . '</style>' ) . '<span class="ssi-form-visual-state" data-wp-bind--hidden="context.selectedCountry.value">' . implode( '', $parts ) . '</span>';
+		$html         = substr_replace( $html, $group, $button[0][1] + strlen( $trigger ), 0 );
 		$arrow_offset = $arrow[0][1] + ( $arrow[0][1] > $button[0][1] ? strlen( $trigger ) - strlen( $button[0][0] ) + strlen( $group ) : 0 );
-		$arrow_tag = $arrow[0][0];
-		$arrow_tag = preg_replace( '/\sdata-wp-bind--hidden=("|\')[^"\']*\1/i', '', $arrow_tag ) ?? $arrow_tag;
+		$arrow_tag    = $arrow[0][0];
+		$arrow_tag    = preg_replace( '/\sdata-wp-bind--hidden=("|\')[^"\']*\1/i', '', $arrow_tag ) ?? $arrow_tag;
 		return substr_replace( $html, rtrim( substr( $arrow_tag, 0, -1 ) ) . ' data-wp-bind--hidden="!context.selectedCountry.value">', $arrow_offset, strlen( $arrow[0][0] ) );
 	}
 

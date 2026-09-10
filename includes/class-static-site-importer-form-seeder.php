@@ -645,13 +645,13 @@ class Static_Site_Importer_Form_Seeder {
 		if ( ! empty( $visual_state['diagnostics'] ) ) {
 			$row['form_visual_state_diagnostics'] = $visual_state['diagnostics'];
 		}
-		$unaccepted_losses           = array_values(
+		$unaccepted_losses   = array_values(
 			array_filter(
 				$layout['receipt']['losses'] ?? array(),
 				static fn( $loss ): bool => is_array( $loss ) && self::receipt_loss_requires_gate( $loss ) && ! self::provider_represents_receipt_loss( $loss, $form, $field_blocks, $target_map ) && true !== apply_filters( 'static_site_importer_form_receipt_loss_accepted', false, $loss, $form, $row )
 			)
 		);
-		$gate_overflow_count         = (int) ( $layout['receipt']['gate_required_loss_overflow_count'] ?? 0 );
+		$gate_overflow_count = (int) ( $layout['receipt']['gate_required_loss_overflow_count'] ?? 0 );
 		if ( $gate_overflow_count > 0 ) {
 			$unaccepted_losses[] = array(
 				'dimension'   => 'topology',
@@ -2235,7 +2235,7 @@ class Static_Site_Importer_Form_Seeder {
 
 	/** Build only a topology-owned source-captured empty-country group. */
 	private static function empty_country_visual_state( array $form, string $scope, array $phone_popup_targets ): array {
-		$parts = is_array( $form['presentation_graph']['visual_parts'] ?? null ) ? $form['presentation_graph']['visual_parts'] : array();
+		$parts    = is_array( $form['presentation_graph']['visual_parts'] ?? null ) ? $form['presentation_graph']['visual_parts'] : array();
 		$by_index = array();
 		foreach ( $parts as $part ) {
 			if ( is_array( $part ) && is_int( $part['index'] ?? null ) ) {
@@ -2254,21 +2254,25 @@ class Static_Site_Importer_Form_Seeder {
 					return array( 'diagnostics' => array( 'visual_state_rejected' ) );
 				}
 				$seen[ $part['id'] ] = true;
-				$state_parts[]       = array( 'id' => $part['id'], 'class' => 'ssi-fvs-' . substr( hash( 'sha256', $scope . "\n" . $part['id'] ), 0, 12 ), 'markup' => $part['markup'] );
+				$state_parts[]       = array(
+					'id'     => $part['id'],
+					'class'  => 'ssi-fvs-' . substr( hash( 'sha256', $scope . "\n" . $part['id'] ), 0, 12 ),
+					'markup' => $part['markup'],
+				);
 			}
 			$css = self::empty_country_visual_css( $scope, $state_parts, $group, $form['presentation_graph']['variants'] ?? array() );
 			return array(
 				'trigger_class' => self::presentation_destination_class( $scope, $auxiliary_index, 'country-trigger' ),
-				'state' => array(
-					'schema'   => 'static-site-importer/form-visual-state/v1',
-					'field_id' => $scope . '-field-' . $phone_index,
+				'state'         => array(
+					'schema'        => 'static-site-importer/form-visual-state/v1',
+					'field_id'      => $scope . '-field-' . $phone_index,
 					'trigger_class' => self::presentation_destination_class( $scope, $auxiliary_index, 'country-trigger' ),
-					'parts'    => $state_parts,
-					'css'      => $css,
+					'parts'         => $state_parts,
+					'css'           => $css,
 				),
 				// Visual-part facts do not establish the provider trigger group's geometry.
 				// Retained control-child layout facts are not currently addressable there.
-				'diagnostics' => array( 'visual_state_group_geometry_gap' ),
+				'diagnostics'   => array( 'visual_state_group_geometry_gap' ),
 			);
 		}
 		return array();

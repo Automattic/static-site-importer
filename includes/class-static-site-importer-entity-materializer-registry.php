@@ -1378,7 +1378,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/** @return array{graph?:array<string,mixed>,error?:string} */
 	private static function normalize_form_presentation_graph( mixed $candidate ): array {
-		$is_v2 = is_array( $candidate ) && 'generic/computed-form-presentation/v2' === ( $candidate['schema'] ?? null );
+		$is_v2         = is_array( $candidate ) && 'generic/computed-form-presentation/v2' === ( $candidate['schema'] ?? null );
 		$expected_keys = $is_v2 ? array( 'schema', 'basis', 'truncated', 'limits', 'controls', 'visual_parts', 'variants', 'diagnostics' ) : array( 'schema', 'basis', 'truncated', 'limits', 'controls', 'variants', 'diagnostics' );
 		if ( ! is_array( $candidate ) || ( ! $is_v2 && 'generic/computed-form-presentation/v1' !== ( $candidate['schema'] ?? null ) ) || 'source_css_cascade' !== ( $candidate['basis'] ?? null ) || true === ( $candidate['truncated'] ?? null ) || ! is_bool( $candidate['truncated'] ?? null ) || ! self::has_only_keys( $candidate, $expected_keys ) || ! is_array( $candidate['limits'] ?? null ) || ! self::has_only_keys( $candidate['limits'], array( 'controls', 'rules_per_role' ) ) || 128 !== ( $candidate['limits']['controls'] ?? null ) || 32 !== ( $candidate['limits']['rules_per_role'] ?? null ) || ! is_array( $candidate['controls'] ?? null ) || ! array_is_list( $candidate['controls'] ) || count( $candidate['controls'] ) > 128 || ! is_array( $candidate['variants'] ?? null ) || ! array_is_list( $candidate['variants'] ) || count( $candidate['variants'] ) > 256 || ! is_array( $candidate['diagnostics'] ?? null ) || ! array_is_list( $candidate['diagnostics'] ) || count( $candidate['diagnostics'] ) > 32 || ( $is_v2 && ( ! is_array( $candidate['visual_parts'] ?? null ) || ! array_is_list( $candidate['visual_parts'] ) || count( $candidate['visual_parts'] ) > 128 ) ) || array_filter( $candidate['diagnostics'], static fn( $diagnostic ): bool => ! is_string( $diagnostic ) || '' === trim( $diagnostic ) || strlen( $diagnostic ) > 1100 ) ) {
 			return array( 'error' => 'presentation_graph must be a complete bounded generic/computed-form-presentation/v1 or v2 graph.' );
@@ -1411,16 +1411,22 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				return array( 'error' => 'presentation_graph visual part is malformed or unsafe.' );
 			}
 			if ( 'known' === $part['source_css']['state'] ) {
-				$source_css = self::normalize_form_presentation_role( array( 'styles' => $part['source_css']['styles'] ?? null, 'provenance' => $part['source_css']['provenance'] ?? null ), $properties, null );
+				$source_css = self::normalize_form_presentation_role( array(
+					'styles'     => $part['source_css']['styles'] ?? null,
+					'provenance' => $part['source_css']['provenance'] ?? null,
+				), $properties, null );
 				if ( isset( $source_css['error'] ) || ! self::has_only_keys( $part['source_css'], array( 'state', 'styles', 'provenance' ) ) ) {
 					return array( 'error' => 'presentation_graph visual part source CSS is malformed.' );
 				}
-				$part['source_css'] = array( 'state' => 'known', ...$source_css['role'] );
+				$part['source_css'] = array(
+					'state' => 'known',
+					...$source_css['role'],
+				);
 			} elseif ( ! self::has_only_keys( $part['source_css'], array( 'state' ) ) ) {
 				return array( 'error' => 'presentation_graph visual part unknown CSS is malformed.' );
 			}
 			$part_indexes[ $part['id'] ] = $part['index'];
-			$visual_parts[] = array_intersect_key( $part, array_flip( array( 'id', 'index', 'kind', 'source_selector', 'markup', 'intrinsic_size', 'source_css' ) ) );
+			$visual_parts[]              = array_intersect_key( $part, array_flip( array( 'id', 'index', 'kind', 'source_selector', 'markup', 'intrinsic_size', 'source_css' ) ) );
 		}
 		$variants = array();
 		foreach ( $candidate['variants'] as $variant ) {

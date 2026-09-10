@@ -202,11 +202,11 @@ class Static_Site_Importer_Companion_Plugin {
 			);
 		}
 
-		$blocks          = self::payload_blocks( $payload );
-		$plugin_slug     = 'ssi-' . $site_slug;
-		$block_namespace = $plugin_slug;
-		$preserved       = self::preserved_js( $payload, $block_namespace );
-		$editor_scripts  = self::editor_scripts( $payload );
+		$blocks             = self::payload_blocks( $payload );
+		$plugin_slug        = 'ssi-' . $site_slug;
+		$block_namespace    = $plugin_slug;
+		$preserved          = self::preserved_js( $payload, $block_namespace );
+		$editor_scripts     = self::editor_scripts( $payload );
 		$form_visual_states = is_array( $payload['form_visual_states'] ?? null ) ? $payload['form_visual_states'] : array();
 		if ( empty( $blocks ) && empty( $preserved ) && empty( $editor_scripts ) && empty( $form_visual_states ) ) {
 			return new WP_Error(
