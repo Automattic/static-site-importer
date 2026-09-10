@@ -417,7 +417,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			return 'auto' === $value;
 		}
 		if ( in_array( $fact, array( 'column', 'row' ), true ) ) {
-			return (bool) preg_match( '/^(?:auto|[1-9][0-9]*|span [1-9][0-9]*) \/ (?:auto|[1-9][0-9]*|span [1-9][0-9]*)$/D', $value );
+			return (bool) preg_match( '/^(?:auto|-1|[1-9][0-9]*|span [1-9][0-9]*)(?: \/ (?:auto|-1|[1-9][0-9]*|span [1-9][0-9]*))?$/D', $value );
 		}
 		if ( 'area' === $fact ) {
 			return (bool) preg_match( '/^(?:auto|[1-9][0-9]*|span [1-9][0-9]*)(?: \/ (?:auto|[1-9][0-9]*|span [1-9][0-9]*)){3}$/D', $value );

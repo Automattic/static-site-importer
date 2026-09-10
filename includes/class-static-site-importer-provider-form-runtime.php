@@ -86,7 +86,69 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		self::$registered = true;
 		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_wrapper_classes' ) );
 		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_empty_country_visual_state' ), 20 );
+		add_filter( 'render_block_jetpack/contact-form', array( __CLASS__, 'project_plain_root_fieldset' ), 10, 2 );
 		add_filter( 'render_block_core/button', array( __CLASS__, 'project_submit_presentation' ), 10, 2 );
+	}
+
+	/** Restore a source plain-root fieldset around provider field content, never the form itself. */
+	public static function project_plain_root_fieldset( string $html, array $block = array() ): string {
+		$class_name = isset( $block['attrs']['className'] ) && is_string( $block['attrs']['className'] ) ? $block['attrs']['className'] : '';
+		if ( 262144 < strlen( $html ) || ! preg_match( '/(?:^|\s)ssi-source-root-fieldset(?:\s|$)/', $class_name ) ) {
+			return $html;
+		}
+		$source_classes = array();
+		$classes        = preg_split( '/\s+/', $class_name );
+		foreach ( false === $classes ? array() : $classes as $class ) {
+			if ( preg_match( '/^ssi-source-root-fieldset--([A-Za-z_][A-Za-z0-9_-]{0,79})$/D', $class, $marker ) ) {
+				$source_classes[] = $marker[1];
+			}
+		}
+		$source_classes = array_slice( array_values( array_unique( $source_classes ) ), 0, 8 );
+		$document       = new \DOMDocument();
+		$previous       = libxml_use_internal_errors( true );
+		$loaded         = $document->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		if ( ! $loaded ) {
+			return $html;
+		}
+		$body = $document->getElementsByTagName( 'body' )->item( 0 );
+		if ( ! $body instanceof \DOMElement ) {
+			return $html;
+		}
+		$field_list = null;
+		foreach ( $body->getElementsByTagName( '*' ) as $element ) {
+			$classes = preg_split( '/\s+/', trim( $element->getAttribute( 'class' ) ) );
+			$classes = false === $classes ? array() : $classes;
+			if ( in_array( 'ssi-source-root-fieldset', $classes, true ) ) {
+				if ( $field_list instanceof \DOMElement || 'div' !== strtolower( $element->tagName ) || ! in_array( 'wp-block-jetpack-contact-form', $classes, true ) ) {
+					return $html;
+				}
+				$field_list = $element;
+			}
+		}
+		if ( ! $field_list instanceof \DOMElement || ! $field_list->parentNode instanceof \DOMElement ) {
+			return $html;
+		}
+		$form         = $field_list->parentNode;
+		$form_classes = preg_split( '/\s+/', trim( $form->getAttribute( 'class' ) ) );
+		if ( 'form' !== strtolower( $form->tagName ) || ! in_array( 'jetpack-contact-form__form', false === $form_classes ? array() : $form_classes, true ) ) {
+			return $html;
+		}
+		$fieldset = $document->createElement( 'fieldset' );
+		if ( ! empty( $source_classes ) ) {
+			$fieldset->setAttribute( 'class', implode( ' ', $source_classes ) );
+		}
+		$form->insertBefore( $fieldset, $field_list );
+		$fieldset->appendChild( $field_list );
+		$field_classes = preg_split( '/\s+/', trim( $field_list->getAttribute( 'class' ) ) );
+		$field_classes = array_values( array_filter( false === $field_classes ? array() : $field_classes, static fn( string $class_name ): bool => 'ssi-source-root-fieldset' !== $class_name && 1 !== preg_match( '/^ssi-source-root-fieldset--/', $class_name ) ) );
+		$field_list->setAttribute( 'class', implode( ' ', $field_classes ) );
+		$output = '';
+		foreach ( $body->childNodes as $child ) {
+			$output .= $document->saveHTML( $child );
+		}
+		return $output;
 	}
 
 	/** Insert the complete captured group into Jetpack's existing trigger; never replace its flag or arrow after selection. */
@@ -179,16 +241,23 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		$wrapper_layers            = array();
 		$composite_layers          = array();
 		$provider_layout_classes   = array();
+		$fullspan_child_classes    = array();
 		$phone_destination_classes = array();
 		$projected                 = preg_replace_callback(
 			'/\bclass=(["\'])(.*?)\1/s',
-			static function ( array $matches ) use ( &$wrapper_layers, &$composite_layers, &$provider_layout_classes, &$phone_destination_classes ): string {
+			static function ( array $matches ) use ( &$wrapper_layers, &$composite_layers, &$provider_layout_classes, &$fullspan_child_classes, &$phone_destination_classes ): string {
 				$classes        = preg_split( '/\s+/', trim( $matches[2] ) );
 				$classes        = false === $classes ? array() : $classes;
 				$is_wrapper     = (bool) array_filter( $classes, static fn ( string $class_name ): bool => 1 === preg_match( '/^grunion-field-[A-Za-z0-9_-]+-wrap$/D', $class_name ) );
 				$is_phone_shell = in_array( 'jetpack-field__input-phone-wrapper', $classes, true );
 				$output         = array();
 				foreach ( $classes as $class_name ) {
+					if ( preg_match( '/^ssi-source-fullspan-child--(ssi-node-[a-f0-9]{12})-wrap$/D', $class_name, $marker ) ) {
+						if ( $is_wrapper ) {
+							$fullspan_child_classes[] = $marker[1] . '-wrap';
+						}
+						continue;
+					}
 					if ( preg_match( '/^ssi-source-wrapper-(prefix|shell)-([0-9]{1,2})--([A-Za-z_][A-Za-z0-9_-]{0,79})-wrap$/D', $class_name, $marker ) ) {
 						if ( $is_wrapper ) {
 							$composite_layers[ $marker[1] ][ (int) $marker[2] ][] = $marker[3];
@@ -233,7 +302,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			},
 			$html
 		);
-		if ( ! is_string( $projected ) || ( empty( $wrapper_layers ) && empty( $composite_layers ) && empty( $phone_destination_classes ) ) ) {
+		if ( ! is_string( $projected ) || ( empty( $wrapper_layers ) && empty( $composite_layers ) && empty( $fullspan_child_classes ) && empty( $phone_destination_classes ) ) ) {
 			return is_string( $projected ) ? self::project_semantic_wrappers( $projected ) : $html;
 		}
 
@@ -246,6 +315,10 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 				$classes = array_values( array_unique( array_merge( $classes, $provider_layout_classes ) ) );
 			}
 			$open .= '<div class="' . implode( ' ', $classes ) . '">';
+			$close = '</div>' . $close;
+		}
+		if ( ! empty( $fullspan_child_classes ) ) {
+			$open .= '<div class="' . implode( ' ', array_values( array_unique( $fullspan_child_classes ) ) ) . '">';
 			$close = '</div>' . $close;
 		}
 		// A phone field's country search precedes its value input in Jetpack's HTML.

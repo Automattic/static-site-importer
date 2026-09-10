@@ -74,6 +74,11 @@ class Static_Site_Importer_Form_Seeder {
 		return Static_Site_Importer_Provider_Form_Runtime_V1::project_wrapper_classes( $html );
 	}
 
+	/** Restore a proven source root fieldset around Jetpack's rendered field list. */
+	public static function project_provider_plain_root_fieldset( string $html, array $block = array() ): string {
+		return Static_Site_Importer_Provider_Form_Runtime_V1::project_plain_root_fieldset( $html, $block );
+	}
+
 	/**
 	 * Load Forms after Jetpack's autoloader is ready and before WordPress init.
 	 *
@@ -744,6 +749,46 @@ class Static_Site_Importer_Form_Seeder {
 		return 'hidden' !== $type;
 	}
 
+	/** Accept only a non-nested root fieldset that contains every mapped provider control. */
+	private static function projectable_plain_root_fieldset( array $fieldset, array $nodes, array $field_blocks ): bool {
+		if ( 'wrapper' !== ( $fieldset['kind'] ?? null ) || 'fieldset' !== ( $fieldset['tag'] ?? null ) || 'plain_group' !== ( $fieldset['fieldset_semantics'] ?? null ) || null !== ( $fieldset['parent'] ?? null ) || ! is_string( $fieldset['id'] ?? null ) || empty( $field_blocks ) ) {
+			return false;
+		}
+		$nodes_by_id     = array();
+		$controls_by_key = array();
+		foreach ( $nodes as $node ) {
+			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) ) {
+				return false;
+			}
+			$nodes_by_id[ $node['id'] ] = $node;
+			if ( 'control' === ( $node['kind'] ?? null ) && is_int( $node['control'] ?? null ) ) {
+				$controls_by_key[ $node['control'] ] = $node;
+			}
+		}
+		foreach ( $nodes as $node ) {
+			if ( 'wrapper' !== ( $node['kind'] ?? null ) || 'fieldset' !== ( $node['tag'] ?? null ) || ( $node['id'] ?? null ) === $fieldset['id'] ) {
+				continue;
+			}
+			$parent = $node['parent'] ?? null;
+			while ( is_string( $parent ) ) {
+				if ( $fieldset['id'] === $parent ) {
+					return false;
+				}
+				$parent = $nodes_by_id[ $parent ]['parent'] ?? null;
+			}
+		}
+		foreach ( array_keys( $field_blocks ) as $control_index ) {
+			$parent = $controls_by_key[ $control_index ]['parent'] ?? null;
+			while ( is_string( $parent ) && $fieldset['id'] !== $parent ) {
+				$parent = $nodes_by_id[ $parent ]['parent'] ?? null;
+			}
+			if ( $fieldset['id'] !== $parent ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	/** A source label wrapper is carried by the mapped Jetpack field's label child. */
 	private static function provider_represents_receipt_loss( array $loss, array $form, array $field_blocks, array $target_map = array() ): bool {
 		if ( 'provider_wrapper_layout_unrepresentable' === ( $loss['reason_code'] ?? '' ) && is_string( $loss['node_hash'] ?? null ) ) {
@@ -771,30 +816,8 @@ class Static_Site_Importer_Form_Seeder {
 			if ( in_array( $tag, array( 'ul', 'ol', 'li' ), true ) ) {
 				return true;
 			}
-			if ( 'fieldset' === $tag && 'plain_group' === ( $node['fieldset_semantics'] ?? '' ) && null === ( $node['parent'] ?? null ) ) {
-				$nodes_by_id = array();
-				foreach ( $nodes as $candidate ) {
-					if ( is_array( $candidate ) && is_string( $candidate['id'] ?? null ) ) {
-						$nodes_by_id[ $candidate['id'] ] = $candidate;
-					}
-				}
-				foreach ( array_keys( $field_blocks ) as $control_index ) {
-					$control_node = null;
-					foreach ( $nodes as $candidate ) {
-						if ( is_array( $candidate ) && 'control' === ( $candidate['kind'] ?? '' ) && ( $candidate['control'] ?? null ) === $control_index ) {
-							$control_node = $candidate;
-							break;
-						}
-					}
-					$parent = $control_node['parent'] ?? null;
-					while ( is_string( $parent ) && ( $node['id'] ?? '' ) !== $parent ) {
-						$parent = $nodes_by_id[ $parent ]['parent'] ?? null;
-					}
-					if ( ( $node['id'] ?? '' ) !== $parent ) {
-						return false;
-					}
-				}
-				return ! empty( $field_blocks );
+			if ( 'fieldset' === $tag && self::projectable_plain_root_fieldset( $node, $nodes, $field_blocks ) ) {
+				return true;
 			}
 			if ( 'label' !== $tag ) {
 				return false;
@@ -1264,8 +1287,31 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		$mapped_controls = array_keys( $field_blocks );
 		sort( $mapped_controls );
+		// Jetpack owns the form and its handler nodes, but a plain root fieldset that
+		// contains every mapped control can be restored around only its field list.
+		foreach ( $nodes as $node ) {
+			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? null ) || 'fieldset' !== ( $node['tag'] ?? null ) || 'plain_group' !== ( $node['fieldset_semantics'] ?? null ) || null !== ( $node['parent'] ?? null ) || ! is_string( $node['id'] ?? null ) ) {
+				continue;
+			}
+			if ( ! self::projectable_plain_root_fieldset( $node, $nodes, $field_blocks ) ) {
+				continue;
+			}
+			$class_tokens                 = preg_split( '/\s+/', trim( (string) ( $node['class'] ?? '' ) ) );
+			$class_tokens                 = false === $class_tokens ? array() : array_values( array_filter( $class_tokens, static fn( string $class_name ): bool => 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) );
+			$form_classes                 = array_merge( $form_classes, array( 'ssi-source-root-fieldset' ), array_map( static fn( string $class_name ): string => 'ssi-source-root-fieldset--' . $class_name, array_slice( array_values( array_unique( $class_tokens ) ), 0, 8 ) ) );
+			$represented_topology_nodes[] = $node['id'];
+			$operations[]                 = array(
+				'dimension'   => 'topology',
+				'strategy'    => 'provider_plain_root_fieldset_projection',
+				'target_hash' => hash( 'sha256', $node['id'] ),
+			);
+			break;
+		}
 		foreach ( $nodes as $node ) {
 			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? null ) || '' === trim( (string) ( $node['class'] ?? '' ) ) ) {
+				continue;
+			}
+			if ( 'fieldset' === ( $node['tag'] ?? null ) && 'plain_group' === ( $node['fieldset_semantics'] ?? null ) && null === ( $node['parent'] ?? null ) ) {
 				continue;
 			}
 			$branch_controls = $collect_controls( $node );
@@ -1340,7 +1386,13 @@ class Static_Site_Importer_Form_Seeder {
 		$grid_span_width       = static function ( mixed $columns, mixed $column ): ?string {
 			$columns = preg_replace( '/\s+/', '', is_string( $columns ) ? $columns : '' );
 			$column  = preg_replace( '/\s+/', '', is_string( $column ) ? $column : '' );
-			if ( ! is_string( $columns ) || ! is_string( $column ) || ! preg_match( '/^repeat\(([1-9][0-9]*),1fr\)$/D', $columns, $column_count ) || ! preg_match( '/^span([1-9][0-9]*)$/D', $column, $span ) || (int) $span[1] > (int) $column_count[1] ) {
+			if ( ! is_string( $columns ) || ! is_string( $column ) || ! preg_match( '/^repeat\(([1-9][0-9]*),1fr\)$/D', $columns, $column_count ) ) {
+				return null;
+			}
+			if ( '1/-1' === $column ) {
+				return '100%';
+			}
+			if ( ! preg_match( '/^span([1-9][0-9]*)$/D', $column, $span ) || (int) $span[1] > (int) $column_count[1] ) {
 				return null;
 			}
 			return rtrim( rtrim( number_format( 100 * (int) $span[1] / (int) $column_count[1], 3, '.', '' ), '0' ), '.' ) . '%';
@@ -1352,38 +1404,34 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			return 'span ' . $span[1];
 		};
-		// A source field shell can be a grid solely to make its one control span every
-		// track. Jetpack inserts label and error nodes between that shell and the native
-		// control, so copying the grid without that direct-child placement makes fields
-		// shrink to one track. The native field is already full-width in this case.
+		// Jetpack's field shell exposes a real child slot only around the native value.
+		// Preserve an evidenced full-span value by rebuilding that child wrapper rather
+		// than collapsing the source grid tracks to a guessed width.
 		foreach ( $nodes as $node ) {
-			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) ) {
+			if ( ! is_array( $node ) || 'control' !== ( $node['kind'] ?? null ) || ! is_string( $node['id'] ?? null ) || ! is_int( $node['control'] ?? null ) || ! isset( $field_blocks[ $node['control'] ] ) || 'core/button' === ( $field_blocks[ $node['control'] ]['name'] ?? '' ) ) {
 				continue;
 			}
-			$branch_controls = $collect_controls( $node );
-			$control_index   = 1 === count( $branch_controls ) ? $branch_controls[0] : null;
-			if ( ! is_int( $control_index ) || ! isset( $field_blocks[ $control_index ] ) || 'core/button' === ( $field_blocks[ $control_index ]['name'] ?? '' ) ) {
+			$parent_id        = is_string( $node['parent'] ?? null ) ? $node['parent'] : '';
+			$parent_layout    = $layout_nodes_by_id[ $parent_id ] ?? null;
+			$control_layout   = $layout_nodes_by_id[ $node['id'] ] ?? null;
+			$placement        = is_array( $control_layout ) ? ( $control_layout['layout']['column'] ?? $grid_area_column_span( $control_layout['layout']['area'] ?? null ) ) : null;
+			$full_span        = is_array( $parent_layout ) ? $grid_span_width( $parent_layout['layout']['columns'] ?? null, $placement ) : null;
+			$parent_proven    = is_array( $parent_layout ) && $has_unconditional_proven_property( $parent_layout, 'display' ) && $has_unconditional_proven_property( $parent_layout, 'grid-template-columns' );
+			$placement_proven = is_array( $control_layout ) && ( $has_unconditional_proven_property( $control_layout, 'grid-column' ) || $has_unconditional_proven_property( $control_layout, 'grid-area' ) );
+			if ( '100%' !== $full_span || ! $parent_proven || ! $placement_proven || ! isset( $wrapper_hooks[ $parent_id ] ) || ! empty( $variants_by_node[ $parent_id ] ) || ! empty( $variants_by_node[ $node['id'] ] ) ) {
 				continue;
 			}
-			$branch_id                 = $node['id'];
-			$parent_id                 = is_string( $node['parent'] ?? null ) ? $node['parent'] : '';
-			$parent_topology           = $topology_nodes_by_id[ $parent_id ] ?? null;
-			$parent                    = $layout_nodes_by_id[ $parent_id ] ?? null;
-			$branch                    = $layout_nodes_by_id[ $branch_id ] ?? null;
-			$columns                   = is_array( $parent ) ? ( $parent['layout']['columns'] ?? null ) : null;
-			$placement                 = is_array( $branch ) ? ( $branch['layout']['column'] ?? $grid_area_column_span( $branch['layout']['area'] ?? null ) ) : null;
-			$width                     = $grid_span_width( $columns, $placement );
-			$parent_layout             = is_array( $parent ) && is_array( $parent['layout'] ?? null ) ? $parent['layout'] : array();
-			$allowed_parent_properties = array( 'display', 'columns', 'width', 'gap', 'row_gap', 'column_gap' );
-			if ( '100%' !== $width || ! is_array( $parent_topology ) || 1 !== count( $collect_controls( $parent_topology ) ) || ! is_array( $parent ) || ! is_array( $branch ) || array_diff( array_keys( $parent_layout ), $allowed_parent_properties ) || ! $has_unconditional_proven_property( $parent, 'grid-template-columns' ) || ! ( $has_unconditional_proven_property( $branch, 'grid-column' ) || $has_unconditional_proven_property( $branch, 'grid-area' ) ) || ! empty( $variants_by_node[ $parent_id ] ) || ! empty( $variants_by_node[ $branch_id ] ) ) {
-				continue;
-			}
-			$suppressed_layout_properties[ $parent_id ] = array_values( array_intersect( array( 'display', 'columns', 'gap', 'row_gap', 'column_gap' ), array_keys( $parent_layout ) ) );
-			$suppressed_layout_properties[ $branch_id ] = array_values( array_intersect( array( 'column', 'row', 'area' ), array_keys( $branch['layout'] ?? array() ) ) );
-			$operations[]                               = array(
+			$child_hook = self::layout_node_class( self::layout_scope( $form ), $node['id'] );
+			$field_blocks[ $node['control'] ]['attrs']['className'] = trim( (string) ( $field_blocks[ $node['control'] ]['attrs']['className'] ?? '' ) . ' ssi-source-fullspan-child--' . $child_hook );
+			$provider_layout_targets[ $node['id'] ]                 = $child_hook . '-wrap';
+			$overlay_node_targets[]                                 = array(
+				'id'     => $node['id'],
+				'layout' => $control_layout['layout'],
+			);
+			$operations[] = array(
 				'dimension'   => 'layout',
-				'strategy'    => 'provider_full_width_field',
-				'target_hash' => hash( 'sha256', $parent_id ),
+				'strategy'    => 'provider_fullspan_grid_child',
+				'target_hash' => hash( 'sha256', $node['id'] ),
 			);
 		}
 		foreach ( $nodes as $node ) {

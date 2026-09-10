@@ -937,7 +937,7 @@ $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/bloc
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/index.js' ), 'install-emits-declared-editor-asset' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/editor/core-enhancement.js' ) && 'window.ssiExampleEditor = true;' === (string) file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/editor/core-enhancement.js' ), 'install-writes-editor-script-asset' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/includes/provider-form-runtime-v1.php' ), 'install-writes-versioned-companion-provider-form-runtime' );
-$assert( isset( $GLOBALS['ssi_companion_registered_filters']['grunion_contact_form_field_html'], $GLOBALS['ssi_companion_registered_filters']['render_block_core/button'] ), 'installed-companion-registers-provider-form-runtime-hooks' );
+$assert( isset( $GLOBALS['ssi_companion_registered_filters']['grunion_contact_form_field_html'], $GLOBALS['ssi_companion_registered_filters']['render_block_jetpack/contact-form'], $GLOBALS['ssi_companion_registered_filters']['render_block_core/button'] ), 'installed-companion-registers-provider-form-runtime-hooks' );
 $submit_filter = $GLOBALS['ssi_companion_registered_filters']['render_block_core/button'][0][0] ?? null;
 $projected_submit = is_callable( $submit_filter ) ? call_user_func(
 	$submit_filter,
