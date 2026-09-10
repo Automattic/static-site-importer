@@ -1069,6 +1069,28 @@ $assert( Static_Site_Importer_Font_Materializer::svg_uses_font_family( '<svg><te
 $assert( Static_Site_Importer_Font_Materializer::svg_uses_font_family( '<svg><text font-family="serif, Example Font">Label</text></svg>', array( 'example font' ) ), 'SVG presentation attributes normalize case and fallback-list position' );
 $assert( ! Static_Site_Importer_Font_Materializer::svg_uses_font_family( '<svg><text font-family="Example Font Pro, sans-serif">Label</text></svg>', array( 'Example Font' ) ), 'SVG font matching compares complete family tokens instead of prefixes' );
 
+$generator_font_result = Static_Site_Importer_Theme_Generator::import_website_artifact(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array(
+			array( 'path' => 'index.html', 'content' => '<html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Example+Font:wght@400&amp;display=swap"><style>body{font-family:"Example Font",sans-serif}</style></head><body><main>Plan-owned font intent</main></body></html>' ),
+		),
+	),
+	array(
+		'slug' => 'generator-plan-owned-fonts',
+		'name' => 'Generator Plan-Owned Fonts',
+	)
+);
+$generator_font_root    = $GLOBALS['ssi_plan_root'] . '/generator-plan-owned-fonts';
+$generator_font_receipt = is_array( $generator_font_result ) ? ( $generator_font_result['materialization_receipt'] ?? array() ) : array();
+$generator_font_files   = $generator_font_receipt['completed']['font_materialization']['files'] ?? array();
+$generator_font_css     = is_file( $generator_font_root . '/assets/css/embedded-fonts.css' ) ? (string) file_get_contents( $generator_font_root . '/assets/css/embedded-fonts.css' ) : '';
+if ( is_wp_error( $generator_font_result ) ) { throw new RuntimeException( $generator_font_result->get_error_code() . ': ' . $generator_font_result->get_error_message() ); }
+$assert(
+	'completed' === ( $generator_font_receipt['status'] ?? '' ) && str_contains( $generator_font_css, 'src:url(../fonts/' ) && 1 === count( array_filter( $generator_font_files, static fn( array $file ): bool => 'assets/css/embedded-fonts.css' === ( $file['target_path'] ?? '' ) ) ),
+	'released compiler font intent flows through Theme_Generator into one materialized CSS file and receipt'
+);
+
 $inter_payload                                        = "\xff" . str_repeat( "\x80", 1048575 );
 $GLOBALS['ssi_plan_binary_font']                      = $inter_payload;
 $typed_font_plan                                      = array(
@@ -1365,7 +1387,7 @@ $assert( 'completed' === $font_without_svg_receipt['status'], 'canonical font ma
 $font_without_svg_css = (string) file_get_contents( $font_without_svg_root . '/assets/css/embedded-fonts.css' );
 $assert( 1 === preg_match( '#src:url\(\.\./fonts/([a-f0-9]{64}\.woff2)\)#', $font_without_svg_css, $font_without_svg_asset_match ) && 'font-payload' === file_get_contents( $font_without_svg_root . '/assets/fonts/' . $font_without_svg_asset_match[1] ), 'page fonts materialize locally without SVG consumers' );
 $assert( str_contains( (string) file_get_contents( $font_without_svg_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-embedded-fonts'" ), 'page fonts load without SVG consumers' );
-$assert( 9 === count( $GLOBALS['ssi_plan_font_requests'] ), 'each successful and rejected font materialization resolves only its declared stylesheet or typed payload URLs' );
+$assert( 11 === count( $GLOBALS['ssi_plan_font_requests'] ), 'each successful and rejected font materialization resolves only its declared stylesheet or typed payload URLs' );
 
 $nested_route_result = ( new ArtifactCompiler() )->compile(
 	array(
