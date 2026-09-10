@@ -2264,7 +2264,7 @@ class Static_Site_Importer_Form_Seeder {
 			$part_ids    = array_column( $state_parts, 'id' );
 			$state_group = null;
 			foreach ( $groups as $candidate ) {
-				if ( is_array( $candidate ) && $part_ids === ( $candidate['part_ids'] ?? null ) && is_string( $candidate['id'] ?? null ) ) {
+				if ( is_array( $candidate ) && ( $candidate['part_ids'] ?? null ) === $part_ids && is_string( $candidate['id'] ?? null ) ) {
 					$state_group = array(
 						'id'    => $candidate['id'],
 						'class' => 'ssi-fvg-' . substr( hash( 'sha256', $scope . "\n" . $candidate['id'] ), 0, 12 ),
