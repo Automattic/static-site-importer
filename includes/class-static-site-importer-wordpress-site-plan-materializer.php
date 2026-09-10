@@ -58,6 +58,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	public static function materialize_prepared_lifecycle( array $prepared, array $lifecycle, $companion_payload, array $gutenberg_gaps, array $theme_materialization ) {
 		$args      = is_array( $prepared['args'] ?? null ) ? $prepared['args'] : array();
 		$lifecycle = Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $lifecycle, is_array( $prepared['resolved'] ?? null ) ? $prepared['resolved'] : array() );
+		if ( is_wp_error( $lifecycle ) ) {
+			return $lifecycle;
+		}
 		$classic   = Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === ( $args['theme_materialization'] ?? null );
 		$preflight = $classic ? Static_Site_Importer_Theme_Generator::preflight_classic_runtime_entity_bindings( $prepared['args']['classic_theme_projection'], $lifecycle, $args ) : Static_Site_Importer_Theme_Generator::preflight_runtime_entity_binding_anchors( $prepared['resolved'] ?? array(), $lifecycle, $args );
 		if ( is_wp_error( $preflight ) ) {
