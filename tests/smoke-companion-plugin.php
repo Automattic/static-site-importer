@@ -892,6 +892,7 @@ $assert( is_wp_error( Static_Site_Importer_Companion_Plugin::scaffold( array( 's
 $empty_country_state = array(
 	'schema'   => 'static-site-importer/form-visual-state/v1',
 	'field_id' => 'ssi-form-123456789abc-field-0',
+	'trigger_class' => 'ssi-node-123456789abc-destination-country-trigger',
 	'parts'    => array(
 		array( 'id' => 'control-0-svg-0', 'class' => 'ssi-fvs-123456789abc', 'markup' => '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h22v22H1z"/></svg>' ),
 		array( 'id' => 'control-0-svg-1', 'class' => 'ssi-fvs-abcdef123456', 'markup' => '<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M1 1l7 7 7-7"/></svg>' ),

@@ -614,7 +614,8 @@ class Static_Site_Importer_Form_Seeder {
 		$overlay_graph['variants']    = array_values( array_filter( $overlay_graph['variants'], static fn ( $variant ): bool => is_array( $variant ) && isset( $overlay_nodes[ $variant['node'] ?? '' ] ) ) );
 		$overlay_form                 = $form;
 		$overlay_form['layout_graph'] = $overlay_graph;
-		$target_map                   = self::provider_layout_target_map( $overlay_form, $scope, $box_targets );
+		$visual_state                 = self::empty_country_visual_state( $form, $scope, $topology['phone_popup_targets'] );
+		$target_map                   = self::provider_layout_target_map( $overlay_form, $scope, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
 		$presentation_graph           = is_array( $form['presentation_graph'] ?? null ) ? $form['presentation_graph'] : array();
 		$overlay                      = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map, $presentation_graph );
 		self::append_receipt_entries( $layout['receipt'], 'operations', $overlay['operations'] );
@@ -638,7 +639,6 @@ class Static_Site_Importer_Form_Seeder {
 			'provider_layout_target_map'  => $target_map,
 			'provider_layout_overlay_css' => $overlay['overlay'],
 		);
-		$visual_state = self::empty_country_visual_state( $form, $scope, $topology['phone_popup_targets'] );
 		if ( ! empty( $visual_state['state'] ) ) {
 			$row['form_visual_state'] = $visual_state['state'];
 		}
@@ -2258,9 +2258,11 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			$css = self::empty_country_visual_css( $scope, $state_parts, $group, $form['presentation_graph']['variants'] ?? array() );
 			return array(
+				'trigger_class' => self::presentation_destination_class( $scope, $auxiliary_index, 'country-trigger' ),
 				'state' => array(
 					'schema'   => 'static-site-importer/form-visual-state/v1',
 					'field_id' => $scope . '-field-' . $phone_index,
+					'trigger_class' => self::presentation_destination_class( $scope, $auxiliary_index, 'country-trigger' ),
 					'parts'    => $state_parts,
 					'css'      => $css,
 				),
@@ -2362,7 +2364,7 @@ class Static_Site_Importer_Form_Seeder {
 		return false;
 	}
 
-	private static function provider_layout_target_map( array $form, string $scope, array $box_targets = array() ): array {
+	private static function provider_layout_target_map( array $form, string $scope, array $box_targets = array(), array $phone_popup_targets = array(), string $country_trigger_class = '' ): array {
 		$selector_scope = '.' . $scope;
 		$targets        = array();
 		foreach ( $form['layout_graph']['nodes'] ?? array() as $node ) {
@@ -2400,7 +2402,14 @@ class Static_Site_Importer_Form_Seeder {
 				'index'        => $index,
 				'destinations' => array(),
 			);
-			if ( isset( $roles['control'] ) ) {
+			if ( isset( $roles['control'] ) && isset( $phone_popup_targets[ $index ] ) && '' !== $country_trigger_class ) {
+				$target['destinations'][] = array(
+					'role'       => 'control',
+					'selector'   => $selector_scope . ' .' . $country_trigger_class,
+					'properties' => array_keys( Static_Site_Importer_Provider_Layout_Overlay::positioned_control_presentation_property_keys() ),
+					'priority'   => 'important',
+				);
+			} elseif ( isset( $roles['control'] ) ) {
 				$type = strtolower( (string) ( $controls[ $index ]['type'] ?? '' ) );
 				if ( in_array( $type, array( 'phone', 'tel' ), true ) ) {
 					foreach ( self::phone_presentation_destinations( $scope, $index ) as $destination ) {
@@ -2412,7 +2421,9 @@ class Static_Site_Importer_Form_Seeder {
 					$target['destinations'][] = array(
 						'role'       => 'control',
 						'selector'   => $selector_scope . ' .' . $class . ( 'submit' === $type ? ' > .wp-block-button__link' : '' ),
-						'properties' => array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ),
+						// Core's rendered button is an actual destination for the source
+						// button's positioning and transform properties; other controls are not.
+						'properties' => array_keys( 'submit' === $type ? Static_Site_Importer_Provider_Layout_Overlay::positioned_control_presentation_property_keys() : Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ),
 					);
 				}
 			}

@@ -65,7 +65,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 
 	/** Validate the portable configuration before it is persisted in a companion. */
 	public static function valid_visual_state( mixed $state ): bool {
-		if ( ! is_array( $state ) || array_keys( $state ) !== array( 'schema', 'field_id', 'parts', 'css' ) || 'static-site-importer/form-visual-state/v1' !== ( $state['schema'] ?? null ) || ! is_string( $state['field_id'] ?? null ) || ! preg_match( '/^ssi-form-[a-f0-9]{12}-field-[0-9]{1,3}$/D', $state['field_id'] ) || ! is_array( $state['parts'] ?? null ) || ! array_is_list( $state['parts'] ) || count( $state['parts'] ) < 1 || count( $state['parts'] ) > 32 || ! is_string( $state['css'] ?? null ) || strlen( $state['css'] ) > 16384 ) {
+		if ( ! is_array( $state ) || array_keys( $state ) !== array( 'schema', 'field_id', 'trigger_class', 'parts', 'css' ) || 'static-site-importer/form-visual-state/v1' !== ( $state['schema'] ?? null ) || ! is_string( $state['field_id'] ?? null ) || ! preg_match( '/^ssi-form-[a-f0-9]{12}-field-[0-9]{1,3}$/D', $state['field_id'] ) || ! is_string( $state['trigger_class'] ?? null ) || ! preg_match( '/^ssi-node-[a-f0-9]{12}-destination-country-trigger$/D', $state['trigger_class'] ) || ! is_array( $state['parts'] ?? null ) || ! array_is_list( $state['parts'] ) || count( $state['parts'] ) < 1 || count( $state['parts'] ) > 32 || ! is_string( $state['css'] ?? null ) || strlen( $state['css'] ) > 16384 ) {
 			return false;
 		}
 		$seen = array();
@@ -98,10 +98,15 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			return $html;
 		}
 		$state = self::$visual_states[ $id[1] ];
+		$trigger = preg_replace( '/\bclass=("|\')(.*?)\1/is', 'class=$1$2 ' . $state['trigger_class'] . '$1', $button[0][0], 1 );
+		if ( ! is_string( $trigger ) ) {
+			return $html;
+		}
+		$html = substr_replace( $html, $trigger, $button[0][1], strlen( $button[0][0] ) );
 		$parts = array_map( static fn( array $part ): string => preg_replace( '/^<svg\b/i', '<svg class="' . $part['class'] . '"', $part['markup'], 1 ) ?? $part['markup'], $state['parts'] );
 		$group = ( '' === $state['css'] ? '' : '<style>' . $state['css'] . '</style>' ) . '<span class="ssi-form-visual-state" data-wp-bind--hidden="context.selectedCountry.value">' . implode( '', $parts ) . '</span>';
-		$html  = substr_replace( $html, $group, $button[0][1] + strlen( $button[0][0] ), 0 );
-		$arrow_offset = $arrow[0][1] + ( $arrow[0][1] > $button[0][1] ? strlen( $group ) : 0 );
+		$html  = substr_replace( $html, $group, $button[0][1] + strlen( $trigger ), 0 );
+		$arrow_offset = $arrow[0][1] + ( $arrow[0][1] > $button[0][1] ? strlen( $trigger ) - strlen( $button[0][0] ) + strlen( $group ) : 0 );
 		$arrow_tag = $arrow[0][0];
 		$arrow_tag = preg_replace( '/\sdata-wp-bind--hidden=("|\')[^"\']*\1/i', '', $arrow_tag ) ?? $arrow_tag;
 		return substr_replace( $html, rtrim( substr( $arrow_tag, 0, -1 ) ) . ' data-wp-bind--hidden="!context.selectedCountry.value">', $arrow_offset, strlen( $arrow[0][0] ) );
