@@ -10,23 +10,28 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class Static_Site_Importer_Compiler_Diagnostic_Normalizer {
-	private const MESSAGE_BYTES  = 512;
-	private const CODE_BYTES     = 128;
-	private const SOURCE_BYTES   = 128;
-	private const STAGE_BYTES    = 128;
-	private const CONTEXT_BYTES  = 4096;
-	private const CONTEXT_ITEMS  = 20;
-	private const CONTEXT_DEPTH  = 3;
-	private const CONTEXT_NODES  = 100;
-	private const SAMPLE_LIMIT   = 5;
+	private const MESSAGE_BYTES = 512;
+	private const CODE_BYTES    = 128;
+	private const SOURCE_BYTES  = 128;
+	private const STAGE_BYTES   = 128;
+	private const CONTEXT_BYTES = 4096;
+	private const CONTEXT_ITEMS = 20;
+	private const CONTEXT_DEPTH = 3;
+	private const CONTEXT_NODES = 100;
+	private const SAMPLE_LIMIT  = 5;
 
 	/** Project compiler rows into bounded operator diagnostics. */
 	public static function normalize( array $diagnostics ): array {
-		$direct      = null;
-		$total       = 0;
-		$samples     = array();
-		$by_code     = array();
-		$by_severity = array( 'error' => 0, 'warning' => 0, 'notice' => 0, 'info' => 0 );
+		$direct                   = null;
+		$total                    = 0;
+		$samples                  = array();
+		$by_code                  = array();
+		$by_severity              = array(
+			'error'   => 0,
+			'warning' => 0,
+			'notice'  => 0,
+			'info'    => 0,
+		);
 		$code_occurrences_omitted = 0;
 		foreach ( $diagnostics as $diagnostic ) {
 			if ( ! is_array( $diagnostic ) ) {
@@ -44,7 +49,10 @@ class Static_Site_Importer_Compiler_Diagnostic_Normalizer {
 			if ( isset( $by_code[ $code_key ] ) ) {
 				++$by_code[ $code_key ]['count'];
 			} elseif ( count( $by_code ) < self::CONTEXT_ITEMS ) {
-				$by_code[ $code_key ] = array( 'code' => $row['code'], 'count' => 1 );
+				$by_code[ $code_key ] = array(
+					'code'  => $row['code'],
+					'count' => 1,
+				);
 			} else {
 				// Code categories outside the fixed map still contribute to exact totals.
 				++$code_occurrences_omitted;
@@ -95,7 +103,12 @@ class Static_Site_Importer_Compiler_Diagnostic_Normalizer {
 			'severity' => self::severity( $row['severity'] ?? $row['level'] ?? 'warning' ),
 			'message'  => self::string( $row['message'] ?? $row['reason'] ?? 'Compiler diagnostic.', self::MESSAGE_BYTES ),
 		);
-		foreach ( array( 'source' => self::SOURCE_BYTES, 'stage' => self::STAGE_BYTES ) as $field => $limit ) {
+		foreach (
+			array(
+				'source' => self::SOURCE_BYTES,
+				'stage'  => self::STAGE_BYTES,
+			) as $field => $limit
+		) {
 			if ( isset( $row[ $field ] ) && is_scalar( $row[ $field ] ) ) {
 				$normalized[ $field ] = self::string( $row[ $field ], $limit );
 			}
@@ -154,7 +167,7 @@ class Static_Site_Importer_Compiler_Diagnostic_Normalizer {
 
 	/** @param array<array-key,mixed> $context */
 	private static function context_bytes( array $context ): int {
-		$json = json_encode( $context, JSON_INVALID_UTF8_SUBSTITUTE );
+		$json = function_exists( 'wp_json_encode' ) ? wp_json_encode( $context, JSON_INVALID_UTF8_SUBSTITUTE ) : json_encode( $context, JSON_INVALID_UTF8_SUBSTITUTE ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Standalone smoke tests do not load WordPress encoding helpers.
 		return is_string( $json ) ? strlen( $json ) : PHP_INT_MAX;
 	}
 
@@ -214,7 +227,7 @@ class Static_Site_Importer_Compiler_Diagnostic_Normalizer {
 	private static function string( mixed $value, int $limit ): string {
 		$value = is_scalar( $value ) || null === $value ? trim( (string) $value ) : '';
 		$value = strlen( $value ) > $limit ? substr( $value, 0, $limit ) : $value;
-		$json  = json_encode( $value, JSON_INVALID_UTF8_SUBSTITUTE );
+		$json  = function_exists( 'wp_json_encode' ) ? wp_json_encode( $value, JSON_INVALID_UTF8_SUBSTITUTE ) : json_encode( $value, JSON_INVALID_UTF8_SUBSTITUTE ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Standalone smoke tests do not load WordPress encoding helpers.
 		return is_string( $json ) ? (string) json_decode( $json, true ) : '';
 	}
 
