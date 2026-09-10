@@ -21,6 +21,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	private const FORM_CONTROL_TOPOLOGY_MAX_DEPTH = 16;
 	private const FAILURE_DIAGNOSTIC_MAX_ROWS     = 10;
 	private const FAILURE_DIAGNOSTIC_MAX_BYTES    = 256;
+	private const FAILURE_DIAGNOSTIC_SCAN_BUDGET  = 10;
 
 	/**
 	 * Per-capability provider selection contract.
@@ -654,13 +655,17 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/** Build shallow, adapter-neutral evidence for a terminal provider failure. */
 	public static function failure_diagnostics( string $declaration_id, array $adapter, array $manifest, array $report ): array {
-		$entity_key = isset( $manifest['products'] ) ? 'products' : 'forms';
-		$entities   = is_array( $manifest[ $entity_key ] ?? null ) ? array_values( $manifest[ $entity_key ] ) : array();
-		$rows       = is_array( $report[ $entity_key ] ?? null ) ? array_values( $report[ $entity_key ] ) : array();
+		$entity_key = self::failure_entity_collection( $adapter, $manifest, $report );
+		$entities   = '' !== $entity_key && is_array( $manifest[ $entity_key ] ?? null ) ? $manifest[ $entity_key ] : array();
+		$rows       = '' !== $entity_key && is_array( $report[ $entity_key ] ?? null ) ? $report[ $entity_key ] : array();
 		$provider   = self::failure_text( $report['provider'] ?? $adapter['provider'] ?? '', 80 );
 		$available  = self::failure_availability( $report );
 		$diagnostics = array();
+		$scanned = 0;
 		foreach ( $rows as $index => $row ) {
+			if ( self::FAILURE_DIAGNOSTIC_SCAN_BUDGET <= $scanned++ ) {
+				break;
+			}
 			if ( ! is_array( $row ) || ! in_array( $row['status'] ?? '', array( 'error', 'failed' ), true ) ) {
 				continue;
 			}
@@ -670,15 +675,36 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 		}
 		if ( empty( $diagnostics ) && ( in_array( $report['status'] ?? '', array( 'error', 'failed' ), true ) || ! empty( $report['counts']['error'] ) || ! empty( $report['counts']['failed'] ) ) ) {
-			$diagnostics[] = self::failure_diagnostic_row( $declaration_id, $adapter, $entities[0] ?? array(), $report, $provider, $available );
+			$diagnostics[] = self::failure_diagnostic_row( $declaration_id, $adapter, self::failure_first_entity( $entities ), $report, $provider, $available );
 		}
 		return $diagnostics;
+	}
+
+	/** Resolve the provider-declared result collection without assuming a product or form shape. */
+	private static function failure_entity_collection( array $adapter, array $manifest, array $report ): string {
+		$declared = $adapter['entity_collection'] ?? '';
+		if ( is_string( $declared ) && is_array( $manifest[ $declared ] ?? null ) && is_array( $report[ $declared ] ?? null ) ) {
+			return $declared;
+		}
+		return '';
+	}
+
+	/** @param array<mixed,mixed> $entities @return array<string,mixed> */
+	private static function failure_first_entity( array $entities ): array {
+		foreach ( $entities as $entity ) {
+			return is_array( $entity ) ? $entity : array();
+		}
+		return array();
 	}
 
 	/** @param array<int,mixed> $diagnostics @return array<int,array<string,mixed>> */
 	public static function project_public_diagnostics( array $diagnostics ): array {
 		$projected = array();
+		$scanned   = 0;
 		foreach ( $diagnostics as $diagnostic ) {
+			if ( self::FAILURE_DIAGNOSTIC_SCAN_BUDGET <= $scanned++ ) {
+				break;
+			}
 			if ( ! is_array( $diagnostic ) ) {
 				continue;
 			}
@@ -695,16 +721,84 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/** @param array<string,mixed> $data @return array<string,mixed> */
 	public static function project_public_error_data( array $data ): array {
-		foreach ( $data as $key => $value ) {
-			if ( 'diagnostics' === $key && is_array( $value ) ) {
-				$data[ $key ] = self::project_public_diagnostics( $value );
-			} elseif ( 'message' === $key && is_string( $value ) ) {
-				$data[ $key ] = 'Materialization failed.';
-			} elseif ( is_array( $value ) ) {
-				$data[ $key ] = self::project_public_error_data( $value );
+		$projected = array();
+		foreach ( array( 'status', 'code', 'phase', 'import_id', 'declaration_id' ) as $field ) {
+			if ( isset( $data[ $field ] ) ) {
+				$value = self::project_public_token( $data[ $field ], 128 );
+				if ( '' !== $value ) {
+					$projected[ $field ] = $value;
+				}
 			}
 		}
-		return $data;
+		foreach ( array( 'success', 'completed' ) as $field ) {
+			if ( is_bool( $data[ $field ] ?? null ) ) {
+				$projected[ $field ] = $data[ $field ];
+			}
+		}
+		if ( is_array( $data['diagnostics'] ?? null ) ) {
+			$projected['diagnostics'] = self::project_public_diagnostics( $data['diagnostics'] );
+		}
+		if ( is_array( $data['import_validation_result']['diagnostics'] ?? null ) ) {
+			$projected['import_validation_result'] = array(
+				'diagnostics' => self::project_public_diagnostics( $data['import_validation_result']['diagnostics'] ),
+			);
+		}
+		if ( is_array( $data['import_report_summary'] ?? null ) ) {
+			$summary = self::project_public_error_summary( $data['import_report_summary'] );
+			if ( ! empty( $summary ) ) {
+				$projected['import_report_summary'] = $summary;
+			}
+		}
+		if ( is_array( $data['quality'] ?? null ) ) {
+			$quality = self::project_public_error_summary( $data['quality'] );
+			if ( ! empty( $quality ) ) {
+				$projected['quality'] = $quality;
+			}
+		}
+		return $projected;
+	}
+
+	/** @param array<string,mixed> $summary @return array<string,mixed> */
+	private static function project_public_error_summary( array $summary ): array {
+		$projected = array();
+		foreach ( array( 'status' ) as $field ) {
+			if ( isset( $summary[ $field ] ) ) {
+				$value = self::project_public_token( $summary[ $field ], 128 );
+				if ( '' !== $value ) {
+					$projected[ $field ] = $value;
+				}
+			}
+		}
+		foreach ( array( 'quality_pass', 'fail_import', 'pass' ) as $field ) {
+			if ( is_bool( $summary[ $field ] ?? null ) ) {
+				$projected[ $field ] = $summary[ $field ];
+			}
+		}
+		foreach ( array( 'failure_reasons' ) as $field ) {
+			if ( ! is_array( $summary[ $field ] ?? null ) ) {
+				continue;
+			}
+			$values  = array();
+			$scanned = 0;
+			foreach ( $summary[ $field ] as $value ) {
+				if ( self::FAILURE_DIAGNOSTIC_SCAN_BUDGET <= $scanned++ ) {
+					break;
+				}
+				$value = self::project_public_token( $value, 128 );
+				if ( '' !== $value ) {
+					$values[] = $value;
+				}
+			}
+			if ( ! empty( $values ) ) {
+				$projected[ $field ] = $values;
+			}
+		}
+		foreach ( array( 'core_html_block_count', 'fallback_count', 'diagnostic_count', 'loss_count' ) as $field ) {
+			if ( is_numeric( $summary[ $field ] ?? null ) ) {
+				$projected[ $field ] = max( 0, (int) $summary[ $field ] );
+			}
+		}
+		return $projected;
 	}
 
 	/** @param array<int,array<string,mixed>> $diagnostics */
@@ -746,9 +840,18 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$row['reconciliation_identity'] = $diagnostic['reconciliation_identity'];
 		}
 		if ( is_array( $diagnostic['binding_reconciliation_identities'] ?? null ) ) {
-			$identities = array_values( array_filter( $diagnostic['binding_reconciliation_identities'], static fn( $identity ): bool => is_string( $identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $identity ) ) );
+			$identities = array();
+			$scanned    = 0;
+			foreach ( $diagnostic['binding_reconciliation_identities'] as $identity ) {
+				if ( self::FAILURE_DIAGNOSTIC_SCAN_BUDGET <= $scanned++ ) {
+					break;
+				}
+				if ( is_string( $identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $identity ) ) {
+					$identities[] = $identity;
+				}
+			}
 			if ( ! empty( $identities ) ) {
-				$row['binding_reconciliation_identities'] = array_slice( $identities, 0, self::FAILURE_DIAGNOSTIC_MAX_ROWS );
+				$row['binding_reconciliation_identities'] = $identities;
 			}
 		}
 		if ( empty( $row ) ) {
@@ -1055,6 +1158,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'woocommerce_simple_product' => array(
 				'id'                       => 'woocommerce_simple_product',
 				'entity_type'              => 'product',
+				'entity_collection'        => 'products',
 				'capability'               => 'shop',
 				'provider'                 => 'woocommerce',
 				'label'                    => 'WooCommerce simple product',
@@ -1081,6 +1185,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'jetpack_contact_form'       => array(
 				'id'                       => 'jetpack_contact_form',
 				'entity_type'              => 'form',
+				'entity_collection'        => 'forms',
 				'capability'               => 'form',
 				'provider'                 => 'jetpack',
 				'label'                    => 'Jetpack contact form',
