@@ -36,7 +36,9 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 				)
 			);
 		}
-		$companion = self::materialize_companion_dependency( $companion_payload, $prepared );
+		// Keep the established companion/dependency transaction ordering. A companion
+		// failure must occur before any runtime dependency can require compensation.
+		$companion = self::materialize_companion_dependency( self::with_form_visual_states( $companion_payload, $lifecycle, $args ), $prepared );
 		if ( is_wp_error( $companion ) ) {
 			return $companion;
 		}
@@ -124,6 +126,31 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			'dependencies' => $dependencies,
 			'entities'     => $entities,
 		);
+	}
+
+	/** Add topology-derived provider field states before the established companion phase. */
+	private static function with_form_visual_states( $payload, array $lifecycle, array $args ) {
+		$states = array();
+		foreach ( $lifecycle['entities'] ?? array() as $prepared_entity ) {
+			$manifest = is_array( $prepared_entity['manifest'] ?? null ) ? $prepared_entity['manifest'] : array();
+			if ( ! isset( $manifest['forms'] ) ) {
+				continue;
+			}
+			$states = array_merge( $states, Static_Site_Importer_Form_Seeder::visual_states( $manifest ) );
+		}
+		if ( empty( $states ) ) {
+			return $payload;
+		}
+		if ( ! is_array( $payload ) ) {
+			$payload = array(
+				'schema'    => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+				'site_slug' => (string) ( $args['slug'] ?? '' ),
+				'site_name' => (string) ( $args['name'] ?? '' ),
+				'blocks'    => array(),
+			);
+		}
+		$payload['form_visual_states'] = array_values( array_unique( $states, SORT_REGULAR ) );
+		return $payload;
 	}
 
 	/** Return a provider-compensated error before canonical plan mutation begins. */

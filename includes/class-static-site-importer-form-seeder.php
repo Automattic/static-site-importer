@@ -171,6 +171,18 @@ class Static_Site_Importer_Form_Seeder {
 		return $report;
 	}
 
+	/** Derive companion-owned visual state without writing provider entities. */
+	public static function visual_states( array $manifest ): array {
+		$states = array();
+		foreach ( self::manifest_forms( $manifest ) as $form ) {
+			$row = self::seed_form( $form, true );
+			if ( ! empty( $row['runtime_mapped'] ) && is_array( $row['form_visual_state'] ?? null ) ) {
+				$states[] = $row['form_visual_state'];
+			}
+		}
+		return array_values( array_unique( $states, SORT_REGULAR ) );
+	}
+
 	/**
 	 * Report a form that cannot be materialized until its configured provider is active.
 	 *
@@ -626,6 +638,13 @@ class Static_Site_Importer_Form_Seeder {
 			'provider_layout_target_map'  => $target_map,
 			'provider_layout_overlay_css' => $overlay['overlay'],
 		);
+		$visual_state = self::empty_country_visual_state( $form, $scope, $topology['phone_popup_targets'] );
+		if ( ! empty( $visual_state['state'] ) ) {
+			$row['form_visual_state'] = $visual_state['state'];
+		}
+		if ( ! empty( $visual_state['diagnostics'] ) ) {
+			$row['form_visual_state_diagnostics'] = $visual_state['diagnostics'];
+		}
 		$unaccepted_losses           = array_values(
 			array_filter(
 				$layout['receipt']['losses'] ?? array(),
@@ -948,7 +967,7 @@ class Static_Site_Importer_Form_Seeder {
 	 *
 	 * @param array<int,array<string,mixed>> $field_blocks
 	 * @param array<int,array<string,mixed>> $controls
-	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,suppressed_layout_properties:array<string,array<int,string>>,overlay_node_targets:array<int,array<string,mixed>>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>,provider_layout_targets:array<string,string>}|null
+	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,suppressed_layout_properties:array<string,array<int,string>>,overlay_node_targets:array<int,array<string,mixed>>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>,provider_layout_targets:array<string,string>,phone_popup_targets:array<int,int>}|null
 	 */
 	private static function topology_inner_blocks( array $form, array $field_blocks, array $controls, array $suppressed_controls = array() ): ?array {
 		if ( ! isset( $form['control_topology'] ) ) {
@@ -964,6 +983,7 @@ class Static_Site_Importer_Form_Seeder {
 				'native_visibility_targets'    => array(),
 				'form_classes'                 => array(),
 				'provider_layout_targets'      => array(),
+				'phone_popup_targets'          => array(),
 			);
 		}
 		$nodes = $form['control_topology']['nodes'] ?? null;
@@ -1014,7 +1034,7 @@ class Static_Site_Importer_Form_Seeder {
 			return false;
 		};
 		foreach ( $controls as $control_index => $control ) {
-			if ( 'phone' !== strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) ) {
+			if ( ! in_array( strtolower( trim( (string) ( $control['type'] ?? '' ) ) ), array( 'phone', 'tel' ), true ) ) {
 				$type      = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
 				$tag       = strtolower( trim( (string) ( $control['tag'] ?? '' ) ) );
 				$popup     = strtolower( trim( (string) ( $control['aria_haspopup'] ?? '' ) ) );
@@ -1038,7 +1058,7 @@ class Static_Site_Importer_Form_Seeder {
 			$previous_label      = is_array( $previous ) ? strtolower( trim( (string) ( $previous['label'] ?? $previous['text'] ?? '' ) ) ) : '';
 			$is_country_selector = str_contains( $previous_label, 'phone' ) && str_contains( $previous_label, 'country' );
 			$popup_is_compatible = '' === $previous_popup || in_array( $previous_popup, array( 'true', 'menu', 'listbox', 'tree', 'grid', 'dialog' ), true );
-			if ( is_array( $previous ) && 'button' === strtolower( trim( (string) ( $previous['tag'] ?? '' ) ) ) && 'button' === strtolower( trim( (string) ( $previous['type'] ?? '' ) ) ) && $popup_is_compatible && $is_country_selector && $shares_phone_group( $control_index - 1, $control_index ) ) {
+			if ( is_array( $previous ) && 'button' === strtolower( trim( (string) ( $previous['tag'] ?? '' ) ) ) && $popup_is_compatible && $is_country_selector && $shares_phone_group( $control_index - 1, $control_index ) ) {
 				$provider_controls[ $control_index - 1 ]        = true;
 				$phone_popup_targets[ $control_index - 1 ]      = $control_index;
 				$auxiliary_popup_controls[ $control_index - 1 ] = true;
@@ -1866,6 +1886,7 @@ class Static_Site_Importer_Form_Seeder {
 			'native_visibility_targets'    => array_values( array_unique( array_map( 'strval', $native_visibility_targets ) ) ),
 			'form_classes'                 => array_values( array_unique( $form_classes ) ),
 			'provider_layout_targets'      => $provider_layout_targets,
+			'phone_popup_targets'          => $phone_popup_targets,
 		);
 	}
 
@@ -2210,6 +2231,82 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		ksort( $roles, SORT_NUMERIC );
 		return $roles;
+	}
+
+	/** Build only a topology-owned source-captured empty-country group. */
+	private static function empty_country_visual_state( array $form, string $scope, array $phone_popup_targets ): array {
+		$parts = is_array( $form['presentation_graph']['visual_parts'] ?? null ) ? $form['presentation_graph']['visual_parts'] : array();
+		$by_index = array();
+		foreach ( $parts as $part ) {
+			if ( is_array( $part ) && is_int( $part['index'] ?? null ) ) {
+				$by_index[ $part['index'] ][] = $part;
+			}
+		}
+		foreach ( $phone_popup_targets as $auxiliary_index => $phone_index ) {
+			$group = $by_index[ $auxiliary_index ] ?? array();
+			if ( ! is_int( $auxiliary_index ) || ! is_int( $phone_index ) || count( $group ) < 1 || count( $group ) > 32 ) {
+				continue;
+			}
+			$state_parts = array();
+			$seen        = array();
+			foreach ( $group as $part ) {
+				if ( ! is_string( $part['id'] ?? null ) || isset( $seen[ $part['id'] ] ) || ! is_string( $part['markup'] ?? null ) || ! Static_Site_Importer_Provider_Form_Runtime_V1::valid_inline_svg( $part['markup'] ) ) {
+					return array( 'diagnostics' => array( 'visual_state_rejected' ) );
+				}
+				$seen[ $part['id'] ] = true;
+				$state_parts[]       = array( 'id' => $part['id'], 'class' => 'ssi-fvs-' . substr( hash( 'sha256', $scope . "\n" . $part['id'] ), 0, 12 ), 'markup' => $part['markup'] );
+			}
+			$css = self::empty_country_visual_css( $scope, $state_parts, $group, $form['presentation_graph']['variants'] ?? array() );
+			return array(
+				'state' => array(
+					'schema'   => 'static-site-importer/form-visual-state/v1',
+					'field_id' => $scope . '-field-' . $phone_index,
+					'parts'    => $state_parts,
+					'css'      => $css,
+				),
+				// Visual-part facts do not establish the provider trigger group's geometry.
+				// Retained control-child layout facts are not currently addressable there.
+				'diagnostics' => array( 'visual_state_group_geometry_gap' ),
+			);
+		}
+		return array();
+	}
+
+	/** Compile only validated visual-part CSS facts into the declared state wrapper. */
+	private static function empty_country_visual_css( string $scope, array $state_parts, array $parts, array $variants ): string {
+		$classes = array_column( $state_parts, 'class', 'id' );
+		$rules   = array();
+		$map     = Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys();
+		foreach ( $parts as $part ) {
+			$styles = $part['source_css']['styles'] ?? array();
+			if ( ! is_array( $styles ) || ! isset( $classes[ $part['id'] ?? '' ] ) ) {
+				continue;
+			}
+			$declarations = array();
+			foreach ( $styles as $key => $value ) {
+				if ( isset( $map[ $key ] ) && is_string( $value ) ) {
+					$declarations[] = $map[ $key ] . ':' . $value . '!important';
+				}
+			}
+			if ( ! empty( $declarations ) ) {
+				$rules[] = '.' . $scope . ' .ssi-form-visual-state .' . $classes[ $part['id'] ] . '{' . implode( ';', $declarations ) . '}';
+			}
+		}
+		foreach ( $variants as $variant ) {
+			if ( 'visual_part' !== ( $variant['role'] ?? null ) || ! isset( $classes[ $variant['part_id'] ?? '' ] ) || ! is_array( $variant['style_patch'] ?? null ) || ! is_array( $variant['condition'] ?? null ) || 'media' !== ( $variant['condition']['kind'] ?? null ) || ! is_string( $variant['condition']['query'] ?? null ) ) {
+				continue;
+			}
+			$declarations = array();
+			foreach ( $variant['style_patch'] as $key => $value ) {
+				if ( isset( $map[ $key ] ) && is_string( $value ) ) {
+					$declarations[] = $map[ $key ] . ':' . $value . '!important';
+				}
+			}
+			if ( ! empty( $declarations ) ) {
+				$rules[] = '@media ' . $variant['condition']['query'] . '{.' . $scope . ' .ssi-form-visual-state .' . $classes[ $variant['part_id'] ] . '{' . implode( ';', $declarations ) . '}}';
+			}
+		}
+		return implode( "\n", array_values( array_unique( $rules ) ) );
 	}
 
 	/**

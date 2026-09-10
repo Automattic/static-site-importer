@@ -889,6 +889,22 @@ $assert( is_array( $mu_descriptor ) && isset( $mu_descriptor['files']['ssi-examp
 $assert( is_wp_error( Static_Site_Importer_Companion_Plugin::scaffold( array( 'site_slug' => '' ) ) ), 'scaffold-rejects-missing-site-slug' );
 $assert( is_wp_error( Static_Site_Importer_Companion_Plugin::scaffold( array( 'site_slug' => 'x', 'blocks' => array() ) ) ), 'scaffold-rejects-missing-blocks' );
 
+$empty_country_state = array(
+	'schema'   => 'static-site-importer/form-visual-state/v1',
+	'field_id' => 'ssi-form-123456789abc-field-0',
+	'parts'    => array(
+		array( 'id' => 'control-0-svg-0', 'class' => 'ssi-fvs-123456789abc', 'markup' => '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h22v22H1z"/></svg>' ),
+		array( 'id' => 'control-0-svg-1', 'class' => 'ssi-fvs-abcdef123456', 'markup' => '<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M1 1l7 7 7-7"/></svg>' ),
+	),
+	'css' => '.ssi-form-123456789abc .ssi-form-visual-state .ssi-fvs-123456789abc{width:24px!important}',
+);
+$visual_companion = array( 'schema' => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA, 'site_slug' => 'visual-state', 'blocks' => array(), 'form_visual_states' => array( $empty_country_state ) );
+$visual_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $visual_companion );
+$visual_main = is_array( $visual_descriptor ) ? (string) ( $visual_descriptor['files']['ssi-visual-state/ssi-visual-state.php'] ?? '' ) : '';
+$invalid_visual_companion = $visual_companion;
+$invalid_visual_companion['form_visual_states'][0]['parts'][0]['markup'] = '<svg><script>alert(1)</script></svg>';
+$assert( is_array( $visual_descriptor ) && str_contains( $visual_main, 'configure_visual_states' ) && str_contains( $visual_main, 'ssi-form-123456789abc-field-0' ) && ! str_contains( $visual_main, 'base64' ) && is_wp_error( Static_Site_Importer_Companion_Plugin::scaffold( $invalid_visual_companion ) ), 'companion-payload-carries-only-validated-empty-country-visual-state-config' );
+
 // 2. Install plan resolves the file set + activation intent (pure / no writes).
 if ( is_array( $descriptor ) ) {
 	$plan = Static_Site_Importer_Plugin_Materializer::generated_install_plan( $descriptor, '/var/plugins' );

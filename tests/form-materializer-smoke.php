@@ -598,6 +598,30 @@ namespace {
 	$oversized_presentation = $presentation_form;
 	$oversized_presentation['forms'][0]['presentation_graph']['controls'] = array_fill( 0, 129, array() );
 	$assert( ! empty( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unsafe_presentation )['errors'] ) && ! empty( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $oversized_presentation )['errors'] ), 'form-presentation-contract-rejects-unsafe-or-unbounded-input' );
+	$candidate_root = getenv( 'STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH' );
+	$candidate_transformer = ( is_string( $candidate_root ) && '' !== $candidate_root ? rtrim( $candidate_root, '/\\' ) : dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer' ) . '/php-transformer.php';
+	if ( ! is_readable( $candidate_transformer ) ) {
+		throw new RuntimeException( 'The required Blocks Engine transformer is unavailable.' );
+	}
+	$candidate_artifact = array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => '<link rel="stylesheet" href="style.css"><main><form><div><button type="button" aria-label="Phone country selector"><svg class="globe" width="24" height="24" viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/></svg><svg class="chevron" width="16" height="16" viewBox="0 0 16 16"><path d="M4 7l4 4 4-4"/></svg></button><input type="tel" name="phone"></div></form></main>', 'style.css' => '.globe{width:24px;color:rgb(30,75,110)}.chevron{width:16px}@media (min-width:769px){.chevron{width:16px}}' ) );
+	$candidate_code = 'require ' . var_export( $candidate_transformer, true ) . '; echo json_encode(blocks_engine_php_transformer_compile_artifact(' . var_export( $candidate_artifact, true ) . '));';
+	$candidate_json = shell_exec( escapeshellarg( PHP_BINARY ) . ' -r ' . escapeshellarg( $candidate_code ) );
+	$candidate_result = is_string( $candidate_json ) ? json_decode( $candidate_json, true ) : null;
+	if ( ! is_array( $candidate_result ) ) {
+		throw new RuntimeException( 'The required Blocks Engine candidate compilation failed.' );
+	}
+	$candidate_plan = $candidate_result['source_reports']['wordpress_site_plan'] ?? array();
+	$candidate_declaration = current( array_filter( $candidate_plan['runtime_declarations'] ?? array(), static fn( array $declaration ): bool => 'forms' === ( $declaration['type'] ?? null ) ) );
+	$visual_state_form = array( 'forms' => $candidate_declaration['payload']['entities'] ?? array() );
+	$validated_visual_state = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $visual_state_form );
+	$visual_state_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_visual_state['forms'] ?? array() ) )['forms'][0] ?? array();
+	$visual_state = $visual_state_row['form_visual_state'] ?? array();
+	Static_Site_Importer_Provider_Form_Runtime_V1::configure_visual_states( array( $visual_state ) );
+	$visual_provider_html = Static_Site_Importer_Provider_Form_Runtime_V1::project_empty_country_visual_state( '<div class="jetpack-field__input-phone-wrapper"><button class="jetpack-combobox-trigger"><span class="jetpack-combobox-trigger-arrow"><svg></svg></span><span data-wp-text="context.selectedCountry.value"></span></button><input type="hidden" id="' . ( $visual_state['field_id'] ?? '' ) . '"></div>' );
+	$assert( empty( $validated_visual_state['errors'] ) && 2 === count( $visual_state['parts'] ?? array() ) && str_contains( $visual_provider_html, 'data-wp-bind--hidden="context.selectedCountry.value"' ) && str_contains( $visual_provider_html, 'data-wp-bind--hidden="!context.selectedCountry.value"' ) && str_contains( $visual_provider_html, 'width:24px!important' ) && str_contains( $visual_provider_html, '@media (min-width:769px)' ) && 1 === substr_count( $visual_provider_html, 'jetpack-combobox-trigger-arrow' ) && ! str_contains( $visual_provider_html, 'base64' ), 'candidate-v2-auxiliary-visual-parts-follow-topology-to-phone-runtime-state-with-conditional-css', wp_json_encode( array( 'validation' => $validated_visual_state, 'row' => $visual_state_row, 'html' => $visual_provider_html ) ) );
+	$malformed_visual_state = $visual_state_form;
+	$malformed_visual_state['forms'][0]['presentation_graph']['visual_parts'][0]['markup'] = '<svg><script>alert(1)</script></svg>';
+	$assert( ! empty( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $malformed_visual_state )['errors'] ), 'v2-visual-parts-reject-malformed-svg-at-intake' );
 	$topology_seed_repeat = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_topology['forms'] ) );
 	$assert( $topology_markup === (string) ( $topology_seed_repeat['forms'][0]['block_markup'] ?? '' ), 'provider-layout-classes-are-stable-for-identical-source-form' );
 	$field_list_form = $topology_form['forms'][0];

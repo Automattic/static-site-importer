@@ -165,6 +165,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		foreach ( $presentation_graph['variants'] ?? array() as $variant ) {
 			$index        = $variant['index'] ?? null;
 			$role         = $variant['role'] ?? null;
+			// Inline SVG parts are rendered by the companion's field-state projection.
+			// They retain their source precedence in the validated v2 graph but have no
+			// generic provider CSS destination here.
+			if ( 'visual_part' === $role ) {
+				continue;
+			}
 			$destinations = is_int( $index ) && is_string( $role ) ? array_filter( $presentation_targets[ $index ]['destinations'] ?? array(), static fn( array $destination ): bool => $role === $destination['role'] ) : array();
 			if ( ! is_int( $index ) || ! in_array( $role, array( 'control', 'label' ), true ) || empty( $destinations ) || ! self::safe_condition( $variant['condition'] ?? null ) || ! is_array( $variant['style_patch'] ?? null ) ) {
 				$losses[] = self::presentation_loss( 'responsive_layout_ownership', is_int( $index ) ? $index : 0, is_string( $role ) ? $role : 'control' );

@@ -13,6 +13,70 @@ if ( ! defined( 'ABSPATH' ) ) {
 final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	/** Whether hooks have already been registered in this request. */
 	private static bool $registered = false;
+	/** @var array<string,array<string,mixed>> Complete empty-country groups keyed by generated field ID. */
+	private static array $visual_states = array();
+
+	/** Admit only the portable subset also enforced by Blocks Engine's SourceDom. */
+	public static function valid_inline_svg( string $markup ): bool {
+		if ( '' === trim( $markup ) || str_contains( $markup, '<?' ) || preg_match( '/<!\s*(?:doctype|entity)\b/i', $markup ) || preg_match( '/&(?!(?:amp|lt|gt|quot|apos);)/i', $markup ) ) {
+			return false;
+		}
+		$document = new \DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$loaded = $document->loadXML( $markup, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING | LIBXML_COMPACT );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		if ( ! $loaded || ! $document->documentElement instanceof \DOMElement || 'svg' !== strtolower( $document->documentElement->tagName ) ) {
+			return false;
+		}
+		$allowed = array_flip( array( 'svg', 'g', 'path', 'circle', 'ellipse', 'rect', 'line', 'polyline', 'polygon', 'text', 'tspan', 'title', 'desc', 'defs', 'lineargradient', 'radialgradient', 'stop', 'clippath', 'mask', 'pattern', 'marker', 'filter', 'feblend', 'fecolormatrix', 'fecomposite', 'fegaussianblur', 'femerge', 'femergenode', 'feoffset', 'feflood', 'feturbulence' ) );
+		$blocked = array_flip( array( 'href', 'xlink:href', 'src', 'style' ) );
+		$nodes = array( $document->documentElement );
+		while ( ! empty( $nodes ) ) {
+			$element = array_pop( $nodes );
+			if ( ! $element instanceof \DOMElement || ! isset( $allowed[ strtolower( $element->tagName ) ] ) ) {
+				return false;
+			}
+			foreach ( $element->attributes as $attribute ) {
+				$name = strtolower( $attribute->name );
+				$value = trim( $attribute->value );
+				if ( str_starts_with( $name, 'on' ) || isset( $blocked[ $name ] ) || ( str_contains( $name, ':' ) && ! in_array( $name, array( 'xmlns', 'xml:lang', 'xml:space' ), true ) ) || preg_match( '/(?:^|[^a-z])url\s*\(/i', $value ) ) {
+					return false;
+				}
+			}
+			foreach ( $element->childNodes as $child ) {
+				if ( $child instanceof \DOMElement ) {
+					$nodes[] = $child;
+				}
+			}
+		}
+		return true;
+	}
+
+	/** Configure complete, source-captured empty-country groups for this companion. */
+	public static function configure_visual_states( array $states ): void {
+		self::$visual_states = array();
+		foreach ( $states as $state ) {
+			if ( self::valid_visual_state( $state ) ) {
+				self::$visual_states[ $state['field_id'] ] = $state;
+			}
+		}
+	}
+
+	/** Validate the portable configuration before it is persisted in a companion. */
+	public static function valid_visual_state( mixed $state ): bool {
+		if ( ! is_array( $state ) || array_keys( $state ) !== array( 'schema', 'field_id', 'parts', 'css' ) || 'static-site-importer/form-visual-state/v1' !== ( $state['schema'] ?? null ) || ! is_string( $state['field_id'] ?? null ) || ! preg_match( '/^ssi-form-[a-f0-9]{12}-field-[0-9]{1,3}$/D', $state['field_id'] ) || ! is_array( $state['parts'] ?? null ) || ! array_is_list( $state['parts'] ) || count( $state['parts'] ) < 1 || count( $state['parts'] ) > 32 || ! is_string( $state['css'] ?? null ) || strlen( $state['css'] ) > 16384 ) {
+			return false;
+		}
+		$seen = array();
+		foreach ( $state['parts'] as $part ) {
+			if ( ! is_array( $part ) || array_keys( $part ) !== array( 'id', 'class', 'markup' ) || ! is_string( $part['id'] ?? null ) || isset( $seen[ $part['id'] ] ) || ! preg_match( '/^control-[0-9]+-svg-[0-9]+$/D', $part['id'] ) || ! is_string( $part['class'] ?? null ) || ! preg_match( '/^ssi-fvs-[a-f0-9]{12}$/D', $part['class'] ) || ! is_string( $part['markup'] ?? null ) || strlen( $part['markup'] ) > 16384 || ! self::valid_inline_svg( $part['markup'] ) ) {
+				return false;
+			}
+			$seen[ $part['id'] ] = true;
+		}
+		return true;
+	}
 
 	/** Register inert-unless-marked provider projection hooks. */
 	public static function register(): void {
@@ -21,7 +85,26 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		}
 		self::$registered = true;
 		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_wrapper_classes' ) );
+		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_empty_country_visual_state' ), 20 );
 		add_filter( 'render_block_core/button', array( __CLASS__, 'project_submit_presentation' ), 10, 2 );
+	}
+
+	/** Insert the complete captured group into Jetpack's existing trigger; never replace its flag or arrow after selection. */
+	public static function project_empty_country_visual_state( string $html ): string {
+		if ( empty( self::$visual_states ) || ! preg_match( '/\bid=(?:"|\')((?:ssi-form-[a-f0-9]{12}-field-[0-9]{1,3}))(?:"|\')/', $html, $id ) || ! isset( self::$visual_states[ $id[1] ] ) ) {
+			return $html;
+		}
+		if ( ! preg_match( '/<button\b(?=[^>]*\bclass=("|\')[^"\']*\bjetpack-combobox-trigger\b[^"\']*\1)[^>]*>/i', $html, $button, PREG_OFFSET_CAPTURE ) || ! preg_match( '/<[^>]*\bclass=("|\')[^"\']*\bjetpack-combobox-trigger-arrow\b[^"\']*\1[^>]*>/i', $html, $arrow, PREG_OFFSET_CAPTURE ) ) {
+			return $html;
+		}
+		$state = self::$visual_states[ $id[1] ];
+		$parts = array_map( static fn( array $part ): string => preg_replace( '/^<svg\b/i', '<svg class="' . $part['class'] . '"', $part['markup'], 1 ) ?? $part['markup'], $state['parts'] );
+		$group = ( '' === $state['css'] ? '' : '<style>' . $state['css'] . '</style>' ) . '<span class="ssi-form-visual-state" data-wp-bind--hidden="context.selectedCountry.value">' . implode( '', $parts ) . '</span>';
+		$html  = substr_replace( $html, $group, $button[0][1] + strlen( $button[0][0] ), 0 );
+		$arrow_offset = $arrow[0][1] + ( $arrow[0][1] > $button[0][1] ? strlen( $group ) : 0 );
+		$arrow_tag = $arrow[0][0];
+		$arrow_tag = preg_replace( '/\sdata-wp-bind--hidden=("|\')[^"\']*\1/i', '', $arrow_tag ) ?? $arrow_tag;
+		return substr_replace( $html, rtrim( substr( $arrow_tag, 0, -1 ) ) . ' data-wp-bind--hidden="!context.selectedCountry.value">', $arrow_offset, strlen( $arrow[0][0] ) );
 	}
 
 	/** Move source submit presentation from Core's wrapper onto its button control. */
