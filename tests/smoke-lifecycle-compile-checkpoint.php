@@ -83,6 +83,25 @@ namespace {
 	$payload = array( 'artifact' => $artifact, 'args' => $args, 'plan' => array( 'schema' => 'test-plan/v1' ), 'gutenberg_gaps' => array(), 'companion_payload' => null, 'materialization_plan' => array(), 'theme_materialization' => array() ); $expired = Static_Site_Importer_Lifecycle_Compile_Checkpoint::create( $artifact, $args, $payload, 'test-owner', $root ); $expired_path = glob( $root . '/.ssi-artifact-run-lifecycle-' . $expired . '/workspace.json' )[0] ?? ''; $workspace = json_decode( (string) file_get_contents( $expired_path ), true ); $workspace['retention']['expires_at'] = gmdate( 'c', time() - 1 ); file_put_contents( $expired_path, json_encode( $workspace ) ); $expired_result = Static_Site_Importer_Lifecycle_Compile_Checkpoint::load( $expired, $artifact, $args, 'test-owner', $root ); if ( ! is_wp_error( $expired_result ) || 'static_site_importer_lifecycle_checkpoint_expired' !== $expired_result->get_error_code() ) { throw new \RuntimeException( 'expired checkpoint must be purged and rejected' ); }
 	$clean = Static_Site_Importer_Lifecycle_Compile_Checkpoint::create( $artifact, $args, $payload, 'site:17;user:23', $root ); $consumed = $child( '', 'site:17;user:23', 'consume', $clean ); if ( 0 !== $consumed[0] || is_dir( $root . '/.ssi-artifact-run-lifecycle-' . $clean ) ) { throw new \RuntimeException( 'successful checkpoint consumption must clean up the workspace' ); }
 	$claim = Static_Site_Importer_Lifecycle_Compile_Checkpoint::create( $artifact, $args, $payload, 'site:17;user:23', $root ); $claimer = $child( '', 'site:17;user:23', 'claim', $claim ); $replay = $child( '', 'site:17;user:23', 'claim', $claim ); Static_Site_Importer_Lifecycle_Compile_Checkpoint::discard( $claim, $root ); if ( 0 !== $claimer[0] || 0 === $replay[0] || ! str_contains( $replay[1], 'static_site_importer_lifecycle_checkpoint_claimed' ) ) { throw new \RuntimeException( 'only one concurrent checkpoint consumer may claim materialization' ); }
-	foreach ( array( 'artifact' => 'invalid', 'args' => 'invalid', 'plan' => 'invalid', 'gutenberg_gaps' => 'invalid', 'companion_payload' => 'invalid', 'materialization_plan' => 'invalid', 'theme_materialization' => 'invalid', 'plan_schema' => null, 'plan_pages' => 'invalid' ) as $invalid_field => $invalid_value ) { $invalid = Static_Site_Importer_Lifecycle_Compile_Checkpoint::create( $artifact, $args, $payload, 'test-owner', $root ); $invalid_path = glob( $root . '/.ssi-artifact-run-lifecycle-' . $invalid . '/checkpoint.json' )[0] ?? ''; $invalid_record = json_decode( (string) file_get_contents( $invalid_path ), true ); if ( 'plan_schema' === $invalid_field ) { unset( $invalid_record['payload']['plan']['schema'] ); } elseif ( 'plan_pages' === $invalid_field ) { $invalid_record['payload']['plan']['pages'] = $invalid_value; } else { $invalid_record['payload'][ $invalid_field ] = $invalid_value; } $invalid_record['payload_sha256'] = hash( 'sha256', json_encode( $invalid_record['payload'] ) ); file_put_contents( $invalid_path, json_encode( $invalid_record ) ); if ( ! is_wp_error( Static_Site_Importer_Lifecycle_Compile_Checkpoint::load( $invalid, $artifact, $args, 'test-owner', $root ) ) ) { throw new \RuntimeException( 'a checksummed checkpoint with an invalid ' . $invalid_field . ' payload must be rejected at load' ); } }
+	foreach ( array( 'artifact' => 'invalid', 'args' => 'invalid', 'plan' => 'invalid', 'gutenberg_gaps' => 'invalid', 'companion_payload' => 'invalid', 'materialization_plan' => 'invalid', 'theme_materialization' => 'invalid', 'plan_schema' => null, 'plan_pages' => 'invalid' ) as $invalid_field => $invalid_value ) {
+		$invalid = Static_Site_Importer_Lifecycle_Compile_Checkpoint::create( $artifact, $args, $payload, 'test-owner', $root );
+		$invalid_path = glob( $root . '/.ssi-artifact-run-lifecycle-' . $invalid . '/checkpoint.json' )[0] ?? '';
+		$invalid_record = json_decode( (string) file_get_contents( $invalid_path ), true );
+		if ( 'plan_schema' === $invalid_field ) {
+			unset( $invalid_record['payload']['plan']['schema'] );
+		} elseif ( 'plan_pages' === $invalid_field ) {
+			$invalid_record['payload']['plan']['pages'] = $invalid_value;
+		} else {
+			$invalid_record['payload'][ $invalid_field ] = $invalid_value;
+		}
+		// Neither a checksum mismatch nor the same-runtime guard may mask a missing shape check.
+		$invalid_record['payload_sha256'] = hash( 'sha256', json_encode( $invalid_record['payload'] ) );
+		$invalid_record['runtime_generation'] = 'different-fixture-generation';
+		file_put_contents( $invalid_path, json_encode( $invalid_record ) );
+		$invalid_result = Static_Site_Importer_Lifecycle_Compile_Checkpoint::load( $invalid, $artifact, $args, 'test-owner', $root );
+		if ( ! is_wp_error( $invalid_result ) || 'static_site_importer_lifecycle_checkpoint_invalid' !== $invalid_result->get_error_code() ) {
+			throw new \RuntimeException( 'a checksummed checkpoint with an invalid ' . $invalid_field . ' payload must be rejected by payload validation at load' );
+		}
+	}
 	echo "Lifecycle compile checkpoint smoke passed.\n";
 }
