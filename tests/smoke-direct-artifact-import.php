@@ -113,26 +113,6 @@ require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-direct-a
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
 
 class Static_Site_Importer_Theme_Generator {
-	public static function compile_website_artifact( array $artifact, array $args = array() ) {
-		$compiled = $args['compiled_artifact_result'] ?? array();
-		if ( 'blocks-engine/wordpress-site-plan-view/v2' === ( $compiled['schema'] ?? '' ) ) {
-			$compiled = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanView::materialize( $compiled );
-		}
-		$plan = is_array( $compiled['wordpress_site_plan'] ?? null ) ? $compiled['wordpress_site_plan'] : array();
-		if ( empty( $plan ) ) {
-			return new WP_Error( 'missing_precompiled_plan', 'The smoke materializer requires the real staged compiler result.' );
-		}
-		return array(
-			'artifact'              => $artifact,
-			'args'                  => $args,
-			'compiled'              => $compiled,
-			'plan'                  => $plan,
-			'gutenberg_gaps'        => $compiled['gutenberg_gaps'] ?? array(),
-			'companion_payload'     => null,
-			'materialization_plan'  => array( 'theme' => array( 'font_materialization' => $compiled['font_materialization'] ?? array() ) ),
-			'theme_materialization' => array( 'strategy' => 'block' ),
-		);
-	}
 	public static function import_website_artifact( array $artifact, array $args = array() ) {
 		if ( true !== ( $args['_static_site_importer_precompiled_source'] ?? null ) || ! is_array( $args['compiled_artifact_result'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/', (string) ( $args['import_run_id'] ?? '' ) ) ) {
 			throw new RuntimeException( 'Materialization must receive the frozen precompiled result and stable run id.' );
