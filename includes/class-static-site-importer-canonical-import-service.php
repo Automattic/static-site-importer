@@ -21,6 +21,9 @@ if ( ! class_exists( 'Static_Site_Importer_Figma_Import' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Compiler_Diagnostic_Normalizer' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-compiler-diagnostic-normalizer.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Compilation_Preparation' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-compilation-preparation.php';
+}
 
 class Static_Site_Importer_Canonical_Import_Service {
 	private static string $cli_report_destination = '';
@@ -357,7 +360,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 
 	/** @param array<string,mixed> $artifact @param array<string,mixed> $args @param array<string,mixed> $provenance @return array<string,mixed> */
 	public static function plan_artifact( array $artifact, array $args, string $type, array $provenance ): array {
-		$compiled = Static_Site_Importer_Theme_Generator::compile_website_artifact( $artifact, $args );
+		$compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $artifact, $args );
 		if ( is_wp_error( $compiled ) ) {
 			return self::error( (string) $compiled->get_error_code(), $compiled->get_error_message(), $compiled->get_error_data() );
 		}
