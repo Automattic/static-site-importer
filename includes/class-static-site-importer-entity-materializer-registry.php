@@ -1453,19 +1453,21 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$visual_groups[]           = $group;
 		}
 		$control_containers = array();
+		$container_indexes  = array();
 		foreach ( $candidate['control_containers'] ?? array() as $container ) {
 			$chrome_properties = array_flip( array( 'background', 'background_color', 'border', 'border_color', 'border_style', 'border_width', 'border_top_color', 'border_right_color', 'border_bottom_color', 'border_left_color', 'border_top_style', 'border_right_style', 'border_bottom_style', 'border_left_style', 'border_top_width', 'border_right_width', 'border_bottom_width', 'border_left_width', 'border_radius', 'border_top_left_radius', 'border_top_right_radius', 'border_bottom_right_radius', 'border_bottom_left_radius' ) );
-			if ( ! is_array( $container ) || ! self::has_only_keys( $container, array( 'index', 'source_selector', 'styles', 'provenance' ) ) || ! is_int( $container['index'] ?? null ) || $container['index'] < 0 || $container['index'] >= 128 || ! is_string( $container['source_selector'] ?? null ) || '' === trim( $container['source_selector'] ) || strlen( $container['source_selector'] ) > 2048 || ! is_array( $container['styles'] ?? null ) || empty( $container['styles'] ) || array_diff_key( $container['styles'], $chrome_properties ) ) {
+			if ( ! is_array( $container ) || ! self::has_only_keys( $container, array( 'index', 'source_selector', 'styles', 'provenance' ) ) || ! is_int( $container['index'] ?? null ) || $container['index'] < 0 || $container['index'] >= 128 || isset( $container_indexes[ $container['index'] ] ) || ! is_string( $container['source_selector'] ?? null ) || '' === trim( $container['source_selector'] ) || strlen( $container['source_selector'] ) > 2048 || ! is_array( $container['styles'] ?? null ) || array_diff_key( $container['styles'], $chrome_properties ) ) {
 				return array( 'error' => 'presentation_graph control container is malformed.' );
 			}
 			$role = self::normalize_form_presentation_role( array(
 				'styles'     => $container['styles'],
 				'provenance' => $container['provenance'] ?? null,
-			), array_intersect_key( $properties, $chrome_properties ), null );
+			), array_intersect_key( $properties, $chrome_properties ), null, true );
 			if ( isset( $role['error'] ) ) {
 				return $role;
 			}
-			$control_containers[] = array(
+			$container_indexes[ $container['index'] ] = true;
+			$control_containers[]                     = array(
 				'index'           => $container['index'],
 				'source_selector' => $container['source_selector'],
 				...$role['role'],
@@ -1473,6 +1475,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		}
 		$variants = array();
 		foreach ( $candidate['variants'] as $variant ) {
+			if ( 'control_container' === ( $variant['role'] ?? null ) && ! isset( $container_indexes[ $variant['index'] ?? -1 ] ) ) {
+				return array( 'error' => 'presentation_graph container variant has no source owner.' );
+			}
 			$is_visual = 'visual_part' === ( $variant['role'] ?? null );
 			$is_group  = 'visual_group' === ( $variant['role'] ?? null );
 			if ( ! is_array( $variant ) || ! self::has_only_keys( $variant, $is_visual ? array( 'index', 'role', 'part_id', 'condition', 'style_patch', 'precedence', 'provenance' ) : ( $is_group ? array( 'role', 'group_id', 'condition', 'style_patch', 'precedence', 'provenance' ) : array( 'index', 'role', 'condition', 'style_patch', 'precedence', 'provenance' ) ) ) || ( ! $is_group && ( ! is_int( $variant['index'] ?? null ) || $variant['index'] < 0 || $variant['index'] >= 128 ) ) || ! in_array( $variant['role'] ?? null, $is_v2 ? array( 'control', 'label', 'required_marker', 'control_container', 'visual_part', 'visual_group' ) : array( 'control', 'label' ), true ) || ( $is_visual && ( ! is_string( $variant['part_id'] ?? null ) || ( $part_indexes[ $variant['part_id'] ] ?? -1 ) !== $variant['index'] ) ) || ( $is_group && ( ! is_string( $variant['group_id'] ?? null ) || ! isset( $group_ids[ $variant['group_id'] ] ) ) ) || ! self::valid_layout_condition( $variant['condition'] ?? null ) || ! is_array( $variant['style_patch'] ?? null ) || empty( $variant['style_patch'] ) || ! is_array( $variant['precedence'] ?? null ) || ! is_array( $variant['provenance'] ?? null ) ) {
@@ -1505,6 +1510,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'precedence'  => $variant['precedence'],
 				'provenance'  => $role['role']['provenance'],
 			), static fn( $value ): bool => null !== $value );
+		}
+		foreach ( $control_containers as $container ) {
+			if ( empty( $container['styles'] ) && ! array_filter( $variants, static fn( array $variant ): bool => 'control_container' === $variant['role'] && $container['index'] === ( $variant['index'] ?? null ) ) ) {
+				return array( 'error' => 'presentation_graph empty container has no conditional presentation.' );
+			}
 		}
 		return array(
 			'graph' => array(
