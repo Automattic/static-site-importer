@@ -11,12 +11,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 foreach ( array(
 	'Static_Site_Importer_Theme_Materialization_Strategy' => 'class-static-site-importer-theme-materialization-strategy.php',
-	'Static_Site_Importer_Content_Policy' => 'class-static-site-importer-content-policy.php',
-	'Static_Site_Importer_Client_Script_Policy' => 'class-static-site-importer-client-script-policy.php',
-	'Static_Site_Importer_Site_Identity' => 'class-static-site-importer-site-identity.php',
+	'Static_Site_Importer_Content_Policy'                 => 'class-static-site-importer-content-policy.php',
+	'Static_Site_Importer_Client_Script_Policy'           => 'class-static-site-importer-client-script-policy.php',
+	'Static_Site_Importer_Site_Identity'                  => 'class-static-site-importer-site-identity.php',
 	'Static_Site_Importer_Compiler_Diagnostic_Normalizer' => 'class-static-site-importer-compiler-diagnostic-normalizer.php',
-	'Static_Site_Importer_Report_Diagnostics' => 'class-static-site-importer-report-diagnostics.php',
-	'Static_Site_Importer_Companion_Plugin' => 'class-static-site-importer-companion-plugin.php',
+	'Static_Site_Importer_Report_Diagnostics'             => 'class-static-site-importer-report-diagnostics.php',
+	'Static_Site_Importer_Companion_Plugin'               => 'class-static-site-importer-companion-plugin.php',
 ) as $class => $file ) {
 	if ( ! class_exists( $class ) ) {
 		require_once __DIR__ . '/' . $file;
@@ -34,17 +34,17 @@ final class Static_Site_Importer_Compilation_Preparation {
 			return $strategy;
 		}
 		$args['theme_materialization'] = $strategy['strategy'];
-		$source_policy = $precompiled ? true : Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
+		$source_policy                 = $precompiled ? true : Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
 		if ( is_wp_error( $source_policy ) ) {
 			return $source_policy;
 		}
-		$script_policy = $precompiled ? array(
+		$script_policy                       = $precompiled ? array(
 			'artifact' => $artifact,
 			'report'   => $args['source_metadata']['collection']['script_policy'] ?? array(),
 		) : Static_Site_Importer_Client_Script_Policy::apply( $artifact, $args );
 		$artifact                            = $script_policy['artifact'];
 		$args['client_script_policy_report'] = $script_policy['report'];
-		$compiler_class = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\ArtifactCompiler';
+		$compiler_class                      = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\ArtifactCompiler';
 		if ( ! class_exists( $compiler_class ) ) {
 			return new WP_Error( 'static_site_importer_missing_transformer', 'Blocks Engine php-transformer is required to import a website artifact.' );
 		}
@@ -97,14 +97,14 @@ final class Static_Site_Importer_Compilation_Preparation {
 			}
 		}
 		$args['compiler_diagnostics'] = Static_Site_Importer_Compiler_Diagnostic_Normalizer::normalize( is_array( $compiled['diagnostics'] ?? null ) ? $compiled['diagnostics'] : array() );
-		$plan = is_array( $compiled['wordpress_site_plan'] ?? null ) ? $compiled['wordpress_site_plan'] : array();
+		$plan                         = is_array( $compiled['wordpress_site_plan'] ?? null ) ? $compiled['wordpress_site_plan'] : array();
 		if ( empty( $plan ) ) {
 			$diagnostics = is_array( $compiled['diagnostics'] ?? null ) ? wp_json_encode( $compiled['diagnostics'] ) : '';
 			return new WP_Error( 'static_site_importer_artifact_compile_failed', 'Website artifact compilation did not produce a WordPress site plan.' . ( false !== $diagnostics ? ' ' . $diagnostics : '' ), $compiled );
 		}
 		$args['missing_author_stylesheet_diagnostics'] = Static_Site_Importer_Report_Diagnostics::missing_author_stylesheet_diagnostics( $plan, $artifact );
-		$companion_payload = null;
-		$gutenberg_gaps    = is_array( $compiled['gutenberg_gaps'] ?? null ) ? $compiled['gutenberg_gaps'] : array();
+		$companion_payload                             = null;
+		$gutenberg_gaps                                = is_array( $compiled['gutenberg_gaps'] ?? null ) ? $compiled['gutenberg_gaps'] : array();
 		if ( ! empty( $compiled['companion_plugin_payload'] ) ) {
 			$companion_payload = $compiled['companion_plugin_payload'];
 			if ( ! is_array( $companion_payload ) ) {
@@ -116,7 +116,7 @@ final class Static_Site_Importer_Compilation_Preparation {
 			} else {
 				$companion_payload['site_slug'] = '' !== (string) ( $companion_payload['site_slug'] ?? '' ) ? (string) $companion_payload['site_slug'] : $args['slug'];
 				$companion_payload['site_name'] = '' !== (string) ( $companion_payload['site_name'] ?? '' ) ? (string) $companion_payload['site_name'] : $args['name'];
-				$companion_validation = Static_Site_Importer_Companion_Plugin::validate_payload( $companion_payload );
+				$companion_validation           = Static_Site_Importer_Companion_Plugin::validate_payload( $companion_payload );
 				if ( is_wp_error( $companion_validation ) ) {
 					return $companion_validation;
 				}

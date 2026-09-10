@@ -193,6 +193,7 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 			'compile_pipeline'     => self::files_binding(
 				array(
 					'class-static-site-importer-theme-generator.php',
+					'class-static-site-importer-compilation-preparation.php',
 					'class-static-site-importer-theme-materialization-strategy.php',
 					'class-static-site-importer-site-identity.php',
 					'class-static-site-importer-classic-theme-projection.php',
