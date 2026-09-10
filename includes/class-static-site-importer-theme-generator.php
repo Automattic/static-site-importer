@@ -270,15 +270,27 @@ class Static_Site_Importer_Theme_Generator {
 
 		// A URL batch run composes this canonical compiler result before the one
 		// serialized WordPress mutation. Direct callers retain whole-artifact compilation.
-		if ( isset( $args['compiled_artifact_result'] ) && is_array( $args['compiled_artifact_result'] ) ) {
+		$supplied_compiled = isset( $args['compiled_artifact_result'] ) && is_array( $args['compiled_artifact_result'] );
+		if ( $supplied_compiled ) {
 			$compiled = $args['compiled_artifact_result'];
 		} else {
 			$compiler_result = ( new $compiler_class() )->compile( $artifact );
 			$compiled        = $compiler_result->toWordPressSitePlanView();
 		}
-		if ( 'blocks-engine/wordpress-site-plan-view/v1' !== ( $compiled['schema'] ?? '' ) ) {
+		$expected_schema = $supplied_compiled ? 'blocks-engine/wordpress-site-plan-view/v2' : 'blocks-engine/wordpress-site-plan-view/v1';
+		if ( ( $compiled['schema'] ?? '' ) !== $expected_schema ) {
 			return new WP_Error( 'static_site_importer_invalid_transformer_result', 'Blocks Engine php-transformer returned an invalid WordPress site plan view.' );
 		}
+		if ( $supplied_compiled ) {
+			try {
+				$compiled = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanView::materialize( $compiled );
+			} catch ( Throwable $error ) {
+				return new WP_Error( 'static_site_importer_invalid_transformer_result', $error->getMessage() );
+			}
+		}
+		// Keep final compiler findings on the ordinary import path without changing
+		// canonical-plan admission or interpreting producer diagnostics.
+		$args['compiler_diagnostics'] = Static_Site_Importer_Compiler_Diagnostic_Normalizer::normalize( is_array( $compiled['diagnostics'] ?? null ) ? $compiled['diagnostics'] : array() );
 		$plan = is_array( $compiled['wordpress_site_plan'] ?? null ) ? $compiled['wordpress_site_plan'] : array();
 		if ( empty( $plan ) ) {
 			$diagnostics = is_array( $compiled['diagnostics'] ?? null ) ? wp_json_encode( $compiled['diagnostics'] ) : '';

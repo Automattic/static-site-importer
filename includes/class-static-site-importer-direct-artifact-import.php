@@ -653,6 +653,10 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				if ( ! is_array( $composed ) || 'blocks-engine/wordpress-site-plan-view/v1' !== ( $composed['schema'] ?? '' ) ) {
 					throw new RuntimeException( 'Blocks Engine returned an invalid composed WordPress site plan view.' );
 				}
+				$composed = ( new \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanView() )->compact( $composed );
+				if ( 'blocks-engine/wordpress-site-plan-view/v2' !== ( $composed['schema'] ?? '' ) ) {
+					throw new RuntimeException( 'Blocks Engine did not compact the composed WordPress site plan view.' );
+				}
 				$metrics = is_array( $result->metrics ?? null ) ? $result->metrics : array();
 				if ( 0 !== (int) ( $metrics['html_document_transform_count'] ?? 0 ) || 0 !== (int) ( $metrics['normalization_count'] ?? 0 ) ) {
 					throw new RuntimeException( sprintf( 'Terminal receipt composition performed %d HTML transforms and %d normalization passes.', (int) ( $metrics['html_document_transform_count'] ?? 0 ), (int) ( $metrics['normalization_count'] ?? 0 ) ) );
@@ -1591,7 +1595,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 		if ( 'composed' === $kind ) {
 			$work = is_array( $payload['terminal_work'] ?? null ) ? $payload['terminal_work'] : array();
-			return 'blocks-engine/wordpress-site-plan-view/v1' === ( $payload['result']['schema'] ?? '' )
+			return 'blocks-engine/wordpress-site-plan-view/v2' === ( $payload['result']['schema'] ?? '' )
 				&& 0 === (int) ( $work['html_document_transform_count'] ?? -1 )
 				&& 0 === (int) ( $work['normalization_count'] ?? -1 );
 		}

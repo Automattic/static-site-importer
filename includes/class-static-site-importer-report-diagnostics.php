@@ -3181,6 +3181,9 @@ class Static_Site_Importer_Report_Diagnostics {
 			'repair_class',
 			'repair_bucket',
 			'group_key',
+			// Context is already bounded by the compiler diagnostic contract. Keep it
+			// ahead of optional evidence so terminal receipt projection retains it.
+			'context',
 			'source_diagnostic',
 			'source_path',
 			'source',
@@ -3207,7 +3210,6 @@ class Static_Site_Importer_Report_Diagnostics {
 			'tag_name',
 			'element',
 			'html_excerpt',
-			'context',
 			'diagnostic_code',
 			'runtime_mapped',
 			'provider_mapped',
