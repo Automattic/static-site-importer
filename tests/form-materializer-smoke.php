@@ -747,6 +747,10 @@ namespace {
 	$partial_grid_field_form['forms'][0]['layout_graph']['nodes'][2]['layout']['column'] = 'span 6';
 	$partial_grid_field_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $partial_grid_field_form )['forms'] ?? array() ) )['forms'][0] ?? array();
 	$assert( ! in_array( 'provider_fullspan_grid_child', array_column( $partial_grid_field_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'partial-span-field-grid-does-not-claim-full-width-provider-ownership', wp_json_encode( $partial_grid_field_row ) );
+	$explicit_start_grid = $full_width_grid_field_form;
+	$explicit_start_grid['forms'][0]['layout_graph']['nodes'][2]['layout']['column'] = '1 / span 12';
+	$explicit_start_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $explicit_start_grid )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( in_array( 'provider_fullspan_grid_child', array_column( $explicit_start_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ) && str_contains( $explicit_start_row['provider_layout_overlay_css']['css'] ?? '', 'grid-column:1 / span 12' ), 'explicit-grid-start-and-full-span-preserve-native-child-placement' );
 	$nested_grid_field_form = $full_width_grid_field_form;
 	$nested_grid_field_form['forms'][0]['control_topology']['nodes'][1]['parent'] = 'wrapper-1';
 	$nested_grid_field_form['forms'][0]['control_topology']['nodes'][1]['depth'] = 2;

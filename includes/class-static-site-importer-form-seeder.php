@@ -1392,7 +1392,7 @@ class Static_Site_Importer_Form_Seeder {
 			if ( '1/-1' === $column ) {
 				return '100%';
 			}
-			if ( ! preg_match( '/^span([1-9][0-9]*)$/D', $column, $span ) || (int) $span[1] > (int) $column_count[1] ) {
+			if ( ! preg_match( '/^(?:1\/)?span([1-9][0-9]*)$/D', $column, $span ) || (int) $span[1] > (int) $column_count[1] ) {
 				return null;
 			}
 			return rtrim( rtrim( number_format( 100 * (int) $span[1] / (int) $column_count[1], 3, '.', '' ), '0' ), '.' ) . '%';
