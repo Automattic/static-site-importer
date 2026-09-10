@@ -19,6 +19,8 @@ if ( ! class_exists( 'Static_Site_Importer_Form_Fallback_Contract' ) ) {
 class Static_Site_Importer_Entity_Materializer_Registry {
 
 	private const FORM_CONTROL_TOPOLOGY_MAX_DEPTH = 16;
+	private const FAILURE_DIAGNOSTIC_MAX_ROWS     = 10;
+	private const FAILURE_DIAGNOSTIC_MAX_BYTES    = 256;
 
 	/**
 	 * Per-capability provider selection contract.
@@ -618,7 +620,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					'reports' => $reports,
 					'error'   => array(
 						'code'    => (string) $report->get_error_code(),
-						'message' => $report->get_error_message(),
+						'message' => self::failure_message( self::failure_diagnostics( $id, $adapter, $prepared['manifest'], $reports[ $id ] ), $report->get_error_message() ),
+						'diagnostics' => self::failure_diagnostics( $id, $adapter, $prepared['manifest'], $reports[ $id ] ),
 					),
 				);
 			}
@@ -631,12 +634,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$completed = array_sum( array_map( 'intval', array_intersect_key( $counts, array_flip( array( 'created', 'updated', 'mapped', 'skipped' ) ) ) ) );
 			if ( in_array( $report['status'] ?? '', array( 'failed', 'error' ), true ) || ! empty( $counts['failed'] ) || ! empty( $counts['error'] ) || ( ( ! empty( $prepared['required'] ) || self::lifecycle_entity_has_bindings( $prepared ) ) && $completed < $expected ) ) {
 				$code    = isset( $report['code'] ) && is_scalar( $report['code'] ) ? (string) $report['code'] : 'static_site_importer_entity_materialization_failed';
-				$message = isset( $report['error'] ) && is_scalar( $report['error'] ) ? (string) $report['error'] : ( isset( $report['reason'] ) && is_scalar( $report['reason'] ) && '' !== (string) $report['reason'] ? (string) $report['reason'] : 'Runtime entity materialization failed for declaration: ' . $id . '.' );
+				$diagnostics = self::failure_diagnostics( (string) $id, $adapter, $prepared['manifest'], $report );
+				$fallback    = isset( $report['error'] ) && is_scalar( $report['error'] ) ? (string) $report['error'] : ( isset( $report['reason'] ) && is_scalar( $report['reason'] ) && '' !== (string) $report['reason'] ? (string) $report['reason'] : 'Runtime entity materialization failed.' );
 				return array(
 					'reports' => $reports,
 					'error'   => array(
 						'code'    => $code,
-						'message' => $message,
+						'message' => self::failure_message( $diagnostics, $fallback ),
+						'diagnostics' => $diagnostics,
 					),
 				);
 			}
@@ -645,6 +650,96 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'reports' => $reports,
 			'error'   => null,
 		);
+	}
+
+	/** Build shallow, adapter-neutral evidence for a terminal provider failure. */
+	public static function failure_diagnostics( string $declaration_id, array $adapter, array $manifest, array $report ): array {
+		$entity_key = isset( $manifest['products'] ) ? 'products' : 'forms';
+		$entities   = is_array( $manifest[ $entity_key ] ?? null ) ? array_values( $manifest[ $entity_key ] ) : array();
+		$rows       = is_array( $report[ $entity_key ] ?? null ) ? array_values( $report[ $entity_key ] ) : array();
+		$provider   = self::failure_text( $report['provider'] ?? $adapter['provider'] ?? '', 80 );
+		$available  = self::failure_availability( $report );
+		$diagnostics = array();
+		foreach ( $rows as $index => $row ) {
+			if ( ! is_array( $row ) || ! in_array( $row['status'] ?? '', array( 'error', 'failed' ), true ) ) {
+				continue;
+			}
+			$diagnostics[] = self::failure_diagnostic_row( $declaration_id, $adapter, $entities[ $index ] ?? array(), $row, $provider, $available );
+			if ( self::FAILURE_DIAGNOSTIC_MAX_ROWS <= count( $diagnostics ) ) {
+				break;
+			}
+		}
+		if ( empty( $diagnostics ) && ( in_array( $report['status'] ?? '', array( 'error', 'failed' ), true ) || ! empty( $report['counts']['error'] ) || ! empty( $report['counts']['failed'] ) ) ) {
+			$diagnostics[] = self::failure_diagnostic_row( $declaration_id, $adapter, $entities[0] ?? array(), $report, $provider, $available );
+		}
+		return $diagnostics;
+	}
+
+	private static function failure_diagnostic_row( string $declaration_id, array $adapter, array $entity, array $row, string $provider, ?bool $available ): array {
+		$source_path = self::failure_text( $row['source_path'] ?? $entity['source_path'] ?? '', self::FAILURE_DIAGNOSTIC_MAX_BYTES );
+		$selector    = self::failure_text( $row['selector'] ?? $entity['selector'] ?? '', self::FAILURE_DIAGNOSTIC_MAX_BYTES );
+		$reason      = self::failure_text( $row['reason_code'] ?? $row['reason'] ?? $row['error_code'] ?? '', 128 );
+		$loss_count  = self::failure_loss_count( $row );
+		$diagnostic  = array_filter(
+			array(
+				'code' => 'provider_entity_materialization_failed',
+				'kind' => 'entity_materialization_failure',
+				'severity' => 'error',
+				'declaration_id' => self::failure_text( $declaration_id, 128 ),
+				'entity_type' => self::failure_text( $adapter['entity_type'] ?? rtrim( isset( $entity['type'] ) ? (string) $entity['type'] : '', 's' ), 80 ),
+				'provider' => $provider,
+				'provider_available' => $available,
+				'provider_availability_reason' => self::failure_text( $row['provider_availability_reason'] ?? $row['availability_reason'] ?? ( false === $available ? $reason : '' ), 128 ),
+				'source_path' => $source_path,
+				'selector' => $selector,
+				'reason_code' => $reason,
+				'loss_count' => $loss_count,
+			), static fn( $value ): bool => null !== $value && '' !== $value );
+		$location    = '' === $source_path ? 'the declared entity' : $source_path . ( '' === $selector ? '' : ' (' . $selector . ')' );
+		$availability = null === $available ? 'availability was not reported' : ( $available ? 'provider is available' : 'provider is unavailable' );
+		$loss         = null === $loss_count ? '' : ' Losses reported: ' . $loss_count . '.';
+		$diagnostic['message'] = self::failure_text( sprintf( '%s failed to materialize %s; %s%s.%s', '' === $provider ? 'The provider' : $provider, $location, $availability, '' === $reason ? '' : '; reason: ' . $reason, $loss ), self::FAILURE_DIAGNOSTIC_MAX_BYTES );
+		return $diagnostic;
+	}
+
+	private static function failure_message( array $diagnostics, string $fallback ): string {
+		return isset( $diagnostics[0]['message'] ) && is_string( $diagnostics[0]['message'] ) ? $diagnostics[0]['message'] : self::failure_text( $fallback, self::FAILURE_DIAGNOSTIC_MAX_BYTES );
+	}
+
+	private static function failure_availability( array $report ): ?bool {
+		foreach ( array( 'provider_available', 'available' ) as $key ) {
+			if ( is_bool( $report[ $key ] ?? null ) ) {
+				return $report[ $key ];
+			}
+		}
+		return null;
+	}
+
+	private static function failure_loss_count( array $row ): ?int {
+		foreach ( array( 'loss_count', 'unaccepted_receipt_loss_count' ) as $key ) {
+			if ( is_numeric( $row[ $key ] ?? null ) ) {
+				return max( 0, (int) $row[ $key ] );
+			}
+		}
+		return is_array( $row['form_receipt_unaccepted_losses'] ?? null ) ? count( $row['form_receipt_unaccepted_losses'] ) : null;
+	}
+
+	private static function failure_text( $value, int $bytes ): string {
+		if ( ! is_scalar( $value ) ) {
+			return '';
+		}
+		$value = trim( (string) $value );
+		if ( strlen( $value ) <= $bytes || ! preg_match_all( '/./us', $value, $characters ) ) {
+			return strlen( $value ) <= $bytes ? $value : '';
+		}
+		$text = '';
+		foreach ( $characters[0] as $character ) {
+			if ( $bytes < strlen( $text . $character ) ) {
+				break;
+			}
+			$text .= $character;
+		}
+		return $text;
 	}
 
 	/**

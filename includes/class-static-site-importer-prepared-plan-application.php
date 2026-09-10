@@ -128,11 +128,16 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 
 	/** Return a provider-compensated error before canonical plan mutation begins. */
 	private static function lifecycle_failure( array $error, array $lifecycle, array $dependencies, array $entities, string $stage ): WP_Error {
+		$diagnostics = is_array( $error['diagnostics'] ?? null ) ? $error['diagnostics'] : array();
+		if ( ! empty( $diagnostics ) ) {
+			$lifecycle['diagnostics'] = array_merge( is_array( $lifecycle['diagnostics'] ?? null ) ? $lifecycle['diagnostics'] : array(), $diagnostics );
+		}
 		$failure = array(
 			'status'            => 'partial',
 			'runtime_lifecycle' => $lifecycle,
 			'dependencies'      => $dependencies,
 			'entities'          => $entities,
+			'diagnostics'       => $diagnostics,
 		);
 		Static_Site_Importer_Entity_Compensation::append( $failure, $lifecycle, $entities, $stage, (string) $error['code'] );
 		return new WP_Error( (string) $error['code'], (string) $error['message'], $failure );

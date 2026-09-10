@@ -205,11 +205,49 @@ $assert( 'about.html' === ( $degraded_bindings[0]['source_path'] ?? '' ), 'the-d
 
 // A provider row that errored, or one that never came back at all, still fails.
 $errored = $lifecycle_for(
-	array( $mapped_row, array( 'source_path' => 'contact.html', 'selector' => 'form.contact', 'status' => 'error', 'reason' => 'provider_exploded' ) ),
+	array( $mapped_row, array( 'source_path' => 'contact.html', 'selector' => 'form.contact', 'status' => 'error', 'reason' => 'provider_exploded', 'unaccepted_receipt_loss_count' => 3 ) ),
 	array( 'mapped' => 1, 'error' => 1 )
 );
 $errored_result = Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $errored['lifecycle'], array( 'seed_entities' => false ) );
 $assert( 'static_site_importer_entity_materialization_failed' === ( $errored_result['error']['code'] ?? '' ), 'a-provider-error-row-still-fails-materialization' );
+$assert( 'contact.html' === ( $errored_result['error']['diagnostics'][0]['source_path'] ?? '' ) && 'form.contact' === ( $errored_result['error']['diagnostics'][0]['selector'] ?? '' ) && 3 === ( $errored_result['error']['diagnostics'][0]['loss_count'] ?? 0 ), 'terminal-error-normalizes-the-failing-provider-row' );
+$assert( str_contains( (string) ( $errored_result['error']['message'] ?? '' ), 'contact.html' ) && ! str_contains( (string) ( $errored_result['error']['message'] ?? '' ), 'contact-forms' ), 'terminal-error-is-readable-without-a-declaration-hash' );
+
+$generic_rows = array();
+for ( $index = 0; $index < 11; ++$index ) {
+	$generic_rows[] = array(
+		'status'                      => 'error',
+		'source_path'                 => 'pages/' . $index . '.html',
+		'selector'                    => 'section[data-item="' . $index . '"]',
+		'reason_code'                 => 'provider_unavailable',
+		'provider_availability_reason' => 'required capability is unavailable',
+		'form_receipt_unaccepted_losses' => array( array(), array() ),
+	);
+}
+$generic_diagnostics = Static_Site_Importer_Entity_Materializer_Registry::failure_diagnostics(
+	'declaration-id',
+	array( 'provider' => 'generic-provider', 'entity_type' => 'widget' ),
+	array( 'widgets' => array() ),
+	array( 'status' => 'failed', 'available' => false, 'reason' => 'provider_unavailable', 'widgets' => $generic_rows )
+);
+$assert( 1 === count( $generic_diagnostics ) && false === ( $generic_diagnostics[0]['provider_available'] ?? true ) && 'provider_unavailable' === ( $generic_diagnostics[0]['reason_code'] ?? '' ), 'provider-level-unavailability-uses-a-generic-fallback-row' );
+
+$bounded_diagnostics = Static_Site_Importer_Entity_Materializer_Registry::failure_diagnostics(
+	'declaration-id',
+	array( 'provider' => 'generic-provider', 'entity_type' => 'product' ),
+	array( 'products' => array_fill( 0, 11, array( 'source_path' => 'products.html', 'selector' => '.product' ) ) ),
+	array( 'status' => 'completed', 'products' => $generic_rows )
+);
+$assert( 10 === count( $bounded_diagnostics ) && 'pages/0.html' === ( $bounded_diagnostics[0]['source_path'] ?? '' ) && 'pages/9.html' === ( $bounded_diagnostics[9]['source_path'] ?? '' ), 'failure-diagnostics-use-the-exact-row-bound-without-provider-specific-shapes' );
+
+$unicode_diagnostics = Static_Site_Importer_Entity_Materializer_Registry::failure_diagnostics(
+	'declaration-id',
+	array( 'provider' => 'generic-provider', 'entity_type' => 'widget' ),
+	array( 'forms' => array() ),
+	array( 'status' => 'failed', 'available' => true, 'forms' => array( array( 'status' => 'error', 'source_path' => 'pages/' . str_repeat('é', 200) . '.html', 'reason' => 'failed' ) ) )
+);
+$unicode_message = (string) ( $unicode_diagnostics[0]['message'] ?? '' );
+$assert( 256 >= strlen( $unicode_message ) && preg_match( '//u', $unicode_message ) && 256 >= strlen( (string) ( $unicode_diagnostics[0]['source_path'] ?? '' ) ), 'failure-diagnostics-bound-unicode-bytes-without-invalid-utf8' );
 
 $absent = $lifecycle_for( array( $mapped_row ), array( 'mapped' => 2 ) );
 $absent_result   = Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $absent['lifecycle'], array( 'seed_entities' => false ) );

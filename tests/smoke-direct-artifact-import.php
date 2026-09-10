@@ -700,9 +700,23 @@ $quality_failure_data = array(
 		'path'               => $test_root . '/private-path',
 		'workspace'          => 'private-workspace',
 		'manifest'           => 'private-manifest',
+		'nested'             => array( 'authorization' => 'Bearer private-token', 'filesystem_path' => '/private/var/import' ),
 		'long_value'         => str_repeat( 'x', 1001 ),
 		'many'               => array_fill( 0, 21, 'item' ),
 		'over_deep'          => array( 'one' => array( 'two' => array( 'three' => array( 'four' => array( 'five' => 'bounded' ) ) ) ) ),
+	),
+	'diagnostics' => array(
+		array(
+			'code'                         => 'provider_entity_materialization_failed',
+			'source_path'                  => 'website/contact/index.html',
+			'selector'                     => 'form.contact',
+			'provider'                     => 'generic-provider',
+			'provider_available'           => false,
+			'provider_availability_reason' => 'required capability is unavailable',
+			'reason_code'                  => 'provider_unavailable',
+			'loss_count'                   => 2,
+			'context'                      => array( 'access_token' => 'private-token', 'temporary_path' => '/private/var/token' ),
+		),
 	),
 );
 $GLOBALS['ssi_direct_materialization_error'] = new WP_Error( 'static_site_importer_quality_gate_failed', 'Website artifact did not pass the canonical plan quality gate.', $quality_failure_data );
@@ -713,7 +727,8 @@ $quality_failure_response = $quality_failure_data['failure']['error']['data'] ??
 $assert( 'inline_svg_fallback' === ( $quality_failure_response['quality']['fallbacks'][0]['reason'] ?? '' ) && 'runtime_dependent_content' === ( $quality_failure_response['quality']['editability_policy']['failures'][0] ?? '' ) && $quality_failure_response === $quality_failure_evidence, 'quality-gate failures must return actionable fallback and editability reasons in both caller and run evidence' );
 $assert( empty( $quality_failure['success'] ) && 'failed' === ( $quality_failure['import_report_summary']['status'] ?? '' ) && true === ( $quality_failure['import_report_summary']['fail_import'] ?? false ), 'direct artifact quality-gate failures cannot be projected as successful imports' );
 $scrubbed_quality = $quality_failure_response['quality'] ?? array();
-$assert( ! isset( $scrubbed_quality['path'], $scrubbed_quality['workspace'], $scrubbed_quality['manifest'] ) && 1000 === strlen( $scrubbed_quality['long_value'] ?? '' ) && true === ( $scrubbed_quality['many']['_truncated'] ?? false ) && '[truncated]' === ( $scrubbed_quality['over_deep']['one']['two']['three']['four'] ?? '' ), 'quality-gate evidence must retain path stripping, string and item caps, and the original depth bound' );
+$assert( '[redacted]' === ( $scrubbed_quality['path'] ?? '' ) && '[redacted]' === ( $scrubbed_quality['workspace'] ?? '' ) && '[redacted]' === ( $scrubbed_quality['manifest'] ?? '' ) && '[redacted]' === ( $scrubbed_quality['nested']['authorization'] ?? '' ) && '[redacted]' === ( $scrubbed_quality['nested']['filesystem_path'] ?? '' ) && 1000 === strlen( $scrubbed_quality['long_value'] ?? '' ) && true === ( $scrubbed_quality['many']['_truncated'] ?? false ) && '[truncated]' === ( $scrubbed_quality['over_deep']['one']['two']['three']['four'] ?? '' ), 'quality-gate evidence must retain redaction, string and item caps, and the original depth bound' );
+$assert( 'website/contact/index.html' === ( $quality_failure_response['diagnostics'][0]['source_path'] ?? '' ) && 'form.contact' === ( $quality_failure['diagnostics'][0]['selector'] ?? '' ) && false === ( $quality_failure['diagnostics'][0]['provider_available'] ?? true ) && '[redacted]' === ( $quality_failure['diagnostics'][0]['context']['access_token'] ?? '' ) && '[redacted]' === ( $quality_failure['diagnostics'][0]['context']['temporary_path'] ?? '' ), 'CLI and API failure receipts retain shallow provider diagnostics with safe source paths and scrub nested secrets' );
 $GLOBALS['ssi_direct_materialization_error'] = null;
 $cli_report = $test_root . '/cli-import-report.json';
 $drive_apply( $input(), static fn ( array $step ): array => Static_Site_Importer_Canonical_Import_Service::import_with_cli_report( $step, $cli_report ) );

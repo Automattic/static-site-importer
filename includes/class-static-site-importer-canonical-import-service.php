@@ -785,7 +785,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 
 	/** @param mixed $data @param array<string,mixed> $summary @return array<int,array<string,mixed>> */
 	public static function error_diagnostics( string $code, string $message, $data, array $summary ): array {
-		$candidates = array( is_array( $data ) && is_array( $data['import_validation_result']['diagnostics'] ?? null ) ? $data['import_validation_result']['diagnostics'] : array(), is_array( $summary['diagnostics'] ?? null ) ? $summary['diagnostics'] : array() );
+		$candidates = array( is_array( $data ) && is_array( $data['diagnostics'] ?? null ) ? $data['diagnostics'] : array(), is_array( $data ) && is_array( $data['import_validation_result']['diagnostics'] ?? null ) ? $data['import_validation_result']['diagnostics'] : array(), is_array( $summary['diagnostics'] ?? null ) ? $summary['diagnostics'] : array() );
 		foreach ( $candidates as $candidate ) {
 			$diagnostics = array_values( array_filter( $candidate, array( self::class, 'is_actionable_error_diagnostic' ) ) );
 			if ( ! empty( $diagnostics ) ) {
