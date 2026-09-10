@@ -1387,15 +1387,15 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$seen       = array();
 		$controls   = array();
 		foreach ( $candidate['controls'] as $row ) {
-			if ( ! is_array( $row ) || ! self::has_only_keys( $row, array( 'index', 'control', 'label' ) ) || ! is_int( $row['index'] ?? null ) || $row['index'] < 0 || $row['index'] >= 128 || isset( $seen[ $row['index'] ] ) || ( ! isset( $row['control'] ) && ! isset( $row['label'] ) ) ) {
+			if ( ! is_array( $row ) || ! self::has_only_keys( $row, $is_v2 ? array( 'index', 'control', 'label', 'required_marker' ) : array( 'index', 'control', 'label' ) ) || ! is_int( $row['index'] ?? null ) || $row['index'] < 0 || $row['index'] >= 128 || isset( $seen[ $row['index'] ] ) || ( ! isset( $row['control'] ) && ! isset( $row['label'] ) && ! isset( $row['required_marker'] ) ) ) {
 				return array( 'error' => 'presentation_graph contains an unsupported control row.' );
 			}
 			$clean = array( 'index' => $row['index'] );
-			foreach ( array( 'control', 'label' ) as $role ) {
+			foreach ( $is_v2 ? array( 'control', 'label', 'required_marker' ) : array( 'control', 'label' ) as $role ) {
 				if ( ! isset( $row[ $role ] ) ) {
 					continue;
 				}
-				$normalized = self::normalize_form_presentation_role( $row[ $role ], $properties, null );
+				$normalized = self::normalize_form_presentation_role( $row[ $role ], $properties, null, 'required_marker' === $role );
 				if ( isset( $normalized['error'] ) ) {
 					return $normalized;
 				}
@@ -1456,7 +1456,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		foreach ( $candidate['variants'] as $variant ) {
 			$is_visual = 'visual_part' === ( $variant['role'] ?? null );
 			$is_group  = 'visual_group' === ( $variant['role'] ?? null );
-			if ( ! is_array( $variant ) || ! self::has_only_keys( $variant, $is_visual ? array( 'index', 'role', 'part_id', 'condition', 'style_patch', 'precedence', 'provenance' ) : ( $is_group ? array( 'role', 'group_id', 'condition', 'style_patch', 'precedence', 'provenance' ) : array( 'index', 'role', 'condition', 'style_patch', 'precedence', 'provenance' ) ) ) || ( ! $is_group && ( ! is_int( $variant['index'] ?? null ) || $variant['index'] < 0 || $variant['index'] >= 128 ) ) || ! in_array( $variant['role'] ?? null, $is_v2 ? array( 'control', 'label', 'visual_part', 'visual_group' ) : array( 'control', 'label' ), true ) || ( $is_visual && ( ! is_string( $variant['part_id'] ?? null ) || ( $part_indexes[ $variant['part_id'] ] ?? -1 ) !== $variant['index'] ) ) || ( $is_group && ( ! is_string( $variant['group_id'] ?? null ) || ! isset( $group_ids[ $variant['group_id'] ] ) ) ) || ! self::valid_layout_condition( $variant['condition'] ?? null ) || ! is_array( $variant['style_patch'] ?? null ) || empty( $variant['style_patch'] ) || ! is_array( $variant['precedence'] ?? null ) || ! is_array( $variant['provenance'] ?? null ) ) {
+			if ( ! is_array( $variant ) || ! self::has_only_keys( $variant, $is_visual ? array( 'index', 'role', 'part_id', 'condition', 'style_patch', 'precedence', 'provenance' ) : ( $is_group ? array( 'role', 'group_id', 'condition', 'style_patch', 'precedence', 'provenance' ) : array( 'index', 'role', 'condition', 'style_patch', 'precedence', 'provenance' ) ) ) || ( ! $is_group && ( ! is_int( $variant['index'] ?? null ) || $variant['index'] < 0 || $variant['index'] >= 128 ) ) || ! in_array( $variant['role'] ?? null, $is_v2 ? array( 'control', 'label', 'required_marker', 'visual_part', 'visual_group' ) : array( 'control', 'label' ), true ) || ( $is_visual && ( ! is_string( $variant['part_id'] ?? null ) || ( $part_indexes[ $variant['part_id'] ] ?? -1 ) !== $variant['index'] ) ) || ( $is_group && ( ! is_string( $variant['group_id'] ?? null ) || ! isset( $group_ids[ $variant['group_id'] ] ) ) ) || ! self::valid_layout_condition( $variant['condition'] ?? null ) || ! is_array( $variant['style_patch'] ?? null ) || empty( $variant['style_patch'] ) || ! is_array( $variant['precedence'] ?? null ) || ! is_array( $variant['provenance'] ?? null ) ) {
 				return array( 'error' => 'presentation_graph contains an unsupported variant.' );
 			}
 			$role = self::normalize_form_presentation_role(
@@ -1508,8 +1508,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	}
 
 	/** @param array<string,string> $properties @return array{role?:array<string,mixed>,error?:string} */
-	private static function normalize_form_presentation_role( mixed $candidate, array $properties, ?array $condition ): array {
-		if ( ! is_array( $candidate ) || count( $candidate ) !== 2 || ! self::has_only_keys( $candidate, array( 'styles', 'provenance' ) ) || ! is_array( $candidate['styles'] ?? null ) || empty( $candidate['styles'] ) || ! is_array( $candidate['provenance'] ?? null ) || count( $candidate['provenance'] ) > 16 ) {
+	private static function normalize_form_presentation_role( mixed $candidate, array $properties, ?array $condition, bool $allow_empty = false ): array {
+		if ( ! is_array( $candidate ) || count( $candidate ) !== 2 || ! self::has_only_keys( $candidate, array( 'styles', 'provenance' ) ) || ! is_array( $candidate['styles'] ?? null ) || ( ! $allow_empty && empty( $candidate['styles'] ) ) || ! is_array( $candidate['provenance'] ?? null ) || count( $candidate['provenance'] ) > 16 ) {
 			return array( 'error' => 'presentation_graph role facts are malformed.' );
 		}
 		foreach ( $candidate['styles'] as $key => $value ) {

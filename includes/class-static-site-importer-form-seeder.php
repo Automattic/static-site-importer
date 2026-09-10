@@ -468,7 +468,7 @@ class Static_Site_Importer_Form_Seeder {
 				$type,
 				$control,
 				empty( $phone_destinations ) && isset( $presentation_roles[ $control_index ]['control'] ) ? self::presentation_node_class( $scope, $control_index, 'control' ) : '',
-				isset( $presentation_roles[ $control_index ]['label'] ) ? self::presentation_node_class( $scope, $control_index, 'label' ) : ''
+				isset( $presentation_roles[ $control_index ]['label'] ) || isset( $presentation_roles[ $control_index ]['required_marker'] ) ? self::presentation_node_class( $scope, $control_index, 'label' ) : ''
 			);
 			if ( null === $field_block ) {
 				$skipped[] = '' !== $type ? $type : $tag;
@@ -2218,14 +2218,14 @@ class Static_Site_Importer_Form_Seeder {
 			if ( ! is_array( $row ) || ! is_int( $row['index'] ?? null ) ) {
 				continue;
 			}
-			foreach ( array( 'control', 'label' ) as $role ) {
+			foreach ( array( 'control', 'label', 'required_marker' ) as $role ) {
 				if ( isset( $row[ $role ] ) ) {
 					$roles[ $row['index'] ][ $role ] = true;
 				}
 			}
 		}
 		foreach ( $graph['variants'] ?? array() as $variant ) {
-			if ( is_array( $variant ) && is_int( $variant['index'] ?? null ) && in_array( $variant['role'] ?? null, array( 'control', 'label' ), true ) ) {
+			if ( is_array( $variant ) && is_int( $variant['index'] ?? null ) && in_array( $variant['role'] ?? null, array( 'control', 'label', 'required_marker' ), true ) ) {
 				$roles[ $variant['index'] ][ $variant['role'] ] = true;
 			}
 		}
@@ -2481,6 +2481,15 @@ class Static_Site_Importer_Form_Seeder {
 					'role'       => 'label',
 					'selector'   => $selector_scope . ' .' . self::presentation_node_class( $scope, $index, 'label' ),
 					'properties' => array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ),
+				);
+			}
+			if ( isset( $roles['required_marker'] ) ) {
+				$target['destinations'][] = array(
+					'role'       => 'required_marker',
+					'selector'   => $selector_scope . ' .' . self::presentation_node_class( $scope, $index, 'label' ) . ' > .grunion-label-required',
+					'properties' => array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ),
+					'resets'     => array( 'font-size' => 'inherit' ),
+					'priority'   => 'important',
 				);
 			}
 			$presentation_targets[] = $target;

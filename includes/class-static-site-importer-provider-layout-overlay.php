@@ -54,7 +54,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				'destinations' => array(),
 			);
 			foreach ( $destinations as $destination ) {
-				if ( ! is_array( $destination ) || ! self::has_only_keys( $destination, array( 'role', 'selector', 'properties', 'aliases', 'resets', 'priority' ) ) || ! in_array( $destination['priority'] ?? '', array( '', 'important' ), true ) || ! in_array( $destination['role'] ?? null, array( 'control', 'label' ), true ) || ! is_string( $destination['selector'] ?? null ) || ! self::safe_selector( $destination['selector'], $map['scope'] ) || ! is_array( $destination['properties'] ?? null ) || ! array_is_list( $destination['properties'] ) || ( empty( $destination['properties'] ) && empty( $destination['resets'] ) ) || count( $destination['properties'] ) > count( self::presentation_property_map() ) || array_diff( $destination['properties'], array_keys( self::presentation_property_map() ) ) || ! self::safe_presentation_aliases( $destination['aliases'] ?? array(), $destination['properties'] ) || ! self::safe_presentation_resets( $destination['resets'] ?? array() ) ) {
+				if ( ! is_array( $destination ) || ! self::has_only_keys( $destination, array( 'role', 'selector', 'properties', 'aliases', 'resets', 'priority' ) ) || ! in_array( $destination['priority'] ?? '', array( '', 'important' ), true ) || ! in_array( $destination['role'] ?? null, array( 'control', 'label', 'required_marker' ), true ) || ! is_string( $destination['selector'] ?? null ) || ! self::safe_selector( $destination['selector'], $map['scope'] ) || ! is_array( $destination['properties'] ?? null ) || ! array_is_list( $destination['properties'] ) || ( empty( $destination['properties'] ) && empty( $destination['resets'] ) ) || count( $destination['properties'] ) > count( self::presentation_property_map() ) || array_diff( $destination['properties'], array_keys( self::presentation_property_map() ) ) || ! self::safe_presentation_aliases( $destination['aliases'] ?? array(), $destination['properties'] ) || ! self::safe_presentation_resets( $destination['resets'] ?? array() ) ) {
 					return array( 'error' => 'provider presentation target map contains an unsafe destination.' );
 				}
 				$clean['destinations'][] = array_filter( array(
@@ -150,7 +150,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				continue;
 			}
 			$target = $presentation_targets[ $control['index'] ] ?? array();
-			foreach ( array( 'control', 'label' ) as $role ) {
+			foreach ( array( 'control', 'label', 'required_marker' ) as $role ) {
 				if ( ! isset( $control[ $role ]['styles'] ) || ! is_array( $control[ $role ]['styles'] ) ) {
 					continue;
 				}
@@ -172,7 +172,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				continue;
 			}
 			$destinations = is_int( $index ) && is_string( $role ) ? array_filter( $presentation_targets[ $index ]['destinations'] ?? array(), static fn( array $destination ): bool => $role === $destination['role'] ) : array();
-			if ( ! is_int( $index ) || ! in_array( $role, array( 'control', 'label' ), true ) || empty( $destinations ) || ! self::safe_condition( $variant['condition'] ?? null ) || ! is_array( $variant['style_patch'] ?? null ) ) {
+			if ( ! is_int( $index ) || ! in_array( $role, array( 'control', 'label', 'required_marker' ), true ) || empty( $destinations ) || ! self::safe_condition( $variant['condition'] ?? null ) || ! is_array( $variant['style_patch'] ?? null ) ) {
 				$losses[] = self::presentation_loss( 'responsive_layout_ownership', is_int( $index ) ? $index : 0, is_string( $role ) ? $role : 'control' );
 				continue;
 			}
@@ -244,7 +244,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( preg_match( '/^@(?:media|container) (\((?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)\))\{(.+)\}$/D', $rule, $matches ) ) {
 			return self::safe_compiled_rule( $matches[2] );
 		}
-		if ( ! preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link)?)?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
+		if ( ! preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required)?)?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
 		$layout_allowed       = array( 'display', 'width', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'position', 'z-index', 'pointer-events' );
@@ -269,7 +269,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		// own position, so it carries the form box's placement inside the page.
 		// A generated node hook resolves to the control, and its provider `-wrap` copy
 		// resolves to that control's field shell.
-		return (bool) preg_match( '/^' . preg_quote( $scope, '/' ) . '(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link)?)?$/D', $selector );
+		return (bool) preg_match( '/^' . preg_quote( $scope, '/' ) . '(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required)?)?$/D', $selector );
 	}
 	private static function safe_condition( mixed $condition ): bool {
 		if ( ! is_array( $condition ) ) {
@@ -411,11 +411,17 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	private static function compile_presentation_destinations( array $destinations, array $styles, int $index, string $role, ?array $condition, array &$rules, array &$operations, array &$losses ): void {
 		$represented = array();
 		foreach ( $destinations as $destination ) {
-			$represented  = array_merge( $represented, $destination['properties'] );
-			$declarations = self::presentation_declarations( $styles, $index, $role, $losses, $destination['properties'], $destination['aliases'] ?? array() );
+			$represented         = array_merge( $represented, $destination['properties'] );
+			$source_declarations = self::presentation_declarations( $styles, $index, $role, $losses, $destination['properties'], $destination['aliases'] ?? array() );
+			$reset_declarations  = array();
 			foreach ( $destination['resets'] ?? array() as $property => $value ) {
-				$declarations[] = $property . ':' . $value;
+				if ( 'required_marker' === $role && null !== $condition ) {
+					continue;
+				}
+				$reset_declarations[] = $property . ':' . $value;
 			}
+			// A required-marker reset removes provider typography before source facts restore it.
+			$declarations = 'required_marker' === $role ? array_merge( $reset_declarations, $source_declarations ) : array_merge( $source_declarations, $reset_declarations );
 			if ( empty( $declarations ) ) {
 				continue;
 			}
@@ -459,7 +465,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	private static function safe_presentation_resets( mixed $resets ): bool {
-		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'padding', 'border', 'background', 'text-indent' ) ) ) {
+		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'padding', 'border', 'background', 'text-indent', 'font-size' ) ) ) {
 			return false;
 		}
 		foreach ( $resets as $property => $value ) {
