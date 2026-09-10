@@ -23,8 +23,8 @@ class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
 
 $result = Static_Site_Importer_Theme_Generator::import_website_artifact( array( 'files' => array() ) );
-if ( ! is_wp_error( $result ) || array( 'schema' => 'blocks-engine/php-transformer/font-materialization-plan/v1', 'stylesheets' => array( array( 'path' => 'assets/css/source-fonts.css', 'content' => '@font-face{font-family:PlanOwned}' ) ) ) !== ( Static_Site_Importer_WordPress_Site_Plan_Materializer::$args['font_materialization'] ?? null ) ) {
-	throw new RuntimeException( 'font materialization must be read from the canonical plan theme field' );
+if ( ! is_wp_error( $result ) || isset( Static_Site_Importer_WordPress_Site_Plan_Materializer::$args['font_materialization'] ) ) {
+	throw new RuntimeException( 'Theme Generator must not copy plan-owned font materialization into mutable args' );
 }
 
 echo "Plan-owned font materialization smoke passed.\n";
