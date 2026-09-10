@@ -92,7 +92,9 @@ class Static_Site_Importer_Public_Diagnostic_Projection {
 		if ( empty( $row['code'] ) ) {
 			$row['code'] = 'materialization_failed';
 		}
-		$row['message'] = self::message( (string) $row['code'], array( $row ) );
+		$code           = is_string( $row['code'] ) ? $row['code'] : 'materialization_failed';
+		$row['code']    = $code;
+		$row['message'] = self::message( $code, array( $row ) );
 		return $row;
 	}
 
