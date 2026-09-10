@@ -1512,7 +1512,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			), static fn( $value ): bool => null !== $value );
 		}
 		foreach ( $control_containers as $container ) {
-			if ( empty( $container['styles'] ) && ! array_filter( $variants, static fn( array $variant ): bool => 'control_container' === $variant['role'] && $container['index'] === ( $variant['index'] ?? null ) ) ) {
+			if ( empty( $container['styles'] ) && ! array_filter( $variants, static fn( array $variant ): bool => 'control_container' === $variant['role'] && ( $variant['index'] ?? null ) === $container['index'] ) ) {
 				return array( 'error' => 'presentation_graph empty container has no conditional presentation.' );
 			}
 		}
