@@ -725,7 +725,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	/** @param array<string,mixed> $data @return array<string,mixed> */
 	public static function project_public_error_data( array $data ): array {
 		$projected = array();
-		foreach ( array( 'status', 'code', 'phase', 'import_id', 'declaration_id' ) as $field ) {
+		foreach ( array( 'status', 'code', 'phase', 'declaration_id' ) as $field ) {
 			if ( isset( $data[ $field ] ) ) {
 				$value = self::project_public_token( $data[ $field ], 128 );
 				if ( '' !== $value ) {
@@ -733,9 +733,22 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 			}
 		}
+		$import_id = self::project_public_import_id( $data['import_id'] ?? null );
+		if ( '' !== $import_id ) {
+			$projected['import_id'] = $import_id;
+		}
 		foreach ( array( 'success', 'completed' ) as $field ) {
 			if ( is_bool( $data[ $field ] ?? null ) ) {
 				$projected[ $field ] = $data[ $field ];
+			}
+		}
+		if ( is_bool( $data['resumable'] ?? null ) ) {
+			$projected['resumable'] = $data['resumable'];
+		}
+		if ( is_array( $data['artifact_run'] ?? null ) ) {
+			$artifact_run = self::project_public_artifact_run( $data['artifact_run'] );
+			if ( ! empty( $artifact_run ) ) {
+				$projected['artifact_run'] = $artifact_run;
 			}
 		}
 		if ( is_array( $data['diagnostics'] ?? null ) ) {
@@ -756,6 +769,71 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$quality = self::project_public_error_summary( $data['quality'] );
 			if ( ! empty( $quality ) ) {
 				$projected['quality'] = $quality;
+			}
+		}
+		return $projected;
+	}
+
+	/** @param array<string,mixed> $artifact_run @return array<string,mixed> */
+	private static function project_public_artifact_run( array $artifact_run ): array {
+		$projected = array();
+		foreach ( array( 'state', 'phase' ) as $field ) {
+			if ( isset( $artifact_run[ $field ] ) ) {
+				$value = self::project_public_token( $artifact_run[ $field ], 128 );
+				if ( '' !== $value ) {
+					$projected[ $field ] = $value;
+				}
+			}
+		}
+		$artifact_identity = self::project_public_hash( $artifact_run['artifact_identity'] ?? null );
+		if ( '' !== $artifact_identity ) {
+			$projected['artifact_identity'] = $artifact_identity;
+		}
+		if ( is_array( $artifact_run['progress'] ?? null ) ) {
+			$progress = array();
+			foreach ( array( 'page_count', 'prepared_count', 'receipt_count', 'remaining' ) as $field ) {
+				if ( is_numeric( $artifact_run['progress'][ $field ] ?? null ) ) {
+					$progress[ $field ] = max( 0, (int) $artifact_run['progress'][ $field ] );
+				}
+			}
+			if ( ! empty( $progress ) ) {
+				$projected['progress'] = $progress;
+			}
+		}
+		if ( is_array( $artifact_run['work'] ?? null ) ) {
+			$work = array();
+			foreach ( array( 'content_policy_applications', 'client_script_policy_applications', 'payloads_retained', 'shared_prepares', 'page_prepare_passes', 'page_plans_prepared', 'compile_batches', 'pages_compiled', 'compositions', 'materialization_claims', 'materialization_attempts', 'materializations', 'lifecycle_preparation_claims', 'lifecycle_preparation_attempts', 'lifecycle_preparations' ) as $field ) {
+				if ( is_numeric( $artifact_run['work'][ $field ] ?? null ) ) {
+					$work[ $field ] = max( 0, (int) $artifact_run['work'][ $field ] );
+				}
+			}
+			if ( ! empty( $work ) ) {
+				$projected['work'] = $work;
+			}
+		}
+		if ( is_array( $artifact_run['failures'] ?? null ) ) {
+			$failures = array();
+			foreach ( array_slice( $artifact_run['failures'], 0, self::FAILURE_DIAGNOSTIC_MAX_ROWS ) as $failure ) {
+				if ( ! is_array( $failure ) ) {
+					continue;
+				}
+				$row = array();
+				foreach ( array( 'phase', 'exception_class' ) as $field ) {
+					$value = self::project_public_token( $failure[ $field ] ?? null, 128 );
+					if ( '' !== $value ) {
+						$row[ $field ] = $value;
+					}
+				}
+				$artifact_identity = self::project_public_hash( $failure['artifact_identity'] ?? null );
+				if ( '' !== $artifact_identity ) {
+					$row['artifact_identity'] = $artifact_identity;
+				}
+				if ( ! empty( $row ) ) {
+					$failures[] = $row;
+				}
+			}
+			if ( ! empty( $failures ) ) {
+				$projected['failures'] = $failures;
 			}
 		}
 		return $projected;
@@ -891,6 +969,16 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	private static function project_public_token( $value, int $bytes, string $fallback = '' ): string {
 		$value = self::project_public_text( $value, $bytes );
 		return 1 === preg_match( '/^[A-Za-z][A-Za-z0-9_-]*$/', $value ) ? $value : $fallback;
+	}
+
+	private static function project_public_hash( $value ): string {
+		$value = self::project_public_text( $value, 64 );
+		return 1 === preg_match( '/^[a-f0-9]{64}$/', $value ) ? $value : '';
+	}
+
+	private static function project_public_import_id( $value ): string {
+		$token = self::project_public_token( $value, 128 );
+		return '' !== $token ? $token : self::project_public_hash( $value );
 	}
 
 	private static function project_public_text( $value, int $bytes = self::FAILURE_DIAGNOSTIC_MAX_BYTES ): string {
