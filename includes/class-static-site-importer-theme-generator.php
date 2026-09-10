@@ -288,6 +288,9 @@ class Static_Site_Importer_Theme_Generator {
 				return new WP_Error( 'static_site_importer_invalid_transformer_result', $error->getMessage() );
 			}
 		}
+		// Keep final compiler findings on the ordinary import path without changing
+		// canonical-plan admission or interpreting producer diagnostics.
+		$args['compiler_diagnostics'] = Static_Site_Importer_Compiler_Diagnostic_Normalizer::normalize( is_array( $compiled['diagnostics'] ?? null ) ? $compiled['diagnostics'] : array() );
 		$plan = is_array( $compiled['wordpress_site_plan'] ?? null ) ? $compiled['wordpress_site_plan'] : array();
 		if ( empty( $plan ) ) {
 			$diagnostics = is_array( $compiled['diagnostics'] ?? null ) ? wp_json_encode( $compiled['diagnostics'] ) : '';
