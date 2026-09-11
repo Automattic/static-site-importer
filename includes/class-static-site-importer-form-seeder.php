@@ -1142,21 +1142,6 @@ class Static_Site_Importer_Form_Seeder {
 				$variants_by_node[ $variant['node'] ][] = $variant;
 			}
 		}
-		if ( ! self::jetpack_forms_preserves_nested_core_groups() && self::native_div_wrapper_layout_present( $nodes, $layout_by_node ) ) {
-			return array(
-				'blocks'                       => array_values( $field_blocks ),
-				'losses'                       => array( array( 'dimension' => 'topology', 'reason_code' => 'provider_native_group_wrapper_unavailable' ) ),
-				'operations'                   => array(),
-				'represented_layout_nodes'     => array(),
-				'represented_topology_nodes'   => array(),
-				'suppressed_layout_properties' => array(),
-				'overlay_node_targets'         => array(),
-				'responsive_variant_targets'   => array(),
-				'native_visibility_targets'    => array(),
-				'form_classes'                 => array(),
-				'provider_layout_targets'      => array(),
-			);
-		}
 		$exact_native_tree = self::exact_native_div_topology( $nodes, $children, $field_blocks, $suppressed_controls, $layout_nodes_by_id, $layout_by_node, $variants_by_node, self::layout_scope( $form ) );
 		if ( null !== $exact_native_tree ) {
 			return $exact_native_tree;
@@ -2122,9 +2107,6 @@ class Static_Site_Importer_Form_Seeder {
 	 * @return array<string,mixed>|null
 	 */
 	private static function exact_native_div_topology( array $nodes, array $children, array $field_blocks, array $suppressed_controls, array $layout_nodes, array $layouts, array $variants, string $scope ): ?array {
-		if ( ! self::jetpack_forms_preserves_nested_core_groups() ) {
-			return null;
-		}
 		$wrappers = array();
 		foreach ( $nodes as $node ) {
 			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) ) {
@@ -2189,6 +2171,58 @@ class Static_Site_Importer_Form_Seeder {
 		foreach ( $wrappers as $id => $wrapper ) {
 			$hooks[ $id ] = self::layout_node_class( $scope, $id );
 			$native_variants = array_merge( $native_variants, $variants[ $id ] ?? array() );
+		}
+		if ( ! self::jetpack_forms_preserves_nested_core_groups() ) {
+			// Jetpack 16.1.3 flattens nested Core groups. Carry the exact, proven
+			// wrapper topology on its native field blocks for the provider runtime.
+			$marked_fields = $field_blocks;
+			foreach ( $wrappers as $id => $wrapper ) {
+				$classes = preg_split( '/\s+/', trim( (string) ( $wrapper['class'] ?? '' ) ) );
+				$classes = false === $classes ? array() : array_values( array_filter( $classes ) );
+				$markers = array_map( static fn( string $class ): string => 'ssi-runtime-wrapper-' . (int) ( $wrapper['depth'] ?? 0 ) . '-' . $id . '--' . $class, $classes );
+				$markers[] = 'ssi-runtime-wrapper-' . (int) ( $wrapper['depth'] ?? 0 ) . '-' . $id . '-hook--' . $hooks[ $id ];
+				$descendants = static function ( string $parent ) use ( &$descendants, $children ): array {
+					$indices = array();
+					foreach ( $children[ $parent ] ?? array() as $child ) {
+						if ( 'control' === ( $child['kind'] ?? null ) && is_int( $child['control'] ?? null ) ) {
+							$indices[] = $child['control'];
+						} elseif ( is_string( $child['id'] ?? null ) ) {
+							$indices = array_merge( $indices, $descendants( $child['id'] ) );
+						}
+					}
+					return $indices;
+				};
+				foreach ( $descendants( $id ) as $index ) {
+					if ( ! isset( $marked_fields[ $index ] ) ) {
+						continue;
+					}
+					$marked_fields[ $index ]['attrs']['className'] = trim( (string) ( $marked_fields[ $index ]['attrs']['className'] ?? '' ) . ' ' . implode( ' ', $markers ) );
+				}
+			}
+			$flatten = static function ( string $parent ) use ( &$flatten, $children, $marked_fields, $suppressed_controls ): array {
+				$blocks = array();
+				foreach ( $children[ $parent ] ?? array() as $node ) {
+					if ( 'control' === ( $node['kind'] ?? null ) && isset( $marked_fields[ $node['control'] ?? -1 ] ) ) {
+						$blocks[] = $marked_fields[ $node['control'] ];
+					} elseif ( 'control' !== ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ) {
+						$blocks = array_merge( $blocks, $flatten( $node['id'] ) );
+					}
+				}
+				return $blocks;
+			};
+			return array(
+				'blocks'                       => $flatten( '$root' ),
+				'losses'                       => array(),
+				'operations'                   => array_map( static fn( string $id ): array => array( 'dimension' => 'topology', 'strategy' => 'provider_runtime_wrapper_projection', 'target_hash' => hash( 'sha256', $id ) ), array_keys( $wrappers ) ),
+				'represented_layout_nodes'     => array_keys( $wrappers ),
+				'represented_topology_nodes'   => array_keys( $wrappers ),
+				'suppressed_layout_properties' => array(),
+				'overlay_node_targets'         => array_map( static fn( string $id ): array => array( 'id' => $id, 'layout' => $layouts[ $id ] ), array_keys( $wrappers ) ),
+				'responsive_variant_targets'   => $native_variants,
+				'native_visibility_targets'    => array(),
+				'form_classes'                 => array(),
+				'provider_layout_targets'      => $hooks,
+			);
 		}
 		$build = static function ( string $parent ) use ( &$build, $children, $field_blocks, $suppressed_controls, $wrappers, $layouts, $hooks ): array {
 			$blocks = array();

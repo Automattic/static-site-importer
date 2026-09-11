@@ -87,7 +87,73 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_wrapper_classes' ) );
 		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_empty_country_visual_state' ), 20 );
 		add_filter( 'render_block_jetpack/contact-form', array( __CLASS__, 'project_plain_root_fieldset' ), 10, 2 );
+		add_filter( 'render_block_jetpack/contact-form', array( __CLASS__, 'project_runtime_group_wrappers' ), 20, 2 );
 		add_filter( 'render_block_core/button', array( __CLASS__, 'project_submit_presentation' ), 10, 2 );
+	}
+
+	/** Rebuild captured div topology around Jetpack's native rendered field shells. */
+	public static function project_runtime_group_wrappers( string $html, array $block = array() ): string {
+		unset( $block );
+		if ( 262144 < strlen( $html ) || ! str_contains( $html, 'ssi-runtime-wrapper-' ) ) {
+			return $html;
+		}
+		$document = new \DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$loaded   = $document->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		if ( ! $loaded || ! ( $body = $document->getElementsByTagName( 'body' )->item( 0 ) ) instanceof \DOMElement ) {
+			return $html;
+		}
+		$groups = array();
+		foreach ( $body->getElementsByTagName( '*' ) as $element ) {
+			foreach ( preg_split( '/\s+/', trim( $element->getAttribute( 'class' ) ) ) ?: array() as $class ) {
+				if ( preg_match( '/^ssi-runtime-wrapper-([0-9]{1,2})-(wrapper-[0-9]+)--([A-Za-z_][A-Za-z0-9_-]{0,79})$/D', $class, $match ) ) {
+					$groups[ $match[2] ]['depth'] = (int) $match[1];
+					$groups[ $match[2] ]['classes'][] = $match[3];
+					$groups[ $match[2] ]['elements'][ spl_object_id( $element ) ] = $element;
+				}
+				if ( preg_match( '/^ssi-runtime-wrapper-([0-9]{1,2})-(wrapper-[0-9]+)-hook--(ssi-node-[a-f0-9]{12})$/D', $class, $match ) ) {
+					$groups[ $match[2] ]['depth'] = (int) $match[1];
+					$groups[ $match[2] ]['hook'] = $match[3];
+					$groups[ $match[2] ]['elements'][ spl_object_id( $element ) ] = $element;
+				}
+			}
+		}
+		if ( empty( $groups ) ) {
+			return $html;
+		}
+		// Wrap outer edges first. Inner projections then move their captured children
+		// inside that outer wrapper instead of pulling them back out of it.
+		uasort( $groups, static fn( array $left, array $right ): int => ( $left['depth'] ?? -1 ) <=> ( $right['depth'] ?? -1 ) );
+		foreach ( $groups as $group ) {
+			$elements = array_values( $group['elements'] ?? array() );
+			if ( empty( $elements ) || ! is_string( $group['hook'] ?? null ) ) {
+				return $html;
+			}
+			$wrapper = $document->createElement( 'div' );
+			$wrapper->setAttribute( 'class', implode( ' ', array_values( array_unique( array_merge( $group['classes'] ?? array(), array( $group['hook'] ) ) ) ) ) );
+			$first = $elements[0];
+			if ( ! $first->parentNode instanceof \DOMNode ) {
+				return $html;
+			}
+			$first->parentNode->insertBefore( $wrapper, $first );
+			foreach ( $elements as $element ) {
+				if ( $element->parentNode instanceof \DOMNode ) {
+					$wrapper->appendChild( $element );
+				}
+			}
+		}
+		foreach ( $body->getElementsByTagName( '*' ) as $element ) {
+			$classes = preg_split( '/\s+/', trim( $element->getAttribute( 'class' ) ) ) ?: array();
+			$classes = array_values( array_filter( $classes, static fn( string $class ): bool => ! str_starts_with( $class, 'ssi-runtime-wrapper-' ) ) );
+			$element->setAttribute( 'class', implode( ' ', $classes ) );
+		}
+		$output = '';
+		foreach ( $body->childNodes as $child ) {
+			$output .= $document->saveHTML( $child );
+		}
+		return $output;
 	}
 
 	/** Restore a source plain-root fieldset around provider field content, never the form itself. */
