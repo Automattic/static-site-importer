@@ -1458,11 +1458,11 @@ class Static_Site_Importer_Form_Seeder {
 				continue;
 			}
 			foreach ( $children[ $grid_id ] ?? array() as $grid_child ) {
-				$child_id         = is_array( $grid_child ) && 'wrapper' === ( $grid_child['kind'] ?? null ) && is_string( $grid_child['id'] ?? null ) ? $grid_child['id'] : '';
+				$child_id         = 'wrapper' === ( $grid_child['kind'] ?? null ) ? $grid_child['id'] : '';
 				$child_layout     = '' !== $child_id ? $layout_nodes_by_id[ $child_id ] ?? null : null;
 				$child_controls   = '' !== $child_id ? array_values( array_filter( $collect_controls( $grid_child ), static fn ( int $index ): bool => isset( $field_blocks[ $index ] ) ) ) : array();
 				$placement        = is_array( $child_layout ) ? ( $child_layout['layout']['column'] ?? $grid_area_column_span( $child_layout['layout']['area'] ?? null ) ) : null;
-				$full_span        = is_array( $grid_layout ) ? $grid_span_width( $grid_layout['layout']['columns'] ?? null, $placement ) : null;
+				$full_span        = $grid_span_width( $grid_layout['layout']['columns'] ?? null, $placement );
 				$placement_proven = is_array( $child_layout ) && ( $has_unconditional_proven_property( $child_layout, 'grid-column' ) || $has_unconditional_proven_property( $child_layout, 'grid-area' ) );
 				if ( '' === $child_id || $grid_controls !== $child_controls || '100%' !== $full_span || ! $placement_proven || ! isset( $wrapper_hooks[ $child_id ] ) ) {
 					continue;
@@ -2592,8 +2592,9 @@ class Static_Site_Importer_Form_Seeder {
 					);
 				}
 			}
-			if ( isset( $roles['control_container'] ) && ! in_array( strtolower( (string) ( $controls[ $index ]['type'] ?? '' ) ), array( 'phone', 'tel' ), true ) ) {
-				$class                    = self::presentation_node_class( $scope, $index, 'control' );
+			if ( isset( $roles['control_container'] ) ) {
+				$type                     = strtolower( (string) ( $controls[ $index ]['type'] ?? '' ) );
+				$class                    = in_array( $type, array( 'phone', 'tel' ), true ) ? self::presentation_destination_class( $scope, $index, 'shell' ) : self::presentation_node_class( $scope, $index, 'control' );
 				$target['destinations'][] = array(
 					'role'       => 'control_container',
 					'selector'   => $selector_scope . ' .' . $class,

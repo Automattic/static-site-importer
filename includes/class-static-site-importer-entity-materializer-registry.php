@@ -1488,7 +1488,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					'styles'     => $variant['style_patch'],
 					'provenance' => $variant['provenance'],
 				),
-				'control_container' === ( $variant['role'] ?? null ) ? array_intersect_key( $properties, $chrome_properties ?? array() ) : $properties,
+				'control_container' === $variant['role'] ? array_intersect_key( $properties, $chrome_properties ?? array() ) : $properties,
 				$variant['condition']
 			);
 			if ( isset( $role['error'] ) ) {
