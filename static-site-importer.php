@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Static Site Importer
  * Description: Materialize compiled website artifacts into WordPress block and classic themes.
- * Version: 1.9.5
+ * Version: 1.10.0
  * Author: Chris Huber
  * Requires at least: 6.9
  * Requires PHP: 8.2
@@ -17,7 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 define( 'STATIC_SITE_IMPORTER_PATH', plugin_dir_path( __FILE__ ) );
 define( 'STATIC_SITE_IMPORTER_URL', plugin_dir_url( __FILE__ ) );
-define( 'STATIC_SITE_IMPORTER_VERSION', '1.9.5' );
+define( 'STATIC_SITE_IMPORTER_VERSION', '1.10.0' );
 
 $static_site_importer_autoload = STATIC_SITE_IMPORTER_PATH . 'vendor/autoload.php';
 if ( is_readable( $static_site_importer_autoload ) ) {
@@ -53,10 +53,12 @@ Static_Site_Importer_Lifecycle_Compile_Checkpoint::register_cleanup();
 register_deactivation_hook( __FILE__, array( Static_Site_Importer_Lifecycle_Compile_Checkpoint::class, 'unschedule_cleanup' ) );
 
 $static_site_importer_includes = array(
+	'class-static-site-importer-run-storage.php',
 	'class-static-site-importer-build-provenance.php',
 	'class-static-site-importer-site-identity.php',
 	'class-static-site-importer-website-artifact-import-input.php',
 	'class-static-site-importer-theme-materialization-strategy.php',
+	'class-static-site-importer-compilation-preparation.php',
 	'class-static-site-importer-classic-theme-projection.php',
 	'class-static-site-importer-client-script-policy-report.php',
 	'class-static-site-importer-client-script-policy.php',
@@ -79,6 +81,9 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-plugin-materializer.php',
 	'class-static-site-importer-dependency-manager.php',
 	'class-static-site-importer-entity-materializer-registry.php',
+	'class-static-site-importer-entity-compensation.php',
+	'class-static-site-importer-runtime-entity-binding-validation.php',
+	'class-static-site-importer-form-fallback-contract.php',
 	'class-static-site-importer-asset-reporter.php',
 	'class-static-site-importer-document-metadata-reporter.php',
 	'class-static-site-importer-route-document-metadata.php',
@@ -90,6 +95,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-provider-submission-evidence.php',
 	'class-static-site-importer-product-handoff-contract.php',
 	'class-static-site-importer-diagnostic-loss-classes.php',
+	'class-static-site-importer-compiler-diagnostic-normalizer.php',
 	'class-static-site-importer-import-report.php',
 	'class-static-site-importer-diagnostic-contract.php',
 	'class-static-site-importer-artifact-diagnostics-adapter.php',
@@ -103,6 +109,9 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-quality-budget-admission.php',
 	'class-static-site-importer-owner-handoff-evidence.php',
 	'class-static-site-importer-wordpress-site-plan-materializer.php',
+	'class-static-site-importer-journaled-report-writer.php',
+	'class-static-site-importer-generated-state-reconciliation.php',
+	'class-static-site-importer-receipt-projection.php',
 	'class-static-site-importer-figma-import.php',
 	'class-static-site-importer-theme-exporter.php',
 	'class-static-site-importer-block-document-reporter.php',

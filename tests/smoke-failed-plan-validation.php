@@ -70,6 +70,18 @@ $assert( 'blocks-engine/import-validation-result/v1' === ( $artifacts['import_va
 $assert( 'blocks-engine/finding-packets/v1' === ( $artifacts['finding_packets']['schema'] ?? '' ), 'standard finding packet schema is preserved' );
 $assert( $plan === $original_plan, 'failed-plan evidence generation does not mutate the canonical plan' );
 
+$editability_plan                                      = $plan;
+unset( $editability_plan['quality']['failure_reasons'] );
+$editability_plan['quality']['editability_policy']     = array(
+	'schema'      => 'blocks-engine/php-transformer/editability-policy/v1',
+	'enforcement' => 'required',
+	'status'      => 'failed',
+	'failures'    => array( array( 'code' => 'shared_region_uneditable' ) ),
+);
+$editability_artifacts = Static_Site_Importer_Failed_Plan_Validation::build( $editability_plan, array( 'slug' => 'failed-editability-policy' ), $compiled );
+$assert( true === ( $editability_artifacts['import_report']['quality']['fail_import'] ?? false ) && false === ( $editability_artifacts['import_report']['quality']['pass'] ?? true ) && 'failed' === ( $editability_artifacts['import_report']['status'] ?? '' ), 'producer-required editability rejection is never reported as a passing import' );
+$assert( 'shared_region_uneditable' === ( $editability_artifacts['import_report']['quality']['failure_reasons'][0] ?? '' ) && $editability_plan['quality']['editability_policy'] === ( $editability_artifacts['import_report']['quality']['editability_policy'] ?? null ), 'failed-plan evidence preserves actionable producer policy diagnostics without recreating policy metrics' );
+
 $root = sys_get_temp_dir() . '/ssi-failed-plan-validation-' . uniqid( '', true );
 mkdir( $root );
 $paths = Static_Site_Importer_Failed_Plan_Validation::persist( $artifacts, $root . '/import-report.json' );

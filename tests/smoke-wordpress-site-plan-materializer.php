@@ -19,6 +19,7 @@ use Automattic\BlocksEngine\PhpTransformer\WordPress\Runtime as Blocks_Engine_Wo
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan;
 
 define( 'OBJECT', 'OBJECT' );
+define( 'ARRAY_A', 'ARRAY_A' );
 $GLOBALS['ssi_plan_root']                 = sys_get_temp_dir() . '/ssi-plan-' . bin2hex( random_bytes( 4 ) );
 $GLOBALS['ssi_plan_posts']                = array();
 $GLOBALS['ssi_plan_meta']                 = array();
@@ -30,6 +31,7 @@ $GLOBALS['ssi_plan_options']              = array(
 );
 $GLOBALS['ssi_plan_fail_after']           = 0;
 $GLOBALS['ssi_plan_insert_calls']         = 0;
+$GLOBALS['ssi_plan_post_status_transitions'] = array();
 $GLOBALS['ssi_plan_font_requests']        = array();
 $GLOBALS['ssi_plan_woo_cleanup_failures'] = false;
 $GLOBALS['ssi_plan_theme_templates']      = array();
@@ -37,21 +39,29 @@ mkdir( $GLOBALS['ssi_plan_root'], 0777, true );
 
 class WP_Error {
 	private string $code;
+	private string $message;
 	private mixed $data;
 	public function __construct( string $code, string $message = '', mixed $data = null ) {
 		$this->code = $code;
+		$this->message = $message;
 		$this->data = $data; }
 	public function get_error_code(): string {
 		return $this->code; }
+	public function get_error_message(): string {
+		return $this->message; }
 	public function get_error_data(): mixed {
 		return $this->data; }
 }
 class WP_Post {
 	public int $ID;
 	public string $post_name;
+	public string $post_type;
+	public string $post_status;
 	public function __construct( int $id ) {
-		$this->ID        = $id;
-		$this->post_name = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_name'] ?? '' ); }
+		$this->ID          = $id;
+		$this->post_name   = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_name'] ?? '' );
+		$this->post_type   = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_type'] ?? '' );
+		$this->post_status = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_status'] ?? '' ); }
 }
 function apply_filters( string $hook, $value, ...$args ) {
 	unset( $hook, $args );
@@ -128,10 +138,21 @@ function wp_remote_retrieve_body( $response ): string {
 	return (string) ( $response['body'] ?? '' ); }
 function get_option( string $key, mixed $default = false ): mixed {
 	return $GLOBALS['ssi_plan_options'][ $key ] ?? $default; }
+function esc_html( string $value ): string {
+	return htmlspecialchars( $value, ENT_QUOTES, 'UTF-8', false ); }
+function sanitize_option( string $key, mixed $value ): mixed {
+	// Core semantics: blogname/blogdescription are escaped on write, page_on_front is cast to a positive int.
+	if ( 'blogname' === $key || 'blogdescription' === $key ) {
+		return esc_html( (string) $value );
+	}
+	return 'page_on_front' === $key ? absint( $value ) : $value; }
+function absint( mixed $value ): int {
+	return abs( (int) $value ); }
 function update_option( string $key, $value ): bool {
 	if ( isset( $GLOBALS['ssi_plan_rollback_events'] ) ) {
 		$GLOBALS['ssi_plan_rollback_events'][] = 'option:' . $key;
 	}
+	$value = sanitize_option( $key, $value ); // Core semantics: values are sanitized before they are stored.
 	if ( array_key_exists( $key, $GLOBALS['ssi_plan_options'] ) && $GLOBALS['ssi_plan_options'][ $key ] === $value ) {
 		return false; // Core semantics: unchanged value writes no row and returns false.
 	}
@@ -174,6 +195,12 @@ function get_page_by_path( string $slug, $output, string $type ) {
 	}
 	return null;
 }
+function get_post( int $id, $output = OBJECT ) {
+	if ( ! isset( $GLOBALS['ssi_plan_posts'][ $id ] ) ) {
+		return null;
+	}
+	return ARRAY_A === $output ? array_merge( array( 'ID' => $id ), $GLOBALS['ssi_plan_posts'][ $id ] ) : new WP_Post( $id );
+}
 function wp_insert_post( array $post, bool $wp_error ) {
 	++$GLOBALS['ssi_plan_insert_calls'];
 	if ( $GLOBALS['ssi_plan_fail_after'] && count( $GLOBALS['ssi_plan_posts'] ) >= $GLOBALS['ssi_plan_fail_after'] ) {
@@ -187,6 +214,13 @@ function wp_update_post( array $post, bool $wp_error = false ) {
 	$id = (int) ( $post['ID'] ?? 0 );
 	if ( $id <= 0 || ! isset( $GLOBALS['ssi_plan_posts'][ $id ] ) ) {
 		return new WP_Error( 'missing_post' );
+	}
+	if ( isset( $post['post_status'] ) ) {
+		$GLOBALS['ssi_plan_post_status_transitions'][] = array(
+			'id'     => $id,
+			'before' => $GLOBALS['ssi_plan_posts'][ $id ]['post_status'] ?? '',
+			'after'  => $post['post_status'],
+		);
 	}
 	$GLOBALS['ssi_plan_posts'][ $id ] = array_merge( $GLOBALS['ssi_plan_posts'][ $id ], $post );
 	return $id;
@@ -305,6 +339,7 @@ require dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.p
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-plugin-materializer.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-manager.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-fallback-contract.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-build-provenance.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
@@ -314,10 +349,32 @@ $assert = static function ( bool $condition, string $message ): void {
 		throw new RuntimeException( $message );
 	}
 };
+$normalize_receipt = static function ( mixed $value ) use ( &$normalize_receipt ): mixed {
+	if ( is_string( $value ) ) {
+		return str_replace( $GLOBALS['ssi_plan_root'], '[temporary-theme-root]', $value );
+	}
+	if ( is_float( $value ) && floor( $value ) === $value ) {
+		return (int) $value;
+	}
+	if ( ! is_array( $value ) ) {
+		return $value;
+	}
+	foreach ( array( 'receipt_instance_id', 'request_id', 'receipt_identity', 'transaction_identity', 'transaction' ) as $volatile_key ) {
+		unset( $value[ $volatile_key ] );
+	}
+	foreach ( $value as $key => $item ) {
+		$value[ $key ] = $normalize_receipt( $item );
+	}
+	if ( ! array_is_list( $value ) ) {
+		ksort( $value );
+	}
+	return $value;
+};
 
 $theme_generator_source = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-generator.php' );
-$materializer_source    = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-wordpress-site-plan-materializer.php' );
+$prepared_application_source = file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-prepared-plan-application.php' );
 $assert( false === strpos( (string) $theme_generator_source, 'function import_compiled_website_artifact' ), 'canonical import has no legacy compiled-artifact execution path' );
+$assert( false === strpos( (string) $prepared_application_source, 'Static_Site_Importer_Theme_Generator' ), 'prepared application has no theme generator dependency' );
 
 $artifact = array(
 	'entrypoint' => 'index.html',
@@ -330,6 +387,59 @@ $artifact = array(
 );
 $result   = ( new ArtifactCompiler() )->compile( $artifact )->toArray();
 $plan     = $result['source_reports']['wordpress_site_plan'];
+
+// The released producer assigns runtime scripts by their source document and
+// occurrence. Exercise its paired theme/companion output before SSI resolves
+// the plan into generated-theme writes.
+$theme_owned_runtime = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array(
+			'index.html'        => '<main><canvas id="theme-chart" class="chart">fallback</canvas><script src="js/theme-chart.js"></script><script>const ctx = document.getElementById("theme-chart").getContext("2d"); ctx.fillRect(0, 0, 10, 10);</script></main>',
+			'js/theme-chart.js' => 'const c = document.getElementById("theme-chart").getContext("2d"); c.strokeRect(0, 0, 5, 5);',
+		),
+	)
+)->toArray();
+$theme_owned_plan     = $theme_owned_runtime['source_reports']['wordpress_site_plan'];
+$theme_owned_payload  = $theme_owned_runtime['source_reports']['companion_plugin_payload'] ?? array();
+$theme_owned_resolved = ( new \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver() )->resolve( $theme_owned_plan, array( 'theme_uri' => 'https://example.test/wp-content/themes/released-script-ownership' ) );
+$theme_owned_scripts  = $theme_owned_resolved['pages'][0]['document_metadata']['scripts'] ?? array();
+$assert( 2 === count( $theme_owned_scripts ) && isset( $theme_owned_scripts[0]['asset_reference'], $theme_owned_scripts[1]['asset_reference'] ) && array() === ( $theme_owned_payload['preserved_js'] ?? array() ), 'released producer keeps canvas-required runtime exclusively in generated-theme output' );
+
+$inline_only_theme = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array(
+			'index.html' => '<main><canvas id="inline-chart"></canvas><script>document.getElementById("inline-chart").getContext("2d");</script></main>',
+		),
+	)
+)->toWordPressSitePlanView();
+$inline_only_scripts = $inline_only_theme['wordpress_site_plan']['pages'][0]['document_metadata']['scripts'] ?? array();
+$assert( 1 === count( $inline_only_scripts ) && isset( $inline_only_scripts[0]['asset_reference'] ) && array() === ( $inline_only_theme['companion_plugin_payload']['preserved_js'] ?? array() ), 'released producer keeps inline-only canvas execution in its generated-theme declaration' );
+
+$companion_owned_runtime = ( new ArtifactCompiler() )->compile(
+	array(
+		'site'  => array( 'name' => 'Released Companion', 'slug' => 'released-companion' ),
+		'files' => array(
+			'index.html' => '<main><p class="status">Ready</p></main><script>window.__companionOnly=true;</script>',
+		),
+	)
+)->toArray();
+$companion_owned_payload = $companion_owned_runtime['source_reports']['companion_plugin_payload'] ?? array();
+$companion_descriptor    = Static_Site_Importer_Companion_Plugin::scaffold( $companion_owned_payload );
+$assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $companion_owned_payload ) && 1 === count( $companion_owned_payload['preserved_js'] ?? array() ) && is_array( $companion_descriptor ) && in_array( 'window.__companionOnly=true;', $companion_descriptor['files'] ?? array(), true ), 'released producer keeps standalone runtime exclusively in the generated companion payload' );
+
+$same_content_cross_route = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array(
+			'index.html' => '<main><canvas id="chart"></canvas><script>document.getElementById("chart").getContext("2d");</script></main>',
+			'about.html' => '<main><canvas id="chart"></canvas><script>document.getElementById("chart").getContext("2d");</script></main>',
+		),
+	)
+)->toWordPressSitePlanView();
+$cross_route_scripts = array_map( static fn( array $page ): int => count( $page['document_metadata']['scripts'] ?? array() ), $same_content_cross_route['wordpress_site_plan']['pages'] ?? array() );
+$assert( array( 1, 1 ) === $cross_route_scripts && array() === ( $same_content_cross_route['companion_plugin_payload']['preserved_js'] ?? array() ), 'released producer retains same-content inline scripts as separate generated-theme declarations across routes' );
 $assert( 'blocks-engine/wordpress-site-plan/v2' === $plan['schema'], 'compiler emits the released v2 site plan' );
 $assert( isset( $result['source_reports']['wordpress_site_plan']['reporting'] ), 'compiler exposes the plan in source reports' );
 
@@ -407,13 +517,14 @@ $failed_policy_plan['quality']['editability_policy']['status']  = 'failed';
 $failed_policy_plan['quality']['editability_policy']['failures'] = array( array( 'metric' => 'max_nesting_depth', 'actual' => 21, 'maximum' => 20, 'source_path' => 'about.html' ) );
 $failed_policy_plan['quality']['editability_report_plan_hash']  = $plan_hash( $failed_policy_plan );
 $failed_policy_plan['plan_identity']                             = WordPressSitePlan::planIdentity( $failed_policy_plan );
+$insert_calls_before_failed_policy                              = $GLOBALS['ssi_plan_insert_calls'];
 $failed_policy_receipt                                          = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $failed_policy_plan, array( 'slug' => 'failed-editability-policy' ) );
-$assert( 'completed' === $failed_policy_receipt['status'] && 'failed' === ( $failed_policy_receipt['editability_report']['status'] ?? '' ) && 'editability_policy_failed' === ( $failed_policy_receipt['editability_report']['diagnostic']['reason_code'] ?? '' ) && 'about.html' === ( $failed_policy_receipt['editability_report']['diagnostic']['threshold_failures'][0]['source_path'] ?? '' ), 'failed producer thresholds remain visible without blocking materialization' );
+$assert( 'rejected' === $failed_policy_receipt['status'] && $insert_calls_before_failed_policy === $GLOBALS['ssi_plan_insert_calls'] && empty( $failed_policy_receipt['wordpress'] ) && empty( $failed_policy_receipt['generated_files'] ) && 'failed' === ( $failed_policy_receipt['editability_report']['status'] ?? '' ) && 'editability_policy_failed' === ( $failed_policy_receipt['editability_report']['diagnostic']['reason_code'] ?? '' ) && 'about.html' === ( $failed_policy_receipt['editability_report']['diagnostic']['threshold_failures'][0]['source_path'] ?? '' ), 'failed required producer thresholds reject before materialization while retaining actionable evidence' );
 
 // Gutenberg gaps are SSI receipt/report extensions and must never alter the
 // compiler-owned plan, whose schema and hash are producer contracts.
 $canonical_plan = $plan;
-$project_gaps   = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'project_gutenberg_gaps' );
+$project_gaps   = new ReflectionMethod( Static_Site_Importer_Receipt_Projection::class, 'project_gutenberg_gaps' );
 $gaps           = $project_gaps->invoke(
 	null,
 	array(
@@ -447,7 +558,7 @@ $assert( 'completed' === $receipt['status'], 'valid plan completes' );
 $assert( 'static-site-importer/materialization-receipt/v2' === $receipt['schema'] && $plan['plan_identity'] === ( $receipt['plan_identity'] ?? null ), 'receipt binds the producer plan identity.' );
 $assert( array() === array_diff( array_column( $plan['writes'], 'target_path' ), array_column( $receipt['generated_files'], 'target_path' ) ), 'all canonical writes are materialized alongside generated support assets' );
 $assert( file_exists( $GLOBALS['ssi_plan_root'] . '/site-plan/templates/front-page.html' ), 'templates are materialized' );
-$assert( str_contains( file_get_contents( $GLOBALS['ssi_plan_root'] . '/site-plan/assets/assets/site.css' ), 'https://example.test/wp-content/themes/site-plan/assets/assets/logo.svg' ), 'root-relative stylesheet references resolve to declared theme assets' );
+$assert( str_contains( file_get_contents( $GLOBALS['ssi_plan_root'] . '/site-plan/assets/assets/site.css' ), 'url(logo.svg)' ), 'root-relative stylesheet references resolve relative to their declared theme asset' );
 $assert( 'posts' === $GLOBALS['ssi_plan_options']['show_on_front'], 'plan-only materialization does not change reading settings by default' );
 $assert( $receipt['plan']['pages'][0]['document_metadata']['links'][0]['resolved_url'] === 'https://example.test/wp-content/themes/site-plan/assets/assets/site.css', 'resolved metadata retains the declared stylesheet destination' );
 $assert( array() === $receipt['completed']['runtime_declarations']['asset_publications'], 'plans without publication declarations retain an explicit empty receipt collection' );
@@ -592,9 +703,6 @@ $prepared_for_admission = Static_Site_Importer_WordPress_Site_Plan_Materializer:
 );
 $admitted_prepared      = Static_Site_Importer_WordPress_Site_Plan_Materializer::admit_prepared( $prepared_for_admission );
 $assert( 'prepared' === ( $prepared_for_admission['status'] ?? '' ) && ! empty( $prepared_for_admission['payload_references_admitted'] ) && $prepared_for_admission === $admitted_prepared && ! str_contains( (string) wp_json_encode( $prepared_for_admission['plan'] ), 'payload_references_admitted' ) && ! str_contains( (string) wp_json_encode( Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared_for_admission ) ), 'payload_references_admitted' ), 'materializer lifecycle preparation admits referenced payloads once, before lifecycle work, without adding transient state to plans or receipts' );
-$materializer_companion_assets = strpos( (string) $materializer_source, 'resolve_companion_asset_references( $payload' );
-$materializer_companion        = strpos( (string) $materializer_source, 'Static_Site_Importer_Dependency_Manager::materialize_companion_dependency( $dependency', $materializer_companion_assets + 1 );
-$assert( false !== $materializer_companion_assets && $materializer_companion_assets < $materializer_companion, 'materializer resolves generated companion assets before companion dependency materialization' );
 $rollback_order     = array();
 $block_lifecycle    = array(
 	'dependencies' => array(),
@@ -703,7 +811,7 @@ $deferred_quality_prepared     = Static_Site_Importer_WordPress_Site_Plan_Materi
 	$deferred_quality_plan,
 	array( 'slug' => 'deferred-quality-compensation', 'seed_entities' => true, 'font_materialization' => array(), 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ),
 );
-$assert( 'prepared' === ( $deferred_quality_prepared['status'] ?? '' ) && 'failed' === ( $deferred_quality_prepared['editability_report']['status'] ?? '' ) && 'editability_policy_failed' === ( $deferred_quality_prepared['editability_report']['diagnostic']['reason_code'] ?? '' ) && array() === $deferred_rollback_order && ! $woo_snapshot_restored && $posts_before_deferred_quality === $GLOBALS['ssi_plan_posts'], 'failed canonical editability policy remains visible without blocking materialization preparation' );
+$assert( 'rejected' === ( $deferred_quality_prepared['status'] ?? '' ) && 'failed' === ( $deferred_quality_prepared['receipt']['editability_report']['status'] ?? '' ) && 'editability_policy_failed' === ( $deferred_quality_prepared['receipt']['editability_report']['diagnostic']['reason_code'] ?? '' ) && array() === $deferred_rollback_order && ! $woo_snapshot_restored && $posts_before_deferred_quality === $GLOBALS['ssi_plan_posts'], 'failed canonical editability policy rejects before provider or WordPress materialization' );
 
 $classic_artifact   = array(
 	'entrypoint' => 'index.html',
@@ -717,6 +825,27 @@ $classic_artifact   = array(
 $classic_plan       = ( new ArtifactCompiler() )->compile( $classic_artifact )->toArray()['source_reports']['wordpress_site_plan'];
 $classic_projection = Static_Site_Importer_Classic_Theme_Projection::build( $classic_artifact, $classic_plan );
 $assert( ! is_wp_error( $classic_projection ), 'normalized artifact produces a render-neutral SSI classic projection without block reverse conversion' );
+$classic_binding_preflight_inserts = $GLOBALS['ssi_plan_insert_calls'];
+$classic_binding_preflight_callbacks = 0;
+$classic_binding_preflight = Static_Site_Importer_Prepared_Plan_Application::materialize(
+	array(
+		'args' => array(
+			'theme_materialization'    => 'classic',
+			'classic_theme_projection' => $classic_projection,
+		),
+		'resolved' => $classic_plan,
+	),
+	array(
+		'entities' => array(
+			'first' => array( 'adapter' => array( 'classic_binding_callback' => static fn(): string => '', 'materializer' => static function () use ( &$classic_binding_preflight_callbacks ): array { ++$classic_binding_preflight_callbacks; return array(); } ), 'manifest' => array( 'products' => array( array( 'source_path' => 'index.html', 'selector' => 'h1' ) ) ) ),
+			'second' => array( 'adapter' => array( 'classic_binding_callback' => static fn(): string => '', 'materializer' => static function () use ( &$classic_binding_preflight_callbacks ): array { ++$classic_binding_preflight_callbacks; return array(); } ), 'manifest' => array( 'products' => array( array( 'source_path' => 'index.html', 'selector' => 'h1' ) ) ) ),
+		),
+	),
+	null,
+	array(),
+	array()
+);
+$assert( is_wp_error( $classic_binding_preflight ) && 'static_site_importer_classic_html_binding_duplicate' === $classic_binding_preflight->get_error_code() && 0 === $classic_binding_preflight_callbacks && $classic_binding_preflight_inserts === $GLOBALS['ssi_plan_insert_calls'], 'invalid classic bindings reject before companion, dependency, provider, or WordPress mutation' );
 $woo_late_failure_lifecycle = array(
 	'dependencies' => array(),
 	'entities'     => array(
@@ -802,6 +931,7 @@ foreach ( array(
 			unset( $GLOBALS['ssi_plan_posts'][ $id ] ); }
 	}
 }
+$compensated_failure_receipt = $late_receipt;
 $classic_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$classic_plan,
 	array(
@@ -874,7 +1004,7 @@ $overlay_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materi
 );
 $overlay_root    = $GLOBALS['ssi_plan_root'] . '/provider-overlay-plan';
 $assert( 'completed' === $overlay_receipt['status'] && 'completed' === ( $overlay_receipt['completed']['provider_layout_overlays']['status'] ?? '' ), 'provider layout receipt is applied only after stylesheet writes complete' );
-$assert( str_contains( (string) file_get_contents( $overlay_root . '/style.css' ), 'provider layout overlay: abcdef123456' ) && str_contains( (string) file_get_contents( $overlay_root . '/assets/css/editor-style.css' ), 'provider layout overlay: abcdef123456' ) && str_contains( (string) file_get_contents( $overlay_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-provider-layout-overlay', get_stylesheet_uri()" ), 'generated frontend and editor stylesheets contain the deduplicated provider overlay and the frontend stylesheet is enqueued' );
+$assert( str_contains( (string) file_get_contents( $overlay_root . '/style.css' ), 'provider layout overlay: abcdef123456' ) && str_contains( (string) file_get_contents( $overlay_root . '/assets/css/editor-style.css' ), 'provider layout overlay: abcdef123456' ) && str_contains( (string) file_get_contents( $overlay_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-theme', get_stylesheet_uri()" ), 'generated frontend and editor stylesheets contain the deduplicated provider overlay and the frontend stylesheet is enqueued' );
 $resumed_overlay_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$plan,
 	array(
@@ -959,7 +1089,7 @@ $explicit_styles_writes = $explicit_styles->invoke(
 	),
 	array( $overlay )
 );
-$assert( is_array( $explicit_styles_writes ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/style.css' ] ?? '', 'body{color:black}' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/css/editor-style.css' ] ?? '', '.editor-styles-wrapper{color:black}' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/style.css' ] ?? '', 'provider layout overlay: abcdef123456' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/css/editor-style.css' ] ?? '', 'provider layout overlay: abcdef123456' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/functions.php' ] ?? '', 'static-site-importer-provider-layout-overlay' ), 'explicit canonical frontend and editor stylesheet payloads derive independent overlay-composed writes with frontend delivery' );
+$assert( is_array( $explicit_styles_writes ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/style.css' ] ?? '', 'body{color:black}' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/css/editor-style.css' ] ?? '', '.editor-styles-wrapper{color:black}' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/style.css' ] ?? '', 'provider layout overlay: abcdef123456' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/css/editor-style.css' ] ?? '', 'provider layout overlay: abcdef123456' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/functions.php' ] ?? '', 'static-site-importer-theme' ), 'explicit canonical frontend and editor stylesheet payloads derive independent overlay-composed writes with frontend delivery' );
 
 $font_result          = ( new ArtifactCompiler() )->compile(
 	array(
@@ -971,15 +1101,16 @@ $font_result          = ( new ArtifactCompiler() )->compile(
 )->toArray();
 $font_plan            = $font_result['source_reports']['wordpress_site_plan'];
 $font_materialization = $font_result['source_reports']['font_materialization'];
+$assert( $font_materialization === ( $font_plan['theme']['font_materialization'] ?? null ), 'released Blocks Engine places font materialization in the canonical theme plan' );
 $font_receipt         = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$font_plan,
 	array(
 		'slug'                 => 'font-site-plan',
-		'font_materialization' => $font_materialization,
+		'font_materialization' => array( 'unexpected_arg_overlay' => true ),
 	)
 );
 $font_root            = $GLOBALS['ssi_plan_root'] . '/font-site-plan';
-$assert( 'completed' === $font_receipt['status'], 'canonical font materialization completes' );
+$assert( 'completed' === $font_receipt['status'], 'canonical theme font materialization ignores conflicting mutable args' );
 $assert( $font_plan['plan_identity'] === ( $font_receipt['plan_identity'] ?? null ), 'font overlay leaves the producer canonical plan identity unchanged' );
 $assert( ! file_exists( $font_root . '/assets/css/fonts.css' ), 'typed font contracts omit the external stylesheet projection' );
 $font_css = (string) file_get_contents( $font_root . '/assets/css/embedded-fonts.css' );
@@ -992,10 +1123,51 @@ $assert( Static_Site_Importer_Font_Materializer::svg_uses_font_family( '<svg><te
 $assert( Static_Site_Importer_Font_Materializer::svg_uses_font_family( '<svg><text font-family="serif, Example Font">Label</text></svg>', array( 'example font' ) ), 'SVG presentation attributes normalize case and fallback-list position' );
 $assert( ! Static_Site_Importer_Font_Materializer::svg_uses_font_family( '<svg><text font-family="Example Font Pro, sans-serif">Label</text></svg>', array( 'Example Font' ) ), 'SVG font matching compares complete family tokens instead of prefixes' );
 
+$generator_font_result = Static_Site_Importer_Theme_Generator::import_website_artifact(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array(
+			array( 'path' => 'index.html', 'content' => '<html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Example+Font:wght@400&amp;display=swap"><style>body{font-family:"Example Font",sans-serif}</style></head><body><main>Plan-owned font intent</main></body></html>' ),
+		),
+	),
+	array(
+		'slug' => 'generator-plan-owned-fonts',
+		'name' => 'Generator Plan-Owned Fonts',
+	)
+);
+$generator_font_root    = $GLOBALS['ssi_plan_root'] . '/generator-plan-owned-fonts';
+$generator_font_receipt = is_array( $generator_font_result ) ? ( $generator_font_result['materialization_receipt'] ?? array() ) : array();
+$generator_font_files   = $generator_font_receipt['completed']['font_materialization']['files'] ?? array();
+$generator_font_css     = is_file( $generator_font_root . '/assets/css/embedded-fonts.css' ) ? (string) file_get_contents( $generator_font_root . '/assets/css/embedded-fonts.css' ) : '';
+if ( is_wp_error( $generator_font_result ) ) { throw new RuntimeException( $generator_font_result->get_error_code() . ': ' . $generator_font_result->get_error_message() ); }
+$assert(
+	'completed' === ( $generator_font_receipt['status'] ?? '' ) && str_contains( $generator_font_css, 'src:url(../fonts/' ) && 1 === count( array_filter( $generator_font_files, static fn( array $file ): bool => 'assets/css/embedded-fonts.css' === ( $file['target_path'] ?? '' ) ) ),
+	'released compiler font intent flows through Theme_Generator into one materialized CSS file and receipt'
+);
+
+$no_font_plan = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array( 'index.html' => '<html><body><main>No font intent</main></body></html>' ),
+	)
+)->toArray()['source_reports']['wordpress_site_plan'];
+$no_font_requests = count( $GLOBALS['ssi_plan_font_requests'] );
+$no_font_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $no_font_plan, array( 'slug' => 'no-font-intent' ) );
+$assert( 'completed' === $no_font_receipt['status'] && ! is_file( $GLOBALS['ssi_plan_root'] . '/no-font-intent/assets/css/embedded-fonts.css' ) && $no_font_requests === count( $GLOBALS['ssi_plan_font_requests'] ), 'canonical plans without font intent materialize no font files or requests' );
+
+$page_ready_requests = count( $GLOBALS['ssi_plan_font_requests'] );
+$page_ready_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $font_plan, array( 'slug' => 'page-ready-font-suppressed', 'page_ready_checkpoint' => 'page-ready-test' ) );
+$assert( 'completed' === $page_ready_receipt['status'] && ! is_file( $GLOBALS['ssi_plan_root'] . '/page-ready-font-suppressed/assets/css/embedded-fonts.css' ) && $page_ready_requests === count( $GLOBALS['ssi_plan_font_requests'] ), 'page-ready execution suppresses canonical font materialization without changing plan intent' );
+
 $inter_payload                                        = "\xff" . str_repeat( "\x80", 1048575 );
 $GLOBALS['ssi_plan_binary_font']                      = $inter_payload;
 $typed_font_plan                                      = array(
 	'schema'           => 'blocks-engine/php-transformer/font-materialization-plan/v1',
+	'provider'          => 'google_fonts',
+	'fonts'             => array( array( 'family' => 'Inter-like', 'weights' => array( 400, 700 ) ) ),
+	'roles'             => array(),
+	'css'               => '',
+	'stylesheets'       => array(),
 	'webfont_contract' => array(
 		'schema'            => 'blocks-engine/webfont-materialization/v1',
 		'imports'           => array(
@@ -1009,6 +1181,8 @@ $typed_font_plan                                      = array(
 					'expected_digest' => null,
 					'observed_digest' => null,
 				),
+				'provenance' => array(),
+				'diagnostics' => array(),
 			),
 		),
 		'faces'             => array(
@@ -1030,6 +1204,7 @@ $typed_font_plan                                      = array(
 					),
 				),
 				'unicode_ranges' => array(),
+				'sources'        => array( array( 'url' => 'https://fonts.googleapis.com/css2?family=Inter-like:wght@400;700', 'format' => 'css', 'expected_digest' => null, 'observed_digest' => null ) ),
 			),
 			array(
 				'id'             => 'webfont-face-inter-700',
@@ -1049,6 +1224,7 @@ $typed_font_plan                                      = array(
 					),
 				),
 				'unicode_ranges' => array(),
+				'sources'        => array( array( 'url' => 'https://fonts.googleapis.com/css2?family=Inter-like:wght@400;700', 'format' => 'css', 'expected_digest' => null, 'observed_digest' => null ) ),
 			),
 			array(
 				'id'             => 'webfont-face-inter-variable',
@@ -1075,6 +1251,7 @@ $typed_font_plan                                      = array(
 					),
 				),
 				'unicode_ranges' => array( 'U+0000-00FF' ),
+				'sources'        => array( array( 'url' => 'https://fonts.googleapis.com/css2?family=Inter-like:wght@400;700', 'format' => 'css', 'expected_digest' => null, 'observed_digest' => null ) ),
 			),
 		),
 		'receipts'          => array(
@@ -1101,6 +1278,7 @@ $typed_font_plan                                      = array(
 			),
 		),
 		'browser_readiness' => array(
+			'schema'               => 'blocks-engine/webfont-browser-readiness/v1',
 			'state'                => 'required',
 			'required_receipt_ids' => array( 'webfont-receipt-inter-400', 'webfont-receipt-inter-700', 'webfont-receipt-inter-variable' ),
 		),
@@ -1112,7 +1290,7 @@ $typed_svg_write                                      = $typed_svg_writes[0] ?? 
 $typed_svg_hash                                       = hash( 'sha256', $typed_svg_write['payload']['data'] );
 $typed_svg_face_ids                                   = array( 'webfont-face-inter-400' );
 $typed_svg_source_path                                = $typed_svg_write['source_path'];
-$typed_svg_write_path                                 = $typed_svg_write['target_path'];
+$typed_svg_write_path                                 = str_starts_with( $typed_svg_write['target_path'], 'assets/' ) ? substr( $typed_svg_write['target_path'], 7 ) : $typed_svg_write['target_path'];
 $typed_font_plan['webfont_contract']['svg_consumers'] = array(
 	array(
 		'id'                         => 'svg-webfont-consumer-' . substr( hash( 'sha256', $typed_svg_source_path . "\n" . $typed_svg_write_path . "\n" . $typed_svg_hash . "\n" . implode( "\n", $typed_svg_face_ids ) ), 0, 20 ),
@@ -1124,13 +1302,15 @@ $typed_font_plan['webfont_contract']['svg_consumers'] = array(
 		'required'                   => true,
 	),
 );
-$typed_font_receipt                                   = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
-	$font_plan,
-	array(
-		'slug'                 => 'typed-font-site-plan',
-		'font_materialization' => $typed_font_plan,
-	)
-);
+$typed_font_site_plan                                 = $font_plan;
+$typed_font_site_plan['theme']['font_materialization'] = $typed_font_plan;
+$typed_font_site_plan['plan_identity']                = WordPressSitePlan::planIdentity( $typed_font_site_plan );
+try {
+	WordPressSitePlan::assertValid( $typed_font_site_plan );
+} catch ( InvalidArgumentException $error ) {
+	throw new RuntimeException( 'typed canonical font plan is invalid: ' . $error->getMessage() );
+}
+$typed_font_receipt                                   = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $typed_font_site_plan, array( 'slug' => 'typed-font-site-plan' ) );
 $typed_font_root                                      = $GLOBALS['ssi_plan_root'] . '/typed-font-site-plan';
 $typed_faces = $typed_font_receipt['completed']['font_materialization']['required_faces'] ?? array();
 $assert(
@@ -1153,7 +1333,41 @@ $assert( ! empty( $typed_plan_writes ) && array() === array_filter( $typed_plan_
 $projection_path = $GLOBALS['ssi_plan_root'] . '/large-invalid-binary-report.json';
 $projection_payload = array( 'schema' => 'static-site-importer/import-report/v1', 'materialization_receipt' => $typed_font_receipt );
 $projection_receipt = $typed_font_receipt;
-$write_projection = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'write_plan_projection' );
+$write_projection = new ReflectionMethod( Static_Site_Importer_Journaled_Report_Writer::class, 'write' );
+// The same test file can compare the immutable pre-extraction baseline.
+$document_metadata_projection = class_exists( 'Static_Site_Importer_Receipt_Projection' )
+	? new ReflectionMethod( Static_Site_Importer_Receipt_Projection::class, 'document_metadata' )
+	: new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'document_metadata_from_plan_receipt' );
+$metadata_projection = $document_metadata_projection->invoke(
+	null,
+	array(
+		'pages' => array(
+			array(
+				'entrypoint'        => true,
+				'document_metadata' => array(
+					'links'   => array( array( 'href' => 'source.css', 'resolved_url' => 'https://example.test/assets/site.css' ) ),
+					'scripts' => array( array( 'src' => 'source.js', 'resolved_url' => 'https://example.test/assets/site.js' ) ),
+				),
+			),
+		),
+	)
+);
+$assert( 'https://example.test/assets/site.css' === ( $metadata_projection['links'][0]['href'] ?? '' ) && 'https://example.test/assets/site.js' === ( $metadata_projection['scripts'][0]['src'] ?? '' ), 'report document metadata rewrites resolved link and script URLs on the owned metadata arrays' );
+$malformed_metadata_projection = $document_metadata_projection->invoke(
+	null,
+	array(
+		'pages' => array(
+			array(
+				'entrypoint'        => true,
+				'document_metadata' => array(
+					'links'   => 'not-an-array',
+					'scripts' => array( 'not-an-array-row' ),
+				),
+			),
+		),
+	)
+);
+$assert( 'not-an-array' === ( $malformed_metadata_projection['links'] ?? '' ) && array( 'not-an-array-row' ) === ( $malformed_metadata_projection['scripts'] ?? array() ), 'report document metadata preserves malformed collections without reference iteration warnings or mutation' );
 $write_projection->invokeArgs( null, array( $projection_path, $projection_payload, &$projection_receipt ) );
 $projection_json = (string) file_get_contents( $projection_path );
 $projection = json_decode( $projection_json, true );
@@ -1166,11 +1380,31 @@ $json_compatibility_path = $GLOBALS['ssi_plan_root'] . '/json-compatibility.json
 $json_compatibility_receipt = array();
 $write_projection->invokeArgs( null, array( $json_compatibility_path, $json_compatibility_payload, &$json_compatibility_receipt ) );
 $assert( (string) wp_json_encode( $json_compatibility_payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) . "\n" === file_get_contents( $json_compatibility_path ), 'streamed public JSON matches historical WordPress encoding for Unicode, quotes, slashes, and control characters' );
+$failed_projection_path = $GLOBALS['ssi_plan_root'] . '/failed-projection-destination';
+mkdir( $failed_projection_path, 0777, true );
+$failed_projection_receipt = array( 'transaction' => (object) array( 'state' => array( 'rollback' => array( 'files' => array() ) ) ) );
+set_error_handler( static fn(): bool => true );
+try {
+	Static_Site_Importer_Journaled_Report_Writer::write( $failed_projection_path, array( 'status' => 'failed' ), $failed_projection_receipt );
+} catch ( RuntimeException $error ) {
+	$failed_projection_error = $error;
+} finally {
+	restore_error_handler();
+}
+$assert( isset( $failed_projection_error ) && 'Failed to write a preflighted import artifact.' === $failed_projection_error->getMessage() && is_dir( $failed_projection_path ) && array() === glob( $GLOBALS['ssi_plan_root'] . '/.ssi-projection-*' ) && array( 'exists' => false ) === ( $failed_projection_receipt['transaction']->state['rollback']['files'][ $failed_projection_path ] ?? null ), 'journaled report publication failure preserves its destination, cleans its temporary file, and records the target before writing' );
+$encoding_failure_path = $GLOBALS['ssi_plan_root'] . '/encoding-failure.json';
+file_put_contents( $encoding_failure_path, 'previous report bytes' );
+$encoding_failure_receipt = array( 'transaction' => (object) array( 'state' => array( 'rollback' => array( 'files' => array() ) ) ) );
+try {
+	Static_Site_Importer_Journaled_Report_Writer::write( $encoding_failure_path, array( 'written_first' => 'partial temporary bytes', 'unencodable' => NAN ), $encoding_failure_receipt );
+} catch ( RuntimeException $error ) {
+	$encoding_failure_error = $error;
+}
+$assert( isset( $encoding_failure_error ) && 'Failed to write a preflighted import artifact.' === $encoding_failure_error->getMessage() && 'previous report bytes' === file_get_contents( $encoding_failure_path ) && array() === glob( $GLOBALS['ssi_plan_root'] . '/.ssi-projection-*' ) && 'previous report bytes' === ( $encoding_failure_receipt['transaction']->state['rollback']['files'][ $encoding_failure_path ]['content'] ?? null ), 'partial JSON encoding failure retains prior destination bytes, journals them, and removes temporary output' );
 $deferred_font_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
-	$font_plan,
+	$typed_font_site_plan,
 	array(
 		'slug'                        => 'deferred-font-report-plan',
-		'font_materialization'        => $typed_font_plan,
 		'defer_materialization_commit' => true,
 	)
 );
@@ -1182,7 +1416,7 @@ $deferred_font_receipt['plan']['assets'][] = array(
 );
 $GLOBALS['ssi_plan_json_array_calls'] = 0;
 $GLOBALS['ssi_plan_count_aggregate_encodes'] = true;
-$production_result = $write_projection->getDeclaringClass()->getMethod( 'public_result_from_wordpress_site_plan_receipt' )->invoke(
+$production_result = ( new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'public_result_from_wordpress_site_plan_receipt' ) )->invoke(
 	null,
 	$deferred_font_receipt,
 	array(
@@ -1203,14 +1437,14 @@ $typed_svg_receipts = $typed_font_receipt['completed']['font_materialization']['
 $assert( 1 === count( $typed_svg_receipts ) && hash( 'sha256', file_get_contents( $typed_font_root . '/' . $typed_svg_write['target_path'] ) ) === ( $typed_svg_receipts[0]['output_sha256'] ?? '' ) && str_contains( (string) file_get_contents( $typed_font_root . '/' . $typed_svg_write['target_path'] ), 'data:font/woff2;base64,' ), 'final write verification accepts the declared SVG change only through its hash-bound materialization receipt' );
 $invalid_typed_plan = $typed_font_plan;
 $invalid_typed_plan['webfont_contract']['imports'][0]['source']['expected_digest'] = 'sha256:' . str_repeat( '0', 64 );
+$invalid_typed_site_plan = $typed_font_site_plan;
+$invalid_typed_site_plan['theme']['font_materialization'] = $invalid_typed_plan;
+$invalid_typed_site_plan['plan_identity'] = WordPressSitePlan::planIdentity( $invalid_typed_site_plan );
 $invalid_typed_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
-	$font_plan,
-	array(
-		'slug'                 => 'invalid-typed-font-site-plan',
-		'font_materialization' => $invalid_typed_plan,
-	)
+	$invalid_typed_site_plan,
+	array( 'slug' => 'invalid-typed-font-site-plan' )
 );
-$assert( 'rejected' === $invalid_typed_receipt['status'] && 'static_site_importer_font_materialization_producer_stylesheet_failed' === ( $invalid_typed_receipt['errors'][0]['code'] ?? '' ) && is_string( wp_json_encode( $invalid_typed_receipt ) ) && ! str_contains( (string) wp_json_encode( $invalid_typed_receipt ), 'font_overlay' ), 'required producer source digest mismatch rejects before filesystem mutation with a serializable public receipt' );
+$assert( 'rejected' === $invalid_typed_receipt['status'] && 'static_site_importer_font_materialization_producer_stylesheet_failed' === ( $invalid_typed_receipt['errors'][0]['code'] ?? '' ) && ! is_dir( $GLOBALS['ssi_plan_root'] . '/invalid-typed-font-site-plan' ) && is_string( wp_json_encode( $invalid_typed_receipt ) ) && ! str_contains( (string) wp_json_encode( $invalid_typed_receipt ), 'font_overlay' ), 'invalid canonical font intent rejects before filesystem mutation with a serializable public receipt' );
 $assert( 'producer_stylesheet_digest_mismatch' === ( $invalid_typed_receipt['diagnostics'][1]['reason_code'] ?? '' ), 'font materialization receipts retain the producer failure reason instead of only the generic error code' );
 
 $font_without_svg_result  = ( new ArtifactCompiler() )->compile(
@@ -1221,19 +1455,18 @@ $font_without_svg_result  = ( new ArtifactCompiler() )->compile(
 		),
 	)
 )->toArray();
+$font_without_svg_plan = $font_without_svg_result['source_reports']['wordpress_site_plan'];
+$assert( $font_without_svg_result['source_reports']['font_materialization'] === ( $font_without_svg_plan['theme']['font_materialization'] ?? null ), 'released Blocks Engine places no-SVG font intent in the canonical theme plan' );
 $font_without_svg_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
-	$font_without_svg_result['source_reports']['wordpress_site_plan'],
-	array(
-		'slug'                 => 'font-site-plan-without-svg',
-		'font_materialization' => $font_without_svg_result['source_reports']['font_materialization'],
-	)
+	$font_without_svg_plan,
+	array( 'slug' => 'font-site-plan-without-svg' )
 );
 $font_without_svg_root    = $GLOBALS['ssi_plan_root'] . '/font-site-plan-without-svg';
 $assert( 'completed' === $font_without_svg_receipt['status'], 'canonical font materialization completes without SVG consumers' );
 $font_without_svg_css = (string) file_get_contents( $font_without_svg_root . '/assets/css/embedded-fonts.css' );
 $assert( 1 === preg_match( '#src:url\(\.\./fonts/([a-f0-9]{64}\.woff2)\)#', $font_without_svg_css, $font_without_svg_asset_match ) && 'font-payload' === file_get_contents( $font_without_svg_root . '/assets/fonts/' . $font_without_svg_asset_match[1] ), 'page fonts materialize locally without SVG consumers' );
 $assert( str_contains( (string) file_get_contents( $font_without_svg_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-embedded-fonts'" ), 'page fonts load without SVG consumers' );
-$assert( 9 === count( $GLOBALS['ssi_plan_font_requests'] ), 'each successful and rejected font materialization resolves only its declared stylesheet or typed payload URLs' );
+$assert( 11 === count( $GLOBALS['ssi_plan_font_requests'] ), 'each successful and rejected font materialization resolves only its declared stylesheet or typed payload URLs' );
 
 $nested_route_result = ( new ArtifactCompiler() )->compile(
 	array(
@@ -1359,6 +1592,9 @@ $assert( 'runtime_declarations' === ( $entity_lifecycle['status'] ?? '' ), 'v2 e
 $assert( 'woocommerce_simple_product' === ( $entity_lifecycle['entities'][ $entity_plan['runtime_declarations'][1]['reconciliation_identity'] ]['adapter']['id'] ?? '' ) || 'woocommerce_simple_product' === ( reset( $entity_lifecycle['entities'] )['adapter']['id'] ?? '' ), 'product collections resolve through the configured WooCommerce adapter' );
 $prepared_entity = reset( $entity_lifecycle['entities'] );
 $assert( 'Aero Mug' === ( $prepared_entity['manifest']['products'][0]['name'] ?? '' ) && true === ( $prepared_entity['required'] ?? false ), 'v2 product rows validate and retain their required dependency relationship' );
+$prepared_entity_lifecycle = $prepare_lifecycle->invoke( null, $entity_plan, array( 'runtime_lifecycle_phase' => 'prepare' ) );
+$prepared_entity_manifest  = reset( $prepared_entity_lifecycle['entities'] );
+$assert( 'Aero Mug' === ( $prepared_entity_manifest['manifest']['products'][0]['name'] ?? '' ), 'dependency preparation retains declared provider entities until resume validates them' );
 
 // Provider declarations keep portable asset tokens, while resolver output carries
 // destination-specific URLs. Binding preflight must use the latter without
@@ -1380,12 +1616,61 @@ $resolved_binding_plan     = array(
 	'runtime_declarations' => array( $resolved_declaration ),
 );
 $resolve_binding_manifests = new ReflectionMethod( Static_Site_Importer_Entity_Materializer_Registry::class, 'with_resolved_binding_manifests' );
-$preflight_bindings        = new ReflectionMethod( Static_Site_Importer_Theme_Generator::class, 'preflight_runtime_entity_binding_anchors' );
+$preflight_bindings        = new ReflectionMethod( Static_Site_Importer_Runtime_Entity_Binding_Validation::class, 'preflight_runtime_entity_binding_anchors' );
 $assert( is_wp_error( $preflight_bindings->invoke( null, $resolved_binding_plan, $token_lifecycle, array() ) ), 'canonical token anchors fail against destination-specific resolved page URLs before projection' );
 $resolved_lifecycle = $resolve_binding_manifests->invoke( null, $token_lifecycle, $resolved_binding_plan );
 $assert( $token_anchor === ( $token_lifecycle['entities'][ $token_entity_declaration_id ]['manifest']['products'][0]['bindings'][0]['search_block_markup'] ?? '' ) && $resolved_anchor === ( $resolved_lifecycle['entities'][ $token_entity_declaration_id ]['manifest']['products'][0]['bindings'][0]['search_block_markup'] ?? '' ), 'resolved binding projection changes only lifecycle binding anchors and preserves canonical declarations' );
 $assert( true === $preflight_bindings->invoke( null, $resolved_binding_plan, $resolved_lifecycle, array() ), 'resolved provider binding anchors match the exact page markup consumed by materialization' );
 $assert( $token_lifecycle === $resolve_binding_manifests->invoke( null, $token_lifecycle, array( 'pages' => $resolved_binding_plan['pages'] ) ), 'plans without resolved runtime declarations retain canonical lifecycle behavior' );
+
+$binding_preflight_cases = array(
+	'overlap' => array(
+		'code' => 'static_site_importer_runtime_binding_claim_conflict',
+		'lifecycle' => array(
+			'entities' => array(
+				'outer' => array( 'adapter' => array(), 'manifest' => array( 'products' => array( array( 'bindings' => array( array( 'source_path' => 'index.html', 'search_block_markup' => '<div><span>nested</span></div>', 'occurrence' => 1 ) ) ) ) ) ),
+				'inner' => array( 'adapter' => array(), 'manifest' => array( 'products' => array( array( 'bindings' => array( array( 'source_path' => 'index.html', 'search_block_markup' => '<span>nested</span>', 'occurrence' => 1 ) ) ) ) ) ),
+			),
+		),
+	),
+	'duplicate' => array(
+		'code' => 'static_site_importer_runtime_binding_claim_conflict',
+		'lifecycle' => array(
+			'entities' => array(
+				'first' => array( 'adapter' => array(), 'manifest' => array( 'products' => array( array( 'bindings' => array( array( 'source_path' => 'index.html', 'search_block_markup' => $resolved_anchor, 'occurrence' => 1 ) ) ) ) ) ),
+				'second' => array( 'adapter' => array(), 'manifest' => array( 'products' => array( array( 'bindings' => array( array( 'source_path' => 'index.html', 'search_block_markup' => $resolved_anchor, 'occurrence' => 1 ) ) ) ) ) ),
+			),
+		),
+	),
+	'missing' => array(
+		'code' => 'static_site_importer_runtime_binding_cardinality_mismatch',
+		'lifecycle' => array( 'entities' => array( 'missing' => array( 'adapter' => array(), 'manifest' => array( 'products' => array( array( 'bindings' => array( array( 'source_path' => 'index.html', 'search_block_markup' => '<!-- wp:paragraph --><p>missing</p><!-- /wp:paragraph -->', 'occurrence' => 1 ) ) ) ) ) ) ) ),
+	),
+	'protected' => array(
+		'code' => 'static_site_importer_runtime_binding_target_protected',
+		'lifecycle' => array( 'entities' => array( 'protected' => array( 'adapter' => array(), 'manifest' => array( 'products' => array( array( 'bindings' => array( array( 'source_path' => 'index.html', 'search_block_markup' => $resolved_anchor, 'occurrence' => 1 ) ) ) ) ) ) ) ),
+	),
+);
+foreach ( $binding_preflight_cases as $case_name => $binding_preflight_case ) {
+	$binding_preflight_callbacks = 0;
+	foreach ( $binding_preflight_case['lifecycle']['entities'] as &$binding_preflight_entity ) {
+		$binding_preflight_entity['adapter']['materializer'] = static function () use ( &$binding_preflight_callbacks ): array { ++$binding_preflight_callbacks; return array(); };
+	}
+	unset( $binding_preflight_entity );
+	$case_prepared = array(
+		'args' => array(),
+		'resolved' => $resolved_binding_plan,
+	);
+	if ( 'protected' === $case_name ) {
+		$case_prepared['resolved']['pages'][0]['skip_materialization'] = true;
+	}
+	if ( 'overlap' === $case_name ) {
+		$case_prepared['resolved']['pages'][0]['resolved_block_markup'] = '<div><span>nested</span></div>';
+	}
+	$inserts_before_binding_preflight = $GLOBALS['ssi_plan_insert_calls'];
+	$binding_preflight = Static_Site_Importer_Prepared_Plan_Application::materialize( $case_prepared, $binding_preflight_case['lifecycle'], null, array(), array() );
+	$assert( is_wp_error( $binding_preflight ) && $binding_preflight_case['code'] === $binding_preflight->get_error_code() && 0 === $binding_preflight_callbacks && $inserts_before_binding_preflight === $GLOBALS['ssi_plan_insert_calls'], $case_name . ' runtime bindings reject before companion, dependency, provider, or WordPress mutation' );
+}
 
 $form_declaration_id                       = 'form-topology-runtime';
 $topology_form                             = array(
@@ -1489,6 +1774,9 @@ $runtime_form_manifest                     = is_wp_error( $runtime_form_lifecycl
 $assert( 'section' === ( $runtime_form_manifest['control_topology']['nodes'][0]['tag'] ?? '' ), 'runtime declarations retain validated form topology' );
 $assert( 'Contact Me' === ( $runtime_form_manifest['form']['context_before'][0]['text'] ?? '' ) && '* Indicates required field' === ( $runtime_form_manifest['form']['context_before'][1]['text'] ?? '' ), 'canonical form bindings preserve ordered heading and required-note context before provider validation' );
 $assert( '200px' === ( $runtime_form_manifest['controls'][1]['height'] ?? '' ) && 'Send' === ( $runtime_form_manifest['form']['submit_presentation']['text'] ?? '' ) && in_array( 'wsite-button', $runtime_form_manifest['form']['submit_presentation']['classes'] ?? array(), true ), 'canonical form bindings preserve textarea sizing and visible submit presentation before provider validation' );
+$prepared_form_lifecycle = $prepare_lifecycle->invoke( null, $runtime_form_plan, array( 'runtime_lifecycle_phase' => 'prepare' ) );
+$prepared_form_manifest  = is_wp_error( $prepared_form_lifecycle ) ? array() : ( $prepared_form_lifecycle['entities'][ $form_declaration_id ]['manifest']['forms'][0] ?? array() );
+$assert( 'form.contact' === ( $prepared_form_manifest['selector'] ?? '' ) && ! empty( $prepared_form_manifest['bindings'] ) && 'textarea' === ( $prepared_form_manifest['controls'][1]['tag'] ?? '' ), 'dependency preparation retains declared form bindings for the durable resume lifecycle' );
 $presentation_conflicts = array(
 	str_replace( 'Contact Me', 'Write Me', $topology_form['bindings'][0]['search_block_markup'] ),
 	str_replace( '</form>', '<p class="help-note">After</p></form>', $topology_form['bindings'][0]['search_block_markup'] ),
@@ -1838,8 +2126,8 @@ $form_fallback                                    = array(
 		),
 	),
 );
-$form_fallback_identity                           = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_identity( $form_fallback );
-$form_fallback_hash                               = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $form_fallback );
+$form_fallback_identity                           = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $form_fallback );
+$form_fallback_hash                               = Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $form_fallback );
 WP_Block_Type_Registry::get_instance()->register( 'jetpack/contact-form', array() );
 $form_binding                                     = array(
 	'schema'                           => 'static-site-importer/runtime-entity-binding/v1',
@@ -2149,6 +2437,65 @@ $ordered_quality_receipt['plan']['diagnostics'] = $deferred_form_receipt['plan']
 $ordered_retry_error = $final_quality_gate->invoke( null, $ordered_quality_receipt, array( 'fail_on_quality' => true, '_static_site_importer_deferred_form_quality_admission' => true ), $ordered_lifecycle, array(), $ordered_reports );
 $assert( ! is_wp_error( $ordered_retry_error ) && $events_before_ordered_retry === $GLOBALS['ssi_plan_rollback_events'] && array() === $ordered_provider_calls, 'repeated quality reporting remains non-destructive' );
 unset( $GLOBALS['ssi_plan_rollback_events'] );
+$compensation_calls    = array();
+$compensation_lifecycle = array(
+	'entities' => array(
+		'first'  => array(
+			'adapter'  => array(
+				'provider'             => 'first-provider',
+				'rollback_contract_id' => 'test/first-provider-rollback/v1',
+				'rollback_callback'    => static function () use ( &$compensation_calls ): array {
+					$compensation_calls[] = 'first';
+					return array( 'status' => 'rolled_back' );
+				},
+			),
+			'manifest' => array( 'entities' => array( array( 'id' => 'first' ) ) ),
+		),
+		'second' => array(
+			'adapter'  => array(
+				'provider'             => 'second-provider',
+				'rollback_contract_id' => 'test/second-provider-rollback/v1',
+				'rollback_callback'    => static function () use ( &$compensation_calls ): array {
+					$compensation_calls[] = 'second';
+					return array( 'status' => 'rolled_back' );
+				},
+			),
+			'manifest' => array( 'entities' => array( array( 'id' => 'second' ) ) ),
+		),
+	),
+);
+$compensation_reports = array(
+	'first'  => array( 'status' => 'mutated', 'mutations' => array( array( 'status' => 'mutated' ) ) ),
+	'second' => array( 'status' => 'mutated', 'mutations' => array( array( 'status' => 'mutated' ) ) ),
+);
+$compensation_receipt = array(
+	'schema'              => 'static-site-importer/materialization-receipt/v2',
+	'status'              => 'partial',
+	'receipt_instance_id' => str_repeat( 'c', 64 ),
+	'plan_identity'       => array( 'schema' => 'test/plan-identity/v1', 'hash' => hash( 'sha256', 'compensation-plan' ) ),
+	'theme'               => array( 'slug' => 'compensation-theme' ),
+	'completed'           => array( 'materialized_pages' => array( array( 'id' => 1 ) ) ),
+	'transaction'         => (object) array( 'state' => array( 'args' => array( 'import_run_id' => 'compensation-run' ), 'applied' => array( 'posts' => array( array( 'id' => 1 ) ) ) ) ),
+);
+Static_Site_Importer_Entity_Compensation::append( $compensation_receipt, $compensation_lifecycle, $compensation_reports, 'test', 'test_failure' );
+Static_Site_Importer_Entity_Compensation::append( $compensation_receipt, $compensation_lifecycle, $compensation_reports, 'test', 'test_failure' );
+$matching_compensation_calls = $compensation_calls;
+$compensation_receipt['receipt_instance_id'] = str_repeat( 'd', 64 );
+Static_Site_Importer_Entity_Compensation::append( $compensation_receipt, $compensation_lifecycle, $compensation_reports, 'test', 'test_failure' );
+$compensation_receipt['transaction']->state['applied']['posts'][] = array( 'id' => 2 );
+Static_Site_Importer_Entity_Compensation::append( $compensation_receipt, $compensation_lifecycle, $compensation_reports, 'test', 'test_failure' );
+$compensation_reports['second']['mutations'][0]['status'] = 'updated';
+Static_Site_Importer_Entity_Compensation::append( $compensation_receipt, $compensation_lifecycle, $compensation_reports, 'test', 'test_failure' );
+$compensation_lifecycle['entities']['second']['manifest']['entities'][0]['id'] = 'second-changed';
+Static_Site_Importer_Entity_Compensation::append( $compensation_receipt, $compensation_lifecycle, $compensation_reports, 'test', 'test_failure' );
+$compensation_lifecycle['entities']['second']['adapter']['rollback_contract_id'] = 'test/second-provider-rollback/v2';
+Static_Site_Importer_Entity_Compensation::append( $compensation_receipt, $compensation_lifecycle, $compensation_reports, 'test', 'test_failure' );
+$assert(
+	array( 'second', 'first' ) === $matching_compensation_calls
+	&& array( 'second', 'first', 'second', 'first', 'second', 'first', 'second', 'first', 'second', 'first', 'second', 'first' ) === $compensation_calls
+	&& true === ( $compensation_receipt['entity_compensation']['superseded_binding_mismatch'] ?? false ),
+	'exact provider compensation bindings suppress duplicate rollback while changed receipt, transaction, report, lifecycle manifest, and rollback contract identities rerun callbacks in reverse order'
+);
 $partial_rollback_plan    = ( new ArtifactCompiler() )->compile(
 	array(
 		'entrypoint' => 'partial-rollback/index.html',
@@ -2293,6 +2640,29 @@ $activated = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 );
 $assert( 'site-plan' === $GLOBALS['ssi_plan_options']['stylesheet'] && 'page' === $GLOBALS['ssi_plan_options']['show_on_front'] && 'Activated Plan' === $GLOBALS['ssi_plan_options']['blogname'], 'activate=true applies theme title and reading policy' );
 
+// A site title WordPress escapes on write is still applied: the read-back check must compare against the stored value.
+$escaped_title = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$plan,
+	array(
+		'slug'       => 'site-plan',
+		'overwrite'  => true,
+		'activate'   => true,
+		'site_title' => 'Aagam & Aayushi',
+	)
+);
+$assert( 'completed' === $escaped_title['status'], 'site title containing an ampersand completes materialization' );
+$assert( 'Aagam &amp; Aayushi' === $GLOBALS['ssi_plan_options']['blogname'], 'escaped site title is stored as WordPress sanitizes it' );
+$repeat_escaped_title = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$plan,
+	array(
+		'slug'       => 'site-plan',
+		'overwrite'  => true,
+		'activate'   => true,
+		'site_title' => 'Aagam & Aayushi',
+	)
+);
+$assert( 'completed' === $repeat_escaped_title['status'], 'reapplying the same escaped site title stays idempotent' );
+
 // disable_smilies (issue #780): non-activating import must not touch the global option.
 $GLOBALS['ssi_plan_options'] = array(
 	'show_on_front' => 'posts',
@@ -2407,7 +2777,6 @@ $font_failed = Static_Site_Importer_WordPress_Site_Plan_Materializer::materializ
 	array(
 		'slug'                           => 'font-site-plan',
 		'overwrite'                      => true,
-		'font_materialization'           => $font_materialization,
 		'inject_materialization_failure' => 'font_verification',
 	)
 );
@@ -2898,7 +3267,7 @@ $resolved_root_media_plan = ( new \Automattic\BlocksEngine\PhpTransformer\WordPr
 	$root_media_plan,
 	array( 'theme_uri' => 'https://example.test/wp-content/themes/root-media-plan', 'runtime_capabilities' => array( 'asset_materialization' ) )
 );
-$resolve_companion_assets = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'resolve_companion_asset_references' );
+$resolve_companion_assets = new ReflectionMethod( Static_Site_Importer_Prepared_Plan_Application::class, 'resolve_companion_asset_references' );
 $resolved_companion       = $resolve_companion_assets->invoke(
 	null,
 	array( 'blocks' => array( array( 'render' => '<img src="/media/example.jpg"><source srcset="/media/example.jpg 1x">' ) ) ),
@@ -2907,5 +3276,254 @@ $resolved_companion       = $resolve_companion_assets->invoke(
 );
 $resolved_companion_html = (string) ( $resolved_companion['blocks'][0]['render'] ?? '' );
 $assert( str_contains( $resolved_companion_html, 'src="' . $root_media_url . '"' ) && str_contains( $resolved_companion_html, 'srcset="' . $root_media_url . ' 1x"' ) && ! str_contains( $resolved_companion_html, '="/media/example.jpg' ), 'generated companion block renders resolve canonical root-relative assets through the materialized theme map' );
+
+$projection_cases = array();
+$GLOBALS['ssi_plan_posts'] = array(
+	900 => array(
+		'post_name'   => 'stale-owned-page',
+		'post_type'   => 'page',
+		'post_status' => 'publish',
+	),
+	901 => array(
+		'post_name'   => 'protected-stale-page',
+		'post_type'   => 'page',
+		'post_status' => 'publish',
+	),
+	902 => array(
+		'post_name'   => 'unowned-stale-page',
+		'post_type'   => 'page',
+		'post_status' => 'publish',
+	),
+);
+$GLOBALS['ssi_plan_meta']  = array(
+	900 => array(
+		'_static_site_importer_provenance' => wp_json_encode( array( 'schema' => 'static-site-importer/page-provenance/v1' ) ),
+	),
+	901 => array(
+		'_static_site_importer_provenance' => wp_json_encode( array( 'schema' => 'static-site-importer/page-provenance/v1' ) ),
+	),
+);
+$GLOBALS['ssi_plan_options']['static_site_importer_protected_pages'] = array( 'protected-stale-page' );
+$GLOBALS['ssi_plan_post_status_transitions'] = array();
+$draft_rollback_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$canonical_plan,
+	array(
+		'slug'                       => 'draft-rollback-reconciliation',
+		'defer_materialization_commit' => true,
+	)
+);
+$draft_rollback_dir     = $draft_rollback_receipt['theme']['dir'];
+$draft_stale_file        = $draft_rollback_dir . '/prior-owned.txt';
+file_put_contents( $draft_stale_file, 'previous import bytes' );
+file_put_contents(
+	$draft_rollback_dir . '/static-site-importer-manifest.json',
+	wp_json_encode(
+		array(
+			'schema'  => 'static-site-importer/source-of-truth-manifest/v1',
+			'desired' => array(
+				'pages'  => array(
+					array( 'source_path' => 'stale.html', 'materialized_post_id' => 900 ),
+					array( 'source_path' => 'protected.html', 'materialized_post_id' => 901 ),
+					array( 'source_path' => 'unowned.html', 'materialized_post_id' => 902 ),
+				),
+				'files'  => array( array( 'path' => 'prior-owned.txt' ) ),
+				'assets' => array(),
+			),
+		)
+	)
+);
+$draft_rollback_result = $project_materialization_result->invoke(
+	null,
+	array(
+		'receipt'      => $draft_rollback_receipt,
+		'lifecycle'    => array(),
+		'dependencies' => array(),
+		'entities'     => array(),
+	),
+	array(
+		'inject_materialization_failure' => 'report_persistence',
+		'stale_page_action'              => 'draft',
+	)
+);
+$draft_rollback_receipt = $draft_rollback_result->get_error_data();
+$draft_status_transitions = array_values( array_filter( $GLOBALS['ssi_plan_post_status_transitions'], static fn( array $transition ): bool => 900 === $transition['id'] ) );
+$assert(
+	is_wp_error( $draft_rollback_result ) &&
+	'static_site_importer_projection_write_failed' === $draft_rollback_result->get_error_code() &&
+	'report_persistence' === ( $draft_rollback_receipt['failure_context']['stage'] ?? '' ) &&
+	'static_site_importer_projection_write_failed' === ( $draft_rollback_receipt['failure_context']['code'] ?? '' ) &&
+	array( array( 'id' => 900, 'before' => 'publish', 'after' => 'draft' ), array( 'id' => 900, 'before' => 'draft', 'after' => 'publish' ) ) === $draft_status_transitions &&
+	'publish' === ( $GLOBALS['ssi_plan_posts'][900]['post_status'] ?? '' ) &&
+	'publish' === ( $GLOBALS['ssi_plan_posts'][901]['post_status'] ?? '' ) &&
+	'publish' === ( $GLOBALS['ssi_plan_posts'][902]['post_status'] ?? '' ) &&
+	is_file( $draft_stale_file ) &&
+	'previous import bytes' === file_get_contents( $draft_stale_file ) &&
+	! empty( $draft_rollback_receipt['transaction']->state['rollback']['done'] ?? false ),
+	'late report persistence failure observes the publish-to-draft transition, restores the eligible page and owned file, and excludes protected and unowned pages: ' . wp_json_encode( array( 'code' => is_wp_error( $draft_rollback_result ) ? $draft_rollback_result->get_error_code() : '', 'stage' => $draft_rollback_receipt['failure_context']['stage'] ?? '', 'transitions' => $draft_status_transitions, 'after' => $GLOBALS['ssi_plan_posts'][900]['post_status'] ?? '', 'file' => is_file( $draft_stale_file ), 'rollback' => $draft_rollback_receipt['transaction']->state['rollback'] ?? array() ) )
+);
+$report_only_root = $GLOBALS['ssi_plan_root'] . '/report-only-reconciliation';
+mkdir( $report_only_root, 0777, true );
+file_put_contents( $report_only_root . '/current-owned.txt', 'current bytes' );
+file_put_contents( $report_only_root . '/unowned.txt', 'unowned bytes' );
+file_put_contents(
+	$report_only_root . '/static-site-importer-manifest.json',
+	wp_json_encode(
+		array(
+			'schema'  => 'static-site-importer/source-of-truth-manifest/v1',
+			'desired' => array(
+				'pages'  => array(
+					array( 'source_path' => 'stale.html', 'materialized_post_id' => 900 ),
+					array( 'source_path' => 'protected.html', 'materialized_post_id' => 901 ),
+					array( 'source_path' => 'unowned.html', 'materialized_post_id' => 902 ),
+				),
+				'files'  => array( array( 'path' => 'current-owned.txt' ) ),
+				'assets' => array(),
+			)
+		)
+	)
+);
+$report_only_cleanup = Static_Site_Importer_Generated_State_Reconciliation::cleanup_stale_generated_theme_files(
+	$report_only_root,
+	array(
+		'desired' => array(
+			'pages'  => array(),
+			'files'  => array( array( 'path' => 'current-owned.txt' ) ),
+			'assets' => array(),
+		),
+	),
+	array( 'stale_page_action' => 'report_only' )
+);
+$report_only_skips = array_column( $report_only_cleanup['pages']['skipped'] ?? array(), 'reason' );
+$assert( array( 900 ) === array_column( $report_only_cleanup['pages']['stale_pages'], 'post_id' ) && 0 === $report_only_cleanup['pages']['counts']['pages_drafted'], 'report-only retains an eligible stale page without drafting it' );
+$assert( ! is_wp_error( $report_only_cleanup ) && 'report_only' === ( $report_only_cleanup['pages']['action'] ?? '' ) && 'publish' === ( $GLOBALS['ssi_plan_posts'][900]['post_status'] ?? '' ) && 'publish' === ( $GLOBALS['ssi_plan_posts'][901]['post_status'] ?? '' ) && 'publish' === ( $GLOBALS['ssi_plan_posts'][902]['post_status'] ?? '' ) && in_array( 'protected_page', $report_only_skips, true ) && in_array( 'missing_static_site_importer_provenance', $report_only_skips, true ) && is_file( $report_only_root . '/current-owned.txt' ) && is_file( $report_only_root . '/unowned.txt' ), 'report-only reconciliation reports eligible stale pages without mutation and preserves protected, missing-provenance, current, and unowned state' );
+if ( in_array( '--late-rollback-proof', $argv, true ) ) {
+	print 'late-rollback-proof=' . wp_json_encode( array( 'result_code' => $draft_rollback_result->get_error_code(), 'failure_context' => $draft_rollback_receipt['failure_context'] ?? array(), 'transitions' => $draft_status_transitions, 'final_status' => $GLOBALS['ssi_plan_posts'][900]['post_status'] ?? '' ) ) . "\n";
+}
+$projection_files = static function ( string $directory ): array {
+	$files = array();
+	foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $directory, FilesystemIterator::SKIP_DOTS ) ) as $file ) {
+		if ( $file->isFile() ) {
+			$files[ substr( $file->getPathname(), strlen( $directory ) + 1 ) ] = file_get_contents( $file->getPathname() );
+		}
+	}
+	ksort( $files );
+	return $files;
+};
+foreach ( array( 'success', 'batch', 'stale_cleanup', 'report_persistence', 'external_destination' ) as $projection_case ) {
+	$GLOBALS['ssi_plan_posts'] = array();
+	$GLOBALS['ssi_plan_meta'] = array();
+	$GLOBALS['ssi_plan_options'] = array( 'show_on_front' => 'posts', 'page_on_front' => 0, 'blogname' => 'Before', 'use_smilies' => true, 'stylesheet' => 'before-theme', 'template' => 'before-theme' );
+	$GLOBALS['ssi_plan_rollback_events'] = array();
+	$rollback_order = array();
+	$case_slug = 'projection-proof-' . $projection_case;
+	$case_root = $GLOBALS['ssi_plan_root'] . '/' . $case_slug;
+	mkdir( $case_root, 0777, true );
+	$prior_manifest = array(
+		'schema' => 'static-site-importer/source-of-truth-manifest/v1',
+		'desired' => array(
+			'pages' => array( array( 'source_path' => 'later.html', 'materialized_post_id' => 0 ) ),
+			'files' => array( array( 'path' => 'prior-owned.txt', 'kind' => 'fixture' ) ),
+			'assets' => array( array( 'source_path' => 'prior-owned.txt', 'theme_path' => 'prior-owned.txt' ) ),
+		),
+	);
+	file_put_contents( $case_root . '/prior-owned.txt', 'previous import bytes' );
+	file_put_contents( $case_root . '/static-site-importer-manifest.json', wp_json_encode( $prior_manifest ) );
+	$files_before_projection = $projection_files( $case_root );
+	$options_before_projection = $GLOBALS['ssi_plan_options'];
+	$case_args = array(
+		'slug' => $case_slug,
+		'overwrite' => true,
+		'activate' => true,
+		'seed_entities' => true,
+		'font_materialization' => array(),
+		'import_run_id' => 'projection-equivalence',
+		'write_theme_report_artifacts' => true,
+		'batch_import' => 'batch' === $projection_case,
+	);
+	if ( in_array( $projection_case, array( 'stale_cleanup', 'report_persistence' ), true ) ) {
+		$case_args['inject_materialization_failure'] = $projection_case;
+	}
+	if ( 'external_destination' === $projection_case ) {
+		// Runner TMPDIR may be an alias; this fixture starts with a valid physical
+		// destination and changes it only after preflight has accepted it.
+		$external_parent = realpath( $GLOBALS['ssi_plan_root'] );
+		$assert( false !== $external_parent, 'external projection fixture has a physical parent directory' );
+		$case_args['report'] = $external_parent . '/late-external-report.json';
+	}
+	$register_plan_blocks( $canonical_plan );
+	$case_prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare_for_materialization( $canonical_plan, $case_args );
+	$assert( 'prepared' === ( $case_prepared['status'] ?? '' ), $projection_case . ' projection fixture prepares a real write plan' );
+	$case_materialized = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared_lifecycle( $case_prepared, $block_lifecycle, null, array(), array() );
+	$assert( isset( $case_materialized['receipt']['transaction'] ), $projection_case . ' retains the deferred transaction until projection' );
+	if ( 'external_destination' === $projection_case ) {
+		mkdir( $case_args['report'] );
+	}
+	$case_result = $project_materialization_result->invoke( null, $case_materialized, $case_prepared['args'] );
+	$case_failed = ! in_array( $projection_case, array( 'success', 'batch' ), true );
+	$assert( $case_failed === is_wp_error( $case_result ), $projection_case . ' retains its success/failure outcome' );
+	$case_receipt = $case_failed ? $case_result->get_error_data() : $case_result['materialization_receipt'];
+	$case_files = $projection_files( $case_root );
+	if ( $case_failed ) {
+		$assert( $files_before_projection === $case_files && array() === $GLOBALS['ssi_plan_posts'] && $options_before_projection === $GLOBALS['ssi_plan_options'], $projection_case . ' restores prior files, pages, and options: ' . wp_json_encode( array( 'before_files' => array_keys( $files_before_projection ), 'after_files' => array_keys( $case_files ), 'posts' => $GLOBALS['ssi_plan_posts'], 'before_options' => $options_before_projection, 'after_options' => $GLOBALS['ssi_plan_options'], 'errors' => $case_receipt['errors'] ?? array() ) ) );
+		$assert( array( 'form', 'woo' ) === $rollback_order && ! empty( $case_receipt['transaction']->state['rollback']['done'] ), $projection_case . ' compensates providers in reverse order and rolls back the transaction' );
+	} else {
+		$assert( ! isset( $case_receipt['transaction'] ) && count( $GLOBALS['ssi_plan_posts'] ) > 0 && array() === $rollback_order, $projection_case . ' commits only after successful projection without compensating providers' );
+		$assert( ( 'batch' === $projection_case ) === is_file( $case_root . '/prior-owned.txt' ), $projection_case . ' preserves the batch manifest or cleans stale owned files' );
+		$assert( ( 'batch' === $projection_case ) === in_array( 'later.html', array_column( $case_result['source_of_truth']['desired']['pages'], 'source_path' ), true ) && ( 'batch' === $projection_case ) === in_array( 'prior-owned.txt', array_column( $case_result['source_of_truth']['desired']['assets'], 'source_path' ), true ), $projection_case . ' preserves prior batch page and asset declarations only for partial imports' );
+		$assert( $case_result['import_report']['owner_handoff_evidence']['materialization_receipt_sha256'] === $case_receipt['receipt_instance_id'], $projection_case . ' binds owner handoff evidence to the exact receipt instance' );
+	}
+	$projection_cases[ $projection_case ] = array(
+		'result' => $case_failed ? array( 'error' => $case_result->get_error_code(), 'receipt' => $case_receipt ) : $case_result,
+		'files' => $case_files,
+		'posts' => $GLOBALS['ssi_plan_posts'],
+		'meta' => $GLOBALS['ssi_plan_meta'],
+		'options' => $GLOBALS['ssi_plan_options'],
+		'provider_rollback_order' => $rollback_order,
+		'mutation_events' => $GLOBALS['ssi_plan_rollback_events'],
+	);
+}
+
+if ( in_array( '--projection-snapshot', $argv, true ) ) {
+	// Preserve data/order and transaction state, normalizing only per-run identity
+	// and paths. Apply the same normalization inside persisted JSON file bytes.
+	$normalize_projection = static function ( mixed $value ) use ( &$normalize_projection ): mixed {
+		if ( is_string( $value ) ) {
+			$value = str_replace( $GLOBALS['ssi_plan_root'], '[temporary-theme-root]', $value );
+			if ( str_starts_with( $value, '{' ) || str_starts_with( $value, '[' ) ) {
+				$decoded = json_decode( $value, true );
+				if ( is_array( $decoded ) && JSON_ERROR_NONE === json_last_error() ) {
+					return wp_json_encode( $normalize_projection( $decoded ), JSON_UNESCAPED_SLASHES );
+				}
+			}
+			return $value;
+		}
+		if ( is_object( $value ) ) {
+			$value = get_object_vars( $value );
+		}
+		if ( ! is_array( $value ) ) {
+			return $value;
+		}
+		$normalized = array();
+		foreach ( $value as $key => $item ) {
+			$key = is_string( $key ) ? str_replace( $GLOBALS['ssi_plan_root'], '[temporary-theme-root]', $key ) : $key;
+			$normalized[ $key ] = in_array( $key, array( 'receipt_instance_id', 'request_id', 'receipt_identity', 'transaction_identity', 'materialization_receipt_sha256', 'imported_at' ), true )
+				? '[volatile-' . $key . ']'
+				: $normalize_projection( $item );
+		}
+		return $normalized;
+	};
+	echo wp_json_encode( $normalize_projection( $projection_cases ) ) . "\n";
+	return;
+}
+
+if ( in_array( '--receipt-snapshot', $argv, true ) ) {
+	echo wp_json_encode(
+		array(
+			'success'              => $normalize_receipt( $valid_reference_receipt ),
+			'failed_compensation'  => $normalize_receipt( $compensated_failure_receipt ),
+		)
+	) . "\n";
+	return;
+}
 
 echo "WordPress site plan materializer smoke passed.\n";

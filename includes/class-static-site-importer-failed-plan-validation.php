@@ -150,7 +150,22 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 	/** @return array<int,string> */
 	private static function failure_reasons( array $plan, array $quality ): array {
 		$reasons = isset( $plan['quality']['failure_reasons'] ) && is_array( $plan['quality']['failure_reasons'] ) ? $plan['quality']['failure_reasons'] : ( $quality['failure_reasons'] ?? array() );
-		$reasons = array_values( array_filter( $reasons, 'is_string' ) );
+		if ( empty( $reasons ) && 'failed' === ( $plan['quality']['editability_policy']['status'] ?? null ) && is_array( $plan['quality']['editability_policy']['failures'] ?? null ) ) {
+			$reasons = $plan['quality']['editability_policy']['failures'];
+		}
+		$reasons = array_map(
+			static function ( mixed $reason ): string {
+				if ( is_string( $reason ) ) {
+					return $reason;
+				}
+				if ( is_array( $reason ) && is_string( $reason['code'] ?? null ) ) {
+					return $reason['code'];
+				}
+				return '';
+			},
+			$reasons
+		);
+		$reasons = array_values( array_filter( $reasons, static fn( string $reason ): bool => '' !== $reason ) );
 		return empty( $reasons ) ? array( 'canonical_plan_quality_gate_failed' ) : array_slice( $reasons, 0, self::MAX_DIAGNOSTICS );
 	}
 

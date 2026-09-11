@@ -82,6 +82,13 @@ function static_site_importer_staged_archive_files( $archive ) {
 		),
 	);
 }
+function static_site_importer_staged_archive_compiler_limits() {
+	return array(
+		'max_files'       => 4242,
+		'max_file_bytes'  => 10485760,
+		'max_total_bytes' => 262144000,
+	);
+}
 function static_site_importer_staged_archive_payload_reader( $archive ) {
 	$GLOBALS['ssi_staged_reader_archives'][] = $archive;
 	return new class() {
@@ -89,12 +96,11 @@ function static_site_importer_staged_archive_payload_reader( $archive ) {
 			return 'staged bytes'; }
 	};
 }
-class Static_Site_Importer_Theme_Generator {
+class Static_Site_Importer_Compilation_Preparation {
 	public static $compiled = 0;
-	public static $applied  = 0;
-	public static $drift    = false;
 	public static $last_args = array();
 	public static $last_artifact = array();
+	public static $compiler_diagnostics = array();
 	public static function compile_website_artifact( $artifact, $args ) {
 		++self::$compiled;
 		self::$last_artifact = $artifact;
@@ -110,7 +116,11 @@ class Static_Site_Importer_Theme_Generator {
 		);
 		if ( 'classic' === ( $args['theme_materialization'] ?? '' ) ) {
 			$args['classic_theme_projection'] = Static_Site_Importer_Classic_Theme_Projection::build( $artifact, $plan );
-		} return array(
+		}
+		$args['compiler_diagnostics'] = self::$compiler_diagnostics ?: array(
+			array( 'code' => 'normalizer_limit_warning', 'severity' => 'warning', 'message' => 'A normalizer limit was reached after successful compilation.' ),
+		);
+		return array(
 			'artifact'             => $artifact,
 			'args'                 => $args,
 			'compiled'             => array(),
@@ -119,10 +129,17 @@ class Static_Site_Importer_Theme_Generator {
 			'companion_payload'    => null,
 			'materialization_plan' => array(),
 		); }
+}
+class Static_Site_Importer_Theme_Generator {
+	public static $applied  = 0;
+	public static $last_args = array();
+	public static $last_artifact = array();
+	public static $drift    = false;
 	public static function import_website_artifact( $artifact, $args ) {
 		if ( self::$drift && isset( $args['approved_classic_plan_identity'] ) ) {
 			return new WP_Error( 'static_site_importer_approved_classic_plan_changed', 'drift' );
 		} ++self::$applied;
+		self::$last_artifact = $artifact;
 		self::$last_args = $args;
 		return array(
 			'quality'               => array( 'pass' => true ),
@@ -188,8 +205,32 @@ $plan  = static_site_importer_ability_import(
 		),
 	)
 );
-if ( empty( $plan['success'] ) || 'blocks-engine/wordpress-site-plan/v2' !== ( $plan['plan']['schema'] ?? '' ) || 1 !== Static_Site_Importer_Theme_Generator::$compiled || 0 !== Static_Site_Importer_Theme_Generator::$applied ) {
+if ( empty( $plan['success'] ) || 'blocks-engine/wordpress-site-plan/v2' !== ( $plan['plan']['schema'] ?? '' ) || 1 !== Static_Site_Importer_Compilation_Preparation::$compiled || 0 !== Static_Site_Importer_Theme_Generator::$applied ) {
 	throw new RuntimeException( 'pasted HTML planning must compile exactly once without materializing' ); }
+if ( 'normalizer_limit_warning' !== ( $plan['diagnostics'][1]['code'] ?? '' ) || 4096 <= strlen( (string) wp_json_encode( $plan ) ) ) {
+	throw new RuntimeException( 'normal-sized compiler warning must remain visible in the bounded canonical plan result' ); }
+Static_Site_Importer_Compilation_Preparation::$compiler_diagnostics = array();
+for ( $index = 0; $index < 80; ++$index ) {
+	Static_Site_Importer_Compilation_Preparation::$compiler_diagnostics[] = array(
+		'code'     => 'compiler-' . $index,
+		'severity' => 0 === $index % 7 ? 'error' : 'warning',
+		'message'  => str_repeat( 'message-', 200 ),
+		'context'  => array( 'nested' => array( 'again' => array( 'payload' => str_repeat( 'context-', 1000 ), 'extra' => array( 'discard' => true ) ) ) ),
+	);
+}
+$compiler_duplicate = Static_Site_Importer_Compilation_Preparation::$compiler_diagnostics[ 79 ];
+Static_Site_Importer_Compilation_Preparation::$compiler_diagnostics[] = $compiler_duplicate;
+$adversarial_plan = static_site_importer_ability_import(
+	array(
+		'operation' => 'plan',
+		'source'    => array( 'type' => 'html', 'html' => '<h1>Adversarial</h1>' ),
+	)
+);
+$compiler_aggregate = $adversarial_plan['diagnostics'][1] ?? array();
+$compiler_aggregate_context_json = json_encode( $compiler_aggregate['context'] ?? array() );
+if ( 2 !== count( $adversarial_plan['diagnostics'] ?? array() ) || 'compiler_diagnostics_aggregated' !== ( $compiler_aggregate['code'] ?? '' ) || 81 !== ( $compiler_aggregate['context']['diagnostic_count'] ?? 0 ) || 12 !== ( $compiler_aggregate['context']['diagnostic_by_severity']['error'] ?? 0 ) || 69 !== ( $compiler_aggregate['context']['diagnostic_by_severity']['warning'] ?? 0 ) || 61 !== ( $compiler_aggregate['context']['code_occurrences_omitted'] ?? 0 ) || isset( $compiler_aggregate['context']['codes_omitted'] ) || 20 !== count( $compiler_aggregate['context']['diagnostic_by_code'] ?? array() ) || 76 !== ( $compiler_aggregate['context']['samples_omitted'] ?? -1 ) || ! is_string( $compiler_aggregate_context_json ) || 4096 < strlen( $compiler_aggregate_context_json ) ) {
+	throw new RuntimeException( 'canonical plan must retain truthful compiler counts in one bounded aggregate' ); }
+Static_Site_Importer_Compilation_Preparation::$compiler_diagnostics = array();
 $service_plan = Static_Site_Importer_Canonical_Import_Service::import(
 	array(
 		'operation' => 'plan',
@@ -199,7 +240,7 @@ $service_plan = Static_Site_Importer_Canonical_Import_Service::import(
 		),
 	)
 );
-if ( $plan !== $service_plan || 2 !== Static_Site_Importer_Theme_Generator::$compiled ) {
+if ( $plan !== $service_plan || 3 !== Static_Site_Importer_Compilation_Preparation::$compiled ) {
 	throw new RuntimeException( 'Ability and canonical service planning must have identical envelopes' ); }
 $wrapper_error = static_site_importer_ability_error( 'canonical-wrapper', 'wrapper' );
 $service_error = Static_Site_Importer_Canonical_Import_Service::error( 'canonical-wrapper', 'wrapper' );
@@ -215,7 +256,7 @@ $files_plan = static_site_importer_ability_import(
 		),
 	)
 );
-if ( empty( $files_plan['success'] ) || $files !== ( $GLOBALS['ssi_runtime_sources'][2]['files'] ?? null ) ) {
+if ( empty( $files_plan['success'] ) || $files !== ( $GLOBALS['ssi_runtime_sources'][3]['files'] ?? null ) ) {
 	throw new RuntimeException( 'file sources must use the canonical source normalizer' ); }
 $figma_plan = static_site_importer_ability_import(
 	array(
@@ -228,7 +269,7 @@ $figma_plan = static_site_importer_ability_import(
 		'source'          => array( 'type' => 'figma' ),
 	)
 );
-if ( empty( $figma_plan['success'] ) || 'figma' !== ( $figma_plan['source']['type'] ?? '' ) || 'website/index.html' !== ( Static_Site_Importer_Theme_Generator::$last_artifact['entrypoint'] ?? '' ) ) {
+if ( empty( $figma_plan['success'] ) || 'figma' !== ( $figma_plan['source']['type'] ?? '' ) || 'website/index.html' !== ( Static_Site_Importer_Compilation_Preparation::$last_artifact['entrypoint'] ?? '' ) ) {
 	throw new RuntimeException( 'Figma sources must normalize and plan through the canonical import service' ); }
 $rejected_staged_figma = static_site_importer_ability_import(
 	array(
@@ -268,7 +309,7 @@ $portable_plan = static_site_importer_ability_import(
 		),
 	)
 );
-if ( empty( $portable_plan['success'] ) || 'index.html' !== ( Static_Site_Importer_Theme_Generator::$last_artifact['entrypoint'] ?? '' ) || array( 'index.html', 'css/site.css' ) !== array_column( Static_Site_Importer_Theme_Generator::$last_artifact['files'] ?? array(), 'path' ) ) {
+if ( empty( $portable_plan['success'] ) || 'index.html' !== ( Static_Site_Importer_Compilation_Preparation::$last_artifact['entrypoint'] ?? '' ) || array( 'index.html', 'css/site.css' ) !== array_column( Static_Site_Importer_Compilation_Preparation::$last_artifact['files'] ?? array(), 'path' ) ) {
 	throw new RuntimeException( 'canonical imports must project portable source manifests before compilation' ); }
 $rejected = static_site_importer_ability_import(
 	array(
@@ -349,7 +390,7 @@ $referenced_files = static_site_importer_ability_import(
 		'source'    => array( 'type' => 'files', 'ref' => 'opaque-files-1' ),
 	)
 );
-if ( empty( $referenced_files['success'] ) || $reference_reader !== ( Static_Site_Importer_Theme_Generator::$last_args['_static_site_importer_payload_reader'] ?? null ) || 501 !== ( Static_Site_Importer_Theme_Generator::$last_artifact['compiler_limits']['max_files'] ?? null ) ) {
+if ( empty( $referenced_files['success'] ) || $reference_reader !== ( Static_Site_Importer_Compilation_Preparation::$last_args['_static_site_importer_payload_reader'] ?? null ) || 501 !== ( Static_Site_Importer_Compilation_Preparation::$last_artifact['compiler_limits']['max_files'] ?? null ) ) {
 	throw new RuntimeException( 'opaque file references must preserve their server-owned payload reader and compiler limits through normalization' ); }
 $GLOBALS['ssi_filters']['static_site_importer_resolve_source_reference'] = static function ( $value, $reference, $type ) {
 	return 'staged-zip-1' === $reference && 'zip' === $type ? array(
@@ -373,6 +414,41 @@ $staged_zip = static_site_importer_ability_import(
 );
 if ( empty( $staged_zip['success'] ) || '/srv/private/website.zip' !== ( $GLOBALS['ssi_staged_archives'][0]['staged_path'] ?? '' ) || isset( $GLOBALS['ssi_runtime_sources'][ array_key_last( $GLOBALS['ssi_runtime_sources'] ) ]['archive'] ) ) {
 	throw new RuntimeException( 'resolved staged archives must normalize through files without inline archive bytes' ); }
+if ( static_site_importer_staged_archive_compiler_limits() !== ( Static_Site_Importer_Compilation_Preparation::$last_artifact['compiler_limits'] ?? null ) ) {
+	throw new RuntimeException( 'staged ZIP artifacts must declare the compiler contract their payload references were verified against' ); }
+$GLOBALS['ssi_filters']['static_site_importer_resolve_source_reference'] = static function ( $value, $reference, $type ) {
+	return 'staged-zip-2' === $reference && 'zip' === $type ? array(
+		'source' => array(
+			'metadata' => array( 'compiler_limits' => array( 'max_files' => 7 ) ),
+			'zip'      => array(
+				'name'        => 'website.zip',
+				'staged_path' => '/srv/private/website.zip',
+			),
+		),
+	) : $value;
+};
+$declared_staged_zip = static_site_importer_ability_import(
+	array(
+		'operation' => 'plan',
+		'source'    => array(
+			'type' => 'zip',
+			'ref'  => 'staged-zip-2',
+		),
+	)
+);
+if ( empty( $declared_staged_zip['success'] ) || array( 'max_files' => 7 ) !== ( Static_Site_Importer_Compilation_Preparation::$last_artifact['compiler_limits'] ?? null ) ) {
+	throw new RuntimeException( 'a resolver that declares its own compiler contract must keep it' ); }
+$GLOBALS['ssi_filters']['static_site_importer_resolve_source_reference'] = static function ( $value, $reference, $type ) {
+	return 'staged-zip-1' === $reference && 'zip' === $type ? array(
+		'source'     => array(
+			'zip' => array(
+				'name'        => 'website.zip',
+				'staged_path' => '/srv/private/website.zip',
+			),
+		),
+		'provenance' => array( 'owner' => 'server' ),
+	) : $value;
+};
 $approved_staged_zip = static_site_importer_ability_import(
 	array(
 		'operation' => 'apply',

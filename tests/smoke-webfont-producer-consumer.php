@@ -44,8 +44,6 @@ $assert = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) throw new RuntimeException( $message );
 };
 
-$assert( 'v0.9.3' === \Composer\InstalledVersions::getPrettyVersion( 'automattic/blocks-engine-php-transformer' ), 'producer-consumer integration runs against the locked Blocks Engine php-transformer v0.9.3 dependency' );
-
 $fixture_html = '<!doctype html><html><head><link rel="stylesheet" href="css/style.css"></head><body><main>Inter fixture</main></body></html>';
 $fixture_css  = "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');\n:root{--font:'Inter',system-ui,sans-serif}body{font-family:var(--font)}";
 $producer_plan = ( new Automattic\BlocksEngine\PhpTransformer\StaticSite\FontMaterialization\FontMaterializationPlanBuilder() )->fromWebFontSources(
@@ -81,6 +79,7 @@ $empty_readiness = (string) ( array_values( array_filter( $empty_overlay['writes
 $empty_bootstrap = (string) ( array_values( array_filter( $empty_overlay['writes'], static fn( array $write ): bool => 'functions.php' === $write['target_path'] ) )[0]['content'] ?? '' );
 $assert( str_starts_with( $empty_bootstrap, '<?php' ) && str_contains( $empty_readiness, 'document.fonts.ready' ) && str_contains( $empty_bootstrap, 'static-site-importer-font-readiness' ) && ! str_contains( $empty_bootstrap, 'embedded-fonts.css' ), 'plans without a canonical bootstrap or materialized font faces synthesize browser readiness without registering a nonexistent stylesheet' );
 $assert( str_contains( $empty_bootstrap, "add_theme_support( 'editor-styles' )" ) && str_contains( $empty_bootstrap, "add_editor_style( 'assets/css/editor-style.css' )" ), 'generated themes register their dedicated stylesheet for the block editor independently of font materialization' );
+$assert( str_contains( $empty_bootstrap, "wp_enqueue_style( 'static-site-importer-theme', get_stylesheet_uri()" ), 'generated themes load their materialized root stylesheet on the frontend independently of font materialization' );
 
 $svg = '<svg xmlns="http://www.w3.org/2000/svg"><text font-family="Inter">Fixture 37</text></svg>';
 $svg_source_path = 'assets/materialized-svg/fixture-37.svg';

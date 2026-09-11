@@ -6,6 +6,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Artifact_Run_Workspace' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-artifact-run.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Run_Storage' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-run-storage.php';
+}
 
 final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 	private const SCHEMA                       = 'static-site-importer/lifecycle-compile-checkpoint/v1';
@@ -47,7 +50,6 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 			'plan'                  => $materialization['plan'],
 			'gutenberg_gaps'        => $materialization['gutenberg_gaps'],
 			'companion_payload'     => $materialization['companion_payload'],
-			'materialization_plan'  => $materialization['materialization_plan'],
 			'theme_materialization' => $materialization['theme_materialization'],
 		);
 		unset( $payload['args']['_static_site_importer_payload_reader'] );
@@ -152,6 +154,12 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 		if ( wp_mkdir_p( $root ) ) {
 			Static_Site_Importer_Artifact_Run_Workspace::purge_expired_in( $root );
 		}
+		// Sites upgraded from a release that stored checkpoints in the media
+		// library keep their expiry sweep until that tree drains.
+		$legacy = Static_Site_Importer_Run_Storage::legacy_uploads_root() . '/lifecycle-checkpoints';
+		if ( $legacy !== $root && is_dir( $legacy ) ) {
+			Static_Site_Importer_Artifact_Run_Workspace::purge_expired_in( $legacy );
+		}
 	}
 
 	public static function current_owner(): string {
@@ -161,11 +169,7 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 	}
 
 	public static function root( string $root = '' ): string {
-		if ( '' !== $root ) {
-			return $root;
-		}
-		$uploads = function_exists( 'wp_upload_dir' ) ? wp_upload_dir() : array();
-		return trailingslashit( (string) ( $uploads['basedir'] ?? sys_get_temp_dir() ) ) . 'static-site-importer/lifecycle-checkpoints';
+		return '' !== $root ? $root : Static_Site_Importer_Run_Storage::path( 'lifecycle-checkpoints' );
 	}
 
 	private static function workspace( string $handle, string $root ) {
@@ -273,6 +277,7 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 			'compile_pipeline'     => self::files_binding(
 				array(
 					'class-static-site-importer-theme-generator.php',
+					'class-static-site-importer-compilation-preparation.php',
 					'class-static-site-importer-theme-materialization-strategy.php',
 					'class-static-site-importer-site-identity.php',
 					'class-static-site-importer-classic-theme-projection.php',
@@ -355,7 +360,7 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 	}
 
 	private static function valid_payload( $payload ): bool {
-		if ( ! is_array( $payload ) || ! is_array( $payload['artifact'] ?? null ) || ! is_array( $payload['args'] ?? null ) || ! is_array( $payload['plan'] ?? null ) || ! is_array( $payload['gutenberg_gaps'] ?? null ) || ! is_array( $payload['materialization_plan'] ?? null ) || ! is_array( $payload['theme_materialization'] ?? null ) || ! is_string( $payload['plan']['schema'] ?? null ) || '' === $payload['plan']['schema'] ) {
+		if ( ! is_array( $payload ) || ! is_array( $payload['artifact'] ?? null ) || ! is_array( $payload['args'] ?? null ) || ! is_array( $payload['plan'] ?? null ) || ! is_array( $payload['gutenberg_gaps'] ?? null ) || ! is_array( $payload['theme_materialization'] ?? null ) || ! is_string( $payload['plan']['schema'] ?? null ) || '' === $payload['plan']['schema'] ) {
 			return false;
 		}
 		if ( ! array_key_exists( 'companion_payload', $payload ) || ( null !== $payload['companion_payload'] && ! is_array( $payload['companion_payload'] ) ) ) {

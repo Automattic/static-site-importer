@@ -46,6 +46,7 @@ if ( ! function_exists( 'add_action' ) ) {
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-diagnostics-adapter.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-fallback-contract.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
 require_once dirname( __DIR__ ) . '/includes/abilities.php';
 
@@ -223,6 +224,44 @@ $clean_quality_contract = Static_Site_Importer_Diagnostic_Contract::build(
 $assert( 0 === ( $clean_quality_contract['quality_counts']['fallback_count'] ?? null ), 'quality-reconciliation-keeps-clean-fallbacks-zero' );
 $assert( true === ( $clean_quality_contract['quality_counts']['consistent'] ?? false ), 'quality-reconciliation-keeps-clean-layers-consistent' );
 $assert( 0 === ( $clean_quality_contract['diagnostic_summary']['total'] ?? null ), 'quality-reconciliation-does-not-diagnose-clean-layers' );
+
+$importer_info_diagnostic_contract = Static_Site_Importer_Diagnostic_Contract::build(
+	array(
+		'import_report' => array(
+			'quality'       => array( 'fallback_count' => 0, 'diagnostic_count' => 1 ),
+			'blocks_engine' => array( 'wordpress_site_plan' => array( 'schema' => 'blocks-engine/wordpress-site-plan/v2', 'quality' => array( 'metrics' => array( 'fallback_count' => 0, 'diagnostic_count' => 1 ) ) ) ),
+			'import_validation_result' => array(
+				'schema'      => 'blocks-engine/import-validation-result/v1',
+				'quality_pass' => true,
+				'counts'      => array( 'fallback_blocks' => 0, 'diagnostics' => 3 ),
+				'diagnostics' => array(
+					array( 'type' => 'preserved_runtime_island', 'severity' => 'info' ),
+					array( 'type' => 'wordpress_site_plan_shell_entry_extracted', 'severity' => 'info' ),
+					array( 'type' => 'wordpress_site_plan_shell_entry_extracted', 'severity' => 'info' ),
+				),
+			),
+		),
+	)
+);
+$assert( true === ( $importer_info_diagnostic_contract['quality_counts']['consistent'] ?? false ), 'quality-reconciliation-keeps-importer-info-diagnostics-out-of-cross-phase-comparison' );
+$assert( 1 === ( $importer_info_diagnostic_contract['quality_counts']['diagnostic_counts']['compiler'] ?? null ), 'quality-reconciliation-retains-compiler-diagnostic-inventory' );
+$assert( 1 === ( $importer_info_diagnostic_contract['quality_counts']['diagnostic_counts']['import_report'] ?? null ), 'quality-reconciliation-retains-report-diagnostic-inventory' );
+$assert( 3 === ( $importer_info_diagnostic_contract['quality_counts']['diagnostic_counts']['materialized_validation'] ?? null ), 'quality-reconciliation-retains-materialized-diagnostic-inventory' );
+$assert( 'import_validation_result.counts.diagnostics' === ( $importer_info_diagnostic_contract['quality_counts']['diagnostic_count_provenance']['materialized_validation']['path'] ?? '' ), 'quality-reconciliation-retains-materialized-diagnostic-provenance' );
+$assert( 3 === ( $importer_info_diagnostic_contract['quality_counts']['diagnostic_count'] ?? null ), 'quality-reconciliation-projects-finalized-diagnostic-inventory' );
+$assert( 0 === count( array_filter( $importer_info_diagnostic_contract['diagnostics'] ?? array(), static fn ( array $diagnostic ): bool => 'quality_count_consistency_failure' === ( $diagnostic['type'] ?? '' ) ) ), 'quality-reconciliation-does-not-gate-importer-info-diagnostics' );
+
+$contradictory_quality_contract = Static_Site_Importer_Diagnostic_Contract::build(
+	array(
+		'import_report' => array(
+			'quality'       => array( 'fallback_count' => 0 ),
+			'blocks_engine' => array( 'wordpress_site_plan' => array( 'quality' => array( 'metrics' => array( 'fallback_count' => 1 ) ) ) ),
+			'import_validation_result' => array( 'counts' => array( 'fallback_blocks' => 1 ) ),
+		),
+	)
+);
+$assert( false === ( $contradictory_quality_contract['quality_counts']['consistent'] ?? true ), 'quality-reconciliation-detects-real-fallback-count-mismatch' );
+$assert( 1 === count( array_filter( $contradictory_quality_contract['diagnostics'] ?? array(), static fn ( array $diagnostic ): bool => 'quality_count_consistency_failure' === ( $diagnostic['type'] ?? '' ) ) ), 'quality-reconciliation-gates-real-fallback-count-mismatch' );
 
 $partial_quality_report = Static_Site_Importer_Import_Report::from_array(
 	array(
@@ -559,9 +598,9 @@ $reordered_form_entity = array(
 		),
 	),
 );
-$form_identity    = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_identity( $reordered_form_entity );
-$form_hash        = Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $reordered_form_entity );
-$assert( $form_hash === Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $normalized_form_fallback ) && $form_identity === Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_identity( $normalized_form_fallback ), 'form-fallback-reconciliation-canonicalizes-associative-key-order' );
+$form_identity    = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $reordered_form_entity );
+$form_hash        = Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $reordered_form_entity );
+$assert( $form_hash === Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $normalized_form_fallback ) && $form_identity === Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $normalized_form_fallback ), 'form-fallback-reconciliation-canonicalizes-associative-key-order' );
 $block_hash       = hash( 'sha256', '<!-- wp:jetpack/contact-form -->newsletter<!-- /wp:jetpack/contact-form -->' );
 $page_hash        = hash( 'sha256', '<!-- wp:group -->materialized page<!-- /wp:group -->' );
 $provider_receipt = array(
@@ -599,6 +638,82 @@ $mismatched_form_report['quality']     = array( 'fallback_count' => 1 );
 $mismatched_form_report['diagnostics'] = array( $normalized_form_fallback );
 Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $mismatched_form_report, array( $mismatched_receipt ) );
 $assert( 1 === ( $mismatched_form_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $mismatched_form_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'normalized-form-diagnostic-rejects-mismatched-provider-receipt' );
+
+$providerless_receipt = $provider_receipt;
+$providerless_receipt['provider'] = '';
+$providerless_form_report = Static_Site_Importer_Import_Report::from_array( $normalized_form_report->to_array() );
+$providerless_form_report['quality'] = array( 'fallback_count' => 1 );
+$providerless_form_report['diagnostics'] = array( $normalized_form_fallback );
+Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $providerless_form_report, array( $providerless_receipt ) );
+$assert( 1 === ( $providerless_form_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $providerless_form_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'form-fallback-requires-provider-resolved-persisted-receipt' );
+
+// BusyBears' captured contract has four source fallbacks without a producer
+// identity. Two have persisted provider receipts; the two declined forms must
+// remain unresolved rather than receiving a synthetic receipt.
+$captured_form_fallbacks = array();
+$captured_form_receipts  = array();
+foreach ( array( 'contact.html', 'contact.html', 'quote.html', 'quote.html' ) as $index => $source_path ) {
+	$fallback = array(
+		'type'        => 'unsupported_html_fallback',
+		'code'        => 'html_form_fallback',
+		'reason_code' => 'html_form_fallback',
+		'source_path' => $source_path,
+		'selector'    => 'form:nth-of-type(' . ( $index + 1 ) . ')',
+		'form'        => array( 'id' => 'captured-form-' . $index ),
+		'controls'    => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email-' . $index ) ),
+	);
+	$captured_form_fallbacks[] = $fallback;
+	if ( 0 === $index || 2 === $index ) {
+		$captured_hash = Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $fallback );
+		$captured_form_receipts[] = array(
+			'schema'                           => 'static-site-importer/quality-resolution-receipt/v1',
+			'status'                           => 'completed',
+			'source_path'                      => $source_path,
+			'fallback_reconciliation_identity' => hash( 'sha256', 'captured-producer-' . $index ),
+			'fallback_hash'                    => $captured_hash,
+			'binding_reconciliation_identity'  => hash( 'sha256', 'captured-binding-' . $index ),
+			'materialized_block_hash'          => hash( 'sha256', 'captured-block-' . $index ),
+			'persisted_fragment_hash'          => hash( 'sha256', 'captured-block-' . $index ),
+			'materialized_content_hash'        => hash( 'sha256', 'captured-page-' . $source_path ),
+			'provider'                         => 'jetpack',
+		);
+	}
+}
+$captured_form_report = Static_Site_Importer_Import_Report::from_array(
+	array(
+		'quality'                 => array( 'fallback_count' => 4 ),
+		'diagnostics'             => $captured_form_fallbacks,
+		'materialization_receipt' => array(
+			'completed' => array(
+				'materialized_pages' => array(
+					'contact.html' => array( 'content_hash' => hash( 'sha256', 'captured-page-contact.html' ) ),
+					'quote.html'   => array( 'content_hash' => hash( 'sha256', 'captured-page-quote.html' ) ),
+				),
+				'runtime_declarations' => array(
+					'entity_bindings' => array_map(
+						static fn( array $receipt ): array => array_merge( $receipt, array( 'role' => 'form', 'reconciliation_identity' => $receipt['binding_reconciliation_identity'] ) ),
+						$captured_form_receipts
+					),
+				),
+			),
+		),
+	)
+);
+Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $captured_form_report );
+$captured_resolutions = $captured_form_report['quality_resolutions']['resolutions'] ?? array();
+$assert( 2 === ( $captured_form_report['quality_resolutions']['resolved_by_provider'] ?? 0 ) && 2 === ( $captured_form_report['quality_resolutions']['unresolved_fallback_count'] ?? 0 ) && 'resolved_by_provider' === ( $captured_resolutions[0]['state'] ?? '' ) && 'unresolved' === ( $captured_resolutions[1]['state'] ?? '' ) && 'resolved_by_provider' === ( $captured_resolutions[2]['state'] ?? '' ) && 'unresolved' === ( $captured_resolutions[3]['state'] ?? '' ), 'captured-form-contract-joins-only-persisted-provider-identities' );
+$assert( ( $captured_form_receipts[0]['fallback_reconciliation_identity'] ?? '' ) === ( $captured_resolutions[0]['fallback_reconciliation_identity'] ?? '' ) && ( $captured_form_receipts[1]['fallback_reconciliation_identity'] ?? '' ) === ( $captured_resolutions[2]['fallback_reconciliation_identity'] ?? '' ), 'captured-form-contract-preserves-persisted-producer-identities' );
+$ambiguous_captured_receipt = $captured_form_receipts[0];
+$ambiguous_captured_receipt['fallback_reconciliation_identity'] = hash( 'sha256', 'captured-producer-duplicate' );
+$ambiguous_captured_report = Static_Site_Importer_Import_Report::from_array(
+	array(
+		'quality'                 => array( 'fallback_count' => 1 ),
+		'diagnostics'             => array( $captured_form_fallbacks[0] ),
+		'materialization_receipt' => $captured_form_report['materialization_receipt'],
+	)
+);
+Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $ambiguous_captured_report, array( $captured_form_receipts[0], $ambiguous_captured_receipt ) );
+$assert( 1 === ( $ambiguous_captured_report['quality_resolutions']['unresolved_fallback_count'] ?? 0 ) && 'unresolved' === ( $ambiguous_captured_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'captured-form-contract-rejects-ambiguous-source-hash-identity-join' );
 
 // Producer-owned identities distinguish responsive copies even when their
 // source selector and form metadata are otherwise identical.

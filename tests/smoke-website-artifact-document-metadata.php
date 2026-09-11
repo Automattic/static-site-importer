@@ -122,6 +122,7 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( ! str_contains( $content, '<script' ), 'page-content-has-no-script-fragments' );
 	$assert( ! empty( $report['quality']['pass'] ), 'canonical-plan-quality-passes' );
 	$assert( isset( $report['quality']['metrics'] ) || isset( $report['quality']['score'] ), 'canonical-plan-quality-is-reported-without-fabricated-core-html-count' );
+	$assert( ! isset( $report['generated_theme']['wordpress_site_plan'] ) && isset( $report['blocks_engine']['wordpress_site_plan'] ), 'report-keeps-one-canonical-wordpress-site-plan' );
 	$assert( '' === ( $result['report_path'] ?? '' ), 'theme-report-artifact-is-not-written-by-default' );
 	$assert( '' === ( $result['validation_result_path'] ?? '' ), 'theme-validation-artifact-is-not-written-by-default' );
 	$assert( '' === ( $result['finding_packets_path'] ?? '' ), 'theme-finding-packets-artifact-is-not-written-by-default' );

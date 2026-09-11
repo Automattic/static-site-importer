@@ -666,6 +666,7 @@ final class Static_Site_Importer_Font_Materializer {
 		}
 		$bootstrap .= "} );\n";
 		$bootstrap .= "\nadd_action( 'wp_enqueue_scripts', static function (): void {\n";
+		$bootstrap .= "    wp_enqueue_style( 'static-site-importer-theme', get_stylesheet_uri(), array(), wp_get_theme()->get( 'Version' ) );\n";
 		if ( $enqueue_stylesheet ) {
 			$bootstrap .= "    wp_enqueue_style( 'static-site-importer-embedded-fonts', get_theme_file_uri( 'assets/css/embedded-fonts.css' ), array(), null );\n";
 		}

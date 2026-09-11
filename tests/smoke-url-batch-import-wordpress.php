@@ -56,4 +56,5 @@ $scope_final = Static_Site_Importer_URL_Batch_Import::import( $scope_request, ar
 $scope_page_after = current( array_filter( get_posts( array( 'post_type' => 'page', 'post_status' => 'any', 'numberposts' => -1 ) ), static fn( WP_Post $post ): bool => str_contains( $post->post_content, $scope_marker ) ) );
 remove_filter( 'ssi_form_plugin', $scope_provider, 10 ); remove_filter( 'static_site_importer_entity_materializers', $scope_adapters ); remove_filter( 'pre_http_request', $scope_http, 10 );
 if ( is_wp_error( $scope_final ) || 'completed' !== ( $scope_final['url_batch_run']['status'] ?? '' ) || 1 !== $scope_effects || 0 !== $scope_requests || 1 !== (int) get_option( $scope_option ) || get_stylesheet() !== $scope_slug || ! $scope_page_after || ! str_contains( $scope_page_after->post_content, $scope_marker . ' bound' ) || ! is_file( $scope_theme_dir . '/assets/website/optional.png' ) ) { throw new RuntimeException( 'complete-snapshot hydration must apply deferred bindings, provider effects, activation, and assets once' ); }
+
 echo "WordPress URL batch import smoke passed.\n";

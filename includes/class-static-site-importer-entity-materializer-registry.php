@@ -9,12 +9,19 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Form_Fallback_Contract' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-form-fallback-contract.php';
+}
+
 /**
  * Registers import-time entity validators, dependency requirements, and writers.
  */
 class Static_Site_Importer_Entity_Materializer_Registry {
 
 	private const FORM_CONTROL_TOPOLOGY_MAX_DEPTH = 16;
+	private const FAILURE_DIAGNOSTIC_MAX_ROWS     = 10;
+	private const FAILURE_DIAGNOSTIC_MAX_BYTES    = 256;
+	private const FAILURE_DIAGNOSTIC_SCAN_BUDGET  = 10;
 
 	/**
 	 * Per-capability provider selection contract.
@@ -382,10 +389,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					)
 				);
 			}
-			$normalized_manifest           = 'shop' === $capability ? array(
+			// Dependency preparation intentionally defers provider validation until
+			// resume, but its checkpoint must still retain every declared entity.
+			$normalized_manifest           = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ? $manifest : ( 'shop' === $capability ? array(
 				'schema_version' => 1,
 				'products'       => $validation['products'] ?? array(),
-			) : array( 'forms' => $validation['forms'] ?? array() );
+			) : array( 'forms' => $validation['forms'] ?? array() ) );
 			$lifecycle['entities'][ $key ] = array(
 				'adapter'     => $adapter,
 				'manifest'    => $normalized_manifest,
@@ -468,11 +477,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || 'form' !== ( $binding['role'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > 262144 ) {
 				continue;
 			}
-			$manifest = Static_Site_Importer_Report_Diagnostics::form_manifest_from_html( $binding['search_block_markup'] );
+			$manifest = Static_Site_Importer_Form_Fallback_Contract::manifest_from_html( $binding['search_block_markup'] );
 			if ( self::ordered_form_control_identity( $manifest['controls'] ) !== $control_shape ) {
 				return $entity;
 			}
-			$presentation = Static_Site_Importer_Report_Diagnostics::form_presentation_from_html( $binding['search_block_markup'], is_string( $entity['selector'] ?? null ) ? $entity['selector'] : '', $binding['occurrence'] );
+			$presentation = Static_Site_Importer_Form_Fallback_Contract::presentation_from_html( $binding['search_block_markup'], is_string( $entity['selector'] ?? null ) ? $entity['selector'] : '', $binding['occurrence'] );
 			if ( 'generic/form-presentation/v1' === ( $presentation['schema'] ?? null ) ) {
 				$presentations[] = $presentation;
 			}
@@ -539,43 +548,42 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'entity_schema' => $payload['entity_schema'],
 			);
 		}
-		if ( empty( $manifests ) ) {
-			return $lifecycle;
-		}
 		$resolved_declarations = isset( $resolved['runtime_declarations'] ) && is_array( $resolved['runtime_declarations'] ) ? $resolved['runtime_declarations'] : array();
-		$resolved_manifests    = array();
-		foreach ( $resolved_declarations as $declaration ) {
-			$payload = is_array( $declaration ) && is_array( $declaration['payload'] ?? null ) ? $declaration['payload'] : null;
-			if ( ! is_array( $payload ) || 'blocks-engine/runtime-entity-manifest/v1' !== ( $payload['schema'] ?? null ) ) {
-				continue;
+		$expanded              = array();
+		if ( ! empty( $manifests ) ) {
+			$resolved_manifests = array();
+			foreach ( $resolved_declarations as $declaration ) {
+				$payload = is_array( $declaration ) && is_array( $declaration['payload'] ?? null ) ? $declaration['payload'] : null;
+				if ( ! is_array( $payload ) || 'blocks-engine/runtime-entity-manifest/v1' !== ( $payload['schema'] ?? null ) ) {
+					continue;
+				}
+				$id = $declaration['reconciliation_identity'] ?? null;
+				if ( ! is_string( $id ) || ! isset( $manifests[ $id ] ) || isset( $resolved_manifests[ $id ] ) || 'entity_collection' !== ( $declaration['kind'] ?? null ) || ( $declaration['type'] ?? null ) !== $manifests[ $id ]['type'] || ( $payload['entity_schema'] ?? null ) !== $manifests[ $id ]['entity_schema'] ) {
+					return self::runtime_entity_resolution_error( 'Runtime entity manifest declaration does not match its lifecycle declaration.' );
+				}
+				$resolved_manifests[ $id ] = true;
 			}
-			$id = $declaration['reconciliation_identity'] ?? null;
-			if ( ! is_string( $id ) || ! isset( $manifests[ $id ] ) || isset( $resolved_manifests[ $id ] ) || 'entity_collection' !== ( $declaration['kind'] ?? null ) || $manifests[ $id ]['type'] !== ( $declaration['type'] ?? null ) || $manifests[ $id ]['entity_schema'] !== ( $payload['entity_schema'] ?? null ) ) {
-				return self::runtime_entity_resolution_error( 'Runtime entity manifest declaration does not match its lifecycle declaration.' );
+			if ( count( $manifests ) !== count( $resolved_manifests ) || array_diff_key( $manifests, $resolved_manifests ) ) {
+				return self::runtime_entity_resolution_error( 'Runtime entity manifest declaration projection is incomplete.' );
 			}
-			$resolved_manifests[ $id ] = true;
-		}
-		if ( count( $manifests ) !== count( $resolved_manifests ) || array_diff_key( $manifests, $resolved_manifests ) ) {
-			return self::runtime_entity_resolution_error( 'Runtime entity manifest declaration projection is incomplete.' );
-		}
 
-		$resolutions = $resolved['runtime_entity_resolution'] ?? null;
-		if ( ! is_array( $resolutions ) || ! array_is_list( $resolutions ) ) {
-			return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution is missing or malformed.' );
-		}
-		$expanded = array();
-		foreach ( $resolutions as $resolution ) {
-			if ( ! is_array( $resolution ) || array( 'reconciliation_identity', 'kind', 'type', 'entity_schema', 'entities' ) !== array_keys( $resolution ) ) {
-				return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution has an invalid shape.' );
+			$resolutions = $resolved['runtime_entity_resolution'] ?? null;
+			if ( ! is_array( $resolutions ) || ! array_is_list( $resolutions ) ) {
+				return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution is missing or malformed.' );
 			}
-			$id = $resolution['reconciliation_identity'];
-			if ( ! is_string( $id ) || ! isset( $manifests[ $id ] ) || isset( $expanded[ $id ] ) || 'entity_collection' !== $resolution['kind'] || $manifests[ $id ]['type'] !== $resolution['type'] || $manifests[ $id ]['entity_schema'] !== $resolution['entity_schema'] || ! is_array( $resolution['entities'] ) || ! array_is_list( $resolution['entities'] ) ) {
-				return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution does not match its declaration.' );
+			foreach ( $resolutions as $resolution ) {
+				if ( ! is_array( $resolution ) || array( 'reconciliation_identity', 'kind', 'type', 'entity_schema', 'entities' ) !== array_keys( $resolution ) ) {
+					return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution has an invalid shape.' );
+				}
+				$id = $resolution['reconciliation_identity'];
+				if ( ! is_string( $id ) || ! isset( $manifests[ $id ] ) || isset( $expanded[ $id ] ) || 'entity_collection' !== $resolution['kind'] || $manifests[ $id ]['type'] !== $resolution['type'] || $manifests[ $id ]['entity_schema'] !== $resolution['entity_schema'] || ! is_array( $resolution['entities'] ) || ! array_is_list( $resolution['entities'] ) ) {
+					return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution does not match its declaration.' );
+				}
+				$expanded[ $id ] = $resolution['entities'];
 			}
-			$expanded[ $id ] = $resolution['entities'];
-		}
-		if ( count( $manifests ) !== count( $expanded ) || array_diff_key( $manifests, $expanded ) ) {
-			return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution is incomplete.' );
+			if ( count( $manifests ) !== count( $expanded ) || array_diff_key( $manifests, $expanded ) ) {
+				return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution is incomplete.' );
+			}
 		}
 
 		if ( ! is_array( $lifecycle['entities'] ?? null ) ) {
@@ -601,7 +609,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					if ( ! is_array( $entity ) ) {
 						continue;
 					}
-					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
+					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : self::form_entity_key( $entity );
 					if ( '' !== $entity_key ) {
 						$resolved_by_key[ $entity_key ] = $entity;
 					}
@@ -610,7 +618,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					if ( ! is_array( $entity ) ) {
 						continue;
 					}
-					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
+					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : self::form_entity_key( $entity );
 					if ( isset( $resolved_by_key[ $entity_key ]['bindings'] ) && is_array( $resolved_by_key[ $entity_key ]['bindings'] ) ) {
 						$prepared['manifest'][ $key ][ $index ]['bindings'] = $resolved_by_key[ $entity_key ]['bindings'];
 					}
@@ -625,12 +633,26 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( 'form' === ( $prepared['adapter']['capability'] ?? null ) ) {
 				$entities = array_map( static fn( $entity ) => is_array( $entity ) ? self::prepare_form_entity( $entity ) : $entity, $entities );
 			}
-			$manifest   = 'products' === $key ? array( 'schema_version' => 1, 'products' => $entities ) : array( 'forms' => $entities );
+			$manifest   = 'products' === $key ? array(
+				'schema_version' => 1,
+				'products'       => $entities,
+			) : array( 'forms' => $entities );
 			$validation = self::validate_manifest_generic( $prepared['adapter'], $manifest );
 			if ( ! empty( $validation['errors'] ) ) {
-				return new WP_Error( 'static_site_importer_runtime_entity_resolution_invalid', 'Resolver-expanded runtime entities failed SSI provider validation.', array( 'status' => 'rejected', 'declaration_id' => $id, 'errors' => $validation['errors'] ) );
+				return new WP_Error(
+					'static_site_importer_runtime_entity_resolution_invalid',
+					'Resolver-expanded runtime entities failed SSI provider validation.',
+					array(
+						'status'         => 'rejected',
+						'declaration_id' => $id,
+						'errors'         => $validation['errors'],
+					)
+				);
 			}
-			$prepared['manifest'] = 'products' === $key ? array( 'schema_version' => 1, 'products' => $validation['products'] ?? array() ) : array( 'forms' => $validation['forms'] ?? array() );
+			$prepared['manifest'] = 'products' === $key ? array(
+				'schema_version' => 1,
+				'products'       => $validation['products'] ?? array(),
+			) : array( 'forms' => $validation['forms'] ?? array() );
 		}
 		unset( $prepared );
 		return $lifecycle;
@@ -678,7 +700,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				continue;
 			}
 			$report = self::materialize( $adapter, $prepared['manifest'] );
-			if ( is_wp_error( $report ) ) {
+			if ( $report instanceof WP_Error ) {
 				$reports[ $id ] = array(
 					'status' => 'error',
 					'reason' => $report->get_error_code(),
@@ -686,11 +708,13 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				return array(
 					'reports' => $reports,
 					'error'   => array(
-						'code'    => (string) $report->get_error_code(),
-						'message' => $report->get_error_message(),
+						'code'        => (string) $report->get_error_code(),
+						'message'     => self::failure_message( self::failure_diagnostics( $id, $adapter, $prepared['manifest'], $reports[ $id ] ), $report->get_error_message() ),
+						'diagnostics' => self::failure_diagnostics( $id, $adapter, $prepared['manifest'], $reports[ $id ] ),
 					),
 				);
 			}
+			$report         = self::normalize_failure_rows( $adapter, $prepared['manifest'], $report );
 			$reports[ $id ] = $report;
 			$counts         = is_array( $report['counts'] ?? null ) ? $report['counts'] : array();
 			$expected       = count( is_array( $prepared['manifest']['products'] ?? null ) ? $prepared['manifest']['products'] : ( $prepared['manifest']['forms'] ?? array() ) );
@@ -699,13 +723,15 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			// accounted for whether or not the entity carries a page binding.
 			$completed = array_sum( array_map( 'intval', array_intersect_key( $counts, array_flip( array( 'created', 'updated', 'mapped', 'skipped' ) ) ) ) );
 			if ( in_array( $report['status'] ?? '', array( 'failed', 'error' ), true ) || ! empty( $counts['failed'] ) || ! empty( $counts['error'] ) || ( ( ! empty( $prepared['required'] ) || self::lifecycle_entity_has_bindings( $prepared ) ) && $completed < $expected ) ) {
-				$code    = isset( $report['code'] ) && is_scalar( $report['code'] ) ? (string) $report['code'] : 'static_site_importer_entity_materialization_failed';
-				$message = isset( $report['error'] ) && is_scalar( $report['error'] ) ? (string) $report['error'] : ( isset( $report['reason'] ) && is_scalar( $report['reason'] ) && '' !== (string) $report['reason'] ? (string) $report['reason'] : 'Runtime entity materialization failed for declaration: ' . $id . '.' );
+				$code        = isset( $report['code'] ) && is_scalar( $report['code'] ) ? (string) $report['code'] : 'static_site_importer_entity_materialization_failed';
+				$diagnostics = self::failure_diagnostics( (string) $id, $adapter, $prepared['manifest'], $report );
+				$fallback    = isset( $report['error'] ) && is_scalar( $report['error'] ) ? (string) $report['error'] : ( isset( $report['reason'] ) && is_scalar( $report['reason'] ) && '' !== (string) $report['reason'] ? (string) $report['reason'] : 'Runtime entity materialization failed.' );
 				return array(
 					'reports' => $reports,
 					'error'   => array(
-						'code'    => $code,
-						'message' => $message,
+						'code'        => $code,
+						'message'     => self::failure_message( $diagnostics, $fallback ),
+						'diagnostics' => $diagnostics,
 					),
 				);
 			}
@@ -714,6 +740,424 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'reports' => $reports,
 			'error'   => null,
 		);
+	}
+
+	/** Build shallow, adapter-neutral evidence for a terminal provider failure. */
+	public static function failure_diagnostics( string $declaration_id, array $adapter, array $manifest, array $report ): array {
+		$rows        = is_array( $report['failure_rows'] ?? null ) ? $report['failure_rows'] : array();
+		$provider    = self::failure_text( $report['provider'] ?? $adapter['provider'] ?? '', 80 );
+		$available   = self::failure_availability( $report );
+		$diagnostics = array();
+		$scanned     = 0;
+		foreach ( $rows as $row ) {
+			if ( self::FAILURE_DIAGNOSTIC_SCAN_BUDGET <= $scanned++ ) {
+				break;
+			}
+			if ( ! is_array( $row ) || ! is_array( $row['result'] ?? null ) || ! in_array( $row['result']['status'] ?? '', array( 'error', 'failed' ), true ) ) {
+				continue;
+			}
+			$diagnostics[] = self::failure_diagnostic_row( $declaration_id, $adapter, is_array( $row['entity'] ?? null ) ? $row['entity'] : array(), $row['result'], $provider, $available );
+			if ( self::FAILURE_DIAGNOSTIC_MAX_ROWS <= count( $diagnostics ) ) {
+				break;
+			}
+		}
+		if ( empty( $diagnostics ) && ( in_array( $report['status'] ?? '', array( 'error', 'failed' ), true ) || ! empty( $report['counts']['error'] ) || ! empty( $report['counts']['failed'] ) ) ) {
+			$diagnostics[] = self::failure_diagnostic_row( $declaration_id, $adapter, array(), $report, $provider, $available );
+		}
+		return $diagnostics;
+	}
+
+	/** Normalize adapter-specific result collections into the generic failure row contract. */
+	private static function normalize_failure_rows( array $adapter, array $manifest, array $report ): array {
+		$declared = $adapter['entity_collection'] ?? '';
+		if ( ! is_string( $declared ) || ! is_array( $manifest[ $declared ] ?? null ) || ! is_array( $report[ $declared ] ?? null ) ) {
+			return $report;
+		}
+		$failure_rows = array();
+		$scanned      = 0;
+		foreach ( $report[ $declared ] as $index => $result ) {
+			if ( self::FAILURE_DIAGNOSTIC_SCAN_BUDGET <= $scanned++ ) {
+				break;
+			}
+			$failure_rows[] = array(
+				'entity' => is_array( $manifest[ $declared ][ $index ] ?? null ) ? $manifest[ $declared ][ $index ] : array(),
+				'result' => $result,
+			);
+		}
+		$report['failure_rows'] = $failure_rows;
+		return $report;
+	}
+
+	/** @param array<int,mixed> $diagnostics @return array<int,array<string,mixed>> */
+	public static function project_public_diagnostics( array $diagnostics ): array {
+		$projected = array();
+		$scanned   = 0;
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( self::FAILURE_DIAGNOSTIC_SCAN_BUDGET <= $scanned++ ) {
+				break;
+			}
+			if ( ! is_array( $diagnostic ) ) {
+				continue;
+			}
+			$row = self::project_public_diagnostic( $diagnostic );
+			if ( ! empty( $row ) ) {
+				$projected[] = $row;
+			}
+			if ( self::FAILURE_DIAGNOSTIC_MAX_ROWS <= count( $projected ) ) {
+				break;
+			}
+		}
+		return $projected;
+	}
+
+	/** @param array<string,mixed> $data @return array<string,mixed> */
+	public static function project_public_error_data( array $data ): array {
+		$projected = array();
+		foreach ( array( 'status', 'code', 'phase', 'declaration_id' ) as $field ) {
+			if ( isset( $data[ $field ] ) ) {
+				$value = self::project_public_token( $data[ $field ], 128 );
+				if ( '' !== $value ) {
+					$projected[ $field ] = $value;
+				}
+			}
+		}
+		$import_id = self::project_public_import_id( $data['import_id'] ?? null );
+		if ( '' !== $import_id ) {
+			$projected['import_id'] = $import_id;
+		}
+		foreach ( array( 'success', 'completed' ) as $field ) {
+			if ( is_bool( $data[ $field ] ?? null ) ) {
+				$projected[ $field ] = $data[ $field ];
+			}
+		}
+		if ( is_bool( $data['resumable'] ?? null ) ) {
+			$projected['resumable'] = $data['resumable'];
+		}
+		if ( is_array( $data['artifact_run'] ?? null ) ) {
+			$artifact_run = self::project_public_artifact_run( $data['artifact_run'] );
+			if ( ! empty( $artifact_run ) ) {
+				$projected['artifact_run'] = $artifact_run;
+			}
+		}
+		if ( is_array( $data['diagnostics'] ?? null ) ) {
+			$projected['diagnostics'] = self::project_public_diagnostics( $data['diagnostics'] );
+		}
+		if ( is_array( $data['import_validation_result']['diagnostics'] ?? null ) ) {
+			$projected['import_validation_result'] = array(
+				'diagnostics' => self::project_public_diagnostics( $data['import_validation_result']['diagnostics'] ),
+			);
+		}
+		if ( is_array( $data['import_report_summary'] ?? null ) ) {
+			$summary = self::project_public_error_summary( $data['import_report_summary'] );
+			if ( ! empty( $summary ) ) {
+				$projected['import_report_summary'] = $summary;
+			}
+		}
+		if ( is_array( $data['quality'] ?? null ) ) {
+			$quality = self::project_public_error_summary( $data['quality'] );
+			if ( ! empty( $quality ) ) {
+				$projected['quality'] = $quality;
+			}
+		}
+		return $projected;
+	}
+
+	/** @param array<string,mixed> $artifact_run @return array<string,mixed> */
+	private static function project_public_artifact_run( array $artifact_run ): array {
+		$projected = array();
+		foreach ( array( 'state', 'phase' ) as $field ) {
+			if ( isset( $artifact_run[ $field ] ) ) {
+				$value = self::project_public_token( $artifact_run[ $field ], 128 );
+				if ( '' !== $value ) {
+					$projected[ $field ] = $value;
+				}
+			}
+		}
+		$artifact_identity = self::project_public_hash( $artifact_run['artifact_identity'] ?? null );
+		if ( '' !== $artifact_identity ) {
+			$projected['artifact_identity'] = $artifact_identity;
+		}
+		if ( is_array( $artifact_run['progress'] ?? null ) ) {
+			$progress = array();
+			foreach ( array( 'page_count', 'prepared_count', 'receipt_count', 'remaining' ) as $field ) {
+				if ( is_numeric( $artifact_run['progress'][ $field ] ?? null ) ) {
+					$progress[ $field ] = max( 0, (int) $artifact_run['progress'][ $field ] );
+				}
+			}
+			if ( ! empty( $progress ) ) {
+				$projected['progress'] = $progress;
+			}
+		}
+		if ( is_array( $artifact_run['work'] ?? null ) ) {
+			$work = array();
+			foreach ( array( 'content_policy_applications', 'client_script_policy_applications', 'payloads_retained', 'shared_prepares', 'page_prepare_passes', 'page_plans_prepared', 'compile_batches', 'pages_compiled', 'compositions', 'materialization_claims', 'materialization_attempts', 'materializations', 'lifecycle_preparation_claims', 'lifecycle_preparation_attempts', 'lifecycle_preparations' ) as $field ) {
+				if ( is_numeric( $artifact_run['work'][ $field ] ?? null ) ) {
+					$work[ $field ] = max( 0, (int) $artifact_run['work'][ $field ] );
+				}
+			}
+			if ( ! empty( $work ) ) {
+				$projected['work'] = $work;
+			}
+		}
+		if ( is_array( $artifact_run['failures'] ?? null ) ) {
+			$failures = array();
+			foreach ( array_slice( $artifact_run['failures'], 0, self::FAILURE_DIAGNOSTIC_MAX_ROWS ) as $failure ) {
+				if ( ! is_array( $failure ) ) {
+					continue;
+				}
+				$row = array();
+				foreach ( array( 'phase', 'exception_class' ) as $field ) {
+					$value = self::project_public_token( $failure[ $field ] ?? null, 128 );
+					if ( '' !== $value ) {
+						$row[ $field ] = $value;
+					}
+				}
+				$artifact_identity = self::project_public_hash( $failure['artifact_identity'] ?? null );
+				if ( '' !== $artifact_identity ) {
+					$row['artifact_identity'] = $artifact_identity;
+				}
+				if ( ! empty( $row ) ) {
+					$failures[] = $row;
+				}
+			}
+			if ( ! empty( $failures ) ) {
+				$projected['failures'] = $failures;
+			}
+		}
+		return $projected;
+	}
+
+	/** @param array<string,mixed> $summary @return array<string,mixed> */
+	private static function project_public_error_summary( array $summary ): array {
+		$projected = array();
+		foreach ( array( 'status' ) as $field ) {
+			if ( isset( $summary[ $field ] ) ) {
+				$value = self::project_public_token( $summary[ $field ], 128 );
+				if ( '' !== $value ) {
+					$projected[ $field ] = $value;
+				}
+			}
+		}
+		foreach ( array( 'quality_pass', 'fail_import', 'pass' ) as $field ) {
+			if ( is_bool( $summary[ $field ] ?? null ) ) {
+				$projected[ $field ] = $summary[ $field ];
+			}
+		}
+		foreach ( array( 'failure_reasons' ) as $field ) {
+			if ( ! is_array( $summary[ $field ] ?? null ) ) {
+				continue;
+			}
+			$values  = array();
+			$scanned = 0;
+			foreach ( $summary[ $field ] as $value ) {
+				if ( self::FAILURE_DIAGNOSTIC_SCAN_BUDGET <= $scanned++ ) {
+					break;
+				}
+				$value = self::project_public_token( $value, 128 );
+				if ( '' !== $value ) {
+					$values[] = $value;
+				}
+			}
+			if ( ! empty( $values ) ) {
+				$projected[ $field ] = $values;
+			}
+		}
+		foreach ( array( 'core_html_block_count', 'fallback_count', 'diagnostic_count', 'loss_count' ) as $field ) {
+			if ( is_numeric( $summary[ $field ] ?? null ) ) {
+				$projected[ $field ] = max( 0, (int) $summary[ $field ] );
+			}
+		}
+		return $projected;
+	}
+
+	/** @param array<int,array<string,mixed>> $diagnostics */
+	public static function project_public_error_message( string $code, array $diagnostics = array() ): string {
+		$source_path = isset( $diagnostics[0]['source_path'] ) ? (string) $diagnostics[0]['source_path'] : '';
+		if ( '' !== $source_path ) {
+			return 'Materialization failed for ' . $source_path . '.';
+		}
+		return 'Materialization failed (' . self::project_public_token( $code, 128, 'materialization_failed' ) . ').';
+	}
+
+	/** @param array<string,mixed> $diagnostic @return array<string,mixed> */
+	private static function project_public_diagnostic( array $diagnostic ): array {
+		$row = array();
+		foreach ( array( 'code', 'type', 'kind', 'severity', 'declaration_id', 'entity_type', 'provider', 'reason_code', 'provider_availability_reason' ) as $field ) {
+			if ( isset( $diagnostic[ $field ] ) ) {
+				$row[ $field ] = self::project_public_token( $diagnostic[ $field ], 128 );
+			}
+		}
+		if ( isset( $diagnostic['provider_available'] ) && is_bool( $diagnostic['provider_available'] ) ) {
+			$row['provider_available'] = $diagnostic['provider_available'];
+		}
+		if ( isset( $diagnostic['loss_count'] ) && is_numeric( $diagnostic['loss_count'] ) ) {
+			$row['loss_count'] = max( 0, (int) $diagnostic['loss_count'] );
+		}
+		if ( isset( $diagnostic['source_path'] ) ) {
+			$source_path = self::project_public_source_path( $diagnostic['source_path'] );
+			if ( '' !== $source_path ) {
+				$row['source_path'] = $source_path;
+			}
+		}
+		if ( isset( $diagnostic['selector'] ) ) {
+			$selector = self::project_public_selector( $diagnostic['selector'] );
+			if ( '' !== $selector ) {
+				$row['selector'] = $selector;
+			}
+		}
+		if ( isset( $diagnostic['reconciliation_identity'] ) && is_string( $diagnostic['reconciliation_identity'] ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $diagnostic['reconciliation_identity'] ) ) {
+			$row['reconciliation_identity'] = $diagnostic['reconciliation_identity'];
+		}
+		if ( is_array( $diagnostic['binding_reconciliation_identities'] ?? null ) ) {
+			$identities = array();
+			$scanned    = 0;
+			foreach ( $diagnostic['binding_reconciliation_identities'] as $identity ) {
+				if ( self::FAILURE_DIAGNOSTIC_SCAN_BUDGET <= $scanned++ ) {
+					break;
+				}
+				if ( is_string( $identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $identity ) ) {
+					$identities[] = $identity;
+				}
+			}
+			if ( ! empty( $identities ) ) {
+				$row['binding_reconciliation_identities'] = $identities;
+			}
+		}
+		if ( empty( $row ) ) {
+			return array();
+		}
+		if ( empty( $row['code'] ) ) {
+			$row['code'] = 'materialization_failed';
+		}
+		$code           = is_string( $row['code'] ) ? $row['code'] : 'materialization_failed';
+		$row['code']    = $code;
+		$row['message'] = self::project_public_error_message( $code, array( $row ) );
+		return $row;
+	}
+
+	private static function project_public_source_path( $value ): string {
+		$value = self::project_public_text( $value );
+		if ( '' === $value || str_contains( $value, '\\' ) || str_contains( $value, '..' ) || preg_match( '/^[A-Za-z]:|[?#:]/', $value ) || preg_match( '#^(?:https?|file)://#i', $value ) ) {
+			return '';
+		}
+		if ( str_starts_with( $value, '$' ) ) {
+			return 1 === preg_match( '/^\$[.\[\]A-Za-z0-9_-]*$/', $value ) ? $value : '';
+		}
+		if ( str_starts_with( $value, '/' ) ) {
+			return '';
+		}
+		return 1 === preg_match( '#^[\pL\pN][\pL\pN_.\-/]*$#u', $value ) ? $value : '';
+	}
+
+	private static function project_public_selector( $value ): string {
+		$value = self::project_public_text( $value );
+		return 1 === preg_match( '/^[A-Za-z0-9_.#\-\[\]=\s>+~,*]+$/', $value ) ? $value : '';
+	}
+
+	private static function project_public_token( $value, int $bytes, string $fallback = '' ): string {
+		$value = self::project_public_text( $value, $bytes );
+		return 1 === preg_match( '/^[A-Za-z][A-Za-z0-9_-]*$/', $value ) ? $value : $fallback;
+	}
+
+	private static function project_public_hash( $value ): string {
+		$value = self::project_public_text( $value, 64 );
+		return 1 === preg_match( '/^[a-f0-9]{64}$/', $value ) ? $value : '';
+	}
+
+	private static function project_public_import_id( $value ): string {
+		$token = self::project_public_token( $value, 128 );
+		return '' !== $token ? $token : self::project_public_hash( $value );
+	}
+
+	private static function project_public_text( $value, int $bytes = self::FAILURE_DIAGNOSTIC_MAX_BYTES ): string {
+		if ( ! is_scalar( $value ) ) {
+			return '';
+		}
+		$value = trim( (string) $value );
+		if ( '' === $value || preg_match( '/(?:password|secret|token|authorization|api[_-]?key|cookie|bearer)\s*[:=]?/i', $value ) || preg_match( '#(?:https?|file)://#i', $value ) || ! preg_match( '//u', $value ) ) {
+			return '';
+		}
+		if ( strlen( $value ) <= $bytes ) {
+			return $value;
+		}
+		preg_match_all( '/./us', $value, $characters );
+		$text = '';
+		foreach ( $characters[0] as $character ) {
+			if ( $bytes < strlen( $text . $character ) ) {
+				break;
+			}
+			$text .= $character;
+		}
+		return $text;
+	}
+
+	private static function failure_diagnostic_row( string $declaration_id, array $adapter, array $entity, array $row, string $provider, ?bool $available ): array {
+		$source_path           = self::failure_text( $row['source_path'] ?? $entity['source_path'] ?? '', self::FAILURE_DIAGNOSTIC_MAX_BYTES );
+		$selector              = self::failure_text( $row['selector'] ?? $entity['selector'] ?? '', self::FAILURE_DIAGNOSTIC_MAX_BYTES );
+		$reason                = self::failure_text( $row['reason_code'] ?? $row['reason'] ?? $row['error_code'] ?? '', 128 );
+		$loss_count            = self::failure_loss_count( $row );
+		$diagnostic            = array_filter(
+			array(
+				'code'                         => 'provider_entity_materialization_failed',
+				'kind'                         => 'entity_materialization_failure',
+				'severity'                     => 'error',
+				'declaration_id'               => self::failure_text( $declaration_id, 128 ),
+				'entity_type'                  => self::failure_text( $adapter['entity_type'] ?? rtrim( isset( $entity['type'] ) ? (string) $entity['type'] : '', 's' ), 80 ),
+				'provider'                     => $provider,
+				'provider_available'           => $available,
+				'provider_availability_reason' => self::failure_text( $row['provider_availability_reason'] ?? $row['availability_reason'] ?? ( false === $available ? $reason : '' ), 128 ),
+				'source_path'                  => $source_path,
+				'selector'                     => $selector,
+				'reason_code'                  => $reason,
+				'loss_count'                   => $loss_count,
+			),
+			static fn( $value ): bool => null !== $value && '' !== $value
+		);
+		$location              = '' === $source_path ? 'the declared entity' : $source_path . ( '' === $selector ? '' : ' (' . $selector . ')' );
+		$availability          = null === $available ? 'availability was not reported' : ( $available ? 'provider is available' : 'provider is unavailable' );
+		$loss                  = null === $loss_count ? '' : ' Losses reported: ' . $loss_count . '.';
+		$diagnostic['message'] = self::failure_text( sprintf( '%s failed to materialize %s; %s%s.%s', '' === $provider ? 'The provider' : $provider, $location, $availability, '' === $reason ? '' : '; reason: ' . $reason, $loss ), self::FAILURE_DIAGNOSTIC_MAX_BYTES );
+		return $diagnostic;
+	}
+
+	private static function failure_message( array $diagnostics, string $fallback ): string {
+		return isset( $diagnostics[0]['message'] ) && is_string( $diagnostics[0]['message'] ) ? $diagnostics[0]['message'] : self::failure_text( $fallback, self::FAILURE_DIAGNOSTIC_MAX_BYTES );
+	}
+
+	private static function failure_availability( array $report ): ?bool {
+		foreach ( array( 'provider_available', 'available' ) as $key ) {
+			if ( is_bool( $report[ $key ] ?? null ) ) {
+				return $report[ $key ];
+			}
+		}
+		return null;
+	}
+
+	private static function failure_loss_count( array $row ): ?int {
+		foreach ( array( 'loss_count', 'unaccepted_receipt_loss_count' ) as $key ) {
+			if ( is_numeric( $row[ $key ] ?? null ) ) {
+				return max( 0, (int) $row[ $key ] );
+			}
+		}
+		return is_array( $row['form_receipt_unaccepted_losses'] ?? null ) ? count( $row['form_receipt_unaccepted_losses'] ) : null;
+	}
+
+	private static function failure_text( $value, int $bytes ): string {
+		if ( ! is_scalar( $value ) ) {
+			return '';
+		}
+		$value = trim( (string) $value );
+		if ( strlen( $value ) <= $bytes || ! preg_match_all( '/./us', $value, $characters ) ) {
+			return strlen( $value ) <= $bytes ? $value : '';
+		}
+		$text = '';
+		foreach ( $characters[0] as $character ) {
+			if ( $bytes < strlen( $text . $character ) ) {
+				break;
+			}
+			$text .= $character;
+		}
+		return $text;
 	}
 
 	/**
@@ -758,7 +1202,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$results           = array();
 			foreach ( $result_entities as $result ) {
 				if ( is_array( $result ) ) {
-					$key             = 'products' === $entity_key ? (string) ( $result['slug'] ?? '' ) : (string) ( $result['source_path'] ?? '' ) . "\n" . (string) ( $result['selector'] ?? '' );
+					$key             = 'products' === $entity_key ? (string) ( $result['slug'] ?? '' ) : self::form_entity_key( $result );
 					$results[ $key ] = $result;
 				}
 			}
@@ -766,7 +1210,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				if ( ! is_array( $entity ) || empty( $entity['bindings'] ) ) {
 					continue;
 				}
-				$key    = 'products' === $entity_key ? (string) ( $entity['slug'] ?? '' ) : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
+				$key    = 'products' === $entity_key ? (string) ( $entity['slug'] ?? '' ) : self::form_entity_key( $entity );
 				$result = is_array( $results[ $key ] ?? null ) ? $results[ $key ] : array();
 				if ( self::entity_result_declined( $result ) ) {
 					continue;
@@ -792,8 +1236,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						'role'                             => $binding['role'],
 						'declaration_id'                   => $declaration_id,
 						'reconciliation_identity'          => hash( 'sha256', "static-site-importer/runtime-entity-binding/v1\n{$declaration_id}\n{$binding['source_path']}\n{$binding['occurrence']}\n" . hash( 'sha256', $binding['search_block_markup'] ) ),
-						'fallback_reconciliation_identity' => 'form' === $binding['role'] ? Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_identity( $entity ) : '',
-						'fallback_hash'                    => 'form' === $binding['role'] ? Static_Site_Importer_Report_Diagnostics::fallback_reconciliation_hash( $entity ) : '',
+						'fallback_reconciliation_identity' => 'form' === $binding['role'] ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $entity ) : '',
+						'fallback_hash'                    => 'form' === $binding['role'] ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $entity ) : '',
 						'materialized_block_hash'          => 'form' === $binding['role'] ? hash( 'sha256', $replacement ) : '',
 						'provider'                         => $prepared['adapter']['provider'] ?? '',
 						'superseded_runtime_selectors'     => $binding['superseded_runtime_selectors'] ?? array(),
@@ -820,14 +1264,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$results = array();
 			foreach ( $report[ $key ] ?? array() as $result ) {
 				if ( is_array( $result ) ) {
-					$results[ 'products' === $key ? (string) ( $result['slug'] ?? '' ) : (string) ( $result['source_path'] ?? '' ) . "\n" . (string) ( $result['selector'] ?? '' ) ] = $result;
+					$results[ 'products' === $key ? (string) ( $result['slug'] ?? '' ) : self::form_entity_key( $result ) ] = $result;
 				}
 			}
 			foreach ( $manifest[ $key ] ?? array() as $entity ) {
 				if ( ! is_array( $entity ) ) {
 					continue;
 				}
-				$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
+				$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : self::form_entity_key( $entity );
 				$result     = is_array( $results[ $entity_key ] ?? null ) ? $results[ $entity_key ] : array();
 				if ( self::entity_result_declined( $result ) ) {
 					continue;
@@ -861,6 +1305,15 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return $bindings;
 	}
 
+	/** Return a form's producer identity without collapsing responsive variants. */
+	private static function form_entity_key( array $form ): string {
+		$identity = $form['fallback_identity'] ?? $form['source_fallback_identity'] ?? $form['fallback_reconciliation_identity'] ?? '';
+		if ( is_string( $identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $identity ) ) {
+			return $identity;
+		}
+		return (string) ( $form['source_path'] ?? '' ) . "\n" . (string) ( $form['selector'] ?? '' );
+	}
+
 	/** Collect structured overlays emitted by successful form adapters. */
 	public static function provider_layout_overlays( array $reports ): array {
 		$overlays = array();
@@ -886,6 +1339,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'woocommerce_simple_product' => array(
 				'id'                       => 'woocommerce_simple_product',
 				'entity_type'              => 'product',
+				'entity_collection'        => 'products',
 				'capability'               => 'shop',
 				'provider'                 => 'woocommerce',
 				'label'                    => 'WooCommerce simple product',
@@ -912,6 +1366,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'jetpack_contact_form'       => array(
 				'id'                       => 'jetpack_contact_form',
 				'entity_type'              => 'form',
+				'entity_collection'        => 'forms',
 				'capability'               => 'form',
 				'provider'                 => 'jetpack',
 				'label'                    => 'Jetpack contact form',
@@ -1230,12 +1685,16 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				continue;
 			}
 
-			$row = array(
+			$row               = array(
 				'selector'    => isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '',
 				'source_path' => isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '',
 				'form'        => isset( $form['form'] ) && is_array( $form['form'] ) ? $form['form'] : array(),
 				'controls'    => $controls,
 			);
+			$fallback_identity = $form['fallback_identity'] ?? $form['source_fallback_identity'] ?? $form['fallback_reconciliation_identity'] ?? '';
+			if ( is_string( $fallback_identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fallback_identity ) ) {
+				$row['fallback_identity'] = $fallback_identity;
+			}
 			if ( array_key_exists( 'control_topology', $form ) ) {
 				$topology = self::normalize_form_control_topology( $form['control_topology'], count( $controls ) );
 				if ( isset( $topology['error'] ) ) {
@@ -1289,11 +1748,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 				$row['presentation_graph'] = $presentation['graph'];
 			}
-			$form_key = $row['source_path'] . "\n" . $row['selector'];
+			$form_key = self::form_entity_key( $row );
 			if ( isset( $seen_forms[ $form_key ] ) ) {
 				$errors[] = array(
 					'path'    => $path_prefix,
-					'message' => 'source_path and selector must identify one unique form.',
+					'message' => 'fallback identity, or source_path and selector when unavailable, must identify one unique form.',
 				);
 				continue;
 			}
@@ -1351,7 +1810,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$seen  = array();
 		$nodes = array();
 		foreach ( $candidate['nodes'] as $node ) {
-			if ( ! is_array( $node ) || ! self::has_only_keys( $node, array( 'id', 'kind', 'parent', 'order', 'source', 'layout', 'provenance' ) ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^(?:form|wrapper-[0-9]+|control-[0-9]+)$/D', $node['id'] ) || isset( $seen[ $node['id'] ] ) || ! in_array( $node['kind'] ?? null, array( 'container', 'control' ), true ) || ! is_int( $node['order'] ?? null ) || $node['order'] < 0 || ! is_array( $node['source'] ?? null ) || ! is_array( $node['layout'] ?? null ) || ! is_array( $node['provenance'] ?? null ) ) {
+			if ( ! is_array( $node ) || ! self::has_only_keys( $node, array( 'id', 'kind', 'parent', 'order', 'source', 'layout', 'provenance', 'sizing' ) ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^(?:form|wrapper-[0-9]+|control-[0-9]+)$/D', $node['id'] ) || isset( $seen[ $node['id'] ] ) || ! in_array( $node['kind'] ?? null, array( 'container', 'control' ), true ) || ! is_int( $node['order'] ?? null ) || $node['order'] < 0 || ! is_array( $node['source'] ?? null ) || ! is_array( $node['layout'] ?? null ) || ! is_array( $node['provenance'] ?? null ) ) {
 				return array( 'error' => 'layout_graph contains an unsupported canonical node.' );
 			}
 			$parent = $node['parent'] ?? null;
@@ -1372,7 +1831,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					return array( 'error' => 'layout_graph layout facts must use only producer-supported keys.' );
 				}
 			}
-			$clean               = array(
+			$sizing = $node['sizing'] ?? null;
+			if ( null !== $sizing && ( ! $is_v2 || ! is_array( $sizing ) || ! self::has_only_keys( $sizing, array( 'kind', 'axis', 'container', 'grid_column' ) ) || 'control' !== $node['kind'] || 'grid_track' !== ( $sizing['kind'] ?? null ) || 'inline' !== ( $sizing['axis'] ?? null ) || ! is_string( $sizing['container'] ?? null ) || $node['parent'] !== $sizing['container'] || ! is_string( $sizing['grid_column'] ?? null ) || '' === trim( $sizing['grid_column'] ) || isset( $layout['width'] ) || ! isset( $seen[ $sizing['container'] ] ) ) ) {
+				return array( 'error' => 'layout_graph sizing evidence is malformed.' );
+			}
+			$clean = array(
 				'id'         => $node['id'],
 				'kind'       => $node['kind'],
 				'parent'     => $parent,
@@ -1381,6 +1844,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'layout'     => array_intersect_key( $layout, array_flip( $layout_keys ) ),
 				'provenance' => array_slice( $node['provenance'], 0, 16 ),
 			);
+			if ( is_array( $sizing ) ) {
+				$clean['sizing'] = $sizing;
+			}
 			$seen[ $node['id'] ] = true;
 			$nodes[]             = $clean;
 		}

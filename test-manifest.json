@@ -6,6 +6,7 @@
   },
   "tests": [
     { "path": "tests/form-materializer-smoke.php", "environment": "standalone-php" },
+    { "path": "tests/form-fallback-contract-equivalence.php", "environment": "standalone-php" },
     { "path": "tests/provider-adapter-runtime-smoke.php", "environment": "standalone-php" },
     { "path": "tests/smoke-provider-submission-evidence.php", "environment": "standalone-php" },
     { "path": "tests/host-dependency-resolver.test.mjs", "environment": "node" },
@@ -27,6 +28,7 @@
     { "path": "tests/smoke-external-report-destinations.php", "environment": "standalone-php" },
     { "path": "tests/smoke-failed-plan-validation.php", "environment": "standalone-php" },
     { "path": "tests/smoke-export-theme-ability.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-form-fallback-contract.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-diagnostic-contract.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-report.php", "environment": "standalone-php" },
     { "path": "tests/smoke-missing-author-stylesheet-diagnostics.php", "environment": "standalone-php" },
@@ -35,8 +37,10 @@
     { "path": "tests/smoke-html-runtime-capabilities.php", "environment": "standalone-php" },
     { "path": "tests/smoke-default-content.php", "environment": "standalone-php" },
     { "path": "tests/smoke-direct-artifact-import.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-run-storage.php", "environment": "standalone-php" },
     { "path": "tests/smoke-rest-import.php", "environment": "standalone-php" },
     { "path": "tests/smoke-lifecycle-compile-checkpoint.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-plan-owned-font-materialization.php", "environment": "standalone-php" },
     { "path": "tests/smoke-materialized-block-content-validation.php", "environment": "standalone-php" },
     { "path": "tests/smoke-managed-classic-theme-materialization.php", "environment": "standalone-php" },
     { "path": "tests/smoke-portable-source-manifest.php", "environment": "standalone-php" },
@@ -98,10 +102,13 @@
     { "path": "tools/run-test-manifest.test.mjs", "environment": "node" },
     { "path": "tools/run-fig-fixture-e2e.test.mjs", "environment": "node" },
     { "path": "tools/runtime-package-manifest.test.mjs", "environment": "node" },
+    { "path": "tools/run-existing-runtime-review.test.mjs", "environment": "node" },
     { "path": "tools/verify-solved-site-promotion.test.mjs", "environment": "node" },
     { "path": "tests/smoke-generated-theme-block-validation.cjs", "environment": "browser-wp-codebox" },
+    { "path": "tests/editor-companion-acceptance.mjs", "environment": "browser-wp-codebox", "command": ["bash", "tools/run-editor-companion-acceptance.sh"] },
     { "path": "tests/run-validation-harness.cjs", "environment": "operator-only", "command": ["node", "tests/run-validation-harness.cjs"] },
     { "path": "tools/run-fixture-matrix.mjs", "environment": "operator-only", "command": ["node", "tools/run-fixture-matrix.mjs"] },
+    { "path": "tools/run-existing-runtime-review.mjs", "environment": "operator-only", "command": ["node", "tools/run-existing-runtime-review.mjs"] },
     { "path": "tools/fig-acceptance-provider.mjs", "environment": "operator-only", "command": ["node", "tools/fig-acceptance-provider.mjs"] }
   ]
 }

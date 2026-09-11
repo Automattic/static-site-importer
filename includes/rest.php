@@ -1056,6 +1056,39 @@ function static_site_importer_staged_archive_limits(): array {
 }
 
 /**
+ * Project the compiler contract a verified staged archive is entitled to.
+ *
+ * A staged ZIP is admitted against static_site_importer_staged_archive_limits(),
+ * which accepts far more than the compiler assumes when an artifact declares no
+ * contract of its own. Without this projection the compiler falls back to its
+ * own defaults and rejects payload references SSI has already verified, so the
+ * bounded intake policy is carried forward, clamped to the compiler's hard caps.
+ *
+ * @return array{max_files:int,max_file_bytes:int,max_total_bytes:int}
+ */
+function static_site_importer_staged_archive_compiler_limits(): array {
+	// Blocks Engine ArtifactNormalizer hard caps; the same numbers the CLI
+	// request-bundle contract in includes/cli.php declares.
+	$compiler_limits = array(
+		'max_files'       => 5000,
+		'max_file_bytes'  => 10485760,
+		'max_total_bytes' => 335544320,
+	);
+	$staged          = static_site_importer_staged_archive_limits();
+	$intake          = array(
+		'max_files'       => (int) $staged['max_entries'],
+		'max_file_bytes'  => (int) $staged['max_entry_uncompressed_bytes'],
+		'max_total_bytes' => (int) $staged['max_total_uncompressed_bytes'],
+	);
+
+	foreach ( $compiler_limits as $key => $maximum ) {
+		$compiler_limits[ $key ] = min( $maximum, max( 1, $intake[ $key ] ) );
+	}
+
+	return $compiler_limits;
+}
+
+/**
  * Build a stable archive-policy error without exposing archive contents.
  *
  * @param string $reason Policy reason code.

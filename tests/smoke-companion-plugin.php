@@ -32,6 +32,8 @@ $GLOBALS['static_site_importer_companion_block_owners'] = array();
 $GLOBALS['ssi_companion_actions']     = array();
 $GLOBALS['ssi_companion_filters']     = array();
 $GLOBALS['ssi_companion_registered_filters'] = array();
+$GLOBALS['ssi_companion_registered_scripts'] = array();
+$GLOBALS['ssi_companion_enqueued']    = array();
 
 if ( ! class_exists( 'WP_Error' ) ) {
 	class WP_Error {
@@ -171,6 +173,24 @@ if ( ! function_exists( 'add_action' ) ) {
 if ( ! function_exists( 'add_filter' ) ) {
 	function add_filter( string $hook, callable|string|array $callback, int $priority = 10, int $accepted_args = 1 ): void {
 		$GLOBALS['ssi_companion_registered_filters'][ $hook ][] = array( $callback, $priority, $accepted_args );
+	}
+}
+
+if ( ! function_exists( 'wp_register_script' ) ) {
+	function wp_register_script( string $handle, string $src = '', array $deps = array(), $ver = false, $in_footer = false ): bool {
+		$GLOBALS['ssi_companion_registered_scripts'][ $handle ] = array(
+			'src'       => $src,
+			'deps'      => $deps,
+			'ver'       => $ver,
+			'in_footer' => $in_footer,
+		);
+		return true;
+	}
+}
+
+if ( ! function_exists( 'wp_enqueue_script' ) ) {
+	function wp_enqueue_script( string $handle, string $src = '', array $deps = array(), $ver = false, $in_footer = false ): void {
+		$GLOBALS['ssi_companion_enqueued'][] = $handle;
 	}
 }
 
@@ -315,6 +335,14 @@ $payload = array(
 			'handle'  => 'hero-island',
 			'content' => 'document.addEventListener("DOMContentLoaded",function(){});',
 			'block'   => 'example/custom-hero',
+		),
+	),
+	'editor_scripts' => array(
+		array(
+			'handle'       => 'ssi-example-site-editor',
+			'src'          => 'editor/core-enhancement.js',
+			'content'      => 'window.ssiExampleEditor = true;',
+			'dependencies' => array( 'wp-blocks', 'wp-block-editor', 'wp-element' ),
 		),
 	),
 );
@@ -470,6 +498,53 @@ $assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $
 $invalid_dependency_handle['blocks'][0]['script_dependencies']['index.js'] = array( 'wp-blocks', 'wp blocks' );
 $assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $invalid_dependency_handle ) ), 'script-dependency-handle-must-be-safe' );
 
+$malformed_editor_scripts = $payload;
+$malformed_editor_scripts['editor_scripts'] = array( 'ssi-example-site-editor' => array( 'content' => 'window.ssiExampleEditor = true;' ) );
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $malformed_editor_scripts ) ), 'editor-scripts-must-be-a-list' );
+$unsafe_editor_handle = $payload;
+$unsafe_editor_handle['editor_scripts'][0]['handle'] = 'ssi example editor';
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $unsafe_editor_handle ) ), 'editor-script-handle-must-be-safe' );
+$duplicate_editor_handle = $payload;
+$duplicate_editor_handle['editor_scripts'][] = array(
+	'handle'  => 'ssi-example-site-editor',
+	'content' => 'window.duplicate = true;',
+	'src'     => 'editor/duplicate.js',
+);
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $duplicate_editor_handle ) ), 'editor-script-handle-must-be-unique' );
+$unsafe_editor_path = $payload;
+$unsafe_editor_path['editor_scripts'][0]['src'] = '../editor.js';
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $unsafe_editor_path ) ), 'editor-script-path-must-be-safe' );
+$unsafe_editor_content = $payload;
+$unsafe_editor_content['editor_scripts'][0]['content'] = '<?php system( "id" );';
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $unsafe_editor_content ) ), 'editor-script-content-must-be-safe' );
+$missing_editor_content = $payload;
+unset( $missing_editor_content['editor_scripts'][0]['content'] );
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $missing_editor_content ) ), 'editor-script-content-is-required' );
+$unsafe_editor_dependency = $payload;
+$unsafe_editor_dependency['editor_scripts'][0]['dependencies'] = array( 'wp-blocks', 'wp blocks' );
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $unsafe_editor_dependency ) ), 'editor-script-dependency-handle-must-be-safe' );
+$malformed_editor_dependencies = $payload;
+$malformed_editor_dependencies['editor_scripts'][0]['dependencies'] = array( 'wp-blocks' => true );
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $malformed_editor_dependencies ) ), 'editor-script-dependencies-must-be-a-list' );
+$default_editor_path = $payload;
+unset( $default_editor_path['editor_scripts'][0]['src'] );
+$assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $default_editor_path ), 'editor-script-path-is-optional' );
+$editor_scripts_only = array(
+	'schema'         => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+	'site_slug'      => 'editor-only-site',
+	'site_name'      => 'Editor Only Site',
+	'blocks'         => array(),
+	'editor_scripts' => array(
+		array(
+			'handle'       => 'ssi-editor-only-site-editor',
+			'content'      => 'window.ssiEditorOnly = true;',
+			'dependencies' => array( 'wp-element' ),
+		),
+	),
+);
+$assert( true === Static_Site_Importer_Companion_Plugin::has_materializable_content( $editor_scripts_only ), 'editor-scripts-only-payload-is-materializable' );
+$assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $editor_scripts_only ), 'editor-scripts-only-payload-validates' );
+
 // 1. Scaffolder emits a valid plugin file set.
 $descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $payload );
 $assert( is_array( $descriptor ), 'scaffold-returns-descriptor', is_array( $descriptor ) ? '' : 'WP_Error returned' );
@@ -486,8 +561,8 @@ if ( is_array( $descriptor ) ) {
 	$assert( str_contains( $main, 'Plugin Name:' ), 'main-file-has-plugin-header' );
 	$assert( str_contains( $main, "add_filter( 'render_block'" ), 'main-file-scopes-island-enqueue' );
 	$assert( str_contains( $main, 'wp_enqueue_script' ), 'main-file-enqueues-island-js' );
-	$assert( str_contains( $main, "require_once __DIR__ . '/includes/class-static-site-importer-provider-form-runtime.php'" ) && str_contains( $main, 'Static_Site_Importer_Provider_Form_Runtime::register();' ), 'main-file-registers-carried-provider-form-runtime' );
-	$assert( isset( $files['ssi-example-site/includes/class-static-site-importer-provider-form-runtime.php'] ), 'provider-form-runtime-file-emitted' );
+	$assert( str_contains( $main, "require_once __DIR__ . '/includes/provider-form-runtime-v1.php'" ) && str_contains( $main, 'SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1::register();' ), 'main-file-registers-versioned-companion-provider-form-runtime' );
+	$assert( isset( $files['ssi-example-site/includes/provider-form-runtime-v1.php'] ) && str_contains( $files['ssi-example-site/includes/provider-form-runtime-v1.php'], 'final class SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1' ), 'provider-form-runtime-is-emitted-under-companion-namespace' );
 
 	$assert( str_contains( $main, "register_block_type( SSI_EXAMPLE_SITE_" ) && str_contains( $main, "_DIR . 'blocks/' . \$block_dir )" ), 'main-file-registers-metadata-block-directory' );
 	$assert( str_contains( $main, "\$registered instanceof WP_Block_Type" ) && str_contains( $main, "static_site_importer_companion_block_owners" ) && str_contains( $main, "'plugin_file' => 'ssi-example-site/ssi-example-site.php'" ), 'main-file-records-owner-after-metadata-registration' );
@@ -552,7 +627,27 @@ if ( is_array( $descriptor ) ) {
 	// Preserved island JS (#496) is separate carried JS and still rides along.
 	$island_files = array_filter( array_keys( $files ), static fn ( string $path ): bool => str_contains( $path, '/islands/' ) && str_ends_with( $path, '.js' ) );
 	$assert( 1 === count( $island_files ), 'preserved-island-js-file-emitted' );
+
+	$assert( 'window.ssiExampleEditor = true;' === ( $files['ssi-example-site/editor/core-enhancement.js'] ?? null ), 'editor-script-asset-is-materialized' );
+	$assert( str_contains( $main, "add_action( 'enqueue_block_editor_assets'" ), 'editor-scripts-hook-block-editor-only' );
+	$assert( str_contains( $main, "'handle' => 'ssi-example-site-editor'" ) && str_contains( $main, "'src' => 'editor/core-enhancement.js'" ) && str_contains( $main, "'wp-block-editor'" ), 'editor-scripts-register-declared-handle-path-and-dependencies' );
+	$frontend_enqueue = preg_match( "/function [^(]+_enqueue_global_islands\\(\\) \\{.*?^\\}/ms", $main, $frontend_match ) ? $frontend_match[0] : '';
+	$assert( '' !== $frontend_enqueue && ! str_contains( $frontend_enqueue, 'ssi-example-site-editor' ) && ! str_contains( $frontend_enqueue, 'enqueue_block_editor_assets' ), 'editor-scripts-are-excluded-from-frontend-enqueue-function' );
 }
+
+$editor_only_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $editor_scripts_only );
+$assert( is_array( $editor_only_descriptor ), 'editor-scripts-only-payload-scaffolds' );
+if ( is_array( $editor_only_descriptor ) ) {
+	$editor_only_files = $editor_only_descriptor['files'] ?? array();
+	$editor_only_main  = $editor_only_files['ssi-editor-only-site/ssi-editor-only-site.php'] ?? '';
+	$assert( 'window.ssiEditorOnly = true;' === ( $editor_only_files['ssi-editor-only-site/editor/ssi-editor-only-site-editor.js'] ?? null ), 'editor-scripts-only-writes-default-asset-path' );
+	$assert( str_contains( $editor_only_main, "add_action( 'enqueue_block_editor_assets'" ) && str_contains( $editor_only_main, 'wp_register_script' ) && str_contains( $editor_only_main, 'wp_enqueue_script' ), 'editor-scripts-only-registers-and-enqueues-in-block-editor' );
+	$editor_only_frontend = preg_match( "/function [^(]+_enqueue_global_islands\\(\\) \\{.*?^\\}/ms", $editor_only_main, $editor_only_match ) ? $editor_only_match[0] : '';
+	$assert( '' !== $editor_only_frontend && ! str_contains( $editor_only_frontend, 'ssi-editor-only-site-editor' ), 'editor-scripts-only-excludes-handle-from-frontend-enqueue' );
+}
+
+$default_editor_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $default_editor_path );
+$assert( is_array( $default_editor_descriptor ) && isset( $default_editor_descriptor['files']['ssi-example-site/editor/ssi-example-site-editor.js'] ), 'omitted-editor-script-src-uses-handle-path' );
 
 // The layout renderer preserves safe semantic content while its media sibling
 // remains restricted to media-only markup.
@@ -822,7 +917,8 @@ $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' )
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/render.php' ), 'install-writes-render-php-to-disk' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/block.json' ), 'install-emits-block-json' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/index.js' ), 'install-emits-declared-editor-asset' );
-$assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/includes/class-static-site-importer-provider-form-runtime.php' ), 'install-writes-provider-form-runtime' );
+$assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/editor/core-enhancement.js' ) && 'window.ssiExampleEditor = true;' === (string) file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/editor/core-enhancement.js' ), 'install-writes-editor-script-asset' );
+$assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/includes/provider-form-runtime-v1.php' ), 'install-writes-versioned-companion-provider-form-runtime' );
 $assert( isset( $GLOBALS['ssi_companion_registered_filters']['grunion_contact_form_field_html'], $GLOBALS['ssi_companion_registered_filters']['render_block_core/button'] ), 'installed-companion-registers-provider-form-runtime-hooks' );
 $submit_filter = $GLOBALS['ssi_companion_registered_filters']['render_block_core/button'][0][0] ?? null;
 $projected_submit = is_callable( $submit_filter ) ? call_user_func(
@@ -866,6 +962,75 @@ if ( is_resource( $standalone_process ) ) {
 	$standalone_status = proc_close( $standalone_process );
 }
 $assert( 0 === $standalone_status, 'generated-plugin-loads-without-importer-or-compiler', $standalone_output );
+
+// A current companion owns a versioned copy of the projection runtime. Verify
+// it remains functional after SSI is absent, and that it has no class identity
+// collision with SSI, legacy global copies, or a second companion.
+$runtime_process = static function ( array $files, array $classes ) use ( $ssi_companion_tmp ): array {
+	$bootstrap = <<<'PHP'
+define( 'ABSPATH', __DIR__ . '/' );
+class WP_Block_Type { public function __construct( public string $name ) {} }
+function plugin_dir_path( string $file ): string { return dirname( $file ) . '/'; }
+function plugin_dir_url( string $file ): string { return 'https://example.test/plugins/' . basename( dirname( $file ) ) . '/'; }
+function add_action( string $hook, callable|string $callback ): void { if ( 'init' === $hook ) { call_user_func( $callback ); } }
+function add_filter( string $hook, callable|string $callback, int $priority = 10, int $accepted_args = 1 ): void { $GLOBALS['filters'][ $hook ][] = $callback; }
+function register_block_type( string $path, array $args = array() ): WP_Block_Type|false { return new WP_Block_Type( 'test/block' ); }
+function get_option( string $name, mixed $default = false ): mixed { return $default; }
+foreach ( array_slice( $argv, 1, -1 ) as $file ) { require $file; }
+$classes = json_decode( end( $argv ), true );
+$submit = $GLOBALS['filters']['render_block_core/button'][0] ?? null;
+$wrapper = $GLOBALS['filters']['grunion_contact_form_field_html'][0] ?? null;
+$submit_output = is_callable( $submit ) ? $submit( '<div class="wp-block-button ssi-source-submit--source-submit"><button>Send</button></div>', array( 'attrs' => array( 'className' => 'ssi-source-submit--source-submit' ) ) ) : '';
+$wrapper_output = is_callable( $wrapper ) ? $wrapper( '<div class="grunion-field-text-wrap ssi-source-wrapper-2--source-box-wrap"><input></div>' ) : '';
+exit( is_array( $classes ) && ! array_filter( $classes, static fn ( string $class ): bool => ! class_exists( $class, false ) ) && str_contains( $submit_output, 'source-submit' ) && str_contains( $wrapper_output, '<div class="source-box"><input>' ) ? 0 : 1 );
+PHP;
+	$process = proc_open( array( PHP_BINARY, '-r', $bootstrap, ...$files, wp_json_encode( $classes ) ), array( 1 => array( 'pipe', 'w' ), 2 => array( 'pipe', 'w' ) ), $pipes );
+	if ( ! is_resource( $process ) ) {
+		return array( 1, 'Could not start runtime compatibility process.' );
+	}
+	$output = stream_get_contents( $pipes[1] ) . stream_get_contents( $pipes[2] );
+	fclose( $pipes[1] );
+	fclose( $pipes[2] );
+	return array( proc_close( $process ), $output );
+};
+$current_companion = WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php';
+$ssi_runtime       = dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-form-runtime.php';
+list( $runtime_status, $runtime_output ) = $runtime_process( array( $current_companion ), array( 'SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1' ) );
+$assert( 0 === $runtime_status, 'standalone-companion-projects-real-form-markers-without-ssi', $runtime_output );
+list( $runtime_status, $runtime_output ) = $runtime_process( array( $ssi_runtime, $current_companion ), array( 'Static_Site_Importer_Provider_Form_Runtime_V1', 'SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1' ) );
+$assert( 0 === $runtime_status, 'ssi-then-current-companion-loads-distinct-versioned-runtimes', $runtime_output );
+list( $runtime_status, $runtime_output ) = $runtime_process( array( $current_companion, $ssi_runtime ), array( 'Static_Site_Importer_Provider_Form_Runtime_V1', 'SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1' ) );
+$assert( 0 === $runtime_status, 'current-companion-then-ssi-loads-distinct-versioned-runtimes', $runtime_output );
+
+$legacy_runtime = str_replace( 'Static_Site_Importer_Provider_Form_Runtime_V1', 'Static_Site_Importer_Provider_Form_Runtime', (string) file_get_contents( $ssi_runtime ) );
+$legacy_runtime = str_replace( '/** Keeps source form presentation attached to provider-rendered controls. */', "if ( class_exists( 'Static_Site_Importer_Provider_Form_Runtime', false ) ) {\n\treturn;\n}\n\n/** Keeps source form presentation attached to provider-rendered controls. */", $legacy_runtime );
+$legacy_file    = $ssi_companion_tmp . '/legacy-provider-runtime.php';
+file_put_contents( $legacy_file, $legacy_runtime );
+$legacy_main = $ssi_companion_tmp . '/legacy-companion.php';
+file_put_contents( $legacy_main, "<?php\nrequire_once __DIR__ . '/legacy-provider-runtime.php';\nStatic_Site_Importer_Provider_Form_Runtime::register();\n" );
+list( $runtime_status, $runtime_output ) = $runtime_process( array( $legacy_main, $ssi_runtime ), array( 'Static_Site_Importer_Provider_Form_Runtime', 'Static_Site_Importer_Provider_Form_Runtime_V1' ) );
+$assert( 0 === $runtime_status, 'legacy-global-copy-then-ssi-loads-without-class-fatal', $runtime_output );
+list( $runtime_status, $runtime_output ) = $runtime_process( array( $ssi_runtime, $legacy_main ), array( 'Static_Site_Importer_Provider_Form_Runtime', 'Static_Site_Importer_Provider_Form_Runtime_V1' ) );
+$assert( 0 === $runtime_status, 'ssi-then-legacy-global-copy-loads-without-class-fatal', $runtime_output );
+
+$second_payload                                  = $payload;
+$second_payload['site_slug']                     = 'Second Site';
+$second_payload['site_name']                     = 'Second Site';
+$second_payload['blocks'][0]['block_json']['name'] = 'example/second-hero';
+$second_descriptor                               = Static_Site_Importer_Companion_Plugin::scaffold( $second_payload );
+$assert( is_array( $second_descriptor ), 'second-companion-scaffolds-for-runtime-isolation' );
+if ( is_array( $second_descriptor ) ) {
+	foreach ( $second_descriptor['files'] as $relative => $content ) {
+		$target = WP_PLUGIN_DIR . '/' . $relative;
+		wp_mkdir_p( dirname( $target ) );
+		file_put_contents( $target, $content );
+	}
+	list( $runtime_status, $runtime_output ) = $runtime_process(
+		array( $current_companion, WP_PLUGIN_DIR . '/ssi-second-site/ssi-second-site.php' ),
+		array( 'SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1', 'SSI_SECOND_SITE_Provider_Form_Runtime_V1' )
+	);
+	$assert( 0 === $runtime_status, 'multiple-current-companions-load-versioned-isolated-runtimes', $runtime_output );
+}
 $written_asset_manifest = WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/index.asset.php';
 $asset_manifest_value  = file_exists( $written_asset_manifest ) ? include $written_asset_manifest : null;
 $assert( array( 'dependencies' => array( 'wp-blocks', 'wp-block-editor', 'wp-element' ), 'version' => hash( 'sha256', 'window.SSIEditor = true;' ) ) === $asset_manifest_value, 'installed-asset-manifest-executes-with-dependencies-and-content-version' );
@@ -873,6 +1038,20 @@ $assert( in_array( 'example/custom-hero', WP_Block_Type_Registry::$registered, t
 $assert( isset( $GLOBALS['static_site_importer_companion_block_owners']['example/custom-hero'] ), 'install-records-declared-block-owner-before-editor-use' );
 $written_main = file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) ? (string) file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ) : '';
 $assert( str_contains( $written_main, 'register_block_type' ), 'written-main-file-registers-blocks' );
+$assert( str_contains( $written_main, "add_action( 'enqueue_block_editor_assets'" ) && str_contains( $written_main, "add_action( 'wp_enqueue_scripts'" ), 'written-main-file-keeps-editor-and-frontend-hooks' );
+$GLOBALS['ssi_companion_enqueued']           = array();
+$GLOBALS['ssi_companion_registered_scripts'] = array();
+foreach ( $GLOBALS['ssi_companion_actions']['enqueue_block_editor_assets'] ?? array() as $callback ) {
+	call_user_func( $callback );
+}
+$assert( isset( $GLOBALS['ssi_companion_registered_scripts']['ssi-example-site-editor'] ), 'editor-script-is-registered-for-block-editor' );
+$assert( in_array( 'ssi-example-site-editor', $GLOBALS['ssi_companion_enqueued'], true ), 'editor-script-is-enqueued-for-block-editor' );
+$assert( array( 'wp-blocks', 'wp-block-editor', 'wp-element' ) === ( $GLOBALS['ssi_companion_registered_scripts']['ssi-example-site-editor']['deps'] ?? null ), 'editor-script-registers-declared-dependencies' );
+$GLOBALS['ssi_companion_enqueued'] = array();
+foreach ( $GLOBALS['ssi_companion_actions']['wp_enqueue_scripts'] ?? array() as $callback ) {
+	call_user_func( $callback );
+}
+$assert( ! in_array( 'ssi-example-site-editor', $GLOBALS['ssi_companion_enqueued'], true ), 'editor-script-is-excluded-from-public-frontend-enqueue' );
 
 // Runtime paths may use filesystem aliases (for example /var and /private/var
 // on macOS) while still identifying the same generated companion entrypoint.
@@ -998,7 +1177,7 @@ $page_ready_payload                                         = $payload;
 $page_ready_payload['site_slug']                            = 'page-ready-site';
 $page_ready_payload['site_name']                            = 'Page Ready Site';
 $page_ready_payload['blocks'][0]['block_json']['name'] = 'example/page-ready-control';
-$page_ready_materializer                                    = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'materialize_companion_dependency' );
+$page_ready_materializer                                    = new ReflectionMethod( Static_Site_Importer_Prepared_Plan_Application::class, 'materialize_companion_dependency' );
 $page_ready_report                                          = $page_ready_materializer->invoke(
 	null,
 	$page_ready_payload,
