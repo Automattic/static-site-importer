@@ -205,7 +205,26 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		}
 		if ( ! empty( $source_classes ) ) {
 			$source_classes = array_values( array_unique( $source_classes ) );
-			$projected      = preg_replace_callback(
+			// The provider sizes its submit wrapper to its own field height. The source
+			// sized that row from its own content, so the provider default is released
+			// on the wrapper exactly as it already is on the button it contains.
+			$projected = preg_replace_callback(
+				'/<div\b([^>]*\bclass=(["\'])[^"\']*\bwp-block-button\b[^"\']*\2[^>]*)>/is',
+				static function ( array $matches ): string {
+					$attributes = $matches[1];
+					if ( preg_match( '/\bstyle=(["\'])(.*?)\1/is', $attributes ) ) {
+						return '<div' . ( preg_replace( '/\bstyle=(["\'])(.*?)\1/is', 'style=$1$2;min-height:0$1', $attributes, 1 ) ?? $attributes ) . '>';
+					}
+
+					return '<div' . $attributes . ' style="min-height:0">';
+				},
+				$projected,
+				1
+			);
+			if ( ! is_string( $projected ) ) {
+				return $html;
+			}
+			$projected = preg_replace_callback(
 			'/<button\b([^>]*)>/is',
 			static function ( array $matches ) use ( $source_classes ): string {
 				$attributes = $matches[1];
