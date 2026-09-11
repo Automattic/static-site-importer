@@ -34,7 +34,6 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 			'plan'                  => $materialization['plan'],
 			'gutenberg_gaps'        => $materialization['gutenberg_gaps'],
 			'companion_payload'     => $materialization['companion_payload'],
-			'materialization_plan'  => $materialization['materialization_plan'],
 			'theme_materialization' => $materialization['theme_materialization'],
 		);
 		unset( $payload['args']['_static_site_importer_payload_reader'] );
@@ -193,6 +192,7 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 			'compile_pipeline'     => self::files_binding(
 				array(
 					'class-static-site-importer-theme-generator.php',
+					'class-static-site-importer-compilation-preparation.php',
 					'class-static-site-importer-theme-materialization-strategy.php',
 					'class-static-site-importer-site-identity.php',
 					'class-static-site-importer-classic-theme-projection.php',
@@ -275,7 +275,7 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 	}
 
 	private static function valid_payload( $payload ): bool {
-		if ( ! is_array( $payload ) || ! is_array( $payload['artifact'] ?? null ) || ! is_array( $payload['args'] ?? null ) || ! is_array( $payload['plan'] ?? null ) || ! is_array( $payload['gutenberg_gaps'] ?? null ) || ! is_array( $payload['materialization_plan'] ?? null ) || ! is_array( $payload['theme_materialization'] ?? null ) || ! is_string( $payload['plan']['schema'] ?? null ) || '' === $payload['plan']['schema'] ) {
+		if ( ! is_array( $payload ) || ! is_array( $payload['artifact'] ?? null ) || ! is_array( $payload['args'] ?? null ) || ! is_array( $payload['plan'] ?? null ) || ! is_array( $payload['gutenberg_gaps'] ?? null ) || ! is_array( $payload['theme_materialization'] ?? null ) || ! is_string( $payload['plan']['schema'] ?? null ) || '' === $payload['plan']['schema'] ) {
 			return false;
 		}
 		if ( ! array_key_exists( 'companion_payload', $payload ) || ( null !== $payload['companion_payload'] && ! is_array( $payload['companion_payload'] ) ) ) {

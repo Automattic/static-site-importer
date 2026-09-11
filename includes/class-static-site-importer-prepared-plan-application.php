@@ -101,7 +101,6 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			$prepared['args']['classic_runtime_bindings']  = $classic_bindings;
 		}
 		$prepared['args']['provider_layout_overlays']     = $page_ready ? array() : Static_Site_Importer_Entity_Materializer_Registry::provider_layout_overlays( $entities );
-		$prepared['args']['font_materialization']         = $page_ready ? array() : ( $prepared['args']['font_materialization'] ?? array() );
 		$prepared['args']['activate']                     = $page_ready ? false : ! empty( $prepared['args']['activate'] );
 		$prepared['args']['defer_materialization_commit'] = true;
 
@@ -155,11 +154,16 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 
 	/** Return a provider-compensated error before canonical plan mutation begins. */
 	private static function lifecycle_failure( array $error, array $lifecycle, array $dependencies, array $entities, string $stage ): WP_Error {
+		$diagnostics = is_array( $error['diagnostics'] ?? null ) ? $error['diagnostics'] : array();
+		if ( ! empty( $diagnostics ) ) {
+			$lifecycle['diagnostics'] = array_merge( is_array( $lifecycle['diagnostics'] ?? null ) ? $lifecycle['diagnostics'] : array(), $diagnostics );
+		}
 		$failure = array(
 			'status'            => 'partial',
 			'runtime_lifecycle' => $lifecycle,
 			'dependencies'      => $dependencies,
 			'entities'          => $entities,
+			'diagnostics'       => $diagnostics,
 		);
 		Static_Site_Importer_Entity_Compensation::append( $failure, $lifecycle, $entities, $stage, (string) $error['code'] );
 		return new WP_Error( (string) $error['code'], (string) $error['message'], $failure );

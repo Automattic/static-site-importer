@@ -30,6 +30,7 @@ jobs:
         with:
           commands: review lint
           args: --extension wordpress
+          differential-gating: true
           php-version: '8.2'
           node-version: '24'
 
