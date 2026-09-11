@@ -434,11 +434,35 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( in_array( $fact, array( 'column', 'row' ), true ) ) {
 			return (bool) preg_match( '/^(?:auto|-1|[1-9][0-9]*|span [1-9][0-9]*)(?: \/ (?:auto|-1|[1-9][0-9]*|span [1-9][0-9]*))?$/D', $value );
 		}
+		if ( str_starts_with( $value, 'calc(' ) ) {
+			return self::safe_calc_value( $value );
+		}
 		if ( 'area' === $fact ) {
 			return (bool) preg_match( '/^(?:auto|[1-9][0-9]*|span [1-9][0-9]*)(?: \/ (?:auto|[1-9][0-9]*|span [1-9][0-9]*)){3}$/D', $value );
 		}
 		return (bool) preg_match( '/^(?:var\(--[a-zA-Z][a-zA-Z0-9_-]{0,79}(?:, ?(?:0|[0-9]+(?:\.[0-9]+)?(?:px|rem|em|%|vw|vh)))?\)|auto|none|0|span [1-9][0-9]*|[1-9][0-9]*|(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr)|minmax\((?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr), ?(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr)\)|repeat\([1-9][0-9]*, ?(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr)\))+(?: \/ [1-9][0-9]*)?$/D', $value );
 	}
+	/**
+	 * A source length can be authored as an arithmetic expression, which the
+	 * browser evaluates. Admit that expression when it carries only numbers,
+	 * units, arithmetic operators, and balanced parentheses, so an authored
+	 * `calc()` keeps its declared geometry instead of being dropped to the
+	 * consuming runtime's own default.
+	 */
+	private static function safe_calc_value( string $value ): bool {
+		if ( ! preg_match( '/^calc\((?:\s|[0-9]+(?:\.[0-9]+)?(?:px|rem|em|%|vw|vh|fr)?|[-+*\/()])+\)$/D', $value ) ) {
+			return false;
+		}
+		$depth = 0;
+		foreach ( str_split( $value ) as $character ) {
+			$depth += '(' === $character ? 1 : ( ')' === $character ? -1 : 0 );
+			if ( $depth < 0 ) {
+				return false;
+			}
+		}
+		return 0 === $depth;
+	}
+
 	private static function loss( string $reason, string $node ): array { return array(
 		'dimension'   => 'layout',
 		'reason_code' => $reason,
