@@ -548,39 +548,39 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$resolved_declarations = isset( $resolved['runtime_declarations'] ) && is_array( $resolved['runtime_declarations'] ) ? $resolved['runtime_declarations'] : array();
 		$expanded              = array();
 		if ( ! empty( $manifests ) ) {
-		$resolved_manifests    = array();
-		foreach ( $resolved_declarations as $declaration ) {
-			$payload = is_array( $declaration ) && is_array( $declaration['payload'] ?? null ) ? $declaration['payload'] : null;
-			if ( ! is_array( $payload ) || 'blocks-engine/runtime-entity-manifest/v1' !== ( $payload['schema'] ?? null ) ) {
-				continue;
+			$resolved_manifests = array();
+			foreach ( $resolved_declarations as $declaration ) {
+				$payload = is_array( $declaration ) && is_array( $declaration['payload'] ?? null ) ? $declaration['payload'] : null;
+				if ( ! is_array( $payload ) || 'blocks-engine/runtime-entity-manifest/v1' !== ( $payload['schema'] ?? null ) ) {
+					continue;
+				}
+				$id = $declaration['reconciliation_identity'] ?? null;
+				if ( ! is_string( $id ) || ! isset( $manifests[ $id ] ) || isset( $resolved_manifests[ $id ] ) || 'entity_collection' !== ( $declaration['kind'] ?? null ) || ( $declaration['type'] ?? null ) !== $manifests[ $id ]['type'] || ( $payload['entity_schema'] ?? null ) !== $manifests[ $id ]['entity_schema'] ) {
+					return self::runtime_entity_resolution_error( 'Runtime entity manifest declaration does not match its lifecycle declaration.' );
+				}
+				$resolved_manifests[ $id ] = true;
 			}
-			$id = $declaration['reconciliation_identity'] ?? null;
-			if ( ! is_string( $id ) || ! isset( $manifests[ $id ] ) || isset( $resolved_manifests[ $id ] ) || 'entity_collection' !== ( $declaration['kind'] ?? null ) || $manifests[ $id ]['type'] !== ( $declaration['type'] ?? null ) || $manifests[ $id ]['entity_schema'] !== ( $payload['entity_schema'] ?? null ) ) {
-				return self::runtime_entity_resolution_error( 'Runtime entity manifest declaration does not match its lifecycle declaration.' );
+			if ( count( $manifests ) !== count( $resolved_manifests ) || array_diff_key( $manifests, $resolved_manifests ) ) {
+				return self::runtime_entity_resolution_error( 'Runtime entity manifest declaration projection is incomplete.' );
 			}
-			$resolved_manifests[ $id ] = true;
-		}
-		if ( count( $manifests ) !== count( $resolved_manifests ) || array_diff_key( $manifests, $resolved_manifests ) ) {
-			return self::runtime_entity_resolution_error( 'Runtime entity manifest declaration projection is incomplete.' );
-		}
 
-		$resolutions = $resolved['runtime_entity_resolution'] ?? null;
-		if ( ! is_array( $resolutions ) || ! array_is_list( $resolutions ) ) {
-			return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution is missing or malformed.' );
-		}
-		foreach ( $resolutions as $resolution ) {
-			if ( ! is_array( $resolution ) || array( 'reconciliation_identity', 'kind', 'type', 'entity_schema', 'entities' ) !== array_keys( $resolution ) ) {
-				return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution has an invalid shape.' );
+			$resolutions = $resolved['runtime_entity_resolution'] ?? null;
+			if ( ! is_array( $resolutions ) || ! array_is_list( $resolutions ) ) {
+				return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution is missing or malformed.' );
 			}
-			$id = $resolution['reconciliation_identity'];
-			if ( ! is_string( $id ) || ! isset( $manifests[ $id ] ) || isset( $expanded[ $id ] ) || 'entity_collection' !== $resolution['kind'] || $manifests[ $id ]['type'] !== $resolution['type'] || $manifests[ $id ]['entity_schema'] !== $resolution['entity_schema'] || ! is_array( $resolution['entities'] ) || ! array_is_list( $resolution['entities'] ) ) {
-				return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution does not match its declaration.' );
+			foreach ( $resolutions as $resolution ) {
+				if ( ! is_array( $resolution ) || array( 'reconciliation_identity', 'kind', 'type', 'entity_schema', 'entities' ) !== array_keys( $resolution ) ) {
+					return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution has an invalid shape.' );
+				}
+				$id = $resolution['reconciliation_identity'];
+				if ( ! is_string( $id ) || ! isset( $manifests[ $id ] ) || isset( $expanded[ $id ] ) || 'entity_collection' !== $resolution['kind'] || $manifests[ $id ]['type'] !== $resolution['type'] || $manifests[ $id ]['entity_schema'] !== $resolution['entity_schema'] || ! is_array( $resolution['entities'] ) || ! array_is_list( $resolution['entities'] ) ) {
+					return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution does not match its declaration.' );
+				}
+				$expanded[ $id ] = $resolution['entities'];
 			}
-			$expanded[ $id ] = $resolution['entities'];
-		}
-		if ( count( $manifests ) !== count( $expanded ) || array_diff_key( $manifests, $expanded ) ) {
-			return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution is incomplete.' );
-		}
+			if ( count( $manifests ) !== count( $expanded ) || array_diff_key( $manifests, $expanded ) ) {
+				return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution is incomplete.' );
+			}
 		}
 
 		if ( ! is_array( $lifecycle['entities'] ?? null ) ) {
@@ -630,12 +630,26 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( 'form' === ( $prepared['adapter']['capability'] ?? null ) ) {
 				$entities = array_map( static fn( $entity ) => is_array( $entity ) ? self::prepare_form_entity( $entity ) : $entity, $entities );
 			}
-			$manifest   = 'products' === $key ? array( 'schema_version' => 1, 'products' => $entities ) : array( 'forms' => $entities );
+			$manifest   = 'products' === $key ? array(
+				'schema_version' => 1,
+				'products'       => $entities,
+			) : array( 'forms' => $entities );
 			$validation = self::validate_manifest_generic( $prepared['adapter'], $manifest );
 			if ( ! empty( $validation['errors'] ) ) {
-				return new WP_Error( 'static_site_importer_runtime_entity_resolution_invalid', 'Resolver-expanded runtime entities failed SSI provider validation.', array( 'status' => 'rejected', 'declaration_id' => $id, 'errors' => $validation['errors'] ) );
+				return new WP_Error(
+					'static_site_importer_runtime_entity_resolution_invalid',
+					'Resolver-expanded runtime entities failed SSI provider validation.',
+					array(
+						'status'         => 'rejected',
+						'declaration_id' => $id,
+						'errors'         => $validation['errors'],
+					)
+				);
 			}
-			$prepared['manifest'] = 'products' === $key ? array( 'schema_version' => 1, 'products' => $validation['products'] ?? array() ) : array( 'forms' => $validation['forms'] ?? array() );
+			$prepared['manifest'] = 'products' === $key ? array(
+				'schema_version' => 1,
+				'products'       => $validation['products'] ?? array(),
+			) : array( 'forms' => $validation['forms'] ?? array() );
 		}
 		unset( $prepared );
 		return $lifecycle;
