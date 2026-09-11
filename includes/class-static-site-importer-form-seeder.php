@@ -1684,28 +1684,42 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			return $proven;
 		};
-		// A direct source row is the one multi-control wrapper the provider does not
-		// need to own. Keep it as an editable Core container only when its direct
-		// children and horizontal flex layout are both completely evidenced.
+		// Preserve a container only when its complete child tree can remain explicit
+		// inside the provider block. This deliberately excludes semantic, ambiguous,
+		// and provider-owned wrapper shapes rather than flattening them into a group.
 		$native_wrapper_blocks = array();
-		foreach ( $nodes as $node ) {
+		$native_container_facts = array( 'display', 'direction', 'width', 'gap', 'wrap', 'align_items', 'align_content', 'justify_content', 'align_self', 'justify_self', 'order', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis' );
+		$native_candidate = array();
+		for ( $offset = count( $nodes ) - 1; $offset >= 0; --$offset ) {
+			$node    = $nodes[ $offset ];
 			$node_id = is_array( $node ) && 'wrapper' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
 			$layout  = $layout_by_node[ $node_id ] ?? array();
-			if ( '' === $node_id || 'div' !== ( $node['tag'] ?? null ) || '$root' !== ( $topology_parents[ $node_id ] ?? null ) || ! empty( $variants_by_node[ $node_id ] ) || 'flex' !== ( $layout['display'] ?? null ) || 'row' !== ( $layout['direction'] ?? null ) || array_diff( array_keys( $layout ), array( 'display', 'direction', 'wrap', 'gap', 'align_items', 'justify_content' ) ) || ! $node_facts_proven( $node_id ) ) {
-				continue;
+			$layout_node = $layout_nodes_by_id[ $node_id ] ?? array();
+			$accepted = '' !== $node_id
+				&& 'div' === ( $node['tag'] ?? null )
+				&& 'div' === ( $layout_node['source']['tag'] ?? null )
+				&& 'flex' === ( $layout['display'] ?? null )
+				&& in_array( $layout['direction'] ?? null, array( 'row', 'column' ), true )
+				&& ! array_diff( array_keys( $layout ), $native_container_facts )
+				&& $node_facts_proven( $node_id )
+				&& Static_Site_Importer_Provider_Layout_Overlay::layout_values_are_safe( $layout );
+			foreach ( $variants_by_node[ $node_id ] ?? array() as $variant ) {
+				$patch = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+				$accepted = $accepted
+					&& ! empty( $patch )
+					&& ! array_diff( array_keys( $patch ), $native_container_facts )
+					&& ( ! isset( $patch['display'] ) || 'flex' === $patch['display'] )
+					&& ( ! isset( $patch['direction'] ) || in_array( $patch['direction'], array( 'row', 'column' ), true ) )
+					&& Static_Site_Importer_Provider_Layout_Overlay::layout_values_are_safe( $patch );
 			}
-			$control_indexes = array();
 			foreach ( $children[ $node_id ] ?? array() as $child ) {
 				$control_index = 'control' === ( $child['kind'] ?? null ) ? ( $child['control'] ?? null ) : null;
-				if ( ! is_int( $control_index ) || ! isset( $field_blocks[ $control_index ] ) ) {
-					$control_indexes = array();
-					break;
-				}
-				$control_indexes[] = $control_index;
+				$accepted = $accepted && ( ( is_int( $control_index ) && isset( $field_blocks[ $control_index ] ) ) || ( 'wrapper' === ( $child['kind'] ?? null ) && ! empty( $native_candidate[ $child['id'] ?? '' ] ) ) );
 			}
-			if ( count( $control_indexes ) < 2 || count( $control_indexes ) !== count( $children[ $node_id ] ?? array() ) ) {
+			if ( empty( $children[ $node_id ] ?? array() ) || ! $accepted ) {
 				continue;
 			}
+			$native_candidate[ $node_id ] = true;
 			$hook    = self::layout_node_class( self::layout_scope( $form ), $node_id );
 			$classes = preg_split( '/\s+/', trim( (string) ( $node['class'] ?? '' ) ) );
 			$classes = false === $classes ? array() : array_filter( $classes );
@@ -1715,18 +1729,21 @@ class Static_Site_Importer_Form_Seeder {
 				'name'              => 'core/group',
 				'attrs'             => array(
 					'className' => trim( implode( ' ', array_merge( $classes, array( $hook ) ) ) ),
-					'layout'    => array( 'type' => 'flex', 'orientation' => 'horizontal' ),
+					'layout'    => array( 'type' => 'flex', 'orientation' => 'row' === $layout['direction'] ? 'horizontal' : 'vertical' ),
 				),
 				'wrapper'           => 'group',
 				'topologyId'        => $node_id,
 				'topologySourceTag' => $node['tag'] ?? 'div',
 			);
 			$provider_layout_targets[ $node_id ] = $hook;
+			$represented_layout_nodes[] = $node_id;
+			$form_classes             = array_values( array_diff( $form_classes, $classes ) );
 			$represented_topology_nodes[]        = $node_id;
 			$overlay_node_targets[]              = array(
 				'id'     => $node_id,
 				'layout' => $layout,
 			);
+			$responsive_variant_targets = array_merge( $responsive_variant_targets, $variants_by_node[ $node_id ] ?? array() );
 			$overlay_represented_nodes[]         = $node_id;
 		}
 		// Source boxes that hold every mapped control become the provider's own form

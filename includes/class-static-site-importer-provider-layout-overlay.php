@@ -210,6 +210,16 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		);
 	}
 
+	/** The form topology adapter admits only values the overlay can safely emit. */
+	public static function layout_values_are_safe( array $layout ): bool {
+		foreach ( $layout as $fact => $value ) {
+			if ( ! is_string( $fact ) || ! isset( self::layout_property_map()[ $fact ] ) || ! self::safe_value( $fact, $value ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	/** Validate a compiler-produced overlay before it is admitted to a stylesheet. */
 	public static function validate_overlay( mixed $overlay ): ?array {
 		if ( ! is_array( $overlay ) || array_keys( $overlay ) !== array( 'schema', 'css', 'sha256', 'bytes' ) || self::OVERLAY_SCHEMA !== ( $overlay['schema'] ?? null ) || ! is_string( $overlay['css'] ?? null ) || ! is_string( $overlay['sha256'] ?? null ) || ! is_int( $overlay['bytes'] ?? null ) ) {
@@ -282,7 +292,26 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		return $rule;
 	}
 	private static function declarations( array $layout, array $capabilities, string $node, array &$losses ): array {
-		$map          = array(
+		$map          = self::layout_property_map();
+		$declarations = array();
+		foreach ( $layout as $fact => $value ) {
+			if ( ! isset( $map[ $fact ] ) || ! self::safe_value( $fact, $value ) ) {
+				$losses[] = self::loss( 'unsafe_layout_value', $node );
+				continue; }
+			if ( in_array( $fact, array( 'column', 'row', 'area', 'order', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis', 'align_self', 'justify_self' ), true ) && ( ! in_array( 'item_layout', $capabilities, true ) || ! in_array( 'direct_child_layout', $capabilities, true ) ) ) {
+				$losses[] = self::loss( 'direct_child_relationship_unrepresentable', $node );
+				continue; }
+			if ( ! in_array( $fact, array( 'column', 'row', 'area', 'order', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis', 'align_self', 'justify_self' ), true ) && ! in_array( 'container_layout', $capabilities, true ) ) {
+				$losses[] = self::loss( 'provider_structure_mismatch', $node );
+				continue; }
+			$declarations[] = $map[ $fact ] . ':' . $value;
+		}
+		return $declarations;
+	}
+
+	/** @return array<string,string> */
+	private static function layout_property_map(): array {
+		return array(
 			'display'         => 'display',
 			'width'           => 'width',
 			'columns'         => 'grid-template-columns',
@@ -306,20 +335,6 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			'row'             => 'grid-row',
 			'area'            => 'grid-area',
 		);
-		$declarations = array();
-		foreach ( $layout as $fact => $value ) {
-			if ( ! isset( $map[ $fact ] ) || ! self::safe_value( $fact, $value ) ) {
-				$losses[] = self::loss( 'unsafe_layout_value', $node );
-				continue; }
-			if ( in_array( $fact, array( 'column', 'row', 'area', 'order', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis', 'align_self', 'justify_self' ), true ) && ( ! in_array( 'item_layout', $capabilities, true ) || ! in_array( 'direct_child_layout', $capabilities, true ) ) ) {
-				$losses[] = self::loss( 'direct_child_relationship_unrepresentable', $node );
-				continue; }
-			if ( ! in_array( $fact, array( 'column', 'row', 'area', 'order', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis', 'align_self', 'justify_self' ), true ) && ! in_array( 'container_layout', $capabilities, true ) ) {
-				$losses[] = self::loss( 'provider_structure_mismatch', $node );
-				continue; }
-			$declarations[] = $map[ $fact ] . ':' . $value;
-		}
-		return $declarations;
 	}
 	private static function safe_value( string $fact, mixed $value ): bool {
 		if ( ! is_string( $value ) && ! is_int( $value ) && ! is_float( $value ) ) {
