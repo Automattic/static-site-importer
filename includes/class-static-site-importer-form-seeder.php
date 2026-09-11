@@ -2013,11 +2013,6 @@ class Static_Site_Importer_Form_Seeder {
 				}
 			}
 		}
-		foreach ( $variants as $id => $node_variants ) {
-			if ( ! isset( $wrappers[ $id ] ) ) {
-				return null;
-			}
-		}
 		foreach ( $layout_nodes as $id => $layout_node ) {
 			if ( preg_match( '/^wrapper-[0-9]+$/D', $id ) && ! isset( $wrappers[ $id ] ) ) {
 				return null;
@@ -2025,8 +2020,10 @@ class Static_Site_Importer_Form_Seeder {
 		}
 
 		$hooks = array();
+		$native_variants = array();
 		foreach ( $wrappers as $id => $wrapper ) {
 			$hooks[ $id ] = self::layout_node_class( $scope, $id );
+			$native_variants = array_merge( $native_variants, $variants[ $id ] ?? array() );
 		}
 		$build = static function ( string $parent ) use ( &$build, $children, $field_blocks, $suppressed_controls, $wrappers, $layouts, $hooks ): array {
 			$blocks = array();
@@ -2060,7 +2057,7 @@ class Static_Site_Importer_Form_Seeder {
 			'represented_topology_nodes'   => array_keys( $wrappers ),
 			'suppressed_layout_properties' => array(),
 			'overlay_node_targets'         => array_map( static fn( string $id ): array => array( 'id' => $id, 'layout' => $layouts[ $id ] ), array_keys( $wrappers ) ),
-			'responsive_variant_targets'   => array_values( array_merge( ...array_values( $variants ) ) ),
+			'responsive_variant_targets'   => $native_variants,
 			'native_visibility_targets'    => array(),
 			'form_classes'                 => array(),
 			'provider_layout_targets'      => $hooks,
