@@ -467,6 +467,9 @@ class Static_Site_Importer_Form_Seeder {
 					$label_classes                        = preg_split( '/\s+/', trim( (string) $control['label_classes'] ) );
 					$submit_presentation['label_classes'] = false === $label_classes ? array() : array_values( array_filter( $label_classes ) );
 				}
+				if ( ! isset( $submit_presentation['label_marker'] ) && isset( $control['label_marker'] ) && is_scalar( $control['label_marker'] ) ) {
+					$submit_presentation['label_marker'] = trim( (string) $control['label_marker'] );
+				}
 				if ( $has_topology ) {
 					$presentation_class             = isset( $presentation_roles[ $control_index ]['control'] ) ? self::presentation_node_class( $scope, $control_index, 'control' ) : '';
 					$field_blocks[ $control_index ] = self::submit_button_block( $submit_text, trim( self::layout_node_class( $scope, 'control-' . $control_index ) . ' ' . $presentation_class ), $submit_presentation );
@@ -2350,7 +2353,10 @@ class Static_Site_Importer_Form_Seeder {
 		// which sizes the rendered line box. Declare that element so the serializer
 		// reproduces it; the text itself stays plain and escaped.
 		if ( isset( $presentation['label_classes'] ) && is_array( $presentation['label_classes'] ) ) {
-			$block['label'] = array( 'classes' => $presentation['label_classes'] );
+			$block['label'] = array(
+				'classes' => $presentation['label_classes'],
+				'marker'  => isset( $presentation['label_marker'] ) && is_scalar( $presentation['label_marker'] ) ? (string) $presentation['label_marker'] : '',
+			);
 		}
 
 		return $block;
@@ -2946,8 +2952,13 @@ class Static_Site_Importer_Form_Seeder {
 				static fn ( $class_name ): bool => is_string( $class_name ) && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name )
 			)
 		);
+		// Author rules that addressed this element are projected onto its compiler
+		// marker, so the marker is reproduced with it.
+		$marker    = isset( $label['marker'] ) && is_string( $label['marker'] ) && 1 === preg_match( '/^blocks-engine-richtext-[a-f0-9]{6,32}-[0-9]{1,4}$/D', $label['marker'] ) ? $label['marker'] : '';
+		$attributes = ( array() === $classes ? '' : ' class="' . implode( ' ', $classes ) . '"' )
+			. ( '' === $marker ? '' : ' data-blocks-engine-richtext-marker="' . $marker . '"' );
 
-		return '<span' . ( array() === $classes ? '' : ' class="' . implode( ' ', $classes ) . '"' ) . '>' . $markup . '</span>';
+		return '<span' . $attributes . '>' . $markup . '</span>';
 	}
 
 	/**
