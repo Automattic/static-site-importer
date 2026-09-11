@@ -460,10 +460,6 @@ class Static_Site_Importer_Form_Seeder {
 					$submit_classes                 = preg_split( '/\s+/', trim( (string) $control['class'] ) );
 					$submit_presentation['classes'] = false === $submit_classes ? array() : $submit_classes;
 				}
-				if ( ! isset( $submit_presentation['label_classes'] ) && isset( $control['label_classes'] ) && is_scalar( $control['label_classes'] ) ) {
-					$label_classes                        = preg_split( '/\s+/', trim( (string) $control['label_classes'] ) );
-					$submit_presentation['label_classes'] = false === $label_classes ? array() : array_values( array_filter( $label_classes ) );
-				}
 				if ( $has_topology ) {
 					$presentation_class             = isset( $presentation_roles[ $control_index ]['control'] ) ? self::presentation_node_class( $scope, $control_index, 'control' ) : '';
 					$field_blocks[ $control_index ] = self::submit_button_block( $submit_text, trim( self::layout_node_class( $scope, 'control-' . $control_index ) . ' ' . $presentation_class ), $submit_presentation );
@@ -2341,13 +2337,11 @@ class Static_Site_Importer_Form_Seeder {
 		// The source label element owns the typography that sizes the rendered line
 		// box, so it is kept around the text rather than letting the button's own
 		// typography resolve it.
-		if ( isset( $presentation['label_classes'] ) && is_array( $presentation['label_classes'] ) ) {
-			// An authored rule can address this element as a descendant, so it is kept
-			// even when it declares no classes of its own. Each retained token already
-			// matched a strict class-name pattern, so the attribute cannot carry
-			// quotes or markup.
-			$label_classes = array_values( array_filter( $presentation['label_classes'], static fn ( $class_name ): bool => is_string( $class_name ) && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) );
-			$content       = array() === $label_classes ? '<span>' . $content . '</span>' : '<span class="' . implode( ' ', $label_classes ) . '">' . $content . '</span>';
+		$label_classes = isset( $presentation['label_classes'] ) && is_array( $presentation['label_classes'] ) ? array_filter( $presentation['label_classes'], static fn ( $class_name ): bool => is_string( $class_name ) && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) : array();
+		if ( array() !== $label_classes ) {
+			// Each retained token already matched a strict class-name pattern, so the
+			// attribute cannot carry quotes or markup.
+			$content = '<span class="' . implode( ' ', $label_classes ) . '">' . $content . '</span>';
 		}
 		return array(
 			'name'    => 'core/button',
