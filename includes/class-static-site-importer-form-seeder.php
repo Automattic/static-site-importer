@@ -2126,6 +2126,10 @@ class Static_Site_Importer_Form_Seeder {
 			'native_visibility_targets'    => array(),
 			'form_classes'                 => array(),
 			'provider_layout_targets'      => $hooks,
+			// Every topology result carries the same shape. This projection owns no
+			// phone popup placement, so it reports an explicit empty set instead of
+			// leaving the key absent for its consumers.
+			'phone_popup_targets'          => array(),
 		);
 	}
 
