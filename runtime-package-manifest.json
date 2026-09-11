@@ -40,6 +40,7 @@
         "includes/class-static-site-importer-entity-compensation.php",
         "includes/class-static-site-importer-runtime-entity-binding-validation.php",
         "includes/class-static-site-importer-runtime-capabilities.php",
+        "includes/class-static-site-importer-compilation-preparation.php",
         "includes/class-static-site-importer-theme-generator.php",
         "includes/class-static-site-importer-journaled-report-writer.php",
         "includes/class-static-site-importer-generated-state-reconciliation.php",
@@ -71,49 +72,36 @@
           "path": "static-site-importer.php"
         },
         {
+          "type": "file",
+          "path": "composer.json"
+        },
+        {
+          "type": "file",
+          "path": "composer.lock"
+        },
+        {
           "type": "prefix",
           "path": "includes/"
         },
         {
-          "type": "file",
-          "path": "vendor/autoload.php"
+          "type": "prefix",
+          "path": "vendor/"
         },
         {
           "type": "prefix",
-          "path": "vendor/composer/"
-        },
-        {
-          "type": "prefix",
-          "path": "vendor/automattic/blocks-engine-php-transformer/"
-        },
-        {
-          "type": "prefix",
-          "path": "vendor/dflydev/"
-        },
-        {
-          "type": "prefix",
-          "path": "vendor/league/"
-        },
-        {
-          "type": "prefix",
-          "path": "vendor/nette/"
-        },
-        {
-          "type": "prefix",
-          "path": "vendor/psr/"
-        },
-        {
-          "type": "prefix",
-          "path": "vendor/symfony/"
+          "path": "vendor/automattic/blocks-engine-figma-transformer/"
         }
       ],
       "required_files": [
         "runtime-package-manifest.json",
         "static-site-importer.php",
+        "composer.json",
+        "composer.lock",
         "includes/abilities.php",
         "includes/class-static-site-importer-form-fallback-contract.php",
         "includes/class-static-site-importer-entity-compensation.php",
         "includes/class-static-site-importer-runtime-entity-binding-validation.php",
+        "includes/class-static-site-importer-compilation-preparation.php",
         "includes/class-static-site-importer-theme-generator.php",
         "includes/class-static-site-importer-journaled-report-writer.php",
         "includes/class-static-site-importer-generated-state-reconciliation.php",

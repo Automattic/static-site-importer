@@ -1806,6 +1806,51 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			return $proven;
 		};
+		// A direct source row is the one multi-control wrapper the provider does not
+		// need to own. Keep it as an editable Core container only when its direct
+		// children and horizontal flex layout are both completely evidenced.
+		$native_wrapper_blocks = array();
+		foreach ( $nodes as $node ) {
+			$node_id = is_array( $node ) && 'wrapper' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
+			$layout  = $layout_by_node[ $node_id ] ?? array();
+			if ( '' === $node_id || 'div' !== ( $node['tag'] ?? null ) || '$root' !== ( $topology_parents[ $node_id ] ?? null ) || ! empty( $variants_by_node[ $node_id ] ) || 'flex' !== ( $layout['display'] ?? null ) || 'row' !== ( $layout['direction'] ?? null ) || array_diff( array_keys( $layout ), array( 'display', 'direction', 'wrap', 'gap', 'align_items', 'justify_content' ) ) || ! $node_facts_proven( $node_id ) ) {
+				continue;
+			}
+			$control_indexes = array();
+			foreach ( $children[ $node_id ] ?? array() as $child ) {
+				$control_index = 'control' === ( $child['kind'] ?? null ) ? ( $child['control'] ?? null ) : null;
+				if ( ! is_int( $control_index ) || ! isset( $field_blocks[ $control_index ] ) ) {
+					$control_indexes = array();
+					break;
+				}
+				$control_indexes[] = $control_index;
+			}
+			if ( count( $control_indexes ) < 2 || count( $control_indexes ) !== count( $children[ $node_id ] ?? array() ) ) {
+				continue;
+			}
+			$hook    = self::layout_node_class( self::layout_scope( $form ), $node_id );
+			$classes = preg_split( '/\s+/', trim( (string) ( $node['class'] ?? '' ) ) );
+			$classes = false === $classes ? array() : array_filter( $classes );
+			// Core's group serializer is available here; do not emit core/row without
+			// a dedicated saved-markup serializer for the active WordPress runtime.
+			$native_wrapper_blocks[ $node_id ] = array(
+				'name'              => 'core/group',
+				'attrs'             => array(
+					'className' => trim( implode( ' ', array_merge( $classes, array( $hook ) ) ) ),
+					'layout'    => array( 'type' => 'flex', 'orientation' => 'horizontal' ),
+				),
+				'wrapper'           => 'group',
+				'topologyId'        => $node_id,
+				'topologySourceTag' => $node['tag'] ?? 'div',
+			);
+			$provider_layout_targets[ $node_id ] = $hook;
+			$represented_topology_nodes[]        = $node_id;
+			$overlay_node_targets[]              = array(
+				'id'     => $node_id,
+				'layout' => $layout,
+			);
+			$overlay_represented_nodes[]         = $node_id;
+		}
 		// Source boxes that hold every mapped control become the provider's own form
 		// element. Their container layout is what positions the fields, so it is merged
 		// onto that element. A nested box declaring a full-width value repeats the box it
@@ -1948,7 +1993,7 @@ class Static_Site_Importer_Form_Seeder {
 				'node_hash'   => hash( 'sha256', $node_id ),
 			);
 		}
-		$build = static function ( string $parent_node ) use ( &$build, $children, $field_blocks, $controls, $suppressed_controls, $provider_controls, &$losses ): array {
+		$build = static function ( string $parent_node ) use ( &$build, $children, $field_blocks, $controls, $suppressed_controls, $provider_controls, $native_wrapper_blocks, &$losses ): array {
 			$blocks = array();
 			foreach ( $children[ $parent_node ] ?? array() as $node ) {
 				if ( 'control' === ( $node['kind'] ?? null ) ) {
@@ -1972,7 +2017,14 @@ class Static_Site_Importer_Form_Seeder {
 					}
 					continue;
 				}
-				$blocks = array_merge( $blocks, $build( $node['id'] ) );
+				$inner_blocks = $build( $node['id'] );
+				if ( isset( $native_wrapper_blocks[ $node['id'] ] ) ) {
+					$wrapper                = $native_wrapper_blocks[ $node['id'] ];
+					$wrapper['innerBlocks'] = $inner_blocks;
+					$blocks[]               = $wrapper;
+				} else {
+					$blocks = array_merge( $blocks, $inner_blocks );
+				}
 			}
 			return $blocks;
 		};

@@ -94,7 +94,7 @@ test("orchestration packages modified and untracked source bytes without changin
   await writeFile(join(source, "composer.json"), JSON.stringify({ require: { php: "^8.1" } }))
   await writeFile(join(source, "composer.lock"), "caller lock")
   await writeFile(join(source, "homeboy.json"), JSON.stringify({ extensions: { wordpress: { settings: { package_profile: { manifest: "runtime-package-manifest.json", profile: "website-artifact-import" } } } } }))
-  const runtimeManifest = { profiles: { "website-artifact-import": { selectors: [{ type: "prefix", path: "vendor/automattic/blocks-engine-figma-transformer/" }], required_files: [] } } }
+  const runtimeManifest = { profiles: { "website-artifact-import": { selectors: [{ type: "prefix", path: "vendor/" }], required_files: [] } } }
   await writeFile(join(source, "runtime-package-manifest.json"), JSON.stringify(runtimeManifest))
   await writeFile(join(source, "tracked.txt"), "modified tracked bytes")
   await writeFile(join(source, "untracked.txt"), "untracked bytes")

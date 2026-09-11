@@ -422,6 +422,22 @@ namespace {
 	$assert( str_contains( $topology_markup, 'First name' ) && str_contains( $topology_markup, 'Email' ) && str_contains( $topology_markup, 'Message' ), 'topology-preserves-labels' );
 	$assert( 1 === substr_count( $topology_markup, '<!-- wp:button ' ), 'topology-submit-control-emits-one-core-button-in-source-position' );
 	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && 5 === ( $topology_receipt['operation_count'] ?? 0 ) && 'provider_equal_width_fields' === ( $topology_receipt['operations'][3]['strategy'] ?? '' ) && 'provider_interaction_carrier' === ( $topology_receipt['operations'][4]['strategy'] ?? '' ), 'computed-layout-equal-grid-applies-with-bounded-receipt' );
+	$native_row_form = array(
+		'forms' => array( array(
+			'selector' => 'form.subscribe',
+			'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Subscribe' ) ),
+			'control_topology' => array( 'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false, 'nodes' => array( array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div', 'class' => 'email-submit-row' ), array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'control' => 0 ), array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 1, 'depth' => 1, 'control' => 1 ) ) ),
+			'layout_graph' => $v2_layout_graph( array( $layout_node( 'form', array(), 'form' ), array( 'id' => 'wrapper-0', 'kind' => 'container', 'parent' => 'form', 'order' => 0, 'source' => array( 'tag' => 'div', 'classes' => array( 'email-submit-row' ) ), 'layout' => array( 'display' => 'flex', 'direction' => 'row', 'gap' => '1rem' ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.email-submit-row', 'condition' => null, 'properties' => array( 'display', 'flex-direction', 'gap' ) ) ) ) ) ),
+		) ),
+	);
+	$native_row_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $native_row_form );
+	$native_row_result     = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $native_row_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$native_row_markup     = (string) ( $native_row_result['block_markup'] ?? '' );
+	$native_row_losses     = array_column( $native_row_result['computed_layout_receipt']['losses'] ?? array(), 'reason_code' );
+	$native_row_targets    = array_filter( $native_row_result['provider_layout_target_map']['targets'] ?? array(), static fn( array $target ): bool => 'wrapper-0' === ( $target['node'] ?? '' ) );
+	$native_row_blocks     = parse_blocks( $native_row_markup );
+	$native_row_block      = $native_row_blocks[0]['innerBlocks'][0] ?? array();
+	$assert( empty( $native_row_validation['errors'] ) && 'core/group' === ( $native_row_block['blockName'] ?? '' ) && array( 'jetpack/field-email', 'core/button' ) === array_column( $native_row_block['innerBlocks'] ?? array(), 'blockName' ) && str_contains( (string) ( $native_row_block['attrs']['className'] ?? '' ), 'email-submit-row' ) && preg_match( '/ssi-node-[a-f0-9]{12}/', (string) ( $native_row_block['attrs']['className'] ?? '' ) ) && 1 === count( $native_row_targets ) && in_array( 'direct_child_layout', reset( $native_row_targets )['capabilities'] ?? array(), true ) && ! array_intersect( array( 'provider_wrapper_layout_unrepresentable', 'direct_child_relationship_unrepresentable' ), $native_row_losses ) && $native_row_markup === serialize_blocks( parse_blocks( $native_row_markup ) ), 'proven-horizontal-direct-control-row-preserves-native-group-and-direct-child-layout-target', wp_json_encode( $native_row_result ) );
 	// A stylesheet may be attached as media="all". It is unconditional, so a
 	// two-field grid can be mapped while source paragraph field wrappers remain
 	// represented by the provider runtime instead of being silently flattened.

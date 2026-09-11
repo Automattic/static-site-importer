@@ -21,6 +21,9 @@ if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Client_Script_Policy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-client-script-policy.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Entity_Materializer_Registry' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-entity-materializer-registry.php';
+}
 
 final class Static_Site_Importer_Direct_Artifact_Import {
 	private const RUN_SCHEMA                    = 'static-site-importer/direct-artifact-run/v1';
@@ -1113,6 +1116,12 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			$message = $error->getMessage();
 			$data    = null;
 		}
+		$diagnostics = is_array( $data ) && is_array( $data['diagnostics'] ?? null ) ? Static_Site_Importer_Entity_Materializer_Registry::project_public_diagnostics( $data['diagnostics'] ) : array();
+
+		$message = Static_Site_Importer_Entity_Materializer_Registry::project_public_error_message( $code, $diagnostics );
+
+		$data = is_array( $data ) ? Static_Site_Importer_Entity_Materializer_Registry::project_public_error_data( $data ) : $data;
+
 		$failure                       = array(
 			'phase'              => $phase,
 			'exception_class'    => get_class( $error ),
@@ -1139,9 +1148,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			'failure'      => self::scrub_failure( $failure ),
 			'resumable'    => ! in_array( $phase, array( 'materialize', 'materialization_claim' ), true ),
 		);
-		// Keep terminal admission evidence visible to the public error projection.
+		// Only the bounded public projection may leave this failure boundary.
 		if ( is_array( $data ) ) {
-			foreach ( array( 'import_report', 'import_report_summary', 'import_validation_result', 'finding_packets', 'fixture_diagnostics', 'failed_plan_artifacts' ) as $key ) {
+			foreach ( array( 'import_report_summary', 'import_validation_result', 'diagnostics' ) as $key ) {
 				if ( array_key_exists( $key, $data ) ) {
 					$error_data[ $key ] = $data[ $key ];
 				}
@@ -1689,7 +1698,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 		if ( ! is_array( $value ) ) {
 			if ( is_string( $value ) ) {
-				return substr( $value, 0, 1000 );
+				return preg_match( '/(?:password|secret|token|authorization|api[_-]?key|cookie|bearer)\s*[:=]/i', $value ) ? '[redacted]' : substr( $value, 0, 1000 );
 			}
 			return is_scalar( $value ) || null === $value ? $value : get_debug_type( $value );
 		}
@@ -1699,12 +1708,31 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				$clean['_truncated'] = true;
 				break;
 			}
-			if ( is_string( $key ) && ( str_contains( strtolower( $key ), 'path' ) || str_contains( strtolower( $key ), 'workspace' ) || str_contains( strtolower( $key ), 'manifest' ) ) ) {
-				continue;
+			if ( is_string( $key ) ) {
+				$normalized_key = strtolower( $key );
+				if ( str_contains( $normalized_key, 'workspace' ) || str_contains( $normalized_key, 'manifest' ) || preg_match( '/(?:password|secret|token|authorization|api[_-]?key|cookie)/', $normalized_key ) ) {
+					$clean[ $key ] = '[redacted]';
+					continue;
+				}
+				if ( str_contains( $normalized_key, 'path' ) ) {
+					$clean[ $key ] = self::safe_error_path( $item ) ? $item : '[redacted]';
+					continue;
+				}
 			}
 			$clean[ $key ] = self::scrub_error( $item, $depth + 1 );
 		}
 		return $clean;
+	}
+
+	/** Keep JSON pointers and source-relative paths while rejecting host filesystem paths. */
+	private static function safe_error_path( $value ): bool {
+		if ( ! is_string( $value ) || '' === $value || strlen( $value ) > 1000 || str_contains( $value, "\0" ) ) {
+			return false;
+		}
+		if ( '$' === $value[0] ) {
+			return 1 === preg_match( '/^\$[.\[\]A-Za-z0-9_-]*$/', $value );
+		}
+		return ! str_starts_with( $value, '/' ) && ! str_starts_with( $value, '\\' ) && ! preg_match( '/^[A-Za-z]:[\\\\\/]/', $value ) && ! str_contains( $value, '\\' ) && ! str_contains( $value, '..' ) && ! str_contains( $value, ':' ) && ! str_contains( $value, '?' ) && ! str_contains( $value, '#' );
 	}
 
 	private static function scrub_failure( array $failure ): array {

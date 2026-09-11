@@ -21,6 +21,12 @@ if ( ! class_exists( 'Static_Site_Importer_Figma_Import' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Compiler_Diagnostic_Normalizer' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-compiler-diagnostic-normalizer.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Entity_Materializer_Registry' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-entity-materializer-registry.php';
+}
+if ( ! class_exists( 'Static_Site_Importer_Compilation_Preparation' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-compilation-preparation.php';
+}
 
 class Static_Site_Importer_Canonical_Import_Service {
 	private static string $cli_report_destination = '';
@@ -357,7 +363,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 
 	/** @param array<string,mixed> $artifact @param array<string,mixed> $args @param array<string,mixed> $provenance @return array<string,mixed> */
 	public static function plan_artifact( array $artifact, array $args, string $type, array $provenance ): array {
-		$compiled = Static_Site_Importer_Theme_Generator::compile_website_artifact( $artifact, $args );
+		$compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $artifact, $args );
 		if ( is_wp_error( $compiled ) ) {
 			return self::error( (string) $compiled->get_error_code(), $compiled->get_error_message(), $compiled->get_error_data() );
 		}
@@ -390,8 +396,11 @@ class Static_Site_Importer_Canonical_Import_Service {
 				'normalized_args' => $compiled['args'],
 			);
 		}
-		if ( ! empty( $args['source_metadata']['figma_transform_report'] ) ) {
-			$response['figma_transform_report'] = $args['source_metadata']['figma_transform_report'];
+		$figma_transform_report = isset( $args['source_metadata']['figma_transform_report'] ) && is_array( $args['source_metadata']['figma_transform_report'] ) ? $args['source_metadata']['figma_transform_report'] : array();
+		if ( ! empty( $figma_transform_report ) ) {
+			$bounded                            = self::bound_success_result( array(), array( 'figma_transform_report' => $figma_transform_report ) );
+			$response['figma_transform_report'] = self::figma_transform_report_response( $figma_transform_report, $bounded['response_artifacts']['artifacts']['figma_transform_report'] ?? array() );
+			$response['response_artifacts']     = $bounded['response_artifacts'] ?? array();
 		}
 		return $response;
 	}
@@ -492,9 +501,10 @@ class Static_Site_Importer_Canonical_Import_Service {
 
 	/** @param array<string,mixed> $result @param array<string,mixed> $input @return array<string,mixed> */
 	public static function success( array $result, array $input ): array {
-		$contract             = self::success_diagnostics_contract( $result );
-		$result               = self::bound_success_result( $result );
-		$contract_diagnostics = isset( $contract['diagnostics'] ) && is_array( $contract['diagnostics'] ) ? $contract['diagnostics'] : array();
+		$contract               = self::success_diagnostics_contract( $result );
+		$figma_transform_report = isset( $input['source_metadata']['figma_transform_report'] ) && is_array( $input['source_metadata']['figma_transform_report'] ) ? $input['source_metadata']['figma_transform_report'] : array();
+		$result                 = self::bound_success_result( $result, empty( $figma_transform_report ) ? array() : array( 'figma_transform_report' => $figma_transform_report ) );
+		$contract_diagnostics   = isset( $contract['diagnostics'] ) && is_array( $contract['diagnostics'] ) ? $contract['diagnostics'] : array();
 		unset( $contract['diagnostics'] );
 		if ( 25 < count( $contract_diagnostics ) ) {
 			$contract_diagnostics = array_merge( array_slice( $contract_diagnostics, 0, 24 ), array_slice( $contract_diagnostics, -1 ) );
@@ -514,14 +524,14 @@ class Static_Site_Importer_Canonical_Import_Service {
 			'diagnostics'         => $bounded_contract['diagnostics'],
 			'fixture_diagnostics' => $bounded_contract,
 		);
-		if ( ! empty( $input['source_metadata']['figma_transform_report'] ) ) {
-			$response['figma_transform_report'] = $input['source_metadata']['figma_transform_report'];
+		if ( ! empty( $figma_transform_report ) ) {
+			$response['figma_transform_report'] = self::figma_transform_report_response( $figma_transform_report, $result['response_artifacts']['artifacts']['figma_transform_report'] ?? array() );
 		}
 		return $response;
 	}
 
 	/** Persist unbounded success payloads and replace them with durable references. */
-	public static function bound_success_result( array $result ): array {
+	public static function bound_success_result( array $result, array $additional_payloads = array() ): array {
 		$details  = $result;
 		$payloads = array_filter(
 			array(
@@ -530,6 +540,11 @@ class Static_Site_Importer_Canonical_Import_Service {
 			),
 			'is_array'
 		);
+		foreach ( $additional_payloads as $name => $payload ) {
+			if ( is_string( $name ) && is_array( $payload ) && ! isset( $payloads[ $name ] ) ) {
+				$payloads[ $name ] = $payload;
+			}
+		}
 		if ( empty( $payloads ) ) {
 			return $result;
 		}
@@ -613,7 +628,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 		$identity      = (string) ( $report['import_run_id'] ?? $receipt['receipt_instance_id'] ?? '' );
 		$plan_identity = is_array( $receipt['plan_identity'] ?? null ) ? $receipt['plan_identity'] : array();
 		if ( '' === $identity ) {
-			$identity = hash( 'sha256', (string) ( $result['theme_slug'] ?? '' ) . "\n" . (string) ( $plan_identity['hash'] ?? '' ) );
+			$identity = hash( 'sha256', (string) ( $result['theme_slug'] ?? '' ) . "\n" . (string) ( $plan_identity['hash'] ?? '' ) . "\n" . (string) wp_json_encode( $payloads ) );
 		}
 		$identity = trim( (string) preg_replace( '/[^A-Za-z0-9_-]/', '-', $identity ), '-' );
 		try {
@@ -659,6 +674,23 @@ class Static_Site_Importer_Canonical_Import_Service {
 		$artifacts['status']          = empty( $artifacts['errors'] ) ? 'completed' : 'failed';
 		$result['response_artifacts'] = $artifacts;
 		return $result;
+	}
+
+	/** Project a Figma report without placing its full transform diagnostics on the transport. */
+	private static function figma_transform_report_response( array $report, array $artifact ): array {
+		$remaining = 400;
+		$summary   = self::bounded_inline_value( is_array( $report['summary'] ?? null ) ? $report['summary'] : array(), $remaining );
+		$response  = array_filter(
+			array(
+				'schema'   => is_string( $report['schema'] ?? null ) ? $report['schema'] : '',
+				'source'   => is_string( $report['source'] ?? null ) ? $report['source'] : '',
+				'status'   => is_string( $report['status'] ?? null ) ? $report['status'] : '',
+				'summary'  => is_array( $summary ) ? $summary : array(),
+				'artifact' => $artifact,
+			),
+			static fn ( $value ): bool => '' !== $value && array() !== $value
+		);
+		return $response;
 	}
 
 	/** Return a globally bounded transport projection while preserving array shape. */
@@ -748,9 +780,17 @@ class Static_Site_Importer_Canonical_Import_Service {
 
 	/** @param mixed $data @return array<string,mixed> */
 	public static function error( string $code, string $message, $data = null ): array {
-		$summary     = is_array( $data ) && isset( $data['import_report_summary'] ) && is_array( $data['import_report_summary'] ) ? $data['import_report_summary'] : self::failure_report_summary( $code, $message );
+		$data = is_array( $data ) ? Static_Site_Importer_Entity_Materializer_Registry::project_public_error_data( $data ) : $data;
+
+		$summary = is_array( $data ) && isset( $data['import_report_summary'] ) && is_array( $data['import_report_summary'] ) ? $data['import_report_summary'] : self::failure_report_summary( $code, $message );
+
 		$diagnostics = self::error_diagnostics( $code, $message, $data, $summary );
-		$fixture     = class_exists( 'Static_Site_Importer_Diagnostic_Contract' ) ? Static_Site_Importer_Diagnostic_Contract::build(
+
+		$message = Static_Site_Importer_Entity_Materializer_Registry::project_public_error_message( $code, $diagnostics );
+		if ( is_array( $summary['error'] ?? null ) ) {
+			$summary['error']['message'] = $message;
+		}
+		$fixture = class_exists( 'Static_Site_Importer_Diagnostic_Contract' ) ? Static_Site_Importer_Diagnostic_Contract::build(
 			array(
 				'success'                  => false,
 				'status'                   => 'failed',
@@ -759,7 +799,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 				'import_report'            => is_array( $data ) && is_array( $data['import_report'] ?? null ) ? $data['import_report'] : array(),
 			)
 		) : array( 'diagnostics' => $diagnostics );
-		$payload     = array(
+		$payload = array(
 			'success'               => false,
 			'error'                 => array(
 				'code'    => $code,
@@ -782,25 +822,27 @@ class Static_Site_Importer_Canonical_Import_Service {
 
 	/** @param mixed $data @param array<string,mixed> $summary @return array<int,array<string,mixed>> */
 	public static function error_diagnostics( string $code, string $message, $data, array $summary ): array {
-		$candidates = array( is_array( $data ) && is_array( $data['import_validation_result']['diagnostics'] ?? null ) ? $data['import_validation_result']['diagnostics'] : array(), is_array( $summary['diagnostics'] ?? null ) ? $summary['diagnostics'] : array() );
+		$candidates = array( is_array( $data ) && is_array( $data['diagnostics'] ?? null ) ? $data['diagnostics'] : array(), is_array( $data ) && is_array( $data['import_validation_result']['diagnostics'] ?? null ) ? $data['import_validation_result']['diagnostics'] : array(), is_array( $summary['diagnostics'] ?? null ) ? $summary['diagnostics'] : array() );
 		foreach ( $candidates as $candidate ) {
-			$diagnostics = array_values( array_filter( $candidate, array( self::class, 'is_actionable_error_diagnostic' ) ) );
+			$diagnostics = array_values( array_filter( Static_Site_Importer_Entity_Materializer_Registry::project_public_diagnostics( $candidate ), array( self::class, 'is_actionable_error_diagnostic' ) ) );
 			if ( ! empty( $diagnostics ) ) {
 				return $diagnostics;
 			}
 		}
-		return array(
+		return Static_Site_Importer_Entity_Materializer_Registry::project_public_diagnostics(
 			array(
-				'type'        => 'validation_error',
-				'kind'        => 'validation_error',
-				'severity'    => 'error',
-				'code'        => $code,
-				'reason_code' => $code,
-				'reason'      => $code,
-				'message'     => $message,
-				'stage'       => 'validation',
-				'owner'       => 'static-site-importer',
-			),
+				array(
+					'type'        => 'validation_error',
+					'kind'        => 'validation_error',
+					'severity'    => 'error',
+					'code'        => $code,
+					'reason_code' => $code,
+					'reason'      => $code,
+					'message'     => $message,
+					'stage'       => 'validation',
+					'owner'       => 'static-site-importer',
+				),
+			)
 		);
 	}
 
