@@ -1795,9 +1795,13 @@ class Static_Site_Importer_Form_Seeder {
 			'flex_grow'       => 'flex-grow',
 			'flex_shrink'     => 'flex-shrink',
 			'flex_basis'      => 'flex-basis',
-			'column'          => 'grid-column',
-			'row'             => 'grid-row',
-			'area'            => 'grid-area',
+			'column'              => 'grid-column',
+			'row'                 => 'grid-row',
+			'area'                => 'grid-area',
+			'margin_block_start'  => 'margin-block-start',
+			'margin_block_end'    => 'margin-block-end',
+			'margin_inline_start' => 'margin-inline-start',
+			'margin_inline_end'   => 'margin-inline-end',
 		);
 		$variant_proven        = static function ( array $variant, string $property ): bool {
 			foreach ( $variant['provenance'] ?? array() as $fact ) {
@@ -2054,7 +2058,7 @@ class Static_Site_Importer_Form_Seeder {
 		}
 
 		$property_map = array(
-			'display' => 'display', 'width' => 'width', 'columns' => 'grid-template-columns', 'rows' => 'grid-template-rows', 'gap' => 'gap', 'row_gap' => 'row-gap', 'column_gap' => 'column-gap', 'direction' => 'flex-direction', 'wrap' => 'flex-wrap', 'align_items' => 'align-items', 'align_content' => 'align-content', 'justify_content' => 'justify-content', 'align_self' => 'align-self', 'justify_self' => 'justify-self', 'order' => 'order', 'flex' => 'flex', 'flex_grow' => 'flex-grow', 'flex_shrink' => 'flex-shrink', 'flex_basis' => 'flex-basis', 'column' => 'grid-column', 'row' => 'grid-row', 'area' => 'grid-area',
+			'display' => 'display', 'width' => 'width', 'columns' => 'grid-template-columns', 'rows' => 'grid-template-rows', 'gap' => 'gap', 'row_gap' => 'row-gap', 'column_gap' => 'column-gap', 'direction' => 'flex-direction', 'wrap' => 'flex-wrap', 'align_items' => 'align-items', 'align_content' => 'align-content', 'justify_content' => 'justify-content', 'align_self' => 'align-self', 'justify_self' => 'justify-self', 'order' => 'order', 'flex' => 'flex', 'flex_grow' => 'flex-grow', 'flex_shrink' => 'flex-shrink', 'flex_basis' => 'flex-basis', 'column' => 'grid-column', 'row' => 'grid-row', 'area' => 'grid-area', 'margin_block_start' => 'margin-block-start', 'margin_block_end' => 'margin-block-end', 'margin_inline_start' => 'margin-inline-start', 'margin_inline_end' => 'margin-inline-end',
 		);
 		$proven = static function ( array $facts, mixed $condition, array $layout ) use ( $property_map ): bool {
 			foreach ( array_keys( $layout ) as $fact ) {
@@ -2644,6 +2648,7 @@ class Static_Site_Importer_Form_Seeder {
 					'border'      => '0',
 					'background'  => 'transparent',
 					'text-indent' => '0',
+					'gap'         => '0',
 				),
 				'priority'   => 'important',
 			),

@@ -319,7 +319,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( ! preg_match( '/^(' . $scope_selector . '(?:, ' . $scope_selector . ')?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
-		$layout_allowed       = array( 'display', 'width', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'position', 'z-index', 'pointer-events' );
+		$layout_allowed       = array( 'display', 'width', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'position', 'z-index', 'pointer-events' );
 		$presentation_allowed = array_merge( array_values( self::presentation_property_map() ), array( 'flex' ) );
 		foreach ( explode( ';', $matches[2] ) as $declaration ) {
 			$declaration = preg_replace( '/!important$/D', '', $declaration ) ?? $declaration;
@@ -415,7 +415,11 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			'flex_basis'      => 'flex-basis',
 			'column'          => 'grid-column',
 			'row'             => 'grid-row',
-			'area'            => 'grid-area',
+			'area'                => 'grid-area',
+			'margin_block_start'  => 'margin-block-start',
+			'margin_block_end'    => 'margin-block-end',
+			'margin_inline_start' => 'margin-inline-start',
+			'margin_inline_end'   => 'margin-inline-end',
 		);
 	}
 	private static function safe_value( string $fact, mixed $value ): bool {
@@ -580,7 +584,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	private static function safe_presentation_resets( mixed $resets ): bool {
-		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'padding', 'border', 'background', 'text-indent', 'font-size' ) ) ) {
+		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'padding', 'border', 'background', 'text-indent', 'font-size', 'gap' ) ) ) {
 			return false;
 		}
 		foreach ( $resets as $property => $value ) {
