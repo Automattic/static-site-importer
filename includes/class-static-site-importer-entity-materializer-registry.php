@@ -1306,7 +1306,6 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						'provider_readiness'    => array(
 							'required_block_types' => Static_Site_Importer_Form_Seeder::required_block_types(),
 							'required_classes'     => Static_Site_Importer_Form_Seeder::required_runtime_apis(),
-							'capabilities'         => Static_Site_Importer_Form_Seeder::jetpack_forms_capabilities(),
 						),
 						'missing_apis'          => array(
 							'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form',
