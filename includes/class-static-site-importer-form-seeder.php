@@ -640,8 +640,9 @@ class Static_Site_Importer_Form_Seeder {
 		$overlay_graph['variants']    = array_values( array_filter( $overlay_graph['variants'], static fn ( $variant ): bool => is_array( $variant ) && isset( $overlay_nodes[ $variant['node'] ?? '' ] ) ) );
 		$overlay_form                 = $form;
 		$overlay_form['layout_graph'] = $overlay_graph;
-		$visual_state                 = self::empty_country_visual_state( $form, $scope, $topology['phone_popup_targets'] );
-		$target_map                   = self::provider_layout_target_map( $overlay_form, $scope, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
+		$phone_popup_targets          = is_array( $topology['phone_popup_targets'] ?? null ) ? $topology['phone_popup_targets'] : array();
+		$visual_state                 = self::empty_country_visual_state( $form, $scope, $phone_popup_targets );
+		$target_map                   = self::provider_layout_target_map( $overlay_form, $scope, $box_targets, $phone_popup_targets, $visual_state['trigger_class'] ?? '' );
 		$presentation_graph           = is_array( $form['presentation_graph'] ?? null ) ? $form['presentation_graph'] : array();
 		$overlay                      = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map, $presentation_graph );
 		self::append_receipt_entries( $layout['receipt'], 'operations', $overlay['operations'] );
@@ -1893,7 +1894,6 @@ class Static_Site_Importer_Form_Seeder {
 				'name'              => 'core/group',
 				'attrs'             => array(
 					'className' => trim( implode( ' ', array_merge( $classes, array( $hook ) ) ) ),
-<<<<<<< HEAD
 					'layout'    => array( 'type' => 'flex', 'orientation' => 'row' === $layout['direction'] ? 'horizontal' : 'vertical' ),
 				),
 				'wrapper'           => 'group',
