@@ -53,6 +53,7 @@ class Static_Site_Importer_Form_Seeder {
 	 * Provider id this seeder materializes for.
 	 */
 	public const PROVIDER_ID = 'jetpack';
+	private const NESTED_CORE_GROUP_WRAPPERS_CAPABILITY = 'nested_core_group_wrappers';
 
 	/** Register the provider bootstrap needed on every WordPress request. */
 	public static function register_runtime_bootstrap(): void {
@@ -123,6 +124,25 @@ class Static_Site_Importer_Form_Seeder {
 	/** @return array<int,string> Provider APIs required by the declared adapter. */
 	public static function required_runtime_apis(): array {
 		return array( 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form' );
+	}
+
+	/**
+	 * Provider-owned render capabilities used by bounded topology projections.
+	 *
+	 * A registered block type establishes syntax availability, not that its server
+	 * renderer preserves arbitrary native wrapper children. Jetpack declares this
+	 * capability only when its contact-form parser retains nested core groups.
+	 *
+	 * @return array<string,bool>
+	 */
+	public static function jetpack_forms_capabilities(): array {
+		$capabilities = function_exists( 'apply_filters' ) ? apply_filters( 'jetpack_forms_contact_form_capabilities', array() ) : array();
+		return is_array( $capabilities ) ? array( self::NESTED_CORE_GROUP_WRAPPERS_CAPABILITY => true === ( $capabilities[ self::NESTED_CORE_GROUP_WRAPPERS_CAPABILITY ] ?? false ) ) : array( self::NESTED_CORE_GROUP_WRAPPERS_CAPABILITY => false );
+	}
+
+	/** Whether the provider has declared that its server renderer retains native group children. */
+	private static function jetpack_forms_preserves_nested_core_groups(): bool {
+		return ! empty( self::jetpack_forms_capabilities()[ self::NESTED_CORE_GROUP_WRAPPERS_CAPABILITY ] );
 	}
 
 	/**
@@ -358,6 +378,7 @@ class Static_Site_Importer_Form_Seeder {
 			'required_apis'      => $required_apis,
 			'required_blocks'    => $registered_blocks,
 			'registered_blocks'  => $registered_blocks,
+			'capabilities'       => self::jetpack_forms_capabilities(),
 		);
 	}
 
@@ -1077,6 +1098,21 @@ class Static_Site_Importer_Form_Seeder {
 				$variants_by_node[ $variant['node'] ][] = $variant;
 			}
 		}
+		if ( ! self::jetpack_forms_preserves_nested_core_groups() && self::native_div_wrapper_layout_present( $nodes, $layout_by_node ) ) {
+			return array(
+				'blocks'                       => array_values( $field_blocks ),
+				'losses'                       => array( array( 'dimension' => 'topology', 'reason_code' => 'provider_native_group_wrapper_unavailable' ) ),
+				'operations'                   => array(),
+				'represented_layout_nodes'     => array(),
+				'represented_topology_nodes'   => array(),
+				'suppressed_layout_properties' => array(),
+				'overlay_node_targets'         => array(),
+				'responsive_variant_targets'   => array(),
+				'native_visibility_targets'    => array(),
+				'form_classes'                 => array(),
+				'provider_layout_targets'      => array(),
+			);
+		}
 		$exact_native_tree = self::exact_native_div_topology( $nodes, $children, $field_blocks, $suppressed_controls, $layout_nodes_by_id, $layout_by_node, $variants_by_node, self::layout_scope( $form ) );
 		if ( null !== $exact_native_tree ) {
 			return $exact_native_tree;
@@ -1692,6 +1728,7 @@ class Static_Site_Importer_Form_Seeder {
 		// inside the provider block. This deliberately excludes semantic, ambiguous,
 		// and provider-owned wrapper shapes rather than flattening them into a group.
 		$native_wrapper_blocks = array();
+		$native_groups_supported = self::jetpack_forms_preserves_nested_core_groups();
 		$native_container_facts = array( 'display', 'direction', 'width', 'gap', 'wrap', 'align_items', 'align_content', 'justify_content', 'align_self', 'justify_self', 'order', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis' );
 		$native_candidate = array();
 		for ( $offset = count( $nodes ) - 1; $offset >= 0; --$offset ) {
@@ -1699,7 +1736,8 @@ class Static_Site_Importer_Form_Seeder {
 			$node_id = is_array( $node ) && 'wrapper' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
 			$layout  = $layout_by_node[ $node_id ] ?? array();
 			$layout_node = $layout_nodes_by_id[ $node_id ] ?? array();
-			$accepted = '' !== $node_id
+			$accepted = $native_groups_supported
+				&& '' !== $node_id
 				&& 'div' === ( $node['tag'] ?? null )
 				&& 'div' === ( $layout_node['source']['tag'] ?? null )
 				&& 'flex' === ( $layout['display'] ?? null )
@@ -1870,7 +1908,7 @@ class Static_Site_Importer_Form_Seeder {
 					$proven = $proven && isset( $layout_css_properties[ $fact ] ) && $variant_proven( $variant, $layout_css_properties[ $fact ] );
 				}
 			}
-			if ( ! $proven || in_array( $node_id, $represented_layout_nodes, true ) ) {
+			if ( ! $native_groups_supported || ! $proven || in_array( $node_id, $represented_layout_nodes, true ) ) {
 				continue;
 			}
 			$provider_layout_targets[ $node_id ] = $hook;
@@ -1960,6 +1998,9 @@ class Static_Site_Importer_Form_Seeder {
 	 * @return array<string,mixed>|null
 	 */
 	private static function exact_native_div_topology( array $nodes, array $children, array $field_blocks, array $suppressed_controls, array $layout_nodes, array $layouts, array $variants, string $scope ): ?array {
+		if ( ! self::jetpack_forms_preserves_nested_core_groups() ) {
+			return null;
+		}
 		$wrappers = array();
 		foreach ( $nodes as $node ) {
 			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) ) {
@@ -2062,6 +2103,17 @@ class Static_Site_Importer_Form_Seeder {
 			'form_classes'                 => array(),
 			'provider_layout_targets'      => $hooks,
 		);
+	}
+
+	/** Whether this source topology needs physical native groups to retain its layout edges. */
+	private static function native_div_wrapper_layout_present( array $nodes, array $layouts ): bool {
+		foreach ( $nodes as $node ) {
+			$id = is_array( $node ) && 'wrapper' === ( $node['kind'] ?? null ) && 'div' === ( $node['tag'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
+			if ( '' !== $id && 'flex' === ( $layouts[ $id ]['display'] ?? null ) && in_array( $layouts[ $id ]['direction'] ?? null, array( 'row', 'column' ), true ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

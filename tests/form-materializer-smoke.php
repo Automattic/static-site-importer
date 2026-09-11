@@ -230,6 +230,7 @@ namespace {
 	$assert( 'form' === ( $form_adapter['capability'] ?? '' ), 'form-adapter-capability' );
 	$assert( 'allow_missing_jetpack' === ( $form_adapter['waiver_arg'] ?? '' ), 'form-adapter-waiver' );
 	$assert( is_callable( $form_adapter['dependencies'][0]['preparation_callback'] ?? null ), 'form-adapter-prepares-provider-runtime' );
+	$assert( false === ( Static_Site_Importer_Form_Seeder::jetpack_forms_capabilities()['nested_core_group_wrappers'] ?? true ), 'form-provider-does-not-assume-nested-group-rendering-capability' );
 	$all_jetpack_blocks = $GLOBALS['ssi_jetpack_registered_form_blocks'];
 	$GLOBALS['ssi_jetpack_registered_form_blocks'] = array( 'jetpack/contact-form', 'jetpack/field-text' );
 	$assert( ! Static_Site_Importer_Form_Seeder::jetpack_forms_available(), 'partial-provider-block-registration-is-unavailable' );
@@ -438,6 +439,9 @@ namespace {
 			'layout_graph' => $v2_layout_graph( array( $layout_node( 'form', array(), 'form' ), array( 'id' => 'wrapper-0', 'kind' => 'container', 'parent' => 'form', 'order' => 0, 'source' => array( 'tag' => 'div', 'classes' => array( 'email-submit-row' ) ), 'layout' => array( 'display' => 'flex', 'direction' => 'row', 'gap' => '1rem' ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.email-submit-row', 'condition' => null, 'properties' => array( 'display', 'flex-direction', 'gap' ) ) ) ) ) ),
 		) ),
 	);
+	$unsupported_native_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $native_row_form )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( 'skipped' === ( $unsupported_native_row['status'] ?? '' ) && false === ( $unsupported_native_row['runtime_mapped'] ?? true ) && 'form_receipt_loss_unaccepted' === ( $unsupported_native_row['reason'] ?? '' ), 'native-wrapper-topology-fails-closed-without-provider-rendering-capability', wp_json_encode( $unsupported_native_row ) );
+	add_filter( 'jetpack_forms_contact_form_capabilities', static fn(): array => array( 'nested_core_group_wrappers' => true ) );
 	$native_row_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $native_row_form );
 	$native_row_result     = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $native_row_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$native_row_markup     = (string) ( $native_row_result['block_markup'] ?? '' );
