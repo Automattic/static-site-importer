@@ -387,6 +387,59 @@ $artifact = array(
 );
 $result   = ( new ArtifactCompiler() )->compile( $artifact )->toArray();
 $plan     = $result['source_reports']['wordpress_site_plan'];
+
+// The released producer assigns runtime scripts by their source document and
+// occurrence. Exercise its paired theme/companion output before SSI resolves
+// the plan into generated-theme writes.
+$theme_owned_runtime = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array(
+			'index.html'        => '<main><canvas id="theme-chart" class="chart">fallback</canvas><script src="js/theme-chart.js"></script><script>const ctx = document.getElementById("theme-chart").getContext("2d"); ctx.fillRect(0, 0, 10, 10);</script></main>',
+			'js/theme-chart.js' => 'const c = document.getElementById("theme-chart").getContext("2d"); c.strokeRect(0, 0, 5, 5);',
+		),
+	)
+)->toArray();
+$theme_owned_plan     = $theme_owned_runtime['source_reports']['wordpress_site_plan'];
+$theme_owned_payload  = $theme_owned_runtime['source_reports']['companion_plugin_payload'] ?? array();
+$theme_owned_resolved = ( new \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver() )->resolve( $theme_owned_plan, array( 'theme_uri' => 'https://example.test/wp-content/themes/released-script-ownership' ) );
+$theme_owned_scripts  = $theme_owned_resolved['pages'][0]['document_metadata']['scripts'] ?? array();
+$assert( 2 === count( $theme_owned_scripts ) && isset( $theme_owned_scripts[0]['asset_reference'], $theme_owned_scripts[1]['asset_reference'] ) && array() === ( $theme_owned_payload['preserved_js'] ?? array() ), 'released producer keeps canvas-required runtime exclusively in generated-theme output' );
+
+$inline_only_theme = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array(
+			'index.html' => '<main><canvas id="inline-chart"></canvas><script>document.getElementById("inline-chart").getContext("2d");</script></main>',
+		),
+	)
+)->toWordPressSitePlanView();
+$inline_only_scripts = $inline_only_theme['wordpress_site_plan']['pages'][0]['document_metadata']['scripts'] ?? array();
+$assert( 1 === count( $inline_only_scripts ) && isset( $inline_only_scripts[0]['asset_reference'] ) && array() === ( $inline_only_theme['companion_plugin_payload']['preserved_js'] ?? array() ), 'released producer keeps inline-only canvas execution in its generated-theme declaration' );
+
+$companion_owned_runtime = ( new ArtifactCompiler() )->compile(
+	array(
+		'site'  => array( 'name' => 'Released Companion', 'slug' => 'released-companion' ),
+		'files' => array(
+			'index.html' => '<main><p class="status">Ready</p></main><script>window.__companionOnly=true;</script>',
+		),
+	)
+)->toArray();
+$companion_owned_payload = $companion_owned_runtime['source_reports']['companion_plugin_payload'] ?? array();
+$companion_descriptor    = Static_Site_Importer_Companion_Plugin::scaffold( $companion_owned_payload );
+$assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $companion_owned_payload ) && 1 === count( $companion_owned_payload['preserved_js'] ?? array() ) && is_array( $companion_descriptor ) && in_array( 'window.__companionOnly=true;', $companion_descriptor['files'] ?? array(), true ), 'released producer keeps standalone runtime exclusively in the generated companion payload' );
+
+$same_content_cross_route = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array(
+			'index.html' => '<main><canvas id="chart"></canvas><script>document.getElementById("chart").getContext("2d");</script></main>',
+			'about.html' => '<main><canvas id="chart"></canvas><script>document.getElementById("chart").getContext("2d");</script></main>',
+		),
+	)
+)->toWordPressSitePlanView();
+$cross_route_scripts = array_map( static fn( array $page ): int => count( $page['document_metadata']['scripts'] ?? array() ), $same_content_cross_route['wordpress_site_plan']['pages'] ?? array() );
+$assert( array( 1, 1 ) === $cross_route_scripts && array() === ( $same_content_cross_route['companion_plugin_payload']['preserved_js'] ?? array() ), 'released producer retains same-content inline scripts as separate generated-theme declarations across routes' );
 $assert( 'blocks-engine/wordpress-site-plan/v2' === $plan['schema'], 'compiler emits the released v2 site plan' );
 $assert( isset( $result['source_reports']['wordpress_site_plan']['reporting'] ), 'compiler exposes the plan in source reports' );
 
