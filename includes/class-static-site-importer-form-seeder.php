@@ -460,6 +460,13 @@ class Static_Site_Importer_Form_Seeder {
 					$submit_classes                 = preg_split( '/\s+/', trim( (string) $control['class'] ) );
 					$submit_presentation['classes'] = false === $submit_classes ? array() : $submit_classes;
 				}
+				// The compiler reports the label element a source button owns, including
+				// when it declares no classes, because authored rules address it as a
+				// descendant of the button.
+				if ( ! isset( $submit_presentation['label_classes'] ) && isset( $control['label_classes'] ) && is_scalar( $control['label_classes'] ) ) {
+					$label_classes                        = preg_split( '/\s+/', trim( (string) $control['label_classes'] ) );
+					$submit_presentation['label_classes'] = false === $label_classes ? array() : array_values( array_filter( $label_classes ) );
+				}
 				if ( $has_topology ) {
 					$presentation_class             = isset( $presentation_roles[ $control_index ]['control'] ) ? self::presentation_node_class( $scope, $control_index, 'control' ) : '';
 					$field_blocks[ $control_index ] = self::submit_button_block( $submit_text, trim( self::layout_node_class( $scope, 'control-' . $control_index ) . ' ' . $presentation_class ), $submit_presentation );
@@ -626,7 +633,7 @@ class Static_Site_Importer_Form_Seeder {
 		self::append_receipt_entries( $layout['receipt'], 'operations', $overlay['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $overlay['losses'] );
 		$layout['receipt']['status'] = 0 < $layout['receipt']['operations_total'] ? 'applied' : ( 0 < $layout['receipt']['losses_total'] ? 'deferred' : 'skipped' );
-		$markup                      = self::context_block_markup( $form, 'context_before' ) . self::serialize_block( 'jetpack/contact-form', $form_attrs, $inner_blocks ) . self::context_block_markup( $form, 'context_after' );
+		$markup                      = self::context_block_markup( $form, 'context_before' ) . self::serialize_block( array( 'name' => 'jetpack/contact-form', 'attrs' => $form_attrs, 'innerBlocks' => $inner_blocks ) ) . self::context_block_markup( $form, 'context_after' );
 		$row                         = array(
 			'selector'                    => $selector,
 			'source_path'                 => $source_path,
@@ -2333,22 +2340,20 @@ class Static_Site_Importer_Form_Seeder {
 		// so the block does not claim those styles as attributes. Claiming them
 		// made the saved markup disagree with core's save() output, which is
 		// what marked every imported form dirty in the editor.
-		$content = '' !== trim( $text ) ? trim( $text ) : 'Submit';
-		// The source label element owns the typography that sizes the rendered line
-		// box, so it is kept around the text rather than letting the button's own
-		// typography resolve it.
-		$label_classes = isset( $presentation['label_classes'] ) && is_array( $presentation['label_classes'] ) ? array_filter( $presentation['label_classes'], static fn ( $class_name ): bool => is_string( $class_name ) && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) : array();
-		if ( array() !== $label_classes ) {
-			// Each retained token already matched a strict class-name pattern, so the
-			// attribute cannot carry quotes or markup.
-			$content = '<span class="' . implode( ' ', $label_classes ) . '">' . $content . '</span>';
-		}
-		return array(
+		$block = array(
 			'name'    => 'core/button',
 			'attrs'   => $attrs,
-			'content' => $content,
+			'content' => '' !== trim( $text ) ? trim( $text ) : 'Submit',
 			'wrapper' => 'submit',
 		);
+		// The source can own the label's typography through its own inline element,
+		// which sizes the rendered line box. Declare that element so the serializer
+		// reproduces it; the text itself stays plain and escaped.
+		if ( isset( $presentation['label_classes'] ) && is_array( $presentation['label_classes'] ) ) {
+			$block['label'] = array( 'classes' => $presentation['label_classes'] );
+		}
+
+		return $block;
 	}
 
 	/** Serialize source context as editable core blocks beside the provider form. */
@@ -2361,9 +2366,9 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			if ( 'heading' === ( $block['type'] ?? null ) ) {
 				$level   = min( 6, max( 1, (int) ( $block['level'] ?? 2 ) ) );
-				$markup .= self::serialize_block( 'core/heading', 2 === $level ? array() : array( 'level' => $level ), array(), 'heading', $block['text'] );
+				$markup .= self::serialize_block( array( 'name' => 'core/heading', 'attrs' => 2 === $level ? array() : array( 'level' => $level ), 'wrapper' => 'heading', 'content' => $block['text'] ) );
 			} elseif ( 'paragraph' === ( $block['type'] ?? null ) ) {
-				$markup .= self::serialize_block( 'core/paragraph', array(), array(), 'paragraph', $block['text'] );
+				$markup .= self::serialize_block( array( 'name' => 'core/paragraph', 'wrapper' => 'paragraph', 'content' => $block['text'] ) );
 			}
 		}
 		return $markup;
@@ -2828,28 +2833,40 @@ class Static_Site_Importer_Form_Seeder {
 		return $labels;
 	}
 
-	/** Serialize a generated block through WordPress's canonical block serializer. */
-	private static function serialize_block( string $name, array $attrs, array $inner_blocks = array(), string $wrapper = '', string $content = '' ): string {
-		return serialize_block( self::parsed_block( $name, $attrs, $inner_blocks, $wrapper, $content ) );
+	/**
+	 * Serialize a generated block through WordPress's canonical block serializer.
+	 *
+	 * @param array<string,mixed> $block Generated block: name, attrs, innerBlocks, wrapper, content, label.
+	 */
+	private static function serialize_block( array $block ): string {
+		return serialize_block( self::parsed_block( $block ) );
 	}
 
-	/** Build a parsed block, keeping Jetpack's required saved markup in innerContent. */
-	private static function parsed_block( string $name, array $attrs, array $inner_blocks = array(), string $wrapper = '', string $content = '' ): array {
+	/**
+	 * Build a parsed block, keeping Jetpack's required saved markup in innerContent.
+	 *
+	 * Generated blocks travel as one array so a child is recursed without being
+	 * taken apart and reassembled, and so saved-markup inputs stay named at every
+	 * level instead of arriving positionally.
+	 *
+	 * @param array<string,mixed> $block Generated block.
+	 */
+	private static function parsed_block( array $block ): array {
+		$name         = isset( $block['name'] ) ? (string) $block['name'] : '';
+		$attrs        = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array();
+		$inner_blocks = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array();
+		$wrapper      = isset( $block['wrapper'] ) && is_string( $block['wrapper'] ) ? $block['wrapper'] : '';
+		$content      = isset( $block['content'] ) && is_string( $block['content'] ) ? $block['content'] : '';
+		$label        = isset( $block['label'] ) && is_array( $block['label'] ) ? $block['label'] : null;
 		// Core groups have canonical saved markup. Keep this serializer contract owned
 		// here so topology callers cannot accidentally emit comment-only groups.
 		if ( 'core/group' === $name && '' === $wrapper ) {
 			$wrapper = 'group';
 		}
 		$children = array();
-		foreach ( $inner_blocks as $block ) {
-			if ( ! empty( $block['name'] ) ) {
-				$children[] = self::parsed_block(
-					(string) $block['name'],
-					isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array(),
-					isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array(),
-					isset( $block['wrapper'] ) && is_string( $block['wrapper'] ) ? $block['wrapper'] : '',
-					isset( $block['content'] ) && is_string( $block['content'] ) ? $block['content'] : ''
-				);
+		foreach ( $inner_blocks as $child ) {
+			if ( is_array( $child ) && ! empty( $child['name'] ) ) {
+				$children[] = self::parsed_block( $child );
 			}
 		}
 
@@ -2864,12 +2881,12 @@ class Static_Site_Importer_Form_Seeder {
 			$suffix = "</div>\n";
 		} elseif ( 'submit' === $wrapper ) {
 			$classes = trim( 'wp-block-button ' . (string) ( $attrs['className'] ?? '' ) );
-			$prefix  = "\n<div class=\"" . self::escape_attribute( $classes ) . '"><button type="submit" class="wp-block-button__link wp-element-button">' . htmlspecialchars( $content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . "</button></div>\n";
+			$prefix  = "\n<div class=\"" . self::escape_attribute( $classes ) . '"><button type="submit" class="wp-block-button__link wp-element-button">' . self::rich_text_markup( $content, $label ) . "</button></div>\n";
 		} elseif ( 'heading' === $wrapper ) {
 			$level  = min( 6, max( 1, (int) ( $attrs['level'] ?? 2 ) ) );
-			$prefix = "\n<h" . $level . ' class="wp-block-heading">' . htmlspecialchars( $content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '</h' . $level . ">\n";
+			$prefix = "\n<h" . $level . ' class="wp-block-heading">' . self::rich_text_markup( $content ) . '</h' . $level . ">\n";
 		} elseif ( 'paragraph' === $wrapper ) {
-			$prefix = "\n<p>" . htmlspecialchars( $content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . "</p>\n";
+			$prefix = "\n<p>" . self::rich_text_markup( $content ) . "</p>\n";
 		} elseif ( 'group' === $wrapper ) {
 			$classes = 'wp-block-group' . ( ! empty( $attrs['className'] ) ? ' ' . $attrs['className'] : '' );
 			if ( 'flex' === ( $attrs['layout']['type'] ?? '' ) ) {
@@ -2903,6 +2920,34 @@ class Static_Site_Importer_Form_Seeder {
 			'innerHTML'    => implode( '', array_filter( $inner_content, 'is_string' ) ),
 			'innerContent' => $inner_content,
 		);
+	}
+
+	/**
+	 * Build the saved rich-text markup for a generated block.
+	 *
+	 * Block text is authored content and is always escaped here, which keeps a
+	 * single owner for that decision. A source can also carry its text inside its
+	 * own inline element, which authored rules address as a descendant, so that
+	 * element is reproduced from validated class tokens rather than by trusting a
+	 * caller-supplied markup string.
+	 *
+	 * @param string                   $text  Plain block text.
+	 * @param array<string,mixed>|null $label Source label element, when the text owns one.
+	 * @return string
+	 */
+	private static function rich_text_markup( string $text, ?array $label = null ): string {
+		$markup = htmlspecialchars( $text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		if ( null === $label ) {
+			return $markup;
+		}
+		$classes = array_values(
+			array_filter(
+				isset( $label['classes'] ) && is_array( $label['classes'] ) ? $label['classes'] : array(),
+				static fn ( $class_name ): bool => is_string( $class_name ) && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name )
+			)
+		);
+
+		return '<span' . ( array() === $classes ? '' : ' class="' . implode( ' ', $classes ) . '"' ) . '>' . $markup . '</span>';
 	}
 
 	/**

@@ -311,6 +311,34 @@ namespace {
 	$assert( str_contains( $markup, 'wp:jetpack/field-textarea' ), 'markup-field-textarea' );
 	$assert( str_contains( $markup, 'wp:button' ) && ! str_contains( $markup, 'wp:jetpack/button' ), 'markup-canonical-core-submit-button' );
 	$assert( 1 === substr_count( $markup, '<!-- wp:button ' ) && str_contains( $markup, '<button type="submit" class="wp-block-button__link wp-element-button">Send message</button>' ), 'source-submit-control-emits-one-canonical-button' );
+	$labelled_submit_markup = Static_Site_Importer_Form_Seeder::seed(
+		array(
+			'forms' => array(
+				array(
+					'form'     => array( 'action' => '/subscribe', 'method' => 'post' ),
+					'controls' => array(
+						array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ),
+						array( 'tag' => 'button', 'type' => 'submit', 'text' => 'Send', 'class' => 'cta', 'label_classes' => 'cta-label typography-small' ),
+					),
+				),
+			),
+		)
+	)['forms'][0]['block_markup'] ?? '';
+	$assert( str_contains( $labelled_submit_markup, '<span class="cta-label typography-small">Send</span>' ) && ! str_contains( $labelled_submit_markup, '&lt;span' ), 'source-submit-label-element-is-saved-as-markup-rather-than-escaped-text', $labelled_submit_markup );
+	$unsafe_label_markup = Static_Site_Importer_Form_Seeder::seed(
+		array(
+			'forms' => array(
+				array(
+					'form'     => array( 'action' => '/subscribe', 'method' => 'post' ),
+					'controls' => array(
+						array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ),
+						array( 'tag' => 'button', 'type' => 'submit', 'text' => 'Send', 'class' => 'cta', 'label_classes' => 'ok "><script>alert(1)</script>' ),
+					),
+				),
+			),
+		)
+	)['forms'][0]['block_markup'] ?? '';
+	$assert( str_contains( $unsafe_label_markup, '<span class="ok">Send</span>' ) && ! str_contains( $unsafe_label_markup, '<script' ), 'submit-label-classes-that-are-not-plain-tokens-are-refused', $unsafe_label_markup );
 	$assert( str_contains( $markup, 'form-button-submit is-submit ssi-source-submit--source-submit ssi-provider-submit-presentation' ), 'source-submit-control-presentation-projects-onto-core-button' );
 	// The source stylesheet governs this button, so the block claims no style
 	// attribute it would then have to reproduce in saved markup. That agreement
