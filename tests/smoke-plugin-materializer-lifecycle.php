@@ -35,8 +35,8 @@ class WP_CLI {
 	public static array $commands = array();
 	public static function runcommand( string $command, array $options ): mixed {
 		self::$commands[] = array( 'command' => $command, 'options' => $options );
-		if ( empty( $options['launch'] ) ) {
-			return 1;
+		if ( true !== ( $options['launch'] ?? false ) || false !== ( $options['exit_error'] ?? true ) || 'return_code' !== ( $options['return'] ?? false ) ) {
+			throw new RuntimeException( 'WP-CLI installation command must request a child return code without exiting the parent.' );
 		}
 		++$GLOBALS['ssi_install_attempts'];
 		if ( 'install_failure' === $GLOBALS['ssi_install_outcome'] ) {
@@ -229,6 +229,7 @@ $absent_report = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
 $assert( 'installed_activated' === ( $absent_report['status'] ?? '' ) && 1 === $GLOBALS['ssi_install_attempts'] && in_array( 'install', $absent_report['attempted_actions'] ?? array(), true ) && in_array( 'activate', $absent_report['attempted_actions'] ?? array(), true ), 'absent-provider-installs-then-activates' );
 $assert( 1 === $GLOBALS['ssi_plugin_cache_cleans'], 'newly-installed-provider-refreshes-plugin-cache-before-activation' );
 $assert( true === ( WP_CLI::$commands[0]['options']['launch'] ?? false ), 'wp-cli-install-launches-in-child-process' );
+$assert( false === ( WP_CLI::$commands[0]['options']['exit_error'] ?? true ) && 'return_code' === ( WP_CLI::$commands[0]['options']['return'] ?? false ) && ! array_key_exists( 'exit_on_error', WP_CLI::$commands[0]['options'] ?? array() ), 'wp-cli-install-uses-recognized-child-status-options' );
 $assert( true === $GLOBALS['ssi_plugin_entrypoint_discoverable'], 'launched-install-makes-fresh-entrypoint-discoverable' );
 $assert( true === ( $absent_report['active'] ?? false ), 'fresh-entrypoint-activates-in-same-execution' );
 $assert( 1 === $GLOBALS['ssi_preparation_calls'] && in_array( 'prepare_runtime', $absent_report['attempted_actions'] ?? array(), true ), 'fresh-entrypoint-prepares-in-same-execution' );

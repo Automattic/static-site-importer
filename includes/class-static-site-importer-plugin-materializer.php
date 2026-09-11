@@ -853,14 +853,14 @@ class Static_Site_Importer_Plugin_Materializer {
 				$result = WP_CLI::runcommand(
 					'plugin install ' . escapeshellarg( $slug ),
 					array(
-						'return'        => true,
-						'exit_on_error' => false,
+						'return'     => 'return_code',
+						'exit_error' => false,
 						// Keep nested WP-CLI plugin discovery out of this request before
 						// activate_plugin() validates the newly written entrypoint.
-						'launch'        => true,
+						'launch'     => true,
 					)
 				);
-				if ( 0 === $result || null === $result || true === $result ) {
+				if ( 0 === $result ) {
 					return true;
 				}
 				return new WP_Error( 'static_site_importer_plugin_install_failed', sprintf( 'WP-CLI could not install plugin %s.', $slug ) );

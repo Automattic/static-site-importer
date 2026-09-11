@@ -46,6 +46,7 @@
     { "path": "tests/smoke-portable-source-manifest.php", "environment": "standalone-php" },
     { "path": "tests/smoke-post-meta-rollback.php", "environment": "standalone-php" },
     { "path": "tests/smoke-plugin-materializer-lifecycle.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-plugin-materializer-wp-cli-process.php", "environment": "standalone-php" },
     { "path": "tests/smoke-owner-handoff-evidence.php", "environment": "standalone-php" },
     { "path": "tests/smoke-product-handoff-contract.php", "environment": "standalone-php" },
     { "path": "tests/smoke-quality-budget-admission.php", "environment": "standalone-php" },

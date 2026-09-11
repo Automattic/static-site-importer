@@ -533,48 +533,136 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		);
 	}
 
-	/** Project resolver-owned binding anchors into validated lifecycle manifests. */
-	public static function with_resolved_binding_manifests( array $lifecycle, array $resolved ): array {
-		$declarations      = isset( $resolved['runtime_declarations'] ) && is_array( $resolved['runtime_declarations'] ) ? $resolved['runtime_declarations'] : array();
-		$resolved_entities = array();
-		foreach ( $declarations as $declaration ) {
-			$id = is_array( $declaration ) ? (string) ( $declaration['reconciliation_identity'] ?? '' ) : '';
-			if ( '' !== $id && 'entity_collection' === ( $declaration['kind'] ?? '' ) && isset( $declaration['payload']['entities'] ) && is_array( $declaration['payload']['entities'] ) ) {
-				$resolved_entities[ $id ] = $declaration['payload']['entities'];
-			}
-		}
-		if ( empty( $lifecycle['entities'] ) || ! is_array( $lifecycle['entities'] ) ) {
-			return $lifecycle;
-		}
-		foreach ( $lifecycle['entities'] as $id => &$prepared ) {
-			$entities = $resolved_entities[ $id ] ?? null;
-			if ( ! is_array( $entities ) || ! is_array( $prepared['manifest'] ?? null ) ) {
+	/** Project resolver-expanded manifest entities into validated lifecycle manifests. */
+	public static function with_resolved_binding_manifests( array $lifecycle, array $resolved ) {
+		$manifests = array();
+		foreach ( $lifecycle['entities'] ?? array() as $id => $prepared ) {
+			$declaration = is_array( $prepared ) && is_array( $prepared['declaration'] ?? null ) ? $prepared['declaration'] : array();
+			$payload     = is_array( $declaration['payload'] ?? null ) ? $declaration['payload'] : null;
+			if ( ! is_array( $payload ) || 'blocks-engine/runtime-entity-manifest/v1' !== ( $payload['schema'] ?? null ) ) {
 				continue;
 			}
-			$key                = isset( $prepared['manifest']['products'] ) ? 'products' : 'forms';
-			$resolved_by_key    = array();
-			$canonical_entities = is_array( $prepared['manifest'][ $key ] ?? null ) ? $prepared['manifest'][ $key ] : array();
-			foreach ( $entities as $entity ) {
-				if ( ! is_array( $entity ) ) {
+			$declaration_id = $declaration['reconciliation_identity'] ?? null;
+			if ( ! is_string( $id ) || $id !== $declaration_id || ! preg_match( '/^[a-f0-9]{64}$/', $id ) || isset( $manifests[ $id ] ) || 'entity_collection' !== ( $declaration['kind'] ?? null ) || ! is_string( $declaration['type'] ?? null ) || ! is_string( $payload['entity_schema'] ?? null ) || '' === $payload['entity_schema'] ) {
+				return self::runtime_entity_resolution_error( 'Runtime entity manifest declaration is malformed or duplicated.' );
+			}
+			$manifests[ $id ] = array(
+				'type'          => $declaration['type'],
+				'entity_schema' => $payload['entity_schema'],
+			);
+		}
+		$resolved_declarations = isset( $resolved['runtime_declarations'] ) && is_array( $resolved['runtime_declarations'] ) ? $resolved['runtime_declarations'] : array();
+		$expanded              = array();
+		if ( ! empty( $manifests ) ) {
+			$resolved_manifests = array();
+			foreach ( $resolved_declarations as $declaration ) {
+				$payload = is_array( $declaration ) && is_array( $declaration['payload'] ?? null ) ? $declaration['payload'] : null;
+				if ( ! is_array( $payload ) || 'blocks-engine/runtime-entity-manifest/v1' !== ( $payload['schema'] ?? null ) ) {
 					continue;
 				}
-				$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : self::form_entity_key( $entity );
-				if ( '' !== $entity_key ) {
-					$resolved_by_key[ $entity_key ] = $entity;
+				$id = $declaration['reconciliation_identity'] ?? null;
+				if ( ! is_string( $id ) || ! isset( $manifests[ $id ] ) || isset( $resolved_manifests[ $id ] ) || 'entity_collection' !== ( $declaration['kind'] ?? null ) || ( $declaration['type'] ?? null ) !== $manifests[ $id ]['type'] || ( $payload['entity_schema'] ?? null ) !== $manifests[ $id ]['entity_schema'] ) {
+					return self::runtime_entity_resolution_error( 'Runtime entity manifest declaration does not match its lifecycle declaration.' );
 				}
+				$resolved_manifests[ $id ] = true;
 			}
-			foreach ( $canonical_entities as $index => $entity ) {
-				if ( ! is_array( $entity ) ) {
-					continue;
-				}
-				$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : self::form_entity_key( $entity );
-				if ( isset( $resolved_by_key[ $entity_key ]['bindings'] ) && is_array( $resolved_by_key[ $entity_key ]['bindings'] ) ) {
-					$prepared['manifest'][ $key ][ $index ]['bindings'] = $resolved_by_key[ $entity_key ]['bindings'];
-				}
+			if ( count( $manifests ) !== count( $resolved_manifests ) || array_diff_key( $manifests, $resolved_manifests ) ) {
+				return self::runtime_entity_resolution_error( 'Runtime entity manifest declaration projection is incomplete.' );
 			}
+
+			$resolutions = $resolved['runtime_entity_resolution'] ?? null;
+			if ( ! is_array( $resolutions ) || ! array_is_list( $resolutions ) ) {
+				return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution is missing or malformed.' );
+			}
+			foreach ( $resolutions as $resolution ) {
+				if ( ! is_array( $resolution ) || array( 'reconciliation_identity', 'kind', 'type', 'entity_schema', 'entities' ) !== array_keys( $resolution ) ) {
+					return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution has an invalid shape.' );
+				}
+				$id = $resolution['reconciliation_identity'];
+				if ( ! is_string( $id ) || ! isset( $manifests[ $id ] ) || isset( $expanded[ $id ] ) || 'entity_collection' !== $resolution['kind'] || $manifests[ $id ]['type'] !== $resolution['type'] || $manifests[ $id ]['entity_schema'] !== $resolution['entity_schema'] || ! is_array( $resolution['entities'] ) || ! array_is_list( $resolution['entities'] ) ) {
+					return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution does not match its declaration.' );
+				}
+				$expanded[ $id ] = $resolution['entities'];
+			}
+			if ( count( $manifests ) !== count( $expanded ) || array_diff_key( $manifests, $expanded ) ) {
+				return self::runtime_entity_resolution_error( 'Runtime entity manifest resolution is incomplete.' );
+			}
+		}
+
+		if ( ! is_array( $lifecycle['entities'] ?? null ) ) {
+			return self::runtime_entity_resolution_error( 'Runtime entity manifest lifecycle is malformed.' );
+		}
+		$resolved_direct_entities = array();
+		foreach ( $resolved_declarations as $declaration ) {
+			$id = is_array( $declaration ) ? (string) ( $declaration['reconciliation_identity'] ?? '' ) : '';
+			if ( '' !== $id && ! isset( $manifests[ $id ] ) && 'entity_collection' === ( $declaration['kind'] ?? null ) && is_array( $declaration['payload']['entities'] ?? null ) ) {
+				$resolved_direct_entities[ $id ] = $declaration['payload']['entities'];
+			}
+		}
+		foreach ( $lifecycle['entities'] as $id => &$prepared ) {
+			if ( ! isset( $manifests[ $id ] ) ) {
+				$entities = $resolved_direct_entities[ $id ] ?? null;
+				if ( ! is_array( $entities ) || ! is_array( $prepared['manifest'] ?? null ) ) {
+					continue; // Direct entity payloads retain their legacy lifecycle behavior.
+				}
+				$key                = isset( $prepared['manifest']['products'] ) ? 'products' : 'forms';
+				$resolved_by_key    = array();
+				$canonical_entities = is_array( $prepared['manifest'][ $key ] ?? null ) ? $prepared['manifest'][ $key ] : array();
+				foreach ( $entities as $entity ) {
+					if ( ! is_array( $entity ) ) {
+						continue;
+					}
+					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : self::form_entity_key( $entity );
+					if ( '' !== $entity_key ) {
+						$resolved_by_key[ $entity_key ] = $entity;
+					}
+				}
+				foreach ( $canonical_entities as $index => $entity ) {
+					if ( ! is_array( $entity ) ) {
+						continue;
+					}
+					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : self::form_entity_key( $entity );
+					if ( isset( $resolved_by_key[ $entity_key ]['bindings'] ) && is_array( $resolved_by_key[ $entity_key ]['bindings'] ) ) {
+						$prepared['manifest'][ $key ][ $index ]['bindings'] = $resolved_by_key[ $entity_key ]['bindings'];
+					}
+				}
+				continue;
+			}
+			if ( ! is_array( $prepared ) || ! is_array( $prepared['adapter'] ?? null ) ) {
+				return self::runtime_entity_resolution_error( 'Runtime entity manifest lifecycle entry is malformed.' );
+			}
+			$key      = 'shop' === ( $prepared['adapter']['capability'] ?? null ) ? 'products' : 'forms';
+			$entities = $expanded[ $id ];
+			if ( 'form' === ( $prepared['adapter']['capability'] ?? null ) ) {
+				$entities = array_map( static fn( $entity ) => is_array( $entity ) ? self::prepare_form_entity( $entity ) : $entity, $entities );
+			}
+			$manifest   = 'products' === $key ? array(
+				'schema_version' => 1,
+				'products'       => $entities,
+			) : array( 'forms' => $entities );
+			$validation = self::validate_manifest_generic( $prepared['adapter'], $manifest );
+			if ( ! empty( $validation['errors'] ) ) {
+				return new WP_Error(
+					'static_site_importer_runtime_entity_resolution_invalid',
+					'Resolver-expanded runtime entities failed SSI provider validation.',
+					array(
+						'status'         => 'rejected',
+						'declaration_id' => $id,
+						'errors'         => $validation['errors'],
+					)
+				);
+			}
+			$prepared['manifest'] = 'products' === $key ? array(
+				'schema_version' => 1,
+				'products'       => $validation['products'] ?? array(),
+			) : array( 'forms' => $validation['forms'] ?? array() );
 		}
 		unset( $prepared );
 		return $lifecycle;
+	}
+
+	private static function runtime_entity_resolution_error( string $message ): WP_Error {
+		return new WP_Error( 'static_site_importer_runtime_entity_resolution_invalid', $message, array( 'status' => 'rejected' ) );
 	}
 
 	/** Runtime bindings cannot be persisted by the page-ready checkpoint. */
