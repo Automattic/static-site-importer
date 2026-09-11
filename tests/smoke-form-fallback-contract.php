@@ -48,6 +48,13 @@ $assert( 'generic/form-presentation/v1' === ( $presentation['schema'] ?? '' ) &&
 $assert( 'Updates' === ( $presentation['context_before'][0]['text'] ?? '' ) && 'Required fields' === ( $presentation['context_before'][1]['text'] ?? '' ) && 'Unsubscribe any time.' === ( $presentation['context_after'][0]['text'] ?? '' ), 'presentation-keeps-bounded-before-and-after-context' );
 $assert( true === ( $presentation['interleaved_context'] ?? false ) && 'Subscribe' === ( $presentation['submit_presentation']['text'] ?? '' ) && array( 'button', 'primary' ) === ( $presentation['submit_presentation']['classes'] ?? array() ), 'presentation-detects-interleaving-and-prefers-visible-submit-treatment' );
 $assert( 16 === count( $presentation['textarea_heights'] ?? array() ) && '1rem' === ( $presentation['textarea_heights'][1] ?? '' ) && 1 === ( $presentation['textarea_height_omitted_count'] ?? 0 ), 'presentation-bounds-textarea-heights-without-changing-control-order' );
+$assert( ! isset( $presentation['submit_presentation']['label_classes'] ), 'submit-treatment-without-a-label-element-reports-no-label-classes' );
+$labelled_submit_html = '<form class="labelled" action="/subscribe" method="post"><input name="email"><button type="submit" class="cta"><span class="cta-label typography-small">Send</span></button></form>';
+$labelled_submit      = Static_Site_Importer_Form_Fallback_Contract::presentation_from_html( $labelled_submit_html, 'form.labelled', 1 );
+$assert( 'Send' === ( $labelled_submit['submit_presentation']['text'] ?? '' ) && array( 'cta-label', 'typography-small' ) === ( $labelled_submit['submit_presentation']['label_classes'] ?? array() ), 'submit-label-element-classes-are-reported-for-the-materialized-button', wp_json_encode( $labelled_submit['submit_presentation'] ?? array() ) );
+$mixed_submit_html = '<form class="mixed" action="/subscribe" method="post"><input name="email"><button type="submit" class="cta">Send <span class="cta-label">now</span></button></form>';
+$mixed_submit      = Static_Site_Importer_Form_Fallback_Contract::presentation_from_html( $mixed_submit_html, 'form.mixed', 1 );
+$assert( ! isset( $mixed_submit['submit_presentation']['label_classes'] ), 'submit-text-outside-a-single-label-element-reports-no-label-classes' );
 
 $fallback = array(
 	'source_path' => 'index.html',

@@ -2333,10 +2333,20 @@ class Static_Site_Importer_Form_Seeder {
 		// so the block does not claim those styles as attributes. Claiming them
 		// made the saved markup disagree with core's save() output, which is
 		// what marked every imported form dirty in the editor.
+		$content = '' !== trim( $text ) ? trim( $text ) : 'Submit';
+		// The source label element owns the typography that sizes the rendered line
+		// box, so it is kept around the text rather than letting the button's own
+		// typography resolve it.
+		$label_classes = isset( $presentation['label_classes'] ) && is_array( $presentation['label_classes'] ) ? array_filter( $presentation['label_classes'], static fn ( $class_name ): bool => is_string( $class_name ) && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) : array();
+		if ( array() !== $label_classes ) {
+			// Each retained token already matched a strict class-name pattern, so the
+			// attribute cannot carry quotes or markup.
+			$content = '<span class="' . implode( ' ', $label_classes ) . '">' . $content . '</span>';
+		}
 		return array(
 			'name'    => 'core/button',
 			'attrs'   => $attrs,
-			'content' => '' !== trim( $text ) ? trim( $text ) : 'Submit',
+			'content' => $content,
 			'wrapper' => 'submit',
 		);
 	}
