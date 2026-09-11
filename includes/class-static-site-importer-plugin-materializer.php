@@ -853,11 +853,11 @@ class Static_Site_Importer_Plugin_Materializer {
 				$result = WP_CLI::runcommand(
 					'plugin install ' . escapeshellarg( $slug ),
 					array(
-						'return'      => 'return_code',
-						'exit_error'  => false,
+						'return'     => 'return_code',
+						'exit_error' => false,
 						// Keep nested WP-CLI plugin discovery out of this request before
 						// activate_plugin() validates the newly written entrypoint.
-						'launch'      => true,
+						'launch'     => true,
 					)
 				);
 				if ( 0 === $result ) {

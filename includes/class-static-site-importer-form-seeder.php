@@ -1711,11 +1711,14 @@ class Static_Site_Importer_Form_Seeder {
 			$classes = false === $classes ? array() : array_filter( $classes );
 			// Core's group serializer is available here; do not emit core/row without
 			// a dedicated saved-markup serializer for the active WordPress runtime.
-			$native_wrapper_blocks[ $node_id ] = array(
+			$native_wrapper_blocks[ $node_id ]   = array(
 				'name'              => 'core/group',
 				'attrs'             => array(
 					'className' => trim( implode( ' ', array_merge( $classes, array( $hook ) ) ) ),
-					'layout'    => array( 'type' => 'flex', 'orientation' => 'horizontal' ),
+					'layout'    => array(
+						'type'        => 'flex',
+						'orientation' => 'horizontal',
+					),
 				),
 				'wrapper'           => 'group',
 				'topologyId'        => $node_id,
