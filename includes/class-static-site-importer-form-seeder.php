@@ -2678,7 +2678,11 @@ class Static_Site_Importer_Form_Seeder {
 				$selector     = $selector_scope;
 				$capabilities = array( 'direct_child_layout', 'item_layout', 'responsive_layout' );
 			} elseif ( 'form' === $id ) {
-				$selector = $selector_scope . ' > form.jetpack-contact-form__form';
+				// Jetpack renders its own form element for a page's first contact form
+				// and lays later ones out directly in the block wrapper. Address both,
+				// so the source container layout reaches the element that actually
+				// positions the fields instead of leaving the runtime default in place.
+				$selector = $selector_scope . ' > form.jetpack-contact-form__form, ' . $selector_scope . ':not(:has(> form.jetpack-contact-form__form))';
 				// Jetpack's contact-form root includes hidden and error nodes, so it cannot
 				// promise source direct-child relationships. Generated node hooks can.
 				$capabilities = array( 'container_layout', 'responsive_layout' );
