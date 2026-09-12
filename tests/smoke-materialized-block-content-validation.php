@@ -123,6 +123,27 @@ $assert( 1 === ( $generated['block_count'] ?? 0 ), 'block-count' );
 $assert( 0 === ( $generated['invalid_block_count'] ?? -1 ), 'valid-content-has-no-invalid-blocks' );
 $assert( array() === ( $report['materialized_content']['block_documents'] ?? null ), 'generated-analysis-does-not-report-materialized-post-content' );
 
+$sourceless_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( '/tmp/source/index.html' );
+Static_Site_Importer_Block_Document_Reporter::analyze_generated_theme_block_documents(
+	array(
+		$theme_dir . '/patterns/page-img.php' => "<?php\n/**\n * Title: Img\n */\n?>\n<!-- wp:html --><picture><img alt=\"decor\"></picture><!-- /wp:html -->",
+	),
+	$theme_dir,
+	$sourceless_report
+);
+$assert( 1 === ( $sourceless_report['quality']['image_missing_source_count'] ?? 0 ), 'image-without-source-is-counted' );
+$assert( ! empty( array_filter( $sourceless_report['diagnostics'] ?? array(), static fn( array $d ): bool => 'image_missing_source' === ( $d['type'] ?? '' ) ) ), 'image-without-source-emits-diagnostic' );
+
+$sourced_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( '/tmp/source/index.html' );
+Static_Site_Importer_Block_Document_Reporter::analyze_generated_theme_block_documents(
+	array(
+		$theme_dir . '/patterns/page-img-ok.php' => "<?php\n/**\n * Title: Ok\n */\n?>\n<!-- wp:html --><img src=\"/a.png\" alt=\"a\"><img srcset=\"/b.png 1x\" alt=\"b\"><img src=/c.png alt=\"c\"><!-- /wp:html -->",
+	),
+	$theme_dir,
+	$sourced_report
+);
+$assert( 0 === ( $sourced_report['quality']['image_missing_source_count'] ?? 0 ), 'images-with-src-or-srcset-are-not-flagged' );
+
 $invalid_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( '/tmp/source/index.html' );
 Static_Site_Importer_Block_Document_Reporter::analyze_generated_theme_block_documents(
 	array(

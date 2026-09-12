@@ -761,6 +761,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 			'freeform_blocks'                    => 'freeform_block_count',
 			'invalid_blocks'                     => 'invalid_block_count',
 			'invalid_block_documents'            => 'invalid_block_document_count',
+			'images_missing_source'              => 'image_missing_source_count',
 			'unsafe_svgs'                        => 'unsafe_svg_count',
 			'svg_materialization_failures'       => 'svg_materialization_failure_count',
 			'svg_sprite_reference_failures'      => 'svg_sprite_reference_failure_count',
