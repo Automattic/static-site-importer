@@ -718,14 +718,10 @@ final class Static_Site_Importer_URL_Batch_Import {
 				return new WP_Error( 'static_site_importer_missing_transformer_capability', 'The Blocks Engine php-transformer does not support staged URL batch plans.' );
 			}
 			$compiled = call_user_func( $compose, $staged['shared_plan'], $staged['page_plans'], $payload_reader );
-			if ( ! is_object( $compiled ) || ! is_callable( array( $compiled, 'toWordPressSitePlanView' ) ) ) {
+			if ( ! is_object( $compiled ) || ! is_callable( array( $compiled, 'toCompactWordPressSitePlanView' ) ) ) {
 				return new WP_Error( 'static_site_importer_invalid_staged_compile', 'The Blocks Engine php-transformer returned an invalid staged URL batch plan.' );
 			}
-			$view = call_user_func( array( $compiled, 'toWordPressSitePlanView' ) );
-			if ( ! is_array( $view ) || 'blocks-engine/wordpress-site-plan-view/v1' !== ( $view['schema'] ?? '' ) ) {
-				return new WP_Error( 'static_site_importer_invalid_staged_compile', 'The Blocks Engine php-transformer returned an invalid staged URL batch plan view.' );
-			}
-			$view = ( new \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanView() )->compact( $view );
+			$view = $compiled->toCompactWordPressSitePlanView();
 			if ( 'blocks-engine/wordpress-site-plan-view/v2' !== ( $view['schema'] ?? '' ) ) {
 				return new WP_Error( 'static_site_importer_invalid_staged_compile', 'The Blocks Engine php-transformer did not compact the staged URL batch plan view.' );
 			}

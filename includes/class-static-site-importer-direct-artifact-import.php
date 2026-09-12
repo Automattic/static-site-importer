@@ -649,14 +649,10 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				$run = $entered;
 				self::before_phase( 'compose', $run, $run['page_ids'] );
 				$result = call_user_func( $compose, $shared, array_values( $receipts ), $payload_reader );
-				if ( ! is_object( $result ) || ! is_callable( array( $result, 'toWordPressSitePlanView' ) ) ) {
+				if ( ! is_object( $result ) || ! is_callable( array( $result, 'toCompactWordPressSitePlanView' ) ) ) {
 					throw new RuntimeException( 'Blocks Engine returned an invalid composed result.' );
 				}
-				$composed = call_user_func( array( $result, 'toWordPressSitePlanView' ) );
-				if ( ! is_array( $composed ) || 'blocks-engine/wordpress-site-plan-view/v1' !== ( $composed['schema'] ?? '' ) ) {
-					throw new RuntimeException( 'Blocks Engine returned an invalid composed WordPress site plan view.' );
-				}
-				$composed = ( new \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanView() )->compact( $composed );
+				$composed = $result->toCompactWordPressSitePlanView();
 				if ( 'blocks-engine/wordpress-site-plan-view/v2' !== ( $composed['schema'] ?? '' ) ) {
 					throw new RuntimeException( 'Blocks Engine did not compact the composed WordPress site plan view.' );
 				}
