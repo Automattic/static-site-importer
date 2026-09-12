@@ -181,6 +181,7 @@ if ( ! is_wp_error( $result ) ) {
 	$bootstrap = $read( $theme_dir . '/functions.php' );
 	$assert( str_contains( $bootstrap, "get_theme_file_uri( 'assets/assets/site.css' )" ), 'theme-bootstrap-enqueues-the-canonical-stylesheet', $bootstrap );
 	$assert( str_contains( $bootstrap, 'Static Site Importer authored viewport metadata' ) && str_contains( $bootstrap, "'width=320, user-scalable=yes'" ) && str_contains( $bootstrap, "remove_action( 'wp_head', '_block_template_viewport_meta_tag', 0 )" ), 'theme-bootstrap-materializes-authored-viewport', $bootstrap );
+	$assert( str_contains( $bootstrap, 'Static Site Importer authored route document titles' ) && str_contains( $bootstrap, "add_filter( 'pre_get_document_title'" ) && str_contains( $bootstrap, 'is_front_page()' ), 'theme-bootstrap-materializes-route-document-titles', $bootstrap );
 	$viewport_receipt = $result['materialization_receipt']['completed']['viewport_metadata'] ?? array();
 	$assert( 'completed' === ( $viewport_receipt['status'] ?? '' ) && 'width=320, user-scalable=yes' === ( $viewport_receipt['declaration'] ?? '' ), 'viewport-materialization-is-recorded-in-receipt' );
 	$previous_query       = $GLOBALS['wp_query'] ?? null;

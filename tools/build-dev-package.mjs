@@ -155,8 +155,11 @@ export async function buildDevelopmentPackage(options, dependencies = {}) {
 
     await mkdir(blocksEngine, { recursive: true })
     const blocksArchive = join(temporaryDirectory, "blocks-engine.tar")
-    await run("git", ["archive", "--format=tar", `--output=${blocksArchive}`, blocksEngineSha, "php-transformer", ...(includeFigma ? ["figma-transformer"] : [])], { cwd: options.blocksEnginePath })
+    const blocksEnginePaths = ["php-transformer", ...(includeFigma ? ["figma-transformer"] : [])]
+    await run("git", ["archive", "--format=tar", `--output=${blocksArchive}`, blocksEngineSha, ...blocksEnginePaths], { cwd: options.blocksEnginePath })
     await extractArchive(blocksArchive, blocksEngine)
+    const blocksEngineSourcePaths = text(await run("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard", ...blocksEnginePaths], { cwd: options.blocksEnginePath, allowEmpty: true })).split("\0").filter(Boolean)
+    await overlayWorkingTree(options.blocksEnginePath, blocksEngine, blocksEngineSourcePaths)
 
     const composerPath = join(snapshot, "composer.json")
     const manifest = JSON.parse(await readFile(composerPath, "utf8"))
