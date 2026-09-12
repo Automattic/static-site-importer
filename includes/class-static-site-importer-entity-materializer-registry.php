@@ -12,6 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Form_Fallback_Contract' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-form-fallback-contract.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Provider_Form_Runtime_V1' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-provider-form-runtime.php';
+}
 
 /**
  * Registers import-time entity validators, dependency requirements, and writers.
@@ -1824,7 +1827,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$layout      = $node['layout'];
 			$layout_keys = array( 'display', 'columns', 'rows', 'gap', 'row_gap', 'column_gap', 'direction', 'wrap', 'align_items', 'align_content', 'justify_content', 'align_self', 'justify_self', 'order', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis', 'column', 'row', 'area', 'item_placement' );
 			if ( $is_v2 ) {
-				$layout_keys[] = 'width';
+				array_push( $layout_keys, 'width', 'height', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end' );
 			}
 			foreach ( $layout as $field => $value ) {
 				if ( ! in_array( $field, $layout_keys, true ) || ( ! is_scalar( $value ) && ! is_array( $value ) ) || ( 'width' === $field && ( ! is_string( $value ) || '' === trim( $value ) ) ) ) {
@@ -1890,22 +1893,24 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/** @return array{graph?:array<string,mixed>,error?:string} */
 	private static function normalize_form_presentation_graph( mixed $candidate ): array {
-		if ( ! is_array( $candidate ) || 'generic/computed-form-presentation/v1' !== ( $candidate['schema'] ?? null ) || 'source_css_cascade' !== ( $candidate['basis'] ?? null ) || true === ( $candidate['truncated'] ?? null ) || ! is_bool( $candidate['truncated'] ?? null ) || ! self::has_only_keys( $candidate, array( 'schema', 'basis', 'truncated', 'limits', 'controls', 'variants', 'diagnostics' ) ) || ! is_array( $candidate['limits'] ?? null ) || ! self::has_only_keys( $candidate['limits'], array( 'controls', 'rules_per_role' ) ) || 128 !== ( $candidate['limits']['controls'] ?? null ) || 32 !== ( $candidate['limits']['rules_per_role'] ?? null ) || ! is_array( $candidate['controls'] ?? null ) || ! array_is_list( $candidate['controls'] ) || count( $candidate['controls'] ) > 128 || ! is_array( $candidate['variants'] ?? null ) || ! array_is_list( $candidate['variants'] ) || count( $candidate['variants'] ) > 256 || ! is_array( $candidate['diagnostics'] ?? null ) || ! array_is_list( $candidate['diagnostics'] ) || count( $candidate['diagnostics'] ) > 32 || array_filter( $candidate['diagnostics'], static fn( $diagnostic ): bool => ! is_string( $diagnostic ) || '' === trim( $diagnostic ) || strlen( $diagnostic ) > 1100 ) ) {
-			return array( 'error' => 'presentation_graph must be a complete bounded generic/computed-form-presentation/v1 graph.' );
+		$is_v2         = is_array( $candidate ) && 'generic/computed-form-presentation/v2' === ( $candidate['schema'] ?? null );
+		$expected_keys = $is_v2 ? array( 'schema', 'basis', 'truncated', 'limits', 'controls', 'visual_parts', 'visual_groups', 'control_containers', 'variants', 'diagnostics' ) : array( 'schema', 'basis', 'truncated', 'limits', 'controls', 'variants', 'diagnostics' );
+		if ( ! is_array( $candidate ) || ( ! $is_v2 && 'generic/computed-form-presentation/v1' !== ( $candidate['schema'] ?? null ) ) || 'source_css_cascade' !== ( $candidate['basis'] ?? null ) || true === ( $candidate['truncated'] ?? null ) || ! is_bool( $candidate['truncated'] ?? null ) || ! self::has_only_keys( $candidate, $expected_keys ) || ! is_array( $candidate['limits'] ?? null ) || ! self::has_only_keys( $candidate['limits'], array( 'controls', 'rules_per_role' ) ) || 128 !== ( $candidate['limits']['controls'] ?? null ) || 32 !== ( $candidate['limits']['rules_per_role'] ?? null ) || ! is_array( $candidate['controls'] ?? null ) || ! array_is_list( $candidate['controls'] ) || count( $candidate['controls'] ) > 128 || ! is_array( $candidate['variants'] ?? null ) || ! array_is_list( $candidate['variants'] ) || count( $candidate['variants'] ) > 256 || ! is_array( $candidate['diagnostics'] ?? null ) || ! array_is_list( $candidate['diagnostics'] ) || count( $candidate['diagnostics'] ) > 32 || ( $is_v2 && ( ! is_array( $candidate['visual_parts'] ?? null ) || ! array_is_list( $candidate['visual_parts'] ) || count( $candidate['visual_parts'] ) > 128 || ! is_array( $candidate['visual_groups'] ?? null ) || ! array_is_list( $candidate['visual_groups'] ) || count( $candidate['visual_groups'] ) > 128 || ! is_array( $candidate['control_containers'] ?? null ) || ! array_is_list( $candidate['control_containers'] ) || count( $candidate['control_containers'] ) > 128 ) ) || array_filter( $candidate['diagnostics'], static fn( $diagnostic ): bool => ! is_string( $diagnostic ) || '' === trim( $diagnostic ) || strlen( $diagnostic ) > 1100 ) ) {
+			return array( 'error' => 'presentation_graph must be a complete bounded generic/computed-form-presentation/v1 or v2 graph.' );
 		}
 		$properties = self::form_presentation_properties();
 		$seen       = array();
 		$controls   = array();
 		foreach ( $candidate['controls'] as $row ) {
-			if ( ! is_array( $row ) || ! self::has_only_keys( $row, array( 'index', 'control', 'label' ) ) || ! is_int( $row['index'] ?? null ) || $row['index'] < 0 || $row['index'] >= 128 || isset( $seen[ $row['index'] ] ) || ( ! isset( $row['control'] ) && ! isset( $row['label'] ) ) ) {
+			if ( ! is_array( $row ) || ! self::has_only_keys( $row, $is_v2 ? array( 'index', 'control', 'label', 'required_marker' ) : array( 'index', 'control', 'label' ) ) || ! is_int( $row['index'] ?? null ) || $row['index'] < 0 || $row['index'] >= 128 || isset( $seen[ $row['index'] ] ) || ( ! isset( $row['control'] ) && ! isset( $row['label'] ) && ! isset( $row['required_marker'] ) ) ) {
 				return array( 'error' => 'presentation_graph contains an unsupported control row.' );
 			}
 			$clean = array( 'index' => $row['index'] );
-			foreach ( array( 'control', 'label' ) as $role ) {
+			foreach ( $is_v2 ? array( 'control', 'label', 'required_marker' ) : array( 'control', 'label' ) as $role ) {
 				if ( ! isset( $row[ $role ] ) ) {
 					continue;
 				}
-				$normalized = self::normalize_form_presentation_role( $row[ $role ], $properties, null );
+				$normalized = self::normalize_form_presentation_role( $row[ $role ], $properties, null, 'required_marker' === $role );
 				if ( isset( $normalized['error'] ) ) {
 					return $normalized;
 				}
@@ -1914,9 +1919,83 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$seen[ $row['index'] ] = true;
 			$controls[]            = $clean;
 		}
+		$visual_parts = array();
+		$part_indexes = array();
+		foreach ( $candidate['visual_parts'] ?? array() as $part ) {
+			if ( ! is_array( $part ) || ! self::has_only_keys( $part, array( 'id', 'index', 'kind', 'source_selector', 'markup', 'intrinsic_size', 'source_css' ) ) || ! is_string( $part['id'] ?? null ) || ! preg_match( '/^control-[0-9]+-svg-[0-9]+$/D', $part['id'] ) || isset( $part_indexes[ $part['id'] ] ) || ! is_int( $part['index'] ?? null ) || $part['index'] < 0 || $part['index'] >= 128 || 'inline_svg' !== ( $part['kind'] ?? null ) || ! is_string( $part['source_selector'] ?? null ) || '' === trim( $part['source_selector'] ) || strlen( $part['source_selector'] ) > 2048 || ! is_string( $part['markup'] ?? null ) || strlen( $part['markup'] ) > 16384 || ! Static_Site_Importer_Provider_Form_Runtime_V1::valid_inline_svg( $part['markup'] ) || ! is_array( $part['source_css'] ?? null ) || ! in_array( $part['source_css']['state'] ?? null, array( 'known', 'unknown' ), true ) ) {
+				return array( 'error' => 'presentation_graph visual part is malformed or unsafe.' );
+			}
+			if ( 'known' === $part['source_css']['state'] ) {
+				$source_css = self::normalize_form_presentation_role( array(
+					'styles'     => $part['source_css']['styles'] ?? null,
+					'provenance' => $part['source_css']['provenance'] ?? null,
+				), $properties, null );
+				if ( isset( $source_css['error'] ) || ! self::has_only_keys( $part['source_css'], array( 'state', 'styles', 'provenance' ) ) ) {
+					return array( 'error' => 'presentation_graph visual part source CSS is malformed.' );
+				}
+				$part['source_css'] = array(
+					'state' => 'known',
+					...$source_css['role'],
+				);
+			} elseif ( ! self::has_only_keys( $part['source_css'], array( 'state' ) ) ) {
+				return array( 'error' => 'presentation_graph visual part unknown CSS is malformed.' );
+			}
+			$part_indexes[ $part['id'] ] = $part['index'];
+			$visual_parts[]              = array_intersect_key( $part, array_flip( array( 'id', 'index', 'kind', 'source_selector', 'markup', 'intrinsic_size', 'source_css' ) ) );
+		}
+		$visual_groups = array();
+		$group_ids     = array();
+		foreach ( $candidate['visual_groups'] ?? array() as $group ) {
+			if ( ! is_array( $group ) || ! self::has_only_keys( $group, array( 'id', 'source_selector', 'part_ids', 'source_css' ) ) || ! is_string( $group['id'] ?? null ) || ! preg_match( '/^visual-group-[a-f0-9]{16}$/D', $group['id'] ) || isset( $group_ids[ $group['id'] ] ) || ! is_string( $group['source_selector'] ?? null ) || '' === trim( $group['source_selector'] ) || strlen( $group['source_selector'] ) > 2048 || ! is_array( $group['part_ids'] ?? null ) || ! array_is_list( $group['part_ids'] ) || count( $group['part_ids'] ) < 2 || count( $group['part_ids'] ) > 32 || count( array_unique( $group['part_ids'] ) ) !== count( $group['part_ids'] ) || array_filter( $group['part_ids'], static fn( $id ): bool => ! is_string( $id ) || ! isset( $part_indexes[ $id ] ) ) || ! is_array( $group['source_css'] ?? null ) || ! in_array( $group['source_css']['state'] ?? null, array( 'known', 'unknown' ), true ) ) {
+				return array( 'error' => 'presentation_graph visual group is malformed.' );
+			}
+			if ( 'known' === $group['source_css']['state'] ) {
+				$source_css = self::normalize_form_presentation_role( array(
+					'styles'     => $group['source_css']['styles'] ?? null,
+					'provenance' => $group['source_css']['provenance'] ?? null,
+				), $properties, null );
+				if ( isset( $source_css['error'] ) || ! self::has_only_keys( $group['source_css'], array( 'state', 'styles', 'provenance' ) ) ) {
+					return array( 'error' => 'presentation_graph visual group source CSS is malformed.' );
+				}
+				$group['source_css'] = array(
+					'state' => 'known',
+					...$source_css['role'],
+				);
+			} elseif ( ! self::has_only_keys( $group['source_css'], array( 'state' ) ) ) {
+				return array( 'error' => 'presentation_graph visual group unknown CSS is malformed.' );
+			}
+			$group_ids[ $group['id'] ] = true;
+			$visual_groups[]           = $group;
+		}
+		$control_containers = array();
+		$container_indexes  = array();
+		foreach ( $candidate['control_containers'] ?? array() as $container ) {
+			$chrome_properties = array_flip( array( 'background', 'background_color', 'border', 'border_color', 'border_style', 'border_width', 'border_top_color', 'border_right_color', 'border_bottom_color', 'border_left_color', 'border_top_style', 'border_right_style', 'border_bottom_style', 'border_left_style', 'border_top_width', 'border_right_width', 'border_bottom_width', 'border_left_width', 'border_radius', 'border_top_left_radius', 'border_top_right_radius', 'border_bottom_right_radius', 'border_bottom_left_radius' ) );
+			if ( ! is_array( $container ) || ! self::has_only_keys( $container, array( 'index', 'source_selector', 'styles', 'provenance' ) ) || ! is_int( $container['index'] ?? null ) || $container['index'] < 0 || $container['index'] >= 128 || isset( $container_indexes[ $container['index'] ] ) || ! is_string( $container['source_selector'] ?? null ) || '' === trim( $container['source_selector'] ) || strlen( $container['source_selector'] ) > 2048 || ! is_array( $container['styles'] ?? null ) || array_diff_key( $container['styles'], $chrome_properties ) ) {
+				return array( 'error' => 'presentation_graph control container is malformed.' );
+			}
+			$role = self::normalize_form_presentation_role( array(
+				'styles'     => $container['styles'],
+				'provenance' => $container['provenance'] ?? null,
+			), array_intersect_key( $properties, $chrome_properties ), null, true );
+			if ( isset( $role['error'] ) ) {
+				return $role;
+			}
+			$container_indexes[ $container['index'] ] = true;
+			$control_containers[]                     = array(
+				'index'           => $container['index'],
+				'source_selector' => $container['source_selector'],
+				...$role['role'],
+			);
+		}
 		$variants = array();
 		foreach ( $candidate['variants'] as $variant ) {
-			if ( ! is_array( $variant ) || ! self::has_only_keys( $variant, array( 'index', 'role', 'condition', 'style_patch', 'precedence', 'provenance' ) ) || ! is_int( $variant['index'] ?? null ) || $variant['index'] < 0 || $variant['index'] >= 128 || ! in_array( $variant['role'] ?? null, array( 'control', 'label' ), true ) || ! self::valid_layout_condition( $variant['condition'] ?? null ) || ! is_array( $variant['style_patch'] ?? null ) || empty( $variant['style_patch'] ) || ! is_array( $variant['precedence'] ?? null ) || ! is_array( $variant['provenance'] ?? null ) ) {
+			if ( 'control_container' === ( $variant['role'] ?? null ) && ! isset( $container_indexes[ $variant['index'] ?? -1 ] ) ) {
+				return array( 'error' => 'presentation_graph container variant has no source owner.' );
+			}
+			$is_visual = 'visual_part' === ( $variant['role'] ?? null );
+			$is_group  = 'visual_group' === ( $variant['role'] ?? null );
+			if ( ! is_array( $variant ) || ! self::has_only_keys( $variant, $is_visual ? array( 'index', 'role', 'part_id', 'condition', 'style_patch', 'precedence', 'provenance' ) : ( $is_group ? array( 'role', 'group_id', 'condition', 'style_patch', 'precedence', 'provenance' ) : array( 'index', 'role', 'condition', 'style_patch', 'precedence', 'provenance' ) ) ) || ( ! $is_group && ( ! is_int( $variant['index'] ?? null ) || $variant['index'] < 0 || $variant['index'] >= 128 ) ) || ! in_array( $variant['role'] ?? null, $is_v2 ? array( 'control', 'label', 'required_marker', 'control_container', 'visual_part', 'visual_group' ) : array( 'control', 'label' ), true ) || ( $is_visual && ( ! is_string( $variant['part_id'] ?? null ) || ( $part_indexes[ $variant['part_id'] ] ?? -1 ) !== $variant['index'] ) ) || ( $is_group && ( ! is_string( $variant['group_id'] ?? null ) || ! isset( $group_ids[ $variant['group_id'] ] ) ) ) || ! self::valid_layout_condition( $variant['condition'] ?? null ) || ! is_array( $variant['style_patch'] ?? null ) || empty( $variant['style_patch'] ) || ! is_array( $variant['precedence'] ?? null ) || ! is_array( $variant['provenance'] ?? null ) ) {
 				return array( 'error' => 'presentation_graph contains an unsupported variant.' );
 			}
 			$role = self::normalize_form_presentation_role(
@@ -1924,7 +2003,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					'styles'     => $variant['style_patch'],
 					'provenance' => $variant['provenance'],
 				),
-				$properties,
+				'control_container' === $variant['role'] ? array_intersect_key( $properties, $chrome_properties ?? array() ) : $properties,
 				$variant['condition']
 			);
 			if ( isset( $role['error'] ) ) {
@@ -1936,18 +2015,25 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					return array( 'error' => 'presentation_graph variant precedence is malformed.' );
 				}
 			}
-			$variants[] = array(
-				'index'       => $variant['index'],
+			$variants[] = array_filter( array(
+				'index'       => $variant['index'] ?? null,
 				'role'        => $variant['role'],
+				'part_id'     => $variant['part_id'] ?? null,
+				'group_id'    => $variant['group_id'] ?? null,
 				'condition'   => $variant['condition'],
 				'style_patch' => $role['role']['styles'],
 				'precedence'  => $variant['precedence'],
 				'provenance'  => $role['role']['provenance'],
-			);
+			), static fn( $value ): bool => null !== $value );
+		}
+		foreach ( $control_containers as $container ) {
+			if ( empty( $container['styles'] ) && ! array_filter( $variants, static fn( array $variant ): bool => 'control_container' === $variant['role'] && ( $variant['index'] ?? null ) === $container['index'] ) ) {
+				return array( 'error' => 'presentation_graph empty container has no conditional presentation.' );
+			}
 		}
 		return array(
 			'graph' => array(
-				'schema'      => 'generic/computed-form-presentation/v1',
+				'schema'      => $is_v2 ? 'generic/computed-form-presentation/v2' : 'generic/computed-form-presentation/v1',
 				'basis'       => 'source_css_cascade',
 				'truncated'   => false,
 				'limits'      => array(
@@ -1955,6 +2041,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					'rules_per_role' => 32,
 				),
 				'controls'    => $controls,
+				...( $is_v2 ? array(
+					'visual_parts'       => $visual_parts,
+					'visual_groups'      => $visual_groups,
+					'control_containers' => $control_containers,
+				) : array() ),
 				'variants'    => $variants,
 				'diagnostics' => $candidate['diagnostics'],
 			),
@@ -1962,8 +2053,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	}
 
 	/** @param array<string,string> $properties @return array{role?:array<string,mixed>,error?:string} */
-	private static function normalize_form_presentation_role( mixed $candidate, array $properties, ?array $condition ): array {
-		if ( ! is_array( $candidate ) || count( $candidate ) !== 2 || ! self::has_only_keys( $candidate, array( 'styles', 'provenance' ) ) || ! is_array( $candidate['styles'] ?? null ) || empty( $candidate['styles'] ) || ! is_array( $candidate['provenance'] ?? null ) || count( $candidate['provenance'] ) > 16 ) {
+	private static function normalize_form_presentation_role( mixed $candidate, array $properties, ?array $condition, bool $allow_empty = false ): array {
+		if ( ! is_array( $candidate ) || count( $candidate ) !== 2 || ! self::has_only_keys( $candidate, array( 'styles', 'provenance' ) ) || ! is_array( $candidate['styles'] ?? null ) || ( ! $allow_empty && empty( $candidate['styles'] ) ) || ! is_array( $candidate['provenance'] ?? null ) || count( $candidate['provenance'] ) > 16 ) {
 			return array( 'error' => 'presentation_graph role facts are malformed.' );
 		}
 		foreach ( $candidate['styles'] as $key => $value ) {
@@ -1986,7 +2077,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/** @return array<string,string> */
 	private static function form_presentation_properties(): array {
-		$properties = array( 'appearance', 'background', 'background_color', 'border', 'border_color', 'border_style', 'border_width', 'border_top_color', 'border_right_color', 'border_bottom_color', 'border_left_color', 'border_top_style', 'border_right_style', 'border_bottom_style', 'border_left_style', 'border_top_width', 'border_right_width', 'border_bottom_width', 'border_left_width', 'border_radius', 'border_top_left_radius', 'border_top_right_radius', 'border_bottom_right_radius', 'border_bottom_left_radius', 'box_sizing', 'color', 'display', 'font_family', 'font_size', 'font_style', 'font_variant', 'font_weight', 'height', 'letter_spacing', 'line_height', 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'max_width', 'min_height', 'min_width', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block_start', 'padding_block_end', 'padding_inline_start', 'padding_inline_end', 'text_align', 'text_decoration', 'text_indent', 'text_transform', 'vertical_align', 'width' );
+		$properties = array( 'appearance', 'background', 'background_color', 'border', 'border_color', 'border_style', 'border_width', 'border_top_color', 'border_right_color', 'border_bottom_color', 'border_left_color', 'border_top_style', 'border_right_style', 'border_bottom_style', 'border_left_style', 'border_top_width', 'border_right_width', 'border_bottom_width', 'border_left_width', 'border_radius', 'border_top_left_radius', 'border_top_right_radius', 'border_bottom_right_radius', 'border_bottom_left_radius', 'box_sizing', 'color', 'display', 'font_family', 'font_size', 'font_style', 'font_variant', 'font_weight', 'height', 'letter_spacing', 'line_height', 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end', 'max_width', 'min_height', 'min_width', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block_start', 'padding_block_end', 'padding_inline_start', 'padding_inline_end', 'text_align', 'text_decoration', 'text_indent', 'text_transform', 'vertical_align', 'width' );
+		$properties = array_merge( $properties, array( 'align_items', 'align_self', 'bottom', 'flex', 'flex_basis', 'flex_direction', 'flex_grow', 'flex_shrink', 'gap', 'inset', 'justify_content', 'justify_self', 'left', 'margin_block', 'margin_inline', 'order', 'position', 'right', 'top', 'transform', 'z_index' ) );
 		return array_combine( $properties, array_map( static fn( string $property ): string => str_replace( '_', '-', $property ), $properties ) );
 	}
 
@@ -2130,7 +2222,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'flex_basis'      => 'flex-basis',
 		);
 		if ( $include_width ) {
-			$map['width'] = 'width';
+			$map['width']                 = 'width';
+			$map['height']                = 'height';
+			$map['margin_block_start']    = 'margin-block-start';
+			$map['margin_block_end']      = 'margin-block-end';
+			$map['margin_inline_start']   = 'margin-inline-start';
+			$map['margin_inline_end']     = 'margin-inline-end';
 		}
 		return $map;
 	}

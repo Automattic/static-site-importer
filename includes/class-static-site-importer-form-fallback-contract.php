@@ -317,11 +317,47 @@ class Static_Site_Importer_Form_Fallback_Contract {
 
 	/** @return array{text:string,classes:array<int,string>} */
 	private static function submit_presentation( DOMElement $node ): array {
-		$text = 'input' === strtolower( $node->nodeName ) ? trim( $node->getAttribute( 'value' ) ) : self::presentation_text( $node->textContent );
-		return array(
+		$text          = 'input' === strtolower( $node->nodeName ) ? trim( $node->getAttribute( 'value' ) ) : self::presentation_text( $node->textContent );
+		$presentation  = array(
 			'text'    => $text,
 			'classes' => self::presentation_classes( 'class="' . $node->getAttribute( 'class' ) . '"' ),
 		);
+		$label_classes = self::submit_label_classes( $node, $text );
+		if ( array() !== $label_classes ) {
+			$presentation['label_classes'] = $label_classes;
+		}
+		return $presentation;
+	}
+
+	/**
+	 * A submit label can live in its own element that carries the typography
+	 * governing the rendered line box. Report that element's classes so the
+	 * materialized button can keep it, instead of resolving the text against the
+	 * button's own typography and changing the control's height.
+	 *
+	 * @return array<int,string>
+	 */
+	private static function submit_label_classes( DOMElement $node, string $text ): array {
+		if ( '' === $text ) {
+			return array();
+		}
+		$only_child = null;
+		foreach ( $node->childNodes as $child ) {
+			if ( $child instanceof DOMElement ) {
+				if ( null !== $only_child ) {
+					return array();
+				}
+				$only_child = $child;
+				continue;
+			}
+			if ( $child instanceof DOMText && '' !== trim( $child->textContent ) ) {
+				return array();
+			}
+		}
+		if ( ! $only_child instanceof DOMElement || 'span' !== strtolower( $only_child->nodeName ) || self::presentation_text( $only_child->textContent ) !== $text ) {
+			return array();
+		}
+		return self::presentation_classes( 'class="' . $only_child->getAttribute( 'class' ) . '"' );
 	}
 
 	private static function submit_is_visually_hidden( DOMElement $node ): bool {

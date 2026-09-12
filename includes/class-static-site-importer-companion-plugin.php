@@ -29,6 +29,9 @@ if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-content-policy.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Provider_Form_Runtime_V1' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-provider-form-runtime.php';
+}
 
 /**
  * Scaffolds a one-per-site companion plugin from a generated block payload.
@@ -159,6 +162,9 @@ class Static_Site_Importer_Companion_Plugin {
 				return new WP_Error( 'static_site_importer_companion_plugin_asset_path_invalid', 'Companion-plugin preserved script has an unsafe asset path.' );
 			}
 		}
+		if ( isset( $payload['form_visual_states'] ) && ( ! is_array( $payload['form_visual_states'] ) || ! array_is_list( $payload['form_visual_states'] ) || count( $payload['form_visual_states'] ) > 128 || array_filter( $payload['form_visual_states'], static fn( $state ): bool => ! Static_Site_Importer_Provider_Form_Runtime_V1::valid_visual_state( $state ) ) ) ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_form_visual_states_invalid', 'Companion form visual states must be a list.' );
+		}
 		$editor_scripts = self::validate_editor_scripts( $payload );
 		if ( is_wp_error( $editor_scripts ) ) {
 			return $editor_scripts;
@@ -196,12 +202,13 @@ class Static_Site_Importer_Companion_Plugin {
 			);
 		}
 
-		$blocks          = self::payload_blocks( $payload );
-		$plugin_slug     = 'ssi-' . $site_slug;
-		$block_namespace = $plugin_slug;
-		$preserved       = self::preserved_js( $payload, $block_namespace );
-		$editor_scripts  = self::editor_scripts( $payload );
-		if ( empty( $blocks ) && empty( $preserved ) && empty( $editor_scripts ) ) {
+		$blocks             = self::payload_blocks( $payload );
+		$plugin_slug        = 'ssi-' . $site_slug;
+		$block_namespace    = $plugin_slug;
+		$preserved          = self::preserved_js( $payload, $block_namespace );
+		$editor_scripts     = self::editor_scripts( $payload );
+		$form_visual_states = is_array( $payload['form_visual_states'] ?? null ) ? $payload['form_visual_states'] : array();
+		if ( empty( $blocks ) && empty( $preserved ) && empty( $editor_scripts ) && empty( $form_visual_states ) ) {
 			return new WP_Error(
 				'static_site_importer_companion_plugin_content_missing',
 				'Companion-plugin payload must declare at least one block, preserved script, or editor script.'
@@ -239,7 +246,7 @@ class Static_Site_Importer_Companion_Plugin {
 			return new WP_Error( 'static_site_importer_companion_plugin_provider_form_runtime_missing', 'Provider form runtime projection file is unavailable.' );
 		}
 
-		$inventory_source = array( $block_names, $preserved, hash( 'sha256', $provider_form_runtime ) );
+		$inventory_source = array( $block_names, $preserved, $form_visual_states, hash( 'sha256', $provider_form_runtime ) );
 		if ( ! empty( $editor_scripts ) ) {
 			$inventory_source[] = $editor_scripts;
 		}
@@ -250,7 +257,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$files[ $plugin_slug . '/includes/provider-form-runtime-v1.php' ] = self::provider_form_runtime_file( $provider_form_runtime, $runtime_class );
 		$files = array_merge(
 			array(
-				$main_file => self::main_plugin_file( $plugin_slug, $block_namespace, $site_name, $block_directories, $preserved, $main_file, $inventory_hash, $runtime_class, $editor_scripts ),
+				$main_file => self::main_plugin_file( $plugin_slug, $block_namespace, $site_name, $block_directories, $preserved, $main_file, $inventory_hash, $runtime_class, $editor_scripts, $form_visual_states ),
 			),
 			$files
 		);
@@ -604,7 +611,8 @@ class Static_Site_Importer_Companion_Plugin {
 		string $plugin_file,
 		string $inventory_hash,
 		string $runtime_class,
-		array $editor_scripts = array()
+		array $editor_scripts = array(),
+		array $form_visual_states = array()
 	): string {
 		$header_name     = sprintf( 'SSI Companion: %s', $site_name );
 		$fn_prefix       = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash;
@@ -635,6 +643,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = sprintf( "define( '%s_URL', plugin_dir_url( __FILE__ ) );", $const_prefix );
 		$lines[] = '';
 		$lines[] = "require_once __DIR__ . '/includes/provider-form-runtime-v1.php';";
+		$lines[] = $runtime_class . '::configure_visual_states( ' . self::export_php_value( $form_visual_states, 1 ) . ' );';
 		$lines[] = $runtime_class . '::register();';
 		$lines[] = '';
 		$lines[] = '/**';
