@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import test from "node:test"
-import { buildDevelopmentPackage, buildIdentity, commandFailureMessage, developmentComposerManifest, overlayWorkingTree, packagedIdentityFile, parseArguments, provenance, runtimeProfileSettings, worktreeIdentity } from "./build-dev-package.mjs"
+import { assertMatchingTrees, buildDevelopmentPackage, buildIdentity, commandFailureMessage, developmentComposerManifest, overlayWorkingTree, packagedIdentityFile, parseArguments, provenance, runtimeProfileSettings, worktreeIdentity } from "./build-dev-package.mjs"
 
 test("parses explicit Blocks Engine inputs and sensible defaults", () => {
   const defaults = parseArguments([], "/workspace/static-site-importer")
@@ -32,6 +32,31 @@ test("development Composer metadata uses isolated, non-symlinked transformer sna
   const htmlOnly = developmentComposerManifest(original, "/tmp/package", false)
   assert.equal(htmlOnly.repositories.length, 2)
   assert.equal(htmlOnly.require["automattic/blocks-engine-figma-transformer"], undefined)
+})
+
+test("development Composer metadata identifies the requested Blocks Engine revision", () => {
+  const manifest = developmentComposerManifest({ require: {} }, "/tmp/package", true, "dev-0123456789abcdef")
+  for (const repository of manifest.repositories.slice(0, 2)) {
+    assert.deepEqual(Object.values(repository.options.versions), ["dev-0123456789abcdef"])
+  }
+})
+
+test("package tree verification rejects a stale installed transformer", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "ssi-dev-package-tree-"))
+  try {
+    const expected = join(directory, "expected")
+    const actual = join(directory, "actual")
+    await mkdir(expected, { recursive: true })
+    await mkdir(actual, { recursive: true })
+    await writeFile(join(expected, "WordPressSitePlanView.php"), "public function compact() {}")
+    await writeFile(join(actual, "WordPressSitePlanView.php"), "public function full() {}")
+    await assert.rejects(
+      () => assertMatchingTrees(expected, actual, "Packaged PHP transformer differs from the requested Blocks Engine archive"),
+      /Packaged PHP transformer differs from the requested Blocks Engine archive/,
+    )
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
 })
 
 test("runtime profile arguments retain the canonical Homeboy package selector", () => {
@@ -112,7 +137,10 @@ test("orchestration packages modified and untracked source bytes without changin
       if (command === "git" && args[0] === "rev-parse") return Buffer.from(context.cwd === source ? `${"a".repeat(40)}\n` : `${"b".repeat(40)}\n`)
       if (command === "git" && args[0] === "status") return Buffer.from(" M tracked.txt\0?? untracked.txt\0")
       if (command === "git" && args[0] === "ls-files") return Buffer.from("composer.json\0composer.lock\0homeboy.json\0runtime-package-manifest.json\0tracked.txt\0untracked.txt\0")
-      if (command === "composer") return writeFile(join(context.cwd, "composer.lock"), "temporary lock")
+      if (command === "composer") return Promise.all([
+        writeFile(join(context.cwd, "composer.lock"), "temporary lock"),
+        mkdir(join(context.cwd, "vendor", "automattic", "blocks-engine-php-transformer", "src"), { recursive: true }).then(() => writeFile(join(context.cwd, "vendor", "automattic", "blocks-engine-php-transformer", "src", "fixture.php"), "transformer fixture")),
+      ])
       if (command === "homeboy" && args[0] === "review") return Promise.all([readFile(join(context.cwd, "tracked.txt"), "utf8"), readFile(join(context.cwd, "untracked.txt"), "utf8"), readFile(join(context.cwd, packagedIdentityFile), "utf8"), readFile(join(context.cwd, "runtime-package-manifest.json"), "utf8")]).then(([tracked, untracked, identity, manifest]) => {
         packagedIdentity = JSON.parse(identity)
         const profile = JSON.parse(manifest).profiles["website-artifact-import"]
@@ -132,7 +160,10 @@ test("orchestration packages modified and untracked source bytes without changin
         await writeFile(join(destination, "homeboy.json"), JSON.stringify({ extensions: { wordpress: { settings: { package_profile: { manifest: "runtime-package-manifest.json", profile: "website-artifact-import" } } } } }))
         await writeFile(join(destination, "runtime-package-manifest.json"), JSON.stringify(runtimeManifest))
       }
-      else await mkdir(join(destination, "php-transformer"), { recursive: true })
+      else {
+        await mkdir(join(destination, "php-transformer", "src"), { recursive: true })
+        await writeFile(join(destination, "php-transformer", "src", "fixture.php"), "transformer fixture")
+      }
     },
   })
   assert.equal(await readFile(join(source, "composer.json"), "utf8"), JSON.stringify({ require: { php: "^8.1" } }))
@@ -141,6 +172,8 @@ test("orchestration packages modified and untracked source bytes without changin
   assert.equal(extracted, 2)
   assert.ok(commands.some(({ command, args }) => command === "git" && args.join(" ") === "rev-parse candidate^{commit}"))
   assert.ok(commands.some(({ command, args }) => command === "git" && args.join(" ") === `archive --format=tar --output=${join(temporary, "blocks-engine.tar")} ${"b".repeat(40)} php-transformer figma-transformer`))
+  assert.equal(commands.some(({ command, args, context }) => command === "git" && args[0] === "ls-files" && context.cwd === engine), false, "the selected Blocks Engine commit must not be overlaid by caller worktree bytes")
+  assert.ok(commands.some(({ command, args }) => command === "composer" && args.join(" ").includes("update automattic/blocks-engine-php-transformer")))
   assert.ok(commands.some(({ command, args }) => command === "homeboy" && args.join(" ") === `review --placement local build static-site-importer --path ${join(temporary, "static-site-importer")}`))
   assert.equal(basename(result.zip), `static-site-importer-dev-${"a".repeat(12)}-dirty-${result.receipt.static_site_importer.diff_sha256.slice(0, 12)}-blocks-engine-${"b".repeat(12)}.zip`)
   assert.equal((await readFile(result.zip, "utf8")).endsWith(`|${JSON.stringify(packagedIdentity, null, 2)}\n`), true, "the generated package contains the development identity bytes")

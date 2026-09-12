@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { execFileSync } from "node:child_process"
-import { cp, lstat, mkdtemp, mkdir, readFile, readlink, rm, stat, writeFile } from "node:fs/promises"
+import { cp, lstat, mkdtemp, mkdir, readFile, readdir, readlink, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -36,7 +36,7 @@ function requiredValue(argv, index, flag) {
   return argv[index]
 }
 
-export function developmentComposerManifest(manifest, packageRoot, includeFigma = true) {
+export function developmentComposerManifest(manifest, packageRoot, includeFigma = true, version = "dev-main") {
   const requirements = { ...manifest.require }
   if (!includeFigma) delete requirements["automattic/blocks-engine-figma-transformer"]
   const packages = [
@@ -49,7 +49,7 @@ export function developmentComposerManifest(manifest, packageRoot, includeFigma 
       ...packages.map(([directory, name]) => ({
         type: "path",
         url: join(packageRoot, "blocks-engine", directory),
-        options: { symlink: false, versions: { [name]: "dev-main" } },
+        options: { symlink: false, versions: { [name]: version } },
       })),
       ...(manifest.repositories ?? []),
     ],
@@ -158,13 +158,17 @@ export async function buildDevelopmentPackage(options, dependencies = {}) {
     const blocksEnginePaths = ["php-transformer", ...(includeFigma ? ["figma-transformer"] : [])]
     await run("git", ["archive", "--format=tar", `--output=${blocksArchive}`, blocksEngineSha, ...blocksEnginePaths], { cwd: options.blocksEnginePath })
     await extractArchive(blocksArchive, blocksEngine)
-    const blocksEngineSourcePaths = text(await run("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard", ...blocksEnginePaths], { cwd: options.blocksEnginePath, allowEmpty: true })).split("\0").filter(Boolean)
-    await overlayWorkingTree(options.blocksEnginePath, blocksEngine, blocksEngineSourcePaths)
 
     const composerPath = join(snapshot, "composer.json")
     const manifest = JSON.parse(await readFile(composerPath, "utf8"))
-    await writeFile(composerPath, `${JSON.stringify(developmentComposerManifest(manifest, temporaryDirectory, includeFigma), null, 2)}\n`)
+    const blocksEngineVersion = `dev-${blocksEngineSha}`
+    await writeFile(composerPath, `${JSON.stringify(developmentComposerManifest(manifest, temporaryDirectory, includeFigma, blocksEngineVersion), null, 2)}\n`)
     await run("composer", ["update", "automattic/blocks-engine-php-transformer", ...(includeFigma ? ["automattic/blocks-engine-figma-transformer"] : []), "--with-all-dependencies", "--no-dev", "--no-interaction", "--prefer-dist"], { cwd: snapshot })
+    await assertMatchingTrees(
+      join(blocksEngine, "php-transformer", "src"),
+      join(snapshot, "vendor", "automattic", "blocks-engine-php-transformer", "src"),
+      "Packaged PHP transformer differs from the requested Blocks Engine archive",
+    )
 
     const composerLock = await readFile(join(snapshot, "composer.lock"))
     const identity = { ssiSha, ssiDiff, blocksEngineSha, blocksEngineRef: options.blocksEngineRef, composerLock, runtimeProfile: options.runtimeProfile ?? "website-artifact-import" }
@@ -223,6 +227,26 @@ function text(value) {
 
 function digest(value) {
   return createHash("sha256").update(value).digest("hex")
+}
+
+export async function assertMatchingTrees(expected, actual, message = "Package trees differ") {
+  const [expectedDigest, actualDigest] = await Promise.all([treeDigest(expected), treeDigest(actual)])
+  if (expectedDigest !== actualDigest) throw new Error(`${message}: expected ${expectedDigest}, got ${actualDigest}`)
+}
+
+async function treeDigest(directory) {
+  const entries = []
+  await appendTreeEntries(directory, "", entries)
+  return digest(entries.join(""))
+}
+
+async function appendTreeEntries(directory, prefix, entries) {
+  for (const entry of (await readdir(directory, { withFileTypes: true })).sort((left, right) => left.name.localeCompare(right.name))) {
+    const path = join(directory, entry.name)
+    const relativePath = `${prefix}${entry.name}`
+    if (entry.isDirectory()) await appendTreeEntries(path, `${relativePath}/`, entries)
+    else if (entry.isFile()) entries.push(`${relativePath}\0${digest(await readFile(path))}\n`)
+  }
 }
 
 function validateSourcePath(path) {
