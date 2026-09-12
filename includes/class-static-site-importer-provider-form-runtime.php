@@ -151,7 +151,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		return $output;
 	}
 
-	/** Insert the complete captured group into Jetpack's existing trigger; never replace its flag or arrow after selection. */
+	/** Insert the complete captured group into Jetpack's existing trigger and keep a functional default country. */
 	public static function project_empty_country_visual_state( string $html ): string {
 		if ( empty( self::$visual_states ) || ! preg_match( '/\bid=(?:"|\')((?:ssi-form-[a-f0-9]{12}-field-[0-9]{1,3}))(?:"|\')/', $html, $id ) || ! isset( self::$visual_states[ $id[1] ] ) ) {
 			return $html;
@@ -166,13 +166,15 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		}
 		$html           = substr_replace( $html, $trigger, $button[0][1], strlen( $button[0][0] ) );
 		$parts          = array_map( static fn( array $part ): string => preg_replace( '/^<svg\b/i', '<svg class="' . $part['class'] . '"', $part['markup'], 1 ) ?? $part['markup'], $state['parts'] );
-		$visibility_css = '.' . $state['trigger_class'] . ' [hidden]{display:none!important}.' . $state['trigger_class'] . ':has(>.ssi-form-visual-state:not([hidden])){gap:0}';
-		$group          = '<style>' . $visibility_css . $state['css'] . '</style><span class="ssi-form-visual-state ' . $state['group']['class'] . '" data-wp-bind--hidden="context.selectedCountry.value">' . implode( '', $parts ) . '</span>';
+		$visibility_css = '.' . $state['trigger_class'] . ' [hidden]{display:none!important}.' . $state['trigger_class'] . ' .jetpack-combobox-selected,.' . $state['trigger_class'] . ' .jetpack-combobox-trigger-arrow{display:none!important}.' . $state['trigger_class'] . ':has(>.ssi-form-visual-state){gap:0}';
+		$group          = '<style>' . $visibility_css . $state['css'] . '</style><span class="ssi-form-visual-state ' . $state['group']['class'] . '">' . implode( '', $parts ) . '</span>';
 		$html           = substr_replace( $html, $group, $button[0][1] + strlen( $trigger ), 0 );
 		$arrow_offset   = $arrow[0][1] + ( $arrow[0][1] > $button[0][1] ? strlen( $trigger ) - strlen( $button[0][0] ) + strlen( $group ) : 0 );
 		$arrow_tag      = $arrow[0][0];
 		$arrow_tag      = preg_replace( '/\sdata-wp-bind--hidden=("|\')[^"\']*\1/i', '', $arrow_tag ) ?? $arrow_tag;
-		return substr_replace( $html, rtrim( substr( $arrow_tag, 0, -1 ) ) . ' data-wp-bind--hidden="!context.selectedCountry.value">', $arrow_offset, strlen( $arrow[0][0] ) );
+		$html           = substr_replace( $html, rtrim( substr( $arrow_tag, 0, -1 ) ) . ' data-wp-bind--hidden="!context.selectedCountry.value">', $arrow_offset, strlen( $arrow[0][0] ) );
+		$with_default   = preg_replace( '/(&quot;|")defaultCountry\1\s*:\s*\1\1/', '$1defaultCountry$1:$1US$1', $html, 1 );
+		return is_string( $with_default ) ? $with_default : $html;
 	}
 
 	/** Move source submit presentation from Core's wrapper onto its button control. */
