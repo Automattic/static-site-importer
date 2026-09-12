@@ -75,7 +75,10 @@ class Static_Site_Importer_Theme_Generator {
 			if ( is_wp_error( $checkpoint ) ) {
 				return $checkpoint;
 			}
-			$compiled_import = $checkpoint['payload'];
+			$compiled_import = ! empty( $checkpoint['reference_backed'] ) ? Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $artifact, $args ) : $checkpoint['payload'];
+			if ( is_wp_error( $compiled_import ) ) {
+				return $compiled_import;
+			}
 			$resume_args = array(
 				'runtime_lifecycle_phase'         => $phase,
 				'runtime_lifecycle_request_id'    => $prepared_invocation,

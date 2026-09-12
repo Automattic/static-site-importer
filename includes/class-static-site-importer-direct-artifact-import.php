@@ -722,6 +722,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			$args['compiled_artifact_result']                 = $composed_state['result'];
 			$args['_static_site_importer_precompiled_source'] = true;
 			$args['_static_site_importer_payload_reader']     = $payload_reader;
+			$args['_static_site_importer_lifecycle_reference_backed'] = true;
 			if ( '' === trim( (string) ( $args['report'] ?? '' ) ) ) {
 				$failed_plan_report = self::failed_plan_report_destination( $workspace );
 				if ( is_wp_error( $failed_plan_report ) ) {
