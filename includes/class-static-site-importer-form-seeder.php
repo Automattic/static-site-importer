@@ -2639,6 +2639,8 @@ class Static_Site_Importer_Form_Seeder {
 	/**
 		 * Jetpack owns this composite's rendered roles. Captured input presentation
 		 * belongs to its value input; the additional provider shell is structural.
+		 * Prefix chrome between a reconstructed source flex parent and the trigger
+		 * stretches and centres so the trigger keeps the source inner offset.
 	 */
 	private static function phone_presentation_destinations( string $scope, int $index ): array {
 		return array(
@@ -2671,6 +2673,18 @@ class Static_Site_Importer_Form_Seeder {
 				'resets'     => array(
 					'flex'      => '1 1 0',
 					'min-width' => '0',
+				),
+				'priority'   => 'important',
+			),
+			array(
+				'role'       => 'control',
+				'class'      => self::presentation_destination_class( $scope, $index, 'prefix' ),
+				'selector'   => '.' . $scope . ' .' . self::presentation_destination_class( $scope, $index, 'prefix' ),
+				'properties' => array(),
+				'resets'     => array(
+					'display'     => 'flex',
+					'align-items' => 'center',
+					'height'      => '100%',
 				),
 				'priority'   => 'important',
 			),

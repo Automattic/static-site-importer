@@ -585,7 +585,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	private static function safe_presentation_resets( mixed $resets ): bool {
-		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'padding', 'border', 'background', 'text-indent', 'font-size', 'gap' ) ) ) {
+		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'padding', 'border', 'background', 'text-indent', 'font-size', 'gap', 'display', 'align-items', 'height' ) ) ) {
 			return false;
 		}
 		foreach ( $resets as $property => $value ) {

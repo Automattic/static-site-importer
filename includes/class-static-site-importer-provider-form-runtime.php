@@ -286,7 +286,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 					if ( preg_match( '/^ssi-source-wrapper-(?:prefix|shell)-[0-9]{1,2}--[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) {
 						continue;
 					}
-					if ( $is_phone_shell && 1 === preg_match( '/^ssi-node-[a-f0-9]{12}-destination-(?:primary|carrier)$/D', $class_name ) ) {
+					if ( $is_phone_shell && 1 === preg_match( '/^ssi-node-[a-f0-9]{12}-destination-(?:primary|carrier|prefix)$/D', $class_name ) ) {
 						$phone_destination_classes[] = $class_name;
 						continue;
 					}
@@ -346,6 +346,8 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		$pattern  = $is_phone
 			? '/<input\b(?=[^>]*\btype\s*=\s*(["\'])tel\1)[^>]*>/is'
 			: '/<input\b[^>]*>|<textarea\b[^>]*>.*?<\/textarea>|<select\b[^>]*>.*?<\/select>/is';
+		$prefix_destination_classes = array_values( array_filter( $phone_destination_classes, static fn( string $class_name ): bool => str_ends_with( $class_name, '-destination-prefix' ) ) );
+		$phone_destination_classes  = array_values( array_filter( $phone_destination_classes, static fn( string $class_name ): bool => ! str_ends_with( $class_name, '-destination-prefix' ) ) );
 		$wrapped  = preg_replace_callback(
 			$pattern,
 			static function ( array $control_match ) use ( $open, $close, $is_phone, $phone_destination_classes ): string {
@@ -403,6 +405,22 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 					$wrapped .= $document->saveHTML( $child );
 				}
 			}
+		}
+		if ( ! empty( $prefix_destination_classes ) ) {
+			$prefix_classes = implode( ' ', array_unique( $prefix_destination_classes ) );
+			$prefixed       = preg_replace_callback(
+				'/<div\b([^>]*\bclass=("|\')([^"\']*\b(?:jetpack-field__input-prefix|jetpack-custom-combobox)\b[^"\']*)\2[^>]*)>/i',
+				static function ( array $matches ) use ( $prefix_destination_classes, $prefix_classes ): string {
+					$existing = preg_split( '/\s+/', trim( $matches[3] ) );
+					$existing = false === $existing ? array() : $existing;
+					if ( array() === array_diff( $prefix_destination_classes, $existing ) ) {
+						return $matches[0];
+					}
+					return preg_replace( '/\bclass=("|\')(.*?)\1/is', 'class=$1$2 ' . $prefix_classes . '$1', $matches[0], 1 ) ?? $matches[0];
+				},
+				$wrapped
+			);
+			$wrapped = is_string( $prefixed ) ? $prefixed : $wrapped;
 		}
 		return self::project_semantic_wrappers( $wrapped );
 	}
