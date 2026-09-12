@@ -1827,7 +1827,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$layout      = $node['layout'];
 			$layout_keys = array( 'display', 'columns', 'rows', 'gap', 'row_gap', 'column_gap', 'direction', 'wrap', 'align_items', 'align_content', 'justify_content', 'align_self', 'justify_self', 'order', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis', 'column', 'row', 'area', 'item_placement' );
 			if ( $is_v2 ) {
-				array_push( $layout_keys, 'width', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end' );
+				array_push( $layout_keys, 'width', 'height', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end' );
 			}
 			foreach ( $layout as $field => $value ) {
 				if ( ! in_array( $field, $layout_keys, true ) || ( ! is_scalar( $value ) && ! is_array( $value ) ) || ( 'width' === $field && ( ! is_string( $value ) || '' === trim( $value ) ) ) ) {
@@ -2223,6 +2223,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		);
 		if ( $include_width ) {
 			$map['width']                 = 'width';
+			$map['height']                = 'height';
 			$map['margin_block_start']    = 'margin-block-start';
 			$map['margin_block_end']      = 'margin-block-end';
 			$map['margin_inline_start']   = 'margin-inline-start';
