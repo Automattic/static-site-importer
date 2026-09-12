@@ -476,6 +476,7 @@ class Static_Site_Importer_Report_Diagnostics {
 				'freeform_blocks'                    => (int) ( $quality['freeform_block_count'] ?? 0 ),
 				'invalid_blocks'                     => (int) ( $quality['invalid_block_count'] ?? 0 ),
 				'invalid_block_documents'            => (int) ( $quality['invalid_block_document_count'] ?? 0 ),
+				'images_missing_source'              => (int) ( $quality['image_missing_source_count'] ?? 0 ),
 				'unsafe_svgs'                        => (int) ( $quality['unsafe_svg_count'] ?? 0 ),
 				'svg_materialization_failures'       => (int) ( $quality['svg_materialization_failure_count'] ?? 0 ),
 				'svg_sprite_reference_failures'      => (int) ( $quality['svg_sprite_reference_failure_count'] ?? 0 ),
@@ -881,6 +882,9 @@ class Static_Site_Importer_Report_Diagnostics {
 		if ( $quality['unsafe_svg_count'] > 0 ) {
 			$reasons[] = 'unsafe_inline_svg';
 		}
+		if ( ( $quality['image_missing_source_count'] ?? 0 ) > 0 ) {
+			$reasons[] = 'image_missing_source';
+		}
 		if ( $quality['svg_materialization_failure_count'] > 0 ) {
 			$reasons[] = 'svg_materialization_failure';
 		}
@@ -942,6 +946,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'invalid_block_count'                     => 0,
 			'invalid_block_document_count'            => 0,
 			'unsafe_svg_count'                        => 0,
+			'image_missing_source_count'              => 0,
 			'svg_materialization_failure_count'       => 0,
 			'svg_sprite_reference_failure_count'      => 0,
 			'commerce_dependency_failures'            => 0,
@@ -1151,6 +1156,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'freeform_block_count'                    => (int) ( $quality['freeform_block_count'] ?? 0 ),
 			'invalid_block_count'                     => (int) ( $quality['invalid_block_count'] ?? 0 ),
 			'invalid_block_document_count'            => (int) ( $quality['invalid_block_document_count'] ?? 0 ),
+			'image_missing_source_count'              => (int) ( $quality['image_missing_source_count'] ?? 0 ),
 			'interaction_candidate_count'             => (int) ( $quality['interaction_candidate_count'] ?? 0 ),
 			'runtime_dependency_parity_issue_count'   => (int) ( $quality['runtime_dependency_parity_issue_count'] ?? 0 ),
 			'semantic_parity_failure_count'           => (int) ( $quality['semantic_parity_failure_count'] ?? 0 ),
@@ -2769,6 +2775,7 @@ class Static_Site_Importer_Report_Diagnostics {
 			'freeform_block_count'                    => array( 'freeform_block' ),
 			'invalid_block_count'                     => array( 'invalid_block_document' ),
 			'unsafe_svg_count'                        => array( 'unsafe_inline_svg' ),
+			'image_missing_source_count'              => array( 'image_missing_source' ),
 			'svg_materialization_failure_count'       => array( 'svg_materialization_failure' ),
 			'svg_sprite_reference_failure_count'      => array( 'svg_sprite_reference_failure' ),
 			'commerce_dependency_failures'            => array( 'commerce_dependency_failure' ),

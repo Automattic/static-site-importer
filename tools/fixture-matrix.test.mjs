@@ -70,6 +70,7 @@ import {
   createFixtureMatrix,
   pathinfoExtension,
   editorBlockValidationStep,
+  editorChromeValidationStep,
   EDITOR_VALIDATE_BLOCKS_COMMAND,
   EDITOR_VALIDATION_METHOD,
   buildGutenbergIncompatibilityRegistry,
@@ -3168,6 +3169,44 @@ test('emits one visual parity mismatch when raw and artifact evidence describe t
   assert.equal(diagnostics.length, 1);
   assert.equal(diagnostics[0].kind, VISUAL_PARITY_MISMATCH_KIND);
   assert.equal(diagnostics[0].source_path, 'file:///tmp/source/index.html');
+});
+
+test('rendered document title differences gate independently of pixel parity', () => {
+  const diagnostics = collectVisualParityDiagnostics({
+    schema: 'wp-codebox/visual-compare/v1',
+    source: { url: 'file:///tmp/source/index.html', title: 'Source title' },
+    candidate: { url: 'http://example.test/', title: 'WordPress title' },
+    comparison: {
+      mismatch_pixels: 0,
+      total_pixels: 1000,
+      overlap_mismatch_pixels: 0,
+      overlap_pixels: 1000,
+      dimension_mismatch: false,
+    },
+  }, { threshold: 0, gate: true });
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].kind, 'document_title_mismatch');
+  assert.equal(diagnostics[0].expected_output, 'Source title');
+  assert.equal(diagnostics[0].observed_output, 'WordPress title');
+
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'title-parity-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{ fixture_id: 'simple-site', status: 'passed', diagnostics }],
+  });
+  assert.equal(result.fixtures[0].status, 'failed');
+  assert.equal(result.findings[0].loss_acceptance, 'unacceptable');
+});
+
+test('matching rendered document titles emit no title diagnostic', () => {
+  const diagnostics = collectVisualParityDiagnostics({
+    schema: 'wp-codebox/visual-compare/v1',
+    source: { url: 'file:///tmp/source/index.html', title: 'Same title' },
+    candidate: { url: 'http://example.test/', title: 'Same title' },
+    comparison: { mismatch_pixels: 0, total_pixels: 1000, overlap_mismatch_pixels: 0, overlap_pixels: 1000 },
+  }, { threshold: 0, gate: true });
+  assert.deepEqual(diagnostics, []);
 });
 
 test('collects visual parity artifacts from wp-codebox matrix summaries with per-fixture refs', () => {
@@ -6476,6 +6515,43 @@ test('editor-canvas-probe invalid-block warnings become gating editor_block_inva
   assert.equal(result.summary.failed, 1);
   assert.equal(result.summary.succeeded, 0);
   assert.equal(result.fixtures[0].status, 'failed');
+});
+
+test('visible imported group placeholders become gating editor presentation findings', () => {
+  const diagnostics = collectEditorValidationDiagnostics({
+    summary: {
+      selectorSummary: {
+        groups: [{
+          name: 'editor_visible_placeholder',
+          selectors: [{
+            selector: '.wp-block-group__placeholder > .components-placeholder',
+            count: 2,
+            visible_count: 2,
+            first_match: { text: 'Group blocks together. Select a layout:' },
+          }],
+        }],
+      },
+    },
+  });
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].kind, 'editor_visible_placeholder');
+
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'editor-placeholder-test' });
+  const result = normalizeFixtureMatrixResult({
+    matrix,
+    results: [{ fixture_id: 'simple-site', status: 'passed', diagnostics }],
+  });
+  assert.equal(result.fixtures[0].status, 'failed');
+  assert.equal(result.findings[0].loss_acceptance, 'unacceptable');
+});
+
+test('editor chrome validation probes placeholder visibility inside the canvas', () => {
+  const step = editorChromeValidationStep({ fixture: { id: 'simple' } });
+  assert.equal(step.command, 'wordpress.editor-canvas-probe');
+  assert.equal(step.allowFailure, true);
+  assert.ok(step.args.includes('target=front-page'));
+  assert.ok(step.args.some((arg) => arg.includes('editor_visible_placeholder') && arg.includes('wp-block-group__placeholder')));
+  assert.equal(step.metadata.phase, 'editor-chrome');
 });
 
 test('per-block editor validity (isValid=false) becomes an editor_block_invalid finding with block name and selector', () => {
