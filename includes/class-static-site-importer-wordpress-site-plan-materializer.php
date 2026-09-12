@@ -366,6 +366,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$args             = $state['args'];
 		$font_overlay     = $state['font_overlay'];
 		$viewport_overlay = $state['viewport_overlay'];
+		$route_title_overlay = $state['route_title_overlay'] ?? array();
 
 		foreach ( $state['ordered_pages'] as $page ) {
 			if ( ! empty( $page['skip_materialization'] ) ) {
@@ -481,7 +482,12 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			return self::failed_receipt_from_error( $state, $viewport_materialization );
 		}
 		$state['applied']['viewport_metadata'] = $viewport_materialization;
-		$svg_receipts                          = self::verify_svg_font_materialization( $state );
+		$route_title_materialization           = self::apply_route_title_overlay( $state, $route_title_overlay );
+		if ( is_wp_error( $route_title_materialization ) ) {
+			return self::failed_receipt_from_error( $state, $route_title_materialization );
+		}
+		$state['applied']['route_document_titles'] = $route_title_materialization;
+		$svg_receipts                              = self::verify_svg_font_materialization( $state );
 		if ( is_wp_error( $svg_receipts ) ) {
 			return self::failed_receipt( $state, $svg_receipts->get_error_code() );
 		}
@@ -627,6 +633,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'payload_reader'                    => $payload_reader,
 			'font_overlay'                      => isset( $prepared['font_overlay'] ) && is_array( $prepared['font_overlay'] ) ? $prepared['font_overlay'] : null,
 			'viewport_overlay'                  => isset( $prepared['viewport_overlay'] ) && is_array( $prepared['viewport_overlay'] ) ? $prepared['viewport_overlay'] : null,
+			'route_title_overlay'               => isset( $prepared['route_title_overlay'] ) && is_array( $prepared['route_title_overlay'] ) ? $prepared['route_title_overlay'] : null,
 			'default_content'                   => isset( $prepared['default_content'] ) && is_array( $prepared['default_content'] ) ? $prepared['default_content'] : array(),
 			'rollback'                          => array(
 				'posts'   => array(),
@@ -768,9 +775,14 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		$viewport_overlay               = isset( $state['viewport_overlay'] ) && is_array( $state['viewport_overlay'] )
 			? $state['viewport_overlay']
 			: Static_Site_Importer_Viewport_Metadata_Materializer::prepare_overlay( $font_resolved, $font_overlay );
+		$title_bootstrap_overlay        = 'materialized' === ( $viewport_overlay['status'] ?? '' ) ? $viewport_overlay : $font_overlay;
+		$route_title_overlay            = isset( $state['route_title_overlay'] ) && is_array( $state['route_title_overlay'] )
+			? $state['route_title_overlay']
+			: Static_Site_Importer_Route_Document_Metadata::prepare_overlay( $font_resolved, $title_bootstrap_overlay );
 		$state['font_overlay']          = $font_overlay;
 		$state['viewport_overlay']      = $viewport_overlay;
-		$state['composed_theme_writes'] = array_merge( $overlay_writes, self::font_overlay_writes( $state['theme_dir'], $font_overlay ), self::viewport_overlay_writes( $state['theme_dir'], $viewport_overlay ) );
+		$state['route_title_overlay']   = $route_title_overlay;
+		$state['composed_theme_writes'] = array_merge( $overlay_writes, self::font_overlay_writes( $state['theme_dir'], $font_overlay ), self::viewport_overlay_writes( $state['theme_dir'], $viewport_overlay ), self::viewport_overlay_writes( $state['theme_dir'], $route_title_overlay ) );
 		foreach ( $state['resolved']['writes'] as $write ) {
 			if ( null !== self::payload_reference( $write ) && ! self::valid_payload_reference( self::payload_reference( $write ) ) ) {
 				throw new InvalidArgumentException( 'payload_reference_invalid' );
@@ -1641,6 +1653,54 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		);
 	}
 
+	/** @param array<string,mixed> $overlay */
+	private static function apply_route_title_overlay( array &$state, array $overlay ) {
+		if ( 'materialized' !== ( $overlay['status'] ?? '' ) ) {
+			return array(
+				'status' => (string) ( $overlay['status'] ?? 'not_requested' ),
+				'files'  => array(),
+			);
+		}
+		$reports = array();
+		foreach ( $overlay['writes'] ?? array() as $write ) {
+			$target  = (string) ( $write['target_path'] ?? '' );
+			$content = (string) ( $write['content'] ?? '' );
+			if ( ! self::safe_destination( $state['theme_dir'], $target ) || ! str_starts_with( ltrim( $content ), '<?php' ) ) {
+				return new WP_Error( 'static_site_importer_route_document_title_materialization_invalid' );
+			}
+			$path = $state['theme_dir'] . '/' . $target;
+			self::journal_file( $state, $path );
+			$result = self::write_file(
+				$state['theme_dir'],
+				array(
+					'target_path'             => $target,
+					'source_path'             => (string) ( $write['source_path'] ?? $target ),
+					'payload'                 => array(
+						'encoding' => 'utf8',
+						'data'     => $content,
+					),
+					'payload_hash'            => hash( 'sha256', $content ),
+					'reconciliation_identity' => hash( 'sha256', "route-document-titles\n" . $target ),
+				)
+			);
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+			$reports[] = $result;
+			foreach ( $state['applied']['files'] as $index => $file ) {
+				if ( ( $file['target_path'] ?? null ) === $target ) {
+					$state['applied']['files'][ $index ] = $result;
+					continue 2;
+				}
+			}
+			$state['applied']['files'][] = $result;
+		}
+		return array(
+			'status' => 'completed',
+			'files'  => $reports,
+		);
+	}
+
 	/** @param array<string,mixed> $overlay @return array<string,string> */
 	private static function viewport_overlay_writes( string $theme_dir, array $overlay ): array {
 		$writes = array();
@@ -2332,7 +2392,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** @param array<string,mixed> $state @return array<string,mixed> */
 	private static function receipt( string $status, array $state ): array {
-		unset( $state['font_overlay'], $state['viewport_overlay'], $state['provider_layout_overlay_writes'], $state['composed_theme_writes'], $state['preflight_error'] );
+		unset( $state['font_overlay'], $state['viewport_overlay'], $state['route_title_overlay'], $state['provider_layout_overlay_writes'], $state['composed_theme_writes'], $state['preflight_error'] );
 		$plan                   = $state['plan'];
 		$resolved_plan          = $state['resolved'] ?? $plan;
 		$materialized_pages     = array();
@@ -2390,6 +2450,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 					'declaration' => '',
 					'files'       => array(),
 					'diagnostics' => array(),
+				),
+				'route_document_titles'      => $state['applied']['route_document_titles'] ?? array(
+					'status' => 'not_requested',
+					'files'  => array(),
 				),
 				'provider_layout_overlays'   => $state['applied']['provider_layout_overlays'] ?? array(
 					'status' => 'not_requested',
