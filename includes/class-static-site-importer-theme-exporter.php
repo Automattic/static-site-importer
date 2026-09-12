@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-site-identity.php';
+}
+
 /**
  * Exports WordPress block themes to website artifacts.
  */
@@ -695,7 +699,7 @@ class Static_Site_Importer_Theme_Exporter {
 	 * @return string
 	 */
 	private static function export_artifact_path( string $path, string $fallback ): string {
-		$path = self::normalize_route_path( $path );
+		$path = Static_Site_Importer_Site_Identity::normalize_route_path( $path );
 		if ( '' === $path || str_ends_with( $path, '/' ) ) {
 			return $fallback;
 		}
@@ -711,39 +715,13 @@ class Static_Site_Importer_Theme_Exporter {
 	 * @return string
 	 */
 	private static function export_artifact_root( string $root, string $entrypoint ): string {
-		$root = self::normalize_route_path( $root );
+		$root = Static_Site_Importer_Site_Identity::normalize_route_path( $root );
 		if ( '' !== $root && ! str_contains( $root, '/' ) ) {
 			return $root;
 		}
 
 		$parts = explode( '/', $entrypoint );
 		return '' !== $parts[0] ? $parts[0] : 'website';
-	}
-
-	/**
-	 * Normalize a route-like path without resolving outside the source root.
-	 *
-	 * @param string $path Route path.
-	 * @return string
-	 */
-	private static function normalize_route_path( string $path ): string {
-		$path_without_query = strtok( $path, '?' );
-		$path               = str_replace( '\\', '/', false === $path_without_query ? $path : $path_without_query );
-		$path               = ltrim( $path, '/' );
-		$segments           = array();
-		foreach ( explode( '/', $path ) as $segment ) {
-			if ( '' === $segment || '.' === $segment ) {
-				continue;
-			}
-			if ( '..' === $segment ) {
-				array_pop( $segments );
-				continue;
-			}
-
-			$segments[] = $segment;
-		}
-
-		return implode( '/', $segments );
 	}
 
 	/**

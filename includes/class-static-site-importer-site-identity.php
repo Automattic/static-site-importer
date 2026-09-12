@@ -374,12 +374,12 @@ class Static_Site_Importer_Site_Identity {
 	}
 
 	/**
-	 * Normalize an artifact route path for entrypoint matching.
+	 * Normalize a route-like artifact path without resolving outside its root.
 	 *
 	 * @param string $path Raw path.
 	 * @return string
 	 */
-	private static function normalize_route_path( string $path ): string {
+	public static function normalize_route_path( string $path ): string {
 		$path_without_query = strtok( $path, '?' );
 		$path               = str_replace( '\\', '/', false === $path_without_query ? $path : $path_without_query );
 		$path               = ltrim( $path, '/' );

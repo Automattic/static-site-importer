@@ -98,7 +98,20 @@ $identity = Static_Site_Importer_Site_Identity::resolve(
 );
 $assert( 'Northline Plumbing' === $identity['name'], 'artifact-entrypoint-title-strips-pipe-suffix', $identity['name'] );
 
-// 4. URL host fallback (minus www.) when no title is available.
+// 4. Artifact paths normalize consistently for matching and export callers.
+$route_paths = array(
+	'website/index.html?cache=1'              => 'website/index.html',
+	'/website\\nested\\..\\Index.HTML'       => 'website/Index.HTML',
+	'website/./nested/../Case/Keep.HTML'      => 'website/Case/Keep.HTML',
+	'../../website/index.html'                 => 'website/index.html',
+	''                                        => '',
+	'/'                                       => '',
+);
+foreach ( $route_paths as $path => $expected ) {
+	$assert( $expected === Static_Site_Importer_Site_Identity::normalize_route_path( $path ), 'normalize-route-path-' . md5( $path ), $path );
+}
+
+// 5. URL host fallback (minus www.) when no title is available.
 $identity = Static_Site_Importer_Site_Identity::resolve(
 	array(
 		'url' => 'https://www.Acme-Co.example/path?x=1',
@@ -106,12 +119,12 @@ $identity = Static_Site_Importer_Site_Identity::resolve(
 );
 $assert( 'acme-co.example' === $identity['name'], 'host-fallback-drops-www-and-lowercases', $identity['name'] );
 
-// 5. Generic constant only as a last resort.
+// 6. Generic constant only as a last resort.
 $identity = Static_Site_Importer_Site_Identity::resolve( array( 'html' => '<main>No title here</main>' ) );
 $assert( Static_Site_Importer_Site_Identity::DEFAULT_NAME === $identity['name'], 'constant-last-resort-name', $identity['name'] );
 $assert( Static_Site_Importer_Site_Identity::DEFAULT_SLUG === $identity['slug'], 'constant-last-resort-slug', $identity['slug'] );
 
-// 6. Explicit slug override wins over the name-derived slug.
+// 7. Explicit slug override wins over the name-derived slug.
 $identity = Static_Site_Importer_Site_Identity::resolve(
 	array(
 		'name' => 'Maya & Devon',
@@ -121,7 +134,7 @@ $identity = Static_Site_Importer_Site_Identity::resolve(
 $assert( 'custom-slug-override' === $identity['slug'], 'explicit-slug-override-wins', $identity['slug'] );
 $assert( 'Maya & Devon' === $identity['name'], 'explicit-name-preserved-with-slug-override', $identity['name'] );
 
-// 7. Shared suffix-strip handles em-dash, en-dash, pipe, and hyphen separators.
+// 8. Shared suffix-strip handles em-dash, en-dash, pipe, and hyphen separators.
 $assert( 'Maya & Devon' === Static_Site_Importer_Site_Identity::strip_title_suffix( 'Maya & Devon — Home' ), 'strip-em-dash' );
 $assert( 'Maya & Devon' === Static_Site_Importer_Site_Identity::strip_title_suffix( 'Maya & Devon – Home' ), 'strip-en-dash' );
 $assert( 'Maya & Devon' === Static_Site_Importer_Site_Identity::strip_title_suffix( 'Maya & Devon | Home' ), 'strip-pipe' );
@@ -129,14 +142,14 @@ $assert( 'Maya & Devon' === Static_Site_Importer_Site_Identity::strip_title_suff
 $assert( 'Single' === Static_Site_Importer_Site_Identity::strip_title_suffix( 'Single' ), 'strip-no-separator-keeps-title' );
 $assert( 'co-op' === Static_Site_Importer_Site_Identity::strip_title_suffix( 'co-op' ), 'strip-keeps-intra-word-hyphen' );
 
-// 8. Uniqueness suffix appends -2, -3, ... against a taken-check.
+// 9. Uniqueness suffix appends -2, -3, ... against a taken-check.
 $taken     = array( 'maya-devon' => true, 'maya-devon-2' => true );
 $is_taken  = static fn ( string $slug ): bool => isset( $taken[ $slug ] );
 $assert( 'maya-devon-3' === Static_Site_Importer_Site_Identity::unique_slug( 'maya-devon', $is_taken ), 'unique-slug-appends-next-free-suffix' );
 $assert( 'fresh-slug' === Static_Site_Importer_Site_Identity::unique_slug( 'fresh-slug', $is_taken ), 'unique-slug-returns-desired-when-free' );
 $assert( Static_Site_Importer_Site_Identity::DEFAULT_SLUG === Static_Site_Importer_Site_Identity::unique_slug( '', static fn ( string $slug ): bool => false ), 'unique-slug-falls-back-to-constant-when-empty' );
 
-// 9. Developers can customize generated theme metadata without replacing identity resolution.
+// 10. Developers can customize generated theme metadata without replacing identity resolution.
 $GLOBALS['ssi_identity_filters']['static_site_importer_theme_name'] = static fn ( string $name ): string => $name . ' Custom Theme';
 $GLOBALS['ssi_identity_filters']['static_site_importer_theme_slug'] = static fn ( string $slug ): string => 'custom-' . $slug;
 $identity = Static_Site_Importer_Site_Identity::resolve( array( 'site_title' => 'Inherited Site Name' ) );
