@@ -627,6 +627,24 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		$overlay_nodes                = array_fill_keys( array_map( static fn ( array $node ): string => (string) $node['id'], $overlay_graph['nodes'] ), true );
 		$overlay_graph['variants']    = array_values( array_filter( $overlay_graph['variants'], static fn ( $variant ): bool => is_array( $variant ) && isset( $overlay_nodes[ $variant['node'] ?? '' ] ) ) );
+		$layout_intent                = self::form_layout_intent( $form );
+		foreach ( $layout_intent['nodes'] as $node ) {
+			if ( ! isset( $overlay_nodes[ $node['id'] ] ) ) {
+				$overlay_graph['nodes'][] = $node;
+				$overlay_nodes[ $node['id'] ] = true;
+			}
+		}
+		foreach ( $layout_intent['variants'] as $variant ) {
+			$node = $variant['node'];
+			if ( ! isset( $overlay_nodes[ $node ] ) ) {
+				$overlay_graph['nodes'][] = array(
+					'id'     => $node,
+					'layout' => array(),
+				);
+				$overlay_nodes[ $node ] = true;
+			}
+			$overlay_graph['variants'][] = $variant;
+		}
 		$overlay_form                 = $form;
 		$overlay_form['layout_graph'] = $overlay_graph;
 		$visual_state                 = self::empty_country_visual_state( $form, $scope, $topology['phone_popup_targets'] );
@@ -634,6 +652,7 @@ class Static_Site_Importer_Form_Seeder {
 		$presentation_graph           = is_array( $form['presentation_graph'] ?? null ) ? $form['presentation_graph'] : array();
 		$overlay                      = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map, $presentation_graph );
 		self::append_receipt_entries( $layout['receipt'], 'operations', $overlay['operations'] );
+		self::append_receipt_entries( $layout['receipt'], 'operations', $layout_intent['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $overlay['losses'] );
 		$layout['receipt']['status'] = 0 < $layout['receipt']['operations_total'] ? 'applied' : ( 0 < $layout['receipt']['losses_total'] ? 'deferred' : 'skipped' );
 		$markup                      = self::context_block_markup( $form, 'context_before' ) . self::serialize_block( array( 'name' => 'jetpack/contact-form', 'attrs' => $form_attrs, 'innerBlocks' => $inner_blocks ) ) . self::context_block_markup( $form, 'context_after' );
@@ -2705,6 +2724,114 @@ class Static_Site_Importer_Form_Seeder {
 		return false;
 	}
 
+	/**
+	 * Resolve source flex stretch into the generated Button wrapper's layout.
+	 *
+	 * The graph deliberately omits controls with no authored declarations, so a
+	 * submit can be present only in topology. This recognizes that narrow case
+	 * without adding browser-computed geometry to the producer contract.
+	 *
+	 * @return array{nodes:array<int,array<string,mixed>>,variants:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>}
+	 */
+	private static function form_layout_intent( array $form ): array {
+		$graph    = is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array();
+		$controls = is_array( $form['controls'] ?? null ) ? $form['controls'] : array();
+		$nodes    = array();
+		foreach ( $graph['nodes'] ?? array() as $node ) {
+			if ( is_array( $node ) && is_string( $node['id'] ?? null ) ) {
+				$nodes[ $node['id'] ] = $node;
+			}
+		}
+		$form_layout = is_array( $nodes['form']['layout'] ?? null ) ? $nodes['form']['layout'] : array();
+		$intent_nodes = array();
+		$variants     = array();
+		$operations   = array();
+		$conditions   = array();
+		foreach ( $form['control_topology']['nodes'] ?? array() as $topology_node ) {
+			$index = is_array( $topology_node ) ? ( $topology_node['control'] ?? null ) : null;
+			if ( ! is_int( $index ) || null !== ( $topology_node['parent'] ?? null ) || 'submit' !== strtolower( (string) ( $controls[ $index ]['type'] ?? '' ) ) ) {
+				continue;
+			}
+			$control_id     = 'control-' . $index;
+			$control_layout = is_array( $nodes[ $control_id ]['layout'] ?? null ) ? $nodes[ $control_id ]['layout'] : array();
+			if ( isset( $nodes[ $control_id ] ) || ! self::submit_allows_flex_stretch( $control_layout ) ) {
+				continue;
+			}
+			$base_stretches = self::is_stretching_column_flex( $form_layout );
+			foreach ( $graph['variants'] ?? array() as $variant ) {
+				if ( ! is_array( $variant ) || ! is_array( $variant['layout_patch'] ?? null ) ) {
+					continue;
+				}
+				if ( 'form' === ( $variant['node'] ?? null ) && array_intersect( array( 'display', 'direction', 'align_items' ), array_keys( $variant['layout_patch'] ) ) && ! self::is_stretching_column_flex( array_merge( $form_layout, $variant['layout_patch'] ) ) ) {
+					$base_stretches = false;
+				}
+				if ( $control_id === ( $variant['node'] ?? null ) && ! self::submit_allows_flex_stretch( array_merge( $control_layout, $variant['layout_patch'] ) ) ) {
+					$base_stretches = false;
+				}
+			}
+			if ( $base_stretches ) {
+				$intent_nodes[] = array(
+					'id'     => $control_id,
+					'layout' => array( 'align_self' => 'stretch' ),
+				);
+				$operations[] = array(
+					'dimension' => 'layout',
+					'strategy'  => 'form_layout_intent_flex_stretch_submit',
+					'node_hash' => hash( 'sha256', $control_id ),
+				);
+			}
+			foreach ( $graph['variants'] ?? array() as $variant ) {
+				if ( ! is_array( $variant ) || 'form' !== ( $variant['node'] ?? null ) || ! is_array( $variant['condition'] ?? null ) || ! is_array( $variant['layout_patch'] ?? null ) ) {
+					continue;
+				}
+				$condition_key = (string) wp_json_encode( $variant['condition'] );
+				if ( isset( $conditions[ $condition_key ] ) ) {
+					continue;
+				}
+				$conditions[ $condition_key ] = true;
+				$parent_patch                 = array();
+				foreach ( $graph['variants'] as $parent_variant ) {
+					if ( is_array( $parent_variant ) && 'form' === ( $parent_variant['node'] ?? null ) && $condition_key === wp_json_encode( $parent_variant['condition'] ?? null ) && is_array( $parent_variant['layout_patch'] ?? null ) ) {
+						$parent_patch = array_merge( $parent_patch, $parent_variant['layout_patch'] );
+					}
+				}
+				$parent_layout = array_merge( $form_layout, $parent_patch );
+				if ( ! self::is_stretching_column_flex( $parent_layout ) ) {
+					continue;
+				}
+				$control_patch = array();
+				foreach ( $graph['variants'] as $control_variant ) {
+					if ( is_array( $control_variant ) && $control_id === ( $control_variant['node'] ?? null ) && $condition_key === wp_json_encode( $control_variant['condition'] ?? null ) && is_array( $control_variant['layout_patch'] ?? null ) ) {
+						$control_patch = array_merge( $control_patch, $control_variant['layout_patch'] );
+					}
+				}
+				if ( ! self::submit_allows_flex_stretch( array_merge( $control_layout, $control_patch ) ) ) {
+					continue;
+				}
+				$variants[]  = array(
+					'node'         => $control_id,
+					'condition'    => $variant['condition'],
+					'layout_patch' => array( 'align_self' => 'stretch' ),
+				);
+				$operations[] = array(
+					'dimension'  => 'layout',
+					'strategy'   => 'form_layout_intent_flex_stretch_submit',
+					'node_hash'  => hash( 'sha256', $control_id ),
+					'responsive' => true,
+				);
+			}
+		}
+		return array( 'nodes' => $intent_nodes, 'variants' => $variants, 'operations' => $operations );
+	}
+
+	private static function is_stretching_column_flex( array $layout ): bool {
+		return 'flex' === ( $layout['display'] ?? null ) && 'column' === ( $layout['direction'] ?? null ) && in_array( $layout['align_items'] ?? 'stretch', array( 'stretch' ), true );
+	}
+
+	private static function submit_allows_flex_stretch( array $layout ): bool {
+		return ! array_intersect( array( 'width', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis' ), array_keys( $layout ) ) && in_array( $layout['align_self'] ?? 'auto', array( 'auto', 'stretch' ), true );
+	}
+
 	private static function provider_layout_target_map( array $form, string $scope, array $box_targets = array(), array $phone_popup_targets = array(), string $country_trigger_class = '' ): array {
 		$selector_scope = '.' . $scope;
 		$targets        = array();
@@ -2768,9 +2895,12 @@ class Static_Site_Importer_Form_Seeder {
 						$target['destinations'][] = array(
 							'role'       => 'control',
 							'selector'   => $selector_scope . ' .' . $class,
-							'properties' => array( 'width' ),
+							// Core Button's wrapper is inline-flex by default. A source block
+							// display must reach that wrapper so its automatic width can fill
+							// the form row, rather than only changing its inner link.
+							'properties' => array( 'display', 'width' ),
 						);
-						$properties               = array_values( array_diff( $properties, array( 'width' ) ) );
+						$properties               = array_values( array_diff( $properties, array( 'display', 'width' ) ) );
 					}
 					$target['destinations'][] = array(
 						'role'       => 'control',

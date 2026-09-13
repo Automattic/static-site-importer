@@ -697,6 +697,32 @@ namespace {
 	$submit_width_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $submit_width_form );
 	$submit_width_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $submit_width_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$assert( empty( $submit_width_validation['errors'] ) && preg_match( '/\.ssi-node-[a-f0-9]{12}\{width:100%\}/', (string) ( $submit_width_row['provider_layout_overlay_css']['css'] ?? '' ) ), 'source-submit-width-targets-the-wrapper-instead-of-its-shrink-wrapped-inner-button' );
+	$submit_block_form = $presentation_form;
+	$submit_block_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 3, 'control' => $presentation_role( array( 'display' => 'block' ), array( 'display' ), 'button' ) ) );
+	$submit_block_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $submit_block_form );
+	$submit_block_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $submit_block_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$submit_block_css = (string) ( $submit_block_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert( empty( $submit_block_validation['errors'] ) && 1 === preg_match( '/\.ssi-node-[a-f0-9]{12}\{display:block\}/', $submit_block_css ) && ! str_contains( $submit_block_css, '> .wp-block-button__link{display:block}' ), 'source-block-submit-display-targets-the-core-button-wrapper-for-automatic-full-row-width', $submit_block_css );
+	$compile_form = static function ( string $css ) use ( $artifact_compiler ): array {
+		$compiled = ( new $artifact_compiler() )->compile( array(
+			'entrypoint' => 'index.html',
+			'files'      => array( 'index.html' => '<style>' . $css . '</style><form><input type="email" name="email"><button type="submit">Send</button></form>' ),
+		) )->toArray();
+		return $compiled['fallbacks'][0] ?? array();
+	};
+	$stretch_source = $compile_form( '@media (min-width: 768px){form{display:flex;flex-direction:column}}' );
+	$stretch_form   = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $stretch_source ) ) );
+	$stretch_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $stretch_form['forms'] ?? array() ) )['forms'][0] ?? array();
+	$stretch_css    = (string) ( $stretch_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert( empty( $stretch_form['errors'] ) && 2 === count( $stretch_source['control_topology']['nodes'] ?? array() ) && 1 === count( $stretch_source['layout_graph']['nodes'] ?? array() ) && str_contains( $stretch_css, '@media (min-width: 768px){.ssi-form-') && str_contains( $stretch_css, '{align-self:stretch}' ) && in_array( 'form_layout_intent_flex_stretch_submit', array_column( $stretch_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'artifact-form-responsive-column-stretch-targets-the-generated-submit-wrapper', $stretch_css );
+	$center_source = $compile_form( '@media (min-width: 768px){form{display:flex;flex-direction:column;align-items:center}}' );
+	$center_form   = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $center_source ) ) );
+	$center_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $center_form['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( ! str_contains( (string) ( $center_row['provider_layout_overlay_css']['css'] ?? '' ), 'align-self:stretch' ), 'artifact-form-align-items-center-does-not-stretch-submit' );
+	$self_source = $compile_form( '@media (min-width: 768px){form{display:flex;flex-direction:column}button{align-self:flex-start}}' );
+	$self_form   = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $self_source ) ) );
+	$self_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $self_form['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( ! str_contains( (string) ( $self_row['provider_layout_overlay_css']['css'] ?? '' ), 'align-self:stretch' ), 'artifact-form-align-self-override-does-not-stretch-submit' );
 	$phone_presentation = $presentation_form;
 	$phone_presentation['forms'][0]['controls'][0]['type'] = 'phone';
 	$phone_presentation['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 0, 'control' => $presentation_role( array( 'background_color' => '#fff', 'border_color' => '#1e4b6e', 'border_radius' => '0', 'font_size' => '16px', 'line_height' => '24px', 'padding_block_start' => '8px', 'padding_block_end' => '8px', 'padding_inline_start' => '8px', 'padding_inline_end' => '8px', 'height' => '40px' ), array( 'background-color', 'border-color', 'border-radius', 'font-size', 'line-height', 'padding-block-start', 'padding-block-end', 'padding-inline-start', 'padding-inline-end', 'height' ), 'input' ) ) );
