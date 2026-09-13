@@ -89,6 +89,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 				'freeform_block_count'         => 0,
 				'invalid_block_count'          => 0,
 				'invalid_block_document_count' => 0,
+				'image_missing_source_count'   => 0,
 			)
 		);
 		$report->filter_diagnostics(
@@ -182,6 +183,7 @@ class Static_Site_Importer_Block_Document_Reporter {
 		$report->increment_quality( 'core_html_block_count', $core_html_count );
 		$report->increment_quality( 'freeform_block_count', $freeform_count );
 		$report->increment_quality( 'invalid_block_count', $invalid_count );
+		self::report_sourceless_images( $block_markup, $relative_path, $report );
 		if ( $invalid_count > 0 ) {
 			$report->increment_quality( 'invalid_block_document_count' );
 			$first_invalid_block = $invalid_blocks[0] ?? self::first_parsed_block_summary( $analyzed_blocks );
@@ -222,6 +224,47 @@ class Static_Site_Importer_Block_Document_Reporter {
 			'serialization_mismatch' => $serialization_mismatch,
 			'validation_method'      => $validation_method,
 			'validation_available'   => true,
+		);
+	}
+
+	/**
+	 * Report images a document emits without a usable source.
+	 *
+	 * A source never ships an image element that resolves to nothing, so one in
+	 * generated markup is invalid output: it requests nothing, renders as a
+	 * broken or zero-sized box, and is invisible to block validation because the
+	 * block itself still parses.
+	 *
+	 * @param string                             $block_markup  Generated block markup.
+	 * @param string                             $relative_path Document path for the diagnostic.
+	 * @param Static_Site_Importer_Import_Report $report        Report being built.
+	 */
+	private static function report_sourceless_images( string $block_markup, string $relative_path, Static_Site_Importer_Import_Report $report ): void {
+		if ( ! preg_match_all( '/<img\b[^>]*>/i', $block_markup, $matches ) ) {
+			return;
+		}
+		$sourceless = array();
+		foreach ( $matches[0] as $tag ) {
+			if ( preg_match( '/\bsrc(?:set)?\s*=\s*(["\'])\s*\S[^"\']*\1/i', $tag )
+				|| preg_match( '/\bsrc(?:set)?\s*=\s*[^\s>"\']+/i', $tag ) ) {
+				continue;
+			}
+			$sourceless[] = $tag;
+		}
+		if ( array() === $sourceless ) {
+			return;
+		}
+
+		$report->increment_quality( 'image_missing_source_count', count( $sourceless ) );
+		$report->append_diagnostic(
+			array(
+				'type'               => 'image_missing_source',
+				'stage'              => 'generated_theme_block_analysis',
+				'source'             => $relative_path,
+				'count'              => count( $sourceless ),
+				'validation_message' => 'Generated markup emits an image element without a source.',
+				'original_excerpt'   => Static_Site_Importer_Report_Diagnostics::diagnostic_excerpt( $sourceless[0] ),
+			)
 		);
 	}
 
