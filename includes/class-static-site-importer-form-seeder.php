@@ -2768,9 +2768,12 @@ class Static_Site_Importer_Form_Seeder {
 						$target['destinations'][] = array(
 							'role'       => 'control',
 							'selector'   => $selector_scope . ' .' . $class,
-							'properties' => array( 'width' ),
+							// Core Button's wrapper is inline-flex by default. A source block
+							// display must reach that wrapper so its automatic width can fill
+							// the form row, rather than only changing its inner link.
+							'properties' => array( 'display', 'width' ),
 						);
-						$properties               = array_values( array_diff( $properties, array( 'width' ) ) );
+						$properties               = array_values( array_diff( $properties, array( 'display', 'width' ) ) );
 					}
 					$target['destinations'][] = array(
 						'role'       => 'control',
