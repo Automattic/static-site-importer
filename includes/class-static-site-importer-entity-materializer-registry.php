@@ -25,6 +25,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	private const FAILURE_DIAGNOSTIC_MAX_ROWS     = 10;
 	private const FAILURE_DIAGNOSTIC_MAX_BYTES    = 256;
 	private const FAILURE_DIAGNOSTIC_SCAN_BUDGET  = 10;
+	private const RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES = 10485760;
 
 	/**
 	 * Per-capability provider selection contract.
@@ -477,7 +478,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$control_shape = self::ordered_form_control_identity( isset( $entity['controls'] ) && is_array( $entity['controls'] ) ? $entity['controls'] : array() );
 		$bindings      = isset( $entity['bindings'] ) && is_array( $entity['bindings'] ) ? $entity['bindings'] : array();
 		foreach ( $bindings as $binding ) {
-			if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || 'form' !== ( $binding['role'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > 262144 ) {
+			if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || 'form' !== ( $binding['role'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES ) {
 				continue;
 			}
 			$manifest = Static_Site_Importer_Form_Fallback_Contract::manifest_from_html( $binding['search_block_markup'] );
@@ -2247,7 +2248,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( null === $binding ) {
 			return array();
 		}
-		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > 262144 || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'form' ), true ) ) {
+		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'form' ), true ) ) {
 			return null;
 		}
 		$normalized = array(
