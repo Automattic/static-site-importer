@@ -315,6 +315,32 @@ $assert( 'smoke' === ( $artifact['provenance']['source_metadata']['source'] ?? '
 $assert( 'website/import-report.json' === ( $artifact['reports'][0]['path'] ?? '' ), 'report-ref' );
 $assert( 'smoke' === ( $artifact['report']['source_metadata']['source'] ?? '' ), 'source-metadata-preserved' );
 $assert( 'completed' === ( $artifact['report']['import_report']['status'] ?? '' ), 'import-report-preserved' );
+
+// Equivalent route inputs must preserve the exact public export artifact.
+$canonical_path_export = static_site_importer_ability_export_theme(
+	array(
+		'theme_slug'    => 'fixture-theme',
+		'root'          => 'Website',
+		'entrypoint'    => 'Website/Index.HTML',
+		'include_pages' => true,
+	)
+);
+$normalized_path_export = static_site_importer_ability_export_theme(
+	array(
+		'theme_slug'    => 'fixture-theme',
+		'root'          => '/Website\\./nested\\..?ignored',
+		'entrypoint'    => '/Website\\./nested\\..\\Index.HTML?ignored',
+		'include_pages' => true,
+	)
+);
+$canonical_path_artifact  = $canonical_path_export['website_artifact'] ?? array();
+$normalized_path_artifact = $normalized_path_export['website_artifact'] ?? array();
+unset( $canonical_path_artifact['generated_at'], $canonical_path_artifact['validation']['checked_at'], $normalized_path_artifact['generated_at'], $normalized_path_artifact['validation']['checked_at'] );
+$assert( true === ( $normalized_path_export['success'] ?? false ), 'normalized-path-export-succeeds' );
+$assert( 'Website' === ( $normalized_path_export['website_artifact']['root'] ?? '' ), 'normalized-root-preserves-case' );
+$assert( 'Website/Index.HTML' === ( $normalized_path_export['website_artifact']['entrypoint'] ?? '' ), 'normalized-entrypoint-preserves-case' );
+$assert( $canonical_path_artifact === $normalized_path_artifact, 'normalized-path-export-matches-canonical-artifact' );
+
 $import_result = static_site_importer_ability_import(
 	array(
 		'source' => static_site_importer_ability_files_source( $artifact ),
