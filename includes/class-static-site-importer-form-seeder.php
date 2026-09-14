@@ -600,19 +600,28 @@ class Static_Site_Importer_Form_Seeder {
 				$overlay_graph['nodes'][] = $target;
 			}
 		}
-		foreach ( self::direct_label_control_gap_targets( $form ) as $control_index => $gap ) {
+		foreach ( self::direct_label_control_gap_targets( $form ) as $target ) {
+			$control_index = $target['control'];
+			$layout_patch  = $target['layout'];
 			$target_id = 'control-' . $control_index;
+			if ( isset( $target['condition'] ) ) {
+				if ( ! array_filter( $overlay_graph['nodes'], static fn( $node ): bool => is_array( $node ) && $target_id === ( $node['id'] ?? null ) ) ) {
+					$overlay_graph['nodes'][] = array( 'id' => $target_id, 'layout' => array() );
+				}
+				$overlay_graph['variants'][] = array( 'node' => $target_id, 'condition' => $target['condition'], 'layout_patch' => $layout_patch );
+				continue;
+			}
 			$merged    = false;
 			foreach ( $overlay_graph['nodes'] as &$overlay_node ) {
 				if ( is_array( $overlay_node ) && $target_id === ( $overlay_node['id'] ?? null ) ) {
-					$overlay_node['layout']        = array_merge( $overlay_node['layout'] ?? array(), array( 'display' => 'flex', 'direction' => 'column', 'gap' => $gap ) );
+					$overlay_node['layout']        = array_merge( $overlay_node['layout'] ?? array(), $layout_patch );
 					$merged                        = true;
 					break;
 				}
 			}
 			unset( $overlay_node );
 			if ( ! $merged ) {
-				$overlay_graph['nodes'][] = array( 'id' => $target_id, 'layout' => array( 'display' => 'flex', 'direction' => 'column', 'gap' => $gap ) );
+				$overlay_graph['nodes'][] = array( 'id' => $target_id, 'layout' => $layout_patch );
 			}
 			$layout['receipt']['operations'][] = array(
 				'dimension'   => 'layout',
@@ -729,7 +738,7 @@ class Static_Site_Importer_Form_Seeder {
 		return $row;
 	}
 
-	/** @return array<int,string> */
+	/** @return array<int,array{control:int,layout:array<string,string>,condition?:array<string,mixed>}> */
 	private static function direct_label_control_gap_targets( array $form ): array {
 		$relations = $form['sibling_relations'] ?? null;
 		$graph     = $form['layout_graph'] ?? null;
@@ -737,28 +746,18 @@ class Static_Site_Importer_Form_Seeder {
 			return array();
 		}
 		$form_node = current( array_filter( $graph['nodes'], static fn( $node ): bool => is_array( $node ) && 'form' === ( $node['id'] ?? null ) ) );
-		$layout    = is_array( $form_node['layout'] ?? null ) ? $form_node['layout'] : array();
-		$property  = isset( $layout['row_gap'] ) ? 'row-gap' : ( isset( $layout['gap'] ) ? 'gap' : '' );
-		$gap       = '' !== $property ? $layout[ str_replace( '-', '_', $property ) ] : null;
-		if ( 'flex' !== ( $layout['display'] ?? null ) || 'column' !== ( $layout['direction'] ?? null ) || ! is_string( $gap ) || '' === trim( $gap ) ) {
-			return array();
-		}
-		$proven = false;
-		foreach ( $form_node['provenance'] ?? array() as $fact ) {
-			if ( is_array( $fact ) && null === ( $fact['condition'] ?? null ) && in_array( $property, $fact['properties'] ?? array(), true ) ) {
-				$proven = true;
-				break;
-			}
-		}
-		if ( ! $proven ) {
-			return array();
-		}
 		$targets = array();
-		foreach ( $relations['pairs'] as $pair ) {
-			if ( is_array( $pair ) && is_int( $pair['control'] ?? null ) ) {
-				$targets[ $pair['control'] ] = $gap;
+		$plans = array( array( 'layout' => $form_node['layout'] ?? array(), 'condition' => null, 'provenance' => $form_node['provenance'] ?? array() ) );
+		foreach ( $graph['variants'] ?? array() as $variant ) if ( is_array( $variant ) && 'form' === ( $variant['node'] ?? null ) ) $plans[] = array( 'layout' => $variant['layout_patch'] ?? array(), 'condition' => $variant['condition'] ?? null, 'provenance' => $variant['provenance'] ?? array() );
+		foreach ( $plans as $plan ) {
+			$layout = is_array( $plan['layout'] ) ? $plan['layout'] : array();
+			$property = isset( $layout['row_gap'] ) ? 'row-gap' : ( isset( $layout['gap'] ) ? 'gap' : '' );
+			$gap = '' !== $property ? $layout[ str_replace( '-', '_', $property ) ] : null;
+			if ( 'flex' !== ( $layout['display'] ?? null ) || 'column' !== ( $layout['direction'] ?? null ) || ! is_string( $gap ) || '' === trim( $gap ) ) continue;
+			$proven = array_filter( $plan['provenance'], static fn( $fact ): bool => is_array( $fact ) && in_array( 'display', $fact['properties'] ?? array(), true ) && in_array( 'flex-direction', $fact['properties'] ?? array(), true ) && in_array( $property, $fact['properties'] ?? array(), true ) );
+			if ( empty( $proven ) ) continue;
+			foreach ( $relations['pairs'] as $pair ) if ( is_array( $pair ) && is_int( $pair['control'] ?? null ) ) $targets[] = array_filter( array( 'control' => $pair['control'], 'layout' => array( 'display' => 'flex', 'direction' => 'column', 'gap' => $gap ), 'condition' => $plan['condition'] ), static fn( $value ): bool => null !== $value );
 			}
-		}
 		return $targets;
 	}
 
