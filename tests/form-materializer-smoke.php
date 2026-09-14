@@ -1553,6 +1553,47 @@ namespace {
 	$assert( empty( $hidden_control_validation['errors'] ) && array() === $hidden_control_losses, 'hidden-control-plumbing-records-no-topology-loss' );
 	$assert( 'mapped' === ( $hidden_control_row['status'] ?? '' ) && empty( $hidden_control_row['form_receipt_unaccepted_losses'] ), 'hidden-control-plumbing-keeps-the-form-materializable' );
 	$assert( str_contains( $hidden_control_markup, 'First name' ) && str_contains( $hidden_control_markup, 'Message' ) && ! str_contains( $hidden_control_markup, 'ucfid' ), 'hidden-control-plumbing-is-dropped-without-disturbing-authored-fields' );
+	// Search mode buttons are not lead-form submits, and a nested source label still
+	// maps to Jetpack's one field label when it owns exactly one provider field.
+	$native_controls = array(
+		'forms' => array(
+			array(
+				'selector' => 'form.property-search',
+				'controls' => array(
+					array( 'tag' => 'button', 'type' => 'button', 'text' => 'Buy', 'class' => 'mode-active' ),
+					array( 'tag' => 'button', 'type' => 'button', 'text' => 'Rent', 'class' => 'mode-idle' ),
+					array( 'tag' => 'select', 'type' => 'select', 'name' => 'property_type', 'label' => 'Property type', 'options' => array( 'House', 'Apartment' ) ),
+					array( 'tag' => 'input', 'type' => 'text', 'name' => 'location', 'label' => 'Location' ),
+					array( 'tag' => 'button', 'type' => 'submit', 'text' => 'Search' ),
+				),
+				'control_topology' => array( 'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 16, 'truncated' => false, 'nodes' => array(
+					array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div' ),
+					array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'control' => 0 ),
+					array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 1, 'depth' => 1, 'control' => 1 ),
+					array( 'id' => 'control-2', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 2 ),
+					array( 'id' => 'control-3', 'kind' => 'control', 'parent' => null, 'order' => 2, 'depth' => 0, 'control' => 3 ),
+					array( 'id' => 'control-4', 'kind' => 'control', 'parent' => null, 'order' => 3, 'depth' => 0, 'control' => 4 ),
+				) ),
+			),
+			array(
+				'selector' => 'form.valuation',
+				'controls' => array( array( 'tag' => 'input', 'type' => 'text', 'name' => 'name', 'label' => 'Name' ), array( 'tag' => 'button', 'type' => 'submit', 'text' => 'Request valuation' ) ),
+				'control_topology' => array( 'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 16, 'truncated' => false, 'nodes' => array(
+					array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'label' ),
+					array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'span' ),
+					array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'control' => 0 ),
+					array( 'id' => 'control-1', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 1 ),
+				) ),
+			),
+		),
+	);
+	$native_controls_valid = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $native_controls );
+	$native_controls_seed  = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $native_controls_valid['forms'] ?? array() ) );
+	$native_search         = $native_controls_seed['forms'][0] ?? array();
+	$native_lead           = $native_controls_seed['forms'][1] ?? array();
+	$assert( empty( $native_controls_valid['errors'] ) && 'mapped' === ( $native_search['status'] ?? '' ) && 'mapped' === ( $native_lead['status'] ?? '' ) && 2 === ( $native_search['field_count'] ?? 0 ) && 1 === ( $native_lead['field_count'] ?? 0 ), 'native-buttons-and-nested-labels-materialize-without-collapsing-search-into-lead-intake', wp_json_encode( $native_controls_seed ) );
+	$assert( 2 === substr_count( (string) ( $native_search['block_markup'] ?? '' ), 'type="button"' ) && str_contains( (string) ( $native_search['block_markup'] ?? '' ), '>Buy</button>' ) && str_contains( (string) ( $native_search['block_markup'] ?? '' ), '>Rent</button>' ) && empty( $native_lead['form_receipt_unaccepted_losses'] ), 'native-mode-buttons-and-one-control-nested-label-keep-their-semantics', wp_json_encode( array( $native_search['computed_layout_receipt'] ?? array(), $native_lead['computed_layout_receipt'] ?? array() ) ) );
+	$assert( (string) ( $native_search['block_markup'] ?? '' ) === serialize_blocks( parse_blocks( (string) ( $native_search['block_markup'] ?? '' ) ) ) && (string) ( $native_lead['block_markup'] ?? '' ) === serialize_blocks( parse_blocks( (string) ( $native_lead['block_markup'] ?? '' ) ) ), 'native-control-provider-markup-round-trips-through-wordpress' );
 	$list_wrapper = $topology_form;
 	$list_wrapper['forms'][0]['control_topology']['nodes'][0]['tag'] = 'ul';
 	$list_wrapper['forms'][0]['layout_graph']['nodes'] = array();

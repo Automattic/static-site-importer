@@ -485,6 +485,14 @@ class Static_Site_Importer_Form_Seeder {
 				}
 				continue;
 			}
+			if ( 'button' === $tag && 'button' === $type && ! self::is_provider_auxiliary_button( $controls, $control_index ) ) {
+				// Mode and filter controls remain native buttons; they are not submits.
+				$field_blocks[ $control_index ] = self::button_block(
+					self::control_text( $control ),
+					trim( (string) ( $control['class'] ?? '' ) . ' ' . self::layout_node_class( $scope, 'control-' . $control_index ) . ' ' . $presentation_descriptor['control_class'] )
+				);
+				continue;
+			}
 
 			$control_phone_destinations = $presentation_descriptor['phone_destinations'];
 			$field_block                = self::field_block_from_control(
@@ -907,6 +915,24 @@ class Static_Site_Importer_Form_Seeder {
 		return 'hidden' !== $type;
 	}
 
+	/** Leave a proven phone-country selector to the Jetpack telephone field. */
+	private static function is_provider_auxiliary_button( array $controls, int $control_index ): bool {
+		$button = $controls[ $control_index ] ?? array();
+		$next   = $controls[ $control_index + 1 ] ?? array();
+		if ( ! is_array( $button ) ) {
+			return false;
+		}
+		$popup = strtolower( trim( (string) ( $button['aria-haspopup'] ?? $button['aria_haspopup'] ?? '' ) ) );
+		if ( '' !== $popup ) {
+			return true;
+		}
+		if ( ! is_array( $next ) || ! in_array( strtolower( trim( (string) ( $next['type'] ?? '' ) ) ), array( 'tel', 'phone' ), true ) ) {
+			return false;
+		}
+		$label = strtolower( self::control_text( $button ) );
+		return str_contains( $label, 'phone' ) && str_contains( $label, 'country' );
+	}
+
 	/** Accept only a non-nested root fieldset that contains every mapped provider control. */
 	private static function projectable_plain_root_fieldset( array $fieldset, array $nodes, array $field_blocks ): bool {
 		if ( 'wrapper' !== ( $fieldset['kind'] ?? null ) || 'fieldset' !== ( $fieldset['tag'] ?? null ) || 'plain_group' !== ( $fieldset['fieldset_semantics'] ?? null ) || null !== ( $fieldset['parent'] ?? null ) || ! is_string( $fieldset['id'] ?? null ) || empty( $field_blocks ) ) {
@@ -980,10 +1006,23 @@ class Static_Site_Importer_Form_Seeder {
 			if ( 'label' !== $tag ) {
 				return false;
 			}
-			$controls = array_values(
+			$nodes_by_id = array_column( $nodes, null, 'id' );
+			$controls    = array_values(
 				array_filter(
 					$nodes,
-					static fn( $candidate ): bool => is_array( $candidate ) && 'control' === ( $candidate['kind'] ?? '' ) && ( $candidate['parent'] ?? '' ) === ( $node['id'] ?? '' ) && is_int( $candidate['control'] ?? null ) && isset( $field_blocks[ $candidate['control'] ] )
+					static function ( $candidate ) use ( $node, $nodes_by_id, $field_blocks ): bool {
+						if ( ! is_array( $candidate ) || 'control' !== ( $candidate['kind'] ?? '' ) || ! is_int( $candidate['control'] ?? null ) || ! isset( $field_blocks[ $candidate['control'] ] ) ) {
+							return false;
+						}
+						$parent = $candidate['parent'] ?? null;
+						while ( is_string( $parent ) ) {
+							if ( $parent === ( $node['id'] ?? null ) ) {
+								return true;
+							}
+							$parent = $nodes_by_id[ $parent ]['parent'] ?? null;
+						}
+						return false;
+					}
 				)
 			);
 			return 1 === count( $controls );
@@ -2550,6 +2589,22 @@ class Static_Site_Importer_Form_Seeder {
 		return $block;
 	}
 
+	/** Build a non-submitting source button without changing the form's submission action. */
+	private static function button_block( string $text, string $class_name = '' ): array {
+		return array(
+			'name'    => 'core/button',
+			'attrs'   => array(
+				'tagName'   => 'button',
+				'type'      => 'button',
+				'lock'      => array( 'remove' => true ),
+				'className' => $class_name,
+				'metadata'  => array( 'name' => 'Button' ),
+			),
+			'content' => '' !== trim( $text ) ? trim( $text ) : 'Button',
+			'wrapper' => 'button',
+		);
+	}
+
 	/** Serialize source context as editable core blocks beside the provider form. */
 	private static function context_block_markup( array $form, string $position ): string {
 		$context = isset( $form['form'][ $position ] ) && is_array( $form['form'][ $position ] ) ? $form['form'][ $position ] : array();
@@ -3242,9 +3297,10 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			$prefix = "\n<div class=\"" . self::escape_attribute( $classes ) . '">';
 			$suffix = "</div>\n";
-		} elseif ( 'submit' === $wrapper ) {
+		} elseif ( in_array( $wrapper, array( 'submit', 'button' ), true ) ) {
 			$classes = trim( 'wp-block-button ' . (string) ( $attrs['className'] ?? '' ) );
-			$prefix  = "\n<div class=\"" . self::escape_attribute( $classes ) . '"><button type="submit" class="wp-block-button__link wp-element-button">' . self::rich_text_markup( $content, $label ) . "</button></div>\n";
+			$type    = 'submit' === $wrapper ? 'submit' : 'button';
+			$prefix  = "\n<div class=\"" . self::escape_attribute( $classes ) . '"><button type="' . $type . '" class="wp-block-button__link wp-element-button">' . self::rich_text_markup( $content, $label ) . "</button></div>\n";
 		} elseif ( 'heading' === $wrapper ) {
 			$level  = min( 6, max( 1, (int) ( $attrs['level'] ?? 2 ) ) );
 			$prefix = "\n<h" . $level . ' class="wp-block-heading">' . self::rich_text_markup( $content ) . '</h' . $level . ">\n";
