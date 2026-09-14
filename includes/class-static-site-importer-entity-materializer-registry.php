@@ -482,11 +482,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || 'form' !== ( $binding['role'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES ) {
 				continue;
 			}
-			$manifest = Static_Site_Importer_Form_Fallback_Contract::manifest_from_html( $binding['search_block_markup'] );
+			$analysis = Static_Site_Importer_Form_Fallback_Contract::analysis_from_html( $binding['search_block_markup'], is_string( $entity['selector'] ?? null ) ? $entity['selector'] : '', $binding['occurrence'] );
+			$manifest = $analysis['manifest'];
 			if ( self::ordered_form_control_identity( $manifest['controls'] ) !== $control_shape ) {
 				return $entity;
 			}
-			$presentation = Static_Site_Importer_Form_Fallback_Contract::presentation_from_html( $binding['search_block_markup'], is_string( $entity['selector'] ?? null ) ? $entity['selector'] : '', $binding['occurrence'] );
+			$presentation = $analysis['presentation'];
 			if ( 'generic/form-presentation/v1' === ( $presentation['schema'] ?? null ) ) {
 				$presentations[] = $presentation;
 			}
