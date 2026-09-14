@@ -734,7 +734,7 @@ class Static_Site_Importer_Form_Seeder {
 		$status = $form['form']['trailing_status'] ?? null;
 		if ( is_array( $status ) && 'status' === ( $status['role'] ?? null ) ) {
 			// Output provides the native status role without a raw HTML block.
-			$attrs = array( 'tagName' => 'output', 'metadata' => array( 'name' => 'Form status' ) );
+			$attrs = array( 'tagName' => 'output', 'templateLock' => 'all', 'metadata' => array( 'name' => 'Form status' ) );
 			if ( is_string( $status['id'] ?? null ) && preg_match( '/^[A-Za-z][A-Za-z0-9_-]{0,79}$/D', $status['id'] ) ) {
 				$attrs['anchor'] = $status['id'];
 			}
@@ -3217,8 +3217,13 @@ class Static_Site_Importer_Form_Seeder {
 			$extra = array();
 			foreach ( $target['destinations'] as &$destination ) {
 				if ( 'label' === $destination['role'] ) {
-					$extra[] = array( 'role' => 'label', 'selector' => $destination['selector'], 'properties' => array(), 'resets' => array( 'display' => 'block', 'margin' => '0', 'padding' => '0' ) );
+					$layout_properties = array_values( array_filter( $destination['properties'], static fn( string $key ): bool => str_starts_with( $key, 'margin' ) || str_starts_with( $key, 'padding' ) || in_array( $key, array( 'width', 'max_width', 'min_width', 'box_sizing' ), true ) ) );
+					$extra[] = array( 'role' => 'label', 'selector' => $destination['selector'], 'properties' => $layout_properties, 'resets' => array( 'display' => 'block' ) );
+					$destination['properties'] = array_values( array_diff( $destination['properties'], $layout_properties ) );
 					$destination['selector'] .= ' > label';
+					$destination['resets']['display'] = 'block';
+					$destination['resets']['margin'] = '0';
+					$destination['resets']['padding'] = '0';
 				}
 				if ( 'control' === $destination['role'] && preg_match( '/ \.ssi-node-[a-f0-9]{12}$/D', $destination['selector'] ) ) {
 					$extra[] = array( 'role' => 'control', 'selector' => $destination['selector'] . '::placeholder', 'properties' => array(), 'resets' => array( 'color' => 'revert', 'opacity' => 'revert' ) );
