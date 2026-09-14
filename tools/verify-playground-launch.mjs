@@ -58,21 +58,71 @@ try {
   assert.equal(figmaAvailable, manifestUrl ? '1' : '0', 'Figma availability must match the optional zstd runtime capability');
   assert.equal(await figmaButton.isDisabled(), !manifestUrl, 'Figma control must fail open without zstd');
 
+  const importer = wordpress.locator('.ssi-importer');
+  const importUrl = wordpress.url();
+  const homeUrl = await importer.getAttribute('data-static-site-importer-home-url');
+  const importRestUrl = await importer.getAttribute('data-static-site-importer-rest-url');
+  assert.ok(homeUrl, 'Importer must expose its home URL');
+  assert.ok(importRestUrl, 'Importer must expose its REST endpoint');
+  const htmlDetails = wordpress.locator('details:has([data-static-site-importer-source-html])');
+  await htmlDetails.locator('summary').click();
+  assert.equal(await htmlDetails.evaluate((element) => element.open), true, 'Paste HTML must be expanded before filling its textarea');
+  // Importing replaces the WordPress iframe. Listen on the browser context so
+  // the response remains observable while that frame navigates.
+  await wordpress.locator('[data-static-site-importer-source-html]').fill('<main><h1>Imported home</h1></main>');
+  const [ response ] = await Promise.all([
+    page.context().waitForEvent('response', {
+      predicate: (response) => response.url() === importRestUrl && response.request().method() === 'POST',
+      timeout: 300_000,
+    }),
+    wordpress.locator('[data-static-site-importer-submit]').click(),
+  ]);
+  const report = await response.json();
+  assert.equal(response.ok(), true, JSON.stringify(report));
+  assert.equal(report.success, true, JSON.stringify(report));
+  diagnostics.push(`import-response: ${JSON.stringify(report)}`);
+  await wordpress.waitForURL((url) => url.href === new URL(homeUrl, importUrl).href, { timeout: 120_000 });
+  assert.equal(report.result?.theme_slug, 'generated-wordpress-website', JSON.stringify(report));
+  assert.equal(await wordpress.locator('body').evaluate((element) => element.classList.contains('wp-theme-generated-wordpress-website')), true, 'The imported theme must be active on the existing home frame');
+  assert.ok((await wordpress.locator('title').textContent())?.trim(), 'The imported site home must retain a document title');
+
+  const migrationToolbarLink = wordpress.locator('#wp-admin-bar-pgwpc a');
+  await migrationToolbarLink.waitFor({ state: 'visible', timeout: 120_000 });
+  await Promise.all([
+    wordpress.waitForURL(/\/wp-admin\/admin\.php\?page=playground-to-wordpress-com/, { timeout: 120_000 }),
+    migrationToolbarLink.click(),
+  ]);
+  await wordpress.locator('#pgwpc-connect').waitFor({ state: 'visible', timeout: 120_000 });
+
+  // The importer must survive materialization so a user can import another site.
+  await wordpress.goto(importUrl, { waitUntil: 'domcontentloaded', timeout: 120_000 });
+  await wordpress.locator('.ssi-importer').waitFor({ state: 'visible', timeout: 120_000 });
+
   if (figFixture) {
     assert.ok(manifestUrl, 'Figma fixture verification requires a PHP extension manifest');
-    const importer = wordpress.locator('.ssi-importer');
     const restUrl = await importer.getAttribute('data-static-site-importer-figma-rest-url');
     assert.ok(restUrl, 'Figma importer must expose its REST endpoint');
-    const responsePromise = page.waitForResponse(
-      (response) => response.url() === restUrl && response.request().method() === 'POST',
-      { timeout: 300_000 },
-    );
-    await wordpress.locator('[data-static-site-importer-source-figma-file]').setInputFiles(figFixture);
-    const response = await responsePromise;
+    const [ response ] = await Promise.all([
+      page.context().waitForEvent('response', {
+        predicate: (response) => response.url() === restUrl && response.request().method() === 'POST',
+        timeout: 300_000,
+      }),
+      wordpress.locator('[data-static-site-importer-source-figma-file]').setInputFiles(figFixture),
+    ]);
     const report = await response.json();
     assert.equal(response.ok(), true, JSON.stringify(report));
     assert.equal(report.success, true, JSON.stringify(report));
+    await wordpress.waitForURL((url) => url.href === new URL('/', importUrl).href, { timeout: 120_000 });
   }
+} catch (error) {
+  const screenshotPath = '/tmp/static-site-importer-playground-launch-failure.png';
+  try {
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    diagnostics.push(`screenshot: ${screenshotPath}`);
+  } catch (screenshotError) {
+    diagnostics.push(`screenshot-error: ${screenshotError.message}`);
+  }
+  throw new Error(`${error.message}\ndiagnostics=${JSON.stringify(diagnostics.slice(-50))}`, { cause: error });
 } finally {
   await browser.close();
 }

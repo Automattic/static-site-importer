@@ -171,6 +171,9 @@ $direct = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input 
 
 // disable_smilies (issue #780) defaults on so ordinary imports keep literal text.
 $default_input = Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'slug' => 'default-theme' ) );
+$assert( 'report_only' === $default_input['stale_page_action'], 'stale-page-action-defaults-report-only' );
+$assert( '' === $default_input['runtime_lifecycle_phase'], 'runtime-lifecycle-phase-defaults-direct-apply' );
+$assert( 'copy_to_theme' === $default_input['asset_materialization_policy'], 'asset-materialization-policy-defaults-copy-to-theme' );
 $assert( true === $default_input['disable_smilies'], 'disable-smilies-defaults-true' );
 $assert( true === Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'disable_smilies' => '1' ) )['disable_smilies'], 'disable-smilies-coerces-true-string' );
 $assert( false === Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'disable_smilies' => '0' ) )['disable_smilies'], 'disable-smilies-coerces-false-string' );

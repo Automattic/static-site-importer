@@ -193,19 +193,13 @@
 		}
 	};
 
-	const previewUrl = function ( report ) {
-		const preview = report && report.preview && typeof report.preview === 'object' ? report.preview : {};
-		const playground = preview.playground && typeof preview.playground === 'object' ? preview.playground : {};
-		return playground.blueprint_url || preview.url || '';
-	};
-
-	const openPreview = function ( root, report ) {
-		const url = previewUrl( report ) || root.getAttribute( 'data-static-site-importer-home-url' );
+	const showImportedHome = function ( root ) {
+		const url = root.getAttribute( 'data-static-site-importer-home-url' );
 		if ( ! url ) {
 			return false;
 		}
 
-		window.open( url, '_blank', 'noopener,noreferrer' );
+		window.location.assign( url );
 
 		return true;
 	};
@@ -273,6 +267,7 @@
 		const formData = new FormData();
 		formData.append( 'figma_file', file );
 		formData.append( 'apply_to_current_site', '1' );
+		formData.append( 'activate', '1' );
 		formData.append( 'theme_materialization', 'block' );
 
 		showStatus( root, 'Preparing Figma file for WordPress preview...' );
@@ -288,8 +283,7 @@
 			const report = await response.json();
 			setReport( root, report );
 			if ( response.ok && report.success ) {
-				openPreview( root, report );
-				showStatus( root, 'WordPress Playground opened.' );
+				showImportedHome( root );
 			} else {
 				showStatus( root, response.ok ? 'Figma import request complete.' : 'Figma import request failed.' );
 			}
@@ -351,6 +345,7 @@
 					const body = {
 						source: importSource,
 						apply_to_current_site: true,
+						activate: true,
 						theme_materialization: 'block',
 					};
 					if ( importId ) {
@@ -396,13 +391,9 @@
 				if ( ! response.ok || report.error ) {
 					showStatus( root, ( report.error && report.error.message ) ? report.error.message : 'Import request failed.' );
 				} else if ( report.success ) {
-					openPreview( root, report );
-					showStatus( root, 'WordPress Playground opened.' );
-				} else if ( report.success && report.preview && 'unavailable' === report.preview.status ) {
-					const requirement = report.preview.requires_ability_capable_target;
-					showStatus( root, requirement ? ( report.preview.message || 'URL preview needs a disposable WordPress target that exposes the import ability.' ) : ( report.preview.message || 'Preview unavailable: WP Codebox did not return a preview URL or Playground blueprint URL.' ) );
+					showImportedHome( root );
 				} else {
-					showStatus( root, report.success ? 'Preview request complete.' : 'Preview request failed.' );
+					showStatus( root, 'Preview request failed.' );
 				}
 			} catch ( error ) {
 				setReport( root, { success: false, error: { message: error.message } } );
