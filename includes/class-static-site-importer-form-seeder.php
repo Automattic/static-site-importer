@@ -605,14 +605,14 @@ class Static_Site_Importer_Form_Seeder {
 			$merged    = false;
 			foreach ( $overlay_graph['nodes'] as &$overlay_node ) {
 				if ( is_array( $overlay_node ) && $target_id === ( $overlay_node['id'] ?? null ) ) {
-					$overlay_node['layout']['gap'] = $gap;
+					$overlay_node['layout']        = array_merge( $overlay_node['layout'] ?? array(), array( 'display' => 'flex', 'direction' => 'column', 'gap' => $gap ) );
 					$merged                        = true;
 					break;
 				}
 			}
 			unset( $overlay_node );
 			if ( ! $merged ) {
-				$overlay_graph['nodes'][] = array( 'id' => $target_id, 'layout' => array( 'gap' => $gap ) );
+				$overlay_graph['nodes'][] = array( 'id' => $target_id, 'layout' => array( 'display' => 'flex', 'direction' => 'column', 'gap' => $gap ) );
 			}
 			$layout['receipt']['operations'][] = array(
 				'dimension'   => 'layout',
