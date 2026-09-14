@@ -763,9 +763,30 @@ namespace {
 	$phone_presentation_css       = (string) ( $phone_presentation_row['provider_layout_overlay_css']['css'] ?? '' );
 	$phone_presentation_target    = $phone_presentation_row['provider_layout_target_map']['presentation_targets'][0] ?? array();
 	$phone_destinations = $phone_presentation_target['destinations'] ?? array();
+	$phone_markup = (string) ( $phone_presentation_row['block_markup'] ?? '' );
+	$phone_destination_hooks = array();
+	foreach ( $phone_destinations as $destination ) {
+		if ( is_array( $destination ) && preg_match( '/\.((?:ssi-node)-[a-f0-9]{12}-destination-(?:shell|primary|carrier|prefix))$/', (string) ( $destination['selector'] ?? '' ), $matches ) ) {
+			$phone_destination_hooks[] = $matches[1];
+		}
+	}
 	$assert( '0' === ( $phone_destinations[0]['resets']['text-indent'] ?? null ) && '0' === ( $phone_destinations[0]['resets']['gap'] ?? null ) && str_contains( $phone_presentation_css, 'text-indent:0!important' ) && str_contains( $phone_presentation_css, 'gap:0!important' ) && str_contains( $phone_presentation_css, 'text-indent:4px!important' ), 'phone-text-indentation-belongs-to-value-not-structural-prefix-container' );
 	$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $phone_presentation_row['provider_layout_overlay_css'] ?? array() ), 'composite-provider-destination-overlay-survives-stylesheet-admission' );
 	$assert( empty( $validated_phone_presentation['errors'] ) && 4 === count( $phone_destinations ) && empty( $phone_destinations[0]['properties'] ) && str_contains( (string) ( $phone_destinations[1]['selector'] ?? '' ), '-destination-primary' ) && str_contains( (string) ( $phone_destinations[3]['selector'] ?? '' ), '-destination-prefix' ) && 'flex' === ( $phone_destinations[3]['resets']['display'] ?? null ) && 'center' === ( $phone_destinations[3]['resets']['align-items'] ?? null ) && '100%' === ( $phone_destinations[3]['resets']['height'] ?? null ) && str_contains( $phone_presentation_css, 'background-color:#fff!important' ) && str_contains( $phone_presentation_css, 'border-color:#1e4b6e!important' ) && str_contains( $phone_presentation_css, 'padding-block-start:8px!important' ) && str_contains( $phone_presentation_css, 'padding-inline-end:8px!important' ) && str_contains( $phone_presentation_css, 'padding:0!important;border:0!important;background:transparent!important;text-indent:0!important;gap:0!important' ) && str_contains( $phone_presentation_css, 'display:flex!important;align-items:center!important;height:100%!important' ), 'phone-presentation-keeps-input-styles-on-value-and-neutralizes-provider-added-shell', wp_json_encode( array( 'css' => $phone_presentation_css, 'target' => $phone_presentation_target ) ) );
+	$assert( 4 === count( $phone_destination_hooks ) && empty( array_filter( $phone_destination_hooks, static fn( string $hook ): bool => ! str_contains( $phone_markup, $hook ) ) ), 'phone-markup-hooks-and-overlay-destinations-share-one-prepared-calculation', wp_json_encode( array( 'markup' => $phone_markup, 'hooks' => $phone_destination_hooks ) ) );
+	$whitespace_phone_presentation                            = $phone_presentation;
+	$whitespace_phone_presentation['forms'][0]['controls'][0]['type'] = ' tel ';
+	$validated_whitespace_phone_presentation                  = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $whitespace_phone_presentation );
+	$whitespace_phone_row                                     = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_whitespace_phone_presentation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$whitespace_phone_destinations                             = $whitespace_phone_row['provider_layout_target_map']['presentation_targets'][0]['destinations'] ?? array();
+	$whitespace_phone_markup                                  = (string) ( $whitespace_phone_row['block_markup'] ?? '' );
+	$whitespace_phone_hooks                                   = array();
+	foreach ( $whitespace_phone_destinations as $destination ) {
+		if ( is_array( $destination ) && preg_match( '/\.((?:ssi-node)-[a-f0-9]{12}-destination-(?:shell|primary|carrier|prefix))$/', (string) ( $destination['selector'] ?? '' ), $matches ) ) {
+			$whitespace_phone_hooks[] = $matches[1];
+		}
+	}
+	$assert( empty( $validated_whitespace_phone_presentation['errors'] ) && 4 === count( $whitespace_phone_hooks ) && empty( array_filter( $whitespace_phone_hooks, static fn( string $hook ): bool => ! str_contains( $whitespace_phone_markup, $hook ) ) ), 'whitespace-padded-tel-shares-phone-markup-hooks-and-overlay-destinations', wp_json_encode( array( 'markup' => $whitespace_phone_markup, 'hooks' => $whitespace_phone_hooks ) ) );
 	$editor_chrome_graph = array(
 		'schema' => 'generic/computed-form-presentation/v2', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'controls' => 128, 'rules_per_role' => 32 ), 'visual_parts' => array(), 'visual_groups' => array(), 'variants' => array(), 'diagnostics' => array(),
 		'controls' => array( array( 'index' => 0, 'control' => $presentation_role( array( 'border' => '0' ), array( 'border' ), 'input' ) ) ),
