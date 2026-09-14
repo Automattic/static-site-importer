@@ -115,6 +115,21 @@ $public_data = Static_Site_Importer_Entity_Materializer_Registry::project_public
 $public_json = json_encode( $public_data );
 $assert( 'failed' === ( $public_data['status'] ?? '' ) && 'import-42' === ( $public_data['import_id'] ?? '' ) && array() === ( $public_data['diagnostics'] ?? null ) && ! isset( $public_data['private_path'], $public_data['callback_url'], $public_data['nested'] ) && false !== $public_json && ! str_contains( $public_json, 'secret' ) && ! str_contains( $public_json, 'must_not_be_scanned' ), 'public-error-data-is-shallow-allowlisted-and-diagnostic-scanning-is-bounded' );
 
+$dependency_data = Static_Site_Importer_Entity_Materializer_Registry::project_public_error_data(
+	array(
+		'dependency' => array(
+			'slug'        => 'jetpack',
+			'plugin_file' => 'jetpack/jetpack.php',
+			'status'      => 'failed',
+			'error'       => array(
+				'code'    => 'static_site_importer_capability_forbidden',
+				'message' => 'Current-site materialization requires install_plugins.',
+			),
+		),
+	)
+);
+$assert( array( 'slug' => 'jetpack', 'status' => 'failed', 'error' => array( 'code' => 'static_site_importer_capability_forbidden' ) ) === ( $dependency_data['dependency'] ?? null ), 'public-error-data-retains-bounded-dependency-identity-and-error-code-without-paths-or-free-text' );
+
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );
