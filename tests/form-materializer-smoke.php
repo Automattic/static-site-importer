@@ -627,9 +627,9 @@ namespace {
 	$assert( str_contains( (string) $phone_popup_row['block_markup'], 'ssi-source-wrapper-shell-0\u002d\u002dphone-shell' ), 'common-source-ancestor-targets-composite-shell-rather-than-only-value' );
 	$assert( 'mapped' === ( $phone_popup_row['status'] ?? '' ) && ! in_array( 'provider_wrapper_layout_unrepresentable', $phone_popup_losses, true ) && in_array( 'provider_auxiliary_popup_control', array_column( $phone_popup_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ) && ! str_contains( (string) ( $phone_popup_row['block_markup'] ?? '' ), 'ssi-source-wrapper-1\u002d\u002dcountry-picker' ), 'owned-phone-country-popup-does-not-transfer-auxiliary-wrappers-to-value-input', wp_json_encode( $phone_popup_row ) );
 	$unrelated_adjacent_phone_popup = $phone_popup_form;
-	$unrelated_adjacent_phone_popup['controls'][0]['label'] = 'Open service menu';
+	$unrelated_adjacent_phone_popup['controls'][0]['aria_haspopup'] = 'false';
 	$unrelated_adjacent_phone_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $unrelated_adjacent_phone_popup ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
-	$assert( 'skipped' === ( $unrelated_adjacent_phone_row['status'] ?? '' ) && in_array( 'unsupported_control_unrepresentable', array_column( $unrelated_adjacent_phone_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true ) && ! in_array( 'provider_auxiliary_popup_control', array_column( $unrelated_adjacent_phone_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'adjacent-non-country-popup-before-phone-remains-unrepresented-and-preserved', wp_json_encode( $unrelated_adjacent_phone_row ) );
+	$assert( 'skipped' === ( $unrelated_adjacent_phone_row['status'] ?? '' ) && str_contains( (string) ( $unrelated_adjacent_phone_row['block_markup'] ?? '' ), 'type="button"' ) && ! in_array( 'provider_auxiliary_popup_control', array_column( $unrelated_adjacent_phone_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'plain-button-with-aria-haspopup-false-remains-native-and-loss-gated', wp_json_encode( $unrelated_adjacent_phone_row ) );
 	$mobile_phone_form = $phone_popup_form;
 	$mobile_phone_form['fallback_identity'] = str_repeat( 'c', 64 );
 	$mobile_phone_form['controls'] = array(
@@ -655,7 +655,7 @@ namespace {
 	$incompatible_mobile_phone_form = $mobile_phone_form;
 	$incompatible_mobile_phone_form['controls'][3]['aria_haspopup'] = 'tooltip';
 	$incompatible_mobile_phone_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $incompatible_mobile_phone_form ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
-	$assert( 'skipped' === ( $incompatible_mobile_phone_row['status'] ?? '' ) && in_array( 'unsupported_control_unrepresentable', array_column( $incompatible_mobile_phone_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true ), 'explicitly-incompatible-country-popup-before-phone-remains-unrepresented', wp_json_encode( $incompatible_mobile_phone_row ) );
+	$assert( 'skipped' === ( $incompatible_mobile_phone_row['status'] ?? '' ) && str_contains( (string) ( $incompatible_mobile_phone_row['block_markup'] ?? '' ), 'type="button"' ) && ! in_array( 'provider_auxiliary_popup_control', array_column( $incompatible_mobile_phone_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'explicitly-incompatible-country-popup-remains-native-and-loss-gated', wp_json_encode( $incompatible_mobile_phone_row ) );
 	$presentation_form = $topology_form;
 	$presentation_role = static function ( array $styles, array $properties, string $selector ): array {
 		return array(
@@ -838,7 +838,7 @@ namespace {
 	if ( ! is_readable( $candidate_transformer ) ) {
 		throw new RuntimeException( 'The required Blocks Engine transformer is unavailable.' );
 	}
-	$candidate_artifact = array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => '<link rel="stylesheet" href="style.css"><main><form><div><button type="button" aria-label="Phone country selector"><span class="sourcegroup"><svg class="globe" width="24" height="24" viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/></svg><svg class="chevron" width="16" height="16" viewBox="0 0 16 16"><path d="M4 7l4 4 4-4"/></svg></span></button><input type="tel" name="phone"></div></form></main>', 'style.css' => '.sourcegroup{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:8px}.globe{width:24px;color:rgb(30,75,110)}.chevron{width:16px}@media (min-width:769px){.sourcegroup{gap:4px}.chevron{width:12px}}' ) );
+	$candidate_artifact = array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => '<link rel="stylesheet" href="style.css"><main><form><div><button type="button" aria-haspopup="listbox" aria-label="Phone country selector"><span class="sourcegroup"><svg class="globe" width="24" height="24" viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/></svg><svg class="chevron" width="16" height="16" viewBox="0 0 16 16"><path d="M4 7l4 4 4-4"/></svg></span></button><input type="tel" name="phone"></div></form></main>', 'style.css' => '.sourcegroup{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:8px}.globe{width:24px;color:rgb(30,75,110)}.chevron{width:16px}@media (min-width:769px){.sourcegroup{gap:4px}.chevron{width:12px}}' ) );
 	$candidate_artifact['files']['style.css'] .= 'button{position:relative;flex-shrink:0;transform:translateX(0)}';
 	$candidate_code = 'require ' . var_export( $candidate_transformer, true ) . '; echo json_encode(blocks_engine_php_transformer_compile_artifact(' . var_export( $candidate_artifact, true ) . '));';
 	$candidate_json = shell_exec( escapeshellarg( PHP_BINARY ) . ' -r ' . escapeshellarg( $candidate_code ) );
@@ -867,7 +867,7 @@ namespace {
 	$visual_provider_html = Static_Site_Importer_Provider_Form_Runtime_V1::project_empty_country_visual_state( '<div class="jetpack-field__input-phone-wrapper" data-wp-context="{&quot;defaultCountry&quot;:&quot;&quot;}"><button class="jetpack-combobox-trigger"><span class="jetpack-combobox-trigger-arrow"><svg></svg></span><span class="jetpack-combobox-selected" data-wp-text="context.selectedCountry.value"></span></button><input type="hidden" id="' . ( $visual_state['field_id'] ?? '' ) . '"></div>' );
 	$auxiliary_target = $visual_state_row['provider_layout_target_map']['presentation_targets'][0]['destinations'][0] ?? array();
 	$auxiliary_overlay = (string) ( $visual_state_row['provider_layout_overlay_css']['css'] ?? '' );
-	$assert( empty( $validated_visual_state['errors'] ) && 2 === count( $visual_state['parts'] ?? array() ) && 'visual-group-' === substr( (string) ( $visual_state['group']['id'] ?? '' ), 0, 13 ) && str_contains( $visual_provider_html, '&quot;defaultCountry&quot;:&quot;US&quot;' ) && ! str_contains( $visual_provider_html, 'data-wp-bind--hidden="context.selectedCountry.value"' ) && str_contains( $visual_provider_html, 'data-wp-bind--hidden="!context.selectedCountry.value"' ) && str_contains( $visual_provider_html, '.jetpack-combobox-selected' ) && str_contains( $visual_provider_html, ':not([hidden])' ) && str_contains( $visual_provider_html, 'display:flex!important' ) && str_contains( $visual_provider_html, 'gap:8px!important' ) && str_contains( $visual_provider_html, 'gap:4px!important' ) && str_contains( $visual_provider_html, 'width:24px!important' ) && str_contains( $visual_provider_html, 'width:12px!important' ) && str_contains( $visual_provider_html, '@media (min-width:769px)' ) && str_contains( $visual_provider_html, 'jetpack-combobox-trigger-arrow' ) && str_contains( $visual_provider_html, (string) ( $visual_state['trigger_class'] ?? '' ) ) && str_contains( (string) ( $auxiliary_target['selector'] ?? '' ), '-destination-country-trigger' ) && str_contains( $auxiliary_overlay, 'position:relative!important' ) && str_contains( $auxiliary_overlay, 'flex-shrink:0!important' ) && str_contains( $auxiliary_overlay, 'transform:translateX(0)!important' ) && empty( $visual_state_row['form_receipt_unaccepted_losses'] ?? array() ) && ! str_contains( $visual_provider_html, 'base64' ), 'candidate-v2-auxiliary-visual-group-retains-source-flex-and-empty-country-chrome-with-functional-default', wp_json_encode( array( 'validation' => $validated_visual_state, 'row' => $visual_state_row, 'html' => $visual_provider_html ) ) );
+	$assert( empty( $validated_visual_state['errors'] ) && 'submit' === ( $validated_visual_state['forms'][0]['controls'][0]['type'] ?? '' ) && true === ( $visual_state_row['runtime_mapped'] ?? false ) && 2 === count( $visual_state['parts'] ?? array() ) && 'visual-group-' === substr( (string) ( $visual_state['group']['id'] ?? '' ), 0, 13 ) && str_contains( $visual_provider_html, '&quot;defaultCountry&quot;:&quot;US&quot;' ) && ! str_contains( $visual_provider_html, 'data-wp-bind--hidden="context.selectedCountry.value"' ) && str_contains( $visual_provider_html, 'data-wp-bind--hidden="!context.selectedCountry.value"' ) && str_contains( $visual_provider_html, '.jetpack-combobox-selected' ) && str_contains( $visual_provider_html, ':not([hidden])' ) && str_contains( $visual_provider_html, 'display:flex!important' ) && str_contains( $visual_provider_html, 'gap:8px!important' ) && str_contains( $visual_provider_html, 'gap:4px!important' ) && str_contains( $visual_provider_html, 'width:24px!important' ) && str_contains( $visual_provider_html, 'width:12px!important' ) && str_contains( $visual_provider_html, '@media (min-width:769px)' ) && str_contains( $visual_provider_html, 'jetpack-combobox-trigger-arrow' ) && str_contains( $visual_provider_html, (string) ( $visual_state['trigger_class'] ?? '' ) ) && str_contains( (string) ( $auxiliary_target['selector'] ?? '' ), '-destination-country-trigger' ) && str_contains( $auxiliary_overlay, 'position:relative!important' ) && str_contains( $auxiliary_overlay, 'flex-shrink:0!important' ) && str_contains( $auxiliary_overlay, 'transform:translateX(0)!important' ) && empty( $visual_state_row['form_receipt_unaccepted_losses'] ?? array() ) && ! str_contains( $visual_provider_html, 'base64' ), 'candidate-producer-submit-coercion-still-materializes-country-selector-with-functional-default', wp_json_encode( array( 'validation' => $validated_visual_state, 'row' => $visual_state_row, 'html' => $visual_provider_html ) ) );
 	$marker_artifact = array(
 		'entrypoint' => 'index.html',
 		'files'      => array(
@@ -1563,6 +1563,47 @@ namespace {
 	$assert( empty( $hidden_control_validation['errors'] ) && array() === $hidden_control_losses, 'hidden-control-plumbing-records-no-topology-loss' );
 	$assert( 'mapped' === ( $hidden_control_row['status'] ?? '' ) && empty( $hidden_control_row['form_receipt_unaccepted_losses'] ), 'hidden-control-plumbing-keeps-the-form-materializable' );
 	$assert( str_contains( $hidden_control_markup, 'First name' ) && str_contains( $hidden_control_markup, 'Message' ) && ! str_contains( $hidden_control_markup, 'ucfid' ), 'hidden-control-plumbing-is-dropped-without-disturbing-authored-fields' );
+	// Search mode buttons are not lead-form submits, and a nested source label still
+	// maps to Jetpack's one field label when it owns exactly one provider field.
+	$native_controls = array(
+		'forms' => array(
+			array(
+				'selector' => 'form.property-search',
+				'controls' => array(
+					array( 'tag' => 'button', 'type' => 'button', 'text' => 'Buy', 'class' => 'mode-active' ),
+					array( 'tag' => 'button', 'type' => 'button', 'text' => 'Rent', 'class' => 'mode-idle' ),
+					array( 'tag' => 'select', 'type' => 'select', 'name' => 'property_type', 'label' => 'Property type', 'options' => array( 'House', 'Apartment' ) ),
+					array( 'tag' => 'input', 'type' => 'text', 'name' => 'location', 'label' => 'Location' ),
+					array( 'tag' => 'button', 'type' => 'submit', 'text' => 'Search' ),
+				),
+				'control_topology' => array( 'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 16, 'truncated' => false, 'nodes' => array(
+					array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div' ),
+					array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'control' => 0 ),
+					array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 1, 'depth' => 1, 'control' => 1 ),
+					array( 'id' => 'control-2', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 2 ),
+					array( 'id' => 'control-3', 'kind' => 'control', 'parent' => null, 'order' => 2, 'depth' => 0, 'control' => 3 ),
+					array( 'id' => 'control-4', 'kind' => 'control', 'parent' => null, 'order' => 3, 'depth' => 0, 'control' => 4 ),
+				) ),
+			),
+			array(
+				'selector' => 'form.valuation',
+				'controls' => array( array( 'tag' => 'input', 'type' => 'text', 'name' => 'name', 'label' => 'Name' ), array( 'tag' => 'button', 'type' => 'submit', 'text' => 'Request valuation' ) ),
+				'control_topology' => array( 'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 16, 'truncated' => false, 'nodes' => array(
+					array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'label' ),
+					array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'span' ),
+					array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'control' => 0 ),
+					array( 'id' => 'control-1', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 1 ),
+				) ),
+			),
+		),
+	);
+	$native_controls_valid = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $native_controls );
+	$native_controls_seed  = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $native_controls_valid['forms'] ?? array() ) );
+	$native_search         = $native_controls_seed['forms'][0] ?? array();
+	$native_lead           = $native_controls_seed['forms'][1] ?? array();
+	$assert( empty( $native_controls_valid['errors'] ) && 'mapped' === ( $native_search['status'] ?? '' ) && 'mapped' === ( $native_lead['status'] ?? '' ) && 2 === ( $native_search['field_count'] ?? 0 ) && 1 === ( $native_lead['field_count'] ?? 0 ), 'native-buttons-and-nested-labels-materialize-as-separate-provider-forms', wp_json_encode( $native_controls_seed ) );
+	$assert( 2 === substr_count( (string) ( $native_search['block_markup'] ?? '' ), 'type="button"' ) && str_contains( (string) ( $native_search['block_markup'] ?? '' ), '>Buy</button>' ) && str_contains( (string) ( $native_search['block_markup'] ?? '' ), '>Rent</button>' ) && empty( $native_lead['form_receipt_unaccepted_losses'] ), 'native-mode-buttons-and-one-control-nested-label-keep-their-semantics', wp_json_encode( array( $native_search['computed_layout_receipt'] ?? array(), $native_lead['computed_layout_receipt'] ?? array() ) ) );
+	$assert( (string) ( $native_search['block_markup'] ?? '' ) === serialize_blocks( parse_blocks( (string) ( $native_search['block_markup'] ?? '' ) ) ) && (string) ( $native_lead['block_markup'] ?? '' ) === serialize_blocks( parse_blocks( (string) ( $native_lead['block_markup'] ?? '' ) ) ), 'native-control-provider-markup-round-trips-through-wordpress' );
 	$list_wrapper = $topology_form;
 	$list_wrapper['forms'][0]['control_topology']['nodes'][0]['tag'] = 'ul';
 	$list_wrapper['forms'][0]['layout_graph']['nodes'] = array();

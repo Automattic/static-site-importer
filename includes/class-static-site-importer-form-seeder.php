@@ -457,6 +457,11 @@ class Static_Site_Importer_Form_Seeder {
 			}
 
 			$presentation_descriptor = $presentation_descriptors[ $control_index ];
+			$is_auxiliary_button    = 'button' === $tag && self::is_provider_auxiliary_button( $controls, $control_index );
+			if ( $is_auxiliary_button ) {
+				// The provider owns this control as part of a field rather than as an action.
+				continue;
+			}
 
 			if ( 'submit' === $type || ( 'button' === $tag && 'submit' === $type ) ) {
 				$text              = self::control_text( $control );
@@ -483,6 +488,14 @@ class Static_Site_Importer_Form_Seeder {
 					$presentation_class             = $presentation_descriptor['control_class'];
 					$field_blocks[ $control_index ] = self::submit_button_block( $submit_text, trim( self::layout_node_class( $scope, 'control-' . $control_index ) . ' ' . $presentation_class ), $submit_presentation );
 				}
+				continue;
+			}
+			if ( 'button' === $tag && 'button' === $type ) {
+				// Mode and filter controls remain native buttons; they are not submits.
+				$field_blocks[ $control_index ] = self::button_block(
+					self::control_text( $control ),
+					trim( (string) ( $control['class'] ?? '' ) . ' ' . self::layout_node_class( $scope, 'control-' . $control_index ) . ' ' . $presentation_descriptor['control_class'] )
+				);
 				continue;
 			}
 
@@ -908,6 +921,36 @@ class Static_Site_Importer_Form_Seeder {
 		return 'hidden' !== $type;
 	}
 
+	/** Identify a provider-owned field companion without consuming ordinary buttons. */
+	private static function is_provider_auxiliary_button( array $controls, int $control_index ): bool {
+		$button = $controls[ $control_index ] ?? array();
+		$next   = $controls[ $control_index + 1 ] ?? array();
+		if ( ! is_array( $button ) || 'button' !== strtolower( trim( (string) ( $button['tag'] ?? '' ) ) ) ) {
+			return false;
+		}
+		$popup = strtolower( trim( (string) ( $button['aria-haspopup'] ?? $button['aria_haspopup'] ?? '' ) ) );
+		if ( 'listbox' === $popup && is_array( $next ) && in_array( strtolower( trim( (string) ( $next['type'] ?? '' ) ) ), array( 'tel', 'phone' ), true ) ) {
+			return true;
+		}
+		$described = preg_split( '/\s+/', trim( (string) ( $button['aria_describedby'] ?? '' ) ) );
+		if ( in_array( $popup, array( 'true', 'menu', 'tree', 'grid', 'dialog' ), true ) && false !== $described && ! empty( $described ) ) {
+			foreach ( $controls as $field ) {
+				if ( is_array( $field ) && ! empty( $field['readonly'] ) && in_array( (string) ( $field['label_id'] ?? '' ), $described, true ) ) {
+					return true;
+				}
+			}
+		}
+		if ( ! is_array( $next ) || ! in_array( strtolower( trim( (string) ( $next['type'] ?? '' ) ) ), array( 'tel', 'phone' ), true ) ) {
+			return false;
+		}
+		// Existing mobile captures expose this relationship only through their visible
+		// provider control label. Retain that shipped contract until its producer emits
+		// a typed replacement; incompatible popup values and ordinary buttons stay native.
+		return ( '' === $popup || in_array( $popup, array( 'true', 'menu', 'listbox', 'tree', 'grid', 'dialog' ), true ) )
+			&& str_contains( strtolower( self::control_text( $button ) ), 'phone' )
+			&& str_contains( strtolower( self::control_text( $button ) ), 'country' );
+	}
+
 	/** Accept only a non-nested root fieldset that contains every mapped provider control. */
 	private static function projectable_plain_root_fieldset( array $fieldset, array $nodes, array $field_blocks ): bool {
 		if ( 'wrapper' !== ( $fieldset['kind'] ?? null ) || 'fieldset' !== ( $fieldset['tag'] ?? null ) || 'plain_group' !== ( $fieldset['fieldset_semantics'] ?? null ) || null !== ( $fieldset['parent'] ?? null ) || ! is_string( $fieldset['id'] ?? null ) || empty( $field_blocks ) ) {
@@ -981,10 +1024,23 @@ class Static_Site_Importer_Form_Seeder {
 			if ( 'label' !== $tag ) {
 				return false;
 			}
-			$controls = array_values(
+			$nodes_by_id = array_column( $nodes, null, 'id' );
+			$controls    = array_values(
 				array_filter(
 					$nodes,
-					static fn( $candidate ): bool => is_array( $candidate ) && 'control' === ( $candidate['kind'] ?? '' ) && ( $candidate['parent'] ?? '' ) === ( $node['id'] ?? '' ) && is_int( $candidate['control'] ?? null ) && isset( $field_blocks[ $candidate['control'] ] )
+					static function ( $candidate ) use ( $node, $nodes_by_id, $field_blocks ): bool {
+						if ( ! is_array( $candidate ) || 'control' !== ( $candidate['kind'] ?? '' ) || ! is_int( $candidate['control'] ?? null ) || ! isset( $field_blocks[ $candidate['control'] ] ) ) {
+							return false;
+						}
+						$parent = $candidate['parent'] ?? null;
+						while ( is_string( $parent ) ) {
+							if ( $parent === ( $node['id'] ?? null ) ) {
+								return true;
+							}
+							$parent = $nodes_by_id[ $parent ]['parent'] ?? null;
+						}
+						return false;
+					}
 				)
 			);
 			return 1 === count( $controls );
@@ -1236,11 +1292,7 @@ class Static_Site_Importer_Form_Seeder {
 				continue;
 			}
 			$previous            = $controls[ $control_index - 1 ] ?? null;
-			$previous_popup      = is_array( $previous ) ? strtolower( trim( (string) ( $previous['aria_haspopup'] ?? '' ) ) ) : '';
-			$previous_label      = is_array( $previous ) ? strtolower( trim( (string) ( $previous['label'] ?? $previous['text'] ?? '' ) ) ) : '';
-			$is_country_selector = str_contains( $previous_label, 'phone' ) && str_contains( $previous_label, 'country' );
-			$popup_is_compatible = '' === $previous_popup || in_array( $previous_popup, array( 'true', 'menu', 'listbox', 'tree', 'grid', 'dialog' ), true );
-			if ( is_array( $previous ) && 'button' === strtolower( trim( (string) ( $previous['tag'] ?? '' ) ) ) && $popup_is_compatible && $is_country_selector && $shares_phone_group( $control_index - 1, $control_index ) ) {
+			if ( is_array( $previous ) && self::is_provider_auxiliary_button( $controls, $control_index - 1 ) && $shares_phone_group( $control_index - 1, $control_index ) ) {
 				$provider_controls[ $control_index - 1 ]        = true;
 				$phone_popup_targets[ $control_index - 1 ]      = $control_index;
 				$auxiliary_popup_controls[ $control_index - 1 ] = true;
@@ -2551,6 +2603,22 @@ class Static_Site_Importer_Form_Seeder {
 		return $block;
 	}
 
+	/** Build a non-submitting source button without changing the form's submission action. */
+	private static function button_block( string $text, string $class_name = '' ): array {
+		return array(
+			'name'    => 'core/button',
+			'attrs'   => array(
+				'tagName'   => 'button',
+				'type'      => 'button',
+				'lock'      => array( 'remove' => true ),
+				'className' => $class_name,
+				'metadata'  => array( 'name' => 'Button' ),
+			),
+			'content' => '' !== trim( $text ) ? trim( $text ) : 'Button',
+			'wrapper' => 'button',
+		);
+	}
+
 	/** Serialize source context as editable core blocks beside the provider form. */
 	private static function context_block_markup( array $form, string $position ): string {
 		$context = isset( $form['form'][ $position ] ) && is_array( $form['form'][ $position ] ) ? $form['form'][ $position ] : array();
@@ -3271,9 +3339,10 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			$prefix = "\n<div class=\"" . self::escape_attribute( $classes ) . '">';
 			$suffix = "</div>\n";
-		} elseif ( 'submit' === $wrapper ) {
+		} elseif ( in_array( $wrapper, array( 'submit', 'button' ), true ) ) {
 			$classes = trim( 'wp-block-button ' . (string) ( $attrs['className'] ?? '' ) );
-			$prefix  = "\n<div class=\"" . self::escape_attribute( $classes ) . '"><button type="submit" class="wp-block-button__link wp-element-button">' . self::rich_text_markup( $content, $label ) . "</button></div>\n";
+			$type    = 'submit' === $wrapper ? 'submit' : 'button';
+			$prefix  = "\n<div class=\"" . self::escape_attribute( $classes ) . '"><button type="' . $type . '" class="wp-block-button__link wp-element-button">' . self::rich_text_markup( $content, $label ) . "</button></div>\n";
 		} elseif ( 'heading' === $wrapper ) {
 			$level  = min( 6, max( 1, (int) ( $attrs['level'] ?? 2 ) ) );
 			$prefix = "\n<h" . $level . ' class="wp-block-heading">' . self::rich_text_markup( $content ) . '</h' . $level . ">\n";
