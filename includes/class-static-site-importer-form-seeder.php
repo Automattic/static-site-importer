@@ -719,6 +719,14 @@ class Static_Site_Importer_Form_Seeder {
 		$presentation_graph = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
 		$overlay            = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map, $presentation_graph );
 		$overlay            = self::collapse_inactive_provider_errors( $overlay, $scope, $mapped_types );
+		$editor_map = self::editor_layout_target_map( $target_map, $scope );
+		$editor_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $editor_map, $presentation_graph, $form['form']['container_presentation'] ?? array(), true );
+		if ( isset( $editor_overlay['overlay']['editor_css'] ) ) {
+			foreach ( array( 'editor_css', 'editor_sha256', 'editor_bytes' ) as $key ) {
+				$overlay['overlay'][ $key ] = $editor_overlay['overlay'][ $key ];
+			}
+		}
+		self::append_receipt_entries( $layout['receipt'], 'losses', $editor_overlay['losses'] );
 		self::append_receipt_entries( $layout['receipt'], 'operations', $overlay['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'operations', $layout_intent['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $overlay['losses'] );
@@ -2451,6 +2459,9 @@ class Static_Site_Importer_Form_Seeder {
 			);
 		} elseif ( '' !== $label ) {
 			$label_attrs = array( 'label' => $label );
+			if ( isset( $attrs['requiredIndicator'] ) ) {
+				$label_attrs['requiredIndicator'] = $attrs['requiredIndicator'];
+			}
 			if ( ! empty( $attrs['required'] ) && is_string( $control['required_text'] ?? null ) && strlen( $control['required_text'] ) <= 32 ) {
 				$label_attrs['requiredText'] = wp_strip_all_tags( $control['required_text'] );
 			}
@@ -2526,6 +2537,7 @@ class Static_Site_Importer_Form_Seeder {
 			}
 		}
 		$block_name = 'checkbox' === $lookup && ! empty( $attrs['options'] ) ? 'jetpack/field-checkbox-multiple' : $map[ $lookup ];
+		$attrs['shareFieldAttributes'] = false;
 		return array(
 			'name'        => $block_name,
 			'attrs'       => $attrs,
@@ -3189,6 +3201,38 @@ class Static_Site_Importer_Form_Seeder {
 			'phone_destinations' => $phone_destinations,
 			'destinations'       => $destinations,
 		);
+	}
+
+	/** Same source facts, explicit destinations for Jetpack's editable DOM. */
+	private static function editor_layout_target_map( array $map, string $scope ): array {
+		foreach ( $map['targets'] as &$target ) {
+			if ( 'form' === $target['node'] ) {
+				$target['selector'] = '.' . $scope . ' > div.jetpack-contact-form';
+			} elseif ( preg_match( '/^field-([0-9]+)$/D', $target['node'], $match ) ) {
+				$target['selector'] = '.' . $scope . ' .' . self::layout_node_class( $scope, 'control-' . $match[1] ) . ' > div.jetpack-field__control';
+			}
+		}
+		unset( $target );
+		foreach ( $map['presentation_targets'] as &$target ) {
+			$extra = array();
+			foreach ( $target['destinations'] as &$destination ) {
+				if ( 'label' === $destination['role'] ) {
+					$extra[] = array( 'role' => 'label', 'selector' => $destination['selector'], 'properties' => array(), 'resets' => array( 'display' => 'block', 'margin' => '0', 'padding' => '0' ) );
+					$destination['selector'] .= ' > label';
+				}
+				if ( 'control' === $destination['role'] && preg_match( '/ \.ssi-node-[a-f0-9]{12}$/D', $destination['selector'] ) ) {
+					$extra[] = array( 'role' => 'control', 'selector' => $destination['selector'] . '::placeholder', 'properties' => array(), 'resets' => array( 'color' => 'revert', 'opacity' => 'revert' ) );
+				}
+				if ( str_ends_with( $destination['selector'], ' > .wp-block-button__link' ) ) {
+					unset( $destination['resets']['font-family'], $destination['resets']['line-height'] );
+					$destination['resets']['font'] = '-webkit-small-control';
+				}
+			}
+			unset( $destination );
+			$target['destinations'] = array_merge( $target['destinations'], $extra );
+		}
+		unset( $target );
+		return $map;
 	}
 
 	private static function provider_layout_target_map( array $form, string $scope, array $presentation_descriptors, array $box_targets = array(), array $phone_popup_targets = array(), string $country_trigger_class = '' ): array {
