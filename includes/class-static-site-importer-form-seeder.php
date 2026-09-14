@@ -457,6 +457,11 @@ class Static_Site_Importer_Form_Seeder {
 			}
 
 			$presentation_descriptor = $presentation_descriptors[ $control_index ];
+			$is_auxiliary_button    = 'button' === $tag && self::is_provider_auxiliary_button( $controls, $control_index );
+			if ( $is_auxiliary_button ) {
+				// The provider owns this control as part of a field rather than as an action.
+				continue;
+			}
 
 			if ( 'submit' === $type || ( 'button' === $tag && 'submit' === $type ) ) {
 				$text              = self::control_text( $control );
@@ -485,7 +490,7 @@ class Static_Site_Importer_Form_Seeder {
 				}
 				continue;
 			}
-			if ( 'button' === $tag && 'button' === $type && ! self::is_provider_auxiliary_button( $controls, $control_index ) ) {
+			if ( 'button' === $tag && 'button' === $type ) {
 				// Mode and filter controls remain native buttons; they are not submits.
 				$field_blocks[ $control_index ] = self::button_block(
 					self::control_text( $control ),
@@ -915,11 +920,11 @@ class Static_Site_Importer_Form_Seeder {
 		return 'hidden' !== $type;
 	}
 
-	/** Jetpack owns a listbox immediately preceding its telephone value control. */
+	/** Identify a provider-owned field companion without consuming ordinary buttons. */
 	private static function is_provider_auxiliary_button( array $controls, int $control_index ): bool {
 		$button = $controls[ $control_index ] ?? array();
 		$next   = $controls[ $control_index + 1 ] ?? array();
-		if ( ! is_array( $button ) ) {
+		if ( ! is_array( $button ) || 'button' !== strtolower( trim( (string) ( $button['tag'] ?? '' ) ) ) ) {
 			return false;
 		}
 		$popup = strtolower( trim( (string) ( $button['aria-haspopup'] ?? $button['aria_haspopup'] ?? '' ) ) );
@@ -927,15 +932,22 @@ class Static_Site_Importer_Form_Seeder {
 			return true;
 		}
 		$described = preg_split( '/\s+/', trim( (string) ( $button['aria_describedby'] ?? '' ) ) );
-		if ( ! in_array( $popup, array( 'true', 'menu', 'tree', 'grid', 'dialog' ), true ) || false === $described || empty( $described ) ) {
-			return false;
-		}
-		foreach ( $controls as $field ) {
-			if ( is_array( $field ) && ! empty( $field['readonly'] ) && in_array( (string) ( $field['label_id'] ?? '' ), $described, true ) ) {
-				return true;
+		if ( in_array( $popup, array( 'true', 'menu', 'tree', 'grid', 'dialog' ), true ) && false !== $described && ! empty( $described ) ) {
+			foreach ( $controls as $field ) {
+				if ( is_array( $field ) && ! empty( $field['readonly'] ) && in_array( (string) ( $field['label_id'] ?? '' ), $described, true ) ) {
+					return true;
+				}
 			}
 		}
-		return false;
+		if ( ! is_array( $next ) || ! in_array( strtolower( trim( (string) ( $next['type'] ?? '' ) ) ), array( 'tel', 'phone' ), true ) ) {
+			return false;
+		}
+		// Existing mobile captures expose this relationship only through their visible
+		// provider control label. Retain that shipped contract until its producer emits
+		// a typed replacement; incompatible popup values and ordinary buttons stay native.
+		return ( '' === $popup || in_array( $popup, array( 'true', 'menu', 'listbox', 'tree', 'grid', 'dialog' ), true ) )
+			&& str_contains( strtolower( self::control_text( $button ) ), 'phone' )
+			&& str_contains( strtolower( self::control_text( $button ) ), 'country' );
 	}
 
 	/** Accept only a non-nested root fieldset that contains every mapped provider control. */
@@ -1279,8 +1291,7 @@ class Static_Site_Importer_Form_Seeder {
 				continue;
 			}
 			$previous            = $controls[ $control_index - 1 ] ?? null;
-			$previous_popup      = is_array( $previous ) ? strtolower( trim( (string) ( $previous['aria_haspopup'] ?? '' ) ) ) : '';
-			if ( is_array( $previous ) && 'button' === strtolower( trim( (string) ( $previous['tag'] ?? '' ) ) ) && 'button' === strtolower( trim( (string) ( $previous['type'] ?? '' ) ) ) && 'listbox' === $previous_popup && $shares_phone_group( $control_index - 1, $control_index ) ) {
+			if ( is_array( $previous ) && self::is_provider_auxiliary_button( $controls, $control_index - 1 ) && $shares_phone_group( $control_index - 1, $control_index ) ) {
 				$provider_controls[ $control_index - 1 ]        = true;
 				$phone_popup_targets[ $control_index - 1 ]      = $control_index;
 				$auxiliary_popup_controls[ $control_index - 1 ] = true;
