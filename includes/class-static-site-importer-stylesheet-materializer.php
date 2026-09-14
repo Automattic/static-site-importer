@@ -171,7 +171,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 * @return string
 	 */
 	private static function style_css( string $theme_name, string $css, array $visual_repair_styles = array() ): string {
-		$theme_name      = Static_Site_Importer_Generated_File::comment_header_value( $theme_name );
+		$theme_name       = Static_Site_Importer_Generated_File::comment_header_value( $theme_name );
 		$admin_bar_bridge = self::admin_bar_top_chrome_css( $css );
 		$body_class_guard = self::wordpress_body_class_collision_guard_css( $css );
 		$repair_css       = self::visual_repair_css_for_target( $visual_repair_styles, 'frontend' );

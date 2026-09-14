@@ -6,6 +6,8 @@
  */
 
 use Automattic\BlocksEngine\PhpTransformer\AssetAnalysis\SrcsetParser;
+use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\AssetReferenceCanonicalizer;
+use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -15,6 +17,15 @@ if ( ! class_exists( 'Static_Site_Importer_Document' ) ) {
 }
 if ( ! class_exists( SrcsetParser::class ) ) {
 	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/AssetAnalysis/SrcsetParser.php';
+}
+if ( ! class_exists( 'Automattic\\BlocksEngine\\PhpTransformer\\WordPressSitePlan\\WordPressSitePlan' ) ) {
+	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/WordPressSitePlan/WordPressSitePlan.php';
+}
+if ( ! class_exists( AssetReferenceCanonicalizer::class ) ) {
+	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/WordPressSitePlan/AssetReferenceCanonicalizer.php';
+}
+if ( ! class_exists( WordPressSitePlanResolver::class ) ) {
+	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/WordPressSitePlan/WordPressSitePlanResolver.php';
 }
 
 final class Static_Site_Importer_Classic_Theme_Projection {
@@ -61,20 +72,24 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 
 	/** Convert inert fragments into destination-specific writes after the canonical resolver runs. */
 	public static function writes( array $projection, array $resolved, string $theme_uri, string $name ): array {
-		$urls   = self::destination_urls( $resolved, $theme_uri );
+		$tokens = isset( $resolved['reference_tokens'] ) && is_array( $resolved['reference_tokens'] ) ? $resolved['reference_tokens'] : array();
+		$entry  = (string) ( $projection['chrome_source_path'] ?? '' );
+		$root   = '' === $entry || '.' === dirname( $entry ) ? '' : trim( dirname( $entry ), '/' );
+		$assets = new AssetReferenceCanonicalizer( $tokens, $root );
+		$urls   = WordPressSitePlanResolver::references( $tokens, rtrim( $theme_uri, '/' ) );
 		$routes = array();
 		foreach ( $resolved['pages'] ?? array() as $page ) {
 			$routes[ (string) ( $page['source_path'] ?? '' ) ] = (string) ( $page['route']['path'] ?? '' ); }
 		$pages = array();
 		foreach ( $projection['pages'] ?? array() as $source => $page ) {
-			$pages[ $source ] = array( 'html' => self::rewrite_urls( (string) ( $page['html'] ?? '' ), (string) $source, $urls, $routes ) ); }
+			$pages[ $source ] = array( 'html' => self::rewrite_urls( (string) ( $page['html'] ?? '' ), (string) $source, $assets, $urls, $routes ) ); }
 		$chrome_source = (string) ( $projection['chrome_source_path'] ?? '' );
 		$chrome        = array();
 		foreach ( $projection['chrome'] ?? array() as $part => $html ) {
-			$chrome[ $part ] = self::rewrite_urls( (string) $html, $chrome_source, $urls, $routes ); }
+			$chrome[ $part ] = self::rewrite_urls( (string) $html, $chrome_source, $assets, $urls, $routes ); }
 		$css = '';
 		foreach ( $projection['stylesheets'] ?? array() as $source => $stylesheet ) {
-			$css .= self::rewrite_css( (string) $stylesheet, (string) $source, $urls ) . "\n"; }
+			$css .= self::rewrite_css( (string) $stylesheet, (string) $source, $assets, $urls ) . "\n"; }
 		$scaffold                          = Static_Site_Importer_Theme_Materialization_Strategy::fixed_classic_scaffold( $name );
 		$scaffold['style.css']            .= "\n" . $css;
 		$scaffold['classic-pages.json']    = (string) wp_json_encode( array( 'pages' => $pages ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) . "\n";
@@ -364,16 +379,6 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 	}
 	private static function valid_source_path( string $path ): bool {
 		return '' !== $path && ! str_starts_with( $path, '/' ) && ! str_contains( $path, "\0" ) && array() === array_filter( explode( '/', $path ), static fn( string $segment ): bool => '' === $segment || '.' === $segment || '..' === $segment ); }
-	/** @return array<string,string> */
-	private static function destination_urls( array $resolved, string $theme_uri ): array {
-		$urls = array();
-		foreach ( $resolved['writes'] ?? array() as $write ) {
-			$source = (string) ( $write['source_path'] ?? '' );
-			$target = (string) ( $write['target_path'] ?? '' );
-			if ( '' !== $source && '' !== $target && 'theme_asset' === ( $write['kind'] ?? '' ) ) {
-				$urls[ trim( $source, '/' ) ] = rtrim( $theme_uri, '/' ) . '/' . ltrim( $target, '/' );
-			}
-		} return $urls; }
 	private static function root_html( DOMDocument $dom ): string {
 		$html = '';
 		$root = $dom->getElementById( 'ssi-classic-root' );
@@ -383,8 +388,7 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 		foreach ( $root->childNodes as $node ) {
 			$html .= $dom->saveHTML( $node );
 		} return $html; }
-	private static function rewrite_urls( string $content, string $source, array $assets, array $routes ): string {
-		$dir      = trim( dirname( $source ), '/' );
+	private static function rewrite_urls( string $content, string $source, AssetReferenceCanonicalizer $assets, array $urls, array $routes ): string {
 		$dom      = new DOMDocument( '1.0', 'UTF-8' );
 		$previous = libxml_use_internal_errors( true );
 		$dom->loadHTML( '<div id="ssi-classic-root">' . $content . '</div>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
@@ -393,26 +397,31 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 		foreach ( iterator_to_array( $dom->getElementsByTagName( '*' ) ) as $element ) {
 			foreach ( array( 'src', 'href', 'action', 'formaction', 'poster', 'xlink:href' ) as $attribute ) {
 				if ( $element->hasAttribute( $attribute ) ) {
-					$element->setAttribute( $attribute, self::replacement( $element->getAttribute( $attribute ), $dir, $assets, $routes ) );
+					$element->setAttribute( $attribute, self::replacement( $element->getAttribute( $attribute ), $source, $assets, $urls, $routes ) );
 				}
 			} if ( $element->hasAttribute( 'srcset' ) ) {
-				$element->setAttribute( 'srcset', self::rewrite_srcset( $element->getAttribute( 'srcset' ), $dir, $assets, $routes ) );
+				$element->setAttribute( 'srcset', self::rewrite_srcset( $element->getAttribute( 'srcset' ), $source, $assets, $urls, $routes ) );
 			} if ( $element->hasAttribute( 'style' ) ) {
-				$element->setAttribute( 'style', self::rewrite_css( $element->getAttribute( 'style' ), $source, $assets ) );
+				$element->setAttribute( 'style', self::rewrite_css( $element->getAttribute( 'style' ), $source, $assets, $urls ) );
 			}
 		} return self::root_html( $dom ); }
-	private static function replacement( string $url, string $dir, array $assets, array $routes = array() ): string {
+	private static function replacement( string $url, string $source, AssetReferenceCanonicalizer $assets, array $urls, array $routes = array() ): string {
 		if ( '' === $url || str_starts_with( $url, '#' ) || preg_match( '#^(?:[a-z][a-z0-9+.-]*:|//)#i', $url ) ) {
 			return $url;
 		} $parts = preg_split( '/([?#].*)/', $url, 2, PREG_SPLIT_DELIM_CAPTURE );
 		$path    = $parts[0] ?? '';
 		$suffix  = $parts[1] ?? '';
-		$key     = self::artifact_path( $path, $dir );
+		// Only declared plan assets receive destination URLs; unmatched values remain route candidates.
+		$canonical = $assets->reference( $url, $source );
+		if ( null !== $canonical ) {
+			return WordPressSitePlanResolver::resolvePayload( $canonical, $urls );
+		}
+		$key = self::route_path( $path, trim( dirname( $source ), '/' ) );
 		if ( null === $key ) {
 			return '#';
-		} return ( $assets[ $key ] ?? $routes[ $key ] ?? $url ) . ( isset( $assets[ $key ] ) || isset( $routes[ $key ] ) ? $suffix : '' ); }
-	/** Resolve a relative artifact reference without permitting traversal above root. */
-	private static function artifact_path( string $path, string $dir ): ?string {
+		} return ( $routes[ $key ] ?? $url ) . ( isset( $routes[ $key ] ) ? $suffix : '' ); }
+	/** Resolve a relative route reference without permitting traversal above root. */
+	private static function route_path( string $path, string $dir ): ?string {
 		$segments = str_starts_with( $path, '/' ) || '.' === $dir ? array() : array_filter( explode( '/', trim( $dir, '/' ) ), static fn( string $segment ): bool => '' !== $segment );
 		foreach ( explode( '/', $path ) as $segment ) {
 			if ( '' === $segment || '.' === $segment ) {
@@ -443,13 +452,13 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 		return ! preg_match( '/^(?:javascript|vbscript|data:text\/html)/i', self::canonical_url( $url ) ); }
 	private static function safe_srcset( string $srcset ): string {
 		return implode( ', ', array_filter( array_map( static fn( array $candidate ): string => self::safe_url( $candidate['url'] ) ? trim( $candidate['url'] . ' ' . $candidate['descriptor'] ) : '', SrcsetParser::parse( $srcset ) ) ) ); }
-	private static function rewrite_srcset( string $srcset, string $dir, array $assets, array $routes ): string {
+	private static function rewrite_srcset( string $srcset, string $source, AssetReferenceCanonicalizer $assets, array $urls, array $routes ): string {
 		return implode(
 			', ',
 			array_filter(
 				array_map(
-					static function ( array $candidate ) use ( $dir, $assets, $routes ): string {
-						return self::safe_url( $candidate['url'] ) ? self::replacement( $candidate['url'], $dir, $assets, $routes ) . ( '' !== $candidate['descriptor'] ? ' ' . $candidate['descriptor'] : '' ) : '';
+					static function ( array $candidate ) use ( $source, $assets, $urls, $routes ): string {
+						return self::safe_url( $candidate['url'] ) ? self::replacement( $candidate['url'], $source, $assets, $urls, $routes ) . ( '' !== $candidate['descriptor'] ? ' ' . $candidate['descriptor'] : '' ) : '';
 					},
 					SrcsetParser::parse( $srcset )
 				)
@@ -462,24 +471,23 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 		return in_array( preg_replace( '/^.*:/', '', strtolower( $tag ) ) ?? '', array( 'animate', 'animatemotion', 'animatetransform', 'set', 'discard', 'mpath' ), true ); }
 	private static function safe_stylesheet( string $css ): bool {
 		return ! preg_match( '/(?:expression\(|behavior\s*:|-moz-binding|(?:@import|url\([^)]*)[^;)]*(?:javascript|vbscript|data:text\/html))/', self::canonical_url( $css ) ); }
-	private static function rewrite_css( string $css, string $source, array $assets ): string {
+	private static function rewrite_css( string $css, string $source, AssetReferenceCanonicalizer $assets, array $urls ): string {
 		if ( ! self::safe_stylesheet( $css ) ) {
 			return '';
-		} $dir = trim( dirname( $source ), '/' );
-		$css   = (string) preg_replace( '#/\*.*?\*/#s', '', $css );
+		} $css = (string) preg_replace( '#/\*.*?\*/#s', '', $css );
 		$css   = (string) preg_replace( '/^[ \t]*(?:Theme Name|Theme URI|Description|Author|Author URI|Version|Template|Status|Tags|Text Domain|Domain Path|Requires at least|Requires PHP|Update URI)\s*:/im', '/* static-site-importer-theme-header-stripped */', $css );
 		$css   = (string) preg_replace_callback(
 			'/@import\s+(?:url\()?\s*(["\']?)([^\)"\';]+)\1\s*\)?\s*;/i',
-			static function ( array $matches ) use ( $dir, $assets ): string {
-				$url = self::replacement( $matches[2], $dir, $assets );
+			static function ( array $matches ) use ( $source, $assets, $urls ): string {
+				$url = self::replacement( $matches[2], $source, $assets, $urls );
 				return self::safe_url( $matches[2] ) && '#' !== $url ? '@import url("' . $url . '");' : '';
 			},
 			$css
 		);
 		return (string) preg_replace_callback(
 			'/url\(\s*(["\']?)([^\)"\']+)\1\s*\)/i',
-			static function ( array $matches ) use ( $dir, $assets ): string {
-				$url = self::replacement( $matches[2], $dir, $assets );
+			static function ( array $matches ) use ( $source, $assets, $urls ): string {
+				$url = self::replacement( $matches[2], $source, $assets, $urls );
 				return self::safe_url( $matches[2] ) && '#' !== $url ? 'url("' . $url . '")' : 'url("")';
 			},
 			$css

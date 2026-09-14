@@ -2608,6 +2608,9 @@ $publication_file        = $GLOBALS['ssi_plan_root'] . '/publication-plan/assets
 $assert( 'completed' === $publication_receipt['status'] && 'completed' === ( $publication_report['status'] ?? '' ), 'required asset publication capability completes and is receipt-owned' );
 $assert( hash_file( 'sha256', $publication_file ) === ( $publication_report['actual_content_hash'] ?? '' ) && $publication_plan['runtime_declarations'][0]['expected_content_hash'] === ( $publication_report['expected_content_hash'] ?? '' ), 'publication receipt proves canonical and resolved content integrity' );
 $assert( str_contains( file_get_contents( $publication_file ), 'https://example.test/wp-content/themes/publication-plan/assets/assets/font.woff2' ), 'font-bearing SVG resolves only its declared local font URL' );
+$publication_css_file = $GLOBALS['ssi_plan_root'] . '/publication-plan/assets/assets/fonts.css';
+$publication_reference = $publication_report['references'][0] ?? array();
+$assert( is_file( $publication_css_file ) && str_contains( file_get_contents( $publication_css_file ), 'url(font.woff2)' ) && ! str_contains( file_get_contents( $publication_css_file ), 'example.test' ) && 'font.woff2' === ( $publication_reference['expected_resolved_url'] ?? null ), 'asset publication verification binds CSS-file-relative URLs while SVG document content remains site-resolved' );
 
 $GLOBALS['ssi_plan_options'] = array(
 	'show_on_front' => 'posts',

@@ -394,28 +394,28 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	/** @return array<string,string> */
 	private static function layout_property_map(): array {
 		return array(
-			'display'         => 'display',
-			'width'           => 'width',
-			'height'          => 'height',
-			'columns'         => 'grid-template-columns',
-			'rows'            => 'grid-template-rows',
-			'gap'             => 'gap',
-			'row_gap'         => 'row-gap',
-			'column_gap'      => 'column-gap',
-			'direction'       => 'flex-direction',
-			'wrap'            => 'flex-wrap',
-			'align_items'     => 'align-items',
-			'align_content'   => 'align-content',
-			'justify_content' => 'justify-content',
-			'align_self'      => 'align-self',
-			'justify_self'    => 'justify-self',
-			'order'           => 'order',
-			'flex'            => 'flex',
-			'flex_grow'       => 'flex-grow',
-			'flex_shrink'     => 'flex-shrink',
-			'flex_basis'      => 'flex-basis',
-			'column'          => 'grid-column',
-			'row'             => 'grid-row',
+			'display'             => 'display',
+			'width'               => 'width',
+			'height'              => 'height',
+			'columns'             => 'grid-template-columns',
+			'rows'                => 'grid-template-rows',
+			'gap'                 => 'gap',
+			'row_gap'             => 'row-gap',
+			'column_gap'          => 'column-gap',
+			'direction'           => 'flex-direction',
+			'wrap'                => 'flex-wrap',
+			'align_items'         => 'align-items',
+			'align_content'       => 'align-content',
+			'justify_content'     => 'justify-content',
+			'align_self'          => 'align-self',
+			'justify_self'        => 'justify-self',
+			'order'               => 'order',
+			'flex'                => 'flex',
+			'flex_grow'           => 'flex-grow',
+			'flex_shrink'         => 'flex-shrink',
+			'flex_basis'          => 'flex-basis',
+			'column'              => 'grid-column',
+			'row'                 => 'grid-row',
 			'area'                => 'grid-area',
 			'margin_block_start'  => 'margin-block-start',
 			'margin_block_end'    => 'margin-block-end',
@@ -540,10 +540,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				}
 				// An explicit source declaration is authoritative over a provider-default
 				// neutralization at the same destination.
-				if ( 'line-height' === $property && array_key_exists( 'line_height', $styles ) ) {
-					continue;
-				}
-				if ( 'font-family' === $property && array_key_exists( 'font_family', $styles ) ) {
+				if ( 'required_marker' !== $role && in_array( str_replace( '-', '_', $property ), $destination['properties'], true ) && array_key_exists( str_replace( '-', '_', $property ), $styles ) ) {
 					continue;
 				}
 				$reset_declarations[] = $property . ':' . $value;
@@ -593,7 +590,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	private static function safe_presentation_resets( mixed $resets ): bool {
-		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'line-height', 'gap', 'display', 'align-items', 'height' ) ) ) {
+		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'line-height', 'gap', 'display', 'align-items', 'height' ) ) ) {
 			return false;
 		}
 		foreach ( $resets as $property => $value ) {

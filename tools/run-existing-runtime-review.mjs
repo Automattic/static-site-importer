@@ -143,24 +143,57 @@ async function validatePersistedPost(page, options, postId = options.post_id, ex
   return { ...validation, content_sha256: contentHash(persisted.content), ...(expectedMarker ? { marker_present: persisted.content.includes(expectedMarker) } : {}), author: persisted.author, editor: persisted.user };
 }
 
+async function captureEditorCanvas(page) {
+  const canvasFrame = page.locator('iframe[name="editor-canvas"]');
+  await canvasFrame.waitFor({ state: 'attached', timeout: 30_000 });
+  const canvas = page.frameLocator('iframe[name="editor-canvas"]');
+  await canvas.locator('.editor-styles-wrapper').waitFor({ state: 'attached', timeout: 30_000 });
+  const summary = await canvas.locator('[data-block]').evaluateAll((blocks) => {
+    const visible = blocks.filter((block) => {
+      const style = getComputedStyle(block);
+      const rect = block.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+    });
+    return {
+      total_blocks: blocks.length,
+      visible_blocks: visible.length,
+      visible_text_blocks: visible.filter((block) => block.textContent.trim().length > 0).length,
+    };
+  });
+  return { schema: 'static-site-importer/runtime-editor-canvas/v1', canvas_document_type: 'iframe', ...summary };
+}
+
+export function assertEditorCanvasUsable(canvas) {
+  if (canvas?.canvas_document_type !== 'iframe') throw new Error('Gutenberg editor canvas was not rendered in its iframe.');
+  if (!Number.isInteger(canvas.total_blocks) || canvas.total_blocks < 1) throw new Error('Gutenberg editor canvas contains zero blocks.');
+  if (!Number.isInteger(canvas.visible_blocks) || canvas.visible_blocks < 1) throw new Error('Gutenberg editor canvas contains no visible blocks.');
+  if (!Number.isInteger(canvas.visible_text_blocks) || canvas.visible_text_blocks < 1) throw new Error('Gutenberg editor canvas contains no visible editable content.');
+}
+
 async function reviewDraft(page, options, targetBaseline) {
   const marker = `ssi-existing-runtime-review-${Date.now()}`;
   let id = 0;
   try {
     await visit(page, studioAutoLoginUrl(options));
-    id = await page.evaluate(async ({ marker, postType }) => {
-      const post = await window.wp.apiFetch({ path: `/wp/v2/${postType}`, method: 'POST', data: { title: marker, status: 'draft', content: `<!-- wp:paragraph --><p>${marker}</p><!-- /wp:paragraph -->` } });
+    id = await page.evaluate(async ({ marker, postType, postId }) => {
+      const source = await window.wp.apiFetch({ path: `/wp/v2/${postType}/${postId}?context=edit` });
+      const post = await window.wp.apiFetch({ path: `/wp/v2/${postType}`, method: 'POST', data: { title: marker, status: 'draft', content: source.content?.raw || '' } });
       return post.id;
-    }, { marker, postType: options.post_type });
+    }, { marker, postType: options.post_type, postId: options.post_id });
     const initial = await validatePersistedPost(page, options, id);
+    const initialCanvas = await captureEditorCanvas(page);
+    assertEditorCanvasUsable(initialCanvas);
     await page.evaluate(async (marker) => {
       const editor = window.wp.data.dispatch('core/editor');
-      editor.editPost({ content: `<!-- wp:paragraph --><p>${marker} saved</p><!-- /wp:paragraph -->` });
+      const blockEditor = window.wp.data.dispatch('core/block-editor');
+      blockEditor.insertBlocks(window.wp.blocks.createBlock('core/paragraph', { content: `${marker} saved` }));
       await editor.savePost();
     }, marker);
     const reloaded = await validatePersistedPost(page, options, id, `${marker} saved`);
+    const reloadedCanvas = await captureEditorCanvas(page);
+    assertEditorCanvasUsable(reloadedCanvas);
     assertReviewDraftLifecycle({ marker_present: reloaded.marker_present });
-    return { status: initial.invalid_blocks === 0 && reloaded.invalid_blocks === 0 ? 'passed' : 'failed', marker, post_id: id, initial_validation: initial, reloaded_validation: reloaded, persisted: true };
+    return { status: initial.invalid_blocks === 0 && reloaded.invalid_blocks === 0 ? 'passed' : 'failed', marker, post_id: id, initial_validation: initial, reloaded_validation: reloaded, initial_canvas: initialCanvas, reloaded_canvas: reloadedCanvas, persisted: true };
   } finally {
     if (id) {
       await page.evaluate(async ({ id, postType }) => window.wp.apiFetch({ path: `/wp/v2/${postType}/${id}?force=true`, method: 'DELETE' }), { id, postType: options.post_type });
@@ -186,6 +219,8 @@ export async function runExistingRuntimeReview(options) {
     const editor = await browser.newPage();
     try {
       result.editor_validation = await validatePersistedPost(editor, options);
+      result.editor_canvas = await captureEditorCanvas(editor);
+      assertEditorCanvasUsable(result.editor_canvas);
       result.review_draft = await reviewDraft(editor, options, result.editor_validation);
     } finally { await editor.close(); }
     result.status = result.visual_parity.status === 'passed' && result.editor_validation.invalid_blocks === 0 && result.review_draft.status === 'passed' ? 'passed' : 'failed';

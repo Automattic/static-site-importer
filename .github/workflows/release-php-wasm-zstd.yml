@@ -76,12 +76,28 @@ jobs:
           demo_archive="$pages_dir/playground/$RELEASE_TAG/static-site-importer-playground-demo.zip"
           (cd "$demo_build_dir" && zip -q -r "$demo_archive" static-site-importer-playground-demo)
           demo_package_sha256="$(sha256sum "$demo_archive" | cut -d ' ' -f 1)"
+          # Package the upstream runtime files from a checksum-pinned public source archive.
+          migration_source_commit="4688faf6e76071af3e8becd1500071f29b4ec63b"
+          migration_source_sha256="6a49991ed71f68e59cce26926d1221b2966ac3adaf8a6d243aae45feced8d3f1"
+          migration_source_archive="$RUNNER_TEMP/playground-to-wordpress-com-$migration_source_commit.zip"
+          migration_extract_dir="$RUNNER_TEMP/playground-to-wordpress-com-source"
+          curl --fail --silent --show-error --location "https://codeload.github.com/jamiemarsland/playground-to-wordpress-com/zip/$migration_source_commit" --output "$migration_source_archive"
+          test "$migration_source_sha256" = "$(sha256sum "$migration_source_archive" | cut -d ' ' -f 1)"
+          unzip -q "$migration_source_archive" -d "$migration_extract_dir"
+          migration_source_dir="$migration_extract_dir/playground-to-wordpress-com-$migration_source_commit"
+          migration_package_dir="$RUNNER_TEMP/playground-to-wordpress-com-package/playground-to-wordpress-com"
+          mkdir -p "$migration_package_dir"
+          cp "$migration_source_dir/playground-to-wordpress-com.php" "$migration_source_dir/includes-export.php" "$migration_source_dir/README.md" "$migration_package_dir/"
+          cp -R "$migration_source_dir/assets" "$migration_package_dir/"
+          migration_archive="$pages_dir/playground/$RELEASE_TAG/playground-to-wordpress-com.zip"
+          (cd "$(dirname "$migration_package_dir")" && zip -q -r "$migration_archive" playground-to-wordpress-com)
+          migration_package_sha256="$(sha256sum "$migration_archive" | cut -d ' ' -f 1)"
           # shellcheck disable=SC2016
           node -e '
             const fs = require("node:fs");
-            const [source, output, tag, digest, demoDigest] = process.argv.slice(1);
+            const [source, output, tag, digest, demoDigest, migrationDigest] = process.argv.slice(1);
             const blueprint = JSON.parse(fs.readFileSync(source, "utf8"));
-            const replace = (value) => value.replaceAll("{{RELEASE_TAG}}", tag).replaceAll("{{PACKAGE_SHA256}}", digest).replaceAll("{{DEMO_PACKAGE_SHA256}}", demoDigest);
+            const replace = (value) => value.replaceAll("{{RELEASE_TAG}}", tag).replaceAll("{{PACKAGE_SHA256}}", digest).replaceAll("{{DEMO_PACKAGE_SHA256}}", demoDigest).replaceAll("{{MIGRATION_PACKAGE_SHA256}}", migrationDigest);
             for (const step of blueprint.steps) {
               if (step.data?.url) step.data.url = replace(step.data.url);
               if (step.pluginData?.url) step.pluginData.url = replace(step.pluginData.url);
@@ -90,8 +106,8 @@ jobs:
               if (step.code) step.code = replace(step.code);
             }
             fs.writeFileSync(output, JSON.stringify(blueprint, null, 2) + "\n");
-          ' docs/playground/blueprint.json "$pages_dir/playground/$RELEASE_TAG.blueprint.json" "$RELEASE_TAG" "$package_sha256" "$demo_package_sha256"
-          git -C "$pages_dir" add .nojekyll "playground/$RELEASE_TAG.blueprint.json" "playground/$RELEASE_TAG/static-site-importer-playground-demo.zip"
+          ' docs/playground/blueprint.json "$pages_dir/playground/$RELEASE_TAG.blueprint.json" "$RELEASE_TAG" "$package_sha256" "$demo_package_sha256" "$migration_package_sha256"
+          git -C "$pages_dir" add .nojekyll "playground/$RELEASE_TAG.blueprint.json" "playground/$RELEASE_TAG/static-site-importer-playground-demo.zip" "playground/$RELEASE_TAG/playground-to-wordpress-com.zip"
           if ! git -C "$pages_dir" diff --cached --quiet; then
             git -C "$pages_dir" -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Publish safe Playground blueprint for $RELEASE_TAG"
             git -C "$pages_dir" push origin HEAD:gh-pages
@@ -101,8 +117,9 @@ jobs:
           blueprint_url="https://automattic.github.io/static-site-importer/playground/$RELEASE_TAG.blueprint.json"
           expected_plugin_url="https://github.com/Automattic/static-site-importer/releases/download/$RELEASE_TAG/static-site-importer.zip"
           expected_demo_url="https://automattic.github.io/static-site-importer/playground/$RELEASE_TAG/static-site-importer-playground-demo.zip"
+          expected_migration_url="https://automattic.github.io/static-site-importer/playground/$RELEASE_TAG/playground-to-wordpress-com.zip"
           for attempt in $(seq 1 30); do
-            if curl --silent --show-error --fail --location "$blueprint_url" | EXPECTED_PLUGIN_URL="$expected_plugin_url" EXPECTED_DEMO_URL="$expected_demo_url" node -e '
+            if curl --silent --show-error --fail --location "$blueprint_url" | EXPECTED_PLUGIN_URL="$expected_plugin_url" EXPECTED_DEMO_URL="$expected_demo_url" EXPECTED_MIGRATION_URL="$expected_migration_url" node -e '
               let body = "";
               process.stdin.on("data", (chunk) => body += chunk);
               process.stdin.on("end", () => {
@@ -110,7 +127,7 @@ jobs:
                 const downloads = blueprint.steps.filter((step) => step.step === "writeFile").map((step) => step.data?.url);
                 const plugins = blueprint.steps.filter((step) => step.step === "installPlugin" && step.pluginData?.resource === "vfs");
                 const checks = blueprint.steps.filter((step) => step.step === "runPHP" && step.code.includes("hash_file"));
-                if (!downloads.includes(process.env.EXPECTED_PLUGIN_URL) || !downloads.includes(process.env.EXPECTED_DEMO_URL) || plugins.length !== 2 || checks.length !== 2) process.exit(1);
+                if (!downloads.includes(process.env.EXPECTED_PLUGIN_URL) || !downloads.includes(process.env.EXPECTED_DEMO_URL) || !downloads.includes(process.env.EXPECTED_MIGRATION_URL) || plugins.length !== 3 || checks.length !== 3) process.exit(1);
               });
             '; then exit 0; fi
             echo "Waiting for immutable safe blueprint ($attempt/30)"
@@ -149,8 +166,9 @@ jobs:
           blueprint_url="https://automattic.github.io/static-site-importer/playground/latest/blueprint.json"
           expected_plugin_url="https://github.com/Automattic/static-site-importer/releases/download/$RELEASE_TAG/static-site-importer.zip"
           expected_demo_url="https://automattic.github.io/static-site-importer/playground/$RELEASE_TAG/static-site-importer-playground-demo.zip"
+          expected_migration_url="https://automattic.github.io/static-site-importer/playground/$RELEASE_TAG/playground-to-wordpress-com.zip"
           for attempt in $(seq 1 30); do
-            if curl --silent --show-error --fail --location "$blueprint_url" | EXPECTED_PLUGIN_URL="$expected_plugin_url" EXPECTED_DEMO_URL="$expected_demo_url" node -e '
+            if curl --silent --show-error --fail --location "$blueprint_url" | EXPECTED_PLUGIN_URL="$expected_plugin_url" EXPECTED_DEMO_URL="$expected_demo_url" EXPECTED_MIGRATION_URL="$expected_migration_url" node -e '
               let body = "";
               process.stdin.on("data", (chunk) => body += chunk);
               process.stdin.on("end", () => {
@@ -158,7 +176,7 @@ jobs:
                 const downloads = blueprint.steps.filter((step) => step.step === "writeFile").map((step) => step.data?.url);
                 const plugins = blueprint.steps.filter((step) => step.step === "installPlugin" && step.pluginData?.resource === "vfs");
                 const checks = blueprint.steps.filter((step) => step.step === "runPHP" && step.code.includes("hash_file"));
-                if (!downloads.includes(process.env.EXPECTED_PLUGIN_URL) || !downloads.includes(process.env.EXPECTED_DEMO_URL) || plugins.length !== 2 || checks.length !== 2) process.exit(1);
+                if (!downloads.includes(process.env.EXPECTED_PLUGIN_URL) || !downloads.includes(process.env.EXPECTED_DEMO_URL) || !downloads.includes(process.env.EXPECTED_MIGRATION_URL) || plugins.length !== 3 || checks.length !== 3) process.exit(1);
               });
             '; then exit 0; fi
             echo "Waiting for safe README blueprint alias ($attempt/30)"

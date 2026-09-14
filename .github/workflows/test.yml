@@ -51,5 +51,7 @@ jobs:
         with:
           commands: review test
           args: --extension wordpress
+          scope: full
+          differential-gating: true
           php-version: ${{ matrix.php-version }}
           node-version: '24'

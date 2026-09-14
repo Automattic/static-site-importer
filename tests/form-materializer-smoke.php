@@ -678,22 +678,24 @@ namespace {
 	$presentation_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_presentation['forms'] ) )['forms'][0] ?? array();
 	$presentation_markup    = (string) ( $presentation_row['block_markup'] ?? '' );
 	$presentation_css       = (string) ( $presentation_row['provider_layout_overlay_css']['css'] ?? '' );
-	$assert( empty( $validated_presentation['errors'] ) && str_contains( $presentation_css, 'background-color:transparent;border:0;padding:8px 0;font-size:16px;line-height:24px;font-family:Arial' ) && ! str_contains( $presentation_css, 'line-height:24px;line-height:normal' ) && str_contains( $presentation_css, 'font-size:14px;font-weight:400;line-height:1.4;margin-bottom:8px' ) && str_contains( $presentation_css, 'background-color:rgb(254,126,3);color:#fff;border:0;border-radius:100px;padding:11px 15px;font-size:16px;font-family:Arial;line-height:normal' ), 'bounded-form-presentation-transposes-control-label-and-submit-styles', $presentation_css );
+	$assert( empty( $validated_presentation['errors'] ) && str_contains( $presentation_css, 'background-color:transparent;border:0;padding:8px 0;font-size:16px;line-height:24px;font-family:revert' ) && ! str_contains( $presentation_css, 'line-height:24px;line-height:revert' ) && str_contains( $presentation_css, 'font-size:14px;font-weight:400;line-height:1.4;margin-bottom:8px' ) && str_contains( $presentation_css, 'background-color:rgb(254,126,3);color:#fff;border:0;border-radius:100px;padding:11px 15px;font-size:16px;font-family:revert;line-height:revert;min-height:0' ), 'bounded-form-presentation-transposes-control-label-and-submit-styles', $presentation_css );
 	$native_line_height_form = $presentation_form;
 	$native_line_height_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 0, 'control' => $presentation_role( array( 'padding' => '8px' ), array( 'padding' ), 'input' ) ) );
 	$native_line_height_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $native_line_height_form );
 	$native_line_height_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $native_line_height_validation['forms'] ?? array() ) )['forms'][0] ?? array();
-	$assert( empty( $native_line_height_validation['errors'] ) && str_contains( (string) ( $native_line_height_row['provider_layout_overlay_css']['css'] ?? '' ), 'padding:8px;font-family:Arial;line-height:normal' ), 'provider-input-native-defaults-are-neutralized-when-the-source-omits-them', wp_json_encode( $native_line_height_row ) );
-	$native_submit_line_height_form = $presentation_form;
-	$native_submit_line_height_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 3, 'control' => $presentation_role( array( 'padding' => '8px' ), array( 'padding' ), 'button' ) ) );
-	$native_submit_line_height_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $native_submit_line_height_form );
-	$native_submit_line_height_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $native_submit_line_height_validation['forms'] ?? array() ) )['forms'][0] ?? array();
-	$assert( empty( $native_submit_line_height_validation['errors'] ) && str_contains( (string) ( $native_submit_line_height_row['provider_layout_overlay_css']['css'] ?? '' ), 'padding:8px;font-family:Arial;line-height:normal' ), 'provider-submit-native-defaults-are-neutralized-when-the-source-omits-them', wp_json_encode( $native_submit_line_height_row ) );
-	$explicit_native_font_form = $presentation_form;
-	$explicit_native_font_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 0, 'control' => $presentation_role( array( 'font_family' => 'Source Control' ), array( 'font-family' ), 'input' ) ) );
-	$explicit_native_font_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $explicit_native_font_form );
-	$explicit_native_font_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $explicit_native_font_validation['forms'] ?? array() ) )['forms'][0] ?? array();
-	$assert( empty( $explicit_native_font_validation['errors'] ) && str_contains( (string) ( $explicit_native_font_row['provider_layout_overlay_css']['css'] ?? '' ), 'font-family:Source Control' ) && ! str_contains( (string) ( $explicit_native_font_row['provider_layout_overlay_css']['css'] ?? '' ), 'font-family:Arial' ), 'explicit-source-control-font-family-is-preserved-over-native-default', wp_json_encode( $explicit_native_font_row ) );
+	$native_default_css = (string) ( $native_line_height_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert( empty( $native_line_height_validation['errors'] ) && str_contains( $native_default_css, 'padding:8px;font-family:revert;line-height:revert' ) && ! str_contains( $native_default_css, 'Arial' ), 'provider-native-typography-reverts-to-the-browser-default-when-the-source-omits-it', $native_default_css );
+	$authored_typography_form = $native_line_height_form;
+	$authored_typography_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 0, 'control' => $presentation_role( array( 'font_family' => 'Georgia', 'line_height' => '1.5' ), array( 'font_family', 'line_height' ), 'input' ) ) );
+	$authored_typography_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $authored_typography_form );
+	$authored_typography_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $authored_typography_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$authored_typography_css = (string) ( $authored_typography_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert( empty( $authored_typography_validation['errors'] ) && str_contains( $authored_typography_css, 'font-family:Georgia;line-height:1.5' ) && ! str_contains( $authored_typography_css, 'font-family:Arial' ) && ! str_contains( $authored_typography_css, 'line-height:normal' ), 'authored-control-typography-overrides-provider-default-neutralization', $authored_typography_css );
+	$native_submit_form = $presentation_form;
+	$native_submit_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 3, 'control' => $presentation_role( array( 'padding' => '8px' ), array( 'padding' ), 'button' ) ) );
+	$native_submit_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $native_submit_form );
+	$native_submit_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $native_submit_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( empty( $native_submit_validation['errors'] ) && str_contains( (string) ( $native_submit_row['provider_layout_overlay_css']['css'] ?? '' ), 'padding:8px;font-family:revert;line-height:revert;min-height:0' ), 'provider-submit-native-defaults-revert-without-provider-minimum-height', wp_json_encode( $native_submit_row ) );
 	$assert( preg_match( '/wp:jetpack\/label .*ssi-node-[a-f0-9]{12}/', $presentation_markup ) && preg_match( '/wp:jetpack\/input .*ssi-node-[a-f0-9]{12}/', $presentation_markup ) && preg_match( '/wp:button .*ssi-node-[a-f0-9]{12}/', $presentation_markup ) && preg_match( '/\.ssi-form-([a-f0-9]{12})\.ssi-form-\1 \.ssi-node-[a-f0-9]{12}/', $presentation_css ) && str_contains( $presentation_css, '> .wp-block-button__link{' ), 'form-presentation-targets-use-deterministic-provider-subparts-with-authoritative-scope-specificity', $presentation_markup );
 	$variant_only_presentation = $presentation_form;
 	$variant_condition         = array( 'kind' => 'media', 'query' => '(min-width:769px)' );
@@ -725,7 +727,7 @@ namespace {
 			$all_controls_hooks[] = substr( $hook[0], 1 );
 		}
 	}
-	$assert( empty( $validated_all_controls['errors'] ) && 4 === count( $all_controls_hooks ) && empty( array_filter( $all_controls_hooks, static fn( string $hook ): bool => ! str_contains( $all_controls_markup, $hook ) || ! str_contains( $all_controls_css, '.' . $hook ) ) ) && str_contains( $all_controls_css, 'border:1px solid #111;padding:7px' ) && str_contains( $all_controls_css, 'border:2px solid #222;padding:8px' ) && str_contains( $all_controls_css, 'border:3px solid #333;min-height:9rem' ) && str_contains( $all_controls_css, 'background-color:#444;padding:9px 12px' ) && str_contains( $all_controls_css, '@media (max-width:48rem){' ) && str_contains( $all_controls_css, '> .wp-block-button__link{background-color:#444;padding:9px 12px;font-family:Arial;line-height:normal}' ) && ! str_contains( $all_controls_css, 'control-shell' ) && ! str_contains( $all_controls_css, 'control-hook' ), 'presentation-overlay-persists-scoped-input-textarea-select-and-submit-relationships-without-raw-class-leakage', wp_json_encode( array( 'markup' => $all_controls_markup, 'css' => $all_controls_css, 'targets' => $all_controls_targets ) ) );
+	$assert( empty( $validated_all_controls['errors'] ) && 4 === count( $all_controls_hooks ) && empty( array_filter( $all_controls_hooks, static fn( string $hook ): bool => ! str_contains( $all_controls_markup, $hook ) || ! str_contains( $all_controls_css, '.' . $hook ) ) ) && str_contains( $all_controls_css, 'border:1px solid #111;padding:7px;font-family:revert;line-height:revert' ) && str_contains( $all_controls_css, 'border:2px solid #222;padding:8px;font-family:revert;line-height:revert' ) && str_contains( $all_controls_css, 'border:3px solid #333;min-height:9rem;font-family:revert;line-height:revert' ) && str_contains( $all_controls_css, 'background-color:#444;padding:9px 12px;font-family:revert;line-height:revert;min-height:0' ) && str_contains( $all_controls_css, '@media (max-width:48rem){' ) && str_contains( $all_controls_css, '> .wp-block-button__link{background-color:#444;padding:9px 12px;font-family:revert;line-height:revert;min-height:0}' ) && ! str_contains( $all_controls_css, 'control-shell' ) && ! str_contains( $all_controls_css, 'control-hook' ), 'presentation-overlay-reverts-unowned-typography-to-each-browser-native-controls', wp_json_encode( array( 'markup' => $all_controls_markup, 'css' => $all_controls_css, 'targets' => $all_controls_targets ) ) );
 	$submit_width_form = $presentation_form;
 	$submit_width_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 3, 'control' => $presentation_role( array( 'width' => '100%' ), array( 'width' ), 'button' ) ) );
 	$submit_width_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $submit_width_form );
@@ -766,9 +768,30 @@ namespace {
 	$phone_presentation_css       = (string) ( $phone_presentation_row['provider_layout_overlay_css']['css'] ?? '' );
 	$phone_presentation_target    = $phone_presentation_row['provider_layout_target_map']['presentation_targets'][0] ?? array();
 	$phone_destinations = $phone_presentation_target['destinations'] ?? array();
+	$phone_markup = (string) ( $phone_presentation_row['block_markup'] ?? '' );
+	$phone_destination_hooks = array();
+	foreach ( $phone_destinations as $destination ) {
+		if ( is_array( $destination ) && preg_match( '/\.((?:ssi-node)-[a-f0-9]{12}-destination-(?:shell|primary|carrier|prefix))$/', (string) ( $destination['selector'] ?? '' ), $matches ) ) {
+			$phone_destination_hooks[] = $matches[1];
+		}
+	}
 	$assert( '0' === ( $phone_destinations[0]['resets']['text-indent'] ?? null ) && '0' === ( $phone_destinations[0]['resets']['gap'] ?? null ) && str_contains( $phone_presentation_css, 'text-indent:0!important' ) && str_contains( $phone_presentation_css, 'gap:0!important' ) && str_contains( $phone_presentation_css, 'text-indent:4px!important' ), 'phone-text-indentation-belongs-to-value-not-structural-prefix-container' );
 	$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $phone_presentation_row['provider_layout_overlay_css'] ?? array() ), 'composite-provider-destination-overlay-survives-stylesheet-admission' );
 	$assert( empty( $validated_phone_presentation['errors'] ) && 4 === count( $phone_destinations ) && empty( $phone_destinations[0]['properties'] ) && str_contains( (string) ( $phone_destinations[1]['selector'] ?? '' ), '-destination-primary' ) && str_contains( (string) ( $phone_destinations[3]['selector'] ?? '' ), '-destination-prefix' ) && 'flex' === ( $phone_destinations[3]['resets']['display'] ?? null ) && 'center' === ( $phone_destinations[3]['resets']['align-items'] ?? null ) && '100%' === ( $phone_destinations[3]['resets']['height'] ?? null ) && str_contains( $phone_presentation_css, 'background-color:#fff!important' ) && str_contains( $phone_presentation_css, 'border-color:#1e4b6e!important' ) && str_contains( $phone_presentation_css, 'padding-block-start:8px!important' ) && str_contains( $phone_presentation_css, 'padding-inline-end:8px!important' ) && str_contains( $phone_presentation_css, 'padding:0!important;border:0!important;background:transparent!important;text-indent:0!important;gap:0!important' ) && str_contains( $phone_presentation_css, 'display:flex!important;align-items:center!important;height:100%!important' ), 'phone-presentation-keeps-input-styles-on-value-and-neutralizes-provider-added-shell', wp_json_encode( array( 'css' => $phone_presentation_css, 'target' => $phone_presentation_target ) ) );
+	$assert( 4 === count( $phone_destination_hooks ) && empty( array_filter( $phone_destination_hooks, static fn( string $hook ): bool => ! str_contains( $phone_markup, $hook ) ) ), 'phone-markup-hooks-and-overlay-destinations-share-one-prepared-calculation', wp_json_encode( array( 'markup' => $phone_markup, 'hooks' => $phone_destination_hooks ) ) );
+	$whitespace_phone_presentation                            = $phone_presentation;
+	$whitespace_phone_presentation['forms'][0]['controls'][0]['type'] = ' tel ';
+	$validated_whitespace_phone_presentation                  = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $whitespace_phone_presentation );
+	$whitespace_phone_row                                     = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_whitespace_phone_presentation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$whitespace_phone_destinations                             = $whitespace_phone_row['provider_layout_target_map']['presentation_targets'][0]['destinations'] ?? array();
+	$whitespace_phone_markup                                  = (string) ( $whitespace_phone_row['block_markup'] ?? '' );
+	$whitespace_phone_hooks                                   = array();
+	foreach ( $whitespace_phone_destinations as $destination ) {
+		if ( is_array( $destination ) && preg_match( '/\.((?:ssi-node)-[a-f0-9]{12}-destination-(?:shell|primary|carrier|prefix))$/', (string) ( $destination['selector'] ?? '' ), $matches ) ) {
+			$whitespace_phone_hooks[] = $matches[1];
+		}
+	}
+	$assert( empty( $validated_whitespace_phone_presentation['errors'] ) && 4 === count( $whitespace_phone_hooks ) && empty( array_filter( $whitespace_phone_hooks, static fn( string $hook ): bool => ! str_contains( $whitespace_phone_markup, $hook ) ) ), 'whitespace-padded-tel-shares-phone-markup-hooks-and-overlay-destinations', wp_json_encode( array( 'markup' => $whitespace_phone_markup, 'hooks' => $whitespace_phone_hooks ) ) );
 	$editor_chrome_graph = array(
 		'schema' => 'generic/computed-form-presentation/v2', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'controls' => 128, 'rules_per_role' => 32 ), 'visual_parts' => array(), 'visual_groups' => array(), 'variants' => array(), 'diagnostics' => array(),
 		'controls' => array( array( 'index' => 0, 'control' => $presentation_role( array( 'border' => '0' ), array( 'border' ), 'input' ) ) ),
@@ -1296,6 +1319,12 @@ namespace {
 	);
 	$height_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $height_entity ) ) )['forms'][0] ?? array();
 	$assert( false === ( $height_row['runtime_mapped'] ?? true ) && 'textarea_height_omitted' === ( $height_row['form_receipt_unaccepted_losses'][0]['reason_code'] ?? '' ) && 1 === ( $height_row['unaccepted_receipt_loss_count'] ?? 0 ), 'omitted-textarea-heights-gate-form-runtime-acceptance' );
+	$invalid_height_binding                              = $height_entity;
+	$invalid_height_binding['bindings'][0]['occurrence'] = 0;
+	$assert( $invalid_height_binding === Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $invalid_height_binding ), 'falsey-binding-occurrence-remains-ineligible-for-presentation-extraction' );
+	$multi_form_mismatch                                  = $height_entity;
+	$multi_form_mismatch['bindings'][0]['search_block_markup'] = '<form><input name="unexpected"></form>' . $height_html;
+	$assert( $multi_form_mismatch === Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $multi_form_mismatch ), 'multi-form-binding-control-mismatch-fails-closed-on-the-first-form' );
 	$newsletter = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.newsletter', 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email' ), array( 'tag' => 'button', 'type' => 'submit', 'text' => 'Subscribe to newsletter' ) ) ) ) ) );
 	$assert( 'Subscribe to newsletter' === ( $newsletter['forms'][0]['submit_text'] ?? '' ), 'canonical-control-text-preserves-newsletter-submit-label' );
 	if ( function_exists( 'parse_blocks' ) ) {

@@ -12,13 +12,19 @@ from that tag and publishes these immutable files:
 - `https://automattic.github.io/static-site-importer/playground/extensions/<tag>/static-site-importer-zstd-php8.5-jspi.so`
 - `https://automattic.github.io/static-site-importer/playground/<tag>.blueprint.json`
 - `https://automattic.github.io/static-site-importer/playground/<tag>/static-site-importer-playground-demo.zip`
+- `https://automattic.github.io/static-site-importer/playground/<tag>/playground-to-wordpress-com.zip`
 
 The versioned blueprint installs the infrastructure-only `static-site-importer.zip`
 from the same GitHub Release tag and the demo-only importer block ZIP from GitHub
 Pages. The workflow builds the demo ZIP from `demos/playground-importer/` and
-pins both packages by SHA-256. `docs/playground/blueprint.json` is a release
-template: the workflow replaces `{{RELEASE_TAG}}`, `{{PACKAGE_SHA256}}`, and
-`{{DEMO_PACKAGE_SHA256}}` while publishing it. README uses the safe
+pins all three packages by SHA-256. The migration archive is built from the
+public codeload source archive for commit
+`4688faf6e76071af3e8becd1500071f29b4ec63b`; the workflow verifies its fixed
+SHA-256 before extraction and packages the upstream runtime files
+(`playground-to-wordpress-com.php`, `includes-export.php`, `README.md`, and
+`assets/`). `docs/playground/blueprint.json` is a release template: the workflow
+replaces `{{RELEASE_TAG}}`, `{{PACKAGE_SHA256}}`, `{{DEMO_PACKAGE_SHA256}}`, and
+`{{MIGRATION_PACKAGE_SHA256}}` while publishing it. README uses the safe
 `playground/latest/blueprint.json` convenience URL without loading an optional
 side module. Reproducible consumers use the tagged blueprint URL.
 

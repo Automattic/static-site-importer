@@ -21,19 +21,25 @@ class Static_Site_Importer_Form_Fallback_Contract {
 	 * @return array<string,mixed>
 	 */
 	public static function presentation_from_html( string $html, string $selector = '', int $occurrence = 0 ): array {
-		$manifest = self::manifest_from_html( $html );
-		$form     = self::preserved_presentation( $html, $manifest['form'], $manifest['controls'] );
-		$doc      = new DOMDocument();
-		$previous = libxml_use_internal_errors( true );
-		$doc->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
-		libxml_clear_errors();
-		libxml_use_internal_errors( $previous );
+		return self::analysis_from_html( $html, $selector, $occurrence )['presentation'];
+	}
+
+	/**
+	 * Analyze one fallback binding from one parsed document.
+	 *
+	 * @return array{manifest:array{form:array<string,string>,controls:array<int,array<string,mixed>>},presentation:array<string,mixed>}
+	 */
+	public static function analysis_from_html( string $html, string $selector = '', int $occurrence = 0 ): array {
+		$doc            = self::document_from_html( $html );
+		$manifest       = self::manifest_from_document( $doc );
+		$controls       = $manifest['controls'];
+		$form           = self::preserved_presentation( $doc, $manifest['form'], $controls );
 		$form_node      = $doc->getElementsByTagName( 'form' )->item( 0 );
 		$before         = array();
 		$after          = array();
 		$interleaved    = false;
 		$seen_controls  = 0;
-		$total_controls = count( $manifest['controls'] );
+		$total_controls = count( $controls );
 		if ( $form_node instanceof DOMElement ) {
 			foreach ( $form_node->getElementsByTagName( '*' ) as $node ) {
 				$tag = strtolower( $node->nodeName );
@@ -63,7 +69,7 @@ class Static_Site_Importer_Form_Fallback_Contract {
 			}
 		}
 		$heights = array();
-		foreach ( $manifest['controls'] as $index => $control ) {
+		foreach ( $controls as $index => $control ) {
 			if ( isset( $control['height'] ) ) {
 				$heights[ $index ] = $control['height'];
 			}
@@ -78,7 +84,7 @@ class Static_Site_Importer_Form_Fallback_Contract {
 			'context_after_hash'  => hash( 'sha256', (string) wp_json_encode( $after ) ),
 		);
 		$stored_heights = array_slice( $heights, 0, 16, true );
-		return array_filter(
+		$presentation   = array_filter(
 			array(
 				'schema'                        => 'generic/form-presentation/v1',
 				'selector'                      => $selector,
@@ -94,6 +100,10 @@ class Static_Site_Importer_Form_Fallback_Contract {
 				'textarea_height_omitted_count' => max( 0, count( $heights ) - count( $stored_heights ) ),
 			)
 		);
+		return array(
+			'manifest'     => $manifest,
+			'presentation' => $presentation,
+		);
 	}
 
 	/**
@@ -104,24 +114,16 @@ class Static_Site_Importer_Form_Fallback_Contract {
 	 */
 	public static function manifest_from_html( string $html ): array {
 		if ( '' === $html || ! str_contains( strtolower( $html ), '<form' ) ) {
-			return array(
-				'form'     => array(),
-				'controls' => array(),
-			);
+			return self::empty_manifest();
 		}
+		return self::manifest_from_document( self::document_from_html( $html ) );
+	}
 
-		$doc      = new DOMDocument();
-		$previous = libxml_use_internal_errors( true );
-		$doc->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
-		libxml_clear_errors();
-		libxml_use_internal_errors( $previous );
-
+	/** @return array{form:array<string,string>,controls:array<int,array<string,mixed>>} */
+	private static function manifest_from_document( DOMDocument $doc ): array {
 		$form_node = $doc->getElementsByTagName( 'form' )->item( 0 );
 		if ( null === $form_node ) {
-			return array(
-				'form'     => array(),
-				'controls' => array(),
-			);
+			return self::empty_manifest();
 		}
 
 		$form = array();
@@ -229,21 +231,12 @@ class Static_Site_Importer_Form_Fallback_Contract {
 	 * replaced, so retain headings, standalone notes, and a visible submit treatment
 	 * before the provider block is serialized.
 	 *
-	 * @param string                         $html     Complete internal fallback HTML.
+	 * @param DOMDocument                     $doc      Parsed internal fallback HTML.
 	 * @param array<string,mixed>            $form     Extracted form metadata.
 	 * @param array<int,array<string,mixed>> $controls Extracted controls, enriched in place.
 	 * @return array<string,mixed>
 	 */
-	private static function preserved_presentation( string $html, array $form, array &$controls ): array {
-		if ( '' === $html ) {
-			return $form;
-		}
-
-		$doc      = new DOMDocument();
-		$previous = libxml_use_internal_errors( true );
-		$doc->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
-		libxml_clear_errors();
-		libxml_use_internal_errors( $previous );
+	private static function preserved_presentation( DOMDocument $doc, array $form, array &$controls ): array {
 		$form_node = $doc->getElementsByTagName( 'form' )->item( 0 );
 		if ( null === $form_node ) {
 			return $form;
@@ -307,6 +300,23 @@ class Static_Site_Importer_Form_Fallback_Contract {
 		}
 
 		return $form;
+	}
+
+	private static function document_from_html( string $html ): DOMDocument {
+		$doc      = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$doc->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		return $doc;
+	}
+
+	/** @return array{form:array<string,string>,controls:array<int,array<string,mixed>>} */
+	private static function empty_manifest(): array {
+		return array(
+			'form'     => array(),
+			'controls' => array(),
+		);
 	}
 
 	private static function is_submit_control( DOMElement $node ): bool {

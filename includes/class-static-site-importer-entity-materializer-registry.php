@@ -21,10 +21,10 @@ if ( ! class_exists( 'Static_Site_Importer_Provider_Form_Runtime_V1' ) ) {
  */
 class Static_Site_Importer_Entity_Materializer_Registry {
 
-	private const FORM_CONTROL_TOPOLOGY_MAX_DEPTH = 16;
-	private const FAILURE_DIAGNOSTIC_MAX_ROWS     = 10;
-	private const FAILURE_DIAGNOSTIC_MAX_BYTES    = 256;
-	private const FAILURE_DIAGNOSTIC_SCAN_BUDGET  = 10;
+	private const FORM_CONTROL_TOPOLOGY_MAX_DEPTH       = 16;
+	private const FAILURE_DIAGNOSTIC_MAX_ROWS           = 10;
+	private const FAILURE_DIAGNOSTIC_MAX_BYTES          = 256;
+	private const FAILURE_DIAGNOSTIC_SCAN_BUDGET        = 10;
 	private const RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES = 10485760;
 
 	/**
@@ -377,10 +377,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( 'form' === $capability ) {
 				$entities = array_map( static fn( $entity ) => is_array( $entity ) ? self::prepare_form_entity( $entity ) : $entity, $entities );
 			}
-			$manifest   = 'shop' === $capability ? array(
-				'schema_version' => 1,
-				'products'       => $entities,
-			) : array( 'forms' => $entities );
+			$collection = (string) ( $adapter['entity_collection'] ?? '' );
+			$manifest   = array( $collection => $entities );
+			if ( 'products' === $collection ) {
+				$manifest['schema_version'] = 1;
+			}
 			$validation = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ? array( 'errors' => array() ) : self::validate_manifest_generic( $adapter, $manifest );
 			if ( ! empty( $validation['errors'] ) ) {
 				return new WP_Error(
@@ -395,10 +396,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			// Dependency preparation intentionally defers provider validation until
 			// resume, but its checkpoint must still retain every declared entity.
-			$normalized_manifest           = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ? $manifest : ( 'shop' === $capability ? array(
-				'schema_version' => 1,
-				'products'       => $validation['products'] ?? array(),
-			) : array( 'forms' => $validation['forms'] ?? array() ) );
+			$normalized_manifest = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ? $manifest : array( $collection => $validation[ $collection ] ?? array() );
+			if ( 'products' === $collection && 'prepare' !== ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
+				$normalized_manifest['schema_version'] = 1;
+			}
 			$lifecycle['entities'][ $key ] = array(
 				'adapter'     => $adapter,
 				'manifest'    => $normalized_manifest,
@@ -481,11 +482,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || 'form' !== ( $binding['role'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES ) {
 				continue;
 			}
-			$manifest = Static_Site_Importer_Form_Fallback_Contract::manifest_from_html( $binding['search_block_markup'] );
+			$analysis = Static_Site_Importer_Form_Fallback_Contract::analysis_from_html( $binding['search_block_markup'], is_string( $entity['selector'] ?? null ) ? $entity['selector'] : '', $binding['occurrence'] );
+			$manifest = $analysis['manifest'];
 			if ( self::ordered_form_control_identity( $manifest['controls'] ) !== $control_shape ) {
 				return $entity;
 			}
-			$presentation = Static_Site_Importer_Form_Fallback_Contract::presentation_from_html( $binding['search_block_markup'], is_string( $entity['selector'] ?? null ) ? $entity['selector'] : '', $binding['occurrence'] );
+			$presentation = $analysis['presentation'];
 			if ( 'generic/form-presentation/v1' === ( $presentation['schema'] ?? null ) ) {
 				$presentations[] = $presentation;
 			}
@@ -606,7 +608,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				if ( ! is_array( $entities ) || ! is_array( $prepared['manifest'] ?? null ) ) {
 					continue; // Direct entity payloads retain their legacy lifecycle behavior.
 				}
-				$key                = isset( $prepared['manifest']['products'] ) ? 'products' : 'forms';
+				$key                = (string) ( $prepared['adapter']['entity_collection'] ?? '' );
 				$resolved_by_key    = array();
 				$canonical_entities = is_array( $prepared['manifest'][ $key ] ?? null ) ? $prepared['manifest'][ $key ] : array();
 				foreach ( $entities as $entity ) {
@@ -632,15 +634,15 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( ! is_array( $prepared ) || ! is_array( $prepared['adapter'] ?? null ) ) {
 				return self::runtime_entity_resolution_error( 'Runtime entity manifest lifecycle entry is malformed.' );
 			}
-			$key      = 'shop' === ( $prepared['adapter']['capability'] ?? null ) ? 'products' : 'forms';
+			$key      = (string) ( $prepared['adapter']['entity_collection'] ?? '' );
 			$entities = $expanded[ $id ];
 			if ( 'form' === ( $prepared['adapter']['capability'] ?? null ) ) {
 				$entities = array_map( static fn( $entity ) => is_array( $entity ) ? self::prepare_form_entity( $entity ) : $entity, $entities );
 			}
-			$manifest   = 'products' === $key ? array(
-				'schema_version' => 1,
-				'products'       => $entities,
-			) : array( 'forms' => $entities );
+			$manifest = array( $key => $entities );
+			if ( 'products' === $key ) {
+				$manifest['schema_version'] = 1;
+			}
 			$validation = self::validate_manifest_generic( $prepared['adapter'], $manifest );
 			if ( ! empty( $validation['errors'] ) ) {
 				return new WP_Error(
@@ -653,10 +655,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					)
 				);
 			}
-			$prepared['manifest'] = 'products' === $key ? array(
-				'schema_version' => 1,
-				'products'       => $validation['products'] ?? array(),
-			) : array( 'forms' => $validation['forms'] ?? array() );
+			$prepared['manifest'] = array( $key => $validation[ $key ] ?? array() );
+			if ( 'products' === $key ) {
+				$prepared['manifest']['schema_version'] = 1;
+			}
 		}
 		unset( $prepared );
 		return $lifecycle;
@@ -673,8 +675,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( '' !== $waiver_arg && ! empty( $args[ $waiver_arg ] ) ) {
 				continue;
 			}
-			$manifest = is_array( $prepared['manifest'] ?? null ) ? $prepared['manifest'] : array();
-			$entities = is_array( $manifest['products'] ?? null ) ? $manifest['products'] : ( is_array( $manifest['forms'] ?? null ) ? $manifest['forms'] : array() );
+			$manifest   = is_array( $prepared['manifest'] ?? null ) ? $prepared['manifest'] : array();
+			$collection = (string) ( $prepared['adapter']['entity_collection'] ?? '' );
+			$entities   = is_array( $manifest[ $collection ] ?? null ) ? $manifest[ $collection ] : array();
 			foreach ( $entities as $entity ) {
 				if ( is_array( $entity ) && ! empty( $entity['bindings'] ) ) {
 					return true;
@@ -721,7 +724,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$report         = self::normalize_failure_rows( $adapter, $prepared['manifest'], $report );
 			$reports[ $id ] = $report;
 			$counts         = is_array( $report['counts'] ?? null ) ? $report['counts'] : array();
-			$expected       = count( is_array( $prepared['manifest']['products'] ?? null ) ? $prepared['manifest']['products'] : ( $prepared['manifest']['forms'] ?? array() ) );
+			$collection     = (string) ( $adapter['entity_collection'] ?? '' );
+			$expected       = count( is_array( $prepared['manifest'][ $collection ] ?? null ) ? $prepared['manifest'][ $collection ] : array() );
 			// A provider that declines one entity reports it as skipped. The compiled
 			// source fallback stays at that binding anchor, so the declaration is
 			// accounted for whether or not the entity carries a page binding.
@@ -845,6 +849,30 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		}
 		if ( is_array( $data['diagnostics'] ?? null ) ) {
 			$projected['diagnostics'] = self::project_public_diagnostics( $data['diagnostics'] );
+		}
+		if ( is_array( $data['dependency'] ?? null ) ) {
+			$dependency = array();
+			foreach ( array( 'slug', 'plugin_file', 'source', 'status' ) as $field ) {
+				$value = self::project_public_token( $data['dependency'][ $field ] ?? null, 128 );
+				if ( '' !== $value ) {
+					$dependency[ $field ] = $value;
+				}
+			}
+			if ( is_array( $data['dependency']['error'] ?? null ) ) {
+				$error = array();
+				foreach ( array( 'code', 'message' ) as $field ) {
+					$value = self::project_public_token( $data['dependency']['error'][ $field ] ?? null, 256 );
+					if ( '' !== $value ) {
+						$error[ $field ] = $value;
+					}
+				}
+				if ( ! empty( $error ) ) {
+					$dependency['error'] = $error;
+				}
+			}
+			if ( ! empty( $dependency ) ) {
+				$projected['dependency'] = $dependency;
+			}
 		}
 		if ( is_array( $data['import_validation_result']['diagnostics'] ?? null ) ) {
 			$projected['import_validation_result'] = array(
@@ -1181,8 +1209,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/** A canonical page binding makes its provider entity part of materialization. */
 	private static function lifecycle_entity_has_bindings( array $prepared ): bool {
-		$manifest = is_array( $prepared['manifest'] ?? null ) ? $prepared['manifest'] : array();
-		$entities = is_array( $manifest['products'] ?? null ) ? $manifest['products'] : ( is_array( $manifest['forms'] ?? null ) ? $manifest['forms'] : array() );
+		$manifest   = is_array( $prepared['manifest'] ?? null ) ? $prepared['manifest'] : array();
+		$collection = (string) ( $prepared['adapter']['entity_collection'] ?? '' );
+		$entities   = is_array( $manifest[ $collection ] ?? null ) ? $manifest[ $collection ] : array();
 		foreach ( $entities as $entity ) {
 			if ( is_array( $entity ) && ! empty( $entity['bindings'] ) ) {
 				return true;
@@ -1200,7 +1229,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( 'waived' === ( $report['status'] ?? '' ) ) {
 				continue;
 			}
-			$entity_key        = isset( $manifest['products'] ) ? 'products' : 'forms';
+			$entity_key        = (string) ( $prepared['adapter']['entity_collection'] ?? '' );
 			$manifest_entities = is_array( $manifest[ $entity_key ] ?? null ) ? $manifest[ $entity_key ] : array();
 			$result_entities   = is_array( $report[ $entity_key ] ?? null ) ? $report[ $entity_key ] : array();
 			$results           = array();
@@ -1264,7 +1293,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( 'waived' === ( $report['status'] ?? '' ) ) {
 				continue;
 			}
-			$key     = isset( $manifest['products'] ) ? 'products' : 'forms';
+			$key     = (string) ( $prepared['adapter']['entity_collection'] ?? '' );
 			$results = array();
 			foreach ( $report[ $key ] ?? array() as $result ) {
 				if ( is_array( $result ) ) {
@@ -1434,7 +1463,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		foreach ( $filtered as $id => $adapter ) {
 			if ( ! is_array( $adapter ) || (string) ( $adapter['id'] ?? '' ) !== (string) $id || '' === self::rollback_contract_id( $adapter ) ) {
 				unset( $filtered[ $id ] );
+				continue;
 			}
+			$collection = is_string( $adapter['entity_collection'] ?? null ) ? trim( $adapter['entity_collection'] ) : '';
+			if ( '' === $collection ) {
+				$collection = 'shop' === ( $adapter['capability'] ?? null ) ? 'products' : 'forms';
+			}
+			$adapter['entity_collection'] = $collection;
+			$filtered[ $id ]              = $adapter;
 		}
 		return $filtered;
 	}
@@ -1723,6 +1759,13 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					$errors[] = array(
 						'path'    => $path_prefix . '.sibling_relations',
 						'message' => $relations['error'],
+					);
+					continue;
+				}
+				if ( ! array_key_exists( 'relations', $relations ) ) {
+					$errors[] = array(
+						'path'    => $path_prefix . '.sibling_relations',
+						'message' => 'Sibling relation normalization did not produce relations.',
 					);
 					continue;
 				}
@@ -2223,7 +2266,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			$seen[ $pair['control'] ] = true;
 		}
-		return array( 'relations' => array( 'schema' => 'generic/form-sibling-relations/v1', 'max_pairs' => $candidate['max_pairs'], 'truncated' => false, 'pairs' => $candidate['pairs'] ) );
+		return array(
+			'relations' => array(
+				'schema'    => 'generic/form-sibling-relations/v1',
+				'max_pairs' => $candidate['max_pairs'],
+				'truncated' => false,
+				'pairs'     => $candidate['pairs'],
+			),
+		);
 	}
 
 	/** @return array<string,string> */
@@ -2252,12 +2302,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'flex_basis'      => 'flex-basis',
 		);
 		if ( $include_width ) {
-			$map['width']                 = 'width';
-			$map['height']                = 'height';
-			$map['margin_block_start']    = 'margin-block-start';
-			$map['margin_block_end']      = 'margin-block-end';
-			$map['margin_inline_start']   = 'margin-inline-start';
-			$map['margin_inline_end']     = 'margin-inline-end';
+			$map['width']               = 'width';
+			$map['height']              = 'height';
+			$map['margin_block_start']  = 'margin-block-start';
+			$map['margin_block_end']    = 'margin-block-end';
+			$map['margin_inline_start'] = 'margin-inline-start';
+			$map['margin_inline_end']   = 'margin-inline-end';
 		}
 		return $map;
 	}
