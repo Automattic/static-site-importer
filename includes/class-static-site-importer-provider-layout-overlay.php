@@ -540,7 +540,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				}
 				// An explicit source declaration is authoritative over a provider-default
 				// neutralization at the same destination.
-				if ( 'line-height' === $property && array_key_exists( 'line_height', $styles ) ) {
+				if ( array_key_exists( str_replace( '-', '_', $property ), $styles ) ) {
 					continue;
 				}
 				$reset_declarations[] = $property . ':' . $value;
@@ -590,7 +590,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	private static function safe_presentation_resets( mixed $resets ): bool {
-		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'padding', 'border', 'background', 'text-indent', 'font-size', 'line-height', 'gap', 'display', 'align-items', 'height' ) ) ) {
+		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'line-height', 'gap', 'display', 'align-items', 'height' ) ) ) {
 			return false;
 		}
 		foreach ( $resets as $property => $value ) {

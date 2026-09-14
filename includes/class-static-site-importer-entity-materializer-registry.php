@@ -846,6 +846,30 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( is_array( $data['diagnostics'] ?? null ) ) {
 			$projected['diagnostics'] = self::project_public_diagnostics( $data['diagnostics'] );
 		}
+		if ( is_array( $data['dependency'] ?? null ) ) {
+			$dependency = array();
+			foreach ( array( 'slug', 'plugin_file', 'source', 'status' ) as $field ) {
+				$value = self::project_public_token( $data['dependency'][ $field ] ?? null, 128 );
+				if ( '' !== $value ) {
+					$dependency[ $field ] = $value;
+				}
+			}
+			if ( is_array( $data['dependency']['error'] ?? null ) ) {
+				$error = array();
+				foreach ( array( 'code', 'message' ) as $field ) {
+					$value = self::project_public_token( $data['dependency']['error'][ $field ] ?? null, 256 );
+					if ( '' !== $value ) {
+						$error[ $field ] = $value;
+					}
+				}
+				if ( ! empty( $error ) ) {
+					$dependency['error'] = $error;
+				}
+			}
+			if ( ! empty( $dependency ) ) {
+				$projected['dependency'] = $dependency;
+			}
+		}
 		if ( is_array( $data['import_validation_result']['diagnostics'] ?? null ) ) {
 			$projected['import_validation_result'] = array(
 				'diagnostics' => self::project_public_diagnostics( $data['import_validation_result']['diagnostics'] ),
