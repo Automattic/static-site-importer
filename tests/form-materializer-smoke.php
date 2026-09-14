@@ -739,6 +739,13 @@ namespace {
 	$submit_block_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $submit_block_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$submit_block_css = (string) ( $submit_block_row['provider_layout_overlay_css']['css'] ?? '' );
 	$assert( empty( $submit_block_validation['errors'] ) && 1 === preg_match( '/\.ssi-node-[a-f0-9]{12}\{display:block\}/', $submit_block_css ) && ! str_contains( $submit_block_css, '> .wp-block-button__link{display:block}' ), 'source-block-submit-display-targets-the-core-button-wrapper-for-automatic-full-row-width', $submit_block_css );
+	$positioned_submit_form = $presentation_form;
+	$positioned_submit_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 3, 'control' => $presentation_role( array( 'display' => 'flex', 'inset' => '0', 'position' => 'absolute' ), array( 'display', 'inset', 'position' ), 'button' ) ) );
+	$positioned_submit_form['forms'][0]['presentation_graph']['variants'] = array( array( 'index' => 3, 'role' => 'control', 'condition' => array( 'kind' => 'media', 'query' => '(max-width:768px)' ), 'style_patch' => array( 'display' => 'flex', 'inset' => '0', 'position' => 'absolute' ), 'precedence' => array( 'display' => array( 'source_order' => 2, 'specificity' => 20, 'important' => false ), 'inset' => array( 'source_order' => 2, 'specificity' => 20, 'important' => false ), 'position' => array( 'source_order' => 2, 'specificity' => 20, 'important' => false ) ), 'provenance' => array() ) );
+	$positioned_submit_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $positioned_submit_form );
+	$positioned_submit_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $positioned_submit_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$positioned_submit_css        = (string) ( $positioned_submit_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert( empty( $positioned_submit_validation['errors'] ) && 'mapped' === ( $positioned_submit_row['status'] ?? '' ) && true === ( $positioned_submit_row['runtime_mapped'] ?? false ) && empty( $positioned_submit_row['form_receipt_unaccepted_losses'] ?? array() ) && 2 === substr_count( $positioned_submit_css, 'inset:0' ) && 2 === substr_count( $positioned_submit_css, 'position:absolute' ), 'positioned-submit-preserves-responsive-inset-without-a-receipt-loss-gate', wp_json_encode( $positioned_submit_row ) );
 	foreach ( array( '' => 'inherit', 'font-weight:600;' => '600' ) as $source_weight => $expected_weight ) {
 		$label_artifact = ( new $artifact_compiler() )->compile( array(
 			'entrypoint' => 'index.html',
@@ -1725,6 +1732,28 @@ namespace {
 		$root_map
 	);
 	$assert( '' === $unsafe_custom_property['css'] && 'unsafe_layout_value' === ( $unsafe_custom_property['losses'][0]['reason_code'] ?? '' ), 'custom-property-passthrough-still-rejects-injected-declarations' );
+	$receipt_argument = array_values( array_filter( $argv ?? array(), static fn( string $argument ): bool => str_starts_with( $argument, '--retained-form-receipt=' ) ) );
+	if ( ! empty( $receipt_argument ) ) {
+		$receipt_path = substr( $receipt_argument[0], strlen( '--retained-form-receipt=' ) );
+		$receipt      = is_readable( $receipt_path ) ? json_decode( (string) file_get_contents( $receipt_path ), true ) : null;
+		$retained     = array();
+		$collect      = static function ( mixed $value ) use ( &$collect, &$retained ): void {
+			if ( ! is_array( $value ) ) {
+				return;
+			}
+			if ( isset( $value['source_path'], $value['controls'], $value['presentation_graph'] ) && is_array( $value['controls'] ) && is_array( $value['presentation_graph'] ) ) {
+				$retained[ (string) ( $value['fallback_identity'] ?? hash( 'sha256', (string) $value['source_path'] . "\n" . wp_json_encode( $value['controls'] ) ) ) ] = $value;
+				return;
+			}
+			foreach ( $value as $child ) {
+				$collect( $child );
+			}
+		};
+		$collect( $receipt );
+		$retained_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array_values( $retained ) ) );
+		$retained_rows       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $retained_validation['forms'] ?? array() ) )['forms'] ?? array();
+		$assert( 24 === count( $retained ) && empty( $retained_validation['errors'] ) && 24 === count( $retained_rows ) && 24 === count( array_filter( $retained_rows, static fn( array $row ): bool => 'mapped' === ( $row['status'] ?? '' ) && true === ( $row['runtime_mapped'] ?? false ) && empty( $row['form_receipt_unaccepted_losses'] ?? array() ) ) ), 'retained-artifact-forms-materialize-without-receipt-losses', wp_json_encode( array( 'path' => $receipt_path, 'forms' => count( $retained ), 'errors' => $retained_validation['errors'] ?? array(), 'rows' => $retained_rows ) ) );
+	}
 
 	if ( empty( $failures ) && in_array( '--emit-topology-markup', $argv ?? array(), true ) ) {
 		echo wp_json_encode( array( 'markup' => $topology_markup, 'styled_markup' => $markup, 'depth_markup' => $deep_topology_markup, 'deep_width_markup' => $deep_width_markup, 'cara_markup' => $cara_grafted ) ) . "\n";
