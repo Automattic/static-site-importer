@@ -315,12 +315,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		// The provider form target is admitted as both of its rendered spellings,
 		// so a compiled rule may carry that two-part selector list.
-		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required)?|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\))?';
+		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required)?| \.grunion-field-wrap > \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap > \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\))?';
 		if ( ! preg_match( '/^(' . $scope_selector . '(?:, ' . $scope_selector . ')?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
 		$layout_allowed       = array( 'display', 'width', 'height', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'position', 'z-index', 'pointer-events' );
-		$presentation_allowed = array_merge( array_values( self::presentation_property_map() ), array( 'flex' ) );
+		$presentation_allowed = array_merge( array_values( self::presentation_property_map() ), array( 'color', 'flex' ) );
 		foreach ( explode( ';', $matches[2] ) as $declaration ) {
 			$declaration = preg_replace( '/!important$/D', '', $declaration ) ?? $declaration;
 			if ( preg_match( '/^(--[a-z][a-z0-9-]{0,79}):(.+)$/D', $declaration, $alias ) ) {

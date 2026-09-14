@@ -705,6 +705,7 @@ class Static_Site_Importer_Form_Seeder {
 		$target_map         = self::provider_layout_target_map( $overlay_form, $scope, $presentation_descriptors, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
 		$presentation_graph = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
 		$overlay            = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map, $presentation_graph );
+		$overlay            = self::collapse_inactive_provider_errors( $overlay, $scope, $mapped_types );
 		self::append_receipt_entries( $layout['receipt'], 'operations', $overlay['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'operations', $layout_intent['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $overlay['losses'] );
@@ -2575,6 +2576,33 @@ class Static_Site_Importer_Form_Seeder {
 			}
 		}
 		return $markup;
+	}
+
+	/**
+	 * Jetpack retains an empty error element in every field. It remains a flex
+	 * item, so a source-owned field gap is applied to it unless it is removed
+	 * while inactive. The runtime adds `has-errors` when validation needs it.
+	 *
+	 * @param array<string,mixed> $overlay Compiled provider overlay.
+	 * @param string              $scope Provider form scope.
+	 * @param array<int,string>  $mapped_types Materialized field types by source index.
+	 * @return array<string,mixed>
+	 */
+	private static function collapse_inactive_provider_errors( array $overlay, string $scope, array $mapped_types ): array {
+		if ( ! isset( $overlay['overlay'] ) || ! is_array( $overlay['overlay'] ) || ! is_string( $overlay['css'] ?? null ) || ! preg_match( '/^ssi-form-[a-f0-9]{12}$/D', $scope ) ) {
+			return $overlay;
+		}
+
+		if ( empty( $mapped_types ) ) {
+			return $overlay;
+		}
+		$css            = rtrim( $overlay['css'] ) . "\n." . $scope . ' .grunion-field-wrap > .contact-form__input-error:not(.has-errors){display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap > .grunion-field::placeholder{color:revert}' . "\n";
+		$overlay['css'] = $css;
+		$overlay['overlay']['css']    = $css;
+		$overlay['overlay']['sha256'] = hash( 'sha256', $css );
+		$overlay['overlay']['bytes']  = strlen( $css );
+
+		return $overlay;
 	}
 
 	/**
