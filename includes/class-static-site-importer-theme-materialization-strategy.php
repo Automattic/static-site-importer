@@ -2,6 +2,9 @@
 /** Theme presentation strategy selection. @package StaticSiteImporter */
 if ( ! defined( 'ABSPATH' ) ) {
 	exit; }
+if ( ! class_exists( 'Static_Site_Importer_Generated_File' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-generated-file.php';
+}
 final class Static_Site_Importer_Theme_Materialization_Strategy {
 	public const BLOCK                      = 'block';
 	public const CLASSIC                    = 'classic';
@@ -41,12 +44,7 @@ final class Static_Site_Importer_Theme_Materialization_Strategy {
 	}
 	/** The only PHP SSI emits; content/chrome remain sanitized data files. */
 	public static function fixed_classic_scaffold( string $name ): array {
-		// Theme headers are comments: retain only one bounded printable line so artifact
-		// metadata cannot terminate or inject header directives.
-		$name = preg_replace( '/[\x00-\x1f\x7f]+/', ' ', $name ) ?? '';
-		$name = str_replace( '*/', '* /', $name );
-		$name = trim( preg_replace( '/\s+/', ' ', $name ) ?? '' );
-		$name = substr( $name, 0, 200 );
+		$name = Static_Site_Importer_Generated_File::comment_header_value( $name );
 		if ( '' === $name ) {
 			$name = 'Static Site Import'; }
 		$functions = <<<'PHP'

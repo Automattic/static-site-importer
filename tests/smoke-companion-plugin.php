@@ -563,9 +563,12 @@ if ( is_array( $descriptor ) ) {
 	$assert( str_contains( $main, 'wp_enqueue_script' ), 'main-file-enqueues-island-js' );
 	$assert( str_contains( $main, "require_once __DIR__ . '/includes/provider-form-runtime-v1.php'" ) && str_contains( $main, 'SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1::register();' ), 'main-file-registers-versioned-companion-provider-form-runtime' );
 	$assert( isset( $files['ssi-example-site/includes/provider-form-runtime-v1.php'] ) && str_contains( $files['ssi-example-site/includes/provider-form-runtime-v1.php'], 'final class SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1' ), 'provider-form-runtime-is-emitted-under-companion-namespace' );
+	$config = json_decode( (string) ( $files['ssi-example-site/companion.json'] ?? '' ), true );
+	$assert( is_array( $config ) && 'Example Site' === ( $config['site_name'] ?? '' ) && array( 'custom-hero' ) === ( $config['block_directories'] ?? null ) && 'ssi-example-site/ssi-example-site.php' === ( $config['plugin_file'] ?? '' ), 'companion-config-contains-imported-runtime-data' );
+	$assert( str_contains( $main, "companion.json" ) && ! str_contains( $main, "'custom-hero'" ) && ! str_contains( $main, "'ssi-example-site-editor'" ), 'main-file-reads-runtime-data-from-json' );
 
-	$assert( str_contains( $main, "register_block_type( SSI_EXAMPLE_SITE_" ) && str_contains( $main, "_DIR . 'blocks/' . \$block_dir )" ), 'main-file-registers-metadata-block-directory' );
-	$assert( str_contains( $main, "\$registered instanceof WP_Block_Type" ) && str_contains( $main, "static_site_importer_companion_block_owners" ) && str_contains( $main, "'plugin_file' => 'ssi-example-site/ssi-example-site.php'" ), 'main-file-records-owner-after-metadata-registration' );
+	$assert( str_contains( $main, "register_block_type( __DIR__ . '/blocks/' . \$block_dir )" ) && str_contains( $main, "['block_directories']" ), 'main-file-registers-json-configured-metadata-block-directory' );
+	$assert( str_contains( $main, "\$registered instanceof WP_Block_Type" ) && str_contains( $main, "static_site_importer_companion_block_owners" ) && str_contains( $main, "['plugin_file']" ), 'main-file-records-json-configured-owner-after-metadata-registration' );
 	$assert( ! str_contains( $main, 'Requires Plugins:' ) && ! str_contains( $main, 'Automattic\\BlocksEngine' ), 'generated-plugin-declares-no-importer-or-compiler-runtime-dependency' );
 	$assert( ! str_contains( $main, 'block_specs' ) && ! str_contains( $main, 'render_callback' ) && ! str_contains( $main, "register_block_type( (string)" ), 'main-file-has-no-php-only-registration-fallback' );
 	$block_json = $files['ssi-example-site/blocks/custom-hero/block.json'] ?? '';
@@ -575,7 +578,8 @@ if ( is_array( $descriptor ) ) {
 	$assert( str_contains( $block_json, '"viewScriptModule"' ) && str_contains( $block_json, '"viewStyle"' ) && str_contains( $block_json, '"script"' ), 'metadata-block-json-retains-all-core-metadata-fields' );
 	$assert( isset( $files['ssi-example-site/blocks/custom-hero/index.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/script.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/style.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/editor.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/view.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/view-module.js'] ) && isset( $files['ssi-example-site/blocks/custom-hero/view.css'] ) && isset( $files['ssi-example-site/blocks/custom-hero/variations.json'] ), 'metadata-block-assets-emitted' );
 	$asset_manifest = $files['ssi-example-site/blocks/custom-hero/index.asset.php'] ?? '';
-	$assert( str_contains( $asset_manifest, "'dependencies' => array(\n\t\t'wp-blocks',\n\t\t'wp-block-editor',\n\t\t'wp-element'," ) && str_contains( $asset_manifest, "'version' => '" . hash( 'sha256', 'window.SSIEditor = true;' ) . "'" ), 'script-dependency-asset-manifest-is-deterministic' );
+	$asset_manifest_json = json_decode( (string) ( $files['ssi-example-site/blocks/custom-hero/index.asset.json'] ?? '' ), true );
+	$assert( str_contains( $asset_manifest, 'JSON_THROW_ON_ERROR' ) && array( 'dependencies' => array( 'wp-blocks', 'wp-block-editor', 'wp-element' ), 'version' => hash( 'sha256', 'window.SSIEditor = true;' ) ) === $asset_manifest_json, 'script-dependency-asset-manifest-is-json-backed-and-deterministic' );
 
 	// The metadata render target remains a server-rendered template.
 	$render = $files['ssi-example-site/blocks/custom-hero/render.php'] ?? '';
@@ -630,7 +634,7 @@ if ( is_array( $descriptor ) ) {
 
 	$assert( 'window.ssiExampleEditor = true;' === ( $files['ssi-example-site/editor/core-enhancement.js'] ?? null ), 'editor-script-asset-is-materialized' );
 	$assert( str_contains( $main, "add_action( 'enqueue_block_editor_assets'" ), 'editor-scripts-hook-block-editor-only' );
-	$assert( str_contains( $main, "'handle' => 'ssi-example-site-editor'" ) && str_contains( $main, "'src' => 'editor/core-enhancement.js'" ) && str_contains( $main, "'wp-block-editor'" ), 'editor-scripts-register-declared-handle-path-and-dependencies' );
+	$assert( str_contains( $main, "['editor_scripts']" ) && is_array( $config ) && 'ssi-example-site-editor' === ( $config['editor_scripts'][0]['handle'] ?? '' ) && 'editor/core-enhancement.js' === ( $config['editor_scripts'][0]['src'] ?? '' ) && in_array( 'wp-block-editor', $config['editor_scripts'][0]['dependencies'] ?? array(), true ), 'editor-scripts-register-json-configured-handle-path-and-dependencies' );
 	$frontend_enqueue = preg_match( "/function [^(]+_enqueue_global_islands\\(\\) \\{.*?^\\}/ms", $main, $frontend_match ) ? $frontend_match[0] : '';
 	$assert( '' !== $frontend_enqueue && ! str_contains( $frontend_enqueue, 'ssi-example-site-editor' ) && ! str_contains( $frontend_enqueue, 'enqueue_block_editor_assets' ), 'editor-scripts-are-excluded-from-frontend-enqueue-function' );
 }
@@ -825,14 +829,23 @@ if ( is_array( $render_variants ) ) {
 
 	// A block with no render payload remains static and uses its saved post markup.
 	$assert( ! isset( $variant_files['ssi-render-variants/blocks/static-card/render.php'] ), 'static-block-omits-render-php' );
-	$assert( str_contains( $variant_main, "'static-card'" ) && str_contains( $variant_main, "register_block_type" ), 'static-block-registered-from-metadata' );
+	$variant_config = json_decode( (string) ( $variant_files['ssi-render-variants/companion.json'] ?? '' ), true );
+	$assert( str_contains( $variant_main, 'register_block_type' ) && is_array( $variant_config ) && in_array( 'static-card', $variant_config['block_directories'] ?? array(), true ), 'static-block-registered-from-json-metadata' );
 	$static_block_json = $variant_files['ssi-render-variants/blocks/static-card/block.json'] ?? '';
 	$assert( str_contains( $static_block_json, '"name": "blocks-engine/description-list"' ), 'static-block-preserves-canonical-name' );
 	$assert( ! str_contains( $static_block_json, '"render"' ), 'static-block-preserves-static-rendering' );
 
 	// A block with payload markup emits that markup as render.php.
 	$declared_render = $variant_files['ssi-render-variants/blocks/declared-render/render.php'] ?? '';
-	$assert( str_contains( $declared_render, 'ssi-declared' ), 'declared-render-block-emits-payload-markup' );
+	$declared_render_json = $variant_files['ssi-render-variants/blocks/declared-render/render.json'] ?? '';
+	$assert( str_contains( $declared_render, "render.json" ) && '<div class="ssi-declared"></div>' === json_decode( $declared_render_json, true ), 'declared-render-block-reads-payload-markup-from-json' );
+	$static_render_dir = $ssi_companion_tmp . '/static-render';
+	wp_mkdir_p( $static_render_dir );
+	file_put_contents( $static_render_dir . '/render.php', $declared_render );
+	file_put_contents( $static_render_dir . '/render.json', $declared_render_json );
+	ob_start();
+	include $static_render_dir . '/render.php';
+	$assert( '<div class="ssi-declared"></div>' === ob_get_clean(), 'static-render-json-reader-emits-normal-markup' );
 
 	// Metadata is emitted and the generated render.php remains its render target.
 	$variant_block_json = array_filter( array_keys( $variant_files ), static fn ( string $path ): bool => str_ends_with( $path, '/block.json' ) );
@@ -905,7 +918,8 @@ $visual_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $visual_co
 $visual_main = is_array( $visual_descriptor ) ? (string) ( $visual_descriptor['files']['ssi-visual-state/ssi-visual-state.php'] ?? '' ) : '';
 $invalid_visual_companion = $visual_companion;
 $invalid_visual_companion['form_visual_states'][0]['parts'][0]['markup'] = '<svg><script>alert(1)</script></svg>';
-$assert( is_array( $visual_descriptor ) && str_contains( $visual_main, 'configure_visual_states' ) && str_contains( $visual_main, 'ssi-form-123456789abc-field-0' ) && ! str_contains( $visual_main, 'base64' ) && is_wp_error( Static_Site_Importer_Companion_Plugin::scaffold( $invalid_visual_companion ) ), 'companion-payload-carries-only-validated-empty-country-visual-state-config' );
+$visual_config = is_array( $visual_descriptor ) ? json_decode( (string) ( $visual_descriptor['files']['ssi-visual-state/companion.json'] ?? '' ), true ) : null;
+$assert( is_array( $visual_descriptor ) && str_contains( $visual_main, 'configure_visual_states' ) && is_array( $visual_config ) && 'ssi-form-123456789abc-field-0' === ( $visual_config['form_visual_states'][0]['field_id'] ?? '' ) && ! str_contains( $visual_main, 'base64' ) && is_wp_error( Static_Site_Importer_Companion_Plugin::scaffold( $invalid_visual_companion ) ), 'companion-payload-carries-only-validated-empty-country-visual-state-config' );
 
 // 2. Install plan resolves the file set + activation intent (pure / no writes).
 if ( is_array( $descriptor ) ) {

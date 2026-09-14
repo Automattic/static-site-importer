@@ -135,7 +135,8 @@ if ( is_array( $descriptor ) ) {
 	$main  = $files['ssi-example-site/ssi-example-site.php'] ?? '';
 	$assert( str_contains( $main, "add_filter( 'render_block'" ), 'companion-scopes-island-to-owning-block' );
 	$assert( str_contains( $main, 'wp_enqueue_script' ), 'companion-enqueues-island-js' );
-	$assert( str_contains( $main, "'block' => 'ssi-example-site/custom-hero'" ), 'companion-island-bound-to-block' );
+	$config = json_decode( (string) ( $descriptor['files']['ssi-example-site/companion.json'] ?? '' ), true );
+	$assert( is_array( $config ) && 'ssi-example-site/custom-hero' === ( $config['islands'][0]['block'] ?? '' ), 'companion-island-bound-to-block' );
 
 	$island_files = array_filter(
 		$files,
