@@ -21,9 +21,9 @@ if ( ! function_exists( 'wp_json_encode' ) ) {
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
 
-$html               = '<form class="newsletter primary" action="/subscribe" method="post"><h2>Updates</h2><label class="required-note">Required fields</label><input name="email" aria-label="Email address" required><p class="help">We only send useful mail.</p><textarea name="message" style="height: 12rem"></textarea><input type="submit" value="Subscribe" style="display: none"><a class="button primary invalid!" href="#subscribe">Subscribe</a><p class="help">Unsubscribe any time.</p></form>';
-$manifest           = Static_Site_Importer_Form_Fallback_Contract::manifest_from_html( $html );
-$presentation       = Static_Site_Importer_Form_Fallback_Contract::presentation_from_html( $html, 'form.newsletter', 1 );
+$html         = '<form class="newsletter primary" action="/subscribe" method="post"><h2>Updates</h2><label class="required-note">Required fields</label><input name="email" aria-label="Email address" required><p class="help">We only send useful mail.</p><textarea name="message" style="height: 12rem"></textarea><input type="submit" value="Subscribe" style="display: none"><a class="button primary invalid!" href="#subscribe">Subscribe</a><p class="help">Unsubscribe any time.</p></form>';
+$manifest     = Static_Site_Importer_Form_Fallback_Contract::manifest_from_html( $html );
+$presentation = Static_Site_Importer_Form_Fallback_Contract::presentation_from_html( $html, 'form.newsletter', 1 );
 if ( method_exists( Static_Site_Importer_Form_Fallback_Contract::class, 'analysis_from_html' ) ) {
 	$analysis = Static_Site_Importer_Form_Fallback_Contract::analysis_from_html( $html, 'form.newsletter', 1 );
 	if ( $manifest !== $analysis['manifest'] || $presentation !== $analysis['presentation'] ) {
@@ -52,9 +52,9 @@ $bindings           = Static_Site_Importer_Entity_Materializer_Registry::block_b
 		'entities' => array(
 			'forms' => array(
 				'adapter'  => array(
-					'provider'         => 'fixture-provider',
+					'provider'          => 'fixture-provider',
 					'entity_collection' => 'forms',
-					'binding_callback' => static fn(): string => '<!-- wp:fixture/form -->form<!-- /wp:fixture/form -->',
+					'binding_callback'  => static fn(): string => '<!-- wp:fixture/form -->form<!-- /wp:fixture/form -->',
 				),
 				'manifest' => array( 'forms' => array( $prepared ) ),
 			),

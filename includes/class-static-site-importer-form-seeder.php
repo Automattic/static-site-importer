@@ -445,7 +445,7 @@ class Static_Site_Importer_Form_Seeder {
 			$tag  = strtolower( trim( (string) ( $control['tag'] ?? '' ) ) );
 			if ( self::is_hidden_bookkeeping_control( $form, $control_index, $control, $tag, $type ) ) {
 				$suppressed_controls[ $control_index ] = true;
-				$skipped[] = 'hidden_bookkeeping';
+				$skipped[]                             = 'hidden_bookkeeping';
 				continue;
 			}
 			$presentation_descriptors[ $control_index ] = self::presentation_descriptor( $scope, $control_index, $type, $presentation_roles[ $control_index ] ?? array() );
@@ -487,7 +487,7 @@ class Static_Site_Importer_Form_Seeder {
 			}
 
 			$control_phone_destinations = $presentation_descriptor['phone_destinations'];
-			$field_block        = self::field_block_from_control(
+			$field_block                = self::field_block_from_control(
 				$tag,
 				$type,
 				$control,
@@ -701,10 +701,10 @@ class Static_Site_Importer_Form_Seeder {
 		foreach ( array_keys( $suppressed_controls ) as $control_index ) {
 			unset( $overlay_form['presentation_graph']['controls'][ $control_index ] );
 		}
-		$visual_state                 = self::empty_country_visual_state( $form, $scope, $topology['phone_popup_targets'] );
-		$target_map                   = self::provider_layout_target_map( $overlay_form, $scope, $presentation_descriptors, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
-		$presentation_graph           = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
-		$overlay                      = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map, $presentation_graph );
+		$visual_state       = self::empty_country_visual_state( $form, $scope, $topology['phone_popup_targets'] );
+		$target_map         = self::provider_layout_target_map( $overlay_form, $scope, $presentation_descriptors, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
+		$presentation_graph = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
+		$overlay            = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map, $presentation_graph );
 		self::append_receipt_entries( $layout['receipt'], 'operations', $overlay['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'operations', $layout_intent['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $overlay['losses'] );
@@ -3035,12 +3035,15 @@ class Static_Site_Importer_Form_Seeder {
 					// Core's rendered button is an actual destination for the source
 					// button's positioning and transform properties; other controls are not.
 					'properties' => $properties,
-						// Provider controls inherit theme typography. Revert to each browser's
-						// native control defaults unless source CSS owns either property.
-						'resets'     => array_merge(
-							array( 'font-family' => 'revert', 'line-height' => 'revert' ),
-						'submit' === $type ? array( 'min-height' => '0' ) : array()
-					),
+					// Provider controls inherit theme typography. Revert to each browser's
+					// native control defaults unless source CSS owns either property.
+					'resets'     => array_merge(
+						array(
+							'font-family' => 'revert',
+							'line-height' => 'revert',
+						),
+					'submit' === $type ? array( 'min-height' => '0' ) : array()
+				),
 				);
 			}
 		}

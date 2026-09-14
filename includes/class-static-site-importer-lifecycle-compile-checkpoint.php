@@ -28,7 +28,7 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 		if ( is_wp_error( $workspace ) ) {
 			return $workspace;
 		}
-		$binding = self::binding( $artifact, $request_args, $owner );
+		$binding   = self::binding( $artifact, $request_args, $owner );
 		$reference = self::direct_artifact_reference( $request_args, $materialization );
 		if ( is_array( $reference ) ) {
 			$record = array(

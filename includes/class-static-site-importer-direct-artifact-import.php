@@ -715,9 +715,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				$args = self::with_lifecycle_transport( $args, $request_args );
 			}
 
-			$args['compiled_artifact_result']                 = $composed_state['result'];
-			$args['_static_site_importer_precompiled_source'] = true;
-			$args['_static_site_importer_payload_reader']     = $payload_reader;
+			$args['compiled_artifact_result']                         = $composed_state['result'];
+			$args['_static_site_importer_precompiled_source']         = true;
+			$args['_static_site_importer_payload_reader']             = $payload_reader;
 			$args['_static_site_importer_lifecycle_reference_backed'] = true;
 			if ( '' === trim( (string) ( $args['report'] ?? '' ) ) ) {
 				$failed_plan_report = self::failed_plan_report_destination( $workspace );
