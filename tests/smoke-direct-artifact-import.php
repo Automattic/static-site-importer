@@ -196,6 +196,11 @@ $assert( hash( 'sha256', (string) wp_json_encode( $canonical ) ) === $hash_json-
 $assert( wp_mkdir_p( $test_root ), 'the fixture workspace root must be created' );
 $primitive_workspace = new Static_Site_Importer_Artifact_Run_Workspace( $test_root, 'direct-checkpoint-primitives' );
 $assert( ! is_wp_error( $primitive_workspace->publish_json_once( 'ordered.json', $ordered ) ) && wp_json_encode( $ordered, JSON_PRETTY_PRINT | JSON_PRESERVE_ZERO_FRACTION ) === $primitive_workspace->read_raw( 'ordered.json' ), 'streamed immutable JSON must preserve exact pretty-printed checkpoint bytes' );
+$exclusive_copy        = new ReflectionMethod( Static_Site_Importer_Artifact_Run_Workspace::class, 'copy_exclusively' );
+$exclusive_source      = $test_root . '/exclusive-source';
+$exclusive_destination = $test_root . '/exclusive-destination';
+file_put_contents( $exclusive_source, 'checkpoint' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Builds an isolated checkpoint fallback fixture.
+$assert( true === $exclusive_copy->invoke( null, $exclusive_source, $exclusive_destination ) && 'checkpoint' === file_get_contents( $exclusive_destination ) && false === $exclusive_copy->invoke( null, $exclusive_source, $exclusive_destination ), 'exclusive checkpoint fallback supports filesystems without hard links without replacing the first writer' );
 $large_chunk = str_repeat( 'x', 1024 * 1024 );
 $large_artifact = array();
 for ( $index = 0; $index < 96; ++$index ) {
