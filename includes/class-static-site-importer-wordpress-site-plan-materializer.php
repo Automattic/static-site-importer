@@ -363,9 +363,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$state['failure_reason'] = $error->getMessage();
 			return self::receipt( 'rejected', $state );
 		}
-		$args             = $state['args'];
-		$font_overlay     = $state['font_overlay'];
-		$viewport_overlay = $state['viewport_overlay'];
+		$args                = $state['args'];
+		$font_overlay        = $state['font_overlay'];
+		$viewport_overlay    = $state['viewport_overlay'];
 		$route_title_overlay = $state['route_title_overlay'] ?? array();
 
 		foreach ( $state['ordered_pages'] as $page ) {
