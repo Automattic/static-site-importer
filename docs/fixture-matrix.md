@@ -567,8 +567,17 @@ the known Gutenberg welcome preference, fails on remaining visible dialogs, and
 waits for fonts, images, and stylesheet readiness. Background editor polling is
 not a readiness requirement. Geometry is relative to the declared container;
 text targets use rendered text bounds rather than unused inline/block width.
-Region screenshots additionally use the existing shared PNG comparison primitive;
-any pixel mismatch or dimension mismatch fails, even if DOM measurements match.
+Region screenshots use the existing shared PNG comparison primitive. Before capture,
+static/relative untransformed regions are temporarily positioned at integer raster
+origins, with their original inline styles restored afterward. Original geometry,
+aligned geometry, and offsets are retained. Geometry is compared before adjustment.
+Transformed or fixed/sticky regions fail as unsupported capture evidence. Oversized
+editor regions increase the bounded browser height before measurement; source and
+frontend use the same resulting iframe viewport. Regions still exceeding it fail
+as clipped evidence. This prevents subpixel raster noise and white iframe crop edges
+from being misclassified as theme defects. Text bounds union non-whitespace text
+ranges, preserving nested text and excluding invisible pre-wrap trailing spaces.
+Any pixel mismatch or dimension mismatch still fails, even if DOM measurements match.
 Map content regions rather than WordPress chrome. Idle selection is cleared before
 capture; selection-state screenshots retain normal editing affordances and use
 semantic measurements rather than requiring selection outlines to match the source.

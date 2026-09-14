@@ -6,6 +6,43 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { measurePresentation, evaluateEditorPresentation, presentationEvidencePassed } from '../lib/editor-presentation.mjs';
 import { compareVisualParityPngFiles } from '../lib/fixture-matrix/image-comparison.mjs';
+import { captureAlignedRegion } from '../lib/aligned-region-capture.mjs';
+import { PNG } from 'pngjs';
+import pixelmatch from 'pixelmatch';
+
+test('fractional page origins cannot manufacture editor pixel or dimension mismatches', async () => {
+  const browser = await chromium.launch();
+  try {
+    const pages = await Promise.all([browser.newPage(), browser.newPage()]);
+    const captures = [];
+    for (const [index, page] of pages.entries()) {
+      await page.setContent(`<style>body{margin:0;background:#151515;color:#39ff14;font:15.2px/1.6 Arial}.region{width:260px}input{padding:19.2px;border:1px solid #333;background:#222;color:white}label{display:block}</style><div style="height:${index ? '101.9375' : '101.34375'}px"></div><div class="region" style="color:inherit"><label>Example field</label><input placeholder="Type here"><label>Another field</label><input placeholder="Another value"></div>`);
+      const locator = page.locator('.region');
+      const originalStyle = await locator.getAttribute('style');
+      const originalRect = await locator.boundingBox();
+      const capture = await captureAlignedRegion(locator);
+      assert.equal(await locator.getAttribute('style'), originalStyle);
+      assert.deepEqual(await locator.boundingBox(), originalRect);
+      assert.equal(capture.evidence.restored, true);
+      captures.push(PNG.sync.read(capture.png));
+    }
+    assert.equal(captures[0].width, captures[1].width);
+    assert.equal(captures[0].height, captures[1].height);
+    assert.equal(pixelmatch(captures[0].data, captures[1].data, null, captures[0].width, captures[0].height, { threshold: 0.1 }), 0);
+    await pages[1].addStyleTag({ content: '.region{color:red!important}' });
+    const changed = PNG.sync.read((await captureAlignedRegion(pages[1].locator('.region'))).png);
+    assert.ok(pixelmatch(captures[0].data, changed.data, null, changed.width, changed.height, { threshold: 0.1 }) > 0, 'real styling differences still fail');
+    await pages[1].addStyleTag({ content: '.region{transform:scale(.9)}' });
+    await assert.rejects(captureAlignedRegion(pages[1].locator('.region')), /untransformed/);
+    const host = await browser.newPage();
+    await host.setContent('<iframe name="canvas" style="height:100px;width:300px"></iframe>');
+    const frame = host.frame('canvas');
+    await frame.setContent('<div class="region" style="height:150px">Oversized region</div>');
+    await assert.rejects(captureAlignedRegion(frame.locator('.region')), /clipped/);
+    await host.locator('iframe').evaluate(element => { element.style.height = '200px'; });
+    await captureAlignedRegion(frame.locator('.region'));
+  } finally { await browser.close(); }
+});
 
 const selectors = selector => Object.fromEntries(['source', 'frontend', 'editor'].map(surface => [surface, selector]));
 const map = { schema: 'static-site-importer/editor-presentation-map/v1', targets: [
@@ -35,6 +72,10 @@ test('real browser geometry rejects the observed editor defects while the fronte
     const baseline = { source: await measurePresentation(source, map, 'source'), frontend: await measurePresentation(frontend, map, 'frontend'), editor: await measurePresentation(frame, map, 'editor') };
     assert.equal(baseline.editor.viewport.width, 600, 'measure the iframe, not the 1000px browser');
     assert.equal(evaluateEditorPresentation(map, baseline).status, 'passed');
+    // A block wrapper around identical label text is not a larger text range.
+    await frame.setContent(html.replace('<label for="name">Your name</label>', '<label for="name"><span style="display:block">Your name</span></label>'));
+    assert.equal(evaluateEditorPresentation(map, { ...baseline, editor: await measurePresentation(frame, map, 'editor') }).status, 'passed');
+    await frame.setContent(html);
     const regionMap = { ...map, targets: [map.targets[0]] };
     const proof = { ...evaluateEditorPresentation(regionMap, baseline), map: regionMap, measurements: baseline, selection_checks: [], artifacts: [] };
     for (const [surface, page] of Object.entries({ source, frontend, editor: frame })) {
