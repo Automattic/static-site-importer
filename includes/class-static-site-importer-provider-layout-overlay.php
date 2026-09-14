@@ -540,7 +540,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				}
 				// An explicit source declaration is authoritative over a provider-default
 				// neutralization at the same destination.
-				if ( array_key_exists( str_replace( '-', '_', $property ), $styles ) ) {
+				if ( 'required_marker' !== $role && in_array( str_replace( '-', '_', $property ), $destination['properties'], true ) && array_key_exists( str_replace( '-', '_', $property ), $styles ) ) {
 					continue;
 				}
 				$reset_declarations[] = $property . ':' . $value;
