@@ -17,6 +17,20 @@ permissions:
   pull-requests: write
 
 jobs:
+  editor-presentation-browser:
+    name: Editor Presentation Browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: node --test tests/editor-presentation-browser.test.mjs tools/run-existing-runtime-review.test.mjs
+
   homeboy-lint:
     name: Homeboy Lint
     runs-on: ubuntu-latest
