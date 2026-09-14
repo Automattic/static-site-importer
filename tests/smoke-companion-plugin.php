@@ -1208,6 +1208,32 @@ $page_ready_report                                          = $page_ready_materi
 );
 $assert( 'skipped' !== ( $page_ready_report['status'] ?? '' ) && in_array( 'example/page-ready-control', WP_Block_Type_Registry::$registered, true ), 'page-ready-checkpoint-materializes-and-registers-declared-companion-blocks' );
 
+// Execute generated entrypoints, rather than only checking their source text.
+foreach ( array( false, true ) as $hostile_mu ) {
+	$hostile_mode = $hostile_mu ? 'mu' : 'regular';
+	$hostile_payload = array_merge(
+		$payload,
+		array(
+			'site_slug' => 'header-security-' . $hostile_mode,
+			'site_name' => "Title */ \$GLOBALS['ssi_header_injected'] = true; /*\r\nRequires Plugins: injected\x00*\x01/",
+			'mu_plugin' => $hostile_mu,
+		)
+	);
+	$hostile_payload['blocks'][0]['block_json']['name'] = 'example/header-security-' . $hostile_mode;
+	$GLOBALS['ssi_header_injected'] = false;
+	$hostile_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $hostile_payload );
+	$assert( 'failed' !== ( $hostile_report['status'] ?? 'failed' ), 'hostile-title-materializes-' . $hostile_mode );
+	$hostile_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $hostile_payload );
+	foreach ( $hostile_descriptor['files'] as $hostile_path => $hostile_source ) {
+		if ( ! str_ends_with( $hostile_path, '.php' ) || ! str_contains( $hostile_source, 'Plugin Name:' ) ) {
+			continue;
+		}
+		$assert( ! preg_match( '/[\r\n]Requires Plugins:/', $hostile_source ), 'hostile-title-cannot-inject-header-' . $hostile_path );
+		require_once ( $hostile_mu ? WPMU_PLUGIN_DIR : WP_PLUGIN_DIR ) . '/' . $hostile_path;
+	}
+	$assert( false === $GLOBALS['ssi_header_injected'], 'hostile-title-executes-no-php-' . $hostile_mode );
+}
+
 // Cleanup generated fixtures.
 $cleanup = static function ( string $dir ) use ( &$cleanup ): void {
 	if ( ! is_dir( $dir ) ) {

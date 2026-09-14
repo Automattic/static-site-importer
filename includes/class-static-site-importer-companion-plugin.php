@@ -614,6 +614,7 @@ class Static_Site_Importer_Companion_Plugin {
 		array $editor_scripts = array(),
 		array $form_visual_states = array()
 	): string {
+		$site_name       = self::header_value( $site_name );
 		$header_name     = sprintf( 'SSI Companion: %s', $site_name );
 		$fn_prefix       = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash;
 		$const_prefix    = strtoupper( $fn_prefix );
@@ -763,6 +764,17 @@ class Static_Site_Importer_Companion_Plugin {
 	}
 
 	/**
+	 * Keep imported metadata inside one PHP header comment line.
+	 *
+	 * @param string $value Imported header value.
+	 * @return string
+	 */
+	private static function header_value( string $value ): string {
+		$value = (string) preg_replace( '/[\x00-\x1f\x7f]/', ' ', $value );
+		return str_replace( '*/', '* /', trim( $value ) );
+	}
+
+	/**
 	 * Render the mu-plugin root loader stub.
 	 *
 	 * @param string $plugin_slug Plugin slug.
@@ -771,7 +783,8 @@ class Static_Site_Importer_Companion_Plugin {
 	 * @return string
 	 */
 	private static function mu_loader_file( string $plugin_slug, string $main_file, string $site_name ): string {
-		$lines   = array();
+		$site_name = self::header_value( $site_name );
+		$lines     = array();
 		$lines[] = '<?php';
 		$lines[] = '/**';
 		$lines[] = ' * Plugin Name: SSI Companion Loader: ' . $site_name;
