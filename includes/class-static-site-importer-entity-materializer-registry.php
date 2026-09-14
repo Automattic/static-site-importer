@@ -1717,6 +1717,17 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 				$row['control_topology'] = $topology['topology'];
 			}
+			if ( array_key_exists( 'sibling_relations', $form ) ) {
+				$relations = self::normalize_form_sibling_relations( $form['sibling_relations'], count( $controls ) );
+				if ( isset( $relations['error'] ) ) {
+					$errors[] = array(
+						'path'    => $path_prefix . '.sibling_relations',
+						'message' => $relations['error'],
+					);
+					continue;
+				}
+				$row['sibling_relations'] = $relations['relations'];
+			}
 			if ( array_key_exists( 'layout_graph', $form ) ) {
 				$graph = self::normalize_computed_layout_graph( $form['layout_graph'] );
 				if ( isset( $graph['error'] ) ) {
@@ -2195,6 +2206,24 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'truncated' => false,
 			),
 		);
+	}
+
+	/** @return array{relations?:array<string,mixed>,error?:string} */
+	private static function normalize_form_sibling_relations( mixed $candidate, int $control_count ): array {
+		if ( ! is_array( $candidate ) || 'generic/form-sibling-relations/v1' !== ( $candidate['schema'] ?? null ) || ! self::has_only_keys( $candidate, array( 'schema', 'max_pairs', 'truncated', 'pairs' ) ) || ! is_int( $candidate['max_pairs'] ?? null ) || $candidate['max_pairs'] < 1 || $candidate['max_pairs'] > 128 || ! is_bool( $candidate['truncated'] ?? null ) || ! is_array( $candidate['pairs'] ?? null ) || ! array_is_list( $candidate['pairs'] ) || count( $candidate['pairs'] ) > $candidate['max_pairs'] ) {
+			return array( 'error' => 'sibling_relations must use bounded generic/form-sibling-relations/v1.' );
+		}
+		if ( $candidate['truncated'] ) {
+			return array( 'error' => 'sibling_relations is truncated and cannot preserve direct source adjacency.' );
+		}
+		$seen = array();
+		foreach ( $candidate['pairs'] as $pair ) {
+			if ( ! is_array( $pair ) || ! self::has_only_keys( $pair, array( 'control' ) ) || ! is_int( $pair['control'] ?? null ) || $pair['control'] < 0 || $pair['control'] >= $control_count || isset( $seen[ $pair['control'] ] ) ) {
+				return array( 'error' => 'sibling_relations pairs must reference unique flat controls.' );
+			}
+			$seen[ $pair['control'] ] = true;
+		}
+		return array( 'relations' => array( 'schema' => 'generic/form-sibling-relations/v1', 'max_pairs' => $candidate['max_pairs'], 'truncated' => false, 'pairs' => $candidate['pairs'] ) );
 	}
 
 	/** @return array<string,string> */

@@ -600,6 +600,26 @@ class Static_Site_Importer_Form_Seeder {
 				$overlay_graph['nodes'][] = $target;
 			}
 		}
+		foreach ( self::direct_label_control_gap_targets( $form ) as $control_index => $gap ) {
+			$target_id = 'control-' . $control_index;
+			$merged    = false;
+			foreach ( $overlay_graph['nodes'] as &$overlay_node ) {
+				if ( is_array( $overlay_node ) && $target_id === ( $overlay_node['id'] ?? null ) ) {
+					$overlay_node['layout']['gap'] = $gap;
+					$merged                        = true;
+					break;
+				}
+			}
+			unset( $overlay_node );
+			if ( ! $merged ) {
+				$overlay_graph['nodes'][] = array( 'id' => $target_id, 'layout' => array( 'gap' => $gap ) );
+			}
+			$layout['receipt']['operations'][] = array(
+				'dimension'   => 'layout',
+				'strategy'    => 'provider_direct_label_control_gap',
+				'target_hash' => hash( 'sha256', $target_id ),
+			);
+		}
 		foreach ( $overlay_graph['nodes'] as &$overlay_node ) {
 			if ( ! is_array( $overlay_node ) || ! preg_match( '/^(?:control|wrapper)-[0-9]+$/D', (string) ( $overlay_node['id'] ?? '' ) ) || ! self::fixed_width_uses_default_flex( $overlay_node ) ) {
 				continue;
@@ -707,6 +727,39 @@ class Static_Site_Importer_Form_Seeder {
 			$row['unaccepted_receipt_loss_count']  = count( $unaccepted_losses );
 		}
 		return $row;
+	}
+
+	/** @return array<int,string> */
+	private static function direct_label_control_gap_targets( array $form ): array {
+		$relations = $form['sibling_relations'] ?? null;
+		$graph     = $form['layout_graph'] ?? null;
+		if ( ! is_array( $relations ) || 'generic/form-sibling-relations/v1' !== ( $relations['schema'] ?? null ) || true === ( $relations['truncated'] ?? false ) || ! is_array( $relations['pairs'] ?? null ) || ! is_array( $graph['nodes'] ?? null ) ) {
+			return array();
+		}
+		$form_node = current( array_filter( $graph['nodes'], static fn( $node ): bool => is_array( $node ) && 'form' === ( $node['id'] ?? null ) ) );
+		$layout    = is_array( $form_node['layout'] ?? null ) ? $form_node['layout'] : array();
+		$property  = isset( $layout['row_gap'] ) ? 'row-gap' : ( isset( $layout['gap'] ) ? 'gap' : '' );
+		$gap       = '' !== $property ? $layout[ str_replace( '-', '_', $property ) ] : null;
+		if ( 'flex' !== ( $layout['display'] ?? null ) || 'column' !== ( $layout['direction'] ?? null ) || ! is_string( $gap ) || '' === trim( $gap ) ) {
+			return array();
+		}
+		$proven = false;
+		foreach ( $form_node['provenance'] ?? array() as $fact ) {
+			if ( is_array( $fact ) && null === ( $fact['condition'] ?? null ) && in_array( $property, $fact['properties'] ?? array(), true ) ) {
+				$proven = true;
+				break;
+			}
+		}
+		if ( ! $proven ) {
+			return array();
+		}
+		$targets = array();
+		foreach ( $relations['pairs'] as $pair ) {
+			if ( is_array( $pair ) && is_int( $pair['control'] ?? null ) ) {
+				$targets[ $pair['control'] ] = $gap;
+			}
+		}
+		return $targets;
 	}
 
 	/**
