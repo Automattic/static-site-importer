@@ -164,10 +164,18 @@ $register_alternate     = static function ( array $adapters ) use ( &$alternate_
 			},
 		),
 	);
+	$adapters['legacy_non_form'] = array(
+		'id'                   => 'legacy_non_form',
+		'capability'           => 'widget',
+		'provider'             => 'legacy',
+		'rollback_contract_id' => 'test/legacy-non-form-rollback/v1',
+	);
 	return $adapters;
 };
 add_filter( 'ssi_form_plugin', $select_alternate );
 add_filter( 'static_site_importer_entity_materializers', $register_alternate );
+$assert( 'forms' === ( Static_Site_Importer_Entity_Materializer_Registry::form_adapter()['entity_collection'] ?? '' ), 'legacy-form-adapter-receives-default-entity-collection' );
+$assert( 'forms' === ( Static_Site_Importer_Entity_Materializer_Registry::adapter( 'legacy_non_form' )['entity_collection'] ?? '' ), 'legacy-non-form-adapter-receives-default-entity-collection' );
 $alternate = Static_Site_Importer_Provider_Submission_Evidence::verify_runtime(
 	array(
 		'fixture_id'   => 'nimbus',
