@@ -110,9 +110,10 @@ namespace {
 
 	$materializer_calls = 0;
 	$bound_adapter      = array(
-		'provider'     => 'test-provider',
-		'waiver_arg'   => 'allow_missing_test_provider',
-		'materializer' => static function ( array $manifest ) use ( &$materializer_calls ): array {
+		'provider'          => 'test-provider',
+		'entity_collection' => 'forms',
+		'waiver_arg'        => 'allow_missing_test_provider',
+		'materializer'      => static function ( array $manifest ) use ( &$materializer_calls ): array {
 			++$materializer_calls;
 			return array(
 				'status' => 'completed',
@@ -134,6 +135,37 @@ namespace {
 	);
 	$bound_result = Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $bound_lifecycle, array( 'seed_entities' => false ) );
 	$assert( 1 === $materializer_calls && 2 === ( $bound_result['reports']['forms']['counts']['mapped'] ?? 0 ), 'bound-entities-materialize-without-opt-in-seeding' );
+
+	$event_materializer_calls = 0;
+	$event_adapter            = array(
+		'provider'                 => 'test-events',
+		'entity_collection'        => 'events',
+		'waiver_arg'               => 'allow_missing_test_events',
+		'materializer'             => static function ( array $manifest ) use ( &$event_materializer_calls ): array {
+			++$event_materializer_calls;
+			return array(
+				'status' => 'completed',
+				'counts' => array( 'mapped' => count( $manifest['events'] ?? array() ) ),
+				'events' => $manifest['events'] ?? array(),
+			);
+		},
+		'binding_callback'         => static fn( array $entity, array $result ): string => '<!-- wp:paragraph --><p>' . (string) ( $result['title'] ?? $entity['title'] ?? '' ) . '</p><!-- /wp:paragraph -->',
+		'classic_binding_callback' => static fn(): array => array( 'kind' => 'shortcode', 'content' => '[test-event]' ),
+	);
+	$event_manifest           = array(
+		'events' => array(
+			array( 'title' => 'Launch', 'source_path' => 'events.html', 'selector' => '.launch', 'bindings' => array( array( 'source_path' => 'events.html', 'search_block_markup' => '<!-- wp:paragraph --><p>Launch</p><!-- /wp:paragraph -->', 'occurrence' => 1, 'role' => 'event' ) ) ),
+			array( 'title' => 'Closing', 'source_path' => 'events.html', 'selector' => '.closing', 'bindings' => array( array( 'source_path' => 'events.html', 'search_block_markup' => '<!-- wp:paragraph --><p>Closing</p><!-- /wp:paragraph -->', 'occurrence' => 1, 'role' => 'event' ) ) ),
+		),
+	);
+	$event_lifecycle          = array( 'entities' => array( 'events' => array( 'adapter' => $event_adapter, 'manifest' => $event_manifest, 'required' => false ) ) );
+	$event_result             = Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $event_lifecycle, array( 'seed_entities' => false ) );
+	$assert( 1 === $event_materializer_calls && 2 === ( $event_result['reports']['events']['counts']['mapped'] ?? 0 ), 'adapter-declared-generic-collection-materializes-bound-entities' );
+	$assert( Static_Site_Importer_Entity_Materializer_Registry::page_ready_requires_final_hydration( $event_lifecycle, array() ), 'adapter-declared-generic-collection-requires-final-hydration-for-bindings' );
+	$event_block_bindings = Static_Site_Importer_Entity_Materializer_Registry::block_bindings( $event_lifecycle, $event_result['reports'] );
+	$assert( ! is_wp_error( $event_block_bindings ) && 2 === count( $event_block_bindings ) && '<!-- wp:paragraph --><p>Launch</p><!-- /wp:paragraph -->' === ( $event_block_bindings[0]['replacement_block_markup'] ?? '' ), 'adapter-declared-generic-collection-resolves-block-binding-results' );
+	$event_classic_bindings = Static_Site_Importer_Entity_Materializer_Registry::classic_bindings( $event_lifecycle, $event_result['reports'] );
+	$assert( ! is_wp_error( $event_classic_bindings ) && 2 === count( $event_classic_bindings ) && '[test-event]' === ( $event_classic_bindings[0]['render']['content'] ?? '' ), 'adapter-declared-generic-collection-resolves-classic-binding-results' );
 
 	$form_adapter = Static_Site_Importer_Entity_Materializer_Registry::form_adapter();
 	$missing_provider_lifecycle = array(
@@ -160,8 +192,9 @@ namespace {
 		'entities' => array(
 			$manifest_id => array(
 				'adapter'     => array(
-					'capability' => 'test',
-					'validator'  => static function ( array $manifest ): array {
+					'capability'        => 'test',
+					'entity_collection' => 'forms',
+					'validator'         => static function ( array $manifest ): array {
 						$forms = $manifest['forms'] ?? array();
 						$valid = is_array( $forms ) && 2 === count( $forms );
 						foreach ( $forms as $form ) {
