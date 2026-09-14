@@ -2195,6 +2195,9 @@ class Static_Site_Importer_Form_Seeder {
 		if ( ! empty( $control['required'] ) || 'true' === strtolower( trim( (string) ( $control['aria-required'] ?? $control['aria_required'] ?? '' ) ) ) ) {
 			$attrs['required'] = true;
 		}
+		if ( false === ( $control['required_indicator'] ?? null ) ) {
+			$attrs['requiredIndicator'] = false;
+		}
 		$id = isset( $control['id'] ) && is_scalar( $control['id'] ) ? trim( (string) $control['id'] ) : '';
 		if ( '' !== $id ) {
 			$attrs['id'] = $id;
@@ -2908,6 +2911,9 @@ class Static_Site_Importer_Form_Seeder {
 						// Core's rendered button is an actual destination for the source
 						// button's positioning and transform properties; other controls are not.
 						'properties' => $properties,
+						// Jetpack inputs inherit the theme line-height while native controls
+						// retain their UA normal line-height unless source CSS says otherwise.
+						'resets'     => 'submit' === $type ? array() : array( 'line-height' => 'normal' ),
 					);
 				}
 			}

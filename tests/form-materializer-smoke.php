@@ -383,6 +383,11 @@ namespace {
 	$marker_form['controls'][0]['required_text'] = '*';
 	$marker_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $marker_form ) ) )['forms'][0];
 	$assert( str_contains( $marker_row['block_markup'], '"requiredText":"*"' ), 'captured-required-marker-uses-existing-provider-label-api' );
+	$markerless_form = $marker_form;
+	unset( $markerless_form['controls'][0]['required_text'] );
+	$markerless_form['controls'][0]['required_indicator'] = false;
+	$markerless_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $markerless_form ) ) )['forms'][0];
+	$assert( str_contains( $markerless_row['block_markup'], '"requiredIndicator":false' ) && ! str_contains( $markerless_row['block_markup'], '"requiredText"' ), 'captured-markerless-required-field-preserves-validation-without-a-provider-default-marker' );
 	$assert( 2 === ( $responsive_seed['counts']['mapped'] ?? 0 ) && array( str_repeat( 'a', 64 ), str_repeat( 'b', 64 ) ) === array_column( $responsive_rows, 'fallback_identity' ) && 2 === count( array_unique( array_map( static fn( array $row ): string => (string) preg_replace( '/.*\b(ssi-form-[a-f0-9]{12})\b.*/s', '$1', (string) ( $row['block_markup'] ?? '' ) ), $responsive_rows ) ) ), 'responsive-form-identities-produce-distinct-provider-blocks-and-receipts' );
 	$responsive_entities = $responsive_identity_forms['forms'];
 	foreach ( $responsive_entities as $index => &$responsive_entity ) {
@@ -659,7 +664,12 @@ namespace {
 	$presentation_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_presentation['forms'] ) )['forms'][0] ?? array();
 	$presentation_markup    = (string) ( $presentation_row['block_markup'] ?? '' );
 	$presentation_css       = (string) ( $presentation_row['provider_layout_overlay_css']['css'] ?? '' );
-	$assert( empty( $validated_presentation['errors'] ) && str_contains( $presentation_css, 'background-color:transparent;border:0;padding:8px 0;font-size:16px;line-height:24px' ) && str_contains( $presentation_css, 'font-size:14px;font-weight:400;line-height:1.4;margin-bottom:8px' ) && str_contains( $presentation_css, 'background-color:rgb(254,126,3);color:#fff;border:0;border-radius:100px;padding:11px 15px;font-size:16px' ), 'bounded-form-presentation-transposes-control-label-and-submit-styles', $presentation_css );
+	$assert( empty( $validated_presentation['errors'] ) && str_contains( $presentation_css, 'background-color:transparent;border:0;padding:8px 0;font-size:16px;line-height:24px' ) && ! str_contains( $presentation_css, 'line-height:24px;line-height:normal' ) && str_contains( $presentation_css, 'font-size:14px;font-weight:400;line-height:1.4;margin-bottom:8px' ) && str_contains( $presentation_css, 'background-color:rgb(254,126,3);color:#fff;border:0;border-radius:100px;padding:11px 15px;font-size:16px' ), 'bounded-form-presentation-transposes-control-label-and-submit-styles', $presentation_css );
+	$native_line_height_form = $presentation_form;
+	$native_line_height_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 0, 'control' => $presentation_role( array( 'padding' => '8px' ), array( 'padding' ), 'input' ) ) );
+	$native_line_height_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $native_line_height_form );
+	$native_line_height_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $native_line_height_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( empty( $native_line_height_validation['errors'] ) && str_contains( (string) ( $native_line_height_row['provider_layout_overlay_css']['css'] ?? '' ), 'padding:8px;line-height:normal' ), 'provider-input-line-height-default-is-neutralized-when-the-source-omits-it', wp_json_encode( $native_line_height_row ) );
 	$assert( preg_match( '/wp:jetpack\/label .*ssi-node-[a-f0-9]{12}/', $presentation_markup ) && preg_match( '/wp:jetpack\/input .*ssi-node-[a-f0-9]{12}/', $presentation_markup ) && preg_match( '/wp:button .*ssi-node-[a-f0-9]{12}/', $presentation_markup ) && preg_match( '/\.ssi-form-([a-f0-9]{12})\.ssi-form-\1 \.ssi-node-[a-f0-9]{12}/', $presentation_css ) && str_contains( $presentation_css, '> .wp-block-button__link{' ), 'form-presentation-targets-use-deterministic-provider-subparts-with-authoritative-scope-specificity', $presentation_markup );
 	$variant_only_presentation = $presentation_form;
 	$variant_condition         = array( 'kind' => 'media', 'query' => '(min-width:769px)' );
