@@ -739,6 +739,16 @@ namespace {
 	$submit_block_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $submit_block_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$submit_block_css = (string) ( $submit_block_row['provider_layout_overlay_css']['css'] ?? '' );
 	$assert( empty( $submit_block_validation['errors'] ) && 1 === preg_match( '/\.ssi-node-[a-f0-9]{12}\{display:block\}/', $submit_block_css ) && ! str_contains( $submit_block_css, '> .wp-block-button__link{display:block}' ), 'source-block-submit-display-targets-the-core-button-wrapper-for-automatic-full-row-width', $submit_block_css );
+	foreach ( array( '' => 'inherit', 'font-weight:600;' => '600' ) as $source_weight => $expected_weight ) {
+		$label_artifact = ( new $artifact_compiler() )->compile( array(
+			'entrypoint' => 'index.html',
+			'files' => array( 'index.html' => '<style>form{font-weight:400}label{font-size:15px;' . $source_weight . '}</style><form><label for="name">Driver name</label><input id="name" name="name"><button>Send</button></form>' ),
+		) )->toArray();
+		$label_manifest = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $label_artifact['fallbacks'][0] ) ) );
+		$label_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $label_manifest['forms'] ?? array() ) )['forms'][0] ?? array();
+		$label_overlay = $label_row['provider_layout_overlay_css'] ?? null;
+		$assert( empty( $label_manifest['errors'] ) && null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $label_overlay ) && str_contains( $label_overlay['css'] ?? '', 'font-weight:' . $expected_weight ) && ( '' === $source_weight || ! str_contains( $label_overlay['css'] ?? '', 'font-weight:inherit' ) ), 'artifact-label-font-weight-preserves-' . $expected_weight );
+	}
 	$compile_form = static function ( string $css ) use ( $artifact_compiler ): array {
 		$compiled = ( new $artifact_compiler() )->compile( array(
 			'entrypoint' => 'index.html',

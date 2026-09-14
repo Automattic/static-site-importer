@@ -3087,6 +3087,7 @@ class Static_Site_Importer_Form_Seeder {
 				'role'       => 'label',
 				'selector'   => '.' . $scope . ' .' . $label_class,
 				'properties' => array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ),
+				'resets'     => array( 'font-weight' => 'inherit' ),
 			);
 		}
 		if ( isset( $roles['required_marker'] ) ) {
