@@ -997,6 +997,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			return '';
 		}
 		$normalized = '/' . trim( $path, '/' );
+		$normalized = preg_replace( '#/index\.html?$#i', '', $normalized ) ?? $normalized;
 		return '/' === $path ? '/' : $normalized;
 	}
 

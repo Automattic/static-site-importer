@@ -3225,6 +3225,8 @@ $assert( 'completed' === ( $route_receipt['status'] ?? '' ) && str_contains( $ro
 $rewrite_route_references = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'rewrite_route_references' );
 $pin_route_content        = $rewrite_route_references->invoke( null, 'data-pin-url=\\u0022/post/news\\u0022', array( '/post/news' => 'https://example.test/2024/03/news/' ) );
 $assert( 'data-pin-url=\\u0022https://example.test/2024/03/news/\\u0022' === $pin_route_content, 'escaped route-bearing data URL attributes resolve to the materialized WordPress permalink' );
+$index_route_content = $rewrite_route_references->invoke( null, '<a href="/comms-&-use-cases/index.html?study=1#scope">Cases</a>', array( '/comms-&-use-cases' => 'https://example.test/comms-use-cases/' ) );
+$assert( '<a href="https://example.test/comms-use-cases/?study=1#scope">Cases</a>' === $index_route_content, 'index-document links resolve to their materialized WordPress route while retaining query and fragment' );
 
 $hash_plan = array(
 	'schema' => 'test/plan/v1',
