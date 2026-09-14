@@ -600,6 +600,38 @@ class Static_Site_Importer_Form_Seeder {
 				$overlay_graph['nodes'][] = $target;
 			}
 		}
+		foreach ( self::direct_label_control_gap_targets( $form ) as $target ) {
+			$control_index = $target['control'];
+			$layout_patch  = $target['layout'];
+			// Jetpack renders a label and input as siblings in its field wrapper.
+			// Keep generic control layout on the input and target this relationship
+			// specifically at the generated wrapper.
+			$target_id = 'field-' . $control_index;
+			if ( isset( $target['condition'] ) ) {
+				if ( ! array_filter( $overlay_graph['nodes'], static fn( $node ): bool => is_array( $node ) && $target_id === ( $node['id'] ?? null ) ) ) {
+					$overlay_graph['nodes'][] = array( 'id' => $target_id, 'layout' => array() );
+				}
+				$overlay_graph['variants'][] = array( 'node' => $target_id, 'condition' => $target['condition'], 'layout_patch' => $layout_patch );
+				continue;
+			}
+			$merged    = false;
+			foreach ( $overlay_graph['nodes'] as &$overlay_node ) {
+				if ( is_array( $overlay_node ) && $target_id === ( $overlay_node['id'] ?? null ) ) {
+					$overlay_node['layout']        = array_merge( $overlay_node['layout'] ?? array(), $layout_patch );
+					$merged                        = true;
+					break;
+				}
+			}
+			unset( $overlay_node );
+			if ( ! $merged ) {
+				$overlay_graph['nodes'][] = array( 'id' => $target_id, 'layout' => $layout_patch );
+			}
+			$layout['receipt']['operations'][] = array(
+				'dimension'   => 'layout',
+				'strategy'    => 'provider_direct_label_control_gap',
+				'target_hash' => hash( 'sha256', $target_id ),
+			);
+		}
 		foreach ( $overlay_graph['nodes'] as &$overlay_node ) {
 			if ( ! is_array( $overlay_node ) || ! preg_match( '/^(?:control|wrapper)-[0-9]+$/D', (string) ( $overlay_node['id'] ?? '' ) ) || ! self::fixed_width_uses_default_flex( $overlay_node ) ) {
 				continue;
@@ -707,6 +739,29 @@ class Static_Site_Importer_Form_Seeder {
 			$row['unaccepted_receipt_loss_count']  = count( $unaccepted_losses );
 		}
 		return $row;
+	}
+
+	/** @return array<int,array{control:int,layout:array<string,string>,condition?:array<string,mixed>}> */
+	private static function direct_label_control_gap_targets( array $form ): array {
+		$relations = $form['sibling_relations'] ?? null;
+		$graph     = $form['layout_graph'] ?? null;
+		if ( ! is_array( $relations ) || 'generic/form-sibling-relations/v1' !== ( $relations['schema'] ?? null ) || true === ( $relations['truncated'] ?? false ) || ! is_array( $relations['pairs'] ?? null ) || ! is_array( $graph['nodes'] ?? null ) ) {
+			return array();
+		}
+		$form_node = current( array_filter( $graph['nodes'], static fn( $node ): bool => is_array( $node ) && 'form' === ( $node['id'] ?? null ) ) );
+		$targets = array();
+		$plans = array( array( 'layout' => $form_node['layout'] ?? array(), 'condition' => null, 'provenance' => $form_node['provenance'] ?? array() ) );
+		foreach ( $graph['variants'] ?? array() as $variant ) if ( is_array( $variant ) && 'form' === ( $variant['node'] ?? null ) ) $plans[] = array( 'layout' => $variant['layout_patch'] ?? array(), 'condition' => $variant['condition'] ?? null, 'provenance' => $variant['provenance'] ?? array() );
+		foreach ( $plans as $plan ) {
+			$layout = is_array( $plan['layout'] ) ? $plan['layout'] : array();
+			$property = isset( $layout['row_gap'] ) ? 'row-gap' : ( isset( $layout['gap'] ) ? 'gap' : '' );
+			$gap = '' !== $property ? $layout[ str_replace( '-', '_', $property ) ] : null;
+			if ( 'flex' !== ( $layout['display'] ?? null ) || 'column' !== ( $layout['direction'] ?? null ) || ! is_string( $gap ) || '' === trim( $gap ) ) continue;
+			$proven = array_filter( $plan['provenance'], static fn( $fact ): bool => is_array( $fact ) && in_array( 'display', $fact['properties'] ?? array(), true ) && in_array( 'flex-direction', $fact['properties'] ?? array(), true ) && in_array( $property, $fact['properties'] ?? array(), true ) );
+			if ( empty( $proven ) ) continue;
+			foreach ( $relations['pairs'] as $pair ) if ( is_array( $pair ) && is_int( $pair['control'] ?? null ) ) $targets[] = array_filter( array( 'control' => $pair['control'], 'layout' => array( 'display' => 'flex', 'direction' => 'column', 'gap' => $gap ), 'condition' => $plan['condition'] ), static fn( $value ): bool => null !== $value );
+			}
+		return $targets;
 	}
 
 	/**
@@ -2843,7 +2898,7 @@ class Static_Site_Importer_Form_Seeder {
 				continue;
 			}
 			$id = $node['id'];
-			if ( 'form' !== $id && 'form-box' !== $id && ! isset( $box_targets[ $id ] ) && ! preg_match( '/^control-[0-9]+$/D', $id ) ) {
+			if ( 'form' !== $id && 'form-box' !== $id && ! isset( $box_targets[ $id ] ) && ! preg_match( '/^(?:control|field)-[0-9]+$/D', $id ) ) {
 				continue;
 			}
 			if ( 'form-box' === $id ) {
@@ -2860,6 +2915,9 @@ class Static_Site_Importer_Form_Seeder {
 				// Jetpack's contact-form root includes hidden and error nodes, so it cannot
 				// promise source direct-child relationships. Generated node hooks can.
 				$capabilities = array( 'container_layout', 'responsive_layout' );
+			} elseif ( preg_match( '/^field-([0-9]+)$/D', $id, $matches ) ) {
+				$selector     = $selector_scope . ' .' . self::layout_node_class( $scope, 'control-' . $matches[1] ) . '-wrap';
+				$capabilities = array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' );
 			} else {
 				$selector     = $selector_scope . ' .' . ( $box_targets[ $id ] ?? self::layout_node_class( $scope, $id ) );
 				$capabilities = array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' );
