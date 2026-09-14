@@ -2971,7 +2971,7 @@ class Static_Site_Importer_Form_Seeder {
 						'properties' => $properties,
 						// Jetpack inputs inherit the theme line-height while native controls
 						// retain their UA normal line-height unless source CSS says otherwise.
-						'resets'     => 'submit' === $type ? array() : array( 'line-height' => 'normal' ),
+						'resets'     => array( 'line-height' => 'normal' ),
 					);
 				}
 			}
