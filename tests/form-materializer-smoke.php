@@ -1314,6 +1314,12 @@ namespace {
 	);
 	$height_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $height_entity ) ) )['forms'][0] ?? array();
 	$assert( false === ( $height_row['runtime_mapped'] ?? true ) && 'textarea_height_omitted' === ( $height_row['form_receipt_unaccepted_losses'][0]['reason_code'] ?? '' ) && 1 === ( $height_row['unaccepted_receipt_loss_count'] ?? 0 ), 'omitted-textarea-heights-gate-form-runtime-acceptance' );
+	$invalid_height_binding                              = $height_entity;
+	$invalid_height_binding['bindings'][0]['occurrence'] = 0;
+	$assert( $invalid_height_binding === Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $invalid_height_binding ), 'falsey-binding-occurrence-remains-ineligible-for-presentation-extraction' );
+	$multi_form_mismatch                                  = $height_entity;
+	$multi_form_mismatch['bindings'][0]['search_block_markup'] = '<form><input name="unexpected"></form>' . $height_html;
+	$assert( $multi_form_mismatch === Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $multi_form_mismatch ), 'multi-form-binding-control-mismatch-fails-closed-on-the-first-form' );
 	$newsletter = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.newsletter', 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email' ), array( 'tag' => 'button', 'type' => 'submit', 'text' => 'Subscribe to newsletter' ) ) ) ) ) );
 	$assert( 'Subscribe to newsletter' === ( $newsletter['forms'][0]['submit_text'] ?? '' ), 'canonical-control-text-preserves-newsletter-submit-label' );
 	if ( function_exists( 'parse_blocks' ) ) {
