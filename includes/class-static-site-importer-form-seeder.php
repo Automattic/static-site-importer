@@ -2922,10 +2922,10 @@ class Static_Site_Importer_Form_Seeder {
 					// Core's rendered button is an actual destination for the source
 					// button's positioning and transform properties; other controls are not.
 					'properties' => $properties,
-					// Provider controls inherit theme typography. Preserve native browser
-					// defaults unless the source presentation graph owns either property.
-					'resets'     => array_merge(
-						array( 'font-family' => 'Arial', 'line-height' => 'normal' ),
+						// Provider controls inherit theme typography. Revert to each browser's
+						// native control defaults unless source CSS owns either property.
+						'resets'     => array_merge(
+							array( 'font-family' => 'revert', 'line-height' => 'revert' ),
 						'submit' === $type ? array( 'min-height' => '0' ) : array()
 					),
 				);
