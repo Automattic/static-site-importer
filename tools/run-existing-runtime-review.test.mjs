@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assertReviewDraftLifecycle, normalizeExistingRuntimeReviewOptions, studioAutoLoginUrl } from './run-existing-runtime-review.mjs';
+import { assertEditorCanvasUsable, assertReviewDraftLifecycle, normalizeExistingRuntimeReviewOptions, studioAutoLoginUrl } from './run-existing-runtime-review.mjs';
 
 test('existing runtime review requires explicit runtime identity and makes credential-free Studio editor URLs', () => {
   const options = normalizeExistingRuntimeReviewOptions({ sourceOrigin: 'https://source.example', candidateOrigin: 'http://localhost:8886', route: '/', postId: '42', postType: 'pages', editorId: '7', authProvider: 'studio-auto-login', outputDirectory: '/tmp/ssi-review' });
@@ -21,4 +21,13 @@ test('existing runtime review fails lifecycle evidence when persistence, cleanup
   assert.throws(() => assertReviewDraftLifecycle({ deleted: false, draft_id: 99 }), /still exists/);
   assert.throws(() => assertReviewDraftLifecycle({ target_baseline_sha256: 'before', target_after_sha256: 'after', target: 'pages\/42' }), /content changed/);
   assert.doesNotThrow(() => assertReviewDraftLifecycle({ marker_present: true, deleted: true, target_baseline_sha256: 'same', target_after_sha256: 'same', draft_id: 99, target: 'pages\/42' }));
+});
+
+test('existing runtime review requires visible editable content in Gutenberg canvas iframe', () => {
+  const canvas = { canvas_document_type: 'iframe', total_blocks: 12, visible_blocks: 4, visible_text_blocks: 3 };
+  assert.doesNotThrow(() => assertEditorCanvasUsable(canvas));
+  assert.throws(() => assertEditorCanvasUsable({ ...canvas, canvas_document_type: 'parent' }), /iframe/);
+  assert.throws(() => assertEditorCanvasUsable({ ...canvas, total_blocks: 0 }), /zero blocks/);
+  assert.throws(() => assertEditorCanvasUsable({ ...canvas, visible_blocks: 0 }), /no visible blocks/);
+  assert.throws(() => assertEditorCanvasUsable({ ...canvas, visible_text_blocks: 0 }), /no visible editable content/);
 });
