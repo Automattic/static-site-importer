@@ -915,7 +915,7 @@ class Static_Site_Importer_Form_Seeder {
 		return 'hidden' !== $type;
 	}
 
-	/** Leave a proven phone-country selector to the Jetpack telephone field. */
+	/** Jetpack owns a listbox immediately preceding its telephone value control. */
 	private static function is_provider_auxiliary_button( array $controls, int $control_index ): bool {
 		$button = $controls[ $control_index ] ?? array();
 		$next   = $controls[ $control_index + 1 ] ?? array();
@@ -923,14 +923,19 @@ class Static_Site_Importer_Form_Seeder {
 			return false;
 		}
 		$popup = strtolower( trim( (string) ( $button['aria-haspopup'] ?? $button['aria_haspopup'] ?? '' ) ) );
-		if ( '' !== $popup ) {
+		if ( 'listbox' === $popup && is_array( $next ) && in_array( strtolower( trim( (string) ( $next['type'] ?? '' ) ) ), array( 'tel', 'phone' ), true ) ) {
 			return true;
 		}
-		if ( ! is_array( $next ) || ! in_array( strtolower( trim( (string) ( $next['type'] ?? '' ) ) ), array( 'tel', 'phone' ), true ) ) {
+		$described = preg_split( '/\s+/', trim( (string) ( $button['aria_describedby'] ?? '' ) ) );
+		if ( ! in_array( $popup, array( 'true', 'menu', 'tree', 'grid', 'dialog' ), true ) || false === $described || empty( $described ) ) {
 			return false;
 		}
-		$label = strtolower( self::control_text( $button ) );
-		return str_contains( $label, 'phone' ) && str_contains( $label, 'country' );
+		foreach ( $controls as $field ) {
+			if ( is_array( $field ) && ! empty( $field['readonly'] ) && in_array( (string) ( $field['label_id'] ?? '' ), $described, true ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Accept only a non-nested root fieldset that contains every mapped provider control. */
@@ -1275,10 +1280,7 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			$previous            = $controls[ $control_index - 1 ] ?? null;
 			$previous_popup      = is_array( $previous ) ? strtolower( trim( (string) ( $previous['aria_haspopup'] ?? '' ) ) ) : '';
-			$previous_label      = is_array( $previous ) ? strtolower( trim( (string) ( $previous['label'] ?? $previous['text'] ?? '' ) ) ) : '';
-			$is_country_selector = str_contains( $previous_label, 'phone' ) && str_contains( $previous_label, 'country' );
-			$popup_is_compatible = '' === $previous_popup || in_array( $previous_popup, array( 'true', 'menu', 'listbox', 'tree', 'grid', 'dialog' ), true );
-			if ( is_array( $previous ) && 'button' === strtolower( trim( (string) ( $previous['tag'] ?? '' ) ) ) && $popup_is_compatible && $is_country_selector && $shares_phone_group( $control_index - 1, $control_index ) ) {
+			if ( is_array( $previous ) && 'button' === strtolower( trim( (string) ( $previous['tag'] ?? '' ) ) ) && 'button' === strtolower( trim( (string) ( $previous['type'] ?? '' ) ) ) && 'listbox' === $previous_popup && $shares_phone_group( $control_index - 1, $control_index ) ) {
 				$provider_controls[ $control_index - 1 ]        = true;
 				$phone_popup_targets[ $control_index - 1 ]      = $control_index;
 				$auxiliary_popup_controls[ $control_index - 1 ] = true;
