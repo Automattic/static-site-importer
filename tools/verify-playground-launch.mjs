@@ -24,6 +24,7 @@ if (process.env.PLAYGROUND_BLUEPRINT_URL) {
   launch.searchParams.set('blueprint-url', process.env.PLAYGROUND_BLUEPRINT_URL);
 }
 const manifestUrl = launch.searchParams.get('php-extension');
+const blueprintUrl = launch.searchParams.get('blueprint-url');
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage();
@@ -43,6 +44,21 @@ try {
     }, manifestUrl);
     assert.equal(manifest.ok, true, 'Playground must be able to CORS-fetch the extension manifest');
     assert.equal(manifest.manifest.name, 'zstd');
+  }
+
+  assert.ok(blueprintUrl, 'Playground launch must include a blueprint URL');
+  await page.goto('https://playground.wordpress.net/', { waitUntil: 'domcontentloaded' });
+  const resourceUrls = await fetch(blueprintUrl)
+    .then((response) => response.json())
+    .then((blueprint) => blueprint.steps
+      .map((step) => step.data?.resource === 'url' ? step.data.url : null)
+      .filter(Boolean));
+  for (const resourceUrl of resourceUrls) {
+    const response = await page.evaluate(async (url) => {
+      const response = await fetch(url);
+      return { ok: response.ok, status: response.status };
+    }, resourceUrl);
+    assert.equal(response.ok, true, `Playground must be able to CORS-fetch ${resourceUrl} (HTTP ${response.status})`);
   }
 
   await page.goto(launch.toString(), { waitUntil: 'domcontentloaded', timeout: 120_000 });

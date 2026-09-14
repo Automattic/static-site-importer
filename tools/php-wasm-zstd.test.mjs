@@ -56,15 +56,17 @@ test( 'release publication keeps immutable assets and blueprints separate from t
 	assert.match( workflow, /PHP_WASM_ZSTD_ASSET_BASE_URL: https:\/\/automattic\.github\.io\/static-site-importer\/playground\/extensions\/\$\{\{ env\.RELEASE_TAG \}\}/ );
 	assert.match( workflow, /playground\/extensions\/\$RELEASE_TAG/ );
 	assert.match( workflow, /playground\/extensions\/latest/ );
-	assert.match( workflow, /releases\/download\/\$RELEASE_TAG/ );
+	assert.match( workflow, /gh release download "\$RELEASE_TAG"/ );
+	assert.match( workflow, /test "\$package_sha256" = "\$\(sha256sum "\$package_archive"/ );
 	assert.match( workflow, /access-control-allow-origin/ );
 	assert.match( workflow, /playground\/\$RELEASE_TAG\/static-site-importer-playground-demo\.zip/ );
+	assert.match( workflow, /playground\/\$RELEASE_TAG\/static-site-importer\.zip/ );
 	assert.match( workflow, /DEMO_PACKAGE_SHA256/ );
 	assert.match( workflow, /migration_source_commit="4688faf6e76071af3e8becd1500071f29b4ec63b"/ );
 	assert.match( workflow, /migration_source_sha256="6a49991ed71f68e59cce26926d1221b2966ac3adaf8a6d243aae45feced8d3f1"/ );
 	assert.match( workflow, /playground\/\$RELEASE_TAG\/playground-to-wordpress-com\.zip/ );
 	assert.match( workflow, /MIGRATION_PACKAGE_SHA256/ );
-	assert.match( workflow, /git -C "\$pages_dir" add \.nojekyll "playground\/\$RELEASE_TAG\.blueprint\.json" "playground\/\$RELEASE_TAG\/static-site-importer-playground-demo\.zip" "playground\/\$RELEASE_TAG\/playground-to-wordpress-com\.zip"/ );
+	assert.match( workflow, /git -C "\$pages_dir" add \.nojekyll "playground\/\$RELEASE_TAG\.blueprint\.json" "playground\/\$RELEASE_TAG\/static-site-importer\.zip" "playground\/\$RELEASE_TAG\/static-site-importer-playground-demo\.zip" "playground\/\$RELEASE_TAG\/playground-to-wordpress-com\.zip"/ );
 	assert.match( workflow, /git -C "\$pages_dir" diff --cached --quiet/ );
 	assert.doesNotMatch( workflow, /gh release upload/ );
 	assert.ok(
@@ -81,5 +83,6 @@ test( 'release publication keeps immutable assets and blueprints separate from t
 	);
 	assert.match( publication, /\{\{RELEASE_TAG\}\}/ );
 	assert.match( publication, /\{\{DEMO_PACKAGE_SHA256\}\}/ );
+	assert.match( publication, /verifies its release-published SHA-256 digest/ );
 	assert.match( publication, /Homeboy remains the sole\s+release owner/ );
 } );

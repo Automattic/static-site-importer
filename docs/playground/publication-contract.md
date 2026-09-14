@@ -11,13 +11,16 @@ from that tag and publishes these immutable files:
 - `https://automattic.github.io/static-site-importer/playground/extensions/<tag>/static-site-importer-zstd-php8.5-jspi.manifest.json`
 - `https://automattic.github.io/static-site-importer/playground/extensions/<tag>/static-site-importer-zstd-php8.5-jspi.so`
 - `https://automattic.github.io/static-site-importer/playground/<tag>.blueprint.json`
+- `https://automattic.github.io/static-site-importer/playground/<tag>/static-site-importer.zip`
 - `https://automattic.github.io/static-site-importer/playground/<tag>/static-site-importer-playground-demo.zip`
 - `https://automattic.github.io/static-site-importer/playground/<tag>/playground-to-wordpress-com.zip`
 
 The versioned blueprint installs the infrastructure-only `static-site-importer.zip`
-from the same GitHub Release tag and the demo-only importer block ZIP from GitHub
-Pages. The workflow builds the demo ZIP from `demos/playground-importer/` and
-pins all three packages by SHA-256. The migration archive is built from the
+and demo-only importer block ZIP from GitHub Pages. The workflow downloads the
+release ZIP, verifies its release-published SHA-256 digest, and mirrors it to
+the immutable Pages release directory. It builds the demo ZIP from
+`demos/playground-importer/` and pins all three packages by SHA-256. The
+migration archive is built from the
 public codeload source archive for commit
 `4688faf6e76071af3e8becd1500071f29b4ec63b`; the workflow verifies its fixed
 SHA-256 before extraction and packages the upstream runtime files
