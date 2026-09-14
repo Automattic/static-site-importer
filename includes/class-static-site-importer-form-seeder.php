@@ -603,7 +603,10 @@ class Static_Site_Importer_Form_Seeder {
 		foreach ( self::direct_label_control_gap_targets( $form ) as $target ) {
 			$control_index = $target['control'];
 			$layout_patch  = $target['layout'];
-			$target_id = 'control-' . $control_index;
+			// Jetpack renders a label and input as siblings in its field wrapper.
+			// Keep generic control layout on the input and target this relationship
+			// specifically at the generated wrapper.
+			$target_id = 'field-' . $control_index;
 			if ( isset( $target['condition'] ) ) {
 				if ( ! array_filter( $overlay_graph['nodes'], static fn( $node ): bool => is_array( $node ) && $target_id === ( $node['id'] ?? null ) ) ) {
 					$overlay_graph['nodes'][] = array( 'id' => $target_id, 'layout' => array() );
@@ -2895,7 +2898,7 @@ class Static_Site_Importer_Form_Seeder {
 				continue;
 			}
 			$id = $node['id'];
-			if ( 'form' !== $id && 'form-box' !== $id && ! isset( $box_targets[ $id ] ) && ! preg_match( '/^control-[0-9]+$/D', $id ) ) {
+			if ( 'form' !== $id && 'form-box' !== $id && ! isset( $box_targets[ $id ] ) && ! preg_match( '/^(?:control|field)-[0-9]+$/D', $id ) ) {
 				continue;
 			}
 			if ( 'form-box' === $id ) {
@@ -2912,6 +2915,9 @@ class Static_Site_Importer_Form_Seeder {
 				// Jetpack's contact-form root includes hidden and error nodes, so it cannot
 				// promise source direct-child relationships. Generated node hooks can.
 				$capabilities = array( 'container_layout', 'responsive_layout' );
+			} elseif ( preg_match( '/^field-([0-9]+)$/D', $id, $matches ) ) {
+				$selector     = $selector_scope . ' .' . self::layout_node_class( $scope, 'control-' . $matches[1] ) . '-wrap';
+				$capabilities = array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' );
 			} else {
 				$selector     = $selector_scope . ' .' . ( $box_targets[ $id ] ?? self::layout_node_class( $scope, $id ) );
 				$capabilities = array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' );

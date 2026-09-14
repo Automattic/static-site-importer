@@ -478,7 +478,7 @@ namespace {
 	$direct_label_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $direct_label_form );
 	$direct_label_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $direct_label_validation['forms'] ?? array() ) );
 	$direct_label_css = (string) ( $direct_label_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' );
-	$assert( empty( $direct_label_validation['errors'] ) && 1 <= substr_count( $direct_label_css, 'gap:1.2rem' ), 'proven direct label/control sibling pairs transpose their parent gap onto native field wrappers' );
+	$assert( empty( $direct_label_validation['errors'] ) && 3 === substr_count( $direct_label_css, 'gap:1.2rem' ) && 2 === preg_match_all( '/\.ssi-node-[a-f0-9]{12}-wrap\{display:flex;flex-direction:column;gap:1\.2rem\}/', $direct_label_css ), 'proven direct label/control sibling pairs transpose their parent gap onto native field wrappers' );
 	$native_row_form = array(
 		'forms' => array( array(
 			'selector' => 'form.subscribe',
