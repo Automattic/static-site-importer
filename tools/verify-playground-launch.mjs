@@ -58,9 +58,37 @@ try {
   assert.equal(figmaAvailable, manifestUrl ? '1' : '0', 'Figma availability must match the optional zstd runtime capability');
   assert.equal(await figmaButton.isDisabled(), !manifestUrl, 'Figma control must fail open without zstd');
 
+  const importer = wordpress.locator('.ssi-importer');
+  const importUrl = wordpress.url();
+  const importRestUrl = await importer.getAttribute('data-static-site-importer-rest-url');
+  assert.ok(importRestUrl, 'Importer must expose its REST endpoint');
+  const importResponse = page.waitForResponse(
+    (response) => response.url() === importRestUrl && response.request().method() === 'POST',
+    { timeout: 300_000 },
+  );
+  await wordpress.locator('[data-static-site-importer-source-html]').fill('<main><h1>Imported home</h1></main>');
+  await wordpress.locator('[data-static-site-importer-submit]').click();
+  const response = await importResponse;
+  const report = await response.json();
+  assert.equal(response.ok(), true, JSON.stringify(report));
+  assert.equal(report.success, true, JSON.stringify(report));
+  await wordpress.waitForURL((url) => url.href === new URL('/', importUrl).href, { timeout: 120_000 });
+  await wordpress.getByRole('heading', { name: 'Imported home' }).waitFor({ state: 'visible', timeout: 120_000 });
+
+  const migrationToolbarLink = wordpress.locator('#wp-admin-bar-pgwpc a');
+  await migrationToolbarLink.waitFor({ state: 'visible', timeout: 120_000 });
+  await Promise.all([
+    wordpress.waitForURL(/\/wp-admin\/admin\.php\?page=playground-to-wordpress-com/, { timeout: 120_000 }),
+    migrationToolbarLink.click(),
+  ]);
+  await wordpress.locator('#pgwpc-connect').waitFor({ state: 'visible', timeout: 120_000 });
+
+  // The importer must survive materialization so a user can import another site.
+  await wordpress.goto(importUrl, { waitUntil: 'domcontentloaded', timeout: 120_000 });
+  await wordpress.locator('.ssi-importer').waitFor({ state: 'visible', timeout: 120_000 });
+
   if (figFixture) {
     assert.ok(manifestUrl, 'Figma fixture verification requires a PHP extension manifest');
-    const importer = wordpress.locator('.ssi-importer');
     const restUrl = await importer.getAttribute('data-static-site-importer-figma-rest-url');
     assert.ok(restUrl, 'Figma importer must expose its REST endpoint');
     const responsePromise = page.waitForResponse(
@@ -72,6 +100,7 @@ try {
     const report = await response.json();
     assert.equal(response.ok(), true, JSON.stringify(report));
     assert.equal(report.success, true, JSON.stringify(report));
+    await wordpress.waitForURL((url) => url.href === new URL('/', importUrl).href, { timeout: 120_000 });
   }
 } finally {
   await browser.close();
