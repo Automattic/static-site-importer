@@ -30,10 +30,10 @@ class Static_Site_Importer_Form_Fallback_Contract {
 	 * @return array{manifest:array{form:array<string,string>,controls:array<int,array<string,mixed>>},presentation:array<string,mixed>}
 	 */
 	public static function analysis_from_html( string $html, string $selector = '', int $occurrence = 0 ): array {
-		$doc      = self::document_from_html( $html );
-		$manifest = self::manifest_from_document( $doc );
-		$controls = $manifest['controls'];
-		$form     = self::preserved_presentation( $doc, $manifest['form'], $controls );
+		$doc            = self::document_from_html( $html );
+		$manifest       = self::manifest_from_document( $doc );
+		$controls       = $manifest['controls'];
+		$form           = self::preserved_presentation( $doc, $manifest['form'], $controls );
 		$form_node      = $doc->getElementsByTagName( 'form' )->item( 0 );
 		$before         = array();
 		$after          = array();
@@ -84,7 +84,7 @@ class Static_Site_Importer_Form_Fallback_Contract {
 			'context_after_hash'  => hash( 'sha256', (string) wp_json_encode( $after ) ),
 		);
 		$stored_heights = array_slice( $heights, 0, 16, true );
-		$presentation = array_filter(
+		$presentation   = array_filter(
 			array(
 				'schema'                        => 'generic/form-presentation/v1',
 				'selector'                      => $selector,
