@@ -1,6 +1,29 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assertEditorCanvasUsable, assertReviewDraftLifecycle, normalizeExistingRuntimeReviewOptions, studioAutoLoginUrl } from './run-existing-runtime-review.mjs';
+import { assertEditorCanvasUsable, assertReviewDraftLifecycle, existingRuntimeReviewPassed, normalizeExistingRuntimeReviewOptions, studioAutoLoginUrl } from './run-existing-runtime-review.mjs';
+import { normalizePresentationMap, evaluateEditorPresentation } from '../lib/editor-presentation.mjs';
+
+test('block validity and successful editing cannot substitute for presentation evidence', () => {
+  const result = { visual_parity: { status: 'passed' }, editor_validation: { total_blocks: 33, invalid_blocks: 0 }, review_draft: { status: 'passed' } };
+  assert.equal(existingRuntimeReviewPassed(result), false);
+  result.editor_presentation = { status: 'failed', comparisons: [] };
+  assert.equal(existingRuntimeReviewPassed(result), false);
+  result.editor_presentation = { status: 'passed', comparisons: [{ status: 'passed' }, { status: 'failed' }] };
+  assert.equal(existingRuntimeReviewPassed(result), false);
+});
+
+test('presentation mapping requires bounded, unique, explicit identities on every surface', () => {
+  const target = { id: 'form', role: 'region', selectors: { source: 'form', frontend: '.form', editor: '[data-type="jetpack/contact-form"]' }, containers: { source: 'main', frontend: 'main', editor: '.editor-styles-wrapper' } };
+  const map = { schema: 'static-site-importer/editor-presentation-map/v1', targets: [target] };
+  assert.equal(normalizePresentationMap(map).targets.length, 1);
+  assert.throws(() => normalizePresentationMap({ ...map, targets: [] }), /1-128/);
+  assert.throws(() => normalizePresentationMap({ ...map, targets: [target, target] }), /unique/);
+  assert.throws(() => normalizePresentationMap({ ...map, targets: [{ ...target, selectors: { source: 'form' } }] }), /frontend/);
+  assert.throws(() => normalizePresentationMap({ ...map, targets: [{ ...target, optional: true }] }), /required/);
+  const empty = evaluateEditorPresentation(map, {});
+  assert.equal(empty.status, 'failed');
+  assert.equal(empty.coverage.matched, 0);
+});
 
 test('existing runtime review requires explicit runtime identity and makes credential-free Studio editor URLs', () => {
   const options = normalizeExistingRuntimeReviewOptions({ sourceOrigin: 'https://source.example', candidateOrigin: 'http://localhost:8886', route: '/', postId: '42', postType: 'pages', editorId: '7', authProvider: 'studio-auto-login', outputDirectory: '/tmp/ssi-review' });

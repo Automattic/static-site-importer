@@ -500,6 +500,7 @@ npm run review:existing-runtime -- \
   --post-type pages \
   --editor-id 7 \
   --auth-provider studio-auto-login \
+  --presentation-map /tmp/source-provider-presentation-map.json \
   --output-directory /tmp/ssi-existing-runtime-review
 ```
 
@@ -511,6 +512,93 @@ separate draft solely for edit/save/reload validation, verifies the reloaded RES
 content contains its marker, force-deletes and verifies deletion in `finally`, and
 then verifies the target content hash is unchanged. Any lifecycle cleanup failure,
 nonzero pixel mismatch, or screenshot dimension mismatch fails the review.
+
+### Semantic Editor Presentation
+
+The existing-runtime review also requires a separate presentation result. Visible
+block counts and valid save markup cannot satisfy it. An absent presentation map
+produces a failed result, rather than falling back to the old visibility check.
+
+Supply explicit source/frontend/editor selectors from the source and provider
+mapping. Each target must resolve uniquely inside its corresponding container.
+Containers establish comparable local coordinates and exclude WordPress chrome
+and the editor's document-title field. Example:
+
+```json
+{
+  "schema": "static-site-importer/editor-presentation-map/v1",
+  "targets": [
+    {
+      "id": "contact-form",
+      "role": "region",
+      "selectors": {
+        "source": "form#contact",
+        "frontend": ".contact-section form",
+        "editor": ".contact-section [data-type=\"jetpack/contact-form\"]"
+      },
+      "containers": {
+        "source": ".contact-section",
+        "frontend": ".contact-section",
+        "editor": ".contact-section"
+      }
+    }
+  ]
+}
+```
+
+Declare the hero, paragraphs, form, individual labels/controls, submit button,
+and other intended content as separate targets. Supported roles are `region`,
+`heading`, `text`, `label`, `field`, `submit`, `image`, and `indicator`.
+An optional indicator may be absent on the source; any unexpected visible match
+on another surface fails. Hidden indicator nodes do not count as visible markers.
+The map is capped at 128 targets and requires at least one content region for
+pixel comparison. Only indicators can be optional. The report states
+`coverage.scope: declared-targets`: passing a partial map is evidence only for
+that map, not proof of whole-site coverage. No fuzzy text/ordinal matching or
+implicit exclusions are used. Callers remain responsible for complete mapping.
+For labels, target the provider's label wrapper including its visible adornments,
+rather than only the nested editable text node. This is what exposes generated
+required markers. Field values are never recorded; target text is bounded to 4096
+characters, with overflow reported as missing evidence rather than truncated.
+
+For desktop and mobile browser sizes, the collector measures the real editor
+iframe's viewport and renders source/frontend at that width. It dismisses only
+the known Gutenberg welcome preference, fails on remaining visible dialogs, and
+waits for fonts, images, and stylesheet readiness. Background editor polling is
+not a readiness requirement. Geometry is relative to the declared container;
+text targets use rendered text bounds rather than unused inline/block width.
+Region screenshots additionally use the existing shared PNG comparison primitive;
+any pixel mismatch or dimension mismatch fails, even if DOM measurements match.
+Map content regions rather than WordPress chrome. Idle selection is cleared before
+capture; selection-state screenshots retain normal editing affordances and use
+semantic measurements rather than requiring selection outlines to match the source.
+Geometry differences over one CSS pixel fail. Computed typography, colors,
+padding, borders, placeholder appearance, generated text, and whitespace-normalized
+visible text are compared exactly. This includes pseudo-element required markers.
+
+The collector also clicks mapped headings, labels, fields, and submit blocks,
+confirms their identity in Gutenberg's selection store, and remeasures presentation
+in each selected state. This establishes pointer selection and selected presentation;
+it does not prove every provider-specific field-setting workflow.
+The existing isolated-draft save/reload check remains a separate result.
+Per-target screenshots, region diff images, selected block screenshots, canvas screenshots, mapping,
+browser version, actual viewport, raw measurements, matching coverage, and
+structured differences are retained in `existing-runtime-review.json` and PNGs.
+Missing, ambiguous, invisible, or incomplete evidence fails closed. Status strings
+alone cannot satisfy the final acceptance predicate; raw measurements are checked.
+
+The measurement regression runs against real Chromium documents and an iframe:
+
+```sh
+npx playwright install chromium
+node --test tests/editor-presentation-browser.test.mjs tools/run-existing-runtime-review.test.mjs
+```
+
+It deliberately introduces form-width, label-gap, button-width, font-weight, and
+required-marker defects while leaving the frontend correct. A dedicated browser
+CI job runs these regressions. This PR strengthens **existing-runtime review**;
+the WP Codebox fixture-matrix promotion provider retains its separate schema and
+does not automatically consume this Playwright evidence.
 
 The workload composes these generic surfaces:
 

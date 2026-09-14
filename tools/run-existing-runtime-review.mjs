@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { compareVisualParityPngFiles } from '../lib/fixture-matrix/image-comparison.mjs';
+import { captureEditorPresentation, normalizePresentationMap, presentationEvidencePassed } from '../lib/editor-presentation.mjs';
 
 const DESKTOP = { name: 'desktop', width: 1440, height: 1000 };
 const MOBILE = { name: 'mobile', width: 390, height: 844 };
@@ -39,6 +40,7 @@ export function normalizeExistingRuntimeReviewOptions(input = {}) {
     editor_id: Number(input.editorId),
     auth_provider: input.authProvider,
     output_directory: path.resolve(input.outputDirectory),
+    presentation_map: input.presentationMap ? path.resolve(input.presentationMap) : null,
   };
 }
 
@@ -221,9 +223,19 @@ export async function runExistingRuntimeReview(options) {
       result.editor_validation = await validatePersistedPost(editor, options);
       result.editor_canvas = await captureEditorCanvas(editor);
       assertEditorCanvasUsable(result.editor_canvas);
+      result.editor_presentation = { status: 'failed', comparisons: [] };
+      if (!options.presentation_map) {
+        result.editor_presentation.reason = 'An explicit --presentation-map is required to prove editor presentation.';
+      } else {
+        const map = normalizePresentationMap(JSON.parse(fs.readFileSync(options.presentation_map, 'utf8')));
+        for (const viewport of [DESKTOP, MOBILE]) {
+          result.editor_presentation.comparisons.push(await captureEditorPresentation(browser, editor, options, map, viewport));
+        }
+        result.editor_presentation.status = result.editor_presentation.comparisons.every(presentationEvidencePassed) ? 'passed' : 'failed';
+      }
       result.review_draft = await reviewDraft(editor, options, result.editor_validation);
     } finally { await editor.close(); }
-    result.status = result.visual_parity.status === 'passed' && result.editor_validation.invalid_blocks === 0 && result.review_draft.status === 'passed' ? 'passed' : 'failed';
+    result.status = existingRuntimeReviewPassed(result) ? 'passed' : 'failed';
   } catch (error) {
     result.status = 'failed';
     result.error = redactRuntimeError(error instanceof Error ? error.message : String(error));
@@ -235,13 +247,17 @@ export async function runExistingRuntimeReview(options) {
 function toCamel(value) { return value.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase()); }
 function toKebab(value) { return value.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`); }
 function contentHash(content) { return createHash('sha256').update(content).digest('hex'); }
+export function existingRuntimeReviewPassed(result) {
+  const comparisons = result.editor_presentation?.comparisons;
+  return result.visual_parity?.status === 'passed' && result.editor_validation?.total_blocks > 0 && result.editor_validation.invalid_blocks === 0 && result.review_draft?.status === 'passed' && result.editor_presentation?.status === 'passed' && comparisons?.length === 2 && comparisons.map(row => row.viewport?.name).sort().join(',') === 'desktop,mobile' && comparisons.every(presentationEvidencePassed);
+}
 export function assertReviewDraftLifecycle(state) {
   if (state.marker_present === false) throw new Error('Dedicated review draft marker was not found in reloaded persisted content.');
   if (state.deleted === false) throw new Error(`Dedicated review draft ${state.draft_id} still exists after cleanup.`);
   if (state.target_baseline_sha256 && state.target_after_sha256 !== state.target_baseline_sha256) throw new Error(`Target ${state.target} content changed during review.`);
 }
 function redactRuntimeError(message) { return String(message).replace(/https?:\/\/[^\s/@]+(?::[^\s/@]*)?@/gi, (match) => match.slice(0, match.indexOf('//') + 2)).replace(/(authorization|cookie|token|password)=([^\s&]+)/gi, '$1=[redacted]'); }
-function printHelp() { process.stdout.write('Usage: node tools/run-existing-runtime-review.mjs --source-origin <url> --candidate-origin <url> --route </path> --post-id <id> --post-type <pages> --editor-id <id> --auth-provider studio-auto-login --output-directory <dir>\n'); }
+function printHelp() { process.stdout.write('Usage: node tools/run-existing-runtime-review.mjs --source-origin <url> --candidate-origin <url> --route </path> --post-id <id> --post-type <pages> --editor-id <id> --auth-provider studio-auto-login --presentation-map <json-file> --output-directory <dir>\n'); }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const options = parseExistingRuntimeReviewArgs(process.argv.slice(2));
