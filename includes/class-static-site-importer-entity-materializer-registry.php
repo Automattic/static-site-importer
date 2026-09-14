@@ -21,10 +21,10 @@ if ( ! class_exists( 'Static_Site_Importer_Provider_Form_Runtime_V1' ) ) {
  */
 class Static_Site_Importer_Entity_Materializer_Registry {
 
-	private const FORM_CONTROL_TOPOLOGY_MAX_DEPTH = 16;
-	private const FAILURE_DIAGNOSTIC_MAX_ROWS     = 10;
-	private const FAILURE_DIAGNOSTIC_MAX_BYTES    = 256;
-	private const FAILURE_DIAGNOSTIC_SCAN_BUDGET  = 10;
+	private const FORM_CONTROL_TOPOLOGY_MAX_DEPTH       = 16;
+	private const FAILURE_DIAGNOSTIC_MAX_ROWS           = 10;
+	private const FAILURE_DIAGNOSTIC_MAX_BYTES          = 256;
+	private const FAILURE_DIAGNOSTIC_SCAN_BUDGET        = 10;
 	private const RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES = 10485760;
 
 	/**
@@ -396,7 +396,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			// Dependency preparation intentionally defers provider validation until
 			// resume, but its checkpoint must still retain every declared entity.
-			$normalized_manifest           = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ? $manifest : array( $collection => $validation[ $collection ] ?? array() );
+			$normalized_manifest = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ? $manifest : array( $collection => $validation[ $collection ] ?? array() );
 			if ( 'products' === $collection && 'prepare' !== ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
 				$normalized_manifest['schema_version'] = 1;
 			}
@@ -639,7 +639,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( 'form' === ( $prepared['adapter']['capability'] ?? null ) ) {
 				$entities = array_map( static fn( $entity ) => is_array( $entity ) ? self::prepare_form_entity( $entity ) : $entity, $entities );
 			}
-			$manifest   = array( $key => $entities );
+			$manifest = array( $key => $entities );
 			if ( 'products' === $key ) {
 				$manifest['schema_version'] = 1;
 			}
@@ -1762,6 +1762,13 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					);
 					continue;
 				}
+				if ( ! array_key_exists( 'relations', $relations ) ) {
+					$errors[] = array(
+						'path'    => $path_prefix . '.sibling_relations',
+						'message' => 'Sibling relation normalization did not produce relations.',
+					);
+					continue;
+				}
 				$row['sibling_relations'] = $relations['relations'];
 			}
 			if ( array_key_exists( 'layout_graph', $form ) ) {
@@ -2259,7 +2266,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			$seen[ $pair['control'] ] = true;
 		}
-		return array( 'relations' => array( 'schema' => 'generic/form-sibling-relations/v1', 'max_pairs' => $candidate['max_pairs'], 'truncated' => false, 'pairs' => $candidate['pairs'] ) );
+		return array(
+			'relations' => array(
+				'schema'    => 'generic/form-sibling-relations/v1',
+				'max_pairs' => $candidate['max_pairs'],
+				'truncated' => false,
+				'pairs'     => $candidate['pairs'],
+			),
+		);
 	}
 
 	/** @return array<string,string> */
@@ -2288,12 +2302,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'flex_basis'      => 'flex-basis',
 		);
 		if ( $include_width ) {
-			$map['width']                 = 'width';
-			$map['height']                = 'height';
-			$map['margin_block_start']    = 'margin-block-start';
-			$map['margin_block_end']      = 'margin-block-end';
-			$map['margin_inline_start']   = 'margin-inline-start';
-			$map['margin_inline_end']     = 'margin-inline-end';
+			$map['width']               = 'width';
+			$map['height']              = 'height';
+			$map['margin_block_start']  = 'margin-block-start';
+			$map['margin_block_end']    = 'margin-block-end';
+			$map['margin_inline_start'] = 'margin-inline-start';
+			$map['margin_inline_end']   = 'margin-inline-end';
 		}
 		return $map;
 	}

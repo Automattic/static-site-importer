@@ -344,13 +344,13 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		}
 		// A phone field's country search precedes its value input in Jetpack's HTML.
 		// Target Jetpack's actual telephone control, leaving auxiliary and hidden inputs intact.
-		$is_phone = (bool) preg_match( '/\bclass=(["\'])[^"\']*\bgrunion-field-(?:phone|telephone)-wrap\b[^"\']*\1/i', $projected );
-		$pattern  = $is_phone
+		$is_phone                   = (bool) preg_match( '/\bclass=(["\'])[^"\']*\bgrunion-field-(?:phone|telephone)-wrap\b[^"\']*\1/i', $projected );
+		$pattern                    = $is_phone
 			? '/<input\b(?=[^>]*\btype\s*=\s*(["\'])tel\1)[^>]*>/is'
 			: '/<input\b[^>]*>|<textarea\b[^>]*>.*?<\/textarea>|<select\b[^>]*>.*?<\/select>/is';
 		$prefix_destination_classes = array_values( array_filter( $phone_destination_classes, static fn( string $class_name ): bool => str_ends_with( $class_name, '-destination-prefix' ) ) );
 		$phone_destination_classes  = array_values( array_filter( $phone_destination_classes, static fn( string $class_name ): bool => ! str_ends_with( $class_name, '-destination-prefix' ) ) );
-		$wrapped  = preg_replace_callback(
+		$wrapped                    = preg_replace_callback(
 			$pattern,
 			static function ( array $control_match ) use ( $open, $close, $is_phone, $phone_destination_classes ): string {
 				if ( ! $is_phone || empty( $phone_destination_classes ) ) {
@@ -374,7 +374,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			$projected,
 			1
 		);
-		$wrapped  = is_string( $wrapped ) ? $wrapped : $projected;
+		$wrapped                    = is_string( $wrapped ) ? $wrapped : $projected;
 		if ( ! empty( $composite_layers ) ) {
 			$document        = new \DOMDocument();
 			$previous_errors = libxml_use_internal_errors( true );
@@ -422,7 +422,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 				},
 				$wrapped
 			);
-			$wrapped = is_string( $prefixed ) ? $prefixed : $wrapped;
+			$wrapped        = is_string( $prefixed ) ? $prefixed : $wrapped;
 		}
 		return self::project_semantic_wrappers( $wrapped );
 	}

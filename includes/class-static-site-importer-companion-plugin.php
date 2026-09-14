@@ -260,12 +260,12 @@ class Static_Site_Importer_Companion_Plugin {
 		$registration_callback = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash . '_register_blocks';
 		$runtime_class         = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Provider_Form_Runtime_V1';
 		$main_file             = $plugin_slug . '/' . $plugin_slug . '.php';
-		$config = wp_json_encode(
+		$config                = wp_json_encode(
 			array(
 				'site_name'          => $site_name,
 				'plugin_file'        => $main_file,
-				'block_directories'  => array_values( $block_directories ),
-				'islands'           => array_map(
+				'block_directories'  => $block_directories,
+				'islands'            => array_map(
 					static fn ( array $island ): array => array(
 						'handle'      => $island['handle'],
 						'src'         => $island['relative_src'],
@@ -275,7 +275,7 @@ class Static_Site_Importer_Companion_Plugin {
 					),
 					$preserved
 				),
-				'editor_scripts'    => array_map(
+				'editor_scripts'     => array_map(
 					static fn ( array $script ): array => array(
 						'handle'       => $script['handle'],
 						'src'          => $script['src'],
@@ -290,7 +290,7 @@ class Static_Site_Importer_Companion_Plugin {
 		if ( false === $config ) {
 			return new WP_Error( 'static_site_importer_companion_plugin_config_invalid', 'Companion configuration could not be encoded as JSON.' );
 		}
-		$files[ $plugin_slug . '/companion.json' ] = $config . "\n";
+		$files[ $plugin_slug . '/companion.json' ]                        = $config . "\n";
 		$files[ $plugin_slug . '/includes/provider-form-runtime-v1.php' ] = self::provider_form_runtime_file( $provider_form_runtime, $runtime_class );
 		$files = array_merge(
 			array(
@@ -504,7 +504,10 @@ class Static_Site_Importer_Companion_Plugin {
 			if ( isset( $files[ $manifest_path ] ) || isset( $files[ $json_path ] ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_asset_conflict', 'Source assets cannot replace generated dependency manifests.' );
 			}
-			$files[ $json_path ] = wp_json_encode( array( 'dependencies' => $dependencies, 'version' => hash( 'sha256', (string) $assets[ $relative ] ) ) ) . "\n";
+			$files[ $json_path ]     = wp_json_encode( array(
+				'dependencies' => $dependencies,
+				'version'      => hash( 'sha256', (string) $assets[ $relative ] ),
+			) ) . "\n";
 			$files[ $manifest_path ] = "<?php\nreturn json_decode( (string) file_get_contents( substr( __FILE__, 0, -4 ) . '.json' ), true, 512, JSON_THROW_ON_ERROR );\n";
 		}
 		$block_json         = $block['block_json'];
@@ -654,7 +657,7 @@ class Static_Site_Importer_Companion_Plugin {
 		string $inventory_hash,
 		string $runtime_class
 	): string {
-		$fn_prefix       = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash;
+		$fn_prefix = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash;
 
 		$lines   = array();
 		$lines[] = '<?php';
@@ -681,7 +684,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = '}';
 		$lines[] = '';
 		$lines[] = "require_once __DIR__ . '/includes/provider-form-runtime-v1.php';";
-		$lines[] = $runtime_class . "::configure_visual_states( " . $fn_prefix . "_config()['form_visual_states'] ?? array() );";
+		$lines[] = $runtime_class . '::configure_visual_states( ' . $fn_prefix . "_config()['form_visual_states'] ?? array() );";
 		$lines[] = $runtime_class . '::register();';
 		$lines[] = '';
 		$lines[] = '/**';
@@ -788,7 +791,7 @@ class Static_Site_Importer_Companion_Plugin {
 	 * @return string
 	 */
 	private static function mu_loader_file( string $main_file ): string {
-		$lines     = array();
+		$lines   = array();
 		$lines[] = '<?php';
 		$lines[] = '/**';
 		$lines[] = ' * Plugin Name: SSI Companion Loader';
@@ -1483,15 +1486,5 @@ PHP;
 			}
 		}
 		return array_values( array_unique( $references ) );
-	}
-
-	/**
-	 * Escape a value for embedding inside single-quoted generated PHP.
-	 *
-	 * @param string $value Raw value.
-	 * @return string
-	 */
-	private static function php_single_quote( string $value ): string {
-		return str_replace( array( '\\', "'" ), array( '\\\\', "\\'" ), $value );
 	}
 }
