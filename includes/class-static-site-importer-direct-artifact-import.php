@@ -1487,7 +1487,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			'compile_shard_pages'       => 2,
 			'compile_fanout'            => null,
 			'max_invocation_seconds'    => 20.0,
-			'freeze_continuation_bytes' => 8 * 1024 * 1024,
+			// Keep browser-originated artifacts below the Playground worker deadline by
+			// releasing the source request before compiler and materializer work begins.
+			'freeze_continuation_bytes' => 64 * 1024,
 			'clock'                     => static fn (): float => microtime( true ),
 		);
 		if ( function_exists( 'apply_filters' ) ) {

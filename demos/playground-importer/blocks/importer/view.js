@@ -364,24 +364,24 @@
 				let response = await postImport( source, '' );
 				let report = await response.json();
 
-				if ( isUrlOnly && response.ok && report.continuation === true ) {
+				if ( response.ok && report.continuation === true ) {
 					const maxContinuations = 64;
 					let steps = 0;
 					while ( response.ok && report.continuation === true && ! report.error && steps < maxContinuations ) {
 						steps++;
-						const nextUrl = report.url || source.url;
 						const nextImportId = report.import_id || '';
-						showStatus( root, 'Continuing URL import (' + steps + ')...' );
-						response = await postImport( { url: nextUrl }, nextImportId );
+						const nextSource = isUrlOnly ? { url: report.url || source.url } : { type: 'files' };
+						showStatus( root, 'Continuing WordPress preview (' + steps + ')...' );
+						response = await postImport( nextSource, nextImportId );
 						report = await response.json();
 					}
 				}
-				if ( isUrlOnly && response.ok && report.continuation === true && ! report.error ) {
+				if ( response.ok && report.continuation === true && ! report.error ) {
 					report = Object.assign( {}, report, {
 						success: false,
 						error: {
 							code: 'static_site_importer_continuation_limit_reached',
-							message: 'URL import did not reach terminal completion after 64 continuation requests.',
+							message: 'Import did not reach terminal completion after 64 continuation requests.',
 						},
 					} );
 				}

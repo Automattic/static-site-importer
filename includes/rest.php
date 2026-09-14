@@ -330,6 +330,16 @@ function static_site_importer_rest_create_import( WP_REST_Request $request ) {
 	if ( isset( $params['provider_args'] ) && is_array( $params['provider_args'] ) ) {
 		$input['provider_args'] = $params['provider_args'];
 	}
+	if ( static_site_importer_rest_is_direct_artifact_continuation( $source ) ) {
+		$input['source'] = $source;
+		$result          = static_site_importer_rest_execute_import_ability(
+			'static-site-importer/import',
+			$input,
+			'static_site_importer_ability_import'
+		);
+
+		return is_wp_error( $result ) ? $result : rest_ensure_response( $result );
+	}
 	if ( static_site_importer_rest_is_url_only_source( $source ) ) {
 		$url_result = static_site_importer_rest_route_url_import( $source, $input );
 		if ( is_wp_error( $url_result ) ) {
@@ -345,6 +355,16 @@ function static_site_importer_rest_create_import( WP_REST_Request $request ) {
 	}
 
 	return rest_ensure_response( $result );
+}
+
+/**
+ * Direct artifact runs retain their source server-side and resume without it.
+ *
+ * @param array<string,mixed> $source Source payload.
+ * @return bool
+ */
+function static_site_importer_rest_is_direct_artifact_continuation( array $source ): bool {
+	return 'files' === (string) ( $source['type'] ?? '' ) && '' !== trim( (string) ( $source['import_id'] ?? '' ) ) && 2 === count( $source );
 }
 
 /**
