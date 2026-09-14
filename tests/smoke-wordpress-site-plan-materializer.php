@@ -3227,6 +3227,8 @@ $pin_route_content        = $rewrite_route_references->invoke( null, 'data-pin-u
 $assert( 'data-pin-url=\\u0022https://example.test/2024/03/news/\\u0022' === $pin_route_content, 'escaped route-bearing data URL attributes resolve to the materialized WordPress permalink' );
 $index_route_content = $rewrite_route_references->invoke( null, '<a href="/comms-&-use-cases/index.html?study=1#scope">Cases</a>', array( '/comms-&-use-cases' => 'https://example.test/comms-use-cases/' ) );
 $assert( '<a href="https://example.test/comms-use-cases/?study=1#scope">Cases</a>' === $index_route_content, 'index-document links resolve to their materialized WordPress route while retaining query and fragment' );
+$root_index_route_content = $rewrite_route_references->invoke( null, '<a href="/index.htm">Home</a>', array( '/' => 'https://example.test/' ) );
+$assert( '<a href="https://example.test/">Home</a>' === $root_index_route_content, 'root index-document links resolve to the front-page permalink' );
 
 $hash_plan = array(
 	'schema' => 'test/plan/v1',
