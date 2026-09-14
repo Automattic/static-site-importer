@@ -304,6 +304,10 @@ $nested_writes     = Static_Site_Importer_Classic_Theme_Projection::writes(
 				'target_path' => 'assets/fonts/site.css',
 			),
 		),
+		'reference_tokens' => array(
+			array( 'source_path' => 'assets/image.png', 'target_path' => 'assets/image.png', 'token' => 'nested-image' ),
+			array( 'source_path' => 'nested/fonts/site.css', 'target_path' => 'assets/fonts/site.css', 'token' => 'nested-font' ),
+		),
 	),
 	'https://example.test/theme',
 	'Theme'
@@ -336,6 +340,37 @@ foreach ( $escape_writes as $write ) {
 		$escape_json = $write['payload']['data']; }
 }
 $assert( ! str_contains( $escape_json, 'secret.png' ) && ! str_contains( $escape_json, 'escape.html' ), 'relative traversal above the artifact root fails closed' );
+$tokenized_projection = array(
+	'chrome_source_path' => 'site/index.html',
+	'pages'              => array( 'site/nested/page.html' => array( 'html' => '<main><img src="/assets/root.png?size=large#hero" srcset="/assets/root.png?size=small#hero 1x, https://cdn.example.test/root.png 2x, data:image/png;base64,AA== 3x"><form formaction="/assets/root.png?size=form#submit"></form><a href="../documents/report%2epdf">Report</a><div style="background:url(/assets/root.png?size=style#bg)"></div></main>' ) ),
+	'chrome'             => array(),
+	'stylesheets'        => array( 'site/styles/app.css' => '@import url(/assets/root.css?font=1#import);a{background:url(/assets/root.png?size=css#bg)}' ),
+);
+$tokenized_resolved = array(
+	'pages'            => array(),
+	'writes'            => array(),
+	'reference_tokens' => array(
+		array( 'source_path' => 'site/assets/root.png', 'target_path' => 'assets/root.png', 'token' => 'root-image' ),
+		array( 'source_path' => 'site/assets/root.css', 'target_path' => 'assets/root.css', 'token' => 'root-stylesheet' ),
+	),
+);
+$tokenized_writes   = Static_Site_Importer_Classic_Theme_Projection::writes(
+	$tokenized_projection,
+	$tokenized_resolved,
+	'https://example.test/theme',
+	'Theme'
+);
+$tokenized_pages = '';
+$tokenized_css   = '';
+foreach ( $tokenized_writes as $write ) {
+	if ( 'classic-pages.json' === $write['target_path'] ) {
+		$tokenized_pages = $write['payload']['data'];
+	} if ( 'style.css' === $write['target_path'] ) {
+		$tokenized_css = $write['payload']['data']; }
+}
+$root_asset_url = 'https://example.test/theme/assets/root.png';
+$assert( str_contains( $tokenized_pages, $root_asset_url . '?size=large#hero' ) && str_contains( $tokenized_pages, $root_asset_url . '?size=small#hero 1x' ) && str_contains( $tokenized_pages, $root_asset_url . '?size=form#submit' ) && str_contains( $tokenized_pages, $root_asset_url . '?size=style#bg' ) && str_contains( $tokenized_pages, 'https://cdn.example.test/root.png 2x' ) && str_contains( $tokenized_pages, 'data:image/png;base64,AA== 3x' ) && str_contains( $tokenized_pages, '../documents/report%2epdf' ) && str_contains( $tokenized_css, 'https://example.test/theme/assets/root.css?font=1#import' ) && str_contains( $tokenized_css, $root_asset_url . '?size=css#bg' ), 'classic uses resolved plan asset tokens for nested root references while retaining unresolved encoded references and CSS semantics' );
+$assert( $tokenized_writes === Static_Site_Importer_Classic_Theme_Projection::writes( $tokenized_projection, $tokenized_resolved, 'https://example.test/theme/', 'Theme' ), 'classic asset resolution is byte-identical for theme URIs with or without a trailing slash' );
 $nested_entry        = Static_Site_Importer_Classic_Theme_Projection::build(
 	array(
 		'entrypoint' => 'site/index.html',
@@ -374,6 +409,10 @@ $nested_entry_writes = Static_Site_Importer_Classic_Theme_Projection::writes(
 				'source_path' => 'site/fonts/font.css',
 				'target_path' => 'assets/font.css',
 			),
+		),
+		'reference_tokens' => array(
+			array( 'source_path' => 'site/assets/logo.svg', 'target_path' => 'assets/logo.svg', 'token' => 'entry-logo' ),
+			array( 'source_path' => 'site/fonts/font.css', 'target_path' => 'assets/font.css', 'token' => 'entry-font' ),
 		),
 	),
 	'https://example.test/theme',
