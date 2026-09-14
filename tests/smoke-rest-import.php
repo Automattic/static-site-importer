@@ -486,6 +486,22 @@ $assert( 'facebook.com' === ( $GLOBALS['ssi_url_ability_inputs'][0]['source']['u
 $assert( 'url' === ( $GLOBALS['ssi_url_ability_inputs'][0]['source']['type'] ?? '' ), 'rest-current-site-url-only-ability-receives-source-type' );
 $assert( array() === Static_Site_Importer_Theme_Generator::$last_args, 'rest-current-site-url-only-does-not-materialize-locally' );
 
+$GLOBALS['ssi_url_ability_inputs'] = array();
+$GLOBALS['ssi_url_ability_id']     = 'retained-artifact-id';
+$direct_continuation_response      = static_site_importer_rest_create_import(
+	new WP_REST_Request(
+		array(
+			'source' => array(
+				'type'      => 'files',
+				'import_id' => 'retained-artifact-id',
+			),
+		)
+	)
+);
+$assert( ! is_wp_error( $direct_continuation_response ), 'rest-direct-artifact-continuation-does-not-error' );
+$assert( 1 === count( $GLOBALS['ssi_url_ability_inputs'] ), 'rest-direct-artifact-continuation-invokes-ability-once' );
+$assert( array( 'type' => 'files', 'import_id' => 'retained-artifact-id' ) === ( $GLOBALS['ssi_url_ability_inputs'][0]['source'] ?? null ), 'rest-direct-artifact-continuation-preserves-source-free-resume-contract' );
+
 $client_shell_html = '<!doctype html><html><head><title>Client App</title>' . str_repeat( '<script src="/bundle.js"></script>', 25 ) . '</head><body><div id="root"></div></body></html>' . str_repeat( ' ', 120000 );
 $pasted_shell_response = static_site_importer_rest_create_import(
 	new WP_REST_Request(

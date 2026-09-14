@@ -7,8 +7,14 @@ const root = path.resolve(import.meta.dirname, '..');
 const readme = await readFile(path.join(root, 'README.md'), 'utf8');
 const launchUrl = [ ...readme.matchAll(/\]\((https:\/\/playground\.wordpress\.net\/\?[^)]+)\)/g) ][0]?.[1];
 const figFixture = process.env.PLAYGROUND_FIG_FIXTURE;
+const restaurantFixtureUrl = process.env.PLAYGROUND_RESTAURANT_FIXTURE_URL || 'https://raw.githubusercontent.com/Automattic/blocks-engine/03d53d903d620a578428c2f61094aca18392406f/fixtures/websites/14-restaurant/index.html';
 
 assert.ok(launchUrl, 'README must include a WordPress Playground launch URL');
+
+const restaurantFixtureResponse = await fetch(restaurantFixtureUrl);
+assert.equal(restaurantFixtureResponse.ok, true, `Restaurant fixture must resolve: ${restaurantFixtureUrl}`);
+const restaurantFixture = await restaurantFixtureResponse.text();
+assert.equal(restaurantFixture.length, 65_512, 'Restaurant fixture must retain its pinned byte size');
 
 const launch = new URL(launchUrl);
 if (process.env.PLAYGROUND_EXTENSION_MANIFEST_URL) {
@@ -69,20 +75,23 @@ try {
   assert.equal(await htmlDetails.evaluate((element) => element.open), true, 'Paste HTML must be expanded before filling its textarea');
   // Importing replaces the WordPress iframe. Listen on the browser context so
   // the response remains observable while that frame navigates.
-  await wordpress.locator('[data-static-site-importer-source-html]').fill('<main><h1>Imported home</h1></main>');
-  const [ response ] = await Promise.all([
-    page.context().waitForEvent('response', {
-      predicate: (response) => response.url() === importRestUrl && response.request().method() === 'POST',
-      timeout: 300_000,
-    }),
-    wordpress.locator('[data-static-site-importer-submit]').click(),
-  ]);
-  const report = await response.json();
-  assert.equal(response.ok(), true, JSON.stringify(report));
-  assert.equal(report.success, true, JSON.stringify(report));
-  diagnostics.push(`import-response: ${JSON.stringify(report)}`);
+  const importResponses = [];
+  const collectImportResponse = async (response) => {
+    if (response.url() !== importRestUrl || response.request().method() !== 'POST') return;
+    importResponses.push({ ok: response.ok(), report: await response.json() });
+  };
+  page.context().on('response', collectImportResponse);
+  await wordpress.locator('[data-static-site-importer-source-html]').fill(restaurantFixture);
+  await wordpress.locator('[data-static-site-importer-submit]').click();
   await wordpress.waitForURL((url) => url.href === new URL(homeUrl, importUrl).href, { timeout: 120_000 });
-  assert.equal(report.result?.theme_slug, 'generated-wordpress-website', JSON.stringify(report));
+  page.context().off('response', collectImportResponse);
+  const importResponse = importResponses.at(-1);
+  assert.ok(importResponse, 'Restaurant fixture import must return a REST response');
+  assert.equal(importResponse.ok, true, JSON.stringify(importResponse.report));
+  assert.equal(importResponse.report.success, true, JSON.stringify(importResponse.report));
+  assert.ok(importResponses.some(({ report }) => report.continuation === true), 'Restaurant fixture must exercise the retained import continuation');
+  diagnostics.push(`import-responses: ${JSON.stringify(importResponses)}`);
+  assert.equal(importResponse.report.result?.theme_slug, 'generated-wordpress-website', JSON.stringify(importResponse.report));
   assert.equal(await wordpress.locator('body').evaluate((element) => element.classList.contains('wp-theme-generated-wordpress-website')), true, 'The imported theme must be active on the existing home frame');
   assert.ok((await wordpress.locator('title').textContent())?.trim(), 'The imported site home must retain a document title');
 
