@@ -109,6 +109,7 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		$temp    = tempnam( $parent, '.ssi-artifact-' );
 		$written = is_string( $temp ) && self::write_complete_file( $temp, $bytes );
 		$linked  = $written && self::filesystem_operation( static fn () => link( $temp, $path ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_link -- Hard-link publication atomically creates an immutable checkpoint on the same filesystem.
+		$linked  = $linked || ( $written && ! is_file( $path ) && self::copy_exclusively( $temp, $path ) );
 		if ( is_string( $temp ) && is_file( $temp ) ) {
 			unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes the private publication temporary file.
 		}
@@ -144,6 +145,7 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		$temp    = tempnam( $parent, '.ssi-artifact-' );
 		$written = is_string( $temp ) && self::write_json_file( $temp, $data );
 		$linked  = $written && self::filesystem_operation( static fn () => link( $temp, $path ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_link -- Hard-link publication atomically creates an immutable checkpoint on the same filesystem.
+		$linked  = $linked || ( $written && ! is_file( $path ) && self::copy_exclusively( $temp, $path ) );
 		$matches = $written && is_file( $path ) && hash_equals( (string) hash_file( 'sha256', $temp ), (string) hash_file( 'sha256', $path ) );
 		if ( is_string( $temp ) && is_file( $temp ) ) {
 			unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes the private publication temporary file.
@@ -156,6 +158,27 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		}
 
 		return new WP_Error( 'static_site_importer_artifact_workspace_conflict', 'An immutable workspace checkpoint already exists with different content.' );
+	}
+
+	/** Publish a checkpoint on filesystems, including PHP-WASM OPFS, without hard links. */
+	private static function copy_exclusively( string $source, string $destination ): bool {
+		$input  = @fopen( $source, 'rb' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Reads the importer-owned temporary checkpoint.
+		$output = false === $input ? false : @fopen( $destination, 'xb' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Creates only when no checkpoint exists.
+		if ( false === $input || false === $output ) {
+			if ( is_resource( $input ) ) {
+				fclose( $input ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the importer-owned checkpoint handle.
+			}
+			return false;
+		}
+
+		$copied = stream_copy_to_stream( $input, $output );
+		$closed = fclose( $input ) && fclose( $output ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the importer-owned checkpoint handles.
+		if ( false !== $copied && $closed ) {
+			return true;
+		}
+
+		is_file( $destination ) && unlink( $destination ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes an incomplete exclusive checkpoint.
+		return false;
 	}
 
 	/** Atomically claim a private workspace directory exactly once. */
