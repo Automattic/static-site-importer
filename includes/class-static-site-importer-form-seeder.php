@@ -723,6 +723,20 @@ class Static_Site_Importer_Form_Seeder {
 		self::append_receipt_entries( $layout['receipt'], 'operations', $layout_intent['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $overlay['losses'] );
 		$layout['receipt']['status'] = 0 < $layout['receipt']['operations_total'] ? 'applied' : ( 0 < $layout['receipt']['losses_total'] ? 'deferred' : 'skipped' );
+		$status = $form['form']['trailing_status'] ?? null;
+		if ( is_array( $status ) && 'status' === ( $status['role'] ?? null ) ) {
+			// Output provides the native status role without a raw HTML block.
+			$attrs = array( 'tagName' => 'output', 'metadata' => array( 'name' => 'Form status' ) );
+			if ( is_string( $status['id'] ?? null ) && preg_match( '/^[A-Za-z][A-Za-z0-9_-]{0,79}$/D', $status['id'] ) ) {
+				$attrs['anchor'] = $status['id'];
+			}
+			foreach ( array( 'top', 'bottom' ) as $side ) {
+				if ( is_string( $status['margin_' . $side] ?? null ) && preg_match( '/^(?:-?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vh|vw|%)|0)$/D', $status['margin_' . $side] ) ) {
+					$attrs['style']['spacing']['margin'][ $side ] = $status['margin_' . $side];
+				}
+			}
+			$inner_blocks[] = array( 'name' => 'core/group', 'attrs' => $attrs );
+		}
 		$markup                      = self::context_block_markup( $form, 'context_before' ) . self::serialize_block( array(
 			'name'        => 'jetpack/contact-form',
 			'attrs'       => $form_attrs,
@@ -3355,7 +3369,13 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			$id     = ! empty( $attrs['anchor'] ) ? ' id="' . self::escape_attribute( (string) $attrs['anchor'] ) . '"' : '';
 			$tag    = ! empty( $attrs['tagName'] ) ? (string) $attrs['tagName'] : 'div';
-			$prefix = "\n<" . $tag . $id . ' class="' . self::escape_attribute( $classes ) . '">';
+			$style = '';
+			foreach ( array( 'top', 'bottom' ) as $side ) {
+				if ( isset( $attrs['style']['spacing']['margin'][ $side ] ) ) {
+					$style .= 'margin-' . $side . ':' . $attrs['style']['spacing']['margin'][ $side ] . ';';
+				}
+			}
+			$prefix = "\n<" . $tag . $id . ' class="' . self::escape_attribute( $classes ) . '"' . ( '' !== $style ? ' style="' . self::escape_attribute( rtrim( $style, ';' ) ) . '"' : '' ) . '>';
 			$suffix = '</' . $tag . ">\n";
 		} elseif ( in_array( $wrapper, array( 'div', 'ul' ), true ) ) {
 			$prefix = "\n<" . $wrapper . '>';

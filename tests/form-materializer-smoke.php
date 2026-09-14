@@ -749,6 +749,10 @@ namespace {
 		$label_overlay = $label_row['provider_layout_overlay_css'] ?? null;
 		$assert( empty( $label_manifest['errors'] ) && null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $label_overlay ) && str_contains( $label_overlay['css'] ?? '', 'font-weight:' . $expected_weight ) && ( '' === $source_weight || ! str_contains( $label_overlay['css'] ?? '', 'font-weight:inherit' ) ), 'artifact-label-font-weight-preserves-' . $expected_weight );
 	}
+	$status_manifest = array( 'selector' => 'form', 'controls' => array( array( 'tag' => 'input', 'name' => 'name', 'type' => 'text' ), array( 'tag' => 'button', 'type' => 'submit', 'text' => 'Send' ) ), 'form' => array( 'trailing_status' => array( 'role' => 'status', 'id' => 'form-status', 'margin_top' => '0.5rem' ) ) );
+	$status_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $status_manifest ) ) );
+	$status_markup = $status_seed['forms'][0]['block_markup'] ?? '';
+	$assert( str_contains( $status_markup, '<output id="form-status" class="wp-block-group" style="margin-top:0.5rem"></output>' ) && ! str_contains( $status_markup, 'wp:html' ), 'empty-source-status-retains-native-output-and-authored-spacing' );
 	$compile_form = static function ( string $css ) use ( $artifact_compiler ): array {
 		$compiled = ( new $artifact_compiler() )->compile( array(
 			'entrypoint' => 'index.html',
