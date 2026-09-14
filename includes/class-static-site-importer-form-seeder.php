@@ -420,6 +420,7 @@ class Static_Site_Importer_Form_Seeder {
 		$has_source_submit             = false;
 		$textarea_height_omitted_count = (int) ( $form['form']['textarea_height_omitted_count'] ?? 0 );
 		$radio_groups                  = self::labelled_radio_groups( $form, $controls );
+		$suppressed_controls           = $radio_groups['suppressed_controls'];
 		if ( ! empty( $form['form']['interleaved_context'] ) ) {
 			return array(
 				'selector'       => $selector,
@@ -442,8 +443,13 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			$type = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
 			$tag  = strtolower( trim( (string) ( $control['tag'] ?? '' ) ) );
+			if ( self::is_hidden_bookkeeping_control( $form, $control_index, $control, $tag, $type ) ) {
+				$suppressed_controls[ $control_index ] = true;
+				$skipped[] = 'hidden_bookkeeping';
+				continue;
+			}
 			$presentation_descriptors[ $control_index ] = self::presentation_descriptor( $scope, $control_index, $type, $presentation_roles[ $control_index ] ?? array() );
-			if ( isset( $radio_groups['suppressed_controls'][ $control_index ] ) ) {
+			if ( isset( $suppressed_controls[ $control_index ] ) ) {
 				continue;
 			}
 			if ( isset( $radio_groups['groups'][ $control_index ] ) ) {
@@ -529,7 +535,7 @@ class Static_Site_Importer_Form_Seeder {
 			);
 		}
 
-		$topology = self::topology_inner_blocks( $form, $field_blocks, $controls, $radio_groups['suppressed_controls'] );
+		$topology = self::topology_inner_blocks( $form, $field_blocks, $controls, $suppressed_controls );
 		if ( null === $topology ) {
 			return array(
 				'selector'       => $selector,
@@ -682,9 +688,12 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		$overlay_form                 = $form;
 		$overlay_form['layout_graph'] = $overlay_graph;
+		foreach ( array_keys( $suppressed_controls ) as $control_index ) {
+			unset( $overlay_form['presentation_graph']['controls'][ $control_index ] );
+		}
 		$visual_state                 = self::empty_country_visual_state( $form, $scope, $topology['phone_popup_targets'] );
 		$target_map                   = self::provider_layout_target_map( $overlay_form, $scope, $presentation_descriptors, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
-		$presentation_graph           = is_array( $form['presentation_graph'] ?? null ) ? $form['presentation_graph'] : array();
+		$presentation_graph           = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
 		$overlay                      = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map, $presentation_graph );
 		self::append_receipt_entries( $layout['receipt'], 'operations', $overlay['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'operations', $layout_intent['operations'] );
@@ -742,6 +751,24 @@ class Static_Site_Importer_Form_Seeder {
 			$row['unaccepted_receipt_loss_count']  = count( $unaccepted_losses );
 		}
 		return $row;
+	}
+
+	/**
+	 * Provider forms omit source-only bookkeeping controls that cannot receive input.
+	 *
+	 * Some site builders use a visually hidden text field instead of type="hidden".
+	 * Treat it as bookkeeping only when its private name and absent user-facing affordances
+	 * prove it is not an authored field the provider must reproduce.
+	 */
+	private static function is_hidden_bookkeeping_control( array $form, int $control_index, array $control, string $tag, string $type ): bool {
+		if ( 'input' !== $tag || ! in_array( $type, array( '', 'text', 'hidden' ), true ) || ! preg_match( '/^_[a-z0-9_-]+$/iD', (string) ( $control['name'] ?? '' ) ) || '' !== trim( (string) ( $control['label'] ?? '' ) ) || '' !== trim( (string) ( $control['placeholder'] ?? '' ) ) ) {
+			return false;
+		}
+		if ( 'hidden' === $type ) {
+			return true;
+		}
+		$presentation = $form['presentation_graph']['controls'][ $control_index ]['control'] ?? null;
+		return is_array( $presentation ) && 'none' === ( $presentation['styles']['display'] ?? null ) && ! empty( $presentation['provenance'] );
 	}
 
 	/** @return array<int,array{control:int,layout:array<string,string>,condition?:array<string,mixed>}> */
