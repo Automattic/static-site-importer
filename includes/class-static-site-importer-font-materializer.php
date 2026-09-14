@@ -12,6 +12,7 @@ final class Static_Site_Importer_Font_Materializer {
 	private const TOTAL_FONT_LIMIT = 4194304;
 	private const REQUEST_ATTEMPTS = 3;
 	private const RETRY_DELAY      = 100000;
+	private const REQUEST_BUDGET   = 8.0;
 
 	/**
 	 * Resolve an explicit font plan into receipt-owned theme writes.
@@ -75,7 +76,7 @@ final class Static_Site_Importer_Font_Materializer {
 			);
 		}
 
-		$font_faces = self::resolve_google_font_faces( $plan, $families, $diagnostics );
+		$font_faces = self::resolve_google_font_faces( $plan, $families, $diagnostics, microtime( true ) + self::request_budget() );
 		if ( is_wp_error( $font_faces ) ) {
 			return $font_faces;
 		}
@@ -759,7 +760,7 @@ final class Static_Site_Importer_Font_Materializer {
 	 *          | array{state:'preserved',reason:string,observed_bytes:int,url:string,aggregate_bytes?:int}
 	 *          | WP_Error
 	 */
-	private static function resolve_google_font_faces( array $plan, array $families, array &$diagnostics ): array|WP_Error {
+	private static function resolve_google_font_faces( array $plan, array $families, array &$diagnostics, float $deadline ): array|WP_Error {
 		$imports = array();
 		foreach ( $plan['stylesheets'] ?? array() as $stylesheet ) {
 			$content = is_array( $stylesheet ) && is_scalar( $stylesheet['content'] ?? null ) ? (string) $stylesheet['content'] : '';
@@ -793,8 +794,11 @@ final class Static_Site_Importer_Font_Materializer {
 		$font_payloads      = array();
 		$font_payload_bytes = 0;
 		foreach ( $imports as $import ) {
-			$response = self::request( $import, self::CSS_LIMIT );
+			$response = self::request( $import, self::CSS_LIMIT, $deadline );
 			$css      = is_wp_error( $response ) ? '' : (string) wp_remote_retrieve_body( $response );
+			if ( self::request_deadline_exhausted( $response ) ) {
+				return self::preserved_google_font_faces( $import );
+			}
 			if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) || '' === $css ) {
 				$diagnostics[] = self::diagnostic_with_detail(
 					'stylesheet_fetch_failed',
@@ -822,7 +826,7 @@ final class Static_Site_Importer_Font_Materializer {
 					'url'            => $import,
 				);
 			}
-			$embedded = self::embed_font_sources( $css, $families, $font_payloads, $font_payload_bytes, $diagnostics );
+			$embedded = self::embed_font_sources( $css, $families, $font_payloads, $font_payload_bytes, $diagnostics, $deadline );
 			if ( is_wp_error( $embedded ) ) {
 				return $embedded;
 			}
@@ -845,7 +849,7 @@ final class Static_Site_Importer_Font_Materializer {
 	 *          | array{state:'preserved',reason:string,observed_bytes:int,url:string,aggregate_bytes?:int}
 	 *          | WP_Error
 	 */
-	private static function embed_font_sources( string $css, array $families, array &$payloads, int &$payload_bytes, array &$diagnostics ): array|WP_Error {
+	private static function embed_font_sources( string $css, array $families, array &$payloads, int &$payload_bytes, array &$diagnostics, float $deadline ): array|WP_Error {
 		if ( ! preg_match_all( '/@font-face\s*\{([^{}]*)\}/is', $css, $faces ) ) {
 			$diagnostics[] = self::diagnostic_with_detail(
 				'stylesheet_font_faces_missing',
@@ -892,9 +896,12 @@ final class Static_Site_Importer_Font_Materializer {
 					);
 				}
 				if ( ! isset( $payloads[ $url ] ) ) {
-					$response = self::request( $url, self::FONT_LIMIT );
+					$response = self::request( $url, self::FONT_LIMIT, $deadline );
 					$payload  = is_wp_error( $response ) ? '' : (string) wp_remote_retrieve_body( $response );
 					$observed = strlen( $payload );
+					if ( self::request_deadline_exhausted( $response ) ) {
+						return self::preserved_google_font_faces( $url );
+					}
 					if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) || '' === $payload ) {
 						$diagnostics[] = self::diagnostic_with_detail(
 							'font_payload_fetch_failed',
@@ -957,7 +964,7 @@ final class Static_Site_Importer_Font_Materializer {
 		);
 	}
 
-	private static function request( string $url, int $limit ) {
+	private static function request( string $url, int $limit, ?float $deadline = null ) {
 		$args     = array(
 			'timeout'             => 15,
 			'redirection'         => 0,
@@ -966,7 +973,17 @@ final class Static_Site_Importer_Font_Materializer {
 		);
 		$response = null;
 		for ( $attempt = 1; $attempt <= self::REQUEST_ATTEMPTS; ++$attempt ) {
+			if ( null !== $deadline ) {
+				$remaining = $deadline - microtime( true );
+				if ( $remaining <= 0 ) {
+					return new WP_Error( 'static_site_importer_font_request_deadline_exhausted' );
+				}
+				$args['timeout'] = min( $args['timeout'], max( 1, (int) ceil( $remaining ) ) );
+			}
 			$response = wp_safe_remote_get( $url, $args );
+			if ( null !== $deadline && $deadline <= microtime( true ) ) {
+				return new WP_Error( 'static_site_importer_font_request_deadline_exhausted' );
+			}
 			$status   = is_wp_error( $response ) ? 0 : (int) wp_remote_retrieve_response_code( $response );
 			if ( ! is_wp_error( $response ) && 0 !== $status && ! in_array( $status, array( 408, 429 ), true ) && $status < 500 ) {
 				break;
@@ -976,6 +993,28 @@ final class Static_Site_Importer_Font_Materializer {
 			}
 		}
 		return $response;
+	}
+
+	private static function request_budget(): float {
+		$budget = self::REQUEST_BUDGET;
+		if ( function_exists( 'apply_filters' ) ) {
+			$budget = (float) apply_filters( 'static_site_importer_font_materialization_request_budget', $budget );
+		}
+		return min( self::REQUEST_BUDGET, max( 0.001, $budget ) );
+	}
+
+	private static function request_deadline_exhausted( $response ): bool {
+		return is_wp_error( $response ) && 'static_site_importer_font_request_deadline_exhausted' === $response->get_error_code();
+	}
+
+	/** @return array{state:'preserved',reason:string,observed_bytes:int,url:string} */
+	private static function preserved_google_font_faces( string $url ): array {
+		return array(
+			'state'          => 'preserved',
+			'reason'         => 'font_materialization_request_budget_exhausted',
+			'observed_bytes' => 0,
+			'url'            => $url,
+		);
 	}
 
 	/** @param array<int,string> $families */
