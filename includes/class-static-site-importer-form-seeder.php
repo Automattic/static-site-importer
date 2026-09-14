@@ -2969,9 +2969,9 @@ class Static_Site_Importer_Form_Seeder {
 						// Core's rendered button is an actual destination for the source
 						// button's positioning and transform properties; other controls are not.
 						'properties' => $properties,
-						// Jetpack inputs inherit the theme line-height while native controls
-						// retain their UA normal line-height unless source CSS says otherwise.
-						'resets'     => array( 'line-height' => 'normal' ),
+						// Provider controls inherit page typography while native controls retain
+						// their browser defaults unless source CSS explicitly replaces them.
+						'resets'     => array( 'font-family' => 'Arial', 'line-height' => 'normal' ),
 					);
 				}
 			}

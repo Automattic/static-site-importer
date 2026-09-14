@@ -543,6 +543,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				if ( 'line-height' === $property && array_key_exists( 'line_height', $styles ) ) {
 					continue;
 				}
+				if ( 'font-family' === $property && array_key_exists( 'font_family', $styles ) ) {
+					continue;
+				}
 				$reset_declarations[] = $property . ':' . $value;
 			}
 			// A required-marker reset removes provider typography before source facts restore it.
@@ -590,7 +593,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	private static function safe_presentation_resets( mixed $resets ): bool {
-		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'padding', 'border', 'background', 'text-indent', 'font-size', 'line-height', 'gap', 'display', 'align-items', 'height' ) ) ) {
+		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'line-height', 'gap', 'display', 'align-items', 'height' ) ) ) {
 			return false;
 		}
 		foreach ( $resets as $property => $value ) {
