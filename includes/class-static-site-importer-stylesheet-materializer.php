@@ -9,6 +9,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Generated_File' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-generated-file.php';
+}
 require_once __DIR__ . '/class-static-site-importer-provider-layout-overlay.php';
 if ( ! class_exists( '\\Automattic\\BlocksEngine\\PhpTransformer\\AssetAnalysis\\CssUrlRewriter' ) ) {
 	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/AssetAnalysis/CssUrlRewriter.php';
@@ -168,6 +171,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 * @return string
 	 */
 	private static function style_css( string $theme_name, string $css, array $visual_repair_styles = array() ): string {
+		$theme_name      = Static_Site_Importer_Generated_File::comment_header_value( $theme_name );
 		$admin_bar_bridge = self::admin_bar_top_chrome_css( $css );
 		$body_class_guard = self::wordpress_body_class_collision_guard_css( $css );
 		$repair_css       = self::visual_repair_css_for_target( $visual_repair_styles, 'frontend' );

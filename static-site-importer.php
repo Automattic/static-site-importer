@@ -55,6 +55,7 @@ register_deactivation_hook( __FILE__, array( Static_Site_Importer_Lifecycle_Comp
 $static_site_importer_includes = array(
 	'class-static-site-importer-run-storage.php',
 	'class-static-site-importer-build-provenance.php',
+	'class-static-site-importer-generated-file.php',
 	'class-static-site-importer-site-identity.php',
 	'class-static-site-importer-website-artifact-import-input.php',
 	'class-static-site-importer-theme-materialization-strategy.php',

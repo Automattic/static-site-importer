@@ -29,6 +29,9 @@ if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-content-policy.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Generated_File' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-generated-file.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Provider_Form_Runtime_V1' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-provider-form-runtime.php';
 }
@@ -67,6 +70,9 @@ class Static_Site_Importer_Companion_Plugin {
 		}
 		if ( '' === self::site_slug( $payload ) ) {
 			return new WP_Error( 'static_site_importer_companion_plugin_site_slug_missing', 'Companion-plugin payload must declare a non-empty site_slug.' );
+		}
+		if ( ! preg_match( '/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/', self::site_slug( $payload ) ) ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_site_slug_invalid', 'Companion-plugin site_slug must resolve to an ASCII slug safe for PHP identifiers and file paths.' );
 		}
 		$blocks = $payload['blocks'] ?? array();
 		if ( ! is_array( $blocks ) || ! array_is_list( $blocks ) ) {
@@ -254,10 +260,41 @@ class Static_Site_Importer_Companion_Plugin {
 		$registration_callback = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash . '_register_blocks';
 		$runtime_class         = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Provider_Form_Runtime_V1';
 		$main_file             = $plugin_slug . '/' . $plugin_slug . '.php';
+		$config = wp_json_encode(
+			array(
+				'site_name'          => $site_name,
+				'plugin_file'        => $main_file,
+				'block_directories'  => array_values( $block_directories ),
+				'islands'           => array_map(
+					static fn ( array $island ): array => array(
+						'handle'      => $island['handle'],
+						'src'         => $island['relative_src'],
+						'block'       => $island['block'],
+						'selector'    => $island['selector'],
+						'source_path' => $island['source_path'],
+					),
+					$preserved
+				),
+				'editor_scripts'    => array_map(
+					static fn ( array $script ): array => array(
+						'handle'       => $script['handle'],
+						'src'          => $script['src'],
+						'dependencies' => $script['dependencies'],
+					),
+					$editor_scripts
+				),
+				'form_visual_states' => $form_visual_states,
+			),
+			JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES
+		);
+		if ( false === $config ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_config_invalid', 'Companion configuration could not be encoded as JSON.' );
+		}
+		$files[ $plugin_slug . '/companion.json' ] = $config . "\n";
 		$files[ $plugin_slug . '/includes/provider-form-runtime-v1.php' ] = self::provider_form_runtime_file( $provider_form_runtime, $runtime_class );
 		$files = array_merge(
 			array(
-				$main_file => self::main_plugin_file( $plugin_slug, $block_namespace, $site_name, $block_directories, $preserved, $main_file, $inventory_hash, $runtime_class, $editor_scripts, $form_visual_states ),
+				$main_file => self::main_plugin_file( $plugin_slug, $inventory_hash, $runtime_class ),
 			),
 			$files
 		);
@@ -300,7 +337,7 @@ class Static_Site_Importer_Companion_Plugin {
 			$loader                    = $plugin_slug . '.php';
 			$descriptor['loader_file'] = $loader;
 			$descriptor['files']       = array_merge(
-				array( $loader => self::mu_loader_file( $plugin_slug, $main_file, $site_name ) ),
+				array( $loader => self::mu_loader_file( $main_file ) ),
 				$descriptor['files']
 			);
 		}
@@ -434,7 +471,14 @@ class Static_Site_Importer_Companion_Plugin {
 		} elseif ( self::has_editable_content_render( $block ) ) {
 			$files['render.php'] = self::editable_content_renderer();
 		} elseif ( $has_render ) {
-			$files['render.php'] = self::normalize_render( $render );
+			$files['render.php'] = self::static_render_file();
+			if ( '' !== trim( $render ) ) {
+				$render_json = wp_json_encode( $render );
+				if ( false === $render_json ) {
+					return new WP_Error( 'static_site_importer_companion_plugin_render_invalid', 'Static render markup could not be encoded as JSON.' );
+				}
+				$files['render.json'] = $render_json . "\n";
+			}
 		}
 
 		// Carried static assets (e.g. block stylesheets or a hand-written
@@ -449,10 +493,19 @@ class Static_Site_Importer_Companion_Plugin {
 			if ( '' === $relative || ! is_scalar( $content ) ) {
 				continue;
 			}
+			if ( isset( $files[ $relative ] ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_asset_conflict', 'Source assets cannot replace generated runtime files.' );
+			}
 			$files[ $relative ] = (string) $content;
 		}
 		foreach ( self::script_dependencies( $block ) as $relative => $dependencies ) {
-			$files[ self::asset_manifest_path( $relative ) ] = self::asset_manifest( $dependencies, (string) $assets[ $relative ] );
+			$manifest_path = self::asset_manifest_path( $relative );
+			$json_path     = substr( $manifest_path, 0, -4 ) . '.json';
+			if ( isset( $files[ $manifest_path ] ) || isset( $files[ $json_path ] ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_asset_conflict', 'Source assets cannot replace generated dependency manifests.' );
+			}
+			$files[ $json_path ] = wp_json_encode( array( 'dependencies' => $dependencies, 'version' => hash( 'sha256', (string) $assets[ $relative ] ) ) ) . "\n";
+			$files[ $manifest_path ] = "<?php\nreturn json_decode( (string) file_get_contents( substr( __FILE__, 0, -4 ) . '.json' ), true, 512, JSON_THROW_ON_ERROR );\n";
 		}
 		$block_json         = $block['block_json'];
 		$block_json['name'] = $block_name;
@@ -592,40 +645,22 @@ class Static_Site_Importer_Companion_Plugin {
 	/**
 	 * Render the main plugin PHP file.
 	 *
-	 * @param string                          $plugin_slug     Plugin slug.
-	 * @param string                          $block_namespace Block namespace.
-	 * @param string                          $site_name       Human-readable site name.
-	 * @param array<int,string>                $block_directories Block directories registered from metadata.
-	 * @param array<int,array<string,string>> $preserved       Preserved island descriptors.
-	 * @param string                          $plugin_file     Generated plugin basename.
+	 * @param string $plugin_slug Plugin slug.
 	 * @param string                          $inventory_hash  Deterministic generated inventory hash.
-	 * @param array<int,array<string,mixed>>  $editor_scripts  Declared editor-only scripts.
 	 * @return string
 	 */
 	private static function main_plugin_file(
 		string $plugin_slug,
-		string $block_namespace,
-		string $site_name,
-		array $block_directories,
-		array $preserved,
-		string $plugin_file,
 		string $inventory_hash,
-		string $runtime_class,
-		array $editor_scripts = array(),
-		array $form_visual_states = array()
+		string $runtime_class
 	): string {
-		$site_name       = self::header_value( $site_name );
-		$header_name     = sprintf( 'SSI Companion: %s', $site_name );
 		$fn_prefix       = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash;
-		$const_prefix    = strtoupper( $fn_prefix );
-		$islands_php     = self::export_islands_php( $preserved );
-		$directories_php = self::export_php_value( array_values( $block_directories ), 1 );
 
 		$lines   = array();
 		$lines[] = '<?php';
 		$lines[] = '/**';
-		$lines[] = ' * Plugin Name: ' . $header_name;
-		$lines[] = ' * Description: Generated companion plugin housing metadata blocks and preserved island JS for ' . $site_name . '. Generated by Static Site Importer.';
+		$lines[] = ' * Plugin Name: SSI Companion';
+		$lines[] = ' * Description: Generated companion plugin housing metadata blocks and preserved island JS.';
 		$lines[] = ' * Version: 1.0.0';
 		$lines[] = ' * Requires at least: 6.9';
 		$lines[] = ' * Requires PHP: 8.1';
@@ -640,11 +675,13 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "\texit;";
 		$lines[] = '}';
 		$lines[] = '';
-		$lines[] = sprintf( "define( '%s_DIR', plugin_dir_path( __FILE__ ) );", $const_prefix );
-		$lines[] = sprintf( "define( '%s_URL', plugin_dir_url( __FILE__ ) );", $const_prefix );
+		$lines[] = sprintf( 'function %s_config() {', $fn_prefix );
+		$lines[] = "\t\$config = json_decode( (string) file_get_contents( __DIR__ . '/companion.json' ), true );";
+		$lines[] = "\treturn is_array( \$config ) ? \$config : array();";
+		$lines[] = '}';
 		$lines[] = '';
 		$lines[] = "require_once __DIR__ . '/includes/provider-form-runtime-v1.php';";
-		$lines[] = $runtime_class . '::configure_visual_states( ' . self::export_php_value( $form_visual_states, 1 ) . ' );';
+		$lines[] = $runtime_class . "::configure_visual_states( " . $fn_prefix . "_config()['form_visual_states'] ?? array() );";
 		$lines[] = $runtime_class . '::register();';
 		$lines[] = '';
 		$lines[] = '/**';
@@ -655,26 +692,18 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "\t\treturn;";
 		$lines[] = "\t}";
 		$lines[] = '';
-		$lines[] = "\tforeach ( " . $directories_php . ' as $block_dir ) {';
-		$lines[] = sprintf( "\t\t\$registered = register_block_type( %s_DIR . 'blocks/' . \$block_dir );", $const_prefix );
+		$lines[] = sprintf( "\tforeach ( %s_config()['block_directories'] ?? array() as \$block_dir ) {", $fn_prefix );
+		$lines[] = "\t\tif ( ! is_string( \$block_dir ) ) { continue; }";
+		$lines[] = "\t\t\$registered = register_block_type( __DIR__ . '/blocks/' . \$block_dir );";
 		$lines[] = "\t\tif ( \$registered instanceof WP_Block_Type ) {";
 		$lines[] = "\t\t\tif ( ! isset( \$GLOBALS['static_site_importer_companion_block_owners'] ) || ! is_array( \$GLOBALS['static_site_importer_companion_block_owners'] ) ) {";
 		$lines[] = "\t\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'] = array();";
 		$lines[] = "\t\t\t}";
-		$lines[] = sprintf( "\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'][ \$registered->name ] = array( 'plugin_file' => '%s', 'plugin_path' => __FILE__ );", self::php_single_quote( $plugin_file ) );
+		$lines[] = sprintf( "\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'][ \$registered->name ] = array( 'plugin_file' => (string) ( %s_config()['plugin_file'] ?? '' ), 'plugin_path' => __FILE__ );", $fn_prefix );
 		$lines[] = "\t\t}";
 		$lines[] = "\t}";
 		$lines[] = '}';
 		$lines[] = sprintf( "add_action( 'init', '%s_register_blocks' );", $fn_prefix );
-		$lines[] = '';
-		$lines[] = '/**';
-		$lines[] = ' * Preserved island scripts, scoped to the block they belong to.';
-		$lines[] = ' *';
-		$lines[] = ' * @return array<int,array<string,string>>';
-		$lines[] = ' */';
-		$lines[] = sprintf( 'function %s_islands() {', $fn_prefix );
-		$lines[] = "\treturn " . $islands_php . ';';
-		$lines[] = '}';
 		$lines[] = '';
 		$lines[] = '/**';
 		$lines[] = ' * Enqueue preserved island JS only when its owning block renders.';
@@ -689,11 +718,11 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "\t\treturn \$content;";
 		$lines[] = "\t}";
 		$lines[] = '';
-		$lines[] = sprintf( "\tforeach ( %s_islands() as \$island ) {", $fn_prefix );
+		$lines[] = sprintf( "\tforeach ( %s_config()['islands'] ?? array() as \$island ) {", $fn_prefix );
 		$lines[] = "\t\tif ( ( \$island['block'] ?? '' ) !== \$name || '' === ( \$island['src'] ?? '' ) ) {";
 		$lines[] = "\t\t\tcontinue;";
 		$lines[] = "\t\t}";
-		$lines[] = sprintf( "\t\twp_enqueue_script( \$island['handle'], %s_URL . \$island['src'], array(), '1.0.0', true );", strtoupper( $fn_prefix ) );
+		$lines[] = "\t\twp_enqueue_script( \$island['handle'], plugin_dir_url( __FILE__ ) . \$island['src'], array(), '1.0.0', true );";
 		$lines[] = "\t}";
 		$lines[] = '';
 		$lines[] = "\treturn \$content;";
@@ -705,51 +734,40 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "\tif ( ! function_exists( 'wp_enqueue_script' ) ) {";
 		$lines[] = "\t\treturn;";
 		$lines[] = "\t}";
-		$lines[] = sprintf( "\tif ( function_exists( 'get_option' ) && '%s' !== (string) get_option( 'static_site_importer_active_companion_plugin', '' ) ) {", self::php_single_quote( $plugin_file ) );
+		$lines[] = sprintf( "\tif ( function_exists( 'get_option' ) && (string) ( %s_config()['plugin_file'] ?? '' ) !== (string) get_option( 'static_site_importer_active_companion_plugin', '' ) ) {", $fn_prefix );
 		$lines[] = "\t\treturn;";
 		$lines[] = "\t}";
-		$lines[] = sprintf( "\tforeach ( %s_islands() as \$island ) {", $fn_prefix );
+		$lines[] = sprintf( "\tforeach ( %s_config()['islands'] ?? array() as \$island ) {", $fn_prefix );
 		$lines[] = "\t\tif ( '' !== ( \$island['block'] ?? '' ) || '' === ( \$island['src'] ?? '' ) ) {";
 		$lines[] = "\t\t\tcontinue;";
 		$lines[] = "\t\t}";
-		$lines[] = sprintf( "\t\twp_enqueue_script( \$island['handle'], %s_URL . \$island['src'], array(), '1.0.0', true );", strtoupper( $fn_prefix ) );
+		$lines[] = "\t\twp_enqueue_script( \$island['handle'], plugin_dir_url( __FILE__ ) . \$island['src'], array(), '1.0.0', true );";
 		$lines[] = "\t}";
 		$lines[] = '}';
 		$lines[] = sprintf( "add_action( 'wp_enqueue_scripts', '%s_enqueue_global_islands' );", $fn_prefix );
 		$lines[] = '';
 
-		if ( ! empty( $editor_scripts ) ) {
-			$editor_export = array_map(
-				static fn ( array $script ): array => array(
-					'handle'       => (string) $script['handle'],
-					'src'          => (string) $script['src'],
-					'dependencies' => is_array( $script['dependencies'] ?? null ) ? $script['dependencies'] : array(),
-				),
-				$editor_scripts
-			);
-			$lines[]       = '/** Register and enqueue declared editor-only scripts. */';
-			$lines[]       = sprintf( 'function %s_enqueue_editor_scripts() {', $fn_prefix );
-			$lines[]       = "\tif ( ! function_exists( 'wp_register_script' ) || ! function_exists( 'wp_enqueue_script' ) ) {";
-			$lines[]       = "\t\treturn;";
-			$lines[]       = "\t}";
-			$lines[]       = sprintf( "\tif ( function_exists( 'get_option' ) && '%s' !== (string) get_option( 'static_site_importer_active_companion_plugin', '' ) ) {", self::php_single_quote( $plugin_file ) );
-			$lines[]       = "\t\treturn;";
-			$lines[]       = "\t}";
-			$lines[]       = "\tforeach ( " . self::export_php_value( $editor_export, 1 ) . ' as $script ) {';
-			$lines[]       = "\t\t\$handle = isset( \$script['handle'] ) ? (string) \$script['handle'] : '';";
-			$lines[]       = "\t\t\$src    = isset( \$script['src'] ) ? (string) \$script['src'] : '';";
-			$lines[]       = "\t\tif ( '' === \$handle || '' === \$src ) {";
-			$lines[]       = "\t\t\tcontinue;";
-			$lines[]       = "\t\t}";
-			$lines[]       = "\t\t\$dependencies = isset( \$script['dependencies'] ) && is_array( \$script['dependencies'] ) ? \$script['dependencies'] : array();";
-			$lines[]       = sprintf( "\t\twp_register_script( \$handle, %s_URL . \$src, \$dependencies, '1.0.0', true );", $const_prefix );
-			$lines[]       = "\t\twp_enqueue_script( \$handle );";
-			$lines[]       = "\t}";
-			$lines[]       = '}';
-			$lines[]       = sprintf( "add_action( 'enqueue_block_editor_assets', '%s_enqueue_editor_scripts' );", $fn_prefix );
-			$lines[]       = '';
-		}
-
+		$lines[] = '/** Register and enqueue declared editor-only scripts. */';
+		$lines[] = sprintf( 'function %s_enqueue_editor_scripts() {', $fn_prefix );
+		$lines[] = "\tif ( ! function_exists( 'wp_register_script' ) || ! function_exists( 'wp_enqueue_script' ) ) {";
+		$lines[] = "\t\treturn;";
+		$lines[] = "\t}";
+		$lines[] = sprintf( "\tif ( function_exists( 'get_option' ) && (string) ( %s_config()['plugin_file'] ?? '' ) !== (string) get_option( 'static_site_importer_active_companion_plugin', '' ) ) {", $fn_prefix );
+		$lines[] = "\t\treturn;";
+		$lines[] = "\t}";
+		$lines[] = sprintf( "\tforeach ( %s_config()['editor_scripts'] ?? array() as \$script ) {", $fn_prefix );
+		$lines[] = "\t\t\$handle = isset( \$script['handle'] ) ? (string) \$script['handle'] : '';";
+		$lines[] = "\t\t\$src    = isset( \$script['src'] ) ? (string) \$script['src'] : '';";
+		$lines[] = "\t\tif ( '' === \$handle || '' === \$src ) {";
+		$lines[] = "\t\t\tcontinue;";
+		$lines[] = "\t\t}";
+		$lines[] = "\t\t\$dependencies = isset( \$script['dependencies'] ) && is_array( \$script['dependencies'] ) ? \$script['dependencies'] : array();";
+		$lines[] = "\t\twp_register_script( \$handle, plugin_dir_url( __FILE__ ) . \$src, \$dependencies, '1.0.0', true );";
+		$lines[] = "\t\twp_enqueue_script( \$handle );";
+		$lines[] = "\t}";
+		$lines[] = '}';
+		$lines[] = sprintf( "add_action( 'enqueue_block_editor_assets', '%s_enqueue_editor_scripts' );", $fn_prefix );
+		$lines[] = '';
 		return implode( "\n", $lines );
 	}
 
@@ -764,31 +782,17 @@ class Static_Site_Importer_Companion_Plugin {
 	}
 
 	/**
-	 * Keep imported metadata inside one PHP header comment line.
-	 *
-	 * @param string $value Imported header value.
-	 * @return string
-	 */
-	private static function header_value( string $value ): string {
-		$value = (string) preg_replace( '/[\x00-\x1f\x7f]/', ' ', $value );
-		return str_replace( '*/', '* /', trim( $value ) );
-	}
-
-	/**
 	 * Render the mu-plugin root loader stub.
 	 *
-	 * @param string $plugin_slug Plugin slug.
 	 * @param string $main_file   Main plugin file relative to plugins dir.
-	 * @param string $site_name   Human-readable site name.
 	 * @return string
 	 */
-	private static function mu_loader_file( string $plugin_slug, string $main_file, string $site_name ): string {
-		$site_name = self::header_value( $site_name );
+	private static function mu_loader_file( string $main_file ): string {
 		$lines     = array();
 		$lines[] = '<?php';
 		$lines[] = '/**';
-		$lines[] = ' * Plugin Name: SSI Companion Loader: ' . $site_name;
-		$lines[] = ' * Description: Must-use loader that requires the ' . $plugin_slug . ' companion plugin. Generated by Static Site Importer.';
+		$lines[] = ' * Plugin Name: SSI Companion Loader';
+		$lines[] = ' * Description: Must-use loader for a generated SSI companion plugin.';
 		$lines[] = ' *';
 		$lines[] = ' * @package StaticSiteImporterCompanion';
 		$lines[] = ' */';
@@ -806,107 +810,12 @@ class Static_Site_Importer_Companion_Plugin {
 		return implode( "\n", $lines );
 	}
 
-	/**
-	 * Export island descriptors as a PHP array literal for the generated file.
-	 *
-	 * @param array<int,array<string,string>> $preserved Preserved island descriptors.
-	 * @return string
-	 */
-	private static function export_islands_php( array $preserved ): string {
-		if ( empty( $preserved ) ) {
-			return 'array()';
-		}
-
-		$rows = array();
-		foreach ( $preserved as $island ) {
-			$rows[] = sprintf(
-				"\t\tarray( 'handle' => '%s', 'src' => '%s', 'block' => '%s', 'selector' => '%s', 'source_path' => '%s' ),",
-				self::php_single_quote( $island['handle'] ),
-				self::php_single_quote( $island['relative_src'] ),
-				self::php_single_quote( $island['block'] ),
-				self::php_single_quote( $island['selector'] ),
-				self::php_single_quote( $island['source_path'] )
-			);
-		}
-
-		return "array(\n" . implode( "\n", $rows ) . "\n\t)";
-	}
 
 	/**
-	 * Export an arbitrary scalar/array value as deterministic, lint-clean PHP.
-	 *
-	 * Used to embed generated asset dependency manifests and block directory lists.
-	 *
-	 * @param mixed $value  Value to export.
-	 * @param int   $indent Current indentation depth (tabs).
-	 * @return string
+	 * Build the fixed render.php reader for static markup stored beside it.
 	 */
-	private static function export_php_value( $value, int $indent = 0 ): string {
-		if ( is_array( $value ) ) {
-			if ( array() === $value ) {
-				return 'array()';
-			}
-
-			$is_list = array_keys( $value ) === range( 0, count( $value ) - 1 );
-			$pad     = str_repeat( "\t", $indent + 1 );
-			$rows    = array();
-			foreach ( $value as $key => $item ) {
-				$exported = self::export_php_value( $item, $indent + 1 );
-				if ( $is_list ) {
-					$rows[] = $pad . $exported . ',';
-				} else {
-					$rows[] = $pad . "'" . self::php_single_quote( (string) $key ) . "' => " . $exported . ',';
-				}
-			}
-
-			return "array(\n" . implode( "\n", $rows ) . "\n" . str_repeat( "\t", $indent ) . ')';
-		}
-
-		if ( is_bool( $value ) ) {
-			return $value ? 'true' : 'false';
-		}
-
-		if ( null === $value ) {
-			return 'null';
-		}
-
-		if ( is_int( $value ) ) {
-			return (string) $value;
-		}
-
-		if ( is_float( $value ) ) {
-			if ( is_nan( $value ) ) {
-				return 'NAN';
-			}
-			if ( is_infinite( $value ) ) {
-				return $value > 0 ? 'INF' : '-INF';
-			}
-
-			return (string) wp_json_encode( $value, JSON_PRESERVE_ZERO_FRACTION );
-		}
-
-		return "'" . self::php_single_quote( (string) $value ) . "'";
-	}
-
-	/**
-	 * Build a render.php template that the dynamic block's render_callback runs.
-	 *
-	 * The closure exposes $attributes, $content, and $block, so a render.php that
-	 * echoes from those variables works exactly like a block.json `render` file.
-	 * An empty payload falls back to passing inner content through unchanged.
-	 *
-	 * @param string $render Render markup or PHP from the payload.
-	 * @return string
-	 */
-	private static function normalize_render( string $render ): string {
-		$trimmed = ltrim( $render );
-		if ( '' === $trimmed ) {
-			return "<?php\n/**\n * Generated companion block render (server-rendered dynamic block).\n *\n * @package StaticSiteImporterCompanion\n *\n * @var array<string,mixed> \$attributes Block attributes.\n * @var string              \$content    Inner block content.\n * @var WP_Block            \$block      Block instance.\n */\n\necho \$content; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Inner block content is already sanitized by WordPress.\n";
-		}
-
-		// Static source markup is data, never executable template source. The only
-		// PHP in this file is SSI-generated code that emits an escaped literal.
-		return "<?php\n/** Generated companion block render. */\n\necho '" . self::php_single_quote( $render ) . "'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static source markup was validated before compilation.\n";
+	private static function static_render_file(): string {
+		return "<?php\n/** Generated companion block render. */\n\n\$render = json_decode( (string) file_get_contents( __DIR__ . '/render.json' ), true );\necho is_string( \$render ) ? \$render : ''; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static source markup was validated before compilation.\n";
 	}
 
 	/** Whether static payload markup represents an editable per-instance content attribute. */
@@ -1554,10 +1463,6 @@ PHP;
 		return false === $extension_offset ? $script_path . '.asset.php' : substr( $script_path, 0, $extension_offset ) . '.asset.php';
 	}
 
-	/** @param array<int,string> $dependencies */
-	private static function asset_manifest( array $dependencies, string $content ): string {
-		return "<?php\nreturn array(\n\t'dependencies' => " . self::export_php_value( $dependencies, 1 ) . ",\n\t'version' => '" . hash( 'sha256', $content ) . "',\n);\n";
-	}
 
 	/** @return array<int,string> */
 	private static function metadata_file_references( array $block_json ): array {
