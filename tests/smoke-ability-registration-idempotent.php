@@ -69,6 +69,7 @@ foreach ( array( 'static-site-importer/import' ) as $ability ) {
 	$properties = $GLOBALS['ssi_abilities'][ $ability ]['input_schema']['properties'];
 	assert( 'string' === $properties['site_title']['type'] );
 	assert( array( 'report_only', 'draft' ) === $properties['stale_page_action']['enum'] );
+	assert( array( '', 'prepare', 'resume' ) === $properties['runtime_lifecycle_phase']['enum'] );
 }
 $import_properties = $GLOBALS['ssi_abilities']['static-site-importer/import']['input_schema']['properties'];
 assert( array( 'plan', 'apply' ) === $import_properties['operation']['enum'] );

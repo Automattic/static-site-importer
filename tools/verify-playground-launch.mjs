@@ -60,7 +60,9 @@ try {
 
   const importer = wordpress.locator('.ssi-importer');
   const importUrl = wordpress.url();
+  const homeUrl = await importer.getAttribute('data-static-site-importer-home-url');
   const importRestUrl = await importer.getAttribute('data-static-site-importer-rest-url');
+  assert.ok(homeUrl, 'Importer must expose its home URL');
   assert.ok(importRestUrl, 'Importer must expose its REST endpoint');
   const htmlDetails = wordpress.locator('details:has([data-static-site-importer-source-html])');
   await htmlDetails.locator('summary').click();
@@ -78,8 +80,11 @@ try {
   const report = await response.json();
   assert.equal(response.ok(), true, JSON.stringify(report));
   assert.equal(report.success, true, JSON.stringify(report));
-  await wordpress.waitForURL((url) => url.href === new URL('/', importUrl).href, { timeout: 120_000 });
-  await wordpress.getByRole('heading', { name: 'Imported home' }).waitFor({ state: 'visible', timeout: 120_000 });
+  diagnostics.push(`import-response: ${JSON.stringify(report)}`);
+  await wordpress.waitForURL((url) => url.href === new URL(homeUrl, importUrl).href, { timeout: 120_000 });
+  assert.equal(report.result?.theme_slug, 'generated-wordpress-website', JSON.stringify(report));
+  assert.equal(await wordpress.locator('body').evaluate((element) => element.classList.contains('wp-theme-generated-wordpress-website')), true, 'The imported theme must be active on the existing home frame');
+  assert.ok((await wordpress.locator('title').textContent())?.trim(), 'The imported site home must retain a document title');
 
   const migrationToolbarLink = wordpress.locator('#wp-admin-bar-pgwpc a');
   await migrationToolbarLink.waitFor({ state: 'visible', timeout: 120_000 });
@@ -117,8 +122,7 @@ try {
   } catch (screenshotError) {
     diagnostics.push(`screenshot-error: ${screenshotError.message}`);
   }
-  error.message = `${error.message}\ndiagnostics=${JSON.stringify(diagnostics.slice(-50))}`;
-  throw error;
+  throw new Error(`${error.message}\ndiagnostics=${JSON.stringify(diagnostics.slice(-50))}`, { cause: error });
 } finally {
   await browser.close();
 }

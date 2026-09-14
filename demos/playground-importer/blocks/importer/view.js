@@ -267,6 +267,7 @@
 		const formData = new FormData();
 		formData.append( 'figma_file', file );
 		formData.append( 'apply_to_current_site', '1' );
+		formData.append( 'activate', '1' );
 		formData.append( 'theme_materialization', 'block' );
 
 		showStatus( root, 'Preparing Figma file for WordPress preview...' );
@@ -344,6 +345,7 @@
 					const body = {
 						source: importSource,
 						apply_to_current_site: true,
+						activate: true,
 						theme_materialization: 'block',
 					};
 					if ( importId ) {
