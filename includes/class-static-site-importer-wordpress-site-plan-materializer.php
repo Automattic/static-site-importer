@@ -16,6 +16,9 @@ require_once __DIR__ . '/class-static-site-importer-route-document-metadata.php'
 if ( ! class_exists( 'Static_Site_Importer_Theme_Materialization_Strategy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-theme-materialization-strategy.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Import_Destination' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-import-destination.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Classic_Theme_Projection' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-classic-theme-projection.php';
 }
@@ -141,19 +144,13 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 
 		try {
-			$slug = sanitize_key( (string) ( $args['slug'] ?? '' ) );
-			if ( '' === $slug ) {
-				throw new InvalidArgumentException( 'invalid_theme_slug' );
+			$destination = Static_Site_Importer_Import_Destination::normalize( $args );
+			if ( is_wp_error( $destination ) ) {
+				throw new InvalidArgumentException( (string) $destination->get_error_code() );
 			}
-			$theme_root = get_theme_root();
-			if ( ! is_dir( $theme_root ) || ! is_writable( $theme_root ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- Validates the native theme destination before atomic local writes.
-				throw new InvalidArgumentException( 'theme_destination_not_ready' );
-			}
-			$theme_dir = trailingslashit( $theme_root ) . $slug;
-			if ( is_link( $theme_dir ) || ( file_exists( $theme_dir ) && ! is_dir( $theme_dir ) ) ) {
-				throw new InvalidArgumentException( 'unsafe_theme_destination' );
-			}
-			$theme_uri = trailingslashit( get_theme_root_uri() ) . $slug;
+			$slug      = (string) $destination['slug'];
+			$theme_dir = (string) $destination['theme_dir'];
+			$theme_uri = (string) $destination['theme_uri'];
 			try {
 				// Resolver proof is canonical semantics, not an inference from copied files.
 				$resolved = ( new WordPressSitePlanResolver() )->resolve(
@@ -185,6 +182,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$state['resolved']                          = $resolved;
 			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
 			$state['theme_dir']                = $theme_dir;
+			$state['destination']              = $destination;
 			$state['theme']                    = array(
 				'slug' => $slug,
 				'dir'  => $theme_dir,
@@ -429,7 +427,26 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		}
 
 		$short_write_attempt = 0;
+		// A prepared state from before this boundary existed described a
+		// generated theme, which owns its directory and may activate.
+		$destination = isset( $state['destination'] ) && is_array( $state['destination'] ) ? $state['destination'] : array(
+			'mode'               => Static_Site_Importer_Import_Destination::GENERATED_THEME,
+			'owns_theme'         => true,
+			'permits_activation' => true,
+		);
 		foreach ( $state['resolved']['writes'] as $write ) {
+			// A destination-owned theme keeps its own scaffold, bootstrap, and
+			// templates. Withholding is recorded so the receipt never implies
+			// this import replaced the host theme's design.
+			if ( ! Static_Site_Importer_Import_Destination::permits_write( $destination, (string) ( $write['kind'] ?? '' ) ) ) {
+				$state['diagnostics'][] = Static_Site_Importer_Import_Destination::withheld_write_diagnostic( $destination, (string) ( $write['kind'] ?? '' ), (string) ( $write['target_path'] ?? '' ) );
+				$state['skipped'][]     = array(
+					'kind'        => (string) ( $write['kind'] ?? '' ),
+					'target_path' => (string) ( $write['target_path'] ?? '' ),
+					'reason_code' => 'destination_withheld_host_theme_write',
+				);
+				continue;
+			}
 			$path = $state['theme_dir'] . '/' . $write['target_path'];
 			self::journal_file( $state, $path );
 			if ( isset( $state['composed_theme_writes'][ $path ] ) && is_file( $path ) && self::file_hash( $path ) === hash( 'sha256', $state['composed_theme_writes'][ $path ] ) ) {
@@ -501,6 +518,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 		}
 
+		// Activation is a destination right, not a caller preference: an import
+		// into a theme the site already runs must never switch the active theme.
+		if ( ! empty( $args['activate'] ) && ! Static_Site_Importer_Import_Destination::permits_activation( $destination ) ) {
+			return self::failed_receipt( $state, 'destination_forbids_theme_activation' );
+		}
 		if ( ! empty( $args['activate'] ) ) {
 			self::journal_runtime( $state );
 			foreach ( $state['resolved']['operations'] as $operation ) {
