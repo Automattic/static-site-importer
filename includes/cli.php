@@ -74,7 +74,8 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 		if ( ! function_exists( 'proc_open' ) || empty( $_SERVER['argv'][0] ) ) {
 			return null;
 		}
-		$base_command = array( (string) $_SERVER['argv'][0], '--path=' . ABSPATH );
+		// Bundled WP-CLI PHARs are readable PHP entrypoints, not necessarily executables.
+		$base_command = array( PHP_BINARY, '-d', 'memory_limit=' . ini_get( 'memory_limit' ), (string) $_SERVER['argv'][0], '--path=' . ABSPATH );
 		$config       = WP_CLI::get_runner()->config ?? array();
 		foreach ( array( 'url', 'user' ) as $key ) {
 			if ( '' !== (string) ( $config[ $key ] ?? '' ) ) {

@@ -746,6 +746,7 @@ class WP_CLI {
 $worker_events = $test_root . '/worker-events.log';
 $worker_script = $test_root . '/fake-wp-worker';
 $worker_source = '#!' . PHP_BINARY . "\n<?php\n"
+	. 'if (ini_get("memory_limit") !== "384M") exit(3);' . "\n"
 	. '$pages = array_values(array_filter($argv, static fn($arg) => str_starts_with($arg, "--pages=")));' . "\n"
 	. '$decoded = json_decode(rawurldecode(substr($pages[0] ?? "", 8)), true);' . "\n"
 	. '$events = $decoded[0] ?? ""; $marker = $decoded[1] ?? "missing";' . "\n"
@@ -753,8 +754,10 @@ $worker_source = '#!' . PHP_BINARY . "\n<?php\n"
 	. 'usleep(500000);' . "\n"
 	. 'file_put_contents($events, "end:" . $marker . "\\n", FILE_APPEND | LOCK_EX);' . "\n"
 	. 'exit("fail" === $marker ? 2 : 0);' . "\n";
-$assert( false !== file_put_contents( $worker_script, $worker_source ) && chmod( $worker_script, 0700 ), 'the process fan-out fixture worker must be executable' );
+$assert( false !== file_put_contents( $worker_script, $worker_source ) && chmod( $worker_script, 0600 ), 'the process fan-out fixture must match a readable, non-executable WP-CLI PHAR' );
 $original_argv_zero = $_SERVER['argv'][0] ?? null;
+$original_memory_limit = ini_get( 'memory_limit' );
+ini_set( 'memory_limit', '384M' );
 $_SERVER['argv'][0] = $worker_script;
 $process_fanout = static_site_importer_cli_compile_artifact_pages_fanout( str_repeat( 'a', 64 ), array( array( $worker_events, 'one' ), array( $worker_events, 'two' ), array( $worker_events, 'three' ) ) );
 $events = file( $worker_events, FILE_IGNORE_NEW_LINES );
@@ -763,6 +766,7 @@ sort( $starts, SORT_STRING );
 $assert( true === $process_fanout && array( 'start:one', 'start:three', 'start:two' ) === $starts, 'the CLI fan-out adapter must start every bounded worker before waiting for completion' );
 $process_failure = static_site_importer_cli_compile_artifact_pages_fanout( str_repeat( 'b', 64 ), array( array( $worker_events, 'ok' ), array( $worker_events, 'fail' ) ) );
 $assert( is_wp_error( $process_failure ) && 'static_site_importer_direct_artifact_worker_process_failed' === $process_failure->get_error_code(), 'the CLI fan-out adapter must surface a nonzero worker exit as a structured compile failure' );
+ini_set( 'memory_limit', $original_memory_limit );
 if ( null === $original_argv_zero ) {
 	unset( $_SERVER['argv'][0] );
 } else {
