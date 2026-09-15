@@ -42,6 +42,7 @@
     "tests/smoke-plugin-materializer-wp-cli-process.php": { "environment": "standalone-php" },
     "tests/smoke-owner-handoff-evidence.php": { "environment": "standalone-php" },
     "tests/smoke-product-handoff-contract.php": { "environment": "standalone-php" },
+    "tests/smoke-materialization-coverage.php": { "environment": "standalone-php" },
     "tests/smoke-quality-budget-admission.php": { "environment": "standalone-php" },
     "tests/smoke-provider-entity-decline.php": { "environment": "standalone-php" },
     "tests/smoke-provider-presentation.php": { "environment": "standalone-php" },
