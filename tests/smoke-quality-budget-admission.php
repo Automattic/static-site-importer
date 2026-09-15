@@ -32,6 +32,39 @@ $assert( 'passed' === $resolved_fallbacks['production_status'] && 0 === $resolve
 $unresolved_fallbacks = Static_Site_Importer_Quality_Budget_Admission::evaluate( $source_fallback_plan, array(), array( 'quality_budget' => array( 'mode' => 'production', 'max_fallback_count' => 0 ) ) );
 $assert( 'failed' === $unresolved_fallbacks['production_status'] && 2 === $unresolved_fallbacks['evidence']['fallback_count'], 'unresolved provider-materializable fallbacks fail zero-fallback admission' );
 
+// A provider-materializable island is only discounted once a provider has
+// actually superseded it, named by fallback identity, hash and provider.
+$form_identity   = str_repeat( 'a', 64 );
+$form_hash       = str_repeat( 'b', 64 );
+$binding         = array( 'fallback_reconciliation_identity' => $form_identity, 'fallback_hash' => $form_hash, 'provider' => 'jetpack-forms', 'role' => 'form' );
+$single_fallback = array( 'quality' => array( 'metrics' => array( 'fallback_count' => 1 ) ) );
+$zero_budget     = array( 'quality_budget' => array( 'mode' => 'production', 'max_fallback_count' => 0 ) );
+
+$unproven = Static_Site_Importer_Quality_Budget_Admission::evaluate( $single_fallback, array(), $zero_budget );
+$assert( 'failed' === $unproven['production_status'] && 1 === $unproven['evidence']['unresolved_fallback_count'] && 0 === $unproven['evidence']['provider_resolved_fallback_count'], 'a compiler fallback with no provider binding stays unresolved under a zero-fallback budget' );
+
+$covered = Static_Site_Importer_Quality_Budget_Admission::evaluate( $single_fallback, array(), $zero_budget, array(), array( $binding ) );
+$assert( 'passed' === $covered['production_status'] && 1 === $covered['evidence']['fallback_count'] && 0 === $covered['evidence']['unresolved_fallback_count'] && array( 'jetpack-forms' ) === $covered['evidence']['fallback_providers'], 'a fallback a provider superseded admits under a zero-fallback budget and names the provider' );
+
+$duplicated = Static_Site_Importer_Quality_Budget_Admission::evaluate( array( 'quality' => array( 'metrics' => array( 'fallback_count' => 2 ) ) ), array(), $zero_budget, array(), array( $binding, $binding ) );
+$assert( 'failed' === $duplicated['production_status'] && 1 === $duplicated['evidence']['unresolved_fallback_count'], 'one binding repeated cannot discount two fallbacks' );
+
+foreach ( array(
+	array( 'fallback_reconciliation_identity' => $form_identity, 'fallback_hash' => $form_hash, 'provider' => '' ),
+	array( 'fallback_reconciliation_identity' => $form_identity, 'fallback_hash' => 'not-a-hash', 'provider' => 'jetpack-forms' ),
+	array( 'fallback_reconciliation_identity' => '', 'fallback_hash' => $form_hash, 'provider' => 'jetpack-forms' ),
+	array( 'provider' => 'jetpack-forms' ),
+) as $index => $incomplete ) {
+	$result = Static_Site_Importer_Quality_Budget_Admission::evaluate( $single_fallback, array(), $zero_budget, array(), array( $incomplete ) );
+	$assert( 'failed' === $result['production_status'] && 1 === $result['evidence']['unresolved_fallback_count'], "binding {$index} without complete fallback provenance cannot discount a fallback" );
+}
+
+$over_resolved = Static_Site_Importer_Quality_Budget_Admission::evaluate( $single_fallback, array(), $zero_budget, array(), array( $binding, array( 'fallback_reconciliation_identity' => str_repeat( 'c', 64 ), 'fallback_hash' => $form_hash, 'provider' => 'jetpack-forms' ) ) );
+$assert( 'passed' === $over_resolved['production_status'] && 0 === $over_resolved['evidence']['unresolved_fallback_count'], 'more bindings than fallbacks never drives the unresolved count below zero' );
+
+$state_bindings = Static_Site_Importer_Quality_Budget_Admission::applied_entity_bindings( array( 'applied' => array( 'runtime_declarations' => array( 'entity_bindings' => array( 'one' => $binding ) ) ) ) );
+$assert( array( 'one' => $binding ) === $state_bindings && array() === Static_Site_Importer_Quality_Budget_Admission::applied_entity_bindings( array() ), 'applied bindings read from materialization state, and an absent state contributes nothing' );
+
 $materialized_counts = Static_Site_Importer_Quality_Budget_Admission::evaluate(
 	array( 'quality' => array( 'metrics' => array( 'block_count' => 12, 'fallback_count' => 4 ) ) ),
 	array(),

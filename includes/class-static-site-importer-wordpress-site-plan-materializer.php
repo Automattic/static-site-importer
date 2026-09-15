@@ -684,7 +684,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				throw new InvalidArgumentException( 'prepared_destination_changed' );
 			}
 			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
-			$state['quality_budget_admission'] = Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $state['resolved'], $args );
+			$state['quality_budget_admission'] = Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $state['resolved'], $args, array(), Static_Site_Importer_Quality_Budget_Admission::applied_entity_bindings( $state ) );
 			if ( Static_Site_Importer_Quality_Budget_Admission::rejects_materialization( $state['quality_budget_admission'] ) ) {
 				$state['diagnostics'][]  = array(
 					'reason_code'    => 'quality_budget_failed',
@@ -2514,7 +2514,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'schema' => 'static-site-importer/editability-report-admission/v1',
 				'status' => 'not_checked',
 			),
-			'quality_budget_admission'  => $state['quality_budget_admission'] ?? Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $resolved_plan, $state['args'] ?? array() ),
+			'quality_budget_admission'  => $state['quality_budget_admission'] ?? Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $resolved_plan, $state['args'] ?? array(), array(), Static_Site_Importer_Quality_Budget_Admission::applied_entity_bindings( $state ) ),
 			'diagnostics'               => $state['diagnostics'],
 			'errors'                    => $errors,
 			'theme_materialization'     => $state['theme_materialization'] ?? self::strategy_evidence( $state['args'] ?? array() ),
