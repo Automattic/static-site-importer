@@ -1012,6 +1012,30 @@ if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 	);
 
 	WP_CLI::add_command(
+		'static-site-importer coverage',
+		/**
+		 * Print what this runtime can materialize natively, before an import.
+		 *
+		 * A caller deciding whether to spend an import on a source needs this
+		 * ahead of the import. The declaration describes this runtime only.
+		 */
+		static function ( array $args, array $assoc_args ): void {
+			unset( $args );
+			$coverage = Static_Site_Importer_Materialization_Coverage::declare_coverage();
+			$json     = wp_json_encode( $coverage, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+			if ( false === $json ) {
+				WP_CLI::error( 'Failed to encode materialization coverage.' );
+				return;
+			}
+			if ( ! empty( $assoc_args['output'] ) && false === file_put_contents( (string) $assoc_args['output'], $json . "\n" ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- CLI writes an explicit host handoff artifact.
+				WP_CLI::error( 'Failed to write materialization coverage output.' );
+				return;
+			}
+			WP_CLI::line( (string) $json );
+		}
+	);
+
+	WP_CLI::add_command(
 		'static-site-importer figma-diagnostics',
 		static function ( array $args, array $assoc_args ): void {
 			unset( $args );
