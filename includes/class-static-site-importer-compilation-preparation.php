@@ -103,6 +103,7 @@ final class Static_Site_Importer_Compilation_Preparation {
 			return new WP_Error( 'static_site_importer_artifact_compile_failed', 'Website artifact compilation did not produce a WordPress site plan.' . ( false !== $diagnostics ? ' ' . $diagnostics : '' ), $compiled );
 		}
 		$args['missing_author_stylesheet_diagnostics'] = Static_Site_Importer_Report_Diagnostics::missing_author_stylesheet_diagnostics( $plan, $artifact );
+		$args['unsafe_layout_constraint_diagnostics'] = Static_Site_Importer_Report_Diagnostics::unsafe_layout_constraint_diagnostics( $plan );
 		$companion_payload                             = null;
 		$gutenberg_gaps                                = is_array( $compiled['gutenberg_gaps'] ?? null ) ? $compiled['gutenberg_gaps'] : array();
 		if ( ! empty( $compiled['companion_plugin_payload'] ) ) {
