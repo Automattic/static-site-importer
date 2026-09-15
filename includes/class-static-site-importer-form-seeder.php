@@ -810,7 +810,24 @@ class Static_Site_Importer_Form_Seeder {
 			return true;
 		}
 		$presentation = $form['presentation_graph']['controls'][ $control_index ]['control'] ?? null;
-		return is_array( $presentation ) && 'none' === ( $presentation['styles']['display'] ?? null ) && ! empty( $presentation['provenance'] );
+		if ( is_array( $presentation ) && 'none' === ( $presentation['styles']['display'] ?? null ) && ! empty( $presentation['provenance'] ) ) {
+			return true;
+		}
+
+		// Some captured builders use a text input for private bookkeeping and hide
+		// it inline. The computed layout graph is the canonical evidence when no
+		// separate presentation graph was emitted.
+		foreach ( $form['layout_graph']['nodes'] ?? array() as $node ) {
+			if ( ! is_array( $node ) || 'control-' . $control_index !== ( $node['id'] ?? null ) || 'none' !== ( $node['layout']['display'] ?? null ) ) {
+				continue;
+			}
+			foreach ( $node['provenance'] ?? array() as $fact ) {
+				if ( is_array( $fact ) && null === ( $fact['condition'] ?? null ) && 'inline-style' === ( $fact['source_path'] ?? null ) && in_array( 'display', $fact['properties'] ?? array(), true ) ) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	/** @return array<int,array{control:int,layout:array<string,string>,condition?:array<string,mixed>}> */

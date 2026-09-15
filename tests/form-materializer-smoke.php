@@ -222,6 +222,27 @@ namespace {
 		}
 		return array( 'node' => $node, 'condition' => $condition, 'layout_patch' => $patch, 'precedence' => $precedence, 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'c', 64 ), 'selector' => '.' . $class, 'condition' => $condition, 'properties' => $properties ) ) );
 	};
+	$punctuated_source_condition = array( 'kind' => 'media', 'query' => '(max-width: 48rem)' );
+	$punctuated_source_form      = array(
+		'forms' => array(
+			array(
+				'controls'     => array( array( 'tag' => 'input', 'type' => 'email' ) ),
+				'layout_graph' => $v2_layout_graph(
+					array(
+						array( 'id' => 'form', 'kind' => 'container', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'form', 'classes' => array() ), 'layout' => array(), 'provenance' => array() ),
+					)
+				),
+			)
+		)
+	);
+	$punctuated_source_form['forms'][0]['layout_graph']['variants'][] = array(
+		'node'         => 'form',
+		'condition'    => $punctuated_source_condition,
+		'layout_patch' => array( 'display' => 'flex' ),
+		'precedence'   => array( 'display' => array( 'source_order' => 1, 'specificity' => 10, 'important' => false ) ),
+		'provenance'   => array( array( 'source_path' => 'website/comms-&-use-cases/index.html', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.contact-form', 'condition' => $punctuated_source_condition, 'properties' => array( 'display' ) ) ),
+	);
+	$assert( empty( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $punctuated_source_form )['errors'] ), 'form-layout-provenance-accepts-canonical-punctuated-artifact-path' );
 
 	// --- Default provider selection -----------------------------------------
 	$assert( 'jetpack' === Static_Site_Importer_Entity_Materializer_Registry::provider_for( 'form' ), 'form-default-provider-jetpack' );
@@ -1122,6 +1143,12 @@ namespace {
 	$hidden_bookkeeping_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $hidden_bookkeeping_form ) ) );
 	$hidden_bookkeeping_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $hidden_bookkeeping_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$assert( 'mapped' === ( $hidden_bookkeeping_row['status'] ?? '' ) && in_array( 'provider_omitted_runtime_controls', array_column( $hidden_bookkeeping_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ) && ! in_array( 'provider_wrapper_layout_unrepresentable', array_column( $hidden_bookkeeping_row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' ), true ), 'hidden-runtime-bookkeeping-wrapper-is-bounded-and-receipted', wp_json_encode( $hidden_bookkeeping_row ) );
+	$inline_hidden_bookkeeping_form = $hidden_bookkeeping_form;
+	$inline_hidden_bookkeeping_form['controls'][0] = array( 'tag' => 'input', 'type' => 'text', 'name' => '_app_id' );
+	$inline_hidden_bookkeeping_form['layout_graph']['nodes'][1]['layout'] = array( 'display' => 'none' );
+	$inline_hidden_bookkeeping_form['layout_graph']['nodes'][1]['provenance'] = array( array( 'source_path' => 'inline-style', 'source_sha256' => str_repeat( 'e', 64 ), 'selector' => '[style]', 'condition' => null, 'properties' => array( 'display' ) ) );
+	$inline_hidden_bookkeeping_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $inline_hidden_bookkeeping_form ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( 'mapped' === ( $inline_hidden_bookkeeping_row['status'] ?? '' ) && empty( $inline_hidden_bookkeeping_row['form_receipt_unaccepted_losses'] ?? array() ) && in_array( 'provider_omitted_runtime_controls', array_column( $inline_hidden_bookkeeping_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'inline-hidden-private-text-bookkeeping-is-omitted-without-visibility-loss', wp_json_encode( $inline_hidden_bookkeeping_row ) );
 	$hidden_variant_form = $hidden_bookkeeping_form;
 	$hidden_variant_form['layout_graph']['variants'][] = array( 'node' => 'wrapper-0', 'condition' => array( 'kind' => 'media', 'query' => '(max-width: 48rem)' ), 'layout_patch' => array( 'display' => 'block' ), 'precedence' => array( 'display' => array( 'source_order' => 1, 'specificity' => 10, 'important' => false ) ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'd', 64 ), 'selector' => '.runtime', 'condition' => array( 'kind' => 'media', 'query' => '(max-width: 48rem)' ), 'properties' => array( 'display' ) ) ) );
 	$hidden_variant_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $hidden_variant_form ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
