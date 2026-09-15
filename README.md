@@ -50,6 +50,26 @@ The conversion stack is split by responsibility:
 - **Static Site Importer** owns WordPress intake, safety checks, page/theme creation, asset placement, import reports, quality gates, and intentional block or classic theme materialization.
 - **Blocks Engine PHP transformer** owns the generic `ArtifactCompiler`, its diagnostics, and the `source_reports.wordpress_site_plan` v2 output. SSI materializes that plan into WordPress and returns the receipt and import report.
 
+## Existing Companion Block Contracts
+
+Companion refresh accepts new blocks, additive attributes, authoring defaults,
+styles and implementation updates. Removing a registration or changing/removing
+an existing attribute schema triggers a saved-usage lookup before files are written.
+It parses candidate WordPress posts (including revisions, reusable blocks and
+template posts), then active theme templates and parts. Text mentions and block
+name prefixes are not treated as actual instances.
+
+If an instance still uses that contract, refresh returns
+`static_site_importer_companion_saved_contract_changed` with the block name,
+changed attributes and a post/template reference. An unused schema may change.
+An unavailable or capped lookup returns `static_site_importer_companion_usage_unverified`.
+`overwrite` is not a migration of every saved instance, including revisions.
+
+This check targets schema-driven data loss. JavaScript/save-function compatibility,
+default-value behavior and switching to another companion plugin remain separate
+concerns. Run `tests/companion-persistence.php` in a disposable WordPress site for
+the real multi-request regression and legitimate-refresh proof.
+
 ## Content-Only Security Boundary
 
 All HTML, folders, ZIPs, URLs, and website artifact objects are untrusted static content. SSI accepts only explicit static asset extensions and rejects server-side source markers before compilation. Compiler-produced companion payloads are independently revalidated before any generated plugin file is written or activated. Companion block renders accept static HTML only; SSI emits its own fixed PHP wrapper to output that markup, so source PHP cannot be preserved or executed. Existing payloads that relied on PHP render templates or PHP companion assets must migrate their behavior to blocks, data bindings, or client-side JavaScript.

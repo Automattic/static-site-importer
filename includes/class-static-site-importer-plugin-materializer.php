@@ -12,6 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Current_Site_Capabilities' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-current-site-capabilities.php';
 }
+require_once __DIR__ . '/class-static-site-importer-companion-replacement.php';
 
 /**
  * Installs and activates declared WordPress.org plugins before entity seeding.
@@ -231,6 +232,10 @@ class Static_Site_Importer_Plugin_Materializer {
 			return self::failed_report( $report, $capabilities );
 		}
 
+		$compatibility = Static_Site_Importer_Companion_Replacement::validate( $plan );
+		if ( is_wp_error( $compatibility ) ) {
+			return self::failed_report( $report, $compatibility );
+		}
 		$written = self::write_generated_files( $plan );
 		if ( is_wp_error( $written ) ) {
 			return self::failed_report( $report, $written );
