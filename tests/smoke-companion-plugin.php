@@ -1110,6 +1110,41 @@ $overwrite_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_p
 $assert( 'refreshed' === ( $overwrite_report['status'] ?? '' ), 'same-companion-overwrite-reuses-prior-registered-block' );
 $assert( in_array( 'refreshed', $overwrite_report['actions'] ?? array(), true ), 'same-companion-overwrite-records-refresh-action' );
 
+// Ordinary implementation updates remain supported. Actual saved-schema
+// compatibility is verified by companion-persistence.php in real WordPress.
+$script_change = $payload;
+$script_change['blocks'][0]['assets']['index.js'] = 'window.SSIEditor = "updated implementation";';
+$script_before = file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/index.js' );
+$script_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $script_change, static fn (): bool => true, true );
+$assert( 'refreshed' === ( $script_report['status'] ?? '' ), 'same-identity-editor-implementation-update-accepted' );
+$assert( $script_change['blocks'][0]['assets']['index.js'] === file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/index.js' ), 'implementation-update-reaches-installed-file' );
+file_put_contents( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/index.js', $script_before );
+
+$style_change = $payload;
+$style_change['blocks'][0]['block_json']['title'] = 'Updated descriptive title';
+$style_change['blocks'][0]['assets']['style.css'] = '.ssi-hero{color:rebeccapurple}';
+$style_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $style_change, static fn (): bool => true, true );
+$assert( 'refreshed' === ( $style_report['status'] ?? '' ), 'descriptive-and-css-only-refresh-remains-supported' );
+$assert( '.ssi-hero{color:rebeccapurple}' === file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/style.css' ), 'allowed-css-refresh-writes-reviewed-presentation' );
+Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload, static fn (): bool => true, true );
+
+$removed_payload = $payload;
+$removed_payload['blocks'] = array();
+$removed_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $removed_payload, static fn (): bool => true, true );
+$assert( 'failed' === ( $removed_report['status'] ?? '' ) && 'static_site_importer_companion_usage_unverified' === ( $removed_report['error']['code'] ?? '' ), 'registration-removal-needs-real-saved-usage-lookup' );
+
+$render_change = $payload;
+$render_change['blocks'][0]['render'] = '<div>Changed shared rendering</div>';
+$renderer_before = file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/render.php' );
+$render_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $render_change, static fn (): bool => true, true );
+$assert( 'refreshed' === ( $render_report['status'] ?? '' ) && $renderer_before === file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/render.php' ), 'unused-render-proposal-does-not-block-identical-content-owned-renderer' );
+
+$config_before = file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/companion.json' );
+file_put_contents( WP_PLUGIN_DIR . '/ssi-example-site/companion.json', '{invalid' );
+$invalid_inventory_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $payload, static fn (): bool => true, true );
+$assert( 'failed' === ( $invalid_inventory_report['status'] ?? '' ) && 'static_site_importer_companion_usage_unverified' === ( $invalid_inventory_report['error']['code'] ?? '' ), 'unreadable-existing-inventory-reports-unverified-usage' );
+file_put_contents( WP_PLUGIN_DIR . '/ssi-example-site/companion.json', $config_before );
+
 // A foreign registration that wins before generated plugin init must never be
 // marked as companion-owned, so a later materialization still fails closed.
 WP_Block_Type_Registry::$registered[] = 'example/custom-hero';
