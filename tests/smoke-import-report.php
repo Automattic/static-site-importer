@@ -180,7 +180,7 @@ $assert( $compiler_warning['context'] === ( $summary['diagnostics'][0]['context'
 
 $unsafe_layout_plan = array(
 	'quality'     => array( 'metrics' => array( 'block_count' => 179, 'diagnostic_count' => 1 ) ),
-	'diagnostics' => array( array( 'code' => 'author_layout_topology_changed', 'source_path' => 'website/index.html' ) ),
+	'diagnostics' => array( array( 'code' => 'author_layout_topology_changed', 'source_path' => 'website/index.html', 'selector' => 'div:nth-of-type(1)' ) ),
 	'assets'      => array( array( 'source' => 'engine-support', 'content' => '.fixed-height{height:50px !important}' ) ),
 	'pages'       => array( array( 'source_path' => 'website/index.html', 'resolved_block_markup' => '<div class="fixed-height blocks-engine-css-owned-layout"></div>' ) ),
 );
@@ -189,6 +189,12 @@ $assert( 1 === count( $unsafe_layout_diagnostics ) && 50 === ( $unsafe_layout_di
 $safe_topology_plan = $unsafe_layout_plan;
 $safe_topology_plan['assets'][0]['content'] = '.fixed-height{height:auto !important}';
 $assert( array() === Static_Site_Importer_Report_Diagnostics::unsafe_layout_constraint_diagnostics( $safe_topology_plan ), 'topology-warning-without-generated-fixed-height-remains-reportable-not-fatal' );
+$page_scope_coincidence_plan = $unsafe_layout_plan;
+$page_scope_coincidence_plan['pages'][0]['resolved_block_markup'] = '<div class="topology-target blocks-engine-css-owned-layout"></div><div class="fixed-height blocks-engine-css-owned-layout"></div>';
+$assert( array() === Static_Site_Importer_Report_Diagnostics::unsafe_layout_constraint_diagnostics( $page_scope_coincidence_plan ), 'fixed-height-on-different-css-container-is-not-unsafe-layout-evidence' );
+$legacy_topology_plan = $unsafe_layout_plan;
+unset( $legacy_topology_plan['diagnostics'][0]['selector'] );
+$assert( array() === Static_Site_Importer_Report_Diagnostics::unsafe_layout_constraint_diagnostics( $legacy_topology_plan ), 'topology-warning-without-definite-container-contract-is-not-unsafe-layout-evidence' );
 
 $unsafe_report = Static_Site_Importer_Import_Report::from_array( array( 'quality' => $unsafe_layout_plan['quality'], 'diagnostics' => $unsafe_layout_diagnostics, 'blocks_engine' => array( 'wordpress_site_plan' => $unsafe_layout_plan ) ) );
 $unsafe_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $unsafe_report, array( 'fail_on_quality' => true ) );

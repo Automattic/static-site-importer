@@ -640,14 +640,14 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array<int,array<string,mixed>> Unsafe layout diagnostics.
 	 */
 	public static function unsafe_layout_constraint_diagnostics( array $plan ): array {
-		$topology_paths = array();
+		$topology_selectors = array();
 		foreach ( is_array( $plan['diagnostics'] ?? null ) ? $plan['diagnostics'] : array() as $diagnostic ) {
-			if ( ! is_array( $diagnostic ) || 'author_layout_topology_changed' !== ( $diagnostic['code'] ?? '' ) || ! is_scalar( $diagnostic['source_path'] ?? null ) ) {
+			if ( ! is_array( $diagnostic ) || 'author_layout_topology_changed' !== ( $diagnostic['code'] ?? '' ) || ! is_scalar( $diagnostic['source_path'] ?? null ) || ! is_string( $diagnostic['selector'] ?? null ) || '' === $diagnostic['selector'] ) {
 				continue;
 			}
-			$topology_paths[ (string) $diagnostic['source_path'] ] = true;
+			$topology_selectors[ (string) $diagnostic['source_path'] ][ $diagnostic['selector'] ] = true;
 		}
-		if ( empty( $topology_paths ) ) {
+		if ( empty( $topology_selectors ) || ! class_exists( 'DOMDocument' ) || ! class_exists( 'DOMXPath' ) ) {
 			return array();
 		}
 
@@ -668,34 +668,75 @@ class Static_Site_Importer_Report_Diagnostics {
 
 		$diagnostics = array();
 		foreach ( is_array( $plan['pages'] ?? null ) ? $plan['pages'] : array() as $page ) {
-			if ( ! is_array( $page ) || ! isset( $topology_paths[ $page['source_path'] ?? '' ] ) ) {
+			if ( ! is_array( $page ) || ! isset( $topology_selectors[ $page['source_path'] ?? '' ] ) ) {
 				continue;
 			}
 			$markup = (string) ( $page['resolved_block_markup'] ?? $page['canonical_block_markup'] ?? '' );
-			if ( ! preg_match_all( '/class="([^"]*\bblocks-engine-css-owned-layout\b[^"]*)"/', $markup, $class_matches ) ) {
-				continue;
-			}
-			foreach ( $class_matches[1] as $classes ) {
-				foreach ( preg_split( '/\s+/', $classes ) ?: array() as $class ) {
-					if ( ! isset( $fixed_heights[ $class ] ) ) {
+			foreach ( array_keys( $topology_selectors[ (string) $page['source_path'] ] ) as $selector ) {
+				foreach ( self::topology_selector_elements( $markup, $selector ) as $element ) {
+					$classes = preg_split( '/\s+/', (string) $element->getAttribute( 'class' ) ) ?: array();
+					if ( ! in_array( 'blocks-engine-css-owned-layout', $classes, true ) ) {
 						continue;
 					}
-					$diagnostics[] = array(
-						'type'        => self::UNSAFE_LAYOUT_CONSTRAINT_TYPE,
-						'code'        => self::UNSAFE_LAYOUT_CONSTRAINT_TYPE,
-						'severity'    => 'error',
-						'loss_class'  => Static_Site_Importer_Diagnostic_Loss_Classes::IMPORTER_MATERIALIZATION_BUG,
-						'repair_class' => 'static-site-importer',
-						'source_path' => (string) $page['source_path'],
-						'context'     => array( 'class_name' => $class, 'fixed_height_px' => $fixed_heights[ $class ] ),
-						'message'     => sprintf( 'Generated layout support pins CSS-owned container .%1$s to %2$dpx after its direct-child topology changed. This fixed constraint can clip or collapse the materialized layout and is not safe to admit without a layout repair.', $class, $fixed_heights[ $class ] ),
-					);
-					unset( $fixed_heights[ $class ] );
+					foreach ( $classes as $class ) {
+						if ( ! isset( $fixed_heights[ $class ] ) ) {
+							continue;
+						}
+						$diagnostics[] = array(
+							'type'        => self::UNSAFE_LAYOUT_CONSTRAINT_TYPE,
+							'code'        => self::UNSAFE_LAYOUT_CONSTRAINT_TYPE,
+							'severity'    => 'error',
+							'loss_class'  => Static_Site_Importer_Diagnostic_Loss_Classes::IMPORTER_MATERIALIZATION_BUG,
+							'repair_class' => 'static-site-importer',
+							'source_path' => (string) $page['source_path'],
+							'context'     => array( 'class_name' => $class, 'fixed_height_px' => $fixed_heights[ $class ] ),
+							'message'     => sprintf( 'Generated layout support pins CSS-owned container .%1$s to %2$dpx after its direct-child topology changed. This fixed constraint can clip or collapse the materialized layout and is not safe to admit without a layout repair.', $class, $fixed_heights[ $class ] ),
+						);
+						unset( $fixed_heights[ $class ] );
+					}
 				}
 			}
 		}
 
 		return $diagnostics;
+	}
+
+	/**
+	 * Resolve the definite structural selector emitted by Blocks Engine topology
+	 * evidence against the converted page markup. Page-level coincidence is not
+	 * enough to prove that a fixed height constrains the changed container.
+	 *
+	 * @return array<int,DOMElement>
+	 */
+	private static function topology_selector_elements( string $markup, string $selector ): array {
+		$segments = explode( ' > ', $selector );
+		$xpath    = '';
+		foreach ( $segments as $segment ) {
+			if ( ! preg_match( '/^([a-z][a-z0-9-]*):nth-of-type\(([1-9][0-9]*)\)$/i', $segment, $match ) ) {
+				return array();
+			}
+			$tag   = strtolower( $match[1] );
+			$index = (int) $match[2];
+			$xpath .= ( '' === $xpath ? '/html/body/' : '/' ) . $tag . '[count(preceding-sibling::' . $tag . ')=' . ( $index - 1 ) . ']';
+		}
+
+		$document = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$loaded   = $document->loadHTML( '<!DOCTYPE html><html><body>' . $markup . '</body></html>' );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		if ( ! $loaded ) {
+			return array();
+		}
+
+		$elements = array();
+		foreach ( ( new DOMXPath( $document ) )->query( $xpath ) ?: array() as $element ) {
+			if ( $element instanceof DOMElement ) {
+				$elements[] = $element;
+			}
+		}
+
+		return $elements;
 	}
 
 	/**
