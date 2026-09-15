@@ -589,6 +589,21 @@ The collector also clicks mapped headings, labels, fields, and submit blocks,
 confirms their identity in Gutenberg's selection store, and remeasures presentation
 in each selected state. This establishes pointer selection and selected presentation;
 it does not prove every provider-specific field-setting workflow.
+
+Selecting a block is allowed to reveal authoring affordances, because that is what
+a block editor does: Jetpack Forms renders an in-flow "Add help text…" row inside a
+selected field, and a narrow viewport hands canvas height to the contextual block
+toolbar. Neither is an import defect, and neither may be waved through as tolerance.
+Before the first selection the resting canvas is marked, so any element that does not
+exist at rest is an affordance that selection introduced. Each selected measurement
+inventories those elements with their box sizes, takes them out of layout, measures,
+and restores them. With affordances neutralized, every mapped target still owes the
+source exact geometry, styles, and text, so a restyled label, a resized input, or a
+dropped stylesheet fails exactly as it does at rest — neutralization never touches an
+element that existed before selection. Canvas width must be unchanged; canvas height
+is recorded as chrome on the check rather than compared. A selected-state difference
+is reported in the top-level findings with its `selected_target`, so a failing check
+can never be summarized as a passing one.
 The existing isolated-draft save/reload check remains a separate result.
 Per-target screenshots, region diff images, selected block screenshots, canvas screenshots, mapping,
 browser version, actual viewport, raw measurements, matching coverage, and

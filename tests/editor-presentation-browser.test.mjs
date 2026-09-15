@@ -4,7 +4,7 @@ import { chromium } from 'playwright';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { measurePresentation, evaluateEditorPresentation, presentationEvidencePassed } from '../lib/editor-presentation.mjs';
+import { measurePresentation, evaluateEditorPresentation, presentationEvidencePassed, markRestingCanvas, measureSelectedPresentation } from '../lib/editor-presentation.mjs';
 import { compareVisualParityPngFiles } from '../lib/fixture-matrix/image-comparison.mjs';
 import { captureAlignedRegion } from '../lib/aligned-region-capture.mjs';
 import { PNG } from 'pngjs';
@@ -127,4 +127,63 @@ test('real browser geometry rejects the observed editor defects while the fronte
     wrongWidth.editor.viewport.width = 1000;
     assert.equal(evaluateEditorPresentation(map, wrongWidth).status, 'failed');
   } finally { await browser.close(); await rm(output, { recursive: true, force: true }); }
+});
+
+test('selecting a block may add editor affordances, and nothing else', async () => {
+  const browser = await chromium.launch();
+  try {
+    const source = await browser.newPage({ viewport: { width: 600, height: 800 } });
+    const frontend = await browser.newPage({ viewport: { width: 600, height: 800 } });
+    const editor = await browser.newPage({ viewport: { width: 1000, height: 1000 } });
+    await source.setContent(html);
+    await frontend.setContent(html);
+    await editor.setContent('<iframe name="editor-canvas" style="width:600px;height:800px;border:0"></iframe>');
+    const frame = editor.frame('editor-canvas');
+    await frame.setContent(html);
+    const baseline = { source: await measurePresentation(source, map, 'source'), frontend: await measurePresentation(frontend, map, 'frontend'), editor: await measurePresentation(frame, map, 'editor') };
+    assert.equal(evaluateEditorPresentation(map, baseline).status, 'passed');
+    assert.ok((await markRestingCanvas(frame)) > 0);
+
+    // A provider's help-text authoring row is in flow and moves real content.
+    await frame.evaluate(() => {
+      const hints = document.createElement('div');
+      hints.className = 'provider-field-hints';
+      hints.style.height = '19.59375px';
+      hints.textContent = 'Add help text…';
+      document.querySelector('label').after(hints);
+    });
+    const shifted = await measurePresentation(frame, map, 'editor');
+    assert.equal(evaluateEditorPresentation(map, { ...baseline, editor: shifted }, { viewport: 'width' }).status, 'failed', 'an unaccounted affordance still moves content');
+
+    const selected = await measureSelectedPresentation(frame, map);
+    assert.deepEqual(selected.affordances.map(row => row.class_name), ['provider-field-hints']);
+    assert.equal(Math.round(selected.affordances[0].height * 100) / 100, 19.59);
+    assert.equal(evaluateEditorPresentation(map, { ...baseline, editor: selected.measurements }, { viewport: 'width' }).status, 'passed');
+    assert.equal(await frame.locator('.provider-field-hints').isVisible(), true, 'neutralization is restored');
+    assert.equal(await frame.locator('.provider-field-hints').evaluate(node => node.getAttribute('data-ssi-affordance')), null);
+
+    // Editor chrome may take canvas height; it may never take canvas width.
+    const shortCanvas = structuredClone(baseline);
+    shortCanvas.editor = structuredClone(selected.measurements);
+    shortCanvas.editor.viewport.height -= 46;
+    assert.equal(evaluateEditorPresentation(map, shortCanvas, { viewport: 'width' }).status, 'passed');
+    assert.equal(evaluateEditorPresentation(map, shortCanvas).status, 'failed', 'a resting canvas still owes exact viewport height');
+    shortCanvas.editor.viewport.width -= 1;
+    assert.equal(evaluateEditorPresentation(map, shortCanvas, { viewport: 'width' }).status, 'failed');
+
+    // Neutralization never reaches content that existed before selection.
+    for (const [css, id, property] of [
+      ['label{font-weight:700}', 'label', 'styles.font-weight'],
+      ['input{height:60px}', 'input', 'rect.height'],
+      ['button{width:150px}', 'submit', 'rect.width'],
+    ]) {
+      const style = await frame.addStyleTag({ content: css });
+      const guarded = await measureSelectedPresentation(frame, map);
+      const result = evaluateEditorPresentation(map, { ...baseline, editor: guarded.measurements }, { viewport: 'width' });
+      assert.equal(result.status, 'failed', css);
+      assert.ok(result.findings.some(finding => finding.target === id && finding.property === property), JSON.stringify(result.findings));
+      await style.evaluate(node => node.remove());
+    }
+    assert.throws(() => evaluateEditorPresentation(map, baseline, { viewport: 'anything' }), /exact or width/);
+  } finally { await browser.close(); }
 });
