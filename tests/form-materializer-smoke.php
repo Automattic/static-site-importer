@@ -222,6 +222,27 @@ namespace {
 		}
 		return array( 'node' => $node, 'condition' => $condition, 'layout_patch' => $patch, 'precedence' => $precedence, 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'c', 64 ), 'selector' => '.' . $class, 'condition' => $condition, 'properties' => $properties ) ) );
 	};
+	$punctuated_source_condition = array( 'kind' => 'media', 'query' => '(max-width: 48rem)' );
+	$punctuated_source_form      = array(
+		'forms' => array(
+			array(
+				'controls'     => array( array( 'tag' => 'input', 'type' => 'email' ) ),
+				'layout_graph' => $v2_layout_graph(
+					array(
+						array( 'id' => 'form', 'kind' => 'container', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'form', 'classes' => array() ), 'layout' => array(), 'provenance' => array() ),
+					)
+				),
+			)
+		)
+	);
+	$punctuated_source_form['forms'][0]['layout_graph']['variants'][] = array(
+		'node'         => 'form',
+		'condition'    => $punctuated_source_condition,
+		'layout_patch' => array( 'display' => 'flex' ),
+		'precedence'   => array( 'display' => array( 'source_order' => 1, 'specificity' => 10, 'important' => false ) ),
+		'provenance'   => array( array( 'source_path' => 'website/comms-&-use-cases/index.html', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.contact-form', 'condition' => $punctuated_source_condition, 'properties' => array( 'display' ) ) ),
+	);
+	$assert( empty( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $punctuated_source_form )['errors'] ), 'form-layout-provenance-accepts-canonical-punctuated-artifact-path' );
 
 	// --- Default provider selection -----------------------------------------
 	$assert( 'jetpack' === Static_Site_Importer_Entity_Materializer_Registry::provider_for( 'form' ), 'form-default-provider-jetpack' );

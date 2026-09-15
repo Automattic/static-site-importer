@@ -1927,7 +1927,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 			}
 			foreach ( $variant['provenance'] as $fact ) {
-				if ( ! is_array( $fact ) || ! self::has_only_keys( $fact, array( 'source_path', 'source_sha256', 'selector', 'condition', 'properties' ) ) || ! is_string( $fact['source_path'] ?? null ) || ! preg_match( '~^(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9._/-]+$~D', $fact['source_path'] ) || ! preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ?? '' ) || ! is_string( $fact['selector'] ?? null ) || '' === trim( $fact['selector'] ) || strlen( $fact['selector'] ) > 1024 || $fact['condition'] !== $variant['condition'] || ! is_array( $fact['properties'] ?? null ) || array() === $fact['properties'] || count( $fact['properties'] ) > ( $is_v2 ? 20 : 19 ) || array_filter( $fact['properties'], static fn( $property ): bool => ! is_string( $property ) || ! isset( self::layout_producer_property_map( $is_v2 )[ $property ] ) || ! isset( $variant['layout_patch'][ self::layout_producer_property_map( $is_v2 )[ $property ] ] ) ) ) {
+				if ( ! is_array( $fact ) || ! self::has_only_keys( $fact, array( 'source_path', 'source_sha256', 'selector', 'condition', 'properties' ) ) || ! self::is_safe_artifact_source_path( $fact['source_path'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ?? '' ) || ! is_string( $fact['selector'] ?? null ) || '' === trim( $fact['selector'] ) || strlen( $fact['selector'] ) > 1024 || $fact['condition'] !== $variant['condition'] || ! is_array( $fact['properties'] ?? null ) || array() === $fact['properties'] || count( $fact['properties'] ) > ( $is_v2 ? 20 : 19 ) || array_filter( $fact['properties'], static fn( $property ): bool => ! is_string( $property ) || ! isset( self::layout_producer_property_map( $is_v2 )[ $property ] ) || ! isset( $variant['layout_patch'][ self::layout_producer_property_map( $is_v2 )[ $property ] ] ) ) ) {
 					return array( 'error' => 'layout_graph variant provenance is malformed.' );
 				}
 			}
@@ -1944,6 +1944,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'diagnostics' => array_slice( $candidate['diagnostics'], 0, 32 ),
 			),
 		);
+	}
+
+	/** Accept canonical artifact-relative paths without narrowing source filenames. */
+	private static function is_safe_artifact_source_path( mixed $path ): bool {
+		if ( ! is_string( $path ) || '' === $path || str_contains( $path, "\0" ) || str_contains( $path, '\\' ) || ! preg_match( '//u', $path ) || str_starts_with( $path, '/' ) || 1 === preg_match( '#^[A-Za-z]:/#', $path ) ) {
+			return false;
+		}
+		return array() === array_filter( explode( '/', $path ), static fn( string $segment ): bool => '' === $segment || '.' === $segment || '..' === $segment );
 	}
 
 	/** @return array{graph?:array<string,mixed>,error?:string} */
