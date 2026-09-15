@@ -16,13 +16,24 @@ final class Static_Site_Importer_Quality_Budget_Admission {
 	 * (the compatibility default) or `production`. Limits are optional, so a
 	 * caller can tighten only the dimensions it has a policy for.
 	 *
+	 * `max_fallback_count` is a limit on fallbacks that remain unresolved. A
+	 * compiler fallback a provider has already superseded is not a fallback the
+	 * caller receives, so counting it would reject sites that land perfectly;
+	 * counting anything a provider has not superseded keeps the limit honest.
+	 *
+	 * `entity_bindings` are the runtime entity bindings already applied to the
+	 * resolved plan. Each one that supersedes a source fallback carries that
+	 * fallback's identity and hash, which is what makes a provider-materializable
+	 * island distinguishable from an unresolvable one before anything is written.
+	 *
 	 * @param array<string,mixed> $plan
 	 * @param array<string,mixed> $resolved
 	 * @param array<string,mixed> $args
 	 * @param array<string,mixed>|Static_Site_Importer_Import_Report $report
+	 * @param array<string|int,mixed> $entity_bindings
 	 * @return array<string,mixed>
 	 */
-	public static function evaluate( array $plan, array $resolved, array $args = array(), array|Static_Site_Importer_Import_Report $report = array() ): array {
+	public static function evaluate( array $plan, array $resolved, array $args = array(), array|Static_Site_Importer_Import_Report $report = array(), array $entity_bindings = array() ): array {
 		$budget                  = isset( $args['quality_budget'] ) && is_array( $args['quality_budget'] ) ? $args['quality_budget'] : ( isset( $args['quality_budgets'] ) && is_array( $args['quality_budgets'] ) ? $args['quality_budgets'] : array() );
 		$mode                    = in_array( $budget['mode'] ?? 'preview', array( 'production', 'production_ready' ), true ) ? 'production' : 'preview';
 		$quality                 = isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array();
@@ -44,17 +55,22 @@ final class Static_Site_Importer_Quality_Budget_Admission {
 		}
 		$bootstrap_bytes = self::bootstrap_bytes( $writes );
 		$stylesheets     = self::stylesheet_count( $writes );
+		$resolution      = self::provider_resolved_fallbacks( $entity_bindings );
+		$unresolved      = null === $fallbacks ? null : max( 0, $fallbacks - min( $fallbacks, count( $resolution['identities'] ) ) );
 		$evidence        = array(
-			'native_block_count'          => $native_blocks,
-			'core_html_block_count'       => $core_html,
-			'core_html_families'          => $families,
-			'unresolved_media_count'      => $unresolved_media,
-			'unresolved_dependency_count' => $unresolved_dependencies,
-			'fallback_count'              => $fallbacks,
-			'bootstrap_bytes'             => $bootstrap_bytes,
-			'stylesheet_asset_count'      => $stylesheets,
-			'visual_gate'                 => self::gate_status( $args, $report, 'visual' ),
-			'editor_gate'                 => self::gate_status( $args, $report, 'editor' ),
+			'native_block_count'               => $native_blocks,
+			'core_html_block_count'            => $core_html,
+			'core_html_families'               => $families,
+			'unresolved_media_count'           => $unresolved_media,
+			'unresolved_dependency_count'      => $unresolved_dependencies,
+			'fallback_count'                   => $fallbacks,
+			'provider_resolved_fallback_count' => count( $resolution['identities'] ),
+			'unresolved_fallback_count'        => $unresolved,
+			'fallback_providers'               => $resolution['providers'],
+			'bootstrap_bytes'                  => $bootstrap_bytes,
+			'stylesheet_asset_count'           => $stylesheets,
+			'visual_gate'                      => self::gate_status( $args, $report, 'visual' ),
+			'editor_gate'                      => self::gate_status( $args, $report, 'editor' ),
 		);
 		$limits          = array(
 			'max_native_block_count'          => $native_blocks,
@@ -62,7 +78,7 @@ final class Static_Site_Importer_Quality_Budget_Admission {
 			'max_core_html_family_count'      => count( $families ),
 			'max_unresolved_media_count'      => $unresolved_media,
 			'max_unresolved_dependency_count' => $unresolved_dependencies,
-			'max_fallback_count'              => $fallbacks,
+			'max_fallback_count'              => $unresolved,
 			'max_bootstrap_bytes'             => $bootstrap_bytes,
 			'max_stylesheet_asset_count'      => $stylesheets,
 		);
@@ -98,9 +114,54 @@ final class Static_Site_Importer_Quality_Budget_Admission {
 		);
 	}
 
+	/**
+	 * Read the runtime entity bindings already applied to a materialization state.
+	 *
+	 * @param array<string,mixed> $state
+	 * @return array<string|int,mixed>
+	 */
+	public static function applied_entity_bindings( array $state ): array {
+		$bindings = $state['applied']['runtime_declarations']['entity_bindings'] ?? null;
+		return is_array( $bindings ) ? $bindings : array();
+	}
+
 	/** @param array<string,mixed> $admission */
 	public static function rejects_materialization( array $admission ): bool {
 		return 'production' === ( $admission['mode'] ?? '' ) && 'failed' === ( $admission['production_status'] ?? '' );
+	}
+
+	/**
+	 * Count source fallbacks a provider has already superseded.
+	 *
+	 * A binding only counts when it names the fallback it replaced by identity
+	 * and hash and names the provider that replaced it. Absent a provider there
+	 * are no bindings, so a missing provider keeps the original strictness
+	 * instead of quietly discounting an island nothing can materialize.
+	 *
+	 * @param array<string|int,mixed> $bindings
+	 * @return array{identities:array<string,true>,providers:array<int,string>}
+	 */
+	private static function provider_resolved_fallbacks( array $bindings ): array {
+		$identities = array();
+		$providers  = array();
+		foreach ( $bindings as $binding ) {
+			if ( ! is_array( $binding ) ) {
+				continue;
+			}
+			$identity = isset( $binding['fallback_reconciliation_identity'] ) && is_string( $binding['fallback_reconciliation_identity'] ) ? $binding['fallback_reconciliation_identity'] : '';
+			$hash     = isset( $binding['fallback_hash'] ) && is_string( $binding['fallback_hash'] ) ? $binding['fallback_hash'] : '';
+			$provider = isset( $binding['provider'] ) && is_string( $binding['provider'] ) ? trim( $binding['provider'] ) : '';
+			if ( 1 !== preg_match( '/^[a-f0-9]{64}$/D', $identity ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $hash ) || '' === $provider ) {
+				continue;
+			}
+			$identities[ $identity ] = true;
+			$providers[ $provider ]  = true;
+		}
+		ksort( $providers, SORT_STRING );
+		return array(
+			'identities' => $identities,
+			'providers'  => array_keys( $providers ),
+		);
 	}
 
 	/** @param array<string,mixed> $metrics @param array<int,string> $keys */
