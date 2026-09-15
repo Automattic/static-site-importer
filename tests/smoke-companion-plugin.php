@@ -875,6 +875,15 @@ if ( is_array( $typed_descriptor ) ) {
 	}
 	$attributes = array(
 		'kind'    => 'media',
+		'content' => '<wow-image class="hero-media" onload="alert(1)"><img src="safe-hero.avif" alt="Hero" fetchpriority="high"></wow-image>',
+	);
+	ob_start();
+	eval( '?>' . $typed_render );
+	$event_bearing_media_output = (string) ob_get_clean();
+	$assert( str_contains( $event_bearing_media_output, '<img src="safe-hero.avif" alt="Hero" fetchpriority="high">' ), 'typed-renderer-preserves-safe-media-inside-event-bearing-wrapper', $event_bearing_media_output );
+	$assert( ! str_contains( strtolower( $event_bearing_media_output ), 'onload' ) && ! str_contains( $event_bearing_media_output, '<wow-image' ), 'typed-renderer-removes-event-bearing-custom-wrapper', $event_bearing_media_output );
+	$attributes = array(
+		'kind'    => 'media',
 		'content' => '<div class="masked-video"><svg viewBox="0 0 100 40"><defs><clipPath id="media-mask"><text x="0" y="20">Play</text></clipPath></defs></svg><video src="footer.mp4" autoplay muted loop style="clip-path:url(#media-mask)"></video></div>',
 	);
 	ob_start();
