@@ -74,6 +74,12 @@ class Static_Site_Importer_Receipt_Projection {
 				array_values( array_filter( $args['missing_author_stylesheet_diagnostics'], 'is_array' ) )
 			);
 		}
+		if ( is_array( $args['unsafe_layout_constraint_diagnostics'] ?? null ) ) {
+			$diagnostics = array_merge(
+				$diagnostics,
+				array_values( array_filter( $args['unsafe_layout_constraint_diagnostics'], 'is_array' ) )
+			);
+		}
 		$report                            = Static_Site_Importer_Import_Report::from_array(
 			array(
 				'schema'                           => Static_Site_Importer_Import_Report::SCHEMA,

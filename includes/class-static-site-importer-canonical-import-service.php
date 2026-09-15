@@ -769,6 +769,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 			'interaction_candidates'             => 'interaction_candidate_count',
 			'runtime_dependency_parity'          => 'runtime_dependency_parity_issue_count',
 			'semantic_parity_failures'           => 'semantic_parity_failure_count',
+			'unsafe_layout_constraints'          => 'unsafe_layout_constraint_count',
 		);
 		foreach ( $map as $validation_key => $quality_key ) {
 			if ( isset( $validation_counts[ $validation_key ] ) && is_numeric( $validation_counts[ $validation_key ] ) && ( ! isset( $quality_counts[ $quality_key ] ) || (int) $validation_counts[ $validation_key ] !== (int) $quality_counts[ $quality_key ] ) ) {
