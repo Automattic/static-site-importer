@@ -380,7 +380,7 @@ namespace {
 	$assert( str_contains( $markup, 'hello@example.com' ), 'markup-mailto-recipient' );
 	$assert( str_contains( $markup, '"options":["Sales","Support"]' ), 'markup-select-options' );
 	$assert( 1 === preg_match( '/<div class="wp-block-jetpack-contact-form form contact ssi-form-[a-f0-9]{12}">/', $markup ), 'markup-contact-form-wrapper-and-source-classes' );
-	$assert( 1 === preg_match( '/<!-- wp:jetpack\/field-text \{"required":true,"id":"ssi-form-[a-f0-9]{12}-field-0","className":"ssi-node-[a-f0-9]{12}"\} -->/', $markup ), 'markup-field-wrapper-keeps-provider-layout-class-and-instance-identity' );
+	$assert( 1 === preg_match( '/<!-- wp:jetpack\/field-text (?=[^\n]*"required":true)(?=[^\n]*"id":"ssi-form-[a-f0-9]{12}-field-0")(?=[^\n]*"className":"ssi-node-[a-f0-9]{12}")(?=[^\n]*"shareFieldAttributes":false)[^\n]* -->/', $markup ), 'markup-field-wrapper-keeps-provider-layout-class-and-instance-identity' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/label {"label":"Your name","className":"source-label"} /-->' ) && str_contains( $markup, '<!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"className":"source-field"} /-->' ), 'markup-field-canonical-label-and-input-children-carry-source-classes' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/field-select {"options":["Sales","Support"]' ) && str_contains( $markup, '<!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"type":"dropdown"} /-->' ), 'markup-select-options-and-dropdown-input' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/field-radio {"options":["In person","Online"]' ) && str_contains( $markup, '<!-- wp:jetpack/options {"type":"radio"} -->' ), 'markup-radio-options-on-field-and-child-list' );
@@ -781,6 +781,12 @@ namespace {
 	$status_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $status_manifest ) ) );
 	$status_markup = $status_seed['forms'][0]['block_markup'] ?? '';
 	$assert( str_contains( $status_markup, '<output id="form-status" class="wp-block-group" style="margin-top:0.5rem"></output>' ) && ! str_contains( $status_markup, 'wp:html' ), 'empty-source-status-retains-native-output-and-authored-spacing' );
+	$editor_form = $presentation_form;
+	$editor_form['forms'][0]['form']['container_presentation'] = array( 'schema' => 'generic/form-container-presentation/v1', 'styles' => array( 'max_width' => '500px', 'margin' => '0 auto', 'text_align' => 'left' ), 'provenance' => array(), 'variants' => array() );
+	$editor_manifest = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $editor_form );
+	$editor_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $editor_manifest['forms'] ) )['forms'][0];
+	$editor_css = $editor_row['provider_layout_overlay_css']['editor_css'] ?? '';
+	$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $editor_row['provider_layout_overlay_css'] ) && str_contains( $editor_css, 'max-width:500px;margin:0 auto;text-align:left' ) && str_contains( $editor_css, ' > label{' ) && str_contains( $editor_css, 'font:-webkit-small-control;' ), 'editor-maps-source-form-box-labels-and-native-button-typography-through-validated-overlay', $editor_css );
 	$compile_form = static function ( string $css ) use ( $artifact_compiler ): array {
 		$compiled = ( new $artifact_compiler() )->compile( array(
 			'entrypoint' => 'index.html',

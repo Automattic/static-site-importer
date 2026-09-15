@@ -81,7 +81,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	/** @return array{overlay:array<string,mixed>,css:string,operations:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>} */
-	public static function compile( array $graph, mixed $map, array $presentation_graph = array() ): array {
+	public static function compile( array $graph, mixed $map, array $presentation_graph = array(), array $container = array(), bool $editor = false ): array {
 		$validated     = self::validate_map( $map, $graph );
 		$validated_map = $validated['map'] ?? null;
 		if ( isset( $validated['error'] ) || ! is_array( $validated_map ) || ! isset( $validated_map['targets'] ) || ! is_array( $validated_map['targets'] ) ) {
@@ -208,6 +208,15 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			}
 			self::compile_presentation_destinations( $destinations, $variant['style_patch'], $index, $role, $variant['condition'], $rules, $operations, $losses );
 		}
+		if ( $editor && 'generic/form-container-presentation/v1' === ( $container['schema'] ?? null ) ) {
+			$destination = array( 'role' => 'control', 'selector' => $validated_map['scope'], 'properties' => array_keys( self::presentation_property_map() ) );
+			self::compile_presentation_destinations( array( $destination ), $container['styles'] ?? array(), 0, 'control', null, $rules, $operations, $losses );
+			foreach ( array_slice( $container['variants'] ?? array(), 0, 32 ) as $variant ) {
+				if ( self::safe_condition( $variant['condition'] ?? null ) && is_array( $variant['styles'] ?? null ) ) {
+					self::compile_presentation_destinations( array( $destination ), $variant['styles'], 0, 'control', $variant['condition'], $rules, $operations, $losses );
+				}
+			}
+		}
 		if ( empty( $losses ) ) {
 			$rules[]      = $validated_map['scope'] . '{position:relative;z-index:1;pointer-events:auto}';
 			$operations[] = array(
@@ -215,6 +224,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				'strategy'    => 'provider_interaction_carrier',
 				'target_hash' => hash( 'sha256', $validated_map['scope'] ),
 			);
+		}
+		if ( $editor ) {
+			foreach ( $rules as $rule ) {
+				$editor_rules[] = preg_replace( '/(^|\{|, )(\.ssi-form-[a-f0-9]{12})/', '$1.editor-styles-wrapper $2', $rule );
+			}
+			$rules = array();
 		}
 		$css               = empty( $rules ) ? '' : '/* Static Site Importer provider layout overlay: ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", array_values( array_unique( $rules ) ) ) . "\n";
 		$max_overlay_bytes = empty( $presentation_graph ) ? self::MAX_LAYOUT_OVERLAY_BYTES : self::MAX_OVERLAY_BYTES;
@@ -310,17 +325,21 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	private static function safe_compiled_rule( string $rule ): bool {
+		$rule = str_replace( ' > div.jetpack-field__control{', '{', $rule );
+		if ( preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? \.ssi-node-[a-f0-9]{12})::placeholder\{color:revert;opacity:revert\}$/D', $rule ) ) {
+			return true;
+		}
 		if ( preg_match( '/^@(?:media|container) (\((?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)\))\{(.+)\}$/D', $rule, $matches ) ) {
 			return self::safe_compiled_rule( $matches[2] );
 		}
 		// The provider form target is admitted as both of its rendered spellings,
 		// so a compiled rule may carry that two-part selector list.
-		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required)?| \.grunion-field-wrap > \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap > \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\))?';
+		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label)?| \.grunion-field-wrap > \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap > \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\))?';
 		if ( ! preg_match( '/^(' . $scope_selector . '(?:, ' . $scope_selector . ')?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
 		$layout_allowed       = array( 'display', 'width', 'height', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'position', 'z-index', 'pointer-events' );
-		$presentation_allowed = array_merge( array_values( self::presentation_property_map() ), array( 'color', 'flex' ) );
+		$presentation_allowed = array_merge( array_values( self::presentation_property_map() ), array( 'color', 'flex', 'font' ) );
 		foreach ( explode( ';', $matches[2] ) as $declaration ) {
 			$declaration = preg_replace( '/!important$/D', '', $declaration ) ?? $declaration;
 			if ( preg_match( '/^(--[a-z][a-z0-9-]{0,79}):(.+)$/D', $declaration, $alias ) ) {
@@ -337,6 +356,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	private static function safe_selector( string $selector, string $scope ): bool {
+		if ( str_ends_with( $selector, ' > div.jetpack-field__control' ) ) {
+			return self::safe_selector( substr( $selector, 0, -strlen( ' > div.jetpack-field__control' ) ), $scope );
+		}
+		if ( preg_match( '/^' . preg_quote( $scope, '/' ) . ' \.ssi-node-[a-f0-9]{12}::placeholder$/D', $selector ) ) {
+			return true;
+		}
 		// The bare scope is the block wrapper the provider renders at the source form's
 		// own position, so it carries the form box's placement inside the page.
 		// A generated node hook resolves to the control, and its provider `-wrap` copy
@@ -351,7 +376,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		$element = '[a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*';
 		foreach ( $parts as $part ) {
-			if ( ! preg_match( '/^' . preg_quote( $scope, '/' ) . '(?: > ' . $element . '| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required)?|:not\(:has\(> ' . $element . '\)\))?$/D', $part ) ) {
+			if ( ! preg_match( '/^' . preg_quote( $scope, '/' ) . '(?: > ' . $element . '| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label)?|:not\(:has\(> ' . $element . '\)\))?$/D', $part ) ) {
 				return false;
 			}
 		}
@@ -547,6 +572,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			}
 			// A required-marker reset removes provider typography before source facts restore it.
 			$declarations = 'required_marker' === $role ? array_merge( $reset_declarations, $source_declarations ) : array_merge( $source_declarations, $reset_declarations );
+			if ( isset( $destination['resets']['font'] ) ) {
+				$declarations = array_merge( array( 'font:' . $destination['resets']['font'] ), array_values( array_filter( $declarations, static fn( string $declaration ): bool => ! str_starts_with( $declaration, 'font:' ) ) ) );
+			}
 			if ( empty( $declarations ) ) {
 				continue;
 			}
@@ -590,7 +618,10 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	private static function safe_presentation_resets( mixed $resets ): bool {
-		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'line-height', 'gap', 'display', 'align-items', 'height' ) ) ) {
+		if ( array( 'color' => 'revert', 'opacity' => 'revert' ) === $resets ) {
+			return true;
+		}
+		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'line-height', 'gap', 'display', 'align-items', 'height' ) ) ) {
 			return false;
 		}
 		foreach ( $resets as $property => $value ) {
