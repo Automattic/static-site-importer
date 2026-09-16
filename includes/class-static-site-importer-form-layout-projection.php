@@ -485,6 +485,43 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'target_hash' => hash( 'sha256', $node['id'] ),
 			);
 		}
+		// A nested labelled fieldset around two to four mapped text fields is the
+		// source Name group. Jetpack keeps the fields; the fieldset is represented
+		// without becoming a root labelled group or a radio aggregate.
+		foreach ( $nodes as $node ) {
+			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? null ) || 'fieldset' !== ( $node['tag'] ?? null ) || 'labelled_group' !== ( $node['fieldset_semantics'] ?? null ) || null === ( $node['parent'] ?? null ) || ! is_string( $node['id'] ?? null ) || ! is_string( $node['legend'] ?? null ) || '' === trim( $node['legend'] ) ) {
+				continue;
+			}
+			$branch_controls = $collect_controls( $node );
+			$branch_fields   = array();
+			$unmapped        = false;
+			foreach ( $branch_controls as $control_index ) {
+				if ( isset( $suppressed_controls[ $control_index ] ) ) {
+					continue;
+				}
+				if ( ! isset( $field_blocks[ $control_index ] ) || 'core/button' === ( $field_blocks[ $control_index ]['name'] ?? '' ) ) {
+					$unmapped = true;
+					break;
+				}
+				$type = strtolower( trim( (string) ( $controls[ $control_index ]['type'] ?? $controls[ $control_index ]['tag'] ?? '' ) ) );
+				if ( 'radio' === $type || ! in_array( $type, array( '', 'text', 'email', 'tel', 'phone', 'number', 'url' ), true ) ) {
+					$unmapped = true;
+					break;
+				}
+				$branch_fields[] = $control_index;
+			}
+			if ( $unmapped || ! in_array( count( $branch_fields ), array( 2, 3, 4 ), true ) ) {
+				continue;
+			}
+			$represented_topology_nodes[] = $node['id'];
+			$represented_layout_nodes[]   = $node['id'];
+			$operations[]                 = array(
+				'dimension'     => 'semantic',
+				'strategy'      => 'provider_labelled_text_fieldset_projection',
+				'target_hash'   => hash( 'sha256', $node['id'] ),
+				'control_count' => count( $branch_fields ),
+			);
+		}
 		$mapped_controls = array_keys( $field_blocks );
 		sort( $mapped_controls );
 		// Jetpack owns the form and its handler nodes, but a plain root fieldset that
