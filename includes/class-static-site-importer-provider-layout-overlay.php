@@ -558,8 +558,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	private static function compile_presentation_destinations( array $destinations, array $styles, int $index, string $role, ?array $condition, array &$rules, array &$operations, array &$losses ): void {
 		$represented = array();
 		foreach ( $destinations as $destination ) {
-			$represented         = array_merge( $represented, $destination['properties'] );
-			$source_declarations = self::presentation_declarations( $styles, $index, $role, $losses, $destination['properties'], $destination['aliases'] ?? array() );
+			$represented = array_merge( $represented, $destination['properties'] );
+			$emit_styles = $styles;
+			if ( str_ends_with( (string) ( $destination['selector'] ?? '' ), ' > .wp-block-button__link' ) ) {
+				$emit_styles = array_diff_key( $styles, array_flip( array( 'position', 'inset', 'top', 'right', 'bottom', 'left' ) ) );
+			}
+			$source_declarations = self::presentation_declarations( $emit_styles, $index, $role, $losses, $destination['properties'], $destination['aliases'] ?? array() );
 			$reset_declarations  = array();
 			foreach ( $destination['resets'] ?? array() as $property => $value ) {
 				if ( 'required_marker' === $role && null !== $condition ) {

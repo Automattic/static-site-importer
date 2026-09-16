@@ -1824,18 +1824,17 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					$destinations[] = array(
 						'role'       => 'control',
 						'selector'   => '.' . $scope . ' .' . $control_class,
-						// Core Button's wrapper is inline-flex by default. A source block
-						// display must reach that wrapper so its automatic width can fill
-						// the form row, rather than only changing its inner link.
-						'properties' => array( 'display', 'width' ),
+						// Core Button's wrapper is inline-flex by default. Source display,
+						// width, and min-width must reach that wrapper so the button can
+						// fill the form row. Absolute inset belongs to a source containing
+						// block the provider form does not recreate.
+						'properties' => array( 'display', 'width', 'min_width' ),
 					);
-					$properties     = array_values( array_diff( $properties, array( 'display', 'width' ) ) );
+					$properties     = array_values( array_diff( $properties, array( 'display', 'width', 'min_width' ) ) );
 				}
 				$destinations[] = array(
 					'role'       => 'control',
 					'selector'   => '.' . $scope . ' .' . $control_class . ( 'submit' === $type ? ' > .wp-block-button__link' : '' ),
-					// Core's rendered button is an actual destination for the source
-					// button's positioning and transform properties; other controls are not.
 					'properties' => $properties,
 					// Provider controls inherit theme typography. Revert to each browser's
 					// native control defaults unless source CSS owns either property.
