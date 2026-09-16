@@ -374,7 +374,6 @@ add_filter(
 require_once dirname( __DIR__ ) . '/includes/abilities.php';
 require_once dirname( __DIR__ ) . '/includes/rest.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-document.php';
-require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-source-page.php';
 
 $plugin_source = file_get_contents( dirname( __DIR__ ) . '/static-site-importer.php' );
 $assert( is_string( $plugin_source ), 'plugin-source-readable' );

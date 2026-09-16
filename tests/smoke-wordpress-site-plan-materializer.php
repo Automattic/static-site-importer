@@ -3137,6 +3137,85 @@ $explicit_ids              = $explicit_receipt['completed']['pages'] ?? array();
 $ideas_id                  = (int) ( $explicit_ids['notes/ideas.md'] ?? 0 );
 $assert( 'post' === ( $GLOBALS['ssi_plan_posts'][ $ideas_id ]['post_type'] ?? null ), 'explicit markdown frontmatter post_type overrides signal-free detection' );
 
+$declared_page = Static_Site_Importer_Document_Type_Classifier::classify(
+	array(
+		'post_type'         => 'page',
+		'content_decision'  => array(
+			'schema'     => 'blocks-engine/content-decision/v1',
+			'state'      => 'declared',
+			'post_type'  => 'page',
+			'provenance' => 'frontmatter:type',
+			'evidence'   => array(),
+		),
+		'document_metadata' => array(
+			'meta' => array(
+				array(
+					'property' => 'article:published_time',
+					'content'  => '2024-03-12T10:00:00Z',
+				),
+			),
+		),
+		'route'             => array( 'path' => '/2024/03/stays-page' ),
+	)
+);
+$assert( 'page' === $declared_page['post_type'] && 'producer_declared' === $declared_page['signal'], 'declared producer page wins over dated consumer inference' );
+
+$inferred_post = Static_Site_Importer_Document_Type_Classifier::classify(
+	array(
+		'post_type'             => 'post',
+		'publication_timestamp' => '2024-03-12T10:00:00Z',
+		'content_decision'      => array(
+			'schema'    => 'blocks-engine/content-decision/v1',
+			'state'     => 'inferred',
+			'post_type' => 'post',
+			'evidence'  => array(
+				array(
+					'source'                => 'meta:article:published_time',
+					'publication_timestamp' => '2024-03-12T10:00:00Z',
+				),
+			),
+		),
+		'route'                 => array( 'path' => '/blog/hello' ),
+	)
+);
+$assert( 'post' === $inferred_post['post_type'] && 'producer_inferred' === $inferred_post['signal'] && '2024-03-12 10:00:00' === $inferred_post['date'], 'inferred producer post_type and publication timestamp win' );
+
+$defaulted_dated = Static_Site_Importer_Document_Type_Classifier::classify(
+	array(
+		'post_type'         => 'page',
+		'content_decision'  => array(
+			'schema'    => 'blocks-engine/content-decision/v1',
+			'state'     => 'defaulted',
+			'post_type' => 'page',
+			'evidence'  => array(),
+		),
+		'document_metadata' => array(
+			'meta' => array(
+				array(
+					'property' => 'article:published_time',
+					'content'  => '2024-03-12T10:00:00Z',
+				),
+			),
+		),
+		'route'             => array( 'path' => '/notes/hello' ),
+	)
+);
+$assert( 'post' === $defaulted_dated['post_type'] && 'dated_meta' === $defaulted_dated['signal'] && '2024-03-12 10:00:00' === $defaulted_dated['date'], 'defaulted producer page still infers dated meta as a post' );
+
+$defaulted_route = Static_Site_Importer_Document_Type_Classifier::classify(
+	array(
+		'post_type'        => 'page',
+		'content_decision' => array(
+			'schema'    => 'blocks-engine/content-decision/v1',
+			'state'     => 'defaulted',
+			'post_type' => 'page',
+			'evidence'  => array(),
+		),
+		'route'            => array( 'path' => '/2024/03/dated-post' ),
+	)
+);
+$assert( 'post' === $defaulted_route['post_type'] && 'dated_route' === $defaulted_route['signal'], 'defaulted producer page still infers a dated route as a post' );
+
 $GLOBALS['ssi_plan_posts']      = array();
 $GLOBALS['ssi_plan_meta']       = array();
 $GLOBALS['ssi_plan_fail_after'] = 1;

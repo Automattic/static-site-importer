@@ -39,10 +39,10 @@ $assert = static function ( bool $condition, string $label, string $detail = '' 
 	}
 };
 
-// The compiler emits a default 'page' post_type for every HTML document on
-// the v2 plan. The consumer-side classifier upgrades a dated or /YYYY/MM/
-// routed document to 'post'. Materialize through the canonical plan via the
-// Blocks Engine compiler so the plan is producer-real.
+// The producer may default HTML documents to page. The consumer classifier
+// upgrades a dated or /YYYY/MM/ routed document to post only in that defaulted
+// case; an explicit non-page post_type still wins. Materialize through the
+// canonical plan via ArtifactCompiler so the plan is producer-real.
 if ( ! class_exists( 'Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler' ) ) {
 	if ( is_readable( $plugin_root . '/vendor/autoload.php' ) ) {
 		require_once $plugin_root . '/vendor/autoload.php';

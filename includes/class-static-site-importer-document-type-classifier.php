@@ -12,11 +12,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Classifies plan page rows as WordPress posts or pages.
  *
- * A document is a post when it carries an article/temporal signal that
- * survives the Blocks Engine plan projection: a dated head meta tag or a
- * hierarchical date URL (YYYY/MM). The site entrypoint is always a page;
- * everything else without date evidence stays a page to preserve existing
- * import behavior.
+ * Producer `content_decision` and a non-page declared `post_type` win.
+ * Consumer dated-meta / dated-route inference runs only when the producer
+ * defaulted the row to page (or omitted a decision). The site entrypoint
+ * is always a page.
  */
 final class Static_Site_Importer_Document_Type_Classifier {
 
@@ -44,14 +43,20 @@ final class Static_Site_Importer_Document_Type_Classifier {
 			return self::result( 'page', null, 'page_default' );
 		}
 
-		// The Blocks Engine producer declares post_type on the plan page row.
-		// The compiler defaults it to 'page' for every HTML document, so only
-		// a non-page value counts as a deliberate producer decision and wins
-		// over this consumer-side detection. `metadata.post_type` mirrors the
-		// row field; read both so hand-built plans stay supported.
+		$decision = self::content_decision( $page );
+		if ( is_array( $decision ) && in_array( $decision['state'], array( 'declared', 'inferred' ), true ) ) {
+			$post_type = sanitize_key( (string) ( $decision['post_type'] ?? '' ) );
+			if ( '' !== $post_type && self::post_type_registered( $post_type ) ) {
+				$signal = 'declared' === $decision['state'] ? 'producer_declared' : 'producer_inferred';
+				return self::result( $post_type, self::producer_date( $page ), $signal );
+			}
+		}
+
+		// Hand-built plans and older rows may omit content_decision. A non-page
+		// post_type on the row or metadata is still a deliberate producer fact.
 		$declared = sanitize_key( (string) ( $page['post_type'] ?? $page['metadata']['post_type'] ?? '' ) );
 		if ( '' !== $declared && 'page' !== $declared && self::post_type_registered( $declared ) ) {
-			return self::result( $declared, self::publish_date( $page ), 'producer_declared' );
+			return self::result( $declared, self::producer_or_consumer_date( $page ), 'producer_declared' );
 		}
 
 		$date  = self::publish_date( $page );
@@ -63,8 +68,6 @@ final class Static_Site_Importer_Document_Type_Classifier {
 			return self::result( 'post', null, 'dated_route' );
 		}
 
-		// No date evidence and no /YYYY/MM/ URL: stay a page. This preserves
-		// about / contact / nav-linked sources untouched.
 		return self::result( 'page', null, 'page_default' );
 	}
 
@@ -82,6 +85,59 @@ final class Static_Site_Importer_Document_Type_Classifier {
 			'date'      => $date,
 			'signal'    => $signal,
 		);
+	}
+
+	/**
+	 * Read a producer content_decision when it is structurally present.
+	 *
+	 * @param array<string,mixed> $page Plan page row.
+	 * @return array<string,mixed>|null
+	 */
+	private static function content_decision( array $page ): ?array {
+		$decision = $page['content_decision'] ?? null;
+		if ( ! is_array( $decision ) || 'blocks-engine/content-decision/v1' !== ( $decision['schema'] ?? null ) ) {
+			return null;
+		}
+		$state = (string) ( $decision['state'] ?? '' );
+		if ( ! in_array( $state, array( 'declared', 'inferred', 'defaulted' ), true ) ) {
+			return null;
+		}
+
+		return $decision;
+	}
+
+	/**
+	 * Prefer the producer publication timestamp, then consumer dated-meta parse.
+	 *
+	 * @param array<string,mixed> $page Plan page row.
+	 * @return string|null MySQL UTC datetime.
+	 */
+	private static function producer_or_consumer_date( array $page ): ?string {
+		$producer = self::producer_date( $page );
+
+		return null !== $producer ? $producer : self::publish_date( $page );
+	}
+
+	/**
+	 * Convert a producer ISO-8601 UTC timestamp to MySQL UTC datetime.
+	 *
+	 * @param array<string,mixed> $page Plan page row.
+	 * @return string|null
+	 */
+	private static function producer_date( array $page ): ?string {
+		$candidates = array( (string) ( $page['publication_timestamp'] ?? '' ) );
+		$decision   = is_array( $page['content_decision'] ?? null ) ? $page['content_decision'] : array();
+		foreach ( $decision['evidence'] ?? array() as $row ) {
+			if ( is_array( $row ) ) {
+				$candidates[] = (string) ( $row['publication_timestamp'] ?? '' );
+			}
+		}
+		foreach ( $candidates as $iso ) {
+			if ( 1 === preg_match( '/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})Z$/', $iso, $matches ) ) {
+				return $matches[1] . ' ' . $matches[2];
+			}
+		}
+		return null;
 	}
 
 	/**

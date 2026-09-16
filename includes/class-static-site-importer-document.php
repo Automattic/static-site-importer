@@ -10,7 +10,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Extracts usable fragments from a static HTML document.
+ * Parses static HTML for classic projection and reporting.
+ *
+ * Fragment chrome heuristics are classic-only. The block-theme path
+ * materializes plan-owned template parts and does not classify source
+ * subtrees as chrome.
  */
 class Static_Site_Importer_Document {
 
@@ -135,7 +139,10 @@ class Static_Site_Importer_Document {
 	}
 
 	/**
-	 * Extract site fragments for theme generation.
+	 * Extract site fragments for classic theme generation.
+	 *
+	 * Classic-only chrome heuristics. Block-theme materialization does not
+	 * call this method and does not classify source subtrees as chrome.
 	 *
 	 * @return array{background:string,header:string,main:string,footer:string}
 	 */
@@ -516,6 +523,8 @@ class Static_Site_Importer_Document {
 
 	/**
 	 * Check whether an element carries explicit global-chrome signals.
+	 *
+	 * Classic-only. Block-theme materialization does not classify chrome.
 	 *
 	 * @param DOMElement $element Element.
 	 * @return bool

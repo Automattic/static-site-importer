@@ -5,6 +5,7 @@
  * @package StaticSiteImporter
  */
 
+use Automattic\BlocksEngine\PhpTransformer\AssetAnalysis\CssUrlRewriter;
 use Automattic\BlocksEngine\PhpTransformer\AssetAnalysis\SrcsetParser;
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\AssetReferenceCanonicalizer;
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver;
@@ -14,6 +15,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 if ( ! class_exists( 'Static_Site_Importer_Document' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-document.php';
+}
+if ( ! class_exists( CssUrlRewriter::class ) ) {
+	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/AssetAnalysis/CssUrlRewriter.php';
 }
 if ( ! class_exists( SrcsetParser::class ) ) {
 	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/AssetAnalysis/SrcsetParser.php';
@@ -29,7 +33,7 @@ if ( ! class_exists( WordPressSitePlanResolver::class ) ) {
 }
 
 final class Static_Site_Importer_Classic_Theme_Projection {
-	/** Build render-neutral source fragments before compiler block conversion. */
+	/** Build render-neutral source fragments before compiler block conversion. Chrome extraction via Document::fragments() is classic-only. */
 	public static function build( array $artifact, array $plan ) {
 		$files  = self::files( $artifact );
 		$pages  = array();
@@ -484,13 +488,12 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 			},
 			$css
 		);
-		return (string) preg_replace_callback(
-			'/url\(\s*(["\']?)([^\)"\']+)\1\s*\)/i',
-			static function ( array $matches ) use ( $source, $assets, $urls ): string {
-				$url = self::replacement( $matches[2], $source, $assets, $urls );
-				return self::safe_url( $matches[2] ) && '#' !== $url ? 'url("' . $url . '")' : 'url("")';
-			},
-			$css
+		return CssUrlRewriter::rewrite(
+			$css,
+			static function ( string $raw ) use ( $source, $assets, $urls ): string {
+				$url = self::replacement( $raw, $source, $assets, $urls );
+				return self::safe_url( $raw ) && '#' !== $url ? $url : '';
+			}
 		); }
 	private static function binding_records( array $projection ): array {
 		$records = array();
