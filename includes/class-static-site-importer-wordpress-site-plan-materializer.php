@@ -19,6 +19,9 @@ if ( ! class_exists( 'Static_Site_Importer_Theme_Materialization_Strategy' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Import_Destination' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-import-destination.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Companion_Asset_Publication' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-companion-asset-publication.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Classic_Theme_Projection' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-classic-theme-projection.php';
 }
@@ -149,8 +152,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				throw new InvalidArgumentException( (string) $destination->get_error_code() );
 			}
 			$slug      = (string) $destination['slug'];
-			$theme_dir = (string) $destination['theme_dir'];
-			$theme_uri = (string) $destination['theme_uri'];
+			// Writes resolve against the destination's asset surface: the theme
+			// directory it owns, or the companion publication home it borrows.
+			$theme_dir = (string) ( $destination['asset_dir'] ?? $destination['theme_dir'] );
+			$theme_uri = (string) ( $destination['asset_uri'] ?? $destination['theme_uri'] );
 			try {
 				// Resolver proof is canonical semantics, not an inference from copied files.
 				$resolved = ( new WordPressSitePlanResolver() )->resolve(
@@ -184,9 +189,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$state['theme_dir']                = $theme_dir;
 			$state['destination']              = $destination;
 			$state['theme']                    = array(
-				'slug' => $slug,
-				'dir'  => $theme_dir,
-				'uri'  => $theme_uri,
+				'slug'              => $slug,
+				'dir'               => $theme_dir,
+				'uri'               => $theme_uri,
+				'asset_publication' => self::asset_publication_receipt( $destination, $theme_dir, $theme_uri, '' ),
 			);
 			$state['quality_budget_admission'] = Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $resolved, $args );
 			self::preflight_state( $state, ! empty( $args['overwrite'] ), (string) ( $args['import_run_id'] ?? '' ) );
@@ -225,6 +231,14 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 	/** Add the importer-owned report targets before canonical destination preflight. */
 	private static function with_report_destinations( array $args ): array {
 		$theme_dir = trailingslashit( get_theme_root() ) . sanitize_key( (string) ( $args['slug'] ?? '' ) );
+		if ( Static_Site_Importer_Import_Destination::EXISTING_THEME === ( $args['destination'] ?? '' ) ) {
+			// An existing-theme destination keeps its report artifacts with the
+			// companion assets instead of writing them into the host theme.
+			$publication = Static_Site_Importer_Companion_Asset_Publication::resolve( $args );
+			if ( ! is_wp_error( $publication ) ) {
+				$theme_dir = (string) $publication['dir'];
+			}
+		}
 		$reports   = array( $theme_dir . '/static-site-importer-manifest.json' );
 		if ( ! empty( $args['write_theme_report_artifacts'] ) ) {
 			$reports = array_merge( $reports, array( $theme_dir . '/import-report.json', $theme_dir . '/import-validation-result.json', $theme_dir . '/finding-packets.json' ) );
@@ -448,9 +462,10 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				continue;
 			}
 			$path = $state['theme_dir'] . '/' . $write['target_path'];
+			$publication = self::asset_publication_receipt( $destination, $state['theme_dir'], (string) ( $state['theme']['uri'] ?? '' ), (string) ( $write['kind'] ?? '' ) );
 			self::journal_file( $state, $path );
 			if ( isset( $state['composed_theme_writes'][ $path ] ) && is_file( $path ) && self::file_hash( $path ) === hash( 'sha256', $state['composed_theme_writes'][ $path ] ) ) {
-				$state['applied']['files'][] = self::canonical_file_receipt( $path, $write );
+				$state['applied']['files'][] = self::canonical_file_receipt( $path, $write ) + array( 'publication' => $publication );
 				continue;
 			}
 			if ( ! empty( $args['preserve_existing_theme_bootstrap'] ) && 'theme_bootstrap' === ( $write['kind'] ?? '' ) && is_file( $state['theme_dir'] . '/' . $write['target_path'] ) ) {
@@ -458,7 +473,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				if ( is_wp_error( $result ) ) {
 					return self::failed_receipt( $state, $result->get_error_code() );
 				}
-				$state['applied']['files'][] = $result;
+				$state['applied']['files'][] = $result + array( 'publication' => $publication );
 				continue;
 			}
 			if ( ! empty( $args['preserve_existing_theme_bootstrap'] ) && in_array( $write['kind'] ?? '', array( 'theme_scaffold', 'theme_bootstrap', 'theme_template' ), true ) && is_file( $state['theme_dir'] . '/' . $write['target_path'] ) ) {
@@ -475,7 +490,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			if ( is_wp_error( $result ) ) {
 				return self::failed_receipt( $state, $result->get_error_code() );
 			}
-			$state['applied']['files'][] = $result;
+			$state['applied']['files'][] = $result + array( 'publication' => $publication );
 		}
 		$provider_layout_overlays = isset( $args['provider_layout_overlays'] ) && is_array( $args['provider_layout_overlays'] ) ? $args['provider_layout_overlays'] : array();
 		if ( ! empty( $provider_layout_overlays ) ) {
@@ -517,6 +532,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				return self::failed_receipt( $state, $publications->get_error_code() );
 			}
 		}
+		$companion_loading = self::apply_companion_asset_loading( $state );
+		if ( is_wp_error( $companion_loading ) ) {
+			return self::failed_receipt( $state, $companion_loading->get_error_code() );
+		}
+		$state['applied']['companion_asset_loading'] = $companion_loading;
 
 		// Activation is a destination right, not a caller preference: an import
 		// into a theme the site already runs must never switch the active theme.
@@ -619,10 +639,38 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			);
 		}
 
-		$slug       = sanitize_key( (string) ( $args['slug'] ?? '' ) );
-		$theme_root = get_theme_root();
-		$theme_uri  = trailingslashit( get_theme_root_uri() ) . $slug;
-		$theme_dir  = trailingslashit( $theme_root ) . $slug;
+		$destination   = isset( $prepared['destination'] ) && is_array( $prepared['destination'] ) ? $prepared['destination'] : null;
+		$recheck_error = '';
+		if ( null !== $destination && Static_Site_Importer_Import_Destination::EXISTING_THEME === ( $destination['mode'] ?? '' ) ) {
+			// Mutable existing destinations are rechecked against the site's own
+			// active theme and companion publication root before writing.
+			$rechecked = Static_Site_Importer_Import_Destination::normalize( $args );
+			if ( is_wp_error( $rechecked ) ) {
+				$recheck_error = (string) $rechecked->get_error_code();
+			} elseif ( $rechecked !== $destination ) {
+				$recheck_error = 'prepared_destination_changed';
+			}
+		} else {
+			$destination = null;
+		}
+		if ( null === $destination ) {
+			$slug       = sanitize_key( (string) ( $args['slug'] ?? '' ) );
+			$theme_root = get_theme_root();
+			$theme_uri  = trailingslashit( get_theme_root_uri() ) . $slug;
+			$theme_dir  = trailingslashit( $theme_root ) . $slug;
+			$destination = array(
+				'mode'               => Static_Site_Importer_Import_Destination::GENERATED_THEME,
+				'slug'               => $slug,
+				'theme_dir'          => $theme_dir,
+				'theme_uri'          => $theme_uri,
+				'owns_theme'         => true,
+				'permits_activation' => true,
+			);
+		} else {
+			$slug      = (string) $destination['slug'];
+			$theme_dir = (string) ( $destination['asset_dir'] ?? $destination['theme_dir'] );
+			$theme_uri = (string) ( $destination['asset_uri'] ?? $destination['theme_uri'] );
+		}
 		$state      = array(
 			'plan'                              => $plan,
 			'plan_identity'                     => $prepared['plan_identity'],
@@ -646,10 +694,12 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			'report_destinations'               => isset( $args['report_destinations'] ) && is_array( $args['report_destinations'] ) ? $args['report_destinations'] : array(),
 			'external_report_destinations'      => isset( $args['external_report_destinations'] ) && is_array( $args['external_report_destinations'] ) ? $args['external_report_destinations'] : array(),
 			'theme_dir'                         => $theme_dir,
+			'destination'                       => $destination,
 			'theme'                             => array(
-				'slug' => $slug,
-				'dir'  => $theme_dir,
-				'uri'  => $theme_uri,
+				'slug'              => $slug,
+				'dir'               => $theme_dir,
+				'uri'               => $theme_uri,
+				'asset_publication' => self::asset_publication_receipt( $destination, $theme_dir, $theme_uri, '' ),
 			),
 			'args'                              => $args,
 			'payload_reader'                    => $payload_reader,
@@ -671,10 +721,19 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		);
 
 		try {
+			if ( '' !== $recheck_error ) {
+				throw new InvalidArgumentException( $recheck_error );
+			}
 			if ( '' === $slug ) {
 				throw new InvalidArgumentException( 'invalid_theme_slug' );
 			}
-			if ( ! is_dir( $theme_root ) || ! is_writable( $theme_root ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- Revalidates the prepared native theme destination before mutation.
+			if ( Static_Site_Importer_Import_Destination::EXISTING_THEME === ( $destination['mode'] ?? '' ) ) {
+				// Revalidate the host theme instead of the generated theme root
+				// the destination does not own.
+				if ( ! is_dir( (string) $destination['theme_dir'] ) ) {
+					throw new InvalidArgumentException( 'theme_destination_not_ready' );
+				}
+			} elseif ( ! is_dir( $theme_root ) || ! is_writable( $theme_root ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- Revalidates the prepared native theme destination before mutation.
 				throw new InvalidArgumentException( 'theme_destination_not_ready' );
 			}
 			if ( is_link( $theme_dir ) || ( file_exists( $theme_dir ) && ! is_dir( $theme_dir ) ) ) {
@@ -1477,7 +1536,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			$reports[]        = $result;
 			foreach ( $state['applied']['files'] as $index => $file ) {
 				if ( ( $file['target_path'] ?? null ) === $target ) {
-					$state['applied']['files'][ $index ] = self::canonical_file_receipt( $path, $file );
+					$state['applied']['files'][ $index ] = self::canonical_file_receipt( $path, $file ) + array( 'publication' => self::asset_publication_receipt( $state['destination'] ?? array(), $state['theme_dir'], (string) ( $state['theme']['uri'] ?? '' ), 'provider_layout_stylesheet' ) );
 				}
 			}
 			self::record_overlay_stylesheet_file( $state['applied']['files'], $path, $target, $content );
@@ -1736,6 +1795,87 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return $writes;
 	}
 
+	/**
+	 * Where an asset lands within a receipt.
+	 *
+	 * Generated-theme imports publish into the theme they own. Existing-theme
+	 * imports publish through the companion plugin primitive, so the receipt
+	 * names a theme-independent location for every asset that lands there.
+	 */
+	private static function asset_publication_receipt( array $destination, string $asset_dir, string $asset_uri, string $kind ): array {
+		unset( $kind );
+		$mode = Static_Site_Importer_Import_Destination::EXISTING_THEME === ( $destination['mode'] ?? '' )
+			? Static_Site_Importer_Companion_Asset_Publication::COMPANION_PLUGIN
+			: Static_Site_Importer_Companion_Asset_Publication::GENERATED_THEME;
+		return array(
+			'mode' => $mode,
+			'dir'  => $asset_dir,
+			'uri'  => $asset_uri,
+		);
+	}
+
+	/**
+	 * Deliver published stylesheets through the companion loader with page scoping.
+	 *
+	 * A companion publication home has no generated theme bootstrap to enqueue
+	 * its CSS, so the loader registers the scoped assets for the materialized
+	 * pages only — on the frontend and in the editor — leaving unrelated pages
+	 * and the host theme's global styles untouched.
+	 */
+	private static function apply_companion_asset_loading( array &$state ) {
+		$destination = $state['destination'] ?? array();
+		if ( Static_Site_Importer_Import_Destination::EXISTING_THEME !== ( $destination['mode'] ?? '' ) ) {
+			return array( 'status' => 'skipped', 'reason' => 'generated_theme_theme_owned_assets', 'post_ids' => array(), 'files' => array(), 'diagnostics' => array() );
+		}
+		$stylesheet_targets = array();
+		foreach ( $state['applied']['files'] as $file ) {
+			$target = (string) ( $file['target_path'] ?? '' );
+			if ( '' !== $target && str_ends_with( strtolower( $target ), '.css' ) ) {
+				$stylesheet_targets[] = array(
+					'src'     => $target,
+					'version' => (string) ( $file['hash'] ?? '' ),
+				);
+			}
+		}
+		if ( array() === $stylesheet_targets ) {
+			return array( 'status' => 'skipped', 'reason' => 'no_published_stylesheets', 'post_ids' => array(), 'files' => array(), 'diagnostics' => array() );
+		}
+		$post_ids = array_map( 'intval', array_column( $state['applied']['posts'] ?? array(), 'id' ) );
+		$config   = Static_Site_Importer_Companion_Asset_Publication::scoped_asset_config( $stylesheet_targets, $post_ids, (string) ( $state['theme']['uri'] ?? '' ) );
+		$loading  = array(
+			'status'      => 'completed',
+			'post_ids'    => array_values( $post_ids ),
+			'files'       => array(),
+			'diagnostics' => array(),
+		);
+		foreach ( array(
+			'scoped-assets.json' => Static_Site_Importer_Companion_Asset_Publication::scoped_assets_json( $config ),
+			'asset-loader.php'   => Static_Site_Importer_Companion_Asset_Publication::scoped_loader_source(),
+		) as $target => $content ) {
+			$path = $state['theme_dir'] . '/' . $target;
+			self::journal_file( $state, $path );
+			$result = self::write_file(
+				$state['theme_dir'],
+				array(
+					'target_path'             => $target,
+					'source_path'             => $target,
+					'payload'                 => array(
+						'encoding' => 'utf8',
+						'data'     => $content,
+					),
+					'payload_hash'            => hash( 'sha256', $content ),
+					'reconciliation_identity' => hash( 'sha256', "companion-asset-loading\n" . $target ),
+				)
+			);
+			if ( is_wp_error( $result ) ) {
+				return new WP_Error( 'static_site_importer_companion_asset_loader_unavailable', sprintf( 'The companion asset loader could not publish %s at %s.', $target, $path ) );
+			}
+			$result['publication'] = self::asset_publication_receipt( $destination, $state['theme_dir'], (string) ( $state['theme']['uri'] ?? '' ), 'companion_asset_loader' );
+			$loading['files'][]    = $result;
+		}
+		return $loading;
+	}
+
 	/** Verify every canonical asset publication against its resolved write and references. */
 	private static function verify_asset_publications( array &$state ) {
 		$writes = array();
@@ -1787,6 +1927,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				'write_reconciliation_identity' => is_array( $write ) ? $write['reconciliation_identity'] : '',
 				'expected_content_hash'         => $declaration['expected_content_hash'],
 				'actual_content_hash'           => is_array( $applied ) ? $applied['hash'] : '',
+				'publication_mode'              => (string) ( $state['theme']['asset_publication']['mode'] ?? '' ),
+				'publication_dir'               => $state['theme_dir'],
+				'publication_uri'               => (string) ( $state['theme']['uri'] ?? '' ),
 				'references'                    => $references[ $id ] ?? array(),
 			);
 			if ( ! $valid ) {
@@ -2483,6 +2626,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 					'status' => 'not_requested',
 					'files'  => array(),
 				),
+				'companion_asset_loading'    => $state['applied']['companion_asset_loading'] ?? array( 'status' => 'not_requested' ),
 				'runtime_policy'             => array(
 					'disable_smilies'        => array(
 						'requested' => isset( $state['args']['disable_smilies'] ) ? (bool) $state['args']['disable_smilies'] : true,
