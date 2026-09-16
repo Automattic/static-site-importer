@@ -789,11 +789,11 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			}
 			$pages_by_route[ $route ] = true;
 
-			// The materializer is the consumer boundary: it trusts the type and
-			// date the producer declared on the plan row and only falls back to
-			// consumer-side detection when the compiler left the row undecided
-			// ('page', its default). Classification runs once here so the
-			// existing-match, conflict, and materialize paths read one value.
+			// The materializer is the consumer boundary: producer content_decision
+			// and declared post_type win. Consumer dated-meta / dated-route
+			// detection runs only when the producer defaulted the row to page.
+			// Classification runs once here so the existing-match, conflict, and
+			// materialize paths read one value.
 			$classification                            = Static_Site_Importer_Document_Type_Classifier::classify( $page );
 			$page['post_type']                         = $classification['post_type'];
 			$page['metadata']['detected_date']         = $classification['date'];

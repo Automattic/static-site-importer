@@ -4,7 +4,7 @@ Import a static site or generated website artifact into WordPress pages and an i
 
 [![Try Static Site Importer in WordPress Playground](https://img.shields.io/badge/Try_Static_Site_Importer_in-WordPress_Playground-3858e9?style=for-the-badge&logo=wordpress&logoColor=white)](https://playground.wordpress.net/?php=8.5&blueprint-url=https%3A%2F%2Fautomattic.github.io%2Fstatic-site-importer%2Fplayground%2Flatest%2Fblueprint.json)
 
-Static Site Importer is a WordPress plugin. It requires the [Blocks Engine PHP transformer](https://github.com/Automattic/blocks-engine/tree/trunk/php-transformer) Composer package and calls that package's canonical helper functions for generic artifact compilation and format conversion.
+Static Site Importer is a WordPress plugin. It requires the [Blocks Engine PHP transformer](https://github.com/Automattic/blocks-engine/tree/trunk/php-transformer) Composer package. Production compilation uses `ArtifactCompiler::compile()`; export still calls `blocks_engine_php_transformer_convert_format()`.
 
 ## Development packages
 
@@ -82,7 +82,7 @@ When a generated artifact contains full-document HTML, Static Site Importer rout
 - Allows ZIP/CLI source-site imports to include nested `.md` / `.markdown` content documents; `.mdx` is skipped with explicit diagnostics because MDX runtime components are not supported.
 - Provides one WP-CLI importer, `wp static-site-importer import`, for pasted HTML, website files, ZIP archives, and public URLs through the canonical `static-site-importer/import` ability.
 - Discovers readable sibling `*.html` files beside the selected entry file and recursive Markdown content documents under the source tree, then imports them as WordPress pages.
-- Compiles static HTML fragments and Markdown content through the Blocks Engine PHP transformer package helpers.
+- Compiles static HTML fragments and Markdown content through Blocks Engine `ArtifactCompiler`.
 - Stores converted page bodies on the imported WordPress pages as `post_content`.
 - Generates a block theme with shared header/footer template parts, `core/post-content` templates, page patterns for reusable/reference artifacts, `theme.json`, `style.css`, and optional `assets/site.js`.
 - Rewrites local `.html` links to the imported WordPress page permalinks.
@@ -101,7 +101,7 @@ When a generated artifact contains full-document HTML, Static Site Importer rout
 
 SSI requires `automattic/blocks-engine-php-transformer:^0.4.3`. Until the package is published on Packagist, `composer.json` includes an explicit package repository for the `php-transformer-v0.4.3` tag with autoloading rooted at the Blocks Engine monorepo archive's `php-transformer/src/` directory. Remove that repository override once Packagist serves the package metadata.
 
-At runtime, SSI loads the transformer package from `vendor/` and calls `blocks_engine_php_transformer_compile_artifact()` and `blocks_engine_php_transformer_convert_format()` directly.
+At runtime, SSI loads the transformer package from `vendor/` and compiles with `new ArtifactCompiler()->compile()`. Theme export still calls `blocks_engine_php_transformer_convert_format()`.
 
 ## Runtime Interfaces
 
@@ -138,7 +138,7 @@ URL intake rules:
 - SSI owns collection, batch, deadline, asset, byte, pacing, and script-policy defaults. Hosts can adjust this policy with the `static_site_importer_url_batch_import_args` filter.
 - `static-site-importer/import` accepts `{ source: { type: "url", url, import_id? }, operation }`. The first URL apply returns an opaque `import_id`; continuation supplies that ID in the same source envelope. SSI resolves the server-owned workspace and validates the URL, import options, and current user; no filesystem path is accepted or returned.
 - URL collection uses the frozen static artifact policy: executable and data scripts are omitted with reason-coded provenance because the server-rendered output does not require them.
-- All source HTML is preserved. SSI does not model source platforms and never classifies a subtree as non-authored chrome; deciding what content is in scope belongs to the capture adapter that produced the artifact.
+- All source HTML is preserved. On the block-theme path SSI does not classify a subtree as non-authored chrome; deciding what content is in scope belongs to the capture adapter and the Blocks Engine plan. Classic projection still extracts header/footer/background fragments from source HTML.
 - External assets must be directly referenced by fetched HTML or CSS and pass the same public-IP and redirect validation as page URLs.
 - Only `http` and `https` URLs are accepted.
 - Localhost, loopback, link-local, private, and otherwise reserved IP targets are rejected before connecting.
@@ -289,9 +289,8 @@ An import writes a conventional block theme directory under `wp-content/themes/<
 
 Important behavior:
 
-- `style.css` contains the source linked local stylesheets, inline styles, and compatibility rules that preserve source button classes on `core/button` links.
+- `style.css` and `theme.json` are plan-owned writes from Blocks Engine (`ThemeJsonProjection` and stylesheet assets). SSI materializes those files rather than re-deriving palettes from `:root`.
 - `functions.php` enqueues frontend styles, editor styles, and optional generated `assets/site.js`.
-- `theme.json` extracts conservative color palette tokens from obvious `:root` CSS custom properties.
 - Shared chrome is stored in `parts/header.html` and, when present in the source, `parts/footer.html`.
 - Generated templates are lightweight block-theme wrappers: header template part, imported background decoration, `core/post-content`, and optional footer template part.
 - Imported WordPress page posts store the converted page body in `post_content`, so routing, titles, front-page assignment, editor visibility, and body edits stay native.
@@ -381,7 +380,7 @@ PHP smokes are declared in `test-manifest.json`; run the standalone lane with `n
 
 `php tests/smoke-wordpress-site-plan-materializer.php` runs outside WordPress and verifies that Blocks Engine's direct `ArtifactCompiler` output is consumed through `source_reports.wordpress_site_plan` v2 and materialized into the stable receipt contract.
 
-The `wordpress-is-dead` smoke verifies the multi-page fixture, generated block-theme artifacts, internal-link rewrites, persistent navigation entities, source CSS preservation, editor style support, conservative `theme.json` palette extraction, and selector fidelity across stored/rendered paths. The `mixed-source-site` smoke verifies an Astro-like source tree with `index.html`, nested Markdown content documents, explicit skipped-MDX diagnostics, report source counts, and generated page block markup.
+The `wordpress-is-dead` smoke verifies the multi-page fixture, generated block-theme artifacts, internal-link rewrites, persistent navigation entities, source CSS preservation, editor style support, plan-owned `theme.json` / `style.css`, and selector fidelity across stored/rendered paths. The `mixed-source-site` smoke verifies an Astro-like source tree with `index.html`, nested Markdown content documents, explicit skipped-MDX diagnostics, report source counts, and generated page block markup.
 
 ### PHPUnit Fixture Test
 
