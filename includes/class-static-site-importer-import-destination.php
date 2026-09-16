@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Companion_Asset_Publication' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-companion-asset-publication.php';
+}
+
 /**
  * Resolves where a canonical plan materializes and what it may write there.
  *
@@ -47,7 +51,7 @@ final class Static_Site_Importer_Import_Destination {
 			return new WP_Error( 'static_site_importer_destination_invalid', 'destination must be generated_theme or existing_theme.' );
 		}
 		if ( self::EXISTING_THEME === $mode ) {
-			return self::existing_theme_destination();
+			return self::existing_theme_destination( $args );
 		}
 		return self::generated_theme_destination( $args );
 	}
@@ -79,15 +83,19 @@ final class Static_Site_Importer_Import_Destination {
 			'theme_uri'          => trailingslashit( get_theme_root_uri() ) . $slug,
 			'owns_theme'         => true,
 			'permits_activation' => true,
+			// The generated theme owns its own asset home; nothing to relocate.
+			'asset_dir'          => $theme_dir,
+			'asset_uri'          => trailingslashit( get_theme_root_uri() ) . $slug,
 		);
 	}
 
 	/**
 	 * Describe the theme the destination site is already running.
 	 *
+	 * @param array $args Canonical materialization arguments.
 	 * @return array|WP_Error
 	 */
-	private static function existing_theme_destination() {
+	private static function existing_theme_destination( array $args ) {
 		if ( ! function_exists( 'get_stylesheet' ) || ! function_exists( 'get_stylesheet_directory' ) ) {
 			return new WP_Error( 'existing_theme_unavailable', 'The destination site has no resolvable active theme.' );
 		}
@@ -95,6 +103,16 @@ final class Static_Site_Importer_Import_Destination {
 		$theme_dir = (string) get_stylesheet_directory();
 		if ( '' === $slug || '' === $theme_dir || ! is_dir( $theme_dir ) ) {
 			return new WP_Error( 'existing_theme_unavailable', 'The destination site has no resolvable active theme.' );
+		}
+		// The import itself must not resolve its writes against the host theme,
+		// so its companion assets publish through the companion plugin primitive.
+		$publication_slug = (string) ( $args['slug'] ?? '' );
+		if ( '' === $publication_slug ) {
+			$publication_slug = $slug;
+		}
+		$publication = Static_Site_Importer_Companion_Asset_Publication::resolve( array( 'slug' => $publication_slug ) );
+		if ( is_wp_error( $publication ) ) {
+			return $publication;
 		}
 		return array(
 			'schema'             => 'static-site-importer/import-destination/v1',
@@ -104,6 +122,10 @@ final class Static_Site_Importer_Import_Destination {
 			'theme_uri'          => (string) get_stylesheet_directory_uri(),
 			'owns_theme'         => false,
 			'permits_activation' => false,
+			// Theme-independent publication surface: assets never land in the
+			// theme the host owns, so imported pages can load them scoped.
+			'asset_dir'          => (string) $publication['dir'],
+			'asset_uri'          => (string) $publication['uri'],
 		);
 	}
 

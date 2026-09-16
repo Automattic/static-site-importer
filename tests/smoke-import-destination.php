@@ -23,6 +23,10 @@ function trailingslashit( string $value ): string {
 
 $GLOBALS['ssi_theme_root']       = sys_get_temp_dir() . '/ssi-destination-theme-root';
 $GLOBALS['ssi_active_stylesheet'] = 'host-theme';
+$GLOBALS['ssi_plugin_root']       = sys_get_temp_dir() . '/ssi-destination-plugin-root';
+define( 'WP_PLUGIN_DIR', $GLOBALS['ssi_plugin_root'] );
+define( 'WP_PLUGIN_URL', 'https://example.test/wp-content/plugins' );
+mkdir( $GLOBALS['ssi_plugin_root'], 0777, true );
 
 function get_theme_root(): string {
 	return $GLOBALS['ssi_theme_root']; }
@@ -99,10 +103,23 @@ foreach ( array( 'theme_scaffold', 'theme_bootstrap', 'theme_template' ) as $kin
 	);
 }
 
-// Imported presentation still reaches the page.
+// Imported presentation still reaches the page — through a theme-independent home.
 $assert(
 	Static_Site_Importer_Import_Destination::permits_write( $existing, 'theme_asset' ),
 	'an existing-theme import still publishes the assets its pages need'
+);
+$assert(
+	str_starts_with( (string) ( $existing['asset_dir'] ?? '' ), WP_PLUGIN_DIR )
+	&& ! str_starts_with( (string) ( $existing['asset_dir'] ?? '' ), trailingslashit( get_stylesheet_directory() ) ),
+	"an existing-theme import's assets publish outside the theme the host owns"
+);
+$assert(
+	WP_PLUGIN_URL . '/ssi-host-theme/assets' === ( $existing['asset_uri'] ?? '' ),
+	"an existing-theme import's assets resolve against the companion publication URI"
+);
+$assert(
+	is_string( $generated['asset_dir'] ?? '' ) && $generated['asset_dir'] === $generated['theme_dir'],
+	"a generated-theme import keeps resolving its assets against its own theme directory"
 );
 
 // The destination site keeps the theme it chose.

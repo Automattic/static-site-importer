@@ -70,6 +70,7 @@
     "tests/smoke-woo-product-seeder-rollback.php": { "environment": "standalone-php" },
     "tests/smoke-artifact-run-primitives.php": { "environment": "standalone-php" },
     "tests/smoke-import-destination.php": { "environment": "standalone-php" },
+    "tests/smoke-existing-theme-scoped-assets.php": { "environment": "standalone-php" },
     "tests/smoke-final-hydration-effects.php": { "environment": "standalone-php" },
     "tests/smoke-shared-resource-plan.php": { "environment": "standalone-php" },
     "tests/smoke-figma-workspace-lifecycle.php": { "environment": "standalone-php" },

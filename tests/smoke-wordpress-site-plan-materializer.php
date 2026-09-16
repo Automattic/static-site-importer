@@ -169,6 +169,12 @@ function get_stylesheet(): string {
 	return (string) ( $GLOBALS['ssi_plan_options']['stylesheet'] ?? '' ); }
 function get_template(): string {
 	return (string) ( $GLOBALS['ssi_plan_options']['template'] ?? '' ); }
+function get_stylesheet_directory(): string {
+	$slug = get_stylesheet();
+	return '' === $slug ? get_theme_root() : get_theme_root() . '/' . $slug; }
+function get_stylesheet_directory_uri(): string {
+	$slug = get_stylesheet();
+	return '' === $slug ? 'https://example.test/wp-content/themes' : 'https://example.test/wp-content/themes/' . $slug; }
 function convert_smilies( string $content, string $which = 'content' ): string {
 	return ( $GLOBALS['ssi_plan_options']['use_smilies'] ?? true ) ? 'smilied-' . $which : $content; }
 function sanitize_text_field( string $value ): string {
@@ -3536,5 +3542,148 @@ if ( in_array( '--receipt-snapshot', $argv, true ) ) {
 	) . "\n";
 	return;
 }
+
+// --- #1617 slice 2: an existing-theme import publishes a theme-independent home
+// and never writes a byte into the theme the destination site already runs. ---
+if ( ! defined( 'WP_PLUGIN_DIR' ) ) {
+	define( 'WP_PLUGIN_DIR', $GLOBALS['ssi_plan_root'] . '/wp-content/plugins' );
+}
+if ( ! defined( 'WP_PLUGIN_URL' ) ) {
+	define( 'WP_PLUGIN_URL', 'https://example.test/wp-content/plugins' );
+}
+mkdir( WP_PLUGIN_DIR, 0777, true );
+$slice_existing_options_before = $GLOBALS['ssi_plan_options'];
+$GLOBALS['ssi_plan_options']['stylesheet'] = 'host-theme';
+$slice_existing_theme_dir = get_theme_root() . '/host-theme';
+mkdir( $slice_existing_theme_dir . '/templates', 0777, true );
+file_put_contents( $slice_existing_theme_dir . '/style.css', "/* Host theme stylesheet the import must not touch. */\n" );
+file_put_contents( $slice_existing_theme_dir . '/templates/index.html', "Host template the import must not touch.\n" );
+$slice_existing_snapshot = static function ( string $dir ): array {
+	$files = array();
+	foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $dir, FilesystemIterator::SKIP_DOTS ) ) as $item ) {
+		if ( $item->isFile() ) {
+			$files[ str_replace( $dir . '/', '', (string) $item->getPathname() ) ] = hash_file( 'sha256', (string) $item->getPathname() );
+		}
+	}
+	ksort( $files );
+	return $files;
+};
+$existing_surface_before    = $slice_existing_snapshot( $slice_existing_theme_dir );
+$existing_surface_plan      = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array(
+			'index.html'      => '<main><h1>Host surface</h1></main>',
+			'assets/page.css' => '.imported-surface{color:orchid}',
+		),
+	)
+)->toArray()['source_reports']['wordpress_site_plan'];
+$existing_surface_receipt   = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$existing_surface_plan,
+	array(
+		'slug'        => 'imported-site',
+		'destination' => 'existing_theme',
+		'overwrite'   => true,
+	)
+);
+$existing_surface_dir       = WP_PLUGIN_DIR . '/ssi-imported-site/assets';
+$existing_surface_pages     = array_map( 'intval', array_column( $existing_surface_receipt['wordpress'] ?? array(), 'id' ) );
+$existing_surface_styles    = array_values( array_filter(
+	$existing_surface_receipt['completed']['files'] ?? array(),
+	static fn( array $file ): bool => str_ends_with( strtolower( (string) ( $file['target_path'] ?? '' ) ), '.css' )
+) );
+$existing_surface_loading   = $existing_surface_receipt['completed']['companion_asset_loading'] ?? array();
+$assert( 'completed' === ( $existing_surface_receipt['status'] ?? '' ), 'an existing-theme import materializes with its assets published next to its companion plugin: ' . wp_json_encode( array( 'errors' => $existing_surface_receipt['errors'] ?? array(), 'skipped' => array_slice( $existing_surface_receipt['skipped_targets'] ?? array(), 0, 5 ) ) ) );
+$assert( $existing_surface_before === $slice_existing_snapshot( $slice_existing_theme_dir ) && count( $existing_surface_before ) > 0, 'an existing-theme import leaves the active theme directory byte-identical' );
+$assert(
+	str_starts_with( (string) ( $existing_surface_receipt['theme']['dir'] ?? '' ), WP_PLUGIN_DIR )
+	&& ! str_starts_with( (string) ( $existing_surface_receipt['theme']['dir'] ?? '' ), $slice_existing_theme_dir ),
+	'the receipt names a companion publication home instead of the host theme directory'
+);
+$assert(
+	'companion_plugin' === ( $existing_surface_receipt['theme']['asset_publication']['mode'] ?? '' )
+	&& $existing_surface_dir === ( $existing_surface_receipt['theme']['asset_publication']['dir'] ?? '' ),
+	'the receipt records the companion asset publication mode and directory'
+);
+$existing_surface_stylesheet_target = '';
+foreach ( $existing_surface_styles as $existing_surface_file ) {
+	$assert( 'companion_plugin' === ( $existing_surface_file['publication']['mode'] ?? '' ), 'every published asset receipt names the companion publication location' );
+	if ( '' === $existing_surface_stylesheet_target ) {
+		$existing_surface_stylesheet_target = (string) ( $existing_surface_file['target_path'] ?? '' );
+	}
+}
+$existing_surface_css_file = $existing_surface_dir . '/' . $existing_surface_stylesheet_target;
+$assert(
+	is_file( $existing_surface_css_file ) && (bool) str_contains( (string) file_get_contents( $existing_surface_css_file ), 'orchid' )
+	&& 'completed' === ( $existing_surface_loading['status'] ?? '' )
+	&& $existing_surface_pages === array_map( 'intval', $existing_surface_loading['post_ids'] ?? array() ),
+	'imported assets are resolvable, and the loader is scoped to the materialized pages'
+);
+
+// The generated loader enqueues published styles only for an imported page — on
+// the frontend and in the editor — never for unrelated pages.
+function add_action( string $hook, $callback ): void {
+	$GLOBALS['ssi_plan_hooks'][ $hook ] = $callback; }
+function wp_enqueue_style( string $handle, string $src, array $deps = array(), string $version = '' ): void {
+	$GLOBALS['ssi_plan_styles'][] = array( 'handle' => $handle, 'src' => $src, 'version' => $version, 'hook' => (string) ( $GLOBALS['ssi_plan_style_hook'] ?? '' ) ); } // phpcs:ignore WordPress.WP.EnqueuedResourcesParameters.NonEnqueuedScript -- Deterministic test-only enqueue capture.
+function get_the_ID(): int {
+	return (int) ( $GLOBALS['ssi_plan_current_post_id'] ?? 0 ); }
+function get_current_screen(): ?object {
+	return $GLOBALS['ssi_plan_current_screen']; }
+$GLOBALS['ssi_plan_hooks']            = array();
+$GLOBALS['ssi_plan_styles']           = array();
+$GLOBALS['ssi_plan_current_post_id']  = 0;
+$GLOBALS['ssi_plan_current_screen']   = null;
+$GLOBALS['ssi_plan_style_hook']       = 'frontend';
+include $existing_surface_dir . '/asset-loader.php';
+$frontend_enqueue = $GLOBALS['ssi_plan_hooks']['wp_enqueue_scripts'] ?? null;
+$editor_enqueue   = $GLOBALS['ssi_plan_hooks']['enqueue_block_editor_assets'] ?? null;
+$assert( is_callable( $frontend_enqueue ) && is_callable( $editor_enqueue ) && array() === $GLOBALS['ssi_plan_styles'] && is_file( $existing_surface_dir . '/scoped-assets.json' ), 'the companion loader publishes scoped frontend and editor enqueues' );
+$GLOBALS['ssi_plan_current_post_id'] = (int) ( $existing_surface_pages[0] ?? 0 );
+$frontend_enqueue();
+$existing_surface_frontend_enqueues = $GLOBALS['ssi_plan_styles'];
+$GLOBALS['ssi_plan_current_post_id'] = 987654;
+$frontend_enqueue();
+$existing_surface_frontend_after_unrelated = $GLOBALS['ssi_plan_styles'];
+$assert(
+	count( $existing_surface_frontend_enqueues ) > 0
+	&& WP_PLUGIN_URL . '/ssi-imported-site/assets/' . $existing_surface_stylesheet_target === $existing_surface_frontend_enqueues[0]['src'],
+	'the imported page loads its published stylesheet from the companion publication URI'
+);
+$assert( $existing_surface_frontend_after_unrelated === $existing_surface_frontend_enqueues, 'unrelated pages load nothing from the companion publication surface' );
+$GLOBALS['ssi_plan_styles']         = array();
+$GLOBALS['ssi_plan_current_screen'] = (object) array( 'post' => (object) array( 'ID' => (int) ( $existing_surface_pages[0] ?? 0 ) ) );
+$GLOBALS['ssi_plan_style_hook']     = 'editor';
+$editor_enqueue();
+$existing_surface_editor_enqueues = $GLOBALS['ssi_plan_styles'];
+$GLOBALS['ssi_plan_styles']         = array();
+$GLOBALS['ssi_plan_current_screen'] = (object) array( 'post' => (object) array( 'ID' => 246810 ) );
+$editor_enqueue();
+$assert( count( $existing_surface_editor_enqueues ) === count( $existing_surface_frontend_enqueues ) && array() === $GLOBALS['ssi_plan_styles'], 'the editor loads the scoped styles only while an imported page is being edited' );
+
+// A generated-theme import keeps publishing into its own theme exactly as before.
+$generated_surface_plan    = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array(
+			'index.html'      => '<main><h1>Generated surface</h1></main>',
+			'assets/page.css' => '.generated-surface{color:invisible}',
+		),
+	)
+)->toArray()['source_reports']['wordpress_site_plan'];
+$generated_surface_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $generated_surface_plan, array( 'slug' => 'generated-surface', 'overwrite' => true ) );
+$generated_surface_css     = get_theme_root() . '/generated-surface/assets/assets/page.css';
+$generated_surface_styles  = array_values( array_filter(
+	$generated_surface_receipt['completed']['files'] ?? array(),
+	static fn( array $file ): bool => str_ends_with( strtolower( (string) ( $file['target_path'] ?? '' ) ), '.css' )
+) );
+$assert(
+	'completed' === ( $generated_surface_receipt['status'] ?? '' )
+	&& is_file( $generated_surface_css ) && str_contains( (string) file_get_contents( $generated_surface_css ), 'invisible' )
+	&& count( $generated_surface_styles ) > 0
+	&& array() === array_filter( $generated_surface_styles, static fn( array $file ): bool => 'generated_theme' !== ( $file['publication']['mode'] ?? '' ) ),
+	'a generated-theme import still publishes its own assets in its own theme directory with unchanged receipt identity: ' . wp_json_encode( $generated_surface_receipt['errors'] ?? array() )
+);
+$GLOBALS['ssi_plan_options'] = $slice_existing_options_before;
 
 echo "WordPress site plan materializer smoke passed.\n";
