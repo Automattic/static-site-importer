@@ -1219,6 +1219,73 @@ namespace {
 	$labelled_width_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $labelled_width_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$labelled_width_reasons = array_column( $labelled_width_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' );
 	$assert( 'skipped' === ( $labelled_width_row['status'] ?? '' ) && in_array( 'unsupported_semantic_wrapper', $labelled_width_reasons, true ) && 3 === substr_count( (string) ( $labelled_width_row['block_markup'] ?? '' ), '"width":33.333' ), 'percentage-width-proof-does-not-accept-labelled-fieldset-semantics', wp_json_encode( $labelled_width_row ) );
+	$name_fieldset_form = array(
+		'forms' => array(
+			array(
+				'selector'         => 'form.contact',
+				'form'             => array( 'class' => 'react-form-contents' ),
+				'controls'         => array(
+					array( 'tag' => 'input', 'type' => 'text', 'name' => 'fname', 'label' => 'First Name' ),
+					array( 'tag' => 'input', 'type' => 'text', 'name' => 'lname', 'label' => 'Last Name' ),
+					array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ),
+					array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Submit' ),
+				),
+				'control_topology' => array(
+					'schema'     => 'generic/form-control-topology/v1',
+					'max_depth'  => 8,
+					'max_nodes'  => 128,
+					'truncated'  => false,
+					'nodes'      => array(
+						array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div', 'class' => 'field-list' ),
+						array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'fieldset', 'class' => 'form-item fields name', 'fieldset_semantics' => 'labelled_group', 'legend' => 'Name' ),
+						array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'tag' => 'div', 'class' => 'field first-name' ),
+						array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-2', 'order' => 0, 'depth' => 3, 'control' => 0 ),
+						array( 'id' => 'wrapper-3', 'kind' => 'wrapper', 'parent' => 'wrapper-1', 'order' => 1, 'depth' => 2, 'tag' => 'div', 'class' => 'field last-name' ),
+						array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-3', 'order' => 0, 'depth' => 3, 'control' => 1 ),
+						array( 'id' => 'wrapper-4', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 1, 'depth' => 1, 'tag' => 'div', 'class' => 'field email' ),
+						array( 'id' => 'control-2', 'kind' => 'control', 'parent' => 'wrapper-4', 'order' => 0, 'depth' => 2, 'control' => 2 ),
+						array( 'id' => 'control-3', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 2, 'depth' => 1, 'control' => 3 ),
+					),
+				),
+				'layout_graph'     => $v2_layout_graph(
+					array(
+						$layout_node( 'form', array(), 'form' ),
+						array(
+							'id'         => 'wrapper-0',
+							'kind'       => 'container',
+							'parent'     => 'form',
+							'order'      => 0,
+							'source'     => array( 'tag' => 'div', 'classes' => array( 'field-list' ) ),
+							'layout'     => array(),
+							'provenance' => array(),
+						),
+						array(
+							'id'         => 'wrapper-1',
+							'kind'       => 'container',
+							'parent'     => 'wrapper-0',
+							'order'      => 0,
+							'source'     => array( 'tag' => 'fieldset', 'classes' => array( 'form-item', 'fields', 'name' ) ),
+							'layout'     => array( 'display' => 'flex', 'direction' => 'row', 'gap' => '1rem' ),
+							'provenance' => array(
+								array(
+									'source_path'  => 'assets/form.css',
+									'source_sha256' => str_repeat( 'e', 64 ),
+									'selector'     => '.form-item.fields.name',
+									'condition'    => null,
+									'properties'   => array( 'display', 'flex-direction', 'gap' ),
+								),
+							),
+						),
+					)
+				),
+			),
+		),
+	);
+	$name_fieldset_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $name_fieldset_form );
+	$name_fieldset_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $name_fieldset_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$name_fieldset_reasons    = array_column( $name_fieldset_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' );
+	$name_fieldset_ops        = array_column( $name_fieldset_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' );
+	$assert( empty( $name_fieldset_validation['errors'] ) && 'mapped' === ( $name_fieldset_row['status'] ?? '' ) && true === ( $name_fieldset_row['runtime_mapped'] ?? false ) && in_array( 'provider_labelled_text_fieldset_projection', $name_fieldset_ops, true ) && ! array_intersect( array( 'unsupported_semantic_wrapper', 'provider_wrapper_layout_unrepresentable' ), $name_fieldset_reasons ) && str_contains( (string) ( $name_fieldset_row['block_markup'] ?? '' ), 'First Name' ) && str_contains( (string) ( $name_fieldset_row['block_markup'] ?? '' ), 'Last Name' ), 'nested-labelled-name-fieldset-materializes-without-semantic-loss', wp_json_encode( $name_fieldset_row ) );
 	$deep_topology_form = $topology_form;
 	$deep_nodes         = array();
 	$parent             = null;
