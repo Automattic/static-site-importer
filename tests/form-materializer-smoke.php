@@ -1904,6 +1904,32 @@ namespace {
 	$assert( str_contains( $kmr_css, ' > form.jetpack-contact-form__form, ' ) && str_contains( $kmr_css, ':not(:has(> form.jetpack-contact-form__form)){grid-template-columns:100%;display:grid}' ), 'all-controls-source-box-establishes-the-provider-form-container', $kmr_css );
 	$assert( 1 === preg_match( '/\.ssi-node-[a-f0-9]{12}-wrap\{[^}]*grid-area:4 \/ 1 \/ 5 \/ 2[^}]*width:156px(?:;[^}]*)?\}/', $kmr_css ), 'single-field-source-box-keeps-its-own-grid-placement', $kmr_css );
 	$assert( str_contains( $kmr_css, 'display:var(--display)' ) && str_contains( $kmr_css, 'justify-content:var(--label-align)' ), 'source-owned-custom-properties-survive-transposition', $kmr_css );
+	$mixed_row_graph = array(
+		'schema'   => 'generic/computed-layout-graph/v2',
+		'nodes'    => array(
+			array( 'id' => 'grid', 'kind' => 'container', 'layout' => array( 'display' => 'grid', 'columns' => '100%' ) ),
+			array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => 'grid', 'layout' => array( 'area' => '1 / 1 / 2 / 2' ) ),
+			array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'grid', 'layout' => array( 'area' => '1 / 1 / 2 / 2' ) ),
+			array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => 'grid', 'layout' => array( 'area' => '2 / 1 / 3 / 2', 'width' => '611px' ) ),
+		),
+		'variants' => array(),
+	);
+	$mixed_row_result = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( $mixed_row_graph );
+	$mixed_row_layout = array_column( $mixed_row_result['nodes'], 'layout', 'id' );
+	$uniform_row_result = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( array(
+		'schema'   => 'generic/computed-layout-graph/v2',
+		'nodes'    => array(
+			array( 'id' => 'grid', 'kind' => 'container', 'layout' => array( 'display' => 'grid', 'columns' => '100%' ) ),
+			array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => 'grid', 'layout' => array( 'area' => '4 / 1 / 5 / 2' ) ),
+			array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'grid', 'layout' => array( 'area' => '4 / 1 / 5 / 2' ) ),
+		),
+		'variants' => array(),
+	) );
+	$assert(
+		! isset( $mixed_row_layout['wrapper-0']['area'] ) && ! isset( $mixed_row_layout['wrapper-2']['area'] ) && '611px' === ( $mixed_row_layout['wrapper-2']['width'] ?? '' ) && array( 'display' => 'grid', 'columns' => '100%' ) === $mixed_row_layout['grid'] && '4 / 1 / 5 / 2' === ( array_column( $uniform_row_result['nodes'], 'layout', 'id' )['wrapper-0']['area'] ?? '' ),
+		'source-rows-that-neither-pair-with-each-box-nor-share-one-band-drop-their-provider-placement',
+		wp_json_encode( array( 'mixed' => $mixed_row_layout, 'uniform' => array_column( $uniform_row_result['nodes'], 'layout', 'id' ) ) )
+	);
 	$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $kmr[2]['provider_layout_overlay_css'] ?? null ), 'kmr-overlay-passes-stylesheet-admission' );
 	// A source box chain deeper than the provider's own element pair cannot keep every
 	// box, so it stays a decline instead of claiming an equivalence it cannot hold.
