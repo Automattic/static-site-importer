@@ -46,7 +46,7 @@ $result = Static_Site_Importer_Theme_Generator::import_website_artifact(
 		'files'  => array(
 			array(
 				'path'    => 'index.html',
-				'content' => '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=320, user-scalable=yes"><title>Ember & Rye</title><meta name="description" content="Wood-fired bakery"><link rel="stylesheet" href="/assets/site.css"></head><body><header class="site-header"><a href="/">Ember & Rye</a></header><main><section class="hero"><h1>Fire, flour, patience.</h1><p>Small-batch loaves.</p><div class="contact-actions"><a class="btn btn-ghost" href="/contact">Visit us</a></div><div class="hours-table"><div><span>Tue</span><strong>4–10pm</strong></div></div><figure><img class="rounded-photo reveal" src="assets/logo.svg" alt="Bakery mark"></figure><div class="glow-orb"></div></section></main><script src="assets/js/main.js" defer></script></body></html>',
+				'content' => '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=320, user-scalable=yes"><title>Ember & Rye – Bakery</title><meta name="description" content="Wood-fired bakery"><link rel="stylesheet" href="/assets/site.css"></head><body><header class="site-header"><a href="/">Ember & Rye</a></header><main><section class="hero"><h1>Fire, flour, patience.</h1><p>Small-batch loaves.</p><div class="contact-actions"><a class="btn btn-ghost" href="/contact">Visit us</a></div><div class="hours-table"><div><span>Tue</span><strong>4–10pm</strong></div></div><figure><img class="rounded-photo reveal" src="assets/logo.svg" alt="Bakery mark"></figure><div class="glow-orb"></div></section></main><script src="assets/js/main.js" defer></script></body></html>',
 			),
 			array(
 				'path'    => 'assets/site.css',
@@ -147,7 +147,7 @@ if ( ! is_wp_error( $result ) ) {
 	$provenance = json_decode( (string) get_post_meta( $page_id, '_static_site_importer_provenance', true ), true );
 	$assert( 'ssi-smoke-run-001' === ( $provenance['import_run_id'] ?? '' ), 'page-provenance-meta-includes-import-run-id' );
 	$assert( 'index.html' === ( $provenance['source_path'] ?? '' ), 'page-provenance-meta-includes-source-path' );
-	$assert( 'Ember & Rye' === ( $provenance['document_title'] ?? '' ), 'page-provenance-meta-includes-document-title' );
+	$assert( 'Ember & Rye – Bakery' === ( $provenance['document_title'] ?? '' ), 'page-provenance-meta-includes-document-title' );
 	$assert( 'blocks-engine/import-validation-result/v1' === ( $validation_result['schema'] ?? '' ), 'validation-result-schema' );
 	$assert( 'ImportValidationResult' === ( $validation_result['artifact_type'] ?? '' ), 'validation-result-artifact-type' );
 	$assert( 'passed' === ( $validation_result['status'] ?? '' ), 'validation-result-status-passed' );
@@ -171,7 +171,7 @@ if ( ! is_wp_error( $result ) ) {
 	$assert( 'FindingPacketSet' === ( $finding_packets['artifact_type'] ?? '' ), 'finding-packets-artifact-type' );
 	$assert( isset( $finding_packets['count'], $finding_packets['packets'] ), 'default-finding-packets-are-complete' );
 	$assert( 'static-site-importer/document-metadata/v1' === ( $metadata['schema'] ?? '' ), 'metadata-contract-is-recorded' );
-	$assert( 'Ember & Rye' === ( $metadata['title'] ?? '' ), 'title-is-preserved-in-metadata' );
+	$assert( 'Ember & Rye – Bakery' === ( $metadata['title'] ?? '' ), 'title-is-preserved-in-metadata' );
 	$assert( 'utf-8' === ( $metadata['meta'][0]['charset'] ?? '' ), 'charset-meta-is-preserved-in-metadata' );
 	$assert( 'viewport' === ( $metadata['meta'][1]['name'] ?? '' ), 'viewport-meta-is-preserved-in-metadata' );
 	$assert( str_ends_with( (string) ( $metadata['links'][0]['href'] ?? '' ), 'assets/assets/site.css' ), 'stylesheet-link-is-resolved-to-the-declared-theme-asset' );
@@ -188,7 +188,7 @@ if ( ! is_wp_error( $result ) ) {
 	$GLOBALS['wp_query']  = new WP_Query( array( 'page_id' => $page_id ) );
 	$rendered_route_title = wp_get_document_title();
 	$GLOBALS['wp_query']  = $previous_query;
-	$assert( 'Ember & Rye' === $rendered_route_title, 'single-page-runtime-title-matches-document-metadata', $rendered_route_title );
+	$assert( 'Ember & Rye – Bakery' === $rendered_route_title, 'single-page-runtime-title-matches-document-metadata', $rendered_route_title );
 }
 
 $missing_template_parts_result = Static_Site_Importer_Theme_Generator::import_website_artifact(

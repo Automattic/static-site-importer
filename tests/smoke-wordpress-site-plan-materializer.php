@@ -31,6 +31,8 @@ $GLOBALS['ssi_plan_options']              = array(
 );
 $GLOBALS['ssi_plan_fail_after']           = 0;
 $GLOBALS['ssi_plan_insert_calls']         = 0;
+$GLOBALS['ssi_plan_meta_write_failure']   = null;
+$GLOBALS['ssi_plan_meta_write_counts']    = array();
 $GLOBALS['ssi_plan_post_status_transitions'] = array();
 $GLOBALS['ssi_plan_font_requests']        = array();
 $GLOBALS['ssi_plan_woo_cleanup_failures'] = false;
@@ -180,7 +182,13 @@ function convert_smilies( string $content, string $which = 'content' ): string {
 function sanitize_text_field( string $value ): string {
 	return $value; }
 function update_post_meta( int $id, string $key, string $value ): void {
-	$GLOBALS['ssi_plan_meta'][ $id ][ $key ] = $value; }
+	$GLOBALS['ssi_plan_meta_write_counts'][ $key ] = (int) ( $GLOBALS['ssi_plan_meta_write_counts'][ $key ] ?? 0 ) + 1;
+	$failure = $GLOBALS['ssi_plan_meta_write_failure'] ?? null;
+	if ( is_array( $failure ) && $key === ( $failure['key'] ?? '' ) && $GLOBALS['ssi_plan_meta_write_counts'][ $key ] === ( $failure['occurrence'] ?? 0 ) ) {
+		return;
+	}
+	// Core update_metadata() unslashes values before persistence.
+	$GLOBALS['ssi_plan_meta'][ $id ][ $key ] = stripslashes( $value ); }
 function get_post_meta( int $id, string $key, bool $single = true ): string {
 	return (string) ( $GLOBALS['ssi_plan_meta'][ $id ][ $key ] ?? '' ); }
 function metadata_exists( string $meta_type, int $id, string $key ): bool {
@@ -573,6 +581,33 @@ $page_source          = (string) ( $receipt['plan']['pages'][0]['source_path'] ?
 $page_id              = (int) ( $receipt['completed']['pages'][ $page_source ] ?? 0 );
 $persisted_page       = stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $page_id ]['post_content'] ?? '' ) );
 $assert( $producer_page_markup === $persisted_page, 'materializer-persists-producer-block-markup-without-html-recompilation' );
+
+$unicode_title_plan                                        = $plan;
+$unicode_title_plan['pages'][0]['document_metadata']['title'] = 'Services – Southern Multi Product ltd';
+$unicode_title_plan['plan_identity']                       = WordPressSitePlan::planIdentity( $unicode_title_plan );
+$unicode_title_receipt                                     = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $unicode_title_plan, array( 'slug' => 'unicode-title-plan' ) );
+$unicode_title_source                                      = (string) ( $unicode_title_receipt['plan']['pages'][0]['source_path'] ?? '' );
+$unicode_title_page_id                                     = (int) ( $unicode_title_receipt['completed']['pages'][ $unicode_title_source ] ?? 0 );
+$unicode_title_provenance                                  = json_decode( (string) get_post_meta( $unicode_title_page_id, '_static_site_importer_provenance', true ), true );
+$assert( 'completed' === ( $unicode_title_receipt['status'] ?? '' ) && 'Services – Southern Multi Product ltd' === ( $unicode_title_provenance['document_title'] ?? '' ), 'provenance JSON survives the WordPress metadata unslash round trip' );
+
+$initial_meta_failure_plan = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'metadata-failure/index.html',
+		'files'      => array( 'metadata-failure/index.html' => '<main>Metadata failure</main>' ),
+	)
+)->toArray()['source_reports']['wordpress_site_plan'];
+$posts_before_initial_meta_failure = $GLOBALS['ssi_plan_posts'];
+$meta_before_initial_meta_failure  = $GLOBALS['ssi_plan_meta'];
+$GLOBALS['ssi_plan_meta_write_counts']  = array();
+$GLOBALS['ssi_plan_meta_write_failure'] = array(
+	'key'        => '_static_site_importer_provenance',
+	'occurrence' => 1,
+);
+$initial_meta_failure_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $initial_meta_failure_plan, array( 'slug' => 'initial-metadata-failure-plan' ) );
+$GLOBALS['ssi_plan_meta_write_failure'] = null;
+$assert( 'partial' === ( $initial_meta_failure_receipt['status'] ?? '' ) && 'materialization_provenance_metadata_write_failed' === ( $initial_meta_failure_receipt['errors'][0]['code'] ?? '' ) && $posts_before_initial_meta_failure === $GLOBALS['ssi_plan_posts'] && $meta_before_initial_meta_failure === $GLOBALS['ssi_plan_meta'], 'initial provenance metadata failure rolls back the inserted page and metadata' );
+
 $short_write_target  = (string) ( $plan['writes'][0]['target_path'] ?? '' );
 $short_write_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
 	$plan,
@@ -3224,6 +3259,16 @@ $route_artifact            = array(
 );
 $route_plan                = ( new ArtifactCompiler() )->compile( $route_artifact )->toArray()['source_reports']['wordpress_site_plan'];
 $register_plan_blocks( $route_plan );
+$posts_before_route_meta_failure = $GLOBALS['ssi_plan_posts'];
+$meta_before_route_meta_failure  = $GLOBALS['ssi_plan_meta'];
+$GLOBALS['ssi_plan_meta_write_counts']  = array();
+$GLOBALS['ssi_plan_meta_write_failure'] = array(
+	'key'        => '_static_site_importer_provenance',
+	'occurrence' => count( $route_plan['pages'] ) + 1,
+);
+$route_meta_failure_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $route_plan, array( 'slug' => 'route-link-metadata-failure-plan' ) );
+$GLOBALS['ssi_plan_meta_write_failure'] = null;
+$assert( 'partial' === ( $route_meta_failure_receipt['status'] ?? '' ) && 'route_link_rewrite_failed' === ( $route_meta_failure_receipt['errors'][0]['code'] ?? '' ) && $posts_before_route_meta_failure === $GLOBALS['ssi_plan_posts'] && $meta_before_route_meta_failure === $GLOBALS['ssi_plan_meta'], 'route-link provenance metadata failure rolls back all inserted pages and metadata' );
 $route_receipt             = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $route_plan, array( 'slug' => 'route-link-plan' ) );
 $route_home                = current( array_filter( $GLOBALS['ssi_plan_posts'], static fn( array $post ): bool => 'index' === ( $post['post_name'] ?? '' ) ) );
 $route_content             = is_array( $route_home ) ? stripslashes( (string) ( $route_home['post_content'] ?? '' ) ) : '';

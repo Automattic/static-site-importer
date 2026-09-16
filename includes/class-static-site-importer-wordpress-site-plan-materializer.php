@@ -414,11 +414,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			if ( '' !== $document_title ) {
 				$provenance['document_title'] = $document_title;
 			}
-			update_post_meta(
-				$post,
-				'_static_site_importer_provenance',
-				wp_json_encode( $provenance )
-			);
+			if ( ! self::write_post_meta( $post, '_static_site_importer_provenance', (string) wp_json_encode( $provenance ) ) ) {
+				return self::failed_receipt( $state, 'materialization_provenance_metadata_write_failed' );
+			}
 			foreach ( $state['applied']['runtime_declarations']['entity_bindings'] as &$binding_report ) {
 				if ( ( $binding_report['source_path'] ?? '' ) === $page['source_path'] ) {
 					$fragment          = (string) ( $binding_report['replacement_block_markup'] ?? '' );
@@ -968,7 +966,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 
 	/** Persist and verify importer-owned post metadata. */
 	private static function write_post_meta( int $id, string $key, string $value ): bool {
-		update_post_meta( $id, $key, $value );
+		update_post_meta( $id, $key, wp_slash( $value ) );
 		return metadata_exists( 'post', $id, $key ) && (string) get_post_meta( $id, $key, true ) === $value;
 	}
 
@@ -1014,7 +1012,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 				$provenance = json_decode( (string) get_post_meta( $post_id, '_static_site_importer_provenance', true ), true );
 				if ( is_array( $provenance ) ) {
 					$provenance['content_hash'] = hash( 'sha256', $rewritten );
-					update_post_meta( $post_id, '_static_site_importer_provenance', wp_json_encode( $provenance ) );
+					if ( ! self::write_post_meta( $post_id, '_static_site_importer_provenance', (string) wp_json_encode( $provenance ) ) ) {
+						return new WP_Error( 'route_link_rewrite_failed', 'Materialized page provenance could not be updated after route-link resolution.', array( 'source_path' => $source_path ) );
+					}
 				}
 			}
 			foreach ( $state['applied']['runtime_declarations']['entity_bindings'] as &$binding_report ) {
@@ -2477,8 +2477,9 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 			try {
 				if ( ! empty( $before['existing'] ) ) {
 					wp_update_post( $before['post'] );
-					update_post_meta( $id, '_static_site_importer_provenance', $before['provenance'] );
-					update_post_meta( $id, self::RECONCILIATION_META_KEY, $before['reconciliation_identity'] );
+					if ( ! self::write_post_meta( $id, '_static_site_importer_provenance', (string) $before['provenance'] ) || ! self::write_post_meta( $id, self::RECONCILIATION_META_KEY, (string) $before['reconciliation_identity'] ) ) {
+						throw new RuntimeException( 'materialization_rollback_post_meta_restore_failed' );
+					}
 					if ( ! empty( $before['producer_reconciliation_identity_exists'] ) ) {
 						if ( ! self::write_post_meta( $id, self::PRODUCER_RECONCILIATION_META_KEY, (string) $before['producer_reconciliation_identity'] ) ) {
 							throw new RuntimeException( 'materialization_rollback_post_meta_restore_failed' );
