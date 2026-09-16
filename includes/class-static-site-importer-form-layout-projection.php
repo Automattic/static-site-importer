@@ -485,11 +485,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'target_hash' => hash( 'sha256', $node['id'] ),
 			);
 		}
-		// A nested labelled fieldset around two to four mapped text fields is the
-		// source Name group. Jetpack keeps the fields; the fieldset is represented
-		// without becoming a root labelled group or a radio aggregate.
+		// A nested labelled fieldset around one to four mapped text fields is the
+		// source Name/phone group. Producers often omit legend text while still
+		// classifying the wrapper as labelled_group. Jetpack keeps the fields.
 		foreach ( $nodes as $node ) {
-			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? null ) || 'fieldset' !== ( $node['tag'] ?? null ) || 'labelled_group' !== ( $node['fieldset_semantics'] ?? null ) || null === ( $node['parent'] ?? null ) || ! is_string( $node['id'] ?? null ) || ! is_string( $node['legend'] ?? null ) || '' === trim( $node['legend'] ) ) {
+			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? null ) || 'fieldset' !== ( $node['tag'] ?? null ) || 'labelled_group' !== ( $node['fieldset_semantics'] ?? null ) || null === ( $node['parent'] ?? null ) || ! is_string( $node['id'] ?? null ) ) {
 				continue;
 			}
 			$branch_controls = $collect_controls( $node );
@@ -510,7 +510,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				}
 				$branch_fields[] = $control_index;
 			}
-			if ( $unmapped || ! in_array( count( $branch_fields ), array( 2, 3, 4 ), true ) ) {
+			if ( $unmapped || ! in_array( count( $branch_fields ), array( 1, 2, 3, 4 ), true ) ) {
 				continue;
 			}
 			$represented_topology_nodes[] = $node['id'];

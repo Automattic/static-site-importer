@@ -1237,7 +1237,7 @@ namespace {
 					'truncated'  => false,
 					'nodes'      => array(
 						array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div', 'class' => 'field-list' ),
-						array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'fieldset', 'class' => 'form-item fields name', 'fieldset_semantics' => 'labelled_group', 'legend' => 'Name' ),
+						array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'fieldset', 'class' => 'form-item fields name', 'fieldset_semantics' => 'labelled_group' ),
 						array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'tag' => 'div', 'class' => 'field first-name' ),
 						array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-2', 'order' => 0, 'depth' => 3, 'control' => 0 ),
 						array( 'id' => 'wrapper-3', 'kind' => 'wrapper', 'parent' => 'wrapper-1', 'order' => 1, 'depth' => 2, 'tag' => 'div', 'class' => 'field last-name' ),
@@ -1286,6 +1286,52 @@ namespace {
 	$name_fieldset_reasons    = array_column( $name_fieldset_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' );
 	$name_fieldset_ops        = array_column( $name_fieldset_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' );
 	$assert( empty( $name_fieldset_validation['errors'] ) && 'mapped' === ( $name_fieldset_row['status'] ?? '' ) && true === ( $name_fieldset_row['runtime_mapped'] ?? false ) && in_array( 'provider_labelled_text_fieldset_projection', $name_fieldset_ops, true ) && ! array_intersect( array( 'unsupported_semantic_wrapper', 'provider_wrapper_layout_unrepresentable' ), $name_fieldset_reasons ) && str_contains( (string) ( $name_fieldset_row['block_markup'] ?? '' ), 'First Name' ) && str_contains( (string) ( $name_fieldset_row['block_markup'] ?? '' ), 'Last Name' ), 'nested-labelled-name-fieldset-materializes-without-semantic-loss', wp_json_encode( $name_fieldset_row ) );
+	$phone_fieldset_form = array(
+		'forms' => array(
+			array(
+				'selector'         => 'form.contact',
+				'controls'         => array(
+					array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ),
+					array( 'tag' => 'input', 'type' => 'text', 'name' => 'phone', 'label' => 'Phone' ),
+					array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Submit' ),
+				),
+				'control_topology' => array(
+					'schema'    => 'generic/form-control-topology/v1',
+					'max_depth' => 8,
+					'max_nodes' => 128,
+					'truncated' => false,
+					'nodes'     => array(
+						array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div', 'class' => 'field-list' ),
+						array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'div', 'class' => 'field email' ),
+						array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'control' => 0 ),
+						array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 1, 'depth' => 1, 'tag' => 'fieldset', 'class' => 'form-item fields phone', 'fieldset_semantics' => 'labelled_group' ),
+						array( 'id' => 'wrapper-3', 'kind' => 'wrapper', 'parent' => 'wrapper-2', 'order' => 0, 'depth' => 2, 'tag' => 'div', 'class' => 'field' ),
+						array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-3', 'order' => 0, 'depth' => 3, 'control' => 1 ),
+						array( 'id' => 'control-2', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 2, 'depth' => 1, 'control' => 2 ),
+					),
+				),
+				'layout_graph'     => $v2_layout_graph(
+					array(
+						$layout_node( 'form', array(), 'form' ),
+						array(
+							'id'         => 'wrapper-2',
+							'kind'       => 'container',
+							'parent'     => 'form',
+							'order'      => 1,
+							'source'     => array( 'tag' => 'fieldset', 'classes' => array( 'form-item', 'fields', 'phone' ) ),
+							'layout'     => array(),
+							'provenance' => array(),
+						),
+					)
+				),
+			),
+		),
+	);
+	$phone_fieldset_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $phone_fieldset_form );
+	$phone_fieldset_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $phone_fieldset_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$phone_fieldset_reasons    = array_column( $phone_fieldset_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' );
+	$phone_fieldset_ops        = array_column( $phone_fieldset_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' );
+	$assert( empty( $phone_fieldset_validation['errors'] ) && 'mapped' === ( $phone_fieldset_row['status'] ?? '' ) && true === ( $phone_fieldset_row['runtime_mapped'] ?? false ) && in_array( 'provider_labelled_text_fieldset_projection', $phone_fieldset_ops, true ) && ! array_intersect( array( 'unsupported_semantic_wrapper', 'provider_wrapper_layout_unrepresentable' ), $phone_fieldset_reasons ), 'nested-labelled-phone-fieldset-without-legend-materializes', wp_json_encode( $phone_fieldset_row ) );
 	$deep_topology_form = $topology_form;
 	$deep_nodes         = array();
 	$parent             = null;
