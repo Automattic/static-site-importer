@@ -364,10 +364,18 @@ class Static_Site_Importer_Report_Diagnostics {
 			$entry['block_path'] = (string) $context['path'];
 		}
 		if ( 'form' === strtolower( (string) $entry['tag_name'] ) ) {
-			$manifest                   = Static_Site_Importer_Form_Fallback_Contract::manifest_from_html( $element_html );
+			$metadata                   = array(
+				'form'              => is_array( $context['form'] ?? null ) ? $context['form'] : array(),
+				'controls'          => is_array( $context['controls'] ?? null ) ? $context['controls'] : array(),
+				'form_presentation' => is_array( $context['form_presentation'] ?? null ) ? $context['form_presentation'] : array(),
+			);
+			$manifest                   = Static_Site_Importer_Form_Fallback_Contract::manifest_from_metadata( $metadata );
 			$entry['form']              = $manifest['form'];
 			$entry['controls']          = $manifest['controls'];
-			$entry['form_presentation'] = Static_Site_Importer_Form_Fallback_Contract::presentation_from_html( $element_html, $selector, (int) ( $context['occurrence'] ?? 0 ) );
+			$presentation               = Static_Site_Importer_Form_Fallback_Contract::presentation_from_metadata( $metadata, $selector, (int) ( $context['occurrence'] ?? 0 ) );
+			if ( ! empty( $presentation ) ) {
+				$entry['form_presentation'] = $presentation;
+			}
 		}
 
 		return $entry;
@@ -1884,15 +1892,14 @@ class Static_Site_Importer_Report_Diagnostics {
 	/**
 	 * Materialize detected product-grid fallbacks through the configured shop provider.
 	 *
-	 * Collects every `html_product_grid_fallback` finding, normalizes each detected
-	 * product into a `products-manifest/v1` row (deriving a slug, normalizing the
-	 * currency price text into a decimal string, and forwarding description, image,
-	 * and source selectors), runs the rows through the shop adapter's manifest
-	 * validator + seeder, and stamps the runtime-mapped / acceptable-preservation
-	 * signal onto each finding whose products were actually seeded. Findings whose
-	 * products could not be seeded (for example because WooCommerce is unavailable)
-	 * keep no signal and stay an unacceptable parity loss, which lets the existing
-	 * commerce dependency gate report the missing runtime.
+	 * Collects every `html_product_grid_fallback` finding and materializes only
+	 * producer-declared product rows (slug + regular_price already present) through
+	 * the shop adapter's manifest validator + seeder. Stamps the runtime-mapped /
+	 * acceptable-preservation signal onto each finding whose products were actually
+	 * seeded. Findings whose products could not be seeded (for example because
+	 * WooCommerce is unavailable) keep no signal and stay an unacceptable parity
+	 * loss, which lets the existing commerce dependency gate report the missing
+	 * runtime.
 	 *
 	 * @param Static_Site_Importer_Import_Report  $report        Import report (mutated in place).
 	 * @param array<string,mixed>  $args          Import args.
@@ -2255,9 +2262,9 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
-	 * Normalize one detected product into a products-manifest/v1 row.
+	 * Copy one producer-declared product into a products-manifest/v1 row.
 	 *
-	 * @param array<string,mixed> $product           Detected product entry.
+	 * @param array<string,mixed> $product           Producer product declaration.
 	 * @param string              $container_selector Owning grid container selector.
 	 * @return array<string,mixed>|null
 	 */
@@ -2267,21 +2274,24 @@ class Static_Site_Importer_Report_Diagnostics {
 			return null;
 		}
 
-		$slug_source = isset( $product['slug'] ) && is_scalar( $product['slug'] ) && '' !== trim( (string) $product['slug'] )
-			? (string) $product['slug']
-			: $name;
-		$slug        = self::product_slug( $slug_source );
-		if ( '' === $slug ) {
+		$slug = isset( $product['slug'] ) && is_scalar( $product['slug'] ) ? trim( (string) $product['slug'] ) : '';
+		if ( '' === $slug || 1 !== preg_match( '/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $slug ) ) {
+			return null;
+		}
+
+		$regular_price = isset( $product['regular_price'] ) && is_scalar( $product['regular_price'] ) ? trim( (string) $product['regular_price'] ) : '';
+		if ( '' === $regular_price || 1 !== preg_match( '/^(?:0|[1-9][0-9]*)(?:\.[0-9]{2})?$/', $regular_price ) ) {
 			return null;
 		}
 
 		$row = array(
 			'name'          => $name,
 			'slug'          => $slug,
-			'regular_price' => self::normalize_product_price( isset( $product['price'] ) && is_scalar( $product['price'] ) ? (string) $product['price'] : '' ),
+			'regular_price' => $regular_price,
 		);
 
-		$sale_price = self::normalize_product_price( isset( $product['sale_price'] ) && is_scalar( $product['sale_price'] ) ? (string) $product['sale_price'] : '' );
+		$sale_price = isset( $product['sale_price'] ) && is_scalar( $product['sale_price'] ) ? trim( (string) $product['sale_price'] ) : '';
+		$sale_price = 1 === preg_match( '/^(?:0|[1-9][0-9]*)(?:\.[0-9]{2})?$/', $sale_price ) ? $sale_price : '';
 		if ( '' !== $sale_price ) {
 			$row['sale_price'] = $sale_price;
 		}
@@ -2308,22 +2318,6 @@ class Static_Site_Importer_Report_Diagnostics {
 		}
 
 		return $row;
-	}
-
-	/**
-	 * Derive a lowercase URL slug for a product.
-	 *
-	 * @param string $text Slug source text.
-	 * @return string
-	 */
-	private static function product_slug( string $text ): string {
-		if ( function_exists( 'sanitize_title' ) ) {
-			return sanitize_title( $text );
-		}
-
-		$slug = strtolower( trim( $text ) );
-		$slug = preg_replace( '/[^a-z0-9]+/', '-', $slug );
-		return trim( is_string( $slug ) ? $slug : '', '-' );
 	}
 
 	/**

@@ -15,91 +15,82 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Static_Site_Importer_Form_Fallback_Contract {
 
 	/**
-	 * Extract bounded presentation facts while the exact fallback form is in scope.
-	 * Raw fallback HTML never enters a diagnostic or materialization manifest.
+	 * Project bounded presentation facts from producer form metadata.
 	 *
+	 * @param array<string,mixed> $metadata Producer form entity or finding.
 	 * @return array<string,mixed>
 	 */
-	public static function presentation_from_html( string $html, string $selector = '', int $occurrence = 0 ): array {
-		return self::analysis_from_html( $html, $selector, $occurrence )['presentation'];
+	public static function presentation_from_metadata( array $metadata, string $selector = '', int $occurrence = 0 ): array {
+		return self::analysis_from_metadata( $metadata, $selector, $occurrence )['presentation'];
 	}
 
 	/**
-	 * Analyze one fallback binding from one parsed document.
+	 * Analyze one fallback binding from producer form metadata.
 	 *
+	 * @param array<string,mixed> $metadata Producer form entity or finding.
 	 * @return array{manifest:array{form:array<string,string>,controls:array<int,array<string,mixed>>},presentation:array<string,mixed>}
 	 */
-	public static function analysis_from_html( string $html, string $selector = '', int $occurrence = 0 ): array {
-		$doc            = self::document_from_html( $html );
-		$manifest       = self::manifest_from_document( $doc );
-		$controls       = $manifest['controls'];
-		$form           = self::preserved_presentation( $doc, $manifest['form'], $controls );
-		$form_node      = $doc->getElementsByTagName( 'form' )->item( 0 );
-		$before         = array();
-		$after          = array();
-		$interleaved    = false;
-		$seen_controls  = 0;
-		$total_controls = count( $controls );
-		if ( $form_node instanceof DOMElement ) {
-			foreach ( $form_node->getElementsByTagName( '*' ) as $node ) {
-				$tag = strtolower( $node->nodeName );
-				if ( in_array( $tag, array( 'input', 'select', 'textarea', 'button' ), true ) ) {
-					++$seen_controls;
-					continue;
-				}
-				$text = self::presentation_text( $node->textContent );
-				$item = preg_match( '/^h[1-6]$/', $tag ) && '' !== $text ? array(
-					'type'  => 'heading',
-					'level' => (int) substr( $tag, 1 ),
-					'text'  => $text,
-				) : ( in_array( $tag, array( 'label', 'p' ), true ) && preg_match( '/(?:required|note|instruction|help)/i', $node->getAttribute( 'class' ) ) && '' !== $text ? array(
-					'type' => 'paragraph',
-					'text' => $text,
-				) : null );
-				if ( ! is_array( $item ) ) {
-					continue;
-				}
-				if ( 0 === $seen_controls ) {
-					$before[] = $item;
-				} elseif ( $seen_controls >= $total_controls ) {
-					$after[] = $item;
-				} else {
-					$interleaved = true;
-				}
-			}
-		}
-		$heights = array();
+	public static function analysis_from_metadata( array $metadata, string $selector = '', int $occurrence = 0 ): array {
+		$manifest = self::manifest_from_metadata( $metadata );
+		$form     = isset( $metadata['form'] ) && is_array( $metadata['form'] ) ? $metadata['form'] : array();
+		$controls = $manifest['controls'];
+		$before   = self::context_items( $form['context_before'] ?? ( $metadata['form_presentation']['context_before'] ?? array() ) );
+		$after    = self::context_items( $form['context_after'] ?? ( $metadata['form_presentation']['context_after'] ?? array() ) );
+		$heights  = array();
 		foreach ( $controls as $index => $control ) {
-			if ( isset( $control['height'] ) ) {
+			if ( isset( $control['height'] ) && is_string( $control['height'] ) && '' !== $control['height'] ) {
 				$heights[ $index ] = $control['height'];
 			}
 		}
+		$declared_heights = $metadata['form_presentation']['textarea_heights'] ?? ( $form['textarea_heights'] ?? array() );
+		if ( is_array( $declared_heights ) && array() !== $declared_heights ) {
+			$heights = array();
+			foreach ( $declared_heights as $index => $height ) {
+				if ( is_string( $height ) && '' !== $height ) {
+					$heights[ (int) $index ] = $height;
+				}
+			}
+		}
+		$submit         = $form['submit_presentation'] ?? ( $metadata['form_presentation']['submit_presentation'] ?? null );
+		$submit         = is_array( $submit ) ? self::submit_presentation( $submit ) : null;
 		$fingerprint    = array(
 			'class'               => $manifest['form']['class'] ?? '',
 			'action'              => $manifest['form']['action'] ?? '',
 			'method'              => $manifest['form']['method'] ?? '',
 			'controls'            => array_map( static fn ( array $control ): array => array_intersect_key( $control, array_flip( array( 'tag', 'type', 'name', 'id', 'label' ) ) ), $manifest['controls'] ),
-			'submit_text'         => $form['submit_presentation']['text'] ?? '',
+			'submit_text'         => is_array( $submit ) ? ( $submit['text'] ?? '' ) : '',
 			'context_before_hash' => hash( 'sha256', (string) wp_json_encode( $before ) ),
 			'context_after_hash'  => hash( 'sha256', (string) wp_json_encode( $after ) ),
 		);
 		$stored_heights = array_slice( $heights, 0, 16, true );
+		$omitted        = isset( $form['textarea_height_omitted_count'] ) && is_int( $form['textarea_height_omitted_count'] )
+			? $form['textarea_height_omitted_count']
+			: ( isset( $metadata['form_presentation']['textarea_height_omitted_count'] ) && is_int( $metadata['form_presentation']['textarea_height_omitted_count'] ) ? $metadata['form_presentation']['textarea_height_omitted_count'] : max( 0, count( $heights ) - count( $stored_heights ) ) );
+		$interleaved    = ! empty( $form['interleaved_context'] ) || ! empty( $metadata['form_presentation']['interleaved_context'] );
 		$presentation   = array_filter(
 			array(
 				'schema'                        => 'generic/form-presentation/v1',
 				'selector'                      => $selector,
-				// The transformer supplies the form's document-wide position. A selector's
-				// nth-of-type position is scoped to siblings and cannot safely identify it.
 				'document_ordinal'              => $occurrence > 0 ? $occurrence : null,
 				'fingerprint'                   => hash( 'sha256', (string) wp_json_encode( $fingerprint ) ),
 				'context_before'                => array_slice( $before, 0, 8 ),
 				'context_after'                 => array_slice( $after, 0, 8 ),
 				'interleaved_context'           => $interleaved,
-				'submit_presentation'           => $form['submit_presentation'] ?? null,
+				'submit_presentation'           => $submit,
 				'textarea_heights'              => $stored_heights,
-				'textarea_height_omitted_count' => max( 0, count( $heights ) - count( $stored_heights ) ),
+				'textarea_height_omitted_count' => $omitted,
 			)
 		);
+		if ( isset( $metadata['form_presentation'] ) && is_array( $metadata['form_presentation'] ) && 'generic/form-presentation/v1' === ( $metadata['form_presentation']['schema'] ?? null ) ) {
+			$declared = $metadata['form_presentation'];
+			if ( '' !== $selector ) {
+				$declared['selector'] = $selector;
+			}
+			if ( $occurrence > 0 ) {
+				$declared['document_ordinal'] = $occurrence;
+			}
+			$presentation = array_filter( $declared );
+		}
 		return array(
 			'manifest'     => $manifest,
 			'presentation' => $presentation,
@@ -107,78 +98,52 @@ class Static_Site_Importer_Form_Fallback_Contract {
 	}
 
 	/**
-	 * Extract a provider-neutral form manifest from complete HTML.
+	 * Extract a provider-neutral form manifest from producer metadata.
 	 *
-	 * @param string $html Form HTML.
+	 * @param array<string,mixed> $metadata Producer form entity or finding.
 	 * @return array{form:array<string,string>,controls:array<int,array<string,mixed>>}
 	 */
-	public static function manifest_from_html( string $html ): array {
-		if ( '' === $html || ! str_contains( strtolower( $html ), '<form' ) ) {
-			return self::empty_manifest();
-		}
-		return self::manifest_from_document( self::document_from_html( $html ) );
-	}
-
-	/** @return array{form:array<string,string>,controls:array<int,array<string,mixed>>} */
-	private static function manifest_from_document( DOMDocument $doc ): array {
-		$form_node = $doc->getElementsByTagName( 'form' )->item( 0 );
-		if ( null === $form_node ) {
-			return self::empty_manifest();
-		}
-
-		$form = array();
+	public static function manifest_from_metadata( array $metadata ): array {
+		$form     = isset( $metadata['form'] ) && is_array( $metadata['form'] ) ? $metadata['form'] : array();
+		$controls = isset( $metadata['controls'] ) && is_array( $metadata['controls'] ) ? $metadata['controls'] : array();
+		$manifest = array(
+			'form'     => array(),
+			'controls' => array(),
+		);
 		foreach ( array( 'class', 'action', 'method' ) as $attribute ) {
-			$value = trim( $form_node->getAttribute( $attribute ) );
+			$value = isset( $form[ $attribute ] ) && is_scalar( $form[ $attribute ] ) ? trim( (string) $form[ $attribute ] ) : '';
 			if ( '' !== $value ) {
-				$form[ $attribute ] = $value;
+				$manifest['form'][ $attribute ] = $value;
 			}
 		}
-
-		$controls = array();
-		foreach ( $form_node->getElementsByTagName( '*' ) as $control_node ) {
-			if ( ! in_array( strtolower( $control_node->tagName ), array( 'input', 'textarea', 'select', 'button' ), true ) ) {
+		foreach ( $controls as $control ) {
+			if ( ! is_array( $control ) ) {
 				continue;
 			}
-			$control = array(
-				'tag'  => strtolower( $control_node->tagName ),
-				'type' => strtolower( trim( $control_node->getAttribute( 'type' ) ) ),
+			$row = array(
+				'tag'  => strtolower( trim( (string) ( $control['tag'] ?? '' ) ) ),
+				'type' => strtolower( trim( (string) ( $control['type'] ?? '' ) ) ),
 			);
-			if ( 'button' === $control['tag'] && '' === $control['type'] ) {
-				$control['type'] = 'submit';
+			if ( 'button' === $row['tag'] && '' === $row['type'] ) {
+				$row['type'] = 'submit';
 			}
-			if ( 'input' === $control['tag'] && '' === $control['type'] ) {
-				$control['type'] = 'text';
+			if ( 'input' === $row['tag'] && '' === $row['type'] ) {
+				$row['type'] = 'text';
 			}
-
-			foreach ( array( 'id', 'name', 'placeholder' ) as $attribute ) {
-				$value = trim( $control_node->getAttribute( $attribute ) );
+			foreach ( array( 'id', 'name', 'placeholder', 'label', 'height', 'aria-required' ) as $attribute ) {
+				$value = isset( $control[ $attribute ] ) && is_scalar( $control[ $attribute ] ) ? trim( (string) $control[ $attribute ] ) : '';
 				if ( '' !== $value ) {
-					$control[ $attribute ] = $value;
+					$row[ $attribute ] = $value;
 				}
 			}
-
-			$label = trim( $control_node->getAttribute( 'aria-label' ) );
-			if ( '' === $label ) {
-				$label = trim( $control_node->textContent );
+			if ( ! empty( $control['required'] ) ) {
+				$row['required'] = true;
 			}
-			if ( '' !== $label ) {
-				$control['label'] = $label;
+			if ( '' !== $row['tag'] ) {
+				$manifest['controls'][] = $row;
 			}
-
-			if ( $control_node->hasAttribute( 'required' ) ) {
-				$control['required'] = true;
-			}
-			if ( $control_node->hasAttribute( 'aria-required' ) ) {
-				$control['aria-required'] = $control_node->getAttribute( 'aria-required' );
-			}
-
-			$controls[] = $control;
 		}
-
-		return array(
-			'form'     => $form,
-			'controls' => $controls,
-		);
+		return $manifest;
 	}
 
 	/** @param array<string,mixed> $fallback */
@@ -212,8 +177,6 @@ class Static_Site_Importer_Form_Fallback_Contract {
 
 	/** @param array<string,mixed> $fallback */
 	public static function reconciliation_identity( array $fallback ): string {
-		// Blocks Engine assigns this identity at fallback detection, before an
-		// importer-specific provider projection can alter its representation.
 		foreach ( array( 'source_fallback_identity', 'fallback_reconciliation_identity', 'fallback_identity' ) as $field ) {
 			$identity = $fallback[ $field ] ?? null;
 			if ( is_string( $identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $identity ) ) {
@@ -224,178 +187,63 @@ class Static_Site_Importer_Form_Fallback_Contract {
 		return hash( 'sha256', "static-site-importer/fallback-reconciliation/v1\n" . self::first_scalar( $fallback, array( 'source_path', 'source' ) ) . "\n" . self::first_scalar( $fallback, array( 'selector' ) ) . "\n" . self::reconciliation_hash( $fallback ) );
 	}
 
-	/**
-	 * Carry bounded authored form context into the provider adapter.
-	 *
-	 * The fallback HTML is the only complete representation when a form island is
-	 * replaced, so retain headings, standalone notes, and a visible submit treatment
-	 * before the provider block is serialized.
-	 *
-	 * @param DOMDocument                     $doc      Parsed internal fallback HTML.
-	 * @param array<string,mixed>            $form     Extracted form metadata.
-	 * @param array<int,array<string,mixed>> $controls Extracted controls, enriched in place.
-	 * @return array<string,mixed>
-	 */
-	private static function preserved_presentation( DOMDocument $doc, array $form, array &$controls ): array {
-		$form_node = $doc->getElementsByTagName( 'form' )->item( 0 );
-		if ( null === $form_node ) {
-			return $form;
+	/** @param mixed $items @return array<int,array<string,mixed>> */
+	private static function context_items( mixed $items ): array {
+		if ( ! is_array( $items ) ) {
+			return array();
 		}
-
 		$context = array();
-		$nodes   = $form_node->getElementsByTagName( '*' );
-		foreach ( $nodes as $node ) {
-			$tag = strtolower( $node->nodeName );
-			if ( in_array( $tag, array( 'input', 'select', 'textarea', 'button' ), true ) ) {
-				break;
+		foreach ( $items as $item ) {
+			if ( ! is_array( $item ) || ! is_string( $item['text'] ?? null ) || '' === trim( $item['text'] ) ) {
+				continue;
 			}
-			$text = self::presentation_text( $node->textContent );
-			if ( preg_match( '/^h[1-6]$/', $tag ) && '' !== $text ) {
+			$text = substr( preg_replace( '/\s+/', ' ', trim( $item['text'] ) ) ?? '', 0, 200 );
+			if ( 'heading' === ( $item['type'] ?? '' ) ) {
 				$context[] = array(
 					'type'  => 'heading',
-					'level' => (int) substr( $tag, 1 ),
+					'level' => min( 6, max( 1, (int) ( $item['level'] ?? 2 ) ) ),
 					'text'  => $text,
 				);
-			} elseif ( 'label' === $tag && preg_match( '/(?:required|note|instruction|help)/i', $node->getAttribute( 'class' ) ) && '' !== $text ) {
+			} elseif ( 'paragraph' === ( $item['type'] ?? '' ) ) {
 				$context[] = array(
 					'type' => 'paragraph',
 					'text' => $text,
 				);
 			}
 		}
-		if ( ! empty( $context ) ) {
-			$form['context_before'] = $context;
-		}
-
-		$textarea_index = 0;
-		foreach ( $nodes as $node ) {
-			if ( 'textarea' !== strtolower( $node->nodeName ) ) {
-				continue;
-			}
-			while ( isset( $controls[ $textarea_index ] ) && 'textarea' !== strtolower( (string) ( $controls[ $textarea_index ]['tag'] ?? '' ) ) ) {
-				++$textarea_index;
-			}
-			if ( isset( $controls[ $textarea_index ] ) && preg_match( '/(?:^|;)\s*height\s*:\s*([0-9]{1,4}(?:\.[0-9]+)?(?:px|em|rem|vh|vw|%))\s*(?:;|$)/i', $node->getAttribute( 'style' ), $height ) ) {
-				$controls[ $textarea_index ]['height'] = $height[1];
-			}
-			++$textarea_index;
-		}
-
-		foreach ( $nodes as $node ) {
-			if ( ! self::is_submit_control( $node ) ) {
-				continue;
-			}
-			$presentation = self::submit_presentation( $node );
-			$visible_node = self::next_element_sibling( $node );
-			if ( self::submit_is_visually_hidden( $node ) && $visible_node instanceof DOMElement && in_array( strtolower( $visible_node->nodeName ), array( 'a', 'button' ), true ) ) {
-				$visible = self::submit_presentation( $visible_node );
-				if ( '' !== $visible['text'] && $visible['text'] === $presentation['text'] ) {
-					$presentation = $visible;
-				}
-			}
-			if ( '' !== $presentation['text'] ) {
-				$form['submit_presentation'] = $presentation;
-			}
-			break;
-		}
-
-		return $form;
+		return $context;
 	}
 
-	private static function document_from_html( string $html ): DOMDocument {
-		$doc      = new DOMDocument();
-		$previous = libxml_use_internal_errors( true );
-		$doc->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
-		libxml_clear_errors();
-		libxml_use_internal_errors( $previous );
-		return $doc;
-	}
-
-	/** @return array{form:array<string,string>,controls:array<int,array<string,mixed>>} */
-	private static function empty_manifest(): array {
-		return array(
-			'form'     => array(),
-			'controls' => array(),
-		);
-	}
-
-	private static function is_submit_control( DOMElement $node ): bool {
-		$tag  = strtolower( $node->nodeName );
-		$type = strtolower( trim( $node->getAttribute( 'type' ) ) );
-		return ( 'input' === $tag && in_array( $type, array( 'submit', 'image' ), true ) ) || ( 'button' === $tag && ( '' === $type || 'submit' === $type ) );
-	}
-
-	/** @return array{text:string,classes:array<int,string>} */
-	private static function submit_presentation( DOMElement $node ): array {
-		$text          = 'input' === strtolower( $node->nodeName ) ? trim( $node->getAttribute( 'value' ) ) : self::presentation_text( $node->textContent );
-		$presentation  = array(
-			'text'    => $text,
-			'classes' => self::presentation_classes( 'class="' . $node->getAttribute( 'class' ) . '"' ),
-		);
-		$label_classes = self::submit_label_classes( $node, $text );
-		if ( array() !== $label_classes ) {
-			$presentation['label_classes'] = $label_classes;
-		}
-		return $presentation;
-	}
-
-	/**
-	 * A submit label can live in its own element that carries the typography
-	 * governing the rendered line box. Report that element's classes so the
-	 * materialized button can keep it, instead of resolving the text against the
-	 * button's own typography and changing the control's height.
-	 *
-	 * @return array<int,string>
-	 */
-	private static function submit_label_classes( DOMElement $node, string $text ): array {
+	/** @param array<string,mixed> $presentation @return array{text:string,classes:array<int,string>}|null */
+	private static function submit_presentation( array $presentation ): ?array {
+		$text = isset( $presentation['text'] ) && is_scalar( $presentation['text'] ) ? trim( (string) $presentation['text'] ) : '';
 		if ( '' === $text ) {
-			return array();
+			return null;
 		}
-		$only_child = null;
-		foreach ( $node->childNodes as $child ) {
-			if ( $child instanceof DOMElement ) {
-				if ( null !== $only_child ) {
-					return array();
+		$classes = array();
+		if ( isset( $presentation['classes'] ) && is_array( $presentation['classes'] ) ) {
+			foreach ( $presentation['classes'] as $class_name ) {
+				if ( is_string( $class_name ) && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) {
+					$classes[] = $class_name;
 				}
-				$only_child = $child;
-				continue;
-			}
-			if ( $child instanceof DOMText && '' !== trim( $child->textContent ) ) {
-				return array();
 			}
 		}
-		if ( ! $only_child instanceof DOMElement || 'span' !== strtolower( $only_child->nodeName ) || self::presentation_text( $only_child->textContent ) !== $text ) {
-			return array();
-		}
-		return self::presentation_classes( 'class="' . $only_child->getAttribute( 'class' ) . '"' );
-	}
-
-	private static function submit_is_visually_hidden( DOMElement $node ): bool {
-		return (bool) preg_match( '/(?:display\s*:\s*none|visibility\s*:\s*hidden|left\s*:\s*-\s*[0-9]+px)/i', $node->getAttribute( 'style' ) );
-	}
-
-	private static function next_element_sibling( DOMElement $node ): ?DOMElement {
-		for ( $sibling = $node->nextSibling; null !== $sibling; $sibling = $sibling->nextSibling ) {
-			if ( $sibling instanceof DOMElement ) {
-				return $sibling;
+		$row = array(
+			'text'    => substr( $text, 0, 200 ),
+			'classes' => array_slice( array_values( array_unique( $classes ) ), 0, 8 ),
+		);
+		$label_classes = array();
+		if ( isset( $presentation['label_classes'] ) && is_array( $presentation['label_classes'] ) ) {
+			foreach ( $presentation['label_classes'] as $class_name ) {
+				if ( is_string( $class_name ) && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) {
+					$label_classes[] = $class_name;
+				}
 			}
 		}
-		return null;
-	}
-
-	/** @return array<int,string> */
-	private static function presentation_classes( string $attributes ): array {
-		if ( ! preg_match( '/\bclass\s*=\s*(["\'])(.*?)\1/is', $attributes, $match ) ) {
-			return array();
+		if ( array() !== $label_classes ) {
+			$row['label_classes'] = array_slice( array_values( array_unique( $label_classes ) ), 0, 8 );
 		}
-		$classes = preg_split( '/\s+/', trim( $match[2] ) );
-		return array_slice( array_filter( is_array( $classes ) ? $classes : array(), static fn ( string $class_name ): bool => (bool) preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ), 0, 8 );
-	}
-
-	private static function presentation_text( string $html ): string {
-		$plain      = function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( $html ) : strip_tags( $html ); // phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- Fallback only for runtime-free smoke tests.
-		$normalized = preg_replace( '/\s+/', ' ', $plain );
-		return substr( trim( is_string( $normalized ) ? $normalized : '' ), 0, 200 );
+		return $row;
 	}
 
 	/** @param array<string,mixed> $row @param array<int,string> $keys */

@@ -1355,30 +1355,27 @@ namespace {
 	$assert( false === ( $booking_row['runtime_mapped'] ?? true ) && array( 'min', 'max' ) === array_column( $booking_row['form_receipt_unaccepted_losses'] ?? array(), 'attribute' ) && 2 === ( $booking_row['unaccepted_receipt_loss_count'] ?? 0 ), 'number-unsupported-attributes-gate-form-runtime-acceptance' );
 	$assert( 'skipped' === ( $booking_row['status'] ?? '' ) && 0 === ( $booking['counts']['error'] ?? -1 ), 'gated-form-is-a-provider-decline-not-a-materialization-error' );
 	$height_controls = array();
-	$height_html     = '<form class="many-heights">';
 	for ( $height_index = 1; $height_index <= 17; ++$height_index ) {
-		$height_html       .= '<textarea name="message-' . $height_index . '" style="height:' . $height_index . 'px"></textarea>';
-		$height_controls[] = array( 'tag' => 'textarea', 'type' => 'textarea', 'name' => 'message-' . $height_index );
+		$height_controls[] = array( 'tag' => 'textarea', 'type' => 'textarea', 'name' => 'message-' . $height_index, 'height' => $height_index . 'px' );
 	}
-	$height_html       .= '<button type="submit">Send</button></form>';
 	$height_controls[] = array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' );
 	$height_entity = Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity(
 		array(
 			'source_path' => 'website/many-heights.html',
 			'selector'    => 'form.many-heights',
-			'form'        => array(),
+			'form'        => array( 'class' => 'many-heights', 'textarea_height_omitted_count' => 1 ),
 			'controls'    => $height_controls,
-			'bindings'    => array( array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/many-heights.html', 'search_block_markup' => $height_html, 'occurrence' => 1, 'role' => 'form' ) ),
+			'bindings'    => array( array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/many-heights.html', 'search_block_markup' => '<!-- wp:html --><form class="many-heights"></form><!-- /wp:html -->', 'occurrence' => 1, 'role' => 'form' ) ),
 		)
 	);
 	$height_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $height_entity ) ) )['forms'][0] ?? array();
 	$assert( false === ( $height_row['runtime_mapped'] ?? true ) && 'textarea_height_omitted' === ( $height_row['form_receipt_unaccepted_losses'][0]['reason_code'] ?? '' ) && 1 === ( $height_row['unaccepted_receipt_loss_count'] ?? 0 ), 'omitted-textarea-heights-gate-form-runtime-acceptance' );
-	$invalid_height_binding                              = $height_entity;
-	$invalid_height_binding['bindings'][0]['occurrence'] = 0;
-	$assert( $invalid_height_binding === Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $invalid_height_binding ), 'falsey-binding-occurrence-remains-ineligible-for-presentation-extraction' );
-	$multi_form_mismatch                                  = $height_entity;
-	$multi_form_mismatch['bindings'][0]['search_block_markup'] = '<form><input name="unexpected"></form>' . $height_html;
-	$assert( $multi_form_mismatch === Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $multi_form_mismatch ), 'multi-form-binding-control-mismatch-fails-closed-on-the-first-form' );
+	$binding_ignored = $height_entity;
+	$binding_ignored['bindings'][0]['occurrence'] = 0;
+	$assert( 1 === ( Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $binding_ignored )['form']['textarea_height_omitted_count'] ?? 0 ), 'producer-presentation-does-not-depend-on-binding-html' );
+	$multi_form_mismatch = $height_entity;
+	$multi_form_mismatch['bindings'][0]['search_block_markup'] = '<form><input name="unexpected"></form>';
+	$assert( 1 === ( Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $multi_form_mismatch )['form']['textarea_height_omitted_count'] ?? 0 ), 'producer-presentation-ignores-conflicting-binding-html' );
 	$newsletter = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.newsletter', 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email' ), array( 'tag' => 'button', 'type' => 'submit', 'text' => 'Subscribe to newsletter' ) ) ) ) ) );
 	$assert( 'Subscribe to newsletter' === ( $newsletter['forms'][0]['submit_text'] ?? '' ), 'canonical-control-text-preserves-newsletter-submit-label' );
 	if ( function_exists( 'parse_blocks' ) ) {
@@ -1537,7 +1534,7 @@ namespace {
 				'control_topology' => array(
 					'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 16, 'truncated' => false,
 					'nodes' => array(
-						array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'fieldset', 'fieldset_semantics' => 'labelled_group' ),
+						array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'fieldset', 'fieldset_semantics' => 'labelled_group', 'legend' => 'What was your treatment?' ),
 						array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'div' ),
 						array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'tag' => 'label' ),
 						array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-2', 'order' => 0, 'depth' => 3, 'control' => 0 ),
@@ -1685,14 +1682,24 @@ namespace {
 	$GLOBALS['ssi_jetpack_form_blocks_available'] = true;
 
 	// Canonical declaration bindings carry authored presentation into the adapter.
-	$cara_form_html = '<form class="contact-form"><h2>Contact Me</h2><label class="required-note"><span>*</span> Indicates required field</label><input aria-required="true" type="text" name="first"><textarea aria-required="true" name="message" style="height:200px"></textarea><input type="submit" value="Submit" style="position:absolute;left:-9999px"><a class="wsite-button"><span class="wsite-button-inner">Submit</span></a></form>';
 	$cara_entity    = Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity(
 		array(
 			'source_path' => 'website/contact.html',
 			'selector'    => 'form.contact-form',
-			'form'        => array( 'class' => 'contact-form' ),
-			'controls'    => array( array( 'tag' => 'input', 'type' => 'text', 'name' => 'first', 'aria-required' => 'true' ), array( 'tag' => 'textarea', 'type' => 'textarea', 'name' => 'message', 'aria-required' => 'true' ), array( 'tag' => 'input', 'type' => 'submit' ) ),
-			'bindings'    => array( array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/contact.html', 'search_block_markup' => $cara_form_html, 'occurrence' => 1, 'role' => 'form' ) ),
+			'form'        => array(
+				'class'               => 'contact-form',
+				'context_before'      => array(
+					array( 'type' => 'heading', 'level' => 2, 'text' => 'Contact Me' ),
+					array( 'type' => 'paragraph', 'text' => '* Indicates required field' ),
+				),
+				'submit_presentation' => array(
+					'text'          => 'Submit',
+					'classes'       => array( 'wsite-button' ),
+					'label_classes' => array( 'wsite-button-inner' ),
+				),
+			),
+			'controls'    => array( array( 'tag' => 'input', 'type' => 'text', 'name' => 'first', 'aria-required' => 'true' ), array( 'tag' => 'textarea', 'type' => 'textarea', 'name' => 'message', 'aria-required' => 'true', 'height' => '200px' ), array( 'tag' => 'input', 'type' => 'submit' ) ),
+			'bindings'    => array( array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/contact.html', 'search_block_markup' => '<!-- wp:html --><form class="contact-form"></form><!-- /wp:html -->', 'occurrence' => 1, 'role' => 'form' ) ),
 		)
 	);
 	$cara_grafted   = (string) ( Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $cara_entity ) ) )['forms'][0]['block_markup'] ?? '' );

@@ -1204,34 +1204,23 @@ class Static_Site_Importer_Form_Seeder {
 	}
 
 	/**
-	 * Read only the source legend evidence already preserved in one canonical
-	 * binding. A count mismatch leaves every fieldset fail-closed.
+	 * Read labelled-fieldset legends from producer topology metadata.
 	 *
 	 * @param array<int,array<string,mixed>> $nodes
 	 * @return array<string,string>
 	 */
 	private static function labelled_fieldset_legends( array $form, array $nodes ): array {
-		$fieldset_ids = array();
-		foreach ( $nodes as $node ) {
-			if ( 'wrapper' === ( $node['kind'] ?? null ) && 'fieldset' === ( $node['tag'] ?? null ) && 'labelled_group' === ( $node['fieldset_semantics'] ?? null ) && is_string( $node['id'] ?? null ) ) {
-				$fieldset_ids[] = $node['id'];
-			}
-		}
-		$bindings = $form['bindings'] ?? null;
-		if ( empty( $fieldset_ids ) || ! is_array( $bindings ) || 1 !== count( $bindings ) || ! is_array( $bindings[0] ?? null ) || ! is_string( $bindings[0]['search_block_markup'] ?? null ) ) {
-			return array();
-		}
-		$count   = preg_match_all( '~<fieldset\b[^>]*>\s*<legend\b[^>]*>(.*?)</legend>~is', $bindings[0]['search_block_markup'], $matches );
+		unset( $form );
 		$legends = array();
-		if ( false === $count || count( $fieldset_ids ) !== $count ) {
-			return array();
-		}
-		foreach ( $matches[1] as $index => $markup ) {
-			$legend = preg_replace( '/\s+/', ' ', trim( html_entity_decode( wp_strip_all_tags( $markup ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ) );
+		foreach ( $nodes as $node ) {
+			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? null ) || 'fieldset' !== ( $node['tag'] ?? null ) || 'labelled_group' !== ( $node['fieldset_semantics'] ?? null ) || ! is_string( $node['id'] ?? null ) || ! is_string( $node['legend'] ?? null ) ) {
+				continue;
+			}
+			$legend = preg_replace( '/\s+/', ' ', trim( $node['legend'] ) );
 			if ( ! is_string( $legend ) || '' === $legend || 200 < strlen( $legend ) ) {
 				return array();
 			}
-			$legends[ $fieldset_ids[ $index ] ] = $legend;
+			$legends[ $node['id'] ] = $legend;
 		}
 		return $legends;
 	}
@@ -2015,35 +2004,7 @@ class Static_Site_Importer_Form_Seeder {
 		// facts are transposed onto that element's generated hook instead of being
 		// declared unrepresentable. A box whose facts are not fully proven by source
 		// provenance keeps its loss.
-		$layout_css_properties = array(
-			'display'             => 'display',
-			'width'               => 'width',
-			'height'              => 'height',
-			'columns'             => 'grid-template-columns',
-			'rows'                => 'grid-template-rows',
-			'gap'                 => 'gap',
-			'row_gap'             => 'row-gap',
-			'column_gap'          => 'column-gap',
-			'direction'           => 'flex-direction',
-			'wrap'                => 'flex-wrap',
-			'align_items'         => 'align-items',
-			'align_content'       => 'align-content',
-			'justify_content'     => 'justify-content',
-			'align_self'          => 'align-self',
-			'justify_self'        => 'justify-self',
-			'order'               => 'order',
-			'flex'                => 'flex',
-			'flex_grow'           => 'flex-grow',
-			'flex_shrink'         => 'flex-shrink',
-			'flex_basis'          => 'flex-basis',
-			'column'              => 'grid-column',
-			'row'                 => 'grid-row',
-			'area'                => 'grid-area',
-			'margin_block_start'  => 'margin-block-start',
-			'margin_block_end'    => 'margin-block-end',
-			'margin_inline_start' => 'margin-inline-start',
-			'margin_inline_end'   => 'margin-inline-end',
-		);
+		$layout_css_properties = Static_Site_Importer_Provider_Layout_Overlay::layout_property_map();
 		$variant_proven        = static function ( array $variant, string $property ): bool {
 			foreach ( $variant['provenance'] ?? array() as $fact ) {
 				if ( is_array( $fact ) && ( $fact['condition'] ?? null ) === ( $variant['condition'] ?? null ) && is_string( $fact['source_path'] ?? null ) && is_string( $fact['source_sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ) && is_string( $fact['selector'] ?? null ) && in_array( $property, $fact['properties'] ?? array(), true ) ) {
