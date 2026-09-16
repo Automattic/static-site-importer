@@ -169,7 +169,7 @@ namespace {
 	$compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $source_artifact, array( 'name' => 'Acme Group', 'slug' => 'acme' ) );
 	$assert( ! is_wp_error( $compiled ), 'unfiltered-compile-prepares', is_wp_error( $compiled ) ? $compiled->get_error_message() : '' );
 	$assert( 'ssi-acme' === ( \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler::$artifacts[0]['block_namespace'] ?? null ), 'unfiltered-namespace-reaches-compiler-artifact-input' );
-	$assert( array( 'ssi-acme/hero' ) === ( $compiled['companion_payload']['blocks'][0]['block_json']['name'] ?? null ) ? true : false, 'unfiltered-payload-blocks-use-default-namespace' ) || $failures[] = '';
+	$assert( 'ssi-acme/hero' === ( $compiled['companion_payload']['blocks'][0]['block_json']['name'] ?? null ), 'unfiltered-payload-blocks-use-default-namespace' );
 	$assert( in_array( 'ssi-acme/hero', array_column( $compiled['companion_payload']['blocks'] ?? array(), 'name' ), true ) === false, 'payload-name-slots-stay-namespace-free' );
 	$assert( 'blocks-engine/generated-artifact-provenance/v1' === ( $compiled['args']['artifact_provenance']['schema'] ?? '' ), 'payload-provenance-travels-with-import-args' );
 
