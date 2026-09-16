@@ -739,8 +739,14 @@ $assert( $cli_report === ( $GLOBALS['ssi_direct_last_args']['report'] ?? '' ) &&
 
 define( 'WP_CLI', true );
 class WP_CLI {
+	public static array $warnings = array();
+
 	public static function get_runner(): object {
 		return (object) array( 'config' => array() );
+	}
+
+	public static function warning( string $message ): void {
+		self::$warnings[] = $message;
 	}
 }
 $worker_events = $test_root . '/worker-events.log';
@@ -753,7 +759,8 @@ $worker_source = '#!' . PHP_BINARY . "\n<?php\n"
 	. 'file_put_contents($events, "start:" . $marker . "\\n", FILE_APPEND | LOCK_EX);' . "\n"
 	. 'usleep(500000);' . "\n"
 	. 'file_put_contents($events, "end:" . $marker . "\\n", FILE_APPEND | LOCK_EX);' . "\n"
-	. 'exit("fail" === $marker ? 2 : 0);' . "\n";
+	. 'if ("fail" === $marker) { fwrite(STDERR, "worker failure\\n" . str_repeat("x", 15000)); fwrite(STDOUT, "worker output\\n" . str_repeat("y", 15000)); exit(2); }' . "\n"
+	. 'exit(0);' . "\n";
 $assert( false !== file_put_contents( $worker_script, $worker_source ) && chmod( $worker_script, 0600 ), 'the process fan-out fixture must match a readable, non-executable WP-CLI PHAR' );
 $original_argv_zero = $_SERVER['argv'][0] ?? null;
 $original_memory_limit = ini_get( 'memory_limit' );
@@ -766,6 +773,8 @@ sort( $starts, SORT_STRING );
 $assert( true === $process_fanout && array( 'start:one', 'start:three', 'start:two' ) === $starts, 'the CLI fan-out adapter must start every bounded worker before waiting for completion' );
 $process_failure = static_site_importer_cli_compile_artifact_pages_fanout( str_repeat( 'b', 64 ), array( array( $worker_events, 'ok' ), array( $worker_events, 'fail' ) ) );
 $assert( is_wp_error( $process_failure ) && 'static_site_importer_direct_artifact_worker_process_failed' === $process_failure->get_error_code(), 'the CLI fan-out adapter must surface a nonzero worker exit as a structured compile failure' );
+$worker_warning = WP_CLI::$warnings[0] ?? '';
+$assert( 1 === count( WP_CLI::$warnings ) && str_contains( $worker_warning, 'Compile worker 2 exited with status 2.' ) && str_contains( $worker_warning, "Stderr:\nworker failure" ) && str_contains( $worker_warning, "Stdout:\nworker output" ) && strlen( $worker_warning ) <= 1100, 'a failed CLI worker must emit one bounded operator diagnostic with its exit status, stderr, and stdout' );
 ini_set( 'memory_limit', $original_memory_limit );
 if ( null === $original_argv_zero ) {
 	unset( $_SERVER['argv'][0] );

@@ -133,6 +133,14 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 				proc_close( $worker['process'] );
 				if ( 0 !== (int) $status['exitcode'] ) {
 					$failures[] = substr( trim( $worker['error'] . "\n" . $worker['output'] ), 0, 1000 );
+					$diagnostic = sprintf( 'Compile worker %d exited with status %d.', (int) $index + 1, (int) $status['exitcode'] );
+					if ( '' !== trim( $worker['error'] ) ) {
+						$diagnostic .= "\nStderr:\n" . substr( trim( $worker['error'] ), 0, 500 );
+					}
+					if ( '' !== trim( $worker['output'] ) ) {
+						$diagnostic .= "\nStdout:\n" . substr( trim( $worker['output'] ), 0, 500 );
+					}
+					WP_CLI::warning( $diagnostic );
 				}
 				unset( $processes[ $index ] );
 			}
