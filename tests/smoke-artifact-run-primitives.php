@@ -7,7 +7,112 @@ function wp_mkdir_p( string $path ): bool { return is_dir( $path ) || mkdir( $pa
 function wp_json_encode( $value, int $options = 0 ) { return json_encode( $value, $options ); }
 function apply_filters( string $hook, $value, ...$args ) { return isset( $GLOBALS['ssi_artifact_filters'][ $hook ] ) ? $GLOBALS['ssi_artifact_filters'][ $hook ]( $value, ...$args ) : $value; }
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-run.php';
+
+if ( '--workspace-concurrency-child' === ( $argv[1] ?? '' ) ) {
+	$root       = (string) ( $argv[2] ?? '' );
+	$control    = (string) ( $argv[3] ?? '' );
+	$worker     = (int) ( $argv[4] ?? -1 );
+	$rounds     = (int) ( $argv[5] ?? 0 );
+	for ( $round = 0; $round < $rounds; ++$round ) {
+		file_put_contents( $control . '/ready-' . $round . '-' . $worker, '' );
+		$deadline = microtime( true ) + 10;
+		while ( ! is_file( $control . '/go-' . $round ) && microtime( true ) < $deadline ) {
+			usleep( 1000 );
+		}
+		try {
+			$concurrent = new Static_Site_Importer_Artifact_Run_Workspace( $root, 'concurrent-' . $round );
+			$published  = $concurrent->publish_json_once( 'page-plans/' . $worker . '.json', array( 'worker' => $worker ) );
+		} catch ( Throwable $error ) {
+			fwrite( STDERR, $error->getMessage() . "\n" );
+			exit( 1 );
+		}
+		if ( is_wp_error( $published ) ) {
+			fwrite( STDERR, $published->get_error_code() . "\n" );
+			exit( 1 );
+		}
+		file_put_contents( $control . '/done-' . $round . '-' . $worker, '' );
+	}
+	exit( 0 );
+}
+
+function assert_concurrent_workspace_directories( string $root ): void {
+	$worker_count = 12;
+	$round_count  = 20;
+	$control      = $root . '/concurrency-control';
+	wp_mkdir_p( $control );
+	for ( $round = 0; $round < $round_count; ++$round ) {
+		new Static_Site_Importer_Artifact_Run_Workspace( $root, 'concurrent-' . $round );
+	}
+	$processes = array();
+	for ( $worker = 0; $worker < $worker_count; ++$worker ) {
+		$process = proc_open(
+			array( PHP_BINARY, __FILE__, '--workspace-concurrency-child', $root, $control, (string) $worker, (string) $round_count ),
+			array( 1 => array( 'pipe', 'w' ), 2 => array( 'pipe', 'w' ) ),
+			$pipes
+		);
+		if ( ! is_resource( $process ) ) {
+			throw new RuntimeException( 'concurrent workspace child could not start' );
+		}
+		$processes[] = array( $process, $pipes );
+	}
+
+	$barrier_failure = '';
+	for ( $round = 0; $round < $round_count; ++$round ) {
+		$deadline = microtime( true ) + 10;
+		while ( count( glob( $control . '/ready-' . $round . '-*' ) ?: array() ) < $worker_count && microtime( true ) < $deadline ) {
+			usleep( 1000 );
+		}
+		if ( count( glob( $control . '/ready-' . $round . '-*' ) ?: array() ) !== $worker_count ) {
+			$barrier_failure = 'concurrent workspace children did not reach the creation barrier';
+			foreach ( $processes as $entry ) {
+				proc_terminate( $entry[0] );
+			}
+			break;
+		}
+		file_put_contents( $control . '/go-' . $round, '' );
+		$deadline = microtime( true ) + 10;
+		while ( count( glob( $control . '/done-' . $round . '-*' ) ?: array() ) < $worker_count && microtime( true ) < $deadline ) {
+			usleep( 1000 );
+		}
+		if ( count( glob( $control . '/done-' . $round . '-*' ) ?: array() ) !== $worker_count ) {
+			$barrier_failure = 'concurrent workspace children did not complete the creation round';
+			foreach ( $processes as $entry ) {
+				proc_terminate( $entry[0] );
+			}
+			break;
+		}
+	}
+
+	$failures = array();
+	foreach ( $processes as $entry ) {
+		list( $process, $pipes ) = $entry;
+		$stdout = stream_get_contents( $pipes[1] );
+		$stderr = stream_get_contents( $pipes[2] );
+		fclose( $pipes[1] );
+		fclose( $pipes[2] );
+		$status = proc_close( $process );
+		if ( 0 !== $status ) {
+			$failures[] = trim( $stdout . "\n" . $stderr );
+		}
+	}
+	if ( '' !== $barrier_failure || array() !== $failures ) {
+		throw new RuntimeException( 'concurrent workspace callers failed: ' . $barrier_failure . '; ' . implode( '; ', $failures ) );
+	}
+	for ( $round = 0; $round < $round_count; ++$round ) {
+		$concurrent = new Static_Site_Importer_Artifact_Run_Workspace( $root, 'concurrent-' . $round );
+		if ( $worker_count !== count( glob( $concurrent->directory() . '/page-plans/*.json' ) ?: array() ) ) {
+			throw new RuntimeException( 'concurrent workspace callers did not publish every page plan' );
+		}
+		$concurrent->purge();
+	}
+	foreach ( glob( $control . '/*' ) ?: array() as $path ) {
+		unlink( $path );
+	}
+	rmdir( $control );
+}
+
 $root = sys_get_temp_dir() . '/ssi-artifact-primitives-' . bin2hex( random_bytes( 4 ) ); wp_mkdir_p( $root ); file_put_contents( $root . '/unrelated.txt', 'keep' );
+assert_concurrent_workspace_directories( $root );
 $workspace = new Static_Site_Importer_Artifact_Run_Workspace( $root, 'test', array( 'on_success' => 'purge_on_success' ) );
 $released = null; $GLOBALS['ssi_artifact_filters']['static_site_importer_artifact_workspace_lock'] = static function ( $value, string $operation, string $path, $token ) use ( &$released ) { if ( 'acquire' === $operation ) { return 'provider-token'; } $released = array( $path, $token ); return true; }; $provided_lock = $workspace->acquire_lock( 'provided.lock' ); $workspace->release_lock( $provided_lock ); unset( $GLOBALS['ssi_artifact_filters']['static_site_importer_artifact_workspace_lock'] ); if ( ! is_array( $provided_lock ) || 'provider-token' !== ( $provided_lock['token'] ?? '' ) || array( $workspace->directory() . '/provided.lock', 'provider-token' ) !== $released ) { throw new RuntimeException( 'workspace locks must support an opaque runtime-owned acquire and release contract' ); }
 if ( ! is_wp_error( $workspace->path( '../escape' ) ) || ! is_wp_error( $workspace->publish_raw( '/escape', 'x' ) ) ) { throw new RuntimeException( 'workspace must reject path traversal and absolute paths' ); }

@@ -25,11 +25,12 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		$this->root      = $resolved;
 		$token           = preg_replace( '/[^A-Za-z0-9_-]/', '-', $purpose );
 		$this->directory = $this->root . '/.ssi-artifact-run-' . $token;
-		if ( is_link( $this->directory ) ) {
-			throw new RuntimeException( 'Artifact workspace directory cannot be a symlink.' );
-		}
-		if ( ! is_dir( $this->directory ) && ! mkdir( $this->directory, 0700 ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir -- Creates the importer-owned workspace without initializing a global filesystem transport.
+		$directory = $this->directory;
+		if ( ! is_dir( $directory ) && ! self::filesystem_operation( static fn () => mkdir( $directory, 0700 ) ) && ! is_dir( $directory ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir -- Creates the importer-owned workspace without initializing a global filesystem transport.
 			throw new RuntimeException( 'Artifact workspace could not be created.' );
+		}
+		if ( is_link( $directory ) ) {
+			throw new RuntimeException( 'Artifact workspace directory cannot be a symlink.' );
 		}
 
 		$existing = $this->read_raw( 'workspace.json' );
@@ -72,7 +73,7 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		}
 
 		$parent = dirname( $path );
-		if ( ! is_dir( $parent ) && ! mkdir( $parent, 0700, true ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir -- Creates importer-owned nested directories without initializing a global filesystem transport.
+		if ( ! is_dir( $parent ) && ! self::filesystem_operation( static fn () => mkdir( $parent, 0700, true ) ) && ! is_dir( $parent ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir -- Creates importer-owned nested directories without initializing a global filesystem transport.
 			return new WP_Error( 'static_site_importer_artifact_workspace_unavailable', 'Workspace directory is unavailable.' );
 		}
 		if ( is_link( $parent ) || ! str_starts_with( (string) realpath( $parent ) . '/', $this->directory . '/' ) ) {
@@ -99,7 +100,7 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		}
 
 		$parent = dirname( $path );
-		if ( ! is_dir( $parent ) && ! mkdir( $parent, 0700, true ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir -- Creates importer-owned nested directories without initializing a global filesystem transport.
+		if ( ! is_dir( $parent ) && ! self::filesystem_operation( static fn () => mkdir( $parent, 0700, true ) ) && ! is_dir( $parent ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir -- Creates importer-owned nested directories without initializing a global filesystem transport.
 			return new WP_Error( 'static_site_importer_artifact_workspace_unavailable', 'Workspace directory is unavailable.' );
 		}
 		if ( is_link( $parent ) || ! str_starts_with( (string) realpath( $parent ) . '/', $this->directory . '/' ) ) {
@@ -135,7 +136,7 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		}
 
 		$parent = dirname( $path );
-		if ( ! is_dir( $parent ) && ! mkdir( $parent, 0700, true ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir -- Creates importer-owned nested directories without initializing a global filesystem transport.
+		if ( ! is_dir( $parent ) && ! self::filesystem_operation( static fn () => mkdir( $parent, 0700, true ) ) && ! is_dir( $parent ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir -- Creates importer-owned nested directories without initializing a global filesystem transport.
 			return new WP_Error( 'static_site_importer_artifact_workspace_unavailable', 'Workspace directory is unavailable.' );
 		}
 		if ( is_link( $parent ) || ! str_starts_with( (string) realpath( $parent ) . '/', $this->directory . '/' ) ) {
@@ -247,7 +248,7 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 			return $path;
 		}
 		$parent = dirname( $path );
-		if ( ! is_dir( $parent ) && ! mkdir( $parent, 0700, true ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir -- Creates importer-owned claim directory.
+		if ( ! is_dir( $parent ) && ! self::filesystem_operation( static fn () => mkdir( $parent, 0700, true ) ) && ! is_dir( $parent ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir -- Creates importer-owned claim directory.
 			return new WP_Error( 'static_site_importer_artifact_workspace_unavailable', 'Workspace directory is unavailable.' );
 		}
 		if ( is_link( $parent ) || ! str_starts_with( (string) realpath( $parent ) . '/', $this->directory . '/' ) ) {
