@@ -13,6 +13,10 @@ if ( ! class_exists( 'Static_Site_Importer_Public_Error_Projection' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-public-error-projection.php';
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Build_Provenance' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-build-provenance.php';
+}
+
 /** Writes posts, files, overlays, and journals for a prepared plan. */
 final class Static_Site_Importer_Site_Plan_Persistence {
 	private const RECONCILIATION_META_KEY          = '_static_site_importer_reconciliation_identity';
@@ -281,6 +285,15 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				),
 				'skipped' => array(),
 			);
+
+		// The composed artifact identity is recorded in a site option so a
+		// fleet can be queried without parsing generated file headers. The
+		// same identity is stamped into the theme/plugin headers that survive
+		// this import; both remain readable after SSI itself is removed.
+		$artifact_provenance = isset( $args['artifact_provenance'] ) && is_array( $args['artifact_provenance'] ) ? $args['artifact_provenance'] : array();
+		if ( array() !== $artifact_provenance && Static_Site_Importer_Build_Provenance::valid_artifact_provenance( $artifact_provenance ) ) {
+			Static_Site_Importer_Build_Provenance::record_artifact_identity( Static_Site_Importer_Build_Provenance::describe_artifact( $artifact_provenance ) );
+		}
 
 		return Static_Site_Importer_Site_Plan_Receipt::receipt( 'completed', $state );
 	}
@@ -672,7 +685,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( isset( $stylesheets[ $state['theme_dir'] . '/style.css' ], $stylesheets[ $state['theme_dir'] . '/assets/css/editor-style.css' ] ) ) {
 			$writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], '', '', array(), array(), $overlays, $stylesheets );
 		} elseif ( '' !== $source_css ) {
-			$writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], (string) $state['theme']['slug'], $source_css, array(), array(), $overlays );
+			$writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], (string) $state['theme']['slug'], $source_css, array(), array(), $overlays, null, isset( $state['args']['artifact_provenance'] ) && is_array( $state['args']['artifact_provenance'] ) ? $state['args']['artifact_provenance'] : array() );
 		} else {
 			return new WP_Error( 'provider_layout_stylesheet_missing' );
 		}

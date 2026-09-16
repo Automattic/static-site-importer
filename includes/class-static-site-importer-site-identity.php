@@ -12,6 +12,7 @@
  * - name/title: explicit theme name -> explicit site_title -> source document <title>
  *   (extracted + suffix-stripped) -> source URL host -> generic constant.
  * - slug: explicit slug arg -> sanitize_title(name) -> host -> generic constant.
+ * - block namespace: ssi-<slug>, filtered, sanitized, and never `core`.
  *
  * @package StaticSiteImporter
  */
@@ -48,7 +49,7 @@ class Static_Site_Importer_Site_Identity {
 	 * - url / source_url: the source URL, used for the host fallback.
 	 *
 	 * @param array<string,mixed> $context Identity resolution context.
-	 * @return array{name:string,slug:string,title:string}
+	 * @return array{name:string,slug:string,title:string,block_namespace:string}
 	 */
 	public static function resolve( array $context ): array {
 		$name = self::resolve_name( $context );
@@ -75,10 +76,30 @@ class Static_Site_Importer_Site_Identity {
 			$slug = self::DEFAULT_SLUG;
 		}
 
+		$block_namespace = 'ssi-' . $slug;
+		/**
+		 * Filters the consumer-owned block namespace for generated blocks.
+		 *
+		 * The resolved namespace is supplied to the compiler as the artifact's
+		 * block_namespace input, so generated blocks and the companion scaffold
+		 * agree on one namespace by construction. The value is sanitized to
+		 * ^[a-z][a-z0-9-]*$ and must not be `core`; an empty or invalid value
+		 * falls back to the default `ssi-<slug>` namespace.
+		 *
+		 * @param string              $block_namespace Default block namespace (ssi-<slug>).
+		 * @param string              $slug    Filtered theme slug.
+		 * @param array<string,mixed> $context Import identity context.
+		 */
+		$block_namespace = self::sanitize_block_namespace( (string) ( function_exists( 'apply_filters' ) ? apply_filters( 'static_site_importer_block_namespace', $block_namespace, $slug, $context ) : $block_namespace ) );
+		if ( '' === $block_namespace ) {
+			$block_namespace = 'ssi-' . $slug;
+		}
+
 		return array(
-			'name'  => $name,
-			'slug'  => $slug,
-			'title' => $name,
+			'name'            => $name,
+			'slug'            => $slug,
+			'title'           => $name,
+			'block_namespace' => $block_namespace,
 		);
 	}
 
@@ -371,6 +392,28 @@ class Static_Site_Importer_Site_Identity {
 		$value = preg_replace( '/[^a-z0-9]+/', '-', $value );
 
 		return trim( (string) $value, '-' );
+	}
+
+	/**
+	 * Sanitize a block namespace, with a runtime-independent fallback.
+	 *
+	 * Returns '' when the value cannot become a valid WordPress block namespace
+	 * (`^[a-z][a-z0-9-]*$`) or claims the reserved `core` namespace, so callers
+	 * can fall back to their default.
+	 *
+	 * @param string $value Raw namespace.
+	 * @return string Sanitized namespace, or '' when unusable.
+	 */
+	private static function sanitize_block_namespace( string $value ): string {
+		$value = strtolower( trim( $value ) );
+		$value = (string) preg_replace( '/[^a-z0-9-]+/', '-', $value );
+		$value = trim( $value, '-' );
+
+		if ( '' === $value || 'core' === $value || 1 !== preg_match( '/^[a-z][a-z0-9-]*$/', $value ) ) {
+			return '';
+		}
+
+		return $value;
 	}
 
 	/**

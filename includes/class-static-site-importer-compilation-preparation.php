@@ -17,6 +17,7 @@ foreach ( array(
 	'Static_Site_Importer_Compiler_Diagnostic_Normalizer' => 'class-static-site-importer-compiler-diagnostic-normalizer.php',
 	'Static_Site_Importer_Report_Diagnostics'             => 'class-static-site-importer-report-diagnostics.php',
 	'Static_Site_Importer_Companion_Plugin'               => 'class-static-site-importer-companion-plugin.php',
+	'Static_Site_Importer_Build_Provenance'               => 'class-static-site-importer-build-provenance.php',
 ) as $class => $file ) {
 	if ( ! class_exists( $class ) ) {
 		require_once __DIR__ . '/' . $file;
@@ -76,6 +77,12 @@ final class Static_Site_Importer_Compilation_Preparation {
 			$args['source_artifact_reference'] = self::source_artifact_reference_from_artifact( $artifact, $args );
 		}
 
+		// One consumer-owned block namespace, resolved once: the identity's
+		// namespace is the artifact's block_namespace input, so the producer
+		// emits generated-block names under exactly this namespace instead of
+		// independently re-deriving ssi-<site_slug>.
+		$artifact['block_namespace'] = $identity['block_namespace'];
+
 		// A URL batch run composes this canonical compiler result before the one
 		// serialized WordPress mutation. Direct callers retain whole-artifact compilation.
 		$supplied_compiled = isset( $args['compiled_artifact_result'] ) && is_array( $args['compiled_artifact_result'] );
@@ -106,10 +113,15 @@ final class Static_Site_Importer_Compilation_Preparation {
 		$args['unsafe_layout_constraint_diagnostics'] = Static_Site_Importer_Report_Diagnostics::unsafe_layout_constraint_diagnostics( $plan );
 		$companion_payload                             = null;
 		$gutenberg_gaps                                = is_array( $compiled['gutenberg_gaps'] ?? null ) ? $compiled['gutenberg_gaps'] : array();
+		$artifact_provenance                           = null;
 		if ( ! empty( $compiled['companion_plugin_payload'] ) ) {
 			$companion_payload = $compiled['companion_plugin_payload'];
 			if ( ! is_array( $companion_payload ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_payload_invalid', 'Compiled companion_plugin_payload must be an object.' );
+			}
+			$artifact_provenance = array_key_exists( 'provenance', $companion_payload ) ? $companion_payload['provenance'] : null;
+			if ( null !== $artifact_provenance && ! Static_Site_Importer_Build_Provenance::valid_artifact_provenance( $artifact_provenance ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_payload_invalid', 'Compiled companion_plugin_payload carries a malformed provenance record.' );
 			}
 			if ( ! Static_Site_Importer_Companion_Plugin::has_materializable_content( $companion_payload ) ) {
 				$companion_payload = null;
@@ -121,6 +133,12 @@ final class Static_Site_Importer_Compilation_Preparation {
 					return $companion_validation;
 				}
 			}
+		}
+		if ( null !== $artifact_provenance && null !== $companion_payload ) {
+			// The validated producer provenance travels with the import args so
+			// every durable artifact and the site-option identity record are
+			// stamped from one record resolved once.
+			$args['artifact_provenance'] = $artifact_provenance;
 		}
 		if ( isset( $args['approved_classic_plan_identity'] ) && is_array( $args['approved_classic_plan_identity'] ) && ( $plan['plan_identity'] ?? null ) !== $args['approved_classic_plan_identity'] ) {
 			return new WP_Error( 'static_site_importer_approved_classic_plan_changed', 'Recompilation did not reproduce the approved canonical classic plan.' );

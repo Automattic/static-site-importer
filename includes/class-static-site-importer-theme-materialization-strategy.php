@@ -5,6 +5,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Generated_File' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-generated-file.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Build_Provenance' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-build-provenance.php';
+}
 final class Static_Site_Importer_Theme_Materialization_Strategy {
 	public const BLOCK                      = 'block';
 	public const CLASSIC                    = 'classic';
@@ -43,10 +46,18 @@ final class Static_Site_Importer_Theme_Materialization_Strategy {
 		);
 	}
 	/** The only PHP SSI emits; content/chrome remain sanitized data files. */
-	public static function fixed_classic_scaffold( string $name ): array {
+	public static function fixed_classic_scaffold( string $name, array $artifact_provenance = array() ): array {
 		$name = Static_Site_Importer_Generated_File::comment_header_value( $name );
 		if ( '' === $name ) {
 			$name = 'Static Site Import'; }
+		// A provenance-carrying build stamps the producing build version and
+		// an Update URI identifying this theme as real style.css headers; an
+		// absent provenance record keeps the historical scaffold header.
+		$style_header = "/*\nTheme Name: " . $name . "\nText Domain: static-site-importer\n";
+		foreach ( Static_Site_Importer_Build_Provenance::artifact_header_lines( $artifact_provenance, $name ) as $header_line ) {
+			$style_header .= $header_line . "\n";
+		}
+		$style_header .= "*/\n";
 		$functions = <<<'PHP'
 <?php
 function static_site_importer_classic_assets() {
@@ -79,7 +90,7 @@ function static_site_importer_classic_render_current_page() {
 }
 PHP;
 		return array(
-			'style.css'      => "/*\nTheme Name: " . $name . "\nText Domain: static-site-importer\n*/\n",
+			'style.css'      => $style_header,
 			'functions.php'  => $functions . "\n",
 			'header.php'     => "<!doctype html>\n<html <?php language_attributes(); ?>>\n<head>\n<meta charset=\"<?php bloginfo( 'charset' ); ?>\">\n<?php wp_head(); ?>\n</head>\n<body <?php body_class(); ?>>\n<?php wp_body_open(); static_site_importer_classic_chrome( 'header' ); ?>\n",
 			'footer.php'     => "<?php static_site_importer_classic_chrome( 'footer' ); wp_footer(); ?>\n</body>\n</html>\n",

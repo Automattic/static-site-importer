@@ -75,7 +75,7 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 	}
 
 	/** Convert inert fragments into destination-specific writes after the canonical resolver runs. */
-	public static function writes( array $projection, array $resolved, string $theme_uri, string $name ): array {
+	public static function writes( array $projection, array $resolved, string $theme_uri, string $name, array $artifact_provenance = array() ): array {
 		$tokens = isset( $resolved['reference_tokens'] ) && is_array( $resolved['reference_tokens'] ) ? $resolved['reference_tokens'] : array();
 		$entry  = (string) ( $projection['chrome_source_path'] ?? '' );
 		$root   = '' === $entry || '.' === dirname( $entry ) ? '' : trim( dirname( $entry ), '/' );
@@ -94,7 +94,7 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 		$css = '';
 		foreach ( $projection['stylesheets'] ?? array() as $source => $stylesheet ) {
 			$css .= self::rewrite_css( (string) $stylesheet, (string) $source, $assets, $urls ) . "\n"; }
-		$scaffold                          = Static_Site_Importer_Theme_Materialization_Strategy::fixed_classic_scaffold( $name );
+		$scaffold                          = Static_Site_Importer_Theme_Materialization_Strategy::fixed_classic_scaffold( $name, $artifact_provenance );
 		$scaffold['style.css']            .= "\n" . $css;
 		$scaffold['classic-pages.json']    = (string) wp_json_encode( array( 'pages' => $pages ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) . "\n";
 		$scaffold['classic-chrome.json']   = (string) wp_json_encode( $chrome, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) . "\n";
@@ -192,8 +192,8 @@ final class Static_Site_Importer_Classic_Theme_Projection {
 	public static function resolved_writes( array $resolved, array $classic_writes ): array {
 		return array_merge( array_values( array_filter( $resolved['writes'] ?? array(), static fn( array $write ): bool => 'theme_asset' === ( $write['kind'] ?? '' ) ) ), $classic_writes ); }
 	/** Rebuild only classic scaffold data payloads after provider substitutions. */
-	public static function with_projection_writes( array $resolved, array $projection, string $theme_uri, string $name ): array {
-		$resolved['writes'] = self::resolved_writes( $resolved, self::writes( $projection, $resolved, $theme_uri, $name ) );
+	public static function with_projection_writes( array $resolved, array $projection, string $theme_uri, string $name, array $artifact_provenance = array() ): array {
+		$resolved['writes'] = self::resolved_writes( $resolved, self::writes( $projection, $resolved, $theme_uri, $name, $artifact_provenance ) );
 		return $resolved; }
 
 	/** Apply provider output through exact source selectors before classic data writes. */

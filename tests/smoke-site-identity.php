@@ -159,6 +159,33 @@ unset( $GLOBALS['ssi_identity_filters'] );
 $identity = Static_Site_Importer_Site_Identity::resolve( array( 'name' => 'Custom Theme Name', 'site_title' => 'Inherited Site Name' ) );
 $assert( 'Custom Theme Name' === $identity['name'], 'explicit-theme-name-overrides-inherited-site-name' );
 
+// 11. Block namespace defaults to ssi-<slug> and is filterable, sanitized, and never `core`.
+$identity = Static_Site_Importer_Site_Identity::resolve( array( 'site_title' => 'Acme Group' ) );
+$assert( 'ssi-acme-group' === $identity['block_namespace'], 'block-namespace-defaults-to-ssi-slug', (string) $identity['block_namespace'] );
+$identity = Static_Site_Importer_Site_Identity::resolve( array( 'site_title' => 'Acme Group', 'slug' => 'acme' ) );
+$assert( 'ssi-acme' === $identity['block_namespace'], 'block-namespace-follows-explicit-slug', (string) $identity['block_namespace'] );
+
+$GLOBALS['ssi_identity_filters']['static_site_importer_block_namespace'] = static fn ( string $namespace, string $slug ): string => 'acme-blocks-' . $slug;
+$identity = Static_Site_Importer_Site_Identity::resolve( array( 'site_title' => 'Acme Group' ) );
+$assert( 'acme-blocks-acme-group' === $identity['block_namespace'], 'block-namespace-filter-reaches-identity', (string) $identity['block_namespace'] );
+
+$GLOBALS['ssi_identity_filters']['static_site_importer_block_namespace'] = static fn (): string => 'My Preferred NS!';
+$identity = Static_Site_Importer_Site_Identity::resolve( array( 'site_title' => 'Acme Group' ) );
+$assert( 'my-preferred-ns' === $identity['block_namespace'], 'block-namespace-filter-is-sanitized-to-valid-namespace', (string) $identity['block_namespace'] );
+
+foreach ( array(
+	'core'            => 'ssi-acme-group',
+	'CORE'            => 'ssi-acme-group',
+	'9starts-digit'   => 'ssi-acme-group',
+	''                => 'ssi-acme-group',
+	'https://evil.co' => 'https-evil-co',
+) as $filtered => $expected ) {
+	$GLOBALS['ssi_identity_filters']['static_site_importer_block_namespace'] = static fn (): string => $filtered;
+	$identity = Static_Site_Importer_Site_Identity::resolve( array( 'site_title' => 'Acme Group' ) );
+	$assert( $expected === $identity['block_namespace'], 'block-namespace-fallback-' . md5( $filtered ), (string) $identity['block_namespace'] );
+}
+unset( $GLOBALS['ssi_identity_filters'] );
+
 if ( empty( $failures ) ) {
 	echo 'OK: site identity smoke passed (' . (int) $assertions . " assertions)\n";
 	exit( 0 );

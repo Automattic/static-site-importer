@@ -17,7 +17,7 @@ namespace {
 	class Static_Site_Importer_Theme_Materialization_Strategy { const CLASSIC = 'classic'; public static function normalize( array $args ) { return array( 'strategy' => 'block', 'evidence' => array() ); } }
 	class Static_Site_Importer_Content_Policy { public static function validate_artifact( array $artifact ) { return true; } }
 	class Static_Site_Importer_Client_Script_Policy { public static function apply( array $artifact, array $args ): array { $artifact['script_policy_applied'] = true; return array( 'artifact' => $artifact, 'report' => array( 'policy' => 'inert' ) ); } }
-	class Static_Site_Importer_Site_Identity { public static function resolve( array $args ): array { return array( 'name' => 'Checkpoint', 'slug' => 'checkpoint' ); } public static function title_from_website_artifact( array $artifact ): string { return ''; } }
+	class Static_Site_Importer_Site_Identity { public static function resolve( array $args ): array { return array( 'name' => 'Checkpoint', 'slug' => 'checkpoint', 'title' => 'Checkpoint', 'block_namespace' => 'ssi-checkpoint' ); } public static function title_from_website_artifact( array $artifact ): string { return ''; } }
 	class Static_Site_Importer_Companion_Plugin { public static function validate_payload( array $payload ) { return true; } }
 	class Static_Site_Importer_Entity_Materializer_Registry { public static function plan_runtime_lifecycle( array $plan, array $args ): array { return array( 'status' => 'not_requested', 'dependencies' => array(), 'entities' => array(), 'diagnostics' => array() ); } }
 	class Static_Site_Importer_Dependency_Manager { public static function dependency_plan( array $lifecycle, string $hash ): array { return array(); } }
