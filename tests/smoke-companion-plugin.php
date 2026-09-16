@@ -13,6 +13,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 }
 
+if ( ! defined( 'STATIC_SITE_IMPORTER_VERSION' ) ) {
+	define( 'STATIC_SITE_IMPORTER_VERSION', '1.11.0' );
+}
+
 $ssi_companion_tmp = sys_get_temp_dir() . '/ssi-companion-smoke-' . getmypid();
 if ( ! defined( 'WP_PLUGIN_DIR' ) ) {
 	define( 'WP_PLUGIN_DIR', $ssi_companion_tmp . '/plugins' );
@@ -1295,6 +1299,94 @@ foreach ( array( false, true ) as $hostile_mu ) {
 		require_once ( $hostile_mu ? WPMU_PLUGIN_DIR : WP_PLUGIN_DIR ) . '/' . $hostile_path;
 	}
 	$assert( false === $GLOBALS['ssi_header_injected'], 'hostile-title-executes-no-php-' . $hostile_mode );
+}
+
+// A payload may carry its producing-build provenance record (blocks-engine#1874).
+// A record that is present but malformed must be rejected, not silently dropped.
+$provenance_record = array(
+	'schema'         => Static_Site_Importer_Build_Provenance::ARTIFACT_PROVENANCE_SCHEMA,
+	'generator'      => 'blocks-engine',
+	'engine_version' => '1.0.0',
+	'artifact_hash'  => str_repeat( 'b2', 32 ),
+);
+$provenanced_payload          = $payload;
+$provenanced_payload['provenance'] = $provenance_record;
+$assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $provenanced_payload ), 'provenance-carrying-payload-validates' );
+foreach ( array(
+	'foreign-schema' => array_merge( $provenance_record, array( 'schema' => 'some/other/schema' ) ),
+	'missing-hash'   => array_diff_key( $provenance_record, array( 'artifact_hash' => true ) ),
+	'non-record'     => 'not-an-array',
+) as $label => $record ) {
+	$malformed_provenance_payload     = $payload;
+	$malformed_provenance_payload['provenance'] = $record;
+	$malformed_provenance_validation  = Static_Site_Importer_Companion_Plugin::validate_payload( $malformed_provenance_payload );
+	$assert( is_wp_error( $malformed_provenance_validation ) && 'static_site_importer_companion_plugin_provenance_invalid' === $malformed_provenance_validation->get_error_code(), 'malformed-provenance-rejected-' . $label );
+	$malformed_report = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $malformed_provenance_payload );
+	$assert( 'failed' === ( $malformed_report['status'] ?? '' ), 'malformed-provenance-prevents-materialization-' . $label );
+}
+$provenance_absent_payload = $payload;
+$provenance_absent_payload['provenance'] = null;
+$assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $provenance_absent_payload ), 'null-provenance-is-treated-as-absent' );
+
+// A provenance-carrying plugin header identifies its producing build and
+// stays updatable through a parseable Update URI after SSI is removed.
+$provenanced_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $provenanced_payload );
+$assert( is_array( $provenanced_descriptor ), 'provenance-carrying-payload-scaffolds' );
+$plain_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $payload );
+$assert( is_array( $plain_descriptor ), 'provenance-free-payload-scaffolds' );
+if ( is_array( $provenanced_descriptor ) && is_array( $plain_descriptor ) ) {
+	$provenanced_main = (string) ( $provenanced_descriptor['files']['ssi-example-site/ssi-example-site.php'] ?? '' );
+	$plain_main       = (string) ( $plain_descriptor['files']['ssi-example-site/ssi-example-site.php'] ?? '' );
+
+	$assert( 1 === preg_match( '/^\s*\* Version: ' . preg_quote( ( defined( 'STATIC_SITE_IMPORTER_VERSION' ) ? (string) STATIC_SITE_IMPORTER_VERSION : '0.0.0' ), '/' ) . '\+b2b2b2b2$/m', $provenanced_main ), 'provenanced-plugin-version-carries-producing-build', $provenanced_main );
+	$update_uri_matches = array();
+	$assert( 1 === preg_match( '/^\s*\* Update URI: (\S+)$/m', $provenanced_main, $update_uri_matches ) && 'static-site-importer.invalid' === ( parse_url( (string) $update_uri_matches[1], PHP_URL_HOST ) ?? '' ) && 'wordpress.org' !== parse_url( (string) $update_uri_matches[1], PHP_URL_HOST ), 'provenanced-plugin-carries-parseable-update-uri', $provenanced_main );
+	$assert( 'ssi-example-site' === $provenanced_descriptor['slug'] && 'ssi-example-site/ssi-example-site.php' === $provenanced_descriptor['plugin_file'], 'provenanced-plugin-identity-is-unchanged' );
+
+	// An unprovenanced payload keeps the historical frozen header byte-for-byte.
+	$assert( str_contains( $plain_main, " * Version: 1.0.0\n" ) && ! str_contains( $plain_main, 'Update URI' ), 'provenance-free-plugin-keeps-frozen-header' );
+	$assert( substr_count( $plain_main, 'Version:' ) === substr_count( $provenanced_main, 'Version:' ) && 1 === substr_count( $provenanced_main, 'Version:' ), 'stamped-plugin-header-has-one-version-line' );
+}
+
+// The scaffold prefers the namespace the payload actually resolved over
+// recomputing ssi-<site_slug>: declared block_json.name namespaces win, and
+// the plugin directory name remains a separate concern.
+$namespaced_payload = array(
+	'schema'    => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+	'site_slug' => 'acme',
+	'site_name' => 'Acme',
+	'blocks'    => array(
+		array(
+			'name'       => 'hero',
+			'block_json' => array(
+				'name'       => 'acme-blocks/hero',
+				'title'      => 'Hero',
+				'category'   => 'design',
+			),
+			'render'     => '<div class="acme-hero">Hero</div>',
+		),
+		array(
+			'name'       => 'teaser',
+			'block_json' => array(
+				'title'      => 'Teaser',
+				'category'   => 'design',
+			),
+		),
+	),
+);
+$assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $namespaced_payload ), 'declared-namespace-payload-validates' );
+$assert( 'acme-blocks' === Static_Site_Importer_Companion_Plugin::block_namespace( $namespaced_payload ), 'payload-derived-namespace-reads-declared-block-name' );
+$undeclared_payload = $namespaced_payload;
+unset( $undeclared_payload['blocks'][0]['block_json']['name'] );
+$assert( 'ssi-acme' === Static_Site_Importer_Companion_Plugin::block_namespace( $undeclared_payload ), 'undeclared-blocks-keep-ssi-slug-namespace' );
+$namespaced_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $namespaced_payload );
+$assert( is_array( $namespaced_descriptor ), 'declared-namespace-payload-scaffolds' );
+if ( is_array( $namespaced_descriptor ) ) {
+	$assert( array( 'acme-blocks/hero', 'acme-blocks/teaser' ) === $namespaced_descriptor['block_names'], 'scaffold-registers-payload-resolved-block-names', print_r( $namespaced_descriptor['block_names'], true ) );
+	$assert( 'acme-blocks' === $namespaced_descriptor['namespace'], 'scaffold-namespace-matches-payload-resolution' );
+	$assert( 'ssi-acme' === $namespaced_descriptor['slug'] && 'ssi-acme/ssi-acme.php' === $namespaced_descriptor['plugin_file'], 'plugin-directory-identity-stays-derived-from-site-slug' );
+	$teaser_block_json = (string) ( $namespaced_descriptor['files']['ssi-acme/blocks/teaser/block.json'] ?? '' );
+	$assert( str_contains( $teaser_block_json, '"name": "acme-blocks/teaser"' ), 'undeclared-block-falls-back-to-payload-namespace' );
 }
 
 // Cleanup generated fixtures.

@@ -121,8 +121,8 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				if ( is_wp_error( $projection ) ) {
 					throw new InvalidArgumentException( (string) $projection->get_error_code() );
 				}
-				$args['classic_theme_projection'] = $projection;
-				$resolved['writes']               = Static_Site_Importer_Classic_Theme_Projection::resolved_writes( $resolved, Static_Site_Importer_Classic_Theme_Projection::writes( $args['classic_theme_projection'], $resolved, $theme_uri, (string) ( $args['name'] ?? $slug ) ) );
+			$args['classic_theme_projection'] = $projection;
+			$resolved['writes']               = Static_Site_Importer_Classic_Theme_Projection::resolved_writes( $resolved, Static_Site_Importer_Classic_Theme_Projection::writes( $args['classic_theme_projection'], $resolved, $theme_uri, (string) ( $args['name'] ?? $slug ), isset( $args['artifact_provenance'] ) && is_array( $args['artifact_provenance'] ) ? $args['artifact_provenance'] : array() ) );
 				foreach ( $resolved['pages'] as &$page ) {
 					$page['resolved_block_markup'] = '';
 				}

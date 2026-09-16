@@ -99,7 +99,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 				);
 			}
 			$prepared['args']['classic_theme_projection']  = $projection;
-			$prepared['base_resolved']                     = Static_Site_Importer_Classic_Theme_Projection::with_projection_writes( $prepared['base_resolved'], $projection, (string) $prepared['theme']['uri'], (string) ( $prepared['args']['name'] ?? $prepared['theme']['slug'] ) );
+			$prepared['base_resolved']                     = Static_Site_Importer_Classic_Theme_Projection::with_projection_writes( $prepared['base_resolved'], $projection, (string) $prepared['theme']['uri'], (string) ( $prepared['args']['name'] ?? $prepared['theme']['slug'] ), isset( $args['artifact_provenance'] ) && is_array( $args['artifact_provenance'] ) ? $args['artifact_provenance'] : array() );
 			$prepared['prepared_resolved_projection_hash'] = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepared_resolved_projection_hash( $prepared['base_resolved'] );
 			$prepared['args']['classic_runtime_bindings']  = $classic_bindings;
 		}

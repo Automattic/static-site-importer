@@ -35,6 +35,9 @@ if ( ! class_exists( 'Static_Site_Importer_Generated_File' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Provider_Form_Runtime_V1' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-provider-form-runtime.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Build_Provenance' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-build-provenance.php';
+}
 
 /**
  * Scaffolds a one-per-site companion plugin from a generated block payload.
@@ -74,13 +77,16 @@ class Static_Site_Importer_Companion_Plugin {
 		if ( ! preg_match( '/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/', self::site_slug( $payload ) ) ) {
 			return new WP_Error( 'static_site_importer_companion_plugin_site_slug_invalid', 'Companion-plugin site_slug must resolve to an ASCII slug safe for PHP identifiers and file paths.' );
 		}
+		if ( array_key_exists( 'provenance', $payload ) && null !== $payload['provenance'] && ! Static_Site_Importer_Build_Provenance::valid_artifact_provenance( $payload['provenance'] ) ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_provenance_invalid', 'Companion-plugin provenance must declare blocks-engine/generated-artifact-provenance/v1 with generator, engine_version, and artifact_hash.' );
+		}
 		$blocks = $payload['blocks'] ?? array();
 		if ( ! is_array( $blocks ) || ! array_is_list( $blocks ) ) {
 			return new WP_Error( 'static_site_importer_companion_plugin_blocks_invalid', 'Companion-plugin blocks must be an array.' );
 		}
 		$names       = array();
 		$block_names = array();
-		$namespace   = 'ssi-' . self::site_slug( $payload );
+		$namespace   = self::block_namespace( $payload );
 		foreach ( $blocks as $index => $block ) {
 			if ( ! is_array( $block ) || array_is_list( $block ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_block_invalid', sprintf( 'Companion-plugin block %d must be an object.', $index ) );
@@ -210,7 +216,7 @@ class Static_Site_Importer_Companion_Plugin {
 
 		$blocks             = self::payload_blocks( $payload );
 		$plugin_slug        = 'ssi-' . $site_slug;
-		$block_namespace    = $plugin_slug;
+		$block_namespace    = self::block_namespace( $payload );
 		$preserved          = self::preserved_js( $payload, $block_namespace );
 		$editor_scripts     = self::editor_scripts( $payload );
 		$form_visual_states = is_array( $payload['form_visual_states'] ?? null ) ? $payload['form_visual_states'] : array();
@@ -294,7 +300,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$files[ $plugin_slug . '/includes/provider-form-runtime-v1.php' ] = self::provider_form_runtime_file( $provider_form_runtime, $runtime_class );
 		$files = array_merge(
 			array(
-				$main_file => self::main_plugin_file( $plugin_slug, $inventory_hash, $runtime_class ),
+				$main_file => self::main_plugin_file( $plugin_slug, $inventory_hash, $runtime_class, self::artifact_provenance( $payload ) ),
 			),
 			$files
 		);
@@ -354,6 +360,32 @@ class Static_Site_Importer_Companion_Plugin {
 	public static function plugin_slug( array $payload ): string {
 		$site_slug = self::site_slug( $payload );
 		return '' === $site_slug ? '' : 'ssi-' . $site_slug;
+	}
+
+	/**
+	 * The block namespace a payload actually resolved its blocks under.
+	 *
+	 * The payload's blocks carry their resolved fully-qualified names in
+	 * block_json.name, so the namespace the producer resolved is read from
+	 * there instead of being re-derived from site_slug: a producer/consumer
+	 * mismatch becomes impossible rather than merely unlikely. Blocks without
+	 * declared names keep the historical `ssi-<site_slug>` fallback namespace.
+	 *
+	 * @param array<string,mixed> $payload Generated companion-plugin payload.
+	 * @return string
+	 */
+	public static function block_namespace( array $payload ): string {
+		$site_slug = self::site_slug( $payload );
+		$fallback  = '' === $site_slug ? '' : 'ssi-' . $site_slug;
+		foreach ( self::payload_blocks( $payload ) as $block ) {
+			$declared_name = is_string( $block['block_json']['name'] ?? null ) ? $block['block_json']['name'] : '';
+			$namespace     = is_string( $declared_name ) && str_contains( $declared_name, '/' ) ? strtok( $declared_name, '/' ) : false;
+			if ( false !== $namespace && 1 === preg_match( '/^[a-z][a-z0-9-]*$/', (string) $namespace ) && 'core' !== (string) $namespace ) {
+				return (string) $namespace;
+			}
+		}
+
+		return $fallback;
 	}
 
 	/**
@@ -646,16 +678,30 @@ class Static_Site_Importer_Companion_Plugin {
 	}
 
 	/**
+	 * The validated artifact provenance record a payload carries, if any.
+	 *
+	 * @param array<string,mixed> $payload Generated companion-plugin payload.
+	 * @return array<string,mixed> Provenance record, or array() when absent.
+	 */
+	private static function artifact_provenance( array $payload ): array {
+		$provenance = $payload['provenance'] ?? null;
+
+		return is_array( $provenance ) && Static_Site_Importer_Build_Provenance::valid_artifact_provenance( $provenance ) ? $provenance : array();
+	}
+
+	/**
 	 * Render the main plugin PHP file.
 	 *
 	 * @param string $plugin_slug Plugin slug.
 	 * @param string                          $inventory_hash  Deterministic generated inventory hash.
+	 * @param array<string,mixed>             $artifact_provenance Producer artifact provenance, when carried.
 	 * @return string
 	 */
 	private static function main_plugin_file(
 		string $plugin_slug,
 		string $inventory_hash,
-		string $runtime_class
+		string $runtime_class,
+		array $artifact_provenance = array()
 	): string {
 		$fn_prefix = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash;
 
@@ -664,7 +710,22 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = '/**';
 		$lines[] = ' * Plugin Name: SSI Companion';
 		$lines[] = ' * Description: Generated companion plugin housing metadata blocks and preserved island JS.';
-		$lines[] = ' * Version: 1.0.0';
+		// A provenance-carrying build stamps the real producing-build version
+		// and an Update URI identifying this artifact, so the plugin remains
+		// attributable and updatable after SSI itself is removed.
+		$version_line   = ' * Version: 1.0.0';
+		$update_uri_line = '';
+		foreach ( Static_Site_Importer_Build_Provenance::artifact_header_lines( $artifact_provenance, $plugin_slug ) as $header_line ) {
+			if ( str_starts_with( $header_line, 'Version: ' ) ) {
+				$version_line = ' * ' . $header_line;
+			} else {
+				$update_uri_line = ' * ' . $header_line;
+			}
+		}
+		$lines[] = $version_line;
+		if ( '' !== $update_uri_line ) {
+			$lines[] = $update_uri_line;
+		}
 		$lines[] = ' * Requires at least: 6.9';
 		$lines[] = ' * Requires PHP: 8.1';
 		$lines[] = ' * Text Domain: ' . $plugin_slug;

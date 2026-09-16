@@ -12,6 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Generated_File' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-generated-file.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Build_Provenance' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-build-provenance.php';
+}
 require_once __DIR__ . '/class-static-site-importer-provider-layout-overlay.php';
 if ( ! class_exists( '\\Automattic\\BlocksEngine\\PhpTransformer\\AssetAnalysis\\CssUrlRewriter' ) ) {
 	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/AssetAnalysis/CssUrlRewriter.php';
@@ -30,6 +33,9 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 * @param string                            $css                  Source CSS.
 	 * @param array<string,array<string,mixed>> $assets Materialized asset map.
 	 * @param array<string,array<int,string>>   $visual_repair_styles Visual repair CSS content by target.
+	 * @param array<int,array<string,mixed>>    $provider_layout_overlays Validated provider layout overlays.
+	 * @param array<string,string>|null         $existing_stylesheets Existing stylesheet contents by path.
+	 * @param array<string,mixed>               $artifact_provenance Producer artifact provenance, when carried.
 	 * @return array<string,string> Absolute stylesheet write paths mapped to file contents.
 	 */
 	public static function stylesheet_writes(
@@ -39,7 +45,8 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		array $assets,
 		array $visual_repair_styles,
 		array $provider_layout_overlays = array(),
-		?array $existing_stylesheets = null
+		?array $existing_stylesheets = null,
+		array $artifact_provenance = array()
 	): array {
 		$provider_layout_css = self::provider_layout_overlay_css( $provider_layout_overlays );
 		$provider_editor_css = self::provider_layout_overlay_css( $provider_layout_overlays, 'editor_css' );
@@ -55,7 +62,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		$css = self::rewrite_css_asset_urls( $css, $assets );
 
 		return array(
-			$theme_dir . '/style.css'                   => self::style_css( $theme_name, $css . $provider_layout_css, $visual_repair_styles ),
+			$theme_dir . '/style.css'                   => self::style_css( $theme_name, $css . $provider_layout_css, $visual_repair_styles, $artifact_provenance ),
 			$theme_dir . '/assets/css/editor-style.css' => self::editor_style_css( $css . $provider_layout_css . $provider_editor_css, $visual_repair_styles, '' !== $provider_layout_css ),
 		);
 	}
@@ -168,15 +175,39 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	 * @param string                          $theme_name           Theme name.
 	 * @param string                          $css                  Source CSS.
 	 * @param array<string,array<int,string>> $visual_repair_styles Visual repair CSS content by target.
+	 * @param array<string,mixed>             $artifact_provenance  Producer artifact provenance, when carried.
 	 * @return string
 	 */
-	private static function style_css( string $theme_name, string $css, array $visual_repair_styles = array() ): string {
+	private static function style_css( string $theme_name, string $css, array $visual_repair_styles = array(), array $artifact_provenance = array() ): string {
 		$theme_name       = Static_Site_Importer_Generated_File::comment_header_value( $theme_name );
 		$admin_bar_bridge = self::admin_bar_top_chrome_css( $css );
 		$body_class_guard = self::wordpress_body_class_collision_guard_css( $css );
 		$repair_css       = self::visual_repair_css_for_target( $visual_repair_styles, 'frontend' );
 
-		return "/*\nTheme Name: " . $theme_name . "\nAuthor: Static Site Importer\nDescription: Materialized from a compiled website artifact.\nVersion: 0.1.0\nRequires at least: 6.6\n*/\n\n" . $css . "\n" . $body_class_guard . $admin_bar_bridge . $repair_css;
+		// A provenance-carrying build replaces the frozen placeholder version
+		// with the producing build and adds an Update URI identifying this
+		// theme, so the theme stays attributable and updatable after SSI is
+		// removed. An absent provenance record keeps the historical header.
+		$headers        = array(
+			'Theme Name: ' . $theme_name,
+			'Author: Static Site Importer',
+			'Description: Materialized from a compiled website artifact.',
+			'Version: 0.1.0',
+			'Requires at least: 6.6',
+		);
+		$update_uri_line = '';
+		foreach ( Static_Site_Importer_Build_Provenance::artifact_header_lines( $artifact_provenance, $theme_name ) as $header_line ) {
+			if ( str_starts_with( $header_line, 'Version: ' ) ) {
+				$headers[3] = $header_line;
+			} else {
+				$update_uri_line = $header_line;
+			}
+		}
+		if ( '' !== $update_uri_line ) {
+			$headers[] = $update_uri_line;
+		}
+
+		return "/*\n" . implode( "\n", $headers ) . "\n*/\n\n" . $css . "\n" . $body_class_guard . $admin_bar_bridge . $repair_css;
 	}
 
 	/**

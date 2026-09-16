@@ -90,6 +90,76 @@ $assert( '1.8.1' === ( $development['static_site_importer']['version'] ?? '' ), 
 unlink( $receipt_path );
 rmdir( $package_root );
 
+// Producer-carried artifact provenance (blocks-engine#1874): validation,
+// composition, durable header lines, and the fleet-queryable site option.
+$valid_provenance = array(
+	'schema'         => Static_Site_Importer_Build_Provenance::ARTIFACT_PROVENANCE_SCHEMA,
+	'generator'      => 'blocks-engine',
+	'engine_version' => '1.0.0',
+	'artifact_hash'  => str_repeat( 'a1', 32 ),
+);
+
+$assert( true === Static_Site_Importer_Build_Provenance::valid_artifact_provenance( $valid_provenance ), 'artifact-provenance-valid-record-accepted' );
+foreach ( array(
+	'null'                 => null,
+	'list'                 => array( $valid_provenance ),
+	'foreign-schema'       => array_merge( $valid_provenance, array( 'schema' => 'some/other/schema' ) ),
+	'missing-generator'    => array_diff_key( $valid_provenance, array( 'generator' => true ) ),
+	'empty-generator'      => array_merge( $valid_provenance, array( 'generator' => '  ' ) ),
+	'newline-engine'       => array_merge( $valid_provenance, array( 'engine_version' => "1.0.0\nVersion: 9.9.9" ) ),
+	'short-hash'           => array_merge( $valid_provenance, array( 'artifact_hash' => 'a1b2c3' ) ),
+	'non-hex-hash'         => array_merge( $valid_provenance, array( 'artifact_hash' => str_repeat( 'z', 64 ) ) ),
+	'numeric-generator'    => array_merge( $valid_provenance, array( 'generator' => 42 ) ),
+) as $label => $record ) {
+	$assert( false === Static_Site_Importer_Build_Provenance::valid_artifact_provenance( $record ), 'artifact-provenance-rejects-' . $label );
+}
+
+$composed = Static_Site_Importer_Build_Provenance::describe_artifact( $valid_provenance, '2026-09-16T08:00:00Z' );
+$assert( Static_Site_Importer_Build_Provenance::SCHEMA === ( $composed['schema'] ?? '' ), 'composed-identity-keeps-build-provenance-schema' );
+$assert( '2026-09-16T08:00:00Z' === ( $composed['imported_at'] ?? '' ), 'composed-identity-records-import-timestamp' );
+$assert( '1.8.1' === ( $composed['static_site_importer']['version'] ?? '' ), 'composed-identity-records-importer-version' );
+$assert( $valid_provenance === ( $composed['artifact'] ?? null ), 'composed-identity-carries-producer-record-verbatim' );
+$assert( ! array_key_exists( 'artifact', Static_Site_Importer_Build_Provenance::describe_artifact() ), 'identity-without-provenance-omits-artifact-record' );
+
+$header_lines = Static_Site_Importer_Build_Provenance::artifact_header_lines( $valid_provenance, 'ssi-acme' );
+$assert( array( 'Version: 1.8.1+' . substr( 'a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1', 0, 8 ), 'Update URI: https://static-site-importer.invalid/ssi-acme' ) === $header_lines, 'header-lines-carry-real-version-and-neutral-update-uri', print_r( $header_lines, true ) );
+$assert( array() === Static_Site_Importer_Build_Provenance::artifact_header_lines( array(), 'ssi-acme' ), 'absent-provenance-emits-no-header-lines' );
+
+if ( ! function_exists( 'apply_filters' ) ) {
+	function apply_filters( string $hook, mixed $value ): mixed {
+		$filter = $GLOBALS['ssi_provenance_filters'][ $hook ] ?? null;
+		return is_callable( $filter ) ? $filter( $value ) : $value;
+	}
+}
+if ( ! function_exists( 'update_option' ) ) {
+	function update_option( string $option, mixed $value, bool $autoload = false ): bool {
+		$GLOBALS['ssi_provenance_options'][ $option ] = $value;
+		return true;
+	}
+}
+if ( ! function_exists( 'get_option' ) ) {
+	function get_option( string $option, mixed $default = false ): mixed {
+		return $GLOBALS['ssi_provenance_options'][ $option ] ?? $default;
+	}
+}
+$GLOBALS['ssi_provenance_filters']['static_site_importer_update_uri_host'] = static fn ( string $host ): string => 'updates.consumer.example';
+$filtered_lines = Static_Site_Importer_Build_Provenance::artifact_header_lines( $valid_provenance, 'SSI Acme!' );
+$assert( (bool) preg_match( '#^Update URI: https://updates\.consumer\.example/ssi-acme$#', (string) ( $filtered_lines[1] ?? '' ) ), 'update-host-is-consumer-policy', print_r( $filtered_lines, true ) );
+$GLOBALS['ssi_provenance_filters']['static_site_importer_update_uri_host'] = static fn (): string => '';
+$assert( 1 === count( Static_Site_Importer_Build_Provenance::artifact_header_lines( $valid_provenance, 'ssi-acme' ) ) && str_starts_with( (string) Static_Site_Importer_Build_Provenance::artifact_header_lines( $valid_provenance, 'ssi-acme' )[0], 'Version: ' ), 'empty-update-host-emits-no-update-uri-line' );
+unset( $GLOBALS['ssi_provenance_filters'] );
+
+$assert( true === Static_Site_Importer_Build_Provenance::record_artifact_identity( $composed ), 'identity-option-write-succeeds' );
+$read_identity = Static_Site_Importer_Build_Provenance::artifact_identity();
+$assert( $composed === $read_identity, 'identity-option-round-trips-composed-record' );
+$assert( $valid_provenance['artifact_hash'] === ( $read_identity['artifact']['artifact_hash'] ?? '' ), 'identity-option-exposes-artifact-hash' );
+$GLOBALS['ssi_provenance_options'][ Static_Site_Importer_Build_Provenance::ARTIFACT_IDENTITY_OPTION ] = 'not json';
+$assert( array() === Static_Site_Importer_Build_Provenance::artifact_identity(), 'unreadable-identity-option-reads-empty' );
+$GLOBALS['ssi_provenance_options'][ Static_Site_Importer_Build_Provenance::ARTIFACT_IDENTITY_OPTION ] = '{"schema":"static-site-importer/build-provenance/v0"}';
+$assert( array() === Static_Site_Importer_Build_Provenance::artifact_identity(), 'foreign-schema-identity-option-reads-empty' );
+$assert( false === Static_Site_Importer_Build_Provenance::record_artifact_identity( array( 'schema' => 'wrong' ) ), 'identity-option-write-requires-current-schema' );
+unset( $GLOBALS['ssi_provenance_options'] );
+
 if ( $failures ) {
 	echo implode( "\n", $failures ) . "\n";
 	echo 'FAILED: build-provenance smoke (' . count( $failures ) . ' of ' . $assertions . " assertions)\n";
