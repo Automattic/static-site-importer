@@ -1930,6 +1930,16 @@ namespace {
 		'source-rows-that-neither-pair-with-each-box-nor-share-one-band-drop-their-provider-placement',
 		wp_json_encode( array( 'mixed' => $mixed_row_layout, 'uniform' => array_column( $uniform_row_result['nodes'], 'layout', 'id' ) ) )
 	);
+	// A sibling that another strategy already represented is absent from the overlay
+	// graph; on its own the remainder looks like an ordered sequence.
+	$reduced_row_graph          = $mixed_row_graph;
+	$reduced_row_graph['nodes'] = array_values( array_filter( $mixed_row_graph['nodes'], static fn ( array $node ): bool => 'wrapper-1' !== $node['id'] ) );
+	$reduced_row_layout         = array_column( Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( $reduced_row_graph, $mixed_row_graph )['nodes'], 'layout', 'id' );
+	$assert(
+		! isset( $reduced_row_layout['wrapper-2']['area'] ) && '611px' === ( $reduced_row_layout['wrapper-2']['width'] ?? '' ) && isset( $reduced_row_layout['wrapper-0'] ) && ! isset( $reduced_row_layout['wrapper-0']['area'] ),
+		'partly-represented-sibling-sets-are-judged-against-the-complete-source-graph',
+		wp_json_encode( $reduced_row_layout )
+	);
 	$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $kmr[2]['provider_layout_overlay_css'] ?? null ), 'kmr-overlay-passes-stylesheet-admission' );
 	// A source box chain deeper than the provider's own element pair cannot keep every
 	// box, so it stays a decline instead of claiming an equivalence it cannot hold.
