@@ -766,7 +766,13 @@ namespace {
 	$positioned_submit_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $positioned_submit_form );
 	$positioned_submit_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $positioned_submit_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$positioned_submit_css        = (string) ( $positioned_submit_row['provider_layout_overlay_css']['css'] ?? '' );
-	$assert( empty( $positioned_submit_validation['errors'] ) && 'mapped' === ( $positioned_submit_row['status'] ?? '' ) && true === ( $positioned_submit_row['runtime_mapped'] ?? false ) && empty( $positioned_submit_row['form_receipt_unaccepted_losses'] ?? array() ) && 2 === substr_count( $positioned_submit_css, 'inset:0' ) && 2 === substr_count( $positioned_submit_css, 'position:absolute' ), 'positioned-submit-preserves-responsive-inset-without-a-receipt-loss-gate', wp_json_encode( $positioned_submit_row ) );
+	$assert( empty( $positioned_submit_validation['errors'] ) && 'mapped' === ( $positioned_submit_row['status'] ?? '' ) && true === ( $positioned_submit_row['runtime_mapped'] ?? false ) && empty( $positioned_submit_row['form_receipt_unaccepted_losses'] ?? array() ) && str_contains( $positioned_submit_css, '{display:flex}' ) && ! str_contains( $positioned_submit_css, 'inset:0' ) && ! str_contains( $positioned_submit_css, 'position:absolute' ), 'positioned-submit-maps-without-stretching-the-inner-button-over-the-form', $positioned_submit_css );
+	$submit_min_width_form = $presentation_form;
+	$submit_min_width_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 3, 'control' => $presentation_role( array( 'min_width' => '100%' ), array( 'min_width' ), 'button' ) ) );
+	$submit_min_width_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $submit_min_width_form );
+	$submit_min_width_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $submit_min_width_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$submit_min_width_css = (string) ( $submit_min_width_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert( empty( $submit_min_width_validation['errors'] ) && preg_match( '/\.ssi-node-[a-f0-9]{12}\{min-width:100%\}/', $submit_min_width_css ) && ! str_contains( $submit_min_width_css, '> .wp-block-button__link{min-width:100%}' ), 'source-submit-min-width-targets-the-wrapper-instead-of-its-inner-button', $submit_min_width_css );
 	foreach ( array( '' => 'inherit', 'font-weight:600;' => '600' ) as $source_weight => $expected_weight ) {
 		$label_artifact = ( new $artifact_compiler() )->compile( array(
 			'entrypoint' => 'index.html',
