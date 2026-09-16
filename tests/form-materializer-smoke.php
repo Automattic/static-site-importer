@@ -1768,7 +1768,13 @@ namespace {
 	$receipt_argument = array_values( array_filter( $argv ?? array(), static fn( string $argument ): bool => str_starts_with( $argument, '--retained-form-receipt=' ) ) );
 	if ( ! empty( $receipt_argument ) ) {
 		$receipt_path = substr( $receipt_argument[0], strlen( '--retained-form-receipt=' ) );
-		$receipt      = is_readable( $receipt_path ) ? json_decode( (string) file_get_contents( $receipt_path ), true ) : null;
+		$retained_raw = is_readable( $receipt_path ) ? (string) file_get_contents( $receipt_path ) : '';
+		// Retained artifacts can carry a large per-form metadata set, so the replay
+		// fixture is stored gzip-compressed and decoded by its magic header.
+		if ( str_starts_with( $retained_raw, "\x1f\x8b" ) ) {
+			$retained_raw = (string) gzdecode( $retained_raw );
+		}
+		$receipt      = '' !== $retained_raw ? json_decode( $retained_raw, true ) : null;
 		$retained     = array();
 		$collect      = static function ( mixed $value ) use ( &$collect, &$retained ): void {
 			if ( ! is_array( $value ) ) {
