@@ -434,7 +434,7 @@ $cursor_payload = $payload;
 $cursor_bytes = file_get_contents( __DIR__ . '/fixtures/cursor.cur' );
 $cursor_payload['blocks'][0]['assets']['pointer.cur'] = $cursor_bytes;
 $cursor_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $cursor_payload );
-$assert( is_array( $cursor_descriptor ) && $cursor_bytes === ( $cursor_descriptor['files']['ssi-example-site/blocks/custom-hero/pointer.cur'] ?? null ), 'cursor-companion-asset-preserves-binary-bytes' );
+$assert( is_array( $cursor_descriptor ) && ( $cursor_descriptor['files']['ssi-example-site/blocks/custom-hero/pointer.cur'] ?? null ) === $cursor_bytes, 'cursor-companion-asset-preserves-binary-bytes' );
 $php_render = $payload;
 $php_render['blocks'][0]['render'] = '<?php system( "id" );';
 $assert( is_wp_error( Static_Site_Importer_Companion_Plugin::validate_payload( $php_render ) ), 'php-render-template-rejected' );
