@@ -26,6 +26,24 @@ require dirname( __DIR__ ) . '/includes/class-static-site-importer-materializati
 // The adapters name their availability callbacks; satisfy them from the shim.
 if ( ! class_exists( 'Static_Site_Importer_Form_Seeder' ) ) {
 	class Static_Site_Importer_Form_Seeder {
+		public static function adapter(): array {
+			return array(
+				'id'                   => 'jetpack_contact_form',
+				'entity_type'          => 'form',
+				'entity_collection'    => 'forms',
+				'capability'           => 'form',
+				'provider'             => 'jetpack',
+				'rollback_contract_id' => 'static-site-importer/jetpack-form-rollback/v1',
+				'dependencies'         => array(
+					array(
+						'type'                  => 'wp_org_plugin',
+						'slug'                  => 'jetpack',
+						'plugin_file'           => 'jetpack/jetpack.php',
+						'availability_callback' => array( self::class, 'jetpack_forms_available' ),
+					),
+				),
+			);
+		}
 		public static function jetpack_forms_available(): bool {
 			return in_array( 'jetpack', $GLOBALS['ssi_available_plugins'], true );
 		}
@@ -39,6 +57,24 @@ if ( ! class_exists( 'Static_Site_Importer_Form_Seeder' ) ) {
 }
 if ( ! class_exists( 'Static_Site_Importer_Woo_Product_Seeder' ) ) {
 	class Static_Site_Importer_Woo_Product_Seeder {
+		public static function adapter(): array {
+			return array(
+				'id'                   => 'woocommerce_simple_product',
+				'entity_type'          => 'product',
+				'entity_collection'    => 'products',
+				'capability'           => 'shop',
+				'provider'             => 'woocommerce',
+				'rollback_contract_id' => 'static-site-importer/woocommerce-product-rollback/v1',
+				'dependencies'         => array(
+					array(
+						'type'                  => 'wp_org_plugin',
+						'slug'                  => 'woocommerce',
+						'plugin_file'           => 'woocommerce/woocommerce.php',
+						'availability_callback' => array( self::class, 'woocommerce_available' ),
+					),
+				),
+			);
+		}
 		public static function woocommerce_available(): bool {
 			return in_array( 'woocommerce', $GLOBALS['ssi_available_plugins'], true );
 		}

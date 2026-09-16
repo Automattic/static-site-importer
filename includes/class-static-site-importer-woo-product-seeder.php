@@ -14,6 +14,41 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Static_Site_Importer_Woo_Product_Seeder {
 
+	/**
+	 * Return the WooCommerce simple-product adapter definition.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public static function adapter(): array {
+		return array(
+			'id'                       => 'woocommerce_simple_product',
+			'entity_type'              => 'product',
+			'entity_collection'        => 'products',
+			'capability'               => 'shop',
+			'provider'                 => 'woocommerce',
+			'label'                    => 'WooCommerce simple product',
+			'report_key'               => 'product_seeding',
+			'waiver_arg'               => 'allow_missing_woocommerce',
+			'validator'                => array( 'Static_Site_Importer_Entity_Materializer_Registry', 'validate_woo_products_manifest' ),
+			'materializer'             => array( self::class, 'seed' ),
+			'rollback_callback'        => array( self::class, 'rollback' ),
+			'rollback_contract_id'     => 'static-site-importer/woocommerce-product-rollback/v1',
+			'binding_callback'         => array( self::class, 'binding_block_markup' ),
+			'classic_binding_callback' => array( self::class, 'binding_classic_render' ),
+			'report_callback'          => array( self::class, 'new_report' ),
+			'presentation'             => 'Static_Site_Importer_Commerce_Presentation',
+			'dependencies'             => array(
+				array(
+					'type'                  => 'wp_org_plugin',
+					'slug'                  => 'woocommerce',
+					'plugin_file'           => 'woocommerce/woocommerce.php',
+					'availability_callback' => array( self::class, 'woocommerce_available' ),
+					'missing_apis'          => array( 'WC_Product_Simple', 'product_post_type', 'product_cat_taxonomy' ),
+				),
+			),
+		);
+	}
+
 	/** Return a Woo-owned cart control for one seeded product binding. */
 	public static function binding_block_markup( array $entity, array $result ): string {
 		unset( $entity );
