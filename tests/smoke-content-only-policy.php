@@ -31,9 +31,10 @@ $artifact = static function ( string $path, string $content, bool $encoded = fal
 };
 
 $assert( true === Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/index.html', '<main>Safe</main>' ) ), 'html-source-accepted' );
+$assert( true === Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/assets/pointer.CUR', file_get_contents( __DIR__ . '/fixtures/cursor.cur' ), true ) ), 'binary-cursor-source-accepted' );
 $assert( false === Static_Site_Importer_Content_Policy::is_static_path( 'website/.config.ts' ), 'dotfile-typescript-rejected-with-pathinfo-semantics' );
 $assert( true === Static_Site_Importer_Content_Policy::is_static_path( 'website/.mjs' ), 'dotfile-mjs-accepted-with-pathinfo-semantics' );
-foreach ( array( 'website/shell.php', 'website/shell.phtml', 'website/shell.jsp', 'website/shell.cgi' ) as $path ) {
+foreach ( array( 'website/shell.php', 'website/shell.phtml', 'website/shell.jsp', 'website/shell.cgi', 'website/pointer.cur.php' ) as $path ) {
 	$assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( $path, 'payload' ) ) ), 'executable-extension-rejected:' . $path );
 }
 // Negative-policy lane: matrix collection may omit build sources, but public

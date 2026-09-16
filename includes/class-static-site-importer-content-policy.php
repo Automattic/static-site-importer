@@ -35,6 +35,7 @@ final class Static_Site_Importer_Content_Policy {
 		'webp',
 		'avif',
 		'ico',
+		'cur',
 		'bmp',
 		'woff',
 		'woff2',
@@ -53,7 +54,7 @@ final class Static_Site_Importer_Content_Policy {
 	private const TEXTUAL_EXTENSIONS = array( 'html', 'htm', 'css', 'js', 'mjs', 'json', 'map', 'xml', 'txt', 'md', 'markdown', 'svg' );
 
 	/** Assets that a compiler may carry into a generated companion plugin. */
-	private const COMPANION_ASSET_EXTENSIONS = array( 'js', 'mjs', 'css', 'json', 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'woff', 'woff2', 'ttf', 'otf', 'eot' );
+	private const COMPANION_ASSET_EXTENSIONS = array( 'js', 'mjs', 'css', 'json', 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'cur', 'woff', 'woff2', 'ttf', 'otf', 'eot' );
 
 	/** @return true|WP_Error */
 	public static function validate_artifact( array $artifact ) {

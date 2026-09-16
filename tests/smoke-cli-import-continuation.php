@@ -170,6 +170,29 @@ rmdir( $bundle_source );
 unlink( $bundle_request );
 rmdir( $bundle_dir );
 
+$cursor_bundle_dir = sys_get_temp_dir() . '/ssi-cursor-request-bundle-' . bin2hex( random_bytes( 6 ) );
+mkdir( $cursor_bundle_dir . '/assets', 0777, true );
+$cursor_bundle_dir = realpath( $cursor_bundle_dir );
+try {
+	$cursor_bytes = file_get_contents( __DIR__ . '/fixtures/cursor.cur' );
+	file_put_contents( $cursor_bundle_dir . '/index.html', '<main style="cursor:url(assets/pointer.cur),pointer">Cursor</main>' );
+	file_put_contents( $cursor_bundle_dir . '/assets/pointer.cur', $cursor_bytes );
+	$cursor_bundle = static_site_importer_cli_request_bundle_files( $cursor_bundle_dir );
+	$cursor_files  = is_array( $cursor_bundle ) ? array_column( $cursor_bundle['files'], null, 'path' ) : array();
+	$assert( isset( $cursor_files['index.html'], $cursor_files['assets/pointer.cur'] ), 'request-bundle-retains-static-cursor-assets' );
+	if ( isset( $cursor_files['assets/pointer.cur'] ) ) {
+		$assert( $cursor_bytes === $cursor_bundle['payload_reader']->read( $cursor_files['assets/pointer.cur']['payload_reference'] ), 'request-bundle-preserves-cursor-bytes' );
+	}
+	file_put_contents( $cursor_bundle_dir . '/assets/pointer.cur.php', '<?php echo "unsafe";' );
+	$executable_bundle = static_site_importer_cli_request_bundle_files( $cursor_bundle_dir );
+	$assert( is_wp_error( $executable_bundle ) && 'static_site_importer_executable_source_rejected' === $executable_bundle->get_error_code(), 'request-bundle-rejects-executable-cursor-suffix' );
+} finally {
+	foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $cursor_bundle_dir, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST ) as $item ) {
+		$item->isDir() ? rmdir( $item->getPathname() ) : unlink( $item->getPathname() );
+	}
+	rmdir( $cursor_bundle_dir );
+}
+
 $bounded_bundle_dir = sys_get_temp_dir() . '/ssi-bounded-request-bundle-' . bin2hex( random_bytes( 6 ) );
 mkdir( $bounded_bundle_dir );
 $inline_styles  = str_repeat( '<style>.bounded{display:grid}</style>', 9 );
