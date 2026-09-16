@@ -141,6 +141,37 @@ $projected_bundle = Static_Site_Importer_Portable_Source_Manifest::project(
 	$resolved_bundle['payload_reader']
 );
 $assert( ! is_wp_error( $projected_bundle ) && array( 'index.html' ) === array_column( $projected_bundle['files'] ?? array(), 'path' ), 'request-bundle-projects-portable-manifest-through-payload-reader' );
+
+$report_bundle_dir  = sys_get_temp_dir() . '/ssi-report-request-bundle-' . bin2hex( random_bytes( 6 ) );
+$report_source      = $report_bundle_dir . '/report-source';
+$report_request     = $report_bundle_dir . '/request.json';
+mkdir( $report_source, 0777, true );
+file_put_contents( $report_source . '/index.html', '<h1>Home</h1>' );
+file_put_contents( $report_source . '/scroll-states.json', '{"pages":[]}' );
+file_put_contents(
+	$report_request,
+	wp_json_encode(
+		array(
+			'operation' => 'plan',
+			'source'    => array(
+				'type'     => 'files',
+				'ref'      => 'request-bundle:report-source',
+				'metadata' => array( 'reports' => array( 'scroll-states.json' ) ),
+			),
+		)
+	)
+);
+$report_input    = static_site_importer_cli_import_input( array(), array( 'request' => $report_request ) );
+$resolved_report = apply_filters( 'static_site_importer_resolve_source_reference', null, 'request-bundle:report-source', 'files' );
+$assert( is_array( $report_input ) && array( 'scroll-states.json' ) === ( $resolved_report['source']['metadata']['reports'] ?? null ), 'request-bundle-preserves-declared-report-paths' );
+$report_runtime = static_site_importer_source_runtime( is_array( $resolved_report ) ? $resolved_report['source'] : array() );
+$report_paths   = is_array( $report_runtime ) ? array_column( $report_runtime['artifact']['files'] ?? array(), 'path' ) : array();
+$assert( array( 'website/index.html', 'scroll-states.json' ) === $report_paths, 'request-bundle-keeps-declared-reports-at-artifact-root' );
+foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $report_bundle_dir, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST ) as $item ) {
+	$item->isDir() ? rmdir( $item->getPathname() ) : unlink( $item->getPathname() );
+}
+rmdir( $report_bundle_dir );
+
 $figma_source = $bundle_dir . '/design.fig';
 file_put_contents( $figma_source, 'figma bytes' );
 $figma_bundle_input = static_site_importer_cli_prepare_request_bundle(

@@ -390,16 +390,18 @@ if ( ! function_exists( 'static_site_importer_cli_prepare_request_bundle' ) ) {
 		if ( function_exists( 'add_filter' ) ) {
 			add_filter(
 				'static_site_importer_resolve_source_reference',
-				static function ( $resolved, string $candidate, string $candidate_type ) use ( $reference, $resolved_path, $type, $bundle ) {
+				static function ( $resolved, string $candidate, string $candidate_type ) use ( $reference, $resolved_path, $type, $bundle, $source ) {
 					if ( null !== $resolved || $reference !== $candidate || $type !== $candidate_type ) {
 						return $resolved;
 					}
 					if ( 'files' === $type ) {
+						$metadata                     = isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array();
+						$metadata['compiler_limits'] = $bundle['compiler_limits'];
 						return array(
 							'source'         => array(
 								'type'     => 'files',
 								'files'    => $bundle['files'],
-								'metadata' => array( 'compiler_limits' => $bundle['compiler_limits'] ),
+								'metadata' => $metadata,
 							),
 							'payload_reader' => $bundle['payload_reader'],
 							'provenance'     => array( 'transport' => 'cli-request-bundle' ),
