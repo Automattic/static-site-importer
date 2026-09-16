@@ -133,6 +133,14 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 				proc_close( $worker['process'] );
 				if ( 0 !== (int) $status['exitcode'] ) {
 					$failures[] = substr( trim( $worker['error'] . "\n" . $worker['output'] ), 0, 1000 );
+					$diagnostic = sprintf( 'Compile worker %d exited with status %d.', (int) $index + 1, (int) $status['exitcode'] );
+					if ( '' !== trim( $worker['error'] ) ) {
+						$diagnostic .= "\nStderr:\n" . substr( trim( $worker['error'] ), 0, 500 );
+					}
+					if ( '' !== trim( $worker['output'] ) ) {
+						$diagnostic .= "\nStdout:\n" . substr( trim( $worker['output'] ), 0, 500 );
+					}
+					WP_CLI::warning( $diagnostic );
 				}
 				unset( $processes[ $index ] );
 			}
@@ -654,9 +662,13 @@ if ( ! function_exists( 'static_site_importer_cli_import_run_fresh_runtime' ) ) 
 			$spec    = static_site_importer_cli_import_fresh_runtime_spec( $path );
 			$raw     = WP_CLI::runcommand( $spec['command'], $spec['options'] );
 			$stdout  = is_object( $raw ) ? (string) ( $raw->stdout ?? '' ) : ( is_string( $raw ) ? $raw : '' );
+			$stderr  = is_object( $raw ) ? trim( (string) ( $raw->stderr ?? '' ) ) : '';
 			$decoded = static_site_importer_cli_decode_import_step( $stdout );
 			if ( ! is_array( $decoded ) ) {
 				return static_site_importer_cli_import_error( 'static_site_importer_cli_step_response_invalid', static_site_importer_cli_invalid_step_message( $raw ) );
+			}
+			if ( empty( $decoded['success'] ) && '' !== $stderr ) {
+				WP_CLI::warning( "Fresh import runtime diagnostics:\n" . substr( $stderr, 0, 5000 ) );
 			}
 			return $decoded;
 		} finally {
