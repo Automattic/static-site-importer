@@ -206,14 +206,17 @@ final class Static_Site_Importer_Form_Field_Markup {
 		}
 
 		$attrs = array();
-		$label = self::control_text( $control );
+		$label = isset( $control['label'] ) && is_scalar( $control['label'] ) ? trim( (string) $control['label'] ) : '';
+		if ( '' === $label && in_array( $lookup, array( 'checkbox', 'radio', 'select' ), true ) ) {
+			$label = self::control_text( $control );
+		}
 		if ( '' !== $label && isset( $control['required_text'] ) && is_scalar( $control['label'] ?? null ) && 1 === preg_match( '/\s$/u', (string) $control['label'] ) ) {
 			$label = rtrim( $label ) . ' ';
 		}
 		if ( ! empty( $control['required'] ) || 'true' === strtolower( trim( (string) ( $control['aria-required'] ?? $control['aria_required'] ?? '' ) ) ) ) {
 			$attrs['required'] = true;
 		}
-		if ( false === ( $control['required_indicator'] ?? null ) ) {
+		if ( false === ( $control['required_indicator'] ?? null ) && '' === trim( (string) ( $control['required_text'] ?? '' ) ) ) {
 			$attrs['requiredIndicator'] = false;
 		}
 		$id = isset( $control['id'] ) && is_scalar( $control['id'] ) ? trim( (string) $control['id'] ) : '';

@@ -1225,6 +1225,32 @@ namespace {
 	$labelled_width_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $labelled_width_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$labelled_width_reasons = array_column( $labelled_width_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' );
 	$assert( 'skipped' === ( $labelled_width_row['status'] ?? '' ) && in_array( 'unsupported_semantic_wrapper', $labelled_width_reasons, true ) && 3 === substr_count( (string) ( $labelled_width_row['block_markup'] ?? '' ), '"width":33.333' ), 'percentage-width-proof-does-not-accept-labelled-fieldset-semantics', wp_json_encode( $labelled_width_row ) );
+	$placeholder_email_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest(
+		array(
+			'forms' => array(
+				array(
+					'selector' => 'form.newsletter',
+					'controls' => array(
+						array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'placeholder' => 'Email Address' ),
+						array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Claim My Reward' ),
+					),
+					'control_topology' => array(
+						'schema'    => 'generic/form-control-topology/v1',
+						'max_depth' => 8,
+						'max_nodes' => 128,
+						'truncated' => false,
+						'nodes'     => array(
+							array( 'id' => 'control-0', 'kind' => 'control', 'parent' => null, 'order' => 0, 'depth' => 0, 'control' => 0 ),
+							array( 'id' => 'control-1', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 1 ),
+						),
+					),
+				),
+			),
+		)
+	);
+	$placeholder_email_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $placeholder_email_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$placeholder_email_markup = (string) ( $placeholder_email_row['block_markup'] ?? '' );
+	$assert( empty( $placeholder_email_validation['errors'] ) && 'mapped' === ( $placeholder_email_row['status'] ?? '' ) && str_contains( $placeholder_email_markup, '"placeholder":"Email Address"' ) && ! str_contains( $placeholder_email_markup, '"label":"Email Address"' ), 'placeholder-only email fields keep placeholder without inventing a label', $placeholder_email_markup );
 	$name_fieldset_form = array(
 		'forms' => array(
 			array(
