@@ -1942,11 +1942,15 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * its own row addresses different controls with those row indexes, so the
 	 * placement would reorder the form instead of reproducing it.
 	 *
+	 * Placement is judged against the complete source graph, because a partly
+	 * represented sibling set can look like an ordered sequence on its own.
+	 *
 	 * @param array<string,mixed> $graph
+	 * @param array<string,mixed>|null $source_graph
 	 * @return array<string,mixed>
 	 */
-	public static function without_shared_source_grid_rows( array $graph ): array {
-		$shared = self::shared_source_grid_row_nodes( $graph );
+	public static function without_shared_source_grid_rows( array $graph, ?array $source_graph = null ): array {
+		$shared = self::shared_source_grid_row_nodes( is_array( $source_graph ) ? $source_graph : $graph );
 		if ( empty( $shared ) ) {
 			return $graph;
 		}
