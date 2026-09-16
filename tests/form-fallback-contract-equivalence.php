@@ -21,30 +21,76 @@ if ( ! function_exists( 'wp_json_encode' ) ) {
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
 
-$html         = '<form class="newsletter primary" action="/subscribe" method="post"><h2>Updates</h2><label class="required-note">Required fields</label><input name="email" aria-label="Email address" required><p class="help">We only send useful mail.</p><textarea name="message" style="height: 12rem"></textarea><input type="submit" value="Subscribe" style="display: none"><a class="button primary invalid!" href="#subscribe">Subscribe</a><p class="help">Unsubscribe any time.</p></form>';
-$manifest     = Static_Site_Importer_Form_Fallback_Contract::manifest_from_html( $html );
-$presentation = Static_Site_Importer_Form_Fallback_Contract::presentation_from_html( $html, 'form.newsletter', 1 );
-if ( method_exists( Static_Site_Importer_Form_Fallback_Contract::class, 'analysis_from_html' ) ) {
-	$analysis = Static_Site_Importer_Form_Fallback_Contract::analysis_from_html( $html, 'form.newsletter', 1 );
-	if ( $manifest !== $analysis['manifest'] || $presentation !== $analysis['presentation'] ) {
-		throw new RuntimeException( 'Expected combined analysis to preserve the legacy helper outputs.' );
-	}
+$entity       = array(
+	'source_path' => 'index.html',
+	'selector'    => 'form.newsletter',
+	'form'        => array(
+		'class'               => 'newsletter primary',
+		'action'              => '/subscribe',
+		'method'              => 'post',
+		'context_before'      => array(
+			array(
+				'type'  => 'heading',
+				'level' => 2,
+				'text'  => 'Updates',
+			),
+			array(
+				'type' => 'paragraph',
+				'text' => 'Required fields',
+			),
+		),
+		'context_after'       => array(
+			array(
+				'type' => 'paragraph',
+				'text' => 'Unsubscribe any time.',
+			),
+		),
+		'interleaved_context' => true,
+		'submit_presentation' => array(
+			'text'    => 'Subscribe',
+			'classes' => array( 'button', 'primary' ),
+		),
+	),
+	'controls'    => array(
+		array(
+			'tag'      => 'input',
+			'type'     => 'text',
+			'name'     => 'email',
+			'label'    => 'Email address',
+			'required' => true,
+		),
+		array(
+			'tag'    => 'textarea',
+			'type'   => 'textarea',
+			'name'   => 'message',
+			'height' => '12rem',
+		),
+		array(
+			'tag'  => 'input',
+			'type' => 'submit',
+		),
+	),
+	'bindings'    => array(
+		array(
+			'schema'              => 'generic/block-binding/v1',
+			'source_path'         => 'index.html',
+			'search_block_markup' => '<!-- wp:html --><form class="newsletter primary"></form><!-- /wp:html -->',
+			'occurrence'          => 1,
+			'role'                => 'form',
+		),
+	),
+);
+$manifest     = Static_Site_Importer_Form_Fallback_Contract::manifest_from_metadata( $entity );
+$presentation = Static_Site_Importer_Form_Fallback_Contract::presentation_from_metadata( $entity, 'form.newsletter', 1 );
+$analysis     = Static_Site_Importer_Form_Fallback_Contract::analysis_from_metadata( $entity, 'form.newsletter', 1 );
+if ( $manifest !== $analysis['manifest'] || $presentation !== $analysis['presentation'] ) {
+	throw new RuntimeException( 'Expected combined analysis to preserve the metadata helper outputs.' );
 }
 $fallback           = array(
 	'source_path' => 'index.html',
 	'selector'    => 'form.newsletter',
 	'form'        => $manifest['form'],
 	'controls'    => $manifest['controls'],
-);
-$entity             = $fallback;
-$entity['bindings'] = array(
-	array(
-		'schema'              => 'generic/block-binding/v1',
-		'source_path'         => 'index.html',
-		'search_block_markup' => $html,
-		'occurrence'          => 1,
-		'role'                => 'form',
-	),
 );
 $prepared           = Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $entity );
 $bindings           = Static_Site_Importer_Entity_Materializer_Registry::block_bindings(
@@ -83,7 +129,7 @@ $projection = array(
 	'hash'         => Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $fallback ),
 	'prepared'     => $prepared,
 	'bindings'     => $bindings,
-	'diagnostic'   => Static_Site_Importer_Report_Diagnostics::fallback_diagnostic_entry( 'core_html_block', 'index.html', $html, array( 'reason' => 'fixture' ), array() ),
+	'diagnostic'   => Static_Site_Importer_Report_Diagnostics::fallback_diagnostic_entry( 'core_html_block', 'index.html', '<form class="newsletter"></form>', array( 'reason' => 'fixture', 'form' => $manifest['form'], 'controls' => $manifest['controls'] ), array() ),
 );
 
 echo wp_json_encode( $projection ) . "\n";

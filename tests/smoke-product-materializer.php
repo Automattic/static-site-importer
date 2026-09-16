@@ -2,8 +2,8 @@
 /**
  * Smoke coverage for the product-grid fallback materialization path.
  *
- * Consumes the Blocks Engine `html_product_grid_fallback` finding, normalizes it
- * into a products-manifest/v1, validates + seeds it through the WooCommerce shop
+ * Consumes the Blocks Engine `html_product_grid_fallback` finding as a producer
+ * product declaration, validates + seeds it through the WooCommerce shop
  * adapter, and confirms the gate-closure signal is stamped onto seeded findings.
  *
  * Run from the repository root:
@@ -231,7 +231,8 @@ namespace {
 		'products'           => array(
 			array(
 				'name'             => 'Aero Mug',
-				'price'            => '$24',
+				'slug'             => 'aero-mug',
+				'regular_price'    => '24',
 				'sale_price'       => null,
 				'description'      => 'Double-walled travel mug.',
 				'image'            => array(
@@ -243,8 +244,9 @@ namespace {
 			),
 			array(
 				'name'             => 'Trail Pack',
-				'price'            => '$1,299.00',
-				'sale_price'       => '$999.00',
+				'slug'             => 'trail-pack',
+				'regular_price'    => '1299.00',
+				'sale_price'       => '999.00',
 				'description'      => null,
 				'image'            => null,
 				'has_cart_control' => true,
@@ -317,12 +319,14 @@ namespace {
 		'products'           => array(
 			array(
 				'name'             => 'Aero Mug',
-				'price'            => '$24',
+				'slug'             => 'aero-mug',
+				'regular_price'    => '24',
 				'has_cart_control' => true,
 			),
 			array(
 				'name'             => 'Trail Pack',
-				'price'            => '$1,299.00',
+				'slug'             => 'trail-pack',
+				'regular_price'    => '1299.00',
 				'has_cart_control' => true,
 			),
 		),
@@ -420,7 +424,7 @@ namespace {
 	add_filter( 'ssi_shop_plugin', $select_shop );
 	add_filter( 'static_site_importer_entity_materializers', $register_shop );
 	$alternate_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/alternate.html' );
-	$alternate_report->append_diagnostic( array( 'diagnostic_code' => 'html_product_grid_fallback', 'products' => array( array( 'name' => 'Alternate Mug', 'price' => '$8' ) ) ) );
+	$alternate_report->append_diagnostic( array( 'diagnostic_code' => 'html_product_grid_fallback', 'products' => array( array( 'name' => 'Alternate Mug', 'slug' => 'alternate-mug', 'regular_price' => '8' ) ) ) );
 	$woo_products_before = count( $GLOBALS['ssi_seeded_products'] );
 	$alternate_seeding   = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $alternate_report );
 	$assert( 1 === $alternate_shop_calls && 'alternate-shop' === ( $alternate_seeding['provider'] ?? '' ), 'alternate-shop-adapter-executes-and-is-attributed' );
@@ -429,7 +433,7 @@ namespace {
 	$unsupported_shop = static fn( string $provider ): string => 'unsupported-shop';
 	add_filter( 'ssi_shop_plugin', $unsupported_shop );
 	$unsupported_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/unsupported.html' );
-	$unsupported_report->append_diagnostic( array( 'diagnostic_code' => 'html_product_grid_fallback', 'products' => array( array( 'name' => 'Unsupported Mug', 'price' => '$8' ) ) ) );
+	$unsupported_report->append_diagnostic( array( 'diagnostic_code' => 'html_product_grid_fallback', 'products' => array( array( 'name' => 'Unsupported Mug', 'slug' => 'unsupported-mug', 'regular_price' => '8' ) ) ) );
 	$unsupported_seeding = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $unsupported_report );
 	$assert( 'configured_shop_provider_unsupported' === ( $unsupported_seeding['reason'] ?? '' ) && 'unsupported-shop' === ( $unsupported_seeding['provider'] ?? '' ), 'unsupported-shop-declines-without-woo-fallback' );
 	$assert( $woo_products_before === count( $GLOBALS['ssi_seeded_products'] ), 'unsupported-shop-does-not-mutate-through-woo' );

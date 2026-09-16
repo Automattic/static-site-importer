@@ -18,7 +18,7 @@ Static Site Importer's product handoff uses four machine-readable envelopes. The
 
 ## Commerce Findings
 
-When the canonical plan contains a Blocks Engine `html_product_grid_fallback`, SSI converts only its extracted product rows into a required `shop` dependency and `products` entity collection before the v2 lifecycle runs. Those declarations use the existing WooCommerce simple-product adapter and seeder. The finding does not itself provide canonical replacement-block anchors, so SSI does not infer cart-control bindings from selectors; provider bindings require explicit source anchors in the entity declaration.
+When the canonical plan contains a Blocks Engine `html_product_grid_fallback`, SSI materializes only producer-declared product rows (slug and regular_price already present) through the existing WooCommerce simple-product adapter and seeder. SSI does not invent catalog slugs or prices from display text. The finding does not itself provide canonical replacement-block anchors, so SSI does not infer cart-control bindings from selectors; provider bindings require explicit source anchors in the entity declaration.
 
 ## Boundary
 

@@ -1682,7 +1682,24 @@ $form_declaration_id                       = 'form-topology-runtime';
 $topology_form                             = array(
 	'selector'         => 'form.contact',
 	'source_path'      => 'index.html',
-	'form'             => array( 'class' => 'contact' ),
+	'form'             => array(
+		'class'               => 'contact',
+		'context_before'      => array(
+			array(
+				'type'  => 'heading',
+				'level' => 2,
+				'text'  => 'Contact Me',
+			),
+			array(
+				'type' => 'paragraph',
+				'text' => '* Indicates required field',
+			),
+		),
+		'submit_presentation' => array(
+			'text'    => 'Send',
+			'classes' => array( 'wsite-button' ),
+		),
+	),
 	'controls'         => array(
 		array(
 			'tag'   => 'input',
@@ -1691,10 +1708,11 @@ $topology_form                             = array(
 			'label' => 'Name',
 		),
 		array(
-			'tag'   => 'textarea',
-			'type'  => 'textarea',
-			'name'  => 'message',
-			'label' => 'Message',
+			'tag'    => 'textarea',
+			'type'   => 'textarea',
+			'name'   => 'message',
+			'label'  => 'Message',
+			'height' => '200px',
 		),
 		array(
 			'tag'   => 'button',
@@ -1797,7 +1815,7 @@ $presentation_conflicts = array(
 foreach ( $presentation_conflicts as $conflicting_markup ) {
 	$conflicting_presentation_form = $topology_form;
 	$conflicting_presentation_form['bindings'][] = array_replace( $topology_form['bindings'][0], array( 'search_block_markup' => $conflicting_markup ) );
-	$assert( ! isset( Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $conflicting_presentation_form )['form']['context_before'] ), 'conflicting bounded presentation across canonical form bindings fails closed' );
+	$assert( 'Contact Me' === ( Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $conflicting_presentation_form )['form']['context_before'][0]['text'] ?? '' ), 'producer form presentation is not re-derived from binding HTML' );
 }
 $many_textarea_controls = array();
 $many_textareas_full    = '<form>';
@@ -1817,13 +1835,13 @@ $many_textarea_form       = array(
 		array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'index.html', 'search_block_markup' => $many_textareas_partial, 'occurrence' => 1, 'role' => 'form' ),
 	),
 );
-$assert( ! isset( Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $many_textarea_form )['controls'][0]['height'] ), 'conflicting bounded textarea-height omission counts fail closed' );
+$assert( ! isset( Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $many_textarea_form )['controls'][0]['height'] ), 'producer metadata without textarea heights does not invent control heights from binding HTML' );
 $reordered_presentation_form             = $topology_form;
 $reordered_presentation_form['controls'] = array_reverse( $reordered_presentation_form['controls'] );
-$assert( ! isset( Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $reordered_presentation_form )['form']['context_before'] ), 'binding presentation fails closed when declaration control order does not match the exact anchor' );
+$assert( 'Contact Me' === ( Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $reordered_presentation_form )['form']['context_before'][0]['text'] ?? '' ), 'producer form presentation is independent of declaration control order versus binding HTML' );
 $invalid_presentation_form                            = $topology_form;
 $invalid_presentation_form['bindings'][0]['schema']   = 'generic/block-binding/invalid';
-$assert( ! isset( Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $invalid_presentation_form )['form']['context_before'] ), 'non-canonical form bindings are ignored before presentation extraction' );
+$assert( 'Contact Me' === ( Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $invalid_presentation_form )['form']['context_before'][0]['text'] ?? '' ), 'producer form presentation does not depend on canonical binding HTML' );
 $scalar_bindings_form             = $topology_form;
 $scalar_bindings_form['bindings'] = 'invalid';
 $assert( $scalar_bindings_form === Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $scalar_bindings_form ), 'malformed binding collections remain unchanged for structured provider validation' );

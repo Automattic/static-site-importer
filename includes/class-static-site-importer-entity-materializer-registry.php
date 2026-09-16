@@ -12,6 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Form_Fallback_Contract' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-form-fallback-contract.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Provider_Layout_Overlay' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-provider-layout-overlay.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Provider_Form_Runtime_V1' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-provider-form-runtime.php';
 }
@@ -473,43 +476,27 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return 'entity_collection' === $kind && in_array( $name, array( 'form', 'forms' ), true ) ? 'form' : '';
 	}
 
-	/** Bounded adapter from canonical binding markup to provider-neutral presentation facts. */
+	/** Copy producer presentation facts onto the form entity without re-parsing source HTML. */
 	public static function prepare_form_entity( array $entity ): array {
-		$presentations = array();
-		$control_shape = self::ordered_form_control_identity( isset( $entity['controls'] ) && is_array( $entity['controls'] ) ? $entity['controls'] : array() );
-		$bindings      = isset( $entity['bindings'] ) && is_array( $entity['bindings'] ) ? $entity['bindings'] : array();
-		foreach ( $bindings as $binding ) {
-			if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || 'form' !== ( $binding['role'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES ) {
-				continue;
-			}
-			$analysis = Static_Site_Importer_Form_Fallback_Contract::analysis_from_html( $binding['search_block_markup'], is_string( $entity['selector'] ?? null ) ? $entity['selector'] : '', $binding['occurrence'] );
-			$manifest = $analysis['manifest'];
-			if ( self::ordered_form_control_identity( $manifest['controls'] ) !== $control_shape ) {
-				return $entity;
-			}
-			$presentation = $analysis['presentation'];
-			if ( 'generic/form-presentation/v1' === ( $presentation['schema'] ?? null ) ) {
-				$presentations[] = $presentation;
-			}
-		}
-		$presentation_keys = array_map( static fn( array $presentation ): string => hash( 'sha256', (string) wp_json_encode( array_intersect_key( $presentation, array_flip( array( 'context_before', 'context_after', 'interleaved_context', 'submit_presentation', 'textarea_heights', 'textarea_height_omitted_count' ) ) ) ) ), $presentations );
-		if ( empty( $presentations ) || 1 !== count( array_unique( $presentation_keys ) ) ) {
+		$analysis     = Static_Site_Importer_Form_Fallback_Contract::analysis_from_metadata( $entity, is_string( $entity['selector'] ?? null ) ? $entity['selector'] : '', is_int( $entity['occurrence'] ?? null ) ? $entity['occurrence'] : 0 );
+		$presentation = $analysis['presentation'];
+		if ( 'generic/form-presentation/v1' !== ( $presentation['schema'] ?? null ) ) {
 			return $entity;
 		}
 		$controls = isset( $entity['controls'] ) && is_array( $entity['controls'] ) ? $entity['controls'] : array();
 		$form     = isset( $entity['form'] ) && is_array( $entity['form'] ) ? $entity['form'] : array();
 		foreach ( array( 'context_before', 'context_after', 'submit_presentation' ) as $key ) {
-			if ( isset( $presentations[0][ $key ] ) ) {
-				$form[ $key ] = $presentations[0][ $key ];
+			if ( isset( $presentation[ $key ] ) ) {
+				$form[ $key ] = $presentation[ $key ];
 			}
 		}
-		if ( ! empty( $presentations[0]['interleaved_context'] ) ) {
+		if ( ! empty( $presentation['interleaved_context'] ) ) {
 			$form['interleaved_context'] = true;
 		}
-		if ( ! empty( $presentations[0]['textarea_height_omitted_count'] ) ) {
-			$form['textarea_height_omitted_count'] = (int) $presentations[0]['textarea_height_omitted_count'];
+		if ( ! empty( $presentation['textarea_height_omitted_count'] ) ) {
+			$form['textarea_height_omitted_count'] = (int) $presentation['textarea_height_omitted_count'];
 		}
-		foreach ( $presentations[0]['textarea_heights'] ?? array() as $index => $height ) {
+		foreach ( $presentation['textarea_heights'] ?? array() as $index => $height ) {
 			if ( isset( $controls[ $index ] ) && is_string( $height ) ) {
 				$controls[ $index ]['height'] = $height;
 			}
@@ -517,23 +504,6 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$entity['form']     = $form;
 		$entity['controls'] = $controls;
 		return $entity;
-	}
-
-	/** @param array<int,mixed> $controls @return array<int,string> */
-	private static function ordered_form_control_identity( array $controls ): array {
-		return array_map(
-			static function ( $control ): string {
-				if ( ! is_array( $control ) ) {
-					return '';
-				}
-				$identity = array_map( static fn( string $key ): string => isset( $control[ $key ] ) && is_scalar( $control[ $key ] ) ? strtolower( trim( (string) $control[ $key ] ) ) : '', array( 'tag', 'type', 'name', 'id' ) );
-				if ( '' === $identity[1] && in_array( $identity[0], array( 'select', 'textarea' ), true ) ) {
-					$identity[1] = $identity[0];
-				}
-				return hash( 'sha256', implode( ':', $identity ) );
-			},
-			array_values( $controls )
-		);
 	}
 
 	/** Project resolver-expanded manifest entities into validated lifecycle manifests. */
@@ -2140,9 +2110,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/** @return array<string,string> */
 	private static function form_presentation_properties(): array {
-		$properties = array( 'appearance', 'background', 'background_color', 'border', 'border_color', 'border_style', 'border_width', 'border_top_color', 'border_right_color', 'border_bottom_color', 'border_left_color', 'border_top_style', 'border_right_style', 'border_bottom_style', 'border_left_style', 'border_top_width', 'border_right_width', 'border_bottom_width', 'border_left_width', 'border_radius', 'border_top_left_radius', 'border_top_right_radius', 'border_bottom_right_radius', 'border_bottom_left_radius', 'box_sizing', 'color', 'display', 'font_family', 'font_size', 'font_style', 'font_variant', 'font_weight', 'height', 'letter_spacing', 'line_height', 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end', 'max_width', 'min_height', 'min_width', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block_start', 'padding_block_end', 'padding_inline_start', 'padding_inline_end', 'text_align', 'text_decoration', 'text_indent', 'text_transform', 'vertical_align', 'width' );
-		$properties = array_merge( $properties, array( 'align_items', 'align_self', 'bottom', 'flex', 'flex_basis', 'flex_direction', 'flex_grow', 'flex_shrink', 'gap', 'inset', 'justify_content', 'justify_self', 'left', 'margin_block', 'margin_inline', 'order', 'position', 'right', 'top', 'transform', 'z_index' ) );
-		return array_combine( $properties, array_map( static fn( string $property ): string => str_replace( '_', '-', $property ), $properties ) );
+		return Static_Site_Importer_Provider_Layout_Overlay::presentation_property_map();
 	}
 
 	private static function valid_layout_condition( mixed $condition, int $depth = 0 ): bool {
@@ -2187,7 +2155,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$controls   = array();
 		$orders     = array();
 		foreach ( $nodes as $index => $node ) {
-			if ( ! is_array( $node ) || ! self::has_only_keys( $node, ( $node['kind'] ?? null ) === 'wrapper' ? array( 'id', 'kind', 'parent', 'order', 'depth', 'tag', 'source_id', 'class', 'fieldset_semantics' ) : array( 'id', 'kind', 'parent', 'order', 'depth', 'control' ) ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^(?:wrapper|control)-[A-Za-z0-9_-]{1,80}$/D', $node['id'] ) || isset( $seen_ids[ $node['id'] ] ) || ! in_array( $node['kind'] ?? null, array( 'wrapper', 'control' ), true ) || ! is_int( $node['order'] ?? null ) || $node['order'] < 0 || ! is_int( $node['depth'] ?? null ) || $node['depth'] < 0 || $node['depth'] > $max_depth ) {
+			if ( ! is_array( $node ) || ! self::has_only_keys( $node, ( $node['kind'] ?? null ) === 'wrapper' ? array( 'id', 'kind', 'parent', 'order', 'depth', 'tag', 'source_id', 'class', 'fieldset_semantics', 'legend' ) : array( 'id', 'kind', 'parent', 'order', 'depth', 'control' ) ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^(?:wrapper|control)-[A-Za-z0-9_-]{1,80}$/D', $node['id'] ) || isset( $seen_ids[ $node['id'] ] ) || ! in_array( $node['kind'] ?? null, array( 'wrapper', 'control' ), true ) || ! is_int( $node['order'] ?? null ) || $node['order'] < 0 || ! is_int( $node['depth'] ?? null ) || $node['depth'] < 0 || $node['depth'] > $max_depth ) {
 				return array( 'error' => 'control_topology contains an unsupported node.' );
 			}
 			$parent = $node['parent'] ?? null;
@@ -2239,6 +2207,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					}
 					$normalized_node['fieldset_semantics'] = $node['fieldset_semantics'];
 				}
+				if ( isset( $node['legend'] ) ) {
+					if ( 'labelled_group' !== ( $node['fieldset_semantics'] ?? '' ) || ! is_string( $node['legend'] ) || '' === trim( $node['legend'] ) || 200 < strlen( $node['legend'] ) ) {
+						return array( 'error' => 'control_topology fieldset legends must be bounded labelled-group text.' );
+					}
+					$normalized_node['legend'] = trim( preg_replace( '/\s+/', ' ', $node['legend'] ) ?? '' );
+				}
 			}
 			$seen_ids[ $node['id'] ]                 = $normalized_node;
 			$orders[ $parent_key ][ $node['order'] ] = true;
@@ -2286,36 +2260,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/** @return array<string,string> */
 	private static function layout_property_map( bool $include_width = false ): array {
-		$map = array(
-			'display'         => 'display',
-			'columns'         => 'grid-template-columns',
-			'rows'            => 'grid-template-rows',
-			'gap'             => 'gap',
-			'row_gap'         => 'row-gap',
-			'column_gap'      => 'column-gap',
-			'column'          => 'grid-column',
-			'row'             => 'grid-row',
-			'area'            => 'grid-area',
-			'direction'       => 'flex-direction',
-			'wrap'            => 'flex-wrap',
-			'align_items'     => 'align-items',
-			'align_content'   => 'align-content',
-			'justify_content' => 'justify-content',
-			'align_self'      => 'align-self',
-			'justify_self'    => 'justify-self',
-			'order'           => 'order',
-			'flex'            => 'flex',
-			'flex_grow'       => 'flex-grow',
-			'flex_shrink'     => 'flex-shrink',
-			'flex_basis'      => 'flex-basis',
-		);
-		if ( $include_width ) {
-			$map['width']               = 'width';
-			$map['height']              = 'height';
-			$map['margin_block_start']  = 'margin-block-start';
-			$map['margin_block_end']    = 'margin-block-end';
-			$map['margin_inline_start'] = 'margin-inline-start';
-			$map['margin_inline_end']   = 'margin-inline-end';
+		$map = Static_Site_Importer_Provider_Layout_Overlay::layout_property_map();
+		if ( ! $include_width ) {
+			unset( $map['width'], $map['height'], $map['margin_block_start'], $map['margin_block_end'], $map['margin_inline_start'], $map['margin_inline_end'] );
 		}
 		return $map;
 	}
