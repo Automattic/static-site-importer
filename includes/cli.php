@@ -662,9 +662,13 @@ if ( ! function_exists( 'static_site_importer_cli_import_run_fresh_runtime' ) ) 
 			$spec    = static_site_importer_cli_import_fresh_runtime_spec( $path );
 			$raw     = WP_CLI::runcommand( $spec['command'], $spec['options'] );
 			$stdout  = is_object( $raw ) ? (string) ( $raw->stdout ?? '' ) : ( is_string( $raw ) ? $raw : '' );
+			$stderr  = is_object( $raw ) ? trim( (string) ( $raw->stderr ?? '' ) ) : '';
 			$decoded = static_site_importer_cli_decode_import_step( $stdout );
 			if ( ! is_array( $decoded ) ) {
 				return static_site_importer_cli_import_error( 'static_site_importer_cli_step_response_invalid', static_site_importer_cli_invalid_step_message( $raw ) );
+			}
+			if ( empty( $decoded['success'] ) && '' !== $stderr ) {
+				WP_CLI::warning( "Fresh import runtime diagnostics:\n" . substr( $stderr, 0, 5000 ) );
 			}
 			return $decoded;
 		} finally {

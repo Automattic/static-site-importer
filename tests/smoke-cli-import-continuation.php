@@ -535,6 +535,7 @@ class WP_CLI {
 	public static array $lines = array();
 	public static ?int $halt   = null;
 	public static array $commands = array();
+	public static array $warnings = array();
 	public static function line( string $text ): void {
 		self::$lines[] = $text;
 	}
@@ -544,6 +545,9 @@ class WP_CLI {
 	}
 	public static function error( string $message ): void {
 		throw new RuntimeException( $message );
+	}
+	public static function warning( string $message ): void {
+		self::$warnings[] = $message;
 	}
 	public static function runcommand( string $command, array $options ) {
 		self::$commands[] = array(
@@ -560,7 +564,7 @@ class WP_CLI {
 					),
 				)
 			),
-			'stderr'      => '',
+			'stderr'      => "Warning: Compile worker 2 exited with status 2.\nStderr:\nworker failure\n" . str_repeat( 'x', 6000 ),
 			'return_code' => 1,
 		);
 	}
@@ -602,6 +606,7 @@ $assert( 'materialization_failed' === ( $fresh_fail['error']['code'] ?? '' ), 'f
 $assert( 1 === count( WP_CLI::$commands ), 'fresh-runtime-runcommand-once' );
 $assert( true === ( WP_CLI::$commands[0]['options']['launch'] ?? null ), 'fresh-runtime-runcommand-launch' );
 $assert( str_contains( (string) ( WP_CLI::$commands[0]['command'] ?? '' ), '--single-step' ), 'fresh-runtime-runcommand-single-step' );
+$assert( 1 === count( WP_CLI::$warnings ) && str_contains( WP_CLI::$warnings[0], 'Compile worker 2 exited with status 2.' ) && str_contains( WP_CLI::$warnings[0], 'worker failure' ) && strlen( WP_CLI::$warnings[0] ) <= 5100, 'fresh-runtime-relays-bounded-child-failure-diagnostics' );
 
 $GLOBALS['ssi_cli_runtime_result'] = (object) array(
 	'stdout'      => '',
