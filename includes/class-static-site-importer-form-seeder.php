@@ -512,7 +512,7 @@ class Static_Site_Importer_Form_Seeder {
 		self::append_receipt_entries( $layout['receipt'], 'losses', $control_attribute_losses );
 		$inner_blocks           = $layout['blocks'];
 		$form_attrs             = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $form, $scope, $topology['form_classes'] );
-		$overlay_graph          = Static_Site_Importer_Form_Layout_Projection::split_form_box( $provider_graph );
+		$overlay_graph          = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( Static_Site_Importer_Form_Layout_Projection::split_form_box( $provider_graph ) );
 		$box_targets            = $topology['provider_layout_targets'];
 		$overlay_graph['nodes'] = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || 'form-box' === ( $node['id'] ?? '' ) || isset( $box_targets[ (string) ( $node['id'] ?? '' ) ] ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
 		foreach ( $topology['overlay_node_targets'] as $target ) {

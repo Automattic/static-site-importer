@@ -1934,6 +1934,111 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		return $map;
 	}
 
+	/**
+	 * Drop grid placement a provider cannot honor.
+	 *
+	 * Siblings that declare the same source grid row are separated by offsets
+	 * outside the layout graph's vocabulary. A provider that gives each control
+	 * its own row addresses different controls with those row indexes, so the
+	 * placement would reorder the form instead of reproducing it.
+	 *
+	 * @param array<string,mixed> $graph
+	 * @return array<string,mixed>
+	 */
+	public static function without_shared_source_grid_rows( array $graph ): array {
+		$shared = self::shared_source_grid_row_nodes( $graph );
+		if ( empty( $shared ) ) {
+			return $graph;
+		}
+		foreach ( $graph['nodes'] ?? array() as $index => $node ) {
+			if ( ! is_array( $node ) || ! isset( $shared[ (string) ( $node['id'] ?? '' ) ] ) || ! is_array( $node['layout'] ?? null ) ) {
+				continue;
+			}
+			$graph['nodes'][ $index ]['layout'] = array_diff_key( $node['layout'], array_flip( array( 'area', 'row' ) ) );
+		}
+		foreach ( $graph['variants'] ?? array() as $index => $variant ) {
+			if ( ! is_array( $variant ) || ! isset( $shared[ (string) ( $variant['node'] ?? '' ) ] ) || ! is_array( $variant['layout_patch'] ?? null ) ) {
+				continue;
+			}
+			$patch = array_diff_key( $variant['layout_patch'], array_flip( array( 'area', 'row' ) ) );
+			if ( empty( $patch ) ) {
+				unset( $graph['variants'][ $index ] );
+				continue;
+			}
+			$graph['variants'][ $index ]['layout_patch'] = $patch;
+		}
+		if ( isset( $graph['variants'] ) && is_array( $graph['variants'] ) ) {
+			$graph['variants'] = array_values( $graph['variants'] );
+		}
+		return $graph;
+	}
+
+	/**
+	 * Source boxes whose grid row placement cannot be transposed to a provider.
+	 *
+	 * @param array<string,mixed> $graph
+	 * @return array<string,bool>
+	 */
+	private static function shared_source_grid_row_nodes( array $graph ): array {
+		$parents = array();
+		$rows    = array();
+		foreach ( $graph['nodes'] ?? array() as $node ) {
+			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) ) {
+				continue;
+			}
+			$parents[ $node['id'] ] = is_string( $node['parent'] ?? null ) ? $node['parent'] : '';
+			$row                    = self::declared_grid_row( is_array( $node['layout'] ?? null ) ? $node['layout'] : array() );
+			if ( '' !== $row ) {
+				$rows[ $node['id'] ][ $row ] = true;
+			}
+		}
+		foreach ( $graph['variants'] ?? array() as $variant ) {
+			$id = is_array( $variant ) && is_string( $variant['node'] ?? null ) ? $variant['node'] : '';
+			if ( '' === $id || ! isset( $parents[ $id ] ) ) {
+				continue;
+			}
+			$row = self::declared_grid_row( is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array() );
+			if ( '' !== $row ) {
+				$rows[ $id ][ $row ] = true;
+			}
+		}
+		$by_parent = array();
+		foreach ( $rows as $id => $declared ) {
+			$parent = $parents[ $id ] ?? '';
+			$by_parent[ $parent ]['boxes'] = ( $by_parent[ $parent ]['boxes'] ?? 0 ) + 1;
+			foreach ( array_keys( $declared ) as $row ) {
+				$by_parent[ $parent ]['rows'][ $row ] = true;
+			}
+		}
+		$scrambled = array();
+		foreach ( $by_parent as $parent => $summary ) {
+			$distinct = count( $summary['rows'] ?? array() );
+			// One row for every box transposes as an ordered sequence, and a single
+			// shared row transposes as one band. Any other mix means the provider's
+			// own row sequence no longer lines up with these row indexes.
+			if ( $distinct > 1 && $distinct !== ( $summary['boxes'] ?? 0 ) ) {
+				$scrambled[ $parent ] = true;
+			}
+		}
+		$shared = array();
+		foreach ( $parents as $id => $parent ) {
+			if ( isset( $scrambled[ $parent ] ) ) {
+				$shared[ $id ] = true;
+			}
+		}
+		return $shared;
+	}
+
+	/** @param array<string,mixed> $layout */
+	private static function declared_grid_row( array $layout ): string {
+		$area = trim( (string) ( $layout['area'] ?? '' ) );
+		if ( '' !== $area ) {
+			$parts = preg_split( '#\s*/\s*#', $area );
+			return is_array( $parts ) && isset( $parts[0] ) ? trim( $parts[0] ) : '';
+		}
+		return trim( (string) ( $layout['row'] ?? '' ) );
+	}
+
 	public static function provider_layout_target_map( array $form, string $scope, array $presentation_descriptors, array $box_targets = array(), array $phone_popup_targets = array(), string $country_trigger_class = '' ): array {
 		$selector_scope = '.' . $scope;
 		$targets        = array();
