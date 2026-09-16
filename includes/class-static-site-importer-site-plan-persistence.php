@@ -9,6 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Public_Error_Projection' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-public-error-projection.php';
+}
+
 /** Writes posts, files, overlays, and journals for a prepared plan. */
 final class Static_Site_Importer_Site_Plan_Persistence {
 	private const RECONCILIATION_META_KEY          = '_static_site_importer_reconciliation_identity';
@@ -1272,7 +1276,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$data                    = $error->get_error_data();
 		if ( is_array( $data ) ) {
 			$diagnostics = is_array( $data['diagnostics'] ?? null ) ? $data['diagnostics'] : $data;
-			$diagnostics = 'static_site_importer_entity_materialization_failed' === $error->get_error_code() ? Static_Site_Importer_Entity_Materializer_Registry::project_public_diagnostics( $diagnostics ) : $diagnostics;
+			$diagnostics = 'static_site_importer_entity_materialization_failed' === $error->get_error_code() ? Static_Site_Importer_Public_Error_Projection::project_public_diagnostics( $diagnostics ) : $diagnostics;
 			foreach ( $diagnostics as $diagnostic ) {
 				if ( ! is_array( $diagnostic ) ) {
 					continue;

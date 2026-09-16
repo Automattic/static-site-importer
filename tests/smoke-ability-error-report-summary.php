@@ -99,7 +99,7 @@ $hostile_json        = json_encode( $hostile );
 $assert( 'pages/é.html' === ( $hostile_diagnostics[0]['source_path'] ?? '' ) && 'form.contact' === ( $hostile_diagnostics[0]['selector'] ?? '' ), 'canonical-ability-error-retains-safe-relative-unicode-location' );
 $assert( ! isset( $hostile_diagnostics[1]['source_path'], $hostile_diagnostics[1]['selector'], $hostile_diagnostics[1]['provider'], $hostile_diagnostics[1]['reason_code'] ) && ! str_contains( (string) ( $hostile['error']['message'] ?? '' ), 'secret' ) && false !== $hostile_json && ! str_contains( $hostile_json, 'password' ), 'canonical-ability-error-redacts-unsafe-fields-and-emits-valid-json' );
 
-$public_data = Static_Site_Importer_Entity_Materializer_Registry::project_public_error_data(
+$public_data = Static_Site_Importer_Public_Error_Projection::project_public_error_data(
 	array(
 		'status'         => 'failed',
 		'import_id'      => 'import-42',
@@ -115,7 +115,7 @@ $public_data = Static_Site_Importer_Entity_Materializer_Registry::project_public
 $public_json = json_encode( $public_data );
 $assert( 'failed' === ( $public_data['status'] ?? '' ) && 'import-42' === ( $public_data['import_id'] ?? '' ) && array() === ( $public_data['diagnostics'] ?? null ) && ! isset( $public_data['private_path'], $public_data['callback_url'], $public_data['nested'] ) && false !== $public_json && ! str_contains( $public_json, 'secret' ) && ! str_contains( $public_json, 'must_not_be_scanned' ), 'public-error-data-is-shallow-allowlisted-and-diagnostic-scanning-is-bounded' );
 
-$dependency_data = Static_Site_Importer_Entity_Materializer_Registry::project_public_error_data(
+$dependency_data = Static_Site_Importer_Public_Error_Projection::project_public_error_data(
 	array(
 		'dependency' => array(
 			'slug'        => 'jetpack',
