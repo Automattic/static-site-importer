@@ -1006,92 +1006,26 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	}
 
 	/**
-	 * Registered entity materializers.
+	 * Collect registered entity materializers from their owning seeders.
 	 *
 	 * @return array<string,array<string,mixed>>
 	 */
 	private static function adapters(): array {
-		$adapters = array(
-			'woocommerce_simple_product' => array(
-				'id'                       => 'woocommerce_simple_product',
-				'entity_type'              => 'product',
-				'entity_collection'        => 'products',
-				'capability'               => 'shop',
-				'provider'                 => 'woocommerce',
-				'label'                    => 'WooCommerce simple product',
-				'report_key'               => 'product_seeding',
-				'waiver_arg'               => 'allow_missing_woocommerce',
-				'validator'                => array( self::class, 'validate_woo_products_manifest' ),
-				'materializer'             => array( 'Static_Site_Importer_Woo_Product_Seeder', 'seed' ),
-				'rollback_callback'        => array( 'Static_Site_Importer_Woo_Product_Seeder', 'rollback' ),
-				'rollback_contract_id'     => 'static-site-importer/woocommerce-product-rollback/v1',
-				'binding_callback'         => array( 'Static_Site_Importer_Woo_Product_Seeder', 'binding_block_markup' ),
-				'classic_binding_callback' => array( 'Static_Site_Importer_Woo_Product_Seeder', 'binding_classic_render' ),
-				'report_callback'          => array( 'Static_Site_Importer_Woo_Product_Seeder', 'new_report' ),
-				'presentation'             => 'Static_Site_Importer_Commerce_Presentation',
-				'dependencies'             => array(
-					array(
-						'type'                  => 'wp_org_plugin',
-						'slug'                  => 'woocommerce',
-						'plugin_file'           => 'woocommerce/woocommerce.php',
-						'availability_callback' => array( 'Static_Site_Importer_Woo_Product_Seeder', 'woocommerce_available' ),
-						'missing_apis'          => array( 'WC_Product_Simple', 'product_post_type', 'product_cat_taxonomy' ),
-					),
-				),
-			),
-			'jetpack_contact_form'       => array(
-				'id'                       => 'jetpack_contact_form',
-				'entity_type'              => 'form',
-				'entity_collection'        => 'forms',
-				'capability'               => 'form',
-				'provider'                 => 'jetpack',
-				'label'                    => 'Jetpack contact form',
-				'report_key'               => 'form_seeding',
-				'waiver_arg'               => 'allow_missing_jetpack',
-				'validator'                => array( self::class, 'validate_forms_manifest' ),
-				'materializer'             => array( 'Static_Site_Importer_Form_Seeder', 'seed' ),
-				'rollback_callback'        => array( 'Static_Site_Importer_Form_Seeder', 'rollback' ),
-				'rollback_contract_id'     => 'static-site-importer/jetpack-form-rollback/v1',
-				'binding_callback'         => array( 'Static_Site_Importer_Form_Seeder', 'binding_block_markup' ),
-				'classic_binding_callback' => array( 'Static_Site_Importer_Form_Seeder', 'binding_classic_render' ),
-				'report_callback'          => array( 'Static_Site_Importer_Form_Seeder', 'new_report' ),
-				'submission_evidence'      => array(
-					'can_accept_callback' => array( 'Static_Site_Importer_Provider_Submission_Evidence', 'jetpack_can_accept' ),
-					'submit'              => array( 'Static_Site_Importer_Provider_Submission_Evidence', 'submit_jetpack' ),
-					'cleanup'             => array( 'Static_Site_Importer_Provider_Submission_Evidence', 'cleanup_feedback' ),
-				),
-				'dependencies'             => array(
-					array(
-						'type'                  => 'wp_org_plugin',
-						'slug'                  => 'jetpack',
-						'plugin_file'           => 'jetpack/jetpack.php',
-						'availability_callback' => array( 'Static_Site_Importer_Form_Seeder', 'jetpack_forms_available' ),
-						'preparation_callback'  => array( 'Static_Site_Importer_Form_Seeder', 'prepare_jetpack_forms_runtime' ),
-						'provider_readiness'    => array(
-							'required_block_types' => Static_Site_Importer_Form_Seeder::required_block_types(),
-							'required_classes'     => Static_Site_Importer_Form_Seeder::required_runtime_apis(),
-						),
-						'missing_apis'          => array(
-							'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form',
-							'jetpack/contact-form',
-							'jetpack/field-text',
-							'jetpack/field-number',
-							'jetpack/field-email',
-							'jetpack/field-url',
-							'jetpack/field-date',
-							'jetpack/field-textarea',
-							'jetpack/field-select',
-							'jetpack/field-checkbox',
-							'jetpack/field-radio',
-							'jetpack/label',
-							'jetpack/input',
-							'jetpack/options',
-							'jetpack/option',
-						),
-					),
-				),
-			),
-		);
+		$adapters = array();
+		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Form_Seeder' ) as $owner ) {
+			if ( ! is_callable( array( $owner, 'adapter' ) ) ) {
+				continue;
+			}
+			$adapter = call_user_func( array( $owner, 'adapter' ) );
+			if ( ! is_array( $adapter ) ) {
+				continue;
+			}
+			$id = (string) ( $adapter['id'] ?? '' );
+			if ( '' === $id ) {
+				continue;
+			}
+			$adapters[ $id ] = $adapter;
+		}
 
 		/**
 		 * Filters registered SSI entity materializers.

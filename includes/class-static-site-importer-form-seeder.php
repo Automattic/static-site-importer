@@ -60,6 +60,66 @@ class Static_Site_Importer_Form_Seeder {
 	 */
 	public const PROVIDER_ID = 'jetpack';
 
+	/**
+	 * Return the Jetpack contact-form adapter definition.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public static function adapter(): array {
+		return array(
+			'id'                       => 'jetpack_contact_form',
+			'entity_type'              => 'form',
+			'entity_collection'        => 'forms',
+			'capability'               => 'form',
+			'provider'                 => 'jetpack',
+			'label'                    => 'Jetpack contact form',
+			'report_key'               => 'form_seeding',
+			'waiver_arg'               => 'allow_missing_jetpack',
+			'validator'                => array( 'Static_Site_Importer_Entity_Materializer_Registry', 'validate_forms_manifest' ),
+			'materializer'             => array( self::class, 'seed' ),
+			'rollback_callback'        => array( self::class, 'rollback' ),
+			'rollback_contract_id'     => 'static-site-importer/jetpack-form-rollback/v1',
+			'binding_callback'         => array( self::class, 'binding_block_markup' ),
+			'classic_binding_callback' => array( self::class, 'binding_classic_render' ),
+			'report_callback'          => array( self::class, 'new_report' ),
+			'submission_evidence'      => array(
+				'can_accept_callback' => array( 'Static_Site_Importer_Provider_Submission_Evidence', 'jetpack_can_accept' ),
+				'submit'              => array( 'Static_Site_Importer_Provider_Submission_Evidence', 'submit_jetpack' ),
+				'cleanup'             => array( 'Static_Site_Importer_Provider_Submission_Evidence', 'cleanup_feedback' ),
+			),
+			'dependencies'             => array(
+				array(
+					'type'                  => 'wp_org_plugin',
+					'slug'                  => 'jetpack',
+					'plugin_file'           => 'jetpack/jetpack.php',
+					'availability_callback' => array( self::class, 'jetpack_forms_available' ),
+					'preparation_callback'  => array( self::class, 'prepare_jetpack_forms_runtime' ),
+					'provider_readiness'    => array(
+						'required_block_types' => self::required_block_types(),
+						'required_classes'     => self::required_runtime_apis(),
+					),
+					'missing_apis'          => array(
+						'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form',
+						'jetpack/contact-form',
+						'jetpack/field-text',
+						'jetpack/field-number',
+						'jetpack/field-email',
+						'jetpack/field-url',
+						'jetpack/field-date',
+						'jetpack/field-textarea',
+						'jetpack/field-select',
+						'jetpack/field-checkbox',
+						'jetpack/field-radio',
+						'jetpack/label',
+						'jetpack/input',
+						'jetpack/options',
+						'jetpack/option',
+					),
+				),
+			),
+		);
+	}
+
 	/** Register the provider bootstrap needed on every WordPress request. */
 	public static function register_runtime_bootstrap(): void {
 		Static_Site_Importer_Jetpack_Forms_Runtime::register_runtime_bootstrap();
