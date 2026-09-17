@@ -487,7 +487,40 @@ namespace {
 	$assert( 2 === substr_count( $topology_markup, '"width":50' ), 'topology-maps-proven-equal-grid-to-field-widths' );
 	$assert( str_contains( $topology_markup, 'First name' ) && str_contains( $topology_markup, 'Email' ) && str_contains( $topology_markup, 'Message' ), 'topology-preserves-labels' );
 	$assert( 1 === substr_count( $topology_markup, '<!-- wp:button ' ), 'topology-submit-control-emits-one-core-button-in-source-position' );
-	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && 5 === ( $topology_receipt['operation_count'] ?? 0 ) && 'provider_equal_width_fields' === ( $topology_receipt['operations'][3]['strategy'] ?? '' ) && 'provider_interaction_carrier' === ( $topology_receipt['operations'][4]['strategy'] ?? '' ), 'computed-layout-equal-grid-applies-with-bounded-receipt' );
+	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && 6 === ( $topology_receipt['operation_count'] ?? 0 ) && 'provider_equal_width_fields' === ( $topology_receipt['operations'][3]['strategy'] ?? '' ) && 'provider_interaction_carrier' === ( $topology_receipt['operations'][5]['strategy'] ?? '' ), 'computed-layout-equal-grid-applies-with-bounded-receipt' );
+	$assert( str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:82px' ) && ! str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:200px' ), 'topology-unstyled-source-textarea-gets-a-two-row-intrinsic-height-instead-of-the-provider-default' );
+	// A source that deliberately sizes two textareas differently through their own
+	// `rows` attribute - rather than an authored CSS height a cascade compiler could
+	// capture - must not materialize both onto this provider's one fixed default;
+	// each field's own row count must reach a distinct computed height.
+	$few_rows_form = $topology_form;
+	$few_rows_form['forms'][0]['controls'][2]['rows'] = '3';
+	$few_rows_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $few_rows_form )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$many_rows_form = $topology_form;
+	$many_rows_form['forms'][0]['controls'][2]['rows'] = '6';
+	$many_rows_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $many_rows_form )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert(
+		str_contains( (string) ( $few_rows_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:106px' )
+			&& str_contains( (string) ( $many_rows_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:178px' )
+			&& ! str_contains( (string) ( $few_rows_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:200px' )
+			&& ! str_contains( (string) ( $many_rows_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:200px' ),
+		'distinctly-authored-textarea-row-counts-materialize-distinct-heights-instead-of-one-provider-default',
+		wp_json_encode( array( 'few' => $few_rows_row['provider_layout_overlay_css'] ?? null, 'many' => $many_rows_row['provider_layout_overlay_css'] ?? null ) )
+	);
+	// A cascade-resolved height or minimum height already captured for this textarea
+	// is authoritative; the row-count arithmetic above only fills what it omits.
+	$authored_textarea_height_form = $topology_form;
+	$authored_textarea_height_form['forms'][0]['presentation_graph'] = array(
+		'schema' => 'generic/computed-form-presentation/v1', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'controls' => 128, 'rules_per_role' => 32 ), 'variants' => array(), 'diagnostics' => array(),
+		'controls' => array( array( 'index' => 2, 'control' => array( 'styles' => array( 'height' => '9rem' ), 'provenance' => array() ) ) ),
+	);
+	$authored_textarea_height_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $authored_textarea_height_form )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert(
+		str_contains( (string) ( $authored_textarea_height_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:9rem' )
+			&& ! str_contains( (string) ( $authored_textarea_height_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:82px' ),
+		'source-cascade-resolved-textarea-height-is-authoritative-over-the-row-count-fallback',
+		wp_json_encode( $authored_textarea_height_row['provider_layout_overlay_css'] ?? null )
+	);
 	$direct_label_form = array(
 		'forms' => array( array(
 			'selector' => 'form.direct-labels',
@@ -850,6 +883,31 @@ namespace {
 	$editor_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $editor_manifest['forms'] ) )['forms'][0];
 	$editor_css = $editor_row['provider_layout_overlay_css']['editor_css'] ?? '';
 	$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $editor_row['provider_layout_overlay_css'] ) && str_contains( $editor_css, 'max-width:500px;margin:0 auto;text-align:left' ) && str_contains( $editor_css, ' > label{' ) && str_contains( $editor_css, 'font:-webkit-small-control;' ), 'editor-maps-source-form-box-labels-and-native-button-typography-through-validated-overlay', $editor_css );
+	// The captured form box's own padding is the same kind of bounded source-CSS-cascade
+	// evidence every other captured control already carries. It must reach the rendered
+	// page, not only editor chrome, and it must still resolve when a captured field
+	// wrapper (control_containers) is also present on the same presentation graph -
+	// both destinations previously shared one loop variable, so the wrapper's own row
+	// silently clobbered the form box's captured styles before this ever compiled.
+	$container_padding_form = $topology_form;
+	$container_padding_form['forms'][0]['form']['container_presentation'] = array( 'schema' => 'generic/form-container-presentation/v1', 'styles' => array( 'padding' => '36px' ), 'provenance' => array(), 'variants' => array() );
+	$container_padding_form['forms'][0]['presentation_graph'] = array(
+		'schema' => 'generic/computed-form-presentation/v2', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'controls' => 128, 'rules_per_role' => 32 ), 'variants' => array(), 'diagnostics' => array(),
+		'controls' => array(),
+		'visual_parts' => array(),
+		'visual_groups' => array(),
+		'control_containers' => array( array( 'index' => 0, 'source_selector' => '.field', 'styles' => array( 'background_color' => '#fff' ), 'provenance' => array() ) ),
+	);
+	$validated_container_padding = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $container_padding_form );
+	$container_padding_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_container_padding['forms'] ?? array() ) )['forms'][0] ?? array();
+	$container_padding_css       = (string) ( $container_padding_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		empty( $validated_container_padding['errors'] )
+			&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $container_padding_row['provider_layout_overlay_css'] ?? null )
+			&& preg_match( '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12}\{padding:36px\}/', $container_padding_css ),
+		'captured-form-container-padding-reaches-the-rendered-page-alongside-a-captured-field-wrapper',
+		wp_json_encode( array( 'css' => $container_padding_css, 'validation' => $validated_container_padding ) )
+	);
 	$compile_form = static function ( string $css ) use ( $artifact_compiler ): array {
 		$compiled = ( new $artifact_compiler() )->compile( array(
 			'entrypoint' => 'index.html',
