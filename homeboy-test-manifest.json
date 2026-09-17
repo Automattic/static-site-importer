@@ -1,7 +1,6 @@
 {
   "schema": "homeboy/test-manifest/v1",
   "tests": {
-    "tests/form-materializer-smoke.php": { "environment": "standalone-php" },
     "tests/form-fallback-contract-equivalence.php": { "environment": "standalone-php" },
     "tests/provider-adapter-runtime-smoke.php": { "environment": "standalone-php" },
     "tests/smoke-provider-submission-evidence.php": { "environment": "standalone-php" },
@@ -35,12 +34,10 @@
     "tests/smoke-rest-import.php": { "environment": "standalone-php" },
     "tests/smoke-lifecycle-compile-checkpoint.php": { "environment": "standalone-php" },
     "tests/smoke-plan-owned-font-materialization.php": { "environment": "standalone-php" },
-    "tests/smoke-materialized-block-content-validation.php": { "environment": "standalone-php" },
     "tests/smoke-managed-classic-theme-materialization.php": { "environment": "standalone-php" },
     "tests/smoke-portable-source-manifest.php": { "environment": "standalone-php" },
     "tests/smoke-post-meta-rollback.php": { "environment": "standalone-php" },
     "tests/smoke-plugin-materializer-lifecycle.php": { "environment": "standalone-php" },
-    "tests/smoke-plugin-materializer-wp-cli-process.php": { "environment": "standalone-php" },
     "tests/smoke-owner-handoff-evidence.php": { "environment": "standalone-php" },
     "tests/smoke-product-handoff-contract.php": { "environment": "standalone-php" },
     "tests/smoke-materialization-coverage.php": { "environment": "standalone-php" },

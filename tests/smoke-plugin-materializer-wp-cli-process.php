@@ -14,8 +14,10 @@
 
 $phar = getenv( 'STATIC_SITE_IMPORTER_WP_CLI_2_12_0_PHAR' );
 if ( ! is_string( $phar ) || ! is_file( $phar ) ) {
-	fwrite( STDERR, "SKIP: Set STATIC_SITE_IMPORTER_WP_CLI_2_12_0_PHAR to the locally provisioned v2.12.0 PHAR from https://github.com/wp-cli/wp-cli/releases/download/v2.12.0/wp-cli-2.12.0.phar.\n" );
-	exit( 0 );
+	// This test declares the operator-only environment; a missing dependency
+	// here must fail closed rather than silently report success.
+	fwrite( STDERR, "FAIL: Set STATIC_SITE_IMPORTER_WP_CLI_2_12_0_PHAR to the locally provisioned v2.12.0 PHAR from https://github.com/wp-cli/wp-cli/releases/download/v2.12.0/wp-cli-2.12.0.phar.\n" );
+	exit( 1 );
 }
 
 $version = array();

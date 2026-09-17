@@ -79,7 +79,7 @@ namespace {
 		}
 	}
 
-	$wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: '/Users/chubes/Studio/intelligence-chubes4';
+	$wp_root = (string) getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' );
 	$parser  = rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-parser.php';
 	$blocks  = rtrim( $wp_root, '/\\' ) . '/wp-includes/blocks.php';
 	if ( is_readable( $parser ) && is_readable( $blocks ) ) {
@@ -87,8 +87,10 @@ namespace {
 		require_once $blocks;
 	}
 	if ( ! function_exists( 'serialize_blocks' ) ) {
-		fwrite( STDERR, "SKIP: WordPress block serialization is unavailable. Set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
-		exit( 0 );
+		// This test declares the wordpress-runtime environment; a missing
+		// dependency here must fail closed rather than silently report success.
+		fwrite( STDERR, "FAIL: WordPress block serialization is unavailable. Set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
+		exit( 1 );
 	}
 
 	$GLOBALS['ssi_jetpack_form_blocks_available'] = true;
