@@ -312,6 +312,7 @@ class Static_Site_Importer_Form_Seeder {
 	private static function seed_form( array $form, bool $available ): array {
 		$form        = Static_Site_Importer_Form_Layout_Projection::normalize_unconditional_layout_variants( $form );
 		$controls    = isset( $form['controls'] ) && is_array( $form['controls'] ) ? $form['controls'] : array();
+		$form        = self::project_submit_style_into_presentation_graph( $form, $controls );
 		$selector    = isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '';
 		$source_path = isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '';
 
@@ -758,6 +759,141 @@ class Static_Site_Importer_Form_Seeder {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * Route a submit control's captured presentation style onto the same
+	 * computed-presentation graph every other control already resolves through.
+	 *
+	 * A producer can capture a submit button's presentation as a bounded
+	 * per-control style (see `flatten_submit_style()`) without running it
+	 * through the full source-CSS-cascade `presentation_graph` compiler. Left
+	 * alone, that capture only flagged the button with the
+	 * `ssi-provider-submit-presentation` marker class; nothing ever resolved
+	 * it into paint. Merging it into `presentation_graph.controls` lets the
+	 * existing `Provider_Layout_Overlay` pipeline - already proven for labels,
+	 * inputs, and this exact `.wp-block-button__link` destination - emit the
+	 * real, specificity-safe CSS instead of relying on carried source class
+	 * names a WordPress stylesheet does not define.
+	 *
+	 * @param array<string,mixed> $form Provider form manifest row.
+	 * @param array<int,mixed>    $controls Normalized controls list.
+	 * @return array<string,mixed>
+	 */
+	private static function project_submit_style_into_presentation_graph( array $form, array $controls ): array {
+		foreach ( $controls as $control_index => $control ) {
+			if ( ! is_array( $control ) || ! is_int( $control_index ) ) {
+				continue;
+			}
+			$type = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
+			$tag  = strtolower( trim( (string) ( $control['tag'] ?? '' ) ) );
+			if ( 'submit' !== $type && ! ( 'button' === $tag && 'submit' === $type ) ) {
+				continue;
+			}
+			$style = isset( $control['presentation']['style'] ) && is_array( $control['presentation']['style'] ) ? $control['presentation']['style'] : array();
+			$flat  = self::flatten_submit_style( $style );
+			if ( empty( $flat ) ) {
+				continue;
+			}
+			$controls_graph = isset( $form['presentation_graph']['controls'] ) && is_array( $form['presentation_graph']['controls'] ) ? $form['presentation_graph']['controls'] : array();
+			$found          = false;
+			foreach ( $controls_graph as &$row ) {
+				if ( ! is_array( $row ) || ( $row['index'] ?? null ) !== $control_index ) {
+					continue;
+				}
+				$found           = true;
+				$existing_styles = isset( $row['control']['styles'] ) && is_array( $row['control']['styles'] ) ? $row['control']['styles'] : array();
+				// A cascade-resolved presentation the importer already carries for this
+				// control is authoritative; this capture only fills what it omits.
+				$row['control']['styles'] = array_merge( $flat, $existing_styles );
+				break;
+			}
+			unset( $row );
+			if ( ! $found ) {
+				$controls_graph[] = array(
+					'index'   => $control_index,
+					'control' => array( 'styles' => $flat ),
+				);
+			}
+			$form['presentation_graph']['controls'] = $controls_graph;
+		}
+		return $form;
+	}
+
+	/**
+	 * Translate a captured submit presentation style into the flat property
+	 * vocabulary `Provider_Layout_Overlay::presentation_property_map()`
+	 * resolves into scoped CSS.
+	 *
+	 * Accepts a WP block-style-object shape (`color.background`,
+	 * `typography.fontWeight`, `spacing.padding.top`, ...), the same shape a
+	 * source submit button's resolved presentation was previously baked into
+	 * saved block attributes as, before that produced saved markup that
+	 * disagreed with core/button's own save() output. It also passes through
+	 * already-flat computed-presentation keys unchanged, so a producer that
+	 * captures this presentation directly in the overlay's own vocabulary
+	 * (background_color, font_size, width, ...) does not need translation.
+	 *
+	 * @param array<string,mixed> $style
+	 * @return array<string,string>
+	 */
+	private static function flatten_submit_style( array $style ): array {
+		$flat         = array();
+		$property_map = Static_Site_Importer_Provider_Layout_Overlay::presentation_property_map();
+		foreach ( $style as $key => $value ) {
+			if ( ! is_string( $key ) || ! is_scalar( $value ) || '' === trim( (string) $value ) ) {
+				continue;
+			}
+			$snake = str_replace( '-', '_', $key );
+			if ( isset( $property_map[ $snake ] ) ) {
+				$flat[ $snake ] = trim( (string) $value );
+			}
+		}
+		$color = isset( $style['color'] ) && is_array( $style['color'] ) ? $style['color'] : array();
+		if ( isset( $color['background'] ) && is_scalar( $color['background'] ) && '' !== trim( (string) $color['background'] ) ) {
+			$flat['background_color'] = trim( (string) $color['background'] );
+		}
+		if ( isset( $color['text'] ) && is_scalar( $color['text'] ) && '' !== trim( (string) $color['text'] ) ) {
+			$flat['color'] = trim( (string) $color['text'] );
+		}
+		$typography     = isset( $style['typography'] ) && is_array( $style['typography'] ) ? $style['typography'] : array();
+		$typography_map = array(
+			'fontFamily'     => 'font_family',
+			'fontSize'       => 'font_size',
+			'fontStyle'      => 'font_style',
+			'fontWeight'     => 'font_weight',
+			'letterSpacing'  => 'letter_spacing',
+			'lineHeight'     => 'line_height',
+			'textDecoration' => 'text_decoration',
+			'textTransform'  => 'text_transform',
+		);
+		foreach ( $typography_map as $attribute => $property ) {
+			if ( isset( $typography[ $attribute ] ) && is_scalar( $typography[ $attribute ] ) && '' !== trim( (string) $typography[ $attribute ] ) ) {
+				$flat[ $property ] = trim( (string) $typography[ $attribute ] );
+			}
+		}
+		$border     = isset( $style['border'] ) && is_array( $style['border'] ) ? $style['border'] : array();
+		$border_map = array(
+			'radius' => 'border_radius',
+			'color'  => 'border_color',
+			'style'  => 'border_style',
+			'width'  => 'border_width',
+		);
+		foreach ( $border_map as $attribute => $property ) {
+			if ( isset( $border[ $attribute ] ) && is_scalar( $border[ $attribute ] ) && '' !== trim( (string) $border[ $attribute ] ) ) {
+				$flat[ $property ] = trim( (string) $border[ $attribute ] );
+			}
+		}
+		$spacing = isset( $style['spacing'] ) && is_array( $style['spacing'] ) ? $style['spacing'] : array();
+		foreach ( array( 'margin', 'padding' ) as $box ) {
+			$values = isset( $spacing[ $box ] ) && is_array( $spacing[ $box ] ) ? $spacing[ $box ] : array();
+			foreach ( array( 'top', 'right', 'bottom', 'left' ) as $side ) {
+				if ( isset( $values[ $side ] ) && is_scalar( $values[ $side ] ) && '' !== trim( (string) $values[ $side ] ) ) {
+					$flat[ $box . '_' . $side ] = trim( (string) $values[ $side ] );
+				}
+			}
+		}
+		return $flat;
 	}
 
 	/** A source label wrapper is carried by the mapped Jetpack field's label child. */
