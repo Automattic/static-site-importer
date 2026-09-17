@@ -87,8 +87,10 @@ namespace {
 		require_once $blocks;
 	}
 	if ( ! function_exists( 'serialize_blocks' ) ) {
-		fwrite( STDERR, "SKIP: WordPress block serialization is unavailable. Set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
-		exit( 0 );
+		// This test declares the wordpress-runtime environment; a missing
+		// dependency here must fail closed rather than silently report success.
+		fwrite( STDERR, "FAIL: WordPress block serialization is unavailable. Set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
+		exit( 1 );
 	}
 
 	$GLOBALS['ssi_jetpack_form_blocks_available'] = true;

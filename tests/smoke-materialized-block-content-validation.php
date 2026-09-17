@@ -83,13 +83,16 @@ if ( ! class_exists( 'WP_Error' ) ) {
 $wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: '/Users/chubes/Studio/intelligence-chubes4';
 $parser  = rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-parser.php';
 $blocks  = rtrim( $wp_root, '/\\' ) . '/wp-includes/blocks.php';
-if ( ! is_readable( $parser ) || ! is_readable( $blocks ) ) {
-	fwrite( STDERR, "SKIP: WordPress parser/serializer files are unavailable. Set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
-	exit( 0 );
+if ( is_readable( $parser ) && is_readable( $blocks ) ) {
+	require_once $parser;
+	require_once $blocks;
 }
-
-require_once $parser;
-require_once $blocks;
+if ( ! function_exists( 'parse_blocks' ) || ! function_exists( 'serialize_blocks' ) ) {
+	// This test declares the wordpress-runtime environment; a missing
+	// dependency here must fail closed rather than silently report success.
+	fwrite( STDERR, "FAIL: WordPress parser/serializer files are unavailable. Set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
+	exit( 1 );
+}
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-document.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-product-handoff-contract.php';
@@ -184,8 +187,46 @@ $form_report  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 
 Static_Site_Importer_Block_Document_Reporter::analyze_generated_block_document( 'parts/footer.html', $form_content, $form_report );
 $form_findings = array_values( array_filter( $form_report['diagnostics'], static fn ( array $diagnostic ): bool => 'generated_document_contains_core_html' === ( $diagnostic['reason'] ?? '' ) ) );
 $form_finding  = $form_findings[0] ?? array();
-$assert( 'email' === ( $form_finding['controls'][0]['name'] ?? '' ), 'generated-form-diagnostic-retains-control-name' );
-$assert( 'post' === ( $form_finding['form']['method'] ?? '' ), 'generated-form-diagnostic-retains-method' );
+
+// #1664 made SSI consume producer-supplied form metadata instead of
+// re-parsing form HTML, so a raw HTML fixture carrying no producer metadata
+// correctly yields an empty manifest here.
+$assert( array() === ( $form_finding['form'] ?? null ), 'generated-form-diagnostic-omits-form-without-producer-metadata' );
+$assert( array() === ( $form_finding['controls'] ?? null ), 'generated-form-diagnostic-omits-controls-without-producer-metadata' );
+
+// Drive the same diagnostic with producer-supplied form metadata (as a form
+// materializer finding would carry) and assert SSI materializes it faithfully
+// into the manifest, per the current (post-#1664) contract.
+$producer_form_diagnostic = Static_Site_Importer_Report_Diagnostics::fallback_diagnostic_entry(
+	'core_html_block',
+	'parts/footer.html',
+	$form_html,
+	array(
+		'reason'   => 'generated_document_contains_core_html',
+		'stage'    => 'generated_theme_block_analysis',
+		'path'     => '0',
+		'form'     => array(
+			'class'  => 'newsletter',
+			'action' => '#',
+			'method' => 'post',
+		),
+		'controls' => array(
+			array(
+				'tag'      => 'input',
+				'type'     => 'email',
+				'name'     => 'email',
+				'required' => true,
+			),
+			array(
+				'tag'  => 'button',
+				'type' => 'submit',
+			),
+		),
+	),
+	array()
+);
+$assert( 'email' === ( $producer_form_diagnostic['controls'][0]['name'] ?? '' ), 'generated-form-diagnostic-retains-control-name' );
+$assert( 'post' === ( $producer_form_diagnostic['form']['method'] ?? '' ), 'generated-form-diagnostic-retains-method' );
 
 Static_Site_Importer_Block_Document_Reporter::reset_generated_block_document_analysis( $form_report );
 Static_Site_Importer_Block_Document_Reporter::analyze_generated_block_document( 'parts/footer.html', '<!-- wp:jetpack/contact-form --><!-- wp:jetpack/field-email {"label":"Email"} /--><!-- /wp:jetpack/contact-form -->', $form_report );
