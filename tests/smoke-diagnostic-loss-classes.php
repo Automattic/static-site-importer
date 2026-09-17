@@ -117,6 +117,99 @@ foreach ( $fixtures as $label => $fixture ) {
 }
 
 /*
+ * Compiler file-drop rows are the documented exception to both paths above.
+ * The transformer's artifact normalizer reports each drop as a warning carrying
+ * a producer code like `file_limit_exceeded`, but no remediation lane, so the
+ * contract files it under generic review -- still an acceptable bucket, even
+ * though the omitted files are gone. That misclassification is issue #1547. The
+ * drift guard below pins the raw behavior so a change on either side surfaces
+ * here.
+ */
+$raw_drop_rows = array(
+	'file_limit_exceeded'      => array(
+		'code'      => 'file_limit_exceeded',
+		'severity'  => 'warning',
+		'source'    => 'artifact_normalization',
+		'context'   => array( 'declared_limit' => 500 ),
+	),
+	'artifact_file_too_large'  => array(
+		'code'      => 'artifact_file_too_large',
+		'severity'  => 'warning',
+		'source'    => 'artifact_normalization',
+		'context'   => array( 'file_size' => 10485761 ),
+	),
+	'artifact_total_too_large' => array(
+		'code'      => 'artifact_total_too_large',
+		'severity'  => 'warning',
+		'source'    => 'artifact_normalization',
+		'context'   => array( 'total_size' => 104857601 ),
+	),
+);
+
+$expected_drop_types = array(
+	'file_limit_exceeded'      => 'omitted_artifact_files',
+	'artifact_file_too_large'  => 'omitted_artifact_file',
+	'artifact_total_too_large' => 'omitted_artifact_file',
+);
+
+// Mapping the producer code onto the importer-owned type is deterministic.
+foreach ( $raw_drop_rows as $code => $row ) {
+	$assert(
+		$expected_drop_types[ $code ] === Static_Site_Importer_Diagnostic_Loss_Classes::compiler_file_drop_type( $row ),
+		'compiler-drop-maps-' . $code
+	);
+}
+$assert(
+	'' === Static_Site_Importer_Diagnostic_Loss_Classes::compiler_file_drop_type( array( 'code' => 'conversion_warning' ) ),
+	'compiler-drop-ignores-unrelated-codes'
+);
+
+// Left un-rewritten, a drop row is a contract finding (it carries a `code`) and
+// lands in an acceptable product bucket even though the omitted files are gone.
+// Pinning that drift here is the point: if upstream ever reclassifies these
+// codes itself, this test flags it and the rewrite below can be revisited.
+foreach ( $raw_drop_rows as $code => $row ) {
+	$class = Static_Site_Importer_Diagnostic_Loss_Classes::classify( $row );
+	$assert(
+		in_array( $class, array( 'native_conversion', 'editable_approximation', 'preserved_runtime_island' ), true ),
+		'raw-drop-row-classifies-acceptable-' . $code,
+		'got: ' . $class
+	);
+}
+
+// After the rewrite the row carries the importer-owned identity everywhere:
+// machine type, producer code preserved for diagnosis, explicit loss class, and
+// a materialization status that matches reality (the files are not in the import).
+foreach ( $raw_drop_rows as $code => $row ) {
+	$reowned = Static_Site_Importer_Diagnostic_Loss_Classes::reown_compiler_file_drop( $row );
+	$assert(
+		$expected_drop_types[ $code ] === ( $reowned['type'] ?? '' ) && $expected_drop_types[ $code ] === ( $reowned['code'] ?? '' ) && $expected_drop_types[ $code ] === ( $reowned['diagnostic_code'] ?? '' ) && $expected_drop_types[ $code ] === ( $reowned['kind'] ?? '' ),
+		'reowned-drop-uses-importer-type-' . $code
+	);
+	$assert(
+		$code === ( $reowned['original_code'] ?? '' ) && $code === ( $reowned['reason_code'] ?? '' ),
+		'reowned-drop-preserves-producer-code-' . $code
+	);
+	$assert(
+		'unsupported_loss' === ( $reowned['loss_class'] ?? '' ) && 'not_materialized' === ( $reowned['materialization_status'] ?? '' ),
+		'reowned-drop-stamps-unsupported-loss-' . $code
+	);
+	$provenance = Static_Site_Importer_Diagnostic_Loss_Classes::classify_with_provenance( $reowned );
+	$assert(
+		'unsupported_loss' === $provenance['class'] && Static_Site_Importer_Diagnostic_Loss_Classes::SOURCE_EXPLICIT === $provenance['source'],
+		'reowned-drop-classifies-explicitly-' . $code,
+		'got: ' . $provenance['class'] . ' via ' . $provenance['source']
+	);
+}
+
+// Non-drop rows pass through the reown helper untouched.
+$untouched = array( 'type' => 'content_loss_abort', 'code' => 'content_loss_abort' );
+$assert(
+	$untouched === Static_Site_Importer_Diagnostic_Loss_Classes::reown_compiler_file_drop( $untouched ),
+	'reown-leaves-non-drop-rows-untouched'
+);
+
+/*
  * Contract path, driven by real transformer output.
  *
  * Rather than asserting against hand-built finding stubs, run the vendored

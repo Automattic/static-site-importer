@@ -42,6 +42,7 @@ final class Static_Site_Importer_Quality_Gates {
 		$quality['accepted_preserved_runtime_island_count'] = $fallback_admission['accepted'];
 		$quality['unsupported_fallback_count']              = $fallback_admission['unsupported'];
 		$quality['unsafe_layout_constraint_count']          = count( array_filter( $report['diagnostics'] ?? array(), static fn( $diagnostic ): bool => is_array( $diagnostic ) && Static_Site_Importer_Report_Diagnostics::UNSAFE_LAYOUT_CONSTRAINT_TYPE === ( $diagnostic['type'] ?? '' ) ) );
+		$quality['omitted_file_count']                     = self::omitted_file_count( $report['diagnostics'] ?? array() );
 		$reasons = array();
 		if ( $quality['unsupported_fallback_count'] > 0 ) {
 			$reasons[] = 'unsupported_html_fallback';
@@ -87,6 +88,9 @@ final class Static_Site_Importer_Quality_Gates {
 		}
 		if ( $quality['unsafe_layout_constraint_count'] > 0 ) {
 			$reasons[] = Static_Site_Importer_Report_Diagnostics::UNSAFE_LAYOUT_CONSTRAINT_TYPE;
+		}
+		if ( ( $quality['omitted_file_count'] ?? 0 ) > 0 ) {
+			$reasons[] = 'dropped_artifact_files';
 		}
 
 		$quality['pass']            = empty( $reasons );
@@ -140,6 +144,7 @@ final class Static_Site_Importer_Quality_Gates {
 			'runtime_dependency_parity_issue_count'   => 0,
 			'semantic_parity_failure_count'           => 0,
 			'unsafe_layout_constraint_count'          => 0,
+			'omitted_file_count'                      => 0,
 			'failure_reasons'                         => array(),
 		);
 	}
@@ -169,6 +174,27 @@ final class Static_Site_Importer_Quality_Gates {
 		}
 
 		$report['quality'] = $quality;
+	}
+
+	/**
+	 * Count normalized diagnostics that report artifact files the compiler omitted.
+	 *
+	 * The compiler emits no aggregate counter for dropped files, so the count is
+	 * derived from the rewritten rows the same way the fallback admission gate
+	 * derives its split from diagnostics.
+	 *
+	 * @param array<int,mixed> $diagnostics Normalized diagnostics.
+	 * @return int
+	 */
+	private static function omitted_file_count( array $diagnostics ): int {
+		$count = 0;
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( is_array( $diagnostic ) && in_array( $diagnostic['type'] ?? '', array( Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE, Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE ), true ) ) {
+				++$count;
+			}
+		}
+
+		return $count;
 	}
 
 	/**
@@ -487,6 +513,7 @@ final class Static_Site_Importer_Quality_Gates {
 			'runtime_dependency_parity_issue_count'   => array( 'runtime_dependency_missing_dom_target', 'runtime_dependency_unsupported_element_reference', 'runtime_dependency_parity_issue' ),
 			'semantic_parity_failure_count'           => array( 'semantic_parity_navigation_missing', 'semantic_parity_navigation_mismatch', 'semantic_parity_landmark_missing', 'semantic_parity_failure' ),
 			'unsafe_layout_constraint_count'          => array( Static_Site_Importer_Report_Diagnostics::UNSAFE_LAYOUT_CONSTRAINT_TYPE ),
+			'omitted_file_count'                      => array( Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE, Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE ),
 		);
 
 		$refs = array();
