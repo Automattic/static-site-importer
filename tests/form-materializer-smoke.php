@@ -775,6 +775,61 @@ namespace {
 	$submit_min_width_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $submit_min_width_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$submit_min_width_css = (string) ( $submit_min_width_row['provider_layout_overlay_css']['css'] ?? '' );
 	$assert( empty( $submit_min_width_validation['errors'] ) && preg_match( '/\.ssi-node-[a-f0-9]{12}\{min-width:100%\}/', $submit_min_width_css ) && ! str_contains( $submit_min_width_css, '> .wp-block-button__link{min-width:100%}' ), 'source-submit-min-width-targets-the-wrapper-instead-of-its-inner-button', $submit_min_width_css );
+	// A producer can capture a submit button's own presentation as a bounded
+	// per-control style rather than running it through the full source-CSS-cascade
+	// presentation_graph compiler. Before this seam was wired up, that capture only
+	// flagged the button with the ssi-provider-submit-presentation marker class -
+	// the source's real background, text color, typography, and full-width intent
+	// never reached the rendered button, so it fell back to a transparent,
+	// default-sized wp-element-button. The seam must resolve this capture through
+	// the same provider layout overlay every other captured control already uses.
+	$submit_control_style_form = $topology_form;
+	$submit_control_style_form['forms'][0]['controls'][3]['presentation'] = array(
+		'style' => array(
+			'width'      => '100%',
+			'color'      => array(
+				'background' => 'oklch(0.2689 0.0057 156.83)',
+				'text'       => 'oklch(0.956 0.0115 84.58)',
+			),
+			'typography' => array(
+				'fontSize'      => '12px',
+				'fontWeight'    => '600',
+				'letterSpacing' => '1.92px',
+				'textTransform' => 'uppercase',
+			),
+			'border'     => array( 'radius' => '9999px' ),
+		),
+	);
+	$validated_submit_control_style = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $submit_control_style_form );
+	$submit_control_style_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_submit_control_style['forms'] ?? array() ) )['forms'][0] ?? array();
+	$submit_control_style_markup    = (string) ( $submit_control_style_row['block_markup'] ?? '' );
+	$submit_control_style_css       = (string) ( $submit_control_style_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		empty( $validated_submit_control_style['errors'] )
+			&& 'mapped' === ( $submit_control_style_row['status'] ?? '' )
+			&& str_contains( $submit_control_style_markup, 'ssi-provider-submit-presentation' )
+			&& str_contains( $submit_control_style_css, '> .wp-block-button__link{background-color:oklch(0.2689 0.0057 156.83);color:oklch(0.956 0.0115 84.58);font-size:12px;font-weight:600;letter-spacing:1.92px;text-transform:uppercase;border-radius:9999px;font-family:revert;line-height:revert;min-height:0}' )
+			&& preg_match( '/\.ssi-node-[a-f0-9]{12}\{width:100%\}/', $submit_control_style_css )
+			&& ! str_contains( $submit_control_style_css, '> .wp-block-button__link{width:100%' ),
+		'source-submit-control-style-capture-resolves-through-the-provider-overlay-instead-of-an-inert-marker-class',
+		wp_json_encode( array( 'markup' => $submit_control_style_markup, 'css' => $submit_control_style_css ) )
+	);
+	// The saved block still claims no style attribute of its own: the overlay
+	// paints the button, so the saved markup keeps agreeing with core/button's
+	// own save() output and the imported form stays clean in the editor.
+	$submit_control_style_attrs = array();
+	foreach ( parse_blocks( $submit_control_style_markup ) as $parsed_submit_control_style_form ) {
+		$collect_submit_control_style = static function ( array $blocks, callable $collect ) use ( &$submit_control_style_attrs ): void {
+			foreach ( $blocks as $parsed ) {
+				if ( 'core/button' === ( $parsed['blockName'] ?? '' ) ) {
+					$submit_control_style_attrs[] = $parsed['attrs'] ?? array();
+				}
+				$collect( $parsed['innerBlocks'] ?? array(), $collect );
+			}
+		};
+		$collect_submit_control_style( array( $parsed_submit_control_style_form ), $collect_submit_control_style );
+	}
+	$assert( 1 === count( $submit_control_style_attrs ) && ! array_key_exists( 'style', $submit_control_style_attrs[0] ), 'source-submit-control-style-capture-still-claims-no-unrenderable-block-style-attribute', wp_json_encode( $submit_control_style_attrs ) );
 	foreach ( array( '' => 'inherit', 'font-weight:600;' => '600' ) as $source_weight => $expected_weight ) {
 		$label_artifact = ( new $artifact_compiler() )->compile( array(
 			'entrypoint' => 'index.html',
