@@ -37,7 +37,15 @@ $static_result       = blocks_engine_php_transformer_transform_html( $static_con
 $static_names        = $collect_block_names( $static_result['blocks'] ?? array() );
 $static_fallbacks    = $static_result['source_reports']['conversion_report']['fallback_diagnostics'] ?? array();
 
-$assert( in_array( 'core/group', $static_names, true ), 'static-contact-layout-group' );
+// The wrapper is either a native group or the producer's generated layout-shell,
+// whose namespace is consumer-owned (blocks-engine #1874). Both are editable
+// container blocks; the guarantees this case exists for are the ones below --
+// native content blocks, no core/html island, and no fallback diagnostics.
+$static_wrapper = array_filter(
+	$static_names,
+	static fn ( string $name ): bool => 'core/group' === $name || str_ends_with( $name, '/layout-shell' )
+);
+$assert( array() !== $static_wrapper, 'static-contact-layout-group' );
 $assert( in_array( 'core/heading', $static_names, true ), 'static-contact-layout-heading' );
 $assert( in_array( 'core/paragraph', $static_names, true ), 'static-contact-layout-paragraphs' );
 $assert( ! in_array( 'core/html', $static_names, true ), 'static-contact-layout-no-core-html' );
