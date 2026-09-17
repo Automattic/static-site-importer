@@ -1081,11 +1081,26 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		foreach ( $variants_by_node['form'] ?? array() as $variant ) {
 			$form_patches[ (string) wp_json_encode( $variant['condition'] ?? null ) ] = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
 		}
+		// A submit control is never a member of the source field-group box a provider
+		// forms its own field container from: Jetpack always renders a submit as a
+		// sibling of that container, never a descendant of it, regardless of what the
+		// source DOM does. A box that groups every other mapped control still states
+		// the field container's own layout, so a submit's absence alone does not make
+		// that box's branch a partial (and therefore unrepresentable) one.
+		$non_submit_mapped_controls = array_values(
+			array_filter(
+				$mapped_controls,
+				static fn ( int $index ): bool => 'submit' !== strtolower( trim( (string) ( $controls[ $index ]['type'] ?? '' ) ) )
+			)
+		);
 		foreach ( $nodes as $node ) {
 			$node_id = is_array( $node ) && 'wrapper' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
 			$branch  = '' !== $node_id ? array_values( array_filter( $collect_controls( $node ), static fn ( int $index ): bool => isset( $field_blocks[ $index ] ) ) ) : array();
 			sort( $branch );
-			if ( '' === $node_id || count( $mapped_controls ) < 2 || $branch !== $mapped_controls || isset( $wrapper_hooks[ $node_id ] ) ) {
+			if ( '' === $node_id || count( $mapped_controls ) < 2 || isset( $wrapper_hooks[ $node_id ] ) ) {
+				continue;
+			}
+			if ( $branch !== $mapped_controls && ( count( $non_submit_mapped_controls ) < 2 || $branch !== $non_submit_mapped_controls ) ) {
 				continue;
 			}
 			$form_boxes[] = $node;
@@ -1166,6 +1181,21 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'target_hash' => hash( 'sha256', $box_id ),
 				);
 			}
+			// A submit exempted from the box's own branch (Jetpack always renders
+			// it as the field container's sibling, never its descendant) becomes
+			// a direct child of whichever element now carries that box's own
+			// grid, so it is auto-placed into a single track unless it is told
+			// to span every track a source column-based field group produces.
+			if ( 'grid' === ( $merged_base['display'] ?? null ) ) {
+				foreach ( $controls as $control_index => $control ) {
+					if ( 'submit' === strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) && '$root' === ( $control_parents[ $control_index ] ?? '$root' ) ) {
+						$overlay_node_targets[] = array(
+							'id'     => 'control-' . $control_index,
+							'layout' => array( 'column' => '1 / -1' ),
+						);
+					}
+				}
+			}
 		}
 		foreach ( $wrapper_hooks as $node_id => $hook ) {
 			$layout_node = $layout_nodes_by_id[ $node_id ] ?? null;
@@ -1178,7 +1208,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					$proven = $proven && isset( $layout_css_properties[ $fact ] ) && $variant_proven( $variant, $layout_css_properties[ $fact ] );
 				}
 			}
-			if ( ! $proven || in_array( $node_id, $represented_layout_nodes, true ) ) {
+			// A wrapper already represented by carrying its own source class name
+			// (so the enqueued source stylesheet paints its base fact directly)
+			// still needs its own overlay target when it also carries a responsive
+			// variant under a different, unrepresented class - the base-class
+			// carry never inspects variants, so it cannot promise those too.
+			$base_represented_only = in_array( $node_id, $represented_layout_nodes, true ) && empty( $variants_by_node[ $node_id ] ?? array() );
+			if ( ! $proven || $base_represented_only ) {
 				continue;
 			}
 			$provider_layout_targets[ $node_id ] = $hook;
@@ -1229,6 +1265,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 			return $blocks;
 		};
+		// A wrapper that also earned its own overlay target (because carrying its
+		// source class name alone cannot promise a responsive variant under a
+		// different, unrepresented class) must keep its graph node so that target
+		// map can still address it; "represented by source class" is no longer
+		// the operative claim once an overlay target exists for the same node.
+		$represented_layout_nodes = array_values( array_diff( array_map( 'strval', $represented_layout_nodes ), array_keys( $provider_layout_targets ) ) );
 		return array(
 			'blocks'                       => $build( '$root' ),
 			'losses'                       => $losses,
@@ -1881,6 +1923,22 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'submit' === $type ? array( 'min-height' => '0' ) : array()
 				),
 				);
+				if ( 'select' === $type ) {
+					// Jetpack's own select styling splits across two elements: its
+					// generic control rule paints the wrapper (background, border,
+					// font), but padding is declared on the nested `<select>` itself
+					// (`.contact-form__select-wrapper select{padding:...}`), so a
+					// captured padding fact needs that same, more specific target to
+					// outrank it.
+					$padding_properties = array_values( array_intersect( $properties, array( 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block', 'padding_inline', 'padding_block_start', 'padding_block_end', 'padding_inline_start', 'padding_inline_end' ) ) );
+					if ( ! empty( $padding_properties ) ) {
+						$destinations[] = array(
+							'role'       => 'control',
+							'selector'   => '.' . $scope . ' .' . $control_class . ' select',
+							'properties' => $padding_properties,
+						);
+					}
+				}
 			}
 		}
 		if ( isset( $roles['control_container'] ) ) {
