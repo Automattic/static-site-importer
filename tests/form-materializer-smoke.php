@@ -488,7 +488,7 @@ namespace {
 	$assert( str_contains( $topology_markup, 'First name' ) && str_contains( $topology_markup, 'Email' ) && str_contains( $topology_markup, 'Message' ), 'topology-preserves-labels' );
 	$assert( 1 === substr_count( $topology_markup, '<!-- wp:button ' ), 'topology-submit-control-emits-one-core-button-in-source-position' );
 	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && 6 === ( $topology_receipt['operation_count'] ?? 0 ) && 'provider_equal_width_fields' === ( $topology_receipt['operations'][3]['strategy'] ?? '' ) && 'provider_interaction_carrier' === ( $topology_receipt['operations'][5]['strategy'] ?? '' ), 'computed-layout-equal-grid-applies-with-bounded-receipt' );
-	$assert( str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'min-height:82px' ), 'topology-unstyled-source-textarea-gets-a-two-row-intrinsic-height-instead-of-the-provider-default' );
+	$assert( str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:82px' ) && ! str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:200px' ), 'topology-unstyled-source-textarea-gets-a-two-row-intrinsic-height-instead-of-the-provider-default' );
 	// A source that deliberately sizes two textareas differently through their own
 	// `rows` attribute - rather than an authored CSS height a cascade compiler could
 	// capture - must not materialize both onto this provider's one fixed default;
@@ -500,10 +500,10 @@ namespace {
 	$many_rows_form['forms'][0]['controls'][2]['rows'] = '6';
 	$many_rows_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $many_rows_form )['forms'] ?? array() ) )['forms'][0] ?? array();
 	$assert(
-		str_contains( (string) ( $few_rows_row['provider_layout_overlay_css']['css'] ?? '' ), 'min-height:106px' )
-			&& str_contains( (string) ( $many_rows_row['provider_layout_overlay_css']['css'] ?? '' ), 'min-height:178px' )
-			&& ! str_contains( (string) ( $few_rows_row['provider_layout_overlay_css']['css'] ?? '' ), 'min-height:200px' )
-			&& ! str_contains( (string) ( $many_rows_row['provider_layout_overlay_css']['css'] ?? '' ), 'min-height:200px' ),
+		str_contains( (string) ( $few_rows_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:106px' )
+			&& str_contains( (string) ( $many_rows_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:178px' )
+			&& ! str_contains( (string) ( $few_rows_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:200px' )
+			&& ! str_contains( (string) ( $many_rows_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:200px' ),
 		'distinctly-authored-textarea-row-counts-materialize-distinct-heights-instead-of-one-provider-default',
 		wp_json_encode( array( 'few' => $few_rows_row['provider_layout_overlay_css'] ?? null, 'many' => $many_rows_row['provider_layout_overlay_css'] ?? null ) )
 	);
@@ -517,7 +517,7 @@ namespace {
 	$authored_textarea_height_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $authored_textarea_height_form )['forms'] ?? array() ) )['forms'][0] ?? array();
 	$assert(
 		str_contains( (string) ( $authored_textarea_height_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:9rem' )
-			&& ! str_contains( (string) ( $authored_textarea_height_row['provider_layout_overlay_css']['css'] ?? '' ), 'min-height:' ),
+			&& ! str_contains( (string) ( $authored_textarea_height_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:82px' ),
 		'source-cascade-resolved-textarea-height-is-authoritative-over-the-row-count-fallback',
 		wp_json_encode( $authored_textarea_height_row['provider_layout_overlay_css'] ?? null )
 	);

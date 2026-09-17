@@ -842,10 +842,15 @@ class Static_Site_Importer_Form_Seeder {
 	 * fixed default height regardless of the source's authored row count,
 	 * discarding a source that deliberately sizes two textareas differently.
 	 *
-	 * Merge a computed minimum height - the same row-count arithmetic a
-	 * browser already uses to size an unstyled `<textarea rows>` - into
+	 * Merge a computed height - the same row-count arithmetic a browser
+	 * already uses to size an unstyled `<textarea rows>` - into
 	 * `presentation_graph.controls` so the existing `Provider_Layout_Overlay`
-	 * pipeline emits it like any other captured control fact. A real
+	 * pipeline emits it like any other captured control fact. This provider's
+	 * own default reaches the rendered textarea as an explicit `height`
+	 * (zero-specificity `:where(.contact-form textarea){height:200px}`), not
+	 * a `min-height`, so only an explicit `height` fact - not a floor a taller
+	 * default already satisfies - actually changes what renders; a single
+	 * scoped class already outranks that zero-specificity default. A real
 	 * cascade-resolved height or minimum height already captured for this
 	 * control is authoritative and this projection does not run; a real
 	 * cascade-resolved font size, line height, padding, or border already
@@ -874,16 +879,16 @@ class Static_Site_Importer_Form_Seeder {
 			if ( isset( $existing_styles['height'] ) || isset( $existing_styles['min_height'] ) ) {
 				continue;
 			}
-			$min_height = self::textarea_row_min_height( $control, $existing_styles );
-			if ( null === $min_height ) {
+			$height = self::textarea_row_height( $control, $existing_styles );
+			if ( null === $height ) {
 				continue;
 			}
 			if ( null !== $row_index ) {
-				$controls_graph[ $row_index ]['control']['styles']['min_height'] = $min_height;
+				$controls_graph[ $row_index ]['control']['styles']['height'] = $height;
 			} else {
 				$controls_graph[] = array(
 					'index'   => $control_index,
-					'control' => array( 'styles' => array( 'min_height' => $min_height ) ),
+					'control' => array( 'styles' => array( 'height' => $height ) ),
 				);
 			}
 			$form['presentation_graph']['controls'] = $controls_graph;
@@ -892,7 +897,7 @@ class Static_Site_Importer_Form_Seeder {
 	}
 
 	/**
-	 * Compute a textarea's intrinsic minimum height the way a browser sizes an
+	 * Compute a textarea's intrinsic height the way a browser sizes an
 	 * unstyled `<textarea rows="N">`: N line boxes plus the field's own
 	 * vertical padding and border. Falls back to this provider's own rendered
 	 * field defaults for whichever fact the source CSS cascade did not
@@ -903,7 +908,7 @@ class Static_Site_Importer_Form_Seeder {
 	 * @param array<string,mixed>  $control Normalized control row.
 	 * @param array<string,string> $styles  Already-resolved presentation styles for this control, if any.
 	 */
-	private static function textarea_row_min_height( array $control, array $styles ): ?string {
+	private static function textarea_row_height( array $control, array $styles ): ?string {
 		$rows = isset( $control['rows'] ) && is_scalar( $control['rows'] ) ? (int) $control['rows'] : 2;
 		if ( $rows < 1 || $rows > 50 ) {
 			return null;
