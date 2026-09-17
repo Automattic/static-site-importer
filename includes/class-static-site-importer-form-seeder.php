@@ -313,6 +313,7 @@ class Static_Site_Importer_Form_Seeder {
 		$form        = Static_Site_Importer_Form_Layout_Projection::normalize_unconditional_layout_variants( $form );
 		$controls    = isset( $form['controls'] ) && is_array( $form['controls'] ) ? $form['controls'] : array();
 		$form        = self::project_submit_style_into_presentation_graph( $form, $controls );
+		$form        = self::project_textarea_row_height_into_presentation_graph( $form, $controls );
 		$selector    = isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '';
 		$source_path = isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '';
 
@@ -626,13 +627,19 @@ class Static_Site_Importer_Form_Seeder {
 		foreach ( array_keys( $suppressed_controls ) as $control_index ) {
 			unset( $overlay_form['presentation_graph']['controls'][ $control_index ] );
 		}
-		$visual_state       = Static_Site_Importer_Form_Layout_Projection::empty_country_visual_state( $form, $scope, $topology['phone_popup_targets'] );
-		$target_map         = Static_Site_Importer_Form_Layout_Projection::provider_layout_target_map( $overlay_form, $scope, $presentation_descriptors, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
-		$presentation_graph = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
-		$overlay            = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map, $presentation_graph );
-		$overlay            = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_provider_errors( $overlay, $scope, $mapped_types );
-		$editor_map         = Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $target_map, $scope );
-		$editor_overlay     = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $editor_map, $presentation_graph, $form['form']['container_presentation'] ?? array(), true );
+		$visual_state            = Static_Site_Importer_Form_Layout_Projection::empty_country_visual_state( $form, $scope, $topology['phone_popup_targets'] );
+		$target_map              = Static_Site_Importer_Form_Layout_Projection::provider_layout_target_map( $overlay_form, $scope, $presentation_descriptors, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
+		$presentation_graph      = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
+		$container_presentation  = is_array( $form['form']['container_presentation'] ?? null ) ? $form['form']['container_presentation'] : array();
+		// The captured form box's own padding/margin/etc. is bounded, source-CSS-cascade
+		// evidence carried the same way every other captured control already is (see
+		// Provider_Layout_Overlay's `generic/form-container-presentation/v1` destination).
+		// It belongs on the rendered page, not only inside editor chrome, so the frontend
+		// compile also receives it.
+		$overlay                 = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map, $presentation_graph, $container_presentation );
+		$overlay                 = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_provider_errors( $overlay, $scope, $mapped_types );
+		$editor_map              = Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $target_map, $scope );
+		$editor_overlay          = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $editor_map, $presentation_graph, $container_presentation, true );
 		if ( isset( $editor_overlay['overlay']['editor_css'] ) ) {
 			foreach ( array( 'editor_css', 'editor_sha256', 'editor_bytes' ) as $key ) {
 				$overlay['overlay'][ $key ] = $editor_overlay['overlay'][ $key ];
@@ -818,6 +825,137 @@ class Static_Site_Importer_Form_Seeder {
 			$form['presentation_graph']['controls'] = $controls_graph;
 		}
 		return $form;
+	}
+
+	/**
+	 * Route a textarea's row count onto the same computed-presentation graph
+	 * every other captured control fact already resolves through.
+	 *
+	 * A source textarea sized by its own `rows` attribute (rather than an
+	 * authored CSS height) carries no CSS declaration a source-CSS-cascade
+	 * compiler could capture - there is nothing in the stylesheet to
+	 * transpose. blocks-engine still reports this row count for every
+	 * textarea control (`effectiveRows()`, always populated, defaulting to
+	 * the browser's own unset-`rows` default of 2), because it is read
+	 * straight off the source element rather than derived from CSS. Left
+	 * unused, every provider textarea instead renders at this provider's own
+	 * fixed default height regardless of the source's authored row count,
+	 * discarding a source that deliberately sizes two textareas differently.
+	 *
+	 * Merge a computed minimum height - the same row-count arithmetic a
+	 * browser already uses to size an unstyled `<textarea rows>` - into
+	 * `presentation_graph.controls` so the existing `Provider_Layout_Overlay`
+	 * pipeline emits it like any other captured control fact. A real
+	 * cascade-resolved height or minimum height already captured for this
+	 * control is authoritative and this projection does not run; a real
+	 * cascade-resolved font size, line height, padding, or border already
+	 * captured for this control is used in the arithmetic in place of this
+	 * provider's own rendered field defaults for whichever fact is absent.
+	 *
+	 * @param array<string,mixed> $form Provider form manifest row.
+	 * @param array<int,mixed>    $controls Normalized controls list.
+	 * @return array<string,mixed>
+	 */
+	private static function project_textarea_row_height_into_presentation_graph( array $form, array $controls ): array {
+		foreach ( $controls as $control_index => $control ) {
+			if ( ! is_array( $control ) || ! is_int( $control_index ) || 'textarea' !== strtolower( trim( (string) ( $control['tag'] ?? '' ) ) ) ) {
+				continue;
+			}
+			$controls_graph  = isset( $form['presentation_graph']['controls'] ) && is_array( $form['presentation_graph']['controls'] ) ? $form['presentation_graph']['controls'] : array();
+			$existing_styles = array();
+			$row_index       = null;
+			foreach ( $controls_graph as $graph_index => $row ) {
+				if ( is_array( $row ) && ( $row['index'] ?? null ) === $control_index ) {
+					$existing_styles = isset( $row['control']['styles'] ) && is_array( $row['control']['styles'] ) ? $row['control']['styles'] : array();
+					$row_index       = $graph_index;
+					break;
+				}
+			}
+			if ( isset( $existing_styles['height'] ) || isset( $existing_styles['min_height'] ) ) {
+				continue;
+			}
+			$min_height = self::textarea_row_min_height( $control, $existing_styles );
+			if ( null === $min_height ) {
+				continue;
+			}
+			if ( null !== $row_index ) {
+				$controls_graph[ $row_index ]['control']['styles']['min_height'] = $min_height;
+			} else {
+				$controls_graph[] = array(
+					'index'   => $control_index,
+					'control' => array( 'styles' => array( 'min_height' => $min_height ) ),
+				);
+			}
+			$form['presentation_graph']['controls'] = $controls_graph;
+		}
+		return $form;
+	}
+
+	/**
+	 * Compute a textarea's intrinsic minimum height the way a browser sizes an
+	 * unstyled `<textarea rows="N">`: N line boxes plus the field's own
+	 * vertical padding and border. Falls back to this provider's own rendered
+	 * field defaults for whichever fact the source CSS cascade did not
+	 * resolve, so the arithmetic is exact once that fact is captured and a
+	 * reasoned approximation - never this provider's unconditional 200px -
+	 * until then.
+	 *
+	 * @param array<string,mixed>  $control Normalized control row.
+	 * @param array<string,string> $styles  Already-resolved presentation styles for this control, if any.
+	 */
+	private static function textarea_row_min_height( array $control, array $styles ): ?string {
+		$rows = isset( $control['rows'] ) && is_scalar( $control['rows'] ) ? (int) $control['rows'] : 2;
+		if ( $rows < 1 || $rows > 50 ) {
+			return null;
+		}
+		$font_size   = self::css_length_to_px( (string) ( $styles['font_size'] ?? '' ) ) ?? 16.0;
+		$line_height = self::css_length_to_px( (string) ( $styles['line_height'] ?? '' ), $font_size ) ?? ( $font_size * 1.5 );
+		// This provider's own textarea field CSS renders 16px padding and a 1px
+		// border on every side when the source cascade resolves neither.
+		$padding = self::resolved_vertical_box_fact( $styles, 'padding_top', 'padding_bottom', 'padding_block', 'padding', 16.0 );
+		$border  = self::resolved_vertical_box_fact( $styles, 'border_top_width', 'border_bottom_width', null, 'border_width', 1.0 );
+		$height  = ( $rows * $line_height ) + $padding + $border;
+		return $height > 0.0 ? (string) round( $height ) . 'px' : null;
+	}
+
+	/**
+	 * Sum a resolved vertical box fact (padding or border) from whichever
+	 * authored shape is present - explicit top/bottom, the two-value logical
+	 * shorthand, or the all-sides shorthand - or twice the given provider
+	 * default when the source cascade resolved none of them.
+	 *
+	 * @param array<string,string> $styles Already-resolved presentation styles.
+	 */
+	private static function resolved_vertical_box_fact( array $styles, string $top_key, string $bottom_key, ?string $block_key, string $shorthand_key, float $default_each_side ): float {
+		$top    = self::css_length_to_px( (string) ( $styles[ $top_key ] ?? '' ) );
+		$bottom = self::css_length_to_px( (string) ( $styles[ $bottom_key ] ?? '' ) );
+		if ( null !== $top && null !== $bottom ) {
+			return $top + $bottom;
+		}
+		if ( null !== $block_key ) {
+			$block = self::css_length_to_px( (string) ( $styles[ $block_key ] ?? '' ) );
+			if ( null !== $block ) {
+				return $block * 2;
+			}
+		}
+		$shorthand = self::css_length_to_px( (string) ( $styles[ $shorthand_key ] ?? '' ) );
+		if ( null !== $shorthand ) {
+			return $shorthand * 2;
+		}
+		return $default_each_side * 2;
+	}
+
+	/** Bounded px/rem/em length parser for the provider's own row-height arithmetic. */
+	private static function css_length_to_px( string $value, float $relative_to = 16.0 ): ?float {
+		$value = trim( $value );
+		if ( '' === $value || 1 !== preg_match( '/^(-?[0-9]+(?:\.[0-9]+)?)(px|rem|em)$/D', $value, $match ) ) {
+			return null;
+		}
+		$number = (float) $match[1];
+		if ( 'px' === $match[2] ) {
+			return $number;
+		}
+		return $number * ( 'rem' === $match[2] ? 16.0 : $relative_to );
 	}
 
 	/**

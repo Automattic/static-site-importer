@@ -147,15 +147,15 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				); }
 		}
 		$presentation_targets = array_column( $validated_map['presentation_targets'] ?? array(), null, 'index' );
-		foreach ( $presentation_graph['control_containers'] ?? array() as $container ) {
-			$index        = $container['index'] ?? null;
+		foreach ( $presentation_graph['control_containers'] ?? array() as $control_container ) {
+			$index        = $control_container['index'] ?? null;
 			$destinations = is_int( $index ) ? array_filter( $presentation_targets[ $index ]['destinations'] ?? array(), static fn( array $destination ): bool => 'control_container' === $destination['role'] ) : array();
-			if ( ! is_int( $index ) || empty( $destinations ) || ! is_array( $container['styles'] ?? null ) ) {
+			if ( ! is_int( $index ) || empty( $destinations ) || ! is_array( $control_container['styles'] ?? null ) ) {
 				$losses[] = self::presentation_loss( 'editor_control_container_unsupported', is_int( $index ) ? $index : 0, 'control_container' );
 				continue;
 			}
 			foreach ( $destinations as $destination ) {
-				$declarations = self::presentation_declarations( $container['styles'], $index, 'control_container', $losses, $destination['properties'] );
+				$declarations = self::presentation_declarations( $control_container['styles'], $index, 'control_container', $losses, $destination['properties'] );
 				if ( ! empty( $declarations ) ) {
 					$editor_rules[] = '.editor-styles-wrapper ' . self::authoritative_presentation_selector( $destination['selector'] ) . '{' . implode( ';', $declarations ) . '}';
 				}
@@ -208,7 +208,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			}
 			self::compile_presentation_destinations( $destinations, $variant['style_patch'], $index, $role, $variant['condition'], $rules, $operations, $losses );
 		}
-		if ( $editor && 'generic/form-container-presentation/v1' === ( $container['schema'] ?? null ) ) {
+		if ( 'generic/form-container-presentation/v1' === ( $container['schema'] ?? null ) ) {
 			$destination = array( 'role' => 'control', 'selector' => $validated_map['scope'], 'properties' => array_keys( self::presentation_property_map() ) );
 			self::compile_presentation_destinations( array( $destination ), $container['styles'] ?? array(), 0, 'control', null, $rules, $operations, $losses );
 			foreach ( array_slice( $container['variants'] ?? array(), 0, 32 ) as $variant ) {
@@ -522,6 +522,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		$keys = array_merge( $keys, array( 'align_items', 'flex_direction', 'gap', 'justify_content' ) );
 		$keys = array_merge( $keys, array( 'align_self', 'justify_self', 'top', 'right', 'bottom', 'left' ) );
 		$keys = array_merge( $keys, array( 'flex', 'flex_basis', 'flex_grow', 'margin_block', 'margin_inline', 'order', 'z_index' ) );
+		// A source can author vertical/horizontal padding through the same two-value
+		// logical shorthand already admitted for margin above.
+		$keys = array_merge( $keys, array( 'padding_block', 'padding_inline' ) );
 		return array_combine( $keys, array_map( static fn( string $key ): string => str_replace( '_', '-', $key ), $keys ) );
 	}
 
