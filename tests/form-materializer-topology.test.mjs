@@ -3,8 +3,6 @@ import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { JSDOM, VirtualConsole } from 'jsdom';
 
 const require = createRequire( import.meta.url );
@@ -28,13 +26,18 @@ const { getBlockType, parse, serialize, validateBlock } = require( '@wordpress/b
 
 registerCoreBlocks();
 
-const wpRoot = process.env.STATIC_SITE_IMPORTER_WP_ROOT || join( homedir(), 'Studio', 'intelligence-chubes4' );
-const hasWordPressBlockSerialization = existsSync( `${wpRoot}/wp-includes/class-wp-block-parser.php` ) && existsSync( `${wpRoot}/wp-includes/blocks.php` );
+// The PHP child this test drives requires a real WordPress block
+// parser/serializer and now fails closed without one, so the root is declared
+// through the environment and propagated rather than guessed from a developer's
+// home directory.
+const wpRoot = process.env.STATIC_SITE_IMPORTER_WP_ROOT || '';
+const hasWordPressBlockSerialization = '' !== wpRoot && existsSync( `${wpRoot}/wp-includes/class-wp-block-parser.php` ) && existsSync( `${wpRoot}/wp-includes/blocks.php` );
 
 test( 'shared-row topology materializes through the PHP provider adapter', { skip: !hasWordPressBlockSerialization }, () => {
 	const output = execFileSync( 'php', [ 'tests/form-materializer-smoke.php' ], {
 		cwd: process.cwd(),
 		encoding: 'utf8',
+		env: { ...process.env, STATIC_SITE_IMPORTER_WP_ROOT: wpRoot },
 	} );
 
 	assert.match( output, /PASS form-materializer-smoke\.php \(\d+ assertions\)/ );

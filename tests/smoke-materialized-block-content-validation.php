@@ -80,7 +80,7 @@ if ( ! class_exists( 'WP_Error' ) ) {
 	}
 }
 
-$wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: '/Users/chubes/Studio/intelligence-chubes4';
+$wp_root = (string) getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' );
 $parser  = rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-parser.php';
 $blocks  = rtrim( $wp_root, '/\\' ) . '/wp-includes/blocks.php';
 if ( is_readable( $parser ) && is_readable( $blocks ) ) {
