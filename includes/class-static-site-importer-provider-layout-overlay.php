@@ -14,6 +14,11 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	public const OVERLAY_SCHEMA            = 'static-site-importer/provider-layout-overlay/v1';
 	private const MAX_LAYOUT_OVERLAY_BYTES = 16384;
 	private const MAX_OVERLAY_BYTES        = 32768;
+	// A source stylesheet can author a media feature with the legacy `min-width:`/
+	// `max-width:` prefix syntax or the modern comparison range syntax
+	// (`width >= 40rem`) - Tailwind v4 emits every default breakpoint with the
+	// latter. Both spellings resolve to the same condition, so both are admitted.
+	private const MEDIA_FEATURE_QUERY = '\((?:(?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)|(?:width|height) ?(?:>=|<=|>|<) ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh))\)';
 
 	/** @return array{map?:array<string,mixed>,error?:string} */
 	public static function validate_map( mixed $map, array $graph ): array {
@@ -317,7 +322,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	private static function safe_editor_compiled_rule( string $rule ): bool {
-		if ( preg_match( '/^@(?:media|container) (\((?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)\))\{(.+)\}$/D', $rule, $matches ) ) {
+		if ( preg_match( '/^@(?:media|container) (' . self::MEDIA_FEATURE_QUERY . ')\{(.+)\}$/D', $rule, $matches ) ) {
 			return self::safe_editor_compiled_rule( $matches[2] );
 		}
 		$prefix = '.editor-styles-wrapper ';
@@ -329,12 +334,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? \.ssi-node-[a-f0-9]{12})::placeholder\{color:revert;opacity:revert\}$/D', $rule ) ) {
 			return true;
 		}
-		if ( preg_match( '/^@(?:media|container) (\((?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)\))\{(.+)\}$/D', $rule, $matches ) ) {
+		if ( preg_match( '/^@(?:media|container) (' . self::MEDIA_FEATURE_QUERY . ')\{(.+)\}$/D', $rule, $matches ) ) {
 			return self::safe_compiled_rule( $matches[2] );
 		}
 		// The provider form target is admitted as both of its rendered spellings,
 		// so a compiled rule may carry that two-part selector list.
-		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label)?| \.grunion-field-wrap > \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap > \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\))?';
+		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label| select)?| \.grunion-field-wrap > \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap > \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\))?';
 		if ( ! preg_match( '/^(' . $scope_selector . '(?:, ' . $scope_selector . ')?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
@@ -358,6 +363,13 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	private static function safe_selector( string $selector, string $scope ): bool {
 		if ( str_ends_with( $selector, ' > div.jetpack-field__control' ) ) {
 			return self::safe_selector( substr( $selector, 0, -strlen( ' > div.jetpack-field__control' ) ), $scope );
+		}
+		// A select control's own padding is declared on the `<select>` element,
+		// nested a level deeper than the generated node hook (an intervening
+		// wrapper div sits between them), not on the control shell the node hook
+		// otherwise addresses.
+		if ( str_ends_with( $selector, ' select' ) ) {
+			return self::safe_selector( substr( $selector, 0, -strlen( ' select' ) ), $scope );
 		}
 		if ( preg_match( '/^' . preg_quote( $scope, '/' ) . ' \.ssi-node-[a-f0-9]{12}::placeholder$/D', $selector ) ) {
 			return true;
@@ -387,7 +399,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			return false;
 		}
 		if ( in_array( $condition['kind'] ?? null, array( 'media', 'container' ), true ) ) {
-			return array_keys( $condition ) === array( 'kind', 'query' ) && is_string( $condition['query'] ?? null ) && (bool) preg_match( '/^\((?:min|max)-(?:width|height): ?(?:[0-9]+(?:\.[0-9]+)?)(?:px|em|rem|vw|vh)\)$/D', $condition['query'] );
+			return array_keys( $condition ) === array( 'kind', 'query' ) && is_string( $condition['query'] ?? null ) && (bool) preg_match( '/^' . self::MEDIA_FEATURE_QUERY . '$/D', $condition['query'] );
 		}
 		return 'all' === ( $condition['kind'] ?? null ) && array_keys( $condition ) === array( 'kind', 'conditions' ) && is_array( $condition['conditions'] ) && count( $condition['conditions'] ) >= 2 && count( $condition['conditions'] ) <= 4 && array_is_list( $condition['conditions'] ) && ! array_filter( $condition['conditions'], static fn ( $part ): bool => ! self::safe_condition( $part ) );
 	}
@@ -479,15 +491,20 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			return 'auto' === $value;
 		}
 		if ( in_array( $fact, array( 'column', 'row' ), true ) ) {
-			return (bool) preg_match( '/^(?:auto|-1|[1-9][0-9]*|span [1-9][0-9]*)(?: \/ (?:auto|-1|[1-9][0-9]*|span [1-9][0-9]*))?$/D', $value );
+			return (bool) preg_match( '/^(?:auto|-1|[1-9][0-9]*|span [1-9][0-9]*)(?: ?\/ ?(?:auto|-1|[1-9][0-9]*|span [1-9][0-9]*))?$/D', $value );
 		}
 		if ( str_starts_with( $value, 'calc(' ) ) {
 			return self::safe_calc_value( $value );
 		}
 		if ( 'area' === $fact ) {
-			return (bool) preg_match( '/^(?:auto|[1-9][0-9]*|span [1-9][0-9]*)(?: \/ (?:auto|[1-9][0-9]*|span [1-9][0-9]*)){3}$/D', $value );
+			return (bool) preg_match( '/^(?:auto|[1-9][0-9]*|span [1-9][0-9]*)(?: ?\/ ?(?:auto|[1-9][0-9]*|span [1-9][0-9]*)){3}$/D', $value );
 		}
-		return (bool) preg_match( '/^(?:var\(--[a-zA-Z][a-zA-Z0-9_-]{0,79}(?:, ?(?:0|[0-9]+(?:\.[0-9]+)?(?:px|rem|em|%|vw|vh)))?\)|auto|none|0|span [1-9][0-9]*|[1-9][0-9]*|(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr)|minmax\((?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr), ?(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr)\)|repeat\([1-9][0-9]*, ?(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr)\))+(?: \/ [1-9][0-9]*)?$/D', $value );
+		// A track size admits a bare zero alongside a unit-suffixed length, and
+		// `repeat()` admits `minmax()` as its track argument - the exact shape
+		// Tailwind's own `grid-cols-*` utilities compile every track list to
+		// (`repeat(N, minmax(0, 1fr))`).
+		$track = '(?:0|[0-9]+(?:\.[0-9]+)?(?:px|rem|em|%|vw|vh|fr))';
+		return (bool) preg_match( '/^(?:var\(--[a-zA-Z][a-zA-Z0-9_-]{0,79}(?:, ?(?:0|[0-9]+(?:\.[0-9]+)?(?:px|rem|em|%|vw|vh)))?\)|auto|none|0|span [1-9][0-9]*|[1-9][0-9]*|(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh|fr)|minmax\(' . $track . ', ?' . $track . '\)|repeat\([1-9][0-9]*, ?(?:' . $track . '|minmax\(' . $track . ', ?' . $track . '\))\))+(?: ?\/ ?[1-9][0-9]*)?$/D', $value );
 	}
 	/**
 	 * A source length can be authored as an arithmetic expression, which the
@@ -497,7 +514,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * consuming runtime's own default.
 	 */
 	private static function safe_calc_value( string $value ): bool {
-		if ( ! preg_match( '/^calc\((?:\s|[0-9]+(?:\.[0-9]+)?(?:px|rem|em|%|vw|vh|fr)?|[-+*\/()])+\)$/D', $value ) ) {
+		// A compact source stylesheet can author a fractional number with no
+		// leading zero (".25rem"), same as an ordinary decimal ("0.25rem").
+		if ( ! preg_match( '/^calc\((?:\s|(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:px|rem|em|%|vw|vh|fr)?|[-+*\/()])+\)$/D', $value ) ) {
 			return false;
 		}
 		$depth = 0;

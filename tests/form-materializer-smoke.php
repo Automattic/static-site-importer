@@ -636,6 +636,89 @@ namespace {
 	$aetna_subscription_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $aetna_subscription_form );
 	$aetna_subscription_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $aetna_subscription_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$assert( empty( $aetna_subscription_validation['errors'] ) && 'mapped' === ( $aetna_subscription_row['status'] ?? '' ) && true === ( $aetna_subscription_row['runtime_mapped'] ?? false ) && ! array_intersect( array( 'unsupported_semantic_wrapper', 'provider_wrapper_layout_unrepresentable' ), array_column( $aetna_subscription_row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' ) ), 'unconditional-subscription-row-with-hidden-bookkeeping-materializes-without-source-form-runtime', wp_json_encode( $aetna_subscription_row ) );
+	// A source field-group grid that groups every mapped control except a
+	// submit sitting outside it (a submit is always the field container's
+	// sibling in Jetpack's own rendering, never its descendant, so requiring
+	// an exact match against every mapped control - submit included - made a
+	// perfectly representable field-group box an unconditional loss) is now
+	// transposed onto the form element, and the exempted submit is told to
+	// span every column that grid produces instead of being auto-placed into
+	// just one of them. The captured responsive condition and grid track list
+	// use the exact shapes a real Tailwind v4 stylesheet compiles to: a
+	// `width >= Nrem` media range (not the legacy `min-width:` prefix), a
+	// `repeat(N, minmax(0, 1fr))` track list, and a leading-dot decimal inside
+	// `calc()` - proving the overlay's value grammar admits all three.
+	$grid_condition        = array( 'kind' => 'media', 'query' => '(width>=40rem)' );
+	$grid_box_form         = array(
+		'forms' => array( array(
+			'selector'         => 'form.grid-fields',
+			'controls'         => array(
+				array( 'tag' => 'input', 'type' => 'text', 'name' => 'first', 'label' => 'First' ),
+				array( 'tag' => 'input', 'type' => 'text', 'name' => 'second', 'label' => 'Second' ),
+				array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+			),
+			'control_topology' => array(
+				'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false,
+				'nodes'  => array(
+					array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div', 'class' => 'fields' ),
+					array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'label', 'class' => 'field' ),
+					array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'control' => 0 ),
+					array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 1, 'depth' => 1, 'tag' => 'label', 'class' => 'field' ),
+					array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-2', 'order' => 0, 'depth' => 2, 'control' => 1 ),
+					array( 'id' => 'control-2', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 2 ),
+				),
+			),
+			'layout_graph'     => $v2_layout_graph( array(
+				array( 'id' => 'form', 'kind' => 'container', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'form', 'classes' => array( 'grid-fields' ) ), 'layout' => array(), 'provenance' => array() ),
+				array(
+					'id'         => 'wrapper-0',
+					'kind'       => 'container',
+					'parent'     => 'form',
+					'order'      => 0,
+					'source'     => array( 'tag' => 'div', 'classes' => array( 'fields' ) ),
+					// Base facts are unconditional (Tailwind's own `grid gap-5`,
+					// present at every width); only the column count is
+					// conditional (`sm:grid-cols-2`), exactly like a real
+					// Tailwind v4 responsive field-group grid.
+					'layout'     => array( 'display' => 'grid', 'gap' => 'calc(.25rem * 5)' ),
+					'provenance' => array(
+						array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'd', 64 ), 'selector' => '.fields', 'condition' => null, 'properties' => array( 'display', 'gap' ) ),
+					),
+				),
+			) ),
+		) ),
+	);
+	$grid_box_form['forms'][0]['layout_graph']['variants'][] = array(
+		'node'         => 'wrapper-0',
+		'condition'    => $grid_condition,
+		'layout_patch' => array( 'columns' => 'repeat(2,minmax(0,1fr))' ),
+		'precedence'   => array(
+			'grid-template-columns' => array( 'source_order' => 1, 'specificity' => 10, 'important' => false ),
+		),
+		'provenance'   => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'd', 64 ), 'selector' => '.sm\:grid-cols-2', 'condition' => $grid_condition, 'properties' => array( 'grid-template-columns' ) ) ),
+	);
+	$grid_box_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $grid_box_form );
+	$grid_box_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $grid_box_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$grid_box_css        = (string) ( $grid_box_row['provider_layout_overlay_css']['css'] ?? '' );
+	$grid_box_losses     = array_column( $grid_box_row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' );
+	$assert(
+		empty( $grid_box_validation['errors'] ) && 'mapped' === ( $grid_box_row['status'] ?? '' ) && true === ( $grid_box_row['runtime_mapped'] ?? false ) && ! in_array( 'provider_wrapper_layout_unrepresentable', $grid_box_losses, true ),
+		'field-group-grid-missing-only-its-sibling-submit-is-a-representable-form-box',
+		wp_json_encode( array( 'validation' => $grid_box_validation, 'row' => $grid_box_row ) )
+	);
+	$assert(
+		null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $grid_box_row['provider_layout_overlay_css'] ?? null )
+			&& str_contains( $grid_box_css, 'gap:calc(.25rem * 5)' )
+			&& str_contains( $grid_box_css, '@media (width>=40rem){' )
+			&& str_contains( $grid_box_css, 'grid-template-columns:repeat(2,minmax(0,1fr))' ),
+		'form-box-grid-carries-modern-media-range-repeat-minmax-tracks-and-leading-dot-calc',
+		$grid_box_css
+	);
+	$assert(
+		str_contains( $grid_box_css, 'grid-column:1 / -1' ),
+		'submit-exempted-from-its-field-groups-grid-spans-every-column-instead-of-one',
+		$grid_box_css
+	);
 	$popup_form = array(
 		'selector' => 'form.picker',
 		'controls' => array(
@@ -685,7 +768,12 @@ namespace {
 	$unrelated_adjacent_phone_popup = $phone_popup_form;
 	$unrelated_adjacent_phone_popup['controls'][0]['aria_haspopup'] = 'false';
 	$unrelated_adjacent_phone_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $unrelated_adjacent_phone_popup ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
-	$assert( 'skipped' === ( $unrelated_adjacent_phone_row['status'] ?? '' ) && str_contains( (string) ( $unrelated_adjacent_phone_row['block_markup'] ?? '' ), 'type="button"' ) && ! in_array( 'provider_auxiliary_popup_control', array_column( $unrelated_adjacent_phone_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'plain-button-with-aria-haspopup-false-remains-native-and-loss-gated', wp_json_encode( $unrelated_adjacent_phone_row ) );
+	// A composite shell wrapping every mapped control except a submit that sits
+	// outside it (Jetpack's own architecture: a submit is always the form's
+	// sibling, never a field-group descendant) is now a representable form box,
+	// so this materializes instead of loss-gating; the popup-supersession
+	// exemption itself - the actual behavior under test - is unaffected.
+	$assert( 'mapped' === ( $unrelated_adjacent_phone_row['status'] ?? '' ) && str_contains( (string) ( $unrelated_adjacent_phone_row['block_markup'] ?? '' ), 'type="button"' ) && ! in_array( 'provider_auxiliary_popup_control', array_column( $unrelated_adjacent_phone_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'plain-button-with-aria-haspopup-false-remains-native-and-is-not-superseded', wp_json_encode( $unrelated_adjacent_phone_row ) );
 	$mobile_phone_form = $phone_popup_form;
 	$mobile_phone_form['fallback_identity'] = str_repeat( 'c', 64 );
 	$mobile_phone_form['controls'] = array(
@@ -907,6 +995,33 @@ namespace {
 			&& preg_match( '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12}\{padding:36px\}/', $container_padding_css ),
 		'captured-form-container-padding-reaches-the-rendered-page-alongside-a-captured-field-wrapper',
 		wp_json_encode( array( 'css' => $container_padding_css, 'validation' => $validated_container_padding ) )
+	);
+	// Jetpack renders a select control's padding on the nested `<select>` itself
+	// (`.contact-form__select-wrapper select{padding:16px}`), a level deeper than
+	// the generated node hook the control's other captured facts (background,
+	// border, font-size) already reach on the control shell. A captured padding
+	// fact needs that same, more specific destination to outrank Jetpack's own
+	// provider default instead of being painted on the shell where it has no
+	// effect on the rendered field.
+	$select_padding_form = array(
+		'forms' => array( array(
+			'selector'           => 'form.select-field',
+			'controls'           => array( array( 'tag' => 'select', 'type' => 'select', 'name' => 'kind', 'label' => 'Kind' ) ),
+			'presentation_graph' => array(
+				'schema' => 'generic/computed-form-presentation/v1', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'controls' => 128, 'rules_per_role' => 32 ), 'variants' => array(), 'diagnostics' => array(),
+				'controls' => array( array( 'index' => 0, 'control' => array( 'styles' => array( 'padding' => '10px 14px' ), 'provenance' => array() ) ) ),
+			),
+		) ),
+	);
+	$select_padding_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $select_padding_form );
+	$select_padding_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $select_padding_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$select_padding_css        = (string) ( $select_padding_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		empty( $select_padding_validation['errors'] )
+			&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $select_padding_row['provider_layout_overlay_css'] ?? null )
+			&& preg_match( '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12} select\{padding:10px 14px\}/', $select_padding_css ),
+		'captured-select-padding-reaches-the-nested-select-element-not-only-its-shell',
+		wp_json_encode( array( 'css' => $select_padding_css, 'validation' => $select_padding_validation ) )
 	);
 	$compile_form = static function ( string $css ) use ( $artifact_compiler ): array {
 		$compiled = ( new $artifact_compiler() )->compile( array(
