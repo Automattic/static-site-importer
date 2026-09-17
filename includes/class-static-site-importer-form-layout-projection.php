@@ -459,6 +459,41 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 			$field_blocks[ $control_index ]['attrs']['className'] = trim( (string) preg_replace( '/\s+/', ' ', implode( ' ', array_filter( $class_names ) ) ) );
 		}
+		// A source row that holds several boxes is a band of columns. The provider
+		// states that relationship with its own field width, so the boxes sit side
+		// by side there instead of stacking one per row.
+		$topology_nodes_by_id = array();
+		foreach ( $nodes as $topology_node ) {
+			if ( is_array( $topology_node ) && is_string( $topology_node['id'] ?? null ) ) {
+				$topology_nodes_by_id[ $topology_node['id'] ] = $topology_node;
+			}
+		}
+		foreach ( self::source_grid_row_bands( $layout_nodes_by_id, $variants_by_node ) as $band ) {
+			$members = array();
+			foreach ( $band as $node_id => $width ) {
+				$node = $topology_nodes_by_id[ $node_id ] ?? null;
+				if ( ! is_array( $node ) ) {
+					continue 2;
+				}
+				$branch = array_values( array_filter( $collect_controls( $node ), static fn ( int $index ): bool => isset( $field_blocks[ $index ] ) ) );
+				if ( 1 !== count( $branch ) || 'core/button' === ( $field_blocks[ $branch[0] ]['name'] ?? '' ) ) {
+					continue 2;
+				}
+				$members[ $branch[0] ] = $width;
+			}
+			$total = array_sum( $members );
+			if ( count( $members ) < 2 || $total <= 0 ) {
+				continue;
+			}
+			foreach ( $members as $control_index => $width ) {
+				$field_blocks[ $control_index ]['attrs']['width'] = self::provider_field_width( $width / $total );
+				$operations[]                                     = array(
+					'dimension'   => 'layout',
+					'strategy'    => 'provider_row_band_field_width',
+					'target_hash' => hash( 'sha256', (string) $control_index ),
+				);
+			}
+		}
 		// Jetpack fields own their editable label/control pair. A source paragraph
 		// around exactly that pair can be restored at render time without claiming
 		// that an arbitrary semantic wrapper is a Gutenberg group.
@@ -1954,11 +1989,38 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		if ( empty( $shared ) ) {
 			return $graph;
 		}
+		// The track definition describes the same rows being dropped. Keeping it
+		// would give every field its own row and undo the column membership the
+		// provider states for itself.
+		// The source container may already be collapsed onto the provider's own form
+		// element, so the track definition can sit on either node.
+		$containers = array( 'form' => true );
+		foreach ( ( is_array( $source_graph ) ? $source_graph : $graph )['nodes'] ?? array() as $node ) {
+			if ( is_array( $node ) && isset( $shared[ (string) ( $node['id'] ?? '' ) ] ) && is_string( $node['parent'] ?? null ) ) {
+				$containers[ $node['parent'] ] = true;
+			}
+		}
 		foreach ( $graph['nodes'] ?? array() as $index => $node ) {
-			if ( ! is_array( $node ) || ! isset( $shared[ (string) ( $node['id'] ?? '' ) ] ) || ! is_array( $node['layout'] ?? null ) ) {
+			if ( ! is_array( $node ) || ! is_array( $node['layout'] ?? null ) ) {
 				continue;
 			}
-			$graph['nodes'][ $index ]['layout'] = array_diff_key( $node['layout'], array_flip( array( 'area', 'row' ) ) );
+			if ( isset( $shared[ (string) ( $node['id'] ?? '' ) ] ) ) {
+				$graph['nodes'][ $index ]['layout'] = array_diff_key( $node['layout'], array_flip( array( 'area', 'row' ) ) );
+			}
+			if ( isset( $containers[ (string) ( $node['id'] ?? '' ) ] ) && 'grid' === ( $node['layout']['display'] ?? '' ) ) {
+				$graph['nodes'][ $index ]['layout'] = array_diff_key( $graph['nodes'][ $index ]['layout'], array_flip( array( 'display', 'columns', 'rows' ) ) );
+			}
+		}
+		foreach ( $graph['variants'] ?? array() as $index => $variant ) {
+			if ( ! is_array( $variant ) || ! isset( $containers[ (string) ( $variant['node'] ?? '' ) ] ) || ! is_array( $variant['layout_patch'] ?? null ) || 'grid' !== ( $variant['layout_patch']['display'] ?? '' ) ) {
+				continue;
+			}
+			$patch = array_diff_key( $variant['layout_patch'], array_flip( array( 'display', 'columns', 'rows' ) ) );
+			if ( empty( $patch ) ) {
+				unset( $graph['variants'][ $index ] );
+				continue;
+			}
+			$graph['variants'][ $index ]['layout_patch'] = $patch;
 		}
 		foreach ( $graph['variants'] ?? array() as $index => $variant ) {
 			if ( ! is_array( $variant ) || ! isset( $shared[ (string) ( $variant['node'] ?? '' ) ] ) || ! is_array( $variant['layout_patch'] ?? null ) ) {
@@ -1975,6 +2037,57 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$graph['variants'] = array_values( $graph['variants'] );
 		}
 		return $graph;
+	}
+
+	/**
+	 * Groups of sibling boxes that a source grid places on one row.
+	 *
+	 * Only sized boxes qualify: a row is a band of columns when its members each
+	 * declare how much of it they occupy. Their offsets are outside the layout
+	 * graph's vocabulary, so the proportion comes from the widths themselves.
+	 *
+	 * @param array<string,array<string,mixed>> $layout_nodes_by_id
+	 * @param array<string,array<int,array<string,mixed>>> $variants_by_node
+	 * @return array<int,array<string,float>>
+	 */
+	private static function source_grid_row_bands( array $layout_nodes_by_id, array $variants_by_node ): array {
+		$rows = array();
+		foreach ( $layout_nodes_by_id as $id => $node ) {
+			if ( ! is_array( $node ) || ! preg_match( '/^wrapper-[0-9]+$/D', (string) $id ) ) {
+				continue;
+			}
+			$layout = is_array( $node['layout'] ?? null ) ? $node['layout'] : array();
+			$width  = self::declared_pixel_width( $layout );
+			$row    = self::declared_grid_row( $layout );
+			foreach ( $variants_by_node[ $id ] ?? array() as $variant ) {
+				$patch = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+				$row   = '' === $row ? self::declared_grid_row( $patch ) : $row;
+				$width = 0.0 === $width ? self::declared_pixel_width( $patch ) : $width;
+			}
+			if ( '' === $row || 0.0 === $width ) {
+				continue;
+			}
+			$rows[ (string) ( $node['parent'] ?? '' ) . "\n" . $row ][ (string) $id ] = $width;
+		}
+
+		return array_values( array_filter( $rows, static fn ( array $band ): bool => count( $band ) > 1 ) );
+	}
+
+	/** @param array<string,mixed> $layout */
+	private static function declared_pixel_width( array $layout ): float {
+		return 1 === preg_match( '/^([0-9]+(?:\.[0-9]+)?)px$/D', trim( (string) ( $layout['width'] ?? '' ) ), $match ) ? (float) $match[1] : 0.0;
+	}
+
+	/** The provider states column membership in fixed steps, so snap to the nearest. */
+	private static function provider_field_width( float $share ): int {
+		$closest = 100;
+		foreach ( array( 25, 33, 50, 75, 100 ) as $step ) {
+			if ( abs( $share - ( $step / 100 ) ) < abs( $share - ( $closest / 100 ) ) ) {
+				$closest = $step;
+			}
+		}
+
+		return $closest;
 	}
 
 	/**

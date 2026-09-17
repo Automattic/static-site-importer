@@ -616,6 +616,10 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			$overlay_graph['variants'][] = $variant;
 		}
+		// Box transposition and responsive targets reinstate the source container's
+		// own layout, so the track definition is reconsidered once every box and
+		// variant has been merged.
+		$overlay_graph                = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( $overlay_graph, is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array() );
 		$overlay_form                 = $form;
 		$overlay_form['layout_graph'] = $overlay_graph;
 		foreach ( array_keys( $suppressed_controls ) as $control_index ) {
