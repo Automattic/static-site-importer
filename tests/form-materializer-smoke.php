@@ -1928,7 +1928,7 @@ namespace {
 		'variants' => array(),
 	) );
 	$assert(
-		! isset( $mixed_row_layout['wrapper-0']['area'] ) && ! isset( $mixed_row_layout['wrapper-2']['area'] ) && '611px' === ( $mixed_row_layout['wrapper-2']['width'] ?? '' ) && array( 'display' => 'grid', 'columns' => '100%' ) === $mixed_row_layout['grid'] && '4 / 1 / 5 / 2' === ( array_column( $uniform_row_result['nodes'], 'layout', 'id' )['wrapper-0']['area'] ?? '' ),
+		! isset( $mixed_row_layout['wrapper-0']['area'] ) && ! isset( $mixed_row_layout['wrapper-2']['area'] ) && '611px' === ( $mixed_row_layout['wrapper-2']['width'] ?? '' ) && array() === $mixed_row_layout['grid'] && array( 'display' => 'grid', 'columns' => '100%' ) === array_column( $uniform_row_result['nodes'], 'layout', 'id' )['grid'] && '4 / 1 / 5 / 2' === ( array_column( $uniform_row_result['nodes'], 'layout', 'id' )['wrapper-0']['area'] ?? '' ),
 		'source-rows-that-neither-pair-with-each-box-nor-share-one-band-drop-their-provider-placement',
 		wp_json_encode( array( 'mixed' => $mixed_row_layout, 'uniform' => array_column( $uniform_row_result['nodes'], 'layout', 'id' ) ) )
 	);
