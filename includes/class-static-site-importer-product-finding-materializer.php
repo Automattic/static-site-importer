@@ -206,7 +206,7 @@ final class Static_Site_Importer_Product_Finding_Materializer {
 		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_manifest( $adapter, $manifest );
 		$validated  = $validation['products'];
 
-		$seeding = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, array( 'products' => $validated ) );
+		$seeding = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, array( 'products' => $validated ), $args );
 		if ( $seeding instanceof WP_Error ) {
 			$error             = $seeding;
 			$seeding           = Static_Site_Importer_Entity_Materializer_Registry::new_entity_report( $adapter );
@@ -597,6 +597,10 @@ final class Static_Site_Importer_Product_Finding_Materializer {
 		if ( '' !== $image ) {
 			$row['image'] = $image;
 		}
+		$image_alt = self::product_image_alt( $product['image'] ?? null );
+		if ( '' !== $image_alt ) {
+			$row['image_alt'] = $image_alt;
+		}
 
 		$selectors = array();
 		if ( isset( $product['source_selector'] ) && is_scalar( $product['source_selector'] ) && '' !== trim( (string) $product['source_selector'] ) ) {
@@ -630,6 +634,23 @@ final class Static_Site_Importer_Product_Finding_Materializer {
 		}
 
 		return '';
+	}
+
+	/**
+	 * Resolve the product image alt text from an {src, alt} object.
+	 *
+	 * A bare string image carries no alt text of its own.
+	 *
+	 * @param mixed $image Detected product image.
+	 * @return string
+	 */
+	public static function product_image_alt( mixed $image ): string {
+		if ( ! is_array( $image ) ) {
+			return '';
+		}
+
+		$alt = $image['alt'] ?? '';
+		return is_scalar( $alt ) ? trim( (string) $alt ) : '';
 	}
 
 	/**

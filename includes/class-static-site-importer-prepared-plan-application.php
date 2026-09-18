@@ -5,6 +5,8 @@
  * @package StaticSiteImporter
  */
 
+use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\AssetReferenceCanonicalizer;
+use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan;
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver;
 
 require_once __DIR__ . '/class-static-site-importer-entity-compensation.php';
@@ -49,10 +51,14 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 		if ( is_wp_error( $dependencies ) ) {
 			return $dependencies;
 		}
+		$entity_args = $args;
+		if ( ! $page_ready ) {
+			$entity_args['resolved_product_images'] = self::resolve_product_image_references( $lifecycle, $prepared );
+		}
 		$entity_result = $page_ready ? array(
 			'reports' => array(),
 			'error'   => null,
-		) : Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $lifecycle, $args );
+		) : Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $lifecycle, $entity_args );
 		$entities      = $entity_result['reports'];
 		if ( null !== $entity_result['error'] ) {
 			return self::lifecycle_failure( $entity_result['error'], $lifecycle, $dependencies, $entities, 'entity_materialization' );
@@ -205,11 +211,9 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			return $payload;
 		}
 
-		$entries       = array_values( array_filter( $plan['pages'] ?? array(), static fn( mixed $page ): bool => is_array( $page ) && ! empty( $page['entrypoint'] ) ) );
-		$entry         = $entries[0] ?? null;
-		$origin        = is_array( $entry ) && is_string( $entry['source_path'] ?? null ) ? $entry['source_path'] : '';
-		$root          = '' === $origin || '.' === dirname( $origin ) ? '' : trim( dirname( $origin ), '/' );
-		$canonicalizer = new \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\AssetReferenceCanonicalizer( $tokens, $root );
+		$origin        = self::plan_entrypoint_source_path( $plan );
+		$root          = self::plan_entrypoint_root( $origin );
+		$canonicalizer = new AssetReferenceCanonicalizer( $tokens, $root );
 		$references    = WordPressSitePlanResolver::references( $tokens, $theme_uri );
 
 		foreach ( $payload['blocks'] ?? array() as $index => $block ) {
@@ -221,5 +225,105 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 		}
 
 		return $payload;
+	}
+
+	/** Resolve the compiled plan's entrypoint page source path, used to root artifact-relative asset references. */
+	private static function plan_entrypoint_source_path( array $plan ): string {
+		$entries = array_values( array_filter( $plan['pages'] ?? array(), static fn( mixed $page ): bool => is_array( $page ) && ! empty( $page['entrypoint'] ) ) );
+		$entry   = $entries[0] ?? null;
+		return is_array( $entry ) && is_string( $entry['source_path'] ?? null ) ? $entry['source_path'] : '';
+	}
+
+	/** Resolve the artifact directory a root-relative asset reference (e.g. `/media/x.jpg`) is rooted under. */
+	private static function plan_entrypoint_root( string $origin ): string {
+		return '' === $origin || '.' === dirname( $origin ) ? '' : trim( dirname( $origin ), '/' );
+	}
+
+	/**
+	 * Resolve every distinct source image a `products` entity collection declares
+	 * to its real materialized bytes, the same canonicalizer + declared-write
+	 * lookup already used to resolve source media referenced by page content
+	 * (see resolve_companion_asset_references() above), so a seeded product can
+	 * carry its source image without a new downloader or sideloader.
+	 *
+	 * @param array<string,mixed> $lifecycle Runtime entity lifecycle.
+	 * @param array<string,mixed> $prepared  Prepared plan state (`plan`, `resolved`, `payload_reader`).
+	 * @return array<string,array{bytes:string,mime_type:string,target_path:string}> Resolved images keyed by their manifest `image` value.
+	 */
+	private static function resolve_product_image_references( array $lifecycle, array $prepared ): array {
+		$plan     = isset( $prepared['plan'] ) && is_array( $prepared['plan'] ) ? $prepared['plan'] : array();
+		$resolved = isset( $prepared['resolved'] ) && is_array( $prepared['resolved'] ) ? $prepared['resolved'] : array();
+		$tokens   = isset( $plan['reference_tokens'] ) && is_array( $plan['reference_tokens'] ) ? $plan['reference_tokens'] : array();
+		$writes   = isset( $resolved['writes'] ) && is_array( $resolved['writes'] ) ? $resolved['writes'] : array();
+		if ( empty( $tokens ) || empty( $writes ) ) {
+			return array();
+		}
+
+		$sources = array();
+		foreach ( $lifecycle['entities'] ?? array() as $prepared_entity ) {
+			if ( ! is_array( $prepared_entity ) || 'products' !== (string) ( $prepared_entity['adapter']['entity_collection'] ?? '' ) ) {
+				continue;
+			}
+			$products = isset( $prepared_entity['manifest']['products'] ) && is_array( $prepared_entity['manifest']['products'] ) ? $prepared_entity['manifest']['products'] : array();
+			foreach ( $products as $product ) {
+				if ( is_array( $product ) && isset( $product['image'] ) && is_string( $product['image'] ) && '' !== $product['image'] ) {
+					$sources[ $product['image'] ] = true;
+				}
+			}
+		}
+		if ( empty( $sources ) ) {
+			return array();
+		}
+
+		$origin         = self::plan_entrypoint_source_path( $plan );
+		$root           = self::plan_entrypoint_root( $origin );
+		$payload_reader = is_object( $prepared['payload_reader'] ?? null ) ? $prepared['payload_reader'] : null;
+		try {
+			$canonicalizer = new AssetReferenceCanonicalizer( $tokens, $root );
+		} catch ( \Throwable ) {
+			return array();
+		}
+
+		$writes_by_target_path = array();
+		foreach ( $writes as $write ) {
+			if ( is_array( $write ) && 'theme_asset' === ( $write['kind'] ?? null ) && is_string( $write['target_path'] ?? null ) ) {
+				$writes_by_target_path[ $write['target_path'] ] = $write;
+			}
+		}
+		$target_path_by_token = array();
+		foreach ( $tokens as $token ) {
+			if ( is_array( $token ) && is_string( $token['token'] ?? null ) && is_string( $token['target_path'] ?? null ) ) {
+				$target_path_by_token[ WordPressSitePlan::TOKEN_PREFIX . $token['token'] . '}}' ] = $token['target_path'];
+			}
+		}
+		$mime_type_by_target_path = array();
+		foreach ( isset( $plan['assets'] ) && is_array( $plan['assets'] ) ? $plan['assets'] : array() as $asset ) {
+			if ( is_array( $asset ) && is_string( $asset['target_path'] ?? null ) && is_string( $asset['mime_type'] ?? null ) ) {
+				$mime_type_by_target_path[ $asset['target_path'] ] = $asset['mime_type'];
+			}
+		}
+
+		$resolved_images = array();
+		foreach ( array_keys( $sources ) as $source ) {
+			$token = $canonicalizer->reference( $source, $origin );
+			if ( ! is_string( $token ) || '' === $token ) {
+				continue;
+			}
+			$target_path = $target_path_by_token[ $token ] ?? '';
+			$write       = '' !== $target_path ? ( $writes_by_target_path[ $target_path ] ?? null ) : null;
+			if ( null === $write ) {
+				continue;
+			}
+			$bytes = Static_Site_Importer_Site_Plan_Persistence::write_payload_bytes( $write, $payload_reader );
+			if ( ! is_string( $bytes ) || '' === $bytes ) {
+				continue;
+			}
+			$resolved_images[ $source ] = array(
+				'bytes'       => $bytes,
+				'mime_type'   => (string) ( $mime_type_by_target_path[ $target_path ] ?? '' ),
+				'target_path' => $target_path,
+			);
+		}
+		return $resolved_images;
 	}
 }
