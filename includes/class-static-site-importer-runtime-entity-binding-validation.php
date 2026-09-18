@@ -75,18 +75,27 @@ final class Static_Site_Importer_Runtime_Entity_Binding_Validation {
 			$entities = isset( $manifest['products'] ) && is_array( $manifest['products'] ) ? $manifest['products'] : ( isset( $manifest['forms'] ) && is_array( $manifest['forms'] ) ? $manifest['forms'] : array() );
 			foreach ( $entities as $entity ) {
 				$entity_bindings = is_array( $entity ) && is_array( $entity['bindings'] ?? null ) ? $entity['bindings'] : array();
-				// A detected product grid deliberately gives every one of its member
-				// products the identical single-binding anchor (the whole grid's own
-				// preserved source-page region), so the entity/binding registry can
-				// resolve that one shared anchor to one native product-display block
-				// carrying every seeded member. That is the only binding shape allowed
-				// to share a canonical claim; every other role keeps this gate's
-				// existing one-claim-per-occurrence uniqueness requirement unchanged.
-				$is_collection_anchor = 1 === count( $entity_bindings ) && is_array( $entity_bindings[0] ?? null ) && 'commerce_collection' === ( $entity_bindings[0]['role'] ?? null );
 				foreach ( $entity_bindings as $binding ) {
 					if ( empty( $binding ) ) {
 						continue;
 					}
+					// A `commerce_collection` binding anchors a detected product
+					// grid region shared by every one of its member products, so
+					// the entity/binding registry can resolve that one shared
+					// anchor to one native product-display block carrying every
+					// seeded member. A single product can legitimately belong to
+					// more than one grid at once (real content overlap, e.g. the
+					// same product shown on a homepage grid and a catalog grid),
+					// in which case it carries one such binding per grid, each
+					// anchored to that grid's own distinct source-page region —
+					// so this is judged per individual binding, not by how many
+					// bindings the owning entity carries in total. Every other
+					// binding role (a single-entity claim, e.g. one product's own
+					// `[add_to_cart]` anchor) keeps this gate's existing
+					// one-claim-per-occurrence uniqueness requirement unchanged:
+					// two of those on the same occurrence is the real corruption
+					// this gate protects against, and still conflicts.
+					$is_collection_anchor = is_array( $binding ) && 'commerce_collection' === ( $binding['role'] ?? null );
 					$claim = $binding['source_path'] . "\n" . hash( 'sha256', $binding['search_block_markup'] ) . "\n" . $binding['occurrence'];
 					if ( isset( $claims[ $claim ] ) ) {
 						if ( $is_collection_anchor && 'commerce_collection' === $claims[ $claim ] ) {

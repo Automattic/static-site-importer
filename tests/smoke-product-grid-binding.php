@@ -395,6 +395,116 @@ $no_anchor_resolutions = $no_anchor_report['quality_resolutions'];
 $assert( array() === ( $no_anchor_resolutions['resolutions'] ?? array( 'unexpected' ) ), 'quality-reconciliation-skips-a-finding-with-no-derivable-anchor' );
 $assert( 1 === ( $no_anchor_report->quality()['fallback_count'] ?? 0 ), 'quality-reconciliation-leaves-fallback-count-unchanged-without-a-derivable-anchor' );
 
+// --- 9. A product legitimately shared between two distinct grids ----------
+//
+// This is the real shape blocks-engine#2037 introduces: a page-owned grid
+// anchor is now distinct per grid, and a product that is a genuine member of
+// two grids at once (e.g. a homepage "Highest Rated" grid and a separate
+// catalog-page grid) carries one `commerce_collection` binding per grid, each
+// anchored to that grid's own distinct source-page region. Neither gate may
+// treat the shared entity's second claim as a conflict with its first, and
+// each grid must still resolve to its own correct, independent replacement.
+
+$home_readable_blocks = array(
+	array(
+		'blockName'    => 'core/group',
+		'attrs'        => array(),
+		'innerBlocks'  => array(),
+		'innerContent' => array( '<div class="wp-block-group featured-products">home grid markup</div>' ),
+	),
+);
+$home_region = serialize_blocks( $home_readable_blocks );
+
+$home_binding    = array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/home.html', 'search_block_markup' => $home_region, 'occurrence' => 1, 'role' => 'commerce_collection' );
+$catalog_binding = array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/browse.html', 'search_block_markup' => $expected_region, 'occurrence' => 1, 'role' => 'commerce_collection' );
+
+$shared_manifest_entities = array(
+	// Present only on the homepage grid.
+	array( 'name' => 'Home Exclusive', 'slug' => 'home-exclusive', 'regular_price' => '19.99', 'bindings' => array( $home_binding ) ),
+	// Present on both grids at once: real, legitimate content overlap, not a
+	// producer defect — the same underlying entity carries two anchors.
+	array( 'name' => 'Shared Product', 'slug' => 'shared-product', 'regular_price' => '29.99', 'bindings' => array( $home_binding, $catalog_binding ) ),
+	// Present only on the catalog grid.
+	array( 'name' => 'Catalog Exclusive', 'slug' => 'catalog-exclusive', 'regular_price' => '39.99', 'bindings' => array( $catalog_binding ) ),
+);
+
+$shared_pages = array(
+	array( 'source_path' => 'website/home.html', 'resolved_block_markup' => $home_region, 'skip_materialization' => false ),
+	array( 'source_path' => 'website/browse.html', 'resolved_block_markup' => $expected_region, 'skip_materialization' => false ),
+);
+$shared_preflight_lifecycle = array(
+	'entities' => array(
+		'products-declaration' => array(
+			'adapter'  => array( 'waiver_arg' => '' ),
+			'manifest' => array( 'products' => $shared_manifest_entities ),
+		),
+	),
+);
+$shared_preflight = Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_runtime_entity_binding_anchors( array( 'pages' => $shared_pages ), $shared_preflight_lifecycle, array() );
+$assert( true === $shared_preflight, 'preflight-allows-one-product-to-legitimately-claim-two-distinct-grid-anchors', is_wp_error( $shared_preflight ) ? $shared_preflight->get_error_message() : '' );
+
+// Mixing a legitimate shared-collection claim into the same manifest must not
+// mask a real single-entity conflict elsewhere: two non-collection claims on
+// one occurrence still fail, even alongside otherwise-valid shared claims.
+$duplicate_single_claim = array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/product-a.html', 'search_block_markup' => '<!-- wp:shortcode -->[add_to_cart id="1"]<!-- /wp:shortcode -->', 'occurrence' => 1, 'role' => 'commerce_controls' );
+$mixed_manifest_entities = array_merge(
+	$shared_manifest_entities,
+	array(
+		array( 'name' => 'Solo A', 'slug' => 'solo-a', 'regular_price' => '1.00', 'bindings' => array( $duplicate_single_claim ) ),
+		array( 'name' => 'Solo B', 'slug' => 'solo-b', 'regular_price' => '1.00', 'bindings' => array( $duplicate_single_claim ) ),
+	)
+);
+$mixed_pages = array_merge(
+	$shared_pages,
+	array( array( 'source_path' => 'website/product-a.html', 'resolved_block_markup' => $duplicate_single_claim['search_block_markup'], 'skip_materialization' => false ) )
+);
+$mixed_preflight_lifecycle = array(
+	'entities' => array(
+		'products-declaration' => array(
+			'adapter'  => array( 'waiver_arg' => '' ),
+			'manifest' => array( 'products' => $mixed_manifest_entities ),
+		),
+	),
+);
+$mixed_preflight = Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_runtime_entity_binding_anchors( array( 'pages' => $mixed_pages ), $mixed_preflight_lifecycle, array() );
+$assert( is_wp_error( $mixed_preflight ) && 'static_site_importer_runtime_binding_claim_conflict' === $mixed_preflight->get_error_code(), 'preflight-still-rejects-two-single-entity-claims-on-one-occurrence-alongside-legitimate-shared-grid-claims' );
+
+// block_bindings(): the shared entity's seeded id must appear in *both*
+// grids' resolved hand-picked product lists, each anchored to its own page,
+// instead of either grid losing the shared member or the two anchors racing.
+$shared_lifecycle = array(
+	'entities' => array(
+		'products-declaration' => array(
+			'adapter'  => $adapter,
+			'manifest' => array( 'products' => $shared_manifest_entities ),
+		),
+	),
+);
+$shared_reports = array(
+	'products-declaration' => array(
+		'products' => array(
+			array( 'slug' => 'home-exclusive', 'id' => 401, 'status' => 'created' ),
+			array( 'slug' => 'shared-product', 'id' => 402, 'status' => 'created' ),
+			array( 'slug' => 'catalog-exclusive', 'id' => 403, 'status' => 'created' ),
+		),
+	),
+);
+$shared_bindings = Static_Site_Importer_Entity_Materializer_Registry::block_bindings( $shared_lifecycle, $shared_reports );
+$assert( ! is_wp_error( $shared_bindings ), 'shared-product-block-bindings-do-not-error', is_wp_error( $shared_bindings ) ? $shared_bindings->get_error_message() : '' );
+$assert( is_array( $shared_bindings ) && 2 === count( $shared_bindings ), 'shared-product-block-bindings-produce-exactly-one-replacement-per-grid' );
+$home_grid_result    = null;
+$catalog_grid_result = null;
+foreach ( $shared_bindings as $binding ) {
+	if ( 'website/home.html' === ( $binding['source_path'] ?? '' ) ) {
+		$home_grid_result = $binding;
+	} elseif ( 'website/browse.html' === ( $binding['source_path'] ?? '' ) ) {
+		$catalog_grid_result = $binding;
+	}
+}
+$assert( is_array( $home_grid_result ) && str_contains( (string) ( $home_grid_result['replacement_block_markup'] ?? '' ), '"woocommerceHandPickedProducts":[401,402]' ), 'shared-product-appears-in-the-homepage-grid-replacement' );
+$assert( is_array( $catalog_grid_result ) && str_contains( (string) ( $catalog_grid_result['replacement_block_markup'] ?? '' ), '"woocommerceHandPickedProducts":[402,403]' ), 'shared-product-appears-in-the-catalog-grid-replacement' );
+$assert( is_array( $home_grid_result ) && 'commerce_collection' === ( $home_grid_result['role'] ?? '' ) && is_array( $catalog_grid_result ) && 'commerce_collection' === ( $catalog_grid_result['role'] ?? '' ), 'shared-product-both-grid-replacements-keep-the-commerce-collection-role' );
+
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );
