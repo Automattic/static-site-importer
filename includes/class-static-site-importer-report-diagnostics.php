@@ -347,26 +347,35 @@ class Static_Site_Importer_Report_Diagnostics {
 	 */
 	public static function finalize_report( Static_Site_Importer_Import_Report $report, array $args ): array {
 		$provided = isset( $args['validation_artifacts'] ) && is_array( $args['validation_artifacts'] ) ? $args['validation_artifacts'] : array();
-		$oracle   = Static_Site_Importer_Visual_Parity_Oracle::evaluate( $provided );
+		if ( isset( $args['source_reports'] ) && is_array( $args['source_reports'] ) ) {
+			$provided['source_reports'] = $args['source_reports'];
+		}
+		$oracle = Static_Site_Importer_Visual_Parity_Oracle::evaluate( $provided );
 		foreach ( $oracle['diagnostics'] as $diagnostic ) {
 			if ( is_array( $diagnostic ) ) {
 				$report->append_diagnostic( $diagnostic );
 			}
 		}
-		if ( 'skipped' !== $oracle['status'] ) {
-			$visual_fidelity = $report->section( 'visual_fidelity' );
-			$visual_fidelity['status']             = 'failed' === $oracle['status'] ? 'failed' : 'passed';
-			$visual_fidelity['gate_owner']         = 'codebox_runtime';
+		$visual_fidelity                           = $report->section( 'visual_fidelity' );
+		$visual_fidelity['gate_owner']             = 'codebox_runtime';
+		$visual_fidelity['compiler_report_path']   = Static_Site_Importer_Visual_Parity_Oracle::COMPILER_REPORT_PATH;
+		$visual_fidelity['expected_schema']        = Static_Site_Importer_Visual_Parity_Oracle::SCHEMA;
+		$visual_fidelity['missing_data_contract']  = isset( $oracle['missing_data_contract'] ) && is_array( $oracle['missing_data_contract'] ) ? $oracle['missing_data_contract'] : array();
+		if ( in_array( $oracle['status'], array( 'passed', 'failed' ), true ) ) {
+			$visual_fidelity['status']             = $oracle['status'];
 			$visual_fidelity['verification']       = Static_Site_Importer_Visual_Parity_Oracle::VERIFICATION;
 			$visual_fidelity['stage']              = Static_Site_Importer_Visual_Parity_Oracle::STAGE;
 			$visual_fidelity['tolerances']         = $oracle['tolerances'];
 			$visual_fidelity['disagreement_count'] = count( $oracle['disagreements'] );
-			$report->set_section( 'visual_fidelity', $visual_fidelity );
-			$provided = array_merge( $provided, $oracle['artifact_refs'] );
+			$provided                              = array_merge( $provided, $oracle['artifact_refs'] );
 			if ( ! empty( $oracle['summary'] ) ) {
 				$provided['summary'] = array_merge( isset( $provided['summary'] ) && is_array( $provided['summary'] ) ? $provided['summary'] : array(), $oracle['summary'] );
 			}
+		} else {
+			$visual_fidelity['status'] = 'not_verified';
+			$visual_fidelity['reason'] = (string) ( $oracle['reason'] ?? '' );
 		}
+		$report->set_section( 'visual_fidelity', $visual_fidelity );
 		$quality                           = Static_Site_Importer_Quality_Gates::finalize_quality_report( $report, $args );
 		$report['visual_parity_artifacts'] = Static_Site_Importer_Diagnostic_Projection::visual_parity_artifact_contract( $provided );
 		Static_Site_Importer_Diagnostic_Projection::refresh_projections( $report, $quality, false );

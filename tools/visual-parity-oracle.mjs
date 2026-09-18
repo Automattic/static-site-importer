@@ -1,12 +1,12 @@
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
-import { basename, dirname, join, resolve } from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-export const SCHEMA = 'static-site-importer/visual-parity-oracle-input/v1';
+export const SCHEMA = 'static-site-importer/layout-baseline/v1';
+export const COMPILER_REPORT_PATH = 'source_reports.layout_baseline';
 export const VIEWPORT = { width: 1440, height: 900 };
 
-const EXTRACT_SECTIONS = () => {
-  const viewport = { width: window.innerWidth, height: window.innerHeight };
+const EXTRACT_LAYOUT = ({ viewport }) => {
   const headingSelector = 'h1,h2,h3,h4,h5,h6,[role="heading"]';
   const isVisible = (el) => {
     const style = window.getComputedStyle(el);
@@ -18,7 +18,21 @@ const EXTRACT_SECTIONS = () => {
   };
   const displayBox = (el) => {
     const box = el.getBoundingClientRect();
-    return { displayWidth: Math.round(box.width), displayHeight: Math.round(box.height) };
+    return { display_width: Math.round(box.width), display_height: Math.round(box.height) };
+  };
+  const mediaOf = (root) => [...root.querySelectorAll('img, svg, video')].filter(isVisible).map((node) => ({
+    id: node.id || '',
+    role: node.getAttribute('role') || node.tagName.toLowerCase(),
+    ...displayBox(node),
+  }));
+  const paddingOf = (el) => {
+    const style = window.getComputedStyle(el);
+    return {
+      top: Math.round(Number.parseFloat(style.paddingTop) || 0),
+      right: Math.round(Number.parseFloat(style.paddingRight) || 0),
+      bottom: Math.round(Number.parseFloat(style.paddingBottom) || 0),
+      left: Math.round(Number.parseFloat(style.paddingLeft) || 0),
+    };
   };
   const sectionNodes = [...document.querySelectorAll('header, main, section, footer, [role="banner"], [role="main"], [role="contentinfo"]')]
     .filter((el) => isVisible(el) && el.getBoundingClientRect().height >= 32);
@@ -30,82 +44,85 @@ const EXTRACT_SECTIONS = () => {
     }
     seen.add(el);
     const box = el.getBoundingClientRect();
-    const headings = [...el.querySelectorAll(headingSelector)].filter((heading) => heading.parentElement?.closest('header, main, section, footer') === el || heading.closest('header, main, section, footer') === el);
-    const images = [...el.querySelectorAll('img')].filter(isVisible).map((img) => ({
-      alt: img.getAttribute('alt') || '',
-      url: img.currentSrc || img.src || '',
-      selector: img.id ? `#${img.id}` : '',
-      kind: 'img',
-      ...displayBox(img),
-    }));
-    const forms = [...el.querySelectorAll('form')].map((form) => ({
-      fields: [...form.querySelectorAll('input, select, textarea')].map((field) => ({
-        kind: (field.getAttribute('type') || field.tagName).toLowerCase(),
-        name: field.getAttribute('name') || '',
-        label: field.getAttribute('aria-label') || field.id || '',
-        tabindex: field.tabIndex,
-        ariaHidden: field.getAttribute('aria-hidden') === 'true',
-        ...displayBox(field),
-      })),
-    }));
+    const headings = [...el.querySelectorAll(headingSelector)].filter((heading) => heading.closest('header, main, section, footer') === el);
+    const body = [...el.querySelectorAll('p')].filter((node) => node.closest('header, main, section, footer') === el && isVisible(node));
     sections.push({
-      sectionIndex: sections.length,
-      selector: [el.tagName.toLowerCase(), el.id ? `#${el.id}` : '', el.className ? `.${String(el.className).trim().split(/\s+/).slice(0, 3).join('.')}` : ''].join(''),
-      top: Math.round(box.top + window.scrollY),
+      id: el.id || `${el.tagName.toLowerCase()}-${sections.length}`,
+      order: sections.length,
+      offset: { top: Math.round(box.top + window.scrollY) },
       height: Math.round(box.height),
-      headings: headings.map((heading) => (heading.textContent || '').trim()).filter(Boolean),
-      headingSizes: headings.map((heading) => Math.round(Number.parseFloat(window.getComputedStyle(heading).fontSize) || 0)),
-      images,
-      forms,
+      headings: headings.map((heading) => {
+        const style = window.getComputedStyle(heading);
+        return {
+          text: (heading.textContent || '').trim(),
+          font_size: Math.round(Number.parseFloat(style.fontSize) || 0),
+          font_family: style.fontFamily || '',
+          line_height: style.lineHeight || '',
+        };
+      }),
+      body: body.slice(0, 3).map((node) => {
+        const style = window.getComputedStyle(node);
+        return {
+          font_size: Math.round(Number.parseFloat(style.fontSize) || 0),
+          font_family: style.fontFamily || '',
+          line_height: style.lineHeight || '',
+        };
+      }),
+      media: mediaOf(el),
+      forms: [...el.querySelectorAll('form')].map((form, formIndex) => ({
+        id: form.id || `form-${formIndex}`,
+        padding: paddingOf(form),
+        fields: [...form.querySelectorAll('input, select, textarea')].map((field, fieldIndex) => ({
+          id: field.id || field.getAttribute('name') || `field-${fieldIndex}`,
+          name: field.getAttribute('name') || '',
+          padding: paddingOf(field),
+          ...displayBox(field),
+        })),
+      })),
     });
   }
   const landmarks = [...document.querySelectorAll('header, main, footer, [role="banner"], [role="main"], [role="contentinfo"]')]
     .filter(isVisible)
-    .map((el) => {
+    .map((el, landmarkIndex) => {
       const box = el.getBoundingClientRect();
-      const role = el.getAttribute('role') || ({ HEADER: 'header', MAIN: 'main', FOOTER: 'footer' }[el.tagName] || el.tagName.toLowerCase());
+      const role = el.getAttribute('role') || ({ HEADER: 'banner', MAIN: 'main', FOOTER: 'contentinfo' }[el.tagName] || el.tagName.toLowerCase());
       return {
+        id: el.id || `${role}-${landmarkIndex}`,
         role,
-        tag: el.tagName.toLowerCase(),
-        selector: el.tagName.toLowerCase() + (el.id ? `#${el.id}` : ''),
-        top: Math.round(box.top + window.scrollY),
+        offset: { top: Math.round(box.top + window.scrollY) },
         height: Math.round(box.height),
-        textLength: (el.textContent || '').trim().length,
-        mediaCount: el.querySelectorAll('img, svg, video').length,
-        linkCount: el.querySelectorAll('a[href]').length,
+        media: mediaOf(el),
       };
     });
+  const pageViewport = viewport || { width: window.innerWidth, height: window.innerHeight };
   return {
-    schema: 9,
-    sourceUrl: location.href,
-    capturedAt: new Date().toISOString(),
-    viewport,
-    sections,
-    landmarks,
+    schema: 'static-site-importer/layout-baseline/v1',
+    viewports: [pageViewport],
+    pages: [{
+      id: (location.pathname.replace(/\/+$/, '') || '/').replace(/^\//, '') || 'index',
+      viewport: pageViewport,
+      sections,
+      landmarks,
+    }],
+    intentional_omissions: [],
   };
 };
 
-export async function loadSectionPages(directory) {
-  const root = resolve(directory);
-  const entries = await readdir(root);
-  const pages = {};
-  for (const name of entries.filter((entry) => entry.endsWith('.json')).sort()) {
-    const parsed = JSON.parse(await readFile(join(root, name), 'utf8'));
-    pages[basename(name, '.json')] = parsed;
-  }
-  return pages;
-}
-
-export function notVerifiedResult(reason) {
+export function notVerifiedResult(reason, missing = []) {
   return {
     schema: SCHEMA,
     status: 'not_verified',
     verification: 'not_verified',
-    stage: 'import_vs_capture',
+    stage: 'import_vs_baseline',
     reason,
-    source_pages: {},
-    imported_pages: {},
+    missing_data_contract: missing,
+    compiler_report_path: COMPILER_REPORT_PATH,
+    expected_schema: SCHEMA,
   };
+}
+
+export async function loadJson(path) {
+  return JSON.parse(await readFile(resolve(path), 'utf8'));
 }
 
 export async function extractImportedPage(origin, route = '/', viewport = VIEWPORT) {
@@ -122,34 +139,79 @@ export async function extractImportedPage(origin, route = '/', viewport = VIEWPO
       ? new URL(route, origin.endsWith('/') ? origin : `${origin}/`).href
       : pathToFileURL(resolve(origin)).href;
     await page.goto(target, { waitUntil: 'networkidle', timeout: 30000 });
-    return page.evaluate(EXTRACT_SECTIONS);
+    return page.evaluate(EXTRACT_LAYOUT, { viewport });
   } finally {
     await browser.close();
   }
 }
 
-export async function buildOracleInput({ sourceSections, importedSections, importedOrigin, omissions, viewport = VIEWPORT } = {}) {
-  const source_pages = sourceSections ? await loadSectionPages(sourceSections) : {};
-  let imported_pages = importedSections ? await loadSectionPages(importedSections) : {};
-  if (importedOrigin) {
-    imported_pages = {};
-    for (const [pageId, record] of Object.entries(source_pages)) {
-      const route = record.sourceUrl ? new URL(record.sourceUrl).pathname : `/${pageId === 'index' || pageId === 'homepage' ? '' : pageId}`;
-      imported_pages[pageId] = await extractImportedPage(importedOrigin, route, record.viewport || viewport);
+function pageRoute(page, fallbackId) {
+  const id = page.id || fallbackId || 'index';
+  if (id === 'index' || id === 'home' || id === 'homepage') {
+    return '/';
+  }
+  return `/${id}`;
+}
+
+function viewportOf(page, fallback = VIEWPORT) {
+  const viewport = page.viewport || fallback;
+  return {
+    width: Number(viewport.width) || fallback.width,
+    height: Number(viewport.height) || fallback.height,
+  };
+}
+
+export async function buildOracleInput({ baseline, importedRender, importedOrigin, viewport = VIEWPORT } = {}) {
+  const baselineDoc = baseline
+    ? (typeof baseline === 'string' ? await loadJson(baseline) : baseline)
+    : null;
+  if (!baselineDoc || baselineDoc.schema !== SCHEMA || !Array.isArray(baselineDoc.pages)) {
+    return notVerifiedResult(
+      'Layout baseline contract is absent or malformed.',
+      [
+        `${COMPILER_REPORT_PATH} schema ${SCHEMA}`,
+        `${COMPILER_REPORT_PATH}.viewports`,
+        `${COMPILER_REPORT_PATH}.pages`,
+        `${COMPILER_REPORT_PATH}.intentional_omissions`,
+      ],
+    );
+  }
+
+  let importedDoc = importedRender
+    ? (typeof importedRender === 'string' ? await loadJson(importedRender) : importedRender)
+    : null;
+  if (!importedDoc && importedOrigin) {
+    const pages = [];
+    for (const page of baselineDoc.pages) {
+      const extracted = await extractImportedPage(
+        importedOrigin,
+        pageRoute(page, page.id),
+        viewportOf(page, baselineDoc.viewports?.[0] || viewport),
+      );
+      pages.push(...(extracted.pages || []));
     }
+    importedDoc = {
+      schema: SCHEMA,
+      viewports: baselineDoc.viewports || [viewport],
+      pages,
+      intentional_omissions: [],
+    };
   }
-  if (Object.keys(source_pages).length === 0 || Object.keys(imported_pages).length === 0) {
-    return notVerifiedResult('Capture or imported section records were not provided, or a browser was unavailable.');
+  if (!importedDoc || !Array.isArray(importedDoc.pages) || importedDoc.pages.length === 0) {
+    return notVerifiedResult('Imported layout record was not provided, or a browser was unavailable.');
   }
+
   return {
     schema: SCHEMA,
     status: 'ready',
     verification: 'section_geometry',
-    stage: 'import_vs_capture',
-    viewport,
-    source_pages,
-    imported_pages,
-    omissions: omissions || [],
+    stage: 'import_vs_baseline',
+    compiler_report_path: COMPILER_REPORT_PATH,
+    expected_schema: SCHEMA,
+    source_reports: {
+      layout_baseline: baselineDoc,
+    },
+    imported_render: importedDoc,
   };
 }
 
@@ -170,16 +232,15 @@ function parseArgs(argv) {
 async function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   if (args.help) {
-    process.stdout.write('Usage: node tools/visual-parity-oracle.mjs [--source-sections dir] [--imported-sections dir] [--imported-origin url] [--omissions json] [--out file]\n');
+    process.stdout.write('Usage: node tools/visual-parity-oracle.mjs [--baseline file] [--imported-render file] [--imported-origin url] [--out file]\n');
     return 0;
   }
   let input;
   try {
     input = await buildOracleInput({
-      sourceSections: args['source-sections'],
-      importedSections: args['imported-sections'],
+      baseline: args.baseline,
+      importedRender: args['imported-render'],
       importedOrigin: args['imported-origin'],
-      omissions: args.omissions ? JSON.parse(await readFile(args.omissions, 'utf8')) : [],
     });
   } catch (error) {
     if (error && (error.code === 'browser_unavailable' || /browser/i.test(String(error)))) {
@@ -195,7 +256,7 @@ async function main(argv = process.argv.slice(2)) {
   } else {
     process.stdout.write(encoded);
   }
-  return input.status === 'not_verified' ? 0 : 0;
+  return 0;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
