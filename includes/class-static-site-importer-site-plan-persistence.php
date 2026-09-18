@@ -337,8 +337,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		} else {
 			$parent = 0;
 		}
-		$post = array(
+		$user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+		$post    = array(
 			'ID'           => (int) ( $page['planned_existing_id'] ?? 0 ),
+			'post_author'  => $user_id > 0 ? $user_id : 1,
 			'post_type'    => $post_type,
 			'post_status'  => 'publish',
 			'post_title'   => (string) $page['title'],

@@ -34,6 +34,7 @@ $GLOBALS['ssi_plan_insert_calls']         = 0;
 $GLOBALS['ssi_plan_meta_write_failure']   = null;
 $GLOBALS['ssi_plan_meta_write_counts']    = array();
 $GLOBALS['ssi_plan_post_status_transitions'] = array();
+$GLOBALS['ssi_plan_user_id']              = 1;
 $GLOBALS['ssi_plan_font_requests']        = array();
 $GLOBALS['ssi_plan_woo_cleanup_failures'] = false;
 $GLOBALS['ssi_plan_theme_templates']      = array();
@@ -72,6 +73,11 @@ function get_page_uri( WP_Post $post ): string {
 	return (string) ( $GLOBALS['ssi_plan_posts'][ $post->ID ]['post_name'] ?? '' ); }
 function is_wp_error( $value ): bool {
 	return $value instanceof WP_Error; }
+function get_current_user_id(): int {
+	return (int) ( $GLOBALS['ssi_plan_user_id'] ?? 1 ); }
+function get_userdata( $user_id ) {
+	$id = (int) $user_id;
+	return $id > 0 ? (object) array( 'ID' => $id ) : false; }
 function sanitize_key( string $value ): string {
 	return strtolower( (string) preg_replace( '/[^a-z0-9_-]/', '', $value ) ); }
 function get_theme_root(): string {
@@ -588,6 +594,32 @@ $page_source          = (string) ( $receipt['plan']['pages'][0]['source_path'] ?
 $page_id              = (int) ( $receipt['completed']['pages'][ $page_source ] ?? 0 );
 $persisted_page       = stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $page_id ]['post_content'] ?? '' ) );
 $assert( $producer_page_markup === $persisted_page, 'materializer-persists-producer-block-markup-without-html-recompilation' );
+$imported_author      = (int) ( $GLOBALS['ssi_plan_posts'][ $page_id ]['post_author'] ?? 0 );
+$assert( $imported_author > 0 && false !== get_userdata( $imported_author ), 'imported page carries a resolvable author rather than 0' );
+
+$GLOBALS['ssi_plan_user_id'] = 23;
+$importer_plan               = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array( 'index.html' => '<main><h1>Importer authored</h1></main>' ),
+	)
+)->toArray()['source_reports']['wordpress_site_plan'];
+$importer_receipt            = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $importer_plan, array( 'slug' => 'importer-author-plan' ) );
+$importer_id                 = (int) ( ( $importer_receipt['completed']['pages'] ?? array() )['index.html'] ?? 0 );
+$assert( 'completed' === ( $importer_receipt['status'] ?? '' ) && 23 === (int) ( $GLOBALS['ssi_plan_posts'][ $importer_id ]['post_author'] ?? 0 ) && false !== get_userdata( 23 ), 'imported page is authored by the user performing the import' );
+
+$GLOBALS['ssi_plan_user_id'] = 0;
+$anonymous_plan              = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array( 'index.html' => '<main><h1>Anonymous import</h1></main>' ),
+	)
+)->toArray()['source_reports']['wordpress_site_plan'];
+$anonymous_receipt           = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $anonymous_plan, array( 'slug' => 'anonymous-author-plan' ) );
+$anonymous_id                = (int) ( ( $anonymous_receipt['completed']['pages'] ?? array() )['index.html'] ?? 0 );
+$anonymous_author            = (int) ( $GLOBALS['ssi_plan_posts'][ $anonymous_id ]['post_author'] ?? 0 );
+$assert( 'completed' === ( $anonymous_receipt['status'] ?? '' ) && $anonymous_author > 0 && false !== get_userdata( $anonymous_author ), 'import without a current user still stores a resolvable author rather than 0' );
+$GLOBALS['ssi_plan_user_id'] = 1;
 
 $unicode_title_plan                                        = $plan;
 $unicode_title_plan['pages'][0]['document_metadata']['title'] = 'Services – Southern Multi Product ltd';
