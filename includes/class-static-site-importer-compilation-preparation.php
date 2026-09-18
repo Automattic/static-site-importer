@@ -104,6 +104,12 @@ final class Static_Site_Importer_Compilation_Preparation {
 			}
 		}
 		$args['compiler_diagnostics'] = Static_Site_Importer_Compiler_Diagnostic_Normalizer::normalize( is_array( $compiled['diagnostics'] ?? null ) ? $compiled['diagnostics'] : array() );
+		$source_reports               = is_array( $compiled['source_reports'] ?? null ) ? $compiled['source_reports'] : array();
+		if ( isset( $source_reports['layout_baseline'] ) && is_array( $source_reports['layout_baseline'] ) ) {
+			$existing                     = isset( $args['source_reports'] ) && is_array( $args['source_reports'] ) ? $args['source_reports'] : array();
+			$existing['layout_baseline']  = $source_reports['layout_baseline'];
+			$args['source_reports']       = $existing;
+		}
 		$plan                         = is_array( $compiled['wordpress_site_plan'] ?? null ) ? $compiled['wordpress_site_plan'] : array();
 		if ( empty( $plan ) ) {
 			$diagnostics = is_array( $compiled['diagnostics'] ?? null ) ? wp_json_encode( $compiled['diagnostics'] ) : '';
