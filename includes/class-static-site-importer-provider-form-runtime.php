@@ -86,8 +86,34 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		self::$registered = true;
 		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_wrapper_classes' ) );
 		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_empty_country_visual_state' ), 20 );
+		add_filter( 'render_block_jetpack/contact-form', array( __CLASS__, 'project_form_container_placement' ), 5, 2 );
 		add_filter( 'render_block_jetpack/contact-form', array( __CLASS__, 'project_plain_root_fieldset' ), 10, 2 );
 		add_filter( 'render_block_core/button', array( __CLASS__, 'project_submit_presentation' ), 10, 2 );
+	}
+
+	/** Copy the provider block's layout role onto Jetpack's page-grid item. */
+	public static function project_form_container_placement( string $html, array $block = array() ): string {
+		$class_name = isset( $block['attrs']['className'] ) && is_string( $block['attrs']['className'] ) ? $block['attrs']['className'] : '';
+		if ( 262144 < strlen( $html ) || '' === trim( $class_name ) || ! preg_match( '/(?:^|\s)ssi-form-[a-f0-9]{12}(?:\s|$)/', $class_name ) || ! str_contains( $html, 'jetpack-contact-form-container' ) ) {
+			return $html;
+		}
+		$carry = preg_split( '/\s+/', trim( $class_name ) );
+		$carry = false === $carry ? array() : array_values( array_filter( $carry ) );
+		if ( empty( $carry ) ) {
+			return $html;
+		}
+		$projected = preg_replace_callback(
+			'/<div\b([^>]*\bclass=(["\'])([^"\']*\bjetpack-contact-form-container\b[^"\']*)\2)/i',
+			static function ( array $matches ) use ( $carry ): string {
+				$existing = preg_split( '/\s+/', trim( $matches[3] ) );
+				$existing = false === $existing ? array() : $existing;
+				$merged   = implode( ' ', array_values( array_unique( array_filter( array_merge( $existing, $carry ) ) ) ) );
+				return '<div' . str_replace( $matches[2] . $matches[3] . $matches[2], $matches[2] . $merged . $matches[2], $matches[1] );
+			},
+			$html,
+			1
+		);
+		return is_string( $projected ) ? $projected : $html;
 	}
 
 	/** Restore a source plain-root fieldset around provider field content, never the form itself. */

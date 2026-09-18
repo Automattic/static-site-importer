@@ -1578,6 +1578,110 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		return $graph;
 	}
 
+	/**
+	 * Source wrappers the provider form replaces are the page-grid item the
+	 * provider container now occupies. Their classes still address that role
+	 * in the source stylesheet, so they belong on the provider block wrapper.
+	 *
+	 * @return array{classes:array<int,string>,operations:array<int,array<string,mixed>>}
+	 */
+	public static function host_wrapper_projection( array $form ): array {
+		$form_classes = preg_split( '/\s+/', trim( (string) ( $form['form']['class'] ?? '' ) ) );
+		$form_classes = false === $form_classes ? array() : array_values( array_filter( $form_classes ) );
+		$form_owned   = array_fill_keys( $form_classes, true );
+		$classes      = array();
+		$operations   = array();
+		foreach ( self::replaced_wrapper_class_lists( $form ) as $wrapper_classes ) {
+			$source = array();
+			foreach ( $wrapper_classes as $class_name ) {
+				if ( isset( $form_owned[ $class_name ] ) || ! self::is_source_host_class( $class_name ) ) {
+					continue;
+				}
+				$source[] = $class_name;
+			}
+			if ( empty( $source ) ) {
+				continue;
+			}
+			$classes      = array_merge( $classes, $source );
+			$operations[] = array(
+				'dimension'   => 'layout',
+				'strategy'    => 'provider_host_wrapper_class_projection',
+				'target_hash' => hash( 'sha256', implode( ' ', $source ) ),
+			);
+		}
+		return array(
+			'classes'    => array_values( array_unique( $classes ) ),
+			'operations' => $operations,
+		);
+	}
+
+	/**
+	 * Class lists of source wrappers the binding search replaces, outermost first.
+	 *
+	 * @return array<int,array<int,string>>
+	 */
+	private static function replaced_wrapper_class_lists( array $form ): array {
+		$markups    = array();
+		$candidates = is_array( $form['bindings'] ?? null ) ? $form['bindings'] : array();
+		if ( is_array( $form['binding'] ?? null ) ) {
+			array_unshift( $candidates, $form['binding'] );
+		}
+		foreach ( $candidates as $binding ) {
+			if ( is_array( $binding ) && is_string( $binding['search_block_markup'] ?? null ) && '' !== trim( $binding['search_block_markup'] ) ) {
+				$markups[] = $binding['search_block_markup'];
+			}
+		}
+		$lists = array();
+		foreach ( $markups as $markup ) {
+			foreach ( self::layout_shell_wrapper_class_lists( $markup ) as $list ) {
+				$lists[] = $list;
+			}
+		}
+		return $lists;
+	}
+
+	/**
+	 * @return array<int,array<int,string>>
+	 */
+	private static function layout_shell_wrapper_class_lists( string $markup ): array {
+		if ( ! preg_match( '/<!-- wp:(?:[a-z][a-z0-9-]*\/)?layout-shell\s+/', $markup, $header, PREG_OFFSET_CAPTURE ) ) {
+			return array();
+		}
+		$start = $header[0][1] + strlen( $header[0][0] );
+		if ( '{' !== ( $markup[ $start ] ?? '' ) ) {
+			return array();
+		}
+		$depth = 0;
+		$end   = strlen( $markup );
+		$json  = '';
+		for ( $index = $start; $index < $end && $index - $start < 8192; ++$index ) {
+			$character = $markup[ $index ];
+			$depth    += '{' === $character ? 1 : ( '}' === $character ? -1 : 0 );
+			if ( 0 === $depth ) {
+				$json = substr( $markup, $start, $index - $start + 1 );
+				break;
+			}
+		}
+		$attrs = json_decode( $json, true );
+		if ( ! is_array( $attrs ) || ! is_array( $attrs['wrappers'] ?? null ) || ! array_is_list( $attrs['wrappers'] ) ) {
+			return array();
+		}
+		$lists = array();
+		foreach ( $attrs['wrappers'] as $wrapper ) {
+			$class   = is_array( $wrapper ) && is_array( $wrapper['attributes'] ?? null ) && is_string( $wrapper['attributes']['class'] ?? null ) ? $wrapper['attributes']['class'] : '';
+			$tokens  = preg_split( '/\s+/', trim( $class ) );
+			$lists[] = false === $tokens ? array() : array_values( array_filter( $tokens ) );
+		}
+		return $lists;
+	}
+
+	private static function is_source_host_class( string $class_name ): bool {
+		return '' !== $class_name
+			&& ! str_starts_with( $class_name, 'wp-block-' )
+			&& ! str_starts_with( $class_name, 'blocks-engine-' )
+			&& 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_.:-]{0,79}$/D', $class_name );
+	}
+
 	/** Stable generated classes are provider hooks, never source presentation hooks. */
 	public static function layout_scope( array $form ): string {
 		$identity = $form['fallback_identity'] ?? '';
