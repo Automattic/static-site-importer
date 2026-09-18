@@ -121,7 +121,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				$losses[] = self::loss( 'provider_structure_mismatch', $id );
 				continue;
 			}
-			$declarations = self::declarations( $node['layout'], $target['capabilities'], $id, $losses );
+			$declarations = self::declarations( $node['layout'], $target['capabilities'], $id, $losses, self::important_properties( $node['important'] ?? null ) );
 			if ( ! empty( $declarations ) ) {
 				$rules[]      = $target['selector'] . '{' . implode( ';', $declarations ) . '}';
 				$operations[] = array(
@@ -140,7 +140,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			if ( null === $target || ! in_array( 'responsive_layout', $target['capabilities'], true ) || ! self::safe_condition( $variant['condition'] ?? null ) ) {
 				$losses[] = self::loss( 'responsive_layout_ownership', $id );
 				continue; }
-			$declarations = self::declarations( $variant['layout_patch'], $target['capabilities'], $id, $losses );
+			$declarations = self::declarations( $variant['layout_patch'], $target['capabilities'], $id, $losses, self::important_properties( $variant['important'] ?? null ) );
 			if ( ! empty( $declarations ) ) {
 				$rules[]      = self::conditional_rule( $variant['condition'], $target['selector'] . '{' . implode( ';', $declarations ) . '}' );
 				$operations[] = array(
@@ -410,7 +410,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		return $rule;
 	}
-	private static function declarations( array $layout, array $capabilities, string $node, array &$losses ): array {
+	/**
+	 * @param array<int,string> $important Layout fact keys this node's declarations
+	 *                                     must win the cascade for, independent of
+	 *                                     the specificity of any carried source rule.
+	 */
+	private static function declarations( array $layout, array $capabilities, string $node, array &$losses, array $important = array() ): array {
 		$map          = self::layout_property_map();
 		$declarations = array();
 		foreach ( $layout as $fact => $value ) {
@@ -423,9 +428,28 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			if ( ! in_array( $fact, array( 'column', 'row', 'area', 'order', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis', 'align_self', 'justify_self' ), true ) && ! in_array( 'container_layout', $capabilities, true ) ) {
 				$losses[] = self::loss( 'provider_structure_mismatch', $node );
 				continue; }
-			$declarations[] = $map[ $fact ] . ':' . $value;
+			$declarations[] = $map[ $fact ] . ':' . $value . ( in_array( $fact, $important, true ) ? '!important' : '' );
 		}
 		return $declarations;
+	}
+
+	/**
+	 * Bounds an `important` request to the flattened-sibling margin resets this
+	 * mechanism exists for. A source sibling-stacking rule (physical `margin-top`
+	 * or a flow-relative equivalent) is carried onto the provider form unscoped and
+	 * can be authored with unbounded specificity, so a plain reset declaration has
+	 * no reliable way to out-rank it. Only these four flow-relative margin
+	 * properties are ever forced; every other layout fact keeps ordinary cascade
+	 * weight.
+	 *
+	 * @param mixed $important
+	 * @return array<int,string>
+	 */
+	private static function important_properties( mixed $important ): array {
+		if ( ! is_array( $important ) ) {
+			return array();
+		}
+		return array_values( array_intersect( $important, array( 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end' ) ) );
 	}
 
 	/** @return array<string,string> */
