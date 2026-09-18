@@ -1867,9 +1867,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					);
 					$properties     = array_values( array_diff( $properties, array( 'display', 'width', 'min_width' ) ) );
 				}
-				$destinations[] = array(
+				$control_suffix = 'submit' === $type ? ' > .wp-block-button__link' : ( 'select' === $type ? ' select' : '' );
+				$destination    = array(
 					'role'       => 'control',
-					'selector'   => '.' . $scope . ' .' . $control_class . ( 'submit' === $type ? ' > .wp-block-button__link' : '' ),
+					'selector'   => '.' . $scope . ' .' . $control_class . $control_suffix,
 					'properties' => $properties,
 					// Provider controls inherit theme typography. Revert to each browser's
 					// native control defaults unless source CSS owns either property.
@@ -1878,9 +1879,14 @@ final class Static_Site_Importer_Form_Layout_Projection {
 							'font-family' => 'revert',
 							'line-height' => 'revert',
 						),
-					'submit' === $type ? array( 'min-height' => '0' ) : array()
-				),
+						'submit' === $type ? array( 'min-height' => '0' ) : array(),
+						'select' === $type ? array( 'appearance' => 'auto' ) : array()
+					),
 				);
+				if ( 'select' === $type ) {
+					$destination['priority'] = 'important';
+				}
+				$destinations[] = $destination;
 			}
 		}
 		if ( isset( $roles['control_container'] ) ) {

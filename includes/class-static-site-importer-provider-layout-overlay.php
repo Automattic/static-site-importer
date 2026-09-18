@@ -334,7 +334,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		// The provider form target is admitted as both of its rendered spellings,
 		// so a compiled rule may carry that two-part selector list.
-		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label)?| \.grunion-field-wrap > \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap > \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\))?';
+		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label| select)?| \.grunion-field-wrap > \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap > \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\))?';
 		if ( ! preg_match( '/^(' . $scope_selector . '(?:, ' . $scope_selector . ')?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
@@ -376,7 +376,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		$element = '[a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*';
 		foreach ( $parts as $part ) {
-			if ( ! preg_match( '/^' . preg_quote( $scope, '/' ) . '(?: > ' . $element . '| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label)?|:not\(:has\(> ' . $element . '\)\))?$/D', $part ) ) {
+			if ( ! preg_match( '/^' . preg_quote( $scope, '/' ) . '(?: > ' . $element . '| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label| select)?|:not\(:has\(> ' . $element . '\)\))?$/D', $part ) ) {
 				return false;
 			}
 		}
@@ -630,7 +630,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( array( 'color' => 'revert', 'opacity' => 'revert' ) === $resets ) {
 			return true;
 		}
-		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'line-height', 'gap', 'display', 'align-items', 'height' ) ) ) {
+		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'line-height', 'gap', 'display', 'align-items', 'height', 'appearance' ) ) ) {
 			return false;
 		}
 		foreach ( $resets as $property => $value ) {
