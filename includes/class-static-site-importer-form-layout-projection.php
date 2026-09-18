@@ -1247,7 +1247,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		}
 		// Only facts the provider's form element does not already declare are emitted, so
 		// a box that merely repeats the form's own value adds no competing declaration.
-		$merged_base = array_filter( $merged_base, static fn ( $value, $property ): bool => ( $form_base[ $property ] ?? null ) !== $value, ARRAY_FILTER_USE_BOTH );
+		$transposed_layout = array_merge( $form_base, $merged_base );
+		$merged_base       = array_filter( $merged_base, static fn ( $value, $property ): bool => ( $form_base[ $property ] ?? null ) !== $value, ARRAY_FILTER_USE_BOTH );
 		foreach ( $merged_patches as $condition => $entry ) {
 			$patch = array_filter( $entry['patch'], static fn ( $value, $property ): bool => ( $form_patches[ $condition ][ $property ] ?? null ) !== $value, ARRAY_FILTER_USE_BOTH );
 			if ( ! empty( $patch ) ) {
@@ -1277,16 +1278,38 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			// A submit exempted from the box's own branch (Jetpack always renders
 			// it as the field container's sibling, never its descendant) becomes
 			// a direct child of whichever element now carries that box's own
-			// grid, so it is auto-placed into a single track unless it is told
-			// to span every track a source column-based field group produces.
-			if ( 'grid' === ( $merged_base['display'] ?? null ) ) {
-				foreach ( $controls as $control_index => $control ) {
-					if ( 'submit' === strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) && '$root' === ( $control_parents[ $control_index ] ?? '$root' ) ) {
-						$overlay_node_targets[] = array(
-							'id'     => 'control-' . $control_index,
-							'layout' => array( 'column' => '1 / -1' ),
-						);
+			// layout. A grid must still span every track. The transposed gap must
+			// not add to the submit's authored margin, so the item cancels it.
+			$row_gap     = self::layout_row_gap( $transposed_layout );
+			$negated_gap = is_string( $row_gap ) ? self::negate_layout_length( $row_gap ) : null;
+			foreach ( $controls as $control_index => $control ) {
+				if ( 'submit' !== strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) || '$root' !== ( $control_parents[ $control_index ] ?? '$root' ) ) {
+					continue;
+				}
+				$layout = array();
+				if ( 'grid' === ( $transposed_layout['display'] ?? null ) ) {
+					$layout['column'] = '1 / -1';
+				}
+				if ( is_string( $negated_gap ) ) {
+					$layout['margin_block_start'] = $negated_gap;
+				}
+				if ( ! empty( $layout ) ) {
+					$overlay_node_targets[] = array(
+						'id'     => 'control-' . $control_index,
+						'layout' => $layout,
+					);
+				}
+				foreach ( $merged_variants as $variant ) {
+					$variant_gap     = self::layout_row_gap( is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array() );
+					$negated_variant = is_string( $variant_gap ) ? self::negate_layout_length( $variant_gap ) : null;
+					if ( ! is_string( $negated_variant ) ) {
+						continue;
 					}
+					$responsive_variant_targets[] = array(
+						'node'         => 'control-' . $control_index,
+						'condition'    => $variant['condition'] ?? null,
+						'layout_patch' => array( 'margin_block_start' => $negated_variant ),
+					);
 				}
 			}
 		}
@@ -2435,6 +2458,27 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 		}
 		return $shared;
+	}
+
+	/** @param array<string,mixed> $layout */
+	private static function layout_row_gap( array $layout ): ?string {
+		foreach ( array( 'row_gap', 'gap' ) as $property ) {
+			if ( is_string( $layout[ $property ] ?? null ) && '' !== trim( $layout[ $property ] ) ) {
+				return trim( $layout[ $property ] );
+			}
+		}
+		return null;
+	}
+
+	private static function negate_layout_length( string $value ): ?string {
+		if ( str_starts_with( $value, 'calc(' ) && str_ends_with( $value, ')' ) && strlen( $value ) > 6 ) {
+			$negated = 'calc(0px - (' . substr( $value, 5, -1 ) . '))';
+		} elseif ( 1 === preg_match( '/^(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:px|rem|em|%|vw|vh)$/D', $value ) ) {
+			$negated = 'calc(0px - ' . $value . ')';
+		} else {
+			return null;
+		}
+		return Static_Site_Importer_Provider_Layout_Overlay::layout_values_are_safe( array( 'margin_block_start' => $negated ) ) ? $negated : null;
 	}
 
 	/** @param array<string,mixed> $layout */
