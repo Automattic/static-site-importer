@@ -38,6 +38,13 @@ class Static_Site_Importer_URL_Site_Collector {
 	private const MAX_DISCOVERED_ROUTES    = 5000;
 	private const SAME_ORIGIN_CONCURRENCY  = 2;
 	private const CROSS_ORIGIN_CONCURRENCY = 4;
+	private const SOCIAL_IMAGE_META_KEYS   = array(
+		'og:image'            => true,
+		'og:image:url'        => true,
+		'og:image:secure_url' => true,
+		'twitter:image'       => true,
+		'twitter:image:src'   => true,
+	);
 
 	/**
 	 * Collect a public static site.
@@ -844,7 +851,8 @@ class Static_Site_Importer_URL_Site_Collector {
 		$urls        = array();
 		$source_urls = array_merge(
 			self::tag_attribute_values( $html, 'img|source|video|audio', 'src' ),
-			self::tag_attribute_values( $html, 'video', 'poster' )
+			self::tag_attribute_values( $html, 'video', 'poster' ),
+			self::social_image_meta_urls( $html )
 		);
 		$link_urls   = array();
 		preg_match_all( '#<link\b[^>]*>#is', $html, $link_matches );
@@ -1080,6 +1088,29 @@ class Static_Site_Importer_URL_Site_Collector {
 			$html
 		);
 		$html = preg_replace_callback(
+			'#<meta\b[^>]*>#is',
+			static function ( array $matches ) use ( $base_url, $source_path, $paths, $external_assets ): string {
+				$tag = $matches[0];
+				if ( ! self::is_social_image_meta( $tag ) ) {
+					return $tag;
+				}
+				$value = self::tag_attribute_value( $tag, 'content' );
+				if ( null === $value ) {
+					return $tag;
+				}
+				$url = self::resolve_url( $value, $base_url );
+				if ( isset( $paths[ $url ] ) ) {
+					$rewritten = self::relative_path( $source_path, $paths[ $url ] );
+				} elseif ( isset( $external_assets[ $url ] ) ) {
+					$rewritten = self::external_asset_url( $url, $value );
+				} else {
+					return $tag;
+				}
+				return (string) preg_replace( '#(\bcontent\s*=\s*)(?:"[^"]*"|\'[^\']*\'|[^\s>]+)#is', '$1"' . $rewritten . '"', $tag, 1 );
+			},
+			(string) $html
+		);
+		$html = preg_replace_callback(
 			'#\bsrcset\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))#is',
 			static function ( array $matches ) use ( $base_url, $source_path, $paths, $external_assets ): string {
 				$candidates = array();
@@ -1132,6 +1163,27 @@ class Static_Site_Importer_URL_Site_Collector {
 		}
 		$resolved = self::resolve_url( $base, $document_url );
 		return '' !== $resolved ? $resolved : $document_url;
+	}
+
+	/** @return array<int,string> */
+	private static function social_image_meta_urls( string $html ): array {
+		preg_match_all( '#<meta\b[^>]*>#is', $html, $matches );
+		$urls = array();
+		foreach ( $matches[0] as $tag ) {
+			if ( ! self::is_social_image_meta( $tag ) ) {
+				continue;
+			}
+			$content = self::tag_attribute_value( $tag, 'content' );
+			if ( null !== $content ) {
+				$urls[] = $content;
+			}
+		}
+		return $urls;
+	}
+
+	private static function is_social_image_meta( string $tag ): bool {
+		$key = strtolower( trim( (string) ( self::tag_attribute_value( $tag, 'property' ) ?? self::tag_attribute_value( $tag, 'name' ) ?? '' ) ) );
+		return isset( self::SOCIAL_IMAGE_META_KEYS[ $key ] );
 	}
 
 	/** @return array<int,string> */
