@@ -487,7 +487,8 @@ namespace {
 	$assert( 2 === substr_count( $topology_markup, '"width":50' ), 'topology-maps-proven-equal-grid-to-field-widths' );
 	$assert( str_contains( $topology_markup, 'First name' ) && str_contains( $topology_markup, 'Email' ) && str_contains( $topology_markup, 'Message' ), 'topology-preserves-labels' );
 	$assert( 1 === substr_count( $topology_markup, '<!-- wp:button ' ), 'topology-submit-control-emits-one-core-button-in-source-position' );
-	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && 6 === ( $topology_receipt['operation_count'] ?? 0 ) && 'provider_equal_width_fields' === ( $topology_receipt['operations'][3]['strategy'] ?? '' ) && 'provider_interaction_carrier' === ( $topology_receipt['operations'][5]['strategy'] ?? '' ), 'computed-layout-equal-grid-applies-with-bounded-receipt' );
+	$topology_ops = array_column( $topology_receipt['operations'] ?? array(), 'strategy' );
+	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && in_array( 'provider_equal_width_fields', $topology_ops, true ) && in_array( 'provider_interaction_carrier', $topology_ops, true ) && 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.5rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.5rem\);margin-block-start:0\}/', (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ), 'computed-layout-equal-grid-applies-with-bounded-receipt', wp_json_encode( array( 'ops' => $topology_ops, 'css' => $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ) );
 	$assert( str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:82px' ) && ! str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:200px' ), 'topology-unstyled-source-textarea-gets-a-two-row-intrinsic-height-instead-of-the-provider-default' );
 
 	// --- A source utility-framework grid row materializes as provider field widths ---
@@ -533,6 +534,14 @@ namespace {
 			&& ! str_contains( $tailwind_grid_markup, 'wp:group' ),
 		'mobile-first-tailwind-v4-grid-row-materializes-as-two-jetpack-fields-at-width-50',
 		wp_json_encode( array( 'row' => $tailwind_grid_row, 'markup' => $tailwind_grid_markup ) )
+	);
+	$tailwind_grid_css_out = (string) ( $tailwind_grid_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		empty( $tailwind_grid_row['form_receipt_unaccepted_losses'] ?? array() )
+			&& 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.75rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.75rem\);margin-block-start:0\}/', $tailwind_grid_css_out )
+			&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $tailwind_grid_row['provider_layout_overlay_css'] ?? null ),
+		'mobile-first-equal-column-row-overlay-compensates-jetpack-gap-and-flattened-sibling-margins',
+		$tailwind_grid_css_out
 	);
 	// A source form that occupies a page-grid item through a host wrapper (the
 	// wrapper the provider container replaces) must keep that item's column span
@@ -584,6 +593,7 @@ namespace {
 			&& str_contains( $host_span_css_out, 'font-weight:600' )
 			&& str_contains( $host_span_css_out, 'letter-spacing:.025em' )
 			&& str_contains( $host_span_css_out, 'text-transform:uppercase' )
+			&& 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.75rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.75rem\);margin-block-start:0\}/', $host_span_css_out )
 			&& ! str_contains( $host_span_markup, 'wp:group' ),
 		'provider-container-inherits-replaced-host-wrapper-column-span-and-authored-submit-box',
 		wp_json_encode( array( 'row' => $host_span_row, 'markup' => $host_span_markup, 'css' => $host_span_css_out, 'binding' => $host_span_source['binding'] ?? null ) )
@@ -1803,7 +1813,8 @@ namespace {
 	$overdeep_topology_form['forms'][0]['control_topology']['max_depth'] = 17;
 	$assert( ! empty( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $overdeep_topology_form )['errors'] ), 'topology-depth-above-supported-bound-rejects' );
 	$provider_map = $topology_seed['forms'][0]['provider_layout_target_map'] ?? array();
-	$assert( 'generic/provider-layout-target-map/v1' === ( $provider_map['schema'] ?? '' ) && array() === ( $provider_map['targets'] ?? null ), 'provider-layout-map-omits-flattened-wrapper-targets' );
+	$provider_map_selectors = array_column( is_array( $provider_map['targets'] ?? null ) ? $provider_map['targets'] : array(), 'selector' );
+	$assert( 'generic/provider-layout-target-map/v1' === ( $provider_map['schema'] ?? '' ) && 2 <= preg_match_all( '/^\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap$/m', implode( "\n", $provider_map_selectors ) ), 'equal-width-field-shells-are-the-flattened-row-overlay-targets', wp_json_encode( $provider_map ) );
 	$class_owned_form = $validated_topology['forms'][0];
 	$class_owned_form['layout_graph']['nodes'][] = array( 'id' => 'wrapper-1', 'kind' => 'container', 'parent' => 'wrapper-0', 'order' => 0, 'source' => array( 'tag' => 'div', 'classes' => array( 'field' ) ), 'layout' => array( 'display' => 'flex', 'direction' => 'column' ), 'provenance' => array( array( 'selector' => '.field' ) ) );
 	$class_owned_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $class_owned_form ) ) );

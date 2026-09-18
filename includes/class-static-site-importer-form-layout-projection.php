@@ -1046,8 +1046,23 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( empty( $indexes ) ) {
 				continue;
 			}
+			$gap    = is_string( $layout['gap'] ?? null ) && '' !== trim( $layout['gap'] )
+				? trim( $layout['gap'] )
+				: ( is_string( $layout['column_gap'] ?? null ) && '' !== trim( $layout['column_gap'] ) ? trim( $layout['column_gap'] ) : '1.5rem' );
+			$track  = self::equal_fraction_track_size( $count, $gap );
+			$paired = array_fill_keys( $indexes, true );
 			foreach ( $indexes as $control_index ) {
 				$field_blocks[ $control_index ]['attrs']['width'] = 100 / $count;
+				$overlay_node_targets[]                           = array(
+					'id'     => 'field-' . $control_index,
+					'layout' => array(
+						'width'              => $track,
+						'flex_grow'          => '0',
+						'flex_shrink'        => '0',
+						'flex_basis'         => $track,
+						'margin_block_start' => '0',
+					),
+				);
 			}
 			$represented_layout_nodes[] = $parent;
 			$operations[]               = array(
@@ -1056,6 +1071,17 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'target_hash' => hash( 'sha256', $parent ),
 				'width'       => 100 / $count,
 			);
+			foreach ( $field_blocks as $control_index => $field_block ) {
+				if ( isset( $paired[ $control_index ] ) || 'core/button' === ( $field_block['name'] ?? '' ) ) {
+					continue;
+				}
+				$overlay_node_targets[] = array(
+					'id'     => 'field-' . $control_index,
+					'layout' => array(
+						'margin_block_start' => '0',
+					),
+				);
+			}
 		}
 		// Every source box that kept its own element can carry its own layout, so the
 		// facts are transposed onto that element's generated hook instead of being
@@ -2303,6 +2329,18 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			return true;
 		}
 		return 1 === preg_match( '/^repeat\(' . $count . ',minmax\(0(?:px)?,1fr\)\)$/D', $columns );
+	}
+
+	/** Jetpack subtracts a whole gap from each field; the source share is gap * (count-1)/count. */
+	private static function equal_fraction_track_size( int $count, string $gap ): string {
+		$share     = 100 / $count;
+		$share_css = rtrim( rtrim( number_format( $share, 3, '.', '' ), '0' ), '.' );
+		if ( 1 !== preg_match( '/^([0-9]+(?:\.[0-9]+)?)(px|rem|em)$/D', trim( $gap ), $match ) ) {
+			$match = array( '1.5rem', '1.5', 'rem' );
+		}
+		$portion = (float) $match[1] * ( $count - 1 ) / $count;
+		$gap_css = rtrim( rtrim( number_format( $portion, 4, '.', '' ), '0' ), '.' ) . $match[2];
+		return 'calc(' . $share_css . '% - ' . $gap_css . ')';
 	}
 
 	/** @param array<string,mixed> $layout */
