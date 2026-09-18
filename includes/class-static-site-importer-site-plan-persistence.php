@@ -70,7 +70,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$args                = $state['args'];
 		$font_overlay        = $state['font_overlay'];
 		$viewport_overlay    = $state['viewport_overlay'];
-		$route_title_overlay = $state['route_title_overlay'] ?? array();
+		$route_title_overlay         = $state['route_title_overlay'] ?? array();
+		$route_head_metadata_overlay = $state['route_head_metadata_overlay'] ?? array();
 
 		foreach ( $state['ordered_pages'] as $page ) {
 			if ( ! empty( $page['skip_materialization'] ) ) {
@@ -105,6 +106,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$document_title      = Static_Site_Importer_Route_Document_Metadata::title_from_page( $page );
 			if ( '' !== $document_title ) {
 				$provenance['document_title'] = $document_title;
+			}
+			$head_metadata = Static_Site_Importer_Route_Head_Metadata::from_page( $page, is_array( $state['resolved'] ?? null ) ? $state['resolved'] : array() );
+			if ( array() !== $head_metadata ) {
+				$provenance['head_metadata'] = $head_metadata;
 			}
 			if ( ! self::write_post_meta( $post, '_static_site_importer_provenance', (string) wp_json_encode( $provenance ) ) ) {
 				return self::failed_receipt( $state, 'materialization_provenance_metadata_write_failed' );
@@ -209,7 +214,12 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return self::failed_receipt_from_error( $state, $route_title_materialization );
 		}
 		$state['applied']['route_document_titles'] = $route_title_materialization;
-		$svg_receipts                              = self::verify_svg_font_materialization( $state );
+		$route_head_metadata_materialization       = self::apply_route_head_metadata_overlay( $state, $route_head_metadata_overlay );
+		if ( is_wp_error( $route_head_metadata_materialization ) ) {
+			return self::failed_receipt_from_error( $state, $route_head_metadata_materialization );
+		}
+		$state['applied']['route_head_metadata'] = $route_head_metadata_materialization;
+		$svg_receipts                            = self::verify_svg_font_materialization( $state );
 		if ( is_wp_error( $svg_receipts ) ) {
 			return self::failed_receipt( $state, $svg_receipts->get_error_code() );
 		}
@@ -902,6 +912,54 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					),
 					'payload_hash'            => hash( 'sha256', $content ),
 					'reconciliation_identity' => hash( 'sha256', "route-document-titles\n" . $target ),
+				)
+			);
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+			$reports[] = $result;
+			foreach ( $state['applied']['files'] as $index => $file ) {
+				if ( ( $file['target_path'] ?? null ) === $target ) {
+					$state['applied']['files'][ $index ] = $result;
+					continue 2;
+				}
+			}
+			$state['applied']['files'][] = $result;
+		}
+		return array(
+			'status' => 'completed',
+			'files'  => $reports,
+		);
+	}
+
+	/** @param array<string,mixed> $overlay */
+	public static function apply_route_head_metadata_overlay( array &$state, array $overlay ) {
+		if ( 'materialized' !== ( $overlay['status'] ?? '' ) ) {
+			return array(
+				'status' => (string) ( $overlay['status'] ?? 'not_requested' ),
+				'files'  => array(),
+			);
+		}
+		$reports = array();
+		foreach ( $overlay['writes'] ?? array() as $write ) {
+			$target  = (string) ( $write['target_path'] ?? '' );
+			$content = (string) ( $write['content'] ?? '' );
+			if ( ! self::safe_destination( $state['theme_dir'], $target ) || ! str_starts_with( ltrim( $content ), '<?php' ) ) {
+				return new WP_Error( 'static_site_importer_route_head_metadata_materialization_invalid' );
+			}
+			$path = $state['theme_dir'] . '/' . $target;
+			self::journal_file( $state, $path );
+			$result = self::write_file(
+				$state['theme_dir'],
+				array(
+					'target_path'             => $target,
+					'source_path'             => (string) ( $write['source_path'] ?? $target ),
+					'payload'                 => array(
+						'encoding' => 'utf8',
+						'data'     => $content,
+					),
+					'payload_hash'            => hash( 'sha256', $content ),
+					'reconciliation_identity' => hash( 'sha256', "route-head-metadata\n" . $target ),
 				)
 			);
 			if ( is_wp_error( $result ) ) {

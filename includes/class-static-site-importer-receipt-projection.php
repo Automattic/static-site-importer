@@ -14,6 +14,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Compiler_Diagnostic_Normalizer' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-compiler-diagnostic-normalizer.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Route_Head_Metadata' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-route-head-metadata.php';
+}
 
 class Static_Site_Importer_Receipt_Projection {
 	/** Project compiler gap rows into stable materialization diagnostics. */
@@ -47,10 +50,13 @@ class Static_Site_Importer_Receipt_Projection {
 	public static function compose( array $receipt, array $args, array $lifecycle, array $dependencies, array $entities, string $import_run_id, array $transformer_provenance, array $build ): array {
 		$plan        = $receipt['plan'];
 		$theme       = $receipt['theme'];
-		$diagnostics = Static_Site_Importer_Report_Diagnostics::after_completed_entity_bindings(
-			array_merge(
-				is_array( $plan['diagnostics'] ?? null ) ? $plan['diagnostics'] : array(),
-				Static_Site_Importer_Compiler_Diagnostic_Normalizer::normalize( is_array( $args['compiler_diagnostics'] ?? null ) ? $args['compiler_diagnostics'] : array() )
+		$diagnostics = Static_Site_Importer_Route_Head_Metadata::reword_handled_diagnostics(
+			Static_Site_Importer_Report_Diagnostics::after_completed_entity_bindings(
+				array_merge(
+					is_array( $plan['diagnostics'] ?? null ) ? $plan['diagnostics'] : array(),
+					Static_Site_Importer_Compiler_Diagnostic_Normalizer::normalize( is_array( $args['compiler_diagnostics'] ?? null ) ? $args['compiler_diagnostics'] : array() )
+				),
+				$receipt
 			),
 			$receipt
 		);
