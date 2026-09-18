@@ -1015,6 +1015,59 @@ namespace {
 		'submit-exempted-from-its-field-groups-grid-spans-every-column-instead-of-one',
 		$grid_box_css
 	);
+	$assert(
+		str_contains( $grid_box_css, 'margin-block-start:calc(0px - (.25rem * 5))' )
+			&& 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{[^}]*margin-block-start:calc\(0px - \(\.25rem \* 5\)\)/', $grid_box_css ),
+		'submit-outside-a-gapped-field-list-cancels-the-transposed-gap-instead-of-adding-it-to-its-margin',
+		$grid_box_css
+	);
+	$dup_gap_form = $grid_box_form;
+	$dup_gap_form['forms'][0]['layout_graph']['nodes'][0]['layout']     = array( 'gap' => 'calc(.25rem * 5)' );
+	$dup_gap_form['forms'][0]['layout_graph']['nodes'][0]['provenance'] = array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'd', 64 ), 'selector' => '.grid-fields', 'condition' => null, 'properties' => array( 'gap' ) ) );
+	$dup_gap_css = (string) ( Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $dup_gap_form )['forms'] ?? array() ) )['forms'][0]['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		1 === preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{[^}]*margin-block-start:calc\(0px - \(\.25rem \* 5\)\)/', $dup_gap_css ),
+		'submit-still-cancels-a-field-list-gap-the-form-node-already-declares',
+		$dup_gap_css
+	);
+	$sibling_submit_css  = '.grid{display:grid}.gap-6{gap:1.5rem}'
+		. '@media (width>=40rem){.sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}'
+		. '.mt-9{margin-top:2.25rem}';
+	$sibling_submit_html = '<style>' . $sibling_submit_css . '</style><form>'
+		. '<div class="grid gap-6 sm:grid-cols-2">'
+		. '<div><label>Name</label><input type="text"></div>'
+		. '<div><label>Email</label><input type="email"></div>'
+		. '<div><label>Message</label><textarea rows="6"></textarea></div>'
+		. '</div>'
+		. '<button type="submit" class="mt-9">Send message</button>'
+		. '</form>';
+	$sibling_submit_source    = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $sibling_submit_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$sibling_submit_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $sibling_submit_source ) ) );
+	$sibling_submit_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $sibling_submit_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$sibling_submit_overlay   = (string) ( $sibling_submit_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		empty( $sibling_submit_validated['errors'] )
+			&& 'mapped' === ( $sibling_submit_row['status'] ?? '' )
+			&& true === ( $sibling_submit_row['runtime_mapped'] ?? false )
+			&& str_contains( $sibling_submit_overlay, 'gap:1.5rem' )
+			&& 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{[^}]*margin-block-start:calc\(0px - 1\.5rem\)/', $sibling_submit_overlay )
+			&& 1 === preg_match( '/> \.wp-block-button__link\{[^}]*margin-top:2\.25rem/', $sibling_submit_overlay ),
+		'source-sibling-submit-keeps-its-authored-margin-and-does-not-also-consume-the-field-list-gap',
+		wp_json_encode( array( 'validation' => $sibling_submit_validated, 'css' => $sibling_submit_overlay, 'markup' => $sibling_submit_row['block_markup'] ?? '' ) )
+	);
+	$flex_list_form = $grid_box_form;
+	$flex_list_form['forms'][0]['layout_graph']['nodes'][1]['layout'] = array( 'display' => 'flex', 'direction' => 'column', 'gap' => '2rem' );
+	$flex_list_form['forms'][0]['layout_graph']['nodes'][1]['provenance'][0]['properties'] = array( 'display', 'flex-direction', 'gap' );
+	$flex_list_form['forms'][0]['layout_graph']['variants'] = array();
+	$flex_list_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $flex_list_form )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$flex_list_css = (string) ( $flex_list_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		str_contains( $flex_list_css, 'gap:2rem' )
+			&& 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{[^}]*margin-block-start:calc\(0px - 2rem\)/', $flex_list_css )
+			&& ! str_contains( $flex_list_css, 'grid-column:1 / -1' ),
+		'submit-outside-a-column-flex-field-list-also-cancels-the-transposed-gap',
+		$flex_list_css
+	);
 	$popup_form = array(
 		'selector' => 'form.picker',
 		'controls' => array(
