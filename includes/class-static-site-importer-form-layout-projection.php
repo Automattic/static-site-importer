@@ -2093,22 +2093,33 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$phone_destinations = self::phone_presentation_destinations( $scope, $index );
 				$destinations       = $phone_destinations;
 			} else {
-				$properties = array_keys( 'submit' === $type ? Static_Site_Importer_Provider_Layout_Overlay::positioned_control_presentation_property_keys() : Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() );
-				if ( 'submit' === $type ) {
-					$destinations[] = array(
+				$properties   = array_keys( 'submit' === $type ? Static_Site_Importer_Provider_Layout_Overlay::positioned_control_presentation_property_keys() : Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() );
+				$inner_suffix = 'submit' === $type ? ' > .wp-block-button__link' : ( 'select' === $type ? ' select' : '' );
+				if ( '' !== $inner_suffix ) {
+					$wrapper = array(
 						'role'       => 'control',
 						'selector'   => '.' . $scope . ' .' . $control_class,
-						// Core Button's wrapper is inline-flex by default. Source display,
-						// width, and min-width must reach that wrapper so the button can
-						// fill the form row. Absolute inset belongs to a source containing
-						// block the provider form does not recreate.
+						// A nested native control's wrapper shrink-wraps unless source
+						// display, width, and min-width reach it. The authored box belongs
+						// on the inner control, the same way submit facts reach the link.
 						'properties' => array( 'display', 'width', 'min_width' ),
 					);
+					if ( 'select' === $type ) {
+						// Jetpack parks input className on the select wrapper and paints
+						// that wrapper as a second box. Neutralize it so only the inner
+						// control carries the authored padding, border, and background.
+						$wrapper['resets'] = array(
+							'padding'    => '0',
+							'border'     => '0',
+							'background' => 'transparent',
+						);
+					}
+					$destinations[] = $wrapper;
 					$properties     = array_values( array_diff( $properties, array( 'display', 'width', 'min_width' ) ) );
 				}
-				$destinations[] = array(
+				$destination = array(
 					'role'       => 'control',
-					'selector'   => '.' . $scope . ' .' . $control_class . ( 'submit' === $type ? ' > .wp-block-button__link' : '' ),
+					'selector'   => '.' . $scope . ' .' . $control_class . $inner_suffix,
 					'properties' => $properties,
 					// Provider controls inherit theme typography. Revert to each browser's
 					// native control defaults unless source CSS owns either property.
@@ -2117,25 +2128,14 @@ final class Static_Site_Importer_Form_Layout_Projection {
 							'font-family' => 'revert',
 							'line-height' => 'revert',
 						),
-					'submit' === $type ? array( 'min-height' => '0' ) : array()
-				),
+						'submit' === $type ? array( 'min-height' => '0' ) : array()
+					),
 				);
 				if ( 'select' === $type ) {
-					// Jetpack's own select styling splits across two elements: its
-					// generic control rule paints the wrapper (background, border,
-					// font), but padding is declared on the nested `<select>` itself
-					// (`.contact-form__select-wrapper select{padding:...}`), so a
-					// captured padding fact needs that same, more specific target to
-					// outrank it.
-					$padding_properties = array_values( array_intersect( $properties, array( 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block', 'padding_inline', 'padding_block_start', 'padding_block_end', 'padding_inline_start', 'padding_inline_end' ) ) );
-					if ( ! empty( $padding_properties ) ) {
-						$destinations[] = array(
-							'role'       => 'control',
-							'selector'   => '.' . $scope . ' .' . $control_class . ' select',
-							'properties' => $padding_properties,
-						);
-					}
+					// Jetpack forces `border:0!important` on the nested `<select>`.
+					$destination['priority'] = 'important';
 				}
+				$destinations[] = $destination;
 			}
 		}
 		if ( isset( $roles['control_container'] ) ) {

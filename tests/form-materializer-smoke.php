@@ -1119,7 +1119,7 @@ namespace {
 			$all_controls_hooks[] = substr( $hook[0], 1 );
 		}
 	}
-	$assert( empty( $validated_all_controls['errors'] ) && 4 === count( $all_controls_hooks ) && empty( array_filter( $all_controls_hooks, static fn( string $hook ): bool => ! str_contains( $all_controls_markup, $hook ) || ! str_contains( $all_controls_css, '.' . $hook ) ) ) && str_contains( $all_controls_css, 'border:1px solid #111;padding:7px;font-family:revert;line-height:revert' ) && str_contains( $all_controls_css, 'border:2px solid #222;padding:8px;font-family:revert;line-height:revert' ) && str_contains( $all_controls_css, 'border:3px solid #333;min-height:9rem;font-family:revert;line-height:revert' ) && str_contains( $all_controls_css, 'background-color:#444;padding:9px 12px;font-family:revert;line-height:revert;min-height:0' ) && str_contains( $all_controls_css, '@media (max-width:48rem){' ) && str_contains( $all_controls_css, '> .wp-block-button__link{background-color:#444;padding:9px 12px;font-family:revert;line-height:revert;min-height:0}' ) && ! str_contains( $all_controls_css, 'control-shell' ) && ! str_contains( $all_controls_css, 'control-hook' ), 'presentation-overlay-reverts-unowned-typography-to-each-browser-native-controls', wp_json_encode( array( 'markup' => $all_controls_markup, 'css' => $all_controls_css, 'targets' => $all_controls_targets ) ) );
+	$assert( empty( $validated_all_controls['errors'] ) && 4 === count( $all_controls_hooks ) && empty( array_filter( $all_controls_hooks, static fn( string $hook ): bool => ! str_contains( $all_controls_markup, $hook ) || ! str_contains( $all_controls_css, '.' . $hook ) ) ) && str_contains( $all_controls_css, 'border:1px solid #111;padding:7px;font-family:revert;line-height:revert' ) && 1 === preg_match( '/\.ssi-node-[a-f0-9]{12} select\{border:2px solid #222!important;padding:8px!important;font-family:revert!important;line-height:revert!important\}/', $all_controls_css ) && str_contains( $all_controls_css, 'border:3px solid #333;min-height:9rem;font-family:revert;line-height:revert' ) && str_contains( $all_controls_css, 'background-color:#444;padding:9px 12px;font-family:revert;line-height:revert;min-height:0' ) && str_contains( $all_controls_css, '@media (max-width:48rem){' ) && str_contains( $all_controls_css, '> .wp-block-button__link{background-color:#444;padding:9px 12px;font-family:revert;line-height:revert;min-height:0}' ) && ! str_contains( $all_controls_css, 'control-shell' ) && ! str_contains( $all_controls_css, 'control-hook' ), 'presentation-overlay-reverts-unowned-typography-to-each-browser-native-controls', wp_json_encode( array( 'markup' => $all_controls_markup, 'css' => $all_controls_css, 'targets' => $all_controls_targets ) ) );
 	$submit_width_form = $presentation_form;
 	$submit_width_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 3, 'control' => $presentation_role( array( 'width' => '100%' ), array( 'width' ), 'button' ) ) );
 	$submit_width_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $submit_width_form );
@@ -1281,32 +1281,39 @@ namespace {
 		'captured-form-container-padding-reaches-the-rendered-page-alongside-a-captured-field-wrapper',
 		wp_json_encode( array( 'css' => $container_padding_css, 'validation' => $validated_container_padding ) )
 	);
-	// Jetpack renders a select control's padding on the nested `<select>` itself
-	// (`.contact-form__select-wrapper select{padding:16px}`), a level deeper than
-	// the generated node hook the control's other captured facts (background,
-	// border, font-size) already reach on the control shell. A captured padding
-	// fact needs that same, more specific destination to outrank Jetpack's own
-	// provider default instead of being painted on the shell where it has no
-	// effect on the rendered field.
-	$select_padding_form = array(
+	// A provider select is a wrapper nest: Jetpack parks input className on
+	// `.contact-form__select-wrapper` and paints that wrapper, then independently
+	// pads the nested `<select>`. The authored box must resolve to one node, the
+	// inner control, while width stays on the wrapper so it does not shrink-wrap.
+	$select_box_form = array(
 		'forms' => array( array(
 			'selector'           => 'form.select-field',
 			'controls'           => array( array( 'tag' => 'select', 'type' => 'select', 'name' => 'kind', 'label' => 'Kind' ) ),
 			'presentation_graph' => array(
 				'schema' => 'generic/computed-form-presentation/v1', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'controls' => 128, 'rules_per_role' => 32 ), 'variants' => array(), 'diagnostics' => array(),
-				'controls' => array( array( 'index' => 0, 'control' => array( 'styles' => array( 'padding' => '10px 14px' ), 'provenance' => array() ) ) ),
+				'controls' => array( array( 'index' => 0, 'control' => array( 'styles' => array( 'padding' => '12px 16px', 'border' => '1px solid #ccc', 'background' => '#fff', 'width' => '100%' ), 'provenance' => array() ) ) ),
 			),
 		) ),
 	);
-	$select_padding_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $select_padding_form );
-	$select_padding_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $select_padding_validation['forms'] ?? array() ) )['forms'][0] ?? array();
-	$select_padding_css        = (string) ( $select_padding_row['provider_layout_overlay_css']['css'] ?? '' );
+	$select_box_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $select_box_form );
+	$select_box_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $select_box_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$select_box_css        = (string) ( $select_box_row['provider_layout_overlay_css']['css'] ?? '' );
+	$select_inner_rule     = 1 === preg_match( '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12} select\{([^}]+)\}/', $select_box_css, $select_inner ) ? $select_inner[1] : '';
+	$select_wrapper_rule   = 1 === preg_match( '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{([^}]+)\}/', $select_box_css, $select_wrapper ) ? $select_wrapper[1] : '';
 	$assert(
-		empty( $select_padding_validation['errors'] )
-			&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $select_padding_row['provider_layout_overlay_css'] ?? null )
-			&& preg_match( '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12} select\{padding:10px 14px\}/', $select_padding_css ),
-		'captured-select-padding-reaches-the-nested-select-element-not-only-its-shell',
-		wp_json_encode( array( 'css' => $select_padding_css, 'validation' => $select_padding_validation ) )
+		empty( $select_box_validation['errors'] )
+			&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $select_box_row['provider_layout_overlay_css'] ?? null )
+			&& str_contains( $select_inner_rule, 'padding:12px 16px' )
+			&& str_contains( $select_inner_rule, 'border:1px solid #ccc' )
+			&& str_contains( $select_inner_rule, 'background:#fff' )
+			&& ! str_contains( $select_inner_rule, 'width:100%' )
+			&& str_contains( $select_wrapper_rule, 'width:100%' )
+			&& str_contains( $select_wrapper_rule, 'padding:0' )
+			&& str_contains( $select_wrapper_rule, 'border:0' )
+			&& ! str_contains( $select_wrapper_rule, 'padding:12px 16px' )
+			&& ! str_contains( $select_wrapper_rule, 'border:1px solid #ccc' ),
+		'authored-select-box-reaches-the-nested-control-once-and-width-stays-on-the-wrapper',
+		wp_json_encode( array( 'css' => $select_box_css, 'inner' => $select_inner_rule, 'wrapper' => $select_wrapper_rule, 'validation' => $select_box_validation ) )
 	);
 	$compile_form = static function ( string $css ) use ( $artifact_compiler ): array {
 		$compiled = ( new $artifact_compiler() )->compile( array(
