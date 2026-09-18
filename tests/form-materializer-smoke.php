@@ -738,6 +738,19 @@ namespace {
 		'provider-runtime-keeps-field-list-grid-classes-off-the-page-item',
 		$field_list_hoist
 	);
+	$card_chrome_hoist = Static_Site_Importer_Form_Seeder::project_provider_form_container_placement(
+		'<div class="jetpack-contact-form-container"><form class="jetpack-contact-form__form"><div class="wp-block-jetpack-contact-form space-y-5 rounded-lg border bg-card p-7 ssi-form-123456789abc">fields</div></form></div>',
+		array( 'attrs' => array( 'className' => 'space-y-5 rounded-lg border bg-card p-7 ssi-form-123456789abc' ) )
+	);
+	$assert(
+		str_contains( $card_chrome_hoist, 'class="jetpack-contact-form-container space-y-5 rounded-lg border bg-card p-7 ssi-form-123456789abc"' )
+			&& str_contains( $card_chrome_hoist, 'wp-block-jetpack-contact-form space-y-5 ssi-form-123456789abc' )
+			&& ! preg_match( '/wp-block-jetpack-contact-form[^"]*\bp-7\b/', $card_chrome_hoist )
+			&& ! preg_match( '/wp-block-jetpack-contact-form[^"]*\brounded-lg\b/', $card_chrome_hoist )
+			&& ! preg_match( '/wp-block-jetpack-contact-form[^"]*\bbg-card\b/', $card_chrome_hoist ),
+		'provider-runtime-keeps-card-chrome-off-the-inner-field-list',
+		$card_chrome_hoist
+	);
 	// In-form heading + a nested `grid sm:grid-cols-2` name/phone row. The heading
 	// is copy inside the form (producer `context_before`), so it is an inner block
 	// of jetpack/contact-form rather than a page-grid sibling. The row maps through
@@ -747,7 +760,7 @@ namespace {
 		. '.grid{display:grid}.gap-5{gap:1.25rem}@media (width>=40rem){.sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}';
 	$in_form_html = '<style>' . $in_form_css . '</style><div class="page-grid"><section class="intro"><h1>Contact</h1></section>'
 		. '<form class="space-y-5 rounded-lg border bg-card p-7">'
-		. '<h2>Send a message</h2>'
+		. '<h2 class="font-serif text-2xl text-card-foreground">Send a message</h2>'
 		. '<div class="grid gap-5 sm:grid-cols-2">'
 		. '<label class="block"><span>Your name</span><input required></label>'
 		. '<label class="block"><span>Mobile number</span><input type="tel" required></label>'
@@ -784,6 +797,9 @@ namespace {
 			&& 'jetpack/contact-form' === ( $in_form_contact['blockName'] ?? '' )
 			&& 'core/heading' === ( $in_form_inners[0]['blockName'] ?? '' )
 			&& 'Send a message' === trim( wp_strip_all_tags( (string) ( $in_form_inners[0]['innerHTML'] ?? '' ) ) )
+			&& ( '' === (string) ( $in_form_source['form']['context_before'][0]['class'] ?? '' )
+				|| ( (string) ( $in_form_source['form']['context_before'][0]['class'] ?? '' ) === ( $in_form_inners[0]['attrs']['className'] ?? '' )
+					&& str_contains( (string) ( $in_form_inners[0]['innerHTML'] ?? '' ), 'class="wp-block-heading ' . (string) ( $in_form_source['form']['context_before'][0]['class'] ?? '' ) . '"' ) ) )
 			&& ! preg_match( '/<!-- wp:heading[\s\S]*<!-- wp:jetpack\/contact-form /', $in_form_markup )
 			&& 2 === substr_count( $in_form_markup, '"width":50' )
 			&& 1 === preg_match( '/<!-- wp:jetpack\/field-text \{[^}]*"width":50/', $in_form_markup )
@@ -865,6 +881,7 @@ namespace {
 			&& 1 === preg_match( '/<!-- wp:jetpack\/field-select \{[^}]*"width":50/', $multi_row_markup )
 			&& 1 === preg_match( '/<!-- wp:jetpack\/field-number \{[^}]*"width":50/', $multi_row_markup )
 			&& 1 === preg_match( '/<!-- wp:jetpack\/field-date \{[^}]*"width":50/', $multi_row_markup )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-date[\s\S]*?<!-- wp:jetpack\/input \{"style":\{"border":\{"style":"solid"\}\},"className":"ssi-node-[a-f0-9]{12}"\} \/\-->/', $multi_row_markup )
 			&& 1 === preg_match( '/<!-- wp:jetpack\/field-textarea \{(?![^}]*"width":50)/', $multi_row_markup )
 			&& in_array( 'provider_equal_width_fields', $multi_row_ops, true )
 			&& 8 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.625rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.625rem\);margin-block-start:0!important\}/', $multi_row_css_out )
@@ -1034,7 +1051,7 @@ namespace {
 	$direct_label_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $direct_label_form );
 	$direct_label_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $direct_label_validation['forms'] ?? array() ) );
 	$direct_label_css = (string) ( $direct_label_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' );
-	$assert( empty( $direct_label_validation['errors'] ) && 3 === substr_count( $direct_label_css, 'gap:1.2rem' ) && 2 === preg_match_all( '/\.ssi-node-[a-f0-9]{12}-wrap\{display:flex;flex-direction:column;gap:1\.2rem\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)\{display:none\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__field-hints\{display:contents\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.ssi-field-row > label\{margin-block-end:0\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.grunion-field::placeholder\{color:revert\}/', $direct_label_css ) && null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $direct_label_seed['forms'][0]['provider_layout_overlay_css'] ?? null ), 'proven direct label/control sibling pairs preserve native placeholder appearance and suppress only inactive provider errors' );
+	$assert( empty( $direct_label_validation['errors'] ) && 3 === substr_count( $direct_label_css, 'gap:1.2rem' ) && 2 === preg_match_all( '/\.ssi-node-[a-f0-9]{12}-wrap\{display:flex;flex-direction:column;gap:1\.2rem\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)\{display:none\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__field-hints\{display:contents\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__field-format\{display:none\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.ssi-field-row > label\{margin-block-end:0\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.grunion-field::placeholder\{color:revert\}/', $direct_label_css ) && null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $direct_label_seed['forms'][0]['provider_layout_overlay_css'] ?? null ), 'proven direct label/control sibling pairs preserve native placeholder appearance and suppress only inactive provider errors' );
 	$native_row_form = array(
 		'forms' => array( array(
 			'selector' => 'form.subscribe',
@@ -1680,7 +1697,7 @@ namespace {
 	$assert(
 		empty( $validated_container_padding['errors'] )
 			&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $container_padding_row['provider_layout_overlay_css'] ?? null )
-			&& preg_match( '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12}\{padding:36px\}/', $container_padding_css ),
+			&& preg_match( '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12}\.jetpack-contact-form-container\{padding:36px\}/', $container_padding_css ),
 		'captured-form-container-padding-reaches-the-rendered-page-alongside-a-captured-field-wrapper',
 		wp_json_encode( array( 'css' => $container_padding_css, 'validation' => $validated_container_padding ) )
 	);
@@ -2807,7 +2824,7 @@ namespace {
 			'form'        => array(
 				'class'               => 'contact-form',
 				'context_before'      => array(
-					array( 'type' => 'heading', 'level' => 2, 'text' => 'Contact Me' ),
+					array( 'type' => 'heading', 'level' => 2, 'text' => 'Contact Me', 'class' => 'font-serif text-2xl' ),
 					array( 'type' => 'paragraph', 'text' => '* Indicates required field' ),
 				),
 				'submit_presentation' => array(
@@ -2824,7 +2841,7 @@ namespace {
 	$cara_parsed    = array_values( array_filter( parse_blocks( $cara_grafted ), static fn( array $block ): bool => ! empty( $block['blockName'] ) ) );
 	$cara_contact   = $cara_parsed[0] ?? array();
 	$cara_inners    = array_column( array_values( array_filter( $cara_contact['innerBlocks'] ?? array(), static fn( array $block ): bool => ! empty( $block['blockName'] ) ) ), 'blockName' );
-	$assert( str_contains( $cara_grafted, '>Contact Me</h2>' ) && str_contains( $cara_grafted, '<p>* Indicates required field</p>' ) && str_contains( $cara_grafted, '"required":true' ) && str_contains( $cara_grafted, 'wsite-button' ), 'canonical-binding-presentation-reaches-provider-markup' );
+	$assert( str_contains( $cara_grafted, '>Contact Me</h2>' ) && str_contains( $cara_grafted, 'class="wp-block-heading font-serif text-2xl"' ) && str_contains( $cara_grafted, '"className":"font-serif text-2xl"' ) && str_contains( $cara_grafted, '<p>* Indicates required field</p>' ) && str_contains( $cara_grafted, '"required":true' ) && str_contains( $cara_grafted, 'wsite-button' ), 'canonical-binding-presentation-reaches-provider-markup' );
 	$assert(
 		1 === count( $cara_parsed )
 			&& 'jetpack/contact-form' === ( $cara_contact['blockName'] ?? '' )

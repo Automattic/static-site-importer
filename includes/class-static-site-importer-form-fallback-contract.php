@@ -187,6 +187,26 @@ class Static_Site_Importer_Form_Fallback_Contract {
 		return hash( 'sha256', "static-site-importer/fallback-reconciliation/v1\n" . self::first_scalar( $fallback, array( 'source_path', 'source' ) ) . "\n" . self::first_scalar( $fallback, array( 'selector' ) ) . "\n" . self::reconciliation_hash( $fallback ) );
 	}
 
+	/** @param mixed $value */
+	private static function context_class( mixed $value ): string {
+		$tokens = array();
+		if ( is_string( $value ) ) {
+			$tokens = preg_split( '/\s+/', trim( $value ) );
+		} elseif ( is_array( $value ) ) {
+			$tokens = $value;
+		}
+		$classes = array();
+		foreach ( false === $tokens ? array() : $tokens as $class_name ) {
+			if ( is_string( $class_name ) && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) {
+				$classes[] = $class_name;
+			}
+			if ( 8 <= count( $classes ) ) {
+				break;
+			}
+		}
+		return implode( ' ', array_values( array_unique( $classes ) ) );
+	}
+
 	/** @param mixed $items @return array<int,array<string,mixed>> */
 	private static function context_items( mixed $items ): array {
 		if ( ! is_array( $items ) ) {
@@ -199,11 +219,16 @@ class Static_Site_Importer_Form_Fallback_Contract {
 			}
 			$text = substr( preg_replace( '/\s+/', ' ', trim( $item['text'] ) ) ?? '', 0, 200 );
 			if ( 'heading' === ( $item['type'] ?? '' ) ) {
-				$context[] = array(
+				$row   = array(
 					'type'  => 'heading',
 					'level' => min( 6, max( 1, (int) ( $item['level'] ?? 2 ) ) ),
 					'text'  => $text,
 				);
+				$class = self::context_class( $item['class'] ?? null );
+				if ( '' !== $class ) {
+					$row['class'] = $class;
+				}
+				$context[] = $row;
 			} elseif ( 'paragraph' === ( $item['type'] ?? '' ) ) {
 				$context[] = array(
 					'type' => 'paragraph',

@@ -449,9 +449,22 @@ class Static_Site_Importer_Form_Seeder {
 			$source_class                      = isset( $control['class'] ) && is_scalar( $control['class'] ) ? trim( (string) $control['class'] ) : '';
 			$has_provider_input                = (bool) array_filter( $field_block['innerBlocks'] ?? array(), static fn ( array $block ): bool => in_array( $block['name'] ?? '', array( 'jetpack/input', 'jetpack/phone-input' ), true ) );
 			$field_source_class                = $has_provider_input ? '' : $source_class;
-			$field_block['attrs']['className'] = trim( $field_source_class . ' ' . Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $control_index ) );
-			$field_blocks[ $control_index ]    = $field_block;
-			$mapped_types[]                    = $field_block['name'];
+			$layout_hook                       = Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $control_index );
+			$field_block['attrs']['className'] = trim( $field_source_class . ' ' . $layout_hook );
+			// Jetpack replaces a date field's class with `jp-contact-form-date`
+			// before deriving wrap classes, so the field-level layout hook never
+			// reaches the shell. Keep that hook on the inner input, which Jetpack
+			// still copies onto the wrap after the replacement.
+			if ( 'jetpack/field-date' === ( $field_block['name'] ?? '' ) ) {
+				foreach ( $field_block['innerBlocks'] as &$inner_block ) {
+					if ( 'jetpack/input' === ( $inner_block['name'] ?? '' ) ) {
+						$inner_block['attrs']['className'] = trim( (string) ( $inner_block['attrs']['className'] ?? '' ) . ' ' . $layout_hook );
+					}
+				}
+				unset( $inner_block );
+			}
+			$field_blocks[ $control_index ] = $field_block;
+			$mapped_types[]                 = $field_block['name'];
 		}
 
 		if ( empty( $field_blocks ) ) {
