@@ -355,66 +355,85 @@ final class Static_Site_Importer_Diagnostic_Projection {
 
 	/**
 	 * Count captured interaction states from the Data Liberation sidecar and
-	 * diagnose captured states that conversion did not materialize.
+	 * diagnose members the imported representation omitted.
 	 *
 	 * Absence, an empty envelope, a legacy schema string, or malformed JSON are
-	 * not errors: they yield a zero count and no diagnostic. The metric counts
-	 * every recorded state; diagnostics fire only for `captured` states that no
-	 * other subsystem already reported.
+	 * not errors: they yield a zero count and no diagnostic. Residual loss is
+	 * counted once per omitted member: Blocks Engine per-member diagnostics win
+	 * when present, otherwise the sidecar and materialized `core/tab-panel`
+	 * counts are reconciled. Capture-side `no-dialog` / `click-failed` stay
+	 * distinct from importer-side unmaterialized captured members.
 	 *
 	 * @param array<string,mixed> $artifact Source website artifact.
 	 * @param array<string,mixed> $plan     Canonical WordPress site plan.
-	 * @return array{recorded_state_count:int,captured_state_count:int,status_counts:array<string,int>,diagnostics:array<int,array<string,mixed>>}
+	 * @return array{recorded_state_count:int,captured_state_count:int,unrepresented_member_count:int,status_counts:array<string,int>,diagnostics:array<int,array<string,mixed>>}
 	 */
 	public static function captured_interaction_inventory( array $artifact, array $plan = array() ): array {
 		$empty = array(
-			'recorded_state_count' => 0,
-			'captured_state_count' => 0,
-			'status_counts'        => array(
+			'recorded_state_count'       => 0,
+			'captured_state_count'       => 0,
+			'unrepresented_member_count' => 0,
+			'status_counts'              => array(
 				'captured'     => 0,
 				'click-failed' => 0,
 				'no-dialog'    => 0,
 			),
-			'diagnostics'          => array(),
+			'diagnostics'                => array(),
 		);
-
-		$payload = self::interaction_states_payload( $artifact );
-		if ( null === $payload ) {
-			return $empty;
-		}
 
 		$route_index    = self::interaction_route_index( $plan );
 		$reported_paths = self::reported_interaction_candidate_paths( $plan );
 		$by_path        = array();
-		foreach ( self::interaction_state_pages( $payload ) as $page ) {
-			if ( ! is_array( $page ) ) {
-				continue;
-			}
-			$source_path = self::interaction_source_path( $page, $route_index );
-			$states      = isset( $page['states'] ) && is_array( $page['states'] ) ? $page['states'] : array();
-			foreach ( $states as $state ) {
-				if ( ! is_array( $state ) ) {
+		$payload        = self::interaction_states_payload( $artifact );
+		if ( null !== $payload ) {
+			foreach ( self::interaction_state_pages( $payload ) as $page ) {
+				if ( ! is_array( $page ) ) {
 					continue;
 				}
-				if ( ! isset( $by_path[ $source_path ] ) ) {
-					$by_path[ $source_path ] = array(
-						'recorded'      => 0,
-						'captured'      => 0,
-						'status_counts' => array(),
-						'kind_counts'   => array(),
-					);
-				}
-				$status = self::interaction_state_status( $state );
-				++$by_path[ $source_path ]['recorded'];
-				$by_path[ $source_path ]['status_counts'][ $status ] = (int) ( $by_path[ $source_path ]['status_counts'][ $status ] ?? 0 ) + 1;
-				if ( 'captured' === $status ) {
-					++$by_path[ $source_path ]['captured'];
-				}
-				$kind = isset( $state['kind'] ) && is_scalar( $state['kind'] ) ? sanitize_key( (string) $state['kind'] ) : '';
-				if ( '' !== $kind ) {
-					$by_path[ $source_path ]['kind_counts'][ $kind ] = (int) ( $by_path[ $source_path ]['kind_counts'][ $kind ] ?? 0 ) + 1;
+				$source_path = self::interaction_source_path( $page, $route_index );
+				$states      = isset( $page['states'] ) && is_array( $page['states'] ) ? $page['states'] : array();
+				foreach ( $states as $state ) {
+					if ( ! is_array( $state ) ) {
+						continue;
+					}
+					if ( ! isset( $by_path[ $source_path ] ) ) {
+						$by_path[ $source_path ] = self::empty_interaction_path_row();
+					}
+					$status = self::interaction_state_status( $state );
+					++$by_path[ $source_path ]['recorded'];
+					$by_path[ $source_path ]['status_counts'][ $status ] = (int) ( $by_path[ $source_path ]['status_counts'][ $status ] ?? 0 ) + 1;
+					$kind = isset( $state['kind'] ) && is_scalar( $state['kind'] ) ? sanitize_key( (string) $state['kind'] ) : '';
+					if ( '' !== $kind ) {
+						$by_path[ $source_path ]['kind_counts'][ $kind ] = (int) ( $by_path[ $source_path ]['kind_counts'][ $kind ] ?? 0 ) + 1;
+					}
+					if ( 'captured' === $status ) {
+						++$by_path[ $source_path ]['captured'];
+						if ( 'selectable-set' === $kind ) {
+							++$by_path[ $source_path ]['captured_selectable'];
+						}
+					} elseif ( in_array( $status, array( 'no-dialog', 'click-failed' ), true ) ) {
+						++$by_path[ $source_path ]['capture_gap'];
+					}
 				}
 			}
+		}
+
+		foreach ( self::interaction_producer_omission_counts( $plan, $route_index ) as $source_path => $omission ) {
+			if ( ! isset( $by_path[ $source_path ] ) ) {
+				$by_path[ $source_path ] = self::empty_interaction_path_row();
+			}
+			$by_path[ $source_path ]['be_failed']    = $omission['failed'];
+			$by_path[ $source_path ]['be_truncated'] = $omission['truncated'];
+		}
+		foreach ( self::interaction_tab_panel_counts( $plan ) as $source_path => $tab_panels ) {
+			if ( ! isset( $by_path[ $source_path ] ) ) {
+				$by_path[ $source_path ] = self::empty_interaction_path_row();
+			}
+			$by_path[ $source_path ]['tab_panels'] = $tab_panels;
+		}
+
+		if ( array() === $by_path ) {
+			return $empty;
 		}
 
 		ksort( $by_path, SORT_STRING );
@@ -429,47 +448,79 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			foreach ( $row['status_counts'] as $status => $count ) {
 				$status_counts[ $status ] = (int) ( $status_counts[ $status ] ?? 0 ) + $count;
 			}
-			if ( $row['captured'] < 1 || isset( $reported_paths[ $source_path ] ) ) {
-				continue;
-			}
 			ksort( $row['status_counts'], SORT_STRING );
 			ksort( $row['kind_counts'], SORT_STRING );
-			$diagnostics[] = array(
-				'type'                    => Static_Site_Importer_Report_Diagnostics::INTERACTION_CANDIDATE_TYPE,
-				'code'                    => Static_Site_Importer_Report_Diagnostics::INTERACTION_CANDIDATE_TYPE,
-				'kind'                    => Static_Site_Importer_Report_Diagnostics::INTERACTION_CANDIDATE_TYPE,
-				'severity'                => 'warning',
-				'source'                  => $source_path,
-				'source_path'             => $source_path,
-				'captured_state_count'    => $row['captured'],
-				'recorded_state_count'    => $row['recorded'],
-				'message'                 => sprintf(
-					'Source path %1$s captured %2$d interaction state(s) that conversion did not materialize.',
+
+			$capture_gap          = $row['be_failed'] > 0 ? $row['be_failed'] : $row['capture_gap'];
+			$other_unmaterialized = max( 0, $row['captured'] - $row['captured_selectable'] );
+			if ( $row['tab_panels'] > 0 ) {
+				$selectable_unmaterialized = $row['captured_selectable'] > 0
+					? max( 0, $row['captured_selectable'] - $row['tab_panels'] )
+					: $row['be_truncated'];
+			} elseif ( $row['be_failed'] > 0 || $row['be_truncated'] > 0 ) {
+				$selectable_unmaterialized = $row['be_truncated'];
+			} elseif ( $row['captured_selectable'] > 0 ) {
+				$selectable_unmaterialized = $row['captured_selectable'];
+			} else {
+				$selectable_unmaterialized = $row['captured'];
+				$other_unmaterialized      = 0;
+			}
+			$importer_unmaterialized = $selectable_unmaterialized + $other_unmaterialized;
+
+			if ( isset( $reported_paths[ $source_path ] ) ) {
+				continue;
+			}
+			if ( $capture_gap > 0 ) {
+				$diagnostics[] = self::interaction_candidate_diagnostic(
 					$source_path,
-					$row['captured']
-				),
-				'reason_code'             => Static_Site_Importer_Report_Diagnostics::CAPTURED_INTERACTION_UNMATERIALIZED_REASON,
-				'stage'                   => 'import',
-				'loss_class'              => Static_Site_Importer_Diagnostic_Loss_Classes::UNSUPPORTED_LOSS,
-				'repair_bucket'           => 'add_generic_pattern_recognizer',
-				'materialization_status'  => 'not_materialized',
-				'context'                 => array(
-					'source_path'          => $source_path,
-					'captured_state_count' => $row['captured'],
-					'recorded_state_count' => $row['recorded'],
-					'status_counts'        => self::stable_interaction_status_counts( $row['status_counts'] ),
-					'kind_counts'          => $row['kind_counts'],
-				),
-			);
+					Static_Site_Importer_Report_Diagnostics::CAPTURED_INTERACTION_CAPTURE_GAP_REASON,
+					sprintf(
+						'Source path %1$s recorded %2$d capture-side interaction outcome(s) that did not produce region content.',
+						$source_path,
+						$capture_gap
+					),
+					0,
+					$capture_gap,
+					array(
+						'status_counts'  => self::stable_interaction_status_counts( $row['status_counts'] ),
+						'kind_counts'    => $row['kind_counts'],
+						'omission_class' => 'capture_side',
+					)
+				);
+			}
+			if ( $importer_unmaterialized > 0 ) {
+				$diagnostics[] = self::interaction_candidate_diagnostic(
+					$source_path,
+					Static_Site_Importer_Report_Diagnostics::CAPTURED_INTERACTION_UNMATERIALIZED_REASON,
+					sprintf(
+						'Source path %1$s captured %2$d interaction state(s) that conversion did not materialize.',
+						$source_path,
+						$importer_unmaterialized
+					),
+					$importer_unmaterialized,
+					$importer_unmaterialized,
+					array(
+						'status_counts'  => self::stable_interaction_status_counts( $row['status_counts'] ),
+						'kind_counts'    => $row['kind_counts'],
+						'omission_class' => 'importer',
+					)
+				);
+			}
 		}
 
 		ksort( $status_counts, SORT_STRING );
 
+		$unrepresented = 0;
+		foreach ( $diagnostics as $diagnostic ) {
+			$unrepresented += max( 0, (int) ( $diagnostic['recorded_state_count'] ?? 0 ) );
+		}
+
 		return array(
-			'recorded_state_count' => $recorded,
-			'captured_state_count' => $captured,
-			'status_counts'        => $status_counts,
-			'diagnostics'          => $diagnostics,
+			'recorded_state_count'       => $recorded,
+			'captured_state_count'       => $captured,
+			'unrepresented_member_count' => $unrepresented,
+			'status_counts'              => $status_counts,
+			'diagnostics'                => $diagnostics,
 		);
 	}
 
@@ -767,6 +818,238 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		}
 
 		return $paths;
+	}
+
+	/**
+	 * @return array{recorded:int,captured:int,captured_selectable:int,capture_gap:int,be_failed:int,be_truncated:int,tab_panels:int,status_counts:array<string,int>,kind_counts:array<string,int>}
+	 */
+	private static function empty_interaction_path_row(): array {
+		return array(
+			'recorded'            => 0,
+			'captured'            => 0,
+			'captured_selectable' => 0,
+			'capture_gap'         => 0,
+			'be_failed'           => 0,
+			'be_truncated'        => 0,
+			'tab_panels'          => 0,
+			'status_counts'       => array(),
+			'kind_counts'         => array(),
+		);
+	}
+
+	/**
+	 * Count Blocks Engine per-member selectable-set omissions without double-counting
+	 * the same producer row from plan and compiler diagnostic lists.
+	 *
+	 * @param array<string,mixed> $plan Canonical WordPress site plan.
+	 * @param array{by_route:array<string,string>,by_source:array<string,string>} $index Plan route index.
+	 * @return array<string,array{failed:int,truncated:int}>
+	 */
+	private static function interaction_producer_omission_counts( array $plan, array $index ): array {
+		$counts = array();
+		$seen   = array();
+		foreach ( array( $plan['diagnostics'] ?? array(), $plan['compiler_diagnostics'] ?? array() ) as $list ) {
+			if ( ! is_array( $list ) ) {
+				continue;
+			}
+			foreach ( $list as $offset => $diagnostic ) {
+				if ( ! is_array( $diagnostic ) ) {
+					continue;
+				}
+				$code = self::interaction_producer_omission_code( $diagnostic );
+				if ( '' === $code ) {
+					continue;
+				}
+				$source_path = self::interaction_diagnostic_source_path( $diagnostic, $index );
+				$fingerprint = implode(
+					"\0",
+					array(
+						$code,
+						$source_path,
+						(string) ( $diagnostic['message'] ?? '' ),
+						(string) ( $diagnostic['id'] ?? $offset ),
+					)
+				);
+				if ( isset( $seen[ $fingerprint ] ) ) {
+					continue;
+				}
+				$seen[ $fingerprint ] = true;
+				if ( ! isset( $counts[ $source_path ] ) ) {
+					$counts[ $source_path ] = array(
+						'failed'    => 0,
+						'truncated' => 0,
+					);
+				}
+				$delta = self::interaction_diagnostic_member_count( $diagnostic );
+				if ( 'captured_selectable_set_member_failed' === $code ) {
+					$counts[ $source_path ]['failed'] += $delta;
+				} else {
+					$counts[ $source_path ]['truncated'] += $delta;
+				}
+			}
+		}
+
+		return $counts;
+	}
+
+	/**
+	 * @param array<string,mixed> $plan Canonical WordPress site plan.
+	 * @return array<string,int>
+	 */
+	private static function interaction_tab_panel_counts( array $plan ): array {
+		$counts = array();
+		foreach ( isset( $plan['pages'] ) && is_array( $plan['pages'] ) ? $plan['pages'] : array() as $page ) {
+			if ( ! is_array( $page ) || ! is_scalar( $page['source_path'] ?? null ) ) {
+				continue;
+			}
+			$source_path = (string) $page['source_path'];
+			$markup      = '';
+			foreach ( array( 'resolved_block_markup', 'canonical_block_markup', 'materialized_block_markup' ) as $field ) {
+				if ( isset( $page[ $field ] ) && is_string( $page[ $field ] ) && '' !== $page[ $field ] ) {
+					$markup = $page[ $field ];
+					break;
+				}
+			}
+			$tab_panels = self::interaction_tab_panel_count( $markup );
+			if ( $tab_panels > 0 ) {
+				$counts[ $source_path ] = $tab_panels;
+			}
+		}
+
+		return $counts;
+	}
+
+	/**
+	 * @param array<string,mixed> $diagnostic Producer or importer diagnostic.
+	 */
+	private static function interaction_producer_omission_code( array $diagnostic ): string {
+		foreach ( array( 'code', 'reason_code', 'type', 'kind' ) as $key ) {
+			if ( ! isset( $diagnostic[ $key ] ) || ! is_scalar( $diagnostic[ $key ] ) ) {
+				continue;
+			}
+			$code = sanitize_key( (string) $diagnostic[ $key ] );
+			if ( in_array(
+				$code,
+				array(
+					'captured_selectable_set_member_failed',
+					'captured_selectable_set_member_truncated',
+					'captured_selectable_set_bounded',
+				),
+				true
+			) ) {
+				return $code;
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * @param array<string,mixed> $diagnostic Producer diagnostic.
+	 * @param array{by_route:array<string,string>,by_source:array<string,string>} $index Plan route index.
+	 */
+	private static function interaction_diagnostic_source_path( array $diagnostic, array $index ): string {
+		$candidates = array();
+		foreach ( array( 'source_path', 'source', 'path' ) as $key ) {
+			if ( isset( $diagnostic[ $key ] ) && is_scalar( $diagnostic[ $key ] ) && '' !== trim( (string) $diagnostic[ $key ] ) ) {
+				$candidates[] = trim( (string) $diagnostic[ $key ] );
+			}
+		}
+		$context = isset( $diagnostic['context'] ) && is_array( $diagnostic['context'] ) ? $diagnostic['context'] : array();
+		foreach ( array( 'source_path', 'sourcePath', 'path' ) as $key ) {
+			if ( isset( $context[ $key ] ) && is_scalar( $context[ $key ] ) && '' !== trim( (string) $context[ $key ] ) ) {
+				$candidates[] = trim( (string) $context[ $key ] );
+			}
+		}
+		foreach ( $candidates as $path ) {
+			if ( isset( $index['by_source'][ $path ] ) ) {
+				return $index['by_source'][ $path ];
+			}
+			$route = self::canonical_interaction_route( $path );
+			if ( isset( $index['by_route'][ $route ] ) ) {
+				return $index['by_route'][ $route ];
+			}
+		}
+
+		return $candidates[0] ?? 'unknown';
+	}
+
+	/**
+	 * @param array<string,mixed> $diagnostic Producer diagnostic.
+	 */
+	private static function interaction_diagnostic_member_count( array $diagnostic ): int {
+		foreach ( array( $diagnostic, isset( $diagnostic['context'] ) && is_array( $diagnostic['context'] ) ? $diagnostic['context'] : array() ) as $row ) {
+			foreach ( array( 'omitted_member_count', 'member_count', 'recorded_state_count', 'count' ) as $key ) {
+				if ( isset( $row[ $key ] ) && is_numeric( $row[ $key ] ) ) {
+					return max( 1, (int) $row[ $key ] );
+				}
+			}
+		}
+
+		return 1;
+	}
+
+	/**
+	 * @param string $markup Block markup.
+	 */
+	private static function interaction_tab_panel_count( string $markup ): int {
+		$count  = 0;
+		$offset = 0;
+		$length = strlen( $markup );
+		while ( $offset < $length ) {
+			$pos = stripos( $markup, 'wp:tab-panel', $offset );
+			$alt = stripos( $markup, 'wp:tabs/tab-panel', $offset );
+			if ( false === $pos && false === $alt ) {
+				break;
+			}
+			if ( false === $pos || ( false !== $alt && $alt < $pos ) ) {
+				$before = $alt > 0 ? $markup[ $alt - 1 ] : '';
+				if ( '/' !== $before ) {
+					++$count;
+				}
+				$offset = $alt + 17;
+				continue;
+			}
+			$before = $pos > 0 ? $markup[ $pos - 1 ] : '';
+			$after  = $markup[ $pos + 12 ] ?? '';
+			if ( '/' !== $before && 's' !== strtolower( $after ) ) {
+				++$count;
+			}
+			$offset = $pos + 12;
+		}
+
+		return $count;
+	}
+
+	/**
+	 * @param array<string,mixed> $context Extra context fields.
+	 * @return array<string,mixed>
+	 */
+	private static function interaction_candidate_diagnostic( string $source_path, string $reason_code, string $message, int $captured_state_count, int $recorded_state_count, array $context ): array {
+		return array(
+			'type'                   => Static_Site_Importer_Report_Diagnostics::INTERACTION_CANDIDATE_TYPE,
+			'code'                   => Static_Site_Importer_Report_Diagnostics::INTERACTION_CANDIDATE_TYPE,
+			'kind'                   => Static_Site_Importer_Report_Diagnostics::INTERACTION_CANDIDATE_TYPE,
+			'severity'               => 'warning',
+			'source'                 => $source_path,
+			'source_path'            => $source_path,
+			'captured_state_count'   => $captured_state_count,
+			'recorded_state_count'   => $recorded_state_count,
+			'message'                => $message,
+			'reason_code'            => $reason_code,
+			'stage'                  => 'import',
+			'loss_class'             => Static_Site_Importer_Diagnostic_Loss_Classes::UNSUPPORTED_LOSS,
+			'repair_bucket'          => 'add_generic_pattern_recognizer',
+			'materialization_status' => 'not_materialized',
+			'context'                => array_merge(
+				array(
+					'source_path'          => $source_path,
+					'captured_state_count' => $captured_state_count,
+					'recorded_state_count' => $recorded_state_count,
+				),
+				$context
+			),
+		);
 	}
 
 	/**

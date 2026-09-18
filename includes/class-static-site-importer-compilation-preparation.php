@@ -117,9 +117,11 @@ final class Static_Site_Importer_Compilation_Preparation {
 		}
 		$args['missing_author_stylesheet_diagnostics'] = Static_Site_Importer_Report_Diagnostics::missing_author_stylesheet_diagnostics( $plan, $artifact );
 		$args['unsafe_layout_constraint_diagnostics']  = Static_Site_Importer_Report_Diagnostics::unsafe_layout_constraint_diagnostics( $plan );
-		$interaction_inventory                         = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( $artifact, $plan );
+		$inventory_plan                                = $plan;
+		$inventory_plan['compiler_diagnostics']        = is_array( $compiled['diagnostics'] ?? null ) ? $compiled['diagnostics'] : array();
+		$interaction_inventory                         = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( $artifact, $inventory_plan );
 		$args['captured_interaction_diagnostics']      = $interaction_inventory['diagnostics'];
-		$args['captured_interaction_state_count']      = $interaction_inventory['recorded_state_count'];
+		$args['captured_interaction_state_count']      = $interaction_inventory['unrepresented_member_count'];
 		$companion_payload                             = null;
 		$gutenberg_gaps                                = is_array( $compiled['gutenberg_gaps'] ?? null ) ? $compiled['gutenberg_gaps'] : array();
 		$artifact_provenance                           = null;
