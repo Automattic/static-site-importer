@@ -354,6 +354,126 @@ final class Static_Site_Importer_Diagnostic_Projection {
 	}
 
 	/**
+	 * Count captured interaction states from the Data Liberation sidecar and
+	 * diagnose captured states that conversion did not materialize.
+	 *
+	 * Absence, an empty envelope, a legacy schema string, or malformed JSON are
+	 * not errors: they yield a zero count and no diagnostic. The metric counts
+	 * every recorded state; diagnostics fire only for `captured` states that no
+	 * other subsystem already reported.
+	 *
+	 * @param array<string,mixed> $artifact Source website artifact.
+	 * @param array<string,mixed> $plan     Canonical WordPress site plan.
+	 * @return array{recorded_state_count:int,captured_state_count:int,status_counts:array<string,int>,diagnostics:array<int,array<string,mixed>>}
+	 */
+	public static function captured_interaction_inventory( array $artifact, array $plan = array() ): array {
+		$empty = array(
+			'recorded_state_count' => 0,
+			'captured_state_count' => 0,
+			'status_counts'        => array(
+				'captured'     => 0,
+				'click-failed' => 0,
+				'no-dialog'    => 0,
+			),
+			'diagnostics'          => array(),
+		);
+
+		$payload = self::interaction_states_payload( $artifact );
+		if ( null === $payload ) {
+			return $empty;
+		}
+
+		$route_index    = self::interaction_route_index( $plan );
+		$reported_paths = self::reported_interaction_candidate_paths( $plan );
+		$by_path        = array();
+		foreach ( self::interaction_state_pages( $payload ) as $page ) {
+			if ( ! is_array( $page ) ) {
+				continue;
+			}
+			$source_path = self::interaction_source_path( $page, $route_index );
+			$states      = isset( $page['states'] ) && is_array( $page['states'] ) ? $page['states'] : array();
+			foreach ( $states as $state ) {
+				if ( ! is_array( $state ) ) {
+					continue;
+				}
+				if ( ! isset( $by_path[ $source_path ] ) ) {
+					$by_path[ $source_path ] = array(
+						'recorded'      => 0,
+						'captured'      => 0,
+						'status_counts' => array(),
+						'kind_counts'   => array(),
+					);
+				}
+				$status = self::interaction_state_status( $state );
+				++$by_path[ $source_path ]['recorded'];
+				$by_path[ $source_path ]['status_counts'][ $status ] = (int) ( $by_path[ $source_path ]['status_counts'][ $status ] ?? 0 ) + 1;
+				if ( 'captured' === $status ) {
+					++$by_path[ $source_path ]['captured'];
+				}
+				$kind = isset( $state['kind'] ) && is_scalar( $state['kind'] ) ? sanitize_key( (string) $state['kind'] ) : '';
+				if ( '' !== $kind ) {
+					$by_path[ $source_path ]['kind_counts'][ $kind ] = (int) ( $by_path[ $source_path ]['kind_counts'][ $kind ] ?? 0 ) + 1;
+				}
+			}
+		}
+
+		ksort( $by_path, SORT_STRING );
+
+		$recorded      = 0;
+		$captured      = 0;
+		$status_counts = $empty['status_counts'];
+		$diagnostics   = array();
+		foreach ( $by_path as $source_path => $row ) {
+			$recorded += $row['recorded'];
+			$captured += $row['captured'];
+			foreach ( $row['status_counts'] as $status => $count ) {
+				$status_counts[ $status ] = (int) ( $status_counts[ $status ] ?? 0 ) + $count;
+			}
+			if ( $row['captured'] < 1 || isset( $reported_paths[ $source_path ] ) ) {
+				continue;
+			}
+			ksort( $row['status_counts'], SORT_STRING );
+			ksort( $row['kind_counts'], SORT_STRING );
+			$diagnostics[] = array(
+				'type'                    => Static_Site_Importer_Report_Diagnostics::INTERACTION_CANDIDATE_TYPE,
+				'code'                    => Static_Site_Importer_Report_Diagnostics::INTERACTION_CANDIDATE_TYPE,
+				'kind'                    => Static_Site_Importer_Report_Diagnostics::INTERACTION_CANDIDATE_TYPE,
+				'severity'                => 'warning',
+				'source'                  => $source_path,
+				'source_path'             => $source_path,
+				'captured_state_count'    => $row['captured'],
+				'recorded_state_count'    => $row['recorded'],
+				'message'                 => sprintf(
+					'Source path %1$s captured %2$d interaction state(s) that conversion did not materialize.',
+					$source_path,
+					$row['captured']
+				),
+				'reason_code'             => Static_Site_Importer_Report_Diagnostics::CAPTURED_INTERACTION_UNMATERIALIZED_REASON,
+				'stage'                   => 'import',
+				'loss_class'              => Static_Site_Importer_Diagnostic_Loss_Classes::UNSUPPORTED_LOSS,
+				'repair_bucket'           => 'add_generic_pattern_recognizer',
+				'materialization_status'  => 'not_materialized',
+				'context'                 => array(
+					'source_path'          => $source_path,
+					'captured_state_count' => $row['captured'],
+					'recorded_state_count' => $row['recorded'],
+					'status_counts'        => self::stable_interaction_status_counts( $row['status_counts'] ),
+					'kind_counts'          => $row['kind_counts'],
+				),
+			);
+		}
+
+		ksort( $status_counts, SORT_STRING );
+
+		return array(
+			'recorded_state_count' => $recorded,
+			'captured_state_count' => $captured,
+			'status_counts'        => $status_counts,
+			'diagnostics'          => $diagnostics,
+		);
+	}
+
+	/**
 	 * Detect a concrete layout hazard in the materialized plan without claiming a
 	 * browser comparison has occurred. A topology warning alone is reportable but
 	 * acceptable; generated fixed height on that CSS-owned container is unsafe.
@@ -546,6 +666,196 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		}
 
 		return $contents;
+	}
+
+	/**
+	 * Decode the captured-interactions sidecar from artifact files.
+	 *
+	 * @param array<string,mixed> $artifact Source website artifact.
+	 * @return array<string,mixed>|null
+	 */
+	private static function interaction_states_payload( array $artifact ): ?array {
+		$files = self::artifact_file_contents( $artifact );
+		$paths = array_keys( $files );
+		sort( $paths, SORT_STRING );
+		$chosen = '';
+		foreach ( $paths as $path ) {
+			$normalized = str_replace( '\\', '/', (string) $path );
+			$base       = basename( $normalized );
+			if ( 'interaction-states.json' === $base ) {
+				$chosen = $path;
+				break;
+			}
+		}
+		if ( '' === $chosen || ! isset( $files[ $chosen ] ) ) {
+			return null;
+		}
+		$raw = trim( (string) $files[ $chosen ] );
+		if ( '' === $raw ) {
+			return null;
+		}
+		$decoded = json_decode( $raw, true );
+
+		return is_array( $decoded ) ? $decoded : null;
+	}
+
+	/**
+	 * Normalize envelope, legacy page, or list-shaped captured-interaction payloads.
+	 *
+	 * @param array<string,mixed> $payload Decoded sidecar.
+	 * @return array<int,mixed>
+	 */
+	private static function interaction_state_pages( array $payload ): array {
+		if ( isset( $payload['pages'] ) && is_array( $payload['pages'] ) ) {
+			return array_values( $payload['pages'] );
+		}
+		if ( isset( $payload['states'] ) && is_array( $payload['states'] ) ) {
+			return array( $payload );
+		}
+		if ( array_is_list( $payload ) ) {
+			return array_values( $payload );
+		}
+
+		return array();
+	}
+
+	/**
+	 * Index plan pages so capture URLs can resolve to importer source paths.
+	 *
+	 * @param array<string,mixed> $plan Canonical WordPress site plan.
+	 * @return array{by_route:array<string,string>,by_source:array<string,string>}
+	 */
+	private static function interaction_route_index( array $plan ): array {
+		$index = array(
+			'by_route'  => array(),
+			'by_source' => array(),
+		);
+		foreach ( isset( $plan['pages'] ) && is_array( $plan['pages'] ) ? $plan['pages'] : array() as $page ) {
+			if ( ! is_array( $page ) || ! is_scalar( $page['source_path'] ?? null ) ) {
+				continue;
+			}
+			$source_path                        = (string) $page['source_path'];
+			$index['by_source'][ $source_path ] = $source_path;
+			if ( is_array( $page['route'] ?? null ) && is_scalar( $page['route']['path'] ?? null ) ) {
+				$index['by_route'][ self::canonical_interaction_route( (string) $page['route']['path'] ) ] = $source_path;
+			}
+		}
+
+		return $index;
+	}
+
+	/**
+	 * Source paths that already carry an interaction_candidate diagnostic.
+	 *
+	 * @param array<string,mixed> $plan Canonical WordPress site plan.
+	 * @return array<string,true>
+	 */
+	private static function reported_interaction_candidate_paths( array $plan ): array {
+		$paths = array();
+		foreach ( isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array() as $diagnostic ) {
+			if ( ! is_array( $diagnostic ) ) {
+				continue;
+			}
+			$type = sanitize_key( (string) ( $diagnostic['type'] ?? $diagnostic['kind'] ?? $diagnostic['code'] ?? '' ) );
+			if ( Static_Site_Importer_Report_Diagnostics::INTERACTION_CANDIDATE_TYPE !== $type ) {
+				continue;
+			}
+			$source_path = isset( $diagnostic['source_path'] ) && is_scalar( $diagnostic['source_path'] ) ? (string) $diagnostic['source_path'] : '';
+			if ( '' !== $source_path ) {
+				$paths[ $source_path ] = true;
+			}
+		}
+
+		return $paths;
+	}
+
+	/**
+	 * Resolve a capture page onto an importer source path.
+	 *
+	 * @param array<string,mixed>                  $page  Capture page envelope.
+	 * @param array{by_route:array<string,string>,by_source:array<string,string>} $index Plan route index.
+	 * @return string
+	 */
+	private static function interaction_source_path( array $page, array $index ): string {
+		foreach ( array( 'source_path', 'sourcePath', 'path' ) as $key ) {
+			if ( isset( $page[ $key ] ) && is_scalar( $page[ $key ] ) && '' !== trim( (string) $page[ $key ] ) ) {
+				$path = trim( (string) $page[ $key ] );
+				return $index['by_source'][ $path ] ?? $path;
+			}
+		}
+		$url = '';
+		foreach ( array( 'sourceUrl', 'source_url', 'url' ) as $key ) {
+			if ( isset( $page[ $key ] ) && is_scalar( $page[ $key ] ) && '' !== trim( (string) $page[ $key ] ) ) {
+				$url = trim( (string) $page[ $key ] );
+				break;
+			}
+		}
+		if ( '' === $url ) {
+			return 'unknown';
+		}
+		$route = self::canonical_interaction_route( self::interaction_url_path( $url ) );
+
+		return $index['by_route'][ $route ] ?? $route;
+	}
+
+	/**
+	 * @param array<string,mixed> $state Captured interaction state.
+	 */
+	private static function interaction_state_status( array $state ): string {
+		if ( ! isset( $state['status'] ) || ! is_scalar( $state['status'] ) ) {
+			return '';
+		}
+
+		return sanitize_key( trim( (string) $state['status'] ) );
+	}
+
+	/**
+	 * @param string $url Source URL or path.
+	 */
+	private static function interaction_url_path( string $url ): string {
+		$parts = parse_url( $url );
+		if ( is_array( $parts ) && isset( $parts['path'] ) && is_string( $parts['path'] ) && '' !== $parts['path'] ) {
+			return $parts['path'];
+		}
+		if ( is_array( $parts ) && isset( $parts['host'] ) ) {
+			return '/';
+		}
+
+		return $url;
+	}
+
+	/**
+	 * @param string $route Raw route or URL path.
+	 */
+	private static function canonical_interaction_route( string $route ): string {
+		$route = trim( str_replace( '\\', '/', $route ) );
+		if ( '' === $route ) {
+			return '/';
+		}
+		if ( ! str_starts_with( $route, '/' ) ) {
+			$route = '/' . $route;
+		}
+		$route = '/' . trim( $route, '/' );
+
+		return '' === $route ? '/' : $route;
+	}
+
+	/**
+	 * @param array<string,int> $counts Status counts for one source path.
+	 * @return array<string,int>
+	 */
+	private static function stable_interaction_status_counts( array $counts ): array {
+		$stable = array(
+			'captured'     => 0,
+			'click-failed' => 0,
+			'no-dialog'    => 0,
+		);
+		foreach ( $counts as $status => $count ) {
+			$stable[ $status ] = (int) $count;
+		}
+		ksort( $stable, SORT_STRING );
+
+		return $stable;
 	}
 
 	/**
@@ -1626,7 +1936,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 	 */
 	public static function diagnostic_context( array $diagnostic ): array {
 		$context = array();
-		foreach ( array( 'href', 'tag', 'tag_name', 'block_name', 'block_path', 'excerpt', 'html_excerpt', 'source_html_preview', 'error_message', 'kind', 'script_path', 'element', 'handle', 'src', 'expected', 'observed', 'label', 'source_label', 'generated_label', 'url', 'source_url', 'generated_url', 'landmark', 'role' ) as $key ) {
+		foreach ( array( 'href', 'tag', 'tag_name', 'block_name', 'block_path', 'excerpt', 'html_excerpt', 'source_html_preview', 'error_message', 'kind', 'script_path', 'element', 'handle', 'src', 'expected', 'observed', 'label', 'source_label', 'generated_label', 'url', 'source_url', 'generated_url', 'landmark', 'role', 'captured_state_count', 'recorded_state_count' ) as $key ) {
 			if ( array_key_exists( $key, $diagnostic ) && null !== $diagnostic[ $key ] && '' !== $diagnostic[ $key ] ) {
 				$context[ $key ] = $diagnostic[ $key ];
 			}
