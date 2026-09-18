@@ -55,6 +55,10 @@ final class Static_Site_Importer_Quality_Gates {
 				static fn( $diagnostic ): bool => is_array( $diagnostic ) && Static_Site_Importer_Visual_Parity_Oracle::DIAGNOSTIC_TYPE === ( $diagnostic['type'] ?? '' )
 			)
 		);
+		$quality['interaction_candidate_count']             = max(
+			(int) ( $quality['interaction_candidate_count'] ?? 0 ),
+			self::interaction_candidate_count( $report['diagnostics'] ?? array() )
+		);
 		$reasons = array();
 		if ( $quality['unsupported_fallback_count'] > 0 ) {
 			$reasons[] = 'unsupported_html_fallback';
@@ -211,6 +215,35 @@ final class Static_Site_Importer_Quality_Gates {
 		}
 
 		return $count;
+	}
+
+	/**
+	 * Count recorded interaction states from importer-owned diagnostics.
+	 *
+	 * Path-level rows carry `recorded_state_count`. Conversion rows without that
+	 * field count as one candidate each so a later producer does not disappear.
+	 *
+	 * @param array<int,mixed> $diagnostics Normalized diagnostics.
+	 * @return int
+	 */
+	private static function interaction_candidate_count( array $diagnostics ): int {
+		$sum          = 0;
+		$saw_recorded = false;
+		$fallback     = 0;
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( ! is_array( $diagnostic ) || Static_Site_Importer_Report_Diagnostics::INTERACTION_CANDIDATE_TYPE !== ( $diagnostic['type'] ?? '' ) ) {
+				continue;
+			}
+			$recorded = $diagnostic['recorded_state_count'] ?? $diagnostic['context']['recorded_state_count'] ?? null;
+			if ( is_numeric( $recorded ) ) {
+				$sum         += max( 0, (int) $recorded );
+				$saw_recorded = true;
+				continue;
+			}
+			++$fallback;
+		}
+
+		return $saw_recorded ? $sum : $fallback;
 	}
 
 	/**

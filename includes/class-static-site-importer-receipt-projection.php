@@ -86,6 +86,19 @@ class Static_Site_Importer_Receipt_Projection {
 				array_values( array_filter( $args['unsafe_layout_constraint_diagnostics'], 'is_array' ) )
 			);
 		}
+		if ( is_array( $args['captured_interaction_diagnostics'] ?? null ) ) {
+			$diagnostics = array_merge(
+				$diagnostics,
+				array_values( array_filter( $args['captured_interaction_diagnostics'], 'is_array' ) )
+			);
+		}
+		$quality = is_array( $plan['quality'] ?? null ) ? $plan['quality'] : array();
+		if ( isset( $args['captured_interaction_state_count'] ) && is_numeric( $args['captured_interaction_state_count'] ) ) {
+			$quality['interaction_candidate_count'] = max(
+				(int) ( $quality['interaction_candidate_count'] ?? 0 ),
+				(int) $args['captured_interaction_state_count']
+			);
+		}
 		$report                            = Static_Site_Importer_Import_Report::from_array(
 			array(
 				'schema'                           => Static_Site_Importer_Import_Report::SCHEMA,
@@ -96,7 +109,7 @@ class Static_Site_Importer_Receipt_Projection {
 					'wordpress_site_plan' => $plan,
 					'gutenberg_gaps'      => $gutenberg_gaps,
 				),
-				'quality'                          => is_array( $plan['quality'] ?? null ) ? $plan['quality'] : array(),
+				'quality'                          => $quality,
 				'client_script_policy'             => $args['client_script_policy_report'] ?? array(),
 				'theme_materialization'            => $receipt['theme_materialization'] ?? array(),
 				'diagnostics'                      => $diagnostics,
