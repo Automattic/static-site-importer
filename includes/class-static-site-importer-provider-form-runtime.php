@@ -87,6 +87,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_wrapper_classes' ) );
 		add_filter( 'grunion_contact_form_field_html', array( __CLASS__, 'project_empty_country_visual_state' ), 20 );
 		add_filter( 'render_block_jetpack/contact-form', array( __CLASS__, 'project_form_container_placement' ), 5, 2 );
+		add_filter( 'render_block_jetpack/contact-form', array( __CLASS__, 'project_field_list_wrapper' ), 6, 2 );
 		add_filter( 'render_block_jetpack/contact-form', array( __CLASS__, 'project_plain_root_fieldset' ), 10, 2 );
 		add_filter( 'render_block_core/button', array( __CLASS__, 'project_submit_presentation' ), 10, 2 );
 	}
@@ -118,10 +119,113 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 
 	/** Field-list display/track utilities belong on the inner list, not the page item. */
 	private static function is_page_placement_class( string $class_name ): bool {
-		if ( '' === $class_name || in_array( $class_name, array( 'grid', 'flex', 'block', 'hidden', 'contents', 'inline-flex' ), true ) ) {
+		if ( '' === $class_name || 'ssi-source-field-list' === $class_name || in_array( $class_name, array( 'grid', 'flex', 'block', 'hidden', 'contents', 'inline-flex' ), true ) ) {
 			return false;
 		}
 		return 1 !== preg_match( '/(?:^|:)(?:grid-cols-|col-span-|gap-)/', $class_name );
+	}
+
+	/** Field-list display/track utilities that must not share a box with the submit. */
+	private static function is_field_list_class( string $class_name ): bool {
+		if ( 'ssi-source-field-list' === $class_name || in_array( $class_name, array( 'grid', 'flex', 'inline-flex' ), true ) ) {
+			return true;
+		}
+		return 1 === preg_match( '/(?:^|:)(?:grid-cols-|gap-)/', $class_name );
+	}
+
+	/**
+	 * Keep a source sibling submit outside the gapped field list.
+	 *
+	 * Jetpack renders fields and submit as children of one `.wp-block-jetpack-contact-form`.
+	 * A source list such as `grid gap-6` must wrap only the fields, or the submit loses
+	 * its authored top margin to the list gap (or to a cancel that overwrites it).
+	 */
+	public static function project_field_list_wrapper( string $html, array $block = array() ): string {
+		$class_name = isset( $block['attrs']['className'] ) && is_string( $block['attrs']['className'] ) ? $block['attrs']['className'] : '';
+		if ( 262144 < strlen( $html ) || ! preg_match( '/(?:^|\s)ssi-form-[a-f0-9]{12}(?:\s|$)/', $class_name ) || ! str_contains( $html, 'wp-block-jetpack-contact-form' ) ) {
+			return $html;
+		}
+		$document = new \DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$loaded   = $document->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		if ( ! $loaded ) {
+			return $html;
+		}
+		$body = $document->getElementsByTagName( 'body' )->item( 0 );
+		if ( ! $body instanceof \DOMElement ) {
+			return $html;
+		}
+		$field_list = null;
+		foreach ( $body->getElementsByTagName( '*' ) as $element ) {
+			$classes = preg_split( '/\s+/', trim( $element->getAttribute( 'class' ) ) );
+			$classes = false === $classes ? array() : $classes;
+			if ( 'div' === strtolower( $element->tagName ) && in_array( 'wp-block-jetpack-contact-form', $classes, true ) ) {
+				if ( $field_list instanceof \DOMElement ) {
+					return $html;
+				}
+				$field_list = $element;
+			}
+		}
+		if ( ! $field_list instanceof \DOMElement ) {
+			return $html;
+		}
+		$classes = preg_split( '/\s+/', trim( $field_list->getAttribute( 'class' ) ) );
+		$classes = false === $classes ? array() : array_values( array_filter( $classes ) );
+		$list_classes = array();
+		$kept         = array();
+		foreach ( $classes as $class ) {
+			if ( self::is_field_list_class( $class ) ) {
+				$list_classes[] = $class;
+			} else {
+				$kept[] = $class;
+			}
+		}
+		if ( empty( $list_classes ) ) {
+			return $html;
+		}
+		$submit_nodes = array();
+		$field_nodes  = array();
+		foreach ( iterator_to_array( $field_list->childNodes ) as $child ) {
+			if ( ! $child instanceof \DOMElement ) {
+				continue;
+			}
+			if ( self::is_submit_field_list_child( $child ) ) {
+				$submit_nodes[] = $child;
+			} else {
+				$field_nodes[] = $child;
+			}
+		}
+		if ( empty( $submit_nodes ) || empty( $field_nodes ) ) {
+			return $html;
+		}
+		$wrapper = $document->createElement( 'div' );
+		$wrapper->setAttribute( 'class', implode( ' ', array_values( array_unique( $list_classes ) ) ) );
+		$field_list->insertBefore( $wrapper, $submit_nodes[0] );
+		foreach ( $field_nodes as $node ) {
+			$wrapper->appendChild( $node );
+		}
+		$field_list->setAttribute( 'class', implode( ' ', $kept ) );
+		$output = '';
+		foreach ( $body->childNodes as $child ) {
+			$output .= $document->saveHTML( $child );
+		}
+		return $output;
+	}
+
+	private static function is_submit_field_list_child( \DOMElement $child ): bool {
+		$classes = preg_split( '/\s+/', trim( $child->getAttribute( 'class' ) ) );
+		$classes = false === $classes ? array() : $classes;
+		if ( array_intersect( $classes, array( 'is-submit', 'form-button-submit' ) ) ) {
+			return true;
+		}
+		foreach ( $child->getElementsByTagName( 'button' ) as $button ) {
+			if ( $button instanceof \DOMElement && 'submit' === strtolower( $button->getAttribute( 'type' ) ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Restore a source plain-root fieldset around provider field content, never the form itself. */
@@ -226,6 +330,10 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 				$output  = array();
 				foreach ( $classes as $candidate ) {
 					if ( preg_match( '/^ssi-source-submit--([A-Za-z_][A-Za-z0-9_-]{0,79})$/D', $candidate, $marker ) ) {
+						if ( 1 === preg_match( '/^m[trblxyse]?-/', $marker[1] ) ) {
+							$output[] = $marker[1];
+							continue;
+						}
 						$source_classes[] = $marker[1];
 						continue;
 					}
