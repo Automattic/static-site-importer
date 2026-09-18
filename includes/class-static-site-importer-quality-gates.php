@@ -48,8 +48,8 @@ final class Static_Site_Importer_Quality_Gates {
 		$quality['accepted_preserved_runtime_island_count'] = $fallback_admission['accepted'];
 		$quality['unsupported_fallback_count']              = $fallback_admission['unsupported'];
 		$quality['unsafe_layout_constraint_count']          = count( array_filter( $report['diagnostics'] ?? array(), static fn( $diagnostic ): bool => is_array( $diagnostic ) && Static_Site_Importer_Report_Diagnostics::UNSAFE_LAYOUT_CONSTRAINT_TYPE === ( $diagnostic['type'] ?? '' ) ) );
-		$quality['omitted_file_count']                     = self::omitted_file_count( $report['diagnostics'] ?? array() );
-		$quality['visual_parity_failure_count']            = count(
+		$quality['omitted_file_count']                      = self::omitted_file_count( $report['diagnostics'] ?? array() );
+		$quality['visual_parity_failure_count']             = count(
 			array_filter(
 				$report['diagnostics'] ?? array(),
 				static fn( $diagnostic ): bool => is_array( $diagnostic ) && Static_Site_Importer_Visual_Parity_Oracle::DIAGNOSTIC_TYPE === ( $diagnostic['type'] ?? '' )

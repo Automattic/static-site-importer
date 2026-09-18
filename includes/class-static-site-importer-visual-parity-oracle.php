@@ -111,10 +111,10 @@ final class Static_Site_Importer_Visual_Parity_Oracle {
 			);
 		}
 
-		$baseline   = self::layout_baseline_from( $provided );
-		$tolerances = self::tolerances( isset( $provided['tolerances'] ) && is_array( $provided['tolerances'] ) ? $provided['tolerances'] : array() );
-		$omissions  = self::omissions( $baseline['intentional_omissions'] ?? array() );
-		$source     = self::pages( $baseline['pages'] );
+		$baseline       = self::layout_baseline_from( $provided );
+		$tolerances     = self::tolerances( isset( $provided['tolerances'] ) && is_array( $provided['tolerances'] ) ? $provided['tolerances'] : array() );
+		$omissions      = self::omissions( $baseline['intentional_omissions'] ?? array() );
+		$source         = self::pages( $baseline['pages'] );
 		$imported_pages = self::pages( $imported['pages'] );
 		if ( array() === $source || array() === $imported_pages ) {
 			return self::not_verified_result(
@@ -443,10 +443,10 @@ final class Static_Site_Importer_Visual_Parity_Oracle {
 		}
 		usort(
 			$ordered,
-			static fn ( array $left, array $right ): int => ( $left['order'] ?? 0 ) <=> ( $right['order'] ?? 0 )
+			static fn ( array $left, array $right ): int => $left['order'] <=> $right['order']
 		);
 
-		return array_values( $ordered );
+		return $ordered;
 	}
 
 	/**
@@ -665,8 +665,8 @@ final class Static_Site_Importer_Visual_Parity_Oracle {
 	 * @return array{disagreements:array<int,array<string,mixed>>,omitted:array<int,array<string,mixed>>}
 	 */
 	private static function compare_media( string $page_id, ?int $index, mixed $source, mixed $imported, array $omissions, array $tolerances, string $owner_id ): array {
-		$disagreements   = array();
-		$omitted         = array();
+		$disagreements  = array();
+		$omitted        = array();
 		$source_media   = self::filter_items( is_array( $source ) ? $source : array(), $omissions, $omitted, $page_id, $index, 'media' );
 		$imported_media = self::filter_items( is_array( $imported ) ? $imported : array(), $omissions, $omitted, $page_id, $index, 'media' );
 		if ( count( $source_media ) !== count( $imported_media ) ) {
@@ -729,9 +729,9 @@ final class Static_Site_Importer_Visual_Parity_Oracle {
 	 * @return array{disagreements:array<int,array<string,mixed>>,omitted:array<int,array<string,mixed>>}
 	 */
 	private static function compare_forms( string $page_id, int $index, mixed $source, mixed $imported, array $omissions, array $tolerances, string $owner_id ): array {
-		$disagreements = array();
-		$omitted       = array();
-		$source_forms  = is_array( $source ) ? array_values( $source ) : array();
+		$disagreements  = array();
+		$omitted        = array();
+		$source_forms   = is_array( $source ) ? array_values( $source ) : array();
 		$imported_forms = is_array( $imported ) ? array_values( $imported ) : array();
 		if ( array() === $source_forms ) {
 			return array(
@@ -838,8 +838,8 @@ final class Static_Site_Importer_Visual_Parity_Oracle {
 	 * @return array<int,array{0:array<string,mixed>,1:array<string,mixed>}>
 	 */
 	private static function pair_items( array $source, array $imported ): array {
-		$pairs        = array();
-		$source_left  = array_values( $source );
+		$pairs         = array();
+		$source_left   = array_values( $source );
 		$imported_left = array_values( $imported );
 		foreach ( $source_left as $source_index => $source_item ) {
 			$source_id = self::scalar( $source_item, array( 'id', 'name' ) );
@@ -891,7 +891,7 @@ final class Static_Site_Importer_Visual_Parity_Oracle {
 			$kept[] = $item;
 		}
 
-		return array_values( $kept );
+		return $kept;
 	}
 
 	/**

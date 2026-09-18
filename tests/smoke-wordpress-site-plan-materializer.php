@@ -625,7 +625,7 @@ $short_write_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::ma
 );
 $short_write_path = $GLOBALS['ssi_plan_root'] . '/short-write-plan/' . $short_write_target;
 $assert( 'partial' === $short_write_receipt['status'] && 'theme_write_failed' === ( $short_write_receipt['errors'][0]['code'] ?? '' ) && array() === ( $short_write_receipt['completed']['files'] ?? null ) && array() === ( $short_write_receipt['wordpress'] ?? null ) && ! is_file( $short_write_path ) && empty( glob( dirname( $short_write_path ) . '/.ssi-plan-*' ) ), 'short canonical writes cannot publish a truncated destination and return a rolled-back error receipt' );
-$write_payload_bytes = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'write_payload_bytes' );
+$write_payload_bytes = new ReflectionMethod( Static_Site_Importer_Site_Plan_Persistence::class, 'write_payload_bytes' );
 $referenced_write    = array(
 	'payload'           => array(
 		'encoding' => 'base64',
@@ -658,7 +658,7 @@ $reference_prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::pre
 $assert( 'prepared' === ( $reference_prepared['status'] ?? '' ) && 0 === $reference_reads && ! isset( $reference_prepared['args']['_static_site_importer_payload_reader'] ) && isset( $reference_prepared['payload_reader'] ), 'prepared materialization retains payload readers ephemerally without dereferencing or serializing them in args' );
 $reference_bytes = $write_payload_bytes->invoke( null, $referenced_write, $reference_reader );
 $assert( 'binary-bytes' === $reference_bytes && 1 === $reference_reads, 'referenced binary writes resolve exactly once at their write boundary' );
-$reference_write_file = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'write_file' );
+$reference_write_file = new ReflectionMethod( Static_Site_Importer_Site_Plan_Persistence::class, 'write_file' );
 $reference_root       = $GLOBALS['ssi_plan_root'] . '/reference-ephemeral';
 mkdir( $reference_root, 0777, true );
 file_put_contents( $reference_root . '/existing.bin', 'binary-bytes' );
@@ -1103,7 +1103,7 @@ $canonical_conflict_receipt = Static_Site_Importer_WordPress_Site_Plan_Materiali
 $assert( 'rejected' === $canonical_conflict_receipt['status'] && 'file_conflict' === ( $canonical_conflict_receipt['diagnostics'][0]['reason_code'] ?? '' ) && '{"conflict":true}' === file_get_contents( $conflict_root . '/theme.json' ), 'unrelated canonical file conflicts remain rejected and unchanged' );
 
 $explicit_styles_root   = $GLOBALS['ssi_plan_root'] . '/explicit-canonical-styles';
-$explicit_styles        = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'provider_layout_stylesheet_writes' );
+$explicit_styles        = new ReflectionMethod( Static_Site_Importer_Site_Plan_Persistence::class, 'provider_layout_stylesheet_writes' );
 $explicit_styles_writes = $explicit_styles->invoke(
 	null,
 	array(
@@ -3332,7 +3332,7 @@ $child_batch = Static_Site_Importer_WordPress_Site_Plan_Materializer::materializ
 $about_id    = (int) ( $parent_batch['completed']['pages']['website/about/index.html'] ?? 0 );
 $team_id     = (int) ( $child_batch['completed']['pages']['website/about/team/index.html'] ?? 0 );
 $assert( 'completed' === $child_batch['status'] && $about_id > 0 && $about_id === (int) ( $GLOBALS['ssi_plan_posts'][ $team_id ]['post_parent'] ?? 0 ), 'later batch resolves an existing parent only through matching run provenance' );
-$parent_order                   = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'parent_ordered_pages' );
+$parent_order                   = new ReflectionMethod( Static_Site_Importer_Site_Plan_Preparation::class, 'parent_ordered_pages' );
 $GLOBALS['ssi_plan_posts'][999] = array( 'post_name' => 'external-parent' );
 $GLOBALS['ssi_plan_meta'][999]['_static_site_importer_provenance'] = json_encode(
 	array(
@@ -3379,7 +3379,7 @@ $route_home                = current( array_filter( $GLOBALS['ssi_plan_posts'], 
 $route_content             = is_array( $route_home ) ? stripslashes( (string) ( $route_home['post_content'] ?? '' ) ) : '';
 $route_rendered            = Static_Site_Importer_Internal_Link_Runtime::resolve_urls( $route_content );
 $assert( 'completed' === ( $route_receipt['status'] ?? '' ) && str_contains( $route_rendered, 'href="https://example.test/contact/"' ) && str_contains( $route_rendered, 'href="https://example.test/2024/03/news/"' ), 'canonical routes resolve to actual WordPress page and dated-post permalinks after materialization' );
-$rewrite_route_references = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'rewrite_route_references' );
+$rewrite_route_references = new ReflectionMethod( Static_Site_Importer_Site_Plan_Persistence::class, 'rewrite_route_references' );
 $pin_route_content        = $rewrite_route_references->invoke( null, 'data-pin-url=\\u0022/post/news\\u0022', array( '/post/news' => 'https://example.test/2024/03/news/' ) );
 $assert( 'data-pin-url=\\u0022https://example.test/2024/03/news/\\u0022' === $pin_route_content, 'escaped route-bearing data URL attributes resolve to the materialized WordPress permalink' );
 $index_route_content = $rewrite_route_references->invoke( null, '<a href="/comms-&-use-cases/index.html?study=1#scope">Cases</a>', array( '/comms-&-use-cases' => 'https://example.test/comms-use-cases/' ) );
@@ -3413,7 +3413,7 @@ $hash_plan = array(
 $GLOBALS['ssi_plan_count_aggregate_encodes'] = true;
 $legacy_hash = hash( 'sha256', (string) wp_json_encode( $hash_plan, JSON_UNESCAPED_SLASHES ) );
 $GLOBALS['ssi_plan_json_array_calls'] = 0;
-$plan_hash_method = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'hash' );
+$plan_hash_method = new ReflectionMethod( Static_Site_Importer_Site_Plan_Preparation::class, 'hash' );
 $streamed_hash = $plan_hash_method->invoke( null, $hash_plan );
 $GLOBALS['ssi_plan_count_aggregate_encodes'] = false;
 $assert( $legacy_hash === $streamed_hash && 0 === $GLOBALS['ssi_plan_json_array_calls'], 'streamed plan hashing preserves canonical JSON SHA-256 identity without materializing the full plan JSON' );

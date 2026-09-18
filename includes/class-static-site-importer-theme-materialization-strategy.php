@@ -58,7 +58,7 @@ final class Static_Site_Importer_Theme_Materialization_Strategy {
 			$style_header .= $header_line . "\n";
 		}
 		$style_header .= "*/\n";
-		$functions = <<<'PHP'
+		$functions     = <<<'PHP'
 <?php
 function static_site_importer_classic_assets() {
 	wp_enqueue_style( 'static-site-importer-classic', get_stylesheet_uri(), array(), wp_get_theme()->get( 'Version' ) );

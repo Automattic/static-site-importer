@@ -984,7 +984,7 @@ final class Static_Site_Importer_Font_Materializer {
 			if ( null !== $deadline && $deadline <= microtime( true ) ) {
 				return new WP_Error( 'static_site_importer_font_request_deadline_exhausted' );
 			}
-			$status   = is_wp_error( $response ) ? 0 : (int) wp_remote_retrieve_response_code( $response );
+			$status = is_wp_error( $response ) ? 0 : (int) wp_remote_retrieve_response_code( $response );
 			if ( ! is_wp_error( $response ) && 0 !== $status && ! in_array( $status, array( 408, 429 ), true ) && $status < 500 ) {
 				break;
 			}

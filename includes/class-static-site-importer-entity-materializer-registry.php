@@ -956,7 +956,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					'entity_kind' => 'product_grid',
 					'product_ids' => $product_ids,
 				);
-				$replacement = self::binding_block_markup( $prepared['adapter'], $grid_entity, array() );
+				$replacement    = self::binding_block_markup( $prepared['adapter'], $grid_entity, array() );
 				if ( '' === $replacement ) {
 					return new WP_Error(
 						'static_site_importer_runtime_binding_unresolved',
@@ -1088,10 +1088,13 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	private static function adapters(): array {
 		$adapters = array();
 		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Form_Seeder' ) as $owner ) {
+			// Seeders may be absent or stubbed in standalone harnesses.
+			// @phpstan-ignore-next-line booleanNot.alwaysFalse -- Optional classes are stubbed in standalone coverage harnesses.
 			if ( ! is_callable( array( $owner, 'adapter' ) ) ) {
 				continue;
 			}
 			$adapter = call_user_func( array( $owner, 'adapter' ) );
+			// @phpstan-ignore-next-line function.alreadyNarrowedType -- Adapter shape is not guaranteed when a harness stubs the seeder.
 			if ( ! is_array( $adapter ) ) {
 				continue;
 			}

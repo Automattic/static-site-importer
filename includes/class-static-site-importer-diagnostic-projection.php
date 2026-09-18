@@ -396,7 +396,8 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			$markup = (string) ( $page['resolved_block_markup'] ?? $page['canonical_block_markup'] ?? '' );
 			foreach ( array_keys( $topology_selectors[ (string) $page['source_path'] ] ) as $selector ) {
 				foreach ( self::topology_selector_elements( $markup, $selector ) as $element ) {
-					$classes = preg_split( '/\s+/', (string) $element->getAttribute( 'class' ) ) ?: array();
+					$classes = preg_split( '/\s+/', (string) $element->getAttribute( 'class' ) );
+					$classes = is_array( $classes ) ? $classes : array();
 					if ( ! in_array( 'blocks-engine-css-owned-layout', $classes, true ) ) {
 						continue;
 					}
@@ -405,14 +406,17 @@ final class Static_Site_Importer_Diagnostic_Projection {
 							continue;
 						}
 						$diagnostics[] = array(
-							'type'        => Static_Site_Importer_Report_Diagnostics::UNSAFE_LAYOUT_CONSTRAINT_TYPE,
-							'code'        => Static_Site_Importer_Report_Diagnostics::UNSAFE_LAYOUT_CONSTRAINT_TYPE,
-							'severity'    => 'error',
-							'loss_class'  => Static_Site_Importer_Diagnostic_Loss_Classes::IMPORTER_MATERIALIZATION_BUG,
+							'type'         => Static_Site_Importer_Report_Diagnostics::UNSAFE_LAYOUT_CONSTRAINT_TYPE,
+							'code'         => Static_Site_Importer_Report_Diagnostics::UNSAFE_LAYOUT_CONSTRAINT_TYPE,
+							'severity'     => 'error',
+							'loss_class'   => Static_Site_Importer_Diagnostic_Loss_Classes::IMPORTER_MATERIALIZATION_BUG,
 							'repair_class' => 'static-site-importer',
-							'source_path' => (string) $page['source_path'],
-							'context'     => array( 'class_name' => $class, 'fixed_height_px' => $fixed_heights[ $class ] ),
-							'message'     => sprintf( 'Generated layout support pins CSS-owned container .%1$s to %2$dpx after its direct-child topology changed. This fixed constraint can clip or collapse the materialized layout and is not safe to admit without a layout repair.', $class, $fixed_heights[ $class ] ),
+							'source_path'  => (string) $page['source_path'],
+							'context'      => array(
+								'class_name'      => $class,
+								'fixed_height_px' => $fixed_heights[ $class ],
+							),
+							'message'      => sprintf( 'Generated layout support pins CSS-owned container .%1$s to %2$dpx after its direct-child topology changed. This fixed constraint can clip or collapse the materialized layout and is not safe to admit without a layout repair.', $class, $fixed_heights[ $class ] ),
 						);
 						unset( $fixed_heights[ $class ] );
 					}
@@ -437,8 +441,8 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			if ( ! preg_match( '/^([a-z][a-z0-9-]*):nth-of-type\(([1-9][0-9]*)\)$/i', $segment, $match ) ) {
 				return array();
 			}
-			$tag   = strtolower( $match[1] );
-			$index = (int) $match[2];
+			$tag    = strtolower( $match[1] );
+			$index  = (int) $match[2];
 			$xpath .= ( '' === $xpath ? '/html/body/' : '/' ) . $tag . '[count(preceding-sibling::' . $tag . ')=' . ( $index - 1 ) . ']';
 		}
 
@@ -451,8 +455,12 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			return array();
 		}
 
+		$nodes = ( new DOMXPath( $document ) )->query( $xpath );
+		if ( false === $nodes ) {
+			return array();
+		}
 		$elements = array();
-		foreach ( ( new DOMXPath( $document ) )->query( $xpath ) ?: array() as $element ) {
+		foreach ( $nodes as $element ) {
 			if ( $element instanceof DOMElement ) {
 				$elements[] = $element;
 			}
@@ -1502,7 +1510,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'unsafe_inline_svg'                          => 'unsafe_svg',
 			'svg_materialization_failure'                => 'unresolved_asset',
 			'svg_sprite_reference_failure'               => 'unresolved_asset',
-			Static_Site_Importer_Report_Diagnostics::PAGE_WITHOUT_AUTHOR_STYLES_TYPE        => 'stylesheet_coverage',
+			Static_Site_Importer_Report_Diagnostics::PAGE_WITHOUT_AUTHOR_STYLES_TYPE => 'stylesheet_coverage',
 			'unsupported_source_document'                => 'unsupported_source',
 			'unsupported_html_fallback'                  => 'unsupported_element',
 			'core_html_block'                            => 'fallback_block',
@@ -1543,7 +1551,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'unsafe_inline_svg'                          => 'sanitize_or_externalize_svg',
 			'svg_materialization_failure'                => 'materialize_or_rewrite_asset',
 			'svg_sprite_reference_failure'               => 'materialize_or_rewrite_asset',
-			Static_Site_Importer_Report_Diagnostics::PAGE_WITHOUT_AUTHOR_STYLES_TYPE        => 'restore_author_stylesheet_extraction',
+			Static_Site_Importer_Report_Diagnostics::PAGE_WITHOUT_AUTHOR_STYLES_TYPE => 'restore_author_stylesheet_extraction',
 			'unsupported_source_document'                => 'convert_source_document',
 			'unsupported_html_fallback'                  => 'replace_unsupported_html',
 			'core_html_block'                            => 'replace_fallback_block',

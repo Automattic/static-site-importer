@@ -1218,7 +1218,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				// from a single breakpoint up) is a different, already-proven
 				// shape and is unaffected.
 				if ( array( 'columns' ) === array_keys( $patch ) ) {
-					$condition_fact = is_array( $variant['condition'] ?? null ) ? $variant['condition'] : null;
+					$condition_fact      = is_array( $variant['condition'] ?? null ) ? $variant['condition'] : null;
 					$widens_only_columns = 1 === count( $patches )
 						&& is_array( $condition_fact ) && 'media' === ( $condition_fact['kind'] ?? null )
 						&& is_string( $condition_fact['query'] ?? null )
@@ -2335,7 +2335,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	private static function source_grid_row_bands( array $layout_nodes_by_id, array $variants_by_node ): array {
 		$rows = array();
 		foreach ( $layout_nodes_by_id as $id => $node ) {
-			if ( ! is_array( $node ) || ! preg_match( '/^wrapper-[0-9]+$/D', (string) $id ) ) {
+			if ( ! preg_match( '/^wrapper-[0-9]+$/D', (string) $id ) ) {
 				continue;
 			}
 			$layout = is_array( $node['layout'] ?? null ) ? $node['layout'] : array();
@@ -2436,7 +2436,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		}
 		$by_parent = array();
 		foreach ( $rows as $id => $declared ) {
-			$parent = $parents[ $id ] ?? '';
+			$parent                        = $parents[ $id ] ?? '';
 			$by_parent[ $parent ]['boxes'] = ( $by_parent[ $parent ]['boxes'] ?? 0 ) + 1;
 			foreach ( array_keys( $declared ) as $row ) {
 				$by_parent[ $parent ]['rows'][ $row ] = true;
@@ -2444,11 +2444,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		}
 		$scrambled = array();
 		foreach ( $by_parent as $parent => $summary ) {
-			$distinct = count( $summary['rows'] ?? array() );
+			$distinct = count( $summary['rows'] );
 			// One row for every box transposes as an ordered sequence, and a single
 			// shared row transposes as one band. Any other mix means the provider's
 			// own row sequence no longer lines up with these row indexes.
-			if ( $distinct > 1 && $distinct !== ( $summary['boxes'] ?? 0 ) ) {
+			if ( 1 < $distinct && $summary['boxes'] !== $distinct ) {
 				$scrambled[ $parent ] = true;
 			}
 		}
@@ -2466,7 +2466,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		$area = trim( (string) ( $layout['area'] ?? '' ) );
 		if ( '' !== $area ) {
 			$parts = preg_split( '#\s*/\s*#', $area );
-			return is_array( $parts ) && isset( $parts[0] ) ? trim( $parts[0] ) : '';
+			return is_array( $parts ) ? trim( $parts[0] ) : '';
 		}
 		return trim( (string) ( $layout['row'] ?? '' ) );
 	}

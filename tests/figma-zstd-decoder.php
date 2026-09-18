@@ -12,7 +12,7 @@
  */
 
 if ( 2 !== $argc || ! in_array( $argv[1], array( 'native', 'command', 'unavailable', 'disabled' ), true ) ) {
-	fwrite( STDERR, "Usage: php tests/figma-zstd-decoder.php <native|command|unavailable|disabled>\n" );
+	fwrite( STDERR, "Usage: php tests/figma-zstd-decoder.php <native|command|unavailable|disabled>\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- CLI harness writes to STDERR.
 	exit( 2 );
 }
 
@@ -40,31 +40,31 @@ if ( 'native' === $argv[1] ) {
 		}
 	}
 
-	putenv( 'STATIC_SITE_IMPORTER_FIGMA_ZSTD_COMMAND=/definitely-not-a-zstd-command' );
+	putenv( 'STATIC_SITE_IMPORTER_FIGMA_ZSTD_COMMAND=/definitely-not-a-zstd-command' ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.runtime_configuration_putenv -- CLI fixture selects the decoder under test.
 } elseif ( in_array( $argv[1], array( 'command', 'disabled' ), true ) ) {
 	$command = tempnam( sys_get_temp_dir(), 'ssi-zstd-command-' );
 	if ( false === $command ) {
-		fwrite( STDERR, "Could not create zstd command fixture.\n" );
+		fwrite( STDERR, "Could not create zstd command fixture.\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- CLI harness writes to STDERR.
 		exit( 1 );
 	}
-	file_put_contents(
+	file_put_contents( // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- CLI fixture writes a local decoder stub.
 		$command,
 		'#!' . PHP_BINARY . "\n<?php\n"
 		. '$input = stream_get_contents( STDIN );' . "\n"
 		. '$probe = base64_decode( \'KLUv/QRYcQAAc3NpLXpzdGQtcHJvYmVUFxFH\', true );' . "\n"
 		. 'fwrite( STDOUT, $input === $probe ? \'ssi-zstd-probe\' : $input );' . "\n"
 	);
-	chmod( $command, 0700 );
-	putenv( 'STATIC_SITE_IMPORTER_FIGMA_ZSTD_COMMAND=' . $command );
+	chmod( $command, 0700 ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- CLI fixture must be executable.
+	putenv( 'STATIC_SITE_IMPORTER_FIGMA_ZSTD_COMMAND=' . $command ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.runtime_configuration_putenv -- CLI fixture selects the decoder under test.
 } else {
 	$command = tempnam( sys_get_temp_dir(), 'ssi-not-zstd-command-' );
 	if ( false === $command ) {
-		fwrite( STDERR, "Could not create invalid zstd command fixture.\n" );
+		fwrite( STDERR, "Could not create invalid zstd command fixture.\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- CLI harness writes to STDERR.
 		exit( 1 );
 	}
-	file_put_contents( $command, "#!/bin/sh\ncat\n" );
-	chmod( $command, 0700 );
-	putenv( 'STATIC_SITE_IMPORTER_FIGMA_ZSTD_COMMAND=' . $command );
+	file_put_contents( $command, "#!/bin/sh\ncat\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- CLI fixture writes a local decoder stub.
+	chmod( $command, 0700 ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- CLI fixture must be executable.
+	putenv( 'STATIC_SITE_IMPORTER_FIGMA_ZSTD_COMMAND=' . $command ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.runtime_configuration_putenv -- CLI fixture selects the decoder under test.
 }
 
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
@@ -76,29 +76,29 @@ $decoder = apply_filters( 'blocks_engine_figma_transformer_zstd_decoder', null )
 if ( in_array( $argv[1], array( 'unavailable', 'disabled' ), true ) ) {
 	try {
 		if ( Static_Site_Importer_Figma_Import::zstd_decoder_available() ) {
-			fwrite( STDERR, "Unavailable zstd command was advertised as available.\n" );
+			fwrite( STDERR, "Unavailable zstd command was advertised as available.\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- CLI harness writes to STDERR.
 			exit( 1 );
 		}
 	} finally {
-		unlink( $command );
+		unlink( $command ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes the CLI fixture file.
 	}
 } elseif ( 'native' === $argv[1] ) {
 	if ( ! is_callable( $decoder ) || ( ! extension_loaded( 'zstd' ) && 'native:compressed' !== $decoder( 'compressed' ) ) ) {
-		fwrite( STDERR, "Native zstd decoder was not preferred.\n" );
+		fwrite( STDERR, "Native zstd decoder was not preferred.\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- CLI harness writes to STDERR.
 		exit( 1 );
 	}
 } else {
 	try {
 		if ( ! Static_Site_Importer_Figma_Import::zstd_decoder_available() ) {
-			fwrite( STDERR, "Working zstd command was not advertised as available.\n" );
+			fwrite( STDERR, "Working zstd command was not advertised as available.\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- CLI harness writes to STDERR.
 			exit( 1 );
 		}
 		$result = is_callable( $decoder ) ? $decoder( 'compressed', array() ) : null;
 	} finally {
-		unlink( $command );
+		unlink( $command ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes the CLI fixture file.
 	}
 	if ( ! is_array( $result ) || 'compressed' !== ( $result['data'] ?? null ) ) {
-		fwrite( STDERR, "Zstd command fallback did not decode the payload.\n" );
+		fwrite( STDERR, "Zstd command fallback did not decode the payload.\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- CLI harness writes to STDERR.
 		exit( 1 );
 	}
 }

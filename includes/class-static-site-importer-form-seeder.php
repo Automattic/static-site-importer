@@ -641,19 +641,19 @@ class Static_Site_Importer_Form_Seeder {
 		foreach ( array_keys( $suppressed_controls ) as $control_index ) {
 			unset( $overlay_form['presentation_graph']['controls'][ $control_index ] );
 		}
-		$visual_state            = Static_Site_Importer_Form_Layout_Projection::empty_country_visual_state( $form, $scope, $topology['phone_popup_targets'] );
-		$target_map              = Static_Site_Importer_Form_Layout_Projection::provider_layout_target_map( $overlay_form, $scope, $presentation_descriptors, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
-		$presentation_graph      = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
-		$container_presentation  = is_array( $form['form']['container_presentation'] ?? null ) ? $form['form']['container_presentation'] : array();
+		$visual_state           = Static_Site_Importer_Form_Layout_Projection::empty_country_visual_state( $form, $scope, $topology['phone_popup_targets'] );
+		$target_map             = Static_Site_Importer_Form_Layout_Projection::provider_layout_target_map( $overlay_form, $scope, $presentation_descriptors, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
+		$presentation_graph     = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
+		$container_presentation = is_array( $form['form']['container_presentation'] ?? null ) ? $form['form']['container_presentation'] : array();
 		// The captured form box's own padding/margin/etc. is bounded, source-CSS-cascade
 		// evidence carried the same way every other captured control already is (see
 		// Provider_Layout_Overlay's `generic/form-container-presentation/v1` destination).
 		// It belongs on the rendered page, not only inside editor chrome, so the frontend
 		// compile also receives it.
-		$overlay                 = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map, $presentation_graph, $container_presentation );
-		$overlay                 = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_provider_errors( $overlay, $scope, $mapped_types );
-		$editor_map              = Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $target_map, $scope );
-		$editor_overlay          = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $editor_map, $presentation_graph, $container_presentation, true );
+		$overlay        = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map, $presentation_graph, $container_presentation );
+		$overlay        = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_provider_errors( $overlay, $scope, $mapped_types );
+		$editor_map     = Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $target_map, $scope );
+		$editor_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $editor_map, $presentation_graph, $container_presentation, true );
 		if ( isset( $editor_overlay['overlay']['editor_css'] ) ) {
 			foreach ( array( 'editor_css', 'editor_sha256', 'editor_bytes' ) as $key ) {
 				$overlay['overlay'][ $key ] = $editor_overlay['overlay'][ $key ];
@@ -803,7 +803,7 @@ class Static_Site_Importer_Form_Seeder {
 	 */
 	private static function project_submit_style_into_presentation_graph( array $form, array $controls ): array {
 		foreach ( $controls as $control_index => $control ) {
-			if ( ! is_array( $control ) || ! is_int( $control_index ) ) {
+			if ( ! is_array( $control ) ) {
 				continue;
 			}
 			$type = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
@@ -921,7 +921,7 @@ class Static_Site_Importer_Form_Seeder {
 		$flat         = array();
 		$property_map = Static_Site_Importer_Provider_Layout_Overlay::presentation_property_map();
 		foreach ( $style as $key => $value ) {
-			if ( ! is_string( $key ) || ! is_scalar( $value ) || '' === trim( (string) $value ) ) {
+			if ( ! is_scalar( $value ) || '' === trim( (string) $value ) ) {
 				continue;
 			}
 			$snake = str_replace( '-', '_', $key );

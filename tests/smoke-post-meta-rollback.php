@@ -75,7 +75,7 @@ if ( true === $state['rollback']['posts'][1]['producer_reconciliation_identity_e
 $GLOBALS['ssi_rollback_meta'][1]['_blocks_engine_reconciliation_identity'] = 'producer-new-1';
 $GLOBALS['ssi_rollback_meta'][2]['_blocks_engine_reconciliation_identity'] = 'producer-new-2';
 $state['applied']['posts'] = array( array( 'id' => 1 ), array( 'id' => 2 ) );
-$rollback = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'rollback' );
+$rollback = new ReflectionMethod( Static_Site_Importer_Site_Plan_Persistence::class, 'rollback' );
 $rollback->invokeArgs( null, array( &$state ) );
 
 if ( array_key_exists( '_blocks_engine_reconciliation_identity', $GLOBALS['ssi_rollback_meta'][1] ) ) {

@@ -228,7 +228,7 @@ class Static_Site_Importer_Form_Fallback_Contract {
 				}
 			}
 		}
-		$row = array(
+		$row           = array(
 			'text'    => substr( $text, 0, 200 ),
 			'classes' => array_slice( array_values( array_unique( $classes ) ), 0, 8 ),
 		);

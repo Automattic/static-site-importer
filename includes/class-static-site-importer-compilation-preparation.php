@@ -106,17 +106,17 @@ final class Static_Site_Importer_Compilation_Preparation {
 		$args['compiler_diagnostics'] = Static_Site_Importer_Compiler_Diagnostic_Normalizer::normalize( is_array( $compiled['diagnostics'] ?? null ) ? $compiled['diagnostics'] : array() );
 		$source_reports               = is_array( $compiled['source_reports'] ?? null ) ? $compiled['source_reports'] : array();
 		if ( isset( $source_reports['layout_baseline'] ) && is_array( $source_reports['layout_baseline'] ) ) {
-			$existing                     = isset( $args['source_reports'] ) && is_array( $args['source_reports'] ) ? $args['source_reports'] : array();
-			$existing['layout_baseline']  = $source_reports['layout_baseline'];
-			$args['source_reports']       = $existing;
+			$existing                    = isset( $args['source_reports'] ) && is_array( $args['source_reports'] ) ? $args['source_reports'] : array();
+			$existing['layout_baseline'] = $source_reports['layout_baseline'];
+			$args['source_reports']      = $existing;
 		}
-		$plan                         = is_array( $compiled['wordpress_site_plan'] ?? null ) ? $compiled['wordpress_site_plan'] : array();
+		$plan = is_array( $compiled['wordpress_site_plan'] ?? null ) ? $compiled['wordpress_site_plan'] : array();
 		if ( empty( $plan ) ) {
 			$diagnostics = is_array( $compiled['diagnostics'] ?? null ) ? wp_json_encode( $compiled['diagnostics'] ) : '';
 			return new WP_Error( 'static_site_importer_artifact_compile_failed', 'Website artifact compilation did not produce a WordPress site plan.' . ( false !== $diagnostics ? ' ' . $diagnostics : '' ), $compiled );
 		}
 		$args['missing_author_stylesheet_diagnostics'] = Static_Site_Importer_Report_Diagnostics::missing_author_stylesheet_diagnostics( $plan, $artifact );
-		$args['unsafe_layout_constraint_diagnostics'] = Static_Site_Importer_Report_Diagnostics::unsafe_layout_constraint_diagnostics( $plan );
+		$args['unsafe_layout_constraint_diagnostics']  = Static_Site_Importer_Report_Diagnostics::unsafe_layout_constraint_diagnostics( $plan );
 		$companion_payload                             = null;
 		$gutenberg_gaps                                = is_array( $compiled['gutenberg_gaps'] ?? null ) ? $compiled['gutenberg_gaps'] : array();
 		$artifact_provenance                           = null;

@@ -71,8 +71,8 @@ final class Static_Site_Importer_Companion_Asset_Publication {
 	public static function scoped_asset_config( array $stylesheet_targets, array $post_ids, string $publication_uri ): array {
 		$stylesheets = array();
 		foreach ( $stylesheet_targets as $index => $target ) {
-			$src          = is_array( $target ) ? (string) ( $target['src'] ?? '' ) : (string) $target;
-			$version      = is_array( $target ) ? (string) ( $target['version'] ?? '' ) : '';
+			$src           = (string) ( $target['src'] ?? '' );
+			$version       = (string) ( $target['version'] ?? '' );
 			$stylesheets[] = array(
 				'handle'  => 'ssi-page-style-' . ( $index + 1 ) . '-' . substr( hash( 'sha256', $src ), 0, 12 ),
 				'src'     => $src,
@@ -159,7 +159,7 @@ final class Static_Site_Importer_Companion_Asset_Publication {
 	 * @return string|WP_Error
 	 */
 	private static function plugin_root() {
-		$root = defined( 'WP_PLUGIN_DIR' ) && is_string( WP_PLUGIN_DIR ) && '' !== WP_PLUGIN_DIR
+		$root = defined( 'WP_PLUGIN_DIR' )
 			? WP_PLUGIN_DIR
 			: ( defined( 'ABSPATH' ) ? rtrim( ABSPATH, '/' ) . '/wp-content/plugins' : '' );
 		if ( '' === $root ) {
@@ -192,10 +192,12 @@ final class Static_Site_Importer_Companion_Asset_Publication {
 	}
 
 	private static function plugin_uri_base(): string {
-		if ( defined( 'WP_PLUGIN_URL' ) && is_string( WP_PLUGIN_URL ) && '' !== WP_PLUGIN_URL ) {
+		if ( defined( 'WP_PLUGIN_URL' ) ) {
+			// @phpstan-ignore-next-line phpstanWP.wpConstant.fetch -- Standalone shims expose WP_PLUGIN_URL without plugins_url().
 			return rtrim( WP_PLUGIN_URL, '/' );
 		}
-		if ( defined( 'WP_CONTENT_URL' ) && is_string( WP_CONTENT_URL ) && '' !== WP_CONTENT_URL ) {
+		if ( defined( 'WP_CONTENT_URL' ) ) {
+			// @phpstan-ignore-next-line phpstanWP.wpConstant.fetch -- Standalone shims expose WP_CONTENT_URL without content_url().
 			return rtrim( WP_CONTENT_URL, '/' ) . '/plugins';
 		}
 		return 'wp-content/plugins';

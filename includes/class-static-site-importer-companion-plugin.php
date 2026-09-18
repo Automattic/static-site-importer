@@ -385,7 +385,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$fallback  = '' === $site_slug ? '' : 'ssi-' . $site_slug;
 		foreach ( self::payload_blocks( $payload ) as $block ) {
 			$declared_name = is_string( $block['block_json']['name'] ?? null ) ? $block['block_json']['name'] : '';
-			$namespace     = is_string( $declared_name ) && str_contains( $declared_name, '/' ) ? strtok( $declared_name, '/' ) : false;
+			$namespace     = str_contains( $declared_name, '/' ) ? strtok( $declared_name, '/' ) : false;
 			if ( false !== $namespace && 1 === preg_match( '/^[a-z][a-z0-9-]*$/', (string) $namespace ) && 'core' !== (string) $namespace ) {
 				return (string) $namespace;
 			}
@@ -720,7 +720,7 @@ class Static_Site_Importer_Companion_Plugin {
 		// A provenance-carrying build stamps the real producing-build version
 		// and an Update URI identifying this artifact, so the plugin remains
 		// attributable and updatable after SSI itself is removed.
-		$version_line   = ' * Version: 1.0.0';
+		$version_line    = ' * Version: 1.0.0';
 		$update_uri_line = '';
 		foreach ( Static_Site_Importer_Build_Provenance::artifact_header_lines( $artifact_provenance, $plugin_slug ) as $header_line ) {
 			if ( str_starts_with( $header_line, 'Version: ' ) ) {

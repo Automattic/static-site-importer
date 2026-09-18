@@ -25,7 +25,7 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		$this->root      = $resolved;
 		$token           = preg_replace( '/[^A-Za-z0-9_-]/', '-', $purpose );
 		$this->directory = $this->root . '/.ssi-artifact-run-' . $token;
-		$directory = $this->directory;
+		$directory       = $this->directory;
 		if ( ! is_dir( $directory ) && ! self::filesystem_operation( static fn () => mkdir( $directory, 0700 ) ) && ! is_dir( $directory ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir -- Creates the importer-owned workspace without initializing a global filesystem transport.
 			throw new RuntimeException( 'Artifact workspace could not be created.' );
 		}
@@ -163,8 +163,8 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 
 	/** Publish a checkpoint on filesystems, including PHP-WASM OPFS, without hard links. */
 	private static function copy_exclusively( string $source, string $destination ): bool {
-		$input  = @fopen( $source, 'rb' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Reads the importer-owned temporary checkpoint.
-		$output = false === $input ? false : @fopen( $destination, 'xb' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Creates only when no checkpoint exists.
+		$input  = @fopen( $source, 'rb' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- Reads the importer-owned temporary checkpoint; absence is returned as false.
+		$output = false === $input ? false : @fopen( $destination, 'xb' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- Exclusive create; existing checkpoints must not warn.
 		if ( false === $input || false === $output ) {
 			if ( is_resource( $input ) ) {
 				fclose( $input ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the importer-owned checkpoint handle.

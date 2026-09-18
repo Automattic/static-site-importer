@@ -1119,8 +1119,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				$diagnostics = array();
 			}
 		}
-		if ( empty( $diagnostics ) && is_array( $result->sourceReports['wordpress_site_plan_diagnostics'] ?? null ) ) {
-			$diagnostics = $result->sourceReports['wordpress_site_plan_diagnostics'];
+		$source_reports = get_object_vars( $result )['sourceReports'] ?? null;
+		if ( empty( $diagnostics ) && is_array( $source_reports['wordpress_site_plan_diagnostics'] ?? null ) ) {
+			$diagnostics = $source_reports['wordpress_site_plan_diagnostics'];
 		}
 		if ( empty( $diagnostics ) && is_array( $result->diagnostics ?? null ) ) {
 			$diagnostics = $result->diagnostics;

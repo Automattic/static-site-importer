@@ -318,7 +318,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 			}
 			if ( 'textarea' === $lookup ) {
 				$input_attrs['type'] = 'textarea';
-				$rows   = self::textarea_rows( $control );
+				$rows                = self::textarea_rows( $control );
 				if ( null !== $rows ) {
 					$input_attrs['className'] = trim( (string) ( $input_attrs['className'] ?? '' ) . ' ssi-textarea-rows-' . $rows );
 				}
