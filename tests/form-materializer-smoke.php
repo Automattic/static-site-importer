@@ -489,6 +489,94 @@ namespace {
 	$assert( 1 === substr_count( $topology_markup, '<!-- wp:button ' ), 'topology-submit-control-emits-one-core-button-in-source-position' );
 	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && 6 === ( $topology_receipt['operation_count'] ?? 0 ) && 'provider_equal_width_fields' === ( $topology_receipt['operations'][3]['strategy'] ?? '' ) && 'provider_interaction_carrier' === ( $topology_receipt['operations'][5]['strategy'] ?? '' ), 'computed-layout-equal-grid-applies-with-bounded-receipt' );
 	$assert( str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:82px' ) && ! str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:200px' ), 'topology-unstyled-source-textarea-gets-a-two-row-intrinsic-height-instead-of-the-provider-default' );
+
+	// --- A source utility-framework grid row materializes as provider field widths ---
+	// Reproduces a real base44/Tailwind CSS v4 contact form (labels are plain,
+	// unassociated siblings with no `for`/`id`/`name`, exactly as captured): a
+	// `grid grid-cols-1 md:grid-cols-2 gap-6` row stacks Name/Phone on narrow
+	// viewports and only bands them into two equal columns at a proven
+	// widening breakpoint. Tailwind v4 emits that breakpoint using the modern
+	// CSS range syntax `(width>=768px)` rather than `(min-width:768px)`.
+	// Jetpack field width has no responsive states, so the widened, two-up
+	// state is what materializes; every other wrapper here is a redundant
+	// single-control `<div>` a Jetpack field already owns as its own unit.
+	$tailwind_grid_css   = '.grid{display:grid}.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}.gap-6{gap:1.5rem}'
+		. '@media (width>=768px){.md\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}';
+	$tailwind_grid_html  = '<style>' . $tailwind_grid_css . '</style><form class="space-y-6">'
+		. '<div class="grid grid-cols-1 md:grid-cols-2 gap-6">'
+		. '<div><label>Name *</label><input type="text" required></div>'
+		. '<div><label>Phone *</label><input type="tel" required></div>'
+		. '</div>'
+		. '<div><label>Email *</label><input type="email" required></div>'
+		. '<div><label>Project Type</label><select><option value="">Select a project type</option><option>Kitchen Renovation</option></select></div>'
+		. '<div><label>Project Details *</label><textarea rows="5" placeholder="Tell us about your project..." required></textarea></div>'
+		. '<button type="submit">Submit</button>'
+		. '</form>';
+	$tailwind_grid_source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $tailwind_grid_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$tailwind_grid_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $tailwind_grid_source ) ) );
+	$assert( empty( $tailwind_grid_validated['errors'] ), 'mobile-first-grid-row-manifest-validates', wp_json_encode( $tailwind_grid_validated ) );
+	$tailwind_grid_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $tailwind_grid_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$tailwind_grid_markup = (string) ( $tailwind_grid_row['block_markup'] ?? '' );
+	$assert(
+		'mapped' === ( $tailwind_grid_row['status'] ?? '' )
+			&& empty( $tailwind_grid_row['form_receipt_unaccepted_losses'] ?? array() )
+			&& 5 === ( $tailwind_grid_row['field_count'] ?? 0 )
+			&& 2 === substr_count( $tailwind_grid_markup, '"width":50' )
+			&& str_contains( $tailwind_grid_markup, 'wp:jetpack/contact-form' )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-text \{"required":true[^}]*"width":50\} -->/', $tailwind_grid_markup )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-telephone \{"required":true[^}]*"width":50\} -->/', $tailwind_grid_markup )
+			&& str_contains( $tailwind_grid_markup, 'wp:jetpack/field-email' )
+			&& str_contains( $tailwind_grid_markup, 'wp:jetpack/field-select' )
+			&& str_contains( $tailwind_grid_markup, '"options":["Select a project type","Kitchen Renovation"]' )
+			&& str_contains( $tailwind_grid_markup, 'wp:jetpack/field-textarea' )
+			&& str_contains( $tailwind_grid_markup, '"placeholder":"Tell us about your project..."' )
+			&& ! str_contains( $tailwind_grid_markup, 'wp:group' ),
+		'mobile-first-tailwind-v4-grid-row-materializes-as-two-jetpack-fields-at-width-50',
+		wp_json_encode( array( 'row' => $tailwind_grid_row, 'markup' => $tailwind_grid_markup ) )
+	);
+	// A narrowing (max-width) variant is not the proven mobile-first widening
+	// shape and must keep the existing decline: Jetpack cannot represent "two
+	// columns by default that collapse to one," and this is not that either.
+	$narrowing_grid_css      = '.grid{display:grid}.grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.gap-6{gap:1.5rem}'
+		. '@media (width<768px){.sm\\:grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}}';
+	$narrowing_grid_html     = '<style>' . $narrowing_grid_css . '</style><form class="space-y-6">'
+		. '<div class="grid grid-cols-2 sm:grid-cols-1 gap-6">'
+		. '<div><label>Name *</label><input type="text" required></div>'
+		. '<div><label>Phone *</label><input type="tel" required></div>'
+		. '</div>'
+		. '<button type="submit">Submit</button>'
+		. '</form>';
+	$narrowing_grid_source   = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $narrowing_grid_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$narrowing_grid_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $narrowing_grid_source ) ) );
+	$narrowing_grid_row      = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $narrowing_grid_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert(
+		'skipped' === ( $narrowing_grid_row['status'] ?? '' )
+			&& 'form_receipt_loss_unaccepted' === ( $narrowing_grid_row['reason'] ?? '' )
+			&& in_array( 'provider_wrapper_layout_unrepresentable', array_column( $narrowing_grid_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true ),
+		'narrowing-max-width-grid-variant-keeps-the-wrapper-layout-decline',
+		wp_json_encode( $narrowing_grid_row )
+	);
+	// Two variants on the same row (e.g. a third breakpoint changing the track
+	// count again) is outside the single proven widening this rule accepts.
+	$two_variant_grid_css    = '.grid{display:grid}.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}.gap-6{gap:1.5rem}'
+		. '@media (width>=768px){.md\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}'
+		. '@media (width>=1024px){.lg\\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}}';
+	$two_variant_grid_html   = '<style>' . $two_variant_grid_css . '</style><form class="space-y-6">'
+		. '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">'
+		. '<div><label>Name *</label><input type="text" required></div>'
+		. '<div><label>Phone *</label><input type="tel" required></div>'
+		. '</div>'
+		. '<button type="submit">Submit</button>'
+		. '</form>';
+	$two_variant_grid_source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $two_variant_grid_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$two_variant_grid_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $two_variant_grid_source ) ) );
+	$two_variant_grid_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $two_variant_grid_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert(
+		'skipped' === ( $two_variant_grid_row['status'] ?? '' )
+			&& in_array( 'provider_wrapper_layout_unrepresentable', array_column( $two_variant_grid_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true ),
+		'a-second-breakpoint-changing-the-track-count-again-keeps-the-wrapper-layout-decline',
+		wp_json_encode( $two_variant_grid_row )
+	);
 	// A source that deliberately sizes two textareas differently through their own
 	// `rows` attribute - rather than an authored CSS height a cascade compiler could
 	// capture - must not materialize both onto this provider's one fixed default;
