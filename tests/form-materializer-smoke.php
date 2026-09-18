@@ -488,7 +488,7 @@ namespace {
 	$assert( str_contains( $topology_markup, 'First name' ) && str_contains( $topology_markup, 'Email' ) && str_contains( $topology_markup, 'Message' ), 'topology-preserves-labels' );
 	$assert( 1 === substr_count( $topology_markup, '<!-- wp:button ' ), 'topology-submit-control-emits-one-core-button-in-source-position' );
 	$topology_ops = array_column( $topology_receipt['operations'] ?? array(), 'strategy' );
-	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && in_array( 'provider_equal_width_fields', $topology_ops, true ) && in_array( 'provider_interaction_carrier', $topology_ops, true ) && 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.5rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.5rem\);margin-block-start:0\}/', (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ), 'computed-layout-equal-grid-applies-with-bounded-receipt', wp_json_encode( array( 'ops' => $topology_ops, 'css' => $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ) );
+	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && in_array( 'provider_equal_width_fields', $topology_ops, true ) && in_array( 'provider_interaction_carrier', $topology_ops, true ) && 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.5rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.5rem\);margin-block-start:0!important\}/', (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ), 'computed-layout-equal-grid-applies-with-bounded-receipt', wp_json_encode( array( 'ops' => $topology_ops, 'css' => $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ) );
 	$assert( str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:82px' ) && ! str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:200px' ), 'topology-unstyled-source-textarea-gets-a-two-row-intrinsic-height-instead-of-the-provider-default' );
 
 	// --- A source utility-framework grid row materializes as provider field widths ---
@@ -536,11 +536,31 @@ namespace {
 		wp_json_encode( array( 'row' => $tailwind_grid_row, 'markup' => $tailwind_grid_markup ) )
 	);
 	$tailwind_grid_css_out = (string) ( $tailwind_grid_row['provider_layout_overlay_css']['css'] ?? '' );
+	// A carried source sibling-stacking utility (Tailwind's `space-y-*`) is
+	// authored against the ORIGINAL sibling relationships, at unbounded
+	// specificity, and lands on the provider form unscoped. Once flattening
+	// makes Name and Phone adjacent provider siblings that rule still matches
+	// them, so a same-specificity reset cannot reliably out-rank it; the reset
+	// must carry `!important` on every flattened field shell, paired or not,
+	// or the source rule can still re-stack the row.
 	$assert(
 		empty( $tailwind_grid_row['form_receipt_unaccepted_losses'] ?? array() )
-			&& 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.75rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.75rem\);margin-block-start:0\}/', $tailwind_grid_css_out )
+			&& 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.75rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.75rem\);margin-block-start:0!important\}/', $tailwind_grid_css_out )
+			&& 3 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{margin-block-start:0!important\}/', $tailwind_grid_css_out )
+			&& ! str_contains( $tailwind_grid_css_out, 'margin-block-start:0}' )
 			&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $tailwind_grid_row['provider_layout_overlay_css'] ?? null ),
 		'mobile-first-equal-column-row-overlay-compensates-jetpack-gap-and-flattened-sibling-margins',
+		$tailwind_grid_css_out
+	);
+	// A submit control is never routed through Jetpack's grunion field renderer, so
+	// its generated hook never gets the `-wrap` class suffix a field's does; it must
+	// still be reset, because it sits as a flex item beside the flattened fields in
+	// the same `space-y-*`-classed container and would otherwise carry both the
+	// container's flex `gap` and the carried sibling-margin, doubling the space the
+	// source spent once.
+	$assert(
+		1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{margin-block-start:0!important\}/', $tailwind_grid_css_out ),
+		'mobile-first-equal-column-row-also-neutralizes-the-flattened-submit-siblings-margin',
 		$tailwind_grid_css_out
 	);
 	// A source form that occupies a page-grid item through a host wrapper (the
@@ -593,7 +613,7 @@ namespace {
 			&& str_contains( $host_span_css_out, 'font-weight:600' )
 			&& str_contains( $host_span_css_out, 'letter-spacing:.025em' )
 			&& str_contains( $host_span_css_out, 'text-transform:uppercase' )
-			&& 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.75rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.75rem\);margin-block-start:0\}/', $host_span_css_out )
+			&& 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.75rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.75rem\);margin-block-start:0!important\}/', $host_span_css_out )
 			&& ! str_contains( $host_span_markup, 'wp:group' ),
 		'provider-container-inherits-replaced-host-wrapper-column-span-and-authored-submit-box',
 		wp_json_encode( array( 'row' => $host_span_row, 'markup' => $host_span_markup, 'css' => $host_span_css_out, 'binding' => $host_span_source['binding'] ?? null ) )

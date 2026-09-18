@@ -1054,14 +1054,24 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			foreach ( $indexes as $control_index ) {
 				$field_blocks[ $control_index ]['attrs']['width'] = 100 / $count;
 				$overlay_node_targets[]                           = array(
-					'id'     => 'field-' . $control_index,
-					'layout' => array(
+					'id'        => 'field-' . $control_index,
+					'layout'    => array(
 						'width'              => $track,
 						'flex_grow'          => '0',
 						'flex_shrink'        => '0',
 						'flex_basis'         => $track,
 						'margin_block_start' => '0',
 					),
+					// A source sibling-stacking utility (e.g. Tailwind `space-y-*`) is
+					// authored against the ORIGINAL sibling relationships and is carried
+					// onto the provider form unscoped. Once flattening makes these two
+					// fields adjacent provider siblings, that rule can still match them
+					// with a selector more specific than this reset, since the reset's
+					// only leverage over an unbounded source selector is the cascade
+					// origin, not specificity. Forcing the reset wins regardless of the
+					// source rule's specificity, which is what a value of literal `0` on
+					// this synthetic flattening seam is always for.
+					'important' => array( 'margin_block_start' ),
 				);
 			}
 			$represented_layout_nodes[] = $parent;
@@ -1072,14 +1082,22 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'width'       => 100 / $count,
 			);
 			foreach ( $field_blocks as $control_index => $field_block ) {
-				if ( isset( $paired[ $control_index ] ) || 'core/button' === ( $field_block['name'] ?? '' ) ) {
+				if ( isset( $paired[ $control_index ] ) ) {
 					continue;
 				}
+				// A submit control is never routed through Jetpack's grunion field
+				// renderer, so it never receives the `-wrap` class suffix the `field-N`
+				// id resolves through; address its own generated node hook instead.
+				// It still sits as a flex item beside the flattened fields in the same
+				// `space-y-*`-classed container, so it needs the identical reset: the
+				// container's own flex `gap` already reproduces the source spacing,
+				// and the carried sibling-margin would otherwise double it.
 				$overlay_node_targets[] = array(
-					'id'     => 'field-' . $control_index,
-					'layout' => array(
+					'id'        => ( 'core/button' === ( $field_block['name'] ?? '' ) ? 'control-' : 'field-' ) . $control_index,
+					'layout'    => array(
 						'margin_block_start' => '0',
 					),
+					'important' => array( 'margin_block_start' ),
 				);
 			}
 		}

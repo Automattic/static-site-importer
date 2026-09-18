@@ -528,7 +528,10 @@ class Static_Site_Importer_Form_Seeder {
 			foreach ( $overlay_graph['nodes'] as &$overlay_node ) {
 				if ( is_array( $overlay_node ) && ( $overlay_node['id'] ?? null ) === ( $target['id'] ?? null ) ) {
 					$overlay_node['layout'] = array_merge( is_array( $overlay_node['layout'] ?? null ) ? $overlay_node['layout'] : array(), $target['layout'] );
-					$merged                 = true;
+					if ( ! empty( $target['important'] ) && is_array( $target['important'] ) ) {
+						$overlay_node['important'] = array_values( array_unique( array_merge( is_array( $overlay_node['important'] ?? null ) ? $overlay_node['important'] : array(), $target['important'] ) ) );
+					}
+					$merged = true;
 					break;
 				}
 			}
