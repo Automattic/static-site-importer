@@ -1596,7 +1596,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		if ( empty( $mapped_types ) ) {
 			return $overlay;
 		}
-		$css                          = rtrim( $overlay['css'] ) . "\n." . $scope . ' .grunion-field-wrap > .contact-form__input-error:not(.has-errors){display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap > .grunion-field::placeholder{color:revert}' . "\n";
+		$css                          = rtrim( $overlay['css'] ) . "\n." . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-hints{display:contents}' . "\n" . '.' . $scope . ' .grunion-field-wrap .ssi-field-row > label{margin-block-end:0}' . "\n" . '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}' . "\n";
 		$overlay['css']               = $css;
 		$overlay['overlay']['css']    = $css;
 		$overlay['overlay']['sha256'] = hash( 'sha256', $css );
