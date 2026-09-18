@@ -1163,6 +1163,27 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					$accepted = false;
 					break;
 				}
+				// A variant that patches *only* the column track count is the same
+				// fact the guarded mobile-first grid-row rule above governs, so it
+				// is held to that same conservative shape here: exactly one proven
+				// min-width-equivalent widening. A second such variant on this box
+				// or a narrowing query keeps this box out of the merge, so it stays
+				// an unrepresented wrapper and the existing decline stands. A patch
+				// that establishes the column tracks together with other facts in
+				// the same declaration (for example a box whose grid only exists
+				// from a single breakpoint up) is a different, already-proven
+				// shape and is unaffected.
+				if ( array( 'columns' ) === array_keys( $patch ) ) {
+					$condition_fact = is_array( $variant['condition'] ?? null ) ? $variant['condition'] : null;
+					$widens_only_columns = 1 === count( $patches )
+						&& is_array( $condition_fact ) && 'media' === ( $condition_fact['kind'] ?? null )
+						&& is_string( $condition_fact['query'] ?? null )
+						&& self::is_min_width_media_query( $condition_fact['query'] );
+					if ( ! $widens_only_columns ) {
+						$accepted = false;
+						break;
+					}
+				}
 				foreach ( $patch as $property => $value ) {
 					$merged_patch = $box_patches[ $condition ]['patch'] ?? array();
 					$current      = $form_patches[ $condition ][ $property ] ?? ( $merged_patch[ $property ] ?? null );
