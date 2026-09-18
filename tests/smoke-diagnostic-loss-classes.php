@@ -117,6 +117,67 @@ foreach ( $fixtures as $label => $fixture ) {
 }
 
 /*
+ * Producer vocabulary: the php-transformer emits `runtime_island_preserved`
+ * (see FallbackDiagnostic). That spelling is not in SSI's product classes, so
+ * without aliasing it falls through to the contract. `html_form_fallback`
+ * maps to `materialize_form_provider` → importer_materialization_bug — a
+ * phantom materialization bug on an otherwise clean run.
+ */
+$transformer_runtime_island = array(
+	'id'               => 'diag-027-import_diagnostic-html_form_fallback-websitecontactindexhtml',
+	'code'             => 'html_form_fallback',
+	'loss_class'       => 'runtime_island_preserved',
+	'diagnostic_class' => 'runtime_island_preserved',
+	'repair_bucket'    => 'materialize_form_provider',
+	'acceptability'    => 'unacceptable_imported_output_defect',
+	'source'           => 'Automattic\\BlocksEngine\\PhpTransformer\\HtmlToBlocks\\HtmlTransformer',
+);
+$aliased = Static_Site_Importer_Diagnostic_Loss_Classes::classify_with_provenance( $transformer_runtime_island );
+$assert(
+	'preserved_runtime_island' === $aliased['class'] && Static_Site_Importer_Diagnostic_Loss_Classes::SOURCE_EXPLICIT === $aliased['source'],
+	'transformer-runtime-island-alias-is-canonical',
+	'got: ' . $aliased['class'] . ' via ' . $aliased['source']
+);
+$assert(
+	'preserved_runtime_island' === Static_Site_Importer_Diagnostic_Loss_Classes::canonicalize( 'runtime_island_preserved' ),
+	'canonicalize-maps-transformer-runtime-island-spelling'
+);
+$stamped = Static_Site_Importer_Diagnostic_Loss_Classes::apply( $transformer_runtime_island );
+$assert(
+	'preserved_runtime_island' === ( $stamped['loss_class'] ?? '' ) && 'preserved_runtime_island' === ( $stamped['diagnostic_class'] ?? '' ),
+	'apply-stamps-canonical-runtime-island'
+);
+$aliased_counts = Static_Site_Importer_Diagnostic_Loss_Classes::counts( array( $transformer_runtime_island ) );
+$assert( 1 === ( $aliased_counts['preserved_runtime_island'] ?? 0 ), 'alias-counts-as-preserved-runtime-island' );
+$assert( 0 === ( $aliased_counts['importer_materialization_bug'] ?? -1 ), 'alias-does-not-count-as-importer-bug' );
+
+/*
+ * An unrecognized explicit loss_class is vocabulary drift, not an importer
+ * bug. A row that the heuristic would otherwise call importer_materialization_bug
+ * must not be re-bucketed that way just because the producer token is unknown.
+ */
+Static_Site_Importer_Diagnostic_Loss_Classes::reset_unmapped_loss_classes();
+$unknown_row = array(
+	'type'       => 'svg_materialization_failure',
+	'loss_class' => 'totally_unknown_bucket',
+);
+$unknown = Static_Site_Importer_Diagnostic_Loss_Classes::classify_with_provenance( $unknown_row );
+$assert(
+	Static_Site_Importer_Diagnostic_Loss_Classes::UNRECOGNIZED_LOSS_CLASS === $unknown['class'] && Static_Site_Importer_Diagnostic_Loss_Classes::SOURCE_UNRECOGNIZED === $unknown['source'],
+	'unknown-explicit-loss-class-is-not-reclassified',
+	'got: ' . $unknown['class'] . ' via ' . $unknown['source']
+);
+$assert(
+	array( 'totally_unknown_bucket' => 1 ) === Static_Site_Importer_Diagnostic_Loss_Classes::unmapped_loss_classes(),
+	'unknown-explicit-loss-class-is-recorded-as-drift'
+);
+$unknown_counts = Static_Site_Importer_Diagnostic_Loss_Classes::counts( array( $unknown_row ) );
+$assert( 1 === ( $unknown_counts['unrecognized_loss_class'] ?? 0 ), 'unknown-token-counts-under-unrecognized' );
+$assert( 0 === ( $unknown_counts['importer_materialization_bug'] ?? -1 ), 'unknown-token-does-not-fabricate-importer-bug' );
+$assert( 0 === ( $unknown_counts['native_conversion'] ?? -1 ), 'unknown-token-does-not-fall-through-to-native' );
+Static_Site_Importer_Diagnostic_Loss_Classes::reset_unmapped_loss_classes();
+
+/*
  * Compiler file-drop rows are the documented exception to both paths above.
  * The transformer's artifact normalizer reports each drop as a warning carrying
  * a producer code like `file_limit_exceeded`, but no remediation lane, so the
@@ -223,6 +284,7 @@ $transformer_class = 'Automattic\\BlocksEngine\\PhpTransformer\\HtmlToBlocks\\Ht
 
 if ( class_exists( $contract_class ) && class_exists( $transformer_class ) ) {
 	Static_Site_Importer_Diagnostic_Loss_Classes::reset_unmapped_repair_buckets();
+	Static_Site_Importer_Diagnostic_Loss_Classes::reset_unmapped_loss_classes();
 
 	$html_fixtures = glob( __DIR__ . '/fixtures/*/*.html' ) ?: array();
 	sort( $html_fixtures );
@@ -273,6 +335,13 @@ if ( class_exists( $contract_class ) && class_exists( $transformer_class ) ) {
 		array() === $unmapped,
 		'no-unmapped-contract-repair-buckets',
 		'unmapped lanes: ' . wp_json_encode_fallback( $unmapped )
+	);
+
+	$unmapped_classes = Static_Site_Importer_Diagnostic_Loss_Classes::unmapped_loss_classes();
+	$assert(
+		array() === $unmapped_classes,
+		'no-unmapped-producer-loss-classes',
+		'unmapped classes: ' . wp_json_encode_fallback( $unmapped_classes )
 	);
 
 	// The corpus must exercise more than a single product bucket, otherwise the

@@ -525,6 +525,7 @@ $assert( 'accepted_runtime_preservation' === ( $runtime_preservation_diagnostic[
 $assert( 'client_script_execution' === ( $runtime_preservation_diagnostic['runtime_requirement'] ?? '' ), 'contract-preserves-runtime-requirement' );
 $assert( 'preserve' === ( $runtime_preservation_diagnostic['disposition'] ?? '' ), 'contract-preserves-runtime-disposition' );
 $assert( 'preserve_verbatim' === ( $runtime_preservation_diagnostic['js_handling'] ?? '' ), 'contract-preserves-runtime-js-handling' );
+$assert( 'preserved_runtime_island' === ( $runtime_preservation_diagnostic['loss_class'] ?? '' ), 'contract-canonicalizes-transformer-runtime-island-spelling' );
 
 $finalized_report = Static_Site_Importer_Import_Report::from_array(
 	array(
@@ -776,6 +777,7 @@ $safe_runtime_report = Static_Site_Importer_Import_Report::from_array(
 );
 $safe_runtime_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $safe_runtime_report, array( 'fail_on_quality' => true ) );
 $assert( true === ( $safe_runtime_quality['pass'] ?? false ) && false === ( $safe_runtime_quality['fail_import'] ?? true ), 'bounded-safe-runtime-iframe-passes-quality-admission' );
+$assert( 'preserved_runtime_island' === ( $safe_runtime_report->diagnostics()[0]['loss_class'] ?? '' ), 'normalize-canonicalizes-transformer-runtime-island-spelling' );
 $assert( 1 === ( $safe_runtime_quality['accepted_preserved_runtime_island_count'] ?? 0 ) && 0 === ( $safe_runtime_quality['unsupported_fallback_count'] ?? -1 ), 'runtime-island-counts-are-separated-from-unsupported-fallbacks' );
 $assert( 1 === ( $safe_runtime_report['import_validation_result']['counts']['accepted_preserved_runtime_islands'] ?? 0 ) && 'passed' === ( $safe_runtime_report['import_validation_result']['quality_gates']['fallback_blocks']['status'] ?? '' ), 'validation-result-reports-accepted-runtime-island-without-fallback-failure' );
 $assert( 'sanitized_embed_markup' === ( $safe_runtime_report['finding_packets']['packets'][0]['preservation']['strategy'] ?? '' ) && 'runtime_island_registry' === ( $safe_runtime_report['finding_packets']['packets'][0]['preservation']['materialization_path'] ?? '' ), 'finding-packet-preserves-runtime-island-contract-evidence' );

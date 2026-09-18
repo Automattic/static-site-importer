@@ -37,6 +37,12 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Keeping those two paths distinct is the point: previously every row went
  * through the heuristic, so an upstream vocabulary change silently rerouted
  * findings into the wrong product bucket instead of failing.
+ *
+ * Producer rows may already carry `loss_class`. Known aliases are rewritten
+ * to the canonical constant before either path runs, so every downstream
+ * consumer sees one vocabulary. An unrecognized explicit value is not
+ * evidence of an importer bug; it is recorded as vocabulary drift and
+ * classified {@see UNRECOGNIZED_LOSS_CLASS} rather than falling through.
  */
 class Static_Site_Importer_Diagnostic_Loss_Classes {
 
@@ -45,6 +51,15 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	public const PRESERVED_RUNTIME_ISLAND     = 'preserved_runtime_island';
 	public const UNSUPPORTED_LOSS             = 'unsupported_loss';
 	public const IMPORTER_MATERIALIZATION_BUG = 'importer_materialization_bug';
+
+	/**
+	 * Producer sent a `loss_class` this plugin does not recognize.
+	 *
+	 * Not a product-readiness bucket and not a member of {@see classes()}.
+	 * Counted separately so vocabulary drift cannot inflate
+	 * {@see IMPORTER_MATERIALIZATION_BUG}.
+	 */
+	public const UNRECOGNIZED_LOSS_CLASS = 'unrecognized_loss_class';
 
 	/** Importer-owned type for files truncated at the compiler's file-count limit. */
 	public const OMITTED_ARTIFACT_FILES_TYPE = 'omitted_artifact_files';
@@ -66,9 +81,25 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	/**
 	 * Classification provenance markers, returned by {@see classify_with_provenance()}.
 	 */
-	public const SOURCE_EXPLICIT  = 'explicit';
-	public const SOURCE_CONTRACT  = 'contract';
-	public const SOURCE_HEURISTIC = 'heuristic';
+	public const SOURCE_EXPLICIT     = 'explicit';
+	public const SOURCE_CONTRACT     = 'contract';
+	public const SOURCE_HEURISTIC    = 'heuristic';
+	public const SOURCE_UNRECOGNIZED = 'unrecognized';
+
+	/**
+	 * Producer spellings that mean a canonical SSI class.
+	 *
+	 * The php-transformer emits `runtime_island_preserved` (FallbackDiagnostic /
+	 * HtmlTransformer). SSI's product vocabulary is `preserved_runtime_island`.
+	 * The fixture matrix already aliases this; classify and ingest must too,
+	 * or an unrecognized explicit value falls through to the contract and is
+	 * counted as an importer materialization bug.
+	 *
+	 * @var array<string,string>
+	 */
+	private const CLASS_ALIASES = array(
+		'runtime_island_preserved' => self::PRESERVED_RUNTIME_ISLAND,
+	);
 
 	/**
 	 * Upstream contract `repair_bucket` remediation lane => product-facing bucket.
@@ -132,6 +163,13 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	private static $unmapped_repair_buckets = array();
 
 	/**
+	 * Explicit `loss_class` tokens seen at runtime with no canonical mapping.
+	 *
+	 * @var array<string,int>
+	 */
+	private static $unmapped_loss_classes = array();
+
+	/**
 	 * Contract repair buckets encountered that this plugin does not map.
 	 *
 	 * @return array<string,int> Bucket name => occurrence count.
@@ -145,6 +183,63 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	 */
 	public static function reset_unmapped_repair_buckets(): void {
 		self::$unmapped_repair_buckets = array();
+	}
+
+	/**
+	 * Producer `loss_class` tokens this plugin does not recognize.
+	 *
+	 * @return array<string,int> Token => occurrence count.
+	 */
+	public static function unmapped_loss_classes(): array {
+		return self::$unmapped_loss_classes;
+	}
+
+	/**
+	 * Reset recorded vocabulary drift. Intended for test isolation.
+	 */
+	public static function reset_unmapped_loss_classes(): void {
+		self::$unmapped_loss_classes = array();
+	}
+
+	/**
+	 * Map a producer or consumer loss-class token onto the canonical vocabulary.
+	 *
+	 * Known aliases become the SSI constant. Unknown tokens return '' so
+	 * callers can distinguish "not a class" from a real bucket.
+	 *
+	 * @param string $value Raw loss_class / diagnostic_class token.
+	 * @return string Canonical class, or '' when unrecognized.
+	 */
+	public static function canonicalize( string $value ): string {
+		$value = trim( $value );
+		if ( '' === $value ) {
+			return '';
+		}
+		if ( isset( self::CLASS_ALIASES[ $value ] ) ) {
+			return self::CLASS_ALIASES[ $value ];
+		}
+		if ( in_array( $value, self::classes(), true ) || self::UNRECOGNIZED_LOSS_CLASS === $value ) {
+			return $value;
+		}
+
+		return '';
+	}
+
+	/**
+	 * Stamp canonical `loss_class` / `diagnostic_class` onto a diagnostic row.
+	 *
+	 * This is the ingest boundary: every downstream consumer (summary
+	 * bucketing, repair buckets, quality gates) must see one vocabulary.
+	 *
+	 * @param array<string,mixed> $diagnostic Diagnostic row.
+	 * @return array<string,mixed>
+	 */
+	public static function apply( array $diagnostic ): array {
+		$class                          = self::classify( $diagnostic );
+		$diagnostic['loss_class']       = $class;
+		$diagnostic['diagnostic_class'] = $class;
+
+		return $diagnostic;
 	}
 
 	/**
@@ -217,11 +312,22 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	 * @return array{class:string,source:string,repair_bucket:string}
 	 */
 	public static function classify_with_provenance( array $diagnostic ): array {
-		$explicit = self::scalar( $diagnostic, array( 'loss_class', 'diagnostic_class' ) );
-		if ( in_array( $explicit, self::classes(), true ) ) {
+		$explicit  = self::scalar( $diagnostic, array( 'loss_class', 'diagnostic_class' ) );
+		$canonical = self::canonicalize( $explicit );
+		if ( '' !== $canonical ) {
 			return array(
-				'class'         => $explicit,
+				'class'         => $canonical,
 				'source'        => self::SOURCE_EXPLICIT,
+				'repair_bucket' => '',
+			);
+		}
+
+		if ( '' !== $explicit ) {
+			self::$unmapped_loss_classes[ $explicit ] = ( self::$unmapped_loss_classes[ $explicit ] ?? 0 ) + 1;
+
+			return array(
+				'class'         => self::UNRECOGNIZED_LOSS_CLASS,
+				'source'        => self::SOURCE_UNRECOGNIZED,
 				'repair_bucket' => '',
 			);
 		}
@@ -363,6 +469,9 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 
 	/**
 	 * Count diagnostics by loss class, including zeroes for every stable class.
+	 *
+	 * Unrecognized producer tokens appear as an extra key rather than being
+	 * folded into {@see IMPORTER_MATERIALIZATION_BUG}.
 	 *
 	 * @param array<int,array<string,mixed>> $diagnostics Diagnostics.
 	 * @return array<string,int>
