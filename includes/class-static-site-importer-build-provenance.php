@@ -230,8 +230,8 @@ class Static_Site_Importer_Build_Provenance {
 		if ( self::SCHEMA !== (string) ( $identity['schema'] ?? '' ) ) {
 			return false;
 		}
-		$encoded = function_exists( 'wp_json_encode' ) ? wp_json_encode( $identity ) : json_encode( $identity );
-		if ( ! is_string( $encoded ) || '' === $encoded ) {
+		$encoded = function_exists( 'wp_json_encode' ) ? wp_json_encode( $identity ) : json_encode( $identity ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Standalone smoke tests do not load WordPress encoding helpers.
+		if ( ! is_string( $encoded ) ) {
 			return false;
 		}
 

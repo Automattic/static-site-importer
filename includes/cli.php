@@ -395,7 +395,7 @@ if ( ! function_exists( 'static_site_importer_cli_prepare_request_bundle' ) ) {
 						return $resolved;
 					}
 					if ( 'files' === $type ) {
-						$metadata                     = isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array();
+						$metadata                    = isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array();
 						$metadata['compiler_limits'] = $bundle['compiler_limits'];
 						return array(
 							'source'         => array(

@@ -32,8 +32,7 @@ class StaticSiteImporterWordPressSitePlanMaterializerTest extends WP_UnitTestCas
 		$plan['quality']['editability_report_plan_hash'] = $bound_hash;
 		$plan['plan_identity']                           = WordPressSitePlan::planIdentity( $plan );
 
-		$admit_report = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'editability_report_admission' );
-		$admission    = $admit_report->invoke( null, $plan );
+		$admission = Static_Site_Importer_Site_Plan_Preparation::editability_report_admission( $plan );
 		$this->assertSame( 'passed', $admission['status'] ?? '' );
 		$this->assertSame( 'blocks-engine/php-transformer/editability-report/v2', $admission['report_schema'] ?? '' );
 		$this->assertSame( $bound_hash, $admission['plan_hash'] ?? '' );
@@ -41,7 +40,7 @@ class StaticSiteImporterWordPressSitePlanMaterializerTest extends WP_UnitTestCas
 		$mismatched_plan                                            = $plan;
 		$mismatched_plan['quality']['editability_report_plan_hash'] = str_repeat( '0', 64 );
 		$mismatched_plan['plan_identity']                           = WordPressSitePlan::planIdentity( $mismatched_plan );
-		$mismatched = $admit_report->invoke( null, $mismatched_plan );
+		$mismatched = Static_Site_Importer_Site_Plan_Preparation::editability_report_admission( $mismatched_plan );
 		$this->assertSame( 'rejected', $mismatched['status'] ?? '' );
 		$this->assertSame( 'editability_report_plan_hash_mismatch', $mismatched['diagnostic']['reason_code'] ?? '' );
 	}

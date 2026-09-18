@@ -86,14 +86,14 @@ $analysis     = Static_Site_Importer_Form_Fallback_Contract::analysis_from_metad
 if ( $manifest !== $analysis['manifest'] || $presentation !== $analysis['presentation'] ) {
 	throw new RuntimeException( 'Expected combined analysis to preserve the metadata helper outputs.' );
 }
-$fallback           = array(
+$fallback = array(
 	'source_path' => 'index.html',
 	'selector'    => 'form.newsletter',
 	'form'        => $manifest['form'],
 	'controls'    => $manifest['controls'],
 );
-$prepared           = Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $entity );
-$bindings           = Static_Site_Importer_Entity_Materializer_Registry::block_bindings(
+$prepared = Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $entity );
+$bindings = Static_Site_Importer_Entity_Materializer_Registry::block_bindings(
 	array(
 		'entities' => array(
 			'forms' => array(
@@ -129,7 +129,11 @@ $projection = array(
 	'hash'         => Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $fallback ),
 	'prepared'     => $prepared,
 	'bindings'     => $bindings,
-	'diagnostic'   => Static_Site_Importer_Report_Diagnostics::fallback_diagnostic_entry( 'core_html_block', 'index.html', '<form class="newsletter"></form>', array( 'reason' => 'fixture', 'form' => $manifest['form'], 'controls' => $manifest['controls'] ), array() ),
+	'diagnostic'   => Static_Site_Importer_Report_Diagnostics::fallback_diagnostic_entry( 'core_html_block', 'index.html', '<form class="newsletter"></form>', array(
+		'reason'   => 'fixture',
+		'form'     => $manifest['form'],
+		'controls' => $manifest['controls'],
+	), array() ),
 );
 
 echo wp_json_encode( $projection ) . "\n";

@@ -293,15 +293,15 @@ class Static_Site_Importer_Report_Diagnostics {
 			$entry['block_path'] = (string) $context['path'];
 		}
 		if ( 'form' === strtolower( (string) $entry['tag_name'] ) ) {
-			$metadata                   = array(
+			$metadata          = array(
 				'form'              => is_array( $context['form'] ?? null ) ? $context['form'] : array(),
 				'controls'          => is_array( $context['controls'] ?? null ) ? $context['controls'] : array(),
 				'form_presentation' => is_array( $context['form_presentation'] ?? null ) ? $context['form_presentation'] : array(),
 			);
-			$manifest                   = Static_Site_Importer_Form_Fallback_Contract::manifest_from_metadata( $metadata );
-			$entry['form']              = $manifest['form'];
-			$entry['controls']          = $manifest['controls'];
-			$presentation               = Static_Site_Importer_Form_Fallback_Contract::presentation_from_metadata( $metadata, $selector, (int) ( $context['occurrence'] ?? 0 ) );
+			$manifest          = Static_Site_Importer_Form_Fallback_Contract::manifest_from_metadata( $metadata );
+			$entry['form']     = $manifest['form'];
+			$entry['controls'] = $manifest['controls'];
+			$presentation      = Static_Site_Importer_Form_Fallback_Contract::presentation_from_metadata( $metadata, $selector, (int) ( $context['occurrence'] ?? 0 ) );
 			if ( ! empty( $presentation ) ) {
 				$entry['form_presentation'] = $presentation;
 			}
@@ -356,11 +356,11 @@ class Static_Site_Importer_Report_Diagnostics {
 				$report->append_diagnostic( $diagnostic );
 			}
 		}
-		$visual_fidelity                           = $report->section( 'visual_fidelity' );
-		$visual_fidelity['gate_owner']             = 'codebox_runtime';
-		$visual_fidelity['compiler_report_path']   = Static_Site_Importer_Visual_Parity_Oracle::COMPILER_REPORT_PATH;
-		$visual_fidelity['expected_schema']        = Static_Site_Importer_Visual_Parity_Oracle::SCHEMA;
-		$visual_fidelity['missing_data_contract']  = isset( $oracle['missing_data_contract'] ) && is_array( $oracle['missing_data_contract'] ) ? $oracle['missing_data_contract'] : array();
+		$visual_fidelity                          = $report->section( 'visual_fidelity' );
+		$visual_fidelity['gate_owner']            = 'codebox_runtime';
+		$visual_fidelity['compiler_report_path']  = Static_Site_Importer_Visual_Parity_Oracle::COMPILER_REPORT_PATH;
+		$visual_fidelity['expected_schema']       = Static_Site_Importer_Visual_Parity_Oracle::SCHEMA;
+		$visual_fidelity['missing_data_contract'] = isset( $oracle['missing_data_contract'] ) && is_array( $oracle['missing_data_contract'] ) ? $oracle['missing_data_contract'] : array();
 		if ( in_array( $oracle['status'], array( 'passed', 'failed' ), true ) ) {
 			$visual_fidelity['status']             = $oracle['status'];
 			$visual_fidelity['verification']       = Static_Site_Importer_Visual_Parity_Oracle::VERIFICATION;
@@ -577,19 +577,6 @@ class Static_Site_Importer_Report_Diagnostics {
 	 */
 	public static function materialize_product_findings( Static_Site_Importer_Import_Report $report, array $args = array(), array &$page_contents = array() ): array {
 		return Static_Site_Importer_Product_Finding_Materializer::materialize_product_findings( $report, $args, $page_contents );
-	}
-
-	/**
-	 * Replace plain static product-card add-to-cart buttons with adapter-owned markup.
-	 *
-	 * @param array<string,mixed>        $adapter                 Shop adapter.
-	 * @param array<string,mixed>        $finding                 Product-grid finding.
-	 * @param array<string,array<mixed>> $seeded_products_by_slug Seeded Woo rows keyed by slug.
-	 * @param array<string,string>       $page_contents           Materialized page post_content keyed by source filename.
-	 * @return array{grafted:bool,finding:array<string,mixed>,diagnostic:?array<string,mixed>}
-	 */
-	private static function graft_product_add_to_cart_shortcodes_into_page_contents( array $adapter, array $finding, array $seeded_products_by_slug, array &$page_contents ): array {
-		return Static_Site_Importer_Product_Finding_Materializer::graft_product_add_to_cart_shortcodes_into_page_contents( $adapter, $finding, $seeded_products_by_slug, $page_contents );
 	}
 
 	/**

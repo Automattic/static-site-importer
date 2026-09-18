@@ -53,9 +53,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		if ( null !== $existing_stylesheets ) {
 			$writes = array();
 			foreach ( $existing_stylesheets as $path => $content ) {
-				if ( is_string( $path ) && is_string( $content ) ) {
-					$writes[ $path ] = $content . $provider_layout_css . ( str_ends_with( $path, '/assets/css/editor-style.css' ) ? $provider_editor_css : '' );
-				}
+				$writes[ $path ] = $content . $provider_layout_css . ( str_ends_with( $path, '/assets/css/editor-style.css' ) ? $provider_editor_css : '' );
 			}
 			return $writes;
 		}
@@ -188,7 +186,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		// with the producing build and adds an Update URI identifying this
 		// theme, so the theme stays attributable and updatable after SSI is
 		// removed. An absent provenance record keeps the historical header.
-		$headers        = array(
+		$headers         = array(
 			'Theme Name: ' . $theme_name,
 			'Author: Static Site Importer',
 			'Description: Materialized from a compiled website artifact.',

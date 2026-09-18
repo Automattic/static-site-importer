@@ -97,7 +97,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			if ( is_wp_error( $destination ) ) {
 				throw new InvalidArgumentException( (string) $destination->get_error_code() );
 			}
-			$slug      = (string) $destination['slug'];
+			$slug = (string) $destination['slug'];
 			// Writes resolve against the destination's asset surface: the theme
 			// directory it owns, or the companion publication home it borrows.
 			$theme_dir = (string) ( $destination['asset_dir'] ?? $destination['theme_dir'] );
@@ -121,8 +121,8 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				if ( is_wp_error( $projection ) ) {
 					throw new InvalidArgumentException( (string) $projection->get_error_code() );
 				}
-			$args['classic_theme_projection'] = $projection;
-			$resolved['writes']               = Static_Site_Importer_Classic_Theme_Projection::resolved_writes( $resolved, Static_Site_Importer_Classic_Theme_Projection::writes( $args['classic_theme_projection'], $resolved, $theme_uri, (string) ( $args['name'] ?? $slug ), isset( $args['artifact_provenance'] ) && is_array( $args['artifact_provenance'] ) ? $args['artifact_provenance'] : array() ) );
+				$args['classic_theme_projection'] = $projection;
+				$resolved['writes']               = Static_Site_Importer_Classic_Theme_Projection::resolved_writes( $resolved, Static_Site_Importer_Classic_Theme_Projection::writes( $args['classic_theme_projection'], $resolved, $theme_uri, (string) ( $args['name'] ?? $slug ), isset( $args['artifact_provenance'] ) && is_array( $args['artifact_provenance'] ) ? $args['artifact_provenance'] : array() ) );
 				foreach ( $resolved['pages'] as &$page ) {
 					$page['resolved_block_markup'] = '';
 				}
@@ -185,7 +185,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				$theme_dir = (string) $publication['dir'];
 			}
 		}
-		$reports   = array( $theme_dir . '/static-site-importer-manifest.json' );
+		$reports = array( $theme_dir . '/static-site-importer-manifest.json' );
 		if ( ! empty( $args['write_theme_report_artifacts'] ) ) {
 			$reports = array_merge( $reports, array( $theme_dir . '/import-report.json', $theme_dir . '/import-validation-result.json', $theme_dir . '/finding-packets.json' ) );
 		}
@@ -318,6 +318,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 
 		$destination   = isset( $prepared['destination'] ) && is_array( $prepared['destination'] ) ? $prepared['destination'] : null;
 		$recheck_error = '';
+		$theme_root    = '';
 		if ( null !== $destination && Static_Site_Importer_Import_Destination::EXISTING_THEME === ( $destination['mode'] ?? '' ) ) {
 			// Mutable existing destinations are rechecked against the site's own
 			// active theme and companion publication root before writing.
@@ -331,10 +332,10 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			$destination = null;
 		}
 		if ( null === $destination ) {
-			$slug       = sanitize_key( (string) ( $args['slug'] ?? '' ) );
-			$theme_root = get_theme_root();
-			$theme_uri  = trailingslashit( get_theme_root_uri() ) . $slug;
-			$theme_dir  = trailingslashit( $theme_root ) . $slug;
+			$slug        = sanitize_key( (string) ( $args['slug'] ?? '' ) );
+			$theme_root  = get_theme_root();
+			$theme_uri   = trailingslashit( get_theme_root_uri() ) . $slug;
+			$theme_dir   = trailingslashit( $theme_root ) . $slug;
 			$destination = array(
 				'mode'               => Static_Site_Importer_Import_Destination::GENERATED_THEME,
 				'slug'               => $slug,
@@ -348,7 +349,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			$theme_dir = (string) ( $destination['asset_dir'] ?? $destination['theme_dir'] );
 			$theme_uri = (string) ( $destination['asset_uri'] ?? $destination['theme_uri'] );
 		}
-		$state      = array(
+		$state = array(
 			'plan'                              => $plan,
 			'plan_identity'                     => $prepared['plan_identity'],
 			'receipt_instance_id'               => $prepared['receipt_instance_id'],
@@ -532,28 +533,28 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			$state['preflight_error'] = $font_overlay;
 			throw new InvalidArgumentException( sanitize_key( (string) $font_overlay->get_error_code() ) );
 		}
-		$viewport_overlay               = isset( $state['viewport_overlay'] ) && is_array( $state['viewport_overlay'] )
+		$viewport_overlay                     = isset( $state['viewport_overlay'] ) && is_array( $state['viewport_overlay'] )
 			? $state['viewport_overlay']
 			: Static_Site_Importer_Viewport_Metadata_Materializer::prepare_overlay( $font_resolved, $font_overlay );
-		$title_bootstrap_overlay        = 'materialized' === ( $viewport_overlay['status'] ?? '' ) ? $viewport_overlay : $font_overlay;
-		$route_title_overlay            = isset( $state['route_title_overlay'] ) && is_array( $state['route_title_overlay'] )
+		$title_bootstrap_overlay              = 'materialized' === ( $viewport_overlay['status'] ?? '' ) ? $viewport_overlay : $font_overlay;
+		$route_title_overlay                  = isset( $state['route_title_overlay'] ) && is_array( $state['route_title_overlay'] )
 			? $state['route_title_overlay']
 			: Static_Site_Importer_Route_Document_Metadata::prepare_overlay( $font_resolved, $title_bootstrap_overlay );
-		$internal_link_overlay          = isset( $state['internal_link_overlay'] ) && is_array( $state['internal_link_overlay'] )
+		$internal_link_overlay                = isset( $state['internal_link_overlay'] ) && is_array( $state['internal_link_overlay'] )
 			? $state['internal_link_overlay']
 			: Static_Site_Importer_Internal_Link_Runtime::prepare_overlay( $font_resolved, $route_title_overlay );
-		$head_bootstrap_overlay         = 'materialized' === ( $internal_link_overlay['status'] ?? '' )
+		$head_bootstrap_overlay               = 'materialized' === ( $internal_link_overlay['status'] ?? '' )
 			? $internal_link_overlay
 			: ( 'materialized' === ( $route_title_overlay['status'] ?? '' ) ? $route_title_overlay : $title_bootstrap_overlay );
-		$route_head_metadata_overlay    = isset( $state['route_head_metadata_overlay'] ) && is_array( $state['route_head_metadata_overlay'] )
+		$route_head_metadata_overlay          = isset( $state['route_head_metadata_overlay'] ) && is_array( $state['route_head_metadata_overlay'] )
 			? $state['route_head_metadata_overlay']
 			: Static_Site_Importer_Route_Head_Metadata::prepare_overlay( $font_resolved, $head_bootstrap_overlay );
-		$state['font_overlay']          = $font_overlay;
-		$state['viewport_overlay']      = $viewport_overlay;
-		$state['internal_link_overlay'] = $internal_link_overlay;
-		$state['route_title_overlay']   = $internal_link_overlay;
+		$state['font_overlay']                = $font_overlay;
+		$state['viewport_overlay']            = $viewport_overlay;
+		$state['internal_link_overlay']       = $internal_link_overlay;
+		$state['route_title_overlay']         = $internal_link_overlay;
 		$state['route_head_metadata_overlay'] = $route_head_metadata_overlay;
-		$state['composed_theme_writes'] = array_merge( $overlay_writes, Static_Site_Importer_Site_Plan_Persistence::font_overlay_writes( $state['theme_dir'], $font_overlay ), Static_Site_Importer_Site_Plan_Persistence::viewport_overlay_writes( $state['theme_dir'], $viewport_overlay ), Static_Site_Importer_Site_Plan_Persistence::viewport_overlay_writes( $state['theme_dir'], $internal_link_overlay ), Static_Site_Importer_Site_Plan_Persistence::viewport_overlay_writes( $state['theme_dir'], $route_head_metadata_overlay ) );
+		$state['composed_theme_writes']       = array_merge( $overlay_writes, Static_Site_Importer_Site_Plan_Persistence::font_overlay_writes( $state['theme_dir'], $font_overlay ), Static_Site_Importer_Site_Plan_Persistence::viewport_overlay_writes( $state['theme_dir'], $viewport_overlay ), Static_Site_Importer_Site_Plan_Persistence::viewport_overlay_writes( $state['theme_dir'], $internal_link_overlay ), Static_Site_Importer_Site_Plan_Persistence::viewport_overlay_writes( $state['theme_dir'], $route_head_metadata_overlay ) );
 		foreach ( $state['resolved']['writes'] as $write ) {
 			if ( null !== Static_Site_Importer_Site_Plan_Persistence::payload_reference( $write ) && ! Static_Site_Importer_Site_Plan_Persistence::valid_payload_reference( Static_Site_Importer_Site_Plan_Persistence::payload_reference( $write ) ) ) {
 				throw new InvalidArgumentException( 'payload_reference_invalid' );

@@ -20,8 +20,8 @@ final class Static_Site_Importer_Companion_Replacement {
 	 * @return true|WP_Error
 	 */
 	public static function validate( array $plan ) {
-		$base = rtrim( (string) $plan['base_dir'], '/\\' );
-		$root = $base . '/' . $plan['slug'];
+		$base        = rtrim( (string) $plan['base_dir'], '/\\' );
+		$root        = $base . '/' . $plan['slug'];
 		$config_path = $root . '/companion.json';
 		if ( ! file_exists( $config_path ) ) {
 			return true;
@@ -35,8 +35,8 @@ final class Static_Site_Importer_Companion_Replacement {
 				return self::unavailable( 'Existing companion block directory is invalid.' );
 			}
 			$relative = $plan['slug'] . '/blocks/' . $directory . '/block.json';
-			$before = self::read_json( $base . '/' . $relative );
-			$after = isset( $plan['files'][ $relative ] ) ? json_decode( $plan['files'][ $relative ], true ) : null;
+			$before   = self::read_json( $base . '/' . $relative );
+			$after    = isset( $plan['files'][ $relative ] ) ? json_decode( $plan['files'][ $relative ], true ) : null;
 			if ( ! is_array( $before ) || ! is_string( $before['name'] ?? null ) ) {
 				return self::unavailable( 'Existing block metadata is unreadable.' );
 			}
@@ -52,7 +52,11 @@ final class Static_Site_Importer_Companion_Replacement {
 				return new WP_Error(
 					'static_site_importer_companion_saved_contract_changed',
 					'Saved content uses a block whose registration or existing attribute schema would change. Migrate those instances or retain their block contract.',
-					array( 'block_name' => $before['name'], 'changed_contract' => $changed, 'reference' => $reference )
+					array(
+						'block_name'       => $before['name'],
+						'changed_contract' => $changed,
+						'reference'        => $reference,
+					)
 				);
 			}
 		}
@@ -119,7 +123,10 @@ final class Static_Site_Importer_Companion_Replacement {
 					foreach ( array( 'wp_template', 'wp_template_part' ) as $type ) {
 						foreach ( get_block_templates( array(), $type ) as $template ) {
 							if ( self::contains_block( parse_blocks( $template->content ), $name ) ) {
-								return array( 'template_id' => $template->id, 'type' => $type );
+								return array(
+									'template_id' => $template->id,
+									'type'        => $type,
+								);
 							}
 						}
 					}
@@ -132,7 +139,7 @@ final class Static_Site_Importer_Companion_Replacement {
 
 	private static function contains_block( array $blocks, string $name ): bool {
 		foreach ( $blocks as $block ) {
-			if ( $name === ( $block['blockName'] ?? null ) || self::contains_block( $block['innerBlocks'] ?? array(), $name ) ) {
+			if ( ( $block['blockName'] ?? null ) === $name || self::contains_block( $block['innerBlocks'] ?? array(), $name ) ) {
 				return true;
 			}
 		}
@@ -145,7 +152,7 @@ final class Static_Site_Importer_Companion_Replacement {
 		}
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local compiler metadata.
 		$content = file_get_contents( $path );
-		$value = is_string( $content ) ? json_decode( $content, true ) : null;
+		$value   = is_string( $content ) ? json_decode( $content, true ) : null;
 		return is_array( $value ) ? $value : null;
 	}
 

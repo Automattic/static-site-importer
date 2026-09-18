@@ -67,9 +67,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$state['failure_reason'] = $error->getMessage();
 			return Static_Site_Importer_Site_Plan_Receipt::receipt( 'rejected', $state );
 		}
-		$args                = $state['args'];
-		$font_overlay        = $state['font_overlay'];
-		$viewport_overlay    = $state['viewport_overlay'];
+		$args                        = $state['args'];
+		$font_overlay                = $state['font_overlay'];
+		$viewport_overlay            = $state['viewport_overlay'];
 		$route_title_overlay         = $state['route_title_overlay'] ?? array();
 		$route_head_metadata_overlay = $state['route_head_metadata_overlay'] ?? array();
 
@@ -156,7 +156,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				);
 				continue;
 			}
-			$path = $state['theme_dir'] . '/' . $write['target_path'];
+			$path        = $state['theme_dir'] . '/' . $write['target_path'];
 			$publication = self::asset_publication_receipt( $destination, $state['theme_dir'], (string) ( $state['theme']['uri'] ?? '' ), (string) ( $write['kind'] ?? '' ) );
 			self::journal_file( $state, $path );
 			if ( isset( $state['composed_theme_writes'][ $path ] ) && is_file( $path ) && self::file_hash( $path ) === hash( 'sha256', $state['composed_theme_writes'][ $path ] ) ) {
@@ -1023,7 +1023,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	public static function apply_companion_asset_loading( array &$state ) {
 		$destination = $state['destination'] ?? array();
 		if ( Static_Site_Importer_Import_Destination::EXISTING_THEME !== ( $destination['mode'] ?? '' ) ) {
-			return array( 'status' => 'skipped', 'reason' => 'generated_theme_theme_owned_assets', 'post_ids' => array(), 'files' => array(), 'diagnostics' => array() );
+			return array(
+				'status'      => 'skipped',
+				'reason'      => 'generated_theme_theme_owned_assets',
+				'post_ids'    => array(),
+				'files'       => array(),
+				'diagnostics' => array(),
+			);
 		}
 		$stylesheet_targets = array();
 		foreach ( $state['applied']['files'] as $file ) {
@@ -1036,13 +1042,19 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 		}
 		if ( array() === $stylesheet_targets ) {
-			return array( 'status' => 'skipped', 'reason' => 'no_published_stylesheets', 'post_ids' => array(), 'files' => array(), 'diagnostics' => array() );
+			return array(
+				'status'      => 'skipped',
+				'reason'      => 'no_published_stylesheets',
+				'post_ids'    => array(),
+				'files'       => array(),
+				'diagnostics' => array(),
+			);
 		}
 		$post_ids = array_map( 'intval', array_column( $state['applied']['posts'] ?? array(), 'id' ) );
 		$config   = Static_Site_Importer_Companion_Asset_Publication::scoped_asset_config( $stylesheet_targets, $post_ids, (string) ( $state['theme']['uri'] ?? '' ) );
 		$loading  = array(
 			'status'      => 'completed',
-			'post_ids'    => array_values( $post_ids ),
+			'post_ids'    => $post_ids,
 			'files'       => array(),
 			'diagnostics' => array(),
 		);

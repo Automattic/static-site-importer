@@ -214,7 +214,11 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			self::compile_presentation_destinations( $destinations, $variant['style_patch'], $index, $role, $variant['condition'], $rules, $operations, $losses );
 		}
 		if ( 'generic/form-container-presentation/v1' === ( $container['schema'] ?? null ) ) {
-			$destination = array( 'role' => 'control', 'selector' => $validated_map['scope'], 'properties' => array_keys( self::presentation_property_map() ) );
+			$destination = array(
+				'role'       => 'control',
+				'selector'   => $validated_map['scope'],
+				'properties' => array_keys( self::presentation_property_map() ),
+			);
 			self::compile_presentation_destinations( array( $destination ), $container['styles'] ?? array(), 0, 'control', null, $rules, $operations, $losses );
 			foreach ( array_slice( $container['variants'] ?? array(), 0, 32 ) as $variant ) {
 				if ( self::safe_condition( $variant['condition'] ?? null ) && is_array( $variant['styles'] ?? null ) ) {
@@ -670,7 +674,10 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	private static function safe_presentation_resets( mixed $resets ): bool {
-		if ( array( 'color' => 'revert', 'opacity' => 'revert' ) === $resets ) {
+		if ( array(
+			'color'   => 'revert',
+			'opacity' => 'revert',
+		) === $resets ) {
 			return true;
 		}
 		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'line-height', 'gap', 'display', 'align-items', 'height' ) ) ) {

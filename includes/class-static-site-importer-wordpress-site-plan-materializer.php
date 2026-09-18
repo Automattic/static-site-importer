@@ -115,31 +115,6 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return Static_Site_Importer_Site_Plan_Preparation::safe_external_report_destination( $path );
 	}
 
-	/** @param array<string,string> $routes */
-	private static function rewrite_route_references( string $content, array $routes ): string {
-		return Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $content, $routes );
-	}
-
-	/** @param array<string,mixed> $write */
-	private static function write_file( string $theme_dir, array $write, ?object $payload_reader = null, ?Closure $chunk_writer = null ) {
-		return Static_Site_Importer_Site_Plan_Persistence::write_file( $theme_dir, $write, $payload_reader, $chunk_writer );
-	}
-
-	/** Derive expected overlay-composed stylesheets and frontend delivery bootstrap. */
-	private static function provider_layout_stylesheet_writes( array $state, array $overlays ) {
-		return Static_Site_Importer_Site_Plan_Persistence::provider_layout_stylesheet_writes( $state, $overlays );
-	}
-
-	/** @param array<int,array<string,mixed>> $pages @return array<int,array<string,mixed>>|null */
-	private static function parent_ordered_pages( array $pages, string $import_run_id = '' ): ?array {
-		return Static_Site_Importer_Site_Plan_Preparation::parent_ordered_pages( $pages, $import_run_id );
-	}
-
-	/** Resolve a reference exactly once at the write boundary and verify declared raw bytes. */
-	private static function write_payload_bytes( array $write, ?object $payload_reader ) {
-		return Static_Site_Importer_Site_Plan_Persistence::write_payload_bytes( $write, $payload_reader );
-	}
-
 	/** Add a late file mutation to a deferred materialization receipt. */
 	public static function journal_receipt_file( array &$receipt, string $path ): void {
 		Static_Site_Importer_Site_Plan_Persistence::journal_receipt_file( $receipt, $path );
@@ -160,33 +135,8 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return Static_Site_Importer_Site_Plan_Persistence::rollback_receipt( $receipt, $reason );
 	}
 
-	/** Revert importer-owned runtime state, writes, and posts on a failed receipt. */
-	private static function rollback( array &$state ): void {
-		Static_Site_Importer_Site_Plan_Persistence::rollback( $state );
-	}
-
-	/**
-	 * Admit producer-owned editability evidence without recreating its metrics or policy.
-	 *
-	 * Current Blocks Engine plans carry the required policy but not the report binding.
-	 * That compatibility path is explicit and can be retired by setting
-	 * quality.editability_report_required on plans from upgraded producers.
-	 *
-	 * @param array<string,mixed> $plan
-	 * @return array<string,mixed>
-	 */
-	private static function editability_report_admission( array $plan ): array {
-		return Static_Site_Importer_Site_Plan_Preparation::editability_report_admission( $plan );
-	}
-
-	/** @param array<string,mixed> $plan */
-	private static function hash( array $plan ): string {
-		return Static_Site_Importer_Site_Plan_Preparation::hash( $plan );
-	}
-
 	/** Hash the resolved projection only for prepare-to-write change detection. */
 	public static function prepared_resolved_projection_hash( array $projection ): string {
 		return Static_Site_Importer_Site_Plan_Preparation::prepared_resolved_projection_hash( $projection );
 	}
-
 }

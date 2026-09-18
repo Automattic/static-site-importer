@@ -369,23 +369,19 @@ namespace {
 	$assert( str_contains( $owned_graft_contents['website/other-shop.html'], '>Add to cart<' ) && ! str_contains( $owned_graft_contents['website/other-shop.html'], '[add_to_cart id=' ), 'product-graft-resolved-source-never-mutates-identical-other-page-region' );
 
 	// Grafting requires a seeded Woo product ID; source-only product metadata is not enough.
-	$graft_method   = new ReflectionMethod( 'Static_Site_Importer_Report_Diagnostics', 'graft_product_add_to_cart_shortcodes_into_page_contents' );
 	$no_id_contents = array( 'website/shop.html' => $button_region );
 	$no_id_finding  = $graft_report['diagnostics'][0];
-	$no_id_result   = $graft_method->invokeArgs(
-		null,
+	$no_id_result   = Static_Site_Importer_Product_Finding_Materializer::graft_product_add_to_cart_shortcodes_into_page_contents(
+		Static_Site_Importer_Entity_Materializer_Registry::product_adapter(),
+		$no_id_finding,
 		array(
-			Static_Site_Importer_Entity_Materializer_Registry::product_adapter(),
-			$no_id_finding,
-			array(
-				'aero-mug'   => array( 'slug' => 'aero-mug' ),
-				'trail-pack' => array(
-					'slug' => 'trail-pack',
-					'id'   => 1201,
-				),
+			'aero-mug'   => array( 'slug' => 'aero-mug' ),
+			'trail-pack' => array(
+				'slug' => 'trail-pack',
+				'id'   => 1201,
 			),
-			&$no_id_contents,
-		)
+		),
+		$no_id_contents
 	);
 	$assert( false === ( $no_id_result['grafted'] ?? true ), 'no-product-id-not-grafted' );
 	$assert( 'no_safe_plain_add_to_cart_products' === ( $no_id_result['diagnostic']['reason'] ?? '' ), 'no-product-id-reason' );
