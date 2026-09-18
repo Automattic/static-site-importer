@@ -470,29 +470,47 @@ final class Static_Site_Importer_Form_Field_Markup {
 		);
 	}
 
-	/** Serialize source context as editable core blocks beside the provider form. */
-	public static function context_block_markup( array $form, string $position ): string {
+	/**
+	 * Build inner blocks for copy the producer recorded inside the form.
+	 *
+	 * `context_before` / `context_after` are in-form content (a heading above the
+	 * fields, a required-field note). They belong inside `jetpack/contact-form`,
+	 * which accepts `core/heading` and `core/paragraph`. Copy outside the form
+	 * element is never stored here; it is already a page-level sibling.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function context_blocks( array $form, string $position ): array {
 		$context = isset( $form['form'][ $position ] ) && is_array( $form['form'][ $position ] ) ? $form['form'][ $position ] : array();
-		$markup  = '';
+		$blocks  = array();
 		foreach ( $context as $block ) {
 			if ( ! is_array( $block ) || ! is_string( $block['text'] ?? null ) || '' === trim( $block['text'] ) ) {
 				continue;
 			}
 			if ( 'heading' === ( $block['type'] ?? null ) ) {
-				$level   = min( 6, max( 1, (int) ( $block['level'] ?? 2 ) ) );
-				$markup .= self::serialize_block( array(
+				$level    = min( 6, max( 1, (int) ( $block['level'] ?? 2 ) ) );
+				$blocks[] = array(
 					'name'    => 'core/heading',
 					'attrs'   => 2 === $level ? array() : array( 'level' => $level ),
 					'wrapper' => 'heading',
 					'content' => $block['text'],
-				) );
+				);
 			} elseif ( 'paragraph' === ( $block['type'] ?? null ) ) {
-				$markup .= self::serialize_block( array(
+				$blocks[] = array(
 					'name'    => 'core/paragraph',
 					'wrapper' => 'paragraph',
 					'content' => $block['text'],
-				) );
+				);
 			}
+		}
+		return $blocks;
+	}
+
+	/** Serialize in-form context as editable core blocks. */
+	public static function context_block_markup( array $form, string $position ): string {
+		$markup = '';
+		foreach ( self::context_blocks( $form, $position ) as $block ) {
+			$markup .= self::serialize_block( $block );
 		}
 		return $markup;
 	}

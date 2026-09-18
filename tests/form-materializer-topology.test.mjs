@@ -133,10 +133,15 @@ test( 'provider-constrained topology emits nested fields and an editor-valid cor
 	assert.equal( validateBlock( styledButtons[ 0 ] )[ 0 ], true );
 	assert.equal( styledButtons[ 0 ].attributes.style, undefined );
 	const caraBlocks = parse( caraMarkup );
-	assert.equal( caraBlocks[ 0 ].name, 'core/heading' );
-	assert.equal( caraBlocks[ 1 ].name, 'core/paragraph' );
+	assert.equal( caraBlocks.length, 1 );
+	assert.match( caraBlocks[ 0 ].name, /jetpack\/contact-form|core\/missing/ );
+	assert.equal( caraBlocks[ 0 ].innerBlocks[ 0 ].name, 'core/heading' );
+	assert.equal( caraBlocks[ 0 ].innerBlocks[ 1 ].name, 'core/paragraph' );
+	assert.equal( validateBlock( caraBlocks[ 0 ].innerBlocks[ 0 ] )[ 0 ], true );
+	assert.equal( validateBlock( caraBlocks[ 0 ].innerBlocks[ 1 ] )[ 0 ], true );
 	assert.match( caraMarkup, /"required":true/ );
 	assert.match( caraMarkup, /wsite-button/ );
+	assert.doesNotMatch( caraMarkup, /<!-- wp:heading[\s\S]*<!-- wp:jetpack\/contact-form / );
 	assert.equal( serialize( parse( serialize( caraBlocks ) ) ), serialize( caraBlocks ), 'complete fallback graft is Gutenberg byte-stable after canonical serialization' );
 } );
 

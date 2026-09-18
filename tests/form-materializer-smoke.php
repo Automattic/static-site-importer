@@ -738,6 +738,96 @@ namespace {
 		'provider-runtime-keeps-field-list-grid-classes-off-the-page-item',
 		$field_list_hoist
 	);
+	// In-form heading + a nested `grid sm:grid-cols-2` name/phone row. The heading
+	// is copy inside the form (producer `context_before`), so it is an inner block
+	// of jetpack/contact-form rather than a page-grid sibling. The row maps through
+	// provider_equal_width_fields onto Jetpack `width: 50`; its grid classes must
+	// not be copied onto the form container.
+	$in_form_css  = '.space-y-5>:not([hidden])~:not([hidden]){margin-top:1.25rem}.rounded-lg{border-radius:.5rem}.border{border-width:1px}.p-7{padding:1.75rem}'
+		. '.grid{display:grid}.gap-5{gap:1.25rem}@media (width>=40rem){.sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}';
+	$in_form_html = '<style>' . $in_form_css . '</style><div class="page-grid"><section class="intro"><h1>Contact</h1></section>'
+		. '<form class="space-y-5 rounded-lg border bg-card p-7">'
+		. '<h2>Send a message</h2>'
+		. '<div class="grid gap-5 sm:grid-cols-2">'
+		. '<label class="block"><span>Your name</span><input required></label>'
+		. '<label class="block"><span>Mobile number</span><input type="tel" required></label>'
+		. '</div>'
+		. '<label class="block"><span>Email</span><input type="email"></label>'
+		. '<label class="block"><span>Subject</span><input required></label>'
+		. '<label class="block"><span>Message</span><textarea rows="5" required></textarea></label>'
+		. '<button type="submit">Send message</button>'
+		. '</form></div>';
+	$in_form_source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $in_form_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	if ( is_array( $in_form_source['binding'] ?? null ) && is_string( $in_form_source['binding']['search_block_markup'] ?? null ) ) {
+		$in_form_source['bindings'] = array(
+			array(
+				'schema'              => 'generic/block-binding/v1',
+				'source_path'         => 'contact.html',
+				'search_block_markup' => $in_form_source['binding']['search_block_markup'],
+				'occurrence'          => 1,
+				'role'                => 'form',
+			),
+		);
+	}
+	$in_form_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $in_form_source ) ) );
+	$in_form_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $in_form_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$in_form_markup    = (string) ( $in_form_row['block_markup'] ?? '' );
+	$in_form_parsed    = array_values( array_filter( parse_blocks( $in_form_markup ), static fn( array $block ): bool => ! empty( $block['blockName'] ) ) );
+	$in_form_contact   = $in_form_parsed[0] ?? array();
+	$in_form_inners    = array_values( array_filter( $in_form_contact['innerBlocks'] ?? array(), static fn( array $block ): bool => ! empty( $block['blockName'] ) ) );
+	$in_form_attrs     = is_array( $in_form_contact['attrs'] ?? null ) ? $in_form_contact['attrs'] : array();
+	$in_form_class     = (string) ( $in_form_attrs['className'] ?? '' );
+	$in_form_ops       = array_column( $in_form_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' );
+	$assert( empty( $in_form_validated['errors'] ) && 'mapped' === ( $in_form_row['status'] ?? '' ), 'in-form-heading-and-field-row-manifest-validates', wp_json_encode( $in_form_validated ) );
+	$assert(
+		1 === count( $in_form_parsed )
+			&& 'jetpack/contact-form' === ( $in_form_contact['blockName'] ?? '' )
+			&& 'core/heading' === ( $in_form_inners[0]['blockName'] ?? '' )
+			&& 'Send a message' === trim( wp_strip_all_tags( (string) ( $in_form_inners[0]['innerHTML'] ?? '' ) ) )
+			&& ! preg_match( '/<!-- wp:heading[\s\S]*<!-- wp:jetpack\/contact-form /', $in_form_markup )
+			&& 2 === substr_count( $in_form_markup, '"width":50' )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-text \{[^}]*"width":50/', $in_form_markup )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-telephone \{[^}]*"width":50/', $in_form_markup )
+			&& in_array( 'provider_equal_width_fields', $in_form_ops, true )
+			&& ! preg_match( '/(?:^|\s)grid(?:\s|$)/', $in_form_class )
+			&& ! str_contains( $in_form_class, 'grid-cols-2' )
+			&& str_contains( $in_form_class, 'space-y-5' )
+			&& $in_form_markup === serialize_blocks( parse_blocks( $in_form_markup ) ),
+		'in-form-heading-stays-inside-contact-form-and-name-phone-use-jetpack-width-not-host-grid',
+		wp_json_encode(
+			array(
+				'ops'     => $in_form_ops,
+				'class'   => $in_form_class,
+				'inners'  => array_column( $in_form_inners, 'blockName' ),
+				'markup'  => $in_form_markup,
+				'context' => $in_form_source['form']['context_before'] ?? null,
+			)
+		)
+	);
+	$bare_row_html = '<form class="space-y-5"><h2>Send a message</h2>'
+		. '<div class="grid gap-5 sm:grid-cols-2">'
+		. '<label class="block"><span>Your name</span><input required></label>'
+		. '<label class="block"><span>Mobile number</span><input type="tel" required></label>'
+		. '</div>'
+		. '<label class="block"><span>Email</span><input type="email"></label>'
+		. '<button type="submit">Send</button></form>';
+	$bare_row_source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $bare_row_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$bare_row_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $bare_row_source ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$bare_row_markup = (string) ( $bare_row_row['block_markup'] ?? '' );
+	$bare_row_class  = '';
+	if ( preg_match( '/<!-- wp:jetpack\/contact-form (\{.*?\}) -->/', $bare_row_markup, $bare_row_attrs ) ) {
+		$bare_row_decoded = json_decode( $bare_row_attrs[1], true );
+		$bare_row_class   = is_array( $bare_row_decoded ) ? (string) ( $bare_row_decoded['className'] ?? '' ) : '';
+	}
+	$assert(
+		'mapped' === ( $bare_row_row['status'] ?? '' )
+			&& 2 === substr_count( $bare_row_markup, '"width":50' )
+			&& in_array( 'provider_equal_width_fields', array_column( $bare_row_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true )
+			&& ! preg_match( '/(?:^|\s)grid(?:\s|$)/', $bare_row_class )
+			&& ! str_contains( $bare_row_class, 'grid-cols-2' ),
+		'class-token-grid-row-without-layout-node-still-maps-to-jetpack-field-width',
+		wp_json_encode( array( 'row' => $bare_row_row, 'class' => $bare_row_class, 'markup' => $bare_row_markup ) )
+	);
 	// A narrowing (max-width) variant is not the proven mobile-first widening
 	// shape and must keep the existing decline: Jetpack cannot represent "two
 	// columns by default that collapse to one," and this is not that either.
@@ -2660,7 +2750,17 @@ namespace {
 		)
 	);
 	$cara_grafted   = (string) ( Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $cara_entity ) ) )['forms'][0]['block_markup'] ?? '' );
+	$cara_parsed    = array_values( array_filter( parse_blocks( $cara_grafted ), static fn( array $block ): bool => ! empty( $block['blockName'] ) ) );
+	$cara_contact   = $cara_parsed[0] ?? array();
+	$cara_inners    = array_column( array_values( array_filter( $cara_contact['innerBlocks'] ?? array(), static fn( array $block ): bool => ! empty( $block['blockName'] ) ) ), 'blockName' );
 	$assert( str_contains( $cara_grafted, '>Contact Me</h2>' ) && str_contains( $cara_grafted, '<p>* Indicates required field</p>' ) && str_contains( $cara_grafted, '"required":true' ) && str_contains( $cara_grafted, 'wsite-button' ), 'canonical-binding-presentation-reaches-provider-markup' );
+	$assert(
+		1 === count( $cara_parsed )
+			&& 'jetpack/contact-form' === ( $cara_contact['blockName'] ?? '' )
+			&& array( 'core/heading', 'core/paragraph' ) === array_slice( $cara_inners, 0, 2 ),
+		'canonical-in-form-context-is-emitted-as-contact-form-inner-blocks',
+		wp_json_encode( array( 'names' => array_column( $cara_parsed, 'blockName' ), 'inners' => $cara_inners, 'markup' => $cara_grafted ) )
+	);
 
 
 	// --- Provider override routes to a different registered adapter ----------
