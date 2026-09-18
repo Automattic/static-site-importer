@@ -97,7 +97,7 @@ class Static_Site_Importer_Theme_Generator {
 		if ( is_object( $payload_reader ) ) {
 			$args['_static_site_importer_payload_reader'] = $payload_reader;
 		}
-		$plan                  = $compiled_import['plan'];
+		$plan                  = self::attach_product_grid_bindings_to_runtime_declarations( $compiled_import['plan'] );
 		$gutenberg_gaps        = $compiled_import['gutenberg_gaps'];
 		$companion_payload     = $compiled_import['companion_payload'];
 		$theme_materialization = $compiled_import['theme_materialization'];
@@ -167,6 +167,73 @@ class Static_Site_Importer_Theme_Generator {
 			return $result;
 		}
 		return self::project_materialization_result( $result, $args );
+	}
+
+	/**
+	 * Attach a shared product-grid binding to compiler-declared product entities
+	 * whose source finding proves a safe, canonical replacement anchor.
+	 *
+	 * Blocks Engine already declares seedable products for a detected
+	 * `html_product_grid_fallback` (name, slug, regular_price, and a classic
+	 * leaf selector) but no `bindings` anchor, because the finding alone
+	 * carries no per-product canonical block-replacement location — SSI does
+	 * not infer one from a selector (see docs/product-handoff-contract.md).
+	 * The finding does carry the exact preserved fallback markup the whole
+	 * grid region already compiles to (`readable_blocks`); every product
+	 * detected inside that same grid safely shares that one exact,
+	 * already-serialized region as a `commerce_collection` binding, so the
+	 * generic entity/binding registry can resolve the whole grid to its
+	 * seeded products through the same contract already proven for forms and
+	 * single products, instead of the grid staying frozen source markup with
+	 * no bindable anchor at all.
+	 *
+	 * A declaration the compiler already bound of its own accord is left
+	 * untouched.
+	 *
+	 * @param array<string,mixed> $plan Compiled WordPress site plan.
+	 * @return array<string,mixed>
+	 */
+	private static function attach_product_grid_bindings_to_runtime_declarations( array $plan ): array {
+		$diagnostics  = isset( $plan['diagnostics'] ) && is_array( $plan['diagnostics'] ) ? $plan['diagnostics'] : array();
+		$declarations = isset( $plan['runtime_declarations'] ) && is_array( $plan['runtime_declarations'] ) ? $plan['runtime_declarations'] : array();
+		if ( empty( $diagnostics ) || empty( $declarations ) ) {
+			return $plan;
+		}
+
+		$anchors_by_slug = Static_Site_Importer_Report_Diagnostics::product_grid_binding_anchors( $diagnostics );
+		if ( empty( $anchors_by_slug ) ) {
+			return $plan;
+		}
+
+		foreach ( $declarations as $index => $declaration ) {
+			if ( ! is_array( $declaration ) || 'entity_collection' !== ( $declaration['kind'] ?? null ) || 'products' !== ( $declaration['type'] ?? null ) ) {
+				continue;
+			}
+			$entities = isset( $declaration['payload']['entities'] ) && is_array( $declaration['payload']['entities'] ) ? $declaration['payload']['entities'] : array();
+			foreach ( $entities as $entity_index => $entity ) {
+				if ( ! is_array( $entity ) || ! empty( $entity['bindings'] ) ) {
+					// A declaration the compiler already bound is left untouched.
+					continue;
+				}
+				$slug   = isset( $entity['slug'] ) && is_scalar( $entity['slug'] ) ? (string) $entity['slug'] : '';
+				$anchor = $anchors_by_slug[ $slug ] ?? null;
+				if ( null === $anchor ) {
+					continue;
+				}
+				$entities[ $entity_index ]['bindings'] = array(
+					array(
+						'schema'              => 'generic/block-binding/v1',
+						'source_path'         => $anchor['source_path'],
+						'search_block_markup' => $anchor['search_block_markup'],
+						'occurrence'          => 1,
+						'role'                => 'commerce_collection',
+					),
+				);
+			}
+			$declarations[ $index ]['payload']['entities'] = $entities;
+		}
+		$plan['runtime_declarations'] = $declarations;
+		return $plan;
 	}
 
 	/** Build the normal failed-import evidence for a producer-required policy rejection. */

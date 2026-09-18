@@ -882,8 +882,19 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					$results[ $key ] = $result;
 				}
 			}
+
+			// Group manifest entities that declare exactly one shared
+			// `commerce_collection` anchor (a detected product grid, where every
+			// member product's own binding points at the same one preserved
+			// source-page region) so that shared anchor resolves to exactly one
+			// replacement instead of racing N per-product replacements against the
+			// same source-page occurrence. Every other binding (forms, single
+			// products) keeps its established one-entity-one-binding resolution,
+			// unchanged.
+			$groups      = array();
+			$group_order = array();
 			foreach ( $manifest_entities as $entity ) {
-				if ( ! is_array( $entity ) || empty( $entity['bindings'] ) ) {
+				if ( ! is_array( $entity ) || empty( $entity['bindings'] ) || ! is_array( $entity['bindings'] ) ) {
 					continue;
 				}
 				$key    = 'products' === $entity_key ? (string) ( $entity['slug'] ?? '' ) : self::form_entity_key( $entity );
@@ -891,37 +902,101 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				if ( self::entity_result_declined( $result ) ) {
 					continue;
 				}
-				$replacement = self::binding_block_markup( $prepared['adapter'], $entity, $result );
+				$first_binding = is_array( $entity['bindings'][0] ?? null ) ? $entity['bindings'][0] : array();
+				$is_collection = 1 === count( $entity['bindings'] ) && 'commerce_collection' === ( $first_binding['role'] ?? '' );
+				$group_key     = $is_collection
+					? 'collection:' . (string) ( $first_binding['source_path'] ?? '' ) . "\n" . hash( 'sha256', (string) ( $first_binding['search_block_markup'] ?? '' ) ) . "\n" . (string) ( $first_binding['occurrence'] ?? '' )
+					: 'single:' . $key . ':' . count( $groups );
+				if ( ! isset( $groups[ $group_key ] ) ) {
+					$groups[ $group_key ] = array();
+					$group_order[]        = $group_key;
+				}
+				$groups[ $group_key ][] = array(
+					'key'    => $key,
+					'entity' => $entity,
+					'result' => $result,
+				);
+			}
+
+			foreach ( $group_order as $group_key ) {
+				$members = $groups[ $group_key ];
+				if ( 1 === count( $members ) || ! str_starts_with( $group_key, 'collection:' ) ) {
+					foreach ( $members as $member ) {
+						$entity      = $member['entity'];
+						$replacement = self::binding_block_markup( $prepared['adapter'], $entity, $member['result'] );
+						if ( '' === $replacement ) {
+							return new WP_Error(
+								'static_site_importer_runtime_binding_unresolved',
+								'A required provider entity did not produce binding block markup.',
+								array(
+									'declaration_id' => $declaration_id,
+									'entity_key'     => $member['key'],
+								)
+							);
+						}
+						foreach ( $entity['bindings'] as $binding ) {
+							$bindings[] = self::block_binding_record( $declaration_id, $binding, $replacement, $entity, $prepared['adapter'] );
+						}
+					}
+					continue;
+				}
+
+				// A shared product-grid anchor: resolve every member's own seeded
+				// result into one grid entity and produce exactly one replacement
+				// for the whole shared preserved-region occurrence.
+				$product_ids = array();
+				foreach ( $members as $member ) {
+					$id = isset( $member['result']['id'] ) ? (int) $member['result']['id'] : 0;
+					if ( $id > 0 ) {
+						$product_ids[] = $id;
+					}
+				}
+				$anchor_binding = $members[0]['entity']['bindings'][0];
+				$grid_entity    = array(
+					'entity_kind' => 'product_grid',
+					'product_ids' => $product_ids,
+				);
+				$replacement = self::binding_block_markup( $prepared['adapter'], $grid_entity, array() );
 				if ( '' === $replacement ) {
 					return new WP_Error(
 						'static_site_importer_runtime_binding_unresolved',
 						'A required provider entity did not produce binding block markup.',
 						array(
 							'declaration_id' => $declaration_id,
-							'entity_key'     => $key,
+							'entity_key'     => 'product_grid:' . (string) ( $anchor_binding['source_path'] ?? '' ),
 						)
 					);
 				}
-				foreach ( $entity['bindings'] as $binding ) {
-					$bindings[] = array(
-						'schema'                           => 'static-site-importer/runtime-entity-binding/v1',
-						'source_path'                      => $binding['source_path'],
-						'search_block_markup'              => $binding['search_block_markup'],
-						'replacement_block_markup'         => $replacement,
-						'occurrence'                       => $binding['occurrence'],
-						'role'                             => $binding['role'],
-						'declaration_id'                   => $declaration_id,
-						'reconciliation_identity'          => hash( 'sha256', "static-site-importer/runtime-entity-binding/v1\n{$declaration_id}\n{$binding['source_path']}\n{$binding['occurrence']}\n" . hash( 'sha256', $binding['search_block_markup'] ) ),
-						'fallback_reconciliation_identity' => 'form' === $binding['role'] ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $entity ) : '',
-						'fallback_hash'                    => 'form' === $binding['role'] ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $entity ) : '',
-						'materialized_block_hash'          => 'form' === $binding['role'] ? hash( 'sha256', $replacement ) : '',
-						'provider'                         => $prepared['adapter']['provider'] ?? '',
-						'superseded_runtime_selectors'     => $binding['superseded_runtime_selectors'] ?? array(),
-					);
-				}
+				$bindings[] = self::block_binding_record( $declaration_id, $anchor_binding, $replacement, $grid_entity, $prepared['adapter'] );
 			}
 		}
 		return $bindings;
+	}
+
+	/** Build one canonical block-binding replacement record for one resolved anchor. */
+	private static function block_binding_record( string $declaration_id, array $binding, string $replacement, array $entity, array $adapter ): array {
+		return array(
+			'schema'                           => 'static-site-importer/runtime-entity-binding/v1',
+			'source_path'                      => $binding['source_path'],
+			'search_block_markup'              => $binding['search_block_markup'],
+			'replacement_block_markup'         => $replacement,
+			'occurrence'                       => $binding['occurrence'],
+			'role'                             => $binding['role'],
+			'declaration_id'                   => $declaration_id,
+			'reconciliation_identity'          => hash( 'sha256', "static-site-importer/runtime-entity-binding/v1\n{$declaration_id}\n{$binding['source_path']}\n{$binding['occurrence']}\n" . hash( 'sha256', $binding['search_block_markup'] ) ),
+			'fallback_reconciliation_identity' => 'form' === $binding['role'] ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $entity ) : ( 'commerce_collection' === $binding['role'] ? self::product_grid_fallback_reconciliation_identity( $binding ) : '' ),
+			'fallback_hash'                    => 'form' === $binding['role'] ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $entity ) : ( 'commerce_collection' === $binding['role'] ? hash( 'sha256', $binding['search_block_markup'] ) : '' ),
+			'materialized_block_hash'          => in_array( $binding['role'], array( 'form', 'commerce_collection' ), true ) ? hash( 'sha256', $replacement ) : '',
+			'provider'                         => $adapter['provider'] ?? '',
+			'superseded_runtime_selectors'     => $binding['superseded_runtime_selectors'] ?? array(),
+		);
+	}
+
+	/** Derive a product-grid fallback's reconciliation identity from its own resolved binding anchor. */
+	private static function product_grid_fallback_reconciliation_identity( array $binding ): string {
+		$source_path = (string) ( $binding['source_path'] ?? '' );
+		$hash        = hash( 'sha256', (string) ( $binding['search_block_markup'] ?? '' ) );
+		return hash( 'sha256', "static-site-importer/product-grid-fallback/v1\n{$source_path}\n{$hash}" );
 	}
 
 	/** Build classic bindings from canonical entity selectors. */
@@ -1889,7 +1964,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( null === $binding ) {
 			return array();
 		}
-		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'form' ), true ) ) {
+		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'commerce_collection', 'form' ), true ) ) {
 			return null;
 		}
 		$normalized = array(

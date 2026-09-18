@@ -75,12 +75,23 @@ final class Static_Site_Importer_Runtime_Entity_Binding_Validation {
 			$entities = isset( $manifest['products'] ) && is_array( $manifest['products'] ) ? $manifest['products'] : ( isset( $manifest['forms'] ) && is_array( $manifest['forms'] ) ? $manifest['forms'] : array() );
 			foreach ( $entities as $entity ) {
 				$entity_bindings = is_array( $entity ) && is_array( $entity['bindings'] ?? null ) ? $entity['bindings'] : array();
+				// A detected product grid deliberately gives every one of its member
+				// products the identical single-binding anchor (the whole grid's own
+				// preserved source-page region), so the entity/binding registry can
+				// resolve that one shared anchor to one native product-display block
+				// carrying every seeded member. That is the only binding shape allowed
+				// to share a canonical claim; every other role keeps this gate's
+				// existing one-claim-per-occurrence uniqueness requirement unchanged.
+				$is_collection_anchor = 1 === count( $entity_bindings ) && is_array( $entity_bindings[0] ?? null ) && 'commerce_collection' === ( $entity_bindings[0]['role'] ?? null );
 				foreach ( $entity_bindings as $binding ) {
 					if ( empty( $binding ) ) {
 						continue;
 					}
 					$claim = $binding['source_path'] . "\n" . hash( 'sha256', $binding['search_block_markup'] ) . "\n" . $binding['occurrence'];
 					if ( isset( $claims[ $claim ] ) ) {
+						if ( $is_collection_anchor && 'commerce_collection' === $claims[ $claim ] ) {
+							continue;
+						}
 						return new WP_Error(
 							'static_site_importer_runtime_binding_claim_conflict',
 							'Two provider entities claim the same canonical source-page binding occurrence.',
@@ -90,7 +101,7 @@ final class Static_Site_Importer_Runtime_Entity_Binding_Validation {
 							)
 						);
 					}
-					$claims[ $claim ] = true;
+					$claims[ $claim ] = $is_collection_anchor ? 'commerce_collection' : true;
 					$page             = $pages[ $binding['source_path'] ] ?? array();
 					if ( ! empty( $page['skip_materialization'] ) ) {
 						return new WP_Error(
