@@ -303,7 +303,7 @@ namespace {
 				'form'     => array( 'action' => 'mailto:hello@example.com', 'method' => 'post', 'class' => 'form contact' ),
 				'controls' => array(
 					array( 'tag' => 'input', 'type' => 'text', 'id' => 'contact-name', 'class' => 'source-field', 'label_class' => 'source-label', 'name' => 'name', 'label' => 'Your name', 'required' => true ),
-					array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email', 'required' => true ),
+					array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email', 'required' => true, 'description' => 'We only use this to contact you back.' ),
 					array( 'tag' => 'input', 'type' => 'tel', 'name' => 'phone', 'label' => 'Phone' ),
 					array( 'tag' => 'input', 'type' => 'number', 'name' => 'attendees', 'label' => 'Attendees' ),
 					array( 'tag' => 'select', 'type' => 'select', 'name' => 'topic', 'label' => 'Topic', 'options' => array( array( 'label' => 'Sales' ), array( 'label' => 'Support' ) ) ),
@@ -387,6 +387,72 @@ namespace {
 	$assert( str_contains( $markup, '<!-- wp:jetpack/field-select {"options":["Sales","Support"]' ) && str_contains( $markup, '<!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"type":"dropdown"} /-->' ), 'markup-select-options-and-dropdown-input' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/field-radio {"options":["In person","Online"]' ) && str_contains( $markup, '<!-- wp:jetpack/options {"type":"radio"} -->' ), 'markup-radio-options-on-field-and-child-list' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/field-checkbox ' ) && str_contains( $markup, '<!-- wp:jetpack/option {"label":"Send me updates","isStandalone":true} /-->' ), 'markup-checkbox-uses-standalone-option-child' );
+
+	// --- A control's own description reaches the provider as Jetpack's shared help-text attribute ---
+	$assert( 1 === preg_match( '/<!-- wp:jetpack\/field-email \{[^\n]*"helpText":"We only use this to contact you back\."[^\n]*\} -->/', $markup ), 'markup-described-control-carries-source-description-as-jetpack-help-text', $markup );
+	$assert( 1 === substr_count( $markup, '"helpText"' ), 'markup-undescribed-controls-in-the-same-form-carry-no-help-text-attribute', $markup );
+
+	// Jetpack declares `helpText` on every jetpack/field-* block, but a field
+	// whose editor and frontend renderer never surface it (checkbox, radio -
+	// the grouped fields this seeder emits as jetpack/field-checkbox(-multiple)
+	// and jetpack/field-radio) must not silently store a value the visitor
+	// never sees. A supported field type carries it as `helpText`; an
+	// unsupported one reports the same `unsupported_control_attribute` loss
+	// an unrepresentable numeric min/max/step already uses, rather than a
+	// parallel mechanism.
+	$described_url_field = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
+		'input',
+		'url',
+		array(
+			'name'        => 'portfolio',
+			'label'       => 'Portfolio URL',
+			'placeholder' => 'https://yourportfolio.com',
+			'description' => 'Link to your design work (Behance, Dribbble, personal site, etc.)',
+		)
+	);
+	$assert( 'Link to your design work (Behance, Dribbble, personal site, etc.)' === ( $described_url_field['attrs']['helpText'] ?? null ), 'described-url-control-carries-jetpack-help-text-attribute', wp_json_encode( $described_url_field ) );
+	$assert( array() === ( $described_url_field['losses'] ?? array() ), 'described-url-control-reports-no-loss', wp_json_encode( $described_url_field ) );
+	$undescribed_url_field = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
+		'input',
+		'url',
+		array(
+			'name'        => 'portfolio',
+			'label'       => 'Portfolio URL',
+			'placeholder' => 'https://yourportfolio.com',
+		)
+	);
+	$assert( ! array_key_exists( 'helpText', $undescribed_url_field['attrs'] ?? array() ), 'undescribed-url-control-carries-no-help-text-attribute', wp_json_encode( $undescribed_url_field ) );
+	$described_checkbox_field = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
+		'input',
+		'checkbox',
+		array( 'name' => 'updates', 'label' => 'Send me updates', 'description' => 'We send about once a month.' )
+	);
+	$described_checkbox_losses = array_values( array_filter( $described_checkbox_field['losses'] ?? array(), static fn( array $loss ): bool => 'unsupported_control_attribute' === ( $loss['reason_code'] ?? '' ) && 'description' === ( $loss['attribute'] ?? '' ) ) );
+	$assert( ! array_key_exists( 'helpText', $described_checkbox_field['attrs'] ?? array() ), 'checkbox-description-is-not-stored-where-jetpack-never-renders-it', wp_json_encode( $described_checkbox_field ) );
+	$assert( 1 === count( $described_checkbox_losses ), 'checkbox-description-is-reported-as-an-unsupported-control-attribute-loss-instead-of-a-silent-drop', wp_json_encode( $described_checkbox_field ) );
+	$described_radio_field = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
+		'input',
+		'radio',
+		array( 'name' => 'format', 'label' => 'In person', 'options' => array( 'In person', 'Online' ), 'description' => 'Choose whichever suits you.' )
+	);
+	$described_radio_losses = array_values( array_filter( $described_radio_field['losses'] ?? array(), static fn( array $loss ): bool => 'unsupported_control_attribute' === ( $loss['reason_code'] ?? '' ) && 'description' === ( $loss['attribute'] ?? '' ) ) );
+	$assert( ! array_key_exists( 'helpText', $described_radio_field['attrs'] ?? array() ), 'radio-description-is-not-stored-where-jetpack-never-renders-it', wp_json_encode( $described_radio_field ) );
+	$assert( 1 === count( $described_radio_losses ), 'radio-description-is-reported-as-an-unsupported-control-attribute-loss-instead-of-a-silent-drop', wp_json_encode( $described_radio_field ) );
+
+	// The same unsupported-attribute loss the seeder already gates provider
+	// mapping on (see the numeric min/max/step overflow coverage below) also
+	// gates a described checkbox: an invisible attribute is not a fidelity
+	// win, so the seeder declines to claim the field is represented rather
+	// than shipping a value the visitor will never see.
+	$described_checkbox_seed = Static_Site_Importer_Form_Seeder::seed(
+		array( 'forms' => array( array( 'selector' => 'form.updates', 'controls' => array(
+			array( 'tag' => 'input', 'type' => 'checkbox', 'name' => 'updates', 'label' => 'Send me updates', 'description' => 'We send about once a month.' ),
+			array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Save' ),
+		) ) ) )
+	);
+	$described_checkbox_row = $described_checkbox_seed['forms'][0] ?? array();
+	$assert( false === ( $described_checkbox_row['runtime_mapped'] ?? true ) && 'form_receipt_loss_unaccepted' === ( $described_checkbox_row['reason'] ?? '' ) && in_array( 'description', array_column( $described_checkbox_row['form_receipt_unaccepted_losses'] ?? array(), 'attribute' ), true ), 'seeder-declines-rather-than-silently-drops-an-unrenderable-checkbox-description', wp_json_encode( $described_checkbox_row ) );
+
 	$responsive_seed = Static_Site_Importer_Form_Seeder::seed(
 		array( 'forms' => array(
 			array( 'source_path' => 'contact.html', 'selector' => 'form.contact', 'fallback_identity' => str_repeat( 'a', 64 ), 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'id' => 'repeated-source-id', 'label' => 'Email' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ) ),

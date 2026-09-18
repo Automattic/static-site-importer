@@ -235,6 +235,32 @@ final class Static_Site_Importer_Form_Field_Markup {
 			}
 		}
 
+		$losses      = array();
+		$description = self::control_description( $control );
+		if ( '' !== $description ) {
+			// Every jetpack/field-* block declares this attribute (see
+			// projects/packages/forms/src/blocks/shared/settings/index.js), but
+			// rendering it is opt-in per field type: only a field whose edit
+			// passes `helpTextSupport` shows the control in the editor, and only
+			// a render_*_field() that calls get_field_descriptions() emits it on
+			// the frontend (class-contact-form-field.php). Grouped fields -
+			// checkbox and radio, materialized here as jetpack/field-checkbox(-multiple)
+			// and jetpack/field-radio - accept the attribute without ever
+			// displaying it, so storing it there would ship a value the visitor
+			// never sees. Report that as the same unsupported-attribute loss an
+			// unrepresentable min/max/step already uses instead of doing that.
+			if ( self::provider_renders_help_text( $lookup ) ) {
+				$attrs['helpText'] = $description;
+			} else {
+				$losses[] = array(
+					'dimension'         => 'control',
+					'reason_code'       => 'unsupported_control_attribute',
+					'attribute'         => 'description',
+					'control_type_hash' => hash( 'sha256', $type ),
+				);
+			}
+		}
+
 		$inner_blocks = array();
 		if ( 'checkbox' === $lookup && empty( $attrs['options'] ) ) {
 			$inner_blocks[] = array(
@@ -308,7 +334,6 @@ final class Static_Site_Importer_Form_Field_Markup {
 			);
 		}
 
-		$losses = array();
 		if ( 'number' === $lookup ) {
 			foreach ( array( 'min', 'max', 'step' ) as $attribute ) {
 				if ( self::provider_supports_input_attribute( $lookup, $attribute ) ) {
@@ -338,6 +363,41 @@ final class Static_Site_Importer_Form_Field_Markup {
 	/** Return whether the selected Jetpack input block can carry a source attribute. */
 	private static function provider_supports_input_attribute( string $lookup, string $attribute ): bool {
 		return 'number' === $lookup && 'step' === $attribute;
+	}
+
+	/**
+	 * Read a control's own source-authored description, distinct from its label.
+	 *
+	 * @param array<string, mixed> $control Source control metadata.
+	 * @return string
+	 */
+	private static function control_description( array $control ): string {
+		if ( ! isset( $control['description'] ) || ! is_scalar( $control['description'] ) ) {
+			return '';
+		}
+		$description = trim( function_exists( 'wp_strip_all_tags' ) ? wp_strip_all_tags( (string) $control['description'] ) : strip_tags( (string) $control['description'] ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- Fallback only for runtime-free smoke tests.
+		return substr( $description, 0, 240 );
+	}
+
+	/**
+	 * Return whether the mapped Jetpack field block ever displays its shared
+	 * `helpText` attribute.
+	 *
+	 * Every `jetpack/field-*` block declares the attribute so it survives a
+	 * type change, but only a field whose editor `edit` component passes
+	 * `helpTextSupport` shows the control (jetpack-field-controls.jsx), and
+	 * only a `render_*_field()` that calls `get_field_descriptions()` emits it
+	 * on the frontend (class-contact-form-field.php). Grouped fields -
+	 * checkbox and radio - are the deliberate exception: they carry the
+	 * attribute so switching a field's type and back does not discard the
+	 * author's text, but neither their editor nor their frontend renderer
+	 * ever shows it.
+	 *
+	 * @param string $lookup Resolved field-block lookup key.
+	 * @return bool
+	 */
+	private static function provider_renders_help_text( string $lookup ): bool {
+		return ! in_array( $lookup, array( 'checkbox', 'radio' ), true );
 	}
 
 	/**
