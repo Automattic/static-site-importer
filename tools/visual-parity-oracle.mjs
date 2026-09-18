@@ -6,7 +6,13 @@ export const SCHEMA = 'static-site-importer/layout-baseline/v1';
 export const COMPILER_REPORT_PATH = 'source_reports.layout_baseline';
 export const VIEWPORT = { width: 1440, height: 900 };
 
-const EXTRACT_LAYOUT = ({ viewport }) => {
+// Exported so downstream consumers (e.g. Studio's `cli site create --from`) can measure a
+// live-rendered page with the exact same selection heuristic the oracle itself uses, instead
+// of re-implementing it. Self-contained on purpose — no references to anything outside this
+// function body (only DOM/browser globals) — so it stays safe to serialize with
+// `Function.prototype.toString()` (e.g. Playwright's `page.evaluate(EXTRACT_LAYOUT, ...)`) even
+// from inside a bundled caller. Do not introduce a closure over module scope here.
+export const EXTRACT_LAYOUT = ({ viewport }) => {
   const headingSelector = 'h1,h2,h3,h4,h5,h6,[role="heading"]';
   const isVisible = (el) => {
     const style = window.getComputedStyle(el);
