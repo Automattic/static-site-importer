@@ -318,7 +318,11 @@ final class Static_Site_Importer_Form_Field_Markup {
 			}
 			if ( 'textarea' === $lookup ) {
 				$input_attrs['type'] = 'textarea';
-				$height              = isset( $control['height'] ) && is_scalar( $control['height'] ) ? trim( (string) $control['height'] ) : '';
+				$rows   = self::textarea_rows( $control );
+				if ( null !== $rows ) {
+					$input_attrs['className'] = trim( (string) ( $input_attrs['className'] ?? '' ) . ' ssi-textarea-rows-' . $rows );
+				}
+				$height = isset( $control['height'] ) && is_scalar( $control['height'] ) ? trim( (string) $control['height'] ) : '';
 				if ( '' !== $height && preg_match( '/^[0-9]{1,4}(?:\.[0-9]+)?(?:px|em|rem|vh|vw|%)$/D', $height ) ) {
 					$input_attrs['style']['dimensions']['minHeight'] = $height;
 				}
@@ -358,6 +362,19 @@ final class Static_Site_Importer_Form_Field_Markup {
 			'wrapper'     => 'div',
 			'losses'      => $losses,
 		);
+	}
+
+	/**
+	 * Read a textarea's authored row count, defaulting to the HTML unset-rows
+	 * value of 2. Jetpack does not expose a rows block attribute; this value
+	 * is carried as an `ssi-textarea-rows-N` class onto `jetpack/input` and
+	 * projected onto the rendered control at runtime.
+	 *
+	 * @param array<string, mixed> $control Source control metadata.
+	 */
+	public static function textarea_rows( array $control ): ?int {
+		$rows = isset( $control['rows'] ) && is_scalar( $control['rows'] ) ? (int) $control['rows'] : 2;
+		return ( $rows >= 1 && $rows <= 50 ) ? $rows : null;
 	}
 
 	/** Return whether the selected Jetpack input block can carry a source attribute. */

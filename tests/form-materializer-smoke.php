@@ -555,7 +555,7 @@ namespace {
 	$assert( 1 === substr_count( $topology_markup, '<!-- wp:button ' ), 'topology-submit-control-emits-one-core-button-in-source-position' );
 	$topology_ops = array_column( $topology_receipt['operations'] ?? array(), 'strategy' );
 	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && in_array( 'provider_equal_width_fields', $topology_ops, true ) && in_array( 'provider_interaction_carrier', $topology_ops, true ) && 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.5rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.5rem\);margin-block-start:0!important\}/', (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ), 'computed-layout-equal-grid-applies-with-bounded-receipt', wp_json_encode( array( 'ops' => $topology_ops, 'css' => $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ) );
-	$assert( str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:82px' ) && ! str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:200px' ), 'topology-unstyled-source-textarea-gets-a-two-row-intrinsic-height-instead-of-the-provider-default' );
+	$assert( str_contains( $topology_markup, 'ssi-textarea-rows-2' ) && str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:auto' ) && ! str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:200px' ), 'topology-unstyled-source-textarea-carries-two-rows-and-neutralizes-the-provider-height' );
 
 	// --- A source utility-framework grid row materializes as provider field widths ---
 	// Reproduces a real base44/Tailwind CSS v4 contact form (labels are plain,
@@ -597,6 +597,7 @@ namespace {
 			&& str_contains( $tailwind_grid_markup, '"options":["Select a project type","Kitchen Renovation"]' )
 			&& str_contains( $tailwind_grid_markup, 'wp:jetpack/field-textarea' )
 			&& str_contains( $tailwind_grid_markup, '"placeholder":"Tell us about your project..."' )
+			&& str_contains( $tailwind_grid_markup, 'ssi-textarea-rows-5' )
 			&& ! str_contains( $tailwind_grid_markup, 'wp:group' ),
 		'mobile-first-tailwind-v4-grid-row-materializes-as-two-jetpack-fields-at-width-50',
 		wp_json_encode( array( 'row' => $tailwind_grid_row, 'markup' => $tailwind_grid_markup ) )
@@ -740,7 +741,7 @@ namespace {
 	// A source that deliberately sizes two textareas differently through their own
 	// `rows` attribute - rather than an authored CSS height a cascade compiler could
 	// capture - must not materialize both onto this provider's one fixed default;
-	// each field's own row count must reach a distinct computed height.
+	// each field's own row count must reach the rendered textarea.
 	$few_rows_form = $topology_form;
 	$few_rows_form['forms'][0]['controls'][2]['rows'] = '3';
 	$few_rows_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $few_rows_form )['forms'] ?? array() ) )['forms'][0] ?? array();
@@ -748,15 +749,62 @@ namespace {
 	$many_rows_form['forms'][0]['controls'][2]['rows'] = '6';
 	$many_rows_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $many_rows_form )['forms'] ?? array() ) )['forms'][0] ?? array();
 	$assert(
-		str_contains( (string) ( $few_rows_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:106px' )
-			&& str_contains( (string) ( $many_rows_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:178px' )
+		str_contains( (string) ( $few_rows_row['block_markup'] ?? '' ), 'ssi-textarea-rows-3' )
+			&& str_contains( (string) ( $many_rows_row['block_markup'] ?? '' ), 'ssi-textarea-rows-6' )
+			&& ! str_contains( (string) ( $few_rows_row['block_markup'] ?? '' ), 'ssi-textarea-rows-6' )
+			&& str_contains( (string) ( $few_rows_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:auto' )
+			&& str_contains( (string) ( $many_rows_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:auto' )
 			&& ! str_contains( (string) ( $few_rows_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:200px' )
 			&& ! str_contains( (string) ( $many_rows_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:200px' ),
-		'distinctly-authored-textarea-row-counts-materialize-distinct-heights-instead-of-one-provider-default',
-		wp_json_encode( array( 'few' => $few_rows_row['provider_layout_overlay_css'] ?? null, 'many' => $many_rows_row['provider_layout_overlay_css'] ?? null ) )
+		'distinctly-authored-textarea-row-counts-materialize-onto-the-rendered-control-instead-of-one-provider-default',
+		wp_json_encode( array( 'few' => $few_rows_row['block_markup'] ?? null, 'many' => $many_rows_row['block_markup'] ?? null ) )
+	);
+	$jetpack_textarea = "<div class=\"grunion-field-textarea-wrap\"><textarea\n\t\t                style=''\n\t\t                name='message'\n\t\t                id='contact-form-comment-message'\n\t\t                rows='20'\n\t\t                class='textarea ssi-textarea-rows-6'></textarea></div>";
+	$projected_rows   = Static_Site_Importer_Form_Seeder::project_provider_textarea_rows( $jetpack_textarea );
+	$assert(
+		str_contains( $projected_rows, "rows='6'" )
+			&& ! str_contains( $projected_rows, "rows='20'" )
+			&& ! str_contains( $projected_rows, 'ssi-textarea-rows-' ),
+		'provider-runtime-rewrites-jetpack-textarea-rows-20-to-the-authored-count',
+		$projected_rows
+	);
+	$projected_rows_via_wrapper = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( $jetpack_textarea );
+	$assert(
+		str_contains( $projected_rows_via_wrapper, "rows='6'" )
+			&& ! str_contains( $projected_rows_via_wrapper, "rows='20'" )
+			&& ! str_contains( $projected_rows_via_wrapper, 'ssi-textarea-rows-' ),
+		'provider-wrapper-projection-also-rewrites-authored-textarea-rows',
+		$projected_rows_via_wrapper
+	);
+	// A source textarea sized by rows="6" plus captured padding/font/line-height
+	// (12px / 14px / 20px) must keep that row count on the materialized control
+	// so the browser can size 6×20 + 12+12 + 1+1 = 146px instead of Jetpack's
+	// rows="20" at 200px or a provider-default overlay of 178px.
+	$authored_rows_html = '<style>textarea{box-sizing:border-box;padding:12px;font-size:14px;line-height:20px;border:1px solid}</style><form>'
+		. '<div><label>Message</label><textarea rows="6" required></textarea></div>'
+		. '<button type="submit">Send</button></form>';
+	$authored_rows_source = class_exists( $artifact_compiler ) ? ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $authored_rows_html ) ) )->toArray() )['fallbacks'][0] ?? array() : array();
+	$authored_rows_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $authored_rows_source ) ) );
+	$authored_rows_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $authored_rows_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$authored_rows_markup    = (string) ( $authored_rows_row['block_markup'] ?? '' );
+	$authored_rows_css       = (string) ( $authored_rows_row['provider_layout_overlay_css']['css'] ?? '' );
+	$authored_rows_rendered  = Static_Site_Importer_Form_Seeder::project_provider_textarea_rows(
+		"<textarea rows='20' class='textarea ssi-textarea-rows-6'></textarea>"
+	);
+	$assert(
+		empty( $authored_rows_validated['errors'] )
+			&& 'mapped' === ( $authored_rows_row['status'] ?? '' )
+			&& str_contains( $authored_rows_markup, 'ssi-textarea-rows-6' )
+			&& str_contains( $authored_rows_css, 'height:auto' )
+			&& ! str_contains( $authored_rows_css, 'height:178px' )
+			&& ! str_contains( $authored_rows_css, 'height:200px' )
+			&& str_contains( $authored_rows_rendered, "rows='6'" )
+			&& ! str_contains( $authored_rows_rendered, "rows='20'" ),
+		'compiled-textarea-rows-6-reaches-the-rendered-control-with-provider-height-neutralized',
+		wp_json_encode( array( 'errors' => $authored_rows_validated['errors'] ?? array(), 'markup' => $authored_rows_markup, 'css' => $authored_rows_css, 'rendered' => $authored_rows_rendered, 'source' => $authored_rows_source['controls'][0] ?? null ) )
 	);
 	// A cascade-resolved height or minimum height already captured for this textarea
-	// is authoritative; the row-count arithmetic above only fills what it omits.
+	// is authoritative; the row-count height override above only fills what it omits.
 	$authored_textarea_height_form = $topology_form;
 	$authored_textarea_height_form['forms'][0]['presentation_graph'] = array(
 		'schema' => 'generic/computed-form-presentation/v1', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'controls' => 128, 'rules_per_role' => 32 ), 'variants' => array(), 'diagnostics' => array(),
