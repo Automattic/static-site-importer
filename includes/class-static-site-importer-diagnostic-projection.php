@@ -18,9 +18,6 @@ if ( ! class_exists( 'Static_Site_Importer_Entity_Materializer_Registry' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Loss_Classes' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-diagnostic-loss-classes.php';
 }
-if ( ! class_exists( 'Static_Site_Importer_Visual_Parity_Oracle' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-visual-parity-oracle.php';
-}
 
 /** Builds public diagnostic projections without mutating provider state. */
 final class Static_Site_Importer_Diagnostic_Projection {
@@ -202,7 +199,6 @@ final class Static_Site_Importer_Diagnostic_Projection {
 				'semantic_parity_failures'           => (int) ( $quality['semantic_parity_failure_count'] ?? 0 ),
 				'unsafe_layout_constraints'          => (int) ( $quality['unsafe_layout_constraint_count'] ?? 0 ),
 				'omitted_artifact_files'             => (int) ( $quality['omitted_file_count'] ?? 0 ),
-				'visual_parity_failures'             => (int) ( $quality['visual_parity_failure_count'] ?? 0 ),
 			),
 			'quality_gates'            => array(
 				'fallback_blocks'                    => self::validation_gate( 'fallback_blocks', (int) ( $quality['unsupported_fallback_count'] ?? 0 ), $quality ),
@@ -216,12 +212,6 @@ final class Static_Site_Importer_Diagnostic_Projection {
 				'semantic_parity'                    => self::validation_gate( 'semantic_parity', (int) ( $quality['semantic_parity_failure_count'] ?? 0 ), $quality ),
 				'unsafe_layout_constraints'          => self::validation_gate( 'unsafe_layout_constraints', (int) ( $quality['unsafe_layout_constraint_count'] ?? 0 ), $quality ),
 				'omitted_artifact_files'             => self::validation_gate( 'omitted_artifact_files', (int) ( $quality['omitted_file_count'] ?? 0 ), $quality ),
-				'visual_parity'                      => array(
-					'status'          => (string) ( $report['visual_fidelity']['status'] ?? 'requires_runtime_visual_parity_check' ),
-					'owner'           => (string) ( $report['visual_fidelity']['gate_owner'] ?? 'codebox_runtime' ),
-					'count'           => (int) ( $quality['visual_parity_failure_count'] ?? 0 ),
-					'diagnostic_refs' => isset( $quality['diagnostic_refs']['visual_parity_failure_count'] ) && is_array( $quality['diagnostic_refs']['visual_parity_failure_count'] ) ? $quality['diagnostic_refs']['visual_parity_failure_count'] : array(),
-				),
 				'visual_fidelity'                    => array(
 					'status' => (string) ( $report['visual_fidelity']['status'] ?? 'requires_external_render_check' ),
 					'owner'  => (string) ( $report['visual_fidelity']['gate_owner'] ?? 'benchmark_harness' ),
@@ -719,7 +709,6 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'semantic_parity_failure_count'           => (int) ( $quality['semantic_parity_failure_count'] ?? 0 ),
 			'unsafe_layout_constraint_count'          => (int) ( $quality['unsafe_layout_constraint_count'] ?? 0 ),
 			'omitted_file_count'                      => (int) ( $quality['omitted_file_count'] ?? 0 ),
-			'visual_parity_failure_count'             => (int) ( $quality['visual_parity_failure_count'] ?? 0 ),
 			'source_document_count'                   => (int) ( $source_documents['total_count'] ?? 0 ),
 			'unresolved_link_count'                   => (int) ( $source_documents['unresolved_link_count'] ?? 0 ),
 			'commerce'                                => $commerce,
@@ -758,7 +747,6 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'semantic_parity'                    => 'semantic_parity_failure_count',
 			'unsafe_layout_constraints'          => 'unsafe_layout_constraint_count',
 			'omitted_artifact_files'             => 'omitted_file_count',
-			'visual_parity'                      => 'visual_parity_failure_count',
 		);
 		$ref_key  = $ref_keys[ $name ] ?? $name;
 
@@ -906,7 +894,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 
 		$metrics = array();
 		foreach ( $summaries as $summary ) {
-			foreach ( array( 'pixel_delta_percent', 'average_delta', 'compared_width', 'compared_height', 'screenshot_artifacts', 'visual_diff_artifacts', 'section_disagreement_count', 'omitted_count', 'compared_page_count' ) as $key ) {
+			foreach ( array( 'pixel_delta_percent', 'average_delta', 'compared_width', 'compared_height', 'screenshot_artifacts', 'visual_diff_artifacts' ) as $key ) {
 				if ( isset( $summary[ $key ] ) && is_numeric( $summary[ $key ] ) ) {
 					$metrics[ $key ] = 0 + $summary[ $key ];
 				}
@@ -1084,7 +1072,6 @@ final class Static_Site_Importer_Diagnostic_Projection {
 				Static_Site_Importer_Report_Diagnostics::UNSAFE_LAYOUT_CONSTRAINT_TYPE,
 				Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE,
 				Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE,
-				Static_Site_Importer_Visual_Parity_Oracle::DIAGNOSTIC_TYPE,
 			),
 			true
 		);
@@ -1175,7 +1162,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		}
 
 		$type = isset( $diagnostic['type'] ) && is_scalar( $diagnostic['type'] ) ? (string) $diagnostic['type'] : '';
-		if ( Static_Site_Importer_Visual_Parity_Oracle::DIAGNOSTIC_TYPE === $type || str_contains( $type, 'svg' ) || str_contains( $type, 'asset' ) ) {
+		if ( str_contains( $type, 'svg' ) || str_contains( $type, 'asset' ) ) {
 			return 'static-site-importer';
 		}
 
@@ -1207,9 +1194,6 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		}
 		if ( str_starts_with( $type, 'semantic_parity_' ) ) {
 			return 'Generate core WordPress blocks whose navigation, landmark, label, and URL semantics match the source structure.';
-		}
-		if ( Static_Site_Importer_Visual_Parity_Oracle::DIAGNOSTIC_TYPE === $type ) {
-			return 'Imported WordPress section geometry and typography should match the capture within documented tolerances.';
 		}
 
 		return 'Import should complete without this diagnostic being reported.';
@@ -1524,7 +1508,6 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'semantic_parity_failure'                    => 'semantic_parity',
 			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE => 'unresolved_asset',
 			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE => 'unresolved_asset',
-			Static_Site_Importer_Visual_Parity_Oracle::DIAGNOSTIC_TYPE => 'visual_parity',
 		);
 
 		return $categories[ $type ] ?? 'import_quality';
@@ -1565,7 +1548,6 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'semantic_parity_failure'                    => 'repair_semantic_structure',
 			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE => 'raise_compiler_file_limit',
 			Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE => 'raise_compiler_file_limit',
-			Static_Site_Importer_Visual_Parity_Oracle::DIAGNOSTIC_TYPE => 'repair_visual_section_geometry',
 		);
 
 		return $classes[ $type ] ?? 'inspect_import_diagnostic';

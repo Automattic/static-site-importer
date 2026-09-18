@@ -31,9 +31,6 @@ if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Projection' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Quality_Gates' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-quality-gates.php';
 }
-if ( ! class_exists( 'Static_Site_Importer_Visual_Parity_Oracle' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-visual-parity-oracle.php';
-}
 if ( ! class_exists( 'Static_Site_Importer_Product_Finding_Materializer' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-product-finding-materializer.php';
 }
@@ -346,29 +343,8 @@ class Static_Site_Importer_Report_Diagnostics {
 	 * @return array<string, mixed>
 	 */
 	public static function finalize_report( Static_Site_Importer_Import_Report $report, array $args ): array {
-		$provided = isset( $args['validation_artifacts'] ) && is_array( $args['validation_artifacts'] ) ? $args['validation_artifacts'] : array();
-		$oracle   = Static_Site_Importer_Visual_Parity_Oracle::evaluate( $provided );
-		foreach ( $oracle['diagnostics'] as $diagnostic ) {
-			if ( is_array( $diagnostic ) ) {
-				$report->append_diagnostic( $diagnostic );
-			}
-		}
-		if ( 'skipped' !== $oracle['status'] ) {
-			$visual_fidelity = $report->section( 'visual_fidelity' );
-			$visual_fidelity['status']             = 'failed' === $oracle['status'] ? 'failed' : 'passed';
-			$visual_fidelity['gate_owner']         = 'codebox_runtime';
-			$visual_fidelity['verification']       = Static_Site_Importer_Visual_Parity_Oracle::VERIFICATION;
-			$visual_fidelity['stage']              = Static_Site_Importer_Visual_Parity_Oracle::STAGE;
-			$visual_fidelity['tolerances']         = $oracle['tolerances'];
-			$visual_fidelity['disagreement_count'] = count( $oracle['disagreements'] );
-			$report->set_section( 'visual_fidelity', $visual_fidelity );
-			$provided = array_merge( $provided, $oracle['artifact_refs'] );
-			if ( ! empty( $oracle['summary'] ) ) {
-				$provided['summary'] = array_merge( isset( $provided['summary'] ) && is_array( $provided['summary'] ) ? $provided['summary'] : array(), $oracle['summary'] );
-			}
-		}
 		$quality                           = Static_Site_Importer_Quality_Gates::finalize_quality_report( $report, $args );
-		$report['visual_parity_artifacts'] = Static_Site_Importer_Diagnostic_Projection::visual_parity_artifact_contract( $provided );
+		$report['visual_parity_artifacts'] = Static_Site_Importer_Diagnostic_Projection::visual_parity_artifact_contract( isset( $args['validation_artifacts'] ) && is_array( $args['validation_artifacts'] ) ? $args['validation_artifacts'] : array() );
 		Static_Site_Importer_Diagnostic_Projection::refresh_projections( $report, $quality, false );
 
 		return $quality;

@@ -421,7 +421,6 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 					'runtime_dependency_target',
 					'runtime_dependency_parity_issue',
 					'commerce_dependency_failure',
-					'visual_parity',
 				)
 			)
 		) {

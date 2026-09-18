@@ -21,9 +21,6 @@ if ( ! class_exists( 'Static_Site_Importer_Form_Fallback_Contract' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Projection' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-diagnostic-projection.php';
 }
-if ( ! class_exists( 'Static_Site_Importer_Visual_Parity_Oracle' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-visual-parity-oracle.php';
-}
 
 /** Computes quality-gate status from normalized import diagnostics. */
 final class Static_Site_Importer_Quality_Gates {
@@ -46,12 +43,6 @@ final class Static_Site_Importer_Quality_Gates {
 		$quality['unsupported_fallback_count']              = $fallback_admission['unsupported'];
 		$quality['unsafe_layout_constraint_count']          = count( array_filter( $report['diagnostics'] ?? array(), static fn( $diagnostic ): bool => is_array( $diagnostic ) && Static_Site_Importer_Report_Diagnostics::UNSAFE_LAYOUT_CONSTRAINT_TYPE === ( $diagnostic['type'] ?? '' ) ) );
 		$quality['omitted_file_count']                     = self::omitted_file_count( $report['diagnostics'] ?? array() );
-		$quality['visual_parity_failure_count']            = count(
-			array_filter(
-				$report['diagnostics'] ?? array(),
-				static fn( $diagnostic ): bool => is_array( $diagnostic ) && Static_Site_Importer_Visual_Parity_Oracle::DIAGNOSTIC_TYPE === ( $diagnostic['type'] ?? '' )
-			)
-		);
 		$reasons = array();
 		if ( $quality['unsupported_fallback_count'] > 0 ) {
 			$reasons[] = 'unsupported_html_fallback';
@@ -100,9 +91,6 @@ final class Static_Site_Importer_Quality_Gates {
 		}
 		if ( ( $quality['omitted_file_count'] ?? 0 ) > 0 ) {
 			$reasons[] = 'dropped_artifact_files';
-		}
-		if ( ( $quality['visual_parity_failure_count'] ?? 0 ) > 0 ) {
-			$reasons[] = Static_Site_Importer_Visual_Parity_Oracle::FAILURE_REASON;
 		}
 
 		$quality['pass']            = empty( $reasons );
@@ -157,7 +145,6 @@ final class Static_Site_Importer_Quality_Gates {
 			'semantic_parity_failure_count'           => 0,
 			'unsafe_layout_constraint_count'          => 0,
 			'omitted_file_count'                      => 0,
-			'visual_parity_failure_count'             => 0,
 			'failure_reasons'                         => array(),
 		);
 	}
@@ -639,7 +626,6 @@ final class Static_Site_Importer_Quality_Gates {
 			'semantic_parity_failure_count'           => array( 'semantic_parity_navigation_missing', 'semantic_parity_navigation_mismatch', 'semantic_parity_landmark_missing', 'semantic_parity_failure' ),
 			'unsafe_layout_constraint_count'          => array( Static_Site_Importer_Report_Diagnostics::UNSAFE_LAYOUT_CONSTRAINT_TYPE ),
 			'omitted_file_count'                      => array( Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE, Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE ),
-			'visual_parity_failure_count'             => array( Static_Site_Importer_Visual_Parity_Oracle::DIAGNOSTIC_TYPE ),
 		);
 
 		$refs = array();
