@@ -828,6 +828,77 @@ namespace {
 		'class-token-grid-row-without-layout-node-still-maps-to-jetpack-field-width',
 		wp_json_encode( array( 'row' => $bare_row_row, 'class' => $bare_row_class, 'markup' => $bare_row_markup ) )
 	);
+	// One 2-column grid holding eight fields (four visual rows) plus two full-width
+	// fields outside it. Column count comes from the resolved track list, not from
+	// sibling count, so every grid child materializes at Jetpack `width: 50`.
+	$multi_row_css  = '.space-y-5>:not([hidden])~:not([hidden]){margin-top:1.25rem}'
+		. '.grid{display:grid}.gap-5{gap:1.25rem}@media (width>=40rem){.sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}';
+	$multi_row_html = '<style>' . $multi_row_css . '</style><form class="space-y-5">'
+		. '<h2>Member details</h2>'
+		. '<div class="grid gap-5 sm:grid-cols-2">'
+		. '<label class="block"><span>Full name</span><input required></label>'
+		. '<label class="block"><span>Father name</span><input required></label>'
+		. '<label class="block"><span>CNIC number</span><input required></label>'
+		. '<label class="block"><span>Date of birth</span><input type="date" required></label>'
+		. '<label class="block"><span>Mobile number</span><input type="tel" required></label>'
+		. '<label class="block"><span>Email</span><input type="email"></label>'
+		. '<label class="block"><span>Membership type</span><select required><option>Ordinary member</option></select></label>'
+		. '<label class="block"><span>Family members</span><input type="number" min="1" max="50" required></label>'
+		. '</div>'
+		. '<label class="block"><span>Residential address</span><textarea rows="3" required></textarea></label>'
+		. '<label class="block"><span>Occupation</span><input></label>'
+		. '<button type="submit">Submit registration</button>'
+		. '</form>';
+	$multi_row_source    = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'membership.html', 'files' => array( 'membership.html' => $multi_row_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$multi_row_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $multi_row_source ) ) );
+	$multi_row_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $multi_row_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$multi_row_markup    = (string) ( $multi_row_row['block_markup'] ?? '' );
+	$multi_row_css_out   = (string) ( $multi_row_row['provider_layout_overlay_css']['css'] ?? '' );
+	$multi_row_ops       = array_column( $multi_row_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' );
+	$assert( empty( $multi_row_validated['errors'] ) && 'mapped' === ( $multi_row_row['status'] ?? '' ), 'multi-row-equal-column-grid-manifest-validates', wp_json_encode( $multi_row_validated ) );
+	$assert(
+		10 === ( $multi_row_row['field_count'] ?? 0 )
+			&& 8 === substr_count( $multi_row_markup, '"width":50' )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-text \{[^}]*"width":50/', $multi_row_markup )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-telephone \{[^}]*"width":50/', $multi_row_markup )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-email \{[^}]*"width":50/', $multi_row_markup )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-select \{[^}]*"width":50/', $multi_row_markup )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-number \{[^}]*"width":50/', $multi_row_markup )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-date \{[^}]*"width":50/', $multi_row_markup )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-textarea \{(?![^}]*"width":50)/', $multi_row_markup )
+			&& in_array( 'provider_equal_width_fields', $multi_row_ops, true )
+			&& 8 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.625rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.625rem\);margin-block-start:0!important\}/', $multi_row_css_out )
+			&& $multi_row_markup === serialize_blocks( parse_blocks( $multi_row_markup ) ),
+		'eight-field-two-column-grid-emits-jetpack-width-50-on-every-grid-child',
+		wp_json_encode( array( 'ops' => $multi_row_ops, 'markup' => $multi_row_markup, 'css' => $multi_row_css_out, 'count' => substr_count( $multi_row_markup, '"width":50' ) ) )
+	);
+	// Real Tailwind v4 captures often keep `display:grid` as a class token while
+	// layered `sm:grid-cols-2` never becomes a layout-graph node. Sibling count
+	// is not column count: eight field boxes in that grid are still two columns.
+	$class_only_html = '<form class="space-y-5">'
+		. '<div class="grid gap-5">'
+		. '<label class="block"><span>Full name</span><input required></label>'
+		. '<label class="block"><span>Father name</span><input required></label>'
+		. '<label class="block"><span>CNIC</span><input required></label>'
+		. '<label class="block"><span>Date of birth</span><input type="date" required></label>'
+		. '<label class="block"><span>Mobile</span><input type="tel" required></label>'
+		. '<label class="block"><span>Email</span><input type="email"></label>'
+		. '<label class="block"><span>Type</span><select required><option>Ordinary</option></select></label>'
+		. '<label class="block"><span>Family</span><input type="number" required></label>'
+		. '</div>'
+		. '<label class="block"><span>Address</span><textarea rows="3" required></textarea></label>'
+		. '<label class="block"><span>Occupation</span><input></label>'
+		. '<button type="submit">Submit</button></form>';
+	$class_only_source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'membership.html', 'files' => array( 'membership.html' => $class_only_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$class_only_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $class_only_source ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$class_only_markup = (string) ( $class_only_row['block_markup'] ?? '' );
+	$assert(
+		'mapped' === ( $class_only_row['status'] ?? '' )
+			&& 8 === substr_count( $class_only_markup, '"width":50' )
+			&& in_array( 'provider_equal_width_fields', array_column( $class_only_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ),
+		'class-token-grid-with-eight-field-children-still-maps-to-jetpack-width-50',
+		wp_json_encode( array( 'markup' => $class_only_markup, 'topo' => $class_only_source['control_topology']['nodes'][0]['class'] ?? null, 'layout' => $class_only_source['layout_graph'] ?? null ) )
+	);
 	// A narrowing (max-width) variant is not the proven mobile-first widening
 	// shape and must keep the existing decline: Jetpack cannot represent "two
 	// columns by default that collapse to one," and this is not that either.
@@ -1858,7 +1929,7 @@ namespace {
 	$full_width_grid_field_css = (string) ( $full_width_grid_field_row['provider_layout_overlay_css']['css'] ?? '' );
 	$assert( 'mapped' === ( $full_width_grid_field_row['status'] ?? '' ) && in_array( 'provider_fullspan_grid_child', array_column( $full_width_grid_field_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ) && str_contains( $full_width_grid_field_css, 'display:grid;grid-template-columns:repeat(12, 1fr);gap:1rem;width:100%' ) && str_contains( $full_width_grid_field_css, 'grid-column:span 12' ), 'full-span-single-field-grid-retains-proven-tracks-and-native-child-placement', wp_json_encode( $full_width_grid_field_row ) );
 	$fullspan_child_runtime = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-email-wrap ssi-node-a1b2c3d4e5f6-wrap ssi-source-wrapper-0--source-grid-wrap ssi-source-fullspan-child--ssi-node-0f1e2d3c4b5a-wrap"><label>Email</label><input type="email"></div>' );
-	$assert( '<div class="grunion-field-email-wrap"><div class="ssi-field-row source-grid ssi-node-a1b2c3d4e5f6-wrap"><label>Email</label><div class="ssi-node-0f1e2d3c4b5a-wrap"><input type="email"></div></div></div>' === $fullspan_child_runtime, 'full-span-grid-rebuilds-a-real-value-child-inside-the-source-grid-container', $fullspan_child_runtime );
+	$assert( '<div class="grunion-field-email-wrap ssi-node-a1b2c3d4e5f6-wrap"><div class="ssi-field-row source-grid"><label>Email</label><div class="ssi-node-0f1e2d3c4b5a-wrap"><input type="email"></div></div></div>' === $fullspan_child_runtime, 'full-span-grid-rebuilds-a-real-value-child-inside-the-source-grid-container', $fullspan_child_runtime );
 	$partial_grid_field_form = $full_width_grid_field_form;
 	$partial_grid_field_form['forms'][0]['layout_graph']['nodes'][2]['layout']['column'] = 'span 6';
 	$partial_grid_field_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $partial_grid_field_form )['forms'] ?? array() ) )['forms'][0] ?? array();
@@ -2268,7 +2339,7 @@ namespace {
 	$projected_wrapper = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-text-wrap ssi-source-wrapper--field-wrap"><input class="ssi-source-wrapper--field source-input"></div>' );
 	$assert( '<div class="grunion-field-text-wrap"><div class="ssi-field-row field"><input class="source-input"></div></div>' === $projected_wrapper, 'provider-runtime-rebuilds-source-wrapper-inside-field-shell', $projected_wrapper );
 	$layout_wrapper = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-text-wrap ssi-node-123456789abc-wrap ssi-source-wrapper--field-wrap"><input class="source-input"></div>' );
-	$assert( '<div class="grunion-field-text-wrap"><div class="ssi-field-row field ssi-node-123456789abc-wrap"><input class="source-input"></div></div>' === $layout_wrapper, 'provider-runtime-places-source layout hooks on the restored source wrapper', $layout_wrapper );
+	$assert( '<div class="grunion-field-text-wrap ssi-node-123456789abc-wrap"><div class="ssi-field-row field"><input class="source-input"></div></div>' === $layout_wrapper, 'provider-runtime-keeps-the-generated-layout-hook-on-the-field-shell', $layout_wrapper );
 	$layered_wrapper = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-text-wrap ssi-source-wrapper-6--carrier-wrap ssi-source-wrapper-8--input-shell-wrap"><label>Name</label><input class="source-input"></div>' );
 	$assert( '<div class="grunion-field-text-wrap"><div class="ssi-field-row carrier"><label>Name</label><div class="input-shell"><input class="source-input"></div></div></div>' === $layered_wrapper, 'provider-runtime-keeps-the-label-inside-the-outermost-source-wrapper', $layered_wrapper );
 	$projected_controls = implode( '', array_map( array( Static_Site_Importer_Form_Seeder::class, 'project_provider_wrapper_classes' ), array( '<div class="grunion-field-text-wrap ssi-source-wrapper-2--control-shell-wrap"><input class="control-hook"></div>', '<div class="grunion-field-textarea-wrap ssi-source-wrapper-2--control-shell-wrap"><textarea class="control-hook"></textarea></div>', '<div class="grunion-field-select-wrap ssi-source-wrapper-2--control-shell-wrap"><select class="control-hook"><option>One</option></select></div>' ) ) );

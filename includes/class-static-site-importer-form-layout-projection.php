@@ -184,9 +184,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 
 	/**
 	 * Flatten the validated generic tree into Jetpack's constrained direct-child
-	 * grammar. Equal two- and four-column grids and complete provenance-backed
-	 * percentage rows map to provider field widths; other wrapper semantics/layout
-	 * remain explicit receipt losses.
+	 * grammar. Equal-fraction field-row grids (2/3/4 columns, any number of
+	 * occupying fields) and complete provenance-backed percentage rows map to
+	 * provider field widths; other wrapper semantics/layout remain explicit
+	 * receipt losses.
 	 *
 	 * @param array<int,array<string,mixed>> $field_blocks
 	 * @param array<int,array<string,mixed>> $controls
@@ -993,14 +994,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			);
 		}
 		foreach ( $children as $parent => $siblings ) {
-			if ( '$root' === $parent || isset( $percentage_width_parents[ $parent ] ) || ! in_array( count( $siblings ), array( 2, 4 ), true ) ) {
+			if ( '$root' === $parent || isset( $percentage_width_parents[ $parent ] ) || count( $siblings ) < 2 ) {
 				continue;
 			}
 			$layout = $layout_by_node[ $parent ] ?? array();
 			if ( array_intersect( array_keys( $layout ), array( 'item_placement', 'column', 'row', 'area' ) ) ) {
 				continue;
 			}
-			$count           = count( $siblings );
 			$parent_variants = $variants_by_node[ $parent ] ?? array();
 			$columns         = preg_replace( '/\s+/', '', (string) ( $layout['columns'] ?? '' ) );
 			$class_tokens    = preg_split( '/\s+/', trim( (string) ( $topology_nodes_by_id[ $parent ]['class'] ?? '' ) ) );
@@ -1012,7 +1012,18 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					$display = 'grid';
 				}
 			}
-			$equal_grid = empty( $parent_variants ) && 'grid' === $display && ( self::is_equal_fraction_columns( $columns, $count ) || ( '' === $columns && in_array( 'grid', $class_tokens, true ) ) );
+			// Column count comes from the resolved track list, not from how many
+			// field boxes occupy those tracks. A 2-column grid of eight fields is
+			// four visual rows of Jetpack `width: 50`, not an 8-column row.
+			$column_count = self::equal_fraction_column_count( $columns );
+			if ( null === $column_count && '' === $columns && in_array( 'grid', $class_tokens, true ) ) {
+				// Resolved tracks are absent (layered utility CSS often never
+				// becomes a layout-graph node). A field-row grid of single-field
+				// siblings is the 2-column pairing Jetpack `width: 50` represents;
+				// 3- and 4-column rows still require a resolved track list.
+				$column_count = 2;
+			}
+			$equal_grid = empty( $parent_variants ) && 'grid' === $display && null !== $column_count;
 			// A mobile-first source stacks these boxes by default and only bands
 			// them into equal columns at a wider breakpoint (Tailwind's own
 			// `grid-cols-1 md:grid-cols-2` or `grid sm:grid-cols-2` shape). Jetpack
@@ -1022,28 +1033,31 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			// a narrowing, a max-width query, or a patch touching more than the
 			// column tracks) keeps the existing wrapper-layout decline.
 			if ( ! $equal_grid && 'grid' === $display && 1 === count( $parent_variants ) ) {
-				$variant   = $parent_variants[0];
-				$condition = is_array( $variant['condition'] ?? null ) ? $variant['condition'] : null;
-				$patch     = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
-				$widened   = preg_replace( '/\s+/', '', (string) ( $patch['columns'] ?? '' ) );
+				$variant       = $parent_variants[0];
+				$condition     = is_array( $variant['condition'] ?? null ) ? $variant['condition'] : null;
+				$patch         = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+				$widened       = preg_replace( '/\s+/', '', (string) ( $patch['columns'] ?? '' ) );
+				$widened_count = self::equal_fraction_column_count( $widened );
 				if ( array( 'columns' ) === array_keys( $patch )
 					&& is_array( $condition ) && 'media' === ( $condition['kind'] ?? null )
 					&& is_string( $condition['query'] ?? null )
 					&& self::is_min_width_media_query( $condition['query'] )
-					&& self::is_equal_fraction_columns( $widened, $count )
+					&& null !== $widened_count
 				) {
 					foreach ( $variant['provenance'] ?? array() as $fact ) {
 						if ( is_array( $fact ) && ( $fact['condition'] ?? null ) === $condition && is_string( $fact['source_path'] ?? null ) && is_string( $fact['source_sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ) && is_string( $fact['selector'] ?? null ) && in_array( 'grid-template-columns', $fact['properties'] ?? array(), true ) ) {
-							$equal_grid = true;
+							$equal_grid   = true;
+							$column_count = $widened_count;
 							break;
 						}
 					}
 					if ( ! $equal_grid && in_array( 'grid', preg_split( '/\s+/', trim( (string) ( $topology_nodes_by_id[ $parent ]['class'] ?? '' ) ) ) ?: array(), true ) ) {
-						$equal_grid = true;
+						$equal_grid   = true;
+						$column_count = $widened_count;
 					}
 				}
 			}
-			if ( ! $equal_grid ) {
+			if ( ! $equal_grid || null === $column_count ) {
 				continue;
 			}
 			$indexes = array();
@@ -1058,13 +1072,26 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( empty( $indexes ) ) {
 				continue;
 			}
+			$non_submit_indexes = array_values(
+				array_filter(
+					array_keys( $field_blocks ),
+					static fn ( int $index ): bool => 'core/button' !== ( $field_blocks[ $index ]['name'] ?? '' )
+				)
+			);
+			$paired_indexes     = $indexes;
+			sort( $non_submit_indexes );
+			sort( $paired_indexes );
+			if ( $paired_indexes === $non_submit_indexes ) {
+				continue;
+			}
+			$width  = self::provider_field_width( 1 / $column_count );
 			$gap    = is_string( $layout['gap'] ?? null ) && '' !== trim( $layout['gap'] )
 				? trim( $layout['gap'] )
 				: ( is_string( $layout['column_gap'] ?? null ) && '' !== trim( $layout['column_gap'] ) ? trim( $layout['column_gap'] ) : '1.5rem' );
-			$track  = self::equal_fraction_track_size( $count, $gap );
+			$track  = self::equal_fraction_track_size( $column_count, $gap );
 			$paired = array_fill_keys( $indexes, true );
 			foreach ( $indexes as $control_index ) {
-				$field_blocks[ $control_index ]['attrs']['width'] = 100 / $count;
+				$field_blocks[ $control_index ]['attrs']['width'] = $width;
 				$overlay_node_targets[]                           = array(
 					'id'        => 'field-' . $control_index,
 					'layout'    => array(
@@ -1091,7 +1118,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'dimension'   => 'layout',
 				'strategy'    => 'provider_equal_width_fields',
 				'target_hash' => hash( 'sha256', $parent ),
-				'width'       => 100 / $count,
+				'width'       => $width,
 			);
 			foreach ( $field_blocks as $control_index => $field_block ) {
 				if ( isset( $paired[ $control_index ] ) ) {
@@ -2449,6 +2476,19 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 		}
 		return $display;
+	}
+
+	/**
+	 * Equal-fraction track count Jetpack can express as a field `width` of
+	 * 50 / 33 / 25. Null when the value is not that shape.
+	 */
+	private static function equal_fraction_column_count( string $columns ): ?int {
+		foreach ( array( 2, 3, 4 ) as $count ) {
+			if ( self::is_equal_fraction_columns( $columns, $count ) ) {
+				return $count;
+			}
+		}
+		return null;
 	}
 
 	/**

@@ -308,10 +308,9 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			static function ( array $matches ) use ( &$wrapper_layers, &$composite_layers, &$provider_layout_classes, &$fullspan_child_classes, &$phone_destination_classes, &$textarea_rows ): string {
 				$classes            = preg_split( '/\s+/', trim( $matches[2] ) );
 				$classes            = false === $classes ? array() : $classes;
-				$is_wrapper         = (bool) array_filter( $classes, static fn ( string $class_name ): bool => 1 === preg_match( '/^grunion-field-[A-Za-z0-9_-]+-wrap$/D', $class_name ) );
-				$is_phone_shell     = in_array( 'jetpack-field__input-phone-wrapper', $classes, true );
-				$has_source_wrapper = (bool) array_filter( $classes, static fn( string $class_name ): bool => str_starts_with( $class_name, 'ssi-source-wrapper-' ) );
-				$output             = array();
+				$is_wrapper     = (bool) array_filter( $classes, static fn ( string $class_name ): bool => 1 === preg_match( '/^grunion-field-[A-Za-z0-9_-]+-wrap$/D', $class_name ) );
+				$is_phone_shell = in_array( 'jetpack-field__input-phone-wrapper', $classes, true );
+				$output         = array();
 				foreach ( $classes as $class_name ) {
 					if ( preg_match( '/^ssi-textarea-rows-([1-9][0-9]{0,1})$/D', $class_name, $marker ) ) {
 						$textarea_rows = $marker[1];
@@ -337,10 +336,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 						continue;
 					}
 					if ( $is_wrapper && 1 === preg_match( '/^ssi-node-[a-f0-9]{12}-wrap$/D', $class_name ) ) {
-						$provider_layout_classes[] = $class_name;
-						if ( ! $has_source_wrapper ) {
-							$output[] = $class_name;
-						}
+						$output[] = $class_name;
 						continue;
 					}
 					if ( preg_match( '/^ssi-source-wrapper-([0-9]{1,2})--([A-Za-z_][A-Za-z0-9_-]{0,79})-wrap$/D', $class_name, $marker ) ) {
