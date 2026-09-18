@@ -687,13 +687,18 @@ class Static_Site_Importer_Form_Seeder {
 				'attrs' => $attrs,
 			);
 		}
-		$markup = Static_Site_Importer_Form_Field_Markup::context_block_markup( $form, 'context_before' ) . Static_Site_Importer_Form_Field_Markup::serialize_block(
+		$inner_blocks = array_merge(
+			Static_Site_Importer_Form_Field_Markup::context_blocks( $form, 'context_before' ),
+			$inner_blocks,
+			Static_Site_Importer_Form_Field_Markup::context_blocks( $form, 'context_after' )
+		);
+		$markup       = Static_Site_Importer_Form_Field_Markup::serialize_block(
 			array(
 				'name'        => 'jetpack/contact-form',
 				'attrs'       => $form_attrs,
 				'innerBlocks' => $inner_blocks,
 			)
-		) . Static_Site_Importer_Form_Field_Markup::context_block_markup( $form, 'context_after' );
+		);
 		$row    = array(
 			'selector'                    => $selector,
 			'source_path'                 => $source_path,

@@ -993,26 +993,35 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			);
 		}
 		foreach ( $children as $parent => $siblings ) {
-			if ( '$root' === $parent || isset( $percentage_width_parents[ $parent ] ) || ! isset( $layout_by_node[ $parent ] ) || ! in_array( count( $siblings ), array( 2, 4 ), true ) ) {
+			if ( '$root' === $parent || isset( $percentage_width_parents[ $parent ] ) || ! in_array( count( $siblings ), array( 2, 4 ), true ) ) {
 				continue;
 			}
-			$layout = $layout_by_node[ $parent ];
+			$layout = $layout_by_node[ $parent ] ?? array();
 			if ( array_intersect( array_keys( $layout ), array( 'item_placement', 'column', 'row', 'area' ) ) ) {
 				continue;
 			}
 			$count           = count( $siblings );
 			$parent_variants = $variants_by_node[ $parent ] ?? array();
 			$columns         = preg_replace( '/\s+/', '', (string) ( $layout['columns'] ?? '' ) );
-			$equal_grid      = empty( $parent_variants ) && 'grid' === ( $layout['display'] ?? null ) && self::is_equal_fraction_columns( $columns, $count );
+			$class_tokens    = preg_split( '/\s+/', trim( (string) ( $topology_nodes_by_id[ $parent ]['class'] ?? '' ) ) );
+			$class_tokens    = false === $class_tokens ? array() : array_values( array_filter( $class_tokens ) );
+			$display         = $layout['display'] ?? null;
+			if ( 'grid' !== $display ) {
+				$from_class = self::display_from_class_tokens( $class_tokens );
+				if ( 'grid' === $from_class ) {
+					$display = 'grid';
+				}
+			}
+			$equal_grid = empty( $parent_variants ) && 'grid' === $display && ( self::is_equal_fraction_columns( $columns, $count ) || ( '' === $columns && in_array( 'grid', $class_tokens, true ) ) );
 			// A mobile-first source stacks these boxes by default and only bands
 			// them into equal columns at a wider breakpoint (Tailwind's own
-			// `grid-cols-1 md:grid-cols-2` shape). Jetpack field width is a single,
-			// non-responsive value, so accept exactly one proven min-width widening
-			// of the track count and materialize that widened state instead; any
-			// other variant shape (more than one variant, a narrowing, a max-width
-			// query, or a patch touching more than the column tracks) keeps the
-			// existing wrapper-layout decline.
-			if ( ! $equal_grid && 'grid' === ( $layout['display'] ?? null ) && 1 === count( $parent_variants ) ) {
+			// `grid-cols-1 md:grid-cols-2` or `grid sm:grid-cols-2` shape). Jetpack
+			// field width is a single, non-responsive value, so accept exactly one
+			// proven min-width widening of the track count and materialize that
+			// widened state instead; any other variant shape (more than one variant,
+			// a narrowing, a max-width query, or a patch touching more than the
+			// column tracks) keeps the existing wrapper-layout decline.
+			if ( ! $equal_grid && 'grid' === $display && 1 === count( $parent_variants ) ) {
 				$variant   = $parent_variants[0];
 				$condition = is_array( $variant['condition'] ?? null ) ? $variant['condition'] : null;
 				$patch     = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
@@ -1028,6 +1037,9 @@ final class Static_Site_Importer_Form_Layout_Projection {
 							$equal_grid = true;
 							break;
 						}
+					}
+					if ( ! $equal_grid && in_array( 'grid', preg_split( '/\s+/', trim( (string) ( $topology_nodes_by_id[ $parent ]['class'] ?? '' ) ) ) ?: array(), true ) ) {
+						$equal_grid = true;
 					}
 				}
 			}
@@ -1663,6 +1675,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * provider container now occupies. Their classes still address that role
 	 * in the source stylesheet, so they belong on the provider block wrapper.
 	 *
+	 * Inner field-row shells (a `grid sm:grid-cols-2` name+phone pair) are not
+	 * the host. Those map through `provider_equal_width_fields` onto Jetpack
+	 * field widths instead of being copied onto the form container.
+	 *
 	 * @return array{classes:array<int,string>,operations:array<int,array<string,mixed>>}
 	 */
 	public static function host_wrapper_projection( array $form ): array {
@@ -1724,10 +1740,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * @return array<int,array<int,string>>
 	 */
 	private static function layout_shell_wrapper_class_lists( string $markup ): array {
-		if ( ! preg_match( '/<!-- wp:(?:[a-z][a-z0-9-]*\/)?layout-shell\s+/', $markup, $header, PREG_OFFSET_CAPTURE ) ) {
+		$markup = ltrim( $markup );
+		if ( ! preg_match( '/^<!-- wp:(?:[a-z][a-z0-9-]*\/)?layout-shell\s+/', $markup, $header ) ) {
 			return array();
 		}
-		$start = $header[0][1] + strlen( $header[0][0] );
+		$start = strlen( $header[0] );
 		if ( '{' !== ( $markup[ $start ] ?? '' ) ) {
 			return array();
 		}
@@ -1756,10 +1773,19 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	}
 
 	private static function is_source_host_class( string $class_name ): bool {
-		return '' !== $class_name
-			&& ! str_starts_with( $class_name, 'wp-block-' )
-			&& ! str_starts_with( $class_name, 'blocks-engine-' )
-			&& 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_.:-]{0,79}$/D', $class_name );
+		if ( '' === $class_name
+			|| str_starts_with( $class_name, 'wp-block-' )
+			|| str_starts_with( $class_name, 'blocks-engine-' )
+			|| 1 !== preg_match( '/^[A-Za-z_][A-Za-z0-9_.:-]{0,79}$/D', $class_name )
+		) {
+			return false;
+		}
+		if ( in_array( $class_name, array( 'grid', 'flex', 'inline-flex' ), true )
+			|| 1 === preg_match( '/(?:^|:)(?:grid-cols-|gap-)/', $class_name )
+		) {
+			return false;
+		}
+		return true;
 	}
 
 	/** Stable generated classes are provider hooks, never source presentation hooks. */
