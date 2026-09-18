@@ -257,14 +257,19 @@ class Static_Site_Importer_Companion_Plugin {
 		if ( ! is_string( $provider_form_runtime ) || '' === $provider_form_runtime ) {
 			return new WP_Error( 'static_site_importer_companion_plugin_provider_form_runtime_missing', 'Provider form runtime projection file is unavailable.' );
 		}
+		$internal_link_runtime = file_get_contents( __DIR__ . '/class-static-site-importer-internal-link-runtime.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the versioned runtime source that generated companions own independently.
+		if ( ! is_string( $internal_link_runtime ) || '' === $internal_link_runtime ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_internal_link_runtime_missing', 'Internal link runtime projection file is unavailable.' );
+		}
 
-		$inventory_source = array( $block_names, $preserved, $form_visual_states, hash( 'sha256', $provider_form_runtime ) );
+		$inventory_source = array( $block_names, $preserved, $form_visual_states, hash( 'sha256', $provider_form_runtime ), hash( 'sha256', $internal_link_runtime ) );
 		if ( ! empty( $editor_scripts ) ) {
 			$inventory_source[] = $editor_scripts;
 		}
 		$inventory_hash        = substr( hash( 'sha256', (string) wp_json_encode( $inventory_source ) ), 0, 16 );
 		$registration_callback = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash . '_register_blocks';
 		$runtime_class         = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Provider_Form_Runtime_V1';
+		$link_runtime_class    = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Internal_Link_Runtime';
 		$main_file             = $plugin_slug . '/' . $plugin_slug . '.php';
 		$config                = wp_json_encode(
 			array(
@@ -298,9 +303,10 @@ class Static_Site_Importer_Companion_Plugin {
 		}
 		$files[ $plugin_slug . '/companion.json' ]                        = $config . "\n";
 		$files[ $plugin_slug . '/includes/provider-form-runtime-v1.php' ] = self::provider_form_runtime_file( $provider_form_runtime, $runtime_class );
+		$files[ $plugin_slug . '/includes/internal-link-runtime.php' ]    = self::internal_link_runtime_file( $internal_link_runtime, $link_runtime_class );
 		$files = array_merge(
 			array(
-				$main_file => self::main_plugin_file( $plugin_slug, $inventory_hash, $runtime_class, self::artifact_provenance( $payload ) ),
+				$main_file => self::main_plugin_file( $plugin_slug, $inventory_hash, $runtime_class, $link_runtime_class, self::artifact_provenance( $payload ) ),
 			),
 			$files
 		);
@@ -701,6 +707,7 @@ class Static_Site_Importer_Companion_Plugin {
 		string $plugin_slug,
 		string $inventory_hash,
 		string $runtime_class,
+		string $link_runtime_class,
 		array $artifact_provenance = array()
 	): string {
 		$fn_prefix = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash;
@@ -745,8 +752,10 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = '}';
 		$lines[] = '';
 		$lines[] = "require_once __DIR__ . '/includes/provider-form-runtime-v1.php';";
+		$lines[] = "require_once __DIR__ . '/includes/internal-link-runtime.php';";
 		$lines[] = $runtime_class . '::configure_visual_states( ' . $fn_prefix . "_config()['form_visual_states'] ?? array() );";
 		$lines[] = $runtime_class . '::register();';
+		$lines[] = $link_runtime_class . '::register();';
 		$lines[] = '';
 		$lines[] = '/**';
 		$lines[] = ' * Register generated blocks from their metadata directories.';
@@ -843,6 +852,10 @@ class Static_Site_Importer_Companion_Plugin {
 	 */
 	private static function provider_form_runtime_file( string $source, string $runtime_class ): string {
 		return str_replace( 'Static_Site_Importer_Provider_Form_Runtime_V1', $runtime_class, $source );
+	}
+
+	private static function internal_link_runtime_file( string $source, string $runtime_class ): string {
+		return str_replace( 'Static_Site_Importer_Internal_Link_Runtime', $runtime_class, $source );
 	}
 
 	/**

@@ -90,6 +90,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-asset-reporter.php',
 	'class-static-site-importer-document-metadata-reporter.php',
 	'class-static-site-importer-route-document-metadata.php',
+	'class-static-site-importer-internal-link-runtime.php',
 	'class-static-site-importer-protected-page-policy.php',
 	'class-static-site-importer-stylesheet-materializer.php',
 	'class-static-site-importer-provider-layout-overlay.php',

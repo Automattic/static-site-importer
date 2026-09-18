@@ -74,6 +74,7 @@
     { "path": "tests/smoke-visual-parity-oracle.php", "environment": "standalone-php" },
     { "path": "tests/smoke-viewport-metadata-materializer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-route-document-title-overlay.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-internal-link-runtime.php", "environment": "standalone-php" },
     { "path": "tests/smoke-webfont-producer-consumer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-google-fonts-cap-fallback.php", "environment": "standalone-php" },
     { "path": "tests/smoke-google-fonts-retry-determinism.php", "environment": "standalone-php" },

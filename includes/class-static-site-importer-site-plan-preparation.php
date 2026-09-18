@@ -537,10 +537,13 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		$route_title_overlay            = isset( $state['route_title_overlay'] ) && is_array( $state['route_title_overlay'] )
 			? $state['route_title_overlay']
 			: Static_Site_Importer_Route_Document_Metadata::prepare_overlay( $font_resolved, $title_bootstrap_overlay );
+		$internal_link_overlay          = isset( $state['internal_link_overlay'] ) && is_array( $state['internal_link_overlay'] )
+			? $state['internal_link_overlay']
+			: Static_Site_Importer_Internal_Link_Runtime::prepare_overlay( $font_resolved, $route_title_overlay );
 		$state['font_overlay']          = $font_overlay;
 		$state['viewport_overlay']      = $viewport_overlay;
-		$state['route_title_overlay']   = $route_title_overlay;
-		$state['composed_theme_writes'] = array_merge( $overlay_writes, Static_Site_Importer_Site_Plan_Persistence::font_overlay_writes( $state['theme_dir'], $font_overlay ), Static_Site_Importer_Site_Plan_Persistence::viewport_overlay_writes( $state['theme_dir'], $viewport_overlay ), Static_Site_Importer_Site_Plan_Persistence::viewport_overlay_writes( $state['theme_dir'], $route_title_overlay ) );
+		$state['route_title_overlay']   = $internal_link_overlay;
+		$state['composed_theme_writes'] = array_merge( $overlay_writes, Static_Site_Importer_Site_Plan_Persistence::font_overlay_writes( $state['theme_dir'], $font_overlay ), Static_Site_Importer_Site_Plan_Persistence::viewport_overlay_writes( $state['theme_dir'], $viewport_overlay ), Static_Site_Importer_Site_Plan_Persistence::viewport_overlay_writes( $state['theme_dir'], $internal_link_overlay ) );
 		foreach ( $state['resolved']['writes'] as $write ) {
 			if ( null !== Static_Site_Importer_Site_Plan_Persistence::payload_reference( $write ) && ! Static_Site_Importer_Site_Plan_Persistence::valid_payload_reference( Static_Site_Importer_Site_Plan_Persistence::payload_reference( $write ) ) ) {
 				throw new InvalidArgumentException( 'payload_reference_invalid' );

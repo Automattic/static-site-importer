@@ -16,6 +16,9 @@ if ( ! class_exists( 'Static_Site_Importer_Public_Error_Projection' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Build_Provenance' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-build-provenance.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Internal_Link_Runtime' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-internal-link-runtime.php';
+}
 
 /** Writes posts, files, overlays, and journals for a prepared plan. */
 final class Static_Site_Importer_Site_Plan_Persistence {
@@ -353,17 +356,19 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		return metadata_exists( 'post', $id, $key ) && (string) get_post_meta( $id, $key, true ) === $value;
 	}
 
-	/** Resolve destination-independent route references after WordPress has assigned every permalink. */
+	/** Rewrite internal routes to portable post-id references after WordPress has assigned every post. */
 	public static function rewrite_materialized_route_links( array &$state ) {
-		$routes              = array();
-		$front_page_identity = self::front_page_reconciliation_identity( $state['resolved']['operations'] ?? array() );
+		$routes = array();
 		foreach ( $state['ordered_pages'] as $page ) {
 			$source_path = (string) ( $page['source_path'] ?? '' );
 			$route       = self::normalized_route_path( (string) ( $page['route']['path'] ?? '' ) );
 			$post_id     = (int) ( $state['source_ids'][ $source_path ] ?? 0 );
-			$permalink   = $post_id > 0 && function_exists( 'get_permalink' ) ? get_permalink( $post_id ) : false;
-			if ( '' !== $route && is_string( $permalink ) && '' !== $permalink ) {
-				$routes[ $route ] = (string) ( $page['reconciliation_identity'] ?? '' ) === $front_page_identity ? home_url( '/' ) : $permalink;
+			$post_type   = sanitize_key( (string) ( $page['post_type'] ?? 'page' ) );
+			if ( ! self::is_valid_post_type( $post_type ) ) {
+				$post_type = 'page';
+			}
+			if ( '' !== $route && $post_id > 0 ) {
+				$routes[ $route ] = self::portable_internal_reference( $post_id, $post_type );
 			}
 		}
 		if ( array() === $routes ) {
@@ -380,7 +385,16 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( ! is_string( $content ) ) {
 				return new WP_Error( 'route_link_rewrite_failed', 'Materialized page content could not be read for route-link resolution.', array( 'source_path' => $source_path ) );
 			}
-			$rewritten = self::rewrite_route_references( $content, $routes );
+			$unresolved = array();
+			$rewritten  = self::rewrite_route_references( $content, $routes, $unresolved );
+			foreach ( array_values( array_unique( $unresolved ) ) as $route ) {
+				$state['diagnostics'][] = array(
+					'type'        => 'unresolved_internal_link',
+					'reason_code' => 'unresolved_internal_link',
+					'source_path' => $source_path,
+					'route'       => $route,
+				);
+			}
 			if ( $rewritten !== $content ) {
 				$updated = wp_update_post(
 					array(
@@ -429,9 +443,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		return '';
 	}
 
-	/** @param array<string,string> $routes */
-	public static function rewrite_route_references( string $content, array $routes ): string {
-		$replace = static function ( array $matches ) use ( $routes ): string {
+	public static function portable_internal_reference( int $post_id, string $post_type ): string {
+		return 'page' === $post_type ? '/?page_id=' . $post_id : '/?p=' . $post_id;
+	}
+
+	/** @param array<string,string> $routes @param array<int,string>|null $unresolved */
+	public static function rewrite_route_references( string $content, array $routes, ?array &$unresolved = null ): string {
+		$replace = static function ( array $matches ) use ( $routes, &$unresolved ): string {
 			$value = (string) $matches[2];
 			if ( '' === $value || preg_match( '~^(?:[a-z][a-z0-9+.-]*:|//|#|\?)~i', $value ) ) {
 				return $matches[0];
@@ -442,7 +460,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				$suffix = $parts[2];
 			}
 			$route = self::normalized_route_path( $value );
-			return isset( $routes[ $route ] ) ? $matches[1] . $routes[ $route ] . $suffix . $matches[3] : $matches[0];
+			if ( isset( $routes[ $route ] ) ) {
+				return $matches[1] . Static_Site_Importer_Internal_Link_Runtime::join_reference_suffix( $routes[ $route ], $suffix ) . $matches[3];
+			}
+			if ( is_array( $unresolved ) && self::is_document_route( $route ) ) {
+				$unresolved[] = $route;
+			}
+			return $matches[0];
 		};
 		foreach ( array(
 			'/(\b(?:href|action|data-[a-z0-9_-]*url)\s*=\s*["\'])([^"\']+)(["\'])/i',
@@ -454,6 +478,14 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		}
 
 		return $content;
+	}
+
+	public static function is_document_route( string $route ): bool {
+		if ( '' === $route || '/' === $route || str_starts_with( $route, '/?' ) ) {
+			return false;
+		}
+		$leaf = basename( $route );
+		return ! str_contains( $leaf, '.' ) || (bool) preg_match( '/\.html?$/i', $leaf );
 	}
 
 	public static function normalized_route_path( string $path ): string {
