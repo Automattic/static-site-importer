@@ -398,7 +398,7 @@ namespace {
 	// and jetpack/field-radio) must not silently store a value the visitor
 	// never sees. A supported field type carries it as `helpText`; an
 	// unsupported one reports the same `unsupported_control_attribute` loss
-	// an unrepresentable numeric min/max/step already uses, rather than a
+	// an unrepresentable numeric step already uses, rather than a
 	// parallel mechanism.
 	$described_url_field = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
 		'input',
@@ -439,8 +439,41 @@ namespace {
 	$assert( ! array_key_exists( 'helpText', $described_radio_field['attrs'] ?? array() ), 'radio-description-is-not-stored-where-jetpack-never-renders-it', wp_json_encode( $described_radio_field ) );
 	$assert( 1 === count( $described_radio_losses ), 'radio-description-is-reported-as-an-unsupported-control-attribute-loss-instead-of-a-silent-drop', wp_json_encode( $described_radio_field ) );
 
+	// jetpack/input declares min and max as numbers and does not declare step.
+	// A bounded number control must become jetpack/field-number with those
+	// attributes on the inner input; step stays a real unsupported-attribute loss.
+	$bounded_number_field = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
+		'input',
+		'number',
+		array( 'name' => 'household', 'label' => 'Household size', 'min' => '1', 'max' => '50' )
+	);
+	$bounded_number_input = array();
+	foreach ( $bounded_number_field['innerBlocks'] ?? array() as $inner ) {
+		if ( 'jetpack/input' === ( $inner['name'] ?? '' ) ) {
+			$bounded_number_input = $inner;
+			break;
+		}
+	}
+	$assert( 'jetpack/field-number' === ( $bounded_number_field['name'] ?? '' ), 'bounded-number-control-maps-to-jetpack-field-number', wp_json_encode( $bounded_number_field ) );
+	$assert( 1 === ( $bounded_number_input['attrs']['min'] ?? null ) && 50 === ( $bounded_number_input['attrs']['max'] ?? null ), 'bounded-number-control-carries-min-max-onto-jetpack-input', wp_json_encode( $bounded_number_input ) );
+	$assert( array() === ( $bounded_number_field['losses'] ?? array() ), 'bounded-number-min-max-are-not-losses', wp_json_encode( $bounded_number_field ) );
+	$stepped_number_field = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
+		'input',
+		'number',
+		array( 'name' => 'guests', 'label' => 'Guests', 'min' => '1', 'max' => '8', 'step' => '0.5' )
+	);
+	$stepped_number_input = array();
+	foreach ( $stepped_number_field['innerBlocks'] ?? array() as $inner ) {
+		if ( 'jetpack/input' === ( $inner['name'] ?? '' ) ) {
+			$stepped_number_input = $inner;
+			break;
+		}
+	}
+	$assert( 1 === ( $stepped_number_input['attrs']['min'] ?? null ) && 8 === ( $stepped_number_input['attrs']['max'] ?? null ) && ! array_key_exists( 'step', $stepped_number_input['attrs'] ?? array() ), 'stepped-number-control-carries-min-max-and-does-not-store-step', wp_json_encode( $stepped_number_input ) );
+	$assert( array( 'step' ) === array_column( $stepped_number_field['losses'] ?? array(), 'attribute' ), 'stepped-number-control-reports-step-as-an-unsupported-control-attribute-loss', wp_json_encode( $stepped_number_field ) );
+
 	// The same unsupported-attribute loss the seeder already gates provider
-	// mapping on (see the numeric min/max/step overflow coverage below) also
+	// mapping on (see the numeric step overflow coverage below) also
 	// gates a described checkbox: an invisible attribute is not a fidelity
 	// win, so the seeder declines to claim the field is represented rather
 	// than shipping a value the visitor will never see.
@@ -2265,11 +2298,18 @@ namespace {
 	$item_map['targets'][0]['capabilities'] = array( 'item_layout' );
 	$item_without_direct_child = Static_Site_Importer_Provider_Layout_Overlay::compile( $item_graph, $item_map );
 	$assert( '' === $item_without_direct_child['css'] && array( 'direct_child_relationship_unrepresentable', 'direct_child_relationship_unrepresentable' ) === array_column( $item_without_direct_child['losses'], 'reason_code' ), 'provider-layout-does-not-accept-inert-item-layout-capability' );
+	$membership = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.membership', 'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ), array( 'tag' => 'input', 'type' => 'number', 'name' => 'household', 'label' => 'Household size', 'min' => '1', 'max' => '50' ), array( 'tag' => 'button', 'type' => 'submit', 'text' => 'Register' ) ) ) ) ) );
+	$membership_row    = $membership['forms'][0] ?? array();
+	$membership_markup = (string) ( $membership_row['block_markup'] ?? '' );
+	$assert( true === ( $membership_row['runtime_mapped'] ?? false ) && 'mapped' === ( $membership_row['status'] ?? '' ) && 0 === ( $membership['counts']['skipped'] ?? -1 ), 'number-min-max-does-not-decline-the-form', wp_json_encode( $membership_row ) );
+	$assert( str_contains( $membership_markup, 'wp:jetpack/field-number' ) && str_contains( $membership_markup, 'wp:jetpack/field-email' ) && str_contains( $membership_markup, '"label":"Household size"' ), 'number-min-max-materializes-field-number-inside-the-form', $membership_markup );
+	$assert( 1 === preg_match( '/<!-- wp:jetpack\/input \{[^\n]*"min":1[^\n]*"max":50[^\n]*\} \/-->/', $membership_markup ), 'number-min-max-are-serialized-onto-jetpack-input', $membership_markup );
+	$assert( array() === array_column( $membership_row['computed_layout_receipt']['losses'] ?? array(), 'attribute' ), 'number-min-max-are-not-receipt-losses', wp_json_encode( $membership_row['computed_layout_receipt'] ?? array() ) );
 	$booking = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.booking', 'controls' => array( array( 'tag' => 'input', 'type' => 'number', 'name' => 'guests', 'label' => 'Guests', 'min' => '1', 'max' => '8', 'step' => '0.5' ), array( 'tag' => 'button', 'type' => 'submit', 'text' => 'Request booking' ) ) ) ) ) );
 	$booking_row = $booking['forms'][0] ?? array();
 	$assert( 'Request booking' === ( $booking_row['submit_text'] ?? '' ) && str_contains( (string) ( $booking_row['block_markup'] ?? '' ), '>Request booking</button>' ), 'canonical-control-text-preserves-request-booking-submit-label' );
-	$assert( str_contains( (string) ( $booking_row['block_markup'] ?? '' ), '"label":"Guests"' ) && str_contains( (string) ( $booking_row['block_markup'] ?? '' ), '"step":"0.5"' ) && array( 'min', 'max' ) === array_column( $booking_row['computed_layout_receipt']['losses'] ?? array(), 'attribute' ), 'number-source-attributes-preserve-supported-step-and-report-min-max-losses' );
-	$assert( false === ( $booking_row['runtime_mapped'] ?? true ) && array( 'min', 'max' ) === array_column( $booking_row['form_receipt_unaccepted_losses'] ?? array(), 'attribute' ) && 2 === ( $booking_row['unaccepted_receipt_loss_count'] ?? 0 ), 'number-unsupported-attributes-gate-form-runtime-acceptance' );
+	$assert( str_contains( (string) ( $booking_row['block_markup'] ?? '' ), '"label":"Guests"' ) && str_contains( (string) ( $booking_row['block_markup'] ?? '' ), '"min":1' ) && str_contains( (string) ( $booking_row['block_markup'] ?? '' ), '"max":8' ) && ! str_contains( (string) ( $booking_row['block_markup'] ?? '' ), '"step"' ) && array( 'step' ) === array_column( $booking_row['computed_layout_receipt']['losses'] ?? array(), 'attribute' ), 'number-source-attributes-preserve-supported-min-max-and-report-step-loss' );
+	$assert( false === ( $booking_row['runtime_mapped'] ?? true ) && array( 'step' ) === array_column( $booking_row['form_receipt_unaccepted_losses'] ?? array(), 'attribute' ) && 1 === ( $booking_row['unaccepted_receipt_loss_count'] ?? 0 ), 'number-unsupported-step-gates-form-runtime-acceptance' );
 	$assert( 'skipped' === ( $booking_row['status'] ?? '' ) && 0 === ( $booking['counts']['error'] ?? -1 ), 'gated-form-is-a-provider-decline-not-a-materialization-error' );
 	$height_controls = array();
 	for ( $height_index = 1; $height_index <= 17; ++$height_index ) {
@@ -2354,7 +2394,7 @@ namespace {
 	$assert( 1 === ( $gate_overflow_receipt['gate_required_loss_overflow_count'] ?? 0 ) && 64 === strlen( (string) ( $gate_overflow_receipt['gate_required_loss_overflow_hash'] ?? '' ) ), 'computed-layout-records-gate-required-overflow-before-seeder-appends' );
 	$overflow_nodes = array();
 	for ( $receipt_index = 0; $receipt_index < 33; ++$receipt_index ) $overflow_nodes[] = $layout_node( 'wrapper-' . $receipt_index, array( 'display' => 'flex', 'direction' => 'row' ) );
-	$overflow_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.overflow', 'controls' => array( array( 'tag' => 'input', 'type' => 'number', 'label' => 'Guests', 'min' => '1' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ), 'layout_graph' => $layout_graph( $overflow_nodes ) ) ) ) );
+	$overflow_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.overflow', 'controls' => array( array( 'tag' => 'input', 'type' => 'number', 'label' => 'Guests', 'step' => '0.5' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ), 'layout_graph' => $layout_graph( $overflow_nodes ) ) ) ) );
 	$overflow_receipt = $overflow_seed['forms'][0]['computed_layout_receipt'] ?? array();
 	$assert( 34 === ( $overflow_receipt['losses_total'] ?? 0 ) && 32 === count( $overflow_receipt['losses'] ?? array() ) && true === ( $overflow_receipt['truncated'] ?? false ) && 1 === ( $overflow_receipt['gate_required_loss_overflow_count'] ?? 0 ) && 64 === strlen( (string) ( $overflow_receipt['gate_required_loss_overflow_hash'] ?? '' ) ) && in_array( 'unsupported_control_attribute', array_column( $overflow_receipt['losses'] ?? array(), 'reason_code' ), true ), 'seeder-retains-gate-required-loss-while-preserving-overflow-totals', wp_json_encode( $overflow_receipt ) );
 	$overflow_row = $overflow_seed['forms'][0] ?? array();

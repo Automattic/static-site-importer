@@ -76,6 +76,16 @@ final class Static_Site_Importer_Jetpack_Forms_Runtime {
 		return array_values( array_unique( array_merge( array( 'jetpack/contact-form', 'jetpack/field-checkbox-multiple', 'jetpack/input', 'jetpack/label', 'jetpack/option', 'jetpack/options', 'jetpack/phone-input' ), array_values( self::field_block_map() ) ) ) );
 	}
 
+	/**
+	 * Return whether jetpack/input can carry a source attribute for this control type.
+	 *
+	 * Grounded in the jetpack/input block attributes: min and max are numbers;
+	 * step is not declared.
+	 */
+	public static function input_supports_attribute( string $lookup, string $attribute ): bool {
+		return 'number' === $lookup && in_array( $attribute, array( 'min', 'max' ), true );
+	}
+
 	/** @return array<int,string> Provider APIs required by the declared adapter. */
 	public static function required_runtime_apis(): array {
 		return array( 'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form' );
