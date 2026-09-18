@@ -233,27 +233,63 @@ $compiler = Static_Site_Importer_Route_Head_Metadata::reword_handled_diagnostics
 );
 $assert( 'named_head_metadata_persisted' === ( $compiler[0]['code'] ?? '' ) && 'report_only' === ( $compiler[0]['constraints'] ?? '' ), 'Compiler html_head_metadata_not_carried rows should be retired once tags are persisted.' );
 
-if ( class_exists( '\Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\AssetReferenceCanonicalizer' ) ) {
-	$resolved_plan = array(
-		'reference_tokens' => array(
-			array(
-				'source_path' => 'assets/hero.png',
-				'token'       => 'hero',
-				'target_path' => 'assets/assets/hero.png',
-			),
+$assert( class_exists( '\Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\AssetReferenceCanonicalizer' ), 'Relative og:image resolution requires AssetReferenceCanonicalizer.' );
+$resolved_plan = array(
+	'reference_tokens' => array(
+		array(
+			'source_path' => 'website/external/9e25/icon.png',
+			'token'       => 'hero',
+			'target_path' => 'assets/external/9e25/icon.png',
 		),
-		'resolution'       => array( 'theme_uri' => 'https://example.test/wp-content/themes/site' ),
-		'pages'            => array( $page( 'index.html', array(), true ) ),
-	);
-	$resolved_tags = Static_Site_Importer_Route_Head_Metadata::from_page(
-		$page(
-			'index.html',
-			array( array( 'property' => 'og:image', 'content' => '/assets/hero.png' ) ),
-			true
+	),
+	'resolution'       => array( 'theme_uri' => 'https://example.test/wp-content/themes/site' ),
+	'pages'            => array( $page( 'website/index.html', array(), true ) ),
+);
+$imported_url = 'https://example.test/wp-content/themes/site/assets/external/9e25/icon.png';
+$relative_tags = Static_Site_Importer_Route_Head_Metadata::from_page(
+	$page(
+		'website/index.html',
+		array(
+			array( 'property' => 'og:image', 'content' => '/external/9e25/icon.png/v1/fill/w_1200,h_630/icon.png' ),
+			array( 'name' => 'twitter:image', 'content' => '/external/9e25/icon.png' ),
 		),
-		$resolved_plan
-	);
-	$assert( 'https://example.test/wp-content/themes/site/assets/assets/hero.png' === ( $resolved_tags[0]['content'] ?? '' ), 'Root-relative og:image must resolve through AssetReferenceCanonicalizer and WordPressSitePlanResolver.' );
-}
+		true
+	),
+	$resolved_plan
+);
+$relative_by_key = $by_key( $relative_tags );
+$assert( $imported_url === ( $relative_by_key['og:image']['content'] ?? '' ), 'Site-relative og:image must resolve through AssetReferenceCanonicalizer to the imported theme URL.' );
+$assert( $imported_url === ( $relative_by_key['twitter:image']['content'] ?? '' ), 'Site-relative twitter:image must resolve through the same materialized asset.' );
+
+$rewritten_tags = Static_Site_Importer_Route_Head_Metadata::from_page(
+	$page(
+		'website/index.html',
+		array( array( 'property' => 'og:image', 'content' => 'external/9e25/icon.png' ) ),
+		true
+	),
+	$resolved_plan
+);
+$assert( $imported_url === ( $rewritten_tags[0]['content'] ?? '' ), 'Collector-rewritten artifact-relative og:image must resolve to the imported theme URL.' );
+
+$dropped = Static_Site_Importer_Route_Head_Metadata::from_page(
+	$page(
+		'website/index.html',
+		array(
+			array( 'name' => 'description', 'content' => 'Kept' ),
+			array( 'property' => 'og:image', 'content' => '/missing/social.png' ),
+		),
+		true
+	),
+	$resolved_plan
+);
+$assert( 1 === count( $dropped ) && 'description' === ( $dropped[0]['key'] ?? '' ), 'Relative og:image that cannot resolve to a materialized asset is dropped rather than emitted.' );
+
+$link_bootstrap = "<?php\n/* Static Site Importer portable internal links. */\n";
+$composed       = Static_Site_Importer_Route_Head_Metadata::prepare_overlay(
+	array( 'writes' => array() ),
+	array( 'writes' => array( array( 'target_path' => 'functions.php', 'content' => $link_bootstrap ) ) )
+);
+$composed_php = (string) ( $composed['writes'][0]['content'] ?? '' );
+$assert( str_contains( $composed_php, 'Static Site Importer portable internal links' ) && str_contains( $composed_php, 'Static Site Importer authored route head metadata' ), 'Head-metadata overlay must keep the internal-link bootstrap it chains from.' );
 
 echo "route head metadata smoke passed\n";

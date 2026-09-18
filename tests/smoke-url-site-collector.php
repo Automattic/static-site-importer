@@ -684,6 +684,36 @@ $srcset_html  = (string) ( $srcset_files['website/index.html']['content'] ?? '' 
 $assert( ! is_wp_error( $srcset_result ) && in_array( 'https://srcset.test/images/hero,wide.png', $srcset_requests, true ) && ! in_array( 'https://srcset.test/images/hero', $srcset_requests, true ), 'collector-keeps-url-internal-commas-in-srcset-candidates' );
 $assert( str_contains( $srcset_html, 'data:image/png;base64,AA== 2x' ) && str_contains( $srcset_html, 'hero-wide.png 1x' ), 'collector-preserves-data-url-srcset-candidates-during-rewrite' );
 
+$og_requests = array();
+$og_result   = Static_Site_Importer_URL_Site_Collector::collect(
+	'https://og.test/',
+	array( 'request_delay_ms' => 0 ),
+	static function ( string $url, array $args ) use ( &$og_requests ) {
+		unset( $args );
+		$og_requests[] = $url;
+		if ( 'https://og.test/sitemap.xml' === $url ) {
+			return new WP_Error( 'no_sitemap', '' );
+		}
+		if ( 'https://og.test/' === $url ) {
+			return array(
+				'body'     => '<html><head><meta property="og:image" content="/external/9e25/icon.png/v1/fill/w_1200,h_630/icon.png"><meta name="twitter:image" content="/external/9e25/icon.png"><meta name="description" content="A clinic"></head><body><h1>Home</h1></body></html>',
+				'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ),
+			);
+		}
+		if ( str_contains( $url, '/external/9e25/icon.png' ) ) {
+			return array( 'body' => "\x89PNG", 'metadata' => array( 'content_type' => 'image/png', 'final_url' => $url ) );
+		}
+		return new WP_Error( 'unexpected_og_request', $url );
+	}
+);
+$og_files = array_column( $og_result['artifact']['files'] ?? array(), null, 'path' );
+$og_html  = (string) ( $og_files['website/index.html']['content'] ?? '' );
+$assert( ! is_wp_error( $og_result ) && in_array( 'https://og.test/external/9e25/icon.png', $og_requests, true ), 'collector-fetches-site-relative-twitter-image' );
+$assert( in_array( 'https://og.test/external/9e25/icon.png/v1/fill/w_1200,h_630/icon.png', $og_requests, true ), 'collector-fetches-site-relative-og-image' );
+$assert( isset( $og_files['website/external/9e25/icon.png'] ), 'collector-packages-twitter-image-asset' );
+$assert( str_contains( $og_html, 'content="external/9e25/icon.png"' ) && ! str_contains( $og_html, 'content="/external/9e25/icon.png"' ), 'collector-rewrites-twitter-image-to-artifact-path' );
+$assert( str_contains( $og_html, 'A clinic' ), 'collector-leaves-non-url-meta-content-alone' );
+
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( PHP_EOL, $failures ) . PHP_EOL );
 	exit( 1 );

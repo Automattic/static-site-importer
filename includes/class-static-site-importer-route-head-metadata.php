@@ -5,8 +5,21 @@
  * @package StaticSiteImporter
  */
 
+use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\AssetReferenceCanonicalizer;
+use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan;
+use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver;
+
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
+}
+if ( ! class_exists( WordPressSitePlan::class ) && is_readable( dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/WordPressSitePlan/WordPressSitePlan.php' ) ) {
+	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/WordPressSitePlan/WordPressSitePlan.php';
+}
+if ( ! class_exists( AssetReferenceCanonicalizer::class ) && is_readable( dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/WordPressSitePlan/AssetReferenceCanonicalizer.php' ) ) {
+	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/WordPressSitePlan/AssetReferenceCanonicalizer.php';
+}
+if ( ! class_exists( WordPressSitePlanResolver::class ) && is_readable( dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/WordPressSitePlan/WordPressSitePlanResolver.php' ) ) {
+	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/WordPressSitePlan/WordPressSitePlanResolver.php';
 }
 
 final class Static_Site_Importer_Route_Head_Metadata {
@@ -313,30 +326,52 @@ PHP;
 
 		$tokens    = is_array( $resolved_plan['reference_tokens'] ?? null ) ? $resolved_plan['reference_tokens'] : array();
 		$theme_uri = is_string( $resolved_plan['resolution']['theme_uri'] ?? null ) ? $resolved_plan['resolution']['theme_uri'] : '';
-		if ( array() === $tokens || '' === $theme_uri || ! class_exists( '\Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\AssetReferenceCanonicalizer' ) || ! class_exists( '\Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver' ) ) {
-			return $content;
+		if ( array() === $tokens || '' === $theme_uri || ! class_exists( AssetReferenceCanonicalizer::class ) || ! class_exists( WordPressSitePlanResolver::class ) ) {
+			return '';
 		}
 
-		$prefix = class_exists( '\Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan' )
-			? \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::TOKEN_PREFIX
-			: '{{wordpress-site-plan:asset:';
+		$prefix = class_exists( WordPressSitePlan::class ) ? WordPressSitePlan::TOKEN_PREFIX : '{{wordpress-site-plan:asset:';
 		try {
-			$references = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::references( $tokens, $theme_uri );
-			if ( str_contains( $content, $prefix ) ) {
-				return \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::resolvePayload( $content, $references );
-			}
+			$references    = WordPressSitePlanResolver::references( $tokens, $theme_uri );
 			$origin        = is_string( $page['source_path'] ?? null ) ? $page['source_path'] : '';
-			$canonicalizer = new \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\AssetReferenceCanonicalizer( $tokens, self::site_root( $resolved_plan ) );
-			$token         = $canonicalizer->reference( $content, $origin );
-			if ( is_string( $token ) ) {
-				return \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver::resolvePayload( $token, $references );
+			$canonicalizer = new AssetReferenceCanonicalizer( $tokens, self::site_root( $resolved_plan ) );
+			foreach ( self::reference_candidates( $content ) as $candidate ) {
+				if ( str_contains( $candidate, $prefix ) ) {
+					$resolved = WordPressSitePlanResolver::resolvePayload( $candidate, $references );
+					if ( self::is_absolute_http_url( $resolved ) ) {
+						return $resolved;
+					}
+					continue;
+				}
+				foreach ( array( $origin, '' ) as $from ) {
+					$token = $canonicalizer->reference( $candidate, $from );
+					if ( ! is_string( $token ) ) {
+						continue;
+					}
+					$resolved = WordPressSitePlanResolver::resolvePayload( $token, $references );
+					if ( self::is_absolute_http_url( $resolved ) ) {
+						return $resolved;
+					}
+				}
 			}
 		} catch ( InvalidArgumentException $error ) {
 			unset( $error );
-			return $content;
 		}
 
-		return $content;
+		return '';
+	}
+
+	/** @return array<int,string> */
+	private static function reference_candidates( string $content ): array {
+		$candidates = array( $content );
+		if ( preg_match( '~^([^?#]+?\.(?:avif|gif|jpe?g|png|svg|webp))(/[^?#]*)([?#].*)?$~i', $content, $parts ) ) {
+			$truncated = $parts[1] . ( $parts[3] ?? '' );
+			if ( $truncated !== $content ) {
+				$candidates[] = $truncated;
+			}
+		}
+
+		return $candidates;
 	}
 
 	/** @param array<string,mixed> $plan */
