@@ -49,8 +49,21 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		);
 	}
 
-	/** Return a Woo-owned cart control for one seeded product binding. */
+	/**
+	 * Return a Woo-owned control for one resolved product binding.
+	 *
+	 * A single-product entity binds to one seeded product via a cart-control
+	 * shortcode, exactly as before. A `product_grid` entity — a detected
+	 * collection of seeded products sharing one canonical source-page anchor —
+	 * binds to every one of its resolved seeded products at once via the native
+	 * `woocommerce/product-collection` block instead, so the whole grid renders
+	 * real products rather than staying frozen source markup with no single
+	 * product to bind to.
+	 */
 	public static function binding_block_markup( array $entity, array $result ): string {
+		if ( 'product_grid' === ( $entity['entity_kind'] ?? '' ) ) {
+			return self::binding_grid_block_markup( $entity );
+		}
 		unset( $entity );
 		$id = isset( $result['id'] ) ? (int) $result['id'] : 0;
 		return $id > 0 ? '<!-- wp:shortcode -->[add_to_cart id="' . $id . '" class="ssi-commerce-control"]<!-- /wp:shortcode -->' : '';
@@ -64,6 +77,99 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			'kind'    => 'shortcode',
 			'content' => '[add_to_cart id="' . $id . '" class="ssi-commerce-control"]',
 		) : array();
+	}
+
+	/**
+	 * Bind a resolved product-grid entity to its seeded products.
+	 *
+	 * @param array<string,mixed> $entity Grid entity: `product_ids` (ints, source display
+	 *                                    order) and an optional `columns` layout hint.
+	 */
+	private static function binding_grid_block_markup( array $entity ): string {
+		$product_ids = is_array( $entity['product_ids'] ?? null )
+			? array_values( array_filter( array_map( 'intval', $entity['product_ids'] ), static fn ( int $id ): bool => $id > 0 ) )
+			: array();
+		if ( empty( $product_ids ) ) {
+			return '';
+		}
+		$columns  = isset( $entity['columns'] ) && is_int( $entity['columns'] ) ? $entity['columns'] : 4;
+		$query_id = isset( $entity['query_id'] ) && is_int( $entity['query_id'] ) ? $entity['query_id'] : 0;
+		return self::product_collection_block_markup( $product_ids, $columns, $query_id );
+	}
+
+	/**
+	 * Build the native WooCommerce product-display block markup for a resolved
+	 * set of seeded product ids, in source display order.
+	 *
+	 * `woocommerce/product-collection` is WooCommerce's own current block for
+	 * rendering a set of products (the block used by its `Product Collection`
+	 * patterns and its own blockified archive-product template; it superseded
+	 * `woocommerce/all-products`). Its built-in `hand-picked` collection —
+	 * `query.woocommerceHandPickedProducts` with `query.orderBy: "post__in"` —
+	 * is WooCommerce's own generic mechanism for binding the block to a
+	 * specific, ordered set of already-existing products; it renders
+	 * server-side with no additional configuration, using the exact
+	 * `product-template` shape WooCommerce's own patterns emit (product image,
+	 * title, price, and add-to-cart button per product).
+	 *
+	 * @param array<int,int> $product_ids Seeded WooCommerce product ids, in source display order.
+	 * @param int             $columns     Grid column count.
+	 * @param int             $query_id    Stable per-page query id so multiple grids on one page do not collide.
+	 */
+	private static function product_collection_block_markup( array $product_ids, int $columns, int $query_id ): string {
+		$product_ids = array_values( array_unique( array_filter( array_map( 'intval', $product_ids ), static fn ( int $id ): bool => $id > 0 ) ) );
+		if ( empty( $product_ids ) ) {
+			return '';
+		}
+
+		$attrs = array(
+			'queryId'              => max( 0, $query_id ),
+			'query'                => array(
+				'perPage'                       => max( 1, min( 100, count( $product_ids ) ) ),
+				'pages'                         => 1,
+				'offset'                        => 0,
+				'postType'                      => 'product',
+				'order'                         => 'asc',
+				'orderBy'                       => 'post__in',
+				'search'                        => '',
+				'exclude'                       => array(),
+				'inherit'                       => false,
+				'taxQuery'                      => array(),
+				'isProductCollectionBlock'      => true,
+				'woocommerceOnSale'             => false,
+				'woocommerceStockStatus'        => array( 'instock', 'outofstock', 'onbackorder' ),
+				'woocommerceAttributes'         => array(),
+				'woocommerceHandPickedProducts' => $product_ids,
+			),
+			'tagName'              => 'div',
+			'dimensions'           => array(
+				'widthType'  => 'fill',
+				'fixedWidth' => '',
+			),
+			'displayLayout'        => array(
+				'type'    => 'flex',
+				'columns' => max( 1, min( 6, $columns ) ),
+			),
+			'collection'           => 'woocommerce/product-collection/hand-picked',
+			'queryContextIncludes' => array( 'collection' ),
+			'align'                => 'wide',
+		);
+
+		$attrs_json = function_exists( 'wp_json_encode' ) ? wp_json_encode( $attrs ) : json_encode( $attrs ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode
+		if ( ! is_string( $attrs_json ) ) {
+			return '';
+		}
+
+		return '<!-- wp:woocommerce/product-collection ' . $attrs_json . ' -->'
+			. '<div class="wp-block-woocommerce-product-collection alignwide ssi-commerce-control">'
+			. '<!-- wp:woocommerce/product-template -->'
+			. '<!-- wp:woocommerce/product-image {"showSaleBadge":false,"isDescendentOfQueryLoop":true} /-->'
+			. '<!-- wp:post-title {"textAlign":"center","level":3,"isLink":true,"fontSize":"medium","__woocommerceNamespace":"woocommerce/product-collection/product-title"} /-->'
+			. '<!-- wp:woocommerce/product-price {"textAlign":"center","isDescendentOfQueryLoop":true,"fontSize":"small"} /-->'
+			. '<!-- wp:woocommerce/product-button {"textAlign":"center","isDescendentOfQueryLoop":true} /-->'
+			. '<!-- /wp:woocommerce/product-template -->'
+			. '</div>'
+			. '<!-- /wp:woocommerce/product-collection -->';
 	}
 
 	/**

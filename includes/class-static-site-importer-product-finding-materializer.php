@@ -498,6 +498,63 @@ final class Static_Site_Importer_Product_Finding_Materializer {
 	}
 
 	/**
+	 * Derive a shared `generic/block-binding/v1` anchor per product for every
+	 * detected product-grid finding, keyed by the same slug the finding's own
+	 * seeded manifest row uses.
+	 *
+	 * A product-grid finding carries no per-product canonical block-replacement
+	 * anchor (the finding-to-manifest bridge intentionally does not infer one
+	 * from a selector), but it does carry the exact preserved fallback markup
+	 * the whole grid region already compiles to (`readable_blocks`). Every
+	 * product detected inside that same grid safely shares that one exact,
+	 * already-serialized region as its binding anchor, with role
+	 * `commerce_collection` so the entity/binding registry resolves the shared
+	 * anchor to one native product-display block instead of racing N
+	 * single-product replacements against the same source-page occurrence.
+	 *
+	 * @param array<int,mixed> $diagnostics Plan or report diagnostics.
+	 * @return array<string,array{source_path:string,search_block_markup:string}>
+	 */
+	public static function product_grid_binding_anchors( array $diagnostics ): array {
+		$anchors = array();
+		foreach ( self::product_grid_finding_indexes( $diagnostics ) as $index ) {
+			$finding = $diagnostics[ $index ] ?? array();
+			if ( ! is_array( $finding ) ) {
+				continue;
+			}
+			$readable = isset( $finding['readable_blocks'] ) && is_array( $finding['readable_blocks'] ) ? $finding['readable_blocks'] : array();
+			$region   = self::serialize_readable_graft_anchor( $readable );
+			if ( '' === $region ) {
+				continue;
+			}
+			$source_path = Static_Site_Importer_Diagnostic_Projection::first_scalar( $finding, array( 'graft_source_path', 'source_path', 'source' ) );
+			if ( '' === $source_path ) {
+				continue;
+			}
+			$container = isset( $finding['container_selector'] ) && is_scalar( $finding['container_selector'] )
+				? (string) $finding['container_selector']
+				: ( isset( $finding['selector'] ) && is_scalar( $finding['selector'] ) ? (string) $finding['selector'] : '' );
+			foreach ( is_array( $finding['products'] ?? null ) ? $finding['products'] : array() as $product ) {
+				if ( ! is_array( $product ) ) {
+					continue;
+				}
+				$row  = self::product_finding_manifest_row( $product, $container );
+				$slug = is_array( $row ) ? (string) ( $row['slug'] ?? '' ) : '';
+				if ( '' === $slug || isset( $anchors[ $slug ] ) ) {
+					// A slug already anchored by another grid stays with its first,
+					// unambiguous anchor rather than being silently reassigned.
+					continue;
+				}
+				$anchors[ $slug ] = array(
+					'source_path'         => $source_path,
+					'search_block_markup' => $region,
+				);
+			}
+		}
+		return $anchors;
+	}
+
+	/**
 	 * Copy one producer-declared product into a products-manifest/v1 row.
 	 *
 	 * @param array<string,mixed> $product           Producer product declaration.

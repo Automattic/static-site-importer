@@ -617,6 +617,17 @@ class Static_Site_Importer_Report_Diagnostics {
 	}
 
 	/**
+	 * Derive a shared block-binding anchor per product for every detected
+	 * product-grid finding, keyed by the finding's own seeded manifest slug.
+	 *
+	 * @param array<int,mixed> $diagnostics Plan or report diagnostics.
+	 * @return array<string,array{source_path:string,search_block_markup:string}>
+	 */
+	public static function product_grid_binding_anchors( array $diagnostics ): array {
+		return Static_Site_Importer_Product_Finding_Materializer::product_grid_binding_anchors( $diagnostics );
+	}
+
+	/**
 	 * Normalize a human-readable currency price into a decimal manifest string.
 	 *
 	 * Generic and locale-tolerant: strips currency symbols, whitespace, and other
