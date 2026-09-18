@@ -234,19 +234,17 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				'target_hash' => hash( 'sha256', $validated_map['scope'] ),
 			);
 		}
-		if ( ! empty( $rules ) ) {
-			// Jetpack wraps the block in `.jetpack-contact-form-container` and paints
-			// that node with padding the source wrapper did not have (grunion.css /
-			// the form block's historical 16px default). The host-wrapper class carry
-			// already seats this container in the page grid; neutralize the extra box
-			// here so only an authored container_presentation can restore padding.
-			$rules[]      = self::authoritative_presentation_selector( $validated_map['scope'] . '.jetpack-contact-form-container' ) . '{padding:0;margin:0;border:0}';
-			$operations[] = array(
-				'dimension'   => 'layout',
-				'strategy'    => 'provider_container_box_reset',
-				'target_hash' => hash( 'sha256', $validated_map['scope'] . '.jetpack-contact-form-container' ),
-			);
-		}
+		// Jetpack wraps the block in `.jetpack-contact-form-container` and paints
+		// that node with padding the source wrapper did not have (grunion.css /
+		// the form block's historical 16px default). The host-wrapper class carry
+		// already seats this container in the page grid; neutralize the extra box
+		// here so only an authored container_presentation can restore padding.
+		$rules[]      = self::authoritative_presentation_selector( $validated_map['scope'] . '.jetpack-contact-form-container' ) . '{padding:0!important;margin:0!important;border:0!important}';
+		$operations[] = array(
+			'dimension'   => 'layout',
+			'strategy'    => 'provider_container_box_reset',
+			'target_hash' => hash( 'sha256', $validated_map['scope'] . '.jetpack-contact-form-container' ),
+		);
 		if ( $editor ) {
 			foreach ( $rules as $rule ) {
 				$editor_rules[] = preg_replace( '/(^|\{|, )(\.ssi-form-[a-f0-9]{12})/', '$1.editor-styles-wrapper $2', $rule );

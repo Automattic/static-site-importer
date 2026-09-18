@@ -681,7 +681,7 @@ namespace {
 			&& str_contains( $host_span_css_out, 'letter-spacing:.025em' )
 			&& str_contains( $host_span_css_out, 'text-transform:uppercase' )
 			&& 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.75rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.75rem\);margin-block-start:0!important\}/', $host_span_css_out )
-			&& preg_match( '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12}\.jetpack-contact-form-container\{padding:0;margin:0;border:0\}/', $host_span_css_out )
+			&& preg_match( '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12}\.jetpack-contact-form-container\{padding:0!important;margin:0!important;border:0!important\}/', $host_span_css_out )
 			&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $host_span_row['provider_layout_overlay_css'] ?? null )
 			&& ! str_contains( $host_span_markup, 'wp:group' ),
 		'provider-container-inherits-replaced-host-wrapper-column-span-and-authored-submit-box',
@@ -706,6 +706,30 @@ namespace {
 			&& str_contains( $field_list_hoist, 'wp-block-jetpack-contact-form panel grid gap-6 sm:grid-cols-2 ssi-form-123456789abc' ),
 		'provider-runtime-keeps-field-list-grid-classes-off-the-page-item',
 		$field_list_hoist
+	);
+	$host_span_overlays = Static_Site_Importer_Entity_Materializer_Registry::provider_layout_overlays( array( array( 'forms' => array( $host_span_row ) ) ) );
+	$host_span_author   = '/tmp/host-span-emit/assets/assets/css/stylesheet-bundle-0011223344556677.css';
+	$host_span_writes   = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes(
+		'/tmp/host-span-emit',
+		'Host Span',
+		'',
+		array(),
+		array(),
+		$host_span_overlays,
+		array(
+			'/tmp/host-span-emit/style.css'                   => '/* theme header */',
+			'/tmp/host-span-emit/assets/css/editor-style.css' => '/* editor */',
+			$host_span_author                                 => '/* author bundle */',
+		)
+	);
+	$host_span_reset = '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12}\.jetpack-contact-form-container\{padding:0!important;margin:0!important;border:0!important\}/';
+	$assert(
+		array( $host_span_row['provider_layout_overlay_css'] ?? null ) === $host_span_overlays
+			&& preg_match( $host_span_reset, (string) ( $host_span_writes['/tmp/host-span-emit/style.css'] ?? '' ) )
+			&& preg_match( $host_span_reset, (string) ( $host_span_writes[ $host_span_author ] ?? '' ) )
+			&& str_contains( (string) ( $host_span_writes[ $host_span_author ] ?? '' ), '/* author bundle */' ),
+		'provider-container-box-reset-reaches-the-generated-theme-stylesheet',
+		wp_json_encode( array( 'overlays' => $host_span_overlays, 'writes' => array_map( 'strlen', $host_span_writes ) ) )
 	);
 	// A narrowing (max-width) variant is not the proven mobile-first widening
 	// shape and must keep the existing decline: Jetpack cannot represent "two
@@ -1493,7 +1517,7 @@ namespace {
 		wp_json_encode( array( 'css' => $container_padding_css, 'validation' => $validated_container_padding ) )
 	);
 	$assert(
-		preg_match( '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12}\.jetpack-contact-form-container\{padding:0;margin:0;border:0\}/', $container_padding_css )
+		preg_match( '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12}\.jetpack-contact-form-container\{padding:0!important;margin:0!important;border:0!important\}/', $container_padding_css )
 			&& preg_match( '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12}\{padding:36px\}/', $container_padding_css ),
 		'provider-container-box-reset-does-not-clobber-authored-form-padding',
 		$container_padding_css
@@ -2226,9 +2250,9 @@ namespace {
 	$calc_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $calc_graph, $root_map );
 	$assert( str_contains( $calc_overlay['css'], 'gap:calc(32 * 1px)' ) && empty( $calc_overlay['losses'] ), 'authored-arithmetic-row-gap-reaches-the-provider-form-instead-of-the-runtime-default', wp_json_encode( $calc_overlay ) );
 	$unbalanced_calc_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $layout_graph( array( $layout_node( 'form', array( 'gap' => 'calc(32 * 1px' ), 'form' ) ) ), $root_map );
-	$assert( '' === $unbalanced_calc_overlay['css'] && 'unsafe_layout_value' === ( $unbalanced_calc_overlay['losses'][0]['reason_code'] ?? '' ), 'unbalanced-arithmetic-value-is-refused' );
+	$assert( ! str_contains( $unbalanced_calc_overlay['css'], 'calc(32 * 1px' ) && 'unsafe_layout_value' === ( $unbalanced_calc_overlay['losses'][0]['reason_code'] ?? '' ), 'unbalanced-arithmetic-value-is-refused' );
 	$unsafe_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $layout_graph( array( $layout_node( 'form', array( 'display' => 'url(https://example.test/x)' ), 'form' ) ) ), $root_map );
-	$assert( '' === $unsafe_overlay['css'] && 'unsafe_layout_value' === ( $unsafe_overlay['losses'][0]['reason_code'] ?? '' ), 'provider-layout-overlay-rejects-unsafe-values' );
+	$assert( ! str_contains( $unsafe_overlay['css'], 'url(' ) && 'unsafe_layout_value' === ( $unsafe_overlay['losses'][0]['reason_code'] ?? '' ), 'provider-layout-overlay-rejects-unsafe-values' );
 	$bad_map = $root_map; $bad_map['targets'][0]['selector'] = 'body .anything';
 	$assert( isset( Static_Site_Importer_Provider_Layout_Overlay::validate_map( $bad_map, $root_graph )['error'] ), 'provider-layout-overlay-rejects-arbitrary-selectors' );
 	$presentation_graph_fixture = array( 'controls' => array( array( 'index' => 0, 'control' => array( 'styles' => array( 'background_color' => '#fff', 'padding' => '8px', 'font_size' => '16px' ) ) ) ) );
@@ -2273,7 +2297,7 @@ namespace {
 	$assert( str_contains( $justify_self_overlay['css'], 'justify-self:center' ) && null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $justify_self_overlay['overlay'] ), 'provider-layout-validates-compiled-justify-self-css' );
 	$item_map['targets'][0]['capabilities'] = array( 'item_layout' );
 	$item_without_direct_child = Static_Site_Importer_Provider_Layout_Overlay::compile( $item_graph, $item_map );
-	$assert( '' === $item_without_direct_child['css'] && array( 'direct_child_relationship_unrepresentable', 'direct_child_relationship_unrepresentable' ) === array_column( $item_without_direct_child['losses'], 'reason_code' ), 'provider-layout-does-not-accept-inert-item-layout-capability' );
+	$assert( ! str_contains( $item_without_direct_child['css'], 'order:1' ) && ! str_contains( $item_without_direct_child['css'], 'flex-grow:1' ) && array( 'direct_child_relationship_unrepresentable', 'direct_child_relationship_unrepresentable' ) === array_column( $item_without_direct_child['losses'], 'reason_code' ), 'provider-layout-does-not-accept-inert-item-layout-capability' );
 	$booking = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.booking', 'controls' => array( array( 'tag' => 'input', 'type' => 'number', 'name' => 'guests', 'label' => 'Guests', 'min' => '1', 'max' => '8', 'step' => '0.5' ), array( 'tag' => 'button', 'type' => 'submit', 'text' => 'Request booking' ) ) ) ) ) );
 	$booking_row = $booking['forms'][0] ?? array();
 	$assert( 'Request booking' === ( $booking_row['submit_text'] ?? '' ) && str_contains( (string) ( $booking_row['block_markup'] ?? '' ), '>Request booking</button>' ), 'canonical-control-text-preserves-request-booking-submit-label' );
@@ -2733,7 +2757,7 @@ namespace {
 		$layout_graph( array( $layout_node( 'form', array( 'display' => 'var(--display); color:red' ), 'form' ) ) ),
 		$root_map
 	);
-	$assert( '' === $unsafe_custom_property['css'] && 'unsafe_layout_value' === ( $unsafe_custom_property['losses'][0]['reason_code'] ?? '' ), 'custom-property-passthrough-still-rejects-injected-declarations' );
+	$assert( ! str_contains( $unsafe_custom_property['css'], 'color:red' ) && 'unsafe_layout_value' === ( $unsafe_custom_property['losses'][0]['reason_code'] ?? '' ), 'custom-property-passthrough-still-rejects-injected-declarations' );
 	$receipt_argument = array_values( array_filter( $argv ?? array(), static fn( string $argument ): bool => str_starts_with( $argument, '--retained-form-receipt=' ) ) );
 	if ( ! empty( $receipt_argument ) ) {
 		$receipt_path = substr( $receipt_argument[0], strlen( '--retained-form-receipt=' ) );

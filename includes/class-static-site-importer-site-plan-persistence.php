@@ -716,7 +716,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( str_ends_with( $target, '.css' ) && '' === $source_css ) {
 				$source_css = $css;
 			}
-			if ( in_array( $target, array( 'style.css', 'assets/css/editor-style.css' ), true ) ) {
+			if ( in_array( $target, array( 'style.css', 'assets/css/editor-style.css' ), true ) || str_starts_with( $target, 'assets/assets/css/' ) ) {
 				$stylesheets[ $state['theme_dir'] . '/' . $target ] = $css;
 			}
 			if ( 'functions.php' === $target ) {

@@ -1158,6 +1158,13 @@ $explicit_styles_writes = $explicit_styles->invoke(
 					),
 				),
 				array(
+					'target_path' => 'assets/assets/css/stylesheet-bundle-0011223344556677.css',
+					'payload'     => array(
+						'encoding' => 'utf8',
+						'data'     => '.page-grid{display:grid}',
+					),
+				),
+				array(
 					'target_path' => 'functions.php',
 					'payload'     => array(
 						'encoding' => 'utf8',
@@ -1169,7 +1176,7 @@ $explicit_styles_writes = $explicit_styles->invoke(
 	),
 	array( $overlay )
 );
-$assert( is_array( $explicit_styles_writes ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/style.css' ] ?? '', 'body{color:black}' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/css/editor-style.css' ] ?? '', '.editor-styles-wrapper{color:black}' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/style.css' ] ?? '', 'provider layout overlay: abcdef123456' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/css/editor-style.css' ] ?? '', 'provider layout overlay: abcdef123456' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/functions.php' ] ?? '', 'static-site-importer-theme' ), 'explicit canonical frontend and editor stylesheet payloads derive independent overlay-composed writes with frontend delivery' );
+$assert( is_array( $explicit_styles_writes ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/style.css' ] ?? '', 'body{color:black}' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/css/editor-style.css' ] ?? '', '.editor-styles-wrapper{color:black}' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/style.css' ] ?? '', 'provider layout overlay: abcdef123456' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/css/editor-style.css' ] ?? '', 'provider layout overlay: abcdef123456' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/assets/css/stylesheet-bundle-0011223344556677.css' ] ?? '', '.page-grid{display:grid}' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/assets/assets/css/stylesheet-bundle-0011223344556677.css' ] ?? '', 'provider layout overlay: abcdef123456' ) && str_contains( $explicit_styles_writes[ $explicit_styles_root . '/functions.php' ] ?? '', 'static-site-importer-theme' ), 'explicit canonical frontend and editor stylesheet payloads derive independent overlay-composed writes with frontend delivery' );
 
 $font_result          = ( new ArtifactCompiler() )->compile(
 	array(
