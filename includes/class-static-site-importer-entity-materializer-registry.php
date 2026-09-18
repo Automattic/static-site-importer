@@ -227,12 +227,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 *
 	 * @param array<string,mixed> $adapter  Adapter definition.
 	 * @param array<string,mixed> $manifest Validated manifest.
+	 * @param array<string,mixed> $args     Import-scoped context (e.g. resolved source assets) an
+	 *                                      adapter's materializer may opt into reading.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	public static function materialize( array $adapter, array $manifest ) {
+	public static function materialize( array $adapter, array $manifest, array $args = array() ) {
 		$materializer = $adapter['materializer'] ?? null;
 		if ( is_callable( $materializer ) ) {
-			$result = call_user_func( $materializer, $manifest );
+			$result = call_user_func( $materializer, $manifest, $args );
 			if ( function_exists( 'is_wp_error' ) && is_wp_error( $result ) ) {
 				return $result;
 			}
@@ -676,7 +678,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				);
 				continue;
 			}
-			$report = self::materialize( $adapter, $prepared['manifest'] );
+			$report = self::materialize( $adapter, $prepared['manifest'], $args );
 			if ( $report instanceof WP_Error ) {
 				$reports[ $id ] = array(
 					'status' => 'error',
@@ -1241,13 +1243,34 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					'message' => 'sale_price must be a decimal string such as "15.00" when provided.',
 				);
 			}
-			foreach ( array( 'description', 'short_description', 'status', 'stock_status', 'image' ) as $field ) {
+			foreach ( array( 'description', 'short_description', 'status', 'stock_status' ) as $field ) {
 				if ( isset( $product[ $field ] ) && ! is_string( $product[ $field ] ) ) {
 					$errors[] = array(
 						'path'    => $path_prefix . '.' . $field,
 						'message' => $field . ' must be a string when provided.',
 					);
 				}
+			}
+			$image = array( 'src' => '', 'alt' => '' );
+			if ( array_key_exists( 'image', $product ) ) {
+				$image = self::manifest_product_image( $product['image'] );
+				if ( null === $image ) {
+					$errors[] = array(
+						'path'    => $path_prefix . '.image',
+						'message' => 'image must be a string source path, or an { src, alt } object with a non-empty src, when provided.',
+					);
+					$image = array( 'src' => '', 'alt' => '' );
+				}
+			}
+			if ( isset( $product['image_alt'] ) && ! is_string( $product['image_alt'] ) ) {
+				$errors[] = array(
+					'path'    => $path_prefix . '.image_alt',
+					'message' => 'image_alt must be a string when provided.',
+				);
+			} elseif ( '' === $image['alt'] && isset( $product['image_alt'] ) && is_string( $product['image_alt'] ) ) {
+				// A sibling `image_alt` field carries alt text for producers that
+				// keep `image` a bare source path (e.g. the product-finding bridge).
+				$image['alt'] = trim( $product['image_alt'] );
 			}
 			foreach ( array( 'categories', 'source_selectors' ) as $field ) {
 				if ( ! isset( $product[ $field ] ) ) {
@@ -1282,10 +1305,16 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'slug'          => $slug,
 				'regular_price' => $regular_price,
 			);
-			foreach ( array( 'sale_price', 'description', 'short_description', 'categories', 'image', 'status', 'stock_status', 'stock_quantity', 'source_selectors' ) as $field ) {
+			foreach ( array( 'sale_price', 'description', 'short_description', 'categories', 'status', 'stock_status', 'stock_quantity', 'source_selectors' ) as $field ) {
 				if ( array_key_exists( $field, $product ) ) {
 					$summary[ $field ] = $product[ $field ];
 				}
+			}
+			if ( '' !== $image['src'] ) {
+				$summary['image'] = $image['src'];
+			}
+			if ( '' !== $image['alt'] ) {
+				$summary['image_alt'] = $image['alt'];
 			}
 			if ( isset( $product['bindings'] ) ) {
 				if ( ! is_array( $product['bindings'] ) || ! array_is_list( $product['bindings'] ) || empty( $product['bindings'] ) ) {
@@ -2039,5 +2068,36 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 */
 	private static function is_manifest_price( string $price ): bool {
 		return 1 === preg_match( '/^(?:0|[1-9][0-9]*)(?:\.[0-9]{2})?$/', $price );
+	}
+
+	/**
+	 * Normalize a manifest product `image` field into its src/alt parts.
+	 *
+	 * A producer may declare an image as a bare artifact-relative source path
+	 * (the current Blocks Engine shape) or as an `{ src, alt }` object (the
+	 * shape a producer carrying detected alt text emits). Both are admitted so
+	 * the seeder always reads one normalized shape.
+	 *
+	 * @param mixed $image Raw manifest `image` field.
+	 * @return array{src:string,alt:string}|null Null when the field is present but malformed.
+	 */
+	private static function manifest_product_image( mixed $image ): ?array {
+		if ( is_string( $image ) ) {
+			return array(
+				'src' => trim( $image ),
+				'alt' => '',
+			);
+		}
+
+		if ( is_array( $image ) && ! array_is_list( $image ) ) {
+			$src = isset( $image['src'] ) && is_string( $image['src'] ) ? trim( $image['src'] ) : '';
+			$alt = isset( $image['alt'] ) && is_string( $image['alt'] ) ? trim( $image['alt'] ) : '';
+			return '' === $src ? null : array(
+				'src' => $src,
+				'alt' => $alt,
+			);
+		}
+
+		return null;
 	}
 }
