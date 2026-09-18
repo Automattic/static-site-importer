@@ -1136,6 +1136,29 @@ namespace {
 	$native_submit_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $native_submit_form );
 	$native_submit_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $native_submit_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$assert( empty( $native_submit_validation['errors'] ) && str_contains( (string) ( $native_submit_row['provider_layout_overlay_css']['css'] ?? '' ), 'padding:8px;font-family:inherit;line-height:inherit;min-height:0' ), 'provider-submit-unowned-typography-inherits-the-source-document-line-box', wp_json_encode( $native_submit_row ) );
+	// A submit control is often a bare direct child of its source container,
+	// unlike every other field, which sits inside its own wrapping box. A
+	// sibling-stacking utility (Tailwind's `space-y-*`) that matches direct
+	// children therefore captures a real vertical margin fact against the
+	// button itself, even though the provider's own field gap already
+	// reproduces that inter-sibling spacing structurally. The captured fact
+	// must still be represented (no receipt loss for a real cascade match),
+	// but an unconditional, later, `!important` reset must win the cascade
+	// so the button's own wrapper does not carry that spacing twice.
+	$submit_sibling_margin_form = $presentation_form;
+	$submit_sibling_margin_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 3, 'control' => $presentation_role( array( 'margin_top' => 'calc(1.5rem * calc(1 - var(--tw-space-y-reverse)))', 'margin_bottom' => 'calc(1.5rem * var(--tw-space-y-reverse))' ), array( 'margin-top', 'margin-bottom' ), 'button' ) ) );
+	$submit_sibling_margin_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $submit_sibling_margin_form );
+	$submit_sibling_margin_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $submit_sibling_margin_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$submit_sibling_margin_css        = (string) ( $submit_sibling_margin_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		empty( $submit_sibling_margin_validation['errors'] )
+			&& array() === ( $submit_sibling_margin_row['form_receipt_unaccepted_losses'] ?? array() )
+			&& str_contains( $submit_sibling_margin_css, 'margin-top:calc(1.5rem * calc(1 - var(--tw-space-y-reverse)))' )
+			&& 1 === preg_match( '/> \.wp-block-button__link\{margin:0!important\}$/m', trim( $submit_sibling_margin_css ) )
+			&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $submit_sibling_margin_row['provider_layout_overlay_css'] ?? null ),
+		'captured-submit-sibling-margin-is-represented-but-an-unconditional-important-reset-wins-the-cascade',
+		wp_json_encode( array( 'css' => $submit_sibling_margin_css, 'losses' => $submit_sibling_margin_row['form_receipt_unaccepted_losses'] ?? array() ) )
+	);
 	$authored_submit_line_height_form = $presentation_form;
 	$authored_submit_line_height_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 3, 'control' => $presentation_role( array( 'padding' => '16px', 'font_size' => '11.2px', 'line_height' => '16.8px' ), array( 'padding', 'font-size', 'line-height' ), 'button' ) ) );
 	$authored_submit_line_height_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $authored_submit_line_height_form );
