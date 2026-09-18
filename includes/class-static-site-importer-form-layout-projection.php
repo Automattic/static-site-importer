@@ -993,16 +993,44 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			);
 		}
 		foreach ( $children as $parent => $siblings ) {
-			if ( '$root' === $parent || isset( $percentage_width_parents[ $parent ] ) || ! isset( $layout_by_node[ $parent ] ) || isset( $variants_by_node[ $parent ] ) || ! in_array( count( $siblings ), array( 2, 4 ), true ) ) {
+			if ( '$root' === $parent || isset( $percentage_width_parents[ $parent ] ) || ! isset( $layout_by_node[ $parent ] ) || ! in_array( count( $siblings ), array( 2, 4 ), true ) ) {
 				continue;
 			}
 			$layout = $layout_by_node[ $parent ];
 			if ( array_intersect( array_keys( $layout ), array( 'item_placement', 'column', 'row', 'area' ) ) ) {
 				continue;
 			}
-			$columns    = preg_replace( '/\s+/', '', (string) ( $layout['columns'] ?? '' ) );
-			$count      = count( $siblings );
-			$equal_grid = 'grid' === ( $layout['display'] ?? null ) && ( 'repeat(' . $count . ',1fr)' === $columns || str_repeat( '1fr', $count ) === $columns );
+			$count           = count( $siblings );
+			$parent_variants = $variants_by_node[ $parent ] ?? array();
+			$columns         = preg_replace( '/\s+/', '', (string) ( $layout['columns'] ?? '' ) );
+			$equal_grid      = empty( $parent_variants ) && 'grid' === ( $layout['display'] ?? null ) && self::is_equal_fraction_columns( $columns, $count );
+			// A mobile-first source stacks these boxes by default and only bands
+			// them into equal columns at a wider breakpoint (Tailwind's own
+			// `grid-cols-1 md:grid-cols-2` shape). Jetpack field width is a single,
+			// non-responsive value, so accept exactly one proven min-width widening
+			// of the track count and materialize that widened state instead; any
+			// other variant shape (more than one variant, a narrowing, a max-width
+			// query, or a patch touching more than the column tracks) keeps the
+			// existing wrapper-layout decline.
+			if ( ! $equal_grid && 'grid' === ( $layout['display'] ?? null ) && 1 === count( $parent_variants ) ) {
+				$variant   = $parent_variants[0];
+				$condition = is_array( $variant['condition'] ?? null ) ? $variant['condition'] : null;
+				$patch     = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+				$widened   = preg_replace( '/\s+/', '', (string) ( $patch['columns'] ?? '' ) );
+				if ( array( 'columns' ) === array_keys( $patch )
+					&& is_array( $condition ) && 'media' === ( $condition['kind'] ?? null )
+					&& is_string( $condition['query'] ?? null )
+					&& self::is_min_width_media_query( $condition['query'] )
+					&& self::is_equal_fraction_columns( $widened, $count )
+				) {
+					foreach ( $variant['provenance'] ?? array() as $fact ) {
+						if ( is_array( $fact ) && ( $fact['condition'] ?? null ) === $condition && is_string( $fact['source_path'] ?? null ) && is_string( $fact['source_sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ) && is_string( $fact['selector'] ?? null ) && in_array( 'grid-template-columns', $fact['properties'] ?? array(), true ) ) {
+							$equal_grid = true;
+							break;
+						}
+					}
+				}
+			}
 			if ( ! $equal_grid ) {
 				continue;
 			}
@@ -2129,6 +2157,27 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		}
 
 		return array_values( array_filter( $rows, static fn ( array $band ): bool => count( $band ) > 1 ) );
+	}
+
+	/**
+	 * Whether a media condition widens at a single fixed breakpoint: the legacy
+	 * `(min-width: 768px)` form and the modern CSS range syntax `(width>=768px)`
+	 * Tailwind CSS v4 emits for its own `md:`/`lg:`/etc. prefixes.
+	 */
+	private static function is_min_width_media_query( string $query ): bool {
+		return 1 === preg_match( '/^\((?:min-width:\s?[0-9]+(?:\.[0-9]+)?(?:px|em|rem)|width\s*>=\s*[0-9]+(?:\.[0-9]+)?(?:px|em|rem))\)$/D', $query );
+	}
+
+	/**
+	 * Whether a resolved `grid-template-columns` value is exactly $count equal
+	 * fractional tracks. Accepts the plain `1fr` form and the `minmax(0,1fr)`
+	 * form utility frameworks such as Tailwind emit for their grid-cols-N classes.
+	 */
+	private static function is_equal_fraction_columns( string $columns, int $count ): bool {
+		if ( 'repeat(' . $count . ',1fr)' === $columns || str_repeat( '1fr', $count ) === $columns ) {
+			return true;
+		}
+		return 1 === preg_match( '/^repeat\(' . $count . ',minmax\(0(?:px)?,1fr\)\)$/D', $columns );
 	}
 
 	/** @param array<string,mixed> $layout */
