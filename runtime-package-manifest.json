@@ -57,6 +57,7 @@
         "includes/class-static-site-importer-site-plan-receipt.php",
         "includes/class-static-site-importer-site-plan-preparation.php",
         "includes/class-static-site-importer-site-plan-persistence.php",
+        "includes/class-static-site-importer-internal-link-runtime.php",
         "includes/class-static-site-importer-prepared-plan-application.php",
         "vendor/automattic/blocks-engine-php-transformer/php-transformer.php"
       ]
@@ -125,6 +126,7 @@
         "includes/class-static-site-importer-site-plan-receipt.php",
         "includes/class-static-site-importer-site-plan-preparation.php",
         "includes/class-static-site-importer-site-plan-persistence.php",
+        "includes/class-static-site-importer-internal-link-runtime.php",
         "includes/class-static-site-importer-prepared-plan-application.php",
         "vendor/autoload.php",
         "vendor/composer/autoload_real.php",

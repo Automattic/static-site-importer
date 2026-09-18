@@ -240,13 +240,20 @@ function wp_update_post( array $post, bool $wp_error = false ) {
 	return $id;
 }
 function get_permalink( int|WP_Post $post ): string {
-	$id   = $post instanceof WP_Post ? $post->ID : $post;
-	$data = $GLOBALS['ssi_plan_posts'][ $id ] ?? array();
-	if ( 'post' === ( $data['post_type'] ?? '' ) ) {
-		return 'https://example.test/2024/03/' . (string) ( $data['post_name'] ?? '' ) . '/';
-	}
+	$id        = $post instanceof WP_Post ? $post->ID : $post;
+	$data      = $GLOBALS['ssi_plan_posts'][ $id ] ?? array();
+	$structure = (string) ( $GLOBALS['ssi_plan_permalink_structure'] ?? 'pretty' );
 	if ( 'page' === ( $GLOBALS['ssi_plan_options']['show_on_front'] ?? '' ) && $id === (int) ( $GLOBALS['ssi_plan_options']['page_on_front'] ?? 0 ) ) {
 		return home_url( '/' );
+	}
+	if ( 'plain' === $structure ) {
+		return 'post' === ( $data['post_type'] ?? '' ) ? home_url( '/?p=' . $id ) : home_url( '/?page_id=' . $id );
+	}
+	if ( 'post' === ( $data['post_type'] ?? '' ) ) {
+		if ( 'postname' === $structure ) {
+			return 'https://example.test/' . (string) ( $data['post_name'] ?? '' ) . '/';
+		}
+		return 'https://example.test/2024/03/' . (string) ( $data['post_name'] ?? '' ) . '/';
 	}
 	return 'https://example.test/' . (string) ( $data['post_name'] ?? '' ) . '/';
 }
@@ -1554,8 +1561,9 @@ $front_page_links_pages   = $front_page_links_receipt['completed']['pages'] ?? a
 $front_page_id            = (int) ( $front_page_links_pages['website/index.html'] ?? 0 );
 $about_page_id            = (int) ( $front_page_links_pages['website/about.html'] ?? 0 );
 $about_page_content       = get_post_field( 'post_content', $about_page_id );
+$about_page_rendered      = Static_Site_Importer_Internal_Link_Runtime::resolve_urls( $about_page_content );
 $assert( 'completed' === $front_page_links_receipt['status'] && $front_page_id === (int) $GLOBALS['ssi_plan_options']['page_on_front'] && 'page' === $GLOBALS['ssi_plan_options']['show_on_front'] && 'https://example.test/' === get_permalink( $front_page_id ), 'the declared website entrypoint becomes the static front page with the root permalink' );
-$assert( str_contains( $about_page_content, 'https://example.test/?view=home#top' ) && str_contains( $about_page_content, 'https://example.test/index/?view=route#section' ) && ! str_contains( $about_page_content, 'https://example.test/index.html' ), 'front-page aliases resolve to home while the distinct nested index route retains its native navigation URL and suffix' );
+$assert( str_contains( $about_page_rendered, 'https://example.test/?view=home#top' ) && str_contains( $about_page_rendered, 'https://example.test/index/?view=route#section' ) && ! str_contains( $about_page_rendered, 'https://example.test/index.html' ), 'front-page aliases resolve to home while the distinct nested index route retains its native navigation URL and suffix' );
 
 $product_grid_artifact     = array(
 	'entrypoint' => 'index.html',
@@ -2220,7 +2228,7 @@ $form_quality_report['diagnostics']               = array( $form_fallback );
 $form_quality_report['materialization_receipt']   = $form_binding_receipt;
 Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $form_quality_report );
 $assert( 'completed' === ( $form_binding_report['status'] ?? '' ) && ( $form_binding_report['materialized_content_hash'] ?? '' ) === hash( 'sha256', $form_binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '' ), 'form quality receipt is emitted after the persisted page replacement' );
-$assert( str_contains( (string) ( $form_binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '' ), 'https://example.test/' ), 'form quality receipt retains final route-rewritten page content' );
+$assert( str_contains( Static_Site_Importer_Internal_Link_Runtime::resolve_urls( (string) ( $form_binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '' ) ), 'https://example.test/' ), 'form quality receipt retains final route-rewritten page content' );
 $assert( 0 === ( $form_quality_report['quality']['fallback_count'] ?? -1 ) && 1 === ( $form_quality_report['quality']['source_fallback_count'] ?? 0 ) && 'resolved_by_provider' === ( $form_quality_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'persisted form receipt resolves only its identity-and-hash-bound source fallback' );
 $resolved_form_quality    = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $form_quality_report, array( 'fail_on_quality' => true ) );
 $resolved_form_validation = Static_Site_Importer_Report_Diagnostics::import_validation_result( $form_quality_report, $resolved_form_quality );
@@ -3369,7 +3377,8 @@ $assert( 'partial' === ( $route_meta_failure_receipt['status'] ?? '' ) && 'route
 $route_receipt             = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $route_plan, array( 'slug' => 'route-link-plan' ) );
 $route_home                = current( array_filter( $GLOBALS['ssi_plan_posts'], static fn( array $post ): bool => 'index' === ( $post['post_name'] ?? '' ) ) );
 $route_content             = is_array( $route_home ) ? stripslashes( (string) ( $route_home['post_content'] ?? '' ) ) : '';
-$assert( 'completed' === ( $route_receipt['status'] ?? '' ) && str_contains( $route_content, 'href="https://example.test/contact/"' ) && str_contains( $route_content, 'href="https://example.test/2024/03/news/"' ), 'canonical routes resolve to actual WordPress page and dated-post permalinks after materialization' );
+$route_rendered            = Static_Site_Importer_Internal_Link_Runtime::resolve_urls( $route_content );
+$assert( 'completed' === ( $route_receipt['status'] ?? '' ) && str_contains( $route_rendered, 'href="https://example.test/contact/"' ) && str_contains( $route_rendered, 'href="https://example.test/2024/03/news/"' ), 'canonical routes resolve to actual WordPress page and dated-post permalinks after materialization' );
 $rewrite_route_references = new ReflectionMethod( Static_Site_Importer_WordPress_Site_Plan_Materializer::class, 'rewrite_route_references' );
 $pin_route_content        = $rewrite_route_references->invoke( null, 'data-pin-url=\\u0022/post/news\\u0022', array( '/post/news' => 'https://example.test/2024/03/news/' ) );
 $assert( 'data-pin-url=\\u0022https://example.test/2024/03/news/\\u0022' === $pin_route_content, 'escaped route-bearing data URL attributes resolve to the materialized WordPress permalink' );
@@ -3377,6 +3386,23 @@ $index_route_content = $rewrite_route_references->invoke( null, '<a href="/comms
 $assert( '<a href="https://example.test/comms-use-cases/?study=1#scope">Cases</a>' === $index_route_content, 'index-document links resolve to their materialized WordPress route while retaining query and fragment' );
 $root_index_route_content = $rewrite_route_references->invoke( null, '<a href="/index.htm">Home</a>', array( '/' => 'https://example.test/' ) );
 $assert( '<a href="https://example.test/">Home</a>' === $root_index_route_content, 'root index-document links resolve to the front-page permalink' );
+$unresolved_routes  = array();
+$dead_route_content = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( '<a href="/missing-page">Gone</a><img src="/media/hero.jpg">', array( '/contact' => '/?page_id=5' ), $unresolved_routes );
+$assert( '<a href="/missing-page">Gone</a><img src="/media/hero.jpg">' === $dead_route_content && array( '/missing-page' ) === $unresolved_routes, 'unknown document routes are reported without rewriting asset paths' );
+
+$GLOBALS['ssi_plan_posts'] = array();
+$GLOBALS['ssi_plan_meta']  = array();
+$GLOBALS['ssi_plan_permalink_structure'] = 'postname';
+$destination_plan     = ( new ArtifactCompiler() )->compile( $route_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$register_plan_blocks( $destination_plan );
+$destination_receipt  = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $destination_plan, array( 'slug' => 'route-link-destination-plan' ) );
+$destination_home     = current( array_filter( $GLOBALS['ssi_plan_posts'], static fn( array $post ): bool => 'index' === ( $post['post_name'] ?? '' ) ) );
+$destination_stored   = is_array( $destination_home ) ? stripslashes( (string) ( $destination_home['post_content'] ?? '' ) ) : '';
+$assert( 'completed' === ( $destination_receipt['status'] ?? '' ) && ! str_contains( $destination_stored, 'https://example.test/news/' ) && ! str_contains( $destination_stored, 'https://example.test/2024/03/news/' ), 'imported internal links are not frozen to the build host permalink structure' );
+$GLOBALS['ssi_plan_permalink_structure'] = 'pretty';
+$destination_rendered = Static_Site_Importer_Internal_Link_Runtime::resolve_urls( $destination_stored );
+$assert( str_contains( $destination_rendered, 'href="https://example.test/contact/"' ) && str_contains( $destination_rendered, 'href="https://example.test/2024/03/news/"' ) && ! str_contains( $destination_rendered, '?page_id=' ) && ! str_contains( $destination_rendered, '?p=' ), 'internal links render against a destination permalink structure the build host never had' );
+unset( $GLOBALS['ssi_plan_permalink_structure'] );
 
 $hash_plan = array(
 	'schema' => 'test/plan/v1',

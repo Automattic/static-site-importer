@@ -44,7 +44,7 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 
 	/** @param array<string,mixed> $state @return array<string,mixed> */
 	public static function receipt( string $status, array $state ): array {
-		unset( $state['font_overlay'], $state['viewport_overlay'], $state['route_title_overlay'], $state['provider_layout_overlay_writes'], $state['composed_theme_writes'], $state['preflight_error'] );
+		unset( $state['font_overlay'], $state['viewport_overlay'], $state['route_title_overlay'], $state['internal_link_overlay'], $state['provider_layout_overlay_writes'], $state['composed_theme_writes'], $state['preflight_error'] );
 		$plan                   = $state['plan'];
 		$resolved_plan          = $state['resolved'] ?? $plan;
 		$materialized_pages     = array();
