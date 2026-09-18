@@ -1950,6 +1950,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'class'      => self::presentation_destination_class( $scope, $index, 'primary' ),
 				'selector'   => '.' . $scope . ' .' . self::presentation_destination_class( $scope, $index, 'primary' ),
 				'properties' => array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ),
+				// Same unowned-typography neutralization text/email already get, so
+				// Jetpack's telephone input CSS cannot keep a shorter line box than
+				// the authored control presentation.
+				'resets'     => array(
+					'font-family' => 'revert',
+					'line-height' => 'revert',
+				),
 				'priority'   => 'important',
 			),
 			array(
@@ -2131,11 +2138,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 						// Jetpack parks input className on the select wrapper and paints
 						// that wrapper as a second box. Neutralize it so only the inner
 						// control carries the authored padding, border, and background.
-						$wrapper['resets'] = array(
+						$wrapper['resets']   = array(
 							'padding'    => '0',
 							'border'     => '0',
 							'background' => 'transparent',
 						);
+						$wrapper['priority'] = 'important';
 					}
 					$destinations[] = $wrapper;
 					$properties     = array_values( array_diff( $properties, array( 'display', 'width', 'min_width' ) ) );
@@ -2152,7 +2160,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'resets'     => array_merge(
 						array(
 							'font-family' => 'submit' === $type ? 'inherit' : 'revert',
-							'line-height' => 'submit' === $type ? 'inherit' : 'revert',
+							// Select and textarea inherit the document line box the source
+							// preflight already set (`line-height: inherit`). Reverting to
+							// the UA control default is what made those types miss the
+							// authored height while text/email stayed exact.
+							'line-height' => in_array( $type, array( 'submit', 'select', 'textarea' ), true ) ? 'inherit' : 'revert',
 						),
 						'submit' === $type ? array( 'min-height' => '0' ) : array()
 					),
