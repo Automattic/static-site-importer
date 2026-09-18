@@ -14,6 +14,8 @@ final class Static_Site_Importer_Public_Error_Projection {
 	private const FAILURE_DIAGNOSTIC_MAX_ROWS    = 10;
 	private const FAILURE_DIAGNOSTIC_MAX_BYTES   = 256;
 	private const FAILURE_DIAGNOSTIC_SCAN_BUDGET = 10;
+	/** Failure rows retained per run failure in resumability evidence. */
+	public const FAILURE_EVIDENCE_MAX_DIAGNOSTICS = 3;
 
 	/** @param array<int,mixed> $diagnostics @return array<int,array<string,mixed>> */
 	public static function project_public_diagnostics( array $diagnostics ): array {
@@ -116,10 +118,9 @@ final class Static_Site_Importer_Public_Error_Projection {
 	/** @param array<int,array<string,mixed>> $diagnostics */
 	public static function project_public_error_message( string $code, array $diagnostics = array() ): string {
 		$source_path = isset( $diagnostics[0]['source_path'] ) ? (string) $diagnostics[0]['source_path'] : '';
-		if ( '' !== $source_path ) {
-			return 'Materialization failed for ' . $source_path . '.';
-		}
-		return 'Materialization failed (' . self::project_public_token( $code, 128, 'materialization_failed' ) . ').';
+		$message     = '' !== $source_path ? 'Materialization failed for ' . $source_path : 'Materialization failed (' . self::project_public_token( $code, 128, 'materialization_failed' ) . ')';
+		$reason      = self::project_public_reason( is_array( $diagnostics[0] ?? null ) ? $diagnostics[0] : array() );
+		return '' !== $reason ? $message . ': ' . $reason : $message . '.';
 	}
 
 	/** @param array<string,mixed> $artifact_run @return array<string,mixed> */
@@ -175,6 +176,12 @@ final class Static_Site_Importer_Public_Error_Projection {
 				$artifact_identity = self::project_public_hash( $failure['artifact_identity'] ?? null );
 				if ( '' !== $artifact_identity ) {
 					$row['artifact_identity'] = $artifact_identity;
+				}
+				if ( ! empty( $row ) && is_array( $failure['diagnostics'] ?? null ) ) {
+					$diagnostics = self::project_public_diagnostics( array_slice( $failure['diagnostics'], 0, self::FAILURE_EVIDENCE_MAX_DIAGNOSTICS ) );
+					if ( ! empty( $diagnostics ) ) {
+						$row['diagnostics'] = $diagnostics;
+					}
 				}
 				if ( ! empty( $row ) ) {
 					$failures[] = $row;
@@ -238,11 +245,23 @@ final class Static_Site_Importer_Public_Error_Projection {
 				$row[ $field ] = self::project_public_token( $diagnostic[ $field ], 128 );
 			}
 		}
+		foreach ( array( 'reason', 'phase' ) as $field ) {
+			$value = self::project_public_token( $diagnostic[ $field ] ?? null, 128 );
+			if ( '' !== $value ) {
+				$row[ $field ] = $value;
+			}
+		}
 		if ( isset( $diagnostic['provider_available'] ) && is_bool( $diagnostic['provider_available'] ) ) {
 			$row['provider_available'] = $diagnostic['provider_available'];
 		}
 		if ( isset( $diagnostic['loss_count'] ) && is_numeric( $diagnostic['loss_count'] ) ) {
 			$row['loss_count'] = max( 0, (int) $diagnostic['loss_count'] );
+		}
+		if ( isset( $diagnostic['exception_class'] ) && is_string( $diagnostic['exception_class'] ) ) {
+			$exception_class = self::project_public_token( substr( (string) strrchr( '\\' . $diagnostic['exception_class'], '\\' ), 1 ), 128 );
+			if ( '' !== $exception_class ) {
+				$row['exception_class'] = $exception_class;
+			}
 		}
 		if ( isset( $diagnostic['source_path'] ) ) {
 			$source_path = self::project_public_source_path( $diagnostic['source_path'] );
@@ -277,6 +296,28 @@ final class Static_Site_Importer_Public_Error_Projection {
 		if ( empty( $row ) ) {
 			return array();
 		}
+		// Free text never identifies a row on its own; it is only kept as redacted, bounded detail.
+		$detail = self::project_public_detail( $diagnostic['detail'] ?? $diagnostic['message'] ?? null );
+		if ( '' !== $detail ) {
+			$row['detail'] = $detail;
+		}
+		if ( is_array( $diagnostic['fields'] ?? null ) ) {
+			$fields  = array();
+			$scanned = 0;
+			foreach ( $diagnostic['fields'] as $key => $value ) {
+				if ( self::FAILURE_DIAGNOSTIC_SCAN_BUDGET <= $scanned++ ) {
+					break;
+				}
+				$key   = self::project_public_token( $key, 64 );
+				$value = self::project_public_detail( $value, 128 );
+				if ( '' !== $key && '' !== $value ) {
+					$fields[ $key ] = $value;
+				}
+			}
+			if ( ! empty( $fields ) ) {
+				$row['fields'] = $fields;
+			}
+		}
 		if ( empty( $row['code'] ) ) {
 			$row['code'] = 'materialization_failed';
 		}
@@ -298,6 +339,46 @@ final class Static_Site_Importer_Public_Error_Projection {
 			return '';
 		}
 		return 1 === preg_match( '#^[\pL\pN][\pL\pN_.\-/]*$#u', $value ) ? $value : '';
+	}
+
+	/** @param array<string,mixed> $diagnostic */
+	private static function project_public_reason( array $diagnostic ): string {
+		if ( isset( $diagnostic['severity'] ) && 'error' !== $diagnostic['severity'] ) {
+			// A warning is evidence, not the cause of the failure.
+			return '';
+		}
+		$detail = self::project_public_detail( $diagnostic['detail'] ?? null );
+		if ( '' === $detail ) {
+			$detail = self::project_public_token( $diagnostic['reason'] ?? null, 128 );
+		}
+		if ( '' === $detail ) {
+			return '';
+		}
+		$exception_class = self::project_public_token( $diagnostic['exception_class'] ?? null, 128 );
+		$detail          = '' !== $exception_class ? $exception_class . ': ' . $detail : $detail;
+		return preg_match( '/[.!?]$/', $detail ) ? $detail : $detail . '.';
+	}
+
+	/**
+	 * Redact free text into a bounded single-line detail: URLs, absolute
+	 * filesystem paths, and credential-shaped values never leave this boundary.
+	 */
+	private static function project_public_detail( $value, int $bytes = self::FAILURE_DIAGNOSTIC_MAX_BYTES ): string {
+		if ( ! is_scalar( $value ) || is_bool( $value ) ) {
+			return '';
+		}
+		$value = (string) $value;
+		if ( ! preg_match( '//u', $value ) ) {
+			return '';
+		}
+		$value = (string) preg_replace( '/[\x00-\x1F\x7F]+/', ' ', $value );
+		$value = (string) preg_replace( '#\b[A-Za-z][A-Za-z0-9+.-]*://\S*#', '[url]', $value );
+		$value = (string) preg_replace( '/\bbearer\s+\S+/i', 'Bearer [redacted]', $value );
+		$value = (string) preg_replace( '/\b((?:password|passwd|secret|token|authorization|api[_-]?key|cookie)[A-Za-z0-9_-]*)(["\']?\s*[:=]\s*)(?!Bearer \[redacted\])("[^"]*"|\'[^\']*\'|\S+)/i', '$1$2[redacted]', $value );
+		$value = (string) preg_replace( '#(?<![\w.~/<\\-])(?:~/|/)(?:[^\s/\'"(),;]+/)*[^\s/\'"(),;]+/?#u', '[path]', $value );
+		$value = (string) preg_replace( '#(?<![\w])[A-Za-z]:\\\\[^\s\'"(),;]*#', '[path]', $value );
+		$value = trim( (string) preg_replace( '/\s+/u', ' ', $value ) );
+		return '' === $value ? '' : self::project_public_bounded( $value, $bytes );
 	}
 
 	private static function project_public_selector( $value ): string {
@@ -328,6 +409,10 @@ final class Static_Site_Importer_Public_Error_Projection {
 		if ( '' === $value || preg_match( '/(?:password|secret|token|authorization|api[_-]?key|cookie|bearer)\s*[:=]?/i', $value ) || preg_match( '#(?:https?|file)://#i', $value ) || ! preg_match( '//u', $value ) ) {
 			return '';
 		}
+		return self::project_public_bounded( $value, $bytes );
+	}
+
+	private static function project_public_bounded( string $value, int $bytes ): string {
 		if ( strlen( $value ) <= $bytes ) {
 			return $value;
 		}

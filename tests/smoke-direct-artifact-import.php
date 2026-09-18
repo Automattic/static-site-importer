@@ -692,6 +692,66 @@ $thrown_id = (string) ( $thrown_data['import_id'] ?? '' );
 $recovered_throw = Static_Site_Importer_Canonical_Import_Service::import( $resume( $thrown_id, 'plan' ) );
 $assert( ! empty( $recovered_throw['success'] ) && empty( $recovered_throw['continuation'] ), 'a thrown phase failure must resume from durable receipts without recompiling pages' );
 
+$fail_compose = true;
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_compiler'][] = static function ( object $compiler ) use ( &$fail_compose ): object {
+	return new class( $compiler, $fail_compose ) {
+		public function __construct( private object $compiler, private bool &$fail ) {}
+
+		public function compose( array $shared, array $receipts, ?object $payload_reader = null ) {
+			$result = $this->compiler->compose( $shared, $receipts, $payload_reader );
+			if ( ! $this->fail ) {
+				return $result;
+			}
+			$this->fail = false;
+			// Mirror Blocks Engine's failed composition: no canonical plan, only plan diagnostics.
+			$reports                                    = $result->sourceReports;
+			unset( $reports['wordpress_site_plan'] );
+			$reports['wordpress_site_plan_diagnostics'] = array(
+				array(
+					'code'             => 'wordpress_site_plan_invalid_declaration',
+					'message'          => 'WordPress site plan contains unresolved local browser reference ./luna.zip (staged at /Users/alice/private-site/website/luna.zip).',
+					'source_path'      => 'website/interactive/index.html',
+					'declaration_kind' => 'browser_reference',
+					'reason'           => 'unresolved_local_browser_reference',
+					'fields'           => array( 'attribute' => 'href', 'context' => 'page', 'value' => './luna.zip', 'resolved' => '/Users/alice/private-site/website/luna.zip' ),
+					'severity'         => 'error',
+				),
+			);
+			return new \Automattic\BlocksEngine\PhpTransformer\Contract\TransformerResult( 'failed', $result->components, $result->blockTypes, $reports, $result->blocks, $result->serializedBlocks, $result->documents, $result->assets, $result->diagnostics, $result->fallbacks, $result->provenance, $result->coverage, $result->context, $result->metrics );
+		}
+
+		public function __call( string $method, array $arguments ) {
+			return $this->compiler->{$method}( ...$arguments );
+		}
+	};
+};
+$compose_failed      = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+$compose_failed_json = (string) wp_json_encode( $compose_failed );
+$compose_diagnostic  = $compose_failed['diagnostics'][0] ?? array();
+$compose_evidence    = $compose_failed['error']['data']['artifact_run']['failures'][0]['diagnostics'][0] ?? array();
+$assert( 'static_site_importer_direct_artifact_phase_failed' === ( $compose_failed['error']['code'] ?? '' ) && 'compose' === ( $compose_failed['error']['data']['artifact_run']['failures'][0]['phase'] ?? '' ), 'a failed composition must keep the stable phase failure code and phase' );
+$assert( 'Materialization failed for website/interactive/index.html: WordPress site plan contains unresolved local browser reference ./luna.zip (staged at [path]).' === ( $compose_failed['error']['message'] ?? '' ), 'a failed composition must surface the plan diagnostic reason and source path in the CLI-facing message: ' . ( $compose_failed['error']['message'] ?? '' ) );
+$assert( 'unresolved_local_browser_reference' === ( $compose_diagnostic['reason'] ?? '' ) && 'website/interactive/index.html' === ( $compose_diagnostic['source_path'] ?? '' ) && array( 'attribute' => 'href', 'context' => 'page', 'value' => './luna.zip', 'resolved' => '[path]' ) === ( $compose_diagnostic['fields'] ?? null ), 'a failed composition must carry the plan diagnostic reason, source path, and fields into the receipt' );
+$assert( 'unresolved_local_browser_reference' === ( $compose_evidence['reason'] ?? '' ) && 'website/interactive/index.html' === ( $compose_evidence['source_path'] ?? '' ), 'a failed composition must persist the plan diagnostic in the run failure evidence' );
+$assert( ! str_contains( $compose_failed_json, 'invalid canonical plan' ) && ! str_contains( $compose_failed_json, '/Users/alice' ) && ! str_contains( $compose_failed_json, 'private-site' ), 'a failed composition must not be compacted, and absolute paths must be redacted' );
+$compose_failed_id = (string) ( $compose_failed['error']['data']['import_id'] ?? '' );
+$compose_run_json  = (string) ( new Static_Site_Importer_Artifact_Run_Workspace( $test_root . '/static-site-importer/direct-artifact-imports', 'direct-' . $compose_failed_id ) )->read_raw( 'run.json' );
+$assert( str_contains( $compose_run_json, 'unresolved_local_browser_reference' ) && ! str_contains( $compose_run_json, '/Users/alice' ), 'the durable run record must keep the redacted composition diagnostic' );
+$recovered_compose = Static_Site_Importer_Canonical_Import_Service::import( $resume( $compose_failed_id, 'plan' ) );
+$assert( ! empty( $recovered_compose['success'] ) && empty( $recovered_compose['continuation'] ), 'a failed composition must remain resumable from durable receipts' );
+
+$throw_detailed_compose = true;
+$GLOBALS['ssi_direct_actions']['static_site_importer_direct_artifact_before_phase'][] = static function ( string $phase ) use ( &$throw_detailed_compose ): void {
+	if ( $throw_detailed_compose && 'compose' === $phase ) {
+		$throw_detailed_compose = false;
+		throw new InvalidArgumentException( 'Entity declaration at /var/www/html/wp-content/uploads/static-site-importer/run/plan.json is invalid; api_key=abc123 rejected.' );
+	}
+};
+$detailed_throw      = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+$detailed_throw_json = (string) wp_json_encode( $detailed_throw );
+$assert( 'static_site_importer_direct_artifact_phase_failed' === ( $detailed_throw['error']['code'] ?? '' ) && 'Materialization failed (static_site_importer_direct_artifact_phase_failed): InvalidArgumentException: Entity declaration at [path] is invalid; api_key=[redacted] rejected.' === ( $detailed_throw['error']['message'] ?? '' ), 'a thrown phase failure must surface its redacted exception class and message: ' . ( $detailed_throw['error']['message'] ?? '' ) );
+$assert( 'InvalidArgumentException' === ( $detailed_throw['error']['data']['artifact_run']['failures'][0]['diagnostics'][0]['exception_class'] ?? '' ) && 'compose' === ( $detailed_throw['diagnostics'][0]['phase'] ?? '' ) && ! str_contains( $detailed_throw_json, '/var/www' ) && ! str_contains( $detailed_throw_json, 'abc123' ), 'thrown phase failure evidence must be redacted and bounded' );
+
 $quality_failure_data = array(
 	'import_report_summary' => array(
 		'status'      => 'failed',

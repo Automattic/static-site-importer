@@ -652,6 +652,10 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				if ( ! is_object( $result ) || ! is_callable( array( $result, 'toCompactWordPressSitePlanView' ) ) ) {
 					throw new RuntimeException( 'Blocks Engine returned an invalid composed result.' );
 				}
+				if ( 'failed' === ( $result->status ?? null ) && empty( $result->sourceReports['wordpress_site_plan'] ?? null ) ) {
+					// A failed result without a canonical plan cannot be compacted; fail with the compiler's own diagnostics.
+					return self::fail( $workspace, $run, 'compose', self::composed_failure( $result ), $run['page_ids'] );
+				}
 				$composed = $result->toCompactWordPressSitePlanView();
 				if ( 'blocks-engine/wordpress-site-plan-view/v2' !== ( $composed['schema'] ?? '' ) ) {
 					throw new RuntimeException( 'Blocks Engine did not compact the composed WordPress site plan view.' );
@@ -1058,6 +1062,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				'phase_started_at'   => (string) ( $failure['phase_started_at'] ?? '' ),
 				'elapsed_seconds'    => (float) ( $failure['elapsed_seconds'] ?? 0 ),
 				'error'              => self::scrub_failure( array( 'error' => $failure['error'] ?? array() ) )['error'],
+				'diagnostics'        => Static_Site_Importer_Public_Error_Projection::project_public_diagnostics( array_slice( is_array( $failure['diagnostics'] ?? null ) ? $failure['diagnostics'] : array(), 0, Static_Site_Importer_Public_Error_Projection::FAILURE_EVIDENCE_MAX_DIAGNOSTICS ) ),
 			),
 			array_slice( is_array( $run['failures'] ?? null ) ? $run['failures'] : array(), -5 )
 		);
@@ -1103,6 +1108,31 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		);
 	}
 
+	/** Project a failed Blocks Engine composition into a phase failure carrying its error diagnostics. */
+	private static function composed_failure( object $result ): WP_Error {
+		$diagnostics = array();
+		if ( is_callable( array( $result, 'toWordPressSitePlanView' ) ) ) {
+			try {
+				$view        = $result->toWordPressSitePlanView();
+				$diagnostics = is_array( $view['diagnostics'] ?? null ) ? $view['diagnostics'] : array();
+			} catch ( Throwable $error ) {
+				$diagnostics = array();
+			}
+		}
+		if ( empty( $diagnostics ) && is_array( $result->sourceReports['wordpress_site_plan_diagnostics'] ?? null ) ) {
+			$diagnostics = $result->sourceReports['wordpress_site_plan_diagnostics'];
+		}
+		if ( empty( $diagnostics ) && is_array( $result->diagnostics ?? null ) ) {
+			$diagnostics = $result->diagnostics;
+		}
+		$errors = array_values( array_filter( $diagnostics, static fn ( $diagnostic ): bool => is_array( $diagnostic ) && 'error' === ( $diagnostic['severity'] ?? null ) ) );
+		return new WP_Error(
+			'static_site_importer_direct_artifact_phase_failed',
+			'Blocks Engine failed to compose the WordPress site plan.',
+			array( 'diagnostics' => empty( $errors ) ? $diagnostics : $errors )
+		);
+	}
+
 	private static function fail( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $run, string $phase, Throwable|WP_Error $error, array $page_ids = array() ) {
 		if ( is_wp_error( $error ) ) {
 			$code    = (string) $error->get_error_code();
@@ -1114,6 +1144,23 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			$data    = null;
 		}
 		$diagnostics = is_array( $data ) && is_array( $data['diagnostics'] ?? null ) ? Static_Site_Importer_Public_Error_Projection::project_public_diagnostics( $data['diagnostics'] ) : array();
+		if ( empty( $diagnostics ) ) {
+			// Keep the underlying cause (redacted and bounded) instead of only the stable machine code.
+			$diagnostics = Static_Site_Importer_Public_Error_Projection::project_public_diagnostics(
+				array(
+					array(
+						'type'            => 'validation_error',
+						'kind'            => 'validation_error',
+						'severity'        => 'error',
+						'code'            => $code,
+						'reason_code'     => $code,
+						'phase'           => $phase,
+						'exception_class' => $error instanceof Throwable ? get_class( $error ) : '',
+						'message'         => $message,
+					),
+				)
+			);
+		}
 
 		$message = Static_Site_Importer_Public_Error_Projection::project_public_error_message( $code, $diagnostics );
 
@@ -1131,6 +1178,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				'message' => $message,
 				'data'    => self::scrub_error( $data ),
 			),
+			'diagnostics'        => array_slice( $diagnostics, 0, Static_Site_Importer_Public_Error_Projection::FAILURE_EVIDENCE_MAX_DIAGNOSTICS ),
 			'at'                 => gmdate( 'c' ),
 		);
 		$run['failures'][]             = $failure;
@@ -1152,6 +1200,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					$error_data[ $key ] = $data[ $key ];
 				}
 			}
+		}
+		if ( empty( $error_data['diagnostics'] ) ) {
+			$error_data['diagnostics'] = $diagnostics;
 		}
 		if ( is_wp_error( $write ) ) {
 			$error_data['checkpoint_error'] = array(
