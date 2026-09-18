@@ -795,6 +795,115 @@ $incomplete_runtime_report->set_diagnostics( $incomplete_diagnostics );
 $incomplete_runtime_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $incomplete_runtime_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $incomplete_runtime_quality['pass'] ?? true ) && true === ( $incomplete_runtime_quality['fail_import'] ?? false ), 'missing-runtime-materialization-contract-remains-fail-closed' );
 
+$declined_form_fallback = array(
+	'code'                  => 'html_form_fallback',
+	'reason_code'           => 'html_form_fallback',
+	'loss_class'            => 'runtime_island_preserved',
+	'source_path'           => 'website/index.html',
+	'selector'              => 'form.contact',
+	'preservation_strategy' => 'fallback_metadata_with_readable_blocks',
+	'runtime_requirement'   => 'server_or_client_form_handler',
+	'repair_bucket'         => 'materialize_form_provider',
+	'message'               => 'Form intent and controls were extracted as provider-materializable metadata; the source form markup is preserved until a form provider materializes it.',
+);
+$provider_form_decline  = array(
+	'id'            => 'provider-entity-declined-contact',
+	'code'          => 'provider_entity_declined',
+	'type'          => 'static-site-importer',
+	'loss_class'    => 'preserved_runtime_island',
+	'acceptability' => 'acceptable_preservation',
+	'reason_code'   => 'form_receipt_loss_unaccepted',
+	'source_path'   => 'website/index.html',
+	'selector'      => 'form.contact',
+	'provider'      => 'jetpack',
+	'entity_type'   => 'form',
+	'message'       => 'jetpack did not materialize a form detected in website/index.html (form_receipt_loss_unaccepted). The imported page keeps its converted source markup for that form.',
+);
+$declined_form_html     = '<form class="contact"><label for="name">Name</label><input id="name" type="text" name="name"><button type="submit">Send</button></form>';
+$declined_form_report   = Static_Site_Importer_Import_Report::from_array(
+	array(
+		'quality'     => array(
+			'fallback_count' => 1,
+			'fallbacks'      => array(
+				array(
+					'source'   => 'website/index.html',
+					'selector' => 'form.contact',
+					'html'     => $declined_form_html,
+				),
+			),
+		),
+		'diagnostics' => array( $declined_form_fallback, $provider_form_decline ),
+	)
+);
+$declined_form_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $declined_form_report, array( 'fail_on_quality' => true ) );
+$declined_form_rows    = array_values(
+	array_filter(
+		$declined_form_report->diagnostics(),
+		static fn( array $diagnostic ): bool => 'html_form_fallback' === ( $diagnostic['code'] ?? '' ) || 'provider_entity_declined' === ( $diagnostic['code'] ?? '' )
+	)
+);
+$assert( true === ( $declined_form_quality['pass'] ?? false ) && false === ( $declined_form_quality['fail_import'] ?? true ), 'declined-form-island-does-not-fail-quality-admission' );
+$assert( 1 === ( $declined_form_quality['accepted_preserved_runtime_island_count'] ?? 0 ) && 0 === ( $declined_form_quality['unsupported_fallback_count'] ?? -1 ), 'declined-form-island-counts-as-accepted-preserved-runtime-island' );
+$assert( 'passed' === ( $declined_form_report['import_validation_result']['quality_gates']['fallback_blocks']['status'] ?? '' ), 'declined-form-island-does-not-fail-fallback-gate' );
+$assert( 2 === count( $declined_form_rows ) && 'acceptable_preservation' === ( $declined_form_rows[0]['acceptability'] ?? '' ) && 'acceptable_preservation' === ( $declined_form_rows[1]['acceptability'] ?? '' ), 'declined-form-diagnostics-agree-on-acceptable-preservation' );
+$assert( 'preserved_runtime_island' === ( $declined_form_rows[0]['loss_class'] ?? '' ) && 'preserved_runtime_island' === ( $declined_form_rows[1]['loss_class'] ?? '' ), 'declined-form-diagnostics-agree-on-preserved-runtime-island' );
+$assert( 0 === ( Static_Site_Importer_Diagnostic_Loss_Classes::counts( $declined_form_report->diagnostics() )['importer_materialization_bug'] ?? -1 ), 'declined-form-island-is-not-classified-as-importer-bug' );
+
+$undeclined_form_report = Static_Site_Importer_Import_Report::from_array(
+	array(
+		'quality'     => array(
+			'fallback_count' => 1,
+			'fallbacks'      => array(
+				array(
+					'source'   => 'website/index.html',
+					'selector' => 'form.contact',
+					'html'     => $declined_form_html,
+				),
+			),
+		),
+		'diagnostics' => array( $declined_form_fallback ),
+	)
+);
+$undeclined_form_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $undeclined_form_report, array( 'fail_on_quality' => true ) );
+$assert( false === ( $undeclined_form_quality['pass'] ?? true ) && true === ( $undeclined_form_quality['fail_import'] ?? false ) && in_array( 'unsupported_html_fallback', $undeclined_form_quality['failure_reasons'] ?? array(), true ), 'form-fallback-without-provider-decline-remains-fail-closed' );
+$assert( 0 === ( $undeclined_form_quality['accepted_preserved_runtime_island_count'] ?? -1 ) && 1 === ( $undeclined_form_quality['unsupported_fallback_count'] ?? 0 ), 'form-fallback-without-provider-decline-is-unsupported' );
+
+$unsafe_declined_form_report = Static_Site_Importer_Import_Report::from_array(
+	array(
+		'quality'     => array(
+			'fallback_count' => 1,
+			'fallbacks'      => array(
+				array(
+					'source'   => 'website/index.html',
+					'selector' => 'form.contact',
+					'html'     => '<form><script>alert(1)</script><button type="submit">Send</button></form>',
+				),
+			),
+		),
+		'diagnostics' => array( $declined_form_fallback, $provider_form_decline ),
+	)
+);
+$unsafe_declined_form_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $unsafe_declined_form_report, array( 'fail_on_quality' => true ) );
+$assert( false === ( $unsafe_declined_form_quality['pass'] ?? true ) && true === ( $unsafe_declined_form_quality['fail_import'] ?? false ), 'unsafe-declined-form-island-remains-fail-closed' );
+$assert( 0 === ( $unsafe_declined_form_quality['accepted_preserved_runtime_island_count'] ?? -1 ) && 1 === ( $unsafe_declined_form_quality['unsupported_fallback_count'] ?? 0 ), 'unsafe-declined-form-island-is-unsupported' );
+
+$unsupported_html_report = Static_Site_Importer_Import_Report::from_array(
+	array(
+		'quality'     => array( 'fallback_count' => 1 ),
+		'diagnostics' => array(
+			array(
+				'type'                => 'unsupported_html_fallback',
+				'source_path'         => 'website/index.html',
+				'selector'            => 'div.unknown-widget',
+				'reason_code'         => 'unsupported_element',
+				'source_html_preview' => '<div class="unknown-widget">custom chrome</div>',
+			),
+		),
+	)
+);
+$unsupported_html_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $unsupported_html_report, array( 'fail_on_quality' => true ) );
+$assert( false === ( $unsupported_html_quality['pass'] ?? true ) && true === ( $unsupported_html_quality['fail_import'] ?? false ) && in_array( 'unsupported_html_fallback', $unsupported_html_quality['failure_reasons'] ?? array(), true ), 'genuine-unsupported-fallback-still-fails-quality-admission' );
+
 /*
  * Issue #1547: the transformer's artifact normalizer drops files at declared
  * limits and reports each drop as a plain warning. Finalization must re-own
