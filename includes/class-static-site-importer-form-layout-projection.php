@@ -1300,7 +1300,9 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					);
 				}
 				foreach ( $merged_variants as $variant ) {
-					$variant_gap     = self::layout_row_gap( is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array() );
+					// layout_patch is set at the single construction site above, guarded by
+					// ! empty( $patch ), so it always exists and is always a non-empty array.
+					$variant_gap     = self::layout_row_gap( $variant['layout_patch'] );
 					$negated_variant = is_string( $variant_gap ) ? self::negate_layout_length( $variant_gap ) : null;
 					if ( ! is_string( $negated_variant ) ) {
 						continue;
