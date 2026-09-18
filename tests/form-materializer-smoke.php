@@ -534,6 +534,70 @@ namespace {
 		'mobile-first-tailwind-v4-grid-row-materializes-as-two-jetpack-fields-at-width-50',
 		wp_json_encode( array( 'row' => $tailwind_grid_row, 'markup' => $tailwind_grid_markup ) )
 	);
+	// A source form that occupies a page-grid item through a host wrapper (the
+	// wrapper the provider container replaces) must keep that item's column span
+	// on the materialized block, without matching any one utility class name.
+	$host_span_css  = '.page-grid{display:grid;grid-template-columns:repeat(1,minmax(0,1fr));gap:3rem}'
+		. '@media (width>=1024px){.page-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.form-host,.bp\\:span-2{grid-column:span 2}}'
+		. '.grid{display:grid}.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}.gap-6{gap:1.5rem}'
+		. '@media (width>=768px){.md\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}'
+		. '.px-8{padding-left:2rem;padding-right:2rem}.py-4{padding-top:1rem;padding-bottom:1rem}'
+		. '.bg-foreground{background-color:rgb(0,0,0)}.font-semibold{font-weight:600}.uppercase{text-transform:uppercase}.tracking-wide{letter-spacing:.025em}';
+	$host_span_html = '<style>' . $host_span_css . '</style><div class="page-grid"><div class="form-host bp:span-2"><form class="stack">'
+		. '<div class="grid grid-cols-1 md:grid-cols-2 gap-6">'
+		. '<div><label>Name *</label><input type="text" required></div>'
+		. '<div><label>Phone *</label><input type="tel" required></div>'
+		. '</div>'
+		. '<div><label>Email *</label><input type="email" required></div>'
+		. '<div><label>Project Type</label><select><option value="">Select a project type</option><option>Kitchen Renovation</option></select></div>'
+		. '<div><label>Project Details *</label><textarea rows="5" required></textarea></div>'
+		. '<button type="submit" class="bg-foreground px-8 py-4 font-semibold uppercase tracking-wide">Submit</button>'
+		. '</form></div><aside>contact</aside></div>';
+	$host_span_source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $host_span_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	if ( is_array( $host_span_source['binding'] ?? null ) && is_string( $host_span_source['binding']['search_block_markup'] ?? null ) ) {
+		$host_span_source['bindings'] = array(
+			array(
+				'schema'              => 'generic/block-binding/v1',
+				'source_path'         => 'contact.html',
+				'search_block_markup' => $host_span_source['binding']['search_block_markup'],
+				'occurrence'          => 1,
+				'role'                => 'form',
+			),
+		);
+	}
+	$host_span_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $host_span_source ) ) );
+	$host_span_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $host_span_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$host_span_markup    = (string) ( $host_span_row['block_markup'] ?? '' );
+	$host_span_css_out   = (string) ( $host_span_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert( empty( $host_span_validated['errors'] ), 'host-wrapper-span-manifest-validates', wp_json_encode( $host_span_validated ) );
+	$assert(
+		'mapped' === ( $host_span_row['status'] ?? '' )
+			&& empty( $host_span_row['form_receipt_unaccepted_losses'] ?? array() )
+			&& 2 === substr_count( $host_span_markup, '"width":50' )
+			&& str_contains( $host_span_markup, 'form-host' )
+			&& str_contains( $host_span_markup, 'bp:span-2' )
+			&& in_array( 'provider_host_wrapper_class_projection', array_column( $host_span_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true )
+			&& str_contains( $host_span_css_out, 'padding-top:1rem' )
+			&& str_contains( $host_span_css_out, 'padding-right:2rem' )
+			&& str_contains( $host_span_css_out, 'padding-bottom:1rem' )
+			&& str_contains( $host_span_css_out, 'padding-left:2rem' )
+			&& str_contains( $host_span_css_out, 'font-weight:600' )
+			&& str_contains( $host_span_css_out, 'letter-spacing:.025em' )
+			&& str_contains( $host_span_css_out, 'text-transform:uppercase' )
+			&& ! str_contains( $host_span_markup, 'wp:group' ),
+		'provider-container-inherits-replaced-host-wrapper-column-span-and-authored-submit-box',
+		wp_json_encode( array( 'row' => $host_span_row, 'markup' => $host_span_markup, 'css' => $host_span_css_out, 'binding' => $host_span_source['binding'] ?? null ) )
+	);
+	$host_span_runtime = Static_Site_Importer_Form_Seeder::project_provider_form_container_placement(
+		'<div class="jetpack-contact-form-container"><form class="jetpack-contact-form__form"><div class="wp-block-jetpack-contact-form ssi-form-123456789abc form-host">fields</div></form></div>',
+		array( 'attrs' => array( 'className' => 'stack form-host ssi-form-123456789abc' ) )
+	);
+	$assert(
+		str_contains( $host_span_runtime, 'class="jetpack-contact-form-container stack form-host ssi-form-123456789abc"' )
+			&& str_contains( $host_span_runtime, 'wp-block-jetpack-contact-form ssi-form-123456789abc form-host' ),
+		'provider-runtime-hoists-the-form-box-layout-role-onto-the-jetpack-page-grid-item',
+		$host_span_runtime
+	);
 	// A narrowing (max-width) variant is not the proven mobile-first widening
 	// shape and must keep the existing decline: Jetpack cannot represent "two
 	// columns by default that collapse to one," and this is not that either.
@@ -1007,6 +1071,14 @@ namespace {
 				'textTransform' => 'uppercase',
 			),
 			'border'     => array( 'radius' => '9999px' ),
+			'spacing'    => array(
+				'padding' => array(
+					'top'    => '1rem',
+					'right'  => '2rem',
+					'bottom' => '1rem',
+					'left'   => '2rem',
+				),
+			),
 		),
 	);
 	$validated_submit_control_style = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $submit_control_style_form );
@@ -1017,7 +1089,7 @@ namespace {
 		empty( $validated_submit_control_style['errors'] )
 			&& 'mapped' === ( $submit_control_style_row['status'] ?? '' )
 			&& str_contains( $submit_control_style_markup, 'ssi-provider-submit-presentation' )
-			&& str_contains( $submit_control_style_css, '> .wp-block-button__link{background-color:oklch(0.2689 0.0057 156.83);color:oklch(0.956 0.0115 84.58);font-size:12px;font-weight:600;letter-spacing:1.92px;text-transform:uppercase;border-radius:9999px;font-family:revert;line-height:revert;min-height:0}' )
+			&& str_contains( $submit_control_style_css, '> .wp-block-button__link{background-color:oklch(0.2689 0.0057 156.83);color:oklch(0.956 0.0115 84.58);font-size:12px;font-weight:600;letter-spacing:1.92px;text-transform:uppercase;border-radius:9999px;padding-top:1rem;padding-right:2rem;padding-bottom:1rem;padding-left:2rem;font-family:revert;line-height:revert;min-height:0}' )
 			&& preg_match( '/\.ssi-node-[a-f0-9]{12}\{width:100%\}/', $submit_control_style_css )
 			&& ! str_contains( $submit_control_style_css, '> .wp-block-button__link{width:100%' ),
 		'source-submit-control-style-capture-resolves-through-the-provider-overlay-instead-of-an-inert-marker-class',
@@ -1039,6 +1111,35 @@ namespace {
 		$collect_submit_control_style( array( $parsed_submit_control_style_form ), $collect_submit_control_style );
 	}
 	$assert( 1 === count( $submit_control_style_attrs ) && ! array_key_exists( 'style', $submit_control_style_attrs[0] ), 'source-submit-control-style-capture-still-claims-no-unrenderable-block-style-attribute', wp_json_encode( $submit_control_style_attrs ) );
+	$submit_preflight_form = $submit_control_style_form;
+	$submit_preflight_form['forms'][0]['presentation_graph'] = array(
+		'schema' => 'generic/computed-form-presentation/v1', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'controls' => 128, 'rules_per_role' => 32 ), 'variants' => array(), 'diagnostics' => array(),
+		'controls' => array(
+			array(
+				'index'   => 3,
+				'control' => array(
+					'styles'     => array( 'background_color' => 'rgb(0,0,0)', 'padding' => '0', 'padding_top' => '.75rem', 'font_weight' => 'inherit' ),
+					'provenance' => array(),
+				),
+			),
+		),
+	);
+	$validated_submit_preflight = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $submit_preflight_form );
+	$submit_preflight_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_submit_preflight['forms'] ?? array() ) )['forms'][0] ?? array();
+	$submit_preflight_css       = (string) ( $submit_preflight_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		empty( $validated_submit_preflight['errors'] )
+			&& str_contains( $submit_preflight_css, 'padding-top:1rem' )
+			&& str_contains( $submit_preflight_css, 'padding-right:2rem' )
+			&& str_contains( $submit_preflight_css, 'padding-bottom:1rem' )
+			&& str_contains( $submit_preflight_css, 'padding-left:2rem' )
+			&& str_contains( $submit_preflight_css, 'font-weight:600' )
+			&& ! str_contains( $submit_preflight_css, 'padding:0' )
+			&& ! str_contains( $submit_preflight_css, 'font-weight:inherit' )
+			&& str_contains( $submit_preflight_css, 'background-color:oklch(0.2689 0.0057 156.83)' ),
+		'authored-submit-style-wins-over-cascade-preflight-padding-and-weight-resets',
+		$submit_preflight_css
+	);
 	foreach ( array( '' => 'inherit', 'font-weight:600;' => '600' ) as $source_weight => $expected_weight ) {
 		$label_artifact = ( new $artifact_compiler() )->compile( array(
 			'entrypoint' => 'index.html',

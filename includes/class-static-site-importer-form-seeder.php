@@ -140,6 +140,11 @@ class Static_Site_Importer_Form_Seeder {
 		return Static_Site_Importer_Provider_Form_Runtime_V1::project_plain_root_fieldset( $html, $block );
 	}
 
+	/** Carry the provider block's layout role onto Jetpack's rendered page-grid item. */
+	public static function project_provider_form_container_placement( string $html, array $block = array() ): string {
+		return Static_Site_Importer_Provider_Form_Runtime_V1::project_form_container_placement( $html, $block );
+	}
+
 	/**
 	 * Load Forms after Jetpack's autoloader is ready and before WordPress init.
 	 *
@@ -510,10 +515,11 @@ class Static_Site_Importer_Form_Seeder {
 				'omitted_count' => $textarea_height_omitted_count,
 			);
 		}
-		self::append_receipt_entries( $layout['receipt'], 'operations', array_merge( $radio_groups['operations'], $topology['operations'] ) );
+		$host = Static_Site_Importer_Form_Layout_Projection::host_wrapper_projection( $form );
+		self::append_receipt_entries( $layout['receipt'], 'operations', array_merge( $radio_groups['operations'], $topology['operations'], $host['operations'] ) );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $control_attribute_losses );
 		$inner_blocks           = $layout['blocks'];
-		$form_attrs             = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $form, $scope, $topology['form_classes'] );
+		$form_attrs             = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $form, $scope, array_merge( $topology['form_classes'], $host['classes'] ) );
 		$overlay_graph          = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( Static_Site_Importer_Form_Layout_Projection::split_form_box( $provider_graph ), is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array() );
 		$box_targets            = $topology['provider_layout_targets'];
 		$overlay_graph['nodes'] = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || 'form-box' === ( $node['id'] ?? '' ) || isset( $box_targets[ (string) ( $node['id'] ?? '' ) ] ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
@@ -810,9 +816,14 @@ class Static_Site_Importer_Form_Seeder {
 				}
 				$found           = true;
 				$existing_styles = isset( $row['control']['styles'] ) && is_array( $row['control']['styles'] ) ? $row['control']['styles'] : array();
-				// A cascade-resolved presentation the importer already carries for this
-				// control is authoritative; this capture only fills what it omits.
-				$row['control']['styles'] = array_merge( $flat, $existing_styles );
+				// Cascade-resolved facts fill what this capture omits (background from
+				// a utility the style object did not reify). Authored style wins on
+				// conflict: a preflight `padding:0` / `font-weight:inherit` reset is
+				// not the button's own box.
+				$row['control']['styles'] = array_merge( $existing_styles, $flat );
+				if ( array_intersect_key( $flat, array_flip( array( 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block', 'padding_inline' ) ) ) && ! isset( $flat['padding'] ) ) {
+					unset( $row['control']['styles']['padding'] );
+				}
 				break;
 			}
 			unset( $row );
@@ -1029,6 +1040,10 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		$spacing = isset( $style['spacing'] ) && is_array( $style['spacing'] ) ? $style['spacing'] : array();
 		foreach ( array( 'margin', 'padding' ) as $box ) {
+			if ( isset( $spacing[ $box ] ) && is_scalar( $spacing[ $box ] ) && '' !== trim( (string) $spacing[ $box ] ) ) {
+				$flat[ $box ] = trim( (string) $spacing[ $box ] );
+				continue;
+			}
 			$values = isset( $spacing[ $box ] ) && is_array( $spacing[ $box ] ) ? $spacing[ $box ] : array();
 			foreach ( array( 'top', 'right', 'bottom', 'left' ) as $side ) {
 				if ( isset( $values[ $side ] ) && is_scalar( $values[ $side ] ) && '' !== trim( (string) $values[ $side ] ) ) {
