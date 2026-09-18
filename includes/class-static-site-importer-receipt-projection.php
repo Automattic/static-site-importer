@@ -96,7 +96,7 @@ class Static_Site_Importer_Receipt_Projection {
 		if ( isset( $args['captured_interaction_state_count'] ) && is_numeric( $args['captured_interaction_state_count'] ) ) {
 			$quality['interaction_candidate_count'] = max(
 				(int) ( $quality['interaction_candidate_count'] ?? 0 ),
-				(int) $args['captured_interaction_state_count']
+				max( 0, (int) $args['captured_interaction_state_count'] )
 			);
 		}
 		$report                            = Static_Site_Importer_Import_Report::from_array(
