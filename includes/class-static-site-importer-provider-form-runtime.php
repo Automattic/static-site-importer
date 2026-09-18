@@ -98,7 +98,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			return $html;
 		}
 		$carry = preg_split( '/\s+/', trim( $class_name ) );
-		$carry = false === $carry ? array() : array_values( array_filter( $carry ) );
+		$carry = false === $carry ? array() : array_values( array_filter( $carry, array( self::class, 'is_page_placement_class' ) ) );
 		if ( empty( $carry ) ) {
 			return $html;
 		}
@@ -114,6 +114,14 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			1
 		);
 		return is_string( $projected ) ? $projected : $html;
+	}
+
+	/** Field-list display/track utilities belong on the inner list, not the page item. */
+	private static function is_page_placement_class( string $class_name ): bool {
+		if ( '' === $class_name || in_array( $class_name, array( 'grid', 'flex', 'block', 'hidden', 'contents', 'inline-flex' ), true ) ) {
+			return false;
+		}
+		return 1 !== preg_match( '/(?:^|:)(?:grid-cols-|col-span-|gap-)/', $class_name );
 	}
 
 	/** Restore a source plain-root fieldset around provider field content, never the form itself. */
