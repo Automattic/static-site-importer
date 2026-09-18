@@ -2139,6 +2139,30 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					$destination['priority'] = 'important';
 				}
 				$destinations[] = $destination;
+				if ( 'submit' === $type ) {
+					// A submit control sits as a bare direct child of its source
+					// container, unlike every other field, which is wrapped in its own
+					// box. A sibling-stacking utility (Tailwind's `space-y-*`) that
+					// matches direct children therefore captures a real vertical margin
+					// fact against the button itself. The provider's own field gap
+					// already reproduces that inter-sibling spacing structurally (the
+					// layout graph's own `margin-block-start` reset on this same node
+					// already neutralizes the layout-level half of that gap); carrying
+					// the captured vertical margin onto the rendered link as well would
+					// double it a second time inside the button's own wrapper. The
+					// margin properties stay listed above so a captured fact is still
+					// represented (not a receipt loss); this unconditional, later,
+					// `!important` reset is what actually wins the cascade.
+					$destinations[] = array(
+						'role'       => 'control',
+						'selector'   => '.' . $scope . ' .' . $control_class . ' > .wp-block-button__link',
+						'properties' => array(),
+						'resets'     => array(
+							'margin' => '0',
+						),
+						'priority'   => 'important',
+					);
+				}
 			}
 		}
 		if ( isset( $roles['control_container'] ) ) {
