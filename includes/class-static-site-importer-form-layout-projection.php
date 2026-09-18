@@ -605,7 +605,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					break;
 				}
 			}
-			if ( ! $class_owned ) {
+			if ( ! $class_owned && null === self::display_from_class_tokens( $class_tokens ) ) {
 				continue;
 			}
 			$form_classes                 = array_merge( $form_classes, $class_tokens );
@@ -1192,6 +1192,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( ! $node_facts_proven( $box_id ) || array_intersect_key( $base, array_flip( $item_facts ) ) ) {
 				continue;
 			}
+			if ( ! isset( $base['display'] ) ) {
+				$class_tokens = preg_split( '/\s+/', trim( (string) ( $box['class'] ?? '' ) ) );
+				$from_class   = self::display_from_class_tokens( false === $class_tokens ? array() : $class_tokens );
+				if ( is_string( $from_class ) ) {
+					$base['display'] = $from_class;
+				}
+			}
 			$box_base    = $merged_base;
 			$box_patches = $merged_patches;
 			$accepted    = true;
@@ -1240,6 +1247,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 			if ( ! $accepted ) {
 				continue;
+			}
+			$box_classes = preg_split( '/\s+/', trim( (string) ( $box['class'] ?? '' ) ) );
+			if ( false !== $box_classes ) {
+				$form_classes = array_merge( $form_classes, array_values( array_filter( $box_classes ) ) );
 			}
 			$merged_base    = $box_base;
 			$merged_patches = $box_patches;
@@ -2296,9 +2307,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		if ( empty( $shared ) ) {
 			return $graph;
 		}
-		// The track definition describes the same rows being dropped. Keeping it
-		// would give every field its own row and undo the column membership the
-		// provider states for itself.
+		// Track indexes describe the same rows being dropped. Keeping them would
+		// give every field its own row and undo the column membership the provider
+		// states for itself. The authored display mode must still reach the field
+		// list: Jetpack paints `display:flex` on `.wp-block-jetpack-contact-form`
+		// unless `is-layout-flex` is present, which outranks a class like `.grid`.
+		// Column templates stay with the source stylesheet.
 		// The source container may already be collapsed onto the provider's own form
 		// element, so the track definition can sit on either node.
 		$containers = array( 'form' => true );
@@ -2315,14 +2329,17 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$graph['nodes'][ $index ]['layout'] = array_diff_key( $node['layout'], array_flip( array( 'area', 'row' ) ) );
 			}
 			if ( isset( $containers[ (string) ( $node['id'] ?? '' ) ] ) && 'grid' === ( $node['layout']['display'] ?? '' ) ) {
-				$graph['nodes'][ $index ]['layout'] = array_diff_key( $graph['nodes'][ $index ]['layout'], array_flip( array( 'display', 'columns', 'rows' ) ) );
+				$graph['nodes'][ $index ]['layout'] = array_diff_key( $graph['nodes'][ $index ]['layout'], array_flip( array( 'columns', 'rows' ) ) );
 			}
 		}
 		foreach ( $graph['variants'] ?? array() as $index => $variant ) {
-			if ( ! is_array( $variant ) || ! isset( $containers[ (string) ( $variant['node'] ?? '' ) ] ) || ! is_array( $variant['layout_patch'] ?? null ) || 'grid' !== ( $variant['layout_patch']['display'] ?? '' ) ) {
+			$patch        = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+			$drops_tracks = (bool) array_intersect( array( 'columns', 'rows' ), array_keys( $patch ) );
+			$grid_display = 'grid' === ( $patch['display'] ?? '' );
+			if ( ! is_array( $variant ) || ! isset( $containers[ (string) ( $variant['node'] ?? '' ) ] ) || empty( $patch ) || ( ! $grid_display && ! $drops_tracks ) ) {
 				continue;
 			}
-			$patch = array_diff_key( $variant['layout_patch'], array_flip( array( 'display', 'columns', 'rows' ) ) );
+			$patch = array_diff_key( $patch, array_flip( array( 'columns', 'rows' ) ) );
 			if ( empty( $patch ) ) {
 				unset( $graph['variants'][ $index ] );
 				continue;
@@ -2387,6 +2404,25 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 */
 	private static function is_min_width_media_query( string $query ): bool {
 		return 1 === preg_match( '/^\((?:min-width:\s?[0-9]+(?:\.[0-9]+)?(?:px|em|rem)|width\s*>=\s*[0-9]+(?:\.[0-9]+)?(?:px|em|rem))\)$/D', $query );
+	}
+
+	/** @param array<int,string> $tokens */
+	private static function display_from_class_tokens( array $tokens ): ?string {
+		$map = array(
+			'grid'        => 'grid',
+			'flex'        => 'flex',
+			'inline-flex' => 'inline-flex',
+			'block'       => 'block',
+			'contents'    => 'contents',
+			'hidden'      => 'none',
+		);
+		$display = null;
+		foreach ( $tokens as $token ) {
+			if ( isset( $map[ $token ] ) ) {
+				$display = $map[ $token ];
+			}
+		}
+		return $display;
 	}
 
 	/**

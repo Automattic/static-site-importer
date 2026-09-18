@@ -695,6 +695,16 @@ namespace {
 		'provider-runtime-hoists-the-form-box-layout-role-onto-the-jetpack-page-grid-item',
 		$host_span_runtime
 	);
+	$field_list_hoist = Static_Site_Importer_Form_Seeder::project_provider_form_container_placement(
+		'<div class="jetpack-contact-form-container"><form class="jetpack-contact-form__form"><div class="wp-block-jetpack-contact-form panel grid gap-6 sm:grid-cols-2 ssi-form-123456789abc">fields</div></form></div>',
+		array( 'attrs' => array( 'className' => 'panel grid gap-6 sm:grid-cols-2 ssi-form-123456789abc' ) )
+	);
+	$assert(
+		str_contains( $field_list_hoist, 'class="jetpack-contact-form-container panel ssi-form-123456789abc"' )
+			&& str_contains( $field_list_hoist, 'wp-block-jetpack-contact-form panel grid gap-6 sm:grid-cols-2 ssi-form-123456789abc' ),
+		'provider-runtime-keeps-field-list-grid-classes-off-the-page-item',
+		$field_list_hoist
+	);
 	// A narrowing (max-width) variant is not the proven mobile-first widening
 	// shape and must keep the existing decline: Jetpack cannot represent "two
 	// columns by default that collapse to one," and this is not that either.
@@ -1055,6 +1065,62 @@ namespace {
 		'source-sibling-submit-keeps-its-authored-margin-and-does-not-also-consume-the-field-list-gap',
 		wp_json_encode( array( 'validation' => $sibling_submit_validated, 'css' => $sibling_submit_overlay, 'markup' => $sibling_submit_row['block_markup'] ?? '' ) )
 	);
+	$assert(
+		str_contains( $sibling_submit_overlay, 'display:grid' ),
+		'field-list-overlay-carries-authored-grid-display',
+		$sibling_submit_overlay
+	);
+	$assert(
+		str_contains( $grid_box_css, 'display:grid' ),
+		'form-box-grid-overlay-carries-authored-display',
+		$grid_box_css
+	);
+	$col_span_css  = '.grid{display:grid}.gap-6{gap:1.5rem}'
+		. '@media (width>=40rem){.sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.sm\\:col-span-2{grid-column:span 2 / span 2}}';
+	$col_span_html = '<style>' . $col_span_css . '</style><form class="panel p-7">'
+		. '<div class="grid gap-6 sm:grid-cols-2">'
+		. '<div><label>Nominee name</label><input type="text"></div>'
+		. '<div><label>Category</label><select><option>One</option></select></div>'
+		. '<div><label>Organisation</label><input type="text"></div>'
+		. '<div><label>Your name</label><input type="text"></div>'
+		. '<div class="sm:col-span-2"><label>Why this nomination</label><textarea rows="6"></textarea></div>'
+		. '<div class="sm:col-span-2"><label>Supporting links</label><input type="text"></div>'
+		. '</div>'
+		. '<button type="submit" class="mt-9">Submit nomination</button>'
+		. '</form>';
+	$col_span_source    = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $col_span_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$col_span_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $col_span_source ) ) );
+	$col_span_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $col_span_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$col_span_overlay   = (string) ( $col_span_row['provider_layout_overlay_css']['css'] ?? '' );
+	$col_span_form_rule = 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} > form\.jetpack-contact-form__form, \.ssi-form-[a-f0-9]{12}:not\(:has\(> form\.jetpack-contact-form__form\)\)\{([^}]+)\}/', $col_span_overlay, $col_span_form ) ? $col_span_form[1] : '';
+	$assert(
+		empty( $col_span_validated['errors'] )
+			&& 'mapped' === ( $col_span_row['status'] ?? '' )
+			&& true === ( $col_span_row['runtime_mapped'] ?? false )
+			&& str_contains( $col_span_form_rule, 'display:grid' )
+			&& str_contains( $col_span_form_rule, 'gap:1.5rem' )
+			&& ! str_contains( $col_span_form_rule, 'grid-template-columns' ),
+		'full-span-field-list-keeps-authored-display-and-leaves-column-tracks-to-the-source',
+		wp_json_encode( array( 'validation' => $col_span_validated, 'css' => $col_span_overlay, 'form' => $col_span_form_rule, 'markup' => $col_span_row['block_markup'] ?? '' ) )
+	);
+	$class_display_form = $grid_box_form;
+	$class_display_form['forms'][0]['layout_graph']['nodes'][1]['layout']     = array();
+	$class_display_form['forms'][0]['layout_graph']['nodes'][1]['provenance'] = array();
+	$class_display_form['forms'][0]['layout_graph']['variants']               = array();
+	$class_display_form['forms'][0]['control_topology']['nodes'][0]['class']  = 'grid gap-6';
+	$class_display_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $class_display_form );
+	$class_display_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $class_display_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$class_display_css        = (string) ( $class_display_row['provider_layout_overlay_css']['css'] ?? '' );
+	$class_display_markup     = (string) ( $class_display_row['block_markup'] ?? '' );
+	$assert(
+		empty( $class_display_validation['errors'] )
+			&& 'mapped' === ( $class_display_row['status'] ?? '' )
+			&& str_contains( $class_display_markup, 'grid gap-6 ssi-form-' )
+			&& str_contains( $class_display_css, 'display:grid' )
+			&& ! str_contains( $class_display_css, 'grid-template-columns' ),
+		'class-only-field-list-display-outranks-the-provider-flex-default',
+		wp_json_encode( array( 'css' => $class_display_css, 'markup' => $class_display_markup, 'row' => $class_display_row ) )
+	);
 	$flex_list_form = $grid_box_form;
 	$flex_list_form['forms'][0]['layout_graph']['nodes'][1]['layout'] = array( 'display' => 'flex', 'direction' => 'column', 'gap' => '2rem' );
 	$flex_list_form['forms'][0]['layout_graph']['nodes'][1]['provenance'][0]['properties'] = array( 'display', 'flex-direction', 'gap' );
@@ -1062,7 +1128,8 @@ namespace {
 	$flex_list_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $flex_list_form )['forms'] ?? array() ) )['forms'][0] ?? array();
 	$flex_list_css = (string) ( $flex_list_row['provider_layout_overlay_css']['css'] ?? '' );
 	$assert(
-		str_contains( $flex_list_css, 'gap:2rem' )
+		str_contains( $flex_list_css, 'display:flex' )
+			&& str_contains( $flex_list_css, 'gap:2rem' )
 			&& 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{[^}]*margin-block-start:calc\(0px - 2rem\)/', $flex_list_css )
 			&& ! str_contains( $flex_list_css, 'grid-column:1 / -1' ),
 		'submit-outside-a-column-flex-field-list-also-cancels-the-transposed-gap',
@@ -2601,7 +2668,7 @@ namespace {
 		'variants' => array(),
 	) );
 	$assert(
-		! isset( $mixed_row_layout['wrapper-0']['area'] ) && ! isset( $mixed_row_layout['wrapper-2']['area'] ) && '611px' === ( $mixed_row_layout['wrapper-2']['width'] ?? '' ) && array() === $mixed_row_layout['grid'] && array( 'display' => 'grid', 'columns' => '100%' ) === array_column( $uniform_row_result['nodes'], 'layout', 'id' )['grid'] && '4 / 1 / 5 / 2' === ( array_column( $uniform_row_result['nodes'], 'layout', 'id' )['wrapper-0']['area'] ?? '' ),
+		! isset( $mixed_row_layout['wrapper-0']['area'] ) && ! isset( $mixed_row_layout['wrapper-2']['area'] ) && '611px' === ( $mixed_row_layout['wrapper-2']['width'] ?? '' ) && array( 'display' => 'grid' ) === $mixed_row_layout['grid'] && array( 'display' => 'grid', 'columns' => '100%' ) === array_column( $uniform_row_result['nodes'], 'layout', 'id' )['grid'] && '4 / 1 / 5 / 2' === ( array_column( $uniform_row_result['nodes'], 'layout', 'id' )['wrapper-0']['area'] ?? '' ),
 		'source-rows-that-neither-pair-with-each-box-nor-share-one-band-drop-their-provider-placement',
 		wp_json_encode( array( 'mixed' => $mixed_row_layout, 'uniform' => array_column( $uniform_row_result['nodes'], 'layout', 'id' ) ) )
 	);
