@@ -290,16 +290,21 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		$provider_layout_classes   = array();
 		$fullspan_child_classes    = array();
 		$phone_destination_classes = array();
+		$textarea_rows             = null;
 		$projected                 = preg_replace_callback(
 			'/\bclass=(["\'])(.*?)\1/s',
-			static function ( array $matches ) use ( &$wrapper_layers, &$composite_layers, &$provider_layout_classes, &$fullspan_child_classes, &$phone_destination_classes ): string {
-				$classes        = preg_split( '/\s+/', trim( $matches[2] ) );
-				$classes        = false === $classes ? array() : $classes;
-				$is_wrapper     = (bool) array_filter( $classes, static fn ( string $class_name ): bool => 1 === preg_match( '/^grunion-field-[A-Za-z0-9_-]+-wrap$/D', $class_name ) );
-				$is_phone_shell = in_array( 'jetpack-field__input-phone-wrapper', $classes, true );
+			static function ( array $matches ) use ( &$wrapper_layers, &$composite_layers, &$provider_layout_classes, &$fullspan_child_classes, &$phone_destination_classes, &$textarea_rows ): string {
+				$classes            = preg_split( '/\s+/', trim( $matches[2] ) );
+				$classes            = false === $classes ? array() : $classes;
+				$is_wrapper         = (bool) array_filter( $classes, static fn ( string $class_name ): bool => 1 === preg_match( '/^grunion-field-[A-Za-z0-9_-]+-wrap$/D', $class_name ) );
+				$is_phone_shell     = in_array( 'jetpack-field__input-phone-wrapper', $classes, true );
 				$has_source_wrapper = (bool) array_filter( $classes, static fn( string $class_name ): bool => str_starts_with( $class_name, 'ssi-source-wrapper-' ) );
-				$output         = array();
+				$output             = array();
 				foreach ( $classes as $class_name ) {
+					if ( preg_match( '/^ssi-textarea-rows-([1-9][0-9]{0,1})$/D', $class_name, $marker ) ) {
+						$textarea_rows = $marker[1];
+						continue;
+					}
 					if ( preg_match( '/^ssi-source-fullspan-child--(ssi-node-[a-f0-9]{12})-wrap$/D', $class_name, $marker ) ) {
 						if ( $is_wrapper ) {
 							$fullspan_child_classes[] = $marker[1] . '-wrap';
@@ -354,7 +359,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			$html
 		);
 		if ( ! is_string( $projected ) || ( empty( $wrapper_layers ) && empty( $composite_layers ) && empty( $fullspan_child_classes ) && empty( $phone_destination_classes ) ) ) {
-			return is_string( $projected ) ? self::project_semantic_wrappers( $projected ) : $html;
+			return self::with_textarea_rows( is_string( $projected ) ? self::project_semantic_wrappers( $projected ) : $html, $textarea_rows );
 		}
 
 		ksort( $wrapper_layers );
@@ -454,7 +459,51 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			);
 			$wrapped        = is_string( $prefixed ) ? $prefixed : $wrapped;
 		}
-		return self::project_semantic_wrappers( $wrapped );
+		return self::with_textarea_rows( self::project_semantic_wrappers( $wrapped ), $textarea_rows );
+	}
+
+	/**
+	 * Carry an authored textarea row count onto Jetpack's hardcoded `rows='20'`.
+	 *
+	 * Jetpack's textarea field has no rows block attribute and its PHP
+	 * renderer always emits 20. The seeder stores the source count as
+	 * `ssi-textarea-rows-N` on `jetpack/input`; that class lands on the
+	 * rendered control through `inputclasses`. Rewrite the attribute and
+	 * drop the transport class so the browser sizes N line boxes using the
+	 * padding, border, and typography already carried onto the same field.
+	 */
+	public static function project_textarea_rows( string $html ): string {
+		$textarea_rows = null;
+		$projected     = preg_replace_callback(
+			'/\bclass=(["\'])(.*?)\1/s',
+			static function ( array $matches ) use ( &$textarea_rows ): string {
+				$classes = preg_split( '/\s+/', trim( $matches[2] ) );
+				$output  = array();
+				foreach ( false === $classes ? array() : $classes as $class_name ) {
+					if ( preg_match( '/^ssi-textarea-rows-([1-9][0-9]{0,1})$/D', $class_name, $marker ) ) {
+						$textarea_rows = $marker[1];
+						continue;
+					}
+					$output[] = $class_name;
+				}
+				return 'class=' . $matches[1] . implode( ' ', $output ) . $matches[1];
+			},
+			$html
+		);
+		return self::with_textarea_rows( is_string( $projected ) ? $projected : $html, $textarea_rows );
+	}
+
+	/** Apply a captured row count to the first textarea in a provider field. */
+	private static function with_textarea_rows( string $html, ?string $rows ): string {
+		if ( null === $rows || 1 !== preg_match( '/^[1-9][0-9]{0,1}$/D', $rows ) ) {
+			return $html;
+		}
+		$replaced = preg_replace( '/(<textarea\b[^>]*\brows=)(["\'])[^"\']*\2/is', '${1}${2}' . $rows . '${2}', $html, 1 );
+		if ( is_string( $replaced ) && $replaced !== $html ) {
+			return $replaced;
+		}
+		$added = preg_replace( '/<textarea\b/i', '<textarea rows="' . $rows . '"', $html, 1 );
+		return is_string( $added ) ? $added : $html;
 	}
 
 	/** Restore a bounded source paragraph around a provider-owned field or button. */
