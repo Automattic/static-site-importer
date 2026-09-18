@@ -248,7 +248,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 			// and jetpack/field-radio - accept the attribute without ever
 			// displaying it, so storing it there would ship a value the visitor
 			// never sees. Report that as the same unsupported-attribute loss an
-			// unrepresentable min/max/step already uses instead of doing that.
+			// unrepresentable numeric step already uses instead of doing that.
 			if ( self::provider_renders_help_text( $lookup ) ) {
 				$attrs['helpText'] = $description;
 			} else {
@@ -329,21 +329,16 @@ final class Static_Site_Importer_Form_Field_Markup {
 			} elseif ( 'select' === $lookup ) {
 				$input_attrs['type'] = 'dropdown';
 			}
-			if ( self::provider_supports_input_attribute( $lookup, 'step' ) && isset( $control['step'] ) && is_scalar( $control['step'] ) && '' !== trim( (string) $control['step'] ) ) {
-				$input_attrs['step'] = trim( (string) $control['step'] );
-			}
-			$inner_blocks[] = array(
-				'name'  => in_array( $lookup, array( 'tel', 'phone' ), true ) ? 'jetpack/phone-input' : 'jetpack/input',
-				'attrs' => $input_attrs,
-			);
-		}
-
-		if ( 'number' === $lookup ) {
-			foreach ( array( 'min', 'max', 'step' ) as $attribute ) {
-				if ( self::provider_supports_input_attribute( $lookup, $attribute ) ) {
-					continue;
-				}
-				if ( isset( $control[ $attribute ] ) && is_scalar( $control[ $attribute ] ) && '' !== trim( (string) $control[ $attribute ] ) ) {
+			if ( 'number' === $lookup ) {
+				foreach ( array( 'min', 'max', 'step' ) as $attribute ) {
+					if ( ! isset( $control[ $attribute ] ) || ! is_scalar( $control[ $attribute ] ) || '' === trim( (string) $control[ $attribute ] ) ) {
+						continue;
+					}
+					if ( Static_Site_Importer_Jetpack_Forms_Runtime::input_supports_attribute( $lookup, $attribute ) ) {
+						$value                     = trim( (string) $control[ $attribute ] );
+						$input_attrs[ $attribute ] = is_numeric( $value ) ? 0 + $value : $value;
+						continue;
+					}
 					$losses[] = array(
 						'dimension'         => 'control',
 						'reason_code'       => 'unsupported_control_attribute',
@@ -352,6 +347,10 @@ final class Static_Site_Importer_Form_Field_Markup {
 					);
 				}
 			}
+			$inner_blocks[] = array(
+				'name'  => in_array( $lookup, array( 'tel', 'phone' ), true ) ? 'jetpack/phone-input' : 'jetpack/input',
+				'attrs' => $input_attrs,
+			);
 		}
 		$block_name                    = 'checkbox' === $lookup && ! empty( $attrs['options'] ) ? 'jetpack/field-checkbox-multiple' : $map[ $lookup ];
 		$attrs['shareFieldAttributes'] = false;
@@ -375,11 +374,6 @@ final class Static_Site_Importer_Form_Field_Markup {
 	public static function textarea_rows( array $control ): ?int {
 		$rows = isset( $control['rows'] ) && is_scalar( $control['rows'] ) ? (int) $control['rows'] : 2;
 		return ( $rows >= 1 && $rows <= 50 ) ? $rows : null;
-	}
-
-	/** Return whether the selected Jetpack input block can carry a source attribute. */
-	private static function provider_supports_input_attribute( string $lookup, string $attribute ): bool {
-		return 'number' === $lookup && 'step' === $attribute;
 	}
 
 	/**
