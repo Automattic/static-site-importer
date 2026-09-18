@@ -108,6 +108,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-validation-runtime.php',
 	'class-static-site-importer-diagnostic-projection.php',
 	'class-static-site-importer-quality-gates.php',
+	'class-static-site-importer-visual-parity-oracle.php',
 	'class-static-site-importer-product-finding-materializer.php',
 	'class-static-site-importer-report-diagnostics.php',
 	'class-static-site-importer-failed-plan-validation.php',
