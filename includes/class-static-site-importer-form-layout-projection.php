@@ -2110,12 +2110,15 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'role'       => 'control',
 					'selector'   => '.' . $scope . ' .' . $control_class . ( 'submit' === $type ? ' > .wp-block-button__link' : '' ),
 					'properties' => $properties,
-					// Provider controls inherit theme typography. Revert to each browser's
-					// native control defaults unless source CSS owns either property.
+					// Native fields revert unowned typography to the browser control
+					// default. A submit is painted as wp-element-button, so the same
+					// reset would resolve to UA `normal` and drop document-authored
+					// line-height the source button inherited. Inherit instead; an
+					// explicit source declaration still wins at this destination.
 					'resets'     => array_merge(
 						array(
-							'font-family' => 'revert',
-							'line-height' => 'revert',
+							'font-family' => 'submit' === $type ? 'inherit' : 'revert',
+							'line-height' => 'submit' === $type ? 'inherit' : 'revert',
 						),
 					'submit' === $type ? array( 'min-height' => '0' ) : array()
 				),
