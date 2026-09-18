@@ -927,9 +927,11 @@ class Static_Site_Importer_Companion_Plugin {
 	 * set) and on* / data-wp-* attributes are removed in paired, self-closing,
 	 * and bare attribute forms. Custom elements become inert div wrappers so
 	 * their safe selector identity and presentation survive. URL-bearing
-	 * attributes are protocol-checked, and the result is KSES-filtered against
-	 * an SVG-aware allowlist so inline SVG structure survives while nothing
-	 * executable reaches the frontend.
+	 * attributes are protocol-checked, inline `image-set()` notations are
+	 * lowered to the `url()` fallback KSES accepts so background-only imagery
+	 * is not discarded with its style attribute, and the result is KSES-filtered
+	 * against an SVG-aware allowlist so inline SVG structure survives while
+	 * nothing executable reaches the frontend.
 	 *
 	 * @return string
 	 */
@@ -1051,10 +1053,104 @@ $content = preg_replace_callback(
 	},
 	$content
 ) ?? '';
+// WordPress core's safecss_filter_attr() knows url() and the gradient
+// functions, but has no allowance for image-set(). Its residual parenthesis
+// trips the unsafe-CSS guard, so the declaration is discarded, and because
+// that declaration is usually the element's only one the whole style attribute
+// goes with it: an image carried solely by a background becomes an empty box.
+// Lower image-set() to the plain url() fallback the sanitizer already accepts,
+// preferring the 1x candidate the way a browser without image-set() support
+// would, so the picture survives the boundary instead of the boundary having
+// to be widened around it.
+$image_set_candidate = static function ( string $candidate ): array {
+	$candidate = trim( $candidate );
+	if ( '' === $candidate ) {
+		return array( '', '' );
+	}
+	if ( preg_match( '/^url\(/i', $candidate ) ) {
+		$depth  = 1;
+		$length = strlen( $candidate );
+		for ( $offset = 4; $offset < $length && $depth > 0; ++$offset ) {
+			if ( '(' === $candidate[ $offset ] ) {
+				++$depth;
+			} elseif ( ')' === $candidate[ $offset ] ) {
+				--$depth;
+			}
+		}
+		return 0 === $depth
+			? array( substr( $candidate, 0, $offset ), trim( substr( $candidate, $offset ) ) )
+			: array( '', '' );
+	}
+	$pieces = preg_split( '/\s+/', $candidate, 2 );
+	return false === $pieces || '' === trim( (string) $pieces[0] )
+		? array( '', '' )
+		: array( 'url(' . trim( (string) $pieces[0] ) . ')', trim( (string) ( $pieces[1] ?? '' ) ) );
+};
+$image_set_fallback = static function ( string $notation ) use ( $image_set_candidate ): string {
+	$candidates = array();
+	$current    = '';
+	$depth      = 0;
+	for ( $offset = 0, $length = strlen( $notation ); $offset < $length; ++$offset ) {
+		$character = $notation[ $offset ];
+		if ( '(' === $character ) {
+			++$depth;
+		} elseif ( ')' === $character && $depth > 0 ) {
+			--$depth;
+		} elseif ( ',' === $character && 0 === $depth ) {
+			$candidates[] = $current;
+			$current      = '';
+			continue;
+		}
+		$current .= $character;
+	}
+	$candidates[] = $current;
+	$fallback     = '';
+	foreach ( $candidates as $candidate ) {
+		list( $reference, $descriptor ) = $image_set_candidate( $candidate );
+		if ( '' === $reference ) {
+			continue;
+		}
+		if ( '' === $fallback ) {
+			$fallback = $reference;
+		}
+		if ( preg_match( '/(?:^|\s)1(?:\.0+)?x(?:\s|$)/i', $descriptor ) ) {
+			return $reference;
+		}
+	}
+	return $fallback;
+};
+$lower_image_sets = static function ( string $value ) use ( $image_set_fallback ): string {
+	for ( $pass = 0; $pass < 32; ++$pass ) {
+		if ( ! preg_match( '/(?:-webkit-)?image-set\(/i', $value, $found, PREG_OFFSET_CAPTURE ) ) {
+			return $value;
+		}
+		$start  = (int) $found[0][1];
+		$open   = $start + strlen( (string) $found[0][0] );
+		$length = strlen( $value );
+		$depth  = 1;
+		for ( $offset = $open; $offset < $length && $depth > 0; ++$offset ) {
+			if ( '(' === $value[ $offset ] ) {
+				++$depth;
+			} elseif ( ')' === $value[ $offset ] ) {
+				--$depth;
+			}
+		}
+		if ( 0 !== $depth ) {
+			return $value;
+		}
+		$fallback = $image_set_fallback( substr( $value, $open, $offset - 1 - $open ) );
+		if ( '' === $fallback ) {
+			return $value;
+		}
+		$value = substr( $value, 0, $start ) . $fallback . substr( $value, $offset );
+	}
+	return $value;
+};
 $content = preg_replace_callback(
 	'/\bstyle\s*=\s*(?:("|\')(.*?)\1|([^\s>]+))/is',
-	static function ( array $match ) use ( $safe_url ): string {
+	static function ( array $match ) use ( $safe_url, $lower_image_sets ): string {
 		$value = '' !== ( $match[2] ?? '' ) ? $match[2] : ( $match[3] ?? '' );
+		$value = $lower_image_sets( $value );
 		if ( preg_match_all( '/url\(\s*["\']?([^\s)"\']+)/i', $value, $urls ) ) {
 			foreach ( $urls[1] as $url ) {
 				if ( ! $safe_url( $url, true ) ) {
