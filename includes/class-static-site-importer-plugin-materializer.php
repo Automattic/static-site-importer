@@ -132,12 +132,16 @@ class Static_Site_Importer_Plugin_Materializer {
 				try {
 					$report['lifecycle_replay'] = self::complete_activation_lifecycle_replay( $lifecycle );
 				} catch ( Throwable $error ) {
-					return self::failed_report(
-						$report,
-						new WP_Error(
-							'static_site_importer_plugin_lifecycle_replay_failed',
-							sprintf( 'Plugin %s activated but its WordPress lifecycle callbacks failed: %s', $slug, $error->getMessage() )
-						)
+					// WordPress's active_plugins state already reflects a successful
+					// activation at this point; a dependency's own init-time bootstrap
+					// was never written to run out-of-band inside a replay, so it can
+					// throw here without that meaning install or activation failed.
+					// Record the cause and let the shared post-activation readiness
+					// check below decide whether this defers to a fresh request,
+					// exactly as it already does for an available()-false result.
+					$report['lifecycle_replay_error'] = array(
+						'code'    => 'static_site_importer_plugin_lifecycle_replay_failed',
+						'message' => sprintf( 'Plugin %s activated but its WordPress lifecycle callbacks failed to replay in this request: %s', $slug, $error->getMessage() ),
 					);
 				}
 
