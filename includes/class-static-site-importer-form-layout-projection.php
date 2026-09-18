@@ -1271,13 +1271,51 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 		}
 		if ( ! empty( $merged_boxes ) ) {
-			if ( ! empty( $merged_base ) ) {
-				$overlay_node_targets[] = array(
-					'id'     => 'form',
-					'layout' => $merged_base,
-				);
+			$sibling_submit_indexes = array();
+			foreach ( $controls as $control_index => $control ) {
+				if ( 'submit' === strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) && '$root' === ( $control_parents[ $control_index ] ?? '$root' ) ) {
+					$sibling_submit_indexes[] = $control_index;
+				}
 			}
-			$responsive_variant_targets = array_merge( $responsive_variant_targets, $merged_variants );
+			// Jetpack paints fields and submit as siblings of one field list. A source
+			// submit that sits beside that list must not become a member of it: the
+			// authored top margin (mt-9) would sit inside the list gap, or a gap
+			// cancel would overwrite it. Keep the list's display/gap on a dedicated
+			// inner wrapper and leave the submit outside.
+			$use_field_list = ! empty( $sibling_submit_indexes );
+			if ( $use_field_list ) {
+				$form_classes[]      = 'ssi-source-field-list';
+				$field_list_layout   = $merged_base;
+				$field_list_row_gap  = self::layout_row_gap( $transposed_layout );
+				if ( is_string( $field_list_row_gap ) ) {
+					$gap_key                   = isset( $transposed_layout['row_gap'] ) ? 'row_gap' : 'gap';
+					$field_list_layout[ $gap_key ] = $field_list_row_gap;
+					if ( ( $form_base[ $gap_key ] ?? null ) === $field_list_row_gap ) {
+						$suppressed_layout_properties['form'] = array_values( array_unique( array_merge( $suppressed_layout_properties['form'] ?? array(), array( $gap_key ) ) ) );
+					}
+				}
+				if ( ! empty( $field_list_layout ) ) {
+					$overlay_node_targets[] = array(
+						'id'     => 'field-list',
+						'layout' => $field_list_layout,
+					);
+				}
+				foreach ( $merged_variants as $variant ) {
+					$responsive_variant_targets[] = array(
+						'node'         => 'field-list',
+						'condition'    => $variant['condition'] ?? null,
+						'layout_patch' => $variant['layout_patch'],
+					);
+				}
+			} else {
+				if ( ! empty( $merged_base ) ) {
+					$overlay_node_targets[] = array(
+						'id'     => 'form',
+						'layout' => $merged_base,
+					);
+				}
+				$responsive_variant_targets = array_merge( $responsive_variant_targets, $merged_variants );
+			}
 			foreach ( $merged_boxes as $box_id ) {
 				$overlay_represented_nodes[] = $box_id;
 				$operations[]                = array(
@@ -1286,43 +1324,40 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'target_hash' => hash( 'sha256', $box_id ),
 				);
 			}
-			// A submit exempted from the box's own branch (Jetpack always renders
-			// it as the field container's sibling, never its descendant) becomes
-			// a direct child of whichever element now carries that box's own
-			// layout. A grid must still span every track. The transposed gap must
-			// not add to the submit's authored margin, so the item cancels it.
-			$row_gap     = self::layout_row_gap( $transposed_layout );
-			$negated_gap = is_string( $row_gap ) ? self::negate_layout_length( $row_gap ) : null;
-			foreach ( $controls as $control_index => $control ) {
-				if ( 'submit' !== strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) || '$root' !== ( $control_parents[ $control_index ] ?? '$root' ) ) {
-					continue;
-				}
-				$layout = array();
-				if ( 'grid' === ( $transposed_layout['display'] ?? null ) ) {
-					$layout['column'] = '1 / -1';
-				}
-				if ( is_string( $negated_gap ) ) {
-					$layout['margin_block_start'] = $negated_gap;
-				}
-				if ( ! empty( $layout ) ) {
-					$overlay_node_targets[] = array(
-						'id'     => 'control-' . $control_index,
-						'layout' => $layout,
-					);
-				}
-				foreach ( $merged_variants as $variant ) {
-					// layout_patch is set at the single construction site above, guarded by
-					// ! empty( $patch ), so it always exists and is always a non-empty array.
-					$variant_gap     = self::layout_row_gap( $variant['layout_patch'] );
-					$negated_variant = is_string( $variant_gap ) ? self::negate_layout_length( $variant_gap ) : null;
-					if ( ! is_string( $negated_variant ) ) {
-						continue;
+			if ( ! $use_field_list ) {
+				// A submit exempted from the box's own branch (Jetpack always renders
+				// it as the field container's sibling, never its descendant) becomes
+				// a direct child of whichever element now carries that box's own
+				// layout. A grid must still span every track. The transposed gap must
+				// not add to the submit's authored margin, so the item cancels it.
+				$row_gap     = self::layout_row_gap( $transposed_layout );
+				$negated_gap = is_string( $row_gap ) ? self::negate_layout_length( $row_gap ) : null;
+				foreach ( $sibling_submit_indexes as $control_index ) {
+					$layout = array();
+					if ( 'grid' === ( $transposed_layout['display'] ?? null ) ) {
+						$layout['column'] = '1 / -1';
 					}
-					$responsive_variant_targets[] = array(
-						'node'         => 'control-' . $control_index,
-						'condition'    => $variant['condition'] ?? null,
-						'layout_patch' => array( 'margin_block_start' => $negated_variant ),
-					);
+					if ( is_string( $negated_gap ) ) {
+						$layout['margin_block_start'] = $negated_gap;
+					}
+					if ( ! empty( $layout ) ) {
+						$overlay_node_targets[] = array(
+							'id'     => 'control-' . $control_index,
+							'layout' => $layout,
+						);
+					}
+					foreach ( $merged_variants as $variant ) {
+						$variant_gap     = self::layout_row_gap( $variant['layout_patch'] );
+						$negated_variant = is_string( $variant_gap ) ? self::negate_layout_length( $variant_gap ) : null;
+						if ( ! is_string( $negated_variant ) ) {
+							continue;
+						}
+						$responsive_variant_targets[] = array(
+							'node'         => 'control-' . $control_index,
+							'condition'    => $variant['condition'] ?? null,
+							'layout_patch' => array( 'margin_block_start' => $negated_variant ),
+						);
+					}
 				}
 			}
 		}
@@ -2132,13 +2167,24 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$properties   = array_keys( 'submit' === $type ? Static_Site_Importer_Provider_Layout_Overlay::positioned_control_presentation_property_keys() : Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() );
 				$inner_suffix = 'submit' === $type ? ' > .wp-block-button__link' : ( 'select' === $type ? ' select' : '' );
 				if ( '' !== $inner_suffix ) {
+					$wrapper_properties = array( 'display', 'width', 'min_width' );
+					if ( 'submit' === $type ) {
+						// Gutenberg's `is-layout-flex > * { margin:0 }` zeros a submit
+						// wrapper's authored class margin. Carry vertical spacing onto
+						// that wrapper through the overlay so it outranks the layout
+						// reset, and keep it off the inner link (which is also zeroed).
+						$wrapper_properties = array_merge(
+							$wrapper_properties,
+							array( 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end' )
+						);
+					}
 					$wrapper = array(
 						'role'       => 'control',
 						'selector'   => '.' . $scope . ' .' . $control_class,
 						// A nested native control's wrapper shrink-wraps unless source
 						// display, width, and min-width reach it. The authored box belongs
 						// on the inner control, the same way submit facts reach the link.
-						'properties' => array( 'display', 'width', 'min_width' ),
+						'properties' => $wrapper_properties,
 					);
 					if ( 'select' === $type ) {
 						// Jetpack parks input className on the select wrapper and paints
@@ -2151,7 +2197,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 						);
 					}
 					$destinations[] = $wrapper;
-					$properties     = array_values( array_diff( $properties, array( 'display', 'width', 'min_width' ) ) );
+					$properties     = array_values( array_diff( $properties, $wrapper_properties ) );
 				}
 				$destination = array(
 					'role'       => 'control',
@@ -2561,7 +2607,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				continue;
 			}
 			$id = $node['id'];
-			if ( 'form' !== $id && 'form-box' !== $id && ! isset( $box_targets[ $id ] ) && ! preg_match( '/^(?:control|field)-[0-9]+$/D', $id ) ) {
+			if ( 'form' !== $id && 'form-box' !== $id && 'field-list' !== $id && ! isset( $box_targets[ $id ] ) && ! preg_match( '/^(?:control|field)-[0-9]+$/D', $id ) ) {
 				continue;
 			}
 			if ( 'form-box' === $id ) {
@@ -2569,6 +2615,9 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				// so that wrapper is the element carrying the form box's page placement.
 				$selector     = $selector_scope;
 				$capabilities = array( 'direct_child_layout', 'item_layout', 'responsive_layout' );
+			} elseif ( 'field-list' === $id ) {
+				$selector     = $selector_scope . ' .ssi-source-field-list';
+				$capabilities = array( 'container_layout', 'responsive_layout' );
 			} elseif ( 'form' === $id ) {
 				// Jetpack renders its own form element for a page's first contact form
 				// and lays later ones out directly in the block wrapper. Address both,
