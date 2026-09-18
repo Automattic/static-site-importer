@@ -115,30 +115,104 @@ class Static_Site_Importer_Dependency_Manager {
 			$reports[ $id ] = ! empty( $args['materialize_dependencies'] ) ? self::materialize_plugin_dependencies( $adapter, ! empty( $args['overwrite'] ) ) : array( 'status' => 'available' );
 			foreach ( $reports[ $id ] as $plugin_report ) {
 				if ( is_array( $plugin_report ) && 'failed' === ( $plugin_report['status'] ?? '' ) ) {
-					return new WP_Error(
-						'static_site_importer_required_runtime_dependency_failed',
-						'SSI could not install or activate a required runtime dependency.',
-						array(
-							'status'         => 'partial',
-							'declaration_id' => $id,
-							'dependency'     => $plugin_report,
-						)
-					);
+					return self::dependency_materialization_failed_error( $id, $plugin_report );
 				}
 			}
 			if ( 'prepare' !== ( $args['runtime_lifecycle_phase'] ?? '' ) && ! self::dependencies_available( $adapter ) && $required ) {
-				return new WP_Error(
-					'static_site_importer_required_runtime_dependency_missing',
-					'SSI could not prepare a required runtime dependency.',
-					array(
-						'status'                    => 'partial',
-						'completed_declaration_ids' => array_keys( $reports ),
-						'dependency_reports'        => $reports,
-					)
-				);
+				return self::dependency_not_ready_error( $id, $reports );
 			}
 		}
 		return $reports;
+	}
+
+	/**
+	 * Build a diagnostic for a dependency whose materialization genuinely
+	 * failed, naming the exact lifecycle stage — install, activation, or a
+	 * residual readiness failure after both succeeded — instead of a single
+	 * generic "could not install or activate" message regardless of cause.
+	 */
+	private static function dependency_materialization_failed_error( string $id, array $plugin_report ): WP_Error {
+		$slug    = (string) ( $plugin_report['slug'] ?? '' );
+		$target  = '' !== $slug ? sprintf( '%s plugin', $slug ) : 'runtime dependency';
+		$detail  = is_array( $plugin_report['error'] ?? null ) ? trim( (string) ( $plugin_report['error']['message'] ?? '' ) ) : '';
+		$stage   = self::dependency_failure_stage( $plugin_report );
+		$message = match ( $stage ) {
+			'install'    => sprintf( 'SSI could not install the required %s.', $target ),
+			'activation' => sprintf( 'SSI installed the required %s but could not activate it.', $target ),
+			default      => sprintf( 'SSI installed and activated the required %s, but it failed to become ready.', $target ),
+		};
+		if ( '' !== $detail ) {
+			$message .= ' ' . $detail;
+		}
+		return new WP_Error(
+			'static_site_importer_required_runtime_dependency_failed',
+			$message,
+			array(
+				'status'         => 'partial',
+				'declaration_id' => $id,
+				'failure_stage'  => $stage,
+				'dependency'     => $plugin_report,
+			)
+		);
+	}
+
+	/** Whether a failed materialization report failed at install, activation, or after both succeeded. */
+	private static function dependency_failure_stage( array $plugin_report ): string {
+		if ( empty( $plugin_report['installed'] ) ) {
+			return 'install';
+		}
+		if ( empty( $plugin_report['active'] ) ) {
+			return 'activation';
+		}
+		return 'readiness';
+	}
+
+	/**
+	 * Build a diagnostic for a dependency that installed and activated
+	 * cleanly but whose availability probe is still not satisfied — a plugin
+	 * whose capability registers on `init` cannot prove readiness in the same
+	 * request that activated it. That is not an install or activation
+	 * failure; it is distinct evidence that this declaration still needs a
+	 * fresh request, which the lifecycle continuation already provides.
+	 *
+	 * @param array<string,array<string,mixed>> $reports Dependency reports gathered so far.
+	 */
+	private static function dependency_not_ready_error( string $id, array $reports ): WP_Error {
+		$pending = null;
+		foreach ( $reports[ $id ] ?? array() as $plugin_report ) {
+			if ( is_array( $plugin_report ) && ! empty( $plugin_report['installed'] ) && ! empty( $plugin_report['active'] ) ) {
+				$pending = $plugin_report;
+				break;
+			}
+		}
+		if ( is_array( $pending ) ) {
+			$slug = (string) ( $pending['slug'] ?? '' );
+			return new WP_Error(
+				'static_site_importer_required_runtime_dependency_missing',
+				sprintf(
+					'SSI installed and activated the required %s, but its runtime capability was not ready in this request. A fresh WordPress request is required before this dependency can be used.',
+					'' !== $slug ? $slug . ' plugin' : 'runtime dependency'
+				),
+				array(
+					'status'                    => 'partial',
+					'declaration_id'            => $id,
+					'readiness_stage'           => 'pending_fresh_runtime',
+					'completed_declaration_ids' => array_keys( $reports ),
+					'dependency_reports'        => $reports,
+				)
+			);
+		}
+		return new WP_Error(
+			'static_site_importer_required_runtime_dependency_missing',
+			'SSI could not prepare a required runtime dependency.',
+			array(
+				'status'                    => 'partial',
+				'declaration_id'            => $id,
+				'readiness_stage'           => 'not_installed',
+				'completed_declaration_ids' => array_keys( $reports ),
+				'dependency_reports'        => $reports,
+			)
+		);
 	}
 
 	/** @return array<string,mixed> */

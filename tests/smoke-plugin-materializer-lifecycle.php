@@ -163,7 +163,13 @@ function activate_plugin( string $plugin_file ) {
 			add_action(
 				'init',
 				static function (): void {
-					$GLOBALS['ssi_replay_order'][]  = 'init';
+					$GLOBALS['ssi_replay_order'][] = 'init';
+					if ( ! empty( $GLOBALS['ssi_replay_should_throw'] ) ) {
+						// Models a dependency whose own init-time bootstrap was never
+						// written to tolerate running outside WordPress's normal
+						// per-request lifecycle order (e.g. WooCommerce's real shape).
+						throw new RuntimeException( 'Dependency init bootstrap is incompatible with out-of-band replay.' );
+					}
 					$GLOBALS['ssi_runtime_ready'] = true;
 				}
 			);
@@ -201,6 +207,32 @@ $assert( 1 === did_action( 'plugins_loaded' ) && 1 === did_action( 'init' ) && 1
 $assert( 1 === ( $report['lifecycle_replay']['plugins_loaded'] ?? 0 ), 'plugins-loaded-replay-reported' );
 $assert( 1 === ( $report['lifecycle_replay']['init'] ?? 0 ), 'init-replay-reported' );
 $assert( 0 === $GLOBALS['ssi_install_attempts'], 'installed-inactive-does-not-install' );
+
+// A dependency's own init-time bootstrap can throw when replayed out-of-band
+// inside this request even though WordPress's active_plugins state already
+// reflects a genuinely successful activation (the false-negative this smoke
+// test guards: a real install+activation must never be reported as failed
+// just because same-request readiness replay could not be proven).
+$GLOBALS['ssi_activation_attempts']  = 0;
+$GLOBALS['ssi_plugin_active']        = false;
+$GLOBALS['ssi_runtime_ready']        = false;
+$GLOBALS['ssi_replay_order']         = array();
+$GLOBALS['ssi_preparation_calls']    = 0;
+$GLOBALS['ssi_replay_should_throw']  = true;
+$replay_throw_report = Static_Site_Importer_Plugin_Materializer::ensure_wp_org_plugin(
+	'late-plugin',
+	'late-plugin/late-plugin.php',
+	static fn (): bool => $GLOBALS['ssi_runtime_ready'],
+	static function (): bool {
+		++$GLOBALS['ssi_preparation_calls'];
+		return true;
+	}
+);
+$assert( 'activated_pending_fresh_runtime' === ( $replay_throw_report['status'] ?? '' ), 'lifecycle-replay-throw-defers-to-fresh-runtime-instead-of-failing' );
+$assert( true === ( $replay_throw_report['active'] ?? false ) && true === $GLOBALS['ssi_plugin_active'], 'lifecycle-replay-throw-still-reports-the-real-successful-activation' );
+$assert( 'static_site_importer_plugin_lifecycle_replay_failed' === ( $replay_throw_report['lifecycle_replay_error']['code'] ?? '' ), 'lifecycle-replay-throw-records-its-cause-as-a-diagnostic-not-a-failure' );
+$assert( false === $GLOBALS['ssi_runtime_ready'], 'lifecycle-replay-throw-leaves-readiness-genuinely-unproven-this-request' );
+$GLOBALS['ssi_replay_should_throw'] = false;
 
 $GLOBALS['ssi_activation_attempts'] = 0;
 $GLOBALS['ssi_plugin_active'] = true;
