@@ -679,6 +679,26 @@ if ( is_array( $descriptor ) ) {
 		$assert( str_contains( $svg_output, $fragment ), 'editable-render-preserves-inline-svg-' . $fragment, $svg_output );
 	}
 
+	// A picture carried only by an inline background must survive the boundary.
+	// WordPress core's safecss_filter_attr() has no allowance for image-set(),
+	// so it discards the declaration and, with it, the whole style attribute --
+	// a source video gallery arrives as a grid of empty boxes. The boundary
+	// lowers image-set() to the url() fallback core accepts, preferring the 1x
+	// candidate, without widening what reaches the frontend.
+	$image_set_markup = '<div class="video-thumb" data-hook="thumbnail-cover" style="background-image: image-set(url(&quot;/media/mqdefault.jpg&quot;) 1x, url(&quot;/media/maxresdefault.jpg&quot;) 2x);"><picture><img alt="Stick it to the Man" src="/media/mqdefault.jpg"></picture></div>';
+	$image_set_output = $render_frontend( $render, array( 'content' => $image_set_markup ) );
+	$assert( ! str_contains( $image_set_output, 'image-set(' ), 'editable-render-lowers-image-set-to-kses-safe-url', $image_set_output );
+	$assert( str_contains( $image_set_output, 'background-image: url(' ) && str_contains( $image_set_output, 'mqdefault.jpg' ) && ! str_contains( $image_set_output, 'maxresdefault.jpg' ), 'editable-render-keeps-image-set-1x-candidate-as-background-fallback', $image_set_output );
+
+	$webkit_image_set_output = $render_frontend( $render, array( 'content' => '<div class="hero" style="background-image:-webkit-image-set(url(/media/hero.jpg) 1x, url(/media/hero-2x.jpg) 2x);background-size:cover"></div>' ) );
+	$assert( ! str_contains( $webkit_image_set_output, 'image-set(' ) && str_contains( $webkit_image_set_output, 'url(/media/hero.jpg)' ) && str_contains( $webkit_image_set_output, 'background-size:cover' ), 'editable-render-lowers-prefixed-image-set-and-keeps-sibling-declarations', $webkit_image_set_output );
+
+	$descriptorless_image_set_output = $render_frontend( $render, array( 'content' => '<div class="tile" style="background-image:image-set(&quot;/media/tile.avif&quot; type(&quot;image/avif&quot;), &quot;/media/tile.jpg&quot; type(&quot;image/jpeg&quot;))"></div>' ) );
+	$assert( ! str_contains( $descriptorless_image_set_output, 'image-set(' ) && str_contains( $descriptorless_image_set_output, 'tile.avif' ) && ! str_contains( $descriptorless_image_set_output, 'tile.jpg' ), 'editable-render-lowers-descriptorless-image-set-to-first-candidate', $descriptorless_image_set_output );
+
+	$hostile_image_set_output = $render_frontend( $render, array( 'content' => '<div class="tile" style="background-image:image-set(url(javascript:alert(1)) 1x)"></div>' ) );
+	$assert( ! str_contains( strtolower( $hostile_image_set_output ), 'javascript' ) && ! str_contains( $hostile_image_set_output, 'style=' ), 'editable-render-still-drops-unsafe-image-set-candidates', $hostile_image_set_output );
+
 	// Every executable and animation vector stays stripped from editable
 	// rendering, across paired, self-closing, and bare/unquoted forms.
 	$hostile_markup = '<main onclick=alert(1) onmouseover=\'alert(2)\' data-wp-interactive data-wp-context=\'{"bad":true}\'><img src="safe.jpg" onerror=alert(4)><span>Kept copy</span><svg onload=alert(5)><path d="M0 0 L10 10" stroke="blue"></path><animate attributeName="x"></animate><animatemotion dur="1s"></animatemotion><set attributeName="z" to="1"></set><foreignObject><p>hidden</p></foreignObject></svg><script>alert(3)</script><style>*{color:red}</style><iframe src="https://evil.test/frame"></iframe><iframe src="https://evil.test/frame2"/><object data="https://evil.test/object"></object><object data="https://evil.test/object2"/><embed src="https://evil.test/embed"></embed><embed src="https://evil.test/embed2"/><animatetransform attributeName="transform"/><wow-image data-hook="hero">Custom element</wow-image></main>';
