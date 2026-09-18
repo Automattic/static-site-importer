@@ -60,6 +60,7 @@ $metadata   = array(
 				'type'  => 'heading',
 				'level' => 2,
 				'text'  => 'Updates',
+				'class' => 'font-serif text-2xl text-card-foreground',
 			),
 			array(
 				'type' => 'paragraph',
@@ -89,7 +90,7 @@ $assert( 19 === count( $manifest['controls'] ) && 'submit' === ( $manifest['cont
 
 $presentation = Static_Site_Importer_Form_Fallback_Contract::presentation_from_metadata( $metadata, 'form.newsletter', 3 );
 $assert( 'generic/form-presentation/v1' === ( $presentation['schema'] ?? '' ) && 'form.newsletter' === ( $presentation['selector'] ?? '' ) && 3 === ( $presentation['document_ordinal'] ?? 0 ), 'presentation-identifies-the-original-form' );
-$assert( 'Updates' === ( $presentation['context_before'][0]['text'] ?? '' ) && 'Required fields' === ( $presentation['context_before'][1]['text'] ?? '' ) && 'Unsubscribe any time.' === ( $presentation['context_after'][0]['text'] ?? '' ), 'presentation-keeps-bounded-before-and-after-context' );
+$assert( 'Updates' === ( $presentation['context_before'][0]['text'] ?? '' ) && 'font-serif text-2xl text-card-foreground' === ( $presentation['context_before'][0]['class'] ?? '' ) && 'Required fields' === ( $presentation['context_before'][1]['text'] ?? '' ) && 'Unsubscribe any time.' === ( $presentation['context_after'][0]['text'] ?? '' ), 'presentation-keeps-bounded-before-and-after-context' );
 $assert( true === ( $presentation['interleaved_context'] ?? false ) && 'Subscribe' === ( $presentation['submit_presentation']['text'] ?? '' ) && array( 'button', 'primary' ) === ( $presentation['submit_presentation']['classes'] ?? array() ), 'presentation-detects-interleaving-and-prefers-visible-submit-treatment' );
 $assert( 16 === count( $presentation['textarea_heights'] ?? array() ) && '1rem' === ( $presentation['textarea_heights'][1] ?? '' ) && 1 === ( $presentation['textarea_height_omitted_count'] ?? 0 ), 'presentation-bounds-textarea-heights-without-changing-control-order' );
 $assert( ! isset( $presentation['submit_presentation']['label_classes'] ), 'submit-treatment-without-a-label-element-reports-no-label-classes' );

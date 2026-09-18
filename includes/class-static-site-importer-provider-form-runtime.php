@@ -113,7 +113,24 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			$html,
 			1
 		);
-		return is_string( $projected ) ? $projected : $html;
+		if ( ! is_string( $projected ) ) {
+			return $html;
+		}
+		// Card chrome belongs on the page item once, not also on the field list
+		// Jetpack renders inside that item. Leaving padding/border classes on
+		// both boxes stacked the source card's own height on top of itself.
+		$stripped = preg_replace_callback(
+			'/<div\b([^>]*\bclass=(["\'])([^"\']*\bwp-block-jetpack-contact-form\b[^"\']*)\2)/i',
+			static function ( array $matches ): string {
+				$existing = preg_split( '/\s+/', trim( $matches[3] ) );
+				$existing = false === $existing ? array() : $existing;
+				$kept     = array_values( array_filter( $existing, static fn( string $class_name ): bool => ! self::is_form_box_chrome_class( $class_name ) ) );
+				return '<div' . str_replace( $matches[2] . $matches[3] . $matches[2], $matches[2] . implode( ' ', $kept ) . $matches[2], $matches[1] );
+			},
+			$projected,
+			1
+		);
+		return is_string( $stripped ) ? $stripped : $projected;
 	}
 
 	/** Field-list display/track utilities belong on the inner list, not the page item. */
@@ -122,6 +139,11 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			return false;
 		}
 		return 1 !== preg_match( '/(?:^|:)(?:grid-cols-|col-span-|gap-)/', $class_name );
+	}
+
+	/** Padding, border, radius, and fill size the card, not the field list. */
+	private static function is_form_box_chrome_class( string $class_name ): bool {
+		return 1 === preg_match( '/^(?:(?:sm|md|lg|xl|2xl):)?(?:p(?:[xyltrbse])?(?:-|$)|border(?:-|$)|rounded(?:-|$)|bg-)/', $class_name );
 	}
 
 	/** Restore a source plain-root fieldset around provider field content, never the form itself. */

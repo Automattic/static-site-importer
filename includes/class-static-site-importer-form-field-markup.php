@@ -488,10 +488,15 @@ final class Static_Site_Importer_Form_Field_Markup {
 				continue;
 			}
 			if ( 'heading' === ( $block['type'] ?? null ) ) {
-				$level    = min( 6, max( 1, (int) ( $block['level'] ?? 2 ) ) );
+				$level = min( 6, max( 1, (int) ( $block['level'] ?? 2 ) ) );
+				$attrs = 2 === $level ? array() : array( 'level' => $level );
+				$class = isset( $block['class'] ) && is_scalar( $block['class'] ) ? trim( (string) $block['class'] ) : '';
+				if ( '' !== $class ) {
+					$attrs['className'] = $class;
+				}
 				$blocks[] = array(
 					'name'    => 'core/heading',
-					'attrs'   => 2 === $level ? array() : array( 'level' => $level ),
+					'attrs'   => $attrs,
 					'wrapper' => 'heading',
 					'content' => $block['text'],
 				);
@@ -636,8 +641,12 @@ final class Static_Site_Importer_Form_Field_Markup {
 			$type    = 'submit' === $wrapper ? 'submit' : 'button';
 			$prefix  = "\n<div class=\"" . self::escape_attribute( $classes ) . '"><button type="' . $type . '" class="wp-block-button__link wp-element-button">' . self::rich_text_markup( $content, $label ) . "</button></div>\n";
 		} elseif ( 'heading' === $wrapper ) {
-			$level  = min( 6, max( 1, (int) ( $attrs['level'] ?? 2 ) ) );
-			$prefix = "\n<h" . $level . ' class="wp-block-heading">' . self::rich_text_markup( $content ) . '</h' . $level . ">\n";
+			$level   = min( 6, max( 1, (int) ( $attrs['level'] ?? 2 ) ) );
+			$classes = 'wp-block-heading';
+			if ( isset( $attrs['className'] ) && is_scalar( $attrs['className'] ) && '' !== trim( (string) $attrs['className'] ) ) {
+				$classes .= ' ' . trim( (string) $attrs['className'] );
+			}
+			$prefix = "\n<h" . $level . ' class="' . self::escape_attribute( $classes ) . '">' . self::rich_text_markup( $content ) . '</h' . $level . ">\n";
 		} elseif ( 'paragraph' === $wrapper ) {
 			$prefix = "\n<p>" . self::rich_text_markup( $content ) . "</p>\n";
 		} elseif ( 'group' === $wrapper ) {
