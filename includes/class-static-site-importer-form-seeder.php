@@ -130,7 +130,7 @@ class Static_Site_Importer_Form_Seeder {
 		return Static_Site_Importer_Provider_Form_Runtime_V1::project_submit_presentation( $html, $block );
 	}
 
-	/** Rebuild source input-only wrapper layers inside Jetpack's field shell. */
+	/** Restore the source field row onto the provider field shell. */
 	public static function project_provider_wrapper_classes( string $html ): string {
 		return Static_Site_Importer_Provider_Form_Runtime_V1::project_wrapper_classes( $html );
 	}

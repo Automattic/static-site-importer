@@ -830,7 +830,7 @@ namespace {
 	$direct_label_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $direct_label_form );
 	$direct_label_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $direct_label_validation['forms'] ?? array() ) );
 	$direct_label_css = (string) ( $direct_label_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' );
-	$assert( empty( $direct_label_validation['errors'] ) && 3 === substr_count( $direct_label_css, 'gap:1.2rem' ) && 2 === preg_match_all( '/\.ssi-node-[a-f0-9]{12}-wrap\{display:flex;flex-direction:column;gap:1\.2rem\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap > \.contact-form__input-error:not\(\.has-errors\)\{display:none\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap > \.grunion-field::placeholder\{color:revert\}/', $direct_label_css ) && null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $direct_label_seed['forms'][0]['provider_layout_overlay_css'] ?? null ), 'proven direct label/control sibling pairs preserve native placeholder appearance and suppress only inactive provider errors' );
+	$assert( empty( $direct_label_validation['errors'] ) && 3 === substr_count( $direct_label_css, 'gap:1.2rem' ) && 2 === preg_match_all( '/\.ssi-node-[a-f0-9]{12}-wrap\{display:flex;flex-direction:column;gap:1\.2rem\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)\{display:none\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__field-hints\{display:contents\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.ssi-field-row > label\{margin-block-end:0\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.grunion-field::placeholder\{color:revert\}/', $direct_label_css ) && null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $direct_label_seed['forms'][0]['provider_layout_overlay_css'] ?? null ), 'proven direct label/control sibling pairs preserve native placeholder appearance and suppress only inactive provider errors' );
 	$native_row_form = array(
 		'forms' => array( array(
 			'selector' => 'form.subscribe',
@@ -1668,7 +1668,7 @@ namespace {
 	$full_width_grid_field_css = (string) ( $full_width_grid_field_row['provider_layout_overlay_css']['css'] ?? '' );
 	$assert( 'mapped' === ( $full_width_grid_field_row['status'] ?? '' ) && in_array( 'provider_fullspan_grid_child', array_column( $full_width_grid_field_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ) && str_contains( $full_width_grid_field_css, 'display:grid;grid-template-columns:repeat(12, 1fr);gap:1rem;width:100%' ) && str_contains( $full_width_grid_field_css, 'grid-column:span 12' ), 'full-span-single-field-grid-retains-proven-tracks-and-native-child-placement', wp_json_encode( $full_width_grid_field_row ) );
 	$fullspan_child_runtime = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-email-wrap ssi-node-a1b2c3d4e5f6-wrap ssi-source-wrapper-0--source-grid-wrap ssi-source-fullspan-child--ssi-node-0f1e2d3c4b5a-wrap"><label>Email</label><input type="email"></div>' );
-	$assert( '<div class="grunion-field-email-wrap"><label>Email</label><div class="source-grid ssi-node-a1b2c3d4e5f6-wrap"><div class="ssi-node-0f1e2d3c4b5a-wrap"><input type="email"></div></div></div>' === $fullspan_child_runtime, 'full-span-grid-rebuilds-a-real-value-child-inside-the-source-grid-container', $fullspan_child_runtime );
+	$assert( '<div class="grunion-field-email-wrap"><div class="ssi-field-row source-grid ssi-node-a1b2c3d4e5f6-wrap"><label>Email</label><div class="ssi-node-0f1e2d3c4b5a-wrap"><input type="email"></div></div></div>' === $fullspan_child_runtime, 'full-span-grid-rebuilds-a-real-value-child-inside-the-source-grid-container', $fullspan_child_runtime );
 	$partial_grid_field_form = $full_width_grid_field_form;
 	$partial_grid_field_form['forms'][0]['layout_graph']['nodes'][2]['layout']['column'] = 'span 6';
 	$partial_grid_field_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $partial_grid_field_form )['forms'] ?? array() ) )['forms'][0] ?? array();
@@ -2076,13 +2076,13 @@ namespace {
 	$classless_owned_markup = (string) ( $classless_owned_seed['forms'][0]['block_markup'] ?? '' );
 	$assert( ! in_array( 'provider_wrapper_layout_unrepresentable', array_column( $classless_owned_losses, 'reason_code' ), true ) && str_contains( $classless_owned_markup, 'ssi-source-wrapper-1\u002d\u002dssi-node-' ), 'proven-classless-single-field-layout-projects-through-a-generated-wrapper-hook', $classless_owned_markup );
 	$projected_wrapper = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-text-wrap ssi-source-wrapper--field-wrap"><input class="ssi-source-wrapper--field source-input"></div>' );
-	$assert( '<div class="grunion-field-text-wrap"><div class="field"><input class="source-input"></div></div>' === $projected_wrapper, 'provider-runtime-rebuilds-source-wrapper-inside-field-shell', $projected_wrapper );
+	$assert( '<div class="grunion-field-text-wrap"><div class="ssi-field-row field"><input class="source-input"></div></div>' === $projected_wrapper, 'provider-runtime-rebuilds-source-wrapper-inside-field-shell', $projected_wrapper );
 	$layout_wrapper = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-text-wrap ssi-node-123456789abc-wrap ssi-source-wrapper--field-wrap"><input class="source-input"></div>' );
-	$assert( '<div class="grunion-field-text-wrap"><div class="field ssi-node-123456789abc-wrap"><input class="source-input"></div></div>' === $layout_wrapper, 'provider-runtime-places-source layout hooks on the restored source wrapper', $layout_wrapper );
+	$assert( '<div class="grunion-field-text-wrap"><div class="ssi-field-row field ssi-node-123456789abc-wrap"><input class="source-input"></div></div>' === $layout_wrapper, 'provider-runtime-places-source layout hooks on the restored source wrapper', $layout_wrapper );
 	$layered_wrapper = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-text-wrap ssi-source-wrapper-6--carrier-wrap ssi-source-wrapper-8--input-shell-wrap"><label>Name</label><input class="source-input"></div>' );
-	$assert( '<div class="grunion-field-text-wrap"><label>Name</label><div class="carrier"><div class="input-shell"><input class="source-input"></div></div></div>' === $layered_wrapper, 'provider-runtime-removes-provider-suffix-before-restoring-ordered-wrapper-carriers', $layered_wrapper );
+	$assert( '<div class="grunion-field-text-wrap"><div class="ssi-field-row carrier"><label>Name</label><div class="input-shell"><input class="source-input"></div></div></div>' === $layered_wrapper, 'provider-runtime-keeps-the-label-inside-the-outermost-source-wrapper', $layered_wrapper );
 	$projected_controls = implode( '', array_map( array( Static_Site_Importer_Form_Seeder::class, 'project_provider_wrapper_classes' ), array( '<div class="grunion-field-text-wrap ssi-source-wrapper-2--control-shell-wrap"><input class="control-hook"></div>', '<div class="grunion-field-textarea-wrap ssi-source-wrapper-2--control-shell-wrap"><textarea class="control-hook"></textarea></div>', '<div class="grunion-field-select-wrap ssi-source-wrapper-2--control-shell-wrap"><select class="control-hook"><option>One</option></select></div>' ) ) );
-	$assert( 3 === substr_count( $projected_controls, '<div class="control-shell">' ) && 3 === substr_count( $projected_controls, 'class="control-hook"' ) && ! str_contains( $projected_controls, 'ssi-source-wrapper-' ), 'wrapper-projection-preserves-input-textarea-and-select-control-relationships', $projected_controls );
+	$assert( 3 === substr_count( $projected_controls, '<div class="ssi-field-row control-shell">' ) && 3 === substr_count( $projected_controls, 'class="control-hook"' ) && ! str_contains( $projected_controls, 'ssi-source-wrapper-' ), 'wrapper-projection-preserves-input-textarea-and-select-control-relationships', $projected_controls );
 	$phone_wrapper = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-phone-wrap ssi-source-wrapper-2--control-shell-wrap"><div class="jetpack-field__input-phone-wrapper"><div class="jetpack-combobox-dropdown"><input class="jetpack-combobox-search" type="text"></div><input class="jetpack-field__input-element" type="tel"><input type="hidden" name="full-phone"></div></div>' );
 	$assert( str_contains( $phone_wrapper, '<div class="jetpack-combobox-dropdown"><input class="jetpack-combobox-search" type="text"></div>' ) && str_contains( $phone_wrapper, '<div class="control-shell"><input class="jetpack-field__input-element" type="tel"></div><input type="hidden" name="full-phone">' ), 'phone-wrapper-restoration-targets-value-control-without-wrapping-country-search-or-hidden-value', $phone_wrapper );
 	$assert( 1 === substr_count( $phone_wrapper, 'class="control-shell"' ) && $phone_wrapper === Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( $phone_wrapper ), 'phone-wrapper-restoration-is-single-target-and-idempotent' );
@@ -2099,6 +2099,36 @@ namespace {
 	$shared_xpath = new DOMXPath( $shared_document );
 	$assert( 1 === $shared_xpath->query( '//div[@class="shared-border"]/div[@class="jetpack-field__input-phone-wrapper"]/input[@type="tel"]' )->length && 1 === $shared_xpath->query( '//div[@class="shared-border"]//div[@class="prefix-box"]//button' )->length, 'shared-border-wraps-both-prefix-and-value-in-the-rendered-provider-tree' );
 	$assert( '<div class="grunion-field-text-wrap unrelated-wrap"><input class="control-hook"></div>' === $unmarked_provider_shell, 'wrapper-projection-does-not-rewrite-unmarked-provider-shells', $unmarked_provider_shell );
+	$described_row_html = '<div class="grunion-field-textarea-wrap ssi-source-wrapper-2--flex-wrap ssi-source-wrapper-2--flex-col-wrap ssi-source-wrapper-2--gap-2-wrap"><label>Why this nomination stands up</label><textarea rows="6"></textarea><div class="contact-form__input-error"></div></div>';
+	$described_row      = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( $described_row_html );
+	$assert(
+		str_contains( $described_row, '<div class="ssi-field-row flex flex-col gap-2">' )
+			&& str_contains( $described_row, '<label>Why this nomination stands up</label>' )
+			&& 1 === preg_match( '/<div class="ssi-field-row flex flex-col gap-2">.*<label>Why this nomination stands up<\/label>.*<textarea\b/s', $described_row )
+			&& ! str_contains( $described_row, 'grunion-field-textarea-wrap flex' ),
+		'outermost-source-field-row-keeps-the-label-inside-the-restored-wrapper',
+		$described_row
+	);
+	$described_source_html = '<style>.flex{display:flex}.flex-col{flex-direction:column}.gap-2{gap:.5rem}label{display:block}textarea{box-sizing:border-box;padding:12px;font-size:14px;line-height:20px;border:1px solid}</style><form>'
+		. '<div class="flex flex-col gap-2"><label>Why this nomination stands up</label><textarea rows="6" required></textarea><p class="text-xs">Evidence, outcomes and dates carry more weight than adjectives.</p></div>'
+		. '<button type="submit">Send</button></form>';
+	$described_source = class_exists( $artifact_compiler ) ? ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $described_source_html ) ) )->toArray() )['fallbacks'][0] ?? array() : array();
+	$described_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $described_source ) ) );
+	$described_seed      = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $described_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$described_markup    = (string) ( $described_seed['block_markup'] ?? '' );
+	$described_css       = (string) ( $described_seed['provider_layout_overlay_css']['css'] ?? '' );
+	$described_help_text = (string) ( $described_source['controls'][0]['description'] ?? '' );
+	$assert(
+		empty( $described_validated['errors'] )
+			&& 'mapped' === ( $described_seed['status'] ?? '' )
+			&& str_contains( $described_markup, 'ssi-textarea-rows-6' )
+			&& str_contains( $described_css, 'display:contents' )
+			&& str_contains( $described_css, 'contact-form__field-hints' )
+			&& ( '' === $described_help_text || 1 === preg_match( '/<!-- wp:jetpack\/field-textarea \{[^\n]*"helpText":"Evidence, outcomes and dates carry more weight than adjectives\."[^\n]*\} -->/', $described_markup ) )
+			&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $described_seed['provider_layout_overlay_css'] ?? null ),
+		'compiled-field-row-keeps-authored-textarea-rows-and-stops-hint-chrome-from-forming-its-own-box',
+		wp_json_encode( array( 'errors' => $described_validated['errors'] ?? array(), 'markup' => $described_markup, 'css' => $described_css, 'description' => $described_help_text ) )
+	);
 	$projected_submit = Static_Site_Importer_Form_Seeder::project_provider_submit_presentation(
 		'<div class="wp-block-button ssi-source-submit--source-submit"><button class="wp-block-button__link">Send</button></div>',
 		array( 'attrs' => array( 'className' => 'wp-block-button ssi-source-submit--source-submit' ) )

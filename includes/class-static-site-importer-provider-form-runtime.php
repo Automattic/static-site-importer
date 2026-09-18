@@ -276,13 +276,16 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	}
 
 	/**
-	 * Rebuild explicitly projected wrapper layers inside a provider field shell.
+	 * Rebuild explicitly projected wrapper layers onto a provider field.
 	 *
 	 * The seeder's `ssi-source-wrapper-N--CLASS-wrap` token is a bounded transport
 	 * contract. It never makes CLASS part of saved provider markup: this filter
-	 * recognizes it only on the provider field shell, then restores the layer
-	 * immediately around its native control. Older depth-qualified tokens remain
-	 * readable because they have already been persisted in imported content.
+	 * recognizes it only on the provider field shell. The outermost layer is the
+	 * source field row — it contained the label and any sibling description — so
+	 * it is restored onto that shell. Deeper layers still wrap the native control.
+	 * Phone composites keep wrapping only the value input. Older depth-qualified
+	 * tokens remain readable because they have already been persisted in imported
+	 * content.
 	 */
 	public static function project_wrapper_classes( string $html ): string {
 		$wrapper_layers            = array();
@@ -291,6 +294,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		$fullspan_child_classes    = array();
 		$phone_destination_classes = array();
 		$textarea_rows             = null;
+		$is_phone                  = (bool) preg_match( '/\bclass=(["\'])[^"\']*\bgrunion-field-(?:phone|telephone)-wrap\b[^"\']*\1/i', $html );
 		$projected                 = preg_replace_callback(
 			'/\bclass=(["\'])(.*?)\1/s',
 			static function ( array $matches ) use ( &$wrapper_layers, &$composite_layers, &$provider_layout_classes, &$fullspan_child_classes, &$phone_destination_classes, &$textarea_rows ): string {
@@ -363,11 +367,17 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		}
 
 		ksort( $wrapper_layers );
+		$field_row_classes = array();
+		if ( ! $is_phone && empty( $composite_layers ) && ! empty( $wrapper_layers ) ) {
+			$outer_depth       = array_key_first( $wrapper_layers );
+			$field_row_classes = array_values( array_unique( array_merge( array( 'ssi-field-row' ), $wrapper_layers[ $outer_depth ], $provider_layout_classes ) ) );
+			unset( $wrapper_layers[ $outer_depth ] );
+		}
 		$open  = '';
 		$close = '';
 		foreach ( $wrapper_layers as $depth => $classes ) {
 			$classes = array_values( array_unique( $classes ) );
-			if ( array_key_first( $wrapper_layers ) === $depth ) {
+			if ( $is_phone && array_key_first( $wrapper_layers ) === $depth ) {
 				$classes = array_values( array_unique( array_merge( $classes, $provider_layout_classes ) ) );
 			}
 			$open .= '<div class="' . implode( ' ', $classes ) . '">';
@@ -379,7 +389,6 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		}
 		// A phone field's country search precedes its value input in Jetpack's HTML.
 		// Target Jetpack's actual telephone control, leaving auxiliary and hidden inputs intact.
-		$is_phone                   = (bool) preg_match( '/\bclass=(["\'])[^"\']*\bgrunion-field-(?:phone|telephone)-wrap\b[^"\']*\1/i', $projected );
 		$pattern                    = $is_phone
 			? '/<input\b(?=[^>]*\btype\s*=\s*(["\'])tel\1)[^>]*>/is'
 			: '/<input\b[^>]*>|<textarea\b[^>]*>.*?<\/textarea>|<select\b[^>]*>.*?<\/select>/is';
@@ -410,6 +419,14 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			1
 		);
 		$wrapped                    = is_string( $wrapped ) ? $wrapped : $projected;
+		if ( ! empty( $field_row_classes ) ) {
+			$row_open = '<div class="' . implode( ' ', $field_row_classes ) . '">';
+			$with_row = preg_replace( '/(<div\b[^>]*\bgrunion-field-[A-Za-z0-9_-]+-wrap\b[^>]*>)/i', '$1' . $row_open, $wrapped, 1 );
+			if ( is_string( $with_row ) ) {
+				$close_at = strrpos( $with_row, '</div>' );
+				$wrapped  = false === $close_at ? $with_row : substr( $with_row, 0, $close_at ) . '</div>' . substr( $with_row, $close_at );
+			}
+		}
 		if ( ! empty( $composite_layers ) ) {
 			$document        = new \DOMDocument();
 			$previous_errors = libxml_use_internal_errors( true );

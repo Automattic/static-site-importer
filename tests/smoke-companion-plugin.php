@@ -1064,7 +1064,7 @@ $projected_submit = is_callable( $submit_filter ) ? call_user_func(
 $assert( str_contains( $projected_submit, 'class="wp-block-button"' ) && str_contains( $projected_submit, 'class="wp-block-button__link source-submit"' ), 'installed-companion-projects-submit-presentation-at-runtime' );
 $wrapper_filter = $GLOBALS['ssi_companion_registered_filters']['grunion_contact_form_field_html'][0][0] ?? null;
 $projected_wrapper = is_callable( $wrapper_filter ) ? call_user_func( $wrapper_filter, '<div class="grunion-field-text-wrap ssi-source-wrapper-2--source-box-wrap"><input type="text"></div>' ) : '';
-$assert( str_contains( $projected_wrapper, '<div class="source-box"><input type="text"></div>' ) && ! str_contains( $projected_wrapper, 'ssi-source-wrapper-' ), 'installed-companion-rebuilds-provider-input-wrapper-at-runtime' );
+$assert( str_contains( $projected_wrapper, '<div class="ssi-field-row source-box"><input type="text"></div>' ) && ! str_contains( $projected_wrapper, 'ssi-source-wrapper-' ), 'installed-companion-rebuilds-provider-input-wrapper-at-runtime' );
 $standalone_bootstrap = <<<'PHP'
 define( 'ABSPATH', __DIR__ . '/' );
 class WP_Block_Type {
@@ -1117,7 +1117,7 @@ $submit = $GLOBALS['filters']['render_block_core/button'][0] ?? null;
 $wrapper = $GLOBALS['filters']['grunion_contact_form_field_html'][0] ?? null;
 $submit_output = is_callable( $submit ) ? $submit( '<div class="wp-block-button ssi-source-submit--source-submit"><button>Send</button></div>', array( 'attrs' => array( 'className' => 'ssi-source-submit--source-submit' ) ) ) : '';
 $wrapper_output = is_callable( $wrapper ) ? $wrapper( '<div class="grunion-field-text-wrap ssi-source-wrapper-2--source-box-wrap"><input></div>' ) : '';
-exit( is_array( $classes ) && ! array_filter( $classes, static fn ( string $class ): bool => ! class_exists( $class, false ) ) && str_contains( $submit_output, 'source-submit' ) && str_contains( $wrapper_output, '<div class="source-box"><input>' ) ? 0 : 1 );
+exit( is_array( $classes ) && ! array_filter( $classes, static fn ( string $class ): bool => ! class_exists( $class, false ) ) && str_contains( $submit_output, 'source-submit' ) && str_contains( $wrapper_output, '<div class="ssi-field-row source-box"><input>' ) ? 0 : 1 );
 PHP;
 	$process = proc_open( array( PHP_BINARY, '-r', $bootstrap, ...$files, wp_json_encode( $classes ) ), array( 1 => array( 'pipe', 'w' ), 2 => array( 'pipe', 'w' ) ), $pipes );
 	if ( ! is_resource( $process ) ) {
