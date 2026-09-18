@@ -231,7 +231,8 @@ final class Static_Site_Importer_Quality_Gates {
 		if ( 'unsupported_html_fallback' !== ( $diagnostic['type'] ?? '' ) ) {
 			return false;
 		}
-		if ( ! in_array( $diagnostic['loss_class'] ?? '', array( 'runtime_island_preserved', 'preserved_runtime_island' ), true ) || ! in_array( $diagnostic['acceptability'] ?? '', array( 'acceptable_conversion', 'acceptable_preservation' ), true ) ) {
+		$loss_class = Static_Site_Importer_Diagnostic_Loss_Classes::canonicalize( (string) ( $diagnostic['loss_class'] ?? '' ) );
+		if ( Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND !== $loss_class || ! in_array( $diagnostic['acceptability'] ?? '', array( 'acceptable_conversion', 'acceptable_preservation' ), true ) ) {
 			return false;
 		}
 		if ( ! in_array( $diagnostic['preservation_strategy'] ?? '', array( 'sanitized_embed_markup', 'fallback_metadata_with_readable_blocks' ), true ) || '' === trim( (string) ( $diagnostic['runtime_requirement'] ?? '' ) ) || '' === trim( (string) ( $diagnostic['materialization_path'] ?? '' ) ) ) {

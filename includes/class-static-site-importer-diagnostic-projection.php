@@ -1310,8 +1310,8 @@ final class Static_Site_Importer_Diagnostic_Projection {
 				$machine['context'] = $context;
 			}
 
-			$row = array_merge( $machine, $diagnostic );
-			if ( Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND === $machine['loss_class'] ) {
+			$row = Static_Site_Importer_Diagnostic_Loss_Classes::apply( array_merge( $machine, $diagnostic ) );
+			if ( Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND === $row['loss_class'] ) {
 				$repair_bucket = isset( $row['repair_bucket'] ) && is_scalar( $row['repair_bucket'] ) ? (string) $row['repair_bucket'] : '';
 				if ( '' === $repair_bucket || in_array( $repair_bucket, array( 'static_site_import_quality', 'import_quality' ), true ) ) {
 					$row['repair_bucket'] = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
