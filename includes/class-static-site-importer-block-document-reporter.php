@@ -128,6 +128,9 @@ class Static_Site_Importer_Block_Document_Reporter {
 	/**
 	 * Analyze one generated block document for server-visible quality issues.
 	 *
+	 * This is a parse_blocks/serialize_blocks structural round-trip. It cannot
+	 * run Gutenberg validateBlock/save(), so gutenberg_save_validation stays unverified.
+	 *
 	 * Public so the theme generator can reuse it for materialized post_content analysis.
 	 *
 	 * @param string              $relative_path Theme-relative path.
@@ -143,14 +146,16 @@ class Static_Site_Importer_Block_Document_Reporter {
 			$report->increment_quality( 'core_html_block_count', $counts['core_html_block_count'] );
 			$report->increment_quality( 'freeform_block_count', $counts['freeform_block_count'] );
 			return array(
-				'path'                   => $relative_path,
-				'block_count'            => $counts['block_count'],
-				'core_html_block_count'  => $counts['core_html_block_count'],
-				'freeform_block_count'   => $counts['freeform_block_count'],
-				'invalid_block_count'    => 0,
-				'serialization_mismatch' => false,
-				'validation_method'      => $validation_method,
-				'validation_available'   => false,
+				'path'                               => $relative_path,
+				'block_count'                        => $counts['block_count'],
+				'core_html_block_count'              => $counts['core_html_block_count'],
+				'freeform_block_count'               => $counts['freeform_block_count'],
+				'invalid_block_count'                => 0,
+				'serialization_mismatch'             => false,
+				'validation_method'                  => $validation_method,
+				'validation_available'               => false,
+				'gutenberg_save_validation'          => 'unverified',
+				'gutenberg_save_validation_method'   => 'not_run',
 			);
 		}
 
@@ -216,14 +221,16 @@ class Static_Site_Importer_Block_Document_Reporter {
 		}
 
 		return array(
-			'path'                   => $relative_path,
-			'block_count'            => $block_count,
-			'core_html_block_count'  => $core_html_count,
-			'freeform_block_count'   => $freeform_count,
-			'invalid_block_count'    => $invalid_count,
-			'serialization_mismatch' => $serialization_mismatch,
-			'validation_method'      => $validation_method,
-			'validation_available'   => true,
+			'path'                             => $relative_path,
+			'block_count'                      => $block_count,
+			'core_html_block_count'            => $core_html_count,
+			'freeform_block_count'             => $freeform_count,
+			'invalid_block_count'              => $invalid_count,
+			'serialization_mismatch'           => $serialization_mismatch,
+			'validation_method'                => $validation_method,
+			'validation_available'             => true,
+			'gutenberg_save_validation'        => 'unverified',
+			'gutenberg_save_validation_method' => 'not_run',
 		);
 	}
 
