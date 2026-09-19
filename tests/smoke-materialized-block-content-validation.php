@@ -122,6 +122,8 @@ $generated = $report['generated_theme']['block_documents'][0] ?? array();
 $assert( 'patterns/page-home.php' === ( $generated['path'] ?? '' ), 'generated-document-path' );
 $assert( true === ( $generated['validation_available'] ?? false ), 'validation-available' );
 $assert( 'wordpress_parse_blocks_serialize_blocks' === ( $generated['validation_method'] ?? '' ), 'validation-method' );
+$assert( 'unverified' === ( $generated['gutenberg_save_validation'] ?? '' ), 'php-analysis-does-not-claim-gutenberg-save-validation' );
+$assert( 'not_run' === ( $generated['gutenberg_save_validation_method'] ?? '' ), 'php-analysis-does-not-run-validateBlock' );
 $assert( 1 === ( $generated['block_count'] ?? 0 ), 'block-count' );
 $assert( 0 === ( $generated['invalid_block_count'] ?? -1 ), 'valid-content-has-no-invalid-blocks' );
 $assert( array() === ( $report['materialized_content']['block_documents'] ?? null ), 'generated-analysis-does-not-report-materialized-post-content' );
@@ -180,6 +182,14 @@ Static_Site_Importer_Block_Document_Reporter::analyze_generated_theme_block_docu
 	$slash_report
 );
 $assert( 0 === ( $slash_report['quality']['invalid_block_count'] ?? -1 ), 'escaped-url-slashes-are-not-invalid-blocks' );
+
+$save_mismatch_markup = '<!-- wp:test/save-mismatch {"name":"country","required":true,"disabled":true} --><select name="country" required disabled></select><!-- /wp:test/save-mismatch -->';
+$save_mismatch_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( '/tmp/source/index.html' );
+$save_mismatch_analysis = Static_Site_Importer_Block_Document_Reporter::analyze_generated_block_document( 'posts/page-welfare.post_content', $save_mismatch_markup, $save_mismatch_report );
+$assert( 0 === ( $save_mismatch_analysis['invalid_block_count'] ?? -1 ), 'php-parse-serialize-is-blind-to-save-mismatch' );
+$assert( 0 === ( $save_mismatch_report['quality']['invalid_block_count'] ?? -1 ), 'php-quality-does-not-count-save-mismatch-as-invalid' );
+$assert( 'unverified' === ( $save_mismatch_analysis['gutenberg_save_validation'] ?? '' ), 'save-mismatch-remains-gutenberg-unverified-in-php' );
+$assert( false === ( $save_mismatch_analysis['serialization_mismatch'] ?? true ), 'save-mismatch-round-trips-structurally' );
 
 $form_html    = '<form class="newsletter" action="#" method="post"><input type="email" name="email" required><button type="submit">Subscribe</button></form>';
 $form_content = '<!-- wp:html ' . wp_json_encode( array( 'content' => $form_html ) ) . ' -->' . $form_html . '<!-- /wp:html -->';

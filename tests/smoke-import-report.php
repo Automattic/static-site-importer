@@ -201,6 +201,11 @@ $unsafe_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $uns
 $unsafe_summary = $unsafe_report['compact_summary'];
 $assert( false === $unsafe_quality['pass'] && true === $unsafe_quality['fail_import'] && 1 === $unsafe_quality['unsafe_layout_constraint_count'] && in_array( 'unsafe_layout_constraint', $unsafe_quality['failure_reasons'], true ), 'strict-quality-rejects-unsafe-layout-constraint' );
 $assert( true === ( $unsafe_summary['compiler']['available'] ?? false ) && 179 === ( $unsafe_summary['compiler']['block_count'] ?? 0 ) && 1 === ( $unsafe_summary['compiler']['page_count'] ?? 0 ), 'compact-summary-derives-compiler-evidence-from-canonical-plan' );
+$assert( 'unverified' === ( $unsafe_summary['gutenberg_save_validation'] ?? '' ), 'compact-summary-marks-gutenberg-save-validation-unverified' );
+$assert( 'unverified' === ( $unsafe_report['import_validation_result']['quality_gates']['gutenberg_block_validation']['status'] ?? '' ), 'validation-result-does-not-pass-unrun-gutenberg-save-validation' );
+$assert( 'wp.blocks.validateBlock' === ( $unsafe_report['import_validation_result']['quality_gates']['gutenberg_block_validation']['method'] ?? '' ), 'validation-result-names-the-missing-gutenberg-method' );
+$assert( 'unverified' === ( $unsafe_report['visual_parity_artifacts']['artifacts']['block_validation']['status'] ?? '' ), 'block-validation-artifact-is-unverified-without-validateBlock' );
+$assert( 'not_run' === ( $unsafe_report['visual_parity_artifacts']['artifacts']['block_validation']['validation_method'] ?? '' ), 'block-validation-artifact-does-not-imply-validateBlock' );
 
 $nested_context = array();
 for ( $index = 0; $index < 20; ++$index ) {
