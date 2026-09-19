@@ -885,14 +885,19 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 			}
 
-			// Group manifest entities that declare exactly one shared
-			// `commerce_collection` anchor (a detected product grid, where every
-			// member product's own binding points at the same one preserved
-			// source-page region) so that shared anchor resolves to exactly one
-			// replacement instead of racing N per-product replacements against the
-			// same source-page occurrence. Every other binding (forms, single
-			// products) keeps its established one-entity-one-binding resolution,
-			// unchanged.
+			// Group individual bindings — not whole entities — that declare one
+			// shared `commerce_collection` anchor (a detected product grid,
+			// where every member product's own binding for that grid points at
+			// the same one preserved source-page region) so that shared anchor
+			// resolves to exactly one replacement instead of racing N per-product
+			// replacements against the same source-page occurrence. Grouping by
+			// individual binding, rather than by an entity's full binding list,
+			// is what lets one product legitimately belong to more than one grid
+			// at once: it then carries one `commerce_collection` binding per
+			// grid, each judged and coalesced against its own grid's members
+			// independently of how many other anchors that same entity also
+			// claims. Every other binding (forms, single products) keeps its
+			// established one-binding-one-resolution, unchanged.
 			$groups      = array();
 			$group_order = array();
 			foreach ( $manifest_entities as $entity ) {
@@ -904,20 +909,25 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				if ( self::entity_result_declined( $result ) ) {
 					continue;
 				}
-				$first_binding = is_array( $entity['bindings'][0] ?? null ) ? $entity['bindings'][0] : array();
-				$is_collection = 1 === count( $entity['bindings'] ) && 'commerce_collection' === ( $first_binding['role'] ?? '' );
-				$group_key     = $is_collection
-					? 'collection:' . (string) ( $first_binding['source_path'] ?? '' ) . "\n" . hash( 'sha256', (string) ( $first_binding['search_block_markup'] ?? '' ) ) . "\n" . (string) ( $first_binding['occurrence'] ?? '' )
-					: 'single:' . $key . ':' . count( $groups );
-				if ( ! isset( $groups[ $group_key ] ) ) {
-					$groups[ $group_key ] = array();
-					$group_order[]        = $group_key;
+				foreach ( $entity['bindings'] as $binding ) {
+					if ( ! is_array( $binding ) ) {
+						continue;
+					}
+					$is_collection = 'commerce_collection' === ( $binding['role'] ?? '' );
+					$group_key     = $is_collection
+						? 'collection:' . (string) ( $binding['source_path'] ?? '' ) . "\n" . hash( 'sha256', (string) ( $binding['search_block_markup'] ?? '' ) ) . "\n" . (string) ( $binding['occurrence'] ?? '' )
+						: 'single:' . $key . ':' . count( $groups );
+					if ( ! isset( $groups[ $group_key ] ) ) {
+						$groups[ $group_key ] = array();
+						$group_order[]        = $group_key;
+					}
+					$groups[ $group_key ][] = array(
+						'key'     => $key,
+						'entity'  => $entity,
+						'binding' => $binding,
+						'result'  => $result,
+					);
 				}
-				$groups[ $group_key ][] = array(
-					'key'    => $key,
-					'entity' => $entity,
-					'result' => $result,
-				);
 			}
 
 			foreach ( $group_order as $group_key ) {
@@ -936,9 +946,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 								)
 							);
 						}
-						foreach ( $entity['bindings'] as $binding ) {
-							$bindings[] = self::block_binding_record( $declaration_id, $binding, $replacement, $entity, $prepared['adapter'] );
-						}
+						$bindings[] = self::block_binding_record( $declaration_id, $member['binding'], $replacement, $entity, $prepared['adapter'] );
 					}
 					continue;
 				}
@@ -953,7 +961,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						$product_ids[] = $id;
 					}
 				}
-				$anchor_binding = $members[0]['entity']['bindings'][0];
+				$anchor_binding = $members[0]['binding'];
 				$grid_entity    = array(
 					'entity_kind' => 'product_grid',
 					'product_ids' => $product_ids,
