@@ -210,6 +210,10 @@ final class Static_Site_Importer_Form_Field_Markup {
 		if ( '' === $label && in_array( $lookup, array( 'checkbox', 'radio', 'select' ), true ) ) {
 			$label = self::control_text( $control );
 		}
+		$description = self::control_description( $control );
+		if ( '' !== $description && '' !== $label && str_ends_with( $label, $description ) ) {
+			$label = trim( substr( $label, 0, -strlen( $description ) ) );
+		}
 		if ( '' !== $label && isset( $control['required_text'] ) && is_scalar( $control['label'] ?? null ) && 1 === preg_match( '/\s$/u', (string) $control['label'] ) ) {
 			$label = rtrim( $label ) . ' ';
 		}
@@ -227,16 +231,18 @@ final class Static_Site_Importer_Form_Field_Markup {
 			$attrs['showCountrySelector'] = 'phone' === $lookup;
 		}
 		$placeholder = isset( $control['placeholder'] ) && is_scalar( $control['placeholder'] ) ? trim( (string) $control['placeholder'] ) : '';
+		if ( 'select' === $lookup && '' === $placeholder ) {
+			$placeholder = self::select_placeholder_label( $control );
+		}
 
 		if ( in_array( $lookup, array( 'select', 'radio', 'checkbox' ), true ) ) {
-			$options = self::option_labels( $control );
+			$options = self::option_labels( $control, 'select' === $lookup );
 			if ( ! empty( $options ) ) {
 				$attrs['options'] = $options;
 			}
 		}
 
-		$losses      = array();
-		$description = self::control_description( $control );
+		$losses = array();
 		if ( '' !== $description ) {
 			// Every jetpack/field-* block declares this attribute (see
 			// projects/packages/forms/src/blocks/shared/settings/index.js), but
@@ -565,15 +571,19 @@ final class Static_Site_Importer_Form_Field_Markup {
 	/**
 	 * Extract option labels from a select/radio/checkbox control.
 	 *
-	 * @param array<string, mixed> $control Source control metadata.
+	 * @param array<string, mixed> $control            Source control metadata.
+	 * @param bool                 $omit_placeholders  Whether source placeholder options stay off the list.
 	 * @return array<int, string>
 	 */
-	private static function option_labels( array $control ): array {
+	private static function option_labels( array $control, bool $omit_placeholders = false ): array {
 		$options = isset( $control['options'] ) && is_array( $control['options'] ) ? $control['options'] : array();
 		$labels  = array();
 
 		foreach ( $options as $option ) {
 			if ( is_array( $option ) ) {
+				if ( $omit_placeholders && ! empty( $option['placeholder'] ) ) {
+					continue;
+				}
 				$label = isset( $option['label'] ) && is_scalar( $option['label'] ) ? trim( (string) $option['label'] ) : '';
 				if ( '' === $label && isset( $option['value'] ) && is_scalar( $option['value'] ) ) {
 					$label = trim( (string) $option['value'] );
@@ -588,6 +598,34 @@ final class Static_Site_Importer_Form_Field_Markup {
 		}
 
 		return $labels;
+	}
+
+	/**
+	 * Read a select's source-authored placeholder option, mapped onto Jetpack's
+	 * input placeholder / togglelabel rather than kept as a real option.
+	 *
+	 * Jetpack prepends a synthetic "Select an option" unless togglelabel or a
+	 * default is set. The source's empty-value disabled option is that prompt.
+	 *
+	 * @param array<string, mixed> $control Source control metadata.
+	 * @return string
+	 */
+	private static function select_placeholder_label( array $control ): string {
+		$options = isset( $control['options'] ) && is_array( $control['options'] ) ? $control['options'] : array();
+		foreach ( $options as $option ) {
+			if ( ! is_array( $option ) || empty( $option['placeholder'] ) ) {
+				continue;
+			}
+			$label = isset( $option['label'] ) && is_scalar( $option['label'] ) ? trim( (string) $option['label'] ) : '';
+			if ( '' === $label && isset( $option['value'] ) && is_scalar( $option['value'] ) ) {
+				$label = trim( (string) $option['value'] );
+			}
+			if ( '' !== $label ) {
+				return substr( $label, 0, 200 );
+			}
+		}
+
+		return '';
 	}
 
 	/**

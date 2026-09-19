@@ -381,6 +381,55 @@ namespace {
 	$assert( 1 === count( $submit_attrs ) && ! array_key_exists( 'style', $submit_attrs[0] ), 'source-submit-block-claims-no-unrenderable-style-attribute', wp_json_encode( $submit_attrs ) );
 	$assert( str_contains( $markup, 'hello@example.com' ), 'markup-mailto-recipient' );
 	$assert( str_contains( $markup, '"options":["Sales","Support"]' ), 'markup-select-options' );
+	$placeholder_select_field = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
+		'select',
+		'select',
+		array(
+			'name'    => 'membership_type',
+			'label'   => 'Membership type',
+			'options' => array(
+				array( 'label' => 'Select', 'value' => '', 'placeholder' => true, 'disabled' => true, 'selected' => true ),
+				array( 'label' => 'Ordinary member', 'value' => 'Ordinary member' ),
+				array( 'label' => 'Life member', 'value' => 'Life member' ),
+				array( 'label' => 'Overseas member', 'value' => 'Overseas member' ),
+			),
+		)
+	);
+	$placeholder_select_input = array();
+	foreach ( $placeholder_select_field['innerBlocks'] ?? array() as $inner ) {
+		if ( 'jetpack/input' === ( $inner['name'] ?? '' ) ) {
+			$placeholder_select_input = $inner;
+			break;
+		}
+	}
+	$assert( array( 'Ordinary member', 'Life member', 'Overseas member' ) === ( $placeholder_select_field['attrs']['options'] ?? null ), 'select-placeholder-option-is-omitted-from-the-provider-option-list', wp_json_encode( $placeholder_select_field ) );
+	$assert( 'Select' === ( $placeholder_select_input['attrs']['placeholder'] ?? null ), 'select-placeholder-option-maps-onto-jetpack-input-placeholder', wp_json_encode( $placeholder_select_input ) );
+	$assert( ! in_array( 'Select an option', $placeholder_select_field['attrs']['options'] ?? array(), true ), 'select-does-not-emit-a-synthetic-select-an-option-label', wp_json_encode( $placeholder_select_field ) );
+	$placeholder_select_markup = Static_Site_Importer_Form_Seeder::seed(
+		array(
+			'forms' => array(
+				array(
+					'form'     => array( 'action' => '/join', 'method' => 'post' ),
+					'controls' => array(
+						array(
+							'tag'     => 'select',
+							'type'    => 'select',
+							'name'    => 'membership_type',
+							'label'   => 'Membership type',
+							'options' => array(
+								array( 'label' => 'Select', 'value' => '', 'placeholder' => true, 'disabled' => true, 'selected' => true ),
+								array( 'label' => 'Ordinary member' ),
+								array( 'label' => 'Life member' ),
+								array( 'label' => 'Overseas member' ),
+							),
+						),
+						array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+					),
+				),
+			),
+		)
+	)['forms'][0]['block_markup'] ?? '';
+	$assert( str_contains( $placeholder_select_markup, '"options":["Ordinary member","Life member","Overseas member"]' ) && str_contains( $placeholder_select_markup, '"placeholder":"Select"' ) && ! str_contains( $placeholder_select_markup, 'Select an option' ), 'seeded-select-emits-source-placeholder-and-source-options-only', $placeholder_select_markup );
 	$assert( 1 === preg_match( '/<div class="wp-block-jetpack-contact-form form contact ssi-form-[a-f0-9]{12}">/', $markup ), 'markup-contact-form-wrapper-and-source-classes' );
 	$assert( 1 === preg_match( '/<!-- wp:jetpack\/field-text (?=[^\n]*"required":true)(?=[^\n]*"id":"ssi-form-[a-f0-9]{12}-field-0")(?=[^\n]*"className":"ssi-node-[a-f0-9]{12}")(?=[^\n]*"shareFieldAttributes":false)[^\n]* -->/', $markup ), 'markup-field-wrapper-keeps-provider-layout-class-and-instance-identity' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/label {"label":"Your name","className":"source-label"} /-->' ) && str_contains( $markup, '<!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"className":"source-field"} /-->' ), 'markup-field-canonical-label-and-input-children-carry-source-classes' );
@@ -412,6 +461,44 @@ namespace {
 	);
 	$assert( 'Link to your design work (Behance, Dribbble, personal site, etc.)' === ( $described_url_field['attrs']['helpText'] ?? null ), 'described-url-control-carries-jetpack-help-text-attribute', wp_json_encode( $described_url_field ) );
 	$assert( array() === ( $described_url_field['losses'] ?? array() ), 'described-url-control-reports-no-loss', wp_json_encode( $described_url_field ) );
+	$concatenated_description_field = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
+		'input',
+		'text',
+		array(
+			'name'        => 'occupation',
+			'label'       => 'Occupation / businessHelps the trade committee connect members.',
+			'description' => 'Helps the trade committee connect members.',
+		)
+	);
+	$concatenated_description_label = array();
+	foreach ( $concatenated_description_field['innerBlocks'] ?? array() as $inner ) {
+		if ( 'jetpack/label' === ( $inner['name'] ?? '' ) ) {
+			$concatenated_description_label = $inner;
+			break;
+		}
+	}
+	$assert( 'Occupation / business' === ( $concatenated_description_label['attrs']['label'] ?? null ), 'concatenated-description-is-removed-from-the-label', wp_json_encode( $concatenated_description_label ) );
+	$assert( 'Helps the trade committee connect members.' === ( $concatenated_description_field['attrs']['helpText'] ?? null ), 'concatenated-description-maps-onto-jetpack-help-text', wp_json_encode( $concatenated_description_field ) );
+	$described_occupation_markup = Static_Site_Importer_Form_Seeder::seed(
+		array(
+			'forms' => array(
+				array(
+					'form'     => array( 'action' => '/join', 'method' => 'post' ),
+					'controls' => array(
+						array(
+							'tag'         => 'input',
+							'type'        => 'text',
+							'name'        => 'occupation',
+							'label'       => 'Occupation / business',
+							'description' => 'Helps the trade committee connect members.',
+						),
+						array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+					),
+				),
+			),
+		)
+	)['forms'][0]['block_markup'] ?? '';
+	$assert( str_contains( $described_occupation_markup, '<!-- wp:jetpack/label {"label":"Occupation / business"} /-->' ) && 1 === preg_match( '/<!-- wp:jetpack\/field-text \{[^\n]*"helpText":"Helps the trade committee connect members\."[^\n]*\} -->/', $described_occupation_markup ) && ! str_contains( $described_occupation_markup, 'businessHelps' ), 'seeded-described-text-field-keeps-label-and-help-text-apart', $described_occupation_markup );
 	$undescribed_url_field = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
 		'input',
 		'url',
@@ -2407,6 +2494,30 @@ namespace {
 		'compiled-field-row-keeps-authored-textarea-rows-and-stops-hint-chrome-from-forming-its-own-box',
 		wp_json_encode( array( 'errors' => $described_validated['errors'] ?? array(), 'markup' => $described_markup, 'css' => $described_css, 'description' => $described_help_text ) )
 	);
+	$wrapping_label_html = '<form><label class="block"><span>Occupation / business</span><input name="occupation"><span class="mt-1 block text-xs">Helps the trade committee connect members.</span></label><button type="submit">Send</button></form>';
+	$wrapping_label_source = class_exists( $artifact_compiler ) ? ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'join.html', 'files' => array( 'join.html' => $wrapping_label_html ) ) )->toArray() )['fallbacks'][0] ?? array() : array();
+	$wrapping_label_control = $wrapping_label_source['controls'][0] ?? array();
+	$wrapping_label_seed    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $wrapping_label_source ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$wrapping_label_markup  = (string) ( $wrapping_label_seed['block_markup'] ?? '' );
+	$assert(
+		! class_exists( $artifact_compiler )
+			|| ! isset( $wrapping_label_control['description'] )
+			|| (
+				'Occupation / business' === ( $wrapping_label_control['label'] ?? null )
+				&& 'Helps the trade committee connect members.' === ( $wrapping_label_control['description'] ?? null )
+				&& str_contains( $wrapping_label_markup, '<!-- wp:jetpack/label {"label":"Occupation / business"} /-->' )
+				&& 1 === preg_match( '/<!-- wp:jetpack\/field-text \{[^\n]*"helpText":"Helps the trade committee connect members\."[^\n]*\} -->/', $wrapping_label_markup )
+				&& ! str_contains( $wrapping_label_markup, 'businessHelps' )
+			),
+		'compiled-wrapping-label-keeps-description-off-the-label-and-on-jetpack-help-text',
+		wp_json_encode( array( 'control' => $wrapping_label_control, 'markup' => $wrapping_label_markup ) )
+	);
+	$help_text_atts = Static_Site_Importer_Provider_Form_Runtime_V1::project_help_text_attribute(
+		array( 'helptext' => null ),
+		array(),
+		array( 'helpText' => 'Helps the trade committee connect members.' )
+	);
+	$assert( 'Helps the trade committee connect members.' === ( $help_text_atts['helptext'] ?? null ), 'block-helpText-reaches-the-shortcode-helptext-attribute', wp_json_encode( $help_text_atts ) );
 	$projected_submit = Static_Site_Importer_Form_Seeder::project_provider_submit_presentation(
 		'<div class="wp-block-button ssi-source-submit--source-submit"><button class="wp-block-button__link">Send</button></div>',
 		array( 'attrs' => array( 'className' => 'wp-block-button ssi-source-submit--source-submit' ) )

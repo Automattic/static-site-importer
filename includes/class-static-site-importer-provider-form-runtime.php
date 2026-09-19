@@ -89,6 +89,30 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		add_filter( 'render_block_jetpack/contact-form', array( __CLASS__, 'project_form_container_placement' ), 5, 2 );
 		add_filter( 'render_block_jetpack/contact-form', array( __CLASS__, 'project_plain_root_fieldset' ), 10, 2 );
 		add_filter( 'render_block_core/button', array( __CLASS__, 'project_submit_presentation' ), 10, 2 );
+		add_filter( 'shortcode_atts_contact-field', array( __CLASS__, 'project_help_text_attribute' ), 10, 3 );
+	}
+
+	/**
+	 * Jetpack's field block stores help as `helpText`; the shortcode renderer
+	 * reads `helptext`. Copy the block attribute onto the shortcode key so a
+	 * source-authored description actually renders.
+	 *
+	 * @param array<string,mixed> $out   Shortcode attributes after defaults.
+	 * @param array<string,mixed> $pairs Unused default pairs.
+	 * @param array<string,mixed> $atts  Original block/shortcode attributes.
+	 * @return array<string,mixed>
+	 */
+	public static function project_help_text_attribute( array $out, array $pairs, array $atts ): array {
+		unset( $pairs );
+		$help_text = $out['helptext'] ?? null;
+		if ( is_string( $help_text ) && '' !== trim( $help_text ) ) {
+			return $out;
+		}
+		$block_help = $atts['helpText'] ?? null;
+		if ( is_string( $block_help ) && '' !== trim( $block_help ) ) {
+			$out['helptext'] = $block_help;
+		}
+		return $out;
 	}
 
 	/** Copy the provider block's layout role onto Jetpack's page-grid item. */
