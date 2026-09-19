@@ -381,6 +381,55 @@ namespace {
 	$assert( 1 === count( $submit_attrs ) && ! array_key_exists( 'style', $submit_attrs[0] ), 'source-submit-block-claims-no-unrenderable-style-attribute', wp_json_encode( $submit_attrs ) );
 	$assert( str_contains( $markup, 'hello@example.com' ), 'markup-mailto-recipient' );
 	$assert( str_contains( $markup, '"options":["Sales","Support"]' ), 'markup-select-options' );
+	$placeholder_select_field = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
+		'select',
+		'select',
+		array(
+			'name'    => 'membership_type',
+			'label'   => 'Membership type',
+			'options' => array(
+				array( 'label' => 'Select', 'value' => '', 'placeholder' => true, 'disabled' => true, 'selected' => true ),
+				array( 'label' => 'Ordinary member', 'value' => 'Ordinary member' ),
+				array( 'label' => 'Life member', 'value' => 'Life member' ),
+				array( 'label' => 'Overseas member', 'value' => 'Overseas member' ),
+			),
+		)
+	);
+	$placeholder_select_input = array();
+	foreach ( $placeholder_select_field['innerBlocks'] ?? array() as $inner ) {
+		if ( 'jetpack/input' === ( $inner['name'] ?? '' ) ) {
+			$placeholder_select_input = $inner;
+			break;
+		}
+	}
+	$assert( array( 'Ordinary member', 'Life member', 'Overseas member' ) === ( $placeholder_select_field['attrs']['options'] ?? null ), 'select-placeholder-option-is-omitted-from-the-provider-option-list', wp_json_encode( $placeholder_select_field ) );
+	$assert( 'Select' === ( $placeholder_select_input['attrs']['placeholder'] ?? null ), 'select-placeholder-option-maps-onto-jetpack-input-placeholder', wp_json_encode( $placeholder_select_input ) );
+	$assert( ! in_array( 'Select an option', $placeholder_select_field['attrs']['options'] ?? array(), true ), 'select-does-not-emit-a-synthetic-select-an-option-label', wp_json_encode( $placeholder_select_field ) );
+	$placeholder_select_markup = Static_Site_Importer_Form_Seeder::seed(
+		array(
+			'forms' => array(
+				array(
+					'form'     => array( 'action' => '/join', 'method' => 'post' ),
+					'controls' => array(
+						array(
+							'tag'     => 'select',
+							'type'    => 'select',
+							'name'    => 'membership_type',
+							'label'   => 'Membership type',
+							'options' => array(
+								array( 'label' => 'Select', 'value' => '', 'placeholder' => true, 'disabled' => true, 'selected' => true ),
+								array( 'label' => 'Ordinary member' ),
+								array( 'label' => 'Life member' ),
+								array( 'label' => 'Overseas member' ),
+							),
+						),
+						array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+					),
+				),
+			),
+		)
+	)['forms'][0]['block_markup'] ?? '';
+	$assert( str_contains( $placeholder_select_markup, '"options":["Ordinary member","Life member","Overseas member"]' ) && str_contains( $placeholder_select_markup, '"placeholder":"Select"' ) && ! str_contains( $placeholder_select_markup, 'Select an option' ), 'seeded-select-emits-source-placeholder-and-source-options-only', $placeholder_select_markup );
 	$assert( 1 === preg_match( '/<div class="wp-block-jetpack-contact-form form contact ssi-form-[a-f0-9]{12}">/', $markup ), 'markup-contact-form-wrapper-and-source-classes' );
 	$assert( 1 === preg_match( '/<!-- wp:jetpack\/field-text (?=[^\n]*"required":true)(?=[^\n]*"id":"ssi-form-[a-f0-9]{12}-field-0")(?=[^\n]*"className":"ssi-node-[a-f0-9]{12}")(?=[^\n]*"shareFieldAttributes":false)[^\n]* -->/', $markup ), 'markup-field-wrapper-keeps-provider-layout-class-and-instance-identity' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/label {"label":"Your name","className":"source-label"} /-->' ) && str_contains( $markup, '<!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"className":"source-field"} /-->' ), 'markup-field-canonical-label-and-input-children-carry-source-classes' );
