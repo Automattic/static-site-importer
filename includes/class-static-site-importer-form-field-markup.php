@@ -210,6 +210,10 @@ final class Static_Site_Importer_Form_Field_Markup {
 		if ( '' === $label && in_array( $lookup, array( 'checkbox', 'radio', 'select' ), true ) ) {
 			$label = self::control_text( $control );
 		}
+		$description = self::control_description( $control );
+		if ( '' !== $description && '' !== $label && str_ends_with( $label, $description ) ) {
+			$label = trim( substr( $label, 0, -strlen( $description ) ) );
+		}
 		if ( '' !== $label && isset( $control['required_text'] ) && is_scalar( $control['label'] ?? null ) && 1 === preg_match( '/\s$/u', (string) $control['label'] ) ) {
 			$label = rtrim( $label ) . ' ';
 		}
@@ -238,8 +242,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 			}
 		}
 
-		$losses      = array();
-		$description = self::control_description( $control );
+		$losses = array();
 		if ( '' !== $description ) {
 			// Every jetpack/field-* block declares this attribute (see
 			// projects/packages/forms/src/blocks/shared/settings/index.js), but
