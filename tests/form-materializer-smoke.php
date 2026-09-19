@@ -677,6 +677,44 @@ namespace {
 	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && in_array( 'provider_equal_width_fields', $topology_ops, true ) && in_array( 'provider_interaction_carrier', $topology_ops, true ) && 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.5rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.5rem\);margin-block-start:0!important\}/', (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ), 'computed-layout-equal-grid-applies-with-bounded-receipt', wp_json_encode( array( 'ops' => $topology_ops, 'css' => $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ) );
 	$assert( str_contains( $topology_markup, 'ssi-textarea-rows-2' ) && str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:auto' ) && ! str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:200px' ), 'topology-unstyled-source-textarea-carries-two-rows-and-neutralizes-the-provider-height' );
 
+	$responsive_equal_form = $topology_form;
+	$responsive_equal_condition = array( 'kind' => 'media', 'query' => '(width>=40rem)' );
+	$responsive_equal_form['forms'][0]['layout_graph']['nodes'][0]['layout'] = array( 'display' => 'grid', 'gap' => '1rem' );
+	$responsive_equal_form['forms'][0]['layout_graph']['variants'][] = array(
+		'node'         => 'wrapper-0',
+		'condition'    => $responsive_equal_condition,
+		'layout_patch' => array( 'columns' => 'repeat(2,minmax(0,1fr))' ),
+		'precedence'   => array( 'grid-template-columns' => array( 'source_order' => 1, 'specificity' => 10, 'important' => false ) ),
+		'provenance'   => array(
+			array(
+				'source_path'   => 'assets/form.css',
+				'source_sha256' => str_repeat( 'd', 64 ),
+				'selector'      => '.row-2',
+				'condition'     => $responsive_equal_condition,
+				'properties'    => array( 'grid-template-columns' ),
+			),
+		),
+	);
+	$responsive_equal_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $responsive_equal_form );
+	$responsive_equal_seed      = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $responsive_equal_validated['forms'] ) );
+	$responsive_equal_row       = $responsive_equal_seed['forms'][0] ?? array();
+	$responsive_equal_css       = (string) ( $responsive_equal_row['provider_layout_overlay_css']['css'] ?? '' );
+	$responsive_equal_markup    = (string) ( $responsive_equal_row['block_markup'] ?? '' );
+	$assert(
+		empty( $responsive_equal_validated['errors'] )
+			&& 'mapped' === ( $responsive_equal_row['status'] ?? '' )
+			&& 2 === substr_count( $responsive_equal_markup, '"width":50' )
+			&& in_array( 'provider_equal_width_fields', array_column( $responsive_equal_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true )
+			&& str_contains( $responsive_equal_css, '@media (width<40rem){' )
+			&& 2 === preg_match_all( '/@media \(width<40rem\)\{\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{flex:1 1 100%;width:100%\}\}/', $responsive_equal_css )
+			&& 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.5rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.5rem\);margin-block-start:0!important\}/', $responsive_equal_css )
+			&& ( 402 / 16 ) < 40
+			&& ( 1440 / 16 ) >= 40
+			&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $responsive_equal_row['provider_layout_overlay_css'] ?? null ),
+		'responsive-equal-width-row-emits-inverted-overlay-media-full-width-at-402px-two-up-at-1440px',
+		wp_json_encode( array( 'validation' => $responsive_equal_validated, 'css' => $responsive_equal_css, 'markup' => $responsive_equal_markup ) )
+	);
+
 	// --- A source utility-framework grid row materializes as provider field widths ---
 	// Reproduces a real base44/Tailwind CSS v4 contact form (labels are plain,
 	// unassociated siblings with no `for`/`id`/`name`, exactly as captured): a
@@ -748,6 +786,15 @@ namespace {
 	$assert(
 		1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{margin-block-start:0!important\}/', $tailwind_grid_css_out ),
 		'mobile-first-equal-column-row-also-neutralizes-the-flattened-submit-siblings-margin',
+		$tailwind_grid_css_out
+	);
+	$assert(
+		str_contains( $tailwind_grid_css_out, '@media (width<768px){' )
+			&& 2 === preg_match_all( '/@media \(width<768px\)\{\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{flex:1 1 100%;width:100%\}\}/', $tailwind_grid_css_out )
+			&& 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.75rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.75rem\);margin-block-start:0!important\}/', $tailwind_grid_css_out )
+			&& 402 < 768
+			&& 1440 >= 768,
+		'mobile-first-equal-column-row-emits-inverted-overlay-media-so-402px-is-full-width-and-1440px-stays-two-up',
 		$tailwind_grid_css_out
 	);
 	// A source form that occupies a page-grid item through a host wrapper (the
@@ -996,12 +1043,21 @@ namespace {
 	$class_only_source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'membership.html', 'files' => array( 'membership.html' => $class_only_html ) ) )->toArray() )['fallbacks'][0] ?? array();
 	$class_only_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $class_only_source ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
 	$class_only_markup = (string) ( $class_only_row['block_markup'] ?? '' );
+	$class_only_css    = (string) ( $class_only_row['provider_layout_overlay_css']['css'] ?? '' );
 	$assert(
 		'mapped' === ( $class_only_row['status'] ?? '' )
 			&& 8 === substr_count( $class_only_markup, '"width":50' )
 			&& in_array( 'provider_equal_width_fields', array_column( $class_only_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ),
 		'class-token-grid-with-eight-field-children-still-maps-to-jetpack-width-50',
 		wp_json_encode( array( 'markup' => $class_only_markup, 'topo' => $class_only_source['control_topology']['nodes'][0]['class'] ?? null, 'layout' => $class_only_source['layout_graph'] ?? null ) )
+	);
+	$assert(
+		str_contains( $class_only_css, '@media (max-width: 480px){' )
+			&& 8 === preg_match_all( '/@media \(max-width: 480px\)\{\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{flex:1 1 100%;width:100%\}\}/', $class_only_css )
+			&& 402 <= 480
+			&& 1440 > 480,
+		'class-token-equal-width-row-without-cascade-query-still-stacks-below-the-provider-wrap-breakpoint',
+		$class_only_css
 	);
 	// A narrowing (max-width) variant is not the proven mobile-first widening
 	// shape and must keep the existing decline: Jetpack cannot represent "two

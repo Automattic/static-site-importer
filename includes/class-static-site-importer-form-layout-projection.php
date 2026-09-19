@@ -1015,13 +1015,16 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			// Column count comes from the resolved track list, not from how many
 			// field boxes occupy those tracks. A 2-column grid of eight fields is
 			// four visual rows of Jetpack `width: 50`, not an 8-column row.
-			$column_count = self::equal_fraction_column_count( $columns );
+			$column_count        = self::equal_fraction_column_count( $columns );
+			$class_token_columns = false;
+			$widening_query      = null;
 			if ( null === $column_count && '' === $columns && in_array( 'grid', $class_tokens, true ) ) {
 				// Resolved tracks are absent (layered utility CSS often never
 				// becomes a layout-graph node). A field-row grid of single-field
 				// siblings is the 2-column pairing Jetpack `width: 50` represents;
 				// 3- and 4-column rows still require a resolved track list.
-				$column_count = 2;
+				$column_count        = 2;
+				$class_token_columns = true;
 			}
 			$equal_grid = empty( $parent_variants ) && 'grid' === $display && null !== $column_count;
 			// A mobile-first source stacks these boxes by default and only bands
@@ -1046,14 +1049,16 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				) {
 					foreach ( $variant['provenance'] ?? array() as $fact ) {
 						if ( is_array( $fact ) && ( $fact['condition'] ?? null ) === $condition && is_string( $fact['source_path'] ?? null ) && is_string( $fact['source_sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ) && is_string( $fact['selector'] ?? null ) && in_array( 'grid-template-columns', $fact['properties'] ?? array(), true ) ) {
-							$equal_grid   = true;
-							$column_count = $widened_count;
+							$equal_grid     = true;
+							$column_count   = $widened_count;
+							$widening_query = $condition['query'];
 							break;
 						}
 					}
 					if ( ! $equal_grid && in_array( 'grid', preg_split( '/\s+/', trim( (string) ( $topology_nodes_by_id[ $parent ]['class'] ?? '' ) ) ) ?: array(), true ) ) {
-						$equal_grid   = true;
-						$column_count = $widened_count;
+						$equal_grid     = true;
+						$column_count   = $widened_count;
+						$widening_query = $condition['query'];
 					}
 				}
 			}
@@ -1088,8 +1093,19 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$gap    = is_string( $layout['gap'] ?? null ) && '' !== trim( $layout['gap'] )
 				? trim( $layout['gap'] )
 				: ( is_string( $layout['column_gap'] ?? null ) && '' !== trim( $layout['column_gap'] ) ? trim( $layout['column_gap'] ) : '1.5rem' );
-			$track  = self::equal_fraction_track_size( $column_count, $gap );
-			$paired = array_fill_keys( $indexes, true );
+			$track       = self::equal_fraction_track_size( $column_count, $gap );
+			$paired      = array_fill_keys( $indexes, true );
+			$stack_query = is_string( $widening_query ) ? self::inverted_min_width_media_query( $widening_query ) : null;
+			if ( null === $stack_query && $class_token_columns ) {
+				$stack_query = self::equal_width_stack_query_from_cascade_facts( $parent, $variants_by_node, $layout_nodes_by_id );
+				if ( null === $stack_query ) {
+					// Layered source utilities never become graph variants, so the
+					// widening query is missing. The 50% overlay is more specific than
+					// Jetpack's own `@media (max-width: 480px)` wrap stack and would
+					// otherwise keep the row two-up at every width.
+					$stack_query = '(max-width: 480px)';
+				}
+			}
 			foreach ( $indexes as $control_index ) {
 				$field_blocks[ $control_index ]['attrs']['width'] = $width;
 				$overlay_node_targets[]                           = array(
@@ -1112,6 +1128,19 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					// this synthetic flattening seam is always for.
 					'important' => array( 'margin_block_start' ),
 				);
+				if ( is_string( $stack_query ) ) {
+					$responsive_variant_targets[] = array(
+						'node'         => 'field-' . $control_index,
+						'condition'    => array(
+							'kind'  => 'media',
+							'query' => $stack_query,
+						),
+						'layout_patch' => array(
+							'flex'  => '1 1 100%',
+							'width' => '100%',
+						),
+					);
+				}
 			}
 			$represented_layout_nodes[] = $parent;
 			$operations[]               = array(
@@ -2457,6 +2486,52 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 */
 	private static function is_min_width_media_query( string $query ): bool {
 		return 1 === preg_match( '/^\((?:min-width:\s?[0-9]+(?:\.[0-9]+)?(?:px|em|rem)|width\s*>=\s*[0-9]+(?:\.[0-9]+)?(?:px|em|rem))\)$/D', $query );
+	}
+
+	/**
+	 * Invert a proven min-width widening into the max-range the overlay applies
+	 * below that breakpoint. `(min-width: 768px)` and `(width>=40rem)` both
+	 * include the bound, so the stacked state is the strict less-than range.
+	 */
+	private static function inverted_min_width_media_query( string $query ): ?string {
+		if ( 1 === preg_match( '/^\(min-width:\s?([0-9]+(?:\.[0-9]+)?)(px|em|rem)\)$/D', $query, $match ) ) {
+			return '(width<' . $match[1] . $match[2] . ')';
+		}
+		if ( 1 === preg_match( '/^\(width\s*>=\s*([0-9]+(?:\.[0-9]+)?)(px|em|rem)\)$/D', $query, $match ) ) {
+			return '(width<' . $match[1] . $match[2] . ')';
+		}
+		return null;
+	}
+
+	/**
+	 * Recover a stacking query from a captured cascade fact when the equal-width
+	 * row came from the class-token fallback rather than a graph variant.
+	 *
+	 * @param array<string,array<int,array<string,mixed>>> $variants_by_node
+	 * @param array<string,array<string,mixed>>            $layout_nodes_by_id
+	 */
+	private static function equal_width_stack_query_from_cascade_facts( string $parent, array $variants_by_node, array $layout_nodes_by_id ): ?string {
+		foreach ( $variants_by_node[ $parent ] ?? array() as $variant ) {
+			$condition = is_array( $variant['condition'] ?? null ) ? $variant['condition'] : null;
+			if ( ! is_array( $condition ) || 'media' !== ( $condition['kind'] ?? null ) || ! is_string( $condition['query'] ?? null ) || ! self::is_min_width_media_query( $condition['query'] ) ) {
+				continue;
+			}
+			$inverted = self::inverted_min_width_media_query( $condition['query'] );
+			if ( is_string( $inverted ) ) {
+				return $inverted;
+			}
+		}
+		foreach ( ( $layout_nodes_by_id[ $parent ]['provenance'] ?? array() ) as $fact ) {
+			$condition = is_array( $fact ) && is_array( $fact['condition'] ?? null ) ? $fact['condition'] : null;
+			if ( ! is_array( $condition ) || 'media' !== ( $condition['kind'] ?? null ) || ! is_string( $condition['query'] ?? null ) || ! self::is_min_width_media_query( $condition['query'] ) || ! in_array( 'grid-template-columns', $fact['properties'] ?? array(), true ) ) {
+				continue;
+			}
+			$inverted = self::inverted_min_width_media_query( $condition['query'] );
+			if ( is_string( $inverted ) ) {
+				return $inverted;
+			}
+		}
+		return null;
 	}
 
 	/** @param array<int,string> $tokens */
