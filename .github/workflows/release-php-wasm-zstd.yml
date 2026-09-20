@@ -70,7 +70,7 @@ jobs:
             echo "Release asset static-site-importer.zip must expose a SHA-256 digest." >&2
             exit 1
           fi
-          package_archive="$pages_dir/playground/$RELEASE_TAG/static-site-importer.zip"
+          package_archive="$RUNNER_TEMP/static-site-importer.zip"
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern static-site-importer.zip --dir "$(dirname "$package_archive")"
           test "$package_sha256" = "$(sha256sum "$package_archive" | cut -d ' ' -f 1)"
           demo_build_dir="$RUNNER_TEMP/static-site-importer-playground-demo-package"
@@ -110,7 +110,7 @@ jobs:
             }
             fs.writeFileSync(output, JSON.stringify(blueprint, null, 2) + "\n");
           ' docs/playground/blueprint.json "$pages_dir/playground/$RELEASE_TAG.blueprint.json" "$RELEASE_TAG" "$package_sha256" "$demo_package_sha256" "$migration_package_sha256"
-          git -C "$pages_dir" add .nojekyll "playground/$RELEASE_TAG.blueprint.json" "playground/$RELEASE_TAG/static-site-importer.zip" "playground/$RELEASE_TAG/static-site-importer-playground-demo.zip" "playground/$RELEASE_TAG/playground-to-wordpress-com.zip"
+          git -C "$pages_dir" add .nojekyll "playground/$RELEASE_TAG.blueprint.json" "playground/$RELEASE_TAG/static-site-importer-playground-demo.zip" "playground/$RELEASE_TAG/playground-to-wordpress-com.zip"
           if ! git -C "$pages_dir" diff --cached --quiet; then
             git -C "$pages_dir" -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Publish safe Playground blueprint for $RELEASE_TAG"
             git -C "$pages_dir" push origin HEAD:gh-pages
@@ -118,7 +118,7 @@ jobs:
       - name: Wait for the immutable safe blueprint
         run: |
           blueprint_url="https://automattic.github.io/static-site-importer/playground/$RELEASE_TAG.blueprint.json"
-          expected_plugin_url="https://automattic.github.io/static-site-importer/playground/$RELEASE_TAG/static-site-importer.zip"
+          expected_plugin_url="https://github.com/Automattic/static-site-importer/releases/download/$RELEASE_TAG/static-site-importer.zip"
           expected_demo_url="https://automattic.github.io/static-site-importer/playground/$RELEASE_TAG/static-site-importer-playground-demo.zip"
           expected_migration_url="https://automattic.github.io/static-site-importer/playground/$RELEASE_TAG/playground-to-wordpress-com.zip"
           for attempt in $(seq 1 30); do
@@ -167,7 +167,7 @@ jobs:
         if: env.ADVANCE_LATEST == 'true'
         run: |
           blueprint_url="https://automattic.github.io/static-site-importer/playground/latest/blueprint.json"
-          expected_plugin_url="https://automattic.github.io/static-site-importer/playground/$RELEASE_TAG/static-site-importer.zip"
+          expected_plugin_url="https://github.com/Automattic/static-site-importer/releases/download/$RELEASE_TAG/static-site-importer.zip"
           expected_demo_url="https://automattic.github.io/static-site-importer/playground/$RELEASE_TAG/static-site-importer-playground-demo.zip"
           expected_migration_url="https://automattic.github.io/static-site-importer/playground/$RELEASE_TAG/playground-to-wordpress-com.zip"
           for attempt in $(seq 1 30); do
