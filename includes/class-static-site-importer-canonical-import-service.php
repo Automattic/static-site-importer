@@ -94,6 +94,9 @@ class Static_Site_Importer_Canonical_Import_Service {
 			}
 		}
 		if ( 'url' === $type ) {
+			if ( 'apply' === $operation ) {
+				return self::error( 'static_site_importer_url_apply_requires_plan', 'Apply a completed URL import by supplying its approved canonical plan.' );
+			}
 			return self::import_url_operation( $input, $source );
 		}
 

@@ -933,6 +933,26 @@ class Static_Site_Importer_URL_Site_Collector {
 			},
 			$html
 		);
+		if ( 'inert' === $policy ) {
+			$html = (string) preg_replace_callback(
+				'#<link\b[^>]*>#is',
+				static function ( array $matches ) use ( $base_url, &$exclusions ): string {
+					$relations = preg_split( '/\s+/', strtolower( trim( (string) self::tag_attribute_value( $matches[0], 'rel' ) ) ) );
+					$as        = strtolower( (string) self::tag_attribute_value( $matches[0], 'as' ) );
+					if ( ! in_array( 'modulepreload', $relations, true ) && ! ( in_array( 'preload', $relations, true ) && 'script' === $as ) ) {
+						return $matches[0];
+					}
+					$exclusions[] = array(
+						'kind'        => 'resource_hint',
+						'reason_code' => 'script_dropped_by_inert_policy',
+						'sha256'      => hash( 'sha256', $matches[0] ),
+						'url'         => self::resolve_url( (string) self::tag_attribute_value( $matches[0], 'href' ), $base_url ),
+					);
+					return '';
+				},
+				$html
+			);
+		}
 		return array(
 			'html'       => $html,
 			'asset_urls' => array_values( array_unique( $asset_urls ) ),
@@ -1002,6 +1022,11 @@ class Static_Site_Importer_URL_Site_Collector {
 		$used  = array();
 		foreach ( $resources as $resource_url => $resource ) {
 			$path = self::artifact_path( $resource_url, 'html' === $resource['kind'], $entry_url );
+			// Stylesheet endpoints such as /css2?… have no filename extension.
+			// Preserve their fetched static type in the portable artifact path.
+			if ( 'text/css' === ( $resource['content_type'] ?? '' ) && '' === pathinfo( $path, PATHINFO_EXTENSION ) ) {
+				$path .= '.css';
+			}
 			if ( isset( $used[ $path ] ) ) {
 				$extension = pathinfo( $path, PATHINFO_EXTENSION );
 				$suffix    = '-' . substr( hash( 'sha256', $resource_url ), 0, 10 );
@@ -1301,7 +1326,12 @@ class Static_Site_Importer_URL_Site_Collector {
 				$slugs[] = $slug;
 			}
 		}
-		return array() === $slugs ? '/' : '/' . implode( '/', $slugs );
+		$route = array() === $slugs ? '/' : '/' . implode( '/', $slugs );
+		$query = (string) ( self::url_parts( $url, PHP_URL_QUERY ) ?? '' );
+		if ( '' !== $query ) {
+			$route = ( '/' === $route ? '/index' : $route ) . '-' . substr( hash( 'sha256', $query ), 0, 8 );
+		}
+		return $route;
 	}
 
 	private static function origin( string $url ): string {

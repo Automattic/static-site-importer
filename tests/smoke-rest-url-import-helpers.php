@@ -80,6 +80,7 @@ if ( ! function_exists( 'wp_get_ability' ) ) {
 		return new class {
 			public function execute( array $input ) {
 				$GLOBALS['ssi_ability_last_input'] = $input;
+				$GLOBALS['ssi_ability_inputs'][] = $input;
 				return array_shift( $GLOBALS['ssi_ability_results'] );
 			}
 		};
@@ -124,6 +125,7 @@ $terminal_envelope = array(
 	'success'               => true,
 	'continuation'          => false,
 	'import_id'             => 'def456',
+	'plan'                  => array( 'schema' => 'blocks-engine/wordpress-site-plan/v2' ),
 	'result'                => array( 'theme_slug' => 'remote-site' ),
 	'import_report_summary' => array( 'status' => 'completed' ),
 	'url_batch_run'         => array(
@@ -147,8 +149,11 @@ $assert( 'abc123' === ( $result['import_id'] ?? '' ), 'import-id-propagates' );
 $assert( 'continuing' === ( $result['url_batch_run']['status'] ?? '' ), 'url-batch-run-status-propagates' );
 $assert( 'https://example.test/start' === ( $GLOBALS['ssi_ability_last_input']['source']['url'] ?? '' ), 'ability-receives-source-url' );
 $assert( 'url' === ( $GLOBALS['ssi_ability_last_input']['source']['type'] ?? '' ), 'ability-input-source-type-is-url' );
+$assert( 'plan' === $GLOBALS['ssi_ability_last_input']['operation'], 'url-collection-uses-canonical-planning' );
 
-$GLOBALS['ssi_ability_results'] = array( $terminal_envelope );
+$applied_envelope = array( 'success' => true, 'operation' => 'apply', 'result' => array( 'status' => 'completed', 'theme' => array( 'slug' => 'remote-site' ) ) );
+$GLOBALS['ssi_ability_results'] = array( $terminal_envelope, $applied_envelope );
+$GLOBALS['ssi_ability_inputs'] = array();
 $GLOBALS['ssi_ability_last_input'] = null;
 
 $result = static_site_importer_rest_route_url_import(
@@ -159,7 +164,9 @@ $result = static_site_importer_rest_route_url_import(
 $assert( true === ( $result['success'] ?? false ), 'terminal-success-true' );
 $assert( false === ( $result['continuation'] ?? false ), 'terminal-continuation-false' );
 $assert( 'def456' === ( $result['import_id'] ?? '' ), 'terminal-import-id-propagates' );
-$assert( 'remote-site' === ( $result['terminal_batch_result']['theme_slug'] ?? '' ), 'terminal-batch-result-propagates' );
+$assert( 'remote-site' === ( $result['result']['theme']['slug'] ?? '' ), 'terminal-result-is-materialization-receipt' );
+$assert( array( 'plan', 'apply' ) === array_column( $GLOBALS['ssi_ability_inputs'], 'operation' ), 'complete-url-plan-is-applied-once' );
+$assert( $terminal_envelope === $GLOBALS['ssi_ability_last_input']['plan'], 'apply-receives-server-produced-plan-envelope' );
 $assert( ! isset( $result['preview'] ), 'terminal-current-site-does-not-advertise-preview' );
 
 $import_id_envelope = array(

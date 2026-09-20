@@ -36,9 +36,14 @@ add_filter( 'static_site_importer_can_manage_imports', '__return_true' );
 
 $ability_stub = new class {
 	public array $last_input  = array();
-	public array $next_result = array();
+	public mixed $next_result = array();
+	public array $apply_input = array();
 
 	public function execute( array $input ) {
+		if ( 'apply' === ( $input['operation'] ?? '' ) ) {
+			$this->apply_input = $input;
+			return array( 'success' => true, 'result' => array( 'status' => 'completed', 'theme' => array( 'slug' => 'bound-site' ) ) );
+		}
 		$this->last_input = $input;
 		return $this->next_result;
 	}
@@ -90,6 +95,7 @@ $ability_stub->next_result = array(
 	'continuation'          => false,
 	'import_id'             => 'bound-1',
 	'result'                => array( 'theme_slug' => 'bound-site' ),
+	'plan'                  => array( 'schema' => 'blocks-engine/wordpress-site-plan/v2' ),
 	'import_report_summary' => array( 'status' => 'completed' ),
 	'url_batch_run'         => array(
 		'status'                => 'completed',
@@ -111,7 +117,8 @@ $body     = $response->get_data();
 
 $assert( 200 === $response->get_status(), 'continuation-second-status' );
 $assert( false === ( $body['continuation'] ?? true ), 'continuation-second-terminal' );
-$assert( 'bound-site' === ( $body['terminal_batch_result']['theme_slug'] ?? '' ), 'continuation-second-terminal-batch' );
+$assert( 'bound-site' === ( $body['result']['theme']['slug'] ?? '' ), 'continuation-second-materialized-theme' );
+$assert( $ability_stub->next_result === $ability_stub->apply_input['plan'], 'continuation-complete-plan-applied-once' );
 $assert( 'bound-1' === ( $ability_stub->last_input['source']['import_id'] ?? '' ), 'continuation-second-input-import-id' );
 $assert( 'https://example.test/site' === ( $ability_stub->last_input['source']['url'] ?? '' ), 'continuation-second-input-url' );
 

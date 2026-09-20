@@ -7,6 +7,7 @@ const root = path.resolve(import.meta.dirname, '..');
 const readme = await readFile(path.join(root, 'README.md'), 'utf8');
 const launchUrl = [ ...readme.matchAll(/\]\((https:\/\/playground\.wordpress\.net\/\?[^)]+)\)/g) ][0]?.[1];
 const figFixture = process.env.PLAYGROUND_FIG_FIXTURE;
+const sourceUrl = process.env.PLAYGROUND_SOURCE_URL;
 const restaurantFixtureUrl = process.env.PLAYGROUND_RESTAURANT_FIXTURE_URL || 'https://raw.githubusercontent.com/Automattic/blocks-engine/03d53d903d620a578428c2f61094aca18392406f/fixtures/websites/14-restaurant/index.html';
 
 assert.ok(launchUrl, 'README must include a WordPress Playground launch URL');
@@ -29,7 +30,7 @@ const blueprintUrl = launch.searchParams.get('blueprint-url');
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage();
 const diagnostics = [];
-page.on('console', (message) => diagnostics.push(`console.${message.type()}: ${message.text()}`));
+page.context().on('console', (message) => diagnostics.push(`console.${message.type()}: ${message.text()}`));
 page.on('pageerror', (error) => diagnostics.push(`pageerror: ${error.message}`));
 page.on('requestfailed', (request) => diagnostics.push(`requestfailed: ${request.url()} (${request.failure()?.errorText})`));
 
@@ -75,9 +76,11 @@ try {
   const importRestUrl = await importer.getAttribute('data-static-site-importer-rest-url');
   assert.ok(homeUrl, 'Importer must expose its home URL');
   assert.ok(importRestUrl, 'Importer must expose its REST endpoint');
-  const htmlDetails = wordpress.locator('details:has([data-static-site-importer-source-html])');
-  await htmlDetails.locator('summary').click();
-  assert.equal(await htmlDetails.evaluate((element) => element.open), true, 'Paste HTML must be expanded before filling its textarea');
+  if (!sourceUrl) {
+    const htmlDetails = wordpress.locator('details:has([data-static-site-importer-source-html])');
+    await htmlDetails.locator('summary').click();
+    assert.equal(await htmlDetails.evaluate((element) => element.open), true, 'Paste HTML must be expanded before filling its textarea');
+  }
   // Importing replaces the WordPress iframe. Listen on the browser context so
   // the response remains observable while that frame navigates.
   const importResponseReads = [];
@@ -89,7 +92,7 @@ try {
     ));
   };
   page.context().on('response', collectImportResponse);
-  await wordpress.locator('[data-static-site-importer-source-html]').fill(restaurantFixture);
+  await wordpress.locator(sourceUrl ? '[data-static-site-importer-source-url]' : '[data-static-site-importer-source-html]').fill(sourceUrl || restaurantFixture);
   await wordpress.locator('[data-static-site-importer-submit]').click();
   await wordpress.waitForURL((url) => url.href === new URL(homeUrl, importUrl).href, { timeout: 120_000 });
   page.context().off('response', collectImportResponse);
@@ -102,8 +105,10 @@ try {
   // Completion, not the number of requests, is the browser acceptance gate.
   assert.notEqual(importResponse.report.continuation, true, 'Restaurant import must finish its continuation');
   diagnostics.push(`import-responses: ${JSON.stringify(importResponses)}`);
-  assert.equal(importResponse.report.result?.theme_slug, 'ember-rye', JSON.stringify(importResponse.report));
-  assert.equal(await wordpress.locator('body').evaluate((element) => element.classList.contains('wp-theme-ember-rye')), true, 'The imported theme must be active on the existing home frame');
+  const themeSlug = importResponse.report.result?.theme_slug || importResponse.report.result?.theme?.slug;
+  assert.ok(typeof themeSlug === 'string' && themeSlug.length > 0, 'A completed import must identify the materialized theme');
+  if (!sourceUrl) assert.equal(themeSlug, 'ember-rye', JSON.stringify(importResponse.report));
+  assert.equal(await wordpress.locator('body').evaluate((element, slug) => element.classList.contains(`wp-theme-${slug}`), themeSlug), true, 'The imported theme must be active on the existing home frame');
   assert.ok((await wordpress.locator('title').textContent())?.trim(), 'The imported site home must retain a document title');
 
   const migrationToolbarLink = wordpress.locator('#wp-admin-bar-pgwpc a');
@@ -118,7 +123,7 @@ try {
   await wordpress.goto(importUrl, { waitUntil: 'domcontentloaded', timeout: 120_000 });
   await wordpress.locator('.ssi-importer').waitFor({ state: 'visible', timeout: 120_000 });
 
-  console.log(JSON.stringify({ blueprintUrl, fixtureBytes: Buffer.byteLength(restaurantFixture, 'utf8'), importRequests: importResponses.length, theme: importResponse.report.result.theme_slug, migration: 'passed', repeatImport: 'passed' }));
+  console.log(JSON.stringify({ blueprintUrl, sourceUrl, fixtureBytes: sourceUrl ? undefined : Buffer.byteLength(restaurantFixture, 'utf8'), importRequests: importResponses.length, theme: themeSlug, migration: 'passed', repeatImport: 'passed' }));
 
   if (figFixture) {
     assert.ok(manifestUrl, 'Figma fixture verification requires a PHP extension manifest');

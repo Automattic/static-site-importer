@@ -461,13 +461,15 @@ function static_site_importer_rest_route_url_import( array $source, array $input
 	$input['client_script_policy']     = 'inert';
 	$input['client_script_isolated']   = false;
 	$input['client_script_provenance'] = array();
+
 	$url       = isset( $source['url'] ) ? (string) $source['url'] : '';
 	$import_id = isset( $source['import_id'] ) ? (string) $source['import_id'] : ( isset( $input['import_id'] ) ? (string) $input['import_id'] : '' );
 
 	$ability_in = array_merge(
 		$input,
 		array(
-			'source' => array_merge(
+			'operation' => 'plan',
+			'source'    => array_merge(
 				isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array(),
 				array(
 					'type'      => 'url',
@@ -505,17 +507,31 @@ function static_site_importer_rest_route_url_import( array $source, array $input
 		);
 	}
 
-	return array(
-		'success'               => true,
-		'import_id'             => isset( $result['import_id'] ) ? (string) $result['import_id'] : '',
-		'result'                => isset( $result['result'] ) && is_array( $result['result'] ) ? $result['result'] : array(),
-		'diagnostics'           => isset( $result['diagnostics'] ) && is_array( $result['diagnostics'] ) ? $result['diagnostics'] : array(),
-		'fixture_diagnostics'   => isset( $result['fixture_diagnostics'] ) && is_array( $result['fixture_diagnostics'] ) ? $result['fixture_diagnostics'] : array(),
-		'import_report_summary' => isset( $result['import_report_summary'] ) && is_array( $result['import_report_summary'] ) ? $result['import_report_summary'] : array(),
-		'terminal_batch_result' => isset( $result['url_batch_run']['terminal_batch_result'] ) && is_array( $result['url_batch_run']['terminal_batch_result'] )
-			? $result['url_batch_run']['terminal_batch_result']
-			: array(),
+	if ( empty( $result['plan'] ) || ! is_array( $result['plan'] ) ) {
+		return new WP_Error( 'static_site_importer_url_plan_missing', 'The completed URL import did not return a canonical plan.' );
+	}
+
+	// Collection is bounded and resumable. Materialize the complete plan once,
+	// rather than replacing the companion contract with each page-sized batch.
+	$apply_input             = $input;
+	$apply_input['operation'] = 'apply';
+	$apply_input['plan']      = $result;
+	$applied                 = static_site_importer_rest_execute_import_ability(
+		'static-site-importer/import',
+		$apply_input,
+		'static_site_importer_ability_import'
 	);
+	if ( is_wp_error( $applied ) ) {
+		return $applied;
+	}
+	if ( empty( $applied['success'] ) || ! empty( $applied['error'] ) ) {
+		$applied['success'] = false;
+		return $applied;
+	}
+	unset( $applied['plan'] );
+	$applied['import_id']    = (string) ( $result['import_id'] ?? '' );
+	$applied['continuation'] = false;
+	return $applied;
 }
 
 /**

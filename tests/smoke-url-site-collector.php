@@ -714,6 +714,37 @@ $assert( isset( $og_files['website/external/9e25/icon.png'] ), 'collector-packag
 $assert( str_contains( $og_html, 'content="external/9e25/icon.png"' ) && ! str_contains( $og_html, 'content="/external/9e25/icon.png"' ), 'collector-rewrites-twitter-image-to-artifact-path' );
 $assert( str_contains( $og_html, 'A clinic' ), 'collector-leaves-non-url-meta-content-alone' );
 
+$modern_requests = array();
+$modern_fetcher = static function ( string $url ) use ( &$modern_requests ) {
+	$modern_requests[] = $url;
+	if ( str_contains( $url, 'sitemap.xml' ) ) {
+		return new WP_Error( 'no_sitemap', '' );
+	}
+	if ( str_contains( $url, '/css2?' ) ) {
+		return array( 'body' => 'body{color:red}', 'metadata' => array( 'content_type' => 'text/css', 'final_url' => $url ) );
+	}
+	return array(
+		'body' => '<html><head><link rel="stylesheet" href="https://fonts.test/css2?family=Demo"><link rel="modulepreload" href="/app.js"><link rel="preload" as="script" href="/boot.js"></head><body><h1>Contact</h1></body></html>',
+		'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ),
+	);
+};
+$query_routes = array();
+foreach ( array( 'one', 'two' ) as $category ) {
+	$modern = Static_Site_Importer_URL_Site_Collector::collect( 'https://modern.test/contact?category=' . $category, array( 'request_delay_ms' => 0, 'max_pages' => 1 ), $modern_fetcher );
+	$assert( ! is_wp_error( $modern ), 'extensionless-stylesheet-is-static-' . $category );
+	$modern_files = $modern['artifact']['files'] ?? array();
+	$css_files = array_values( array_filter( $modern_files, static fn( array $file ): bool => 'text/css' === ( $file['mime_type'] ?? '' ) ) );
+	$assert( 1 === count( $css_files ) && str_ends_with( $css_files[0]['path'], '.css' ), 'stylesheet-mime-has-portable-extension-' . $category );
+	foreach ( $modern_files as $file ) {
+		if ( 'text/html' === ( $file['mime_type'] ?? '' ) ) {
+			$query_routes[] = $file['metadata']['route_path'];
+			$assert( ! str_contains( $file['content'], 'app.js' ) && ! str_contains( $file['content'], 'boot.js' ), 'inert-policy-removes-script-resource-hints-' . $category );
+		}
+	}
+}
+$assert( 2 === count( array_unique( $query_routes ) ), 'independent-query-batches-have-distinct-canonical-routes' );
+$assert( array() === array_filter( $modern_requests, static fn( string $url ): bool => str_ends_with( $url, '.js' ) ), 'inert-script-preloads-are-never-fetched' );
+
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( PHP_EOL, $failures ) . PHP_EOL );
 	exit( 1 );
