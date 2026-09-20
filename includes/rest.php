@@ -457,6 +457,10 @@ function static_site_importer_rest_execute_import_ability( string $ability_name,
  * @return array<string,mixed>|WP_Error
  */
 function static_site_importer_rest_route_url_import( array $source, array $input ) {
+	// URL imports use the same current-site script policy as direct sources.
+	$input['client_script_policy']     = 'inert';
+	$input['client_script_isolated']   = false;
+	$input['client_script_provenance'] = array();
 	$url       = isset( $source['url'] ) ? (string) $source['url'] : '';
 	$import_id = isset( $source['import_id'] ) ? (string) $source['import_id'] : ( isset( $input['import_id'] ) ? (string) $input['import_id'] : '' );
 
@@ -480,6 +484,13 @@ function static_site_importer_rest_route_url_import( array $source, array $input
 		'static_site_importer_ability_import'
 	);
 	if ( is_wp_error( $result ) ) {
+		return $result;
+	}
+
+	// The canonical service returns failure envelopes as well as WP_Error.
+	// Preserve the error before projecting either continuation or completion.
+	if ( empty( $result['success'] ) || ! empty( $result['error'] ) ) {
+		$result['success'] = false;
 		return $result;
 	}
 

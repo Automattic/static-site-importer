@@ -179,6 +179,24 @@ $result = static_site_importer_rest_route_url_import(
 $assert( 'bound-id' === ( $GLOBALS['ssi_ability_last_input']['source']['import_id'] ?? '' ), 'ability-receives-rest-import-id' );
 $assert( 'bound-id' === ( $result['import_id'] ?? '' ), 'import-id-echoes-through-result' );
 
+$failure = array(
+	'success'     => false,
+	'error'       => array( 'code' => 'source_rejected', 'message' => 'Source could not be imported.' ),
+	'diagnostics' => array( array( 'severity' => 'error', 'code' => 'source_rejected' ) ),
+);
+$GLOBALS['ssi_ability_results'] = array( $failure );
+$result = static_site_importer_rest_route_url_import(
+	array( 'url' => 'https://example.test/failure' ),
+	array( 'client_script_policy' => 'isolated_preview', 'client_script_isolated' => true, 'client_script_provenance' => array( 'ref' => 'untrusted' ) )
+);
+$assert( $failure === $result, 'canonical-failure-preserves-error-and-diagnostics' );
+$assert( 'inert' === $GLOBALS['ssi_ability_last_input']['client_script_policy'], 'url-import-forces-current-site-inert-policy' );
+$assert( false === $GLOBALS['ssi_ability_last_input']['client_script_isolated'], 'url-import-clears-isolation' );
+$assert( array() === $GLOBALS['ssi_ability_last_input']['client_script_provenance'], 'url-import-clears-preview-provenance' );
+$GLOBALS['ssi_ability_results'] = array( array_merge( $failure, array( 'success' => true, 'continuation' => true ) ) );
+$result = static_site_importer_rest_route_url_import( array( 'url' => 'https://example.test/failure' ), array() );
+$assert( false === $result['success'] && 'source_rejected' === $result['error']['code'], 'error-cannot-be-masked-by-continuation' );
+
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );
