@@ -1,9 +1,11 @@
 # Playground Publication Contract
 
 The GitHub Pages `gh-pages` branch is the browser-facing publication origin for
-Playground assets. GitHub Release Assets are not used by the browser because
-their redirect target does not provide the CORS response required by
-`resolvePHPExtension`.
+the blueprint, demo packages, and optional extension assets. The SSI plugin ZIP
+comes from its canonical GitHub Release asset. Playground's Blueprint downloader
+supports a CORS proxy fallback for that download; direct browser CORS access is
+not a requirement for Blueprint URL resources. The optional extension loader has
+a separate direct-CORS requirement and retains its Pages origin.
 
 For every Homeboy-owned plugin release tag `<tag>`, the release workflow builds
 from that tag and publishes these immutable files:
@@ -11,14 +13,13 @@ from that tag and publishes these immutable files:
 - `https://automattic.github.io/static-site-importer/playground/extensions/<tag>/static-site-importer-zstd-php8.5-jspi.manifest.json`
 - `https://automattic.github.io/static-site-importer/playground/extensions/<tag>/static-site-importer-zstd-php8.5-jspi.so`
 - `https://automattic.github.io/static-site-importer/playground/<tag>.blueprint.json`
-- `https://automattic.github.io/static-site-importer/playground/<tag>/static-site-importer.zip`
 - `https://automattic.github.io/static-site-importer/playground/<tag>/static-site-importer-playground-demo.zip`
 - `https://automattic.github.io/static-site-importer/playground/<tag>/playground-to-wordpress-com.zip`
 
 The versioned blueprint installs the infrastructure-only `static-site-importer.zip`
-and demo-only importer block ZIP from GitHub Pages. The workflow downloads the
-release ZIP, verifies its release-published SHA-256 digest, and mirrors it to
-the immutable Pages release directory. It builds the demo ZIP from
+from GitHub Releases and the demo-only importer block ZIP from GitHub Pages. The
+workflow downloads the release ZIP and verifies its release-published SHA-256 digest
+before binding that digest into the blueprint. It builds the demo ZIP from
 `demos/playground-importer/` and pins all three packages by SHA-256. The
 migration archive is built from the
 public codeload source archive for commit
@@ -41,3 +42,8 @@ verification therefore cannot take down the README demo. Publication can be
 resumed for an existing tag through `workflow_dispatch`; publication commits are
 idempotent. The workflow never creates or edits a release. Homeboy remains the sole
 release owner.
+
+Pages currently packages the separate demo and migration plugins because they
+are not SSI runtime release artifacts. Moving those packages into Homeboy-owned
+release assets is a separate packaging change; it is not necessary to mirror the
+SSI ZIP. Existing tagged publications remain available for reproducible consumers.
