@@ -942,9 +942,11 @@ class Static_Site_Importer_Companion_Plugin {
 	 * their safe selector identity and presentation survive. URL-bearing
 	 * attributes are protocol-checked, inline `image-set()` notations are
 	 * lowered to the `url()` fallback KSES accepts so background-only imagery
-	 * is not discarded with its style attribute, and the result is KSES-filtered
-	 * against an SVG-aware allowlist so inline SVG structure survives while
-	 * nothing executable reaches the frontend.
+	 * is not discarded with its style attribute, literal `rgb()`/`rgba()`/
+	 * `hsl()`/`hsla()` color notations are lowered to the hex equivalents KSES
+	 * accepts so authored text and background colors are not discarded, and the
+	 * result is KSES-filtered against an SVG-aware allowlist so inline SVG
+	 * structure survives while nothing executable reaches the frontend.
 	 *
 	 * @return string
 	 */
@@ -1159,11 +1161,111 @@ $lower_image_sets = static function ( string $value ) use ( $image_set_fallback 
 	}
 	return $value;
 };
+// The same safecss_filter_attr() guard has no allowance for the functional
+// color notations rgb()/rgba()/hsl()/hsla() either: their residual
+// parenthesis rejects the whole declaration, so authored white
+// rgb(255, 255, 255) paragraph text on a dark band reaches the browser as
+// inherited near-black while a sibling #FFFFFF heading survives. Lower
+// literal-component color functions to the hex equivalent the sanitizer
+// already accepts. A notation carrying anything but numeric/percentage
+// literals (var(), calc(), color keywords) is left untouched for the
+// sanitizer to judge exactly as before.
+$color_channel = static function ( string $component ): ?float {
+	if ( preg_match( '/^[+-]?(?:\d+\.?\d*|\.\d+)$/', $component ) ) {
+		return (float) $component;
+	}
+	if ( preg_match( '/^[+-]?(?:\d+\.?\d*|\.\d+)%$/', $component ) ) {
+		return (float) substr( $component, 0, -1 ) * 2.55;
+	}
+	return null;
+};
+$color_alpha = static function ( ?string $component ): ?float {
+	if ( null === $component ) {
+		return 1.0;
+	}
+	if ( preg_match( '/^[+-]?(?:\d+\.?\d*|\.\d+)$/', $component ) ) {
+		return (float) $component;
+	}
+	if ( preg_match( '/^[+-]?(?:\d+\.?\d*|\.\d+)%$/', $component ) ) {
+		return (float) substr( $component, 0, -1 ) / 100;
+	}
+	return null;
+};
+$hex_color = static function ( float $red, float $green, float $blue, float $alpha ): string {
+	$hex = sprintf(
+		'#%02x%02x%02x',
+		(int) round( max( 0.0, min( 255.0, $red ) ) ),
+		(int) round( max( 0.0, min( 255.0, $green ) ) ),
+		(int) round( max( 0.0, min( 255.0, $blue ) ) )
+	);
+	$alpha = max( 0.0, min( 1.0, $alpha ) );
+	return $alpha >= 1.0 ? $hex : $hex . sprintf( '%02x', (int) round( $alpha * 255 ) );
+};
+$lower_color_functions = static function ( string $value ) use ( $color_channel, $color_alpha, $hex_color ): string {
+	return preg_replace_callback(
+		'/\b(rgba?|hsla?)\(\s*([^()]*?)\s*\)/i',
+		static function ( array $match ) use ( $color_channel, $color_alpha, $hex_color ): string {
+			$body            = $match[2];
+			$alpha_component = null;
+			if ( str_contains( $body, '/' ) ) {
+				$pieces          = explode( '/', $body, 2 );
+				$body            = trim( $pieces[0] );
+				$alpha_component = trim( $pieces[1] );
+			}
+			$components = preg_split( '/\s*,\s*|\s+/', $body ) ?: array();
+			$components = array_values(
+				array_filter(
+					$components,
+					static function ( string $component ): bool {
+						return '' !== $component;
+					}
+				)
+			);
+			if ( 4 === count( $components ) && null === $alpha_component ) {
+				$alpha_component = array_pop( $components );
+			}
+			$alpha = $color_alpha( $alpha_component );
+			if ( 3 !== count( $components ) || null === $alpha ) {
+				return $match[0];
+			}
+			if ( 'r' === strtolower( $match[1][0] ) ) {
+				$red   = $color_channel( $components[0] );
+				$green = $color_channel( $components[1] );
+				$blue  = $color_channel( $components[2] );
+				return null === $red || null === $green || null === $blue
+					? $match[0]
+					: $hex_color( $red, $green, $blue, $alpha );
+			}
+			if ( ! preg_match( '/^[+-]?(?:\d+\.?\d*|\.\d+)(?:deg)?$/i', $components[0] )
+				|| ! preg_match( '/^(?:\d+\.?\d*|\.\d+)%$/', $components[1] )
+				|| ! preg_match( '/^(?:\d+\.?\d*|\.\d+)%$/', $components[2] ) ) {
+				return $match[0];
+			}
+			$hue        = fmod( fmod( (float) preg_replace( '/deg$/i', '', $components[0] ), 360.0 ) + 360.0, 360.0 );
+			$saturation = max( 0.0, min( 100.0, (float) substr( $components[1], 0, -1 ) ) ) / 100;
+			$lightness  = max( 0.0, min( 100.0, (float) substr( $components[2], 0, -1 ) ) ) / 100;
+			$chroma     = ( 1 - abs( 2 * $lightness - 1 ) ) * $saturation;
+			$secondary  = $chroma * ( 1 - abs( fmod( $hue / 60, 2 ) - 1 ) );
+			$base       = $lightness - $chroma / 2;
+			$sectors    = array(
+				array( $chroma, $secondary, 0.0 ),
+				array( $secondary, $chroma, 0.0 ),
+				array( 0.0, $chroma, $secondary ),
+				array( 0.0, $secondary, $chroma ),
+				array( $secondary, 0.0, $chroma ),
+				array( $chroma, 0.0, $secondary ),
+			);
+			list( $red, $green, $blue ) = $sectors[ max( 0, min( 5, (int) floor( $hue / 60 ) ) ) ];
+			return $hex_color( ( $red + $base ) * 255, ( $green + $base ) * 255, ( $blue + $base ) * 255, $alpha );
+		},
+		$value
+	) ?? $value;
+};
 $content = preg_replace_callback(
 	'/\bstyle\s*=\s*(?:("|\')(.*?)\1|([^\s>]+))/is',
-	static function ( array $match ) use ( $safe_url, $lower_image_sets ): string {
+	static function ( array $match ) use ( $safe_url, $lower_image_sets, $lower_color_functions ): string {
 		$value = '' !== ( $match[2] ?? '' ) ? $match[2] : ( $match[3] ?? '' );
-		$value = $lower_image_sets( $value );
+		$value = $lower_color_functions( $lower_image_sets( $value ) );
 		if ( preg_match_all( '/url\(\s*["\']?([^\s)"\']+)/i', $value, $urls ) ) {
 			foreach ( $urls[1] as $url ) {
 				if ( ! $safe_url( $url, true ) ) {
