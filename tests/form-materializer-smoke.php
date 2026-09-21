@@ -677,6 +677,25 @@ namespace {
 	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && in_array( 'provider_equal_width_fields', $topology_ops, true ) && in_array( 'provider_interaction_carrier', $topology_ops, true ) && 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.5rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.5rem\);margin-block-start:0!important\}/', (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ), 'computed-layout-equal-grid-applies-with-bounded-receipt', wp_json_encode( array( 'ops' => $topology_ops, 'css' => $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ) );
 	$assert( str_contains( $topology_markup, 'ssi-textarea-rows-2' ) && str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:auto' ) && ! str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:200px' ), 'topology-unstyled-source-textarea-carries-two-rows-and-neutralizes-the-provider-height' );
 
+	// A layout graph may contain the complete control ancestry while the producer
+	// omits its parallel topology document. Recover that tree so proven grid rows
+	// do not silently flatten into Jetpack's full-width default.
+	$layout_only_form = $topology_form;
+	unset( $layout_only_form['forms'][0]['control_topology'] );
+	$layout_only_form['forms'][0]['layout_graph']['nodes'] = array(
+		array( 'id' => 'wrapper-0', 'kind' => 'container', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'div', 'classes' => array( 'row-2' ) ), 'layout' => array( 'display' => 'grid', 'columns' => 'repeat(2, 1fr)', 'gap' => '1rem' ), 'provenance' => array() ),
+		array( 'id' => 'wrapper-1', 'kind' => 'container', 'parent' => 'wrapper-0', 'order' => 0, 'source' => array( 'tag' => 'div', 'classes' => array( 'field' ) ), 'layout' => array(), 'provenance' => array() ),
+		array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'source' => array( 'tag' => 'input', 'classes' => array() ), 'layout' => array(), 'provenance' => array() ),
+		array( 'id' => 'wrapper-2', 'kind' => 'container', 'parent' => 'wrapper-0', 'order' => 1, 'source' => array( 'tag' => 'div', 'classes' => array( 'field' ) ), 'layout' => array(), 'provenance' => array() ),
+		array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-2', 'order' => 0, 'source' => array( 'tag' => 'input', 'classes' => array() ), 'layout' => array(), 'provenance' => array() ),
+		array( 'id' => 'control-2', 'kind' => 'control', 'parent' => null, 'order' => 1, 'source' => array( 'tag' => 'input', 'classes' => array() ), 'layout' => array(), 'provenance' => array() ),
+		array( 'id' => 'control-3', 'kind' => 'control', 'parent' => null, 'order' => 2, 'source' => array( 'tag' => 'textarea', 'classes' => array() ), 'layout' => array(), 'provenance' => array() ),
+	);
+	$layout_only_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $layout_only_form );
+	$layout_only_seed      = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $layout_only_validated['forms'] ?? array() ) );
+	$layout_only_markup    = (string) ( $layout_only_seed['forms'][0]['block_markup'] ?? '' );
+	$assert( empty( $layout_only_validated['errors'] ) && 2 === substr_count( $layout_only_markup, '"width":50' ) && in_array( 'provider_equal_width_fields', array_column( $layout_only_seed['forms'][0]['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'layout-graph-only-form-recovers-grid-topology-and-field-widths', wp_json_encode( $layout_only_seed ) );
+
 	$responsive_equal_form = $topology_form;
 	$responsive_equal_condition = array( 'kind' => 'media', 'query' => '(width>=40rem)' );
 	$responsive_equal_form['forms'][0]['layout_graph']['nodes'][0]['layout'] = array( 'display' => 'grid', 'gap' => '1rem' );

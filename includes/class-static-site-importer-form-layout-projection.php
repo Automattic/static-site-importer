@@ -195,20 +195,25 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 */
 	public static function topology_inner_blocks( array $form, array $field_blocks, array $controls, array $suppressed_controls = array() ): ?array {
 		if ( ! isset( $form['control_topology'] ) ) {
-			return array(
-				'blocks'                       => array_values( $field_blocks ),
-				'losses'                       => array(),
-				'operations'                   => array(),
-				'represented_layout_nodes'     => array(),
-				'represented_topology_nodes'   => array(),
-				'suppressed_layout_properties' => array(),
-				'overlay_node_targets'         => array(),
-				'responsive_variant_targets'   => array(),
-				'native_visibility_targets'    => array(),
-				'form_classes'                 => array(),
-				'provider_layout_targets'      => array(),
-				'phone_popup_targets'          => array(),
-			);
+			$derived_topology = self::derive_control_topology_from_layout_graph( $form, $controls );
+			if ( null !== $derived_topology ) {
+				$form['control_topology'] = $derived_topology;
+			} else {
+				return array(
+					'blocks'                       => array_values( $field_blocks ),
+					'losses'                       => array(),
+					'operations'                   => array(),
+					'represented_layout_nodes'     => array(),
+					'represented_topology_nodes'   => array(),
+					'suppressed_layout_properties' => array(),
+					'overlay_node_targets'         => array(),
+					'responsive_variant_targets'   => array(),
+					'native_visibility_targets'    => array(),
+					'form_classes'                 => array(),
+					'provider_layout_targets'      => array(),
+					'phone_popup_targets'          => array(),
+				);
+			}
 		}
 		$nodes = $form['control_topology']['nodes'] ?? null;
 		if ( ! is_array( $nodes ) ) {
@@ -1482,6 +1487,86 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			'form_classes'                 => array_values( array_unique( $form_classes ) ),
 			'provider_layout_targets'      => $provider_layout_targets,
 			'phone_popup_targets'          => $phone_popup_targets,
+		);
+	}
+
+	/**
+	 * Recover the control tree when the producer emitted layout nodes but no
+	 * separate topology. The layout graph is sufficient only when every visible
+	 * control and its ancestor chain survived capture; otherwise retain the
+	 * existing fail-closed flat projection.
+	 *
+	 * @param array<string,mixed>              $form
+	 * @param array<int,array<string,mixed>>   $controls
+	 * @return array<string,mixed>|null
+	 */
+	private static function derive_control_topology_from_layout_graph( array $form, array $controls ): ?array {
+		$graph = $form['layout_graph'] ?? null;
+		if ( ! is_array( $graph ) || ! is_array( $graph['nodes'] ?? null ) ) {
+			return null;
+		}
+
+		$source_nodes = array();
+		foreach ( $graph['nodes'] as $node ) {
+			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) ) {
+				continue;
+			}
+			$source_nodes[ $node['id'] ] = $node;
+		}
+		if ( empty( $source_nodes ) ) {
+			return null;
+		}
+
+		$nodes       = array();
+		$control_ids = array();
+		foreach ( $source_nodes as $id => $node ) {
+			$parent = is_string( $node['parent'] ?? null ) ? $node['parent'] : null;
+			if ( null !== $parent && ! isset( $source_nodes[ $parent ] ) ) {
+				continue;
+			}
+			$source = is_array( $node['source'] ?? null ) ? $node['source'] : array();
+			$control_match = array();
+			if ( 1 === preg_match( '/^control-([0-9]+)$/D', $id, $control_match ) ) {
+				$control_index       = (int) $control_match[1];
+				$control_ids[ $control_index ] = true;
+				$nodes[]             = array(
+					'id'      => $id,
+					'kind'    => 'control',
+					'parent'  => $parent,
+					'order'   => (int) ( $node['order'] ?? 0 ),
+					'depth'   => (int) ( $node['depth'] ?? 0 ),
+					'control' => $control_index,
+				);
+				continue;
+			}
+			$classes = is_array( $source['classes'] ?? null ) ? $source['classes'] : array();
+			$nodes[] = array(
+				'id'     => $id,
+				'kind'   => 'wrapper',
+				'parent' => $parent,
+				'order'  => (int) ( $node['order'] ?? 0 ),
+				'depth'  => (int) ( $node['depth'] ?? 0 ),
+				'tag'    => is_string( $source['tag'] ?? null ) ? strtolower( $source['tag'] ) : 'div',
+				'class'  => implode( ' ', array_filter( array_map( 'strval', $classes ) ) ),
+			);
+		}
+		foreach ( $controls as $index => $control ) {
+			$type = strtolower( trim( (string) ( $control['type'] ?? $control['tag'] ?? '' ) ) );
+			if ( ! isset( $control_ids[ $index ] ) && 'hidden' !== $type ) {
+				return null;
+			}
+		}
+		if ( empty( $nodes ) ) {
+			return null;
+		}
+		usort( $nodes, static fn ( array $left, array $right ): int => ( (int) $left['depth'] <=> (int) $right['depth'] ) ?: ( (int) $left['order'] <=> (int) $right['order'] ) );
+
+		return array(
+			'schema'     => 'generic/form-control-topology/v1',
+			'max_depth'  => (int) ( $graph['limits']['depth'] ?? 16 ),
+			'max_nodes'  => (int) ( $graph['limits']['nodes'] ?? 128 ),
+			'truncated'  => ! empty( $graph['truncated'] ),
+			'nodes'      => $nodes,
 		);
 	}
 
