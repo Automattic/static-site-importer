@@ -1737,6 +1737,20 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * item, so a source-owned field gap is applied to it unless it is removed
 	 * while inactive. The runtime adds `has-errors` when validation needs it.
 	 *
+	 * The runtime also rebuilds a proven source label/control row as the field
+	 * shell's own sole child (`.ssi-field-row`, see
+	 * Static_Site_Importer_Provider_Form_Runtime::project_wrapper_classes()).
+	 * When the shell itself resolves to `display: grid` from captured source
+	 * facts (a mobile-only track layout is one such source), an item that is
+	 * not explicitly placed on the grid's column axis auto-places into a
+	 * single implicit track instead of spanning the shell's own tracks, so
+	 * both the row and every control nested inside it collapse to that one
+	 * track's width. `grid-column` has no effect on a non-grid-item element,
+	 * so this is scoped to only the forms that proved a field shell's own
+	 * `display: grid` (detected from the shell's already-compiled `-wrap`
+	 * rule), leaving every flex- or block-shell form's compiled CSS, and the
+	 * existing tests that assert its exact shape, unchanged.
+	 *
 	 * @param array<string,mixed> $overlay Compiled provider overlay.
 	 * @param string              $scope Provider form scope.
 	 * @param array<int,string>  $mapped_types Materialized field types by source index.
@@ -1750,7 +1764,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		if ( empty( $mapped_types ) ) {
 			return $overlay;
 		}
-		$css                          = rtrim( $overlay['css'] ) . "\n." . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-hints{display:contents}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-format{display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .ssi-field-row > label{margin-block-end:0}' . "\n" . '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}' . "\n";
+		$field_row_span = 1 === preg_match( '/\.ssi-node-[a-f0-9]{12}-wrap\{[^}]*\bdisplay:grid\b/', $overlay['css'] )
+			? '.' . $scope . ' .grunion-field-wrap > .ssi-field-row{grid-column:1 / -1}' . "\n"
+			: '';
+		$css                          = rtrim( $overlay['css'] ) . "\n." . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-hints{display:contents}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-format{display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .ssi-field-row > label{margin-block-end:0}' . "\n" . '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}' . "\n" . $field_row_span;
 		$overlay['css']               = $css;
 		$overlay['overlay']['css']    = $css;
 		$overlay['overlay']['sha256'] = hash( 'sha256', $css );
