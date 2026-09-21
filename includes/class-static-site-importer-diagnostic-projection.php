@@ -756,7 +756,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 	/**
 	 * Normalize envelope, legacy page, or list-shaped captured-interaction payloads.
 	 *
-	 * @param array<string,mixed> $payload Decoded sidecar.
+	 * @param array<array-key,mixed> $payload Decoded sidecar.
 	 * @return array<int,mixed>
 	 */
 	private static function interaction_state_pages( array $payload ): array {
@@ -767,7 +767,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			return array( $payload );
 		}
 		if ( array_is_list( $payload ) ) {
-			return array_values( $payload );
+			return $payload;
 		}
 
 		return array();
@@ -1099,8 +1099,8 @@ final class Static_Site_Importer_Diagnostic_Projection {
 	 * @param string $url Source URL or path.
 	 */
 	private static function interaction_url_path( string $url ): string {
-		$parts = parse_url( $url );
-		if ( is_array( $parts ) && isset( $parts['path'] ) && is_string( $parts['path'] ) && '' !== $parts['path'] ) {
+		$parts = function_exists( 'wp_parse_url' ) ? wp_parse_url( $url ) : parse_url( $url ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Standalone diagnostic tests run without WordPress URL helpers.
+		if ( is_array( $parts ) && isset( $parts['path'] ) && '' !== $parts['path'] ) {
 			return $parts['path'];
 		}
 		if ( is_array( $parts ) && isset( $parts['host'] ) ) {
@@ -1121,9 +1121,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		if ( ! str_starts_with( $route, '/' ) ) {
 			$route = '/' . $route;
 		}
-		$route = '/' . trim( $route, '/' );
-
-		return '' === $route ? '/' : $route;
+		return '/' . trim( $route, '/' );
 	}
 
 	/**

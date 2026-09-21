@@ -96,7 +96,7 @@ final class Static_Site_Importer_Runtime_Entity_Binding_Validation {
 					// two of those on the same occurrence is the real corruption
 					// this gate protects against, and still conflicts.
 					$is_collection_anchor = is_array( $binding ) && 'commerce_collection' === ( $binding['role'] ?? null );
-					$claim = $binding['source_path'] . "\n" . hash( 'sha256', $binding['search_block_markup'] ) . "\n" . $binding['occurrence'];
+					$claim                = $binding['source_path'] . "\n" . hash( 'sha256', $binding['search_block_markup'] ) . "\n" . $binding['occurrence'];
 					if ( isset( $claims[ $claim ] ) ) {
 						if ( $is_collection_anchor && 'commerce_collection' === $claims[ $claim ] ) {
 							continue;

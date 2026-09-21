@@ -344,16 +344,15 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	public static function project_wrapper_classes( string $html ): string {
 		$wrapper_layers            = array();
 		$composite_layers          = array();
-		$provider_layout_classes   = array();
 		$fullspan_child_classes    = array();
 		$phone_destination_classes = array();
 		$textarea_rows             = null;
 		$is_phone                  = (bool) preg_match( '/\bclass=(["\'])[^"\']*\bgrunion-field-(?:phone|telephone)-wrap\b[^"\']*\1/i', $html );
 		$projected                 = preg_replace_callback(
 			'/\bclass=(["\'])(.*?)\1/s',
-			static function ( array $matches ) use ( &$wrapper_layers, &$composite_layers, &$provider_layout_classes, &$fullspan_child_classes, &$phone_destination_classes, &$textarea_rows ): string {
-				$classes            = preg_split( '/\s+/', trim( $matches[2] ) );
-				$classes            = false === $classes ? array() : $classes;
+			static function ( array $matches ) use ( &$wrapper_layers, &$composite_layers, &$fullspan_child_classes, &$phone_destination_classes, &$textarea_rows ): string {
+				$classes        = preg_split( '/\s+/', trim( $matches[2] ) );
+				$classes        = false === $classes ? array() : $classes;
 				$is_wrapper     = (bool) array_filter( $classes, static fn ( string $class_name ): bool => 1 === preg_match( '/^grunion-field-[A-Za-z0-9_-]+-wrap$/D', $class_name ) );
 				$is_phone_shell = in_array( 'jetpack-field__input-phone-wrapper', $classes, true );
 				$output         = array();
@@ -420,18 +419,15 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		$field_row_classes = array();
 		if ( ! $is_phone && empty( $composite_layers ) && ! empty( $wrapper_layers ) ) {
 			$outer_depth       = array_key_first( $wrapper_layers );
-			$field_row_classes = array_values( array_unique( array_merge( array( 'ssi-field-row' ), $wrapper_layers[ $outer_depth ], $provider_layout_classes ) ) );
+			$field_row_classes = array_values( array_unique( array_merge( array( 'ssi-field-row' ), $wrapper_layers[ $outer_depth ] ) ) );
 			unset( $wrapper_layers[ $outer_depth ] );
 		}
 		$open  = '';
 		$close = '';
-		foreach ( $wrapper_layers as $depth => $classes ) {
+		foreach ( $wrapper_layers as $classes ) {
 			$classes = array_values( array_unique( $classes ) );
-			if ( $is_phone && array_key_first( $wrapper_layers ) === $depth ) {
-				$classes = array_values( array_unique( array_merge( $classes, $provider_layout_classes ) ) );
-			}
-			$open .= '<div class="' . implode( ' ', $classes ) . '">';
-			$close = '</div>' . $close;
+			$open   .= '<div class="' . implode( ' ', $classes ) . '">';
+			$close   = '</div>' . $close;
 		}
 		if ( ! empty( $fullspan_child_classes ) ) {
 			$open .= '<div class="' . implode( ' ', array_values( array_unique( $fullspan_child_classes ) ) ) . '">';
