@@ -146,16 +146,16 @@ class Static_Site_Importer_Block_Document_Reporter {
 			$report->increment_quality( 'core_html_block_count', $counts['core_html_block_count'] );
 			$report->increment_quality( 'freeform_block_count', $counts['freeform_block_count'] );
 			return array(
-				'path'                               => $relative_path,
-				'block_count'                        => $counts['block_count'],
-				'core_html_block_count'              => $counts['core_html_block_count'],
-				'freeform_block_count'               => $counts['freeform_block_count'],
-				'invalid_block_count'                => 0,
-				'serialization_mismatch'             => false,
-				'validation_method'                  => $validation_method,
-				'validation_available'               => false,
-				'gutenberg_save_validation'          => 'unverified',
-				'gutenberg_save_validation_method'   => 'not_run',
+				'path'                             => $relative_path,
+				'block_count'                      => $counts['block_count'],
+				'core_html_block_count'            => $counts['core_html_block_count'],
+				'freeform_block_count'             => $counts['freeform_block_count'],
+				'invalid_block_count'              => 0,
+				'serialization_mismatch'           => false,
+				'validation_method'                => $validation_method,
+				'validation_available'             => false,
+				'gutenberg_save_validation'        => 'unverified',
+				'gutenberg_save_validation_method' => 'not_run',
 			);
 		}
 

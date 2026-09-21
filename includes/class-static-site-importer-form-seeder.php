@@ -712,7 +712,7 @@ class Static_Site_Importer_Form_Seeder {
 				'innerBlocks' => $inner_blocks,
 			)
 		);
-		$row    = array(
+		$row          = array(
 			'selector'                    => $selector,
 			'source_path'                 => $source_path,
 			'provider'                    => self::PROVIDER_ID,

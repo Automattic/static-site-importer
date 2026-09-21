@@ -348,9 +348,9 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			$product = new WC_Product_Simple();
 		}
 
-		$product_id           = 0;
-		$created_term_offset  = count( $created_terms );
-		$losses               = array();
+		$product_id          = 0;
+		$created_term_offset = count( $created_terms );
+		$losses              = array();
 		try {
 			$product->set_name( $name );
 			$product->set_slug( $slug );
@@ -534,12 +534,12 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		}
 
 		$upload = wp_upload_bits( $filename, null, $bytes );
-		if ( ! empty( $upload['error'] ) || ! is_string( $upload['file'] ?? null ) ) {
+		if ( ! empty( $upload['error'] ) ) {
 			return 0;
 		}
 
 		$declared_mime_type = is_array( $resolved ) && is_string( $resolved['mime_type'] ?? null ) ? $resolved['mime_type'] : '';
-		$mime_type          = '' !== $declared_mime_type ? $declared_mime_type : (string) ( wp_check_filetype( $upload['file'] )['type'] ?? '' );
+		$mime_type          = '' !== $declared_mime_type ? $declared_mime_type : (string) wp_check_filetype( $upload['file'] )['type'];
 		if ( ! str_starts_with( $mime_type, 'image/' ) ) {
 			wp_delete_file( $upload['file'] );
 			return 0;
@@ -554,7 +554,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			),
 			$upload['file']
 		);
-		if ( ! is_int( $attachment_id ) || $attachment_id <= 0 ) {
+		if ( $attachment_id <= 0 ) {
 			wp_delete_file( $upload['file'] );
 			return 0;
 		}
@@ -562,9 +562,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		self::require_admin_media_dependencies();
 		if ( function_exists( 'wp_generate_attachment_metadata' ) ) {
 			$metadata = wp_generate_attachment_metadata( $attachment_id, $upload['file'] );
-			if ( is_array( $metadata ) ) {
-				wp_update_attachment_metadata( $attachment_id, $metadata );
-			}
+			wp_update_attachment_metadata( $attachment_id, $metadata );
 		}
 		update_post_meta( $attachment_id, self::SOURCE_IMAGE_META_KEY, $source );
 		self::apply_attachment_alt_text( $attachment_id, $alt );
@@ -580,13 +578,13 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		}
 		$found = get_posts(
 			array(
-				'post_type'      => 'attachment',
-				'post_status'    => 'inherit',
-				'numberposts'    => 1,
-				'fields'         => 'ids',
-				'no_found_rows'  => true,
-				'meta_key'       => self::SOURCE_IMAGE_META_KEY,
-				'meta_value'     => $source,
+				'post_type'     => 'attachment',
+				'post_status'   => 'inherit',
+				'numberposts'   => 1,
+				'fields'        => 'ids',
+				'no_found_rows' => true,
+				'meta_key'      => self::SOURCE_IMAGE_META_KEY,
+				'meta_value'    => $source,
 			)
 		);
 		return ! empty( $found ) ? (int) $found[0] : 0;
@@ -684,6 +682,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	 * Ensure product categories exist and return term IDs.
 	 *
 	 * @param array<int, string> $category_names Category names.
+	 * @param array<int, int> $created_terms Created term IDs, updated by reference.
 	 * @return array<int, int>|WP_Error
 	 */
 	private static function ensure_category_ids( array $category_names, array &$created_terms = array() ) {
@@ -699,7 +698,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		return array_values( array_unique( array_filter( $term_ids ) ) );
 	}
 
-	/** @return int|WP_Error */
+	/** @param array<int,int> $created_terms @return int|WP_Error */
 	private static function ensure_category_id( string $category_name, array &$created_terms ) {
 		/** @var mixed $term */
 		$term    = term_exists( $category_name, 'product_cat' );

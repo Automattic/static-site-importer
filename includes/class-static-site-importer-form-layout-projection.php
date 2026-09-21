@@ -1055,7 +1055,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 							break;
 						}
 					}
-					if ( ! $equal_grid && in_array( 'grid', preg_split( '/\s+/', trim( (string) ( $topology_nodes_by_id[ $parent ]['class'] ?? '' ) ) ) ?: array(), true ) ) {
+					$class_tokens = preg_split( '/\s+/', trim( (string) ( $topology_nodes_by_id[ $parent ]['class'] ?? '' ) ) );
+					if ( ! $equal_grid && in_array( 'grid', is_array( $class_tokens ) ? $class_tokens : array(), true ) ) {
 						$equal_grid     = true;
 						$column_count   = $widened_count;
 						$widening_query = $condition['query'];
@@ -1089,8 +1090,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( $paired_indexes === $non_submit_indexes ) {
 				continue;
 			}
-			$width  = self::provider_field_width( 1 / $column_count );
-			$gap    = is_string( $layout['gap'] ?? null ) && '' !== trim( $layout['gap'] )
+			$width       = self::provider_field_width( 1 / $column_count );
+			$gap         = is_string( $layout['gap'] ?? null ) && '' !== trim( $layout['gap'] )
 				? trim( $layout['gap'] )
 				: ( is_string( $layout['column_gap'] ?? null ) && '' !== trim( $layout['column_gap'] ) ? trim( $layout['column_gap'] ) : '1.5rem' );
 			$track       = self::equal_fraction_track_size( $column_count, $gap );
@@ -2510,8 +2511,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * @param array<string,array<int,array<string,mixed>>> $variants_by_node
 	 * @param array<string,array<string,mixed>>            $layout_nodes_by_id
 	 */
-	private static function equal_width_stack_query_from_cascade_facts( string $parent, array $variants_by_node, array $layout_nodes_by_id ): ?string {
-		foreach ( $variants_by_node[ $parent ] ?? array() as $variant ) {
+	private static function equal_width_stack_query_from_cascade_facts( string $parent_id, array $variants_by_node, array $layout_nodes_by_id ): ?string {
+		foreach ( $variants_by_node[ $parent_id ] ?? array() as $variant ) {
 			$condition = is_array( $variant['condition'] ?? null ) ? $variant['condition'] : null;
 			if ( ! is_array( $condition ) || 'media' !== ( $condition['kind'] ?? null ) || ! is_string( $condition['query'] ?? null ) || ! self::is_min_width_media_query( $condition['query'] ) ) {
 				continue;
@@ -2521,7 +2522,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				return $inverted;
 			}
 		}
-		foreach ( ( $layout_nodes_by_id[ $parent ]['provenance'] ?? array() ) as $fact ) {
+		foreach ( ( $layout_nodes_by_id[ $parent_id ]['provenance'] ?? array() ) as $fact ) {
 			$condition = is_array( $fact ) && is_array( $fact['condition'] ?? null ) ? $fact['condition'] : null;
 			if ( ! is_array( $condition ) || 'media' !== ( $condition['kind'] ?? null ) || ! is_string( $condition['query'] ?? null ) || ! self::is_min_width_media_query( $condition['query'] ) || ! in_array( 'grid-template-columns', $fact['properties'] ?? array(), true ) ) {
 				continue;
@@ -2536,7 +2537,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 
 	/** @param array<int,string> $tokens */
 	private static function display_from_class_tokens( array $tokens ): ?string {
-		$map = array(
+		$map     = array(
 			'grid'        => 'grid',
 			'flex'        => 'flex',
 			'inline-flex' => 'inline-flex',

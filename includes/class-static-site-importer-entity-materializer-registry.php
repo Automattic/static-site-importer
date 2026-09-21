@@ -1259,7 +1259,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					);
 				}
 			}
-			$image = array( 'src' => '', 'alt' => '' );
+			$image = array(
+				'src' => '',
+				'alt' => '',
+			);
 			if ( array_key_exists( 'image', $product ) ) {
 				$image = self::manifest_product_image( $product['image'] );
 				if ( null === $image ) {
@@ -1267,7 +1270,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						'path'    => $path_prefix . '.image',
 						'message' => 'image must be a string source path, or an { src, alt } object with a non-empty src, when provided.',
 					);
-					$image = array( 'src' => '', 'alt' => '' );
+					$image    = array(
+						'src' => '',
+						'alt' => '',
+					);
 				}
 			}
 			if ( isset( $product['image_alt'] ) && ! is_string( $product['image_alt'] ) ) {
