@@ -375,6 +375,9 @@ function static_site_importer_rest_is_direct_artifact_continuation( array $sourc
  * @return array<string,mixed>|WP_Error
  */
 function static_site_importer_rest_apply_to_current_site( array $source, array $input ) {
+	// HTTP imports must allow plugin provisioning to finish in a fresh request,
+	// including a single HTML page that declares provider-backed features.
+	$input['runtime_lifecycle_phase'] = 'prepare';
 	// Current-site materialization is always inert even when a request carries preview options.
 	$input['client_script_policy']     = 'inert';
 	$input['client_script_isolated']   = false;
@@ -513,10 +516,18 @@ function static_site_importer_rest_route_url_import( array $source, array $input
 
 	// Collection is bounded and resumable. Materialize the complete plan once,
 	// rather than replacing the companion contract with each page-sized batch.
-	$apply_input             = $input;
+	$identity                 = Static_Site_Importer_Site_Identity::resolve( array_merge( $input, array(
+		'plan' => $result['plan'],
+		'url'  => $url,
+	) ) );
+	$apply_input              = array_merge( $input, array(
+		'slug'       => $identity['slug'],
+		'name'       => $identity['name'],
+		'site_title' => $identity['title'],
+	) );
 	$apply_input['operation'] = 'apply';
 	$apply_input['plan']      = $result;
-	$applied                 = static_site_importer_rest_execute_import_ability(
+	$applied                  = static_site_importer_rest_execute_import_ability(
 		'static-site-importer/import',
 		$apply_input,
 		'static_site_importer_ability_import'
@@ -529,8 +540,9 @@ function static_site_importer_rest_route_url_import( array $source, array $input
 		return $applied;
 	}
 	unset( $applied['plan'] );
-	$applied['import_id']    = (string) ( $result['import_id'] ?? '' );
-	$applied['continuation'] = false;
+	$applied['import_id']     = (string) ( $result['import_id'] ?? '' );
+	$applied['continuation']  = ! empty( $applied['continuation'] );
+	$applied['url_batch_run'] = $result['url_batch_run'] ?? array();
 	return $applied;
 }
 
@@ -680,7 +692,10 @@ function static_site_importer_source_runtime( array $source ) {
 
 	$entrypoint = isset( $source['entrypoint'] ) ? static_site_importer_rest_artifact_path( (string) $source['entrypoint'] ) : '';
 	if ( '' === $entrypoint || ! in_array( $entrypoint, array_column( $files, 'path' ), true ) ) {
-		$entrypoint = static_site_importer_rest_entrypoint( $files );
+		$entrypoint = static_site_importer_rest_entrypoint( $files, isset( $source['archive'] ) );
+		if ( is_wp_error( $entrypoint ) ) {
+			return $entrypoint;
+		}
 	}
 
 	$artifact      = array_merge(
@@ -1246,15 +1261,27 @@ function static_site_importer_rest_should_include_artifact_file( string $path ):
  * Pick an entrypoint from artifact files.
  *
  * @param array<int,array<string,mixed>> $files Artifact files.
- * @return string
+ * @param bool $require_index Whether a ZIP requires a definite index document.
+ * @return string|WP_Error
  */
-function static_site_importer_rest_entrypoint( array $files ): string {
-	foreach ( array( 'website/index.html', 'website/home.html' ) as $candidate ) {
+function static_site_importer_rest_entrypoint( array $files, bool $require_index = false ): string|WP_Error {
+	foreach ( array( 'website/index.html', 'website/index.htm', 'website/home.html' ) as $candidate ) {
 		foreach ( $files as $file ) {
 			if ( isset( $file['path'] ) && $candidate === (string) $file['path'] ) {
 				return $candidate;
 			}
 		}
+	}
+
+	$indexes = array_values( array_filter( array_column( $files, 'path' ), static fn( string $path ): bool => (bool) preg_match( '#/index\.html?$#i', $path ) ) );
+	if ( 1 === count( $indexes ) ) {
+		return $indexes[0];
+	}
+	if ( count( $indexes ) > 1 ) {
+		return new WP_Error( 'static_site_importer_ambiguous_entrypoint', 'The source has multiple nested index documents. Include a root index.html or select an entrypoint.', array( 'status' => 400 ) );
+	}
+	if ( $require_index ) {
+		return new WP_Error( 'static_site_importer_missing_entrypoint', 'The ZIP must include an index.html entry document.', array( 'status' => 400 ) );
 	}
 
 	foreach ( $files as $file ) {

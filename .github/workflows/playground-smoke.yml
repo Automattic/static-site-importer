@@ -1,0 +1,46 @@
+name: Published Playground smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '15 9 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: published-playground-smoke
+  cancel-in-progress: false
+
+jobs:
+  browser-inputs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/checkout@v4
+        with:
+          repository: Automattic/blocks-engine
+          ref: 12c93f35529c563257d144b511b0dbd30eb89ebe
+          path: .playground-fixtures
+          persist-credentials: false
+          sparse-checkout: |
+            fixtures/websites/17-markdown-blog-launch-site
+            fixtures/websites/81-dental-practice
+      - run: npx playwright install --with-deps chromium
+      - name: Verify the published README input matrix
+        env:
+          PLAYGROUND_FIXTURE_REPO: ${{ github.workspace }}/.playground-fixtures
+          PLAYGROUND_EXPECT_RESPONSE_ARTIFACTS: not_retained
+        run: npm run test:playground-inputs
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playground-browser-failure
+          path: /tmp/static-site-importer-playground-launch-failure.png
+          if-no-files-found: ignore

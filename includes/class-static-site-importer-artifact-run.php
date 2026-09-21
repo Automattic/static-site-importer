@@ -454,7 +454,23 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		if ( false === $handle ) {
 			return false;
 		}
-		$written = self::write_json_value( $handle, $data, 0 );
+		// Keep streaming memory bounds without issuing a filesystem write for
+		// every JSON token. Browser-backed filesystems make tiny writes costly.
+		$buffer  = '';
+		$write   = static function ( string $bytes ) use ( $handle, &$buffer ): bool {
+			if ( strlen( $buffer ) + strlen( $bytes ) > 65536 ) {
+				if ( ! self::write_complete_handle( $handle, $buffer ) ) {
+					return false;
+				}
+				$buffer = '';
+			}
+			if ( strlen( $bytes ) >= 65536 ) {
+				return self::write_complete_handle( $handle, $bytes );
+			}
+			$buffer .= $bytes;
+			return true;
+		};
+		$written = self::write_json_value( $write, $data, 0 ) && self::write_complete_handle( $handle, $buffer );
 		$flushed = $written && fflush( $handle );
 		$synced  = $flushed && ( ! function_exists( 'fsync' ) || fsync( $handle ) );
 		$closed  = fclose( $handle ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Preserves flush, sync, then close durability ordering on the native stream.
@@ -462,35 +478,35 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 	}
 
 	/** Stream the exact JSON_PRETTY_PRINT token sequence without one complete JSON allocation. */
-	private static function write_json_value( $handle, $value, int $depth ): bool {
+	private static function write_json_value( callable $write, $value, int $depth ): bool {
 		if ( ! is_array( $value ) ) {
 			$encoded = wp_json_encode( $value, JSON_PRETTY_PRINT | JSON_PRESERVE_ZERO_FRACTION );
-			return is_string( $encoded ) && self::write_complete_handle( $handle, $encoded );
+			return is_string( $encoded ) && $write( $encoded );
 		}
 		if ( empty( $value ) ) {
-			return self::write_complete_handle( $handle, '[]' );
+			return $write( '[]' );
 		}
 		$list = array_is_list( $value );
-		if ( ! self::write_complete_handle( $handle, $list ? "[\n" : "{\n" ) ) {
+		if ( ! $write( $list ? "[\n" : "{\n" ) ) {
 			return false;
 		}
 		$count = count( $value );
 		$index = 0;
 		foreach ( $value as $key => $item ) {
-			if ( ! self::write_complete_handle( $handle, str_repeat( ' ', 4 * ( $depth + 1 ) ) ) ) {
+			if ( ! $write( str_repeat( ' ', 4 * ( $depth + 1 ) ) ) ) {
 				return false;
 			}
 			if ( ! $list ) {
 				$encoded_key = wp_json_encode( (string) $key, JSON_PRETTY_PRINT | JSON_PRESERVE_ZERO_FRACTION );
-				if ( ! is_string( $encoded_key ) || ! self::write_complete_handle( $handle, $encoded_key . ': ' ) ) {
+				if ( ! is_string( $encoded_key ) || ! $write( $encoded_key . ': ' ) ) {
 					return false;
 				}
 			}
-			if ( ! self::write_json_value( $handle, $item, $depth + 1 ) || ! self::write_complete_handle( $handle, ++$index < $count ? ",\n" : "\n" ) ) {
+			if ( ! self::write_json_value( $write, $item, $depth + 1 ) || ! $write( ++$index < $count ? ",\n" : "\n" ) ) {
 				return false;
 			}
 		}
-		return self::write_complete_handle( $handle, str_repeat( ' ', 4 * $depth ) . ( $list ? ']' : '}' ) );
+		return $write( str_repeat( ' ', 4 * $depth ) . ( $list ? ']' : '}' ) );
 	}
 
 	private static function write_complete_handle( $handle, string $bytes ): bool {

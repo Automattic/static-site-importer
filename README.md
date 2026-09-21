@@ -99,7 +99,7 @@ When a generated artifact contains full-document HTML, Static Site Importer rout
 - Composer dependencies installed with `composer install`.
 - Node dependencies installed only when running the JavaScript block-validation smoke tests.
 
-SSI pins `automattic/blocks-engine-php-transformer:0.16.0` from Packagist. The committed Composer lockfile records the immutable source reference for the `php-transformer-v0.16.0` release.
+SSI pins `automattic/blocks-engine-php-transformer:0.16.1` from Packagist. The committed Composer lockfile records the immutable source reference for the `php-transformer-v0.16.1` release.
 
 At runtime, SSI loads the transformer package from `vendor/` and compiles with `new ArtifactCompiler()->compile()`. Theme export still calls `blocks_engine_php_transformer_convert_format()`.
 

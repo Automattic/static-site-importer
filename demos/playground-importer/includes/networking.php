@@ -26,7 +26,11 @@ function static_site_importer_playground_resolve_ips( $provided, string $host ) 
 	foreach ( array( 1, 28 ) as $type ) {
 		$response = wp_remote_get(
 			'https://dns.google/resolve?name=' . rawurlencode( $host ) . '&type=' . $type,
-			array( 'timeout' => 5, 'redirection' => 0, 'limit_response_size' => 65536 )
+			array(
+				'timeout'             => 5,
+				'redirection'         => 0,
+				'limit_response_size' => 65536,
+			)
 		);
 		if ( is_wp_error( $response ) ) {
 			return $response;
@@ -36,7 +40,7 @@ function static_site_importer_playground_resolve_ips( $provided, string $host ) 
 			return new WP_Error( 'static_site_importer_playground_dns_failed', 'Public DNS resolution failed in Playground.' );
 		}
 		foreach ( $data['Answer'] ?? array() as $answer ) {
-			if ( $type === ( $answer['type'] ?? null ) && is_string( $answer['data'] ?? null ) ) {
+			if ( ( $answer['type'] ?? null ) === $type && is_string( $answer['data'] ?? null ) ) {
 				$ips[] = $answer['data'];
 			}
 		}
@@ -49,6 +53,12 @@ function static_site_importer_playground_resolve_ips( $provided, string $host ) 
 /** Select the browser transport only for the demo's PHP.wasm runtime. */
 function static_site_importer_playground_url_fetcher( $provided ) {
 	return null === $provided ? 'static_site_importer_playground_fetch' : $provided;
+}
+
+/** Leave headroom for one atomic page transform inside Playground's reply window. */
+function static_site_importer_playground_url_budget( array $args ): array {
+	$args['max_invocation_seconds'] = min( 10, (float) ( $args['max_invocation_seconds'] ?? 10 ) );
+	return $args;
 }
 
 /** Fetch through the existing SSI policy/redirect engine with WP HTTP transport. */

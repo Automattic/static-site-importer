@@ -64,6 +64,14 @@ $staged_interrupted = $prepare_staged->invoke( null, $staged_workspace, $staged_
 $staged_checkpoint = json_decode( (string) $staged_workspace->read_raw( 'staged-pages.json' ), true );
 $staged_resumed = $prepare_staged->invoke( null, $staged_workspace, $staged_artifact, hash( 'sha256', 'page-checkpoint' ), null, 'staged-pages.json', static fn(): bool => false );
 if ( ! is_wp_error( $staged_interrupted ) || 'static_site_importer_invocation_deadline_exceeded' !== $staged_interrupted->get_error_code() || 1 !== count( $staged_checkpoint['plans'] ?? array() ) || is_wp_error( $staged_resumed ) || 2 !== ( $staged_resumed['page_prepared'] ?? -1 ) || 3 !== count( $staged_resumed['page_plans'] ?? array() ) ) { throw new RuntimeException( 'staged page preparation must checkpoint each completed page and resume only unfinished pages' ); }
+$yield_checks = 0;
+$compiled_interrupted = $prepare_staged->invoke( null, $staged_workspace, $staged_artifact, hash( 'sha256', 'page-checkpoint' ), null, 'compiled-pages.json', static function () use ( &$yield_checks ): bool { return 1 < ++$yield_checks; }, true );
+$compiled_checkpoint = json_decode( (string) $staged_workspace->read_raw( 'compiled-pages.json' ), true );
+$compiled_resumed = $prepare_staged->invoke( null, $staged_workspace, $staged_artifact, hash( 'sha256', 'page-checkpoint' ), null, 'compiled-pages.json', static fn(): bool => false, true );
+$first_compiled = array_values( $compiled_checkpoint['plans'] ?? array() )[0] ?? array();
+if ( ! is_wp_error( $compiled_interrupted ) || empty( $first_compiled['receipt_schema'] ) || 1 !== ( $first_compiled['work']['html_document_transform_count'] ?? 0 ) || is_wp_error( $compiled_resumed ) || 2 !== $compiled_resumed['page_prepared'] || $first_compiled !== $compiled_resumed['page_plans'][0] ) { throw new RuntimeException( 'URL compilation must checkpoint compiled receipts and resume without repeating completed page work' ); }
+$composed_receipts = ( new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler() )->compose( $compiled_resumed['shared_plan'], $compiled_resumed['page_plans'] );
+if ( 0 !== ( $composed_receipts->metrics['html_document_transform_count'] ?? -1 ) ) { throw new RuntimeException( 'final URL receipt composition must perform zero HTML transforms' ); }
 $staged_workspace->purge();
 
 $payload_workspace_root = sys_get_temp_dir() . '/ssi-collection-payload-' . bin2hex( random_bytes( 4 ) );
@@ -380,7 +388,10 @@ add_filter( 'static_site_importer_url_batch_import_fetcher', static function ( $
 			return array( 'body' => '<urlset><url><loc>https://runtime-plan.test/</loc></url><url><loc>https://runtime-plan.test/about/</loc></url></urlset>', 'metadata' => array( 'content_type' => 'application/xml', 'final_url' => $url ) );
 		}
 
-		return array( 'body' => '<main>' . $url . '</main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) );
+		if ( 'https://runtime-plan.test/image.png' === $url ) {
+			return array( 'body' => 'url-plan-image', 'metadata' => array( 'content_type' => 'image/png', 'final_url' => $url ) );
+		}
+		return array( 'body' => '<main>' . $url . '<img src="/image.png"></main>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) );
 	};
 } );
 $writes_before_url_plan = count( $runtime_imports );
@@ -392,6 +403,29 @@ $operation_mismatch = Static_Site_Importer_URL_Import_Runtime::run_operation( ar
 if ( empty( $url_plan_first['continuation'] ) || empty( $url_plan_first['import_id'] ) || ! empty( $url_plan_first['plan'] ) || empty( $url_plan_final['plan'] ) || 'completed' !== ( $url_plan_final['url_batch_run']['status'] ?? '' ) || 2 !== count( $url_plan_pages ) || empty( $url_plan_paths[0] ) || empty( $url_plan_paths[1] ) || $writes_before_url_plan !== count( $runtime_imports ) || ! is_wp_error( $operation_mismatch ) || 'static_site_importer_url_import_run_mismatch' !== $operation_mismatch->get_error_code() ) { throw new RuntimeException( 'URL planning must compose every frozen batch into one plan without importer writes and bind continuation to operation intent' ); }
 
 // shared-change.test — plan-mode cross-batch shared digest change (issue #901)
+Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::assertValid( $url_plan_final['plan'] );
+$approved_runtime = Static_Site_Importer_URL_Import_Runtime::approved_plan_runtime( $url_plan_final['source'], $url_plan_final['plan'] );
+$binary = array_values( array_filter( $url_plan_final['plan']['assets'], static fn( array $asset ): bool => isset( $asset['payload_reference'] ) ) )[0] ?? array();
+if ( is_wp_error( $approved_runtime ) || empty( $binary ) || 'url-plan-image' !== $approved_runtime['payload_reader']->read( $binary['payload_reference'] ) ) { throw new RuntimeException( 'completed URL plans must remain canonical and retain verified binary payload access for their owner' ); }
+$changed_plan = $url_plan_final['plan']; $changed_plan['plan_identity']['hash'] = str_repeat( '0', 64 );
+if ( ! is_wp_error( Static_Site_Importer_URL_Import_Runtime::approved_plan_runtime( $url_plan_final['source'], $changed_plan ) ) ) { throw new RuntimeException( 'URL payload handoff must reject another plan identity' ); }
+$GLOBALS['ssi_test_user_id'] = 2;
+if ( ! is_wp_error( Static_Site_Importer_URL_Import_Runtime::approved_plan_runtime( $url_plan_final['source'], $url_plan_final['plan'] ) ) ) { throw new RuntimeException( 'URL payload handoff must reject another user' ); }
+$GLOBALS['ssi_test_user_id'] = 1;
+
+// Retained application responses are atomic and replay under an execution lock.
+$apply_input = array( 'operation' => 'apply', 'plan' => $url_plan_final, 'slug' => 'runtime-plan' );
+$apply_args = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $apply_input );
+$cached_response = array( 'success' => true, 'result' => array( 'theme_slug' => 'cached-application' ) );
+$application = array( 'args_hash' => Static_Site_Importer_Canonical_Import_Service::handoff_hash( $apply_args ), 'response' => $cached_response );
+if ( is_wp_error( Static_Site_Importer_URL_Import_Runtime::checkpoint_plan_application( $approved_runtime, $application ) ) ) { throw new RuntimeException( 'approved URL application must persist atomically' ); }
+$application_lock = $approved_runtime['workspace']->acquire_lock( 'application.lock' );
+$locked_apply = Static_Site_Importer_Canonical_Import_Service::apply_approved_plan( $apply_input );
+$approved_runtime['workspace']->release_lock( $application_lock );
+if ( 'static_site_importer_artifact_workspace_locked' !== ( $locked_apply['error']['code'] ?? '' ) || $cached_response !== Static_Site_Importer_Canonical_Import_Service::apply_approved_plan( $apply_input ) ) { throw new RuntimeException( 'approved URL apply must serialize admission and replay completed responses without repeated mutation' ); }
+$changed_apply = Static_Site_Importer_Canonical_Import_Service::apply_approved_plan( array_merge( $apply_input, array( 'slug' => 'different-target' ) ) );
+if ( 'static_site_importer_url_apply_options_changed' !== ( $changed_apply['error']['code'] ?? '' ) ) { throw new RuntimeException( 'retained URL application must remain bound to destination options' ); }
+
 add_filter( 'static_site_importer_url_batch_import_fetcher', static function ( $fetcher, array $request ) {
 	if ( 'https://shared-change.test/' !== ( $request['url'] ?? '' ) ) {
 		return $fetcher;

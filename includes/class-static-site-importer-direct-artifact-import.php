@@ -24,6 +24,9 @@ if ( ! class_exists( 'Static_Site_Importer_Client_Script_Policy' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Public_Error_Projection' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-public-error-projection.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-site-identity.php';
+}
 
 final class Static_Site_Importer_Direct_Artifact_Import {
 	private const RUN_SCHEMA                    = 'static-site-importer/direct-artifact-run/v1';
@@ -58,6 +61,11 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			$workspace->purge();
 			return $retained;
 		}
+		$site_identity               = Static_Site_Importer_Site_Identity::resolve( array_merge( $args, array(
+			'artifact'       => $artifact,
+			'payload_reader' => self::payload_reader( $workspace ),
+		) ) );
+		$artifact['block_namespace'] = $site_identity['block_namespace'];
 		unset( $args['_static_site_importer_payload_reader'] );
 		$policy                                = Static_Site_Importer_Client_Script_Policy::apply( $artifact, $args );
 		$artifact                              = $policy['artifact'];

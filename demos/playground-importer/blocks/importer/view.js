@@ -3,6 +3,32 @@
 ( function () {
 	const roots = document.querySelectorAll( '[data-static-site-importer]' );
 
+	// The hosted Playground client owns long-running PHP requests. Its service
+	// worker navigation transport has a shorter fixed reply window.
+	const requestImport = async function ( url, options ) {
+		let playground;
+		try {
+			playground = window.top.playground;
+		} catch {
+			// An embedded or exported site may have a different-origin parent.
+		}
+		if ( playground && typeof playground.request === 'function' ) {
+			const site = new URL( await playground.absoluteUrl );
+			const target = new URL( url, window.location.href );
+			const sitePath = site.pathname.replace( /\/$/, '' ) + '/';
+			if ( target.origin === site.origin && target.pathname.startsWith( sitePath ) ) {
+				const response = await playground.request( {
+					url: target.href,
+					method: options.method,
+					headers: options.headers,
+					body: new TextEncoder().encode( options.body ),
+				} );
+				return new Response( response.bytes, { status: response.httpStatusCode } );
+			}
+		}
+		return fetch( url, options );
+	};
+
 	const fileToBase64 = function ( file ) {
 		return new Promise( function ( resolve, reject ) {
 			const reader = new FileReader();
@@ -341,7 +367,7 @@
 			try {
 				const restUrl = root.getAttribute( 'data-static-site-importer-rest-url' );
 				const nonce = root.getAttribute( 'data-static-site-importer-nonce' );
-				const postImport = async function ( importSource, importId ) {
+				const postImport = async function ( importSource, importId, lifecycle ) {
 					const body = {
 						source: importSource,
 						apply_to_current_site: true,
@@ -351,7 +377,12 @@
 					if ( importId ) {
 						body.source = Object.assign( {}, importSource, { import_id: importId } );
 					}
-					return fetch( restUrl, {
+					if ( lifecycle && lifecycle.runtime_lifecycle_checkpoint ) {
+						body.runtime_lifecycle_phase = 'resume';
+						body.runtime_lifecycle_checkpoint = lifecycle.runtime_lifecycle_checkpoint;
+						body.runtime_lifecycle_request_id = lifecycle.fresh_runtime ? lifecycle.fresh_runtime.request_id : '';
+					}
+					return requestImport( restUrl, {
 						method: 'POST',
 						headers: {
 							'Content-Type': 'application/json',
@@ -367,12 +398,16 @@
 				if ( response.ok && report.continuation === true ) {
 					const maxContinuations = 64;
 					let steps = 0;
+					let lifecycle = null;
 					while ( response.ok && report.continuation === true && ! report.error && steps < maxContinuations ) {
 						steps++;
 						const nextImportId = report.import_id || '';
 						const nextSource = isUrlOnly ? { url: report.url || source.url } : { type: 'files' };
+						if ( report.result && report.result.runtime_lifecycle_checkpoint ) {
+							lifecycle = report.result;
+						}
 						showStatus( root, 'Continuing WordPress preview (' + steps + ')...' );
-						response = await postImport( nextSource, nextImportId );
+						response = await postImport( nextSource, nextImportId, lifecycle );
 						report = await response.json();
 					}
 				}

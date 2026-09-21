@@ -745,6 +745,13 @@ foreach ( array( 'one', 'two' ) as $category ) {
 $assert( 2 === count( array_unique( $query_routes ) ), 'independent-query-batches-have-distinct-canonical-routes' );
 $assert( array() === array_filter( $modern_requests, static fn( string $url ): bool => str_ends_with( $url, '.js' ) ), 'inert-script-preloads-are-never-fetched' );
 
+$deadline_discovery = Static_Site_Importer_URL_Site_Collector::discover_routes( 'https://discovery.test/', array( 'request_delay_ms' => 0 ), static function ( string $url ) {
+	if ( str_ends_with( $url, 'sitemap.xml' ) ) { return new WP_Error( 'not_found', 'No sitemap' ); }
+	if ( 'https://discovery.test/' === $url ) { return array( 'body' => '<a href="/next">Next</a>', 'metadata' => array( 'content_type' => 'text/html' ) ); }
+	return new WP_Error( 'static_site_importer_invocation_deadline_exceeded', 'Continue discovery' );
+} );
+$assert( is_wp_error( $deadline_discovery ) && 'static_site_importer_invocation_deadline_exceeded' === $deadline_discovery->get_error_code(), 'discovery-deadline-never-reports-a-partial-route-set-as-complete' );
+
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( PHP_EOL, $failures ) . PHP_EOL );
 	exit( 1 );

@@ -730,6 +730,9 @@ class Static_Site_Importer_URL_Site_Collector {
 				continue;
 			}
 			$response = $fetcher( $current, array_merge( $fetch_args, array( 'content_types' => array( 'text/html', 'application/xhtml+xml' ) ) ) );
+			if ( is_wp_error( $response ) && in_array( $response->get_error_code(), array( 'static_site_importer_invocation_deadline_exceeded', 'static_site_importer_url_deadline_exhausted' ), true ) ) {
+				return $response;
+			}
 			if ( is_wp_error( $response ) || '' === trim( (string) ( $response['body'] ?? '' ) ) ) {
 				continue;
 			}
@@ -793,6 +796,9 @@ class Static_Site_Importer_URL_Site_Collector {
 				)
 			);
 			if ( is_wp_error( $response ) ) {
+				if ( in_array( $response->get_error_code(), array( 'static_site_importer_invocation_deadline_exceeded', 'static_site_importer_url_deadline_exhausted' ), true ) ) {
+					return $response;
+				}
 				continue;
 			}
 			preg_match_all( '#<loc\b[^>]*>(.*?)</loc>#is', (string) $response['body'], $matches );
@@ -938,6 +944,7 @@ class Static_Site_Importer_URL_Site_Collector {
 				'#<link\b[^>]*>#is',
 				static function ( array $matches ) use ( $base_url, &$exclusions ): string {
 					$relations = preg_split( '/\s+/', strtolower( trim( (string) self::tag_attribute_value( $matches[0], 'rel' ) ) ) );
+					$relations = is_array( $relations ) ? $relations : array();
 					$as        = strtolower( (string) self::tag_attribute_value( $matches[0], 'as' ) );
 					if ( ! in_array( 'modulepreload', $relations, true ) && ! ( in_array( 'preload', $relations, true ) && 'script' === $as ) ) {
 						return $matches[0];

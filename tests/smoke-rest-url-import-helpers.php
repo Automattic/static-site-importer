@@ -89,6 +89,10 @@ if ( ! function_exists( 'wp_get_ability' ) ) {
 
 require_once dirname( __DIR__ ) . '/includes/rest.php';
 
+$assert( 'website/export/index.html' === static_site_importer_rest_entrypoint( array( array( 'path' => 'website/export/about.html' ), array( 'path' => 'website/export/index.html' ) ), true ), 'nested-zip-index-precedes-alphabetical-document' );
+$assert( is_wp_error( static_site_importer_rest_entrypoint( array( array( 'path' => 'website/fixture.json' ) ), true ) ), 'zip-without-entry-document-fails-at-intake' );
+$assert( is_wp_error( static_site_importer_rest_entrypoint( array( array( 'path' => 'website/one/index.html' ), array( 'path' => 'website/two/index.html' ) ), true ) ), 'ambiguous-nested-zip-entrypoints-are-rejected' );
+
 $report_paths = array( 'interaction-states.json', 'reports/capture.json' );
 $assert( 'interaction-states.json' === static_site_importer_rest_source_file_path( 'interaction-states.json', $report_paths ), 'declared-root-report-path-is-preserved' );
 $assert( 'reports/capture.json' === static_site_importer_rest_source_file_path( 'reports/capture.json', $report_paths ), 'declared-nested-report-path-is-preserved' );
