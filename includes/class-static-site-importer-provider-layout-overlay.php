@@ -587,6 +587,17 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		return self::presentation_property_map();
 	}
 
+	/**
+	 * Properties an explicitly declared positioned control's destination may
+	 * carry but an ordinary control, label, or required-marker destination
+	 * never may (see `presentation_property_keys()`).
+	 *
+	 * @return array<int,string>
+	 */
+	private static function positioned_control_only_presentation_property_keys(): array {
+		return array_keys( array_diff_key( self::positioned_control_presentation_property_keys(), self::presentation_property_keys() ) );
+	}
+
 	private static function presentation_declarations( array $styles, int $index, string $role, array &$losses, array $properties = array(), array $aliases = array() ): array {
 		$map          = self::presentation_property_map();
 		$declarations = array();
@@ -643,7 +654,16 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			$rules[]      = null === $condition ? $rule : self::conditional_rule( $condition, $rule );
 			$operations[] = self::presentation_operation( $index, $role, $destination['selector'], null !== $condition );
 		}
-		if ( array_diff( array_keys( $styles ), $represented ) ) {
+		// A captured property outside every ordinary destination's own vocabulary
+		// (see `positioned_control_only_presentation_property_keys()`) is not a
+		// coverage gap: no non-positioned control, label, or required-marker
+		// destination for any field is ever allowed to carry it, so its absence
+		// here is the documented, universal exclusion working as designed, not a
+		// per-field fidelity regression worth declining provider materialization
+		// over. Only a property this role's own vocabulary could have carried,
+		// yet no destination actually represented, is a genuine structure
+		// mismatch.
+		if ( array_diff( array_keys( $styles ), $represented, self::positioned_control_only_presentation_property_keys() ) ) {
 			$losses[] = self::presentation_loss( 'provider_structure_mismatch', $index, $role );
 		}
 	}

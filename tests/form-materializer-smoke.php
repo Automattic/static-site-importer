@@ -2587,6 +2587,40 @@ namespace {
 		'compiled-wrapping-label-keeps-description-off-the-label-and-on-jetpack-help-text',
 		wp_json_encode( array( 'control' => $wrapping_label_control, 'markup' => $wrapping_label_markup ) )
 	);
+
+	// A source builder commonly hides a checkbox's native control behind a
+	// custom-drawn box with `position: absolute` (paired with `opacity: 0`),
+	// so its own captured presentation styles include `position` alongside
+	// ordinary box/typography facts. `position` is deliberately outside the
+	// vocabulary every ordinary control/label destination may represent (see
+	// `Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys()`
+	// vs `positioned_control_presentation_property_keys()`), so its absence
+	// from the represented set is the documented universal exclusion working
+	// as designed, not a per-field fidelity regression. Declining the whole
+	// form over an intentionally unrepresentable property leaves an
+	// email-plus-consent-plus-submit form a dead, unsubmittable control (see
+	// https://github.com/Automattic/static-site-importer/issues/1773).
+	$hidden_checkbox_html = '<style>.subscribe-checkbox{position:absolute;opacity:0;width:20px;height:20px;margin:0;padding:0;box-sizing:border-box;border:1px solid #000}</style><form>'
+		. '<label>Email<input type="email" name="email"></label>'
+		. '<label class="consent-row"><input type="checkbox" name="updates" class="subscribe-checkbox">Yes, subscribe me to your newsletter.</label>'
+		. '<button type="submit">Sign Up</button></form>';
+	$hidden_checkbox_source = class_exists( $artifact_compiler ) ? ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'subscribe.html', 'files' => array( 'subscribe.html' => $hidden_checkbox_html ) ) )->toArray() )['fallbacks'][0] ?? array() : array();
+	$hidden_checkbox_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $hidden_checkbox_source ) ) );
+	$hidden_checkbox_seed      = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $hidden_checkbox_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert(
+		! class_exists( $artifact_compiler )
+			|| (
+				empty( $hidden_checkbox_validated['errors'] )
+				&& 'mapped' === ( $hidden_checkbox_seed['status'] ?? '' )
+				&& true === ( $hidden_checkbox_seed['runtime_mapped'] ?? false )
+				&& empty( $hidden_checkbox_seed['form_receipt_unaccepted_losses'] ?? array() )
+				&& in_array( 'jetpack/field-checkbox', $hidden_checkbox_seed['field_blocks'] ?? array(), true )
+				&& in_array( 'jetpack/field-email', $hidden_checkbox_seed['field_blocks'] ?? array(), true )
+			),
+		'visually-hidden-checkbox-position-styling-does-not-decline-the-whole-form',
+		wp_json_encode( array( 'errors' => $hidden_checkbox_validated['errors'] ?? array(), 'row' => $hidden_checkbox_seed ) )
+	);
+
 	$help_text_atts = Static_Site_Importer_Provider_Form_Runtime_V1::project_help_text_attribute(
 		array( 'helptext' => null ),
 		array(),
