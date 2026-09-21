@@ -4,6 +4,9 @@
  *
  * @package StaticSiteImporter
  */
+
+use Automattic\BlocksEngine\PhpTransformer\Support\StyleTagScanner;
+
 if ( ! function_exists( 'static_site_importer_cli_write_validation_output' ) ) {
 	/**
 	 * Write validation output to a file when requested, otherwise stdout.
@@ -258,15 +261,88 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		);
 	}
 
-	/** Count bounded HTML assets that Blocks Engine will expand into generated files. */
+	/**
+	 * Count bounded HTML assets that Blocks Engine will expand into generated files.
+	 *
+	 * This reserves budget against what Blocks Engine actually emits, so it
+	 * mirrors the skip rules in ArtifactNormalizer: an inline style needs CSS
+	 * content and a CSS `type`, and an inline script needs an executable `type`
+	 * and its own body rather than a `src`. Counting every `<style>`/`<script>`
+	 * element instead reserves slots for blocks that expand into nothing, which
+	 * rejects captures that fit the compiler.
+	 */
 	function static_site_importer_cli_inline_expansion_count( string $path ): int {
 		$content = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a verified, bounded CLI request-bundle file.
 		if ( false === $content ) {
 			throw new RuntimeException( 'The request-bundle HTML payload is unavailable.' );
 		}
-		$styles  = preg_match_all( '@<style\b[^>]*>.*?</style\s*>@is', $content );
-		$scripts = preg_match_all( '@<script\b[^>]*>.*?</script\s*>@is', $content );
-		return ( false === $styles ? 0 : $styles ) + ( false === $scripts ? 0 : $scripts );
+		return static_site_importer_cli_inline_style_expansion_count( $content )
+			+ static_site_importer_cli_inline_script_expansion_count( $content );
+	}
+
+	/** Count the inline stylesheets Blocks Engine will expand out of an HTML payload. */
+	function static_site_importer_cli_inline_style_expansion_count( string $content ): int {
+		$styles = 0;
+		foreach ( StyleTagScanner::scan( $content ) as $style ) {
+			$css = trim( (string) $style['content'] );
+			if ( '' === $css || ! StyleTagScanner::isCssType( StyleTagScanner::attribute( (string) $style['attributes'], 'type' ) ) ) {
+				continue;
+			}
+			++$styles;
+		}
+
+		// Spacing authored inline on <body> is carried as generated CSS. It merges
+		// into the last inline stylesheet when the document has one, so it only
+		// adds a file to a document that has none.
+		if ( 0 === $styles && static_site_importer_cli_inline_body_spacing_present( $content ) ) {
+			return 1;
+		}
+		return $styles;
+	}
+
+	/** Does inline `<body>` spacing exist that Blocks Engine carries as generated CSS? */
+	function static_site_importer_cli_inline_body_spacing_present( string $content ): bool {
+		if ( 1 !== preg_match( '/<body\b[^>]*\sstyle\s*=\s*(?:"([^"]*)"|\'([^\']*)\')/i', $content, $matches ) ) {
+			return false;
+		}
+		$style = html_entity_decode( '' !== ( $matches[1] ?? '' ) ? $matches[1] : ( $matches[2] ?? '' ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		if ( '' === trim( $style ) || preg_match( '/[{}<>]/', $style ) ) {
+			return false;
+		}
+		foreach ( explode( ';', $style ) as $declaration ) {
+			$parts = explode( ':', $declaration, 2 );
+			if ( 2 !== count( $parts ) ) {
+				continue;
+			}
+			if ( '' !== trim( $parts[1] ) && 1 === preg_match( '/^(?:margin|padding)(?:-(?:top|right|bottom|left))?$/', strtolower( trim( $parts[0] ) ) ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Count the inline scripts Blocks Engine will expand out of an HTML payload. */
+	function static_site_importer_cli_inline_script_expansion_count( string $content ): int {
+		if ( ! preg_match_all( '@<script\b([^>]*)>(.*?)</script>@is', $content, $matches, PREG_SET_ORDER ) ) {
+			return 0;
+		}
+		$scripts = 0;
+		foreach ( $matches as $match ) {
+			$attributes = (string) $match[1];
+			if ( '' === trim( (string) $match[2] )
+				|| '' !== StyleTagScanner::attribute( $attributes, 'src' )
+				|| ! static_site_importer_cli_is_executable_script_type( StyleTagScanner::attribute( $attributes, 'type' ) ) ) {
+				continue;
+			}
+			++$scripts;
+		}
+		return $scripts;
+	}
+
+	/** Does a `<script>`'s `type` mark a body Blocks Engine expands into a file? */
+	function static_site_importer_cli_is_executable_script_type( string $type ): bool {
+		$type = strtolower( trim( $type ) );
+		return '' === $type || in_array( $type, array( 'module', 'text/javascript', 'application/javascript', 'text/ecmascript', 'application/ecmascript' ), true );
 	}
 
 	/** Project a local source tree as metadata-only payload references. */
