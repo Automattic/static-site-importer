@@ -1508,6 +1508,66 @@ namespace {
 		'submit-outside-a-column-flex-field-list-also-cancels-the-transposed-gap',
 		$flex_list_css
 	);
+	// A captured field can carry its own two-level wrapper chain: a classless
+	// outer box establishing `display: grid` (proven the same way a source
+	// grid ever is, e.g. a mobile-only breakpoint's own track layout) around
+	// a second, deeper box holding the label and control together. The
+	// runtime always rebuilds that deeper box as the field shell's sole
+	// child (`.ssi-field-row`, see
+	// Static_Site_Importer_Provider_Form_Runtime::project_wrapper_classes()),
+	// which is never placed on the shell's own grid tracks, so without an
+	// explicit span it auto-places into a single implicit column instead of
+	// the shell's full track set - collapsing the label and control inside
+	// it to that one track's width. Regression for
+	// https://github.com/Automattic/static-site-importer/issues/1772.
+	$grid_shell_form = array(
+		'forms' => array( array(
+			'selector'         => 'form.grid-shell',
+			'controls'         => array(
+				array( 'tag' => 'input', 'type' => 'text', 'name' => 'first', 'label' => 'First name' ),
+				array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+			),
+			'control_topology' => array(
+				'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false,
+				'nodes'  => array(
+					array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div' ),
+					array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'div', 'class' => 'row' ),
+					array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'control' => 0 ),
+					array( 'id' => 'control-1', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 1 ),
+				),
+			),
+			'layout_graph'     => array(
+				'schema' => 'generic/computed-layout-graph/v1', 'basis' => 'source_css_cascade', 'truncated' => false,
+				'limits' => array( 'nodes' => 128, 'depth' => 8, 'rules_per_node' => 16 ), 'variants' => array(), 'diagnostics' => array(),
+				'nodes'  => array(
+					array(
+						'id'         => 'wrapper-0',
+						'kind'       => 'container',
+						'parent'     => null,
+						'order'      => 0,
+						'source'     => array( 'tag' => 'div', 'classes' => array() ),
+						'layout'     => array( 'display' => 'grid', 'columns' => 'repeat(2, 1fr)' ),
+						'provenance' => array(
+							array( 'source_path' => 'inline-style', 'source_sha256' => str_repeat( 'c', 64 ), 'selector' => '[style]', 'condition' => null, 'properties' => array( 'display', 'grid-template-columns' ) ),
+						),
+					),
+				),
+			),
+		) ),
+	);
+	$grid_shell_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $grid_shell_form );
+	$grid_shell_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $grid_shell_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$grid_shell_css        = (string) ( $grid_shell_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		empty( $grid_shell_validation['errors'] )
+			&& 'mapped' === ( $grid_shell_row['status'] ?? '' )
+			&& true === ( $grid_shell_row['runtime_mapped'] ?? false )
+			&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $grid_shell_row['provider_layout_overlay_css'] ?? null )
+			&& 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{[^}]*display:grid[^}]*\}/', $grid_shell_css )
+			&& 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap > \.ssi-field-row\{grid-column:1 \/ -1\}/', $grid_shell_css ),
+		'field-shells-own-grid-spans-its-rebuilt-label-control-row-across-every-track',
+		$grid_shell_css
+	);
 	$popup_form = array(
 		'selector' => 'form.picker',
 		'controls' => array(
