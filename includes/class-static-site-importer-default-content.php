@@ -21,7 +21,13 @@ final class Static_Site_Importer_Default_Content {
 			return $result;
 		}
 
-		foreach ( array( 1 => 'post', 2 => 'page', 3 => 'page' ) as $id => $post_type ) {
+		foreach (
+			array(
+				1 => 'post',
+				2 => 'page',
+				3 => 'page',
+			) as $id => $post_type
+		) {
 			$post = get_post( $id );
 			if ( ! $post instanceof WP_Post || $post_type !== $post->post_type || ! self::is_core_seed( $post, $id ) || '' !== (string) get_post_meta( $id, '_static_site_importer_provenance', true ) ) {
 				continue;
@@ -130,7 +136,7 @@ final class Static_Site_Importer_Default_Content {
 
 		// wp_install_defaults() creates this draft from the localized, filterable
 		// core source and assigns this exact page to the privacy-policy option.
-		if ( 3 !== (int) get_option( 'wp_page_for_privacy_policy', 0 ) || 'draft' !== $post->post_status || __( 'Privacy Policy' ) !== $post->post_title || __( 'privacy-policy' ) !== $post->post_name || 'default' !== (string) get_post_meta( 3, '_wp_page_template', true ) ) {
+		if ( 3 !== (int) get_option( 'wp_page_for_privacy_policy', 0 ) || 'draft' !== $post->post_status || __( 'Privacy Policy' ) !== $post->post_title || __( 'privacy-policy' ) !== $post->post_name || 'default' !== (string) get_post_meta( 3, '_wp_page_template', true ) ) { // phpcs:ignore WordPress.WP.I18n.MissingArgDomain -- These seed strings belong to WordPress core's default text domain.
 			return false;
 		}
 		if ( ! class_exists( 'WP_Privacy_Policy_Content' ) ) {
@@ -140,7 +146,7 @@ final class Static_Site_Importer_Default_Content {
 			}
 			require_once $source;
 		}
-		return (string) $post->post_content === WP_Privacy_Policy_Content::get_default_content();
+		return WP_Privacy_Policy_Content::get_default_content() === (string) $post->post_content;
 	}
 
 	private static function post_fingerprint( WP_Post $post ): string {
