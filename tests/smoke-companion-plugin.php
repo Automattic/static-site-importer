@@ -701,6 +701,25 @@ if ( is_array( $descriptor ) ) {
 	$hostile_image_set_output = $render_frontend( $render, array( 'content' => '<div class="tile" style="background-image:image-set(url(javascript:alert(1)) 1x)"></div>' ) );
 	$assert( ! str_contains( strtolower( $hostile_image_set_output ), 'javascript' ) && ! str_contains( $hostile_image_set_output, 'style=' ), 'editable-render-still-drops-unsafe-image-set-candidates', $hostile_image_set_output );
 
+	// Authored text colors carried as functional notation must survive the
+	// boundary. WordPress core's safecss_filter_attr() has no allowance for
+	// rgb()/rgba()/hsl()/hsla() -- the residual parenthesis discards the whole
+	// declaration, so white rgb(255, 255, 255) paragraph text on a dark band
+	// renders as inherited near-black while a sibling #FFFFFF heading survives.
+	// The boundary lowers literal color functions to the hex equivalent core
+	// accepts, without widening what reaches the frontend.
+	$rgb_color_output = $render_frontend( $render, array( 'content' => '<p class="font_8" style="font-size:30px"><span style="color:rgb(255, 255, 255); font-weight:bold">Data at the speed of light.</span></p>' ) );
+	$assert( ! str_contains( $rgb_color_output, 'rgb(' ) && str_contains( $rgb_color_output, 'color:#ffffff' ) && str_contains( $rgb_color_output, 'font-weight:bold' ), 'editable-render-lowers-rgb-color-to-kses-safe-hex', $rgb_color_output );
+
+	$rgba_color_output = $render_frontend( $render, array( 'content' => '<div style="background-color:rgba(18, 18, 18, 0.6);color:rgb(100%, 0%, 0%)">Tinted</div>' ) );
+	$assert( str_contains( $rgba_color_output, 'background-color:#12121299' ) && str_contains( $rgba_color_output, 'color:#ff0000' ), 'editable-render-lowers-rgba-alpha-and-percentage-channels-to-hex', $rgba_color_output );
+
+	$modern_color_output = $render_frontend( $render, array( 'content' => '<span style="color:rgb(255 0 0 / 50%);border-color:hsl(120, 50%, 50%)">Modern</span>' ) );
+	$assert( str_contains( $modern_color_output, 'color:#ff000080' ) && str_contains( $modern_color_output, 'border-color:#40bf40' ), 'editable-render-lowers-slash-alpha-rgb-and-hsl-to-hex', $modern_color_output );
+
+	$variable_color_output = $render_frontend( $render, array( 'content' => '<span style="color:rgba(var(--color_11), 1)">Token</span>' ) );
+	$assert( str_contains( $variable_color_output, 'rgba(var(--color_11), 1)' ), 'editable-render-leaves-non-literal-color-functions-for-the-sanitizer', $variable_color_output );
+
 	// Every executable and animation vector stays stripped from editable
 	// rendering, across paired, self-closing, and bare/unquoted forms.
 	$hostile_markup = '<main onclick=alert(1) onmouseover=\'alert(2)\' data-wp-interactive data-wp-context=\'{"bad":true}\'><img src="safe.jpg" onerror=alert(4)><span>Kept copy</span><svg onload=alert(5)><path d="M0 0 L10 10" stroke="blue"></path><animate attributeName="x"></animate><animatemotion dur="1s"></animatemotion><set attributeName="z" to="1"></set><foreignObject><p>hidden</p></foreignObject></svg><script>alert(3)</script><style>*{color:red}</style><iframe src="https://evil.test/frame"></iframe><iframe src="https://evil.test/frame2"/><object data="https://evil.test/object"></object><object data="https://evil.test/object2"/><embed src="https://evil.test/embed"></embed><embed src="https://evil.test/embed2"/><animatetransform attributeName="transform"/><wow-image data-hook="hero">Custom element</wow-image></main>';
