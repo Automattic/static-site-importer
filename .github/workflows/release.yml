@@ -1,10 +1,19 @@
 name: Refresh dependencies and release
 
+# SSI owns its own dependency freshness. It never receives a notification from
+# Blocks Engine (no repository_dispatch, no cross-repo token, no Homeboy App
+# installation on this repository) — it resolves the newest released Blocks
+# Engine coordinates itself, on every push, once a day on a schedule, and on
+# demand. A dependency refresh with no other change is itself a releasable
+# commit, so a newer upstream release ships even when nobody touched SSI.
 on:
   push:
     branches: [main]
-  repository_dispatch:
-    types: [component-released]
+  schedule:
+    # Daily at 06:17 UTC. Off-the-hour minute avoids the top-of-hour scheduler
+    # thundering herd; cadence is intentionally coarse — a missed day is
+    # picked up by the next push or the next scheduled run.
+    - cron: '17 6 * * *'
   workflow_dispatch:
     inputs:
       dry-run:
@@ -24,6 +33,11 @@ concurrency:
 jobs:
   refresh:
     name: Refresh published Blocks Engine pins
+    # A release commit pushed back to main by the `release` job below must
+    # never retrigger this workflow against its own output — that is the
+    # infinite-loop path. Mirrors the same guard the reusable release
+    # workflow applies to its own push trigger.
+    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'release:') }}
     runs-on: ubuntu-latest
     outputs:
       source-sha: ${{ steps.source.outputs.sha }}
@@ -33,25 +47,25 @@ jobs:
           fetch-depth: 0
           token: ${{ github.token }}
 
-      - name: Validate upstream publication event
-        if: github.event_name == 'repository_dispatch'
-        env:
-          PAYLOAD: ${{ toJSON(github.event.client_payload) }}
-        run: |
-          set -euo pipefail
-          jq -e '
-            (.component | type == "string" and length > 0)
-            and (.version | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
-            and (.tag | type == "string" and length > 0)
-            and (.sha | type == "string" and test("^[0-9a-f]{40}$"))
-          ' <<<"${PAYLOAD}" >/dev/null || {
-            echo "::error::component-released payload must contain component, stable version, tag, and 40-character sha"
-            exit 1
-          }
+      # Homeboy CLI acquisition is left at the composite action's default
+      # ("latest" released binary) rather than pinned here: `homeboy release
+      # resolve` and the `extension action --payload` passthrough this
+      # script depends on are only available once Homeboy publishes a
+      # release containing https://github.com/Extra-Chill/homeboy/pull/14853
+      # and https://github.com/Extra-Chill/homeboy/pull/14857. Floating means
+      # this workflow self-heals the moment that release ships, with no SSI
+      # change required. extension-ref and action-ref are pinned to exact
+      # commits of released tags so the Composer contract and the release
+      # pipeline itself stay reproducible.
+      - uses: Extra-Chill/homeboy-action@a03c9f7251ae73071a77511a6567c231cd456c54 # v2.18.4
+        with:
+          prepare-only: true
+          extension: wordpress
+          extension-ref: 7f28a979517a96e003d0510d64bc5139c259837d # wordpress-v3.48.6
+          component: static-site-importer
 
       - name: Run Homeboy dependency refresh action
         env:
-          HOMEBOY_DEPENDENCY_PAYLOAD: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload) || '' }}
           HOMEBOY_DRY_RUN: ${{ inputs.dry-run || 'false' }}
         run: bash scripts/release/refresh-blocks-engine.sh
 
@@ -70,7 +84,12 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add composer.json composer.lock
-          git commit -m "chore(deps): refresh Blocks Engine pins"
+          # fix(deps) is deliberate, not chore(deps): Homeboy's release
+          # planner ignores chore commits for the version-bump floor, so a
+          # solo chore-only refresh would never be releasable. This must
+          # bump so a dependency refresh with no other SSI change still
+          # ships (operator intent: no manual release ceremony).
+          git commit -m "fix(deps): refresh Blocks Engine pins to latest release"
           git push origin HEAD:main
 
       - name: Resolve prepared source SHA
@@ -80,11 +99,14 @@ jobs:
   release:
     name: Release prepared SSI commit
     needs: refresh
+    if: needs.refresh.result == 'success'
     uses: Extra-Chill/homeboy-action/.github/workflows/release.yml@v2
     with:
       prepared-ref: ${{ needs.refresh.outputs.source-sha }}
       release-branch: main
       dry-run: ${{ inputs.dry-run || false }}
       extension: wordpress
+      extension-ref: 7f28a979517a96e003d0510d64bc5139c259837d # wordpress-v3.48.6
       component: static-site-importer
+      action-ref: a03c9f7251ae73071a77511a6567c231cd456c54 # v2.18.4
     secrets: inherit
