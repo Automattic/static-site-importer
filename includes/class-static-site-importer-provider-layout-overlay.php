@@ -159,6 +159,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				$losses[] = self::presentation_loss( 'editor_control_container_unsupported', is_int( $index ) ? $index : 0, 'control_container' );
 				continue;
 			}
+			self::compile_presentation_destinations( $destinations, $control_container['styles'], $index, 'control_container', null, $rules, $operations, $losses );
 			foreach ( $destinations as $destination ) {
 				$declarations = self::presentation_declarations( $control_container['styles'], $index, 'control_container', $losses, $destination['properties'] );
 				if ( ! empty( $declarations ) ) {
@@ -199,6 +200,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					continue;
 				}
 				foreach ( $destinations as $destination ) {
+					self::compile_presentation_destinations( array( $destination ), $variant['style_patch'], $index, 'control_container', $variant['condition'], $rules, $operations, $losses );
 					$declarations = self::presentation_declarations( $variant['style_patch'], $index, 'control_container', $losses, $destination['properties'] );
 					if ( ! empty( $declarations ) ) {
 						$editor_rules[] = self::conditional_rule( $variant['condition'], '.editor-styles-wrapper ' . self::authoritative_presentation_selector( $destination['selector'] ) . '{' . implode( ';', $declarations ) . '}' );

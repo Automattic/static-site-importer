@@ -2372,7 +2372,9 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		if ( isset( $roles['control_container'] ) ) {
 			$destinations[] = array(
 				'role'       => 'control_container',
-				'selector'   => '.' . $scope . ' .' . ( in_array( $type, array( 'phone', 'tel' ), true ) ? self::presentation_destination_class( $scope, $index, 'shell' ) : self::presentation_node_class( $scope, $index, 'control' ) ),
+				// The source chrome owns the provider field wrapper, not its nested input.
+				// The layout hook is placed on that wrapper for every Jetpack field type.
+				'selector'   => '.' . $scope . ' .' . self::layout_node_class( $scope, 'control-' . $index ),
 				'properties' => array( 'background', 'background_color', 'border', 'border_color', 'border_style', 'border_width', 'border_top_color', 'border_right_color', 'border_bottom_color', 'border_left_color', 'border_top_style', 'border_right_style', 'border_bottom_style', 'border_left_style', 'border_top_width', 'border_right_width', 'border_bottom_width', 'border_left_width', 'border_radius', 'border_top_left_radius', 'border_top_right_radius', 'border_bottom_right_radius', 'border_bottom_left_radius' ),
 			);
 		}
