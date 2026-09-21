@@ -201,6 +201,15 @@ class Static_Site_Importer_URL_Import_Runtime {
 			return new WP_Error( $result->get_error_code(), $result->get_error_message(), $data );
 		}
 		$result['import_id'] = (string) $record['identity'];
+		if ( 'plan' === ( $input['operation'] ?? '' ) && 'completed' === ( $result['url_batch_run']['status'] ?? '' ) ) {
+			$plan_manifest = (string) ( $result['url_batch_run']['run_manifest'] ?? '' );
+			if ( ( $record['plan_manifest'] ?? '' ) !== $plan_manifest ) {
+				$record['plan_manifest'] = $plan_manifest;
+				if ( false === file_put_contents( self::run_registry_path( $record['identity'] ), wp_json_encode( $record ) ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Retains the server-owned plan handoff alongside its opaque run binding.
+					return new WP_Error( 'static_site_importer_url_import_run_unavailable', 'The completed URL plan handoff could not be retained.' );
+				}
+			}
+		}
 		if ( isset( $result['url_batch_run'] ) && is_array( $result['url_batch_run'] ) ) {
 			unset( $result['url_batch_run']['run_manifest'] );
 			unset( $result['url_batch_run']['cleanup'], $result['url_batch_run']['legacy_cache_cleanup'] );
@@ -208,6 +217,65 @@ class Static_Site_Importer_URL_Import_Runtime {
 		}
 
 		return $result;
+	}
+
+	/** Resolve the immutable compiler handoff and payloads for an approved URL plan. */
+	public static function approved_plan_runtime( array $source, array $plan ) {
+		$id = (string) ( $source['import_id'] ?? $source['provenance']['import_id'] ?? '' );
+		if ( ! preg_match( '/^[a-f0-9]{64}$/', $id ) ) {
+			return new WP_Error( 'static_site_importer_invalid_url_import_id', 'The approved URL plan has no valid import_id.' );
+		}
+		$registry = self::run_registry_path( $id );
+		$raw      = is_file( $registry ) ? file_get_contents( $registry ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the importer-owned opaque run registry.
+		$record   = is_string( $raw ) ? json_decode( $raw, true ) : null;
+		$owner    = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+		$url      = (string) ( $source['url'] ?? $source['provenance']['url'] ?? '' );
+		if ( ! is_array( $record ) || 'static-site-importer/url-import-run/v1' !== ( $record['schema'] ?? '' ) || ( $record['identity'] ?? '' ) !== $id || ( $record['workspace'] ?? '' ) !== self::run_workspace( $id ) || ( $record['contract']['user_id'] ?? null ) !== $owner || Static_Site_Importer_URL_Fetcher::normalize_url( $url ) !== ( $record['contract']['url'] ?? '' ) ) {
+			return new WP_Error( 'static_site_importer_url_import_run_mismatch', 'The approved URL plan does not belong to this source and user.' );
+		}
+		$path = (string) ( $record['plan_manifest'] ?? '' );
+		if ( dirname( $path ) !== $record['workspace'] || ! preg_match( '/^url-site-batch-manifest-[a-f0-9]{64}\.json$/', basename( $path ) ) || is_link( $path ) ) {
+			return new WP_Error( 'static_site_importer_url_plan_missing', 'The approved URL plan handoff is unavailable.' );
+		}
+		$raw          = is_file( $path ) ? file_get_contents( $path ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the verified server-owned plan manifest.
+		$manifest     = is_string( $raw ) ? json_decode( $raw, true ) : null;
+		$expected     = $manifest['final_result']['terminal_batch_result']['plan']['plan_identity'] ?? null;
+		$workspace_id = (string) ( $manifest['source']['identity'] ?? '' );
+		if ( 'completed' !== ( $manifest['state'] ?? '' ) || ! is_array( $expected ) || ( $plan['plan_identity'] ?? null ) !== $expected || ! preg_match( '/^[a-f0-9]{64}$/', $workspace_id ) ) {
+			return new WP_Error( 'static_site_importer_url_plan_mismatch', 'The approved plan does not match the completed URL run.' );
+		}
+		try {
+			$workspace = new Static_Site_Importer_Artifact_Run_Workspace( $record['workspace'], 'url-' . $workspace_id );
+			if ( $workspace->is_expired() ) {
+				return new WP_Error( 'static_site_importer_url_plan_expired', 'The approved URL plan payloads have expired.' );
+			}
+			$application = self::plan_application_state( $workspace );
+			if ( is_wp_error( $application ) ) {
+				return $application;
+			}
+			return array(
+				'payload_reader' => Static_Site_Importer_URL_Batch_Import::payload_reader( $workspace ),
+				'terminal'       => $manifest['final_result']['terminal_batch_result'],
+				'application'    => $application,
+				'workspace'      => $workspace,
+				'record'         => $record,
+			);
+		} catch ( Throwable $error ) {
+			return new WP_Error( 'static_site_importer_url_plan_missing', 'The approved URL plan payloads are unavailable.' );
+		}
+	}
+
+	/** Read only the small mutable application checkpoint, not the full plan. */
+	public static function plan_application_state( Static_Site_Importer_Artifact_Run_Workspace $workspace ): array|WP_Error {
+		$raw   = $workspace->read_raw( 'approved-application.json' );
+		$state = is_string( $raw ) ? json_decode( $raw, true ) : array();
+		return is_array( $state ) ? $state : new WP_Error( 'static_site_importer_url_application_invalid', 'The retained URL application checkpoint is invalid.' );
+	}
+
+	/** Persist the application handoff inside the already validated opaque run. */
+	public static function checkpoint_plan_application( array $runtime, array $application ) {
+		$saved = $runtime['workspace']->publish_json( 'approved-application.json', $application );
+		return is_wp_error( $saved ) ? $saved : true;
 	}
 
 	/** @return array<string,mixed> */

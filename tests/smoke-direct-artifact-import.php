@@ -560,6 +560,8 @@ $zip_artifact = static_site_importer_source_runtime(
 	)
 )['artifact'];
 $zip_reader = static_site_importer_staged_archive_payload_reader( array() );
+// Both uninterrupted and resumed compilation receive the consumer-owned namespace.
+$zip_artifact['block_namespace'] = Static_Site_Importer_Site_Identity::resolve( array( 'artifact' => $zip_artifact, 'payload_reader' => $zip_reader ) )['block_namespace'];
 $zip_compiler = new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler();
 $zip_shared = $zip_compiler->prepareShared( $zip_artifact, $zip_reader );
 $zip_pages = $zip_compiler->preparePages( $zip_artifact, $zip_shared, $zip_reader );

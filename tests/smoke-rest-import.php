@@ -320,6 +320,9 @@ if ( ! class_exists( 'Static_Site_Importer_Theme_Generator' ) ) {
 		public static function import_website_artifact( array $artifact, array $args ): array {
 			self::$last_artifact = $artifact;
 			self::$last_args     = $args;
+			if ( 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
+				return array( 'status' => 'dependencies_prepared', 'runtime_lifecycle_checkpoint' => str_repeat( 'a', 32 ), 'fresh_runtime' => array( 'request_id' => 'test-request' ) );
+			}
 
 			return array( 'import_report_summary' => array( 'status' => 'passed' ) );
 		}
@@ -430,6 +433,7 @@ $apply_response = static_site_importer_rest_create_import(
 	)
 );
 $assert( true === ( $apply_response['success'] ?? null ), 'rest-import-applies-to-current-site' );
+$assert( true === ( $apply_response['continuation'] ?? false ) && 'prepare' === ( Static_Site_Importer_Theme_Generator::$last_args['runtime_lifecycle_phase'] ?? '' ), 'single-page-rest-import-prepares-fresh-runtime-continuation' );
 $assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['activate'] ?? null ), 'rest-import-preserves-activate' );
 $assert( isset( $apply_response['result'] ), 'rest-import-returns-ability-envelope' );
 $assert( 'https://example.test/' === ( $apply_response['preview']['url'] ?? '' ), 'rest-import-returns-site-preview-url' );

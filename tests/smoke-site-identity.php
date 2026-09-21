@@ -97,6 +97,10 @@ $identity = Static_Site_Importer_Site_Identity::resolve(
 	)
 );
 $assert( 'Northline Plumbing' === $identity['name'], 'artifact-entrypoint-title-strips-pipe-suffix', $identity['name'] );
+$encoded = Static_Site_Importer_Site_Identity::resolve( array( 'artifact' => array( 'entrypoint' => 'website/index.html', 'files' => array( array( 'path' => 'website/index.html', 'content_base64' => base64_encode( '<title>Northstar Pantry — Real Dinners</title>' ) ) ) ) ) );
+$assert( 'northstar-pantry' === $encoded['slug'], 'zip-base64-entrypoint-retains-source-identity', $encoded['slug'] );
+$planned = Static_Site_Importer_Site_Identity::resolve( array( 'plan' => array( 'pages' => array( array( 'entrypoint' => false, 'title' => 'About' ), array( 'entrypoint' => true, 'document_metadata' => array( 'title' => 'The Golden Awards — Home' ) ) ) ) ) );
+$assert( 'the-golden-awards' === $planned['slug'], 'approved-plan-uses-entrypoint-title', $planned['slug'] );
 
 // 4. Artifact paths normalize consistently for matching and export callers.
 $route_paths = array(

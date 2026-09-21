@@ -99,7 +99,7 @@ When a generated artifact contains full-document HTML, Static Site Importer rout
 - Composer dependencies installed with `composer install`.
 - Node dependencies installed only when running the JavaScript block-validation smoke tests.
 
-SSI pins `automattic/blocks-engine-php-transformer:0.16.0` from Packagist. The committed Composer lockfile records the immutable source reference for the `php-transformer-v0.16.0` release.
+SSI pins `automattic/blocks-engine-php-transformer:0.16.1` from Packagist. The committed Composer lockfile records the immutable source reference for the `php-transformer-v0.16.1` release.
 
 At runtime, SSI loads the transformer package from `vendor/` and compiles with `new ArtifactCompiler()->compile()`. Theme export still calls `blocks_engine_php_transformer_convert_format()`.
 
@@ -116,6 +116,8 @@ Open the separate demo interface in a disposable WordPress Playground site:
 The release blueprint installs the infrastructure-only Static Site Importer package and a separate demo plugin built from `demos/playground-importer/`. The demo plugin owns the `static-site-importer/importer` block and consumes SSI's public REST contract to import into the disposable Playground site. The SSI plugin and its runtime package contain no demo UI or demo registration.
 
 Testers can enter one public URL, upload static site files, choose a folder, upload a ZIP, or paste HTML. Figma upload is enabled only when the Playground runtime provides the optional zstd extension; all other source types remain available without it. Tagged blueprints and demo packages are published through the [Playground publication contract](docs/playground/publication-contract.md), while the README uses the browser-verified `playground/latest/blueprint.json` alias.
+
+URL imports collect a complete canonical plan before applying it once to the existing Playground site. The demo's PHP.wasm-only network adapter resolves public A/AAAA records through Google's DNS-over-HTTPS endpoint and uses WordPress HTTP over Playground's browser/proxy transport. SSI retains public-address classification, redirect validation, response limits, and the inert script policy. Native WordPress installations continue to use SSI's IP-pinned transport. After successful materialization, the demo opens the imported homepage; the `/import/` page and **Move to WordPress.com** toolbar remain available. Failed imports stay on the importer with their error.
 
 ## Site Identity and Default Content
 

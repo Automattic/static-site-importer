@@ -179,7 +179,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 		if ( isset( $payload_reader ) ) {
 			$args['_static_site_importer_payload_reader'] = $payload_reader;
 		}
-		if ( self::direct_artifact_continuation_available() && in_array( $type, array( 'html', 'files', 'zip', 'figma' ), true ) && 'resume' !== $args['runtime_lifecycle_phase'] && ( self::artifact_html_page_count( $artifact ) > 1 || self::artifact_has_payload_references( $artifact ) ) ) {
+		if ( self::direct_artifact_continuation_available() && in_array( $type, array( 'html', 'files', 'zip', 'figma' ), true ) && 'resume' !== $args['runtime_lifecycle_phase'] && ( 'prepare' === $args['runtime_lifecycle_phase'] || self::artifact_html_page_count( $artifact ) > 1 || self::artifact_has_payload_references( $artifact ) ) ) {
 			if ( 'apply' === $operation && '' === $args['runtime_lifecycle_phase'] ) {
 				$args['runtime_lifecycle_phase']         = 'prepare';
 				$args['runtime_lifecycle_invocation_id'] = wp_generate_uuid4();
@@ -282,8 +282,31 @@ class Static_Site_Importer_Canonical_Import_Service {
 
 	/** @param array<string,mixed> $input @return array<string,mixed> */
 	public static function apply_approved_plan( array $input ): array {
-		$approved       = $input['plan'];
-		$plan           = isset( $approved['plan'] ) && is_array( $approved['plan'] ) ? $approved['plan'] : $approved;
+		$approved = $input['plan'];
+		$plan     = isset( $approved['plan'] ) && is_array( $approved['plan'] ) ? $approved['plan'] : $approved;
+		$source   = isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : ( $approved['source'] ?? array() );
+		if ( 'url' === ( $source['type'] ?? '' ) ) {
+			$runtime = Static_Site_Importer_URL_Import_Runtime::approved_plan_runtime( $source, $plan );
+			if ( is_wp_error( $runtime ) ) {
+				return self::error( (string) $runtime->get_error_code(), $runtime->get_error_message(), $runtime->get_error_data() );
+			}
+			$workspace = $runtime['workspace'];
+			$lock      = $workspace->acquire_lock( 'application.lock' );
+			if ( is_wp_error( $lock ) ) {
+				return self::error( (string) $lock->get_error_code(), $lock->get_error_message() );
+			}
+			try {
+				// Refresh only mutable application state, not the site-sized plan.
+				$application = Static_Site_Importer_URL_Import_Runtime::plan_application_state( $workspace );
+				if ( is_wp_error( $application ) ) {
+					return self::error( (string) $application->get_error_code(), $application->get_error_message() );
+				}
+				$runtime['application'] = $application;
+				return self::apply_retained_url_plan( $input, $runtime );
+			} finally {
+				$workspace->release_lock( $lock );
+			}
+		}
 		$payload_reader = self::approved_plan_payload_reader( $input, $approved );
 		if ( is_wp_error( $payload_reader ) ) {
 			return self::error( (string) $payload_reader->get_error_code(), $payload_reader->get_error_message(), $payload_reader->get_error_data() );
@@ -323,8 +346,9 @@ class Static_Site_Importer_Canonical_Import_Service {
 		if ( is_object( $payload_reader ) ) {
 			$input['_static_site_importer_payload_reader'] = $payload_reader;
 		}
-		$receipt = self::materialize_wordpress_site_plan( $input );
-		$success = 'completed' === ( $receipt['status'] ?? '' );
+		$input['plan'] = $plan;
+		$receipt       = self::materialize_wordpress_site_plan( $input );
+		$success       = 'completed' === ( $receipt['status'] ?? '' );
 		return array(
 			'success'   => $success,
 			'operation' => 'apply',
@@ -335,6 +359,56 @@ class Static_Site_Importer_Canonical_Import_Service {
 				'message' => 'The approved plan could not be materialized.',
 			) ),
 		);
+	}
+
+	/** Apply one admitted phase using the normal companion/provider lifecycle. */
+	private static function apply_retained_url_plan( array $input, array $runtime ): array {
+		$args        = self::direct_artifact_args( $input );
+		$args_hash   = self::handoff_hash( $args );
+		$application = $runtime['application'];
+		if ( ! empty( $application ) && ( $application['args_hash'] ?? '' ) !== $args_hash ) {
+			return self::error( 'static_site_importer_url_apply_options_changed', 'The approved URL application options changed during continuation.' );
+		}
+		if ( isset( $application['response'] ) ) {
+			return $application['response'];
+		}
+		if ( ! empty( $application['checkpoint'] ) ) {
+			$input['runtime_lifecycle_phase']      = 'resume';
+			$input['runtime_lifecycle_checkpoint'] = $application['checkpoint'];
+			$input['runtime_lifecycle_request_id'] = $application['request_id'];
+		} else {
+			$input['runtime_lifecycle_phase'] = 'prepare';
+		}
+		$args = self::direct_artifact_args( $input );
+
+		$args['compiled_artifact_result']                         = $runtime['terminal']['compiled_artifact_result'];
+		$args['_static_site_importer_payload_reader']             = $runtime['payload_reader'];
+		$args['_static_site_importer_precompiled_source']         = true;
+		$args['import_run_id']                                    = $runtime['record']['identity'];
+		$args['_static_site_importer_lifecycle_reference_backed'] = true;
+
+		$result = Static_Site_Importer_Theme_Generator::import_website_artifact( $runtime['terminal']['artifact'], $args );
+		if ( is_wp_error( $result ) ) {
+			return self::error( (string) $result->get_error_code(), $result->get_error_message(), $result->get_error_data() );
+		}
+		if ( 'dependencies_prepared' === ( $result['status'] ?? '' ) ) {
+			$saved = Static_Site_Importer_URL_Import_Runtime::checkpoint_plan_application( $runtime, array(
+				'args_hash'  => $args_hash,
+				'checkpoint' => $result['runtime_lifecycle_checkpoint'],
+				'request_id' => $result['fresh_runtime']['request_id'],
+			) );
+			return is_wp_error( $saved ) ? self::error( (string) $saved->get_error_code(), $saved->get_error_message() ) : array(
+				'success'             => true,
+				'continuation'        => true,
+				'continuation_reason' => 'dependencies_prepared',
+			);
+		}
+		$response = self::success( $result, $input );
+		$saved    = Static_Site_Importer_URL_Import_Runtime::checkpoint_plan_application( $runtime, array(
+			'args_hash' => $args_hash,
+			'response'  => $response,
+		) );
+		return is_wp_error( $saved ) ? self::error( (string) $saved->get_error_code(), $saved->get_error_message() ) : $response;
 	}
 
 	/** @param array<string,mixed> $input @return array<string,mixed> */
@@ -605,6 +679,27 @@ class Static_Site_Importer_Canonical_Import_Service {
 			}
 		}
 		$result = $bounded;
+
+		/**
+		 * Whether the host retains full response reports after a successful import.
+		 *
+		 * Compact results, diagnostics and receipt identity remain available when
+		 * disabled. This policy does not affect execution checkpoints or site files.
+		 *
+		 * @param bool                $retain  Retain detailed response artifacts.
+		 * @param array<string,mixed> $summary Bounded import result.
+		 */
+		$retain = ! function_exists( 'apply_filters' ) || (bool) apply_filters( 'static_site_importer_retain_response_artifacts', true, $bounded );
+		if ( ! $retain ) {
+			$result['response_artifacts'] = array(
+				'schema'    => 'static-site-importer/import-response-artifacts/v1',
+				'status'    => 'not_retained',
+				'reason'    => 'host_policy',
+				'artifacts' => array(),
+				'errors'    => array(),
+			);
+			return $result;
+		}
 
 		$artifacts = array(
 			'schema'    => 'static-site-importer/import-response-artifacts/v1',

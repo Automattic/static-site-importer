@@ -25,6 +25,7 @@ jobs:
     timeout-minutes: 45
     env:
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+      PLAYGROUND_EXPECT_RESPONSE_ARTIFACTS: not_retained
     steps:
       - uses: actions/checkout@v4
         with:
@@ -138,12 +139,23 @@ jobs:
           done
           echo "GitHub Pages did not publish the immutable safe blueprint for $RELEASE_TAG" >&2
           exit 1
+      - name: Check out immutable browser fixtures
+        uses: actions/checkout@v4
+        with:
+          repository: Automattic/blocks-engine
+          ref: 12c93f35529c563257d144b511b0dbd30eb89ebe
+          path: .playground-fixtures
+          persist-credentials: false
+          sparse-checkout: |
+            fixtures/websites/17-markdown-blog-launch-site
+            fixtures/websites/81-dental-practice
       - name: Verify the immutable safe Playground launch
         env:
           PLAYGROUND_BLUEPRINT_URL: https://automattic.github.io/static-site-importer/playground/${{ env.RELEASE_TAG }}.blueprint.json
+          PLAYGROUND_FIXTURE_REPO: ${{ github.workspace }}/.playground-fixtures
         run: |
           npx playwright install --with-deps chromium
-          npm run test:playground-launch
+          npm run test:playground-inputs
       - name: Advance the safe README blueprint alias
         if: env.ADVANCE_LATEST == 'true'
         env:

@@ -47,3 +47,32 @@ Pages currently packages the separate demo and migration plugins because they
 are not SSI runtime release artifacts. Moving those packages into Homeboy-owned
 release assets is a separate packaging change; it is not necessary to mirror the
 SSI ZIP. Existing tagged publications remain available for reproducible consumers.
+
+## Disposable runtime policy
+
+The blueprint installs a small host-policy MU plugin that disables
+`static_site_importer_retain_response_artifacts`. The demo receives compact
+results, diagnostics, page counts and receipt identity without retaining full
+`import_report`, `materialization_receipt` or `result_details` JSON files after
+success. This is independent of `write_theme_report_artifacts` (already false by
+default). Continuation checkpoints and source payloads still follow their
+execution retention policy; generated site files and the site manifest remain
+available for the WordPress.com handoff.
+
+## Browser acceptance
+
+Before advancing the README alias, `npm run test:playground-inputs` boots fresh
+browser instances for pasted restaurant HTML, a public URL, a nested six-page
+Northstar Pantry ZIP, and the Brightwell Dental ZIP with a local SVG asset and
+provider-backed forms. ZIP fixtures are archived from Blocks Engine commit
+`12c93f35529c563257d144b511b0dbd30eb89ebe`. Set `PLAYGROUND_FIXTURE_REPO` to that
+checkout to run the same matrix locally. Each success verifies theme activation,
+page counts, retained importer access, and the WordPress.com migration screen;
+negative cases cover private URLs and a ZIP without an entry document.
+
+`Published Playground smoke` runs this read-only matrix against the exact README
+URL daily and on manual dispatch. It never publishes or advances an alias.
+For candidate review, `PLAYGROUND_PLUGIN_ZIP`, `PLAYGROUND_DEMO_ZIP`, and
+`PLAYGROUND_BLUEPRINT_FILE` substitute local artifacts in the browser while
+preserving package checksum verification. `PLAYGROUND_SOURCE_URL` and
+`PLAYGROUND_SOURCE_ZIP` select a source for the single-launch verifier.
