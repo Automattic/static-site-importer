@@ -486,11 +486,11 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				continue;
 			}
 			$conflict = '' === trim( $route, '/' ) ? null : get_page_by_path( trim( $route, '/' ), OBJECT, $page['post_type'] );
-			if ( $conflict && ! $overwrite && ! self::post_belongs_to_run( $conflict, $import_run_id ) ) {
+			if ( $conflict && ! $overwrite && ! self::post_belongs_to_run( $conflict, $import_run_id ) && ! Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $conflict ) ) {
 				throw new InvalidArgumentException( 'post_conflict' );
 			}
 			if ( $conflict ) {
-				$page = self::plan_existing_page( $state, $page, $conflict, 'canonical_route_match' );
+				$page = self::plan_existing_page( $state, $page, $conflict, Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $conflict ) ? 'default_content_seed_match' : 'canonical_route_match' );
 			}
 		}
 		unset( $page );
