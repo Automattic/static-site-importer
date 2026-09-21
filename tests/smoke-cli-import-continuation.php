@@ -306,6 +306,52 @@ foreach ( scandir( $count_limit_dir ) as $entry ) {
 }
 rmdir( $count_limit_dir );
 
+// The reservation has to track what Blocks Engine actually expands. Blocks that
+// expand into nothing still consumed budget, which rejected captures that fit.
+$expansion_dir  = sys_get_temp_dir() . '/ssi-inline-expansion-' . bin2hex( random_bytes( 6 ) );
+mkdir( $expansion_dir );
+$expansion_page = $expansion_dir . '/index.html';
+file_put_contents(
+	$expansion_page,
+	'<html><head>'
+	. '<style></style><style>   </style><style type="text/css"></style>'
+	. '<style type="text/plain">.skipped{color:red}</style>'
+	. '<style type="text/css">.kept{color:blue}</style>'
+	. '<script src="vendor.js"></script>'
+	. '<script type="application/json">{"skipped":true}</script>'
+	. '<script></script>'
+	. '<script type="text/javascript">console.log(1);</script>'
+	. '</head><body></body></html>'
+);
+$assert( 2 === static_site_importer_cli_inline_expansion_count( $expansion_page ), 'inline-expansion-reserves-only-blocks-blocks-engine-expands' );
+
+// A document with no expandable stylesheet still reserves one slot, because
+// spacing authored on <body> is carried as generated CSS.
+file_put_contents( $expansion_page, '<html><head><style></style></head><body style="margin:3rem"></body></html>' );
+$assert( 1 === static_site_importer_cli_inline_expansion_count( $expansion_page ), 'inline-expansion-keeps-a-slot-for-generated-body-spacing-css' );
+
+// A page that expands into nothing reserves nothing.
+file_put_contents( $expansion_page, '<html><head><style></style><script src="vendor.js"></script></head><body></body></html>' );
+$assert( 0 === static_site_importer_cli_inline_expansion_count( $expansion_page ), 'inline-expansion-reserves-nothing-for-a-page-that-expands-into-nothing' );
+
+// A capture whose pages are dense with non-expanding blocks must be accepted.
+unlink( $expansion_page );
+for ( $index = 0; $index < 40; ++$index ) {
+	file_put_contents(
+		$expansion_dir . '/page-' . $index . '.html',
+		'<html><head>' . str_repeat( '<style></style>', 60 ) . '<style type="text/css">.a{color:red}</style></head><body></body></html>'
+	);
+}
+$expansion_bundle = static_site_importer_cli_request_bundle_files( $expansion_dir );
+$assert( ! is_wp_error( $expansion_bundle ), 'request-bundle-accepts-pages-dense-with-non-expanding-blocks' );
+$assert( is_array( $expansion_bundle ) && 80 === ( $expansion_bundle['compiler_limits']['max_files'] ?? 0 ), 'request-bundle-reserves-one-expansion-per-page-with-one-real-stylesheet' );
+foreach ( scandir( $expansion_dir ) as $entry ) {
+	if ( '.' !== $entry && '..' !== $entry ) {
+		unlink( $expansion_dir . '/' . $entry );
+	}
+}
+rmdir( $expansion_dir );
+
 $file_limit_dir = sys_get_temp_dir() . '/ssi-request-bundle-file-' . bin2hex( random_bytes( 6 ) );
 mkdir( $file_limit_dir );
 $file_limit_handle = fopen( $file_limit_dir . '/asset.css', 'w' );
