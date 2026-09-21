@@ -1,0 +1,90 @@
+name: Refresh dependencies and release
+
+on:
+  push:
+    branches: [main]
+  repository_dispatch:
+    types: [component-released]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Preview dependency refresh and release without writes
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: static-site-importer-release-main
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Refresh published Blocks Engine pins
+    runs-on: ubuntu-latest
+    outputs:
+      source-sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Validate upstream publication event
+        if: github.event_name == 'repository_dispatch'
+        env:
+          PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+        run: |
+          set -euo pipefail
+          jq -e '
+            (.component | type == "string" and length > 0)
+            and (.version | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
+            and (.tag | type == "string" and length > 0)
+            and (.sha | type == "string" and test("^[0-9a-f]{40}$"))
+          ' <<<"${PAYLOAD}" >/dev/null || {
+            echo "::error::component-released payload must contain component, stable version, tag, and 40-character sha"
+            exit 1
+          }
+
+      - name: Run Homeboy dependency refresh action
+        env:
+          HOMEBOY_DEPENDENCY_PAYLOAD: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload) || '' }}
+          HOMEBOY_DRY_RUN: ${{ inputs.dry-run || 'false' }}
+        run: bash scripts/release/refresh-blocks-engine.sh
+
+      - name: Assert dry-run left manifests unchanged
+        if: inputs.dry-run == true
+        run: git diff --exit-code -- composer.json composer.lock
+
+      - name: Commit refreshed pins
+        if: inputs.dry-run != true
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- composer.json composer.lock; then
+            echo "No published Blocks Engine pin changed."
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add composer.json composer.lock
+          git commit -m "chore(deps): refresh Blocks Engine pins"
+          git push origin HEAD:main
+
+      - name: Resolve prepared source SHA
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  release:
+    name: Release prepared SSI commit
+    needs: refresh
+    uses: Extra-Chill/homeboy-action/.github/workflows/release.yml@v2
+    with:
+      prepared-ref: ${{ needs.refresh.outputs.source-sha }}
+      release-branch: main
+      dry-run: ${{ inputs.dry-run || false }}
+      extension: wordpress
+      component: static-site-importer
+    secrets: inherit
