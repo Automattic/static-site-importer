@@ -293,6 +293,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		$operations                   = array();
 		$represented_layout_nodes     = array();
 		$represented_topology_nodes   = array();
+		/** @var array<string,array<int,string>> $suppressed_layout_properties */
 		$suppressed_layout_properties = array();
 		$overlay_node_targets         = array();
 		$responsive_variant_targets   = array();
@@ -1345,6 +1346,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 		}
 		if ( ! empty( $merged_boxes ) ) {
+			/** @var array<int,int|string> $sibling_submit_indexes */
 			$sibling_submit_indexes = array();
 			foreach ( $controls as $control_index => $control ) {
 				if ( 'submit' === strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) && '$root' === ( $control_parents[ $control_index ] ?? '$root' ) ) {
@@ -1358,11 +1360,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			// inner wrapper and leave the submit outside.
 			$use_field_list = ! empty( $sibling_submit_indexes );
 			if ( $use_field_list ) {
-				$form_classes[]      = 'ssi-source-field-list';
-				$field_list_layout   = $merged_base;
-				$field_list_row_gap  = self::layout_row_gap( $transposed_layout );
+				$form_classes[]     = 'ssi-source-field-list';
+				$field_list_layout  = $merged_base;
+				$field_list_row_gap = self::layout_row_gap( $transposed_layout );
 				if ( is_string( $field_list_row_gap ) ) {
-					$gap_key                   = isset( $transposed_layout['row_gap'] ) ? 'row_gap' : 'gap';
+					$gap_key                       = isset( $transposed_layout['row_gap'] ) ? 'row_gap' : 'gap';
 					$field_list_layout[ $gap_key ] = $field_list_row_gap;
 					if ( ( $form_base[ $gap_key ] ?? null ) === $field_list_row_gap ) {
 						$suppressed_layout_properties['form'] = array_values( array_unique( array_merge( $suppressed_layout_properties['form'] ?? array(), array( $gap_key ) ) ) );

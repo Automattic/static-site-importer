@@ -459,10 +459,10 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				if ( false === $digest ) {
 					return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'A request-bundle source file could not be verified.' );
 				}
-				$id               = 'request-bundle-file:' . rawurlencode( $relative );
-				$paths[ $id ]     = $absolute;
-				$files[]          = array(
-					'path'              => $relative,
+				$id           = 'request-bundle-file:' . rawurlencode( $relative );
+				$paths[ $id ] = $absolute;
+				$files[]      = array(
+					'path'       => $relative,
 					'payload_reference' => array(
 						'schema' => 'blocks-engine/payload-reference/v1',
 						'id'     => $id,
