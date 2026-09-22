@@ -153,6 +153,11 @@ $assert( ! is_wp_error( $user_id ), 'user-page-created', is_wp_error( $user_id )
 		$matches         = $manifest['existing_matches']['pages'] ?? array();
 		$protected_match = array_values( array_filter( $matches, static fn( array $row ): bool => (int) ( $row['post_id'] ?? 0 ) === (int) $protected_id ) );
 		$assert( 1 === count( $protected_match ) && true === ( $protected_match[0]['protected'] ?? false ) && '/protected' === ( $protected_match[0]['route'] ?? '' ), 'manifest-records-protected-canonical-route-match' );
+		// The manifest ships inside the theme, so it must not name the host that
+		// built it: an export built on one host and restored on another would
+		// carry that host forever. Existing matches record a host-free permalink.
+		$home_host = (string) wp_parse_url( home_url(), PHP_URL_HOST );
+		$assert( '' !== $home_host && ! str_contains( $read( $result['manifest_path'] ), $home_host ), 'manifest-omits-build-host', (string) ( $protected_match[0]['permalink'] ?? '' ) );
 		$assert( ! isset( $report['generated_theme']['block_documents'][0]['core_html_block_count'] ), 'projection-omits-unreported-core-html-metric' );
 
 		$preserved_bootstrap = $theme_dir . '/static-site-importer-batch-bootstrap/preserved.php';

@@ -871,7 +871,9 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			'post_id'     => $id,
 			'source_path' => $page['source_path'],
 			'route'       => $page['route']['path'],
-			'permalink'   => function_exists( 'get_permalink' ) ? get_permalink( $existing ) : $page['route']['path'],
+			// Host-free: the manifest ships inside the theme and must not name the
+			// host that built it.
+			'permalink'   => function_exists( 'get_permalink' ) ? wp_make_link_relative( (string) get_permalink( $existing ) ) : $page['route']['path'],
 			'slug'        => $page['slug'],
 			'post_type'   => $page['post_type'],
 			'protected'   => $protected,
