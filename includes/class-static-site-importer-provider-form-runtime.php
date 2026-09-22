@@ -89,6 +89,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		add_filter( 'render_block_jetpack/contact-form', array( __CLASS__, 'project_form_container_placement' ), 5, 2 );
 		add_filter( 'render_block_jetpack/contact-form', array( __CLASS__, 'project_field_list_wrapper' ), 6, 2 );
 		add_filter( 'render_block_jetpack/contact-form', array( __CLASS__, 'project_plain_root_fieldset' ), 10, 2 );
+		add_filter( 'render_block_jetpack/contact-form', array( __CLASS__, 'project_choice_bridge' ), 20, 2 );
 		add_filter( 'render_block_core/button', array( __CLASS__, 'project_submit_presentation' ), 10, 2 );
 		add_filter( 'shortcode_atts_contact-field', array( __CLASS__, 'project_help_text_attribute' ), 10, 3 );
 	}
@@ -156,6 +157,19 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			1
 		);
 		return is_string( $stripped ) ? $stripped : $projected;
+	}
+
+	/** Synchronize captured observed-choice keys into Jetpack's validated radio field. */
+	public static function project_choice_bridge( string $html, array $block = array() ): string {
+		unset( $block );
+		if ( ! str_contains( $html, 'ssi-choice-provider-bridge' ) || ! str_contains( $html, 'data-blocks-engine-choice-group' ) ) {
+			return $html;
+		}
+		$style  = '<style>.ssi-choice-provider-bridge{display:none!important}</style>';
+		$script = <<<'HTML'
+<script>(function(){var stateKey='__ssi_choice_provider_bridge_v1__';function clear(field){field.querySelectorAll('input[type="radio"]').forEach(function(radio){if(radio.checked){radio.checked=false;radio.dispatchEvent(new Event('change',{bubbles:true}))}})}function sync(field,group){var selection=null;try{selection=JSON.parse(group.getAttribute('data-blocks-engine-choice-selection')||'null')}catch(error){}var key=selection&&typeof selection.observed_choice_key==='string'?selection.observed_choice_key:null;field.querySelectorAll('input[type="radio"]').forEach(function(radio){var checked=null!==key&&radio.value===key;if(radio.checked!==checked){radio.checked=checked;radio.dispatchEvent(new Event('change',{bubbles:true}))}})}function cleanup(state){state.entries=state.entries.filter(function(entry){if(entry.group.isConnected&&entry.field.isConnected){return true}entry.observer&&entry.observer.disconnect();entry.form.removeEventListener('reset',entry.reset);return false})}function mountAll(state){cleanup(state);document.querySelectorAll('form').forEach(function(form){var groups=form.querySelectorAll('[data-blocks-engine-choice-group="true"]'),fields=form.querySelectorAll('.ssi-choice-provider-bridge');for(var index=0;index<Math.min(groups.length,fields.length);index++){var group=groups[index],field=fields[index];if(state.entries.some(function(entry){return entry.group===group&&entry.field===field})){continue}var reset=function(){window.setTimeout(function(){clear(field)},0)};var observer=window.MutationObserver?new MutationObserver(function(){sync(field,group)}):null;if(observer){observer.observe(group,{attributes:true,attributeFilter:['data-blocks-engine-choice-selection']})}state.entries.push({group:group,field:field,form:form,observer:observer,reset:reset});sync(field,group);form.addEventListener('reset',reset)}})}function install(){var state=window[stateKey];if(!state){state={entries:[],mountAll:function(){mountAll(state)},destroy:function(){state.entries.forEach(function(entry){entry.observer&&entry.observer.disconnect();entry.form.removeEventListener('reset',entry.reset)});state.entries=[];state.documentObserver&&state.documentObserver.disconnect();window.removeEventListener('unload',state.destroy);delete window[stateKey]}};if(window.MutationObserver){state.documentObserver=new MutationObserver(function(){state.mountAll()});state.documentObserver.observe(document.documentElement,{childList:true,subtree:true})}window[stateKey]=state;window.addEventListener('unload',state.destroy)}state.mountAll()}if('loading'===document.readyState){document.addEventListener('DOMContentLoaded',install)}else{install()}})();</script>
+HTML;
+		return $html . $style . $script;
 	}
 
 	/** Field-list display/track utilities belong on the inner list, not the page item. */

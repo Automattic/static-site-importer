@@ -318,6 +318,121 @@ class Static_Site_Importer_Form_Seeder {
 	}
 
 	/**
+	 * Build provider-owned local fields while retaining the captured choice block.
+	 *
+	 * @param array<string,mixed>   $form     Validated form row.
+	 * @param array<int,array<mixed>> $controls Source controls.
+	 * @return array{groups?:array<int,array<string,mixed>>,error?:string}
+	 */
+	private static function choice_bridge_plan( array $form, array $controls ): array {
+		$choice_groups = isset( $form['choice_groups'] ) && is_array( $form['choice_groups'] ) ? $form['choice_groups'] : array();
+		if ( empty( $choice_groups ) ) {
+			return array( 'groups' => array() );
+		}
+
+		$groups = array();
+		foreach ( $choice_groups as $group_index => $choice_group ) {
+			$group     = is_array( $choice_group['group'] ?? null ) ? $choice_group['group'] : array();
+			$choices   = is_array( $choice_group['choices'] ?? null ) ? $choice_group['choices'] : array();
+			$indexes   = self::choice_control_indexes( $controls, $choices );
+			$companion = self::choice_companion_block( $form, (string) ( $group['selector'] ?? '' ) );
+			if ( count( $indexes ) !== count( $choices ) || null === $companion ) {
+				return array( 'error' => 'choice_provider_bridge_unavailable' );
+			}
+			$local_values = array_column( $choices, 'observed_choice_key' );
+			$field_id     = 'ssi-choice-' . substr( hash( 'sha256', Static_Site_Importer_Form_Layout_Projection::layout_scope( $form ) . "\n" . (string) ( $group['selector'] ?? '' ) . "\n" . $group_index ), 0, 16 );
+			$control      = array(
+				'tag'     => 'input',
+				'type'    => 'radio',
+				'label'   => is_string( $group['label'] ?? null ) && '' !== trim( $group['label'] ) ? $group['label'] : 'Choice',
+				'id'      => $field_id,
+				'options' => $local_values,
+			);
+			$field_block  = Static_Site_Importer_Form_Field_Markup::field_block_from_control( 'input', 'radio', $control );
+			if ( null === $field_block ) {
+				return array( 'error' => 'choice_provider_bridge_unavailable' );
+			}
+			$field_block['attrs']['id']        = $field_id;
+			$field_block['attrs']['values']    = $local_values;
+			$field_block['attrs']['className'] = trim( (string) ( $field_block['attrs']['className'] ?? '' ) . ' ssi-choice-provider-bridge' );
+			$groups[]                          = array(
+				'control_indexes' => $indexes,
+				'companion_block' => $companion,
+				'field_block'     => $field_block,
+				'field_id'        => $field_id,
+				'local_values'    => $local_values,
+			);
+		}
+		return array( 'groups' => $groups );
+	}
+
+	/** @param array<int,array<string,mixed>> $controls @param array<int,array<string,mixed>> $choices */
+	private static function choice_control_indexes( array $controls, array $choices ): array {
+		$indexes = array();
+		foreach ( $choices as $choice ) {
+			$target = self::canonical_choice_selector( (string) ( $choice['selector'] ?? '' ) );
+			$found  = null;
+			foreach ( $controls as $control_index => $control ) {
+				if ( 'button' !== strtolower( trim( (string) ( $control['tag'] ?? '' ) ) ) || 'button' !== strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) || self::canonical_choice_selector( (string) ( $control['selector'] ?? '' ) ) !== $target ) {
+					continue;
+				}
+				$found = (int) $control_index;
+				break;
+			}
+			if ( null === $found || in_array( $found, $indexes, true ) ) {
+				return array();
+			}
+			$indexes[] = $found;
+		}
+		return $indexes;
+	}
+
+	private static function canonical_choice_selector( string $selector ): string {
+		$selector = preg_replace( '/^\s*body\s*>\s*/i', '', trim( $selector ) );
+		$selector = preg_replace( '/:nth-(?:of-type|child)\(1\)/i', '', (string) $selector );
+		$selector = preg_replace( '/\s+/', ' ', (string) $selector );
+		return trim( (string) $selector );
+	}
+
+	private static function choice_companion_block( array $form, string $selector ): ?array {
+		if ( '' === $selector || ! function_exists( 'parse_blocks' ) ) {
+			return null;
+		}
+		$bindings = isset( $form['bindings'] ) && is_array( $form['bindings'] ) ? $form['bindings'] : array();
+		foreach ( $bindings as $binding ) {
+			$markup = is_array( $binding ) && is_string( $binding['search_block_markup'] ?? null ) ? $binding['search_block_markup'] : '';
+			if ( '' === trim( $markup ) ) {
+				continue;
+			}
+			$found = self::find_choice_companion_block( parse_blocks( $markup ), $selector );
+			if ( null !== $found ) {
+				return $found;
+			}
+		}
+		return null;
+	}
+
+	private static function find_choice_companion_block( array $blocks, string $selector ): ?array {
+		foreach ( $blocks as $block ) {
+			if ( ! is_array( $block ) ) {
+				continue;
+			}
+			$block_name = (string) ( $block['blockName'] ?? '' );
+			$config     = is_string( $block['attrs']['config'] ?? null ) ? json_decode( html_entity_decode( $block['attrs']['config'] ), true ) : null;
+			if ( str_ends_with( $block_name, '/captured-choice-group' ) && is_array( $config ) && (string) ( $config['group']['selector'] ?? '' ) === $selector ) {
+				$block['_parsed_block'] = $block;
+				$block['name']          = $block_name;
+				return $block;
+			}
+			$found = self::find_choice_companion_block( is_array( $block['innerBlocks'] ?? null ) ? $block['innerBlocks'] : array(), $selector );
+			if ( null !== $found ) {
+				return $found;
+			}
+		}
+		return null;
+	}
+
+	/**
 	 * Map one source form into Jetpack contact-form block markup.
 	 *
 	 * @param array<string, mixed> $form      Validated form row.
@@ -344,7 +459,27 @@ class Static_Site_Importer_Form_Seeder {
 		$has_source_submit             = false;
 		$textarea_height_omitted_count = (int) ( $form['form']['textarea_height_omitted_count'] ?? 0 );
 		$radio_groups                  = Static_Site_Importer_Form_Field_Markup::labelled_radio_groups( $form, $controls );
-		$suppressed_controls           = $radio_groups['suppressed_controls'];
+		$choice_bridge                 = self::choice_bridge_plan( $form, $controls );
+		if ( isset( $choice_bridge['error'] ) ) {
+			return array(
+				'selector'       => $selector,
+				'source_path'    => $source_path,
+				'provider'       => self::PROVIDER_ID,
+				'block_name'     => 'jetpack/contact-form',
+				'status'         => 'skipped',
+				'reason'         => $choice_bridge['error'],
+				'runtime_mapped' => false,
+			);
+		}
+		$choice_bridge_groups = $choice_bridge['groups'] ?? array();
+		$suppressed_controls  = $radio_groups['suppressed_controls'];
+		foreach ( $choice_bridge_groups as $choice_group ) {
+			foreach ( $choice_group['control_indexes'] as $control_index ) {
+				if ( $control_index !== $choice_group['control_indexes'][0] ) {
+					$suppressed_controls[ $control_index ] = true;
+				}
+			}
+		}
 		if ( ! empty( $form['form']['interleaved_context'] ) ) {
 			return array(
 				'selector'       => $selector,
@@ -363,6 +498,17 @@ class Static_Site_Importer_Form_Seeder {
 
 		foreach ( $controls as $control_index => $control ) {
 			if ( ! is_array( $control ) ) {
+				continue;
+			}
+			$choice_companion = null;
+			foreach ( $choice_bridge_groups as $choice_group ) {
+				if ( $choice_group['control_indexes'][0] === $control_index ) {
+					$choice_companion = $choice_group['companion_block'];
+					break;
+				}
+			}
+			if ( is_array( $choice_companion ) ) {
+				$field_blocks[ $control_index ] = $choice_companion;
 				continue;
 			}
 			$type = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
@@ -498,11 +644,25 @@ class Static_Site_Importer_Form_Seeder {
 			);
 		}
 		$inner_blocks = $topology['blocks'];
+		foreach ( $choice_bridge_groups as $choice_group ) {
+			$inner_blocks[] = $choice_group['field_block'];
+			$mapped_types[] = 'jetpack/field-radio';
+		}
 		if ( ! $has_topology || ! $has_source_submit ) {
 			$inner_blocks[] = Static_Site_Importer_Form_Field_Markup::submit_button_block( $submit_text, Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-submit' ), $submit_presentation );
 		}
 		$form['topology_losses']            = $topology['losses'];
 		$form['represented_semantic_nodes'] = $radio_groups['represented_semantic_nodes'];
+		$form['choice_groups']              = array_map(
+			static fn ( array $choice_group ): array => array(
+				'field_id'            => $choice_group['field_id'],
+				'local_values'        => $choice_group['local_values'],
+				'source_values'       => array_fill( 0, count( $choice_group['local_values'] ), null ),
+				'selected_index'      => null,
+				'provider_block_name' => 'jetpack/field-radio',
+			),
+			$choice_bridge_groups
+		);
 		$provider_graph                     = is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array(
 			'nodes'    => array(),
 			'variants' => array(),
@@ -734,6 +894,9 @@ class Static_Site_Importer_Form_Seeder {
 			'provider_layout_target_map'  => $target_map,
 			'provider_layout_overlay_css' => $overlay['overlay'],
 		);
+		if ( ! empty( $choice_bridge_groups ) ) {
+			$row['choice_bridge'] = $form['choice_groups'];
+		}
 		if ( ! empty( $visual_state['state'] ) ) {
 			$row['form_visual_state'] = $visual_state['state'];
 		}

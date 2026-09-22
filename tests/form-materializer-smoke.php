@@ -363,6 +363,40 @@ namespace {
 	)['forms'][0]['block_markup'] ?? '';
 	$assert( str_contains( $unsafe_label_markup, '<span class="ok">Send</span>' ) && ! str_contains( $unsafe_label_markup, '<script' ), 'submit-label-classes-that-are-not-plain-tokens-are-refused', $unsafe_label_markup );
 	$assert( str_contains( $markup, 'form-button-submit is-submit ssi-source-submit--source-submit ssi-provider-submit-presentation' ), 'source-submit-control-presentation-projects-onto-core-button' );
+	$choice_config = array(
+		'group'   => array( 'selector' => 'form.contact > .rating-group', 'tag' => 'div', 'label' => 'Rating' ),
+		'choices' => array(
+			array( 'index' => 0, 'observed_choice_key' => 'choice-0', 'source_value' => null, 'selector' => 'button.rating-one', 'tag' => 'button', 'label' => 'One' ),
+			array( 'index' => 1, 'observed_choice_key' => 'choice-1', 'source_value' => null, 'selector' => 'button.rating-two', 'tag' => 'button', 'label' => 'Two' ),
+		),
+		'states'  => array( array( 'selectedIndex' => 0, 'bindings' => array() ), array( 'selectedIndex' => 1, 'bindings' => array() ) ),
+	);
+	$choice_binding = '<!-- wp:blocks-engine/captured-choice-group ' . wp_json_encode( array( 'config' => wp_json_encode( $choice_config ) ) ) . ' --><!-- wp:button {"type":"button","className":"rating-one"} --><div class="wp-block-button rating-one"><button type="button">One</button></div><!-- /wp:button --><!-- wp:button {"type":"button","className":"rating-two"} --><div class="wp-block-button rating-two"><button type="button">Two</button></div><!-- /wp:button --><!-- /wp:blocks-engine/captured-choice-group -->';
+	$choice_form = array(
+		'forms' => array( array(
+			'selector'      => 'form.contact',
+			'controls'      => array(
+				array( 'tag' => 'button', 'type' => 'button', 'selector' => 'button.rating-one', 'label' => 'One' ),
+				array( 'tag' => 'button', 'type' => 'button', 'selector' => 'button.rating-two', 'label' => 'Two' ),
+				array( 'tag' => 'input', 'type' => 'text', 'selector' => 'form.contact > input', 'name' => 'name', 'label' => 'Name' ),
+				array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+			),
+			'choice_groups' => array( array( 'group' => $choice_config['group'], 'choices' => $choice_config['choices'] ) ),
+			'bindings' => array( array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'contact.html', 'search_block_markup' => $choice_binding, 'occurrence' => 1, 'role' => 'form' ) ),
+		) ),
+	);
+	$choice_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $choice_form );
+	$choice_row        = Static_Site_Importer_Form_Seeder::seed( $choice_validation )['forms'][0] ?? array();
+	$choice_markup     = (string) ( $choice_row['block_markup'] ?? '' );
+	$assert( empty( $choice_validation['errors'] ) && array_key_exists( 'source_value', $choice_validation['forms'][0]['choice_groups'][0]['choices'][0] ?? array() ) && null === $choice_validation['forms'][0]['choice_groups'][0]['choices'][0]['source_value'] && array_key_exists( 'selected_index', $choice_validation['forms'][0]['choice_groups'][0]['observed_transition'] ?? array() ) && null === $choice_validation['forms'][0]['choice_groups'][0]['observed_transition']['selected_index'], 'choice-groups-preserve-observed-keys-with-unknown-source-values' );
+	$assert( 'mapped' === ( $choice_row['status'] ?? '' ) && 2 === substr_count( $choice_markup, 'wp:blocks-engine/captured-choice-group' ) && 2 === substr_count( $choice_markup, 'wp:jetpack/field-radio' ) && str_contains( $choice_markup, '"values":["choice-0","choice-1"]' ) && str_contains( $choice_markup, 'ssi-choice-provider-bridge' ), 'choice-bridge-retains-captured-companion-and-submits-observed-provider-values', $choice_markup );
+	$choice_runtime = Static_Site_Importer_Provider_Form_Runtime_V1::project_choice_bridge( '<form><div data-blocks-engine-choice-group="true"></div><div class="ssi-choice-provider-bridge"></div></form>' );
+	$assert( str_contains( $choice_runtime, 'data-blocks-engine-choice-selection' ) && str_contains( $choice_runtime, 'MutationObserver' ) && str_contains( $choice_runtime, 'radio.value===key' ), 'choice-bridge-runtime-syncs-click-and-keyboard-selection-into-provider-radio' );
+	$choice_missing_companion             = $choice_form;
+	unset( $choice_missing_companion['forms'][0]['bindings'] );
+	$choice_missing_validation            = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $choice_missing_companion );
+	$choice_missing_row                   = Static_Site_Importer_Form_Seeder::seed( $choice_missing_validation )['forms'][0] ?? array();
+	$assert( 'skipped' === ( $choice_missing_row['status'] ?? '' ) && 'choice_provider_bridge_unavailable' === ( $choice_missing_row['reason'] ?? '' ), 'choice-bridge-fails-closed-without-captured-companion' );
 	// The source stylesheet governs this button, so the block claims no style
 	// attribute it would then have to reproduce in saved markup. That agreement
 	// with core's save() output is what keeps imported forms clean in the editor.
