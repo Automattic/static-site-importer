@@ -221,33 +221,3 @@
 		flex: 1 1 100%;
 	}
 }
-
-.ssi-importer__agent {
-	margin-top: 2rem;
-	padding-top: 1.5rem;
-	border-top: 1px solid rgba(0, 0, 0, 0.1);
-}
-
-.ssi-importer__agent-label {
-	margin: 0 0 0.75rem;
-	font-weight: 600;
-}
-
-.ssi-importer__agent-prompt {
-	margin: 0 0 0.75rem;
-	padding: 0.75rem 1rem;
-	background: rgba(0, 0, 0, 0.04);
-	border-radius: 4px;
-	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-	font-size: 0.8125rem;
-	line-height: 1.5;
-	/* The prompt contains a long URL; wrap it rather than scroll the panel. */
-	white-space: pre-wrap;
-	overflow-wrap: anywhere;
-}
-
-.ssi-importer__agent-note {
-	margin: 0.75rem 0 0;
-	font-size: 0.875rem;
-	opacity: 0.8;
-}
