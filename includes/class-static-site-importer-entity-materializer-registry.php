@@ -393,9 +393,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					'static_site_importer_runtime_entity_invalid',
 					'Runtime entity declaration failed SSI provider validation.',
 					array(
-						'status'         => 'rejected',
-						'declaration_id' => $key,
-						'errors'         => $validation['errors'],
+						'status'            => 'rejected',
+						'declaration_id'    => $key,
+						'entity_collection' => $collection,
+						'error_count'       => count( $validation['errors'] ),
+						'errors'            => $validation['errors'],
 					)
 				);
 			}
