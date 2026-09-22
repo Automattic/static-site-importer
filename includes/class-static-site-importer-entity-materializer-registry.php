@@ -18,6 +18,9 @@ if ( ! class_exists( 'Static_Site_Importer_Provider_Layout_Overlay' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Provider_Form_Runtime_V1' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-provider-form-runtime.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Loss_Classes' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-diagnostic-loss-classes.php';
+}
 
 /**
  * Registers import-time entity validators, dependency requirements, and writers.
@@ -388,22 +391,35 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				$manifest['schema_version'] = 1;
 			}
 			$validation = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ? array( 'errors' => array() ) : self::validate_manifest_generic( $adapter, $manifest );
+			$accepted   = is_array( $validation[ $collection ] ?? null ) ? $validation[ $collection ] : array();
 			if ( ! empty( $validation['errors'] ) ) {
-				return new WP_Error(
-					'static_site_importer_runtime_entity_invalid',
-					'Runtime entity declaration failed SSI provider validation.',
-					array(
-						'status'            => 'rejected',
-						'declaration_id'    => $key,
-						'entity_collection' => $collection,
-						'error_count'       => count( $validation['errors'] ),
-						'errors'            => $validation['errors'],
-					)
-				);
+				// Entity validators report per row: an unmappable row is rejected
+				// without discarding the rows that did validate, so partial feature
+				// parity is still materialized. Honour that here -- only a
+				// declaration that produced no usable row is rejected outright.
+				//
+				// The rejection carries the collection and error count alongside the
+				// errors themselves, because the user-facing gate message is built
+				// from this data and "failed validation" without the facts is not
+				// actionable (#1785).
+				if ( empty( $accepted ) ) {
+					return new WP_Error(
+						'static_site_importer_runtime_entity_invalid',
+						'Runtime entity declaration failed SSI provider validation.',
+						array(
+							'status'            => 'rejected',
+							'declaration_id'    => $key,
+							'entity_collection' => $collection,
+							'error_count'       => count( $validation['errors'] ),
+							'errors'            => $validation['errors'],
+						)
+					);
+				}
+				$lifecycle['diagnostics'][] = self::rejected_runtime_entity_rows_diagnostic( $key, $adapter, count( $entities ), count( $accepted ), $validation['errors'] );
 			}
 			// Dependency preparation intentionally defers provider validation until
 			// resume, but its checkpoint must still retain every declared entity.
-			$normalized_manifest = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ? $manifest : array( $collection => $validation[ $collection ] ?? array() );
+			$normalized_manifest = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ? $manifest : array( $collection => $accepted );
 			if ( 'products' === $collection && 'prepare' !== ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
 				$normalized_manifest['schema_version'] = 1;
 			}
@@ -454,6 +470,43 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$lifecycle['status'] = 'runtime_declarations';
 		}
 		return $lifecycle;
+	}
+
+	/**
+	 * Report the rows of a runtime entity declaration a provider validator rejected.
+	 *
+	 * Entity validators are per row by contract, so the declaration is still
+	 * materialized from the rows that validated. The rejected rows keep the
+	 * converted source markup already on the page, which is the same loss class
+	 * as a provider decline.
+	 *
+	 * @param string              $declaration_id Declaration reconciliation identity.
+	 * @param array<string,mixed> $adapter        Adapter definition.
+	 * @param int                 $declared       Declared row count.
+	 * @param int                 $accepted       Validated row count.
+	 * @param array<int,mixed>    $errors         Validator errors for the rejected rows.
+	 * @return array<string,mixed>
+	 */
+	private static function rejected_runtime_entity_rows_diagnostic( string $declaration_id, array $adapter, int $declared, int $accepted, array $errors ): array {
+		$collection = (string) ( $adapter['entity_collection'] ?? 'entities' );
+		$rejected   = max( 0, $declared - $accepted );
+		return array(
+			'id'                      => 'runtime-entity-rows-rejected-' . hash( 'sha256', $declaration_id . "\n" . $collection ),
+			'code'                    => 'runtime_entity_rows_rejected',
+			'type'                    => 'static-site-importer',
+			'severity'                => 'warning',
+			'stage'                   => 'entity_materialization',
+			'loss_class'              => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+			'declaration_id'          => $declaration_id,
+			'reconciliation_identity' => $declaration_id,
+			'provider'                => (string) ( $adapter['provider'] ?? '' ),
+			'entity_collection'       => $collection,
+			'declared_count'          => $declared,
+			'accepted_count'          => $accepted,
+			'rejected_count'          => $rejected,
+			'errors'                  => array_slice( array_values( array_filter( $errors, 'is_array' ) ), 0, 16 ),
+			'message'                 => $rejected . ' of ' . $declared . ' declared ' . $collection . ' failed SSI provider validation and were skipped; the remaining ' . $accepted . ' materialized. The imported pages keep their converted source markup for the skipped rows.',
+		);
 	}
 
 	private static function runtime_declaration_is_required( array $declaration, array $declarations ): bool {
@@ -1826,7 +1879,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 		}
 		foreach ( $candidate['provenance'] as $fact ) {
-			if ( ! is_array( $fact ) || ! self::has_only_keys( $fact, array( 'source_path', 'source_sha256', 'selector', 'condition', 'properties' ) ) || ! is_string( $fact['source_path'] ?? null ) || ! preg_match( '~^(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9._/-]+$~D', $fact['source_path'] ) || ! preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ?? '' ) || ! is_string( $fact['selector'] ?? null ) || '' === trim( $fact['selector'] ) || strlen( $fact['selector'] ) > 1024 || ( $fact['condition'] ?? null ) !== $condition || ! is_array( $fact['properties'] ?? null ) || empty( $fact['properties'] ) || array_filter( $fact['properties'], static fn( $property ): bool => ! is_string( $property ) || ! isset( $properties[ str_replace( '-', '_', $property ) ], $candidate['styles'][ str_replace( '-', '_', $property ) ] ) ) ) {
+			if ( ! is_array( $fact ) || ! self::has_only_keys( $fact, array( 'source_path', 'source_sha256', 'selector', 'condition', 'properties' ) ) || ! self::is_safe_artifact_source_path( $fact['source_path'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ?? '' ) || ! is_string( $fact['selector'] ?? null ) || '' === trim( $fact['selector'] ) || strlen( $fact['selector'] ) > 1024 || ( $fact['condition'] ?? null ) !== $condition || ! is_array( $fact['properties'] ?? null ) || empty( $fact['properties'] ) || array_filter( $fact['properties'], static fn( $property ): bool => ! is_string( $property ) || ! isset( $properties[ str_replace( '-', '_', $property ) ], $candidate['styles'][ str_replace( '-', '_', $property ) ] ) ) ) {
 				return array( 'error' => 'presentation_graph provenance is malformed.' );
 			}
 		}

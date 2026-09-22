@@ -471,7 +471,7 @@ document.addEventListener( 'DOMContentLoaded', function () {
 					confirm();
 					return;
 				}
-			} catch ( error ) {
+			} catch {
 				// Fall through to the selection-based path below.
 			}
 
@@ -485,7 +485,7 @@ document.addEventListener( 'DOMContentLoaded', function () {
 			try {
 				document.execCommand( 'copy' );
 				confirm();
-			} catch ( error ) {
+			} catch {
 				button.textContent = 'Select and copy above';
 				window.setTimeout( () => { button.textContent = restore; }, 3000 );
 			}

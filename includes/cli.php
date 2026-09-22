@@ -255,10 +255,38 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		return array(
 			'max_files'                => 5000,
 			'max_file_bytes'           => 10485760,
+			'max_media_file_bytes'     => 104857600,
 			'max_total_bytes'          => 268435456,
 			'generated_bytes_headroom' => 67108864,
 			'compiler_max_total_bytes' => 335544320,
 		);
+	}
+
+	/**
+	 * The per-file byte ceiling for one request-bundle source file.
+	 *
+	 * `max_file_bytes` protects parse/expansion cost: the compiler reads and
+	 * rewrites textual sources (HTML it converts to blocks, CSS/SVG it may
+	 * inline, JS/JSON/etc. it inspects for server-side code), so that cost
+	 * scales with bytes and stays tightly bounded. An opaque binary the
+	 * compiler only copies — an image, font, or a photo/video site's video or
+	 * audio clip — carries none of that cost, so it gets a much wider ceiling.
+	 * That wider ceiling is still bounded on two sides: a flat cap
+	 * (`max_media_file_bytes`) and whatever remains of the aggregate budget
+	 * (`max_total_bytes`) at this point in the walk, so one large file can
+	 * spend a large share of the run's budget but never exceed it.
+	 */
+	function static_site_importer_cli_request_bundle_file_byte_limit( string $relative, array $limits, int $bytes_used ): int {
+		if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) || Static_Site_Importer_Content_Policy::is_textual_path( $relative ) ) {
+			return $limits['max_file_bytes'];
+		}
+		return min( $limits['max_media_file_bytes'], max( 0, $limits['max_total_bytes'] - $bytes_used ) );
+	}
+
+	/** Format a byte count as whole or one-decimal MiB for an error message. */
+	function static_site_importer_cli_request_bundle_mib( int $bytes ): string {
+		$decimals = 0 === $bytes % 1048576 ? 0 : 1;
+		return number_format( $bytes / 1048576, $decimals ) . ' MiB';
 	}
 
 	/**
@@ -305,7 +333,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		if ( 1 !== preg_match( '/<body\b[^>]*\sstyle\s*=\s*(?:"([^"]*)"|\'([^\']*)\')/i', $content, $matches ) ) {
 			return false;
 		}
-		$style = html_entity_decode( '' !== ( $matches[1] ?? '' ) ? $matches[1] : ( $matches[2] ?? '' ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		$style = html_entity_decode( '' !== $matches[1] ? $matches[1] : ( $matches[2] ?? '' ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
 		if ( '' === trim( $style ) || preg_match( '/[{}<>]/', $style ) ) {
 			return false;
 		}
@@ -378,9 +406,13 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				if ( class_exists( 'Static_Site_Importer_Content_Policy' ) && ! Static_Site_Importer_Content_Policy::is_static_path( $relative ) ) {
 					return new WP_Error( 'static_site_importer_executable_source_rejected', 'Request-bundle source trees may contain static content only.' );
 				}
-				$bytes = $item->getSize();
-				if ( $bytes > $limits['max_file_bytes'] ) {
-					return new WP_Error( 'static_site_importer_cli_request_bundle_file_too_large', 'A request-bundle source file exceeds the 10 MiB compiler limit.' );
+				$bytes           = $item->getSize();
+				$file_byte_limit = static_site_importer_cli_request_bundle_file_byte_limit( $relative, $limits, $total_bytes );
+				if ( $bytes > $file_byte_limit ) {
+					return new WP_Error(
+						'static_site_importer_cli_request_bundle_file_too_large',
+						sprintf( 'A request-bundle source file exceeds the %s compiler limit.', static_site_importer_cli_request_bundle_mib( $file_byte_limit ) )
+					);
 				}
 				if ( $total_bytes + $bytes > $limits['max_total_bytes'] ) {
 					return new WP_Error( 'static_site_importer_cli_request_bundle_total_too_large', 'Request-bundle source files exceed the 256 MiB aggregate compiler limit.' );
@@ -795,10 +827,10 @@ if ( ! function_exists( 'static_site_importer_cli_run_stateful_import_step' ) ) 
 			$input = $state['input'];
 		}
 
+		// static_site_importer_cli_import() is declared `: array`, so the shape
+		// guard the host loop needs around its injectable `$invoke` would be
+		// dead code here.
 		$result = static_site_importer_cli_import( $input );
-		if ( ! is_array( $result ) ) {
-			$result = static_site_importer_cli_import_error( 'static_site_importer_cli_step_response_invalid', 'An import step did not return an object.' );
-		}
 
 		if ( empty( $result['continuation'] ) ) {
 			$persisted = static_site_importer_cli_write_import_state( $state_path, array( 'terminal' => $result ) );
@@ -922,9 +954,6 @@ if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 				$emit_progress( static_site_importer_cli_import_progress( $previous, $steps, $started_at, 'heartbeat', $resume_command ) );
 			}
 			$result = $invoke( $input );
-			if ( ! is_array( $result ) ) {
-				$result = static_site_importer_cli_import_error( 'static_site_importer_cli_step_response_invalid', 'An import step did not return an object.' );
-			}
 			if ( empty( $result['continuation'] ) ) {
 				return static_site_importer_cli_import_receipt( $result, $steps );
 			}

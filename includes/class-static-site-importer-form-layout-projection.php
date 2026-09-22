@@ -1524,12 +1524,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( null !== $parent && ! isset( $source_nodes[ $parent ] ) ) {
 				continue;
 			}
-			$source = is_array( $node['source'] ?? null ) ? $node['source'] : array();
+			$source        = is_array( $node['source'] ?? null ) ? $node['source'] : array();
 			$control_match = array();
 			if ( 1 === preg_match( '/^control-([0-9]+)$/D', $id, $control_match ) ) {
-				$control_index       = (int) $control_match[1];
+				$control_index                 = (int) $control_match[1];
 				$control_ids[ $control_index ] = true;
-				$nodes[]             = array(
+				$nodes[]                       = array(
 					'id'      => $id,
 					'kind'    => 'control',
 					'parent'  => $parent,
@@ -1559,14 +1559,21 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		if ( empty( $nodes ) ) {
 			return null;
 		}
-		usort( $nodes, static fn ( array $left, array $right ): int => ( (int) $left['depth'] <=> (int) $right['depth'] ) ?: ( (int) $left['order'] <=> (int) $right['order'] ) );
+		usort(
+			$nodes,
+			static function ( array $left, array $right ): int {
+				$depth = (int) $left['depth'] <=> (int) $right['depth'];
+
+				return 0 !== $depth ? $depth : ( (int) $left['order'] <=> (int) $right['order'] );
+			}
+		);
 
 		return array(
-			'schema'     => 'generic/form-control-topology/v1',
-			'max_depth'  => (int) ( $graph['limits']['depth'] ?? 16 ),
-			'max_nodes'  => (int) ( $graph['limits']['nodes'] ?? 128 ),
-			'truncated'  => ! empty( $graph['truncated'] ),
-			'nodes'      => $nodes,
+			'schema'    => 'generic/form-control-topology/v1',
+			'max_depth' => (int) ( $graph['limits']['depth'] ?? 16 ),
+			'max_nodes' => (int) ( $graph['limits']['nodes'] ?? 128 ),
+			'truncated' => ! empty( $graph['truncated'] ),
+			'nodes'     => $nodes,
 		);
 	}
 
@@ -1767,7 +1774,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		$field_row_span = 1 === preg_match( '/\.ssi-node-[a-f0-9]{12}-wrap\{[^}]*\bdisplay:grid\b/', $overlay['css'] )
 			? '.' . $scope . ' .grunion-field-wrap > .ssi-field-row{grid-column:1 / -1}' . "\n"
 			: '';
-		$css                          = rtrim( $overlay['css'] ) . "\n." . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-hints{display:contents}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-format{display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .ssi-field-row > label{margin-block-end:0}' . "\n" . '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}' . "\n" . $field_row_span;
+		$css            = rtrim( $overlay['css'] ) . "\n." . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-hints{display:contents}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-format{display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .ssi-field-row > label{margin-block-end:0}' . "\n" . '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}' . "\n" . $field_row_span;
 		$overlay['css']               = $css;
 		$overlay['overlay']['css']    = $css;
 		$overlay['overlay']['sha256'] = hash( 'sha256', $css );
