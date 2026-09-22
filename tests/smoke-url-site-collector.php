@@ -745,34 +745,39 @@ foreach ( array( 'one', 'two' ) as $category ) {
 $assert( 2 === count( array_unique( $query_routes ) ), 'independent-query-batches-have-distinct-canonical-routes' );
 $assert( array() === array_filter( $modern_requests, static fn( string $url ): bool => str_ends_with( $url, '.js' ) ), 'inert-script-preloads-are-never-fetched' );
 
-$astro_requests = array();
-$astro_result   = Static_Site_Importer_URL_Site_Collector::collect(
-	'https://astro.test/about',
-	array( 'request_delay_ms' => 0 ),
-	static function ( string $url ) use ( &$astro_requests ) {
-		$astro_requests[] = $url;
-		if ( str_contains( $url, 'sitemap.xml' ) ) {
-			return new WP_Error( 'no_sitemap', '' );
+foreach ( array( 'image/jpeg' => 'jpg', 'video/mp4' => 'mp4', 'video/quicktime' => 'mov' ) as $astro_mime => $astro_extension ) {
+	$astro_requests = array();
+	$astro_result   = Static_Site_Importer_URL_Site_Collector::collect(
+		'https://astro.test/about',
+		array( 'request_delay_ms' => 0 ),
+		static function ( string $url ) use ( &$astro_requests, $astro_mime ) {
+			$astro_requests[] = $url;
+			if ( str_contains( $url, 'sitemap.xml' ) ) {
+				return new WP_Error( 'no_sitemap', '' );
+			}
+			if ( 'https://astro.test/about' === $url ) {
+				$media = str_starts_with( $astro_mime, 'video/' )
+					? '<video src="https://cdn.test/media-id?v=1" controls></video>'
+					: '<img src="https://cdn.test/media-id?v=1" alt="Team">';
+				return array( 'body' => '<!doctype html><html><head><link rel="stylesheet" href="/_astro/about.DJhDvW0b.css"></head><body><h1>About the team</h1>' . $media . '</body></html>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) );
+			}
+			if ( 'https://astro.test/_astro/about.DJhDvW0b.css' === $url ) {
+				return array( 'body' => 'body{color:#111}', 'metadata' => array( 'content_type' => 'text/css', 'final_url' => $url ) );
+			}
+			if ( 'https://cdn.test/media-id?v=1' === $url ) {
+				return array( 'body' => "\x00binary-media-fixture", 'metadata' => array( 'content_type' => $astro_mime, 'final_url' => $url ) );
+			}
+			return new WP_Error( 'unexpected_astro_request', $url );
 		}
-		if ( 'https://astro.test/about' === $url ) {
-			return array( 'body' => '<!doctype html><html><head><link rel="stylesheet" href="/_astro/about.DJhDvW0b.css"></head><body><h1>About the team</h1><img src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?&fit=crop&w=280" alt="Team"></body></html>', 'metadata' => array( 'content_type' => 'text/html', 'final_url' => $url ) );
-		}
-		if ( 'https://astro.test/_astro/about.DJhDvW0b.css' === $url ) {
-			return array( 'body' => 'body{color:#111}', 'metadata' => array( 'content_type' => 'text/css', 'final_url' => $url ) );
-		}
-		if ( 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?&fit=crop&w=280' === $url ) {
-			return array( 'body' => "\xff\xd8team-avatar", 'metadata' => array( 'content_type' => 'image/jpeg', 'final_url' => $url ) );
-		}
-		return new WP_Error( 'unexpected_astro_request', $url );
-	}
-);
-$astro_files = is_wp_error( $astro_result ) ? array() : array_column( $astro_result['artifact']['files'] ?? array(), null, 'path' );
-$assert( ! is_wp_error( $astro_result ), 'extensionless-downloaded-image-does-not-reject-astro-import' );
-$assert( in_array( 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?&fit=crop&w=280', $astro_requests, true ), 'astro-extensionless-image-is-downloaded' );
-$astro_image = array_values( array_filter( $astro_files, static fn( array $file ): bool => 'image/jpeg' === ( $file['mime_type'] ?? '' ) ) );
-$assert( 1 === count( $astro_image ) && str_ends_with( $astro_image[0]['path'], '.jpg' ) && isset( $astro_image[0]['content_base64'] ) && ! isset( $astro_image[0]['content'] ), 'extensionless-image-download-keeps-portable-binary-extension' );
-$astro_html = (string) ( $astro_files['website/about/index.html']['content'] ?? '' );
-$assert( 1 === preg_match( '#_external/images\.unsplash\.com/photo-1535713875002-d1d0cf377fde-[a-f0-9]{8}\.jpg#', $astro_html ), 'extensionless-image-reference-rewritten-to-portable-artifact-path' );
+	);
+	$astro_files = is_wp_error( $astro_result ) ? array() : array_column( $astro_result['artifact']['files'] ?? array(), null, 'path' );
+	$assert( ! is_wp_error( $astro_result ), 'extensionless-media-does-not-reject-import-' . $astro_extension );
+	$assert( in_array( 'https://cdn.test/media-id?v=1', $astro_requests, true ), 'extensionless-media-is-downloaded-' . $astro_extension );
+	$astro_media = array_values( array_filter( $astro_files, static fn( array $file ): bool => $astro_mime === ( $file['mime_type'] ?? '' ) ) );
+	$assert( 1 === count( $astro_media ) && str_ends_with( $astro_media[0]['path'], '.' . $astro_extension ) && isset( $astro_media[0]['content_base64'] ) && ! isset( $astro_media[0]['content'] ), 'extensionless-media-keeps-portable-binary-extension-' . $astro_extension );
+	$astro_html = (string) ( $astro_files['website/about/index.html']['content'] ?? '' );
+	$assert( 1 === preg_match( '#_external/cdn\.test/media-id-[a-f0-9]{8}\.' . $astro_extension . '#', $astro_html ), 'extensionless-media-reference-rewritten-' . $astro_extension );
+}
 
 $deadline_discovery = Static_Site_Importer_URL_Site_Collector::discover_routes( 'https://discovery.test/', array( 'request_delay_ms' => 0 ), static function ( string $url ) {
 	if ( str_ends_with( $url, 'sitemap.xml' ) ) { return new WP_Error( 'not_found', 'No sitemap' ); }

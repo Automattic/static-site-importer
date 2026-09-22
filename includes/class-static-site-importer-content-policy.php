@@ -44,6 +44,7 @@ final class Static_Site_Importer_Content_Policy {
 		'eot',
 		'mp3',
 		'mp4',
+		'mov',
 		'webm',
 		'ogg',
 		'wav',
@@ -76,6 +77,13 @@ final class Static_Site_Importer_Content_Policy {
 		'font/woff2'               => 'woff2',
 		'font/ttf'                 => 'ttf',
 		'font/otf'                 => 'otf',
+		'video/mp4'                => 'mp4',
+		'video/quicktime'           => 'mov',
+		'video/webm'               => 'webm',
+		'audio/mpeg'               => 'mp3',
+		'audio/ogg'                => 'ogg',
+		'audio/wav'                => 'wav',
+		'application/pdf'          => 'pdf',
 	);
 
 	/** @return true|WP_Error */
