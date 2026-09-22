@@ -289,10 +289,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$auxiliary_popup_controls[ $control_index - 1 ] = true;
 			}
 		}
-		$losses                       = array();
-		$operations                   = array();
-		$represented_layout_nodes     = array();
-		$represented_topology_nodes   = array();
+		$losses                     = array();
+		$operations                 = array();
+		$represented_layout_nodes   = array();
+		$represented_topology_nodes = array();
 		/** @var array<string,array<int,string>> $suppressed_layout_properties */
 		$suppressed_layout_properties = array();
 		$overlay_node_targets         = array();
