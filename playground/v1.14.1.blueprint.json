@@ -1,0 +1,94 @@
+{
+  "$schema": "https://playground.wordpress.net/blueprint-schema.json",
+  "landingPage": "/import/",
+  "preferredVersions": {
+    "php": "8.5",
+    "wp": "latest"
+  },
+  "features": {
+    "networking": true
+  },
+  "steps": [
+    {
+      "step": "login"
+    },
+    {
+      "step": "writeFile",
+      "path": "/wordpress/wp-content/mu-plugins/static-site-importer-demo-policy.php",
+      "data": "<?php add_filter( 'static_site_importer_retain_response_artifacts', '__return_false' );"
+    },
+    {
+      "step": "writeFile",
+      "path": "/tmp/static-site-importer-4184e15482d1cb7d0a73c53aa3495112c682730e0a8a4508cf9c77c1210e0f10.zip",
+      "data": {
+        "resource": "url",
+        "url": "https://github.com/Automattic/static-site-importer/releases/download/v1.14.1/static-site-importer.zip"
+      }
+    },
+    {
+      "step": "runPHP",
+      "code": "<?php if ( ! hash_equals( '4184e15482d1cb7d0a73c53aa3495112c682730e0a8a4508cf9c77c1210e0f10', hash_file( 'sha256', '/tmp/static-site-importer-4184e15482d1cb7d0a73c53aa3495112c682730e0a8a4508cf9c77c1210e0f10.zip' ) ) ) { throw new RuntimeException( 'Static Site Importer package integrity verification failed.' ); } ?>"
+    },
+    {
+      "step": "installPlugin",
+      "pluginData": {
+        "resource": "vfs",
+        "path": "/tmp/static-site-importer-4184e15482d1cb7d0a73c53aa3495112c682730e0a8a4508cf9c77c1210e0f10.zip"
+      },
+      "options": {
+        "activate": true,
+        "targetFolderName": "static-site-importer"
+      }
+    },
+    {
+      "step": "writeFile",
+      "path": "/tmp/static-site-importer-playground-demo-5cd22154604fba1dba049cf5026d586bdd9389e9efd9ccde9929b0a963d6e880.zip",
+      "data": {
+        "resource": "url",
+        "url": "https://automattic.github.io/static-site-importer/playground/v1.14.1/static-site-importer-playground-demo.zip"
+      }
+    },
+    {
+      "step": "runPHP",
+      "code": "<?php if ( ! hash_equals( '5cd22154604fba1dba049cf5026d586bdd9389e9efd9ccde9929b0a963d6e880', hash_file( 'sha256', '/tmp/static-site-importer-playground-demo-5cd22154604fba1dba049cf5026d586bdd9389e9efd9ccde9929b0a963d6e880.zip' ) ) ) { throw new RuntimeException( 'Static Site Importer Playground demo package integrity verification failed.' ); } ?>"
+    },
+    {
+      "step": "installPlugin",
+      "pluginData": {
+        "resource": "vfs",
+        "path": "/tmp/static-site-importer-playground-demo-5cd22154604fba1dba049cf5026d586bdd9389e9efd9ccde9929b0a963d6e880.zip"
+      },
+      "options": {
+        "activate": true,
+        "targetFolderName": "static-site-importer-playground-demo"
+      }
+    },
+    {
+      "step": "writeFile",
+      "path": "/tmp/playground-to-wordpress-com-0a9c968124f26ef7e7b9ff1c0c2778cd3206cf5080bcebb3e83b0377e7d6345e.zip",
+      "data": {
+        "resource": "url",
+        "url": "https://automattic.github.io/static-site-importer/playground/v1.14.1/playground-to-wordpress-com.zip"
+      }
+    },
+    {
+      "step": "runPHP",
+      "code": "<?php if ( ! hash_equals( '0a9c968124f26ef7e7b9ff1c0c2778cd3206cf5080bcebb3e83b0377e7d6345e', hash_file( 'sha256', '/tmp/playground-to-wordpress-com-0a9c968124f26ef7e7b9ff1c0c2778cd3206cf5080bcebb3e83b0377e7d6345e.zip' ) ) ) { throw new RuntimeException( 'Playground to WordPress.com package integrity verification failed.' ); } ?>"
+    },
+    {
+      "step": "installPlugin",
+      "pluginData": {
+        "resource": "vfs",
+        "path": "/tmp/playground-to-wordpress-com-0a9c968124f26ef7e7b9ff1c0c2778cd3206cf5080bcebb3e83b0377e7d6345e.zip"
+      },
+      "options": {
+        "activate": true,
+        "targetFolderName": "playground-to-wordpress-com"
+      }
+    },
+    {
+      "step": "runPHP",
+      "code": "<?php require_once '/wordpress/wp-load.php';\n$page = get_page_by_path( 'import', OBJECT, 'page' );\n$content = '<!-- wp:static-site-importer/importer /-->';\n$post = array(\n    'post_title' => 'Import Static Site',\n    'post_name' => 'import',\n    'post_type' => 'page',\n    'post_status' => 'publish',\n    'post_content' => $content,\n    'comment_status' => 'closed',\n    'ping_status' => 'closed',\n);\nif ( $page instanceof WP_Post ) {\n    $post['ID'] = $page->ID;\n    wp_update_post( $post );\n} else {\n    wp_insert_post( $post );\n}\nupdate_option( 'static_site_importer_protected_pages', array( 'import' ), false );\n?>"
+    }
+  ]
+}
