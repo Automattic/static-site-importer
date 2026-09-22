@@ -250,16 +250,44 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_path' ) ) {
 }
 
 if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
-	/** Return the bounded compiler contract for verified request-bundle files. */
+	/**
+	 * Return the bounded compiler contract for verified request-bundle files.
+	 *
+	 * The byte budgets come in pairs, because the compiler treats the two kinds
+	 * of source differently. `max_file_bytes` and `max_total_bytes` bound what
+	 * it reads and rewrites. `max_media_file_bytes` and `max_media_total_bytes`
+	 * bound the opaque binaries it only copies: Blocks Engine keeps those closed
+	 * behind their payload reference and never opens them, so their bytes cannot
+	 * cause the parse cost the first pair exists to bound.
+	 *
+	 * `max_media_total_bytes` is enforced through the per-file ceiling below,
+	 * which shrinks to whatever remains of it, so a capture of any shape is
+	 * still refused once its media passes the aggregate.
+	 */
 	function static_site_importer_cli_request_bundle_limits(): array {
 		return array(
 			'max_files'                => 5000,
 			'max_file_bytes'           => 10485760,
 			'max_media_file_bytes'     => 104857600,
 			'max_total_bytes'          => 268435456,
+			'max_media_total_bytes'    => 1073741824,
 			'generated_bytes_headroom' => 67108864,
 			'compiler_max_total_bytes' => 335544320,
 		);
+	}
+
+	/**
+	 * Does the compiler read and rewrite this request-bundle source?
+	 *
+	 * This is the same boundary Blocks Engine draws in
+	 * `ArtifactNormalizer::isReferenceBackedBinary()`, reusing the textual-path
+	 * rule the zip intake already applies in `rest.php`. Every extension Blocks
+	 * Engine parses is textual here too, so the two cannot disagree about which
+	 * budget a file belongs to; `tests/smoke-cli-import-continuation.php`
+	 * asserts that containment against the Blocks Engine constant.
+	 */
+	function static_site_importer_cli_request_bundle_is_read_source( string $relative ): bool {
+		return ! class_exists( 'Static_Site_Importer_Content_Policy' ) || Static_Site_Importer_Content_Policy::is_textual_path( $relative );
 	}
 
 	/**
@@ -272,15 +300,15 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 	 * compiler only copies — an image, font, or a photo/video site's video or
 	 * audio clip — carries none of that cost, so it gets a much wider ceiling.
 	 * That wider ceiling is still bounded on two sides: a flat cap
-	 * (`max_media_file_bytes`) and whatever remains of the aggregate budget
-	 * (`max_total_bytes`) at this point in the walk, so one large file can
+	 * (`max_media_file_bytes`) and whatever remains of the media budget
+	 * (`max_media_total_bytes`) at this point in the walk, so one large file can
 	 * spend a large share of the run's budget but never exceed it.
 	 */
-	function static_site_importer_cli_request_bundle_file_byte_limit( string $relative, array $limits, int $bytes_used ): int {
-		if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) || Static_Site_Importer_Content_Policy::is_textual_path( $relative ) ) {
+	function static_site_importer_cli_request_bundle_file_byte_limit( string $relative, array $limits, int $media_bytes_used ): int {
+		if ( static_site_importer_cli_request_bundle_is_read_source( $relative ) ) {
 			return $limits['max_file_bytes'];
 		}
-		return min( $limits['max_media_file_bytes'], max( 0, $limits['max_total_bytes'] - $bytes_used ) );
+		return min( $limits['max_media_file_bytes'], max( 0, $limits['max_media_total_bytes'] - $media_bytes_used ) );
 	}
 
 	/** Format a byte count as whole or one-decimal MiB for an error message. */
@@ -382,6 +410,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		$files           = array();
 		$paths           = array();
 		$total_bytes     = 0;
+		$media_bytes     = 0;
 		$generated_files = 0;
 		try {
 			$iterator = new RecursiveIteratorIterator(
@@ -407,14 +436,18 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 					return new WP_Error( 'static_site_importer_executable_source_rejected', 'Request-bundle source trees may contain static content only.' );
 				}
 				$bytes           = $item->getSize();
-				$file_byte_limit = static_site_importer_cli_request_bundle_file_byte_limit( $relative, $limits, $total_bytes );
+				$read_source     = static_site_importer_cli_request_bundle_is_read_source( $relative );
+				$file_byte_limit = static_site_importer_cli_request_bundle_file_byte_limit( $relative, $limits, $media_bytes );
 				if ( $bytes > $file_byte_limit ) {
 					return new WP_Error(
-						'static_site_importer_cli_request_bundle_file_too_large',
-						sprintf( 'A request-bundle source file exceeds the %s compiler limit.', static_site_importer_cli_request_bundle_mib( $file_byte_limit ) )
+						$read_source ? 'static_site_importer_cli_request_bundle_file_too_large' : 'static_site_importer_cli_request_bundle_media_file_too_large',
+						sprintf(
+							$read_source ? 'A request-bundle source file exceeds the %s compiler limit.' : 'A request-bundle media file exceeds the %s media limit.',
+							static_site_importer_cli_request_bundle_mib( $file_byte_limit )
+						)
 					);
 				}
-				if ( $total_bytes + $bytes > $limits['max_total_bytes'] ) {
+				if ( $read_source && $total_bytes + $bytes > $limits['max_total_bytes'] ) {
 					return new WP_Error( 'static_site_importer_cli_request_bundle_total_too_large', 'Request-bundle source files exceed the 256 MiB aggregate compiler limit.' );
 				}
 				$is_html           = (bool) preg_match( '/\.html?$/i', $relative );
@@ -437,7 +470,11 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 						'sha256' => $digest,
 					),
 				);
-				$total_bytes     += $bytes;
+				if ( $read_source ) {
+					$total_bytes += $bytes;
+				} else {
+					$media_bytes += $bytes;
+				}
 				$generated_files += $inline_expansions;
 			}
 		} catch ( UnexpectedValueException | RuntimeException $error ) {
@@ -450,9 +487,11 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		return array(
 			'files'           => $files,
 			'compiler_limits' => array(
-				'max_files'       => count( $files ) + $generated_files,
-				'max_file_bytes'  => $limits['max_file_bytes'],
-				'max_total_bytes' => min( $limits['compiler_max_total_bytes'], $limits['max_total_bytes'] + min( $limits['generated_bytes_headroom'], $limits['max_total_bytes'] ) ),
+				'max_files'             => count( $files ) + $generated_files,
+				'max_file_bytes'        => $limits['max_file_bytes'],
+				'max_total_bytes'       => min( $limits['compiler_max_total_bytes'], $limits['max_total_bytes'] + min( $limits['generated_bytes_headroom'], $limits['max_total_bytes'] ) ),
+				'max_media_file_bytes'  => $limits['max_media_file_bytes'],
+				'max_media_total_bytes' => $limits['max_media_total_bytes'],
 			),
 			'payload_reader'  => new class( $paths ) implements \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader {
 				/** @param array<string,string> $paths */
