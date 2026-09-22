@@ -41,6 +41,7 @@
     { "path": "tests/smoke-current-site-capabilities.php", "environment": "standalone-php" },
     { "path": "tests/smoke-html-runtime-capabilities.php", "environment": "standalone-php" },
     { "path": "tests/smoke-default-content.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-default-content-wp-eval.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-dependency-manager-readiness.php", "environment": "standalone-php" },
     { "path": "tests/smoke-direct-artifact-import.php", "environment": "standalone-php" },
     { "path": "tests/smoke-run-storage.php", "environment": "standalone-php" },

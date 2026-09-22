@@ -56,6 +56,28 @@ final class Static_Site_Importer_Content_Policy {
 	/** Assets that a compiler may carry into a generated companion plugin. */
 	private const COMPANION_ASSET_EXTENSIONS = array( 'js', 'mjs', 'css', 'json', 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'cur', 'woff', 'woff2', 'ttf', 'otf', 'eot' );
 
+	/** Portable extensions for downloaded assets whose URL paths carry no filename extension. */
+	private const PORTABLE_CONTENT_TYPE_EXTENSIONS = array(
+		'text/css'                 => 'css',
+		'text/javascript'          => 'js',
+		'application/javascript'   => 'js',
+		'application/json'         => 'json',
+		'image/jpeg'               => 'jpg',
+		'image/png'                => 'png',
+		'image/gif'                => 'gif',
+		'image/webp'               => 'webp',
+		'image/avif'               => 'avif',
+		'image/svg+xml'            => 'svg',
+		'image/bmp'                => 'bmp',
+		'image/x-icon'             => 'ico',
+		'image/vnd.microsoft.icon' => 'ico',
+		'font/woff'                => 'woff',
+		'application/font-woff'    => 'woff',
+		'font/woff2'               => 'woff2',
+		'font/ttf'                 => 'ttf',
+		'font/otf'                 => 'otf',
+	);
+
 	/** @return true|WP_Error */
 	public static function validate_artifact( array $artifact ) {
 		$files = $artifact['files'] ?? null;
@@ -101,6 +123,21 @@ final class Static_Site_Importer_Content_Policy {
 	public static function is_static_path( string $path ): bool {
 		$extension = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
 		return '' !== $extension && in_array( $extension, self::STATIC_EXTENSIONS, true );
+	}
+
+	/**
+	 * Infer a portable, import-safe extension for a downloaded asset whose URL
+	 * path carries no filename extension, such as Google Fonts /css2 or CDN
+	 * photo endpoints. Unknown or non-static content types return an empty
+	 * string so the static-content boundary keeps rejecting them.
+	 *
+	 * @param string $content_type Fetched content type, optionally with parameters.
+	 * @return string Portable extension with no leading dot, or '' when none applies.
+	 */
+	public static function portable_extension( string $content_type ): string {
+		$normalized = strtolower( trim( explode( ';', $content_type, 2 )[0] ) );
+		$extension  = self::PORTABLE_CONTENT_TYPE_EXTENSIONS[ $normalized ] ?? '';
+		return '' !== $extension && in_array( $extension, self::STATIC_EXTENSIONS, true ) ? $extension : '';
 	}
 
 	public static function is_textual_path( string $path ): bool {

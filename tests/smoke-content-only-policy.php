@@ -44,6 +44,15 @@ $assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $a
 $assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/site.js', '<?php system("id");' ) ) ), 'server-code-marker-in-static-extension-rejected' );
 $assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/logo.svg', '<svg><?php system("id");</svg>', true ) ) ), 'textual-svg-server-code-rejected' );
 $assert( true === Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/photo.jpeg', "\xFF\xD8\xFF\xFE\x00\x07<?php\xFF\xD9", true ) ), 'binary-jpeg-php-tag-bytes-accepted' );
+// Extensionless downloads keep a portable extension inferred from the fetched
+// static content type; unknown or executable types infer none and stay rejected.
+$assert( 'jpg' === Static_Site_Importer_Content_Policy::portable_extension( 'image/jpeg' ), 'extensionless-jpeg-download-infers-portable-jpg' );
+$assert( 'css' === Static_Site_Importer_Content_Policy::portable_extension( 'text/css; charset=utf-8' ), 'extensionless-css-download-infers-portable-css-past-parameters' );
+$assert( 'svg' === Static_Site_Importer_Content_Policy::portable_extension( 'Image/SVG+XML' ), 'extensionless-svg-download-infers-portable-svg-case-insensitively' );
+$assert( 'woff2' === Static_Site_Importer_Content_Policy::portable_extension( 'font/woff2' ), 'extensionless-woff2-download-infers-portable-woff2' );
+$assert( '' === Static_Site_Importer_Content_Policy::portable_extension( 'application/octet-stream' ), 'opaque-download-type-infers-no-portable-extension' );
+$assert( '' === Static_Site_Importer_Content_Policy::portable_extension( 'application/x-httpd-php' ), 'server-code-download-type-infers-no-portable-extension' );
+$assert( Static_Site_Importer_Content_Policy::is_static_path( 'website/_external/images.unsplash.com/photo-1535713875002-d1d0cf377fde-32b524cf.' . Static_Site_Importer_Content_Policy::portable_extension( 'image/jpeg' ) ), 'inferred-portable-extension-passes-the-static-boundary' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
