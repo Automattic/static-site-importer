@@ -111,6 +111,7 @@
     { "path": "tests/StaticSiteImporterWordPressSitePlanMaterializerTest.php", "environment": "wordpress-runtime", "command": ["phpunit", "tests/StaticSiteImporterWordPressSitePlanMaterializerTest.php"] },
     { "path": "tests/form-materializer-topology.test.mjs", "environment": "node" },
     { "path": "tools/build-dev-package.test.mjs", "environment": "node" },
+    { "path": "tools/release-import-gate.test.mjs", "environment": "node" },
     { "path": "tools/acceptance-handoff.test.mjs", "environment": "node" },
     { "path": "tools/owner-handoff-evidence.test.mjs", "environment": "node" },
     { "path": "tools/fig-intent-parity-report.test.mjs", "environment": "node" },
