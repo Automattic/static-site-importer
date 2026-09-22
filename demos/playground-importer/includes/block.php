@@ -85,7 +85,7 @@ function static_site_importer_playground_demo_render_block(): string {
 			 * inline, so a prompt pasted today keeps matching the shipped importer.
 			 */
 			$agent_prompt_url = 'https://automattic.github.io/static-site-importer/playground/latest/agent-prompt.md';
-			$agent_prompt     = "Build me a WordPress site I can open in my browser.\nRead " . $agent_prompt_url . " and follow it exactly.";
+			$agent_prompt     = "Build me a WordPress site I can open in my browser.\nRead " . $agent_prompt_url . ' and follow it exactly.';
 			?>
 			<div class="ssi-importer__agent" data-static-site-importer-agent>
 				<p class="ssi-importer__agent-label"><?php esc_html_e( 'No site yet? Have your AI agent build one.', 'static-site-importer' ); ?></p>

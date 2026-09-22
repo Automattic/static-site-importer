@@ -795,10 +795,10 @@ if ( ! function_exists( 'static_site_importer_cli_run_stateful_import_step' ) ) 
 			$input = $state['input'];
 		}
 
+		// static_site_importer_cli_import() is declared `: array`, so the shape
+		// guard the host loop needs around its injectable `$invoke` would be
+		// dead code here.
 		$result = static_site_importer_cli_import( $input );
-		if ( ! is_array( $result ) ) {
-			$result = static_site_importer_cli_import_error( 'static_site_importer_cli_step_response_invalid', 'An import step did not return an object.' );
-		}
 
 		if ( empty( $result['continuation'] ) ) {
 			$persisted = static_site_importer_cli_write_import_state( $state_path, array( 'terminal' => $result ) );
