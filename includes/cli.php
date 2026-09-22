@@ -305,7 +305,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		if ( 1 !== preg_match( '/<body\b[^>]*\sstyle\s*=\s*(?:"([^"]*)"|\'([^\']*)\')/i', $content, $matches ) ) {
 			return false;
 		}
-		$style = html_entity_decode( '' !== ( $matches[1] ?? '' ) ? $matches[1] : ( $matches[2] ?? '' ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		$style = html_entity_decode( '' !== $matches[1] ? $matches[1] : ( $matches[2] ?? '' ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
 		if ( '' === trim( $style ) || preg_match( '/[{}<>]/', $style ) ) {
 			return false;
 		}
@@ -922,9 +922,6 @@ if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 				$emit_progress( static_site_importer_cli_import_progress( $previous, $steps, $started_at, 'heartbeat', $resume_command ) );
 			}
 			$result = $invoke( $input );
-			if ( ! is_array( $result ) ) {
-				$result = static_site_importer_cli_import_error( 'static_site_importer_cli_step_response_invalid', 'An import step did not return an object.' );
-			}
 			if ( empty( $result['continuation'] ) ) {
 				return static_site_importer_cli_import_receipt( $result, $steps );
 			}
