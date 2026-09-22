@@ -1029,10 +1029,15 @@ class Static_Site_Importer_URL_Site_Collector {
 		$used  = array();
 		foreach ( $resources as $resource_url => $resource ) {
 			$path = self::artifact_path( $resource_url, 'html' === $resource['kind'], $entry_url );
-			// Stylesheet endpoints such as /css2?… have no filename extension.
-			// Preserve their fetched static type in the portable artifact path.
-			if ( 'text/css' === ( $resource['content_type'] ?? '' ) && '' === pathinfo( $path, PATHINFO_EXTENSION ) ) {
-				$path .= '.css';
+			// Extensionless download endpoints such as /css2?… or CDN photo
+			// URLs carry no filename extension. Preserve their fetched static
+			// type in the portable artifact path so validated downloads stay
+			// importable static content instead of failing the static boundary.
+			if ( '' === pathinfo( $path, PATHINFO_EXTENSION ) ) {
+				$portable_extension = Static_Site_Importer_Content_Policy::portable_extension( (string) ( $resource['content_type'] ?? '' ) );
+				if ( '' !== $portable_extension ) {
+					$path .= '.' . $portable_extension;
+				}
 			}
 			if ( isset( $used[ $path ] ) ) {
 				$extension = pathinfo( $path, PATHINFO_EXTENSION );
