@@ -234,7 +234,16 @@ for ( $index = 0; $index < 500; ++$index ) {
 }
 $bounded_bundle = static_site_importer_cli_request_bundle_files( $bounded_bundle_dir );
 $assert( is_array( $bounded_bundle ) && 501 === count( $bounded_bundle['files'] ?? array() ), 'request-bundle-retains-files-above-compiler-default' );
-$assert( array( 'max_files' => 512, 'max_file_bytes' => 10485760, 'max_total_bytes' => 335544320 ) === ( $bounded_bundle['compiler_limits'] ?? null ), 'request-bundle-reserves every inline style and script expansion' );
+$assert(
+	array(
+		'max_files'             => 512,
+		'max_file_bytes'        => 10485760,
+		'max_total_bytes'       => 335544320,
+		'max_media_file_bytes'  => 104857600,
+		'max_media_total_bytes' => 1073741824,
+	) === ( $bounded_bundle['compiler_limits'] ?? null ),
+	'request-bundle-reserves every inline style and script expansion'
+);
 foreach ( scandir( $bounded_bundle_dir ) as $entry ) {
 	if ( '.' !== $entry && '..' !== $entry ) {
 		unlink( $bounded_bundle_dir . '/' . $entry );
@@ -390,28 +399,70 @@ $assert( str_contains( $parsed_over_cap->get_error_message(), '10 MiB' ), 'reque
 unlink( $parsed_over_cap_dir . '/index.html' );
 rmdir( $parsed_over_cap_dir );
 
-// The wider media ceiling still cooperates with the aggregate budget instead
-// of racing past it: three equally sized media files, each comfortably under
-// the flat media ceiling on its own, exhaust the 256 MiB aggregate budget by
-// the third file, whose effective ceiling has shrunk to what remains (56
-// MiB) — and the rejection message reports that shrunken remaining-budget
-// limit, not the flat 100 MiB media ceiling.
+// Media the compiler never opens no longer spends the budget that bounds what
+// it parses. madalenatavares.net (runs r26/r36) projects 9.9 MiB of text beside
+// 336.5 MiB of Pixieset srcset candidates, and used to be refused outright on
+// the 256 MiB aggregate: 270 MiB of media beside a page is now admitted whole.
+$media_aggregate_dir = sys_get_temp_dir() . '/ssi-request-bundle-media-aggregate-' . bin2hex( random_bytes( 6 ) );
+mkdir( $media_aggregate_dir );
+$media_aggregate_dir = realpath( $media_aggregate_dir );
+file_put_contents( $media_aggregate_dir . '/index.html', '<main><img src="hero-0.jpg" alt="Hero"></main>' );
+for ( $index = 0; $index < 6; ++$index ) {
+	$hero_handle = fopen( $media_aggregate_dir . '/hero-' . $index . '.jpg', 'w' );
+	ftruncate( $hero_handle, 47185920 );
+	fclose( $hero_handle );
+}
+$media_aggregate = static_site_importer_cli_request_bundle_files( $media_aggregate_dir );
+$assert( ! is_wp_error( $media_aggregate ) && 7 === count( $media_aggregate['files'] ?? array() ), 'request-bundle-admits-media-past-the-aggregate-budget-for-parsed-sources' );
+foreach ( scandir( $media_aggregate_dir ) as $entry ) {
+	if ( '.' !== $entry && '..' !== $entry ) {
+		unlink( $media_aggregate_dir . '/' . $entry );
+	}
+}
+rmdir( $media_aggregate_dir );
+
+// The wider media ceiling still cooperates with the media budget instead of
+// racing past it: eleven equally sized media files, each comfortably under the
+// flat media ceiling on its own, exhaust the 1 GiB media budget by the eleventh
+// file, whose effective ceiling has shrunk to what remains (24 MiB) — and the
+// rejection message reports that shrunken remaining-budget limit, not the flat
+// 100 MiB media ceiling, under the media budget's own error code.
 $media_budget_dir = sys_get_temp_dir() . '/ssi-request-bundle-media-budget-' . bin2hex( random_bytes( 6 ) );
 mkdir( $media_budget_dir );
-foreach ( array( 'clip-a.mp4', 'clip-b.mp4', 'clip-c.mp4' ) as $clip ) {
-	$clip_handle = fopen( $media_budget_dir . '/' . $clip, 'w' );
+for ( $index = 0; $index < 11; ++$index ) {
+	$clip_handle = fopen( $media_budget_dir . '/clip-' . $index . '.mp4', 'w' );
 	ftruncate( $clip_handle, 104857600 );
 	fclose( $clip_handle );
 }
 $media_budget = static_site_importer_cli_request_bundle_files( $media_budget_dir );
-$assert( is_wp_error( $media_budget ) && 'static_site_importer_cli_request_bundle_file_too_large' === $media_budget->get_error_code(), 'request-bundle-shrinks-the-media-ceiling-to-what-remains-of-the-aggregate-budget' );
-$assert( str_contains( $media_budget->get_error_message(), '56 MiB' ) && ! str_contains( $media_budget->get_error_message(), '100 MiB' ), 'request-bundle-media-rejection-message-reports-the-remaining-budget-not-the-flat-media-ceiling' );
+$assert( is_wp_error( $media_budget ) && 'static_site_importer_cli_request_bundle_media_file_too_large' === $media_budget->get_error_code(), 'request-bundle-shrinks-the-media-ceiling-to-what-remains-of-the-media-budget' );
+$assert( str_contains( $media_budget->get_error_message(), '24 MiB' ) && ! str_contains( $media_budget->get_error_message(), '100 MiB' ), 'request-bundle-media-rejection-message-reports-the-remaining-budget-not-the-flat-media-ceiling' );
 foreach ( scandir( $media_budget_dir ) as $entry ) {
 	if ( '.' !== $entry && '..' !== $entry ) {
 		unlink( $media_budget_dir . '/' . $entry );
 	}
 }
 rmdir( $media_budget_dir );
+
+// The two budgets can only stay coherent if SSI and Blocks Engine agree on
+// which sources the compiler reads. Every extension Blocks Engine hydrates
+// behind a payload reference must be a read source here, or SSI would wave
+// through a file Blocks Engine then refuses on its own source-read budget.
+$blocks_engine_parsed_extensions = array( 'css', 'html', 'htm', 'js', 'mjs', 'json', 'md', 'markdown', 'mdx', 'svg' );
+foreach ( $blocks_engine_parsed_extensions as $extension ) {
+	if ( ! Static_Site_Importer_Content_Policy::is_static_path( 'source.' . $extension ) ) {
+		// Never reaches a budget: a non-static source is refused outright.
+		continue;
+	}
+	$assert( static_site_importer_cli_request_bundle_is_read_source( 'source.' . $extension ), 'request-bundle-budgets-' . $extension . '-as-a-read-source' );
+}
+$normalizer_class = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\ArtifactNormalizer';
+if ( class_exists( $normalizer_class ) && ( new ReflectionClass( $normalizer_class ) )->hasConstant( 'REFERENCE_TEXT_EXTENSIONS' ) ) {
+	$assert( constant( $normalizer_class . '::REFERENCE_TEXT_EXTENSIONS' ) === $blocks_engine_parsed_extensions, 'request-bundle-tracks-the-blocks-engine-read-source-rule' );
+}
+foreach ( array( 'jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'mp4', 'webm', 'mp3', 'wav', 'ogg', 'pdf', 'woff', 'woff2', 'ttf', 'otf', 'eot', 'ico', 'cur', 'bmp' ) as $extension ) {
+	$assert( ! static_site_importer_cli_request_bundle_is_read_source( 'media.' . $extension ), 'request-bundle-budgets-' . $extension . '-as-media' );
+}
 
 // The wider media ceiling never loosens the executable/static-content
 // policy: a large file with a disallowed extension is still rejected before
@@ -435,6 +486,13 @@ for ( $index = 0; $index < 26; ++$index ) {
 }
 $total_limit = static_site_importer_cli_request_bundle_files( $total_limit_dir );
 $assert( is_wp_error( $total_limit ) && 'static_site_importer_cli_request_bundle_total_too_large' === $total_limit->get_error_code(), 'request-bundle-rejects-aggregate-bytes-over-hard-boundary' );
+// Media beside those parsed sources does not bring the aggregate forward: the
+// same 260 MiB of CSS is what refuses the bundle, not the media next to it.
+$total_limit_media_handle = fopen( $total_limit_dir . '/clip.mp4', 'w' );
+ftruncate( $total_limit_media_handle, 94371840 );
+fclose( $total_limit_media_handle );
+$total_limit_with_media = static_site_importer_cli_request_bundle_files( $total_limit_dir );
+$assert( is_wp_error( $total_limit_with_media ) && 'static_site_importer_cli_request_bundle_total_too_large' === $total_limit_with_media->get_error_code(), 'request-bundle-charges-the-parsed-aggregate-to-parsed-sources-alone' );
 foreach ( scandir( $total_limit_dir ) as $entry ) {
 	if ( '.' !== $entry && '..' !== $entry ) {
 		unlink( $total_limit_dir . '/' . $entry );
