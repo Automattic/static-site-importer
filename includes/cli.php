@@ -462,7 +462,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				$id           = 'request-bundle-file:' . rawurlencode( $relative );
 				$paths[ $id ] = $absolute;
 				$files[]      = array(
-					'path'       => $relative,
+					'path'              => $relative,
 					'payload_reference' => array(
 						'schema' => 'blocks-engine/payload-reference/v1',
 						'id'     => $id,
