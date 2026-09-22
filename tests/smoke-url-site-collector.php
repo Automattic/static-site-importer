@@ -72,7 +72,7 @@ $responses = array(
 	),
 	'https://example.test/' => array(
 		'content_type' => 'text/html; charset=utf-8',
-		'body'         => '<!doctype html><html><head><link rel="canonical" href="/"><link rel="stylesheet" href="/files/main.css?v=1"><script src="/platform-runtime.js"></script></head><body style="background-image:url(/uploads/hero.jpg)"><nav><a href="/services.html">Services</a><a href="/cdn-cgi/l/email-protection#127352703c717d">Email</a></nav><img src="/uploads/logo.png" srcset="/uploads/logo.png 1x, /uploads/logo-2x.png 2x"><main><h1>Home</h1></main><script>URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)]));</script><div class="source-footer-signup"><a href="https://signup.example.test/signup"><div><img src="https://cdn.example.test/platform-badge.png">Powered by the source host</div></a></div></body></html>',
+		'body'         => '<!doctype html><html><head><link rel="canonical" href="/"><link rel="sitemap" href="/sitemap-index.xml"><link rel="stylesheet" href="/files/main.css?v=1"><script src="/platform-runtime.js"></script></head><body style="background-image:url(/uploads/hero.jpg)"><nav><a href="/services.html">Services</a><a href="/cdn-cgi/l/email-protection#127352703c717d">Email</a></nav><img src="/uploads/logo.png" srcset="/uploads/logo.png 1x, /uploads/logo-2x.png 2x"><main><h1>Home</h1></main><script>URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)]));</script><div class="source-footer-signup"><a href="https://signup.example.test/signup"><div><img src="https://cdn.example.test/platform-badge.png">Powered by the source host</div></a></div></body></html>',
 	),
 	'https://example.test/services.html' => array(
 		'content_type' => 'text/html',
@@ -91,6 +91,7 @@ $responses = array(
 		'body'         => '@import "components.css";@font-face{src:url("https://cdn.example.test/font.woff2")}body{background:url(../uploads/pattern.svg)}',
 	),
 	'https://example.test/files/components.css' => array( 'content_type' => 'text/css', 'body' => '.component{display:block}' ),
+	'https://example.test/sitemap-index.xml' => array( 'content_type' => 'application/xml', 'body' => '<?xml version="1.0"?><sitemapindex><sitemap><loc>https://example.test/sitemap.xml</loc></sitemap></sitemapindex>' ),
 	'https://example.test/platform-runtime.js' => array( 'content_type' => 'application/javascript', 'body' => 'window.platformRuntime = true;' ),
 	'https://example.test/uploads/hero.jpg' => array( 'content_type' => 'image/jpeg', 'body' => "\xff\xd8hero" ),
 	'https://example.test/uploads/logo.png' => array( 'content_type' => 'image/png', 'body' => "\x89PNGlogo" ),
@@ -139,7 +140,7 @@ $assert( 'public-static-site-collector' === ( $result['provider'] ?? '' ), 'prov
 $assert( 'website/index.html' === ( $result['artifact']['entrypoint'] ?? '' ), 'root-entrypoint' );
 $assert( array( 'max_files' => 70, 'max_file_bytes' => 10485760, 'max_total_bytes' => 104857600 ) === ( $result['artifact']['compiler_limits'] ?? null ), 'collector-declares-bounded-compiler-limits' );
 $assert( 4 === ( $result['source_metadata']['collection']['pages'] ?? 0 ), 'sitemap-index-alias-deduplicated' );
-$assert( 9 === ( $result['source_metadata']['collection']['assets'] ?? 0 ), 'static-policy-collects-frozen-rendering-assets' );
+$assert( 10 === ( $result['source_metadata']['collection']['assets'] ?? 0 ), 'static-policy-collects-frozen-rendering-assets-and-sitemap-metadata' );
 $assert( array() === ( $result['source_metadata']['collection']['failures'] ?? null ), 'no-collection-failures' );
 $snapshot = $result['source_metadata']['snapshot'] ?? array();
 $assert( 'static-site-importer/url-snapshot/v1' === ( $snapshot['schema'] ?? '' ) && 64 === strlen( (string) ( $snapshot['sha256'] ?? '' ) ), 'snapshot-hash-recorded' );
@@ -152,6 +153,7 @@ foreach ( $result['artifact']['files'] ?? array() as $file ) {
 $assert( isset( $files['website/services.html'], $files['website/team.html'], $files['website/contact.html'] ), 'all-pages-packaged' );
 $assert( '/' === ( $files['website/index.html']['metadata']['route_path'] ?? null ) && '/services' === ( $files['website/services.html']['metadata']['route_path'] ?? null ), 'html-files-declare-canonical-source-routes' );
 $assert( isset( $files['website/files/main-a798de8e.css'] ), 'query-addressed-stylesheet-packaged' );
+$assert( isset( $files['website/sitemap-index.xml'] ), 'same-origin-sitemap-link-packaged-for-plan-reference' );
 $assert( isset( $files['website/_external/cdn.example.test/font.woff2'] ), 'external-font-packaged' );
 $assert( isset( $files['website/_external/cdn.example.test/team.webp'] ), 'external-image-packaged' );
 $assert( isset( $files['website/files/components.css'] ), 'quoted-css-import-packaged' );
