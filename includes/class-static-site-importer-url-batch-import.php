@@ -259,6 +259,38 @@ final class Static_Site_Importer_URL_Batch_Import {
 					$ready_args['asset_failure_policy']        = count( $routes ) > 1 ? 'preserve_failed_external_assets' : 'preserve_external';
 					$ready_args['hydration_mode']              = 'page_ready';
 					$ready_args['_static_site_importer_known_asset_paths'] = $known_asset_paths;
+					$ready_collection_cursor_name = 'batches/' . $batch['batch_id'] . '.page-ready.collection-cursor.json';
+					$ready_collection_contract    = hash(
+						'sha256',
+						(string) wp_json_encode(
+							array(
+								'version'       => 2,
+								'routes'        => $routes,
+								'mode'          => 'page_ready',
+								'shared_digest' => hash( 'sha256', (string) wp_json_encode( $known_asset_paths, JSON_UNESCAPED_SLASHES ) ),
+							)
+						)
+					);
+					$ready_args = array_merge(
+						$ready_args,
+						array(
+							'_static_site_importer_collection_contract'      => $ready_collection_contract,
+							'_static_site_importer_collection_cursor_load'   => static function () use ( $workspace, $ready_collection_cursor_name ) {
+								$raw    = $workspace->read_raw( $ready_collection_cursor_name );
+								$cursor = is_string( $raw ) ? json_decode( $raw, true ) : null;
+								return is_array( $cursor ) ? $cursor : null;
+							},
+							'_static_site_importer_collection_resource_load' => static function ( array $retained ) use ( $workspace ) {
+								$body = isset( $retained['body_ref'] ) && is_string( $retained['body_ref'] ) ? $workspace->read_raw( $retained['body_ref'] ) : null;
+								return is_string( $body ) && hash_equals( (string) ( $retained['sha256'] ?? '' ), hash( 'sha256', $body ) ) ? $body : null;
+							},
+							'_static_site_importer_collection_resource_store' => static fn ( string $body ) => self::store_collection_payload( $workspace, $body ),
+							'_static_site_importer_collection_should_yield'  => static fn (): bool => self::deadline_reached( $deadline, $clock ),
+							'_static_site_importer_collection_cursor_save'   => static function ( array $cursor ) use ( $workspace, $ready_collection_cursor_name ) {
+								return $workspace->publish_json( $ready_collection_cursor_name, $cursor );
+							},
+						)
+					);
 					$ready_runtime = Static_Site_Importer_URL_Site_Collector::collect( $batch_entry, $ready_args, $fetcher );
 					if ( is_wp_error( $ready_runtime ) ) {
 						if ( self::deadline_error( $ready_runtime ) ) {
@@ -276,6 +308,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 					if ( is_wp_error( $write ) ) {
 						return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $write, $cache );
 					}
+					$workspace->delete( $ready_collection_cursor_name );
 				}
 				if ( 'page_ready' === $batch['state'] && ( $batch['result']['snapshot_sha256'] ?? '' ) !== ( $ready_runtime['source_metadata']['snapshot']['sha256'] ?? '' ) ) {
 					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, new WP_Error( 'static_site_importer_page_ready_checkpoint_mismatch', 'The immutable page-ready checkpoint no longer matches its persisted receipt.' ), $cache );
