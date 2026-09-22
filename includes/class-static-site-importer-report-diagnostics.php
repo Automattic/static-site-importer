@@ -45,11 +45,14 @@ class Static_Site_Importer_Report_Diagnostics {
 	/** Diagnostic type for a page route materialized without author stylesheet coverage. */
 	public const PAGE_WITHOUT_AUTHOR_STYLES_TYPE = 'page_materialized_without_author_styles';
 
-	/** Diagnostic type for captured interaction states the conversion did not materialize. */
+	/** Diagnostic type for interaction members the imported representation omitted. */
 	public const INTERACTION_CANDIDATE_TYPE = 'interaction_candidate';
 
 	/** Reason code for captured interaction states with no imported representation. */
 	public const CAPTURED_INTERACTION_UNMATERIALIZED_REASON = 'captured_interaction_unmaterialized';
+
+	/** Reason code for capture-side outcomes that never produced region content. */
+	public const CAPTURED_INTERACTION_CAPTURE_GAP_REASON = 'captured_interaction_capture_gap';
 
 	/** Diagnostic type for fixed geometry added to a topology-changed CSS-owned container. */
 	public const UNSAFE_LAYOUT_CONSTRAINT_TYPE = 'unsafe_layout_constraint';
@@ -449,11 +452,11 @@ class Static_Site_Importer_Report_Diagnostics {
 
 	/**
 	 * Read captured interaction states from the source artifact and report the
-	 * ones conversion did not materialize.
+	 * members conversion omitted, including partial set loss.
 	 *
 	 * @param array<string,mixed> $artifact Source website artifact.
 	 * @param array<string,mixed> $plan     Canonical WordPress site plan.
-	 * @return array{recorded_state_count:int,captured_state_count:int,status_counts:array<string,int>,diagnostics:array<int,array<string,mixed>>}
+	 * @return array{recorded_state_count:int,captured_state_count:int,unrepresented_member_count:int,status_counts:array<string,int>,diagnostics:array<int,array<string,mixed>>}
 	 */
 	public static function captured_interaction_inventory( array $artifact, array $plan = array() ): array {
 		return Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact, $plan );

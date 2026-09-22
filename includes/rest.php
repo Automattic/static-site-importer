@@ -375,6 +375,9 @@ function static_site_importer_rest_is_direct_artifact_continuation( array $sourc
  * @return array<string,mixed>|WP_Error
  */
 function static_site_importer_rest_apply_to_current_site( array $source, array $input ) {
+	// HTTP imports must allow plugin provisioning to finish in a fresh request,
+	// including a single HTML page that declares provider-backed features.
+	$input['runtime_lifecycle_phase'] = 'prepare';
 	// Current-site materialization is always inert even when a request carries preview options.
 	$input['client_script_policy']     = 'inert';
 	$input['client_script_isolated']   = false;
@@ -457,13 +460,19 @@ function static_site_importer_rest_execute_import_ability( string $ability_name,
  * @return array<string,mixed>|WP_Error
  */
 function static_site_importer_rest_route_url_import( array $source, array $input ) {
+	// URL imports use the same current-site script policy as direct sources.
+	$input['client_script_policy']     = 'inert';
+	$input['client_script_isolated']   = false;
+	$input['client_script_provenance'] = array();
+
 	$url       = isset( $source['url'] ) ? (string) $source['url'] : '';
 	$import_id = isset( $source['import_id'] ) ? (string) $source['import_id'] : ( isset( $input['import_id'] ) ? (string) $input['import_id'] : '' );
 
 	$ability_in = array_merge(
 		$input,
 		array(
-			'source' => array_merge(
+			'operation' => 'plan',
+			'source'    => array_merge(
 				isset( $input['source'] ) && is_array( $input['source'] ) ? $input['source'] : array(),
 				array(
 					'type'      => 'url',
@@ -483,6 +492,13 @@ function static_site_importer_rest_route_url_import( array $source, array $input
 		return $result;
 	}
 
+	// The canonical service returns failure envelopes as well as WP_Error.
+	// Preserve the error before projecting either continuation or completion.
+	if ( empty( $result['success'] ) || ! empty( $result['error'] ) ) {
+		$result['success'] = false;
+		return $result;
+	}
+
 	if ( ! empty( $result['continuation'] ) ) {
 		return array(
 			'success'               => true,
@@ -494,17 +510,40 @@ function static_site_importer_rest_route_url_import( array $source, array $input
 		);
 	}
 
-	return array(
-		'success'               => true,
-		'import_id'             => isset( $result['import_id'] ) ? (string) $result['import_id'] : '',
-		'result'                => isset( $result['result'] ) && is_array( $result['result'] ) ? $result['result'] : array(),
-		'diagnostics'           => isset( $result['diagnostics'] ) && is_array( $result['diagnostics'] ) ? $result['diagnostics'] : array(),
-		'fixture_diagnostics'   => isset( $result['fixture_diagnostics'] ) && is_array( $result['fixture_diagnostics'] ) ? $result['fixture_diagnostics'] : array(),
-		'import_report_summary' => isset( $result['import_report_summary'] ) && is_array( $result['import_report_summary'] ) ? $result['import_report_summary'] : array(),
-		'terminal_batch_result' => isset( $result['url_batch_run']['terminal_batch_result'] ) && is_array( $result['url_batch_run']['terminal_batch_result'] )
-			? $result['url_batch_run']['terminal_batch_result']
-			: array(),
+	if ( empty( $result['plan'] ) || ! is_array( $result['plan'] ) ) {
+		return new WP_Error( 'static_site_importer_url_plan_missing', 'The completed URL import did not return a canonical plan.' );
+	}
+
+	// Collection is bounded and resumable. Materialize the complete plan once,
+	// rather than replacing the companion contract with each page-sized batch.
+	$identity                 = Static_Site_Importer_Site_Identity::resolve( array_merge( $input, array(
+		'plan' => $result['plan'],
+		'url'  => $url,
+	) ) );
+	$apply_input              = array_merge( $input, array(
+		'slug'       => $identity['slug'],
+		'name'       => $identity['name'],
+		'site_title' => $identity['title'],
+	) );
+	$apply_input['operation'] = 'apply';
+	$apply_input['plan']      = $result;
+	$applied                  = static_site_importer_rest_execute_import_ability(
+		'static-site-importer/import',
+		$apply_input,
+		'static_site_importer_ability_import'
 	);
+	if ( is_wp_error( $applied ) ) {
+		return $applied;
+	}
+	if ( empty( $applied['success'] ) || ! empty( $applied['error'] ) ) {
+		$applied['success'] = false;
+		return $applied;
+	}
+	unset( $applied['plan'] );
+	$applied['import_id']     = (string) ( $result['import_id'] ?? '' );
+	$applied['continuation']  = ! empty( $applied['continuation'] );
+	$applied['url_batch_run'] = $result['url_batch_run'] ?? array();
+	return $applied;
 }
 
 /**
@@ -653,7 +692,10 @@ function static_site_importer_source_runtime( array $source ) {
 
 	$entrypoint = isset( $source['entrypoint'] ) ? static_site_importer_rest_artifact_path( (string) $source['entrypoint'] ) : '';
 	if ( '' === $entrypoint || ! in_array( $entrypoint, array_column( $files, 'path' ), true ) ) {
-		$entrypoint = static_site_importer_rest_entrypoint( $files );
+		$entrypoint = static_site_importer_rest_entrypoint( $files, isset( $source['archive'] ) );
+		if ( is_wp_error( $entrypoint ) ) {
+			return $entrypoint;
+		}
 	}
 
 	$artifact      = array_merge(
@@ -1219,15 +1261,27 @@ function static_site_importer_rest_should_include_artifact_file( string $path ):
  * Pick an entrypoint from artifact files.
  *
  * @param array<int,array<string,mixed>> $files Artifact files.
- * @return string
+ * @param bool $require_index Whether a ZIP requires a definite index document.
+ * @return string|WP_Error
  */
-function static_site_importer_rest_entrypoint( array $files ): string {
-	foreach ( array( 'website/index.html', 'website/home.html' ) as $candidate ) {
+function static_site_importer_rest_entrypoint( array $files, bool $require_index = false ): string|WP_Error {
+	foreach ( array( 'website/index.html', 'website/index.htm', 'website/home.html' ) as $candidate ) {
 		foreach ( $files as $file ) {
 			if ( isset( $file['path'] ) && $candidate === (string) $file['path'] ) {
 				return $candidate;
 			}
 		}
+	}
+
+	$indexes = array_values( array_filter( array_column( $files, 'path' ), static fn( string $path ): bool => (bool) preg_match( '#/index\.html?$#i', $path ) ) );
+	if ( 1 === count( $indexes ) ) {
+		return $indexes[0];
+	}
+	if ( count( $indexes ) > 1 ) {
+		return new WP_Error( 'static_site_importer_ambiguous_entrypoint', 'The source has multiple nested index documents. Include a root index.html or select an entrypoint.', array( 'status' => 400 ) );
+	}
+	if ( $require_index ) {
+		return new WP_Error( 'static_site_importer_missing_entrypoint', 'The ZIP must include an index.html entry document.', array( 'status' => 400 ) );
 	}
 
 	foreach ( $files as $file ) {

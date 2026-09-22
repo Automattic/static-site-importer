@@ -77,6 +77,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 		$this->assertCount( 1, $result['warning_summaries'] ?? array() );
 		$this->assertSame( 'core_html_block', $result['warning_summaries'][0]['type'] ?? '' );
 		$this->assertCount( 1, $result['diagnostics'] ?? array() );
+		$this->assertSame( 'unverified', $result['gutenberg_save_validation'] ?? '' );
 		$this->assertSame( 'diag-001-core_html_block-generated_document_contains_core_html-indexhtml', $result['diagnostics'][0]['id'] ?? '' );
 		$this->assertSame( 'index.html', $result['diagnostics'][0]['source_path'] ?? '' );
 		$this->assertSame( 'iframe#store-widget.embedded.checkout', $result['diagnostics'][0]['selector'] ?? '' );
@@ -192,6 +193,8 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 		$this->assertSame( 'reported', $report['import_validation_result']['status'] ?? '' );
 		$this->assertFalse( $quality['pass'] ?? true );
 		$this->assertSame( 1, $report['import_validation_result']['counts']['core_html_blocks'] ?? 0 );
+		$this->assertSame( 'unverified', $report['import_validation_result']['quality_gates']['gutenberg_block_validation']['status'] ?? '' );
+		$this->assertSame( 'wp.blocks.validateBlock', $report['import_validation_result']['quality_gates']['gutenberg_block_validation']['method'] ?? '' );
 		$this->assertSame( 'import-validation-result.json', $report['import_validation_result']['artifacts']['import_validation_result']['path'] ?? '' );
 		$this->assertSame( 'finding-packets.json', $report['import_validation_result']['artifacts']['finding_packets']['path'] ?? '' );
 		$this->assertSame( '/tmp/source/index.html', $report['import_validation_result']['reproduction_context']['entry_file'] ?? '' );
@@ -269,6 +272,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 		$this->assertSame( 'not_captured', $artifacts['visual_diff']['capture_state'] ?? '' );
 		$this->assertSame( 'captured', $artifacts['import_report']['status'] ?? '' );
 		$this->assertSame( 'import-report.json', $artifacts['import_report']['ref']['artifact_name'] ?? '' );
+		$this->assertSame( 'captured', $artifacts['block_validation']['status'] ?? '' );
 		$this->assertSame( 'block-validation.json', $artifacts['block_validation']['ref']['artifact_name'] ?? '' );
 		$this->assertSame( $visual, $report['import_validation_result']['visual_parity_artifacts'] ?? array() );
 		$this->assertSame( $visual, $report['compact_summary']['visual_parity_artifacts'] ?? array() );

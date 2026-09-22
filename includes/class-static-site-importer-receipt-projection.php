@@ -96,7 +96,7 @@ class Static_Site_Importer_Receipt_Projection {
 		if ( isset( $args['captured_interaction_state_count'] ) && is_numeric( $args['captured_interaction_state_count'] ) ) {
 			$quality['interaction_candidate_count'] = max(
 				(int) ( $quality['interaction_candidate_count'] ?? 0 ),
-				(int) $args['captured_interaction_state_count']
+				max( 0, (int) $args['captured_interaction_state_count'] )
 			);
 		}
 		$report                            = Static_Site_Importer_Import_Report::from_array(
@@ -166,7 +166,7 @@ class Static_Site_Importer_Receipt_Projection {
 			)
 		);
 		$report['source_artifact']         = array( 'hash' => (string) ( $args['artifact_hash'] ?? $plan['source']['source_hash'] ) );
-		$report['materialization_receipt'] = $receipt;
+		$report['materialization_receipt'] = self::report_receipt( $receipt );
 		Static_Site_Importer_Block_Document_Reporter::analyze_materialized_block_documents( $report['generated_theme']['block_documents'], $report );
 		$artifact         = array_merge(
 			is_array( $args['source_artifact_reference'] ?? null ) ? $args['source_artifact_reference'] : array(),
@@ -296,13 +296,28 @@ class Static_Site_Importer_Receipt_Projection {
 		return $manifest;
 	}
 
+	/**
+	 * Receipt copy for the persisted report.
+	 *
+	 * A deferred receipt carries its live rollback journal under `transaction`.
+	 * That handle only works in memory (consumers require an object), and its
+	 * state repeats the whole site plan several times, so it stays out of reports.
+	 *
+	 * @param array<array-key,mixed> $receipt Materialization receipt.
+	 * @return array<array-key,mixed>
+	 */
+	private static function report_receipt( array $receipt ): array {
+		unset( $receipt['transaction'] );
+		return $receipt;
+	}
+
 	/** Refresh report-derived projections after cleanup has updated the receipt. */
 	public static function finalize( Static_Site_Importer_Import_Report $report, array $manifest, array $plan, array &$receipt, array $args, array $quality ): array {
 		$report['source_of_truth']                                = $manifest;
 		$receipt['quality_budget_admission']                      = Static_Site_Importer_Quality_Budget_Admission::evaluate( $plan, $receipt['plan'] ?? array(), $args, $report );
 		$receipt['quality_budget_admission']['mechanical_status'] = $receipt['status'] ?? 'completed';
 		$report['quality_budget_admission']                       = $receipt['quality_budget_admission'];
-		$report['materialization_receipt']                        = $receipt;
+		$report['materialization_receipt']                        = self::report_receipt( $receipt );
 
 		return array(
 			'fixture_diagnostics' => Static_Site_Importer_Report_Diagnostics::refresh_projections( $report, $quality ),

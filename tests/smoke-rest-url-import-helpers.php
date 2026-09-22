@@ -80,6 +80,7 @@ if ( ! function_exists( 'wp_get_ability' ) ) {
 		return new class {
 			public function execute( array $input ) {
 				$GLOBALS['ssi_ability_last_input'] = $input;
+				$GLOBALS['ssi_ability_inputs'][] = $input;
 				return array_shift( $GLOBALS['ssi_ability_results'] );
 			}
 		};
@@ -87,6 +88,10 @@ if ( ! function_exists( 'wp_get_ability' ) ) {
 }
 
 require_once dirname( __DIR__ ) . '/includes/rest.php';
+
+$assert( 'website/export/index.html' === static_site_importer_rest_entrypoint( array( array( 'path' => 'website/export/about.html' ), array( 'path' => 'website/export/index.html' ) ), true ), 'nested-zip-index-precedes-alphabetical-document' );
+$assert( is_wp_error( static_site_importer_rest_entrypoint( array( array( 'path' => 'website/fixture.json' ) ), true ) ), 'zip-without-entry-document-fails-at-intake' );
+$assert( is_wp_error( static_site_importer_rest_entrypoint( array( array( 'path' => 'website/one/index.html' ), array( 'path' => 'website/two/index.html' ) ), true ) ), 'ambiguous-nested-zip-entrypoints-are-rejected' );
 
 $report_paths = array( 'interaction-states.json', 'reports/capture.json' );
 $assert( 'interaction-states.json' === static_site_importer_rest_source_file_path( 'interaction-states.json', $report_paths ), 'declared-root-report-path-is-preserved' );
@@ -124,6 +129,7 @@ $terminal_envelope = array(
 	'success'               => true,
 	'continuation'          => false,
 	'import_id'             => 'def456',
+	'plan'                  => array( 'schema' => 'blocks-engine/wordpress-site-plan/v2' ),
 	'result'                => array( 'theme_slug' => 'remote-site' ),
 	'import_report_summary' => array( 'status' => 'completed' ),
 	'url_batch_run'         => array(
@@ -147,8 +153,11 @@ $assert( 'abc123' === ( $result['import_id'] ?? '' ), 'import-id-propagates' );
 $assert( 'continuing' === ( $result['url_batch_run']['status'] ?? '' ), 'url-batch-run-status-propagates' );
 $assert( 'https://example.test/start' === ( $GLOBALS['ssi_ability_last_input']['source']['url'] ?? '' ), 'ability-receives-source-url' );
 $assert( 'url' === ( $GLOBALS['ssi_ability_last_input']['source']['type'] ?? '' ), 'ability-input-source-type-is-url' );
+$assert( 'plan' === $GLOBALS['ssi_ability_last_input']['operation'], 'url-collection-uses-canonical-planning' );
 
-$GLOBALS['ssi_ability_results'] = array( $terminal_envelope );
+$applied_envelope = array( 'success' => true, 'operation' => 'apply', 'result' => array( 'status' => 'completed', 'theme' => array( 'slug' => 'remote-site' ) ) );
+$GLOBALS['ssi_ability_results'] = array( $terminal_envelope, $applied_envelope );
+$GLOBALS['ssi_ability_inputs'] = array();
 $GLOBALS['ssi_ability_last_input'] = null;
 
 $result = static_site_importer_rest_route_url_import(
@@ -159,7 +168,9 @@ $result = static_site_importer_rest_route_url_import(
 $assert( true === ( $result['success'] ?? false ), 'terminal-success-true' );
 $assert( false === ( $result['continuation'] ?? false ), 'terminal-continuation-false' );
 $assert( 'def456' === ( $result['import_id'] ?? '' ), 'terminal-import-id-propagates' );
-$assert( 'remote-site' === ( $result['terminal_batch_result']['theme_slug'] ?? '' ), 'terminal-batch-result-propagates' );
+$assert( 'remote-site' === ( $result['result']['theme']['slug'] ?? '' ), 'terminal-result-is-materialization-receipt' );
+$assert( array( 'plan', 'apply' ) === array_column( $GLOBALS['ssi_ability_inputs'], 'operation' ), 'complete-url-plan-is-applied-once' );
+$assert( $terminal_envelope === $GLOBALS['ssi_ability_last_input']['plan'], 'apply-receives-server-produced-plan-envelope' );
 $assert( ! isset( $result['preview'] ), 'terminal-current-site-does-not-advertise-preview' );
 
 $import_id_envelope = array(
@@ -178,6 +189,24 @@ $result = static_site_importer_rest_route_url_import(
 
 $assert( 'bound-id' === ( $GLOBALS['ssi_ability_last_input']['source']['import_id'] ?? '' ), 'ability-receives-rest-import-id' );
 $assert( 'bound-id' === ( $result['import_id'] ?? '' ), 'import-id-echoes-through-result' );
+
+$failure = array(
+	'success'     => false,
+	'error'       => array( 'code' => 'source_rejected', 'message' => 'Source could not be imported.' ),
+	'diagnostics' => array( array( 'severity' => 'error', 'code' => 'source_rejected' ) ),
+);
+$GLOBALS['ssi_ability_results'] = array( $failure );
+$result = static_site_importer_rest_route_url_import(
+	array( 'url' => 'https://example.test/failure' ),
+	array( 'client_script_policy' => 'isolated_preview', 'client_script_isolated' => true, 'client_script_provenance' => array( 'ref' => 'untrusted' ) )
+);
+$assert( $failure === $result, 'canonical-failure-preserves-error-and-diagnostics' );
+$assert( 'inert' === $GLOBALS['ssi_ability_last_input']['client_script_policy'], 'url-import-forces-current-site-inert-policy' );
+$assert( false === $GLOBALS['ssi_ability_last_input']['client_script_isolated'], 'url-import-clears-isolation' );
+$assert( array() === $GLOBALS['ssi_ability_last_input']['client_script_provenance'], 'url-import-clears-preview-provenance' );
+$GLOBALS['ssi_ability_results'] = array( array_merge( $failure, array( 'success' => true, 'continuation' => true ) ) );
+$result = static_site_importer_rest_route_url_import( array( 'url' => 'https://example.test/failure' ), array() );
+$assert( false === $result['success'] && 'source_rejected' === $result['error']['code'], 'error-cannot-be-masked-by-continuation' );
 
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );

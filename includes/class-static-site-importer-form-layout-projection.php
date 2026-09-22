@@ -184,9 +184,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 
 	/**
 	 * Flatten the validated generic tree into Jetpack's constrained direct-child
-	 * grammar. Equal two- and four-column grids and complete provenance-backed
-	 * percentage rows map to provider field widths; other wrapper semantics/layout
-	 * remain explicit receipt losses.
+	 * grammar. Equal-fraction field-row grids (2/3/4 columns, any number of
+	 * occupying fields) and complete provenance-backed percentage rows map to
+	 * provider field widths; other wrapper semantics/layout remain explicit
+	 * receipt losses.
 	 *
 	 * @param array<int,array<string,mixed>> $field_blocks
 	 * @param array<int,array<string,mixed>> $controls
@@ -194,20 +195,25 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 */
 	public static function topology_inner_blocks( array $form, array $field_blocks, array $controls, array $suppressed_controls = array() ): ?array {
 		if ( ! isset( $form['control_topology'] ) ) {
-			return array(
-				'blocks'                       => array_values( $field_blocks ),
-				'losses'                       => array(),
-				'operations'                   => array(),
-				'represented_layout_nodes'     => array(),
-				'represented_topology_nodes'   => array(),
-				'suppressed_layout_properties' => array(),
-				'overlay_node_targets'         => array(),
-				'responsive_variant_targets'   => array(),
-				'native_visibility_targets'    => array(),
-				'form_classes'                 => array(),
-				'provider_layout_targets'      => array(),
-				'phone_popup_targets'          => array(),
-			);
+			$derived_topology = self::derive_control_topology_from_layout_graph( $form, $controls );
+			if ( null !== $derived_topology ) {
+				$form['control_topology'] = $derived_topology;
+			} else {
+				return array(
+					'blocks'                       => array_values( $field_blocks ),
+					'losses'                       => array(),
+					'operations'                   => array(),
+					'represented_layout_nodes'     => array(),
+					'represented_topology_nodes'   => array(),
+					'suppressed_layout_properties' => array(),
+					'overlay_node_targets'         => array(),
+					'responsive_variant_targets'   => array(),
+					'native_visibility_targets'    => array(),
+					'form_classes'                 => array(),
+					'provider_layout_targets'      => array(),
+					'phone_popup_targets'          => array(),
+				);
+			}
 		}
 		$nodes = $form['control_topology']['nodes'] ?? null;
 		if ( ! is_array( $nodes ) ) {
@@ -993,45 +999,76 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			);
 		}
 		foreach ( $children as $parent => $siblings ) {
-			if ( '$root' === $parent || isset( $percentage_width_parents[ $parent ] ) || ! isset( $layout_by_node[ $parent ] ) || ! in_array( count( $siblings ), array( 2, 4 ), true ) ) {
+			if ( '$root' === $parent || isset( $percentage_width_parents[ $parent ] ) || count( $siblings ) < 2 ) {
 				continue;
 			}
-			$layout = $layout_by_node[ $parent ];
+			$layout = $layout_by_node[ $parent ] ?? array();
 			if ( array_intersect( array_keys( $layout ), array( 'item_placement', 'column', 'row', 'area' ) ) ) {
 				continue;
 			}
-			$count           = count( $siblings );
 			$parent_variants = $variants_by_node[ $parent ] ?? array();
 			$columns         = preg_replace( '/\s+/', '', (string) ( $layout['columns'] ?? '' ) );
-			$equal_grid      = empty( $parent_variants ) && 'grid' === ( $layout['display'] ?? null ) && self::is_equal_fraction_columns( $columns, $count );
+			$class_tokens    = preg_split( '/\s+/', trim( (string) ( $topology_nodes_by_id[ $parent ]['class'] ?? '' ) ) );
+			$class_tokens    = false === $class_tokens ? array() : array_values( array_filter( $class_tokens ) );
+			$display         = $layout['display'] ?? null;
+			if ( 'grid' !== $display ) {
+				$from_class = self::display_from_class_tokens( $class_tokens );
+				if ( 'grid' === $from_class ) {
+					$display = 'grid';
+				}
+			}
+			// Column count comes from the resolved track list, not from how many
+			// field boxes occupy those tracks. A 2-column grid of eight fields is
+			// four visual rows of Jetpack `width: 50`, not an 8-column row.
+			$column_count        = self::equal_fraction_column_count( $columns );
+			$class_token_columns = false;
+			$widening_query      = null;
+			if ( null === $column_count && '' === $columns && in_array( 'grid', $class_tokens, true ) ) {
+				// Resolved tracks are absent (layered utility CSS often never
+				// becomes a layout-graph node). A field-row grid of single-field
+				// siblings is the 2-column pairing Jetpack `width: 50` represents;
+				// 3- and 4-column rows still require a resolved track list.
+				$column_count        = 2;
+				$class_token_columns = true;
+			}
+			$equal_grid = empty( $parent_variants ) && 'grid' === $display && null !== $column_count;
 			// A mobile-first source stacks these boxes by default and only bands
 			// them into equal columns at a wider breakpoint (Tailwind's own
-			// `grid-cols-1 md:grid-cols-2` shape). Jetpack field width is a single,
-			// non-responsive value, so accept exactly one proven min-width widening
-			// of the track count and materialize that widened state instead; any
-			// other variant shape (more than one variant, a narrowing, a max-width
-			// query, or a patch touching more than the column tracks) keeps the
-			// existing wrapper-layout decline.
-			if ( ! $equal_grid && 'grid' === ( $layout['display'] ?? null ) && 1 === count( $parent_variants ) ) {
-				$variant   = $parent_variants[0];
-				$condition = is_array( $variant['condition'] ?? null ) ? $variant['condition'] : null;
-				$patch     = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
-				$widened   = preg_replace( '/\s+/', '', (string) ( $patch['columns'] ?? '' ) );
+			// `grid-cols-1 md:grid-cols-2` or `grid sm:grid-cols-2` shape). Jetpack
+			// field width is a single, non-responsive value, so accept exactly one
+			// proven min-width widening of the track count and materialize that
+			// widened state instead; any other variant shape (more than one variant,
+			// a narrowing, a max-width query, or a patch touching more than the
+			// column tracks) keeps the existing wrapper-layout decline.
+			if ( ! $equal_grid && 'grid' === $display && 1 === count( $parent_variants ) ) {
+				$variant       = $parent_variants[0];
+				$condition     = is_array( $variant['condition'] ?? null ) ? $variant['condition'] : null;
+				$patch         = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+				$widened       = preg_replace( '/\s+/', '', (string) ( $patch['columns'] ?? '' ) );
+				$widened_count = self::equal_fraction_column_count( $widened );
 				if ( array( 'columns' ) === array_keys( $patch )
 					&& is_array( $condition ) && 'media' === ( $condition['kind'] ?? null )
 					&& is_string( $condition['query'] ?? null )
 					&& self::is_min_width_media_query( $condition['query'] )
-					&& self::is_equal_fraction_columns( $widened, $count )
+					&& null !== $widened_count
 				) {
 					foreach ( $variant['provenance'] ?? array() as $fact ) {
 						if ( is_array( $fact ) && ( $fact['condition'] ?? null ) === $condition && is_string( $fact['source_path'] ?? null ) && is_string( $fact['source_sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ) && is_string( $fact['selector'] ?? null ) && in_array( 'grid-template-columns', $fact['properties'] ?? array(), true ) ) {
-							$equal_grid = true;
+							$equal_grid     = true;
+							$column_count   = $widened_count;
+							$widening_query = $condition['query'];
 							break;
 						}
 					}
+					$class_tokens = preg_split( '/\s+/', trim( (string) ( $topology_nodes_by_id[ $parent ]['class'] ?? '' ) ) );
+					if ( ! $equal_grid && in_array( 'grid', is_array( $class_tokens ) ? $class_tokens : array(), true ) ) {
+						$equal_grid     = true;
+						$column_count   = $widened_count;
+						$widening_query = $condition['query'];
+					}
 				}
 			}
-			if ( ! $equal_grid ) {
+			if ( ! $equal_grid || null === $column_count ) {
 				continue;
 			}
 			$indexes = array();
@@ -1046,13 +1083,37 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( empty( $indexes ) ) {
 				continue;
 			}
-			$gap    = is_string( $layout['gap'] ?? null ) && '' !== trim( $layout['gap'] )
+			$non_submit_indexes = array_values(
+				array_filter(
+					array_keys( $field_blocks ),
+					static fn ( int $index ): bool => 'core/button' !== ( $field_blocks[ $index ]['name'] ?? '' )
+				)
+			);
+			$paired_indexes     = $indexes;
+			sort( $non_submit_indexes );
+			sort( $paired_indexes );
+			if ( $paired_indexes === $non_submit_indexes ) {
+				continue;
+			}
+			$width       = self::provider_field_width( 1 / $column_count );
+			$gap         = is_string( $layout['gap'] ?? null ) && '' !== trim( $layout['gap'] )
 				? trim( $layout['gap'] )
 				: ( is_string( $layout['column_gap'] ?? null ) && '' !== trim( $layout['column_gap'] ) ? trim( $layout['column_gap'] ) : '1.5rem' );
-			$track  = self::equal_fraction_track_size( $count, $gap );
-			$paired = array_fill_keys( $indexes, true );
+			$track       = self::equal_fraction_track_size( $column_count, $gap );
+			$paired      = array_fill_keys( $indexes, true );
+			$stack_query = is_string( $widening_query ) ? self::inverted_min_width_media_query( $widening_query ) : null;
+			if ( null === $stack_query && $class_token_columns ) {
+				$stack_query = self::equal_width_stack_query_from_cascade_facts( $parent, $variants_by_node, $layout_nodes_by_id );
+				if ( null === $stack_query ) {
+					// Layered source utilities never become graph variants, so the
+					// widening query is missing. The 50% overlay is more specific than
+					// Jetpack's own `@media (max-width: 480px)` wrap stack and would
+					// otherwise keep the row two-up at every width.
+					$stack_query = '(max-width: 480px)';
+				}
+			}
 			foreach ( $indexes as $control_index ) {
-				$field_blocks[ $control_index ]['attrs']['width'] = 100 / $count;
+				$field_blocks[ $control_index ]['attrs']['width'] = $width;
 				$overlay_node_targets[]                           = array(
 					'id'        => 'field-' . $control_index,
 					'layout'    => array(
@@ -1073,13 +1134,26 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					// this synthetic flattening seam is always for.
 					'important' => array( 'margin_block_start' ),
 				);
+				if ( is_string( $stack_query ) ) {
+					$responsive_variant_targets[] = array(
+						'node'         => 'field-' . $control_index,
+						'condition'    => array(
+							'kind'  => 'media',
+							'query' => $stack_query,
+						),
+						'layout_patch' => array(
+							'flex'  => '1 1 100%',
+							'width' => '100%',
+						),
+					);
+				}
 			}
 			$represented_layout_nodes[] = $parent;
 			$operations[]               = array(
 				'dimension'   => 'layout',
 				'strategy'    => 'provider_equal_width_fields',
 				'target_hash' => hash( 'sha256', $parent ),
-				'width'       => 100 / $count,
+				'width'       => $width,
 			);
 			foreach ( $field_blocks as $control_index => $field_block ) {
 				if ( isset( $paired[ $control_index ] ) ) {
@@ -1452,6 +1526,93 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	}
 
 	/**
+	 * Recover the control tree when the producer emitted layout nodes but no
+	 * separate topology. The layout graph is sufficient only when every visible
+	 * control and its ancestor chain survived capture; otherwise retain the
+	 * existing fail-closed flat projection.
+	 *
+	 * @param array<string,mixed>              $form
+	 * @param array<int,array<string,mixed>>   $controls
+	 * @return array<string,mixed>|null
+	 */
+	private static function derive_control_topology_from_layout_graph( array $form, array $controls ): ?array {
+		$graph = $form['layout_graph'] ?? null;
+		if ( ! is_array( $graph ) || ! is_array( $graph['nodes'] ?? null ) ) {
+			return null;
+		}
+
+		$source_nodes = array();
+		foreach ( $graph['nodes'] as $node ) {
+			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) ) {
+				continue;
+			}
+			$source_nodes[ $node['id'] ] = $node;
+		}
+		if ( empty( $source_nodes ) ) {
+			return null;
+		}
+
+		$nodes       = array();
+		$control_ids = array();
+		foreach ( $source_nodes as $id => $node ) {
+			$parent = is_string( $node['parent'] ?? null ) ? $node['parent'] : null;
+			if ( null !== $parent && ! isset( $source_nodes[ $parent ] ) ) {
+				continue;
+			}
+			$source        = is_array( $node['source'] ?? null ) ? $node['source'] : array();
+			$control_match = array();
+			if ( 1 === preg_match( '/^control-([0-9]+)$/D', $id, $control_match ) ) {
+				$control_index                 = (int) $control_match[1];
+				$control_ids[ $control_index ] = true;
+				$nodes[]                       = array(
+					'id'      => $id,
+					'kind'    => 'control',
+					'parent'  => $parent,
+					'order'   => (int) ( $node['order'] ?? 0 ),
+					'depth'   => (int) ( $node['depth'] ?? 0 ),
+					'control' => $control_index,
+				);
+				continue;
+			}
+			$classes = is_array( $source['classes'] ?? null ) ? $source['classes'] : array();
+			$nodes[] = array(
+				'id'     => $id,
+				'kind'   => 'wrapper',
+				'parent' => $parent,
+				'order'  => (int) ( $node['order'] ?? 0 ),
+				'depth'  => (int) ( $node['depth'] ?? 0 ),
+				'tag'    => is_string( $source['tag'] ?? null ) ? strtolower( $source['tag'] ) : 'div',
+				'class'  => implode( ' ', array_filter( array_map( 'strval', $classes ) ) ),
+			);
+		}
+		foreach ( $controls as $index => $control ) {
+			$type = strtolower( trim( (string) ( $control['type'] ?? $control['tag'] ?? '' ) ) );
+			if ( ! isset( $control_ids[ $index ] ) && 'hidden' !== $type ) {
+				return null;
+			}
+		}
+		if ( empty( $nodes ) ) {
+			return null;
+		}
+		usort(
+			$nodes,
+			static function ( array $left, array $right ): int {
+				$depth = (int) $left['depth'] <=> (int) $right['depth'];
+
+				return 0 !== $depth ? $depth : ( (int) $left['order'] <=> (int) $right['order'] );
+			}
+		);
+
+		return array(
+			'schema'    => 'generic/form-control-topology/v1',
+			'max_depth' => (int) ( $graph['limits']['depth'] ?? 16 ),
+			'max_nodes' => (int) ( $graph['limits']['nodes'] ?? 128 ),
+			'truncated' => ! empty( $graph['truncated'] ),
+			'nodes'     => $nodes,
+		);
+	}
+
+	/**
 	 * Preserve a complete source div subtree before provider field-shell projection.
 	 *
 	 * Jetpack owns the markup below a mapped control. A source container can therefore
@@ -1618,6 +1779,20 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * item, so a source-owned field gap is applied to it unless it is removed
 	 * while inactive. The runtime adds `has-errors` when validation needs it.
 	 *
+	 * The runtime also rebuilds a proven source label/control row as the field
+	 * shell's own sole child (`.ssi-field-row`, see
+	 * Static_Site_Importer_Provider_Form_Runtime::project_wrapper_classes()).
+	 * When the shell itself resolves to `display: grid` from captured source
+	 * facts (a mobile-only track layout is one such source), an item that is
+	 * not explicitly placed on the grid's column axis auto-places into a
+	 * single implicit track instead of spanning the shell's own tracks, so
+	 * both the row and every control nested inside it collapse to that one
+	 * track's width. `grid-column` has no effect on a non-grid-item element,
+	 * so this is scoped to only the forms that proved a field shell's own
+	 * `display: grid` (detected from the shell's already-compiled `-wrap`
+	 * rule), leaving every flex- or block-shell form's compiled CSS, and the
+	 * existing tests that assert its exact shape, unchanged.
+	 *
 	 * @param array<string,mixed> $overlay Compiled provider overlay.
 	 * @param string              $scope Provider form scope.
 	 * @param array<int,string>  $mapped_types Materialized field types by source index.
@@ -1631,7 +1806,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		if ( empty( $mapped_types ) ) {
 			return $overlay;
 		}
-		$css                          = rtrim( $overlay['css'] ) . "\n." . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-hints{display:contents}' . "\n" . '.' . $scope . ' .grunion-field-wrap .ssi-field-row > label{margin-block-end:0}' . "\n" . '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}' . "\n";
+		$field_row_span               = 1 === preg_match( '/\.ssi-node-[a-f0-9]{12}-wrap\{[^}]*\bdisplay:grid\b/', $overlay['css'] )
+			? '.' . $scope . ' .grunion-field-wrap > .ssi-field-row{grid-column:1 / -1}' . "\n"
+			: '';
+		$css                          = rtrim( $overlay['css'] ) . "\n." . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-hints{display:contents}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-format{display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .ssi-field-row > label{margin-block-end:0}' . "\n" . '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}' . "\n" . $field_row_span;
 		$overlay['css']               = $css;
 		$overlay['overlay']['css']    = $css;
 		$overlay['overlay']['sha256'] = hash( 'sha256', $css );
@@ -1698,6 +1876,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * provider container now occupies. Their classes still address that role
 	 * in the source stylesheet, so they belong on the provider block wrapper.
 	 *
+	 * Inner field-row shells (a `grid sm:grid-cols-2` name+phone pair) are not
+	 * the host. Those map through `provider_equal_width_fields` onto Jetpack
+	 * field widths instead of being copied onto the form container.
+	 *
 	 * @return array{classes:array<int,string>,operations:array<int,array<string,mixed>>}
 	 */
 	public static function host_wrapper_projection( array $form ): array {
@@ -1759,10 +1941,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * @return array<int,array<int,string>>
 	 */
 	private static function layout_shell_wrapper_class_lists( string $markup ): array {
-		if ( ! preg_match( '/<!-- wp:(?:[a-z][a-z0-9-]*\/)?layout-shell\s+/', $markup, $header, PREG_OFFSET_CAPTURE ) ) {
+		$markup = ltrim( $markup );
+		if ( ! preg_match( '/^<!-- wp:(?:[a-z][a-z0-9-]*\/)?layout-shell\s+/', $markup, $header ) ) {
 			return array();
 		}
-		$start = $header[0][1] + strlen( $header[0][0] );
+		$start = strlen( $header[0] );
 		if ( '{' !== ( $markup[ $start ] ?? '' ) ) {
 			return array();
 		}
@@ -1791,10 +1974,19 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	}
 
 	private static function is_source_host_class( string $class_name ): bool {
-		return '' !== $class_name
-			&& ! str_starts_with( $class_name, 'wp-block-' )
-			&& ! str_starts_with( $class_name, 'blocks-engine-' )
-			&& 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_.:-]{0,79}$/D', $class_name );
+		if ( '' === $class_name
+			|| str_starts_with( $class_name, 'wp-block-' )
+			|| str_starts_with( $class_name, 'blocks-engine-' )
+			|| 1 !== preg_match( '/^[A-Za-z_][A-Za-z0-9_.:-]{0,79}$/D', $class_name )
+		) {
+			return false;
+		}
+		if ( in_array( $class_name, array( 'grid', 'flex', 'inline-flex' ), true )
+			|| 1 === preg_match( '/(?:^|:)(?:grid-cols-|gap-)/', $class_name )
+		) {
+			return false;
+		}
+		return true;
 	}
 
 	/** Stable generated classes are provider hooks, never source presentation hooks. */
@@ -2213,7 +2405,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 							'font-family' => 'submit' === $type ? 'inherit' : 'revert',
 							'line-height' => 'submit' === $type ? 'inherit' : 'revert',
 						),
-						'submit' === $type ? array( 'min-height' => '0' ) : array()
+						'submit' === $type ? array( 'min-height' => '0' ) : array(),
+						// Jetpack renders the native control with `appearance: none`,
+						// which removes the platform chevron the authored select had.
+						// Reverting to `auto` restores it alongside the authored
+						// padding and border this destination already carries.
+						'select' === $type ? array( 'appearance' => 'auto' ) : array()
 					),
 				);
 				if ( 'select' === $type ) {
@@ -2250,7 +2447,9 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		if ( isset( $roles['control_container'] ) ) {
 			$destinations[] = array(
 				'role'       => 'control_container',
-				'selector'   => '.' . $scope . ' .' . ( in_array( $type, array( 'phone', 'tel' ), true ) ? self::presentation_destination_class( $scope, $index, 'shell' ) : self::presentation_node_class( $scope, $index, 'control' ) ),
+				// The source chrome owns the provider field wrapper, not its nested input.
+				// The layout hook is placed on that wrapper for every Jetpack field type.
+				'selector'   => '.' . $scope . ' .' . self::layout_node_class( $scope, 'control-' . $index ),
 				'properties' => array( 'background', 'background_color', 'border', 'border_color', 'border_style', 'border_width', 'border_top_color', 'border_right_color', 'border_bottom_color', 'border_left_color', 'border_top_style', 'border_right_style', 'border_bottom_style', 'border_left_style', 'border_top_width', 'border_right_width', 'border_bottom_width', 'border_left_width', 'border_radius', 'border_top_left_radius', 'border_top_right_radius', 'border_bottom_right_radius', 'border_bottom_left_radius' ),
 			);
 		}
@@ -2452,9 +2651,55 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		return 1 === preg_match( '/^\((?:min-width:\s?[0-9]+(?:\.[0-9]+)?(?:px|em|rem)|width\s*>=\s*[0-9]+(?:\.[0-9]+)?(?:px|em|rem))\)$/D', $query );
 	}
 
+	/**
+	 * Invert a proven min-width widening into the max-range the overlay applies
+	 * below that breakpoint. `(min-width: 768px)` and `(width>=40rem)` both
+	 * include the bound, so the stacked state is the strict less-than range.
+	 */
+	private static function inverted_min_width_media_query( string $query ): ?string {
+		if ( 1 === preg_match( '/^\(min-width:\s?([0-9]+(?:\.[0-9]+)?)(px|em|rem)\)$/D', $query, $match ) ) {
+			return '(width<' . $match[1] . $match[2] . ')';
+		}
+		if ( 1 === preg_match( '/^\(width\s*>=\s*([0-9]+(?:\.[0-9]+)?)(px|em|rem)\)$/D', $query, $match ) ) {
+			return '(width<' . $match[1] . $match[2] . ')';
+		}
+		return null;
+	}
+
+	/**
+	 * Recover a stacking query from a captured cascade fact when the equal-width
+	 * row came from the class-token fallback rather than a graph variant.
+	 *
+	 * @param array<string,array<int,array<string,mixed>>> $variants_by_node
+	 * @param array<string,array<string,mixed>>            $layout_nodes_by_id
+	 */
+	private static function equal_width_stack_query_from_cascade_facts( string $parent_id, array $variants_by_node, array $layout_nodes_by_id ): ?string {
+		foreach ( $variants_by_node[ $parent_id ] ?? array() as $variant ) {
+			$condition = is_array( $variant['condition'] ?? null ) ? $variant['condition'] : null;
+			if ( ! is_array( $condition ) || 'media' !== ( $condition['kind'] ?? null ) || ! is_string( $condition['query'] ?? null ) || ! self::is_min_width_media_query( $condition['query'] ) ) {
+				continue;
+			}
+			$inverted = self::inverted_min_width_media_query( $condition['query'] );
+			if ( is_string( $inverted ) ) {
+				return $inverted;
+			}
+		}
+		foreach ( ( $layout_nodes_by_id[ $parent_id ]['provenance'] ?? array() ) as $fact ) {
+			$condition = is_array( $fact ) && is_array( $fact['condition'] ?? null ) ? $fact['condition'] : null;
+			if ( ! is_array( $condition ) || 'media' !== ( $condition['kind'] ?? null ) || ! is_string( $condition['query'] ?? null ) || ! self::is_min_width_media_query( $condition['query'] ) || ! in_array( 'grid-template-columns', $fact['properties'] ?? array(), true ) ) {
+				continue;
+			}
+			$inverted = self::inverted_min_width_media_query( $condition['query'] );
+			if ( is_string( $inverted ) ) {
+				return $inverted;
+			}
+		}
+		return null;
+	}
+
 	/** @param array<int,string> $tokens */
 	private static function display_from_class_tokens( array $tokens ): ?string {
-		$map = array(
+		$map     = array(
 			'grid'        => 'grid',
 			'flex'        => 'flex',
 			'inline-flex' => 'inline-flex',
@@ -2469,6 +2714,19 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 		}
 		return $display;
+	}
+
+	/**
+	 * Equal-fraction track count Jetpack can express as a field `width` of
+	 * 50 / 33 / 25. Null when the value is not that shape.
+	 */
+	private static function equal_fraction_column_count( string $columns ): ?int {
+		foreach ( array( 2, 3, 4 ) as $count ) {
+			if ( self::is_equal_fraction_columns( $columns, $count ) ) {
+				return $count;
+			}
+		}
+		return null;
 	}
 
 	/**

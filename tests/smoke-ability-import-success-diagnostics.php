@@ -76,6 +76,11 @@ if ( ! defined( 'WEEK_IN_SECONDS' ) ) {
 }
 
 $GLOBALS['ssi_smoke_fired_hooks'] = array();
+if ( ! function_exists( 'apply_filters' ) ) {
+	function apply_filters( string $hook, $value, ...$args ) {
+		return 'static_site_importer_retain_response_artifacts' === $hook ? ( $GLOBALS['ssi_retain_response_artifacts'] ?? $value ) : $value;
+	}
+}
 if ( ! function_exists( 'do_action' ) ) {
 	function do_action( string $hook_name, ...$args ): void {
 		$GLOBALS['ssi_smoke_fired_hooks'][] = array(
@@ -284,6 +289,19 @@ $assert( ! isset( $persisted_receipt['plan'] ), 'persisted-receipt-references-pl
 $assert( ! isset( $persisted_report['materialization_receipt']['plan'] ), 'persisted-report-does-not-duplicate-receipt-plan' );
 $assert( 500 === count( $persisted_details['finding_packets'] ?? array() ), 'persisted-details-retain-full-finding-packets' );
 $assert( 5000 === count( $persisted_details['pages'] ?? array() ), 'persisted-details-retain-all-page-identities' );
+
+$GLOBALS['ssi_retain_response_artifacts'] = false;
+$reconciled_result['import_report']['import_run_id'] = 'not-retained-' . getmypid();
+$root = Static_Site_Importer_Direct_Artifact_Import::root();
+$before = glob( $root . '/.ssi-artifact-run-import-response-*' ) ?: array();
+$unretained = static_site_importer_ability_import_success( $reconciled_result, array() );
+$after = glob( $root . '/.ssi-artifact-run-import-response-*' ) ?: array();
+$assert( $before === $after, 'disabled-response-retention-creates-no-artifact-workspace' );
+$assert( true === $unretained['success'] && 5000 === $unretained['result']['page_count'], 'disabled-retention-preserves-success-and-page-count' );
+$assert( 'completed' === $unretained['result']['materialization_receipt_summary']['status'], 'disabled-retention-preserves-receipt-identity' );
+$assert( 'not_retained' === $unretained['result']['response_artifacts']['status'] && array() === $unretained['result']['response_artifacts']['artifacts'], 'disabled-retention-is-explicit-without-dangling-refs' );
+$assert( 450 === $unretained['fixture_diagnostics']['quality_counts']['fallback_count'], 'disabled-retention-preserves-diagnostics' );
+$assert( strlen( wp_json_encode( $unretained ) ) < 200000, 'disabled-retention-does-not-inline-unbounded-reports' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );

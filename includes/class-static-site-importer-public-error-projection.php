@@ -14,6 +14,8 @@ final class Static_Site_Importer_Public_Error_Projection {
 	private const FAILURE_DIAGNOSTIC_MAX_ROWS    = 10;
 	private const FAILURE_DIAGNOSTIC_MAX_BYTES   = 256;
 	private const FAILURE_DIAGNOSTIC_SCAN_BUDGET = 10;
+	/** Structured fact rows retained per diagnostic, so a gate keeps evidence without becoming a dump. */
+	private const FAILURE_DIAGNOSTIC_MAX_FACTS = 3;
 	/** Failure rows retained per run failure in resumability evidence. */
 	public const FAILURE_EVIDENCE_MAX_DIAGNOSTICS = 3;
 
@@ -42,13 +44,22 @@ final class Static_Site_Importer_Public_Error_Projection {
 	/** @param array<string,mixed> $data @return array<string,mixed> */
 	public static function project_public_error_data( array $data ): array {
 		$projected = array();
-		foreach ( array( 'status', 'code', 'phase', 'declaration_id' ) as $field ) {
+		foreach ( array( 'status', 'code', 'phase', 'entity_collection' ) as $field ) {
 			if ( isset( $data[ $field ] ) ) {
 				$value = self::project_public_token( $data[ $field ], 128 );
 				if ( '' !== $value ) {
 					$projected[ $field ] = $value;
 				}
 			}
+		}
+		$declaration_id = self::project_public_identity( $data['declaration_id'] ?? null );
+		if ( '' !== $declaration_id ) {
+			$projected['declaration_id'] = $declaration_id;
+		}
+		// Validator findings are the only statement of why a declaration was rejected; keep them shallow and bounded.
+		$errors = self::project_public_validation_errors( $data['errors'] ?? null );
+		if ( ! empty( $errors ) ) {
+			$projected['errors'] = $errors;
 		}
 		$import_id = self::project_public_import_id( $data['import_id'] ?? null );
 		if ( '' !== $import_id ) {
@@ -117,10 +128,84 @@ final class Static_Site_Importer_Public_Error_Projection {
 
 	/** @param array<int,array<string,mixed>> $diagnostics */
 	public static function project_public_error_message( string $code, array $diagnostics = array() ): string {
-		$source_path = isset( $diagnostics[0]['source_path'] ) ? (string) $diagnostics[0]['source_path'] : '';
+		$diagnostic = is_array( $diagnostics[0] ?? null ) ? $diagnostics[0] : array();
+		// A gate that carried its own facts states them itself; the generic phrasing only covers what did not.
+		$gate = self::project_public_gate_message( $diagnostic );
+		if ( '' !== $gate ) {
+			return $gate;
+		}
+		$source_path = isset( $diagnostic['source_path'] ) ? (string) $diagnostic['source_path'] : '';
 		$message     = '' !== $source_path ? 'Materialization failed for ' . $source_path : 'Materialization failed (' . self::project_public_token( $code, 128, 'materialization_failed' ) . ')';
-		$reason      = self::project_public_reason( is_array( $diagnostics[0] ?? null ) ? $diagnostics[0] : array() );
+		$reason      = self::project_public_reason( $diagnostic );
 		return '' !== $reason ? $message . ': ' . $reason : $message . '.';
+	}
+
+	/**
+	 * State the gate that rejected the import and quote its own first fact.
+	 *
+	 * Both carriers are already redacted and bounded by project_public_diagnostic(),
+	 * so this only phrases what the diagnostic kept.
+	 *
+	 * @param array<string,mixed> $diagnostic
+	 */
+	private static function project_public_gate_message( array $diagnostic ): string {
+		if ( ! empty( $diagnostic['threshold_failures'] ) && is_array( $diagnostic['threshold_failures'] ) ) {
+			return self::project_public_threshold_message( $diagnostic );
+		}
+		if ( ! empty( $diagnostic['errors'] ) && is_array( $diagnostic['errors'] ) && '' !== self::project_public_identity( $diagnostic['declaration_id'] ?? null ) ) {
+			return self::project_public_declaration_message( $diagnostic );
+		}
+		return '';
+	}
+
+	/** @param array<string,mixed> $diagnostic */
+	private static function project_public_threshold_message( array $diagnostic ): string {
+		$failures = array_values( $diagnostic['threshold_failures'] );
+		$first    = is_array( $failures[0] ?? null ) ? $failures[0] : array();
+		$gate     = self::project_public_token( $diagnostic['reason_code'] ?? null, 128 );
+		$gate     = '' !== $gate ? str_replace( '_', ' ', (string) preg_replace( '/_(?:failed|invalid|rejected|exceeded)$/', '', $gate ) ) : 'quality policy';
+		$metric   = isset( $first['metric'] ) ? (string) $first['metric'] : '';
+		$fact     = '';
+		if ( '' !== $metric && isset( $first['actual'] ) ) {
+			$fact = $metric . ' is ' . self::project_public_number( $first['actual'] );
+			foreach ( array( 'maximum' => 'max', 'minimum' => 'min' ) as $field => $label ) {
+				if ( isset( $first[ $field ] ) ) {
+					$fact .= ' (' . $label . ' ' . self::project_public_number( $first[ $field ] ) . ')';
+					break;
+				}
+			}
+		} else {
+			$fact = rtrim( self::project_public_detail( $first['detail'] ?? null, 128 ), '.' );
+		}
+		$source_path = self::project_public_source_path( $first['source_path'] ?? null );
+		if ( '' !== $fact && '' !== $source_path ) {
+			$fact .= ' in ' . $source_path;
+		}
+		$remaining = max( 0, (int) ( $diagnostic['threshold_failure_count'] ?? count( $failures ) ) - 1 );
+		if ( '' !== $fact && 0 < $remaining ) {
+			$fact .= ', and ' . $remaining . ( 1 === $remaining ? ' more page' : ' more pages' );
+		}
+		return 'Materialization failed the ' . $gate . ( '' !== $fact ? ': ' . $fact : '' ) . '.';
+	}
+
+	/** @param array<string,mixed> $diagnostic */
+	private static function project_public_declaration_message( array $diagnostic ): string {
+		$errors     = array_values( $diagnostic['errors'] );
+		$first      = is_array( $errors[0] ?? null ) ? $errors[0] : array();
+		$collection = self::project_public_token( $diagnostic['entity_collection'] ?? null, 128 );
+		$subject    = 'Runtime entity declaration ' . self::project_public_identity( $diagnostic['declaration_id'] ) . ( '' !== $collection ? ' (' . $collection . ')' : '' );
+		$path       = self::project_public_source_path( $first['path'] ?? null );
+		$fact       = trim( ( '' !== $path ? $path . ' — ' : '' ) . self::project_public_detail( $first['detail'] ?? null, 128 ) );
+		if ( '' === $fact ) {
+			return $subject . ' rejected.';
+		}
+		$remaining = max( 0, (int) ( $diagnostic['error_count'] ?? count( $errors ) ) - 1 );
+		return $subject . ' rejected: ' . $fact . ( 0 < $remaining ? ' (and ' . $remaining . ' more)' : '' );
+	}
+
+	/** @param mixed $value */
+	private static function project_public_number( $value ): string {
+		return is_int( $value ) ? (string) $value : rtrim( rtrim( sprintf( '%.4F', (float) $value ), '0' ), '.' );
 	}
 
 	/** @param array<string,mixed> $artifact_run @return array<string,mixed> */
@@ -240,10 +325,13 @@ final class Static_Site_Importer_Public_Error_Projection {
 	/** @param array<string,mixed> $diagnostic @return array<string,mixed> */
 	private static function project_public_diagnostic( array $diagnostic ): array {
 		$row = array();
-		foreach ( array( 'code', 'type', 'kind', 'severity', 'declaration_id', 'entity_type', 'provider', 'reason_code', 'provider_availability_reason' ) as $field ) {
+		foreach ( array( 'code', 'type', 'kind', 'severity', 'entity_type', 'entity_collection', 'provider', 'reason_code', 'provider_availability_reason' ) as $field ) {
 			if ( isset( $diagnostic[ $field ] ) ) {
 				$row[ $field ] = self::project_public_token( $diagnostic[ $field ], 128 );
 			}
+		}
+		if ( isset( $diagnostic['declaration_id'] ) ) {
+			$row['declaration_id'] = self::project_public_identity( $diagnostic['declaration_id'] );
 		}
 		foreach ( array( 'reason', 'phase' ) as $field ) {
 			$value = self::project_public_token( $diagnostic[ $field ] ?? null, 128 );
@@ -318,6 +406,17 @@ final class Static_Site_Importer_Public_Error_Projection {
 				$row['fields'] = $fields;
 			}
 		}
+		// The gate's own measurements and validator findings; without them a reader only learns that something failed.
+		$threshold_failures = self::project_public_threshold_failures( $diagnostic['threshold_failures'] ?? null );
+		if ( ! empty( $threshold_failures ) ) {
+			$row['threshold_failures']      = $threshold_failures;
+			$row['threshold_failure_count'] = is_numeric( $diagnostic['threshold_failure_count'] ?? null ) ? max( 0, (int) $diagnostic['threshold_failure_count'] ) : count( $threshold_failures );
+		}
+		$errors = self::project_public_validation_errors( $diagnostic['errors'] ?? null );
+		if ( ! empty( $errors ) ) {
+			$row['errors']      = $errors;
+			$row['error_count'] = is_numeric( $diagnostic['error_count'] ?? null ) ? max( 0, (int) $diagnostic['error_count'] ) : count( $errors );
+		}
 		if ( empty( $row['code'] ) ) {
 			$row['code'] = 'materialization_failed';
 		}
@@ -325,6 +424,90 @@ final class Static_Site_Importer_Public_Error_Projection {
 		$row['code']    = $code;
 		$row['message'] = self::project_public_error_message( $code, array( $row ) );
 		return $row;
+	}
+
+	/**
+	 * Keep a producer threshold breach as measurements rather than prose.
+	 *
+	 * @param mixed $failures
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function project_public_threshold_failures( $failures ): array {
+		if ( ! is_array( $failures ) ) {
+			return array();
+		}
+		$rows    = array();
+		$scanned = 0;
+		foreach ( $failures as $failure ) {
+			if ( self::FAILURE_DIAGNOSTIC_SCAN_BUDGET <= $scanned++ ) {
+				break;
+			}
+			if ( ! is_array( $failure ) ) {
+				continue;
+			}
+			$row    = array();
+			$metric = self::project_public_token( $failure['metric'] ?? null, 128 );
+			if ( '' !== $metric ) {
+				$row['metric'] = $metric;
+			}
+			foreach ( array( 'actual', 'maximum', 'minimum' ) as $field ) {
+				if ( is_numeric( $failure[ $field ] ?? null ) ) {
+					$row[ $field ] = $failure[ $field ] + 0;
+				}
+			}
+			$source_path = self::project_public_source_path( $failure['source_path'] ?? null );
+			if ( '' !== $source_path ) {
+				$row['source_path'] = $source_path;
+			}
+			if ( empty( $row ) ) {
+				continue;
+			}
+			$detail = self::project_public_detail( $failure['message'] ?? $failure['detail'] ?? null, 128 );
+			if ( '' !== $detail ) {
+				$row['detail'] = $detail;
+			}
+			$rows[] = $row;
+			if ( self::FAILURE_DIAGNOSTIC_MAX_FACTS <= count( $rows ) ) {
+				break;
+			}
+		}
+		return $rows;
+	}
+
+	/**
+	 * Keep validator findings addressable: the pointer says which entity, the detail says which rule.
+	 *
+	 * @param mixed $errors
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function project_public_validation_errors( $errors ): array {
+		if ( ! is_array( $errors ) ) {
+			return array();
+		}
+		$rows    = array();
+		$scanned = 0;
+		foreach ( $errors as $error ) {
+			if ( self::FAILURE_DIAGNOSTIC_SCAN_BUDGET <= $scanned++ ) {
+				break;
+			}
+			$row  = array();
+			$path = self::project_public_source_path( is_array( $error ) ? ( $error['path'] ?? null ) : null );
+			if ( '' !== $path ) {
+				$row['path'] = $path;
+			}
+			$detail = self::project_public_detail( is_array( $error ) ? ( $error['message'] ?? $error['detail'] ?? null ) : $error, 128 );
+			if ( '' !== $detail ) {
+				$row['detail'] = $detail;
+			}
+			if ( empty( $row ) ) {
+				continue;
+			}
+			$rows[] = $row;
+			if ( self::FAILURE_DIAGNOSTIC_MAX_FACTS <= count( $rows ) ) {
+				break;
+			}
+		}
+		return $rows;
 	}
 
 	private static function project_public_source_path( $value ): string {
@@ -348,6 +531,10 @@ final class Static_Site_Importer_Public_Error_Projection {
 			return '';
 		}
 		$detail = self::project_public_detail( $diagnostic['detail'] ?? null );
+		if ( '' === $detail && is_array( $diagnostic['errors'][0] ?? null ) ) {
+			// An unattributed validator finding still says which rule rejected the import.
+			$detail = trim( ( '' !== (string) ( $diagnostic['errors'][0]['path'] ?? '' ) ? $diagnostic['errors'][0]['path'] . ' — ' : '' ) . (string) ( $diagnostic['errors'][0]['detail'] ?? '' ) );
+		}
 		if ( '' === $detail ) {
 			$detail = self::project_public_token( $diagnostic['reason'] ?? null, 128 );
 		}
@@ -397,6 +584,11 @@ final class Static_Site_Importer_Public_Error_Projection {
 	}
 
 	private static function project_public_import_id( $value ): string {
+		return self::project_public_identity( $value );
+	}
+
+	/** An importer-owned identifier: a slug-shaped token, or the digest such identifiers are usually derived as. */
+	private static function project_public_identity( $value ): string {
 		$token = self::project_public_token( $value, 128 );
 		return '' !== $token ? $token : self::project_public_hash( $value );
 	}

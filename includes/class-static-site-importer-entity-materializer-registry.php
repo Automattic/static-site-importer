@@ -18,6 +18,9 @@ if ( ! class_exists( 'Static_Site_Importer_Provider_Layout_Overlay' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Provider_Form_Runtime_V1' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-provider-form-runtime.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Loss_Classes' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-diagnostic-loss-classes.php';
+}
 
 /**
  * Registers import-time entity validators, dependency requirements, and writers.
@@ -227,12 +230,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 *
 	 * @param array<string,mixed> $adapter  Adapter definition.
 	 * @param array<string,mixed> $manifest Validated manifest.
+	 * @param array<string,mixed> $args     Import-scoped context (e.g. resolved source assets) an
+	 *                                      adapter's materializer may opt into reading.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	public static function materialize( array $adapter, array $manifest ) {
+	public static function materialize( array $adapter, array $manifest, array $args = array() ) {
 		$materializer = $adapter['materializer'] ?? null;
 		if ( is_callable( $materializer ) ) {
-			$result = call_user_func( $materializer, $manifest );
+			$result = call_user_func( $materializer, $manifest, $args );
 			if ( function_exists( 'is_wp_error' ) && is_wp_error( $result ) ) {
 				return $result;
 			}
@@ -386,20 +391,35 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				$manifest['schema_version'] = 1;
 			}
 			$validation = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ? array( 'errors' => array() ) : self::validate_manifest_generic( $adapter, $manifest );
+			$accepted   = is_array( $validation[ $collection ] ?? null ) ? $validation[ $collection ] : array();
 			if ( ! empty( $validation['errors'] ) ) {
-				return new WP_Error(
-					'static_site_importer_runtime_entity_invalid',
-					'Runtime entity declaration failed SSI provider validation.',
-					array(
-						'status'         => 'rejected',
-						'declaration_id' => $key,
-						'errors'         => $validation['errors'],
-					)
-				);
+				// Entity validators report per row: an unmappable row is rejected
+				// without discarding the rows that did validate, so partial feature
+				// parity is still materialized. Honour that here -- only a
+				// declaration that produced no usable row is rejected outright.
+				//
+				// The rejection carries the collection and error count alongside the
+				// errors themselves, because the user-facing gate message is built
+				// from this data and "failed validation" without the facts is not
+				// actionable (#1785).
+				if ( empty( $accepted ) ) {
+					return new WP_Error(
+						'static_site_importer_runtime_entity_invalid',
+						'Runtime entity declaration failed SSI provider validation.',
+						array(
+							'status'            => 'rejected',
+							'declaration_id'    => $key,
+							'entity_collection' => $collection,
+							'error_count'       => count( $validation['errors'] ),
+							'errors'            => $validation['errors'],
+						)
+					);
+				}
+				$lifecycle['diagnostics'][] = self::rejected_runtime_entity_rows_diagnostic( $key, $adapter, count( $entities ), count( $accepted ), $validation['errors'] );
 			}
 			// Dependency preparation intentionally defers provider validation until
 			// resume, but its checkpoint must still retain every declared entity.
-			$normalized_manifest = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ? $manifest : array( $collection => $validation[ $collection ] ?? array() );
+			$normalized_manifest = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ? $manifest : array( $collection => $accepted );
 			if ( 'products' === $collection && 'prepare' !== ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
 				$normalized_manifest['schema_version'] = 1;
 			}
@@ -450,6 +470,43 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$lifecycle['status'] = 'runtime_declarations';
 		}
 		return $lifecycle;
+	}
+
+	/**
+	 * Report the rows of a runtime entity declaration a provider validator rejected.
+	 *
+	 * Entity validators are per row by contract, so the declaration is still
+	 * materialized from the rows that validated. The rejected rows keep the
+	 * converted source markup already on the page, which is the same loss class
+	 * as a provider decline.
+	 *
+	 * @param string              $declaration_id Declaration reconciliation identity.
+	 * @param array<string,mixed> $adapter        Adapter definition.
+	 * @param int                 $declared       Declared row count.
+	 * @param int                 $accepted       Validated row count.
+	 * @param array<int,mixed>    $errors         Validator errors for the rejected rows.
+	 * @return array<string,mixed>
+	 */
+	private static function rejected_runtime_entity_rows_diagnostic( string $declaration_id, array $adapter, int $declared, int $accepted, array $errors ): array {
+		$collection = (string) ( $adapter['entity_collection'] ?? 'entities' );
+		$rejected   = max( 0, $declared - $accepted );
+		return array(
+			'id'                      => 'runtime-entity-rows-rejected-' . hash( 'sha256', $declaration_id . "\n" . $collection ),
+			'code'                    => 'runtime_entity_rows_rejected',
+			'type'                    => 'static-site-importer',
+			'severity'                => 'warning',
+			'stage'                   => 'entity_materialization',
+			'loss_class'              => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+			'declaration_id'          => $declaration_id,
+			'reconciliation_identity' => $declaration_id,
+			'provider'                => (string) ( $adapter['provider'] ?? '' ),
+			'entity_collection'       => $collection,
+			'declared_count'          => $declared,
+			'accepted_count'          => $accepted,
+			'rejected_count'          => $rejected,
+			'errors'                  => array_slice( array_values( array_filter( $errors, 'is_array' ) ), 0, 16 ),
+			'message'                 => $rejected . ' of ' . $declared . ' declared ' . $collection . ' failed SSI provider validation and were skipped; the remaining ' . $accepted . ' materialized. The imported pages keep their converted source markup for the skipped rows.',
+		);
 	}
 
 	private static function runtime_declaration_is_required( array $declaration, array $declarations ): bool {
@@ -676,7 +733,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				);
 				continue;
 			}
-			$report = self::materialize( $adapter, $prepared['manifest'] );
+			$report = self::materialize( $adapter, $prepared['manifest'], $args );
 			if ( $report instanceof WP_Error ) {
 				$reports[ $id ] = array(
 					'status' => 'error',
@@ -883,14 +940,19 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 			}
 
-			// Group manifest entities that declare exactly one shared
-			// `commerce_collection` anchor (a detected product grid, where every
-			// member product's own binding points at the same one preserved
-			// source-page region) so that shared anchor resolves to exactly one
-			// replacement instead of racing N per-product replacements against the
-			// same source-page occurrence. Every other binding (forms, single
-			// products) keeps its established one-entity-one-binding resolution,
-			// unchanged.
+			// Group individual bindings — not whole entities — that declare one
+			// shared `commerce_collection` anchor (a detected product grid,
+			// where every member product's own binding for that grid points at
+			// the same one preserved source-page region) so that shared anchor
+			// resolves to exactly one replacement instead of racing N per-product
+			// replacements against the same source-page occurrence. Grouping by
+			// individual binding, rather than by an entity's full binding list,
+			// is what lets one product legitimately belong to more than one grid
+			// at once: it then carries one `commerce_collection` binding per
+			// grid, each judged and coalesced against its own grid's members
+			// independently of how many other anchors that same entity also
+			// claims. Every other binding (forms, single products) keeps its
+			// established one-binding-one-resolution, unchanged.
 			$groups      = array();
 			$group_order = array();
 			foreach ( $manifest_entities as $entity ) {
@@ -902,20 +964,25 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				if ( self::entity_result_declined( $result ) ) {
 					continue;
 				}
-				$first_binding = is_array( $entity['bindings'][0] ?? null ) ? $entity['bindings'][0] : array();
-				$is_collection = 1 === count( $entity['bindings'] ) && 'commerce_collection' === ( $first_binding['role'] ?? '' );
-				$group_key     = $is_collection
-					? 'collection:' . (string) ( $first_binding['source_path'] ?? '' ) . "\n" . hash( 'sha256', (string) ( $first_binding['search_block_markup'] ?? '' ) ) . "\n" . (string) ( $first_binding['occurrence'] ?? '' )
-					: 'single:' . $key . ':' . count( $groups );
-				if ( ! isset( $groups[ $group_key ] ) ) {
-					$groups[ $group_key ] = array();
-					$group_order[]        = $group_key;
+				foreach ( $entity['bindings'] as $binding ) {
+					if ( ! is_array( $binding ) ) {
+						continue;
+					}
+					$is_collection = 'commerce_collection' === ( $binding['role'] ?? '' );
+					$group_key     = $is_collection
+						? 'collection:' . (string) ( $binding['source_path'] ?? '' ) . "\n" . hash( 'sha256', (string) ( $binding['search_block_markup'] ?? '' ) ) . "\n" . (string) ( $binding['occurrence'] ?? '' )
+						: 'single:' . $key . ':' . count( $groups );
+					if ( ! isset( $groups[ $group_key ] ) ) {
+						$groups[ $group_key ] = array();
+						$group_order[]        = $group_key;
+					}
+					$groups[ $group_key ][] = array(
+						'key'     => $key,
+						'entity'  => $entity,
+						'binding' => $binding,
+						'result'  => $result,
+					);
 				}
-				$groups[ $group_key ][] = array(
-					'key'    => $key,
-					'entity' => $entity,
-					'result' => $result,
-				);
 			}
 
 			foreach ( $group_order as $group_key ) {
@@ -934,9 +1001,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 								)
 							);
 						}
-						foreach ( $entity['bindings'] as $binding ) {
-							$bindings[] = self::block_binding_record( $declaration_id, $binding, $replacement, $entity, $prepared['adapter'] );
-						}
+						$bindings[] = self::block_binding_record( $declaration_id, $member['binding'], $replacement, $entity, $prepared['adapter'] );
 					}
 					continue;
 				}
@@ -951,7 +1016,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						$product_ids[] = $id;
 					}
 				}
-				$anchor_binding = $members[0]['entity']['bindings'][0];
+				$anchor_binding = $members[0]['binding'];
 				$grid_entity    = array(
 					'entity_kind' => 'product_grid',
 					'product_ids' => $product_ids,
@@ -1241,13 +1306,40 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					'message' => 'sale_price must be a decimal string such as "15.00" when provided.',
 				);
 			}
-			foreach ( array( 'description', 'short_description', 'status', 'stock_status', 'image' ) as $field ) {
+			foreach ( array( 'description', 'short_description', 'status', 'stock_status' ) as $field ) {
 				if ( isset( $product[ $field ] ) && ! is_string( $product[ $field ] ) ) {
 					$errors[] = array(
 						'path'    => $path_prefix . '.' . $field,
 						'message' => $field . ' must be a string when provided.',
 					);
 				}
+			}
+			$image = array(
+				'src' => '',
+				'alt' => '',
+			);
+			if ( array_key_exists( 'image', $product ) ) {
+				$image = self::manifest_product_image( $product['image'] );
+				if ( null === $image ) {
+					$errors[] = array(
+						'path'    => $path_prefix . '.image',
+						'message' => 'image must be a string source path, or an { src, alt } object with a non-empty src, when provided.',
+					);
+					$image    = array(
+						'src' => '',
+						'alt' => '',
+					);
+				}
+			}
+			if ( isset( $product['image_alt'] ) && ! is_string( $product['image_alt'] ) ) {
+				$errors[] = array(
+					'path'    => $path_prefix . '.image_alt',
+					'message' => 'image_alt must be a string when provided.',
+				);
+			} elseif ( '' === $image['alt'] && isset( $product['image_alt'] ) && is_string( $product['image_alt'] ) ) {
+				// A sibling `image_alt` field carries alt text for producers that
+				// keep `image` a bare source path (e.g. the product-finding bridge).
+				$image['alt'] = trim( $product['image_alt'] );
 			}
 			foreach ( array( 'categories', 'source_selectors' ) as $field ) {
 				if ( ! isset( $product[ $field ] ) ) {
@@ -1282,10 +1374,16 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'slug'          => $slug,
 				'regular_price' => $regular_price,
 			);
-			foreach ( array( 'sale_price', 'description', 'short_description', 'categories', 'image', 'status', 'stock_status', 'stock_quantity', 'source_selectors' ) as $field ) {
+			foreach ( array( 'sale_price', 'description', 'short_description', 'categories', 'status', 'stock_status', 'stock_quantity', 'source_selectors' ) as $field ) {
 				if ( array_key_exists( $field, $product ) ) {
 					$summary[ $field ] = $product[ $field ];
 				}
+			}
+			if ( '' !== $image['src'] ) {
+				$summary['image'] = $image['src'];
+			}
+			if ( '' !== $image['alt'] ) {
+				$summary['image_alt'] = $image['alt'];
 			}
 			if ( isset( $product['bindings'] ) ) {
 				if ( ! is_array( $product['bindings'] ) || ! array_is_list( $product['bindings'] ) || empty( $product['bindings'] ) ) {
@@ -1781,7 +1879,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 		}
 		foreach ( $candidate['provenance'] as $fact ) {
-			if ( ! is_array( $fact ) || ! self::has_only_keys( $fact, array( 'source_path', 'source_sha256', 'selector', 'condition', 'properties' ) ) || ! is_string( $fact['source_path'] ?? null ) || ! preg_match( '~^(?!.*(?:^|/)\.\.(?:/|$))[A-Za-z0-9._/-]+$~D', $fact['source_path'] ) || ! preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ?? '' ) || ! is_string( $fact['selector'] ?? null ) || '' === trim( $fact['selector'] ) || strlen( $fact['selector'] ) > 1024 || ( $fact['condition'] ?? null ) !== $condition || ! is_array( $fact['properties'] ?? null ) || empty( $fact['properties'] ) || array_filter( $fact['properties'], static fn( $property ): bool => ! is_string( $property ) || ! isset( $properties[ str_replace( '-', '_', $property ) ], $candidate['styles'][ str_replace( '-', '_', $property ) ] ) ) ) {
+			if ( ! is_array( $fact ) || ! self::has_only_keys( $fact, array( 'source_path', 'source_sha256', 'selector', 'condition', 'properties' ) ) || ! self::is_safe_artifact_source_path( $fact['source_path'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ?? '' ) || ! is_string( $fact['selector'] ?? null ) || '' === trim( $fact['selector'] ) || strlen( $fact['selector'] ) > 1024 || ( $fact['condition'] ?? null ) !== $condition || ! is_array( $fact['properties'] ?? null ) || empty( $fact['properties'] ) || array_filter( $fact['properties'], static fn( $property ): bool => ! is_string( $property ) || ! isset( $properties[ str_replace( '-', '_', $property ) ], $candidate['styles'][ str_replace( '-', '_', $property ) ] ) ) ) {
 				return array( 'error' => 'presentation_graph provenance is malformed.' );
 			}
 		}
@@ -2039,5 +2137,36 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 */
 	private static function is_manifest_price( string $price ): bool {
 		return 1 === preg_match( '/^(?:0|[1-9][0-9]*)(?:\.[0-9]{2})?$/', $price );
+	}
+
+	/**
+	 * Normalize a manifest product `image` field into its src/alt parts.
+	 *
+	 * A producer may declare an image as a bare artifact-relative source path
+	 * (the current Blocks Engine shape) or as an `{ src, alt }` object (the
+	 * shape a producer carrying detected alt text emits). Both are admitted so
+	 * the seeder always reads one normalized shape.
+	 *
+	 * @param mixed $image Raw manifest `image` field.
+	 * @return array{src:string,alt:string}|null Null when the field is present but malformed.
+	 */
+	private static function manifest_product_image( mixed $image ): ?array {
+		if ( is_string( $image ) ) {
+			return array(
+				'src' => trim( $image ),
+				'alt' => '',
+			);
+		}
+
+		if ( is_array( $image ) && ! array_is_list( $image ) ) {
+			$src = isset( $image['src'] ) && is_string( $image['src'] ) ? trim( $image['src'] ) : '';
+			$alt = isset( $image['alt'] ) && is_string( $image['alt'] ) ? trim( $image['alt'] ) : '';
+			return '' === $src ? null : array(
+				'src' => $src,
+				'alt' => $alt,
+			);
+		}
+
+		return null;
 	}
 }

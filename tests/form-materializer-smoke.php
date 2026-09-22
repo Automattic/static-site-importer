@@ -381,6 +381,55 @@ namespace {
 	$assert( 1 === count( $submit_attrs ) && ! array_key_exists( 'style', $submit_attrs[0] ), 'source-submit-block-claims-no-unrenderable-style-attribute', wp_json_encode( $submit_attrs ) );
 	$assert( str_contains( $markup, 'hello@example.com' ), 'markup-mailto-recipient' );
 	$assert( str_contains( $markup, '"options":["Sales","Support"]' ), 'markup-select-options' );
+	$placeholder_select_field = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
+		'select',
+		'select',
+		array(
+			'name'    => 'membership_type',
+			'label'   => 'Membership type',
+			'options' => array(
+				array( 'label' => 'Select', 'value' => '', 'placeholder' => true, 'disabled' => true, 'selected' => true ),
+				array( 'label' => 'Ordinary member', 'value' => 'Ordinary member' ),
+				array( 'label' => 'Life member', 'value' => 'Life member' ),
+				array( 'label' => 'Overseas member', 'value' => 'Overseas member' ),
+			),
+		)
+	);
+	$placeholder_select_input = array();
+	foreach ( $placeholder_select_field['innerBlocks'] ?? array() as $inner ) {
+		if ( 'jetpack/input' === ( $inner['name'] ?? '' ) ) {
+			$placeholder_select_input = $inner;
+			break;
+		}
+	}
+	$assert( array( 'Ordinary member', 'Life member', 'Overseas member' ) === ( $placeholder_select_field['attrs']['options'] ?? null ), 'select-placeholder-option-is-omitted-from-the-provider-option-list', wp_json_encode( $placeholder_select_field ) );
+	$assert( 'Select' === ( $placeholder_select_input['attrs']['placeholder'] ?? null ), 'select-placeholder-option-maps-onto-jetpack-input-placeholder', wp_json_encode( $placeholder_select_input ) );
+	$assert( ! in_array( 'Select an option', $placeholder_select_field['attrs']['options'] ?? array(), true ), 'select-does-not-emit-a-synthetic-select-an-option-label', wp_json_encode( $placeholder_select_field ) );
+	$placeholder_select_markup = Static_Site_Importer_Form_Seeder::seed(
+		array(
+			'forms' => array(
+				array(
+					'form'     => array( 'action' => '/join', 'method' => 'post' ),
+					'controls' => array(
+						array(
+							'tag'     => 'select',
+							'type'    => 'select',
+							'name'    => 'membership_type',
+							'label'   => 'Membership type',
+							'options' => array(
+								array( 'label' => 'Select', 'value' => '', 'placeholder' => true, 'disabled' => true, 'selected' => true ),
+								array( 'label' => 'Ordinary member' ),
+								array( 'label' => 'Life member' ),
+								array( 'label' => 'Overseas member' ),
+							),
+						),
+						array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+					),
+				),
+			),
+		)
+	)['forms'][0]['block_markup'] ?? '';
+	$assert( str_contains( $placeholder_select_markup, '"options":["Ordinary member","Life member","Overseas member"]' ) && str_contains( $placeholder_select_markup, '"placeholder":"Select"' ) && ! str_contains( $placeholder_select_markup, 'Select an option' ), 'seeded-select-emits-source-placeholder-and-source-options-only', $placeholder_select_markup );
 	$assert( 1 === preg_match( '/<div class="wp-block-jetpack-contact-form form contact ssi-form-[a-f0-9]{12}">/', $markup ), 'markup-contact-form-wrapper-and-source-classes' );
 	$assert( 1 === preg_match( '/<!-- wp:jetpack\/field-text (?=[^\n]*"required":true)(?=[^\n]*"id":"ssi-form-[a-f0-9]{12}-field-0")(?=[^\n]*"className":"ssi-node-[a-f0-9]{12}")(?=[^\n]*"shareFieldAttributes":false)[^\n]* -->/', $markup ), 'markup-field-wrapper-keeps-provider-layout-class-and-instance-identity' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/label {"label":"Your name","className":"source-label"} /-->' ) && str_contains( $markup, '<!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"className":"source-field"} /-->' ), 'markup-field-canonical-label-and-input-children-carry-source-classes' );
@@ -412,6 +461,44 @@ namespace {
 	);
 	$assert( 'Link to your design work (Behance, Dribbble, personal site, etc.)' === ( $described_url_field['attrs']['helpText'] ?? null ), 'described-url-control-carries-jetpack-help-text-attribute', wp_json_encode( $described_url_field ) );
 	$assert( array() === ( $described_url_field['losses'] ?? array() ), 'described-url-control-reports-no-loss', wp_json_encode( $described_url_field ) );
+	$concatenated_description_field = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
+		'input',
+		'text',
+		array(
+			'name'        => 'occupation',
+			'label'       => 'Occupation / businessHelps the trade committee connect members.',
+			'description' => 'Helps the trade committee connect members.',
+		)
+	);
+	$concatenated_description_label = array();
+	foreach ( $concatenated_description_field['innerBlocks'] ?? array() as $inner ) {
+		if ( 'jetpack/label' === ( $inner['name'] ?? '' ) ) {
+			$concatenated_description_label = $inner;
+			break;
+		}
+	}
+	$assert( 'Occupation / business' === ( $concatenated_description_label['attrs']['label'] ?? null ), 'concatenated-description-is-removed-from-the-label', wp_json_encode( $concatenated_description_label ) );
+	$assert( 'Helps the trade committee connect members.' === ( $concatenated_description_field['attrs']['helpText'] ?? null ), 'concatenated-description-maps-onto-jetpack-help-text', wp_json_encode( $concatenated_description_field ) );
+	$described_occupation_markup = Static_Site_Importer_Form_Seeder::seed(
+		array(
+			'forms' => array(
+				array(
+					'form'     => array( 'action' => '/join', 'method' => 'post' ),
+					'controls' => array(
+						array(
+							'tag'         => 'input',
+							'type'        => 'text',
+							'name'        => 'occupation',
+							'label'       => 'Occupation / business',
+							'description' => 'Helps the trade committee connect members.',
+						),
+						array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+					),
+				),
+			),
+		)
+	)['forms'][0]['block_markup'] ?? '';
+	$assert( str_contains( $described_occupation_markup, '<!-- wp:jetpack/label {"label":"Occupation / business"} /-->' ) && 1 === preg_match( '/<!-- wp:jetpack\/field-text \{[^\n]*"helpText":"Helps the trade committee connect members\."[^\n]*\} -->/', $described_occupation_markup ) && ! str_contains( $described_occupation_markup, 'businessHelps' ), 'seeded-described-text-field-keeps-label-and-help-text-apart', $described_occupation_markup );
 	$undescribed_url_field = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
 		'input',
 		'url',
@@ -590,6 +677,63 @@ namespace {
 	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && in_array( 'provider_equal_width_fields', $topology_ops, true ) && in_array( 'provider_interaction_carrier', $topology_ops, true ) && 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.5rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.5rem\);margin-block-start:0!important\}/', (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ), 'computed-layout-equal-grid-applies-with-bounded-receipt', wp_json_encode( array( 'ops' => $topology_ops, 'css' => $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ) );
 	$assert( str_contains( $topology_markup, 'ssi-textarea-rows-2' ) && str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:auto' ) && ! str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:200px' ), 'topology-unstyled-source-textarea-carries-two-rows-and-neutralizes-the-provider-height' );
 
+	// A layout graph may contain the complete control ancestry while the producer
+	// omits its parallel topology document. Recover that tree so proven grid rows
+	// do not silently flatten into Jetpack's full-width default.
+	$layout_only_form = $topology_form;
+	unset( $layout_only_form['forms'][0]['control_topology'] );
+	$layout_only_form['forms'][0]['layout_graph']['nodes'] = array(
+		array( 'id' => 'wrapper-0', 'kind' => 'container', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'div', 'classes' => array( 'row-2' ) ), 'layout' => array( 'display' => 'grid', 'columns' => 'repeat(2, 1fr)', 'gap' => '1rem' ), 'provenance' => array() ),
+		array( 'id' => 'wrapper-1', 'kind' => 'container', 'parent' => 'wrapper-0', 'order' => 0, 'source' => array( 'tag' => 'div', 'classes' => array( 'field' ) ), 'layout' => array(), 'provenance' => array() ),
+		array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'source' => array( 'tag' => 'input', 'classes' => array() ), 'layout' => array(), 'provenance' => array() ),
+		array( 'id' => 'wrapper-2', 'kind' => 'container', 'parent' => 'wrapper-0', 'order' => 1, 'source' => array( 'tag' => 'div', 'classes' => array( 'field' ) ), 'layout' => array(), 'provenance' => array() ),
+		array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-2', 'order' => 0, 'source' => array( 'tag' => 'input', 'classes' => array() ), 'layout' => array(), 'provenance' => array() ),
+		array( 'id' => 'control-2', 'kind' => 'control', 'parent' => null, 'order' => 1, 'source' => array( 'tag' => 'input', 'classes' => array() ), 'layout' => array(), 'provenance' => array() ),
+		array( 'id' => 'control-3', 'kind' => 'control', 'parent' => null, 'order' => 2, 'source' => array( 'tag' => 'textarea', 'classes' => array() ), 'layout' => array(), 'provenance' => array() ),
+	);
+	$layout_only_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $layout_only_form );
+	$layout_only_seed      = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $layout_only_validated['forms'] ?? array() ) );
+	$layout_only_markup    = (string) ( $layout_only_seed['forms'][0]['block_markup'] ?? '' );
+	$assert( empty( $layout_only_validated['errors'] ) && 2 === substr_count( $layout_only_markup, '"width":50' ) && in_array( 'provider_equal_width_fields', array_column( $layout_only_seed['forms'][0]['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'layout-graph-only-form-recovers-grid-topology-and-field-widths', wp_json_encode( $layout_only_seed ) );
+
+	$responsive_equal_form = $topology_form;
+	$responsive_equal_condition = array( 'kind' => 'media', 'query' => '(width>=40rem)' );
+	$responsive_equal_form['forms'][0]['layout_graph']['nodes'][0]['layout'] = array( 'display' => 'grid', 'gap' => '1rem' );
+	$responsive_equal_form['forms'][0]['layout_graph']['variants'][] = array(
+		'node'         => 'wrapper-0',
+		'condition'    => $responsive_equal_condition,
+		'layout_patch' => array( 'columns' => 'repeat(2,minmax(0,1fr))' ),
+		'precedence'   => array( 'grid-template-columns' => array( 'source_order' => 1, 'specificity' => 10, 'important' => false ) ),
+		'provenance'   => array(
+			array(
+				'source_path'   => 'assets/form.css',
+				'source_sha256' => str_repeat( 'd', 64 ),
+				'selector'      => '.row-2',
+				'condition'     => $responsive_equal_condition,
+				'properties'    => array( 'grid-template-columns' ),
+			),
+		),
+	);
+	$responsive_equal_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $responsive_equal_form );
+	$responsive_equal_seed      = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $responsive_equal_validated['forms'] ) );
+	$responsive_equal_row       = $responsive_equal_seed['forms'][0] ?? array();
+	$responsive_equal_css       = (string) ( $responsive_equal_row['provider_layout_overlay_css']['css'] ?? '' );
+	$responsive_equal_markup    = (string) ( $responsive_equal_row['block_markup'] ?? '' );
+	$assert(
+		empty( $responsive_equal_validated['errors'] )
+			&& 'mapped' === ( $responsive_equal_row['status'] ?? '' )
+			&& 2 === substr_count( $responsive_equal_markup, '"width":50' )
+			&& in_array( 'provider_equal_width_fields', array_column( $responsive_equal_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true )
+			&& str_contains( $responsive_equal_css, '@media (width<40rem){' )
+			&& 2 === preg_match_all( '/@media \(width<40rem\)\{\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{flex:1 1 100%;width:100%\}\}/', $responsive_equal_css )
+			&& 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.5rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.5rem\);margin-block-start:0!important\}/', $responsive_equal_css )
+			&& ( 402 / 16 ) < 40
+			&& ( 1440 / 16 ) >= 40
+			&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $responsive_equal_row['provider_layout_overlay_css'] ?? null ),
+		'responsive-equal-width-row-emits-inverted-overlay-media-full-width-at-402px-two-up-at-1440px',
+		wp_json_encode( array( 'validation' => $responsive_equal_validated, 'css' => $responsive_equal_css, 'markup' => $responsive_equal_markup ) )
+	);
+
 	// --- A source utility-framework grid row materializes as provider field widths ---
 	// Reproduces a real base44/Tailwind CSS v4 contact form (labels are plain,
 	// unassociated siblings with no `for`/`id`/`name`, exactly as captured): a
@@ -661,6 +805,15 @@ namespace {
 	$assert(
 		1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{margin-block-start:0!important\}/', $tailwind_grid_css_out ),
 		'mobile-first-equal-column-row-also-neutralizes-the-flattened-submit-siblings-margin',
+		$tailwind_grid_css_out
+	);
+	$assert(
+		str_contains( $tailwind_grid_css_out, '@media (width<768px){' )
+			&& 2 === preg_match_all( '/@media \(width<768px\)\{\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{flex:1 1 100%;width:100%\}\}/', $tailwind_grid_css_out )
+			&& 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.75rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.75rem\);margin-block-start:0!important\}/', $tailwind_grid_css_out )
+			&& 402 < 768
+			&& 1440 >= 768,
+		'mobile-first-equal-column-row-emits-inverted-overlay-media-so-402px-is-full-width-and-1440px-stays-two-up',
 		$tailwind_grid_css_out
 	);
 	// A source form that occupies a page-grid item through a host wrapper (the
@@ -749,6 +902,194 @@ namespace {
 			&& ! str_contains( $field_list_wrap, 'wp-block-jetpack-contact-form panel grid gap-6' ),
 		'provider-runtime-keeps-a-sibling-submit-outside-the-gapped-field-list',
 		$field_list_wrap
+	);
+
+	$card_chrome_hoist = Static_Site_Importer_Form_Seeder::project_provider_form_container_placement(
+		'<div class="jetpack-contact-form-container"><form class="jetpack-contact-form__form"><div class="wp-block-jetpack-contact-form space-y-5 rounded-lg border bg-card p-7 ssi-form-123456789abc">fields</div></form></div>',
+		array( 'attrs' => array( 'className' => 'space-y-5 rounded-lg border bg-card p-7 ssi-form-123456789abc' ) )
+	);
+	$assert(
+		str_contains( $card_chrome_hoist, 'class="jetpack-contact-form-container space-y-5 rounded-lg border bg-card p-7 ssi-form-123456789abc"' )
+			&& str_contains( $card_chrome_hoist, 'wp-block-jetpack-contact-form space-y-5 ssi-form-123456789abc' )
+			&& ! preg_match( '/wp-block-jetpack-contact-form[^"]*\bp-7\b/', $card_chrome_hoist )
+			&& ! preg_match( '/wp-block-jetpack-contact-form[^"]*\brounded-lg\b/', $card_chrome_hoist )
+			&& ! preg_match( '/wp-block-jetpack-contact-form[^"]*\bbg-card\b/', $card_chrome_hoist ),
+		'provider-runtime-keeps-card-chrome-off-the-inner-field-list',
+		$card_chrome_hoist
+	);
+	// In-form heading + a nested `grid sm:grid-cols-2` name/phone row. The heading
+	// is copy inside the form (producer `context_before`), so it is an inner block
+	// of jetpack/contact-form rather than a page-grid sibling. The row maps through
+	// provider_equal_width_fields onto Jetpack `width: 50`; its grid classes must
+	// not be copied onto the form container.
+	$in_form_css  = '.space-y-5>:not([hidden])~:not([hidden]){margin-top:1.25rem}.rounded-lg{border-radius:.5rem}.border{border-width:1px}.p-7{padding:1.75rem}'
+		. '.grid{display:grid}.gap-5{gap:1.25rem}@media (width>=40rem){.sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}';
+	$in_form_html = '<style>' . $in_form_css . '</style><div class="page-grid"><section class="intro"><h1>Contact</h1></section>'
+		. '<form class="space-y-5 rounded-lg border bg-card p-7">'
+		. '<h2 class="font-serif text-2xl text-card-foreground">Send a message</h2>'
+		. '<div class="grid gap-5 sm:grid-cols-2">'
+		. '<label class="block"><span>Your name</span><input required></label>'
+		. '<label class="block"><span>Mobile number</span><input type="tel" required></label>'
+		. '</div>'
+		. '<label class="block"><span>Email</span><input type="email"></label>'
+		. '<label class="block"><span>Subject</span><input required></label>'
+		. '<label class="block"><span>Message</span><textarea rows="5" required></textarea></label>'
+		. '<button type="submit">Send message</button>'
+		. '</form></div>';
+	$in_form_source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $in_form_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	if ( is_array( $in_form_source['binding'] ?? null ) && is_string( $in_form_source['binding']['search_block_markup'] ?? null ) ) {
+		$in_form_source['bindings'] = array(
+			array(
+				'schema'              => 'generic/block-binding/v1',
+				'source_path'         => 'contact.html',
+				'search_block_markup' => $in_form_source['binding']['search_block_markup'],
+				'occurrence'          => 1,
+				'role'                => 'form',
+			),
+		);
+	}
+	$in_form_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $in_form_source ) ) );
+	$in_form_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $in_form_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$in_form_markup    = (string) ( $in_form_row['block_markup'] ?? '' );
+	$in_form_parsed    = array_values( array_filter( parse_blocks( $in_form_markup ), static fn( array $block ): bool => ! empty( $block['blockName'] ) ) );
+	$in_form_contact   = $in_form_parsed[0] ?? array();
+	$in_form_inners    = array_values( array_filter( $in_form_contact['innerBlocks'] ?? array(), static fn( array $block ): bool => ! empty( $block['blockName'] ) ) );
+	$in_form_attrs     = is_array( $in_form_contact['attrs'] ?? null ) ? $in_form_contact['attrs'] : array();
+	$in_form_class     = (string) ( $in_form_attrs['className'] ?? '' );
+	$in_form_ops       = array_column( $in_form_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' );
+	$assert( empty( $in_form_validated['errors'] ) && 'mapped' === ( $in_form_row['status'] ?? '' ), 'in-form-heading-and-field-row-manifest-validates', wp_json_encode( $in_form_validated ) );
+	$assert(
+		1 === count( $in_form_parsed )
+			&& 'jetpack/contact-form' === ( $in_form_contact['blockName'] ?? '' )
+			&& 'core/heading' === ( $in_form_inners[0]['blockName'] ?? '' )
+			&& 'Send a message' === trim( wp_strip_all_tags( (string) ( $in_form_inners[0]['innerHTML'] ?? '' ) ) )
+			&& ( '' === (string) ( $in_form_source['form']['context_before'][0]['class'] ?? '' )
+				|| ( (string) ( $in_form_source['form']['context_before'][0]['class'] ?? '' ) === ( $in_form_inners[0]['attrs']['className'] ?? '' )
+					&& str_contains( (string) ( $in_form_inners[0]['innerHTML'] ?? '' ), 'class="wp-block-heading ' . (string) ( $in_form_source['form']['context_before'][0]['class'] ?? '' ) . '"' ) ) )
+			&& ! preg_match( '/<!-- wp:heading[\s\S]*<!-- wp:jetpack\/contact-form /', $in_form_markup )
+			&& 2 === substr_count( $in_form_markup, '"width":50' )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-text \{[^}]*"width":50/', $in_form_markup )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-telephone \{[^}]*"width":50/', $in_form_markup )
+			&& in_array( 'provider_equal_width_fields', $in_form_ops, true )
+			&& ! preg_match( '/(?:^|\s)grid(?:\s|$)/', $in_form_class )
+			&& ! str_contains( $in_form_class, 'grid-cols-2' )
+			&& str_contains( $in_form_class, 'space-y-5' )
+			&& $in_form_markup === serialize_blocks( parse_blocks( $in_form_markup ) ),
+		'in-form-heading-stays-inside-contact-form-and-name-phone-use-jetpack-width-not-host-grid',
+		wp_json_encode(
+			array(
+				'ops'     => $in_form_ops,
+				'class'   => $in_form_class,
+				'inners'  => array_column( $in_form_inners, 'blockName' ),
+				'markup'  => $in_form_markup,
+				'context' => $in_form_source['form']['context_before'] ?? null,
+			)
+		)
+	);
+	$bare_row_html = '<form class="space-y-5"><h2>Send a message</h2>'
+		. '<div class="grid gap-5 sm:grid-cols-2">'
+		. '<label class="block"><span>Your name</span><input required></label>'
+		. '<label class="block"><span>Mobile number</span><input type="tel" required></label>'
+		. '</div>'
+		. '<label class="block"><span>Email</span><input type="email"></label>'
+		. '<button type="submit">Send</button></form>';
+	$bare_row_source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $bare_row_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$bare_row_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $bare_row_source ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$bare_row_markup = (string) ( $bare_row_row['block_markup'] ?? '' );
+	$bare_row_class  = '';
+	if ( preg_match( '/<!-- wp:jetpack\/contact-form (\{.*?\}) -->/', $bare_row_markup, $bare_row_attrs ) ) {
+		$bare_row_decoded = json_decode( $bare_row_attrs[1], true );
+		$bare_row_class   = is_array( $bare_row_decoded ) ? (string) ( $bare_row_decoded['className'] ?? '' ) : '';
+	}
+	$assert(
+		'mapped' === ( $bare_row_row['status'] ?? '' )
+			&& 2 === substr_count( $bare_row_markup, '"width":50' )
+			&& in_array( 'provider_equal_width_fields', array_column( $bare_row_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true )
+			&& ! preg_match( '/(?:^|\s)grid(?:\s|$)/', $bare_row_class )
+			&& ! str_contains( $bare_row_class, 'grid-cols-2' ),
+		'class-token-grid-row-without-layout-node-still-maps-to-jetpack-field-width',
+		wp_json_encode( array( 'row' => $bare_row_row, 'class' => $bare_row_class, 'markup' => $bare_row_markup ) )
+	);
+	// One 2-column grid holding eight fields (four visual rows) plus two full-width
+	// fields outside it. Column count comes from the resolved track list, not from
+	// sibling count, so every grid child materializes at Jetpack `width: 50`.
+	$multi_row_css  = '.space-y-5>:not([hidden])~:not([hidden]){margin-top:1.25rem}'
+		. '.grid{display:grid}.gap-5{gap:1.25rem}@media (width>=40rem){.sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}';
+	$multi_row_html = '<style>' . $multi_row_css . '</style><form class="space-y-5">'
+		. '<h2>Member details</h2>'
+		. '<div class="grid gap-5 sm:grid-cols-2">'
+		. '<label class="block"><span>Full name</span><input required></label>'
+		. '<label class="block"><span>Father name</span><input required></label>'
+		. '<label class="block"><span>CNIC number</span><input required></label>'
+		. '<label class="block"><span>Date of birth</span><input type="date" required></label>'
+		. '<label class="block"><span>Mobile number</span><input type="tel" required></label>'
+		. '<label class="block"><span>Email</span><input type="email"></label>'
+		. '<label class="block"><span>Membership type</span><select required><option>Ordinary member</option></select></label>'
+		. '<label class="block"><span>Family members</span><input type="number" min="1" max="50" required></label>'
+		. '</div>'
+		. '<label class="block"><span>Residential address</span><textarea rows="3" required></textarea></label>'
+		. '<label class="block"><span>Occupation</span><input></label>'
+		. '<button type="submit">Submit registration</button>'
+		. '</form>';
+	$multi_row_source    = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'membership.html', 'files' => array( 'membership.html' => $multi_row_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$multi_row_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $multi_row_source ) ) );
+	$multi_row_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $multi_row_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$multi_row_markup    = (string) ( $multi_row_row['block_markup'] ?? '' );
+	$multi_row_css_out   = (string) ( $multi_row_row['provider_layout_overlay_css']['css'] ?? '' );
+	$multi_row_ops       = array_column( $multi_row_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' );
+	$assert( empty( $multi_row_validated['errors'] ) && 'mapped' === ( $multi_row_row['status'] ?? '' ), 'multi-row-equal-column-grid-manifest-validates', wp_json_encode( $multi_row_validated ) );
+	$assert(
+		10 === ( $multi_row_row['field_count'] ?? 0 )
+			&& 8 === substr_count( $multi_row_markup, '"width":50' )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-text \{[^}]*"width":50/', $multi_row_markup )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-telephone \{[^}]*"width":50/', $multi_row_markup )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-email \{[^}]*"width":50/', $multi_row_markup )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-select \{[^}]*"width":50/', $multi_row_markup )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-number \{[^}]*"width":50/', $multi_row_markup )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-date \{[^}]*"width":50/', $multi_row_markup )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-date[\s\S]*?<!-- wp:jetpack\/input \{"style":\{"border":\{"style":"solid"\}\},"className":"ssi-node-[a-f0-9]{12}"\} \/\-->/', $multi_row_markup )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-textarea \{(?![^}]*"width":50)/', $multi_row_markup )
+			&& in_array( 'provider_equal_width_fields', $multi_row_ops, true )
+			&& 8 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.625rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.625rem\);margin-block-start:0!important\}/', $multi_row_css_out )
+			&& $multi_row_markup === serialize_blocks( parse_blocks( $multi_row_markup ) ),
+		'eight-field-two-column-grid-emits-jetpack-width-50-on-every-grid-child',
+		wp_json_encode( array( 'ops' => $multi_row_ops, 'markup' => $multi_row_markup, 'css' => $multi_row_css_out, 'count' => substr_count( $multi_row_markup, '"width":50' ) ) )
+	);
+	// Real Tailwind v4 captures often keep `display:grid` as a class token while
+	// layered `sm:grid-cols-2` never becomes a layout-graph node. Sibling count
+	// is not column count: eight field boxes in that grid are still two columns.
+	$class_only_html = '<form class="space-y-5">'
+		. '<div class="grid gap-5">'
+		. '<label class="block"><span>Full name</span><input required></label>'
+		. '<label class="block"><span>Father name</span><input required></label>'
+		. '<label class="block"><span>CNIC</span><input required></label>'
+		. '<label class="block"><span>Date of birth</span><input type="date" required></label>'
+		. '<label class="block"><span>Mobile</span><input type="tel" required></label>'
+		. '<label class="block"><span>Email</span><input type="email"></label>'
+		. '<label class="block"><span>Type</span><select required><option>Ordinary</option></select></label>'
+		. '<label class="block"><span>Family</span><input type="number" required></label>'
+		. '</div>'
+		. '<label class="block"><span>Address</span><textarea rows="3" required></textarea></label>'
+		. '<label class="block"><span>Occupation</span><input></label>'
+		. '<button type="submit">Submit</button></form>';
+	$class_only_source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'membership.html', 'files' => array( 'membership.html' => $class_only_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$class_only_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $class_only_source ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$class_only_markup = (string) ( $class_only_row['block_markup'] ?? '' );
+	$class_only_css    = (string) ( $class_only_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		'mapped' === ( $class_only_row['status'] ?? '' )
+			&& 8 === substr_count( $class_only_markup, '"width":50' )
+			&& in_array( 'provider_equal_width_fields', array_column( $class_only_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ),
+		'class-token-grid-with-eight-field-children-still-maps-to-jetpack-width-50',
+		wp_json_encode( array( 'markup' => $class_only_markup, 'topo' => $class_only_source['control_topology']['nodes'][0]['class'] ?? null, 'layout' => $class_only_source['layout_graph'] ?? null ) )
+	);
+	$assert(
+		str_contains( $class_only_css, '@media (max-width: 480px){' )
+			&& 8 === preg_match_all( '/@media \(max-width: 480px\)\{\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{flex:1 1 100%;width:100%\}\}/', $class_only_css )
+			&& 402 <= 480
+			&& 1440 > 480,
+		'class-token-equal-width-row-without-cascade-query-still-stacks-below-the-provider-wrap-breakpoint',
+		$class_only_css
 	);
 	// A narrowing (max-width) variant is not the proven mobile-first widening
 	// shape and must keep the existing decline: Jetpack cannot represent "two
@@ -885,7 +1226,7 @@ namespace {
 	$direct_label_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $direct_label_form );
 	$direct_label_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $direct_label_validation['forms'] ?? array() ) );
 	$direct_label_css = (string) ( $direct_label_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' );
-	$assert( empty( $direct_label_validation['errors'] ) && 3 === substr_count( $direct_label_css, 'gap:1.2rem' ) && 2 === preg_match_all( '/\.ssi-node-[a-f0-9]{12}-wrap\{display:flex;flex-direction:column;gap:1\.2rem\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)\{display:none\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__field-hints\{display:contents\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.ssi-field-row > label\{margin-block-end:0\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.grunion-field::placeholder\{color:revert\}/', $direct_label_css ) && null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $direct_label_seed['forms'][0]['provider_layout_overlay_css'] ?? null ), 'proven direct label/control sibling pairs preserve native placeholder appearance and suppress only inactive provider errors' );
+	$assert( empty( $direct_label_validation['errors'] ) && 3 === substr_count( $direct_label_css, 'gap:1.2rem' ) && 2 === preg_match_all( '/\.ssi-node-[a-f0-9]{12}-wrap\{display:flex;flex-direction:column;gap:1\.2rem\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)\{display:none\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__field-hints\{display:contents\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__field-format\{display:none\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.ssi-field-row > label\{margin-block-end:0\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.grunion-field::placeholder\{color:revert\}/', $direct_label_css ) && null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $direct_label_seed['forms'][0]['provider_layout_overlay_css'] ?? null ), 'proven direct label/control sibling pairs preserve native placeholder appearance and suppress only inactive provider errors' );
 	$native_row_form = array(
 		'forms' => array( array(
 			'selector' => 'form.subscribe',
@@ -1192,6 +1533,106 @@ namespace {
 		'submit-outside-a-column-flex-field-list-keeps-its-authored-margin',
 		$flex_list_css
 	);
+	// A captured field can carry its own two-level wrapper chain: a classless
+	// outer box establishing `display: grid` (proven the same way a source
+	// grid ever is, e.g. a mobile-only breakpoint's own track layout) around
+	// a second, deeper box holding the label and control together. The
+	// runtime always rebuilds that deeper box as the field shell's sole
+	// child (`.ssi-field-row`, see
+	// Static_Site_Importer_Provider_Form_Runtime::project_wrapper_classes()),
+	// which is never placed on the shell's own grid tracks, so without an
+	// explicit span it auto-places into a single implicit column instead of
+	// the shell's full track set - collapsing the label and control inside
+	// it to that one track's width. Regression for
+	// https://github.com/Automattic/static-site-importer/issues/1772.
+	$grid_shell_form = array(
+		'forms' => array( array(
+			'selector'         => 'form.grid-shell',
+			'controls'         => array(
+				array( 'tag' => 'input', 'type' => 'text', 'name' => 'first', 'label' => 'First name' ),
+				array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+			),
+			'control_topology' => array(
+				'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false,
+				'nodes'  => array(
+					array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div' ),
+					array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'div', 'class' => 'row' ),
+					array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'control' => 0 ),
+					array( 'id' => 'control-1', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 1 ),
+				),
+			),
+			'layout_graph'     => array(
+				'schema' => 'generic/computed-layout-graph/v1', 'basis' => 'source_css_cascade', 'truncated' => false,
+				'limits' => array( 'nodes' => 128, 'depth' => 8, 'rules_per_node' => 16 ), 'variants' => array(), 'diagnostics' => array(),
+				'nodes'  => array(
+					array(
+						'id'         => 'wrapper-0',
+						'kind'       => 'container',
+						'parent'     => null,
+						'order'      => 0,
+						'source'     => array( 'tag' => 'div', 'classes' => array() ),
+						'layout'     => array( 'display' => 'grid', 'columns' => 'repeat(2, 1fr)' ),
+						'provenance' => array(
+							array( 'source_path' => 'inline-style', 'source_sha256' => str_repeat( 'c', 64 ), 'selector' => '[style]', 'condition' => null, 'properties' => array( 'display', 'grid-template-columns' ) ),
+						),
+					),
+				),
+			),
+		) ),
+	);
+	$grid_shell_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $grid_shell_form );
+	$grid_shell_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $grid_shell_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$grid_shell_css        = (string) ( $grid_shell_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		empty( $grid_shell_validation['errors'] )
+			&& 'mapped' === ( $grid_shell_row['status'] ?? '' )
+			&& true === ( $grid_shell_row['runtime_mapped'] ?? false )
+			&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $grid_shell_row['provider_layout_overlay_css'] ?? null )
+			&& 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{[^}]*display:grid[^}]*\}/', $grid_shell_css )
+			&& 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap > \.ssi-field-row\{grid-column:1 \/ -1\}/', $grid_shell_css ),
+		'field-shells-own-grid-spans-its-rebuilt-label-control-row-across-every-track',
+		$grid_shell_css
+	);
+	$interactive_button_shell_form = array(
+		'forms' => array( array(
+			'selector'  => 'form.feedback',
+			'controls'  => array_merge(
+				array( array( 'tag' => 'input', 'type' => 'text', 'name' => 'name', 'label' => 'Your name' ) ),
+				array_fill( 0, 5, array( 'tag' => 'button', 'type' => 'button' ) ),
+				array( array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) )
+			),
+			'control_topology' => array(
+				'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false,
+				'nodes'  => array_merge(
+					array(
+						array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div' ),
+						array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'control' => 0 ),
+						array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => null, 'order' => 1, 'depth' => 0, 'tag' => 'div' ),
+						array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 1, 'tag' => 'div' ),
+					),
+					array_map(
+						static fn ( int $index ): array => array( 'id' => 'control-' . ( $index + 1 ), 'kind' => 'control', 'parent' => 'wrapper-2', 'order' => $index, 'depth' => 2, 'control' => $index + 1 ),
+						array( 0, 1, 2, 3, 4 )
+					),
+					array( array( 'id' => 'control-6', 'kind' => 'control', 'parent' => null, 'order' => 2, 'depth' => 0, 'control' => 6 ) )
+				),
+			),
+			'layout_graph' => $v2_layout_graph( array(
+				array( 'id' => 'wrapper-2', 'kind' => 'container', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'div', 'classes' => array( 'flex', 'gap-1' ) ), 'layout' => array( 'display' => 'flex', 'gap' => '0.25rem' ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.flex.gap-1', 'condition' => null, 'properties' => array( 'display', 'gap' ) ) ) ),
+			) ),
+			'presentation_graph' => array(
+				'schema' => 'generic/computed-form-presentation/v2', 'basis' => 'source_css_cascade', 'truncated' => false,
+				'limits' => array( 'controls' => 128, 'rules_per_role' => 32 ), 'controls' => array(), 'visual_groups' => array(), 'control_containers' => array(), 'variants' => array(), 'diagnostics' => array(),
+				'visual_parts' => array_map(
+					static fn ( int $index ): array => array( 'id' => 'control-' . $index . '-svg-0', 'index' => $index, 'kind' => 'inline_svg', 'source_selector' => 'form button:nth-of-type(' . ( $index - 3 ) . ') > svg', 'markup' => '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h22v22H1z"/></svg>', 'intrinsic_size' => array( 'width' => 24, 'height' => 24 ), 'source_css' => array( 'state' => 'unknown' ) ),
+					array( 4, 5, 6, 7, 8 )
+				),
+			),
+		) ),
+	);
+	$interactive_button_shell_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $interactive_button_shell_form );
+	$interactive_button_shell_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $interactive_button_shell_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( empty( $interactive_button_shell_validation['errors'] ) && 'skipped' === ( $interactive_button_shell_row['status'] ?? '' ) && false === ( $interactive_button_shell_row['runtime_mapped'] ?? true ) && 'form_receipt_loss_unaccepted' === ( $interactive_button_shell_row['reason'] ?? '' ) && 1 === ( $interactive_button_shell_row['unaccepted_receipt_loss_count'] ?? 0 ), 'captured-visual-button-controls-remain-loss-gated-without-rating-semantics', wp_json_encode( $interactive_button_shell_row ) );
 	$popup_form = array(
 		'selector' => 'form.picker',
 		'controls' => array(
@@ -1296,6 +1737,16 @@ namespace {
 	$presentation_markup    = (string) ( $presentation_row['block_markup'] ?? '' );
 	$presentation_css       = (string) ( $presentation_row['provider_layout_overlay_css']['css'] ?? '' );
 	$assert( empty( $validated_presentation['errors'] ) && str_contains( $presentation_css, 'background-color:transparent;border:0;padding:8px 0;font-size:16px;line-height:24px;font-family:revert' ) && ! str_contains( $presentation_css, 'line-height:24px;line-height:revert' ) && str_contains( $presentation_css, 'font-size:14px;font-weight:400;line-height:1.4;margin-bottom:8px' ) && str_contains( $presentation_css, 'background-color:rgb(254,126,3);color:#fff;border:0;border-radius:100px;padding:11px 15px;font-size:16px;font-family:inherit;line-height:inherit;min-height:0' ), 'bounded-form-presentation-transposes-control-label-and-submit-styles', $presentation_css );
+	// Vendored stylesheets keep their upstream package filenames, so artifact paths
+	// carry punctuation such as `@` that the canonical artifact path contract allows.
+	$punctuated_presentation_form = $presentation_form;
+	$punctuated_presentation_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 0, 'control' => $presentation_role( array( 'padding' => '8px' ), array( 'padding' ), 'input' ) ) );
+	$punctuated_presentation_form['forms'][0]['presentation_graph']['controls'][0]['control']['provenance'][0]['source_path'] = 'website/external/5a53b0b68d356c47/npm/select2@4.1.0-rc.0/dist/css/select2.min.css';
+	$punctuated_presentation_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $punctuated_presentation_form );
+	$assert( empty( $punctuated_presentation_validation['errors'] ), 'form-presentation-provenance-accepts-canonical-punctuated-artifact-path', wp_json_encode( $punctuated_presentation_validation['errors'] ?? array() ) );
+	$traversing_presentation_form = $punctuated_presentation_form;
+	$traversing_presentation_form['forms'][0]['presentation_graph']['controls'][0]['control']['provenance'][0]['source_path'] = 'website/../../etc/passwd';
+	$assert( ! empty( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $traversing_presentation_form )['errors'] ), 'form-presentation-provenance-still-rejects-traversing-artifact-path' );
 	$native_line_height_form = $presentation_form;
 	$native_line_height_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 0, 'control' => $presentation_role( array( 'padding' => '8px' ), array( 'padding' ), 'input' ) ) );
 	$native_line_height_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $native_line_height_form );
@@ -1373,7 +1824,7 @@ namespace {
 			$all_controls_hooks[] = substr( $hook[0], 1 );
 		}
 	}
-	$assert( empty( $validated_all_controls['errors'] ) && 4 === count( $all_controls_hooks ) && empty( array_filter( $all_controls_hooks, static fn( string $hook ): bool => ! str_contains( $all_controls_markup, $hook ) || ! str_contains( $all_controls_css, '.' . $hook ) ) ) && str_contains( $all_controls_css, 'border:1px solid #111;padding:7px;font-family:revert;line-height:revert' ) && 1 === preg_match( '/\.ssi-node-[a-f0-9]{12} select\{border:2px solid #222!important;padding:8px!important;font-family:revert!important;line-height:revert!important\}/', $all_controls_css ) && str_contains( $all_controls_css, 'border:3px solid #333;min-height:9rem;font-family:revert;line-height:revert' ) && str_contains( $all_controls_css, 'background-color:#444;padding:9px 12px;font-family:inherit;line-height:inherit;min-height:0' ) && str_contains( $all_controls_css, '@media (max-width:48rem){' ) && str_contains( $all_controls_css, '> .wp-block-button__link{background-color:#444;padding:9px 12px;font-family:inherit;line-height:inherit;min-height:0}' ) && ! str_contains( $all_controls_css, 'control-shell' ) && ! str_contains( $all_controls_css, 'control-hook' ), 'presentation-overlay-reverts-unowned-typography-to-each-browser-native-controls', wp_json_encode( array( 'markup' => $all_controls_markup, 'css' => $all_controls_css, 'targets' => $all_controls_targets ) ) );
+	$assert( empty( $validated_all_controls['errors'] ) && 4 === count( $all_controls_hooks ) && empty( array_filter( $all_controls_hooks, static fn( string $hook ): bool => ! str_contains( $all_controls_markup, $hook ) || ! str_contains( $all_controls_css, '.' . $hook ) ) ) && str_contains( $all_controls_css, 'border:1px solid #111;padding:7px;font-family:revert;line-height:revert' ) && 1 === preg_match( '/\.ssi-node-[a-f0-9]{12} select\{border:2px solid #222!important;padding:8px!important;font-family:revert!important;line-height:revert!important;appearance:auto!important\}/', $all_controls_css ) && str_contains( $all_controls_css, 'border:3px solid #333;min-height:9rem;font-family:revert;line-height:revert' ) && str_contains( $all_controls_css, 'background-color:#444;padding:9px 12px;font-family:inherit;line-height:inherit;min-height:0' ) && str_contains( $all_controls_css, '@media (max-width:48rem){' ) && str_contains( $all_controls_css, '> .wp-block-button__link{background-color:#444;padding:9px 12px;font-family:inherit;line-height:inherit;min-height:0}' ) && ! str_contains( $all_controls_css, 'control-shell' ) && ! str_contains( $all_controls_css, 'control-hook' ), 'presentation-overlay-reverts-unowned-typography-to-each-browser-native-controls', wp_json_encode( array( 'markup' => $all_controls_markup, 'css' => $all_controls_css, 'targets' => $all_controls_targets ) ) );
 	$submit_width_form = $presentation_form;
 	$submit_width_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 3, 'control' => $presentation_role( array( 'width' => '100%' ), array( 'width' ), 'button' ) ) );
 	$submit_width_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $submit_width_form );
@@ -1543,7 +1994,7 @@ namespace {
 	$assert(
 		empty( $validated_container_padding['errors'] )
 			&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $container_padding_row['provider_layout_overlay_css'] ?? null )
-			&& preg_match( '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12}\{padding:36px\}/', $container_padding_css ),
+			&& preg_match( '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12}\.jetpack-contact-form-container\{padding:36px\}/', $container_padding_css ),
 		'captured-form-container-padding-reaches-the-rendered-page-alongside-a-captured-field-wrapper',
 		wp_json_encode( array( 'css' => $container_padding_css, 'validation' => $validated_container_padding ) )
 	);
@@ -1564,6 +2015,21 @@ namespace {
 	$select_box_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $select_box_form );
 	$select_box_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $select_box_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$select_box_css        = (string) ( $select_box_row['provider_layout_overlay_css']['css'] ?? '' );
+	// Jetpack renders the native control with `appearance: none`, dropping the
+	// platform chevron the authored select had. The authored padding and border
+	// already reach the native control; the appearance revert must ride with
+	// them, or the select keeps provider chrome while claiming authored
+	// presentation.
+	$select_appearance_rule = 1 === preg_match( '/\.ssi-node-[a-f0-9]{12} select\{([^}]+)\}/', $all_controls_css, $select_appearance ) ? $select_appearance[1] : '';
+	$assert(
+		str_contains( $select_appearance_rule, 'appearance:auto' )
+			&& str_contains( $select_appearance_rule, 'padding:8px' )
+			&& str_contains( $select_appearance_rule, 'border:2px solid #222' )
+			&& 1 !== preg_match( '/\.ssi-node-[a-f0-9]{12}\{[^}]*appearance:auto/', $all_controls_css ),
+		'authored-select-appearance-reaches-the-native-control-not-its-provider-wrapper',
+		$select_appearance_rule
+	);
+
 	$select_inner_rule     = 1 === preg_match( '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12} select\{([^}]+)\}/', $select_box_css, $select_inner ) ? $select_inner[1] : '';
 	$select_wrapper_rule   = 1 === preg_match( '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{([^}]+)\}/', $select_box_css, $select_wrapper ) ? $select_wrapper[1] : '';
 	$assert(
@@ -1657,7 +2123,7 @@ namespace {
 	$editor_chrome_writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/tmp/editor-chrome', 'Editor Chrome', '', array(), array(), array( $editor_chrome_overlay ) );
 	$editor_chrome_frontend = (string) ( $editor_chrome_writes['/tmp/editor-chrome/style.css'] ?? '' );
 	$editor_chrome_editor = (string) ( $editor_chrome_writes['/tmp/editor-chrome/assets/css/editor-style.css'] ?? '' );
-	$assert( empty( $editor_chrome_validation['errors'] ) && str_contains( (string) ( $editor_chrome_overlay['css'] ?? '' ), 'border:0' ) && ! str_contains( (string) ( $editor_chrome_overlay['css'] ?? '' ), '1px solid rgba(30,75,110,.6)' ) && str_contains( (string) ( $editor_chrome_overlay['editor_css'] ?? '' ), '.editor-styles-wrapper ' ) && str_contains( $editor_chrome_editor, 'border:1px solid rgba(30,75,110,.6);background:rgb(247,249,251);border-radius:0' ) && ! str_contains( $editor_chrome_frontend, '1px solid rgba(30,75,110,.6)' ), 'editor-only-control-container-chrome-preserves-a-single-owned-source-wrapper-on-the-editable-control-without-changing-frontend-input-resets', wp_json_encode( $editor_chrome_overlay ) );
+	$assert( empty( $editor_chrome_validation['errors'] ) && str_contains( (string) ( $editor_chrome_overlay['css'] ?? '' ), 'border:0' ) && str_contains( (string) ( $editor_chrome_overlay['css'] ?? '' ), 'border:1px solid rgba(30,75,110,.6);background:rgb(247,249,251);border-radius:0' ) && str_contains( (string) ( $editor_chrome_overlay['editor_css'] ?? '' ), '.editor-styles-wrapper ' ) && str_contains( $editor_chrome_editor, 'border:1px solid rgba(30,75,110,.6);background:rgb(247,249,251);border-radius:0' ) && str_contains( $editor_chrome_frontend, '1px solid rgba(30,75,110,.6)' ), 'control-container-chrome-reaches-the-rendered-field-wrapper-without-overwriting-the-inner-input-reset', wp_json_encode( $editor_chrome_overlay ) );
 	$phone_editor_chrome_form                              = $editor_chrome_form;
 	$phone_editor_chrome_form['forms'][0]['controls'][0]['type'] = 'phone';
 	$phone_editor_chrome_form['forms'][0]['presentation_graph']['controls'][0]['control'] = $presentation_role( array( 'padding_inline_end' => '2px' ), array( 'padding-inline-end' ), 'input' );
@@ -1665,7 +2131,7 @@ namespace {
 	$phone_editor_chrome_row                               = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $phone_editor_chrome_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$phone_editor_chrome_overlay                           = $phone_editor_chrome_row['provider_layout_overlay_css'] ?? array();
 	$phone_editor_chrome_destinations                      = $phone_editor_chrome_row['provider_layout_target_map']['presentation_targets'][0]['destinations'] ?? array();
-	$assert( empty( $phone_editor_chrome_validation['errors'] ) && 5 === count( $phone_editor_chrome_destinations ) && str_contains( (string) ( $phone_editor_chrome_destinations[1]['selector'] ?? '' ), '-destination-primary' ) && '0' === ( $phone_editor_chrome_destinations[0]['resets']['padding'] ?? null ) && str_contains( (string) ( $phone_editor_chrome_destinations[2]['selector'] ?? '' ), '-destination-carrier' ) && str_contains( (string) ( $phone_editor_chrome_destinations[3]['selector'] ?? '' ), '-destination-prefix' ) && str_contains( (string) ( $phone_editor_chrome_destinations[4]['selector'] ?? '' ), '-destination-shell' ) && str_contains( (string) ( $phone_editor_chrome_overlay['css'] ?? '' ), 'padding-inline-end:2px!important' ) && str_contains( (string) ( $phone_editor_chrome_overlay['editor_css'] ?? '' ), '-destination-shell{border:1px solid rgba(30,75,110,.6);background:rgb(247,249,251);border-radius:0}' ) && ! str_contains( (string) ( $phone_editor_chrome_overlay['css'] ?? '' ), '1px solid rgba(30,75,110,.6)' ), 'phone-control-container-chrome-targets-the-editor-shell-while-primary-and-carrier-destinations-retain-their-separate-ownership', wp_json_encode( $phone_editor_chrome_row ) );
+	$assert( empty( $phone_editor_chrome_validation['errors'] ) && 5 === count( $phone_editor_chrome_destinations ) && str_contains( (string) ( $phone_editor_chrome_destinations[1]['selector'] ?? '' ), '-destination-primary' ) && '0' === ( $phone_editor_chrome_destinations[0]['resets']['padding'] ?? null ) && str_contains( (string) ( $phone_editor_chrome_destinations[2]['selector'] ?? '' ), '-destination-carrier' ) && str_contains( (string) ( $phone_editor_chrome_destinations[3]['selector'] ?? '' ), '-destination-prefix' ) && str_contains( (string) ( $phone_editor_chrome_destinations[4]['selector'] ?? '' ), 'ssi-node-' ) && str_contains( (string) ( $phone_editor_chrome_overlay['css'] ?? '' ), 'padding-inline-end:2px!important' ) && str_contains( (string) ( $phone_editor_chrome_overlay['css'] ?? '' ), '1px solid rgba(30,75,110,.6)' ) && str_contains( (string) ( $phone_editor_chrome_overlay['editor_css'] ?? '' ), 'border:1px solid rgba(30,75,110,.6);background:rgb(247,249,251);border-radius:0' ), 'phone-control-container-chrome-targets-the-rendered-field-wrapper-while-primary-and-carrier-destinations-retain-their-separate-ownership', wp_json_encode( $phone_editor_chrome_row ) );
 	$unsafe_presentation = $presentation_form;
 	$unsafe_presentation['forms'][0]['presentation_graph']['controls'][0]['control']['styles']['background_image'] = 'url(https://example.test/tracker)';
 	$oversized_presentation = $presentation_form;
@@ -1699,7 +2165,7 @@ namespace {
 	$chrome_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $chrome_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$chrome_overlay = $chrome_row['provider_layout_overlay_css'] ?? array();
 	$chrome_writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/tmp/real-be-chrome', 'Real BE Chrome', '', array(), array(), array( $chrome_overlay ) );
-	$assert( is_array( $chrome_result ) && array() === ( $chrome_entity['presentation_graph']['control_containers'][0]['styles'] ?? null ) && 1 === count( $chrome_entity['presentation_graph']['control_containers'] ?? array() ) && str_contains( (string) ( $chrome_overlay['css'] ?? '' ), 'border:0' ) && ! str_contains( (string) ( $chrome_overlay['css'] ?? '' ), '1px solid rgba(30,75,110,.6)' ) && str_contains( (string) ( $chrome_writes['/tmp/real-be-chrome/assets/css/editor-style.css'] ?? '' ), 'border:1px solid rgba(30,75,110,.6)' ) && ! str_contains( (string) ( $chrome_writes['/tmp/real-be-chrome/style.css'] ?? '' ), '1px solid rgba(30,75,110,.6)' ), 'real-blocks-engine-artifact-preserves-responsive-owned-wrapper-paint-without-assigning-shared-or-neutral-wrappers', wp_json_encode( $chrome_row ) );
+	$assert( is_array( $chrome_result ) && array() === ( $chrome_entity['presentation_graph']['control_containers'][0]['styles'] ?? null ) && 1 === count( $chrome_entity['presentation_graph']['control_containers'] ?? array() ) && str_contains( (string) ( $chrome_overlay['css'] ?? '' ), 'border:0' ) && str_contains( (string) ( $chrome_overlay['css'] ?? '' ), '1px solid rgba(30,75,110,.6)' ) && str_contains( (string) ( $chrome_writes['/tmp/real-be-chrome/assets/css/editor-style.css'] ?? '' ), 'border:1px solid rgba(30,75,110,.6)' ) && str_contains( (string) ( $chrome_writes['/tmp/real-be-chrome/style.css'] ?? '' ), '1px solid rgba(30,75,110,.6)' ), 'real-blocks-engine-artifact-preserves-responsive-owned-wrapper-paint-through-frontend-and-editor-overlays', wp_json_encode( $chrome_row ) );
 	$candidate_declaration = current( array_filter( $candidate_plan['runtime_declarations'] ?? array(), static fn( array $declaration ): bool => 'forms' === ( $declaration['type'] ?? null ) ) );
 	$visual_state_form = array( 'forms' => $candidate_declaration['payload']['entities'] ?? array() );
 	$validated_visual_state = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $visual_state_form );
@@ -1792,7 +2258,7 @@ namespace {
 	$full_width_grid_field_css = (string) ( $full_width_grid_field_row['provider_layout_overlay_css']['css'] ?? '' );
 	$assert( 'mapped' === ( $full_width_grid_field_row['status'] ?? '' ) && in_array( 'provider_fullspan_grid_child', array_column( $full_width_grid_field_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ) && str_contains( $full_width_grid_field_css, 'display:grid;grid-template-columns:repeat(12, 1fr);gap:1rem;width:100%' ) && str_contains( $full_width_grid_field_css, 'grid-column:span 12' ), 'full-span-single-field-grid-retains-proven-tracks-and-native-child-placement', wp_json_encode( $full_width_grid_field_row ) );
 	$fullspan_child_runtime = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-email-wrap ssi-node-a1b2c3d4e5f6-wrap ssi-source-wrapper-0--source-grid-wrap ssi-source-fullspan-child--ssi-node-0f1e2d3c4b5a-wrap"><label>Email</label><input type="email"></div>' );
-	$assert( '<div class="grunion-field-email-wrap"><div class="ssi-field-row source-grid ssi-node-a1b2c3d4e5f6-wrap"><label>Email</label><div class="ssi-node-0f1e2d3c4b5a-wrap"><input type="email"></div></div></div>' === $fullspan_child_runtime, 'full-span-grid-rebuilds-a-real-value-child-inside-the-source-grid-container', $fullspan_child_runtime );
+	$assert( '<div class="grunion-field-email-wrap ssi-node-a1b2c3d4e5f6-wrap"><div class="ssi-field-row source-grid"><label>Email</label><div class="ssi-node-0f1e2d3c4b5a-wrap"><input type="email"></div></div></div>' === $fullspan_child_runtime, 'full-span-grid-rebuilds-a-real-value-child-inside-the-source-grid-container', $fullspan_child_runtime );
 	$partial_grid_field_form = $full_width_grid_field_form;
 	$partial_grid_field_form['forms'][0]['layout_graph']['nodes'][2]['layout']['column'] = 'span 6';
 	$partial_grid_field_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $partial_grid_field_form )['forms'] ?? array() ) )['forms'][0] ?? array();
@@ -2202,7 +2668,7 @@ namespace {
 	$projected_wrapper = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-text-wrap ssi-source-wrapper--field-wrap"><input class="ssi-source-wrapper--field source-input"></div>' );
 	$assert( '<div class="grunion-field-text-wrap"><div class="ssi-field-row field"><input class="source-input"></div></div>' === $projected_wrapper, 'provider-runtime-rebuilds-source-wrapper-inside-field-shell', $projected_wrapper );
 	$layout_wrapper = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-text-wrap ssi-node-123456789abc-wrap ssi-source-wrapper--field-wrap"><input class="source-input"></div>' );
-	$assert( '<div class="grunion-field-text-wrap"><div class="ssi-field-row field ssi-node-123456789abc-wrap"><input class="source-input"></div></div>' === $layout_wrapper, 'provider-runtime-places-source layout hooks on the restored source wrapper', $layout_wrapper );
+	$assert( '<div class="grunion-field-text-wrap ssi-node-123456789abc-wrap"><div class="ssi-field-row field"><input class="source-input"></div></div>' === $layout_wrapper, 'provider-runtime-keeps-the-generated-layout-hook-on-the-field-shell', $layout_wrapper );
 	$layered_wrapper = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-text-wrap ssi-source-wrapper-6--carrier-wrap ssi-source-wrapper-8--input-shell-wrap"><label>Name</label><input class="source-input"></div>' );
 	$assert( '<div class="grunion-field-text-wrap"><div class="ssi-field-row carrier"><label>Name</label><div class="input-shell"><input class="source-input"></div></div></div>' === $layered_wrapper, 'provider-runtime-keeps-the-label-inside-the-outermost-source-wrapper', $layered_wrapper );
 	$projected_controls = implode( '', array_map( array( Static_Site_Importer_Form_Seeder::class, 'project_provider_wrapper_classes' ), array( '<div class="grunion-field-text-wrap ssi-source-wrapper-2--control-shell-wrap"><input class="control-hook"></div>', '<div class="grunion-field-textarea-wrap ssi-source-wrapper-2--control-shell-wrap"><textarea class="control-hook"></textarea></div>', '<div class="grunion-field-select-wrap ssi-source-wrapper-2--control-shell-wrap"><select class="control-hook"><option>One</option></select></div>' ) ) );
@@ -2253,6 +2719,64 @@ namespace {
 		'compiled-field-row-keeps-authored-textarea-rows-and-stops-hint-chrome-from-forming-its-own-box',
 		wp_json_encode( array( 'errors' => $described_validated['errors'] ?? array(), 'markup' => $described_markup, 'css' => $described_css, 'description' => $described_help_text ) )
 	);
+	$wrapping_label_html = '<form><label class="block"><span>Occupation / business</span><input name="occupation"><span class="mt-1 block text-xs">Helps the trade committee connect members.</span></label><button type="submit">Send</button></form>';
+	$wrapping_label_source = class_exists( $artifact_compiler ) ? ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'join.html', 'files' => array( 'join.html' => $wrapping_label_html ) ) )->toArray() )['fallbacks'][0] ?? array() : array();
+	$wrapping_label_control = $wrapping_label_source['controls'][0] ?? array();
+	$wrapping_label_seed    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $wrapping_label_source ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$wrapping_label_markup  = (string) ( $wrapping_label_seed['block_markup'] ?? '' );
+	$assert(
+		! class_exists( $artifact_compiler )
+			|| ! isset( $wrapping_label_control['description'] )
+			|| (
+				'Occupation / business' === ( $wrapping_label_control['label'] ?? null )
+				&& 'Helps the trade committee connect members.' === ( $wrapping_label_control['description'] ?? null )
+				&& str_contains( $wrapping_label_markup, '<!-- wp:jetpack/label {"label":"Occupation / business"} /-->' )
+				&& 1 === preg_match( '/<!-- wp:jetpack\/field-text \{[^\n]*"helpText":"Helps the trade committee connect members\."[^\n]*\} -->/', $wrapping_label_markup )
+				&& ! str_contains( $wrapping_label_markup, 'businessHelps' )
+			),
+		'compiled-wrapping-label-keeps-description-off-the-label-and-on-jetpack-help-text',
+		wp_json_encode( array( 'control' => $wrapping_label_control, 'markup' => $wrapping_label_markup ) )
+	);
+
+	// A source builder commonly hides a checkbox's native control behind a
+	// custom-drawn box with `position: absolute` (paired with `opacity: 0`),
+	// so its own captured presentation styles include `position` alongside
+	// ordinary box/typography facts. `position` is deliberately outside the
+	// vocabulary every ordinary control/label destination may represent (see
+	// `Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys()`
+	// vs `positioned_control_presentation_property_keys()`), so its absence
+	// from the represented set is the documented universal exclusion working
+	// as designed, not a per-field fidelity regression. Declining the whole
+	// form over an intentionally unrepresentable property leaves an
+	// email-plus-consent-plus-submit form a dead, unsubmittable control (see
+	// https://github.com/Automattic/static-site-importer/issues/1773).
+	$hidden_checkbox_html = '<style>.subscribe-checkbox{position:absolute;opacity:0;width:20px;height:20px;margin:0;padding:0;box-sizing:border-box;border:1px solid #000}</style><form>'
+		. '<label>Email<input type="email" name="email"></label>'
+		. '<label class="consent-row"><input type="checkbox" name="updates" class="subscribe-checkbox">Yes, subscribe me to your newsletter.</label>'
+		. '<button type="submit">Sign Up</button></form>';
+	$hidden_checkbox_source = class_exists( $artifact_compiler ) ? ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'subscribe.html', 'files' => array( 'subscribe.html' => $hidden_checkbox_html ) ) )->toArray() )['fallbacks'][0] ?? array() : array();
+	$hidden_checkbox_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $hidden_checkbox_source ) ) );
+	$hidden_checkbox_seed      = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $hidden_checkbox_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert(
+		! class_exists( $artifact_compiler )
+			|| (
+				empty( $hidden_checkbox_validated['errors'] )
+				&& 'mapped' === ( $hidden_checkbox_seed['status'] ?? '' )
+				&& true === ( $hidden_checkbox_seed['runtime_mapped'] ?? false )
+				&& empty( $hidden_checkbox_seed['form_receipt_unaccepted_losses'] ?? array() )
+				&& in_array( 'jetpack/field-checkbox', $hidden_checkbox_seed['field_blocks'] ?? array(), true )
+				&& in_array( 'jetpack/field-email', $hidden_checkbox_seed['field_blocks'] ?? array(), true )
+			),
+		'visually-hidden-checkbox-position-styling-does-not-decline-the-whole-form',
+		wp_json_encode( array( 'errors' => $hidden_checkbox_validated['errors'] ?? array(), 'row' => $hidden_checkbox_seed ) )
+	);
+
+	$help_text_atts = Static_Site_Importer_Provider_Form_Runtime_V1::project_help_text_attribute(
+		array( 'helptext' => null ),
+		array(),
+		array( 'helpText' => 'Helps the trade committee connect members.' )
+	);
+	$assert( 'Helps the trade committee connect members.' === ( $help_text_atts['helptext'] ?? null ), 'block-helpText-reaches-the-shortcode-helptext-attribute', wp_json_encode( $help_text_atts ) );
 	$projected_submit = Static_Site_Importer_Form_Seeder::project_provider_submit_presentation(
 		'<div class="wp-block-button ssi-source-submit--source-submit"><button class="wp-block-button__link">Send</button></div>',
 		array( 'attrs' => array( 'className' => 'wp-block-button ssi-source-submit--source-submit' ) )
@@ -2682,7 +3206,7 @@ namespace {
 			'form'        => array(
 				'class'               => 'contact-form',
 				'context_before'      => array(
-					array( 'type' => 'heading', 'level' => 2, 'text' => 'Contact Me' ),
+					array( 'type' => 'heading', 'level' => 2, 'text' => 'Contact Me', 'class' => 'font-serif text-2xl' ),
 					array( 'type' => 'paragraph', 'text' => '* Indicates required field' ),
 				),
 				'submit_presentation' => array(
@@ -2696,7 +3220,17 @@ namespace {
 		)
 	);
 	$cara_grafted   = (string) ( Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $cara_entity ) ) )['forms'][0]['block_markup'] ?? '' );
-	$assert( str_contains( $cara_grafted, '>Contact Me</h2>' ) && str_contains( $cara_grafted, '<p>* Indicates required field</p>' ) && str_contains( $cara_grafted, '"required":true' ) && str_contains( $cara_grafted, 'wsite-button' ), 'canonical-binding-presentation-reaches-provider-markup' );
+	$cara_parsed    = array_values( array_filter( parse_blocks( $cara_grafted ), static fn( array $block ): bool => ! empty( $block['blockName'] ) ) );
+	$cara_contact   = $cara_parsed[0] ?? array();
+	$cara_inners    = array_column( array_values( array_filter( $cara_contact['innerBlocks'] ?? array(), static fn( array $block ): bool => ! empty( $block['blockName'] ) ) ), 'blockName' );
+	$assert( str_contains( $cara_grafted, '>Contact Me</h2>' ) && str_contains( $cara_grafted, 'class="wp-block-heading font-serif text-2xl"' ) && str_contains( $cara_grafted, '"className":"font-serif text-2xl"' ) && str_contains( $cara_grafted, '<p>* Indicates required field</p>' ) && str_contains( $cara_grafted, '"required":true' ) && str_contains( $cara_grafted, 'wsite-button' ), 'canonical-binding-presentation-reaches-provider-markup' );
+	$assert(
+		1 === count( $cara_parsed )
+			&& 'jetpack/contact-form' === ( $cara_contact['blockName'] ?? '' )
+			&& array( 'core/heading', 'core/paragraph' ) === array_slice( $cara_inners, 0, 2 ),
+		'canonical-in-form-context-is-emitted-as-contact-form-inner-blocks',
+		wp_json_encode( array( 'names' => array_column( $cara_parsed, 'blockName' ), 'inners' => $cara_inners, 'markup' => $cara_grafted ) )
+	);
 
 
 	// --- Provider override routes to a different registered adapter ----------

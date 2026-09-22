@@ -560,6 +560,8 @@ $zip_artifact = static_site_importer_source_runtime(
 	)
 )['artifact'];
 $zip_reader = static_site_importer_staged_archive_payload_reader( array() );
+// Both uninterrupted and resumed compilation receive the consumer-owned namespace.
+$zip_artifact['block_namespace'] = Static_Site_Importer_Site_Identity::resolve( array( 'artifact' => $zip_artifact, 'payload_reader' => $zip_reader ) )['block_namespace'];
 $zip_compiler = new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler();
 $zip_shared = $zip_compiler->prepareShared( $zip_artifact, $zip_reader );
 $zip_pages = $zip_compiler->preparePages( $zip_artifact, $zip_shared, $zip_reader );
@@ -792,6 +794,66 @@ $assert( ! isset( $quality_failure_data['quality'], $quality_failure_data['failu
 $assert( empty( $quality_failure['success'] ) && 'failed' === ( $quality_failure['import_report_summary']['status'] ?? '' ) && true === ( $quality_failure['import_report_summary']['fail_import'] ?? false ), 'direct artifact quality-gate failures cannot be projected as successful imports' );
 $assert( 'website/contact/index.html' === ( $quality_failure['diagnostics'][0]['source_path'] ?? '' ) && 'form.contact' === ( $quality_failure['diagnostics'][0]['selector'] ?? '' ) && false === ( $quality_failure['diagnostics'][0]['provider_available'] ?? true ) && ! isset( $quality_failure['diagnostics'][0]['context'] ), 'CLI and API failure receipts retain safe provider diagnostics without nested secrets' );
 $assert( ! str_contains( (string) ( $quality_failure['error']['message'] ?? '' ), 'password' ) && false !== json_encode( $quality_failure ), 'terminal CLI failure messages are importer-owned and JSON-safe' );
+
+// The producer-required editability gate, in the shape the plan records it (runs/r23 and runs/r33).
+$editability_failure_data = array(
+	'status'                => 'rejected',
+	'import_report_summary' => array(
+		'status'          => 'failed',
+		'quality_pass'    => false,
+		'fail_import'     => true,
+		'failure_reasons' => array( 'editability_policy_failed', 'empty_wrapper_count', 'unsupported_html_fallback' ),
+	),
+	'diagnostics'           => array(
+		array(
+			'code'                    => 'editability_policy_failed',
+			'severity'                => 'error',
+			'reason_code'             => 'editability_policy_failed',
+			'owning_layer'            => 'blocks-engine',
+			'source_path'             => 'website/functions-and-scope/index.html',
+			'detail'                  => 'empty_wrapper_count is 16; meaningful editability allows at most 10.',
+			'threshold_failure_count' => 3,
+			'threshold_failures'      => array(
+				array( 'metric' => 'empty_wrapper_count', 'actual' => 16, 'maximum' => 10, 'message' => 'empty_wrapper_count is 16; meaningful editability allows at most 10.', 'source_path' => 'website/functions-and-scope/index.html' ),
+				array( 'metric' => 'empty_wrapper_count', 'actual' => 20, 'maximum' => 10, 'source_path' => 'website/objects-and-arrays/index.html' ),
+				array( 'metric' => 'empty_wrapper_count', 'actual' => 22, 'maximum' => 10, 'source_path' => $test_root . '/private/leaked.html', 'message' => 'Rejected while reading https://user:password@example.test/private' ),
+			),
+		),
+	),
+);
+$GLOBALS['ssi_direct_materialization_error'] = new WP_Error( 'static_site_importer_quality_gate_failed', 'Website artifact did not pass the producer-required editability policy.', $editability_failure_data );
+$editability_failure = $drive_apply( $input() );
+$assert( 'Materialization failed the editability policy: empty_wrapper_count is 16 (max 10) in website/functions-and-scope/index.html, and 2 more pages.' === ( $editability_failure['error']['message'] ?? '' ), 'a failed producer gate names itself and states its own first measurement' );
+$editability_diagnostic = $editability_failure['diagnostics'][0] ?? array();
+$assert( 'editability_policy_failed' === ( $editability_diagnostic['code'] ?? '' ) && array( 'metric' => 'empty_wrapper_count', 'actual' => 16, 'maximum' => 10, 'source_path' => 'website/functions-and-scope/index.html', 'detail' => 'empty_wrapper_count is 16; meaningful editability allows at most 10.' ) === ( $editability_diagnostic['threshold_failures'][0] ?? array() ) && 3 === ( $editability_diagnostic['threshold_failure_count'] ?? 0 ), 'the metric, its value, its bound and its page reach the failure receipt' );
+$assert( ! isset( $editability_diagnostic['threshold_failures'][2]['source_path'] ) && 'Rejected while reading [url]' === ( $editability_diagnostic['threshold_failures'][2]['detail'] ?? '' ) && ! str_contains( (string) json_encode( $editability_failure ), 'password' ), 'threshold evidence obeys the same path and URL redaction as every other public diagnostic' );
+$editability_evidence = $editability_failure['error']['data']['artifact_run']['failures'][0]['diagnostics'][0] ?? array();
+$assert( 'empty_wrapper_count' === ( $editability_evidence['threshold_failures'][0]['metric'] ?? '' ) && 16 === ( $editability_evidence['threshold_failures'][0]['actual'] ?? 0 ), 'resumability evidence keeps the measurements that rejected the run' );
+$assert( 'editability_policy_failed' === ( $editability_failure['import_report_summary']['failure_reasons'][0] ?? '' ), 'the failure summary names the gate that failed' );
+
+// A runtime entity rejection states its subject and findings in error data alone, with no diagnostics list (runs/r31).
+$entity_declaration_id = str_repeat( 'e', 64 );
+$GLOBALS['ssi_direct_materialization_error'] = new WP_Error(
+	'static_site_importer_runtime_entity_invalid',
+	'Runtime entity declaration failed SSI provider validation.',
+	array(
+		'status'            => 'rejected',
+		'declaration_id'    => $entity_declaration_id,
+		'entity_collection' => 'forms',
+		'error_count'       => 2,
+		'errors'            => array(
+			array( 'path' => '$.forms[0].presentation_graph', 'message' => 'presentation_graph provenance is malformed.' ),
+			array( 'path' => '$.forms[1].presentation_graph', 'message' => 'presentation_graph provenance is malformed.' ),
+		),
+	)
+);
+$entity_failure = $drive_apply( $input() );
+$assert( 'Runtime entity declaration ' . $entity_declaration_id . ' (forms) rejected: $.forms[0].presentation_graph — presentation_graph provenance is malformed. (and 1 more)' === ( $entity_failure['error']['message'] ?? '' ), 'a rejected runtime declaration names itself and quotes the validator finding' );
+$entity_diagnostic = $entity_failure['diagnostics'][0] ?? array();
+$assert( $entity_declaration_id === ( $entity_diagnostic['declaration_id'] ?? '' ) && 'forms' === ( $entity_diagnostic['entity_collection'] ?? '' ) && array( 'path' => '$.forms[0].presentation_graph', 'detail' => 'presentation_graph provenance is malformed.' ) === ( $entity_diagnostic['errors'][0] ?? array() ) && 2 === ( $entity_diagnostic['error_count'] ?? 0 ), 'the declaration id and its validator findings reach the failure receipt' );
+$assert( 'static_site_importer_runtime_entity_invalid' === ( $entity_failure['error']['code'] ?? '' ), 'machine-readable failure codes are unchanged' );
+$assert( '$.forms[0].presentation_graph' === ( $entity_failure['error']['data']['artifact_run']['failures'][0]['diagnostics'][0]['errors'][0]['path'] ?? '' ), 'resumability evidence keeps the pointer identifying the rejected entity' );
+
 $GLOBALS['ssi_direct_materialization_error'] = null;
 $cli_report = $test_root . '/cli-import-report.json';
 $drive_apply( $input(), static fn ( array $step ): array => Static_Site_Importer_Canonical_Import_Service::import_with_cli_report( $step, $cli_report ) );

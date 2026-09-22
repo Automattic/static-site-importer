@@ -18,6 +18,7 @@
     "test:promote-solved-fixture": "node --test tools/promote-solved-fixture.test.mjs",
     "test:php-wasm-zstd": "node --test tools/php-wasm-zstd.test.mjs",
     "test:playground-launch": "node tools/verify-playground-launch.mjs",
+    "test:playground-inputs": "node tools/verify-playground-inputs.mjs",
     "build:php-wasm-zstd": "bash tools/build-php-wasm-zstd.sh",
     "build:dev-package": "node tools/build-dev-package.mjs",
     "test:dev-package": "node --test tools/build-dev-package.test.mjs",

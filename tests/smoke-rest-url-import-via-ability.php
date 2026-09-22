@@ -41,6 +41,9 @@ $ability_stub = new class {
 	public array $next_result = array();
 
 	public function execute( array $input ) {
+		if ( 'apply' === ( $input['operation'] ?? '' ) ) {
+			return array( 'success' => true, 'result' => array( 'status' => 'completed', 'theme' => array( 'slug' => 'rest-site' ) ) );
+		}
 		$this->last_input = $input;
 		return $this->next_result;
 	}
@@ -100,6 +103,7 @@ $ability_stub->next_result = array(
 	'success'               => true,
 	'continuation'          => false,
 	'import_id'             => 'rest-id-2',
+	'plan'                  => array( 'schema' => 'blocks-engine/wordpress-site-plan/v2' ),
 	'result'                => array( 'theme_slug' => 'rest-site' ),
 	'import_report_summary' => array( 'status' => 'completed' ),
 	'url_batch_run'         => array(
@@ -122,8 +126,8 @@ $response = rest_get_server()->dispatch( $request );
 $body     = $response->get_data();
 
 $assert( 200 === $response->get_status(), 'rest-route-terminal-status' );
-$assert( 'rest-site' === ( $body['terminal_batch_result']['theme_slug'] ?? '' ), 'rest-response-terminal-batch' );
-$assert( 'rest-site' === ( $body['result']['theme_slug'] ?? '' ), 'rest-response-result-theme-slug' );
+$assert( 'completed' === ( $body['result']['status'] ?? '' ), 'rest-response-completed-materialization' );
+$assert( 'rest-site' === ( $body['result']['theme']['slug'] ?? '' ), 'rest-response-result-theme-slug' );
 $assert( ! isset( $body['preview'] ), 'rest-response-terminal-current-site-no-preview' );
 
 if ( ! empty( $failures ) ) {

@@ -210,6 +210,10 @@ final class Static_Site_Importer_Form_Field_Markup {
 		if ( '' === $label && in_array( $lookup, array( 'checkbox', 'radio', 'select' ), true ) ) {
 			$label = self::control_text( $control );
 		}
+		$description = self::control_description( $control );
+		if ( '' !== $description && '' !== $label && str_ends_with( $label, $description ) ) {
+			$label = trim( substr( $label, 0, -strlen( $description ) ) );
+		}
 		if ( '' !== $label && isset( $control['required_text'] ) && is_scalar( $control['label'] ?? null ) && 1 === preg_match( '/\s$/u', (string) $control['label'] ) ) {
 			$label = rtrim( $label ) . ' ';
 		}
@@ -227,16 +231,18 @@ final class Static_Site_Importer_Form_Field_Markup {
 			$attrs['showCountrySelector'] = 'phone' === $lookup;
 		}
 		$placeholder = isset( $control['placeholder'] ) && is_scalar( $control['placeholder'] ) ? trim( (string) $control['placeholder'] ) : '';
+		if ( 'select' === $lookup && '' === $placeholder ) {
+			$placeholder = self::select_placeholder_label( $control );
+		}
 
 		if ( in_array( $lookup, array( 'select', 'radio', 'checkbox' ), true ) ) {
-			$options = self::option_labels( $control );
+			$options = self::option_labels( $control, 'select' === $lookup );
 			if ( ! empty( $options ) ) {
 				$attrs['options'] = $options;
 			}
 		}
 
-		$losses      = array();
-		$description = self::control_description( $control );
+		$losses = array();
 		if ( '' !== $description ) {
 			// Every jetpack/field-* block declares this attribute (see
 			// projects/packages/forms/src/blocks/shared/settings/index.js), but
@@ -470,29 +476,52 @@ final class Static_Site_Importer_Form_Field_Markup {
 		);
 	}
 
-	/** Serialize source context as editable core blocks beside the provider form. */
-	public static function context_block_markup( array $form, string $position ): string {
+	/**
+	 * Build inner blocks for copy the producer recorded inside the form.
+	 *
+	 * `context_before` / `context_after` are in-form content (a heading above the
+	 * fields, a required-field note). They belong inside `jetpack/contact-form`,
+	 * which accepts `core/heading` and `core/paragraph`. Copy outside the form
+	 * element is never stored here; it is already a page-level sibling.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function context_blocks( array $form, string $position ): array {
 		$context = isset( $form['form'][ $position ] ) && is_array( $form['form'][ $position ] ) ? $form['form'][ $position ] : array();
-		$markup  = '';
+		$blocks  = array();
 		foreach ( $context as $block ) {
 			if ( ! is_array( $block ) || ! is_string( $block['text'] ?? null ) || '' === trim( $block['text'] ) ) {
 				continue;
 			}
 			if ( 'heading' === ( $block['type'] ?? null ) ) {
-				$level   = min( 6, max( 1, (int) ( $block['level'] ?? 2 ) ) );
-				$markup .= self::serialize_block( array(
+				$level = min( 6, max( 1, (int) ( $block['level'] ?? 2 ) ) );
+				$attrs = 2 === $level ? array() : array( 'level' => $level );
+				$class = isset( $block['class'] ) && is_scalar( $block['class'] ) ? trim( (string) $block['class'] ) : '';
+				if ( '' !== $class ) {
+					$attrs['className'] = $class;
+				}
+				$blocks[] = array(
 					'name'    => 'core/heading',
-					'attrs'   => 2 === $level ? array() : array( 'level' => $level ),
+					'attrs'   => $attrs,
 					'wrapper' => 'heading',
 					'content' => $block['text'],
-				) );
+				);
 			} elseif ( 'paragraph' === ( $block['type'] ?? null ) ) {
-				$markup .= self::serialize_block( array(
+				$blocks[] = array(
 					'name'    => 'core/paragraph',
 					'wrapper' => 'paragraph',
 					'content' => $block['text'],
-				) );
+				);
 			}
+		}
+		return $blocks;
+	}
+
+	/** Serialize in-form context as editable core blocks. */
+	public static function context_block_markup( array $form, string $position ): string {
+		$markup = '';
+		foreach ( self::context_blocks( $form, $position ) as $block ) {
+			$markup .= self::serialize_block( $block );
 		}
 		return $markup;
 	}
@@ -542,15 +571,19 @@ final class Static_Site_Importer_Form_Field_Markup {
 	/**
 	 * Extract option labels from a select/radio/checkbox control.
 	 *
-	 * @param array<string, mixed> $control Source control metadata.
+	 * @param array<string, mixed> $control            Source control metadata.
+	 * @param bool                 $omit_placeholders  Whether source placeholder options stay off the list.
 	 * @return array<int, string>
 	 */
-	private static function option_labels( array $control ): array {
+	private static function option_labels( array $control, bool $omit_placeholders = false ): array {
 		$options = isset( $control['options'] ) && is_array( $control['options'] ) ? $control['options'] : array();
 		$labels  = array();
 
 		foreach ( $options as $option ) {
 			if ( is_array( $option ) ) {
+				if ( $omit_placeholders && ! empty( $option['placeholder'] ) ) {
+					continue;
+				}
 				$label = isset( $option['label'] ) && is_scalar( $option['label'] ) ? trim( (string) $option['label'] ) : '';
 				if ( '' === $label && isset( $option['value'] ) && is_scalar( $option['value'] ) ) {
 					$label = trim( (string) $option['value'] );
@@ -565,6 +598,34 @@ final class Static_Site_Importer_Form_Field_Markup {
 		}
 
 		return $labels;
+	}
+
+	/**
+	 * Read a select's source-authored placeholder option, mapped onto Jetpack's
+	 * input placeholder / togglelabel rather than kept as a real option.
+	 *
+	 * Jetpack prepends a synthetic "Select an option" unless togglelabel or a
+	 * default is set. The source's empty-value disabled option is that prompt.
+	 *
+	 * @param array<string, mixed> $control Source control metadata.
+	 * @return string
+	 */
+	private static function select_placeholder_label( array $control ): string {
+		$options = isset( $control['options'] ) && is_array( $control['options'] ) ? $control['options'] : array();
+		foreach ( $options as $option ) {
+			if ( ! is_array( $option ) || empty( $option['placeholder'] ) ) {
+				continue;
+			}
+			$label = isset( $option['label'] ) && is_scalar( $option['label'] ) ? trim( (string) $option['label'] ) : '';
+			if ( '' === $label && isset( $option['value'] ) && is_scalar( $option['value'] ) ) {
+				$label = trim( (string) $option['value'] );
+			}
+			if ( '' !== $label ) {
+				return substr( $label, 0, 200 );
+			}
+		}
+
+		return '';
 	}
 
 	/**
@@ -618,8 +679,12 @@ final class Static_Site_Importer_Form_Field_Markup {
 			$type    = 'submit' === $wrapper ? 'submit' : 'button';
 			$prefix  = "\n<div class=\"" . self::escape_attribute( $classes ) . '"><button type="' . $type . '" class="wp-block-button__link wp-element-button">' . self::rich_text_markup( $content, $label ) . "</button></div>\n";
 		} elseif ( 'heading' === $wrapper ) {
-			$level  = min( 6, max( 1, (int) ( $attrs['level'] ?? 2 ) ) );
-			$prefix = "\n<h" . $level . ' class="wp-block-heading">' . self::rich_text_markup( $content ) . '</h' . $level . ">\n";
+			$level   = min( 6, max( 1, (int) ( $attrs['level'] ?? 2 ) ) );
+			$classes = 'wp-block-heading';
+			if ( isset( $attrs['className'] ) && is_scalar( $attrs['className'] ) && '' !== trim( (string) $attrs['className'] ) ) {
+				$classes .= ' ' . trim( (string) $attrs['className'] );
+			}
+			$prefix = "\n<h" . $level . ' class="' . self::escape_attribute( $classes ) . '">' . self::rich_text_markup( $content ) . '</h' . $level . ">\n";
 		} elseif ( 'paragraph' === $wrapper ) {
 			$prefix = "\n<p>" . self::rich_text_markup( $content ) . "</p>\n";
 		} elseif ( 'group' === $wrapper ) {

@@ -234,7 +234,16 @@ for ( $index = 0; $index < 500; ++$index ) {
 }
 $bounded_bundle = static_site_importer_cli_request_bundle_files( $bounded_bundle_dir );
 $assert( is_array( $bounded_bundle ) && 501 === count( $bounded_bundle['files'] ?? array() ), 'request-bundle-retains-files-above-compiler-default' );
-$assert( array( 'max_files' => 512, 'max_file_bytes' => 10485760, 'max_total_bytes' => 335544320 ) === ( $bounded_bundle['compiler_limits'] ?? null ), 'request-bundle-reserves every inline style and script expansion' );
+$assert(
+	array(
+		'max_files'             => 512,
+		'max_file_bytes'        => 10485760,
+		'max_total_bytes'       => 335544320,
+		'max_media_file_bytes'  => 104857600,
+		'max_media_total_bytes' => 1073741824,
+	) === ( $bounded_bundle['compiler_limits'] ?? null ),
+	'request-bundle-reserves every inline style and script expansion'
+);
 foreach ( scandir( $bounded_bundle_dir ) as $entry ) {
 	if ( '.' !== $entry && '..' !== $entry ) {
 		unlink( $bounded_bundle_dir . '/' . $entry );
@@ -306,6 +315,52 @@ foreach ( scandir( $count_limit_dir ) as $entry ) {
 }
 rmdir( $count_limit_dir );
 
+// The reservation has to track what Blocks Engine actually expands. Blocks that
+// expand into nothing still consumed budget, which rejected captures that fit.
+$expansion_dir  = sys_get_temp_dir() . '/ssi-inline-expansion-' . bin2hex( random_bytes( 6 ) );
+mkdir( $expansion_dir );
+$expansion_page = $expansion_dir . '/index.html';
+file_put_contents(
+	$expansion_page,
+	'<html><head>'
+	. '<style></style><style>   </style><style type="text/css"></style>'
+	. '<style type="text/plain">.skipped{color:red}</style>'
+	. '<style type="text/css">.kept{color:blue}</style>'
+	. '<script src="vendor.js"></script>'
+	. '<script type="application/json">{"skipped":true}</script>'
+	. '<script></script>'
+	. '<script type="text/javascript">console.log(1);</script>'
+	. '</head><body></body></html>'
+);
+$assert( 2 === static_site_importer_cli_inline_expansion_count( $expansion_page ), 'inline-expansion-reserves-only-blocks-blocks-engine-expands' );
+
+// A document with no expandable stylesheet still reserves one slot, because
+// spacing authored on <body> is carried as generated CSS.
+file_put_contents( $expansion_page, '<html><head><style></style></head><body style="margin:3rem"></body></html>' );
+$assert( 1 === static_site_importer_cli_inline_expansion_count( $expansion_page ), 'inline-expansion-keeps-a-slot-for-generated-body-spacing-css' );
+
+// A page that expands into nothing reserves nothing.
+file_put_contents( $expansion_page, '<html><head><style></style><script src="vendor.js"></script></head><body></body></html>' );
+$assert( 0 === static_site_importer_cli_inline_expansion_count( $expansion_page ), 'inline-expansion-reserves-nothing-for-a-page-that-expands-into-nothing' );
+
+// A capture whose pages are dense with non-expanding blocks must be accepted.
+unlink( $expansion_page );
+for ( $index = 0; $index < 40; ++$index ) {
+	file_put_contents(
+		$expansion_dir . '/page-' . $index . '.html',
+		'<html><head>' . str_repeat( '<style></style>', 60 ) . '<style type="text/css">.a{color:red}</style></head><body></body></html>'
+	);
+}
+$expansion_bundle = static_site_importer_cli_request_bundle_files( $expansion_dir );
+$assert( ! is_wp_error( $expansion_bundle ), 'request-bundle-accepts-pages-dense-with-non-expanding-blocks' );
+$assert( is_array( $expansion_bundle ) && 80 === ( $expansion_bundle['compiler_limits']['max_files'] ?? 0 ), 'request-bundle-reserves-one-expansion-per-page-with-one-real-stylesheet' );
+foreach ( scandir( $expansion_dir ) as $entry ) {
+	if ( '.' !== $entry && '..' !== $entry ) {
+		unlink( $expansion_dir . '/' . $entry );
+	}
+}
+rmdir( $expansion_dir );
+
 $file_limit_dir = sys_get_temp_dir() . '/ssi-request-bundle-file-' . bin2hex( random_bytes( 6 ) );
 mkdir( $file_limit_dir );
 $file_limit_handle = fopen( $file_limit_dir . '/asset.css', 'w' );
@@ -313,8 +368,114 @@ ftruncate( $file_limit_handle, 10485761 );
 fclose( $file_limit_handle );
 $file_limit = static_site_importer_cli_request_bundle_files( $file_limit_dir );
 $assert( is_wp_error( $file_limit ) && 'static_site_importer_cli_request_bundle_file_too_large' === $file_limit->get_error_code(), 'request-bundle-rejects-file-bytes-over-hard-boundary' );
+$assert( str_contains( $file_limit->get_error_message(), '10 MiB' ), 'request-bundle-parsed-file-rejection-message-reports-the-parse-limit-it-exceeded' );
 unlink( $file_limit_dir . '/asset.css' );
 rmdir( $file_limit_dir );
+
+// A binary media file the compiler only copies, never parses, gets a far
+// wider per-file ceiling than a parsed source — comfortably past the old
+// flat 10 MiB cap, and still nowhere near the 256 MiB aggregate budget.
+$media_bundle_dir = sys_get_temp_dir() . '/ssi-request-bundle-media-' . bin2hex( random_bytes( 6 ) );
+mkdir( $media_bundle_dir );
+$media_bundle_dir  = realpath( $media_bundle_dir );
+$media_clip_handle = fopen( $media_bundle_dir . '/clip.mp4', 'w' );
+ftruncate( $media_clip_handle, 13600000 );
+fclose( $media_clip_handle );
+$media_bundle = static_site_importer_cli_request_bundle_files( $media_bundle_dir );
+$media_files  = is_array( $media_bundle ) ? array_column( $media_bundle['files'], null, 'path' ) : array();
+$assert( ! is_wp_error( $media_bundle ) && isset( $media_files['clip.mp4'] ) && 13600000 === $media_files['clip.mp4']['payload_reference']['bytes'], 'request-bundle-accepts-a-media-file-above-the-old-flat-per-file-cap-when-the-aggregate-budget-allows' );
+unlink( $media_bundle_dir . '/clip.mp4' );
+rmdir( $media_bundle_dir );
+
+// A PARSED file (HTML) above the parse-oriented cap is still rejected — the
+// wider ceiling only applies to opaque binaries the compiler copies, not to
+// documents it converts to blocks.
+$parsed_over_cap_dir = sys_get_temp_dir() . '/ssi-request-bundle-parsed-' . bin2hex( random_bytes( 6 ) );
+mkdir( $parsed_over_cap_dir );
+file_put_contents( $parsed_over_cap_dir . '/index.html', '<html><body>' . str_repeat( 'a', 10485761 ) . '</body></html>' );
+$parsed_over_cap = static_site_importer_cli_request_bundle_files( $parsed_over_cap_dir );
+$assert( is_wp_error( $parsed_over_cap ) && 'static_site_importer_cli_request_bundle_file_too_large' === $parsed_over_cap->get_error_code(), 'request-bundle-still-rejects-a-parsed-html-file-above-the-parse-cap' );
+$assert( str_contains( $parsed_over_cap->get_error_message(), '10 MiB' ), 'request-bundle-parsed-html-rejection-message-reports-the-parse-limit' );
+unlink( $parsed_over_cap_dir . '/index.html' );
+rmdir( $parsed_over_cap_dir );
+
+// Media the compiler never opens no longer spends the budget that bounds what
+// it parses. madalenatavares.net (runs r26/r36) projects 9.9 MiB of text beside
+// 336.5 MiB of Pixieset srcset candidates, and used to be refused outright on
+// the 256 MiB aggregate: 270 MiB of media beside a page is now admitted whole.
+$media_aggregate_dir = sys_get_temp_dir() . '/ssi-request-bundle-media-aggregate-' . bin2hex( random_bytes( 6 ) );
+mkdir( $media_aggregate_dir );
+$media_aggregate_dir = realpath( $media_aggregate_dir );
+file_put_contents( $media_aggregate_dir . '/index.html', '<main><img src="hero-0.jpg" alt="Hero"></main>' );
+for ( $index = 0; $index < 6; ++$index ) {
+	$hero_handle = fopen( $media_aggregate_dir . '/hero-' . $index . '.jpg', 'w' );
+	ftruncate( $hero_handle, 47185920 );
+	fclose( $hero_handle );
+}
+$media_aggregate = static_site_importer_cli_request_bundle_files( $media_aggregate_dir );
+$assert( ! is_wp_error( $media_aggregate ) && 7 === count( $media_aggregate['files'] ?? array() ), 'request-bundle-admits-media-past-the-aggregate-budget-for-parsed-sources' );
+foreach ( scandir( $media_aggregate_dir ) as $entry ) {
+	if ( '.' !== $entry && '..' !== $entry ) {
+		unlink( $media_aggregate_dir . '/' . $entry );
+	}
+}
+rmdir( $media_aggregate_dir );
+
+// The wider media ceiling still cooperates with the media budget instead of
+// racing past it: eleven equally sized media files, each comfortably under the
+// flat media ceiling on its own, exhaust the 1 GiB media budget by the eleventh
+// file, whose effective ceiling has shrunk to what remains (24 MiB) — and the
+// rejection message reports that shrunken remaining-budget limit, not the flat
+// 100 MiB media ceiling, under the media budget's own error code.
+$media_budget_dir = sys_get_temp_dir() . '/ssi-request-bundle-media-budget-' . bin2hex( random_bytes( 6 ) );
+mkdir( $media_budget_dir );
+for ( $index = 0; $index < 11; ++$index ) {
+	$clip_handle = fopen( $media_budget_dir . '/clip-' . $index . '.mp4', 'w' );
+	ftruncate( $clip_handle, 104857600 );
+	fclose( $clip_handle );
+}
+$media_budget = static_site_importer_cli_request_bundle_files( $media_budget_dir );
+$assert( is_wp_error( $media_budget ) && 'static_site_importer_cli_request_bundle_media_file_too_large' === $media_budget->get_error_code(), 'request-bundle-shrinks-the-media-ceiling-to-what-remains-of-the-media-budget' );
+$assert( str_contains( $media_budget->get_error_message(), '24 MiB' ) && ! str_contains( $media_budget->get_error_message(), '100 MiB' ), 'request-bundle-media-rejection-message-reports-the-remaining-budget-not-the-flat-media-ceiling' );
+foreach ( scandir( $media_budget_dir ) as $entry ) {
+	if ( '.' !== $entry && '..' !== $entry ) {
+		unlink( $media_budget_dir . '/' . $entry );
+	}
+}
+rmdir( $media_budget_dir );
+
+// The two budgets can only stay coherent if SSI and Blocks Engine agree on
+// which sources the compiler reads. Every extension Blocks Engine hydrates
+// behind a payload reference must be a read source here, or SSI would wave
+// through a file Blocks Engine then refuses on its own source-read budget.
+$blocks_engine_parsed_extensions = array( 'css', 'html', 'htm', 'js', 'mjs', 'json', 'md', 'markdown', 'mdx', 'svg' );
+foreach ( $blocks_engine_parsed_extensions as $extension ) {
+	if ( ! Static_Site_Importer_Content_Policy::is_static_path( 'source.' . $extension ) ) {
+		// Never reaches a budget: a non-static source is refused outright.
+		continue;
+	}
+	$assert( static_site_importer_cli_request_bundle_is_read_source( 'source.' . $extension ), 'request-bundle-budgets-' . $extension . '-as-a-read-source' );
+}
+$normalizer_class = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\ArtifactNormalizer';
+if ( class_exists( $normalizer_class ) && ( new ReflectionClass( $normalizer_class ) )->hasConstant( 'REFERENCE_TEXT_EXTENSIONS' ) ) {
+	$assert( constant( $normalizer_class . '::REFERENCE_TEXT_EXTENSIONS' ) === $blocks_engine_parsed_extensions, 'request-bundle-tracks-the-blocks-engine-read-source-rule' );
+}
+foreach ( array( 'jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'mp4', 'webm', 'mp3', 'wav', 'ogg', 'pdf', 'woff', 'woff2', 'ttf', 'otf', 'eot', 'ico', 'cur', 'bmp' ) as $extension ) {
+	$assert( ! static_site_importer_cli_request_bundle_is_read_source( 'media.' . $extension ), 'request-bundle-budgets-' . $extension . '-as-media' );
+}
+
+// The wider media ceiling never loosens the executable/static-content
+// policy: a large file with a disallowed extension is still rejected before
+// any byte check runs, regardless of how far under the media ceiling it is.
+$executable_media_dir = sys_get_temp_dir() . '/ssi-request-bundle-executable-media-' . bin2hex( random_bytes( 6 ) );
+mkdir( $executable_media_dir );
+$executable_media_handle = fopen( $executable_media_dir . '/clip.mp4.php', 'w' );
+ftruncate( $executable_media_handle, 13600000 );
+fclose( $executable_media_handle );
+$executable_media = static_site_importer_cli_request_bundle_files( $executable_media_dir );
+$assert( is_wp_error( $executable_media ) && 'static_site_importer_executable_source_rejected' === $executable_media->get_error_code(), 'request-bundle-wider-media-ceiling-does-not-loosen-the-executable-policy' );
+unlink( $executable_media_dir . '/clip.mp4.php' );
+rmdir( $executable_media_dir );
 
 $total_limit_dir = sys_get_temp_dir() . '/ssi-request-bundle-total-' . bin2hex( random_bytes( 6 ) );
 mkdir( $total_limit_dir );
@@ -325,6 +486,13 @@ for ( $index = 0; $index < 26; ++$index ) {
 }
 $total_limit = static_site_importer_cli_request_bundle_files( $total_limit_dir );
 $assert( is_wp_error( $total_limit ) && 'static_site_importer_cli_request_bundle_total_too_large' === $total_limit->get_error_code(), 'request-bundle-rejects-aggregate-bytes-over-hard-boundary' );
+// Media beside those parsed sources does not bring the aggregate forward: the
+// same 260 MiB of CSS is what refuses the bundle, not the media next to it.
+$total_limit_media_handle = fopen( $total_limit_dir . '/clip.mp4', 'w' );
+ftruncate( $total_limit_media_handle, 94371840 );
+fclose( $total_limit_media_handle );
+$total_limit_with_media = static_site_importer_cli_request_bundle_files( $total_limit_dir );
+$assert( is_wp_error( $total_limit_with_media ) && 'static_site_importer_cli_request_bundle_total_too_large' === $total_limit_with_media->get_error_code(), 'request-bundle-charges-the-parsed-aggregate-to-parsed-sources-alone' );
 foreach ( scandir( $total_limit_dir ) as $entry ) {
 	if ( '.' !== $entry && '..' !== $entry ) {
 		unlink( $total_limit_dir . '/' . $entry );
@@ -670,6 +838,66 @@ $GLOBALS['ssi_cli_runtime_result'] = (object) array(
 $fresh_invalid = static_site_importer_cli_import_run_fresh_runtime( array( 'source' => array( 'type' => 'html' ) ) );
 $assert( 'static_site_importer_cli_step_response_invalid' === ( $fresh_invalid['error']['code'] ?? '' ), 'fresh-runtime-invalid-response-code' );
 $assert( str_contains( (string) ( $fresh_invalid['error']['message'] ?? '' ), 'code 255' ) && str_contains( (string) ( $fresh_invalid['error']['message'] ?? '' ), 'Allowed memory size exhausted' ), 'fresh-runtime-invalid-response-reports-process-failure' );
+
+// Externally driven continuation (#1779).
+//
+// A host that supplies fresh runtimes but cannot fork -- PHP.wasm has no
+// subprocesses at all -- must be able to drive the same state machine by
+// repeating one identical command. Without this it has to reimplement the
+// host loop's state transition, and every copy of that logic rots when the
+// continuation contract moves.
+$state_dir  = sys_get_temp_dir() . '/ssi-state-' . bin2hex( random_bytes( 6 ) );
+mkdir( $state_dir );
+$state_path = $state_dir . '/state.json';
+
+$GLOBALS['ssi_stateful_steps']   = 0;
+$GLOBALS['ssi_stateful_inputs']  = array();
+$GLOBALS['ssi_stateful_scripted'] = array(
+	array( 'success' => true, 'continuation' => true, 'import_id' => 'run-1', 'continuation_reason' => 'pages_remaining' ),
+	array(
+		'success'             => true,
+		'continuation'        => true,
+		'import_id'           => 'run-1',
+		'continuation_reason' => 'dependencies_prepared',
+		'result'              => array( 'fresh_runtime' => array( 'request_id' => 'req-9', 'lifecycle_checkpoint_id' => 'ckpt-9' ) ),
+	),
+	array( 'success' => true, 'continuation' => false, 'import_id' => 'run-1', 'theme_slug' => 'generated-site' ),
+);
+
+function static_site_importer_cli_import( array $input ): array {
+	$GLOBALS['ssi_stateful_inputs'][] = $input;
+	$index                            = $GLOBALS['ssi_stateful_steps']++;
+
+	return $GLOBALS['ssi_stateful_scripted'][ $index ] ?? array( 'success' => false, 'error' => array( 'code' => 'ran_too_many_times' ) );
+}
+
+$request = array( 'source' => array( 'type' => 'files', 'entrypoint' => 'website/index.html', 'files' => array() ), 'slug' => 'generated-site' );
+
+$first = static_site_importer_cli_run_stateful_import_step( $request, $state_path );
+$assert( ! empty( $first['continuation'] ), 'stateful-first-invocation-reports-continuation' );
+$assert( is_file( $state_path ), 'stateful-first-invocation-persists-state' );
+
+$second = static_site_importer_cli_run_stateful_import_step( $request, $state_path );
+$assert( 'dependencies_prepared' === ( $second['continuation_reason'] ?? '' ), 'stateful-second-invocation-advances' );
+$assert( 'run-1' === ( $GLOBALS['ssi_stateful_inputs'][1]['source']['import_id'] ?? '' ), 'stateful-resume-carries-import-id-without-caller' );
+
+$third = static_site_importer_cli_run_stateful_import_step( $request, $state_path );
+$assert( empty( $third['continuation'] ) && 'generated-site' === ( $third['theme_slug'] ?? '' ), 'stateful-third-invocation-is-terminal' );
+$assert( 'resume' === ( $GLOBALS['ssi_stateful_inputs'][2]['runtime_lifecycle_phase'] ?? '' ), 'stateful-lifecycle-handoff-applied-without-caller' );
+$assert( 'ckpt-9' === ( $GLOBALS['ssi_stateful_inputs'][2]['runtime_lifecycle_checkpoint'] ?? '' ), 'stateful-lifecycle-checkpoint-applied-without-caller' );
+
+// Over-provisioned steps are the whole point: a Blueprint cannot know the page
+// count in advance, so extra invocations must replay rather than start again.
+$fourth = static_site_importer_cli_run_stateful_import_step( $request, $state_path );
+$assert( 'generated-site' === ( $fourth['theme_slug'] ?? '' ), 'stateful-post-terminal-invocation-replays-receipt' );
+$assert( 3 === $GLOBALS['ssi_stateful_steps'], 'stateful-post-terminal-invocation-runs-no-further-import' );
+
+file_put_contents( $state_path, '{"schema":"something-else"}' );
+$rejected = static_site_importer_cli_run_stateful_import_step( $request, $state_path );
+$assert( 'static_site_importer_cli_import_state_invalid' === ( $rejected['error']['code'] ?? '' ), 'stateful-foreign-state-file-is-refused' );
+
+array_map( 'unlink', glob( $state_dir . '/*' ) ?: array() );
+rmdir( $state_dir );
 
 if ( $failures ) {
 	fwrite( STDERR, "Unified CLI import smoke failed:\n- " . implode( "\n- ", $failures ) . "\n" );

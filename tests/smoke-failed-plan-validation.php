@@ -80,7 +80,31 @@ $editability_plan['quality']['editability_policy']     = array(
 );
 $editability_artifacts = Static_Site_Importer_Failed_Plan_Validation::build( $editability_plan, array( 'slug' => 'failed-editability-policy' ), $compiled );
 $assert( true === ( $editability_artifacts['import_report']['quality']['fail_import'] ?? false ) && false === ( $editability_artifacts['import_report']['quality']['pass'] ?? true ) && 'failed' === ( $editability_artifacts['import_report']['status'] ?? '' ), 'producer-required editability rejection is never reported as a passing import' );
-$assert( 'shared_region_uneditable' === ( $editability_artifacts['import_report']['quality']['failure_reasons'][0] ?? '' ) && $editability_plan['quality']['editability_policy'] === ( $editability_artifacts['import_report']['quality']['editability_policy'] ?? null ), 'failed-plan evidence preserves actionable producer policy diagnostics without recreating policy metrics' );
+$assert( array( 'editability_policy_failed', 'shared_region_uneditable' ) === array_slice( $editability_artifacts['import_report']['quality']['failure_reasons'] ?? array(), 0, 2 ) && $editability_plan['quality']['editability_policy'] === ( $editability_artifacts['import_report']['quality']['editability_policy'] ?? null ), 'failed-plan evidence preserves actionable producer policy diagnostics without recreating policy metrics' );
+
+// A plan whose gate errors trail hundreds of warnings, as Blocks Engine appends them (runs/r33).
+$buried_plan                                       = $plan;
+$buried_plan['quality']['failure_reasons']         = array( 'unsupported_html_fallback' );
+$buried_plan['quality']['editability_policy']      = array(
+	'schema'      => 'blocks-engine/php-transformer/editability-policy/v1',
+	'enforcement' => 'required',
+	'status'      => 'failed',
+	'failures'    => array(
+		array( 'metric' => 'empty_wrapper_count', 'actual' => 16, 'maximum' => 10, 'message' => 'empty_wrapper_count is 16; meaningful editability allows at most 10.', 'source_path' => 'website/functions-and-scope/index.html' ),
+		array( 'metric' => 'empty_wrapper_count', 'actual' => 20, 'maximum' => 10, 'source_path' => 'website/objects-and-arrays/index.html' ),
+	),
+);
+$buried_plan['diagnostics']                        = array_merge(
+	array_fill( 0, 235, array( 'type' => 'author_layout_topology_changed', 'severity' => 'warning', 'reason_code' => 'author_layout_topology_changed', 'message' => 'Author layout topology changed.' ) ),
+	array(
+		array( 'code' => 'editability_policy_failed', 'severity' => 'error', 'message' => 'empty_wrapper_count is 16; meaningful editability allows at most 10.' ),
+		array( 'code' => 'editability_policy_failed', 'severity' => 'error', 'message' => 'empty_wrapper_count is 20; meaningful editability allows at most 10.' ),
+	)
+);
+$buried_artifacts                                  = Static_Site_Importer_Failed_Plan_Validation::build( $buried_plan, array( 'slug' => 'buried-editability-policy' ), $compiled );
+$buried_reasons                                    = $buried_artifacts['import_report_summary']['failure_reasons'] ?? array();
+$assert( 'editability_policy_failed' === ( $buried_reasons[0] ?? '' ) && in_array( 'empty_wrapper_count', $buried_reasons, true ), 'the failed-plan summary names the gate that actually rejected the plan, not an unrelated quality observation' );
+$assert( 'editability_policy_failed' === ( $buried_artifacts['import_report']['diagnostics'][0]['code'] ?? '' ) && 2 === count( array_filter( $buried_artifacts['import_report']['diagnostics'], static fn( array $diagnostic ): bool => 'error' === ( $diagnostic['severity'] ?? '' ) ) ), 'gate errors survive the diagnostic bound even when hundreds of warnings precede them' );
 
 $root = sys_get_temp_dir() . '/ssi-failed-plan-validation-' . uniqid( '', true );
 mkdir( $root );

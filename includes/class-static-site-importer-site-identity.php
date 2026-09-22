@@ -46,6 +46,8 @@ class Static_Site_Importer_Site_Identity {
 	 * - document_title: a pre-extracted raw document title (suffix-stripped here).
 	 * - html: raw HTML to extract a <title> from.
 	 * - artifact: a website artifact bundle whose entrypoint <title> is used.
+	 * - plan: a canonical site plan whose entrypoint document title is used.
+	 * - payload_reader: a transient reader for a reference-backed entry document.
 	 * - url / source_url: the source URL, used for the host fallback.
 	 *
 	 * @param array<string,mixed> $context Identity resolution context.
@@ -227,7 +229,7 @@ class Static_Site_Importer_Site_Identity {
 	 * @param array<string,mixed> $artifact Website artifact bundle.
 	 * @return string
 	 */
-	public static function title_from_website_artifact( array $artifact ): string {
+	public static function title_from_website_artifact( array $artifact, ?object $payload_reader = null ): string {
 		$entrypoint = isset( $artifact['entrypoint'] ) && is_scalar( $artifact['entrypoint'] ) ? self::normalize_route_path( (string) $artifact['entrypoint'] ) : '';
 		$files      = isset( $artifact['files'] ) && is_array( $artifact['files'] ) ? $artifact['files'] : array();
 
@@ -242,7 +244,23 @@ class Static_Site_Importer_Site_Identity {
 			}
 
 			$content = isset( $file['content'] ) && is_scalar( $file['content'] ) ? (string) $file['content'] : '';
-			$title   = self::title_from_html( $content );
+			if ( '' === $content && is_string( $file['content_base64'] ?? null ) ) {
+				// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes static HTML transport solely to read its document title.
+				$decoded = base64_decode( $file['content_base64'], true );
+				$content = is_string( $decoded ) ? $decoded : '';
+			}
+			if ( '' === $content && is_array( $file['payload_reference'] ?? null ) && is_object( $payload_reader ) && is_callable( array( $payload_reader, 'read' ) ) ) {
+				$reference = $file['payload_reference'];
+				try {
+					$bytes = $payload_reader->read( $reference );
+				} catch ( Throwable $error ) {
+					$bytes = null;
+				}
+				if ( is_string( $bytes ) && strlen( $bytes ) === ( $reference['bytes'] ?? null ) && hash_equals( (string) ( $reference['sha256'] ?? '' ), hash( 'sha256', $bytes ) ) ) {
+					$content = $bytes;
+				}
+			}
+			$title = self::title_from_html( $content );
 			if ( '' !== $title ) {
 				return $title;
 			}
@@ -312,12 +330,20 @@ class Static_Site_Importer_Site_Identity {
 		}
 
 		if ( isset( $context['artifact'] ) && is_array( $context['artifact'] ) ) {
-			$title = self::title_from_website_artifact( $context['artifact'] );
+			$title = self::title_from_website_artifact( $context['artifact'], is_object( $context['payload_reader'] ?? null ) ? $context['payload_reader'] : null );
 			if ( '' !== $title ) {
 				return $title;
 			}
 		}
 
+		foreach ( $context['plan']['pages'] ?? array() as $page ) {
+			if ( ! empty( $page['entrypoint'] ) ) {
+				$title = self::clean_title( (string) ( $page['document_metadata']['title'] ?? $page['title'] ?? '' ) );
+				if ( '' !== $title ) {
+					return $title;
+				}
+			}
+		}
 		return '';
 	}
 

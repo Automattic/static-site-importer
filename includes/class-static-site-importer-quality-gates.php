@@ -218,32 +218,33 @@ final class Static_Site_Importer_Quality_Gates {
 	}
 
 	/**
-	 * Count recorded interaction states from importer-owned diagnostics.
+	 * Count omitted interaction members from importer-owned diagnostics.
 	 *
-	 * Path-level rows carry `recorded_state_count`. Conversion rows without that
-	 * field count as one candidate each so a later producer does not disappear.
+	 * `interaction_candidate_count` is residual loss, not capture volume: members
+	 * the imported representation dropped. Path-level rows carry that omitted
+	 * count as `recorded_state_count`. Rows without the field count as one
+	 * member so a later producer does not disappear. Capture-side `no-dialog` /
+	 * `click-failed` and importer-side unmaterialized captured members both
+	 * contribute; `quality_pass` does not fail on this count.
 	 *
 	 * @param array<int,mixed> $diagnostics Normalized diagnostics.
 	 * @return int
 	 */
 	private static function interaction_candidate_count( array $diagnostics ): int {
-		$sum          = 0;
-		$saw_recorded = false;
-		$fallback     = 0;
+		$sum = 0;
 		foreach ( $diagnostics as $diagnostic ) {
 			if ( ! is_array( $diagnostic ) || Static_Site_Importer_Report_Diagnostics::INTERACTION_CANDIDATE_TYPE !== ( $diagnostic['type'] ?? '' ) ) {
 				continue;
 			}
 			$recorded = $diagnostic['recorded_state_count'] ?? $diagnostic['context']['recorded_state_count'] ?? null;
 			if ( is_numeric( $recorded ) ) {
-				$sum         += max( 0, (int) $recorded );
-				$saw_recorded = true;
+				$sum += max( 0, (int) $recorded );
 				continue;
 			}
-			++$fallback;
+			++$sum;
 		}
 
-		return $saw_recorded ? $sum : $fallback;
+		return $sum;
 	}
 
 	/**

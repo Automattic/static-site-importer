@@ -25,6 +25,7 @@ jobs:
     timeout-minutes: 45
     env:
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+      PLAYGROUND_EXPECT_RESPONSE_ARTIFACTS: not_retained
     steps:
       - uses: actions/checkout@v4
         with:
@@ -70,7 +71,7 @@ jobs:
             echo "Release asset static-site-importer.zip must expose a SHA-256 digest." >&2
             exit 1
           fi
-          package_archive="$pages_dir/playground/$RELEASE_TAG/static-site-importer.zip"
+          package_archive="$RUNNER_TEMP/static-site-importer.zip"
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern static-site-importer.zip --dir "$(dirname "$package_archive")"
           test "$package_sha256" = "$(sha256sum "$package_archive" | cut -d ' ' -f 1)"
           demo_build_dir="$RUNNER_TEMP/static-site-importer-playground-demo-package"
@@ -110,7 +111,8 @@ jobs:
             }
             fs.writeFileSync(output, JSON.stringify(blueprint, null, 2) + "\n");
           ' docs/playground/blueprint.json "$pages_dir/playground/$RELEASE_TAG.blueprint.json" "$RELEASE_TAG" "$package_sha256" "$demo_package_sha256" "$migration_package_sha256"
-          git -C "$pages_dir" add .nojekyll "playground/$RELEASE_TAG.blueprint.json" "playground/$RELEASE_TAG/static-site-importer.zip" "playground/$RELEASE_TAG/static-site-importer-playground-demo.zip" "playground/$RELEASE_TAG/playground-to-wordpress-com.zip"
+          cp docs/playground/agent-prompt.md "$pages_dir/playground/$RELEASE_TAG/agent-prompt.md"
+          git -C "$pages_dir" add .nojekyll "playground/$RELEASE_TAG.blueprint.json" "playground/$RELEASE_TAG/static-site-importer-playground-demo.zip" "playground/$RELEASE_TAG/playground-to-wordpress-com.zip" "playground/$RELEASE_TAG/agent-prompt.md"
           if ! git -C "$pages_dir" diff --cached --quiet; then
             git -C "$pages_dir" -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Publish safe Playground blueprint for $RELEASE_TAG"
             git -C "$pages_dir" push origin HEAD:gh-pages
@@ -118,7 +120,7 @@ jobs:
       - name: Wait for the immutable safe blueprint
         run: |
           blueprint_url="https://automattic.github.io/static-site-importer/playground/$RELEASE_TAG.blueprint.json"
-          expected_plugin_url="https://automattic.github.io/static-site-importer/playground/$RELEASE_TAG/static-site-importer.zip"
+          expected_plugin_url="https://github.com/Automattic/static-site-importer/releases/download/$RELEASE_TAG/static-site-importer.zip"
           expected_demo_url="https://automattic.github.io/static-site-importer/playground/$RELEASE_TAG/static-site-importer-playground-demo.zip"
           expected_migration_url="https://automattic.github.io/static-site-importer/playground/$RELEASE_TAG/playground-to-wordpress-com.zip"
           for attempt in $(seq 1 30); do
@@ -138,12 +140,23 @@ jobs:
           done
           echo "GitHub Pages did not publish the immutable safe blueprint for $RELEASE_TAG" >&2
           exit 1
+      - name: Check out immutable browser fixtures
+        uses: actions/checkout@v4
+        with:
+          repository: Automattic/blocks-engine
+          ref: 12c93f35529c563257d144b511b0dbd30eb89ebe
+          path: .playground-fixtures
+          persist-credentials: false
+          sparse-checkout: |
+            fixtures/websites/17-markdown-blog-launch-site
+            fixtures/websites/81-dental-practice
       - name: Verify the immutable safe Playground launch
         env:
           PLAYGROUND_BLUEPRINT_URL: https://automattic.github.io/static-site-importer/playground/${{ env.RELEASE_TAG }}.blueprint.json
+          PLAYGROUND_FIXTURE_REPO: ${{ github.workspace }}/.playground-fixtures
         run: |
           npx playwright install --with-deps chromium
-          npm run test:playground-launch
+          npm run test:playground-inputs
       - name: Advance the safe README blueprint alias
         if: env.ADVANCE_LATEST == 'true'
         env:
@@ -158,6 +171,11 @@ jobs:
           pages_dir="$RUNNER_TEMP/static-site-importer-pages"
           mkdir -p "$pages_dir/playground/latest"
           cp "$pages_dir/playground/$RELEASE_TAG.blueprint.json" "$pages_dir/playground/latest/blueprint.json"
+          # The agent prompt is the copy/paste surface, and it installs the
+          # WordPress.com handoff by URL. Both must resolve under `latest` so a
+          # pasted prompt never names a version.
+          cp docs/playground/agent-prompt.md "$pages_dir/playground/latest/agent-prompt.md"
+          cp "$pages_dir/playground/$RELEASE_TAG/playground-to-wordpress-com.zip" "$pages_dir/playground/latest/playground-to-wordpress-com.zip"
           git -C "$pages_dir" add playground
           if ! git -C "$pages_dir" diff --cached --quiet; then
             git -C "$pages_dir" -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Advance safe Playground blueprint to $RELEASE_TAG"
@@ -166,8 +184,20 @@ jobs:
       - name: Wait for the safe README blueprint alias
         if: env.ADVANCE_LATEST == 'true'
         run: |
+          for asset in agent-prompt.md playground-to-wordpress-com.zip; do
+            asset_url="https://automattic.github.io/static-site-importer/playground/latest/$asset"
+            for attempt in $(seq 1 30); do
+              if curl --silent --show-error --fail --location --output /dev/null "$asset_url"; then break; fi
+              if [ "$attempt" -eq 30 ]; then
+                echo "GitHub Pages did not publish playground/latest/$asset" >&2
+                exit 1
+              fi
+              echo "Waiting for playground/latest/$asset ($attempt/30)"
+              sleep 10
+            done
+          done
           blueprint_url="https://automattic.github.io/static-site-importer/playground/latest/blueprint.json"
-          expected_plugin_url="https://automattic.github.io/static-site-importer/playground/$RELEASE_TAG/static-site-importer.zip"
+          expected_plugin_url="https://github.com/Automattic/static-site-importer/releases/download/$RELEASE_TAG/static-site-importer.zip"
           expected_demo_url="https://automattic.github.io/static-site-importer/playground/$RELEASE_TAG/static-site-importer-playground-demo.zip"
           expected_migration_url="https://automattic.github.io/static-site-importer/playground/$RELEASE_TAG/playground-to-wordpress-com.zip"
           for attempt in $(seq 1 30); do

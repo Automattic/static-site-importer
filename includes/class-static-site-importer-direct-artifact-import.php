@@ -24,6 +24,9 @@ if ( ! class_exists( 'Static_Site_Importer_Client_Script_Policy' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Public_Error_Projection' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-public-error-projection.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-site-identity.php';
+}
 
 final class Static_Site_Importer_Direct_Artifact_Import {
 	private const RUN_SCHEMA                    = 'static-site-importer/direct-artifact-run/v1';
@@ -58,6 +61,11 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			$workspace->purge();
 			return $retained;
 		}
+		$site_identity               = Static_Site_Importer_Site_Identity::resolve( array_merge( $args, array(
+			'artifact'       => $artifact,
+			'payload_reader' => self::payload_reader( $workspace ),
+		) ) );
+		$artifact['block_namespace'] = $site_identity['block_namespace'];
 		unset( $args['_static_site_importer_payload_reader'] );
 		$policy                                = Static_Site_Importer_Client_Script_Policy::apply( $artifact, $args );
 		$artifact                              = $policy['artifact'];
@@ -1147,17 +1155,22 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$diagnostics = is_array( $data ) && is_array( $data['diagnostics'] ?? null ) ? Static_Site_Importer_Public_Error_Projection::project_public_diagnostics( $data['diagnostics'] ) : array();
 		if ( empty( $diagnostics ) ) {
 			// Keep the underlying cause (redacted and bounded) instead of only the stable machine code.
+			// An error that states its subject and findings without a diagnostics list keeps them here.
+			$evidence    = is_array( $data ) ? array_intersect_key( $data, array_flip( array( 'declaration_id', 'entity_collection', 'entity_type', 'provider', 'source_path', 'errors', 'error_count', 'threshold_failures', 'threshold_failure_count' ) ) ) : array();
 			$diagnostics = Static_Site_Importer_Public_Error_Projection::project_public_diagnostics(
 				array(
-					array(
-						'type'            => 'validation_error',
-						'kind'            => 'validation_error',
-						'severity'        => 'error',
-						'code'            => $code,
-						'reason_code'     => $code,
-						'phase'           => $phase,
-						'exception_class' => $error instanceof Throwable ? get_class( $error ) : '',
-						'message'         => $message,
+					array_merge(
+						array(
+							'type'            => 'validation_error',
+							'kind'            => 'validation_error',
+							'severity'        => 'error',
+							'code'            => $code,
+							'reason_code'     => $code,
+							'phase'           => $phase,
+							'exception_class' => $error instanceof Throwable ? get_class( $error ) : '',
+							'message'         => $message,
+						),
+						$evidence
 					),
 				)
 			);

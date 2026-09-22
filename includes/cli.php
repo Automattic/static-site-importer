@@ -4,6 +4,9 @@
  *
  * @package StaticSiteImporter
  */
+
+use Automattic\BlocksEngine\PhpTransformer\Support\StyleTagScanner;
+
 if ( ! function_exists( 'static_site_importer_cli_write_validation_output' ) ) {
 	/**
 	 * Write validation output to a file when requested, otherwise stdout.
@@ -247,26 +250,155 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_path' ) ) {
 }
 
 if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
-	/** Return the bounded compiler contract for verified request-bundle files. */
+	/**
+	 * Return the bounded compiler contract for verified request-bundle files.
+	 *
+	 * The byte budgets come in pairs, because the compiler treats the two kinds
+	 * of source differently. `max_file_bytes` and `max_total_bytes` bound what
+	 * it reads and rewrites. `max_media_file_bytes` and `max_media_total_bytes`
+	 * bound the opaque binaries it only copies: Blocks Engine keeps those closed
+	 * behind their payload reference and never opens them, so their bytes cannot
+	 * cause the parse cost the first pair exists to bound.
+	 *
+	 * `max_media_total_bytes` is enforced through the per-file ceiling below,
+	 * which shrinks to whatever remains of it, so a capture of any shape is
+	 * still refused once its media passes the aggregate.
+	 */
 	function static_site_importer_cli_request_bundle_limits(): array {
 		return array(
 			'max_files'                => 5000,
 			'max_file_bytes'           => 10485760,
+			'max_media_file_bytes'     => 104857600,
 			'max_total_bytes'          => 268435456,
+			'max_media_total_bytes'    => 1073741824,
 			'generated_bytes_headroom' => 67108864,
 			'compiler_max_total_bytes' => 335544320,
 		);
 	}
 
-	/** Count bounded HTML assets that Blocks Engine will expand into generated files. */
+	/**
+	 * Does the compiler read and rewrite this request-bundle source?
+	 *
+	 * This is the same boundary Blocks Engine draws in
+	 * `ArtifactNormalizer::isReferenceBackedBinary()`, reusing the textual-path
+	 * rule the zip intake already applies in `rest.php`. Every extension Blocks
+	 * Engine parses is textual here too, so the two cannot disagree about which
+	 * budget a file belongs to; `tests/smoke-cli-import-continuation.php`
+	 * asserts that containment against the Blocks Engine constant.
+	 */
+	function static_site_importer_cli_request_bundle_is_read_source( string $relative ): bool {
+		return ! class_exists( 'Static_Site_Importer_Content_Policy' ) || Static_Site_Importer_Content_Policy::is_textual_path( $relative );
+	}
+
+	/**
+	 * The per-file byte ceiling for one request-bundle source file.
+	 *
+	 * `max_file_bytes` protects parse/expansion cost: the compiler reads and
+	 * rewrites textual sources (HTML it converts to blocks, CSS/SVG it may
+	 * inline, JS/JSON/etc. it inspects for server-side code), so that cost
+	 * scales with bytes and stays tightly bounded. An opaque binary the
+	 * compiler only copies — an image, font, or a photo/video site's video or
+	 * audio clip — carries none of that cost, so it gets a much wider ceiling.
+	 * That wider ceiling is still bounded on two sides: a flat cap
+	 * (`max_media_file_bytes`) and whatever remains of the media budget
+	 * (`max_media_total_bytes`) at this point in the walk, so one large file can
+	 * spend a large share of the run's budget but never exceed it.
+	 */
+	function static_site_importer_cli_request_bundle_file_byte_limit( string $relative, array $limits, int $media_bytes_used ): int {
+		if ( static_site_importer_cli_request_bundle_is_read_source( $relative ) ) {
+			return $limits['max_file_bytes'];
+		}
+		return min( $limits['max_media_file_bytes'], max( 0, $limits['max_media_total_bytes'] - $media_bytes_used ) );
+	}
+
+	/** Format a byte count as whole or one-decimal MiB for an error message. */
+	function static_site_importer_cli_request_bundle_mib( int $bytes ): string {
+		$decimals = 0 === $bytes % 1048576 ? 0 : 1;
+		return number_format( $bytes / 1048576, $decimals ) . ' MiB';
+	}
+
+	/**
+	 * Count bounded HTML assets that Blocks Engine will expand into generated files.
+	 *
+	 * This reserves budget against what Blocks Engine actually emits, so it
+	 * mirrors the skip rules in ArtifactNormalizer: an inline style needs CSS
+	 * content and a CSS `type`, and an inline script needs an executable `type`
+	 * and its own body rather than a `src`. Counting every `<style>`/`<script>`
+	 * element instead reserves slots for blocks that expand into nothing, which
+	 * rejects captures that fit the compiler.
+	 */
 	function static_site_importer_cli_inline_expansion_count( string $path ): int {
 		$content = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a verified, bounded CLI request-bundle file.
 		if ( false === $content ) {
 			throw new RuntimeException( 'The request-bundle HTML payload is unavailable.' );
 		}
-		$styles  = preg_match_all( '@<style\b[^>]*>.*?</style\s*>@is', $content );
-		$scripts = preg_match_all( '@<script\b[^>]*>.*?</script\s*>@is', $content );
-		return ( false === $styles ? 0 : $styles ) + ( false === $scripts ? 0 : $scripts );
+		return static_site_importer_cli_inline_style_expansion_count( $content )
+			+ static_site_importer_cli_inline_script_expansion_count( $content );
+	}
+
+	/** Count the inline stylesheets Blocks Engine will expand out of an HTML payload. */
+	function static_site_importer_cli_inline_style_expansion_count( string $content ): int {
+		$styles = 0;
+		foreach ( StyleTagScanner::scan( $content ) as $style ) {
+			$css = trim( (string) $style['content'] );
+			if ( '' === $css || ! StyleTagScanner::isCssType( StyleTagScanner::attribute( (string) $style['attributes'], 'type' ) ) ) {
+				continue;
+			}
+			++$styles;
+		}
+
+		// Spacing authored inline on <body> is carried as generated CSS. It merges
+		// into the last inline stylesheet when the document has one, so it only
+		// adds a file to a document that has none.
+		if ( 0 === $styles && static_site_importer_cli_inline_body_spacing_present( $content ) ) {
+			return 1;
+		}
+		return $styles;
+	}
+
+	/** Does inline `<body>` spacing exist that Blocks Engine carries as generated CSS? */
+	function static_site_importer_cli_inline_body_spacing_present( string $content ): bool {
+		if ( 1 !== preg_match( '/<body\b[^>]*\sstyle\s*=\s*(?:"([^"]*)"|\'([^\']*)\')/i', $content, $matches ) ) {
+			return false;
+		}
+		$style = html_entity_decode( '' !== $matches[1] ? $matches[1] : ( $matches[2] ?? '' ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		if ( '' === trim( $style ) || preg_match( '/[{}<>]/', $style ) ) {
+			return false;
+		}
+		foreach ( explode( ';', $style ) as $declaration ) {
+			$parts = explode( ':', $declaration, 2 );
+			if ( 2 !== count( $parts ) ) {
+				continue;
+			}
+			if ( '' !== trim( $parts[1] ) && 1 === preg_match( '/^(?:margin|padding)(?:-(?:top|right|bottom|left))?$/', strtolower( trim( $parts[0] ) ) ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Count the inline scripts Blocks Engine will expand out of an HTML payload. */
+	function static_site_importer_cli_inline_script_expansion_count( string $content ): int {
+		if ( ! preg_match_all( '@<script\b([^>]*)>(.*?)</script>@is', $content, $matches, PREG_SET_ORDER ) ) {
+			return 0;
+		}
+		$scripts = 0;
+		foreach ( $matches as $match ) {
+			$attributes = (string) $match[1];
+			if ( '' === trim( (string) $match[2] )
+				|| '' !== StyleTagScanner::attribute( $attributes, 'src' )
+				|| ! static_site_importer_cli_is_executable_script_type( StyleTagScanner::attribute( $attributes, 'type' ) ) ) {
+				continue;
+			}
+			++$scripts;
+		}
+		return $scripts;
+	}
+
+	/** Does a `<script>`'s `type` mark a body Blocks Engine expands into a file? */
+	function static_site_importer_cli_is_executable_script_type( string $type ): bool {
+		$type = strtolower( trim( $type ) );
+		return '' === $type || in_array( $type, array( 'module', 'text/javascript', 'application/javascript', 'text/ecmascript', 'application/ecmascript' ), true );
 	}
 
 	/** Project a local source tree as metadata-only payload references. */
@@ -278,6 +410,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		$files           = array();
 		$paths           = array();
 		$total_bytes     = 0;
+		$media_bytes     = 0;
 		$generated_files = 0;
 		try {
 			$iterator = new RecursiveIteratorIterator(
@@ -302,11 +435,19 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				if ( class_exists( 'Static_Site_Importer_Content_Policy' ) && ! Static_Site_Importer_Content_Policy::is_static_path( $relative ) ) {
 					return new WP_Error( 'static_site_importer_executable_source_rejected', 'Request-bundle source trees may contain static content only.' );
 				}
-				$bytes = $item->getSize();
-				if ( $bytes > $limits['max_file_bytes'] ) {
-					return new WP_Error( 'static_site_importer_cli_request_bundle_file_too_large', 'A request-bundle source file exceeds the 10 MiB compiler limit.' );
+				$bytes           = $item->getSize();
+				$read_source     = static_site_importer_cli_request_bundle_is_read_source( $relative );
+				$file_byte_limit = static_site_importer_cli_request_bundle_file_byte_limit( $relative, $limits, $media_bytes );
+				if ( $bytes > $file_byte_limit ) {
+					return new WP_Error(
+						$read_source ? 'static_site_importer_cli_request_bundle_file_too_large' : 'static_site_importer_cli_request_bundle_media_file_too_large',
+						sprintf(
+							$read_source ? 'A request-bundle source file exceeds the %s compiler limit.' : 'A request-bundle media file exceeds the %s media limit.',
+							static_site_importer_cli_request_bundle_mib( $file_byte_limit )
+						)
+					);
 				}
-				if ( $total_bytes + $bytes > $limits['max_total_bytes'] ) {
+				if ( $read_source && $total_bytes + $bytes > $limits['max_total_bytes'] ) {
 					return new WP_Error( 'static_site_importer_cli_request_bundle_total_too_large', 'Request-bundle source files exceed the 256 MiB aggregate compiler limit.' );
 				}
 				$is_html           = (bool) preg_match( '/\.html?$/i', $relative );
@@ -329,7 +470,11 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 						'sha256' => $digest,
 					),
 				);
-				$total_bytes     += $bytes;
+				if ( $read_source ) {
+					$total_bytes += $bytes;
+				} else {
+					$media_bytes += $bytes;
+				}
 				$generated_files += $inline_expansions;
 			}
 		} catch ( UnexpectedValueException | RuntimeException $error ) {
@@ -342,9 +487,11 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		return array(
 			'files'           => $files,
 			'compiler_limits' => array(
-				'max_files'       => count( $files ) + $generated_files,
-				'max_file_bytes'  => $limits['max_file_bytes'],
-				'max_total_bytes' => min( $limits['compiler_max_total_bytes'], $limits['max_total_bytes'] + min( $limits['generated_bytes_headroom'], $limits['max_total_bytes'] ) ),
+				'max_files'             => count( $files ) + $generated_files,
+				'max_file_bytes'        => $limits['max_file_bytes'],
+				'max_total_bytes'       => min( $limits['compiler_max_total_bytes'], $limits['max_total_bytes'] + min( $limits['generated_bytes_headroom'], $limits['max_total_bytes'] ) ),
+				'max_media_file_bytes'  => $limits['max_media_file_bytes'],
+				'max_media_total_bytes' => $limits['max_media_total_bytes'],
 			),
 			'payload_reader'  => new class( $paths ) implements \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader {
 				/** @param array<string,string> $paths */
@@ -681,6 +828,152 @@ if ( ! function_exists( 'static_site_importer_cli_import_run_fresh_runtime' ) ) 
 	}
 }
 
+if ( ! function_exists( 'static_site_importer_cli_run_stateful_import_step' ) ) {
+	/**
+	 * Run one import step, resuming from and persisting to a state file.
+	 *
+	 * Hosts that supply fresh runtimes externally cannot use the in-process
+	 * host loop, because that loop advances by forking a child WP-CLI process
+	 * and some runtimes — WordPress Playground's PHP.wasm among them — have no
+	 * subprocesses at all. Without this, every such host reimplements the
+	 * continuation state transition itself.
+	 *
+	 * With a state file, repeated identical invocations converge: the first
+	 * starts the run, each later one resumes it, and any call after the run
+	 * reaches a terminal result replays that result rather than starting a
+	 * second import. Callers never handle an `import_id` or a lifecycle
+	 * checkpoint.
+	 *
+	 * The state file is host-owned. A caller that wants a fresh run removes it.
+	 *
+	 * @param array<string,mixed> $input      Import request for the first step.
+	 * @param string              $state_path Absolute path to the state file.
+	 * @return array<string,mixed> Step result.
+	 */
+	function static_site_importer_cli_run_stateful_import_step( array $input, string $state_path ): array {
+		$state = static_site_importer_cli_read_import_state( $state_path );
+		if ( is_wp_error( $state ) ) {
+			return static_site_importer_cli_import_error( (string) $state->get_error_code(), $state->get_error_message() );
+		}
+
+		// A completed run replays its receipt. Repeating the command must not
+		// start a second import over a site the first one already produced.
+		if ( isset( $state['terminal'] ) && is_array( $state['terminal'] ) ) {
+			return $state['terminal'];
+		}
+
+		if ( isset( $state['input'] ) && is_array( $state['input'] ) ) {
+			$input = $state['input'];
+		}
+
+		// static_site_importer_cli_import() is declared `: array`, so the shape
+		// guard the host loop needs around its injectable `$invoke` would be
+		// dead code here.
+		$result = static_site_importer_cli_import( $input );
+
+		if ( empty( $result['continuation'] ) ) {
+			$persisted = static_site_importer_cli_write_import_state( $state_path, array( 'terminal' => $result ) );
+
+			return is_wp_error( $persisted )
+				? static_site_importer_cli_import_error( (string) $persisted->get_error_code(), $persisted->get_error_message() )
+				: $result;
+		}
+
+		if ( '' === (string) ( $result['import_id'] ?? '' ) ) {
+			return static_site_importer_cli_import_error( 'static_site_importer_cli_import_id_missing', 'A continuation did not include an opaque import_id.' );
+		}
+
+		$persisted = static_site_importer_cli_write_import_state(
+			$state_path,
+			array( 'input' => static_site_importer_cli_next_import_input( $input, $result ) )
+		);
+
+		return is_wp_error( $persisted )
+			? static_site_importer_cli_import_error( (string) $persisted->get_error_code(), $persisted->get_error_message() )
+			: $result;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_read_import_state' ) ) {
+	/**
+	 * Read host-owned continuation state.
+	 *
+	 * An absent file is a first invocation, not an error.
+	 *
+	 * @param string $state_path Absolute path to the state file.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	function static_site_importer_cli_read_import_state( string $state_path ) {
+		if ( ! is_file( $state_path ) ) {
+			return array();
+		}
+		$raw = file_get_contents( $state_path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads host-owned continuation state.
+		if ( false === $raw || '' === trim( (string) $raw ) ) {
+			return array();
+		}
+		$decoded = json_decode( (string) $raw, true );
+		if ( ! is_array( $decoded ) || 'static-site-importer/cli-import-state/v1' !== ( $decoded['schema'] ?? null ) ) {
+			return new WP_Error( 'static_site_importer_cli_import_state_invalid', 'The import state file is not a Static Site Importer continuation state.' );
+		}
+
+		return $decoded;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_write_import_state' ) ) {
+	/**
+	 * Persist host-owned continuation state.
+	 *
+	 * @param string              $state_path Absolute path to the state file.
+	 * @param array<string,mixed> $state      State to persist.
+	 * @return true|WP_Error
+	 */
+	function static_site_importer_cli_write_import_state( string $state_path, array $state ) {
+		$json = function_exists( 'wp_json_encode' )
+			? wp_json_encode( array_merge( array( 'schema' => 'static-site-importer/cli-import-state/v1' ), $state ), JSON_UNESCAPED_SLASHES )
+			: false;
+		if ( false === $json ) {
+			return new WP_Error( 'static_site_importer_cli_import_state_encode_failed', 'The import continuation state could not be encoded.' );
+		}
+		$directory = dirname( $state_path );
+		if ( ! is_dir( $directory ) ) {
+			return new WP_Error( 'static_site_importer_cli_import_state_directory_missing', 'The import state directory does not exist.' );
+		}
+		if ( false === file_put_contents( $state_path, $json ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Writes host-owned continuation state.
+			return new WP_Error( 'static_site_importer_cli_import_state_write_failed', 'The import continuation state could not be written.' );
+		}
+
+		return true;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_next_import_input' ) ) {
+	/**
+	 * Advance a bounded import request to the input its next step expects.
+	 *
+	 * This is the continuation state transition, and it is the only place that
+	 * knows it. The in-process host loop and the externally driven
+	 * `--single-step --state` mode both advance through here, so a host that
+	 * owns process lifetime never has to reimplement it. Callers that receive a
+	 * terminal result must not call this.
+	 *
+	 * @param array<string,mixed> $input  Input that produced `$result`.
+	 * @param array<string,mixed> $result Non-terminal step result.
+	 * @return array<string,mixed> Input for the next step.
+	 */
+	function static_site_importer_cli_next_import_input( array $input, array $result ): array {
+		$input = static_site_importer_cli_apply_import_id( $input, (string) ( $result['import_id'] ?? '' ) );
+		if ( 'dependencies_prepared' === ( $result['continuation_reason'] ?? '' ) ) {
+			$prepared                              = is_array( $result['result'] ?? null ) ? $result['result'] : array();
+			$input['runtime_lifecycle_phase']      = 'resume';
+			$input['runtime_lifecycle_request_id'] = (string) ( $prepared['fresh_runtime']['request_id'] ?? '' );
+			$input['runtime_lifecycle_checkpoint'] = (string) ( $prepared['fresh_runtime']['lifecycle_checkpoint_id'] ?? $prepared['runtime_lifecycle_checkpoint'] ?? '' );
+		}
+
+		return $input;
+	}
+}
+
 if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 	/**
 	 * Drive bounded ability steps until a terminal result.
@@ -700,9 +993,6 @@ if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 				$emit_progress( static_site_importer_cli_import_progress( $previous, $steps, $started_at, 'heartbeat', $resume_command ) );
 			}
 			$result = $invoke( $input );
-			if ( ! is_array( $result ) ) {
-				$result = static_site_importer_cli_import_error( 'static_site_importer_cli_step_response_invalid', 'An import step did not return an object.' );
-			}
 			if ( empty( $result['continuation'] ) ) {
 				return static_site_importer_cli_import_receipt( $result, $steps );
 			}
@@ -716,13 +1006,7 @@ if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 			if ( null !== $emit_progress ) {
 				$emit_progress( static_site_importer_cli_import_progress( $result, $steps, $started_at, 'continuation', $resume_command ) );
 			}
-			$input = static_site_importer_cli_apply_import_id( $input, $import_id );
-			if ( 'dependencies_prepared' === ( $result['continuation_reason'] ?? '' ) ) {
-				$prepared                              = is_array( $result['result'] ?? null ) ? $result['result'] : array();
-				$input['runtime_lifecycle_phase']      = 'resume';
-				$input['runtime_lifecycle_request_id'] = (string) ( $prepared['fresh_runtime']['request_id'] ?? '' );
-				$input['runtime_lifecycle_checkpoint'] = (string) ( $prepared['fresh_runtime']['lifecycle_checkpoint_id'] ?? $prepared['runtime_lifecycle_checkpoint'] ?? '' );
-			}
+			$input    = static_site_importer_cli_next_import_input( $input, $result );
 			$previous = $result;
 		}
 		return static_site_importer_cli_import_receipt(
@@ -737,7 +1021,9 @@ if ( ! function_exists( 'static_site_importer_cli_import_resume_command' ) ) {
 	function static_site_importer_cli_import_resume_command( array $assoc_args, string $import_id ): string {
 		$parts = array( 'wp', 'static-site-importer', 'import' );
 		foreach ( $assoc_args as $key => $value ) {
-			if ( in_array( $key, array( 'import-id', 'max-steps', 'single-step' ), true ) ) {
+			// `state` is the externally driven mode's own bookkeeping; a durable
+			// resume command carries the import id instead.
+			if ( in_array( $key, array( 'import-id', 'max-steps', 'single-step', 'state' ), true ) ) {
 				continue;
 			}
 			$parts[] = is_bool( $value ) ? '--' . $key : '--' . $key . '=' . escapeshellarg( (string) $value );
@@ -800,7 +1086,14 @@ if ( ! function_exists( 'static_site_importer_cli_import_command' ) ) {
 			return;
 		}
 		if ( isset( $assoc_args['single-step'] ) ) {
-			static_site_importer_cli_emit_import_step( static_site_importer_cli_import( $input ) );
+			$state_path = isset( $assoc_args['state'] ) ? (string) $assoc_args['state'] : '';
+			if ( '' === $state_path ) {
+				static_site_importer_cli_emit_import_step( static_site_importer_cli_import( $input ) );
+				return;
+			}
+			static_site_importer_cli_emit_import_step(
+				static_site_importer_cli_run_stateful_import_step( $input, $state_path )
+			);
 			return;
 		}
 		$max_steps      = isset( $assoc_args['max-steps'] ) ? (int) $assoc_args['max-steps'] : 0;

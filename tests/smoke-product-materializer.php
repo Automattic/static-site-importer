@@ -117,6 +117,16 @@ namespace {
 			return null;
 		}
 	}
+	if ( ! function_exists( 'get_posts' ) ) {
+		// No attachment materializer is stubbed in this test, so an image
+		// source never resolves to an existing attachment here; the seeder is
+		// expected to report that loss instead of failing (see the
+		// `seeder-*-image-loss` assertions below).
+		function get_posts( $args ) {
+			unset( $args );
+			return array();
+		}
+	}
 	if ( ! function_exists( 'term_exists' ) ) {
 		function term_exists( $term, $taxonomy = '' ) {
 			unset( $term, $taxonomy );
@@ -275,6 +285,8 @@ namespace {
 	$assert( '24' === ( $rows[0]['regular_price'] ?? '' ), 'manifest-row0-regular-price' );
 	$assert( ! isset( $rows[0]['sale_price'] ), 'manifest-row0-no-sale-price' );
 	$assert( 'https://cdn.example.com/mug.jpg' === ( $rows[0]['image'] ?? '' ), 'manifest-row0-image-src' );
+	$assert( 'Aero Mug' === ( $rows[0]['image_alt'] ?? '' ), 'manifest-row0-image-alt' );
+	$assert( ! isset( $rows[1]['image'] ), 'manifest-row1-no-image' );
 	$assert( in_array( 'ul.products li:nth-child(1)', $rows[0]['source_selectors'] ?? array(), true ), 'manifest-row0-source-selectors' );
 	$assert( '1299.00' === ( $rows[1]['regular_price'] ?? '' ), 'manifest-row1-regular-price' );
 	$assert( '999.00' === ( $rows[1]['sale_price'] ?? '' ), 'manifest-row1-sale-price' );
@@ -286,6 +298,23 @@ namespace {
 	$assert( isset( $GLOBALS['ssi_seeded_products']['trail-pack'] ), 'seeder-product-trail-pack' );
 	$assert( '1299.00' === ( $GLOBALS['ssi_seeded_products']['trail-pack']['regular_price'] ?? '' ), 'seeder-trail-pack-price' );
 	$assert( '999.00' === ( $GLOBALS['ssi_seeded_products']['trail-pack']['sale_price'] ?? '' ), 'seeder-trail-pack-sale-price' );
+
+	// An image the seeder cannot resolve (no `resolved_product_images` context
+	// is supplied here) reports the same unrepresentable-attribute loss the
+	// form seeder uses instead of failing the product.
+	$seeded_rows = $seeding['products'] ?? array();
+	$seeded_by_slug = array();
+	foreach ( $seeded_rows as $seeded_row ) {
+		if ( is_array( $seeded_row ) && isset( $seeded_row['slug'] ) ) {
+			$seeded_by_slug[ (string) $seeded_row['slug'] ] = $seeded_row;
+		}
+	}
+	$aero_row = $seeded_by_slug['aero-mug'] ?? array();
+	$assert( 'created' === ( $aero_row['status'] ?? '' ), 'seeder-aero-mug-created-despite-unresolved-image' );
+	$assert( 1 === count( $aero_row['losses'] ?? array() ), 'seeder-aero-mug-reports-one-image-loss' );
+	$assert( 'unsupported_control_attribute' === ( $aero_row['losses'][0]['reason_code'] ?? '' ) && 'image' === ( $aero_row['losses'][0]['attribute'] ?? '' ), 'seeder-aero-mug-image-loss-shape' );
+	$trail_row = $seeded_by_slug['trail-pack'] ?? array();
+	$assert( empty( $trail_row['losses'] ), 'seeder-trail-pack-no-image-no-loss' );
 
 	// Gate-closure: the seeded finding receives the runtime-mapped signal.
 	$assert( 1 === ( $seeding['mapped_count'] ?? 0 ), 'materialize-finding-mapped-count' );

@@ -27,6 +27,12 @@ namespace {
 		}
 	}
 
+	if ( ! function_exists( 'wp_json_encode' ) ) {
+		function wp_json_encode( $value ) {
+			return json_encode( $value );
+		}
+	}
+
 	if ( ! class_exists( 'WP_Error' ) ) {
 		class WP_Error {
 			public function __construct( private string $code, private string $message, private $data = null ) {}
@@ -236,6 +242,46 @@ namespace {
 	$incomplete_entity_resolution = $manifest_resolved;
 	$incomplete_entity_resolution['runtime_entity_resolution'][0]['entities'][1]['controls'] = array();
 	$assert( is_wp_error( Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $manifest_lifecycle, $incomplete_entity_resolution ) ), 'resolver-expanded-manifest-rejects-incomplete-expanded-entity-data' );
+	// --- Entity validators report per row, so the lifecycle keeps the valid rows -
+	$mixed_id         = str_repeat( 'c', 64 );
+	$mappable_control = array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' );
+	$submit_control   = array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' );
+	$mixed_entity     = static fn( string $selector, array $controls ): array => array(
+		'source_path' => 'contact.html',
+		'selector'    => $selector,
+		'controls'    => $controls,
+	);
+	$mixed_plan       = array(
+		'runtime_declarations' => array(
+			array(
+				'kind'                    => 'entity_collection',
+				'type'                    => 'forms',
+				'source_path'             => 'contact.html',
+				'reconciliation_identity' => $mixed_id,
+				'payload'                 => array(
+					'schema'   => 'generic/forms/v1',
+					'entities' => array(
+						$mixed_entity( 'form.contact', array( $mappable_control, $submit_control ) ),
+						$mixed_entity( 'form.search', array( $submit_control ) ),
+						$mixed_entity( 'form.newsletter', array( $mappable_control, $submit_control ) ),
+					),
+				),
+			),
+		),
+	);
+	$mixed_lifecycle  = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $mixed_plan, array() );
+	$mixed_forms      = is_wp_error( $mixed_lifecycle ) ? array() : ( $mixed_lifecycle['entities'][ $mixed_id ]['manifest']['forms'] ?? array() );
+	$mixed_diagnostic = is_wp_error( $mixed_lifecycle ) ? array() : ( array_values( array_filter( $mixed_lifecycle['diagnostics'] ?? array(), static fn( $diagnostic ): bool => is_array( $diagnostic ) && 'runtime_entity_rows_rejected' === ( $diagnostic['code'] ?? '' ) ) )[0] ?? array() );
+	$assert( ! is_wp_error( $mixed_lifecycle ) && 2 === count( $mixed_forms ) && array( 'form.contact', 'form.newsletter' ) === array_column( $mixed_forms, 'selector' ), 'partially-valid-entity-declaration-materializes-every-valid-row', (string) wp_json_encode( is_wp_error( $mixed_lifecycle ) ? $mixed_lifecycle->get_error_data() : $mixed_forms ) );
+	$assert( 'warning' === ( $mixed_diagnostic['severity'] ?? '' ) && $mixed_id === ( $mixed_diagnostic['declaration_id'] ?? '' ) && 3 === ( $mixed_diagnostic['declared_count'] ?? 0 ) && 2 === ( $mixed_diagnostic['accepted_count'] ?? 0 ) && 1 === ( $mixed_diagnostic['rejected_count'] ?? 0 ) && '$.forms[1].controls' === ( $mixed_diagnostic['errors'][0]['path'] ?? '' ), 'partially-valid-entity-declaration-reports-every-rejected-row', (string) wp_json_encode( $mixed_diagnostic ) );
+	$unmappable_plan = $mixed_plan;
+	foreach ( $unmappable_plan['runtime_declarations'][0]['payload']['entities'] as $unmappable_index => $unused_entity ) {
+		$unmappable_plan['runtime_declarations'][0]['payload']['entities'][ $unmappable_index ]['controls'] = array( $submit_control );
+	}
+	unset( $unused_entity );
+	$unmappable_lifecycle = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $unmappable_plan, array() );
+	$assert( is_wp_error( $unmappable_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $unmappable_lifecycle->get_error_code(), 'entity-declaration-without-one-valid-row-is-still-rejected' );
+
 	$legacy_lifecycle = array( 'entities' => array( 'legacy' => array( 'manifest' => array( 'forms' => array( $manifest_entity ) ) ) ) );
 	$assert( $legacy_lifecycle === Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $legacy_lifecycle, array( 'runtime_declarations' => array() ) ), 'direct-payload-entity-lifecycle-remains-unchanged-without-manifests' );
 

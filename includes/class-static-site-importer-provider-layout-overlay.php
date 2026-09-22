@@ -159,6 +159,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				$losses[] = self::presentation_loss( 'editor_control_container_unsupported', is_int( $index ) ? $index : 0, 'control_container' );
 				continue;
 			}
+			self::compile_presentation_destinations( $destinations, $control_container['styles'], $index, 'control_container', null, $rules, $operations, $losses );
 			foreach ( $destinations as $destination ) {
 				$declarations = self::presentation_declarations( $control_container['styles'], $index, 'control_container', $losses, $destination['properties'] );
 				if ( ! empty( $declarations ) ) {
@@ -199,6 +200,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					continue;
 				}
 				foreach ( $destinations as $destination ) {
+					self::compile_presentation_destinations( array( $destination ), $variant['style_patch'], $index, 'control_container', $variant['condition'], $rules, $operations, $losses );
 					$declarations = self::presentation_declarations( $variant['style_patch'], $index, 'control_container', $losses, $destination['properties'] );
 					if ( ! empty( $declarations ) ) {
 						$editor_rules[] = self::conditional_rule( $variant['condition'], '.editor-styles-wrapper ' . self::authoritative_presentation_selector( $destination['selector'] ) . '{' . implode( ';', $declarations ) . '}' );
@@ -216,7 +218,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( 'generic/form-container-presentation/v1' === ( $container['schema'] ?? null ) ) {
 			$destination = array(
 				'role'       => 'control',
-				'selector'   => $validated_map['scope'],
+				'selector'   => $validated_map['scope'] . '.jetpack-contact-form-container',
 				'properties' => array_keys( self::presentation_property_map() ),
 			);
 			self::compile_presentation_destinations( array( $destination ), $container['styles'] ?? array(), 0, 'control', null, $rules, $operations, $losses );
@@ -343,7 +345,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		// The provider form target is admitted as both of its rendered spellings,
 		// so a compiled rule may carry that two-part selector list.
-		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-source-field-list| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label| select)?| \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap \.contact-form__field-hints| \.grunion-field-wrap \.ssi-field-row > label| \.grunion-field-wrap \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\))?';
+		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?:\.jetpack-contact-form-container)?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-source-field-list| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label| select)?| \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap \.contact-form__field-hints| \.grunion-field-wrap \.contact-form__field-format| \.grunion-field-wrap \.ssi-field-row > label| \.grunion-field-wrap > \.ssi-field-row| \.grunion-field-wrap \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\))?';
 		if ( ! preg_match( '/^(' . $scope_selector . '(?:, ' . $scope_selector . ')?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
@@ -392,7 +394,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		$element = '[a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*';
 		foreach ( $parts as $part ) {
-			if ( ! preg_match( '/^' . preg_quote( $scope, '/' ) . '(?: > ' . $element . '| \.ssi-source-field-list| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label)?|:not\(:has\(> ' . $element . '\)\))?$/D', $part ) ) {
+			if ( ! preg_match( '/^' . preg_quote( $scope, '/' ) . '(?:\.jetpack-contact-form-container)?(?: > ' . $element . '| \.ssi-source-field-list| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label)?|:not\(:has\(> ' . $element . '\)\))?$/D', $part ) ) {
 				return false;
 			}
 		}
@@ -585,6 +587,17 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		return self::presentation_property_map();
 	}
 
+	/**
+	 * Properties an explicitly declared positioned control's destination may
+	 * carry but an ordinary control, label, or required-marker destination
+	 * never may (see `presentation_property_keys()`).
+	 *
+	 * @return array<int,string>
+	 */
+	private static function positioned_control_only_presentation_property_keys(): array {
+		return array_keys( array_diff_key( self::positioned_control_presentation_property_keys(), self::presentation_property_keys() ) );
+	}
+
 	private static function presentation_declarations( array $styles, int $index, string $role, array &$losses, array $properties = array(), array $aliases = array() ): array {
 		$map          = self::presentation_property_map();
 		$declarations = array();
@@ -641,7 +654,16 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			$rules[]      = null === $condition ? $rule : self::conditional_rule( $condition, $rule );
 			$operations[] = self::presentation_operation( $index, $role, $destination['selector'], null !== $condition );
 		}
-		if ( array_diff( array_keys( $styles ), $represented ) ) {
+		// A captured property outside every ordinary destination's own vocabulary
+		// (see `positioned_control_only_presentation_property_keys()`) is not a
+		// coverage gap: no non-positioned control, label, or required-marker
+		// destination for any field is ever allowed to carry it, so its absence
+		// here is the documented, universal exclusion working as designed, not a
+		// per-field fidelity regression worth declining provider materialization
+		// over. Only a property this role's own vocabulary could have carried,
+		// yet no destination actually represented, is a genuine structure
+		// mismatch.
+		if ( array_diff( array_keys( $styles ), $represented, self::positioned_control_only_presentation_property_keys() ) ) {
 			$losses[] = self::presentation_loss( 'provider_structure_mismatch', $index, $role );
 		}
 	}
@@ -680,7 +702,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		) === $resets ) {
 			return true;
 		}
-		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'line-height', 'gap', 'display', 'align-items', 'height' ) ) ) {
+		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'line-height', 'gap', 'display', 'align-items', 'height', 'appearance' ) ) ) {
 			return false;
 		}
 		foreach ( $resets as $property => $value ) {

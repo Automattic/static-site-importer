@@ -50,6 +50,7 @@
     "tests/smoke-source-normalizer.php": { "environment": "standalone-php" },
     "tests/smoke-url-import-runtime.php": { "environment": "standalone-php" },
     "tests/smoke-rest-url-import-helpers.php": { "environment": "standalone-php" },
+    "tests/smoke-playground-networking.php": { "environment": "standalone-php" },
     "tests/smoke-url-concurrent-fetcher.php": { "environment": "standalone-php" },
     "tests/smoke-url-curl-deadline.php": { "environment": "standalone-php" },
     "tests/smoke-url-native-deadline.php": { "environment": "standalone-php" },

@@ -14,10 +14,15 @@
     },
     {
       "step": "writeFile",
+      "path": "/wordpress/wp-content/mu-plugins/static-site-importer-demo-policy.php",
+      "data": "<?php add_filter( 'static_site_importer_retain_response_artifacts', '__return_false' );"
+    },
+    {
+      "step": "writeFile",
       "path": "/tmp/static-site-importer-{{PACKAGE_SHA256}}.zip",
       "data": {
         "resource": "url",
-        "url": "https://automattic.github.io/static-site-importer/playground/{{RELEASE_TAG}}/static-site-importer.zip"
+        "url": "https://github.com/Automattic/static-site-importer/releases/download/{{RELEASE_TAG}}/static-site-importer.zip"
       }
     },
     {

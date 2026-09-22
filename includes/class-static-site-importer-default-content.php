@@ -25,10 +25,11 @@ final class Static_Site_Importer_Default_Content {
 			array(
 				1 => 'post',
 				2 => 'page',
+				3 => 'page',
 			) as $id => $post_type
 		) {
 			$post = get_post( $id );
-			if ( ! $post instanceof WP_Post || $post_type !== $post->post_type || ! self::has_default_guid( $post, $id ) || '' !== (string) get_post_meta( $id, '_static_site_importer_provenance', true ) ) {
+			if ( ! $post instanceof WP_Post || $post_type !== $post->post_type || ! self::is_core_seed( $post, $id ) || '' !== (string) get_post_meta( $id, '_static_site_importer_provenance', true ) ) {
 				continue;
 			}
 			$result['posts'][] = array(
@@ -46,6 +47,19 @@ final class Static_Site_Importer_Default_Content {
 		}
 
 		return $result;
+	}
+
+	/** Whether a discovered seed remains safe to materialize through the normal existing-post lifecycle. */
+	public static function is_untouched_seed( array $discovery, WP_Post $post ): bool {
+		if ( empty( $discovery['eligible'] ) ) {
+			return false;
+		}
+		foreach ( $discovery['posts'] ?? array() as $candidate ) {
+			if ( (int) ( $candidate['id'] ?? 0 ) === (int) $post->ID && hash_equals( (string) ( $candidate['fingerprint'] ?? '' ), self::post_fingerprint( $post ) ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Remove records that still exactly match their pre-import fingerprints. */
@@ -112,8 +126,27 @@ final class Static_Site_Importer_Default_Content {
 		return $report;
 	}
 
-	private static function has_default_guid( WP_Post $post, int $id ): bool {
-		return str_ends_with( (string) $post->guid, 1 === $id ? '/?p=1' : '/?page_id=2' );
+	private static function is_core_seed( WP_Post $post, int $id ): bool {
+		if ( ! str_ends_with( (string) $post->guid, 1 === $id ? '/?p=1' : '/?page_id=' . $id ) ) {
+			return false;
+		}
+		if ( 3 !== $id ) {
+			return true;
+		}
+
+		// wp_install_defaults() creates this draft from the localized, filterable
+		// core source and assigns this exact page to the privacy-policy option.
+		if ( 3 !== (int) get_option( 'wp_page_for_privacy_policy', 0 ) || 'draft' !== $post->post_status || __( 'Privacy Policy' ) !== $post->post_title || __( 'privacy-policy' ) !== $post->post_name || 'default' !== (string) get_post_meta( 3, '_wp_page_template', true ) ) { // phpcs:ignore WordPress.WP.I18n.MissingArgDomain -- These seed strings belong to WordPress core's default text domain.
+			return false;
+		}
+		if ( ! class_exists( 'WP_Privacy_Policy_Content' ) ) {
+			$source = ABSPATH . 'wp-admin/includes/class-wp-privacy-policy-content.php';
+			if ( ! is_readable( $source ) ) {
+				return false;
+			}
+			require_once $source;
+		}
+		return WP_Privacy_Policy_Content::get_default_content() === (string) $post->post_content;
 	}
 
 	private static function post_fingerprint( WP_Post $post ): string {

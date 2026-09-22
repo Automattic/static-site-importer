@@ -90,6 +90,30 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		add_filter( 'render_block_jetpack/contact-form', array( __CLASS__, 'project_field_list_wrapper' ), 6, 2 );
 		add_filter( 'render_block_jetpack/contact-form', array( __CLASS__, 'project_plain_root_fieldset' ), 10, 2 );
 		add_filter( 'render_block_core/button', array( __CLASS__, 'project_submit_presentation' ), 10, 2 );
+		add_filter( 'shortcode_atts_contact-field', array( __CLASS__, 'project_help_text_attribute' ), 10, 3 );
+	}
+
+	/**
+	 * Jetpack's field block stores help as `helpText`; the shortcode renderer
+	 * reads `helptext`. Copy the block attribute onto the shortcode key so a
+	 * source-authored description actually renders.
+	 *
+	 * @param array<string,mixed> $out   Shortcode attributes after defaults.
+	 * @param array<string,mixed> $pairs Unused default pairs.
+	 * @param array<string,mixed> $atts  Original block/shortcode attributes.
+	 * @return array<string,mixed>
+	 */
+	public static function project_help_text_attribute( array $out, array $pairs, array $atts ): array {
+		unset( $pairs );
+		$help_text = $out['helptext'] ?? null;
+		if ( is_string( $help_text ) && '' !== trim( $help_text ) ) {
+			return $out;
+		}
+		$block_help = $atts['helpText'] ?? null;
+		if ( is_string( $block_help ) && '' !== trim( $block_help ) ) {
+			$out['helptext'] = $block_help;
+		}
+		return $out;
 	}
 
 	/** Copy the provider block's layout role onto Jetpack's page-grid item. */
@@ -114,7 +138,24 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			$html,
 			1
 		);
-		return is_string( $projected ) ? $projected : $html;
+		if ( ! is_string( $projected ) ) {
+			return $html;
+		}
+		// Card chrome belongs on the page item once, not also on the field list
+		// Jetpack renders inside that item. Leaving padding/border classes on
+		// both boxes stacked the source card's own height on top of itself.
+		$stripped = preg_replace_callback(
+			'/<div\b([^>]*\bclass=(["\'])([^"\']*\bwp-block-jetpack-contact-form\b[^"\']*)\2)/i',
+			static function ( array $matches ): string {
+				$existing = preg_split( '/\s+/', trim( $matches[3] ) );
+				$existing = false === $existing ? array() : $existing;
+				$kept     = array_values( array_filter( $existing, static fn( string $class_name ): bool => ! self::is_form_box_chrome_class( $class_name ) ) );
+				return '<div' . str_replace( $matches[2] . $matches[3] . $matches[2], $matches[2] . implode( ' ', $kept ) . $matches[2], $matches[1] );
+			},
+			$projected,
+			1
+		);
+		return is_string( $stripped ) ? $stripped : $projected;
 	}
 
 	/** Field-list display/track utilities belong on the inner list, not the page item. */
@@ -226,6 +267,11 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			}
 		}
 		return false;
+	}
+
+	/** Padding, border, radius, and fill size the card, not the field list. */
+	private static function is_form_box_chrome_class( string $class_name ): bool {
+		return 1 === preg_match( '/^(?:(?:sm|md|lg|xl|2xl):)?(?:p(?:[xyltrbse])?(?:-|$)|border(?:-|$)|rounded(?:-|$)|bg-)/', $class_name );
 	}
 
 	/** Restore a source plain-root fieldset around provider field content, never the form itself. */
@@ -406,20 +452,18 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	public static function project_wrapper_classes( string $html ): string {
 		$wrapper_layers            = array();
 		$composite_layers          = array();
-		$provider_layout_classes   = array();
 		$fullspan_child_classes    = array();
 		$phone_destination_classes = array();
 		$textarea_rows             = null;
 		$is_phone                  = (bool) preg_match( '/\bclass=(["\'])[^"\']*\bgrunion-field-(?:phone|telephone)-wrap\b[^"\']*\1/i', $html );
 		$projected                 = preg_replace_callback(
 			'/\bclass=(["\'])(.*?)\1/s',
-			static function ( array $matches ) use ( &$wrapper_layers, &$composite_layers, &$provider_layout_classes, &$fullspan_child_classes, &$phone_destination_classes, &$textarea_rows ): string {
-				$classes            = preg_split( '/\s+/', trim( $matches[2] ) );
-				$classes            = false === $classes ? array() : $classes;
-				$is_wrapper         = (bool) array_filter( $classes, static fn ( string $class_name ): bool => 1 === preg_match( '/^grunion-field-[A-Za-z0-9_-]+-wrap$/D', $class_name ) );
-				$is_phone_shell     = in_array( 'jetpack-field__input-phone-wrapper', $classes, true );
-				$has_source_wrapper = (bool) array_filter( $classes, static fn( string $class_name ): bool => str_starts_with( $class_name, 'ssi-source-wrapper-' ) );
-				$output             = array();
+			static function ( array $matches ) use ( &$wrapper_layers, &$composite_layers, &$fullspan_child_classes, &$phone_destination_classes, &$textarea_rows ): string {
+				$classes        = preg_split( '/\s+/', trim( $matches[2] ) );
+				$classes        = false === $classes ? array() : $classes;
+				$is_wrapper     = (bool) array_filter( $classes, static fn ( string $class_name ): bool => 1 === preg_match( '/^grunion-field-[A-Za-z0-9_-]+-wrap$/D', $class_name ) );
+				$is_phone_shell = in_array( 'jetpack-field__input-phone-wrapper', $classes, true );
+				$output         = array();
 				foreach ( $classes as $class_name ) {
 					if ( preg_match( '/^ssi-textarea-rows-([1-9][0-9]{0,1})$/D', $class_name, $marker ) ) {
 						$textarea_rows = $marker[1];
@@ -445,10 +489,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 						continue;
 					}
 					if ( $is_wrapper && 1 === preg_match( '/^ssi-node-[a-f0-9]{12}-wrap$/D', $class_name ) ) {
-						$provider_layout_classes[] = $class_name;
-						if ( ! $has_source_wrapper ) {
-							$output[] = $class_name;
-						}
+						$output[] = $class_name;
 						continue;
 					}
 					if ( preg_match( '/^ssi-source-wrapper-([0-9]{1,2})--([A-Za-z_][A-Za-z0-9_-]{0,79})-wrap$/D', $class_name, $marker ) ) {
@@ -486,18 +527,15 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		$field_row_classes = array();
 		if ( ! $is_phone && empty( $composite_layers ) && ! empty( $wrapper_layers ) ) {
 			$outer_depth       = array_key_first( $wrapper_layers );
-			$field_row_classes = array_values( array_unique( array_merge( array( 'ssi-field-row' ), $wrapper_layers[ $outer_depth ], $provider_layout_classes ) ) );
+			$field_row_classes = array_values( array_unique( array_merge( array( 'ssi-field-row' ), $wrapper_layers[ $outer_depth ] ) ) );
 			unset( $wrapper_layers[ $outer_depth ] );
 		}
 		$open  = '';
 		$close = '';
-		foreach ( $wrapper_layers as $depth => $classes ) {
+		foreach ( $wrapper_layers as $classes ) {
 			$classes = array_values( array_unique( $classes ) );
-			if ( $is_phone && array_key_first( $wrapper_layers ) === $depth ) {
-				$classes = array_values( array_unique( array_merge( $classes, $provider_layout_classes ) ) );
-			}
-			$open .= '<div class="' . implode( ' ', $classes ) . '">';
-			$close = '</div>' . $close;
+			$open   .= '<div class="' . implode( ' ', $classes ) . '">';
+			$close   = '</div>' . $close;
 		}
 		if ( ! empty( $fullspan_child_classes ) ) {
 			$open .= '<div class="' . implode( ' ', array_values( array_unique( $fullspan_child_classes ) ) ) . '">';

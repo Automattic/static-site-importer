@@ -14,6 +14,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Static_Site_Importer_Woo_Product_Seeder {
 
+	/** Post meta key that identifies the manifest source image an attachment materializes, for dedup. */
+	private const SOURCE_IMAGE_META_KEY = '_static_site_importer_source_image';
+
 	/**
 	 * Return the WooCommerce simple-product adapter definition.
 	 *
@@ -179,9 +182,13 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	 * consumes the normalized array shape after that validation has succeeded.
 	 *
 	 * @param array<string, mixed> $manifest Validated product manifest.
+	 * @param array<string, mixed> $args     Import-scoped context. `resolved_product_images` (when
+	 *                                       present) maps a manifest `image` source path to its real
+	 *                                       materialized bytes, resolved the same way source media
+	 *                                       referenced by page content already resolves.
 	 * @return array<string, mixed>
 	 */
-	public static function seed( array $manifest ): array {
+	public static function seed( array $manifest, array $args = array() ): array {
 		$products = self::manifest_products( $manifest );
 		$report   = self::new_report( 'not_run' );
 
@@ -209,13 +216,16 @@ class Static_Site_Importer_Woo_Product_Seeder {
 
 		$report['status'] = 'completed';
 
-		$report['rollback'] = array( 'created_terms' => array() );
+		$report['rollback'] = array(
+			'created_terms'       => array(),
+			'created_attachments' => array(),
+		);
 		foreach ( $products as $product ) {
 			$existing = get_page_by_path( sanitize_title( self::string_value( $product, 'slug' ) ), OBJECT, 'product' );
 			$before   = $existing instanceof WP_Post ? self::product_state( (int) $existing->ID ) : null;
 			if ( is_array( $before ) ) {
 				$report['rollback'][ (int) $existing->ID ] = $before; }
-			$row                  = self::seed_product( $product, $report['rollback']['created_terms'], $before );
+			$row                  = self::seed_product( $product, $report['rollback']['created_terms'], $before, $args, $report['rollback']['created_attachments'] );
 			$report['products'][] = $row;
 
 			$status = $row['status'] ?? 'error';
@@ -243,11 +253,13 @@ class Static_Site_Importer_Woo_Product_Seeder {
 					'failures'   => $result['failures'],
 				); }
 		}
-		$term_failures = self::cleanup_terms( $report['rollback']['created_terms'] ?? array() );
+		$term_failures       = self::cleanup_terms( $report['rollback']['created_terms'] ?? array() );
+		$attachment_failures = self::cleanup_attachments( $report['rollback']['created_attachments'] ?? array() );
 		return array(
-			'status'                   => empty( $failures ) && empty( $term_failures ) ? 'rolled_back' : 'partial',
-			'product_cleanup_failures' => $failures,
-			'term_cleanup_failures'    => $term_failures,
+			'status'                      => empty( $failures ) && empty( $term_failures ) && empty( $attachment_failures ) ? 'rolled_back' : 'partial',
+			'product_cleanup_failures'    => $failures,
+			'term_cleanup_failures'       => $term_failures,
+			'attachment_cleanup_failures' => $attachment_failures,
 		);
 	}
 
@@ -303,10 +315,14 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	/**
 	 * Create or update one product.
 	 *
-	 * @param array<string, mixed> $manifest_product Validated product manifest row.
+	 * @param array<string, mixed>  $manifest_product     Validated product manifest row.
+	 * @param array<int, int>       $created_terms        Term ids created so far this run, by reference.
+	 * @param array<string, mixed>|null $before           Prior product state for an existing product.
+	 * @param array<string, mixed>  $args                 Import-scoped context (see seed()).
+	 * @param array<int, int>       $created_attachments  Attachment ids created so far this run, by reference.
 	 * @return array<string, mixed>
 	 */
-	private static function seed_product( array $manifest_product, array &$created_terms = array(), ?array $before = null ): array {
+	private static function seed_product( array $manifest_product, array &$created_terms = array(), ?array $before = null, array $args = array(), array &$created_attachments = array() ): array {
 		$slug = sanitize_title( self::string_value( $manifest_product, 'slug' ) );
 		$name = self::string_value( $manifest_product, 'name' );
 
@@ -334,6 +350,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 
 		$product_id          = 0;
 		$created_term_offset = count( $created_terms );
+		$losses              = array();
 		try {
 			$product->set_name( $name );
 			$product->set_slug( $slug );
@@ -351,6 +368,20 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			if ( array_key_exists( 'stock_quantity', $manifest_product ) && '' !== (string) $manifest_product['stock_quantity'] ) {
 				$product->set_manage_stock( true );
 				$product->set_stock_quantity( max( 0, (int) $manifest_product['stock_quantity'] ) );
+			}
+
+			$image_source = self::string_value( $manifest_product, 'image' );
+			if ( '' !== $image_source ) {
+				$attachment_id = self::resolve_product_image_attachment( $image_source, self::string_value( $manifest_product, 'image_alt' ), $name, $args, $created_attachments );
+				if ( $attachment_id > 0 ) {
+					$product->set_image_id( $attachment_id );
+				} else {
+					$losses[] = array(
+						'dimension'   => 'product',
+						'reason_code' => 'unsupported_control_attribute',
+						'attribute'   => 'image',
+					);
+				}
 			}
 
 			$product_id = (int) $product->save();
@@ -374,13 +405,17 @@ class Static_Site_Importer_Woo_Product_Seeder {
 				}
 			}
 
-			return array(
+			$row = array(
 				'id'           => $product_id,
 				'slug'         => $slug,
 				'name'         => $name,
 				'status'       => $status,
 				'category_ids' => $category_ids,
 			);
+			if ( ! empty( $losses ) ) {
+				$row['losses'] = $losses;
+			}
+			return $row;
 		} catch ( Throwable $exception ) {
 			$row = array(
 				'slug'   => $slug,
@@ -448,6 +483,131 @@ class Static_Site_Importer_Woo_Product_Seeder {
 				$failures[] = $term_id; }
 		}
 		return $failures;
+	}
+
+	/** Remove attachments created by this run, in reverse creation order. */
+	private static function cleanup_attachments( array $attachment_ids ): array {
+		$failures = array();
+		foreach ( array_reverse( array_unique( array_map( 'intval', $attachment_ids ) ) ) as $attachment_id ) {
+			if ( $attachment_id <= 0 || ! get_post( $attachment_id ) ) {
+				continue;
+			}
+			$deleted = wp_delete_attachment( $attachment_id, true );
+			if ( false === $deleted || null === $deleted ) {
+				$failures[] = $attachment_id;
+			}
+		}
+		return $failures;
+	}
+
+	/**
+	 * Resolve a manifest product image to a WooCommerce-ready attachment id.
+	 *
+	 * The same source image reused by several products resolves to the same
+	 * attachment: an already-materialized attachment for this exact source is
+	 * found and reused before anything new is created.
+	 *
+	 * @param string                $source               Artifact-relative manifest `image` source path.
+	 * @param string                $alt                  Manifest `image_alt` text, if any.
+	 * @param string                $product_name         Product name, used as a title fallback.
+	 * @param array<string, mixed>  $args                 Import-scoped context (see seed()).
+	 * @param array<int, int>       $created_attachments  Attachment ids created so far this run, by reference.
+	 * @return int Attachment post id, or 0 when the image could not be resolved.
+	 */
+	private static function resolve_product_image_attachment( string $source, string $alt, string $product_name, array $args, array &$created_attachments ): int {
+		$existing = self::existing_source_attachment_id( $source );
+		if ( $existing > 0 ) {
+			self::apply_attachment_alt_text( $existing, $alt );
+			return $existing;
+		}
+
+		$resolved = is_array( $args['resolved_product_images'][ $source ] ?? null ) ? $args['resolved_product_images'][ $source ] : null;
+		$bytes    = is_array( $resolved ) && is_string( $resolved['bytes'] ?? null ) ? $resolved['bytes'] : '';
+		if ( '' === $bytes || ! function_exists( 'wp_upload_bits' ) ) {
+			return 0;
+		}
+
+		$target_path = is_array( $resolved ) && is_string( $resolved['target_path'] ?? null ) && '' !== $resolved['target_path'] ? $resolved['target_path'] : $source;
+		$filename    = sanitize_file_name( basename( $target_path ) );
+		if ( '' === $filename ) {
+			return 0;
+		}
+
+		$upload = wp_upload_bits( $filename, null, $bytes );
+		if ( ! empty( $upload['error'] ) ) {
+			return 0;
+		}
+
+		$declared_mime_type = is_array( $resolved ) && is_string( $resolved['mime_type'] ?? null ) ? $resolved['mime_type'] : '';
+		$mime_type          = '' !== $declared_mime_type ? $declared_mime_type : (string) wp_check_filetype( $upload['file'] )['type'];
+		if ( ! str_starts_with( $mime_type, 'image/' ) ) {
+			wp_delete_file( $upload['file'] );
+			return 0;
+		}
+
+		$attachment_id = wp_insert_attachment(
+			array(
+				'post_mime_type' => $mime_type,
+				'post_title'     => '' !== $product_name ? $product_name : $filename,
+				'post_content'   => '',
+				'post_status'    => 'inherit',
+			),
+			$upload['file']
+		);
+		if ( $attachment_id <= 0 ) {
+			wp_delete_file( $upload['file'] );
+			return 0;
+		}
+
+		self::require_admin_media_dependencies();
+		if ( function_exists( 'wp_generate_attachment_metadata' ) ) {
+			$metadata = wp_generate_attachment_metadata( $attachment_id, $upload['file'] );
+			wp_update_attachment_metadata( $attachment_id, $metadata );
+		}
+		update_post_meta( $attachment_id, self::SOURCE_IMAGE_META_KEY, $source );
+		self::apply_attachment_alt_text( $attachment_id, $alt );
+		$created_attachments[] = $attachment_id;
+
+		return $attachment_id;
+	}
+
+	/** Find an already-materialized attachment for one exact manifest source image. */
+	private static function existing_source_attachment_id( string $source ): int {
+		if ( '' === $source ) {
+			return 0;
+		}
+		$found = get_posts(
+			array(
+				'post_type'     => 'attachment',
+				'post_status'   => 'inherit',
+				'numberposts'   => 1,
+				'fields'        => 'ids',
+				'no_found_rows' => true,
+				'meta_key'      => self::SOURCE_IMAGE_META_KEY,
+				'meta_value'    => $source,
+			)
+		);
+		return ! empty( $found ) ? (int) $found[0] : 0;
+	}
+
+	/** Apply manifest-supplied alt text to an attachment, when present. */
+	private static function apply_attachment_alt_text( int $attachment_id, string $alt ): void {
+		if ( $attachment_id > 0 && '' !== $alt ) {
+			update_post_meta( $attachment_id, '_wp_attachment_image_alt', wp_strip_all_tags( $alt ) );
+		}
+	}
+
+	/** Load the WordPress admin media dependencies wp_generate_attachment_metadata() requires. */
+	private static function require_admin_media_dependencies(): void {
+		if ( function_exists( 'wp_generate_attachment_metadata' ) ) {
+			return;
+		}
+		foreach ( array( 'wp-admin/includes/image.php', 'wp-admin/includes/media.php', 'wp-admin/includes/file.php' ) as $relative ) {
+			$file = ABSPATH . $relative;
+			if ( is_readable( $file ) ) {
+				require_once $file;
+			}
+		}
 	}
 
 	/**
@@ -522,6 +682,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	 * Ensure product categories exist and return term IDs.
 	 *
 	 * @param array<int, string> $category_names Category names.
+	 * @param array<int, int> $created_terms Created term IDs, updated by reference.
 	 * @return array<int, int>|WP_Error
 	 */
 	private static function ensure_category_ids( array $category_names, array &$created_terms = array() ) {
@@ -537,7 +698,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		return array_values( array_unique( array_filter( $term_ids ) ) );
 	}
 
-	/** @return int|WP_Error */
+	/** @param array<int,int> $created_terms @return int|WP_Error */
 	private static function ensure_category_id( string $category_name, array &$created_terms ) {
 		/** @var mixed $term */
 		$term    = term_exists( $category_name, 'product_cat' );

@@ -35,6 +35,8 @@ test( 'Playground starts PHP 8.5 and both README launch links boot without an op
 	] );
 	const parsedBlueprint = JSON.parse( blueprint );
 	assert.equal( parsedBlueprint.preferredVersions.php, '8.5' );
+	const policy = parsedBlueprint.steps.find( ( step ) => step.path === '/wordpress/wp-content/mu-plugins/static-site-importer-demo-policy.php' );
+	assert.match( policy?.data || '', /add_filter\( 'static_site_importer_retain_response_artifacts', '__return_false' \)/ );
 	assert.ok( ! parsedBlueprint.steps.some( ( step ) => step.step === 'runPHP' && step.code.includes( "extension_loaded( 'zstd' )" ) ) );
 	const links = [ ...readme.matchAll( /\]\((https:\/\/playground\.wordpress\.net\/\?[^)]+)\)/g ) ].map( ( match ) => match[ 1 ] );
 	assert.equal( links.length, 2 );
@@ -60,13 +62,13 @@ test( 'release publication keeps immutable assets and blueprints separate from t
 	assert.match( workflow, /test "\$package_sha256" = "\$\(sha256sum "\$package_archive"/ );
 	assert.match( workflow, /access-control-allow-origin/ );
 	assert.match( workflow, /playground\/\$RELEASE_TAG\/static-site-importer-playground-demo\.zip/ );
-	assert.match( workflow, /playground\/\$RELEASE_TAG\/static-site-importer\.zip/ );
+	assert.match( workflow, /releases\/download\/\$RELEASE_TAG\/static-site-importer\.zip/ );
 	assert.match( workflow, /DEMO_PACKAGE_SHA256/ );
 	assert.match( workflow, /migration_source_commit="4688faf6e76071af3e8becd1500071f29b4ec63b"/ );
 	assert.match( workflow, /migration_source_sha256="6a49991ed71f68e59cce26926d1221b2966ac3adaf8a6d243aae45feced8d3f1"/ );
 	assert.match( workflow, /playground\/\$RELEASE_TAG\/playground-to-wordpress-com\.zip/ );
 	assert.match( workflow, /MIGRATION_PACKAGE_SHA256/ );
-	assert.match( workflow, /git -C "\$pages_dir" add \.nojekyll "playground\/\$RELEASE_TAG\.blueprint\.json" "playground\/\$RELEASE_TAG\/static-site-importer\.zip" "playground\/\$RELEASE_TAG\/static-site-importer-playground-demo\.zip" "playground\/\$RELEASE_TAG\/playground-to-wordpress-com\.zip"/ );
+	assert.match( workflow, /git -C "\$pages_dir" add \.nojekyll "playground\/\$RELEASE_TAG\.blueprint\.json" "playground\/\$RELEASE_TAG\/static-site-importer-playground-demo\.zip" "playground\/\$RELEASE_TAG\/playground-to-wordpress-com\.zip"/ );
 	assert.match( workflow, /git -C "\$pages_dir" diff --cached --quiet/ );
 	assert.doesNotMatch( workflow, /gh release upload/ );
 	assert.ok(
