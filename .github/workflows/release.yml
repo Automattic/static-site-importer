@@ -91,10 +91,109 @@ jobs:
         id: source
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-  release:
-    name: Release prepared SSI commit
+  # Issue #1808. Blocking consumer-contract gate: build the html-site-import
+  # runtime-profile zip from the prepared commit and prove it imports a real
+  # fixture through `wp static-site-importer import --request=` (plan, then
+  # apply, request-bundle zip source), asserting the
+  # static-site-importer/import-cli-receipt/v1 receipts. The gate runs on a
+  # real PHP CLI so the fresh-runtime WP-CLI re-exec and compile worker fanout
+  # actually execute; php-wasm cannot run that path (documented in
+  # tools/run-release-import-gate.mjs and printed in the job output).
+  release-import-gate:
+    name: Release import gate (html-site-import zip)
     needs: refresh
     if: needs.refresh.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      NODE_VERSION: '20.19.4'
+      PHP_VERSION: '8.2.33'
+      HOMEBOY_VERSION: v0.298.1
+      HOMEBOY_SHA256: 543a1eb7348a9dcde3bee671dbbeaabb9486781d350792bed8a77424fdad60d5
+    steps:
+      - name: Checkout prepared source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.refresh.outputs.source-sha }}
+          path: static-site-importer
+
+      # The packaging path extracts the transformer from a Blocks Engine
+      # checkout; the tag must match the pin committed in composer.lock.
+      - name: Resolve pinned Blocks Engine transformer tag
+        id: blocks-engine
+        working-directory: static-site-importer
+        run: |
+          TRANSFORMER_VERSION=$(node -e 'const lock=require("./composer.lock"); const pin=lock.packages.find((entry)=>entry.name==="automattic/blocks-engine-php-transformer"); if(!pin)process.exit(1); console.log(pin.version.replace(/^v/,""))')
+          echo "ref=php-transformer-v${TRANSFORMER_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout pinned Blocks Engine
+        uses: actions/checkout@v6
+        with:
+          repository: Automattic/blocks-engine
+          ref: ${{ steps.blocks-engine.outputs.ref }}
+          path: blocks-engine
+
+      - name: Setup pinned Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pinned PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          coverage: none
+          tools: composer:v2
+
+      - name: Install pinned Homeboy
+        run: |
+          mkdir -p "$RUNNER_TEMP/homeboy"
+          curl --fail --location --retry 3 --retry-all-errors --output "$RUNNER_TEMP/homeboy.tar.xz" "https://github.com/Extra-Chill/homeboy/releases/download/${HOMEBOY_VERSION}/homeboy-x86_64-unknown-linux-gnu.tar.xz"
+          echo "${HOMEBOY_SHA256}  $RUNNER_TEMP/homeboy.tar.xz" | sha256sum --check --status
+          tar --extract --xz --file "$RUNNER_TEMP/homeboy.tar.xz" --directory "$RUNNER_TEMP/homeboy" --strip-components=1
+          chmod +x "$RUNNER_TEMP/homeboy/homeboy"
+          echo "$RUNNER_TEMP/homeboy" >> "$GITHUB_PATH"
+
+      - name: Build the html-site-import runtime profile zip
+        working-directory: static-site-importer
+        env:
+          BLOCKS_ENGINE_REF: ${{ steps.blocks-engine.outputs.ref }}
+        run: |
+          node tools/build-dev-package.mjs \
+            --runtime-profile html-site-import \
+            --blocks-engine-path "$GITHUB_WORKSPACE/blocks-engine" \
+            --blocks-engine-ref "$BLOCKS_ENGINE_REF" \
+            --output-dir "$RUNNER_TEMP/gate-package"
+
+      - name: Assert the zip provenance matches the prepared commit
+        working-directory: static-site-importer
+        env:
+          PREPARED_SHA: ${{ needs.refresh.outputs.source-sha }}
+        run: |
+          node -e 'const fs=require("node:fs");const provenance=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const head=provenance.static_site_importer?.head;const profile=provenance.runtime_profile;if(head!==process.env.PREPARED_SHA){console.error("Provenance head "+head+" does not match prepared commit "+process.env.PREPARED_SHA);process.exit(1);}if(profile!=="html-site-import"){console.error("Provenance runtime_profile "+profile+" is not html-site-import");process.exit(1);}console.log("Provenance verified: head="+head+" profile="+profile);' "$RUNNER_TEMP"/gate-package/*.zip.json
+
+      - name: Run the release import gate
+        working-directory: static-site-importer
+        run: |
+          node tools/run-release-import-gate.mjs \
+            --zip "$RUNNER_TEMP"/gate-package/*.zip \
+            --output "$RUNNER_TEMP/gate-evidence"
+
+      - name: Upload gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-import-gate-${{ needs.refresh.outputs.source-sha }}
+          path: ${{ runner.temp }}/gate-evidence
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Release prepared SSI commit
+    needs: [refresh, release-import-gate]
+    if: needs.refresh.result == 'success' && needs.release-import-gate.result == 'success'
     # Pinned to an exact release tag, not the moving `v2` alias. `v2` currently
     # points at v2.18.0, which predates the `prepared-ref` input, and passing an
     # input a reusable workflow does not declare fails the run at startup with
