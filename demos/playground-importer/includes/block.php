@@ -75,6 +75,27 @@ function static_site_importer_playground_demo_render_block(): string {
 
 				<button type="button" class="ssi-importer__submit" data-static-site-importer-submit><?php esc_html_e( 'Generate WordPress Website', 'static-site-importer' ); ?></button>
 			</form>
+
+			<?php
+			/*
+			 * The importer above needs a site that already exists. This hands the
+			 * other case — "I do not have a site yet" — to a coding agent, which
+			 * writes the HTML and returns a Playground link that materializes it.
+			 * The instructions live at the published `latest` alias rather than
+			 * inline, so a prompt pasted today keeps matching the shipped importer.
+			 */
+			$agent_prompt_url = 'https://automattic.github.io/static-site-importer/playground/latest/agent-prompt.md';
+			$agent_prompt     = "Build me a WordPress site I can open in my browser.\nRead " . $agent_prompt_url . " and follow it exactly.";
+			?>
+			<div class="ssi-importer__agent" data-static-site-importer-agent>
+				<p class="ssi-importer__agent-label"><?php esc_html_e( 'No site yet? Have your AI agent build one.', 'static-site-importer' ); ?></p>
+				<pre class="ssi-importer__agent-prompt" data-static-site-importer-agent-prompt><?php echo esc_html( $agent_prompt ); ?></pre>
+				<button type="button" class="ssi-importer__agent-copy" data-static-site-importer-agent-copy data-copied-label="<?php esc_attr_e( 'Copied', 'static-site-importer' ); ?>"><?php esc_html_e( 'Copy prompt', 'static-site-importer' ); ?></button>
+				<p class="ssi-importer__agent-note">
+					<?php esc_html_e( 'Paste it into Claude Code, Cursor, opencode or similar. It will ask what you want, then return a link that opens your site here.', 'static-site-importer' ); ?>
+					<a href="<?php echo esc_url( $agent_prompt_url ); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e( 'Read the instructions', 'static-site-importer' ); ?></a>
+				</p>
+			</div>
 		</section>
 
 		<section class="ssi-importer__report" aria-live="polite" hidden data-static-site-importer-status>
