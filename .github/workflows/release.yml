@@ -21,8 +21,14 @@ on:
         type: boolean
         default: false
 
+# The reusable release workflow declares `id-token: write` for npm trusted
+# publishing. A caller that grants less than a called workflow declares fails
+# the run at startup, before any job exists, so this grant is required even
+# though SSI publishes nothing to npm. Tracked upstream as
+# Extra-Chill/homeboy-action#498.
 permissions:
   contents: write
+  id-token: write
   issues: write
   pull-requests: write
 
