@@ -717,6 +717,66 @@ $fresh_invalid = static_site_importer_cli_import_run_fresh_runtime( array( 'sour
 $assert( 'static_site_importer_cli_step_response_invalid' === ( $fresh_invalid['error']['code'] ?? '' ), 'fresh-runtime-invalid-response-code' );
 $assert( str_contains( (string) ( $fresh_invalid['error']['message'] ?? '' ), 'code 255' ) && str_contains( (string) ( $fresh_invalid['error']['message'] ?? '' ), 'Allowed memory size exhausted' ), 'fresh-runtime-invalid-response-reports-process-failure' );
 
+// Externally driven continuation (#1779).
+//
+// A host that supplies fresh runtimes but cannot fork -- PHP.wasm has no
+// subprocesses at all -- must be able to drive the same state machine by
+// repeating one identical command. Without this it has to reimplement the
+// host loop's state transition, and every copy of that logic rots when the
+// continuation contract moves.
+$state_dir  = sys_get_temp_dir() . '/ssi-state-' . bin2hex( random_bytes( 6 ) );
+mkdir( $state_dir );
+$state_path = $state_dir . '/state.json';
+
+$GLOBALS['ssi_stateful_steps']   = 0;
+$GLOBALS['ssi_stateful_inputs']  = array();
+$GLOBALS['ssi_stateful_scripted'] = array(
+	array( 'success' => true, 'continuation' => true, 'import_id' => 'run-1', 'continuation_reason' => 'pages_remaining' ),
+	array(
+		'success'             => true,
+		'continuation'        => true,
+		'import_id'           => 'run-1',
+		'continuation_reason' => 'dependencies_prepared',
+		'result'              => array( 'fresh_runtime' => array( 'request_id' => 'req-9', 'lifecycle_checkpoint_id' => 'ckpt-9' ) ),
+	),
+	array( 'success' => true, 'continuation' => false, 'import_id' => 'run-1', 'theme_slug' => 'generated-site' ),
+);
+
+function static_site_importer_cli_import( array $input ): array {
+	$GLOBALS['ssi_stateful_inputs'][] = $input;
+	$index                            = $GLOBALS['ssi_stateful_steps']++;
+
+	return $GLOBALS['ssi_stateful_scripted'][ $index ] ?? array( 'success' => false, 'error' => array( 'code' => 'ran_too_many_times' ) );
+}
+
+$request = array( 'source' => array( 'type' => 'files', 'entrypoint' => 'website/index.html', 'files' => array() ), 'slug' => 'generated-site' );
+
+$first = static_site_importer_cli_run_stateful_import_step( $request, $state_path );
+$assert( ! empty( $first['continuation'] ), 'stateful-first-invocation-reports-continuation' );
+$assert( is_file( $state_path ), 'stateful-first-invocation-persists-state' );
+
+$second = static_site_importer_cli_run_stateful_import_step( $request, $state_path );
+$assert( 'dependencies_prepared' === ( $second['continuation_reason'] ?? '' ), 'stateful-second-invocation-advances' );
+$assert( 'run-1' === ( $GLOBALS['ssi_stateful_inputs'][1]['source']['import_id'] ?? '' ), 'stateful-resume-carries-import-id-without-caller' );
+
+$third = static_site_importer_cli_run_stateful_import_step( $request, $state_path );
+$assert( empty( $third['continuation'] ) && 'generated-site' === ( $third['theme_slug'] ?? '' ), 'stateful-third-invocation-is-terminal' );
+$assert( 'resume' === ( $GLOBALS['ssi_stateful_inputs'][2]['runtime_lifecycle_phase'] ?? '' ), 'stateful-lifecycle-handoff-applied-without-caller' );
+$assert( 'ckpt-9' === ( $GLOBALS['ssi_stateful_inputs'][2]['runtime_lifecycle_checkpoint'] ?? '' ), 'stateful-lifecycle-checkpoint-applied-without-caller' );
+
+// Over-provisioned steps are the whole point: a Blueprint cannot know the page
+// count in advance, so extra invocations must replay rather than start again.
+$fourth = static_site_importer_cli_run_stateful_import_step( $request, $state_path );
+$assert( 'generated-site' === ( $fourth['theme_slug'] ?? '' ), 'stateful-post-terminal-invocation-replays-receipt' );
+$assert( 3 === $GLOBALS['ssi_stateful_steps'], 'stateful-post-terminal-invocation-runs-no-further-import' );
+
+file_put_contents( $state_path, '{"schema":"something-else"}' );
+$rejected = static_site_importer_cli_run_stateful_import_step( $request, $state_path );
+$assert( 'static_site_importer_cli_import_state_invalid' === ( $rejected['error']['code'] ?? '' ), 'stateful-foreign-state-file-is-refused' );
+
+array_map( 'unlink', glob( $state_dir . '/*' ) ?: array() );
+rmdir( $state_dir );
+
 if ( $failures ) {
 	fwrite( STDERR, "Unified CLI import smoke failed:\n- " . implode( "\n- ", $failures ) . "\n" );
 	exit( 1 );

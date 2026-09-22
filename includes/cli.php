@@ -757,6 +757,152 @@ if ( ! function_exists( 'static_site_importer_cli_import_run_fresh_runtime' ) ) 
 	}
 }
 
+if ( ! function_exists( 'static_site_importer_cli_run_stateful_import_step' ) ) {
+	/**
+	 * Run one import step, resuming from and persisting to a state file.
+	 *
+	 * Hosts that supply fresh runtimes externally cannot use the in-process
+	 * host loop, because that loop advances by forking a child WP-CLI process
+	 * and some runtimes — WordPress Playground's PHP.wasm among them — have no
+	 * subprocesses at all. Without this, every such host reimplements the
+	 * continuation state transition itself.
+	 *
+	 * With a state file, repeated identical invocations converge: the first
+	 * starts the run, each later one resumes it, and any call after the run
+	 * reaches a terminal result replays that result rather than starting a
+	 * second import. Callers never handle an `import_id` or a lifecycle
+	 * checkpoint.
+	 *
+	 * The state file is host-owned. A caller that wants a fresh run removes it.
+	 *
+	 * @param array<string,mixed> $input      Import request for the first step.
+	 * @param string              $state_path Absolute path to the state file.
+	 * @return array<string,mixed> Step result.
+	 */
+	function static_site_importer_cli_run_stateful_import_step( array $input, string $state_path ): array {
+		$state = static_site_importer_cli_read_import_state( $state_path );
+		if ( is_wp_error( $state ) ) {
+			return static_site_importer_cli_import_error( (string) $state->get_error_code(), $state->get_error_message() );
+		}
+
+		// A completed run replays its receipt. Repeating the command must not
+		// start a second import over a site the first one already produced.
+		if ( isset( $state['terminal'] ) && is_array( $state['terminal'] ) ) {
+			return $state['terminal'];
+		}
+
+		if ( isset( $state['input'] ) && is_array( $state['input'] ) ) {
+			$input = $state['input'];
+		}
+
+		$result = static_site_importer_cli_import( $input );
+		if ( ! is_array( $result ) ) {
+			$result = static_site_importer_cli_import_error( 'static_site_importer_cli_step_response_invalid', 'An import step did not return an object.' );
+		}
+
+		if ( empty( $result['continuation'] ) ) {
+			$persisted = static_site_importer_cli_write_import_state( $state_path, array( 'terminal' => $result ) );
+
+			return is_wp_error( $persisted )
+				? static_site_importer_cli_import_error( (string) $persisted->get_error_code(), $persisted->get_error_message() )
+				: $result;
+		}
+
+		if ( '' === (string) ( $result['import_id'] ?? '' ) ) {
+			return static_site_importer_cli_import_error( 'static_site_importer_cli_import_id_missing', 'A continuation did not include an opaque import_id.' );
+		}
+
+		$persisted = static_site_importer_cli_write_import_state(
+			$state_path,
+			array( 'input' => static_site_importer_cli_next_import_input( $input, $result ) )
+		);
+
+		return is_wp_error( $persisted )
+			? static_site_importer_cli_import_error( (string) $persisted->get_error_code(), $persisted->get_error_message() )
+			: $result;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_read_import_state' ) ) {
+	/**
+	 * Read host-owned continuation state.
+	 *
+	 * An absent file is a first invocation, not an error.
+	 *
+	 * @param string $state_path Absolute path to the state file.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	function static_site_importer_cli_read_import_state( string $state_path ) {
+		if ( ! is_file( $state_path ) ) {
+			return array();
+		}
+		$raw = file_get_contents( $state_path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads host-owned continuation state.
+		if ( false === $raw || '' === trim( (string) $raw ) ) {
+			return array();
+		}
+		$decoded = json_decode( (string) $raw, true );
+		if ( ! is_array( $decoded ) || 'static-site-importer/cli-import-state/v1' !== ( $decoded['schema'] ?? null ) ) {
+			return new WP_Error( 'static_site_importer_cli_import_state_invalid', 'The import state file is not a Static Site Importer continuation state.' );
+		}
+
+		return $decoded;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_write_import_state' ) ) {
+	/**
+	 * Persist host-owned continuation state.
+	 *
+	 * @param string              $state_path Absolute path to the state file.
+	 * @param array<string,mixed> $state      State to persist.
+	 * @return true|WP_Error
+	 */
+	function static_site_importer_cli_write_import_state( string $state_path, array $state ) {
+		$json = function_exists( 'wp_json_encode' )
+			? wp_json_encode( array_merge( array( 'schema' => 'static-site-importer/cli-import-state/v1' ), $state ), JSON_UNESCAPED_SLASHES )
+			: false;
+		if ( false === $json ) {
+			return new WP_Error( 'static_site_importer_cli_import_state_encode_failed', 'The import continuation state could not be encoded.' );
+		}
+		$directory = dirname( $state_path );
+		if ( ! is_dir( $directory ) ) {
+			return new WP_Error( 'static_site_importer_cli_import_state_directory_missing', 'The import state directory does not exist.' );
+		}
+		if ( false === file_put_contents( $state_path, $json ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Writes host-owned continuation state.
+			return new WP_Error( 'static_site_importer_cli_import_state_write_failed', 'The import continuation state could not be written.' );
+		}
+
+		return true;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_next_import_input' ) ) {
+	/**
+	 * Advance a bounded import request to the input its next step expects.
+	 *
+	 * This is the continuation state transition, and it is the only place that
+	 * knows it. The in-process host loop and the externally driven
+	 * `--single-step --state` mode both advance through here, so a host that
+	 * owns process lifetime never has to reimplement it. Callers that receive a
+	 * terminal result must not call this.
+	 *
+	 * @param array<string,mixed> $input  Input that produced `$result`.
+	 * @param array<string,mixed> $result Non-terminal step result.
+	 * @return array<string,mixed> Input for the next step.
+	 */
+	function static_site_importer_cli_next_import_input( array $input, array $result ): array {
+		$input = static_site_importer_cli_apply_import_id( $input, (string) ( $result['import_id'] ?? '' ) );
+		if ( 'dependencies_prepared' === ( $result['continuation_reason'] ?? '' ) ) {
+			$prepared                              = is_array( $result['result'] ?? null ) ? $result['result'] : array();
+			$input['runtime_lifecycle_phase']      = 'resume';
+			$input['runtime_lifecycle_request_id'] = (string) ( $prepared['fresh_runtime']['request_id'] ?? '' );
+			$input['runtime_lifecycle_checkpoint'] = (string) ( $prepared['fresh_runtime']['lifecycle_checkpoint_id'] ?? $prepared['runtime_lifecycle_checkpoint'] ?? '' );
+		}
+
+		return $input;
+	}
+}
+
 if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 	/**
 	 * Drive bounded ability steps until a terminal result.
@@ -792,13 +938,7 @@ if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 			if ( null !== $emit_progress ) {
 				$emit_progress( static_site_importer_cli_import_progress( $result, $steps, $started_at, 'continuation', $resume_command ) );
 			}
-			$input = static_site_importer_cli_apply_import_id( $input, $import_id );
-			if ( 'dependencies_prepared' === ( $result['continuation_reason'] ?? '' ) ) {
-				$prepared                              = is_array( $result['result'] ?? null ) ? $result['result'] : array();
-				$input['runtime_lifecycle_phase']      = 'resume';
-				$input['runtime_lifecycle_request_id'] = (string) ( $prepared['fresh_runtime']['request_id'] ?? '' );
-				$input['runtime_lifecycle_checkpoint'] = (string) ( $prepared['fresh_runtime']['lifecycle_checkpoint_id'] ?? $prepared['runtime_lifecycle_checkpoint'] ?? '' );
-			}
+			$input    = static_site_importer_cli_next_import_input( $input, $result );
 			$previous = $result;
 		}
 		return static_site_importer_cli_import_receipt(
@@ -813,7 +953,9 @@ if ( ! function_exists( 'static_site_importer_cli_import_resume_command' ) ) {
 	function static_site_importer_cli_import_resume_command( array $assoc_args, string $import_id ): string {
 		$parts = array( 'wp', 'static-site-importer', 'import' );
 		foreach ( $assoc_args as $key => $value ) {
-			if ( in_array( $key, array( 'import-id', 'max-steps', 'single-step' ), true ) ) {
+			// `state` is the externally driven mode's own bookkeeping; a durable
+			// resume command carries the import id instead.
+			if ( in_array( $key, array( 'import-id', 'max-steps', 'single-step', 'state' ), true ) ) {
 				continue;
 			}
 			$parts[] = is_bool( $value ) ? '--' . $key : '--' . $key . '=' . escapeshellarg( (string) $value );
@@ -876,7 +1018,14 @@ if ( ! function_exists( 'static_site_importer_cli_import_command' ) ) {
 			return;
 		}
 		if ( isset( $assoc_args['single-step'] ) ) {
-			static_site_importer_cli_emit_import_step( static_site_importer_cli_import( $input ) );
+			$state_path = isset( $assoc_args['state'] ) ? (string) $assoc_args['state'] : '';
+			if ( '' === $state_path ) {
+				static_site_importer_cli_emit_import_step( static_site_importer_cli_import( $input ) );
+				return;
+			}
+			static_site_importer_cli_emit_import_step(
+				static_site_importer_cli_run_stateful_import_step( $input, $state_path )
+			);
 			return;
 		}
 		$max_steps      = isset( $assoc_args['max-steps'] ) ? (int) $assoc_args['max-steps'] : 0;
