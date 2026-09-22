@@ -344,6 +344,21 @@
 		}
 
 		submit.addEventListener( 'click', async function () {
+			if ( submit.disabled ) {
+				return;
+			}
+			// Disable before reading the upload: building the archive is async,
+			// and a button that stays enabled meanwhile accepts a second submit
+			// and reports "idle" to anything waiting for the request to settle.
+			submit.disabled = true;
+			try {
+				await runImport();
+			} finally {
+				submit.disabled = false;
+			}
+		} );
+
+		const runImport = async function () {
 			const sourceUrl = root.querySelector( '[data-static-site-importer-source-url]' );
 			const html = root.querySelector( '[data-static-site-importer-source-html]' );
 			const uploadInputs = root.querySelectorAll( '[data-static-site-importer-source-files], [data-static-site-importer-source-directory]' );
@@ -362,7 +377,6 @@
 
 			const isUrlOnly = Boolean( source.url.trim() && ! source.html.trim() && ! source.files.length && ! source.archive );
 			showStatus( root, 'Preparing WordPress preview...' );
-			submit.disabled = true;
 
 			try {
 				const restUrl = root.getAttribute( 'data-static-site-importer-rest-url' );
@@ -433,10 +447,8 @@
 			} catch ( error ) {
 				setReport( root, { success: false, error: { message: error.message } } );
 				showStatus( root, 'Preview request failed.' );
-			} finally {
-				submit.disabled = false;
 			}
-		} );
+		};
 	} );
 } )();
 
