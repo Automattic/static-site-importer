@@ -359,8 +359,72 @@ ftruncate( $file_limit_handle, 10485761 );
 fclose( $file_limit_handle );
 $file_limit = static_site_importer_cli_request_bundle_files( $file_limit_dir );
 $assert( is_wp_error( $file_limit ) && 'static_site_importer_cli_request_bundle_file_too_large' === $file_limit->get_error_code(), 'request-bundle-rejects-file-bytes-over-hard-boundary' );
+$assert( str_contains( $file_limit->get_error_message(), '10 MiB' ), 'request-bundle-parsed-file-rejection-message-reports-the-parse-limit-it-exceeded' );
 unlink( $file_limit_dir . '/asset.css' );
 rmdir( $file_limit_dir );
+
+// A binary media file the compiler only copies, never parses, gets a far
+// wider per-file ceiling than a parsed source — comfortably past the old
+// flat 10 MiB cap, and still nowhere near the 256 MiB aggregate budget.
+$media_bundle_dir = sys_get_temp_dir() . '/ssi-request-bundle-media-' . bin2hex( random_bytes( 6 ) );
+mkdir( $media_bundle_dir );
+$media_bundle_dir  = realpath( $media_bundle_dir );
+$media_clip_handle = fopen( $media_bundle_dir . '/clip.mp4', 'w' );
+ftruncate( $media_clip_handle, 13600000 );
+fclose( $media_clip_handle );
+$media_bundle = static_site_importer_cli_request_bundle_files( $media_bundle_dir );
+$media_files  = is_array( $media_bundle ) ? array_column( $media_bundle['files'], null, 'path' ) : array();
+$assert( ! is_wp_error( $media_bundle ) && isset( $media_files['clip.mp4'] ) && 13600000 === $media_files['clip.mp4']['payload_reference']['bytes'], 'request-bundle-accepts-a-media-file-above-the-old-flat-per-file-cap-when-the-aggregate-budget-allows' );
+unlink( $media_bundle_dir . '/clip.mp4' );
+rmdir( $media_bundle_dir );
+
+// A PARSED file (HTML) above the parse-oriented cap is still rejected — the
+// wider ceiling only applies to opaque binaries the compiler copies, not to
+// documents it converts to blocks.
+$parsed_over_cap_dir = sys_get_temp_dir() . '/ssi-request-bundle-parsed-' . bin2hex( random_bytes( 6 ) );
+mkdir( $parsed_over_cap_dir );
+file_put_contents( $parsed_over_cap_dir . '/index.html', '<html><body>' . str_repeat( 'a', 10485761 ) . '</body></html>' );
+$parsed_over_cap = static_site_importer_cli_request_bundle_files( $parsed_over_cap_dir );
+$assert( is_wp_error( $parsed_over_cap ) && 'static_site_importer_cli_request_bundle_file_too_large' === $parsed_over_cap->get_error_code(), 'request-bundle-still-rejects-a-parsed-html-file-above-the-parse-cap' );
+$assert( str_contains( $parsed_over_cap->get_error_message(), '10 MiB' ), 'request-bundle-parsed-html-rejection-message-reports-the-parse-limit' );
+unlink( $parsed_over_cap_dir . '/index.html' );
+rmdir( $parsed_over_cap_dir );
+
+// The wider media ceiling still cooperates with the aggregate budget instead
+// of racing past it: three equally sized media files, each comfortably under
+// the flat media ceiling on its own, exhaust the 256 MiB aggregate budget by
+// the third file, whose effective ceiling has shrunk to what remains (56
+// MiB) — and the rejection message reports that shrunken remaining-budget
+// limit, not the flat 100 MiB media ceiling.
+$media_budget_dir = sys_get_temp_dir() . '/ssi-request-bundle-media-budget-' . bin2hex( random_bytes( 6 ) );
+mkdir( $media_budget_dir );
+foreach ( array( 'clip-a.mp4', 'clip-b.mp4', 'clip-c.mp4' ) as $clip ) {
+	$clip_handle = fopen( $media_budget_dir . '/' . $clip, 'w' );
+	ftruncate( $clip_handle, 104857600 );
+	fclose( $clip_handle );
+}
+$media_budget = static_site_importer_cli_request_bundle_files( $media_budget_dir );
+$assert( is_wp_error( $media_budget ) && 'static_site_importer_cli_request_bundle_file_too_large' === $media_budget->get_error_code(), 'request-bundle-shrinks-the-media-ceiling-to-what-remains-of-the-aggregate-budget' );
+$assert( str_contains( $media_budget->get_error_message(), '56 MiB' ) && ! str_contains( $media_budget->get_error_message(), '100 MiB' ), 'request-bundle-media-rejection-message-reports-the-remaining-budget-not-the-flat-media-ceiling' );
+foreach ( scandir( $media_budget_dir ) as $entry ) {
+	if ( '.' !== $entry && '..' !== $entry ) {
+		unlink( $media_budget_dir . '/' . $entry );
+	}
+}
+rmdir( $media_budget_dir );
+
+// The wider media ceiling never loosens the executable/static-content
+// policy: a large file with a disallowed extension is still rejected before
+// any byte check runs, regardless of how far under the media ceiling it is.
+$executable_media_dir = sys_get_temp_dir() . '/ssi-request-bundle-executable-media-' . bin2hex( random_bytes( 6 ) );
+mkdir( $executable_media_dir );
+$executable_media_handle = fopen( $executable_media_dir . '/clip.mp4.php', 'w' );
+ftruncate( $executable_media_handle, 13600000 );
+fclose( $executable_media_handle );
+$executable_media = static_site_importer_cli_request_bundle_files( $executable_media_dir );
+$assert( is_wp_error( $executable_media ) && 'static_site_importer_executable_source_rejected' === $executable_media->get_error_code(), 'request-bundle-wider-media-ceiling-does-not-loosen-the-executable-policy' );
+unlink( $executable_media_dir . '/clip.mp4.php' );
+rmdir( $executable_media_dir );
 
 $total_limit_dir = sys_get_temp_dir() . '/ssi-request-bundle-total-' . bin2hex( random_bytes( 6 ) );
 mkdir( $total_limit_dir );
