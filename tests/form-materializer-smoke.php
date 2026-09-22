@@ -1568,6 +1568,46 @@ namespace {
 		'field-shells-own-grid-spans-its-rebuilt-label-control-row-across-every-track',
 		$grid_shell_css
 	);
+	$interactive_button_shell_form = array(
+		'forms' => array( array(
+			'selector'  => 'form.feedback',
+			'controls'  => array_merge(
+				array( array( 'tag' => 'input', 'type' => 'text', 'name' => 'name', 'label' => 'Your name' ) ),
+				array_fill( 0, 5, array( 'tag' => 'button', 'type' => 'button' ) ),
+				array( array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) )
+			),
+			'control_topology' => array(
+				'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false,
+				'nodes'  => array_merge(
+					array(
+						array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div' ),
+						array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'control' => 0 ),
+						array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => null, 'order' => 1, 'depth' => 0, 'tag' => 'div' ),
+						array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 1, 'tag' => 'div' ),
+					),
+					array_map(
+						static fn ( int $index ): array => array( 'id' => 'control-' . ( $index + 1 ), 'kind' => 'control', 'parent' => 'wrapper-2', 'order' => $index, 'depth' => 2, 'control' => $index + 1 ),
+						array( 0, 1, 2, 3, 4 )
+					),
+					array( array( 'id' => 'control-6', 'kind' => 'control', 'parent' => null, 'order' => 2, 'depth' => 0, 'control' => 6 ) )
+				),
+			),
+			'layout_graph' => $v2_layout_graph( array(
+				array( 'id' => 'wrapper-2', 'kind' => 'container', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'div', 'classes' => array( 'flex', 'gap-1' ) ), 'layout' => array( 'display' => 'flex', 'gap' => '0.25rem' ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.flex.gap-1', 'condition' => null, 'properties' => array( 'display', 'gap' ) ) ) ),
+			) ),
+			'presentation_graph' => array(
+				'schema' => 'generic/computed-form-presentation/v2', 'basis' => 'source_css_cascade', 'truncated' => false,
+				'limits' => array( 'controls' => 128, 'rules_per_role' => 32 ), 'controls' => array(), 'visual_groups' => array(), 'control_containers' => array(), 'variants' => array(), 'diagnostics' => array(),
+				'visual_parts' => array_map(
+					static fn ( int $index ): array => array( 'id' => 'control-' . $index . '-svg-0', 'index' => $index, 'kind' => 'inline_svg', 'source_selector' => 'form button:nth-of-type(' . ( $index - 3 ) . ') > svg', 'markup' => '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h22v22H1z"/></svg>', 'intrinsic_size' => array( 'width' => 24, 'height' => 24 ), 'source_css' => array( 'state' => 'unknown' ) ),
+					array( 4, 5, 6, 7, 8 )
+				),
+			),
+		) ),
+	);
+	$interactive_button_shell_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $interactive_button_shell_form );
+	$interactive_button_shell_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $interactive_button_shell_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( empty( $interactive_button_shell_validation['errors'] ) && 'skipped' === ( $interactive_button_shell_row['status'] ?? '' ) && false === ( $interactive_button_shell_row['runtime_mapped'] ?? true ) && 'form_receipt_loss_unaccepted' === ( $interactive_button_shell_row['reason'] ?? '' ) && 1 === ( $interactive_button_shell_row['unaccepted_receipt_loss_count'] ?? 0 ), 'captured-visual-button-controls-remain-loss-gated-without-rating-semantics', wp_json_encode( $interactive_button_shell_row ) );
 	$popup_form = array(
 		'selector' => 'form.picker',
 		'controls' => array(
