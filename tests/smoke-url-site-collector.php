@@ -72,7 +72,7 @@ $responses = array(
 	),
 	'https://example.test/' => array(
 		'content_type' => 'text/html; charset=utf-8',
-		'body'         => '<!doctype html><html><head><link rel="canonical" href="/"><link rel="stylesheet" href="/files/main.css?v=1"><script src="/platform-runtime.js"></script></head><body style="background-image:url(/uploads/hero.jpg)"><nav><a href="/services.html">Services</a><a href="/cdn-cgi/l/email-protection#127352703c717d">Email</a></nav><img src="/uploads/logo.png" srcset="/uploads/logo.png 1x, /uploads/logo-2x.png 2x"><main><h1>Home</h1></main><script>URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)]));</script><div class="source-footer-signup"><a href="https://signup.example.test/signup"><div><img src="https://cdn.example.test/platform-badge.png">Powered by the source host</div></a></div></body></html>',
+		'body'         => '<!doctype html><html><head><link rel="canonical" href="/"><link rel="stylesheet" href="/files/main.css?v=1"><script src="/platform-runtime.js"></script></head><body style="background-image:url(/uploads/hero.jpg)"><nav><a href="/services.html">Services</a><a href="/cdn-cgi/l/email-protection#127352703c717d">Email</a></nav><img src="/uploads/logo.png" srcset="/uploads/logo.png 1x, /uploads/logo-2x.png 2x"><svg><image href="assets/vinyl-record.png#cover" width="1000" height="1000"/><image xlink:href="assets/vinyl-record.png#cover"/></svg><svg><image href="#local-symbol"/></svg><main><h1>Home</h1></main><script>URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)]));</script><div class="source-footer-signup"><a href="https://signup.example.test/signup"><div><img src="https://cdn.example.test/platform-badge.png">Powered by the source host</div></a></div></body></html>',
 	),
 	'https://example.test/services.html' => array(
 		'content_type' => 'text/html',
@@ -96,6 +96,7 @@ $responses = array(
 	'https://example.test/uploads/logo.png' => array( 'content_type' => 'image/png', 'body' => "\x89PNGlogo" ),
 	'https://example.test/uploads/logo-2x.png' => array( 'content_type' => 'image/png', 'body' => "\x89PNGlogo2" ),
 	'https://example.test/uploads/pattern.svg' => array( 'content_type' => 'image/svg+xml', 'body' => '<svg xmlns="http://www.w3.org/2000/svg"></svg>' ),
+	'https://example.test/assets/vinyl-record.png' => array( 'content_type' => 'image/png', 'body' => 'vinyl-record' ),
 	'https://cdn.example.test/team.webp' => array( 'content_type' => 'image/webp', 'body' => 'webp-team' ),
 	'https://cdn.example.test/platform-badge.png' => array( 'content_type' => 'image/png', 'body' => "\x89PNGbadge" ),
 	'https://cdn.example.test/font.woff2' => array( 'content_type' => 'font/woff2', 'body' => 'woff2-font' ),
@@ -139,7 +140,7 @@ $assert( 'public-static-site-collector' === ( $result['provider'] ?? '' ), 'prov
 $assert( 'website/index.html' === ( $result['artifact']['entrypoint'] ?? '' ), 'root-entrypoint' );
 $assert( array( 'max_files' => 70, 'max_file_bytes' => 10485760, 'max_total_bytes' => 104857600 ) === ( $result['artifact']['compiler_limits'] ?? null ), 'collector-declares-bounded-compiler-limits' );
 $assert( 4 === ( $result['source_metadata']['collection']['pages'] ?? 0 ), 'sitemap-index-alias-deduplicated' );
-$assert( 9 === ( $result['source_metadata']['collection']['assets'] ?? 0 ), 'static-policy-collects-frozen-rendering-assets' );
+$assert( 10 === ( $result['source_metadata']['collection']['assets'] ?? 0 ), 'static-policy-collects-frozen-rendering-assets' );
 $assert( array() === ( $result['source_metadata']['collection']['failures'] ?? null ), 'no-collection-failures' );
 $snapshot = $result['source_metadata']['snapshot'] ?? array();
 $assert( 'static-site-importer/url-snapshot/v1' === ( $snapshot['schema'] ?? '' ) && 64 === strlen( (string) ( $snapshot['sha256'] ?? '' ) ), 'snapshot-hash-recorded' );
@@ -158,6 +159,10 @@ $assert( isset( $files['website/files/components.css'] ), 'quoted-css-import-pac
 $assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'href="/services.html"' ), 'page-link-preserved-for-route-rewriting' );
 $assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'src="uploads/logo.png"' ), 'image-link-rewritten' );
 $assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'url(uploads/hero.jpg)' ), 'inline-background-rewritten' );
+$assert( in_array( 'https://example.test/assets/vinyl-record.png', array_column( $requests, 'url' ), true ), 'inline-svg-image-href-is-collected' );
+$assert( substr_count( (string) ( $files['website/index.html']['content'] ?? '' ), 'assets/vinyl-record.png#cover' ) === 2, 'inline-svg-href-and-xlink-href-are-rewritten-with-fragments' );
+$assert( str_contains( (string) ( $files['website/index.html']['content'] ?? '' ), 'href="#local-symbol"' ), 'fragment-only-svg-reference-is-preserved' );
+$assert( ! in_array( 'https://example.test/#local-symbol', array_column( $requests, 'url' ), true ), 'fragment-only-reference-is-not-fetched' );
 $assert( isset( $files['website/uploads/logo.png']['content_base64'] ), 'binary-assets-base64-encoded' );
 $assert( ! in_array( 'https://example.test/index.html', array_column( $requests, 'url' ), true ), 'root-index-not-fetched-twice' );
 $assert( array() === array_filter( array_column( $requests, 'url' ), static fn ( string $url ): bool => str_contains( $url, 'new Blob' ) ), 'inline-javascript-url-functions-are-not-css-assets' );

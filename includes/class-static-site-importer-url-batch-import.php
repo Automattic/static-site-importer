@@ -749,6 +749,14 @@ final class Static_Site_Importer_URL_Batch_Import {
 			if ( ! is_object( $compiled ) || ! is_callable( array( $compiled, 'toCompactWordPressSitePlanView' ) ) ) {
 				return new WP_Error( 'static_site_importer_invalid_staged_compile', 'The Blocks Engine php-transformer returned an invalid staged URL batch plan.' );
 			}
+			if ( 'failed' === ( $compiled->status ?? null ) && empty( ( get_object_vars( $compiled )['sourceReports']['wordpress_site_plan'] ?? null ) ) ) {
+				$diagnostics = self::composition_diagnostics( $compiled );
+				return new WP_Error(
+					'static_site_importer_staged_compose_failed',
+					'Blocks Engine failed to compose the WordPress site plan.',
+					array( 'diagnostics' => $diagnostics )
+				);
+			}
 			$view = $compiled->toCompactWordPressSitePlanView();
 			if ( 'blocks-engine/wordpress-site-plan-view/v2' !== ( $view['schema'] ?? '' ) ) {
 				return new WP_Error( 'static_site_importer_invalid_staged_compile', 'The Blocks Engine php-transformer did not compact the staged URL batch plan view.' );
@@ -757,6 +765,14 @@ final class Static_Site_Importer_URL_Batch_Import {
 		} catch ( Throwable $error ) {
 			return new WP_Error( 'static_site_importer_staged_compose_failed', $error->getMessage() );
 		}
+	}
+	/** @return array<int,array<string,mixed>> */
+	private static function composition_diagnostics( object $compiled ): array {
+		$source_reports = get_object_vars( $compiled )['sourceReports'] ?? array();
+		if ( is_array( $source_reports['wordpress_site_plan_diagnostics'] ?? null ) ) {
+			return $source_reports['wordpress_site_plan_diagnostics'];
+		}
+		return is_array( $compiled->diagnostics ?? null ) ? $compiled->diagnostics : array();
 	}
 
 	public static function payload_reader( Static_Site_Importer_Artifact_Run_Workspace $workspace ): ?object {
@@ -901,7 +917,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 		if ( ! class_exists( $compiler_class ) ) {
 			return new WP_Error( 'static_site_importer_missing_transformer', 'Blocks Engine php-transformer is required to prepare staged URL batch plans.' );
 		}
-		return new $compiler_class();
+		$compiler = new $compiler_class();
+		return function_exists( 'apply_filters' ) ? apply_filters( 'static_site_importer_url_batch_compiler', $compiler ) : $compiler;
 	}
 	private static function cached_fetcher( Static_Site_Importer_Artifact_Byte_Cache $cache, ?callable $fetcher ): callable {
 		$fetcher = $fetcher ?? static fn ( string $url, array $args ) => Static_Site_Importer_URL_Fetcher::fetch( $url, $args );
