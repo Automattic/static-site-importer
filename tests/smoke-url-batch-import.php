@@ -74,6 +74,28 @@ $composed_receipts = ( new Automattic\BlocksEngine\PhpTransformer\ArtifactCompil
 if ( 0 !== ( $composed_receipts->metrics['html_document_transform_count'] ?? -1 ) ) { throw new RuntimeException( 'final URL receipt composition must perform zero HTML transforms' ); }
 $staged_workspace->purge();
 
+$diagnostic_failure = true;
+add_filter( 'static_site_importer_url_batch_compiler', static function ( object $compiler ) use ( &$diagnostic_failure ): object {
+	if ( ! $diagnostic_failure ) { return $compiler; }
+	return new class( $compiler, $diagnostic_failure ) {
+		public function __construct( private object $compiler, private bool &$should_fail ) {}
+		public function compose( array $shared, array $receipts, ?object $payload_reader = null ): object {
+			$result = $this->compiler->compose( $shared, $receipts, $payload_reader );
+			if ( ! $this->should_fail ) { return $result; }
+			$this->should_fail = false;
+			$reports = $result->sourceReports;
+			unset( $reports['wordpress_site_plan'] );
+			$reports['wordpress_site_plan_diagnostics'] = array( array( 'code' => 'wordpress_site_plan_invalid_declaration', 'severity' => 'error', 'source_path' => 'website/index.html', 'reason' => 'unresolved_local_browser_reference', 'fields' => array( 'attribute' => 'href', 'value' => 'assets/missing.png' ) ) );
+			return new \Automattic\BlocksEngine\PhpTransformer\Contract\TransformerResult( 'failed', $result->components, $result->blockTypes, $reports, $result->blocks, $result->serializedBlocks, $result->documents, $result->assets, $result->diagnostics, $result->fallbacks, $result->provenance, $result->coverage, $result->context, $result->metrics );
+		}
+		public function __call( string $method, array $arguments ): mixed { return $this->compiler->{$method}( ...$arguments ); }
+	};
+} );
+$compose_staged = new ReflectionMethod( Static_Site_Importer_URL_Batch_Import::class, 'compose_staged_plans' );
+$failed_composition = $compose_staged->invoke( null, $compiled_resumed );
+$failed_diagnostics = is_wp_error( $failed_composition ) ? ( $failed_composition->get_error_data()['diagnostics'] ?? array() ) : array();
+if ( ! is_wp_error( $failed_composition ) || 'static_site_importer_staged_compose_failed' !== $failed_composition->get_error_code() || 'wordpress_site_plan_invalid_declaration' !== ( $failed_diagnostics[0]['code'] ?? '' ) || 'website/index.html' !== ( $failed_diagnostics[0]['source_path'] ?? '' ) ) { throw new RuntimeException( 'failed staged composition must preserve producer no-plan diagnostics before compact-view conversion' ); }
+
 $payload_workspace_root = sys_get_temp_dir() . '/ssi-collection-payload-' . bin2hex( random_bytes( 4 ) );
 wp_mkdir_p( $payload_workspace_root );
 $payload_workspace = new Static_Site_Importer_Artifact_Run_Workspace( $payload_workspace_root, 'corruption' );

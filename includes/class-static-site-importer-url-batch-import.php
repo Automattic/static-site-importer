@@ -917,7 +917,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 		if ( ! class_exists( $compiler_class ) ) {
 			return new WP_Error( 'static_site_importer_missing_transformer', 'Blocks Engine php-transformer is required to prepare staged URL batch plans.' );
 		}
-		return new $compiler_class();
+		$compiler = new $compiler_class();
+		return function_exists( 'apply_filters' ) ? apply_filters( 'static_site_importer_url_batch_compiler', $compiler ) : $compiler;
 	}
 	private static function cached_fetcher( Static_Site_Importer_Artifact_Byte_Cache $cache, ?callable $fetcher ): callable {
 		$fetcher = $fetcher ?? static fn ( string $url, array $args ) => Static_Site_Importer_URL_Fetcher::fetch( $url, $args );
