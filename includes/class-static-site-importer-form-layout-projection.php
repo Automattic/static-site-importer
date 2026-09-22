@@ -2807,17 +2807,6 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		return null;
 	}
 
-	private static function negate_layout_length( string $value ): ?string {
-		if ( str_starts_with( $value, 'calc(' ) && str_ends_with( $value, ')' ) && strlen( $value ) > 6 ) {
-			$negated = 'calc(0px - (' . substr( $value, 5, -1 ) . '))';
-		} elseif ( 1 === preg_match( '/^(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:px|rem|em|%|vw|vh)$/D', $value ) ) {
-			$negated = 'calc(0px - ' . $value . ')';
-		} else {
-			return null;
-		}
-		return Static_Site_Importer_Provider_Layout_Overlay::layout_values_are_safe( array( 'margin_block_start' => $negated ) ) ? $negated : null;
-	}
-
 	/** @param array<string,mixed> $layout */
 	private static function declared_grid_row( array $layout ): string {
 		$area = trim( (string) ( $layout['area'] ?? '' ) );
