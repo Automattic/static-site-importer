@@ -1568,7 +1568,7 @@ namespace {
 		'field-shells-own-grid-spans-its-rebuilt-label-control-row-across-every-track',
 		$grid_shell_css
 	);
-	$empty_button_shell_form = array(
+	$interactive_button_shell_form = array(
 		'forms' => array( array(
 			'selector'  => 'form.feedback',
 			'controls'  => array_merge(
@@ -1595,11 +1595,19 @@ namespace {
 			'layout_graph' => $v2_layout_graph( array(
 				array( 'id' => 'wrapper-2', 'kind' => 'container', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'div', 'classes' => array( 'flex', 'gap-1' ) ), 'layout' => array( 'display' => 'flex', 'gap' => '0.25rem' ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.flex.gap-1', 'condition' => null, 'properties' => array( 'display', 'gap' ) ) ) ),
 			) ),
+			'presentation_graph' => array(
+				'schema' => 'generic/computed-form-presentation/v2', 'basis' => 'source_css_cascade', 'truncated' => false,
+				'limits' => array( 'controls' => 128, 'rules_per_role' => 32 ), 'controls' => array(), 'visual_groups' => array(), 'control_containers' => array(), 'variants' => array(), 'diagnostics' => array(),
+				'visual_parts' => array_map(
+					static fn ( int $index ): array => array( 'id' => 'control-' . $index . '-svg-0', 'index' => $index, 'kind' => 'inline_svg', 'source_selector' => 'form button:nth-of-type(' . ( $index - 3 ) . ') > svg', 'markup' => '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h22v22H1z"/></svg>', 'intrinsic_size' => array( 'width' => 24, 'height' => 24 ), 'source_css' => array( 'state' => 'unknown' ) ),
+					array( 4, 5, 6, 7, 8 )
+				),
+			),
 		) ),
 	);
-	$empty_button_shell_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $empty_button_shell_form );
-	$empty_button_shell_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $empty_button_shell_validation['forms'] ?? array() ) )['forms'][0] ?? array();
-	$assert( empty( $empty_button_shell_validation['errors'] ) && 'mapped' === ( $empty_button_shell_row['status'] ?? '' ) && true === ( $empty_button_shell_row['runtime_mapped'] ?? false ) && 1 === ( $empty_button_shell_row['field_count'] ?? 0 ) && empty( $empty_button_shell_row['form_receipt_unaccepted_losses'] ?? array() ) && str_contains( (string) ( $empty_button_shell_row['block_markup'] ?? '' ), 'jetpack/contact-form' ), 'empty-captured-button-shell-does-not-decline-mapped-form', wp_json_encode( $empty_button_shell_row ) );
+	$interactive_button_shell_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $interactive_button_shell_form );
+	$interactive_button_shell_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $interactive_button_shell_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( empty( $interactive_button_shell_validation['errors'] ) && 'skipped' === ( $interactive_button_shell_row['status'] ?? '' ) && false === ( $interactive_button_shell_row['runtime_mapped'] ?? true ) && 'form_receipt_loss_unaccepted' === ( $interactive_button_shell_row['reason'] ?? '' ) && 1 === ( $interactive_button_shell_row['unaccepted_receipt_loss_count'] ?? 0 ), 'captured-visual-button-controls-remain-loss-gated-without-rating-semantics', wp_json_encode( $interactive_button_shell_row ) );
 	$popup_form = array(
 		'selector' => 'form.picker',
 		'controls' => array(
