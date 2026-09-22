@@ -2359,7 +2359,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 							'font-family' => 'submit' === $type ? 'inherit' : 'revert',
 							'line-height' => 'submit' === $type ? 'inherit' : 'revert',
 						),
-						'submit' === $type ? array( 'min-height' => '0' ) : array()
+						'submit' === $type ? array( 'min-height' => '0' ) : array(),
+						// Jetpack renders the native control with `appearance: none`,
+						// which removes the platform chevron the authored select had.
+						// Reverting to `auto` restores it alongside the authored
+						// padding and border this destination already carries.
+						'select' === $type ? array( 'appearance' => 'auto' ) : array()
 					),
 				);
 				if ( 'select' === $type ) {
