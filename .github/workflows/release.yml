@@ -52,7 +52,7 @@ jobs:
       # `extension action --payload` passthrough are now released contracts.
       # extension-ref and action-ref are pinned to exact commits of released
       # tags so the Composer contract and release pipeline stay reproducible.
-      - uses: Extra-Chill/homeboy-action@a03c9f7251ae73071a77511a6567c231cd456c54 # v2.18.4
+      - uses: Extra-Chill/homeboy-action@fa03f448b662d40620d5b445d071bb77e2296f41 # v2.20.0
         with:
           prepare-only: true
           extension: wordpress
@@ -95,7 +95,11 @@ jobs:
     name: Release prepared SSI commit
     needs: refresh
     if: needs.refresh.result == 'success'
-    uses: Extra-Chill/homeboy-action/.github/workflows/release.yml@v2
+    # Pinned to an exact release tag, not the moving `v2` alias. `v2` currently
+    # points at v2.18.0, which predates the `prepared-ref` input, and passing an
+    # input a reusable workflow does not declare fails the run at startup with
+    # no job log and no annotation. Tracked as Extra-Chill/homeboy-action#497.
+    uses: Extra-Chill/homeboy-action/.github/workflows/release.yml@v2.20.0
     with:
       prepared-ref: ${{ needs.refresh.outputs.source-sha }}
       release-branch: main
@@ -103,5 +107,5 @@ jobs:
       extension: wordpress
       extension-ref: 7f28a979517a96e003d0510d64bc5139c259837d # wordpress-v3.48.6
       component: static-site-importer
-      action-ref: a03c9f7251ae73071a77511a6567c231cd456c54 # v2.18.4
+      action-ref: fa03f448b662d40620d5b445d071bb77e2296f41 # v2.20.0
     secrets: inherit
