@@ -1400,42 +1400,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'target_hash' => hash( 'sha256', $box_id ),
 				);
 			}
-			if ( ! $use_field_list ) {
-				// A submit exempted from the box's own branch (Jetpack always renders
-				// it as the field container's sibling, never its descendant) becomes
-				// a direct child of whichever element now carries that box's own
-				// layout. A grid must still span every track. The transposed gap must
-				// not add to the submit's authored margin, so the item cancels it.
-				$row_gap     = self::layout_row_gap( $transposed_layout );
-				$negated_gap = is_string( $row_gap ) ? self::negate_layout_length( $row_gap ) : null;
-				foreach ( $sibling_submit_indexes as $control_index ) {
-					$layout = array();
-					if ( 'grid' === ( $transposed_layout['display'] ?? null ) ) {
-						$layout['column'] = '1 / -1';
-					}
-					if ( is_string( $negated_gap ) ) {
-						$layout['margin_block_start'] = $negated_gap;
-					}
-					if ( ! empty( $layout ) ) {
-						$overlay_node_targets[] = array(
-							'id'     => 'control-' . $control_index,
-							'layout' => $layout,
-						);
-					}
-					foreach ( $merged_variants as $variant ) {
-						$variant_gap     = self::layout_row_gap( $variant['layout_patch'] );
-						$negated_variant = is_string( $variant_gap ) ? self::negate_layout_length( $variant_gap ) : null;
-						if ( ! is_string( $negated_variant ) ) {
-							continue;
-						}
-						$responsive_variant_targets[] = array(
-							'node'         => 'control-' . $control_index,
-							'condition'    => $variant['condition'] ?? null,
-							'layout_patch' => array( 'margin_block_start' => $negated_variant ),
-						);
-					}
-				}
-			}
+			// The gap cancel this replaced only ever applied to a sibling submit,
+			// and a sibling submit is exactly what puts the fields in their own
+			// field-list wrapper. Once that wrapper carries the list's gap the
+			// submit sits outside it, so there is no transposed gap left to cancel
+			// against its authored margin (#1738).
 		}
 		foreach ( $wrapper_hooks as $node_id => $hook ) {
 			$layout_node = $layout_nodes_by_id[ $node_id ] ?? null;
