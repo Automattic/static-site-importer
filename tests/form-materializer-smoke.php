@@ -1568,6 +1568,38 @@ namespace {
 		'field-shells-own-grid-spans-its-rebuilt-label-control-row-across-every-track',
 		$grid_shell_css
 	);
+	$empty_button_shell_form = array(
+		'forms' => array( array(
+			'selector'  => 'form.feedback',
+			'controls'  => array_merge(
+				array( array( 'tag' => 'input', 'type' => 'text', 'name' => 'name', 'label' => 'Your name' ) ),
+				array_fill( 0, 5, array( 'tag' => 'button', 'type' => 'button' ) ),
+				array( array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) )
+			),
+			'control_topology' => array(
+				'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false,
+				'nodes'  => array_merge(
+					array(
+						array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div' ),
+						array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'control' => 0 ),
+						array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => null, 'order' => 1, 'depth' => 0, 'tag' => 'div' ),
+						array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 1, 'tag' => 'div' ),
+					),
+					array_map(
+						static fn ( int $index ): array => array( 'id' => 'control-' . ( $index + 1 ), 'kind' => 'control', 'parent' => 'wrapper-2', 'order' => $index, 'depth' => 2, 'control' => $index + 1 ),
+						array( 0, 1, 2, 3, 4 )
+					),
+					array( array( 'id' => 'control-6', 'kind' => 'control', 'parent' => null, 'order' => 2, 'depth' => 0, 'control' => 6 ) )
+				),
+			),
+			'layout_graph' => $v2_layout_graph( array(
+				array( 'id' => 'wrapper-2', 'kind' => 'container', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'div', 'classes' => array( 'flex', 'gap-1' ) ), 'layout' => array( 'display' => 'flex', 'gap' => '0.25rem' ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.flex.gap-1', 'condition' => null, 'properties' => array( 'display', 'gap' ) ) ) ),
+			) ),
+		) ),
+	);
+	$empty_button_shell_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $empty_button_shell_form );
+	$empty_button_shell_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $empty_button_shell_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( empty( $empty_button_shell_validation['errors'] ) && 'mapped' === ( $empty_button_shell_row['status'] ?? '' ) && true === ( $empty_button_shell_row['runtime_mapped'] ?? false ) && 1 === ( $empty_button_shell_row['field_count'] ?? 0 ) && empty( $empty_button_shell_row['form_receipt_unaccepted_losses'] ?? array() ) && str_contains( (string) ( $empty_button_shell_row['block_markup'] ?? '' ), 'jetpack/contact-form' ), 'empty-captured-button-shell-does-not-decline-mapped-form', wp_json_encode( $empty_button_shell_row ) );
 	$popup_form = array(
 		'selector' => 'form.picker',
 		'controls' => array(

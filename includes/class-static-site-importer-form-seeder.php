@@ -1012,6 +1012,45 @@ class Static_Site_Importer_Form_Seeder {
 					return true;
 				}
 			}
+			$nodes    = isset( $form['control_topology']['nodes'] ) && is_array( $form['control_topology']['nodes'] ) ? $form['control_topology']['nodes'] : array();
+			$children = array();
+			foreach ( $nodes as $node ) {
+				if ( is_array( $node ) && is_string( $node['id'] ?? null ) ) {
+					$children[ $node['parent'] ?? '$root' ][] = $node;
+				}
+			}
+			$empty_button_controls = static function ( string $node_id ) use ( &$empty_button_controls, $children, $form ): bool {
+				$descendants = $children[ $node_id ] ?? array();
+				if ( empty( $descendants ) ) {
+					return false;
+				}
+				foreach ( $descendants as $node ) {
+					if ( 'control' === ( $node['kind'] ?? '' ) ) {
+						$control = $form['controls'][ $node['control'] ?? -1 ] ?? null;
+						if ( ! is_array( $control ) || 'button' !== strtolower( trim( (string) ( $control['tag'] ?? '' ) ) ) || 'button' !== strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) ) {
+							return false;
+						}
+						foreach ( array( 'text', 'label', 'aria_label', 'aria-label', 'name', 'value', 'title' ) as $attribute ) {
+							if ( '' !== trim( (string) ( $control[ $attribute ] ?? '' ) ) ) {
+								return false;
+							}
+						}
+						continue;
+					}
+					if ( 'wrapper' !== ( $node['kind'] ?? '' ) || ! $empty_button_controls( (string) ( $node['id'] ?? '' ) ) ) {
+						return false;
+					}
+				}
+				return true;
+			};
+			foreach ( $nodes as $node ) {
+				if ( is_array( $node ) && 'wrapper' === ( $node['kind'] ?? '' ) && hash( 'sha256', (string) ( $node['id'] ?? '' ) ) === $loss['node_hash'] && $empty_button_controls( (string) $node['id'] ) ) {
+					// Capture recorded empty button shells without authored content. The
+					// provider retains them as native buttons, but their missing source
+					// layout cannot block the independently mapped form fields.
+					return true;
+				}
+			}
 		}
 		if ( 'unsupported_semantic_wrapper' !== ( $loss['reason_code'] ?? '' ) || ! is_string( $loss['node_hash'] ?? null ) ) {
 			return false;
