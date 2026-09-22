@@ -49,3 +49,38 @@ for (const transport of ['fetch', 'playground', 'other-playground']) {
     }
   });
 }
+
+test('submit is disabled from the click until the report is written', async () => {
+  const dom = new JSDOM(`<div data-static-site-importer data-static-site-importer-rest-url="https://example.test/wp-json/static-site-importer/v1/imports" data-static-site-importer-nonce="nonce"><textarea data-static-site-importer-source-html></textarea><button data-static-site-importer-submit>Import</button><div data-static-site-importer-status><div data-static-site-importer-progress></div><textarea data-static-site-importer-report></textarea></div></div>`, { url: 'https://example.test/import/', runScripts: 'outside-only' });
+  const { window } = dom;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let calls = 0;
+  window.Response = Response;
+  window.TextEncoder = TextEncoder;
+  window.fetch = async () => {
+    calls++;
+    await gate;
+    return Response.json({ success: false, error: { code: 'static_site_importer_missing_entrypoint', message: 'The ZIP must include an index.html entry document.' } });
+  };
+  try {
+    window.eval(script);
+    const submit = window.document.querySelector('button');
+    const report = window.document.querySelector('[data-static-site-importer-report]');
+    window.document.querySelector('[data-static-site-importer-source-html]').value = '<main>Source</main>';
+    submit.click();
+    // Anything that waits for the button to re-enable must find a finished
+    // report, so the button has to be disabled before any async source read.
+    assert.equal(submit.disabled, true, 'Submit must be disabled synchronously on click');
+    submit.click();
+    for (let attempt = 0; attempt < 100 && calls < 1; attempt++) await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal(report.value, '', 'No report exists while the request is in flight');
+    release();
+    for (let attempt = 0; attempt < 100 && submit.disabled; attempt++) await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal(submit.disabled, false);
+    assert.equal(calls, 1, 'A second click while busy must not start another import');
+    assert.equal(JSON.parse(report.value).error.code, 'static_site_importer_missing_entrypoint');
+  } finally {
+    window.close();
+  }
+});
