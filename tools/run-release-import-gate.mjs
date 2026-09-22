@@ -444,8 +444,17 @@ if (isMain) {
   if (options.help) {
     console.log('Usage: node tools/run-release-import-gate.mjs --zip <runtime profile zip> --output <evidence dir> [--work-dir <dir>] [--fixture <dir>] [--keep]');
   } else {
-    runGate(options).catch((error) => {
+    runGate(options).catch(async (error) => {
       console.error(`Release import gate crashed: ${error.message}`);
+      try {
+        await mkdir(options.output, { recursive: true });
+        await writeFile(
+          join(options.output, 'release-import-gate-evidence.json'),
+          `${JSON.stringify({ schema: 'static-site-importer/release-import-gate-evidence/v1', crashed: true, error: bounded(error.message, 8000), zip: options.zip }, null, 2)}\n`
+        );
+      } catch {
+        // Evidence persistence is best effort; the crash itself already failed the job.
+      }
       process.exit(1);
     });
   }

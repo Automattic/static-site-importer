@@ -112,6 +112,7 @@ jobs:
       PHP_VERSION: '8.2.33'
       HOMEBOY_VERSION: v0.298.1
       HOMEBOY_SHA256: 543a1eb7348a9dcde3bee671dbbeaabb9486781d350792bed8a77424fdad60d5
+      HOMEBOY_EXTENSIONS_REF: 615fe3632d0cd30e9a70d5aea82be80460d733d5
     steps:
       - name: Checkout prepared source
         uses: actions/checkout@v6
@@ -156,6 +157,13 @@ jobs:
           chmod +x "$RUNNER_TEMP/homeboy/homeboy"
           echo "$RUNNER_TEMP/homeboy" >> "$GITHUB_PATH"
 
+      # `homeboy review build` refuses to package a component whose declared
+      # extension is not installed; the packaging path needs it like CI lanes
+      # that run Homeboy against this component do.
+      - name: Install pinned Homeboy wordpress extension
+        run: |
+          homeboy extension install https://github.com/Extra-Chill/homeboy-extensions --id wordpress --ref "$HOMEBOY_EXTENSIONS_REF"
+
       - name: Build the html-site-import runtime profile zip
         working-directory: static-site-importer
         env:
@@ -187,7 +195,7 @@ jobs:
         with:
           name: release-import-gate-${{ needs.refresh.outputs.source-sha }}
           path: ${{ runner.temp }}/gate-evidence
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 14
 
   release:
