@@ -78,7 +78,7 @@ final class Static_Site_Importer_Content_Policy {
 		'font/ttf'                 => 'ttf',
 		'font/otf'                 => 'otf',
 		'video/mp4'                => 'mp4',
-		'video/quicktime'           => 'mov',
+		'video/quicktime'          => 'mov',
 		'video/webm'               => 'webm',
 		'audio/mpeg'               => 'mp3',
 		'audio/ogg'                => 'ogg',
