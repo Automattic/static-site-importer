@@ -395,16 +395,23 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( ! empty( $validation['errors'] ) ) {
 				// Entity validators report per row: an unmappable row is rejected
 				// without discarding the rows that did validate, so partial feature
-				// parity is still materialized. Honour that here — only a
+				// parity is still materialized. Honour that here -- only a
 				// declaration that produced no usable row is rejected outright.
+				//
+				// The rejection carries the collection and error count alongside the
+				// errors themselves, because the user-facing gate message is built
+				// from this data and "failed validation" without the facts is not
+				// actionable (#1785).
 				if ( empty( $accepted ) ) {
 					return new WP_Error(
 						'static_site_importer_runtime_entity_invalid',
 						'Runtime entity declaration failed SSI provider validation.',
 						array(
-							'status'         => 'rejected',
-							'declaration_id' => $key,
-							'errors'         => $validation['errors'],
+							'status'            => 'rejected',
+							'declaration_id'    => $key,
+							'entity_collection' => $collection,
+							'error_count'       => count( $validation['errors'] ),
+							'errors'            => $validation['errors'],
 						)
 					);
 				}

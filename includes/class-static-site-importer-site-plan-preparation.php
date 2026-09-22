@@ -1019,14 +1019,22 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			return self::rejected_editability_report_admission( $base, 'editability_policy_invalid' );
 		}
 		if ( 'failed' === ( $policy['status'] ?? null ) ) {
+			$failures = array_values( array_filter( $policy['failures'], 'is_array' ) );
 			return array_merge(
 				$base,
 				array(
 					'status'     => 'failed',
 					'diagnostic' => array(
-						'reason_code'        => 'editability_policy_failed',
-						'owning_layer'       => 'blocks-engine',
-						'threshold_failures' => array_slice( array_values( array_filter( $policy['failures'], 'is_array' ) ), 0, 10 ),
+						// The producer already measured and phrased every breach; state it as a
+						// failing diagnostic so the public projection can carry it to the reader.
+						'code'                    => 'editability_policy_failed',
+						'severity'                => 'error',
+						'reason_code'             => 'editability_policy_failed',
+						'owning_layer'            => 'blocks-engine',
+						'source_path'             => (string) ( $failures[0]['source_path'] ?? '' ),
+						'detail'                  => (string) ( $failures[0]['message'] ?? '' ),
+						'threshold_failure_count' => count( $failures ),
+						'threshold_failures'      => array_slice( $failures, 0, 10 ),
 					),
 				)
 			);
