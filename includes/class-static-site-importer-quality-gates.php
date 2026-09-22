@@ -442,8 +442,8 @@ final class Static_Site_Importer_Quality_Gates {
 	 * The source finding remains in diagnostics for auditability. Only the final
 	 * quality count excludes a form after a completed receipt proves that exact
 	 * source fallback was replaced by the provider's persisted block markup.
-	 * A matching provider decline does not resolve the fallback; it endorses the
-	 * preserved island so admission can count it instead of failing closed.
+	 * A provider decline does not resolve a form fallback. The fallback remains
+	 * unresolved until a completed receipt proves provider replacement.
 	 *
 	 * @param Static_Site_Importer_Import_Report $report Import report.
 	 * @return void
@@ -616,115 +616,6 @@ final class Static_Site_Importer_Quality_Gates {
 			'resolutions'               => $resolutions,
 		);
 		$report['fallback_reconciliation'] = $report['quality_resolutions'];
-		self::endorse_declined_form_islands( $report );
-	}
-
-	/**
-	 * Endorse a declined form fallback as an accepted preserved runtime island.
-	 *
-	 * A provider decline is already classified `preserved_runtime_island` /
-	 * `acceptable_preservation`. The compiler's matching `html_form_fallback` is
-	 * not: its repair bucket still says `materialize_form_provider`, so
-	 * classification treats it as an importer bug and admission leaves it in
-	 * `unsupported_fallback_count`. Stamping the SSI-owned island contract onto
-	 * that fallback is the evidence `is_accepted_preserved_runtime_island()`
-	 * requires. Producers cannot admit a form by label because they do not set
-	 * `type`, `acceptability`, or `materialization_path`.
-	 *
-	 * @param Static_Site_Importer_Import_Report $report Import report.
-	 * @return void
-	 */
-	private static function endorse_declined_form_islands( Static_Site_Importer_Import_Report $report ): void {
-		$declined_keys = array();
-		foreach ( $report['diagnostics'] ?? array() as $diagnostic ) {
-			if ( ! is_array( $diagnostic ) || 'provider_entity_declined' !== ( $diagnostic['code'] ?? '' ) ) {
-				continue;
-			}
-			if ( Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND !== ( $diagnostic['loss_class'] ?? '' ) ) {
-				continue;
-			}
-			$key = self::form_island_key( $diagnostic );
-			if ( '' !== $key ) {
-				$declined_keys[ $key ] = true;
-			}
-		}
-		if ( array() === $declined_keys ) {
-			return;
-		}
-
-		$quality   = $report->quality();
-		$fallbacks = isset( $quality['fallbacks'] ) && is_array( $quality['fallbacks'] ) ? $quality['fallbacks'] : array();
-		foreach ( $report['diagnostics'] ?? array() as $index => $diagnostic ) {
-			if ( ! is_array( $diagnostic ) || ! self::is_form_fallback_diagnostic( $diagnostic ) ) {
-				continue;
-			}
-			if ( 'resolved_by_provider' === ( $diagnostic['fallback_resolution']['state'] ?? '' ) ) {
-				continue;
-			}
-			$key = self::form_island_key( $diagnostic );
-			if ( '' === $key || ! isset( $declined_keys[ $key ] ) ) {
-				continue;
-			}
-
-			$payload = self::form_fallback_payload( $diagnostic, $fallbacks );
-
-			$diagnostic['loss_class']       = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
-			$diagnostic['diagnostic_class'] = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
-			$diagnostic['acceptability']    = 'acceptable_preservation';
-			$diagnostic['repair_bucket']    = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
-			$diagnostic['type']             = 'unsupported_html_fallback';
-			if ( '' === trim( (string) ( $diagnostic['materialization_path'] ?? '' ) ) ) {
-				$diagnostic['materialization_path'] = 'runtime_island_registry';
-			}
-			if ( '' === trim( (string) ( $diagnostic['source_html_preview'] ?? $diagnostic['html_excerpt'] ?? '' ) ) && '' !== $payload ) {
-				$diagnostic['source_html_preview'] = $payload;
-			}
-			$report->replace_diagnostic( $index, $diagnostic );
-		}
-	}
-
-	/**
-	 * Join key for a form island and a matching provider decline.
-	 *
-	 * @param array<string,mixed> $diagnostic Diagnostic row.
-	 */
-	private static function form_island_key( array $diagnostic ): string {
-		$source_path = Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
-		$selector    = Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'selector' ) );
-		if ( '' === $source_path || '' === $selector ) {
-			return '';
-		}
-
-		return $source_path . "\n" . $selector;
-	}
-
-	/**
-	 * Bounded HTML evidence for a form fallback, including compiler fallback rows.
-	 *
-	 * @param array<string,mixed> $diagnostic Form fallback diagnostic.
-	 * @param array<int,mixed>    $fallbacks  Compiler quality fallback rows.
-	 */
-	private static function form_fallback_payload( array $diagnostic, array $fallbacks ): string {
-		$payload = trim( (string) ( $diagnostic['source_html_preview'] ?? $diagnostic['html_excerpt'] ?? $diagnostic['html'] ?? '' ) );
-		if ( '' !== $payload ) {
-			return $payload;
-		}
-
-		$key = self::form_island_key( $diagnostic );
-		if ( '' === $key ) {
-			return '';
-		}
-		foreach ( $fallbacks as $fallback ) {
-			if ( ! is_array( $fallback ) || self::form_island_key( $fallback ) !== $key ) {
-				continue;
-			}
-			$payload = trim( (string) ( $fallback['source_html_preview'] ?? $fallback['html_excerpt'] ?? $fallback['html'] ?? '' ) );
-			if ( '' !== $payload ) {
-				return $payload;
-			}
-		}
-
-		return '';
 	}
 
 	/** @param array<string,mixed> $fallback */

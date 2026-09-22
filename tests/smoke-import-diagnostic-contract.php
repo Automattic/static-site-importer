@@ -800,7 +800,7 @@ $assert( false === ( $incomplete_runtime_quality['pass'] ?? true ) && true === (
 $declined_form_fallback = array(
 	'code'                  => 'html_form_fallback',
 	'reason_code'           => 'html_form_fallback',
-	'loss_class'            => 'runtime_island_preserved',
+	'loss_class'            => 'unsupported_loss',
 	'source_path'           => 'website/index.html',
 	'selector'              => 'form.contact',
 	'preservation_strategy' => 'fallback_metadata_with_readable_blocks',
@@ -844,12 +844,61 @@ $declined_form_rows    = array_values(
 		static fn( array $diagnostic ): bool => 'html_form_fallback' === ( $diagnostic['code'] ?? '' ) || 'provider_entity_declined' === ( $diagnostic['code'] ?? '' )
 	)
 );
-$assert( true === ( $declined_form_quality['pass'] ?? false ) && false === ( $declined_form_quality['fail_import'] ?? true ), 'declined-form-island-does-not-fail-quality-admission' );
-$assert( 1 === ( $declined_form_quality['accepted_preserved_runtime_island_count'] ?? 0 ) && 0 === ( $declined_form_quality['unsupported_fallback_count'] ?? -1 ), 'declined-form-island-counts-as-accepted-preserved-runtime-island' );
-$assert( 'passed' === ( $declined_form_report['import_validation_result']['quality_gates']['fallback_blocks']['status'] ?? '' ), 'declined-form-island-does-not-fail-fallback-gate' );
-$assert( 2 === count( $declined_form_rows ) && 'acceptable_preservation' === ( $declined_form_rows[0]['acceptability'] ?? '' ) && 'acceptable_preservation' === ( $declined_form_rows[1]['acceptability'] ?? '' ), 'declined-form-diagnostics-agree-on-acceptable-preservation' );
-$assert( 'preserved_runtime_island' === ( $declined_form_rows[0]['loss_class'] ?? '' ) && 'preserved_runtime_island' === ( $declined_form_rows[1]['loss_class'] ?? '' ), 'declined-form-diagnostics-agree-on-preserved-runtime-island' );
-$assert( 0 === ( Static_Site_Importer_Diagnostic_Loss_Classes::counts( $declined_form_report->diagnostics() )['importer_materialization_bug'] ?? -1 ), 'declined-form-island-is-not-classified-as-importer-bug' );
+$assert( false === ( $declined_form_quality['pass'] ?? true ) && true === ( $declined_form_quality['fail_import'] ?? false ), 'declined-form-without-provider-receipt-fails-quality-admission' );
+$assert( 0 === ( $declined_form_quality['accepted_preserved_runtime_island_count'] ?? -1 ) && 1 === ( $declined_form_quality['unsupported_fallback_count'] ?? 0 ), 'declined-form-without-provider-receipt-remains-unsupported' );
+$assert( 'reported' === ( $declined_form_report['import_validation_result']['quality_gates']['fallback_blocks']['status'] ?? '' ) && 1 === ( $declined_form_report['import_validation_result']['quality_gates']['fallback_blocks']['count'] ?? 0 ), 'declined-form-without-provider-receipt-remains-reported-as-fallback' );
+$assert( 2 === count( $declined_form_rows ) && 'acceptable_preservation' !== ( $declined_form_rows[0]['acceptability'] ?? '' ), 'declined-form-fallback-is-not-reclassified-as-acceptable-preservation' );
+$assert( 'preserved_runtime_island' === ( $declined_form_rows[1]['loss_class'] ?? '' ), 'provider-decline-diagnostic-retains-decline-classification' );
+$assert( 1 === ( Static_Site_Importer_Diagnostic_Loss_Classes::counts( $declined_form_report->diagnostics() )['unsupported_loss'] ?? -1 ), 'declined-form-fallback-remains-unsupported-loss' );
+
+$rating_form_html     = '<form class="feedback"><label>Rating</label><div class="flex gap-1 mt-1"><button type="button">1</button><button type="button">2</button><button type="button">3</button><button type="button">4</button><button type="button">5</button></div><textarea required></textarea><button type="submit">Submit Feedback</button></form>';
+$rating_form_report   = Static_Site_Importer_Import_Report::from_array(
+	array(
+		'quality'     => array(
+			'fallback_count' => 1,
+			'fallbacks'      => array(
+				array(
+					'source'   => 'website/feedback/index.html',
+					'selector' => 'form.feedback',
+					'html'     => $rating_form_html,
+				),
+			),
+		),
+		'diagnostics' => array(
+			array(
+				'code'                => 'html_form_fallback',
+				'reason_code'         => 'html_form_fallback',
+				'source_path'         => 'website/feedback/index.html',
+				'selector'            => 'form.feedback',
+				'source_html_preview' => $rating_form_html,
+				'loss_class'          => 'unsupported_loss',
+			),
+			array(
+				'id'                         => 'provider-entity-declined-feedback',
+				'code'                       => 'provider_entity_declined',
+				'loss_class'                 => 'preserved_runtime_island',
+				'acceptability'              => 'acceptable_preservation',
+				'reason_code'                => 'form_receipt_loss_unaccepted',
+				'source_path'                => 'website/feedback/index.html',
+				'selector'                   => 'form.feedback',
+				'provider'                   => 'jetpack',
+				'entity_type'                => 'form',
+				'runtime_mapped'             => false,
+				'provider_mapped'            => true,
+				'runtime_carried'            => true,
+				'form_receipt_unaccepted_losses' => array(
+					array(
+						'dimension'   => 'topology',
+						'reason_code' => 'provider_wrapper_layout_unrepresentable',
+						'node_hash'   => hash( 'sha256', 'wrapper-6' ),
+					),
+				),
+			),
+		),
+	)
+);
+$rating_form_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $rating_form_report, array( 'fail_on_quality' => true ) );
+$assert( false === ( $rating_form_quality['pass'] ?? true ) && true === ( $rating_form_quality['fail_import'] ?? false ) && 1 === ( $rating_form_quality['unsupported_fallback_count'] ?? 0 ), 'actual-rating-button-form-decline-remains-unresolved' );
 
 $undeclined_form_report = Static_Site_Importer_Import_Report::from_array(
 	array(
