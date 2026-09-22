@@ -702,7 +702,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		) === $resets ) {
 			return true;
 		}
-		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'line-height', 'gap', 'display', 'align-items', 'height' ) ) ) {
+		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'line-height', 'gap', 'display', 'align-items', 'height', 'appearance' ) ) ) {
 			return false;
 		}
 		foreach ( $resets as $property => $value ) {

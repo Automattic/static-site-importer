@@ -1799,7 +1799,7 @@ namespace {
 			$all_controls_hooks[] = substr( $hook[0], 1 );
 		}
 	}
-	$assert( empty( $validated_all_controls['errors'] ) && 4 === count( $all_controls_hooks ) && empty( array_filter( $all_controls_hooks, static fn( string $hook ): bool => ! str_contains( $all_controls_markup, $hook ) || ! str_contains( $all_controls_css, '.' . $hook ) ) ) && str_contains( $all_controls_css, 'border:1px solid #111;padding:7px;font-family:revert;line-height:revert' ) && 1 === preg_match( '/\.ssi-node-[a-f0-9]{12} select\{border:2px solid #222!important;padding:8px!important;font-family:revert!important;line-height:revert!important\}/', $all_controls_css ) && str_contains( $all_controls_css, 'border:3px solid #333;min-height:9rem;font-family:revert;line-height:revert' ) && str_contains( $all_controls_css, 'background-color:#444;padding:9px 12px;font-family:inherit;line-height:inherit;min-height:0' ) && str_contains( $all_controls_css, '@media (max-width:48rem){' ) && str_contains( $all_controls_css, '> .wp-block-button__link{background-color:#444;padding:9px 12px;font-family:inherit;line-height:inherit;min-height:0}' ) && ! str_contains( $all_controls_css, 'control-shell' ) && ! str_contains( $all_controls_css, 'control-hook' ), 'presentation-overlay-reverts-unowned-typography-to-each-browser-native-controls', wp_json_encode( array( 'markup' => $all_controls_markup, 'css' => $all_controls_css, 'targets' => $all_controls_targets ) ) );
+	$assert( empty( $validated_all_controls['errors'] ) && 4 === count( $all_controls_hooks ) && empty( array_filter( $all_controls_hooks, static fn( string $hook ): bool => ! str_contains( $all_controls_markup, $hook ) || ! str_contains( $all_controls_css, '.' . $hook ) ) ) && str_contains( $all_controls_css, 'border:1px solid #111;padding:7px;font-family:revert;line-height:revert' ) && 1 === preg_match( '/\.ssi-node-[a-f0-9]{12} select\{border:2px solid #222!important;padding:8px!important;font-family:revert!important;line-height:revert!important;appearance:auto!important\}/', $all_controls_css ) && str_contains( $all_controls_css, 'border:3px solid #333;min-height:9rem;font-family:revert;line-height:revert' ) && str_contains( $all_controls_css, 'background-color:#444;padding:9px 12px;font-family:inherit;line-height:inherit;min-height:0' ) && str_contains( $all_controls_css, '@media (max-width:48rem){' ) && str_contains( $all_controls_css, '> .wp-block-button__link{background-color:#444;padding:9px 12px;font-family:inherit;line-height:inherit;min-height:0}' ) && ! str_contains( $all_controls_css, 'control-shell' ) && ! str_contains( $all_controls_css, 'control-hook' ), 'presentation-overlay-reverts-unowned-typography-to-each-browser-native-controls', wp_json_encode( array( 'markup' => $all_controls_markup, 'css' => $all_controls_css, 'targets' => $all_controls_targets ) ) );
 	$submit_width_form = $presentation_form;
 	$submit_width_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 3, 'control' => $presentation_role( array( 'width' => '100%' ), array( 'width' ), 'button' ) ) );
 	$submit_width_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $submit_width_form );
@@ -1990,6 +1990,21 @@ namespace {
 	$select_box_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $select_box_form );
 	$select_box_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $select_box_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$select_box_css        = (string) ( $select_box_row['provider_layout_overlay_css']['css'] ?? '' );
+	// Jetpack renders the native control with `appearance: none`, dropping the
+	// platform chevron the authored select had. The authored padding and border
+	// already reach the native control; the appearance revert must ride with
+	// them, or the select keeps provider chrome while claiming authored
+	// presentation.
+	$select_appearance_rule = 1 === preg_match( '/\.ssi-node-[a-f0-9]{12} select\{([^}]+)\}/', $all_controls_css, $select_appearance ) ? $select_appearance[1] : '';
+	$assert(
+		str_contains( $select_appearance_rule, 'appearance:auto' )
+			&& str_contains( $select_appearance_rule, 'padding:8px' )
+			&& str_contains( $select_appearance_rule, 'border:2px solid #222' )
+			&& 1 !== preg_match( '/\.ssi-node-[a-f0-9]{12}\{[^}]*appearance:auto/', $all_controls_css ),
+		'authored-select-appearance-reaches-the-native-control-not-its-provider-wrapper',
+		$select_appearance_rule
+	);
+
 	$select_inner_rule     = 1 === preg_match( '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12} select\{([^}]+)\}/', $select_box_css, $select_inner ) ? $select_inner[1] : '';
 	$select_wrapper_rule   = 1 === preg_match( '/\.ssi-form-[a-f0-9]{12}\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{([^}]+)\}/', $select_box_css, $select_wrapper ) ? $select_wrapper[1] : '';
 	$assert(
