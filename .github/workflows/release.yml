@@ -48,15 +48,10 @@ jobs:
           token: ${{ github.token }}
 
       # Homeboy CLI acquisition is left at the composite action's default
-      # ("latest" released binary) rather than pinned here: `homeboy release
-      # resolve` and the `extension action --payload` passthrough this
-      # script depends on are only available once Homeboy publishes a
-      # release containing https://github.com/Extra-Chill/homeboy/pull/14853
-      # and https://github.com/Extra-Chill/homeboy/pull/14857. Floating means
-      # this workflow self-heals the moment that release ships, with no SSI
-      # change required. extension-ref and action-ref are pinned to exact
-      # commits of released tags so the Composer contract and the release
-      # pipeline itself stay reproducible.
+      # ("latest" released binary): `homeboy release resolve` and the
+      # `extension action --payload` passthrough are now released contracts.
+      # extension-ref and action-ref are pinned to exact commits of released
+      # tags so the Composer contract and release pipeline stay reproducible.
       - uses: Extra-Chill/homeboy-action@a03c9f7251ae73071a77511a6567c231cd456c54 # v2.18.4
         with:
           prepare-only: true

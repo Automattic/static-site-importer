@@ -20,7 +20,11 @@ if [[ "$1 $2 $3" == "release resolve https://github.com/Automattic/blocks-engine
   printf '%s\n' '{"data":{"version":"0.3.0","tag":"figma-transformer-v0.3.0","commit":"0123456789012345678901234567890123456789"}}'
   exit 0
 fi
-printf '%s\n' "$*" >> "${HOMEBOY_CAPTURE}"
+if [[ "$1 $2 $3 $4 $5" == "extension action wordpress release.update_dependency --payload" ]]; then
+  printf '%s --payload-json=%s\n' "$*" "$6" >> "${HOMEBOY_CAPTURE}"
+else
+  printf '%s\n' "$*" >> "${HOMEBOY_CAPTURE}"
+fi
 if [[ "${HOMEBOY_FAIL_INVOKE:-false}" == "true" ]]; then
   exit 1
 fi

@@ -6,13 +6,8 @@ set -euo pipefail
 # Homeboy roots and invokes the real release.update_dependency action against
 # disposable Composer projects.
 #
-# Requires a Homeboy CLI build that supports `extension action --payload`
-# with exit-code propagation (Extra-Chill/homeboy#14857). That fix has not
-# shipped in a release yet as of this writing (latest is v0.382.0); this
-# test will fail with "unexpected argument '--payload'" against any
-# currently released homeboy binary until a new release ships. It is wired
-# to the reusable release workflow for when that release exists — it is not
-# run as a release gate today.
+# Requires a released Homeboy CLI that supports `extension action --payload`
+# with exit-code propagation (Extra-Chill/homeboy#14857), currently v0.383.4.
 
 WORK_DIR="$(mktemp -d -t ssi-composer-action.XXXXXX)"
 trap 'rm -rf "${WORK_DIR}"' EXIT
@@ -64,6 +59,7 @@ git -C "${NORMAL}" init -q
 cat >"${NORMAL}/composer.json" <<JSON
 {"repositories":[{"type":"composer","url":"file://${WORK_DIR}/composer-repo"}],"require":{"acme/library":"1.0.0"}}
 JSON
+(cd "${NORMAL}" && composer install --no-interaction --no-progress >/dev/null)
 run_action "${NORMAL}" '{"release":{"component_id":"fixture"},"dependency":{"package":"acme/library","version":"latest","latest_stable":true,"discovery_constraint":"^1.0","allow_constraint_replacement":true}}'
 jq -e '.require["acme/library"] == "1.1.0"' "${NORMAL}/composer.json" >/dev/null
 jq -e '.packages[] | select(.name == "acme/library") | .version == "1.1.0"' "${NORMAL}/composer.lock" >/dev/null
