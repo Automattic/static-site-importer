@@ -310,7 +310,10 @@ export async function runGate(options, dependencies = {}) {
   wpRun(['config', 'create', '--skip-check', '--dbname=wordpress', '--dbuser=wordpress', '--dbpass=wordpress', '--dbhost=localhost']);
   wpRun(['core', 'install', '--url=http://localhost:8090', '--title=SSI Release Import Gate', '--admin_user=admin', '--admin_password=password', '--admin_email=admin@example.test', '--skip-email']);
   evidence.runtime.wordpress = wpRun(['core', 'version']).stdout.trim();
-  evidence.runtime.database = wpRun(['eval', 'echo defined("SQLITE_DB_DROPIN_VERSION") ? "sqlite " . SQLITE_DB_DROPIN_VERSION : "mysql";']).stdout.trim();
+  // Report the plugin version. SQLITE_DB_DROPIN_VERSION is the db.copy file's
+  // own constant and lags the plugin (plugin 3.0.1 ships drop-in 1.8.0), so
+  // printing it alone reads as the wrong plugin being installed.
+  evidence.runtime.database = wpRun(['eval', 'if ( ! defined( "SQLITE_DB_DROPIN_VERSION" ) ) { echo "mysql"; return; } $plugin = get_file_data( WP_CONTENT_DIR . "/plugins/sqlite-database-integration/load.php", array( "Version" => "Version" ) ); echo "sqlite plugin " . $plugin["Version"] . " (drop-in " . SQLITE_DB_DROPIN_VERSION . ")";']).stdout.trim();
   if (!/sqlite/i.test(evidence.runtime.database)) {
     return finish(log, options, workDir, evidence, [...failures, `expected the SQLite drop-in to own the database, wp db engine reports: ${evidence.runtime.database}`]);
   }
