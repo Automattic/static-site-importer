@@ -125,7 +125,7 @@ jobs:
         id: blocks-engine
         working-directory: static-site-importer
         run: |
-          TRANSFORMER_VERSION=$(node -e 'const lock=require("./composer.lock"); const pin=lock.packages.find((entry)=>entry.name==="automattic/blocks-engine-php-transformer"); if(!pin)process.exit(1); console.log(pin.version.replace(/^v/,""))')
+          TRANSFORMER_VERSION=$(node -e 'const fs=require("node:fs");const lock=JSON.parse(fs.readFileSync("composer.lock","utf8")); const pin=lock.packages.find((entry)=>entry.name==="automattic/blocks-engine-php-transformer"); if(!pin)process.exit(1); console.log(pin.version.replace(/^v/,""))')
           echo "ref=php-transformer-v${TRANSFORMER_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout pinned Blocks Engine
