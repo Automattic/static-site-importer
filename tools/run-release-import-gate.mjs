@@ -34,20 +34,21 @@ export const FANOUT_MIN_BATCHES = 2;
 
 const ROOT = resolve(pathDirname(fileURLToPath(import.meta.url)), '..');
 
+// The runtime a downstream consumer builds SSI into: WordPress, WP-CLI, and the
+// SQLite drop-in at the same versions. Every input is an immutable URL pinned
+// by digest, so the gate fails on a changed artifact rather than drifting.
 export const PINNED = Object.freeze({
-  wordpressVersion: '7.0.4',
-  wordpressUrl: 'https://wordpress.org/wordpress-7.0.4.tar.gz',
-  wordpressSha256: '26b99abfc65427fbab52b24315539b944dcef1467899a5256b6c1de2c4ae7e46',
+  wordpressVersion: '7.1',
+  wordpressUrl: 'https://wordpress.org/wordpress-7.1.tar.gz',
+  wordpressSha256: '05a5f89138f632b7329f1202f2a0553c5f7fe4daf8e4b9ca7ebae9b9466b9e86',
   wpCliVersion: '2.12.0',
-  wpCliUrl: 'https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar',
+  wpCliUrl: 'https://github.com/wp-cli/wp-cli/releases/download/v2.12.0/wp-cli-2.12.0.phar',
   wpCliSha256: 'ce34ddd838f7351d6759068d09793f26755463b4a4610a5a5c0a97b68220d85c',
-  // Pinned to a develop commit rather than the v3.x releases: the 3.x line
-  // dropped the db.copy drop-in and now requires a plugin build step. The
-  // drop-in at this commit installs without a build and is what the gate
-  // verifies locally, so the pin matches the verified bytes exactly.
-  sqliteIntegrationVersion: 'd2082798c7371934a3565d692bf7aeb6a20376da',
-  sqliteIntegrationUrl: 'https://codeload.github.com/WordPress/sqlite-database-integration/tar.gz/d2082798c7371934a3565d692bf7aeb6a20376da',
-  sqliteIntegrationSha256: '274625f1d8802d983f99a825e33229daba8bcd30da59c6f7c807ac232e3d9b85',
+  // The WordPress.org build, not a GitHub tag: the wordpress.org zip ships the
+  // db.copy drop-in, while the GitHub tags are a monorepo without it.
+  sqliteIntegrationVersion: '3.0.1',
+  sqliteIntegrationUrl: 'https://downloads.wordpress.org/plugin/sqlite-database-integration.3.0.1.zip',
+  sqliteIntegrationSha256: '8703c196d3c666be9e60ced60cafabc726b23193179bfa99147e2d9feb38aecb',
 });
 
 export const PLAN_REQUEST = Object.freeze({
@@ -280,7 +281,7 @@ export async function runGate(options, dependencies = {}) {
   log('== Runtime staging ==');
   const wordpressArchive = join(downloadsDir, `wordpress-${PINNED.wordpressVersion}.tar.gz`);
   const wpCliPath = join(downloadsDir, 'wp-cli.phar');
-  const sqliteArchive = join(downloadsDir, `sqlite-database-integration-${PINNED.sqliteIntegrationVersion}.tar.gz`);
+  const sqliteArchive = join(downloadsDir, `sqlite-database-integration-${PINNED.sqliteIntegrationVersion}.zip`);
   for (const [url, hash, destination, label] of [
     [PINNED.wordpressUrl, PINNED.wordpressSha256, wordpressArchive, `WordPress ${PINNED.wordpressVersion}`],
     [PINNED.wpCliUrl, PINNED.wpCliSha256, wpCliPath, `WP-CLI ${PINNED.wpCliVersion}`],
@@ -295,9 +296,9 @@ export async function runGate(options, dependencies = {}) {
   const wpDir = join(runtimeDir, 'wordpress');
   await mkdir(wpDir, { recursive: true });
   run('tar', ['-xzf', wordpressArchive, '-C', wpDir, '--strip-components=1']);
-  run('tar', ['-xzf', sqliteArchive, '-C', runtimeDir]);
+  // The wordpress.org zip unpacks to sqlite-database-integration/ directly.
+  run('unzip', ['-q', sqliteArchive, '-d', join(wpDir, 'wp-content', 'plugins')]);
   const sqlitePlugin = join(wpDir, 'wp-content', 'plugins', 'sqlite-database-integration');
-  await cp(join(runtimeDir, `sqlite-database-integration-${PINNED.sqliteIntegrationVersion.replace(/^v/, '')}`), sqlitePlugin, { recursive: true });
   await cp(join(sqlitePlugin, 'db.copy'), join(wpDir, 'wp-content', 'db.php'));
 
   const php = dependencies.phpBinary ?? 'php';
