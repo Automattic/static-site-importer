@@ -150,6 +150,11 @@ class Static_Site_Importer_Form_Seeder {
 		return Static_Site_Importer_Provider_Form_Runtime_V1::project_form_container_placement( $html, $block );
 	}
 
+	/** Keep a source sibling submit outside the gapped field list. */
+	public static function project_provider_field_list_wrapper( string $html, array $block = array() ): string {
+		return Static_Site_Importer_Provider_Form_Runtime_V1::project_field_list_wrapper( $html, $block );
+	}
+
 	/**
 	 * Load Forms after Jetpack's autoloader is ready and before WordPress init.
 	 *

@@ -891,6 +891,19 @@ namespace {
 		'provider-runtime-keeps-field-list-grid-classes-off-the-page-item',
 		$field_list_hoist
 	);
+	$field_list_wrap = Static_Site_Importer_Form_Seeder::project_provider_field_list_wrapper(
+		'<div class="jetpack-contact-form-container"><form class="jetpack-contact-form__form"><div class="wp-block-jetpack-contact-form panel grid gap-6 sm:grid-cols-2 ssi-source-field-list ssi-form-123456789abc"><div class="grunion-field-text-wrap">fields</div><div class="wp-block-button form-button-submit is-submit"><button type="submit">Send</button></div></div></form></div>',
+		array( 'attrs' => array( 'className' => 'panel grid gap-6 sm:grid-cols-2 ssi-source-field-list ssi-form-123456789abc' ) )
+	);
+	$assert(
+		str_contains( $field_list_wrap, 'class="wp-block-jetpack-contact-form panel ssi-form-123456789abc"' )
+			&& str_contains( $field_list_wrap, '<div class="grid gap-6 sm:grid-cols-2 ssi-source-field-list"><div class="grunion-field-text-wrap">fields</div></div>' )
+			&& str_contains( $field_list_wrap, 'form-button-submit is-submit' )
+			&& ! str_contains( $field_list_wrap, 'wp-block-jetpack-contact-form panel grid gap-6' ),
+		'provider-runtime-keeps-a-sibling-submit-outside-the-gapped-field-list',
+		$field_list_wrap
+	);
+
 	$card_chrome_hoist = Static_Site_Importer_Form_Seeder::project_provider_form_container_placement(
 		'<div class="jetpack-contact-form-container"><form class="jetpack-contact-form__form"><div class="wp-block-jetpack-contact-form space-y-5 rounded-lg border bg-card p-7 ssi-form-123456789abc">fields</div></form></div>',
 		array( 'attrs' => array( 'className' => 'space-y-5 rounded-lg border bg-card p-7 ssi-form-123456789abc' ) )
@@ -1394,14 +1407,17 @@ namespace {
 		$grid_box_css
 	);
 	$assert(
-		str_contains( $grid_box_css, 'grid-column:1 / -1' ),
-		'submit-exempted-from-its-field-groups-grid-spans-every-column-instead-of-one',
-		$grid_box_css
+		str_contains( $grid_box_css, '.ssi-source-field-list' )
+			&& str_contains( (string) ( $grid_box_row['block_markup'] ?? '' ), 'ssi-source-field-list' )
+			&& ! str_contains( $grid_box_css, 'grid-column:1 / -1' ),
+		'submit-beside-a-field-list-stays-outside-the-list-instead-of-spanning-its-tracks',
+		wp_json_encode( array( 'css' => $grid_box_css, 'markup' => $grid_box_row['block_markup'] ?? '' ) )
 	);
 	$assert(
-		str_contains( $grid_box_css, 'margin-block-start:calc(0px - (.25rem * 5))' )
-			&& 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{[^}]*margin-block-start:calc\(0px - \(\.25rem \* 5\)\)/', $grid_box_css ),
-		'submit-outside-a-gapped-field-list-cancels-the-transposed-gap-instead-of-adding-it-to-its-margin',
+		str_contains( $grid_box_css, 'gap:calc(.25rem * 5)' )
+			&& str_contains( $grid_box_css, '.ssi-source-field-list' )
+			&& ! preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{[^}]*margin-block-start:calc\(0px - \(\.25rem \* 5\)\)/', $grid_box_css ),
+		'submit-outside-a-gapped-field-list-keeps-its-authored-margin-instead-of-cancelling-the-list-gap',
 		$grid_box_css
 	);
 	$dup_gap_form = $grid_box_form;
@@ -1409,8 +1425,10 @@ namespace {
 	$dup_gap_form['forms'][0]['layout_graph']['nodes'][0]['provenance'] = array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'd', 64 ), 'selector' => '.grid-fields', 'condition' => null, 'properties' => array( 'gap' ) ) );
 	$dup_gap_css = (string) ( Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $dup_gap_form )['forms'] ?? array() ) )['forms'][0]['provider_layout_overlay_css']['css'] ?? '' );
 	$assert(
-		1 === preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{[^}]*margin-block-start:calc\(0px - \(\.25rem \* 5\)\)/', $dup_gap_css ),
-		'submit-still-cancels-a-field-list-gap-the-form-node-already-declares',
+		str_contains( $dup_gap_css, '.ssi-source-field-list' )
+			&& str_contains( $dup_gap_css, 'gap:calc(.25rem * 5)' )
+			&& ! preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{[^}]*margin-block-start:calc\(0px - \(\.25rem \* 5\)\)/', $dup_gap_css ),
+		'submit-beside-a-field-list-does-not-cancel-a-gap-the-form-node-already-declares',
 		$dup_gap_css
 	);
 	$sibling_submit_css  = '.grid{display:grid}.gap-6{gap:1.5rem}'
@@ -1433,8 +1451,11 @@ namespace {
 			&& 'mapped' === ( $sibling_submit_row['status'] ?? '' )
 			&& true === ( $sibling_submit_row['runtime_mapped'] ?? false )
 			&& str_contains( $sibling_submit_overlay, 'gap:1.5rem' )
-			&& 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{[^}]*margin-block-start:calc\(0px - 1\.5rem\)/', $sibling_submit_overlay )
-			&& 1 === preg_match( '/> \.wp-block-button__link\{[^}]*margin-top:2\.25rem/', $sibling_submit_overlay ),
+			&& str_contains( $sibling_submit_overlay, '.ssi-source-field-list' )
+			&& str_contains( (string) ( $sibling_submit_row['block_markup'] ?? '' ), 'ssi-source-field-list' )
+			&& ! preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{[^}]*margin-block-start:calc\(0px - 1\.5rem\)/', $sibling_submit_overlay )
+			&& 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{[^}]*margin-top:2\.25rem/', $sibling_submit_overlay )
+			&& 1 === preg_match( '/> \.wp-block-button__link\{[^}]*margin:0!important/', $sibling_submit_overlay ),
 		'source-sibling-submit-keeps-its-authored-margin-and-does-not-also-consume-the-field-list-gap',
 		wp_json_encode( array( 'validation' => $sibling_submit_validated, 'css' => $sibling_submit_overlay, 'markup' => $sibling_submit_row['block_markup'] ?? '' ) )
 	);
@@ -1465,16 +1486,17 @@ namespace {
 	$col_span_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $col_span_source ) ) );
 	$col_span_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $col_span_validated['forms'] ?? array() ) )['forms'][0] ?? array();
 	$col_span_overlay   = (string) ( $col_span_row['provider_layout_overlay_css']['css'] ?? '' );
-	$col_span_form_rule = 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} > form\.jetpack-contact-form__form, \.ssi-form-[a-f0-9]{12}:not\(:has\(> form\.jetpack-contact-form__form\)\)\{([^}]+)\}/', $col_span_overlay, $col_span_form ) ? $col_span_form[1] : '';
+	$col_span_list_rule = 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-source-field-list\{([^}]+)\}/', $col_span_overlay, $col_span_list ) ? $col_span_list[1] : '';
 	$assert(
 		empty( $col_span_validated['errors'] )
 			&& 'mapped' === ( $col_span_row['status'] ?? '' )
 			&& true === ( $col_span_row['runtime_mapped'] ?? false )
-			&& str_contains( $col_span_form_rule, 'display:grid' )
-			&& str_contains( $col_span_form_rule, 'gap:1.5rem' )
-			&& ! str_contains( $col_span_form_rule, 'grid-template-columns' ),
+			&& str_contains( (string) ( $col_span_row['block_markup'] ?? '' ), 'ssi-source-field-list' )
+			&& str_contains( $col_span_list_rule, 'display:grid' )
+			&& str_contains( $col_span_list_rule, 'gap:1.5rem' )
+			&& ! str_contains( $col_span_list_rule, 'grid-template-columns' ),
 		'full-span-field-list-keeps-authored-display-and-leaves-column-tracks-to-the-source',
-		wp_json_encode( array( 'validation' => $col_span_validated, 'css' => $col_span_overlay, 'form' => $col_span_form_rule, 'markup' => $col_span_row['block_markup'] ?? '' ) )
+		wp_json_encode( array( 'validation' => $col_span_validated, 'css' => $col_span_overlay, 'list' => $col_span_list_rule, 'markup' => $col_span_row['block_markup'] ?? '' ) )
 	);
 	$class_display_form = $grid_box_form;
 	$class_display_form['forms'][0]['layout_graph']['nodes'][1]['layout']     = array();
@@ -1488,8 +1510,10 @@ namespace {
 	$assert(
 		empty( $class_display_validation['errors'] )
 			&& 'mapped' === ( $class_display_row['status'] ?? '' )
-			&& str_contains( $class_display_markup, 'grid gap-6 ssi-form-' )
+			&& str_contains( $class_display_markup, 'grid gap-6' )
+			&& str_contains( $class_display_markup, 'ssi-source-field-list' )
 			&& str_contains( $class_display_css, 'display:grid' )
+			&& str_contains( $class_display_css, '.ssi-source-field-list' )
 			&& ! str_contains( $class_display_css, 'grid-template-columns' ),
 		'class-only-field-list-display-outranks-the-provider-flex-default',
 		wp_json_encode( array( 'css' => $class_display_css, 'markup' => $class_display_markup, 'row' => $class_display_row ) )
@@ -1503,9 +1527,10 @@ namespace {
 	$assert(
 		str_contains( $flex_list_css, 'display:flex' )
 			&& str_contains( $flex_list_css, 'gap:2rem' )
-			&& 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{[^}]*margin-block-start:calc\(0px - 2rem\)/', $flex_list_css )
+			&& str_contains( $flex_list_css, '.ssi-source-field-list' )
+			&& ! preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{[^}]*margin-block-start:calc\(0px - 2rem\)/', $flex_list_css )
 			&& ! str_contains( $flex_list_css, 'grid-column:1 / -1' ),
-		'submit-outside-a-column-flex-field-list-also-cancels-the-transposed-gap',
+		'submit-outside-a-column-flex-field-list-keeps-its-authored-margin',
 		$flex_list_css
 	);
 	// A captured field can carry its own two-level wrapper chain: a classless
@@ -2757,6 +2782,18 @@ namespace {
 		array( 'attrs' => array( 'className' => 'wp-block-button ssi-source-submit--source-submit' ) )
 	);
 	$assert( '<div class="wp-block-button" style="min-height:0"><button class="wp-block-button__link source-submit" style="min-height:0">Send</button></div>' === $projected_submit, 'provider-runtime-projects-submit-classes-and-neutralizes-provider-minimum-height-on-the-button-and-its-wrapper', $projected_submit );
+	$projected_submit_margin = Static_Site_Importer_Form_Seeder::project_provider_submit_presentation(
+		'<div class="wp-block-button ssi-source-submit--mt-9 ssi-source-submit--bg-gold"><button class="wp-block-button__link">Send</button></div>',
+		array( 'attrs' => array( 'className' => 'wp-block-button ssi-source-submit--mt-9 ssi-source-submit--bg-gold' ) )
+	);
+	$assert(
+		str_contains( $projected_submit_margin, 'class="wp-block-button mt-9"' )
+			&& str_contains( $projected_submit_margin, 'class="wp-block-button__link bg-gold"' )
+			&& ! str_contains( $projected_submit_margin, 'wp-block-button__link mt-9' )
+			&& ! str_contains( $projected_submit_margin, 'ssi-source-submit--' ),
+		'provider-runtime-keeps-authored-submit-margin-on-the-wrapper-instead-of-the-inner-link',
+		$projected_submit_margin
+	);
 	$unproven_class_form = $class_owned_form;
 	$unproven_class_form['layout_graph']['nodes'][1]['provenance'] = array();
 	$unproven_class_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $unproven_class_form ) ) );
