@@ -8,19 +8,19 @@
       "type": "package",
       "package": {
         "name": "automattic/blocks-engine-figma-transformer",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "description": "PHP primitives for transforming Figma designs into static HTML website artifacts.",
         "type": "library",
         "license": "GPL-3.0-or-later",
         "source": {
           "type": "git",
           "url": "https://github.com/Automattic/blocks-engine.git",
-          "reference": "409b967f106481ea981ce8b1693eb1410387597d"
+          "reference": "42849acef9948e2adb9dd470413bc16d96ed2a1f"
         },
         "dist": {
           "type": "zip",
-          "url": "https://github.com/Automattic/blocks-engine/archive/refs/tags/figma-transformer-v0.2.0.zip",
-          "reference": "409b967f106481ea981ce8b1693eb1410387597d"
+          "url": "https://github.com/Automattic/blocks-engine/archive/refs/tags/figma-transformer-v0.3.0.zip",
+          "reference": "42849acef9948e2adb9dd470413bc16d96ed2a1f"
         },
         "autoload": {
           "psr-4": {
@@ -43,7 +43,7 @@
   ],
   "require": {
     "php": "^8.2",
-    "automattic/blocks-engine-figma-transformer": "0.2.0",
+    "automattic/blocks-engine-figma-transformer": "0.3.0",
     "automattic/blocks-engine-php-transformer": "v0.16.1"
   },
   "minimum-stability": "dev",
