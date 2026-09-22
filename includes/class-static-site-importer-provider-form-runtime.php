@@ -212,8 +212,8 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		if ( ! $field_list instanceof \DOMElement ) {
 			return $html;
 		}
-		$classes = preg_split( '/\s+/', trim( $field_list->getAttribute( 'class' ) ) );
-		$classes = false === $classes ? array() : array_values( array_filter( $classes ) );
+		$classes      = preg_split( '/\s+/', trim( $field_list->getAttribute( 'class' ) ) );
+		$classes      = false === $classes ? array() : array_values( array_filter( $classes ) );
 		$list_classes = array();
 		$kept         = array();
 		foreach ( $classes as $class ) {
@@ -262,7 +262,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			return true;
 		}
 		foreach ( $child->getElementsByTagName( 'button' ) as $button ) {
-			if ( $button instanceof \DOMElement && 'submit' === strtolower( $button->getAttribute( 'type' ) ) ) {
+			if ( 'submit' === strtolower( $button->getAttribute( 'type' ) ) ) {
 				return true;
 			}
 		}

@@ -168,7 +168,12 @@ final class Static_Site_Importer_Public_Error_Projection {
 		$fact     = '';
 		if ( '' !== $metric && isset( $first['actual'] ) ) {
 			$fact = $metric . ' is ' . self::project_public_number( $first['actual'] );
-			foreach ( array( 'maximum' => 'max', 'minimum' => 'min' ) as $field => $label ) {
+			foreach (
+				array(
+					'maximum' => 'max',
+					'minimum' => 'min',
+				) as $field => $label
+			) {
 				if ( isset( $first[ $field ] ) ) {
 					$fact .= ' (' . $label . ' ' . self::project_public_number( $first[ $field ] ) . ')';
 					break;
