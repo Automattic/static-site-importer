@@ -81,6 +81,7 @@ namespace {
 	require_once dirname( __DIR__ ) . '/vendor/autoload.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-compilation-preparation.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-client-script-policy.php';
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-website-artifact-import-input.php';
 
 	use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver;
 
@@ -179,6 +180,10 @@ namespace {
 	} catch ( InvalidArgumentException $error ) {
 		$assert( false, 'loss-applied-plan-passes-strict-resolution', $error->getMessage() );
 	}
+
+	// Fail-closed is the default: normalized import input requires proven dynamic client assets.
+	$defaults = Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'artifact' => $artifact ) );
+	$assert( ! is_wp_error( $defaults ) && true === ( $defaults['require_proven_dynamic_client_assets'] ?? null ), 'default-import-input-requires-proven-dynamic-client-assets', is_wp_error( $defaults ) ? $defaults->get_error_message() : wp_json_encode( $defaults['require_proven_dynamic_client_assets'] ?? null ) );
 
 	$strict = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $artifact, $import_args( true ) );
 	$assert( ! is_wp_error( $strict ), 'strict-policy-compile-prepares', is_wp_error( $strict ) ? $strict->get_error_message() : '' );

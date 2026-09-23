@@ -40,9 +40,9 @@ Every artifact is passed through `client_script_policy` before Blocks Engine com
 
 ### Unproven dynamic client asset references
 
-Blocks Engine marks a plan `reference_semantics.dynamic_client_assets.status = not_proven` when a preserved local script builds asset URLs at runtime (dynamic imports, script injection, runtime URL construction), because those references cannot be proven against the theme's asset surface. This is a reported loss, not an import failure: SSI drops exactly the unprovable scripts from the artifact, strips their `<script>` tags and script preloads, recompiles a proven plan, and records one typed `unproven_dynamic` row per unproven reference (script path, referencing document, `src`, and `sha256`) in the `client_script_policy.dropped` report section the materialization receipt projects. Proven scripts and all non-script files are untouched.
+Blocks Engine marks a plan `reference_semantics.dynamic_client_assets.status = not_proven` when a preserved local script builds asset URLs at runtime (dynamic imports, script injection, runtime URL construction), because those references cannot be proven against the theme's asset surface. By default SSI fails closed: destination preparation rejects the unproven plan with the canonical reason code.
 
-Passing `require_proven_dynamic_client_assets => true` (CLI: `--require-proven-dynamic-client-assets`) restores the fail-closed contract: the unproven plan is left as compiled and destination preparation rejects it with the canonical reason code. The legacy `--allow-unproven-dynamic-client-assets` flag is accepted and implied by the new default.
+Callers can opt into treating unproven references as a reported loss with `require_proven_dynamic_client_assets => false` (CLI: `--allow-unproven-dynamic-client-assets`). SSI then drops exactly the unprovable scripts from the artifact, strips their `<script>` tags and script preloads, recompiles a proven plan, and records one typed `unproven_dynamic` row per unproven reference (script path, referencing document, `src`, and `sha256`) in the `client_script_policy.dropped` report section the materialization receipt projects. Proven scripts and all non-script files are untouched.
 
 ## Architecture Stack
 
