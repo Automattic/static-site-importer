@@ -362,6 +362,81 @@ namespace {
 		)
 	)['forms'][0]['block_markup'] ?? '';
 	$assert( str_contains( $unsafe_label_markup, '<span class="ok">Send</span>' ) && ! str_contains( $unsafe_label_markup, '<script' ), 'submit-label-classes-that-are-not-plain-tokens-are-refused', $unsafe_label_markup );
+	// A source submit can own a leading inline icon drawn inside its own control
+	// box, ahead of the label; the producer captures it as a bounded
+	// presentation-graph visual part on the control. The materialized button must
+	// carry that icon into its saved content or the rendered submit loses the
+	// icon and the authored gap beside it.
+	$icon_submit_form = array(
+		'forms' => array( array(
+			'selector'           => 'form.contact',
+			'form'               => array( 'action' => '/contact', 'method' => 'post' ),
+			'controls'           => array(
+				array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ),
+				array( 'tag' => 'button', 'type' => 'submit', 'text' => 'Send Message', 'class' => 'w-full bg-primary flex items-center justify-center gap-2' ),
+			),
+			'presentation_graph' => array(
+				'schema' => 'generic/computed-form-presentation/v2', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'controls' => 128, 'rules_per_role' => 32 ),
+				'controls'           => array(),
+				'visual_parts'       => array(
+					array(
+						'id'              => 'control-1-svg-0',
+						'index'           => 1,
+						'kind'            => 'inline_svg',
+						'source_selector' => 'form.contact > button:nth-of-type(1) > svg:nth-of-type(1)',
+						'markup'          => '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-send" aria-hidden="true"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"></path><path d="m21.854 2.147-10.94 10.939"></path></svg>',
+						'source_css'      => array( 'state' => 'unknown' ),
+					),
+					array(
+						'id'              => 'control-0-svg-0',
+						'index'           => 0,
+						'kind'            => 'inline_svg',
+						'source_selector' => 'form.contact > div:nth-of-type(1) > svg:nth-of-type(1)',
+						'markup'          => '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5"></circle></svg>',
+						'source_css'      => array( 'state' => 'unknown' ),
+					),
+				),
+				'visual_groups'      => array(),
+				'control_containers' => array(),
+				'variants'           => array(),
+				'diagnostics'        => array(),
+			),
+		) ),
+	);
+	$icon_submit_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $icon_submit_form );
+	$icon_submit_markup    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $icon_submit_validated['forms'] ?? array() ) )['forms'][0]['block_markup'] ?? '';
+	$assert(
+		empty( $icon_submit_validated['errors'] )
+			&& 1 === preg_match( '/<button type="submit" class="wp-block-button__link wp-element-button[^"]*"><svg [^>]*class="lucide lucide-send"[^>]*>.*<\/svg>Send Message<\/button>/s', $icon_submit_markup )
+			&& ! str_contains( $icon_submit_markup, '<circle cx="6"' )
+			&& $icon_submit_markup === serialize_blocks( parse_blocks( $icon_submit_markup ) ),
+		'source-submit-leading-inline-icon-is-carried-into-the-materialized-button-content',
+		$icon_submit_markup
+	);
+	// Only parts that pass the portable inline-SVG admission are saved, and the
+	// list is bounded, so a captured icon can never smuggle markup into the
+	// saved button content.
+	$direct_icon_block  = Static_Site_Importer_Form_Field_Markup::submit_button_block(
+		'Send',
+		'',
+		array(
+			'icon' => array(
+				'<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="3"></circle></svg>',
+				'<svg onload="alert(1)" width="4" height="4"></svg>',
+				'<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><script>alert(1)</script></svg>',
+				str_repeat( ' ', 13000 ) . '<svg width="4" height="4"></svg>',
+			),
+		)
+	);
+	$direct_icon_markup = Static_Site_Importer_Form_Field_Markup::serialize_block( $direct_icon_block );
+	$assert(
+		str_contains( $direct_icon_markup, '<circle cx="4" cy="4" r="3"></circle>' )
+			&& ! str_contains( $direct_icon_markup, 'onload' )
+			&& ! str_contains( $direct_icon_markup, '<script' )
+			&& str_contains( $direct_icon_markup, '>Send</button>' ),
+		'submit-icon-parts-that-fail-the-portable-svg-admission-are-dropped-from-the-saved-button',
+		$direct_icon_markup
+	);
 	$assert( str_contains( $markup, 'form-button-submit is-submit ssi-source-submit--source-submit ssi-provider-submit-presentation' ), 'source-submit-control-presentation-projects-onto-core-button' );
 	// The source stylesheet governs this button, so the block claims no style
 	// attribute it would then have to reproduce in saved markup. That agreement
@@ -909,13 +984,28 @@ namespace {
 		array( 'attrs' => array( 'className' => 'space-y-5 rounded-lg border bg-card p-7 ssi-form-123456789abc' ) )
 	);
 	$assert(
-		str_contains( $card_chrome_hoist, 'class="jetpack-contact-form-container space-y-5 rounded-lg border bg-card p-7 ssi-form-123456789abc"' )
+		str_contains( $card_chrome_hoist, 'class="jetpack-contact-form-container rounded-lg border bg-card p-7 ssi-form-123456789abc"' )
 			&& str_contains( $card_chrome_hoist, 'wp-block-jetpack-contact-form space-y-5 ssi-form-123456789abc' )
+			&& ! preg_match( '/jetpack-contact-form-container[^"]*\bspace-y-5\b/', $card_chrome_hoist )
 			&& ! preg_match( '/wp-block-jetpack-contact-form[^"]*\bp-7\b/', $card_chrome_hoist )
 			&& ! preg_match( '/wp-block-jetpack-contact-form[^"]*\brounded-lg\b/', $card_chrome_hoist )
 			&& ! preg_match( '/wp-block-jetpack-contact-form[^"]*\bbg-card\b/', $card_chrome_hoist ),
-		'provider-runtime-keeps-card-chrome-off-the-inner-field-list',
+		'provider-runtime-keeps-card-chrome-and-rhythm-utilities-off-the-page-item',
 		$card_chrome_hoist
+	);
+	// The rhythm utility must stay with the submit inside the field list, though:
+	// the source form element carried it, so its submit owns the authored top gap
+	// as a child of the same rhythm. A fields-only wrapper split would drop it.
+	$rhythm_wrap = Static_Site_Importer_Form_Seeder::project_provider_field_list_wrapper(
+		'<div class="jetpack-contact-form-container"><form class="jetpack-contact-form__form"><div class="wp-block-jetpack-contact-form space-y-5 ssi-form-123456789abc"><div class="grunion-field-text-wrap">fields</div><div class="wp-block-button form-button-submit is-submit"><button type="submit">Send</button></div></div></form></div>',
+		array( 'attrs' => array( 'className' => 'space-y-5 ssi-form-123456789abc' ) )
+	);
+	$assert(
+		str_contains( $rhythm_wrap, 'wp-block-jetpack-contact-form space-y-5 ssi-form-123456789abc' )
+			&& str_contains( $rhythm_wrap, 'form-button-submit is-submit' )
+			&& ! str_contains( $rhythm_wrap, '<div class="space-y-5">' ),
+		'provider-runtime-keeps-the-source-rhythm-utility-around-the-fields-and-the-submit',
+		$rhythm_wrap
 	);
 	// In-form heading + a nested `grid sm:grid-cols-2` name/phone row. The heading
 	// is copy inside the form (producer `context_before`), so it is an inner block
@@ -1212,6 +1302,31 @@ namespace {
 			&& ! str_contains( (string) ( $authored_textarea_height_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:82px' ),
 		'source-cascade-resolved-textarea-height-is-authoritative-over-the-row-count-fallback',
 		wp_json_encode( $authored_textarea_height_row['provider_layout_overlay_css'] ?? null )
+	);
+	// The HTML platform renders an author-less textarea inline-level, so its field
+	// row keeps the control's baseline descent inside the row box. The provider
+	// paints its textarea block-level, which shrinks every row by that descent and
+	// changes the form box. The platform default is restored whenever the source
+	// cascade captured no display of its own for the control - independently of a
+	// captured height, which governs a different dimension of the same box.
+	$assert(
+		str_contains( $authored_rows_css, 'display:inline-block' )
+			&& 1 === preg_match( '/height:9rem[^}]*display:inline-block|display:inline-block[^}]*height:9rem/', (string) ( $authored_textarea_height_row['provider_layout_overlay_css']['css'] ?? '' ) ),
+		'authored-less-textarea-keeps-the-platform-inline-level-box-participation-even-with-a-captured-height',
+		wp_json_encode( array( 'rows_css' => $authored_rows_css, 'height_css' => $authored_textarea_height_row['provider_layout_overlay_css']['css'] ?? '' ) )
+	);
+	$captured_display_form = $authored_textarea_height_form;
+	$captured_display_form['forms'][0]['presentation_graph'] = array(
+		'schema' => 'generic/computed-form-presentation/v1', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'controls' => 128, 'rules_per_role' => 32 ), 'variants' => array(), 'diagnostics' => array(),
+		'controls' => array( array( 'index' => 2, 'control' => array( 'styles' => array( 'display' => 'flex' ), 'provenance' => array() ) ) ),
+	);
+	$captured_display_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $captured_display_form )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$captured_display_css = (string) ( $captured_display_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		str_contains( $captured_display_css, 'display:flex' )
+			&& ! str_contains( $captured_display_css, 'display:inline-block' ),
+		'captured-source-display-is-authoritative-over-the-platform-textarea-default',
+		$captured_display_css
 	);
 	$direct_label_form = array(
 		'forms' => array( array(
@@ -1824,7 +1939,7 @@ namespace {
 			$all_controls_hooks[] = substr( $hook[0], 1 );
 		}
 	}
-	$assert( empty( $validated_all_controls['errors'] ) && 4 === count( $all_controls_hooks ) && empty( array_filter( $all_controls_hooks, static fn( string $hook ): bool => ! str_contains( $all_controls_markup, $hook ) || ! str_contains( $all_controls_css, '.' . $hook ) ) ) && str_contains( $all_controls_css, 'border:1px solid #111;padding:7px;font-family:revert;line-height:revert' ) && 1 === preg_match( '/\.ssi-node-[a-f0-9]{12} select\{border:2px solid #222!important;padding:8px!important;font-family:revert!important;line-height:revert!important;appearance:auto!important\}/', $all_controls_css ) && str_contains( $all_controls_css, 'border:3px solid #333;min-height:9rem;font-family:revert;line-height:revert' ) && str_contains( $all_controls_css, 'background-color:#444;padding:9px 12px;font-family:inherit;line-height:inherit;min-height:0' ) && str_contains( $all_controls_css, '@media (max-width:48rem){' ) && str_contains( $all_controls_css, '> .wp-block-button__link{background-color:#444;padding:9px 12px;font-family:inherit;line-height:inherit;min-height:0}' ) && ! str_contains( $all_controls_css, 'control-shell' ) && ! str_contains( $all_controls_css, 'control-hook' ), 'presentation-overlay-reverts-unowned-typography-to-each-browser-native-controls', wp_json_encode( array( 'markup' => $all_controls_markup, 'css' => $all_controls_css, 'targets' => $all_controls_targets ) ) );
+	$assert( empty( $validated_all_controls['errors'] ) && 4 === count( $all_controls_hooks ) && empty( array_filter( $all_controls_hooks, static fn( string $hook ): bool => ! str_contains( $all_controls_markup, $hook ) || ! str_contains( $all_controls_css, '.' . $hook ) ) ) && str_contains( $all_controls_css, 'border:1px solid #111;padding:7px;font-family:revert;line-height:revert' ) && 1 === preg_match( '/\.ssi-node-[a-f0-9]{12} select\{border:2px solid #222!important;padding:8px!important;font-family:revert!important;line-height:revert!important;appearance:auto!important\}/', $all_controls_css ) && str_contains( $all_controls_css, 'border:3px solid #333;min-height:9rem;display:inline-block;font-family:revert;line-height:revert' ) && str_contains( $all_controls_css, 'background-color:#444;padding:9px 12px;font-family:inherit;line-height:inherit;min-height:0' ) && str_contains( $all_controls_css, '@media (max-width:48rem){' ) && str_contains( $all_controls_css, '> .wp-block-button__link{background-color:#444;padding:9px 12px;font-family:inherit;line-height:inherit;min-height:0}' ) && ! str_contains( $all_controls_css, 'control-shell' ) && ! str_contains( $all_controls_css, 'control-hook' ), 'presentation-overlay-reverts-unowned-typography-to-each-browser-native-controls', wp_json_encode( array( 'markup' => $all_controls_markup, 'css' => $all_controls_css, 'targets' => $all_controls_targets ) ) );
 	$submit_width_form = $presentation_form;
 	$submit_width_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 3, 'control' => $presentation_role( array( 'width' => '100%' ), array( 'width' ), 'button' ) ) );
 	$submit_width_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $submit_width_form );

@@ -408,6 +408,12 @@ class Static_Site_Importer_Form_Seeder {
 				if ( ! isset( $submit_presentation['label_marker'] ) && isset( $control['label_marker'] ) && is_scalar( $control['label_marker'] ) ) {
 					$submit_presentation['label_marker'] = trim( (string) $control['label_marker'] );
 				}
+				if ( ! isset( $submit_presentation['icon'] ) ) {
+					$leading_icon = self::submit_leading_icon( $form, $control_index );
+					if ( ! empty( $leading_icon ) ) {
+						$submit_presentation['icon'] = $leading_icon;
+					}
+				}
 				if ( $has_topology ) {
 					$presentation_class             = $presentation_descriptor['control_class'];
 					$field_blocks[ $control_index ] = Static_Site_Importer_Form_Field_Markup::submit_button_block( $submit_text, trim( Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $control_index ) . ' ' . $presentation_class ), $submit_presentation );
@@ -771,6 +777,44 @@ class Static_Site_Importer_Form_Seeder {
 	}
 
 	/**
+	 * Resolve a submit control's own captured inline SVGs into the leading icon
+	 * the source button renders inside its control box.
+	 *
+	 * The producer captures every drawable inline SVG descendant of a control
+	 * as a bounded visual part (see the presentation graph's `visual_parts`,
+	 * the same capture the empty-country visual state consumes). A submit
+	 * button with an authored leading icon therefore arrives with that icon
+	 * attached to its control index, while the provider submit only carries
+	 * the button text — so the icon, and the authored gap beside it, vanish.
+	 * Only parts that pass the portable inline-SVG admission and the same
+	 * bounded sizes the producer enforced are carried, in source order.
+	 *
+	 * @param array<string,mixed> $form Validated form row.
+	 * @param int                 $control_index Submit control index.
+	 * @return array<int,string> Validated SVG markup strings, source order.
+	 */
+	private static function submit_leading_icon( array $form, int $control_index ): array {
+		$parts = is_array( $form['presentation_graph']['visual_parts'] ?? null ) ? $form['presentation_graph']['visual_parts'] : array();
+		$owned = array();
+		foreach ( $parts as $part ) {
+			if ( ! is_array( $part ) || ( $part['index'] ?? null ) !== $control_index || 'inline_svg' !== ( $part['kind'] ?? null ) ) {
+				continue;
+			}
+			$id = is_string( $part['id'] ?? null ) ? $part['id'] : '';
+			if ( '' === $id || isset( $owned[ $id ] ) || ! preg_match( '/-svg-([0-9]{1,3})$/D', $id, $ordinal ) ) {
+				continue;
+			}
+			$markup = is_string( $part['markup'] ?? null ) ? trim( $part['markup'] ) : '';
+			if ( '' === $markup || strlen( $markup ) > 12288 || ! Static_Site_Importer_Provider_Form_Runtime_V1::valid_inline_svg( $markup ) ) {
+				continue;
+			}
+			$owned[ (int) $ordinal[1] ] = $markup;
+		}
+		ksort( $owned );
+		return array_slice( array_values( $owned ), 0, 4 );
+	}
+
+	/**
 	 * Provider forms omit source-only bookkeeping controls that cannot receive input.
 	 *
 	 * Some site builders use a visually hidden text field instead of type="hidden".
@@ -871,7 +915,8 @@ class Static_Site_Importer_Form_Seeder {
 
 	/**
 	 * Neutralize this provider's fixed textarea height so the authored `rows`
-	 * attribute can size the control.
+	 * attribute can size the control, and keep the source platform's inline-level
+	 * box participation for the multi-line control.
 	 *
 	 * A source textarea sized by its own `rows` attribute (rather than an
 	 * authored CSS height) carries no CSS declaration a source-CSS-cascade
@@ -887,6 +932,14 @@ class Static_Site_Importer_Form_Seeder {
 	 * onto the same control. A cascade-resolved height or minimum height
 	 * already captured for this control is authoritative and this
 	 * projection does not run.
+	 *
+	 * The HTML platform renders an authored-less textarea inline-level, so its
+	 * field row keeps the control's baseline descent inside the row box. The
+	 * provider paints its textarea block-level, which shrinks every field row
+	 * by that descent and changes the whole form box. When the source cascade
+	 * captured no `display` of its own for the control, the platform default
+	 * is restored so the materialized row keeps the source box; a captured
+	 * `display` is authoritative and this projection does not run.
 	 *
 	 * @param array<string,mixed> $form Provider form manifest row.
 	 * @param array<int,mixed>    $controls Normalized controls list.
@@ -907,15 +960,33 @@ class Static_Site_Importer_Form_Seeder {
 					break;
 				}
 			}
+			$display_projected = false;
+			if ( ! isset( $existing_styles['display'] ) ) {
+				$existing_styles['display'] = 'inline-block';
+				$display_projected          = true;
+			}
 			if ( isset( $existing_styles['height'] ) || isset( $existing_styles['min_height'] ) ) {
+				if ( $display_projected ) {
+					if ( null !== $row_index ) {
+						$controls_graph[ $row_index ]['control']['styles'] = $existing_styles;
+					} else {
+						$controls_graph[] = array(
+							'index'   => $control_index,
+							'control' => array( 'styles' => $existing_styles ),
+						);
+						$row_index        = count( $controls_graph ) - 1;
+					}
+					$form['presentation_graph']['controls'] = $controls_graph;
+				}
 				continue;
 			}
+			$existing_styles['height'] = 'auto';
 			if ( null !== $row_index ) {
-				$controls_graph[ $row_index ]['control']['styles']['height'] = 'auto';
+				$controls_graph[ $row_index ]['control']['styles'] = $existing_styles;
 			} else {
 				$controls_graph[] = array(
 					'index'   => $control_index,
-					'control' => array( 'styles' => array( 'height' => 'auto' ) ),
+					'control' => array( 'styles' => $existing_styles ),
 				);
 			}
 			$form['presentation_graph']['controls'] = $controls_graph;

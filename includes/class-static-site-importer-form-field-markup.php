@@ -13,6 +13,10 @@ if ( ! class_exists( 'Static_Site_Importer_Jetpack_Forms_Runtime' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-jetpack-forms-runtime.php';
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Provider_Form_Runtime_V1' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-provider-form-runtime.php';
+}
+
 /**
  * Emits Jetpack field and contact-form block markup.
  */
@@ -421,6 +425,10 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 * Build the Jetpack submit button block.
 	 *
 	 * @param string $text Submit button label.
+	 * @param string $class_name Wrapper class list.
+	 * @param array<string, mixed> $presentation Source submit presentation: text
+	 *   label element classes and marker, captured leading inline icon parts,
+	 *   and provider block attrs.
 	 * @return array<string, mixed>
 	 */
 	public static function submit_button_block( string $text, string $class_name = '', array $presentation = array() ): array {
@@ -455,6 +463,18 @@ final class Static_Site_Importer_Form_Field_Markup {
 				'classes' => $presentation['label_classes'],
 				'marker'  => isset( $presentation['label_marker'] ) && is_scalar( $presentation['label_marker'] ) ? (string) $presentation['label_marker'] : '',
 			);
+		}
+		// The source button can own a leading inline icon drawn inside its own
+		// control box, ahead of the label; the authored gap between them already
+		// travels with the button's projected classes. Only parts that pass the
+		// portable inline-SVG admission are kept, so the serializer reproduces
+		// exactly the bounded markup the producer captured.
+		$icon_parts = isset( $presentation['icon'] ) && is_array( $presentation['icon'] ) ? $presentation['icon'] : array();
+		if ( ! empty( $icon_parts ) ) {
+			$icon_parts = Static_Site_Importer_Provider_Form_Runtime_V1::valid_icon_parts( $icon_parts );
+			if ( ! empty( $icon_parts ) ) {
+				$block['icon'] = array( 'parts' => $icon_parts );
+			}
 		}
 
 		return $block;
@@ -631,7 +651,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 	/**
 	 * Serialize a generated block through WordPress's canonical block serializer.
 	 *
-	 * @param array<string,mixed> $block Generated block: name, attrs, innerBlocks, wrapper, content, label.
+	 * @param array<string,mixed> $block Generated block: name, attrs, innerBlocks, wrapper, content, label, icon.
 	 */
 	public static function serialize_block( array $block ): string {
 		return serialize_block( self::parsed_block( $block ) );
@@ -677,7 +697,8 @@ final class Static_Site_Importer_Form_Field_Markup {
 		} elseif ( in_array( $wrapper, array( 'submit', 'button' ), true ) ) {
 			$classes = trim( 'wp-block-button ' . (string) ( $attrs['className'] ?? '' ) );
 			$type    = 'submit' === $wrapper ? 'submit' : 'button';
-			$prefix  = "\n<div class=\"" . self::escape_attribute( $classes ) . '"><button type="' . $type . '" class="wp-block-button__link wp-element-button">' . self::rich_text_markup( $content, $label ) . "</button></div>\n";
+			$icon    = self::icon_markup( $block['icon'] ?? null );
+			$prefix  = "\n<div class=\"" . self::escape_attribute( $classes ) . '"><button type="' . $type . '" class="wp-block-button__link wp-element-button">' . $icon . self::rich_text_markup( $content, $label ) . "</button></div>\n";
 		} elseif ( 'heading' === $wrapper ) {
 			$level   = min( 6, max( 1, (int) ( $attrs['level'] ?? 2 ) ) );
 			$classes = 'wp-block-heading';
@@ -726,6 +747,25 @@ final class Static_Site_Importer_Form_Field_Markup {
 			'innerHTML'    => implode( '', array_filter( $inner_content, 'is_string' ) ),
 			'innerContent' => $inner_content,
 		);
+	}
+
+	/**
+	 * Build the saved markup for a source submit's leading inline icon.
+	 *
+	 * The icon is authored control content, captured by the producer as
+	 * bounded validated SVG parts. Each part is re-admitted here so only the
+	 * portable subset ever reaches the saved markup; an invalid or oversized
+	 * part is dropped, never repaired.
+	 *
+	 * @param array<string,mixed>|null $icon Captured icon parts.
+	 * @return string
+	 */
+	private static function icon_markup( ?array $icon ): string {
+		if ( null === $icon || ! isset( $icon['parts'] ) || ! is_array( $icon['parts'] ) ) {
+			return '';
+		}
+		$parts = Static_Site_Importer_Provider_Form_Runtime_V1::valid_icon_parts( $icon['parts'] );
+		return implode( '', $parts );
 	}
 
 	/**
