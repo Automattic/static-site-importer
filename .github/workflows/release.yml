@@ -52,7 +52,7 @@ jobs:
         with:
           prepare-only: true
           extension: wordpress
-          extension-ref: 7e4c3114604bd08a8507e2d1c5c1a3b2ef035575 # wordpress-v3.48.9
+          extension-ref: d9c54bf281cbd97b39a57c72b7447c125d1bab20 # wordpress-v3.49.1
           component: static-site-importer
 
       # Exit 0: every edge current. 1: at least one behind. 2: at least one
@@ -105,7 +105,7 @@ jobs:
         with:
           prepare-only: true
           extension: wordpress
-          extension-ref: 7e4c3114604bd08a8507e2d1c5c1a3b2ef035575 # wordpress-v3.48.9
+          extension-ref: d9c54bf281cbd97b39a57c72b7447c125d1bab20 # wordpress-v3.49.1
           component: static-site-importer
 
       - name: Run Homeboy dependency refresh action
@@ -261,7 +261,7 @@ jobs:
       release-branch: main
       dry-run: ${{ inputs.dry-run || false }}
       extension: wordpress
-      extension-ref: 7e4c3114604bd08a8507e2d1c5c1a3b2ef035575 # wordpress-v3.48.9
+      extension-ref: d9c54bf281cbd97b39a57c72b7447c125d1bab20 # wordpress-v3.49.1
       component: static-site-importer
       action-ref: cad123d49bc1ef414d0ac802a436643294d3a45c # v2.20.3
     secrets: inherit
