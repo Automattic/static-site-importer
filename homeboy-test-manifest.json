@@ -4,6 +4,7 @@
     "tests/form-fallback-contract-equivalence.php": { "environment": "standalone-php" },
     "tests/provider-adapter-runtime-smoke.php": { "environment": "standalone-php" },
     "tests/smoke-provider-submission-evidence.php": { "environment": "standalone-php" },
+    "tests/smoke-layout-projection.php": { "environment": "standalone-php" },
     "tests/smoke-ability-error-report-summary.php": { "environment": "standalone-php" },
     "tests/smoke-ability-import-success-diagnostics.php": { "environment": "standalone-php" },
     "tests/smoke-ability-registration-idempotent.php": { "environment": "standalone-php" },

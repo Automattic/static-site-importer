@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SSI layout placement capture fixture</title>
+<style>
+	* { box-sizing: border-box; margin: 0; padding: 0; }
+	.page { width: 1200px; margin: 0 auto; font-family: sans-serif; }
+	.section { position: relative; height: 420px; background: #f2f2f2; }
+	.logo { position: absolute; left: 0; top: 0; width: 300px; height: 200px; background: #ccc; }
+	.photo { position: absolute; left: 450px; top: 0; width: 750px; height: 420px; background: #999; }
+	.cta { position: absolute; left: 0; top: 336px; width: 150px; height: 42px; background: #333; color: #fff; }
+	@media ( max-width: 800px ) {
+		.page { width: 640px; }
+		.section { height: 300px; }
+		.photo { width: 400px; height: 300px; }
+		.cta { top: 240px; }
+	}
+	@media ( max-width: 480px ) {
+		.page { width: 350px; }
+		.section { height: 200px; }
+		.photo { width: 350px; height: 200px; }
+		.cta { display: none; }
+	}
+</style>
+</head>
+<body>
+<main class="page">
+	<section class="section" data-ssi-block-path="0">
+		<div class="logo" data-ssi-block-path="0.0">Bistro</div>
+		<div class="photo" data-ssi-block-path="0.1">Wood-fired everything.</div>
+		<div class="cta" data-ssi-block-path="0.2">Reserve</div>
+	</section>
+</main>
+</body>
+</html>
