@@ -136,6 +136,15 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-commerce-presentation.php',
 	'class-static-site-importer-direct-artifact-import.php',
 	'class-static-site-importer-canonical-import-service.php',
+	'class-static-site-importer-layout-placement-model.php',
+	'class-static-site-importer-layout-adapter.php',
+	'class-static-site-importer-none-layout-adapter.php',
+	'class-static-site-importer-core-grid-layout-adapter.php',
+	'class-static-site-importer-canvas-layout-adapter.php',
+	'class-static-site-importer-layout-adapter-registry.php',
+	'class-static-site-importer-layout-projector.php',
+	'class-static-site-importer-layout-release.php',
+	'class-static-site-importer-layout-marker-filter.php',
 );
 foreach ( $static_site_importer_includes as $static_site_importer_include ) {
 	require_once STATIC_SITE_IMPORTER_PATH . 'includes/' . $static_site_importer_include;
@@ -147,6 +156,8 @@ register_deactivation_hook( __FILE__, array( Static_Site_Importer_Direct_Artifac
 Static_Site_Importer_Figma_Import::register_default_zstd_decoder();
 Static_Site_Importer_Entity_Materializer_Registry::register_presentations();
 Static_Site_Importer_Form_Seeder::register_runtime_bootstrap();
+Static_Site_Importer_Layout_Release::register();
+Static_Site_Importer_Layout_Marker_Filter::register();
 Static_Site_Importer_Route_Document_Metadata::register();
 Static_Site_Importer_Route_Head_Metadata::register();
 
