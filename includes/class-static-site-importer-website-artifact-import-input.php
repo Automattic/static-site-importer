@@ -88,7 +88,7 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 				'runtime_lifecycle_phase'              => '',
 				'runtime_lifecycle_request_id'         => '',
 				'runtime_lifecycle_checkpoint'         => '',
-				'require_proven_dynamic_client_assets' => true,
+				'require_proven_dynamic_client_assets' => false,
 				'seed_entities'                        => false,
 				'products_manifest'                    => array(),
 				'commerce_context'                     => array(),

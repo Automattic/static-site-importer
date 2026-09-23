@@ -38,6 +38,12 @@ Every artifact is passed through `client_script_policy` before Blocks Engine com
 
 `isolated_preview` is the sole preservation opt-in. It requires an explicit `client_script_provenance` object with a non-empty `ref` and a runtime isolation assertion. It is intended only for an isolated disposable preview runtime. Preserved scripts remain `untrusted_imported_code`; artifact carriage, local paths, and source type never establish trust. Current-site REST imports forcibly use `inert`. Existing `include_scripts` URL collection callers no longer preserve scripts; callers must request `script_policy: isolated_preview`, supply provenance, and run only in an isolated preview environment.
 
+### Unproven dynamic client asset references
+
+Blocks Engine marks a plan `reference_semantics.dynamic_client_assets.status = not_proven` when a preserved local script builds asset URLs at runtime (dynamic imports, script injection, runtime URL construction), because those references cannot be proven against the theme's asset surface. This is a reported loss, not an import failure: SSI drops exactly the unprovable scripts from the artifact, strips their `<script>` tags and script preloads, recompiles a proven plan, and records one typed `unproven_dynamic` row per unproven reference (script path, referencing document, `src`, and `sha256`) in the `client_script_policy.dropped` report section the materialization receipt projects. Proven scripts and all non-script files are untouched.
+
+Passing `require_proven_dynamic_client_assets => true` (CLI: `--require-proven-dynamic-client-assets`) restores the fail-closed contract: the unproven plan is left as compiled and destination preparation rejects it with the canonical reason code. The legacy `--allow-unproven-dynamic-client-assets` flag is accepted and implied by the new default.
+
 ## Architecture Stack
 
 Static Site Importer is the WordPress materialization layer for static website inputs. It accepts two related shapes:

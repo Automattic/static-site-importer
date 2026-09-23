@@ -1227,7 +1227,7 @@ if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 				'overwrite'                            => ! isset( $assoc_args['no-overwrite'] ),
 				'fail_on_quality'                      => isset( $assoc_args['fail-on-quality'] ),
 				'allow_missing_woocommerce'            => isset( $assoc_args['allow-missing-woocommerce'] ),
-				'require_proven_dynamic_client_assets' => ! isset( $assoc_args['allow-unproven-dynamic-client-assets'] ),
+				'require_proven_dynamic_client_assets' => isset( $assoc_args['require-proven-dynamic-client-assets'] ),
 			);
 			$input = static_site_importer_cli_apply_client_script_args( $input, $assoc_args );
 			if ( isset( $assoc_args['host-staged-dependencies'] ) ) {
