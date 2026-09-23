@@ -85,6 +85,15 @@ abstract class Static_Site_Importer_Layout_Adapter {
 	}
 
 	/**
+	 * CSS selector, relative to the rendered host element, whose matches are
+	 * the rendered placed items in placement order. Empty when the placed
+	 * items stay direct children of the host (resolve them by block path).
+	 */
+	public function rendered_item_selector(): string {
+		return '';
+	}
+
+	/**
 	 * Block types that must be registered before this adapter may project.
 	 *
 	 * @return array<int,string>

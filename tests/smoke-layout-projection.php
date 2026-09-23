@@ -66,6 +66,81 @@ namespace {
 		}
 	}
 
+	if ( ! class_exists( 'WP_Post' ) ) {
+		class WP_Post {
+			public int $ID;
+			public string $post_content;
+			public function __construct( int $id, string $post_content ) {
+				$this->ID           = $id;
+				$this->post_content = $post_content;
+			}
+		}
+	}
+
+	if ( ! function_exists( 'get_post' ) ) {
+		function get_post( $id ) {
+			$id = (int) $id;
+			if ( ! isset( $GLOBALS['stub_posts'][ $id ] ) ) {
+				return null;
+			}
+			return new WP_Post( $id, $GLOBALS['stub_posts'][ $id ] );
+		}
+	}
+
+	if ( ! function_exists( 'wp_update_post' ) ) {
+		function wp_update_post( array $postarr, bool $wp_error = false ) {
+			unset( $wp_error );
+			$id = (int) ( $postarr['ID'] ?? 0 );
+			if ( ! isset( $GLOBALS['stub_posts'][ $id ] ) ) {
+				return new WP_Error( 'stub_missing_post', 'No such stub post.' );
+			}
+			$GLOBALS['stub_posts'][ $id ] = (string) ( $postarr['post_content'] ?? '' );
+			return $id;
+		}
+	}
+
+	if ( ! function_exists( 'wp_slash' ) ) {
+		function wp_slash( $value ) {
+			return $value;
+		}
+	}
+
+	if ( ! function_exists( 'get_post_meta' ) ) {
+		function get_post_meta( $id, $key, $single = false ) {
+			unset( $single );
+			return $GLOBALS['stub_post_meta'][ (int) $id ][ $key ] ?? '';
+		}
+	}
+
+	if ( ! function_exists( 'update_post_meta' ) ) {
+		function update_post_meta( $id, $key, $value ) {
+			$GLOBALS['stub_post_meta'][ (int) $id ][ $key ] = $value;
+			return true;
+		}
+	}
+
+	if ( ! function_exists( 'delete_post_meta' ) ) {
+		function delete_post_meta( $id, $key ) {
+			unset( $GLOBALS['stub_post_meta'][ (int) $id ][ $key ] );
+			return true;
+		}
+	}
+
+	if ( ! class_exists( 'WP_CLI' ) ) {
+		class WP_CLI {
+			public static array $lines = array();
+			public static function line( string $text ): void {
+				self::$lines[] = $text;
+			}
+			public static function error( string $message ): void {
+				throw new RuntimeException( $message );
+			}
+			public static function halt( int $code ): void {
+				throw new RuntimeException( 'halt:' . $code );
+			}
+		}
+	}
+
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-layout-placement-model.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-layout-adapter.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-none-layout-adapter.php';
@@ -75,6 +150,7 @@ namespace {
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-layout-projector.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-layout-release.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-layout-marker-filter.php';
+	require_once dirname( __DIR__ ) . '/includes/cli.php';
 
 	$failures   = array();
 	$assertions = 0;
@@ -331,6 +407,154 @@ namespace {
 	Static_Site_Importer_Layout_Marker_Filter::end_content_capture( '' );
 	$assert( '<p data-ssi-block-path="0.0">Wood-fired everything.</p>' === $marked_child, 'marker-filter-marks-nested-block-path', $marked_child );
 	$assert( false !== strpos( $marked_parent, '<div class="wp-block-group bistro" data-ssi-block-path="0">' ), 'marker-filter-marks-host-block-path', $marked_parent );
+
+	// --- CLI: --plan parsing, per-section adapters, all-none restore ---------------
+
+	$run_command = static function ( array $assoc_args ) {
+		WP_CLI::$lines = array();
+		try {
+			static_site_importer_cli_project_layout_command( array(), $assoc_args );
+			return array( 'error' => null, 'receipt' => json_decode( (string) ( WP_CLI::$lines[0] ?? 'null' ), true ) );
+		} catch ( RuntimeException $error ) {
+			$message = $error->getMessage();
+			if ( str_starts_with( $message, 'halt:' ) ) {
+				return array( 'error' => null, 'receipt' => json_decode( (string) ( WP_CLI::$lines[0] ?? 'null' ), true ) );
+			}
+			return array( 'error' => $message, 'receipt' => null );
+		}
+	};
+
+	$two_section_markup = "<!-- wp:group -->\n<div class=\"wp-block-group\">\n<!-- wp:paragraph -->\n<p>A</p>\n<!-- /wp:paragraph -->\n<!-- wp:paragraph -->\n<p>B</p>\n<!-- /wp:paragraph -->\n</div>\n<!-- /wp:group -->\n<!-- wp:group -->\n<div class=\"wp-block-group\">\n<!-- wp:paragraph -->\n<p>C</p>\n<!-- /wp:paragraph -->\n<!-- wp:paragraph -->\n<p>D</p>\n<!-- /wp:paragraph -->\n</div>\n<!-- /wp:group -->\n";
+
+	$section_model = static function ( string $host_path ) use ( $box, $viewports ): array {
+		return array(
+			'schema' => 'static-site-importer/layout-placement/v1',
+			'host'   => array( 'path' => $host_path, 'viewports' => $viewports( $box( 0, 0, 1200, 100 ), $box( 0, 0, 640, 100 ), $box( 0, 0, 350, 100 ) ) ),
+			'items'  => array(
+				array( 'path' => $host_path . '.0', 'viewports' => $viewports( $box( 0, 0, 600, 100 ), $box( 0, 0, 320, 100 ), $box( 0, 0, 350, 50 ) ) ),
+				array( 'path' => $host_path . '.1', 'viewports' => $viewports( $box( 600, 0, 600, 100 ), $box( 320, 0, 320, 100 ), $box( 0, 50, 350, 50 ) ) ),
+			),
+		);
+	};
+	$section_a_model = $section_model( '0' );
+	$section_b_model = $section_model( '1' );
+
+	$write_plan = static function ( array $plan ): string {
+		$path = tempnam( sys_get_temp_dir(), 'ssi-layout-plan-' ) . '.json';
+		file_put_contents( $path, (string) wp_json_encode( $plan ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+		return $path;
+	};
+
+	$page_id                          = 501;
+	$GLOBALS['stub_posts'][ $page_id ] = $two_section_markup;
+	$GLOBALS['stub_post_meta']         = array();
+
+	$mixed_plan_file = $write_plan(
+		array(
+			'schema'   => 'static-site-importer/layout-plan/v1',
+			'sections' => array(
+				array( 'placement' => $section_a_model, 'adapter' => 'core-grid' ),
+				array( 'placement' => $section_b_model, 'adapter' => 'none' ),
+			),
+		)
+	);
+	$mixed_result = $run_command( array( 'page' => (string) $page_id, 'plan' => $mixed_plan_file ) );
+	$assert( null === $mixed_result['error'], 'plan-mixed-adapters-does-not-error', (string) $mixed_result['error'] );
+	$assert( 'plan' === ( $mixed_result['receipt']['adapter'] ?? '' ), 'plan-receipt-top-level-adapter-is-plan' );
+	$assert(
+		array( 'core-grid', 'none' ) === array_column( $mixed_result['receipt']['sections'] ?? array(), 'adapter' ),
+		'plan-receipt-reports-each-sections-own-adapter',
+		(string) wp_json_encode( $mixed_result['receipt']['sections'] ?? null )
+	);
+	$assert( true === ( $mixed_result['receipt']['snapshot_stored'] ?? false ), 'plan-first-projection-stores-snapshot' );
+	$assert( false !== strpos( $GLOBALS['stub_posts'][ $page_id ], 'ssi-layout-core-grid-host' ), 'plan-applies-core-grid-only-to-its-own-section' );
+	$assert( $GLOBALS['stub_posts'][ $page_id ] !== $two_section_markup, 'plan-mixed-adapters-changes-persisted-content' );
+	$assert( '' !== ( $GLOBALS['stub_post_meta'][ $page_id ][ Static_Site_Importer_Layout_Projector::ORIGINAL_CONTENT_META_KEY ] ?? '' ), 'plan-projection-keeps-original-content-snapshot' );
+
+	$all_none_plan_file = $write_plan(
+		array(
+			'schema'   => 'static-site-importer/layout-plan/v1',
+			'sections' => array(
+				array( 'placement' => $section_a_model, 'adapter' => 'none' ),
+				array( 'placement' => $section_b_model, 'adapter' => 'none' ),
+			),
+		)
+	);
+	$restore_result = $run_command( array( 'page' => (string) $page_id, 'plan' => $all_none_plan_file ) );
+	$assert( null === $restore_result['error'], 'plan-all-none-does-not-error', (string) $restore_result['error'] );
+	$assert( true === ( $restore_result['receipt']['restored'] ?? false ), 'plan-all-none-restores-like-adapter-none' );
+	$assert( $two_section_markup === $GLOBALS['stub_posts'][ $page_id ], 'plan-all-none-restores-original-content' );
+	$assert( '' === ( $GLOBALS['stub_post_meta'][ $page_id ][ Static_Site_Importer_Layout_Projector::ORIGINAL_CONTENT_META_KEY ] ?? '' ), 'plan-all-none-clears-snapshot' );
+
+	$conflict_result = $run_command(
+		array(
+			'page'      => (string) $page_id,
+			'plan'      => $mixed_plan_file,
+			'placement' => $mixed_plan_file,
+		)
+	);
+	$assert(
+		null !== $conflict_result['error'] && str_contains( $conflict_result['error'], 'not both' ),
+		'plan-and-placement-together-is-rejected',
+		(string) $conflict_result['error']
+	);
+
+	$conflict_adapter_result = $run_command(
+		array(
+			'page'    => (string) $page_id,
+			'plan'    => $mixed_plan_file,
+			'adapter' => 'none',
+		)
+	);
+	$assert(
+		null !== $conflict_adapter_result['error'] && str_contains( $conflict_adapter_result['error'], 'not both' ),
+		'plan-and-adapter-together-is-rejected',
+		(string) $conflict_adapter_result['error']
+	);
+
+	$unknown_adapter_plan_file = $write_plan(
+		array(
+			'schema'   => 'static-site-importer/layout-plan/v1',
+			'sections' => array( array( 'placement' => $section_a_model, 'adapter' => 'not-a-real-adapter' ) ),
+		)
+	);
+	$unknown_adapter_result = $run_command( array( 'page' => (string) $page_id, 'plan' => $unknown_adapter_plan_file ) );
+	$assert(
+		null !== $unknown_adapter_result['error'] && str_contains( $unknown_adapter_result['error'], 'unknown adapter' ),
+		'plan-rejects-unknown-adapter-id',
+		(string) $unknown_adapter_result['error']
+	);
+
+	WP_Block_Type_Registry::$registered = false;
+	$unavailable_adapter_plan_file      = $write_plan(
+		array(
+			'schema'   => 'static-site-importer/layout-plan/v1',
+			'sections' => array( array( 'placement' => $section_a_model, 'adapter' => 'canvas' ) ),
+		)
+	);
+	$unavailable_adapter_result = $run_command( array( 'page' => (string) $page_id, 'plan' => $unavailable_adapter_plan_file ) );
+	WP_Block_Type_Registry::$registered = true;
+	$assert(
+		null !== $unavailable_adapter_result['error'] && str_contains( $unavailable_adapter_result['error'], 'unregistered block types' ),
+		'plan-rejects-adapter-with-missing-dependencies',
+		(string) $unavailable_adapter_result['error']
+	);
+
+	// --- CLI: --placement / --adapter single-adapter case keeps working ------------
+
+	$single_page_id                          = 502;
+	$GLOBALS['stub_posts'][ $single_page_id ] = $original_markup;
+	$placement_file                           = $write_plan( $bistro_model );
+	$placement_result                         = $run_command(
+		array( 'page' => (string) $single_page_id, 'placement' => $placement_file, 'adapter' => 'core-grid' )
+	);
+	$assert( null === $placement_result['error'], 'placement-and-adapter-still-works', (string) $placement_result['error'] );
+	$assert( 'core-grid' === ( $placement_result['receipt']['adapter'] ?? '' ), 'placement-receipt-top-level-adapter-is-the-single-adapter' );
+	$assert(
+		array( 'core-grid' ) === array_column( $placement_result['receipt']['sections'] ?? array(), 'adapter' ),
+		'placement-receipt-reports-the-shared-adapter-per-section'
+	);
+	$assert( false !== strpos( $GLOBALS['stub_posts'][ $single_page_id ], 'ssi-layout-core-grid-host' ), 'placement-adapter-path-persists-projection' );
 
 	if ( $failures ) {
 		fwrite( STDERR, implode( "\n", $failures ) . "\n" );

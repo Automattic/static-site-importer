@@ -68,6 +68,13 @@ final class Static_Site_Importer_Canvas_Layout_Adapter extends Static_Site_Impor
 	}
 
 	/**
+	 * Canvas renders each placed child inside its own grid item wrapper.
+	 */
+	public function rendered_item_selector(): string {
+		return '.wp-block-tabor-canvas > .canvas__grid > *';
+	}
+
+	/**
 	 * Report whether the host block can carry a canvas.
 	 */
 	public function host_refusal( array $host_block, array $model ): ?string {

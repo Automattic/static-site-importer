@@ -822,6 +822,48 @@ $leaked = static_site_importer_cli_import_receipt(
 );
 $assert( 'failed' === ( $leaked['status'] ?? '' ) && 'static_site_importer_cli_nonterminal_receipt' === ( $leaked['response']['error']['code'] ?? '' ), 'receipt-rejects-continuation-as-success' );
 
+// layout_adapters is opt-in; SSI's PHP import cannot render a page, so the
+// receipt only records the request for `tools/project-imported-layout.mjs`.
+$plain_receipt = static_site_importer_cli_import_receipt( array( 'success' => true ), 1 );
+$assert( ! array_key_exists( 'layout_projection', $plain_receipt ), 'receipt-omits-layout-projection-when-not-requested' );
+
+$requested_receipt = static_site_importer_cli_import_receipt(
+	array(
+		'success' => true,
+		'pages'   => array( 'website/index.html' => 12, 'website/about.html' => 13 ),
+	),
+	1,
+	array( 'layout_adapters' => array( 'canvas', 'core-grid' ) )
+);
+$assert(
+	array(
+		'status'   => 'requested',
+		'adapters' => array( 'canvas', 'core-grid' ),
+		'pages'    => array( 12, 13 ),
+	) === ( $requested_receipt['layout_projection'] ?? null ),
+	'receipt-records-layout-projection-request-with-page-ids'
+);
+
+$plan_apply_receipt = static_site_importer_cli_import_receipt(
+	array(
+		'success' => true,
+		'result'  => array( 'completed' => array( 'pages' => array( 'website/index.html' => 21 ) ) ),
+	),
+	1,
+	array( 'layout_adapters' => array( 'canvas' ) )
+);
+$assert( array( 21 ) === ( $plan_apply_receipt['layout_projection']['pages'] ?? null ), 'receipt-reads-plan-apply-page-ids' );
+
+$failed_layout_receipt = static_site_importer_cli_import_receipt(
+	array( 'success' => false ),
+	1,
+	array( 'layout_adapters' => array( 'canvas' ) )
+);
+$assert(
+	array( 'status' => 'requested', 'adapters' => array( 'canvas' ), 'pages' => array() ) === ( $failed_layout_receipt['layout_projection'] ?? null ),
+	'receipt-records-layout-projection-request-even-on-failure'
+);
+
 $spec = static_site_importer_cli_import_fresh_runtime_spec( '/tmp/ssi-step.json', '768M' );
 $assert( true === ( $spec['options']['launch'] ?? null ), 'fresh-runtime-launches-new-process' );
 $assert( false === ( $spec['options']['exit_error'] ?? null ), 'fresh-runtime-does-not-halt-on-child-error' );

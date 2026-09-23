@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SSI layout sections capture fixture</title>
+<style>
+	* { box-sizing: border-box; margin: 0; padding: 0; }
+	.page { width: 1200px; font-family: sans-serif; }
+	.hero { position: relative; height: 200px; background: #f2f2f2; }
+	.hero .tile { position: absolute; top: 0; width: 100px; height: 100px; }
+	.hero .tile-0 { left: 0; background: #ccc; }
+	.hero .tile-1 { left: 100px; background: #bbb; }
+	.hero .tile-2 { left: 200px; background: #aaa; }
+	.solo { position: relative; height: 50px; background: #eee; }
+	.solo .tile { position: absolute; left: 0; top: 0; width: 50px; height: 50px; background: #ddd; }
+	.footer { position: relative; height: 80px; background: #f8f8f8; }
+	.footer .column { position: absolute; top: 0; width: 40px; height: 80px; }
+	.footer .column-0 { left: 0; background: #999; }
+	.footer .column-1 { left: 40px; background: #888; }
+</style>
+</head>
+<body>
+<main class="page" data-ssi-block-path="0">
+	<!-- 0.0 wraps a single marked child (0.0.0), which itself wraps a single
+	     marked child (0.0.0.0); descent through both single-child wrappers
+	     reaches the real host at 0.0.0.0, which has three marked children. -->
+	<div data-ssi-block-path="0.0">
+		<div data-ssi-block-path="0.0.0">
+			<div class="hero" data-ssi-block-path="0.0.0.0">
+				<div class="tile tile-0" data-ssi-block-path="0.0.0.0.0">A</div>
+				<div class="tile tile-1" data-ssi-block-path="0.0.0.0.1">B</div>
+				<div class="tile tile-2" data-ssi-block-path="0.0.0.0.2">C</div>
+			</div>
+		</div>
+	</div>
+	<!-- 0.1 wraps a single marked child (0.1.0) that is itself a marked leaf;
+	     descent bottoms out there with zero items, so this section is
+	     reported as skipped rather than producing a placement model. -->
+	<div class="solo" data-ssi-block-path="0.1">
+		<div class="tile" data-ssi-block-path="0.1.0">Solo</div>
+	</div>
+	<!-- 0.2 already has two marked direct children, so it is the host with no
+	     descent needed. -->
+	<div class="footer" data-ssi-block-path="0.2">
+		<div class="column column-0" data-ssi-block-path="0.2.0">Left</div>
+		<div class="column column-1" data-ssi-block-path="0.2.1">Right</div>
+	</div>
+</main>
+</body>
+</html>
