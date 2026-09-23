@@ -89,8 +89,25 @@ final class Static_Site_Importer_Compilation_Preparation {
 		if ( $supplied_compiled ) {
 			$compiled = $args['compiled_artifact_result'];
 		} else {
-			$compiler_result = ( new $compiler_class() )->compile( $artifact );
-			$compiled        = $compiler_result->toWordPressSitePlanView();
+			$compiled = ( new $compiler_class() )->compile( $artifact )->toWordPressSitePlanView();
+			// An unproven dynamic client script becomes a typed, reported loss
+			// instead of failing materialization: the offending scripts are
+			// dropped from the artifact, the plan recompiles proven, and the
+			// loss rows join the client-script policy report the receipt
+			// already projects. Callers that explicitly require proven dynamic
+			// client assets keep the reject-at-resolution contract.
+			$script_loss = false === ( $args['require_proven_dynamic_client_assets'] ?? true )
+				? Static_Site_Importer_Client_Script_Policy::drop_unproven_dynamic_scripts( $artifact, is_array( $compiled['wordpress_site_plan'] ?? null ) ? $compiled['wordpress_site_plan'] : array() )
+				: null;
+			if ( null !== $script_loss && array() !== $script_loss['dropped'] ) {
+				$artifact = $script_loss['artifact'];
+				$compiled = ( new $compiler_class() )->compile( $artifact )->toWordPressSitePlanView();
+				$report   = is_array( $args['client_script_policy_report'] ?? null ) ? $args['client_script_policy_report'] : array( 'dropped' => array() );
+				foreach ( $script_loss['dropped'] as $row ) {
+					$report['dropped'][] = $row;
+				}
+				$args['client_script_policy_report'] = $report;
+			}
 		}
 		$expected_schema = $supplied_compiled ? 'blocks-engine/wordpress-site-plan-view/v2' : 'blocks-engine/wordpress-site-plan-view/v1';
 		if ( ( $compiled['schema'] ?? '' ) !== $expected_schema ) {
