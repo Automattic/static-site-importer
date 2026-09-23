@@ -9,6 +9,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+// Themes generated before theme-scoped runtimes shipped a guarded copy under
+// this class name. When one of those themes loads first (for example while
+// the plugin is being activated), reuse its copy instead of redeclaring it.
+if ( class_exists( 'Static_Site_Importer_Internal_Link_Runtime', false ) ) {
+	return;
+}
+
 /**
  * Turns importer-owned `/?p=` / `/?page_id=` references into destination permalinks.
  *
@@ -88,8 +95,11 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 	 * @param array<string,mixed> $bootstrap_overlay
 	 * @return array<string,mixed>
 	 */
-	public static function prepare_overlay( array $resolved_plan, array $bootstrap_overlay = array() ): array {
+	public static function prepare_overlay( array $resolved_plan, array $bootstrap_overlay = array(), string $theme_slug = '' ): array {
 		$bootstrap = self::bootstrap_content( $resolved_plan, $bootstrap_overlay );
+		// The theme copy gets a theme-scoped class name, so it can never
+		// collide with this plugin class or with another generated theme.
+		$class     = self::theme_runtime_class( $theme_slug );
 		$marker    = '/* Static Site Importer portable internal links. */';
 		$source    = file_get_contents( __FILE__ ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the runtime source the generated theme owns independently.
 		if ( ! is_string( $source ) || '' === $source ) {
@@ -99,7 +109,7 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 			);
 		}
 		if ( ! str_contains( $bootstrap, $marker ) ) {
-			$bootstrap .= "\n{$marker}\nif ( ! class_exists( 'Static_Site_Importer_Internal_Link_Runtime' ) ) {\n\trequire_once get_stylesheet_directory() . '/portable-internal-links.php';\n}\nStatic_Site_Importer_Internal_Link_Runtime::register();\n";
+			$bootstrap .= "\n{$marker}\nif ( ! class_exists( '{$class}' ) ) {\n\trequire_once get_stylesheet_directory() . '/portable-internal-links.php';\n}\n{$class}::register();\n";
 		}
 
 		return array(
@@ -113,12 +123,20 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 				),
 				array(
 					'target_path' => 'portable-internal-links.php',
-					'content'     => $source,
+					'content'     => str_replace( 'Static_Site_Importer_Internal_Link_Runtime', $class, $source ),
 					'encoding'    => 'utf8',
 					'source_path' => 'static-site-importer/portable-internal-links',
 				),
 			),
 		);
+	}
+
+	/**
+	 * Theme-scoped class name for the portable runtime copy.
+	 */
+	public static function theme_runtime_class( string $theme_slug ): string {
+		$scope = strtoupper( trim( (string) preg_replace( '/[^A-Za-z0-9]+/', '_', $theme_slug ), '_' ) );
+		return 'SSI_Theme_' . ( '' !== $scope ? $scope : 'Default' ) . '_Internal_Link_Runtime';
 	}
 
 	/** @param array<string,mixed> $resolved_plan @param array<string,mixed> $overlay */
