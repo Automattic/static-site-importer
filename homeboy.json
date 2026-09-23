@@ -229,5 +229,25 @@
       "file": "static-site-importer.php",
       "pattern": "define\\(\\s*'STATIC_SITE_IMPORTER_VERSION',\\s*'([0-9.]+)'\\s*\\)"
     }
+  ],
+  "dependency_stack": [
+    {
+      "upstream": "php-transformer",
+      "downstream": "static-site-importer",
+      "package": "automattic/blocks-engine-php-transformer",
+      "source": {
+        "repo": "https://github.com/Automattic/blocks-engine.git",
+        "prefix": "php-transformer"
+      }
+    },
+    {
+      "upstream": "figma-transformer",
+      "downstream": "static-site-importer",
+      "package": "automattic/blocks-engine-figma-transformer",
+      "source": {
+        "repo": "https://github.com/Automattic/blocks-engine.git",
+        "prefix": "figma-transformer"
+      }
+    }
   ]
 }
