@@ -10,10 +10,11 @@ on:
   push:
     branches: [main]
   schedule:
-    # Daily at 06:17 UTC. Off-the-hour minute avoids the top-of-hour scheduler
-    # thundering herd; cadence is intentionally coarse — a missed day is
-    # picked up by the next push or the next scheduled run.
-    - cron: '17 6 * * *'
+    # Hourly, at an off-the-hour minute to avoid the top-of-hour scheduler
+    # thundering herd. Affordable because a scheduled run first asks whether
+    # any declared dependency is behind its newest release (the `check` job,
+    # seconds) and runs the refresh, gate and release only when one is.
+    - cron: '17 * * * *'
   workflow_dispatch:
     inputs:
       dry-run:
@@ -31,13 +32,61 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A scheduled run has no new SSI code to ship; its only job is to notice a
+  # newer Blocks Engine release. Answer that first, cheaply, from the
+  # dependency edges declared in homeboy.json: `homeboy deps stack outdated`
+  # compares each locked version with the newest release tag using ls-remote
+  # and composer.lock alone, with no installs. Only a behind edge runs the
+  # full pipeline. Pushes and manual dispatches skip this and always run it,
+  # because they may carry new SSI code that needs gating regardless.
+  check:
+    name: Check declared dependencies for newer releases
+    if: ${{ github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    outputs:
+      behind: ${{ steps.outdated.outputs.behind }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: Extra-Chill/homeboy-action@cad123d49bc1ef414d0ac802a436643294d3a45c # v2.20.3
+        with:
+          prepare-only: true
+          extension: wordpress
+          extension-ref: d9c54bf281cbd97b39a57c72b7447c125d1bab20 # wordpress-v3.49.1
+          component: static-site-importer
+
+      # Exit 0: every edge current. 1: at least one behind. 2: at least one
+      # could not be checked. An unresolvable edge must not silently skip the
+      # refresh, so it runs the pipeline too, where the real refresh reports
+      # the cause loudly.
+      - name: Compare locked versions with newest releases
+        id: outdated
+        shell: bash
+        run: |
+          set +e
+          homeboy deps stack outdated
+          status=$?
+          set -e
+          case "${status}" in
+            0) echo "behind=false" >> "${GITHUB_OUTPUT}"; echo "::notice::Every declared dependency is current; skipping refresh and release." ;;
+            1|2) echo "behind=true" >> "${GITHUB_OUTPUT}" ;;
+            *) echo "::error::homeboy deps stack outdated exited ${status}"; exit "${status}" ;;
+          esac
+
   refresh:
     name: Refresh published Blocks Engine pins
+    needs: check
     # A release commit pushed back to main by the `release` job below must
     # never retrigger this workflow against its own output — that is the
     # infinite-loop path. Mirrors the same guard the reusable release
     # workflow applies to its own push trigger.
-    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'release:') }}
+    # `check` only runs on schedule; on push and dispatch it is skipped, and
+    # always() lets this job run anyway. On schedule it runs only when an
+    # edge is behind.
+    if: >-
+      ${{ always()
+          && (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'release:'))
+          && (github.event_name != 'schedule' || needs.check.outputs.behind == 'true') }}
     runs-on: ubuntu-latest
     outputs:
       source-sha: ${{ steps.source.outputs.sha }}
@@ -56,7 +105,7 @@ jobs:
         with:
           prepare-only: true
           extension: wordpress
-          extension-ref: 7e4c3114604bd08a8507e2d1c5c1a3b2ef035575 # wordpress-v3.48.9
+          extension-ref: d9c54bf281cbd97b39a57c72b7447c125d1bab20 # wordpress-v3.49.1
           component: static-site-importer
 
       - name: Run Homeboy dependency refresh action
@@ -212,7 +261,7 @@ jobs:
       release-branch: main
       dry-run: ${{ inputs.dry-run || false }}
       extension: wordpress
-      extension-ref: 7e4c3114604bd08a8507e2d1c5c1a3b2ef035575 # wordpress-v3.48.9
+      extension-ref: d9c54bf281cbd97b39a57c72b7447c125d1bab20 # wordpress-v3.49.1
       component: static-site-importer
       action-ref: cad123d49bc1ef414d0ac802a436643294d3a45c # v2.20.3
     secrets: inherit
