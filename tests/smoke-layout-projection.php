@@ -296,14 +296,19 @@ namespace {
 	$core_host = $find( $core_pieces, '0' );
 	$assert( array( 'type' => 'grid', 'columnCount' => 8 ) === ( $core_host['attrs']['layout'] ?? null ) && array( 'top' => '0px', 'left' => '0px' ) === ( $core_host['attrs']['style']['spacing']['blockGap'] ?? null ), 'core-grid-host-fits-source-columns-and-gaps', (string) wp_json_encode( $core_host['attrs'] ?? null ) );
 	$assert( array( 'name' => 'bistro' ) === ( $core_host['attrs']['metadata'] ?? null ), 'core-grid-host-preserves-existing-attributes' );
+	// Each viewport gets its own fitted grid, stored as core 7.1 per-viewport
+	// container values: tablet (320/320 halves, a 150px button) needs 22
+	// tracks; mobile (full-width items, a 120px button) needs 3.
+	$assert( array( 'columnCount' => 22 ) === ( $core_host['attrs']['style']['@tablet']['layout'] ?? null ) && array( 'top' => '0px', 'left' => '0px' ) === ( $core_host['attrs']['style']['@tablet']['spacing']['blockGap'] ?? null ) && array( 'columnCount' => 3 ) === ( $core_host['attrs']['style']['@mobile']['layout'] ?? null ), 'core-grid-host-fits-each-viewport', (string) wp_json_encode( $core_host['attrs']['style'] ?? null ) );
+
 	$assert( false !== strpos( (string) $core_host['innerContent'][0], 'class="wp-block-group bistro ssi-layout-core-grid-host"' ), 'core-grid-host-class-appended', (string) wp_json_encode( $core_host['innerContent'][0] ?? null ) );
 	$assert( 'core/group' === ( $core_host['blockName'] ?? '' ), 'core-grid-host-keeps-block-name' );
 
 	// Base viewport rows derive from the distinct item top edges (0 and 336px).
 	$core_image = $find( $core_pieces, '0.0' );
 	$assert( array( 'columnStart' => 1, 'columnSpan' => 2, 'rowStart' => 1, 'rowSpan' => 1 ) === ( $core_image['attrs']['style']['layout'] ?? null ), 'core-grid-image-base-placement', (string) wp_json_encode( $core_image['attrs'] ?? null ) );
-	$assert( array( 'columnStart' => 1, 'columnSpan' => 4, 'rowStart' => 1, 'rowSpan' => 1 ) === ( $core_image['attrs']['style']['@tablet']['layout'] ?? null ), 'core-grid-image-tablet-override-under-breakpoint-style', (string) wp_json_encode( $core_image['attrs'] ?? null ) );
-	$assert( array( 'columnStart' => 1, 'columnSpan' => 8, 'rowStart' => 1, 'rowSpan' => 2 ) === ( $core_image['attrs']['style']['@mobile']['layout'] ?? null ), 'core-grid-image-mobile-override-under-breakpoint-style', (string) wp_json_encode( $core_image['attrs'] ?? null ) );
+	$assert( array( 'columnStart' => 1, 'columnSpan' => 11, 'rowStart' => 1, 'rowSpan' => 1 ) === ( $core_image['attrs']['style']['@tablet']['layout'] ?? null ), 'core-grid-image-tablet-override-under-breakpoint-style', (string) wp_json_encode( $core_image['attrs'] ?? null ) );
+	$assert( array( 'columnStart' => 1, 'columnSpan' => 3, 'rowStart' => 1, 'rowSpan' => 2 ) === ( $core_image['attrs']['style']['@mobile']['layout'] ?? null ), 'core-grid-image-mobile-override-under-breakpoint-style', (string) wp_json_encode( $core_image['attrs'] ?? null ) );
 	$assert( ! isset( $core_image['attrs']['style']['layout']['@tablet'] ), 'core-grid-overrides-not-nested-in-base-layout' );
 	$assert( 12 === ( $core_image['attrs']['id'] ?? null ), 'core-grid-image-preserves-existing-attributes' );
 	$core_paragraph = $find( $core_pieces, '0.1' );

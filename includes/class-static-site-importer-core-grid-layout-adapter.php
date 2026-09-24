@@ -85,12 +85,14 @@ final class Static_Site_Importer_Core_Grid_Layout_Adapter extends Static_Site_Im
 	 */
 	private array $row_bands = array();
 
-	/** Fitted column count for the host being projected. */
-	private int $columns = self::COLUMNS;
-
-	/** Fitted horizontal and vertical gaps (px) between items. */
-	private float $column_gap = 0.0;
-	private float $row_gap    = 0.0;
+	/**
+	 * Fitted grid per captured width: column count and horizontal gap (px).
+	 * WordPress 7.1 lets a grid container change both per viewport
+	 * (`style['@tablet'|'@mobile'].layout.columnCount` and `.spacing.blockGap`).
+	 *
+	 * @var array<int,array{columns:int,gap:float}>
+	 */
+	private array $fits = array();
 
 	/**
 	 * Derive grid rows from every item's top edge, per viewport, so each item's
@@ -156,25 +158,26 @@ final class Static_Site_Importer_Core_Grid_Layout_Adapter extends Static_Site_Im
 		if ( array() === $runs ) {
 			return;
 		}
-		$base      = $runs[ $widths[0] ] ?? reset( $runs );
-		// Vertical spacing between stacked items stays with the items' own
-		// margins (as in the source flow); a row gap would add to it.
-		$row_gap   = 0.0;
-		$gaps      = array_unique( array( self::neighbour_gap( $base['boxes'], 'left', 'right', 'top', 'bottom' ), 0.0 ) );
-		// Rank fits: every captured width within tolerance, then the base
-		// (widest) width within tolerance, then fewer columns, then the smaller
-		// worst-case error. A single column count and gap serve all widths.
-		$base_width = array_key_first( $runs );
-		$best       = null;
+		$this->fits = array();
+		foreach ( $runs as $width => $run ) {
+			$this->fits[ (int) $width ] = self::fit_width( $run );
+		}
+	}
+
+	/**
+	 * The fewest tracks (with the source's neighbour gap, or no gap) that put
+	 * every item edge at this width within tolerance, else the smallest error.
+	 *
+	 * @param array{width:float,boxes:array<int,array<string,float>>} $run
+	 * @return array{columns:int,gap:float}
+	 */
+	private static function fit_width( array $run ): array {
+		$gaps = array_unique( array( self::neighbour_gap( $run['boxes'], 'left', 'right', 'top', 'bottom' ), 0.0 ) );
+		$best = null;
 		foreach ( $gaps as $gap ) {
 			for ( $columns = 1; $columns <= self::MAX_COLUMNS; $columns++ ) {
-				list( $all_within, $worst ) = self::fit_error( $runs, $columns, $gap );
-				list( $base_within ) = self::fit_error( array( $base_width => $runs[ $base_width ] ), $columns, $gap );
-				// Within tolerance, fewer columns win; outside it, the smaller
-				// error across all captured widths wins (fewer columns break ties).
-				$rank = $base_within
-					? array( $all_within ? 0 : 1, 0, $columns, $worst )
-					: array( 2, 1, $worst, $columns );
+				list( $within, $worst ) = self::fit_error( array( $run ), $columns, $gap );
+				$rank                   = $within ? array( 0, $columns, $worst ) : array( 1, $worst, $columns );
 				if ( null === $best || $rank < $best['rank'] ) {
 					$best = array(
 						'rank'    => $rank,
@@ -184,9 +187,22 @@ final class Static_Site_Importer_Core_Grid_Layout_Adapter extends Static_Site_Im
 				}
 			}
 		}
-		$this->columns    = $best['columns'];
-		$this->column_gap = $best['gap'];
-		$this->row_gap    = $row_gap;
+		return array(
+			'columns' => $best['columns'],
+			'gap'     => $best['gap'],
+		);
+	}
+
+	/**
+	 * Fitted grid at one captured width.
+	 *
+	 * @return array{columns:int,gap:float}
+	 */
+	private function fit_at( int $width ): array {
+		return $this->fits[ $width ] ?? array(
+			'columns' => self::COLUMNS,
+			'gap'     => 0.0,
+		);
 	}
 
 	/**
@@ -234,28 +250,43 @@ final class Static_Site_Importer_Core_Grid_Layout_Adapter extends Static_Site_Im
 		return is_finite( $gap ) ? round( $gap ) : 0.0;
 	}
 
-	/** Fitted column count of the host being projected. */
+	/** Fitted column count of the host being projected, at its widest width. */
 	public function columns(): int {
-		return $this->columns;
+		return array() === $this->fits ? self::COLUMNS : $this->fits[ max( array_keys( $this->fits ) ) ]['columns'];
 	}
 
 	/**
 	 * Write the core grid layout attribute onto the host block.
 	 */
 	public function place_host( array &$host_block, array $model ): void {
-		unset( $model );
-		$attrs              = is_array( $host_block['attrs'] ?? null ) ? $host_block['attrs'] : array();
-		$attrs['layout']    = array(
-			'type'        => 'grid',
-			'columnCount' => $this->columns,
-		);
-		// Native gap: tracks and gaps together reproduce the source edges.
-		$style                                = is_array( $attrs['style'] ?? null ) ? $attrs['style'] : array();
-		$style['spacing']                     = is_array( $style['spacing'] ?? null ) ? $style['spacing'] : array();
-		$style['spacing']['blockGap']         = array(
-			'top'  => self::px( $this->row_gap ),
-			'left' => self::px( $this->column_gap ),
-		);
+		$tiers = self::placement_tiers( is_array( $model['host'] ?? null ) ? $model['host'] : array() );
+		$attrs = is_array( $host_block['attrs'] ?? null ) ? $host_block['attrs'] : array();
+		$style = is_array( $attrs['style'] ?? null ) ? $attrs['style'] : array();
+		foreach ( array( 'base', '@tablet', '@mobile' ) as $tier ) {
+			if ( null === $tiers[ $tier ] ) {
+				continue;
+			}
+			$fit = $this->fit_at( (int) $tiers[ $tier ] );
+			// Vertical spacing stays with the items' own margins, as in the
+			// source flow; a row gap would add to it.
+			$gap = array(
+				'top'  => '0px',
+				'left' => self::px( $fit['gap'] ),
+			);
+			if ( 'base' === $tier ) {
+				$attrs['layout']              = array(
+					'type'        => 'grid',
+					'columnCount' => $fit['columns'],
+				);
+				$style['spacing']             = is_array( $style['spacing'] ?? null ) ? $style['spacing'] : array();
+				$style['spacing']['blockGap'] = $gap;
+				continue;
+			}
+			$style[ $tier ]                        = is_array( $style[ $tier ] ?? null ) ? $style[ $tier ] : array();
+			$style[ $tier ]['layout']              = array_merge( is_array( $style[ $tier ]['layout'] ?? null ) ? $style[ $tier ]['layout'] : array(), array( 'columnCount' => $fit['columns'] ) );
+			$style[ $tier ]['spacing']             = is_array( $style[ $tier ]['spacing'] ?? null ) ? $style[ $tier ]['spacing'] : array();
+			$style[ $tier ]['spacing']['blockGap'] = $gap;
+		}
 		$attrs['style']      = $style;
 		$host_block['attrs'] = $attrs;
 	}
@@ -305,9 +336,10 @@ final class Static_Site_Importer_Core_Grid_Layout_Adapter extends Static_Site_Im
 		if ( null === $item_box || null === $host_box || 0.0 >= (float) $host_box['width'] ) {
 			return null;
 		}
-		$pitch               = ( (float) $host_box['width'] + $this->column_gap ) / $this->columns;
+		$fit                 = $this->fit_at( $width );
+		$pitch               = ( (float) $host_box['width'] + $fit['gap'] ) / $fit['columns'];
 		$left                = (float) $item_box['x'] - (float) $host_box['x'];
-		list( $start, $span ) = self::track_span( $left, $left + (float) $item_box['width'] + $this->column_gap, $pitch, $this->columns );
+		list( $start, $span ) = self::track_span( $left, $left + (float) $item_box['width'] + $fit['gap'], $pitch, $fit['columns'] );
 		$top                 = (float) $item_box['y'] - (float) $host_box['y'];
 		$bands               = $this->row_bands[ $width ] ?? array();
 		$row_start           = self::band_index( $bands, $top );
