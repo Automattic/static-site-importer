@@ -123,6 +123,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-owner-handoff-evidence.php',
 	'class-static-site-importer-site-plan-receipt.php',
 	'class-static-site-importer-site-plan-preparation.php',
+	'class-static-site-importer-rewrite-base-collision.php',
 	'class-static-site-importer-site-plan-persistence.php',
 	'class-static-site-importer-wordpress-site-plan-materializer.php',
 	'class-static-site-importer-journaled-report-writer.php',
