@@ -1459,7 +1459,7 @@ if ( ! function_exists( 'static_site_importer_cli_project_layout_command' ) ) {
 			$adapters = Static_Site_Importer_Layout_Adapter_Registry::adapters();
 			$adapter  = '' !== $adapter_id ? ( $adapters[ $adapter_id ] ?? null ) : Static_Site_Importer_Layout_Adapter_Registry::layout_adapter();
 			if ( null === $adapter ) {
-				WP_CLI::error( 'Provide --adapter=<none|core-grid|canvas> matching a registered layout adapter.' );
+				WP_CLI::error( 'Provide --adapter=<none|canvas> matching a registered layout adapter.' );
 			}
 			$dependency_error = static_site_importer_cli_layout_adapter_dependency_error( $adapter );
 			if ( null !== $dependency_error ) {

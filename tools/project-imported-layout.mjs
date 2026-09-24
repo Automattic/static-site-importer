@@ -33,7 +33,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { PATH_ATTRIBUTE, captureLayoutSections } from '../lib/layout-placement-capture.mjs';
+import { PATH_ATTRIBUTE, captureLayoutSections, settleLayout } from '../lib/layout-placement-capture.mjs';
 import { DEFAULT_GATE_WIDTHS, DEFAULT_REFERENCE_WIDTH, evaluateSection } from '../lib/layout-projection-gate.mjs';
 
 export const PLAN_SCHEMA = 'static-site-importer/layout-plan/v1';
@@ -210,10 +210,21 @@ function resolveAndMeasureInBrowser( { attribute, hostPath, itemPaths, itemSelec
 			y: rect.y,
 			width: rect.width,
 			height: rect.height,
-			clientWidth: element.clientWidth,
-			clientHeight: element.clientHeight,
-			scrollWidth: element.scrollWidth,
-			scrollHeight: element.scrollHeight,
+			// Overflow is judged on the rendered content: an adapter wrapper
+			// (for example a Canvas grid item) holds exactly one block, whose
+			// own margins are not content overflow.
+			...( () => {
+				const content = itemSelector && 1 === element.children.length ? element.firstElementChild : element;
+				const box = content.getBoundingClientRect();
+				const clientHeight = Math.round( box.height );
+				const clientWidth = Math.round( box.width );
+				return {
+					clientWidth,
+					clientHeight,
+					scrollWidth: Math.max( clientWidth, content.scrollWidth ),
+					scrollHeight: Math.max( clientHeight, content.scrollHeight ),
+				};
+			} )(),
 			pageOverflow: document.documentElement.scrollWidth > window.innerWidth + 1,
 		};
 	};
@@ -268,22 +279,23 @@ async function loginAsAdmin( page, origin, adminUser, adminPassword ) {
 	await page.goto( loginUrl );
 	await page.fill( '#user_login', adminUser );
 	await page.fill( '#user_pass', adminPassword );
-	// Submit, and resubmit if a slow login page swallowed the first click.
+	// Logged in once WordPress sets its auth cookie; resubmit if a slow login
+	// page swallowed the click.
+	const loggedIn = async () => ( await page.context().cookies() ).some( cookie => cookie.name.startsWith( 'wordpress_logged_in_' ) );
 	for ( let attempt = 0; attempt < 3; attempt++ ) {
-		await page.click( '#wp-submit' );
-		try {
-			await page.waitForURL( url => ! url.pathname.endsWith( '/wp-login.php' ), { timeout: 30000, waitUntil: 'commit' } );
-			return;
-		} catch ( error ) {
-			if ( 2 === attempt ) {
-				throw error;
-			}
-			if ( ! ( await page.locator( '#wp-submit' ).count() ) ) {
+		await page.click( '#wp-submit' ).catch( () => {} );
+		for ( let waited = 0; waited < 30000; waited += 500 ) {
+			if ( await loggedIn() ) {
 				return;
 			}
+			await page.waitForTimeout( 500 );
+		}
+		if ( await page.locator( '#user_pass' ).count() ) {
+			await page.fill( '#user_login', adminUser );
 			await page.fill( '#user_pass', adminPassword );
 		}
 	}
+	throw new Error( 'projectImportedLayout: admin login did not complete.' );
 }
 
 /**
@@ -329,6 +341,7 @@ function defaultMeasureSection( { origin, adminUser, adminPassword, pageId } ) {
 			await page.setViewportSize( { width, height: 900 } );
 			await page.goto( captureUrl( origin, pageId ) );
 			await page.waitForLoadState( 'networkidle' );
+			await settleLayout( page );
 			return await page.evaluate( resolveAndMeasureInBrowser, { attribute: PATH_ATTRIBUTE, hostPath, itemPaths, itemSelector } );
 		} finally {
 			await browser.close();

@@ -30,6 +30,8 @@ final class Static_Site_Importer_Canvas_Layout_Adapter extends Static_Site_Impor
 	public const GRID_COLUMNS     = 12;
 	public const ROW_PITCH_FACTOR = 0.0215;
 	public const MAX_ROWS         = 500;
+	/** Canvas's reference width when the theme sets no content size. */
+	private const DEFAULT_REFERENCE_WIDTH = 1340.0;
 
 	/** Blocks Canvas accepts as items, and inside grouped items. */
 	private const ITEM_BLOCKS    = array( 'core/heading', 'core/paragraph', 'core/image', 'core/buttons', 'core/group' );
@@ -120,7 +122,7 @@ final class Static_Site_Importer_Canvas_Layout_Adapter extends Static_Site_Impor
 			if ( null === $width ) {
 				continue;
 			}
-			$placement = self::placement( $item_block, $item_model, $host_model, $width );
+			$placement = self::placement( $item_block, $item_model, $host_model, $width, 'desktop' === $mode ? self::reference_width() : null );
 			if ( null !== $placement ) {
 				$canvas[ $mode ] = $placement;
 			}
@@ -196,7 +198,7 @@ final class Static_Site_Importer_Canvas_Layout_Adapter extends Static_Site_Impor
 	 *
 	 * @return array<string,int|float>|null
 	 */
-	private static function placement( array $item_block, array $item_model, array $host_model, int $width ): ?array {
+	private static function placement( array $item_block, array $item_model, array $host_model, int $width, ?float $reference_width = null ): ?array {
 		$item_box = Static_Site_Importer_Layout_Placement_Model::box_at( $item_model, $width );
 		$host_box = Static_Site_Importer_Layout_Placement_Model::box_at( $host_model, $width );
 		if ( null === $item_box || null === $host_box || 0.0 >= (float) $host_box['width'] ) {
@@ -224,9 +226,41 @@ final class Static_Site_Importer_Canvas_Layout_Adapter extends Static_Site_Impor
 		if ( 'core/image' === $name && 0.0 < (float) $item_box['height'] ) {
 			$placement['frameRatio'] = (float) sprintf( '%.6g', (float) $item_box['width'] / (float) $item_box['height'] );
 		}
+		// An exact frame keeps the measured position and size instead of
+		// snapping to whole cells. Canvas measures desktop frames against the
+		// centered reference canvas (the theme content width, capped at the
+		// canvas width) and other viewports against the canvas width; x and
+		// width are fractions of that box (outside [0, 1] is allowed), y is in
+		// row pitches from the top, and ratio is width / height.
+		if ( 1.0 <= (float) $item_box['width'] && 1.0 <= (float) $item_box['height'] ) {
+			$bounds_width      = null !== $reference_width ? min( $host_width, $reference_width ) : $host_width;
+			$bounds_left       = ( $host_width - $bounds_width ) / 2;
+			$placement['free'] = array(
+				'x'     => round( ( $left - $bounds_left ) / $bounds_width, 6 ),
+				'y'     => round( $top / max( 1.0, $host_width * self::ROW_PITCH_FACTOR ), 6 ),
+				'width' => max( 0.000001, round( (float) $item_box['width'] / $bounds_width, 6 ) ),
+				'ratio' => max( 0.000001, round( (float) $item_box['width'] / (float) $item_box['height'], 6 ) ),
+			);
+		}
 		return $placement;
 	}
 
+	/**
+	 * The reference width Canvas measures desktop frames against, in px: the
+	 * theme's content size, or Canvas's 1340px fallback when it is unset.
+	 * Null when the content size is not a plain length (for example a
+	 * clamp()), in which case desktop frames fall back to the canvas width.
+	 */
+	private static function reference_width(): ?float {
+		$size = function_exists( 'wp_get_global_settings' ) ? wp_get_global_settings( array( 'layout', 'contentSize' ) ) : null;
+		if ( ! is_string( $size ) || '' === trim( $size ) ) {
+			return self::DEFAULT_REFERENCE_WIDTH;
+		}
+		if ( 1 !== preg_match( '/^\s*([0-9]+(?:\.[0-9]+)?)(px|rem|em)\s*$/', $size, $match ) ) {
+			return null;
+		}
+		return (float) $match[1] * ( 'px' === $match[2] ? 1.0 : 16.0 );
+	}
 	/**
 	 * Whether every nested block of a grouped item is one Canvas can hold.
 	 */

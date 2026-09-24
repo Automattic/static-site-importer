@@ -833,12 +833,12 @@ $requested_receipt = static_site_importer_cli_import_receipt(
 		'pages'   => array( 'website/index.html' => 12, 'website/about.html' => 13 ),
 	),
 	1,
-	array( 'layout_adapters' => array( 'canvas', 'core-grid' ) )
+	array( 'layout_adapters' => array( 'canvas' ) )
 );
 $assert(
 	array(
 		'status'   => 'requested',
-		'adapters' => array( 'canvas', 'core-grid' ),
+		'adapters' => array( 'canvas' ),
 		'pages'    => array( 12, 13 ),
 	) === ( $requested_receipt['layout_projection'] ?? null ),
 	'receipt-records-layout-projection-request-with-page-ids'

@@ -166,7 +166,7 @@ $input  = array(
 	'client_script_provenance'             => array( 'ref' => 'contract:preview' ),
 	'client_script_isolated'               => true,
 	'theme_materialization'                => 'classic',
-	'layout_adapters'                      => array( 'canvas', 'core-grid' ),
+	'layout_adapters'                      => array( 'canvas' ),
 );
 $direct = Static_Site_Importer_Website_Artifact_Import_Input::normalize( $input );
 
@@ -183,7 +183,7 @@ $assert( false === Static_Site_Importer_Website_Artifact_Import_Input::normalize
 
 // layout_adapters is an opt-in, ordered adapter preference; empty (off) by default.
 $assert( array() === $default_input['layout_adapters'], 'layout-adapters-defaults-empty' );
-$assert( array( 'canvas', 'core-grid' ) === Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'layout_adapters' => array( 'canvas', 'core-grid' ) ) )['layout_adapters'], 'layout-adapters-preserves-order' );
+$assert( array( 'canvas' ) === Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'layout_adapters' => array( 'canvas' ) ) )['layout_adapters'], 'layout-adapters-preserves-order' );
 $assert( array() === Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'layout_adapters' => 'canvas' ) )['layout_adapters'], 'layout-adapters-rejects-non-array' );
 $assert( array( 'canvas', '42' ) === Static_Site_Importer_Website_Artifact_Import_Input::normalize( array( 'layout_adapters' => array( 'canvas', 42, array( 'nested' => true ) ) ) )['layout_adapters'], 'layout-adapters-coerces-scalars-and-drops-non-scalars' );
 

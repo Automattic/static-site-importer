@@ -12,16 +12,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Canvas_Layout_Adapter' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-canvas-layout-adapter.php';
 }
-if ( ! class_exists( 'Static_Site_Importer_Core_Grid_Layout_Adapter' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-core-grid-layout-adapter.php';
-}
 
 /**
  * Releases the minimal host layout stylesheet on block asset enqueues.
  *
- * Projection adapters add a generated class to the host block; this runtime
- * styles those classes on the frontend and in the editor: canvas hosts render
- * as block containers, core-grid hosts render the 12-column grid.
+ * The Canvas adapter adds a generated class to each projected host. This
+ * runtime styles that class on the frontend and in the editor so the source's
+ * own layout rules cannot fight the Canvas placement.
  */
 final class Static_Site_Importer_Layout_Release {
 
@@ -37,7 +34,6 @@ final class Static_Site_Importer_Layout_Release {
 			return;
 		}
 		add_action( 'enqueue_block_assets', array( self::class, 'enqueue_assets' ) );
-		add_filter( 'render_block', array( self::class, 'expose_grid_host' ), 10, 2 );
 	}
 
 	/**
@@ -55,91 +51,19 @@ final class Static_Site_Importer_Layout_Release {
 	}
 
 	/**
-	 * Write a core-grid host's native column count and gaps onto its rendered
-	 * wrapper as custom properties the release stylesheet reads.
-	 *
-	 * @param string              $content Rendered block.
-	 * @param array<string,mixed> $block   Parsed block.
-	 */
-	public static function expose_grid_host( $content, $block ) {
-		$host = ( new Static_Site_Importer_Core_Grid_Layout_Adapter() )->host_class();
-		// The projector adds the host class to the saved markup, not to the
-		// className attribute, so match on the rendered wrapper.
-		if ( ! is_string( $content ) || ! is_array( $block ) || ! str_contains( $content, $host ) || 'grid' !== ( $block['attrs']['layout']['type'] ?? '' ) || ! class_exists( 'WP_HTML_Tag_Processor' ) ) {
-			return $content;
-		}
-		$length = static fn( $value ): string => is_string( $value ) && 1 === preg_match( '/^[0-9]+(?:\\.[0-9]+)?px$/', $value ) ? $value : '0px';
-		$vars   = array();
-		// Base values, then the per-viewport container values core 7.1 stores
-		// under style['@tablet'|'@mobile'].
-		foreach ( array( '' => $block['attrs'], '-tablet' => $block['attrs']['style']['@tablet'] ?? array(), '-mobile' => $block['attrs']['style']['@mobile'] ?? array() ) as $suffix => $source ) {
-			$columns = (int) ( ( '' === $suffix ? $source['layout']['columnCount'] ?? 0 : $source['layout']['columnCount'] ?? 0 ) );
-			$gap     = '' === $suffix ? $source['style']['spacing']['blockGap'] ?? null : $source['spacing']['blockGap'] ?? null;
-			if ( $columns > 0 ) {
-				$vars[] = '--ssi-layout-columns' . $suffix . ':' . $columns;
-			}
-			if ( is_array( $gap ) ) {
-				$vars[] = '--ssi-layout-column-gap' . $suffix . ':' . $length( $gap['left'] ?? '' );
-				$vars[] = '--ssi-layout-row-gap' . $suffix . ':' . $length( $gap['top'] ?? '' );
-			}
-		}
-		if ( array() === $vars ) {
-			return $content;
-		}
-		$processor = new WP_HTML_Tag_Processor( $content );
-		if ( ! $processor->next_tag( array( 'class_name' => $host ) ) ) {
-			return $content;
-		}
-		$style = trim( (string) $processor->get_attribute( 'style' ) );
-		$processor->set_attribute( 'style', ( '' !== $style ? rtrim( $style, ';' ) . ';' : '' ) . implode( ';', $vars ) );
-		return $processor->get_updated_html();
-	}
-
-	/**
-	 * The site's viewport media queries keyed by viewport name (tablet, mobile),
-	 * ordered so narrower viewports come last and win.
-	 *
-	 * @return array<string,string>
-	 */
-	private static function viewport_media_queries(): array {
-		if ( ! class_exists( 'WP_Theme_JSON' ) || ! method_exists( 'WP_Theme_JSON', 'get_viewport_media_queries' ) || ! function_exists( 'wp_get_global_settings' ) ) {
-			return array();
-		}
-		$queries = WP_Theme_JSON::get_viewport_media_queries( wp_get_global_settings( array( 'viewport' ) ) );
-		$out     = array();
-		foreach ( array( 'tablet', 'mobile' ) as $viewport ) {
-			if ( isset( $queries[ '@' . $viewport ] ) ) {
-				$out[ $viewport ] = $queries[ '@' . $viewport ];
-			}
-		}
-		return $out;
-	}
-
-	/**
 	 * Return the minimal host layout stylesheet.
 	 *
 	 * @return string
 	 */
 	public static function stylesheet(): string {
-		$canvas   = ( new Static_Site_Importer_Canvas_Layout_Adapter() )->host_class();
-		$grid     = ( new Static_Site_Importer_Core_Grid_Layout_Adapter() )->host_class();
-		$columns  = (string) Static_Site_Importer_Core_Grid_Layout_Adapter::COLUMNS;
+		$canvas = ( new Static_Site_Importer_Canvas_Layout_Adapter() )->host_class();
 		// The adapter owns the host's layout, so its release must beat the
 		// source's own layout rules (author and editor-scoped stylesheets).
-		$css      = '.' . $canvas . '{display:block!important}';
-		$css     .= '.' . $canvas . '>.wp-block-tabor-canvas{width:100%;max-width:none;margin-left:0;margin-right:0}';
-		// Core renders the host's own columnCount and blockGap; the release only
-		// has to outrank the source's rules, so it reads them back from the
-		// custom properties `expose_grid_host()` writes on the rendered host.
-		$css     .= '.' . $grid . '{display:grid!important;grid-template-columns:repeat(var(--ssi-layout-columns,' . $columns . '),minmax(0,1fr))!important;grid-template-rows:none!important;grid-template-areas:none!important;column-gap:var(--ssi-layout-column-gap,0px)!important;row-gap:var(--ssi-layout-row-gap,0px)!important}';
-		// Per-viewport container values, at the site's own viewport breakpoints.
-		foreach ( self::viewport_media_queries() as $viewport => $query ) {
-			$css .= $query . '{.' . $grid . '{grid-template-columns:repeat(var(--ssi-layout-columns-' . $viewport . ',var(--ssi-layout-columns,' . $columns . ')),minmax(0,1fr))!important;column-gap:var(--ssi-layout-column-gap-' . $viewport . ',var(--ssi-layout-column-gap,0px))!important;row-gap:var(--ssi-layout-row-gap-' . $viewport . ',var(--ssi-layout-row-gap,0px))!important}}';
-		}
-		// Placement is now the only thing positioning or sizing each placed
-		// item: source item widths, grid areas and flex sizing would fight it.
-		$items    = '.' . $canvas . ' .canvas__grid>*>*,.' . $grid . '>*';
-		$css     .= $items . '{width:auto!important;max-width:none!important;min-width:0!important;flex:none!important;grid-area:auto;margin-left:0!important;margin-right:0!important}';
+		$css  = '.' . $canvas . '{display:block!important}';
+		$css .= '.' . $canvas . '>.wp-block-tabor-canvas{width:100%;max-width:none;margin-left:0;margin-right:0}';
+		// A Canvas frame is each placed block's whole measured box: source item
+		// widths, grid areas, flex sizing and margins must not add to or fight it.
+		$css .= '.' . $canvas . ' .canvas__grid>*>*{width:auto!important;max-width:none!important;min-width:0!important;flex:none!important;grid-area:auto;margin:0!important}';
 		return $css;
 	}
 }
