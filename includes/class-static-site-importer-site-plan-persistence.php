@@ -1449,7 +1449,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 	/** Snapshot all runtime state this materializer can mutate before activation. */
 	public static function journal_runtime( array &$state ): void {
-		foreach ( array( 'stylesheet', 'template', 'show_on_front', 'page_on_front', 'use_smilies', 'blogname' ) as $option ) {
+		foreach ( array( 'stylesheet', 'template', 'show_on_front', 'page_on_front', 'use_smilies', 'blogname', 'site_icon' ) as $option ) {
 			if ( isset( $state['rollback']['options'][ $option ] ) ) {
 				continue;
 			}

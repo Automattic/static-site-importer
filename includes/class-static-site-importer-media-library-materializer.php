@@ -108,9 +108,64 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			unset( $resolved_page );
 			$report['bound_block_count'] += $bound;
 		}
+		$error                      = null;
+		$report['site_icon']        = self::materialize_site_icon( $state, $theme_uri, $theme_dir, $attachments, $error );
+		if ( $error instanceof WP_Error ) {
+			return $error;
+		}
 		$report['attachment_count'] = count( array_filter( $attachments ) );
 
 		return $report;
+	}
+
+	/**
+	 * Make the source favicon the WordPress site icon, so the owner sees and can
+	 * change it under Site Identity. An owner's existing icon is never replaced.
+	 *
+	 * @param array<string,mixed> $state
+	 * @param array<string,int>   $attachments
+	 */
+	private static function materialize_site_icon( array &$state, string $theme_uri, string $theme_dir, array &$attachments, ?WP_Error &$error ): int {
+		if ( (int) get_option( 'site_icon', 0 ) > 0 ) {
+			return 0;
+		}
+		$pages = $state['resolved']['pages'] ?? array();
+		usort( $pages, static fn( $left, $right ): int => (int) empty( $left['entrypoint'] ) <=> (int) empty( $right['entrypoint'] ) );
+		foreach ( array( 'icon', 'apple-touch-icon' ) as $wanted ) {
+			foreach ( $pages as $page ) {
+				foreach ( ( is_array( $page['document_metadata']['links'] ?? null ) ? $page['document_metadata']['links'] : array() ) as $link ) {
+					$rels = preg_split( '/\s+/', strtolower( trim( (string) ( $link['rel'] ?? '' ) ) ) ) ?: array();
+					$url  = (string) ( $link['resolved_url'] ?? '' );
+					if ( ! in_array( $wanted, $rels, true ) || '' === $url ) {
+						continue;
+					}
+					$relative = self::theme_relative_raster( $url, $theme_uri );
+					if ( null === $relative ) {
+						continue;
+					}
+					if ( ! array_key_exists( $relative, $attachments ) ) {
+						$file                     = $theme_dir . '/' . $relative;
+						$identity                 = basename( $theme_dir ) . '/' . $relative . '#' . ( is_readable( $file ) ? (string) hash_file( 'sha256', $file ) : '' );
+						$attachments[ $relative ] = self::attachment_for( $file, $relative, $identity, 'Site icon', $state, $error );
+						if ( null !== $error ) {
+							return 0;
+						}
+					}
+					if ( $attachments[ $relative ] > 0 ) {
+						// Journal the prior value now; the runtime snapshot runs later.
+						if ( ! isset( $state['rollback']['options']['site_icon'] ) ) {
+							$state['rollback']['options']['site_icon'] = array(
+								'exists' => false !== get_option( 'site_icon', false ),
+								'value'  => get_option( 'site_icon', 0 ),
+							);
+						}
+						update_option( 'site_icon', $attachments[ $relative ] );
+						return $attachments[ $relative ];
+					}
+				}
+			}
+		}
+		return 0;
 	}
 
 	/**
