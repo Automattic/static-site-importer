@@ -52,7 +52,7 @@ jobs:
         with:
           prepare-only: true
           extension: wordpress
-          extension-ref: d9c54bf281cbd97b39a57c72b7447c125d1bab20 # wordpress-v3.49.1
+          extension-ref: 7a58eb1d3f0e39380ae9e7bcd2f6afde54aa2141 # homeboy-extensions main, Composer adapter lockfile (#2876)
           component: static-site-importer
 
       # Exit 0: every edge current. 1: at least one behind. 2: at least one
@@ -99,13 +99,16 @@ jobs:
       # Homeboy CLI acquisition is left at the composite action's default
       # ("latest" released binary): `homeboy release resolve` and the
       # `extension action --payload` passthrough are now released contracts.
-      # extension-ref and action-ref are pinned to exact commits of released
-      # tags so the Composer contract and release pipeline stay reproducible.
+      # extension-ref and action-ref are pinned to exact commits so the Composer
+      # contract and release pipeline stay reproducible. extension-ref points at
+      # a main commit rather than a wordpress-v* tag: the Composer adapter's
+      # lockfile declaration lives in the shared dependency-adapters asset,
+      # outside the wordpress component, so it ships in no component release.
       - uses: Extra-Chill/homeboy-action@cad123d49bc1ef414d0ac802a436643294d3a45c # v2.20.3
         with:
           prepare-only: true
           extension: wordpress
-          extension-ref: d9c54bf281cbd97b39a57c72b7447c125d1bab20 # wordpress-v3.49.1
+          extension-ref: 7a58eb1d3f0e39380ae9e7bcd2f6afde54aa2141 # homeboy-extensions main, Composer adapter lockfile (#2876)
           component: static-site-importer
 
       - name: Run Homeboy dependency refresh action
@@ -261,7 +264,7 @@ jobs:
       release-branch: main
       dry-run: ${{ inputs.dry-run || false }}
       extension: wordpress
-      extension-ref: d9c54bf281cbd97b39a57c72b7447c125d1bab20 # wordpress-v3.49.1
+      extension-ref: 7a58eb1d3f0e39380ae9e7bcd2f6afde54aa2141 # homeboy-extensions main, Composer adapter lockfile (#2876)
       component: static-site-importer
       action-ref: cad123d49bc1ef414d0ac802a436643294d3a45c # v2.20.3
     secrets: inherit
