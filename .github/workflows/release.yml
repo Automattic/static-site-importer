@@ -154,7 +154,9 @@ jobs:
   release-import-gate:
     name: Release import gate (html-site-import zip)
     needs: refresh
-    if: needs.refresh.result == 'success'
+    # always(): `check` runs only on schedule, and a skipped ancestor would
+    # otherwise skip this job on every push and dispatch.
+    if: always() && needs.refresh.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -253,7 +255,7 @@ jobs:
   release:
     name: Release prepared SSI commit
     needs: [refresh, release-import-gate]
-    if: needs.refresh.result == 'success' && needs.release-import-gate.result == 'success'
+    if: always() && needs.refresh.result == 'success' && needs.release-import-gate.result == 'success'
     # Pinned to an exact release tag, not the moving `v2` alias. `v2` currently
     # points at v2.18.0, which predates the `prepared-ref` input, and passing an
     # input a reusable workflow does not declare fails the run at startup with
