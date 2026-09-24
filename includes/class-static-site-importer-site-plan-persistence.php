@@ -199,6 +199,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( is_wp_error( $publications ) ) {
 			return self::failed_receipt( $state, $publications->get_error_code() );
 		}
+		$media_library = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
+		if ( is_wp_error( $media_library ) ) {
+			return self::failed_receipt_from_error( $state, $media_library );
+		}
+		$state['applied']['media_library'] = $media_library;
 		$font_materialization = self::apply_font_overlay( $state, $font_overlay );
 		if ( is_wp_error( $font_materialization ) ) {
 			return self::failed_receipt_from_error( $state, $font_materialization );
@@ -1545,6 +1550,16 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				self::record_rollback_failure( $state, 'file', (string) $path, $error );
 			}
 		}
+		foreach ( array_reverse( $state['applied']['attachments'] ?? array() ) as $attachment_id ) {
+			try {
+				if ( function_exists( 'wp_delete_attachment' ) && ! wp_delete_attachment( (int) $attachment_id, true ) ) {
+					throw new RuntimeException( 'materialization_rollback_attachment_delete_failed' );
+				}
+			} catch ( Throwable $error ) {
+				self::record_rollback_failure( $state, 'post', (string) $attachment_id, $error );
+			}
+		}
+		$state['applied']['attachments'] = array();
 		foreach ( array_reverse( $state['applied']['posts'] ?? array() ) as $applied ) {
 			$id     = (int) ( $applied['id'] ?? 0 );
 			$before = $state['rollback']['posts'][ $id ] ?? $state['rollback']['posts'][ 'new:' . (string) ( $applied['source_path'] ?? '' ) ] ?? null;
