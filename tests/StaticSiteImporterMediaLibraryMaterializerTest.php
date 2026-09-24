@@ -62,6 +62,40 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 		$this->assertNull( get_post( $attachment ) );
 	}
 
+	/** The source favicon becomes the site icon; rollback restores the prior value. */
+	public function test_source_favicon_becomes_site_icon_and_rolls_back(): void {
+		delete_option( 'site_icon' );
+		$state = $this->state_with_page( $this->page_markup() );
+		$state['resolved']['pages'][0]['entrypoint']        = true;
+		$state['resolved']['pages'][0]['document_metadata'] = array(
+			'links' => array( array( 'rel' => 'icon', 'resolved_url' => get_theme_root_uri() . '/' . $this->slug() . '/media/photo.png' ) ),
+		);
+
+		$report = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
+
+		$this->assertGreaterThan( 0, $report['site_icon'] );
+		$this->assertSame( $report['site_icon'], (int) get_option( 'site_icon' ) );
+		$this->assertSame( 1, $report['attachment_count'], 'the icon reuses the page image attachment for the same file' );
+
+		Static_Site_Importer_Site_Plan_Persistence::rollback( $state );
+		$this->assertSame( 0, (int) get_option( 'site_icon', 0 ) );
+	}
+
+	/** An owner's existing site icon is kept. */
+	public function test_existing_site_icon_is_kept(): void {
+		update_option( 'site_icon', 999999 );
+		$state = $this->state_with_page( $this->page_markup() );
+		$state['resolved']['pages'][0]['document_metadata'] = array(
+			'links' => array( array( 'rel' => 'icon', 'resolved_url' => get_theme_root_uri() . '/' . $this->slug() . '/media/photo.png' ) ),
+		);
+
+		$report = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
+
+		$this->assertSame( 0, $report['site_icon'] );
+		$this->assertSame( 999999, (int) get_option( 'site_icon' ) );
+		delete_option( 'site_icon' );
+	}
+
 	private function page_markup(): string {
 		$uri = get_theme_root_uri() . '/' . $this->slug();
 		return '<!-- wp:image {"className":"hero"} --><figure class="wp-block-image hero"><img src="' . $uri . '/media/photo.png" alt="Studio photo"/></figure><!-- /wp:image -->'
