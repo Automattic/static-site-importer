@@ -67,6 +67,10 @@ final class Static_Site_Importer_Layout_Release {
 		$css      = '.' . $canvas . '{display:block!important}';
 		$css     .= '.' . $canvas . '>.wp-block-tabor-canvas{width:100%;max-width:none;margin-left:0;margin-right:0}';
 		$css     .= '.' . $grid . '{display:grid!important;grid-template-columns:repeat(' . $columns . ',minmax(0,1fr))!important;grid-template-rows:none!important;grid-template-areas:none!important}';
+		// Placement is now the only thing positioning or sizing each placed
+		// item: source item widths, grid areas and flex sizing would fight it.
+		$items    = '.' . $canvas . ' .canvas__grid>*>*,.' . $grid . '>*';
+		$css     .= $items . '{width:auto!important;max-width:none!important;min-width:0!important;flex:none!important;grid-area:auto;margin-left:0!important;margin-right:0!important}';
 		return $css;
 	}
 }

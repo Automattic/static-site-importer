@@ -61,6 +61,27 @@ export function buildArgv( wpCommand, extra ) {
 }
 
 /**
+ * The active theme's `settings.viewport`, or null when unset or unreadable.
+ *
+ * @param {(argv:Array<string>)=>{status:number,stdout:string}} runWpCli
+ * @param {string} wpCommand
+ * @returns {{tablet?:string,mobile?:string}|null}
+ */
+export function readSiteViewport( runWpCli, wpCommand ) {
+	if ( '' === wpCommand.trim() ) {
+		return null;
+	}
+	const raw = runWpCli( buildArgv( wpCommand, [ 'eval', 'echo wp_json_encode( wp_get_global_settings( array( "viewport" ) ) );' ] ) );
+	const line = String( raw.stdout || '' ).trim().split( '\n' ).pop();
+	try {
+		const value = JSON.parse( line );
+		return value && 'object' === typeof value && ! Array.isArray( value ) ? value : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Default WP-CLI runner: a real child process.
  *
  * @param {Array<string>} argv Full argv, including the `wp`/`studio` prefix.
@@ -247,10 +268,28 @@ async function loginAsAdmin( page, origin, adminUser, adminPassword ) {
 	await page.goto( loginUrl );
 	await page.fill( '#user_login', adminUser );
 	await page.fill( '#user_pass', adminPassword );
-	await Promise.all( [ page.waitForNavigation(), page.click( '#wp-submit' ) ] );
+	await Promise.all( [ page.waitForURL( url => ! url.pathname.endsWith( '/wp-login.php' ), { timeout: 90000 } ), page.click( '#wp-submit' ) ] );
 }
 
-function defaultCaptureSections( { origin, adminUser, adminPassword, pageId, widths } ) {
+/**
+ * The three capture widths the adapters map onto the site's own breakpoints:
+ * one inside each of WordPress's desktop, tablet and mobile ranges, read from
+ * the theme's `settings.viewport` (defaults 782/480).
+ *
+ * @param {{tablet?:string,mobile?:string}|null} viewport
+ * @returns {Array<number>}
+ */
+export function captureWidthsForViewport( viewport ) {
+	const px = ( value, fallback ) => {
+		const match = /^([0-9.]+)px$/.exec( String( value ?? '' ).trim() );
+		return match ? Number( match[ 1 ] ) : fallback;
+	};
+	const tablet = px( viewport?.tablet, 782 );
+	const mobile = Math.min( px( viewport?.mobile, 480 ), tablet - 1 );
+	return [ 1440, Math.round( ( tablet + mobile ) / 2 ), Math.max( 320, Math.min( 390, mobile ) ) ];
+}
+
+function defaultCaptureSections( { origin, adminUser, adminPassword, pageId, viewport } ) {
 	return async () => {
 		const { chromium } = await import( 'playwright' );
 		const browser = await chromium.launch();
@@ -258,7 +297,7 @@ function defaultCaptureSections( { origin, adminUser, adminPassword, pageId, wid
 			const page = await browser.newPage();
 			await loginAsAdmin( page, origin, adminUser, adminPassword );
 			await page.goto( captureUrl( origin, pageId ) );
-			return await captureLayoutSections( page, widths );
+			return await captureLayoutSections( page, captureWidthsForViewport( viewport ) );
 		} finally {
 			await browser.close();
 		}
@@ -313,7 +352,7 @@ function normalizeOptions( input ) {
 		receiptPath: input.receiptPath ? String( input.receiptPath ) : '',
 		tmpDir: input.tmpDir ? String( input.tmpDir ) : os.tmpdir(),
 		runWpCli: input.runWpCli ?? defaultRunWpCli,
-		captureSections: input.captureSections ?? defaultCaptureSections( input ),
+		captureSections: input.captureSections ?? defaultCaptureSections( { ...input, viewport: input.viewport ?? readSiteViewport( input.runWpCli ?? defaultRunWpCli, String( input.wpCommand || '' ) ) } ),
 		measureSection: input.measureSection ?? defaultMeasureSection( input ),
 	};
 }

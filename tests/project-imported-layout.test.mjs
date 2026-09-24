@@ -9,6 +9,8 @@ import {
 	interpretProjectLayoutRun,
 	projectImportedLayout,
 	readLayoutProjectionInstructions,
+	captureWidthsForViewport,
+	readSiteViewport,
 } from '../tools/project-imported-layout.mjs';
 
 const PAGE_ID = 42;
@@ -437,4 +439,23 @@ test( 'readLayoutProjectionInstructions returns null when no projection was requ
 	} finally {
 		fs.rmSync( path, { force: true } );
 	}
+} );
+
+test( 'capture widths land inside the site\'s own desktop, tablet and mobile ranges', () => {
+	assert.deepEqual( captureWidthsForViewport( null ), [ 1440, 631, 390 ] );
+	assert.deepEqual( captureWidthsForViewport( { tablet: '959px' } ), [ 1440, 720, 390 ] );
+	assert.deepEqual( captureWidthsForViewport( { tablet: '768px', mobile: '600px' } ), [ 1440, 684, 390 ] );
+	assert.deepEqual( captureWidthsForViewport( { tablet: '900px', mobile: '360px' } ), [ 1440, 630, 360 ] );
+} );
+
+test( 'readSiteViewport reads the active theme viewport through WP-CLI', () => {
+	const calls = [];
+	const runner = argv => {
+		calls.push( argv );
+		return { status: 0, stdout: 'Notice\n{"tablet":"959px"}\n', stderr: '' };
+	};
+	assert.deepEqual( readSiteViewport( runner, 'studio wp' ), { tablet: '959px' } );
+	assert.deepEqual( calls[ 0 ].slice( 0, 3 ), [ 'studio', 'wp', 'eval' ] );
+	assert.equal( readSiteViewport( () => ( { status: 0, stdout: '[]', stderr: '' } ), 'wp' ), null );
+	assert.equal( readSiteViewport( () => ( { status: 1, stdout: '', stderr: 'boom' } ), 'wp' ), null );
 } );
