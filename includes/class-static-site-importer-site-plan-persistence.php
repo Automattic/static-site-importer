@@ -1477,7 +1477,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				'to'          => $move['to'],
 			);
 		}
-		array_push( $state['diagnostics'], ...Static_Site_Importer_Rewrite_Base_Collision::unmovable_diagnostics( $paths ) );
+		array_push( $state['diagnostics'], ...Static_Site_Importer_Rewrite_Base_Collision::shadowed_route_diagnostics( $paths ) );
 		return true;
 	}
 

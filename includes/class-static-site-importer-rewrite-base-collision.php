@@ -16,9 +16,11 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * Core lets a site move the category and tag bases with the `category_base`
  * and `tag_base` options (Settings > Permalinks), so a colliding base is moved
- * to a free path and the source URL keeps pointing at the imported page. The
- * author, search, and post-format bases have no option; a page under one of
- * them is reported instead of silently 404ing.
+ * to a free path and the source URL keeps pointing at the imported page. A
+ * taxonomy the destination already uses keeps its base, so established archive
+ * URLs never change without the owner's say. The author, search, and
+ * post-format bases have no option. A page left under any base is reported
+ * instead of silently 404ing.
  */
 final class Static_Site_Importer_Rewrite_Base_Collision {
 	/** Core taxonomies whose rewrite base an option can move. */
@@ -38,7 +40,7 @@ final class Static_Site_Importer_Rewrite_Base_Collision {
 		$moves = array();
 		foreach ( self::MOVABLE_BASES as $taxonomy => $option ) {
 			$base = self::static_prefix( $wp_rewrite->get_extra_permastruct( $taxonomy ) );
-			if ( '' === $base || ! self::shadows( $base, $page_paths ) ) {
+			if ( '' === $base || ! self::shadows( $base, $page_paths ) || self::in_use( $taxonomy ) ) {
 				continue;
 			}
 			$target = self::free_base( $base, $page_paths );
@@ -94,20 +96,43 @@ final class Static_Site_Importer_Rewrite_Base_Collision {
 	}
 
 	/**
-	 * Report imported pages that a base without a core option still shadows.
+	 * Whether any term of the taxonomy has published posts, so its archive URLs are live.
+	 *
+	 * The default category is ignored: every site has it, and a fresh site's
+	 * sample post alone does not make the category archives established.
+	 */
+	private static function in_use( string $taxonomy ): bool {
+		$terms = get_terms(
+			array(
+				'taxonomy'   => $taxonomy,
+				'hide_empty' => true, // Term counts cover published posts only.
+				'exclude'    => 'category' === $taxonomy ? array( (int) get_option( 'default_category' ) ) : array(),
+				'fields'     => 'ids',
+				'number'     => 1,
+			)
+		);
+		return is_array( $terms ) && array() !== $terms;
+	}
+
+	/**
+	 * Report imported pages that a core rewrite base still shadows after any moves.
 	 *
 	 * @param string[] $page_paths Imported page paths.
 	 * @return array<int,array<string,string>>
 	 */
-	public static function unmovable_diagnostics( array $page_paths ): array {
+	public static function shadowed_route_diagnostics( array $page_paths ): array {
 		global $wp_rewrite;
-		$bases       = array(
-			'author'      => self::static_prefix( $wp_rewrite->get_author_permastruct() ),
-			'search'      => self::static_prefix( $wp_rewrite->get_search_permastruct() ),
-			'post_format' => self::static_prefix( $wp_rewrite->get_extra_permastruct( 'post_format' ) ),
+		$taxonomy_detail = ' The taxonomy already has published posts, so its base was kept; the site owner can change it in Settings > Permalinks.';
+		$fixed_detail    = ' Core has no option to move that base.';
+		$bases           = array(
+			'category'    => array( self::static_prefix( $wp_rewrite->get_extra_permastruct( 'category' ) ), $taxonomy_detail ),
+			'tag'         => array( self::static_prefix( $wp_rewrite->get_extra_permastruct( 'post_tag' ) ), $taxonomy_detail ),
+			'author'      => array( self::static_prefix( $wp_rewrite->get_author_permastruct() ), $fixed_detail ),
+			'search'      => array( self::static_prefix( $wp_rewrite->get_search_permastruct() ), $fixed_detail ),
+			'post_format' => array( self::static_prefix( $wp_rewrite->get_extra_permastruct( 'post_format' ) ), $fixed_detail ),
 		);
-		$diagnostics = array();
-		foreach ( $bases as $kind => $base ) {
+		$diagnostics     = array();
+		foreach ( $bases as $kind => list( $base, $detail ) ) {
 			if ( '' === $base ) {
 				continue;
 			}
@@ -118,7 +143,7 @@ final class Static_Site_Importer_Rewrite_Base_Collision {
 						'severity'    => 'warning',
 						'rewrite'     => $kind,
 						'target_path' => $path,
-						'detail'      => 'WordPress routes this path to its ' . $kind . ' rewrite before page rules, and core has no option to move that base.',
+						'detail'      => 'WordPress routes this path to its ' . $kind . ' rewrite before page rules.' . $detail,
 					);
 				}
 			}
