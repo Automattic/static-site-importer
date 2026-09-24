@@ -3,9 +3,10 @@ import test from 'node:test';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { CAPTURE_VIEWPORTS, MODEL_SCHEMA, captureLayoutPlacement } from '../lib/layout-placement-capture.mjs';
+import { CAPTURE_VIEWPORTS, MODEL_SCHEMA, SECTIONS_SCHEMA, captureLayoutPlacement, captureLayoutSections } from '../lib/layout-placement-capture.mjs';
 
 const fixtureUrl = pathToFileURL( 'tests/fixtures/layout-placement-capture-fixture.html' ).href;
+const sectionsFixtureUrl = pathToFileURL( 'tests/fixtures/layout-sections-capture-fixture.html' ).href;
 
 // Playwright is a devDependency installed by CI (`npm ci` plus
 // `npx playwright install chromium`); the deterministic gate environment runs
@@ -78,6 +79,71 @@ test( 'capture helper rejects a page without a marked host section', { skip: ski
 		const page = await browser.newPage();
 		await page.setContent( '<main><div data-ssi-block-path="0">No nested markers here.</div></main>' );
 		await assert.rejects( () => captureLayoutPlacement( page ), /No marked host section found/ );
+	} finally {
+		await browser.close();
+	}
+} );
+
+test( 'captureLayoutSections descends single-child wrappers and skips a section without items', { skip: skipWithoutPlaywright }, async () => {
+	const browser = await chromium.launch();
+	try {
+		const page = await browser.newPage();
+		await page.goto( sectionsFixtureUrl );
+		const result = await captureLayoutSections( page, [ 1440 ] );
+
+		assert.equal( result.schema, SECTIONS_SCHEMA );
+		assert.equal( result.sections.length, 2 );
+		assert.deepEqual( result.skipped, [ { path: '0.1.0', reason: 'section_without_items' } ] );
+
+		const [ hero, footer ] = result.sections;
+
+		// 0.0 -> 0.0.0 -> 0.0.0.0 is a chain of marked single-child wrappers;
+		// the host is the element where descent finally finds 2+ items.
+		assert.equal( hero.schema, MODEL_SCHEMA );
+		assert.equal( hero.host.path, '0.0.0.0' );
+		assert.deepEqual( hero.items.map( item => item.path ), [ '0.0.0.0.0', '0.0.0.0.1', '0.0.0.0.2' ] );
+		assert.deepEqual( hero.host.viewports[ '1440' ], { x: 0, y: 0, width: 1200, height: 200 } );
+		assert.deepEqual( hero.items[ 0 ].viewports[ '1440' ], { x: 0, y: 0, width: 100, height: 100 } );
+		assert.deepEqual( hero.items[ 1 ].viewports[ '1440' ], { x: 100, y: 0, width: 100, height: 100 } );
+		assert.deepEqual( hero.items[ 2 ].viewports[ '1440' ], { x: 200, y: 0, width: 100, height: 100 } );
+
+		// 0.2 already has 2 marked direct children, so no descent is needed.
+		assert.equal( footer.host.path, '0.2' );
+		assert.deepEqual( footer.items.map( item => item.path ), [ '0.2.0', '0.2.1' ] );
+		assert.deepEqual( footer.host.viewports[ '1440' ], { x: 0, y: 250, width: 1200, height: 80 } );
+		assert.deepEqual( footer.items[ 0 ].viewports[ '1440' ], { x: 0, y: 250, width: 40, height: 80 } );
+		assert.deepEqual( footer.items[ 1 ].viewports[ '1440' ], { x: 40, y: 250, width: 40, height: 80 } );
+	} finally {
+		await browser.close();
+	}
+} );
+
+test( 'every captured section validates through the SSI placement model contract', { skip: skipWithoutPlaywright }, async () => {
+	const browser = await chromium.launch();
+	try {
+		const page = await browser.newPage();
+		await page.goto( sectionsFixtureUrl );
+		const result = await captureLayoutSections( page, CAPTURE_VIEWPORTS );
+		const code = String.raw`
+namespace {
+	define( 'ABSPATH', getcwd() . '/' );
+	require 'includes/class-static-site-importer-layout-placement-model.php';
+	$models = json_decode( getenv( 'MODELS_JSON' ), true );
+	foreach ( $models as $model ) {
+		$result = Static_Site_Importer_Layout_Placement_Model::validate( $model );
+		if ( count( $result['errors'] ) !== 0 ) {
+			echo 'invalid';
+			exit;
+		}
+	}
+	echo 'valid';
+}`;
+		const output = execFileSync( 'php', [ '-r', code ], {
+			cwd: process.cwd(),
+			encoding: 'utf8',
+			env: { ...process.env, MODELS_JSON: JSON.stringify( result.sections ) },
+		} );
+		assert.equal( output.trim(), 'valid' );
 	} finally {
 		await browser.close();
 	}

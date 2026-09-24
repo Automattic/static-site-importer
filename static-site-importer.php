@@ -139,7 +139,6 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-layout-placement-model.php',
 	'class-static-site-importer-layout-adapter.php',
 	'class-static-site-importer-none-layout-adapter.php',
-	'class-static-site-importer-core-grid-layout-adapter.php',
 	'class-static-site-importer-canvas-layout-adapter.php',
 	'class-static-site-importer-layout-adapter-registry.php',
 	'class-static-site-importer-layout-projector.php',

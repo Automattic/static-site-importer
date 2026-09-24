@@ -61,6 +61,14 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 			'type' => 'string',
 			'enum' => array( 'block', 'classic' ),
 		),
+		// Opt-in, ordered adapter preference for the post-import layout
+		// projection pipeline step. Empty (the default) means the step is a
+		// no-op: SSI's PHP import never renders a page, so this only records
+		// the request for `tools/project-imported-layout.mjs` to carry out.
+		'layout_adapters'                      => array(
+			'type'  => 'array',
+			'items' => array( 'type' => 'string' ),
+		),
 	);
 
 	/**
@@ -103,6 +111,7 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 				'client_script_provenance'             => array(),
 				'client_script_isolated'               => false,
 				'theme_materialization'                => 'block',
+				'layout_adapters'                      => array(),
 			),
 			$defaults
 		);
@@ -122,6 +131,13 @@ class Static_Site_Importer_Website_Artifact_Import_Input {
 		foreach ( array( 'products_manifest', 'commerce_context', 'asset_map', 'compiler_options', 'source_metadata', 'validation_artifacts', 'quality_budget', 'client_script_provenance' ) as $field ) {
 			$values[ $field ] = is_array( $values[ $field ] ) ? $values[ $field ] : array();
 		}
+
+		// An ordered list of adapter ids; unlike the map-typed fields above,
+		// order is meaningful (adapter preference), so it is re-indexed
+		// rather than merged, and every entry is coerced to a string.
+		$values['layout_adapters'] = is_array( $values['layout_adapters'] )
+			? array_values( array_map( 'strval', array_filter( $values['layout_adapters'], 'is_scalar' ) ) )
+			: array();
 
 		return $values;
 	}

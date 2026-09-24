@@ -66,15 +66,90 @@ namespace {
 		}
 	}
 
+	if ( ! class_exists( 'WP_Post' ) ) {
+		class WP_Post {
+			public int $ID;
+			public string $post_content;
+			public function __construct( int $id, string $post_content ) {
+				$this->ID           = $id;
+				$this->post_content = $post_content;
+			}
+		}
+	}
+
+	if ( ! function_exists( 'get_post' ) ) {
+		function get_post( $id ) {
+			$id = (int) $id;
+			if ( ! isset( $GLOBALS['stub_posts'][ $id ] ) ) {
+				return null;
+			}
+			return new WP_Post( $id, $GLOBALS['stub_posts'][ $id ] );
+		}
+	}
+
+	if ( ! function_exists( 'wp_update_post' ) ) {
+		function wp_update_post( array $postarr, bool $wp_error = false ) {
+			unset( $wp_error );
+			$id = (int) ( $postarr['ID'] ?? 0 );
+			if ( ! isset( $GLOBALS['stub_posts'][ $id ] ) ) {
+				return new WP_Error( 'stub_missing_post', 'No such stub post.' );
+			}
+			$GLOBALS['stub_posts'][ $id ] = (string) ( $postarr['post_content'] ?? '' );
+			return $id;
+		}
+	}
+
+	if ( ! function_exists( 'wp_slash' ) ) {
+		function wp_slash( $value ) {
+			return $value;
+		}
+	}
+
+	if ( ! function_exists( 'get_post_meta' ) ) {
+		function get_post_meta( $id, $key, $single = false ) {
+			unset( $single );
+			return $GLOBALS['stub_post_meta'][ (int) $id ][ $key ] ?? '';
+		}
+	}
+
+	if ( ! function_exists( 'update_post_meta' ) ) {
+		function update_post_meta( $id, $key, $value ) {
+			$GLOBALS['stub_post_meta'][ (int) $id ][ $key ] = $value;
+			return true;
+		}
+	}
+
+	if ( ! function_exists( 'delete_post_meta' ) ) {
+		function delete_post_meta( $id, $key ) {
+			unset( $GLOBALS['stub_post_meta'][ (int) $id ][ $key ] );
+			return true;
+		}
+	}
+
+	if ( ! class_exists( 'WP_CLI' ) ) {
+		class WP_CLI {
+			public static array $lines = array();
+			public static function line( string $text ): void {
+				self::$lines[] = $text;
+			}
+			public static function error( string $message ): void {
+				throw new RuntimeException( $message );
+			}
+			public static function halt( int $code ): void {
+				throw new RuntimeException( 'halt:' . $code );
+			}
+		}
+	}
+
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-layout-placement-model.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-layout-adapter.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-none-layout-adapter.php';
-	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-core-grid-layout-adapter.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-canvas-layout-adapter.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-layout-adapter-registry.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-layout-projector.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-layout-release.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-layout-marker-filter.php';
+	require_once dirname( __DIR__ ) . '/includes/cli.php';
 
 	$failures   = array();
 	$assertions = 0;
@@ -186,7 +261,7 @@ namespace {
 	$assert( array( 'default_provider' => 'none', 'option' => 'static_site_importer_layout_plugin', 'filter' => 'ssi_layout_plugin' ) === ( $capabilities['layout'] ?? null ), 'layout-capability-contract' );
 	$assert( 'none' === Static_Site_Importer_Layout_Adapter_Registry::provider_for( 'layout' ), 'layout-provider-defaults-to-none' );
 	$assert( Static_Site_Importer_Layout_Adapter_Registry::layout_adapter() instanceof Static_Site_Importer_None_Layout_Adapter, 'default-layout-adapter-is-none' );
-	$assert( Static_Site_Importer_Layout_Adapter_Registry::adapter( 'core-grid' ) instanceof Static_Site_Importer_Core_Grid_Layout_Adapter, 'core-grid-adapter-registered-by-id' );
+	$assert( null === Static_Site_Importer_Layout_Adapter_Registry::adapter( 'core-grid' ) && Static_Site_Importer_Layout_Adapter_Registry::adapter( 'canvas' ) instanceof Static_Site_Importer_Canvas_Layout_Adapter, 'only-the-canvas-adapter-is-registered' );
 	$assert( null === Static_Site_Importer_Layout_Adapter_Registry::adapter_for_capability( 'form' ), 'unknown-capability-has-no-adapter' );
 
 	$GLOBALS['stub_layout_option'] = 'canvas';
@@ -196,8 +271,8 @@ namespace {
 	$assert( null === Static_Site_Importer_Layout_Adapter_Registry::layout_adapter(), 'unregistered-provider-resolves-to-no-adapter' );
 	unset( $GLOBALS['stub_layout_option'] );
 
-	$GLOBALS['stub_layout_provider_filter'] = 'core-grid';
-	$assert( 'core-grid' === Static_Site_Importer_Layout_Adapter_Registry::provider_for( 'layout' ), 'layout-provider-filter-override' );
+	$GLOBALS['stub_layout_provider_filter'] = 'canvas';
+	$assert( 'canvas' === Static_Site_Importer_Layout_Adapter_Registry::provider_for( 'layout' ), 'layout-provider-filter-override' );
 	unset( $GLOBALS['stub_layout_provider_filter'] );
 
 	$GLOBALS['stub_cross_provider_filter'] = 'canvas';
@@ -209,32 +284,7 @@ namespace {
 	$rows = Static_Site_Importer_Layout_Adapter_Registry::dependency_rows( new Static_Site_Importer_Canvas_Layout_Adapter() );
 	$assert( array( 'tabor/canvas' ) === array_keys( $rows ) && false === $rows['tabor/canvas']['active'], 'canvas-dependency-row-reports-missing-block-type' );
 	$assert( false === Static_Site_Importer_Layout_Adapter_Registry::dependencies_available( new Static_Site_Importer_Canvas_Layout_Adapter() ), 'canvas-dependency-missing-when-block-type-unregistered' );
-	$assert( true === Static_Site_Importer_Layout_Adapter_Registry::dependencies_available( new Static_Site_Importer_Core_Grid_Layout_Adapter() ), 'core-grid-has-no-dependencies' );
 	WP_Block_Type_Registry::$registered = true;
-
-	// --- Core-grid projection ----------------------------------------------------
-	$core_grid = Static_Site_Importer_Layout_Projector::project( $original_markup, $validation['model'], new Static_Site_Importer_Core_Grid_Layout_Adapter() );
-	$assert( true === $core_grid['applied'] && 3 === $core_grid['placed'] && '' === $core_grid['reason'], 'core-grid-projects-all-items', (string) wp_json_encode( $core_grid['losses'] ) );
-	$core_pieces = Static_Site_Importer_Layout_Projector::parse( $core_grid['markup'] );
-	$assert( null !== $core_pieces, 'core-grid-output-parses' );
-	$core_host = $find( $core_pieces, '0' );
-	$assert( array( 'type' => 'grid', 'columnCount' => 12 ) === ( $core_host['attrs']['layout'] ?? null ), 'core-grid-host-layout-attribute', (string) wp_json_encode( $core_host['attrs'] ?? null ) );
-	$assert( array( 'name' => 'bistro' ) === ( $core_host['attrs']['metadata'] ?? null ), 'core-grid-host-preserves-existing-attributes' );
-	$assert( false !== strpos( (string) $core_host['innerContent'][0], 'class="wp-block-group bistro ssi-layout-core-grid-host"' ), 'core-grid-host-class-appended', (string) wp_json_encode( $core_host['innerContent'][0] ?? null ) );
-	$assert( 'core/group' === ( $core_host['blockName'] ?? '' ), 'core-grid-host-keeps-block-name' );
-
-	// Base viewport rows derive from the distinct item top edges (0 and 336px).
-	$core_image = $find( $core_pieces, '0.0' );
-	$assert( array( 'columnStart' => 1, 'columnSpan' => 3, 'rowStart' => 1, 'rowSpan' => 1 ) === ( $core_image['attrs']['style']['layout'] ?? null ), 'core-grid-image-base-placement', (string) wp_json_encode( $core_image['attrs'] ?? null ) );
-	$assert( array( 'columnStart' => 1, 'columnSpan' => 6, 'rowStart' => 1, 'rowSpan' => 1 ) === ( $core_image['attrs']['style']['@tablet']['layout'] ?? null ), 'core-grid-image-tablet-override-under-breakpoint-style', (string) wp_json_encode( $core_image['attrs'] ?? null ) );
-	$assert( array( 'columnStart' => 1, 'columnSpan' => 12, 'rowStart' => 1, 'rowSpan' => 2 ) === ( $core_image['attrs']['style']['@mobile']['layout'] ?? null ), 'core-grid-image-mobile-override-under-breakpoint-style', (string) wp_json_encode( $core_image['attrs'] ?? null ) );
-	$assert( ! isset( $core_image['attrs']['style']['layout']['@tablet'] ), 'core-grid-overrides-not-nested-in-base-layout' );
-	$assert( 12 === ( $core_image['attrs']['id'] ?? null ), 'core-grid-image-preserves-existing-attributes' );
-	$core_paragraph = $find( $core_pieces, '0.1' );
-	$assert( array( 'columnStart' => 6, 'columnSpan' => 7, 'rowStart' => 1, 'rowSpan' => 2 ) === ( $core_paragraph['attrs']['style']['layout'] ?? null ), 'core-grid-paragraph-spans-both-rows', (string) wp_json_encode( $core_paragraph['attrs'] ?? null ) );
-	$core_buttons = $find( $core_pieces, '0.2' );
-	$assert( array( 'columnStart' => 1, 'columnSpan' => 2, 'rowStart' => 2, 'rowSpan' => 1 ) === ( $core_buttons['attrs']['style']['layout'] ?? null ), 'core-grid-buttons-second-row', (string) wp_json_encode( $core_buttons['attrs'] ?? null ) );
-	$assert( false === strpos( $core_grid['markup'], 'ssi-layout-canvas-host' ), 'core-grid-does-not-leak-canvas-class' );
 
 	// --- Canvas projection -------------------------------------------------------
 	$canvas = Static_Site_Importer_Layout_Projector::project( $original_markup, $validation['model'], new Static_Site_Importer_Canvas_Layout_Adapter() );
@@ -249,31 +299,35 @@ namespace {
 	$assert( 'core/template-part' === ( $find( $canvas_pieces, '0.1' )['blockName'] ?? '' ), 'ineligible-child-stays-in-host-flow-after-canvas' );
 
 	$canvas_image = $find( $canvas_pieces, '0.0.0' );
-	$assert( array( 'desktop' => array( 'column' => 1, 'row' => 1, 'columnSpan' => 3, 'rowSpan' => 8, 'gridColumns' => 12, 'frameRatio' => 1.5 ), 'tablet' => array( 'column' => 1, 'row' => 1, 'columnSpan' => 6, 'rowSpan' => 15, 'gridColumns' => 12, 'frameRatio' => 1.6 ), 'mobile' => array( 'column' => 1, 'row' => 1, 'columnSpan' => 12, 'rowSpan' => 27, 'gridColumns' => 12, 'frameRatio' => 1.75 ) ) === ( $canvas_image['attrs']['canvas'] ?? null ), 'canvas-image-placements-and-frame-ratio', (string) wp_json_encode( $canvas_image['attrs'] ?? null ) );
+	$assert( array( 'desktop' => array( 'column' => 1, 'row' => 1, 'columnSpan' => 3, 'rowSpan' => 8, 'gridColumns' => 12, 'frameRatio' => 1.5, 'free' => array( 'x' => 0.0, 'y' => 0.0, 'width' => 0.25, 'ratio' => 1.5 ) ), 'tablet' => array( 'column' => 1, 'row' => 1, 'columnSpan' => 6, 'rowSpan' => 15, 'gridColumns' => 12, 'frameRatio' => 1.6, 'free' => array( 'x' => 0.0, 'y' => 0.0, 'width' => 0.5, 'ratio' => 1.6 ) ), 'mobile' => array( 'column' => 1, 'row' => 1, 'columnSpan' => 12, 'rowSpan' => 27, 'gridColumns' => 12, 'frameRatio' => 1.75, 'free' => array( 'x' => 0.0, 'y' => 0.0, 'width' => 1.0, 'ratio' => 1.75 ) ) ) == ( $canvas_image['attrs']['canvas'] ?? null ), 'canvas-image-placements-and-frame-ratio', (string) wp_json_encode( $canvas_image['attrs'] ?? null ) );
 	$assert( 12 === ( $canvas_image['attrs']['id'] ?? null ), 'canvas-image-preserves-existing-attributes' );
+	// Exact frames: desktop is measured against Canvas's reference width (the
+	// theme content size, or 1340px when unset), other viewports against the
+	// canvas width; the host here is 1200px, under that reference.
+	$assert( 0.25 == ( $canvas_image['attrs']['canvas']['desktop']['free']['width'] ?? null ), 'canvas-desktop-frame-width-is-a-fraction-of-the-reference-box' );
 	$canvas_buttons = $find( $canvas_pieces, '0.0.2' );
-	$assert( array( 'column' => 1, 'row' => 14, 'columnSpan' => 4, 'rowSpan' => 2, 'gridColumns' => 12 ) === ( $canvas_buttons['attrs']['canvas']['desktop'] ?? null ), 'canvas-buttons-minimum-span-and-row-math', (string) wp_json_encode( $canvas_buttons['attrs'] ?? null ) );
+	$assert( array( 'column' => 1, 'row' => 14, 'columnSpan' => 4, 'rowSpan' => 2, 'gridColumns' => 12, 'free' => array( 'x' => 0.0, 'y' => 13.023256, 'width' => 0.125, 'ratio' => 3.571429 ) ) == ( $canvas_buttons['attrs']['canvas']['desktop'] ?? null ), 'canvas-buttons-minimum-span-and-row-math', (string) wp_json_encode( $canvas_buttons['attrs'] ?? null ) );
 
 	// --- Ineligible sections and per-item losses ---------------------------------
 	$paragraph_host_markup = "<!-- wp:paragraph -->\n<p>No items here.</p>\n<!-- /wp:paragraph -->\n";
 	$paragraph_host_model  = $validation['model'];
 	$paragraph_host_model['host']['path'] = '0';
-	$refused               = Static_Site_Importer_Layout_Projector::project( $paragraph_host_markup, $paragraph_host_model, new Static_Site_Importer_Core_Grid_Layout_Adapter() );
+	$refused               = Static_Site_Importer_Layout_Projector::project( $paragraph_host_markup, $paragraph_host_model, new Static_Site_Importer_Canvas_Layout_Adapter() );
 	$assert( false === $refused['applied'] && 'host_without_items' === $refused['reason'], 'host-without-inner-blocks-refused', (string) wp_json_encode( $refused ) );
 
 	$no_items_model        = $validation['model'];
 	$no_items_model['items'] = array();
-	$no_items              = Static_Site_Importer_Layout_Projector::project( $original_markup, $no_items_model, new Static_Site_Importer_Core_Grid_Layout_Adapter() );
+	$no_items              = Static_Site_Importer_Layout_Projector::project( $original_markup, $no_items_model, new Static_Site_Importer_Canvas_Layout_Adapter() );
 	$assert( false === $no_items['applied'] && 'model_without_items' === $no_items['reason'], 'model-without-items-refused' );
 
 	$unresolved_host       = $validation['model'];
 	$unresolved_host['host']['path'] = '9';
-	$unresolved            = Static_Site_Importer_Layout_Projector::project( $original_markup, $unresolved_host, new Static_Site_Importer_Core_Grid_Layout_Adapter() );
+	$unresolved            = Static_Site_Importer_Layout_Projector::project( $original_markup, $unresolved_host, new Static_Site_Importer_Canvas_Layout_Adapter() );
 	$assert( false === $unresolved['applied'] && 'host_path_unresolved' === $unresolved['reason'], 'unresolved-host-path-refused' );
 
-	$unparseable           = Static_Site_Importer_Layout_Projector::project( "<!-- wp:group -->\n<div>unclosed\n", $validation['model'], new Static_Site_Importer_Core_Grid_Layout_Adapter() );
+	$unparseable           = Static_Site_Importer_Layout_Projector::project( "<!-- wp:group -->\n<div>unclosed\n", $validation['model'], new Static_Site_Importer_Canvas_Layout_Adapter() );
 	$assert( false === $unparseable['applied'] && 'markup_unparseable' === $unparseable['reason'], 'unclosed-markup-refused-with-unparseable-reason' );
-	$without_blocks        = Static_Site_Importer_Layout_Projector::project( 'plain text without any block', $validation['model'], new Static_Site_Importer_Core_Grid_Layout_Adapter() );
+	$without_blocks        = Static_Site_Importer_Layout_Projector::project( 'plain text without any block', $validation['model'], new Static_Site_Importer_Canvas_Layout_Adapter() );
 	$assert( false === $without_blocks['applied'] && 'host_path_unresolved' === $without_blocks['reason'], 'blockless-markup-refused-with-unresolved-host' );
 
 	$shared_reference_model = $validation['model'];
@@ -296,7 +350,7 @@ namespace {
 
 	$nested_model          = $validation['model'];
 	$nested_model['items'][2]['path'] = '0.2.0';
-	$nested                = Static_Site_Importer_Layout_Projector::project( $original_markup, $nested_model, new Static_Site_Importer_Core_Grid_Layout_Adapter() );
+	$nested                = Static_Site_Importer_Layout_Projector::project( $original_markup, $nested_model, new Static_Site_Importer_Canvas_Layout_Adapter() );
 	$nested_reasons        = array_column( array_filter( $nested['losses'], static fn( array $loss ): bool => '0.2.0' === ( $loss['item'] ?? '' ) ), 'reason' );
 	$assert( array( 'item_not_host_child' ) === $nested_reasons && 2 === $nested['placed'], 'nested-item-refused-as-not-host-child', (string) wp_json_encode( $nested['losses'] ) );
 
@@ -305,23 +359,21 @@ namespace {
 		$all_hidden_model['items'][ $index ]['viewports'][700] = $box( 0, 0, 0, 0 );
 	}
 	unset( $_ );
-	$all_hidden            = Static_Site_Importer_Layout_Projector::project( $original_markup, $all_hidden_model, new Static_Site_Importer_Core_Grid_Layout_Adapter() );
+	$all_hidden            = Static_Site_Importer_Layout_Projector::project( $original_markup, $all_hidden_model, new Static_Site_Importer_Canvas_Layout_Adapter() );
 	$assert( false === $all_hidden['applied'] && 'no_placeable_items' === $all_hidden['reason'], 'all-hidden-items-refuse-section' );
 
 	// --- Round trip from the original block tree ----------------------------------
 	$round_none   = Static_Site_Importer_Layout_Projector::project( $original_markup, $validation['model'], new Static_Site_Importer_None_Layout_Adapter() );
 	$assert( true === $round_none['applied'] && $original_markup === $round_none['markup'], 'none-adapter-restores-original-markup' );
-	$round_core   = Static_Site_Importer_Layout_Projector::project( $original_markup, $validation['model'], new Static_Site_Importer_Core_Grid_Layout_Adapter() );
-	$direct_core  = Static_Site_Importer_Layout_Projector::project( $original_markup, $validation['model'], new Static_Site_Importer_Core_Grid_Layout_Adapter() );
-	$assert( $round_core['markup'] === $direct_core['markup'], 'reprojection-after-canvas-and-none-matches-direct-projection' );
-	$assert( $canvas['markup'] !== $round_core['markup'], 'canvas-and-core-grid-projections-differ' );
-	$dirty_core   = Static_Site_Importer_Layout_Projector::project( $canvas['markup'], $validation['model'], new Static_Site_Importer_Core_Grid_Layout_Adapter() );
-	$assert( $dirty_core['markup'] !== $direct_core['markup'] && false !== strpos( $dirty_core['markup'], '"canvas":' ), 'projecting-canvas-output-without-restore-is-not-clean' );
+	$round_canvas = Static_Site_Importer_Layout_Projector::project( $original_markup, $validation['model'], new Static_Site_Importer_Canvas_Layout_Adapter() );
+	$assert( $round_canvas['markup'] === $canvas['markup'], 'reprojection-from-original-matches-direct-projection' );
+	$dirty_canvas = Static_Site_Importer_Layout_Projector::project( $canvas['markup'], $validation['model'], new Static_Site_Importer_Canvas_Layout_Adapter() );
+	$assert( false === $dirty_canvas['applied'], 'projecting-canvas-output-again-is-refused-not-nested', (string) wp_json_encode( $dirty_canvas ) );
 
 	// --- Host layout release and capture markers -----------------------------------
 	$stylesheet = Static_Site_Importer_Layout_Release::stylesheet();
 	$assert( false !== strpos( $stylesheet, '.ssi-layout-canvas-host{display:block!important}' ), 'release-stylesheet-blocks-canvas-hosts', $stylesheet );
-	$assert( false !== strpos( $stylesheet, '.ssi-layout-core-grid-host{display:grid!important;grid-template-columns:repeat(12,minmax(0,1fr))!important;grid-template-rows:none!important;grid-template-areas:none!important}' ), 'release-stylesheet-grids-core-hosts', $stylesheet );
+	$assert( false !== strpos( $stylesheet, '.ssi-layout-canvas-host .canvas__grid>*>*{width:auto!important;max-width:none!important;min-width:0!important;flex:none!important;grid-area:auto;margin:0!important}' ), 'release-stylesheet-frees-placed-blocks-from-source-sizing', $stylesheet );
 
 	Static_Site_Importer_Layout_Marker_Filter::begin_content_capture( '' );
 	Static_Site_Importer_Layout_Marker_Filter::open_frame( array( 'blockName' => 'core/group' ) );
@@ -331,6 +383,154 @@ namespace {
 	Static_Site_Importer_Layout_Marker_Filter::end_content_capture( '' );
 	$assert( '<p data-ssi-block-path="0.0">Wood-fired everything.</p>' === $marked_child, 'marker-filter-marks-nested-block-path', $marked_child );
 	$assert( false !== strpos( $marked_parent, '<div class="wp-block-group bistro" data-ssi-block-path="0">' ), 'marker-filter-marks-host-block-path', $marked_parent );
+
+	// --- CLI: --plan parsing, per-section adapters, all-none restore ---------------
+
+	$run_command = static function ( array $assoc_args ) {
+		WP_CLI::$lines = array();
+		try {
+			static_site_importer_cli_project_layout_command( array(), $assoc_args );
+			return array( 'error' => null, 'receipt' => json_decode( (string) ( WP_CLI::$lines[0] ?? 'null' ), true ) );
+		} catch ( RuntimeException $error ) {
+			$message = $error->getMessage();
+			if ( str_starts_with( $message, 'halt:' ) ) {
+				return array( 'error' => null, 'receipt' => json_decode( (string) ( WP_CLI::$lines[0] ?? 'null' ), true ) );
+			}
+			return array( 'error' => $message, 'receipt' => null );
+		}
+	};
+
+	$two_section_markup = "<!-- wp:group -->\n<div class=\"wp-block-group\">\n<!-- wp:paragraph -->\n<p>A</p>\n<!-- /wp:paragraph -->\n<!-- wp:paragraph -->\n<p>B</p>\n<!-- /wp:paragraph -->\n</div>\n<!-- /wp:group -->\n<!-- wp:group -->\n<div class=\"wp-block-group\">\n<!-- wp:paragraph -->\n<p>C</p>\n<!-- /wp:paragraph -->\n<!-- wp:paragraph -->\n<p>D</p>\n<!-- /wp:paragraph -->\n</div>\n<!-- /wp:group -->\n";
+
+	$section_model = static function ( string $host_path ) use ( $box, $viewports ): array {
+		return array(
+			'schema' => 'static-site-importer/layout-placement/v1',
+			'host'   => array( 'path' => $host_path, 'viewports' => $viewports( $box( 0, 0, 1200, 100 ), $box( 0, 0, 640, 100 ), $box( 0, 0, 350, 100 ) ) ),
+			'items'  => array(
+				array( 'path' => $host_path . '.0', 'viewports' => $viewports( $box( 0, 0, 600, 100 ), $box( 0, 0, 320, 100 ), $box( 0, 0, 350, 50 ) ) ),
+				array( 'path' => $host_path . '.1', 'viewports' => $viewports( $box( 600, 0, 600, 100 ), $box( 320, 0, 320, 100 ), $box( 0, 50, 350, 50 ) ) ),
+			),
+		);
+	};
+	$section_a_model = $section_model( '0' );
+	$section_b_model = $section_model( '1' );
+
+	$write_plan = static function ( array $plan ): string {
+		$path = tempnam( sys_get_temp_dir(), 'ssi-layout-plan-' ) . '.json';
+		file_put_contents( $path, (string) wp_json_encode( $plan ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+		return $path;
+	};
+
+	$page_id                          = 501;
+	$GLOBALS['stub_posts'][ $page_id ] = $two_section_markup;
+	$GLOBALS['stub_post_meta']         = array();
+
+	$mixed_plan_file = $write_plan(
+		array(
+			'schema'   => 'static-site-importer/layout-plan/v1',
+			'sections' => array(
+				array( 'placement' => $section_a_model, 'adapter' => 'canvas' ),
+				array( 'placement' => $section_b_model, 'adapter' => 'none' ),
+			),
+		)
+	);
+	$mixed_result = $run_command( array( 'page' => (string) $page_id, 'plan' => $mixed_plan_file ) );
+	$assert( null === $mixed_result['error'], 'plan-mixed-adapters-does-not-error', (string) $mixed_result['error'] );
+	$assert( 'plan' === ( $mixed_result['receipt']['adapter'] ?? '' ), 'plan-receipt-top-level-adapter-is-plan' );
+	$assert(
+		array( 'canvas', 'none' ) === array_column( $mixed_result['receipt']['sections'] ?? array(), 'adapter' ),
+		'plan-receipt-reports-each-sections-own-adapter',
+		(string) wp_json_encode( $mixed_result['receipt']['sections'] ?? null )
+	);
+	$assert( true === ( $mixed_result['receipt']['snapshot_stored'] ?? false ), 'plan-first-projection-stores-snapshot' );
+	$assert( false !== strpos( $GLOBALS['stub_posts'][ $page_id ], 'ssi-layout-canvas-host' ), 'plan-applies-canvas-only-to-its-own-section' );
+	$assert( $GLOBALS['stub_posts'][ $page_id ] !== $two_section_markup, 'plan-mixed-adapters-changes-persisted-content' );
+	$assert( '' !== ( $GLOBALS['stub_post_meta'][ $page_id ][ Static_Site_Importer_Layout_Projector::ORIGINAL_CONTENT_META_KEY ] ?? '' ), 'plan-projection-keeps-original-content-snapshot' );
+
+	$all_none_plan_file = $write_plan(
+		array(
+			'schema'   => 'static-site-importer/layout-plan/v1',
+			'sections' => array(
+				array( 'placement' => $section_a_model, 'adapter' => 'none' ),
+				array( 'placement' => $section_b_model, 'adapter' => 'none' ),
+			),
+		)
+	);
+	$restore_result = $run_command( array( 'page' => (string) $page_id, 'plan' => $all_none_plan_file ) );
+	$assert( null === $restore_result['error'], 'plan-all-none-does-not-error', (string) $restore_result['error'] );
+	$assert( true === ( $restore_result['receipt']['restored'] ?? false ), 'plan-all-none-restores-like-adapter-none' );
+	$assert( $two_section_markup === $GLOBALS['stub_posts'][ $page_id ], 'plan-all-none-restores-original-content' );
+	$assert( '' === ( $GLOBALS['stub_post_meta'][ $page_id ][ Static_Site_Importer_Layout_Projector::ORIGINAL_CONTENT_META_KEY ] ?? '' ), 'plan-all-none-clears-snapshot' );
+
+	$conflict_result = $run_command(
+		array(
+			'page'      => (string) $page_id,
+			'plan'      => $mixed_plan_file,
+			'placement' => $mixed_plan_file,
+		)
+	);
+	$assert(
+		null !== $conflict_result['error'] && str_contains( $conflict_result['error'], 'not both' ),
+		'plan-and-placement-together-is-rejected',
+		(string) $conflict_result['error']
+	);
+
+	$conflict_adapter_result = $run_command(
+		array(
+			'page'    => (string) $page_id,
+			'plan'    => $mixed_plan_file,
+			'adapter' => 'none',
+		)
+	);
+	$assert(
+		null !== $conflict_adapter_result['error'] && str_contains( $conflict_adapter_result['error'], 'not both' ),
+		'plan-and-adapter-together-is-rejected',
+		(string) $conflict_adapter_result['error']
+	);
+
+	$unknown_adapter_plan_file = $write_plan(
+		array(
+			'schema'   => 'static-site-importer/layout-plan/v1',
+			'sections' => array( array( 'placement' => $section_a_model, 'adapter' => 'not-a-real-adapter' ) ),
+		)
+	);
+	$unknown_adapter_result = $run_command( array( 'page' => (string) $page_id, 'plan' => $unknown_adapter_plan_file ) );
+	$assert(
+		null !== $unknown_adapter_result['error'] && str_contains( $unknown_adapter_result['error'], 'unknown adapter' ),
+		'plan-rejects-unknown-adapter-id',
+		(string) $unknown_adapter_result['error']
+	);
+
+	WP_Block_Type_Registry::$registered = false;
+	$unavailable_adapter_plan_file      = $write_plan(
+		array(
+			'schema'   => 'static-site-importer/layout-plan/v1',
+			'sections' => array( array( 'placement' => $section_a_model, 'adapter' => 'canvas' ) ),
+		)
+	);
+	$unavailable_adapter_result = $run_command( array( 'page' => (string) $page_id, 'plan' => $unavailable_adapter_plan_file ) );
+	WP_Block_Type_Registry::$registered = true;
+	$assert(
+		null !== $unavailable_adapter_result['error'] && str_contains( $unavailable_adapter_result['error'], 'unregistered block types' ),
+		'plan-rejects-adapter-with-missing-dependencies',
+		(string) $unavailable_adapter_result['error']
+	);
+
+	// --- CLI: --placement / --adapter single-adapter case keeps working ------------
+
+	$single_page_id                          = 502;
+	$GLOBALS['stub_posts'][ $single_page_id ] = $original_markup;
+	$placement_file                           = $write_plan( $bistro_model );
+	$placement_result                         = $run_command(
+		array( 'page' => (string) $single_page_id, 'placement' => $placement_file, 'adapter' => 'canvas' )
+	);
+	$assert( null === $placement_result['error'], 'placement-and-adapter-still-works', (string) $placement_result['error'] );
+	$assert( 'canvas' === ( $placement_result['receipt']['adapter'] ?? '' ), 'placement-receipt-top-level-adapter-is-the-single-adapter' );
+	$assert(
+		array( 'canvas' ) === array_column( $placement_result['receipt']['sections'] ?? array(), 'adapter' ),
+		'placement-receipt-reports-the-shared-adapter-per-section'
+	);
+	$assert( false !== strpos( $GLOBALS['stub_posts'][ $single_page_id ], 'ssi-layout-canvas-host' ), 'placement-adapter-path-persists-projection' );
 
 	if ( $failures ) {
 		fwrite( STDERR, implode( "\n", $failures ) . "\n" );

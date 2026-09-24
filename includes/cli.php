@@ -688,7 +688,21 @@ if ( ! function_exists( 'static_site_importer_cli_import_options' ) ) {
 			'report'                       => isset( $assoc_args['report'] ) ? (string) $assoc_args['report'] : '',
 			'asset_materialization_policy' => isset( $assoc_args['asset-materialization-policy'] ) ? (string) $assoc_args['asset-materialization-policy'] : '',
 			'theme_materialization'        => isset( $assoc_args['theme-materialization'] ) ? (string) $assoc_args['theme-materialization'] : 'block',
+			'layout_adapters'              => static_site_importer_cli_ordered_list( isset( $assoc_args['layout-adapters'] ) ? (string) $assoc_args['layout-adapters'] : '' ),
 		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_ordered_list' ) ) {
+	/**
+	 * Split a comma-separated CLI flag into a trimmed, ordered, deduped list.
+	 *
+	 * @param string $value Raw flag value.
+	 * @return array<int,string>
+	 */
+	function static_site_importer_cli_ordered_list( string $value ): array {
+		$items = array_filter( array_map( 'trim', explode( ',', $value ) ) );
+		return array_values( array_unique( $items ) );
 	}
 }
 
@@ -784,22 +798,57 @@ if ( ! function_exists( 'static_site_importer_cli_import_input' ) ) {
 	}
 }
 
+if ( ! function_exists( 'static_site_importer_cli_layout_projection_page_ids' ) ) {
+	/**
+	 * Page ids a completed import materialized, in creation order.
+	 *
+	 * Direct imports report a `source_path => post_id` map at `pages`; a
+	 * `--plan` apply reports the same shape nested at `result.completed.pages`.
+	 *
+	 * @param array<string,mixed> $result Ability response.
+	 * @return array<int,int>
+	 */
+	function static_site_importer_cli_layout_projection_page_ids( array $result ): array {
+		$pages = $result['pages'] ?? ( $result['result']['completed']['pages'] ?? null );
+		if ( ! is_array( $pages ) ) {
+			return array();
+		}
+		return array_values( array_map( 'intval', $pages ) );
+	}
+}
+
 if ( ! function_exists( 'static_site_importer_cli_import_receipt' ) ) {
 	/**
 	 * @param array<string,mixed> $result
+	 * @param array<string,mixed> $input Import input that produced `$result`; used only to
+	 *                                   record an opt-in `layout_projection` request.
 	 * @return array<string,mixed>
 	 */
-	function static_site_importer_cli_import_receipt( array $result, int $steps ): array {
+	function static_site_importer_cli_import_receipt( array $result, int $steps, array $input = array() ): array {
 		if ( ! empty( $result['continuation'] ) ) {
 			$result = static_site_importer_cli_import_error( 'static_site_importer_cli_nonterminal_receipt', 'A continuation is not a terminal import receipt.' );
 		}
 		$success = ! empty( $result['success'] ) && empty( $result['continuation'] );
-		return array(
+		$receipt = array(
 			'schema'   => 'static-site-importer/import-cli-receipt/v1',
 			'status'   => $success ? 'completed' : 'failed',
 			'steps'    => $steps,
 			'response' => $result,
 		);
+
+		$adapters = is_array( $input['layout_adapters'] ?? null ) ? array_values( array_filter( array_map( 'strval', $input['layout_adapters'] ) ) ) : array();
+		if ( array() !== $adapters ) {
+			// SSI's PHP import never renders a page, so it cannot itself pick
+			// and gate layout adapters; it only records the request for
+			// `tools/project-imported-layout.mjs` (via `--receipt-in`) to run.
+			$receipt['layout_projection'] = array(
+				'status'   => 'requested',
+				'adapters' => $adapters,
+				'pages'    => static_site_importer_cli_layout_projection_page_ids( $result ),
+			);
+		}
+
+		return $receipt;
 	}
 }
 
@@ -1078,13 +1127,14 @@ if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 			}
 			$result = $invoke( $input );
 			if ( empty( $result['continuation'] ) ) {
-				return static_site_importer_cli_import_receipt( $result, $steps );
+				return static_site_importer_cli_import_receipt( $result, $steps, $input );
 			}
 			$import_id = (string) ( $result['import_id'] ?? '' );
 			if ( '' === $import_id ) {
 				return static_site_importer_cli_import_receipt(
 					static_site_importer_cli_import_error( 'static_site_importer_cli_import_id_missing', 'A continuation did not include an opaque import_id.' ),
-					$steps
+					$steps,
+					$input
 				);
 			}
 			if ( null !== $emit_progress ) {
@@ -1095,7 +1145,8 @@ if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 		}
 		return static_site_importer_cli_import_receipt(
 			static_site_importer_cli_import_error( 'static_site_importer_cli_continuation_bound_exceeded', 'The import exceeded its bounded continuation steps.' ),
-			$max_steps
+			$max_steps,
+			$input
 		);
 	}
 }
@@ -1194,6 +1245,247 @@ if ( ! function_exists( 'static_site_importer_cli_import_command' ) ) {
 	}
 }
 
+if ( ! function_exists( 'static_site_importer_cli_layout_adapter_dependency_error' ) ) {
+	/**
+	 * Build the "unregistered block types" error message for one adapter, or null when satisfied.
+	 *
+	 * @param Static_Site_Importer_Layout_Adapter $adapter Candidate adapter.
+	 * @return string|null
+	 */
+	function static_site_importer_cli_layout_adapter_dependency_error( Static_Site_Importer_Layout_Adapter $adapter ): ?string {
+		if ( 'none' === $adapter->id() || Static_Site_Importer_Layout_Adapter_Registry::dependencies_available( $adapter ) ) {
+			return null;
+		}
+		$missing = array_keys( array_filter( Static_Site_Importer_Layout_Adapter_Registry::dependency_rows( $adapter ), static fn( array $row ): bool => empty( $row['active'] ) ) );
+		return 'The ' . $adapter->id() . ' layout adapter requires unregistered block types: ' . implode( ', ', $missing ) . '.';
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_layout_placement_sections' ) ) {
+	/**
+	 * Build ordered sections from `--placement=<file>[,<file>...]`, one shared adapter for all.
+	 *
+	 * @param string                               $placement Comma-separated placement model file paths.
+	 * @param Static_Site_Importer_Layout_Adapter $adapter   Adapter every section uses.
+	 * @return array<int,array{source:string,model:array<string,mixed>,adapter:Static_Site_Importer_Layout_Adapter}>|WP_Error
+	 */
+	function static_site_importer_cli_layout_placement_sections( string $placement, Static_Site_Importer_Layout_Adapter $adapter ) {
+		$sections = array();
+		foreach ( array_filter( array_map( 'trim', explode( ',', $placement ) ) ) as $file ) {
+			$raw        = is_file( $file ) && is_readable( $file ) && ! is_link( $file ) ? file_get_contents( $file ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads operator-supplied placement models.
+			$model_data = is_string( $raw ) ? json_decode( $raw, true ) : null;
+			$model      = Static_Site_Importer_Layout_Placement_Model::validated( $model_data );
+			if ( is_wp_error( $model ) ) {
+				return new WP_Error( 'static_site_importer_cli_layout_placement_invalid', 'Placement model ' . $file . ' failed validation: ' . (string) wp_json_encode( $model->get_error_data(), JSON_UNESCAPED_SLASHES ) );
+			}
+			$sections[] = array(
+				'source'  => $file,
+				'model'   => $model,
+				'adapter' => $adapter,
+			);
+		}
+		return $sections;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_layout_plan_sections' ) ) {
+	/**
+	 * Build ordered sections from a decoded `--plan=<file>` layout plan, each with its own adapter.
+	 *
+	 * @param mixed $plan Decoded `static-site-importer/layout-plan/v1` JSON.
+	 * @return array<int,array{source:string,model:array<string,mixed>,adapter:Static_Site_Importer_Layout_Adapter}>|WP_Error
+	 */
+	function static_site_importer_cli_layout_plan_sections( mixed $plan ) {
+		if ( ! is_array( $plan ) || 'static-site-importer/layout-plan/v1' !== ( $plan['schema'] ?? null ) || ! is_array( $plan['sections'] ?? null ) || array() === $plan['sections'] ) {
+			return new WP_Error( 'static_site_importer_cli_layout_plan_invalid', 'A layout plan must be a JSON object with schema "static-site-importer/layout-plan/v1" and a non-empty sections array.' );
+		}
+
+		$adapters = Static_Site_Importer_Layout_Adapter_Registry::adapters();
+		$sections = array();
+		foreach ( array_values( $plan['sections'] ) as $index => $row ) {
+			if ( ! is_array( $row ) ) {
+				return new WP_Error( 'static_site_importer_cli_layout_plan_invalid', 'Plan section ' . $index . ' must be an object with placement and adapter fields.' );
+			}
+			$model = Static_Site_Importer_Layout_Placement_Model::validated( $row['placement'] ?? null );
+			if ( is_wp_error( $model ) ) {
+				return new WP_Error( 'static_site_importer_cli_layout_plan_invalid', 'Plan section ' . $index . ' placement failed validation: ' . (string) wp_json_encode( $model->get_error_data(), JSON_UNESCAPED_SLASHES ) );
+			}
+			$adapter_id = is_string( $row['adapter'] ?? null ) ? $row['adapter'] : '';
+			$adapter    = $adapters[ $adapter_id ] ?? null;
+			if ( null === $adapter ) {
+				return new WP_Error( 'static_site_importer_cli_layout_plan_invalid', 'Plan section ' . $index . ' has an unknown adapter "' . $adapter_id . '".' );
+			}
+			$dependency_error = static_site_importer_cli_layout_adapter_dependency_error( $adapter );
+			if ( null !== $dependency_error ) {
+				return new WP_Error( 'static_site_importer_cli_layout_plan_invalid', 'Plan section ' . $index . ': ' . $dependency_error );
+			}
+			$sections[] = array(
+				'source'  => 'plan[' . $index . ']',
+				'model'   => $model,
+				'adapter' => $adapter,
+			);
+		}
+		return $sections;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_layout_projection_apply' ) ) {
+	/**
+	 * Project ordered sections onto a page's original content and persist the result.
+	 *
+	 * Every run starts from the original-content snapshot (or the page's
+	 * current content, the first time), so switching adapters -- or a plan
+	 * whose sections are all `none` -- never compounds an earlier projection.
+	 *
+	 * @param int                  $page_id        Page id.
+	 * @param string               $current_content Page's current (possibly already projected) content.
+	 * @param array<int,array{source:string,model:array<string,mixed>,adapter:Static_Site_Importer_Layout_Adapter}> $sections Ordered sections to apply.
+	 * @param bool                 $dry_run        Whether to skip persistence.
+	 * @param string               $adapter_label  Receipt's top-level `adapter`: one adapter id, or `plan` for a mixed-adapter plan.
+	 * @return array{receipt:array<string,mixed>,halt:bool,error:string|null}
+	 */
+	function static_site_importer_cli_layout_projection_apply( int $page_id, string $current_content, array $sections, bool $dry_run, string $adapter_label ): array {
+		$snapshot = (string) get_post_meta( $page_id, Static_Site_Importer_Layout_Projector::ORIGINAL_CONTENT_META_KEY, true );
+		$original = '' !== $snapshot ? $snapshot : $current_content;
+
+		$markup        = $original;
+		$section_rows  = array();
+		$applied       = 0;
+		$all_none      = true;
+		foreach ( $sections as $section ) {
+			$adapter    = $section['adapter'];
+			$projection = Static_Site_Importer_Layout_Projector::project( $markup, $section['model'], $adapter );
+			$markup     = (string) $projection['markup'];
+			$applied   += $projection['applied'] ? 1 : 0;
+			if ( 'none' !== $adapter->id() ) {
+				$all_none = false;
+			}
+			$section_rows[] = array(
+				'placement' => $section['source'],
+				'host'      => (string) ( $section['model']['host']['path'] ?? '' ),
+				'adapter'   => $adapter->id(),
+				'applied'   => (bool) $projection['applied'],
+				'placed'    => (int) $projection['placed'],
+				'reason'    => (string) $projection['reason'],
+				'losses'    => $projection['losses'],
+				'rendered_item_selector' => $adapter->rendered_item_selector(),
+			);
+		}
+
+		$receipt = array(
+			'schema'          => 'static-site-importer/layout-projection-receipt/v1',
+			'page'            => $page_id,
+			'adapter'         => $adapter_label,
+			'applied'         => $applied > 0,
+			'dry_run'         => $dry_run,
+			'sections'        => $section_rows,
+			'restored'        => false,
+			'snapshot_stored' => false,
+			'content_sha'     => array(
+				'before' => hash( 'sha256', $original ),
+				'after'  => hash( 'sha256', $markup ),
+			),
+		);
+
+		if ( 0 === $applied ) {
+			return array( 'receipt' => $receipt, 'halt' => true, 'error' => null );
+		}
+
+		if ( ! $dry_run ) {
+			if ( $all_none ) {
+				if ( '' !== $snapshot ) {
+					$updated = wp_update_post( wp_slash( array( 'ID' => $page_id, 'post_content' => $original ) ), true );
+					if ( is_wp_error( $updated ) ) {
+						return array( 'receipt' => $receipt, 'halt' => false, 'error' => 'Layout restore failed: ' . $updated->get_error_message() );
+					}
+					delete_post_meta( $page_id, Static_Site_Importer_Layout_Projector::ORIGINAL_CONTENT_META_KEY );
+					$receipt['restored'] = true;
+				}
+			} else {
+				if ( '' === $snapshot ) {
+					if ( false === update_post_meta( $page_id, Static_Site_Importer_Layout_Projector::ORIGINAL_CONTENT_META_KEY, wp_slash( $current_content ) ) ) {
+						return array( 'receipt' => $receipt, 'halt' => false, 'error' => 'Layout projection failed to store its original-content snapshot.' );
+					}
+					$receipt['snapshot_stored'] = true;
+				}
+				$updated = wp_update_post( wp_slash( array( 'ID' => $page_id, 'post_content' => $markup ) ), true );
+				if ( is_wp_error( $updated ) ) {
+					return array( 'receipt' => $receipt, 'halt' => false, 'error' => 'Layout projection failed to write the page: ' . $updated->get_error_message() );
+				}
+			}
+		}
+
+		return array( 'receipt' => $receipt, 'halt' => false, 'error' => null );
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_project_layout_command' ) ) {
+	/**
+	 * Canonical host command for static-site-importer/project-layout.
+	 *
+	 * @param array<int,string>   $args
+	 * @param array<string,mixed> $assoc_args
+	 * @return void
+	 */
+	function static_site_importer_cli_project_layout_command( array $args, array $assoc_args ): void {
+		unset( $args );
+		$page_id    = isset( $assoc_args['page'] ) ? (int) $assoc_args['page'] : 0;
+		$plan_file  = isset( $assoc_args['plan'] ) ? (string) $assoc_args['plan'] : '';
+		$placement  = isset( $assoc_args['placement'] ) ? (string) $assoc_args['placement'] : '';
+		$adapter_id = isset( $assoc_args['adapter'] ) ? (string) $assoc_args['adapter'] : '';
+		$dry_run    = isset( $assoc_args['dry-run'] );
+
+		if ( '' !== $plan_file && ( '' !== $placement || '' !== $adapter_id ) ) {
+			WP_CLI::error( 'Provide either --plan=<file>, or --placement/--adapter, not both.' );
+		}
+
+		$page = $page_id > 0 ? get_post( $page_id ) : null;
+		if ( ! $page instanceof WP_Post ) {
+			WP_CLI::error( 'Provide --page=<id> of an existing page to project.' );
+		}
+
+		if ( '' !== $plan_file ) {
+			$raw  = is_file( $plan_file ) && is_readable( $plan_file ) && ! is_link( $plan_file ) ? file_get_contents( $plan_file ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads an operator-supplied layout plan.
+			$plan = is_string( $raw ) ? json_decode( $raw, true ) : null;
+			$sections = static_site_importer_cli_layout_plan_sections( $plan );
+			if ( is_wp_error( $sections ) ) {
+				WP_CLI::error( $sections->get_error_message() );
+			}
+			$adapter_label = 'plan';
+		} else {
+			if ( '' === $placement ) {
+				WP_CLI::error( 'Provide --plan=<file>, or --placement=<file>[,<file>...] with at least one placement model.' );
+			}
+			$adapters = Static_Site_Importer_Layout_Adapter_Registry::adapters();
+			$adapter  = '' !== $adapter_id ? ( $adapters[ $adapter_id ] ?? null ) : Static_Site_Importer_Layout_Adapter_Registry::layout_adapter();
+			if ( null === $adapter ) {
+				WP_CLI::error( 'Provide --adapter=<none|canvas> matching a registered layout adapter.' );
+			}
+			$dependency_error = static_site_importer_cli_layout_adapter_dependency_error( $adapter );
+			if ( null !== $dependency_error ) {
+				WP_CLI::error( $dependency_error );
+			}
+			$sections = static_site_importer_cli_layout_placement_sections( $placement, $adapter );
+			if ( is_wp_error( $sections ) ) {
+				WP_CLI::error( $sections->get_error_message() );
+			}
+			if ( array() === $sections ) {
+				WP_CLI::error( 'Provide --placement=<file>[,<file>...] with at least one placement model.' );
+			}
+			$adapter_label = $adapter->id();
+		}
+
+		$outcome = static_site_importer_cli_layout_projection_apply( $page_id, (string) $page->post_content, $sections, $dry_run, $adapter_label );
+		if ( null !== $outcome['error'] ) {
+			WP_CLI::error( $outcome['error'] );
+		}
+		WP_CLI::line( (string) wp_json_encode( $outcome['receipt'], JSON_UNESCAPED_SLASHES ) );
+		if ( $outcome['halt'] ) {
+			WP_CLI::halt( 1 );
+		}
+	}
+}
+
 if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 	WP_CLI::add_command(
 		'static-site-importer materialize-wordpress-site-plan',
@@ -1224,113 +1516,7 @@ if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 
 	WP_CLI::add_command( 'static-site-importer import', 'static_site_importer_cli_import_command' );
 
-	WP_CLI::add_command(
-		'static-site-importer project-layout',
-		static function ( array $args, array $assoc_args ): void {
-			unset( $args );
-			$page_id    = isset( $assoc_args['page'] ) ? (int) $assoc_args['page'] : 0;
-			$placement  = isset( $assoc_args['placement'] ) ? (string) $assoc_args['placement'] : '';
-			$adapter_id = isset( $assoc_args['adapter'] ) ? (string) $assoc_args['adapter'] : '';
-			$dry_run    = isset( $assoc_args['dry-run'] );
-
-			$page = $page_id > 0 ? get_post( $page_id ) : null;
-			if ( ! $page instanceof WP_Post ) {
-				WP_CLI::error( 'Provide --page=<id> of an existing page to project.' );
-			}
-			// One placement model per section; several sections apply in order.
-			$models = array();
-			foreach ( array_filter( array_map( 'trim', explode( ',', $placement ) ) ) as $file ) {
-				$raw        = is_file( $file ) && is_readable( $file ) && ! is_link( $file ) ? file_get_contents( $file ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads operator-supplied placement models.
-				$model_data = is_string( $raw ) ? json_decode( $raw, true ) : null;
-				$model      = Static_Site_Importer_Layout_Placement_Model::validated( $model_data );
-				if ( is_wp_error( $model ) ) {
-					WP_CLI::error( 'Placement model ' . $file . ' failed validation: ' . (string) wp_json_encode( $model->get_error_data(), JSON_UNESCAPED_SLASHES ) );
-				}
-				$models[ $file ] = $model;
-			}
-			if ( array() === $models ) {
-				WP_CLI::error( 'Provide --placement=<file>[,<file>...] with at least one placement model.' );
-			}
-
-			$adapters = Static_Site_Importer_Layout_Adapter_Registry::adapters();
-			$adapter  = '' !== $adapter_id ? ( $adapters[ $adapter_id ] ?? null ) : Static_Site_Importer_Layout_Adapter_Registry::layout_adapter();
-			if ( null === $adapter ) {
-				WP_CLI::error( 'Provide --adapter=<none|core-grid|canvas> matching a registered layout adapter.' );
-			}
-			if ( 'none' !== $adapter->id() && ! Static_Site_Importer_Layout_Adapter_Registry::dependencies_available( $adapter ) ) {
-				$missing = array_keys( array_filter( Static_Site_Importer_Layout_Adapter_Registry::dependency_rows( $adapter ), static fn( array $row ): bool => empty( $row['active'] ) ) );
-				WP_CLI::error( 'The ' . $adapter->id() . ' layout adapter requires unregistered block types: ' . implode( ', ', $missing ) . '.' );
-			}
-
-			// Every projection starts from the original content, so switching
-			// adapters (or back to none) never compounds earlier projections.
-			$snapshot = (string) get_post_meta( $page_id, Static_Site_Importer_Layout_Projector::ORIGINAL_CONTENT_META_KEY, true );
-			$current  = (string) $page->post_content;
-			$original = '' !== $snapshot ? $snapshot : $current;
-
-			$markup   = $original;
-			$sections = array();
-			$applied  = 0;
-			foreach ( $models as $file => $model ) {
-				$projection = Static_Site_Importer_Layout_Projector::project( $markup, $model, $adapter );
-				$markup     = (string) $projection['markup'];
-				$applied   += $projection['applied'] ? 1 : 0;
-				$sections[] = array(
-					'placement' => $file,
-					'host'      => (string) ( $model['host']['path'] ?? '' ),
-					'applied'   => (bool) $projection['applied'],
-					'placed'    => (int) $projection['placed'],
-					'reason'    => (string) $projection['reason'],
-					'losses'    => $projection['losses'],
-				);
-			}
-			$receipt = array(
-				'schema'          => 'static-site-importer/layout-projection-receipt/v1',
-				'page'            => $page_id,
-				'adapter'         => $adapter->id(),
-				'applied'         => $applied > 0,
-				'dry_run'         => $dry_run,
-				'sections'        => $sections,
-				'restored'        => false,
-				'snapshot_stored' => false,
-				'content_sha'     => array(
-					'before' => hash( 'sha256', $original ),
-					'after'  => hash( 'sha256', $markup ),
-				),
-			);
-
-			if ( 0 === $applied ) {
-				WP_CLI::line( (string) wp_json_encode( $receipt, JSON_UNESCAPED_SLASHES ) );
-				WP_CLI::halt( 1 );
-			}
-
-			if ( ! $dry_run ) {
-				if ( 'none' === $adapter->id() ) {
-					if ( '' !== $snapshot ) {
-						$updated = wp_update_post( wp_slash( array( 'ID' => $page_id, 'post_content' => $original ) ), true );
-						if ( is_wp_error( $updated ) ) {
-							WP_CLI::error( 'Layout restore failed: ' . $updated->get_error_message() );
-						}
-						delete_post_meta( $page_id, Static_Site_Importer_Layout_Projector::ORIGINAL_CONTENT_META_KEY );
-						$receipt['restored'] = true;
-					}
-				} else {
-					if ( '' === $snapshot ) {
-						if ( false === update_post_meta( $page_id, Static_Site_Importer_Layout_Projector::ORIGINAL_CONTENT_META_KEY, wp_slash( $current ) ) ) {
-							WP_CLI::error( 'Layout projection failed to store its original-content snapshot.' );
-						}
-						$receipt['snapshot_stored'] = true;
-					}
-					$updated = wp_update_post( wp_slash( array( 'ID' => $page_id, 'post_content' => $markup ) ), true );
-					if ( is_wp_error( $updated ) ) {
-						WP_CLI::error( 'Layout projection failed to write the page: ' . $updated->get_error_message() );
-					}
-				}
-			}
-
-			WP_CLI::line( (string) wp_json_encode( $receipt, JSON_UNESCAPED_SLASHES ) );
-		}
-	);
+	WP_CLI::add_command( 'static-site-importer project-layout', 'static_site_importer_cli_project_layout_command' );
 
 	WP_CLI::add_command(
 		'static-site-importer compile-artifact-pages',

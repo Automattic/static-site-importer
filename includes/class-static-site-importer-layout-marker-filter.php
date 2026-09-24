@@ -58,7 +58,8 @@ final class Static_Site_Importer_Layout_Marker_Filter {
 		// capture must switch on before it.
 		add_filter( 'the_content', array( self::class, 'begin_content_capture' ), 8 );
 		add_filter( 'the_content', array( self::class, 'end_content_capture' ), PHP_INT_MAX );
-		add_filter( 'render_block_data', array( self::class, 'open_frame' ) );
+		// Last, so the frame identity matches the data the block renders with.
+		add_filter( 'render_block_data', array( self::class, 'open_frame' ), PHP_INT_MAX );
 		add_filter( 'render_block', array( self::class, 'close_frame' ), 10, 2 );
 	}
 
@@ -120,6 +121,7 @@ final class Static_Site_Importer_Layout_Marker_Filter {
 			self::$frames[] = array(
 				'path'     => $path,
 				'children' => 0,
+				'block'    => self::identity( $block ),
 			);
 			return $block;
 		}
@@ -129,8 +131,18 @@ final class Static_Site_Importer_Layout_Marker_Filter {
 		self::$frames[] = array(
 			'path'     => $path,
 			'children' => 0,
+			'block'    => self::identity( $block ),
 		);
 		return $block;
+	}
+
+	/**
+	 * Identity of a parsed block, to pair each render with the frame opened for it.
+	 *
+	 * @param array<string,mixed> $block Parsed block.
+	 */
+	private static function identity( array $block ): string {
+		return (string) ( $block['blockName'] ?? '' ) . '|' . md5( (string) wp_json_encode( $block['attrs'] ?? array() ) . "\0" . (string) ( $block['innerHTML'] ?? '' ) );
 	}
 
 	/**
@@ -141,12 +153,18 @@ final class Static_Site_Importer_Layout_Marker_Filter {
 	 * @return string
 	 */
 	public static function close_frame( string $html, array $block ): string {
-		unset( $block );
 		if ( ! self::$capturing || empty( self::$frames ) ) {
 			return $html;
 		}
-		$frame = array_pop( self::$frames );
-		return self::mark_html( $html, (string) $frame['path'] );
+		// A block rendered without `render_block_data` (for example by a parent
+		// that renders its children directly) opened no frame: leave it
+		// unmarked and keep the open frame for its own render.
+		$top = self::$frames[ count( self::$frames ) - 1 ];
+		if ( $top['block'] !== self::identity( $block ) ) {
+			return $html;
+		}
+		array_pop( self::$frames );
+		return self::mark_html( $html, (string) $top['path'] );
 	}
 
 	/**

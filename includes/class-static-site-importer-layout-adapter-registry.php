@@ -15,9 +15,6 @@ if ( ! class_exists( 'Static_Site_Importer_Layout_Adapter' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_None_Layout_Adapter' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-none-layout-adapter.php';
 }
-if ( ! class_exists( 'Static_Site_Importer_Core_Grid_Layout_Adapter' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-core-grid-layout-adapter.php';
-}
 if ( ! class_exists( 'Static_Site_Importer_Canvas_Layout_Adapter' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-canvas-layout-adapter.php';
 }
@@ -105,7 +102,7 @@ final class Static_Site_Importer_Layout_Adapter_Registry {
 	 */
 	public static function adapters(): array {
 		$adapters = array();
-		foreach ( array( 'Static_Site_Importer_None_Layout_Adapter', 'Static_Site_Importer_Core_Grid_Layout_Adapter', 'Static_Site_Importer_Canvas_Layout_Adapter' ) as $adapter_class ) {
+		foreach ( array( 'Static_Site_Importer_None_Layout_Adapter', 'Static_Site_Importer_Canvas_Layout_Adapter' ) as $adapter_class ) {
 			if ( ! class_exists( $adapter_class ) ) {
 				continue;
 			}

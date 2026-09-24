@@ -12,16 +12,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Canvas_Layout_Adapter' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-canvas-layout-adapter.php';
 }
-if ( ! class_exists( 'Static_Site_Importer_Core_Grid_Layout_Adapter' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-core-grid-layout-adapter.php';
-}
 
 /**
  * Releases the minimal host layout stylesheet on block asset enqueues.
  *
- * Projection adapters add a generated class to the host block; this runtime
- * styles those classes on the frontend and in the editor: canvas hosts render
- * as block containers, core-grid hosts render the 12-column grid.
+ * The Canvas adapter adds a generated class to each projected host. This
+ * runtime styles that class on the frontend and in the editor so the source's
+ * own layout rules cannot fight the Canvas placement.
  */
 final class Static_Site_Importer_Layout_Release {
 
@@ -59,14 +56,14 @@ final class Static_Site_Importer_Layout_Release {
 	 * @return string
 	 */
 	public static function stylesheet(): string {
-		$canvas   = ( new Static_Site_Importer_Canvas_Layout_Adapter() )->host_class();
-		$grid     = ( new Static_Site_Importer_Core_Grid_Layout_Adapter() )->host_class();
-		$columns  = (string) Static_Site_Importer_Core_Grid_Layout_Adapter::COLUMNS;
+		$canvas = ( new Static_Site_Importer_Canvas_Layout_Adapter() )->host_class();
 		// The adapter owns the host's layout, so its release must beat the
 		// source's own layout rules (author and editor-scoped stylesheets).
-		$css      = '.' . $canvas . '{display:block!important}';
-		$css     .= '.' . $canvas . '>.wp-block-tabor-canvas{width:100%;max-width:none;margin-left:0;margin-right:0}';
-		$css     .= '.' . $grid . '{display:grid!important;grid-template-columns:repeat(' . $columns . ',minmax(0,1fr))!important;grid-template-rows:none!important;grid-template-areas:none!important}';
+		$css  = '.' . $canvas . '{display:block!important}';
+		$css .= '.' . $canvas . '>.wp-block-tabor-canvas{width:100%;max-width:none;margin-left:0;margin-right:0}';
+		// A Canvas frame is each placed block's whole measured box: source item
+		// widths, grid areas, flex sizing and margins must not add to or fight it.
+		$css .= '.' . $canvas . ' .canvas__grid>*>*{width:auto!important;max-width:none!important;min-width:0!important;flex:none!important;grid-area:auto;margin:0!important}';
 		return $css;
 	}
 }
