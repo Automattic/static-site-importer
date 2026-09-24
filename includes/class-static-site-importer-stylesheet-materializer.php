@@ -17,7 +17,13 @@ if ( ! class_exists( 'Static_Site_Importer_Build_Provenance' ) ) {
 }
 require_once __DIR__ . '/class-static-site-importer-provider-layout-overlay.php';
 if ( ! class_exists( '\\Automattic\\BlocksEngine\\PhpTransformer\\AssetAnalysis\\CssUrlRewriter' ) ) {
-	require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/AssetAnalysis/CssUrlRewriter.php';
+	$blocks_engine_path = getenv( 'STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH' );
+	if ( ! is_string( $blocks_engine_path ) || '' === trim( $blocks_engine_path ) ) {
+		$blocks_engine_path = dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer';
+	} else {
+		$blocks_engine_path = rtrim( $blocks_engine_path, '/\\' );
+	}
+	require_once $blocks_engine_path . '/src/AssetAnalysis/CssUrlRewriter.php';
 }
 
 /**

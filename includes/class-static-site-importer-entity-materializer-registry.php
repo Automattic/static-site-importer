@@ -1478,12 +1478,23 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				continue;
 			}
 
-			$row               = array(
+			$row = array(
 				'selector'    => isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '',
 				'source_path' => isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '',
 				'form'        => isset( $form['form'] ) && is_array( $form['form'] ) ? $form['form'] : array(),
 				'controls'    => $controls,
 			);
+			if ( array_key_exists( 'choice_groups', $form ) ) {
+				$choice_groups = self::normalize_form_choice_groups( $form['choice_groups'] );
+				if ( isset( $choice_groups['error'] ) ) {
+					$errors[] = array(
+						'path'    => $path_prefix . '.choice_groups',
+						'message' => $choice_groups['error'],
+					);
+					continue;
+				}
+				$row['choice_groups'] = $choice_groups['groups'] ?? array();
+			}
 			$fallback_identity = $form['fallback_identity'] ?? $form['source_fallback_identity'] ?? $form['fallback_reconciliation_identity'] ?? '';
 			if ( is_string( $fallback_identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fallback_identity ) ) {
 				$row['fallback_identity'] = $fallback_identity;
@@ -1602,6 +1613,68 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'forms'  => $forms,
 			'errors' => $errors,
 		);
+	}
+
+	/**
+	 * Preserve the producer-owned choice transition contract without treating it
+	 * as recovered source backend field/value metadata.
+	 *
+	 * @param mixed $value Choice groups from Blocks Engine.
+	 * @return array{groups?:array<int,array<string,mixed>>,error?:string}
+	 */
+	private static function normalize_form_choice_groups( mixed $value ): array {
+		if ( ! is_array( $value ) || ! array_is_list( $value ) || count( $value ) > 16 ) {
+			return array( 'error' => 'choice_groups must be a bounded list.' );
+		}
+		$groups = array();
+		foreach ( $value as $group_index => $candidate ) {
+			if ( ! is_array( $candidate ) || ! is_array( $candidate['group'] ?? null ) || ! is_array( $candidate['choices'] ?? null ) || count( $candidate['choices'] ) < 2 || count( $candidate['choices'] ) > 32 ) {
+				return array( 'error' => 'Each choice group must declare between 2 and 32 choices.' );
+			}
+			$group = array();
+			foreach ( array( 'selector', 'tag', 'label', 'labelSelector', 'formSelector' ) as $key ) {
+				if ( is_string( $candidate['group'][ $key ] ?? null ) && '' !== trim( $candidate['group'][ $key ] ) && 512 >= strlen( $candidate['group'][ $key ] ) ) {
+					$group[ $key ] = trim( $candidate['group'][ $key ] );
+				}
+			}
+			if ( '' === ( $group['selector'] ?? '' ) ) {
+				return array( 'error' => 'Each choice group must declare its source selector.' );
+			}
+			$choices            = array();
+			$seen_observed_keys = array();
+			foreach ( $candidate['choices'] as $choice_index => $choice ) {
+				if ( ! is_array( $choice ) || ( $choice['index'] ?? null ) !== $choice_index || ! is_string( $choice['observed_choice_key'] ?? null ) || '' === trim( $choice['observed_choice_key'] ) || 128 < strlen( $choice['observed_choice_key'] ) || ! preg_match( '/^[A-Za-z0-9._:-]+$/D', $choice['observed_choice_key'] ) ) {
+					return array( 'error' => 'Each choice must declare a bounded stable observed_choice_key in index order.' );
+				}
+				$observed_choice_key = trim( $choice['observed_choice_key'] );
+				if ( isset( $seen_observed_keys[ $observed_choice_key ] ) ) {
+					return array( 'error' => 'Each choice group must use unique observed_choice_key values.' );
+				}
+				$seen_observed_keys[ $observed_choice_key ] = true;
+				$normalized_choice                          = array(
+					'index'               => $choice_index,
+					'observed_choice_key' => $observed_choice_key,
+					'source_value'        => null,
+				);
+				foreach ( array( 'selector', 'tag', 'id', 'role', 'label' ) as $key ) {
+					if ( is_string( $choice[ $key ] ?? null ) && '' !== trim( $choice[ $key ] ) && 512 >= strlen( $choice[ $key ] ) ) {
+						$normalized_choice[ $key ] = trim( $choice[ $key ] );
+					}
+				}
+				// The local provider value is the observed key. Preserve the source
+				// scalar only as null until the source contract supplies one.
+				$choices[] = $normalized_choice;
+			}
+			$groups[] = array(
+				'group'               => $group,
+				'choices'             => $choices,
+				'observed_transition' => array(
+					'selected_index' => null,
+					'selected'       => array_fill( 0, count( $choices ), null ),
+				),
+			);
+		}
+		return array( 'groups' => $groups );
 	}
 
 	/** @return array{graph?:array<string,mixed>,error?:string} */

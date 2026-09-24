@@ -667,6 +667,9 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 * @param array<string,mixed> $block Generated block.
 	 */
 	private static function parsed_block( array $block ): array {
+		if ( is_array( $block['_parsed_block'] ?? null ) ) {
+			return $block['_parsed_block'];
+		}
 		$name         = isset( $block['name'] ) ? (string) $block['name'] : '';
 		$attrs        = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : array();
 		$inner_blocks = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : array();
