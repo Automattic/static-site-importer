@@ -300,8 +300,10 @@ async function loginAsAdmin( page, origin, adminUser, adminPassword ) {
 
 /**
  * The three capture widths the adapters map onto the site's own breakpoints:
- * one inside each of WordPress's desktop, tablet and mobile ranges, read from
- * the theme's `settings.viewport` (defaults 782/480).
+ * the widest viewport in each of the desktop, tablet and mobile ranges, read
+ * from the theme's `settings.viewport` (defaults 782/480). Content is
+ * shortest at a range's widest viewport, so a frame captured there is the
+ * minimum Canvas grows from as narrower viewports reflow its content.
  *
  * @param {{tablet?:string,mobile?:string}|null} viewport
  * @returns {Array<number>}
@@ -311,9 +313,9 @@ export function captureWidthsForViewport( viewport ) {
 		const match = /^([0-9.]+)px$/.exec( String( value ?? '' ).trim() );
 		return match ? Number( match[ 1 ] ) : fallback;
 	};
-	const tablet = px( viewport?.tablet, 782 );
-	const mobile = Math.min( px( viewport?.mobile, 480 ), tablet - 1 );
-	return [ 1440, Math.round( ( tablet + mobile ) / 2 ), Math.max( 320, Math.min( 390, mobile ) ) ];
+	const tablet = Math.round( px( viewport?.tablet, 782 ) );
+	const mobile = Math.max( 320, Math.min( Math.round( px( viewport?.mobile, 480 ) ), tablet - 1 ) );
+	return [ 1440, tablet, mobile ];
 }
 
 function defaultCaptureSections( { origin, adminUser, adminPassword, pageId, viewport } ) {
