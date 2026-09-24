@@ -37,6 +37,7 @@ final class Static_Site_Importer_Layout_Release {
 			return;
 		}
 		add_action( 'enqueue_block_assets', array( self::class, 'enqueue_assets' ) );
+		add_filter( 'render_block', array( self::class, 'expose_grid_host' ), 10, 2 );
 	}
 
 	/**
@@ -54,6 +55,43 @@ final class Static_Site_Importer_Layout_Release {
 	}
 
 	/**
+	 * Write a core-grid host's native column count and gaps onto its rendered
+	 * wrapper as custom properties the release stylesheet reads.
+	 *
+	 * @param string              $content Rendered block.
+	 * @param array<string,mixed> $block   Parsed block.
+	 */
+	public static function expose_grid_host( $content, $block ) {
+		$host = ( new Static_Site_Importer_Core_Grid_Layout_Adapter() )->host_class();
+		// The projector adds the host class to the saved markup, not to the
+		// className attribute, so match on the rendered wrapper.
+		if ( ! is_string( $content ) || ! is_array( $block ) || ! str_contains( $content, $host ) || 'grid' !== ( $block['attrs']['layout']['type'] ?? '' ) || ! class_exists( 'WP_HTML_Tag_Processor' ) ) {
+			return $content;
+		}
+		$columns = (int) ( $block['attrs']['layout']['columnCount'] ?? 0 );
+		$gap     = $block['attrs']['style']['spacing']['blockGap'] ?? null;
+		$length  = static fn( $value ): string => is_string( $value ) && 1 === preg_match( '/^[0-9]+(?:\\.[0-9]+)?px$/', $value ) ? $value : '0px';
+		$vars    = array();
+		if ( $columns > 0 ) {
+			$vars[] = '--ssi-layout-columns:' . $columns;
+		}
+		if ( is_array( $gap ) ) {
+			$vars[] = '--ssi-layout-column-gap:' . $length( $gap['left'] ?? '' );
+			$vars[] = '--ssi-layout-row-gap:' . $length( $gap['top'] ?? '' );
+		}
+		if ( array() === $vars ) {
+			return $content;
+		}
+		$processor = new WP_HTML_Tag_Processor( $content );
+		if ( ! $processor->next_tag( array( 'class_name' => $host ) ) ) {
+			return $content;
+		}
+		$style = trim( (string) $processor->get_attribute( 'style' ) );
+		$processor->set_attribute( 'style', ( '' !== $style ? rtrim( $style, ';' ) . ';' : '' ) . implode( ';', $vars ) );
+		return $processor->get_updated_html();
+	}
+
+	/**
 	 * Return the minimal host layout stylesheet.
 	 *
 	 * @return string
@@ -66,7 +104,10 @@ final class Static_Site_Importer_Layout_Release {
 		// source's own layout rules (author and editor-scoped stylesheets).
 		$css      = '.' . $canvas . '{display:block!important}';
 		$css     .= '.' . $canvas . '>.wp-block-tabor-canvas{width:100%;max-width:none;margin-left:0;margin-right:0}';
-		$css     .= '.' . $grid . '{display:grid!important;grid-template-columns:repeat(' . $columns . ',minmax(0,1fr))!important;grid-template-rows:none!important;grid-template-areas:none!important}';
+		// Core renders the host's own columnCount and blockGap; the release only
+		// has to outrank the source's rules, so it reads them back from the
+		// custom properties `expose_grid_host()` writes on the rendered host.
+		$css     .= '.' . $grid . '{display:grid!important;grid-template-columns:repeat(var(--ssi-layout-columns,' . $columns . '),minmax(0,1fr))!important;grid-template-rows:none!important;grid-template-areas:none!important;column-gap:var(--ssi-layout-column-gap,0px)!important;row-gap:var(--ssi-layout-row-gap,0px)!important}';
 		// Placement is now the only thing positioning or sizing each placed
 		// item: source item widths, grid areas and flex sizing would fight it.
 		$items    = '.' . $canvas . ' .canvas__grid>*>*,.' . $grid . '>*';

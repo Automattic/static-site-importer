@@ -294,23 +294,46 @@ namespace {
 	$core_pieces = Static_Site_Importer_Layout_Projector::parse( $core_grid['markup'] );
 	$assert( null !== $core_pieces, 'core-grid-output-parses' );
 	$core_host = $find( $core_pieces, '0' );
-	$assert( array( 'type' => 'grid', 'columnCount' => 12 ) === ( $core_host['attrs']['layout'] ?? null ), 'core-grid-host-layout-attribute', (string) wp_json_encode( $core_host['attrs'] ?? null ) );
+	$assert( array( 'type' => 'grid', 'columnCount' => 8 ) === ( $core_host['attrs']['layout'] ?? null ) && array( 'top' => '0px', 'left' => '0px' ) === ( $core_host['attrs']['style']['spacing']['blockGap'] ?? null ), 'core-grid-host-fits-source-columns-and-gaps', (string) wp_json_encode( $core_host['attrs'] ?? null ) );
 	$assert( array( 'name' => 'bistro' ) === ( $core_host['attrs']['metadata'] ?? null ), 'core-grid-host-preserves-existing-attributes' );
 	$assert( false !== strpos( (string) $core_host['innerContent'][0], 'class="wp-block-group bistro ssi-layout-core-grid-host"' ), 'core-grid-host-class-appended', (string) wp_json_encode( $core_host['innerContent'][0] ?? null ) );
 	$assert( 'core/group' === ( $core_host['blockName'] ?? '' ), 'core-grid-host-keeps-block-name' );
 
 	// Base viewport rows derive from the distinct item top edges (0 and 336px).
 	$core_image = $find( $core_pieces, '0.0' );
-	$assert( array( 'columnStart' => 1, 'columnSpan' => 3, 'rowStart' => 1, 'rowSpan' => 1 ) === ( $core_image['attrs']['style']['layout'] ?? null ), 'core-grid-image-base-placement', (string) wp_json_encode( $core_image['attrs'] ?? null ) );
-	$assert( array( 'columnStart' => 1, 'columnSpan' => 6, 'rowStart' => 1, 'rowSpan' => 1 ) === ( $core_image['attrs']['style']['@tablet']['layout'] ?? null ), 'core-grid-image-tablet-override-under-breakpoint-style', (string) wp_json_encode( $core_image['attrs'] ?? null ) );
-	$assert( array( 'columnStart' => 1, 'columnSpan' => 12, 'rowStart' => 1, 'rowSpan' => 2 ) === ( $core_image['attrs']['style']['@mobile']['layout'] ?? null ), 'core-grid-image-mobile-override-under-breakpoint-style', (string) wp_json_encode( $core_image['attrs'] ?? null ) );
+	$assert( array( 'columnStart' => 1, 'columnSpan' => 2, 'rowStart' => 1, 'rowSpan' => 1 ) === ( $core_image['attrs']['style']['layout'] ?? null ), 'core-grid-image-base-placement', (string) wp_json_encode( $core_image['attrs'] ?? null ) );
+	$assert( array( 'columnStart' => 1, 'columnSpan' => 4, 'rowStart' => 1, 'rowSpan' => 1 ) === ( $core_image['attrs']['style']['@tablet']['layout'] ?? null ), 'core-grid-image-tablet-override-under-breakpoint-style', (string) wp_json_encode( $core_image['attrs'] ?? null ) );
+	$assert( array( 'columnStart' => 1, 'columnSpan' => 8, 'rowStart' => 1, 'rowSpan' => 2 ) === ( $core_image['attrs']['style']['@mobile']['layout'] ?? null ), 'core-grid-image-mobile-override-under-breakpoint-style', (string) wp_json_encode( $core_image['attrs'] ?? null ) );
 	$assert( ! isset( $core_image['attrs']['style']['layout']['@tablet'] ), 'core-grid-overrides-not-nested-in-base-layout' );
 	$assert( 12 === ( $core_image['attrs']['id'] ?? null ), 'core-grid-image-preserves-existing-attributes' );
 	$core_paragraph = $find( $core_pieces, '0.1' );
-	$assert( array( 'columnStart' => 6, 'columnSpan' => 7, 'rowStart' => 1, 'rowSpan' => 2 ) === ( $core_paragraph['attrs']['style']['layout'] ?? null ), 'core-grid-paragraph-spans-both-rows', (string) wp_json_encode( $core_paragraph['attrs'] ?? null ) );
+	$assert( array( 'columnStart' => 4, 'columnSpan' => 5, 'rowStart' => 1, 'rowSpan' => 2 ) === ( $core_paragraph['attrs']['style']['layout'] ?? null ), 'core-grid-paragraph-spans-both-rows', (string) wp_json_encode( $core_paragraph['attrs'] ?? null ) );
 	$core_buttons = $find( $core_pieces, '0.2' );
-	$assert( array( 'columnStart' => 1, 'columnSpan' => 2, 'rowStart' => 2, 'rowSpan' => 1 ) === ( $core_buttons['attrs']['style']['layout'] ?? null ), 'core-grid-buttons-second-row', (string) wp_json_encode( $core_buttons['attrs'] ?? null ) );
+	$assert( array( 'columnStart' => 1, 'columnSpan' => 1, 'rowStart' => 2, 'rowSpan' => 1 ) === ( $core_buttons['attrs']['style']['layout'] ?? null ), 'core-grid-buttons-second-row', (string) wp_json_encode( $core_buttons['attrs'] ?? null ) );
 	$assert( false === strpos( $core_grid['markup'], 'ssi-layout-canvas-host' ), 'core-grid-does-not-leak-canvas-class' );
+
+	// --- Core-grid column fitting -------------------------------------------------
+	$fit_markup = "<!-- wp:group -->\n<div class=\"wp-block-group\"><!-- wp:paragraph -->\n<p>A</p>\n<!-- /wp:paragraph --><!-- wp:paragraph -->\n<p>B</p>\n<!-- /wp:paragraph --><!-- wp:paragraph -->\n<p>C</p>\n<!-- /wp:paragraph --></div>\n<!-- /wp:group -->\n";
+	$fit_host    = static fn( array $model ): array => $find( Static_Site_Importer_Layout_Projector::parse( Static_Site_Importer_Layout_Projector::project( $fit_markup, $model, new Static_Site_Importer_Core_Grid_Layout_Adapter() )['markup'] ), '0' );
+	$fit_item    = static fn( array $model, string $path ): array => $find( Static_Site_Importer_Layout_Projector::parse( Static_Site_Importer_Layout_Projector::project( $fit_markup, $model, new Static_Site_Importer_Core_Grid_Layout_Adapter() )['markup'] ), $path );
+	$fit_model   = static fn( array $items ): array => Static_Site_Importer_Layout_Placement_Model::validate( array(
+		'schema' => 'static-site-importer/layout-placement/v1',
+		'host'   => array( 'path' => '0', 'viewports' => array( 1440 => $box( 0, 0, 1200, 300 ) ) ),
+		'items'  => array_map( static fn( array $item, int $index ): array => array( 'path' => '0.' . $index, 'viewports' => array( 1440 => $box( $item[0], 0, $item[1], 300 ) ) ), $items, array_keys( $items ) ),
+	) )['model'];
+	// Three equal columns with a 24px source gap: 3 tracks and a native 24px gap.
+	$three = $fit_model( array( array( 0, 384 ), array( 408, 384 ), array( 816, 384 ) ) );
+	$assert( 3 === ( $fit_host( $three )['attrs']['layout']['columnCount'] ?? null ) && '24px' === ( $fit_host( $three )['attrs']['style']['spacing']['blockGap']['left'] ?? null ), 'core-grid-fits-three-equal-columns-with-source-gap', (string) wp_json_encode( $fit_host( $three )['attrs'] ?? null ) );
+	$assert( array( 'columnStart' => 2, 'columnSpan' => 1, 'rowStart' => 1, 'rowSpan' => 1 ) === ( $fit_item( $three, '0.1' )['attrs']['style']['layout'] ?? null ), 'core-grid-three-column-middle-placement' );
+	// A 55% / 45% split is off the 12-track grid (7 tracks = 58.3%, a 40px error);
+	// the fewest tracks within tolerance (1% of the width) are 9 (5/9 = 55.6%).
+	$split = $fit_model( array( array( 0, 660 ), array( 660, 540 ) ) );
+	$assert( 9 === ( $fit_host( $split )['attrs']['layout']['columnCount'] ?? null ) && array( 'columnStart' => 1, 'columnSpan' => 5, 'rowStart' => 1, 'rowSpan' => 1 ) === ( $fit_item( $split, '0.0' )['attrs']['style']['layout'] ?? null ), 'core-grid-fits-uneven-split-off-the-twelve-track-grid', (string) wp_json_encode( $fit_host( $split )['attrs'] ?? null ) );
+
+	// Items inset from the host edge fit no track grid exactly: the smallest
+	// error wins, not the fewest columns.
+	$inset = $fit_model( array( array( 40, 676 ), array( 756, 684 ) ) );
+	$assert( 1 < ( $fit_host( $inset )['attrs']['layout']['columnCount'] ?? 1 ) && 1 === ( $fit_item( $inset, '0.0' )['attrs']['style']['layout']['rowStart'] ?? null ) && 1 === ( $fit_item( $inset, '0.1' )['attrs']['style']['layout']['rowStart'] ?? null ), 'core-grid-inexact-fit-keeps-side-by-side-items', (string) wp_json_encode( $fit_host( $inset )['attrs'] ?? null ) );
 
 	// --- Canvas projection -------------------------------------------------------
 	$canvas = Static_Site_Importer_Layout_Projector::project( $original_markup, $validation['model'], new Static_Site_Importer_Canvas_Layout_Adapter() );
@@ -397,7 +420,12 @@ namespace {
 	// --- Host layout release and capture markers -----------------------------------
 	$stylesheet = Static_Site_Importer_Layout_Release::stylesheet();
 	$assert( false !== strpos( $stylesheet, '.ssi-layout-canvas-host{display:block!important}' ), 'release-stylesheet-blocks-canvas-hosts', $stylesheet );
-	$assert( false !== strpos( $stylesheet, '.ssi-layout-core-grid-host{display:grid!important;grid-template-columns:repeat(12,minmax(0,1fr))!important;grid-template-rows:none!important;grid-template-areas:none!important}' ), 'release-stylesheet-grids-core-hosts', $stylesheet );
+	$assert( false !== strpos( $stylesheet, '.ssi-layout-core-grid-host{display:grid!important;grid-template-columns:repeat(var(--ssi-layout-columns,12),minmax(0,1fr))!important;grid-template-rows:none!important;grid-template-areas:none!important;column-gap:var(--ssi-layout-column-gap,0px)!important;row-gap:var(--ssi-layout-row-gap,0px)!important}' ), 'release-stylesheet-grids-core-hosts', $stylesheet );
+
+	if ( class_exists( 'WP_HTML_Tag_Processor' ) ) {
+		$exposed = Static_Site_Importer_Layout_Release::expose_grid_host( '<div class="wp-block-group ssi-layout-core-grid-host" style="color:red"><p>x</p></div>', array( 'attrs' => array( 'layout' => array( 'type' => 'grid', 'columnCount' => 9 ), 'style' => array( 'spacing' => array( 'blockGap' => array( 'top' => '12px', 'left' => '24px' ) ) ) ) ) );
+		$assert( str_contains( $exposed, 'style="color:red;--ssi-layout-columns:9;--ssi-layout-column-gap:24px;--ssi-layout-row-gap:12px"' ), 'release-exposes-fitted-grid-to-its-stylesheet', $exposed );
+	}
 
 	Static_Site_Importer_Layout_Marker_Filter::begin_content_capture( '' );
 	Static_Site_Importer_Layout_Marker_Filter::open_frame( array( 'blockName' => 'core/group' ) );

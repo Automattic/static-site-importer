@@ -268,7 +268,22 @@ async function loginAsAdmin( page, origin, adminUser, adminPassword ) {
 	await page.goto( loginUrl );
 	await page.fill( '#user_login', adminUser );
 	await page.fill( '#user_pass', adminPassword );
-	await Promise.all( [ page.waitForURL( url => ! url.pathname.endsWith( '/wp-login.php' ), { timeout: 90000 } ), page.click( '#wp-submit' ) ] );
+	// Submit, and resubmit if a slow login page swallowed the first click.
+	for ( let attempt = 0; attempt < 3; attempt++ ) {
+		await page.click( '#wp-submit' );
+		try {
+			await page.waitForURL( url => ! url.pathname.endsWith( '/wp-login.php' ), { timeout: 30000, waitUntil: 'commit' } );
+			return;
+		} catch ( error ) {
+			if ( 2 === attempt ) {
+				throw error;
+			}
+			if ( ! ( await page.locator( '#wp-submit' ).count() ) ) {
+				return;
+			}
+			await page.fill( '#user_pass', adminPassword );
+		}
+	}
 }
 
 /**

@@ -24,7 +24,13 @@ final class Static_Site_Importer_Core_Grid_Layout_Adapter extends Static_Site_Im
 
 	private const ROW_TOLERANCE = 8.0;
 
+	/** Column count used when no captured layout suggests a better fit. */
 	public const COLUMNS = 12;
+	/** Largest column count considered when fitting the source's own grid. */
+	public const MAX_COLUMNS = 24;
+	/** Largest edge error (px, or share of the host width) a fitted grid may leave. */
+	private const FIT_TOLERANCE_PX    = 4.0;
+	private const FIT_TOLERANCE_SHARE = 0.01;
 
 	/**
 	 * Adapter id.
@@ -79,6 +85,13 @@ final class Static_Site_Importer_Core_Grid_Layout_Adapter extends Static_Site_Im
 	 */
 	private array $row_bands = array();
 
+	/** Fitted column count for the host being projected. */
+	private int $columns = self::COLUMNS;
+
+	/** Fitted horizontal and vertical gaps (px) between items. */
+	private float $column_gap = 0.0;
+	private float $row_gap    = 0.0;
+
 	/**
 	 * Derive grid rows from every item's top edge, per viewport, so each item's
 	 * row start and span line up with its siblings.
@@ -104,6 +117,126 @@ final class Static_Site_Importer_Core_Grid_Layout_Adapter extends Static_Site_Im
 			}
 			$this->row_bands[ $width ] = $bands;
 		}
+		$this->fit_grid( $model );
+	}
+
+	/**
+	 * Fit the column count and gaps to the source layout: the gaps are the
+	 * smallest positive distances between neighbouring items at the base
+	 * width, and the column count is the smallest N (up to MAX_COLUMNS) whose
+	 * tracks put every item edge within tolerance at every captured width,
+	 * else the N with the smallest worst-case error.
+	 */
+	private function fit_grid( array $model ): void {
+		$host_model = is_array( $model['host'] ?? null ) ? $model['host'] : array();
+		$widths     = Static_Site_Importer_Layout_Placement_Model::viewport_widths( $host_model );
+		$runs       = array();
+		foreach ( $widths as $width ) {
+			$host_box = Static_Site_Importer_Layout_Placement_Model::box_at( $host_model, $width );
+			if ( null === $host_box || 0.0 >= (float) $host_box['width'] ) {
+				continue;
+			}
+			$boxes = array();
+			foreach ( is_array( $model['items'] ?? null ) ? $model['items'] : array() as $item ) {
+				$box = is_array( $item ) ? Static_Site_Importer_Layout_Placement_Model::box_at( $item, $width ) : null;
+				if ( null !== $box && 1.0 <= (float) $box['width'] && 1.0 <= (float) $box['height'] ) {
+					$boxes[] = array(
+						'left'   => (float) $box['x'] - (float) $host_box['x'],
+						'right'  => (float) $box['x'] + (float) $box['width'] - (float) $host_box['x'],
+						'top'    => (float) $box['y'] - (float) $host_box['y'],
+						'bottom' => (float) $box['y'] + (float) $box['height'] - (float) $host_box['y'],
+					);
+				}
+			}
+			$runs[ $width ] = array(
+				'width' => (float) $host_box['width'],
+				'boxes' => $boxes,
+			);
+		}
+		if ( array() === $runs ) {
+			return;
+		}
+		$base      = $runs[ $widths[0] ] ?? reset( $runs );
+		// Vertical spacing between stacked items stays with the items' own
+		// margins (as in the source flow); a row gap would add to it.
+		$row_gap   = 0.0;
+		$gaps      = array_unique( array( self::neighbour_gap( $base['boxes'], 'left', 'right', 'top', 'bottom' ), 0.0 ) );
+		// Rank fits: every captured width within tolerance, then the base
+		// (widest) width within tolerance, then fewer columns, then the smaller
+		// worst-case error. A single column count and gap serve all widths.
+		$base_width = array_key_first( $runs );
+		$best       = null;
+		foreach ( $gaps as $gap ) {
+			for ( $columns = 1; $columns <= self::MAX_COLUMNS; $columns++ ) {
+				list( $all_within, $worst ) = self::fit_error( $runs, $columns, $gap );
+				list( $base_within ) = self::fit_error( array( $base_width => $runs[ $base_width ] ), $columns, $gap );
+				// Within tolerance, fewer columns win; outside it, the smaller
+				// error across all captured widths wins (fewer columns break ties).
+				$rank = $base_within
+					? array( $all_within ? 0 : 1, 0, $columns, $worst )
+					: array( 2, 1, $worst, $columns );
+				if ( null === $best || $rank < $best['rank'] ) {
+					$best = array(
+						'rank'    => $rank,
+						'columns' => $columns,
+						'gap'     => $gap,
+					);
+				}
+			}
+		}
+		$this->columns    = $best['columns'];
+		$this->column_gap = $best['gap'];
+		$this->row_gap    = $row_gap;
+	}
+
+	/**
+	 * Whether every item edge lands within tolerance on N tracks with the
+	 * given gap at every captured width, and the worst edge error.
+	 *
+	 * @param array<int|string,array{width:float,boxes:array<int,array<string,float>>}> $runs
+	 * @return array{0:bool,1:float}
+	 */
+	private static function fit_error( array $runs, int $columns, float $gap ): array {
+		$worst  = 0.0;
+		$within = true;
+		foreach ( $runs as $run ) {
+			$pitch = ( $run['width'] + $gap ) / $columns;
+			foreach ( $run['boxes'] as $box ) {
+				$start = max( 0, min( $columns - 1, (int) round( $box['left'] / $pitch ) ) );
+				$end   = max( $start + 1, min( $columns, (int) round( ( $box['right'] + $gap ) / $pitch ) ) );
+				$error = max( abs( $box['left'] - $start * $pitch ), abs( $box['right'] - ( $end * $pitch - $gap ) ) );
+				$worst = max( $worst, $error );
+				if ( $error > max( self::FIT_TOLERANCE_PX, self::FIT_TOLERANCE_SHARE * $run['width'] ) ) {
+					$within = false;
+				}
+			}
+		}
+		return array( $within, $worst );
+	}
+
+	/**
+	 * Smallest positive distance between two boxes that sit side by side on
+	 * one axis (overlapping on the other axis), or 0 when none do.
+	 *
+	 * @param array<int,array<string,float>> $boxes
+	 */
+	private static function neighbour_gap( array $boxes, string $near, string $far, string $cross_near, string $cross_far ): float {
+		$gap = INF;
+		foreach ( $boxes as $a ) {
+			foreach ( $boxes as $b ) {
+				$distance = $b[ $near ] - $a[ $far ];
+				$overlaps = min( $a[ $cross_far ], $b[ $cross_far ] ) - max( $a[ $cross_near ], $b[ $cross_near ] ) > 1.0;
+				if ( $overlaps && $distance > 0.5 && $distance < $gap ) {
+					$gap = $distance;
+				}
+			}
+		}
+		return is_finite( $gap ) ? round( $gap ) : 0.0;
+	}
+
+	/** Fitted column count of the host being projected. */
+	public function columns(): int {
+		return $this->columns;
 	}
 
 	/**
@@ -114,8 +247,16 @@ final class Static_Site_Importer_Core_Grid_Layout_Adapter extends Static_Site_Im
 		$attrs              = is_array( $host_block['attrs'] ?? null ) ? $host_block['attrs'] : array();
 		$attrs['layout']    = array(
 			'type'        => 'grid',
-			'columnCount' => self::COLUMNS,
+			'columnCount' => $this->columns,
 		);
+		// Native gap: tracks and gaps together reproduce the source edges.
+		$style                                = is_array( $attrs['style'] ?? null ) ? $attrs['style'] : array();
+		$style['spacing']                     = is_array( $style['spacing'] ?? null ) ? $style['spacing'] : array();
+		$style['spacing']['blockGap']         = array(
+			'top'  => self::px( $this->row_gap ),
+			'left' => self::px( $this->column_gap ),
+		);
+		$attrs['style']      = $style;
 		$host_block['attrs'] = $attrs;
 	}
 
@@ -164,9 +305,9 @@ final class Static_Site_Importer_Core_Grid_Layout_Adapter extends Static_Site_Im
 		if ( null === $item_box || null === $host_box || 0.0 >= (float) $host_box['width'] ) {
 			return null;
 		}
-		$track               = (float) $host_box['width'] / self::COLUMNS;
+		$pitch               = ( (float) $host_box['width'] + $this->column_gap ) / $this->columns;
 		$left                = (float) $item_box['x'] - (float) $host_box['x'];
-		list( $start, $span ) = self::track_span( $left, $left + (float) $item_box['width'], $track, self::COLUMNS );
+		list( $start, $span ) = self::track_span( $left, $left + (float) $item_box['width'] + $this->column_gap, $pitch, $this->columns );
 		$top                 = (float) $item_box['y'] - (float) $host_box['y'];
 		$bands               = $this->row_bands[ $width ] ?? array();
 		$row_start           = self::band_index( $bands, $top );
@@ -177,6 +318,10 @@ final class Static_Site_Importer_Core_Grid_Layout_Adapter extends Static_Site_Im
 			'rowStart'    => $row_start,
 			'rowSpan'     => max( 1, $row_end - $row_start + 1 ),
 		);
+	}
+
+	private static function px( float $value ): string {
+		return ( 0.0 === $value ? '0' : (string) (int) round( $value ) ) . 'px';
 	}
 
 	/**
