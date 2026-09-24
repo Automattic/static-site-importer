@@ -983,6 +983,19 @@ if ( is_array( $typed_descriptor ) ) {
 	$event_bearing_media_output = (string) ob_get_clean();
 	$assert( str_contains( $event_bearing_media_output, '<img src="safe-hero.avif" alt="Hero" fetchpriority="high">' ), 'typed-renderer-preserves-safe-media-inside-event-bearing-wrapper', $event_bearing_media_output );
 	$assert( ! str_contains( strtolower( $event_bearing_media_output ), 'onload' ) && ! str_contains( $event_bearing_media_output, '<wow-image' ), 'typed-renderer-removes-event-bearing-custom-wrapper', $event_bearing_media_output );
+	// Clip paths and masks carry their coordinate system on the element. Without
+	// clipPathUnits/maskUnits an objectBoundingBox shape (0-1 coordinates) is
+	// read in user space and the clipped section collapses to about one pixel.
+	$attributes = array(
+		'kind'    => 'media',
+		'content' => '<svg width="0" height="0" aria-hidden="true"><defs><clipPath id="wave" clipPathUnits="objectBoundingBox" transform="scale(1 -1) translate(0 -1)"><path d="M0,0 H1 V0.9 C0.75,1 0.25,0.8 0,0.9 Z"></path></clipPath><mask id="fade" maskUnits="objectBoundingBox" maskContentUnits="objectBoundingBox" x="0" y="0" width="1" height="1"><rect width="1" height="1" fill="white"></rect></mask></defs></svg><img src="hero.jpg" alt="" style="clip-path:url(#wave)">',
+	);
+	ob_start();
+	eval( '?>' . $typed_render );
+	$clip_geometry_output = strtolower( (string) ob_get_clean() );
+	foreach ( array( 'clippathunits="objectboundingbox"', 'transform="scale(1 -1) translate(0 -1)"', 'maskunits="objectboundingbox"', 'maskcontentunits="objectboundingbox"', 'x="0" y="0" width="1" height="1"' ) as $fragment ) {
+		$assert( str_contains( $clip_geometry_output, $fragment ), 'typed-renderer-preserves-clip-and-mask-geometry-' . $fragment, $clip_geometry_output );
+	}
 	$attributes = array(
 		'kind'    => 'media',
 		'content' => '<div class="masked-video"><svg viewBox="0 0 100 40"><defs><clipPath id="media-mask"><text x="0" y="20">Play</text></clipPath></defs></svg><video src="footer.mp4" autoplay muted loop style="clip-path:url(#media-mask)"></video></div>',
