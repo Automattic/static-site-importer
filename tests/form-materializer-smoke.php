@@ -1226,6 +1226,103 @@ namespace {
 		'a-second-breakpoint-changing-the-track-count-again-keeps-the-wrapper-layout-decline',
 		wp_json_encode( $two_variant_grid_row )
 	);
+	$span_fact = static function ( string $id, ?string $parent, int $order, array $layout, array $properties ): array {
+		return array(
+			'id'         => $id,
+			'kind'       => 'container',
+			'parent'     => $parent,
+			'order'      => $order,
+			'source'     => array( 'tag' => 'div', 'classes' => array() ),
+			'layout'     => $layout,
+			'provenance' => array(
+				array(
+					'source_path'   => 'inline-style',
+					'source_sha256' => str_repeat( 'a', 64 ),
+					'selector'      => '[style]',
+					'condition'     => null,
+					'properties'    => $properties,
+				),
+			),
+		);
+	};
+	$span_row_form = array(
+		'selector'         => 'form.span-row',
+		'controls'         => array(
+			array( 'tag' => 'input', 'type' => 'text', 'name' => 'first', 'label' => 'First name' ),
+			array( 'tag' => 'input', 'type' => 'text', 'name' => 'last', 'label' => 'Last name' ),
+			array( 'tag' => 'textarea', 'type' => 'textarea', 'name' => 'message', 'label' => 'Message' ),
+			array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ),
+			array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+		),
+		'control_topology' => array(
+			'schema'    => 'generic/form-control-topology/v1',
+			'max_depth' => 8,
+			'max_nodes' => 128,
+			'truncated' => false,
+			'nodes'     => array(
+				array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div' ),
+				array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'div' ),
+				array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'control' => 0 ),
+				array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 1, 'depth' => 1, 'tag' => 'div' ),
+				array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-2', 'order' => 0, 'depth' => 2, 'control' => 1 ),
+				array( 'id' => 'wrapper-3', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 2, 'depth' => 1, 'tag' => 'div' ),
+				array( 'id' => 'control-2', 'kind' => 'control', 'parent' => 'wrapper-3', 'order' => 0, 'depth' => 2, 'control' => 2 ),
+				array( 'id' => 'control-3', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 3 ),
+				array( 'id' => 'control-4', 'kind' => 'control', 'parent' => null, 'order' => 2, 'depth' => 0, 'control' => 4 ),
+			),
+		),
+		'layout_graph'     => $v2_layout_graph(
+			array(
+				array( 'id' => 'form', 'kind' => 'container', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'form', 'classes' => array() ), 'layout' => array(), 'provenance' => array() ),
+				array(
+					'id'         => 'wrapper-0',
+					'kind'       => 'container',
+					'parent'     => 'form',
+					'order'      => 0,
+					'source'     => array( 'tag' => 'div', 'classes' => array( 'field-row' ) ),
+					'layout'     => array( 'display' => 'grid', 'columns' => 'repeat(12, 1fr)', 'width' => '100%', 'column_gap' => 'var(--form-column-spacing, 24px)' ),
+					'provenance' => array(
+						array( 'source_path' => 'inline-style', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '[style]', 'condition' => null, 'properties' => array( 'display', 'grid-template-columns', 'width' ) ),
+						array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'b', 64 ), 'selector' => '.field-row', 'condition' => null, 'properties' => array( 'column-gap' ) ),
+					),
+				),
+				$span_fact( 'wrapper-1', 'wrapper-0', 0, array( 'column' => '1 / span 6', 'row' => '1 / span 1' ), array( 'grid-column', 'grid-row' ) ),
+				$span_fact( 'wrapper-2', 'wrapper-0', 1, array( 'column' => '7 / span 6', 'row' => '1 / span 1' ), array( 'grid-column', 'grid-row' ) ),
+				$span_fact( 'wrapper-3', 'wrapper-0', 2, array( 'column' => '1 / span 12', 'row' => '2 / span 1' ), array( 'grid-column', 'grid-row' ) ),
+			)
+		),
+	);
+	$span_row_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $span_row_form ) ) );
+	$span_row_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $span_row_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$span_row_markup    = (string) ( $span_row_row['block_markup'] ?? '' );
+	$span_row_css       = (string) ( $span_row_row['provider_layout_overlay_css']['css'] ?? '' );
+	$span_row_losses    = array_column( $span_row_row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' );
+	$assert(
+		empty( $span_row_validated['errors'] )
+			&& 'mapped' === ( $span_row_row['status'] ?? '' )
+			&& true === ( $span_row_row['runtime_mapped'] ?? false )
+			&& ! in_array( 'provider_wrapper_layout_unrepresentable', $span_row_losses, true )
+			&& ! in_array( 'provider_wrapper_layout_unrepresentable', array_column( $span_row_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true )
+			&& in_array( 'provider_grid_span_fields', array_column( $span_row_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true )
+			&& 2 === substr_count( $span_row_markup, '"width":50' )
+			&& 1 === substr_count( $span_row_markup, '"width":100' )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-text \{[^}]*"width":50\} -->\s*<div><!-- wp:jetpack\/label \{"label":"First name"\}/', $span_row_markup )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-text \{[^}]*"width":50\} -->\s*<div><!-- wp:jetpack\/label \{"label":"Last name"\}/', $span_row_markup )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-textarea \{[^}]*"width":100\} -->/', $span_row_markup )
+			&& 2 === preg_match_all( '/width:calc\(50% - 12px\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 12px\)/', $span_row_css ),
+		'twelve-column-grid-span-row-materializes-name-fields-side-by-side',
+		wp_json_encode( array( 'validation' => $span_row_validated, 'row' => $span_row_row, 'markup' => $span_row_markup, 'css' => $span_row_css ) )
+	);
+	$unclean_span_form = $span_row_form;
+	$unclean_span_form['layout_graph']['nodes'][2]['layout']['column'] = '1 / span 5';
+	$unclean_span_form['layout_graph']['nodes'][3]['layout']['column'] = '6 / span 7';
+	$unclean_span_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $unclean_span_form ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert(
+		'skipped' === ( $unclean_span_row['status'] ?? '' )
+			&& in_array( 'provider_wrapper_layout_unrepresentable', array_column( $unclean_span_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true ),
+		'span-that-does-not-map-to-a-jetpack-field-width-keeps-the-wrapper-layout-decline',
+		wp_json_encode( $unclean_span_row )
+	);
 	// A source that deliberately sizes two textareas differently through their own
 	// `rows` attribute - rather than an authored CSS height a cascade compiler could
 	// capture - must not materialize both onto this provider's one fixed default;
