@@ -22,6 +22,7 @@
     "tests/smoke-external-report-destinations.php": { "environment": "standalone-php" },
     "tests/smoke-failed-plan-validation.php": { "environment": "standalone-php" },
     "tests/smoke-export-theme-ability.php": { "environment": "standalone-php" },
+    "tests/smoke-form-context-class-fallback.php": { "environment": "standalone-php" },
     "tests/smoke-form-fallback-contract.php": { "environment": "standalone-php" },
     "tests/smoke-import-diagnostic-contract.php": { "environment": "standalone-php" },
     "tests/smoke-import-report.php": { "environment": "standalone-php" },
