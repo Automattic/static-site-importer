@@ -236,6 +236,18 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				'target_hash' => hash( 'sha256', $validated_map['scope'] ),
 			);
 		}
+		if ( ! empty( $rules ) ) {
+			// Jetpack paints `.jetpack-contact-form-container` with an unauthored
+			// box (grunion.css `:where(.jetpack-contact-form-container)` plus theme
+			// block-child margin). Reset at two classes so it beats those selectors
+			// and still loses to authored `.ssi-form-x.ssi-form-x.jetpack-contact-form-container`.
+			$rules[]      = $validated_map['scope'] . '.jetpack-contact-form-container{padding:0;margin:0;border:0}';
+			$operations[] = array(
+				'dimension'   => 'layout',
+				'strategy'    => 'provider_container_box_reset',
+				'target_hash' => hash( 'sha256', $validated_map['scope'] . '.jetpack-contact-form-container' ),
+			);
+		}
 		if ( $editor ) {
 			foreach ( $rules as $rule ) {
 				$editor_rules[] = preg_replace( '/(^|\{|, )(\.ssi-form-[a-f0-9]{12})/', '$1.editor-styles-wrapper $2', $rule );
