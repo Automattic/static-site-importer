@@ -535,31 +535,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/** Copy producer presentation facts onto the form entity without re-parsing source HTML. */
 	public static function prepare_form_entity( array $entity ): array {
-		$analysis     = Static_Site_Importer_Form_Fallback_Contract::analysis_from_metadata( $entity, is_string( $entity['selector'] ?? null ) ? $entity['selector'] : '', is_int( $entity['occurrence'] ?? null ) ? $entity['occurrence'] : 0 );
-		$presentation = $analysis['presentation'];
-		if ( 'generic/form-presentation/v1' !== ( $presentation['schema'] ?? null ) ) {
-			return $entity;
-		}
-		$controls = isset( $entity['controls'] ) && is_array( $entity['controls'] ) ? $entity['controls'] : array();
-		$form     = isset( $entity['form'] ) && is_array( $entity['form'] ) ? $entity['form'] : array();
-		foreach ( array( 'context_before', 'context_after', 'submit_presentation' ) as $key ) {
-			if ( isset( $presentation[ $key ] ) ) {
-				$form[ $key ] = $presentation[ $key ];
-			}
-		}
-		if ( ! empty( $presentation['interleaved_context'] ) ) {
-			$form['interleaved_context'] = true;
-		}
-		if ( ! empty( $presentation['textarea_height_omitted_count'] ) ) {
-			$form['textarea_height_omitted_count'] = (int) $presentation['textarea_height_omitted_count'];
-		}
-		foreach ( $presentation['textarea_heights'] ?? array() as $index => $height ) {
-			if ( isset( $controls[ $index ] ) && is_string( $height ) ) {
-				$controls[ $index ]['height'] = $height;
-			}
-		}
-		$entity['form']     = $form;
-		$entity['controls'] = $controls;
+		$normalized         = Static_Site_Importer_Form_Fallback_Contract::normalize_form_metadata( $entity );
+		$entity['form']     = $normalized['form'];
+		$entity['controls'] = $normalized['controls'];
 		return $entity;
 	}
 

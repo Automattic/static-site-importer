@@ -35,6 +35,7 @@
     { "path": "tests/smoke-external-report-destinations.php", "environment": "standalone-php" },
     { "path": "tests/smoke-failed-plan-validation.php", "environment": "standalone-php" },
     { "path": "tests/smoke-export-theme-ability.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-form-context-class-fallback.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-fallback-contract.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-diagnostic-contract.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-report.php", "environment": "standalone-php" },

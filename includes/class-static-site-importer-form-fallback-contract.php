@@ -151,14 +151,63 @@ class Static_Site_Importer_Form_Fallback_Contract {
 		$source = isset( $fallback['form'] ) || isset( $fallback['controls'] )
 			? wp_json_encode(
 				self::canonical_value(
-					array(
-						'form'     => $fallback['form'] ?? array(),
-						'controls' => $fallback['controls'] ?? array(),
-					)
+					self::normalize_form_metadata( $fallback )
 				)
 			)
 			: self::first_scalar( $fallback, array( 'source_html_preview', 'html_excerpt', 'excerpt' ) );
 		return hash( 'sha256', (string) $source );
+	}
+
+	/**
+	 * Apply this contract's normalized presentation facts to producer form metadata.
+	 *
+	 * This is the single normalization both reconciliation sides hash: a source
+	 * finding's raw producer `form`/`controls` and a materialized provider
+	 * entity normalize to the same representation, so a field the contract
+	 * normalizes can never by itself leave a provider-materialized form
+	 * unresolved.
+	 *
+	 * @param array<string,mixed> $metadata Producer form entity or finding.
+	 * @return array{form:array<string,mixed>,controls:array<int,array<string,mixed>>}
+	 */
+	public static function normalize_form_metadata( array $metadata ): array {
+		$form     = isset( $metadata['form'] ) && is_array( $metadata['form'] ) ? $metadata['form'] : array();
+		$controls = isset( $metadata['controls'] ) && is_array( $metadata['controls'] ) ? $metadata['controls'] : array();
+		foreach ( array( 'form', 'controls' ) as $key ) {
+			if ( isset( $metadata[ $key ] ) && ! is_array( $metadata[ $key ] ) ) {
+				return array(
+					'form'     => array(),
+					'controls' => array(),
+				);
+			}
+		}
+		$presentation = self::presentation_from_metadata( $metadata );
+		if ( 'generic/form-presentation/v1' !== ( $presentation['schema'] ?? null ) ) {
+			return array(
+				'form'     => $form,
+				'controls' => $controls,
+			);
+		}
+		foreach ( array( 'context_before', 'context_after', 'submit_presentation' ) as $key ) {
+			if ( isset( $presentation[ $key ] ) ) {
+				$form[ $key ] = $presentation[ $key ];
+			}
+		}
+		if ( ! empty( $presentation['interleaved_context'] ) ) {
+			$form['interleaved_context'] = true;
+		}
+		if ( ! empty( $presentation['textarea_height_omitted_count'] ) ) {
+			$form['textarea_height_omitted_count'] = (int) $presentation['textarea_height_omitted_count'];
+		}
+		foreach ( $presentation['textarea_heights'] ?? array() as $index => $height ) {
+			if ( isset( $controls[ $index ] ) && is_string( $height ) ) {
+				$controls[ $index ]['height'] = $height;
+			}
+		}
+		return array(
+			'form'     => $form,
+			'controls' => $controls,
+		);
 	}
 
 	/** Canonicalize associative metadata while retaining authored list order. */
@@ -230,10 +279,15 @@ class Static_Site_Importer_Form_Fallback_Contract {
 				}
 				$context[] = $row;
 			} elseif ( 'paragraph' === ( $item['type'] ?? '' ) ) {
-				$context[] = array(
+				$row   = array(
 					'type' => 'paragraph',
 					'text' => $text,
 				);
+				$class = self::context_class( $item['class'] ?? null );
+				if ( '' !== $class ) {
+					$row['class'] = $class;
+				}
+				$context[] = $row;
 			}
 		}
 		return $context;

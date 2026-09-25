@@ -527,8 +527,14 @@ final class Static_Site_Importer_Form_Field_Markup {
 					'content' => $block['text'],
 				);
 			} elseif ( 'paragraph' === ( $block['type'] ?? null ) ) {
+				$attrs = array();
+				$class = isset( $block['class'] ) && is_scalar( $block['class'] ) ? trim( (string) $block['class'] ) : '';
+				if ( '' !== $class ) {
+					$attrs['className'] = $class;
+				}
 				$blocks[] = array(
 					'name'    => 'core/paragraph',
+					'attrs'   => $attrs,
 					'wrapper' => 'paragraph',
 					'content' => $block['text'],
 				);
@@ -707,7 +713,11 @@ final class Static_Site_Importer_Form_Field_Markup {
 			}
 			$prefix = "\n<h" . $level . ' class="' . self::escape_attribute( $classes ) . '">' . self::rich_text_markup( $content ) . '</h' . $level . ">\n";
 		} elseif ( 'paragraph' === $wrapper ) {
-			$prefix = "\n<p>" . self::rich_text_markup( $content ) . "</p>\n";
+			$classes = 'wp-block-paragraph';
+			if ( isset( $attrs['className'] ) && is_scalar( $attrs['className'] ) && '' !== trim( (string) $attrs['className'] ) ) {
+				$classes .= ' ' . trim( (string) $attrs['className'] );
+			}
+			$prefix = "\n<p" . ( 'wp-block-paragraph' === $classes ? '' : ' class="' . self::escape_attribute( $classes ) . '"' ) . '>' . self::rich_text_markup( $content ) . "</p>\n";
 		} elseif ( 'group' === $wrapper ) {
 			$classes = 'wp-block-group' . ( ! empty( $attrs['className'] ) ? ' ' . $attrs['className'] : '' );
 			if ( 'flex' === ( $attrs['layout']['type'] ?? '' ) ) {
