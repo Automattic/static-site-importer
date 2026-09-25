@@ -57,6 +57,9 @@ final class Static_Site_Importer_Content_Policy {
 	/** Assets that a compiler may carry into a generated companion plugin. */
 	private const COMPANION_ASSET_EXTENSIONS = array( 'js', 'mjs', 'css', 'json', 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'cur', 'woff', 'woff2', 'ttf', 'otf', 'eot' );
 
+	/** Root-level Netlify `_redirects` manifests are bounded import metadata, not pages. */
+	public const REDIRECTS_MANIFEST_MAX_BYTES = 65536;
+
 	/** Portable extensions for downloaded assets whose URL paths carry no filename extension. */
 	private const PORTABLE_CONTENT_TYPE_EXTENSIONS = array(
 		'text/css'                 => 'css',
@@ -111,6 +114,12 @@ final class Static_Site_Importer_Content_Policy {
 			if ( ! self::is_static_path( $path ) ) {
 				return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s is not static content.', $path ), array( 'path' => $path ) );
 			}
+			if ( self::is_redirects_manifest_path( $path ) ) {
+				$bytes = self::declared_bytes( $file );
+				if ( null !== $bytes && $bytes > self::REDIRECTS_MANIFEST_MAX_BYTES ) {
+					return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s is not static content.', $path ), array( 'path' => $path ) );
+				}
+			}
 			$content = self::file_content( $file );
 			if ( null !== $content && self::is_textual_path( $path ) && self::contains_server_code( $content ) ) {
 				return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s contains server-side code.', $path ), array( 'path' => $path ) );
@@ -129,8 +138,21 @@ final class Static_Site_Importer_Content_Policy {
 	}
 
 	public static function is_static_path( string $path ): bool {
+		if ( self::is_redirects_manifest_path( $path ) ) {
+			return true;
+		}
 		$extension = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
 		return '' !== $extension && in_array( $extension, self::STATIC_EXTENSIONS, true );
+	}
+
+	public static function is_redirects_manifest_path( string $path ): bool {
+		$normalized = str_replace( '\\', '/', $path );
+		$normalized = ltrim( $normalized, '/' );
+		if ( str_starts_with( $normalized, 'website/' ) ) {
+			$normalized = substr( $normalized, strlen( 'website/' ) );
+		}
+
+		return '_redirects' === $normalized;
 	}
 
 	/**
@@ -149,6 +171,9 @@ final class Static_Site_Importer_Content_Policy {
 	}
 
 	public static function is_textual_path( string $path ): bool {
+		if ( self::is_redirects_manifest_path( $path ) ) {
+			return true;
+		}
 		$extension = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
 		return '' !== $extension && in_array( $extension, self::TEXTUAL_EXTENSIONS, true );
 	}
@@ -160,6 +185,20 @@ final class Static_Site_Importer_Content_Policy {
 
 	public static function contains_server_code( string $content ): bool {
 		return preg_match( '/<\?(?:php|=|[[:space:]])/i', $content ) === 1;
+	}
+
+	/** @param array<string,mixed> $file */
+	private static function declared_bytes( array $file ): ?int {
+		$content = self::file_content( $file );
+		if ( null !== $content ) {
+			return strlen( $content );
+		}
+		$reference = isset( $file['payload_reference'] ) && is_array( $file['payload_reference'] ) ? $file['payload_reference'] : null;
+		if ( null === $reference || ! isset( $reference['bytes'] ) || ! is_numeric( $reference['bytes'] ) ) {
+			return null;
+		}
+
+		return (int) $reference['bytes'];
 	}
 
 	/** @param array<string,mixed> $file */

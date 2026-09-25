@@ -565,6 +565,27 @@ $assert( is_wp_error( $executable_media ) && 'static_site_importer_executable_so
 unlink( $executable_media_dir . '/clip.mp4.php' );
 rmdir( $executable_media_dir );
 
+$redirects_bundle_dir = sys_get_temp_dir() . '/ssi-redirects-request-bundle-' . bin2hex( random_bytes( 6 ) );
+mkdir( $redirects_bundle_dir );
+$redirects_bundle_dir = realpath( $redirects_bundle_dir );
+file_put_contents( $redirects_bundle_dir . '/index.html', '<main>Home</main>' );
+file_put_contents( $redirects_bundle_dir . '/_redirects', "/blog.html  /blog/index.html  301\n" );
+$redirects_bundle = static_site_importer_cli_request_bundle_files( $redirects_bundle_dir );
+$redirects_files  = is_array( $redirects_bundle ) ? array_column( $redirects_bundle['files'], 'path' ) : array();
+$assert( is_array( $redirects_bundle ) && in_array( '_redirects', $redirects_files, true ), 'request-bundle-accepts-root-redirects-manifest' );
+file_put_contents( $redirects_bundle_dir . '/evil', 'payload' );
+$evil_bundle = static_site_importer_cli_request_bundle_files( $redirects_bundle_dir );
+$assert( is_wp_error( $evil_bundle ) && 'static_site_importer_executable_source_rejected' === $evil_bundle->get_error_code(), 'request-bundle-still-rejects-extensionless-evil-beside-redirects' );
+unlink( $redirects_bundle_dir . '/evil' );
+mkdir( $redirects_bundle_dir . '/nested' );
+file_put_contents( $redirects_bundle_dir . '/nested/_redirects', "/a /b 301\n" );
+$nested_redirects = static_site_importer_cli_request_bundle_files( $redirects_bundle_dir );
+$assert( is_wp_error( $nested_redirects ) && 'static_site_importer_executable_source_rejected' === $nested_redirects->get_error_code(), 'request-bundle-rejects-nested-redirects-manifest' );
+foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $redirects_bundle_dir, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST ) as $redirects_item ) {
+	$redirects_item->isDir() ? rmdir( $redirects_item->getPathname() ) : unlink( $redirects_item->getPathname() );
+}
+rmdir( $redirects_bundle_dir );
+
 $total_limit_dir = sys_get_temp_dir() . '/ssi-request-bundle-total-' . bin2hex( random_bytes( 6 ) );
 mkdir( $total_limit_dir );
 for ( $index = 0; $index < 26; ++$index ) {

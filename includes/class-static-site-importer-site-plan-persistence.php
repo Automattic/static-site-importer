@@ -25,6 +25,9 @@ if ( ! class_exists( 'Static_Site_Importer_Internal_Link_Runtime' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Source_Route_Redirect' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-source-route-redirect.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Redirects_Manifest' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-redirects-manifest.php';
+}
 
 /** Writes posts, files, overlays, and journals for a prepared plan. */
 final class Static_Site_Importer_Site_Plan_Persistence {
@@ -79,6 +82,19 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$route_title_overlay         = $state['route_title_overlay'] ?? array();
 		$route_head_metadata_overlay = $state['route_head_metadata_overlay'] ?? array();
 
+		$state['source_route_aliases'] = Static_Site_Importer_Redirects_Manifest::aliases_for_source_paths(
+			isset( $args['source_route_aliases'] ) && is_array( $args['source_route_aliases'] ) ? $args['source_route_aliases'] : array(),
+			array_values(
+				array_filter(
+					array_map(
+						static fn( array $page ): string => (string) ( $page['source_path'] ?? '' ),
+						$state['ordered_pages']
+					),
+					static fn( string $path ): bool => '' !== $path
+				)
+			)
+		);
+
 		foreach ( $state['ordered_pages'] as $page ) {
 			if ( ! empty( $page['skip_materialization'] ) ) {
 				continue;
@@ -123,6 +139,14 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$source_route = Static_Site_Importer_Source_Route_Redirect::public_source_route( (string) $page['source_path'] );
 			if ( '' !== $source_route && ! self::write_post_meta( $post, Static_Site_Importer_Source_Route_Redirect::META_KEY, $source_route ) ) {
 				return self::failed_receipt( $state, 'materialization_source_route_metadata_write_failed' );
+			}
+			foreach ( $state['source_route_aliases'][ $page['source_path'] ] ?? array() as $alias_route ) {
+				if ( ! is_string( $alias_route ) || '' === $alias_route || $alias_route === $source_route ) {
+					continue;
+				}
+				if ( ! self::add_post_meta_value( $post, Static_Site_Importer_Source_Route_Redirect::META_KEY, $alias_route ) ) {
+					return self::failed_receipt( $state, 'materialization_source_route_metadata_write_failed' );
+				}
 			}
 			foreach ( $state['applied']['runtime_declarations']['entity_bindings'] as &$binding_report ) {
 				if ( ( $binding_report['source_path'] ?? '' ) === $page['source_path'] ) {
@@ -384,6 +408,17 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	public static function write_post_meta( int $id, string $key, string $value ): bool {
 		update_post_meta( $id, $key, wp_slash( $value ) );
 		return metadata_exists( 'post', $id, $key ) && (string) get_post_meta( $id, $key, true ) === $value;
+	}
+
+	/** Append and verify an additional importer-owned post metadata value. */
+	public static function add_post_meta_value( int $id, string $key, string $value ): bool {
+		if ( ! function_exists( 'add_post_meta' ) ) {
+			return false;
+		}
+		add_post_meta( $id, $key, wp_slash( $value ) );
+		$values = get_post_meta( $id, $key, false );
+
+		return is_array( $values ) && in_array( $value, array_map( 'strval', $values ), true );
 	}
 
 	/** Rewrite internal routes to portable post-id references after WordPress has assigned every post. */

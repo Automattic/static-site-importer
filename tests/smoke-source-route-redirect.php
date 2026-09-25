@@ -19,7 +19,8 @@ function get_posts( array $args ): array {
 	$key   = (string) ( $args['meta_key'] ?? '' );
 	$ids   = array();
 	foreach ( $GLOBALS['ssi_redirect_meta'] as $id => $meta ) {
-		if ( $key === ( $meta['key'] ?? '' ) && $value === ( $meta['value'] ?? '' ) ) {
+		$values = $meta['values'] ?? array( $meta['value'] ?? '' );
+		if ( $key === ( $meta['key'] ?? '' ) && in_array( $value, $values, true ) ) {
 			$ids[] = $id;
 		}
 	}
@@ -35,6 +36,8 @@ $GLOBALS['ssi_redirect_meta']       = array();
 $GLOBALS['ssi_redirect_actions']    = array();
 
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-source-route-redirect.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-redirects-manifest.php';
 
 $assert = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) {
@@ -49,6 +52,48 @@ $assert( 'foo/index.html' === Static_Site_Importer_Source_Route_Redirect::public
 $assert( 'blog/merhaba-explorers/index.html' === Static_Site_Importer_Source_Route_Redirect::public_source_route( 'website/blog/merhaba-explorers/index.html' ), 'Nested blog documents keep the public source path.' );
 $assert( 'index.html' === Static_Site_Importer_Source_Route_Redirect::public_source_route( 'website/index.html' ), 'The entry document public route is index.html.' );
 $assert( '' === Static_Site_Importer_Source_Route_Redirect::public_source_route( '../escape.html' ), 'Source routes cannot escape the site root.' );
+
+$parsed = Static_Site_Importer_Redirects_Manifest::parse(
+	"# aliases\n/blog.html  /blog/index.html  301\n\n/about-me.html /about-me.html 301\n/gone  https://evil.test/ 301\n/news/*  /blog/:splat  301\n/old  /new  200\n/forced  /blog/index.html  301!\n/contact  /contact.html\n"
+);
+$assert(
+	array(
+		array(
+			'from' => 'blog.html',
+			'to'   => 'blog/index.html',
+		),
+		array(
+			'from' => 'contact',
+			'to'   => 'contact.html',
+		),
+	) === $parsed,
+	'Redirects parser keeps same-site 301/302 aliases and ignores comments, duplicates, splats, rewrites, force, and external targets.'
+);
+$extracted = Static_Site_Importer_Redirects_Manifest::extract(
+	array(
+		'files' => array(
+			array(
+				'path'    => 'website/index.html',
+				'content' => '<main>Home</main>',
+			),
+			array(
+				'path'    => 'website/_redirects',
+				'content' => "/blog.html  /blog/index.html  301\n",
+			),
+			array(
+				'path'    => 'website/blog/index.html',
+				'content' => '<main>Blog</main>',
+			),
+		),
+	)
+);
+$assert( is_array( $extracted ) && array( 'website/index.html', 'website/blog/index.html' ) === array_column( $extracted['artifact']['files'], 'path' ), '_redirects is excluded from page and asset materialization.' );
+$assert( array( array( 'from' => 'blog.html', 'to' => 'blog/index.html' ) ) === ( $extracted['aliases'] ?? null ), 'Extracted aliases keep the public from and target source path.' );
+$aliases = Static_Site_Importer_Redirects_Manifest::aliases_for_source_paths(
+	$extracted['aliases'],
+	array( 'website/index.html', 'website/blog/index.html', 'website/about-me.html' )
+);
+$assert( array( 'website/blog/index.html' => array( 'blog.html' ) ) === $aliases, 'A _redirects alias attaches to the materialized page whose source path matches to.' );
 
 $GLOBALS['ssi_redirect_permalinks'] = array(
 	11 => 'https://imported.test/about-me/',
@@ -80,6 +125,13 @@ $assert( 'https://imported.test/about-me/?utm=nav' === Static_Site_Importer_Sour
 $assert( 'https://imported.test/contact/' === Static_Site_Importer_Source_Route_Redirect::target_url( '/contact.html' ), 'Sibling HTML files redirect to their permalinks.' );
 $assert( 'https://imported.test/blog/merhaba-explorers/' === Static_Site_Importer_Source_Route_Redirect::target_url( '/blog/merhaba-explorers/index.html' ), 'Nested index.html source paths redirect to the page permalink.' );
 $assert( 'https://imported.test/' === Static_Site_Importer_Source_Route_Redirect::target_url( '/index.html' ), 'The source index document redirects to the front page permalink.' );
+$GLOBALS['ssi_redirect_permalinks'][15] = 'https://imported.test/blog/';
+$GLOBALS['ssi_redirect_meta'][15]       = array(
+	'key'    => Static_Site_Importer_Source_Route_Redirect::META_KEY,
+	'values' => array( 'blog/index.html', 'blog.html' ),
+);
+$assert( 'https://imported.test/blog/' === Static_Site_Importer_Source_Route_Redirect::target_url( '/blog.html' ), 'A _redirects alias stored as additional source-route meta resolves to the page permalink.' );
+$assert( 'https://imported.test/blog/' === Static_Site_Importer_Source_Route_Redirect::target_url( '/blog/index.html' ), 'The materialized blog source path still resolves after an alias is attached.' );
 $assert( null === Static_Site_Importer_Source_Route_Redirect::target_url( '/missing.html' ), 'Unknown source paths do not redirect.' );
 $assert( null === Static_Site_Importer_Source_Route_Redirect::target_url( '//evil.test/about-me.html' ), 'Protocol-relative URLs never redirect.' );
 $assert( null === Static_Site_Importer_Source_Route_Redirect::target_url( 'https://evil.test/about-me.html' ), 'Absolute URLs never redirect.' );

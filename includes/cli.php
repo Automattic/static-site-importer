@@ -508,7 +508,10 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				if ( class_exists( 'Static_Site_Importer_Content_Policy' ) && ! Static_Site_Importer_Content_Policy::is_static_path( $relative ) ) {
 					return new WP_Error( 'static_site_importer_executable_source_rejected', 'Request-bundle source trees may contain static content only.' );
 				}
-				$bytes           = $item->getSize();
+				$bytes = $item->getSize();
+				if ( class_exists( 'Static_Site_Importer_Content_Policy' ) && Static_Site_Importer_Content_Policy::is_redirects_manifest_path( $relative ) && $bytes > Static_Site_Importer_Content_Policy::REDIRECTS_MANIFEST_MAX_BYTES ) {
+					return new WP_Error( 'static_site_importer_executable_source_rejected', 'Request-bundle source trees may contain static content only.' );
+				}
 				$read_source     = static_site_importer_cli_request_bundle_is_read_source( $relative );
 				$report          = $read_source && static_site_importer_cli_request_bundle_is_declared_report( $relative, $reports );
 				$file_byte_limit = static_site_importer_cli_request_bundle_file_byte_limit( $relative, $limits, $media_bytes, $report_bytes, $reports );

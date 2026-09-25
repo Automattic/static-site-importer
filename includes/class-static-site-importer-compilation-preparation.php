@@ -12,6 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 foreach ( array(
 	'Static_Site_Importer_Theme_Materialization_Strategy' => 'class-static-site-importer-theme-materialization-strategy.php',
 	'Static_Site_Importer_Content_Policy'                 => 'class-static-site-importer-content-policy.php',
+	'Static_Site_Importer_Redirects_Manifest'             => 'class-static-site-importer-redirects-manifest.php',
 	'Static_Site_Importer_Client_Script_Policy'           => 'class-static-site-importer-client-script-policy.php',
 	'Static_Site_Importer_Site_Identity'                  => 'class-static-site-importer-site-identity.php',
 	'Static_Site_Importer_Compiler_Diagnostic_Normalizer' => 'class-static-site-importer-compiler-diagnostic-normalizer.php',
@@ -38,6 +39,14 @@ final class Static_Site_Importer_Compilation_Preparation {
 		$source_policy                 = $precompiled ? true : Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
 		if ( is_wp_error( $source_policy ) ) {
 			return $source_policy;
+		}
+		$redirects = Static_Site_Importer_Redirects_Manifest::extract( $artifact, is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null );
+		if ( is_wp_error( $redirects ) ) {
+			return $redirects;
+		}
+		$artifact = $redirects['artifact'];
+		if ( empty( $args['source_route_aliases'] ) || ! is_array( $args['source_route_aliases'] ) ) {
+			$args['source_route_aliases'] = $redirects['aliases'];
 		}
 		$script_policy                       = $precompiled ? array(
 			'artifact' => $artifact,
