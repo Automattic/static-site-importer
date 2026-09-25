@@ -663,18 +663,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		};
 
 		$grid_span_width       = static function ( mixed $columns, mixed $column ): ?string {
-			$columns = preg_replace( '/\s+/', '', is_string( $columns ) ? $columns : '' );
-			$column  = preg_replace( '/\s+/', '', is_string( $column ) ? $column : '' );
-			if ( ! is_string( $columns ) || ! is_string( $column ) || ! preg_match( '/^repeat\(([1-9][0-9]*),1fr\)$/D', $columns, $column_count ) ) {
-				return null;
-			}
-			if ( '1/-1' === $column ) {
-				return '100%';
-			}
-			if ( ! preg_match( '/^(?:1\/)?span([1-9][0-9]*)$/D', $column, $span ) || (int) $span[1] > (int) $column_count[1] ) {
-				return null;
-			}
-			return rtrim( rtrim( number_format( 100 * (int) $span[1] / (int) $column_count[1], 3, '.', '' ), '0' ), '.' ) . '%';
+			return self::grid_column_span_width( $columns, $column );
 		};
 		$grid_area_column_span = static function ( mixed $area ): ?string {
 			$area = is_string( $area ) ? trim( $area ) : '';
@@ -1175,6 +1164,123 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'important' => array( 'margin_block_start' ),
 				);
 			}
+		}
+		// A repeat(N, 1fr) row places each field with grid-column: A / span B.
+		// Jetpack has no grid-column attribute; a span that is exactly 25 / 33 /
+		// 50 / 75 / 100 becomes that field's width, and the row's column-gap is
+		// the same track compensation an equal-fraction row already uses. A span
+		// that does not land on one of those steps, a row that does not tile, or
+		// any other wrapper fact stays unrepresented.
+		foreach ( $children as $parent => $siblings ) {
+			if ( ! is_string( $parent ) || 1 !== preg_match( '/^wrapper-[0-9]+$/D', $parent ) || count( $siblings ) < 2 || in_array( $parent, $represented_layout_nodes, true ) || isset( $percentage_width_parents[ $parent ] ) || ! empty( $variants_by_node[ $parent ] ) ) {
+				continue;
+			}
+			$layout_node = $layout_nodes_by_id[ $parent ] ?? null;
+			$layout      = is_array( $layout_node ) && is_array( $layout_node['layout'] ?? null ) ? $layout_node['layout'] : array();
+			$columns     = self::grid_repeat_column_count( is_string( $layout['columns'] ?? null ) ? $layout['columns'] : '' );
+			if ( ! is_array( $layout_node ) || null === $columns || array_diff( array_keys( $layout ), array( 'display', 'columns', 'width', 'column_gap', 'gap' ) ) || 'grid' !== ( $layout['display'] ?? null ) || ( isset( $layout['width'] ) && '100%' !== $layout['width'] ) || ! $has_unconditional_proven_property( $layout_node, 'display' ) || ! $has_unconditional_proven_property( $layout_node, 'grid-template-columns' ) || ( isset( $layout['width'] ) && ! $has_unconditional_proven_property( $layout_node, 'width' ) ) ) {
+				continue;
+			}
+			if ( isset( $layout['gap'], $layout['column_gap'] ) && trim( (string) $layout['gap'] ) !== trim( (string) $layout['column_gap'] ) ) {
+				continue;
+			}
+			if ( ( isset( $layout['column_gap'] ) && ! $has_unconditional_proven_property( $layout_node, 'column-gap' ) ) || ( isset( $layout['gap'] ) && ! $has_unconditional_proven_property( $layout_node, 'gap' ) ) ) {
+				continue;
+			}
+			$source_gap = isset( $layout['column_gap'] ) ? trim( (string) $layout['column_gap'] ) : ( isset( $layout['gap'] ) ? trim( (string) $layout['gap'] ) : null );
+			$gap        = null === $source_gap ? '1.5rem' : self::resolved_gap_length( $source_gap );
+			if ( ! is_string( $gap ) ) {
+				continue;
+			}
+			$placements = array();
+			$accepted   = true;
+			foreach ( $siblings as $sibling ) {
+				$sibling_id = is_array( $sibling ) && is_string( $sibling['id'] ?? null ) ? $sibling['id'] : '';
+				$branch     = '' !== $sibling_id ? array_values( array_filter( $collect_controls( $sibling ), static fn ( int $index ): bool => isset( $field_blocks[ $index ] ) ) ) : array();
+				$item_node  = $layout_nodes_by_id[ $sibling_id ] ?? null;
+				$item       = is_array( $item_node ) && is_array( $item_node['layout'] ?? null ) ? $item_node['layout'] : array();
+				if ( '' === $sibling_id || 1 !== count( $branch ) || 'core/button' === ( $field_blocks[ $branch[0] ]['name'] ?? '' ) || ! empty( $variants_by_node[ $sibling_id ] ) || isset( $item['column'], $item['area'] ) || ( ! isset( $item['column'] ) && ! isset( $item['area'] ) ) || ! is_array( $item_node ) ) {
+					$accepted = false;
+					break;
+				}
+				if ( isset( $item['column'] ) ) {
+					$parsed = self::grid_column_placement( $layout['columns'], $item['column'] );
+					if ( null === $parsed || $parsed['columns'] !== $columns || ! $has_unconditional_proven_property( $item_node, 'grid-column' ) ) {
+						$accepted = false;
+						break;
+					}
+					$start = $parsed['start'];
+					$span  = $parsed['span'];
+					$row   = null;
+				} else {
+					$parsed = self::grid_area_placement( $item['area'] );
+					if ( null === $parsed || $parsed['span'] > $columns || ( null !== $parsed['start'] && $parsed['start'] + $parsed['span'] - 1 > $columns ) || ! $has_unconditional_proven_property( $item_node, 'grid-area' ) ) {
+						$accepted = false;
+						break;
+					}
+					$start = $parsed['start'];
+					$span  = $parsed['span'];
+					$row   = $parsed['row'];
+				}
+				if ( isset( $item['row'] ) ) {
+					$row_start = self::grid_line_start( $item['row'] );
+					if ( null === $row_start || ( null !== $row && $row !== $row_start ) || ! $has_unconditional_proven_property( $item_node, 'grid-row' ) ) {
+						$accepted = false;
+						break;
+					}
+					$row = $row_start;
+				}
+				$placements[] = array(
+					'control' => $branch[0],
+					'node'    => $sibling_id,
+					'start'   => $start,
+					'span'    => $span,
+					'row'     => $row,
+					'layout'  => $item,
+				);
+			}
+			$tiled = $accepted ? self::tiled_grid_span_placements( $placements, $columns ) : null;
+			if ( null === $tiled ) {
+				continue;
+			}
+			$widths = array();
+			foreach ( $tiled as $placement ) {
+				$width = self::clean_provider_field_width( $placement['span'] / $columns );
+				if ( null === $width ) {
+					$widths = array();
+					break;
+				}
+				$widths[] = $width;
+			}
+			if ( count( $widths ) !== count( $tiled ) ) {
+				continue;
+			}
+			foreach ( $tiled as $offset => $placement ) {
+				$share = $placement['span'] / $columns;
+				$track = self::fractional_track_size( $share, $gap );
+				$field_blocks[ $placement['control'] ]['attrs']['width'] = $widths[ $offset ];
+				$overlay_node_targets[]                                  = array(
+					'id'        => 'field-' . $placement['control'],
+					'layout'    => array(
+						'width'              => $track,
+						'flex_grow'          => '0',
+						'flex_shrink'        => '0',
+						'flex_basis'         => $track,
+						'margin_block_start' => '0',
+					),
+					'important' => array( 'margin_block_start' ),
+				);
+				if ( ! array_diff( array_keys( $placement['layout'] ), array( 'column', 'row', 'area' ) ) ) {
+					$overlay_represented_nodes[] = $placement['node'];
+				}
+			}
+			$represented_layout_nodes[] = $parent;
+			$operations[]               = array(
+				'dimension'   => 'layout',
+				'strategy'    => 'provider_grid_span_fields',
+				'target_hash' => hash( 'sha256', $parent ),
+				'field_count' => count( $tiled ),
+			);
 		}
 		// Every source box that kept its own element can carry its own layout, so the
 		// facts are transposed onto that element's generated hook instead of being
@@ -2693,6 +2799,185 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	}
 
 	/**
+	 * Percentage width of a proven `grid-column` span on equal `1fr` tracks.
+	 * `A / span B` is the same share as `span B`; the start only places it.
+	 */
+	private static function grid_column_span_width( mixed $columns, mixed $column ): ?string {
+		$placement = self::grid_column_placement( $columns, $column );
+		if ( null === $placement ) {
+			return null;
+		}
+		return rtrim( rtrim( number_format( 100 * $placement['span'] / $placement['columns'], 3, '.', '' ), '0' ), '.' ) . '%';
+	}
+
+	/** Start line and span of a grid-column value on equal fractional tracks. */
+	private static function grid_column_placement( mixed $columns, mixed $column ): ?array {
+		$columns = preg_replace( '/\s+/', '', is_string( $columns ) ? $columns : '' );
+		$column  = preg_replace( '/\s+/', '', is_string( $column ) ? $column : '' );
+		$count   = self::grid_repeat_column_count( is_string( $columns ) ? $columns : '' );
+		if ( null === $count || ! is_string( $column ) ) {
+			return null;
+		}
+		if ( '1/-1' === $column ) {
+			return array(
+				'columns' => $count,
+				'start'   => 1,
+				'span'    => $count,
+			);
+		}
+		if ( 1 !== preg_match( '/^(?:([1-9][0-9]*)\/)?span([1-9][0-9]*)$/D', $column, $span ) ) {
+			return null;
+		}
+		$start = '' === ( $span[1] ?? '' ) ? null : (int) $span[1];
+		$size  = (int) $span[2];
+		if ( $size > $count || ( null !== $start && ( $start < 1 || $start + $size - 1 > $count ) ) ) {
+			return null;
+		}
+		return array(
+			'columns' => $count,
+			'start'   => $start,
+			'span'    => $size,
+		);
+	}
+
+	/** Row start, column start, and column span of a four-part grid-area value. */
+	private static function grid_area_placement( mixed $area ): ?array {
+		$area = is_string( $area ) ? trim( $area ) : '';
+		if ( 1 !== preg_match( '/^([0-9]+|auto)\s*\/\s*([0-9]+|auto)\s*\/\s*span\s+[0-9]+\s*\/\s*span\s+([1-9][0-9]*)$/D', $area, $match ) ) {
+			return null;
+		}
+		return array(
+			'row'   => 'auto' === $match[1] ? null : (int) $match[1],
+			'start' => 'auto' === $match[2] ? null : (int) $match[2],
+			'span'  => (int) $match[3],
+		);
+	}
+
+	/** First line of a grid-row or grid-column value, when it is a line number. */
+	private static function grid_line_start( mixed $value ): ?int {
+		$value = preg_replace( '/\s+/', '', is_string( $value ) ? $value : '' );
+		if ( ! is_string( $value ) || 1 !== preg_match( '/^([1-9][0-9]*)(?:\/(?:span[1-9][0-9]*|-1|[1-9][0-9]*))?$/D', $value, $match ) ) {
+			return null;
+		}
+		return (int) $match[1];
+	}
+
+	/** Track count of repeat(N, 1fr) or repeat(N, minmax(0, 1fr)). */
+	private static function grid_repeat_column_count( string $columns ): ?int {
+		$columns = preg_replace( '/\s+/', '', $columns );
+		if ( ! is_string( $columns ) || 1 !== preg_match( '/^repeat\(([1-9][0-9]*),(?:1fr|minmax\(0(?:px)?,1fr\))\)$/D', $columns, $match ) ) {
+			return null;
+		}
+		$count = (int) $match[1];
+		return $count >= 1 ? $count : null;
+	}
+
+	/**
+	 * Resolved length of a gap, including a custom property's own length fallback.
+	 */
+	private static function resolved_gap_length( string $gap ): ?string {
+		$gap = trim( $gap );
+		if ( 1 === preg_match( '/^(?:0|[0-9]+(?:\.[0-9]+)?)(?:px|rem|em)$/D', $gap ) ) {
+			return $gap;
+		}
+		if ( 1 === preg_match( '/^var\(--[a-zA-Z][a-zA-Z0-9_-]{0,79},\s*((?:0|[0-9]+(?:\.[0-9]+)?)(?:px|rem|em))\)$/D', $gap, $match ) ) {
+			return $match[1];
+		}
+		return null;
+	}
+
+	/** Jetpack field width, or null when the share is not one of those steps. */
+	private static function clean_provider_field_width( float $share ): ?int {
+		foreach ( array( 25, 33, 50, 75, 100 ) as $step ) {
+			if ( abs( $share - ( $step / 100 ) ) <= 0.005 ) {
+				return $step;
+			}
+		}
+		return null;
+	}
+
+	/** Place span items into rows that fill the track list in source order. Null when they do not tile. */
+	private static function tiled_grid_span_placements( array $placements, int $columns ): ?array {
+		if ( $columns < 2 || count( $placements ) < 2 ) {
+			return null;
+		}
+		$rows_declared = array_filter( $placements, static fn ( array $placement ): bool => null !== $placement['row'] );
+		if ( 0 !== count( $rows_declared ) && count( $rows_declared ) !== count( $placements ) ) {
+			return null;
+		}
+		if ( count( $rows_declared ) === count( $placements ) ) {
+			$by_row     = array();
+			$normalized = $placements;
+			foreach ( $placements as $index => $placement ) {
+				$by_row[ $placement['row'] ][] = $index;
+			}
+			foreach ( $by_row as $row => $indexes ) {
+				$cursor = 1;
+				foreach ( $indexes as $index ) {
+					$span  = $normalized[ $index ]['span'];
+					$start = $normalized[ $index ]['start'] ?? $cursor;
+					if ( $start !== $cursor || $span < 1 || $cursor + $span - 1 > $columns ) {
+						return null;
+					}
+					$normalized[ $index ]['start'] = $start;
+					$normalized[ $index ]['row']   = (int) $row;
+					$cursor                       += $span;
+				}
+				if ( $columns + 1 !== $cursor ) {
+					return null;
+				}
+			}
+		} else {
+			$cursor     = 1;
+			$row        = 1;
+			$normalized = array();
+			foreach ( $placements as $placement ) {
+				$span  = $placement['span'];
+				$start = $placement['start'] ?? $cursor;
+				if ( $start !== $cursor || $cursor + $span - 1 > $columns ) {
+					return null;
+				}
+				$placement['start'] = $start;
+				$placement['row']   = $row;
+				$normalized[]       = $placement;
+				$cursor            += $span;
+				if ( $columns + 1 === $cursor ) {
+					$cursor = 1;
+					++$row;
+				}
+			}
+			if ( 1 !== $cursor ) {
+				return null;
+			}
+		}
+		$visual = $normalized;
+		usort(
+			$visual,
+			static function ( array $left, array $right ): int {
+				return $left['row'] <=> $right['row'] ?: $left['start'] <=> $right['start'];
+			}
+		);
+		if ( array_column( $visual, 'control' ) !== array_column( $normalized, 'control' ) ) {
+			return null;
+		}
+		return $normalized;
+	}
+
+	/** Width of one span after the source column-gap is subtracted from that share. */
+	private static function fractional_track_size( float $share, string $gap ): string {
+		$share_css = rtrim( rtrim( number_format( $share * 100, 3, '.', '' ), '0' ), '.' );
+		if ( 1 !== preg_match( '/^([0-9]+(?:\.[0-9]+)?)(px|rem|em)$/D', trim( $gap ), $match ) ) {
+			$match = array( '1.5rem', '1.5', 'rem' );
+		}
+		$portion = (float) $match[1] * ( 1 - $share );
+		if ( $portion < 0.0000001 ) {
+			return $share_css . '%';
+		}
+		$gap_css = rtrim( rtrim( number_format( $portion, 4, '.', '' ), '0' ), '.' ) . $match[2];
+		return 'calc(' . $share_css . '% - ' . $gap_css . ')';
+	}
+
+	/**
 	 * Equal-fraction track count Jetpack can express as a field `width` of
 	 * 50 / 33 / 25. Null when the value is not that shape.
 	 */
@@ -2719,14 +3004,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 
 	/** Jetpack subtracts a whole gap from each field; the source share is gap * (count-1)/count. */
 	private static function equal_fraction_track_size( int $count, string $gap ): string {
-		$share     = 100 / $count;
-		$share_css = rtrim( rtrim( number_format( $share, 3, '.', '' ), '0' ), '.' );
-		if ( 1 !== preg_match( '/^([0-9]+(?:\.[0-9]+)?)(px|rem|em)$/D', trim( $gap ), $match ) ) {
-			$match = array( '1.5rem', '1.5', 'rem' );
-		}
-		$portion = (float) $match[1] * ( $count - 1 ) / $count;
-		$gap_css = rtrim( rtrim( number_format( $portion, 4, '.', '' ), '0' ), '.' ) . $match[2];
-		return 'calc(' . $share_css . '% - ' . $gap_css . ')';
+		return self::fractional_track_size( 1 / $count, $gap );
 	}
 
 	/** @param array<string,mixed> $layout */
