@@ -364,8 +364,11 @@ final class Static_Site_Importer_Diagnostic_Projection {
 	 * not errors: they yield a zero count and no diagnostic. Residual loss is
 	 * counted once per omitted member: Blocks Engine per-member diagnostics win
 	 * when present, otherwise the sidecar and materialized `core/tab-panel`
-	 * counts are reconciled. Capture-side `no-dialog` / `click-failed` stay
-	 * distinct from importer-side unmaterialized captured members.
+	 * counts are reconciled. Capture-side `click-failed` stays a gap. A
+	 * selectable-set `no-dialog` probe disproved a shared region, so the static
+	 * HTML already holds the content and it is not an unsupported loss. Other
+	 * `no-dialog` outcomes remain capture gaps, distinct from importer-side
+	 * unmaterialized captured members.
 	 *
 	 * @param array<string,mixed> $artifact Source website artifact.
 	 * @param array<string,mixed> $plan     Canonical WordPress site plan.
@@ -414,7 +417,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 						if ( 'selectable-set' === $kind ) {
 							++$by_path[ $source_path ]['captured_selectable'];
 						}
-					} elseif ( in_array( $status, array( 'no-dialog', 'click-failed' ), true ) ) {
+					} elseif ( self::interaction_state_is_capture_gap( $status, $kind ) ) {
 						++$by_path[ $source_path ]['capture_gap'];
 					}
 				}
@@ -427,6 +430,14 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			}
 			$by_path[ $source_path ]['be_failed']    = $omission['failed'];
 			$by_path[ $source_path ]['be_truncated'] = $omission['truncated'];
+			if ( 0 === (int) $by_path[ $source_path ]['recorded'] ) {
+				foreach ( $omission['status_counts'] as $status => $count ) {
+					if ( ! is_string( $status ) || '' === $status || $count < 1 ) {
+						continue;
+					}
+					$by_path[ $source_path ]['status_counts'][ $status ] = (int) ( $by_path[ $source_path ]['status_counts'][ $status ] ?? 0 ) + $count;
+				}
+			}
 		}
 		foreach ( self::interaction_tab_panel_counts( $plan ) as $source_path => $tab_panels ) {
 			if ( ! isset( $by_path[ $source_path ] ) ) {
@@ -846,7 +857,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 	 *
 	 * @param array<string,mixed> $plan Canonical WordPress site plan.
 	 * @param array{by_route:array<string,string>,by_source:array<string,string>} $index Plan route index.
-	 * @return array<string,array{failed:int,truncated:int}>
+	 * @return array<string,array{failed:int,truncated:int,status_counts:array<string,int>}>
 	 */
 	private static function interaction_producer_omission_counts( array $plan, array $index ): array {
 		$counts = array();
@@ -860,7 +871,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 					continue;
 				}
 				$code = self::interaction_producer_omission_code( $diagnostic );
-				if ( '' === $code ) {
+				if ( '' === $code || self::interaction_diagnostic_is_rejected_selectable_set( $diagnostic, $code ) ) {
 					continue;
 				}
 				$source_path = self::interaction_diagnostic_source_path( $diagnostic, $index );
@@ -879,8 +890,9 @@ final class Static_Site_Importer_Diagnostic_Projection {
 				$seen[ $fingerprint ] = true;
 				if ( ! isset( $counts[ $source_path ] ) ) {
 					$counts[ $source_path ] = array(
-						'failed'    => 0,
-						'truncated' => 0,
+						'failed'        => 0,
+						'truncated'     => 0,
+						'status_counts' => array(),
 					);
 				}
 				$delta = self::interaction_diagnostic_member_count( $diagnostic );
@@ -888,6 +900,10 @@ final class Static_Site_Importer_Diagnostic_Projection {
 					$counts[ $source_path ]['failed'] += $delta;
 				} else {
 					$counts[ $source_path ]['truncated'] += $delta;
+				}
+				$status = self::interaction_diagnostic_status( $diagnostic );
+				if ( '' !== $status ) {
+					$counts[ $source_path ]['status_counts'][ $status ] = (int) ( $counts[ $source_path ]['status_counts'][ $status ] ?? 0 ) + $delta;
 				}
 			}
 		}
@@ -972,9 +988,66 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			if ( isset( $index['by_route'][ $route ] ) ) {
 				return $index['by_route'][ $route ];
 			}
+			$from_url = self::canonical_interaction_route( self::interaction_url_path( $path ) );
+			if ( isset( $index['by_route'][ $from_url ] ) ) {
+				return $index['by_route'][ $from_url ];
+			}
+		}
+		foreach ( array( $diagnostic, $context ) as $row ) {
+			foreach ( array( 'source_url', 'sourceUrl', 'url' ) as $key ) {
+				if ( ! isset( $row[ $key ] ) || ! is_scalar( $row[ $key ] ) || '' === trim( (string) $row[ $key ] ) ) {
+					continue;
+				}
+				$route = self::canonical_interaction_route( self::interaction_url_path( trim( (string) $row[ $key ] ) ) );
+				if ( isset( $index['by_route'][ $route ] ) ) {
+					return $index['by_route'][ $route ];
+				}
+			}
 		}
 
 		return $candidates[0] ?? 'unknown';
+	}
+
+	/**
+	 * A selectable-set `no-dialog` probe proved no shared region varies.
+	 *
+	 * @param array<string,mixed> $diagnostic Producer diagnostic.
+	 * @param string              $code       Producer omission code.
+	 */
+	private static function interaction_diagnostic_is_rejected_selectable_set( array $diagnostic, string $code ): bool {
+		if ( 'captured_selectable_set_candidate_rejected' === $code ) {
+			return true;
+		}
+
+		return 'captured_selectable_set_member_failed' === $code && 'no-dialog' === self::interaction_diagnostic_status( $diagnostic );
+	}
+
+	/**
+	 * @param array<string,mixed> $diagnostic Producer diagnostic.
+	 */
+	private static function interaction_diagnostic_status( array $diagnostic ): string {
+		$context = isset( $diagnostic['context'] ) && is_array( $diagnostic['context'] ) ? $diagnostic['context'] : array();
+		foreach ( array( $context, $diagnostic ) as $row ) {
+			if ( isset( $row['status'] ) && is_scalar( $row['status'] ) && '' !== trim( (string) $row['status'] ) ) {
+				return sanitize_key( trim( (string) $row['status'] ) );
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * Selectable-set `no-dialog` is a rejected candidate, not omitted content.
+	 *
+	 * @param string $status Captured interaction status.
+	 * @param string $kind   Captured interaction kind.
+	 */
+	private static function interaction_state_is_capture_gap( string $status, string $kind ): bool {
+		if ( 'click-failed' === $status ) {
+			return true;
+		}
+
+		return 'no-dialog' === $status && 'selectable-set' !== $kind;
 	}
 
 	/**
