@@ -307,11 +307,9 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		$form_classes                 = array();
 		$grid_span_active             = false;
 		$grid_span_gap                = null;
-		$grid_span_parents            = array();
 		$grid_span_submit_controls    = array();
 		$grid_span_submit_parents     = array();
 		$grid_span_container          = 'form';
-		$suppressed_form_classes      = array();
 		foreach ( array_keys( $auxiliary_popup_controls ) as $control_index ) {
 			$operations[] = array(
 				'dimension'   => 'topology',
@@ -1342,8 +1340,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					$overlay_represented_nodes[] = $placement['node'];
 				}
 			}
-			$grid_span_active    = true;
-			$grid_span_parents[] = $parent;
+			$grid_span_active = true;
 			if ( null === $grid_span_gap ) {
 				$grid_span_gap = is_string( $source_gap ) && Static_Site_Importer_Provider_Layout_Overlay::layout_values_are_safe( array( 'gap' => $source_gap ) ) ? $source_gap : $gap;
 			}
@@ -1598,39 +1595,6 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'gap'       => $grid_span_gap,
 				),
 			);
-			$stack_ids = array( 'form' );
-			foreach ( $grid_span_parents as $grid_parent ) {
-				$cursor = $grid_parent;
-				while ( is_string( $cursor ) && '' !== $cursor ) {
-					$stack_ids[] = $cursor;
-					$cursor      = is_array( $layout_nodes_by_id[ $cursor ] ?? null ) ? ( $layout_nodes_by_id[ $cursor ]['parent'] ?? null ) : null;
-				}
-			}
-			foreach ( array_unique( $stack_ids ) as $stack_id ) {
-				$stack_node   = $layout_nodes_by_id[ $stack_id ] ?? null;
-				$stack_layout = is_array( $stack_node['layout'] ?? null ) ? $stack_node['layout'] : array();
-				if ( ! is_array( $stack_node ) || 'flex' !== ( $stack_layout['display'] ?? null ) || 'column' !== ( $stack_layout['direction'] ?? null ) ) {
-					continue;
-				}
-				foreach ( $stack_node['provenance'] ?? array() as $fact ) {
-					$selector = is_array( $fact ) && is_string( $fact['selector'] ?? null ) ? $fact['selector'] : '';
-					if ( ! in_array( 'flex-direction', $fact['properties'] ?? array(), true ) || ! preg_match_all( '/\.([A-Za-z_][A-Za-z0-9_-]{0,79})/', $selector, $class_matches ) ) {
-						continue;
-					}
-					$suppressed_form_classes = array_merge( $suppressed_form_classes, $class_matches[1] );
-				}
-				$topology_class = $topology_nodes_by_id[ $stack_id ]['class'] ?? '';
-				if ( is_string( $topology_class ) && '' !== trim( $topology_class ) ) {
-					$topology_tokens = preg_split( '/\s+/', trim( $topology_class ) );
-					if ( is_array( $topology_tokens ) ) {
-						$suppressed_form_classes = array_merge( $suppressed_form_classes, $topology_tokens );
-					}
-				}
-				$source_classes = is_array( $stack_node['source']['classes'] ?? null ) ? $stack_node['source']['classes'] : array();
-				$suppressed_form_classes = array_merge( $suppressed_form_classes, $source_classes );
-			}
-			$suppressed_form_classes = array_values( array_unique( array_filter( $suppressed_form_classes, static fn ( $class_name ): bool => is_string( $class_name ) && '' !== $class_name ) ) );
-			$form_classes            = array_values( array_diff( $form_classes, $suppressed_form_classes ) );
 		}
 		foreach ( $wrapper_hooks as $node_id => $hook ) {
 			$layout_node = $layout_nodes_by_id[ $node_id ] ?? null;
@@ -1719,7 +1683,6 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			'form_classes'                 => array_values( array_unique( $form_classes ) ),
 			'provider_layout_targets'      => $provider_layout_targets,
 			'phone_popup_targets'          => $phone_popup_targets,
-			'suppressed_form_classes'      => $suppressed_form_classes,
 			'grid_span_submit_controls'    => array_values( array_unique( $grid_span_submit_controls ) ),
 		);
 	}
