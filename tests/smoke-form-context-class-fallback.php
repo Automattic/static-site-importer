@@ -72,11 +72,23 @@ $form_manifest = array(
 			'level' => 2,
 			'text'  => 'Stay Connected with Us',
 			'class' => 'font-serif text-2xl',
+			'styles' => array(
+				'font_size'   => '28px',
+				'font_family' => 'Georgia, serif',
+				'color'       => 'rgb(243, 242, 237)',
+				'line_height' => '1.5',
+				'font_weight' => 'unset',
+			),
 		),
 		array(
 			'type'  => 'paragraph',
 			'text'  => 'Required fields are marked',
 			'class' => 'form-note lead',
+			'styles' => array(
+				'font_size' => '15px',
+				'color'     => '#f3f2ed',
+				'font_family' => 'url(evil)',
+			),
 		),
 	),
 	'context_after'  => array(
@@ -202,10 +214,22 @@ $paragraph      = $blocks[1] ?? array();
 $assert( 'core/heading' === ( $heading_block['name'] ?? '' ) && 'font-serif text-2xl' === ( $heading_block['attrs']['className'] ?? '' ), 'heading-context-class-treatment-is-unchanged' );
 $assert( 'core/paragraph' === ( $paragraph['name'] ?? '' ) && 'form-note lead' === ( $paragraph['attrs']['className'] ?? '' ), 'paragraph-context-class-is-emitted-as-className', wp_json_encode( $paragraph ) );
 $paragraph_markup = trim( Static_Site_Importer_Form_Field_Markup::serialize_block( $paragraph ) );
-$assert( str_contains( $paragraph_markup, '<p class="wp-block-paragraph form-note lead">Required fields are marked</p>' ), 'serialized-paragraph-carries-the-class-on-the-element', $paragraph_markup );
+$assert( 1 === preg_match( '#<p class="wp-block-paragraph form-note lead[^"]*"[^>]*>Required fields are marked</p>#', $paragraph_markup ), 'serialized-paragraph-carries-the-class-on-the-element', $paragraph_markup );
 $plain = Static_Site_Importer_Form_Field_Markup::context_blocks( array( 'form' => array( 'context_after' => $prepared['form']['context_after'] ?? array() ) ), 'context_after' );
 $plain_markup = isset( $plain[0] ) ? trim( Static_Site_Importer_Form_Field_Markup::serialize_block( $plain[0] ) ) : '';
 $assert( str_contains( $plain_markup, '<p>Unsubscribe any time.</p>' ) && ! str_contains( $plain_markup, 'class=' ), 'classless-paragraph-markup-is-unchanged', $plain_markup );
+
+// Resolved context typography reaches the emitted blocks as editable style
+// attributes, and the saved element carries the matching inline declarations.
+// Unsafe or CSS-wide values never travel.
+$heading_style = $heading_block['attrs']['style'] ?? array();
+$assert( '28px' === ( $heading_style['typography']['fontSize'] ?? '' ) && 'Georgia, serif' === ( $heading_style['typography']['fontFamily'] ?? '' ) && '1.5' === ( $heading_style['typography']['lineHeight'] ?? '' ) && 'rgb(243, 242, 237)' === ( $heading_style['color']['text'] ?? '' ), 'heading-context-typography-becomes-block-style-attributes', wp_json_encode( $heading_style ) );
+$assert( ! isset( $heading_style['typography']['fontWeight'] ), 'css-wide-context-typography-value-is-dropped', wp_json_encode( $heading_style ) );
+$heading_markup = trim( Static_Site_Importer_Form_Field_Markup::serialize_block( $heading_block ) );
+$assert( str_contains( $heading_markup, 'font-size:28px' ) && str_contains( $heading_markup, 'color:rgb(243, 242, 237)' ) && str_contains( $heading_markup, 'has-text-color' ), 'saved-heading-carries-the-inline-typography', $heading_markup );
+$paragraph_style = $paragraph['attrs']['style'] ?? array();
+$assert( '15px' === ( $paragraph_style['typography']['fontSize'] ?? '' ) && '#f3f2ed' === ( $paragraph_style['color']['text'] ?? '' ) && ! isset( $paragraph_style['typography']['fontFamily'] ), 'paragraph-context-typography-keeps-safe-values-only', wp_json_encode( $paragraph_style ) );
+$assert( str_contains( $paragraph_markup, 'font-size:15px' ) && ! str_contains( $paragraph_markup, 'url(' ), 'saved-paragraph-carries-safe-inline-typography', $paragraph_markup );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
