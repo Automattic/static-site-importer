@@ -3415,7 +3415,9 @@ $route_receipt             = Static_Site_Importer_WordPress_Site_Plan_Materializ
 $route_home                = current( array_filter( $GLOBALS['ssi_plan_posts'], static fn( array $post ): bool => 'index' === ( $post['post_name'] ?? '' ) ) );
 $route_content             = is_array( $route_home ) ? stripslashes( (string) ( $route_home['post_content'] ?? '' ) ) : '';
 $route_rendered            = Static_Site_Importer_Internal_Link_Runtime::resolve_urls( $route_content );
+$contact_source_id = (int) ( $route_receipt['completed']['pages']['website/contact/index.html'] ?? 0 );
 $assert( 'completed' === ( $route_receipt['status'] ?? '' ) && str_contains( $route_rendered, 'href="https://example.test/contact/"' ) && str_contains( $route_rendered, 'href="https://example.test/2024/03/news/"' ), 'canonical routes resolve to actual WordPress page and dated-post permalinks after materialization' );
+$assert( 'contact/index.html' === get_post_meta( $contact_source_id, Static_Site_Importer_Source_Route_Redirect::META_KEY, true ), 'source file routes are persisted as queryable post meta for 404 redirects' );
 $rewrite_route_references = new ReflectionMethod( Static_Site_Importer_Site_Plan_Persistence::class, 'rewrite_route_references' );
 $pin_route_content        = $rewrite_route_references->invoke( null, 'data-pin-url=\\u0022/post/news\\u0022', array( '/post/news' => 'https://example.test/2024/03/news/' ) );
 $assert( 'data-pin-url=\\u0022https://example.test/2024/03/news/\\u0022' === $pin_route_content, 'escaped route-bearing data URL attributes resolve to the materialized WordPress permalink' );

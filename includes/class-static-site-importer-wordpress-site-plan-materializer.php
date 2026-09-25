@@ -10,6 +10,7 @@ require_once __DIR__ . '/class-static-site-importer-protected-page-policy.php';
 require_once __DIR__ . '/class-static-site-importer-default-content.php';
 require_once __DIR__ . '/class-static-site-importer-route-document-metadata.php';
 require_once __DIR__ . '/class-static-site-importer-internal-link-runtime.php';
+require_once __DIR__ . '/class-static-site-importer-source-route-redirect.php';
 require_once __DIR__ . '/class-static-site-importer-route-head-metadata.php';
 if ( ! class_exists( 'Static_Site_Importer_Theme_Materialization_Strategy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-theme-materialization-strategy.php';

@@ -173,7 +173,7 @@ if ( ! function_exists( 'plugin_dir_url' ) ) {
 }
 
 if ( ! function_exists( 'add_action' ) ) {
-	function add_action( string $hook, callable|string $callback ): void {
+	function add_action( string $hook, callable|string|array $callback, int $priority = 10, int $accepted_args = 1 ): void {
 		$GLOBALS['ssi_companion_actions'][ $hook ][] = $callback;
 	}
 }
@@ -623,8 +623,10 @@ if ( is_array( $descriptor ) ) {
 	$assert( str_contains( $main, 'wp_enqueue_script' ), 'main-file-enqueues-island-js' );
 	$assert( str_contains( $main, "require_once __DIR__ . '/includes/provider-form-runtime-v1.php'" ) && str_contains( $main, 'SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1::register();' ), 'main-file-registers-versioned-companion-provider-form-runtime' );
 	$assert( str_contains( $main, "require_once __DIR__ . '/includes/internal-link-runtime.php'" ) && str_contains( $main, 'SSI_EXAMPLE_SITE_Internal_Link_Runtime::register();' ), 'main-file-registers-companion-internal-link-runtime' );
+	$assert( str_contains( $main, "require_once __DIR__ . '/includes/source-route-redirect.php'" ) && str_contains( $main, 'SSI_EXAMPLE_SITE_Source_Route_Redirect::register();' ), 'main-file-registers-companion-source-route-redirect' );
 	$assert( isset( $files['ssi-example-site/includes/provider-form-runtime-v1.php'] ) && str_contains( $files['ssi-example-site/includes/provider-form-runtime-v1.php'], 'final class SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1' ), 'provider-form-runtime-is-emitted-under-companion-namespace' );
 	$assert( isset( $files['ssi-example-site/includes/internal-link-runtime.php'] ) && str_contains( $files['ssi-example-site/includes/internal-link-runtime.php'], 'final class SSI_EXAMPLE_SITE_Internal_Link_Runtime' ), 'internal-link-runtime-is-emitted-under-companion-namespace' );
+	$assert( isset( $files['ssi-example-site/includes/source-route-redirect.php'] ) && str_contains( $files['ssi-example-site/includes/source-route-redirect.php'], 'final class SSI_EXAMPLE_SITE_Source_Route_Redirect' ) && ! str_contains( $files['ssi-example-site/includes/source-route-redirect.php'], 'Static_Site_Importer_Source_Route_Redirect' ), 'source-route-redirect-is-emitted-under-companion-namespace' );
 	$config = json_decode( (string) ( $files['ssi-example-site/companion.json'] ?? '' ), true );
 	$assert( is_array( $config ) && 'Example Site' === ( $config['site_name'] ?? '' ) && array( 'custom-hero' ) === ( $config['block_directories'] ?? null ) && 'ssi-example-site/ssi-example-site.php' === ( $config['plugin_file'] ?? '' ), 'companion-config-contains-imported-runtime-data' );
 	$assert( str_contains( $main, "companion.json" ) && ! str_contains( $main, "'custom-hero'" ) && ! str_contains( $main, "'ssi-example-site-editor'" ), 'main-file-reads-runtime-data-from-json' );
@@ -1096,8 +1098,10 @@ $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/inde
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/editor/core-enhancement.js' ) && 'window.ssiExampleEditor = true;' === (string) file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/editor/core-enhancement.js' ), 'install-writes-editor-script-asset' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/includes/provider-form-runtime-v1.php' ), 'install-writes-versioned-companion-provider-form-runtime' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/includes/internal-link-runtime.php' ), 'install-writes-companion-internal-link-runtime' );
+$assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/includes/source-route-redirect.php' ), 'install-writes-companion-source-route-redirect' );
 $assert( isset( $GLOBALS['ssi_companion_registered_filters']['grunion_contact_form_field_html'], $GLOBALS['ssi_companion_registered_filters']['render_block_jetpack/contact-form'], $GLOBALS['ssi_companion_registered_filters']['render_block_core/button'] ), 'installed-companion-registers-provider-form-runtime-hooks' );
 $assert( isset( $GLOBALS['ssi_companion_registered_filters']['the_content'] ), 'installed-companion-registers-internal-link-runtime' );
+$assert( isset( $GLOBALS['ssi_companion_actions']['template_redirect'] ), 'installed-companion-registers-source-route-redirect' );
 $submit_filter = $GLOBALS['ssi_companion_registered_filters']['render_block_core/button'][0][0] ?? null;
 $projected_submit = is_callable( $submit_filter ) ? call_user_func(
 	$submit_filter,
@@ -1115,7 +1119,7 @@ class WP_Block_Type {
 }
 function plugin_dir_path( string $file ): string { return dirname( $file ) . '/'; }
 function plugin_dir_url( string $file ): string { return 'https://example.test/plugins/' . basename( dirname( $file ) ) . '/'; }
-function add_action( string $hook, callable|string $callback ): void { if ( 'init' === $hook ) { call_user_func( $callback ); } }
+function add_action( string $hook, callable|string|array $callback, int $priority = 10, int $accepted_args = 1 ): void { if ( 'init' === $hook ) { call_user_func( $callback ); } }
 function add_filter( string $hook, callable|string $callback, int $priority = 10, int $accepted_args = 1 ): void {}
 function register_block_type( string $path, array $args = array() ): WP_Block_Type|false {
 	$metadata = is_file( $path . '/block.json' ) ? json_decode( (string) file_get_contents( $path . '/block.json' ), true ) : array();
@@ -1150,7 +1154,7 @@ define( 'ABSPATH', __DIR__ . '/' );
 class WP_Block_Type { public function __construct( public string $name ) {} }
 function plugin_dir_path( string $file ): string { return dirname( $file ) . '/'; }
 function plugin_dir_url( string $file ): string { return 'https://example.test/plugins/' . basename( dirname( $file ) ) . '/'; }
-function add_action( string $hook, callable|string $callback ): void { if ( 'init' === $hook ) { call_user_func( $callback ); } }
+function add_action( string $hook, callable|string|array $callback, int $priority = 10, int $accepted_args = 1 ): void { if ( 'init' === $hook ) { call_user_func( $callback ); } }
 function add_filter( string $hook, callable|string $callback, int $priority = 10, int $accepted_args = 1 ): void { $GLOBALS['filters'][ $hook ][] = $callback; }
 function register_block_type( string $path, array $args = array() ): WP_Block_Type|false { return new WP_Block_Type( 'test/block' ); }
 function get_option( string $name, mixed $default = false ): mixed { return $default; }
