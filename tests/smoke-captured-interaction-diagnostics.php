@@ -190,11 +190,13 @@ $assert(
 	'capture-gap-is-classified-separately-from-unmaterialized'
 );
 $assert( 2 === ( $mixed_inventory['diagnostics'][0]['captured_state_count'] ?? -1 ), 'alpha-diagnostic-count' );
-$assert( 2 === ( $mixed_inventory['diagnostics'][1]['recorded_state_count'] ?? -1 ), 'beta-capture-gap-counts-no-dialog-and-click-failed' );
+$assert( 1 === ( $mixed_inventory['diagnostics'][1]['recorded_state_count'] ?? -1 ), 'beta-capture-gap-counts-click-failed-not-disproved-no-dialog' );
+$assert( 1 === ( $mixed_inventory['diagnostics'][1]['context']['status_counts']['no-dialog'] ?? -1 ), 'capture-gap-status-counts-include-recorded-no-dialog' );
+$assert( 1 === ( $mixed_inventory['diagnostics'][1]['context']['status_counts']['click-failed'] ?? -1 ), 'capture-gap-status-counts-include-recorded-click-failed' );
 $assert( 'capture_side' === ( $mixed_inventory['diagnostics'][1]['context']['omission_class'] ?? '' ), 'beta-capture-gap-is-capture-side' );
 $assert( 1 === ( $mixed_inventory['diagnostics'][2]['captured_state_count'] ?? -1 ), 'beta-unmaterialized-counts-only-captured-members' );
 $assert( 'importer' === ( $mixed_inventory['diagnostics'][2]['context']['omission_class'] ?? '' ), 'beta-unmaterialized-is-importer-side' );
-$assert( 5 === ( $mixed_inventory['unrepresented_member_count'] ?? -1 ), 'unrepresented-count-sums-capture-gap-and-unmaterialized' );
+$assert( 4 === ( $mixed_inventory['unrepresented_member_count'] ?? -1 ), 'unrepresented-count-sums-capture-gap-and-unmaterialized' );
 
 $no_dialog_only = array(
 	'schema' => 'data-liberation/captured-interactions/v1',
@@ -212,8 +214,40 @@ $no_dialog_inventory = Static_Site_Importer_Report_Diagnostics::captured_interac
 $assert( 2 === ( $no_dialog_inventory['recorded_state_count'] ?? -1 ), 'non-captured-only-states-are-still-counted' );
 $assert( 1 === count( $no_dialog_inventory['diagnostics'] ?? array() ), 'capture-side-only-states-emit-a-capture-gap-diagnostic' );
 $assert( 'captured_interaction_capture_gap' === ( $no_dialog_inventory['diagnostics'][0]['reason_code'] ?? '' ), 'capture-side-only-reason' );
-$assert( 2 === ( $no_dialog_inventory['diagnostics'][0]['recorded_state_count'] ?? -1 ), 'capture-side-only-count' );
+$assert( 1 === ( $no_dialog_inventory['diagnostics'][0]['recorded_state_count'] ?? -1 ), 'capture-side-only-count-is-click-failed' );
 $assert( 'capture_side' === ( $no_dialog_inventory['diagnostics'][0]['context']['omission_class'] ?? '' ), 'capture-side-only-class' );
+$assert( 1 === ( $no_dialog_inventory['diagnostics'][0]['context']['status_counts']['no-dialog'] ?? -1 ), 'click-failed-gap-still-counts-recorded-no-dialog' );
+
+$disproved_only = array(
+	'schema' => 'data-liberation/captured-interactions/v1',
+	'pages'  => array(
+		$page(
+			'https://example.test/beta',
+			array(
+				$state( 'no-dialog' ),
+				$state( 'no-dialog' ),
+			)
+		),
+	),
+);
+$disproved_inventory = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( $artifact( $disproved_only ), $plan );
+$assert( 2 === ( $disproved_inventory['recorded_state_count'] ?? -1 ), 'disproved-selectable-set-states-are-still-counted' );
+$assert( 2 === ( $disproved_inventory['status_counts']['no-dialog'] ?? -1 ), 'disproved-selectable-set-status-counts-are-recorded' );
+$assert( array() === ( $disproved_inventory['diagnostics'] ?? null ), 'disproved-selectable-set-is-not-an-unsupported-capture-gap' );
+$assert( 0 === ( $disproved_inventory['unrepresented_member_count'] ?? -1 ), 'disproved-selectable-set-has-no-unrepresented-members' );
+
+$dialog_no_dialog = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory(
+	$artifact(
+		array(
+			'schema' => 'data-liberation/captured-interactions/v1',
+			'pages'  => array(
+				$page( 'https://example.test/beta', array( $state( 'no-dialog', 'dialog' ) ) ),
+			),
+		)
+	),
+	$plan
+);
+$assert( 'captured_interaction_capture_gap' === ( $dialog_no_dialog['diagnostics'][0]['reason_code'] ?? '' ), 'non-selectable-set-no-dialog-stays-a-capture-gap' );
 
 $already_reported = $plan;
 $already_reported['diagnostics'] = array(
@@ -231,7 +265,7 @@ foreach ( $mixed_inventory['diagnostics'] as $diagnostic ) {
 	$report->append_diagnostic( $diagnostic );
 }
 $quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $report, array() );
-$assert( 5 === ( $quality['interaction_candidate_count'] ?? -1 ), 'quality-count-sums-omitted-members' );
+$assert( 4 === ( $quality['interaction_candidate_count'] ?? -1 ), 'quality-count-sums-omitted-members' );
 $assert( true === ( $quality['pass'] ?? false ), 'unmaterialized-interactions-do-not-fail-quality-pass' );
 $assert( array() === ( $quality['failure_reasons'] ?? null ), 'unmaterialized-interactions-are-not-a-quality-failure-reason' );
 $assert( ! empty( $quality['diagnostic_refs']['interaction_candidate_count'] ?? array() ), 'quality-refs-point-at-interaction-candidate-diagnostics' );
@@ -259,7 +293,7 @@ $selectable_states = static function ( int $captured, int $gaps ) use ( $state )
 		$states[] = $state( 'captured', 'selectable-set' );
 	}
 	for ( $index = 0; $index < $gaps; $index++ ) {
-		$states[] = $state( 'no-dialog', 'selectable-set' );
+		$states[] = $state( 'click-failed', 'selectable-set' );
 	}
 
 	return $states;
@@ -313,6 +347,49 @@ $be_only = Static_Site_Importer_Report_Diagnostics::captured_interaction_invento
 $assert( 9 === ( $be_only['unrepresented_member_count'] ?? -1 ), 'producer-member-failed-without-sidecar-is-counted' );
 $assert( 'captured_interaction_capture_gap' === ( $be_only['diagnostics'][0]['reason_code'] ?? '' ), 'producer-member-failed-is-capture-side' );
 $assert( 9 === ( $be_only['diagnostics'][0]['recorded_state_count'] ?? -1 ), 'producer-member-failed-aggregates-to-one-diagnostic' );
+$disproved_producer = array(
+	array(
+		'code'    => 'captured_selectable_set_member_failed',
+		'source'  => 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\CapturedSelectableSetProjector',
+		'context' => array(
+			'source_url' => 'https://example.test/beta',
+			'status'     => 'no-dialog',
+		),
+	),
+	array(
+		'code'    => 'captured_selectable_set_member_failed',
+		'source'  => 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\CapturedSelectableSetProjector',
+		'context' => array(
+			'source_url' => 'https://example.test/beta',
+			'status'     => 'no-dialog',
+		),
+	),
+);
+$disproved_producer_inventory = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory(
+	$artifact( $disproved_only ),
+	array_merge( $plan, array( 'compiler_diagnostics' => $disproved_producer ) )
+);
+$assert( array() === ( $disproved_producer_inventory['diagnostics'] ?? null ), 'producer-no-dialog-is-not-an-unsupported-capture-gap' );
+$assert( 2 === ( $disproved_producer_inventory['status_counts']['no-dialog'] ?? -1 ), 'producer-no-dialog-does-not-erase-recorded-status-counts' );
+$click_failed_producer = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory(
+	array( 'files' => array() ),
+	array_merge(
+		$plan,
+		array(
+			'compiler_diagnostics' => array(
+				array(
+					'code'    => 'captured_selectable_set_member_failed',
+					'source'  => 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\CapturedSelectableSetProjector',
+					'context' => array(
+						'status' => 'click-failed',
+					),
+				),
+			),
+		)
+	)
+);
+$assert( 1 === count( $click_failed_producer['diagnostics'] ?? array() ), 'click-failed-producer-still-reports-one-gap' );
+$assert( 1 === ( $click_failed_producer['diagnostics'][0]['context']['status_counts']['click-failed'] ?? -1 ), 'producer-only-gap-counts-the-recorded-status' );
 $compiler_only = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory(
 	array( 'files' => array() ),
 	array_merge( $plan, array( 'compiler_diagnostics' => $be_failed ) )
