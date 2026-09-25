@@ -3022,6 +3022,129 @@ namespace {
 		wp_json_encode( array( 'errors' => $hidden_checkbox_validated['errors'] ?? array(), 'row' => $hidden_checkbox_seed ) )
 	);
 
+	$declared_box_form = static function ( array $styles, array $layout, string $class ) use ( $presentation_role, $v2_layout_graph, $layout_node ): array {
+		$properties = array();
+		foreach ( array_keys( $styles ) as $key ) {
+			$properties[] = str_replace( '_', '-', (string) $key );
+		}
+		$control_node                   = $layout_node( 'control-0', $layout, 'input' );
+		$control_node['parent']         = 'form';
+		$control_node['order']          = 1;
+		$control_node['source']['classes'] = array( $class );
+		$condition                      = array( 'kind' => 'media', 'query' => '(max-width: 48rem)' );
+		$graph                          = $v2_layout_graph( array( $layout_node( 'form', array( 'display' => 'flex' ), 'form' ), $control_node ) );
+		$graph['variants'][]            = array(
+			'node'         => 'control-0',
+			'condition'    => $condition,
+			'layout_patch' => array( 'width' => $layout['width'], 'height' => $layout['height'] ),
+			'precedence'   => array(
+				'width'  => array( 'source_order' => 2, 'specificity' => 10, 'important' => false ),
+				'height' => array( 'source_order' => 2, 'specificity' => 10, 'important' => false ),
+			),
+			'provenance'   => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'b', 64 ), 'selector' => '.box', 'condition' => $condition, 'properties' => array( 'width', 'height' ) ) ),
+		);
+		return array(
+			'selector'           => 'form.consent',
+			'controls'           => array(
+				array( 'tag' => 'input', 'type' => 'checkbox', 'name' => 'updates', 'label' => 'Send me updates', 'class' => $class ),
+				array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+			),
+			'presentation_graph' => array(
+				'schema' => 'generic/computed-form-presentation/v1', 'basis' => 'source_css_cascade', 'truncated' => false,
+				'limits' => array( 'controls' => 128, 'rules_per_role' => 32 ), 'variants' => array(), 'diagnostics' => array(),
+				'controls' => array( array(
+					'index'   => 0,
+					'control' => $presentation_role( $styles, $properties, '.box' ),
+					'label'   => $presentation_role( array( 'font_size' => '14px', 'color' => '#fff' ), array( 'font-size', 'color' ), 'label' ),
+				) ),
+			),
+			'layout_graph'       => $graph,
+		);
+	};
+	$seed_declared_box = static function ( array $form ) {
+		$validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $form ) ) );
+		return array(
+			'errors' => $validated['errors'] ?? array(),
+			'row'    => Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated['forms'] ?? array() ) )['forms'][0] ?? array(),
+		);
+	};
+	$hidden_native_box = $seed_declared_box( $declared_box_form(
+		array( 'position' => 'absolute', 'width' => '1px', 'height' => '1px', 'margin' => '-1px', 'border' => '0', 'padding' => '0' ),
+		array( 'height' => '1px', 'width' => '1px' ),
+		'visually-hidden'
+	) );
+	$hidden_native_row   = $hidden_native_box['row'];
+	$hidden_native_css   = (string) ( $hidden_native_row['provider_layout_overlay_css']['css'] ?? '' );
+	$hidden_native_markup = (string) ( $hidden_native_row['block_markup'] ?? '' );
+	$assert(
+		empty( $hidden_native_box['errors'] )
+			&& 'mapped' === ( $hidden_native_row['status'] ?? '' )
+			&& true === ( $hidden_native_row['runtime_mapped'] ?? false )
+			&& empty( $hidden_native_row['form_receipt_unaccepted_losses'] ?? array() )
+			&& in_array( 'provider_visually_hidden_native_control', array_column( $hidden_native_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ),
+		'visually-hidden-native-checkbox-maps-after-dropping-source-hiding-presentation',
+		wp_json_encode( array( 'errors' => $hidden_native_box['errors'], 'row' => $hidden_native_row ) )
+	);
+	$assert(
+		! str_contains( $hidden_native_css, 'height:1px' )
+			&& ! str_contains( $hidden_native_css, 'width:1px' )
+			&& str_contains( $hidden_native_css, 'font-size:14px' )
+			&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $hidden_native_row['provider_layout_overlay_css'] ?? null ),
+		'visually-hidden-native-checkbox-overlay-drops-the-1px-box-and-keeps-label-typography',
+		$hidden_native_css
+	);
+	$assert( ! str_contains( $hidden_native_markup, 'visually-hidden' ), 'visually-hidden-native-checkbox-markup-does-not-carry-the-hiding-class', $hidden_native_markup );
+	$authored_small_box = $seed_declared_box( $declared_box_form(
+		array( 'position' => 'static', 'width' => '16px', 'height' => '16px', 'margin' => '0', 'border' => '0', 'padding' => '0' ),
+		array( 'height' => '16px', 'width' => '16px' ),
+		'authored-box'
+	) );
+	$authored_small_row = $authored_small_box['row'];
+	$authored_small_css = (string) ( $authored_small_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		empty( $authored_small_box['errors'] )
+			&& 'mapped' === ( $authored_small_row['status'] ?? '' )
+			&& str_contains( (string) ( $authored_small_row['block_markup'] ?? '' ), 'authored-box' )
+			&& str_contains( $authored_small_css, 'height:16px' )
+			&& str_contains( $authored_small_css, 'width:16px' )
+			&& ! in_array( 'provider_visually_hidden_native_control', array_column( $authored_small_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ),
+		'authored-static-small-checkbox-keeps-its-declared-box-and-class',
+		wp_json_encode( array( 'errors' => $authored_small_box['errors'], 'css' => $authored_small_css, 'markup' => $authored_small_row['block_markup'] ?? '' ) )
+	);
+	$absolute_tight_box = $seed_declared_box( $declared_box_form(
+		array( 'position' => 'absolute', 'width' => '1px', 'height' => '1px', 'margin' => '0', 'border' => '0', 'padding' => '0' ),
+		array( 'height' => '1px', 'width' => '1px' ),
+		'tight-control'
+	) );
+	$absolute_tight_row = $absolute_tight_box['row'];
+	$absolute_tight_css = (string) ( $absolute_tight_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		empty( $absolute_tight_box['errors'] )
+			&& 'mapped' === ( $absolute_tight_row['status'] ?? '' )
+			&& str_contains( (string) ( $absolute_tight_row['block_markup'] ?? '' ), 'tight-control' )
+			&& str_contains( $absolute_tight_css, 'height:1px' )
+			&& str_contains( $absolute_tight_css, 'width:1px' )
+			&& ! in_array( 'provider_visually_hidden_native_control', array_column( $absolute_tight_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ),
+		'absolute-1px-checkbox-without-clip-or-negative-margin-is-unchanged',
+		wp_json_encode( array( 'errors' => $absolute_tight_box['errors'], 'css' => $absolute_tight_css, 'markup' => $absolute_tight_row['block_markup'] ?? '' ) )
+	);
+	$clipped_box = $declared_box_form(
+		array( 'position' => 'fixed', 'width' => '1px', 'height' => '1px', 'clip_path' => 'inset(50%)', 'border' => '0', 'padding' => '0' ),
+		array( 'height' => '1px', 'width' => '1px' ),
+		'clipped-control'
+	);
+	$clipped_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $clipped_box ) ) )['forms'][0] ?? array();
+	$clipped_css = (string) ( $clipped_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		'mapped' === ( $clipped_row['status'] ?? '' )
+			&& ! str_contains( $clipped_css, 'height:1px' )
+			&& ! str_contains( $clipped_css, 'width:1px' )
+			&& ! str_contains( (string) ( $clipped_row['block_markup'] ?? '' ), 'clipped-control' )
+			&& in_array( 'provider_visually_hidden_native_control', array_column( $clipped_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ),
+		'fixed-1px-checkbox-with-collapsing-clip-path-drops-hiding-presentation',
+		wp_json_encode( array( 'css' => $clipped_css, 'markup' => $clipped_row['block_markup'] ?? '', 'row' => $clipped_row ) )
+	);
+
 	$help_text_atts = Static_Site_Importer_Provider_Form_Runtime_V1::project_help_text_attribute(
 		array( 'helptext' => null ),
 		array(),

@@ -329,6 +329,9 @@ class Static_Site_Importer_Form_Seeder {
 		$controls    = isset( $form['controls'] ) && is_array( $form['controls'] ) ? $form['controls'] : array();
 		$form        = self::project_submit_style_into_presentation_graph( $form, $controls );
 		$form        = self::project_textarea_row_height_into_presentation_graph( $form, $controls );
+		$released    = self::release_visually_hidden_native_controls( $form, $controls );
+		$form        = $released['form'];
+		$controls    = $released['controls'];
 		$selector    = isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '';
 		$source_path = isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '';
 
@@ -545,7 +548,7 @@ class Static_Site_Importer_Form_Seeder {
 			);
 		}
 		$host = Static_Site_Importer_Form_Layout_Projection::host_wrapper_projection( $form );
-		self::append_receipt_entries( $layout['receipt'], 'operations', array_merge( $radio_groups['operations'], $topology['operations'], $host['operations'] ) );
+		self::append_receipt_entries( $layout['receipt'], 'operations', array_merge( $released['operations'], $radio_groups['operations'], $topology['operations'], $host['operations'] ) );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $control_attribute_losses );
 		$inner_blocks            = $layout['blocks'];
 		$suppressed_form_classes = array_fill_keys( is_array( $topology['suppressed_form_classes'] ?? null ) ? $topology['suppressed_form_classes'] : array(), true );
@@ -842,6 +845,148 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		ksort( $owned );
 		return array_slice( array_values( $owned ), 0, 4 );
+	}
+
+	/**
+	 * Drop source visually-hidden presentation before provider destinations are built.
+	 *
+	 * A source hides its native input (absolute or fixed, a 1px-or-smaller box, and
+	 * either a collapsing clip or a -1px margin) because a sibling paints the visible
+	 * box. The provider emits its own native control and does not reproduce that
+	 * sibling, so those declarations would hide the only remaining control. Detection
+	 * reads declared styles only; a measured box is not evidence. Label roles stay.
+	 *
+	 * @param array<string,mixed> $form     Provider form manifest row.
+	 * @param array<int,mixed>    $controls Normalized controls list.
+	 * @return array{form:array<string,mixed>,controls:array<int,mixed>,operations:array<int,array<string,mixed>>}
+	 */
+	private static function release_visually_hidden_native_controls( array $form, array $controls ): array {
+		$operations = array();
+		$hidden     = array();
+		foreach ( $form['presentation_graph']['controls'] ?? array() as $row ) {
+			if ( ! is_array( $row ) || ! is_int( $row['index'] ?? null ) || ! is_array( $row['control']['styles'] ?? null ) || ! self::is_visually_hidden_control_declaration( $row['control']['styles'] ) ) {
+				continue;
+			}
+			$hidden[ $row['index'] ] = true;
+		}
+		if ( empty( $hidden ) ) {
+			return array(
+				'form'       => $form,
+				'controls'   => $controls,
+				'operations' => $operations,
+			);
+		}
+		foreach ( array_keys( $hidden ) as $index ) {
+			if ( isset( $controls[ $index ] ) && is_array( $controls[ $index ] ) ) {
+				unset( $controls[ $index ]['class'] );
+			}
+			if ( isset( $form['controls'][ $index ] ) && is_array( $form['controls'][ $index ] ) ) {
+				unset( $form['controls'][ $index ]['class'] );
+			}
+			$operations[] = array(
+				'dimension' => 'presentation',
+				'strategy'  => 'provider_visually_hidden_native_control',
+				'node_hash' => hash( 'sha256', 'control-' . $index ),
+			);
+		}
+		if ( is_array( $form['presentation_graph']['controls'] ?? null ) ) {
+			$kept_controls = array();
+			foreach ( $form['presentation_graph']['controls'] as $row ) {
+				if ( ! is_array( $row ) || ! isset( $hidden[ $row['index'] ?? null ] ) ) {
+					$kept_controls[] = $row;
+					continue;
+				}
+				unset( $row['control'] );
+				if ( isset( $row['label'] ) || isset( $row['required_marker'] ) ) {
+					$kept_controls[] = $row;
+				}
+			}
+			$form['presentation_graph']['controls'] = $kept_controls;
+		}
+		if ( is_array( $form['presentation_graph']['variants'] ?? null ) ) {
+			$form['presentation_graph']['variants'] = array_values(
+				array_filter(
+					$form['presentation_graph']['variants'],
+					static fn ( $variant ): bool => ! is_array( $variant ) || 'control' !== ( $variant['role'] ?? null ) || ! isset( $hidden[ $variant['index'] ?? null ] )
+				)
+			);
+		}
+		if ( is_array( $form['layout_graph']['nodes'] ?? null ) ) {
+			$form['layout_graph']['nodes'] = array_values(
+				array_filter(
+					$form['layout_graph']['nodes'],
+					static function ( $node ) use ( $hidden ): bool {
+						if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) || 1 !== preg_match( '/^control-([0-9]+)$/D', $node['id'], $match ) ) {
+							return true;
+						}
+						return ! isset( $hidden[ (int) $match[1] ] );
+					}
+				)
+			);
+		}
+		if ( is_array( $form['layout_graph']['variants'] ?? null ) ) {
+			$form['layout_graph']['variants'] = array_values(
+				array_filter(
+					$form['layout_graph']['variants'],
+					static function ( $variant ) use ( $hidden ): bool {
+						if ( ! is_array( $variant ) || ! is_string( $variant['node'] ?? null ) || 1 !== preg_match( '/^control-([0-9]+)$/D', $variant['node'], $match ) ) {
+							return true;
+						}
+						return ! isset( $hidden[ (int) $match[1] ] );
+					}
+				)
+			);
+		}
+		return array(
+			'form'       => $form,
+			'controls'   => $controls,
+			'operations' => $operations,
+		);
+	}
+
+	/**
+	 * Whether declared styles hide a native control that a sibling box was painting.
+	 *
+	 * @param array<string,mixed> $styles Control presentation declarations.
+	 */
+	private static function is_visually_hidden_control_declaration( array $styles ): bool {
+		$position = strtolower( trim( (string) ( $styles['position'] ?? '' ) ) );
+		if ( ! in_array( $position, array( 'absolute', 'fixed' ), true ) || ! self::is_collapsed_declared_box( $styles['width'] ?? null ) || ! self::is_collapsed_declared_box( $styles['height'] ?? null ) ) {
+			return false;
+		}
+		return self::declaration_has_collapsing_clip( $styles ) || self::declaration_has_negative_pixel_margin( $styles );
+	}
+
+	/** @param mixed $value Declared box length. */
+	private static function is_collapsed_declared_box( mixed $value ): bool {
+		if ( ! is_string( $value ) || 1 !== preg_match( '/^(?:0|[0-9]+(?:\.[0-9]+)?)(?:px)?$/D', strtolower( trim( $value ) ) ) ) {
+			return false;
+		}
+		return (float) $value <= 1.0;
+	}
+
+	/** @param array<string,mixed> $styles */
+	private static function declaration_has_negative_pixel_margin( array $styles ): bool {
+		foreach ( array( 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'margin_block', 'margin_block_start', 'margin_block_end', 'margin_inline', 'margin_inline_start', 'margin_inline_end' ) as $key ) {
+			if ( ! is_string( $styles[ $key ] ?? null ) ) {
+				continue;
+			}
+			$tokens = preg_split( '/\s+/', strtolower( trim( $styles[ $key ] ) ) );
+			if ( is_array( $tokens ) && array() !== $tokens && array() === array_diff( $tokens, array( '-1px' ) ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** @param array<string,mixed> $styles */
+	private static function declaration_has_collapsing_clip( array $styles ): bool {
+		$clip = strtolower( trim( (string) ( $styles['clip'] ?? '' ) ) );
+		if ( '' !== $clip && 1 === preg_match( '/^rect\(\s*(?:0|0px|1px)(?:\s*,\s*|\s+)(?:0|0px|1px)(?:\s*,\s*|\s+)(?:0|0px|1px)(?:\s*,\s*|\s+)(?:0|0px|1px)\s*\)$/D', $clip ) ) {
+			return true;
+		}
+		$clip_path = strtolower( trim( (string) ( $styles['clip_path'] ?? $styles['clip-path'] ?? '' ) ) );
+		return '' !== $clip_path && 1 === preg_match( '/^inset\(\s*(?:50%|100%)(?:\s+(?:50%|100%)){0,3}\s*\)$/D', $clip_path );
 	}
 
 	/**
