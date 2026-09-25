@@ -29,7 +29,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: node --test tests/editor-presentation-browser.test.mjs tools/run-existing-runtime-review.test.mjs
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - run: node --test tests/editor-presentation-browser.test.mjs tests/form-layout-rendered.test.mjs tools/run-existing-runtime-review.test.mjs
 
   homeboy-lint:
     name: Homeboy Lint

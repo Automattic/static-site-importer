@@ -1323,6 +1323,35 @@ namespace {
 		'span-that-does-not-map-to-a-jetpack-field-width-keeps-the-wrapper-layout-decline',
 		wp_json_encode( $unclean_span_row )
 	);
+	$column_stack_html = '<style>.stack{display:flex;flex-direction:column;gap:24px;width:100%}</style><form class="stack">'
+		. '<div style="display:grid;width:100%;grid-template-columns:repeat(12, 1fr);column-gap:24px">'
+		. '<div style="grid-column:1 / span 6"><label>First name</label><input type="text" name="first"></div>'
+		. '<div style="grid-column:7 / span 6"><label>Last name</label><input type="text" name="last"></div>'
+		. '<div style="grid-column:1 / span 12"><label>Message</label><textarea name="message"></textarea></div>'
+		. '<div style="grid-column:1 / span 3"><button type="submit">Send</button></div>'
+		. '</div></form>';
+	$column_stack_source    = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $column_stack_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$column_stack_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $column_stack_source ) ) );
+	$column_stack_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $column_stack_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$column_stack_markup    = (string) ( $column_stack_row['block_markup'] ?? '' );
+	$column_stack_css       = (string) ( $column_stack_row['provider_layout_overlay_css']['css'] ?? '' );
+	$column_stack_form_rule = 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} > form\.jetpack-contact-form__form, \.ssi-form-[a-f0-9]{12}:not\(:has\(> form\.jetpack-contact-form__form\)\)\{([^}]+)\}/', $column_stack_css, $column_stack_form ) ? $column_stack_form[1] : '';
+	$assert(
+		empty( $column_stack_validated['errors'] )
+			&& 'mapped' === ( $column_stack_row['status'] ?? '' )
+			&& true === ( $column_stack_row['runtime_mapped'] ?? false )
+			&& in_array( 'provider_grid_span_fields', array_column( $column_stack_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true )
+			&& ! str_contains( $column_stack_markup, 'stack' )
+			&& str_contains( $column_stack_form_rule, 'flex-direction:row' )
+			&& str_contains( $column_stack_form_rule, 'flex-wrap:wrap' )
+			&& str_contains( $column_stack_form_rule, 'gap:24px' )
+			&& ! str_contains( $column_stack_form_rule, 'flex-direction:column' )
+			&& 2 === substr_count( $column_stack_markup, '"width":50' )
+			&& 1 === substr_count( $column_stack_markup, '"width":100' )
+			&& str_contains( $column_stack_css, 'width:calc(25% - 18px)' ),
+		'column-flex-form-root-does-not-stack-a-represented-grid-span-row',
+		wp_json_encode( array( 'validation' => $column_stack_validated, 'row' => $column_stack_row, 'rule' => $column_stack_form_rule, 'css' => $column_stack_css ) )
+	);
 	// A source that deliberately sizes two textareas differently through their own
 	// `rows` attribute - rather than an authored CSS height a cascade compiler could
 	// capture - must not materialize both onto this provider's one fixed default;
