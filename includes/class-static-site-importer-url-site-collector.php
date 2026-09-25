@@ -871,7 +871,8 @@ class Static_Site_Importer_URL_Site_Collector {
 				continue;
 			}
 			$relations = preg_split( '/\s+/', strtolower( trim( $relation ) ) );
-			if ( array_intersect( $relations ? $relations : array(), array( 'stylesheet', 'icon', 'preload', 'modulepreload' ) ) ) {
+			$url = self::resolve_url( $href, $base_url );
+			if ( array_intersect( $relations ? $relations : array(), array( 'stylesheet', 'icon', 'preload', 'modulepreload' ) ) || ( '' !== $url && self::same_origin( $url, $base_url ) && ! self::is_page_url( $url ) ) ) {
 				$link_urls[] = $href;
 			}
 		}
