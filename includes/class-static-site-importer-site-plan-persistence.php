@@ -16,6 +16,9 @@ if ( ! class_exists( 'Static_Site_Importer_Public_Error_Projection' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Build_Provenance' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-build-provenance.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Rewrite_Base_Collision' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-rewrite-base-collision.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Internal_Link_Runtime' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-internal-link-runtime.php';
 }
@@ -133,6 +136,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$route_links = self::rewrite_materialized_route_links( $state );
 		if ( is_wp_error( $route_links ) ) {
 			return self::failed_receipt_from_error( $state, $route_links );
+		}
+		if ( ! self::keep_page_routes_reachable( $state ) ) {
+			return self::failed_receipt( $state, 'rewrite_base_not_applied' );
 		}
 
 		$short_write_attempt = 0;
@@ -1447,19 +1453,57 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		) : array( 'exists' => false );
 	}
 
+	/** Move core rewrite bases that would route an imported page path to an archive. */
+	public static function keep_page_routes_reachable( array &$state ): bool {
+		// Without a rewrite engine there are no pretty routes to shadow.
+		if ( ! ( $GLOBALS['wp_rewrite'] ?? null ) instanceof WP_Rewrite ) {
+			return true;
+		}
+		$paths = array();
+		foreach ( $state['applied']['posts'] as $post ) {
+			if ( 'page' === get_post_type( (int) $post['id'] ) ) {
+				$paths[] = trim( (string) get_page_uri( (int) $post['id'] ), '/' );
+			}
+		}
+		$moves = Static_Site_Importer_Rewrite_Base_Collision::planned_moves( $paths );
+		foreach ( $moves as $move ) {
+			self::journal_option( $state, $move['option'] );
+		}
+		if ( ! Static_Site_Importer_Rewrite_Base_Collision::apply( $moves ) ) {
+			return false;
+		}
+		foreach ( $moves as $taxonomy => $move ) {
+			$state['applied']['operations'][] = array(
+				'kind'        => 'move_rewrite_base',
+				'reason_code' => 'imported_page_route_collision',
+				'taxonomy'    => $taxonomy,
+				'option'      => $move['option'],
+				'from'        => $move['from'],
+				'to'          => $move['to'],
+			);
+		}
+		array_push( $state['diagnostics'], ...Static_Site_Importer_Rewrite_Base_Collision::shadowed_route_diagnostics( $paths ) );
+		return true;
+	}
+
 	/** Snapshot all runtime state this materializer can mutate before activation. */
 	public static function journal_runtime( array &$state ): void {
 		foreach ( array( 'stylesheet', 'template', 'show_on_front', 'page_on_front', 'use_smilies', 'blogname', 'site_icon' ) as $option ) {
-			if ( isset( $state['rollback']['options'][ $option ] ) ) {
-				continue;
-			}
-			$missing                                 = '__static_site_importer_missing_' . $option . '__';
-			$value                                   = get_option( $option, $missing );
-			$state['rollback']['options'][ $option ] = array(
-				'exists' => $value !== $missing,
-				'value'  => $value,
-			);
+			self::journal_option( $state, $option );
 		}
+	}
+
+	/** Snapshot one option's pre-import value once, for rollback. */
+	public static function journal_option( array &$state, string $option ): void {
+		if ( isset( $state['rollback']['options'][ $option ] ) ) {
+			return;
+		}
+		$missing                                 = '__static_site_importer_missing_' . $option . '__';
+		$value                                   = get_option( $option, $missing );
+		$state['rollback']['options'][ $option ] = array(
+			'exists' => $value !== $missing,
+			'value'  => $value,
+		);
 	}
 
 	public static function write_option( string $option, mixed $value ): bool {
@@ -1618,6 +1662,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			} catch ( Throwable $error ) {
 				self::record_rollback_failure( $state, 'option', (string) $option, $error );
 			}
+		}
+		if ( isset( $options['category_base'] ) || isset( $options['tag_base'] ) ) {
+			delete_option( 'rewrite_rules' );
 		}
 	}
 
