@@ -36,6 +36,26 @@ jobs:
       - run: composer install --no-interaction --no-progress
       - run: node --test tests/editor-presentation-browser.test.mjs tests/form-layout-rendered.test.mjs tools/run-existing-runtime-review.test.mjs
 
+  form-materializer:
+    # The form provider smoke needs WordPress core's block parser and serializer,
+    # not a running site, so it runs against a pinned core source download.
+    name: Form Materializer (WordPress core)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WORDPRESS_VERSION: '7.1.2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - name: Download WordPress core source
+        run: curl -fsSL "https://wordpress.org/wordpress-${WORDPRESS_VERSION}.tar.gz" | tar -xz -C "$RUNNER_TEMP"
+      - name: Form materializer smoke
+        run: STATIC_SITE_IMPORTER_WP_ROOT="$RUNNER_TEMP/wordpress" php tests/form-materializer-smoke.php
+
   homeboy-lint:
     name: Homeboy Lint
     runs-on: ubuntu-latest
