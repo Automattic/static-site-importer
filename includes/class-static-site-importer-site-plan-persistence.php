@@ -22,6 +22,9 @@ if ( ! class_exists( 'Static_Site_Importer_Rewrite_Base_Collision' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Internal_Link_Runtime' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-internal-link-runtime.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Source_Route_Redirect' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-source-route-redirect.php';
+}
 
 /** Writes posts, files, overlays, and journals for a prepared plan. */
 final class Static_Site_Importer_Site_Plan_Persistence {
@@ -116,6 +119,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			if ( ! self::write_post_meta( $post, '_static_site_importer_provenance', (string) wp_json_encode( $provenance ) ) ) {
 				return self::failed_receipt( $state, 'materialization_provenance_metadata_write_failed' );
+			}
+			$source_route = Static_Site_Importer_Source_Route_Redirect::public_source_route( (string) $page['source_path'] );
+			if ( '' !== $source_route && ! self::write_post_meta( $post, Static_Site_Importer_Source_Route_Redirect::META_KEY, $source_route ) ) {
+				return self::failed_receipt( $state, 'materialization_source_route_metadata_write_failed' );
 			}
 			foreach ( $state['applied']['runtime_declarations']['entity_bindings'] as &$binding_report ) {
 				if ( ( $binding_report['source_path'] ?? '' ) === $page['source_path'] ) {
