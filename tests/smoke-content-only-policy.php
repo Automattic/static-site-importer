@@ -54,6 +54,16 @@ $assert( 'mp4' === Static_Site_Importer_Content_Policy::portable_extension( 'vid
 $assert( '' === Static_Site_Importer_Content_Policy::portable_extension( 'application/octet-stream' ), 'opaque-download-type-infers-no-portable-extension' );
 $assert( '' === Static_Site_Importer_Content_Policy::portable_extension( 'application/x-httpd-php' ), 'server-code-download-type-infers-no-portable-extension' );
 $assert( Static_Site_Importer_Content_Policy::is_static_path( 'website/_external/images.unsplash.com/photo-1535713875002-d1d0cf377fde-32b524cf.' . Static_Site_Importer_Content_Policy::portable_extension( 'image/jpeg' ) ), 'inferred-portable-extension-passes-the-static-boundary' );
+$assert( true === Static_Site_Importer_Content_Policy::is_static_path( '_redirects' ), 'root-redirects-manifest-is-static' );
+$assert( true === Static_Site_Importer_Content_Policy::is_static_path( 'website/_redirects' ), 'website-root-redirects-manifest-is-static' );
+$assert( true === Static_Site_Importer_Content_Policy::is_textual_path( '_redirects' ), 'root-redirects-manifest-is-textual' );
+$assert( true === Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/_redirects', "/blog.html  /blog/index.html  301\n" ) ), 'root-redirects-manifest-accepted' );
+$assert( false === Static_Site_Importer_Content_Policy::is_static_path( 'evil' ), 'extensionless-evil-rejected' );
+$assert( false === Static_Site_Importer_Content_Policy::is_static_path( 'website/blog/_redirects' ), 'nested-redirects-manifest-rejected' );
+$assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'evil', 'payload' ) ) ), 'extensionless-evil-artifact-rejected' );
+$assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/blog/_redirects', "/a /b 301\n" ) ) ), 'nested-redirects-artifact-rejected' );
+$assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/_redirects', '<?php system("id");' ) ) ), 'redirects-manifest-server-code-rejected' );
+$assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/_redirects', str_repeat( "/a /b 301\n", 7000 ) ) ) ), 'oversized-redirects-manifest-rejected' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );

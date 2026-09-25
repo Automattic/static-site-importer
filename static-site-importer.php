@@ -92,6 +92,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-route-document-metadata.php',
 	'class-static-site-importer-internal-link-runtime.php',
 	'class-static-site-importer-source-route-redirect.php',
+	'class-static-site-importer-redirects-manifest.php',
 	'class-static-site-importer-route-head-metadata.php',
 	'class-static-site-importer-protected-page-policy.php',
 	'class-static-site-importer-stylesheet-materializer.php',
