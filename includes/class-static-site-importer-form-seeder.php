@@ -547,8 +547,21 @@ class Static_Site_Importer_Form_Seeder {
 		$host = Static_Site_Importer_Form_Layout_Projection::host_wrapper_projection( $form );
 		self::append_receipt_entries( $layout['receipt'], 'operations', array_merge( $radio_groups['operations'], $topology['operations'], $host['operations'] ) );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $control_attribute_losses );
-		$inner_blocks           = $layout['blocks'];
-		$form_attrs             = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $form, $scope, array_merge( $topology['form_classes'], $host['classes'] ) );
+		$inner_blocks            = $layout['blocks'];
+		$suppressed_form_classes = array_fill_keys( is_array( $topology['suppressed_form_classes'] ?? null ) ? $topology['suppressed_form_classes'] : array(), true );
+		$attrs_form              = $form;
+		if ( ! empty( $suppressed_form_classes ) && isset( $attrs_form['form']['class'] ) && is_scalar( $attrs_form['form']['class'] ) ) {
+			$class_tokens                 = preg_split( '/\s+/', trim( (string) $attrs_form['form']['class'] ) );
+			$class_tokens                 = false === $class_tokens ? array() : array_values( array_filter( $class_tokens, static fn ( string $class_name ): bool => ! isset( $suppressed_form_classes[ $class_name ] ) ) );
+			$attrs_form['form']['class']  = implode( ' ', $class_tokens );
+		}
+		$carried_classes = array_values(
+			array_filter(
+				array_merge( $topology['form_classes'], $host['classes'] ),
+				static fn ( $class_name ): bool => is_string( $class_name ) && ! isset( $suppressed_form_classes[ $class_name ] )
+			)
+		);
+		$form_attrs             = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $attrs_form, $scope, $carried_classes );
 		$overlay_graph          = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( Static_Site_Importer_Form_Layout_Projection::split_form_box( $provider_graph ), is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array() );
 		$box_targets            = $topology['provider_layout_targets'];
 		$overlay_graph['nodes'] = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || 'form-box' === ( $node['id'] ?? '' ) || isset( $box_targets[ (string) ( $node['id'] ?? '' ) ] ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
@@ -664,6 +677,23 @@ class Static_Site_Importer_Form_Seeder {
 		$overlay_form['layout_graph'] = $overlay_graph;
 		foreach ( array_keys( $suppressed_controls ) as $control_index ) {
 			unset( $overlay_form['presentation_graph']['controls'][ $control_index ] );
+		}
+		foreach ( is_array( $topology['grid_span_submit_controls'] ?? null ) ? $topology['grid_span_submit_controls'] : array() as $span_control ) {
+			if ( ! is_int( $span_control ) || ! is_array( $overlay_form['presentation_graph'] ?? null ) ) {
+				continue;
+			}
+			foreach ( $overlay_form['presentation_graph']['controls'] ?? array() as $row_index => $control_row ) {
+				if ( ! is_array( $control_row ) || ( $control_row['index'] ?? $row_index ) !== $span_control ) {
+					continue;
+				}
+				unset( $overlay_form['presentation_graph']['controls'][ $row_index ]['control']['styles']['width'], $overlay_form['presentation_graph']['controls'][ $row_index ]['control']['styles']['min_width'] );
+			}
+			foreach ( $overlay_form['presentation_graph']['variants'] ?? array() as $variant_index => $variant ) {
+				if ( ! is_array( $variant ) || ( $variant['index'] ?? null ) !== $span_control || 'control' !== ( $variant['role'] ?? null ) || ! is_array( $variant['style_patch'] ?? null ) ) {
+					continue;
+				}
+				unset( $overlay_form['presentation_graph']['variants'][ $variant_index ]['style_patch']['width'], $overlay_form['presentation_graph']['variants'][ $variant_index ]['style_patch']['min_width'] );
+			}
 		}
 		$visual_state           = Static_Site_Importer_Form_Layout_Projection::empty_country_visual_state( $form, $scope, $topology['phone_popup_targets'] );
 		$target_map             = Static_Site_Importer_Form_Layout_Projection::provider_layout_target_map( $overlay_form, $scope, $presentation_descriptors, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
