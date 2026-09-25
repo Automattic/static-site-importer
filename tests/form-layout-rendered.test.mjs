@@ -28,7 +28,7 @@ test( 'span-6 fields share a row under a source column-flex rule and the span-3 
 		await page.setContent( `<!doctype html><style>
 			body{margin:0}
 			.page{width:883px;margin:47px}
-			.stack{display:flex;flex-direction:column;gap:24px;width:100%}
+			.stack{display:flex;flex-direction:column;gap:24px;width:100%;background:#123456;padding:13px 17px}
 			.wp-block-jetpack-contact-form{display:flex;flex-direction:row;flex-wrap:wrap;gap:1.5rem}
 			:where(.has-no-jetpack-form-layout) .wp-block-jetpack-contact-form>:not(.wp-block-button){box-sizing:border-box;flex:0 0 100%}
 			.wp-block-button{display:block;width:100%}
@@ -45,6 +45,15 @@ test( 'span-6 fields share a row under a source column-flex rule and the span-3 
 		assert.equal( first.top, last.top, JSON.stringify( boxes ) );
 		assert.notEqual( first.left, last.left, JSON.stringify( boxes ) );
 		assert.ok( send.width <= send.parent * 0.25 + 24, JSON.stringify( boxes ) );
+		const container = await page.locator( '.wp-block-jetpack-contact-form' ).evaluate( ( node ) => {
+			const style = getComputedStyle( node );
+			return { background: style.backgroundColor, paddingTop: style.paddingTop, paddingRight: style.paddingRight, paddingBottom: style.paddingBottom, paddingLeft: style.paddingLeft };
+		} );
+		assert.equal( container.background, 'rgb(18, 52, 86)', JSON.stringify( container ) );
+		assert.equal( container.paddingTop, '13px', JSON.stringify( container ) );
+		assert.equal( container.paddingRight, '17px', JSON.stringify( container ) );
+		assert.equal( container.paddingBottom, '13px', JSON.stringify( container ) );
+		assert.equal( container.paddingLeft, '17px', JSON.stringify( container ) );
 	} finally {
 		await browser.close();
 	}
