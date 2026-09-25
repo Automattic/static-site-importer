@@ -9,12 +9,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-// Themes generated before theme-scoped runtimes shipped a guarded copy under
-// this class name. When one of those themes loads first, reuse its copy.
-if ( class_exists( 'Static_Site_Importer_Source_Route_Redirect', false ) ) {
-	return;
-}
-
 /**
  * Maps a materialized page's original static path onto a 301.
  *
@@ -25,13 +19,11 @@ if ( class_exists( 'Static_Site_Importer_Source_Route_Redirect', false ) ) {
 final class Static_Site_Importer_Source_Route_Redirect {
 	public const META_KEY = '_static_site_importer_source_route';
 
-	private static bool $registered = false;
-
 	public static function register(): void {
-		if ( self::$registered || ! function_exists( 'add_action' ) ) {
+		if ( ! empty( $GLOBALS['static_site_importer_source_route_redirect_registered'] ) || ! function_exists( 'add_action' ) ) {
 			return;
 		}
-		self::$registered = true;
+		$GLOBALS['static_site_importer_source_route_redirect_registered'] = true;
 		add_action( 'template_redirect', array( self::class, 'redirect' ), 11 );
 	}
 
@@ -97,80 +89,6 @@ final class Static_Site_Importer_Source_Route_Redirect {
 		return self::with_query( $permalink, $query );
 	}
 
-	/**
-	 * Materialize the redirector into the generated theme so imported sites
-	 * keep source-file aliases after the importer plugin is gone.
-	 *
-	 * @param array<string,mixed> $resolved_plan
-	 * @param array<string,mixed> $bootstrap_overlay
-	 * @return array<string,mixed>
-	 */
-	public static function prepare_overlay( array $resolved_plan, array $bootstrap_overlay = array(), string $theme_slug = '' ): array {
-		$bootstrap = self::bootstrap_content( $resolved_plan, $bootstrap_overlay );
-		$class     = self::theme_runtime_class( $theme_slug );
-		$marker    = '/* Static Site Importer source route redirects. */';
-		$source    = file_get_contents( __FILE__ ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the runtime source the generated theme owns independently.
-		if ( ! is_string( $source ) || '' === $source ) {
-			return isset( $bootstrap_overlay['writes'] ) ? $bootstrap_overlay : array(
-				'status' => 'skipped',
-				'writes' => array(),
-			);
-		}
-		if ( ! str_contains( $bootstrap, $marker ) ) {
-			$bootstrap .= "\n{$marker}\nif ( ! class_exists( '{$class}' ) ) {\n\trequire_once get_stylesheet_directory() . '/source-route-redirect.php';\n}\n{$class}::register();\n";
-		}
-
-		$writes             = array();
-		$replaced_functions = false;
-		$has_runtime        = false;
-		foreach ( $bootstrap_overlay['writes'] ?? array() as $write ) {
-			if ( ! is_array( $write ) || ! is_string( $write['target_path'] ?? null ) ) {
-				continue;
-			}
-			if ( 'functions.php' === $write['target_path'] ) {
-				$writes[]           = array(
-					'target_path' => 'functions.php',
-					'content'     => $bootstrap,
-					'encoding'    => 'utf8',
-					'source_path' => 'static-site-importer/source-route-redirect',
-				);
-				$replaced_functions = true;
-				continue;
-			}
-			if ( 'source-route-redirect.php' === $write['target_path'] ) {
-				$has_runtime = true;
-			}
-			$writes[] = $write;
-		}
-		if ( ! $replaced_functions ) {
-			$writes[] = array(
-				'target_path' => 'functions.php',
-				'content'     => $bootstrap,
-				'encoding'    => 'utf8',
-				'source_path' => 'static-site-importer/source-route-redirect',
-			);
-		}
-		if ( ! $has_runtime ) {
-			$writes[] = array(
-				'target_path' => 'source-route-redirect.php',
-				'content'     => str_replace( 'Static_Site_Importer_Source_Route_Redirect', $class, $source ),
-				'encoding'    => 'utf8',
-				'source_path' => 'static-site-importer/source-route-redirect',
-			);
-		}
-
-		return array(
-			'status' => 'materialized',
-			'writes' => $writes,
-		);
-	}
-
-	public static function theme_runtime_class( string $theme_slug ): string {
-		$scope = strtoupper( trim( (string) preg_replace( '/[^A-Za-z0-9]+/', '_', $theme_slug ), '_' ) );
-
-		return 'SSI_Theme_' . ( '' !== $scope ? $scope : 'Default' ) . '_Source_Route_Redirect';
-	}
-
 	public static function request_path( string $uri ): string {
 		if ( '' === $uri ) {
 			return '';
@@ -193,27 +111,6 @@ final class Static_Site_Importer_Source_Route_Redirect {
 		}
 
 		return self::normalize_path( $path );
-	}
-
-	/** @param array<string,mixed> $resolved_plan @param array<string,mixed> $overlay */
-	private static function bootstrap_content( array $resolved_plan, array $overlay ): string {
-		foreach ( array_reverse( $overlay['writes'] ?? array() ) as $write ) {
-			if ( is_array( $write ) && 'functions.php' === ( $write['target_path'] ?? null ) && is_string( $write['content'] ?? null ) ) {
-				return $write['content'];
-			}
-		}
-		foreach ( $resolved_plan['writes'] ?? array() as $write ) {
-			if ( ! is_array( $write ) || 'functions.php' !== ( $write['target_path'] ?? null ) || ! is_array( $write['payload'] ?? null ) ) {
-				continue;
-			}
-			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes a declared plan payload encoding.
-			$content = 'base64' === ( $write['payload']['encoding'] ?? 'utf8' ) ? base64_decode( (string) ( $write['payload']['data'] ?? '' ), true ) : $write['payload']['data'] ?? null;
-			if ( is_string( $content ) && str_starts_with( ltrim( $content ), '<?php' ) ) {
-				return $content;
-			}
-		}
-
-		return "<?php\n";
 	}
 
 	private static function find_post_id( string $path ): int {

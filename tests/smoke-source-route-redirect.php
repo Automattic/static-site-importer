@@ -25,10 +25,14 @@ function get_posts( array $args ): array {
 	}
 	return array_slice( $ids, 0, (int) ( $args['posts_per_page'] ?? 1 ) );
 }
+function add_action( string $hook, callable|array|string $callback, int $priority = 10, int $accepted_args = 1 ): void {
+	$GLOBALS['ssi_redirect_actions'][] = array( $hook, $callback, $priority );
+}
 
 $GLOBALS['ssi_redirect_home']       = 'https://imported.test/';
 $GLOBALS['ssi_redirect_permalinks'] = array();
 $GLOBALS['ssi_redirect_meta']       = array();
+$GLOBALS['ssi_redirect_actions']    = array();
 
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-source-route-redirect.php';
 
@@ -84,42 +88,35 @@ $assert( null === Static_Site_Importer_Source_Route_Redirect::target_url( '/abou
 $GLOBALS['ssi_redirect_home'] = 'https://playground.test/scope:abc/';
 $assert( 'https://imported.test/about-me/' === Static_Site_Importer_Source_Route_Redirect::target_url( '/scope:abc/about-me.html' ), 'Subdirectory homes still match the source path after the home prefix.' );
 
-$result    = Static_Site_Importer_Source_Route_Redirect::prepare_overlay(
-	array( 'writes' => array() ),
-	array( 'writes' => array( array( 'target_path' => 'functions.php', 'content' => "<?php\n// Existing bootstrap.\n" ), array( 'target_path' => 'portable-internal-links.php', 'content' => "<?php\n" ) ) ),
-	'adventuring-ankara'
-);
-$bootstrap = (string) ( $result['writes'][0]['content'] ?? '' );
-$runtime   = '';
-foreach ( $result['writes'] as $write ) {
-	if ( 'source-route-redirect.php' === ( $write['target_path'] ?? '' ) ) {
-		$runtime = (string) ( $write['content'] ?? '' );
-	}
-}
-$assert( 'materialized' === ( $result['status'] ?? '' ), 'Source-route redirects should always materialize into the generated theme.' );
-$assert( str_contains( $bootstrap, '// Existing bootstrap.' ) && str_contains( $bootstrap, 'Static Site Importer source route redirects' ), 'The overlay should keep prior bootstrap code and add the redirect marker.' );
-$assert( str_contains( $bootstrap, "require_once get_stylesheet_directory() . '/source-route-redirect.php'" ) && str_contains( $bootstrap, 'SSI_Theme_ADVENTURING_ANKARA_Source_Route_Redirect::register()' ), 'The portable theme bootstrap must load and register the redirector after SSI is gone.' );
-$assert( str_contains( $runtime, 'final class SSI_Theme_ADVENTURING_ANKARA_Source_Route_Redirect' ) && ! str_contains( $runtime, 'Static_Site_Importer_Source_Route_Redirect' ), 'The generated theme owns a theme-scoped copy of the redirector.' );
-$passed_links = false;
-foreach ( $result['writes'] as $write ) {
-	if ( 'portable-internal-links.php' === ( $write['target_path'] ?? '' ) ) {
-		$passed_links = true;
-	}
-}
-$assert( $passed_links, 'The overlay should keep previously materialized theme runtime files.' );
+$assert( ! method_exists( Static_Site_Importer_Source_Route_Redirect::class, 'prepare_overlay' ), 'Source-route redirects must not materialize a theme overlay.' );
+$assert( ! method_exists( Static_Site_Importer_Source_Route_Redirect::class, 'theme_runtime_class' ), 'Source-route redirects must not own a theme-scoped class name.' );
 
-$repeat = Static_Site_Importer_Source_Route_Redirect::prepare_overlay(
-	array(),
-	array( 'writes' => $result['writes'] ),
-	'adventuring-ankara'
-);
-$assert( 1 === substr_count( (string) ( $repeat['writes'][0]['content'] ?? '' ), 'Static Site Importer source route redirects' ), 'The overlay should be idempotent.' );
-$runtime_writes = 0;
-foreach ( $repeat['writes'] as $write ) {
-	if ( 'source-route-redirect.php' === ( $write['target_path'] ?? '' ) ) {
-		++$runtime_writes;
+$companion_source    = (string) file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-companion-plugin.php' );
+$preparation_source  = (string) file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-site-plan-preparation.php' );
+$assert( str_contains( $companion_source, "class-static-site-importer-source-route-redirect.php" ) && str_contains( $companion_source, "'/includes/source-route-redirect.php'" ) && str_contains( $companion_source, '_Source_Route_Redirect' ), 'The companion plugin must copy and register the source-route redirect runtime.' );
+$assert( ! str_contains( $preparation_source, 'Static_Site_Importer_Source_Route_Redirect::prepare_overlay' ), 'Theme preparation must not overlay source-route redirects into functions.php.' );
+
+$runtime_source = (string) file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-source-route-redirect.php' );
+$copy_dir       = sys_get_temp_dir() . '/ssi-source-route-copy-' . getmypid();
+if ( ! is_dir( $copy_dir ) && ! mkdir( $copy_dir, 0777, true ) && ! is_dir( $copy_dir ) ) {
+	throw new RuntimeException( 'Could not create companion runtime copy directory.' );
+}
+$copy_file = $copy_dir . '/source-route-redirect.php';
+file_put_contents( $copy_file, str_replace( 'Static_Site_Importer_Source_Route_Redirect', 'SSI_TEST_SITE_Source_Route_Redirect', $runtime_source ) );
+require $copy_file;
+
+Static_Site_Importer_Source_Route_Redirect::register();
+SSI_TEST_SITE_Source_Route_Redirect::register();
+$assert( 1 === count( $GLOBALS['ssi_redirect_actions'] ), 'SSI and the companion copy must not both register template_redirect.' );
+$assert( 'template_redirect' === ( $GLOBALS['ssi_redirect_actions'][0][0] ?? '' ) && 11 === ( $GLOBALS['ssi_redirect_actions'][0][2] ?? 0 ), 'The single source-route runtime registers template_redirect at priority 11.' );
+$assert( array( Static_Site_Importer_Source_Route_Redirect::class, 'redirect' ) === ( $GLOBALS['ssi_redirect_actions'][0][1] ?? null ) || array( SSI_TEST_SITE_Source_Route_Redirect::class, 'redirect' ) === ( $GLOBALS['ssi_redirect_actions'][0][1] ?? null ), 'The registered callback belongs to exactly one runtime class.' );
+
+foreach ( array( $copy_file, $copy_dir ) as $path ) {
+	if ( is_file( $path ) ) {
+		unlink( $path );
+	} elseif ( is_dir( $path ) ) {
+		rmdir( $path );
 	}
 }
-$assert( 1 === $runtime_writes, 'The overlay should not duplicate the theme runtime file.' );
 
 echo "source route redirect smoke passed\n";

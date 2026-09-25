@@ -542,11 +542,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			: Static_Site_Importer_Route_Document_Metadata::prepare_overlay( $font_resolved, $title_bootstrap_overlay );
 		$internal_link_overlay                = isset( $state['internal_link_overlay'] ) && is_array( $state['internal_link_overlay'] )
 			? $state['internal_link_overlay']
-			: Static_Site_Importer_Source_Route_Redirect::prepare_overlay(
-				$font_resolved,
-				Static_Site_Importer_Internal_Link_Runtime::prepare_overlay( $font_resolved, $route_title_overlay, (string) ( $state['args']['slug'] ?? '' ) ),
-				(string) ( $state['args']['slug'] ?? '' )
-			);
+			: Static_Site_Importer_Internal_Link_Runtime::prepare_overlay( $font_resolved, $route_title_overlay, (string) ( $state['args']['slug'] ?? '' ) );
 		$head_bootstrap_overlay               = 'materialized' === ( $internal_link_overlay['status'] ?? '' )
 			? $internal_link_overlay
 			: ( 'materialized' === ( $route_title_overlay['status'] ?? '' ) ? $route_title_overlay : $title_bootstrap_overlay );
