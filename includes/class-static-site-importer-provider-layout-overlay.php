@@ -729,7 +729,8 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		return preg_replace( '/^(\.ssi-form-[a-f0-9]{12})/', '$1$1', $selector, 1 ) ?? $selector;
 	}
 
-	private static function safe_presentation_value( mixed $value ): bool {
+	/** A captured CSS value admitted into provider output must stay a plain declaration value. */
+	public static function safe_presentation_value( mixed $value ): bool {
 		return is_string( $value ) && '' !== trim( $value ) && strlen( $value ) <= 160 && ! preg_match( '/(?:url\(|@import|[;{}\\\\]|!important|expression\(|javascript:)/i', $value ) && (bool) preg_match( "~^[a-zA-Z0-9_#%.,()\\s+\\-*/'\"]+$~D", $value );
 	}
 

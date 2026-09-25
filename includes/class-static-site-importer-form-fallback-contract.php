@@ -256,6 +256,33 @@ class Static_Site_Importer_Form_Fallback_Contract {
 		return implode( ' ', array_values( array_unique( $classes ) ) );
 	}
 
+	/**
+	 * The resolved typography a producer may record on an in-form context item,
+	 * in the same flat computed-presentation vocabulary controls use. Each key
+	 * maps onto a block style attribute (`style.typography.*`, `style.color.text`)
+	 * that core's own save serializes back onto the element.
+	 */
+	private const CONTEXT_STYLE_KEYS = array( 'font_size', 'font_family', 'font_weight', 'font_style', 'color', 'line_height', 'letter_spacing', 'text_transform' );
+
+	/** @param mixed $value @return array<string,string> */
+	private static function context_styles( mixed $value ): array {
+		if ( ! is_array( $value ) ) {
+			return array();
+		}
+		$styles = array();
+		foreach ( self::CONTEXT_STYLE_KEYS as $key ) {
+			$style = isset( $value[ $key ] ) && is_scalar( $value[ $key ] ) ? trim( (string) $value[ $key ] ) : '';
+			// A keyword that resolves against no element's own box would render the
+			// captured value differently here than at the source; drop it rather
+			// than keep an invalid inline declaration.
+			if ( '' === $style || in_array( $style, array( 'unset', 'initial', 'inherit' ), true ) || ! Static_Site_Importer_Provider_Layout_Overlay::safe_presentation_value( $style ) ) {
+				continue;
+			}
+			$styles[ $key ] = $style;
+		}
+		return $styles;
+	}
+
 	/** @param mixed $items @return array<int,array<string,mixed>> */
 	private static function context_items( mixed $items ): array {
 		if ( ! is_array( $items ) ) {
@@ -267,6 +294,7 @@ class Static_Site_Importer_Form_Fallback_Contract {
 				continue;
 			}
 			$text = substr( preg_replace( '/\s+/', ' ', trim( $item['text'] ) ) ?? '', 0, 200 );
+			$styles = self::context_styles( $item['styles'] ?? null );
 			if ( 'heading' === ( $item['type'] ?? '' ) ) {
 				$row   = array(
 					'type'  => 'heading',
@@ -277,6 +305,9 @@ class Static_Site_Importer_Form_Fallback_Contract {
 				if ( '' !== $class ) {
 					$row['class'] = $class;
 				}
+				if ( array() !== $styles ) {
+					$row['styles'] = $styles;
+				}
 				$context[] = $row;
 			} elseif ( 'paragraph' === ( $item['type'] ?? '' ) ) {
 				$row   = array(
@@ -286,6 +317,9 @@ class Static_Site_Importer_Form_Fallback_Contract {
 				$class = self::context_class( $item['class'] ?? null );
 				if ( '' !== $class ) {
 					$row['class'] = $class;
+				}
+				if ( array() !== $styles ) {
+					$row['styles'] = $styles;
 				}
 				$context[] = $row;
 			}
