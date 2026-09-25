@@ -59,14 +59,14 @@ final class Static_Site_Importer_Layout_Release {
 	 * @return string
 	 */
 	public static function stylesheet(): string {
-		$canvas   = ( new Static_Site_Importer_Canvas_Layout_Adapter() )->host_class();
-		$grid     = ( new Static_Site_Importer_Core_Grid_Layout_Adapter() )->host_class();
-		$columns  = (string) Static_Site_Importer_Core_Grid_Layout_Adapter::COLUMNS;
+		$canvas  = ( new Static_Site_Importer_Canvas_Layout_Adapter() )->host_class();
+		$grid    = ( new Static_Site_Importer_Core_Grid_Layout_Adapter() )->host_class();
+		$columns = (string) Static_Site_Importer_Core_Grid_Layout_Adapter::COLUMNS;
 		// The adapter owns the host's layout, so its release must beat the
 		// source's own layout rules (author and editor-scoped stylesheets).
-		$css      = '.' . $canvas . '{display:block!important}';
-		$css     .= '.' . $canvas . '>.wp-block-tabor-canvas{width:100%;max-width:none;margin-left:0;margin-right:0}';
-		$css     .= '.' . $grid . '{display:grid!important;grid-template-columns:repeat(' . $columns . ',minmax(0,1fr))!important;grid-template-rows:none!important;grid-template-areas:none!important}';
+		$css  = '.' . $canvas . '{display:block!important}';
+		$css .= '.' . $canvas . '>.wp-block-tabor-canvas{width:100%;max-width:none;margin-left:0;margin-right:0}';
+		$css .= '.' . $grid . '{display:grid!important;grid-template-columns:repeat(' . $columns . ',minmax(0,1fr))!important;grid-template-rows:none!important;grid-template-areas:none!important}';
 		return $css;
 	}
 }

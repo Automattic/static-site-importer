@@ -102,7 +102,7 @@ final class Static_Site_Importer_Compilation_Preparation {
 			if ( null !== $script_loss && array() !== $script_loss['dropped'] ) {
 				$artifact = $script_loss['artifact'];
 				$compiled = ( new $compiler_class() )->compile( $artifact )->toWordPressSitePlanView();
-				$report   = is_array( $args['client_script_policy_report'] ?? null ) ? $args['client_script_policy_report'] : array( 'dropped' => array() );
+				$report   = is_array( $args['client_script_policy_report'] ) ? $args['client_script_policy_report'] : array( 'dropped' => array() );
 				foreach ( $script_loss['dropped'] as $row ) {
 					$report['dropped'][] = $row;
 				}

@@ -20,15 +20,15 @@ final class Static_Site_Importer_Layout_Placement_Model {
 
 	public const SCHEMA = 'static-site-importer/layout-placement/v1';
 
-	private const BOX_FIELDS            = array( 'x', 'y', 'width', 'height' );
-	private const VIEWPORT_MIN_WIDTH    = 200;
-	private const VIEWPORT_MAX_WIDTH    = 7680;
-	private const POSITION_MAX_ABS      = 1000000.0;
-	private const SIZE_MAX              = 1000000.0;
-	private const BOX_PRECISION         = 3;
-	private const MAX_ITEMS             = 256;
-	private const MAX_VIEWPORTS         = 8;
-	private const PATH_MAX_BYTES        = 128;
+	private const BOX_FIELDS         = array( 'x', 'y', 'width', 'height' );
+	private const VIEWPORT_MIN_WIDTH = 200;
+	private const VIEWPORT_MAX_WIDTH = 7680;
+	private const POSITION_MAX_ABS   = 1000000.0;
+	private const SIZE_MAX           = 1000000.0;
+	private const BOX_PRECISION      = 3;
+	private const MAX_ITEMS          = 256;
+	private const MAX_VIEWPORTS      = 8;
+	private const PATH_MAX_BYTES     = 128;
 
 	/**
 	 * Validate and normalize a decoded placement model.
@@ -89,13 +89,13 @@ final class Static_Site_Importer_Layout_Placement_Model {
 				'path'    => '$.items',
 				'message' => 'items must be a JSON array.',
 			);
-			$items = null;
+			$items    = null;
 		} elseif ( count( $items ) > self::MAX_ITEMS ) {
 			$errors[] = array(
 				'path'    => '$.items',
 				'message' => 'items must not exceed ' . (string) self::MAX_ITEMS . ' entries.',
 			);
-			$items = null;
+			$items    = null;
 		} else {
 			$normalized_items = array();
 			$seen_paths       = array();
@@ -116,7 +116,7 @@ final class Static_Site_Importer_Layout_Placement_Model {
 					);
 					continue;
 				}
-				if ( $item_path === ( $model['host']['path'] ?? null ) ) {
+				if ( ( $model['host']['path'] ?? null ) === $item_path ) {
 					$errors[] = array(
 						'path'    => $prefix . '.path',
 						'message' => 'item path must differ from the host path.',
@@ -238,7 +238,7 @@ final class Static_Site_Importer_Layout_Placement_Model {
 
 		$widths = array();
 		foreach ( array_keys( $data ) as $key ) {
-			$width = is_int( $key ) ? $key : ( is_string( $key ) && 1 === preg_match( '/^[1-9][0-9]*$/D', $key ) ? (int) $key : null );
+			$width = is_int( $key ) ? $key : ( 1 === preg_match( '/^[1-9][0-9]*$/D', $key ) ? (int) $key : null );
 			if ( null === $width || $width < self::VIEWPORT_MIN_WIDTH || $width > self::VIEWPORT_MAX_WIDTH ) {
 				$errors[] = array(
 					'path'    => $prefix . '.' . (string) $key,

@@ -1245,6 +1245,7 @@ if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 				$model      = Static_Site_Importer_Layout_Placement_Model::validated( $model_data );
 				if ( is_wp_error( $model ) ) {
 					WP_CLI::error( 'Placement model ' . $file . ' failed validation: ' . (string) wp_json_encode( $model->get_error_data(), JSON_UNESCAPED_SLASHES ) );
+					return;
 				}
 				$models[ $file ] = $model;
 			}
@@ -1307,7 +1308,10 @@ if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 			if ( ! $dry_run ) {
 				if ( 'none' === $adapter->id() ) {
 					if ( '' !== $snapshot ) {
-						$updated = wp_update_post( wp_slash( array( 'ID' => $page_id, 'post_content' => $original ) ), true );
+						$updated = wp_update_post( wp_slash( array(
+							'ID'           => $page_id,
+							'post_content' => $original,
+						) ), true );
 						if ( is_wp_error( $updated ) ) {
 							WP_CLI::error( 'Layout restore failed: ' . $updated->get_error_message() );
 						}
@@ -1321,7 +1325,10 @@ if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 						}
 						$receipt['snapshot_stored'] = true;
 					}
-					$updated = wp_update_post( wp_slash( array( 'ID' => $page_id, 'post_content' => $markup ) ), true );
+					$updated = wp_update_post( wp_slash( array(
+						'ID'           => $page_id,
+						'post_content' => $markup,
+					) ), true );
 					if ( is_wp_error( $updated ) ) {
 						WP_CLI::error( 'Layout projection failed to write the page: ' . $updated->get_error_message() );
 					}

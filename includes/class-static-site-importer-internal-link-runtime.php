@@ -77,24 +77,32 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 			// `/?page_id=N` and `/?p=N` are portable post references.
 			$portable = substr( self::resolve_urls( 'href="' . $url . '"' ), 6, -1 );
 
-			return $resolved[ $url ] = ( $portable !== $url ) ? $portable : home_url( $url );
+			$resolved[ $url ] = ( $portable !== $url ) ? $portable : home_url( $url );
+
+			return $resolved[ $url ];
 		}
 		$slug = trim( $path, '/' );
 		if ( '' === $slug ) {
-			return $resolved[ $url ] = self::join_reference_suffix( home_url( '/' ), $suffix );
+			$resolved[ $url ] = self::join_reference_suffix( home_url( '/' ), $suffix );
+
+			return $resolved[ $url ];
 		}
 		if ( function_exists( 'get_page_by_path' ) && function_exists( 'get_permalink' ) ) {
 			$page = get_page_by_path( $slug );
 			if ( $page ) {
 				$permalink = get_permalink( (int) $page->ID );
 				if ( is_string( $permalink ) && '' !== $permalink ) {
-					return $resolved[ $url ] = self::join_reference_suffix( $permalink, $suffix );
+					$resolved[ $url ] = self::join_reference_suffix( $permalink, $suffix );
+
+					return $resolved[ $url ];
 				}
 			}
 		}
 		$home_path = (string) wp_parse_url( home_url( '/' ), PHP_URL_PATH );
 
-		return $resolved[ $url ] = ( '' === $home_path || '/' === $home_path ) ? $url : home_url( $url );
+		$resolved[ $url ] = ( '' === $home_path || '/' === $home_path ) ? $url : home_url( $url );
+
+		return $resolved[ $url ];
 	}
 
 	/** @param mixed $content */
@@ -160,9 +168,9 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 		$bootstrap = self::bootstrap_content( $resolved_plan, $bootstrap_overlay );
 		// The theme copy gets a theme-scoped class name, so it can never
 		// collide with this plugin class or with another generated theme.
-		$class     = self::theme_runtime_class( $theme_slug );
-		$marker    = '/* Static Site Importer portable internal links. */';
-		$source    = file_get_contents( __FILE__ ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the runtime source the generated theme owns independently.
+		$class  = self::theme_runtime_class( $theme_slug );
+		$marker = '/* Static Site Importer portable internal links. */';
+		$source = file_get_contents( __FILE__ ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the runtime source the generated theme owns independently.
 		if ( ! is_string( $source ) || '' === $source ) {
 			return isset( $bootstrap_overlay['writes'] ) ? $bootstrap_overlay : array(
 				'status' => 'skipped',

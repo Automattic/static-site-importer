@@ -26,9 +26,9 @@ if ( ! class_exists( 'Static_Site_Importer_Layout_Adapter' ) ) {
  */
 final class Static_Site_Importer_Layout_Projector {
 
-	public const PROJECTION_SCHEMA = 'static-site-importer/layout-projection/v1';
+	public const PROJECTION_SCHEMA         = 'static-site-importer/layout-projection/v1';
 	public const ORIGINAL_CONTENT_META_KEY = '_static_site_importer_layout_original_content';
-	private const HIDDEN_SIZE_THRESHOLD = 1.0;
+	private const HIDDEN_SIZE_THRESHOLD    = 1.0;
 
 	/**
 	 * Project one model onto original canonical block markup.
@@ -85,21 +85,30 @@ final class Static_Site_Importer_Layout_Projector {
 			if ( ! is_array( $item ) ) {
 				continue;
 			}
-			$item_path  = is_string( $item['path'] ?? null ) ? $item['path'] : '';
+			$item_path = is_string( $item['path'] ?? null ) ? $item['path'] : '';
 			// Placement applies to the host's direct children only: a grid track
 			// or a canvas cell cannot hold a block nested inside another child.
 			if ( 1 !== preg_match( '/^' . preg_quote( $host_path, '/' ) . '\\.[0-9]+$/D', $item_path ) ) {
-				$result['losses'][] = array( 'item' => $item_path, 'reason' => 'item_not_host_child' );
+				$result['losses'][] = array(
+					'item'   => $item_path,
+					'reason' => 'item_not_host_child',
+				);
 				continue;
 			}
 			$item_block = &self::resolve( $pieces, $item_path );
 			if ( null === $item_block ) {
-				$result['losses'][] = array( 'item' => $item_path, 'reason' => 'item_path_unresolved' );
+				$result['losses'][] = array(
+					'item'   => $item_path,
+					'reason' => 'item_path_unresolved',
+				);
 				continue;
 			}
 			$item_refusal = $adapter->item_refusal( $item_block );
 			if ( null !== $item_refusal ) {
-				$result['losses'][] = array( 'item' => $item_path, 'reason' => $item_refusal );
+				$result['losses'][] = array(
+					'item'   => $item_path,
+					'reason' => $item_refusal,
+				);
 				continue;
 			}
 			$hidden_at = self::hidden_viewport( $item );
@@ -219,9 +228,12 @@ final class Static_Site_Importer_Layout_Projector {
 	 * @return array<string,mixed>
 	 */
 	private static function refused( array $result, string $reason ): array {
-		$result['applied']   = false;
-		$result['reason']    = $reason;
-		$result['losses'][] = array( 'item' => '', 'reason' => $reason );
+		$result['applied']  = false;
+		$result['reason']   = $reason;
+		$result['losses'][] = array(
+			'item'   => '',
+			'reason' => $reason,
+		);
 		return $result;
 	}
 
@@ -277,7 +289,7 @@ final class Static_Site_Importer_Layout_Projector {
 			return;
 		}
 		$stack[ count( $stack ) - 1 ]['innerContent'][] = null;
-		$stack[ count( $stack ) - 1 ]['innerBlocks'][]   = $block;
+		$stack[ count( $stack ) - 1 ]['innerBlocks'][]  = $block;
 	}
 
 	/**
@@ -289,7 +301,7 @@ final class Static_Site_Importer_Layout_Projector {
 	 * @return string
 	 */
 	private static function serialize_pieces( array $pieces, array $reencode, string $prefix = '' ): string {
-		$output     = '';
+		$output      = '';
 		$block_index = 0;
 		foreach ( $pieces as $piece ) {
 			if ( is_string( $piece ) ) {
@@ -311,19 +323,19 @@ final class Static_Site_Importer_Layout_Projector {
 	 * @return string
 	 */
 	private static function serialize_block( array $block, string $path, array $reencode ): string {
-		$name    = self::comment_name( (string) ( $block['blockName'] ?? '' ) );
-		$attrs   = '';
+		$name  = self::comment_name( (string) ( $block['blockName'] ?? '' ) );
+		$attrs = '';
 		// Rewritten blocks, and blocks created by an adapter (which carry no raw
 		// attribute source), serialize from their decoded attributes.
 		if ( isset( $reencode[ $path ] ) || ! is_string( $block['attrs_raw'] ?? null ) || ! empty( $block['attrs_dirty'] ) ) {
 			$decoded = is_array( $block['attrs'] ?? null ) ? $block['attrs'] : array();
-			$json    = empty( $decoded ) ? '' : json_encode( $decoded, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+			$json    = empty( $decoded ) ? '' : wp_json_encode( $decoded, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
 			if ( is_string( $json ) && '' !== $json && '[]' !== $json ) {
 				$attrs = ' ' . $json;
 			}
 		} else {
-			$raw = $block['attrs_raw'] ?? null;
-			if ( is_string( $raw ) && '' !== $raw ) {
+			$raw = $block['attrs_raw'];
+			if ( '' !== $raw ) {
 				$attrs = ' ' . $raw;
 			}
 		}
@@ -422,16 +434,16 @@ final class Static_Site_Importer_Layout_Projector {
 	 * Add the generated host class to the host wrapper tag.
 	 *
 	 * @param array<string,mixed> $host_block Host block.
-	 * @param string              $class      Generated host class.
+	 * @param string              $class_name      Generated host class.
 	 * @return bool
 	 */
-	private static function add_host_class( array &$host_block, string $class ): bool {
+	private static function add_host_class( array &$host_block, string $class_name ): bool {
 		$inner_content = is_array( $host_block['innerContent'] ?? null ) ? $host_block['innerContent'] : array();
 		foreach ( $inner_content as $index => $chunk ) {
 			if ( ! is_string( $chunk ) || '' === $chunk ) {
 				continue;
 			}
-			$marked = self::add_class_to_first_tag( $chunk, $class );
+			$marked = self::add_class_to_first_tag( $chunk, $class_name );
 			if ( null !== $marked ) {
 				$host_block['innerContent'][ $index ] = $marked;
 				return true;
@@ -445,10 +457,10 @@ final class Static_Site_Importer_Layout_Projector {
 	 * Add one class to the first opening tag of an HTML run.
 	 *
 	 * @param string $html   HTML run from block inner content.
-	 * @param string $class  Class to add.
+	 * @param string $class_name  Class to add.
 	 * @return string|null Rewritten run, or null when no opening tag exists.
 	 */
-	private static function add_class_to_first_tag( string $html, string $class ): ?string {
+	private static function add_class_to_first_tag( string $html, string $class_name ): ?string {
 		$tag_start = strpos( $html, '<' );
 		if ( false === $tag_start || '/' === substr( $html, $tag_start + 1, 1 ) || '!--' === substr( $html, $tag_start + 1, 3 ) ) {
 			return null;
@@ -474,19 +486,19 @@ final class Static_Site_Importer_Layout_Projector {
 
 		if ( 1 === preg_match( '/(^|\s)class\s*=\s*"([^"]*)"/', $attrs, $matches, PREG_OFFSET_CAPTURE ) ) {
 			$leading  = $matches[1][1] > 0 && '' === $matches[1][0] ? ' ' : $matches[1][0];
-			$classes  = trim( $matches[2][0] . ' ' . $class );
+			$classes  = trim( $matches[2][0] . ' ' . $class_name );
 			$position = $matches[0][1];
 			$attrs    = substr( $attrs, 0, $position ) . $leading . 'class="' . $classes . '"' . substr( $attrs, $position + strlen( $matches[0][0] ) );
 		} elseif ( 1 === preg_match( "/(^|\s)class\s*=\s*'([^']*)'/", $attrs, $matches, PREG_OFFSET_CAPTURE ) ) {
 			$leading  = $matches[1][1] > 0 && '' === $matches[1][0] ? ' ' : $matches[1][0];
-			$classes  = trim( $matches[2][0] . ' ' . $class );
+			$classes  = trim( $matches[2][0] . ' ' . $class_name );
 			$position = $matches[0][1];
 			$attrs    = substr( $attrs, 0, $position ) . $leading . 'class="' . $classes . '"' . substr( $attrs, $position + strlen( $matches[0][0] ) );
 		} else {
-			$attrs = 'class="' . $class . '"' . ( '' === $attrs ? '' : ' ' . $attrs );
+			$attrs = 'class="' . $class_name . '"' . ( '' === $attrs ? '' : ' ' . $attrs );
 		}
 
-		$rebuilt = $name . ( '' === $attrs ? '' : ' ' . $attrs ) . ( $self_close ? ' /' : '' );
+		$rebuilt = $name . ' ' . $attrs . ( $self_close ? ' /' : '' );
 		return substr( $html, 0, $tag_start ) . '<' . $rebuilt . '>' . substr( $html, $tag_end + 1 );
 	}
 }
