@@ -2981,7 +2981,7 @@ namespace {
 			|| (
 				'Occupation / business' === ( $wrapping_label_control['label'] ?? null )
 				&& 'Helps the trade committee connect members.' === ( $wrapping_label_control['description'] ?? null )
-				&& str_contains( $wrapping_label_markup, '<!-- wp:jetpack/label {"label":"Occupation / business"} /-->' )
+				&& 1 === preg_match( '/<!-- wp:jetpack\/label \{"label":"Occupation \\/ business"(?:,"className":"[^"]*")?\} \/-->/', $wrapping_label_markup )
 				&& 1 === preg_match( '/<!-- wp:jetpack\/field-text \{[^\n]*"helpText":"Helps the trade committee connect members\."[^\n]*\} -->/', $wrapping_label_markup )
 				&& ! str_contains( $wrapping_label_markup, 'businessHelps' )
 			),
