@@ -1325,6 +1325,7 @@ $output = wp_kses(
 		'button' => array_merge( $global, array( 'disabled' => true, 'name' => true, 'type' => true, 'value' => true ) ),
 		'form' => array_merge( $flow, array( 'action' => true, 'method' => true ) ),
 		'fieldset' => array_merge( $flow, array( 'disabled' => true, 'name' => true ) ), 'legend' => $global,
+		'details' => array_merge( $flow, array( 'name' => true, 'open' => true ) ), 'summary' => $flow,
 		'label' => array_merge( $global, array( 'for' => true ) ),
 		'input' => array_merge( $global, array( 'autocomplete' => true, 'checked' => true, 'disabled' => true, 'max' => true, 'maxlength' => true, 'min' => true, 'minlength' => true, 'multiple' => true, 'name' => true, 'pattern' => true, 'placeholder' => true, 'readonly' => true, 'required' => true, 'step' => true, 'type' => true, 'value' => true ) ),
 		'textarea' => array_merge( $global, array( 'cols' => true, 'disabled' => true, 'maxlength' => true, 'minlength' => true, 'name' => true, 'placeholder' => true, 'readonly' => true, 'required' => true, 'rows' => true ) ),

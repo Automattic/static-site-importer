@@ -681,6 +681,17 @@ if ( is_array( $descriptor ) ) {
 		$assert( str_contains( $svg_output, $fragment ), 'editable-render-preserves-inline-svg-' . $fragment, $svg_output );
 	}
 
+	// A closed disclosure must survive the boundary. KSES strips a disallowed
+	// tag but keeps its children, so a missing <details>/<summary> entry
+	// unrolls the closed disclosure and its hidden dialog body flows into the
+	// tile layout, clipping the sibling imagery below the fold (#1840).
+	$disclosure_markup = '<div style="position:relative;width:200px;height:200px;overflow:hidden"><details class="dla-disclosure"><summary aria-label="open">Gallery item</summary><div class="dla-dialog" style="height:500px">viewer</div></details><img src="https://example.test/a.jpg" width="200" height="200" alt=""></div>';
+	$disclosure_output = $render_frontend( $render, array( 'content' => $disclosure_markup ) );
+	foreach ( array( '<details class="dla-disclosure">', '<summary aria-label="open">Gallery item</summary>', '<div class="dla-dialog" style="height:500px">viewer</div>', '</details>', '<img src="https://example.test/a.jpg" width="200" height="200" alt="">' ) as $disclosure_fragment ) {
+		$assert( str_contains( $disclosure_output, $disclosure_fragment ), 'editable-render-preserves-closed-disclosure-wrappers', $disclosure_output );
+	}
+	$assert( ! str_contains( $disclosure_output, 'open=' ), 'editable-render-leaves-closed-disclosure-closed', $disclosure_output );
+
 	// A picture carried only by an inline background must survive the boundary.
 	// WordPress core's safecss_filter_attr() has no allowance for image-set(),
 	// so it discards the declaration and, with it, the whole style attribute --
