@@ -542,7 +542,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			: Static_Site_Importer_Route_Document_Metadata::prepare_overlay( $font_resolved, $title_bootstrap_overlay );
 		$internal_link_overlay                = isset( $state['internal_link_overlay'] ) && is_array( $state['internal_link_overlay'] )
 			? $state['internal_link_overlay']
-			: Static_Site_Importer_Internal_Link_Runtime::prepare_overlay( $font_resolved, $route_title_overlay );
+			: Static_Site_Importer_Internal_Link_Runtime::prepare_overlay( $font_resolved, $route_title_overlay, (string) ( $state['args']['slug'] ?? '' ) );
 		$head_bootstrap_overlay               = 'materialized' === ( $internal_link_overlay['status'] ?? '' )
 			? $internal_link_overlay
 			: ( 'materialized' === ( $route_title_overlay['status'] ?? '' ) ? $route_title_overlay : $title_bootstrap_overlay );
@@ -860,6 +860,17 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		return $topology;
 	}
 
+	/** Drop scheme, credentials, host and port, keeping path, query and fragment. */
+	private static function host_free_url( string $url ): string {
+		$parts = parse_url( $url ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Plain URL split; runs without WordPress loaded.
+		if ( ! is_array( $parts ) ) {
+			return '';
+		}
+		return ( $parts['path'] ?? '/' )
+			. ( isset( $parts['query'] ) ? '?' . $parts['query'] : '' )
+			. ( isset( $parts['fragment'] ) ? '#' . $parts['fragment'] : '' );
+	}
+
 	/** @param array<string,mixed> $state @param array<string,mixed> $page */
 	public static function plan_existing_page( array &$state, array $page, WP_Post $existing, string $reason ): array {
 		$id                          = (int) $existing->ID;
@@ -871,7 +882,9 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			'post_id'     => $id,
 			'source_path' => $page['source_path'],
 			'route'       => $page['route']['path'],
-			'permalink'   => function_exists( 'get_permalink' ) ? get_permalink( $existing ) : $page['route']['path'],
+			// Host-free: the manifest ships inside the theme and must not name the
+			// host that built it.
+			'permalink'   => function_exists( 'get_permalink' ) ? self::host_free_url( (string) get_permalink( $existing ) ) : $page['route']['path'],
 			'slug'        => $page['slug'],
 			'post_type'   => $page['post_type'],
 			'protected'   => $protected,

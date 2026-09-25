@@ -344,6 +344,21 @@
 		}
 
 		submit.addEventListener( 'click', async function () {
+			if ( submit.disabled ) {
+				return;
+			}
+			// Disable before reading the upload: building the archive is async,
+			// and a button that stays enabled meanwhile accepts a second submit
+			// and reports "idle" to anything waiting for the request to settle.
+			submit.disabled = true;
+			try {
+				await runImport();
+			} finally {
+				submit.disabled = false;
+			}
+		} );
+
+		const runImport = async function () {
 			const sourceUrl = root.querySelector( '[data-static-site-importer-source-url]' );
 			const html = root.querySelector( '[data-static-site-importer-source-html]' );
 			const uploadInputs = root.querySelectorAll( '[data-static-site-importer-source-files], [data-static-site-importer-source-directory]' );
@@ -362,7 +377,6 @@
 
 			const isUrlOnly = Boolean( source.url.trim() && ! source.html.trim() && ! source.files.length && ! source.archive );
 			showStatus( root, 'Preparing WordPress preview...' );
-			submit.disabled = true;
 
 			try {
 				const restUrl = root.getAttribute( 'data-static-site-importer-rest-url' );
@@ -433,63 +447,7 @@
 			} catch ( error ) {
 				setReport( root, { success: false, error: { message: error.message } } );
 				showStatus( root, 'Preview request failed.' );
-			} finally {
-				submit.disabled = false;
 			}
-		} );
+		};
 	} );
 } )();
-
-/**
- * Copy the agent prompt.
- *
- * The prompt is deliberately two lines pointing at a published URL, so the
- * clipboard payload stays short enough to read before pasting and the
- * instructions can be corrected after a prompt has already been copied.
- * `navigator.clipboard` is unavailable on insecure origins, so the textarea
- * fallback keeps the button working there rather than failing silently.
- */
-document.addEventListener( 'DOMContentLoaded', function () {
-	document.querySelectorAll( '[data-static-site-importer-agent]' ).forEach( function ( root ) {
-		const button = root.querySelector( '[data-static-site-importer-agent-copy]' );
-		const source = root.querySelector( '[data-static-site-importer-agent-prompt]' );
-		if ( ! button || ! source ) {
-			return;
-		}
-
-		const restore = button.textContent;
-		const confirm = () => {
-			button.textContent = button.dataset.copiedLabel || 'Copied';
-			window.setTimeout( () => { button.textContent = restore; }, 2000 );
-		};
-
-		button.addEventListener( 'click', async function () {
-			const text = source.textContent.trim();
-			try {
-				if ( navigator.clipboard && window.isSecureContext ) {
-					await navigator.clipboard.writeText( text );
-					confirm();
-					return;
-				}
-			} catch {
-				// Fall through to the selection-based path below.
-			}
-
-			const scratch = document.createElement( 'textarea' );
-			scratch.value = text;
-			scratch.setAttribute( 'readonly', '' );
-			scratch.style.position = 'fixed';
-			scratch.style.opacity = '0';
-			document.body.appendChild( scratch );
-			scratch.select();
-			try {
-				document.execCommand( 'copy' );
-				confirm();
-			} catch {
-				button.textContent = 'Select and copy above';
-				window.setTimeout( () => { button.textContent = restore; }, 3000 );
-			}
-			document.body.removeChild( scratch );
-		} );
-	} );
-} );

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Static Site Importer
  * Description: Materialize compiled website artifacts into WordPress block and classic themes.
- * Version: 1.13.2
+ * Version: 1.17.2
  * Author: Chris Huber
  * Requires at least: 6.9
  * Requires PHP: 8.2
@@ -17,7 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 define( 'STATIC_SITE_IMPORTER_PATH', plugin_dir_path( __FILE__ ) );
 define( 'STATIC_SITE_IMPORTER_URL', plugin_dir_url( __FILE__ ) );
-define( 'STATIC_SITE_IMPORTER_VERSION', '1.13.2' );
+define( 'STATIC_SITE_IMPORTER_VERSION', '1.17.2' );
 
 $static_site_importer_autoload = STATIC_SITE_IMPORTER_PATH . 'vendor/autoload.php';
 if ( is_readable( $static_site_importer_autoload ) ) {
@@ -123,6 +123,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-owner-handoff-evidence.php',
 	'class-static-site-importer-site-plan-receipt.php',
 	'class-static-site-importer-site-plan-preparation.php',
+	'class-static-site-importer-rewrite-base-collision.php',
 	'class-static-site-importer-site-plan-persistence.php',
 	'class-static-site-importer-wordpress-site-plan-materializer.php',
 	'class-static-site-importer-journaled-report-writer.php',
@@ -136,6 +137,15 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-commerce-presentation.php',
 	'class-static-site-importer-direct-artifact-import.php',
 	'class-static-site-importer-canonical-import-service.php',
+	'class-static-site-importer-layout-placement-model.php',
+	'class-static-site-importer-layout-adapter.php',
+	'class-static-site-importer-none-layout-adapter.php',
+	'class-static-site-importer-core-grid-layout-adapter.php',
+	'class-static-site-importer-canvas-layout-adapter.php',
+	'class-static-site-importer-layout-adapter-registry.php',
+	'class-static-site-importer-layout-projector.php',
+	'class-static-site-importer-layout-release.php',
+	'class-static-site-importer-layout-marker-filter.php',
 );
 foreach ( $static_site_importer_includes as $static_site_importer_include ) {
 	require_once STATIC_SITE_IMPORTER_PATH . 'includes/' . $static_site_importer_include;
@@ -147,6 +157,8 @@ register_deactivation_hook( __FILE__, array( Static_Site_Importer_Direct_Artifac
 Static_Site_Importer_Figma_Import::register_default_zstd_decoder();
 Static_Site_Importer_Entity_Materializer_Registry::register_presentations();
 Static_Site_Importer_Form_Seeder::register_runtime_bootstrap();
+Static_Site_Importer_Layout_Release::register();
+Static_Site_Importer_Layout_Marker_Filter::register();
 Static_Site_Importer_Route_Document_Metadata::register();
 Static_Site_Importer_Route_Head_Metadata::register();
 

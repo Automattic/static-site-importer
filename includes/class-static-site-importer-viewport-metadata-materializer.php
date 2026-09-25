@@ -19,7 +19,9 @@ final class Static_Site_Importer_Viewport_Metadata_Materializer {
 		$declared     = false;
 
 		foreach ( $resolved_plan['pages'] ?? array() as $page ) {
-			if ( ! is_array( $page ) ) {
+			// A synthetic route (a hub the site plan adds for nested routes) has no
+			// authored document, so it neither declares nor contradicts a viewport.
+			if ( ! is_array( $page ) || true === ( $page['synthetic'] ?? null ) ) {
 				continue;
 			}
 			$source_path = is_string( $page['source_path'] ?? null ) ? $page['source_path'] : '';

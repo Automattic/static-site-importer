@@ -260,17 +260,24 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 	 * behind their payload reference and never opens them, so their bytes cannot
 	 * cause the parse cost the first pair exists to bound.
 	 *
-	 * `max_media_total_bytes` is enforced through the per-file ceiling below,
-	 * which shrinks to whatever remains of it, so a capture of any shape is
-	 * still refused once its media passes the aggregate.
+	 * `max_report_file_bytes` and `max_report_total_bytes` bound the capture
+	 * reports the source manifest declares: Blocks Engine hydrates those, so
+	 * they stay bounded, but it converts none of them, so the budget sized for
+	 * page source does not describe what they cost.
+	 *
+	 * `max_media_total_bytes` and `max_report_total_bytes` are enforced through
+	 * the per-file ceiling below, which shrinks to whatever remains of them, so
+	 * a capture of any shape is still refused once it passes an aggregate.
 	 */
 	function static_site_importer_cli_request_bundle_limits(): array {
 		return array(
 			'max_files'                => 5000,
 			'max_file_bytes'           => 10485760,
 			'max_media_file_bytes'     => 104857600,
+			'max_report_file_bytes'    => 33554432,
 			'max_total_bytes'          => 268435456,
 			'max_media_total_bytes'    => 1073741824,
+			'max_report_total_bytes'   => 67108864,
 			'generated_bytes_headroom' => 67108864,
 			'compiler_max_total_bytes' => 335544320,
 		);
@@ -291,6 +298,56 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 	}
 
 	/**
+	 * Normalize the capture reports a source manifest declares into a lookup set.
+	 *
+	 * `source.metadata.reports` is the declaration this plugin already honours
+	 * in `static_site_importer_rest_source_file_path()`, where it keeps a report
+	 * addressable at the artifact root instead of rehoming it under the website
+	 * tree. Reusing it here means one declaration decides both where a report
+	 * lives and which budget bounds it.
+	 *
+	 * @param array<mixed> $reports Declared report paths.
+	 * @return array<string,true>
+	 */
+	function static_site_importer_cli_request_bundle_declared_reports( array $reports ): array {
+		$declared = array();
+		foreach ( $reports as $report ) {
+			if ( ! is_string( $report ) || '' === $report || str_starts_with( str_replace( '\\', '/', $report ), '/' ) ) {
+				continue;
+			}
+			$segments = array();
+			foreach ( explode( '/', str_replace( '\\', '/', $report ) ) as $segment ) {
+				if ( '' === $segment || '.' === $segment ) {
+					continue;
+				}
+				if ( '..' === $segment ) {
+					// Matches the safe-relative-path rule Blocks Engine applies to
+					// the same declaration, so both sides classify a report alike.
+					$segments = array();
+					break;
+				}
+				$segments[] = $segment;
+			}
+			if ( ! empty( $segments ) ) {
+				$declared[ implode( '/', $segments ) ] = true;
+			}
+		}
+		return $declared;
+	}
+
+	/**
+	 * Is this request-bundle source a capture report the manifest declares?
+	 *
+	 * The declaration, not the extension or the directory, decides: a JSON file
+	 * of the same shape that no manifest declares stays page source.
+	 *
+	 * @param array<string,true> $reports Declared report lookup set.
+	 */
+	function static_site_importer_cli_request_bundle_is_declared_report( string $relative, array $reports ): bool {
+		return isset( $reports[ $relative ] );
+	}
+
+	/**
 	 * The per-file byte ceiling for one request-bundle source file.
 	 *
 	 * `max_file_bytes` protects parse/expansion cost: the compiler reads and
@@ -303,12 +360,22 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 	 * (`max_media_file_bytes`) and whatever remains of the media budget
 	 * (`max_media_total_bytes`) at this point in the walk, so one large file can
 	 * spend a large share of the run's budget but never exceed it.
+	 *
+	 * A declared capture report is read, so it is not media, but it is evidence
+	 * about the capture rather than page source: Blocks Engine hydrates it and
+	 * only ever decodes the few reports a projector names, converting none of
+	 * them. It gets the same two-sided treatment on the report budget.
+	 *
+	 * @param array<string,true> $reports Declared report lookup set.
 	 */
-	function static_site_importer_cli_request_bundle_file_byte_limit( string $relative, array $limits, int $media_bytes_used ): int {
-		if ( static_site_importer_cli_request_bundle_is_read_source( $relative ) ) {
-			return $limits['max_file_bytes'];
+	function static_site_importer_cli_request_bundle_file_byte_limit( string $relative, array $limits, int $media_bytes_used, int $report_bytes_used = 0, array $reports = array() ): int {
+		if ( ! static_site_importer_cli_request_bundle_is_read_source( $relative ) ) {
+			return min( $limits['max_media_file_bytes'], max( 0, $limits['max_media_total_bytes'] - $media_bytes_used ) );
 		}
-		return min( $limits['max_media_file_bytes'], max( 0, $limits['max_media_total_bytes'] - $media_bytes_used ) );
+		if ( static_site_importer_cli_request_bundle_is_declared_report( $relative, $reports ) ) {
+			return min( $limits['max_report_file_bytes'], max( 0, $limits['max_report_total_bytes'] - $report_bytes_used ) );
+		}
+		return $limits['max_file_bytes'];
 	}
 
 	/** Format a byte count as whole or one-decimal MiB for an error message. */
@@ -401,16 +468,22 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		return '' === $type || in_array( $type, array( 'module', 'text/javascript', 'application/javascript', 'text/ecmascript', 'application/ecmascript' ), true );
 	}
 
-	/** Project a local source tree as metadata-only payload references. */
-	function static_site_importer_cli_request_bundle_files( string $directory ) {
+	/**
+	 * Project a local source tree as metadata-only payload references.
+	 *
+	 * @param array<mixed> $declared_reports Capture reports the source manifest declares.
+	 */
+	function static_site_importer_cli_request_bundle_files( string $directory, array $declared_reports = array() ) {
 		if ( ! is_dir( $directory ) ) {
 			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'A files request-bundle reference must resolve to a directory.' );
 		}
 		$limits          = static_site_importer_cli_request_bundle_limits();
+		$reports         = static_site_importer_cli_request_bundle_declared_reports( $declared_reports );
 		$files           = array();
 		$paths           = array();
 		$total_bytes     = 0;
 		$media_bytes     = 0;
+		$report_bytes    = 0;
 		$generated_files = 0;
 		try {
 			$iterator = new RecursiveIteratorIterator(
@@ -437,8 +510,15 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				}
 				$bytes           = $item->getSize();
 				$read_source     = static_site_importer_cli_request_bundle_is_read_source( $relative );
-				$file_byte_limit = static_site_importer_cli_request_bundle_file_byte_limit( $relative, $limits, $media_bytes );
+				$report          = $read_source && static_site_importer_cli_request_bundle_is_declared_report( $relative, $reports );
+				$file_byte_limit = static_site_importer_cli_request_bundle_file_byte_limit( $relative, $limits, $media_bytes, $report_bytes, $reports );
 				if ( $bytes > $file_byte_limit ) {
+					if ( $report ) {
+						return new WP_Error(
+							'static_site_importer_cli_request_bundle_report_file_too_large',
+							sprintf( 'The declared capture report %1$s exceeds the %2$s report limit.', $relative, static_site_importer_cli_request_bundle_mib( $file_byte_limit ) )
+						);
+					}
 					return new WP_Error(
 						$read_source ? 'static_site_importer_cli_request_bundle_file_too_large' : 'static_site_importer_cli_request_bundle_media_file_too_large',
 						sprintf(
@@ -447,7 +527,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 						)
 					);
 				}
-				if ( $read_source && $total_bytes + $bytes > $limits['max_total_bytes'] ) {
+				if ( $read_source && ! $report && $total_bytes + $bytes > $limits['max_total_bytes'] ) {
 					return new WP_Error( 'static_site_importer_cli_request_bundle_total_too_large', 'Request-bundle source files exceed the 256 MiB aggregate compiler limit.' );
 				}
 				$is_html           = (bool) preg_match( '/\.html?$/i', $relative );
@@ -462,7 +542,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				$id           = 'request-bundle-file:' . rawurlencode( $relative );
 				$paths[ $id ] = $absolute;
 				$files[]      = array(
-					'path'       => $relative,
+					'path'              => $relative,
 					'payload_reference' => array(
 						'schema' => 'blocks-engine/payload-reference/v1',
 						'id'     => $id,
@@ -470,7 +550,9 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 						'sha256' => $digest,
 					),
 				);
-				if ( $read_source ) {
+				if ( $report ) {
+					$report_bytes += $bytes;
+				} elseif ( $read_source ) {
 					$total_bytes += $bytes;
 				} else {
 					$media_bytes += $bytes;
@@ -487,11 +569,13 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		return array(
 			'files'           => $files,
 			'compiler_limits' => array(
-				'max_files'             => count( $files ) + $generated_files,
-				'max_file_bytes'        => $limits['max_file_bytes'],
-				'max_total_bytes'       => min( $limits['compiler_max_total_bytes'], $limits['max_total_bytes'] + min( $limits['generated_bytes_headroom'], $limits['max_total_bytes'] ) ),
-				'max_media_file_bytes'  => $limits['max_media_file_bytes'],
-				'max_media_total_bytes' => $limits['max_media_total_bytes'],
+				'max_files'              => count( $files ) + $generated_files,
+				'max_file_bytes'         => $limits['max_file_bytes'],
+				'max_total_bytes'        => min( $limits['compiler_max_total_bytes'], $limits['max_total_bytes'] + min( $limits['generated_bytes_headroom'], $limits['max_total_bytes'] ) ),
+				'max_media_file_bytes'   => $limits['max_media_file_bytes'],
+				'max_media_total_bytes'  => $limits['max_media_total_bytes'],
+				'max_report_file_bytes'  => $limits['max_report_file_bytes'],
+				'max_report_total_bytes' => $limits['max_report_total_bytes'],
 			),
 			'payload_reader'  => new class( $paths ) implements \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader {
 				/** @param array<string,string> $paths */
@@ -527,7 +611,8 @@ if ( ! function_exists( 'static_site_importer_cli_prepare_request_bundle' ) ) {
 		if ( is_wp_error( $resolved_path ) ) {
 			return $resolved_path;
 		}
-		$bundle = 'files' === $type ? static_site_importer_cli_request_bundle_files( $resolved_path ) : null;
+		$metadata = isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array();
+		$bundle   = 'files' === $type ? static_site_importer_cli_request_bundle_files( $resolved_path, isset( $metadata['reports'] ) && is_array( $metadata['reports'] ) ? $metadata['reports'] : array() ) : null;
 		if ( is_wp_error( $bundle ) ) {
 			return $bundle;
 		}
@@ -537,12 +622,11 @@ if ( ! function_exists( 'static_site_importer_cli_prepare_request_bundle' ) ) {
 		if ( function_exists( 'add_filter' ) ) {
 			add_filter(
 				'static_site_importer_resolve_source_reference',
-				static function ( $resolved, string $candidate, string $candidate_type ) use ( $reference, $resolved_path, $type, $bundle, $source ) {
+				static function ( $resolved, string $candidate, string $candidate_type ) use ( $reference, $resolved_path, $type, $bundle, $metadata ) {
 					if ( null !== $resolved || $reference !== $candidate || $type !== $candidate_type ) {
 						return $resolved;
 					}
 					if ( 'files' === $type ) {
-						$metadata                    = isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array();
 						$metadata['compiler_limits'] = $bundle['compiler_limits'];
 						return array(
 							'source'         => array(
@@ -1139,6 +1223,114 @@ if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 	);
 
 	WP_CLI::add_command( 'static-site-importer import', 'static_site_importer_cli_import_command' );
+
+	WP_CLI::add_command(
+		'static-site-importer project-layout',
+		static function ( array $args, array $assoc_args ): void {
+			unset( $args );
+			$page_id    = isset( $assoc_args['page'] ) ? (int) $assoc_args['page'] : 0;
+			$placement  = isset( $assoc_args['placement'] ) ? (string) $assoc_args['placement'] : '';
+			$adapter_id = isset( $assoc_args['adapter'] ) ? (string) $assoc_args['adapter'] : '';
+			$dry_run    = isset( $assoc_args['dry-run'] );
+
+			$page = $page_id > 0 ? get_post( $page_id ) : null;
+			if ( ! $page instanceof WP_Post ) {
+				WP_CLI::error( 'Provide --page=<id> of an existing page to project.' );
+			}
+			// One placement model per section; several sections apply in order.
+			$models = array();
+			foreach ( array_filter( array_map( 'trim', explode( ',', $placement ) ) ) as $file ) {
+				$raw        = is_file( $file ) && is_readable( $file ) && ! is_link( $file ) ? file_get_contents( $file ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads operator-supplied placement models.
+				$model_data = is_string( $raw ) ? json_decode( $raw, true ) : null;
+				$model      = Static_Site_Importer_Layout_Placement_Model::validated( $model_data );
+				if ( is_wp_error( $model ) ) {
+					WP_CLI::error( 'Placement model ' . $file . ' failed validation: ' . (string) wp_json_encode( $model->get_error_data(), JSON_UNESCAPED_SLASHES ) );
+				}
+				$models[ $file ] = $model;
+			}
+			if ( array() === $models ) {
+				WP_CLI::error( 'Provide --placement=<file>[,<file>...] with at least one placement model.' );
+			}
+
+			$adapters = Static_Site_Importer_Layout_Adapter_Registry::adapters();
+			$adapter  = '' !== $adapter_id ? ( $adapters[ $adapter_id ] ?? null ) : Static_Site_Importer_Layout_Adapter_Registry::layout_adapter();
+			if ( null === $adapter ) {
+				WP_CLI::error( 'Provide --adapter=<none|core-grid|canvas> matching a registered layout adapter.' );
+			}
+			if ( 'none' !== $adapter->id() && ! Static_Site_Importer_Layout_Adapter_Registry::dependencies_available( $adapter ) ) {
+				$missing = array_keys( array_filter( Static_Site_Importer_Layout_Adapter_Registry::dependency_rows( $adapter ), static fn( array $row ): bool => empty( $row['active'] ) ) );
+				WP_CLI::error( 'The ' . $adapter->id() . ' layout adapter requires unregistered block types: ' . implode( ', ', $missing ) . '.' );
+			}
+
+			// Every projection starts from the original content, so switching
+			// adapters (or back to none) never compounds earlier projections.
+			$snapshot = (string) get_post_meta( $page_id, Static_Site_Importer_Layout_Projector::ORIGINAL_CONTENT_META_KEY, true );
+			$current  = (string) $page->post_content;
+			$original = '' !== $snapshot ? $snapshot : $current;
+
+			$markup   = $original;
+			$sections = array();
+			$applied  = 0;
+			foreach ( $models as $file => $model ) {
+				$projection = Static_Site_Importer_Layout_Projector::project( $markup, $model, $adapter );
+				$markup     = (string) $projection['markup'];
+				$applied   += $projection['applied'] ? 1 : 0;
+				$sections[] = array(
+					'placement' => $file,
+					'host'      => (string) ( $model['host']['path'] ?? '' ),
+					'applied'   => (bool) $projection['applied'],
+					'placed'    => (int) $projection['placed'],
+					'reason'    => (string) $projection['reason'],
+					'losses'    => $projection['losses'],
+				);
+			}
+			$receipt = array(
+				'schema'          => 'static-site-importer/layout-projection-receipt/v1',
+				'page'            => $page_id,
+				'adapter'         => $adapter->id(),
+				'applied'         => $applied > 0,
+				'dry_run'         => $dry_run,
+				'sections'        => $sections,
+				'restored'        => false,
+				'snapshot_stored' => false,
+				'content_sha'     => array(
+					'before' => hash( 'sha256', $original ),
+					'after'  => hash( 'sha256', $markup ),
+				),
+			);
+
+			if ( 0 === $applied ) {
+				WP_CLI::line( (string) wp_json_encode( $receipt, JSON_UNESCAPED_SLASHES ) );
+				WP_CLI::halt( 1 );
+			}
+
+			if ( ! $dry_run ) {
+				if ( 'none' === $adapter->id() ) {
+					if ( '' !== $snapshot ) {
+						$updated = wp_update_post( wp_slash( array( 'ID' => $page_id, 'post_content' => $original ) ), true );
+						if ( is_wp_error( $updated ) ) {
+							WP_CLI::error( 'Layout restore failed: ' . $updated->get_error_message() );
+						}
+						delete_post_meta( $page_id, Static_Site_Importer_Layout_Projector::ORIGINAL_CONTENT_META_KEY );
+						$receipt['restored'] = true;
+					}
+				} else {
+					if ( '' === $snapshot ) {
+						if ( false === update_post_meta( $page_id, Static_Site_Importer_Layout_Projector::ORIGINAL_CONTENT_META_KEY, wp_slash( $current ) ) ) {
+							WP_CLI::error( 'Layout projection failed to store its original-content snapshot.' );
+						}
+						$receipt['snapshot_stored'] = true;
+					}
+					$updated = wp_update_post( wp_slash( array( 'ID' => $page_id, 'post_content' => $markup ) ), true );
+					if ( is_wp_error( $updated ) ) {
+						WP_CLI::error( 'Layout projection failed to write the page: ' . $updated->get_error_message() );
+					}
+				}
+			}
+
+			WP_CLI::line( (string) wp_json_encode( $receipt, JSON_UNESCAPED_SLASHES ) );
+		}
+	);
 
 	WP_CLI::add_command(
 		'static-site-importer compile-artifact-pages',

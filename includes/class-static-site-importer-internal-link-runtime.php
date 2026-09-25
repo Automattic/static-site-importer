@@ -9,6 +9,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+// Themes generated before theme-scoped runtimes shipped a guarded copy under
+// this class name. When one of those themes loads first (for example while
+// the plugin is being activated), reuse its copy instead of redeclaring it.
+if ( class_exists( 'Static_Site_Importer_Internal_Link_Runtime', false ) ) {
+	return;
+}
+
 /**
  * Turns importer-owned `/?p=` / `/?page_id=` references into destination permalinks.
  *
@@ -27,6 +34,67 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 		}
 		self::$registered = true;
 		add_filter( 'the_content', array( self::class, 'filter_content' ), 8 );
+		add_filter( 'render_block', array( self::class, 'filter_rendered_block' ), 10, 1 );
+	}
+
+	/**
+	 * Resolve root-relative links in rendered blocks outside post content.
+	 *
+	 * Template parts and templates (header navigation, footer links) keep the
+	 * source site's root-relative routes, such as `/about`. Those only work when
+	 * WordPress serves the site from a domain root with matching permalinks. A
+	 * Playground scope, a subdirectory install, or plain permalinks all break
+	 * them. A route that names a page resolves to that page's permalink; any
+	 * other root-relative link is rebased onto the site's home path.
+	 *
+	 * @param mixed $content Rendered block markup.
+	 * @return mixed
+	 */
+	public static function filter_rendered_block( $content ) {
+		if ( ! is_string( $content ) || ! str_contains( $content, 'href="/' ) || ! function_exists( 'home_url' ) ) {
+			return $content;
+		}
+
+		return preg_replace_callback(
+			'~(\bhref=")(/(?!/)[^"]*)(")~i',
+			static fn( array $matches ): string => $matches[1] . self::resolve_root_relative( $matches[2] ) . $matches[3],
+			$content
+		) ?? $content;
+	}
+
+	public static function resolve_root_relative( string $url ): string {
+		static $resolved = array();
+		if ( isset( $resolved[ $url ] ) ) {
+			return $resolved[ $url ];
+		}
+		$path   = $url;
+		$suffix = '';
+		if ( preg_match( '/^([^?#]*)(.*)$/s', $url, $parts ) ) {
+			$path   = $parts[1];
+			$suffix = $parts[2];
+		}
+		if ( '' !== $suffix && '?' === $suffix[0] && '' === trim( $path, '/' ) ) {
+			// `/?page_id=N` and `/?p=N` are portable post references.
+			$portable = substr( self::resolve_urls( 'href="' . $url . '"' ), 6, -1 );
+
+			return $resolved[ $url ] = ( $portable !== $url ) ? $portable : home_url( $url );
+		}
+		$slug = trim( $path, '/' );
+		if ( '' === $slug ) {
+			return $resolved[ $url ] = self::join_reference_suffix( home_url( '/' ), $suffix );
+		}
+		if ( function_exists( 'get_page_by_path' ) && function_exists( 'get_permalink' ) ) {
+			$page = get_page_by_path( $slug );
+			if ( $page ) {
+				$permalink = get_permalink( (int) $page->ID );
+				if ( is_string( $permalink ) && '' !== $permalink ) {
+					return $resolved[ $url ] = self::join_reference_suffix( $permalink, $suffix );
+				}
+			}
+		}
+		$home_path = (string) wp_parse_url( home_url( '/' ), PHP_URL_PATH );
+
+		return $resolved[ $url ] = ( '' === $home_path || '/' === $home_path ) ? $url : home_url( $url );
 	}
 
 	/** @param mixed $content */
@@ -88,8 +156,11 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 	 * @param array<string,mixed> $bootstrap_overlay
 	 * @return array<string,mixed>
 	 */
-	public static function prepare_overlay( array $resolved_plan, array $bootstrap_overlay = array() ): array {
+	public static function prepare_overlay( array $resolved_plan, array $bootstrap_overlay = array(), string $theme_slug = '' ): array {
 		$bootstrap = self::bootstrap_content( $resolved_plan, $bootstrap_overlay );
+		// The theme copy gets a theme-scoped class name, so it can never
+		// collide with this plugin class or with another generated theme.
+		$class     = self::theme_runtime_class( $theme_slug );
 		$marker    = '/* Static Site Importer portable internal links. */';
 		$source    = file_get_contents( __FILE__ ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the runtime source the generated theme owns independently.
 		if ( ! is_string( $source ) || '' === $source ) {
@@ -99,7 +170,7 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 			);
 		}
 		if ( ! str_contains( $bootstrap, $marker ) ) {
-			$bootstrap .= "\n{$marker}\nif ( ! class_exists( 'Static_Site_Importer_Internal_Link_Runtime' ) ) {\n\trequire_once get_stylesheet_directory() . '/portable-internal-links.php';\n}\nStatic_Site_Importer_Internal_Link_Runtime::register();\n";
+			$bootstrap .= "\n{$marker}\nif ( ! class_exists( '{$class}' ) ) {\n\trequire_once get_stylesheet_directory() . '/portable-internal-links.php';\n}\n{$class}::register();\n";
 		}
 
 		return array(
@@ -113,12 +184,20 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 				),
 				array(
 					'target_path' => 'portable-internal-links.php',
-					'content'     => $source,
+					'content'     => str_replace( 'Static_Site_Importer_Internal_Link_Runtime', $class, $source ),
 					'encoding'    => 'utf8',
 					'source_path' => 'static-site-importer/portable-internal-links',
 				),
 			),
 		);
+	}
+
+	/**
+	 * Theme-scoped class name for the portable runtime copy.
+	 */
+	public static function theme_runtime_class( string $theme_slug ): string {
+		$scope = strtoupper( trim( (string) preg_replace( '/[^A-Za-z0-9]+/', '_', $theme_slug ), '_' ) );
+		return 'SSI_Theme_' . ( '' !== $scope ? $scope : 'Default' ) . '_Internal_Link_Runtime';
 	}
 
 	/** @param array<string,mixed> $resolved_plan @param array<string,mixed> $overlay */

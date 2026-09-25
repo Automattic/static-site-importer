@@ -236,11 +236,13 @@ $bounded_bundle = static_site_importer_cli_request_bundle_files( $bounded_bundle
 $assert( is_array( $bounded_bundle ) && 501 === count( $bounded_bundle['files'] ?? array() ), 'request-bundle-retains-files-above-compiler-default' );
 $assert(
 	array(
-		'max_files'             => 512,
-		'max_file_bytes'        => 10485760,
-		'max_total_bytes'       => 335544320,
-		'max_media_file_bytes'  => 104857600,
-		'max_media_total_bytes' => 1073741824,
+		'max_files'              => 512,
+		'max_file_bytes'         => 10485760,
+		'max_total_bytes'        => 335544320,
+		'max_media_file_bytes'   => 104857600,
+		'max_media_total_bytes'  => 1073741824,
+		'max_report_file_bytes'  => 33554432,
+		'max_report_total_bytes' => 67108864,
 	) === ( $bounded_bundle['compiler_limits'] ?? null ),
 	'request-bundle-reserves every inline style and script expansion'
 );
@@ -443,6 +445,92 @@ foreach ( scandir( $media_budget_dir ) as $entry ) {
 	}
 }
 rmdir( $media_budget_dir );
+
+// www.ghestilistes.com (run r65) is refused for a capture report, not for its
+// pages: asset-evidence.json is 10,666,142 bytes (10.17 MiB) beside a 47 MB
+// website tree with no oversized file in it. A declared capture report is
+// evidence about the capture, not page source the compiler converts, so it is
+// bounded on its own budget and the capture is admitted whole.
+$report_dir = sys_get_temp_dir() . '/ssi-request-bundle-report-' . bin2hex( random_bytes( 6 ) );
+mkdir( $report_dir . '/website', 0777, true );
+$report_dir = realpath( $report_dir );
+$declared_reports = array( 'capture-receipt.json', 'asset-evidence.json' );
+file_put_contents( $report_dir . '/website/index.html', '<main><h1>Ghestilistes</h1></main>' );
+file_put_contents( $report_dir . '/capture-receipt.json', '{"schema":"data-liberation/capture-receipt/v1"}' );
+file_put_contents( $report_dir . '/asset-evidence.json', '{"assets":"' . str_repeat( 'x', 10666142 - 13 ) . '"}' );
+$report_bundle = static_site_importer_cli_request_bundle_files( $report_dir, $declared_reports );
+$report_files  = is_array( $report_bundle ) ? array_column( $report_bundle['files'], null, 'path' ) : array();
+$assert( ! is_wp_error( $report_bundle ) && isset( $report_files['asset-evidence.json'] ) && 10666142 === $report_files['asset-evidence.json']['payload_reference']['bytes'], 'request-bundle-admits-a-declared-capture-report-above-the-parse-budget' );
+$assert(
+	is_array( $report_bundle ) && 33554432 === ( $report_bundle['compiler_limits']['max_report_file_bytes'] ?? null ) && 67108864 === ( $report_bundle['compiler_limits']['max_report_total_bytes'] ?? null ),
+	'request-bundle-declares-the-report-budget-to-the-compiler'
+);
+
+// The declaration, not the extension or the directory, decides the budget: the
+// very same file is still refused as page source when no manifest declares it.
+$undeclared_report = static_site_importer_cli_request_bundle_files( $report_dir );
+$assert( is_wp_error( $undeclared_report ) && 'static_site_importer_cli_request_bundle_file_too_large' === $undeclared_report->get_error_code(), 'request-bundle-still-budgets-an-undeclared-json-file-as-page-source' );
+
+// Growth past the report budget is still refused, under its own error code and
+// with a message that names the report the way the media budget names its limit.
+$over_report_dir = sys_get_temp_dir() . '/ssi-request-bundle-report-budget-' . bin2hex( random_bytes( 6 ) );
+mkdir( $over_report_dir );
+$over_report_dir = realpath( $over_report_dir );
+file_put_contents( $over_report_dir . '/index.html', '<main>Report budget</main>' );
+$over_report_handle = fopen( $over_report_dir . '/asset-evidence.json', 'w' );
+ftruncate( $over_report_handle, 33554433 );
+fclose( $over_report_handle );
+$over_report = static_site_importer_cli_request_bundle_files( $over_report_dir, array( 'asset-evidence.json' ) );
+$assert( is_wp_error( $over_report ) && 'static_site_importer_cli_request_bundle_report_file_too_large' === $over_report->get_error_code(), 'request-bundle-refuses-a-declared-report-past-the-report-budget-under-its-own-code' );
+$assert( str_contains( $over_report->get_error_message(), 'asset-evidence.json' ) && str_contains( $over_report->get_error_message(), '32 MiB' ), 'request-bundle-report-rejection-message-names-the-report-and-its-limit' );
+
+// The aggregate report budget shrinks the per-file ceiling the same way the
+// media budget does, so a capture that keeps adding reports is still refused.
+$report_aggregate_handle = fopen( $over_report_dir . '/diagnostics.json', 'w' );
+ftruncate( $report_aggregate_handle, 33554432 );
+fclose( $report_aggregate_handle );
+$report_aggregate_handle = fopen( $over_report_dir . '/asset-evidence.json', 'w' );
+ftruncate( $report_aggregate_handle, 33554432 );
+fclose( $report_aggregate_handle );
+$report_overflow_handle = fopen( $over_report_dir . '/cleanup-evidence.json', 'w' );
+ftruncate( $report_overflow_handle, 1 );
+fclose( $report_overflow_handle );
+$report_aggregate = static_site_importer_cli_request_bundle_files( $over_report_dir, array( 'asset-evidence.json', 'diagnostics.json', 'cleanup-evidence.json' ) );
+$assert( is_wp_error( $report_aggregate ) && 'static_site_importer_cli_request_bundle_report_file_too_large' === $report_aggregate->get_error_code(), 'request-bundle-shrinks-the-report-ceiling-to-what-remains-of-the-report-budget' );
+$assert( str_contains( $report_aggregate->get_error_message(), '0 MiB' ), 'request-bundle-report-aggregate-rejection-reports-the-remaining-budget' );
+foreach ( scandir( $over_report_dir ) as $entry ) {
+	if ( '.' !== $entry && '..' !== $entry ) {
+		unlink( $over_report_dir . '/' . $entry );
+	}
+}
+rmdir( $over_report_dir );
+
+// A declared report never loosens the budget for the pages beside it: the same
+// capture with an oversized page source is still refused on the parse budget.
+$report_source_handle = fopen( $report_dir . '/website/huge.html', 'w' );
+ftruncate( $report_source_handle, 10485761 );
+fclose( $report_source_handle );
+$report_source = static_site_importer_cli_request_bundle_files( $report_dir, $declared_reports );
+$assert( is_wp_error( $report_source ) && 'static_site_importer_cli_request_bundle_file_too_large' === $report_source->get_error_code(), 'request-bundle-still-refuses-oversized-page-source-beside-a-declared-report' );
+$assert( str_contains( $report_source->get_error_message(), '10 MiB' ), 'request-bundle-page-source-rejection-beside-a-report-still-reports-the-parse-limit' );
+foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $report_dir, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST ) as $report_item ) {
+	$report_item->isDir() ? rmdir( $report_item->getPathname() ) : unlink( $report_item->getPathname() );
+}
+rmdir( $report_dir );
+
+// Blocks Engine hydrates a declared report too, so the two sides must agree on
+// the budget that bounds it, exactly as they agree on the read-source rule.
+$assert( static_site_importer_cli_request_bundle_declared_reports( array( './asset-evidence.json', '../escape.json', '/abs.json', 42 ) ) === array( 'asset-evidence.json' => true ), 'request-bundle-reads-the-report-declaration-as-safe-relative-paths-only' );
+$artifact_path_class = 'Automattic\\BlocksEngine\\PhpTransformer\\Path\\ArtifactPath';
+if ( class_exists( $artifact_path_class ) ) {
+	foreach ( array( './asset-evidence.json', '../escape.json', '/abs.json', 'reports//a.json', 'asset-evidence.json' ) as $declared_path ) {
+		$blocks_engine_path = (string) $artifact_path_class::safeRelativePath( $declared_path );
+		$assert(
+			array_keys( static_site_importer_cli_request_bundle_declared_reports( array( $declared_path ) ) ) === ( '' === $blocks_engine_path ? array() : array( $blocks_engine_path ) ),
+			'request-bundle-tracks-the-blocks-engine-report-declaration-rule-for-' . $declared_path
+		);
+	}
+}
 
 // The two budgets can only stay coherent if SSI and Blocks Engine agree on
 // which sources the compiler reads. Every extension Blocks Engine hydrates

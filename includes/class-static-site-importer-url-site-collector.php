@@ -857,6 +857,8 @@ class Static_Site_Importer_URL_Site_Collector {
 		$urls        = array();
 		$source_urls = array_merge(
 			self::tag_attribute_values( $html, 'img|source|video|audio', 'src' ),
+			self::tag_attribute_values( $html, 'image', 'href' ),
+			self::tag_attribute_values( $html, 'image', 'xlink:href' ),
 			self::tag_attribute_values( $html, 'video', 'poster' ),
 			self::social_image_meta_urls( $html )
 		);
@@ -1098,7 +1100,7 @@ class Static_Site_Importer_URL_Site_Collector {
 	/** @param array<string,string> $paths */
 	private static function rewrite_html( string $html, string $base_url, string $source_path, array $paths, array $aliases, string $site_url, array $external_assets = array(), array &$external_pages = array(), array $known_pages = array() ): string {
 		$html = preg_replace_callback(
-			'#\b(src|href|poster)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))#is',
+			'#\b(src|href|xlink:href|poster)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))#is',
 			static function ( array $matches ) use ( $base_url, $source_path, $paths, $aliases, $site_url, $external_assets, &$external_pages, $known_pages ): string {
 				$value = self::matched_attribute_value( $matches );
 				$url   = self::resolve_url( $value, $base_url );
@@ -1109,7 +1111,7 @@ class Static_Site_Importer_URL_Site_Collector {
 					return $matches[0];
 				}
 				if ( isset( $paths[ $url ] ) ) {
-					return $matches[1] . '="' . self::relative_path( $source_path, $paths[ $url ] ) . '"';
+					return $matches[1] . '="' . self::reference_path( self::relative_path( $source_path, $paths[ $url ] ), $value ) . '"';
 				}
 				if ( isset( $external_assets[ $url ] ) ) {
 					return $matches[1] . '="' . self::external_asset_url( $url, $value ) . '"';
@@ -1138,7 +1140,7 @@ class Static_Site_Importer_URL_Site_Collector {
 				}
 				$url = self::resolve_url( $value, $base_url );
 				if ( isset( $paths[ $url ] ) ) {
-					$rewritten = self::relative_path( $source_path, $paths[ $url ] );
+					$rewritten = self::reference_path( self::relative_path( $source_path, $paths[ $url ] ), $value );
 				} elseif ( isset( $external_assets[ $url ] ) ) {
 					$rewritten = self::external_asset_url( $url, $value );
 				} else {
@@ -1154,7 +1156,7 @@ class Static_Site_Importer_URL_Site_Collector {
 				$candidates = array();
 				foreach ( SrcsetParser::parse( self::matched_attribute_value( $matches, 1 ) ) as $candidate ) {
 					$url          = self::resolve_url( $candidate['url'], $base_url );
-					$ref          = isset( $paths[ $url ] ) ? self::relative_path( $source_path, $paths[ $url ] ) : ( isset( $external_assets[ $url ] ) ? self::external_asset_url( $url, $candidate['url'] ) : $candidate['url'] );
+					$ref          = isset( $paths[ $url ] ) ? self::reference_path( self::relative_path( $source_path, $paths[ $url ] ), $candidate['url'] ) : ( isset( $external_assets[ $url ] ) ? self::external_asset_url( $url, $candidate['url'] ) : $candidate['url'] );
 					$candidates[] = trim( $ref . ' ' . $candidate['descriptor'] );
 				}
 				return 'srcset="' . implode( ', ', $candidates ) . '"';
@@ -1186,6 +1188,11 @@ class Static_Site_Importer_URL_Site_Collector {
 	private static function external_asset_url( string $url, string $reference ): string {
 		$fragment = self::url_parts( html_entity_decode( $reference, ENT_QUOTES | ENT_HTML5, 'UTF-8' ), PHP_URL_FRAGMENT );
 		return $url . ( is_string( $fragment ) && '' !== $fragment ? '#' . $fragment : '' );
+	}
+
+	private static function reference_path( string $path, string $reference ): string {
+		$fragment = self::url_parts( html_entity_decode( $reference, ENT_QUOTES | ENT_HTML5, 'UTF-8' ), PHP_URL_FRAGMENT );
+		return $path . ( is_string( $fragment ) && '' !== $fragment ? '#' . $fragment : '' );
 	}
 
 	private static function response_url( array $response, string $requested_url ): string {

@@ -53,6 +53,33 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		return true;
 	}
 
+	/**
+	 * Admit a bounded list of captured inline SVG parts for a submit button.
+	 *
+	 * Every part must pass the portable inline-SVG admission on its own; the
+	 * list is capped so one captured control cannot grow the saved markup
+	 * without bound.
+	 *
+	 * @param mixed $parts Candidate list of SVG markup strings.
+	 * @return array<int,string>
+	 */
+	public static function valid_icon_parts( mixed $parts ): array {
+		if ( ! is_array( $parts ) || ! array_is_list( $parts ) ) {
+			return array();
+		}
+		$valid = array();
+		foreach ( $parts as $part ) {
+			if ( ! is_string( $part ) || '' === trim( $part ) || strlen( $part ) > 12288 || ! self::valid_inline_svg( $part ) ) {
+				continue;
+			}
+			$valid[] = $part;
+			if ( 4 === count( $valid ) ) {
+				break;
+			}
+		}
+		return $valid;
+	}
+
 	/** Configure complete, source-captured empty-country groups for this companion. */
 	public static function configure_visual_states( array $states ): void {
 		self::$visual_states = array();
@@ -161,6 +188,13 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	/** Field-list display/track utilities belong on the inner list, not the page item. */
 	private static function is_page_placement_class( string $class_name ): bool {
 		if ( '' === $class_name || 'ssi-source-field-list' === $class_name || in_array( $class_name, array( 'grid', 'flex', 'block', 'hidden', 'contents', 'inline-flex' ), true ) ) {
+			return false;
+		}
+		// A vertical/horizontal rhythm utility sizes the gap between the form's own
+		// controls. The page item carries provider siblings of the form (a submission
+		// status region), so the rhythm applied there reaches the wrong children and
+		// shifts the whole form box inside its grid cell. It stays on the field list.
+		if ( 1 === preg_match( '/(?:^|:)space-[xy]-/', $class_name ) ) {
 			return false;
 		}
 		return 1 !== preg_match( '/(?:^|:)(?:grid-cols-|col-span-|gap-)/', $class_name );
