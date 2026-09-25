@@ -20,9 +20,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 final class Static_Site_Importer_Layout_Marker_Filter {
 
-	public const QUERY_ARG     = 'ssi_layout_capture';
+	public const QUERY_ARG      = 'ssi_layout_capture';
 	public const PATH_ATTRIBUTE = 'data-ssi-block-path';
-	private const CAPABILITY   = 'manage_options';
+	private const CAPABILITY    = 'manage_options';
 
 	/**
 	 * @var array<int,array{path:string,children:int}>
@@ -68,7 +68,7 @@ final class Static_Site_Importer_Layout_Marker_Filter {
 	 * @return bool
 	 */
 	public static function capture_requested(): bool {
-		if ( defined( 'WP_CLI' ) && WP_CLI ) {
+		if ( defined( 'WP_CLI' ) ) {
 			return true;
 		}
 		if ( function_exists( 'current_user_can' ) && ! current_user_can( self::CAPABILITY ) ) {
@@ -86,9 +86,9 @@ final class Static_Site_Importer_Layout_Marker_Filter {
 	 * @return string
 	 */
 	public static function begin_content_capture( string $content ): string {
-		self::$frames       = array();
+		self::$frames        = array();
 		self::$root_children = 0;
-		self::$capturing    = true;
+		self::$capturing     = true;
 		return $content;
 	}
 
@@ -116,7 +116,7 @@ final class Static_Site_Importer_Layout_Marker_Filter {
 		}
 		if ( empty( self::$frames ) ) {
 			$path = (string) self::$root_children;
-			self::$root_children++;
+			++self::$root_children;
 			self::$frames[] = array(
 				'path'     => $path,
 				'children' => 0,
@@ -125,7 +125,7 @@ final class Static_Site_Importer_Layout_Marker_Filter {
 		}
 		$top_index = count( self::$frames ) - 1;
 		$path      = self::$frames[ $top_index ]['path'] . '.' . (string) self::$frames[ $top_index ]['children'];
-		self::$frames[ $top_index ]['children']++;
+		++self::$frames[ $top_index ]['children'];
 		self::$frames[] = array(
 			'path'     => $path,
 			'children' => 0,

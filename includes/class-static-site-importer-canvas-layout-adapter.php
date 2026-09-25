@@ -32,10 +32,14 @@ final class Static_Site_Importer_Canvas_Layout_Adapter extends Static_Site_Impor
 	public const MAX_ROWS         = 500;
 
 	/** Blocks Canvas accepts as items, and inside grouped items. */
-	private const ITEM_BLOCKS    = array( 'core/heading', 'core/paragraph', 'core/image', 'core/buttons', 'core/group' );
-	private const NESTED_BLOCKS  = array( 'core/heading', 'core/paragraph', 'core/image', 'core/buttons', 'core/button', 'core/group' );
-	private const PLACED_FLAG    = 'ssi_canvas_placed';
-	private const MODES          = array( 'base' => 'desktop', '@tablet' => 'tablet', '@mobile' => 'mobile' );
+	private const ITEM_BLOCKS   = array( 'core/heading', 'core/paragraph', 'core/image', 'core/buttons', 'core/group' );
+	private const NESTED_BLOCKS = array( 'core/heading', 'core/paragraph', 'core/image', 'core/buttons', 'core/button', 'core/group' );
+	private const PLACED_FLAG   = 'ssi_canvas_placed';
+	private const MODES         = array(
+		'base'    => 'desktop',
+		'@tablet' => 'tablet',
+		'@mobile' => 'mobile',
+	);
 
 	/**
 	 * Adapter id.
@@ -173,9 +177,9 @@ final class Static_Site_Importer_Canvas_Layout_Adapter extends Static_Site_Impor
 			'innerContent' => array_fill( 0, count( $placed ), null ),
 		);
 
-		$strings = array_values( array_filter( $host_block['innerContent'], 'is_string' ) );
-		$open    = $strings[0] ?? '';
-		$close   = count( $strings ) > 1 ? end( $strings ) : '';
+		$strings                    = array_values( array_filter( $host_block['innerContent'], 'is_string' ) );
+		$open                       = $strings[0] ?? '';
+		$close                      = count( $strings ) > 1 ? end( $strings ) : '';
 		$host_block['innerBlocks']  = array_merge( array( $canvas ), $remaining );
 		$host_block['innerContent'] = array_merge( array( $open ), array_fill( 0, count( $remaining ) + 1, null ), array( $close ) );
 		$host_block['attrs_dirty']  = true;
@@ -195,9 +199,9 @@ final class Static_Site_Importer_Canvas_Layout_Adapter extends Static_Site_Impor
 		if ( null === $item_box || null === $host_box || 0.0 >= (float) $host_box['width'] ) {
 			return null;
 		}
-		$host_width = (float) $host_box['width'];
-		$left       = (float) $item_box['x'] - (float) $host_box['x'];
-		$top        = (float) $item_box['y'] - (float) $host_box['y'];
+		$host_width                   = (float) $host_box['width'];
+		$left                         = (float) $item_box['x'] - (float) $host_box['x'];
+		$top                          = (float) $item_box['y'] - (float) $host_box['y'];
 		list( $column, $column_span ) = self::track_span( $left, $left + (float) $item_box['width'], $host_width / self::GRID_COLUMNS, self::GRID_COLUMNS );
 		list( $row, $row_span )       = self::track_span( $top, $top + (float) $item_box['height'], max( 1.0, $host_width * self::ROW_PITCH_FACTOR ), self::MAX_ROWS );
 

@@ -28,8 +28,8 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	/**
 	 * Bind page image blocks to Media Library attachments.
 	 *
-	 * @param array<string,mixed> $state Materialization transaction state.
-	 * @return array{attachment_count:int,replaceable_media_count:int,bound_block_count:int}|WP_Error
+	 * @param array<mixed> $state Materialization transaction state.
+	 * @return array{attachment_count:int,replaceable_media_count:int,bound_block_count:int,site_icon?:int}|WP_Error
 	 */
 	public static function materialize( array &$state ) {
 		$theme_uri = rtrim( (string) ( $state['theme']['uri'] ?? '' ), '/' );
@@ -66,7 +66,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			// transaction's attachment journal, which must be $state itself.
 			if ( preg_match_all( '/<!--\s+wp:image(\s+\{.*?\})?\s+-->(.*?)<!--\s+\/wp:image\s+-->/s', $content, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE ) ) {
 				foreach ( $matches as $found ) {
-					$match      = array( $found[0][0], $found[1][0] ?? '', $found[2][0] ?? '' );
+					$match      = array( $found[0][0], $found[1][0], $found[2][0] );
 					$rewritten .= substr( $content, $offset, $found[0][1] - $offset );
 					$rewritten .= null === $error ? self::bind_image_block( $match, $theme_uri, $theme_dir, $state, $attachments, $report, $bound, $error ) : $match[0];
 					$offset     = $found[0][1] + strlen( $found[0][0] );
@@ -79,7 +79,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			if ( 0 === $bound ) {
 				continue;
 			}
-			$updated   = wp_update_post(
+			$updated = wp_update_post(
 				array(
 					'ID'           => $post_id,
 					'post_content' => wp_slash( $rewritten ),
@@ -108,8 +108,8 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			unset( $resolved_page );
 			$report['bound_block_count'] += $bound;
 		}
-		$error                      = null;
-		$report['site_icon']        = self::materialize_site_icon( $state, $theme_uri, $theme_dir, $attachments, $error );
+		$error               = null;
+		$report['site_icon'] = self::materialize_site_icon( $state, $theme_uri, $theme_dir, $attachments, $error );
 		if ( $error instanceof WP_Error ) {
 			return $error;
 		}
@@ -122,8 +122,8 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * Make the source favicon the WordPress site icon, so the owner sees and can
 	 * change it under Site Identity. An owner's existing icon is never replaced.
 	 *
-	 * @param array<string,mixed> $state
-	 * @param array<string,int>   $attachments
+	 * @param array<mixed>      $state
+	 * @param array<string,int> $attachments
 	 */
 	private static function materialize_site_icon( array &$state, string $theme_uri, string $theme_dir, array &$attachments, ?WP_Error &$error ): int {
 		if ( (int) get_option( 'site_icon', 0 ) > 0 ) {
@@ -134,7 +134,8 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		foreach ( array( 'icon', 'apple-touch-icon' ) as $wanted ) {
 			foreach ( $pages as $page ) {
 				foreach ( ( is_array( $page['document_metadata']['links'] ?? null ) ? $page['document_metadata']['links'] : array() ) as $link ) {
-					$rels = preg_split( '/\s+/', strtolower( trim( (string) ( $link['rel'] ?? '' ) ) ) ) ?: array();
+					$rels = preg_split( '/\s+/', strtolower( trim( (string) ( $link['rel'] ?? '' ) ) ) );
+					$rels = is_array( $rels ) ? $rels : array();
 					$url  = (string) ( $link['resolved_url'] ?? '' );
 					if ( ! in_array( $wanted, $rels, true ) || '' === $url ) {
 						continue;
@@ -171,39 +172,39 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	/**
 	 * Bind one serialized core/image block to its attachment.
 	 *
-	 * @param array<int,string>   $match       Regex match: whole block, attribute JSON, inner HTML.
-	 * @param array<string,mixed> $state
+	 * @param array<int,string>   $block_match       Regex match: whole block, attribute JSON, inner HTML.
+	 * @param array<mixed>        $state
 	 * @param array<string,int>   $attachments Attachment ID per theme-relative source (0 when not bindable).
-	 * @param array<string,int>   $report
+	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
 	 */
-	private static function bind_image_block( array $match, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$report, int &$bound, ?WP_Error &$error ): string {
-		$attrs = '' !== trim( (string) ( $match[1] ?? '' ) ) ? json_decode( trim( $match[1] ), true ) : array();
-		if ( ! is_array( $attrs ) || ! empty( $attrs['id'] ) || str_contains( $match[2], '<!-- wp:' ) ) {
-			return $match[0];
+	private static function bind_image_block( array $block_match, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$report, int &$bound, ?WP_Error &$error ): string {
+		$attrs = '' !== trim( (string) ( $block_match[1] ?? '' ) ) ? json_decode( trim( $block_match[1] ), true ) : array();
+		if ( ! is_array( $attrs ) || ! empty( $attrs['id'] ) || str_contains( $block_match[2], '<!-- wp:' ) ) {
+			return $block_match[0];
 		}
-		if ( ! preg_match( '/<img\b[^>]*\bsrc="([^"]+)"/i', $match[2], $src_match ) ) {
-			return $match[0];
+		if ( ! preg_match( '/<img\b[^>]*\bsrc="([^"]+)"/i', $block_match[2], $src_match ) ) {
+			return $block_match[0];
 		}
 		$relative = self::theme_relative_raster( html_entity_decode( $src_match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8' ), $theme_uri );
 		if ( null === $relative ) {
-			return $match[0];
+			return $block_match[0];
 		}
 		++$report['replaceable_media_count'];
 		if ( ! array_key_exists( $relative, $attachments ) ) {
-			$alt                      = preg_match( '/<img\b[^>]*\balt="([^"]*)"/i', $match[2], $alt_match ) ? html_entity_decode( $alt_match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8' ) : '';
+			$alt = preg_match( '/<img\b[^>]*\balt="([^"]*)"/i', $block_match[2], $alt_match ) ? html_entity_decode( $alt_match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8' ) : '';
 			// Keyed by theme and file content, so a later import of different
 			// bytes, or another theme, never reuses this attachment.
 			$file                     = $theme_dir . '/' . $relative;
 			$identity                 = basename( $theme_dir ) . '/' . $relative . '#' . ( is_readable( $file ) ? (string) hash_file( 'sha256', $file ) : '' );
 			$attachments[ $relative ] = self::attachment_for( $file, $relative, $identity, $alt, $state, $error );
 			if ( null !== $error ) {
-				return $match[0];
+				return $block_match[0];
 			}
 		}
 		$attachment_id = $attachments[ $relative ];
 		$url           = $attachment_id > 0 ? wp_get_attachment_url( $attachment_id ) : false;
 		if ( ! is_string( $url ) || '' === $url ) {
-			return $match[0];
+			return $block_match[0];
 		}
 
 		$attrs['id'] = $attachment_id;
@@ -216,7 +217,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				}
 				return (string) preg_replace( '/^<img\b/i', '<img class="wp-image-' . $attachment_id . '"', $tag, 1 );
 			},
-			$match[2],
+			$block_match[2],
 			1
 		);
 		++$bound;
@@ -266,7 +267,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			$error = new WP_Error( 'media_library_upload_failed', 'An imported page image could not be added to the Media Library.', array( 'source_asset' => $relative ) );
 			return 0;
 		}
-		$mime = (string) ( wp_check_filetype( $upload['file'] )['type'] ?? '' );
+		$mime = (string) wp_check_filetype( $upload['file'] )['type'];
 		if ( ! str_starts_with( $mime, 'image/' ) ) {
 			wp_delete_file( $upload['file'] );
 			return 0;
@@ -283,7 +284,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			0,
 			true
 		);
-		if ( is_wp_error( $attachment_id ) || $attachment_id <= 0 ) {
+		if ( is_wp_error( $attachment_id ) ) {
 			wp_delete_file( $upload['file'] );
 			$error = new WP_Error( 'media_library_attachment_failed', 'An imported page image could not be registered as an attachment.', array( 'source_asset' => $relative ) );
 			return 0;

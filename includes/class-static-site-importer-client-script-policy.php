@@ -78,7 +78,10 @@ class Static_Site_Importer_Client_Script_Policy {
 	 */
 	public static function drop_unproven_dynamic_scripts( array $artifact, array $plan ): array {
 		if ( 'not_proven' !== ( $plan['reference_semantics']['dynamic_client_assets']['status'] ?? '' ) || ! is_array( $artifact['files'] ?? null ) ) {
-			return array( 'artifact' => $artifact, 'dropped' => array() );
+			return array(
+				'artifact' => $artifact,
+				'dropped'  => array(),
+			);
 		}
 		$tokens = array();
 		foreach ( is_array( $plan['reference_tokens'] ?? null ) ? $plan['reference_tokens'] : array() as $reference ) {
@@ -106,7 +109,7 @@ class Static_Site_Importer_Client_Script_Policy {
 				continue;
 			}
 			list( $page_path, $order ) = explode( '#', $diagnostic['source_path'], 2 );
-			$declaration = null;
+			$declaration               = null;
 			foreach ( $pages[ $page_path ]['document_metadata']['scripts'] ?? array() as $script ) {
 				if ( is_array( $script ) && (string) ( $script['order'] ?? '' ) === $order ) {
 					$declaration = $script;
@@ -124,18 +127,21 @@ class Static_Site_Importer_Client_Script_Policy {
 				'@order'          => (int) $order,
 			);
 			if ( is_string( $declaration['asset_reference'] ?? null ) && preg_match( '/^\{\{wordpress-site-plan:asset:([^}]+)\}\}/', $declaration['asset_reference'], $match ) && isset( $tokens[ $match[1] ], $asset_sources[ $tokens[ $match[1] ] ] ) ) {
-				$script_path                 = $asset_sources[ $tokens[ $match[1] ] ];
+				$script_path                  = $asset_sources[ $tokens[ $match[1] ] ];
 				$script_files[ $script_path ] = true;
-				$row['type']                 = 'asset';
-				$row['path']                 = $script_path;
-				$dropped[]                   = $row;
+				$row['type']                  = 'asset';
+				$row['path']                  = $script_path;
+				$dropped[]                    = $row;
 			} elseif ( isset( $pages[ $page_path ] ) ) {
 				$inline_orders[ $page_path ][] = (int) $order;
-				$dropped[]                    = $row;
+				$dropped[]                     = $row;
 			}
 		}
 		if ( array() === $script_files && array() === $inline_orders ) {
-			return array( 'artifact' => $artifact, 'dropped' => array() );
+			return array(
+				'artifact' => $artifact,
+				'dropped'  => array(),
+			);
 		}
 		$contents = self::artifact_file_contents( $artifact['files'] );
 		foreach ( $contents as $path => $content ) {
@@ -164,7 +170,7 @@ class Static_Site_Importer_Client_Script_Policy {
 		);
 	}
 
-	/** @param array<string,mixed> $files @return array<string,string> */
+	/** @param array<int|string,mixed> $files @return array<string,string> */
 	private static function artifact_file_contents( array $files ): array {
 		$contents = array();
 		foreach ( $files as $key => $file ) {
@@ -180,7 +186,7 @@ class Static_Site_Importer_Client_Script_Policy {
 		return $contents;
 	}
 
-	/** @param array<string,mixed> $files @param array<string,string> $contents @return array<string,mixed> */
+	/** @param array<int|string,mixed> $files @param array<string,string> $contents @return array<int|string,mixed> */
 	private static function artifact_files_from_contents( array $files, array $contents ) {
 		if ( array() !== $files && ! isset( $files[0] ) && ! is_numeric( key( $files ) ) ) {
 			return $contents;
@@ -217,14 +223,14 @@ class Static_Site_Importer_Client_Script_Policy {
 				++$index;
 				$source   = self::attribute( $matches[1], 'src' );
 				$resolved = null === $source ? null : self::resolve_artifact_path( $path, $source );
-			if ( null !== $resolved && isset( $script_files[ $resolved ] ) ) {
-				foreach ( $dropped as $row_index => $row ) {
-					if ( 'asset' === ( $row['type'] ?? '' ) && ( $row['path'] ?? '' ) === $resolved && ( $row['source_document'] ?? '' ) === $path && ! isset( $row['src'] ) ) {
-						$dropped[ $row_index ]['src'] = $source;
+				if ( null !== $resolved && isset( $script_files[ $resolved ] ) ) {
+					foreach ( $dropped as $row_index => $row ) {
+						if ( 'asset' === ( $row['type'] ?? '' ) && ( $row['path'] ?? '' ) === $resolved && ( $row['source_document'] ?? '' ) === $path && ! isset( $row['src'] ) ) {
+							$dropped[ $row_index ]['src'] = $source;
+						}
 					}
+					return '';
 				}
-				return '';
-			}
 				if ( null === $source && in_array( $index, $inline_orders, true ) ) {
 					foreach ( $dropped as $row_index => $row ) {
 						if ( 'inline' === ( $row['type'] ?? '' ) && ( $row['source_document'] ?? '' ) === $path && (int) ( $row['@order'] ?? -1 ) === $index ) {

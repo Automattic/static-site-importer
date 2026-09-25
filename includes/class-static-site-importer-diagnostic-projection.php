@@ -432,7 +432,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			$by_path[ $source_path ]['be_truncated'] = $omission['truncated'];
 			if ( 0 === (int) $by_path[ $source_path ]['recorded'] ) {
 				foreach ( $omission['status_counts'] as $status => $count ) {
-					if ( ! is_string( $status ) || '' === $status || $count < 1 ) {
+					if ( '' === $status || $count < 1 ) {
 						continue;
 					}
 					$by_path[ $source_path ]['status_counts'][ $status ] = (int) ( $by_path[ $source_path ]['status_counts'][ $status ] ?? 0 ) + $count;

@@ -259,8 +259,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 					$ready_args['asset_failure_policy']        = count( $routes ) > 1 ? 'preserve_failed_external_assets' : 'preserve_external';
 					$ready_args['hydration_mode']              = 'page_ready';
 					$ready_args['_static_site_importer_known_asset_paths'] = $known_asset_paths;
-					$ready_collection_cursor_name = 'batches/' . $batch['batch_id'] . '.page-ready.collection-cursor.json';
-					$ready_collection_contract    = hash(
+					$ready_collection_cursor_name                          = 'batches/' . $batch['batch_id'] . '.page-ready.collection-cursor.json';
+					$ready_collection_contract                             = hash(
 						'sha256',
 						(string) wp_json_encode(
 							array(
@@ -271,7 +271,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 							)
 						)
 					);
-					$ready_args = array_merge(
+					$ready_args    = array_merge(
 						$ready_args,
 						array(
 							'_static_site_importer_collection_contract'      => $ready_collection_contract,

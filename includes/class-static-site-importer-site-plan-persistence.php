@@ -217,7 +217,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return self::failed_receipt_from_error( $state, $media_library );
 		}
 		$state['applied']['media_library'] = $media_library;
-		$font_materialization = self::apply_font_overlay( $state, $font_overlay );
+		$font_materialization              = self::apply_font_overlay( $state, $font_overlay );
 		if ( is_wp_error( $font_materialization ) ) {
 			return self::failed_receipt_from_error( $state, $font_materialization );
 		}

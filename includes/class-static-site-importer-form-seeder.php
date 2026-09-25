@@ -551,14 +551,14 @@ class Static_Site_Importer_Form_Seeder {
 		$suppressed_form_classes = array_fill_keys( is_array( $topology['suppressed_form_classes'] ?? null ) ? $topology['suppressed_form_classes'] : array(), true );
 		$attrs_form              = $form;
 		if ( ! empty( $suppressed_form_classes ) && isset( $attrs_form['form']['class'] ) && is_scalar( $attrs_form['form']['class'] ) ) {
-			$class_tokens                 = preg_split( '/\s+/', trim( (string) $attrs_form['form']['class'] ) );
-			$class_tokens                 = false === $class_tokens ? array() : array_values( array_filter( $class_tokens, static fn ( string $class_name ): bool => ! isset( $suppressed_form_classes[ $class_name ] ) ) );
-			$attrs_form['form']['class']  = implode( ' ', $class_tokens );
+			$class_tokens                = preg_split( '/\s+/', trim( (string) $attrs_form['form']['class'] ) );
+			$class_tokens                = false === $class_tokens ? array() : array_values( array_filter( $class_tokens, static fn ( string $class_name ): bool => ! isset( $suppressed_form_classes[ $class_name ] ) ) );
+			$attrs_form['form']['class'] = implode( ' ', $class_tokens );
 		}
-		$carried_classes = array_values(
+		$carried_classes        = array_values(
 			array_filter(
 				array_merge( $topology['form_classes'], $host['classes'] ),
-				static fn ( $class_name ): bool => is_string( $class_name ) && ! isset( $suppressed_form_classes[ $class_name ] )
+				static fn ( string $class_name ): bool => ! isset( $suppressed_form_classes[ $class_name ] )
 			)
 		);
 		$form_attrs             = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $attrs_form, $scope, $carried_classes );
@@ -679,7 +679,7 @@ class Static_Site_Importer_Form_Seeder {
 			unset( $overlay_form['presentation_graph']['controls'][ $control_index ] );
 		}
 		foreach ( is_array( $topology['grid_span_submit_controls'] ?? null ) ? $topology['grid_span_submit_controls'] : array() as $span_control ) {
-			if ( ! is_int( $span_control ) || ! is_array( $overlay_form['presentation_graph'] ?? null ) ) {
+			if ( ! is_array( $overlay_form['presentation_graph'] ?? null ) ) {
 				continue;
 			}
 			foreach ( $overlay_form['presentation_graph']['controls'] ?? array() as $row_index => $control_row ) {

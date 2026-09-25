@@ -33,9 +33,9 @@ if ( ! class_exists( 'Static_Site_Importer_Canvas_Layout_Adapter' ) ) {
  */
 final class Static_Site_Importer_Layout_Adapter_Registry {
 
-	public const CAPABILITY             = 'layout';
-	public const ADAPTERS_FILTER        = 'static_site_importer_layout_adapters';
-	public const CROSS_PROVIDER_FILTER  = 'ssi_entity_materializer_provider';
+	public const CAPABILITY            = 'layout';
+	public const ADAPTERS_FILTER       = 'static_site_importer_layout_adapters';
+	public const CROSS_PROVIDER_FILTER = 'ssi_entity_materializer_provider';
 
 	/**
 	 * Per-capability provider selection contract.
@@ -109,10 +109,7 @@ final class Static_Site_Importer_Layout_Adapter_Registry {
 			if ( ! class_exists( $adapter_class ) ) {
 				continue;
 			}
-			$adapter = new $adapter_class();
-			if ( ! $adapter instanceof Static_Site_Importer_Layout_Adapter ) {
-				continue;
-			}
+			$adapter                    = new $adapter_class();
 			$adapters[ $adapter->id() ] = $adapter;
 		}
 
@@ -122,14 +119,29 @@ final class Static_Site_Importer_Layout_Adapter_Registry {
 			 *
 			 * @param array<string,Static_Site_Importer_Layout_Adapter> $adapters Adapter instances keyed by id.
 			 */
-			$filtered = apply_filters( self::ADAPTERS_FILTER, $adapters );
-			if ( is_array( $filtered ) ) {
-				foreach ( $filtered as $id => $adapter ) {
-					if ( ! $adapter instanceof Static_Site_Importer_Layout_Adapter || ! is_string( $id ) || '' === $id || $adapter->id() !== $id ) {
-						unset( $filtered[ $id ] );
-					}
-				}
+			$filtered = self::valid_adapters( apply_filters( self::ADAPTERS_FILTER, $adapters ) );
+			if ( null !== $filtered ) {
 				$adapters = $filtered;
+			}
+		}
+
+		return $adapters;
+	}
+
+	/**
+	 * Keep only filtered adapters whose key matches their id.
+	 *
+	 * @param mixed $filtered Filter result supplied by extensions.
+	 * @return array<string,Static_Site_Importer_Layout_Adapter>|null Null when the filter result is not an array.
+	 */
+	private static function valid_adapters( $filtered ): ?array {
+		if ( ! is_array( $filtered ) ) {
+			return null;
+		}
+		$adapters = array();
+		foreach ( $filtered as $id => $adapter ) {
+			if ( $adapter instanceof Static_Site_Importer_Layout_Adapter && is_string( $id ) && '' !== $id && $adapter->id() === $id ) {
+				$adapters[ $id ] = $adapter;
 			}
 		}
 
@@ -215,7 +227,6 @@ final class Static_Site_Importer_Layout_Adapter_Registry {
 		if ( ! class_exists( 'WP_Block_Type_Registry' ) ) {
 			return false;
 		}
-		$registry = WP_Block_Type_Registry::get_instance();
-		return $registry instanceof WP_Block_Type_Registry && $registry->is_registered( $block_type );
+		return WP_Block_Type_Registry::get_instance()->is_registered( $block_type );
 	}
 }

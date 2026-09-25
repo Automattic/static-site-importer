@@ -111,8 +111,8 @@ final class Static_Site_Importer_Core_Grid_Layout_Adapter extends Static_Site_Im
 	 */
 	public function place_host( array &$host_block, array $model ): void {
 		unset( $model );
-		$attrs              = is_array( $host_block['attrs'] ?? null ) ? $host_block['attrs'] : array();
-		$attrs['layout']    = array(
+		$attrs               = is_array( $host_block['attrs'] ?? null ) ? $host_block['attrs'] : array();
+		$attrs['layout']     = array(
 			'type'        => 'grid',
 			'columnCount' => self::COLUMNS,
 		);
@@ -164,13 +164,13 @@ final class Static_Site_Importer_Core_Grid_Layout_Adapter extends Static_Site_Im
 		if ( null === $item_box || null === $host_box || 0.0 >= (float) $host_box['width'] ) {
 			return null;
 		}
-		$track               = (float) $host_box['width'] / self::COLUMNS;
-		$left                = (float) $item_box['x'] - (float) $host_box['x'];
+		$track                = (float) $host_box['width'] / self::COLUMNS;
+		$left                 = (float) $item_box['x'] - (float) $host_box['x'];
 		list( $start, $span ) = self::track_span( $left, $left + (float) $item_box['width'], $track, self::COLUMNS );
-		$top                 = (float) $item_box['y'] - (float) $host_box['y'];
-		$bands               = $this->row_bands[ $width ] ?? array();
-		$row_start           = self::band_index( $bands, $top );
-		$row_end             = self::band_index( $bands, $top + (float) $item_box['height'] - 1.0 );
+		$top                  = (float) $item_box['y'] - (float) $host_box['y'];
+		$bands                = $this->row_bands[ $width ] ?? array();
+		$row_start            = self::band_index( $bands, $top );
+		$row_end              = self::band_index( $bands, $top + (float) $item_box['height'] - 1.0 );
 		return array(
 			'columnStart' => $start,
 			'columnSpan'  => $span,
