@@ -28,6 +28,9 @@ export function parseArguments(argv, cwd = process.cwd()) {
     else if (value === "--help") options.help = true
     else throw new Error(`Unknown argument: ${value}`)
   }
+  // Pointing at a checkout means "package this checkout": without an explicit
+  // ref, take its HEAD rather than silently packaging the remote trunk.
+  if (argv.includes("--blocks-engine-path") && !argv.includes("--blocks-engine-ref")) options.blocksEngineRef = "HEAD"
   return options
 }
 
@@ -131,6 +134,12 @@ export async function buildDevelopmentPackage(options, dependencies = {}) {
     for (const tool of ["git", "tar", "composer", "homeboy"]) await run(tool, ["--version"], { cwd: sourceRoot })
     const ssiSha = text(await run("git", ["rev-parse", "HEAD"], { cwd: sourceRoot }))
     const blocksEngineSha = text(await run("git", ["rev-parse", `${options.blocksEngineRef}^{commit}`], { cwd: options.blocksEnginePath }))
+    if (options.blocksEngineRef === "HEAD") {
+      // Only committed bytes are packaged, so uncommitted transformer edits in the
+      // checkout would be silently left out of a package that claims to be it.
+      const engineStatus = await run("git", ["status", "--porcelain=v1", "-z", "--untracked-files=no", "--", "php-transformer", "figma-transformer"], { cwd: options.blocksEnginePath, allowEmpty: true })
+      if (engineStatus.length) throw new Error(`Blocks Engine checkout ${options.blocksEnginePath} has uncommitted transformer changes; only committed bytes are packaged. Commit them, or pass --blocks-engine-ref to package a specific commit.`)
+    }
     const status = await run("git", ["status", "--porcelain=v1", "-z"], { cwd: sourceRoot, allowEmpty: true })
     const sourcePaths = text(await run("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd: sourceRoot })).split("\0").filter(Boolean)
     const ssiDiff = status.length ? await worktreeIdentity(sourceRoot, sourcePaths) : null

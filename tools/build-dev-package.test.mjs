@@ -17,6 +17,19 @@ test("parses explicit Blocks Engine inputs and sensible defaults", () => {
     outputDir: "/workspace/static-site-importer/artifacts",
     runtimeProfile: null,
   })
+  assert.equal(parseArguments(["--blocks-engine-path", "../engine"], "/workspace/static-site-importer").blocksEngineRef, "HEAD", "an explicit checkout packages its own HEAD, not the remote trunk")
+})
+
+test("refuses to package a Blocks Engine checkout HEAD with uncommitted transformer changes", async () => {
+  const run = async (command, args) => {
+    if (command === "git" && args[0] === "status") return Buffer.from(" M php-transformer/src/Fixture.php\0")
+    if (command === "git" && args[0] === "rev-parse") return Buffer.from(`${"b".repeat(40)}\n`)
+    return Buffer.from("")
+  }
+  await assert.rejects(
+    buildDevelopmentPackage({ blocksEnginePath: "/workspace/engine", blocksEngineRef: "HEAD", outputDir: "/workspace/out", runtimeProfile: "website-artifact-import" }, { sourceRoot: "/workspace/ssi", temporaryDirectory: "/tmp/unused", cleanup: async () => {}, run }),
+    /uncommitted transformer changes/,
+  )
 })
 
 test("development Composer metadata uses isolated, non-symlinked transformer snapshots", () => {
