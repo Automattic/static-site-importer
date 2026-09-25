@@ -5,6 +5,8 @@
  * @package StaticSiteImporter
  */
 
+// phpcs:ignoreFile -- Standalone CLI fixture: stubs Jetpack and WordPress symbols across namespaces outside a WordPress runtime.
+
 namespace Automattic\Jetpack\Forms\ContactForm {
 	class Contact_Form {}
 }
