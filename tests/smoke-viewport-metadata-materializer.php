@@ -30,6 +30,9 @@ $assert( str_contains( $bootstrap, "add_action( 'wp_head', static function (): v
 $missing = Static_Site_Importer_Viewport_Metadata_Materializer::prepare_overlay( array( 'pages' => array( $page( 'index.html', array( $viewport( 'width=320' ) ) ), $page( 'about.html', array() ) ) ) );
 $assert( 'report_only' === $missing['status'] && 'viewport_metadata_missing_route' === ( $missing['diagnostics'][0]['reason_code'] ?? '' ) && array() === $missing['writes'], 'A declaration missing from one route should remain report-only.' );
 
+$synthetic = Static_Site_Importer_Viewport_Metadata_Materializer::prepare_overlay( array( 'pages' => array( $page( 'index.html', array( $viewport( 'width=320' ) ) ), $page( 'product/rt3.html', array( $viewport( 'width=320' ) ) ), array( 'source_path' => 'wordpress-site-plan/routes/product.html', 'synthetic' => true, 'document_metadata' => array() ) ), 'writes' => array() ) );
+$assert( 'materialized' === $synthetic['status'] && 'width=320' === $synthetic['declaration'], 'Synthetic hub routes the site plan adds have no authored document, so they must not block an otherwise consistent declaration.' );
+
 $conflict = Static_Site_Importer_Viewport_Metadata_Materializer::prepare_overlay( array( 'pages' => array( $page( 'index.html', array( $viewport( 'width=320' ) ) ), $page( 'about.html', array( $viewport( 'width=device-width' ) ) ) ) ) );
 $assert( 'report_only' === $conflict['status'] && 'viewport_metadata_conflict' === ( $conflict['diagnostics'][0]['reason_code'] ?? '' ), 'Conflicting route declarations should emit a bounded diagnostic.' );
 
