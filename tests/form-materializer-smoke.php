@@ -1341,7 +1341,7 @@ namespace {
 			&& 'mapped' === ( $column_stack_row['status'] ?? '' )
 			&& true === ( $column_stack_row['runtime_mapped'] ?? false )
 			&& in_array( 'provider_grid_span_fields', array_column( $column_stack_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true )
-			&& ! str_contains( $column_stack_markup, 'stack' )
+			&& str_contains( $column_stack_markup, 'stack' )
 			&& str_contains( $column_stack_form_rule, 'flex-direction:row' )
 			&& str_contains( $column_stack_form_rule, 'flex-wrap:wrap' )
 			&& str_contains( $column_stack_form_rule, 'gap:24px' )
