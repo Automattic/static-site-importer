@@ -2161,6 +2161,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'class'      => self::presentation_destination_class( $scope, $index, 'primary' ),
 				'selector'   => '.' . $scope . ' .' . self::presentation_destination_class( $scope, $index, 'primary' ),
 				'properties' => array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ),
+				'resets'     => array(
+					'font-family' => 'revert',
+					'line-height' => 'revert',
+				),
 				'priority'   => 'important',
 			),
 			array(
@@ -2353,11 +2357,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 						// Jetpack parks input className on the select wrapper and paints
 						// that wrapper as a second box. Neutralize it so only the inner
 						// control carries the authored padding, border, and background.
-						$wrapper['resets'] = array(
+						$wrapper['resets']   = array(
 							'padding'    => '0',
 							'border'     => '0',
 							'background' => 'transparent',
 						);
+						$wrapper['priority'] = 'important';
 					}
 					$destinations[] = $wrapper;
 					$properties     = array_values( array_diff( $properties, $wrapper_properties ) );
