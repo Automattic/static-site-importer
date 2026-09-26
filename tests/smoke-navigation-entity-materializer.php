@@ -125,6 +125,14 @@ $rewritten_token = Static_Site_Importer_Navigation_Entity_Materializer::rewrite_
 $assert( str_contains( $rewritten_token, '"ref":42' ) && ! str_contains( $rewritten_token, $prefix ) && str_contains( $rewritten_token, '"overlayMenu":"mobile"' ) && str_contains( $rewritten_token, '"className":"primary"' ), 'Token refs become integer refs while overlay and className stay on the referencing block.' );
 $rewritten_match = Static_Site_Importer_Navigation_Entity_Materializer::rewrite_matching( $inline, array( "Home\t/\nAbout\t/about" => 42 ) );
 $assert( str_contains( $rewritten_match, '"ref":42' ) && ! str_contains( $rewritten_match, 'wp:navigation-link' ) && str_contains( $rewritten_match, '"overlayMenu":"mobile"' ), 'Matching inline navigation becomes a self-closing integer ref.' );
+$fragment_entity = '<!-- wp:navigation-link {"label":"Home","url":"/"} /--><!-- wp:navigation-link {"label":"Journal","url":"/journal"} /--><!-- wp:navigation-link {"label":"Events","url":"/#events"} /-->';
+$fragment_signature = Static_Site_Importer_Navigation_Entity_Materializer::destination_signature( $fragment_entity );
+$fragment_pair = '<!-- wp:navigation {"className":"desktop","overlayMenu":"never"} --><!-- wp:navigation-link {"label":"Home","url":"/"} /--><!-- wp:navigation-link {"label":"Journal","url":"/journal"} /--><!-- wp:navigation-link {"label":"Events","url":"/#events"} /--><!-- /wp:navigation -->'
+	. '<!-- wp:navigation {"className":"mobile","overlayMenu":"mobile"} --><!-- wp:navigation-link {"label":"Home","url":"/"} /--><!-- wp:navigation-link {"label":"Journal","url":"/journal"} /--><!-- wp:navigation-link {"label":"Events","url":"/"} /--><!-- /wp:navigation -->';
+$rewritten_fragment = Static_Site_Importer_Navigation_Entity_Materializer::rewrite_matching( $fragment_pair, array( $fragment_signature => 7 ) );
+$assert( 2 === substr_count( $rewritten_fragment, '"ref":7' ) && ! str_contains( $rewritten_fragment, 'wp:navigation-link' ) && str_contains( $rewritten_fragment, '"overlayMenu":"never"' ) && str_contains( $rewritten_fragment, '"overlayMenu":"mobile"' ), 'Fragment-equivalent variant menus share one integer ref.' );
+$divergent = '<!-- wp:navigation {"className":"mobile","overlayMenu":"mobile"} --><!-- wp:navigation-link {"label":"Home","url":"/"} /--><!-- wp:navigation-link {"label":"Shop","url":"/shop"} /--><!-- /wp:navigation -->';
+$assert( str_contains( Static_Site_Importer_Navigation_Entity_Materializer::rewrite_matching( $divergent, array( $fragment_signature => 7 ) ), 'wp:navigation-link' ), 'A different destination list stays inline.' );
 $assert( '<!-- wp:page-list /-->' === Static_Site_Importer_Navigation_Entity_Materializer::rewrite_references( '<!-- wp:page-list /-->', array( $token => 42 ) ), 'Unrelated markup is left alone.' );
 
 $identity = str_repeat( 'ab', 32 );
@@ -190,5 +198,10 @@ $GLOBALS['ssi_nav_posts'][99] = array(
 	'post_content' => '<!-- wp:page-list /-->',
 );
 $assert( 2 === count( $GLOBALS['ssi_nav_posts'] ) && '<!-- wp:page-list /-->' === $GLOBALS['ssi_nav_posts'][99]['post_content'], 'The default page-list navigation post remains unused.' );
+
+$persistence = (string) file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-site-plan-persistence.php' );
+$navigation_bind = strpos( $persistence, 'Navigation_Entity_Materializer::materialize' );
+$route_rewrite   = strpos( $persistence, 'rewrite_materialized_route_links( $state )' );
+$assert( is_int( $navigation_bind ) && is_int( $route_rewrite ) && $navigation_bind < $route_rewrite, 'Navigation refs are bound while page markup still has canonical routes, before portable page_id rewriting.' );
 
 echo "smoke-navigation-entity-materializer: ok\n";
