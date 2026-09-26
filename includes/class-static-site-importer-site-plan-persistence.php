@@ -171,6 +171,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( ! self::keep_page_routes_reachable( $state ) ) {
 			return self::failed_receipt( $state, 'rewrite_base_not_applied' );
 		}
+		if ( ! class_exists( 'Static_Site_Importer_Navigation_Entity_Materializer' ) ) {
+			require_once __DIR__ . '/class-static-site-importer-navigation-entity-materializer.php';
+		}
+		$navigation_entities = Static_Site_Importer_Navigation_Entity_Materializer::materialize( $state );
+		if ( is_wp_error( $navigation_entities ) ) {
+			return self::failed_receipt_from_error( $state, $navigation_entities );
+		}
 
 		$short_write_attempt = 0;
 		// A prepared state from before this boundary existed described a

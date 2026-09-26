@@ -74,6 +74,7 @@
     "tests/smoke-google-fonts-retry-determinism.php": { "environment": "standalone-php" },
     "tests/smoke-google-fonts-request-budget.php": { "environment": "standalone-php" },
     "tests/smoke-website-artifact-import-input.php": { "environment": "standalone-php" },
+    "tests/smoke-navigation-entity-materializer.php": { "environment": "standalone-php" },
     "tests/smoke-wordpress-site-plan-materializer.php": { "environment": "standalone-php" },
     "tests/smoke-woo-product-seeder-rollback.php": { "environment": "standalone-php" },
     "tests/smoke-artifact-run-primitives.php": { "environment": "standalone-php" },
