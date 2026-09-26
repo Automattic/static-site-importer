@@ -155,7 +155,7 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 			}
 			$attrs        = $block['attrs'];
 			$attrs['ref'] = $id;
-			$encoded      = function_exists( 'wp_json_encode' ) ? wp_json_encode( $attrs ) : json_encode( $attrs );
+			$encoded      = function_exists( 'wp_json_encode' ) ? wp_json_encode( $attrs ) : json_encode( $attrs ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Standalone smoke tests do not load WordPress encoding helpers.
 			if ( ! is_string( $encoded ) ) {
 				continue;
 			}
@@ -176,7 +176,7 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 		$items  = array();
 		$offset = 0;
 		while ( preg_match( '/<!--\s*wp:navigation-(?:link|submenu)\s*/', $inner, $match, PREG_OFFSET_CAPTURE, $offset ) ) {
-			$start   = $match[0][1];
+			$start    = $match[0][1];
 			$open_end = strpos( $inner, '-->', $start );
 			if ( false === $open_end ) {
 				break;
@@ -214,11 +214,20 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 					$ranges[ $open['index'] ]['length'] = $offset + strlen( $token ) - $open['offset'];
 				}
 			} elseif ( str_ends_with( rtrim( $token ), '/-->' ) ) {
-				$ranges[] = array( 'offset' => $offset, 'length' => strlen( $token ) );
+				$ranges[] = array(
+					'offset' => $offset,
+					'length' => strlen( $token ),
+				);
 			} else {
 				$index    = count( $ranges );
-				$ranges[] = array( 'offset' => $offset, 'length' => 0 );
-				$stack[]  = array( 'index' => $index, 'offset' => $offset );
+				$ranges[] = array(
+					'offset' => $offset,
+					'length' => 0,
+				);
+				$stack[]  = array(
+					'index'  => $index,
+					'offset' => $offset,
+				);
 			}
 		}
 		foreach ( $ranges as $range ) {
