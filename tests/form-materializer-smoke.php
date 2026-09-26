@@ -2167,6 +2167,35 @@ namespace {
 		'captured-submit-style-line-height-reaches-the-rendered-button-geometry',
 		$submit_style_line_height_css
 	);
+	// An authored submit value that still references an unresolved custom
+	// property (`var(--x, unset)`) is not the button's font: the cascade-resolved
+	// graph fact wins, while a resolved authored value still wins as before.
+	$submit_unresolved_form = $submit_control_style_form;
+	$submit_unresolved_form['forms'][0]['controls'][3]['presentation']['style']['typography']['fontFamily'] = 'var(--body-font,unset)';
+	$submit_unresolved_form['forms'][0]['controls'][3]['presentation']['style']['typography']['fontSize']   = '17px';
+	$submit_unresolved_form['forms'][0]['presentation_graph'] = array(
+		'schema' => 'generic/computed-form-presentation/v1', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'controls' => 128, 'rules_per_role' => 32 ), 'variants' => array(), 'diagnostics' => array(),
+		'controls' => array(
+			array(
+				'index'   => 3,
+				'control' => array(
+					'styles'     => array( 'font_family' => 'Georgia', 'font_size' => '16px' ),
+					'provenance' => array(),
+				),
+			),
+		),
+	);
+	$validated_submit_unresolved = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $submit_unresolved_form );
+	$submit_unresolved_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_submit_unresolved['forms'] ?? array() ) )['forms'][0] ?? array();
+	$submit_unresolved_css       = (string) ( $submit_unresolved_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		empty( $validated_submit_unresolved['errors'] )
+			&& 1 === preg_match( '/> \.wp-block-button__link\{[^}]*font-family:Georgia;/', $submit_unresolved_css )
+			&& ! str_contains( $submit_unresolved_css, 'var(--body-font' )
+			&& 1 === preg_match( '/> \.wp-block-button__link\{[^}]*font-size:17px;/', $submit_unresolved_css ),
+		'unresolved-authored-submit-value-yields-to-the-resolved-graph-fact',
+		$submit_unresolved_css
+	);
 	$submit_preflight_form = $submit_control_style_form;
 	$submit_preflight_form['forms'][0]['presentation_graph'] = array(
 		'schema' => 'generic/computed-form-presentation/v1', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'controls' => 128, 'rules_per_role' => 32 ), 'variants' => array(), 'diagnostics' => array(),

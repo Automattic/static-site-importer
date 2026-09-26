@@ -1069,8 +1069,15 @@ class Static_Site_Importer_Form_Seeder {
 				// Cascade-resolved facts fill what this capture omits (background from
 				// a utility the style object did not reify). Authored style wins on
 				// conflict: a preflight `padding:0` / `font-weight:inherit` reset is
-				// not the button's own box.
-				$row['control']['styles'] = array_merge( $existing_styles, $flat );
+				// not the button's own box. An authored value that still references
+				// a custom property (`var(--x, unset)`) was never resolved against
+				// the source cascade, so a resolved fact for it wins.
+				$authored                 = array_filter(
+					$flat,
+					static fn ( string $value, string $key ): bool => ! ( str_contains( $value, 'var(' ) && isset( $existing_styles[ $key ] ) && is_string( $existing_styles[ $key ] ) && ! str_contains( $existing_styles[ $key ], 'var(' ) ),
+					ARRAY_FILTER_USE_BOTH
+				);
+				$row['control']['styles'] = array_merge( $existing_styles, $authored );
 				if ( array_intersect_key( $flat, array_flip( array( 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block', 'padding_inline' ) ) ) && ! isset( $flat['padding'] ) ) {
 					unset( $row['control']['styles']['padding'] );
 				}
