@@ -199,4 +199,9 @@ $GLOBALS['ssi_nav_posts'][99] = array(
 );
 $assert( 2 === count( $GLOBALS['ssi_nav_posts'] ) && '<!-- wp:page-list /-->' === $GLOBALS['ssi_nav_posts'][99]['post_content'], 'The default page-list navigation post remains unused.' );
 
+$persistence = (string) file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-site-plan-persistence.php' );
+$navigation_bind = strpos( $persistence, 'Navigation_Entity_Materializer::materialize' );
+$route_rewrite   = strpos( $persistence, 'rewrite_materialized_route_links( $state )' );
+$assert( is_int( $navigation_bind ) && is_int( $route_rewrite ) && $navigation_bind < $route_rewrite, 'Navigation refs are bound while page markup still has canonical routes, before portable page_id rewriting.' );
+
 echo "smoke-navigation-entity-materializer: ok\n";
