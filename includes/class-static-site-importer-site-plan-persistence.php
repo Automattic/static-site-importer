@@ -164,19 +164,19 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			unset( $binding_report );
 		}
-		$route_links = self::rewrite_materialized_route_links( $state );
-		if ( is_wp_error( $route_links ) ) {
-			return self::failed_receipt_from_error( $state, $route_links );
-		}
-		if ( ! self::keep_page_routes_reachable( $state ) ) {
-			return self::failed_receipt( $state, 'rewrite_base_not_applied' );
-		}
 		if ( ! class_exists( 'Static_Site_Importer_Navigation_Entity_Materializer' ) ) {
 			require_once __DIR__ . '/class-static-site-importer-navigation-entity-materializer.php';
 		}
 		$navigation_entities = Static_Site_Importer_Navigation_Entity_Materializer::materialize( $state );
 		if ( is_wp_error( $navigation_entities ) ) {
 			return self::failed_receipt_from_error( $state, $navigation_entities );
+		}
+		$route_links = self::rewrite_materialized_route_links( $state );
+		if ( is_wp_error( $route_links ) ) {
+			return self::failed_receipt_from_error( $state, $route_links );
+		}
+		if ( ! self::keep_page_routes_reachable( $state ) ) {
+			return self::failed_receipt( $state, 'rewrite_base_not_applied' );
 		}
 
 		$short_write_attempt = 0;

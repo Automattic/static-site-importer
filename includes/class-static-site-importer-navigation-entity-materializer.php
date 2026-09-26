@@ -189,10 +189,16 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 					$attrs = $decoded;
 				}
 			}
-			$items[] = (string) ( $attrs['label'] ?? '' ) . "\t" . (string) ( $attrs['url'] ?? '' );
+			$items[] = (string) ( $attrs['label'] ?? '' ) . "\t" . self::destination_path( (string) ( $attrs['url'] ?? '' ) );
 			$offset  = $open_end + 3;
 		}
 		return implode( "\n", $items );
+	}
+
+	private static function destination_path( string $url ): string {
+		$path = preg_replace( '/#.*$/s', '', $url );
+
+		return is_string( $path ) ? $path : $url;
 	}
 
 	/**
