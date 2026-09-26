@@ -120,6 +120,26 @@ jobs:
         if: inputs.dry-run == true
         run: git diff --exit-code -- composer.json composer.lock
 
+      # This commit is pushed with the workflow token, which does not trigger
+      # the Test workflow, and the release below ships it. Prove the refreshed
+      # pins against the same suites the Test workflow runs before anything is
+      # pushed, so a Blocks Engine release that breaks SSI never reaches main
+      # or a published release untested (#1867).
+      - name: Test the refreshed pins before pushing them
+        if: inputs.dry-run != true
+        env:
+          WORDPRESS_VERSION: '7.1.2'
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- composer.json composer.lock; then
+            echo "No published Blocks Engine pin changed; nothing to test."
+            exit 0
+          fi
+          composer install --no-interaction --no-progress
+          homeboy review test --placement local static-site-importer --path .
+          curl -fsSL "https://wordpress.org/wordpress-${WORDPRESS_VERSION}.tar.gz" | tar -xz -C "${RUNNER_TEMP}"
+          STATIC_SITE_IMPORTER_WP_ROOT="${RUNNER_TEMP}/wordpress" php tests/form-materializer-smoke.php
+
       - name: Commit refreshed pins
         if: inputs.dry-run != true
         run: |
