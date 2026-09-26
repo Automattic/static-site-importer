@@ -41,7 +41,8 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 		if ( ! isset( $state['applied']['navigation_entities'] ) || ! is_array( $state['applied']['navigation_entities'] ) ) {
 			$state['applied']['navigation_entities'] = array();
 		}
-		$refs = array();
+		$refs       = array();
+		$signatures = array();
 		foreach ( $entities as $menu ) {
 			$content = (string) $menu['block_markup'];
 			$id      = self::upsert( $menu, $content, $state );
@@ -49,6 +50,10 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 				return $id;
 			}
 			$refs[ (string) $menu['token'] ] = (int) $id;
+			$signature                       = self::destination_signature( $content );
+			if ( '' !== $signature ) {
+				$signatures[ $signature ] = (int) $id;
+			}
 			$state['applied']['navigation_entities'][] = array(
 				'id'                      => (int) $id,
 				'token'                   => (string) $menu['token'],
@@ -56,18 +61,20 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 			);
 		}
 
-		foreach ( $state['resolved']['writes'] as &$write ) {
-			if ( ! is_array( $write ) || 'utf8' !== ( $write['payload']['encoding'] ?? null ) || ! is_string( $write['payload']['data'] ?? null ) ) {
-				continue;
+		if ( isset( $state['resolved']['writes'] ) && is_array( $state['resolved']['writes'] ) ) {
+			foreach ( $state['resolved']['writes'] as &$write ) {
+				if ( ! is_array( $write ) || 'utf8' !== ( $write['payload']['encoding'] ?? null ) || ! is_string( $write['payload']['data'] ?? null ) ) {
+					continue;
+				}
+				$rewritten = self::rewrite_markup( (string) $write['payload']['data'], $refs, $signatures );
+				if ( $rewritten === $write['payload']['data'] ) {
+					continue;
+				}
+				$write['payload']['data'] = $rewritten;
+				$write['payload_hash']    = hash( 'sha256', $rewritten );
 			}
-			$rewritten = self::rewrite_references( (string) $write['payload']['data'], $refs );
-			if ( $rewritten === $write['payload']['data'] ) {
-				continue;
-			}
-			$write['payload']['data'] = $rewritten;
-			$write['payload_hash']    = hash( 'sha256', $rewritten );
+			unset( $write );
 		}
-		unset( $write );
 
 		foreach ( array( 'template_parts', 'pages' ) as $group ) {
 			if ( ! isset( $state['resolved'][ $group ] ) || ! is_array( $state['resolved'][ $group ] ) ) {
@@ -76,7 +83,7 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 			foreach ( $state['resolved'][ $group ] as &$document ) {
 				foreach ( array( 'resolved_block_markup', 'canonical_block_markup', 'materialized_block_markup' ) as $field ) {
 					if ( is_string( $document[ $field ] ?? null ) ) {
-						$document[ $field ] = self::rewrite_references( $document[ $field ], $refs );
+						$document[ $field ] = self::rewrite_markup( $document[ $field ], $refs, $signatures );
 					}
 				}
 			}
@@ -92,7 +99,7 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 			if ( ! is_string( $content ) ) {
 				continue;
 			}
-			$rewritten = self::rewrite_references( $content, $refs );
+			$rewritten = self::rewrite_markup( $content, $refs, $signatures );
 			if ( $rewritten === $content ) {
 				continue;
 			}
@@ -113,6 +120,15 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 
 	/**
 	 * @param array<string,int> $refs
+	 * @param array<string,int> $signatures
+	 */
+	public static function rewrite_markup( string $content, array $refs, array $signatures = array() ): string {
+		$content = self::rewrite_references( $content, $refs );
+		return self::rewrite_matching( $content, $signatures );
+	}
+
+	/**
+	 * @param array<string,int> $refs
 	 */
 	public static function rewrite_references( string $content, array $refs ): string {
 		if ( array() === $refs || ! str_contains( $content, self::TOKEN_PREFIX ) ) {
@@ -122,6 +138,127 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 			$content = str_replace( '"ref":"' . self::TOKEN_PREFIX . $token . '}}"', '"ref":' . (int) $id, $content );
 		}
 		return $content;
+	}
+
+	/**
+	 * @param array<string,int> $signatures
+	 */
+	public static function rewrite_matching( string $content, array $signatures ): string {
+		if ( array() === $signatures ) {
+			return $content;
+		}
+		$edits = array();
+		foreach ( self::navigation_blocks( $content ) as $block ) {
+			$id = $signatures[ self::destination_signature( $block['inner'] ) ] ?? null;
+			if ( ! is_int( $id ) ) {
+				continue;
+			}
+			$attrs        = $block['attrs'];
+			$attrs['ref'] = $id;
+			$encoded      = function_exists( 'wp_json_encode' ) ? wp_json_encode( $attrs ) : json_encode( $attrs );
+			if ( ! is_string( $encoded ) ) {
+				continue;
+			}
+			$edits[] = array(
+				'offset'      => $block['offset'],
+				'length'      => $block['length'],
+				'replacement' => '<!-- wp:navigation ' . $encoded . ' /-->',
+			);
+		}
+		usort( $edits, static fn( array $left, array $right ): int => $right['offset'] <=> $left['offset'] );
+		foreach ( $edits as $edit ) {
+			$content = substr( $content, 0, $edit['offset'] ) . $edit['replacement'] . substr( $content, $edit['offset'] + $edit['length'] );
+		}
+		return $content;
+	}
+
+	public static function destination_signature( string $inner ): string {
+		$items  = array();
+		$offset = 0;
+		while ( preg_match( '/<!--\s*wp:navigation-(?:link|submenu)\s*/', $inner, $match, PREG_OFFSET_CAPTURE, $offset ) ) {
+			$start   = $match[0][1];
+			$open_end = strpos( $inner, '-->', $start );
+			if ( false === $open_end ) {
+				break;
+			}
+			$opening = substr( $inner, $start, $open_end + 3 - $start );
+			$attrs   = array();
+			if ( preg_match( '/\{.*\}/s', $opening, $json ) ) {
+				$decoded = json_decode( $json[0], true );
+				if ( is_array( $decoded ) ) {
+					$attrs = $decoded;
+				}
+			}
+			$items[] = (string) ( $attrs['label'] ?? '' ) . "\t" . (string) ( $attrs['url'] ?? '' );
+			$offset  = $open_end + 3;
+		}
+		return implode( "\n", $items );
+	}
+
+	/**
+	 * @return array<int,array{offset:int,length:int,inner:string,attrs:array<string,mixed>}>
+	 */
+	private static function navigation_blocks( string $markup ): array {
+		$blocks = array();
+		if ( ! preg_match_all( '/<!--\s*(\/?)wp:.*?-->/s', $markup, $matches, PREG_OFFSET_CAPTURE ) ) {
+			return $blocks;
+		}
+		$ranges = array();
+		$stack  = array();
+		foreach ( $matches[0] as $match ) {
+			$token  = $match[0];
+			$offset = $match[1];
+			if ( str_starts_with( $token, '<!-- /wp:' ) ) {
+				$open = array_pop( $stack );
+				if ( is_array( $open ) ) {
+					$ranges[ $open['index'] ]['length'] = $offset + strlen( $token ) - $open['offset'];
+				}
+			} elseif ( str_ends_with( rtrim( $token ), '/-->' ) ) {
+				$ranges[] = array( 'offset' => $offset, 'length' => strlen( $token ) );
+			} else {
+				$index    = count( $ranges );
+				$ranges[] = array( 'offset' => $offset, 'length' => 0 );
+				$stack[]  = array( 'index' => $index, 'offset' => $offset );
+			}
+		}
+		foreach ( $ranges as $range ) {
+			if ( ( $range['length'] ?? 0 ) < 1 ) {
+				continue;
+			}
+			$block = substr( $markup, $range['offset'], $range['length'] );
+			if ( ! preg_match( '/^<!--\s*wp:navigation(?!-)/', $block ) ) {
+				continue;
+			}
+			$open_end = strpos( $block, '-->' );
+			if ( false === $open_end ) {
+				continue;
+			}
+			$opening = substr( $block, 0, $open_end + 3 );
+			if ( preg_match( '/\/\s*-->$/', $opening ) ) {
+				continue;
+			}
+			$attrs = array();
+			if ( preg_match( '/\{.*\}/s', $opening, $json ) ) {
+				$decoded = json_decode( $json[0], true );
+				if ( is_array( $decoded ) ) {
+					$attrs = $decoded;
+				}
+			}
+			if ( isset( $attrs['ref'] ) ) {
+				continue;
+			}
+			$inner_end = strrpos( $block, '<!-- /wp:navigation' );
+			if ( false === $inner_end ) {
+				continue;
+			}
+			$blocks[] = array(
+				'offset' => $range['offset'],
+				'length' => $range['length'],
+				'inner'  => substr( $block, $open_end + 3, $inner_end - ( $open_end + 3 ) ),
+				'attrs'  => $attrs,
+			);
+		}
+		return $blocks;
 	}
 
 	/**

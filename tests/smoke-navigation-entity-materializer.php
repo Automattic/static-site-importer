@@ -119,9 +119,12 @@ $assert = static function ( bool $condition, string $message ): void {
 
 $token   = 'navigation-aaaaaaaaaaaaaaaa';
 $prefix  = Static_Site_Importer_Navigation_Entity_Materializer::TOKEN_PREFIX;
-$markup  = '<!-- wp:navigation {"className":"primary","overlayMenu":"mobile","ref":"' . $prefix . $token . '}}"} /-->';
-$rewritten = Static_Site_Importer_Navigation_Entity_Materializer::rewrite_references( $markup, array( $token => 42 ) );
-$assert( str_contains( $rewritten, '"ref":42' ) && ! str_contains( $rewritten, $prefix ) && str_contains( $rewritten, '"overlayMenu":"mobile"' ) && str_contains( $rewritten, '"className":"primary"' ), 'Token refs become integer refs while overlay and className stay on the referencing block.' );
+$inline  = '<!-- wp:navigation {"className":"primary","overlayMenu":"mobile"} --><!-- wp:navigation-link {"label":"Home","url":"/"} /--><!-- wp:navigation-link {"label":"About","url":"/about"} /--><!-- /wp:navigation -->';
+$tokened = '<!-- wp:navigation {"className":"primary","overlayMenu":"mobile","ref":"' . $prefix . $token . '}}"} /-->';
+$rewritten_token = Static_Site_Importer_Navigation_Entity_Materializer::rewrite_references( $tokened, array( $token => 42 ) );
+$assert( str_contains( $rewritten_token, '"ref":42' ) && ! str_contains( $rewritten_token, $prefix ) && str_contains( $rewritten_token, '"overlayMenu":"mobile"' ) && str_contains( $rewritten_token, '"className":"primary"' ), 'Token refs become integer refs while overlay and className stay on the referencing block.' );
+$rewritten_match = Static_Site_Importer_Navigation_Entity_Materializer::rewrite_matching( $inline, array( "Home\t/\nAbout\t/about" => 42 ) );
+$assert( str_contains( $rewritten_match, '"ref":42' ) && ! str_contains( $rewritten_match, 'wp:navigation-link' ) && str_contains( $rewritten_match, '"overlayMenu":"mobile"' ), 'Matching inline navigation becomes a self-closing integer ref.' );
 $assert( '<!-- wp:page-list /-->' === Static_Site_Importer_Navigation_Entity_Materializer::rewrite_references( '<!-- wp:page-list /-->', array( $token => 42 ) ), 'Unrelated markup is left alone.' );
 
 $identity = str_repeat( 'ab', 32 );
@@ -142,15 +145,15 @@ $state    = array(
 				'target_path' => 'parts/header.html',
 				'payload'     => array(
 					'encoding' => 'utf8',
-					'data'     => $markup,
+					'data'     => $inline,
 				),
 			),
 		),
 		'pages'          => array(
 			array(
 				'source_path'            => 'index.html',
-				'resolved_block_markup'  => $markup,
-				'canonical_block_markup' => $markup,
+				'resolved_block_markup'  => $inline,
+				'canonical_block_markup' => $inline,
 			),
 		),
 		'template_parts' => array(),
