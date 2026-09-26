@@ -12,12 +12,13 @@ defined( 'ABSPATH' ) || exit;
  *
  * The site plan resolves every image to a file the generated theme ships, so
  * after an import an owner sees an empty Media Library and image blocks with
- * no attachment. Each core/image block in materialized page content whose
- * source is a raster file inside the generated theme becomes an attachment
- * (one per source file), and the block is bound to it the way the editor
- * binds an uploaded image: `id` attribute, `wp-image-{id}` class, attachment
- * URL. Theme chrome (template parts), SVG icons, and CSS backgrounds stay
- * theme-owned design assets.
+ * no attachment. Raster files referenced by materialized page content — a
+ * core/image, core/cover, or core/media-text block, or an img inside another
+ * block's saved markup — become attachments. Identical bytes share one
+ * attachment. Native blocks are bound the way the editor binds an uploaded
+ * image: media id, `wp-image-{id}` class, attachment URL. Theme chrome
+ * (template parts), SVG icons, and CSS backgrounds stay theme-owned design
+ * assets.
  */
 final class Static_Site_Importer_Media_Library_Materializer {
 
@@ -44,6 +45,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		}
 
 		$attachments = array();
+		$by_hash     = array();
 		foreach ( $state['ordered_pages'] ?? array() as $page ) {
 			if ( ! empty( $page['skip_materialization'] ) ) {
 				continue;
@@ -51,7 +53,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			$source_path = (string) ( $page['source_path'] ?? '' );
 			$post_id     = (int) ( $state['source_ids'][ $source_path ] ?? 0 );
 			$content     = $post_id > 0 ? get_post_field( 'post_content', $post_id ) : null;
-			if ( ! is_string( $content ) || ! str_contains( $content, '<!-- wp:image' ) ) {
+			if ( ! is_string( $content ) || ! self::content_references_media( $content ) ) {
 				continue;
 			}
 
@@ -68,7 +70,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				foreach ( $matches as $found ) {
 					$match      = array( $found[0][0], $found[1][0], $found[2][0] );
 					$rewritten .= substr( $content, $offset, $found[0][1] - $offset );
-					$rewritten .= null === $error ? self::bind_image_block( $match, $theme_uri, $theme_dir, $state, $attachments, $report, $bound, $error ) : $match[0];
+					$rewritten .= null === $error ? self::bind_image_block( $match, $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error ) : $match[0];
 					$offset     = $found[0][1] + strlen( $found[0][0] );
 				}
 			}
@@ -76,7 +78,11 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			if ( $error instanceof WP_Error ) {
 				return $error;
 			}
-			if ( 0 === $bound ) {
+			$rewritten = self::bind_referenced_images( $rewritten, $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error );
+			if ( $error instanceof WP_Error ) {
+				return $error;
+			}
+			if ( $rewritten === $content ) {
 				continue;
 			}
 			$updated = wp_update_post(
@@ -109,11 +115,11 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			$report['bound_block_count'] += $bound;
 		}
 		$error               = null;
-		$report['site_icon'] = self::materialize_site_icon( $state, $theme_uri, $theme_dir, $attachments, $error );
+		$report['site_icon'] = self::materialize_site_icon( $state, $theme_uri, $theme_dir, $attachments, $by_hash, $error );
 		if ( $error instanceof WP_Error ) {
 			return $error;
 		}
-		$report['attachment_count'] = count( array_filter( $attachments ) );
+		$report['attachment_count'] = count( array_unique( array_filter( $attachments ) ) );
 
 		return $report;
 	}
@@ -124,8 +130,9 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 *
 	 * @param array<mixed>      $state
 	 * @param array<string,int> $attachments
+	 * @param array<string,int> $by_hash     Attachment ID per content hash.
 	 */
-	private static function materialize_site_icon( array &$state, string $theme_uri, string $theme_dir, array &$attachments, ?WP_Error &$error ): int {
+	private static function materialize_site_icon( array &$state, string $theme_uri, string $theme_dir, array &$attachments, array &$by_hash, ?WP_Error &$error ): int {
 		if ( (int) get_option( 'site_icon', 0 ) > 0 ) {
 			return 0;
 		}
@@ -145,9 +152,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 						continue;
 					}
 					if ( ! array_key_exists( $relative, $attachments ) ) {
-						$file                     = $theme_dir . '/' . $relative;
-						$identity                 = basename( $theme_dir ) . '/' . $relative . '#' . ( is_readable( $file ) ? (string) hash_file( 'sha256', $file ) : '' );
-						$attachments[ $relative ] = self::attachment_for( $file, $relative, $identity, 'Site icon', $state, $error );
+						self::ensure_attachment( $theme_dir, $relative, 'Site icon', $state, $attachments, $by_hash, $error );
 						if ( null !== $error ) {
 							return 0;
 						}
@@ -175,9 +180,10 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @param array<int,string>   $block_match       Regex match: whole block, attribute JSON, inner HTML.
 	 * @param array<mixed>        $state
 	 * @param array<string,int>   $attachments Attachment ID per theme-relative source (0 when not bindable).
+	 * @param array<string,int>   $by_hash     Attachment ID per content hash.
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
 	 */
-	private static function bind_image_block( array $block_match, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$report, int &$bound, ?WP_Error &$error ): string {
+	private static function bind_image_block( array $block_match, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, ?WP_Error &$error ): string {
 		$attrs = '' !== trim( (string) ( $block_match[1] ?? '' ) ) ? json_decode( trim( $block_match[1] ), true ) : array();
 		if ( ! is_array( $attrs ) || ! empty( $attrs['id'] ) || str_contains( $block_match[2], '<!-- wp:' ) ) {
 			return $block_match[0];
@@ -192,11 +198,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		++$report['replaceable_media_count'];
 		if ( ! array_key_exists( $relative, $attachments ) ) {
 			$alt = preg_match( '/<img\b[^>]*\balt="([^"]*)"/i', $block_match[2], $alt_match ) ? html_entity_decode( $alt_match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8' ) : '';
-			// Keyed by theme and file content, so a later import of different
-			// bytes, or another theme, never reuses this attachment.
-			$file                     = $theme_dir . '/' . $relative;
-			$identity                 = basename( $theme_dir ) . '/' . $relative . '#' . ( is_readable( $file ) ? (string) hash_file( 'sha256', $file ) : '' );
-			$attachments[ $relative ] = self::attachment_for( $file, $relative, $identity, $alt, $state, $error );
+			self::ensure_attachment( $theme_dir, $relative, $alt, $state, $attachments, $by_hash, $error );
 			if ( null !== $error ) {
 				return $block_match[0];
 			}
@@ -237,6 +239,28 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			return null;
 		}
 		return $relative;
+	}
+
+	/** Create (or reuse) one attachment for identical file bytes in this theme. */
+	private static function ensure_attachment( string $theme_dir, string $relative, string $alt, array &$state, array &$attachments, array &$by_hash, ?WP_Error &$error ): int {
+		if ( array_key_exists( $relative, $attachments ) ) {
+			return $attachments[ $relative ];
+		}
+		$file = $theme_dir . '/' . $relative;
+		$hash = is_readable( $file ) ? (string) hash_file( 'sha256', $file ) : '';
+		if ( '' !== $hash && isset( $by_hash[ $hash ] ) ) {
+			$attachments[ $relative ] = $by_hash[ $hash ];
+			return $by_hash[ $hash ];
+		}
+		// Keyed by theme and file content, so a later import of different bytes,
+		// or another theme, never reuses this attachment. The same bytes at two
+		// paths share one attachment.
+		$identity                 = basename( $theme_dir ) . '#' . $hash;
+		$attachments[ $relative ] = '' === $hash ? 0 : self::attachment_for( $file, $relative, $identity, $alt, $state, $error );
+		if ( $attachments[ $relative ] > 0 ) {
+			$by_hash[ $hash ] = $attachments[ $relative ];
+		}
+		return $attachments[ $relative ];
 	}
 
 	/** Create (or reuse) the attachment for one theme-relative image file. */
@@ -307,5 +331,377 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		}
 
 		return (int) $attachment_id;
+	}
+
+	/** Page markup that may reference a replaceable raster, including escaped block attributes. */
+	private static function content_references_media( string $content ): bool {
+		return str_contains( $content, '<!-- wp:image' )
+			|| str_contains( $content, '<!-- wp:cover' )
+			|| str_contains( $content, '<!-- wp:media-text' )
+			|| str_contains( $content, '<img' )
+			|| str_contains( $content, '\\u003cimg' );
+	}
+
+	/**
+	 * Bind raster images that are not already a core/image block.
+	 *
+	 * Companion blocks keep the image inside an attribute string. Cover and
+	 * media-text keep it in a media URL attribute plus inner HTML. Only those
+	 * references are rewritten; surrounding blocks keep their exact bytes.
+	 *
+	 * @param array<mixed>        $state
+	 * @param array<string,int>   $attachments
+	 * @param array<string,int>   $by_hash
+	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
+	 */
+	private static function bind_referenced_images( string $content, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, ?WP_Error &$error ): string {
+		$rewritten = '';
+		$offset    = 0;
+		foreach ( self::block_openers( $content ) as $opener ) {
+			if ( null !== $error ) {
+				$rewritten .= substr( $content, $offset );
+				return $rewritten;
+			}
+			$rewritten .= substr( $content, $offset, $opener['start'] - $offset );
+			$rewritten .= self::bind_block_opener( $opener, $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error );
+			$offset     = $opener['end'];
+		}
+		$rewritten .= substr( $content, $offset );
+		if ( null !== $error || ! str_contains( $rewritten, '<img' ) ) {
+			return $rewritten;
+		}
+
+		$spans      = self::comment_spans( $rewritten );
+		$bound_html = '';
+		$cursor     = 0;
+		foreach ( $spans as $span ) {
+			$bound_html .= self::rewrite_markup( substr( $rewritten, $cursor, $span['start'] - $cursor ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error )['html'];
+			if ( null !== $error ) {
+				return $rewritten;
+			}
+			$bound_html .= substr( $rewritten, $span['start'], $span['end'] - $span['start'] );
+			$cursor      = $span['end'];
+		}
+		$tail        = self::rewrite_markup( substr( $rewritten, $cursor ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error );
+		$bound_html .= $tail['html'];
+
+		return null === $error ? $bound_html : $rewritten;
+	}
+
+	/**
+	 * @param array{start:int,end:int,name:string,json:string,self:bool,raw:string} $opener
+	 * @param array<mixed>      $state
+	 * @param array<string,int> $attachments
+	 * @param array<string,int> $by_hash
+	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
+	 */
+	private static function bind_block_opener( array $opener, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, ?WP_Error &$error ): string {
+		$raw = $opener['raw'];
+		if ( 'core/image' === $opener['name'] || '' === $opener['json'] ) {
+			return $raw;
+		}
+		$attrs = json_decode( $opener['json'], true );
+		if ( ! is_array( $attrs ) ) {
+			return $raw;
+		}
+		$ids     = array();
+		$changed = false;
+		foreach ( array( 'url' => 'id', 'mediaUrl' => 'mediaId' ) as $source_key => $id_key ) {
+			if ( ! isset( $attrs[ $source_key ] ) || ! is_string( $attrs[ $source_key ] ) || ! empty( $attrs[ $id_key ] ) ) {
+				continue;
+			}
+			$id = self::attachment_id_for_url( $attrs[ $source_key ], '', $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
+			if ( null !== $error || $id <= 0 ) {
+				continue;
+			}
+			$url = wp_get_attachment_url( $id );
+			if ( ! is_string( $url ) || '' === $url ) {
+				continue;
+			}
+			$attrs[ $source_key ] = $url;
+			$attrs[ $id_key ]     = $id;
+			$ids[]                = $id;
+			$changed              = true;
+			++$bound;
+		}
+		foreach ( $attrs as $key => $value ) {
+			if ( ! is_string( $value ) || ! str_contains( $value, '<img' ) ) {
+				continue;
+			}
+			$rewritten = self::rewrite_markup( $value, $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error );
+			if ( null !== $error ) {
+				return $raw;
+			}
+			if ( $rewritten['html'] === $value ) {
+				continue;
+			}
+			$attrs[ $key ] = $rewritten['html'];
+			$ids           = array_merge( $ids, $rewritten['ids'] );
+			$changed       = true;
+		}
+		$unique = array_values( array_unique( array_filter( $ids ) ) );
+		if ( 1 === count( $unique ) && empty( $attrs['id'] ) && empty( $attrs['mediaId'] ) ) {
+			$attrs['id'] = $unique[0];
+			$changed     = true;
+		}
+		if ( ! $changed ) {
+			return $raw;
+		}
+		$encoded = serialize_block_attributes( $attrs );
+
+		return '<!-- wp:' . $opener['name'] . ' ' . $encoded . ( $opener['self'] ? ' /-->' : ' -->' );
+	}
+
+	/**
+	 * Rewrite img and source tags whose raster sources live in the generated theme.
+	 *
+	 * @param array<mixed>      $state
+	 * @param array<string,int> $attachments
+	 * @param array<string,int> $by_hash
+	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
+	 * @return array{html:string,ids:array<int,int>}
+	 */
+	private static function rewrite_markup( string $html, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, ?WP_Error &$error ): array {
+		$ids = array();
+		if ( ! str_contains( $html, '<img' ) && ! str_contains( $html, '<source' ) ) {
+			return array(
+				'html' => $html,
+				'ids'  => $ids,
+			);
+		}
+		$rewritten = preg_replace_callback(
+			'/<(?:img|source)\b[^>]*>/i',
+			static function ( array $match ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$bound, &$error, &$ids ): string {
+				if ( null !== $error ) {
+					return $match[0];
+				}
+				return self::rewrite_media_tag( $match[0], $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $ids, $error );
+			},
+			$html
+		);
+
+		return array(
+			'html' => is_string( $rewritten ) ? $rewritten : $html,
+			'ids'  => $ids,
+		);
+	}
+
+	/**
+	 * @param array<mixed>      $state
+	 * @param array<string,int> $attachments
+	 * @param array<string,int> $by_hash
+	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
+	 * @param array<int,int>    $ids
+	 */
+	private static function rewrite_media_tag( string $tag, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, array &$ids, ?WP_Error &$error ): string {
+		$src_id = 0;
+		if ( preg_match( '/\bsrc="([^"]*)"/i', $tag, $src_match ) ) {
+			$src_id = self::attachment_id_for_url( html_entity_decode( $src_match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8' ), self::alt_from_tag( $tag ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
+			if ( null !== $error ) {
+				return $tag;
+			}
+			if ( $src_id > 0 ) {
+				$url = wp_get_attachment_url( $src_id );
+				if ( is_string( $url ) && '' !== $url ) {
+					$tag   = str_replace( 'src="' . $src_match[1] . '"', 'src="' . esc_url( $url ) . '"', $tag );
+					$ids[] = $src_id;
+					++$bound;
+				}
+			}
+		}
+		if ( preg_match( '/\bsrcset="([^"]*)"/i', $tag, $srcset_match ) ) {
+			$srcset = self::rewrite_srcset( $srcset_match[1], $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
+			if ( null !== $error ) {
+				return $tag;
+			}
+			if ( $srcset !== $srcset_match[1] ) {
+				$tag = str_replace( 'srcset="' . $srcset_match[1] . '"', 'srcset="' . esc_attr( $srcset ) . '"', $tag );
+			}
+		}
+		if ( $src_id <= 0 || ! str_starts_with( strtolower( $tag ), '<img' ) ) {
+			return $tag;
+		}
+		if ( preg_match( '/\bclass="[^"]*"/i', $tag ) ) {
+			return (string) preg_replace( '/\bclass="([^"]*)"/i', 'class="$1 wp-image-' . $src_id . '"', $tag, 1 );
+		}
+
+		return (string) preg_replace( '/^<img\b/i', '<img class="wp-image-' . $src_id . '"', $tag, 1 );
+	}
+
+	/**
+	 * @param array<mixed>      $state
+	 * @param array<string,int> $attachments
+	 * @param array<string,int> $by_hash
+	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
+	 */
+	private static function rewrite_srcset( string $srcset, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, ?WP_Error &$error ): string {
+		$urls = self::theme_urls_in( $srcset, $theme_uri );
+		usort( $urls, static fn ( string $left, string $right ): int => strlen( $right ) <=> strlen( $left ) );
+		foreach ( $urls as $url ) {
+			$id = self::attachment_id_for_url( $url, '', $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
+			if ( null !== $error || $id <= 0 ) {
+				continue;
+			}
+			$canonical = wp_get_attachment_url( $id );
+			if ( is_string( $canonical ) && '' !== $canonical ) {
+				$srcset = str_replace( $url, $canonical, $srcset );
+			}
+		}
+		return $srcset;
+	}
+
+	/**
+	 * @param array<mixed>      $state
+	 * @param array<string,int> $attachments
+	 * @param array<string,int> $by_hash
+	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
+	 */
+	private static function attachment_id_for_url( string $url, string $alt, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, ?WP_Error &$error ): int {
+		$relative = self::theme_relative_raster( $url, $theme_uri );
+		if ( null === $relative ) {
+			return 0;
+		}
+		++$report['replaceable_media_count'];
+		$id = self::ensure_attachment( $theme_dir, $relative, $alt, $state, $attachments, $by_hash, $error );
+		return null === $error ? $id : 0;
+	}
+
+	private static function alt_from_tag( string $tag ): string {
+		if ( ! preg_match( '/\balt="([^"]*)"/i', $tag, $alt_match ) ) {
+			return '';
+		}
+		return html_entity_decode( $alt_match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+	}
+
+	/**
+	 * Theme URLs in a fragment, longest first when replaced by the caller.
+	 *
+	 * @return array<int,string>
+	 */
+	private static function theme_urls_in( string $text, string $theme_uri ): array {
+		$base = (string) wp_parse_url( $theme_uri, PHP_URL_PATH );
+		$found = array();
+		foreach ( array( $theme_uri, $base ) as $prefix ) {
+			if ( '' === $prefix || ! str_contains( $text, $prefix . '/' ) ) {
+				continue;
+			}
+			if ( preg_match_all( '#' . preg_quote( $prefix, '#' ) . '/[^"\'\s>]+#', $text, $matches ) ) {
+				foreach ( $matches[0] as $url ) {
+					if ( null !== self::theme_relative_raster( $url, $theme_uri ) ) {
+						$found[ $url ] = $url;
+					}
+				}
+			}
+		}
+		return array_values( $found );
+	}
+
+	/**
+	 * @return array<int,array{start:int,end:int,name:string,json:string,self:bool,raw:string}>
+	 */
+	private static function block_openers( string $content ): array {
+		$openers = array();
+		$offset  = 0;
+		$length  = strlen( $content );
+		while ( false !== ( $pos = strpos( $content, '<!-- wp:', $offset ) ) ) {
+			$cursor = $pos + 8;
+			if ( ! preg_match( '/\G([a-z0-9\/-]+)/', $content, $name_match, 0, $cursor ) ) {
+				$offset = $pos + 8;
+				continue;
+			}
+			$name   = $name_match[1];
+			$cursor += strlen( $name );
+			while ( $cursor < $length && ( ' ' === $content[ $cursor ] || "\t" === $content[ $cursor ] ) ) {
+				++$cursor;
+			}
+			$json = '';
+			if ( $cursor < $length && '{' === $content[ $cursor ] ) {
+				$json_end = self::json_object_end( $content, $cursor );
+				if ( null === $json_end ) {
+					$offset = $pos + 8;
+					continue;
+				}
+				$json   = substr( $content, $cursor, $json_end - $cursor );
+				$cursor = $json_end;
+			}
+			while ( $cursor < $length && ( ' ' === $content[ $cursor ] || "\t" === $content[ $cursor ] ) ) {
+				++$cursor;
+			}
+			$self = str_starts_with( substr( $content, $cursor ), '/-->' );
+			if ( ! $self && ! str_starts_with( substr( $content, $cursor ), '-->' ) ) {
+				$offset = $pos + 8;
+				continue;
+			}
+			$end       = $cursor + ( $self ? 4 : 3 );
+			$openers[] = array(
+				'start' => $pos,
+				'end'   => $end,
+				'name'  => $name,
+				'json'  => $json,
+				'self'  => $self,
+				'raw'   => substr( $content, $pos, $end - $pos ),
+			);
+			$offset = $end;
+		}
+		return $openers;
+	}
+
+	/**
+	 * @return array<int,array{start:int,end:int}>
+	 */
+	private static function comment_spans( string $content ): array {
+		$spans  = array();
+		$offset = 0;
+		while ( false !== ( $pos = strpos( $content, '<!--', $offset ) ) ) {
+			$end = strpos( $content, '-->', $pos );
+			if ( false === $end ) {
+				break;
+			}
+			$spans[] = array(
+				'start' => $pos,
+				'end'   => $end + 3,
+			);
+			$offset = $end + 3;
+		}
+		return $spans;
+	}
+
+	private static function json_object_end( string $content, int $start ): ?int {
+		$length    = strlen( $content );
+		$depth     = 0;
+		$in_string = false;
+		$escape    = false;
+		for ( $index = $start; $index < $length; $index++ ) {
+			$char = $content[ $index ];
+			if ( $in_string ) {
+				if ( $escape ) {
+					$escape = false;
+					continue;
+				}
+				if ( '\\' === $char ) {
+					$escape = true;
+					continue;
+				}
+				if ( '"' === $char ) {
+					$in_string = false;
+				}
+				continue;
+			}
+			if ( '"' === $char ) {
+				$in_string = true;
+				continue;
+			}
+			if ( '{' === $char ) {
+				++$depth;
+				continue;
+			}
+			if ( '}' === $char ) {
+				--$depth;
+				if ( 0 === $depth ) {
+					return $index + 1;
+				}
+			}
+		}
+		return null;
 	}
 }
