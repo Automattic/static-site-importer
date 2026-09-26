@@ -38,18 +38,13 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 			return $state;
 		}
 
-		$routes = self::route_map( $state );
 		if ( ! isset( $state['applied']['navigation_entities'] ) || ! is_array( $state['applied']['navigation_entities'] ) ) {
 			$state['applied']['navigation_entities'] = array();
 		}
 		$refs = array();
 		foreach ( $entities as $menu ) {
 			$content = (string) $menu['block_markup'];
-			if ( array() !== $routes ) {
-				$unresolved = array();
-				$content    = Static_Site_Importer_Site_Plan_Persistence::rewrite_route_references( $content, $routes, $unresolved );
-			}
-			$id = self::upsert( $menu, $content, $state );
+			$id      = self::upsert( $menu, $content, $state );
 			if ( is_wp_error( $id ) ) {
 				return $id;
 			}
@@ -164,26 +159,5 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 			return new WP_Error( 'navigation_entity_metadata_write_failed' );
 		}
 		return $id;
-	}
-
-	/**
-	 * @param array<string,mixed> $state
-	 * @return array<string,string>
-	 */
-	private static function route_map( array $state ): array {
-		$routes = array();
-		foreach ( $state['ordered_pages'] ?? array() as $page ) {
-			$route   = Static_Site_Importer_Site_Plan_Persistence::normalized_route_path( (string) ( $page['route']['path'] ?? '' ) );
-			$post_id = (int) ( $state['source_ids'][ (string) ( $page['source_path'] ?? '' ) ] ?? 0 );
-			if ( '' === $route || $post_id <= 0 ) {
-				continue;
-			}
-			$post_type = sanitize_key( (string) ( $page['post_type'] ?? 'page' ) );
-			if ( ! Static_Site_Importer_Site_Plan_Persistence::is_valid_post_type( $post_type ) ) {
-				$post_type = 'page';
-			}
-			$routes[ $route ] = Static_Site_Importer_Site_Plan_Persistence::portable_internal_reference( $post_id, $post_type );
-		}
-		return $routes;
 	}
 }

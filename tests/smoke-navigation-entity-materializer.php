@@ -170,7 +170,7 @@ $nav_posts = array_values(
 	)
 );
 $assert( 1 === count( $nav_posts ), 'Exactly one wp_navigation post is created.' );
-$assert( str_contains( (string) $nav_posts[0]['post_content'], '"label":"Home"' ) && str_contains( (string) $nav_posts[0]['post_content'], '"label":"About"' ) && ! str_contains( (string) $nav_posts[0]['post_content'], 'wp:page-list' ), 'The navigation post stores source links, not the page-list placeholder.' );
+$assert( str_contains( (string) $nav_posts[0]['post_content'], '"label":"Home"' ) && str_contains( (string) $nav_posts[0]['post_content'], '"label":"About"' ) && str_contains( (string) $nav_posts[0]['post_content'], '"url":"/"' ) && str_contains( (string) $nav_posts[0]['post_content'], '"url":"/about"' ) && ! str_contains( (string) $nav_posts[0]['post_content'], 'page_id' ) && ! str_contains( (string) $nav_posts[0]['post_content'], 'wp:page-list' ), 'The navigation post stores source links with canonical routes, not the page-list placeholder.' );
 $assert( str_contains( (string) $state['resolved']['writes'][0]['payload']['data'], '"ref":1' ) && ! str_contains( (string) $state['resolved']['writes'][0]['payload']['data'], $prefix ), 'Header write references the persisted post by integer ref.' );
 $assert( str_contains( (string) $state['resolved']['pages'][0]['resolved_block_markup'], '"ref":1' ), 'Page-owned copies of the same menu also reference the persisted post.' );
 $first_id = (int) $state['applied']['navigation_entities'][0]['id'];
