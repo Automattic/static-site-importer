@@ -241,7 +241,13 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		return $relative;
 	}
 
-	/** Create (or reuse) one attachment for identical file bytes in this theme. */
+	/**
+	 * Create (or reuse) one attachment for identical file bytes in this theme.
+	 *
+	 * @param array<mixed>      $state
+	 * @param array<string,int> $attachments Attachment ID per theme-relative source (0 when not bindable).
+	 * @param array<string,int> $by_hash     Attachment ID per content hash.
+	 */
 	private static function ensure_attachment( string $theme_dir, string $relative, string $alt, array &$state, array &$attachments, array &$by_hash, ?WP_Error &$error ): int {
 		if ( array_key_exists( $relative, $attachments ) ) {
 			return $attachments[ $relative ];
@@ -406,7 +412,11 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		}
 		$ids     = array();
 		$changed = false;
-		foreach ( array( 'url' => 'id', 'mediaUrl' => 'mediaId' ) as $source_key => $id_key ) {
+		$id_keys = array(
+			'url'      => 'id',
+			'mediaUrl' => 'mediaId',
+		);
+		foreach ( $id_keys as $source_key => $id_key ) {
 			if ( ! isset( $attrs[ $source_key ] ) || ! is_string( $attrs[ $source_key ] ) || ! empty( $attrs[ $id_key ] ) ) {
 				continue;
 			}
@@ -471,11 +481,11 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		}
 		$rewritten = preg_replace_callback(
 			'/<(?:img|source)\b[^>]*>/i',
-			static function ( array $match ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$bound, &$error, &$ids ): string {
+			static function ( array $tag ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$bound, &$error, &$ids ): string {
 				if ( null !== $error ) {
-					return $match[0];
+					return $tag[0];
 				}
-				return self::rewrite_media_tag( $match[0], $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $ids, $error );
+				return self::rewrite_media_tag( $tag[0], $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $ids, $error );
 			},
 			$html
 		);
@@ -579,7 +589,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @return array<int,string>
 	 */
 	private static function theme_urls_in( string $text, string $theme_uri ): array {
-		$base = (string) wp_parse_url( $theme_uri, PHP_URL_PATH );
+		$base  = (string) wp_parse_url( $theme_uri, PHP_URL_PATH );
 		$found = array();
 		foreach ( array( $theme_uri, $base ) as $prefix ) {
 			if ( '' === $prefix || ! str_contains( $text, $prefix . '/' ) ) {
@@ -603,13 +613,13 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		$openers = array();
 		$offset  = 0;
 		$length  = strlen( $content );
-		while ( false !== ( $pos = strpos( $content, '<!-- wp:', $offset ) ) ) {
+		for ( $pos = strpos( $content, '<!-- wp:', $offset ); false !== $pos; $pos = strpos( $content, '<!-- wp:', $offset ) ) {
 			$cursor = $pos + 8;
 			if ( ! preg_match( '/\G([a-z0-9\/-]+)/', $content, $name_match, 0, $cursor ) ) {
 				$offset = $pos + 8;
 				continue;
 			}
-			$name   = $name_match[1];
+			$name    = $name_match[1];
 			$cursor += strlen( $name );
 			while ( $cursor < $length && ( ' ' === $content[ $cursor ] || "\t" === $content[ $cursor ] ) ) {
 				++$cursor;
@@ -641,7 +651,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				'self'  => $self,
 				'raw'   => substr( $content, $pos, $end - $pos ),
 			);
-			$offset = $end;
+			$offset    = $end;
 		}
 		return $openers;
 	}
@@ -652,7 +662,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	private static function comment_spans( string $content ): array {
 		$spans  = array();
 		$offset = 0;
-		while ( false !== ( $pos = strpos( $content, '<!--', $offset ) ) ) {
+		for ( $pos = strpos( $content, '<!--', $offset ); false !== $pos; $pos = strpos( $content, '<!--', $offset ) ) {
 			$end = strpos( $content, '-->', $pos );
 			if ( false === $end ) {
 				break;
@@ -661,7 +671,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				'start' => $pos,
 				'end'   => $end + 3,
 			);
-			$offset = $end + 3;
+			$offset  = $end + 3;
 		}
 		return $spans;
 	}

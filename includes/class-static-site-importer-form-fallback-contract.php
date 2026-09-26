@@ -293,7 +293,7 @@ class Static_Site_Importer_Form_Fallback_Contract {
 			if ( ! is_array( $item ) || ! is_string( $item['text'] ?? null ) || '' === trim( $item['text'] ) ) {
 				continue;
 			}
-			$text = substr( preg_replace( '/\s+/', ' ', trim( $item['text'] ) ) ?? '', 0, 200 );
+			$text   = substr( preg_replace( '/\s+/', ' ', trim( $item['text'] ) ) ?? '', 0, 200 );
 			$styles = self::context_styles( $item['styles'] ?? null );
 			if ( 'heading' === ( $item['type'] ?? '' ) ) {
 				$row   = array(

@@ -3106,7 +3106,7 @@ $home_id                   = (int) ( $nested_index_ids['website/index.html'] ?? 
 $about_id                  = (int) ( $nested_index_ids['website/about/index.html'] ?? 0 );
 $team_id                   = (int) ( $nested_index_ids['website/about/team/index.html'] ?? 0 );
 $assert( 'completed' === $nested_index_receipt['status'] && 3 === count( array_unique( array( $home_id, $about_id, $team_id ) ) ), 'wrapper-root nested index pages materialize as distinct WordPress posts' );
-$assert( 'index' === ( $GLOBALS['ssi_plan_posts'][ $home_id ]['post_name'] ?? null ) && 0 === ( $GLOBALS['ssi_plan_posts'][ $home_id ]['post_parent'] ?? null ), 'wrapper entrypoint preserves its root page identity' );
+$assert( 'home' === ( $GLOBALS['ssi_plan_posts'][ $home_id ]['post_name'] ?? null ) && 0 === ( $GLOBALS['ssi_plan_posts'][ $home_id ]['post_parent'] ?? null ), 'wrapper entrypoint preserves its root page identity' );
 $assert( 'about' === ( $GLOBALS['ssi_plan_posts'][ $about_id ]['post_name'] ?? null ) && 0 === ( $GLOBALS['ssi_plan_posts'][ $about_id ]['post_parent'] ?? null ), 'nested index page slug matches its top-level canonical route' );
 $assert( 'team' === ( $GLOBALS['ssi_plan_posts'][ $team_id ]['post_name'] ?? null ) && $about_id === ( $GLOBALS['ssi_plan_posts'][ $team_id ]['post_parent'] ?? null ), 'deeper nested index page preserves canonical slug and WordPress parent identity' );
 
@@ -3412,7 +3412,7 @@ $route_meta_failure_receipt = Static_Site_Importer_WordPress_Site_Plan_Materiali
 $GLOBALS['ssi_plan_meta_write_failure'] = null;
 $assert( 'partial' === ( $route_meta_failure_receipt['status'] ?? '' ) && 'route_link_rewrite_failed' === ( $route_meta_failure_receipt['errors'][0]['code'] ?? '' ) && $posts_before_route_meta_failure === $GLOBALS['ssi_plan_posts'] && $meta_before_route_meta_failure === $GLOBALS['ssi_plan_meta'], 'route-link provenance metadata failure rolls back all inserted pages and metadata' );
 $route_receipt             = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $route_plan, array( 'slug' => 'route-link-plan' ) );
-$route_home                = current( array_filter( $GLOBALS['ssi_plan_posts'], static fn( array $post ): bool => 'index' === ( $post['post_name'] ?? '' ) ) );
+$route_home                = current( array_filter( $GLOBALS['ssi_plan_posts'], static fn( array $post ): bool => 'home' === ( $post['post_name'] ?? '' ) ) );
 $route_content             = is_array( $route_home ) ? stripslashes( (string) ( $route_home['post_content'] ?? '' ) ) : '';
 $route_rendered            = Static_Site_Importer_Internal_Link_Runtime::resolve_urls( $route_content );
 $contact_source_id = (int) ( $route_receipt['completed']['pages']['website/contact/index.html'] ?? 0 );
@@ -3435,7 +3435,7 @@ $GLOBALS['ssi_plan_permalink_structure'] = 'postname';
 $destination_plan     = ( new ArtifactCompiler() )->compile( $route_artifact )->toArray()['source_reports']['wordpress_site_plan'];
 $register_plan_blocks( $destination_plan );
 $destination_receipt  = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $destination_plan, array( 'slug' => 'route-link-destination-plan' ) );
-$destination_home     = current( array_filter( $GLOBALS['ssi_plan_posts'], static fn( array $post ): bool => 'index' === ( $post['post_name'] ?? '' ) ) );
+$destination_home     = current( array_filter( $GLOBALS['ssi_plan_posts'], static fn( array $post ): bool => 'home' === ( $post['post_name'] ?? '' ) ) );
 $destination_stored   = is_array( $destination_home ) ? stripslashes( (string) ( $destination_home['post_content'] ?? '' ) ) : '';
 $assert( 'completed' === ( $destination_receipt['status'] ?? '' ) && ! str_contains( $destination_stored, 'https://example.test/news/' ) && ! str_contains( $destination_stored, 'https://example.test/2024/03/news/' ), 'imported internal links are not frozen to the build host permalink structure' );
 $GLOBALS['ssi_plan_permalink_structure'] = 'pretty';
