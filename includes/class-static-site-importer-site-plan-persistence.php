@@ -231,6 +231,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			$state['applied']['files'][] = $result + array( 'publication' => $publication );
 		}
+		self::complete_template_part_entity_bindings( $state );
 		$provider_layout_overlays = isset( $args['provider_layout_overlays'] ) && is_array( $args['provider_layout_overlays'] ) ? $args['provider_layout_overlays'] : array();
 		if ( ! empty( $provider_layout_overlays ) ) {
 			$provider_layout_materialization = self::apply_provider_layout_overlays( $state, $provider_layout_overlays );
@@ -605,6 +606,36 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			'payload_hash'            => $write['payload_hash'] ?? hash( 'sha256', $data ),
 			'reconciliation_identity' => $write['reconciliation_identity'] ?? hash( 'sha256', $write['source_path'] . "\n" . $write['target_path'] ),
 		);
+	}
+
+	/**
+	 * A binding owned by a shared template part completes when the written part
+	 * file carries the provider fragment, the same proof a page binding gets from
+	 * its persisted post content.
+	 *
+	 * @param array<string,mixed> $state Materialization state.
+	 */
+	public static function complete_template_part_entity_bindings( array &$state ): void {
+		$documents = Static_Site_Importer_Site_Plan_Preparation::runtime_binding_documents( $state['resolved'] );
+		foreach ( $state['applied']['runtime_declarations']['entity_bindings'] as &$binding_report ) {
+			$document = $documents[ (string) ( $binding_report['source_path'] ?? '' ) ] ?? null;
+			if ( ! is_array( $document ) || 'template_parts' !== $document['group'] ) {
+				continue;
+			}
+			$target   = 'parts/' . (string) ( $state['resolved']['template_parts'][ $document['index'] ]['slug'] ?? '' ) . '.html';
+			$path     = $state['theme_dir'] . '/' . $target;
+			$fragment = (string) ( $binding_report['replacement_block_markup'] ?? '' );
+			$content  = is_file( $path ) ? file_get_contents( $path ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the just-written local theme part to prove the binding landed.
+			if ( ! is_string( $content ) || '' === $fragment || ! str_contains( $content, $fragment ) ) {
+				$binding_report['status'] = 'unresolved';
+				continue;
+			}
+			$binding_report['status']                    = 'completed';
+			$binding_report['template_part']             = $target;
+			$binding_report['persisted_fragment_hash']   = hash( 'sha256', $fragment );
+			$binding_report['materialized_content_hash'] = hash( 'sha256', $content );
+		}
+		unset( $binding_report );
 	}
 
 	/** Write every canonical byte or fail before the temporary file can be published. */

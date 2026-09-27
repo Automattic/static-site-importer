@@ -58,11 +58,11 @@ final class Static_Site_Importer_Runtime_Entity_Binding_Validation {
 
 	/** Verify every declared source anchor before providers create or update entities. */
 	public static function preflight_runtime_entity_binding_anchors( array $plan, array $lifecycle, array $args ) {
+		// A binding targets a page, or a template part that shared chrome
+		// containing the bound entity moved into.
 		$pages = array();
-		foreach ( is_array( $plan['pages'] ?? null ) ? $plan['pages'] : array() as $page ) {
-			if ( is_array( $page ) && is_string( $page['source_path'] ?? null ) ) {
-				$pages[ $page['source_path'] ] = $page;
-			}
+		foreach ( Static_Site_Importer_Site_Plan_Preparation::runtime_binding_documents( $plan ) as $source_path => $document ) {
+			$pages[ $source_path ] = $plan[ $document['group'] ][ $document['index'] ];
 		}
 		$claims = array();
 		$ranges = array();
