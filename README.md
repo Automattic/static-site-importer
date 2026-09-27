@@ -321,6 +321,30 @@ The export envelope includes:
 
 The default root is `website` with `entrypoint: "website/index.html"`. Callers can pass any safe single-segment root with a matching entrypoint, such as `root: "artifact"` and `entrypoint: "artifact/index.html"`. The import ability accepts the same canonical website artifact through `artifact`.
 
+## URL Loop Intake
+
+The bounded URL entrypoint retains one fresh Data Liberation Agent capture, then
+passes that exact generated-artifact tree through SSI's existing fixture intake.
+It never interprets fallback counts as solved-site acceptance and does not run a
+matrix unless explicitly requested:
+
+```bash
+node tools/url-loop-intake.mjs https://quinn-fluid-demo.squarespace.com/ \
+  --dla-cli /path/to/dla --dla-version 0.6.5 --dla-commit <known-ref> \
+  --output-root /path/to/retained/quinn-capture \
+  --run-matrix --static-site-importer /path/to/static-site-importer \
+  --blocks-engine /path/to/blocks-engine
+```
+
+The resulting `url-loop-handoff.json` records the source digest, capture receipt,
+observed component identities, normalized fixture, matrix/finding references,
+stage failures, and replay commands. A capture receipt must be
+`data-liberation-agent/capture-receipt/v1`, completed, source-bound, and carry a
+known DLA version and commit. Ambiguous artifact directories, partial captures,
+and missing provenance are blocked before SSI intake. WordPress/editor evidence
+remains owned by the existing fixture matrix and is required by solved-site
+promotion; this entrypoint never claims solved status.
+
 ## Product Handoff Contract
 
 The product handoff contract is defined in `docs/product-handoff-contract.md` and locked by `tests/fixtures/product-handoff-contract/v1.json` plus `tests/smoke-product-handoff-contract.php`.
