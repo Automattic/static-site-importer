@@ -340,14 +340,17 @@ The entrypoint configures the pinned DLA v0.6.5 asset and invokes
 supplies only the URL on later runs. The resulting `url-loop-handoff.json` records
 derived SHA256 provenance for the normalized URL, receipt bytes, and retained
 capture content, plus the capture receipt,
-observed component identities, normalized fixture, matrix/finding references,
-stage failures, and replay commands. A capture receipt must be
+observed component identities, normalized fixture, canonical matrix summary and
+artifact references when requested, stage failures, and replay commands. A capture receipt must be
 `data-liberation/capture-receipt/v1`, with `source.url` bound to the normalized
 URL and a complete route summary (`routesCaptured === routesDiscovered`, with no
 failed or skipped routes). Ambiguous artifact directories, partial captures,
-missing files, and missing declared release identity are blocked before SSI intake. WordPress/editor evidence
-remains owned by the existing fixture matrix and is required by solved-site
-promotion; this entrypoint never claims solved status.
+missing files, and missing declared release identity are blocked before SSI intake. A complete capture
+without a requested matrix is `needs_evaluation`; matrix evidence is accepted only
+when the selected fixture is explicitly `verified` in the canonical runtime
+evidence summary. WordPress/editor evidence remains owned by the existing fixture
+matrix and is required by solved-site promotion; this entrypoint never claims solved
+status.
 
 ## Product Handoff Contract
 

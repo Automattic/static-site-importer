@@ -9,6 +9,7 @@ import { materializeGeneratedArtifactFixtures, discoverGeneratedArtifacts } from
 
 export const URL_LOOP_INTAKE_SCHEMA = 'static-site-importer/url-loop-intake/v1';
 export const CAPTURE_RECEIPT_SCHEMA = 'data-liberation/capture-receipt/v1';
+export const MATRIX_EVIDENCE_READINESS_SCHEMA = 'static-site-importer/fixture-matrix-runtime-evidence-summary/v1';
 export const DLA_RELEASE = Object.freeze({
   version: 'v0.6.5',
   commit: '880575b81cd837322520d05d260f5d682506afbb',
@@ -38,9 +39,16 @@ export function validateArtifactSelection(artifactRoot) {
 }
 
 export function createHandoff(input = {}) {
+  const status = input.failures?.length
+    ? 'blocked'
+    : input.matrix?.evidence_complete
+      ? 'needs_review'
+      : input.matrix
+        ? 'blocked'
+        : 'needs_evaluation';
   const handoff = {
     schema: URL_LOOP_INTAKE_SCHEMA,
-    status: input.failures?.length ? 'blocked' : (input.matrix?.evidence_complete ? 'needs_review' : 'blocked'),
+    status,
     url: input.url || '',
     provenance: input.provenance || null,
     capture_receipt: input.captureReceipt || null,
@@ -108,7 +116,7 @@ export async function runUrlLoopIntake(input = {}, dependencies = {}) {
     try {
       // Keep capture/intake diagnostics usable without the optional visual-matrix
       // dependencies. The canonical matrix module is loaded only when requested.
-      const { buildFixtureMatrixRunPlan } = await import('./run-fixture-matrix.mjs');
+      const { buildFixtureMatrixRunPlan, summarizeBenchRun } = await import('./run-fixture-matrix.mjs');
       if (typeof input.staticSiteImporter !== 'string' || !input.staticSiteImporter || typeof input.blocksEngine !== 'string' || !input.blocksEngine) throw new Error('matrix_component_identities_missing');
       const matrixInput = { ...input.matrix, fixtureRoot, targetFixture: fixture.id, staticSiteImporter: input.staticSiteImporter, blocksEngine: input.blocksEngine, ssiIdentity: input.ssiIdentity, blocksEngineIdentity: input.blocksEngineIdentity, output: path.join(outputRoot, 'matrix', 'homeboy-bench-result.json') };
       const plan = buildFixtureMatrixRunPlan(matrixInput);
@@ -116,18 +124,35 @@ export async function runUrlLoopIntake(input = {}, dependencies = {}) {
       if (!input.dryRun) {
         const args = [fileURLToPath(import.meta.url).replace('url-loop-intake.mjs', 'run-fixture-matrix.mjs'), '--static-site-importer', input.staticSiteImporter, '--blocks-engine', input.blocksEngine, '--fixture-root', fixtureRoot, '--target-fixture', fixture.id, '--output', matrixInput.output, ...(input.matrixArgs || [])];
         const result = (dependencies.spawn || spawnSync)(process.execPath, args, { stdio: 'inherit' });
-        matrix.status = result.status === 0 ? 'passed' : 'failed';
-        if (result.status !== 0) failures.push(`matrix_command_failed:${result.status}`);
-        if (fs.existsSync(matrixInput.output)) matrix.evidence = readMatrixEvidence(matrixInput.output);
-        matrix.evidence_complete = Boolean(matrix.evidence?.result_file && matrix.evidence?.finding_packet_files?.length && matrix.evidence?.browser_status && matrix.evidence?.editor_status);
-        if (!matrix.evidence_complete) failures.push('matrix_runtime_evidence_incomplete');
+        let matrixSummary = null;
+        try {
+          matrixSummary = summarizeBenchRun({ plan, benchStatus: result.status ?? 1 }).summary;
+        } catch {
+          // A timeout, crash, or unparseable bench output is a typed runtime blocker.
+        }
+        if (matrixSummary?.matrix_evidence_readiness) {
+          matrix.summary = matrixSummary;
+          matrix.status = matrixSummary.status;
+          matrix.artifact_refs = matrixSummary.artifact_urls || [];
+          matrix.evidence = matrixSummary.matrix_evidence_readiness;
+          const evidence = validateMatrixEvidence(matrixSummary, fixture.id);
+          matrix.evidence_complete = evidence.valid;
+        }
+        if (!matrixSummary?.matrix_evidence_readiness) {
+          failures.push(matrixRuntimeFailure(result, matrixInput.output));
+        } else if (!matrix.evidence_complete) {
+          const evidenceReason = validateMatrixEvidence(matrixSummary, fixture.id);
+          failures.push(result.status !== 0
+            ? matrixRuntimeFailure(result, matrixInput.output)
+            : { stage: 'matrix', reason: evidenceReason.reason, fixture_id: fixture.id, readiness: matrix.evidence || null });
+        }
       }
       commands.push({ stage: 'matrix', command: process.execPath, args: [ 'tools/run-fixture-matrix.mjs', '--static-site-importer', input.staticSiteImporter, '--blocks-engine', input.blocksEngine, '--fixture-root', fixtureRoot, '--target-fixture', fixture.id, '--output', matrixInput.output, ...(input.matrixArgs || [])] });
     } catch (error) {
       failures.push(`matrix_setup_failed:${error.message}`);
     }
   }
-  const handoff = createHandoff({ url, provenance, captureReceipt, fixture, matrix, failures, commands, findingPacketRefs: matrix?.evidence?.finding_packet_files || [], identities: { dla: config.identity, ssi: input.ssiIdentity, blocks_engine: input.blocksEngineIdentity, wordpress: input.wordpressIdentity } });
+  const handoff = createHandoff({ url, provenance, captureReceipt, fixture, matrix, failures, commands, findingPacketRefs: [], identities: { dla: config.identity, ssi: input.ssiIdentity, blocks_engine: input.blocksEngineIdentity, wordpress: input.wordpressIdentity } });
   if (input.dryRun) return { ...handoff, handoff_path: null };
   fs.mkdirSync(path.dirname(handoffPath), { recursive: true });
   fs.writeFileSync(handoffPath, `${JSON.stringify(handoff, null, 2)}\n`);
@@ -169,18 +194,24 @@ function buildProvenance(url, capture) {
 }
 function listFiles(directory) { const files = []; for (const entry of fs.readdirSync(directory, { withFileTypes: true })) { const item = path.join(directory, entry.name); if (entry.isDirectory()) files.push(...listFiles(item)); else if (entry.isFile()) files.push(item); } return files; }
 function sha256(value) { return `sha256:${crypto.createHash('sha256').update(value).digest('hex')}`; }
-function readMatrixEvidence(file) {
-  const output = readJson(file);
-  if (!output) return null;
-  const resultFile = findKey(output, 'result_file') || findKey(output, 'output_file') || (findKey(output, 'result_summary') ? file : null);
-  const findingFiles = findValues(output, /finding[_-]?packet/i).filter((value) => typeof value === 'string');
-  const browserStatus = findStatus(output, /browser|visual/i);
-  const editorStatus = findStatus(output, /editor/i);
-  return { result_file: resultFile, finding_packet_files: [...new Set(findingFiles)], browser_status: browserStatus, editor_status: editorStatus, output_file: file };
+export function validateMatrixEvidence(summary, fixtureId) {
+  const readiness = summary?.matrix_evidence_readiness;
+  if (readiness?.schema !== MATRIX_EVIDENCE_READINESS_SCHEMA || !Array.isArray(readiness.fixtures)) return { valid: false, reason: 'authoritative_output_missing' };
+  const fixture = readiness.fixtures.find((row) => row.fixture_id === fixtureId);
+  if (!fixture || fixture.readiness !== 'verified') return { valid: false, reason: 'runtime_evidence_incomplete' };
+  return { valid: true, reason: null };
 }
-function findKey(value, key) { if (!value || typeof value !== 'object') return null; if (Object.prototype.hasOwnProperty.call(value, key) && typeof value[key] === 'string') return value[key]; for (const child of Object.values(value)) { const result = findKey(child, key); if (result) return result; } return null; }
-function findValues(value, keyPattern) { if (!value || typeof value !== 'object') return []; const values = []; for (const [key, child] of Object.entries(value)) { if (keyPattern.test(key) && typeof child === 'string') values.push(child); if (child && typeof child === 'object') values.push(...findValues(child, keyPattern)); } return values; }
-function findStatus(value, keyPattern) { if (!value || typeof value !== 'object') return null; for (const [key, child] of Object.entries(value)) { if (keyPattern.test(key) && typeof child === 'string') return child; if (keyPattern.test(key) && child && typeof child === 'object' && typeof child.status === 'string') return child.status; if (child && typeof child === 'object') { const result = findStatus(child, keyPattern); if (result) return result; } } return null; }
+function matrixRuntimeFailure(result, output) {
+  const timedOut = result?.status === null || result?.signal === 'SIGTERM' || result?.error?.code === 'ETIMEDOUT';
+  return {
+    stage: 'matrix',
+    reason: timedOut ? 'command_timeout' : (result?.status === 0 ? 'authoritative_output_missing' : 'command_failed'),
+    outcome: timedOut ? 'timed_out' : 'nonzero_or_missing_output',
+    exit_status: result?.status ?? null,
+    signal: result?.signal || null,
+    output_file: output,
+  };
+}
 function sourceSlug(url) { return new URL(url).hostname.replace(/[^a-z0-9.-]/gi, '-'); }
 function shellCommand(step) { return [step.command, ...(step.args || [])].map((value) => /^[A-Za-z0-9_./:=@+-]+$/.test(value) ? value : `'${String(value).replaceAll("'", "'\\''")}'`).join(' '); }
 

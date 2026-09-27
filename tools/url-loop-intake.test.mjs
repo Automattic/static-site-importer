@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CAPTURE_RECEIPT_SCHEMA, DLA_RELEASE, createHandoff, runUrlLoopIntake, validateArtifactSelection, validateCapture } from './url-loop-intake.mjs';
+import { CAPTURE_RECEIPT_SCHEMA, DLA_RELEASE, createHandoff, runUrlLoopIntake, validateArtifactSelection, validateCapture, validateMatrixEvidence } from './url-loop-intake.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -53,7 +53,7 @@ test('intake records derived provenance and materializes the retained website', 
       return { status: 0 };
     },
   });
-  assert.equal(result.status, 'blocked');
+  assert.equal(result.status, 'needs_evaluation');
   assert.match(result.provenance.source_url_sha256, /^sha256:[a-f0-9]{64}$/);
   assert.equal(fs.readFileSync(path.join(result.fixture.directory, 'index.html'), 'utf8'), '<!doctype html><main>fixture</main>');
 });
@@ -75,4 +75,63 @@ test('handoff never infers solved status from fallback-free output', () => {
   const handoff = createHandoff({ url: 'https://example.com/', provenance: { source_url_sha256: 'sha256:' + 'a'.repeat(64) }, matrix: { status: 'passed', fallback_count: 0 } });
   assert.equal(handoff.acceptance.solved, false);
   assert.equal(handoff.status, 'blocked');
+});
+
+test('complete capture without a matrix is actionable for evaluation', () => {
+  const handoff = createHandoff({
+    url: 'https://example.com/',
+    captureReceipt: { schema: CAPTURE_RECEIPT_SCHEMA },
+    fixture: { id: 'example' },
+  });
+  assert.equal(handoff.status, 'needs_evaluation');
+  assert.equal(handoff.acceptance.solved, false);
+});
+
+test('verified canonical matrix evidence is reviewable without a finding packet', () => {
+  const handoff = createHandoff({
+    url: 'https://example.com/',
+    fixture: { id: 'example' },
+    matrix: {
+      status: 'passed',
+      evidence_complete: true,
+      evidence: {
+        schema: 'static-site-importer/fixture-matrix-runtime-evidence-summary/v1',
+        status: 'verified',
+      },
+      artifact_refs: ['homeboy-runs:matrix-1'],
+    },
+  });
+  assert.equal(handoff.status, 'needs_review');
+  assert.deepEqual(handoff.finding_packet_refs, []);
+  assert.equal(handoff.acceptance.solved, false);
+});
+
+test('matrix runtime blockers retain typed stage and actual outcome', () => {
+  const failure = { stage: 'matrix', reason: 'command_timeout', outcome: 'timed_out', exit_status: null };
+  const handoff = createHandoff({ url: 'https://example.com/', matrix: { status: 'failed' }, failures: [failure] });
+  assert.equal(handoff.status, 'blocked');
+  assert.deepEqual(handoff.failures, [failure]);
+});
+
+test('matrix evidence fails closed for missing, pending, or failed runtime rows', () => {
+  assert.deepEqual(validateMatrixEvidence({}, 'example'), { valid: false, reason: 'authoritative_output_missing' });
+  const base = {
+    matrix_evidence_readiness: {
+      schema: 'static-site-importer/fixture-matrix-runtime-evidence-summary/v1',
+      fixtures: [{ fixture_id: 'example', readiness: 'pending' }],
+    },
+  };
+  assert.deepEqual(validateMatrixEvidence(base, 'example'), { valid: false, reason: 'runtime_evidence_incomplete' });
+  assert.deepEqual(validateMatrixEvidence({ ...base, matrix_evidence_readiness: { ...base.matrix_evidence_readiness, fixtures: [{ fixture_id: 'example', readiness: 'failed' }] } }, 'example'), { valid: false, reason: 'runtime_evidence_incomplete' });
+});
+
+test('matrix evidence requires verified evidence for the selected fixture', () => {
+  const summary = {
+    matrix_evidence_readiness: {
+      schema: 'static-site-importer/fixture-matrix-runtime-evidence-summary/v1',
+      fixtures: [{ fixture_id: 'other', readiness: 'verified' }, { fixture_id: 'example', readiness: 'verified' }],
+    },
+  };
+  assert.deepEqual(validateMatrixEvidence(summary, 'example'), { valid: true, reason: null });
+  assert.deepEqual(validateMatrixEvidence(summary, 'missing'), { valid: false, reason: 'runtime_evidence_incomplete' });
 });
