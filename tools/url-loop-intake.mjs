@@ -2,22 +2,30 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { materializeGeneratedArtifactFixtures, discoverGeneratedArtifacts } from '../lib/artifact-intake.mjs';
 
 export const URL_LOOP_INTAKE_SCHEMA = 'static-site-importer/url-loop-intake/v1';
-export const CAPTURE_RECEIPT_SCHEMA = 'data-liberation-agent/capture-receipt/v1';
+export const CAPTURE_RECEIPT_SCHEMA = 'data-liberation/capture-receipt/v1';
+export const DLA_RELEASE = Object.freeze({
+  version: 'v0.6.5',
+  commit: '880575b81cd837322520d05d260f5d682506afbb',
+  asset: 'https://github.com/Automattic/data-liberation-agent/releases/download/v0.6.5/data-liberation-0.6.5.tgz',
+  sha256: 'dd6ce344a37fbe7e06af973aec0cf576cdb2fc88f3a4e155e49723953c4200b8',
+});
 
 export function validateCapture(input = {}) {
   const receipt = input.receipt || input;
   const failures = [];
   if (receipt.schema !== CAPTURE_RECEIPT_SCHEMA) failures.push('capture_receipt_schema_unknown');
-  if (receipt.status !== 'completed' || receipt.complete !== true) failures.push('capture_incomplete');
-  if (!receipt.source_url) failures.push('capture_source_url_missing');
-  if (!receipt.source_digest || !/^sha256:[a-f0-9]{64}$/i.test(receipt.source_digest)) failures.push('source_digest_missing');
-  if (!known(receipt.dla?.version) || !known(receipt.dla?.commit)) failures.push('dla_provenance_missing');
-  if (!Number.isInteger(receipt.file_count) || receipt.file_count < 1) failures.push('capture_files_missing');
+  const summary = receipt.summary;
+  if (summary?.complete !== true || !Number.isInteger(summary?.routesCaptured) || summary.routesCaptured < 1 || summary.routesCaptured !== summary.routesDiscovered || summary.routesFailed !== 0 || summary.routesSkipped !== 0) {
+    failures.push('capture_incomplete');
+  }
+  if (!receipt.source?.url) failures.push('capture_source_url_missing');
+  if (!summary || !Number.isInteger(summary.routesDiscovered)) failures.push('capture_route_summary_missing');
   return { valid: failures.length === 0, failures };
 }
 
@@ -32,9 +40,9 @@ export function validateArtifactSelection(artifactRoot) {
 export function createHandoff(input = {}) {
   const handoff = {
     schema: URL_LOOP_INTAKE_SCHEMA,
-    status: input.failures?.length ? 'blocked' : (input.matrix?.status || 'captured'),
+    status: input.failures?.length ? 'blocked' : (input.matrix?.evidence_complete ? 'needs_review' : 'blocked'),
     url: input.url || '',
-    source_digest: input.sourceDigest || '',
+    provenance: input.provenance || null,
     capture_receipt: input.captureReceipt || null,
     identities: input.identities || {},
     fixture: input.fixture || null,
@@ -56,32 +64,38 @@ export async function runUrlLoopIntake(input = {}, dependencies = {}) {
   const config = normalizeDlaConfig(configInput || {});
   const outputRoot = path.resolve(input.outputRoot || path.join(process.cwd(), 'artifacts', sourceSlug(url)));
   const captureRoot = path.join(outputRoot, 'capture');
-  const artifactRoot = path.join(captureRoot, 'artifacts');
-  const receiptPath = path.join(captureRoot, 'capture-receipt.json');
   const fixtureRoot = path.join(outputRoot, 'fixtures', 'websites');
   const handoffPath = path.resolve(input.handoff || path.join(outputRoot, 'url-loop-handoff.json'));
   const commands = [];
   const failures = [];
-  fs.mkdirSync(outputRoot, { recursive: true });
-  if (fs.readdirSync(outputRoot).length > 0 && !input.allowExistingOutput) failures.push('output_root_not_fresh');
+  if (!input.dryRun) fs.mkdirSync(outputRoot, { recursive: true });
+  if (input.dryRun) failures.push('dry_run_not_executed');
+  if (fs.existsSync(outputRoot) && fs.readdirSync(outputRoot).length > 0 && !input.allowExistingOutput) failures.push('output_root_not_fresh');
   if (!failures.length) {
-    fs.mkdirSync(artifactRoot, { recursive: true });
-    const captureArgs = config.captureArgs.map((arg) => String(arg).replaceAll('{url}', url).replaceAll('{output}', artifactRoot).replaceAll('{receipt}', receiptPath));
+    fs.mkdirSync(captureRoot, { recursive: true });
+    const captureArgs = config.captureArgs.map((arg) => String(arg).replaceAll('{url}', url).replaceAll('{output}', captureRoot));
     const command = { command: config.cli, args: captureArgs };
     commands.push({ stage: 'capture', ...command, shell: shellCommand(command) });
     const result = (dependencies.spawn || spawnSync)(config.cli, captureArgs, { stdio: 'inherit' });
     if ((result.status ?? 1) !== 0) failures.push(`capture_command_failed:${result.status ?? 1}`);
   }
 
-  let captureReceipt = readJson(receiptPath);
+  const selectedCapture = findRetainedCapture(captureRoot, url);
+  const captureReceipt = selectedCapture?.receipt || null;
   const captureValidation = validateCapture(captureReceipt || {});
   failures.push(...captureValidation.failures);
-  if (captureReceipt && captureReceipt.source_url !== url) failures.push('capture_source_url_mismatch');
+  if (!selectedCapture) failures.push('capture_directory_missing_or_ambiguous');
+  if (captureReceipt && captureReceipt.source?.url !== url) failures.push('capture_source_url_mismatch');
+  if (selectedCapture && captureReceipt) {
+    const htmlCount = listFiles(path.join(selectedCapture.directory, 'website')).filter((file) => /\.html?$/i.test(file)).length;
+    if (htmlCount < captureReceipt.summary.routesCaptured) failures.push('capture_route_files_missing');
+  }
+  const provenance = selectedCapture ? buildProvenance(url, selectedCapture) : null;
   let fixture;
   if (!failures.length) {
     try {
-      validateArtifactSelection(artifactRoot);
-      const intake = materializeGeneratedArtifactFixtures({ artifactRoot, fixtureRoot });
+      validateArtifactSelection(path.join(selectedCapture.directory, 'website'));
+      const intake = materializeGeneratedArtifactFixtures({ artifactRoot: path.join(selectedCapture.directory, 'website'), fixtureRoot });
       if (intake.count !== 1) throw new Error(`fixture_count_invalid:${intake.count}`);
       fixture = intake.fixtures[0];
     } catch (error) {
@@ -94,22 +108,27 @@ export async function runUrlLoopIntake(input = {}, dependencies = {}) {
     try {
       // Keep capture/intake diagnostics usable without the optional visual-matrix
       // dependencies. The canonical matrix module is loaded only when requested.
-      const { buildFixtureMatrixRunPlan, summarizeRun } = await import('./run-fixture-matrix.mjs');
-      const matrixInput = { ...input.matrix, fixtureRoot, targetFixture: fixture.id, staticSiteImporter: input.staticSiteImporter, blocksEngine: input.blocksEngine, output: path.join(outputRoot, 'matrix', 'homeboy-bench-result.json') };
+      const { buildFixtureMatrixRunPlan } = await import('./run-fixture-matrix.mjs');
+      if (typeof input.staticSiteImporter !== 'string' || !input.staticSiteImporter || typeof input.blocksEngine !== 'string' || !input.blocksEngine) throw new Error('matrix_component_identities_missing');
+      const matrixInput = { ...input.matrix, fixtureRoot, targetFixture: fixture.id, staticSiteImporter: input.staticSiteImporter, blocksEngine: input.blocksEngine, ssiIdentity: input.ssiIdentity, blocksEngineIdentity: input.blocksEngineIdentity, output: path.join(outputRoot, 'matrix', 'homeboy-bench-result.json') };
       const plan = buildFixtureMatrixRunPlan(matrixInput);
       matrix = { status: 'planned', plan, command: plan.steps.at(-1)?.retry_command || '' };
       if (!input.dryRun) {
-        const result = (dependencies.spawn || spawnSync)(process.execPath, [fileURLToPath(import.meta.url).replace('url-loop-intake.mjs', 'run-fixture-matrix.mjs'), '--static-site-importer', input.staticSiteImporter, '--fixture-root', fixtureRoot, '--target-fixture', fixture.id, '--output', matrixInput.output, ...(input.matrixArgs || [])], { stdio: 'inherit' });
+        const args = [fileURLToPath(import.meta.url).replace('url-loop-intake.mjs', 'run-fixture-matrix.mjs'), '--static-site-importer', input.staticSiteImporter, '--blocks-engine', input.blocksEngine, '--fixture-root', fixtureRoot, '--target-fixture', fixture.id, '--output', matrixInput.output, ...(input.matrixArgs || [])];
+        const result = (dependencies.spawn || spawnSync)(process.execPath, args, { stdio: 'inherit' });
         matrix.status = result.status === 0 ? 'passed' : 'failed';
         if (result.status !== 0) failures.push(`matrix_command_failed:${result.status}`);
-        if (fs.existsSync(matrixInput.output)) matrix.summary = summarizeRun(plan, { status: matrix.status });
+        if (fs.existsSync(matrixInput.output)) matrix.evidence = readMatrixEvidence(matrixInput.output);
+        matrix.evidence_complete = Boolean(matrix.evidence?.result_file && matrix.evidence?.finding_packet_files?.length && matrix.evidence?.browser_status && matrix.evidence?.editor_status);
+        if (!matrix.evidence_complete) failures.push('matrix_runtime_evidence_incomplete');
       }
-      commands.push({ stage: 'matrix', command: process.execPath, args: ['tools/run-fixture-matrix.mjs', '--static-site-importer', input.staticSiteImporter, '--fixture-root', fixtureRoot, '--target-fixture', fixture.id, '--output', matrixInput.output, ...(input.matrixArgs || [])] });
+      commands.push({ stage: 'matrix', command: process.execPath, args: [ 'tools/run-fixture-matrix.mjs', '--static-site-importer', input.staticSiteImporter, '--blocks-engine', input.blocksEngine, '--fixture-root', fixtureRoot, '--target-fixture', fixture.id, '--output', matrixInput.output, ...(input.matrixArgs || [])] });
     } catch (error) {
       failures.push(`matrix_setup_failed:${error.message}`);
     }
   }
-  const handoff = createHandoff({ url, sourceDigest: captureReceipt?.source_digest, captureReceipt, fixture, matrix, failures, commands, findingPacketRefs: matrix?.summary?.finding_packet_refs || [], identities: { dla: config.identity, ssi: input.ssiIdentity, blocks_engine: input.blocksEngineIdentity, wordpress: input.wordpressIdentity } });
+  const handoff = createHandoff({ url, provenance, captureReceipt, fixture, matrix, failures, commands, findingPacketRefs: matrix?.evidence?.finding_packet_files || [], identities: { dla: config.identity, ssi: input.ssiIdentity, blocks_engine: input.blocksEngineIdentity, wordpress: input.wordpressIdentity } });
+  if (input.dryRun) return { ...handoff, handoff_path: null };
   fs.mkdirSync(path.dirname(handoffPath), { recursive: true });
   fs.writeFileSync(handoffPath, `${JSON.stringify(handoff, null, 2)}\n`);
   return { ...handoff, handoff_path: handoffPath };
@@ -117,12 +136,51 @@ export async function runUrlLoopIntake(input = {}, dependencies = {}) {
 
 function normalizeUrl(value) { const url = new URL(String(value || '')); if (!['http:', 'https:'].includes(url.protocol)) throw new Error('url must be a public http(s) URL'); return url.href; }
 function normalizeDlaConfig(input) {
-  const cli = input.dlaCli || input.cli;
-  if (!cli || !known(input.dlaVersion) || !known(input.dlaCommit)) throw new Error('explicit, known DLA CLI, version, and commit are required');
-  return { cli, captureArgs: input.captureArgs || ['capture', '--url', '{url}', '--output', '{output}', '--receipt', '{receipt}'], identity: { cli, version: input.dlaVersion, commit: input.dlaCommit } };
+  const identity = { ...DLA_RELEASE, executable: 'data-liberation' };
+  if (input.dlaVersion && input.dlaVersion !== identity.version || input.dlaCommit && input.dlaCommit !== identity.commit || input.dlaAsset && input.dlaAsset !== identity.asset || input.dlaSha256 && input.dlaSha256 !== identity.sha256) throw new Error('declared DLA release identity does not match v0.6.5');
+  return { cli: 'npx', captureArgs: ['--yes', `--package=${identity.asset}`, identity.executable, '{url}', '--output', '{output}'], identity };
 }
-function known(value) { return Boolean(value && !/^(?:unknown|latest|dev|dirty)$/i.test(String(value).trim())); }
 function readJson(file) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } }
+function findRetainedCapture(root, url) {
+  const candidates = [];
+  let malformed = false;
+  visitCaptureDirectories(root, (directory) => {
+    const receiptPath = path.join(directory, 'capture-receipt.json');
+    const website = path.join(directory, 'website');
+    const hasReceipt = fs.existsSync(receiptPath);
+    const hasWebsite = fs.existsSync(website) && fs.statSync(website).isDirectory();
+    if (hasReceipt !== hasWebsite) { malformed = true; return; }
+    if (!hasReceipt) return;
+    const receipt = readJson(receiptPath);
+    if (receipt?.source?.url === url) candidates.push({ directory, receipt, receiptPath });
+  });
+  if (malformed || candidates.length !== 1) return null;
+  return candidates[0];
+}
+function visitCaptureDirectories(directory, callback) {
+  if (!fs.existsSync(directory) || !fs.statSync(directory).isDirectory()) return;
+  callback(directory);
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) if (entry.isDirectory()) visitCaptureDirectories(path.join(directory, entry.name), callback);
+}
+function buildProvenance(url, capture) {
+  const files = listFiles(capture.directory).filter((file) => file !== capture.receiptPath).map((file) => ({ path: path.relative(capture.directory, file), bytes: fs.readFileSync(file) })).sort((left, right) => left.path.localeCompare(right.path));
+  const content = Buffer.concat(files.flatMap((file) => [Buffer.from(`${file.path}\0`), file.bytes]));
+  return { source_url_sha256: sha256(url), capture_receipt_sha256: sha256(fs.readFileSync(capture.receiptPath)), captured_content_sha256: sha256(content), basis: 'normalized source URL, capture-receipt.json bytes, and sorted retained capture files' };
+}
+function listFiles(directory) { const files = []; for (const entry of fs.readdirSync(directory, { withFileTypes: true })) { const item = path.join(directory, entry.name); if (entry.isDirectory()) files.push(...listFiles(item)); else if (entry.isFile()) files.push(item); } return files; }
+function sha256(value) { return `sha256:${crypto.createHash('sha256').update(value).digest('hex')}`; }
+function readMatrixEvidence(file) {
+  const output = readJson(file);
+  if (!output) return null;
+  const resultFile = findKey(output, 'result_file') || findKey(output, 'output_file') || (findKey(output, 'result_summary') ? file : null);
+  const findingFiles = findValues(output, /finding[_-]?packet/i).filter((value) => typeof value === 'string');
+  const browserStatus = findStatus(output, /browser|visual/i);
+  const editorStatus = findStatus(output, /editor/i);
+  return { result_file: resultFile, finding_packet_files: [...new Set(findingFiles)], browser_status: browserStatus, editor_status: editorStatus, output_file: file };
+}
+function findKey(value, key) { if (!value || typeof value !== 'object') return null; if (Object.prototype.hasOwnProperty.call(value, key) && typeof value[key] === 'string') return value[key]; for (const child of Object.values(value)) { const result = findKey(child, key); if (result) return result; } return null; }
+function findValues(value, keyPattern) { if (!value || typeof value !== 'object') return []; const values = []; for (const [key, child] of Object.entries(value)) { if (keyPattern.test(key) && typeof child === 'string') values.push(child); if (child && typeof child === 'object') values.push(...findValues(child, keyPattern)); } return values; }
+function findStatus(value, keyPattern) { if (!value || typeof value !== 'object') return null; for (const [key, child] of Object.entries(value)) { if (keyPattern.test(key) && typeof child === 'string') return child; if (keyPattern.test(key) && child && typeof child === 'object' && typeof child.status === 'string') return child.status; if (child && typeof child === 'object') { const result = findStatus(child, keyPattern); if (result) return result; } } return null; }
 function sourceSlug(url) { return new URL(url).hostname.replace(/[^a-z0-9.-]/gi, '-'); }
 function shellCommand(step) { return [step.command, ...(step.args || [])].map((value) => /^[A-Za-z0-9_./:=@+-]+$/.test(value) ? value : `'${String(value).replaceAll("'", "'\\''")}'`).join(' '); }
 

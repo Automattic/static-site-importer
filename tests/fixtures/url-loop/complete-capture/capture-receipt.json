@@ -1,0 +1,13 @@
+{
+  "schema": "data-liberation/capture-receipt/v1",
+  "source": {
+    "url": "https://example.com/"
+  },
+  "summary": {
+    "complete": true,
+    "routesCaptured": 8,
+    "routesDiscovered": 8,
+    "routesFailed": 0,
+    "routesSkipped": 0
+  }
+}

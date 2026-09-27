@@ -330,18 +330,22 @@ matrix unless explicitly requested:
 
 ```bash
 node tools/url-loop-intake.mjs https://quinn-fluid-demo.squarespace.com/ \
-  --dla-cli /path/to/dla --dla-version 0.6.5 --dla-commit <known-ref> \
   --output-root /path/to/retained/quinn-capture \
   --run-matrix --static-site-importer /path/to/static-site-importer \
   --blocks-engine /path/to/blocks-engine
 ```
 
-The resulting `url-loop-handoff.json` records the source digest, capture receipt,
+The entrypoint configures the pinned DLA v0.6.5 asset and invokes
+`npx --yes --package=<asset> data-liberation <url> --output <dir>`. The operator
+supplies only the URL on later runs. The resulting `url-loop-handoff.json` records
+derived SHA256 provenance for the normalized URL, receipt bytes, and retained
+capture content, plus the capture receipt,
 observed component identities, normalized fixture, matrix/finding references,
 stage failures, and replay commands. A capture receipt must be
-`data-liberation-agent/capture-receipt/v1`, completed, source-bound, and carry a
-known DLA version and commit. Ambiguous artifact directories, partial captures,
-and missing provenance are blocked before SSI intake. WordPress/editor evidence
+`data-liberation/capture-receipt/v1`, with `source.url` bound to the normalized
+URL and a complete route summary (`routesCaptured === routesDiscovered`, with no
+failed or skipped routes). Ambiguous artifact directories, partial captures,
+missing files, and missing declared release identity are blocked before SSI intake. WordPress/editor evidence
 remains owned by the existing fixture matrix and is required by solved-site
 promotion; this entrypoint never claims solved status.
 
