@@ -321,6 +321,37 @@ The export envelope includes:
 
 The default root is `website` with `entrypoint: "website/index.html"`. Callers can pass any safe single-segment root with a matching entrypoint, such as `root: "artifact"` and `entrypoint: "artifact/index.html"`. The import ability accepts the same canonical website artifact through `artifact`.
 
+## URL Loop Intake
+
+The bounded URL entrypoint retains one fresh Data Liberation Agent capture, then
+passes that exact generated-artifact tree through SSI's existing fixture intake.
+It never interprets fallback counts as solved-site acceptance and does not run a
+matrix unless explicitly requested:
+
+```bash
+node tools/url-loop-intake.mjs https://quinn-fluid-demo.squarespace.com/ \
+  --output-root /path/to/retained/quinn-capture \
+  --run-matrix --static-site-importer /path/to/static-site-importer \
+  --blocks-engine /path/to/blocks-engine
+```
+
+The entrypoint configures the pinned DLA v0.6.5 asset and invokes
+`npx --yes --package=<asset> data-liberation <url> --output <dir>`. The operator
+supplies only the URL on later runs. The resulting `url-loop-handoff.json` records
+derived SHA256 provenance for the normalized URL, receipt bytes, and retained
+capture content, plus the capture receipt,
+observed component identities, normalized fixture, canonical matrix summary and
+artifact references when requested, stage failures, and replay commands. A capture receipt must be
+`data-liberation/capture-receipt/v1`, with `source.url` bound to the normalized
+URL and a complete route summary (`routesCaptured === routesDiscovered`, with no
+failed or skipped routes). Ambiguous artifact directories, partial captures,
+missing files, and missing declared release identity are blocked before SSI intake. A complete capture
+without a requested matrix is `needs_evaluation`; matrix evidence is accepted only
+when the selected fixture is explicitly `verified` in the canonical runtime
+evidence summary. WordPress/editor evidence remains owned by the existing fixture
+matrix and is required by solved-site promotion; this entrypoint never claims solved
+status.
+
 ## Product Handoff Contract
 
 The product handoff contract is defined in `docs/product-handoff-contract.md` and locked by `tests/fixtures/product-handoff-contract/v1.json` plus `tests/smoke-product-handoff-contract.php`.
