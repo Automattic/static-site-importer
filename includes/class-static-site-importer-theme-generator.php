@@ -89,7 +89,7 @@ class Static_Site_Importer_Theme_Generator {
 			$resume_args = array(
 				'runtime_lifecycle_phase'         => 'prepare',
 				'runtime_lifecycle_invocation_id' => $current_invocation,
-				'materialize_dependencies'       => true,
+				'materialize_dependencies'        => true,
 			);
 		} elseif ( 'resume' === $phase && '' !== (string) ( $args['runtime_lifecycle_checkpoint'] ?? '' ) ) {
 			$checkpoint = Static_Site_Importer_Lifecycle_Compile_Checkpoint::load(

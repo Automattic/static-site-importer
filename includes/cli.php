@@ -1368,7 +1368,9 @@ if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 			if ( is_wp_error( $input ) ) {
 				WP_CLI::error( $input->get_error_message() );
 			}
-			$input['retain_compile_checkpoint'] = isset( $assoc_args['retain-compile-checkpoint'] );
+			if ( isset( $assoc_args['retain-compile-checkpoint'] ) ) {
+				$input['retain_compile_checkpoint'] = true;
+			}
 			$result = Static_Site_Importer_Validation_Runtime::plan_artifact_dependencies( $input );
 			if ( is_wp_error( $result ) ) {
 				WP_CLI::error( $result->get_error_message() );
