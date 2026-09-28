@@ -342,23 +342,16 @@ class Static_Site_Importer_Form_Seeder {
 		$mapped_types                  = array();
 		$submit_text                   = 'Submit';
 		$skipped                       = array();
+		$unsupported_capabilities      = array();
 		$control_attribute_losses      = array();
 		$has_topology                  = isset( $form['control_topology'] );
 		$has_source_submit             = false;
 		$textarea_height_omitted_count = (int) ( $form['form']['textarea_height_omitted_count'] ?? 0 );
 		$radio_groups                  = Static_Site_Importer_Form_Field_Markup::labelled_radio_groups( $form, $controls );
 		$suppressed_controls           = $radio_groups['suppressed_controls'];
-		if ( ! empty( $form['form']['interleaved_context'] ) ) {
-			return array(
-				'selector'       => $selector,
-				'source_path'    => $source_path,
-				'provider'       => self::PROVIDER_ID,
-				'block_name'     => 'jetpack/contact-form',
-				'status'         => 'skipped',
-				'reason'         => 'interleaved_context_unrepresentable',
-				'runtime_mapped' => false,
-			);
-		}
+		// Context is editable content, not a reason to decline the provider form.
+		// Keep supported fields in Jetpack and project bounded before/after copy
+		// as editable core blocks within the provider form (see context_blocks).
 		$submit_presentation = isset( $form['form']['submit_presentation'] ) && is_array( $form['form']['submit_presentation'] ) ? $form['form']['submit_presentation'] : array();
 		if ( is_string( $submit_presentation['text'] ?? null ) && '' !== trim( $submit_presentation['text'] ) ) {
 			$submit_text = trim( $submit_presentation['text'] );
@@ -433,7 +426,23 @@ class Static_Site_Importer_Form_Seeder {
 			}
 
 			$control_phone_destinations = $presentation_descriptor['phone_destinations'];
-			$field_block                = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
+			if ( 'file' === $type && 'input' === $tag ) {
+				$label                         = Static_Site_Importer_Form_Field_Markup::control_text( $control );
+				$field_blocks[ $control_index ] = array(
+					'name'    => 'core/paragraph',
+					'attrs'   => array( 'className' => 'ssi-unsupported-file-upload' ),
+					'content' => trim( $label . ' — File upload requires Jetpack connection and a supported plan; unavailable in this import runtime.' ),
+					'wrapper' => 'paragraph',
+				);
+				$skipped[]                       = 'file';
+				$unsupported_capabilities[]      = array(
+					'capability'    => 'file_upload',
+					'reason_code'   => 'jetpack_upload_endpoint_requires_connected_site_and_supported_plan',
+					'control_index' => $control_index,
+				);
+				continue;
+			}
+			$field_block = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
 				$tag,
 				$type,
 				$control,
@@ -773,6 +782,9 @@ class Static_Site_Importer_Form_Seeder {
 			'provider_layout_target_map'  => $target_map,
 			'provider_layout_overlay_css' => $overlay['overlay'],
 		);
+		if ( ! empty( $unsupported_capabilities ) ) {
+			$row['unsupported_capabilities'] = $unsupported_capabilities;
+		}
 		if ( ! empty( $visual_state['state'] ) ) {
 			$row['form_visual_state'] = $visual_state['state'];
 		}
@@ -1258,6 +1270,21 @@ class Static_Site_Importer_Form_Seeder {
 
 	/** A source label wrapper is carried by the mapped Jetpack field's label child. */
 	private static function provider_represents_receipt_loss( array $loss, array $form, array $field_blocks, array $target_map = array() ): bool {
+		if ( 'provider_native_control_visibility_unrepresentable' === ( $loss['reason_code'] ?? '' ) && is_string( $loss['node_hash'] ?? null ) ) {
+			foreach ( $form['control_topology']['nodes'] ?? array() as $node ) {
+				$index = is_array( $node ) && 'control' === ( $node['kind'] ?? '' ) && is_int( $node['control'] ?? null ) ? $node['control'] : null;
+				$control = is_int( $index ) ? ( $form['controls'][ $index ] ?? null ) : null;
+				if ( is_array( $node ) && is_int( $index ) && hash( 'sha256', (string) ( $node['id'] ?? '' ) ) === $loss['node_hash'] && is_array( $control ) && 'file' === strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) && 'core/paragraph' === ( $field_blocks[ $index ]['name'] ?? '' ) ) {
+					return true;
+				}
+			}
+		}
+		if ( 'unsupported_control_unrepresentable' === ( $loss['reason_code'] ?? '' ) && is_int( $loss['control_index'] ?? null ) ) {
+			$control = $form['controls'][ $loss['control_index'] ] ?? null;
+			if ( is_array( $control ) && 'file' === strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) && 'core/paragraph' === ( $field_blocks[ $loss['control_index'] ]['name'] ?? '' ) ) {
+				return true;
+			}
+		}
 		if ( 'provider_wrapper_layout_unrepresentable' === ( $loss['reason_code'] ?? '' ) && is_string( $loss['node_hash'] ?? null ) ) {
 			$targets = is_array( $target_map['targets'] ?? null ) ? $target_map['targets'] : array();
 			foreach ( $targets as $target ) {

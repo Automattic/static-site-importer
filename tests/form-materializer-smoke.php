@@ -332,6 +332,26 @@ namespace {
 	$assert( str_contains( $markup, 'wp:jetpack/field-radio' ), 'markup-field-radio' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-checkbox' ), 'markup-field-checkbox' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-textarea' ), 'markup-field-textarea' );
+	$interleaved_form = array(
+		'form'     => array(
+			'interleaved_context' => true,
+			'context_before'      => array( array( 'type' => 'heading', 'text' => 'Contact us' ) ),
+			'context_after'       => array( array( 'type' => 'paragraph', 'text' => 'We will reply soon.' ) ),
+		),
+		'controls' => array(
+			array( 'tag' => 'input', 'type' => 'text', 'name' => 'name', 'label' => 'Name' ),
+			array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email', 'required' => true ),
+			array( 'tag' => 'textarea', 'type' => 'textarea', 'name' => 'message', 'label' => 'Message' ),
+			array( 'tag' => 'input', 'type' => 'file', 'name' => 'attachment', 'label' => 'Attach files' ),
+			array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+		),
+	);
+	$interleaved_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $interleaved_form ) ) )['forms'][0] ?? array();
+	$interleaved_markup = (string) ( $interleaved_row['block_markup'] ?? '' );
+	$assert( 'mapped' === ( $interleaved_row['status'] ?? '' ) && true === ( $interleaved_row['runtime_mapped'] ?? false ), 'interleaved-context-form-is-provider-mapped' );
+	$assert( 3 === ( $interleaved_row['field_count'] ?? 0 ) && str_contains( $interleaved_markup, 'wp:jetpack/field-text' ) && str_contains( $interleaved_markup, 'wp:jetpack/field-email' ) && str_contains( $interleaved_markup, 'wp:jetpack/field-textarea' ), 'interleaved-context-supported-fields-remain-submittable-provider-fields' );
+	$assert( str_contains( $interleaved_markup, 'wp:heading' ) && str_contains( $interleaved_markup, 'Contact us' ) && str_contains( $interleaved_markup, 'wp:paragraph' ) && str_contains( $interleaved_markup, 'We will reply soon.' ), 'interleaved-context-is-editable-block-content' );
+	$assert( in_array( 'file', $interleaved_row['skipped_types'] ?? array(), true ) && 'file_upload' === ( $interleaved_row['unsupported_capabilities'][0]['capability'] ?? '' ) && 'jetpack_upload_endpoint_requires_connected_site_and_supported_plan' === ( $interleaved_row['unsupported_capabilities'][0]['reason_code'] ?? '' ) && str_contains( $interleaved_markup, 'Attach files' ) && str_contains( $interleaved_markup, 'requires Jetpack connection and a supported plan' ), 'unsupported-file-upload-is-diagnostic-and-retains-labelled-position' );
 	$assert( str_contains( $markup, 'wp:button' ) && ! str_contains( $markup, 'wp:jetpack/button' ), 'markup-canonical-core-submit-button' );
 	$assert( 1 === substr_count( $markup, '<!-- wp:button ' ) && str_contains( $markup, '<button type="submit" class="wp-block-button__link wp-element-button">Send message</button>' ), 'source-submit-control-emits-one-canonical-button' );
 	$labelled_submit_markup = Static_Site_Importer_Form_Seeder::seed(
@@ -3504,15 +3524,15 @@ namespace {
 	$assert( ! empty( $unsupported_tag_validation['forms'] ) && empty( $unsupported_tag_validation['errors'] ), 'topology-canonical-wrapper-vocabulary-remains-compatible' );
 	$unsupported_control = $topology_form;
 	$unsupported_control['forms'][0]['controls'][1] = array( 'tag' => 'input', 'type' => 'file', 'name' => 'attachment', 'label' => 'Attachment' );
+	$unsupported_control['forms'][0]['layout_graph'] = $layout_graph( array( $layout_node( 'control-1', array( 'display' => 'none' ), 'input' ) ) );
 	$unsupported_control_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unsupported_control );
 	$unsupported_control_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $unsupported_control_validation['forms'] ) );
 	$unsupported_control_row = $unsupported_control_seed['forms'][0] ?? array();
 	$unsupported_control_losses = array_values( array_filter( $unsupported_control_row['computed_layout_receipt']['losses'] ?? array(), static fn ( $loss ): bool => 'unsupported_control_unrepresentable' === ( $loss['reason_code'] ?? '' ) ) );
-	$unsupported_control_loss = $unsupported_control_losses[0] ?? array();
 	$unsupported_control_markup = (string) ( $unsupported_control_row['block_markup'] ?? '' );
-	$assert( empty( $unsupported_control_validation['errors'] ) && array( 'file' ) === ( $unsupported_control_row['skipped_types'] ?? array() ), 'unsupported-file-control-keeps-provider-skipped-type-diagnostic' );
-	$assert( 'topology' === ( $unsupported_control_loss['dimension'] ?? '' ) && 'unsupported_control_unrepresentable' === ( $unsupported_control_loss['reason_code'] ?? '' ) && 1 === ( $unsupported_control_loss['control_index'] ?? null ) && hash( 'sha256', 'file' ) === ( $unsupported_control_loss['control_type_hash'] ?? '' ) && 64 === strlen( (string) ( $unsupported_control_loss['node_hash'] ?? '' ) ), 'unsupported-file-control-records-node-addressable-topology-loss' );
-	$assert( str_contains( $unsupported_control_markup, 'First name' ) && ! str_contains( $unsupported_control_markup, 'Attachment' ) && str_contains( $unsupported_control_markup, 'Message' ), 'unsupported-file-control-preserves-supported-topology-order-around-loss' );
+	$assert( empty( $unsupported_control_validation['errors'] ) && array( 'file' ) === ( $unsupported_control_row['skipped_types'] ?? array() ), 'unsupported-file-control-keeps-provider-skipped-type-diagnostic', wp_json_encode( $unsupported_control_row ) );
+	$assert( empty( $unsupported_control_losses ) && empty( $unsupported_control_row['form_receipt_unaccepted_losses'] ) && 'file_upload' === ( $unsupported_control_row['unsupported_capabilities'][0]['capability'] ?? '' ), 'hidden-file-control-loss-is-replaced-by-targeted-upload-capability-diagnostic', wp_json_encode( $unsupported_control_row ) );
+	$assert( 'mapped' === ( $unsupported_control_row['status'] ?? '' ) && str_contains( $unsupported_control_markup, 'First name' ) && str_contains( $unsupported_control_markup, 'Attachment' ) && str_contains( $unsupported_control_markup, 'Message' ) && strpos( $unsupported_control_markup, 'Attachment' ) < strpos( $unsupported_control_markup, 'Message' ) && str_contains( $unsupported_control_markup, 'requires Jetpack connection and a supported plan' ), 'unsupported-file-control-preserves-labelled-position-with-explicit-upload-limit', $unsupported_control_markup );
 	$hidden_control = $topology_form;
 	$hidden_control['forms'][0]['controls'][] = array( 'tag' => 'input', 'type' => 'hidden', 'name' => 'ucfid', 'value' => '980337499904279388' );
 	$hidden_control['forms'][0]['control_topology']['nodes'][] = array( 'id' => 'control-4', 'kind' => 'control', 'parent' => null, 'order' => 3, 'depth' => 0, 'control' => 4 );
