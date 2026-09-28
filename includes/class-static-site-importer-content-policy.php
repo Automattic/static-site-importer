@@ -49,6 +49,7 @@ final class Static_Site_Importer_Content_Policy {
 		'ogg',
 		'wav',
 		'pdf',
+		'docx',
 	);
 
 	/** Static formats whose source bytes are inspected for server-side code. */
@@ -87,6 +88,7 @@ final class Static_Site_Importer_Content_Policy {
 		'audio/ogg'                => 'ogg',
 		'audio/wav'                => 'wav',
 		'application/pdf'          => 'pdf',
+		'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
 	);
 
 	/** @return true|WP_Error */
