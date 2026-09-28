@@ -3524,14 +3524,15 @@ namespace {
 	$assert( ! empty( $unsupported_tag_validation['forms'] ) && empty( $unsupported_tag_validation['errors'] ), 'topology-canonical-wrapper-vocabulary-remains-compatible' );
 	$unsupported_control = $topology_form;
 	$unsupported_control['forms'][0]['controls'][1] = array( 'tag' => 'input', 'type' => 'file', 'name' => 'attachment', 'label' => 'Attachment' );
+	$unsupported_control['forms'][0]['layout_graph'] = $layout_graph( array( $layout_node( 'control-1', array( 'display' => 'none' ), 'input' ) ) );
 	$unsupported_control_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unsupported_control );
 	$unsupported_control_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $unsupported_control_validation['forms'] ) );
 	$unsupported_control_row = $unsupported_control_seed['forms'][0] ?? array();
 	$unsupported_control_losses = array_values( array_filter( $unsupported_control_row['computed_layout_receipt']['losses'] ?? array(), static fn ( $loss ): bool => 'unsupported_control_unrepresentable' === ( $loss['reason_code'] ?? '' ) ) );
 	$unsupported_control_markup = (string) ( $unsupported_control_row['block_markup'] ?? '' );
-	$assert( empty( $unsupported_control_validation['errors'] ) && array( 'file' ) === ( $unsupported_control_row['skipped_types'] ?? array() ), 'unsupported-file-control-keeps-provider-skipped-type-diagnostic' );
-	$assert( empty( $unsupported_control_losses ) && 'file_upload' === ( $unsupported_control_row['unsupported_capabilities'][0]['capability'] ?? '' ), 'unsupported-file-control-has-targeted-capability-diagnostic-without-topology-loss' );
-	$assert( 'mapped' === ( $unsupported_control_row['status'] ?? '' ) && str_contains( $unsupported_control_markup, 'First name' ) && str_contains( $unsupported_control_markup, 'Attachment' ) && str_contains( $unsupported_control_markup, 'Message' ) && strpos( $unsupported_control_markup, 'Attachment' ) < strpos( $unsupported_control_markup, 'Message' ) && str_contains( $unsupported_control_markup, 'requires Jetpack connection and a supported plan' ), 'unsupported-file-control-preserves-labelled-position-with-explicit-upload-limit' );
+	$assert( empty( $unsupported_control_validation['errors'] ) && array( 'file' ) === ( $unsupported_control_row['skipped_types'] ?? array() ), 'unsupported-file-control-keeps-provider-skipped-type-diagnostic', wp_json_encode( $unsupported_control_row ) );
+	$assert( empty( $unsupported_control_losses ) && empty( $unsupported_control_row['form_receipt_unaccepted_losses'] ) && 'file_upload' === ( $unsupported_control_row['unsupported_capabilities'][0]['capability'] ?? '' ), 'hidden-file-control-loss-is-replaced-by-targeted-upload-capability-diagnostic', wp_json_encode( $unsupported_control_row ) );
+	$assert( 'mapped' === ( $unsupported_control_row['status'] ?? '' ) && str_contains( $unsupported_control_markup, 'First name' ) && str_contains( $unsupported_control_markup, 'Attachment' ) && str_contains( $unsupported_control_markup, 'Message' ) && strpos( $unsupported_control_markup, 'Attachment' ) < strpos( $unsupported_control_markup, 'Message' ) && str_contains( $unsupported_control_markup, 'requires Jetpack connection and a supported plan' ), 'unsupported-file-control-preserves-labelled-position-with-explicit-upload-limit', $unsupported_control_markup );
 	$hidden_control = $topology_form;
 	$hidden_control['forms'][0]['controls'][] = array( 'tag' => 'input', 'type' => 'hidden', 'name' => 'ucfid', 'value' => '980337499904279388' );
 	$hidden_control['forms'][0]['control_topology']['nodes'][] = array( 'id' => 'control-4', 'kind' => 'control', 'parent' => null, 'order' => 3, 'depth' => 0, 'control' => 4 );

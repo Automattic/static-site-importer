@@ -1270,6 +1270,15 @@ class Static_Site_Importer_Form_Seeder {
 
 	/** A source label wrapper is carried by the mapped Jetpack field's label child. */
 	private static function provider_represents_receipt_loss( array $loss, array $form, array $field_blocks, array $target_map = array() ): bool {
+		if ( 'provider_native_control_visibility_unrepresentable' === ( $loss['reason_code'] ?? '' ) && is_string( $loss['node_hash'] ?? null ) ) {
+			foreach ( $form['control_topology']['nodes'] ?? array() as $node ) {
+				$index = is_array( $node ) && 'control' === ( $node['kind'] ?? '' ) && is_int( $node['control'] ?? null ) ? $node['control'] : null;
+				$control = is_int( $index ) ? ( $form['controls'][ $index ] ?? null ) : null;
+				if ( is_array( $node ) && is_int( $index ) && hash( 'sha256', (string) ( $node['id'] ?? '' ) ) === $loss['node_hash'] && is_array( $control ) && 'file' === strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) && 'core/paragraph' === ( $field_blocks[ $index ]['name'] ?? '' ) ) {
+					return true;
+				}
+			}
+		}
 		if ( 'unsupported_control_unrepresentable' === ( $loss['reason_code'] ?? '' ) && is_int( $loss['control_index'] ?? null ) ) {
 			$control = $form['controls'][ $loss['control_index'] ] ?? null;
 			if ( is_array( $control ) && 'file' === strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) && 'core/paragraph' === ( $field_blocks[ $loss['control_index'] ]['name'] ?? '' ) ) {
