@@ -817,7 +817,7 @@ class Static_Site_Importer_Form_Seeder {
 	 * @return array<string,mixed>
 	 */
 	private static function mapping_decision( array $form, array $row, array $mapped_types, array $skipped, array $receipt, array $field_blocks, array $target_map ): array {
-		$unaccepted_losses = array_values(
+		$unaccepted_losses   = array_values(
 			array_filter(
 				$receipt['losses'] ?? array(),
 				static fn( $loss ): bool => is_array( $loss ) && self::receipt_loss_requires_gate( $loss ) && ! self::provider_represents_receipt_loss( $loss, $form, $field_blocks, $target_map ) && true !== apply_filters( 'static_site_importer_form_receipt_loss_accepted', false, $loss, $form, $row )
