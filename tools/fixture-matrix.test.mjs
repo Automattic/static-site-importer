@@ -784,6 +784,7 @@ test('builds a generic WP Codebox recipe with SSI-owned plugin defaults', () => 
   assert.equal(recipe.workflow.steps[0].command, 'wordpress.wp-cli');
   assert.equal(recipe.workflow.steps[0].args[0], 'command=plugin activate static-site-importer/static-site-importer.php');
   assert.match(recipe.workflow.steps[1].args[0], /static-site-importer prepare-artifact-dependencies/);
+  assert.doesNotMatch(recipe.workflow.steps[1].args[0], /--dependency-plan=/);
   assert.match(recipe.workflow.steps[2].args[0], /static-site-importer validate-artifact/);
   for (const step of [recipe.workflow.steps[1], recipe.workflow.steps[2]]) {
     assert.match(step.args[0], /--client-script-policy=isolated_preview/);
@@ -902,7 +903,7 @@ test('runtime presentation evidence persists, merges, and reaches the Blocks Eng
   });
   assert.match(recipe.workflow.steps[importIndex].args[0], /--artifact=\/tmp\/artifacts\/simple-site\/artifact-with-runtime-presentation-evidence\.json/);
 
-  const playgroundRecipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: '/tmp/artifacts', playgroundArtifactsDirectory: '/wordpress/wp-content/uploads/artifacts', staticSiteImporterPath: '/tmp/static-site-importer', runtimePresentationEvidence: true });
+  const playgroundRecipe = buildFixtureMatrixRecipe({ matrix, artifactsDirectory: '/tmp/artifacts', playgroundArtifactsDirectory: '/wordpress/wp-content/uploads/artifacts', staticSiteImporterPath: '/tmp/static-site-importer', runtimePresentationEvidence: true, phasedDependencyPlanning: true });
   const playgroundProbe = playgroundRecipe.workflow.steps.find((step) => step.metadata?.phase === 'runtime-presentation-evidence');
   const playgroundMerge = playgroundRecipe.workflow.steps.find((step) => step.metadata?.phase === 'runtime-presentation-evidence-merge');
   const playgroundImport = playgroundRecipe.workflow.steps.find((step) => /static-site-importer validate-artifact/.test(step.args?.[0] || ''));
@@ -911,6 +912,8 @@ test('runtime presentation evidence persists, merges, and reaches the Blocks Eng
   assert.equal(playgroundProbe.metadata.output_runtime_path, '/wordpress/wp-content/uploads/artifacts/simple-site/runtime-presentation-evidence.json');
   assert.equal(playgroundMerge.metadata.artifact_root, '/wordpress/wp-content/uploads/artifacts');
   assert.match(playgroundImport.args[0], /--artifact=\/wordpress\/wp-content\/uploads\/artifacts\/simple-site\/artifact-with-runtime-presentation-evidence\.json/);
+  assert.doesNotMatch(playgroundRecipe.workflow.steps.find((step) => step.metadata?.phase === 'dependency-plan').args[0], /--retain-compile-checkpoint/);
+  assert.doesNotMatch(playgroundRecipe.workflow.steps.find((step) => step.metadata?.phase === 'dependency-prepare').args[0], /--dependency-plan=/);
 });
 
 test('runtime presentation evidence probes every selected surface before one aggregate merge and import', () => {
@@ -5793,7 +5796,18 @@ test('runFixtureMatrix uses the candidate transformer overlay for planning and i
       reference,
     };
 
-    assert.ok(combinedRecipe.workflow.steps.some((step) => step.args?.some((arg) => arg.includes('plan-artifact-dependencies'))));
+    const planStep = combinedRecipe.workflow.steps.find((step) => step.args?.some((arg) => arg.includes('plan-artifact-dependencies')));
+    const prepareStep = combinedRecipe.workflow.steps.find((step) => step.args?.some((arg) => arg.includes('prepare-artifact-dependencies')));
+    assert.ok(planStep);
+    assert.ok(prepareStep);
+    assert.match(planStep.args[0], /--retain-compile-checkpoint/);
+    assert.match(planStep.args[0], /--client-script-policy=isolated_preview/);
+    assert.match(prepareStep.args[0], /--dependency-plan=\S+\/dependency-plan\.json/);
+    assert.equal(
+      planStep.args[0].match(/--client-script-provenance=([^ ]+)/)?.[1],
+      prepareStep.args[0].match(/--client-script-provenance=([^ ]+)/)?.[1],
+      'the checkpoint binds the same script policy as preparation',
+    );
     assert.ok(combinedRecipe.workflow.steps.some((step) => step.metadata?.phase === 'import'));
     assert.deepEqual(combinedRecipe.inputs.dependency_overlays, [expectedOverlay]);
     assert.deepEqual(importRecipe.inputs.dependency_overlays, [expectedOverlay]);
