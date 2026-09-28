@@ -427,15 +427,15 @@ class Static_Site_Importer_Form_Seeder {
 
 			$control_phone_destinations = $presentation_descriptor['phone_destinations'];
 			if ( 'file' === $type && 'input' === $tag ) {
-				$label                         = Static_Site_Importer_Form_Field_Markup::control_text( $control );
+				$label                          = Static_Site_Importer_Form_Field_Markup::control_text( $control );
 				$field_blocks[ $control_index ] = array(
 					'name'    => 'core/paragraph',
 					'attrs'   => array( 'className' => 'ssi-unsupported-file-upload' ),
 					'content' => trim( $label . ' — File upload requires Jetpack connection and a supported plan; unavailable in this import runtime.' ),
 					'wrapper' => 'paragraph',
 				);
-				$skipped[]                       = 'file';
-				$unsupported_capabilities[]      = array(
+				$skipped[]                      = 'file';
+				$unsupported_capabilities[]     = array(
 					'capability'    => 'file_upload',
 					'reason_code'   => 'jetpack_upload_endpoint_requires_connected_site_and_supported_plan',
 					'control_index' => $control_index,
@@ -1291,7 +1291,7 @@ class Static_Site_Importer_Form_Seeder {
 	private static function provider_represents_receipt_loss( array $loss, array $form, array $field_blocks, array $target_map = array() ): bool {
 		if ( 'provider_native_control_visibility_unrepresentable' === ( $loss['reason_code'] ?? '' ) && is_string( $loss['node_hash'] ?? null ) ) {
 			foreach ( $form['control_topology']['nodes'] ?? array() as $node ) {
-				$index = is_array( $node ) && 'control' === ( $node['kind'] ?? '' ) && is_int( $node['control'] ?? null ) ? $node['control'] : null;
+				$index   = is_array( $node ) && 'control' === ( $node['kind'] ?? '' ) && is_int( $node['control'] ?? null ) ? $node['control'] : null;
 				$control = is_int( $index ) ? ( $form['controls'][ $index ] ?? null ) : null;
 				if ( is_array( $node ) && is_int( $index ) && hash( 'sha256', (string) ( $node['id'] ?? '' ) ) === $loss['node_hash'] && is_array( $control ) && 'file' === strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) && 'core/paragraph' === ( $field_blocks[ $index ]['name'] ?? '' ) ) {
 					return true;
