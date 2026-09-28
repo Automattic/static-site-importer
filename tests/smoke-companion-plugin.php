@@ -619,6 +619,7 @@ if ( is_array( $descriptor ) ) {
 	$files = $descriptor['files'];
 	$main  = $files['ssi-example-site/ssi-example-site.php'] ?? '';
 	$assert( str_contains( $main, 'Plugin Name:' ), 'main-file-has-plugin-header' );
+	$assert( str_contains( $main, 'Requires at least: 7.1' ), 'generated-plugin-requires-wordpress-7-1' );
 	$assert( str_contains( $main, "add_filter( 'render_block'" ), 'main-file-scopes-island-enqueue' );
 	$assert( str_contains( $main, 'wp_enqueue_script' ), 'main-file-enqueues-island-js' );
 	$assert( str_contains( $main, "require_once __DIR__ . '/includes/provider-form-runtime-v1.php'" ) && str_contains( $main, 'SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1::register();' ), 'main-file-registers-versioned-companion-provider-form-runtime' );

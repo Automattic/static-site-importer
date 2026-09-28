@@ -191,7 +191,7 @@ class Static_Site_Importer_Stylesheet_Materializer {
 			'Author: Static Site Importer',
 			'Description: Materialized from a compiled website artifact.',
 			'Version: 0.1.0',
-			'Requires at least: 6.6',
+			'Requires at least: 7.1',
 		);
 		$update_uri_line = '';
 		foreach ( Static_Site_Importer_Build_Provenance::artifact_header_lines( $artifact_provenance, $theme_name ) as $header_line ) {

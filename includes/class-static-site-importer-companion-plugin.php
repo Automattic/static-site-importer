@@ -741,7 +741,7 @@ class Static_Site_Importer_Companion_Plugin {
 		if ( '' !== $update_uri_line ) {
 			$lines[] = $update_uri_line;
 		}
-		$lines[] = ' * Requires at least: 6.9';
+		$lines[] = ' * Requires at least: 7.1';
 		$lines[] = ' * Requires PHP: 8.1';
 		$lines[] = ' * Text Domain: ' . $plugin_slug;
 		$lines[] = ' *';
