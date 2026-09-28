@@ -156,6 +156,11 @@ final class Static_Site_Importer_Quality_Budget_Admission {
 			}
 			$identities[ $identity ] = true;
 			$providers[ $provider ]  = true;
+			foreach ( is_array( $binding['replaced_fallback_identities'] ?? null ) ? $binding['replaced_fallback_identities'] : array() as $replaced ) {
+				if ( is_string( $replaced ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $replaced ) ) {
+					$identities[ $replaced ] = true;
+				}
+			}
 		}
 		ksort( $providers, SORT_STRING );
 		return array(

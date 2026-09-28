@@ -688,6 +688,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				'replacement_block_markup'         => $binding['replacement_block_markup'],
 				'provider'                         => $binding['provider'] ?? '',
 				'superseded_runtime_selectors'     => $selectors,
+				'replaced_fallback_identities'     => array_values( array_filter( is_array( $binding['replaced_fallback_identities'] ?? null ) ? $binding['replaced_fallback_identities'] : array(), static fn( $identity ): bool => is_string( $identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $identity ) ) ),
 			);
 		}
 		foreach ( $part_patches as $source_path => $patches ) {

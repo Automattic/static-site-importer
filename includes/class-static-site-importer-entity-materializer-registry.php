@@ -1032,7 +1032,26 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'materialized_block_hash'          => in_array( $binding['role'], array( 'form', 'commerce_collection' ), true ) ? hash( 'sha256', $replacement ) : '',
 			'provider'                         => $adapter['provider'] ?? '',
 			'superseded_runtime_selectors'     => $binding['superseded_runtime_selectors'] ?? array(),
+			'replaced_fallback_identities'     => 'form' === $binding['role'] ? self::replaced_fallback_identities( $entity ) : array(),
 		);
+	}
+
+	/**
+	 * Source form fallbacks one shared provider form stands for. A producer that
+	 * moved identical chrome into a template part keeps one entity and lists the
+	 * fallback of every page it replaced, its own included.
+	 *
+	 * @param array<string,mixed> $entity Form entity.
+	 * @return array<int,string>
+	 */
+	private static function replaced_fallback_identities( array $entity ): array {
+		$identities = array();
+		foreach ( is_array( $entity['replaced_fallback_identities'] ?? null ) ? $entity['replaced_fallback_identities'] : array() as $identity ) {
+			if ( is_string( $identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $identity ) ) {
+				$identities[ $identity ] = true;
+			}
+		}
+		return array_keys( $identities );
 	}
 
 	/** Derive a product-grid fallback's reconciliation identity from its own resolved binding anchor. */
