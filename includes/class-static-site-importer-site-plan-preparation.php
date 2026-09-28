@@ -608,12 +608,31 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		return true;
 	}
 
+	/**
+	 * Index the documents a runtime entity binding may target: every page, and
+	 * every template part that shared chrome containing the entity moved into.
+	 *
+	 * @param array<string,mixed> $plan Resolved plan.
+	 * @return array<string,array{group:string,index:int|string}>
+	 */
+	public static function runtime_binding_documents( array $plan ): array {
+		$documents = array();
+		foreach ( array( 'pages', 'template_parts' ) as $group ) {
+			foreach ( is_array( $plan[ $group ] ?? null ) ? $plan[ $group ] : array() as $index => $document ) {
+				if ( is_array( $document ) && is_string( $document['source_path'] ?? null ) && ! isset( $documents[ $document['source_path'] ] ) ) {
+					$documents[ $document['source_path'] ] = array(
+						'group' => $group,
+						'index' => $index,
+					);
+				}
+			}
+		}
+		return $documents;
+	}
+
 	/** Apply exact provider bindings to the resolved projection while retaining canonical plan markup. */
 	public static function apply_runtime_entity_bindings( array &$plan, array $bindings, array &$reports, array &$diagnostics ): void {
-		$pages = array();
-		foreach ( $plan['pages'] as $index => $page ) {
-			$pages[ $page['source_path'] ] = $index;
-		}
+		$documents = self::runtime_binding_documents( $plan );
 		foreach ( $bindings as $binding ) {
 			if ( ! is_array( $binding ) ) {
 				throw new InvalidArgumentException( 'runtime_entity_binding_invalid' );
@@ -626,10 +645,11 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				return 0 !== $group ? $group : (int) ( $right['occurrence'] ?? 0 ) <=> (int) ( $left['occurrence'] ?? 0 );
 			}
 		);
-		$seen = array();
+		$seen         = array();
+		$part_patches = array();
 		foreach ( $bindings as $binding ) {
 			$selectors = $binding['superseded_runtime_selectors'] ?? array();
-			if ( ! is_array( $binding ) || 'static-site-importer/runtime-entity-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! isset( $pages[ $binding['source_path'] ] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || ! is_string( $binding['replacement_block_markup'] ?? null ) || '' === trim( $binding['replacement_block_markup'] ) || ! is_string( $binding['reconciliation_identity'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/', $binding['reconciliation_identity'] ) || isset( $seen[ $binding['reconciliation_identity'] ] ) || ! is_array( $selectors ) ) {
+			if ( ! is_array( $binding ) || 'static-site-importer/runtime-entity-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! isset( $documents[ $binding['source_path'] ] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || ! is_string( $binding['replacement_block_markup'] ?? null ) || '' === trim( $binding['replacement_block_markup'] ) || ! is_string( $binding['reconciliation_identity'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/', $binding['reconciliation_identity'] ) || isset( $seen[ $binding['reconciliation_identity'] ] ) || ! is_array( $selectors ) ) {
 				throw new InvalidArgumentException( 'runtime_entity_binding_invalid' );
 			}
 			$selectors = array_values( array_unique( $selectors ) );
@@ -640,24 +660,23 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			}
 			$seen[ $binding['reconciliation_identity'] ] = true;
 			self::validate_runtime_entity_binding_fragment( $binding, $diagnostics );
-			$index   = $pages[ $binding['source_path'] ];
-			$content = (string) ( $plan['pages'][ $index ]['materialized_block_markup'] ?? $plan['pages'][ $index ]['resolved_block_markup'] ?? '' );
-			if ( substr_count( $content, $binding['search_block_markup'] ) < $binding['occurrence'] ) {
+			$group    = $documents[ $binding['source_path'] ]['group'];
+			$index    = $documents[ $binding['source_path'] ]['index'];
+			$pristine = (string) ( $plan[ $group ][ $index ]['resolved_block_markup'] ?? '' );
+			$content  = (string) ( $plan[ $group ][ $index ]['materialized_block_markup'] ?? $pristine );
+			$position = self::binding_occurrence_offset( $content, $binding['search_block_markup'], $binding['occurrence'] );
+			if ( null === $position ) {
 				throw new InvalidArgumentException( 'runtime_entity_binding_cardinality_mismatch' );
 			}
-			$position = 0;
-			for ( $occurrence = 0; $occurrence < $binding['occurrence']; ++$occurrence ) {
-				$position = strpos( $content, $binding['search_block_markup'], $position );
-				if ( false === $position ) {
-					throw new InvalidArgumentException( 'runtime_entity_binding_cardinality_mismatch' );
-				}
-				if ( $occurrence + 1 < $binding['occurrence'] ) {
-					$position += strlen( $binding['search_block_markup'] );
-				}
+			if ( 'template_parts' === $group ) {
+				$part_patches[ $binding['source_path'] ][] = array(
+					'offset'      => self::binding_occurrence_offset( $pristine, $binding['search_block_markup'], $binding['occurrence'] ),
+					'search'      => $binding['search_block_markup'],
+					'replacement' => $binding['replacement_block_markup'],
+				);
 			}
-			$materialized = substr( $content, 0, $position ) . $binding['replacement_block_markup'] . substr( $content, $position + strlen( $binding['search_block_markup'] ) );
-			$plan['pages'][ $index ]['materialized_block_markup'] = $materialized;
-			$reports[ $binding['reconciliation_identity'] ]       = array(
+			$plan[ $group ][ $index ]['materialized_block_markup'] = substr( $content, 0, $position ) . $binding['replacement_block_markup'] . substr( $content, $position + strlen( $binding['search_block_markup'] ) );
+			$reports[ $binding['reconciliation_identity'] ]        = array(
 				'status'                           => 'prepared',
 				'reconciliation_identity'          => $binding['reconciliation_identity'],
 				'source_path'                      => $binding['source_path'],
@@ -669,13 +688,85 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				'replacement_block_markup'         => $binding['replacement_block_markup'],
 				'provider'                         => $binding['provider'] ?? '',
 				'superseded_runtime_selectors'     => $selectors,
+				'replaced_fallback_identities'     => array_values( array_filter( is_array( $binding['replaced_fallback_identities'] ?? null ) ? $binding['replaced_fallback_identities'] : array(), static fn( $identity ): bool => is_string( $identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/', $identity ) ) ),
 			);
 		}
+		foreach ( $part_patches as $source_path => $patches ) {
+			self::apply_template_part_binding_patches( $plan, $documents[ $source_path ]['index'], $patches );
+		}
 		foreach ( $reports as &$report ) {
-			$index                               = $pages[ $report['source_path'] ];
-			$report['materialized_content_hash'] = hash( 'sha256', (string) ( $plan['pages'][ $index ]['materialized_block_markup'] ?? $plan['pages'][ $index ]['resolved_block_markup'] ) );
+			$document                            = $documents[ $report['source_path'] ];
+			$report['materialized_content_hash'] = hash( 'sha256', (string) ( $plan[ $document['group'] ][ $document['index'] ]['materialized_block_markup'] ?? $plan[ $document['group'] ][ $document['index'] ]['resolved_block_markup'] ) );
 		}
 		unset( $report );
+	}
+
+	/** Byte offset of the nth occurrence of a search string, or null when it has fewer. */
+	private static function binding_occurrence_offset( string $content, string $search, int $occurrence ): ?int {
+		$position = 0;
+		for ( $found = 0; $found < $occurrence; ++$found ) {
+			$position = strpos( $content, $search, $position );
+			if ( false === $position ) {
+				return null;
+			}
+			if ( $found + 1 < $occurrence ) {
+				$position += strlen( $search );
+			}
+		}
+		return $position;
+	}
+
+	/**
+	 * A template part is written from its canonical payload, which keeps asset
+	 * tokens that the resolved markup has already expanded. Tokens live inside
+	 * attribute values, so both serializations have the same blocks in the same
+	 * order: each binding's resolved block maps to the canonical block at the same
+	 * index, and the provider replacement is spliced there, last offset first.
+	 *
+	 * @param array<string,mixed>                                                 $plan    Resolved plan.
+	 * @param int|string                                                          $index   Template part index.
+	 * @param array<int,array{offset:int|null,search:string,replacement:string}> $patches Bindings applied to this part.
+	 */
+	private static function apply_template_part_binding_patches( array &$plan, int|string $index, array $patches ): void {
+		$part   = $plan['template_parts'][ $index ];
+		$target = 'parts/' . (string) ( $part['slug'] ?? '' ) . '.html';
+		$write  = null;
+		foreach ( $plan['writes'] ?? array() as $write_index => $candidate ) {
+			if ( is_array( $candidate ) && ( $candidate['target_path'] ?? null ) === $target && 'utf8' === ( $candidate['payload']['encoding'] ?? null ) && is_string( $candidate['payload']['data'] ?? null ) ) {
+				$write = $write_index;
+				break;
+			}
+		}
+		if ( null === $write ) {
+			throw new InvalidArgumentException( 'runtime_entity_binding_template_part_write_missing' );
+		}
+		$resolved         = (string) ( $part['resolved_block_markup'] ?? '' );
+		$canonical        = (string) $plan['writes'][ $write ]['payload']['data'];
+		$resolved_ranges  = WordPressSitePlan::blockRanges( $resolved );
+		$canonical_ranges = WordPressSitePlan::blockRanges( $canonical );
+		if ( count( $resolved_ranges ) !== count( $canonical_ranges ) ) {
+			throw new InvalidArgumentException( 'runtime_entity_binding_template_part_write_mismatch' );
+		}
+		$splices = array();
+		foreach ( $patches as $patch ) {
+			$block = null;
+			foreach ( $resolved_ranges as $block_index => $range ) {
+				if ( $range['offset'] === $patch['offset'] && strlen( $patch['search'] ) === $range['length'] ) {
+					$block = $block_index;
+					break;
+				}
+			}
+			if ( null === $block ) {
+				throw new InvalidArgumentException( 'runtime_entity_binding_template_part_write_mismatch' );
+			}
+			$splices[] = $canonical_ranges[ $block ] + array( 'replacement' => $patch['replacement'] );
+		}
+		usort( $splices, static fn( array $left, array $right ): int => $right['offset'] <=> $left['offset'] );
+		foreach ( $splices as $splice ) {
+			$canonical = substr( $canonical, 0, $splice['offset'] ) . $splice['replacement'] . substr( $canonical, $splice['offset'] + $splice['length'] );
+		}
+		$plan['writes'][ $write ]['payload']['data'] = $canonical;
+		$plan['writes'][ $write ]['payload_hash']    = hash( 'sha256', $canonical );
 	}
 
 	/**
@@ -707,7 +798,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	 * @return void
 	 */
 	public static function validate_materialized_block_documents( array $plan, array $bindings, array &$diagnostics ): void {
-		foreach ( $plan['pages'] ?? array() as $page ) {
+		foreach ( array_merge( $plan['pages'] ?? array(), array_values( array_filter( $plan['template_parts'] ?? array(), static fn( $part ): bool => is_array( $part ) && isset( $part['materialized_block_markup'] ) ) ) ) as $page ) {
 			if ( ! is_array( $page ) ) {
 				continue;
 			}

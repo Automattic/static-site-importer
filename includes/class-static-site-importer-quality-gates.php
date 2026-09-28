@@ -437,6 +437,65 @@ final class Static_Site_Importer_Quality_Gates {
 	}
 
 	/**
+	 * A provider form owned by a shared template part stands for the same source
+	 * form on every page that renders the part. The producer proved those forms
+	 * equivalent and lists their fallbacks; each becomes a receipt of its own,
+	 * backed by the one part binding.
+	 *
+	 * @param array<int,mixed> $receipts Quality resolution receipts.
+	 * @return array<int,mixed>
+	 */
+	private static function with_template_part_absorbed_receipts( array $receipts ): array {
+		$expanded = array();
+		foreach ( $receipts as $receipt ) {
+			$expanded[] = $receipt;
+			if ( ! is_array( $receipt ) || '' === (string) ( $receipt['template_part'] ?? '' ) ) {
+				continue;
+			}
+			foreach ( is_array( $receipt['replaced_fallback_identities'] ?? null ) ? $receipt['replaced_fallback_identities'] : array() as $replaced ) {
+				if ( is_string( $replaced ) && ( $receipt['fallback_reconciliation_identity'] ?? null ) !== $replaced ) {
+					$expanded[] = array(
+						'fallback_reconciliation_identity' => $replaced,
+						'absorbed_by_template_part'        => true,
+					) + $receipt;
+				}
+			}
+		}
+		return $expanded;
+	}
+
+	/**
+	 * Whether a completed receipt proves the provider replaced this exact source
+	 * fallback. The replacement must be persisted where the binding put it: the
+	 * page's post content, or the written template part file. A fallback a part
+	 * binding absorbed from another page carries that page's own form hash, so it
+	 * is matched by the producer-declared identity alone.
+	 *
+	 * @param array<string,mixed>     $receipt       Candidate receipt.
+	 * @param array<string,string>    $part_hashes   Written file hashes by target path.
+	 */
+	private static function receipt_resolves_fallback( array $receipt, string $identity, string $fallback_hash, string $source_path, Static_Site_Importer_Import_Report $report, array $part_hashes ): bool {
+		$part_target = (string) ( $receipt['template_part'] ?? '' );
+		if ( '' !== $part_target ) {
+			$persisted_hash = $part_hashes[ $part_target ] ?? '';
+		} else {
+			$page_receipt   = $report['materialization_receipt']['completed']['materialized_pages'][ $source_path ] ?? array();
+			$persisted_hash = is_array( $page_receipt ) && is_string( $page_receipt['content_hash'] ?? null ) ? $page_receipt['content_hash'] : '';
+		}
+		return 'static-site-importer/quality-resolution-receipt/v1' === ( $receipt['schema'] ?? null )
+			&& 'completed' === ( $receipt['status'] ?? null )
+			&& ( $receipt['fallback_reconciliation_identity'] ?? null ) === $identity
+			&& ( ! empty( $receipt['absorbed_by_template_part'] ) || ( $receipt['fallback_hash'] ?? null ) === $fallback_hash )
+			&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['binding_reconciliation_identity'] ?? '' ) )
+			&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['materialized_block_hash'] ?? '' ) )
+			&& ( $receipt['persisted_fragment_hash'] ?? null ) === ( $receipt['materialized_block_hash'] ?? null )
+			&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['materialized_content_hash'] ?? '' ) )
+			&& '' !== trim( (string) ( $receipt['provider'] ?? '' ) )
+			&& '' !== $persisted_hash
+			&& ( $receipt['materialized_content_hash'] ?? null ) === $persisted_hash;
+	}
+
+	/**
 	 * Reconcile source form fallbacks against hash-bound provider receipts.
 	 *
 	 * The source finding remains in diagnostics for auditability. Only the final
@@ -474,9 +533,18 @@ final class Static_Site_Importer_Quality_Gates {
 					'persisted_fragment_hash'          => $binding['persisted_fragment_hash'] ?? '',
 					'materialized_content_hash'        => $binding['materialized_content_hash'] ?? '',
 					'provider'                         => $binding['provider'] ?? '',
+					'template_part'                    => $binding['template_part'] ?? '',
+					'replaced_fallback_identities'     => $binding['replaced_fallback_identities'] ?? array(),
 				);
 			}
 		}
+		$part_hashes = array();
+		foreach ( $report['materialization_receipt']['completed']['files'] ?? array() as $file ) {
+			if ( is_array( $file ) && is_string( $file['target_path'] ?? null ) && is_string( $file['hash'] ?? null ) ) {
+				$part_hashes[ $file['target_path'] ] = $file['hash'];
+			}
+		}
+		$receipts                = self::with_template_part_absorbed_receipts( $receipts );
 		$receipts_by_fallback    = array();
 		$receipts_by_source_hash = array();
 		foreach ( $receipts as $receipt ) {
@@ -490,6 +558,9 @@ final class Static_Site_Importer_Quality_Gates {
 				continue;
 			}
 			$receipts_by_fallback[ $identity ] = $receipt;
+			if ( ! empty( $receipt['absorbed_by_template_part'] ) ) {
+				continue;
+			}
 
 			$source_path   = Static_Site_Importer_Diagnostic_Projection::first_scalar( $receipt, array( 'source_path', 'source' ) );
 			$fallback_hash = $receipt['fallback_hash'] ?? '';
@@ -526,18 +597,7 @@ final class Static_Site_Importer_Quality_Gates {
 					}
 				}
 			}
-			$page_receipt         = $report['materialization_receipt']['completed']['materialized_pages'][ $source_path ] ?? array();
-			$page_hash            = is_array( $page_receipt ) && is_string( $page_receipt['content_hash'] ?? null ) ? $page_receipt['content_hash'] : '';
-			$resolved_by_provider = 'static-site-importer/quality-resolution-receipt/v1' === ( $receipt['schema'] ?? null )
-				&& 'completed' === ( $receipt['status'] ?? null )
-				&& ( $receipt['fallback_reconciliation_identity'] ?? null ) === $identity
-				&& ( $receipt['fallback_hash'] ?? null ) === $fallback_hash
-				&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['binding_reconciliation_identity'] ?? '' ) )
-				&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['materialized_block_hash'] ?? '' ) )
-				&& ( $receipt['persisted_fragment_hash'] ?? null ) === ( $receipt['materialized_block_hash'] ?? null )
-				&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['materialized_content_hash'] ?? '' ) )
-				&& '' !== trim( (string) ( $receipt['provider'] ?? '' ) )
-				&& ( $receipt['materialized_content_hash'] ?? null ) === $page_hash;
+			$resolved_by_provider = self::receipt_resolves_fallback( $receipt, $identity, $fallback_hash, $source_path, $report, $part_hashes );
 
 			$diagnostic['fallback_reconciliation_identity'] = $identity;
 			$diagnostic['fallback_hash']                    = $fallback_hash;
@@ -575,18 +635,7 @@ final class Static_Site_Importer_Quality_Gates {
 			$source_path          = Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
 			$candidate_receipt    = $receipts_by_fallback[ $identity ] ?? array();
 			$receipt              = is_array( $candidate_receipt ) ? $candidate_receipt : array();
-			$page_receipt         = $report['materialization_receipt']['completed']['materialized_pages'][ $source_path ] ?? array();
-			$page_hash            = is_array( $page_receipt ) && is_string( $page_receipt['content_hash'] ?? null ) ? $page_receipt['content_hash'] : '';
-			$resolved_by_provider = 'static-site-importer/quality-resolution-receipt/v1' === ( $receipt['schema'] ?? null )
-				&& 'completed' === ( $receipt['status'] ?? null )
-				&& ( $receipt['fallback_reconciliation_identity'] ?? null ) === $identity
-				&& ( $receipt['fallback_hash'] ?? null ) === $fallback_hash
-				&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['binding_reconciliation_identity'] ?? '' ) )
-				&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['materialized_block_hash'] ?? '' ) )
-				&& ( $receipt['persisted_fragment_hash'] ?? null ) === ( $receipt['materialized_block_hash'] ?? null )
-				&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['materialized_content_hash'] ?? '' ) )
-				&& '' !== trim( (string) ( $receipt['provider'] ?? '' ) )
-				&& ( $receipt['materialized_content_hash'] ?? null ) === $page_hash;
+			$resolved_by_provider = self::receipt_resolves_fallback( $receipt, $identity, $fallback_hash, $source_path, $report, $part_hashes );
 
 			$diagnostic['fallback_reconciliation_identity'] = $identity;
 			$diagnostic['fallback_hash']                    = $fallback_hash;
