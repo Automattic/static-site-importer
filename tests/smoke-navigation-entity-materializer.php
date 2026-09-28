@@ -108,6 +108,7 @@ class Static_Site_Importer_Site_Plan_Persistence {
 	}
 }
 
+require_once dirname( __DIR__ ) . '/vendor/autoload.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-navigation-entity-materializer.php';
 
 $assert = static function ( bool $condition, string $message ): void {
@@ -133,6 +134,12 @@ $rewritten_fragment = Static_Site_Importer_Navigation_Entity_Materializer::rewri
 $assert( 2 === substr_count( $rewritten_fragment, '"ref":7' ) && ! str_contains( $rewritten_fragment, 'wp:navigation-link' ) && str_contains( $rewritten_fragment, '"overlayMenu":"never"' ) && str_contains( $rewritten_fragment, '"overlayMenu":"mobile"' ), 'Fragment-equivalent variant menus share one integer ref.' );
 $divergent = '<!-- wp:navigation {"className":"mobile","overlayMenu":"mobile"} --><!-- wp:navigation-link {"label":"Home","url":"/"} /--><!-- wp:navigation-link {"label":"Shop","url":"/shop"} /--><!-- /wp:navigation -->';
 $assert( str_contains( Static_Site_Importer_Navigation_Entity_Materializer::rewrite_matching( $divergent, array( $fragment_signature => 7 ) ), 'wp:navigation-link' ), 'A different destination list stays inline.' );
+// The same menu rendered with different rich-text label wrappers (a desktop
+// bar and a phone panel) binds to one entity: labels match by what they read.
+$wrapped_entity = '<!-- wp:navigation-link {"label":"\\u003cspan class=\\u0022a\\u0022\\u003eAbout\\u003c/span\\u003e","url":"/#about"} /-->';
+$wrapped_panel  = '<!-- wp:navigation {"className":"panel","overlayMenu":"never"} --><!-- wp:navigation-link {"label":"\\u003cspan class=\\u0022b marker-2\\u0022\\u003e\\u003cspan\\u003eAbout\\u003c/span\\u003e\\u003c/span\\u003e","url":"/#about"} /--><!-- /wp:navigation -->';
+$wrapped_bound  = Static_Site_Importer_Navigation_Entity_Materializer::rewrite_matching( $wrapped_panel, array( Static_Site_Importer_Navigation_Entity_Materializer::destination_signature( $wrapped_entity ) => 9 ) );
+$assert( str_contains( $wrapped_bound, '"ref":9' ) && ! str_contains( $wrapped_bound, 'wp:navigation-link' ), 'A menu whose labels read the same through different wrappers binds to the one entity.' );
 $assert( '<!-- wp:page-list /-->' === Static_Site_Importer_Navigation_Entity_Materializer::rewrite_references( '<!-- wp:page-list /-->', array( $token => 42 ) ), 'Unrelated markup is left alone.' );
 
 $identity = str_repeat( 'ab', 32 );

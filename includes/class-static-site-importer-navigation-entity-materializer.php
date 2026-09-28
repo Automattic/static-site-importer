@@ -5,6 +5,8 @@
  * @package StaticSiteImporter
  */
 
+use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\NavigationEntityProjection;
+
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
@@ -172,33 +174,12 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 		return $content;
 	}
 
+	/**
+	 * The producer owns navigation identity; binding entities back to blocks
+	 * must match with exactly its signature.
+	 */
 	public static function destination_signature( string $inner ): string {
-		$items  = array();
-		$offset = 0;
-		while ( preg_match( '/<!--\s*wp:navigation-(?:link|submenu)\s*/', $inner, $match, PREG_OFFSET_CAPTURE, $offset ) ) {
-			$start    = $match[0][1];
-			$open_end = strpos( $inner, '-->', $start );
-			if ( false === $open_end ) {
-				break;
-			}
-			$opening = substr( $inner, $start, $open_end + 3 - $start );
-			$attrs   = array();
-			if ( preg_match( '/\{.*\}/s', $opening, $json ) ) {
-				$decoded = json_decode( $json[0], true );
-				if ( is_array( $decoded ) ) {
-					$attrs = $decoded;
-				}
-			}
-			$items[] = (string) ( $attrs['label'] ?? '' ) . "\t" . self::destination_path( (string) ( $attrs['url'] ?? '' ) );
-			$offset  = $open_end + 3;
-		}
-		return implode( "\n", $items );
-	}
-
-	private static function destination_path( string $url ): string {
-		$path = preg_replace( '/#.*$/s', '', $url );
-
-		return is_string( $path ) ? $path : $url;
+		return NavigationEntityProjection::destinationSignature( $inner );
 	}
 
 	/**
