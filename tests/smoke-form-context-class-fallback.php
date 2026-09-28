@@ -288,30 +288,40 @@ foreach ( array( 'matching' => $part_file_hash, 'stale' => hash( 'sha256', 'stal
 			),
 		)
 	);
-	Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks(
-		$part_report,
+	$part_receipts = array(
 		array(
-			array(
-				'schema'                           => 'static-site-importer/quality-resolution-receipt/v1',
-				'status'                           => 'completed',
-				'fallback_reconciliation_identity' => $part_binding['fallback_reconciliation_identity'],
-				'source_path'                      => $part_binding['source_path'],
-				'fallback_hash'                    => $part_binding['fallback_hash'],
-				'binding_reconciliation_identity'  => $part_binding['reconciliation_identity'],
-				'materialized_block_hash'          => $part_binding['materialized_block_hash'],
-				'persisted_fragment_hash'          => $part_binding['materialized_block_hash'],
-				'materialized_content_hash'        => $part_file_hash,
-				'provider'                         => 'fixture-provider',
-				'template_part'                    => 'parts/footer.html',
-				'replaced_fallback_identities'     => $part_binding['replaced_fallback_identities'],
-			),
-		)
+			'schema'                           => 'static-site-importer/quality-resolution-receipt/v1',
+			'status'                           => 'completed',
+			'fallback_reconciliation_identity' => $part_binding['fallback_reconciliation_identity'],
+			'source_path'                      => $part_binding['source_path'],
+			'fallback_hash'                    => $part_binding['fallback_hash'],
+			'binding_reconciliation_identity'  => $part_binding['reconciliation_identity'],
+			'materialized_block_hash'          => $part_binding['materialized_block_hash'],
+			'persisted_fragment_hash'          => $part_binding['materialized_block_hash'],
+			'materialized_content_hash'        => $part_file_hash,
+			'provider'                         => 'fixture-provider',
+			'template_part'                    => 'parts/footer.html',
+			'replaced_fallback_identities'     => $part_binding['replaced_fallback_identities'],
+		),
 	);
+	Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $part_report, $part_receipts );
 	$states = array_column( $part_report['quality_resolutions']['resolutions'] ?? array(), 'state', 'fallback_reconciliation_identity' );
 	$expected = 'matching' === $case ? 'resolved_by_provider' : 'unresolved';
 	$assert( $expected === ( $states[ $home_fallback['fallback_identity'] ] ?? '' ) && $expected === ( $states[ $about_fallback['fallback_identity'] ] ?? '' ), 'part-receipt-resolves-every-absorbed-page-fallback-only-against-the-written-part-file-' . $case, wp_json_encode( $states ) );
 	$assert( 'unresolved' === ( $states[ $team_fallback['fallback_identity'] ] ?? '' ), 'a-page-fallback-the-part-did-not-absorb-stays-unresolved-' . $case );
 	$assert( ( 'matching' === $case ? 1 : 3 ) === ( $part_report['quality']['fallback_count'] ?? -1 ), 'part-resolution-leaves-only-unabsorbed-fallbacks-in-the-quality-count-' . $case, (string) ( $part_report['quality']['fallback_count'] ?? '' ) );
+	// The exact two-page/shared-footer case has no unrelated fallback to mask
+	// either a missing replacement receipt or an incorrect quality count.
+	$two_page_report = Static_Site_Importer_Import_Report::from_array(
+		array(
+			'quality'                 => array( 'fallback_count' => 2 ),
+			'diagnostics'             => array( $home_fallback, $about_fallback ),
+			'materialization_receipt' => array( 'completed' => array( 'files' => array( array( 'target_path' => 'parts/footer.html', 'hash' => $written_hash ) ) ) ),
+		)
+	);
+	Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $two_page_report, $part_receipts );
+	$assert( ( 'matching' === $case ? 0 : 2 ) === ( $two_page_report['quality_resolutions']['unresolved_fallback_count'] ?? -1 ), 'two-page-shared-footer-exact-provider-replacement-' . $case, wp_json_encode( $two_page_report['quality_resolutions'] ?? null ) );
+	$assert( ( 'matching' === $case ? 0 : 2 ) === ( $two_page_report['quality']['fallback_count'] ?? -1 ), 'two-page-shared-footer-final-quality-count-' . $case );
 }
 
 if ( $failures ) {
