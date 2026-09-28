@@ -348,17 +348,9 @@ class Static_Site_Importer_Form_Seeder {
 		$textarea_height_omitted_count = (int) ( $form['form']['textarea_height_omitted_count'] ?? 0 );
 		$radio_groups                  = Static_Site_Importer_Form_Field_Markup::labelled_radio_groups( $form, $controls );
 		$suppressed_controls           = $radio_groups['suppressed_controls'];
-		if ( ! empty( $form['form']['interleaved_context'] ) ) {
-			return array(
-				'selector'       => $selector,
-				'source_path'    => $source_path,
-				'provider'       => self::PROVIDER_ID,
-				'block_name'     => 'jetpack/contact-form',
-				'status'         => 'skipped',
-				'reason'         => 'interleaved_context_unrepresentable',
-				'runtime_mapped' => false,
-			);
-		}
+		// Context is editable content, not a reason to decline the provider form.
+		// Keep supported fields in Jetpack and project bounded before/after copy
+		// as editable core blocks within the provider form (see context_blocks).
 		$submit_presentation = isset( $form['form']['submit_presentation'] ) && is_array( $form['form']['submit_presentation'] ) ? $form['form']['submit_presentation'] : array();
 		if ( is_string( $submit_presentation['text'] ?? null ) && '' !== trim( $submit_presentation['text'] ) ) {
 			$submit_text = trim( $submit_presentation['text'] );

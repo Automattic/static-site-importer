@@ -332,6 +332,26 @@ namespace {
 	$assert( str_contains( $markup, 'wp:jetpack/field-radio' ), 'markup-field-radio' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-checkbox' ), 'markup-field-checkbox' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-textarea' ), 'markup-field-textarea' );
+	$interleaved_form = array(
+		'form'     => array(
+			'interleaved_context' => true,
+			'context_before'      => array( array( 'type' => 'heading', 'text' => 'Contact us' ) ),
+			'context_after'       => array( array( 'type' => 'paragraph', 'text' => 'We will reply soon.' ) ),
+		),
+		'controls' => array(
+			array( 'tag' => 'input', 'type' => 'text', 'name' => 'name', 'label' => 'Name' ),
+			array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email', 'required' => true ),
+			array( 'tag' => 'textarea', 'type' => 'textarea', 'name' => 'message', 'label' => 'Message' ),
+			array( 'tag' => 'input', 'type' => 'file', 'name' => 'attachment', 'label' => 'Attach files' ),
+			array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+		),
+	);
+	$interleaved_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $interleaved_form ) ) )['forms'][0] ?? array();
+	$interleaved_markup = (string) ( $interleaved_row['block_markup'] ?? '' );
+	$assert( 'mapped' === ( $interleaved_row['status'] ?? '' ) && true === ( $interleaved_row['runtime_mapped'] ?? false ), 'interleaved-context-form-is-provider-mapped' );
+	$assert( 3 === ( $interleaved_row['field_count'] ?? 0 ) && str_contains( $interleaved_markup, 'wp:jetpack/field-text' ) && str_contains( $interleaved_markup, 'wp:jetpack/field-email' ) && str_contains( $interleaved_markup, 'wp:jetpack/field-textarea' ), 'interleaved-context-supported-fields-remain-submittable-provider-fields' );
+	$assert( str_contains( $interleaved_markup, 'wp:heading' ) && str_contains( $interleaved_markup, 'Contact us' ) && str_contains( $interleaved_markup, 'wp:paragraph' ) && str_contains( $interleaved_markup, 'We will reply soon.' ), 'interleaved-context-is-editable-block-content' );
+	$assert( in_array( 'file', $interleaved_row['skipped_types'] ?? array(), true ) && ! str_contains( $interleaved_markup, 'file' ), 'file-upload-remains-explicitly-unsupported' );
 	$assert( str_contains( $markup, 'wp:button' ) && ! str_contains( $markup, 'wp:jetpack/button' ), 'markup-canonical-core-submit-button' );
 	$assert( 1 === substr_count( $markup, '<!-- wp:button ' ) && str_contains( $markup, '<button type="submit" class="wp-block-button__link wp-element-button">Send message</button>' ), 'source-submit-control-emits-one-canonical-button' );
 	$labelled_submit_markup = Static_Site_Importer_Form_Seeder::seed(
