@@ -167,6 +167,55 @@ $assert = static function ( bool $condition, string $message ): void {
 		throw new RuntimeException( $message );
 	}
 };
+// Run with SSI_FINALIZATION_PROBE=74 php -d memory_limit=512M tests/smoke-direct-artifact-import.php.
+// Public-safe compiler/checkpoint probe: the materializer here is a stub and
+// continuations share one PHP process (unlike separate CLI invocations). This
+// cannot establish live WordPress materialization cost or CWCTU parity.
+if ( getenv( 'SSI_FINALIZATION_PROBE' ) ) {
+	$count = min( 74, max( 2, (int) getenv( 'SSI_FINALIZATION_PROBE' ) ) );
+	$root  = dirname( __DIR__ ) . '/tests/fixtures/direct-artifact-multi-page/';
+	$html  = (string) file_get_contents( $root . 'about.html' );
+	$files = array( array( 'path' => 'website/index.html', 'content' => (string) file_get_contents( $root . 'index.html' ) ) );
+	for ( $i = 1; $i < $count; ++$i ) {
+		$files[] = array( 'path' => sprintf( 'website/page-%03d.html', $i ), 'content' => str_replace( 'About', 'Page ' . $i, $html ) );
+	}
+	$files[] = array( 'path' => 'website/styles.css', 'content' => (string) file_get_contents( $root . 'styles.css' ) );
+	$stages = array();
+	$sample = static function ( string $stage ) use ( &$stages ): void {
+		$usage = getrusage();
+		$stages[] = array( 'stage' => $stage, 'php_bytes' => memory_get_usage( true ), 'php_peak_bytes' => memory_get_peak_usage( true ), 'rss_max_native' => $usage['ru_maxrss'] );
+	};
+	$compile_batches = 0;
+	$GLOBALS['ssi_direct_actions']['static_site_importer_direct_artifact_before_phase'][] = static function ( string $phase ) use ( $sample, &$compile_batches, $count ): void {
+		if ( 'compile_pages' === $phase ) {
+			++$compile_batches;
+			if ( 1 !== $compile_batches && $count !== $compile_batches ) { return; }
+		}
+		$sample( 'before_' . $phase . ( 'compile_pages' === $phase ? '_' . $compile_batches : '' ) );
+	};
+	$GLOBALS['ssi_direct_actions']['static_site_importer_direct_artifact_checkpoint_read'][] = static function ( string $kind ) use ( $sample ): void {
+		if ( in_array( $kind, array( 'composed', 'artifact', 'materialization' ), true ) ) { $sample( 'read_' . $kind ); }
+	};
+	$input = array( 'operation' => 'apply', 'slug' => 'direct-artifact-fixture', 'source_metadata' => array( 'source_path' => 'https://source.example.test/' ), 'source' => array( 'type' => 'files', 'entrypoint' => 'website/index.html', 'files' => $files ) );
+	$sample( 'start' );
+	for ( $attempt = 0; $attempt < $count + 10; ++$attempt ) {
+		$result = Static_Site_Importer_Canonical_Import_Service::import( $input );
+		if ( empty( $result['success'] ) ) { throw new RuntimeException( 'Probe failed: ' . json_encode( $result['error'] ?? $result ) ); }
+		if ( empty( $result['continuation'] ) ) { break; }
+		$input['source'] = array( 'type' => 'files', 'import_id' => $result['import_id'] );
+		if ( 'dependencies_prepared' === ( $result['continuation_reason'] ?? '' ) ) {
+			$input['runtime_lifecycle_phase'] = 'resume';
+			$input['runtime_lifecycle_request_id'] = $result['result']['fresh_runtime']['request_id'];
+			$input['runtime_lifecycle_checkpoint'] = $result['result']['runtime_lifecycle_checkpoint'];
+		}
+	}
+	$assert( empty( $result['continuation'] ), 'probe must complete' );
+	$plan = $GLOBALS['ssi_direct_compiled_results'][0]['wordpress_site_plan'] ?? array();
+	$assert( $count === count( $plan['pages'] ?? array() ) && $count === ( $result['artifact_run']['work']['pages_compiled'] ?? 0 ), 'probe must retain every generated page in the completed output' );
+	$sample( 'completed' );
+	print json_encode( array( 'fixture' => 'public-safe direct-artifact-multi-page, synthetic about-page variants', 'source_pages' => $count, 'rss_max_units' => 'Darwin bytes; Linux KiB', 'stages' => $stages, 'output_sha256' => hash( 'sha256', json_encode( $plan ) ), 'output_pages' => count( $plan['pages'] ), 'compile_batches' => $compile_batches, 'materializations' => $result['artifact_run']['work']['materializations'] ?? null ), JSON_PRETTY_PRINT ) . "\n";
+	exit( 0 );
+}
 $validate_receipt = new ReflectionMethod( Static_Site_Importer_Direct_Artifact_Import::class, 'validate_receipt' );
 $shared_receipt_contract = array( 'digest' => 'shared-digest', 'shared_reduction_digest' => 'shared-reduction-digest' );
 $page_receipt_contract = array( 'page_id' => 'website/index.html', 'digest' => 'page-digest', 'compiler_options' => array(), 'output_schema' => 'blocks-engine/php-transformer/result/v1' );
