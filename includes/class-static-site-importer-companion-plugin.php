@@ -829,6 +829,21 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = '}';
 		$lines[] = sprintf( "add_action( 'wp_enqueue_scripts', '%s_enqueue_global_islands' );", $fn_prefix );
 		$lines[] = '';
+		$lines[] = '/** Remove lazy auto-sizes only for SSI-materialized attachment images. */';
+		$lines[] = sprintf( 'function %s_preserve_materialized_image_sizes( $image, $context, $attachment_id ) {', $fn_prefix );
+		$lines[] = "\tif ( ! is_string( \$image ) || (int) \$attachment_id < 1 || ! function_exists( 'get_post_meta' ) || '' === (string) get_post_meta( (int) \$attachment_id, '_static_site_importer_source_asset', true ) ) {";
+		$lines[] = "\t\treturn \$image;";
+		$lines[] = "\t}";
+		$lines[] = "\tif ( ! class_exists( 'WP_HTML_Tag_Processor' ) ) { return \$image; }";
+		$lines[] = "\t\$processor = new WP_HTML_Tag_Processor( \$image );";
+		$lines[] = "\tif ( ! \$processor->next_tag( array( 'tag_name' => 'IMG' ) ) || 'lazy' !== strtolower( (string) \$processor->get_attribute( 'loading' ) ) ) { return \$image; }";
+		$lines[] = "\t\$sizes = \$processor->get_attribute( 'sizes' );";
+		$lines[] = "\tif ( ! is_string( \$sizes ) || ! preg_match( '/^auto,\\s*(.+)$/i', \$sizes, \$matches ) ) { return \$image; }";
+		$lines[] = "\t\$processor->set_attribute( 'sizes', \$matches[1] );";
+		$lines[] = "\treturn \$processor->get_updated_html();";
+		$lines[] = '}';
+		$lines[] = sprintf( "add_filter( 'wp_content_img_tag', '%s_preserve_materialized_image_sizes', 10, 3 );", $fn_prefix );
+		$lines[] = '';
 
 		$lines[] = '/** Register and enqueue declared editor-only scripts. */';
 		$lines[] = sprintf( 'function %s_enqueue_editor_scripts() {', $fn_prefix );
