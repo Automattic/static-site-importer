@@ -152,6 +152,9 @@ class Static_Site_Importer_Validation_Runtime {
 			)
 		);
 		$import_args['runtime_lifecycle_phase'] = 'prepare';
+		if ( isset( $input['plan_checkpoint'] ) ) {
+			$import_args['plan_checkpoint'] = (string) $input['plan_checkpoint'];
+		}
 		$import_args['runtime_lifecycle_invocation_id'] = self::invocation_id( $invocation_id );
 		$result = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $import_args );
 		if ( is_wp_error( $result ) ) {
@@ -234,6 +237,10 @@ class Static_Site_Importer_Validation_Runtime {
 		}
 		$input['runtime_lifecycle_phase']  = 'plan';
 		$input['materialize_dependencies'] = false;
+		$input['source_metadata']          = array_merge(
+			isset( $input['source_metadata'] ) && is_array( $input['source_metadata'] ) ? $input['source_metadata'] : array(),
+			array( 'validation_provider' => 'static-site-importer/current-runtime' )
+		);
 		$slug                              = sanitize_title( (string) ( $input['slug'] ?? 'static-site-importer-validation' ) );
 		$input['slug']                     = '' !== $slug ? $slug : 'static-site-importer-validation';
 		$input['name']                     = isset( $input['name'] ) ? sanitize_text_field( (string) $input['name'] ) : $input['slug'];
@@ -246,6 +253,9 @@ class Static_Site_Importer_Validation_Runtime {
 			)
 		);
 		$args['runtime_lifecycle_phase']   = 'plan';
+		if ( ! empty( $input['retain_compile_checkpoint'] ) ) {
+			$args['retain_compile_checkpoint'] = true;
+		}
 		return Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $args );
 	}
 

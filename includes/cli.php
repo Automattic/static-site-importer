@@ -1368,6 +1368,9 @@ if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 			if ( is_wp_error( $input ) ) {
 				WP_CLI::error( $input->get_error_message() );
 			}
+			if ( isset( $assoc_args['retain-compile-checkpoint'] ) ) {
+				$input['retain_compile_checkpoint'] = true;
+			}
 			$result = Static_Site_Importer_Validation_Runtime::plan_artifact_dependencies( $input );
 			if ( is_wp_error( $result ) ) {
 				WP_CLI::error( $result->get_error_message() );
@@ -1390,6 +1393,19 @@ if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 			$input = static_site_importer_cli_artifact_input( $assoc_args );
 			if ( is_wp_error( $input ) ) {
 				WP_CLI::error( $input->get_error_message() );
+			}
+			if ( ! empty( $assoc_args['dependency-plan'] ) ) {
+				$plan_json = file_get_contents( (string) $assoc_args['dependency-plan'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads a declared lifecycle handoff.
+				$plan      = json_decode( false === $plan_json ? '' : $plan_json, true );
+				if ( ! is_array( $plan ) || 'static-site-importer/runtime-dependency-plan/v1' !== ( $plan['schema'] ?? '' ) || ! is_array( $plan['entries'] ?? null ) ) {
+					WP_CLI::error( 'Dependency preparation requires a valid dependency plan.' );
+				}
+				if ( isset( $plan['compile_checkpoint'] ) ) {
+					if ( array() !== $plan['entries'] || ! is_string( $plan['compile_checkpoint'] ) || ! preg_match( '/^[a-f0-9]{32}$/', $plan['compile_checkpoint'] ) ) {
+						WP_CLI::error( 'Dependency plan carries an invalid compile checkpoint.' );
+					}
+					$input['plan_checkpoint'] = $plan['compile_checkpoint'];
+				}
 			}
 			$result = Static_Site_Importer_Validation_Runtime::prepare_artifact_dependencies( $input );
 			if ( is_wp_error( $result ) ) {

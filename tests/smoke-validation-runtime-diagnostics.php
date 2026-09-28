@@ -257,6 +257,15 @@ $assert( false === ( Static_Site_Importer_Theme_Generator::$last_args['materiali
 $assert( false === ( $override_result['request']['import_args']['materialize_dependencies'] ?? null ), 'validation-result-records-disabled-dependency-materialization' );
 
 $lifecycle_artifact = array( 'schema' => 'test/website-artifact/v1' );
+Static_Site_Importer_Validation_Runtime::plan_artifact_dependencies(
+	array(
+		'artifact'                  => $lifecycle_artifact,
+		'slug'                      => 'persistent-worker',
+		'retain_compile_checkpoint' => true,
+	)
+);
+$planned_metadata = Static_Site_Importer_Theme_Generator::$last_args['source_metadata'] ?? array();
+$assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['retain_compile_checkpoint'] ?? false ), 'explicit-dependency-plan-retains-bound-compile-checkpoint' );
 $prepare_receipt    = Static_Site_Importer_Validation_Runtime::prepare_artifact_dependencies(
 	array(
 		'artifact' => $lifecycle_artifact,
@@ -268,6 +277,7 @@ $prepared_metadata   = Static_Site_Importer_Theme_Generator::$last_args['source_
 $assert( '' !== $prepared_invocation, 'prepare-receipt-carries-invocation' );
 $assert( 'checkpoint-id' === ( $prepare_receipt['fresh_runtime']['lifecycle_checkpoint_id'] ?? '' ) && 'checkpoint-id' === ( $prepare_receipt['runtime_lifecycle_checkpoint'] ?? '' ), 'prepare-receipt-carries-checkpoint-in-fresh-runtime-and-compatibility-field' );
 $assert( 'static-site-importer/current-runtime' === ( $prepared_metadata['validation_provider'] ?? '' ), 'prepare-and-resume-share-validation-provider-metadata' );
+$assert( $planned_metadata === $prepared_metadata, 'plan-and-prepare-bind-identical-validation-provider-metadata' );
 
 $resume_artifact_dir = $artifact_dir . '/persistent-worker-resume';
 $resume_result       = Static_Site_Importer_Validation_Runtime::validate_artifact(
