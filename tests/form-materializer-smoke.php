@@ -321,6 +321,7 @@ namespace {
 	$row    = $seed['forms'][0] ?? array();
 	$markup = (string) ( $row['block_markup'] ?? '' );
 	$assert( true === ( $row['runtime_mapped'] ?? false ), 'seed-form-runtime-mapped' );
+	$assert( 'mapped' === ( $row['mapping_decision']['status'] ?? '' ) && 8 === count( $row['mapping_decision']['supported_fields'] ?? array() ) && array() === ( $row['mapping_decision']['losses'] ?? null ), 'mapped-form-has-loss-free-provider-decision' );
 	$assert( 8 === ( $row['field_count'] ?? 0 ), 'seed-eight-fields-mapped' );
 	$assert( str_contains( $markup, 'wp:jetpack/contact-form' ), 'markup-contact-form' );
 	$assert( str_contains( $markup, 'wp:jetpack/field-text' ), 'markup-field-text' );
@@ -667,6 +668,19 @@ namespace {
 	);
 	$described_checkbox_row = $described_checkbox_seed['forms'][0] ?? array();
 	$assert( false === ( $described_checkbox_row['runtime_mapped'] ?? true ) && 'form_receipt_loss_unaccepted' === ( $described_checkbox_row['reason'] ?? '' ) && in_array( 'description', array_column( $described_checkbox_row['form_receipt_unaccepted_losses'] ?? array(), 'attribute' ), true ), 'seeder-declines-rather-than-silently-drops-an-unrenderable-checkbox-description', wp_json_encode( $described_checkbox_row ) );
+	$assert( 'declined' === ( $described_checkbox_row['mapping_decision']['status'] ?? '' ) && ( $described_checkbox_row['field_blocks'] ?? null ) === ( $described_checkbox_row['mapping_decision']['supported_fields'] ?? null ) && ( $described_checkbox_row['form_receipt_unaccepted_losses'] ?? null ) === ( $described_checkbox_row['mapping_decision']['losses'] ?? null ), 'declined-form-keeps-exact-losses-in-provider-decision' );
+	$callback_rows = array();
+	add_filter( 'static_site_importer_form_receipt_loss_accepted', static function ( $accepted, $loss, $form, $emission_row ) use ( &$callback_rows ) {
+		$callback_rows[] = array( 'loss' => $loss, 'form' => $form, 'row' => $emission_row );
+		return true;
+	} );
+	$accepted_checkbox_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.updates', 'controls' => array(
+		array( 'tag' => 'input', 'type' => 'checkbox', 'name' => 'updates', 'label' => 'Send me updates', 'description' => 'We send about once a month.' ),
+		array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Save' ),
+	) ) ) ) )['forms'][0] ?? array();
+	unset( $GLOBALS['ssi_test_hooks']['static_site_importer_form_receipt_loss_accepted'] );
+	$callback_row = $callback_rows[0]['row'] ?? array();
+	$assert( 1 === count( $callback_rows ) && 'description' === ( $callback_rows[0]['loss']['attribute'] ?? '' ) && 'form.updates' === ( $callback_rows[0]['form']['selector'] ?? '' ) && 'mapped' === ( $callback_row['status'] ?? '' ) && true === ( $callback_row['runtime_mapped'] ?? false ) && ! empty( $callback_row['block_markup'] ) && isset( $callback_row['provider_layout_target_map'], $callback_row['provider_layout_overlay_css'] ) && ! isset( $callback_row['mapping_decision'] ) && ( $callback_row['computed_layout_receipt'] ?? null ) === ( $accepted_checkbox_row['computed_layout_receipt'] ?? null ) && 'mapped' === ( $accepted_checkbox_row['mapping_decision']['status'] ?? '' ) && array() === ( $accepted_checkbox_row['mapping_decision']['losses'] ?? null ), 'receipt-filter-sees-complete-original-row-and-exact-receipt-before-decision', wp_json_encode( $callback_rows ) );
 
 	$responsive_seed = Static_Site_Importer_Form_Seeder::seed(
 		array( 'forms' => array(
@@ -3382,6 +3396,7 @@ namespace {
 	$assert( 34 === ( $overflow_receipt['losses_total'] ?? 0 ) && 32 === count( $overflow_receipt['losses'] ?? array() ) && true === ( $overflow_receipt['truncated'] ?? false ) && 1 === ( $overflow_receipt['gate_required_loss_overflow_count'] ?? 0 ) && 64 === strlen( (string) ( $overflow_receipt['gate_required_loss_overflow_hash'] ?? '' ) ) && in_array( 'unsupported_control_attribute', array_column( $overflow_receipt['losses'] ?? array(), 'reason_code' ), true ), 'seeder-retains-gate-required-loss-while-preserving-overflow-totals', wp_json_encode( $overflow_receipt ) );
 	$overflow_row = $overflow_seed['forms'][0] ?? array();
 	$assert( false === ( $overflow_row['runtime_mapped'] ?? true ) && 'form_receipt_gate_loss_overflow' === ( $overflow_row['form_receipt_unaccepted_losses'][1]['reason_code'] ?? '' ), 'gate-required-receipt-overflow-fails-runtime-acceptance', wp_json_encode( $overflow_row ) );
+	$assert( 'declined' === ( $overflow_row['mapping_decision']['status'] ?? '' ) && ( $overflow_row['mapping_decision']['losses'] ?? null ) === ( $overflow_row['form_receipt_unaccepted_losses'] ?? null ) && 32 === count( $overflow_receipt['losses'] ?? array() ) && ! in_array( 'form_receipt_gate_loss_overflow', array_column( $overflow_receipt['losses'] ?? array(), 'reason_code' ), true ), 'overflow-decision-retains-synthetic-gate-loss-without-changing-bounded-receipt' );
 	$variant_only = $topology_form;
 	$variant_only['forms'][0]['layout_graph']['nodes'] = array( $layout_node( 'wrapper-0', array(), 'section' ) );
 	$variant_only['forms'][0]['layout_graph']['variants'] = array();

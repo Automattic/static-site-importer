@@ -791,22 +791,9 @@ class Static_Site_Importer_Form_Seeder {
 		if ( ! empty( $visual_state['diagnostics'] ) ) {
 			$row['form_visual_state_diagnostics'] = $visual_state['diagnostics'];
 		}
-		$unaccepted_losses   = array_values(
-			array_filter(
-				$layout['receipt']['losses'] ?? array(),
-				static fn( $loss ): bool => is_array( $loss ) && self::receipt_loss_requires_gate( $loss ) && ! self::provider_represents_receipt_loss( $loss, $form, $field_blocks, $target_map ) && true !== apply_filters( 'static_site_importer_form_receipt_loss_accepted', false, $loss, $form, $row )
-			)
-		);
-		$gate_overflow_count = (int) ( $layout['receipt']['gate_required_loss_overflow_count'] ?? 0 );
-		if ( $gate_overflow_count > 0 ) {
-			$unaccepted_losses[] = array(
-				'dimension'   => 'topology',
-				'reason_code' => 'form_receipt_gate_loss_overflow',
-				'loss_count'  => $gate_overflow_count,
-				'loss_hash'   => (string) ( $layout['receipt']['gate_required_loss_overflow_hash'] ?? '' ),
-			);
-		}
-		if ( ! empty( $unaccepted_losses ) ) {
+		$mapping_decision        = self::mapping_decision( $form, $row, $mapped_types, $skipped, $layout['receipt'], $field_blocks, $target_map );
+		$row['mapping_decision'] = $mapping_decision;
+		if ( 'declined' === $mapping_decision['status'] ) {
 			// The layout-fidelity gate is a decision not to represent this one form
 			// with the provider, exactly like an unsupported control topology. The
 			// converted source form stays in the page, so this is a per-entity
@@ -815,10 +802,42 @@ class Static_Site_Importer_Form_Seeder {
 			$row['runtime_mapped']                 = false;
 			$row['status']                         = 'skipped';
 			$row['reason']                         = 'form_receipt_loss_unaccepted';
-			$row['form_receipt_unaccepted_losses'] = $unaccepted_losses;
-			$row['unaccepted_receipt_loss_count']  = count( $unaccepted_losses );
+			$row['form_receipt_unaccepted_losses'] = $mapping_decision['losses'];
+			$row['unaccepted_receipt_loss_count']  = count( $mapping_decision['losses'] );
 		}
 		return $row;
+	}
+
+	/**
+	 * Decide provider support from the prepared row and bounded receipt evidence.
+	 *
+	 * The filter receives the complete pre-decision emission row, including its
+	 * original computed receipt and provider overlay, as it did before extraction.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private static function mapping_decision( array $form, array $row, array $mapped_types, array $skipped, array $receipt, array $field_blocks, array $target_map ): array {
+		$unaccepted_losses = array_values(
+			array_filter(
+				$receipt['losses'] ?? array(),
+				static fn( $loss ): bool => is_array( $loss ) && self::receipt_loss_requires_gate( $loss ) && ! self::provider_represents_receipt_loss( $loss, $form, $field_blocks, $target_map ) && true !== apply_filters( 'static_site_importer_form_receipt_loss_accepted', false, $loss, $form, $row )
+			)
+		);
+		$gate_overflow_count = (int) ( $receipt['gate_required_loss_overflow_count'] ?? 0 );
+		if ( $gate_overflow_count > 0 ) {
+			$unaccepted_losses[] = array(
+				'dimension'   => 'topology',
+				'reason_code' => 'form_receipt_gate_loss_overflow',
+				'loss_count'  => $gate_overflow_count,
+				'loss_hash'   => (string) ( $receipt['gate_required_loss_overflow_hash'] ?? '' ),
+			);
+		}
+		return array(
+			'status'                   => empty( $unaccepted_losses ) ? 'mapped' : 'declined',
+			'supported_fields'         => array_values( $mapped_types ),
+			'unsupported_capabilities' => array_values( array_unique( array_filter( $skipped ) ) ),
+			'losses'                   => $unaccepted_losses,
+		);
 	}
 
 	/**
