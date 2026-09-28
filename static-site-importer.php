@@ -4,7 +4,7 @@
  * Description: Materialize compiled website artifacts into WordPress block and classic themes.
  * Version: 1.19.1
  * Author: Chris Huber
- * Requires at least: 6.9
+ * Requires at least: 7.1
  * Requires PHP: 8.2
  * Text Domain: static-site-importer
  *

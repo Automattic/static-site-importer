@@ -102,7 +102,7 @@ When a generated artifact contains full-document HTML, Static Site Importer rout
 
 ## Requirements
 
-- WordPress 6.6 or later.
+- WordPress 7.1 or later.
 - PHP 8.2 or later.
 - Composer dependencies installed with `composer install`.
 - Node dependencies installed only when running the JavaScript block-validation smoke tests.
