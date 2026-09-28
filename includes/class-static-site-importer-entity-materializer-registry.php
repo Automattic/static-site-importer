@@ -1485,6 +1485,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( is_string( $fallback_identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fallback_identity ) ) {
 				$row['fallback_identity'] = $fallback_identity;
 			}
+			$replaced = self::replaced_fallback_identities( $form );
+			if ( array() !== $replaced ) {
+				$row['replaced_fallback_identities'] = $replaced;
+			}
 			if ( array_key_exists( 'control_topology', $form ) ) {
 				$topology = self::normalize_form_control_topology( $form['control_topology'], count( $controls ) );
 				if ( isset( $topology['error'] ) ) {

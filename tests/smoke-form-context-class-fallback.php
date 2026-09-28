@@ -272,6 +272,8 @@ $part_bindings = Static_Site_Importer_Entity_Materializer_Registry::block_bindin
 	array( 'forms' => array( 'forms' => array( array( 'source_path' => 'wordpress-site-plan/shared/footer#footer', 'selector' => 'form.newsletter', 'status' => 'created' ) ) ) )
 );
 $part_binding = $part_bindings[0] ?? array();
+$validated_part = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( $part_entity ) );
+$assert( array( $home_fallback['fallback_identity'], $about_fallback['fallback_identity'] ) === ( $validated_part['forms'][0]['replaced_fallback_identities'] ?? null ), 'forms-manifest-validation-keeps-the-replaced-fallback-identities', wp_json_encode( $validated_part['errors'] ?? null ) );
 $assert( array( $home_fallback['fallback_identity'], $about_fallback['fallback_identity'] ) === ( $part_binding['replaced_fallback_identities'] ?? null ), 'part-binding-record-carries-only-valid-replaced-fallback-identities', wp_json_encode( $part_binding['replaced_fallback_identities'] ?? null ) );
 $part_file_hash = hash( 'sha256', '<!-- wp:fixture/form -->form<!-- /wp:fixture/form -->' );
 foreach ( array( 'matching' => $part_file_hash, 'stale' => hash( 'sha256', 'stale part' ) ) as $case => $written_hash ) {
