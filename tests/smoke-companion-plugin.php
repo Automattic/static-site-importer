@@ -42,6 +42,7 @@ $GLOBALS['ssi_companion_filters']     = array();
 $GLOBALS['ssi_companion_registered_filters'] = array();
 $GLOBALS['ssi_companion_registered_scripts'] = array();
 $GLOBALS['ssi_companion_enqueued']    = array();
+$GLOBALS['ssi_companion_image_meta'] = array();
 
 if ( ! class_exists( 'WP_Error' ) ) {
 	class WP_Error {
@@ -293,6 +294,29 @@ if ( ! function_exists( 'deactivate_plugins' ) ) {
 if ( ! function_exists( 'get_option' ) ) {
 	function get_option( string $name, mixed $default = false ): mixed {
 		return $GLOBALS['ssi_companion_options'][ $name ] ?? $default;
+	}
+}
+
+if ( ! function_exists( 'get_post_meta' ) ) {
+	function get_post_meta( int $post_id, string $key, bool $single = false ): string {
+		unset( $single );
+		return (string) ( $GLOBALS['ssi_companion_image_meta'][ $post_id ][ $key ] ?? '' );
+	}
+}
+
+if ( ! class_exists( 'WP_HTML_Tag_Processor' ) ) {
+	class WP_HTML_Tag_Processor {
+		private array $attributes = array();
+		public function __construct( private string $html ) {
+			preg_match_all( '/([a-z-]+)="([^"]*)"/i', $html, $matches, PREG_SET_ORDER );
+			foreach ( $matches as $match ) { $this->attributes[ strtolower( $match[1] ) ] = $match[2]; }
+		}
+		public function next_tag( array $options = array() ): bool { unset( $options ); return str_starts_with( strtolower( ltrim( $this->html ) ), '<img' ); }
+		public function get_attribute( string $name ): string|null { return $this->attributes[ strtolower( $name ) ] ?? null; }
+		public function set_attribute( string $name, string $value ): void {
+			$this->html = (string) preg_replace( '/(\\b' . preg_quote( $name, '/' ) . '=")([^"]*)(")/i', '$1' . $value . '$3', $this->html, 1 );
+		}
+		public function get_updated_html(): string { return $this->html; }
 	}
 }
 
@@ -1092,6 +1116,17 @@ $assert( in_array( 'activated', $report['actions'] ?? array(), true ), 'install-
 $assert( in_array( 'ssi-example-site/ssi-example-site.php', $GLOBALS['ssi_companion_activated'], true ), 'install-activates-companion-plugin' );
 $assert( 'ssi-example-site/ssi-example-site.php' === get_option( Static_Site_Importer_Plugin_Materializer::ACTIVE_COMPANION_OPTION ), 'install-records-current-companion-plugin' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/ssi-example-site.php' ), 'install-writes-main-file-to-disk' );
+$image_filter = $GLOBALS['ssi_companion_registered_filters']['wp_content_img_tag'][0][0] ?? null;
+$assert( is_string( $image_filter ) && 3 === ( $GLOBALS['ssi_companion_registered_filters']['wp_content_img_tag'][0][2] ?? 0 ), 'companion-registers-scoped-content-image-filter' );
+if ( is_string( $image_filter ) && function_exists( $image_filter ) ) {
+	$GLOBALS['ssi_companion_image_meta'][81]['_static_site_importer_source_asset'] = 'capture#sha256';
+	$imported_img = '<img width="1024" height="512" loading="lazy" srcset="small.jpg 300w, large.jpg 1024w" sizes="auto, (max-width: 1024px) 100vw, 1024px" />';
+	$fixed_img = $image_filter( $imported_img, 'the_content', 81 );
+	$assert( str_contains( $fixed_img, 'sizes="(max-width: 1024px) 100vw, 1024px"' ) && str_contains( $fixed_img, 'loading="lazy"' ) && str_contains( $fixed_img, 'width="1024"' ) && str_contains( $fixed_img, 'height="512"' ) && str_contains( $fixed_img, 'srcset="small.jpg 300w, large.jpg 1024w"' ), 'imported-lazy-auto-sizes-keeps-fallback-and-responsive-attributes' );
+	$neutral_img = '<img loading="lazy" sizes="auto, 100vw" style="aspect-ratio: 4 / 3" />';
+	$assert( $neutral_img === $image_filter( $neutral_img, 'the_content', 82 ), 'neutral-image-with-authored-ratio-remains-untouched' );
+	$assert( str_contains( $imported_img, 'sizes="auto,' ) && $imported_img === $image_filter( $imported_img, 'the_content', 82 ), 'image-without-ssi-provenance-remains-untouched' );
+}
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/render.php' ), 'install-writes-render-php-to-disk' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/block.json' ), 'install-emits-block-json' );
 $assert( file_exists( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/index.js' ), 'install-emits-declared-editor-asset' );
