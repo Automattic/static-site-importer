@@ -79,7 +79,19 @@ namespace {
 		}
 	}
 
-	$wp_root = (string) getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' );
+	// The deterministic gate invokes this file directly in a fresh worktree.
+	// Install the locked test dependencies if either the parser or compiler is
+	// missing from the supplied runtimes.
+	$repo_root        = dirname( __DIR__ );
+	$wp_root          = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: $repo_root . '/vendor/johnpbloch/wordpress-core';
+	$transformer_root = getenv( 'STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH' ) ?: $repo_root . '/vendor/automattic/blocks-engine-php-transformer';
+	if ( ( ! is_readable( rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-parser.php' ) || ! is_readable( rtrim( $wp_root, '/\\' ) . '/wp-includes/blocks.php' ) || ! is_readable( rtrim( $transformer_root, '/\\' ) . '/php-transformer.php' ) ) && is_file( $repo_root . '/composer.lock' ) ) {
+		passthru( 'composer --working-dir=' . escapeshellarg( $repo_root ) . ' install --no-interaction --prefer-dist --no-progress 2>&1', $install_status );
+		if ( 0 !== $install_status ) {
+			fwrite( STDERR, "FAIL: Could not install locked smoke-test dependencies.\n" );
+			exit( 1 );
+		}
+	}
 	$parser  = rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-parser.php';
 	$blocks  = rtrim( $wp_root, '/\\' ) . '/wp-includes/blocks.php';
 	if ( is_readable( $parser ) && is_readable( $blocks ) ) {
@@ -89,7 +101,7 @@ namespace {
 	if ( ! function_exists( 'serialize_blocks' ) ) {
 		// This test declares the wordpress-runtime environment; a missing
 		// dependency here must fail closed rather than silently report success.
-		fwrite( STDERR, "FAIL: WordPress block serialization is unavailable. Set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
+		fwrite( STDERR, "FAIL: WordPress block serialization is unavailable. Run composer install or set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
 		exit( 1 );
 	}
 
@@ -190,7 +202,6 @@ namespace {
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-product-handoff-contract.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
 
-	$transformer_root      = getenv( 'STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH' ) ?: dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer';
 	$transformer_bootstrap = rtrim( $transformer_root, '/\\' ) . '/php-transformer.php';
 	if ( is_readable( $transformer_bootstrap ) ) {
 		require_once $transformer_bootstrap;
@@ -873,6 +884,36 @@ namespace {
 	$assert( 6 === ( $nested_grid_row['field_count'] ?? 0 ) && 2 === substr_count( $nested_grid_markup, '"width":50' ) && 1 === preg_match( '/wp:jetpack\/field-text [^\n]*"width":50/', $nested_grid_markup ) && 1 === preg_match( '/wp:jetpack\/field-email [^\n]*"width":50/', $nested_grid_markup ) && ! str_contains( $nested_grid_markup, 'wp:group' ) && $nested_grid_markup === serialize_blocks( parse_blocks( $nested_grid_markup ) ), 'nested-neutral-grid-row-preserves-provider-fields-and-save-roundtrip', $nested_grid_markup );
 	$assert( str_contains( $nested_grid_css_out, '@media (width<640px){' ) && 2 === preg_match_all( '/@media \(width<640px\)\{\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{flex:1 1 100%;width:100%\}\}/', $nested_grid_css_out ) && null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $nested_grid_overlay ) && in_array( 'provider_equal_width_fields', array_column( $nested_grid_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'nested-neutral-grid-row-scoped-overlay-stacks-below-640px', $nested_grid_css_out );
 	$assert( 1 === preg_match( '/field-text[\s\S]*field-text[\s\S]*field-email[\s\S]*field-textarea[\s\S]*wp:button/', $nested_grid_markup ), 'nested-neutral-grid-row-keeps-source-field-order', $nested_grid_markup );
+	// Ward's grid differs from the neutral single-control shells above: the
+	// second shell owns both a visible combobox and its hidden native value
+	// carrier. The producer proves their relationship by exact selector.
+	$ward_html = '<style>' . $nested_grid_css . '</style><form class="space-y-4">'
+		. '<div><div><div><input name="first" aria-label="First"></div><input name="second" aria-label="Second"></div></div>'
+		. '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'
+		. '<div><label for="ward-phone">Phone</label><input id="ward-phone" name="phone" type="tel" required></div>'
+		. '<div><label>Contact Preference</label><button type="button" role="combobox" aria-label="Contact Preference">Phone</button><select hidden name="contact_preference" required><option value="email">Email</option><option value="phone" selected>Phone</option></select></div>'
+		. '</div>'
+		. '<div><label>Services</label><button type="button" role="combobox" aria-label="Services">Consulting</button><select hidden name="services" required><option value="consulting" selected>Consulting</option><option value="support">Support</option></select></div>'
+		. '<button type="submit">Send</button></form>';
+	$ward_source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $ward_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$ward_controls = $ward_source['controls'] ?? array();
+	$ward_nodes = array_column( $ward_source['control_topology']['nodes'] ?? array(), null, 'id' );
+	$assert( 'wrapper-3' === ( $ward_nodes['wrapper-4']['parent'] ?? null ) && 'wrapper-3' === ( $ward_nodes['wrapper-5']['parent'] ?? null ) && 'wrapper-4' === ( $ward_nodes['control-2']['parent'] ?? null ) && 'wrapper-5' === ( $ward_nodes['control-3']['parent'] ?? null ) && 'wrapper-5' === ( $ward_nodes['control-4']['parent'] ?? null ) && 'wrapper-6' === ( $ward_nodes['control-5']['parent'] ?? null ) && 'wrapper-6' === ( $ward_nodes['control-6']['parent'] ?? null ) && ! empty( $ward_controls[3]['choice_source_selector'] ) && ( $ward_controls[3]['choice_source_selector'] ?? null ) === ( $ward_controls[4]['selector'] ?? null ) && ( $ward_controls[5]['choice_source_selector'] ?? null ) === ( $ward_controls[6]['selector'] ?? null ), 'ward-paired-grid-fixture-proves-exact-native-select-link', wp_json_encode( array( $ward_controls, $ward_nodes ) ) );
+	$ward_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $ward_source ) ) );
+	$ward_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $ward_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$ward_markup = (string) ( $ward_row['block_markup'] ?? '' );
+	$ward_css = (string) ( $ward_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert( empty( $ward_validated['errors'] ) && 'mapped' === ( $ward_row['status'] ?? '' ) && array() === ( $ward_row['mapping_decision']['losses'] ?? null ) && 5 === ( $ward_row['field_count'] ?? 0 ), 'ward-linked-pairs-map-once-without-waived-loss', wp_json_encode( array( 'validation' => $ward_validated['errors'], 'row' => $ward_row['reason'] ?? '', 'losses' => $ward_row['mapping_decision']['losses'] ?? null ) ) );
+	$assert( 2 === substr_count( $ward_markup, 'wp:jetpack/field-select {' ) && str_contains( $ward_markup, '"options":["Email","Phone"]' ) && str_contains( $ward_markup, '"options":["Consulting","Support"]' ) && 2 === substr_count( $ward_markup, '"width":50' ) && str_contains( $ward_css, '@media (width<640px){' ) && $ward_markup === serialize_blocks( parse_blocks( $ward_markup ) ), 'ward-linked-pairs-retain-nested-shell-and-responsive-two-track-grid', $ward_markup . "\n" . $ward_css );
+	$choice_token = Static_Site_Importer_Provider_Form_Runtime_V1::choice_token( $ward_controls[4]['options'] ?? null );
+	$projected_choice = Static_Site_Importer_Provider_Form_Runtime_V1::project_choice_values( '<div class="' . $choice_token . '"><select required><option value="">Select one option</option><option value="Email">Email</option><option value="Phone">Phone</option></select></div>' );
+	$assert( str_contains( $ward_markup, $choice_token ) && str_contains( $projected_choice, '<option value="email">Email</option>' ) && str_contains( $projected_choice, '<option value="phone" selected="selected">Phone</option>' ) && str_contains( $projected_choice, '<select required>' ), 'ward-choice-provider-projects-distinct-values-and-selected-required-state', $projected_choice );
+	$wrapped_choice = Static_Site_Importer_Provider_Form_Runtime_V1::project_choice_values( '<div class="' . $choice_token . '-wrap"><select><option value="Email">Email</option><option value="Phone">Phone</option></select></div>' );
+	$assert( str_contains( $wrapped_choice, 'value="phone" selected="selected"' ) && '' === Static_Site_Importer_Provider_Form_Runtime_V1::choice_token( array( array( 'label' => 'A', 'value' => 'a', 'selected' => true ), array( 'label' => 'B', 'value' => 'b', 'selected' => true ) ) ), 'choice-projection-handles-provider-wrap-suffix-and-rejects-ambiguous-selection', $wrapped_choice );
+	$unlinked_ward = $ward_validated['forms'][0];
+	$unlinked_ward['controls'][3]['choice_source_selector'] = 'form > select.other';
+	$unlinked_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $unlinked_ward ) ) )['forms'][0] ?? array();
+	$assert( 1 === substr_count( (string) ( $unlinked_row['block_markup'] ?? '' ), '<!-- wp:button {"tagName":"button","type":"button"' ) && 2 === substr_count( (string) ( $unlinked_row['block_markup'] ?? '' ), 'wp:jetpack/field-select {' ) && 'mapped' !== ( $unlinked_row['status'] ?? '' ), 'unlinked-choice-does-not-borrow-hidden-select-or-claim-loss-free-grid', wp_json_encode( $unlinked_row['mapping_decision']['losses'] ?? null ) );
 	// Reproduces a real base44/Tailwind CSS v4 contact form (labels are plain,
 	// unassociated siblings with no `for`/`id`/`name`, exactly as captured): a
 	// `grid grid-cols-1 md:grid-cols-2 gap-6` row stacks Name/Phone on narrow
