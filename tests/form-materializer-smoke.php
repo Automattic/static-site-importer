@@ -2020,6 +2020,19 @@ namespace {
 	$expanded_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $expanded_presentation );
 	$expanded_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $expanded_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$assert( empty( $expanded_validation['errors'] ) && str_contains( (string) ( $expanded_row['provider_layout_overlay_css']['css'] ?? '' ), 'font-size:16px;line-height:24px' ), 'expanded bounded producer graph preserves authored form typography', wp_json_encode( $expanded_validation['errors'] ?? array() ) );
+	$responsive_typography = $expanded_presentation;
+	$responsive_typography['forms'][0]['presentation_graph']['controls'][0]['control'] = $presentation_role( array( 'font_family' => 'Georgia', 'line_height' => '1.75' ), array( 'font-family', 'line-height' ), 'input' );
+	$responsive_typography['forms'][0]['presentation_graph']['variants'] = array( array(
+		'index' => 0, 'role' => 'control',
+		'condition' => array( 'kind' => 'media', 'query' => '(min-width: 1536px)' ),
+		'style_patch' => array( 'font_size' => '18px' ),
+		'precedence' => array( 'font_size' => array( 'source_order' => 1, 'specificity' => 1, 'important' => false ) ),
+		'provenance' => array( array( 'source_path' => 'assets/forms.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => 'input', 'condition' => array( 'kind' => 'media', 'query' => '(min-width: 1536px)' ), 'properties' => array( 'font-size' ) ) ),
+	) );
+	$responsive_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $responsive_typography );
+	$responsive_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $responsive_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$responsive_css = (string) ( $responsive_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert( empty( $responsive_validation['errors'] ) && str_contains( $responsive_css, 'font-family:Georgia;line-height:1.75' ) && str_contains( $responsive_css, '@media (min-width: 1536px)' ) && 1 === preg_match( '/@media \(min-width: 1536px\)\{[^}]*font-size:18px[^}]*\}/', $responsive_css ) && 0 === preg_match( '/@media \(min-width: 1536px\)\{[^}]*font-family:revert/', $responsive_css ), 'responsive font size retains base family and line height instead of reverting them', $responsive_css );
 	$unbounded_presentation = $expanded_presentation;
 	$unbounded_presentation['forms'][0]['presentation_graph']['limits']['rules_per_role'] = 97;
 	$assert( ! empty( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unbounded_presentation )['errors'] ), 'presentation graph still rejects an unrecognized rule budget' );
