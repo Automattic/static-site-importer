@@ -110,6 +110,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			$prepared['args']['classic_runtime_bindings']  = $classic_bindings;
 		}
 		$prepared['args']['provider_layout_overlays']     = $page_ready ? array() : Static_Site_Importer_Entity_Materializer_Registry::provider_layout_overlays( $entities );
+		$prepared['args']['whole_page_provider_results'] = $page_ready ? array() : self::whole_page_provider_results( $entities );
 		$prepared['args']['activate']                     = $page_ready ? false : ! empty( $prepared['args']['activate'] );
 		$prepared['args']['defer_materialization_commit'] = true;
 
@@ -134,6 +135,23 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			'dependencies' => $dependencies,
 			'entities'     => $entities,
 		);
+	}
+
+	/** Flatten opt-in provider receipts without interpreting provider HTML. */
+	private static function whole_page_provider_results( array $entities ): array {
+		$results = array();
+		foreach ( $entities as $report ) {
+			if ( ! is_array( $report ) ) {
+				continue;
+			}
+			$rows = is_array( $report['whole_page_results'] ?? null ) ? $report['whole_page_results'] : array();
+			foreach ( $rows as $row ) {
+				if ( is_array( $row ) ) {
+					$results[] = $row;
+				}
+			}
+		}
+		return $results;
 	}
 
 	/** Add topology-derived provider field states before the established companion phase. */

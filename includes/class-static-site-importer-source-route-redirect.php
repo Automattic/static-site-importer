@@ -124,7 +124,7 @@ final class Static_Site_Importer_Source_Route_Redirect {
 		foreach ( $candidates as $value ) {
 			$found = get_posts(
 				array(
-					'post_type'              => array( 'page', 'post' ),
+				'post_type'              => 'any',
 					'post_status'            => 'publish',
 					'meta_key'               => self::META_KEY,
 					'meta_value'             => $value,
