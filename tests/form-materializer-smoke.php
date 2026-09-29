@@ -2014,6 +2014,15 @@ namespace {
 	$presentation_markup    = (string) ( $presentation_row['block_markup'] ?? '' );
 	$presentation_css       = (string) ( $presentation_row['provider_layout_overlay_css']['css'] ?? '' );
 	$assert( empty( $validated_presentation['errors'] ) && str_contains( $presentation_css, 'background-color:transparent;border:0;padding:8px 0;font-size:16px;line-height:24px;font-family:revert' ) && ! str_contains( $presentation_css, 'line-height:24px;line-height:revert' ) && str_contains( $presentation_css, 'font-size:14px;font-weight:400;line-height:1.4;margin-bottom:8px' ) && str_contains( $presentation_css, 'background-color:rgb(254,126,3);color:#fff;border:0;border-radius:100px;padding:11px 15px;font-size:16px;font-family:inherit;line-height:inherit;min-height:0' ), 'bounded-form-presentation-transposes-control-label-and-submit-styles', $presentation_css );
+	$expanded_presentation = $presentation_form;
+	$expanded_presentation['forms'][0]['presentation_graph']['limits']['rules_per_role'] = 96;
+	$expanded_presentation['forms'][0]['presentation_graph']['controls'][0]['control']['provenance'] = array_fill( 0, 17, $expanded_presentation['forms'][0]['presentation_graph']['controls'][0]['control']['provenance'][0] );
+	$expanded_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $expanded_presentation );
+	$expanded_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $expanded_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( empty( $expanded_validation['errors'] ) && str_contains( (string) ( $expanded_row['provider_layout_overlay_css']['css'] ?? '' ), 'font-size:16px;line-height:24px' ), 'expanded bounded producer graph preserves authored form typography', wp_json_encode( $expanded_validation['errors'] ?? array() ) );
+	$unbounded_presentation = $expanded_presentation;
+	$unbounded_presentation['forms'][0]['presentation_graph']['limits']['rules_per_role'] = 97;
+	$assert( ! empty( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unbounded_presentation )['errors'] ), 'presentation graph still rejects an unrecognized rule budget' );
 	// Vendored stylesheets keep their upstream package filenames, so artifact paths
 	// carry punctuation such as `@` that the canonical artifact path contract allows.
 	$punctuated_presentation_form = $presentation_form;
