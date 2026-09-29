@@ -52,6 +52,7 @@ require_once ABSPATH . 'includes/class-static-site-importer-import-report.php';
 require_once ABSPATH . 'includes/class-static-site-importer-diagnostic-projection.php';
 require_once ABSPATH . 'includes/class-static-site-importer-quality-gates.php';
 require_once ABSPATH . 'includes/class-static-site-importer-form-field-markup.php';
+require_once ABSPATH . 'includes/class-static-site-importer-provider-layout-overlay.php';
 
 $failures   = array();
 $assertions = 0;
@@ -211,25 +212,45 @@ $prepared_form  = array( 'form' => $prepared['form'] );
 $blocks         = Static_Site_Importer_Form_Field_Markup::context_blocks( $prepared_form, 'context_before' );
 $heading_block  = $blocks[0] ?? array();
 $paragraph      = $blocks[1] ?? array();
-$assert( 'core/heading' === ( $heading_block['name'] ?? '' ) && 'font-serif text-2xl' === ( $heading_block['attrs']['className'] ?? '' ), 'heading-context-class-treatment-is-unchanged' );
-$assert( 'core/paragraph' === ( $paragraph['name'] ?? '' ) && 'form-note lead' === ( $paragraph['attrs']['className'] ?? '' ), 'paragraph-context-class-is-emitted-as-className', wp_json_encode( $paragraph ) );
+$assert( 'core/heading' === ( $heading_block['name'] ?? '' ) && str_starts_with( (string) ( $heading_block['attrs']['className'] ?? '' ), 'font-serif text-2xl ' ) && 1 === preg_match( '/ssi-context-[a-f0-9]{12}/', (string) ( $heading_block['attrs']['className'] ?? '' ) ), 'heading-context-keeps-author-classes-and-adds-deterministic-fallback-identity' );
+$assert( 'core/paragraph' === ( $paragraph['name'] ?? '' ) && str_starts_with( (string) ( $paragraph['attrs']['className'] ?? '' ), 'form-note lead ' ) && 1 === preg_match( '/ssi-context-[a-f0-9]{12}/', (string) ( $paragraph['attrs']['className'] ?? '' ) ), 'paragraph-context-keeps-author-classes-and-adds-deterministic-fallback-identity', wp_json_encode( $paragraph ) );
 $paragraph_markup = trim( Static_Site_Importer_Form_Field_Markup::serialize_block( $paragraph ) );
 $assert( 1 === preg_match( '#<p class="wp-block-paragraph form-note lead[^"]*"[^>]*>Required fields are marked</p>#', $paragraph_markup ), 'serialized-paragraph-carries-the-class-on-the-element', $paragraph_markup );
 $plain = Static_Site_Importer_Form_Field_Markup::context_blocks( array( 'form' => array( 'context_after' => $prepared['form']['context_after'] ?? array() ) ), 'context_after' );
 $plain_markup = isset( $plain[0] ) ? trim( Static_Site_Importer_Form_Field_Markup::serialize_block( $plain[0] ) ) : '';
 $assert( str_contains( $plain_markup, '<p>Unsubscribe any time.</p>' ) && ! str_contains( $plain_markup, 'class=' ), 'classless-paragraph-markup-is-unchanged', $plain_markup );
+$classless_styled = Static_Site_Importer_Form_Field_Markup::context_blocks( array( 'form' => array( 'context_before' => array( array( 'type' => 'paragraph', 'text' => 'Classless note', 'styles' => array( 'font_size' => '12px' ) ) ) ) ), 'context_before' )[0] ?? array();
+$assert( '12px' === ( $classless_styled['attrs']['style']['typography']['fontSize'] ?? '' ) && ! isset( $classless_styled['attrs']['className'] ), 'classless-context-keeps-existing-inline-typography-fallback' );
 
-// Resolved context typography reaches the emitted blocks as editable style
-// attributes, and the saved element carries the matching inline declarations.
-// Unsafe or CSS-wide values never travel.
+// Resolved class context typography is carried by a deterministic fallback
+// class in the shared stylesheet overlay, not flattened inline over author CSS.
 $heading_style = $heading_block['attrs']['style'] ?? array();
-$assert( '28px' === ( $heading_style['typography']['fontSize'] ?? '' ) && 'Georgia, serif' === ( $heading_style['typography']['fontFamily'] ?? '' ) && '1.5' === ( $heading_style['typography']['lineHeight'] ?? '' ) && 'rgb(243, 242, 237)' === ( $heading_style['color']['text'] ?? '' ), 'heading-context-typography-becomes-block-style-attributes', wp_json_encode( $heading_style ) );
-$assert( ! isset( $heading_style['typography']['fontWeight'] ), 'css-wide-context-typography-value-is-dropped', wp_json_encode( $heading_style ) );
+$assert( array() === $heading_style, 'class-owned-heading-does-not-freeze-resolved-base-typography-inline', wp_json_encode( $heading_style ) );
+$assert( 1 === preg_match( '/(?:^|\s)ssi-context-[a-f0-9]{12}(?:$|\s)/', (string) ( $heading_block['attrs']['className'] ?? '' ) ), 'classed-heading-receives-deterministic-context-fallback-identity', wp_json_encode( $heading_block['attrs'] ?? array() ) );
 $heading_markup = trim( Static_Site_Importer_Form_Field_Markup::serialize_block( $heading_block ) );
-$assert( str_contains( $heading_markup, 'font-size:28px' ) && str_contains( $heading_markup, 'color:rgb(243, 242, 237)' ) && str_contains( $heading_markup, 'has-text-color' ), 'saved-heading-carries-the-inline-typography', $heading_markup );
+$assert( str_contains( $heading_markup, 'font-serif text-2xl' ) && ! str_contains( $heading_markup, 'font-size:' ), 'saved-heading-keeps-responsive-class-ownership-without-inline-freeze', $heading_markup );
 $paragraph_style = $paragraph['attrs']['style'] ?? array();
-$assert( '15px' === ( $paragraph_style['typography']['fontSize'] ?? '' ) && '#f3f2ed' === ( $paragraph_style['color']['text'] ?? '' ) && ! isset( $paragraph_style['typography']['fontFamily'] ), 'paragraph-context-typography-keeps-safe-values-only', wp_json_encode( $paragraph_style ) );
-$assert( str_contains( $paragraph_markup, 'font-size:15px' ) && ! str_contains( $paragraph_markup, 'url(' ), 'saved-paragraph-carries-safe-inline-typography', $paragraph_markup );
+$assert( array() === $paragraph_style, 'class-owned-paragraph-does-not-freeze-resolved-base-typography-inline', wp_json_encode( $paragraph_style ) );
+$assert( 1 === preg_match( '/(?:^|\s)ssi-context-[a-f0-9]{12}(?:$|\s)/', (string) ( $paragraph['attrs']['className'] ?? '' ) ), 'classed-paragraph-receives-deterministic-context-fallback-identity', wp_json_encode( $paragraph['attrs'] ?? array() ) );
+$assert( str_contains( $paragraph_markup, 'form-note lead' ) && ! str_contains( $paragraph_markup, 'font-size:' ) && ! str_contains( $paragraph_markup, 'url(' ), 'saved-paragraph-keeps-source-class-responsible-for-responsive-typography', $paragraph_markup );
+
+$context_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile(
+	array(),
+	array( 'schema' => 'generic/provider-layout-target-map/v1', 'provider' => 'fixture', 'scope' => '.ssi-form-aaaaaaaaaaaa', 'targets' => array() ),
+	array(),
+	array(),
+	false,
+	Static_Site_Importer_Form_Field_Markup::context_style_fallbacks( $prepared['form'] )
+)['overlay'];
+$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $context_overlay ), 'computed-context-fallback-overlay-is-admitted' );
+foreach ( array( 'context', 'editor_context' ) as $prefix ) {
+	$malformed = $context_overlay;
+	$malformed[ $prefix . '_css' ] = array();
+	$assert( null === Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $malformed ), 'context-overlay-rejects-non-string-' . $prefix );
+	$malformed = $context_overlay;
+	$malformed[ $prefix . '_sha256' ] = str_repeat( '0', 64 );
+	$assert( null === Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $malformed ), 'context-overlay-rejects-mismatched-digest-' . $prefix );
+}
 
 // A shared template part can own one provider form that stands for the same
 // source form on several pages. The producer lists the fallback of every page

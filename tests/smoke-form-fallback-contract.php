@@ -92,6 +92,16 @@ $presentation = Static_Site_Importer_Form_Fallback_Contract::presentation_from_m
 $assert( 'generic/form-presentation/v1' === ( $presentation['schema'] ?? '' ) && 'form.newsletter' === ( $presentation['selector'] ?? '' ) && 3 === ( $presentation['document_ordinal'] ?? 0 ), 'presentation-identifies-the-original-form' );
 $assert( 'Updates' === ( $presentation['context_before'][0]['text'] ?? '' ) && 'font-serif text-2xl text-card-foreground' === ( $presentation['context_before'][0]['class'] ?? '' ) && 'Required fields' === ( $presentation['context_before'][1]['text'] ?? '' ) && 'Unsubscribe any time.' === ( $presentation['context_after'][0]['text'] ?? '' ), 'presentation-keeps-bounded-before-and-after-context' );
 $assert( true === ( $presentation['interleaved_context'] ?? false ) && 'Subscribe' === ( $presentation['submit_presentation']['text'] ?? '' ) && array( 'button', 'primary' ) === ( $presentation['submit_presentation']['classes'] ?? array() ), 'presentation-detects-interleaving-and-prefers-visible-submit-treatment' );
+$bounded_context = Static_Site_Importer_Form_Fallback_Contract::presentation_from_metadata( array(
+	'form' => array(
+		'context_before' => array( array( 'type' => 'paragraph', 'text' => 'Intro', 'class' => 'one two three four five six seven eight responsive-intro utility' ) ),
+		'unrepresented_context' => array( array( 'type' => 'paragraph', 'text' => 'Middle note' ) ),
+		'submit_presentation' => array( 'text' => 'Send', 'classes' => array( 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'responsive-submit', 'utility' ) ),
+	),
+) );
+$assert( 'one two three four five six seven eight responsive-intro utility' === ( $bounded_context['context_before'][0]['class'] ?? '' ) && in_array( 'responsive-submit', $bounded_context['submit_presentation']['classes'] ?? array(), true ) && 1 === ( $bounded_context['unrepresented_context_count'] ?? 0 ), 'consumer-retains-all-producer-bounded-context-and-submit-classes-and-counts-interleaved-loss' );
+$renormalized_context = Static_Site_Importer_Form_Fallback_Contract::presentation_from_metadata( array( 'form' => $bounded_context ) );
+$assert( 1 === ( $renormalized_context['unrepresented_context_count'] ?? 0 ), 'normalized-interleaved-loss-count-survives-repeated-preparation' );
 $assert( 16 === count( $presentation['textarea_heights'] ?? array() ) && '1rem' === ( $presentation['textarea_heights'][1] ?? '' ) && 1 === ( $presentation['textarea_height_omitted_count'] ?? 0 ), 'presentation-bounds-textarea-heights-without-changing-control-order' );
 $assert( ! isset( $presentation['submit_presentation']['label_classes'] ), 'submit-treatment-without-a-label-element-reports-no-label-classes' );
 $labelled_submit = Static_Site_Importer_Form_Fallback_Contract::presentation_from_metadata(
