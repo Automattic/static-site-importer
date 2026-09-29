@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "185aa00c7a9840d115301cd7cf57d186",
+    "content-hash": "b0d8079aaa6bd836ac8e2dc3ddc3c7fa",
     "packages": [
         {
             "name": "automattic/blocks-engine-figma-transformer",
@@ -43,28 +43,55 @@
         },
         {
             "name": "automattic/blocks-engine-php-transformer",
-            "version": "0.26.2-dev",
+            "version": "v0.26.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Automattic/blocks-engine-php-transformer.git",
-                "reference": "59269cb7200571324320ff0a87843baa9f7b9dee"
+                "reference": "0563f251c9548867ef2ab48e8528496ba794abcc"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://github.com/Automattic/blocks-engine-php-transformer/archive/59269cb7200571324320ff0a87843baa9f7b9dee.zip",
-                "reference": "59269cb7200571324320ff0a87843baa9f7b9dee"
+                "url": "https://api.github.com/repos/Automattic/blocks-engine-php-transformer/zipball/0563f251c9548867ef2ab48e8528496ba794abcc",
+                "reference": "0563f251c9548867ef2ab48e8528496ba794abcc",
+                "shasum": ""
             },
             "require": {
                 "league/commonmark": "^2.5",
                 "league/html-to-markdown": "^5.1",
                 "php": ">=8.2"
             },
+            "require-dev": {
+                "phpunit/phpunit": "^9.6",
+                "yoast/phpunit-polyfills": "^3.0"
+            },
             "type": "library",
             "autoload": {
                 "psr-4": {
                     "Automattic\\BlocksEngine\\PhpTransformer\\": "src/"
                 }
-            }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "GPL-3.0-or-later"
+            ],
+            "authors": [
+                {
+                    "name": "Automattic"
+                }
+            ],
+            "description": "PHP primitives for transforming HTML, Markdown, and website artifacts into WordPress block outputs.",
+            "homepage": "https://github.com/Automattic/blocks-engine/tree/trunk/php-transformer",
+            "keywords": [
+                "blocks",
+                "html",
+                "markdown",
+                "wordpress"
+            ],
+            "support": {
+                "issues": "https://github.com/Automattic/blocks-engine/issues",
+                "source": "https://github.com/Automattic/blocks-engine-php-transformer"
+            },
+            "time": "2026-09-29T13:37:59+00:00"
         },
         {
             "name": "dflydev/dot-access-data",
@@ -835,9 +862,7 @@
     ],
     "aliases": [],
     "minimum-stability": "dev",
-    "stability-flags": {
-        "automattic/blocks-engine-php-transformer": 20
-    },
+    "stability-flags": {},
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
