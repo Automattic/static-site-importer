@@ -844,6 +844,35 @@ namespace {
 	);
 
 	// --- A source utility-framework grid row materializes as provider field widths ---
+	// Ward's row is a partial form subtree: the two grid children are neutral,
+	// classless div shells, each containing one labelled field. A two-control
+	// form with controls directly beneath the grid does not exercise this seam.
+	$nested_grid_css  = '.grid{display:grid}.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}.gap-4{gap:1rem}'
+		. '@media (width>=640px){.sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}';
+	$nested_grid_html = '<style>' . $nested_grid_css . '</style><form class="space-y-4">'
+		. '<div><label for="before-a">Before A</label><input id="before-a" name="before_a"></div>'
+		. '<div><label for="before-b">Before B</label><input id="before-b" name="before_b"></div>'
+		. '<div><label for="before-c">Before C</label><input id="before-c" name="before_c"></div>'
+		. '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'
+		. '<div><label for="first">First</label><input id="first" name="first" required></div>'
+		. '<div><label for="second">Second</label><input id="second" type="email" name="second" required></div>'
+		. '</div>'
+		. '<div><label>After<textarea name="after"></textarea></label></div>'
+		. '<button type="submit">Send</button></form>';
+	$nested_grid_source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $nested_grid_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$nested_grid_nodes = array_column( $nested_grid_source['control_topology']['nodes'] ?? array(), null, 'id' );
+	$nested_grid_parent = array_values( array_filter( $nested_grid_nodes, static fn( array $node ): bool => str_contains( (string) ( $node['class'] ?? '' ), 'grid-cols-1' ) ) )[0] ?? array();
+	$nested_grid_shells = array_values( array_filter( $nested_grid_nodes, static fn( array $node ): bool => ( $node['parent'] ?? null ) === ( $nested_grid_parent['id'] ?? null ) && 'wrapper' === ( $node['kind'] ?? null ) && 'div' === ( $node['tag'] ?? null ) && '' === ( $node['class'] ?? '' ) ) );
+	$assert( 'wrapper-3' === ( $nested_grid_parent['id'] ?? '' ) && 2 === count( $nested_grid_shells ) && array( 'wrapper-4', 'wrapper-5' ) === array_column( $nested_grid_shells, 'id' ), 'nested-neutral-grid-fixture-captures-classless-field-shells', wp_json_encode( $nested_grid_source['control_topology']['nodes'] ?? null ) );
+	$nested_grid_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $nested_grid_source ) ) );
+	$nested_grid_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $nested_grid_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$nested_grid_markup = (string) ( $nested_grid_row['block_markup'] ?? '' );
+	$nested_grid_overlay = $nested_grid_row['provider_layout_overlay_css'] ?? array();
+	$nested_grid_css_out = (string) ( $nested_grid_overlay['css'] ?? '' );
+	$assert( empty( $nested_grid_validated['errors'] ) && 'mapped' === ( $nested_grid_row['status'] ?? '' ) && array() === ( $nested_grid_row['mapping_decision']['losses'] ?? null ) && empty( $nested_grid_row['form_receipt_unaccepted_losses'] ?? array() ), 'nested-neutral-grid-row-maps-without-loss', wp_json_encode( array( 'validation' => $nested_grid_validated['errors'], 'row' => $nested_grid_row['reason'] ?? null, 'losses' => $nested_grid_row['mapping_decision']['losses'] ?? null ) ) );
+	$assert( 6 === ( $nested_grid_row['field_count'] ?? 0 ) && 2 === substr_count( $nested_grid_markup, '"width":50' ) && 1 === preg_match( '/wp:jetpack\/field-text [^\n]*"width":50/', $nested_grid_markup ) && 1 === preg_match( '/wp:jetpack\/field-email [^\n]*"width":50/', $nested_grid_markup ) && ! str_contains( $nested_grid_markup, 'wp:group' ) && $nested_grid_markup === serialize_blocks( parse_blocks( $nested_grid_markup ) ), 'nested-neutral-grid-row-preserves-provider-fields-and-save-roundtrip', $nested_grid_markup );
+	$assert( str_contains( $nested_grid_css_out, '@media (width<640px){' ) && 2 === preg_match_all( '/@media \(width<640px\)\{\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{flex:1 1 100%;width:100%\}\}/', $nested_grid_css_out ) && null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $nested_grid_overlay ) && in_array( 'provider_equal_width_fields', array_column( $nested_grid_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'nested-neutral-grid-row-scoped-overlay-stacks-below-640px', $nested_grid_css_out );
+	$assert( 1 === preg_match( '/field-text[\s\S]*field-text[\s\S]*field-email[\s\S]*field-textarea[\s\S]*wp:button/', $nested_grid_markup ), 'nested-neutral-grid-row-keeps-source-field-order', $nested_grid_markup );
 	// Reproduces a real base44/Tailwind CSS v4 contact form (labels are plain,
 	// unassociated siblings with no `for`/`id`/`name`, exactly as captured): a
 	// `grid grid-cols-1 md:grid-cols-2 gap-6` row stacks Name/Phone on narrow
