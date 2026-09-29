@@ -126,9 +126,9 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		if ( ! is_array( $options ) || ! array_is_list( $options ) || count( $options ) < 1 || count( $options ) > 32 ) {
 			return '';
 		}
-		$values = array();
+		$values         = array();
 		$selected_count = 0;
-		$labels = array();
+		$labels         = array();
 		foreach ( $options as $option ) {
 			if ( is_array( $option ) && ! empty( $option['placeholder'] ) ) {
 				continue;
@@ -137,7 +137,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 				return '';
 			}
 			$labels[ $option['label'] ] = true;
-			$selected_count += ! empty( $option['selected'] ) ? 1 : 0;
+			$selected_count            += ! empty( $option['selected'] ) ? 1 : 0;
 			if ( $selected_count > 1 ) {
 				return '';
 			}
@@ -146,19 +146,19 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		if ( array() === $values ) {
 			return '';
 		}
-		$encoded = base64_encode( (string) wp_json_encode( $values ) );
+		$encoded = base64_encode( (string) wp_json_encode( $values ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encodes bounded choice data for a persisted CSS-class transport token, not obfuscation.
 		return strlen( $encoded ) <= 8192 ? 'ssi-choice-' . rtrim( strtr( $encoded, '+/', '-_' ), '=' ) : '';
 	}
 
 	/** Apply the captured native option values and selected state to Jetpack's select. */
 	public static function project_choice_values( string $html ): string {
-		if ( strlen( $html ) > 262144 || ! preg_match( '/\bssi-choice-([A-Za-z0-9_-]{1,8192})\b/', $html, $match ) ) {
+		if ( strlen( $html ) > 262144 || ! preg_match( '/\bssi-choice-([A-Za-z0-9_-]{1,8192})\b/', $html, $matches ) ) {
 			return $html;
 		}
-		$json = base64_decode( strtr( $match[1], '-_', '+/' ), true );
+		$json = base64_decode( strtr( $matches[1], '-_', '+/' ), true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the persisted choice-data transport token before validating its shape.
 		$data = is_string( $json ) ? json_decode( $json, true ) : null;
-		if ( ! is_array( $data ) && str_ends_with( $match[1], '-wrap' ) ) {
-			$json = base64_decode( strtr( substr( $match[1], 0, -5 ), '-_', '+/' ), true );
+		if ( ! is_array( $data ) && str_ends_with( $matches[1], '-wrap' ) ) {
+			$json = base64_decode( strtr( substr( $matches[1], 0, -5 ), '-_', '+/' ), true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes the same token after removing Jetpack's appended wrapper suffix.
 			$data = is_string( $json ) ? json_decode( $json, true ) : null;
 		}
 		if ( ! is_array( $data ) || count( $data ) > 32 || ! str_contains( $html, '<select' ) ) {
@@ -166,20 +166,20 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		}
 		$ordinal = 0;
 		$found   = false;
-		$updated = preg_replace_callback( '/<option\b([^>]*)>(.*?)<\/option>/si', static function ( array $match ) use ( $data, &$ordinal, &$found ): string {
+		$updated = preg_replace_callback( '/<option\b([^>]*)>(.*?)<\/option>/si', static function ( array $matches ) use ( $data, &$ordinal, &$found ): string {
 			if ( ! isset( $data[ $ordinal ] ) || ! is_array( $data[ $ordinal ] ) || count( $data[ $ordinal ] ) !== 3 ) {
-				return $match[0];
+				return $matches[0];
 			}
 			[ $label, $value, $selected ] = $data[ $ordinal ];
-			if ( ! is_string( $label ) || ! is_string( $value ) || ! is_bool( $selected ) || html_entity_decode( strip_tags( $match[2] ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) !== $label ) {
-				return $match[0];
+			if ( ! is_string( $label ) || ! is_string( $value ) || ! is_bool( $selected ) || html_entity_decode( wp_strip_all_tags( $matches[2] ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) !== $label ) {
+				return $matches[0];
 			}
 			++$ordinal;
 			$found = true;
-			$attrs = preg_replace( '/\s+(?:value=(?:"[^"]*"|\x27[^\x27]*\x27)|selected(?:=(?:"[^"]*"|\x27[^\x27]*\x27))?)/i', '', $match[1] );
-			return '<option' . $attrs . ' value="' . htmlspecialchars( $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' . ( $selected ? ' selected="selected"' : '' ) . '>' . $match[2] . '</option>';
+			$attrs = preg_replace( '/\s+(?:value=(?:"[^"]*"|\x27[^\x27]*\x27)|selected(?:=(?:"[^"]*"|\x27[^\x27]*\x27))?)/i', '', $matches[1] );
+			return '<option' . $attrs . ' value="' . htmlspecialchars( $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"' . ( $selected ? ' selected="selected"' : '' ) . '>' . $matches[2] . '</option>';
 		}, $html );
-		return $found && $ordinal === count( $data ) && is_string( $updated ) ? $updated : $html;
+		return $found && count( $data ) === $ordinal && is_string( $updated ) ? $updated : $html;
 	}
 
 	/**

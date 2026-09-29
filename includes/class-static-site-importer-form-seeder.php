@@ -366,9 +366,9 @@ class Static_Site_Importer_Form_Seeder {
 				continue;
 			}
 			if ( isset( $choice_pairs[ $control_index ] ) ) {
-				$carrier = $controls[ $choice_pairs[ $control_index ] ];
-				$control = array_merge( $carrier, array_intersect_key( $control, array_flip( array( 'label', 'label_class', 'required_text', 'required_indicator', 'description' ) ) ) );
-				$control['tag'] = 'select';
+				$carrier         = $controls[ $choice_pairs[ $control_index ] ];
+				$control         = array_merge( $carrier, array_intersect_key( $control, array_flip( array( 'label', 'label_class', 'required_text', 'required_indicator', 'description' ) ) ) );
+				$control['tag']  = 'select';
 				$control['type'] = 'select';
 				// The source carrier was hidden; its class cannot follow the new
 				// visitor-facing provider input.
@@ -490,7 +490,12 @@ class Static_Site_Importer_Form_Seeder {
 			if ( isset( $choice_pairs[ $control_index ] ) ) {
 				$choice_token = Static_Site_Importer_Provider_Form_Runtime_V1::choice_token( $control['options'] );
 				if ( '' === $choice_token ) {
-					$control_attribute_losses[] = array( 'dimension' => 'control', 'reason_code' => 'unsupported_control_attribute', 'attribute' => 'choice_values', 'control_index' => $control_index );
+					$control_attribute_losses[] = array(
+						'dimension'     => 'control',
+						'reason_code'   => 'unsupported_control_attribute',
+						'attribute'     => 'choice_values',
+						'control_index' => $control_index,
+					);
 				} else {
 					$field_block['attrs']['className'] .= ' ' . $choice_token;
 				}
@@ -577,7 +582,7 @@ class Static_Site_Importer_Form_Seeder {
 				'omitted_count' => $textarea_height_omitted_count,
 			);
 		}
-		$host = Static_Site_Importer_Form_Layout_Projection::host_wrapper_projection( $form );
+		$host              = Static_Site_Importer_Form_Layout_Projection::host_wrapper_projection( $form );
 		$choice_operations = array();
 		foreach ( $choice_pairs as $trigger => $carrier ) {
 			$choice_operations[] = array(
@@ -916,11 +921,11 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			$carrier_index = $index + 1;
 			$carrier       = $controls[ $carrier_index ] ?? null;
-			if ( ! is_array( $carrier ) || 'select' !== ( $carrier['tag'] ?? null ) || ( $carrier['selector'] ?? null ) !== $trigger['choice_source_selector'] || ( $parents[ $carrier_index ] ?? null ) !== $parents[ $index ] || isset( $used[ $carrier_index ] ) || empty( $carrier['options'] ) || ( $carrier['options'] ?? null ) !== ( $trigger['options'] ?? null ) ) {
+			if ( ! is_array( $carrier ) || 'select' !== ( $carrier['tag'] ?? null ) || ( $carrier['selector'] ?? null ) !== $trigger['choice_source_selector'] || ( $parents[ $carrier_index ] ?? null ) !== $parents[ $index ] || isset( $used[ $carrier_index ] ) || empty( $carrier['options'] ) || ! isset( $trigger['options'] ) || $carrier['options'] !== $trigger['options'] ) {
 				continue;
 			}
-			$pairs[ $index ]           = $carrier_index;
-			$used[ $carrier_index ]   = true;
+			$pairs[ $index ]        = $carrier_index;
+			$used[ $carrier_index ] = true;
 		}
 		return $pairs;
 	}
