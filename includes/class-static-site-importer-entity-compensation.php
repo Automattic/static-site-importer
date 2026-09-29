@@ -74,7 +74,7 @@ final class Static_Site_Importer_Entity_Compensation {
 		if ( ! in_array( $report['status'] ?? null, array( 'completed', 'materialized', 'mapped', 'mutated' ), true ) ) {
 			return false;
 		}
-		foreach ( array( 'products', 'forms', 'events', 'entities', 'mutations' ) as $key ) {
+		foreach ( array( 'products', 'forms', 'entities', 'mutations' ) as $key ) {
 			foreach ( $report[ $key ] ?? array() as $row ) {
 				if ( is_array( $row ) && in_array( $row['status'] ?? null, array( 'created', 'updated', 'mapped', 'materialized', 'mutated' ), true ) ) {
 					return true;
