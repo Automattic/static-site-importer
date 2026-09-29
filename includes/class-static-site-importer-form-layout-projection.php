@@ -1858,7 +1858,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$layout_node     = $layout_nodes[ $id ] ?? null;
 			$parent          = is_string( $wrapper['parent'] ?? null ) ? $wrapper['parent'] : '$root';
 			$expected_parent = '$root' === $parent ? 'form' : $parent;
-			$layout = $layouts[ $id ] ?? null;
+			$layout          = $layouts[ $id ] ?? null;
 			if ( ! is_array( $layout_node ) || 'div' !== ( $layout_node['source']['tag'] ?? null ) || ( $layout_node['parent'] ?? null ) !== $expected_parent || ! is_array( $layout ) || ! Static_Site_Importer_Provider_Layout_Overlay::layout_values_are_safe( $layout ) || ! $proven( $layout_node['provenance'] ?? array(), null, $layout ) ) {
 				return null;
 			}
@@ -1910,10 +1910,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					}
 					continue;
 				}
-				$id       = $node['id'];
-				$classes  = preg_split( '/\s+/', trim( (string) ( $wrappers[ $id ]['class'] ?? '' ) ) );
-				$classes  = false === $classes ? array() : array_values( array_filter( $classes ) );
-				$attrs = array( 'className' => trim( implode( ' ', array_merge( $classes, array( $hooks[ $id ] ) ) ) ) );
+				$id      = $node['id'];
+				$classes = preg_split( '/\s+/', trim( (string) ( $wrappers[ $id ]['class'] ?? '' ) ) );
+				$classes = false === $classes ? array() : array_values( array_filter( $classes ) );
+				$attrs   = array( 'className' => trim( implode( ' ', array_merge( $classes, array( $hooks[ $id ] ) ) ) ) );
 				if ( 'flex' === ( $layouts[ $id ]['display'] ?? null ) ) {
 					$attrs['layout'] = array(
 						'type'        => 'flex',
