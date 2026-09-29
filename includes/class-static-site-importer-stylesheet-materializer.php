@@ -48,20 +48,24 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		?array $existing_stylesheets = null,
 		array $artifact_provenance = array()
 	): array {
-		$provider_layout_css = self::provider_layout_overlay_css( $provider_layout_overlays );
-		$provider_editor_css = self::provider_layout_overlay_css( $provider_layout_overlays, 'editor_css' );
+		$provider_layout_css         = self::provider_layout_overlay_css( $provider_layout_overlays );
+		$provider_editor_css         = self::provider_layout_overlay_css( $provider_layout_overlays, 'editor_css' );
+		$provider_context_css        = self::provider_layout_overlay_css( $provider_layout_overlays, 'context_css' );
+		$provider_editor_context_css = self::provider_layout_overlay_css( $provider_layout_overlays, 'editor_context_css' );
 		if ( null !== $existing_stylesheets ) {
 			$writes = array();
 			foreach ( $existing_stylesheets as $path => $content ) {
-				$writes[ $path ] = $content . $provider_layout_css . ( str_ends_with( $path, '/assets/css/editor-style.css' ) ? $provider_editor_css : '' );
+				$is_editor       = str_ends_with( $path, '/assets/css/editor-style.css' );
+				$context_css     = $is_editor ? $provider_editor_context_css : $provider_context_css;
+				$writes[ $path ] = $context_css . $content . $provider_layout_css . ( $is_editor ? $provider_editor_css : '' );
 			}
 			return $writes;
 		}
 		$css = self::rewrite_css_asset_urls( $css, $assets );
 
 		return array(
-			$theme_dir . '/style.css'                   => self::style_css( $theme_name, $css . $provider_layout_css, $visual_repair_styles, $artifact_provenance ),
-			$theme_dir . '/assets/css/editor-style.css' => self::editor_style_css( $css . $provider_layout_css . $provider_editor_css, $visual_repair_styles, '' !== $provider_layout_css ),
+			$theme_dir . '/style.css'                   => self::style_css( $theme_name, $provider_context_css . $css . $provider_layout_css, $visual_repair_styles, $artifact_provenance ),
+			$theme_dir . '/assets/css/editor-style.css' => self::editor_style_css( $provider_editor_context_css . $css . $provider_layout_css . $provider_editor_css, $visual_repair_styles, '' !== $provider_layout_css ),
 		);
 	}
 

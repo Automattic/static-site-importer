@@ -86,7 +86,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	/** @return array{overlay:array<string,mixed>,css:string,operations:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>} */
-	public static function compile( array $graph, mixed $map, array $presentation_graph = array(), array $container = array(), bool $editor = false ): array {
+	public static function compile( array $graph, mixed $map, array $presentation_graph = array(), array $container = array(), bool $editor = false, array $context_fallbacks = array() ): array {
 		$validated     = self::validate_map( $map, $graph );
 		$validated_map = $validated['map'] ?? null;
 		if ( isset( $validated['error'] ) || ! is_array( $validated_map ) || ! isset( $validated_map['targets'] ) || ! is_array( $validated_map['targets'] ) ) {
@@ -107,10 +107,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		foreach ( $validated_map['targets'] as $target ) {
 			$targets[ $target['node'] ] = $target;
 		}
-		$rules        = array();
-		$editor_rules = array();
-		$operations   = array();
-		$losses       = array();
+		$rules              = array();
+		$editor_rules       = array();
+		$operations         = array();
+		$losses             = array();
+		$context_css        = self::context_fallback_css( $validated_map['scope'], $context_fallbacks, false, $operations, $losses );
+		$editor_context_css = self::context_fallback_css( $validated_map['scope'], $context_fallbacks, true, $operations, $losses );
 		foreach ( $graph['nodes'] ?? array() as $node ) {
 			if ( ! is_array( $node ) || empty( $node['layout'] ) ) {
 				continue;
@@ -259,7 +261,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		$max_overlay_bytes = empty( $presentation_graph ) ? self::MAX_LAYOUT_OVERLAY_BYTES : self::MAX_OVERLAY_BYTES;
 		// Editor chrome is admitted against MAX_OVERLAY_BYTES (validate_overlay), so
 		// an oversized one degrades to the same recorded loss instead of a rejection.
-		if ( strlen( $css ) > $max_overlay_bytes || strlen( $editor_css ) > self::MAX_OVERLAY_BYTES ) {
+		if ( strlen( $css ) + strlen( $context_css ) > $max_overlay_bytes || strlen( $editor_css ) + strlen( $editor_context_css ) > self::MAX_OVERLAY_BYTES ) {
 			return array(
 				'overlay'    => array(),
 				'css'        => '',
@@ -273,7 +275,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				),
 			);
 		}
-		$overlay = '' === $css && '' === $editor_css ? array() : array(
+		$overlay = '' === $css && '' === $editor_css && '' === $context_css && '' === $editor_context_css ? array() : array(
 			'schema'        => self::OVERLAY_SCHEMA,
 			'css'           => $css,
 			'editor_css'    => $editor_css,
@@ -282,12 +284,71 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			'editor_sha256' => hash( 'sha256', $editor_css ),
 			'editor_bytes'  => strlen( $editor_css ),
 		);
+		if ( '' !== $context_css ) {
+			$overlay['context_css']    = $context_css;
+			$overlay['context_sha256'] = hash( 'sha256', $context_css );
+			$overlay['context_bytes']  = strlen( $context_css );
+		}
+		if ( '' !== $editor_context_css ) {
+			$overlay['editor_context_css']    = $editor_context_css;
+			$overlay['editor_context_sha256'] = hash( 'sha256', $editor_context_css );
+			$overlay['editor_context_bytes']  = strlen( $editor_context_css );
+		}
 		return array(
 			'overlay'    => $overlay,
 			'css'        => $css,
 			'operations' => $operations,
 			'losses'     => $losses,
 		);
+	}
+
+	/** Compile bounded source context styles at a selector weight below source class rules. */
+	private static function context_fallback_css( string $scope, array $fallbacks, bool $editor, array &$operations, array &$losses ): string {
+		if ( empty( $fallbacks ) ) {
+			return '';
+		}
+		$properties = array(
+			'color'          => 'color',
+			'font_family'    => 'font-family',
+			'font_size'      => 'font-size',
+			'font_style'     => 'font-style',
+			'font_weight'    => 'font-weight',
+			'letter_spacing' => 'letter-spacing',
+			'line_height'    => 'line-height',
+			'text_transform' => 'text-transform',
+		);
+		$rules      = array();
+		foreach ( array_slice( $fallbacks, 0, 16 ) as $fallback ) {
+			$identity    = is_array( $fallback ) && is_string( $fallback['identity'] ?? null ) ? $fallback['identity'] : '';
+			$owner_class = is_array( $fallback ) && is_string( $fallback['owner_class'] ?? null ) ? $fallback['owner_class'] : '';
+			$styles      = is_array( $fallback['styles'] ?? null ) ? $fallback['styles'] : array();
+			if ( ! preg_match( '/^ssi-context-[a-f0-9]{12}$/D', $identity ) || ! preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $owner_class ) || empty( $styles ) || count( $styles ) > 8 || array_diff( array_keys( $styles ), array_keys( $properties ) ) ) {
+				$losses[] = self::presentation_loss( 'provider_context_fallback_unsupported', 0, 'context' );
+				continue;
+			}
+			$declarations = array();
+			foreach ( $styles as $property => $value ) {
+				if ( ! is_string( $value ) || ! self::safe_presentation_value( $value ) ) {
+					$losses[] = self::presentation_loss( 'unsafe_presentation_value', 0, 'context' );
+					continue 2;
+				}
+				$declarations[] = $properties[ $property ] . ':' . $value;
+			}
+			$selector = ':where(' . $scope . ') :where(.' . $identity . ').' . $owner_class;
+			$rules[]  = $selector . '{' . implode( ';', $declarations ) . '}';
+			if ( ! $editor ) {
+				$operations[] = array(
+					'dimension'   => 'presentation',
+					'strategy'    => 'provider_context_style_fallback',
+					'target_hash' => hash( 'sha256', $identity ),
+				);
+			}
+		}
+		if ( empty( $rules ) ) {
+			return '';
+		}
+		$label = $editor ? 'editor form context fallback' : 'form context fallback';
+		return '/* Static Site Importer ' . $label . ': ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", array_values( array_unique( $rules ) ) ) . "\n";
 	}
 
 	/** The form topology adapter admits only values the overlay can safely emit. */
@@ -302,7 +363,19 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 
 	/** Validate a compiler-produced overlay before it is admitted to a stylesheet. */
 	public static function validate_overlay( mixed $overlay ): ?array {
-		if ( ! is_array( $overlay ) || ! in_array( array_keys( $overlay ), array( array( 'schema', 'css', 'sha256', 'bytes' ), array( 'schema', 'css', 'editor_css', 'sha256', 'bytes', 'editor_sha256', 'editor_bytes' ) ), true ) || self::OVERLAY_SCHEMA !== ( $overlay['schema'] ?? null ) || ! is_string( $overlay['css'] ?? null ) || ( isset( $overlay['editor_css'] ) && ( ! is_string( $overlay['editor_css'] ) || ! is_string( $overlay['editor_sha256'] ?? null ) || ! is_int( $overlay['editor_bytes'] ?? null ) ) ) || ! is_string( $overlay['sha256'] ?? null ) || ! is_int( $overlay['bytes'] ?? null ) ) {
+		if ( ! is_array( $overlay ) ) {
+			return null;
+		}
+		$expected_keys = isset( $overlay['editor_css'] ) ? array( 'schema', 'css', 'editor_css', 'sha256', 'bytes', 'editor_sha256', 'editor_bytes' ) : array( 'schema', 'css', 'sha256', 'bytes' );
+		foreach ( array( array( 'context_css', 'context_sha256', 'context_bytes' ), array( 'editor_context_css', 'editor_context_sha256', 'editor_context_bytes' ) ) as $optional_keys ) {
+			if ( isset( $overlay[ $optional_keys[0] ] ) ) {
+				if ( ! is_string( $overlay[ $optional_keys[0] ] ) || ! is_string( $overlay[ $optional_keys[1] ] ?? null ) || ! is_int( $overlay[ $optional_keys[2] ] ?? null ) ) {
+					return null;
+				}
+				$expected_keys = array_merge( $expected_keys, $optional_keys );
+			}
+		}
+		if ( array_keys( $overlay ) !== $expected_keys || self::OVERLAY_SCHEMA !== ( $overlay['schema'] ?? null ) || ! is_string( $overlay['css'] ?? null ) || ( isset( $overlay['editor_css'] ) && ( ! is_string( $overlay['editor_css'] ) || ! is_string( $overlay['editor_sha256'] ?? null ) || ! is_int( $overlay['editor_bytes'] ?? null ) ) ) || ! is_string( $overlay['sha256'] ?? null ) || ! is_int( $overlay['bytes'] ?? null ) ) {
 			return null;
 		}
 		$css = $overlay['css'];
@@ -313,13 +386,30 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( '' !== $editor_css && ( strlen( $editor_css ) !== $overlay['editor_bytes'] || $overlay['editor_bytes'] > self::MAX_OVERLAY_BYTES || ! preg_match( '/^[a-f0-9]{64}$/D', $overlay['editor_sha256'] ) || ! hash_equals( $overlay['editor_sha256'], hash( 'sha256', $editor_css ) ) ) ) {
 			return null;
 		}
-		if ( '' === $css && '' === $editor_css ) {
+		$context_css        = $overlay['context_css'] ?? '';
+		$editor_context_css = $overlay['editor_context_css'] ?? '';
+		if ( '' !== $context_css && ( strlen( $context_css ) !== $overlay['context_bytes'] || $overlay['context_bytes'] > self::MAX_OVERLAY_BYTES || ! preg_match( '/^[a-f0-9]{64}$/D', $overlay['context_sha256'] ) || ! hash_equals( $overlay['context_sha256'], hash( 'sha256', $context_css ) ) ) ) {
+			return null;
+		}
+		if ( '' !== $editor_context_css && ( strlen( $editor_context_css ) !== $overlay['editor_context_bytes'] || $overlay['editor_context_bytes'] > self::MAX_OVERLAY_BYTES || ! preg_match( '/^[a-f0-9]{64}$/D', $overlay['editor_context_sha256'] ) || ! hash_equals( $overlay['editor_context_sha256'], hash( 'sha256', $editor_context_css ) ) ) ) {
+			return null;
+		}
+		if ( strlen( $css ) + strlen( $context_css ) > self::MAX_OVERLAY_BYTES || strlen( $editor_css ) + strlen( $editor_context_css ) > self::MAX_OVERLAY_BYTES ) {
+			return null;
+		}
+		if ( '' === $css && '' === $editor_css && '' === $context_css && '' === $editor_context_css ) {
 			return null;
 		}
 		if ( '' !== $css && ! self::safe_compiled_artifact( $css, 'provider layout overlay', false ) ) {
 			return null;
 		}
 		if ( '' !== $editor_css && ! self::safe_compiled_artifact( $editor_css, 'editor control chrome', true ) ) {
+			return null;
+		}
+		if ( '' !== $context_css && ! self::safe_compiled_artifact( $context_css, 'form context fallback', false ) ) {
+			return null;
+		}
+		if ( '' !== $editor_context_css && ! self::safe_compiled_artifact( $editor_context_css, 'editor form context fallback', true ) ) {
 			return null;
 		}
 		return $overlay;
@@ -334,11 +424,21 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			return false;
 		}
 		foreach ( array_filter( explode( "\n", trim( $body ) ) ) as $rule ) {
-			if ( ! ( $editor ? self::safe_editor_compiled_rule( $rule ) : self::safe_compiled_rule( $rule ) ) ) {
+			$safe = 'editor form context fallback' === $kind
+				? self::safe_context_fallback_artifact_rule( $rule )
+				: ( $editor ? self::safe_editor_compiled_rule( $rule ) : self::safe_compiled_rule( $rule ) );
+			if ( ! $safe ) {
 				return false;
 			}
 		}
 		return true;
+	}
+
+	private static function safe_context_fallback_artifact_rule( string $rule ): bool {
+		if ( preg_match( '/^@(?:media|container) (' . self::MEDIA_FEATURE_QUERY . ')\{(.+)\}$/D', $rule, $matches ) ) {
+			return self::safe_context_fallback_artifact_rule( $matches[2] );
+		}
+		return self::safe_context_fallback_rule( $rule );
 	}
 
 	private static function safe_editor_compiled_rule( string $rule ): bool {
@@ -351,6 +451,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 
 	private static function safe_compiled_rule( string $rule ): bool {
 		$rule = str_replace( ' > div.jetpack-field__control{', '{', $rule );
+		if ( self::safe_context_fallback_rule( $rule ) ) {
+			return true;
+		}
 		if ( preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? \.ssi-node-[a-f0-9]{12})::placeholder\{color:revert;opacity:revert\}$/D', $rule ) ) {
 			return true;
 		}
@@ -374,6 +477,19 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				continue;
 			}
 			if ( ! preg_match( '/^([a-z-]+):(.+)$/D', $declaration, $parts ) || ( ! in_array( $parts[1], $layout_allowed, true ) && ! in_array( $parts[1], $presentation_allowed, true ) ) || ( in_array( $parts[1], $presentation_allowed, true ) ? ! self::safe_presentation_value( $parts[2] ) : ! self::safe_value( str_replace( array( 'grid-template-columns', 'grid-template-rows', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area' ), array( 'columns', 'rows', 'direction', 'wrap', 'align_items', 'align_content', 'justify_content', 'align_self', 'justify_self', 'flex_grow', 'flex_shrink', 'flex_basis', 'column', 'row', 'area' ), $parts[1] ), $parts[2] ) ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static function safe_context_fallback_rule( string $rule ): bool {
+		if ( ! preg_match( '/^:where\((\.ssi-form-[a-f0-9]{12})\) :where\(\.(ssi-context-[a-f0-9]{12})\)\.([A-Za-z_][A-Za-z0-9_-]{0,79})\{([^{}]+)\}$/D', $rule, $matches ) ) {
+			return false;
+		}
+		$allowed = array( 'color', 'font-family', 'font-size', 'font-style', 'font-weight', 'letter-spacing', 'line-height', 'text-transform' );
+		foreach ( explode( ';', $matches[4] ) as $declaration ) {
+			if ( ! preg_match( '/^([a-z-]+):(.+)$/D', $declaration, $parts ) || ! in_array( $parts[1], $allowed, true ) || ! self::safe_presentation_value( $parts[2] ) ) {
 				return false;
 			}
 		}
@@ -658,8 +774,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				}
 				$reset_declarations[] = $property . ':' . $value;
 			}
-			// A required-marker reset removes provider typography before source facts restore it.
-			$declarations = 'required_marker' === $role ? array_merge( $reset_declarations, $source_declarations ) : array_merge( $source_declarations, $reset_declarations );
+			// Resets release provider defaults first; authored declarations then own
+			// their exact longhand/shorthand box, including over a reset shorthand.
+			$declarations = array_merge( $reset_declarations, $source_declarations );
 			if ( isset( $destination['resets']['font'] ) ) {
 				$declarations = array_merge( array( 'font:' . $destination['resets']['font'] ), array_values( array_filter( $declarations, static fn( string $declaration ): bool => ! str_starts_with( $declaration, 'font:' ) ) ) );
 			}

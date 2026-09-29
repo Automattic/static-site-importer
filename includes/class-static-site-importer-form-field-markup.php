@@ -509,18 +509,22 @@ final class Static_Site_Importer_Form_Field_Markup {
 	public static function context_blocks( array $form, string $position ): array {
 		$context = isset( $form['form'][ $position ] ) && is_array( $form['form'][ $position ] ) ? $form['form'][ $position ] : array();
 		$blocks  = array();
-		foreach ( $context as $block ) {
+		foreach ( $context as $index => $block ) {
 			if ( ! is_array( $block ) || ! is_string( $block['text'] ?? null ) || '' === trim( $block['text'] ) ) {
 				continue;
 			}
 			if ( 'heading' === ( $block['type'] ?? null ) ) {
-				$level = min( 6, max( 1, (int) ( $block['level'] ?? 2 ) ) );
-				$attrs = 2 === $level ? array() : array( 'level' => $level );
-				$class = isset( $block['class'] ) && is_scalar( $block['class'] ) ? trim( (string) $block['class'] ) : '';
+				$level  = min( 6, max( 1, (int) ( $block['level'] ?? 2 ) ) );
+				$attrs  = 2 === $level ? array() : array( 'level' => $level );
+				$class  = isset( $block['class'] ) && is_scalar( $block['class'] ) ? trim( (string) $block['class'] ) : '';
+				$styles = is_array( $block['styles'] ?? null ) ? $block['styles'] : array();
+				if ( '' !== $class && ! empty( $styles ) ) {
+					$class .= ' ' . self::context_style_identity( $position, (int) $index, $block );
+				}
 				if ( '' !== $class ) {
 					$attrs['className'] = $class;
 				}
-				$style = self::block_style_attributes( $block['styles'] ?? null );
+				$style = '' === trim( (string) ( $block['class'] ?? '' ) ) ? self::block_style_attributes( $styles ) : array();
 				if ( array() !== $style ) {
 					$attrs['style'] = $style;
 				}
@@ -531,12 +535,16 @@ final class Static_Site_Importer_Form_Field_Markup {
 					'content' => $block['text'],
 				);
 			} elseif ( 'paragraph' === ( $block['type'] ?? null ) ) {
-				$attrs = array();
-				$class = isset( $block['class'] ) && is_scalar( $block['class'] ) ? trim( (string) $block['class'] ) : '';
+				$attrs  = array();
+				$class  = isset( $block['class'] ) && is_scalar( $block['class'] ) ? trim( (string) $block['class'] ) : '';
+				$styles = is_array( $block['styles'] ?? null ) ? $block['styles'] : array();
+				if ( '' !== $class && ! empty( $styles ) ) {
+					$class .= ' ' . self::context_style_identity( $position, (int) $index, $block );
+				}
 				if ( '' !== $class ) {
 					$attrs['className'] = $class;
 				}
-				$style = self::block_style_attributes( $block['styles'] ?? null );
+				$style = '' === trim( (string) ( $block['class'] ?? '' ) ) ? self::block_style_attributes( $styles ) : array();
 				if ( array() !== $style ) {
 					$attrs['style'] = $style;
 				}
@@ -549,6 +557,31 @@ final class Static_Site_Importer_Form_Field_Markup {
 			}
 		}
 		return $blocks;
+	}
+
+	/** @return array<int,array{identity:string,styles:array<string,string>}> */
+	public static function context_style_fallbacks( array $form ): array {
+		$fallbacks = array();
+		foreach ( array( 'context_before', 'context_after' ) as $position ) {
+			foreach ( $form[ $position ] ?? array() as $index => $block ) {
+				$class  = is_array( $block ) && is_string( $block['class'] ?? null ) ? trim( $block['class'] ) : '';
+				$styles = is_array( $block['styles'] ?? null ) ? $block['styles'] : array();
+				if ( '' !== $class && ! empty( $styles ) ) {
+					$fallbacks[] = array(
+						'identity'    => self::context_style_identity( $position, (int) $index, $block ),
+						'tag'         => 'heading' === ( $block['type'] ?? null ) ? 'h' . min( 6, max( 1, (int) ( $block['level'] ?? 2 ) ) ) : 'p',
+						'owner_class' => (string) ( preg_split( '/\s+/', $class )[0] ?? '' ),
+						'styles'      => $styles,
+					);
+				}
+			}
+		}
+		return $fallbacks;
+	}
+
+	private static function context_style_identity( string $position, int $index, array $block ): string {
+		$fingerprint = array_intersect_key( $block, array_flip( array( 'type', 'level', 'text', 'class', 'styles' ) ) );
+		return 'ssi-context-' . substr( hash( 'sha256', $position . "\n" . $index . "\n" . (string) wp_json_encode( $fingerprint ) ), 0, 12 );
 	}
 
 	/**
