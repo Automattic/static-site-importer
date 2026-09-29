@@ -395,7 +395,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			// bodies; with_resolved_binding_manifests() validates their resolved rows.
 			$defer_validation = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) || 'blocks-engine/runtime-entity-manifest/v1' === ( $declaration['payload']['schema'] ?? null );
 			$validation       = $defer_validation ? array( 'errors' => array() ) : self::validate_manifest_generic( $adapter, $manifest );
-			$accepted   = is_array( $validation[ $collection ] ?? null ) ? $validation[ $collection ] : array();
+			$accepted         = is_array( $validation[ $collection ] ?? null ) ? $validation[ $collection ] : array();
 			if ( ! empty( $validation['errors'] ) ) {
 				// Entity validators report per row: an unmappable row is rejected
 				// without discarding the rows that did validate, so partial feature
