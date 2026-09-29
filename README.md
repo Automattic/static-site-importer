@@ -374,6 +374,8 @@ homeboy agent-task loop status ssi-url-e40fb1ae670f7b0acf36
 Configure `SSI_BLOCKS_ENGINE_PATH`, `HOMEBOY_WP_CODEBOX_BIN`, and (when the
 synced workspace has no `.git`) `SSI_CANDIDATE_SHA` on the Lab runner to make
 `start --url <url>` the only per-site input.
+For independent proof runs of the same source, `--instance <token>` forks the
+controller identity while retaining the stable `source_id` in its handoff.
 
 The first action retains DLA's source capture and normalized SSI fixture. The
 second runs the canonical WordPress/Codebox matrix and records its typed browser

@@ -38,10 +38,12 @@ export function buildUrlLoopSpec(input) {
   if (!blocksEngine || !wpCodeboxBin) throw new Error('blocks-engine and wp-codebox-bin must be configured on this runner');
   const maxActions = Number(input.maxActions ?? 4);
   if (!Number.isInteger(maxActions) || maxActions < 3 || maxActions > 10) throw new Error('max-actions must be an integer between 3 and 10');
-  const loopId = sourceIdentity(url);
+  const sourceId = sourceIdentity(url);
+  if (input.instance && !/^[A-Za-z0-9_-]{1,32}$/.test(input.instance)) throw new Error('instance must be a short path-safe token');
+  const loopId = input.instance ? `${sourceId}-${input.instance}` : sourceId;
   const workspace = path.resolve(input.workspace || process.cwd());
   const root = path.resolve(input.outputRoot || path.join(workspace, 'artifacts', 'url-loop', loopId));
-  const context = { url, loop_id: loopId, root, workspace, blocks_engine: path.resolve(blocksEngine), wp_codebox_bin: path.resolve(wpCodeboxBin), transformer_path: input.transformerPath ? path.resolve(input.transformerPath) : '', candidate_sha: input.candidateSha || process.env.SSI_CANDIDATE_SHA || null, blocks_engine_sha: input.blocksEngineSha || null, wordpress_version: input.wordpressVersion || null, max_actions: maxActions };
+  const context = { url, loop_id: loopId, source_id: sourceId, root, workspace, blocks_engine: path.resolve(blocksEngine), wp_codebox_bin: path.resolve(wpCodeboxBin), transformer_path: input.transformerPath ? path.resolve(input.transformerPath) : '', candidate_sha: input.candidateSha || process.env.SSI_CANDIDATE_SHA || null, blocks_engine_sha: input.blocksEngineSha || null, wordpress_version: input.wordpressVersion || null, max_actions: maxActions };
   const action = (stage, timeout, artifacts, consumes = []) => ({
     workflow_id: stage,
     tasks: [stage === 'capture' ? 'Retain the source URL capture and normalized SSI fixture.' : 'Evaluate the retained fixture in disposable WordPress and report browser findings.'],

@@ -32,6 +32,10 @@ test('one URL yields a stable bounded Homeboy controller with typed capture-to-e
   assert.equal(spec.schema, 'homeboy/controller-spec/v1');
   assert.equal(spec.controller_id, sourceIdentity(url));
   assert.equal(spec.controller_id, sourceIdentity('https://example.com/#fragment'));
+  const proof = buildUrlLoopSpec({ url, workspace: root, blocksEngine: root, wpCodeboxBin: root, instance: 'proof-r2' });
+  assert.equal(proof.context.source_id, spec.controller_id);
+  assert.equal(proof.spec.controller_id, `${spec.controller_id}-proof-r2`);
+  assert.throws(() => buildUrlLoopSpec({ url, workspace: root, blocksEngine: root, wpCodeboxBin: root, instance: '../invalid' }), /path-safe/);
   assert.equal(spec.workflows[0].runtime_execution.kind, 'command');
   assert.deepEqual(spec.workflows[0].emits, ['capture']);
   assert.deepEqual(spec.workflows[1].consumes, ['capture']);
