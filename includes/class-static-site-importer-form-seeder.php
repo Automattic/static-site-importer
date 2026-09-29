@@ -732,17 +732,21 @@ class Static_Site_Importer_Form_Seeder {
 		$target_map             = Static_Site_Importer_Form_Layout_Projection::provider_layout_target_map( $overlay_form, $scope, $presentation_descriptors, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
 		$presentation_graph     = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
 		$container_presentation = is_array( $form['form']['container_presentation'] ?? null ) ? $form['form']['container_presentation'] : array();
+		$context_fallbacks      = Static_Site_Importer_Form_Field_Markup::context_style_fallbacks( is_array( $form['form'] ?? null ) ? $form['form'] : array() );
 		// The captured form box's own padding/margin/etc. is bounded, source-CSS-cascade
 		// evidence carried the same way every other captured control already is (see
 		// Provider_Layout_Overlay's `generic/form-container-presentation/v1` destination).
 		// It belongs on the rendered page, not only inside editor chrome, so the frontend
 		// compile also receives it.
-		$overlay        = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map, $presentation_graph, $container_presentation );
+		$overlay        = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map, $presentation_graph, $container_presentation, false, $context_fallbacks );
 		$overlay        = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_provider_errors( $overlay, $scope, $mapped_types );
 		$editor_map     = Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $target_map, $scope );
-		$editor_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $editor_map, $presentation_graph, $container_presentation, true );
+		$editor_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $editor_map, $presentation_graph, $container_presentation, true, $context_fallbacks );
 		if ( isset( $editor_overlay['overlay']['editor_css'] ) ) {
-			foreach ( array( 'editor_css', 'editor_sha256', 'editor_bytes' ) as $key ) {
+			foreach ( array( 'editor_css', 'editor_sha256', 'editor_bytes', 'context_css', 'context_sha256', 'context_bytes', 'editor_context_css', 'editor_context_sha256', 'editor_context_bytes' ) as $key ) {
+				if ( ! array_key_exists( $key, $editor_overlay['overlay'] ) ) {
+					continue;
+				}
 				$overlay['overlay'][ $key ] = $editor_overlay['overlay'][ $key ];
 			}
 		}
