@@ -255,8 +255,11 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			$rules = array();
 		}
 		$css               = empty( $rules ) ? '' : '/* Static Site Importer provider layout overlay: ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", array_values( array_unique( $rules ) ) ) . "\n";
+		$editor_css        = empty( $editor_rules ) ? '' : '/* Static Site Importer editor control chrome: ' . substr( hash( 'sha256', implode( "\n", $editor_rules ) ), 0, 12 ) . " */\n" . implode( "\n", array_values( array_unique( $editor_rules ) ) ) . "\n";
 		$max_overlay_bytes = empty( $presentation_graph ) ? self::MAX_LAYOUT_OVERLAY_BYTES : self::MAX_OVERLAY_BYTES;
-		if ( strlen( $css ) > $max_overlay_bytes ) {
+		// Editor chrome is admitted against MAX_OVERLAY_BYTES (validate_overlay), so
+		// an oversized one degrades to the same recorded loss instead of a rejection.
+		if ( strlen( $css ) > $max_overlay_bytes || strlen( $editor_css ) > self::MAX_OVERLAY_BYTES ) {
 			return array(
 				'overlay'    => array(),
 				'css'        => '',
@@ -270,8 +273,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				),
 			);
 		}
-		$editor_css = empty( $editor_rules ) ? '' : '/* Static Site Importer editor control chrome: ' . substr( hash( 'sha256', implode( "\n", $editor_rules ) ), 0, 12 ) . " */\n" . implode( "\n", array_values( array_unique( $editor_rules ) ) ) . "\n";
-		$overlay    = '' === $css && '' === $editor_css ? array() : array(
+		$overlay = '' === $css && '' === $editor_css ? array() : array(
 			'schema'        => self::OVERLAY_SCHEMA,
 			'css'           => $css,
 			'editor_css'    => $editor_css,
