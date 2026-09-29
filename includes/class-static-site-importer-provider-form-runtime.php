@@ -271,11 +271,16 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	}
 
 	/**
-	 * Keep a source sibling submit outside the gapped field list.
+	 * Keep source submits outside the gapped field list, in authored order.
 	 *
 	 * Jetpack renders fields and submit as children of one `.wp-block-jetpack-contact-form`.
 	 * A source list such as `grid gap-6` must wrap only the fields, or the submit loses
 	 * its authored top margin to the list gap (or to a cancel that overwrites it).
+	 * A source may also interleave rows — field(s), submit, field(s) — so every
+	 * contiguous run of field children is wrapped in place with the list classes and
+	 * submit children stay at their original position with their own presentation
+	 * classes. Gathering all fields into one list before the first submit would
+	 * silently move a later checkbox ahead of an earlier button.
 	 */
 	public static function project_field_list_wrapper( string $html, array $block = array() ): string {
 		$class_name = isset( $block['attrs']['className'] ) && is_string( $block['attrs']['className'] ) ? $block['attrs']['className'] : '';
@@ -322,26 +327,43 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		if ( empty( $list_classes ) ) {
 			return $html;
 		}
-		$submit_nodes = array();
-		$field_nodes  = array();
+		// Segment direct children in document order: submit children break the
+		// field runs and keep their original position; each contiguous field run
+		// is wrapped once, so no field ever crosses a source submit.
+		$field_runs = array();
+		$run        = array();
+		$has_submit = false;
+		$has_field  = false;
 		foreach ( iterator_to_array( $field_list->childNodes ) as $child ) {
 			if ( ! $child instanceof \DOMElement ) {
+				$run[] = $child;
 				continue;
 			}
 			if ( self::is_submit_field_list_child( $child ) ) {
-				$submit_nodes[] = $child;
-			} else {
-				$field_nodes[] = $child;
+				$has_submit = true;
+				if ( ! empty( $run ) ) {
+					$field_runs[] = $run;
+					$run          = array();
+				}
+				continue;
 			}
+			$has_field = true;
+			$run[]     = $child;
 		}
-		if ( empty( $submit_nodes ) || empty( $field_nodes ) ) {
+		if ( ! empty( $run ) ) {
+			$field_runs[] = $run;
+		}
+		if ( ! $has_submit || ! $has_field ) {
 			return $html;
 		}
-		$wrapper = $document->createElement( 'div' );
-		$wrapper->setAttribute( 'class', implode( ' ', array_values( array_unique( $list_classes ) ) ) );
-		$field_list->insertBefore( $wrapper, $submit_nodes[0] );
-		foreach ( $field_nodes as $node ) {
-			$wrapper->appendChild( $node );
+		$wrapper_classes = implode( ' ', array_values( array_unique( $list_classes ) ) );
+		foreach ( $field_runs as $run ) {
+			$wrapper = $document->createElement( 'div' );
+			$wrapper->setAttribute( 'class', $wrapper_classes );
+			$field_list->insertBefore( $wrapper, $run[0] );
+			foreach ( $run as $node ) {
+				$wrapper->appendChild( $node );
+			}
 		}
 		$field_list->setAttribute( 'class', implode( ' ', $kept ) );
 		$output = '';
