@@ -2014,6 +2014,28 @@ namespace {
 	$presentation_markup    = (string) ( $presentation_row['block_markup'] ?? '' );
 	$presentation_css       = (string) ( $presentation_row['provider_layout_overlay_css']['css'] ?? '' );
 	$assert( empty( $validated_presentation['errors'] ) && str_contains( $presentation_css, 'background-color:transparent;border:0;padding:8px 0;font-size:16px;line-height:24px;font-family:revert' ) && ! str_contains( $presentation_css, 'line-height:24px;line-height:revert' ) && str_contains( $presentation_css, 'font-size:14px;font-weight:400;line-height:1.4;margin-bottom:8px' ) && str_contains( $presentation_css, 'background-color:rgb(254,126,3);color:#fff;border:0;border-radius:100px;padding:11px 15px;font-size:16px;font-family:inherit;line-height:inherit;min-height:0' ), 'bounded-form-presentation-transposes-control-label-and-submit-styles', $presentation_css );
+	$expanded_presentation = $presentation_form;
+	$expanded_presentation['forms'][0]['presentation_graph']['limits']['rules_per_role'] = 96;
+	$expanded_presentation['forms'][0]['presentation_graph']['controls'][0]['control']['provenance'] = array_fill( 0, 17, $expanded_presentation['forms'][0]['presentation_graph']['controls'][0]['control']['provenance'][0] );
+	$expanded_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $expanded_presentation );
+	$expanded_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $expanded_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( empty( $expanded_validation['errors'] ) && str_contains( (string) ( $expanded_row['provider_layout_overlay_css']['css'] ?? '' ), 'font-size:16px;line-height:24px' ), 'expanded bounded producer graph preserves authored form typography', wp_json_encode( $expanded_validation['errors'] ?? array() ) );
+	$responsive_typography = $expanded_presentation;
+	$responsive_typography['forms'][0]['presentation_graph']['controls'][0]['control'] = $presentation_role( array( 'font_family' => 'Georgia', 'line_height' => '1.75' ), array( 'font-family', 'line-height' ), 'input' );
+	$responsive_typography['forms'][0]['presentation_graph']['variants'] = array( array(
+		'index' => 0, 'role' => 'control',
+		'condition' => array( 'kind' => 'media', 'query' => '(min-width: 1536px)' ),
+		'style_patch' => array( 'font_size' => '18px' ),
+		'precedence' => array( 'font_size' => array( 'source_order' => 1, 'specificity' => 1, 'important' => false ) ),
+		'provenance' => array( array( 'source_path' => 'assets/forms.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => 'input', 'condition' => array( 'kind' => 'media', 'query' => '(min-width: 1536px)' ), 'properties' => array( 'font-size' ) ) ),
+	) );
+	$responsive_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $responsive_typography );
+	$responsive_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $responsive_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$responsive_css = (string) ( $responsive_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert( empty( $responsive_validation['errors'] ) && str_contains( $responsive_css, 'font-family:Georgia;line-height:1.75' ) && str_contains( $responsive_css, '@media (min-width: 1536px)' ) && 1 === preg_match( '/@media \(min-width: 1536px\)\{[^}]*font-size:18px[^}]*\}/', $responsive_css ) && 0 === preg_match( '/@media \(min-width: 1536px\)\{[^}]*font-family:revert/', $responsive_css ), 'responsive font size retains base family and line height instead of reverting them', $responsive_css );
+	$unbounded_presentation = $expanded_presentation;
+	$unbounded_presentation['forms'][0]['presentation_graph']['limits']['rules_per_role'] = 97;
+	$assert( ! empty( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unbounded_presentation )['errors'] ), 'presentation graph still rejects an unrecognized rule budget' );
 	// Vendored stylesheets keep their upstream package filenames, so artifact paths
 	// carry punctuation such as `@` that the canonical artifact path contract allows.
 	$punctuated_presentation_form = $presentation_form;

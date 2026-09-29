@@ -640,10 +640,10 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			}
 			$source_declarations = self::presentation_declarations( $emit_styles, $index, $role, $losses, $destination['properties'], $destination['aliases'] ?? array() );
 			$reset_declarations  = array();
-			foreach ( $destination['resets'] ?? array() as $property => $value ) {
-				if ( 'required_marker' === $role && null !== $condition ) {
-					continue;
-				}
+			// Provider defaults need one base reset. A responsive patch must carry
+			// only its authored changes; repeating the reset in every media query
+			// otherwise overrides a complete base font family or line-height.
+			foreach ( null === $condition ? ( $destination['resets'] ?? array() ) : array() as $property => $value ) {
 				// An explicit source declaration is authoritative over a provider-default
 				// neutralization at the same destination.
 				if ( 'required_marker' !== $role && in_array( str_replace( '-', '_', $property ), $destination['properties'], true ) && array_key_exists( str_replace( '-', '_', $property ), $styles ) ) {
