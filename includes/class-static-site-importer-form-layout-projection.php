@@ -1228,7 +1228,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				}
 				$gap_variant = $candidate;
 			}
-			$columns     = self::grid_repeat_column_count( is_string( $layout['columns'] ?? null ) ? $layout['columns'] : '' );
+			$columns = self::grid_repeat_column_count( is_string( $layout['columns'] ?? null ) ? $layout['columns'] : '' );
 			if ( ! is_array( $layout_node ) || null === $columns || array_diff( array_keys( $layout ), array( 'display', 'columns', 'width', 'column_gap', 'gap' ) ) || 'grid' !== ( $layout['display'] ?? null ) || ( isset( $layout['width'] ) && '100%' !== $layout['width'] ) || ! $has_unconditional_proven_property( $layout_node, 'display' ) || ! $has_unconditional_proven_property( $layout_node, 'grid-template-columns' ) || ( isset( $layout['width'] ) && ! $has_unconditional_proven_property( $layout_node, 'width' ) ) ) {
 				continue;
 			}
@@ -1337,12 +1337,15 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'important' => array( 'margin_block_start' ),
 				);
 				if ( null !== $gap_variant ) {
-					$variant_gap   = self::resolved_gap_length( (string) $gap_variant['layout_patch']['column_gap'] );
-					$variant_track = self::fractional_track_size( $share, $variant_gap );
+					$variant_gap                  = self::resolved_gap_length( (string) $gap_variant['layout_patch']['column_gap'] );
+					$variant_track                = self::fractional_track_size( $share, $variant_gap );
 					$responsive_variant_targets[] = array(
 						'node'         => 'field-' . $placement['control'],
 						'condition'    => $gap_variant['condition'],
-						'layout_patch' => array( 'width' => $variant_track, 'flex_basis' => $variant_track ),
+						'layout_patch' => array(
+							'width'      => $variant_track,
+							'flex_basis' => $variant_track,
+						),
 					);
 				}
 				if ( ! array_diff( array_keys( $placement['layout'] ), array( 'column', 'row', 'area' ) ) ) {
