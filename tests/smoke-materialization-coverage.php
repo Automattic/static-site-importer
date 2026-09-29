@@ -10,11 +10,7 @@ $GLOBALS['ssi_available_plugins'] = array();
 $GLOBALS['ssi_provider_override'] = array();
 
 function get_option( string $name, $default_value = false ) { // phpcs:ignore WordPress.NamingConventions
-	$overrides  = array(
-		'static_site_importer_form_plugin'   => 'form',
-		'static_site_importer_shop_plugin'   => 'shop',
-		'static_site_importer_events_plugin' => 'events',
-	);
+	$overrides = array( 'static_site_importer_form_plugin' => 'form', 'static_site_importer_shop_plugin' => 'shop' );
 	$capability = $overrides[ $name ] ?? '';
 	return '' !== $capability && isset( $GLOBALS['ssi_provider_override'][ $capability ] ) ? $GLOBALS['ssi_provider_override'][ $capability ] : $default_value;
 }
@@ -84,31 +80,6 @@ if ( ! class_exists( 'Static_Site_Importer_Woo_Product_Seeder' ) ) {
 		}
 	}
 }
-if ( ! class_exists( 'Static_Site_Importer_TEC_Event_Seeder' ) ) {
-	class Static_Site_Importer_TEC_Event_Seeder {
-		public static function adapter(): array {
-			return array(
-				'id'                   => 'tec_event',
-				'entity_type'          => 'event',
-				'entity_collection'    => 'events',
-				'capability'           => 'events',
-				'provider'             => 'the-events-calendar',
-				'rollback_contract_id' => 'static-site-importer/tec-event-rollback/v1',
-				'dependencies'         => array(
-					array(
-						'type'                  => 'wp_org_plugin',
-						'slug'                  => 'the-events-calendar',
-						'plugin_file'           => 'the-events-calendar/the-events-calendar.php',
-						'availability_callback' => array( self::class, 'available' ),
-					),
-				),
-			);
-		}
-		public static function available(): bool {
-			return in_array( 'the-events-calendar', $GLOBALS['ssi_available_plugins'], true );
-		}
-	}
-}
 
 $assert = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) {
@@ -118,7 +89,7 @@ $assert = static function ( bool $condition, string $message ): void {
 
 $coverage = Static_Site_Importer_Materialization_Coverage::declare_coverage();
 $assert( Static_Site_Importer_Materialization_Coverage::SCHEMA === $coverage['schema'], 'coverage carries its versioned schema' );
-$assert( array( 'events', 'form', 'shop' ) === array_keys( $coverage['capabilities'] ), 'coverage answers for every registered capability and invents none' );
+$assert( array( 'form', 'shop' ) === array_keys( $coverage['capabilities'] ), 'coverage answers for every registered capability and invents none' );
 
 // The importer describes its own runtime. It must not borrow a capture
 // producer's vocabulary, because a destination that does stops accepting
@@ -132,31 +103,8 @@ $form = $coverage['capabilities']['form'];
 $assert( 'jetpack' === $form['provider'] && 'default' === $form['selected_from'], 'the form capability reports its default provider selection' );
 $assert( 'provider_unavailable' === $form['status'] && 'dependencies_unavailable' === $form['reason'], 'an absent provider is reported as unavailable rather than native' );
 $assert( 'jetpack_contact_form' === $form['adapter'] && 'form' === $form['entity_type'] && 'forms' === $form['entity_collection'], 'coverage names the adapter and the entity it materializes' );
-$assert(
-	array(
-		array(
-			'type'      => 'wp_org_plugin',
-			'slug'      => 'jetpack',
-			'available' => false,
-		),
-	) === $form['dependencies'],
-	'each declared dependency reports its own availability'
-);
+$assert( array( array( 'type' => 'wp_org_plugin', 'slug' => 'jetpack', 'available' => false ) ) === $form['dependencies'], 'each declared dependency reports its own availability' );
 $assert( array() === $coverage['native'], 'nothing is native while its provider is missing' );
-$events = $coverage['capabilities']['events'];
-$assert( 'the-events-calendar' === $events['provider'] && 'default' === $events['selected_from'], 'events selects the TEC provider' );
-$assert( 'provider_unavailable' === $events['status'] && 'dependencies_unavailable' === $events['reason'], 'missing TEC cannot be reported native' );
-$assert( 'tec_event' === $events['adapter'] && 'event' === $events['entity_type'] && 'events' === $events['entity_collection'], 'events coverage names its adapter and collection' );
-$assert(
-	array(
-		array(
-			'type'      => 'wp_org_plugin',
-			'slug'      => 'the-events-calendar',
-			'available' => false,
-		),
-	) === $events['dependencies'],
-	'TEC dependency availability is explicit'
-);
 
 // A satisfied dependency is the only thing that makes a capability native.
 $GLOBALS['ssi_available_plugins'] = array( 'jetpack' );
@@ -164,10 +112,6 @@ $available                        = Static_Site_Importer_Materialization_Coverag
 $assert( 'native' === $available['capabilities']['form']['status'] && '' === $available['capabilities']['form']['reason'], 'a satisfied dependency makes the capability native' );
 $assert( array( 'form' ) === $available['native'], 'the native list names exactly the capabilities this runtime can materialize' );
 $assert( 'provider_unavailable' === $available['capabilities']['shop']['status'], 'one satisfied provider does not vouch for another' );
-$GLOBALS['ssi_available_plugins'] = array( 'the-events-calendar' );
-$tec_available                    = Static_Site_Importer_Materialization_Coverage::declare_coverage();
-$assert( 'native' === $tec_available['capabilities']['events']['status'] && array( 'events' ) === $tec_available['native'], 'only an available TEC provider makes events native' );
-$assert( 'provider_unavailable' === $tec_available['capabilities']['form']['status'], 'TEC does not vouch for forms' );
 $GLOBALS['ssi_available_plugins'] = array();
 
 // A configured provider is never routed to a different adapter, so an
@@ -177,9 +121,6 @@ $overridden                       = Static_Site_Importer_Materialization_Coverag
 $assert( 'gravity-forms' === $overridden['capabilities']['form']['provider'] && 'configured' === $overridden['capabilities']['form']['selected_from'], 'an overridden provider is reported as configured' );
 $assert( 'unsupported' === $overridden['capabilities']['form']['status'] && 'provider_has_no_adapter' === $overridden['capabilities']['form']['reason'], 'a provider with no adapter is unsupported, not quietly rerouted to the default' );
 $assert( ! isset( $overridden['capabilities']['form']['adapter'] ), 'an unserviceable selection names no adapter' );
-$GLOBALS['ssi_provider_override'] = array( 'events' => 'other-events-provider' );
-$event_override = Static_Site_Importer_Materialization_Coverage::declare_coverage();
-$assert( 'unsupported' === $event_override['capabilities']['events']['status'] && 'provider_has_no_adapter' === $event_override['capabilities']['events']['reason'] && ! isset( $event_override['capabilities']['events']['adapter'] ), 'an unsupported events selection cannot borrow TEC coverage' );
 $GLOBALS['ssi_provider_override'] = array();
 
 $unknown = Static_Site_Importer_Materialization_Coverage::capability_coverage( 'booking' );

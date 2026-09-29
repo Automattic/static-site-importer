@@ -55,11 +55,6 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'option'           => 'static_site_importer_shop_plugin',
 				'filter'           => 'ssi_shop_plugin',
 			),
-			'events' => array(
-				'default_provider' => 'the-events-calendar',
-				'option'           => 'static_site_importer_events_plugin',
-				'filter'           => 'ssi_events_plugin',
-			),
 		);
 	}
 
@@ -432,17 +427,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'adapter'     => $adapter,
 				'manifest'    => $normalized_manifest,
 				'declaration' => $declaration,
-				'required'    => $required || ( 'events' === $capability && ! empty( $entities ) ),
+				'required'    => $required,
 			);
 			if ( ! isset( $lifecycle['dependencies'][ $key ] ) ) {
 				$lifecycle['dependencies'][ $key ] = array(
 					'adapter'     => $adapter,
 					'declaration' => $declaration,
-					'required'    => $required || ( 'events' === $capability && ! empty( $entities ) ),
+					'required'    => $required,
 				);
-			}
-			if ( 'events' === $capability && ! empty( $entities ) ) {
-				$lifecycle['dependencies'][ $key ]['required'] = true;
 			}
 		}
 		if ( isset( $args['products_manifest'] ) && is_array( $args['products_manifest'] ) && ! empty( $args['products_manifest'] ) ) {
@@ -532,11 +524,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	private static function runtime_declaration_capability( string $kind, string $name ): string {
 		$name = strtolower( $name );
-		if ( 'dependency' === $kind && in_array( $name, array( 'shop', 'form', 'events' ), true ) ) {
+		if ( 'dependency' === $kind && in_array( $name, array( 'shop', 'form' ), true ) ) {
 			return $name;
-		}
-		if ( 'entity_collection' === $kind && in_array( $name, array( 'event', 'events' ), true ) ) {
-			return 'events';
 		}
 		if ( 'entity_collection' === $kind && in_array( $name, array( 'product', 'products' ), true ) ) {
 			return 'shop';
@@ -1160,10 +1149,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 */
 	private static function adapters(): array {
 		$adapters = array();
-		if ( ! class_exists( 'Static_Site_Importer_TEC_Event_Seeder' ) ) {
-			require_once __DIR__ . '/class-static-site-importer-tec-event-seeder.php';
-		}
-		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_TEC_Event_Seeder' ) as $owner ) {
+		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Form_Seeder' ) as $owner ) {
 			// Seeders may be absent or stubbed in standalone harnesses.
 			// @phpstan-ignore-next-line booleanNot.alwaysFalse -- Optional classes are stubbed in standalone coverage harnesses.
 			if ( ! is_callable( array( $owner, 'adapter' ) ) ) {
