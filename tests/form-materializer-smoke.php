@@ -85,7 +85,13 @@ namespace {
 	$repo_root        = dirname( __DIR__ );
 	$wp_root          = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: $repo_root . '/vendor/johnpbloch/wordpress-core';
 	$transformer_root = getenv( 'STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH' ) ?: $repo_root . '/vendor/automattic/blocks-engine-php-transformer';
-	if ( ( ! is_readable( rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-parser.php' ) || ! is_readable( rtrim( $wp_root, '/\\' ) . '/wp-includes/blocks.php' ) || ! is_readable( rtrim( $transformer_root, '/\\' ) . '/php-transformer.php' ) ) && is_file( $repo_root . '/composer.lock' ) ) {
+	$transformer_bootstrap = rtrim( $transformer_root, '/\\' ) . '/php-transformer.php';
+	// The producer can be supplied as either its package root or the Blocks
+	// Engine checkout. The latter keeps the PHP package in php-transformer/.
+	if ( ! is_readable( $transformer_bootstrap ) && is_readable( rtrim( $transformer_root, '/\\' ) . '/php-transformer/php-transformer.php' ) ) {
+		$transformer_bootstrap = rtrim( $transformer_root, '/\\' ) . '/php-transformer/php-transformer.php';
+	}
+	if ( ( ! is_readable( rtrim( $wp_root, '/\\' ) . '/wp-includes/class-wp-block-parser.php' ) || ! is_readable( rtrim( $wp_root, '/\\' ) . '/wp-includes/blocks.php' ) || ! is_readable( $transformer_bootstrap ) ) && is_file( $repo_root . '/composer.lock' ) ) {
 		passthru( 'composer --working-dir=' . escapeshellarg( $repo_root ) . ' install --no-interaction --prefer-dist --no-progress 2>&1', $install_status );
 		if ( 0 !== $install_status ) {
 			fwrite( STDERR, "FAIL: Could not install locked smoke-test dependencies.\n" );
@@ -202,7 +208,6 @@ namespace {
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-product-handoff-contract.php';
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
 
-	$transformer_bootstrap = rtrim( $transformer_root, '/\\' ) . '/php-transformer.php';
 	if ( is_readable( $transformer_bootstrap ) ) {
 		require_once $transformer_bootstrap;
 	}
@@ -886,19 +891,22 @@ namespace {
 	$assert( 1 === preg_match( '/field-text[\s\S]*field-text[\s\S]*field-email[\s\S]*field-textarea[\s\S]*wp:button/', $nested_grid_markup ), 'nested-neutral-grid-row-keeps-source-field-order', $nested_grid_markup );
 	// Ward's grid differs from the neutral single-control shells above: the
 	// second shell owns both a visible combobox and its hidden native value
-	// carrier. The producer proves their relationship by exact selector.
+	// carrier. This is the producer's direct-sibling choice contract: the
+	// trigger is a combobox/listbox and the native select is hidden, adjacent,
+	// and carries the submitted values. The producer proves the relationship
+	// by exact selector, rather than inferring it from matching labels.
 	$ward_html = '<style>' . $nested_grid_css . '</style><form class="space-y-4">'
 		. '<div><div><div><input name="first" aria-label="First"></div><input name="second" aria-label="Second"></div></div>'
 		. '<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">'
 		. '<div><label for="ward-phone">Phone</label><input id="ward-phone" name="phone" type="tel" required></div>'
-		. '<div><label>Contact Preference</label><button type="button" role="combobox" aria-label="Contact Preference">Phone</button><select hidden name="contact_preference" required><option value="email">Email</option><option value="phone" selected>Phone</option></select></div>'
+		. '<div><label>Contact Preference</label><button type="button" role="combobox" aria-haspopup="listbox" aria-label="Contact Preference">Phone</button><select hidden aria-hidden="true" tabindex="-1" name="contact_preference" required><option value="email">Email</option><option value="phone" selected>Phone</option></select></div>'
 		. '</div>'
-		. '<div><label>Services</label><button type="button" role="combobox" aria-label="Services">Consulting</button><select hidden name="services" required><option value="consulting" selected>Consulting</option><option value="support">Support</option></select></div>'
+		. '<div><label>Services</label><button type="button" role="combobox" aria-haspopup="listbox" aria-label="Services">Consulting</button><select hidden aria-hidden="true" tabindex="-1" name="services" required><option value="consulting" selected>Consulting</option><option value="support">Support</option></select></div>'
 		. '<button type="submit">Send</button></form>';
 	$ward_source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $ward_html ) ) )->toArray() )['fallbacks'][0] ?? array();
 	$ward_controls = $ward_source['controls'] ?? array();
 	$ward_nodes = array_column( $ward_source['control_topology']['nodes'] ?? array(), null, 'id' );
-	$assert( 'wrapper-3' === ( $ward_nodes['wrapper-4']['parent'] ?? null ) && 'wrapper-3' === ( $ward_nodes['wrapper-5']['parent'] ?? null ) && 'wrapper-4' === ( $ward_nodes['control-2']['parent'] ?? null ) && 'wrapper-5' === ( $ward_nodes['control-3']['parent'] ?? null ) && 'wrapper-5' === ( $ward_nodes['control-4']['parent'] ?? null ) && 'wrapper-6' === ( $ward_nodes['control-5']['parent'] ?? null ) && 'wrapper-6' === ( $ward_nodes['control-6']['parent'] ?? null ) && ! empty( $ward_controls[3]['choice_source_selector'] ) && ( $ward_controls[3]['choice_source_selector'] ?? null ) === ( $ward_controls[4]['selector'] ?? null ) && ( $ward_controls[5]['choice_source_selector'] ?? null ) === ( $ward_controls[6]['selector'] ?? null ), 'ward-paired-grid-fixture-proves-exact-native-select-link', wp_json_encode( array( $ward_controls, $ward_nodes ) ) );
+	$assert( 'wrapper-3' === ( $ward_nodes['wrapper-4']['parent'] ?? null ) && 'wrapper-3' === ( $ward_nodes['wrapper-5']['parent'] ?? null ) && 'wrapper-4' === ( $ward_nodes['control-2']['parent'] ?? null ) && 'wrapper-5' === ( $ward_nodes['control-3']['parent'] ?? null ) && 'wrapper-5' === ( $ward_nodes['control-4']['parent'] ?? null ) && 'wrapper-6' === ( $ward_nodes['control-5']['parent'] ?? null ) && 'wrapper-6' === ( $ward_nodes['control-6']['parent'] ?? null ) && 'combobox' === ( $ward_controls[3]['role'] ?? null ) && 'combobox' === ( $ward_controls[5]['role'] ?? null ) && ! empty( $ward_controls[3]['choice_source_selector'] ) && ( $ward_controls[3]['choice_source_selector'] ?? null ) === ( $ward_controls[4]['selector'] ?? null ) && ( $ward_controls[5]['choice_source_selector'] ?? null ) === ( $ward_controls[6]['selector'] ?? null ) && ( $ward_controls[3]['options'] ?? null ) === ( $ward_controls[4]['options'] ?? null ) && ( $ward_controls[5]['options'] ?? null ) === ( $ward_controls[6]['options'] ?? null ), 'ward-paired-grid-fixture-proves-exact-native-select-link', wp_json_encode( array( $ward_controls, $ward_nodes ) ) );
 	$ward_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $ward_source ) ) );
 	$ward_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $ward_validated['forms'] ?? array() ) )['forms'][0] ?? array();
 	$ward_markup = (string) ( $ward_row['block_markup'] ?? '' );
