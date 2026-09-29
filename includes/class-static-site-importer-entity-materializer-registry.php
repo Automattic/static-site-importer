@@ -390,8 +390,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( 'products' === $collection ) {
 				$manifest['schema_version'] = 1;
 			}
-			$validation = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ? array( 'errors' => array() ) : self::validate_manifest_generic( $adapter, $manifest );
-			$accepted   = is_array( $validation[ $collection ] ?? null ) ? $validation[ $collection ] : array();
+			// Dependency preparation intentionally defers provider validation until
+			// resume. Runtime entity manifests carry content-hash refs, not entity
+			// bodies; with_resolved_binding_manifests() validates their resolved rows.
+			$defer_validation = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) || 'blocks-engine/runtime-entity-manifest/v1' === ( $declaration['payload']['schema'] ?? null );
+			$validation       = $defer_validation ? array( 'errors' => array() ) : self::validate_manifest_generic( $adapter, $manifest );
+			$accepted         = is_array( $validation[ $collection ] ?? null ) ? $validation[ $collection ] : array();
 			if ( ! empty( $validation['errors'] ) ) {
 				// Entity validators report per row: an unmappable row is rejected
 				// without discarding the rows that did validate, so partial feature
@@ -417,10 +421,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 				$lifecycle['diagnostics'][] = self::rejected_runtime_entity_rows_diagnostic( $key, $adapter, count( $entities ), count( $accepted ), $validation['errors'] );
 			}
-			// Dependency preparation intentionally defers provider validation until
-			// resume, but its checkpoint must still retain every declared entity.
-			$normalized_manifest = 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ? $manifest : array( $collection => $accepted );
-			if ( 'products' === $collection && 'prepare' !== ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
+			// Deferred validation must still retain every declared entity.
+			$normalized_manifest = $defer_validation ? $manifest : array( $collection => $accepted );
+			if ( 'products' === $collection && ! $defer_validation ) {
 				$normalized_manifest['schema_version'] = 1;
 			}
 			$lifecycle['entities'][ $key ] = array(
