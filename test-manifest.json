@@ -61,6 +61,7 @@
     { "path": "tests/smoke-owner-handoff-evidence.php", "environment": "standalone-php" },
     { "path": "tests/smoke-product-handoff-contract.php", "environment": "standalone-php" },
     { "path": "tests/smoke-materialization-coverage.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-tec-event-seeder.php", "environment": "standalone-php" },
     { "path": "tests/smoke-quality-budget-admission.php", "environment": "standalone-php" },
     { "path": "tests/smoke-product-materializer.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-product-grid-binding.php", "environment": "wordpress-runtime" },
