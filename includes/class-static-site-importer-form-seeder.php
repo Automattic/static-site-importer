@@ -349,6 +349,10 @@ class Static_Site_Importer_Form_Seeder {
 		$textarea_height_omitted_count = (int) ( $form['form']['textarea_height_omitted_count'] ?? 0 );
 		$radio_groups                  = Static_Site_Importer_Form_Field_Markup::labelled_radio_groups( $form, $controls );
 		$suppressed_controls           = $radio_groups['suppressed_controls'];
+		$choice_pairs                  = self::linked_choice_pairs( $controls, $form );
+		foreach ( $choice_pairs as $trigger => $carrier ) {
+			$suppressed_controls[ $carrier ] = true;
+		}
 		// Context is editable content, not a reason to decline the provider form.
 		// Keep supported fields in Jetpack and project bounded before/after copy
 		// as editable core blocks within the provider form (see context_blocks).
@@ -360,6 +364,15 @@ class Static_Site_Importer_Form_Seeder {
 		foreach ( $controls as $control_index => $control ) {
 			if ( ! is_array( $control ) ) {
 				continue;
+			}
+			if ( isset( $choice_pairs[ $control_index ] ) ) {
+				$carrier         = $controls[ $choice_pairs[ $control_index ] ];
+				$control         = array_merge( $carrier, array_intersect_key( $control, array_flip( array( 'label', 'label_class', 'required_text', 'required_indicator', 'description' ) ) ) );
+				$control['tag']  = 'select';
+				$control['type'] = 'select';
+				// The source carrier was hidden; its class cannot follow the new
+				// visitor-facing provider input.
+				unset( $control['class'] );
 			}
 			$type = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
 			$tag  = strtolower( trim( (string) ( $control['tag'] ?? '' ) ) );
@@ -474,6 +487,19 @@ class Static_Site_Importer_Form_Seeder {
 			$field_source_class                = $has_provider_input ? '' : $source_class;
 			$layout_hook                       = Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $control_index );
 			$field_block['attrs']['className'] = trim( $field_source_class . ' ' . $layout_hook );
+			if ( isset( $choice_pairs[ $control_index ] ) ) {
+				$choice_token = Static_Site_Importer_Provider_Form_Runtime_V1::choice_token( $control['options'] );
+				if ( '' === $choice_token ) {
+					$control_attribute_losses[] = array(
+						'dimension'     => 'control',
+						'reason_code'   => 'unsupported_control_attribute',
+						'attribute'     => 'choice_values',
+						'control_index' => $control_index,
+					);
+				} else {
+					$field_block['attrs']['className'] .= ' ' . $choice_token;
+				}
+			}
 			// Jetpack replaces a date field's class with `jp-contact-form-date`
 			// before deriving wrap classes, so the field-level layout hook never
 			// reaches the shell. Keep that hook on the inner input, which Jetpack
@@ -556,8 +582,16 @@ class Static_Site_Importer_Form_Seeder {
 				'omitted_count' => $textarea_height_omitted_count,
 			);
 		}
-		$host = Static_Site_Importer_Form_Layout_Projection::host_wrapper_projection( $form );
-		self::append_receipt_entries( $layout['receipt'], 'operations', array_merge( $released['operations'], $radio_groups['operations'], $topology['operations'], $host['operations'] ) );
+		$host              = Static_Site_Importer_Form_Layout_Projection::host_wrapper_projection( $form );
+		$choice_operations = array();
+		foreach ( $choice_pairs as $trigger => $carrier ) {
+			$choice_operations[] = array(
+				'dimension'   => 'control',
+				'strategy'    => 'provider_linked_native_choice',
+				'target_hash' => hash( 'sha256', 'control-' . $trigger . ':control-' . $carrier ),
+			);
+		}
+		self::append_receipt_entries( $layout['receipt'], 'operations', array_merge( $released['operations'], $radio_groups['operations'], $choice_operations, $topology['operations'], $host['operations'] ) );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $control_attribute_losses );
 		$inner_blocks           = $layout['blocks'];
 		$form_attrs             = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $form, $scope, array_merge( $topology['form_classes'], $host['classes'] ) );
@@ -863,6 +897,37 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		ksort( $owned );
 		return array_slice( array_values( $owned ), 0, 4 );
+	}
+
+	/**
+	 * Pair only a producer-linked visible choice trigger with its native select in
+	 * the same field shell. The carrier is suppressed only after the trigger can
+	 * stand in for the complete option list as a provider select.
+	 *
+	 * @return array<int,int> Trigger index to carrier index.
+	 */
+	private static function linked_choice_pairs( array $controls, array $form ): array {
+		$parents = array();
+		foreach ( $form['control_topology']['nodes'] ?? array() as $node ) {
+			if ( is_array( $node ) && 'control' === ( $node['kind'] ?? null ) && is_int( $node['control'] ?? null ) ) {
+				$parents[ $node['control'] ] = $node['parent'] ?? null;
+			}
+		}
+		$pairs = array();
+		$used  = array();
+		foreach ( $controls as $index => $trigger ) {
+			if ( ! is_array( $trigger ) || 'button' !== ( $trigger['tag'] ?? null ) || 'combobox' !== ( $trigger['role'] ?? null ) || ! is_string( $trigger['choice_source_selector'] ?? null ) || '' === trim( $trigger['choice_source_selector'] ) || ! isset( $parents[ $index ] ) ) {
+				continue;
+			}
+			$carrier_index = $index + 1;
+			$carrier       = $controls[ $carrier_index ] ?? null;
+			if ( ! is_array( $carrier ) || 'select' !== ( $carrier['tag'] ?? null ) || ( $carrier['selector'] ?? null ) !== $trigger['choice_source_selector'] || ( $parents[ $carrier_index ] ?? null ) !== $parents[ $index ] || isset( $used[ $carrier_index ] ) || empty( $carrier['options'] ) || ! isset( $trigger['options'] ) || $carrier['options'] !== $trigger['options'] ) {
+				continue;
+			}
+			$pairs[ $index ]        = $carrier_index;
+			$used[ $carrier_index ] = true;
+		}
+		return $pairs;
 	}
 
 	/**
