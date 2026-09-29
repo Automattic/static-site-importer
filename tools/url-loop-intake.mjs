@@ -66,6 +66,44 @@ export function createHandoff(input = {}) {
   return handoff;
 }
 
+/** One SSI-owned matrix boundary for initial URL intake and candidate re-evaluation. */
+export async function runUrlLoopMatrix(input, dependencies = {}) {
+  if (!input.staticSiteImporter || !input.blocksEngine) throw new Error('matrix_component_identities_missing');
+  const { buildFixtureMatrixRunPlan, summarizeBenchRun } = await (dependencies.matrixModule || import('./run-fixture-matrix.mjs'));
+  const output = path.resolve(input.output || path.join(input.outputRoot, 'homeboy-bench-result.json'));
+  const matrixInput = {
+    ...(input.matrixOptions || {}),
+    fixtureRoot: input.fixtureRoot,
+    targetFixture: input.fixtureId,
+    staticSiteImporter: input.staticSiteImporter,
+    blocksEngine: input.blocksEngine,
+    ssiIdentity: input.ssiIdentity,
+    blocksEngineIdentity: input.blocksEngineIdentity,
+    output,
+  };
+  const plan = buildFixtureMatrixRunPlan(matrixInput);
+  const args = [path.join(path.dirname(fileURLToPath(import.meta.url)), 'run-fixture-matrix.mjs'), '--static-site-importer', input.staticSiteImporter, '--blocks-engine', input.blocksEngine, '--fixture-root', input.fixtureRoot, '--target-fixture', input.fixtureId, '--output', output, ...(input.matrixArgs || [])];
+  const command = { stage: 'matrix', command: process.execPath, args };
+  const matrix = { status: 'planned', plan, command: plan.steps.at(-1)?.retry_command || '' };
+  const result = (dependencies.spawn || spawnSync)(process.execPath, args, { cwd: input.cwd || process.cwd(), stdio: 'inherit' });
+  const failures = [];
+  let summary = null;
+  try { summary = summarizeBenchRun({ plan, benchStatus: result.status ?? 1 }).summary; } catch { /* A crash has no authoritative result. */ }
+  if (summary?.matrix_evidence_readiness) {
+    matrix.summary = summary;
+    matrix.status = summary.status;
+    matrix.artifact_refs = summary.artifact_urls || [];
+    matrix.evidence = summary.matrix_evidence_readiness;
+    const evidence = validateMatrixEvidence(summary, input.fixtureId);
+    matrix.evidence_complete = evidence.valid;
+    if (!evidence.valid) failures.push({ stage: 'matrix', reason: evidence.reason, fixture_id: input.fixtureId, readiness: matrix.evidence });
+  } else {
+    matrix.status = 'blocked';
+    failures.push(matrixRuntimeFailure(result, output));
+  }
+  return { matrix, summary, result, failures, commands: [command] };
+}
+
 export async function runUrlLoopIntake(input = {}, dependencies = {}) {
   const url = normalizeUrl(input.url);
   const configInput = typeof input.dlaConfig === 'string' ? readJson(path.resolve(input.dlaConfig)) : (input.dlaConfig || input);
@@ -114,40 +152,10 @@ export async function runUrlLoopIntake(input = {}, dependencies = {}) {
   let matrix = null;
   if (!failures.length && input.runMatrix) {
     try {
-      // Keep capture/intake diagnostics usable without the optional visual-matrix
-      // dependencies. The canonical matrix module is loaded only when requested.
-      const { buildFixtureMatrixRunPlan, summarizeBenchRun } = await import('./run-fixture-matrix.mjs');
-      if (typeof input.staticSiteImporter !== 'string' || !input.staticSiteImporter || typeof input.blocksEngine !== 'string' || !input.blocksEngine) throw new Error('matrix_component_identities_missing');
-      const matrixInput = { ...input.matrix, fixtureRoot, targetFixture: fixture.id, staticSiteImporter: input.staticSiteImporter, blocksEngine: input.blocksEngine, ssiIdentity: input.ssiIdentity, blocksEngineIdentity: input.blocksEngineIdentity, output: path.join(outputRoot, 'matrix', 'homeboy-bench-result.json') };
-      const plan = buildFixtureMatrixRunPlan(matrixInput);
-      matrix = { status: 'planned', plan, command: plan.steps.at(-1)?.retry_command || '' };
-      if (!input.dryRun) {
-        const args = [fileURLToPath(import.meta.url).replace('url-loop-intake.mjs', 'run-fixture-matrix.mjs'), '--static-site-importer', input.staticSiteImporter, '--blocks-engine', input.blocksEngine, '--fixture-root', fixtureRoot, '--target-fixture', fixture.id, '--output', matrixInput.output, ...(input.matrixArgs || [])];
-        const result = (dependencies.spawn || spawnSync)(process.execPath, args, { stdio: 'inherit' });
-        let matrixSummary = null;
-        try {
-          matrixSummary = summarizeBenchRun({ plan, benchStatus: result.status ?? 1 }).summary;
-        } catch {
-          // A timeout, crash, or unparseable bench output is a typed runtime blocker.
-        }
-        if (matrixSummary?.matrix_evidence_readiness) {
-          matrix.summary = matrixSummary;
-          matrix.status = matrixSummary.status;
-          matrix.artifact_refs = matrixSummary.artifact_urls || [];
-          matrix.evidence = matrixSummary.matrix_evidence_readiness;
-          const evidence = validateMatrixEvidence(matrixSummary, fixture.id);
-          matrix.evidence_complete = evidence.valid;
-        }
-        if (!matrixSummary?.matrix_evidence_readiness) {
-          failures.push(matrixRuntimeFailure(result, matrixInput.output));
-        } else if (!matrix.evidence_complete) {
-          const evidenceReason = validateMatrixEvidence(matrixSummary, fixture.id);
-          failures.push(result.status !== 0
-            ? matrixRuntimeFailure(result, matrixInput.output)
-            : { stage: 'matrix', reason: evidenceReason.reason, fixture_id: fixture.id, readiness: matrix.evidence || null });
-        }
-      }
-      commands.push({ stage: 'matrix', command: process.execPath, args: [ 'tools/run-fixture-matrix.mjs', '--static-site-importer', input.staticSiteImporter, '--blocks-engine', input.blocksEngine, '--fixture-root', fixtureRoot, '--target-fixture', fixture.id, '--output', matrixInput.output, ...(input.matrixArgs || [])] });
+      const evaluated = await runUrlLoopMatrix({ fixtureRoot, fixtureId: fixture.id, staticSiteImporter: input.staticSiteImporter, blocksEngine: input.blocksEngine, ssiIdentity: input.ssiIdentity, blocksEngineIdentity: input.blocksEngineIdentity, matrixOptions: input.matrix, matrixArgs: input.matrixArgs, output: path.join(outputRoot, 'matrix', 'homeboy-bench-result.json') }, dependencies);
+      matrix = evaluated.matrix;
+      failures.push(...evaluated.failures);
+      commands.push(...evaluated.commands);
     } catch (error) {
       failures.push(`matrix_setup_failed:${error.message}`);
     }
