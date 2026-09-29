@@ -1425,6 +1425,36 @@ namespace {
 		'twelve-column-grid-span-row-materializes-name-fields-side-by-side',
 		wp_json_encode( array( 'validation' => $span_row_validated, 'row' => $span_row_row, 'markup' => $span_row_markup, 'css' => $span_row_css ) )
 	);
+	// A source may author the same grid tracks at every width but add its
+	// gutter only at desktop. The provider must preserve the conditional gap
+	// rather than leaving a visually complete, non-submitting form behind.
+	$conditional_gap_form = $span_row_form;
+	$conditional_gap_form['layout_graph']['nodes'][1]['layout'] = array( 'display' => 'grid', 'columns' => 'repeat(12, 1fr)', 'width' => '100%' );
+	$conditional_gap_form['layout_graph']['nodes'][1]['provenance'] = array_slice( $conditional_gap_form['layout_graph']['nodes'][1]['provenance'], 0, 1 );
+	$conditional_gap_form['layout_graph']['variants'][] = array(
+		'node' => 'wrapper-0',
+		'condition' => array( 'kind' => 'media', 'query' => '(min-width:768px)' ),
+		'layout_patch' => array( 'column_gap' => '12px' ),
+		'precedence' => array( 'column-gap' => array( 'source_order' => 2, 'specificity' => 10, 'important' => false ) ),
+		'provenance' => array( array(
+			'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'b', 64 ),
+			'selector' => '.field-row', 'condition' => array( 'kind' => 'media', 'query' => '(min-width:768px)' ),
+			'properties' => array( 'column-gap' ),
+		) ),
+	);
+	$conditional_gap_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $conditional_gap_form ) ) );
+	$conditional_gap_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $conditional_gap_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$conditional_gap_css = (string) ( $conditional_gap_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		empty( $conditional_gap_validated['errors'] )
+			&& 'mapped' === ( $conditional_gap_row['status'] ?? '' )
+			&& in_array( 'provider_grid_span_fields', array_column( $conditional_gap_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true )
+			&& ! in_array( 'provider_wrapper_layout_unrepresentable', array_column( $conditional_gap_row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' ), true )
+			&& str_contains( $conditional_gap_css, '@media (min-width:768px)' )
+			&& str_contains( $conditional_gap_css, 'width:calc(50% - 6px)' ),
+		'proven-desktop-only-grid-gutter-keeps-real-provider-form-and-conditional-tracks',
+		wp_json_encode( array( 'validation' => $conditional_gap_validated['errors'] ?? array(), 'status' => $conditional_gap_row['status'] ?? '', 'losses' => $conditional_gap_row['computed_layout_receipt']['losses'] ?? array(), 'css' => $conditional_gap_css ) )
+	);
 	$unclean_span_form = $span_row_form;
 	$unclean_span_form['layout_graph']['nodes'][2]['layout']['column'] = '1 / span 5';
 	$unclean_span_form['layout_graph']['nodes'][3]['layout']['column'] = '6 / span 7';
