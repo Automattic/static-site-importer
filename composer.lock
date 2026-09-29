@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "b0d8079aaa6bd836ac8e2dc3ddc3c7fa",
+    "content-hash": "1d4e92f95a855ebc6e6585446bf0f60a",
     "packages": [
         {
             "name": "automattic/blocks-engine-figma-transformer",
@@ -43,16 +43,16 @@
         },
         {
             "name": "automattic/blocks-engine-php-transformer",
-            "version": "v0.26.1",
+            "version": "v0.26.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Automattic/blocks-engine-php-transformer.git",
-                "reference": "0563f251c9548867ef2ab48e8528496ba794abcc"
+                "reference": "b94ec409f6b9dc0969a61b003bdbff9b2eaeb57a"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Automattic/blocks-engine-php-transformer/zipball/0563f251c9548867ef2ab48e8528496ba794abcc",
-                "reference": "0563f251c9548867ef2ab48e8528496ba794abcc",
+                "url": "https://api.github.com/repos/Automattic/blocks-engine-php-transformer/zipball/b94ec409f6b9dc0969a61b003bdbff9b2eaeb57a",
+                "reference": "b94ec409f6b9dc0969a61b003bdbff9b2eaeb57a",
                 "shasum": ""
             },
             "require": {
@@ -91,7 +91,7 @@
                 "issues": "https://github.com/Automattic/blocks-engine/issues",
                 "source": "https://github.com/Automattic/blocks-engine-php-transformer"
             },
-            "time": "2026-09-29T13:37:59+00:00"
+            "time": "2026-09-29T13:54:40+00:00"
         },
         {
             "name": "dflydev/dot-access-data",
@@ -810,56 +810,7 @@
             "time": "2026-04-10T16:19:22+00:00"
         }
     ],
-    "packages-dev": [
-        {
-            "name": "johnpbloch/wordpress-core",
-            "version": "7.1.2",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/johnpbloch/wordpress-core.git",
-                "reference": "74f26ca0fc3fef436d29bdc50a4def940969fa85"
-            },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/johnpbloch/wordpress-core/zipball/74f26ca0fc3fef436d29bdc50a4def940969fa85",
-                "reference": "74f26ca0fc3fef436d29bdc50a4def940969fa85",
-                "shasum": ""
-            },
-            "require": {
-                "ext-json": "*",
-                "php": ">=7.4"
-            },
-            "provide": {
-                "wordpress/core-implementation": "7.1.2"
-            },
-            "type": "wordpress-core",
-            "notification-url": "https://packagist.org/downloads/",
-            "license": [
-                "GPL-2.0-or-later"
-            ],
-            "authors": [
-                {
-                    "name": "WordPress Community",
-                    "homepage": "https://wordpress.org/about/"
-                }
-            ],
-            "description": "WordPress is open source software you can use to create a beautiful website, blog, or app.",
-            "homepage": "https://wordpress.org/",
-            "keywords": [
-                "blog",
-                "cms",
-                "wordpress"
-            ],
-            "support": {
-                "forum": "https://wordpress.org/support/",
-                "irc": "irc://irc.freenode.net/wordpress",
-                "issues": "https://core.trac.wordpress.org/",
-                "source": "https://core.trac.wordpress.org/browser",
-                "wiki": "https://codex.wordpress.org/"
-            },
-            "time": "2026-09-22T16:56:31+00:00"
-        }
-    ],
+    "packages-dev": [],
     "aliases": [],
     "minimum-stability": "dev",
     "stability-flags": {},

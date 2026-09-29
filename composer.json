@@ -44,7 +44,7 @@
   "require": {
     "php": "^8.2",
     "automattic/blocks-engine-figma-transformer": "0.3.0",
-    "automattic/blocks-engine-php-transformer": "0.26.1"
+    "automattic/blocks-engine-php-transformer": "0.26.2"
   },
   "minimum-stability": "dev",
   "prefer-stable": true,
@@ -53,8 +53,5 @@
       "php": "8.2.0"
     },
     "sort-packages": true
-  },
-  "require-dev": {
-    "johnpbloch/wordpress-core": "7.1.2"
   }
 }
