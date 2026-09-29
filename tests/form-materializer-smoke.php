@@ -1338,6 +1338,37 @@ namespace {
 		'a-second-breakpoint-changing-the-track-count-again-keeps-the-wrapper-layout-decline',
 		wp_json_encode( $two_variant_grid_row )
 	);
+	// Keep the responsive field grid and its sibling submit as physical blocks.
+	// This source shape has two direct controls, not nested field wrappers.
+	$native_grid_css = '.w-full{width:100%}.grid{display:grid}.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}.gap-3{gap:.75rem}'
+		. '@media (min-width:640px){.sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}'
+		. '.flex{display:flex}.justify-center{justify-content:center}';
+	$native_grid_html = '<style>' . $native_grid_css . '</style><form class="w-full">'
+		. '<div class="grid grid-cols-1 sm:grid-cols-2 gap-3"><input type="text" name="first" placeholder="First name"><input type="email" name="email" placeholder="Email"></div>'
+		. '<div class="flex justify-center"><button type="submit">Send</button></div></form>';
+	$native_grid_source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $native_grid_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$native_grid_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $native_grid_source ) ) );
+	$native_grid_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $native_grid_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$native_grid_blocks = parse_blocks( (string) ( $native_grid_row['block_markup'] ?? '' ) );
+	$native_grid_root = $native_grid_blocks[0]['innerBlocks'][0] ?? array();
+	$native_grid_children = $native_grid_root['innerBlocks'] ?? array();
+	$native_submit_group = $native_grid_blocks[0]['innerBlocks'][1] ?? array();
+	$assert(
+		empty( $native_grid_validated['errors'] )
+			&& 1 === count( $native_grid_source['layout_graph']['variants'] ?? array() )
+			&& 'mapped' === ( $native_grid_row['status'] ?? '' )
+			&& true === ( $native_grid_row['runtime_mapped'] ?? false )
+			&& 'core/group' === ( $native_grid_root['blockName'] ?? '' )
+			&& array( 'jetpack/field-text', 'jetpack/field-email' ) === array_column( $native_grid_children, 'blockName' )
+			&& 'core/group' === ( $native_submit_group['blockName'] ?? '' )
+			&& array( 'core/button' ) === array_column( $native_submit_group['innerBlocks'] ?? array(), 'blockName' )
+			&& 'Send' === ( $native_grid_row['submit_text'] ?? '' )
+			&& empty( $native_grid_row['form_receipt_unaccepted_losses'] )
+			&& str_contains( (string) ( $native_grid_row['provider_layout_overlay_css']['css'] ?? '' ), '@media (min-width:640px)' )
+			&& (string) ( $native_grid_row['block_markup'] ?? '' ) === serialize_blocks( $native_grid_blocks ),
+		'direct-input-grid-and-sibling-submit-preserve-proven-responsive-layout-in-native-groups',
+		wp_json_encode( array( 'source' => $native_grid_source, 'row' => $native_grid_row, 'blocks' => $native_grid_blocks ) )
+	);
 	$span_fact = static function ( string $id, ?string $parent, int $order, array $layout, array $properties ): array {
 		return array(
 			'id'         => $id,

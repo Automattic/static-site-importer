@@ -1920,7 +1920,27 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$layout_node     = $layout_nodes[ $id ] ?? null;
 			$parent          = is_string( $wrapper['parent'] ?? null ) ? $wrapper['parent'] : '$root';
 			$expected_parent = '$root' === $parent ? 'form' : $parent;
-			if ( ! is_array( $layout_node ) || 'div' !== ( $layout_node['source']['tag'] ?? null ) || ( $layout_node['parent'] ?? null ) !== $expected_parent || ! is_array( $layouts[ $id ] ?? null ) || 'flex' !== ( $layouts[ $id ]['display'] ?? null ) || ! in_array( $layouts[ $id ]['direction'] ?? null, array( 'row', 'column' ), true ) || ! Static_Site_Importer_Provider_Layout_Overlay::layout_values_are_safe( $layouts[ $id ] ) || ! $proven( $layout_node['provenance'] ?? array(), null, $layouts[ $id ] ) ) {
+			$layout          = $layouts[ $id ] ?? null;
+			if ( ! is_array( $layout_node ) || 'div' !== ( $layout_node['source']['tag'] ?? null ) || ( $layout_node['parent'] ?? null ) !== $expected_parent || ! is_array( $layout ) || ! Static_Site_Importer_Provider_Layout_Overlay::layout_values_are_safe( $layout ) || ! $proven( $layout_node['provenance'] ?? array(), null, $layout ) ) {
+				return null;
+			}
+			$flex = 'flex' === ( $layout['display'] ?? null ) && in_array( $layout['direction'] ?? 'row', array( 'row', 'column' ), true );
+			$grid = 'grid' === ( $layout['display'] ?? null )
+				&& ! array_diff( array_keys( $layout ), array( 'display', 'columns', 'gap' ) )
+				&& self::is_equal_fraction_columns( preg_replace( '/\s+/', '', (string) ( $layout['columns'] ?? '' ) ), 1 )
+				&& 2 === count( $children[ $id ] ?? array() )
+				&& 2 === count( array_filter( $children[ $id ], static fn( array $child ): bool => 'control' === ( $child['kind'] ?? null ) && isset( $field_blocks[ $child['control'] ?? -1 ] ) && 'core/button' !== ( $field_blocks[ $child['control'] ]['name'] ?? null ) ) )
+				&& 1 === count( $variants[ $id ] ?? array() );
+			if ( $grid ) {
+				$variant   = $variants[ $id ][0];
+				$condition = $variant['condition'] ?? null;
+				$patch     = $variant['layout_patch'] ?? null;
+				$grid      = is_array( $condition ) && 'media' === ( $condition['kind'] ?? null )
+					&& is_string( $condition['query'] ?? null ) && self::is_min_width_media_query( $condition['query'] )
+					&& is_array( $patch ) && array( 'columns' ) === array_keys( $patch )
+					&& self::is_equal_fraction_columns( preg_replace( '/\s+/', '', (string) ( $patch['columns'] ?? '' ) ), 2 );
+			}
+			if ( ! $flex && ! $grid ) {
 				return null;
 			}
 			foreach ( $variants[ $id ] ?? array() as $variant ) {
@@ -1952,18 +1972,19 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					}
 					continue;
 				}
-				$id       = $node['id'];
-				$classes  = preg_split( '/\s+/', trim( (string) ( $wrappers[ $id ]['class'] ?? '' ) ) );
-				$classes  = false === $classes ? array() : array_values( array_filter( $classes ) );
+				$id      = $node['id'];
+				$classes = preg_split( '/\s+/', trim( (string) ( $wrappers[ $id ]['class'] ?? '' ) ) );
+				$classes = false === $classes ? array() : array_values( array_filter( $classes ) );
+				$attrs   = array( 'className' => trim( implode( ' ', array_merge( $classes, array( $hooks[ $id ] ) ) ) ) );
+				if ( 'flex' === ( $layouts[ $id ]['display'] ?? null ) ) {
+					$attrs['layout'] = array(
+						'type'        => 'flex',
+						'orientation' => 'column' === ( $layouts[ $id ]['direction'] ?? null ) ? 'vertical' : 'horizontal',
+					);
+				}
 				$blocks[] = array(
 					'name'        => 'core/group',
-					'attrs'       => array(
-						'className' => trim( implode( ' ', array_merge( $classes, array( $hooks[ $id ] ) ) ) ),
-						'layout'    => array(
-							'type'        => 'flex',
-							'orientation' => 'row' === ( $layouts[ $id ]['direction'] ?? null ) ? 'horizontal' : 'vertical',
-						),
-					),
+					'attrs'       => $attrs,
 					'innerBlocks' => $build( $id ),
 				);
 			}

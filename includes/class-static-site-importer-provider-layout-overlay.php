@@ -510,6 +510,11 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( '' === $value || strlen( $value ) > 160 || preg_match( '/(?:url\(|[;{}\\\\]|!important|expression\()/i', $value ) ) {
 			return false;
 		}
+		// CSS permits fractional lengths without a leading zero; the source
+		// stylesheet and the overlay express the same value either way.
+		if ( 1 === preg_match( '/^\.[0-9]+(?:px|rem|em|%|vw|vh|fr)$/D', $value ) ) {
+			$value = '0' . $value;
+		}
 		if ( in_array( $fact, array( 'display', 'direction', 'wrap', 'align_items', 'align_content', 'justify_content', 'align_self', 'justify_self' ), true ) ) {
 			// Source stylesheets drive these keywords through their own custom properties.
 			// The overlay references the property the preserved source CSS already defines
