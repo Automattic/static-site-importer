@@ -427,15 +427,15 @@ class Static_Site_Importer_Form_Seeder {
 
 			$control_phone_destinations = $presentation_descriptor['phone_destinations'];
 			if ( 'file' === $type && 'input' === $tag ) {
-				$label                         = Static_Site_Importer_Form_Field_Markup::control_text( $control );
+				$label                          = Static_Site_Importer_Form_Field_Markup::control_text( $control );
 				$field_blocks[ $control_index ] = array(
 					'name'    => 'core/paragraph',
 					'attrs'   => array( 'className' => 'ssi-unsupported-file-upload' ),
 					'content' => trim( $label . ' — File upload requires Jetpack connection and a supported plan; unavailable in this import runtime.' ),
 					'wrapper' => 'paragraph',
 				);
-				$skipped[]                       = 'file';
-				$unsupported_capabilities[]      = array(
+				$skipped[]                      = 'file';
+				$unsupported_capabilities[]     = array(
 					'capability'    => 'file_upload',
 					'reason_code'   => 'jetpack_upload_endpoint_requires_connected_site_and_supported_plan',
 					'control_index' => $control_index,
@@ -559,21 +559,8 @@ class Static_Site_Importer_Form_Seeder {
 		$host = Static_Site_Importer_Form_Layout_Projection::host_wrapper_projection( $form );
 		self::append_receipt_entries( $layout['receipt'], 'operations', array_merge( $released['operations'], $radio_groups['operations'], $topology['operations'], $host['operations'] ) );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $control_attribute_losses );
-		$inner_blocks            = $layout['blocks'];
-		$suppressed_form_classes = array_fill_keys( is_array( $topology['suppressed_form_classes'] ?? null ) ? $topology['suppressed_form_classes'] : array(), true );
-		$attrs_form              = $form;
-		if ( ! empty( $suppressed_form_classes ) && isset( $attrs_form['form']['class'] ) && is_scalar( $attrs_form['form']['class'] ) ) {
-			$class_tokens                = preg_split( '/\s+/', trim( (string) $attrs_form['form']['class'] ) );
-			$class_tokens                = false === $class_tokens ? array() : array_values( array_filter( $class_tokens, static fn ( string $class_name ): bool => ! isset( $suppressed_form_classes[ $class_name ] ) ) );
-			$attrs_form['form']['class'] = implode( ' ', $class_tokens );
-		}
-		$carried_classes        = array_values(
-			array_filter(
-				array_merge( $topology['form_classes'], $host['classes'] ),
-				static fn ( string $class_name ): bool => ! isset( $suppressed_form_classes[ $class_name ] )
-			)
-		);
-		$form_attrs             = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $attrs_form, $scope, $carried_classes );
+		$inner_blocks           = $layout['blocks'];
+		$form_attrs             = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $form, $scope, array_merge( $topology['form_classes'], $host['classes'] ) );
 		$overlay_graph          = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( Static_Site_Importer_Form_Layout_Projection::split_form_box( $provider_graph ), is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array() );
 		$box_targets            = $topology['provider_layout_targets'];
 		$overlay_graph['nodes'] = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || 'form-box' === ( $node['id'] ?? '' ) || isset( $box_targets[ (string) ( $node['id'] ?? '' ) ] ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
@@ -791,22 +778,9 @@ class Static_Site_Importer_Form_Seeder {
 		if ( ! empty( $visual_state['diagnostics'] ) ) {
 			$row['form_visual_state_diagnostics'] = $visual_state['diagnostics'];
 		}
-		$unaccepted_losses   = array_values(
-			array_filter(
-				$layout['receipt']['losses'] ?? array(),
-				static fn( $loss ): bool => is_array( $loss ) && self::receipt_loss_requires_gate( $loss ) && ! self::provider_represents_receipt_loss( $loss, $form, $field_blocks, $target_map ) && true !== apply_filters( 'static_site_importer_form_receipt_loss_accepted', false, $loss, $form, $row )
-			)
-		);
-		$gate_overflow_count = (int) ( $layout['receipt']['gate_required_loss_overflow_count'] ?? 0 );
-		if ( $gate_overflow_count > 0 ) {
-			$unaccepted_losses[] = array(
-				'dimension'   => 'topology',
-				'reason_code' => 'form_receipt_gate_loss_overflow',
-				'loss_count'  => $gate_overflow_count,
-				'loss_hash'   => (string) ( $layout['receipt']['gate_required_loss_overflow_hash'] ?? '' ),
-			);
-		}
-		if ( ! empty( $unaccepted_losses ) ) {
+		$mapping_decision        = self::mapping_decision( $form, $row, $mapped_types, $skipped, $layout['receipt'], $field_blocks, $target_map );
+		$row['mapping_decision'] = $mapping_decision;
+		if ( 'declined' === $mapping_decision['status'] ) {
 			// The layout-fidelity gate is a decision not to represent this one form
 			// with the provider, exactly like an unsupported control topology. The
 			// converted source form stays in the page, so this is a per-entity
@@ -815,10 +789,42 @@ class Static_Site_Importer_Form_Seeder {
 			$row['runtime_mapped']                 = false;
 			$row['status']                         = 'skipped';
 			$row['reason']                         = 'form_receipt_loss_unaccepted';
-			$row['form_receipt_unaccepted_losses'] = $unaccepted_losses;
-			$row['unaccepted_receipt_loss_count']  = count( $unaccepted_losses );
+			$row['form_receipt_unaccepted_losses'] = $mapping_decision['losses'];
+			$row['unaccepted_receipt_loss_count']  = count( $mapping_decision['losses'] );
 		}
 		return $row;
+	}
+
+	/**
+	 * Decide provider support from the prepared row and bounded receipt evidence.
+	 *
+	 * The filter receives the complete pre-decision emission row, including its
+	 * original computed receipt and provider overlay, as it did before extraction.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private static function mapping_decision( array $form, array $row, array $mapped_types, array $skipped, array $receipt, array $field_blocks, array $target_map ): array {
+		$unaccepted_losses   = array_values(
+			array_filter(
+				$receipt['losses'] ?? array(),
+				static fn( $loss ): bool => is_array( $loss ) && self::receipt_loss_requires_gate( $loss ) && ! self::provider_represents_receipt_loss( $loss, $form, $field_blocks, $target_map ) && true !== apply_filters( 'static_site_importer_form_receipt_loss_accepted', false, $loss, $form, $row )
+			)
+		);
+		$gate_overflow_count = (int) ( $receipt['gate_required_loss_overflow_count'] ?? 0 );
+		if ( $gate_overflow_count > 0 ) {
+			$unaccepted_losses[] = array(
+				'dimension'   => 'topology',
+				'reason_code' => 'form_receipt_gate_loss_overflow',
+				'loss_count'  => $gate_overflow_count,
+				'loss_hash'   => (string) ( $receipt['gate_required_loss_overflow_hash'] ?? '' ),
+			);
+		}
+		return array(
+			'status'                   => empty( $unaccepted_losses ) ? 'mapped' : 'declined',
+			'supported_fields'         => array_values( $mapped_types ),
+			'unsupported_capabilities' => array_values( array_unique( array_filter( $skipped ) ) ),
+			'losses'                   => $unaccepted_losses,
+		);
 	}
 
 	/**
@@ -1272,7 +1278,7 @@ class Static_Site_Importer_Form_Seeder {
 	private static function provider_represents_receipt_loss( array $loss, array $form, array $field_blocks, array $target_map = array() ): bool {
 		if ( 'provider_native_control_visibility_unrepresentable' === ( $loss['reason_code'] ?? '' ) && is_string( $loss['node_hash'] ?? null ) ) {
 			foreach ( $form['control_topology']['nodes'] ?? array() as $node ) {
-				$index = is_array( $node ) && 'control' === ( $node['kind'] ?? '' ) && is_int( $node['control'] ?? null ) ? $node['control'] : null;
+				$index   = is_array( $node ) && 'control' === ( $node['kind'] ?? '' ) && is_int( $node['control'] ?? null ) ? $node['control'] : null;
 				$control = is_int( $index ) ? ( $form['controls'][ $index ] ?? null ) : null;
 				if ( is_array( $node ) && is_int( $index ) && hash( 'sha256', (string) ( $node['id'] ?? '' ) ) === $loss['node_hash'] && is_array( $control ) && 'file' === strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) && 'core/paragraph' === ( $field_blocks[ $index ]['name'] ?? '' ) ) {
 					return true;

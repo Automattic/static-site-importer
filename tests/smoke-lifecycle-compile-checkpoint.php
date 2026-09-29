@@ -19,7 +19,7 @@ namespace {
 	class Static_Site_Importer_Client_Script_Policy { public static function apply( array $artifact, array $args ): array { $artifact['script_policy_applied'] = true; return array( 'artifact' => $artifact, 'report' => array( 'policy' => 'inert' ) ); } }
 	class Static_Site_Importer_Site_Identity { public static function resolve( array $args ): array { return array( 'name' => 'Checkpoint', 'slug' => 'checkpoint', 'title' => 'Checkpoint', 'block_namespace' => 'ssi-checkpoint' ); } public static function title_from_website_artifact( array $artifact ): string { return ''; } }
 	class Static_Site_Importer_Companion_Plugin { public static function validate_payload( array $payload ) { return true; } }
-	class Static_Site_Importer_Entity_Materializer_Registry { public static function plan_runtime_lifecycle( array $plan, array $args ): array { return array( 'status' => 'not_requested', 'dependencies' => array(), 'entities' => array(), 'diagnostics' => array() ); } }
+	class Static_Site_Importer_Entity_Materializer_Registry { public static function plan_runtime_lifecycle( array $plan, array $args ): array { return array( 'status' => 'not_requested', 'dependencies' => getenv( 'SSI_TEST_DEPENDENCIES' ) ? array( 'provider' => array( 'required' => true ) ) : array(), 'entities' => array(), 'diagnostics' => array() ); } }
 	class Static_Site_Importer_Dependency_Manager { public static function dependency_plan( array $lifecycle, string $hash ): array { return array(); } }
 	class Static_Site_Importer_WordPress_Site_Plan_Materializer { public static function prepare( array $plan, array $args ): array { return array( 'status' => 'failed', 'receipt' => array( 'errors' => array( array( 'code' => 'test_stop', 'message' => 'stop after checkpoint restore' ) ) ) ); } public static function prepare_for_materialization( array $plan, array $args ): array { if ( 'prepare' !== ( $args['runtime_lifecycle_phase'] ?? '' ) ) { return self::prepare( $plan, $args ); } $args['prepared_by_preflight'] = true; return array( 'status' => 'prepared', 'args' => $args, 'resolved' => array() ); } public static function materialize_runtime_dependencies( array $lifecycle, array $args ): array { return array(); } }
 	eval( 'namespace Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler { class ArtifactCompiler { public static int $calls = 0; public static array $artifacts = array(); public function compile( array $artifact ): object { ++self::$calls; self::$artifacts[] = $artifact; return new class { public function toWordPressSitePlanView(): array { return array( "schema" => "blocks-engine/wordpress-site-plan-view/v1", "wordpress_site_plan" => array( "schema" => "test-plan/v1", "assets" => array(), "writes" => array() ), "gutenberg_gaps" => array(), "companion_plugin_payload" => array(), "font_materialization" => array(), "diagnostics" => array() ); } public function toArray(): array { throw new \\RuntimeException( "complete compiler envelope must not be projected" ); } }; } } } namespace Automattic\\BlocksEngine\\PhpTransformer\\WordPressSitePlan { class WordPressSitePlanView { public static function materialize( array $view ): array { if ( "blocks-engine/wordpress-site-plan-view/v2" !== ( $view["schema"] ?? "" ) || ! is_array( $view["wordpress_site_plan"] ?? null ) || ! is_array( $view["view_payloads"] ?? null ) ) { throw new \\InvalidArgumentException( "WordPress site plan view materialization requires the compact v2 view." ); } unset( $view["view_payloads"] ); $view["schema"] = "blocks-engine/wordpress-site-plan-view/v1"; return $view; } } }' );
@@ -32,6 +32,20 @@ namespace {
 		if ( 'owned-routes' === ( $argv[9] ?? '' ) && ( (string) $argv[3] . '/failed-plan-report.json' !== ( $loaded['payload']['args']['failed_plan_report_destination'] ?? '' ) || 'direct-test-import/failed-plan' !== ( $loaded['payload']['args']['failed_plan_artifact_prefix'] ?? '' ) ) ) { fwrite( STDERR, 'checkpoint payload must retain importer-owned failed-plan routing' ); exit( 1 ); }
 		if ( in_array( $argv[5] ?? '', array( 'claim', 'consume' ), true ) ) { $claim = Static_Site_Importer_Lifecycle_Compile_Checkpoint::claim( $loaded['workspace'] ); if ( is_wp_error( $claim ) ) { fwrite( STDERR, $claim->get_error_code() ); exit( 1 ); } if ( 'consume' === ( $argv[5] ?? '' ) ) { $loaded['workspace']->cleanup( 'success' ); } }
 		exit( 0);
+	}
+	if ( '--plan-prepare-child' === ( $argv[1] ?? '' ) ) {
+		$artifact = array( 'schema' => (string) ( $argv[4] ?? 'test/v1' ), 'files' => array() );
+		$prepared = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, array( 'slug' => 'checkpoint', 'name' => 'Checkpoint', 'source_metadata' => array( 'source' => 'fixture' ), '_static_site_importer_lifecycle_checkpoint_root' => (string) $argv[3], 'materialize_dependencies' => true, 'runtime_lifecycle_phase' => 'prepare', 'runtime_lifecycle_invocation_id' => 'prepare-request', 'plan_checkpoint' => (string) $argv[2] ) );
+		if ( is_wp_error( $prepared ) ) { fwrite( STDERR, $prepared->get_error_code() ); exit( 1 ); }
+		if ( 0 !== \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler::$calls || 'dependencies_prepared' !== ( $prepared['status'] ?? '' ) || ! preg_match( '/^[a-f0-9]{32}$/', $prepared['runtime_lifecycle_checkpoint'] ?? '' ) ) { fwrite( STDERR, 'plan preparation must reuse the bound canonical compilation without a second compile' ); exit( 1 ); }
+		echo $prepared['runtime_lifecycle_checkpoint'];
+		exit( 0 );
+	}
+	if ( '--plan-resume-child' === ( $argv[1] ?? '' ) ) {
+		$artifact = array( 'schema' => 'test/v1', 'files' => array() );
+		$resumed = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, array( 'slug' => 'checkpoint', 'name' => 'Checkpoint', 'source_metadata' => array( 'source' => 'fixture' ), '_static_site_importer_lifecycle_checkpoint_root' => (string) $argv[3], 'materialize_dependencies' => true, 'runtime_lifecycle_phase' => 'resume', 'runtime_lifecycle_request_id' => 'prepare-request', 'runtime_lifecycle_invocation_id' => 'resume-request', 'runtime_lifecycle_checkpoint' => (string) $argv[2] ) );
+		if ( ! is_wp_error( $resumed ) || 'test_stop' !== $resumed->get_error_code() || 0 !== \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler::$calls ) { fwrite( STDERR, is_wp_error( $resumed ) ? $resumed->get_error_code() : 'resume unexpectedly accepted' ); exit( 1 ); }
+		exit( 0 );
 	}
 	$root = sys_get_temp_dir() . '/ssi-lifecycle-checkpoint-' . bin2hex( random_bytes( 4 ) ); wp_mkdir_p( $root );
 	$artifact = array( 'schema' => 'test/v1', 'files' => array() );
@@ -108,5 +122,33 @@ namespace {
 			throw new \RuntimeException( 'a checksummed checkpoint with an invalid ' . $invalid_field . ' payload must be rejected by payload validation at load' );
 		}
 	}
+	$plan_args = array( 'slug' => 'checkpoint', 'name' => 'Checkpoint', 'source_metadata' => array( 'source' => 'fixture' ), '_static_site_importer_lifecycle_checkpoint_root' => $root, 'materialize_dependencies' => false, 'retain_compile_checkpoint' => true, 'runtime_lifecycle_phase' => 'plan' );
+	$before_plan = \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler::$calls;
+	$planned = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $plan_args );
+	if ( is_wp_error( $planned ) || 1 !== \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler::$calls - $before_plan || ! preg_match( '/^[a-f0-9]{32}$/', $planned['compile_checkpoint'] ?? '' ) ) { throw new \RuntimeException( 'dependency-free plan must compile once and retain an identity-bound checkpoint' ); }
+	$plan_handle = $planned['compile_checkpoint'];
+	$run_plan_prepare = static function ( string $schema ) use ( $plan_handle, $root ): array {
+		$command = PHP_BINARY . ' ' . escapeshellarg( __FILE__ ) . ' --plan-prepare-child ' . escapeshellarg( $plan_handle ) . ' ' . escapeshellarg( $root ) . ' ' . escapeshellarg( $schema );
+		$process = proc_open( $command, array( 1 => array( 'pipe', 'w' ), 2 => array( 'pipe', 'w' ) ), $pipes );
+		$output = is_resource( $process ) ? stream_get_contents( $pipes[1] ) . stream_get_contents( $pipes[2] ) : '';
+		if ( is_resource( $process ) ) { fclose( $pipes[1] ); fclose( $pipes[2] ); return array( proc_close( $process ), $output ); }
+		return array( 1, $output );
+	};
+	$changed_source = $run_plan_prepare( 'test/v2' );
+	if ( 0 === $changed_source[0] || ! str_contains( $changed_source[1], 'static_site_importer_lifecycle_checkpoint_mismatch' ) ) { throw new \RuntimeException( 'changed input must not reuse a planned compilation' ); }
+	$reused = $run_plan_prepare( 'test/v1' );
+	if ( 0 !== $reused[0] || ! preg_match( '/^[a-f0-9]{32}$/', $reused[1] ) || glob( $root . '/.ssi-artifact-run-lifecycle-' . $plan_handle ) ) { throw new \RuntimeException( 'fresh dependency preparation must reuse and consume the plan checkpoint: ' . $reused[1] ); }
+	$resume_command = PHP_BINARY . ' ' . escapeshellarg( __FILE__ ) . ' --plan-resume-child ' . escapeshellarg( $reused[1] ) . ' ' . escapeshellarg( $root );
+	$resume_process = proc_open( $resume_command, array( 1 => array( 'pipe', 'w' ), 2 => array( 'pipe', 'w' ) ), $resume_pipes );
+	$resume_output = is_resource( $resume_process ) ? stream_get_contents( $resume_pipes[1] ) . stream_get_contents( $resume_pipes[2] ) : '';
+	if ( ! is_resource( $resume_process ) ) { throw new \RuntimeException( 'fresh resume test could not start' ); }
+	fclose( $resume_pipes[1] ); fclose( $resume_pipes[2] );
+	if ( 0 !== proc_close( $resume_process ) ) { throw new \RuntimeException( 'preparation checkpoint must bind to a fresh resume without carrying its plan token: ' . $resume_output ); }
+	putenv( 'SSI_TEST_DEPENDENCIES=1' );
+	$dependent = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $plan_args );
+	$before_dependent_prepare = \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler::$calls;
+	$dependent_prepare = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, array( 'slug' => 'checkpoint', 'name' => 'Checkpoint', 'source_metadata' => array( 'source' => 'fixture' ), '_static_site_importer_lifecycle_checkpoint_root' => $root, 'materialize_dependencies' => true, 'runtime_lifecycle_phase' => 'prepare', 'runtime_lifecycle_invocation_id' => 'dependent-prepare' ) );
+	putenv( 'SSI_TEST_DEPENDENCIES' );
+	if ( is_wp_error( $dependent ) || isset( $dependent['compile_checkpoint'] ) || is_wp_error( $dependent_prepare ) || 1 !== \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler::$calls - $before_dependent_prepare ) { throw new \RuntimeException( 'nonempty provider dependencies must retain the existing two-phase compilation path' ); }
 	echo "Lifecycle compile checkpoint smoke passed.\n";
 }

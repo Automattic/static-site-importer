@@ -64,7 +64,34 @@ class Static_Site_Importer_Theme_Generator {
 		$payload_reader = is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null;
 		$checkpoint  = null;
 		$resume_args = array();
-		if ( 'resume' === $phase && '' !== (string) ( $args['runtime_lifecycle_checkpoint'] ?? '' ) ) {
+		$plan_checkpoint = 'prepare' === $phase && '' !== (string) ( $args['plan_checkpoint'] ?? '' );
+		if ( $plan_checkpoint ) {
+			$binding_args = $request_args;
+			unset( $binding_args['plan_checkpoint'] );
+			$checkpoint = Static_Site_Importer_Lifecycle_Compile_Checkpoint::load(
+				(string) $args['plan_checkpoint'],
+				$request_artifact,
+				$binding_args,
+				$checkpoint_owner,
+				(string) ( $args['_static_site_importer_lifecycle_checkpoint_root'] ?? '' )
+			);
+			if ( is_wp_error( $checkpoint ) ) {
+				return $checkpoint;
+			}
+			if ( ! empty( $checkpoint['reference_backed'] ) || ! isset( $checkpoint['payload'] ) ) {
+				return new WP_Error( 'static_site_importer_plan_checkpoint_invalid', 'Dependency preparation requires a compiled plan checkpoint.' );
+			}
+			$claimed = Static_Site_Importer_Lifecycle_Compile_Checkpoint::claim( $checkpoint['workspace'] );
+			if ( is_wp_error( $claimed ) ) {
+				return $claimed;
+			}
+			$compiled_import = $checkpoint['payload'];
+			$resume_args = array(
+				'runtime_lifecycle_phase'         => 'prepare',
+				'runtime_lifecycle_invocation_id' => $current_invocation,
+				'materialize_dependencies'        => true,
+			);
+		} elseif ( 'resume' === $phase && '' !== (string) ( $args['runtime_lifecycle_checkpoint'] ?? '' ) ) {
 			$checkpoint = Static_Site_Importer_Lifecycle_Compile_Checkpoint::load(
 				(string) $args['runtime_lifecycle_checkpoint'],
 				$request_artifact,
@@ -107,7 +134,27 @@ class Static_Site_Importer_Theme_Generator {
 		}
 		if ( 'plan' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
 			$encoded_artifact = wp_json_encode( $artifact );
-			return Static_Site_Importer_Dependency_Manager::dependency_plan( $lifecycle, hash( 'sha256', false !== $encoded_artifact ? $encoded_artifact : '' ) );
+			$dependency_plan = Static_Site_Importer_Dependency_Manager::dependency_plan( $lifecycle, hash( 'sha256', false !== $encoded_artifact ? $encoded_artifact : '' ) );
+			if ( ! empty( $args['retain_compile_checkpoint'] ) && empty( $lifecycle['dependencies'] ) && empty( $lifecycle['entities'] ) ) {
+				// Only a dependency-free plan is valid before and after package setup.
+				// The ordinary checkpoint binds the original artifact, caller, compiler,
+				// and policy; a later prepare must run in a fresh PHP request.
+				$binding_args = $request_args;
+				unset( $binding_args['retain_compile_checkpoint'] );
+				$binding_args['materialize_dependencies'] = true;
+				$handle = Static_Site_Importer_Lifecycle_Compile_Checkpoint::create(
+					$request_artifact,
+					$binding_args,
+					$compiled_import,
+					$checkpoint_owner,
+					(string) ( $args['_static_site_importer_lifecycle_checkpoint_root'] ?? '' )
+				);
+				if ( is_wp_error( $handle ) ) {
+					return $handle;
+				}
+				$dependency_plan['compile_checkpoint'] = $handle;
+			}
+			return $dependency_plan;
 		}
 		$prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare_for_materialization( $plan, $args );
 		if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
@@ -140,6 +187,9 @@ class Static_Site_Importer_Theme_Generator {
 			if ( is_wp_error( $dependencies ) ) {
 				Static_Site_Importer_Lifecycle_Compile_Checkpoint::discard( $handle, (string) ( $args['_static_site_importer_lifecycle_checkpoint_root'] ?? '' ) );
 				return $dependencies;
+			}
+			if ( $plan_checkpoint ) {
+				$checkpoint['workspace']->cleanup( 'success' );
 			}
 			return array(
 				'status'                       => 'dependencies_prepared',
