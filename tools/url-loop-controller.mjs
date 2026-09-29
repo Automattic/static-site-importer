@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { DLA_RELEASE, runUrlLoopIntake, validateCapture } from './url-loop-intake.mjs';
+import { runUrlLoopIntake, runUrlLoopMatrix, validateCapture, validateMatrixEvidence } from './url-loop-intake.mjs';
 
 export const CAPTURE_ARTIFACT_SCHEMA = 'static-site-importer/url-loop-capture/v1';
 export const EVALUATION_ARTIFACT_SCHEMA = 'static-site-importer/url-loop-evaluation/v1';
@@ -91,8 +91,9 @@ export async function runCapture(context, dependencies = {}) {
 export function evaluateMatrixSummary({ summary, benchStatus, capture, candidateSha, runId }) {
   const readiness = summary?.matrix_evidence_readiness;
   const row = readiness?.fixtures?.find((item) => item.fixture_id === capture.fixture_id);
+  const evidence = validateMatrixEvidence(summary, capture.fixture_id);
   const observedViewports = summary?.surface_coverage?.viewports || [];
-  const missing = [...new Set([...(row?.missing || []), ...(row?.readiness === 'verified' ? [] : ['runtime_evidence_incomplete']), 'solved_site_promotion_receipt', ...SOURCE_VIEWS.filter((width) => !observedViewports.includes(width)).map((width) => `visual_viewport_${width}_missing`)])];
+  const missing = [...new Set([...(row?.missing || []), ...(evidence.valid ? [] : [evidence.reason]), 'solved_site_promotion_receipt', ...SOURCE_VIEWS.filter((width) => !observedViewports.includes(width)).map((width) => `visual_viewport_${width}_missing`)])];
   const findings = Array.isArray(summary?.gate_failure_reasons) ? summary.gate_failure_reasons : [];
   return {
     schema: EVALUATION_ARTIFACT_SCHEMA,
@@ -128,18 +129,19 @@ export async function runEvaluation(request, dependencies = {}) {
   const runId = `${context.loop_id}-matrix-${candidateSha.slice(0, 12)}-${actionId}`;
   const output = path.join(context.root, 'evaluations', candidateSha, actionId, 'homeboy-bench-result.json');
   if (fs.existsSync(output)) throw new Error('matrix_output_not_fresh');
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  const matrixInput = { fixtureRoot: capture.fixture_root, targetFixture: capture.fixture_id, staticSiteImporter: context.workspace, blocksEngine: context.blocks_engine, blocksEnginePhpTransformerPath: context.transformer_path || context.blocks_engine, runId, output, local: true, surfaceCoverage: Math.min(10, capture.routes - 1) };
-  const { buildFixtureMatrixRunPlan, summarizeBenchRun } = await (dependencies.matrixModule || import('./run-fixture-matrix.mjs'));
-  const plan = buildFixtureMatrixRunPlan(matrixInput);
-  const args = ['tools/run-fixture-matrix.mjs', '--static-site-importer', context.workspace, '--blocks-engine', context.blocks_engine, '--blocks-engine-php-transformer-path', matrixInput.blocksEnginePhpTransformerPath, '--fixture-root', capture.fixture_root, '--target-fixture', capture.fixture_id, '--run-id', runId, '--output', output, '--wp-codebox-bin', context.wp_codebox_bin, '--surface-coverage', String(matrixInput.surfaceCoverage), '--local', '--skip-install', '--skip-sync'];
-  const result = (dependencies.spawn || spawnSync)(process.execPath, args, { cwd: context.workspace, stdio: 'inherit' });
-  let summary = null;
-  try { summary = summarizeBenchRun({ plan, benchStatus: result.status ?? 1 }).summary; } catch { /* Missing authoritative result is a typed blocker below. */ }
+  const transformer = context.transformer_path || context.blocks_engine;
+  const coverage = Math.min(10, capture.routes - 1);
+  const evaluated = await runUrlLoopMatrix({
+    fixtureRoot: capture.fixture_root, fixtureId: capture.fixture_id,
+    staticSiteImporter: context.workspace, blocksEngine: context.blocks_engine, output, cwd: context.workspace,
+    matrixOptions: { runId, local: true, surfaceCoverage: coverage, blocksEnginePhpTransformerPath: transformer },
+    matrixArgs: ['--blocks-engine-php-transformer-path', transformer, '--run-id', runId, '--wp-codebox-bin', context.wp_codebox_bin, '--surface-coverage', String(coverage), '--local', '--skip-install', '--skip-sync'],
+  }, dependencies);
+  const { summary, result } = evaluated;
   const evaluation = evaluateMatrixSummary({ summary, benchStatus: result.status, capture, candidateSha, runId });
   evaluation.versions = { dla: capture.dla, ssi: candidateSha, blocks_engine: context.blocks_engine_sha || null, wordpress: context.wordpress_version || null, browser: summary?.lane_identity?.browser || null };
   if (!observedCommit) evaluation.missing.push('candidate_commit_unverified');
-  evaluation.command = { command: process.execPath, args };
+  evaluation.command = evaluated.commands[0];
   writeJson(path.join(context.root, 'evaluations', candidateSha, actionId, 'evaluation.json'), evaluation);
   if (evaluation.status === 'blocked') throw new Error(`matrix_runtime_blocked:${result.status ?? 'signal'}`);
   return { evaluation };

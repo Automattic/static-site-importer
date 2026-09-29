@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CAPTURE_RECEIPT_SCHEMA, DLA_RELEASE, createHandoff, runUrlLoopIntake, validateArtifactSelection, validateCapture, validateMatrixEvidence } from './url-loop-intake.mjs';
+import { CAPTURE_RECEIPT_SCHEMA, DLA_RELEASE, createHandoff, runUrlLoopIntake, runUrlLoopMatrix, validateArtifactSelection, validateCapture, validateMatrixEvidence } from './url-loop-intake.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -134,4 +134,54 @@ test('matrix evidence requires verified evidence for the selected fixture', () =
   };
   assert.deepEqual(validateMatrixEvidence(summary, 'example'), { valid: true, reason: null });
   assert.deepEqual(validateMatrixEvidence(summary, 'missing'), { valid: false, reason: 'runtime_evidence_incomplete' });
+});
+
+test('initial URL intake and candidate replay share one canonical summarizable matrix failure path', async () => {
+  const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-shared-url-matrix-'));
+  const summary = {
+    schema: 'static-site-importer/fixture-matrix-operator-summary/v1', status: 'failed',
+    matrix_evidence_readiness: { schema: 'static-site-importer/fixture-matrix-runtime-evidence-summary/v1', status: 'verified', fixtures: [{ fixture_id: 'website', readiness: 'verified', missing: [] }] },
+    gate_failure_reasons: [{ fixture_id: 'website', category: 'visual_mismatch' }],
+  };
+  const matrixModule = {
+    buildFixtureMatrixRunPlan: (input) => ({ output_file: input.output, steps: [{ retry_command: 'homeboy bench ...' }] }),
+    summarizeBenchRun: () => ({ gateFailed: true, summary }),
+  };
+  const shared = await runUrlLoopMatrix({ fixtureRoot: '/tmp/fixtures', fixtureId: 'website', staticSiteImporter: '/tmp/ssi', blocksEngine: '/tmp/blocks-engine', outputRoot }, { matrixModule, spawn: () => ({ status: 1 }) });
+  assert.equal(shared.matrix.status, 'failed');
+  assert.equal(shared.matrix.evidence_complete, true);
+  assert.deepEqual(shared.failures, [], 'a measured visual gate failure is not a runtime-command crash');
+
+  let calls = 0;
+  const handoff = await runUrlLoopIntake({ url: 'https://example.com/', outputRoot: path.join(outputRoot, 'intake'), runMatrix: true, staticSiteImporter: '/tmp/ssi', blocksEngine: '/tmp/blocks-engine' }, {
+    matrixModule,
+    spawn(command, args) {
+      calls += 1;
+      if (calls === 1) {
+        const captureRoot = args[args.indexOf('--output') + 1];
+        const site = path.join(captureRoot, 'example.com');
+        fs.mkdirSync(path.join(site, 'website'), { recursive: true });
+        fs.writeFileSync(path.join(site, 'website', 'index.html'), '<main>one route</main>');
+        fs.writeFileSync(path.join(site, 'capture-receipt.json'), JSON.stringify({ schema: CAPTURE_RECEIPT_SCHEMA, source: { url: 'https://example.com/' }, summary: { complete: true, routesCaptured: 1, routesDiscovered: 1, routesFailed: 0, routesSkipped: 0 } }));
+      }
+      return { status: calls === 1 ? 0 : 1 };
+    },
+  });
+  assert.equal(calls, 2);
+  assert.equal(handoff.status, 'needs_review');
+  assert.equal(handoff.matrix.summary, summary);
+  assert.deepEqual(handoff.failures, []);
+  assert.equal(handoff.acceptance.solved, false);
+});
+
+test('missing canonical matrix result remains a typed hard blocker for both callers', async () => {
+  const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-url-matrix-crash-'));
+  const shared = await runUrlLoopMatrix({ fixtureRoot: '/tmp/fixtures', fixtureId: 'website', staticSiteImporter: '/tmp/ssi', blocksEngine: '/tmp/blocks-engine', outputRoot }, {
+    matrixModule: { buildFixtureMatrixRunPlan: () => ({ output_file: path.join(outputRoot, 'result.json'), steps: [] }), summarizeBenchRun: () => { throw new Error('bench output missing'); } },
+    spawn: () => ({ status: 1 }),
+  });
+  assert.equal(shared.matrix.status, 'blocked');
+  assert.equal(shared.summary, null);
+  assert.equal(shared.failures[0].stage, 'matrix');
+  assert.equal(shared.failures[0].reason, 'command_failed');
 });
