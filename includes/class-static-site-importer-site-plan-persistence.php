@@ -95,6 +95,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			)
 		);
 
+		require_once __DIR__ . '/class-static-site-importer-navigation-entity-materializer.php';
+		$navigation_entities = Static_Site_Importer_Navigation_Entity_Materializer::materialize( $state );
+		if ( is_wp_error( $navigation_entities ) ) {
+			return self::failed_receipt_from_error( $state, $navigation_entities );
+		}
 		foreach ( $state['ordered_pages'] as $page ) {
 			if ( ! empty( $page['skip_materialization'] ) ) {
 				continue;
@@ -163,13 +168,6 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				}
 			}
 			unset( $binding_report );
-		}
-		if ( ! class_exists( 'Static_Site_Importer_Navigation_Entity_Materializer' ) ) {
-			require_once __DIR__ . '/class-static-site-importer-navigation-entity-materializer.php';
-		}
-		$navigation_entities = Static_Site_Importer_Navigation_Entity_Materializer::materialize( $state );
-		if ( is_wp_error( $navigation_entities ) ) {
-			return self::failed_receipt_from_error( $state, $navigation_entities );
 		}
 		$route_links = self::rewrite_materialized_route_links( $state );
 		if ( is_wp_error( $route_links ) ) {
@@ -1370,12 +1368,12 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		);
 	}
 
-	public static function reconciled_post( string $identity ) {
-		// The reconciliation meta key is unique per document, so no post_type
-		// filter is needed; 'any' covers posts, pages, and custom import types.
+	public static function reconciled_post( string $identity, string|array $post_types = 'any' ) {
+		// WordPress 'any' excludes internal/search-excluded types. Entity owners
+		// supply their declared types rather than losing reconciliation on reimport.
 		$posts = get_posts(
 			array(
-				'post_type'   => 'any',
+				'post_type'   => $post_types,
 				'post_status' => 'any',
 				'meta_key'    => self::RECONCILIATION_META_KEY,
 				'meta_value'  => $identity,
@@ -1590,10 +1588,16 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		// WordPress sanitizes on write ('blogname' runs through esc_html()), so a title containing
 		// & < > " or ' is stored escaped. Verify against what core stores, not the raw value.
 		$stored = function_exists( 'sanitize_option' ) ? sanitize_option( $option, $value ) : $value;
-		if ( get_option( $option, null ) === $stored ) {
+		// Database scalars are strings on a fresh request, while the write cache
+		// retains PHP types. Verify their storage value, including no-op updates.
+		$matches = static fn( $actual ): bool => is_scalar( $actual ) && is_scalar( $stored )
+			? (string) $actual === (string) $stored
+			: $actual === $stored;
+		if ( $matches( get_option( $option, null ) ) ) {
 			return true;
 		}
-		return false !== update_option( $option, $value ) && get_option( $option, null ) === $stored;
+		update_option( $option, $value );
+		return $matches( get_option( $option, null ) );
 	}
 
 	public static function active_theme_matches( string $stylesheet, ?string $template = null ): bool {
@@ -1691,7 +1695,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				continue; }
 			try {
 				if ( ! empty( $before['existing'] ) ) {
-					wp_update_post( $before['post'] );
+					wp_update_post( wp_slash( $before['post'] ) );
 					if ( ! self::write_post_meta( $id, '_static_site_importer_provenance', (string) $before['provenance'] ) || ! self::write_post_meta( $id, self::RECONCILIATION_META_KEY, (string) $before['reconciliation_identity'] ) ) {
 						throw new RuntimeException( 'materialization_rollback_post_meta_restore_failed' );
 					}
