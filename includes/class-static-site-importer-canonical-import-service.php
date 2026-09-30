@@ -9,6 +9,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Compiler_Limits' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-compiler-limits.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Direct_Artifact_Import' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-direct-artifact-import.php';
 }
@@ -127,16 +130,18 @@ class Static_Site_Importer_Canonical_Import_Service {
 				if ( is_wp_error( $payload_reader ) ) {
 					return self::error( (string) $payload_reader->get_error_code(), $payload_reader->get_error_message(), $payload_reader->get_error_data() );
 				}
-				// Staged archives normalize into payload references, so the
-				// artifact has to carry the bounded contract those references
-				// were verified against. Without it the compiler applies its own
-				// defaults and rejects entries the staged intake accepted. A
-				// resolver that declares its own contract keeps it.
+				// Staged archives carry the bounded contract their payload
+				// references were verified against.
 				if ( ! isset( $runtime_source['metadata']['compiler_limits'] ) ) {
 					$runtime_source['metadata']['compiler_limits'] = static_site_importer_staged_archive_compiler_limits();
 				}
 			} else {
 				$runtime_source['archive'] = isset( $source['zip'] ) && is_array( $source['zip'] ) ? $source['zip'] : array();
+			}
+			// Every source declares a compiler contract; an undeclared one falls
+			// back to the compiler's 500-file default and truncates large sites.
+			if ( ! isset( $runtime_source['metadata']['compiler_limits'] ) ) {
+				$runtime_source['metadata']['compiler_limits'] = Static_Site_Importer_Compiler_Limits::resolve();
 			}
 			if ( ! function_exists( 'static_site_importer_source_runtime' ) ) {
 				return self::error( 'static_site_importer_source_normalizer_unavailable', 'The canonical source normalizer is unavailable.' );

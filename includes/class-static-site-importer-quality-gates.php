@@ -121,6 +121,10 @@ final class Static_Site_Importer_Quality_Gates {
 		if ( array_key_exists( 'max_fallbacks', $args ) && null !== $args['max_fallbacks'] && $quality['unsupported_fallback_count'] > (int) $args['max_fallbacks'] ) {
 			$quality['fail_import'] = true;
 		}
+		if ( in_array( 'dropped_artifact_files', $reasons, true ) ) {
+			// A partial site is never a successful import.
+			$quality['fail_import'] = true;
+		}
 		if ( in_array( 'woocommerce_missing', $reasons, true ) ) {
 			$quality['fail_import'] = true;
 		}
@@ -199,22 +203,19 @@ final class Static_Site_Importer_Quality_Gates {
 	/**
 	 * Count normalized diagnostics that report artifact files the compiler omitted.
 	 *
-	 * The compiler emits no aggregate counter for dropped files, so the count is
-	 * derived from the rewritten rows the same way the fallback admission gate
-	 * derives its split from diagnostics.
+	 * Rewritten rows count one file each, except the compiler's aggregate
+	 * rejection row, which carries the dropped count per code.
 	 *
 	 * @param array<int,mixed> $diagnostics Normalized diagnostics.
 	 * @return int
 	 */
 	private static function omitted_file_count( array $diagnostics ): int {
-		$count = 0;
-		foreach ( $diagnostics as $diagnostic ) {
-			if ( is_array( $diagnostic ) && in_array( $diagnostic['type'] ?? '', array( Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE, Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE ), true ) ) {
-				++$count;
-			}
-		}
+		$omitted = array_filter(
+			$diagnostics,
+			static fn( $diagnostic ): bool => is_array( $diagnostic ) && in_array( $diagnostic['type'] ?? '', array( Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE, Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILE_TYPE ), true )
+		);
 
-		return $count;
+		return max( count( $omitted ), Static_Site_Importer_Diagnostic_Loss_Classes::omitted_artifact_file_count( $omitted ) );
 	}
 
 	/**

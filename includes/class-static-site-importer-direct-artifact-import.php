@@ -704,6 +704,20 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			if ( is_wp_error( $composed_state ) ) {
 				return $composed_state;
 			}
+			$omitted_files = Static_Site_Importer_Diagnostic_Loss_Classes::omitted_artifact_file_count( $composed_state['result']['wordpress_site_plan']['diagnostics'] ?? array() );
+			if ( $omitted_files > 0 ) {
+				// A partial site is never imported: refuse before any WordPress mutation.
+				return self::fail(
+					$workspace,
+					$run,
+					'compose',
+					new WP_Error(
+						'static_site_importer_artifact_files_omitted',
+						sprintf( 'The compiler omitted %d source file(s) at its declared limits; refusing to import a partial site.', $omitted_files ),
+						array( 'omitted_file_count' => $omitted_files )
+					)
+				);
+			}
 			if ( self::deadline_reached( $deadline, $clock ) ) {
 				return self::continuation( $run, 'deadline_exhausted' );
 			}

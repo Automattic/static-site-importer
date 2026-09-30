@@ -8,6 +8,9 @@
 
 use Automattic\BlocksEngine\PhpTransformer\AssetAnalysis\SrcsetParser;
 
+if ( ! class_exists( 'Static_Site_Importer_Compiler_Limits' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-compiler-limits.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Source_Normalizer' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-source-normalizer.php';
 }
@@ -538,10 +541,12 @@ class Static_Site_Importer_URL_Site_Collector {
 		$external_pages = $finalization['external_pages'];
 		usort( $files, static fn ( array $left, array $right ): int => strcmp( (string) $left['path'], (string) $right['path'] ) );
 		usort( $snapshot_files, static fn ( array $left, array $right ): int => strcmp( (string) $left['path'], (string) $right['path'] ) );
-		$compiler_limits    = array(
-			'max_files'       => min( 5000, $max_assets + ( 5 * $max_pages ) ),
-			'max_file_bytes'  => $fetch_args['max_bytes'],
-			'max_total_bytes' => min( 335544320, $max_total_bytes + min( 67108864, $max_total_bytes ) ),
+		$compiler_limits    = Static_Site_Importer_Compiler_Limits::resolve(
+			array(
+				'max_files'       => $max_assets + ( 5 * $max_pages ),
+				'max_file_bytes'  => $fetch_args['max_bytes'],
+				'max_total_bytes' => $max_total_bytes + min( 67108864, $max_total_bytes ),
+			)
 		);
 		$snapshot           = array(
 			'schema'     => 'static-site-importer/url-snapshot/v1',

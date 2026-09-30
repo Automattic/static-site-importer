@@ -709,7 +709,9 @@ $run_failure_data = $run_failed['error']['data'] ?? array();
 $assert( 'injected_run_publication_failure' === ( $run_failed['error']['code'] ?? '' ) && preg_match( '/^[a-f0-9]{64}$/', (string) ( $run_failure_data['import_id'] ?? '' ) ), 'run checkpoint failures after immutable work publication must retain a structured resumable import id' );
 $run_recovered = Static_Site_Importer_Canonical_Import_Service::import( $resume( (string) $run_failure_data['import_id'], 'plan' ) );
 $assert( ! empty( $run_recovered['success'] ) && array( 1, 1, 1 ) === ( $run_recovered['artifact_run']['work']['page_compile_counts'] ?? null ), 'resume must adopt the immutable receipt and never recompile completed page work' );
-$source_artifact = static_site_importer_source_runtime( $input( 'plan' )['source'] )['artifact'];
+$identity_source = $input( 'plan' )['source'];
+$identity_source['metadata']['compiler_limits'] = Static_Site_Importer_Compiler_Limits::resolve();
+$source_artifact = static_site_importer_source_runtime( $identity_source )['artifact'];
 $source_artifact['provenance'] = array( 'source_url' => 'https://source.example.test/' );
 $assert( hash( 'sha256', (string) wp_json_encode( $source_artifact ) ) === ( $run_recovered['source']['identity'] ?? '' ), 'staged planning must preserve the canonical normalized source identity from before script policy transforms' );
 
