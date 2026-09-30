@@ -647,7 +647,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 				$covered[ $id ] = true;
 				$identity       = self::context_node_identity( $nodes[ $id ] );
 				self::push_context_fallback( $result['fallbacks'], $identity, $nodes[ $id ], array_merge( self::CONTEXT_TEXT_PROPERTIES, self::CONTEXT_BOX_PROPERTIES ) );
-				$wrappers = array();
+				$wrappers  = array();
 				$ancestors = array();
 				$parent    = $nodes[ $id ]['parent'] ?? null;
 				while ( is_string( $parent ) && isset( $nodes[ $parent ] ) && ! in_array( $parent, $ancestors, true ) ) {
