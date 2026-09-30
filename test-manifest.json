@@ -35,6 +35,7 @@
     { "path": "tests/smoke-compiler-file-limits.php", "environment": "standalone-php" },
     { "path": "tests/editor-validation-contract.test.mjs", "environment": "node" },
     { "path": "tests/gutenberg-block-validation.test.mjs", "environment": "node" },
+    { "path": "tests/media-library-save-shape.test.mjs", "environment": "node" },
     { "path": "tests/smoke-editor-theme-styles.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-entity-materializer-registry.php", "environment": "standalone-php" },
     { "path": "tests/smoke-external-report-destinations.php", "environment": "standalone-php" },
