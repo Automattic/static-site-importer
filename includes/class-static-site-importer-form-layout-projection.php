@@ -2303,52 +2303,57 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	}
 
 	/**
-	 * Source wrappers the provider form replaces are the page-grid item the
-	 * provider container now occupies. Their classes still address that role
-	 * in the source stylesheet, so they belong on the provider block wrapper.
+	 * Source wrappers the binding replaces together with the form.
 	 *
-	 * Inner field-row shells (a `grid sm:grid-cols-2` name+phone pair) are not
-	 * the host. Those map through `provider_equal_width_fields` onto Jetpack
-	 * field widths instead of being copied onto the form container.
+	 * The producer coalesces a form's exclusive ancestors and the form element
+	 * into one layout-shell block, so replacing that block with the provider form
+	 * also removes every ancestor box (a page-grid column, a flex row, their
+	 * margins and padding). Each ancestor keeps its own element here: the shell
+	 * is re-emitted around the provider block with the form element removed from
+	 * its wrapper chain. Flattening ancestor classes onto the provider block
+	 * instead stacks nested boxes onto one element, which the provider then
+	 * renders twice (on its container and its inner block).
 	 *
-	 * @return array{classes:array<int,string>,operations:array<int,array<string,mixed>>}
+	 * @return array{shell:array{name:string,wrappers:array<int,array<string,mixed>>,open:string,close:string}|null,operations:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>}
 	 */
 	public static function host_wrapper_projection( array $form ): array {
-		$form_classes = preg_split( '/\s+/', trim( (string) ( $form['form']['class'] ?? '' ) ) );
-		$form_classes = false === $form_classes ? array() : array_values( array_filter( $form_classes ) );
-		$form_owned   = array_fill_keys( $form_classes, true );
-		$classes      = array();
-		$operations   = array();
-		foreach ( self::replaced_wrapper_class_lists( $form ) as $wrapper_classes ) {
-			$source = array();
-			foreach ( $wrapper_classes as $class_name ) {
-				if ( isset( $form_owned[ $class_name ] ) || ! self::is_source_host_class( $class_name ) ) {
-					continue;
-				}
-				$source[] = $class_name;
-			}
-			if ( empty( $source ) ) {
-				continue;
-			}
-			$classes      = array_merge( $classes, $source );
-			$operations[] = array(
-				'dimension'   => 'layout',
-				'strategy'    => 'provider_host_wrapper_class_projection',
-				'target_hash' => hash( 'sha256', implode( ' ', $source ) ),
-			);
+		$shells = array();
+		foreach ( self::binding_markups( $form ) as $markup ) {
+			$shells[] = self::host_shell( $markup );
 		}
-		return array(
-			'classes'    => array_values( array_unique( $classes ) ),
-			'operations' => $operations,
+		$result = array(
+			'shell'      => null,
+			'operations' => array(),
+			'losses'     => array(),
 		);
+		if ( array() === array_filter( $shells ) ) {
+			return $result;
+		}
+		$first = $shells[0];
+		foreach ( $shells as $shell ) {
+			if ( null === $shell || $shell !== $first ) {
+				// Occurrences disagree about the ancestor chain, so no single
+				// replacement can restore it for every page.
+				$result['losses'][] = array(
+					'dimension'   => 'layout',
+					'reason_code' => 'provider_host_wrapper_unrestored',
+					'target_hash' => hash( 'sha256', (string) ( $form['selector'] ?? '' ) ),
+				);
+				return $result;
+			}
+		}
+		$result['shell']        = $first;
+		$result['operations'][] = array(
+			'dimension'     => 'layout',
+			'strategy'      => 'provider_host_wrapper_restoration',
+			'target_hash'   => hash( 'sha256', $first['open'] ),
+			'wrapper_count' => count( $first['wrappers'] ),
+		);
+		return $result;
 	}
 
-	/**
-	 * Class lists of source wrappers the binding search replaces, outermost first.
-	 *
-	 * @return array<int,array<int,string>>
-	 */
-	private static function replaced_wrapper_class_lists( array $form ): array {
+	/** @return array<int,string> */
+	private static function binding_markups( array $form ): array {
 		$markups    = array();
 		$candidates = is_array( $form['bindings'] ?? null ) ? $form['bindings'] : array();
 		if ( is_array( $form['binding'] ?? null ) ) {
@@ -2359,65 +2364,59 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$markups[] = $binding['search_block_markup'];
 			}
 		}
-		$lists = array();
-		foreach ( $markups as $markup ) {
-			foreach ( self::layout_shell_wrapper_class_lists( $markup ) as $list ) {
-				$lists[] = $list;
-			}
-		}
-		return $lists;
+		return $markups;
 	}
 
 	/**
-	 * @return array<int,array<int,string>>
+	 * Split a layout-shell whose innermost wrapper is the form element into the
+	 * ancestor wrappers' exact saved open and close markup. Null when the markup
+	 * is not such a shell or has no ancestor to restore.
+	 *
+	 * @return array{name:string,wrappers:array<int,array<string,mixed>>,open:string,close:string}|null
 	 */
-	private static function layout_shell_wrapper_class_lists( string $markup ): array {
-		$markup = ltrim( $markup );
-		if ( ! preg_match( '/^<!-- wp:(?:[a-z][a-z0-9-]*\/)?layout-shell\s+/', $markup, $header ) ) {
-			return array();
+	private static function host_shell( string $markup ): ?array {
+		$markup = trim( $markup );
+		if ( ! preg_match( '/^<!-- wp:((?:[a-z][a-z0-9-]*\/)?layout-shell) (\{.*?\}) -->/s', $markup, $header ) || ! str_ends_with( $markup, '<!-- /wp:' . $header[1] . ' -->' ) ) {
+			return null;
 		}
-		$start = strlen( $header[0] );
-		if ( '{' !== ( $markup[ $start ] ?? '' ) ) {
-			return array();
+		$attrs    = json_decode( $header[2], true );
+		$wrappers = is_array( $attrs ) && is_array( $attrs['wrappers'] ?? null ) && array_is_list( $attrs['wrappers'] ) ? $attrs['wrappers'] : array();
+		$count    = count( $wrappers );
+		if ( $count < 2 || ! is_array( $wrappers[ $count - 1 ] ) || 'form' !== strtolower( (string) ( $wrappers[ $count - 1 ]['tagName'] ?? '' ) ) ) {
+			return null;
 		}
-		$depth = 0;
-		$end   = strlen( $markup );
-		$json  = '';
-		for ( $index = $start; $index < $end && $index - $start < 8192; ++$index ) {
-			$character = $markup[ $index ];
-			$depth    += '{' === $character ? 1 : ( '}' === $character ? -1 : 0 );
-			if ( 0 === $depth ) {
-				$json = substr( $markup, $start, $index - $start + 1 );
-				break;
+		$tags = array();
+		foreach ( $wrappers as $wrapper ) {
+			$tag = is_array( $wrapper ) ? strtolower( (string) ( $wrapper['tagName'] ?? 'div' ) ) : '';
+			if ( 1 !== preg_match( '/^[a-z][a-z0-9]*$/D', $tag ) ) {
+				return null;
 			}
+			$tags[] = $tag;
 		}
-		$attrs = json_decode( $json, true );
-		if ( ! is_array( $attrs ) || ! is_array( $attrs['wrappers'] ?? null ) || ! array_is_list( $attrs['wrappers'] ) ) {
-			return array();
+		// Saved shell content is each wrapper's opening tag in order, the inner
+		// blocks, then the closing tags. Take the ancestors' tags verbatim so the
+		// restored shell saves exactly as the block's own save() would.
+		$body   = substr( $markup, strlen( $header[0] ), - strlen( '<!-- /wp:' . $header[1] . ' -->' ) );
+		$offset = 0;
+		$opens  = array();
+		foreach ( $tags as $tag ) {
+			if ( 1 !== preg_match( '/\G<' . $tag . '(?:\s[^<>]*)?>/', $body, $opening, 0, $offset ) ) {
+				return null;
+			}
+			$opens[] = $opening[0];
+			$offset += strlen( $opening[0] );
 		}
-		$lists = array();
-		foreach ( $attrs['wrappers'] as $wrapper ) {
-			$class   = is_array( $wrapper ) && is_array( $wrapper['attributes'] ?? null ) && is_string( $wrapper['attributes']['class'] ?? null ) ? $wrapper['attributes']['class'] : '';
-			$tokens  = preg_split( '/\s+/', trim( $class ) );
-			$lists[] = false === $tokens ? array() : array_values( array_filter( $tokens ) );
+		$closing = implode( '', array_map( static fn( string $tag ): string => '</' . $tag . '>', array_reverse( $tags ) ) );
+		if ( ! str_ends_with( $body, $closing ) ) {
+			return null;
 		}
-		return $lists;
-	}
-
-	private static function is_source_host_class( string $class_name ): bool {
-		if ( '' === $class_name
-			|| str_starts_with( $class_name, 'wp-block-' )
-			|| str_starts_with( $class_name, 'blocks-engine-' )
-			|| 1 !== preg_match( '/^[A-Za-z_][A-Za-z0-9_.:-]{0,79}$/D', $class_name )
-		) {
-			return false;
-		}
-		if ( in_array( $class_name, array( 'grid', 'flex', 'inline-flex' ), true )
-			|| 1 === preg_match( '/(?:^|:)(?:grid-cols-|gap-)/', $class_name )
-		) {
-			return false;
-		}
-		return true;
+		$ancestors = array_slice( $tags, 0, -1 );
+		return array(
+			'name'     => $header[1],
+			'wrappers' => array_slice( $wrappers, 0, -1 ),
+			'open'     => implode( '', array_slice( $opens, 0, -1 ) ),
+			'close'    => implode( '', array_map( static fn( string $tag ): string => '</' . $tag . '>', array_reverse( $ancestors ) ) ),
+		);
 	}
 
 	/** Stable generated classes are provider hooks, never source presentation hooks. */

@@ -1043,9 +1043,13 @@ namespace {
 		'mapped' === ( $host_span_row['status'] ?? '' )
 			&& empty( $host_span_row['form_receipt_unaccepted_losses'] ?? array() )
 			&& 2 === substr_count( $host_span_markup, '"width":50' )
-			&& str_contains( $host_span_markup, 'form-host' )
-			&& str_contains( $host_span_markup, 'bp:span-2' )
-			&& in_array( 'provider_host_wrapper_class_projection', array_column( $host_span_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true )
+			// The replaced host keeps its own element around the provider form, so
+			// its column span stays on the page-grid item instead of the form.
+			&& 1 === preg_match( '/^<!-- wp:custom\/layout-shell \{"wrappers":\[\{"tagName":"div","attributes":\{"class":"wp-block-group form-host bp:span-2 blocks-engine-css-owned-layout"\}\}\]\} --><div class="wp-block-group form-host bp:span-2 blocks-engine-css-owned-layout"><!-- wp:jetpack\/contact-form \{"className":"stack ssi-form-[a-f0-9]{12}"\} -->/', $host_span_markup )
+			&& str_ends_with( $host_span_markup, '<!-- /wp:jetpack/contact-form --></div><!-- /wp:custom/layout-shell -->' )
+			&& 1 === count( array_filter( parse_blocks( $host_span_markup ), static fn( array $block ): bool => ! empty( $block['blockName'] ) ) )
+			&& $host_span_markup === serialize_blocks( parse_blocks( $host_span_markup ) )
+			&& in_array( 'provider_host_wrapper_restoration', array_column( $host_span_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true )
 			&& str_contains( $host_span_css_out, 'padding-top:1rem' )
 			&& str_contains( $host_span_css_out, 'padding-right:2rem' )
 			&& str_contains( $host_span_css_out, 'padding-bottom:1rem' )

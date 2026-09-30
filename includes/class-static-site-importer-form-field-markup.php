@@ -935,6 +935,25 @@ final class Static_Site_Importer_Form_Field_Markup {
 	}
 
 	/**
+	 * Serialize a generated block inside the source layout shell it replaces,
+	 * reusing the shell's exact saved ancestor markup.
+	 *
+	 * @param array<string,mixed>                                                               $block Generated block.
+	 * @param array{name:string,wrappers:array<int,array<string,mixed>>,open:string,close:string} $shell Restored ancestors.
+	 */
+	public static function serialize_in_shell( array $block, array $shell ): string {
+		return serialize_block(
+			array(
+				'blockName'    => $shell['name'],
+				'attrs'        => array( 'wrappers' => $shell['wrappers'] ),
+				'innerBlocks'  => array( self::parsed_block( $block ) ),
+				'innerHTML'    => $shell['open'] . $shell['close'],
+				'innerContent' => array( $shell['open'], null, $shell['close'] ),
+			)
+		);
+	}
+
+	/**
 	 * Build a parsed block, keeping Jetpack's required saved markup in innerContent.
 	 *
 	 * Generated blocks travel as one array so a child is recursed without being
