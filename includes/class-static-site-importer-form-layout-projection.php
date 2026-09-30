@@ -214,16 +214,22 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		if ( ! is_array( $outer ) || 'form' !== ( $outer['parent'] ?? null ) ) {
 			return null;
 		}
-		$box = Static_Site_Importer_Provider_Layout_Overlay::box_property_map() + array_flip( array( 'margin_block_start', 'margin_block_end' ) );
+		$box   = Static_Site_Importer_Provider_Layout_Overlay::box_property_map() + array_flip( array( 'margin_block_start', 'margin_block_end' ) );
+		$align = '';
 		foreach ( $chain as $wrapper ) {
-			$node    = $layout_nodes_by_id[ (string) ( $wrapper['id'] ?? '' ) ] ?? null;
-			$display = strtolower( trim( (string) ( $node['presentation']['styles']['display'] ?? 'block' ) ) );
-			if ( ! is_array( $node ) || ! in_array( $node['source']['tag'] ?? '', array( 'div', 'p', 'section', 'fieldset', 'li' ), true ) || ! in_array( $display, array( 'block', 'flow-root' ), true ) || array() !== array_diff_key( is_array( $node['layout'] ?? null ) ? $node['layout'] : array(), $box ) ) {
+			// A wrapper the layout graph omits declared no layout facts, display
+			// included, so it is the plain block box its topology tag describes.
+			$node    = $layout_nodes_by_id[ (string) ( $wrapper['id'] ?? '' ) ] ?? array( 'source' => array( 'tag' => (string) ( $wrapper['tag'] ?? 'div' ) ) );
+			$display = strtolower( trim( (string) ( $node['layout']['display'] ?? ( $node['presentation']['styles']['display'] ?? 'block' ) ) ) );
+			if ( ! in_array( $node['source']['tag'] ?? '', array( 'div', 'p', 'section', 'fieldset', 'li' ), true ) || ! in_array( $display, array( 'block', 'flow-root' ), true ) || array() !== array_diff_key( is_array( $node['layout'] ?? null ) ? $node['layout'] : array(), $box ) ) {
 				return null;
 			}
+			// text-align inherits, so the innermost box that resolves it places the button.
+			$resolved = strtolower( trim( (string) ( $node['presentation']['styles']['text_align'] ?? '' ) ) );
+			if ( '' !== $resolved ) {
+				$align = $resolved;
+			}
 		}
-		$inner   = $layout_nodes_by_id[ (string) ( $chain[ count( $chain ) - 1 ]['id'] ?? '' ) ] ?? array();
-		$align   = strtolower( trim( (string) ( $inner['presentation']['styles']['text_align'] ?? '' ) ) );
 		$justify = array(
 			'left'   => 'flex-start',
 			'start'  => 'flex-start',
