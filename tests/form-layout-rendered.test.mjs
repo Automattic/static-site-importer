@@ -170,7 +170,7 @@ test( 'v3 source boxes keep wrapper, control and context ownership against the s
 	assert.equal( seeded.status, 'mapped', raw );
 	const late = Array.from( { length: 20 }, ( _, index ) => `hook-${ index + 1 }` ).join( ' ' );
 	// The neutral source the producer fixture was compiled from.
-	const sourceMarkup = `<main class="page"><form class="source"><div class="intro-box"><p class="${ late } wide-copy">A neutral introduction.</p></div><label>Email</label><input type="email"><div class="submit-box"><button class="send" type="submit">Send</button></div><div class="note-box"><p class="note">Please review your details.</p></div></form></main>`;
+	const sourceMarkup = `<main class="page"><form class="source"><div class="intro-box"><p class="${ late } wide-copy">A neutral introduction.</p></div><div class="field-box"><label>Email</label><input type="email"></div><div class="submit-box"><button class="send" type="submit">Send</button></div><div class="note-box"><p class="note">Please review your details.</p></div></form></main>`;
 	// Provider and theme defaults the projected form must not inherit in place of source facts.
 	const providerDefaults = '<style>body{margin:0;font-family:serif;color:#000}.wp-block-paragraph{font-size:22px;line-height:normal;margin:0}.wp-block-group{padding:0}.wp-block-button{min-height:0;padding:0}.wp-block-button__link{min-height:0}</style>';
 	const projectedMarkup = `<div class="projected"><div class="wp-block-jetpack-contact-form ${ seeded.className }">${ seeded.beforeHtml }<div class="wp-block-jetpack-field-email"><label>Email</label><input type="email"></div>${ seeded.submitHtml }${ seeded.afterHtml }</div></div>`;

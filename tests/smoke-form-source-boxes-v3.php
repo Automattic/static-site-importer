@@ -41,7 +41,7 @@ namespace {
 	$graph = $validated['forms'][0]['layout_graph'] ?? array();
 	$by_id = array_column( $graph['nodes'] ?? array(), null, 'id' );
 	$assert( 'generic/computed-layout-graph/v3' === ( $graph['schema'] ?? null ), 'v3-schema-retained' );
-	$assert( '73px' === ( $by_id['wrapper-0']['layout']['min_height'] ?? null ) && '19px' === ( $by_id['wrapper-0']['layout']['padding_bottom'] ?? null ), 'v3-wrapper-box-retained', wp_json_encode( $by_id['wrapper-0'] ?? null ) );
+	$assert( '73px' === ( $by_id['wrapper-1']['layout']['min_height'] ?? null ) && '19px' === ( $by_id['wrapper-1']['layout']['padding_bottom'] ?? null ), 'v3-wrapper-box-retained', wp_json_encode( $by_id['wrapper-1'] ?? null ) );
 	$assert( isset( $by_id['context-1']['presentation']['variants'][0]['styles']['font_size'] ) && is_string( $by_id['context-1']['source']['selector'] ?? null ), 'v3-context-identity-and-presentation-retained' );
 
 	// 2. Malformed v3 facts are rejected with named errors, per form row.
@@ -71,12 +71,16 @@ namespace {
 	$row = $seed( $validated );
 	$css = (string) ( $row['provider_layout_overlay_css']['css'] ?? '' );
 	$assert( 'mapped' === ( $row['status'] ?? null ), 'v3-form-maps', wp_json_encode( $row['mapping_decision'] ?? $row ) );
-	$wrapper_hook = Static_Site_Importer_Form_Layout_Projection::layout_node_class( Static_Site_Importer_Form_Layout_Projection::layout_scope( $validated['forms'][0] ?? $complete ), 'wrapper-0' );
+	$wrapper_hook = Static_Site_Importer_Form_Layout_Projection::layout_node_class( Static_Site_Importer_Form_Layout_Projection::layout_scope( $validated['forms'][0] ?? $complete ), 'wrapper-1' );
 	$assert( 1 === preg_match( '/\.' . preg_quote( $wrapper_hook, '/' ) . '\{[^}]*min-height:73px[^}]*\}/', $css ) && 1 === preg_match( '/\.' . preg_quote( $wrapper_hook, '/' ) . '\{[^}]*padding-bottom:19px[^}]*\}/', $css ), 'submit-wrapper-box-on-provider-wrapper', $css );
 	$assert( 1 === preg_match( '/> \.wp-block-button__link\{[^}]*min-height:41px/', $css ) && 0 === preg_match( '/\.' . preg_quote( $wrapper_hook, '/' ) . '\{[^}]*min-height:41px/', $css ), 'button-min-height-stays-on-native-control', $css );
 	$markup = (string) ( $row['block_markup'] ?? '' );
 	$assert( str_contains( $markup, '"name":"email"' ) || str_contains( $markup, 'email' ), 'field-semantics-preserved' );
 	$assert( 1 === substr_count( $markup, 'type="submit"' ), 'single-native-submit-preserved', $markup );
+
+	// 3b. A field box restored by its own source class keeps its box there once.
+	$assert( str_contains( $markup, 'ssi-source-wrapper-0--field-box' ) && in_array( 'provider_source_box_class_carry', array_column( $row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'class-carried-field-box-restored', $markup );
+	$assert( ! preg_match( '/-wrap\{[^}]*padding-bottom:24px/', $css ), 'class-carried-field-box-not-repeated-on-provider-shell', $css );
 
 	// 4. Context copy joins its source element by identity and recreates its box.
 	$context_css = (string) ( $row['provider_layout_overlay_css']['context_css'] ?? '' );

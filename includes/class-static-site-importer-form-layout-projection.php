@@ -165,6 +165,40 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		return $form;
 	}
 
+	/**
+	 * Box facts whose every provenance rule selects the element by classes it
+	 * carries in its rightmost compound, so a restored element with those
+	 * classes receives the same declaration from the enqueued source stylesheet.
+	 *
+	 * @param array<string,mixed>            $layout
+	 * @param array<int,mixed>               $provenance
+	 * @param array<int,string>              $class_tokens
+	 * @return array<int,string> Layout fact keys.
+	 */
+	private static function class_carried_box_facts( array $layout, array $provenance, array $class_tokens ): array {
+		$box     = Static_Site_Importer_Provider_Layout_Overlay::box_property_map();
+		$carried = array();
+		foreach ( array_intersect_key( $layout, $box ) as $fact => $value ) {
+			$owners = 0;
+			foreach ( $provenance as $row ) {
+				if ( ! is_array( $row ) || ! in_array( $box[ $fact ], is_array( $row['properties'] ?? null ) ? $row['properties'] : array(), true ) ) {
+					continue;
+				}
+				$parts     = preg_split( '/\s*[\s>+~]\s*/', trim( (string) ( $row['selector'] ?? '' ) ) );
+				$rightmost = false === $parts ? '' : (string) end( $parts );
+				if ( null !== ( $row['condition'] ?? null ) || ! preg_match( '/^(?:[a-z][a-z0-9-]*)?((?:\.[A-Za-z_][A-Za-z0-9_-]*)+)$/D', $rightmost, $compound ) || array_diff( explode( '.', ltrim( $compound[1], '.' ) ), $class_tokens ) ) {
+					$owners = -1;
+					break;
+				}
+				++$owners;
+			}
+			if ( $owners > 0 ) {
+				$carried[] = $fact;
+			}
+		}
+		return $carried;
+	}
+
 	/** A box value equal to the CSS initial value of that property. */
 	public static function is_initial_box_value( string $fact, string $value ): bool {
 		$tokens = preg_split( '/\s+/', trim( $value ) );
@@ -290,7 +324,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 *
 	 * @param array<int,array<string,mixed>> $field_blocks
 	 * @param array<int,array<string,mixed>> $controls
-	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,suppressed_layout_properties:array<string,array<int,string>>,overlay_node_targets:array<int,array<string,mixed>>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>,provider_layout_targets:array<string,string>,phone_popup_targets:array<int,int>,grid_span_submit_controls?:array<int,int>}|null
+	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,suppressed_layout_properties:array<string,array<int,string>>,suppressed_variant_properties?:array<string,array<int,string>>,overlay_node_targets:array<int,array<string,mixed>>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>,provider_layout_targets:array<string,string>,phone_popup_targets:array<int,int>,grid_span_submit_controls?:array<int,int>}|null
 	 */
 	public static function topology_inner_blocks( array $form, array $field_blocks, array $controls, array $suppressed_controls = array() ): ?array {
 		if ( ! isset( $form['control_topology'] ) ) {
@@ -394,6 +428,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		$represented_topology_nodes = array();
 		/** @var array<string,array<int,string>> $suppressed_layout_properties */
 		$suppressed_layout_properties = array();
+		$class_carried_variants       = array();
 		$overlay_node_targets         = array();
 		$responsive_variant_targets   = array();
 		$native_visibility_targets    = array();
@@ -567,6 +602,33 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				}
 				if ( $class_owned ) {
 					$represented_layout_nodes[] = $node['id'];
+				} elseif ( 0 === $offset && $is_primary_wrapper && array() !== $class_tokens ) {
+					// Box facts add up across nested elements. The runtime rebuilds this
+					// primary box as its own element carrying its source classes, so a
+					// source rule whose subject is those classes already paints it there;
+					// repeating the box on the provider shell would double it.
+					$class_carried = self::class_carried_box_facts( $layout_by_node[ $node['id'] ] ?? array(), $provenance, $class_tokens );
+					foreach ( $variants_by_node[ $node['id'] ] ?? array() as $variant ) {
+						$patch = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+						foreach ( array_keys( array_intersect_key( $patch, Static_Site_Importer_Provider_Layout_Overlay::box_property_map() ) ) as $fact ) {
+							// A conditional box patch is carried only when its own rule is too.
+							$rows = array_map( static fn( $row ): mixed => is_array( $row ) ? array_merge( $row, array( 'condition' => null ) ) : $row, is_array( $variant['provenance'] ?? null ) ? $variant['provenance'] : array() );
+							if ( array( $fact ) === self::class_carried_box_facts( array( $fact => $patch[ $fact ] ), $rows, $class_tokens ) ) {
+								$class_carried_variants[ $node['id'] ][] = $fact;
+							} else {
+								$class_carried = array_values( array_diff( $class_carried, array( $fact ) ) );
+							}
+						}
+					}
+					if ( array() !== $class_carried ) {
+						$suppressed_layout_properties[ $node['id'] ] = array_values( array_unique( array_merge( $suppressed_layout_properties[ $node['id'] ] ?? array(), $class_carried ) ) );
+						$layout_by_node[ $node['id'] ]               = array_diff_key( $layout_by_node[ $node['id'] ] ?? array(), array_flip( $class_carried ) );
+						$operations[]                                = array(
+							'dimension'   => 'layout',
+							'strategy'    => 'provider_source_box_class_carry',
+							'target_hash' => hash( 'sha256', $node['id'] ),
+						);
+					}
 				}
 			}
 			$field_blocks[ $control_index ]['attrs']['className'] = trim( (string) preg_replace( '/\s+/', ' ', implode( ' ', array_filter( $class_names ) ) ) );
@@ -1841,20 +1903,33 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		// map can still address it; "represented by source class" is no longer
 		// the operative claim once an overlay target exists for the same node.
 		$represented_layout_nodes = array_values( array_diff( array_map( 'strval', $represented_layout_nodes ), array_keys( $provider_layout_targets ) ) );
+		// A conditional box patch stays with the restored source element only when
+		// its base fact did too (or it has none); otherwise shell and element would
+		// each hold one half of the same property.
+		$suppressed_variant_properties = array();
+		foreach ( $class_carried_variants as $node_id => $facts ) {
+			$base = $layout_nodes_by_id[ $node_id ]['layout'] ?? array();
+			foreach ( array_unique( $facts ) as $fact ) {
+				if ( ! isset( $base[ $fact ] ) || in_array( $fact, $suppressed_layout_properties[ $node_id ] ?? array(), true ) ) {
+					$suppressed_variant_properties[ $node_id ][] = $fact;
+				}
+			}
+		}
 		return array(
-			'blocks'                       => $build( '$root' ),
-			'losses'                       => $losses,
-			'operations'                   => $operations,
-			'represented_layout_nodes'     => array_values( array_unique( array_map( 'strval', $represented_layout_nodes ) ) ),
-			'represented_topology_nodes'   => array_values( array_unique( array_map( 'strval', $represented_topology_nodes ) ) ),
-			'suppressed_layout_properties' => $suppressed_layout_properties,
-			'overlay_node_targets'         => $overlay_node_targets,
-			'responsive_variant_targets'   => $responsive_variant_targets,
-			'native_visibility_targets'    => array_values( array_unique( array_map( 'strval', $native_visibility_targets ) ) ),
-			'form_classes'                 => array_values( array_unique( $form_classes ) ),
-			'provider_layout_targets'      => $provider_layout_targets,
-			'phone_popup_targets'          => $phone_popup_targets,
-			'grid_span_submit_controls'    => array_values( array_unique( $grid_span_submit_controls ) ),
+			'blocks'                        => $build( '$root' ),
+			'losses'                        => $losses,
+			'operations'                    => $operations,
+			'represented_layout_nodes'      => array_values( array_unique( array_map( 'strval', $represented_layout_nodes ) ) ),
+			'represented_topology_nodes'    => array_values( array_unique( array_map( 'strval', $represented_topology_nodes ) ) ),
+			'suppressed_layout_properties'  => $suppressed_layout_properties,
+			'suppressed_variant_properties' => $suppressed_variant_properties,
+			'overlay_node_targets'          => $overlay_node_targets,
+			'responsive_variant_targets'    => $responsive_variant_targets,
+			'native_visibility_targets'     => array_values( array_unique( array_map( 'strval', $native_visibility_targets ) ) ),
+			'form_classes'                  => array_values( array_unique( $form_classes ) ),
+			'provider_layout_targets'       => $provider_layout_targets,
+			'phone_popup_targets'           => $phone_popup_targets,
+			'grid_span_submit_controls'     => array_values( array_unique( $grid_span_submit_controls ) ),
 		);
 	}
 
@@ -1962,7 +2037,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * @param array<string,array<string,mixed>> $layout_nodes
 	 * @param array<string,array<string,mixed>> $layouts
 	 * @param array<string,array<int,array<string,mixed>>> $variants
-	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,suppressed_layout_properties:array<string,array<int,string>>,overlay_node_targets:array<int,array<string,mixed>>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>,provider_layout_targets:array<string,string>,phone_popup_targets:array<int,int>,grid_span_submit_controls?:array<int,int>}|null
+	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,suppressed_layout_properties:array<string,array<int,string>>,suppressed_variant_properties?:array<string,array<int,string>>,overlay_node_targets:array<int,array<string,mixed>>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>,provider_layout_targets:array<string,string>,phone_popup_targets:array<int,int>,grid_span_submit_controls?:array<int,int>}|null
 	 */
 	private static function exact_native_div_topology( array $nodes, array $children, array $field_blocks, array $suppressed_controls, array $layout_nodes, array $layouts, array $variants, string $scope ): ?array {
 		$wrappers = array();

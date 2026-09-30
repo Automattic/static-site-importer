@@ -565,6 +565,14 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			unset( $provider_node );
 		}
+		foreach ( $topology['suppressed_variant_properties'] ?? array() as $node_id => $properties ) {
+			foreach ( $provider_graph['variants'] as $variant_index => $provider_variant ) {
+				if ( is_array( $provider_variant ) && ( $provider_variant['node'] ?? null ) === $node_id && is_array( $provider_variant['layout_patch'] ?? null ) ) {
+					$provider_graph['variants'][ $variant_index ]['layout_patch'] = array_diff_key( $provider_variant['layout_patch'], array_fill_keys( $properties, true ) );
+				}
+			}
+			$provider_graph['variants'] = array_values( array_filter( $provider_graph['variants'], static fn( $variant ): bool => ! is_array( $variant ) || ! empty( $variant['layout_patch'] ) ) );
+		}
 		$native_visibility_targets = array_fill_keys( $topology['native_visibility_targets'], true );
 		foreach ( $provider_graph['nodes'] as &$provider_node ) {
 			if ( is_array( $provider_node ) && isset( $native_visibility_targets[ $provider_node['id'] ?? '' ] ) ) {

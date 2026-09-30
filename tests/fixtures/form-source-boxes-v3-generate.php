@@ -19,14 +19,14 @@ $root = getenv( 'STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH' ) ?: dirname( __DIR__,
 require_once rtrim( (string) $root, '/\\' ) . '/php-transformer.php';
 
 $css = '.page{--copy:21px;font-family:Georgia;color:#123456}.wide-copy{font-size:var(--copy);line-height:1.5;margin:0 0 6px}'
-	. '.intro-box{padding:3px 5px}.submit-box{min-height:73px;padding-bottom:19px}.send{min-height:41px}'
+	. '.intro-box{padding:3px 5px}.page .field-box{padding-bottom:24px}.submit-box{min-height:73px;padding-bottom:19px}.send{min-height:41px}'
 	. '.note-box{padding:7px 0 13px}.note{font-size:11px;line-height:1.25;margin:4px 0 0}'
 	. '@media (min-width:1200px){.page{--copy:27px}.wide-copy{letter-spacing:2px}.note-box{padding-bottom:17px}}';
 
 $form = static function ( string $intro_classes ): string {
 	return '<!doctype html><html><head><link rel="stylesheet" href="source.css"></head><body><main class="page"><form method="post">'
 		. '<div class="intro-box"><p class="' . $intro_classes . '">A neutral introduction.</p></div>'
-		. '<label for="email">Email</label><input id="email" type="email" name="email" required>'
+		. '<div class="field-box"><label for="email">Email</label><input id="email" type="email" name="email" required></div>'
 		. '<div class="submit-box"><button class="send" type="submit">Send</button></div>'
 		. '<div class="note-box"><p class="note">Please review your details.</p></div></form></main></body></html>';
 };
