@@ -3337,6 +3337,51 @@ namespace {
 		$hidden_native_css
 	);
 	$assert( ! str_contains( $hidden_native_markup, 'visually-hidden' ), 'visually-hidden-native-checkbox-markup-does-not-carry-the-hiding-class', $hidden_native_markup );
+	foreach ( array( 'responsive-only', 'base-plus-responsive' ) as $case ) {
+		$responsive_hidden = $declared_box_form(
+			'responsive-only' === $case ? array() : array( 'width' => '1px', 'height' => '1px' ),
+			array( 'height' => '1px', 'width' => '1px' ),
+			'responsive-hidden-control'
+		);
+		$responsive_hidden['controls'][0]['required'] = true;
+		$patch = 'responsive-only' === $case
+			? array( 'position' => 'absolute', 'width' => '1px', 'height' => '1px', 'margin' => '-1px' )
+			: array( 'position' => 'absolute', 'margin' => '-1px' );
+		$responsive_hidden['presentation_graph']['variants'][] = array(
+			'index' => 0, 'role' => 'control', 'condition' => array( 'kind' => 'media', 'query' => '(max-width:48rem)' ),
+			'style_patch' => $patch, 'precedence' => array(),
+			'provenance' => array(),
+		);
+		$responsive_hidden['presentation_graph']['variants'][] = array(
+			'index' => 0, 'role' => 'label', 'condition' => array( 'kind' => 'media', 'query' => '(max-width:48rem)' ),
+			'style_patch' => array( 'font_size' => '18px' ), 'precedence' => array(), 'provenance' => array(),
+		);
+		$responsive_hidden_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $responsive_hidden ) ) )['forms'][0] ?? array();
+		$responsive_hidden_css = (string) ( $responsive_hidden_row['provider_layout_overlay_css']['css'] ?? '' );
+		$assert(
+			'mapped' === ( $responsive_hidden_row['status'] ?? '' )
+				&& in_array( 'provider_visually_hidden_native_control', array_column( $responsive_hidden_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true )
+				&& ! str_contains( (string) ( $responsive_hidden_row['block_markup'] ?? '' ), 'responsive-hidden-control' )
+				&& ! str_contains( $responsive_hidden_css, 'height:1px' ) && ! str_contains( $responsive_hidden_css, 'width:1px' )
+				&& str_contains( $responsive_hidden_css, 'font-size:14px' )
+				&& str_contains( $responsive_hidden_css, 'font-size:18px' )
+				&& str_contains( (string) ( $responsive_hidden_row['block_markup'] ?? '' ), '"required":true' ),
+			$case . '-native-consent-release-keeps-label-and-required-semantics',
+			wp_json_encode( $responsive_hidden_row )
+		);
+	}
+	foreach ( array(
+		array( 'position' => 'static', 'width' => '16px', 'height' => '16px', 'margin' => '0' ),
+		array( 'position' => 'absolute', 'width' => '1px', 'height' => '1px', 'margin' => '0' ),
+	) as $patch ) {
+		$regular_variant = $declared_box_form( array(), array( 'height' => $patch['height'], 'width' => $patch['width'] ), 'authored-responsive-control' );
+		$regular_variant['presentation_graph']['variants'][] = array(
+			'index' => 0, 'role' => 'control', 'condition' => array( 'kind' => 'media', 'query' => '(max-width:48rem)' ),
+			'style_patch' => $patch, 'precedence' => array(), 'provenance' => array(),
+		);
+		$regular_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $regular_variant ) ) )['forms'][0] ?? array();
+		$assert( str_contains( (string) ( $regular_row['block_markup'] ?? '' ), 'authored-responsive-control' ) && ! in_array( 'provider_visually_hidden_native_control', array_column( $regular_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'ordinary-responsive-control-without-proven-hiding-keeps-source-presentation', wp_json_encode( $regular_row ) );
+	}
 	$authored_small_box = $seed_declared_box( $declared_box_form(
 		array( 'position' => 'static', 'width' => '16px', 'height' => '16px', 'margin' => '0', 'border' => '0', 'padding' => '0' ),
 		array( 'height' => '16px', 'width' => '16px' ),

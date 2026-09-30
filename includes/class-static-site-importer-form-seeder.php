@@ -973,13 +973,26 @@ class Static_Site_Importer_Form_Seeder {
 	 * @return array{form:array<string,mixed>,controls:array<int,mixed>,operations:array<int,array<string,mixed>>}
 	 */
 	private static function release_visually_hidden_native_controls( array $form, array $controls ): array {
-		$operations = array();
-		$hidden     = array();
+		$operations  = array();
+		$hidden      = array();
+		$base_styles = array();
 		foreach ( $form['presentation_graph']['controls'] ?? array() as $row ) {
-			if ( ! is_array( $row ) || ! is_int( $row['index'] ?? null ) || ! is_array( $row['control']['styles'] ?? null ) || ! self::is_visually_hidden_control_declaration( $row['control']['styles'] ) ) {
+			if ( ! is_array( $row ) || ! is_int( $row['index'] ?? null ) || ! is_array( $row['control']['styles'] ?? null ) ) {
 				continue;
 			}
-			$hidden[ $row['index'] ] = true;
+			$base_styles[ $row['index'] ] = $row['control']['styles'];
+			if ( self::is_visually_hidden_control_declaration( $row['control']['styles'] ) ) {
+				$hidden[ $row['index'] ] = true;
+			}
+		}
+		foreach ( $form['presentation_graph']['variants'] ?? array() as $variant ) {
+			if ( ! is_array( $variant ) || 'control' !== ( $variant['role'] ?? null ) || ! is_int( $variant['index'] ?? null ) || ! is_array( $variant['style_patch'] ?? null ) ) {
+				continue;
+			}
+			$styles = array_replace( $base_styles[ $variant['index'] ] ?? array(), $variant['style_patch'] );
+			if ( self::is_visually_hidden_control_declaration( $styles ) ) {
+				$hidden[ $variant['index'] ] = true;
+			}
 		}
 		if ( empty( $hidden ) ) {
 			return array(
