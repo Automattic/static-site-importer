@@ -31,6 +31,6 @@ $markup        = preg_replace_callback(
 	},
 	$markup
 );
-$method       = new ReflectionMethod( Static_Site_Importer_Media_Library_Materializer::class, 'bind_referenced_images' );
-$materialized = $method->invokeArgs( null, array( $markup, $theme_uri, __DIR__, &$state, &$attachments, &$by_hash, &$report, &$bound, &$binding_error ) );
+$method        = new ReflectionMethod( Static_Site_Importer_Media_Library_Materializer::class, 'bind_referenced_images' );
+$materialized  = $method->invokeArgs( null, array( $markup, $theme_uri, __DIR__, &$state, &$attachments, &$by_hash, &$report, &$bound, &$binding_error ) );
 echo $materialized; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Raw serialized markup is the test protocol.
