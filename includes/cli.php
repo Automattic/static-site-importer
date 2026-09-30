@@ -228,9 +228,34 @@ if ( ! function_exists( 'static_site_importer_cli_import' ) ) {
 	}
 }
 
-if ( ! function_exists( 'static_site_importer_cli_import_max_steps' ) ) {
-	function static_site_importer_cli_import_max_steps(): int {
-		return 256;
+if ( ! function_exists( 'static_site_importer_cli_import_stall_limit' ) ) {
+	/** Consecutive continuations without any observable progress before the host stops. */
+	function static_site_importer_cli_import_stall_limit(): int {
+		return 16;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_import_progress_fingerprint' ) ) {
+	/**
+	 * Identify the observable state a continuation reached.
+	 *
+	 * Durable runs report their phase, page progress and work counters; any
+	 * change means the step advanced the import.
+	 */
+	function static_site_importer_cli_import_progress_fingerprint( array $result ): string {
+		$evidence = is_array( $result['artifact_run'] ?? null ) ? $result['artifact_run'] : array();
+
+		return hash(
+			'sha256',
+			(string) wp_json_encode(
+				array(
+					$result['continuation_reason'] ?? null,
+					$evidence['phase'] ?? null,
+					$evidence['progress'] ?? null,
+					$evidence['work'] ?? null,
+				)
+			)
+		);
 	}
 }
 
@@ -1109,18 +1134,25 @@ if ( ! function_exists( 'static_site_importer_cli_next_import_input' ) ) {
 
 if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 	/**
-	 * Drive bounded ability steps until a terminal result.
+	 * Drive ability steps until a terminal result.
+	 *
+	 * The host continues while each step advances the durable run, so import
+	 * size never exhausts a fixed step budget. It stops when the run stalls:
+	 * {@see static_site_importer_cli_import_stall_limit()} consecutive
+	 * continuations that report no progress. An operator `$max_steps` adds an
+	 * explicit hard cap.
 	 *
 	 * @param array<string,mixed> $input
 	 * @return array<string,mixed>
 	 */
 	function static_site_importer_cli_run_import_host( array $input, ?callable $invoke = null, int $max_steps = 0, ?callable $emit_progress = null, string $resume_command = '' ): array {
-		$invoke     = $invoke ?? 'static_site_importer_cli_import_run_fresh_runtime';
-		$max_steps  = min( 1024, max( 1, $max_steps > 0 ? $max_steps : static_site_importer_cli_import_max_steps() ) );
-		$steps      = 0;
-		$started_at = microtime( true );
-		$previous   = null;
-		while ( $steps < $max_steps ) {
+		$invoke      = $invoke ?? 'static_site_importer_cli_import_run_fresh_runtime';
+		$steps       = 0;
+		$stalled     = 0;
+		$fingerprint = '';
+		$started_at  = microtime( true );
+		$previous    = null;
+		while ( $max_steps <= 0 || $steps < $max_steps ) {
 			++$steps;
 			if ( is_array( $previous ) && null !== $emit_progress ) {
 				$emit_progress( static_site_importer_cli_import_progress( $previous, $steps, $started_at, 'heartbeat', $resume_command ) );
@@ -1139,11 +1171,20 @@ if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 			if ( null !== $emit_progress ) {
 				$emit_progress( static_site_importer_cli_import_progress( $result, $steps, $started_at, 'continuation', $resume_command ) );
 			}
+			$next        = static_site_importer_cli_import_progress_fingerprint( $result );
+			$stalled     = $next === $fingerprint ? $stalled + 1 : 0;
+			$fingerprint = $next;
+			if ( $stalled >= static_site_importer_cli_import_stall_limit() ) {
+				return static_site_importer_cli_import_receipt(
+					static_site_importer_cli_import_error( 'static_site_importer_cli_continuation_stalled', 'The import stopped advancing across consecutive continuation steps.' ),
+					$steps
+				);
+			}
 			$input    = static_site_importer_cli_next_import_input( $input, $result );
 			$previous = $result;
 		}
 		return static_site_importer_cli_import_receipt(
-			static_site_importer_cli_import_error( 'static_site_importer_cli_continuation_bound_exceeded', 'The import exceeded its bounded continuation steps.' ),
+			static_site_importer_cli_import_error( 'static_site_importer_cli_continuation_bound_exceeded', 'The import exceeded its operator step bound.' ),
 			$max_steps
 		);
 	}
