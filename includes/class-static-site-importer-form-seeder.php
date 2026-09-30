@@ -601,9 +601,10 @@ class Static_Site_Importer_Form_Seeder {
 			);
 		}
 		self::append_receipt_entries( $layout['receipt'], 'operations', array_merge( $released['operations'], $radio_groups['operations'], $choice_operations, $topology['operations'], $host['operations'] ) );
+		self::append_receipt_entries( $layout['receipt'], 'losses', $host['losses'] );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $control_attribute_losses );
 		$inner_blocks           = $layout['blocks'];
-		$form_attrs             = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $form, $scope, array_merge( $topology['form_classes'], $host['classes'] ) );
+		$form_attrs             = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $form, $scope, $topology['form_classes'] );
 		$overlay_graph          = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( Static_Site_Importer_Form_Layout_Projection::split_form_box( $provider_graph ), is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array() );
 		$box_targets            = $topology['provider_layout_targets'];
 		$overlay_graph['nodes'] = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || 'form-box' === ( $node['id'] ?? '' ) || isset( $box_targets[ (string) ( $node['id'] ?? '' ) ] ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
@@ -803,13 +804,12 @@ class Static_Site_Importer_Form_Seeder {
 			$inner_blocks,
 			Static_Site_Importer_Form_Field_Markup::context_blocks( $form, 'context_after' )
 		);
-		$markup       = Static_Site_Importer_Form_Field_Markup::serialize_block(
-			array(
-				'name'        => 'jetpack/contact-form',
-				'attrs'       => $form_attrs,
-				'innerBlocks' => $inner_blocks,
-			)
+		$form_block   = array(
+			'name'        => 'jetpack/contact-form',
+			'attrs'       => $form_attrs,
+			'innerBlocks' => $inner_blocks,
 		);
+		$markup       = null === $host['shell'] ? Static_Site_Importer_Form_Field_Markup::serialize_block( $form_block ) : Static_Site_Importer_Form_Field_Markup::serialize_in_shell( $form_block, $host['shell'] );
 		$row          = array(
 			'selector'                    => $selector,
 			'source_path'                 => $source_path,

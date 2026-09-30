@@ -294,6 +294,12 @@ final class Static_Site_Importer_Form_Field_Markup {
 			if ( '' !== $label_class ) {
 				$label_attrs['className'] = $label_class;
 			}
+			if ( false === ( $control['label_visible'] ?? null ) ) {
+				// The source names this control without a rendered label box. Jetpack's
+				// own label visibility keeps the name as the control's accessible name
+				// without adding a label line the source never had.
+				$label_attrs['metadata'] = array( 'blockVisibility' => false );
+			}
 			$inner_blocks[] = array(
 				'name'  => 'jetpack/label',
 				'attrs' => $label_attrs,
@@ -932,6 +938,25 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 */
 	public static function serialize_block( array $block ): string {
 		return serialize_block( self::parsed_block( $block ) );
+	}
+
+	/**
+	 * Serialize a generated block inside the source layout shell it replaces,
+	 * reusing the shell's exact saved ancestor markup.
+	 *
+	 * @param array<string,mixed>                                                               $block Generated block.
+	 * @param array{name:string,wrappers:array<int,array<string,mixed>>,open:string,close:string} $shell Restored ancestors.
+	 */
+	public static function serialize_in_shell( array $block, array $shell ): string {
+		return serialize_block(
+			array(
+				'blockName'    => $shell['name'],
+				'attrs'        => array( 'wrappers' => $shell['wrappers'] ),
+				'innerBlocks'  => array( self::parsed_block( $block ) ),
+				'innerHTML'    => $shell['open'] . $shell['close'],
+				'innerContent' => array( $shell['open'], null, $shell['close'] ),
+			)
+		);
 	}
 
 	/**

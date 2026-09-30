@@ -27,6 +27,7 @@ $form = static function ( string $intro_classes ): string {
 	return '<!doctype html><html><head><link rel="stylesheet" href="source.css"></head><body><main class="page"><form method="post">'
 		. '<div class="intro-box"><p class="' . $intro_classes . '">A neutral introduction.</p></div>'
 		. '<div class="field-box"><label for="email">Email</label><input id="email" type="email" name="email" required></div>'
+		. '<textarea aria-label="Message" placeholder="Message" name="message"></textarea>'
 		. '<div class="submit-box"><button class="send" type="submit">Send</button></div>'
 		. '<div class="note-box"><p class="note">Please review your details.</p></div></form></main></body></html>';
 };
