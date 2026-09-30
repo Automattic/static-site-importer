@@ -250,6 +250,32 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		);
 	}
 
+	/**
+	 * Once a submit's Core wrapper stands for its source block row, the wrapper
+	 * is that row's box and the inner link is the source button's box. Move the
+	 * button's own sizing facts from the wrapper destination to the link.
+	 *
+	 * @param array<string,mixed> $descriptor Presentation descriptor for the submit.
+	 * @return array<string,mixed>
+	 */
+	public static function with_submit_row_button_box( array $descriptor ): array {
+		$moved        = array( 'display', 'width', 'min_width' );
+		$destinations = is_array( $descriptor['destinations'] ?? null ) ? $descriptor['destinations'] : array();
+		foreach ( $destinations as $index => $destination ) {
+			$selector = (string) ( $destination['selector'] ?? '' );
+			if ( 'control' !== ( $destination['role'] ?? null ) || ! empty( $destination['resets'] ) && array() === ( $destination['properties'] ?? array() ) ) {
+				continue;
+			}
+			if ( str_ends_with( $selector, ' > .wp-block-button__link' ) ) {
+				$destinations[ $index ]['properties'] = array_values( array_unique( array_merge( $destination['properties'] ?? array(), $moved ) ) );
+			} elseif ( array() !== array_intersect( $moved, $destination['properties'] ?? array() ) ) {
+				$destinations[ $index ]['properties'] = array_values( array_diff( $destination['properties'] ?? array(), $moved ) );
+			}
+		}
+		$descriptor['destinations'] = $destinations;
+		return $descriptor;
+	}
+
 	/** A box value equal to the CSS initial value of that property. */
 	public static function is_initial_box_value( string $fact, string $value ): bool {
 		$tokens = preg_split( '/\s+/', trim( $value ) );
@@ -375,7 +401,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 *
 	 * @param array<int,array<string,mixed>> $field_blocks
 	 * @param array<int,array<string,mixed>> $controls
-	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,suppressed_layout_properties:array<string,array<int,string>>,suppressed_variant_properties?:array<string,array<int,string>>,overlay_node_targets:array<int,array<string,mixed>>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>,provider_layout_targets:array<string,string>,phone_popup_targets:array<int,int>,grid_span_submit_controls?:array<int,int>}|null
+	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,suppressed_layout_properties:array<string,array<int,string>>,suppressed_variant_properties?:array<string,array<int,string>>,submit_block_rows?:array<int,int>,overlay_node_targets:array<int,array<string,mixed>>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>,provider_layout_targets:array<string,string>,phone_popup_targets:array<int,int>,grid_span_submit_controls?:array<int,int>}|null
 	 */
 	public static function topology_inner_blocks( array $form, array $field_blocks, array $controls, array $suppressed_controls = array() ): ?array {
 		if ( ! isset( $form['control_topology'] ) ) {
@@ -480,6 +506,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		/** @var array<string,array<int,string>> $suppressed_layout_properties */
 		$suppressed_layout_properties = array();
 		$class_carried_variants       = array();
+		$submit_block_rows            = array();
 		$overlay_node_targets         = array();
 		$responsive_variant_targets   = array();
 		$native_visibility_targets    = array();
@@ -589,6 +616,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 
 				$row = self::submit_block_row( $chain, $layout_nodes_by_id );
 				if ( null !== $row ) {
+					$submit_block_rows[]                         = $control_index;
 					$provider_layout_targets[ $outermost['id'] ] = $button_hook;
 					$overlay_node_targets[]                      = array(
 						'id'     => $outermost['id'],
@@ -1989,6 +2017,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			'represented_topology_nodes'    => array_values( array_unique( array_map( 'strval', $represented_topology_nodes ) ) ),
 			'suppressed_layout_properties'  => $suppressed_layout_properties,
 			'suppressed_variant_properties' => $suppressed_variant_properties,
+			'submit_block_rows'             => $submit_block_rows,
 			'overlay_node_targets'          => $overlay_node_targets,
 			'responsive_variant_targets'    => $responsive_variant_targets,
 			'native_visibility_targets'     => array_values( array_unique( array_map( 'strval', $native_visibility_targets ) ) ),
@@ -2103,7 +2132,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * @param array<string,array<string,mixed>> $layout_nodes
 	 * @param array<string,array<string,mixed>> $layouts
 	 * @param array<string,array<int,array<string,mixed>>> $variants
-	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,suppressed_layout_properties:array<string,array<int,string>>,suppressed_variant_properties?:array<string,array<int,string>>,overlay_node_targets:array<int,array<string,mixed>>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>,provider_layout_targets:array<string,string>,phone_popup_targets:array<int,int>,grid_span_submit_controls?:array<int,int>}|null
+	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,suppressed_layout_properties:array<string,array<int,string>>,suppressed_variant_properties?:array<string,array<int,string>>,submit_block_rows?:array<int,int>,overlay_node_targets:array<int,array<string,mixed>>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>,provider_layout_targets:array<string,string>,phone_popup_targets:array<int,int>,grid_span_submit_controls?:array<int,int>}|null
 	 */
 	private static function exact_native_div_topology( array $nodes, array $children, array $field_blocks, array $suppressed_controls, array $layout_nodes, array $layouts, array $variants, string $scope ): ?array {
 		$wrappers = array();
