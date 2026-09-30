@@ -1771,9 +1771,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				$candidate['controls']
 			)
 		);
-		$roles      = array_merge( $roles, $candidate['control_containers'] ?? array(), $candidate['variants'] );
-		foreach ( $roles as $role ) {
-			foreach ( array_keys( $role['styles'] ?? array() ) as $key ) {
+		$roles      = array_merge( $roles, $candidate['control_containers'] ?? array() );
+		$styles     = array_merge( array_column( $roles, 'styles' ), array_column( $candidate['variants'], 'style_patch' ) );
+		foreach ( $styles as $role_styles ) {
+			foreach ( array_keys( $role_styles ) as $key ) {
 				if ( ! isset( $properties[ $key ] ) ) {
 					return array( 'error' => 'presentation_graph contains a style fact the provider cannot materialize.' );
 				}
