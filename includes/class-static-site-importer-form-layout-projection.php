@@ -81,6 +81,103 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * safely become a base fact. Conflicting values remain variants and continue
 	 * through the existing fail-closed receipt path.
 	 */
+	/**
+	 * Separate a v3 graph's copy-only `context-N` boxes from the control graph and
+	 * drop box facts that only restate a CSS initial value.
+	 *
+	 * Context boxes are materialized around the in-form context blocks they own
+	 * (see Static_Site_Importer_Form_Field_Markup::context_blocks()), so the control
+	 * topology, target map and computed-layout strategy never see them. A
+	 * `padding: 0` or `min-height: auto` reset matches a bare element's own box,
+	 * so it needs no provider target and does not make a wrapper unrepresentable.
+	 */
+	public static function separate_source_boxes( array $form ): array {
+		$graph = $form['layout_graph'] ?? null;
+		if ( ! is_array( $graph ) || 'generic/computed-layout-graph/v3' !== ( $graph['schema'] ?? null ) || ! is_array( $graph['nodes'] ?? null ) ) {
+			return $form;
+		}
+		$box            = Static_Site_Importer_Provider_Layout_Overlay::box_property_map();
+		$strip_initial  = static function ( array $layout, array $provenance ) use ( $box ): array {
+			$removed = array();
+			foreach ( $layout as $fact => $value ) {
+				if ( isset( $box[ $fact ] ) && is_string( $value ) && self::is_initial_box_value( $fact, $value ) ) {
+					unset( $layout[ $fact ] );
+					$removed[] = $box[ $fact ];
+				}
+			}
+			$kept = array();
+			foreach ( $provenance as $fact ) {
+				if ( is_array( $fact ) && is_array( $fact['properties'] ?? null ) ) {
+					$fact['properties'] = array_values( array_diff( $fact['properties'], $removed ) );
+					if ( array() === $fact['properties'] ) {
+						continue;
+					}
+				}
+				$kept[] = $fact;
+			}
+			return array( $layout, $kept );
+		};
+		$context = array(
+			'nodes'    => array(),
+			'variants' => array(),
+		);
+		$nodes   = array();
+		foreach ( $graph['nodes'] as $node ) {
+			if ( is_array( $node ) && str_starts_with( (string) ( $node['id'] ?? '' ), 'context-' ) ) {
+				$context['nodes'][] = $node;
+				continue;
+			}
+			if ( is_array( $node ) && is_array( $node['layout'] ?? null ) ) {
+				// A native control's own box is owned by the presentation graph, which
+				// targets the control element itself; the layout target of a control is
+				// the provider shell around it and must not receive the control's box.
+				if ( 'control' === ( $node['kind'] ?? null ) ) {
+					$node['layout'] = array_diff_key( $node['layout'], $box );
+				}
+				[ $node['layout'], $node['provenance'] ] = $strip_initial( $node['layout'], is_array( $node['provenance'] ?? null ) ? $node['provenance'] : array() );
+			}
+			$nodes[] = $node;
+		}
+		$variants = array();
+		foreach ( is_array( $graph['variants'] ?? null ) ? $graph['variants'] : array() as $variant ) {
+			if ( is_array( $variant ) && str_starts_with( (string) ( $variant['node'] ?? '' ), 'context-' ) ) {
+				$context['variants'][] = $variant;
+				continue;
+			}
+			if ( is_array( $variant ) && is_array( $variant['layout_patch'] ?? null ) ) {
+				if ( 1 === preg_match( '/^control-[0-9]+$/D', (string) ( $variant['node'] ?? '' ) ) ) {
+					$variant['layout_patch'] = array_diff_key( $variant['layout_patch'], $box );
+				}
+				[ $variant['layout_patch'], $variant['provenance'] ] = $strip_initial( $variant['layout_patch'], is_array( $variant['provenance'] ?? null ) ? $variant['provenance'] : array() );
+				if ( array() === $variant['layout_patch'] ) {
+					continue;
+				}
+				$variant['precedence'] = array_intersect_key( is_array( $variant['precedence'] ?? null ) ? $variant['precedence'] : array(), array_flip( array_map( static fn( string $fact ): string => Static_Site_Importer_Provider_Layout_Overlay::layout_property_map()[ $fact ] ?? $fact, array_keys( $variant['layout_patch'] ) ) ) );
+			}
+			$variants[] = $variant;
+		}
+		$graph['nodes']       = $nodes;
+		$graph['variants']    = $variants;
+		$form['layout_graph']         = $graph;
+		$form['source_context_graph'] = $context;
+		return $form;
+	}
+
+	/** A box value equal to the CSS initial value of that property. */
+	public static function is_initial_box_value( string $fact, string $value ): bool {
+		$tokens = preg_split( '/\s+/', trim( $value ) );
+		if ( false === $tokens || array() === $tokens ) {
+			return false;
+		}
+		foreach ( $tokens as $token ) {
+			$initial = 1 === preg_match( '/^(?:0|0?\.?0+(?:px|rem|em|%|vw|vh|vmin|vmax|ch|ex))$/D', $token ) || ( 'min_height' === $fact && 'auto' === $token );
+			if ( ! $initial ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	public static function normalize_unconditional_layout_variants( array $form ): array {
 		$graph = $form['layout_graph'] ?? null;
 		if ( ! is_array( $graph ) || ! is_array( $graph['nodes'] ?? null ) || ! is_array( $graph['variants'] ?? null ) ) {
@@ -808,8 +905,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$grid_span_submit_parents[ $submit_parent ] = true;
 			}
 			$responsive_variant_targets = array_merge( $responsive_variant_targets, $target_variants );
-			$represented_layout_nodes[] = $id;
-			$operations[]               = array(
+			// Placement is carried by the button's width. Any other fact the source
+			// wrapper owns (its minimum height or padding) stays on the wrapper's own
+			// provider element through source box transposition below.
+			if ( array() === array_diff_key( $layout_node['layout'] ?? array(), array_flip( array( 'column', 'row', 'area' ) ) ) ) {
+				$represented_layout_nodes[] = $id;
+			}
+			$operations[] = array(
 				'dimension'   => 'layout',
 				'strategy'    => 'provider_grid_span_submit',
 				'target_hash' => hash( 'sha256', $id ),
@@ -925,7 +1027,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			);
 		}
 		$percentage_width_parents = array();
-		if ( 'generic/computed-layout-graph/v2' === ( $form['layout_graph']['schema'] ?? null ) ) {
+		if ( in_array( $form['layout_graph']['schema'] ?? null, array( 'generic/computed-layout-graph/v2', 'generic/computed-layout-graph/v3' ), true ) ) {
 			foreach ( $children as $parent => $siblings ) {
 				if ( '$root' === $parent || count( $siblings ) < 2 || isset( $variants_by_node[ $parent ] ) ) {
 					continue;
@@ -1688,9 +1790,17 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( ! preg_match( '/^wrapper-[0-9]+$/D', $node_id ) || isset( $represented[ $node_id ] ) || ( empty( $layout ) && ! isset( $variants_by_node[ $node_id ] ) ) ) {
 				continue;
 			}
+			// A wrapper whose only unrepresented facts are its own box (padding,
+			// min-height) still arranges its controls exactly as the provider does;
+			// that is a named box loss, not a topology the provider cannot express.
+			$facts = array_keys( $layout );
+			foreach ( $variants_by_node[ $node_id ] ?? array() as $variant ) {
+				$facts = array_merge( $facts, array_keys( is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array() ) );
+			}
+			$box_only = array() !== $facts && array() === array_diff( $facts, array_keys( Static_Site_Importer_Provider_Layout_Overlay::box_property_map() ) );
 			$losses[] = array(
-				'dimension'   => 'topology',
-				'reason_code' => 'provider_wrapper_layout_unrepresentable',
+				'dimension'   => $box_only ? 'layout' : 'topology',
+				'reason_code' => $box_only ? 'provider_wrapper_box_unrepresentable' : 'provider_wrapper_layout_unrepresentable',
 				'node_hash'   => hash( 'sha256', $node_id ),
 			);
 		}
@@ -1764,7 +1874,9 @@ final class Static_Site_Importer_Form_Layout_Projection {
 
 		$source_nodes = array();
 		foreach ( $graph['nodes'] as $node ) {
-			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) ) {
+			// Copy-only `context-N` boxes belong to in-form context materialization,
+			// not to the control topology a provider field shell is rebuilt from.
+			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) || str_starts_with( $node['id'], 'context-' ) ) {
 				continue;
 			}
 			$source_nodes[ $node['id'] ] = $node;

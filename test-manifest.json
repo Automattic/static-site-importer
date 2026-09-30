@@ -41,6 +41,7 @@
     { "path": "tests/smoke-export-theme-ability.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-context-class-fallback.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-fallback-contract.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-form-source-boxes-v3.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-diagnostic-contract.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-report.php", "environment": "standalone-php" },
     { "path": "tests/smoke-missing-author-stylesheet-diagnostics.php", "environment": "standalone-php" },

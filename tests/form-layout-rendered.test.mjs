@@ -92,7 +92,9 @@ test( 'source submit minimum height is not replaced by a provider reset', async 
 	assert.ok( seeded.producerContext.context_after[ 0 ].class.includes( 'responsive-disclaimer' ), JSON.stringify( seeded.producerContext ) );
 	assert.equal( seeded.submitParentSourceMinHeight, '64px' );
 	assert.equal( seeded.submitParentProducerLayout.id, 'wrapper-4' );
-	assert.equal( seeded.submitParentProducerLayout.layout.min_height, undefined, 'producer output omits the source-owned wrapper min-height fact' );
+	// Layout graph v3 (blocks-engine#2356) owns the wrapper's own box; v2 omitted it.
+	const producerOwnsWrapperBox = 'generic/computed-layout-graph/v3' === seeded.producerLayoutGraph.schema;
+	assert.equal( seeded.submitParentProducerLayout.layout.min_height, producerOwnsWrapperBox ? '64px' : undefined, 'producer wrapper min-height ownership follows its graph version' );
 	assert.equal( seeded.normalizedContext.context_before[ 0 ].class, seeded.producerContext.context_before[ 0 ].class );
 	assert.equal( seeded.normalizedContext.context_after[ 0 ].class, seeded.producerContext.context_after[ 0 ].class );
 	assert.equal( seeded.normalizedContext.unrepresented_context_count, seeded.producerContext.unrepresented_context.length );
@@ -128,7 +130,7 @@ test( 'source submit minimum height is not replaced by a provider reset', async 
 			assert.deepEqual( measured.map( ( item ) => item.type ), [ 'submit', 'submit', 'submit' ] );
 			const wrappers = await page.locator( '.wp-block-button' ).evaluateAll( ( nodes ) => nodes.map( ( node ) => getComputedStyle( node ).minHeight ) );
 			const sourceWrapperHeight = width >= 1536 ? '72px' : '64px';
-			assert.deepEqual( wrappers, [ sourceWrapperHeight, '0px' ], `current graph v2 omission is distinct from provider wrapper default at ${width}: ${JSON.stringify( wrappers )}` );
+			assert.deepEqual( wrappers, [ sourceWrapperHeight, producerOwnsWrapperBox ? '64px' : '0px' ], `projected wrapper min-height follows producer ownership at ${width}: ${JSON.stringify( wrappers )}` );
 			const contextBoxes = await page.locator( '.intro-note,.disclaimer-note' ).evaluateAll( ( nodes ) => nodes.filter( ( node ) => ! node.closest( '.editor-styles-wrapper' ) ).map( ( node ) => {
 				const rect = node.getBoundingClientRect();
 				const style = getComputedStyle( node );
@@ -150,6 +152,72 @@ test( 'source submit minimum height is not replaced by a provider reset', async 
 			assert.equal( editorIntro.fontFamily, 'Georgia', `editor ancestor fallback at ${width}: ${JSON.stringify( editorIntro )}` );
 			assert.equal( editorIntro.fontSize, width >= 1536 ? '24px' : '16px', `editor author font-size at ${width}: ${JSON.stringify( editorIntro )}` );
 			assert.equal( editorIntro.lineHeight, width >= 1536 ? '42px' : '28px', `editor ancestor line-height fallback remains at ${width}: ${JSON.stringify( editorIntro )}` );
+			await page.close();
+		}
+	} finally {
+		await browser.close();
+	}
+} );
+
+test( 'v3 source boxes keep wrapper, control and context ownership against the source across viewports', async () => {
+	requireBrowserPrerequisites();
+	const raw = execFileSync( 'php', [ 'tests/fixtures/form-source-boxes-v3-rendered.php' ], {
+		cwd: process.cwd(),
+		encoding: 'utf8',
+		env: process.env,
+	} );
+	const seeded = JSON.parse( raw );
+	assert.equal( seeded.status, 'mapped', raw );
+	const late = Array.from( { length: 20 }, ( _, index ) => `hook-${ index + 1 }` ).join( ' ' );
+	// The neutral source the producer fixture was compiled from.
+	const sourceMarkup = `<main class="page"><form class="source"><div class="intro-box"><p class="${ late } wide-copy">A neutral introduction.</p></div><label>Email</label><input type="email"><div class="submit-box"><button class="send" type="submit">Send</button></div><div class="note-box"><p class="note">Please review your details.</p></div></form></main>`;
+	// Provider and theme defaults the projected form must not inherit in place of source facts.
+	const providerDefaults = '<style>body{margin:0;font-family:serif;color:#000}.wp-block-paragraph{font-size:22px;line-height:normal;margin:0}.wp-block-group{padding:0}.wp-block-button{min-height:0;padding:0}.wp-block-button__link{min-height:0}</style>';
+	const projectedMarkup = `<div class="projected"><div class="wp-block-jetpack-contact-form ${ seeded.className }">${ seeded.beforeHtml }<div class="wp-block-jetpack-field-email"><label>Email</label><input type="email"></div>${ seeded.submitHtml }${ seeded.afterHtml }</div></div>`;
+	const editorMarkup = `<div class="editor-styles-wrapper"><div class="wp-block-jetpack-contact-form ${ seeded.className }">${ seeded.beforeHtml }${ seeded.afterHtml }</div></div>`;
+	const browser = await chromium.launch();
+	try {
+		for ( const width of [ 390, 768, 1440, 1600 ] ) {
+			const page = await browser.newPage( { viewport: { width, height: 900 } } );
+			await page.setContent( `${ providerDefaults }<style>${ seeded.sourceCss }</style><style>${ seeded.css }${ seeded.contextCss }${ seeded.editorContextCss }</style>${ sourceMarkup }${ projectedMarkup }${ editorMarkup }` );
+			const measure = ( root ) => page.evaluate( ( scope ) => {
+				const pick = ( selector ) => {
+					const node = document.querySelector( `${ scope } ${ selector }` );
+					const style = getComputedStyle( node );
+					return { minHeight: style.minHeight, paddingTop: style.paddingTop, paddingRight: style.paddingRight, paddingBottom: style.paddingBottom, paddingLeft: style.paddingLeft, fontSize: style.fontSize, fontFamily: style.fontFamily, color: style.color, letterSpacing: style.letterSpacing, lineHeight: style.lineHeight, height: node.getBoundingClientRect().height };
+				};
+				return { intro: pick( '.wide-copy' ), introBox: pick( '.intro-box' ), note: pick( '.note' ), noteBox: pick( '.note-box' ), button: pick( 'button[type=submit]' ) };
+			}, root );
+			const wrapper = ( root ) => page.evaluate( ( scope ) => {
+				const style = getComputedStyle( document.querySelector( `${ scope } button[type=submit]` ).parentElement );
+				return { minHeight: style.minHeight, paddingBottom: style.paddingBottom };
+			}, root );
+			const source = await measure( '.source' );
+			const projected = await measure( '.projected' );
+			const editor = await page.evaluate( () => {
+				const style = getComputedStyle( document.querySelector( '.editor-styles-wrapper .wide-copy' ) );
+				return { fontSize: style.fontSize, letterSpacing: style.letterSpacing, fontFamily: style.fontFamily };
+			} );
+			const wide = width >= 1200;
+			assert.deepEqual( await wrapper( '.source' ), { minHeight: '73px', paddingBottom: '19px' }, `source submit wrapper at ${ width }` );
+			assert.deepEqual( await wrapper( '.projected' ), { minHeight: '73px', paddingBottom: '19px' }, `projected submit wrapper keeps its own box at ${ width }` );
+			assert.equal( source.button.minHeight, '41px', `source button at ${ width }` );
+			assert.equal( projected.button.minHeight, '41px', `projected button keeps only its own min-height at ${ width }: ${ JSON.stringify( projected.button ) }` );
+			for ( const key of [ 'fontSize', 'fontFamily', 'color', 'letterSpacing', 'lineHeight' ] ) {
+				assert.equal( projected.intro[ key ], source.intro[ key ], `late-class responsive intro ${ key } at ${ width }: ${ JSON.stringify( { source: source.intro, projected: projected.intro } ) }` );
+			}
+			assert.equal( projected.intro.fontSize, wide ? '27px' : '21px', `intro custom-property size at ${ width }` );
+			assert.equal( projected.intro.letterSpacing, wide ? '2px' : 'normal', `intro property-only patch at ${ width }` );
+			for ( const key of [ 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft' ] ) {
+				assert.equal( projected.introBox[ key ], source.introBox[ key ], `intro wrapper ${ key } at ${ width }` );
+				assert.equal( projected.noteBox[ key ], source.noteBox[ key ], `disclaimer wrapper ${ key } at ${ width }: ${ JSON.stringify( { source: source.noteBox, projected: projected.noteBox } ) }` );
+			}
+			assert.equal( projected.noteBox.paddingBottom, wide ? '17px' : '13px', `disclaimer wrapper responsive padding at ${ width }` );
+			for ( const key of [ 'fontSize', 'lineHeight', 'fontFamily', 'color' ] ) {
+				assert.equal( projected.note[ key ], source.note[ key ], `disclaimer ${ key } at ${ width }` );
+			}
+			assert.ok( Math.abs( projected.noteBox.height - source.noteBox.height ) <= 1 && Math.abs( projected.introBox.height - source.introBox.height ) <= 1, `context box heights at ${ width }: ${ JSON.stringify( { source, projected } ) }` );
+			assert.deepEqual( editor, { fontSize: source.intro.fontSize, letterSpacing: source.intro.letterSpacing, fontFamily: source.intro.fontFamily }, `editor context presentation at ${ width }` );
 			await page.close();
 		}
 	} finally {

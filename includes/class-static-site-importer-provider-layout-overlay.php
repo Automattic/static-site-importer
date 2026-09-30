@@ -302,48 +302,76 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		);
 	}
 
-	/** Compile bounded source context styles at a selector weight below source class rules. */
+	/** CSS properties a form context rule may declare, keyed by fact name. */
+	private static function context_property_map(): array {
+		$keys = array( 'color', 'font_family', 'font_size', 'font_style', 'font_weight', 'letter_spacing', 'line_height', 'text_transform', 'text_align', 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block_start', 'padding_block_end', 'padding_inline_start', 'padding_inline_end', 'min_height' );
+		return array_combine( $keys, array_map( static fn( string $key ): string => str_replace( '_', '-', $key ), $keys ) );
+	}
+
+	/**
+	 * Compile bounded source context styles.
+	 *
+	 * A fallback carrying only resolved typography keeps the legacy owner-class
+	 * selector, below source class rules. A fallback resolved from the source
+	 * graph owns its element's cascade result, including conditional patches, and
+	 * is addressed by its identity hook inside the form scope.
+	 */
 	private static function context_fallback_css( string $scope, array $fallbacks, bool $editor, array &$operations, array &$losses ): string {
 		if ( empty( $fallbacks ) ) {
 			return '';
 		}
-		$properties = array(
-			'color'          => 'color',
-			'font_family'    => 'font-family',
-			'font_size'      => 'font-size',
-			'font_style'     => 'font-style',
-			'font_weight'    => 'font-weight',
-			'letter_spacing' => 'letter-spacing',
-			'line_height'    => 'line-height',
-			'text_transform' => 'text-transform',
-		);
-		$rules      = array();
-		foreach ( array_slice( $fallbacks, 0, 16 ) as $fallback ) {
-			$identity    = is_array( $fallback ) && is_string( $fallback['identity'] ?? null ) ? $fallback['identity'] : '';
-			$owner_class = is_array( $fallback ) && is_string( $fallback['owner_class'] ?? null ) ? $fallback['owner_class'] : '';
-			$styles      = is_array( $fallback['styles'] ?? null ) ? $fallback['styles'] : array();
-			if ( ! preg_match( '/^ssi-context-[a-f0-9]{12}$/D', $identity ) || ! preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $owner_class ) || empty( $styles ) || count( $styles ) > 8 || array_diff( array_keys( $styles ), array_keys( $properties ) ) ) {
-				$losses[] = self::presentation_loss( 'provider_context_fallback_unsupported', 0, 'context' );
-				continue;
-			}
+		$properties  = self::context_property_map();
+		$legacy_keys = array( 'color', 'font_family', 'font_size', 'font_style', 'font_weight', 'letter_spacing', 'line_height', 'text_transform' );
+		$declare     = static function ( array $styles ) use ( $properties ): ?array {
 			$declarations = array();
 			foreach ( $styles as $property => $value ) {
-				if ( ! is_string( $value ) || ! self::safe_presentation_value( $value ) ) {
-					$losses[] = self::presentation_loss( 'unsafe_presentation_value', 0, 'context' );
-					continue 2;
+				if ( ! isset( $properties[ $property ] ) || ! is_string( $value ) || ! self::safe_presentation_value( $value ) ) {
+					return null;
 				}
 				$declarations[] = $properties[ $property ] . ':' . $value;
 			}
-			$selector = ':where(' . $scope . ') :where(.' . $identity . ').' . $owner_class;
-			$rules[]  = $selector . '{' . implode( ';', $declarations ) . '}';
+			return $declarations;
+		};
+		$rules       = array();
+		$conditional = array();
+		foreach ( array_slice( $fallbacks, 0, 32 ) as $fallback ) {
+			$identity    = is_array( $fallback ) && is_string( $fallback['identity'] ?? null ) ? $fallback['identity'] : '';
+			$owner_class = is_array( $fallback ) && is_string( $fallback['owner_class'] ?? null ) ? $fallback['owner_class'] : '';
+			$styles      = is_array( $fallback['styles'] ?? null ) ? $fallback['styles'] : array();
+			$variants    = is_array( $fallback['variants'] ?? null ) ? $fallback['variants'] : array();
+			$legacy      = isset( $fallback['owner_class'] );
+			if ( ! preg_match( '/^ssi-context-[a-f0-9]{12}$/D', $identity ) || ( $legacy && ( ! preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $owner_class ) || empty( $styles ) || count( $styles ) > 8 || array_diff( array_keys( $styles ), $legacy_keys ) ) ) || ( ! $legacy && empty( $styles ) && empty( $variants ) ) ) {
+				$losses[] = self::presentation_loss( 'provider_context_fallback_unsupported', 0, 'context' );
+				continue;
+			}
+			$selector     = $legacy ? ':where(' . $scope . ') :where(.' . $identity . ').' . $owner_class : $scope . ' .' . $identity;
+			$declarations = $declare( $styles );
+			if ( null === $declarations ) {
+				$losses[] = self::presentation_loss( 'unsafe_presentation_value', 0, 'context' );
+				continue;
+			}
+			if ( array() !== $declarations ) {
+				$rules[] = $selector . '{' . implode( ';', $declarations ) . '}';
+			}
+			foreach ( $legacy ? array() : array_slice( $variants, 0, 16 ) as $variant ) {
+				$patch = is_array( $variant['styles'] ?? null ) ? $declare( $variant['styles'] ) : null;
+				if ( ! self::safe_condition( $variant['condition'] ?? null ) || empty( $patch ) ) {
+					$losses[] = self::presentation_loss( 'responsive_layout_ownership', 0, 'context' );
+					continue;
+				}
+				// Conditional patches follow every base rule, so a matching condition
+				// overrides its base value exactly as the source cascade does.
+				$conditional[] = self::conditional_rule( $variant['condition'], $selector . '{' . implode( ';', $patch ) . '}' );
+			}
 			if ( ! $editor ) {
 				$operations[] = array(
 					'dimension'   => 'presentation',
-					'strategy'    => 'provider_context_style_fallback',
+					'strategy'    => $legacy ? 'provider_context_style_fallback' : 'provider_context_source_presentation',
 					'target_hash' => hash( 'sha256', $identity ),
 				);
 			}
 		}
+		$rules = array_merge( $rules, $conditional );
 		if ( empty( $rules ) ) {
 			return '';
 		}
@@ -466,7 +494,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( ! preg_match( '/^(' . $scope_selector . '(?:, ' . $scope_selector . ')?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
-		$layout_allowed       = array( 'display', 'width', 'height', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'position', 'z-index', 'pointer-events' );
+		$layout_allowed       = array( 'display', 'width', 'height', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'position', 'z-index', 'pointer-events', ...array_values( self::box_property_map() ) );
 		$presentation_allowed = array_merge( array_values( self::presentation_property_map() ), array( 'color', 'flex', 'font' ) );
 		foreach ( explode( ';', $matches[2] ) as $declaration ) {
 			$declaration = preg_replace( '/!important$/D', '', $declaration ) ?? $declaration;
@@ -484,11 +512,16 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	private static function safe_context_fallback_rule( string $rule ): bool {
-		if ( ! preg_match( '/^:where\((\.ssi-form-[a-f0-9]{12})\) :where\(\.(ssi-context-[a-f0-9]{12})\)\.([A-Za-z_][A-Za-z0-9_-]{0,79})\{([^{}]+)\}$/D', $rule, $matches ) ) {
+		if ( preg_match( '/^:where\((\.ssi-form-[a-f0-9]{12})\) :where\(\.(ssi-context-[a-f0-9]{12})\)\.([A-Za-z_][A-Za-z0-9_-]{0,79})\{([^{}]+)\}$/D', $rule, $matches ) ) {
+			$allowed = array( 'color', 'font-family', 'font-size', 'font-style', 'font-weight', 'letter-spacing', 'line-height', 'text-transform' );
+			$body    = $matches[4];
+		} elseif ( preg_match( '/^\.ssi-form-[a-f0-9]{12} \.ssi-context-[a-f0-9]{12}\{([^{}]+)\}$/D', $rule, $matches ) ) {
+			$allowed = array_values( self::context_property_map() );
+			$body    = $matches[1];
+		} else {
 			return false;
 		}
-		$allowed = array( 'color', 'font-family', 'font-size', 'font-style', 'font-weight', 'letter-spacing', 'line-height', 'text-transform' );
-		foreach ( explode( ';', $matches[4] ) as $declaration ) {
+		foreach ( explode( ';', $body ) as $declaration ) {
 			if ( ! preg_match( '/^([a-z-]+):(.+)$/D', $declaration, $parts ) || ! in_array( $parts[1], $allowed, true ) || ! self::safe_presentation_value( $parts[2] ) ) {
 				return false;
 			}
@@ -618,8 +651,44 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			'margin_block_end'    => 'margin-block-end',
 			'margin_inline_start' => 'margin-inline-start',
 			'margin_inline_end'   => 'margin-inline-end',
+		) + self::box_property_map();
+	}
+
+	/**
+	 * Source box facts a v3 layout graph assigns to the element that declares
+	 * them. They stay on that element's provider target, never on an inner control.
+	 *
+	 * @return array<string,string>
+	 */
+	public static function box_property_map(): array {
+		return array(
+			'min_height'           => 'min-height',
+			'padding'              => 'padding',
+			'padding_top'          => 'padding-top',
+			'padding_right'        => 'padding-right',
+			'padding_bottom'       => 'padding-bottom',
+			'padding_left'         => 'padding-left',
+			'padding_block_start'  => 'padding-block-start',
+			'padding_block_end'    => 'padding-block-end',
+			'padding_inline_start' => 'padding-inline-start',
+			'padding_inline_end'   => 'padding-inline-end',
 		);
 	}
+
+	/** One to four box lengths; `min-height` and the longhands take exactly one. */
+	private static function safe_box_value( string $fact, string $value ): bool {
+		$tokens = preg_split( '/\s+/', trim( $value ) );
+		if ( false === $tokens || array() === $tokens || count( $tokens ) > ( 'padding' === $fact ? 4 : 1 ) ) {
+			return false;
+		}
+		foreach ( $tokens as $token ) {
+			if ( str_starts_with( $token, 'calc(' ) ? ! self::safe_calc_value( $token ) : ! preg_match( '/^(?:0|auto|(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:px|rem|em|%|vw|vh|vmin|vmax|ch|ex|svh|dvh|lvh)|var\(--[a-zA-Z][a-zA-Z0-9_-]{0,79}\))$/D', $token ) ) {
+				return false;
+			}
+		}
+		return 'auto' !== $value || 'min_height' === $fact;
+	}
+
 	private static function safe_value( string $fact, mixed $value ): bool {
 		if ( ! is_string( $value ) && ! is_int( $value ) && ! is_float( $value ) ) {
 			return false;
@@ -627,6 +696,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		$value = (string) $value;
 		if ( '' === $value || strlen( $value ) > 160 || preg_match( '/(?:url\(|[;{}\\\\]|!important|expression\()/i', $value ) ) {
 			return false;
+		}
+		if ( isset( self::box_property_map()[ $fact ] ) ) {
+			return self::safe_box_value( $fact, $value );
 		}
 		// CSS permits fractional lengths without a leading zero; the source
 		// stylesheet and the overlay express the same value either way.
