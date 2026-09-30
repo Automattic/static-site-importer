@@ -78,6 +78,10 @@ namespace {
 	$assert( str_contains( $markup, '"name":"email"' ) || str_contains( $markup, 'email' ), 'field-semantics-preserved' );
 	$assert( 1 === substr_count( $markup, 'type="submit"' ), 'single-native-submit-preserved', $markup );
 
+	// 3a'. A submit whose source wrappers are plain block boxes keeps its own row,
+	// placed by the inherited text alignment, instead of shrinking beside fields.
+	$assert( 1 === preg_match( '/\.' . preg_quote( $wrapper_hook, '/' ) . '\{[^}]*width:100%;[^}]*flex-basis:100%;[^}]*justify-content:center/', $css ) || 1 === preg_match( '/\.' . preg_quote( $wrapper_hook, '/' ) . '\{(?=[^}]*width:100%)(?=[^}]*flex-basis:100%)(?=[^}]*justify-content:center)[^}]*\}/', $css ), 'submit-block-row-restored-with-source-alignment', $css );
+
 	// 3a. A control named only by aria-label keeps that name without gaining a
 	// visible provider label line; a control with a rendered source label keeps it.
 	$assert( 1 === preg_match( '/<!-- wp:jetpack\/label \{"label":"Message","metadata":\{"blockVisibility":false\}\} (?:\/-->|-->)/', $markup ) && 1 === preg_match( '/<!-- wp:jetpack\/label \{"label":"Email"[^}]*\} (?:\/-->|-->)/', $markup ) && ! preg_match( '/"label":"Email"[^}]*blockVisibility/', $markup ), 'aria-named-control-label-hidden-by-provider-visibility', $markup );

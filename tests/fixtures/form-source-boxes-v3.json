@@ -1,5 +1,5 @@
 {
-    "source_css": ".page{--copy:21px;font-family:Georgia;color:#123456}.wide-copy{font-size:var(--copy);line-height:1.5;margin:0 0 6px}.intro-box{padding:3px 5px}.page .field-box{padding-bottom:24px}.submit-box{min-height:73px;padding-bottom:19px}.send{min-height:41px}.note-box{padding:7px 0 13px}.note{font-size:11px;line-height:1.25;margin:4px 0 0}@media (min-width:1200px){.page{--copy:27px}.wide-copy{letter-spacing:2px}.note-box{padding-bottom:17px}}",
+    "source_css": ".page{--copy:21px;font-family:Georgia;color:#123456;text-align:center}.wide-copy{font-size:var(--copy);line-height:1.5;margin:0 0 6px}.intro-box{padding:3px 5px}.page .field-box{padding-bottom:24px}.submit-box{min-height:73px;padding-bottom:19px}.send{min-height:41px}.note-box{padding:7px 0 13px}.note{font-size:11px;line-height:1.25;margin:4px 0 0}@media (min-width:1200px){.page{--copy:27px}.wide-copy{letter-spacing:2px}.note-box{padding-bottom:17px}}",
     "complete": {
         "bindings": [
             {
@@ -184,24 +184,26 @@
                                 ],
                                 "selector": ".intro-box",
                                 "source_path": "source.css",
-                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                                "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                             },
                             {
                                 "condition": null,
                                 "properties": [
                                     "color",
-                                    "font-family"
+                                    "font-family",
+                                    "text-align"
                                 ],
                                 "selector": ".page",
                                 "source_path": "source.css",
-                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                                "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                             }
                         ],
                         "schema": "generic/form-element-presentation/v1",
                         "styles": {
                             "color": "#123456",
                             "font_family": "Georgia",
-                            "padding": "3px 5px"
+                            "padding": "3px 5px",
+                            "text_align": "center"
                         },
                         "truncated": false,
                         "variants": []
@@ -214,7 +216,7 @@
                             ],
                             "selector": ".intro-box",
                             "source_path": "source.css",
-                            "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                         }
                     ],
                     "source": {
@@ -244,17 +246,18 @@
                                 ],
                                 "selector": ".wide-copy",
                                 "source_path": "source.css",
-                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                                "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                             },
                             {
                                 "condition": null,
                                 "properties": [
                                     "color",
-                                    "font-family"
+                                    "font-family",
+                                    "text-align"
                                 ],
                                 "selector": ".page",
                                 "source_path": "source.css",
-                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                                "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                             }
                         ],
                         "schema": "generic/form-element-presentation/v1",
@@ -263,7 +266,8 @@
                             "font_family": "Georgia",
                             "font_size": "21px",
                             "line_height": "1.5",
-                            "margin": "0 0 6px"
+                            "margin": "0 0 6px",
+                            "text_align": "center"
                         },
                         "truncated": false,
                         "variants": [
@@ -296,7 +300,7 @@
                                         ],
                                         "selector": ".wide-copy",
                                         "source_path": "source.css",
-                                        "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                                        "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                                     }
                                 ],
                                 "styles": {
@@ -354,24 +358,26 @@
                                 ],
                                 "selector": ".page .field-box",
                                 "source_path": "source.css",
-                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                                "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                             },
                             {
                                 "condition": null,
                                 "properties": [
                                     "color",
-                                    "font-family"
+                                    "font-family",
+                                    "text-align"
                                 ],
                                 "selector": ".page",
                                 "source_path": "source.css",
-                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                                "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                             }
                         ],
                         "schema": "generic/form-element-presentation/v1",
                         "styles": {
                             "color": "#123456",
                             "font_family": "Georgia",
-                            "padding_bottom": "24px"
+                            "padding_bottom": "24px",
+                            "text_align": "center"
                         },
                         "truncated": false,
                         "variants": []
@@ -384,7 +390,7 @@
                             ],
                             "selector": ".page .field-box",
                             "source_path": "source.css",
-                            "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                         }
                     ],
                     "source": {
@@ -416,17 +422,18 @@
                                 ],
                                 "selector": ".submit-box",
                                 "source_path": "source.css",
-                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                                "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                             },
                             {
                                 "condition": null,
                                 "properties": [
                                     "color",
-                                    "font-family"
+                                    "font-family",
+                                    "text-align"
                                 ],
                                 "selector": ".page",
                                 "source_path": "source.css",
-                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                                "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                             }
                         ],
                         "schema": "generic/form-element-presentation/v1",
@@ -434,7 +441,8 @@
                             "color": "#123456",
                             "font_family": "Georgia",
                             "min_height": "73px",
-                            "padding_bottom": "19px"
+                            "padding_bottom": "19px",
+                            "text_align": "center"
                         },
                         "truncated": false,
                         "variants": []
@@ -448,7 +456,7 @@
                             ],
                             "selector": ".submit-box",
                             "source_path": "source.css",
-                            "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                         }
                     ],
                     "source": {
@@ -476,7 +484,7 @@
                             ],
                             "selector": ".send",
                             "source_path": "source.css",
-                            "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                         }
                     ],
                     "source": {
@@ -506,24 +514,26 @@
                                 ],
                                 "selector": ".note-box",
                                 "source_path": "source.css",
-                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                                "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                             },
                             {
                                 "condition": null,
                                 "properties": [
                                     "color",
-                                    "font-family"
+                                    "font-family",
+                                    "text-align"
                                 ],
                                 "selector": ".page",
                                 "source_path": "source.css",
-                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                                "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                             }
                         ],
                         "schema": "generic/form-element-presentation/v1",
                         "styles": {
                             "color": "#123456",
                             "font_family": "Georgia",
-                            "padding": "7px 0 13px"
+                            "padding": "7px 0 13px",
+                            "text_align": "center"
                         },
                         "truncated": false,
                         "variants": [
@@ -550,7 +560,7 @@
                                         ],
                                         "selector": ".note-box",
                                         "source_path": "source.css",
-                                        "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                                        "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                                     }
                                 ],
                                 "styles": {
@@ -567,7 +577,7 @@
                             ],
                             "selector": ".note-box",
                             "source_path": "source.css",
-                            "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                         }
                     ],
                     "source": {
@@ -597,17 +607,18 @@
                                 ],
                                 "selector": ".note",
                                 "source_path": "source.css",
-                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                                "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                             },
                             {
                                 "condition": null,
                                 "properties": [
                                     "color",
-                                    "font-family"
+                                    "font-family",
+                                    "text-align"
                                 ],
                                 "selector": ".page",
                                 "source_path": "source.css",
-                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                                "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                             }
                         ],
                         "schema": "generic/form-element-presentation/v1",
@@ -616,7 +627,8 @@
                             "font_family": "Georgia",
                             "font_size": "11px",
                             "line_height": "1.25",
-                            "margin": "4px 0 0"
+                            "margin": "4px 0 0",
+                            "text_align": "center"
                         },
                         "truncated": false,
                         "variants": []
@@ -662,7 +674,7 @@
                             ],
                             "selector": ".note-box",
                             "source_path": "source.css",
-                            "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                         }
                     ]
                 }
@@ -681,7 +693,7 @@
                                 ],
                                 "selector": ".send",
                                 "source_path": "source.css",
-                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                                "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                             }
                         ],
                         "styles": {
@@ -864,7 +876,7 @@
                                 ],
                                 "selector": ".send",
                                 "source_path": "source.css",
-                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                                "source_sha256": "1e649942ad09ac6308ef5de22d9743821b36c4dbc1c48f23d55d7155a3279c8f"
                             }
                         ],
                         "styles": {

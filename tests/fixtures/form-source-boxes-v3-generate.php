@@ -18,7 +18,7 @@
 $root = getenv( 'STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH' ) ?: dirname( __DIR__, 2 ) . '/vendor/automattic/blocks-engine-php-transformer';
 require_once rtrim( (string) $root, '/\\' ) . '/php-transformer.php';
 
-$css = '.page{--copy:21px;font-family:Georgia;color:#123456}.wide-copy{font-size:var(--copy);line-height:1.5;margin:0 0 6px}'
+$css = '.page{--copy:21px;font-family:Georgia;color:#123456;text-align:center}.wide-copy{font-size:var(--copy);line-height:1.5;margin:0 0 6px}'
 	. '.intro-box{padding:3px 5px}.page .field-box{padding-bottom:24px}.submit-box{min-height:73px;padding-bottom:19px}.send{min-height:41px}'
 	. '.note-box{padding:7px 0 13px}.note{font-size:11px;line-height:1.25;margin:4px 0 0}'
 	. '@media (min-width:1200px){.page{--copy:27px}.wide-copy{letter-spacing:2px}.note-box{padding-bottom:17px}}';
