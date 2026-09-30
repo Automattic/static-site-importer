@@ -95,7 +95,9 @@ When a generated artifact contains full-document HTML, Static Site Importer rout
 - Generates a block theme with shared header/footer template parts, `core/post-content` templates, page patterns for reusable/reference artifacts, `theme.json`, `style.css`, and optional `assets/site.js`.
 - Rewrites local `.html` links to the imported WordPress page permalinks.
 - Creates deterministic `wp_navigation` posts for supported header/footer navigation and references them from generated template parts.
+- Consumes producer-owned `explicit_refs/v1` navigation references, validates all declarations before writes, and binds IDs before page persistence. Full destinations, submenu structure and authored item presentation stay producer-owned; SSI performs no inline-menu signature matching. Navigation uses explicit post-type reconciliation, participates in rollback, and is exposed in `materialization_receipt.completed.navigation_entities`.
 - Keeps imported pages native and editor-visible; page content belongs to WordPress pages while the generated theme owns shared chrome, background decoration, styles, scripts, and template wrappers.
+- Keeps nested shared chrome references at their original positions inside page-owned layout containers. One template part owns the shared content while its occurrences preserve authored containment and order.
 - Optionally activates the generated theme and assigns the imported `index.html` page as the front page when that page exists.
 - Names the generated theme from the resolved imported site title unless the caller supplies an explicit name.
 - Removes untouched WordPress installation content (`Hello world!`, `Sample Page`, and the sample comment) from fresh sites by default.

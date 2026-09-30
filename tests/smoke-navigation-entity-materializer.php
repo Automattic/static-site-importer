@@ -34,7 +34,7 @@ class WP_Post {
 function is_wp_error( $value ): bool {
 	return $value instanceof WP_Error; }
 function post_type_exists( string $type ): bool {
-	return 'wp_navigation' === $type; }
+	return 'wp_navigation' === $type && empty( $GLOBALS['ssi_nav_unavailable'] ); }
 function sanitize_title( string $value ): string {
 	return trim( (string) preg_replace( '/-+/', '-', (string) preg_replace( '/[^a-z0-9]+/', '-', strtolower( $value ) ) ), '-' ); }
 function sanitize_key( string $value ): string {
@@ -68,6 +68,10 @@ function metadata_exists( string $type, int $id, string $key ): bool {
 function get_posts( array $args ): array {
 	$matches = array();
 	foreach ( $GLOBALS['ssi_nav_meta'] as $id => $meta ) {
+		// wp_navigation is excluded from WordPress's post_type=any query.
+		if ( 'wp_navigation' !== ( $args['post_type'] ?? 'any' ) ) {
+			continue;
+		}
 		if ( isset( $meta[ $args['meta_key'] ] ) && ( ! isset( $args['meta_value'] ) || $meta[ $args['meta_key'] ] === $args['meta_value'] ) ) {
 			$matches[] = new WP_Post( $id );
 		}
@@ -76,13 +80,18 @@ function get_posts( array $args ): array {
 }
 
 class Static_Site_Importer_Site_Plan_Persistence {
+	public static function journal_post( array &$state, array $post ): void {
+		$id = $post['planned_existing_id'];
+		$state['rollback']['posts'][ $id ] = array( 'existing' => true, 'post' => $GLOBALS['ssi_nav_posts'][ $id ] );
+	}
 	public static function rewrite_route_references( string $content, array $routes, ?array &$unresolved = null ): string {
 		unset( $routes, $unresolved );
 		return $content;
 	}
-	public static function reconciled_post( string $identity ) {
+	public static function reconciled_post( string $identity, string|array $post_types = 'any' ) {
 		$posts = get_posts(
 			array(
+				'post_type'  => $post_types,
 				'meta_key'   => Static_Site_Importer_Navigation_Entity_Materializer::META_KEY,
 				'meta_value' => $identity,
 			)
@@ -124,30 +133,19 @@ $inline  = '<!-- wp:navigation {"className":"primary","overlayMenu":"mobile"} --
 $tokened = '<!-- wp:navigation {"className":"primary","overlayMenu":"mobile","ref":"' . $prefix . $token . '}}"} /-->';
 $rewritten_token = Static_Site_Importer_Navigation_Entity_Materializer::rewrite_references( $tokened, array( $token => 42 ) );
 $assert( str_contains( $rewritten_token, '"ref":42' ) && ! str_contains( $rewritten_token, $prefix ) && str_contains( $rewritten_token, '"overlayMenu":"mobile"' ) && str_contains( $rewritten_token, '"className":"primary"' ), 'Token refs become integer refs while overlay and className stay on the referencing block.' );
-$rewritten_match = Static_Site_Importer_Navigation_Entity_Materializer::rewrite_matching( $inline, array( "Home\t/\nAbout\t/about" => 42 ) );
-$assert( str_contains( $rewritten_match, '"ref":42' ) && ! str_contains( $rewritten_match, 'wp:navigation-link' ) && str_contains( $rewritten_match, '"overlayMenu":"mobile"' ), 'Matching inline navigation becomes a self-closing integer ref.' );
-$fragment_entity = '<!-- wp:navigation-link {"label":"Home","url":"/"} /--><!-- wp:navigation-link {"label":"Journal","url":"/journal"} /--><!-- wp:navigation-link {"label":"Events","url":"/#events"} /-->';
-$fragment_signature = Static_Site_Importer_Navigation_Entity_Materializer::destination_signature( $fragment_entity );
-$fragment_pair = '<!-- wp:navigation {"className":"desktop","overlayMenu":"never"} --><!-- wp:navigation-link {"label":"Home","url":"/"} /--><!-- wp:navigation-link {"label":"Journal","url":"/journal"} /--><!-- wp:navigation-link {"label":"Events","url":"/#events"} /--><!-- /wp:navigation -->'
-	. '<!-- wp:navigation {"className":"mobile","overlayMenu":"mobile"} --><!-- wp:navigation-link {"label":"Home","url":"/"} /--><!-- wp:navigation-link {"label":"Journal","url":"/journal"} /--><!-- wp:navigation-link {"label":"Events","url":"/"} /--><!-- /wp:navigation -->';
-$rewritten_fragment = Static_Site_Importer_Navigation_Entity_Materializer::rewrite_matching( $fragment_pair, array( $fragment_signature => 7 ) );
-$assert( 2 === substr_count( $rewritten_fragment, '"ref":7' ) && ! str_contains( $rewritten_fragment, 'wp:navigation-link' ) && str_contains( $rewritten_fragment, '"overlayMenu":"never"' ) && str_contains( $rewritten_fragment, '"overlayMenu":"mobile"' ), 'Fragment-equivalent variant menus share one integer ref.' );
-$divergent = '<!-- wp:navigation {"className":"mobile","overlayMenu":"mobile"} --><!-- wp:navigation-link {"label":"Home","url":"/"} /--><!-- wp:navigation-link {"label":"Shop","url":"/shop"} /--><!-- /wp:navigation -->';
-$assert( str_contains( Static_Site_Importer_Navigation_Entity_Materializer::rewrite_matching( $divergent, array( $fragment_signature => 7 ) ), 'wp:navigation-link' ), 'A different destination list stays inline.' );
-// The same menu rendered with different rich-text label wrappers (a desktop
-// bar and a phone panel) binds to one entity: labels match by what they read.
-$wrapped_entity = '<!-- wp:navigation-link {"label":"\\u003cspan class=\\u0022a\\u0022\\u003eAbout\\u003c/span\\u003e","url":"/#about"} /-->';
-$wrapped_panel  = '<!-- wp:navigation {"className":"panel","overlayMenu":"never"} --><!-- wp:navigation-link {"label":"\\u003cspan class=\\u0022b marker-2\\u0022\\u003e\\u003cspan\\u003eAbout\\u003c/span\\u003e\\u003c/span\\u003e","url":"/#about"} /--><!-- /wp:navigation -->';
-$wrapped_bound  = Static_Site_Importer_Navigation_Entity_Materializer::rewrite_matching( $wrapped_panel, array( Static_Site_Importer_Navigation_Entity_Materializer::destination_signature( $wrapped_entity ) => 9 ) );
-$assert( str_contains( $wrapped_bound, '"ref":9' ) && ! str_contains( $wrapped_bound, 'wp:navigation-link' ), 'A menu whose labels read the same through different wrappers binds to the one entity.' );
+$assert( $inline === Static_Site_Importer_Navigation_Entity_Materializer::rewrite_references( $inline, array( $token => 42 ) ), 'The consumer never recognizes or replaces inline menus by content.' );
+$disclosure = '<!-- wp:details --><details><summary>Menu</summary>' . $tokened . '</details><!-- /wp:details -->';
+$assert( str_contains( Static_Site_Importer_Navigation_Entity_Materializer::rewrite_references( $disclosure, array( $token => 42 ) ), '<summary>Menu</summary><!-- wp:navigation' ), 'ID binding retains actual disclosure ancestry.' );
 $assert( '<!-- wp:page-list /-->' === Static_Site_Importer_Navigation_Entity_Materializer::rewrite_references( '<!-- wp:page-list /-->', array( $token => 42 ) ), 'Unrelated markup is left alone.' );
 
 $identity = str_repeat( 'ab', 32 );
 $state    = array(
 	'resolved'       => array(
+		'reference_semantics' => array( 'navigation_entities' => 'explicit_refs/v1' ),
 		'menus'          => array(
 			array(
 				'kind'                    => 'menu',
+				'source_path'             => 'index.html',
 				'token'                   => $token,
 				'block_markup'            => '<!-- wp:navigation-link {"label":"Home","url":"/"} /--><!-- wp:navigation-link {"label":"About","url":"/about"} /-->',
 				'reconciliation_identity' => $identity,
@@ -160,18 +158,19 @@ $state    = array(
 				'target_path' => 'parts/header.html',
 				'payload'     => array(
 					'encoding' => 'utf8',
-					'data'     => $inline,
+					'data'     => $tokened,
 				),
 			),
 		),
 		'pages'          => array(
 			array(
 				'source_path'            => 'index.html',
-				'resolved_block_markup'  => $inline,
-				'canonical_block_markup' => $inline,
+				'resolved_block_markup'  => $tokened,
+				'canonical_block_markup' => $tokened,
 			),
 		),
 		'template_parts' => array(),
+		'templates'      => array(),
 	),
 	'ordered_pages'  => array(),
 	'source_ids'     => array(),
@@ -179,6 +178,18 @@ $state    = array(
 	'rollback'       => array( 'posts' => array() ),
 );
 
+$prepared = $state;
+$unavailable = $state['resolved'];
+$GLOBALS['ssi_nav_unavailable'] = true;
+$assert( 'navigation_entity_post_type_unavailable' === Static_Site_Importer_Navigation_Entity_Materializer::preflight( $unavailable )->get_error_code(), 'An unavailable destination is rejected before creating any post.' );
+unset( $GLOBALS['ssi_nav_unavailable'] );
+foreach ( array( 'unknown', 'duplicate', 'legacy' ) as $case ) {
+	$invalid = $state['resolved'];
+	if ( 'unknown' === $case ) { $invalid['menus'] = array(); }
+	elseif ( 'duplicate' === $case ) { $invalid['menus'][] = $invalid['menus'][0]; }
+	else { unset( $invalid['reference_semantics']['navigation_entities'] ); }
+	$assert( Static_Site_Importer_Navigation_Entity_Materializer::preflight( $invalid ) instanceof WP_Error && array() === $GLOBALS['ssi_nav_posts'], 'Invalid ' . $case . ' contract causes no WordPress mutation.' );
+}
 $first = Static_Site_Importer_Navigation_Entity_Materializer::materialize( $state );
 $assert( ! is_wp_error( $first ), 'First persist succeeds.' );
 $nav_posts = array_values(
@@ -193,10 +204,12 @@ $assert( str_contains( (string) $state['resolved']['writes'][0]['payload']['data
 $assert( str_contains( (string) $state['resolved']['pages'][0]['resolved_block_markup'], '"ref":1' ), 'Page-owned copies of the same menu also reference the persisted post.' );
 $first_id = (int) $state['applied']['navigation_entities'][0]['id'];
 
+$state = $prepared;
 $second = Static_Site_Importer_Navigation_Entity_Materializer::materialize( $state );
 $assert( ! is_wp_error( $second ), 'Re-persist succeeds.' );
 $assert( 1 === count( $GLOBALS['ssi_nav_posts'] ), 'Re-import updates the same wp_navigation post instead of duplicating it.' );
-$assert( $first_id === (int) $state['applied']['navigation_entities'][1]['id'], 'Idempotent persist keeps the same post id.' );
+$assert( $first_id === (int) $state['applied']['navigation_entities'][0]['id'], 'Idempotent persist keeps the same post id.' );
+$assert( ! empty( $state['rollback']['posts'][ $first_id ]['existing'] ), 'Reconciled navigation participates in the existing-post rollback journal.' );
 
 $GLOBALS['ssi_nav_posts'][99] = array(
 	'post_type'    => 'wp_navigation',
@@ -205,10 +218,5 @@ $GLOBALS['ssi_nav_posts'][99] = array(
 	'post_content' => '<!-- wp:page-list /-->',
 );
 $assert( 2 === count( $GLOBALS['ssi_nav_posts'] ) && '<!-- wp:page-list /-->' === $GLOBALS['ssi_nav_posts'][99]['post_content'], 'The default page-list navigation post remains unused.' );
-
-$persistence = (string) file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-site-plan-persistence.php' );
-$navigation_bind = strpos( $persistence, 'Navigation_Entity_Materializer::materialize' );
-$route_rewrite   = strpos( $persistence, 'rewrite_materialized_route_links( $state )' );
-$assert( is_int( $navigation_bind ) && is_int( $route_rewrite ) && $navigation_bind < $route_rewrite, 'Navigation refs are bound while page markup still has canonical routes, before portable page_id rewriting.' );
 
 echo "smoke-navigation-entity-materializer: ok\n";

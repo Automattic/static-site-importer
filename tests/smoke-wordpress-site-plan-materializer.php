@@ -91,8 +91,10 @@ function wp_json_encode( $value, int $options = 0 ) {
 		$GLOBALS['ssi_plan_json_array_calls'] = (int) ( $GLOBALS['ssi_plan_json_array_calls'] ?? 0 ) + 1;
 	}
 	return json_encode( $value, $options ); }
-function wp_slash( string $value ): string {
-	return addslashes( $value ); }
+function wp_slash( $value ) {
+	return is_array( $value ) ? array_map( 'wp_slash', $value ) : ( is_string( $value ) ? addslashes( $value ) : $value ); }
+function wp_unslash( $value ) {
+	return is_array( $value ) ? array_map( 'wp_unslash', $value ) : ( is_string( $value ) ? stripslashes( $value ) : $value ); }
 function wp_mkdir_p( string $path ): bool {
 	return is_dir( $path ) || mkdir( $path, 0777, true ); }
 function WP_Filesystem(): bool {
@@ -219,7 +221,7 @@ function get_post( int $id, $output = OBJECT ) {
 	if ( ! isset( $GLOBALS['ssi_plan_posts'][ $id ] ) ) {
 		return null;
 	}
-	return ARRAY_A === $output ? array_merge( array( 'ID' => $id ), $GLOBALS['ssi_plan_posts'][ $id ] ) : new WP_Post( $id );
+	return ARRAY_A === $output ? wp_unslash( array_merge( array( 'ID' => $id ), $GLOBALS['ssi_plan_posts'][ $id ] ) ) : new WP_Post( $id );
 }
 function wp_insert_post( array $post, bool $wp_error ) {
 	++$GLOBALS['ssi_plan_insert_calls'];

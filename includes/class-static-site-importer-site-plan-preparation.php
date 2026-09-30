@@ -458,6 +458,13 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 
 	/** @param array<string,mixed> $state */
 	public static function preflight_state( array &$state, bool $overwrite, string $import_run_id = '' ): void {
+		if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC !== ( $state['args']['theme_materialization'] ?? null ) ) {
+			require_once __DIR__ . '/class-static-site-importer-navigation-entity-materializer.php';
+			$navigation_error = Static_Site_Importer_Navigation_Entity_Materializer::preflight( $state['resolved'] );
+			if ( $navigation_error ) {
+				throw new InvalidArgumentException( esc_html( (string) $navigation_error->get_error_code() ) );
+			}
+		}
 		$pages_by_route      = array();
 		$state['page_ids']   = array();
 		$state['source_ids'] = array();

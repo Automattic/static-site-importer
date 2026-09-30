@@ -89,6 +89,7 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 			'theme'                     => $state['theme'] ?? array(),
 			'completed'                 => array(
 				'pages'                      => $pages,
+				'navigation_entities'        => $state['applied']['navigation_entities'] ?? array(),
 				'files'                      => $state['applied']['files'],
 				'operations'                 => $state['applied']['operations'],
 				'runtime_declarations'       => $state['applied']['runtime_declarations'] ?? array( 'asset_publications' => array() ),
