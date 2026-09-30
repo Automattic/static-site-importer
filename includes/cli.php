@@ -120,7 +120,8 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 			return null;
 		}
 
-		$failures = array();
+		$failures      = array();
+		$first_failure = '';
 		while ( ! empty( $processes ) ) {
 			foreach ( $processes as $index => &$worker ) {
 				$worker['output'] = substr( $worker['output'] . (string) stream_get_contents( $worker['pipes'][1] ), -16000 );
@@ -135,6 +136,18 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 				fclose( $worker['pipes'][2] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the worker stderr pipe before process collection.
 				proc_close( $worker['process'] );
 				if ( 0 !== (int) $status['exitcode'] ) {
+					if ( empty( $failures ) ) {
+						$first_failure = sprintf(
+							'Compile worker %d of %d exited with status %d',
+							(int) $index + 1,
+							count( $shards ),
+							(int) $status['exitcode']
+						);
+						$cause         = static_site_importer_cli_worker_failure_cause( $worker['error'], $worker['output'] );
+						if ( '' !== $cause ) {
+							$first_failure .= ': ' . $cause;
+						}
+					}
 					$failures[] = substr( trim( $worker['error'] . "\n" . $worker['output'] ), 0, 1000 );
 					$diagnostic = sprintf( 'Compile worker %d exited with status %d.', (int) $index + 1, (int) $status['exitcode'] );
 					if ( '' !== trim( $worker['error'] ) ) {
@@ -153,13 +166,46 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 			}
 		}
 		if ( $spawn_error || ! empty( $failures ) ) {
+			// The message is the only part of this error that reaches the import's
+			// public failure (redacted and bounded there), so it names the first
+			// failing worker and why, not just that some worker failed.
 			return new WP_Error(
 				'static_site_importer_direct_artifact_worker_process_failed',
-				'One or more compile workers failed.',
+				'' === $first_failure ? 'A compile worker could not be started.' : $first_failure . '.',
 				array( 'worker_errors' => array_slice( $failures, 0, 4 ) )
 			);
 		}
 		return true;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_worker_failure_cause' ) ) {
+	/**
+	 * The line that says why a compile worker died: the last PHP fatal, uncaught
+	 * exception or WP-CLI error it printed, else its last line of stderr, else of
+	 * stdout. One line; the public projection redacts and bounds it further.
+	 *
+	 * @param string $stderr Worker stderr tail.
+	 * @param string $stdout Worker stdout tail.
+	 * @return string Cause, or '' when the worker printed nothing.
+	 */
+	function static_site_importer_cli_worker_failure_cause( string $stderr, string $stdout ): string {
+		foreach ( array( $stderr, $stdout ) as $stream ) {
+			$split = preg_split( '/\R/', $stream );
+			$lines = array_values( array_filter( array_map( 'trim', false === $split ? array() : $split ) ) );
+			if ( empty( $lines ) ) {
+				continue;
+			}
+			$cause = end( $lines );
+			foreach ( array_reverse( $lines ) as $line ) {
+				if ( preg_match( '/(?:Fatal error|Uncaught|Exception|^Error:|exhausted|Killed)/i', $line ) ) {
+					$cause = $line;
+					break;
+				}
+			}
+			return substr( (string) preg_replace( '/^(?:PHP\s+)?(?:Error:\s+)?/i', '', $cause ), 0, 300 );
+		}
+		return '';
 	}
 }
 
