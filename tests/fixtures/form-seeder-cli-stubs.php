@@ -120,6 +120,7 @@ namespace {
 	if ( ! class_exists( 'Grunion_Contact_Form' ) ) {
 		class Grunion_Contact_Form {}
 	}
+	require_once dirname( __DIR__, 2 ) . '/vendor/autoload.php';
 	require_once dirname( __DIR__, 2 ) . '/includes/class-static-site-importer-form-seeder.php';
 	require_once dirname( __DIR__, 2 ) . '/includes/class-static-site-importer-entity-materializer-registry.php';
 	require_once dirname( __DIR__, 2 ) . '/includes/class-static-site-importer-stylesheet-materializer.php';
