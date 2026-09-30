@@ -143,7 +143,7 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 			}
 			if ( 'core/media-text' === $block['blockName'] ) {
 				$this->assertGreaterThan( 0, (int) ( $block['attrs']['mediaId'] ?? 0 ) );
-				$this->assertStringContainsString( 'wp-image-' . $block['attrs']['mediaId'], $block['innerHTML'] );
+				$this->assertStringContainsString( 'wp-image-' . $block['attrs']['mediaId'] . ' size-full', $block['innerHTML'], 'media-text save() emits attachment and size classes together' );
 				$this->assertContains( (int) $block['attrs']['mediaId'], $ids );
 			}
 		}

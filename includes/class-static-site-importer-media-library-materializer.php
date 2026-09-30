@@ -380,18 +380,37 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		$spans      = self::comment_spans( $rewritten );
 		$bound_html = '';
 		$cursor     = 0;
+		$owners     = array();
+		$openers    = array_column( self::block_openers( $rewritten ), null, 'start' );
 		foreach ( $spans as $span ) {
-			$bound_html .= self::rewrite_markup( substr( $rewritten, $cursor, $span['start'] - $cursor ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error )['html'];
+			$image_class = self::image_class_for_owner( $owners[ count( $owners ) - 1 ] ?? null );
+			$bound_html .= self::rewrite_markup( substr( $rewritten, $cursor, $span['start'] - $cursor ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error, $image_class )['html'];
 			if ( null !== $error ) {
 				return $rewritten;
 			}
-			$bound_html .= substr( $rewritten, $span['start'], $span['end'] - $span['start'] );
-			$cursor      = $span['end'];
+			$comment     = substr( $rewritten, $span['start'], $span['end'] - $span['start'] );
+			$bound_html .= $comment;
+			if ( isset( $openers[ $span['start'] ] ) && ! $openers[ $span['start'] ]['self'] ) {
+				$owners[] = $openers[ $span['start'] ];
+			} elseif ( preg_match( '~^<!--\s+/wp:([a-z0-9/-]+)\s+-->$~', $comment, $closing ) && ( $owners[ count( $owners ) - 1 ]['name'] ?? null ) === $closing[1] ) {
+				array_pop( $owners );
+			}
+			$cursor = $span['end'];
 		}
-		$tail        = self::rewrite_markup( substr( $rewritten, $cursor ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error );
+		$tail        = self::rewrite_markup( substr( $rewritten, $cursor ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error, self::image_class_for_owner( $owners[ count( $owners ) - 1 ] ?? null ) );
 		$bound_html .= $tail['html'];
 
 		return null === $error ? $bound_html : $rewritten;
+	}
+
+	/** The media-text save contract derives both image classes from mediaId. */
+	private static function image_class_for_owner( ?array $owner ): ?string {
+		if ( ! in_array( $owner['name'] ?? '', array( 'media-text', 'core/media-text' ), true ) ) {
+			return null;
+		}
+		$attrs = json_decode( $owner['json'], true );
+		$id    = (int) ( $attrs['mediaId'] ?? 0 );
+		return $id > 0 ? 'wp-image-' . $id . ' size-' . ( $attrs['mediaSizeSlug'] ?? 'full' ) : '';
 	}
 
 	/**
@@ -471,7 +490,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
 	 * @return array{html:string,ids:array<int,int>}
 	 */
-	private static function rewrite_markup( string $html, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, ?WP_Error &$error ): array {
+	private static function rewrite_markup( string $html, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, ?WP_Error &$error, ?string $image_class = null ): array {
 		$ids = array();
 		if ( ! str_contains( $html, '<img' ) && ! str_contains( $html, '<source' ) ) {
 			return array(
@@ -481,11 +500,11 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		}
 		$rewritten = preg_replace_callback(
 			'/<(?:img|source)\b[^>]*>/i',
-			static function ( array $tag ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$bound, &$error, &$ids ): string {
+			static function ( array $tag ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$bound, &$error, &$ids, $image_class ): string {
 				if ( null !== $error ) {
 					return $tag[0];
 				}
-				return self::rewrite_media_tag( $tag[0], $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $ids, $error );
+				return self::rewrite_media_tag( $tag[0], $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $ids, $error, $image_class );
 			},
 			$html
 		);
@@ -503,7 +522,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
 	 * @param array<int,int>    $ids
 	 */
-	private static function rewrite_media_tag( string $tag, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, array &$ids, ?WP_Error &$error ): string {
+	private static function rewrite_media_tag( string $tag, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, array &$ids, ?WP_Error &$error, ?string $image_class ): string {
 		$src_id = 0;
 		if ( preg_match( '/\bsrc="([^"]*)"/i', $tag, $src_match ) ) {
 			$src_id = self::attachment_id_for_url( html_entity_decode( $src_match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8' ), self::alt_from_tag( $tag ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
@@ -528,14 +547,15 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				$tag = str_replace( 'srcset="' . $srcset_match[1] . '"', 'srcset="' . esc_attr( $srcset ) . '"', $tag );
 			}
 		}
-		if ( $src_id <= 0 || ! str_starts_with( strtolower( $tag ), '<img' ) ) {
+		if ( '' === $image_class || $src_id <= 0 || ! str_starts_with( strtolower( $tag ), '<img' ) ) {
 			return $tag;
 		}
+		$class = esc_attr( $image_class ?? 'wp-image-' . $src_id );
 		if ( preg_match( '/\bclass="[^"]*"/i', $tag ) ) {
-			return (string) preg_replace( '/\bclass="([^"]*)"/i', 'class="$1 wp-image-' . $src_id . '"', $tag, 1 );
+			return (string) preg_replace( '/\bclass="([^"]*)"/i', 'class="$1 ' . $class . '"', $tag, 1 );
 		}
 
-		return (string) preg_replace( '/^<img\b/i', '<img class="wp-image-' . $src_id . '"', $tag, 1 );
+		return (string) preg_replace( '/^<img\b/i', '<img class="' . $class . '"', $tag, 1 );
 	}
 
 	/**
