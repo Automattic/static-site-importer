@@ -2,6 +2,7 @@
   "name": "static-site-importer",
   "private": true,
   "scripts": {
+    "build": "node tools/build-host-acceptance.mjs",
     "fig-intent-parity": "node tools/fig-intent-parity-report.mjs",
     "fig-fixture-e2e": "node tools/run-fig-fixture-e2e.mjs",
     "fig-acceptance-provider": "node tools/fig-acceptance-provider.mjs",
@@ -29,6 +30,7 @@
     "review:existing-runtime": "node tools/run-existing-runtime-review.mjs"
   },
   "devDependencies": {
+    "esbuild": "^0.25.12",
     "@wordpress/block-library": "^10.3.0",
     "@wordpress/blocks": "^15.25.0",
     "@wordpress/element": "^8.4.0",

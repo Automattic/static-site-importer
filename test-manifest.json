@@ -140,6 +140,7 @@
     { "path": "tools/visual-parity-oracle.test.mjs", "environment": "node" },
     { "path": "tools/run-fig-fixture-e2e.test.mjs", "environment": "node" },
     { "path": "tools/runtime-package-manifest.test.mjs", "environment": "node" },
+    { "path": "tools/host-acceptance-package.test.mjs", "environment": "node" },
     { "path": "tools/run-existing-runtime-review.test.mjs", "environment": "node" },
     { "path": "tools/url-loop-intake.test.mjs", "environment": "node" },
     { "path": "tools/url-loop-controller.test.mjs", "environment": "node" },
