@@ -199,6 +199,51 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		return $carried;
 	}
 
+	/**
+	 * A submit whose source wrappers are plain block boxes between it and the
+	 * form occupies its own row there, placed within that row by the inherited
+	 * text alignment. The provider renders the button's Core wrapper as a
+	 * shrink-to-fit item of its flex form, so restore the row and the placement.
+	 *
+	 * @param array<int,array<string,mixed>>   $chain              Source wrappers, outermost first.
+	 * @param array<string,array<string,mixed>> $layout_nodes_by_id Source layout graph nodes.
+	 * @return array<string,string>|null Layout for the provider button wrapper.
+	 */
+	private static function submit_block_row( array $chain, array $layout_nodes_by_id ): ?array {
+		$outer = $layout_nodes_by_id[ (string) ( $chain[0]['id'] ?? '' ) ] ?? null;
+		if ( ! is_array( $outer ) || 'form' !== ( $outer['parent'] ?? null ) ) {
+			return null;
+		}
+		$box = Static_Site_Importer_Provider_Layout_Overlay::box_property_map() + array_flip( array( 'margin_block_start', 'margin_block_end' ) );
+		foreach ( $chain as $wrapper ) {
+			$node    = $layout_nodes_by_id[ (string) ( $wrapper['id'] ?? '' ) ] ?? null;
+			$display = strtolower( trim( (string) ( $node['presentation']['styles']['display'] ?? 'block' ) ) );
+			if ( ! is_array( $node ) || ! in_array( $node['source']['tag'] ?? '', array( 'div', 'p', 'section', 'fieldset', 'li' ), true ) || ! in_array( $display, array( 'block', 'flow-root' ), true ) || array() !== array_diff_key( is_array( $node['layout'] ?? null ) ? $node['layout'] : array(), $box ) ) {
+				return null;
+			}
+		}
+		$inner   = $layout_nodes_by_id[ (string) ( $chain[ count( $chain ) - 1 ]['id'] ?? '' ) ] ?? array();
+		$align   = strtolower( trim( (string) ( $inner['presentation']['styles']['text_align'] ?? '' ) ) );
+		$justify = array(
+			'left'   => 'flex-start',
+			'start'  => 'flex-start',
+			'center' => 'center',
+			'right'  => 'flex-end',
+			'end'    => 'flex-end',
+		)[ $align ] ?? null;
+		if ( null === $justify ) {
+			return null;
+		}
+		return array(
+			'width'           => '100%',
+			'flex_basis'      => '100%',
+			'flex_grow'       => '0',
+			'flex_shrink'     => '0',
+			'display'         => 'flex',
+			'justify_content' => $justify,
+		);
+	}
+
 	/** A box value equal to the CSS initial value of that property. */
 	public static function is_initial_box_value( string $fact, string $value ): bool {
 		$tokens = preg_split( '/\s+/', trim( $value ) );
@@ -535,6 +580,21 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'strategy'    => 'provider_field_wrapper_class_projection',
 					'target_hash' => hash( 'sha256', $outermost['id'] ),
 				);
+
+				$row = self::submit_block_row( $chain, $layout_nodes_by_id );
+				if ( null !== $row ) {
+					$provider_layout_targets[ $outermost['id'] ] = $button_hook;
+					$overlay_node_targets[]                      = array(
+						'id'     => $outermost['id'],
+						'layout' => $row,
+					);
+
+					$operations[] = array(
+						'dimension'   => 'layout',
+						'strategy'    => 'provider_submit_block_row',
+						'target_hash' => hash( 'sha256', $outermost['id'] ),
+					);
+				}
 				continue;
 			}
 			foreach ( $chain as $offset => $node ) {
