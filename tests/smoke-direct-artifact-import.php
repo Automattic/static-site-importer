@@ -930,7 +930,7 @@ $worker_source = '#!' . PHP_BINARY . "\n<?php\n"
 	. 'file_put_contents($events, "start:" . $marker . "\\n", FILE_APPEND | LOCK_EX);' . "\n"
 	. 'usleep(500000);' . "\n"
 	. 'file_put_contents($events, "end:" . $marker . "\\n", FILE_APPEND | LOCK_EX);' . "\n"
-	. 'if ("fail" === $marker) { fwrite(STDERR, "worker failure\\n" . str_repeat("x", 15000)); fwrite(STDOUT, "worker output\\n" . str_repeat("y", 15000)); exit(2); }' . "\n"
+	. 'if ("fail" === $marker) { fwrite(STDERR, "worker failure\\n" . str_repeat("x", 15000) . "\\nPHP Fatal error:  Allowed memory size of 402653184 bytes exhausted in /srv/wp/blocks.php on line 12\\n"); fwrite(STDOUT, "worker output\\n" . str_repeat("y", 15000)); exit(2); }' . "\n"
 	. 'exit(0);' . "\n";
 $assert( false !== file_put_contents( $worker_script, $worker_source ) && chmod( $worker_script, 0600 ), 'the process fan-out fixture must match a readable, non-executable WP-CLI PHAR' );
 $original_argv_zero = $_SERVER['argv'][0] ?? null;
@@ -944,6 +944,25 @@ sort( $starts, SORT_STRING );
 $assert( true === $process_fanout && array( 'start:one', 'start:three', 'start:two' ) === $starts, 'the CLI fan-out adapter must start every bounded worker before waiting for completion' );
 $process_failure = static_site_importer_cli_compile_artifact_pages_fanout( str_repeat( 'b', 64 ), array( array( $worker_events, 'ok' ), array( $worker_events, 'fail' ) ) );
 $assert( is_wp_error( $process_failure ) && 'static_site_importer_direct_artifact_worker_process_failed' === $process_failure->get_error_code(), 'the CLI fan-out adapter must surface a nonzero worker exit as a structured compile failure' );
+$assert( is_wp_error( $process_failure ) && 'Compile worker 2 of 2 exited with status 2: Fatal error:  Allowed memory size of 402653184 bytes exhausted in /srv/wp/blocks.php on line 12.' === $process_failure->get_error_message(), 'a failed CLI worker must name itself, its status and its fatal in the error message, not only that some worker failed' );
+$worker_public = Static_Site_Importer_Public_Error_Projection::project_public_error_message(
+	$process_failure->get_error_code(),
+	Static_Site_Importer_Public_Error_Projection::project_public_diagnostics(
+		array(
+			array(
+				'type'        => 'validation_error',
+				'severity'    => 'error',
+				'code'        => $process_failure->get_error_code(),
+				'reason_code' => $process_failure->get_error_code(),
+				'message'     => $process_failure->get_error_message(),
+			),
+		)
+	)
+);
+$assert( 'Materialization failed (static_site_importer_direct_artifact_worker_process_failed): Compile worker 2 of 2 exited with status 2: Fatal error: Allowed memory size of 402653184 bytes exhausted in [path] on line 12.' === $worker_public, 'the worker failure must reach the public failure message with its path redacted: ' . $worker_public );
+$assert( 'Fatal error:  Uncaught TypeError: bad block' === static_site_importer_cli_worker_failure_cause( "notice one\nPHP Fatal error:  Uncaught TypeError: bad block\nStack trace:\n#0 {main}", '' ), 'the cause is the fatal line, not the stack trace after it' );
+$assert( 'last words' === static_site_importer_cli_worker_failure_cause( '', "noise\nlast words\n" ), 'without stderr the cause falls back to the last stdout line' );
+$assert( '' === static_site_importer_cli_worker_failure_cause( '', '' ), 'a silent worker has no cause to report' );
 $worker_warning = WP_CLI::$warnings[0] ?? '';
 $assert( 1 === count( WP_CLI::$warnings ) && str_contains( $worker_warning, 'Compile worker 2 exited with status 2.' ) && str_contains( $worker_warning, "Stderr:\nworker failure" ) && str_contains( $worker_warning, "Stdout:\nworker output" ) && strlen( $worker_warning ) <= 1100, 'a failed CLI worker must emit one bounded operator diagnostic with its exit status, stderr, and stdout' );
 ini_set( 'memory_limit', $original_memory_limit );
