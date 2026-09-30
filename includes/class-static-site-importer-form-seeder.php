@@ -738,7 +738,7 @@ class Static_Site_Importer_Form_Seeder {
 				unset( $overlay_form['presentation_graph']['variants'][ $variant_index ]['style_patch']['width'], $overlay_form['presentation_graph']['variants'][ $variant_index ]['style_patch']['min_width'] );
 			}
 		}
-		$visual_state           = Static_Site_Importer_Form_Layout_Projection::empty_country_visual_state( $form, $scope, $topology['phone_popup_targets'] );
+		$visual_state = Static_Site_Importer_Form_Layout_Projection::empty_country_visual_state( $form, $scope, $topology['phone_popup_targets'] );
 		foreach ( $topology['submit_block_rows'] ?? array() as $row_control ) {
 			if ( isset( $presentation_descriptors[ $row_control ] ) ) {
 				$presentation_descriptors[ $row_control ] = Static_Site_Importer_Form_Layout_Projection::with_submit_row_button_box( $presentation_descriptors[ $row_control ] );

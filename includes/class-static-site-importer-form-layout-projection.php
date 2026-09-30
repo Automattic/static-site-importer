@@ -263,7 +263,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		$destinations = is_array( $descriptor['destinations'] ?? null ) ? $descriptor['destinations'] : array();
 		foreach ( $destinations as $index => $destination ) {
 			$selector = (string) ( $destination['selector'] ?? '' );
-			if ( 'control' !== ( $destination['role'] ?? null ) || ! empty( $destination['resets'] ) && array() === ( $destination['properties'] ?? array() ) ) {
+			if ( 'control' !== ( $destination['role'] ?? null ) || ( ! empty( $destination['resets'] ) && array() === ( $destination['properties'] ?? array() ) ) ) {
 				continue;
 			}
 			if ( str_ends_with( $selector, ' > .wp-block-button__link' ) ) {
