@@ -120,7 +120,8 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 			return null;
 		}
 
-		$failures = array();
+		$failures      = array();
+		$first_failure = '';
 		while ( ! empty( $processes ) ) {
 			foreach ( $processes as $index => &$worker ) {
 				$worker['output'] = substr( $worker['output'] . (string) stream_get_contents( $worker['pipes'][1] ), -16000 );
@@ -170,7 +171,7 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 			// failing worker and why, not just that some worker failed.
 			return new WP_Error(
 				'static_site_importer_direct_artifact_worker_process_failed',
-				empty( $failures ) ? 'A compile worker could not be started.' : $first_failure . '.',
+				'' === $first_failure ? 'A compile worker could not be started.' : $first_failure . '.',
 				array( 'worker_errors' => array_slice( $failures, 0, 4 ) )
 			);
 		}
@@ -190,7 +191,8 @@ if ( ! function_exists( 'static_site_importer_cli_worker_failure_cause' ) ) {
 	 */
 	function static_site_importer_cli_worker_failure_cause( string $stderr, string $stdout ): string {
 		foreach ( array( $stderr, $stdout ) as $stream ) {
-			$lines = array_values( array_filter( array_map( 'trim', preg_split( '/\R/', $stream ) ) ) );
+			$split = preg_split( '/\R/', $stream );
+			$lines = array_values( array_filter( array_map( 'trim', false === $split ? array() : $split ) ) );
 			if ( empty( $lines ) ) {
 				continue;
 			}
