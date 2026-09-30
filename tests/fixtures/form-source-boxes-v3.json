@@ -310,20 +310,6 @@
                     }
                 },
                 {
-                    "id": "control-0",
-                    "kind": "control",
-                    "layout": [],
-                    "order": 1,
-                    "parent": "form",
-                    "provenance": [],
-                    "source": {
-                        "classes": [],
-                        "id": "email",
-                        "selector": "main:nth-of-type(1) > form:nth-of-type(1) > input:nth-of-type(1)",
-                        "tag": "input"
-                    }
-                },
-                {
                     "id": "wrapper-0",
                     "kind": "container",
                     "layout": {

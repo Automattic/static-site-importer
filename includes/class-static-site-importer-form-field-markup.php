@@ -530,6 +530,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 				// The source graph resolved this element's own cascade, so its
 				// identity hook carries base and conditional facts as scoped CSS.
 				$class = trim( $class . ' ' . $source['identity'] );
+				$style = array();
 			} else {
 				if ( '' !== $class && ! empty( $styles ) ) {
 					$class .= ' ' . self::context_style_identity( $position, (int) $index, $block );
@@ -646,7 +647,10 @@ final class Static_Site_Importer_Form_Field_Markup {
 				}
 				$covered[ $id ] = true;
 				$identity       = self::context_node_identity( $nodes[ $id ] );
-				self::push_context_fallback( $result['fallbacks'], $identity, $nodes[ $id ], array_merge( self::CONTEXT_TEXT_PROPERTIES, self::CONTEXT_BOX_PROPERTIES ) );
+				if ( ! self::push_context_fallback( $result['fallbacks'], $identity, $nodes[ $id ], array_merge( self::CONTEXT_TEXT_PROPERTIES, self::CONTEXT_BOX_PROPERTIES ) ) ) {
+					// Nothing resolved for this copy: its source classes alone carry it.
+					$identity = '';
+				}
 				$wrappers  = array();
 				$ancestors = array();
 				$parent    = $nodes[ $id ]['parent'] ?? null;
@@ -711,11 +715,15 @@ final class Static_Site_Importer_Form_Field_Markup {
 		return false;
 	}
 
-	/** @param array<int,array<string,mixed>> $fallbacks @param array<int,string> $properties */
-	private static function push_context_fallback( array &$fallbacks, string $identity, array $node, array $properties ): void {
+	/**
+	 * @param array<int,array<string,mixed>> $fallbacks
+	 * @param array<int,string>              $properties
+	 * @return bool Whether this identity carries resolved facts.
+	 */
+	private static function push_context_fallback( array &$fallbacks, string $identity, array $node, array $properties ): bool {
 		foreach ( $fallbacks as $fallback ) {
 			if ( $identity === $fallback['identity'] ) {
-				return;
+				return true;
 			}
 		}
 		$allowed      = array_flip( $properties );
@@ -732,13 +740,14 @@ final class Static_Site_Importer_Form_Field_Markup {
 			}
 		}
 		if ( array() === $styles && array() === $variants ) {
-			return;
+			return false;
 		}
 		$fallbacks[] = array(
 			'identity' => $identity,
 			'styles'   => $styles,
 			'variants' => $variants,
 		);
+		return true;
 	}
 
 	/** @return array<int,array<string,mixed>> */
