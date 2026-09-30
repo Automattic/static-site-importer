@@ -4,7 +4,10 @@ import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
-import test from "node:test"
+import test, { before } from "node:test"
+import { buildHostAcceptance } from "./build-host-acceptance.mjs"
+
+before(() => buildHostAcceptance())
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const manifestPath = join(root, "runtime-package-manifest.json")
