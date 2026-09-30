@@ -117,10 +117,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 			return array( $layout, $kept );
 		};
+
 		$context = array(
 			'nodes'    => array(),
 			'variants' => array(),
 		);
+
 		$nodes = array();
 		foreach ( $graph['nodes'] as $node ) {
 			if ( is_array( $node ) && str_starts_with( (string) ( $node['id'] ?? '' ), 'context-' ) ) {
