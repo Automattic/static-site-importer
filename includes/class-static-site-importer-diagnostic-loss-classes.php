@@ -267,8 +267,55 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 				}
 			}
 		}
+		// The compiler dedupes per-file drop rows into one aggregate
+		// `artifact_inputs_rejected` row whose context counts them by code.
+		$dropped = self::rejected_drop_counts( $diagnostic );
+		if ( array() !== $dropped ) {
+			return isset( $dropped['file_limit_exceeded'] ) ? self::OMITTED_ARTIFACT_FILES_TYPE : self::OMITTED_ARTIFACT_FILE_TYPE;
+		}
 
 		return '';
+	}
+
+	/**
+	 * Count artifact files a set of compiler diagnostics reports as omitted.
+	 *
+	 * @param array<int,mixed> $diagnostics Raw or normalized diagnostic rows.
+	 * @return int
+	 */
+	public static function omitted_artifact_file_count( array $diagnostics ): int {
+		$count = 0;
+		foreach ( $diagnostics as $diagnostic ) {
+			if ( ! is_array( $diagnostic ) ) {
+				continue;
+			}
+			$dropped = self::rejected_drop_counts( $diagnostic );
+			if ( array() !== $dropped ) {
+				$count += array_sum( $dropped );
+			} elseif ( '' !== self::compiler_file_drop_type( $diagnostic ) ) {
+				++$count;
+			}
+		}
+
+		return $count;
+	}
+
+	/**
+	 * Drop counts by code from an aggregate `artifact_inputs_rejected` row.
+	 *
+	 * @param array<string,mixed> $diagnostic Diagnostic row.
+	 * @return array<string,int>
+	 */
+	private static function rejected_drop_counts( array $diagnostic ): array {
+		$code = (string) ( $diagnostic['original_code'] ?? $diagnostic['code'] ?? $diagnostic['diagnostic_code'] ?? '' );
+		if ( 'artifact_inputs_rejected' !== $code || ! is_array( $diagnostic['context']['rejected_by_code'] ?? null ) ) {
+			return array();
+		}
+
+		return array_filter(
+			array_map( 'intval', array_intersect_key( $diagnostic['context']['rejected_by_code'], self::COMPILER_FILE_DROP_TYPES ) ),
+			static fn( int $count ): bool => $count > 0
+		);
 	}
 
 	/**

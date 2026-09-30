@@ -32,6 +32,7 @@
     { "path": "tests/smoke-companion-plugin.php", "environment": "standalone-php" },
     { "path": "tests/smoke-contact-layout-transformer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-diagnostic-loss-classes.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-compiler-file-limits.php", "environment": "standalone-php" },
     { "path": "tests/editor-validation-contract.test.mjs", "environment": "node" },
     { "path": "tests/gutenberg-block-validation.test.mjs", "environment": "node" },
     { "path": "tests/smoke-editor-theme-styles.php", "environment": "wordpress-runtime" },
