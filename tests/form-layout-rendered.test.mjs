@@ -8,6 +8,30 @@ const { chromium } = ( await import( 'playwright' ).catch( () => null ) ) ?? {};
 const transformer = process.env.STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH
 	? `${process.env.STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH.replace(/\/$/, '')}/php-transformer.php`
 	: 'vendor/automattic/blocks-engine-php-transformer/php-transformer.php';
+
+test( 'overlay compaction preserves frontend and editor cascade across responsive conditions', async () => {
+	assert.ok( chromium, 'Playwright is required' );
+	const fixture = JSON.parse( execFileSync( 'php', [ 'tests/fixtures/provider-overlay-compaction-rendered.php' ], { encoding: 'utf8' } ) );
+	assert.ok( fixture.after.length < fixture.before.length );
+	const browser = await chromium.launch();
+	try {
+		const page = await browser.newPage();
+		for ( const width of [ 390, 768, 1079, 1080, 1440 ] ) {
+			await page.setViewportSize( { width, height: 900 } );
+			const samples = [];
+			for ( const css of [ fixture.before, fixture.after ] ) {
+				await page.setContent( `<style>.form{container-type:inline-size;width:600px}input,textarea{font-size:16px}${ css }</style><div class="form"><input class="first"><input class="last"><textarea class="message"></textarea></div><div class="editor-styles-wrapper"><div class="form"><input class="first"><input class="last"><textarea class="message"></textarea></div></div>` );
+				samples.push( await page.locator( 'input,textarea' ).evaluateAll( nodes => nodes.map( node => {
+					const style = getComputedStyle( node );
+					return { color: style.color, fontSize: style.fontSize, padding: style.padding, border: style.border, height: node.getBoundingClientRect().height };
+				} ) ) );
+			}
+			assert.deepEqual( samples[1], samples[0], `cascade and container/media applicability at ${ width }` );
+		}
+	} finally {
+		await browser.close();
+	}
+} );
 function requireBrowserPrerequisites() {
 	assert.ok( chromium, 'Playwright is required; browser acceptance must not silently skip' );
 	assert.ok( existsSync( chromium.executablePath() ), `Playwright Chromium is missing at ${chromium.executablePath()}` );

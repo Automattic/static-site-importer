@@ -256,8 +256,10 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			}
 			$rules = array();
 		}
-		$css               = empty( $rules ) ? '' : '/* Static Site Importer provider layout overlay: ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", array_values( array_unique( $rules ) ) ) . "\n";
-		$editor_css        = empty( $editor_rules ) ? '' : '/* Static Site Importer editor control chrome: ' . substr( hash( 'sha256', implode( "\n", $editor_rules ) ), 0, 12 ) . " */\n" . implode( "\n", array_values( array_unique( $editor_rules ) ) ) . "\n";
+		$rules             = self::compact_rules( array_values( array_unique( $rules ) ) );
+		$editor_rules      = self::compact_rules( array_values( array_unique( $editor_rules ) ) );
+		$css               = empty( $rules ) ? '' : '/* Static Site Importer provider layout overlay: ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", $rules ) . "\n";
+		$editor_css        = empty( $editor_rules ) ? '' : '/* Static Site Importer editor control chrome: ' . substr( hash( 'sha256', implode( "\n", $editor_rules ) ), 0, 12 ) . " */\n" . implode( "\n", $editor_rules ) . "\n";
 		$max_overlay_bytes = empty( $presentation_graph ) ? self::MAX_LAYOUT_OVERLAY_BYTES : self::MAX_OVERLAY_BYTES;
 		// Editor chrome is admitted against MAX_OVERLAY_BYTES (validate_overlay), so
 		// an oversized one degrades to the same recorded loss instead of a rejection.
@@ -300,6 +302,35 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			'operations' => $operations,
 			'losses'     => $losses,
 		);
+	}
+
+	/** Merge adjacent equivalent rules without changing selector specificity or cascade order. */
+	private static function compact_rules( array $rules ): array {
+		$compacted = array();
+		$previous  = null;
+		foreach ( $rules as $rule ) {
+			if ( ! preg_match( '/^((?:@(?:media|container) [^{}]+\{)*)([^{}]+)\{([^{}]*)\}(\}*)$/D', $rule, $parts ) || substr_count( $parts[1], '{' ) !== strlen( $parts[4] ) ) {
+				$compacted[] = $rule;
+				$previous    = null;
+				continue;
+			}
+			if ( null !== $previous && $previous[3] === $parts[3] ) {
+				if ( $previous[1] === $parts[1] && $previous[4] === $parts[4] && substr_count( $previous[2] . ', ' . $parts[2], ', ' ) < 128 ) {
+					$previous[2] .= ', ' . $parts[2];
+				} elseif ( $previous[2] === $parts[2] && '}' === $previous[4] && '}' === $parts[4] && preg_match( '/^@media ([^{}]+)\{$/D', $previous[1], $left ) && preg_match( '/^@media ([^{}]+)\{$/D', $parts[1], $right ) && substr_count( $left[1] . ',' . $right[1], ',' ) < 128 ) {
+					$previous[1] = '@media ' . $left[1] . ',' . $right[1] . '{';
+				} else {
+					$previous = null;
+				}
+				if ( null !== $previous ) {
+					$compacted[ count( $compacted ) - 1 ] = $previous[1] . $previous[2] . '{' . $previous[3] . '}' . $previous[4];
+					continue;
+				}
+			}
+			$compacted[] = $rule;
+			$previous    = $parts;
+		}
+		return $compacted;
 	}
 
 	/** CSS properties a form context rule may declare, keyed by fact name. */
@@ -463,21 +494,29 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	private static function safe_context_fallback_artifact_rule( string $rule ): bool {
-		if ( preg_match( '/^@(?:media|container) (' . self::MEDIA_FEATURE_QUERY . ')\{(.+)\}$/D', $rule, $matches ) ) {
-			return self::safe_context_fallback_artifact_rule( $matches[2] );
+		if ( preg_match( '/^@(?:media (' . self::MEDIA_FEATURE_QUERY . '(?:,' . self::MEDIA_FEATURE_QUERY . '){0,127})|container (' . self::MEDIA_FEATURE_QUERY . '))\{(.+)\}$/D', $rule, $matches ) ) {
+			return self::safe_context_fallback_artifact_rule( $matches[3] );
 		}
 		return self::safe_context_fallback_rule( $rule );
 	}
 
 	private static function safe_editor_compiled_rule( string $rule ): bool {
-		if ( preg_match( '/^@(?:media|container) (' . self::MEDIA_FEATURE_QUERY . ')\{(.+)\}$/D', $rule, $matches ) ) {
-			return self::safe_editor_compiled_rule( $matches[2] );
+		if ( preg_match( '/^@(?:media (' . self::MEDIA_FEATURE_QUERY . '(?:,' . self::MEDIA_FEATURE_QUERY . '){0,127})|container (' . self::MEDIA_FEATURE_QUERY . '))\{(.+)\}$/D', $rule, $matches ) ) {
+			return self::safe_editor_compiled_rule( $matches[3] );
 		}
 		$prefix = '.editor-styles-wrapper ';
-		return str_starts_with( $rule, $prefix ) && self::safe_compiled_rule( substr( $rule, strlen( $prefix ) ) );
+		if ( ! preg_match( '/^([^{}]+)\{([^{}]+)\}$/D', $rule, $matches ) ) {
+			return false;
+		}
+		$selectors = explode( ', ', $matches[1] );
+		return count( $selectors ) <= 128 && ! array_filter( $selectors, static fn( string $selector ): bool => ! str_starts_with( $selector, $prefix ) || ! self::safe_compiled_rule( substr( $selector, strlen( $prefix ) ) . '{' . $matches[2] . '}' ) );
 	}
 
 	private static function safe_compiled_rule( string $rule ): bool {
+		if ( preg_match( '/^([^{}]+)\{([^{}]+)\}$/D', $rule, $list ) && str_contains( $list[1], ', ' ) ) {
+			$selectors = explode( ', ', $list[1] );
+			return count( $selectors ) <= 128 && ! array_filter( $selectors, static fn( string $selector ): bool => ! self::safe_compiled_rule( $selector . '{' . $list[2] . '}' ) );
+		}
 		$rule = str_replace( ' > div.jetpack-field__control{', '{', $rule );
 		if ( self::safe_context_fallback_rule( $rule ) ) {
 			return true;
@@ -485,13 +524,16 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? \.ssi-node-[a-f0-9]{12})::placeholder\{color:revert;opacity:revert\}$/D', $rule ) ) {
 			return true;
 		}
-		if ( preg_match( '/^@(?:media|container) (' . self::MEDIA_FEATURE_QUERY . ')\{(.+)\}$/D', $rule, $matches ) ) {
-			return self::safe_compiled_rule( $matches[2] );
+		if ( preg_match( '/^@(?:media (' . self::MEDIA_FEATURE_QUERY . '(?:,' . self::MEDIA_FEATURE_QUERY . '){0,127})|container (' . self::MEDIA_FEATURE_QUERY . '))\{(.+)\}$/D', $rule, $matches ) ) {
+			return self::safe_compiled_rule( $matches[3] );
 		}
 		// The provider form target is admitted as both of its rendered spellings,
 		// so a compiled rule may carry that two-part selector list.
 		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?:\.jetpack-contact-form-container)?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-source-field-list| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label| select)?| \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap \.contact-form__field-hints| \.grunion-field-wrap \.contact-form__field-format| \.grunion-field-wrap \.ssi-field-row > label| \.grunion-field-wrap > \.ssi-field-row| \.grunion-field-wrap \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\))?';
-		if ( ! preg_match( '/^(' . $scope_selector . '(?:, ' . $scope_selector . ')?)\{([^{}]+)\}$/D', $rule, $matches ) ) {
+		if ( ! preg_match( '/^([^{}]+)\{([^{}]+)\}$/D', $rule, $matches ) ) {
+			return false;
+		}
+		if ( ! preg_match( '/^' . $scope_selector . '$/D', $matches[1] ) ) {
 			return false;
 		}
 		$layout_allowed       = array( 'display', 'width', 'height', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'position', 'z-index', 'pointer-events', ...array_values( self::box_property_map() ) );
