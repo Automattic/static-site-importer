@@ -1,0 +1,863 @@
+{
+    "source_css": ".page{--copy:21px;font-family:Georgia;color:#123456}.wide-copy{font-size:var(--copy);line-height:1.5;margin:0 0 6px}.intro-box{padding:3px 5px}.page .field-box{padding-bottom:24px}.submit-box{min-height:73px;padding-bottom:19px}.send{min-height:41px}.note-box{padding:7px 0 13px}.note{font-size:11px;line-height:1.25;margin:4px 0 0}@media (min-width:1200px){.page{--copy:27px}.wide-copy{letter-spacing:2px}.note-box{padding-bottom:17px}}",
+    "complete": {
+        "bindings": [
+            {
+                "occurrence": 1,
+                "position": {
+                    "block_index": 1,
+                    "length": 555,
+                    "offset": 248,
+                    "schema": "blocks-engine/runtime-binding-position/v1"
+                },
+                "projected_anchor": {
+                    "schema": "blocks-engine/projected-binding-anchor/v1",
+                    "source_block_markup": "<!-- wp:html --><form method=\"post\"><div class=\"intro-box\"><p class=\"hook-1 hook-2 hook-3 hook-4 hook-5 hook-6 hook-7 hook-8 hook-9 hook-10 hook-11 hook-12 hook-13 hook-14 hook-15 hook-16 hook-17 hook-18 hook-19 hook-20 wide-copy\">A neutral introduction.</p></div><div class=\"field-box\"><label for=\"email\">Email</label><input id=\"email\" type=\"email\" name=\"email\" required></div><div class=\"submit-box\"><button class=\"send\" type=\"submit\">Send</button></div><div class=\"note-box\"><p class=\"note\">Please review your details.</p></div></form><!-- /wp:html -->",
+                    "source_occurrence": 1,
+                    "source_position": {
+                        "block_index": 1,
+                        "length": 555,
+                        "offset": 248,
+                        "schema": "blocks-engine/runtime-binding-position/v1"
+                    }
+                },
+                "role": "form",
+                "schema": "generic/block-binding/v1",
+                "search_block_markup": "<!-- wp:html --><form method=\"post\"><div class=\"intro-box\"><p class=\"hook-1 hook-2 hook-3 hook-4 hook-5 hook-6 hook-7 hook-8 hook-9 hook-10 hook-11 hook-12 hook-13 hook-14 hook-15 hook-16 hook-17 hook-18 hook-19 hook-20 wide-copy\">A neutral introduction.</p></div><div class=\"field-box\"><label for=\"email\">Email</label><input id=\"email\" type=\"email\" name=\"email\" required></div><div class=\"submit-box\"><button class=\"send\" type=\"submit\">Send</button></div><div class=\"note-box\"><p class=\"note\">Please review your details.</p></div></form><!-- /wp:html -->",
+                "source_path": "index.html",
+                "superseded_runtime_selectors": [
+                    "main:nth-of-type(1) > form:nth-of-type(1)"
+                ]
+            }
+        ],
+        "control_topology": {
+            "max_depth": 16,
+            "max_nodes": 128,
+            "nodes": [
+                {
+                    "class": "field-box",
+                    "depth": 0,
+                    "id": "wrapper-0",
+                    "kind": "wrapper",
+                    "order": 0,
+                    "tag": "div"
+                },
+                {
+                    "control": 0,
+                    "depth": 1,
+                    "id": "control-0",
+                    "kind": "control",
+                    "order": 0,
+                    "parent": "wrapper-0"
+                },
+                {
+                    "class": "submit-box",
+                    "depth": 0,
+                    "id": "wrapper-1",
+                    "kind": "wrapper",
+                    "order": 1,
+                    "tag": "div"
+                },
+                {
+                    "control": 1,
+                    "depth": 1,
+                    "id": "control-1",
+                    "kind": "control",
+                    "order": 0,
+                    "parent": "wrapper-1"
+                }
+            ],
+            "schema": "generic/form-control-topology/v1",
+            "truncated": false
+        },
+        "controls": [
+            {
+                "id": "email",
+                "label": "Email",
+                "name": "email",
+                "order": 0,
+                "required": true,
+                "required_indicator": false,
+                "selector": "main:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(2) > input:nth-of-type(1)",
+                "tag": "input",
+                "type": "email"
+            },
+            {
+                "class": "send",
+                "order": 1,
+                "presentation": {
+                    "style": {
+                        "dimensions": {
+                            "minHeight": "41px"
+                        }
+                    }
+                },
+                "selector": "main:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(3) > button:nth-of-type(1)",
+                "tag": "button",
+                "text": "Send",
+                "type": "submit"
+            }
+        ],
+        "fallback_identity": "6371992b9ea7ab2aa3ad82f7c4e152833d5d97fe91a212f08ce543dbfef4316b",
+        "form": {
+            "context_after": [
+                {
+                    "class": "note",
+                    "source_selector": "main:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(4) > p:nth-of-type(1)",
+                    "styles": {
+                        "font_size": "11px",
+                        "line_height": "1.25"
+                    },
+                    "text": "Please review your details.",
+                    "type": "paragraph"
+                }
+            ],
+            "context_before": [
+                {
+                    "class": "hook-1 hook-2 hook-3 hook-4 hook-5 hook-6 hook-7 hook-8 hook-9 hook-10 hook-11 hook-12 hook-13 hook-14 hook-15 hook-16 hook-17 hook-18 hook-19 hook-20 wide-copy",
+                    "source_selector": "main:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(1) > p:nth-of-type(1)",
+                    "styles": {
+                        "font_size": "27px",
+                        "line_height": "1.5"
+                    },
+                    "text": "A neutral introduction.",
+                    "type": "paragraph"
+                }
+            ],
+            "method": "post"
+        },
+        "layout_graph": {
+            "basis": "source_css_cascade",
+            "diagnostics": [],
+            "limits": {
+                "depth": 16,
+                "nodes": 128,
+                "rules_per_node": 16
+            },
+            "nodes": [
+                {
+                    "id": "form",
+                    "kind": "container",
+                    "layout": [],
+                    "order": 0,
+                    "provenance": [],
+                    "source": {
+                        "classes": [],
+                        "id": null,
+                        "selector": "main:nth-of-type(1) > form:nth-of-type(1)",
+                        "tag": "form"
+                    }
+                },
+                {
+                    "id": "context-0",
+                    "kind": "container",
+                    "layout": {
+                        "padding": "3px 5px"
+                    },
+                    "order": 0,
+                    "parent": "form",
+                    "presentation": {
+                        "diagnostics": [],
+                        "provenance": [
+                            {
+                                "condition": null,
+                                "properties": [
+                                    "padding"
+                                ],
+                                "selector": ".intro-box",
+                                "source_path": "source.css",
+                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            },
+                            {
+                                "condition": null,
+                                "properties": [
+                                    "color",
+                                    "font-family"
+                                ],
+                                "selector": ".page",
+                                "source_path": "source.css",
+                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            }
+                        ],
+                        "schema": "generic/form-element-presentation/v1",
+                        "styles": {
+                            "color": "#123456",
+                            "font_family": "Georgia",
+                            "padding": "3px 5px"
+                        },
+                        "truncated": false,
+                        "variants": []
+                    },
+                    "provenance": [
+                        {
+                            "condition": null,
+                            "properties": [
+                                "padding"
+                            ],
+                            "selector": ".intro-box",
+                            "source_path": "source.css",
+                            "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                        }
+                    ],
+                    "source": {
+                        "classes": [
+                            "intro-box"
+                        ],
+                        "id": null,
+                        "selector": "main:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(1)",
+                        "tag": "div"
+                    }
+                },
+                {
+                    "id": "context-1",
+                    "kind": "container",
+                    "layout": [],
+                    "order": 0,
+                    "parent": "context-0",
+                    "presentation": {
+                        "diagnostics": [],
+                        "provenance": [
+                            {
+                                "condition": null,
+                                "properties": [
+                                    "font-size",
+                                    "line-height",
+                                    "margin"
+                                ],
+                                "selector": ".wide-copy",
+                                "source_path": "source.css",
+                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            },
+                            {
+                                "condition": null,
+                                "properties": [
+                                    "color",
+                                    "font-family"
+                                ],
+                                "selector": ".page",
+                                "source_path": "source.css",
+                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            }
+                        ],
+                        "schema": "generic/form-element-presentation/v1",
+                        "styles": {
+                            "color": "#123456",
+                            "font_family": "Georgia",
+                            "font_size": "21px",
+                            "line_height": "1.5",
+                            "margin": "0 0 6px"
+                        },
+                        "truncated": false,
+                        "variants": [
+                            {
+                                "condition": {
+                                    "kind": "media",
+                                    "query": "(min-width:1200px)"
+                                },
+                                "precedence": {
+                                    "font-size": {
+                                        "important": false,
+                                        "source_order": 1,
+                                        "specificity": 10
+                                    },
+                                    "letter-spacing": {
+                                        "important": false,
+                                        "source_order": 8,
+                                        "specificity": 10
+                                    }
+                                },
+                                "provenance": [
+                                    {
+                                        "condition": {
+                                            "kind": "media",
+                                            "query": "(min-width:1200px)"
+                                        },
+                                        "properties": [
+                                            "font-size",
+                                            "letter-spacing"
+                                        ],
+                                        "selector": ".wide-copy",
+                                        "source_path": "source.css",
+                                        "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                                    }
+                                ],
+                                "styles": {
+                                    "font_size": "27px",
+                                    "letter_spacing": "2px"
+                                }
+                            }
+                        ]
+                    },
+                    "provenance": [],
+                    "source": {
+                        "classes": [
+                            "hook-1",
+                            "hook-2",
+                            "hook-3",
+                            "hook-4",
+                            "hook-5",
+                            "hook-6",
+                            "hook-7",
+                            "hook-8",
+                            "hook-9",
+                            "hook-10",
+                            "hook-11",
+                            "hook-12",
+                            "hook-13",
+                            "hook-14",
+                            "hook-15",
+                            "hook-16",
+                            "hook-17",
+                            "hook-18",
+                            "hook-19",
+                            "hook-20",
+                            "wide-copy"
+                        ],
+                        "id": null,
+                        "selector": "main:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(1) > p:nth-of-type(1)",
+                        "tag": "p"
+                    }
+                },
+                {
+                    "id": "wrapper-0",
+                    "kind": "container",
+                    "layout": {
+                        "padding_bottom": "24px"
+                    },
+                    "order": 1,
+                    "parent": "form",
+                    "presentation": {
+                        "diagnostics": [],
+                        "provenance": [
+                            {
+                                "condition": null,
+                                "properties": [
+                                    "padding-bottom"
+                                ],
+                                "selector": ".page .field-box",
+                                "source_path": "source.css",
+                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            },
+                            {
+                                "condition": null,
+                                "properties": [
+                                    "color",
+                                    "font-family"
+                                ],
+                                "selector": ".page",
+                                "source_path": "source.css",
+                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            }
+                        ],
+                        "schema": "generic/form-element-presentation/v1",
+                        "styles": {
+                            "color": "#123456",
+                            "font_family": "Georgia",
+                            "padding_bottom": "24px"
+                        },
+                        "truncated": false,
+                        "variants": []
+                    },
+                    "provenance": [
+                        {
+                            "condition": null,
+                            "properties": [
+                                "padding-bottom"
+                            ],
+                            "selector": ".page .field-box",
+                            "source_path": "source.css",
+                            "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                        }
+                    ],
+                    "source": {
+                        "classes": [
+                            "field-box"
+                        ],
+                        "id": null,
+                        "selector": "main:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(2)",
+                        "tag": "div"
+                    }
+                },
+                {
+                    "id": "wrapper-1",
+                    "kind": "container",
+                    "layout": {
+                        "min_height": "73px",
+                        "padding_bottom": "19px"
+                    },
+                    "order": 2,
+                    "parent": "form",
+                    "presentation": {
+                        "diagnostics": [],
+                        "provenance": [
+                            {
+                                "condition": null,
+                                "properties": [
+                                    "min-height",
+                                    "padding-bottom"
+                                ],
+                                "selector": ".submit-box",
+                                "source_path": "source.css",
+                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            },
+                            {
+                                "condition": null,
+                                "properties": [
+                                    "color",
+                                    "font-family"
+                                ],
+                                "selector": ".page",
+                                "source_path": "source.css",
+                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            }
+                        ],
+                        "schema": "generic/form-element-presentation/v1",
+                        "styles": {
+                            "color": "#123456",
+                            "font_family": "Georgia",
+                            "min_height": "73px",
+                            "padding_bottom": "19px"
+                        },
+                        "truncated": false,
+                        "variants": []
+                    },
+                    "provenance": [
+                        {
+                            "condition": null,
+                            "properties": [
+                                "min-height",
+                                "padding-bottom"
+                            ],
+                            "selector": ".submit-box",
+                            "source_path": "source.css",
+                            "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                        }
+                    ],
+                    "source": {
+                        "classes": [
+                            "submit-box"
+                        ],
+                        "id": null,
+                        "selector": "main:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(3)",
+                        "tag": "div"
+                    }
+                },
+                {
+                    "id": "control-1",
+                    "kind": "control",
+                    "layout": {
+                        "min_height": "41px"
+                    },
+                    "order": 0,
+                    "parent": "wrapper-1",
+                    "provenance": [
+                        {
+                            "condition": null,
+                            "properties": [
+                                "min-height"
+                            ],
+                            "selector": ".send",
+                            "source_path": "source.css",
+                            "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                        }
+                    ],
+                    "source": {
+                        "classes": [
+                            "send"
+                        ],
+                        "id": null,
+                        "selector": "main:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(3) > button:nth-of-type(1)",
+                        "tag": "button"
+                    }
+                },
+                {
+                    "id": "context-2",
+                    "kind": "container",
+                    "layout": {
+                        "padding": "7px 0 13px"
+                    },
+                    "order": 3,
+                    "parent": "form",
+                    "presentation": {
+                        "diagnostics": [],
+                        "provenance": [
+                            {
+                                "condition": null,
+                                "properties": [
+                                    "padding"
+                                ],
+                                "selector": ".note-box",
+                                "source_path": "source.css",
+                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            },
+                            {
+                                "condition": null,
+                                "properties": [
+                                    "color",
+                                    "font-family"
+                                ],
+                                "selector": ".page",
+                                "source_path": "source.css",
+                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            }
+                        ],
+                        "schema": "generic/form-element-presentation/v1",
+                        "styles": {
+                            "color": "#123456",
+                            "font_family": "Georgia",
+                            "padding": "7px 0 13px"
+                        },
+                        "truncated": false,
+                        "variants": [
+                            {
+                                "condition": {
+                                    "kind": "media",
+                                    "query": "(min-width:1200px)"
+                                },
+                                "precedence": {
+                                    "padding-bottom": {
+                                        "important": false,
+                                        "source_order": 9,
+                                        "specificity": 10
+                                    }
+                                },
+                                "provenance": [
+                                    {
+                                        "condition": {
+                                            "kind": "media",
+                                            "query": "(min-width:1200px)"
+                                        },
+                                        "properties": [
+                                            "padding-bottom"
+                                        ],
+                                        "selector": ".note-box",
+                                        "source_path": "source.css",
+                                        "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                                    }
+                                ],
+                                "styles": {
+                                    "padding_bottom": "17px"
+                                }
+                            }
+                        ]
+                    },
+                    "provenance": [
+                        {
+                            "condition": null,
+                            "properties": [
+                                "padding"
+                            ],
+                            "selector": ".note-box",
+                            "source_path": "source.css",
+                            "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                        }
+                    ],
+                    "source": {
+                        "classes": [
+                            "note-box"
+                        ],
+                        "id": null,
+                        "selector": "main:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(4)",
+                        "tag": "div"
+                    }
+                },
+                {
+                    "id": "context-3",
+                    "kind": "container",
+                    "layout": [],
+                    "order": 0,
+                    "parent": "context-2",
+                    "presentation": {
+                        "diagnostics": [],
+                        "provenance": [
+                            {
+                                "condition": null,
+                                "properties": [
+                                    "font-size",
+                                    "line-height",
+                                    "margin"
+                                ],
+                                "selector": ".note",
+                                "source_path": "source.css",
+                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            },
+                            {
+                                "condition": null,
+                                "properties": [
+                                    "color",
+                                    "font-family"
+                                ],
+                                "selector": ".page",
+                                "source_path": "source.css",
+                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            }
+                        ],
+                        "schema": "generic/form-element-presentation/v1",
+                        "styles": {
+                            "color": "#123456",
+                            "font_family": "Georgia",
+                            "font_size": "11px",
+                            "line_height": "1.25",
+                            "margin": "4px 0 0"
+                        },
+                        "truncated": false,
+                        "variants": []
+                    },
+                    "provenance": [],
+                    "source": {
+                        "classes": [
+                            "note"
+                        ],
+                        "id": null,
+                        "selector": "main:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(4) > p:nth-of-type(1)",
+                        "tag": "p"
+                    }
+                }
+            ],
+            "schema": "generic/computed-layout-graph/v3",
+            "truncated": false,
+            "variants": [
+                {
+                    "condition": {
+                        "kind": "media",
+                        "query": "(min-width:1200px)"
+                    },
+                    "layout_patch": {
+                        "padding_bottom": "17px"
+                    },
+                    "node": "context-2",
+                    "precedence": {
+                        "padding-bottom": {
+                            "important": false,
+                            "source_order": 5,
+                            "specificity": 10
+                        }
+                    },
+                    "provenance": [
+                        {
+                            "condition": {
+                                "kind": "media",
+                                "query": "(min-width:1200px)"
+                            },
+                            "properties": [
+                                "padding-bottom"
+                            ],
+                            "selector": ".note-box",
+                            "source_path": "source.css",
+                            "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                        }
+                    ]
+                }
+            ]
+        },
+        "presentation_graph": {
+            "basis": "source_css_cascade",
+            "controls": [
+                {
+                    "control": {
+                        "provenance": [
+                            {
+                                "condition": null,
+                                "properties": [
+                                    "min-height"
+                                ],
+                                "selector": ".send",
+                                "source_path": "source.css",
+                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            }
+                        ],
+                        "styles": {
+                            "min_height": "41px"
+                        }
+                    },
+                    "index": 1
+                }
+            ],
+            "diagnostics": [],
+            "limits": {
+                "controls": 128,
+                "rules_per_role": 96
+            },
+            "schema": "generic/computed-form-presentation/v1",
+            "truncated": false,
+            "variants": []
+        },
+        "reconciliation_identity": "6371992b9ea7ab2aa3ad82f7c4e152833d5d97fe91a212f08ce543dbfef4316b",
+        "selector": "main:nth-of-type(1) > form:nth-of-type(1)",
+        "sibling_relations": {
+            "max_pairs": 128,
+            "pairs": [],
+            "schema": "generic/form-sibling-relations/v1",
+            "truncated": false
+        },
+        "source_path": "index.html"
+    },
+    "exhausted": {
+        "bindings": [
+            {
+                "occurrence": 1,
+                "position": {
+                    "block_index": 1,
+                    "length": 945,
+                    "offset": 248,
+                    "schema": "blocks-engine/runtime-binding-position/v1"
+                },
+                "projected_anchor": {
+                    "schema": "blocks-engine/projected-binding-anchor/v1",
+                    "source_block_markup": "<!-- wp:html --><form method=\"post\"><div class=\"intro-box\"><p class=\"hook-1 hook-2 hook-3 hook-4 hook-5 hook-6 hook-7 hook-8 hook-9 hook-10 hook-11 hook-12 hook-13 hook-14 hook-15 hook-16 hook-17 hook-18 hook-19 hook-20 hook-21 hook-22 hook-23 hook-24 hook-25 hook-26 hook-27 hook-28 hook-29 hook-30 hook-31 hook-32 hook-33 hook-34 hook-35 hook-36 hook-37 hook-38 hook-39 hook-40 hook-41 hook-42 hook-43 hook-44 hook-45 hook-46 hook-47 hook-48 hook-49 hook-50 hook-51 hook-52 hook-53 hook-54 hook-55 hook-56 hook-57 hook-58 hook-59 hook-60 hook-61 hook-62 hook-63 hook-64 hook-65 hook-66 hook-67 hook-68 hook-69 hook-70\">A neutral introduction.</p></div><div class=\"field-box\"><label for=\"email\">Email</label><input id=\"email\" type=\"email\" name=\"email\" required></div><div class=\"submit-box\"><button class=\"send\" type=\"submit\">Send</button></div><div class=\"note-box\"><p class=\"note\">Please review your details.</p></div></form><!-- /wp:html -->",
+                    "source_occurrence": 1,
+                    "source_position": {
+                        "block_index": 1,
+                        "length": 945,
+                        "offset": 248,
+                        "schema": "blocks-engine/runtime-binding-position/v1"
+                    }
+                },
+                "role": "form",
+                "schema": "generic/block-binding/v1",
+                "search_block_markup": "<!-- wp:html --><form method=\"post\"><div class=\"intro-box\"><p class=\"hook-1 hook-2 hook-3 hook-4 hook-5 hook-6 hook-7 hook-8 hook-9 hook-10 hook-11 hook-12 hook-13 hook-14 hook-15 hook-16 hook-17 hook-18 hook-19 hook-20 hook-21 hook-22 hook-23 hook-24 hook-25 hook-26 hook-27 hook-28 hook-29 hook-30 hook-31 hook-32 hook-33 hook-34 hook-35 hook-36 hook-37 hook-38 hook-39 hook-40 hook-41 hook-42 hook-43 hook-44 hook-45 hook-46 hook-47 hook-48 hook-49 hook-50 hook-51 hook-52 hook-53 hook-54 hook-55 hook-56 hook-57 hook-58 hook-59 hook-60 hook-61 hook-62 hook-63 hook-64 hook-65 hook-66 hook-67 hook-68 hook-69 hook-70\">A neutral introduction.</p></div><div class=\"field-box\"><label for=\"email\">Email</label><input id=\"email\" type=\"email\" name=\"email\" required></div><div class=\"submit-box\"><button class=\"send\" type=\"submit\">Send</button></div><div class=\"note-box\"><p class=\"note\">Please review your details.</p></div></form><!-- /wp:html -->",
+                "source_path": "index.html",
+                "superseded_runtime_selectors": [
+                    "main:nth-of-type(1) > form:nth-of-type(1)"
+                ]
+            }
+        ],
+        "control_topology": {
+            "max_depth": 16,
+            "max_nodes": 128,
+            "nodes": [
+                {
+                    "class": "field-box",
+                    "depth": 0,
+                    "id": "wrapper-0",
+                    "kind": "wrapper",
+                    "order": 0,
+                    "tag": "div"
+                },
+                {
+                    "control": 0,
+                    "depth": 1,
+                    "id": "control-0",
+                    "kind": "control",
+                    "order": 0,
+                    "parent": "wrapper-0"
+                },
+                {
+                    "class": "submit-box",
+                    "depth": 0,
+                    "id": "wrapper-1",
+                    "kind": "wrapper",
+                    "order": 1,
+                    "tag": "div"
+                },
+                {
+                    "control": 1,
+                    "depth": 1,
+                    "id": "control-1",
+                    "kind": "control",
+                    "order": 0,
+                    "parent": "wrapper-1"
+                }
+            ],
+            "schema": "generic/form-control-topology/v1",
+            "truncated": false
+        },
+        "controls": [
+            {
+                "id": "email",
+                "label": "Email",
+                "name": "email",
+                "order": 0,
+                "required": true,
+                "required_indicator": false,
+                "selector": "main:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(2) > input:nth-of-type(1)",
+                "tag": "input",
+                "type": "email"
+            },
+            {
+                "class": "send",
+                "order": 1,
+                "presentation": {
+                    "style": {
+                        "dimensions": {
+                            "minHeight": "41px"
+                        }
+                    }
+                },
+                "selector": "main:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(3) > button:nth-of-type(1)",
+                "tag": "button",
+                "text": "Send",
+                "type": "submit"
+            }
+        ],
+        "fallback_identity": "6371992b9ea7ab2aa3ad82f7c4e152833d5d97fe91a212f08ce543dbfef4316b",
+        "form": {
+            "context_after": [
+                {
+                    "class": "note",
+                    "source_selector": "main:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(4) > p:nth-of-type(1)",
+                    "styles": {
+                        "font_size": "11px",
+                        "line_height": "1.25"
+                    },
+                    "text": "Please review your details.",
+                    "type": "paragraph"
+                }
+            ],
+            "context_before": [
+                {
+                    "class": "hook-1 hook-2 hook-3 hook-4 hook-5 hook-6 hook-7 hook-8 hook-9 hook-10 hook-11 hook-12 hook-13 hook-14 hook-15 hook-16 hook-17 hook-18 hook-19 hook-20 hook-21 hook-22 hook-23 hook-24 hook-25 hook-26 hook-27 hook-28 hook-29 hook-30 hook-31 hook-32 hook-33 hook-34 hook-35 hook-36 hook-37 hook-38 hook-39 hook-40 hook-41 hook-42 hook-43 hook-44 hook-45 hook-46 hook-47 hook-48 hook-49 hook-50 hook-51 hook-52 hook-53 hook-54 hook-55 hook-56 hook-57 hook-58 hook-59 hook-60 hook-61 hook-62 hook-63 hook-64",
+                    "classes_truncated": true,
+                    "source_selector": "main:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(1) > p:nth-of-type(1)",
+                    "text": "A neutral introduction.",
+                    "type": "paragraph"
+                }
+            ],
+            "method": "post"
+        },
+        "presentation_graph": {
+            "basis": "source_css_cascade",
+            "controls": [
+                {
+                    "control": {
+                        "provenance": [
+                            {
+                                "condition": null,
+                                "properties": [
+                                    "min-height"
+                                ],
+                                "selector": ".send",
+                                "source_path": "source.css",
+                                "source_sha256": "3bb104bd41f95e8801a7643c7b2c7f19b09c2276870976ff72991e10d152c9a3"
+                            }
+                        ],
+                        "styles": {
+                            "min_height": "41px"
+                        }
+                    },
+                    "index": 1
+                }
+            ],
+            "diagnostics": [],
+            "limits": {
+                "controls": 128,
+                "rules_per_role": 96
+            },
+            "schema": "generic/computed-form-presentation/v1",
+            "truncated": false,
+            "variants": []
+        },
+        "reconciliation_identity": "6371992b9ea7ab2aa3ad82f7c4e152833d5d97fe91a212f08ce543dbfef4316b",
+        "selector": "main:nth-of-type(1) > form:nth-of-type(1)",
+        "sibling_relations": {
+            "max_pairs": 128,
+            "pairs": [],
+            "schema": "generic/form-sibling-relations/v1",
+            "truncated": false
+        },
+        "source_contract_losses": [
+            "source_class_limit"
+        ],
+        "source_path": "index.html"
+    }
+}

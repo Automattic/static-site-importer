@@ -252,7 +252,9 @@ class Static_Site_Importer_Form_Fallback_Contract {
 			if ( is_string( $class_name ) && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) {
 				$classes[] = $class_name;
 			}
-			if ( 16 <= count( $classes ) ) {
+			// The producer bounds context class hooks at 64 and reports exhaustion
+			// itself; a smaller consumer bound silently dropped late responsive hooks.
+			if ( 64 <= count( $classes ) ) {
 				break;
 			}
 		}
@@ -301,6 +303,8 @@ class Static_Site_Importer_Form_Fallback_Contract {
 			// Retain both classes and resolved facts. The materializer chooses their
 			// cascade placement without inferring ownership from a class token.
 			$styles = self::context_styles( $item['styles'] ?? null );
+			// The source element identity joins this copy to its source graph node.
+			$selector = is_string( $item['source_selector'] ?? null ) && '' !== trim( $item['source_selector'] ) && strlen( $item['source_selector'] ) <= 2048 && ! preg_match( '/[\x00-\x1f{};]/', $item['source_selector'] ) ? $item['source_selector'] : '';
 			if ( 'heading' === ( $item['type'] ?? '' ) ) {
 				$row = array(
 					'type'  => 'heading',
@@ -313,6 +317,9 @@ class Static_Site_Importer_Form_Fallback_Contract {
 				if ( array() !== $styles ) {
 					$row['styles'] = $styles;
 				}
+				if ( '' !== $selector ) {
+					$row['source_selector'] = $selector;
+				}
 				$context[] = $row;
 			} elseif ( 'paragraph' === ( $item['type'] ?? '' ) ) {
 				$row = array(
@@ -324,6 +331,9 @@ class Static_Site_Importer_Form_Fallback_Contract {
 				}
 				if ( array() !== $styles ) {
 					$row['styles'] = $styles;
+				}
+				if ( '' !== $selector ) {
+					$row['source_selector'] = $selector;
 				}
 				$context[] = $row;
 			}

@@ -325,6 +325,7 @@ class Static_Site_Importer_Form_Seeder {
 	 * @return array<string, mixed>
 	 */
 	private static function seed_form( array $form, bool $available ): array {
+		$form        = Static_Site_Importer_Form_Layout_Projection::separate_source_boxes( $form );
 		$form        = Static_Site_Importer_Form_Layout_Projection::normalize_unconditional_layout_variants( $form );
 		$controls    = isset( $form['controls'] ) && is_array( $form['controls'] ) ? $form['controls'] : array();
 		$form        = self::project_submit_style_into_presentation_graph( $form, $controls );
@@ -564,6 +565,14 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			unset( $provider_node );
 		}
+		foreach ( $topology['suppressed_variant_properties'] ?? array() as $node_id => $properties ) {
+			foreach ( $provider_graph['variants'] as $variant_index => $provider_variant ) {
+				if ( is_array( $provider_variant ) && ( $provider_variant['node'] ?? null ) === $node_id && is_array( $provider_variant['layout_patch'] ?? null ) ) {
+					$provider_graph['variants'][ $variant_index ]['layout_patch'] = array_diff_key( $provider_variant['layout_patch'], array_fill_keys( $properties, true ) );
+				}
+			}
+			$provider_graph['variants'] = array_values( array_filter( $provider_graph['variants'], static fn( $variant ): bool => ! is_array( $variant ) || ! empty( $variant['layout_patch'] ) ) );
+		}
 		$native_visibility_targets = array_fill_keys( $topology['native_visibility_targets'], true );
 		foreach ( $provider_graph['nodes'] as &$provider_node ) {
 			if ( is_array( $provider_node ) && isset( $native_visibility_targets[ $provider_node['id'] ?? '' ] ) ) {
@@ -732,7 +741,17 @@ class Static_Site_Importer_Form_Seeder {
 		$target_map             = Static_Site_Importer_Form_Layout_Projection::provider_layout_target_map( $overlay_form, $scope, $presentation_descriptors, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
 		$presentation_graph     = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
 		$container_presentation = is_array( $form['form']['container_presentation'] ?? null ) ? $form['form']['container_presentation'] : array();
-		$context_fallbacks      = Static_Site_Importer_Form_Field_Markup::context_style_fallbacks( is_array( $form['form'] ?? null ) ? $form['form'] : array() );
+		$context_fallbacks      = Static_Site_Importer_Form_Field_Markup::context_style_fallbacks( $form );
+		$source_losses          = Static_Site_Importer_Form_Field_Markup::context_source_boxes( $form )['losses'];
+		foreach ( is_array( $form['source_contract_losses'] ?? null ) ? $form['source_contract_losses'] : array() as $diagnostic ) {
+			// The producer withheld its exhausted source graph; the form still maps,
+			// but every fact that graph would have carried is reported as missing.
+			$source_losses[] = array(
+				'dimension'       => 'source_contract',
+				'reason_code'     => 'producer_source_contract_exhausted',
+				'diagnostic_hash' => hash( 'sha256', (string) $diagnostic ),
+			);
+		}
 		// The captured form box's own padding/margin/etc. is bounded, source-CSS-cascade
 		// evidence carried the same way every other captured control already is (see
 		// Provider_Layout_Overlay's `generic/form-container-presentation/v1` destination).
@@ -754,6 +773,7 @@ class Static_Site_Importer_Form_Seeder {
 		self::append_receipt_entries( $layout['receipt'], 'operations', $overlay['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'operations', $layout_intent['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $overlay['losses'] );
+		self::append_receipt_entries( $layout['receipt'], 'losses', $source_losses );
 		$layout['receipt']['status'] = 0 < $layout['receipt']['operations_total'] ? 'applied' : ( 0 < $layout['receipt']['losses_total'] ? 'deferred' : 'skipped' );
 		$status                      = $form['form']['trailing_status'] ?? null;
 		if ( is_array( $status ) && 'status' === ( $status['role'] ?? null ) ) {
