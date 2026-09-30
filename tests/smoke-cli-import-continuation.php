@@ -869,6 +869,35 @@ $bounded = static_site_importer_cli_run_import_host(
 $assert( 'failed' === ( $bounded['status'] ?? '' ) && 2 === ( $bounded['steps'] ?? 0 ), 'bound-exceeded-steps' );
 $assert( 'static_site_importer_cli_continuation_bound_exceeded' === ( $bounded['response']['error']['code'] ?? '' ), 'bound-exceeded-code' );
 
+$stalled = static_site_importer_cli_run_import_host(
+	array( 'source' => array( 'type' => 'zip' ) ),
+	static fn (): array => array(
+		'success'      => true,
+		'continuation' => true,
+		'import_id'    => 'opaque-stalled-id',
+		'artifact_run' => array( 'phase' => 'compile_pages', 'progress' => array( 'receipt_count' => 3 ) ),
+	)
+);
+$assert( 'static_site_importer_cli_continuation_stalled' === ( $stalled['response']['error']['code'] ?? '' ) && static_site_importer_cli_import_stall_limit() + 1 === ( $stalled['steps'] ?? 0 ), 'stall-guard-stops-a-run-without-progress' );
+
+$advancing_calls = 0;
+$advancing       = static_site_importer_cli_run_import_host(
+	array( 'source' => array( 'type' => 'zip' ) ),
+	static function () use ( &$advancing_calls ): array {
+		++$advancing_calls;
+		if ( $advancing_calls > 600 ) {
+			return array( 'success' => true, 'result' => array( 'status' => 'completed' ) );
+		}
+		return array(
+			'success'      => true,
+			'continuation' => true,
+			'import_id'    => 'opaque-large-id',
+			'artifact_run' => array( 'phase' => 'compile_pages', 'progress' => array( 'receipt_count' => $advancing_calls ) ),
+		);
+	}
+);
+$assert( 'completed' === ( $advancing['status'] ?? '' ) && 601 === ( $advancing['steps'] ?? 0 ), 'advancing-runs-are-not-bounded-by-a-fixed-step-budget' );
+
 $leaked = static_site_importer_cli_import_receipt(
 	array(
 		'success'      => true,
