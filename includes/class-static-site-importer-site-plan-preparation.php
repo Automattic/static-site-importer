@@ -462,7 +462,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			require_once __DIR__ . '/class-static-site-importer-navigation-entity-materializer.php';
 			$navigation_error = Static_Site_Importer_Navigation_Entity_Materializer::preflight( $state['resolved'] );
 			if ( $navigation_error ) {
-				throw new InvalidArgumentException( $navigation_error->get_error_code() );
+				throw new InvalidArgumentException( esc_html( (string) $navigation_error->get_error_code() ) );
 			}
 		}
 		$pages_by_route      = array();

@@ -30,6 +30,7 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 			}
 			$entities[ $token ]      = 0;
 			$identities[ $identity ] = true;
+
 			$existing = Static_Site_Importer_Site_Plan_Persistence::reconciled_post( $identity, 'wp_navigation' );
 			if ( $existing && 'wp_navigation' !== $existing->post_type ) {
 				return new WP_Error( 'navigation_entity_identity_conflict' );
@@ -91,6 +92,7 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 				return $id;
 			}
 			$refs[ $menu['token'] ] = $id;
+
 			$state['applied']['navigation_entities'][] = array(
 				'id'                      => $id,
 				'token'                   => $menu['token'],
@@ -103,7 +105,7 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 			}
 			$markup = self::rewrite_references( $write['payload']['data'], $refs );
 			$state['resolved']['writes'][ $index ]['payload']['data'] = $markup;
-			$state['resolved']['writes'][ $index ]['payload_hash'] = hash( 'sha256', $markup );
+			$state['resolved']['writes'][ $index ]['payload_hash']    = hash( 'sha256', $markup );
 		}
 		foreach ( array( 'pages', 'template_parts', 'templates' ) as $group ) {
 			foreach ( $state['resolved'][ $group ] ?? array() as $index => $document ) {
@@ -128,7 +130,7 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 	public static function rewrite_references( string $content, array $refs ): string {
 		return (string) preg_replace_callback(
 			'/"ref"\s*:\s*"\{\{wordpress-site-plan:navigation:(navigation-[a-f0-9]{16})}}"/',
-			static fn( array $match ): string => isset( $refs[ $match[1] ] ) ? '"ref":' . (int) $refs[ $match[1] ] : $match[0],
+			static fn( array $reference ): string => isset( $refs[ $reference[1] ] ) ? '"ref":' . (int) $refs[ $reference[1] ] : $reference[0],
 			$content
 		);
 	}
@@ -140,30 +142,41 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 		if ( $existing && 'wp_navigation' !== $existing->post_type ) {
 			return new WP_Error( 'navigation_entity_identity_conflict' );
 		}
-		$title = trim( (string) ( $menu['title'] ?? '' ) ) ?: 'Navigation';
+		$title = trim( (string) ( $menu['title'] ?? '' ) );
+		$title = $title ? $title : 'Navigation';
+		$slug  = sanitize_title( (string) ( $menu['target_slug'] ?? $title ) );
+
 		$postarr = array(
 			'post_title'   => $title,
-			'post_name'    => sanitize_title( (string) ( $menu['target_slug'] ?? $title ) ) ?: 'navigation',
+			'post_name'    => $slug ? $slug : 'navigation',
 			'post_status'  => 'publish',
 			'post_type'    => 'wp_navigation',
 			'post_content' => wp_slash( $content ),
 		);
 		if ( $existing instanceof WP_Post ) {
 			$postarr['ID'] = (int) $existing->ID;
-			Static_Site_Importer_Site_Plan_Persistence::journal_post( $state, array( 'planned_existing_id' => $existing->ID, 'source_path' => $menu['source_path'] ) );
+			Static_Site_Importer_Site_Plan_Persistence::journal_post(
+				$state,
+				array(
+					'planned_existing_id' => $existing->ID,
+					'source_path'         => $menu['source_path'],
+				)
+			);
 		}
 		$id = wp_insert_post( $postarr, true );
 		if ( is_wp_error( $id ) ) {
 			return $id;
 		}
 		$id = (int) $id;
-		if ( $id <= 0 ) {
-			return new WP_Error( 'navigation_entity_write_failed' );
-		}
 		if ( ! isset( $postarr['ID'] ) ) {
 			$state['rollback']['posts'][ $id ] = array( 'existing' => false );
 		}
-		$state['applied']['posts'][] = array( 'id' => $id, 'source_path' => $menu['source_path'], 'reconciliation_identity' => $identity, 'post_type' => 'wp_navigation' );
+		$state['applied']['posts'][] = array(
+			'id'                      => $id,
+			'source_path'             => $menu['source_path'],
+			'reconciliation_identity' => $identity,
+			'post_type'               => 'wp_navigation',
+		);
 		if ( ! Static_Site_Importer_Site_Plan_Persistence::write_post_meta( $id, self::META_KEY, $identity ) ) {
 			return new WP_Error( 'navigation_entity_metadata_write_failed' );
 		}

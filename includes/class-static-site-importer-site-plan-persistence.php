@@ -1695,7 +1695,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				continue; }
 			try {
 				if ( ! empty( $before['existing'] ) ) {
-					wp_update_post( wp_slash( $before['post'] ) );
+					wp_update_post( (array) wp_slash( $before['post'] ) );
 					if ( ! self::write_post_meta( $id, '_static_site_importer_provenance', (string) $before['provenance'] ) || ! self::write_post_meta( $id, self::RECONCILIATION_META_KEY, (string) $before['reconciliation_identity'] ) ) {
 						throw new RuntimeException( 'materialization_rollback_post_meta_restore_failed' );
 					}
