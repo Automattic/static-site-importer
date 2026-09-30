@@ -1685,8 +1685,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				// Resolved presentation belongs to a source container element, never to
 				// the provider-owned form root or a native control.
 				$presentation = 'container' === $node['kind'] && 'form' !== $node['id'] ? self::normalize_element_presentation( $node['presentation'] ) : array( 'error' => 'layout_graph presentation may only describe a source container element.' );
-				if ( isset( $presentation['error'] ) ) {
-					return array( 'error' => $presentation['error'] );
+				if ( ! isset( $presentation['presentation'] ) ) {
+					return array( 'error' => $presentation['error'] ?? 'layout_graph presentation normalization did not produce presentation facts.' );
 				}
 				$clean['presentation'] = $presentation['presentation'];
 			}

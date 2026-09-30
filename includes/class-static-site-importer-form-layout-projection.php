@@ -96,8 +96,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		if ( ! is_array( $graph ) || 'generic/computed-layout-graph/v3' !== ( $graph['schema'] ?? null ) || ! is_array( $graph['nodes'] ?? null ) ) {
 			return $form;
 		}
-		$box            = Static_Site_Importer_Provider_Layout_Overlay::box_property_map();
-		$strip_initial  = static function ( array $layout, array $provenance ) use ( $box ): array {
+		$box           = Static_Site_Importer_Provider_Layout_Overlay::box_property_map();
+		$strip_initial = static function ( array $layout, array $provenance ) use ( $box ): array {
 			$removed = array();
 			foreach ( $layout as $fact => $value ) {
 				if ( isset( $box[ $fact ] ) && is_string( $value ) && self::is_initial_box_value( $fact, $value ) ) {
@@ -121,7 +121,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			'nodes'    => array(),
 			'variants' => array(),
 		);
-		$nodes   = array();
+		$nodes = array();
 		foreach ( $graph['nodes'] as $node ) {
 			if ( is_array( $node ) && str_starts_with( (string) ( $node['id'] ?? '' ), 'context-' ) ) {
 				$context['nodes'][] = $node;
@@ -156,8 +156,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 			$variants[] = $variant;
 		}
-		$graph['nodes']       = $nodes;
-		$graph['variants']    = $variants;
+		$graph['nodes']               = $nodes;
+		$graph['variants']            = $variants;
 		$form['layout_graph']         = $graph;
 		$form['source_context_graph'] = $context;
 		return $form;
