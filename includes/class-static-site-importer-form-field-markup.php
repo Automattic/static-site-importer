@@ -294,6 +294,12 @@ final class Static_Site_Importer_Form_Field_Markup {
 			if ( '' !== $label_class ) {
 				$label_attrs['className'] = $label_class;
 			}
+			if ( false === ( $control['label_visible'] ?? null ) ) {
+				// The source names this control without a rendered label box. Jetpack's
+				// own label visibility keeps the name as the control's accessible name
+				// without adding a label line the source never had.
+				$label_attrs['metadata'] = array( 'blockVisibility' => false );
+			}
 			$inner_blocks[] = array(
 				'name'  => 'jetpack/label',
 				'attrs' => $label_attrs,

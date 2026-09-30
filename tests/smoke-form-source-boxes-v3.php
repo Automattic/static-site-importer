@@ -55,7 +55,7 @@ namespace {
 		'context-kind-control'      => $mutate( static function ( array &$entity ): void { $entity['layout_graph']['nodes'][1]['kind'] = 'control'; } ),
 		'oversized-classes'         => $mutate( static function ( array &$entity ): void { $entity['layout_graph']['nodes'][2]['source']['classes'] = array_map( static fn( int $i ): string => 'c' . $i, range( 1, 65 ) ); } ),
 		'missing-selector'          => $mutate( static function ( array &$entity ): void { unset( $entity['layout_graph']['nodes'][2]['source']['selector'] ); } ),
-		'presentation-on-control'   => $mutate( static function ( array &$entity ): void { foreach ( $entity['layout_graph']['nodes'] as &$node ) { if ( 'control-1' === $node['id'] ) { $node['presentation'] = $entity['layout_graph']['nodes'][2]['presentation']; } } } ),
+		'presentation-on-control'   => $mutate( static function ( array &$entity ): void { $presentation = current( array_filter( array_column( $entity['layout_graph']['nodes'], 'presentation' ) ) ); foreach ( $entity['layout_graph']['nodes'] as &$node ) { if ( 'control' === $node['kind'] ) { $node['presentation'] = $presentation; } } } ),
 		'presentation-unknown-key'  => $mutate( static function ( array &$entity ): void { $entity['layout_graph']['nodes'][2]['presentation']['extra'] = true; } ),
 		'presentation-truncated'    => $mutate( static function ( array &$entity ): void { $entity['layout_graph']['nodes'][2]['presentation']['truncated'] = true; } ),
 		'unsupported-style'         => $mutate( static function ( array &$entity ): void { $entity['layout_graph']['nodes'][2]['presentation']['styles']['behavior'] = 'x'; } ),
@@ -77,6 +77,10 @@ namespace {
 	$markup = (string) ( $row['block_markup'] ?? '' );
 	$assert( str_contains( $markup, '"name":"email"' ) || str_contains( $markup, 'email' ), 'field-semantics-preserved' );
 	$assert( 1 === substr_count( $markup, 'type="submit"' ), 'single-native-submit-preserved', $markup );
+
+	// 3a. A control named only by aria-label keeps that name without gaining a
+	// visible provider label line; a control with a rendered source label keeps it.
+	$assert( 1 === preg_match( '/<!-- wp:jetpack\/label \{"label":"Message","metadata":\{"blockVisibility":false\}\} (?:\/-->|-->)/', $markup ) && 1 === preg_match( '/<!-- wp:jetpack\/label \{"label":"Email"[^}]*\} (?:\/-->|-->)/', $markup ) && ! preg_match( '/"label":"Email"[^}]*blockVisibility/', $markup ), 'aria-named-control-label-hidden-by-provider-visibility', $markup );
 
 	// 3b. A field box restored by its own source class keeps its box there once.
 	$assert( str_contains( $markup, 'ssi-source-wrapper-0--field-box' ) && in_array( 'provider_source_box_class_carry', array_column( $row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'class-carried-field-box-restored', $markup );

@@ -6,24 +6,24 @@
                 "occurrence": 1,
                 "position": {
                     "block_index": 1,
-                    "length": 555,
+                    "length": 634,
                     "offset": 248,
                     "schema": "blocks-engine/runtime-binding-position/v1"
                 },
                 "projected_anchor": {
                     "schema": "blocks-engine/projected-binding-anchor/v1",
-                    "source_block_markup": "<!-- wp:html --><form method=\"post\"><div class=\"intro-box\"><p class=\"hook-1 hook-2 hook-3 hook-4 hook-5 hook-6 hook-7 hook-8 hook-9 hook-10 hook-11 hook-12 hook-13 hook-14 hook-15 hook-16 hook-17 hook-18 hook-19 hook-20 wide-copy\">A neutral introduction.</p></div><div class=\"field-box\"><label for=\"email\">Email</label><input id=\"email\" type=\"email\" name=\"email\" required></div><div class=\"submit-box\"><button class=\"send\" type=\"submit\">Send</button></div><div class=\"note-box\"><p class=\"note\">Please review your details.</p></div></form><!-- /wp:html -->",
+                    "source_block_markup": "<!-- wp:html --><form method=\"post\"><div class=\"intro-box\"><p class=\"hook-1 hook-2 hook-3 hook-4 hook-5 hook-6 hook-7 hook-8 hook-9 hook-10 hook-11 hook-12 hook-13 hook-14 hook-15 hook-16 hook-17 hook-18 hook-19 hook-20 wide-copy\">A neutral introduction.</p></div><div class=\"field-box\"><label for=\"email\">Email</label><input id=\"email\" type=\"email\" name=\"email\" required></div><textarea aria-label=\"Message\" placeholder=\"Message\" name=\"message\"></textarea><div class=\"submit-box\"><button class=\"send\" type=\"submit\">Send</button></div><div class=\"note-box\"><p class=\"note\">Please review your details.</p></div></form><!-- /wp:html -->",
                     "source_occurrence": 1,
                     "source_position": {
                         "block_index": 1,
-                        "length": 555,
+                        "length": 634,
                         "offset": 248,
                         "schema": "blocks-engine/runtime-binding-position/v1"
                     }
                 },
                 "role": "form",
                 "schema": "generic/block-binding/v1",
-                "search_block_markup": "<!-- wp:html --><form method=\"post\"><div class=\"intro-box\"><p class=\"hook-1 hook-2 hook-3 hook-4 hook-5 hook-6 hook-7 hook-8 hook-9 hook-10 hook-11 hook-12 hook-13 hook-14 hook-15 hook-16 hook-17 hook-18 hook-19 hook-20 wide-copy\">A neutral introduction.</p></div><div class=\"field-box\"><label for=\"email\">Email</label><input id=\"email\" type=\"email\" name=\"email\" required></div><div class=\"submit-box\"><button class=\"send\" type=\"submit\">Send</button></div><div class=\"note-box\"><p class=\"note\">Please review your details.</p></div></form><!-- /wp:html -->",
+                "search_block_markup": "<!-- wp:html --><form method=\"post\"><div class=\"intro-box\"><p class=\"hook-1 hook-2 hook-3 hook-4 hook-5 hook-6 hook-7 hook-8 hook-9 hook-10 hook-11 hook-12 hook-13 hook-14 hook-15 hook-16 hook-17 hook-18 hook-19 hook-20 wide-copy\">A neutral introduction.</p></div><div class=\"field-box\"><label for=\"email\">Email</label><input id=\"email\" type=\"email\" name=\"email\" required></div><textarea aria-label=\"Message\" placeholder=\"Message\" name=\"message\"></textarea><div class=\"submit-box\"><button class=\"send\" type=\"submit\">Send</button></div><div class=\"note-box\"><p class=\"note\">Please review your details.</p></div></form><!-- /wp:html -->",
                 "source_path": "index.html",
                 "superseded_runtime_selectors": [
                     "main:nth-of-type(1) > form:nth-of-type(1)"
@@ -51,17 +51,24 @@
                     "parent": "wrapper-0"
                 },
                 {
+                    "control": 1,
+                    "depth": 0,
+                    "id": "control-1",
+                    "kind": "control",
+                    "order": 1
+                },
+                {
                     "class": "submit-box",
                     "depth": 0,
                     "id": "wrapper-1",
                     "kind": "wrapper",
-                    "order": 1,
+                    "order": 2,
                     "tag": "div"
                 },
                 {
-                    "control": 1,
+                    "control": 2,
                     "depth": 1,
-                    "id": "control-1",
+                    "id": "control-2",
                     "kind": "control",
                     "order": 0,
                     "parent": "wrapper-1"
@@ -83,8 +90,19 @@
                 "type": "email"
             },
             {
-                "class": "send",
+                "label": "Message",
+                "label_visible": false,
+                "name": "message",
                 "order": 1,
+                "placeholder": "Message",
+                "rows": "2",
+                "selector": "main:nth-of-type(1) > form:nth-of-type(1) > textarea:nth-of-type(1)",
+                "tag": "textarea",
+                "type": "textarea"
+            },
+            {
+                "class": "send",
+                "order": 2,
                 "presentation": {
                     "style": {
                         "dimensions": {
@@ -385,7 +403,7 @@
                         "min_height": "73px",
                         "padding_bottom": "19px"
                     },
-                    "order": 2,
+                    "order": 3,
                     "parent": "form",
                     "presentation": {
                         "diagnostics": [],
@@ -443,7 +461,7 @@
                     }
                 },
                 {
-                    "id": "control-1",
+                    "id": "control-2",
                     "kind": "control",
                     "layout": {
                         "min_height": "41px"
@@ -476,7 +494,7 @@
                     "layout": {
                         "padding": "7px 0 13px"
                     },
-                    "order": 3,
+                    "order": 4,
                     "parent": "form",
                     "presentation": {
                         "diagnostics": [],
@@ -670,7 +688,7 @@
                             "min_height": "41px"
                         }
                     },
-                    "index": 1
+                    "index": 2
                 }
             ],
             "diagnostics": [],
@@ -698,24 +716,24 @@
                 "occurrence": 1,
                 "position": {
                     "block_index": 1,
-                    "length": 945,
+                    "length": 1024,
                     "offset": 248,
                     "schema": "blocks-engine/runtime-binding-position/v1"
                 },
                 "projected_anchor": {
                     "schema": "blocks-engine/projected-binding-anchor/v1",
-                    "source_block_markup": "<!-- wp:html --><form method=\"post\"><div class=\"intro-box\"><p class=\"hook-1 hook-2 hook-3 hook-4 hook-5 hook-6 hook-7 hook-8 hook-9 hook-10 hook-11 hook-12 hook-13 hook-14 hook-15 hook-16 hook-17 hook-18 hook-19 hook-20 hook-21 hook-22 hook-23 hook-24 hook-25 hook-26 hook-27 hook-28 hook-29 hook-30 hook-31 hook-32 hook-33 hook-34 hook-35 hook-36 hook-37 hook-38 hook-39 hook-40 hook-41 hook-42 hook-43 hook-44 hook-45 hook-46 hook-47 hook-48 hook-49 hook-50 hook-51 hook-52 hook-53 hook-54 hook-55 hook-56 hook-57 hook-58 hook-59 hook-60 hook-61 hook-62 hook-63 hook-64 hook-65 hook-66 hook-67 hook-68 hook-69 hook-70\">A neutral introduction.</p></div><div class=\"field-box\"><label for=\"email\">Email</label><input id=\"email\" type=\"email\" name=\"email\" required></div><div class=\"submit-box\"><button class=\"send\" type=\"submit\">Send</button></div><div class=\"note-box\"><p class=\"note\">Please review your details.</p></div></form><!-- /wp:html -->",
+                    "source_block_markup": "<!-- wp:html --><form method=\"post\"><div class=\"intro-box\"><p class=\"hook-1 hook-2 hook-3 hook-4 hook-5 hook-6 hook-7 hook-8 hook-9 hook-10 hook-11 hook-12 hook-13 hook-14 hook-15 hook-16 hook-17 hook-18 hook-19 hook-20 hook-21 hook-22 hook-23 hook-24 hook-25 hook-26 hook-27 hook-28 hook-29 hook-30 hook-31 hook-32 hook-33 hook-34 hook-35 hook-36 hook-37 hook-38 hook-39 hook-40 hook-41 hook-42 hook-43 hook-44 hook-45 hook-46 hook-47 hook-48 hook-49 hook-50 hook-51 hook-52 hook-53 hook-54 hook-55 hook-56 hook-57 hook-58 hook-59 hook-60 hook-61 hook-62 hook-63 hook-64 hook-65 hook-66 hook-67 hook-68 hook-69 hook-70\">A neutral introduction.</p></div><div class=\"field-box\"><label for=\"email\">Email</label><input id=\"email\" type=\"email\" name=\"email\" required></div><textarea aria-label=\"Message\" placeholder=\"Message\" name=\"message\"></textarea><div class=\"submit-box\"><button class=\"send\" type=\"submit\">Send</button></div><div class=\"note-box\"><p class=\"note\">Please review your details.</p></div></form><!-- /wp:html -->",
                     "source_occurrence": 1,
                     "source_position": {
                         "block_index": 1,
-                        "length": 945,
+                        "length": 1024,
                         "offset": 248,
                         "schema": "blocks-engine/runtime-binding-position/v1"
                     }
                 },
                 "role": "form",
                 "schema": "generic/block-binding/v1",
-                "search_block_markup": "<!-- wp:html --><form method=\"post\"><div class=\"intro-box\"><p class=\"hook-1 hook-2 hook-3 hook-4 hook-5 hook-6 hook-7 hook-8 hook-9 hook-10 hook-11 hook-12 hook-13 hook-14 hook-15 hook-16 hook-17 hook-18 hook-19 hook-20 hook-21 hook-22 hook-23 hook-24 hook-25 hook-26 hook-27 hook-28 hook-29 hook-30 hook-31 hook-32 hook-33 hook-34 hook-35 hook-36 hook-37 hook-38 hook-39 hook-40 hook-41 hook-42 hook-43 hook-44 hook-45 hook-46 hook-47 hook-48 hook-49 hook-50 hook-51 hook-52 hook-53 hook-54 hook-55 hook-56 hook-57 hook-58 hook-59 hook-60 hook-61 hook-62 hook-63 hook-64 hook-65 hook-66 hook-67 hook-68 hook-69 hook-70\">A neutral introduction.</p></div><div class=\"field-box\"><label for=\"email\">Email</label><input id=\"email\" type=\"email\" name=\"email\" required></div><div class=\"submit-box\"><button class=\"send\" type=\"submit\">Send</button></div><div class=\"note-box\"><p class=\"note\">Please review your details.</p></div></form><!-- /wp:html -->",
+                "search_block_markup": "<!-- wp:html --><form method=\"post\"><div class=\"intro-box\"><p class=\"hook-1 hook-2 hook-3 hook-4 hook-5 hook-6 hook-7 hook-8 hook-9 hook-10 hook-11 hook-12 hook-13 hook-14 hook-15 hook-16 hook-17 hook-18 hook-19 hook-20 hook-21 hook-22 hook-23 hook-24 hook-25 hook-26 hook-27 hook-28 hook-29 hook-30 hook-31 hook-32 hook-33 hook-34 hook-35 hook-36 hook-37 hook-38 hook-39 hook-40 hook-41 hook-42 hook-43 hook-44 hook-45 hook-46 hook-47 hook-48 hook-49 hook-50 hook-51 hook-52 hook-53 hook-54 hook-55 hook-56 hook-57 hook-58 hook-59 hook-60 hook-61 hook-62 hook-63 hook-64 hook-65 hook-66 hook-67 hook-68 hook-69 hook-70\">A neutral introduction.</p></div><div class=\"field-box\"><label for=\"email\">Email</label><input id=\"email\" type=\"email\" name=\"email\" required></div><textarea aria-label=\"Message\" placeholder=\"Message\" name=\"message\"></textarea><div class=\"submit-box\"><button class=\"send\" type=\"submit\">Send</button></div><div class=\"note-box\"><p class=\"note\">Please review your details.</p></div></form><!-- /wp:html -->",
                 "source_path": "index.html",
                 "superseded_runtime_selectors": [
                     "main:nth-of-type(1) > form:nth-of-type(1)"
@@ -743,17 +761,24 @@
                     "parent": "wrapper-0"
                 },
                 {
+                    "control": 1,
+                    "depth": 0,
+                    "id": "control-1",
+                    "kind": "control",
+                    "order": 1
+                },
+                {
                     "class": "submit-box",
                     "depth": 0,
                     "id": "wrapper-1",
                     "kind": "wrapper",
-                    "order": 1,
+                    "order": 2,
                     "tag": "div"
                 },
                 {
-                    "control": 1,
+                    "control": 2,
                     "depth": 1,
-                    "id": "control-1",
+                    "id": "control-2",
                     "kind": "control",
                     "order": 0,
                     "parent": "wrapper-1"
@@ -775,8 +800,19 @@
                 "type": "email"
             },
             {
-                "class": "send",
+                "label": "Message",
+                "label_visible": false,
+                "name": "message",
                 "order": 1,
+                "placeholder": "Message",
+                "rows": "2",
+                "selector": "main:nth-of-type(1) > form:nth-of-type(1) > textarea:nth-of-type(1)",
+                "tag": "textarea",
+                "type": "textarea"
+            },
+            {
+                "class": "send",
+                "order": 2,
                 "presentation": {
                     "style": {
                         "dimensions": {
@@ -835,7 +871,7 @@
                             "min_height": "41px"
                         }
                     },
-                    "index": 1
+                    "index": 2
                 }
             ],
             "diagnostics": [],
