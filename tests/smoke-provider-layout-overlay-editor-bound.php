@@ -8,7 +8,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 }
 
-require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-layout-overlay.php';
+if ( ! class_exists( 'Static_Site_Importer_Provider_Layout_Overlay' ) ) {
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-layout-overlay.php';
+}
 
 $assertions = 0;
 $assert     = static function ( bool $condition, string $message ) use ( &$assertions ): void {
@@ -75,6 +77,16 @@ for ( $index = 0; $index < 128; ++$index ) {
 	);
 }
 $presentation_graph = array( 'controls' => $controls );
+
+$shared_editor = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph, array(), true );
+$assert( empty( $shared_editor['losses'] ) && ! empty( $shared_editor['overlay']['editor_css'] ), 'equivalent adjacent control presentations fit the editor admission bound' );
+$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $shared_editor['overlay'] ), 'compacted shared editor presentation is admitted' );
+
+// Distinct declarations cannot share a selector list and must retain the bound.
+foreach ( $presentation_graph['controls'] as $index => &$control ) {
+	$control['control']['styles']['color'] = sprintf( '#%06x', $index + 1 );
+}
+unset( $control );
 
 $frontend = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph );
 $assert( array() === $frontend['losses'] && strlen( $frontend['css'] ) <= 32768, 'fixture frontend overlay fits its bound (' . strlen( $frontend['css'] ) . ' bytes)' );

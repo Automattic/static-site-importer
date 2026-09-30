@@ -214,6 +214,14 @@ namespace {
 
 	$failures   = array();
 	$assertions = 0;
+	// Count declarations per selector, whether equivalent targets share a rule or not.
+	$expand_selector_lists = static function ( string $css ): string {
+		return preg_replace_callback(
+			'/^((?:@(?:media|container) [^{}\n]+\{)*)([^{}\n]+)\{([^{}\n]*)\}(\}*)$/m',
+			static fn( array $rule ): string => implode( "\n", array_map( static fn( string $selector ): string => $rule[1] . $selector . '{' . $rule[3] . '}' . $rule[4], explode( ', ', $rule[2] ) ) ),
+			$css
+		) ?? $css;
+	};
 	$assert     = static function ( bool $condition, string $label, string $detail = '' ) use ( &$assertions, &$failures ): void {
 		++$assertions;
 		if ( ! $condition ) {
@@ -799,7 +807,7 @@ namespace {
 	$assert( str_contains( $topology_markup, 'First name' ) && str_contains( $topology_markup, 'Email' ) && str_contains( $topology_markup, 'Message' ), 'topology-preserves-labels' );
 	$assert( 1 === substr_count( $topology_markup, '<!-- wp:button ' ), 'topology-submit-control-emits-one-core-button-in-source-position' );
 	$topology_ops = array_column( $topology_receipt['operations'] ?? array(), 'strategy' );
-	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && in_array( 'provider_equal_width_fields', $topology_ops, true ) && in_array( 'provider_interaction_carrier', $topology_ops, true ) && 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.5rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.5rem\);margin-block-start:0!important\}/', (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ), 'computed-layout-equal-grid-applies-with-bounded-receipt', wp_json_encode( array( 'ops' => $topology_ops, 'css' => $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ) );
+	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && in_array( 'provider_equal_width_fields', $topology_ops, true ) && in_array( 'provider_interaction_carrier', $topology_ops, true ) && 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.5rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.5rem\);margin-block-start:0!important\}/', $expand_selector_lists( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ) ), 'computed-layout-equal-grid-applies-with-bounded-receipt', wp_json_encode( array( 'ops' => $topology_ops, 'css' => $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ) );
 	$assert( str_contains( $topology_markup, 'ssi-textarea-rows-2' ) && str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:auto' ) && ! str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:200px' ), 'topology-unstyled-source-textarea-carries-two-rows-and-neutralizes-the-provider-height' );
 
 	// A layout graph may contain the complete control ancestry while the producer
@@ -842,7 +850,7 @@ namespace {
 	$responsive_equal_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $responsive_equal_form );
 	$responsive_equal_seed      = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $responsive_equal_validated['forms'] ) );
 	$responsive_equal_row       = $responsive_equal_seed['forms'][0] ?? array();
-	$responsive_equal_css       = (string) ( $responsive_equal_row['provider_layout_overlay_css']['css'] ?? '' );
+	$responsive_equal_css       = $expand_selector_lists( (string) ( $responsive_equal_row['provider_layout_overlay_css']['css'] ?? '' ) );
 	$responsive_equal_markup    = (string) ( $responsive_equal_row['block_markup'] ?? '' );
 	$assert(
 		empty( $responsive_equal_validated['errors'] )
@@ -884,7 +892,7 @@ namespace {
 	$nested_grid_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $nested_grid_validated['forms'] ?? array() ) )['forms'][0] ?? array();
 	$nested_grid_markup = (string) ( $nested_grid_row['block_markup'] ?? '' );
 	$nested_grid_overlay = $nested_grid_row['provider_layout_overlay_css'] ?? array();
-	$nested_grid_css_out = (string) ( $nested_grid_overlay['css'] ?? '' );
+	$nested_grid_css_out = $expand_selector_lists( (string) ( $nested_grid_overlay['css'] ?? '' ) );
 	$assert( empty( $nested_grid_validated['errors'] ) && 'mapped' === ( $nested_grid_row['status'] ?? '' ) && array() === ( $nested_grid_row['mapping_decision']['losses'] ?? null ) && empty( $nested_grid_row['form_receipt_unaccepted_losses'] ?? array() ), 'nested-neutral-grid-row-maps-without-loss', wp_json_encode( array( 'validation' => $nested_grid_validated['errors'], 'row' => $nested_grid_row['reason'] ?? null, 'losses' => $nested_grid_row['mapping_decision']['losses'] ?? null ) ) );
 	$assert( 6 === ( $nested_grid_row['field_count'] ?? 0 ) && 2 === substr_count( $nested_grid_markup, '"width":50' ) && 1 === preg_match( '/wp:jetpack\/field-text [^\n]*"width":50/', $nested_grid_markup ) && 1 === preg_match( '/wp:jetpack\/field-email [^\n]*"width":50/', $nested_grid_markup ) && ! str_contains( $nested_grid_markup, 'wp:group' ) && $nested_grid_markup === serialize_blocks( parse_blocks( $nested_grid_markup ) ), 'nested-neutral-grid-row-preserves-provider-fields-and-save-roundtrip', $nested_grid_markup );
 	$assert( str_contains( $nested_grid_css_out, '@media (width<640px){' ) && 2 === preg_match_all( '/@media \(width<640px\)\{\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{flex:1 1 100%;width:100%\}\}/', $nested_grid_css_out ) && null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $nested_grid_overlay ) && in_array( 'provider_equal_width_fields', array_column( $nested_grid_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'nested-neutral-grid-row-scoped-overlay-stacks-below-640px', $nested_grid_css_out );
@@ -966,7 +974,7 @@ namespace {
 		'mobile-first-tailwind-v4-grid-row-materializes-as-two-jetpack-fields-at-width-50',
 		wp_json_encode( array( 'row' => $tailwind_grid_row, 'markup' => $tailwind_grid_markup ) )
 	);
-	$tailwind_grid_css_out = (string) ( $tailwind_grid_row['provider_layout_overlay_css']['css'] ?? '' );
+	$tailwind_grid_css_out = $expand_selector_lists( (string) ( $tailwind_grid_row['provider_layout_overlay_css']['css'] ?? '' ) );
 	// A carried source sibling-stacking utility (Tailwind's `space-y-*`) is
 	// authored against the ORIGINAL sibling relationships, at unbounded
 	// specificity, and lands on the provider form unscoped. Once flattening
@@ -1037,7 +1045,7 @@ namespace {
 	$host_span_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $host_span_source ) ) );
 	$host_span_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $host_span_validated['forms'] ?? array() ) )['forms'][0] ?? array();
 	$host_span_markup    = (string) ( $host_span_row['block_markup'] ?? '' );
-	$host_span_css_out   = (string) ( $host_span_row['provider_layout_overlay_css']['css'] ?? '' );
+	$host_span_css_out   = $expand_selector_lists( (string) ( $host_span_row['provider_layout_overlay_css']['css'] ?? '' ) );
 	$assert( empty( $host_span_validated['errors'] ), 'host-wrapper-span-manifest-validates', wp_json_encode( $host_span_validated ) );
 	$assert(
 		'mapped' === ( $host_span_row['status'] ?? '' )
@@ -1243,7 +1251,7 @@ namespace {
 	$multi_row_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $multi_row_source ) ) );
 	$multi_row_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $multi_row_validated['forms'] ?? array() ) )['forms'][0] ?? array();
 	$multi_row_markup    = (string) ( $multi_row_row['block_markup'] ?? '' );
-	$multi_row_css_out   = (string) ( $multi_row_row['provider_layout_overlay_css']['css'] ?? '' );
+	$multi_row_css_out   = $expand_selector_lists( (string) ( $multi_row_row['provider_layout_overlay_css']['css'] ?? '' ) );
 	$multi_row_ops       = array_column( $multi_row_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' );
 	$assert( empty( $multi_row_validated['errors'] ) && 'mapped' === ( $multi_row_row['status'] ?? '' ), 'multi-row-equal-column-grid-manifest-validates', wp_json_encode( $multi_row_validated ) );
 	$assert(
@@ -1283,7 +1291,7 @@ namespace {
 	$class_only_source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'membership.html', 'files' => array( 'membership.html' => $class_only_html ) ) )->toArray() )['fallbacks'][0] ?? array();
 	$class_only_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $class_only_source ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
 	$class_only_markup = (string) ( $class_only_row['block_markup'] ?? '' );
-	$class_only_css    = (string) ( $class_only_row['provider_layout_overlay_css']['css'] ?? '' );
+	$class_only_css    = $expand_selector_lists( (string) ( $class_only_row['provider_layout_overlay_css']['css'] ?? '' ) );
 	$assert(
 		'mapped' === ( $class_only_row['status'] ?? '' )
 			&& 8 === substr_count( $class_only_markup, '"width":50' )
@@ -1442,7 +1450,7 @@ namespace {
 	$span_row_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $span_row_form ) ) );
 	$span_row_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $span_row_validated['forms'] ?? array() ) )['forms'][0] ?? array();
 	$span_row_markup    = (string) ( $span_row_row['block_markup'] ?? '' );
-	$span_row_css       = (string) ( $span_row_row['provider_layout_overlay_css']['css'] ?? '' );
+	$span_row_css       = $expand_selector_lists( (string) ( $span_row_row['provider_layout_overlay_css']['css'] ?? '' ) );
 	$span_row_losses    = array_column( $span_row_row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' );
 	$assert(
 		empty( $span_row_validated['errors'] )
@@ -1645,8 +1653,8 @@ namespace {
 	);
 	$direct_label_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $direct_label_form );
 	$direct_label_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $direct_label_validation['forms'] ?? array() ) );
-	$direct_label_css = (string) ( $direct_label_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' );
-	$assert( empty( $direct_label_validation['errors'] ) && 3 === substr_count( $direct_label_css, 'gap:1.2rem' ) && 2 === preg_match_all( '/\.ssi-node-[a-f0-9]{12}-wrap\{display:flex;flex-direction:column;gap:1\.2rem\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)\{display:none\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__field-hints\{display:contents\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__field-format\{display:none\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.ssi-field-row > label\{margin-block-end:0\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.grunion-field::placeholder\{color:revert\}/', $direct_label_css ) && null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $direct_label_seed['forms'][0]['provider_layout_overlay_css'] ?? null ), 'proven direct label/control sibling pairs preserve native placeholder appearance and suppress only inactive provider errors' );
+	$direct_label_css = $expand_selector_lists( (string) ( $direct_label_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) );
+	$assert( empty( $direct_label_validation['errors'] ) && 4 === substr_count( $direct_label_css, 'gap:1.2rem' ) && 2 === preg_match_all( '/\.ssi-node-[a-f0-9]{12}-wrap\{display:flex;flex-direction:column;gap:1\.2rem\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)\{display:none\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__field-hints\{display:contents\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__field-format\{display:none\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.ssi-field-row > label\{margin-block-end:0\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.grunion-field::placeholder\{color:revert\}/', $direct_label_css ) && null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $direct_label_seed['forms'][0]['provider_layout_overlay_css'] ?? null ), 'proven direct label/control sibling pairs preserve native placeholder appearance and suppress only inactive provider errors' );
 	$native_row_form = array(
 		'forms' => array( array(
 			'selector' => 'form.subscribe',
