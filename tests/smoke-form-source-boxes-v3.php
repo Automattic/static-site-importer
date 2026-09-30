@@ -91,6 +91,14 @@ namespace {
 	$assert( ! preg_match( '/\.' . $note_class . '\{[^}]*font-family/', $context_css ), 'wrapper-carries-box-not-inherited-typography', $context_css );
 	$assert( Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $row['provider_layout_overlay_css'] ?? null ) === $row['provider_layout_overlay_css'], 'overlay-artifact-validates' );
 
+	// 4b. The import runtime prepares entities through the fallback contract first;
+	// that normalization must keep the identity join and late class hooks.
+	$prepared     = Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $complete );
+	$prepared_row = $seed( $validate( $prepared ) );
+	$prepared_css = (string) ( $prepared_row['provider_layout_overlay_css']['context_css'] ?? '' );
+	$assert( ( $prepared['form']['context_before'][0]['source_selector'] ?? null ) === ( $complete['form']['context_before'][0]['source_selector'] ?? '' ) && str_contains( (string) ( $prepared['form']['context_before'][0]['class'] ?? '' ), 'hook-20 wide-copy' ), 'runtime-preparation-keeps-identity-and-late-class', wp_json_encode( $prepared['form']['context_before'] ?? null ) );
+	$assert( 1 === preg_match( '/@media \(min-width:1200px\)\{[^{]*\.ssi-context-[a-f0-9]{12}\{font-size:27px;letter-spacing:2px\}\}/', $prepared_css ) && ! in_array( 'provider_context_identity_unmatched', array_column( $prepared_row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' ), true ), 'runtime-preparation-materializes-source-presentation', $prepared_css );
+
 	// 5. An exhausted producer contract is a named loss, never a faithful graph.
 	$exhausted = $validate( $fixture['exhausted'] );
 	$assert( array() === ( $exhausted['errors'] ?? array() ) && ! isset( $exhausted['forms'][0]['layout_graph'] ), 'exhausted-entity-validates-without-graph', wp_json_encode( $exhausted['errors'] ?? array() ) );
