@@ -144,6 +144,10 @@ class Static_Site_Importer_Theme_Exporter {
 		}
 
 		$files = array_merge( $files, self::export_theme_asset_files( $theme_dir, $root, $diagnostics ) );
+		$preview = self::read_file_if_readable( $theme_dir . '/screenshot.png' );
+		if ( '' !== $preview ) {
+			$files[] = self::export_file_entry( $root . '/site-preview.png', $preview, 'asset', 'preview' );
+		}
 
 		$import_report = self::read_theme_import_report( $theme_dir );
 		if ( ! empty( $import_report ) ) {

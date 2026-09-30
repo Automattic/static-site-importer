@@ -719,7 +719,14 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			}
 			$path = (string) $file['path'];
 			if ( isset( $file['content'] ) && is_string( $file['content'] ) ) {
-				$contents[ $path ] = $file['content'];
+				if ( 'base64' === ( $file['encoding'] ?? '' ) ) {
+					$decoded = base64_decode( $file['content'], true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Honors declared binary artifact transport encoding.
+					if ( false !== $decoded ) {
+						$contents[ $path ] = $decoded;
+					}
+				} else {
+					$contents[ $path ] = $file['content'];
+				}
 				continue;
 			}
 			if ( isset( $file['content_base64'] ) && is_string( $file['content_base64'] ) ) {

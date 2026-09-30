@@ -11,6 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 foreach ( array(
 	'Static_Site_Importer_Theme_Materialization_Strategy' => 'class-static-site-importer-theme-materialization-strategy.php',
+	'Static_Site_Importer_Theme_Screenshot'              => 'class-static-site-importer-theme-screenshot.php',
 	'Static_Site_Importer_Content_Policy'                 => 'class-static-site-importer-content-policy.php',
 	'Static_Site_Importer_Redirects_Manifest'             => 'class-static-site-importer-redirects-manifest.php',
 	'Static_Site_Importer_Client_Script_Policy'           => 'class-static-site-importer-client-script-policy.php',
@@ -128,6 +129,10 @@ final class Static_Site_Importer_Compilation_Preparation {
 			} catch ( Throwable $error ) {
 				return new WP_Error( 'static_site_importer_invalid_transformer_result', $error->getMessage() );
 			}
+		}
+		$preview = Static_Site_Importer_Theme_Screenshot::from_artifact( $artifact );
+		if ( null !== $preview ) {
+			$args['theme_screenshot'] = $preview;
 		}
 		$args['compiler_diagnostics'] = Static_Site_Importer_Compiler_Diagnostic_Normalizer::normalize( is_array( $compiled['diagnostics'] ?? null ) ? $compiled['diagnostics'] : array() );
 		$source_reports               = is_array( $compiled['source_reports'] ?? null ) ? $compiled['source_reports'] : array();
