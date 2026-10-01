@@ -909,11 +909,20 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			if ( is_wp_error( $final_ref ) ) {
 				return self::fail( $workspace, $run, 'terminal_checkpoint', $final_ref );
 			}
-			$run['refs']['final'] = $final_ref;
-			$write                = self::write_run( $workspace, $run );
+			$run['refs'] = array( 'final' => $final_ref );
+			$write       = self::write_run( $workspace, $run );
 			if ( is_wp_error( $write ) ) {
 				return self::fail( $workspace, $run, 'terminal_checkpoint', $write );
 			}
+			// A completed run replays only its terminal response. Intermediate
+			// checkpoints (source artifact, plans, receipts, the composed site)
+			// exist to resume work and would otherwise stay on disk until expiry.
+			// A returned plan still references retained payloads by identity.
+			$retained = array( 'workspace.json', 'run.json', 'final-response.json', 'execution.lock', 'materialization-claim', 'failed-plan' );
+			if ( 'plan' === $run['binding']['operation'] ) {
+				$retained[] = 'payloads';
+			}
+			$workspace->prune_except( $retained );
 			return $response;
 		} catch ( Throwable $error ) {
 			return self::fail( $workspace, $run, (string) ( $run['progress']['phase'] ?? $run['phase'] ?? 'runtime' ), $error );
