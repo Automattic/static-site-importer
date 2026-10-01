@@ -1385,14 +1385,15 @@ namespace {
 	// while a nested submit wrapper owns sizing independently of the button.
 	$shared_label_html = '<style>.quote{display:flex;flex-direction:column;gap:16px}'
 		. '.shared-fields{display:flex;flex-direction:column;gap:16px;width:100%;height:min-content;padding:0}'
-		. '.field-box{display:flex;align-items:center;width:100%;height:60px;padding:12px}'
-		. '.field-box input{width:100%;height:100%;padding:0}'
+		. '.field-box{display:flex;align-items:center;width:100%;height:60px;padding:12px;background:white;border-radius:10px}'
+		. '.field-box input{width:100%;height:100%;padding:0;border-style:none}'
 		. '.variant{display:contents}'
 		. '.submit-shell{width:100%;height:60px;flex:0 0 auto}'
 		. '.submit-shell button{width:100%;height:100%}</style>'
 		. '<form class="quote"><label class="shared-fields"><div class="field-box"><input name="service" placeholder="Service" required></div>'
 		. '<div class="field-box"><input name="location" placeholder="Location"></div></label>'
-		. '<div class="variant"><div class="submit-shell"><button type="submit">Send</button></div></div></form>';
+		. '<div class="variant"><div class="submit-shell"><button type="submit">Send</button></div></div>'
+		. '<input name="website" style="position:absolute;transform:scale(0)"></form>';
 	$shared_label_source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $shared_label_html ) ) )->toArray() )['fallbacks'][0] ?? array();
 	$shared_label_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $shared_label_source ) ) );
 	$shared_label_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $shared_label_validation['forms'] ?? array() ) )['forms'][0] ?? array();
@@ -1401,6 +1402,7 @@ namespace {
 	$shared_label_group = $shared_label_blocks[0]['innerBlocks'][0] ?? array();
 	$shared_submit_shell = $shared_label_blocks[0]['innerBlocks'][1]['innerBlocks'][0] ?? array();
 	$shared_targets = array_column( $shared_label_row['provider_layout_target_map']['targets'] ?? array(), null, 'node' );
+	$shared_css = (string) ( $shared_label_row['provider_layout_overlay_css']['css'] ?? '' );
 	$assert( empty( $shared_label_validation['errors'] ) && true === ( $shared_label_row['runtime_mapped'] ?? false ) && empty( $shared_label_row['form_receipt_unaccepted_losses'] )
 		&& 'label' === ( $shared_label_group['attrs']['tagName'] ?? '' ) && 2 === count( $shared_label_group['innerBlocks'] ?? array() )
 		&& 'core/group' === ( $shared_submit_shell['blockName'] ?? '' ) && 'core/button' === ( $shared_submit_shell['innerBlocks'][0]['blockName'] ?? '' )
@@ -1408,6 +1410,15 @@ namespace {
 		&& str_contains( (string) ( $shared_label_row['provider_layout_overlay_css']['css'] ?? '' ), 'height:60px' )
 		&& $shared_label_markup === serialize_blocks( $shared_label_blocks ),
 		'shared-empty-label-fields-and-nested-submit-box-have-physical-provider-targets', wp_json_encode( array( 'decision' => $shared_label_row['mapping_decision'] ?? null, 'markup' => $shared_label_markup, 'topology' => $shared_label_source['control_topology'] ?? null, 'layout' => $shared_label_source['layout_graph'] ?? null ) ) );
+	$assert( 2 === ( $shared_label_row['field_count'] ?? 0 ) && ! str_contains( $shared_label_markup, '"label":"website"' )
+		&& str_contains( $shared_label_markup, '"blockVisibility":false' ) && str_contains( $shared_label_markup, '"border":{"style":"none"}' )
+		&& str_contains( $shared_css, 'ssi-native-control-shell-wrap{display:contents}' ) && str_contains( $shared_css, 'border-radius:10px' )
+		&& str_contains( $shared_css, '.ssi-native-form-topology form.jetpack-contact-form__form' )
+		&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $shared_label_row['provider_layout_overlay_css'] ),
+		'native-provider-presentation-hides-only-source-bookkeeping-and-keeps-control-shell-ownership', wp_json_encode( $shared_label_row['mapping_decision'] ?? null ) );
+	$unsafe_native_map = $shared_label_row['provider_layout_target_map'];
+	$unsafe_native_map['targets'][0]['selector'] .= ', body';
+	$assert( isset( Static_Site_Importer_Provider_Layout_Overlay::validate_map( $unsafe_native_map, $shared_label_source['layout_graph'] )['error'] ), 'native-form-selector-never-admits-an-unscoped-list-member' );
 	$labelled_shared_source = $shared_label_source;
 	$labelled_shared_source['controls'][0]['label'] = 'Service';
 	$labelled_shared_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $labelled_shared_source ) ) );

@@ -197,7 +197,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 * @param array<string, mixed> $control Source control metadata.
 	 * @return array<string, mixed>|null
 	 */
-	public static function field_block_from_control( string $tag, string $type, array $control, string $control_class = '', string $label_class = '' ): ?array {
+	public static function field_block_from_control( string $tag, string $type, array $control, string $control_class = '', string $label_class = '', array $control_styles = array() ): ?array {
 		$map = Static_Site_Importer_Jetpack_Forms_Runtime::field_block_map();
 
 		$lookup = 'textarea' === $tag ? 'textarea' : ( 'select' === $tag ? 'select' : $type );
@@ -272,6 +272,18 @@ final class Static_Site_Importer_Form_Field_Markup {
 		}
 
 		$inner_blocks = array();
+		// An omitted label child makes Jetpack synthesize its type's default
+		// visible label. Preserve source controls named only by name/placeholder
+		// through Jetpack's own hidden-label/accessible-name contract instead.
+		if ( '' === $label && ! in_array( $lookup, array( 'checkbox', 'radio', 'select' ), true ) ) {
+			$inner_blocks[] = array(
+				'name'  => 'jetpack/label',
+				'attrs' => array(
+					'label'    => trim( (string) ( $control['name'] ?? $control['placeholder'] ?? '' ) ),
+					'metadata' => array( 'blockVisibility' => false ),
+				),
+			);
+		}
 		if ( 'checkbox' === $lookup && empty( $attrs['options'] ) ) {
 			$inner_blocks[] = array(
 				'name'  => 'jetpack/option',
@@ -324,6 +336,9 @@ final class Static_Site_Importer_Form_Field_Markup {
 			$input_attrs  = array(
 				'style' => array( 'border' => array( 'style' => 'solid' ) ),
 			);
+			if ( in_array( $control_styles['border_style'] ?? null, array( 'none', 'solid', 'dotted', 'dashed', 'double', 'groove', 'ridge', 'inset', 'outset' ), true ) ) {
+				$input_attrs['style']['border']['style'] = $control_styles['border_style'];
+			}
 			$source_class = isset( $control['class'] ) && is_scalar( $control['class'] ) ? trim( (string) $control['class'] ) : '';
 			$input_class  = trim( $source_class . ' ' . $control_class );
 			if ( '' !== $input_class ) {

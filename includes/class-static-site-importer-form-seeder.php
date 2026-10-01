@@ -338,6 +338,7 @@ class Static_Site_Importer_Form_Seeder {
 
 		$scope                         = Static_Site_Importer_Form_Layout_Projection::layout_scope( $form );
 		$presentation_roles            = Static_Site_Importer_Form_Layout_Projection::presentation_roles( is_array( $form['presentation_graph'] ?? null ) ? $form['presentation_graph'] : array() );
+		$control_presentations         = array_column( $form['presentation_graph']['controls'] ?? array(), null, 'index' );
 		$presentation_descriptors      = array();
 		$field_blocks                  = array();
 		$mapped_types                  = array();
@@ -461,7 +462,8 @@ class Static_Site_Importer_Form_Seeder {
 				$type,
 				$control,
 				empty( $control_phone_destinations ) ? $presentation_descriptor['control_class'] : '',
-				$presentation_descriptor['label_class']
+				$presentation_descriptor['label_class'],
+				$control_presentations[ $control_index ]['control']['styles'] ?? array()
 			);
 			if ( null === $field_block ) {
 				$skipped[] = '' !== $type ? $type : $tag;
@@ -543,6 +545,7 @@ class Static_Site_Importer_Form_Seeder {
 			);
 		}
 		$inner_blocks = $topology['blocks'];
+		$form['provider_native_topology'] = in_array( 'ssi-native-form-topology', $topology['form_classes'], true );
 		if ( ! $has_topology || ! $has_source_submit ) {
 			$inner_blocks[] = Static_Site_Importer_Form_Field_Markup::submit_button_block( $submit_text, Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-submit' ), $submit_presentation );
 		}
@@ -1122,7 +1125,31 @@ class Static_Site_Importer_Form_Seeder {
 	 * prove it is not an authored field the provider must reproduce.
 	 */
 	private static function is_hidden_bookkeeping_control( array $form, int $control_index, array $control, string $tag, string $type ): bool {
-		if ( 'input' !== $tag || ! in_array( $type, array( '', 'text', 'hidden' ), true ) || ! preg_match( '/^_[a-z0-9_-]+$/iD', (string) ( $control['name'] ?? '' ) ) || '' !== trim( (string) ( $control['label'] ?? '' ) ) || '' !== trim( (string) ( $control['placeholder'] ?? '' ) ) ) {
+		if ( 'input' !== $tag || ! in_array( $type, array( '', 'text', 'hidden' ), true ) || '' !== trim( (string) ( $control['label'] ?? '' ) ) || '' !== trim( (string) ( $control['placeholder'] ?? '' ) ) ) {
+			return false;
+		}
+		// Permanently collapsed, out-of-flow inputs with no visitor-facing
+		// affordance are source bookkeeping even when their name is not private.
+		// Conditional/revealed controls retain the existing provider mapping.
+		if ( empty( $control['required'] ) && empty( $control['value'] ) ) {
+			foreach ( $form['presentation_graph']['controls'] ?? array() as $row ) {
+				$part = $row['control'] ?? array();
+				if ( ( $row['index'] ?? null ) !== $control_index || 'absolute' !== ( $part['styles']['position'] ?? null ) || ! in_array( $part['styles']['transform'] ?? null, array( 'scale(0)', 'scale(0,0)', 'scale(0, 0)' ), true ) ) {
+					continue;
+				}
+				$proven = array();
+				foreach ( $part['provenance'] ?? array() as $fact ) {
+					if ( null === ( $fact['condition'] ?? null ) && ! empty( $fact['source_sha256'] ) ) {
+						$proven = array_merge( $proven, $fact['properties'] ?? array() );
+					}
+				}
+				$conditional = array_filter( $form['presentation_graph']['variants'] ?? array(), static fn( array $variant ): bool => $control_index === ( $variant['index'] ?? null ) && 'control' === ( $variant['role'] ?? null ) );
+				if ( empty( $conditional ) && empty( array_diff( array( 'position', 'transform' ), $proven ) ) ) {
+					return true;
+				}
+			}
+		}
+		if ( ! preg_match( '/^_[a-z0-9_-]+$/iD', (string) ( $control['name'] ?? '' ) ) ) {
 			return false;
 		}
 		if ( 'hidden' === $type ) {

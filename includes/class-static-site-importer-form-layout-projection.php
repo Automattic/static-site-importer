@@ -2136,7 +2136,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 */
 	private static function exact_native_topology( array $nodes, array $children, array $field_blocks, array $suppressed_controls, array $layout_nodes, array $layouts, array $variants, string $scope ): ?array {
 		$contains_label = static function ( array $block ) use ( &$contains_label ): bool {
-			if ( in_array( $block['name'] ?? '', array( 'jetpack/label', 'jetpack/option' ), true ) || 'label' === ( $block['attrs']['tagName'] ?? '' ) ) {
+			if ( ( 'jetpack/label' === ( $block['name'] ?? '' ) && false !== ( $block['attrs']['metadata']['blockVisibility'] ?? null ) ) || 'jetpack/option' === ( $block['name'] ?? '' ) || 'label' === ( $block['attrs']['tagName'] ?? '' ) ) {
 				return true;
 			}
 			foreach ( $block['innerBlocks'] ?? array() as $child ) {
@@ -2301,7 +2301,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				if ( 'control' === ( $node['kind'] ?? null ) ) {
 					$index = $node['control'];
 					if ( isset( $field_blocks[ $index ] ) ) {
-						$blocks[] = $field_blocks[ $index ];
+						$field = $field_blocks[ $index ];
+						if ( in_array( $field['name'], array( 'jetpack/field-text', 'jetpack/field-email', 'jetpack/field-telephone', 'jetpack/field-number', 'jetpack/field-url', 'jetpack/field-date', 'jetpack/field-textarea' ), true ) ) {
+							$field['attrs']['className'] = trim( (string) ( $field['attrs']['className'] ?? '' ) . ' ssi-native-control-shell' );
+						}
+						$blocks[] = $field;
 					}
 					continue;
 				}
@@ -2340,10 +2344,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			'overlay_node_targets'         => array_map( static fn( string $id ): array => array(
 				'id'     => $id,
 				'layout' => $layouts[ $id ],
+				'presentation' => $layout_nodes[ $id ]['presentation'] ?? array(),
 			), array_keys( $wrappers ) ),
 			'responsive_variant_targets'   => $native_variants,
 			'native_visibility_targets'    => array(),
-			'form_classes'                 => array(),
+			'form_classes'                 => array( 'ssi-native-form-topology' ),
 			'provider_layout_targets'      => $hooks,
 			// Every topology result carries the same shape. This projection owns no
 			// phone popup placement, so it reports an explicit empty set instead of
@@ -3069,7 +3074,9 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	public static function editor_layout_target_map( array $map, string $scope ): array {
 		foreach ( $map['targets'] as &$target ) {
 			if ( 'form' === $target['node'] ) {
-				$target['selector'] = '.' . $scope . ' > div.jetpack-contact-form';
+				$target['selector'] = '.' . $scope . ( str_contains( $target['selector'], '.ssi-native-form-topology' ) ? '.ssi-native-form-topology' : '' ) . ' > div.jetpack-contact-form';
+			} elseif ( 'form-box' === $target['node'] && str_contains( $target['selector'], '.ssi-native-form-topology' ) ) {
+				$target['selector'] = '.' . $scope . '.ssi-native-form-topology';
 			} elseif ( preg_match( '/^field-([0-9]+)$/D', $target['node'], $match ) ) {
 				$target['selector'] = '.' . $scope . ' .' . self::layout_node_class( $scope, 'control-' . $match[1] ) . ' > div.jetpack-field__control';
 			}
@@ -3622,7 +3629,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( 'form-box' === $id ) {
 				// The provider renders its block wrapper at the source form's own position,
 				// so that wrapper is the element carrying the form box's page placement.
-				$selector     = $selector_scope;
+				$selector     = ! empty( $form['provider_native_topology'] ) ? $selector_scope . '.ssi-native-form-topology.jetpack-contact-form-container' : $selector_scope;
 				$capabilities = array( 'direct_child_layout', 'item_layout', 'responsive_layout' );
 			} elseif ( 'field-list' === $id ) {
 				$selector     = $selector_scope . ' .ssi-source-field-list';
@@ -3632,7 +3639,9 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				// and lays later ones out directly in the block wrapper. Address both,
 				// so the source container layout reaches the element that actually
 				// positions the fields instead of leaving the runtime default in place.
-				$selector = $selector_scope . ' > form.jetpack-contact-form__form, ' . $selector_scope . ':not(:has(> form.jetpack-contact-form__form))';
+				$selector = ! empty( $form['provider_native_topology'] )
+					? $selector_scope . '.ssi-native-form-topology form.jetpack-contact-form__form, ' . $selector_scope . '.ssi-native-form-topology.wp-block-jetpack-contact-form:not(:has(form.jetpack-contact-form__form))'
+					: $selector_scope . ' > form.jetpack-contact-form__form, ' . $selector_scope . ':not(:has(> form.jetpack-contact-form__form))';
 				// Jetpack's contact-form root includes hidden and error nodes, so it cannot
 				// promise source direct-child relationships. Generated node hooks can.
 				$capabilities = array( 'container_layout', 'responsive_layout' );
