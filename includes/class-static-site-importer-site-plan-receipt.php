@@ -92,6 +92,7 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 				'navigation_entities'        => $state['applied']['navigation_entities'] ?? array(),
 				'files'                      => $state['applied']['files'],
 				'operations'                 => $state['applied']['operations'],
+				'site_identity'              => $state['applied']['site_identity'] ?? array( 'status' => 'not_applied' ),
 				'runtime_declarations'       => $state['applied']['runtime_declarations'] ?? array( 'asset_publications' => array() ),
 				'font_materialization'       => $state['applied']['font_materialization'] ?? array(
 					'status'      => 'not_requested',

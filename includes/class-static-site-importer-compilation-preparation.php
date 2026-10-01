@@ -46,6 +46,14 @@ final class Static_Site_Importer_Compilation_Preparation {
 			return $redirects;
 		}
 		$artifact = $redirects['artifact'];
+		// Preserve explicit producer evidence for the native Site Identity handoff.
+		// The runtime materializer will use the source write mapping; no asset URL
+		// is fetched or inferred from a theme directory convention.
+		$args['native_site_identity_evidence'] = Static_Site_Importer_Site_Identity::evidence_from_website_artifact(
+			$artifact,
+			is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null,
+			isset( $args['site_tagline'] ) && is_scalar( $args['site_tagline'] ) ? (string) $args['site_tagline'] : ''
+		);
 		if ( empty( $args['source_route_aliases'] ) || ! is_array( $args['source_route_aliases'] ) ) {
 			$args['source_route_aliases'] = $redirects['aliases'];
 		}

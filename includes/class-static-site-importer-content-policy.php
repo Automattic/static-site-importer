@@ -22,6 +22,7 @@ final class Static_Site_Importer_Content_Policy {
 		'js',
 		'mjs',
 		'json',
+		'webmanifest',
 		'map',
 		'xml',
 		'txt',
@@ -53,7 +54,7 @@ final class Static_Site_Importer_Content_Policy {
 	);
 
 	/** Static formats whose source bytes are inspected for server-side code. */
-	private const TEXTUAL_EXTENSIONS = array( 'html', 'htm', 'css', 'js', 'mjs', 'json', 'map', 'xml', 'txt', 'md', 'markdown', 'svg' );
+	private const TEXTUAL_EXTENSIONS = array( 'html', 'htm', 'css', 'js', 'mjs', 'json', 'webmanifest', 'map', 'xml', 'txt', 'md', 'markdown', 'svg' );
 
 	/** Assets that a compiler may carry into a generated companion plugin. */
 	private const COMPANION_ASSET_EXTENSIONS = array( 'js', 'mjs', 'css', 'json', 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'cur', 'woff', 'woff2', 'ttf', 'otf', 'eot' );
@@ -63,31 +64,32 @@ final class Static_Site_Importer_Content_Policy {
 
 	/** Portable extensions for downloaded assets whose URL paths carry no filename extension. */
 	private const PORTABLE_CONTENT_TYPE_EXTENSIONS = array(
-		'text/css'                 => 'css',
-		'text/javascript'          => 'js',
-		'application/javascript'   => 'js',
-		'application/json'         => 'json',
-		'image/jpeg'               => 'jpg',
-		'image/png'                => 'png',
-		'image/gif'                => 'gif',
-		'image/webp'               => 'webp',
-		'image/avif'               => 'avif',
-		'image/svg+xml'            => 'svg',
-		'image/bmp'                => 'bmp',
-		'image/x-icon'             => 'ico',
-		'image/vnd.microsoft.icon' => 'ico',
-		'font/woff'                => 'woff',
-		'application/font-woff'    => 'woff',
-		'font/woff2'               => 'woff2',
-		'font/ttf'                 => 'ttf',
-		'font/otf'                 => 'otf',
-		'video/mp4'                => 'mp4',
-		'video/quicktime'          => 'mov',
-		'video/webm'               => 'webm',
-		'audio/mpeg'               => 'mp3',
-		'audio/ogg'                => 'ogg',
-		'audio/wav'                => 'wav',
-		'application/pdf'          => 'pdf',
+		'text/css'                  => 'css',
+		'text/javascript'           => 'js',
+		'application/javascript'    => 'js',
+		'application/json'          => 'json',
+		'application/manifest+json' => 'json',
+		'image/jpeg'                => 'jpg',
+		'image/png'                 => 'png',
+		'image/gif'                 => 'gif',
+		'image/webp'                => 'webp',
+		'image/avif'                => 'avif',
+		'image/svg+xml'             => 'svg',
+		'image/bmp'                 => 'bmp',
+		'image/x-icon'              => 'ico',
+		'image/vnd.microsoft.icon'  => 'ico',
+		'font/woff'                 => 'woff',
+		'application/font-woff'     => 'woff',
+		'font/woff2'                => 'woff2',
+		'font/ttf'                  => 'ttf',
+		'font/otf'                  => 'otf',
+		'video/mp4'                 => 'mp4',
+		'video/quicktime'           => 'mov',
+		'video/webm'                => 'webm',
+		'audio/mpeg'                => 'mp3',
+		'audio/ogg'                 => 'ogg',
+		'audio/wav'                 => 'wav',
+		'application/pdf'           => 'pdf',
 		'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
 	);
 

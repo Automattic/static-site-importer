@@ -124,6 +124,97 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		return $report;
 	}
 
+	/** Apply explicit branding through native WordPress settings after activation. */
+	public static function materialize_identity( array &$state ) {
+		if ( empty( $state['args']['activate'] ) || Static_Site_Importer_Import_Destination::EXISTING_THEME === ( $state['args']['destination'] ?? '' ) ) {
+			return array( 'status' => 'not_applied' );
+		}
+		$evidence    = is_array( $state['args']['native_site_identity_evidence'] ?? null ) ? $state['args']['native_site_identity_evidence'] : array();
+		$theme_uri   = (string) ( $state['theme']['uri'] ?? '' );
+		$theme_dir   = (string) ( $state['theme_dir'] ?? '' );
+		$attachments = array();
+		$by_hash     = array();
+		$report      = array();
+		foreach ( array(
+			'logo' => 'site_logo',
+			'icon' => 'site_icon',
+		) as $field => $option ) {
+			$current = (int) get_option( $option, 0 );
+			$source  = $evidence[ $field . '_source_path' ] ?? null;
+			$entry   = array(
+				'status'        => 'absent',
+				'attachment_id' => 0,
+				'source_path'   => $source,
+			);
+			if ( ! empty( $evidence['truncated'] ) || ! empty( $evidence['invalid_jsonld'] ) ) {
+				$entry['status'] = 'unknown_evidence';
+			}
+			if ( 'icon' === $field && isset( $evidence['manifest_status'] ) && 'parsed' !== $evidence['manifest_status'] ) {
+				$entry['status'] = 'unresolved_manifest';
+			}
+			if ( 'logo' === $field && isset( $evidence['logo_status'] ) ) {
+				$entry['status'] = $evidence['logo_status'];
+			}
+			if ( $current > 0 ) {
+				$entry['status']        = 'preserved_owner_value';
+				$entry['attachment_id'] = $current;
+				$report[ $option ]      = $entry;
+				continue;
+			}
+			$id = 'icon' === $field ? (int) ( $state['pending_site_icon'] ?? 0 ) : 0;
+			if ( $id <= 0 && ! empty( $evidence[ $field ] ) ) {
+				$write = null;
+				foreach ( $state['resolved']['writes'] ?? array() as $candidate ) {
+					if ( is_string( $source ) && ( $candidate['source_path'] ?? null ) === $source && 'theme_asset' === ( $candidate['kind'] ?? '' ) ) {
+						$write = $candidate;
+						break;
+					}
+				}
+				if ( null === $write ) {
+					$entry['status'] = 'unresolved_asset';
+				} else {
+					$relative = self::theme_relative_raster( rtrim( $theme_uri, '/' ) . '/' . $write['target_path'], $theme_uri );
+					if ( null === $relative ) {
+						$entry['status'] = 'unsupported_format';
+					} elseif ( ! function_exists( 'wp_insert_attachment' ) ) {
+						$entry['status'] = 'runtime_unavailable';
+					} else {
+						$error = null;
+						$id    = self::ensure_attachment( $theme_dir, $relative, 'Site ' . $field, $state, $attachments, $by_hash, $error );
+						if ( null !== $error ) {
+							return $error;
+						}
+						if ( $id <= 0 ) {
+							$entry['status'] = 'unresolved_asset';
+						}
+					}
+				}
+			}
+			if ( $id > 0 ) {
+				Static_Site_Importer_Site_Plan_Persistence::journal_option( $state, $option );
+				if ( ! Static_Site_Importer_Site_Plan_Persistence::write_option( $option, $id ) ) {
+					return new WP_Error( 'native_' . $option . '_not_applied' );
+				}
+				$entry['status']        = 'applied';
+				$entry['attachment_id'] = $id;
+			}
+			$report[ $option ] = $entry;
+		}
+		$tagline = trim( (string) ( $state['args']['site_tagline'] ?? $evidence['tagline'] ?? '' ) );
+		if ( '' === $tagline ) {
+			$tagline = trim( (string) ( $evidence['tagline'] ?? '' ) );
+		}
+		$report['blogdescription'] = array( 'status' => '' === $tagline ? 'absent' : 'preserved_owner_value' );
+		if ( '' !== $tagline && '' === trim( (string) get_option( 'blogdescription', '' ) ) ) {
+			Static_Site_Importer_Site_Plan_Persistence::journal_option( $state, 'blogdescription' );
+			if ( ! Static_Site_Importer_Site_Plan_Persistence::write_option( 'blogdescription', sanitize_text_field( $tagline ) ) ) {
+				return new WP_Error( 'site_tagline_not_applied' );
+			}
+			$report['blogdescription']['status'] = 'applied';
+		}
+		return $report;
+	}
+
 	/**
 	 * Make the source favicon the WordPress site icon, so the owner sees and can
 	 * change it under Site Identity. An owner's existing icon is never replaced.
@@ -165,7 +256,9 @@ final class Static_Site_Importer_Media_Library_Materializer {
 								'value'  => get_option( 'site_icon', 0 ),
 							);
 						}
-						update_option( 'site_icon', $attachments[ $relative ] );
+						// Attachment creation may precede activation, but global Site
+						// Identity is only changed in the authorized activation transaction.
+						$state['pending_site_icon'] = $attachments[ $relative ];
 						return $attachments[ $relative ];
 					}
 				}

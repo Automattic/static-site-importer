@@ -160,6 +160,23 @@ $identity = Static_Site_Importer_Site_Identity::resolve( array( 'site_title' => 
 $assert( 'Inherited Site Name Custom Theme' === $identity['name'], 'theme-name-filter' );
 $assert( 'custom-inherited-site-name-custom-theme' === $identity['slug'], 'theme-slug-filter-sees-filtered-name' );
 unset( $GLOBALS['ssi_identity_filters'] );
+
+$branding = Static_Site_Importer_Site_Identity::evidence_from_website_artifact(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => array(
+			array(
+				'path'    => 'index.html',
+				'content' => '<script type="application/ld+json">{"@type":"Organization","logo":{"url":"brand.png"},"slogan":"Explicit slogan"}</script><link rel="icon" href="mark.png"><link rel="manifest" href="manifest.webmanifest"><meta name="description" content="Not a tagline"><h1>Not a tagline</h1>',
+			),
+		),
+	)
+);
+$assert( 'Explicit slogan' === $branding['tagline'], 'explicit-jsonld-slogan' );
+$assert( 'brand.png' === $branding['logo'], 'explicit-jsonld-logo' );
+$assert( 'mark.png' === $branding['icon'], 'explicit-icon-link' );
+$assert( 'manifest.webmanifest' === $branding['manifest'], 'explicit-manifest-link' );
+$assert( 'Caller tagline' === Static_Site_Importer_Site_Identity::evidence_from_website_artifact( array( 'entrypoint' => 'index.html', 'files' => array( array( 'path' => 'index.html', 'content' => '<meta name="description" content="No">' ) ) ), null, 'Caller tagline' )['tagline'], 'caller-tagline-only' );
 $identity = Static_Site_Importer_Site_Identity::resolve( array( 'name' => 'Custom Theme Name', 'site_title' => 'Inherited Site Name' ) );
 $assert( 'Custom Theme Name' === $identity['name'], 'explicit-theme-name-overrides-inherited-site-name' );
 
