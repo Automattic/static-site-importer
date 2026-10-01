@@ -2813,7 +2813,7 @@ namespace {
 				array( 'id' => 'form', 'kind' => 'container', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'form', 'classes' => array( 'fixed-control' ) ), 'layout' => array(), 'provenance' => array() ),
 				array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'form', 'order' => 0, 'source' => array( 'tag' => 'textarea', 'classes' => array() ), 'layout' => array( 'width' => '611px' ), 'provenance' => array( array( 'source_path' => 'inline-style', 'source_sha256' => str_repeat( 'c', 64 ), 'selector' => '[style]', 'condition' => null, 'properties' => array( 'width' ) ) ) ),
 				array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'form', 'order' => 1, 'source' => array( 'tag' => 'input', 'classes' => array() ), 'layout' => array( 'width' => '100%' ), 'provenance' => array( array( 'source_path' => 'inline-style', 'source_sha256' => str_repeat( 'c', 64 ), 'selector' => '[style]', 'condition' => null, 'properties' => array( 'width' ) ) ) ),
-				array( 'id' => 'control-2', 'kind' => 'control', 'parent' => 'form', 'order' => 2, 'source' => array( 'tag' => 'button', 'classes' => array() ), 'layout' => array( 'width' => '280px', 'flex_grow' => 1 ), 'provenance' => array( array( 'source_path' => 'inline-style', 'source_sha256' => str_repeat( 'c', 64 ), 'selector' => '[style]', 'condition' => null, 'properties' => array( 'width', 'flex-grow' ) ) ) ),
+				array( 'id' => 'control-2', 'kind' => 'control', 'parent' => 'form', 'order' => 2, 'source' => array( 'tag' => 'button', 'classes' => array() ), 'layout' => array( 'width' => '280px', 'flex_grow' => '1' ), 'provenance' => array( array( 'source_path' => 'inline-style', 'source_sha256' => str_repeat( 'c', 64 ), 'selector' => '[style]', 'condition' => null, 'properties' => array( 'width', 'flex-grow' ) ) ) ),
 			) ),
 		) ),
 	);
@@ -2960,15 +2960,15 @@ namespace {
 	$v1_with_width['layout_graph']['schema'] = 'generic/computed-layout-graph/v1';
 	$v1_with_width['layout_graph']['limits']['depth'] = 8;
 	$v1_with_width_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $v1_with_width ) ) );
-	$assert( empty( $v1_with_width_validation['forms'] ) && str_contains( (string) ( $v1_with_width_validation['errors'][0]['message'] ?? '' ), 'producer-supported keys' ), 'v1-graph-rejects-v2-width-vocabulary' );
+	$assert( empty( $v1_with_width_validation['forms'] ) && str_contains( (string) ( $v1_with_width_validation['errors'][0]['message'] ?? '' ), 'producer contract' ), 'v1-graph-rejects-v2-width-vocabulary' );
 	$v1_depth_16 = $topology_form;
 	$v1_depth_16['forms'][0]['layout_graph']['limits']['depth'] = 16;
 	$v1_depth_16_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $v1_depth_16 );
-	$assert( empty( $v1_depth_16_validation['forms'] ) && str_contains( (string) ( $v1_depth_16_validation['errors'][0]['message'] ?? '' ), 'exact versioned depth' ), 'v1-graph-rejects-v2-depth-limit' );
+	$assert( empty( $v1_depth_16_validation['forms'] ) && str_contains( (string) ( $v1_depth_16_validation['errors'][0]['message'] ?? '' ), 'producer contract' ), 'v1-graph-rejects-v2-depth-limit' );
 	$v2_depth_8 = $deep_width_form;
 	$v2_depth_8['layout_graph']['limits']['depth'] = 8;
 	$v2_depth_8_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $v2_depth_8 ) ) );
-	$assert( empty( $v2_depth_8_validation['forms'] ) && str_contains( (string) ( $v2_depth_8_validation['errors'][0]['message'] ?? '' ), 'exact versioned depth' ), 'v2-graph-rejects-v1-depth-limit' );
+	$assert( empty( $v2_depth_8_validation['forms'] ) && str_contains( (string) ( $v2_depth_8_validation['errors'][0]['message'] ?? '' ), 'producer contract' ), 'v2-graph-rejects-v1-depth-limit' );
 	$unproven_table_form = $deep_width_form;
 	$unproven_table_form['layout_graph']['nodes'][13]['provenance'] = array();
 	$unproven_table_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $unproven_table_form ) ) );
@@ -3509,7 +3509,7 @@ namespace {
 	$assert( str_contains( Static_Site_Importer_Provider_Layout_Overlay::compile( $responsive_root, $root_map )['css'], '@media (min-width: 48rem)' ), 'provider-layout-overlay-supports-bounded-media-condition' );
 	$root_item = Static_Site_Importer_Provider_Layout_Overlay::compile( $layout_graph( array( $layout_node( 'form', array( 'order' => 1 ), 'form' ) ) ), $root_map );
 	$assert( 'direct_child_relationship_unrepresentable' === ( $root_item['losses'][0]['reason_code'] ?? '' ), 'jetpack-form-root-does-not-claim-direct-child-layout' );
-	$item_graph = $layout_graph( array( $layout_node( 'control-0', array( 'order' => 1, 'flex_grow' => 1 ), 'input' ) ) );
+	$item_graph = $layout_graph( array( $layout_node( 'control-0', array( 'order' => 1, 'flex_grow' => '1' ), 'input' ) ) );
 	$item_map = array( 'schema' => 'generic/provider-layout-target-map/v1', 'provider' => 'jetpack', 'scope' => '.ssi-form-123456789abc', 'targets' => array( array( 'node' => 'control-0', 'selector' => '.ssi-form-123456789abc .ssi-node-123456789abc', 'capabilities' => array( 'item_layout', 'direct_child_layout' ) ) ) );
 	$item_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $item_graph, $item_map );
 	$assert( str_contains( $item_overlay['css'], 'order:1;flex-grow:1' ) && empty( $item_overlay['losses'] ), 'provider-layout-emits-item-properties-only-for-proven-direct-child-targets' );
@@ -3579,16 +3579,14 @@ namespace {
 	$unsafe_graph = $topology_form;
 	$unsafe_graph['forms'][0]['layout_graph']['nodes'][0]['layout'] = array( 'display' => 'grid', 'direction' => 'none', 'item_placement' => array( 'column' => 1 ) );
 	$unsafe_graph_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unsafe_graph );
-	$unsafe_graph_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $unsafe_graph_validation['forms'] ) );
-	$unsafe_losses = $unsafe_graph_seed['forms'][0]['computed_layout_receipt']['losses'] ?? array();
-	$assert( 'applied' === ( $unsafe_graph_seed['forms'][0]['computed_layout_receipt']['status'] ?? '' ) && array( 'provider_wrapper_layout_unrepresentable', 'unsupported_item_placement' ) === array_column( $unsafe_losses, 'reason_code' ), 'computed-layout-grid-placement-is-gated-despite-represented-field-wrappers', wp_json_encode( $unsafe_graph_seed['forms'][0]['computed_layout_receipt'] ?? array() ) );
+	$assert( empty( $unsafe_graph_validation['forms'] ) && str_contains( (string) ( $unsafe_graph_validation['errors'][0]['message'] ?? '' ), 'producer contract' ), 'computed-layout-rejects-non-producer-item-placement-shape' );
 	$unknown_layout_key = $topology_form;
 	$unknown_layout_key['forms'][0]['layout_graph']['nodes'][0]['layout']['alignment'] = 'center';
 	$unknown_layout_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unknown_layout_key );
-	$assert( empty( $unknown_layout_validation['forms'] ) && str_contains( (string) ( $unknown_layout_validation['errors'][0]['message'] ?? '' ), 'producer-supported keys' ), 'computed-layout-rejects-alignment-alias-at-runtime-boundary' );
+	$assert( empty( $unknown_layout_validation['forms'] ) && str_contains( (string) ( $unknown_layout_validation['errors'][0]['message'] ?? '' ), 'producer contract' ), 'computed-layout-rejects-alignment-alias-at-runtime-boundary' );
 	$unknown_layout_key['forms'][0]['layout_graph']['nodes'][0]['layout'] = array( 'display' => 'flex', 'direction' => 'row', 'justify' => 'center' );
 	$unknown_layout_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unknown_layout_key );
-	$assert( empty( $unknown_layout_validation['forms'] ) && str_contains( (string) ( $unknown_layout_validation['errors'][0]['message'] ?? '' ), 'producer-supported keys' ), 'computed-layout-rejects-justify-alias-at-runtime-boundary' );
+	$assert( empty( $unknown_layout_validation['forms'] ) && str_contains( (string) ( $unknown_layout_validation['errors'][0]['message'] ?? '' ), 'producer contract' ), 'computed-layout-rejects-justify-alias-at-runtime-boundary' );
 	$responsive_flex = $topology_form;
 	$responsive_condition = array( 'kind' => 'media', 'query' => '(min-width: 48rem)' );
 	$responsive_flex['forms'][0]['layout_graph']['variants'] = array( array( 'node' => 'wrapper-0', 'condition' => $responsive_condition, 'layout_patch' => array( 'direction' => 'column', 'wrap' => 'wrap' ), 'precedence' => array( 'flex-direction' => array( 'source_order' => 4, 'specificity' => 10, 'important' => false ), 'flex-wrap' => array( 'source_order' => 4, 'specificity' => 10, 'important' => false ) ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'b', 64 ), 'selector' => '.row-2', 'condition' => $responsive_condition, 'properties' => array( 'flex-direction', 'flex-wrap' ) ) ) ) );

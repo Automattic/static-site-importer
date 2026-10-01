@@ -1359,7 +1359,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				continue;
 			}
 			$layout = $s->layout_by_node[ $parent ] ?? array();
-			if ( array_intersect( array_keys( $layout ), array( 'item_placement', 'column', 'row', 'area' ) ) ) {
+			if ( array_intersect( array_keys( $layout ), array( 'column', 'row', 'area' ) ) ) {
 				continue;
 			}
 			$parent_variants = $s->variants_by_node[ $parent ] ?? array();
