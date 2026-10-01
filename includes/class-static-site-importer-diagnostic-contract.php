@@ -9,6 +9,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Quality_Count_Keys' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-quality-count-keys.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Loss_Classes' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-diagnostic-loss-classes.php';
 }
@@ -375,28 +378,9 @@ class Static_Site_Importer_Diagnostic_Contract {
 
 	/** @return array<string,int> */
 	private static function validation_quality_metric_values( array $validation ): array {
-		$counts  = isset( $validation['counts'] ) && is_array( $validation['counts'] ) ? $validation['counts'] : array();
-		$map     = array(
-			'diagnostics'                        => 'diagnostic_count',
-			'fallback_blocks'                    => 'fallback_count',
-			'unsupported_fallbacks'              => 'unsupported_fallback_count',
-			'accepted_preserved_runtime_islands' => 'accepted_preserved_runtime_island_count',
-			'content_loss'                       => 'content_loss_count',
-			'empty_conversions'                  => 'empty_conversion_count',
-			'core_html_blocks'                   => 'core_html_block_count',
-			'freeform_blocks'                    => 'freeform_block_count',
-			'invalid_blocks'                     => 'invalid_block_count',
-			'invalid_block_documents'            => 'invalid_block_document_count',
-			'images_missing_source'              => 'image_missing_source_count',
-			'unsafe_svgs'                        => 'unsafe_svg_count',
-			'svg_materialization_failures'       => 'svg_materialization_failure_count',
-			'svg_sprite_reference_failures'      => 'svg_sprite_reference_failure_count',
-			'commerce_dependency_failures'       => 'commerce_dependency_failures',
-			'interaction_candidates'             => 'interaction_candidate_count',
-			'runtime_dependency_parity'          => 'runtime_dependency_parity_issue_count',
-			'semantic_parity_failures'           => 'semantic_parity_failure_count',
-			'unsafe_layout_constraints'          => 'unsafe_layout_constraint_count',
-		);
+		$counts = isset( $validation['counts'] ) && is_array( $validation['counts'] ) ? $validation['counts'] : array();
+		$map    = Static_Site_Importer_Quality_Count_Keys::MAP;
+
 		$metrics = array();
 		foreach ( $map as $validation_key => $quality_key ) {
 			if ( isset( $counts[ $validation_key ] ) && is_numeric( $counts[ $validation_key ] ) ) {

@@ -140,7 +140,7 @@ class Static_Site_Importer_Computed_Layout_Strategy {
 	}
 
 	private static function flex_loss( array $layout ): ?string {
-		if ( ! empty( $layout['item_placement'] ) || isset( $layout['column'], $layout['row'] ) || array_key_exists( 'area', $layout ) ) {
+		if ( isset( $layout['column'], $layout['row'] ) || array_key_exists( 'area', $layout ) ) {
 			return 'unsupported_item_placement';
 		}
 		if ( 'flex' !== ( $layout['display'] ?? null ) || ! in_array( $layout['direction'] ?? null, array( 'row', 'column' ), true ) ) {
@@ -164,9 +164,9 @@ class Static_Site_Importer_Computed_Layout_Strategy {
 		if ( array_key_exists( 'justify_content', $layout ) && null === self::alignment_attr( $layout['direction'], 'justify_content', $layout['justify_content'] ) ) {
 			return 'unsupported_justification';
 		}
-		foreach ( array( 'columns', 'rows', 'align_content', 'align_self', 'justify_self', 'order', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis', 'column', 'row', 'area', 'item_placement' ) as $fact ) {
+		foreach ( array( 'columns', 'rows', 'align_content', 'align_self', 'justify_self', 'order', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis', 'column', 'row', 'area' ) as $fact ) {
 			if ( array_key_exists( $fact, $layout ) ) {
-				return ! empty( $layout['item_placement'] ) || in_array( $fact, array( 'column', 'row', 'area' ), true ) ? 'unsupported_item_placement' : 'equivalence_unproven_layout';
+				return in_array( $fact, array( 'column', 'row', 'area' ), true ) ? 'unsupported_item_placement' : 'equivalence_unproven_layout';
 			}
 		}
 		return null;

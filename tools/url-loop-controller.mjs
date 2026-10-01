@@ -43,7 +43,9 @@ export function buildUrlLoopSpec(input) {
   const loopId = input.instance ? `${sourceId}-${input.instance}` : sourceId;
   const workspace = path.resolve(input.workspace || process.cwd());
   const root = path.resolve(input.outputRoot || path.join(workspace, 'artifacts', 'url-loop', loopId));
-  const context = { url, loop_id: loopId, source_id: sourceId, root, workspace, blocks_engine: path.resolve(blocksEngine), wp_codebox_bin: path.resolve(wpCodeboxBin), transformer_path: input.transformerPath ? path.resolve(input.transformerPath) : '', candidate_sha: input.candidateSha || process.env.SSI_CANDIDATE_SHA || null, blocks_engine_sha: input.blocksEngineSha || null, wordpress_version: input.wordpressVersion || null, max_actions: maxActions };
+  const node = path.resolve(input.nodeExecutable || process.execPath);
+  const runtimeToolchain = { node, npx: path.resolve(input.npxExecutable || path.join(path.dirname(node), 'npx')), env: Object.fromEntries(['HOME', 'XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'PLAYWRIGHT_BROWSERS_PATH', 'PLAYWRIGHT_HOST_PLATFORM_OVERRIDE', 'NPM_CONFIG_CACHE', 'npm_config_cache'].filter((key) => process.env[key]).map((key) => [key, process.env[key]])) };
+  const context = { url, loop_id: loopId, source_id: sourceId, root, workspace, blocks_engine: path.resolve(blocksEngine), wp_codebox_bin: path.resolve(wpCodeboxBin), transformer_path: input.transformerPath ? path.resolve(input.transformerPath) : '', runtime_toolchain: runtimeToolchain, candidate_sha: input.candidateSha || process.env.SSI_CANDIDATE_SHA || null, blocks_engine_sha: input.blocksEngineSha || null, wordpress_version: input.wordpressVersion || null, max_actions: maxActions };
   const action = (stage, timeout, artifacts, consumes = []) => ({
     workflow_id: stage,
     tasks: [stage === 'capture' ? 'Retain the source URL capture and normalized SSI fixture.' : 'Evaluate the retained fixture in disposable WordPress and report browser findings.'],
@@ -84,7 +86,7 @@ function captureArtifact(handoff) {
 }
 
 export async function runCapture(context, dependencies = {}) {
-  const handoff = await (dependencies.capture || runUrlLoopIntake)({ url: context.url, outputRoot: path.join(context.root, 'capture-intake') });
+  const handoff = await (dependencies.capture || runUrlLoopIntake)({ url: context.url, outputRoot: path.join(context.root, 'capture-intake'), runtimeToolchain: context.runtime_toolchain });
   return { capture: captureArtifact(handoff) };
 }
 

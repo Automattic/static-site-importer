@@ -42,7 +42,7 @@ test('intake records derived provenance and materializes the retained website', 
   const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-url-loop-run-'));
   const result = await runUrlLoopIntake({ url: 'https://example.com', outputRoot }, {
     spawn(command, args) {
-      assert.equal(command, 'npx');
+      assert.match(command, /\/npx$/);
       assert.deepEqual(args.slice(0, 3), ['--yes', `--package=${DLA_RELEASE.asset}`, 'data-liberation']);
       const captureRoot = args[args.indexOf('--output') + 1];
       const sourceRoot = path.join(captureRoot, 'example.com');
@@ -56,6 +56,50 @@ test('intake records derived provenance and materializes the retained website', 
   assert.equal(result.status, 'needs_evaluation');
   assert.match(result.provenance.source_url_sha256, /^sha256:[a-f0-9]{64}$/);
   assert.equal(fs.readFileSync(path.join(result.fixture.directory, 'index.html'), 'utf8'), '<!doctype html><main>fixture</main>');
+});
+
+test('capture launcher, child exit, and timeout failures retain bounded typed spawn evidence', async () => {
+  for (const [result, reason, code, status, signal] of [
+    [{ status: null, error: { code: 'ENOENT', message: 'spawnSync npx ENOENT' } }, 'launcher_unavailable', 'ENOENT', null, null],
+    [{ status: 7, signal: null }, 'child_nonzero_exit', null, 7, null],
+    [{ status: null, signal: 'SIGTERM', error: { code: 'ETIMEDOUT', message: 'timed out' } }, 'command_timeout', 'ETIMEDOUT', null, 'SIGTERM'],
+    [{ status: null, signal: 'SIGTERM' }, 'child_signaled', null, null, 'SIGTERM'],
+    [{ status: null, error: { code: 'EACCES', message: 'permission denied' } }, 'spawn_failed', 'EACCES', null, null],
+  ]) {
+    const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-url-loop-failure-'));
+    const handoff = await runUrlLoopIntake({ url: 'https://example.com/', outputRoot }, { spawn: () => result });
+    assert.equal(handoff.runtime_failure.reason, reason);
+    assert.equal(handoff.runtime_failure.error_code, code);
+    assert.equal(handoff.runtime_failure.exit_status, status);
+    assert.equal(handoff.runtime_failure.signal, signal);
+    assert.equal(handoff.status, 'blocked');
+  }
+});
+
+test('a paired absolute launcher captures successfully with only standard system PATH entries', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-url-loop-toolchain-'));
+  const launcher = path.join(root, 'npx');
+  const source = `#!/usr/bin/env node\nconst fs=require('node:fs');const path=require('node:path');const args=process.argv.slice(2);const output=args[args.indexOf('--output')+1];const site=path.join(output,'example.com');fs.mkdirSync(path.join(site,'website'),{recursive:true});fs.writeFileSync(path.join(site,'capture-receipt.json'),JSON.stringify({schema:'${CAPTURE_RECEIPT_SCHEMA}',source:{url:'https://example.com/'},summary:{complete:true,routesCaptured:1,routesDiscovered:1,routesFailed:0,routesSkipped:0}}));fs.writeFileSync(path.join(site,'website','index.html'),'<main>captured</main>');`;
+  fs.writeFileSync(launcher, source, { mode: 0o755 });
+  const outputRoot = path.join(root, 'output');
+  const result = await runUrlLoopIntake({ url: 'https://example.com/', outputRoot, runtimeToolchain: { node: process.execPath, npx: launcher } });
+  assert.equal(result.status, 'needs_evaluation');
+  assert.equal(result.failures.length, 0);
+  assert.equal(result.capture_receipt.summary.routesCaptured, 1);
+  assert.equal(fs.readFileSync(path.join(result.fixture.directory, 'index.html'), 'utf8'), '<main>captured</main>');
+});
+
+test('missing declared Node and launcher fail before capture with precise prerequisites', async () => {
+  for (const kind of ['node', 'npx']) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-toolchain-missing-'));
+    let spawned = false;
+    const runtimeToolchain = { [kind]: path.join(root, `missing-${kind}`) };
+    const handoff = await runUrlLoopIntake({ url: 'https://example.com/', outputRoot: root, runtimeToolchain }, { spawn: () => { spawned = true; return { status: 0 }; } });
+    assert.equal(spawned, false);
+    assert.equal(handoff.runtime_failure.reason, kind === 'node' ? 'node_unavailable' : 'launcher_unavailable');
+    assert.equal(handoff.runtime_failure.error_code, 'ENOENT');
+    assert.equal(handoff.runtime_failure.outcome, 'prerequisite_unavailable');
+  }
 });
 
 test('dry run does not invoke DLA or SSI materialization and remains blocked', async () => {
