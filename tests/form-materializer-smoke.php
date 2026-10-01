@@ -1412,10 +1412,10 @@ namespace {
 		'shared-empty-label-fields-and-nested-submit-box-have-physical-provider-targets', wp_json_encode( array( 'decision' => $shared_label_row['mapping_decision'] ?? null, 'markup' => $shared_label_markup, 'topology' => $shared_label_source['control_topology'] ?? null, 'layout' => $shared_label_source['layout_graph'] ?? null ) ) );
 	$assert( 2 === ( $shared_label_row['field_count'] ?? 0 ) && ! str_contains( $shared_label_markup, '"label":"website"' )
 		&& str_contains( $shared_label_markup, '"blockVisibility":false' ) && str_contains( $shared_label_markup, '"border":{"style":"none"}' )
-		&& str_contains( $shared_css, 'ssi-native-control-shell-wrap{display:contents}' ) && str_contains( $shared_css, 'border-radius:10px' )
+		&& 1 === preg_match( '/\.ssi-native-control-shell-wrap(?:, [^{]+)?\{display:contents\}/', $shared_css ) && str_contains( $shared_css, 'border-radius:10px' )
 		&& str_contains( $shared_css, '.ssi-native-form-topology form.jetpack-contact-form__form' )
 		&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $shared_label_row['provider_layout_overlay_css'] ),
-		'native-provider-presentation-hides-only-source-bookkeeping-and-keeps-control-shell-ownership', wp_json_encode( $shared_label_row['mapping_decision'] ?? null ) );
+		'native-provider-presentation-hides-only-source-bookkeeping-and-keeps-control-shell-ownership', wp_json_encode( array( 'decision' => $shared_label_row['mapping_decision'] ?? null, 'css' => $shared_css, 'valid' => null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $shared_label_row['provider_layout_overlay_css'] ) ) ) );
 	$unsafe_native_map = $shared_label_row['provider_layout_target_map'];
 	$unsafe_native_map['targets'][0]['selector'] .= ', body';
 	$assert( isset( Static_Site_Importer_Provider_Layout_Overlay::validate_map( $unsafe_native_map, $shared_label_source['layout_graph'] )['error'] ), 'native-form-selector-never-admits-an-unscoped-list-member' );
