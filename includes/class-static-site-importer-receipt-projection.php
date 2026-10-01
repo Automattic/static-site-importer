@@ -306,8 +306,12 @@ class Static_Site_Importer_Receipt_Projection {
 	 * @param array<array-key,mixed> $receipt Materialization receipt.
 	 * @return array<array-key,mixed>
 	 */
+	/**
+	 * The report carries the canonical plan once, under blocks_engine; its
+	 * receipt references that plan by identity instead of embedding a copy.
+	 */
 	private static function report_receipt( array $receipt ): array {
-		unset( $receipt['transaction'] );
+		unset( $receipt['transaction'], $receipt['plan'] );
 		return $receipt;
 	}
 
