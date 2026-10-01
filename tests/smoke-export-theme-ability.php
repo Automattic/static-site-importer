@@ -384,6 +384,13 @@ $assert( isset( $flipped_files['website/post/about/index.html'] ), 'flipped-orde
 $assert( isset( $flipped_files['website/hello/index.html'] ), 'flipped-order-noncolliding-post-exported' );
 $assert( count( $flipped_files ) === count( $files_by_path ), 'flipped-order-file-count-stable' );
 
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-screenshot.php';
+$preview_png = base64_decode( 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jXioAAAAASUVORK5CYII=' );
+file_put_contents( $theme_dir . '/screenshot.png', $preview_png );
+$preview_export = Static_Site_Importer_Theme_Exporter::export_theme( array( 'theme_slug' => 'fixture-theme' ) );
+$preview_input = Static_Site_Importer_Theme_Screenshot::from_artifact( $preview_export['website_artifact'] );
+$assert( null !== $preview_input && base64_decode( $preview_input['payload']['data'] ) === $preview_png, 'theme-thumbnail-survives-export-and-reimport' );
+
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );

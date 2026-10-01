@@ -3976,4 +3976,39 @@ foreach ( array( 'completed' => $part_bound_write['payload']['data'], 'unresolve
 	$assert( $part_expected_status === $part_completed['status'] && ( 'unresolved' === $part_expected_status || 'parts/footer.html' === ( $part_completed['template_part'] ?? null ) ), 'a part binding completes only when the written part file carries the provider fragment (' . $part_expected_status . ')' );
 }
 
+// A preview is consumed automatically at the artifact boundary and uses the
+// same conflict/rollback contract as the rest of the generated theme.
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-compilation-preparation.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-exporter.php';
+$preview_png = getenv( 'SSI_THEME_PREVIEW' ) ? file_get_contents( getenv( 'SSI_THEME_PREVIEW' ) ) : base64_decode( 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jXioAAAAASUVORK5CYII=' );
+$preview_artifact = array(
+	'entrypoint' => 'website/index.html',
+	'files'      => array(
+		array( 'path' => 'website/index.html', 'content' => '<!doctype html><title>Preview</title><main><h1>Preview homepage</h1></main>' ),
+		array( 'path' => 'website/site-preview.png', 'content_base64' => base64_encode( $preview_png ) ),
+	),
+);
+foreach ( array( 'block', 'classic' ) as $preview_strategy ) {
+	$preview_compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $preview_artifact, array( 'slug' => 'preview-' . $preview_strategy, 'theme_materialization' => $preview_strategy ) );
+	$assert( ! is_wp_error( $preview_compiled ) && isset( $preview_compiled['args']['theme_screenshot'] ), 'artifact compilation discovers the portable preview (' . $preview_strategy . '): ' . ( is_wp_error( $preview_compiled ) ? $preview_compiled->get_error_code() . ' ' . $preview_compiled->get_error_message() : 'missing preview' ) );
+	$preview_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $preview_compiled['plan'], $preview_compiled['args'] );
+	$preview_theme = $GLOBALS['ssi_plan_root'] . '/preview-' . $preview_strategy;
+	$assert( 'completed' === $preview_receipt['status'] && file_get_contents( $preview_theme . '/screenshot.png' ) === $preview_png, 'generated theme contains the exact producer PNG (' . $preview_strategy . ')' );
+	$preview_files = array_filter( $preview_receipt['completed']['files'], static fn( array $file ): bool => 'screenshot.png' === $file['target_path'] );
+	$assert( 1 === count( $preview_files ), 'thumbnail has a canonical completed-file receipt (' . $preview_strategy . ')' );
+	$preview_retry = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $preview_compiled['plan'], $preview_compiled['args'] );
+	$assert( 'completed' === $preview_retry['status'], 'byte-identical thumbnail reconciles on retry (' . $preview_strategy . ')' );
+	if ( getenv( 'SSI_THEME_PREVIEW' ) ) {
+		echo 'Generated preview theme: ' . $preview_theme . "\n";
+	}
+}
+$missing_preview = $preview_artifact;
+unset( $missing_preview['files'][1] );
+$assert( null === Static_Site_Importer_Theme_Screenshot::from_artifact( $missing_preview ), 'legacy artifacts without previews remain supported' );
+$invalid_preview = $preview_artifact;
+$invalid_preview['files'][1]['content_base64'] = base64_encode( 'not a PNG' );
+$assert( null === Static_Site_Importer_Theme_Screenshot::from_artifact( $invalid_preview ), 'invalid optional previews are ignored' );
+$existing_preview = Static_Site_Importer_Theme_Screenshot::with_write( array( 'writes' => array() ), array( 'destination' => 'existing_theme', 'theme_screenshot' => $preview_compiled['args']['theme_screenshot'] ) );
+$assert( array() === $existing_preview['writes'], 'existing-theme imports do not replace the host theme thumbnail' );
+
 echo "WordPress site plan materializer smoke passed.\n";
