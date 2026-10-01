@@ -724,7 +724,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 			foreach ( $chain as $offset => $node ) {
 				$generated_class = self::layout_node_class( self::layout_scope( $s->form ), $node['id'] );
-				$wrapper_classes = preg_split( '/\s+/', trim( (string) ( $node['class'] ?? '' ) ) );
+				$wrapper_classes = self::class_tokens( $node );
 				if ( false === $wrapper_classes ) {
 					$wrapper_classes = array();
 				}
@@ -762,7 +762,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				);
 				// A source box whose own stylesheet addresses it by class keeps its layout
 				// through the projected classes, so it needs no generated overlay target.
-				$class_tokens = preg_split( '/\s+/', trim( (string) ( $node['class'] ?? '' ) ) );
+				$class_tokens = self::class_tokens( $node );
 				if ( false === $class_tokens ) {
 					$class_tokens = array();
 				}
@@ -794,7 +794,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					// repeating the box on the provider shell would double it.
 					$class_carried = self::class_carried_box_facts( $s->layout_by_node[ $node['id'] ] ?? array(), $provenance, $class_tokens );
 					foreach ( $s->variants_by_node[ $node['id'] ] ?? array() as $variant ) {
-						$patch = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+						$patch = self::layout_patch( $variant );
 						foreach ( array_keys( array_intersect_key( $patch, Static_Site_Importer_Provider_Layout_Overlay::box_property_map() ) ) as $fact ) {
 							// A conditional box patch is carried only when its own rule is too.
 							$rows = array_map( static fn( $row ): mixed => is_array( $row ) ? array_merge( $row, array( 'condition' => null ) ) : $row, is_array( $variant['provenance'] ?? null ) ? $variant['provenance'] : array() );
@@ -838,7 +838,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				if ( ! is_array( $node ) ) {
 					continue 2;
 				}
-				$branch = array_values( array_filter( ( $s->collect_controls )( $node ), static fn ( int $index ): bool => isset( $s->field_blocks[ $index ] ) ) );
+				$branch = $s->mapped_branch( $node );
 				if ( 1 !== count( $branch ) || 'core/button' === ( $s->field_blocks[ $branch[0] ]['name'] ?? '' ) ) {
 					continue 2;
 				}
@@ -868,12 +868,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? null ) || 'p' !== ( $node['tag'] ?? null ) || ! is_string( $node['id'] ?? null ) ) {
 				continue;
 			}
-			$branch_controls = array_values( array_filter( ( $s->collect_controls )( $node ), static fn ( int $index ): bool => isset( $s->field_blocks[ $index ] ) ) );
+			$branch_controls = $s->mapped_branch( $node );
 			if ( 1 !== count( $branch_controls ) ) {
 				continue;
 			}
 			$control_index = $branch_controls[0];
-			$classes       = preg_split( '/\s+/', trim( (string) ( $node['class'] ?? '' ) ) );
+			$classes       = self::class_tokens( $node );
 			$classes       = false === $classes ? array() : $classes;
 			$markers       = array( 'ssi-source-semantic-wrapper-' . min( 99, max( 0, (int) $node['depth'] ) ) . '--p' );
 			foreach ( $classes as $class ) {
@@ -935,7 +935,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( ! self::projectable_plain_root_fieldset( $node, $s->nodes, $s->field_blocks ) ) {
 				continue;
 			}
-			$class_tokens                    = preg_split( '/\s+/', trim( (string) ( $node['class'] ?? '' ) ) );
+			$class_tokens                    = self::class_tokens( $node );
 			$class_tokens                    = false === $class_tokens ? array() : array_values( array_filter( $class_tokens, static fn( string $class_name ): bool => 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) );
 			$s->form_classes                 = array_merge( $s->form_classes, array( 'ssi-source-root-fieldset' ), array_map( static fn( string $class_name ): string => 'ssi-source-root-fieldset--' . $class_name, array_slice( array_values( array_unique( $class_tokens ) ), 0, 8 ) ) );
 			$s->represented_topology_nodes[] = $node['id'];
@@ -995,30 +995,15 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$topology_by_id[ $node['id'] ] = $node;
 			}
 		}
-		$s->has_unconditional_proven_property = static function ( array $node, string $property ): bool {
-			foreach ( $node['provenance'] ?? array() as $fact ) {
-				if ( is_array( $fact ) && null === ( $fact['condition'] ?? null ) && is_string( $fact['source_path'] ?? null ) && is_string( $fact['source_sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ) && is_string( $fact['selector'] ?? null ) && in_array( $property, $fact['properties'] ?? array(), true ) ) {
-					return true;
-				}
-			}
-			return false;
-		};
-		$safe_percentage_variants             = static function ( array $variants ): bool {
+		$safe_percentage_variants = static function ( array $variants ): bool {
 			foreach ( $variants as $variant ) {
-				$patch = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+				$patch = self::layout_patch( $variant );
 				$width = $patch['width'] ?? null;
 				if ( ! is_array( $variant ) || ! is_array( $variant['condition'] ?? null ) || 'media' !== ( $variant['condition']['kind'] ?? null ) || ! is_string( $variant['condition']['query'] ?? null ) || 1 !== preg_match( '/^\((?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)\)$/D', $variant['condition']['query'] ) || ! is_string( $width ) || 1 !== preg_match( '/^(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)%$/D', $width ) || ( array( 'width' ) !== array_keys( $patch ) && array( 'display', 'width' ) !== array_keys( $patch ) ) || ( isset( $patch['display'] ) && 'block' !== $patch['display'] ) ) {
 					return false;
 				}
 
-				$proven = false;
-				foreach ( $variant['provenance'] ?? array() as $fact ) {
-					if ( is_array( $fact ) && ( $fact['condition'] ?? null ) === $variant['condition'] && is_string( $fact['source_path'] ?? null ) && is_string( $fact['source_sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ) && is_string( $fact['selector'] ?? null ) && ! array_diff( array_keys( $patch ), $fact['properties'] ?? array() ) ) {
-						$proven = true;
-						break;
-					}
-				}
-				if ( ! $proven ) {
+				if ( ! self::has_source_fact( $variant['provenance'] ?? array(), $variant['condition'], array_keys( $patch ) ) ) {
 					return false;
 				}
 			}
@@ -1026,16 +1011,6 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			return true;
 		};
 
-		$grid_span_width       = static function ( mixed $columns, mixed $column ): ?string {
-			return self::grid_column_span_width( $columns, $column );
-		};
-		$grid_area_column_span = static function ( mixed $area ): ?string {
-			$area = is_string( $area ) ? trim( $area ) : '';
-			if ( ! preg_match( '/^(?:[0-9]+|auto)\s*\/\s*(?:[0-9]+|auto)\s*\/\s*span\s+[0-9]+\s*\/\s*span\s+([1-9][0-9]*)$/D', $area, $span ) ) {
-				return null;
-			}
-			return 'span ' . $span[1];
-		};
 		// Jetpack's field shell exposes a real child slot only around the native value.
 		// Preserve an evidenced full-span value by rebuilding that child wrapper rather
 		// than collapsing the source grid tracks to a guessed width.
@@ -1046,10 +1021,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$parent_id        = is_string( $node['parent'] ?? null ) ? $node['parent'] : '';
 			$parent_layout    = $s->layout_nodes_by_id[ $parent_id ] ?? null;
 			$control_layout   = $s->layout_nodes_by_id[ $node['id'] ] ?? null;
-			$placement        = is_array( $control_layout ) ? ( $control_layout['layout']['column'] ?? $grid_area_column_span( $control_layout['layout']['area'] ?? null ) ) : null;
-			$full_span        = is_array( $parent_layout ) ? $grid_span_width( $parent_layout['layout']['columns'] ?? null, $placement ) : null;
-			$parent_proven    = is_array( $parent_layout ) && ( $s->has_unconditional_proven_property )( $parent_layout, 'display' ) && ( $s->has_unconditional_proven_property )( $parent_layout, 'grid-template-columns' );
-			$placement_proven = is_array( $control_layout ) && ( ( $s->has_unconditional_proven_property )( $control_layout, 'grid-column' ) || ( $s->has_unconditional_proven_property )( $control_layout, 'grid-area' ) );
+			$placement        = self::grid_placement( $control_layout );
+			$full_span        = is_array( $parent_layout ) ? self::grid_column_span_width( $parent_layout['layout']['columns'] ?? null, $placement ) : null;
+			$parent_proven    = is_array( $parent_layout ) && self::has_unconditional_proven_property( $parent_layout, 'display' ) && self::has_unconditional_proven_property( $parent_layout, 'grid-template-columns' );
+			$placement_proven = self::grid_placement_proven( $control_layout );
 			if ( '100%' !== $full_span || ! $parent_proven || ! $placement_proven || ! isset( $s->wrapper_hooks[ $parent_id ] ) || ! empty( $s->variants_by_node[ $parent_id ] ) || ! empty( $s->variants_by_node[ $node['id'] ] ) ) {
 				continue;
 			}
@@ -1076,11 +1051,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$grid_id         = $grid_node['id'];
 			$grid_layout     = $s->layout_nodes_by_id[ $grid_id ] ?? null;
 			$grid_controls   = array_values( array_filter( ( $s->collect_controls )( $grid_node ), static fn ( int $index ): bool => isset( $s->field_blocks[ $index ] ) && 'core/button' !== ( $s->field_blocks[ $index ]['name'] ?? '' ) ) );
-			$grid_proven     = is_array( $grid_layout ) && ( $s->has_unconditional_proven_property )( $grid_layout, 'display' ) && ( $s->has_unconditional_proven_property )( $grid_layout, 'grid-template-columns' );
+			$grid_proven     = is_array( $grid_layout ) && self::has_unconditional_proven_property( $grid_layout, 'display' ) && self::has_unconditional_proven_property( $grid_layout, 'grid-template-columns' );
 			$grid_variants   = $s->variants_by_node[ $grid_id ] ?? array();
 			$variants_stable = true;
 			foreach ( $grid_variants as $variant ) {
-				$patch = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+				$patch = self::layout_patch( $variant );
 				if ( isset( $patch['columns'] ) ) {
 					$variants_stable = false;
 					break;
@@ -1092,16 +1067,16 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			foreach ( $s->children[ $grid_id ] ?? array() as $grid_child ) {
 				$child_id         = 'wrapper' === ( $grid_child['kind'] ?? null ) ? $grid_child['id'] : '';
 				$child_layout     = '' !== $child_id ? $s->layout_nodes_by_id[ $child_id ] ?? null : null;
-				$child_controls   = '' !== $child_id ? array_values( array_filter( ( $s->collect_controls )( $grid_child ), static fn ( int $index ): bool => isset( $s->field_blocks[ $index ] ) ) ) : array();
-				$placement        = is_array( $child_layout ) ? ( $child_layout['layout']['column'] ?? $grid_area_column_span( $child_layout['layout']['area'] ?? null ) ) : null;
-				$full_span        = $grid_span_width( $grid_layout['layout']['columns'] ?? null, $placement );
-				$placement_proven = is_array( $child_layout ) && ( ( $s->has_unconditional_proven_property )( $child_layout, 'grid-column' ) || ( $s->has_unconditional_proven_property )( $child_layout, 'grid-area' ) );
+				$child_controls   = '' !== $child_id ? $s->mapped_branch( $grid_child ) : array();
+				$placement        = self::grid_placement( $child_layout );
+				$full_span        = self::grid_column_span_width( $grid_layout['layout']['columns'] ?? null, $placement );
+				$placement_proven = self::grid_placement_proven( $child_layout );
 				if ( '' === $child_id || $grid_controls !== $child_controls || '100%' !== $full_span || ! $placement_proven || ! isset( $s->wrapper_hooks[ $child_id ] ) ) {
 					continue;
 				}
 				$child_variants_stable = true;
 				foreach ( $s->variants_by_node[ $child_id ] ?? array() as $variant ) {
-					$patch = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+					$patch = self::layout_patch( $variant );
 					if ( isset( $patch['column'] ) || isset( $patch['area'] ) ) {
 						$child_variants_stable = false;
 						break;
@@ -1126,25 +1101,19 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$control_index    = 1 === count( $branch_controls ) ? $branch_controls[0] : null;
 			$layout_node      = $s->layout_nodes_by_id[ $id ] ?? null;
 			$layout_parent    = is_array( $layout_node ) && is_string( $layout_node['parent'] ?? null ) ? $s->layout_nodes_by_id[ $layout_node['parent'] ] ?? null : null;
-			$column           = is_array( $layout_node ) ? ( $layout_node['layout']['column'] ?? $grid_area_column_span( $layout_node['layout']['area'] ?? null ) ) : null;
-			$width            = is_array( $layout_node ) && is_array( $layout_parent ) ? $grid_span_width( $layout_parent['layout']['columns'] ?? null, $column ) : null;
-			$placement_proven = is_array( $layout_node ) && ( ( $s->has_unconditional_proven_property )( $layout_node, 'grid-column' ) || ( $s->has_unconditional_proven_property )( $layout_node, 'grid-area' ) );
-			$parent_proven    = is_array( $layout_parent ) && ( $s->has_unconditional_proven_property )( $layout_parent, 'grid-template-columns' );
+			$column           = self::grid_placement( $layout_node );
+			$width            = is_array( $layout_node ) && is_array( $layout_parent ) ? self::grid_column_span_width( $layout_parent['layout']['columns'] ?? null, $column ) : null;
+			$placement_proven = self::grid_placement_proven( $layout_node );
+			$parent_proven    = is_array( $layout_parent ) && self::has_unconditional_proven_property( $layout_parent, 'grid-template-columns' );
 			if ( ! is_int( $control_index ) || 'core/button' !== ( $s->field_blocks[ $control_index ]['name'] ?? '' ) || null === $width || ! $placement_proven || ! $parent_proven ) {
 				continue;
 			}
 			$target_variants = array();
 			$variants_safe   = true;
 			foreach ( $s->variants_by_node[ $id ] ?? array() as $variant ) {
-				$patch         = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
-				$variant_width = array( 'column' ) === array_keys( $patch ) ? $grid_span_width( $layout_parent['layout']['columns'] ?? null, $patch['column'] ) : null;
-				$proven        = false;
-				foreach ( $variant['provenance'] ?? array() as $fact ) {
-					if ( is_array( $fact ) && ( $fact['condition'] ?? null ) === ( $variant['condition'] ?? null ) && is_string( $fact['source_path'] ?? null ) && is_string( $fact['source_sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ) && in_array( 'grid-column', $fact['properties'] ?? array(), true ) ) {
-						$proven = true;
-						break;
-					}
-				}
+				$patch         = self::layout_patch( $variant );
+				$variant_width = array( 'column' ) === array_keys( $patch ) ? self::grid_column_span_width( $layout_parent['layout']['columns'] ?? null, $patch['column'] ) : null;
+				$proven        = self::has_source_fact( $variant['provenance'] ?? array(), $variant['condition'] ?? null, array( 'grid-column' ), false );
 				if ( null === $variant_width || ! is_array( $variant['condition'] ?? null ) || 'media' !== ( $variant['condition']['kind'] ?? null ) || ! $proven ) {
 					$variants_safe = false;
 					break;
@@ -1182,7 +1151,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$saw_submit_control = false;
 			$submit_parent_done = true;
 			foreach ( $s->children[ $submit_parent ] ?? array() as $submit_child ) {
-				$submit_branch = array_values( array_filter( ( $s->collect_controls )( $submit_child ), static fn ( int $index ): bool => isset( $s->field_blocks[ $index ] ) ) );
+				$submit_branch = $s->mapped_branch( $submit_child );
 				if ( empty( $submit_branch ) ) {
 					continue;
 				}
@@ -1245,7 +1214,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$parent         = is_string( $node['parent'] ?? null ) ? $node['parent'] : '';
 			$layout_node    = $s->layout_nodes_by_id[ $id ] ?? null;
 			$source_classes = is_array( $layout_node['source']['classes'] ?? null ) ? $layout_node['source']['classes'] : array();
-			$class_proven   = ! empty( $source_classes ) && is_array( $layout_node ) && ( $s->has_unconditional_proven_property )( $layout_node, 'display' );
+			$class_proven   = ! empty( $source_classes ) && is_array( $layout_node ) && self::has_unconditional_proven_property( $layout_node, 'display' );
 			foreach ( $layout_node['provenance'] ?? array() as $fact ) {
 				if ( ! is_array( $fact ) || ! in_array( 'display', $fact['properties'] ?? array(), true ) ) {
 					continue;
@@ -1302,7 +1271,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					$layout_node     = $s->layout_nodes_by_id[ $id ] ?? null;
 					$layout          = is_array( $layout_node ) && is_array( $layout_node['layout'] ?? null ) ? $layout_node['layout'] : array();
 					$width           = is_string( $layout['width'] ?? null ) ? trim( $layout['width'] ) : '';
-					$width_proven    = is_array( $layout_node ) && ( $s->has_unconditional_proven_property )( $layout_node, 'width' );
+					$width_proven    = is_array( $layout_node ) && self::has_unconditional_proven_property( $layout_node, 'width' );
 					$branch_controls = ( $s->collect_controls )( $sibling );
 					$value           = 1 === preg_match( '/^(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)%$/D', $width ) ? (float) substr( $width, 0, -1 ) : 0.0;
 					$variants        = $s->variants_by_node[ $id ] ?? array();
@@ -1342,7 +1311,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				foreach ( $table_tags as $expected_tag ) {
 					$current            = $topology_by_id[ $cursor ] ?? null;
 					$layout             = $s->layout_by_node[ $cursor ] ?? array();
-					$allows_table_width = 'table' === $expected_tag && array( 'width' ) === array_keys( $layout ) && '100%' === ( $layout['width'] ?? null ) && isset( $s->layout_nodes_by_id[ $cursor ] ) && ( $s->has_unconditional_proven_property )( $s->layout_nodes_by_id[ $cursor ], 'width' );
+					$allows_table_width = 'table' === $expected_tag && array( 'width' ) === array_keys( $layout ) && '100%' === ( $layout['width'] ?? null ) && isset( $s->layout_nodes_by_id[ $cursor ] ) && self::has_unconditional_proven_property( $s->layout_nodes_by_id[ $cursor ], 'width' );
 					if ( ! is_array( $current ) || ( $current['tag'] ?? 'div' ) !== $expected_tag || ( $s->layout_nodes_by_id[ $cursor ]['source']['tag'] ?? '' ) !== $expected_tag || ( 'tr' !== $expected_tag && ! empty( $layout ) && ! $allows_table_width ) ) {
 						$table_proven = false;
 						break;
@@ -1369,7 +1338,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$id               = is_array( $node ) ? ( $node['id'] ?? null ) : null;
 			$layout_node      = is_string( $id ) ? ( $s->layout_nodes_by_id[ $id ] ?? null ) : null;
 			$omitted_controls = is_array( $node ) ? ( $s->collect_controls )( $node ) : array();
-			if ( 'wrapper' !== ( $node['kind'] ?? null ) || ! is_string( $id ) || array( 'display' => 'none' ) !== ( $s->layout_by_node[ $id ] ?? array() ) || isset( $s->variants_by_node[ $id ] ) || ! is_array( $layout_node ) || ! ( $s->has_unconditional_proven_property )( $layout_node, 'display' ) || empty( $omitted_controls ) || array_filter( $omitted_controls, static fn( int $index ): bool => self::control_carries_authored_content( strtolower( trim( (string) ( $s->controls[ $index ]['type'] ?? $s->controls[ $index ]['tag'] ?? '' ) ) ) ) ) ) {
+			if ( 'wrapper' !== ( $node['kind'] ?? null ) || ! is_string( $id ) || array( 'display' => 'none' ) !== ( $s->layout_by_node[ $id ] ?? array() ) || isset( $s->variants_by_node[ $id ] ) || ! is_array( $layout_node ) || ! self::has_unconditional_proven_property( $layout_node, 'display' ) || empty( $omitted_controls ) || array_filter( $omitted_controls, static fn( int $index ): bool => self::control_carries_authored_content( strtolower( trim( (string) ( $s->controls[ $index ]['type'] ?? $s->controls[ $index ]['tag'] ?? '' ) ) ) ) ) ) {
 				continue;
 			}
 			$s->represented_layout_nodes[]   = $id;
@@ -1430,7 +1399,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( ! $equal_grid && 'grid' === $display && 1 === count( $parent_variants ) ) {
 				$variant       = $parent_variants[0];
 				$condition     = is_array( $variant['condition'] ?? null ) ? $variant['condition'] : null;
-				$patch         = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+				$patch         = self::layout_patch( $variant );
 				$widened       = preg_replace( '/\s+/', '', (string) ( $patch['columns'] ?? '' ) );
 				$widened_count = self::equal_fraction_column_count( $widened );
 				if ( array( 'columns' ) === array_keys( $patch )
@@ -1439,13 +1408,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					&& self::is_min_width_media_query( $condition['query'] )
 					&& null !== $widened_count
 				) {
-					foreach ( $variant['provenance'] ?? array() as $fact ) {
-						if ( is_array( $fact ) && ( $fact['condition'] ?? null ) === $condition && is_string( $fact['source_path'] ?? null ) && is_string( $fact['source_sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ) && is_string( $fact['selector'] ?? null ) && in_array( 'grid-template-columns', $fact['properties'] ?? array(), true ) ) {
-							$equal_grid     = true;
-							$column_count   = $widened_count;
-							$widening_query = $condition['query'];
-							break;
-						}
+					if ( self::has_source_fact( $variant['provenance'] ?? array(), $condition, array( 'grid-template-columns' ) ) ) {
+						$equal_grid     = true;
+						$column_count   = $widened_count;
+						$widening_query = $condition['query'];
 					}
 					$class_tokens = preg_split( '/\s+/', trim( (string) ( $s->topology_nodes_by_id[ $parent ]['class'] ?? '' ) ) );
 					if ( ! $equal_grid && in_array( 'grid', is_array( $class_tokens ) ? $class_tokens : array(), true ) ) {
@@ -1585,7 +1551,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					continue;
 				}
 				$candidate = $variants[0];
-				$patch     = is_array( $candidate['layout_patch'] ?? null ) ? $candidate['layout_patch'] : array();
+				$patch     = self::layout_patch( $candidate );
 				$condition = $candidate['condition'] ?? null;
 				$proven    = false;
 				foreach ( $candidate['provenance'] ?? array() as $fact ) {
@@ -1600,13 +1566,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$gap_variant = $candidate;
 			}
 			$columns = self::grid_repeat_column_count( is_string( $layout['columns'] ?? null ) ? $layout['columns'] : '' );
-			if ( ! is_array( $layout_node ) || null === $columns || array_diff( array_keys( $layout ), array( 'display', 'columns', 'width', 'column_gap', 'gap' ) ) || 'grid' !== ( $layout['display'] ?? null ) || ( isset( $layout['width'] ) && '100%' !== $layout['width'] ) || ! ( $s->has_unconditional_proven_property )( $layout_node, 'display' ) || ! ( $s->has_unconditional_proven_property )( $layout_node, 'grid-template-columns' ) || ( isset( $layout['width'] ) && ! ( $s->has_unconditional_proven_property )( $layout_node, 'width' ) ) ) {
+			if ( ! is_array( $layout_node ) || null === $columns || array_diff( array_keys( $layout ), array( 'display', 'columns', 'width', 'column_gap', 'gap' ) ) || 'grid' !== ( $layout['display'] ?? null ) || ( isset( $layout['width'] ) && '100%' !== $layout['width'] ) || ! self::has_unconditional_proven_property( $layout_node, 'display' ) || ! self::has_unconditional_proven_property( $layout_node, 'grid-template-columns' ) || ( isset( $layout['width'] ) && ! self::has_unconditional_proven_property( $layout_node, 'width' ) ) ) {
 				continue;
 			}
 			if ( isset( $layout['gap'], $layout['column_gap'] ) && trim( (string) $layout['gap'] ) !== trim( (string) $layout['column_gap'] ) ) {
 				continue;
 			}
-			if ( ( isset( $layout['column_gap'] ) && ! ( $s->has_unconditional_proven_property )( $layout_node, 'column-gap' ) ) || ( isset( $layout['gap'] ) && ! ( $s->has_unconditional_proven_property )( $layout_node, 'gap' ) ) ) {
+			if ( ( isset( $layout['column_gap'] ) && ! self::has_unconditional_proven_property( $layout_node, 'column-gap' ) ) || ( isset( $layout['gap'] ) && ! self::has_unconditional_proven_property( $layout_node, 'gap' ) ) ) {
 				continue;
 			}
 			$source_gap = isset( $layout['column_gap'] ) ? trim( (string) $layout['column_gap'] ) : ( isset( $layout['gap'] ) ? trim( (string) $layout['gap'] ) : null );
@@ -1619,7 +1585,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$accepted          = true;
 			foreach ( $siblings as $sibling ) {
 				$sibling_id = $sibling['id'];
-				$branch     = '' !== $sibling_id ? array_values( array_filter( ( $s->collect_controls )( $sibling ), static fn ( int $index ): bool => isset( $s->field_blocks[ $index ] ) ) ) : array();
+				$branch     = '' !== $sibling_id ? $s->mapped_branch( $sibling ) : array();
 				$item_node  = $s->layout_nodes_by_id[ $sibling_id ] ?? null;
 				$item       = is_array( $item_node ) && is_array( $item_node['layout'] ?? null ) ? $item_node['layout'] : array();
 				$is_submit  = 1 === count( $branch ) && 'core/button' === ( $s->field_blocks[ $branch[0] ]['name'] ?? '' );
@@ -1629,7 +1595,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				}
 				if ( isset( $item['column'] ) ) {
 					$parsed = self::grid_column_placement( $layout['columns'], $item['column'] );
-					if ( null === $parsed || $parsed['columns'] !== $columns || ! ( $s->has_unconditional_proven_property )( $item_node, 'grid-column' ) ) {
+					if ( null === $parsed || $parsed['columns'] !== $columns || ! self::has_unconditional_proven_property( $item_node, 'grid-column' ) ) {
 						$accepted = false;
 						break;
 					}
@@ -1638,7 +1604,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					$row   = null;
 				} else {
 					$parsed = self::grid_area_placement( $item['area'] );
-					if ( null === $parsed || $parsed['span'] > $columns || ( null !== $parsed['start'] && $parsed['start'] + $parsed['span'] - 1 > $columns ) || ! ( $s->has_unconditional_proven_property )( $item_node, 'grid-area' ) ) {
+					if ( null === $parsed || $parsed['span'] > $columns || ( null !== $parsed['start'] && $parsed['start'] + $parsed['span'] - 1 > $columns ) || ! self::has_unconditional_proven_property( $item_node, 'grid-area' ) ) {
 						$accepted = false;
 						break;
 					}
@@ -1648,7 +1614,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				}
 				if ( isset( $item['row'] ) ) {
 					$row_start = self::grid_line_start( $item['row'] );
-					if ( null === $row_start || ( null !== $row && $row !== $row_start ) || ! ( $s->has_unconditional_proven_property )( $item_node, 'grid-row' ) ) {
+					if ( null === $row_start || ( null !== $row && $row !== $row_start ) || ! self::has_unconditional_proven_property( $item_node, 'grid-row' ) ) {
 						$accepted = false;
 						break;
 					}
@@ -1769,23 +1735,15 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		// declared unrepresentable. A box whose facts are not fully proven by source
 		// provenance keeps its loss.
 		$s->layout_css_properties = Static_Site_Importer_Provider_Layout_Overlay::layout_property_map();
-		$s->variant_proven        = static function ( array $variant, string $property ): bool {
-			foreach ( $variant['provenance'] ?? array() as $fact ) {
-				if ( is_array( $fact ) && ( $fact['condition'] ?? null ) === ( $variant['condition'] ?? null ) && is_string( $fact['source_path'] ?? null ) && is_string( $fact['source_sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ) && is_string( $fact['selector'] ?? null ) && in_array( $property, $fact['properties'] ?? array(), true ) ) {
-					return true;
-				}
-			}
-			return false;
-		};
 		$node_facts_proven        = static function ( string $node_id ) use ( $s ): bool {
 			$layout_node = $s->layout_nodes_by_id[ $node_id ] ?? null;
 			$proven      = is_array( $layout_node );
 			foreach ( array_keys( $s->layout_by_node[ $node_id ] ?? array() ) as $fact ) {
-				$proven = $proven && isset( $s->layout_css_properties[ $fact ] ) && ( $s->has_unconditional_proven_property )( $layout_node, $s->layout_css_properties[ $fact ] );
+				$proven = $proven && isset( $s->layout_css_properties[ $fact ] ) && self::has_unconditional_proven_property( $layout_node, $s->layout_css_properties[ $fact ] );
 			}
 			foreach ( $s->variants_by_node[ $node_id ] ?? array() as $variant ) {
-				foreach ( array_keys( is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array() ) as $fact ) {
-					$proven = $proven && isset( $s->layout_css_properties[ $fact ] ) && ( $s->variant_proven )( $variant, $s->layout_css_properties[ $fact ] );
+				foreach ( array_keys( self::layout_patch( $variant ) ) as $fact ) {
+					$proven = $proven && isset( $s->layout_css_properties[ $fact ] ) && self::variant_proven( $variant, $s->layout_css_properties[ $fact ] );
 				}
 			}
 			return $proven;
@@ -1814,7 +1772,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		$form_base    = $s->layout_by_node['form'] ?? array();
 		$form_patches = array();
 		foreach ( $s->variants_by_node['form'] ?? array() as $variant ) {
-			$form_patches[ (string) wp_json_encode( $variant['condition'] ?? null ) ] = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+			$form_patches[ (string) wp_json_encode( $variant['condition'] ?? null ) ] = self::layout_patch( $variant );
 		}
 		// A submit control is never a member of the source field-group box a provider
 		// forms its own field container from: Jetpack always renders a submit as a
@@ -1830,7 +1788,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		);
 		foreach ( $s->nodes as $node ) {
 			$node_id = is_array( $node ) && 'wrapper' === ( $node['kind'] ?? null ) && is_string( $node['id'] ?? null ) ? $node['id'] : '';
-			$branch  = '' !== $node_id ? array_values( array_filter( ( $s->collect_controls )( $node ), static fn ( int $index ): bool => isset( $s->field_blocks[ $index ] ) ) ) : array();
+			$branch  = '' !== $node_id ? $s->mapped_branch( $node ) : array();
 			sort( $branch );
 			if ( '' === $node_id || count( $s->mapped_controls ) < 2 || isset( $s->wrapper_hooks[ $node_id ] ) ) {
 				continue;
@@ -1856,7 +1814,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				continue;
 			}
 			if ( ! isset( $base['display'] ) ) {
-				$class_tokens = preg_split( '/\s+/', trim( (string) ( $box['class'] ?? '' ) ) );
+				$class_tokens = self::class_tokens( $box );
 				$from_class   = self::display_from_class_tokens( false === $class_tokens ? array() : $class_tokens );
 				if ( is_string( $from_class ) ) {
 					$base['display'] = $from_class;
@@ -1872,7 +1830,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 			foreach ( $patches as $variant ) {
 				$condition = (string) wp_json_encode( $variant['condition'] ?? null );
-				$patch     = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+				$patch     = self::layout_patch( $variant );
 				if ( array_intersect_key( $patch, array_flip( $item_facts ) ) ) {
 					$accepted = false;
 					break;
@@ -1911,7 +1869,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( ! $accepted ) {
 				continue;
 			}
-			$box_classes = preg_split( '/\s+/', trim( (string) ( $box['class'] ?? '' ) ) );
+			$box_classes = self::class_tokens( $box );
 			if ( false !== $box_classes ) {
 				$s->form_classes = array_merge( $s->form_classes, array_values( array_filter( $box_classes ) ) );
 			}
@@ -2038,11 +1996,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$layout_node = $s->layout_nodes_by_id[ $node_id ] ?? null;
 			$proven      = is_array( $layout_node );
 			foreach ( array_keys( $s->layout_by_node[ $node_id ] ?? array() ) as $fact ) {
-				$proven = $proven && isset( $s->layout_css_properties[ $fact ] ) && ( $s->has_unconditional_proven_property )( $layout_node, $s->layout_css_properties[ $fact ] );
+				$proven = $proven && isset( $s->layout_css_properties[ $fact ] ) && self::has_unconditional_proven_property( $layout_node, $s->layout_css_properties[ $fact ] );
 			}
 			foreach ( $s->variants_by_node[ $node_id ] ?? array() as $variant ) {
-				foreach ( array_keys( is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array() ) as $fact ) {
-					$proven = $proven && isset( $s->layout_css_properties[ $fact ] ) && ( $s->variant_proven )( $variant, $s->layout_css_properties[ $fact ] );
+				foreach ( array_keys( self::layout_patch( $variant ) ) as $fact ) {
+					$proven = $proven && isset( $s->layout_css_properties[ $fact ] ) && self::variant_proven( $variant, $s->layout_css_properties[ $fact ] );
 				}
 			}
 			// A wrapper already represented by carrying its own source class name
@@ -2072,7 +2030,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			// that is a named box loss, not a topology the provider cannot express.
 			$facts = array_keys( $layout );
 			foreach ( $s->variants_by_node[ $node_id ] ?? array() as $variant ) {
-				$facts = array_merge( $facts, array_keys( is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array() ) );
+				$facts = array_merge( $facts, array_keys( self::layout_patch( $variant ) ) );
 			}
 			$box_only    = array() !== $facts && array() === array_diff( $facts, array_keys( Static_Site_Importer_Provider_Layout_Overlay::box_property_map() ) );
 			$s->losses[] = array(
@@ -2283,7 +2241,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				return null;
 			}
 			foreach ( $variants[ $id ] ?? array() as $variant ) {
-				$patch = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+				$patch = self::layout_patch( $variant );
 				if ( empty( $patch ) || ! is_array( $variant['condition'] ?? null ) || ! Static_Site_Importer_Provider_Layout_Overlay::layout_values_are_safe( $patch ) || ! $proven( $variant['provenance'] ?? array(), $variant['condition'], $patch ) ) {
 					return null;
 				}
@@ -2427,7 +2385,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		}
 		$variants = array();
 		foreach ( $graph['variants'] ?? array() as $variant ) {
-			$patch = is_array( $variant ) && is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+			$patch = self::layout_patch( $variant );
 			$box   = 'form' === ( $variant['node'] ?? '' ) ? array_intersect_key( $patch, array_flip( $item_facts ) ) : array();
 			if ( ! empty( $box ) ) {
 				$variant['layout_patch']     = array_diff_key( $patch, $box );
@@ -2804,17 +2762,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 
 	/** Jetpack fields default to flex:1 1 100%; preserve a source fixed width's default flex behavior. */
 	public static function fixed_width_uses_default_flex( array $node ): bool {
-		$layout = is_array( $node['layout'] ?? null ) ? $node['layout'] : ( is_array( $node['layout_patch'] ?? null ) ? $node['layout_patch'] : array() );
+		$layout = is_array( $node['layout'] ?? null ) ? $node['layout'] : ( self::layout_patch( $node ) );
 		$width  = $layout['width'] ?? null;
 		if ( ! is_string( $width ) || ! preg_match( '/^(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em)$/D', $width ) || array_intersect( array( 'flex', 'flex_grow', 'flex_shrink', 'flex_basis' ), array_keys( $layout ) ) ) {
 			return false;
 		}
-		foreach ( $node['provenance'] ?? array() as $fact ) {
-			if ( is_array( $fact ) && is_string( $fact['source_path'] ?? null ) && is_string( $fact['source_sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ) && in_array( 'width', $fact['properties'] ?? array(), true ) ) {
-				return true;
-			}
-		}
-		return false;
+		return self::has_source_fact( $node['provenance'] ?? array(), null, array( 'width' ), false, true );
 	}
 
 	/**
@@ -3166,7 +3119,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 		}
 		foreach ( $graph['variants'] ?? array() as $index => $variant ) {
-			$patch        = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+			$patch        = self::layout_patch( $variant );
 			$drops_tracks = (bool) array_intersect( array( 'columns', 'rows' ), array_keys( $patch ) );
 			$grid_display = 'grid' === ( $patch['display'] ?? '' );
 			if ( ! is_array( $variant ) || ! isset( $containers[ (string) ( $variant['node'] ?? '' ) ] ) || empty( $patch ) || ( ! $grid_display && ! $drops_tracks ) ) {
@@ -3217,7 +3170,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$width  = self::declared_pixel_width( $layout );
 			$row    = self::declared_grid_row( $layout );
 			foreach ( $variants_by_node[ $id ] ?? array() as $variant ) {
-				$patch = is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+				$patch = self::layout_patch( $variant );
 				$row   = '' === $row ? self::declared_grid_row( $patch ) : $row;
 				$width = 0.0 === $width ? self::declared_pixel_width( $patch ) : $width;
 			}
@@ -3302,6 +3255,70 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 		}
 		return $display;
+	}
+
+	/**
+	 * Whether source provenance proves every listed CSS property.
+	 *
+	 * A fact proves a property when it names a safe source path, a SHA-256
+	 * source digest and the property, under the given condition. Selector
+	 * evidence is required unless the caller proves facts by source alone.
+	 *
+	 * @param mixed             $facts            Provenance rows.
+	 * @param array|null        $condition        Condition the fact must carry.
+	 * @param array<int,string> $properties       CSS properties that must all be proven.
+	 * @param bool              $require_selector Whether the fact must name its selector.
+	 * @param bool              $any_condition    Whether a fact under any condition proves.
+	 */
+	private static function has_source_fact( mixed $facts, ?array $condition, array $properties, bool $require_selector = true, bool $any_condition = false ): bool {
+		foreach ( is_array( $facts ) ? $facts : array() as $fact ) {
+			if ( ! is_array( $fact ) || ( ! $any_condition && ( $fact['condition'] ?? null ) !== $condition ) || ! is_string( $fact['source_path'] ?? null ) || ! is_string( $fact['source_sha256'] ?? null ) || 1 !== preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ) || ( $require_selector && ! is_string( $fact['selector'] ?? null ) ) ) {
+				continue;
+			}
+			if ( ! array_diff( $properties, $fact['properties'] ?? array() ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Whether an unconditional source rule proves a layout node's property. */
+	private static function has_unconditional_proven_property( array $node, string $property ): bool {
+		return self::has_source_fact( $node['provenance'] ?? array(), null, array( $property ) );
+	}
+
+	/** Whether a variant's own conditional rule proves one of its properties. */
+	private static function variant_proven( array $variant, string $property ): bool {
+		return self::has_source_fact( $variant['provenance'] ?? array(), $variant['condition'] ?? null, array( $property ) );
+	}
+
+	/** @return array<string,mixed> A layout variant's patch, or an empty patch. */
+	private static function layout_patch( mixed $variant ): array {
+		return is_array( $variant ) && is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array();
+	}
+
+	/** @return array<int,string>|false A topology node's source class tokens, as preg_split returns them. */
+	private static function class_tokens( mixed $node ): array|false {
+		return preg_split( '/\s+/', trim( (string) ( is_array( $node ) ? ( $node['class'] ?? '' ) : '' ) ) );
+	}
+
+	/** A grid item's column placement: its grid-column, else its grid-area column span. */
+	private static function grid_placement( mixed $layout_node ): mixed {
+		return is_array( $layout_node ) ? ( $layout_node['layout']['column'] ?? self::grid_area_column_span( $layout_node['layout']['area'] ?? null ) ) : null;
+	}
+
+	/** Whether an unconditional source rule proves a grid item's placement. */
+	private static function grid_placement_proven( mixed $layout_node ): bool {
+		return is_array( $layout_node ) && ( self::has_unconditional_proven_property( $layout_node, 'grid-column' ) || self::has_unconditional_proven_property( $layout_node, 'grid-area' ) );
+	}
+
+	/** The column span a `row / column / span R / span C` grid-area places, or null. */
+	private static function grid_area_column_span( mixed $area ): ?string {
+		$area = is_string( $area ) ? trim( $area ) : '';
+		if ( ! preg_match( '/^(?:[0-9]+|auto)\s*\/\s*(?:[0-9]+|auto)\s*\/\s*span\s+[0-9]+\s*\/\s*span\s+([1-9][0-9]*)$/D', $area, $span ) ) {
+			return null;
+		}
+		return 'span ' . $span[1];
 	}
 
 	/**
@@ -3559,7 +3576,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( '' === $id || ! isset( $parents[ $id ] ) ) {
 				continue;
 			}
-			$row = self::declared_grid_row( is_array( $variant['layout_patch'] ?? null ) ? $variant['layout_patch'] : array() );
+			$row = self::declared_grid_row( self::layout_patch( $variant ) );
 			if ( '' !== $row ) {
 				$rows[ $id ][ $row ] = true;
 			}

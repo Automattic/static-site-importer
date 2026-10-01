@@ -41,9 +41,7 @@ final class Static_Site_Importer_Form_Topology_State {
 	public mixed $phone_popup_targets      = array();
 
 	// Shared predicates.
-	public mixed $collect_controls                  = null;
-	public mixed $has_unconditional_proven_property = null;
-	public mixed $variant_proven                    = null;
+	public mixed $collect_controls = null;
 
 	// Projection results.
 	public mixed $losses                     = array();
@@ -75,5 +73,15 @@ final class Static_Site_Importer_Form_Topology_State {
 		$this->field_blocks        = $field_blocks;
 		$this->controls            = $controls;
 		$this->suppressed_controls = $suppressed_controls;
+	}
+
+	/**
+	 * Mapped controls a topology branch contains, in branch order.
+	 *
+	 * @param array<string,mixed> $node Topology node.
+	 * @return array<int,int>
+	 */
+	public function mapped_branch( array $node ): array {
+		return array_values( array_filter( ( $this->collect_controls )( $node ), fn ( int $index ): bool => isset( $this->field_blocks[ $index ] ) ) );
 	}
 }
