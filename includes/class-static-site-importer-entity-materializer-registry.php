@@ -1681,14 +1681,6 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		);
 	}
 
-	/** Accept canonical artifact-relative paths without narrowing source filenames. */
-	private static function is_safe_artifact_source_path( mixed $path ): bool {
-		if ( ! is_string( $path ) || '' === $path || str_contains( $path, "\0" ) || str_contains( $path, '\\' ) || ! preg_match( '//u', $path ) || str_starts_with( $path, '/' ) || 1 === preg_match( '#^[A-Za-z]:/#', $path ) ) {
-			return false;
-		}
-		return array() === array_filter( explode( '/', $path ), static fn( string $segment ): bool => '' === $segment || '.' === $segment || '..' === $segment );
-	}
-
 	/**
 	 * Admit a producer form presentation graph.
 	 *
@@ -1731,42 +1723,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return array( 'graph' => $candidate );
 	}
 
-	/** @param array<string,string> $properties @return array{role?:array<string,mixed>,error?:string} */
-	private static function normalize_form_presentation_role( mixed $candidate, array $properties, ?array $condition, bool $allow_empty = false ): array {
-		if ( ! is_array( $candidate ) || count( $candidate ) !== 2 || ! self::has_only_keys( $candidate, array( 'styles', 'provenance' ) ) || ! is_array( $candidate['styles'] ?? null ) || ( ! $allow_empty && empty( $candidate['styles'] ) ) || ! is_array( $candidate['provenance'] ?? null ) || count( $candidate['provenance'] ) > 32 ) {
-			return array( 'error' => 'presentation_graph role facts are malformed.' );
-		}
-		foreach ( $candidate['styles'] as $key => $value ) {
-			if ( ! isset( $properties[ $key ] ) || ! is_string( $value ) || '' === trim( $value ) || strlen( $value ) > 160 ) {
-				return array( 'error' => 'presentation_graph contains an unsupported style fact.' );
-			}
-		}
-		foreach ( $candidate['provenance'] as $fact ) {
-			if ( ! is_array( $fact ) || ! self::has_only_keys( $fact, array( 'source_path', 'source_sha256', 'selector', 'condition', 'properties' ) ) || ! self::is_safe_artifact_source_path( $fact['source_path'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/D', $fact['source_sha256'] ?? '' ) || ! is_string( $fact['selector'] ?? null ) || '' === trim( $fact['selector'] ) || strlen( $fact['selector'] ) > 1024 || ( $fact['condition'] ?? null ) !== $condition || ! is_array( $fact['properties'] ?? null ) || empty( $fact['properties'] ) || array_filter( $fact['properties'], static fn( $property ): bool => ! is_string( $property ) || ! isset( $properties[ str_replace( '-', '_', $property ) ], $candidate['styles'][ str_replace( '-', '_', $property ) ] ) ) ) {
-				return array( 'error' => 'presentation_graph provenance is malformed.' );
-			}
-		}
-		return array(
-			'role' => array(
-				'styles'     => $candidate['styles'],
-				'provenance' => $candidate['provenance'],
-			),
-		);
-	}
-
 	/** @return array<string,string> */
 	private static function form_presentation_properties(): array {
 		return Static_Site_Importer_Provider_Layout_Overlay::presentation_property_map();
-	}
-
-	private static function valid_layout_condition( mixed $condition, int $depth = 0 ): bool {
-		if ( ! is_array( $condition ) || $depth > 8 ) {
-			return false;
-		}
-		if ( 'all' === ( $condition['kind'] ?? null ) ) {
-			return self::has_only_keys( $condition, array( 'kind', 'conditions' ) ) && is_array( $condition['conditions'] ?? null ) && ! empty( $condition['conditions'] ) && count( $condition['conditions'] ) <= 8 && array_reduce( $condition['conditions'], static fn( bool $valid, $item ): bool => $valid && self::valid_layout_condition( $item, $depth + 1 ), true );
-		}
-		return self::has_only_keys( $condition, array( 'kind', 'query' ) ) && in_array( $condition['kind'] ?? null, array( 'media', 'container', 'supports' ), true ) && is_string( $condition['query'] ?? null ) && '' !== trim( $condition['query'] ) && strlen( $condition['query'] ) <= 1024;
 	}
 
 	/**
@@ -1904,69 +1863,34 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		);
 	}
 
-
-
 	/**
-	 * Validate the resolved source presentation a v3 graph attaches to a
-	 * container node. Base facts and every conditional patch keep provenance.
+	 * Admit the resolved source presentation a v3 graph attaches to a container.
+	 *
+	 * Blocks Engine owns the envelope contract through
+	 * FormPresentationGraphBuilder::assertElement(); the importer refuses a
+	 * truncated presentation and any style the provider overlay cannot express.
 	 *
 	 * @return array{presentation?:array<string,mixed>,error?:string}
 	 */
 	private static function normalize_element_presentation( mixed $candidate ): array {
-		if ( ! is_array( $candidate ) || 'generic/form-element-presentation/v1' !== ( $candidate['schema'] ?? null ) || ! self::has_only_keys( $candidate, array( 'schema', 'styles', 'provenance', 'variants', 'truncated', 'diagnostics' ) ) || false !== ( $candidate['truncated'] ?? null ) || ! is_array( $candidate['variants'] ?? null ) || ! array_is_list( $candidate['variants'] ) || count( $candidate['variants'] ) > 96 || ! is_array( $candidate['diagnostics'] ?? null ) || count( $candidate['diagnostics'] ) > 32 ) {
-			return array( 'error' => 'layout_graph element presentation must be a complete bounded generic/form-element-presentation/v1 envelope.' );
+		if ( ! is_array( $candidate ) ) {
+			return array( 'error' => 'layout_graph element presentation must be a producer element presentation.' );
+		}
+		try {
+			\Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Style\FormPresentationGraphBuilder::assertElement( $candidate );
+		} catch ( InvalidArgumentException $error ) {
+			return array( 'error' => 'layout_graph element presentation violates the producer contract: ' . $error->getMessage() );
+		}
+		if ( false !== $candidate['truncated'] ) {
+			return array( 'error' => 'layout_graph element presentation is truncated.' );
 		}
 		$properties = self::form_presentation_properties();
-		$base       = self::normalize_form_presentation_role(
-			array(
-				'styles'     => $candidate['styles'] ?? null,
-				'provenance' => $candidate['provenance'] ?? null,
-			),
-			$properties,
-			null,
-			true
-		);
-		if ( isset( $base['error'] ) ) {
-			return array( 'error' => 'layout_graph element presentation base facts are malformed.' );
+		foreach ( array_merge( array( $candidate['styles'] ), array_column( $candidate['variants'], 'styles' ) ) as $styles ) {
+			if ( array_diff_key( $styles, $properties ) ) {
+				return array( 'error' => 'layout_graph element presentation contains a style the provider cannot materialize.' );
+			}
 		}
-		$variants = array();
-		foreach ( $candidate['variants'] as $variant ) {
-			if ( ! is_array( $variant ) || ! self::has_only_keys( $variant, array( 'condition', 'styles', 'precedence', 'provenance' ) ) || ! self::valid_layout_condition( $variant['condition'] ?? null ) || ! is_array( $variant['precedence'] ?? null ) ) {
-				return array( 'error' => 'layout_graph element presentation variant is malformed.' );
-			}
-			$role = self::normalize_form_presentation_role(
-				array(
-					'styles'     => $variant['styles'] ?? null,
-					'provenance' => $variant['provenance'] ?? null,
-				),
-				$properties,
-				$variant['condition']
-			);
-			if ( isset( $role['error'] ) ) {
-				return array( 'error' => 'layout_graph element presentation variant facts are malformed.' );
-			}
-			foreach ( $variant['precedence'] as $property => $precedence ) {
-				if ( ! is_string( $property ) || ! isset( $role['role']['styles'][ str_replace( '-', '_', $property ) ] ) || ! is_array( $precedence ) || ! self::has_only_keys( $precedence, array( 'source_order', 'specificity', 'important' ) ) || ! is_int( $precedence['source_order'] ?? null ) || ! is_int( $precedence['specificity'] ?? null ) || ! is_bool( $precedence['important'] ?? null ) ) {
-					return array( 'error' => 'layout_graph element presentation precedence is malformed.' );
-				}
-			}
-			$variants[] = array(
-				'condition'  => $variant['condition'],
-				'styles'     => $role['role']['styles'],
-				'precedence' => $variant['precedence'],
-				'provenance' => $role['role']['provenance'],
-			);
-		}
-		return array(
-			'presentation' => array(
-				'schema'      => 'generic/form-element-presentation/v1',
-				'styles'      => $base['role']['styles'],
-				'provenance'  => $base['role']['provenance'],
-				'variants'    => $variants,
-				'truncated'   => false,
-				'diagnostics' => array_values( array_filter( $candidate['diagnostics'], static fn( $diagnostic ): bool => is_string( $diagnostic ) && '' !== trim( $diagnostic ) && strlen( $diagnostic ) <= 1100 ) ),
-			),
-		);
+		return array( 'presentation' => $candidate );
 	}
 
 	/** @param array<int,string> $allowed */
