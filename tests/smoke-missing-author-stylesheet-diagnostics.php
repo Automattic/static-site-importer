@@ -99,7 +99,7 @@ $artifact     = array(
 	),
 );
 
-$rows = Static_Site_Importer_Report_Diagnostics::missing_author_stylesheet_diagnostics( $plan_missing, $artifact );
+$rows = Static_Site_Importer_Diagnostic_Projection::missing_author_stylesheet_diagnostics( $plan_missing, $artifact );
 $assert( 2 === count( $rows ), 'uncovered-styled-pages-warn', 'expected 2 warnings, got ' . count( $rows ) );
 $by_source = array_column( $rows, null, 'source_path' );
 $front     = $by_source['website/index.html'] ?? array();
@@ -122,7 +122,7 @@ $plan_no_styles = array(
 	'pages'  => array( $page( 'website/index.html', '/' ) ),
 	'assets' => array(),
 );
-$rows           = Static_Site_Importer_Report_Diagnostics::missing_author_stylesheet_diagnostics(
+$rows           = Static_Site_Importer_Diagnostic_Projection::missing_author_stylesheet_diagnostics(
 	$plan_no_styles,
 	array(
 		'files' => array(
@@ -136,7 +136,7 @@ $rows           = Static_Site_Importer_Report_Diagnostics::missing_author_styles
 $assert( array() === $rows, 'unstyled-source-does-not-warn' );
 
 // An empty inline style payload is not author-style evidence.
-$rows = Static_Site_Importer_Report_Diagnostics::missing_author_stylesheet_diagnostics(
+$rows = Static_Site_Importer_Diagnostic_Projection::missing_author_stylesheet_diagnostics(
 	$plan_no_styles,
 	array( 'files' => array( 'website/index.html' => '<html><head><style>   </style><style type="text/template">.x{}</style></head><body><main>Plain</main></body></html>' ) )
 );
@@ -155,7 +155,7 @@ $global_plan = array(
 		),
 	),
 );
-$rows        = Static_Site_Importer_Report_Diagnostics::missing_author_stylesheet_diagnostics( $global_plan, array( 'files' => array( 'website/index.html' => $styled_html ) ) );
+$rows        = Static_Site_Importer_Diagnostic_Projection::missing_author_stylesheet_diagnostics( $global_plan, array( 'files' => array( 'website/index.html' => $styled_html ) ) );
 $assert( array() === $rows, 'global-author-stylesheet-covers-route' );
 
 // Engine-generated and editor-only stylesheet assets never satisfy author coverage.
@@ -179,7 +179,7 @@ $engine_only_plan = array(
 		),
 	),
 );
-$rows             = Static_Site_Importer_Report_Diagnostics::missing_author_stylesheet_diagnostics( $engine_only_plan, array( 'files' => array( 'website/index.html' => $styled_html ) ) );
+$rows             = Static_Site_Importer_Diagnostic_Projection::missing_author_stylesheet_diagnostics( $engine_only_plan, array( 'files' => array( 'website/index.html' => $styled_html ) ) );
 $assert( 1 === count( $rows ), 'engine-generated-assets-do-not-count-as-author-coverage' );
 
 // A linked stylesheet resolving to a non-empty artifact-local CSS file is author-style evidence.
@@ -193,11 +193,11 @@ $linked_plan     = array(
 	'pages'  => array( $page( 'website/team/index.html', '/team' ) ),
 	'assets' => array(),
 );
-$rows            = Static_Site_Importer_Report_Diagnostics::missing_author_stylesheet_diagnostics( $linked_plan, $linked_artifact );
+$rows            = Static_Site_Importer_Diagnostic_Projection::missing_author_stylesheet_diagnostics( $linked_plan, $linked_artifact );
 $assert( 1 === count( $rows ) && 1 === ( $rows[0]['context']['source_linked_stylesheet_count'] ?? null ) && 0 === ( $rows[0]['context']['source_inline_style_count'] ?? null ), 'linked-local-stylesheet-counts-remote-does-not' );
 
 // A linked stylesheet pointing at a file the artifact never captured is not proof the pipeline dropped styles.
-$rows = Static_Site_Importer_Report_Diagnostics::missing_author_stylesheet_diagnostics(
+$rows = Static_Site_Importer_Diagnostic_Projection::missing_author_stylesheet_diagnostics(
 	$linked_plan,
 	array( 'files' => array( 'website/team/index.html' => '<html><head><link rel="stylesheet" href="missing.css"></head><body><main>Linked</main></body></html>' ) )
 );
@@ -208,7 +208,7 @@ $assert( array() === $rows, 'uncaptured-linked-stylesheet-does-not-warn' );
 $huge_html = '<html><head><style>' . str_repeat( 'main{color:#000;}', 200000 ) . '</style></head><body><main>' . str_repeat( '<p>filler</p>', 100000 ) . '</main></body></html>';
 $assert( strlen( $huge_html ) > 4000000, 'huge-fixture-is-multi-megabyte' );
 $started = microtime( true );
-$rows    = Static_Site_Importer_Report_Diagnostics::missing_author_stylesheet_diagnostics(
+$rows    = Static_Site_Importer_Diagnostic_Projection::missing_author_stylesheet_diagnostics(
 	array(
 		'pages'  => array( $page( 'website/index.html', '/' ) ),
 		'assets' => array(),
@@ -219,7 +219,7 @@ $assert( 1 === count( $rows ) && 1 === ( $rows[0]['context']['source_inline_styl
 $assert( microtime( true ) - $started < 2.0, 'multi-megabyte-scan-is-linear-time' );
 
 // The warning routes into finding packets for repair-loop consumers.
-$packets = Static_Site_Importer_Report_Diagnostics::finding_packets(
+$packets = Static_Site_Importer_Diagnostic_Projection::finding_packets(
 	array(
 		'diagnostics' => array( $front ),
 	)
@@ -253,7 +253,7 @@ $compiled_artifact = array(
 	),
 );
 
-$rows = Static_Site_Importer_Report_Diagnostics::missing_author_stylesheet_diagnostics( $compiled_plan, $compiled_artifact );
+$rows = Static_Site_Importer_Diagnostic_Projection::missing_author_stylesheet_diagnostics( $compiled_plan, $compiled_artifact );
 $assert( array() === $rows, 'healthy-compiled-plan-reports-clean', wp_json_encode( $rows ) );
 
 $lossy_plan           = $compiled_plan;
@@ -263,7 +263,7 @@ $lossy_plan['assets'] = array_values(
 		static fn ( array $asset ): bool => 'css' !== ( $asset['kind'] ?? '' ) || in_array( (string) ( $asset['source'] ?? '' ), array( 'engine-support', 'editor-static-state' ), true )
 	)
 );
-$rows                 = Static_Site_Importer_Report_Diagnostics::missing_author_stylesheet_diagnostics( $lossy_plan, $compiled_artifact );
+$rows                 = Static_Site_Importer_Diagnostic_Projection::missing_author_stylesheet_diagnostics( $lossy_plan, $compiled_artifact );
 $assert( 1 === count( $rows ), 'stripped-author-assets-surface-warning', 'expected 1 warning, got ' . count( $rows ) );
 $assert( 'index.html' === ( $rows[0]['source_path'] ?? '' ) && true === ( $rows[0]['front_page'] ?? null ), 'compiled-warning-names-styled-route-only' );
 

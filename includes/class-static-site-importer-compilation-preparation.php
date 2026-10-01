@@ -146,11 +146,11 @@ final class Static_Site_Importer_Compilation_Preparation {
 			$diagnostics = is_array( $compiled['diagnostics'] ?? null ) ? wp_json_encode( $compiled['diagnostics'] ) : '';
 			return new WP_Error( 'static_site_importer_artifact_compile_failed', 'Website artifact compilation did not produce a WordPress site plan.' . ( false !== $diagnostics ? ' ' . $diagnostics : '' ), $compiled );
 		}
-		$args['missing_author_stylesheet_diagnostics'] = Static_Site_Importer_Report_Diagnostics::missing_author_stylesheet_diagnostics( $plan, $artifact );
-		$args['unsafe_layout_constraint_diagnostics']  = Static_Site_Importer_Report_Diagnostics::unsafe_layout_constraint_diagnostics( $plan );
+		$args['missing_author_stylesheet_diagnostics'] = Static_Site_Importer_Diagnostic_Projection::missing_author_stylesheet_diagnostics( $plan, $artifact );
+		$args['unsafe_layout_constraint_diagnostics']  = Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $plan );
 		$inventory_plan                                = $plan;
 		$inventory_plan['compiler_diagnostics']        = is_array( $compiled['diagnostics'] ?? null ) ? $compiled['diagnostics'] : array();
-		$interaction_inventory                         = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( $artifact, $inventory_plan );
+		$interaction_inventory                         = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact, $inventory_plan );
 		$args['captured_interaction_diagnostics']      = $interaction_inventory['diagnostics'];
 		$args['captured_interaction_state_count']      = $interaction_inventory['unrepresented_member_count'];
 		$companion_payload                             = null;

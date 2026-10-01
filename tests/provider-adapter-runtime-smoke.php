@@ -121,7 +121,7 @@ namespace Automattic\Jetpack\Forms\ContactForm {
 					return;
 				}
 				++self::$initializations;
-				foreach ( \Static_Site_Importer_Form_Seeder::required_block_types() as $block_name ) {
+				foreach ( \Static_Site_Importer_Jetpack_Forms_Runtime::required_block_types() as $block_name ) {
 					\WP_Block_Type_Registry::get_instance()->register( $block_name );
 				}
 			}
@@ -145,7 +145,7 @@ namespace {
 		ssi_run_hook( 'init' );
 	}
 
-	$result = 'fresh-frontend' === $case ? Static_Site_Importer_Form_Seeder::jetpack_forms_available() : Static_Site_Importer_Form_Seeder::prepare_jetpack_forms_runtime();
+	$result = 'fresh-frontend' === $case ? Static_Site_Importer_Jetpack_Forms_Runtime::jetpack_forms_available() : Static_Site_Importer_Jetpack_Forms_Runtime::prepare_jetpack_forms_runtime();
 	$assert = static function ( bool $condition, string $message ): void {
 		if ( ! $condition ) {
 			echo 'FAIL ' . $message . "\n";
@@ -158,7 +158,7 @@ namespace {
 		$assert( 1 === Jetpack::$default_activations && array( 'blocks', 'contact-form' ) === Jetpack::$last_activated_modules, 'only the explicit editor and Forms modules are activated' );
 		$assert( 1 === \Automattic\Jetpack\Forms\Jetpack_Forms::$loads, 'module lifecycle loads Forms once' );
 		$assert( 1 === \Automattic\Jetpack\Forms\ContactForm\Contact_Form_Plugin::$initializations, 'late singleton init runs once' );
-		$assert( true === Static_Site_Importer_Form_Seeder::prepare_jetpack_forms_runtime(), 'repeated preparation succeeds' );
+		$assert( true === Static_Site_Importer_Jetpack_Forms_Runtime::prepare_jetpack_forms_runtime(), 'repeated preparation succeeds' );
 		$assert( 1 === Jetpack::$default_activations && 1 === \Automattic\Jetpack\Forms\Jetpack_Forms::$loads, 'repeated preparation does not replay lifecycle work' );
 	}
 	if ( 'already-active-late' === $case ) {
@@ -180,7 +180,7 @@ namespace {
 	if ( 'init-pending' === $case ) {
 		$assert( is_wp_error( $result ) && 'static_site_importer_jetpack_forms_init_pending' === $result->get_error_code(), 'pre-init preparation is bounded' );
 		ssi_run_hook( 'init' );
-		$assert( true === Static_Site_Importer_Form_Seeder::prepare_jetpack_forms_runtime(), 'normal init hook completes readiness' );
+		$assert( true === Static_Site_Importer_Jetpack_Forms_Runtime::prepare_jetpack_forms_runtime(), 'normal init hook completes readiness' );
 		$assert( 1 === Jetpack::$default_activations && 1 === \Automattic\Jetpack\Forms\Jetpack_Forms::$loads, 'init completion does not replay lifecycle work' );
 	}
 	if ( 'activation-failed' === $case ) {

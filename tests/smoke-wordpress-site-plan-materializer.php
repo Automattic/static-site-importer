@@ -2027,7 +2027,7 @@ $binding_post_id = (int) ( $binding_receipt['completed']['pages']['index.html'] 
 $assert( str_contains( $GLOBALS['ssi_plan_posts'][ $binding_post_id ]['post_content'] ?? '', '[add_to_cart id=\"42\"]' ), 'page write uses provider-bound markup rather than the static fallback' );
 $assert( 'completed' === ( reset( $binding_receipt['completed']['runtime_declarations']['entity_bindings'] )['status'] ?? '' ), 'receipt proves canonical runtime entity binding completion' );
 $assert( array( '.add-to-cart' ) === ( reset( $binding_receipt['completed']['runtime_declarations']['entity_bindings'] )['superseded_runtime_selectors'] ?? null ), 'completed receipt retains provider runtime-selector coverage' );
-$reconcile_diagnostics = new ReflectionMethod( Static_Site_Importer_Report_Diagnostics::class, 'after_completed_entity_bindings' );
+$reconcile_diagnostics = new ReflectionMethod( Static_Site_Importer_Diagnostic_Projection::class, 'after_completed_entity_bindings' );
 $runtime_diagnostics   = array(
 	array(
 		'code'        => 'preserved_runtime_island',
@@ -2269,13 +2269,13 @@ Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbac
 $assert( 'completed' === ( $form_binding_report['status'] ?? '' ) && ( $form_binding_report['materialized_content_hash'] ?? '' ) === hash( 'sha256', $form_binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '' ), 'form quality receipt is emitted after the persisted page replacement' );
 $assert( str_contains( Static_Site_Importer_Internal_Link_Runtime::resolve_urls( (string) ( $form_binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '' ) ), 'https://example.test/' ), 'form quality receipt retains final route-rewritten page content' );
 $assert( 0 === ( $form_quality_report['quality']['fallback_count'] ?? -1 ) && 1 === ( $form_quality_report['quality']['source_fallback_count'] ?? 0 ) && 'resolved_by_provider' === ( $form_quality_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'persisted form receipt resolves only its identity-and-hash-bound source fallback' );
-$resolved_form_quality    = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $form_quality_report, array( 'fail_on_quality' => true ) );
-$resolved_form_validation = Static_Site_Importer_Report_Diagnostics::import_validation_result( $form_quality_report, $resolved_form_quality );
+$resolved_form_quality    = Static_Site_Importer_Quality_Gates::finalize_quality_report( $form_quality_report, array( 'fail_on_quality' => true ) );
+$resolved_form_validation = Static_Site_Importer_Diagnostic_Projection::import_validation_result( $form_quality_report, $resolved_form_quality );
 $assert( true === ( $resolved_form_quality['pass'] ?? false ) && false === ( $resolved_form_quality['fail_import'] ?? true ) && array() === ( $resolved_form_quality['failure_reasons'] ?? null ) && 'passed' === ( $resolved_form_validation['status'] ?? '' ), 'receipt-resolved form fallback clears derived quality gates and validation status' );
 $other_failure_report                                     = Static_Site_Importer_Import_Report::from_array( $form_quality_report->to_array() );
 $other_failure_report->merge_quality( array( 'core_html_block_count' => 1 ) );
-$other_failure_quality                                    = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $other_failure_report, array( 'fail_on_quality' => true ) );
-$other_failure_validation                                 = Static_Site_Importer_Report_Diagnostics::import_validation_result( $other_failure_report, $other_failure_quality );
+$other_failure_quality                                    = Static_Site_Importer_Quality_Gates::finalize_quality_report( $other_failure_report, array( 'fail_on_quality' => true ) );
+$other_failure_validation                                 = Static_Site_Importer_Diagnostic_Projection::import_validation_result( $other_failure_report, $other_failure_quality );
 $assert( 0 === ( $other_failure_quality['fallback_count'] ?? -1 ) && false === ( $other_failure_quality['pass'] ?? true ) && true === ( $other_failure_quality['fail_import'] ?? false ) && array( 'core_html_block' ) === ( $other_failure_quality['failure_reasons'] ?? null ) && 'failed' === ( $other_failure_validation['status'] ?? '' ), 'receipt reconciliation preserves unrelated quality failures and validation status' );
 // Exercise the production result composition path with the partial compiler
 // quality envelope that website-artifact imports supply.

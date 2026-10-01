@@ -281,11 +281,11 @@ namespace {
 	$assert( is_callable( $form_adapter['dependencies'][0]['preparation_callback'] ?? null ), 'form-adapter-prepares-provider-runtime' );
 	$all_jetpack_blocks = $GLOBALS['ssi_jetpack_registered_form_blocks'];
 	$GLOBALS['ssi_jetpack_registered_form_blocks'] = array( 'jetpack/contact-form', 'jetpack/field-text' );
-	$assert( ! Static_Site_Importer_Form_Seeder::jetpack_forms_available(), 'partial-provider-block-registration-is-unavailable' );
+	$assert( ! Static_Site_Importer_Jetpack_Forms_Runtime::jetpack_forms_available(), 'partial-provider-block-registration-is-unavailable' );
 	$GLOBALS['ssi_jetpack_registered_form_blocks'] = $all_jetpack_blocks;
 	$jetpack_dependency = $form_adapter['dependencies'][0] ?? array();
 	$assert( in_array( 'jetpack/option', $jetpack_dependency['missing_apis'] ?? array(), true ), 'form-adapter-declares-field-children' );
-	$assert( Static_Site_Importer_Form_Seeder::required_block_types() === ( $jetpack_dependency['provider_readiness']['required_block_types'] ?? array() ), 'form-adapter-declares-every-emitted-block' );
+	$assert( Static_Site_Importer_Jetpack_Forms_Runtime::required_block_types() === ( $jetpack_dependency['provider_readiness']['required_block_types'] ?? array() ), 'form-adapter-declares-every-emitted-block' );
 
 	// --- Woo path unaffected -------------------------------------------------
 	$product_adapter = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();

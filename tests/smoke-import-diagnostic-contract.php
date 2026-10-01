@@ -276,7 +276,7 @@ $partial_quality_warning_handler = set_error_handler(
 	}
 );
 try {
-	$partial_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $partial_quality_report, array( 'fail_on_quality' => true ) );
+	$partial_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $partial_quality_report, array( 'fail_on_quality' => true ) );
 } finally {
 	restore_error_handler();
 }
@@ -557,7 +557,7 @@ $finalized_report['materialization_receipt'] = array(
 	'status'    => 'completed',
 	'completed' => array( 'pages' => array( 1 ) ),
 );
-$cached_contract = Static_Site_Importer_Report_Diagnostics::refresh_projections( $finalized_report, $finalized_quality );
+$cached_contract = Static_Site_Importer_Diagnostic_Projection::refresh_projections( $finalized_report, $finalized_quality );
 $assert( 1 === ( $cached_contract['diagnostic_summary']['total'] ?? 0 ), 'finalized-report-is-sole-diagnostic-source' );
 $assert( 'invalid_block_content' === ( $cached_contract['diagnostics'][0]['type'] ?? '' ), 'finalized-report-builds-fixture-projection' );
 $assert( $cached_contract === Static_Site_Importer_Canonical_Import_Service::success_diagnostics_contract( array( 'fixture_diagnostics' => $cached_contract, 'import_report' => $finalized_report->to_array() ) ), 'canonical-service-reuses-finalized-fixture-projection' );
@@ -786,7 +786,7 @@ $unsafe_runtime_report = Static_Site_Importer_Import_Report::from_array( $safe_r
 $unsafe_diagnostics    = $unsafe_runtime_report->diagnostics();
 $unsafe_diagnostics[0]['source_html_preview'] = '<iframe srcdoc="<script>alert(1)</script>"></iframe>';
 $unsafe_runtime_report->set_diagnostics( $unsafe_diagnostics );
-$unsafe_runtime_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $unsafe_runtime_report, array( 'fail_on_quality' => true ) );
+$unsafe_runtime_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $unsafe_runtime_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $unsafe_runtime_quality['pass'] ?? true ) && true === ( $unsafe_runtime_quality['fail_import'] ?? false ), 'unsafe-runtime-iframe-remains-fail-closed' );
 $assert( 0 === ( $unsafe_runtime_quality['accepted_preserved_runtime_island_count'] ?? -1 ) && 1 === ( $unsafe_runtime_quality['unsupported_fallback_count'] ?? 0 ), 'unsafe-runtime-iframe-is-counted-as-unsupported-fallback' );
 
@@ -794,7 +794,7 @@ $incomplete_runtime_report = Static_Site_Importer_Import_Report::from_array( $sa
 $incomplete_diagnostics    = $incomplete_runtime_report->diagnostics();
 unset( $incomplete_diagnostics[0]['materialization_path'] );
 $incomplete_runtime_report->set_diagnostics( $incomplete_diagnostics );
-$incomplete_runtime_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $incomplete_runtime_report, array( 'fail_on_quality' => true ) );
+$incomplete_runtime_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $incomplete_runtime_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $incomplete_runtime_quality['pass'] ?? true ) && true === ( $incomplete_runtime_quality['fail_import'] ?? false ), 'missing-runtime-materialization-contract-remains-fail-closed' );
 
 $declined_form_fallback = array(
@@ -897,7 +897,7 @@ $rating_form_report   = Static_Site_Importer_Import_Report::from_array(
 		),
 	)
 );
-$rating_form_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $rating_form_report, array( 'fail_on_quality' => true ) );
+$rating_form_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $rating_form_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $rating_form_quality['pass'] ?? true ) && true === ( $rating_form_quality['fail_import'] ?? false ) && 1 === ( $rating_form_quality['unsupported_fallback_count'] ?? 0 ), 'actual-rating-button-form-decline-remains-unresolved' );
 
 $undeclined_form_report = Static_Site_Importer_Import_Report::from_array(
@@ -915,7 +915,7 @@ $undeclined_form_report = Static_Site_Importer_Import_Report::from_array(
 		'diagnostics' => array( $declined_form_fallback ),
 	)
 );
-$undeclined_form_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $undeclined_form_report, array( 'fail_on_quality' => true ) );
+$undeclined_form_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $undeclined_form_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $undeclined_form_quality['pass'] ?? true ) && true === ( $undeclined_form_quality['fail_import'] ?? false ) && in_array( 'unsupported_html_fallback', $undeclined_form_quality['failure_reasons'] ?? array(), true ), 'form-fallback-without-provider-decline-remains-fail-closed' );
 $assert( 0 === ( $undeclined_form_quality['accepted_preserved_runtime_island_count'] ?? -1 ) && 1 === ( $undeclined_form_quality['unsupported_fallback_count'] ?? 0 ), 'form-fallback-without-provider-decline-is-unsupported' );
 
@@ -934,7 +934,7 @@ $unsafe_declined_form_report = Static_Site_Importer_Import_Report::from_array(
 		'diagnostics' => array( $declined_form_fallback, $provider_form_decline ),
 	)
 );
-$unsafe_declined_form_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $unsafe_declined_form_report, array( 'fail_on_quality' => true ) );
+$unsafe_declined_form_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $unsafe_declined_form_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $unsafe_declined_form_quality['pass'] ?? true ) && true === ( $unsafe_declined_form_quality['fail_import'] ?? false ), 'unsafe-declined-form-island-remains-fail-closed' );
 $assert( 0 === ( $unsafe_declined_form_quality['accepted_preserved_runtime_island_count'] ?? -1 ) && 1 === ( $unsafe_declined_form_quality['unsupported_fallback_count'] ?? 0 ), 'unsafe-declined-form-island-is-unsupported' );
 
@@ -952,7 +952,7 @@ $unsupported_html_report = Static_Site_Importer_Import_Report::from_array(
 		),
 	)
 );
-$unsupported_html_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $unsupported_html_report, array( 'fail_on_quality' => true ) );
+$unsupported_html_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $unsupported_html_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $unsupported_html_quality['pass'] ?? true ) && true === ( $unsupported_html_quality['fail_import'] ?? false ) && in_array( 'unsupported_html_fallback', $unsupported_html_quality['failure_reasons'] ?? array(), true ), 'genuine-unsupported-fallback-still-fails-quality-admission' );
 
 /*

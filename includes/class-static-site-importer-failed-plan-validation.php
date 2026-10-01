@@ -45,7 +45,7 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 		$quality['pass']            = false;
 		$quality['fail_import']     = true;
 		$quality['failure_reasons'] = self::failure_reasons( $plan, $quality );
-		$fixture_diagnostics        = Static_Site_Importer_Report_Diagnostics::refresh_projections( $report, $quality );
+		$fixture_diagnostics        = Static_Site_Importer_Diagnostic_Projection::refresh_projections( $report, $quality );
 
 		return array(
 			'import_report'            => $report->to_array(),

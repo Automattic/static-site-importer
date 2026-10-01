@@ -97,7 +97,7 @@ $plan = array(
 	),
 );
 
-$inventory = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( $artifact( $envelope ), $plan );
+$inventory = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact( $envelope ), $plan );
 $assert( 3 === ( $inventory['recorded_state_count'] ?? -1 ), 'captured-states-are-counted' );
 $assert( 3 === ( $inventory['captured_state_count'] ?? -1 ), 'captured-status-is-distinguished' );
 $assert( 3 === ( $inventory['unrepresented_member_count'] ?? -1 ), 'unrepresented-count-matches-captured-when-nothing-materialized' );
@@ -109,18 +109,18 @@ $assert( 'captured_interaction_unmaterialized' === ( $row['reason_code'] ?? '' )
 $assert( Static_Site_Importer_Diagnostic_Loss_Classes::UNSUPPORTED_LOSS === ( $row['loss_class'] ?? '' ), 'loss-class-is-unsupported-loss' );
 $assert( 'interaction_candidate' === ( $row['type'] ?? '' ), 'diagnostic-type-is-existing-interaction-candidate' );
 
-$repeat = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( $artifact( $envelope ), $plan );
+$repeat = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact( $envelope ), $plan );
 $assert( wp_json_encode( $inventory ) === wp_json_encode( $repeat ), 'inventory-is-byte-stable' );
 
-$missing = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( array( 'files' => array() ), $plan );
+$missing = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( array( 'files' => array() ), $plan );
 $assert( 0 === ( $missing['recorded_state_count'] ?? -1 ) && array() === ( $missing['diagnostics'] ?? null ), 'missing-artifact-is-zero-and-silent' );
 
 $empty_states = $envelope;
 $empty_states['pages'][0]['states'] = array();
-$empty = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( $artifact( $empty_states ), $plan );
+$empty = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact( $empty_states ), $plan );
 $assert( 0 === ( $empty['recorded_state_count'] ?? -1 ) && array() === ( $empty['diagnostics'] ?? null ), 'empty-states-are-zero-and-silent' );
 
-$malformed = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory(
+$malformed = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory(
 	array(
 		'files' => array(
 			array(
@@ -141,11 +141,11 @@ $legacy = array(
 		$state( 'captured', 'disclosure' ),
 	),
 );
-$legacy_inventory = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( $artifact( $legacy ), $plan );
+$legacy_inventory = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact( $legacy ), $plan );
 $assert( 2 === ( $legacy_inventory['recorded_state_count'] ?? -1 ), 'legacy-page-envelope-still-counts' );
 $assert( 1 === count( $legacy_inventory['diagnostics'] ?? array() ), 'legacy-page-envelope-still-diagnoses' );
 
-$website_rooted = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory(
+$website_rooted = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory(
 	$artifact( $envelope, 'website/interaction-states.json' ),
 	$plan
 );
@@ -171,7 +171,7 @@ $mixed = array(
 		),
 	),
 );
-$mixed_inventory = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( $artifact( $mixed ), $plan );
+$mixed_inventory = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact( $mixed ), $plan );
 $assert( 5 === ( $mixed_inventory['recorded_state_count'] ?? -1 ), 'recorded-count-includes-non-captured-statuses' );
 $assert( 3 === ( $mixed_inventory['captured_state_count'] ?? -1 ), 'captured-count-excludes-non-captured-statuses' );
 $assert( 1 === ( $mixed_inventory['status_counts']['no-dialog'] ?? -1 ), 'no-dialog-status-is-counted' );
@@ -210,7 +210,7 @@ $no_dialog_only = array(
 		),
 	),
 );
-$no_dialog_inventory = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( $artifact( $no_dialog_only ), $plan );
+$no_dialog_inventory = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact( $no_dialog_only ), $plan );
 $assert( 2 === ( $no_dialog_inventory['recorded_state_count'] ?? -1 ), 'non-captured-only-states-are-still-counted' );
 $assert( 1 === count( $no_dialog_inventory['diagnostics'] ?? array() ), 'capture-side-only-states-emit-a-capture-gap-diagnostic' );
 $assert( 'captured_interaction_capture_gap' === ( $no_dialog_inventory['diagnostics'][0]['reason_code'] ?? '' ), 'capture-side-only-reason' );
@@ -230,13 +230,13 @@ $disproved_only = array(
 		),
 	),
 );
-$disproved_inventory = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( $artifact( $disproved_only ), $plan );
+$disproved_inventory = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact( $disproved_only ), $plan );
 $assert( 2 === ( $disproved_inventory['recorded_state_count'] ?? -1 ), 'disproved-selectable-set-states-are-still-counted' );
 $assert( 2 === ( $disproved_inventory['status_counts']['no-dialog'] ?? -1 ), 'disproved-selectable-set-status-counts-are-recorded' );
 $assert( array() === ( $disproved_inventory['diagnostics'] ?? null ), 'disproved-selectable-set-is-not-an-unsupported-capture-gap' );
 $assert( 0 === ( $disproved_inventory['unrepresented_member_count'] ?? -1 ), 'disproved-selectable-set-has-no-unrepresented-members' );
 
-$dialog_no_dialog = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory(
+$dialog_no_dialog = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory(
 	$artifact(
 		array(
 			'schema' => 'data-liberation/captured-interactions/v1',
@@ -256,7 +256,7 @@ $already_reported['diagnostics'] = array(
 		'source_path' => 'website/alpha.html',
 	),
 );
-$deduped = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( $artifact( $envelope ), $already_reported );
+$deduped = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact( $envelope ), $already_reported );
 $assert( 3 === ( $deduped['recorded_state_count'] ?? -1 ), 'already-reported-path-still-counts' );
 $assert( array() === ( $deduped['diagnostics'] ?? null ), 'already-reported-path-is-not-diagnosed-twice' );
 
@@ -264,14 +264,14 @@ $report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index
 foreach ( $mixed_inventory['diagnostics'] as $diagnostic ) {
 	$report->append_diagnostic( $diagnostic );
 }
-$quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $report, array() );
+$quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $report, array() );
 $assert( 4 === ( $quality['interaction_candidate_count'] ?? -1 ), 'quality-count-sums-omitted-members' );
 $assert( true === ( $quality['pass'] ?? false ), 'unmaterialized-interactions-do-not-fail-quality-pass' );
 $assert( array() === ( $quality['failure_reasons'] ?? null ), 'unmaterialized-interactions-are-not-a-quality-failure-reason' );
 $assert( ! empty( $quality['diagnostic_refs']['interaction_candidate_count'] ?? array() ), 'quality-refs-point-at-interaction-candidate-diagnostics' );
 
 $clean_report  = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );
-$clean_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $clean_report, array() );
+$clean_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $clean_report, array() );
 $assert( 0 === ( $clean_quality['interaction_candidate_count'] ?? -1 ), 'missing-sidecar-leaves-quality-count-at-zero' );
 $assert( true === ( $clean_quality['pass'] ?? false ), 'missing-sidecar-keeps-quality-pass' );
 
@@ -307,7 +307,7 @@ $partial_envelope = array(
 );
 $partial_plan = $plan;
 $partial_plan['pages'][0]['resolved_block_markup'] = $tab_markup( 10 );
-$partial = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( $artifact( $partial_envelope ), $partial_plan );
+$partial = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact( $partial_envelope ), $partial_plan );
 $assert( 9 === ( $partial['unrepresented_member_count'] ?? -1 ), 'partial-set-reports-dropped-member-count' );
 $assert( 1 === count( $partial['diagnostics'] ?? array() ), 'partial-set-emits-one-unmaterialized-diagnostic' );
 $assert( 'captured_interaction_unmaterialized' === ( $partial['diagnostics'][0]['reason_code'] ?? '' ), 'partial-set-is-importer-side' );
@@ -315,7 +315,7 @@ $assert( 9 === ( $partial['diagnostics'][0]['recorded_state_count'] ?? -1 ), 'pa
 
 $full_plan = $plan;
 $full_plan['pages'][0]['resolved_block_markup'] = $tab_markup( 19 );
-$full = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( $artifact( $partial_envelope ), $full_plan );
+$full = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact( $partial_envelope ), $full_plan );
 $assert( 0 === ( $full['unrepresented_member_count'] ?? -1 ), 'fully-materialized-set-reports-zero' );
 $assert( array() === ( $full['diagnostics'] ?? null ), 'fully-materialized-set-emits-no-diagnostic' );
 
@@ -327,7 +327,7 @@ $gap_envelope = array(
 );
 $gap_plan = $plan;
 $gap_plan['pages'][0]['resolved_block_markup'] = $tab_markup( 19 );
-$gapped = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( $artifact( $gap_envelope ), $gap_plan );
+$gapped = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact( $gap_envelope ), $gap_plan );
 $assert( 9 === ( $gapped['unrepresented_member_count'] ?? -1 ), 'capture-side-gaps-on-a-materialized-set-are-visible' );
 $assert( 1 === count( $gapped['diagnostics'] ?? array() ), 'capture-side-gaps-do-not-emit-unmaterialized' );
 $assert( 'captured_interaction_capture_gap' === ( $gapped['diagnostics'][0]['reason_code'] ?? '' ), 'materialized-set-gaps-are-capture-side' );
@@ -340,7 +340,7 @@ for ( $index = 0; $index < 9; $index++ ) {
 		'source_path' => 'website/alpha.html',
 	);
 }
-$be_only = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory(
+$be_only = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory(
 	array( 'files' => array() ),
 	array_merge( $plan, array( 'diagnostics' => $be_failed ) )
 );
@@ -365,13 +365,13 @@ $disproved_producer = array(
 		),
 	),
 );
-$disproved_producer_inventory = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory(
+$disproved_producer_inventory = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory(
 	$artifact( $disproved_only ),
 	array_merge( $plan, array( 'compiler_diagnostics' => $disproved_producer ) )
 );
 $assert( array() === ( $disproved_producer_inventory['diagnostics'] ?? null ), 'producer-no-dialog-is-not-an-unsupported-capture-gap' );
 $assert( 2 === ( $disproved_producer_inventory['status_counts']['no-dialog'] ?? -1 ), 'producer-no-dialog-does-not-erase-recorded-status-counts' );
-$click_failed_producer = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory(
+$click_failed_producer = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory(
 	array( 'files' => array() ),
 	array_merge(
 		$plan,
@@ -390,12 +390,12 @@ $click_failed_producer = Static_Site_Importer_Report_Diagnostics::captured_inter
 );
 $assert( 1 === count( $click_failed_producer['diagnostics'] ?? array() ), 'click-failed-producer-still-reports-one-gap' );
 $assert( 1 === ( $click_failed_producer['diagnostics'][0]['context']['status_counts']['click-failed'] ?? -1 ), 'producer-only-gap-counts-the-recorded-status' );
-$compiler_only = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory(
+$compiler_only = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory(
 	array( 'files' => array() ),
 	array_merge( $plan, array( 'compiler_diagnostics' => $be_failed ) )
 );
 $assert( 9 === ( $compiler_only['unrepresented_member_count'] ?? -1 ), 'compiler-diagnostics-without-sidecar-are-counted' );
-$duplicated_producer = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory(
+$duplicated_producer = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory(
 	array( 'files' => array() ),
 	array_merge(
 		$plan,
@@ -409,7 +409,7 @@ $assert( 9 === ( $duplicated_producer['unrepresented_member_count'] ?? -1 ), 'pl
 
 $reconciled_plan = $gap_plan;
 $reconciled_plan['diagnostics'] = $be_failed;
-$reconciled = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( $artifact( $gap_envelope ), $reconciled_plan );
+$reconciled = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact( $gap_envelope ), $reconciled_plan );
 $assert( 9 === ( $reconciled['unrepresented_member_count'] ?? -1 ), 'sidecar-and-producer-gaps-are-not-double-counted' );
 $assert( 1 === count( $reconciled['diagnostics'] ?? array() ), 'reconciled-gaps-emit-one-capture-side-diagnostic' );
 
@@ -425,7 +425,7 @@ $truncated = array(
 );
 $truncated_plan = $partial_plan;
 $truncated_plan['diagnostics'] = $truncated;
-$truncated_inventory = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( $artifact( $partial_envelope ), $truncated_plan );
+$truncated_inventory = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact( $partial_envelope ), $truncated_plan );
 $assert( 9 === ( $truncated_inventory['unrepresented_member_count'] ?? -1 ), 'truncated-members-are-not-added-on-top-of-tab-panel-residual' );
 
 $disclosure_envelope = array(
@@ -439,19 +439,19 @@ $disclosure_envelope = array(
 );
 $disclosure_plan = $plan;
 $disclosure_plan['pages'][0]['resolved_block_markup'] = $tab_markup( 3 );
-$disclosures = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( $artifact( $disclosure_envelope ), $disclosure_plan );
+$disclosures = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact( $disclosure_envelope ), $disclosure_plan );
 $assert( 2 === ( $disclosures['unrepresented_member_count'] ?? -1 ), 'materialized-selectable-set-still-reports-unmaterialized-disclosures' );
 
 $partial_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );
 foreach ( $partial['diagnostics'] as $diagnostic ) {
 	$partial_report->append_diagnostic( $diagnostic );
 }
-$partial_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $partial_report, array() );
+$partial_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $partial_report, array() );
 $assert( 9 === ( $partial_quality['interaction_candidate_count'] ?? -1 ), 'quality-count-reports-partial-loss' );
 $assert( true === ( $partial_quality['pass'] ?? false ), 'partial-loss-does-not-fail-quality-pass' );
 $assert( array() === ( $partial_quality['failure_reasons'] ?? null ), 'partial-loss-is-not-a-quality-failure-reason' );
 
-$repeat_partial = Static_Site_Importer_Report_Diagnostics::captured_interaction_inventory( $artifact( $partial_envelope ), $partial_plan );
+$repeat_partial = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact( $partial_envelope ), $partial_plan );
 $assert( wp_json_encode( $partial ) === wp_json_encode( $repeat_partial ), 'partial-inventory-is-byte-stable' );
 $assert( 0 === ( $empty['unrepresented_member_count'] ?? -1 ), 'empty-states-leave-unrepresented-at-zero' );
 

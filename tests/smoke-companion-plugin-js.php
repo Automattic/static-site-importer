@@ -228,7 +228,7 @@ $assert( 0 === ( $report['quality']['fallback_count'] ?? -1 ), 'materialized-scr
 			'reason'      => 'script_requires_runtime',
 		)
 	);
-Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $report, array() );
+Static_Site_Importer_Quality_Gates::finalize_quality_report( $report, array() );
 $unresolved = array_filter( $report['diagnostics'], static fn ( array $d ): bool => 'html_script_fallback' === ( $d['code'] ?? '' ) );
 $assert( empty( $unresolved ), 'finalization-reconciles-late-script-fallback-rows' );
 $stored = $report['companion_plugins']['dependencies']['ssi-example-site']['island_handles'] ?? null;

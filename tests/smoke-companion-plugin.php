@@ -1405,7 +1405,7 @@ $assert( isset( $gate_report['companion_plugins']['dependencies']['ssi-second-si
 $missing_diag = array_values( array_filter( $gate_report['diagnostics'] ?? array(), static fn ( array $d ): bool => 'companion_plugin_missing' === ( $d['code'] ?? '' ) ) );
 $assert( 1 === count( $missing_diag ), 'missing-companion-emits-diagnostic' );
 
-$quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $gate_report, array( 'fail_on_quality' => true ) );
+$quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $gate_report, array( 'fail_on_quality' => true ) );
 $assert( in_array( 'companion_plugin_missing', $quality['failure_reasons'] ?? array(), true ), 'gate-sees-companion-plugin-missing' );
 $assert( true === ( $quality['fail_import'] ?? false ), 'gate-fails-import-on-missing-companion' );
 
