@@ -23,6 +23,17 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 	/** Preserve typed preflight diagnostics without claiming filesystem mutation. */
 	public static function rejected_receipt_from_error( array $state, WP_Error $error ): array {
 		unset( $state['preflight_error'] );
+		$state = self::with_error_diagnostics( $state, $error );
+		return self::receipt( 'rejected', $state );
+	}
+
+	/**
+	 * Record a failure's reason and the typed diagnostics its error carries.
+	 *
+	 * @param array<string,mixed> $state
+	 * @return array<string,mixed>
+	 */
+	public static function with_error_diagnostics( array $state, WP_Error $error ): array {
 		$state['diagnostics'][]  = array( 'reason_code' => $error->get_error_code() );
 		$state['failure_reason'] = $error->get_error_code();
 		$data                    = $error->get_error_data();
@@ -39,7 +50,7 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 				}
 			}
 		}
-		return self::receipt( 'rejected', $state );
+		return $state;
 	}
 
 	/** @param array<string,mixed> $state @return array<string,mixed> */

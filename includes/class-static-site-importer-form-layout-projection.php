@@ -2209,49 +2209,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			return null;
 		}
 
-		$property_map = array(
-			'display'             => 'display',
-			'width'               => 'width',
-			'height'              => 'height',
-			'columns'             => 'grid-template-columns',
-			'rows'                => 'grid-template-rows',
-			'gap'                 => 'gap',
-			'row_gap'             => 'row-gap',
-			'column_gap'          => 'column-gap',
-			'direction'           => 'flex-direction',
-			'wrap'                => 'flex-wrap',
-			'align_items'         => 'align-items',
-			'align_content'       => 'align-content',
-			'justify_content'     => 'justify-content',
-			'align_self'          => 'align-self',
-			'justify_self'        => 'justify-self',
-			'order'               => 'order',
-			'flex'                => 'flex',
-			'flex_grow'           => 'flex-grow',
-			'flex_shrink'         => 'flex-shrink',
-			'flex_basis'          => 'flex-basis',
-			'column'              => 'grid-column',
-			'row'                 => 'grid-row',
-			'area'                => 'grid-area',
-			'margin_block_start'  => 'margin-block-start',
-			'margin_block_end'    => 'margin-block-end',
-			'margin_inline_start' => 'margin-inline-start',
-			'margin_inline_end'   => 'margin-inline-end',
-		);
-		$property_map = array_merge( Static_Site_Importer_Provider_Layout_Overlay::box_property_map(), $property_map );
-		$proven       = static function ( array $facts, mixed $condition, array $layout ) use ( $property_map ): bool {
+		$property_map = Static_Site_Importer_Provider_Layout_Overlay::layout_property_map();
+		$proven       = static function ( array $facts, ?array $condition, array $layout ) use ( $property_map ): bool {
 			foreach ( array_keys( $layout ) as $fact ) {
-				if ( ! isset( $property_map[ $fact ] ) ) {
-					return false;
-				}
-				$found = false;
-				foreach ( $facts as $entry ) {
-					if ( is_array( $entry ) && ( $entry['condition'] ?? null ) === $condition && is_string( $entry['source_path'] ?? null ) && is_string( $entry['source_sha256'] ?? null ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $entry['source_sha256'] ) && is_string( $entry['selector'] ?? null ) && in_array( $property_map[ $fact ], $entry['properties'] ?? array(), true ) ) {
-						$found = true;
-						break;
-					}
-				}
-				if ( ! $found ) {
+				if ( ! isset( $property_map[ $fact ] ) || ! self::has_source_fact( $facts, $condition, array( $property_map[ $fact ] ) ) ) {
 					return false;
 				}
 			}
