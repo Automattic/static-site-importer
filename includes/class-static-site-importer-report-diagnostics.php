@@ -57,8 +57,6 @@ class Static_Site_Importer_Report_Diagnostics {
 	/** Diagnostic type for fixed geometry added to a topology-changed CSS-owned container. */
 	public const UNSAFE_LAYOUT_CONSTRAINT_TYPE = 'unsafe_layout_constraint';
 
-
-
 	/**
 	 * Initialize a conversion report.
 	 *
@@ -372,13 +370,6 @@ class Static_Site_Importer_Report_Diagnostics {
 		return $quality;
 	}
 
-
-
-
-
-
-
-
 	/**
 	 * Record a generated companion-plugin dependency into a conversion report.
 	 *
@@ -462,32 +453,6 @@ class Static_Site_Importer_Report_Diagnostics {
 		);
 	}
 
-
-	/**
-	 * Materialize detected product-grid fallbacks through the configured shop provider.
-	 *
-	 * Collects every `html_product_grid_fallback` finding and materializes only
-	 * producer-declared product rows (slug + regular_price already present) through
-	 * the shop adapter's manifest validator + seeder. Stamps the runtime-mapped /
-	 * acceptable-preservation signal onto each finding whose products were actually
-	 * seeded. Findings whose products could not be seeded (for example because
-	 * WooCommerce is unavailable) keep no signal and stay an unacceptable parity
-	 * loss, which lets the existing commerce dependency gate report the missing
-	 * runtime.
-	 *
-	 * @param Static_Site_Importer_Import_Report  $report        Import report (mutated in place).
-	 * @param array<string,mixed>  $args          Import args.
-	 * @param array<string,string> $page_contents Materialized page post_content keyed by source filename, mutated in place.
-	 * @return array<string,mixed> The recorded product_finding_seeding report.
-	 */
-	public static function materialize_product_findings( Static_Site_Importer_Import_Report $report, array $args = array(), array &$page_contents = array() ): array {
-		return Static_Site_Importer_Product_Finding_Materializer::materialize_product_findings( $report, $args, $page_contents );
-	}
-
-
-
-
-
 	/**
 	 * Build a compact diagnostic excerpt.
 	 *
@@ -498,20 +463,6 @@ class Static_Site_Importer_Report_Diagnostics {
 		$excerpt = preg_replace( '/\s+/', ' ', trim( $html ) );
 		$excerpt = is_string( $excerpt ) ? $excerpt : trim( $html );
 		return substr( $excerpt, 0, 300 );
-	}
-
-	/**
-	 * Reconcile source form fallbacks against hash-bound provider receipts.
-	 *
-	 * The source finding remains in diagnostics for auditability. Only the final
-	 * quality count excludes a form after a completed receipt proves that exact
-	 * source fallback was replaced by the provider's persisted block markup.
-	 *
-	 * @param Static_Site_Importer_Import_Report $report Import report.
-	 * @return void
-	 */
-	public static function reconcile_provider_materialized_fallbacks( Static_Site_Importer_Import_Report $report, array $receipts = array() ): void {
-		Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $report, $receipts );
 	}
 
 	/**

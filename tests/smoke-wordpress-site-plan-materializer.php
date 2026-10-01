@@ -2265,7 +2265,7 @@ $form_quality_report                              = Static_Site_Importer_Report_
 $form_quality_report->merge_quality( array( 'fallback_count' => 1 ) );
 $form_quality_report['diagnostics']               = array( $form_fallback );
 $form_quality_report['materialization_receipt']   = $form_binding_receipt;
-Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $form_quality_report );
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $form_quality_report );
 $assert( 'completed' === ( $form_binding_report['status'] ?? '' ) && ( $form_binding_report['materialized_content_hash'] ?? '' ) === hash( 'sha256', $form_binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '' ), 'form quality receipt is emitted after the persisted page replacement' );
 $assert( str_contains( Static_Site_Importer_Internal_Link_Runtime::resolve_urls( (string) ( $form_binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '' ) ), 'https://example.test/' ), 'form quality receipt retains final route-rewritten page content' );
 $assert( 0 === ( $form_quality_report['quality']['fallback_count'] ?? -1 ) && 1 === ( $form_quality_report['quality']['source_fallback_count'] ?? 0 ) && 'resolved_by_provider' === ( $form_quality_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'persisted form receipt resolves only its identity-and-hash-bound source fallback' );
@@ -2338,7 +2338,7 @@ $tampered_fragment_report                              = Static_Site_Importer_Re
 $tampered_fragment_report->merge_quality( array( 'fallback_count' => 1 ) );
 $tampered_fragment_report['diagnostics']               = array( $form_fallback );
 $tampered_fragment_report['materialization_receipt']   = $tampered_fragment_receipt;
-Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $tampered_fragment_report );
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $tampered_fragment_report );
 $assert( 1 === ( $tampered_fragment_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $tampered_fragment_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'tampered persisted fragment digest cannot resolve a fallback' );
 $tampered_content_receipt = $form_binding_receipt;
 $tampered_content_receipt['completed']['runtime_declarations']['entity_bindings'][ hash( 'sha256', 'form-fallback-binding' ) ]['materialized_content_hash'] = hash( 'sha256', 'tampered page' );
@@ -2346,7 +2346,7 @@ $tampered_content_report                              = Static_Site_Importer_Rep
 $tampered_content_report->merge_quality( array( 'fallback_count' => 1 ) );
 $tampered_content_report['diagnostics']               = array( $form_fallback );
 $tampered_content_report['materialization_receipt']   = $tampered_content_receipt;
-Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $tampered_content_report );
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $tampered_content_report );
 $assert( 1 === ( $tampered_content_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $tampered_content_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'tampered persisted page digest cannot resolve a fallback' );
 $deferred_form_plan                = $binding_plan;
 $deferred_form_receipt             = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
@@ -2631,7 +2631,7 @@ $resumed_form_quality_report                              = Static_Site_Importer
 $resumed_form_quality_report->merge_quality( array( 'fallback_count' => 1 ) );
 $resumed_form_quality_report['diagnostics']               = array( $form_fallback );
 $resumed_form_quality_report['materialization_receipt']   = $resumed_form_binding_receipt;
-Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $resumed_form_quality_report );
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $resumed_form_quality_report );
 $assert( $form_quality_report['quality_resolutions'] === $resumed_form_quality_report['quality_resolutions'], 'form quality resolution receipts remain deterministic on retry' );
 
 $publication_svg         = '<svg xmlns="http://www.w3.org/2000/svg"><text style="font-family:Example">Example</text></svg>';

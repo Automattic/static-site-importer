@@ -1482,22 +1482,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 	/** @param array<string,mixed> $state */
 	public static function failed_receipt_from_error( array $state, WP_Error $error ): array {
-		$state['diagnostics'][]  = array( 'reason_code' => $error->get_error_code() );
-		$state['failure_reason'] = $error->get_error_code();
-		$data                    = $error->get_error_data();
-		if ( is_array( $data ) ) {
-			$diagnostics = is_array( $data['diagnostics'] ?? null ) ? $data['diagnostics'] : $data;
-			$diagnostics = 'static_site_importer_entity_materialization_failed' === $error->get_error_code() ? Static_Site_Importer_Public_Error_Projection::project_public_diagnostics( $diagnostics ) : $diagnostics;
-			foreach ( $diagnostics as $diagnostic ) {
-				if ( ! is_array( $diagnostic ) ) {
-					continue;
-				}
-				$reason = (string) ( $diagnostic['reason_code'] ?? $diagnostic['reason'] ?? $diagnostic['code'] ?? '' );
-				if ( '' !== $reason ) {
-					$state['diagnostics'][] = array_merge( $diagnostic, array( 'reason_code' => $reason ) );
-				}
-			}
-		}
+		$state = Static_Site_Importer_Site_Plan_Receipt::with_error_diagnostics( $state, $error );
 		self::rollback( $state );
 		return Static_Site_Importer_Site_Plan_Receipt::receipt( 'partial', $state );
 	}

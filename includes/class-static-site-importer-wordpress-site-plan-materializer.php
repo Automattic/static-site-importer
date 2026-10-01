@@ -54,14 +54,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return Static_Site_Importer_Site_Plan_Persistence::materialize_prepared( $prepared );
 	}
 
-	/**
-	 * Apply prepared runtime declarations and the canonical plan as one transaction.
-	 *
-	 * Theme_Generator supplies compiler-owned declarations and projects the public
-	 * import result; this boundary owns every WordPress/provider mutation.
-	 *
-	 * @return array<string,mixed>|WP_Error
-	 */
+	/** Seam for Static_Site_Importer_Prepared_Plan_Application::materialize(); see it for the contract. */
 	public static function materialize_prepared_lifecycle( array $prepared, array $lifecycle, $companion_payload, array $gutenberg_gaps, array $theme_materialization ) {
 		return Static_Site_Importer_Prepared_Plan_Application::materialize( $prepared, $lifecycle, $companion_payload, $gutenberg_gaps, $theme_materialization );
 	}
@@ -71,16 +64,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return Static_Site_Importer_Dependency_Manager::materialize_lifecycle_dependencies( $lifecycle, $args );
 	}
 
-	/**
-	 * Validate and resolve every destination without mutating WordPress or the filesystem.
-	 *
-	 * The resulting state may be passed to materialize_prepared(). That method prepares
-	 * again before writing so changes after this check cannot bypass conflict protection.
-	 *
-	 * @param array<string,mixed> $plan Canonical v2 plan.
-	 * @param array<string,mixed> $args Materialization options.
-	 * @return array<string,mixed> Prepared state or a rejected receipt.
-	 */
+	/** Seam for Static_Site_Importer_Site_Plan_Preparation::prepare(); see it for the contract. */
 	public static function prepare( array $plan, array $args = array() ): array {
 		return Static_Site_Importer_Site_Plan_Preparation::prepare( $plan, $args );
 	}
@@ -90,16 +74,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return Static_Site_Importer_Site_Plan_Preparation::prepare_for_materialization( $plan, $args );
 	}
 
-	/**
-	 * Verify all reference-backed payloads before related runtime work begins.
-	 *
-	 * The success marker is intentionally ephemeral: it is neither part of the
-	 * canonical plan hash nor projected into materialization receipts. Individual
-	 * writes still reread and verify their payload immediately before mutation.
-	 *
-	 * @param array<string,mixed> $prepared Prepared materialization state.
-	 * @return array<string,mixed> Prepared state or a rejected receipt.
-	 */
+	/** Seam for Static_Site_Importer_Site_Plan_Preparation::admit_prepared(); see it for the contract. */
 	public static function admit_prepared( array $prepared ): array {
 		return Static_Site_Importer_Site_Plan_Preparation::admit_prepared( $prepared );
 	}
@@ -109,10 +84,7 @@ final class Static_Site_Importer_WordPress_Site_Plan_Materializer {
 		return Static_Site_Importer_Site_Plan_Persistence::materialize_prepared( $prepared );
 	}
 
-	/**
-	 * External report output is a CLI-only operator seam. Every artifact must be
-	 * a new file directly beneath one existing, physical directory.
-	 */
+	/** Seam for Static_Site_Importer_Site_Plan_Preparation::safe_external_report_destination(); see it for the contract. */
 	public static function safe_external_report_destination( $path ): bool {
 		return Static_Site_Importer_Site_Plan_Preparation::safe_external_report_destination( $path );
 	}
