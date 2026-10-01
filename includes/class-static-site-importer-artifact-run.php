@@ -330,6 +330,54 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		);
 	}
 
+	/**
+	 * Delete every workspace entry except the listed top-level names.
+	 *
+	 * Used once a run is terminal: intermediate checkpoints are only needed
+	 * to resume work, and the retained entries replay the terminal result.
+	 *
+	 * @param array<int,string> $keep Top-level file or directory names to retain.
+	 * @return array{removed:int,failed:array<int,string>}
+	 */
+	public function prune_except( array $keep ): array {
+		$removed = 0;
+		$failed  = array();
+		if ( is_link( $this->directory ) || ! is_dir( $this->directory ) ) {
+			return array(
+				'removed' => 0,
+				'failed'  => array( $this->directory ),
+			);
+		}
+		$keep  = array_fill_keys( $keep, true );
+		$names = scandir( $this->directory );
+		foreach ( is_array( $names ) ? $names : array() as $name ) {
+			$path = $this->directory . '/' . $name;
+			if ( '.' === $name || '..' === $name || isset( $keep[ $name ] ) || is_link( $path ) ) {
+				continue;
+			}
+			if ( is_dir( $path ) ) {
+				/** @var iterable<SplFileInfo> $children */
+				$children = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $path, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST );
+				foreach ( $children as $child ) {
+					$child_path = $child->getPathname();
+					if ( is_link( $child_path ) || ! self::remove_path( $child_path, $child->isDir() ) ) {
+						$failed[] = $child_path;
+					}
+				}
+			}
+			if ( self::remove_path( $path, is_dir( $path ) ) ) {
+				++$removed;
+			} else {
+				$failed[] = $path;
+			}
+		}
+
+		return array(
+			'removed' => $removed,
+			'failed'  => $failed,
+		);
+	}
+
 	public function purge(): array {
 		$removed = array();
 		$skipped = array();
