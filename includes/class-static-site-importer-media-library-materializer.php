@@ -173,9 +173,17 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				if ( null === $write ) {
 					$entry['status'] = 'unresolved_asset';
 				} else {
-					$relative = self::theme_relative_raster( rtrim( $theme_uri, '/' ) . '/' . $write['target_path'], $theme_uri );
+					$url      = rtrim( $theme_uri, '/' ) . '/' . $write['target_path'];
+					$relative = self::theme_relative_raster( $url, $theme_uri );
+					$svg      = null;
+					if ( null === $relative && 'svg' === strtolower( pathinfo( $write['target_path'], PATHINFO_EXTENSION ) ) ) {
+						$relative = self::theme_relative_asset( $url, $theme_uri, array( 'svg' ) );
+						$svg      = null === $relative ? null : self::svg_asset_metadata( $theme_dir . '/' . $relative );
+					}
 					if ( null === $relative ) {
 						$entry['status'] = 'unsupported_format';
+					} elseif ( null !== $svg && 'supported' !== $svg['status'] ) {
+						$entry['status'] = $svg['status'];
 					} elseif ( ! function_exists( 'wp_insert_attachment' ) ) {
 						$entry['status'] = 'runtime_unavailable';
 					} else {
@@ -322,13 +330,18 @@ final class Static_Site_Importer_Media_Library_Materializer {
 
 	/** Theme-relative path of a raster file the generated theme serves, or null. */
 	private static function theme_relative_raster( string $src, string $theme_uri ): ?string {
+		return self::theme_relative_asset( $src, $theme_uri, self::RASTER_EXTENSIONS );
+	}
+
+	/** Resolve only the explicitly supported formats within the generated theme. */
+	private static function theme_relative_asset( string $src, string $theme_uri, array $extensions ): ?string {
 		$path = (string) wp_parse_url( $src, PHP_URL_PATH );
 		$base = (string) wp_parse_url( $theme_uri, PHP_URL_PATH );
 		if ( '' === $path || '' === $base || ! str_starts_with( $path, $base . '/' ) ) {
 			return null;
 		}
 		$relative = rawurldecode( substr( $path, strlen( $base ) + 1 ) );
-		if ( str_contains( $relative, '..' ) || ! in_array( strtolower( pathinfo( $relative, PATHINFO_EXTENSION ) ), self::RASTER_EXTENSIONS, true ) ) {
+		if ( str_contains( $relative, '..' ) || ! in_array( strtolower( pathinfo( $relative, PATHINFO_EXTENSION ) ), $extensions, true ) ) {
 			return null;
 		}
 		return $relative;
@@ -385,12 +398,31 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		if ( false === $bytes ) {
 			return 0;
 		}
-		$upload = wp_upload_bits( sanitize_file_name( basename( $relative ) ), null, $bytes );
+		$svg = 'svg' === strtolower( pathinfo( $relative, PATHINFO_EXTENSION ) ) ? self::svg_asset_metadata( $file ) : null;
+		if ( null !== $svg && 'supported' !== $svg['status'] ) {
+			return 0;
+		}
+		// Admit only compiler-validated artwork during this synchronous upload.
+		// Ordinary uploads keep WordPress's existing SVG MIME policy.
+		$svg_mime = static function ( array $mimes ): array {
+			$mimes['svg'] = 'image/svg+xml';
+			return $mimes;
+		};
+		if ( null !== $svg ) {
+			add_filter( 'upload_mimes', $svg_mime );
+		}
+		try {
+			$upload = wp_upload_bits( sanitize_file_name( basename( $relative ) ), null, $bytes );
+		} finally {
+			if ( null !== $svg ) {
+				remove_filter( 'upload_mimes', $svg_mime );
+			}
+		}
 		if ( ! empty( $upload['error'] ) ) {
 			$error = new WP_Error( 'media_library_upload_failed', 'An imported page image could not be added to the Media Library.', array( 'source_asset' => $relative ) );
 			return 0;
 		}
-		$mime = (string) wp_check_filetype( $upload['file'] )['type'];
+		$mime = null !== $svg ? 'image/svg+xml' : (string) wp_check_filetype( $upload['file'] )['type'];
 		if ( ! str_starts_with( $mime, 'image/' ) ) {
 			wp_delete_file( $upload['file'] );
 			return 0;
@@ -421,7 +453,15 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				require_once ABSPATH . $include;
 			}
 		}
-		if ( function_exists( 'wp_generate_attachment_metadata' ) ) {
+		if ( null !== $svg ) {
+			wp_update_attachment_metadata( $attachment_id, array(
+				'width'    => $svg['width'],
+				'height'   => $svg['height'],
+				'file'     => _wp_relative_upload_path( $upload['file'] ),
+				'filesize' => strlen( $bytes ),
+				'sizes'    => array(),
+			) );
+		} elseif ( function_exists( 'wp_generate_attachment_metadata' ) ) {
 			wp_update_attachment_metadata( $attachment_id, wp_generate_attachment_metadata( $attachment_id, $upload['file'] ) );
 		}
 		update_post_meta( $attachment_id, self::SOURCE_ASSET_META_KEY, $identity );
@@ -430,6 +470,18 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		}
 
 		return (int) $attachment_id;
+	}
+
+	/** Reuse the owning compiler's standalone artwork contract for native media. */
+	private static function svg_asset_metadata( string $file ): array {
+		if ( ! class_exists( \Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Support\StandaloneSvgAsset::class ) ) {
+			return array( 'status' => 'svg_runtime_unavailable' );
+		}
+		if ( ! is_readable( $file ) || filesize( $file ) > 2 * 1024 * 1024 ) {
+			return array( 'status' => 'invalid_svg' );
+		}
+		$bytes = file_get_contents( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local canonical asset written by this import.
+		return false === $bytes ? array( 'status' => 'invalid_svg' ) : \Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Support\StandaloneSvgAsset::inspect( $bytes );
 	}
 
 	/** Page markup that may reference a replaceable raster, including escaped block attributes. */
