@@ -144,10 +144,6 @@ class Static_Site_Importer_Theme_Exporter {
 		}
 
 		$files = array_merge( $files, self::export_theme_asset_files( $theme_dir, $root, $diagnostics ) );
-		$preview = self::read_file_if_readable( $theme_dir . '/screenshot.png' );
-		if ( '' !== $preview ) {
-			$files[] = self::export_file_entry( $root . '/site-preview.png', $preview, 'asset', 'preview' );
-		}
 
 		$import_report = self::read_theme_import_report( $theme_dir );
 		if ( ! empty( $import_report ) ) {
@@ -652,12 +648,16 @@ class Static_Site_Importer_Theme_Exporter {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private static function export_theme_asset_files( string $theme_dir, string $root, array &$diagnostics ): array {
+		$files   = array();
+		$preview = self::read_file_if_readable( $theme_dir . '/screenshot.png' );
+		if ( '' !== $preview ) {
+			$files[] = self::export_file_entry( $root . '/site-preview.png', $preview, 'asset', 'preview' );
+		}
 		$assets_dir = $theme_dir . '/assets';
 		if ( ! is_dir( $assets_dir ) ) {
-			return array();
+			return $files;
 		}
 
-		$files    = array();
 		$iterator = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $assets_dir, FilesystemIterator::SKIP_DOTS ) );
 		foreach ( $iterator as $item ) {
 			if ( ! $item instanceof SplFileInfo || ! $item->isFile() || ! $item->isReadable() ) {

@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 foreach ( array(
 	'Static_Site_Importer_Theme_Materialization_Strategy' => 'class-static-site-importer-theme-materialization-strategy.php',
-	'Static_Site_Importer_Theme_Screenshot'              => 'class-static-site-importer-theme-screenshot.php',
+	'Static_Site_Importer_Theme_Screenshot'               => 'class-static-site-importer-theme-screenshot.php',
 	'Static_Site_Importer_Content_Policy'                 => 'class-static-site-importer-content-policy.php',
 	'Static_Site_Importer_Redirects_Manifest'             => 'class-static-site-importer-redirects-manifest.php',
 	'Static_Site_Importer_Client_Script_Policy'           => 'class-static-site-importer-client-script-policy.php',

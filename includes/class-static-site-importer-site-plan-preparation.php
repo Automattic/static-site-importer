@@ -129,8 +129,8 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				}
 				unset( $page );
 			}
-			$resolved                                 = Static_Site_Importer_Theme_Screenshot::with_write( $resolved, $args );
-			$state['base_resolved']                    = $resolved;
+			$resolved                                   = Static_Site_Importer_Theme_Screenshot::with_write( $resolved, $args );
+			$state['base_resolved']                     = $resolved;
 			$state['prepared_resolved_projection_hash'] = self::prepared_resolved_projection_hash( $resolved );
 			$state['resolved']                          = $resolved;
 			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );

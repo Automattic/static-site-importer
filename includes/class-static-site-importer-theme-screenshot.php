@@ -21,7 +21,10 @@ final class Static_Site_Importer_Theme_Screenshot {
 		}
 		return array(
 			'source_path' => $path,
-			'payload'     => array( 'encoding' => 'base64', 'data' => base64_encode( $bytes ) ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Binary artifact transport.
+			'payload'     => array(
+				'encoding' => 'base64',
+				'data'     => base64_encode( $bytes ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Binary artifact transport.
+			),
 		);
 	}
 
@@ -39,7 +42,10 @@ final class Static_Site_Importer_Theme_Screenshot {
 			'target_path'             => 'screenshot.png',
 			'source_path'             => (string) ( $preview['source_path'] ?? 'site-preview.png' ),
 			'kind'                    => 'theme_asset',
-			'payload'                 => array( 'encoding' => 'base64', 'data' => base64_encode( $bytes ) ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Binary theme asset.
+			'payload'                 => array(
+				'encoding' => 'base64',
+				'data'     => base64_encode( $bytes ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Binary theme asset.
+			),
 			'payload_hash'            => hash( 'sha256', $bytes ),
 			'reconciliation_identity' => hash( 'sha256', "theme-screenshot\nscreenshot.png" ),
 		);
