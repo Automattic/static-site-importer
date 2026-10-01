@@ -66,6 +66,9 @@ if ( ! function_exists( 'static_site_importer_cli_direct_artifact_run_policy' ) 
 			$policy['compile_workers']      = 4;
 			$policy['compile_shard_pages']  = 4;
 			$policy['compile_fanout']       = 'static_site_importer_cli_compile_artifact_pages_fanout';
+			// Receipt workers are separate processes, so the host step stays small;
+			// keep compiling until the invocation deadline instead of one batch per step.
+			$policy['compile_batches_per_invocation'] = 1000;
 		}
 		return $policy;
 	}
