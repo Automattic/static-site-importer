@@ -234,9 +234,7 @@ $compact_receipt = array(
 $assert( true === $validate_receipt->invoke( null, $compact_receipt, $page_receipt_contract, $shared_receipt_contract ), 'compact v3 receipts must validate without duplicated shared files' );
 $legacy_receipt = $compact_receipt;
 $legacy_receipt['receipt_schema'] = 'blocks-engine/php-transformer/compiled-page-receipt/v2';
-$assert( is_wp_error( $validate_receipt->invoke( null, $legacy_receipt, $page_receipt_contract, $shared_receipt_contract ) ), 'v2 receipts must retain their files reduction contract' );
-$legacy_receipt['terminal_reduction']['files'] = array();
-$assert( true === $validate_receipt->invoke( null, $legacy_receipt, $page_receipt_contract, $shared_receipt_contract ), 'complete v2 receipts must remain compatible' );
+$assert( is_wp_error( $validate_receipt->invoke( null, $legacy_receipt, $page_receipt_contract, $shared_receipt_contract ) ), 'retired v2 receipts are rejected' );
 $hash_json = new ReflectionMethod( Static_Site_Importer_Direct_Artifact_Import::class, 'hash_json' );
 $ordered = array( 'z' => array( 'b' => 2, 'a' => 1 ), 'a' => 'https://example.com/a/b' );
 $canonical = array( 'a' => 'https://example.com/a/b', 'z' => array( 'a' => 1, 'b' => 2 ) );
