@@ -57,27 +57,7 @@ class Static_Site_Importer_Report_Diagnostics {
 	/** Diagnostic type for fixed geometry added to a topology-changed CSS-owned container. */
 	public const UNSAFE_LAYOUT_CONSTRAINT_TYPE = 'unsafe_layout_constraint';
 
-	/** Retain source diagnostics unless a persisted provider replacement covers them. */
-	public static function after_completed_entity_bindings( array $diagnostics, array $receipt ): array {
-		return Static_Site_Importer_Diagnostic_Projection::after_completed_entity_bindings( $diagnostics, $receipt );
-	}
 
-	/**
-	 * Name every entity a provider declined to materialize.
-	 *
-	 * A provider declines one entity when it cannot represent it faithfully -- an
-	 * unsupported control topology, or a layout it cannot carry without losing
-	 * fidelity. The imported page keeps the converted source markup at that
-	 * anchor, so the outcome is a bounded, reportable preservation rather than a
-	 * failure. Without these rows the decline is only reachable by reading the
-	 * entity lifecycle, which names the declaration by hash and nothing else.
-	 *
-	 * @param array<string,mixed> $entities Provider entity reports keyed by declaration id.
-	 * @return array<int,array<string,mixed>>
-	 */
-	public static function provider_entity_decline_diagnostics( array $entities ): array {
-		return Static_Site_Importer_Diagnostic_Projection::provider_entity_decline_diagnostics( $entities );
-	}
 
 	/**
 	 * Initialize a conversion report.
@@ -392,98 +372,12 @@ class Static_Site_Importer_Report_Diagnostics {
 		return $quality;
 	}
 
-	/**
-	 * Refresh every public projection from one finalized report state.
-	 *
-	 * @param Static_Site_Importer_Import_Report $report  Finalized import report.
-	 * @param array<string,mixed> $quality Finalized quality gate state.
-	 * @param bool                $build_fixture Whether to build the fixture projection.
-	 * @return array<string,mixed>
-	 */
-	public static function refresh_projections( Static_Site_Importer_Import_Report $report, array $quality, bool $build_fixture = true ): array {
-		return Static_Site_Importer_Diagnostic_Projection::refresh_projections( $report, $quality, $build_fixture );
-	}
 
-	/**
-	 * Build the first-class import validation artifact for automation consumers.
-	 *
-	 * @param array<string,mixed>|Static_Site_Importer_Import_Report $report  Full import report.
-	 * @param array<string,mixed> $quality Finalized quality gate state.
-	 * @return array<string,mixed>
-	 */
-	public static function import_validation_result( array|Static_Site_Importer_Import_Report $report, array $quality ): array {
-		return Static_Site_Importer_Diagnostic_Projection::import_validation_result( $report, $quality );
-	}
 
-	/**
-	 * Build the finding packet artifact set for repair-loop routing.
-	 *
-	 * @param array<string,mixed>|Static_Site_Importer_Import_Report $report Full import report.
-	 * @return array<string,mixed>
-	 */
-	public static function finding_packets( array|Static_Site_Importer_Import_Report $report ): array {
-		return Static_Site_Importer_Diagnostic_Projection::finding_packets( $report );
-	}
 
-	/**
-	 * Detect page routes that materialize without any author stylesheet asset
-	 * while their source document demonstrably ships author styles.
-	 *
-	 * The importer is the only layer that sees both the canonical plan's
-	 * asset-to-route scopes and the source artifact, so it owns reporting the
-	 * "page ships without its styles while the import reports clean" failure
-	 * class (Automattic/blocks-engine#1241) regardless of which upstream stage
-	 * regresses next. A page counts as covered when any non-engine stylesheet
-	 * asset (coalesced `stylesheet-bundle-*`, uncoalesced `source-author-*`, or
-	 * a copied author CSS file) is scoped to its route or declared global;
-	 * `engine-support` and `editor-static-state` assets are engine-generated
-	 * and never satisfy author coverage. Source evidence requires a non-empty
-	 * inline `<style>` payload or a linked stylesheet that resolves to a
-	 * non-empty artifact-local CSS file, so a warning always means author CSS
-	 * the pipeline had in hand was dropped.
-	 *
-	 * @param array<string,mixed> $plan     Canonical WordPress site plan.
-	 * @param array<string,mixed> $artifact Source website artifact.
-	 * @return array<int,array<string,mixed>> Warning diagnostics, one per uncovered route.
-	 */
-	public static function missing_author_stylesheet_diagnostics( array $plan, array $artifact ): array {
-		return Static_Site_Importer_Diagnostic_Projection::missing_author_stylesheet_diagnostics( $plan, $artifact );
-	}
 
-	/**
-	 * Read captured interaction states from the source artifact and report the
-	 * members conversion omitted, including partial set loss.
-	 *
-	 * @param array<string,mixed> $artifact Source website artifact.
-	 * @param array<string,mixed> $plan     Canonical WordPress site plan.
-	 * @return array{recorded_state_count:int,captured_state_count:int,unrepresented_member_count:int,status_counts:array<string,int>,diagnostics:array<int,array<string,mixed>>}
-	 */
-	public static function captured_interaction_inventory( array $artifact, array $plan = array() ): array {
-		return Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory( $artifact, $plan );
-	}
 
-	/**
-	 * Detect a concrete layout hazard in the materialized plan without claiming a
-	 * browser comparison has occurred. A topology warning alone is reportable but
-	 * acceptable; generated fixed height on that CSS-owned container is unsafe.
-	 *
-	 * @param array<string,mixed> $plan Canonical WordPress site plan.
-	 * @return array<int,array<string,mixed>> Unsafe layout diagnostics.
-	 */
-	public static function unsafe_layout_constraint_diagnostics( array $plan ): array {
-		return Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $plan );
-	}
 
-	/**
-	 * Finalize quality summary and gate status.
-	 *
-	 * @param Static_Site_Importer_Import_Report $report Import report.
-	 * @param array<string,mixed> $args   Import args.
-	 * @return array<string, mixed>
-	 */
-	public static function finalize_quality_report( Static_Site_Importer_Import_Report $report, array $args ): array {
-		return Static_Site_Importer_Quality_Gates::finalize_quality_report( $report, $args );
-	}
 
 	/**
 	 * Record a generated companion-plugin dependency into a conversion report.
@@ -568,16 +462,6 @@ class Static_Site_Importer_Report_Diagnostics {
 		);
 	}
 
-	/**
-	 * Build the compact report summary consumed by validation harnesses.
-	 *
-	 * @param array<string,mixed>|Static_Site_Importer_Import_Report $report  Full conversion report.
-	 * @param array<string, mixed> $quality Finalized quality summary.
-	 * @return array<string, mixed>
-	 */
-	public static function import_report_summary( array|Static_Site_Importer_Import_Report $report, array $quality ): array {
-		return Static_Site_Importer_Diagnostic_Projection::import_report_summary( $report, $quality );
-	}
 
 	/**
 	 * Materialize detected product-grid fallbacks through the configured shop provider.
@@ -600,58 +484,9 @@ class Static_Site_Importer_Report_Diagnostics {
 		return Static_Site_Importer_Product_Finding_Materializer::materialize_product_findings( $report, $args, $page_contents );
 	}
 
-	/**
-	 * Return diagnostic indexes for every detected product-grid fallback finding.
-	 *
-	 * @param array<int,mixed> $diagnostics Report diagnostics.
-	 * @return array<int,int>
-	 */
-	public static function product_grid_finding_indexes( array $diagnostics ): array {
-		return Static_Site_Importer_Product_Finding_Materializer::product_grid_finding_indexes( $diagnostics );
-	}
 
-	/**
-	 * Normalize active product-grid findings into the Woo manifest row contract.
-	 *
-	 * This is intentionally limited to the Blocks Engine product-grid discriminator.
-	 * Callers own how the rows are declared or materialized; this helper owns only
-	 * the source-finding to validated-product data bridge.
-	 *
-	 * @param array<int,mixed> $diagnostics Plan or report diagnostics.
-	 * @return array<int,array<string,mixed>>
-	 */
-	public static function product_grid_manifest_products( array $diagnostics ): array {
-		return Static_Site_Importer_Product_Finding_Materializer::product_grid_manifest_products( $diagnostics );
-	}
 
-	/**
-	 * Derive a shared block-binding anchor per product for every detected
-	 * product-grid finding, keyed by the finding's own seeded manifest slug.
-	 *
-	 * @param array<int,mixed> $diagnostics Plan or report diagnostics.
-	 * @return array<string,array{source_path:string,search_block_markup:string}>
-	 */
-	public static function product_grid_binding_anchors( array $diagnostics ): array {
-		return Static_Site_Importer_Product_Finding_Materializer::product_grid_binding_anchors( $diagnostics );
-	}
 
-	/**
-	 * Normalize a human-readable currency price into a decimal manifest string.
-	 *
-	 * Generic and locale-tolerant: strips currency symbols, whitespace, and other
-	 * non-numeric characters, then resolves the decimal separator from the digit
-	 * grouping itself rather than any site or locale setting. Handles US grouping
-	 * ("$1,299.00" => "1299.00"), European grouping ("1.299,00 €" => "1299.00"),
-	 * symbol-only integers ("$24" => "24", "€18" => "18"), and bare decimals
-	 * ("18.00" => "18.00"). The fractional part is normalized to exactly two
-	 * decimals; integers stay integers so the manifest validator accepts both.
-	 *
-	 * @param string $price Raw price text.
-	 * @return string Decimal price string, or '' when no digits are present.
-	 */
-	public static function normalize_product_price( string $price ): string {
-		return Static_Site_Importer_Product_Finding_Materializer::normalize_product_price( $price );
-	}
 
 	/**
 	 * Build a compact diagnostic excerpt.

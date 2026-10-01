@@ -170,7 +170,7 @@ $diagnostics = array(
 );
 
 $expected_region = serialize_blocks( $readable_blocks );
-$anchors          = Static_Site_Importer_Report_Diagnostics::product_grid_binding_anchors( $diagnostics );
+$anchors          = Static_Site_Importer_Product_Finding_Materializer::product_grid_binding_anchors( $diagnostics );
 $assert( 3 === count( $anchors ), 'grid-anchors-cover-every-product-in-the-anchored-grid' );
 foreach ( array( 'apex-dynamics', 'solaris-ring', 'prism-wave' ) as $slug ) {
 	$assert( isset( $anchors[ $slug ] ), 'grid-anchors-key-by-manifest-slug-' . $slug );

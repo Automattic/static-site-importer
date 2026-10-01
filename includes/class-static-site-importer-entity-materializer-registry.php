@@ -1702,7 +1702,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( true === $candidate['truncated'] ) {
 			return array( 'error' => 'presentation_graph is truncated and cannot be materialized.' );
 		}
-		$properties = self::form_presentation_properties();
+		$properties = Static_Site_Importer_Provider_Layout_Overlay::presentation_property_map();
 		$roles      = array_merge(
 			...array_map(
 				static fn( array $row ): array => array_values( array_intersect_key( $row, array_flip( array( 'control', 'label', 'required_marker' ) ) ) ),
@@ -1722,10 +1722,6 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return array( 'graph' => $candidate );
 	}
 
-	/** @return array<string,string> */
-	private static function form_presentation_properties(): array {
-		return Static_Site_Importer_Provider_Layout_Overlay::presentation_property_map();
-	}
 
 	/**
 	 * Admit a producer control topology.
@@ -1798,7 +1794,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( false !== $candidate['truncated'] ) {
 			return array( 'error' => 'layout_graph element presentation is truncated.' );
 		}
-		$properties = self::form_presentation_properties();
+		$properties = Static_Site_Importer_Provider_Layout_Overlay::presentation_property_map();
 		foreach ( array_merge( array( $candidate['styles'] ), array_column( $candidate['variants'], 'styles' ) ) as $styles ) {
 			if ( array_diff_key( $styles, $properties ) ) {
 				return array( 'error' => 'layout_graph element presentation contains a style the provider cannot materialize.' );

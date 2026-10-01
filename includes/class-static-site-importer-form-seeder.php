@@ -92,11 +92,11 @@ class Static_Site_Importer_Form_Seeder {
 					'type'                  => 'wp_org_plugin',
 					'slug'                  => 'jetpack',
 					'plugin_file'           => 'jetpack/jetpack.php',
-					'availability_callback' => array( self::class, 'jetpack_forms_available' ),
-					'preparation_callback'  => array( self::class, 'prepare_jetpack_forms_runtime' ),
+					'availability_callback' => array( Static_Site_Importer_Jetpack_Forms_Runtime::class, 'jetpack_forms_available' ),
+					'preparation_callback'  => array( Static_Site_Importer_Jetpack_Forms_Runtime::class, 'prepare_jetpack_forms_runtime' ),
 					'provider_readiness'    => array(
-						'required_block_types' => self::required_block_types(),
-						'required_classes'     => self::required_runtime_apis(),
+						'required_block_types' => Static_Site_Importer_Jetpack_Forms_Runtime::required_block_types(),
+						'required_classes'     => Static_Site_Importer_Jetpack_Forms_Runtime::required_runtime_apis(),
 					),
 					'missing_apis'          => array(
 						'Automattic\\Jetpack\\Forms\\ContactForm\\Contact_Form',
@@ -166,15 +166,7 @@ class Static_Site_Importer_Form_Seeder {
 		Static_Site_Importer_Jetpack_Forms_Runtime::bootstrap_jetpack_forms_runtime();
 	}
 
-	/** @return array<int,string> Every Jetpack block type the adapter can emit. */
-	public static function required_block_types(): array {
-		return Static_Site_Importer_Jetpack_Forms_Runtime::required_block_types();
-	}
 
-	/** @return array<int,string> Provider APIs required by the declared adapter. */
-	public static function required_runtime_apis(): array {
-		return Static_Site_Importer_Jetpack_Forms_Runtime::required_runtime_apis();
-	}
 
 	/**
 	 * Materialize Jetpack contact forms from a validated forms manifest.
@@ -274,31 +266,8 @@ class Static_Site_Importer_Form_Seeder {
 		);
 	}
 
-	/**
-	 * Determine whether the Jetpack Forms runtime is available to host seeded forms.
-	 *
-	 * Public so the registry availability callback and the dependency gate can run
-	 * before forms are materialized into a runtime that can carry submissions.
-	 *
-	 * @return bool
-	 */
-	public static function jetpack_forms_available(): bool {
-		return Static_Site_Importer_Jetpack_Forms_Runtime::jetpack_forms_available();
-	}
 
-	/** Activate and prepare Jetpack Forms through its canonical module lifecycle. */
-	public static function prepare_jetpack_forms_runtime() {
-		return Static_Site_Importer_Jetpack_Forms_Runtime::prepare_jetpack_forms_runtime();
-	}
 
-	/**
-	 * Return the specific Jetpack Forms APIs present in the current runtime.
-	 *
-	 * @return array<string,mixed>
-	 */
-	public static function jetpack_forms_availability_details(): array {
-		return Static_Site_Importer_Jetpack_Forms_Runtime::jetpack_forms_availability_details();
-	}
 
 	/**
 	 * Extract the validator-owned forms list from a manifest.

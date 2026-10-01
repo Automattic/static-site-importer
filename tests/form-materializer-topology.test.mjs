@@ -62,7 +62,7 @@ namespace {
 	}
 	function update_option( $name, $value, $autoload = null ) {}
 	require 'includes/class-static-site-importer-form-seeder.php';
-	$result = Static_Site_Importer_Form_Seeder::prepare_jetpack_forms_runtime();
+	$result = Static_Site_Importer_Jetpack_Forms_Runtime::prepare_jetpack_forms_runtime();
 	if ( ! ( $result instanceof WP_Error ) ) {
 		exit( 1 );
 	}

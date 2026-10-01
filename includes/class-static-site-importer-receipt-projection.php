@@ -51,7 +51,7 @@ class Static_Site_Importer_Receipt_Projection {
 		$plan        = $receipt['plan'];
 		$theme       = $receipt['theme'];
 		$diagnostics = Static_Site_Importer_Route_Head_Metadata::reword_handled_diagnostics(
-			Static_Site_Importer_Report_Diagnostics::after_completed_entity_bindings(
+			Static_Site_Importer_Diagnostic_Projection::after_completed_entity_bindings(
 				array_merge(
 					is_array( $plan['diagnostics'] ?? null ) ? $plan['diagnostics'] : array(),
 					Static_Site_Importer_Compiler_Diagnostic_Normalizer::normalize( is_array( $args['compiler_diagnostics'] ?? null ) ? $args['compiler_diagnostics'] : array() )
@@ -70,7 +70,7 @@ class Static_Site_Importer_Receipt_Projection {
 		$diagnostics    = array_merge(
 			$diagnostics,
 			$lifecycle['diagnostics'] ?? array(),
-			Static_Site_Importer_Report_Diagnostics::provider_entity_decline_diagnostics( $entities )
+			Static_Site_Importer_Diagnostic_Projection::provider_entity_decline_diagnostics( $entities )
 		);
 		$gutenberg_gaps = is_array( $receipt['extensions']['gutenberg_gaps'] ?? null ) ? $receipt['extensions']['gutenberg_gaps'] : array();
 		$diagnostics    = array_merge( $diagnostics, $gutenberg_gaps );
@@ -341,7 +341,7 @@ class Static_Site_Importer_Receipt_Projection {
 		$report['materialization_receipt']                        = self::report_receipt( $receipt );
 
 		return array(
-			'fixture_diagnostics' => Static_Site_Importer_Report_Diagnostics::refresh_projections( $report, $quality ),
+			'fixture_diagnostics' => Static_Site_Importer_Diagnostic_Projection::refresh_projections( $report, $quality ),
 			'validation'          => $report['import_validation_result'],
 			'findings'            => $report['finding_packets'],
 		);

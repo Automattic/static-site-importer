@@ -275,7 +275,7 @@ $absent_bindings = Static_Site_Importer_Entity_Materializer_Registry::block_bind
 $assert( is_wp_error( $absent_bindings ) && 'static_site_importer_runtime_binding_unresolved' === $absent_bindings->get_error_code(), 'an-absent-provider-result-remains-unresolved' );
 
 // The decline is named for a reader: which page, which provider, which reason.
-$diagnostics = Static_Site_Importer_Report_Diagnostics::provider_entity_decline_diagnostics(
+$diagnostics = Static_Site_Importer_Diagnostic_Projection::provider_entity_decline_diagnostics(
 	array(
 		'contact-forms' => array(
 			'status'   => 'completed',

@@ -175,7 +175,7 @@ $receipt = array(
 $projection = Static_Site_Importer_Receipt_Projection::compose( $receipt, array( 'compiler_diagnostics' => array( $compiler_warning ) ), array(), array(), array(), 'compiler-warning-run', array(), array() );
 $persisted  = $projection['report']->to_array();
 $assert( array( $compiler_warning ) === ( $persisted['diagnostics'] ?? null ), 'persisted-import-report-retains-compiler-warning' );
-$summary = Static_Site_Importer_Report_Diagnostics::import_report_summary( $persisted, array() );
+$summary = Static_Site_Importer_Diagnostic_Projection::import_report_summary( $persisted, array() );
 $assert( $compiler_warning['context'] === ( $summary['diagnostics'][0]['context'] ?? null ), 'compact-summary-retains-bounded-compiler-warning-context' );
 
 $unsafe_layout_plan = array(
@@ -184,17 +184,17 @@ $unsafe_layout_plan = array(
 	'assets'      => array( array( 'source' => 'engine-support', 'content' => '.fixed-height{height:50px !important}' ) ),
 	'pages'       => array( array( 'source_path' => 'website/index.html', 'resolved_block_markup' => '<div class="fixed-height blocks-engine-css-owned-layout"></div>' ) ),
 );
-$unsafe_layout_diagnostics = Static_Site_Importer_Report_Diagnostics::unsafe_layout_constraint_diagnostics( $unsafe_layout_plan );
+$unsafe_layout_diagnostics = Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $unsafe_layout_plan );
 $assert( 1 === count( $unsafe_layout_diagnostics ) && 50 === ( $unsafe_layout_diagnostics[0]['context']['fixed_height_px'] ?? 0 ), 'fixed-height-on-topology-changed-css-container-is-unsafe-layout-evidence' );
 $safe_topology_plan = $unsafe_layout_plan;
 $safe_topology_plan['assets'][0]['content'] = '.fixed-height{height:auto !important}';
-$assert( array() === Static_Site_Importer_Report_Diagnostics::unsafe_layout_constraint_diagnostics( $safe_topology_plan ), 'topology-warning-without-generated-fixed-height-remains-reportable-not-fatal' );
+$assert( array() === Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $safe_topology_plan ), 'topology-warning-without-generated-fixed-height-remains-reportable-not-fatal' );
 $page_scope_coincidence_plan = $unsafe_layout_plan;
 $page_scope_coincidence_plan['pages'][0]['resolved_block_markup'] = '<div class="topology-target blocks-engine-css-owned-layout"></div><div class="fixed-height blocks-engine-css-owned-layout"></div>';
-$assert( array() === Static_Site_Importer_Report_Diagnostics::unsafe_layout_constraint_diagnostics( $page_scope_coincidence_plan ), 'fixed-height-on-different-css-container-is-not-unsafe-layout-evidence' );
+$assert( array() === Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $page_scope_coincidence_plan ), 'fixed-height-on-different-css-container-is-not-unsafe-layout-evidence' );
 $legacy_topology_plan = $unsafe_layout_plan;
 unset( $legacy_topology_plan['diagnostics'][0]['selector'] );
-$assert( array() === Static_Site_Importer_Report_Diagnostics::unsafe_layout_constraint_diagnostics( $legacy_topology_plan ), 'topology-warning-without-definite-container-contract-is-not-unsafe-layout-evidence' );
+$assert( array() === Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $legacy_topology_plan ), 'topology-warning-without-definite-container-contract-is-not-unsafe-layout-evidence' );
 
 $unsafe_report = Static_Site_Importer_Import_Report::from_array( array( 'quality' => $unsafe_layout_plan['quality'], 'diagnostics' => $unsafe_layout_diagnostics, 'blocks_engine' => array( 'wordpress_site_plan' => $unsafe_layout_plan ) ) );
 $unsafe_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $unsafe_report, array( 'fail_on_quality' => true ) );
@@ -272,7 +272,7 @@ $adversarial_projection = Static_Site_Importer_Receipt_Projection::compose( $rec
 $adversarial_report     = $adversarial_projection['report'];
 $adversarial_quality    = Static_Site_Importer_Report_Diagnostics::finalize_report( $adversarial_report, array() );
 $adversarial_persisted  = $adversarial_report->to_array();
-$adversarial_summary    = Static_Site_Importer_Report_Diagnostics::import_report_summary( $adversarial_persisted, $adversarial_quality );
+$adversarial_summary    = Static_Site_Importer_Diagnostic_Projection::import_report_summary( $adversarial_persisted, $adversarial_quality );
 $aggregate              = $adversarial_persisted['diagnostics'][0] ?? array();
 $aggregate_context_json = json_encode( $aggregate['context'] ?? array() );
 $summary_context_json   = json_encode( $adversarial_summary['diagnostics'][0]['context'] ?? array() );

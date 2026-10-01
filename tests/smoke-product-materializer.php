@@ -226,7 +226,7 @@ namespace {
 		'free'       => '',
 	);
 	foreach ( $price_cases as $input => $expected ) {
-		$actual = Static_Site_Importer_Report_Diagnostics::normalize_product_price( (string) $input );
+		$actual = Static_Site_Importer_Product_Finding_Materializer::normalize_product_price( (string) $input );
 		$assert( $expected === $actual, 'price-normalize-' . sanitize_key( (string) $input ), 'input "' . $input . '" => "' . $actual . '" expected "' . $expected . '"' );
 	}
 
@@ -472,7 +472,7 @@ namespace {
 	$assert( 'no_product_findings' === ( $empty_seed['reason'] ?? '' ), 'no-findings-reason' );
 
 	// --- product_grid_finding_indexes detects plan and fallback discriminator fields
-	$indexes = Static_Site_Importer_Report_Diagnostics::product_grid_finding_indexes(
+	$indexes = Static_Site_Importer_Product_Finding_Materializer::product_grid_finding_indexes(
 		array(
 			array( 'diagnostic_code' => 'html_form_fallback' ),
 			array( 'kind' => 'html_product_grid_fallback' ),
