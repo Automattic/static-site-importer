@@ -42,6 +42,8 @@ test('one URL yields a stable bounded Homeboy controller with typed capture-to-e
   assert.equal(spec.artifact_graph[0].required, true);
   assert.equal(spec.actions, undefined, 'an initial wait must not block capture and evaluation');
   assert.equal(inputs.max_actions, 4);
+  assert.equal(spec.workflows[0].inputs.runtime_toolchain.node, process.execPath);
+  assert.equal(spec.workflows[0].inputs.runtime_toolchain.npx, path.join(path.dirname(process.execPath), 'npx'));
   assert.throws(() => buildUrlLoopSpec({ url, workspace: root, blocksEngine: root, wpCodeboxBin: root, maxActions: 100 }), /max-actions/);
 });
 
@@ -49,12 +51,29 @@ test('complete DLA capture is retained once and handed to Homeboy without claimi
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-controller-capture-'));
   const { context: inputs } = context(root);
   let count = 0;
-  const { capture: artifact } = await runCapture(inputs, { capture: async () => { ++count; return capture(root); } });
+  const { capture: artifact } = await runCapture(inputs, { capture: async (request) => { ++count; assert.deepEqual(request.runtimeToolchain, inputs.runtime_toolchain); return capture(root); } });
   assert.equal(count, 1);
   assert.equal(artifact.schema, CAPTURE_ARTIFACT_SCHEMA);
   assert.equal(artifact.routes, 2);
   assert.equal(artifact.provenance.captured_content_sha256, provenance.captured_content_sha256);
   await assert.rejects(runCapture(inputs, { capture: async () => capture(root, { capture_receipt: { schema: 'unknown' } }) }), /capture_blocked/);
+});
+
+test('durable capture retains declared public browser cache inputs', () => {
+  const keys = ['PLAYWRIGHT_BROWSERS_PATH', 'PLAYWRIGHT_HOST_PLATFORM_OVERRIDE'];
+  const previous = keys.map((key) => process.env[key]);
+  try {
+    process.env.PLAYWRIGHT_BROWSERS_PATH = '/declared/browser-cache';
+    process.env.PLAYWRIGHT_HOST_PLATFORM_OVERRIDE = 'ubuntu24.04-x64';
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-runtime-context-'));
+    const { spec } = context(root);
+    const retained = JSON.parse(JSON.stringify(spec)).workflows[0].inputs.runtime_toolchain;
+    assert.equal(retained.env.PLAYWRIGHT_BROWSERS_PATH, process.env.PLAYWRIGHT_BROWSERS_PATH);
+    assert.equal(retained.env.PLAYWRIGHT_HOST_PLATFORM_OVERRIDE, process.env.PLAYWRIGHT_HOST_PLATFORM_OVERRIDE);
+    assert.equal(Object.hasOwn(retained.env, 'OPENAI_API_KEY'), false);
+  } finally {
+    keys.forEach((key, index) => previous[index] === undefined ? delete process.env[key] : process.env[key] = previous[index]);
+  }
 });
 
 test('matrix findings remain actionable with incomplete evidence but never become solved', async () => {
