@@ -742,6 +742,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( isset( self::box_property_map()[ $fact ] ) ) {
 			return self::safe_box_value( $fact, $value );
 		}
+		if ( in_array( $fact, array( 'width', 'height', 'flex_basis' ), true ) && in_array( $value, array( 'min-content', 'max-content', 'fit-content' ), true ) ) {
+			return true;
+		}
+		if ( 'display' === $fact && 'contents' === $value ) {
+			return true;
+		}
 		// CSS permits fractional lengths without a leading zero; the source
 		// stylesheet and the overlay express the same value either way.
 		if ( 1 === preg_match( '/^\.[0-9]+(?:px|rem|em|%|vw|vh|fr)$/D', $value ) ) {
