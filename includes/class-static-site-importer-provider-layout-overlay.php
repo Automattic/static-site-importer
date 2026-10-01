@@ -114,6 +114,25 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		$context_css        = self::context_fallback_css( $validated_map['scope'], $context_fallbacks, false, $operations, $losses );
 		$editor_context_css = self::context_fallback_css( $validated_map['scope'], $context_fallbacks, true, $operations, $losses );
 		foreach ( $graph['nodes'] ?? array() as $node ) {
+			$id     = $node['id'] ?? '';
+			$target = $targets[ $id ] ?? null;
+			if ( ! is_array( $target ) || ! empty( array_diff( array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' ), $target['capabilities'] ) ) || empty( $node['presentation']['styles'] ) ) {
+				continue;
+			}
+			// A physical native source box owns its own paint as well as layout.
+			// Keep that paint on its validated target instead of the inner input.
+			$paint        = array_diff_key( $node['presentation']['styles'], self::layout_property_map() );
+			$declarations = self::presentation_declarations( $paint, 0, 'control_container', $losses, array_keys( self::presentation_property_map() ) );
+			if ( ! empty( $declarations ) ) {
+				$rules[]      = $target['selector'] . '{' . implode( ';', $declarations ) . '}';
+				$operations[] = array(
+					'dimension' => 'presentation',
+					'strategy'  => 'provider_source_container_presentation',
+					'node_hash' => hash( 'sha256', $id ),
+				);
+			}
+		}
+		foreach ( $graph['nodes'] ?? array() as $node ) {
 			if ( ! is_array( $node ) || empty( $node['layout'] ) ) {
 				continue;
 			}
@@ -220,7 +239,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( 'generic/form-container-presentation/v1' === ( $container['schema'] ?? null ) ) {
 			$destination = array(
 				'role'       => 'control',
-				'selector'   => $validated_map['scope'] . '.jetpack-contact-form-container',
+				'selector'   => str_contains( $targets['form']['selector'] ?? '', '.ssi-native-form-topology' ) ? $targets['form']['selector'] : $validated_map['scope'] . '.jetpack-contact-form-container',
 				'properties' => array_keys( self::presentation_property_map() ),
 			);
 			self::compile_presentation_destinations( array( $destination ), $container['styles'] ?? array(), 0, 'control', null, $rules, $operations, $losses );
@@ -249,6 +268,22 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				'strategy'    => 'provider_container_box_reset',
 				'target_hash' => hash( 'sha256', $validated_map['scope'] . '.jetpack-contact-form-container' ),
 			);
+		}
+		if ( str_contains( $targets['form']['selector'] ?? '', '.ssi-native-form-topology' ) ) {
+			$native_scope = $validated_map['scope'] . '.ssi-native-form-topology';
+			$rules[]      = $native_scope . '.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form){display:contents}';
+			$rules[]      = $native_scope . '.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *){display:contents}';
+			// The provider's success state removes its real form from layout.
+			// Source display facts must not resurrect those submitted controls.
+			$rules[] = $native_scope . ' form.jetpack-contact-form__form.submission-success{display:none}';
+			// Provider field state stays in the DOM, while its synthetic shell has
+			// no box between a source container and the source-owned input.
+			$rules[] = $validated_map['scope'] . ' .ssi-native-control-shell-wrap{display:contents}';
+			$rules[] = $validated_map['scope'] . ' .wp-block-button.form-button-submit{display:contents}';
+			if ( $editor ) {
+				$rules[] = $validated_map['scope'] . ' .ssi-native-control-shell{display:contents}';
+				$rules[] = $validated_map['scope'] . '.ssi-native-form-topology{padding:0;border:0}';
+			}
 		}
 		if ( $editor ) {
 			foreach ( $rules as $rule ) {
@@ -533,7 +568,14 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( ! preg_match( '/^([^{}]+)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
-		if ( ! preg_match( '/^' . $scope_selector . '$/D', $matches[1] ) ) {
+		$native_safe = false;
+		if ( preg_match( '/^(\.ssi-form-[a-f0-9]{12})/', $matches[1], $scope_match ) ) {
+			$scope       = $scope_match[1];
+			$selector    = str_starts_with( $matches[1], $scope . $scope ) ? substr( $matches[1], strlen( $scope ) ) : $matches[1];
+			$native_safe = ( str_contains( $selector, '.ssi-native-form-topology' ) && self::safe_selector( $selector, $scope ) )
+				|| ( in_array( $selector, array( $scope . ' .ssi-native-control-shell', $scope . ' .ssi-native-control-shell-wrap', $scope . ' .wp-block-button.form-button-submit' ), true ) && 'display:contents' === $matches[2] );
+		}
+		if ( ! preg_match( '/^' . $scope_selector . '$/D', $matches[1] ) && ! $native_safe ) {
 			return false;
 		}
 		$layout_allowed       = array( 'display', 'width', 'height', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'position', 'z-index', 'pointer-events', ...array_values( self::box_property_map() ) );
@@ -572,6 +614,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	private static function safe_selector( string $selector, string $scope ): bool {
+		$native_scope = $scope . '.ssi-native-form-topology';
+		if ( str_contains( $selector, '.ssi-native-form-topology' ) ) {
+			$parts   = explode( ', ', $selector );
+			$allowed = array( $native_scope, $native_scope . '.jetpack-contact-form-container', $native_scope . ' form.jetpack-contact-form__form', $native_scope . '.wp-block-jetpack-contact-form:not(:has(form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *)', $native_scope . ' > div.jetpack-contact-form', $native_scope . '.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form)', $native_scope . '.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *)', $native_scope . ' form.jetpack-contact-form__form.submission-success' );
+			return count( $parts ) <= 2 && empty( array_diff( $parts, $allowed ) );
+		}
 		if ( str_ends_with( $selector, ' > div.jetpack-field__control' ) ) {
 			return self::safe_selector( substr( $selector, 0, -strlen( ' > div.jetpack-field__control' ) ), $scope );
 		}
@@ -741,6 +789,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		if ( isset( self::box_property_map()[ $fact ] ) ) {
 			return self::safe_box_value( $fact, $value );
+		}
+		if ( in_array( $fact, array( 'width', 'height', 'flex_basis' ), true ) && in_array( $value, array( 'min-content', 'max-content', 'fit-content' ), true ) ) {
+			return true;
+		}
+		if ( 'display' === $fact && 'contents' === $value ) {
+			return true;
 		}
 		// CSS permits fractional lengths without a leading zero; the source
 		// stylesheet and the overlay express the same value either way.

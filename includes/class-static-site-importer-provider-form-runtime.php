@@ -211,6 +211,10 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		if ( 262144 < strlen( $html ) || '' === trim( $class_name ) || ! preg_match( '/(?:^|\s)ssi-form-[a-f0-9]{12}(?:\s|$)/', $class_name ) || ! str_contains( $html, 'jetpack-contact-form-container' ) ) {
 			return $html;
 		}
+		$tokens = preg_split( '/\s+/', $class_name );
+		if ( in_array( 'ssi-native-form-topology', false === $tokens ? array() : $tokens, true ) && class_exists( 'WP_HTML_Tag_Processor' ) ) {
+			return self::project_native_form_classes( $html, $class_name );
+		}
 		$carry = preg_split( '/\s+/', trim( $class_name ) );
 		$carry = false === $carry ? array() : array_values( array_filter( $carry, array( self::class, 'is_page_placement_class' ) ) );
 		if ( empty( $carry ) ) {
@@ -245,6 +249,34 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			1
 		);
 		return is_string( $stripped ) ? $stripped : $projected;
+	}
+
+	/** Source classes paint the real form once; provider scope paints placement. */
+	private static function project_native_form_classes( string $html, string $class_name ): string {
+		$tokens  = preg_split( '/\s+/', trim( $class_name ) );
+		$classes = array_values( array_filter( false === $tokens ? array() : $tokens ) );
+		$scope   = array_values( array_filter( $classes, static fn( string $token ): bool => 'ssi-native-form-topology' === $token || 1 === preg_match( '/^ssi-form-[a-f0-9]{12}$/D', $token ) ) );
+		$source  = array_values( array_diff( $classes, $scope ) );
+		$probe   = new WP_HTML_Tag_Processor( $html );
+		if ( ! $probe->next_tag( array(
+			'tag_name'   => 'FORM',
+			'class_name' => 'jetpack-contact-form__form',
+		) ) ) {
+			return $html;
+		}
+		$tags = new WP_HTML_Tag_Processor( $html );
+		while ( $tags->next_tag() ) {
+			$existing = preg_split( '/\s+/', trim( (string) $tags->get_attribute( 'class' ) ) );
+			$existing = false === $existing ? array() : $existing;
+			if ( in_array( 'jetpack-contact-form-container', $existing, true ) ) {
+				$tags->set_attribute( 'class', implode( ' ', array_unique( array_merge( array_diff( $existing, $source ), $scope ) ) ) );
+			} elseif ( in_array( 'wp-block-jetpack-contact-form', $existing, true ) ) {
+				$tags->set_attribute( 'class', implode( ' ', array_diff( $existing, $source ) ) );
+			} elseif ( 'FORM' === $tags->get_tag() && in_array( 'jetpack-contact-form__form', $existing, true ) ) {
+				$tags->set_attribute( 'class', implode( ' ', array_unique( array_merge( $existing, $source ) ) ) );
+			}
+		}
+		return $tags->get_updated_html();
 	}
 
 	/** Field-list display/track utilities belong on the inner list, not the page item. */
