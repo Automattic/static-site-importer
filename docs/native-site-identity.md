@@ -15,8 +15,16 @@ remain untouched. Native Logo attachment handoff uses WordPress core's global
 that logo visually.
 
 Raster attachment formats supported by the existing media materializer are
-JPEG, PNG, GIF, WebP, and AVIF. SVG, ICO, and other formats remain theme-owned
-assets and are reported as unsupported for native attachment handoff. Relative
+JPEG, PNG, GIF, WebP, and AVIF. Explicit SVG branding also becomes native logo
+and site-icon attachments when the owning compiler verifies self-contained
+passive artwork and resolves its intrinsic dimensions. SVG keeps its exact vector
+bytes, local gradients/definitions, and viewBox-derived attachment metadata.
+The import scopes SVG MIME admission to the validated upload; ordinary upload
+policy remains unchanged. Stylesheet-dependent, active/external, malformed, and
+dimensionless SVGs retain explicit receipt statuses instead of guessed output.
+ICO and other formats remain theme-owned assets and are reported as unsupported
+for native attachment handoff. SVG favicon markup is emitted by core; platform
+support for SVG touch icons varies and this handoff does not create PNG derivatives. Relative
 resources must resolve to canonical artifact writes. SSI does not fetch network
 resources during application. Missing, unresolved, and unsupported evidence is
 reported rather than guessed.

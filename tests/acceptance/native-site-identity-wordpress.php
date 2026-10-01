@@ -203,3 +203,75 @@ echo wp_json_encode( array(
 	'owner_preservation' => true,
 	'rollback'           => true,
 ) ) . "\n";
+
+// Native vector handoff exercises actual core rendering and attachment bytes.
+$svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><linearGradient id="brand"><stop offset="0" stop-color="#14283c"/><stop offset="1" stop-color="#b0d0f0"/></linearGradient></defs><rect width="512" height="512" fill="url(#brand)"/></svg>';
+
+$svg_artifact = array(
+	'entrypoint' => 'website/index.html',
+	'files'      => array(
+		array(
+			'path'    => 'website/index.html',
+			'content' => '<html><head><title>Vector Identity</title><link rel="icon" href="brand.svg"><script type="application/ld+json">{"@type":"Organization","logo":"brand.svg"}</script></head><body><h1>Vector identity</h1></body></html>',
+		),
+		array(
+			'path'      => 'website/brand.svg',
+			'content'   => $svg,
+			'mime_type' => 'image/svg+xml',
+		),
+	),
+);
+
+$svg_upload_policy = wp_check_filetype( 'unrelated.svg' );
+$svg_compiled      = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $svg_artifact, array(
+	'slug'     => 'vector-identity-oracle',
+	'activate' => true,
+) );
+identity_assert( ! is_wp_error( $svg_compiled ), 'SVG identity must compile: ' . ( is_wp_error( $svg_compiled ) ? $svg_compiled->get_error_message() : '' ) );
+$svg_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $svg_compiled['plan'], $svg_compiled['args'] );
+identity_assert( 'completed' === ( $svg_receipt['status'] ?? '' ), 'SVG identity must materialize: ' . wp_json_encode( $svg_receipt['errors'] ?? array() ) );
+$svg_logo = (int) get_option( 'site_logo' );
+identity_assert( $svg_logo > 0 && (int) get_option( 'site_icon' ) === $svg_logo, 'SVG logo and icon must share a real attachment' );
+identity_assert( 'image/svg+xml' === get_post_mime_type( $svg_logo ), 'SVG must remain a vector attachment' );
+$svg_metadata = wp_get_attachment_metadata( $svg_logo );
+identity_assert( 512 === $svg_metadata['width'] && 512 === $svg_metadata['height'], 'SVG attachment metadata must carry intrinsic dimensions' );
+identity_assert( file_get_contents( get_attached_file( $svg_logo ) ) === $svg, 'Gradient/vector artwork must retain exact accepted bytes' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Disposable attachment readback.
+identity_assert( str_contains( get_custom_logo(), '.svg' ), 'Core custom logo must render the SVG attachment' );
+identity_assert( str_contains( do_blocks( '<!-- wp:site-logo /-->' ), '.svg' ), 'Core site-logo block must render the SVG attachment' );
+identity_assert( str_contains( get_site_icon_url( 32 ), '.svg' ) && str_contains( get_site_icon_url( 512 ), '.svg' ), 'Native icon URLs must reference SVG at requested sizes' );
+ob_start();
+wp_site_icon();
+$svg_icon_markup = (string) ob_get_clean();
+identity_assert( str_contains( $svg_icon_markup, 'rel="icon"' ) && str_contains( $svg_icon_markup, '.svg' ), 'Core favicon markup must reference the native vector icon' );
+identity_assert( wp_check_filetype( 'unrelated.svg' ) === $svg_upload_policy, 'Ordinary SVG upload policy must remain unchanged' );
+$svg_query = array(
+	'post_type'   => 'attachment',
+	'post_status' => 'inherit',
+	'numberposts' => -1,
+	'fields'      => 'ids',
+);
+$svg_ids   = get_posts( $svg_query );
+delete_option( 'site_logo' );
+delete_option( 'site_icon' );
+$svg_reimport = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $svg_compiled['plan'], $svg_compiled['args'] );
+identity_assert( 'completed' === ( $svg_reimport['status'] ?? '' ) && (int) get_option( 'site_logo' ) === $svg_logo, 'SVG reimport must reuse the attachment after settings are cleared' );
+identity_assert( get_posts( $svg_query ) === $svg_ids, 'SVG reimport must not duplicate attachments' );
+$svg_owner         = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $svg_artifact, array(
+	'slug'     => 'vector-identity-owner',
+	'activate' => true,
+) );
+$svg_owner_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $svg_owner['plan'], $svg_owner['args'] );
+identity_assert( 'completed' === ( $svg_owner_receipt['status'] ?? '' ) && (int) get_option( 'site_logo' ) === $svg_logo, 'SVG import must preserve an owner-selected logo' );
+delete_option( 'site_logo' );
+delete_option( 'site_icon' );
+$svg_failure        = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $svg_artifact, array(
+	'slug'                           => 'vector-identity-rollback',
+	'activate'                       => true,
+	'inject_materialization_failure' => 'after_blogname',
+) );
+$svg_failed_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $svg_failure['plan'], $svg_failure['args'] );
+identity_assert( 'completed' !== ( $svg_failed_receipt['status'] ?? '' ), 'SVG injected failure must roll back' );
+identity_assert( 0 === (int) get_option( 'site_logo', 0 ) && 0 === (int) get_option( 'site_icon', 0 ), 'SVG rollback must restore native settings' );
+identity_assert( get_posts( $svg_query ) === $svg_ids, 'SVG rollback must remove newly created attachments' );
+identity_assert( wp_check_filetype( 'unrelated.svg' ) === $svg_upload_policy, 'Rollback must not leave SVG upload filters installed' );
+echo "Native SVG logo/icon rendering, vector preservation, deduplication, owner preservation and rollback passed.\n";
