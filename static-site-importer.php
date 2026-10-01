@@ -140,6 +140,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-commerce-presentation.php',
 	'class-static-site-importer-direct-artifact-import.php',
 	'class-static-site-importer-compiler-limits.php',
+	'class-static-site-importer-quality-count-keys.php',
 	'class-static-site-importer-canonical-import-service.php',
 	'class-static-site-importer-layout-placement-model.php',
 	'class-static-site-importer-layout-adapter.php',
