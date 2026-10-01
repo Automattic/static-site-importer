@@ -50,7 +50,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			if ( ! is_array( $target ) || ! is_int( $target['index'] ?? null ) || $target['index'] < 0 || $target['index'] >= 128 || isset( $seen_presentations[ $target['index'] ] ) ) {
 				return array( 'error' => 'provider presentation target map contains an unsafe target.' );
 			}
-			$destinations = $target['destinations'] ?? self::legacy_presentation_destinations( $target );
+			$destinations = $target['destinations'] ?? array();
 			if ( ! self::has_only_keys( $target, array( 'index', 'control', 'label', 'destinations' ) ) || ! is_array( $destinations ) || ! array_is_list( $destinations ) || empty( $destinations ) || count( $destinations ) > 8 ) {
 				return array( 'error' => 'provider presentation target map contains an unsafe target.' );
 			}
@@ -916,21 +916,6 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( array_diff( array_keys( $styles ), $represented, self::positioned_control_only_presentation_property_keys() ) ) {
 			$losses[] = self::presentation_loss( 'provider_structure_mismatch', $index, $role );
 		}
-	}
-
-	/** Normalize maps produced before destination maps were introduced. */
-	private static function legacy_presentation_destinations( array $target ): array {
-		$destinations = array();
-		foreach ( array( 'control', 'label' ) as $role ) {
-			if ( is_string( $target[ $role ] ?? null ) ) {
-				$destinations[] = array(
-					'role'       => $role,
-					'selector'   => $target[ $role ],
-					'properties' => array_keys( self::presentation_property_map() ),
-				);
-			}
-		}
-		return $destinations;
 	}
 
 	private static function safe_presentation_aliases( mixed $aliases, array $properties ): bool {

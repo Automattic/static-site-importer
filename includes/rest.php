@@ -405,7 +405,7 @@ function static_site_importer_rest_apply_to_current_site( array $source, array $
 		return $decorate_current_site_preview( static_site_importer_rest_execute_import_ability( 'static-site-importer/import', $input, 'static_site_importer_ability_import' ) );
 	}
 
-	$runtime = static_site_importer_rest_source_runtime( $source, $input );
+	$runtime = static_site_importer_source_runtime( $source );
 	if ( is_wp_error( $runtime ) ) {
 		return $runtime;
 	}
@@ -716,19 +716,6 @@ function static_site_importer_source_runtime( array $source ) {
 		'source_metadata' => array(),
 		'provider'        => 'rest-source',
 	);
-}
-
-/**
- * Backward-compatible REST wrapper around the canonical source normalizer.
- *
- * @param array<string,mixed> $source Source payload.
- * @param array<string,mixed> $input  Import input.
- * @return array{artifact:array<string,mixed>,source_metadata:array<string,mixed>,provider:string}|WP_Error
- */
-function static_site_importer_rest_source_runtime( array $source, array $input = array() ) {
-	unset( $input ); // Retained for compatibility with callers using the former provider-args parameter.
-
-	return static_site_importer_source_runtime( $source );
 }
 
 /**
