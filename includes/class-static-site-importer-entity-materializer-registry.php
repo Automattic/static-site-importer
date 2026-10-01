@@ -27,7 +27,6 @@ if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Loss_Classes' ) ) {
  */
 class Static_Site_Importer_Entity_Materializer_Registry {
 
-	private const FORM_CONTROL_TOPOLOGY_MAX_DEPTH       = 16;
 	private const FAILURE_DIAGNOSTIC_MAX_ROWS           = 10;
 	private const FAILURE_DIAGNOSTIC_MAX_BYTES          = 256;
 	private const FAILURE_DIAGNOSTIC_SCAN_BUDGET        = 10;
@@ -1729,138 +1728,53 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	}
 
 	/**
-	 * Normalize the bounded generic form-control topology without applying any
-	 * provider semantics. A truncated or incomplete tree cannot preserve source
-	 * parentage, so it is reported instead of falling back to a flat form.
+	 * Admit a producer control topology.
+	 *
+	 * Blocks Engine owns the contract (FormControlTopologyBuilder::assertValid());
+	 * the importer refuses a truncated topology, which cannot preserve parentage.
 	 *
 	 * @return array{topology?:array<string,mixed>,error?:string}
 	 */
 	private static function normalize_form_control_topology( mixed $candidate, int $control_count ): array {
-		if ( ! is_array( $candidate ) || 'generic/form-control-topology/v1' !== ( $candidate['schema'] ?? null ) ) {
-			return array( 'error' => 'control_topology must use generic/form-control-topology/v1.' );
-		}
-		$max_depth = $candidate['max_depth'] ?? null;
-		$max_nodes = $candidate['max_nodes'] ?? null;
-		$nodes     = $candidate['nodes'] ?? null;
-		if ( ! is_int( $max_depth ) || $max_depth < 0 || $max_depth > self::FORM_CONTROL_TOPOLOGY_MAX_DEPTH || ! is_int( $max_nodes ) || $max_nodes < 1 || $max_nodes > 128 || ! is_array( $nodes ) || ! array_is_list( $nodes ) || count( $nodes ) > $max_nodes ) {
-			return array( 'error' => 'control_topology exceeds the supported generic bounds.' );
+		if ( ! is_array( $candidate ) ) {
+			return array( 'error' => 'control_topology must be a producer control topology.' );
 		}
 		if ( true === ( $candidate['truncated'] ?? false ) ) {
 			return array( 'error' => 'control_topology is truncated and cannot preserve source control parentage.' );
 		}
-		if ( ! isset( $candidate['truncated'] ) || ! is_bool( $candidate['truncated'] ) ) {
-			return array( 'error' => 'control_topology.truncated must be a boolean.' );
+		try {
+			\Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Style\FormControlTopologyBuilder::assertValid( $candidate, $control_count );
+		} catch ( InvalidArgumentException $error ) {
+			return array( 'error' => 'control_topology violates the producer contract: ' . $error->getMessage() );
 		}
-		if ( ! self::has_only_keys( $candidate, array( 'schema', 'max_depth', 'max_nodes', 'nodes', 'truncated' ) ) ) {
-			return array( 'error' => 'control_topology contains unknown canonical keys.' );
+		foreach ( $candidate['nodes'] as $index => $node ) {
+			if ( isset( $node['legend'] ) ) {
+				$candidate['nodes'][ $index ]['legend'] = trim( preg_replace( '/\s+/', ' ', $node['legend'] ) ?? '' );
+			}
+			$candidate['nodes'][ $index ]['parent'] = $node['parent'] ?? null;
 		}
-
-		$normalized = array();
-		$seen_ids   = array();
-		$controls   = array();
-		$orders     = array();
-		foreach ( $nodes as $index => $node ) {
-			if ( ! is_array( $node ) || ! self::has_only_keys( $node, ( $node['kind'] ?? null ) === 'wrapper' ? array( 'id', 'kind', 'parent', 'order', 'depth', 'tag', 'source_id', 'class', 'fieldset_semantics', 'legend' ) : array( 'id', 'kind', 'parent', 'order', 'depth', 'control' ) ) || ! is_string( $node['id'] ?? null ) || ! preg_match( '/^(?:wrapper|control)-[A-Za-z0-9_-]{1,80}$/D', $node['id'] ) || isset( $seen_ids[ $node['id'] ] ) || ! in_array( $node['kind'] ?? null, array( 'wrapper', 'control' ), true ) || ! is_int( $node['order'] ?? null ) || $node['order'] < 0 || ! is_int( $node['depth'] ?? null ) || $node['depth'] < 0 || $node['depth'] > $max_depth ) {
-				return array( 'error' => 'control_topology contains an unsupported node.' );
-			}
-			$parent = $node['parent'] ?? null;
-			if ( null !== $parent && ( ! is_string( $parent ) || ! isset( $seen_ids[ $parent ] ) ) ) {
-				return array( 'error' => 'control_topology nodes must reference an earlier parent.' );
-			}
-			$parent_key = null === $parent ? '$root' : $parent;
-			if ( isset( $orders[ $parent_key ][ $node['order'] ] ) ) {
-				return array( 'error' => 'control_topology sibling order must be unique.' );
-			}
-			if ( null === $parent && 0 !== $node['depth'] ) {
-				return array( 'error' => 'control_topology root nodes must have depth zero.' );
-			}
-			if ( null !== $parent && ( 'wrapper' !== $seen_ids[ $parent ]['kind'] || $node['depth'] !== $seen_ids[ $parent ]['depth'] + 1 ) ) {
-				return array( 'error' => 'control_topology node depth and parent must describe a wrapper tree.' );
-			}
-
-			$normalized_node = array(
-				'id'     => $node['id'],
-				'kind'   => $node['kind'],
-				'parent' => $parent,
-				'order'  => $node['order'],
-				'depth'  => $node['depth'],
-			);
-			if ( 'control' === $node['kind'] ) {
-				if ( ! str_starts_with( $node['id'], 'control-' ) || ! is_int( $node['control'] ?? null ) || $node['control'] < 0 || $node['control'] >= $control_count || isset( $controls[ $node['control'] ] ) ) {
-					return array( 'error' => 'control_topology control references must be unique flat control indexes.' );
-				}
-				$controls[ $node['control'] ] = true;
-				$normalized_node['control']   = $node['control'];
-			} else {
-				if ( ! str_starts_with( $node['id'], 'wrapper-' ) ) {
-					return array( 'error' => 'control_topology wrapper ids must match their node kind.' );
-				}
-				foreach ( array( 'tag', 'source_id', 'class' ) as $field ) {
-					if ( ! isset( $node[ $field ] ) ) {
-						continue;
-					}
-					$value = $node[ $field ];
-					$valid = is_string( $value ) && ( 'tag' === $field ? in_array( $value, array( 'article', 'aside', 'dd', 'div', 'dl', 'dt', 'fieldset', 'footer', 'header', 'label', 'li', 'main', 'nav', 'ol', 'p', 'section', 'span', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'ul' ), true ) : (bool) preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}(?: [A-Za-z_][A-Za-z0-9_-]{0,79}){0,7}$/D', $value ) );
-					if ( ! $valid ) {
-						return array( 'error' => 'control_topology presentation hooks must be bounded safe identifiers and supported Gutenberg group tags.' );
-					}
-					$normalized_node[ $field ] = $value;
-				}
-				if ( isset( $node['fieldset_semantics'] ) ) {
-					if ( 'fieldset' !== ( $node['tag'] ?? '' ) || ! in_array( $node['fieldset_semantics'], array( 'plain_group', 'labelled_group', 'disabled_group', 'attributed_group' ), true ) ) {
-						return array( 'error' => 'control_topology fieldset semantics must describe a fieldset wrapper.' );
-					}
-					$normalized_node['fieldset_semantics'] = $node['fieldset_semantics'];
-				}
-				if ( isset( $node['legend'] ) ) {
-					if ( 'labelled_group' !== ( $node['fieldset_semantics'] ?? '' ) || ! is_string( $node['legend'] ) || '' === trim( $node['legend'] ) || 200 < strlen( $node['legend'] ) ) {
-						return array( 'error' => 'control_topology fieldset legends must be bounded labelled-group text.' );
-					}
-					$normalized_node['legend'] = trim( preg_replace( '/\s+/', ' ', $node['legend'] ) ?? '' );
-				}
-			}
-			$seen_ids[ $node['id'] ]                 = $normalized_node;
-			$orders[ $parent_key ][ $node['order'] ] = true;
-			$normalized[]                            = $normalized_node;
-		}
-		if ( count( $controls ) !== $control_count ) {
-			return array( 'error' => 'control_topology must preserve every flat control exactly once.' );
-		}
-
-		return array(
-			'topology' => array(
-				'schema'    => 'generic/form-control-topology/v1',
-				'max_depth' => $max_depth,
-				'max_nodes' => $max_nodes,
-				'nodes'     => $normalized,
-				'truncated' => false,
-			),
-		);
+		return array( 'topology' => $candidate );
 	}
 
-	/** @return array{relations?:array<string,mixed>,error?:string} */
+	/**
+	 * Admit producer sibling relations (FormControlTopologyBuilder::assertSiblingRelations());
+	 * the importer refuses truncated relations, which cannot preserve adjacency.
+	 *
+	 * @return array{relations?:array<string,mixed>,error?:string}
+	 */
 	private static function normalize_form_sibling_relations( mixed $candidate, int $control_count ): array {
-		if ( ! is_array( $candidate ) || 'generic/form-sibling-relations/v1' !== ( $candidate['schema'] ?? null ) || ! self::has_only_keys( $candidate, array( 'schema', 'max_pairs', 'truncated', 'pairs' ) ) || ! is_int( $candidate['max_pairs'] ?? null ) || $candidate['max_pairs'] < 1 || $candidate['max_pairs'] > 128 || ! is_bool( $candidate['truncated'] ?? null ) || ! is_array( $candidate['pairs'] ?? null ) || ! array_is_list( $candidate['pairs'] ) || count( $candidate['pairs'] ) > $candidate['max_pairs'] ) {
-			return array( 'error' => 'sibling_relations must use bounded generic/form-sibling-relations/v1.' );
+		if ( ! is_array( $candidate ) ) {
+			return array( 'error' => 'sibling_relations must be producer sibling relations.' );
+		}
+		try {
+			\Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Style\FormControlTopologyBuilder::assertSiblingRelations( $candidate, $control_count );
+		} catch ( InvalidArgumentException $error ) {
+			return array( 'error' => 'sibling_relations violates the producer contract: ' . $error->getMessage() );
 		}
 		if ( $candidate['truncated'] ) {
 			return array( 'error' => 'sibling_relations is truncated and cannot preserve direct source adjacency.' );
 		}
-		$seen = array();
-		foreach ( $candidate['pairs'] as $pair ) {
-			if ( ! is_array( $pair ) || ! self::has_only_keys( $pair, array( 'control' ) ) || ! is_int( $pair['control'] ?? null ) || $pair['control'] < 0 || $pair['control'] >= $control_count || isset( $seen[ $pair['control'] ] ) ) {
-				return array( 'error' => 'sibling_relations pairs must reference unique flat controls.' );
-			}
-			$seen[ $pair['control'] ] = true;
-		}
-		return array(
-			'relations' => array(
-				'schema'    => 'generic/form-sibling-relations/v1',
-				'max_pairs' => $candidate['max_pairs'],
-				'truncated' => false,
-				'pairs'     => $candidate['pairs'],
-			),
-		);
+		return array( 'relations' => $candidate );
 	}
 
 	/**
@@ -1891,11 +1805,6 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 		}
 		return array( 'presentation' => $candidate );
-	}
-
-	/** @param array<int,string> $allowed */
-	private static function has_only_keys( array $candidate, array $allowed ): bool {
-		return array() === array_diff( array_keys( $candidate ), $allowed );
 	}
 
 	/** @return array<string,mixed>|null */
