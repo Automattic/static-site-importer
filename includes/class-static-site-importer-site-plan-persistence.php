@@ -314,6 +314,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( self::injected_failure( $args, 'after_activation' ) ) {
 				return self::failed_receipt( $state, 'injected_after_activation_failure' );
 			}
+			$identity = Static_Site_Importer_Media_Library_Materializer::materialize_identity( $state );
+			if ( is_wp_error( $identity ) ) {
+				return self::failed_receipt_from_error( $state, $identity );
+			}
+			$state['applied']['site_identity'] = $identity;
 			if ( ! isset( $args['disable_smilies'] ) || false !== (bool) $args['disable_smilies'] ) {
 				if ( ! self::write_option( 'use_smilies', false ) ) {
 					return self::failed_receipt( $state, 'disable_smilies_not_applied' );
@@ -1566,7 +1571,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 	/** Snapshot all runtime state this materializer can mutate before activation. */
 	public static function journal_runtime( array &$state ): void {
-		foreach ( array( 'stylesheet', 'template', 'show_on_front', 'page_on_front', 'use_smilies', 'blogname', 'site_icon' ) as $option ) {
+		// Core's site-logo deletion hook can remove the restored theme's custom
+		// logo. Restore its option after the global logo option during rollback.
+		$stylesheet = (string) get_option( 'stylesheet', '' );
+		if ( '' !== $stylesheet ) {
+			self::journal_option( $state, 'theme_mods_' . $stylesheet );
+		}
+		foreach ( array( 'stylesheet', 'template', 'show_on_front', 'page_on_front', 'use_smilies', 'blogname', 'blogdescription', 'site_icon', 'site_logo' ) as $option ) {
 			self::journal_option( $state, $option );
 		}
 	}

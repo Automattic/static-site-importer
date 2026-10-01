@@ -64,6 +64,11 @@ function static_site_importer_classic_assets() {
 	wp_enqueue_style( 'static-site-importer-classic', get_stylesheet_uri(), array(), wp_get_theme()->get( 'Version' ) );
 }
 add_action( 'wp_enqueue_scripts', 'static_site_importer_classic_assets' );
+add_action( 'after_setup_theme', static function () {
+	add_theme_support( 'title-tag' );
+	add_theme_support( 'custom-logo' );
+	add_theme_support( 'automatic-feed-links' );
+} );
 function static_site_importer_classic_render_binding( $id, $bindings, $source, $page_hash, $surface = 'page' ) {
 	$binding = $bindings[ $id ] ?? array();
 	if ( ! is_array( $binding ) || ! isset( $binding['kind'], $binding['content'], $binding['source_path'], $binding['page_hash'] ) || ( 'page' === $surface && $source !== $binding['source_path'] ) || $surface !== ( $binding['surface'] ?? 'page' ) || ! hash_equals( $binding['page_hash'], $page_hash ) ) { return ''; }
@@ -80,13 +85,48 @@ function static_site_importer_classic_chrome( $slot ) {
 	echo preg_replace_callback( '/<!--static-site-importer-binding:([a-f0-9]{64})-->/', static function ( $match ) use ( $bindings, $hash, $slot, $source ) { return static_site_importer_classic_render_binding( $match[1], is_array( $bindings ) ? $bindings : array(), $source, $hash, $slot ); }, $html ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Sanitized chrome and fixed SSI binding records.
 }
 function static_site_importer_classic_render_current_page() {
-	$provenance = json_decode( (string) get_post_meta( get_queried_object_id(), '_static_site_importer_provenance', true ), true );
+	$id = function_exists( 'in_the_loop' ) && in_the_loop() ? get_the_ID() : get_queried_object_id();
+	$provenance = json_decode( (string) get_post_meta( $id, '_static_site_importer_provenance', true ), true );
 	$source = is_array( $provenance ) ? (string) ( $provenance['source_path'] ?? '' ) : '';
 	$data = wp_json_file_decode( get_stylesheet_directory() . '/classic-pages.json', array( 'associative' => true ) );
 	$bindings = wp_json_file_decode( get_stylesheet_directory() . '/classic-bindings.json', array( 'associative' => true ) );
 	$html = (string) ( $data['pages'][ $source ]['html'] ?? '' ); $page_hash = hash( 'sha256', $html );
+	if ( '' === $source || ! isset( $data['pages'][ $source ]['html'] ) ) {
+		echo '<main class="static-site-importer-native-content"><h1>' . esc_html( get_the_title() ) . '</h1>';
+		the_content();
+		echo '</main>';
+		return;
+	}
 	$html = preg_replace_callback( '/<!--static-site-importer-binding:([a-f0-9]{64})-->/', static function ( $match ) use ( $bindings, $source, $page_hash ) { return static_site_importer_classic_render_binding( $match[1], is_array( $bindings ) ? $bindings : array(), $source, $page_hash ); }, $html );
 	echo $html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Sanitized artifact HTML and fixed SSI binding records.
+}
+function static_site_importer_classic_render_singular() {
+	if ( have_posts() ) {
+		while ( have_posts() ) {
+			the_post();
+			static_site_importer_classic_render_current_page();
+		}
+	}
+}
+function static_site_importer_classic_render_listing( $context = 'index' ) {
+	echo '<main class="static-site-importer-native-listing">';
+	if ( 'archive' === $context ) {
+		echo '<h1>' . wp_kses_post( get_the_archive_title() ) . '</h1>';
+	} elseif ( 'search' === $context ) {
+		echo '<h1>' . esc_html__( 'Search results', 'static-site-importer' ) . ': ' . esc_html( get_search_query( false ) ) . '</h1>';
+	}
+	if ( have_posts() ) {
+		while ( have_posts() ) {
+			the_post();
+			echo '<article><h2><a href="' . esc_url( get_permalink() ) . '">' . esc_html( get_the_title() ) . '</a></h2>';
+			the_excerpt();
+			echo '</article>';
+		}
+		the_posts_pagination();
+	} else {
+		echo '<p>' . esc_html__( 'No posts found.', 'static-site-importer' ) . '</p>';
+	}
+	echo '</main>';
 }
 PHP;
 		return array(
@@ -94,13 +134,13 @@ PHP;
 			'functions.php'  => $functions . "\n",
 			'header.php'     => "<!doctype html>\n<html <?php language_attributes(); ?>>\n<head>\n<meta charset=\"<?php bloginfo( 'charset' ); ?>\">\n<?php wp_head(); ?>\n</head>\n<body <?php body_class(); ?>>\n<?php wp_body_open(); static_site_importer_classic_chrome( 'header' ); ?>\n",
 			'footer.php'     => "<?php static_site_importer_classic_chrome( 'footer' ); wp_footer(); ?>\n</body>\n</html>\n",
-			'front-page.php' => "<?php get_header(); static_site_importer_classic_render_current_page(); get_footer();\n",
-			'page.php'       => "<?php get_header(); static_site_importer_classic_render_current_page(); get_footer();\n",
-			'single.php'     => "<?php get_header(); static_site_importer_classic_render_current_page(); get_footer();\n",
-			'index.php'      => "<?php get_header(); if ( have_posts() ) { while ( have_posts() ) { the_post(); static_site_importer_classic_render_current_page(); } } get_footer();\n",
-			'archive.php'    => "<?php get_header(); if ( have_posts() ) { while ( have_posts() ) { the_post(); static_site_importer_classic_render_current_page(); } } get_footer();\n",
-			'search.php'     => "<?php get_template_part( 'archive' );\n",
-			'404.php'        => "<?php get_template_part( 'index' );\n",
+			'front-page.php' => "<?php get_header(); static_site_importer_classic_render_singular(); get_footer();\n",
+			'page.php'       => "<?php get_header(); static_site_importer_classic_render_singular(); get_footer();\n",
+			'single.php'     => "<?php get_header(); static_site_importer_classic_render_singular(); get_footer();\n",
+			'index.php'      => "<?php get_header(); static_site_importer_classic_render_listing(); get_footer();\n",
+			'archive.php'    => "<?php get_header(); static_site_importer_classic_render_listing( 'archive' ); get_footer();\n",
+			'search.php'     => "<?php get_header(); static_site_importer_classic_render_listing( 'search' ); get_footer();\n",
+			'404.php'        => "<?php get_header(); ?><main class=\"static-site-importer-native-not-found\"><h1><?php esc_html_e( 'Page not found', 'static-site-importer' ); ?></h1><?php get_search_form(); ?></main><?php get_footer();\n",
 		);
 	}
 }
