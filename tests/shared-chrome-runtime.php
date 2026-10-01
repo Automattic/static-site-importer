@@ -105,10 +105,10 @@ foreach ( $ids as $navigation_id ) {
 	}
 }
 $assert( is_int( $primary ), 'A real navigation entity owns the primary labels.' );
-$fallback_count = $receipt['plan']['quality']['metrics']['fallback_count'];
+$fallback_count = $report['blocks_engine']['wordpress_site_plan']['quality']['metrics']['fallback_count'];
 $assert( 0 === $fallback_count, 'The neutral imported fixture has zero fallback blocks.' );
 $page_urls    = array_map( 'get_permalink', $receipt['completed']['pages'] );
-$entry_source = array_values( array_filter( $receipt['plan']['pages'], static fn( array $page ): bool => $page['entrypoint'] ) )[0]['source_path'];
+$entry_source = array_values( array_filter( $report['blocks_engine']['wordpress_site_plan']['pages'], static fn( array $page ): bool => $page['entrypoint'] ) )[0]['source_path'];
 file_put_contents(
 	'/evidence/runtime-inventory.json',
 	wp_json_encode(
