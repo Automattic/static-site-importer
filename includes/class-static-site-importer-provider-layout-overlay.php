@@ -273,6 +273,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			$native_scope = $validated_map['scope'] . '.ssi-native-form-topology';
 			$rules[]      = $native_scope . '.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form){display:contents}';
 			$rules[]      = $native_scope . '.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *){display:contents}';
+			// The provider's success state removes its real form from layout.
+			// Source display facts must not resurrect those submitted controls.
+			$rules[]      = $native_scope . ' form.jetpack-contact-form__form.submission-success{display:none}';
 			// Provider field state stays in the DOM, while its synthetic shell has
 			// no box between a source container and the source-owned input.
 			$rules[] = $validated_map['scope'] . ' .ssi-native-control-shell-wrap{display:contents}';
@@ -614,7 +617,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		$native_scope = $scope . '.ssi-native-form-topology';
 		if ( str_contains( $selector, '.ssi-native-form-topology' ) ) {
 			$parts   = explode( ', ', $selector );
-			$allowed = array( $native_scope, $native_scope . '.jetpack-contact-form-container', $native_scope . ' form.jetpack-contact-form__form', $native_scope . '.wp-block-jetpack-contact-form:not(:has(form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *)', $native_scope . ' > div.jetpack-contact-form', $native_scope . '.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form)', $native_scope . '.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *)' );
+			$allowed = array( $native_scope, $native_scope . '.jetpack-contact-form-container', $native_scope . ' form.jetpack-contact-form__form', $native_scope . '.wp-block-jetpack-contact-form:not(:has(form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *)', $native_scope . ' > div.jetpack-contact-form', $native_scope . '.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form)', $native_scope . '.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *)', $native_scope . ' form.jetpack-contact-form__form.submission-success' );
 			return count( $parts ) <= 2 && empty( array_diff( $parts, $allowed ) );
 		}
 		if ( str_ends_with( $selector, ' > div.jetpack-field__control' ) ) {

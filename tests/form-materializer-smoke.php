@@ -1417,6 +1417,7 @@ namespace {
 		&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $shared_label_row['provider_layout_overlay_css'] ),
 		'native-provider-presentation-hides-only-source-bookkeeping-and-keeps-control-shell-ownership', wp_json_encode( array( 'decision' => $shared_label_row['mapping_decision'] ?? null, 'css' => $shared_css, 'valid' => null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $shared_label_row['provider_layout_overlay_css'] ) ) ) );
 	$unsafe_native_map = $shared_label_row['provider_layout_target_map'];
+	$assert( str_contains( $shared_css, 'form.jetpack-contact-form__form.submission-success{display:none}' ), 'native-source-layout-retains-provider-submission-success-visibility' );
 	$unsafe_native_map['targets'][0]['selector'] .= ', body';
 	$assert( isset( Static_Site_Importer_Provider_Layout_Overlay::validate_map( $unsafe_native_map, $shared_label_source['layout_graph'] )['error'] ), 'native-form-selector-never-admits-an-unscoped-list-member' );
 	$labelled_shared_source = $shared_label_source;
