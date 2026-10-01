@@ -2158,7 +2158,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 			return true;
 		};
-		$wrappers = array();
+		$wrappers       = array();
 		foreach ( $nodes as $node ) {
 			if ( ! is_string( $node['id'] ?? null ) ) {
 				return null;
@@ -2271,7 +2271,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			// A physical source box does not need to establish flex/grid. A
 			// nested submit's height and width still have their own owner, and
 			// a class-carrying ancestry box may have no unconditional facts.
-			$box = ! isset( $layout['display'] ) && ! array_diff( array_keys( $layout ), array_merge( array_keys( Static_Site_Importer_Provider_Layout_Overlay::box_property_map() ), array( 'width', 'height', 'flex', 'flex_basis', 'flex_grow', 'flex_shrink', 'align_self', 'justify_self', 'order' ) ) );
+			$box      = ! isset( $layout['display'] ) && ! array_diff( array_keys( $layout ), array_merge( array_keys( Static_Site_Importer_Provider_Layout_Overlay::box_property_map() ), array( 'width', 'height', 'flex', 'flex_basis', 'flex_grow', 'flex_shrink', 'align_self', 'justify_self', 'order' ) ) );
 			$contents = array( 'display' => 'contents' ) === $layout;
 			if ( ! $flex && ! $grid && ! $box && ! $contents ) {
 				return null;
@@ -2342,8 +2342,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			'represented_topology_nodes'   => array_keys( $wrappers ),
 			'suppressed_layout_properties' => array(),
 			'overlay_node_targets'         => array_map( static fn( string $id ): array => array(
-				'id'     => $id,
-				'layout' => $layouts[ $id ],
+				'id'           => $id,
+				'layout'       => $layouts[ $id ],
 				'presentation' => $layout_nodes[ $id ]['presentation'] ?? array(),
 			), array_keys( $wrappers ) ),
 			'responsive_variant_targets'   => $native_variants,
@@ -3640,7 +3640,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				// so the source container layout reaches the element that actually
 				// positions the fields instead of leaving the runtime default in place.
 				$selector = ! empty( $form['provider_native_topology'] )
-					? $selector_scope . '.ssi-native-form-topology form.jetpack-contact-form__form, ' . $selector_scope . '.ssi-native-form-topology.wp-block-jetpack-contact-form:not(:has(form.jetpack-contact-form__form))'
+					? $selector_scope . '.ssi-native-form-topology form.jetpack-contact-form__form, ' . $selector_scope . '.ssi-native-form-topology.wp-block-jetpack-contact-form:not(:has(form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *)'
 					: $selector_scope . ' > form.jetpack-contact-form__form, ' . $selector_scope . ':not(:has(> form.jetpack-contact-form__form))';
 				// Jetpack's contact-form root includes hidden and error nodes, so it cannot
 				// promise source direct-child relationships. Generated node hooks can.

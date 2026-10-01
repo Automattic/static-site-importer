@@ -544,7 +544,7 @@ class Static_Site_Importer_Form_Seeder {
 				'runtime_mapped' => false,
 			);
 		}
-		$inner_blocks = $topology['blocks'];
+		$inner_blocks                     = $topology['blocks'];
 		$form['provider_native_topology'] = in_array( 'ssi-native-form-topology', $topology['form_classes'], true );
 		if ( ! $has_topology || ! $has_source_submit ) {
 			$inner_blocks[] = Static_Site_Importer_Form_Field_Markup::submit_button_block( $submit_text, Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-submit' ), $submit_presentation );
@@ -742,6 +742,13 @@ class Static_Site_Importer_Form_Seeder {
 			}
 		}
 		$visual_state = Static_Site_Importer_Form_Layout_Projection::empty_country_visual_state( $form, $scope, $topology['phone_popup_targets'] );
+		if ( ! empty( $form['provider_native_topology'] ) ) {
+			foreach ( $controls as $control_index => $control ) {
+				if ( 'core/button' === ( $field_blocks[ $control_index ]['name'] ?? '' ) && isset( $presentation_descriptors[ $control_index ] ) ) {
+					$presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Layout_Projection::with_submit_row_button_box( $presentation_descriptors[ $control_index ] );
+				}
+			}
+		}
 		foreach ( $topology['submit_block_rows'] ?? array() as $row_control ) {
 			if ( isset( $presentation_descriptors[ $row_control ] ) ) {
 				$presentation_descriptors[ $row_control ] = Static_Site_Importer_Form_Layout_Projection::with_submit_row_button_box( $presentation_descriptors[ $row_control ] );
@@ -1143,7 +1150,13 @@ class Static_Site_Importer_Form_Seeder {
 						$proven = array_merge( $proven, $fact['properties'] ?? array() );
 					}
 				}
-				$conditional = array_filter( $form['presentation_graph']['variants'] ?? array(), static fn( array $variant ): bool => $control_index === ( $variant['index'] ?? null ) && 'control' === ( $variant['role'] ?? null ) );
+				$conditional = array_filter( $form['presentation_graph']['variants'] ?? array(), static function ( array $variant ) use ( $control_index, $part ): bool {
+					if ( ( $variant['index'] ?? null ) !== $control_index || 'control' !== ( $variant['role'] ?? null ) ) {
+						return false;
+					}
+					$styles = array_replace( $part['styles'], $variant['style_patch'] ?? array() );
+					return 'absolute' !== ( $styles['position'] ?? null ) || ! in_array( $styles['transform'] ?? null, array( 'scale(0)', 'scale(0,0)', 'scale(0, 0)' ), true );
+				} );
 				if ( empty( $conditional ) && empty( array_diff( array( 'position', 'transform' ), $proven ) ) ) {
 					return true;
 				}

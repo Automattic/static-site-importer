@@ -121,11 +121,15 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			}
 			// A physical native source box owns its own paint as well as layout.
 			// Keep that paint on its validated target instead of the inner input.
-			$paint = array_diff_key( $node['presentation']['styles'], self::layout_property_map() );
+			$paint        = array_diff_key( $node['presentation']['styles'], self::layout_property_map() );
 			$declarations = self::presentation_declarations( $paint, 0, 'control_container', $losses, array_keys( self::presentation_property_map() ) );
 			if ( ! empty( $declarations ) ) {
-				$rules[] = $target['selector'] . '{' . implode( ';', $declarations ) . '}';
-				$operations[] = array( 'dimension' => 'presentation', 'strategy' => 'provider_source_container_presentation', 'node_hash' => hash( 'sha256', $id ) );
+				$rules[]      = $target['selector'] . '{' . implode( ';', $declarations ) . '}';
+				$operations[] = array(
+					'dimension' => 'presentation',
+					'strategy'  => 'provider_source_container_presentation',
+					'node_hash' => hash( 'sha256', $id ),
+				);
 			}
 		}
 		foreach ( $graph['nodes'] ?? array() as $node ) {
@@ -266,9 +270,13 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			);
 		}
 		if ( str_contains( $targets['form']['selector'] ?? '', '.ssi-native-form-topology' ) ) {
+			$native_scope = $validated_map['scope'] . '.ssi-native-form-topology';
+			$rules[]      = $native_scope . '.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form){display:contents}';
+			$rules[]      = $native_scope . '.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *){display:contents}';
 			// Provider field state stays in the DOM, while its synthetic shell has
 			// no box between a source container and the source-owned input.
 			$rules[] = $validated_map['scope'] . ' .ssi-native-control-shell-wrap{display:contents}';
+			$rules[] = $validated_map['scope'] . ' .wp-block-button.form-button-submit{display:contents}';
 			if ( $editor ) {
 				$rules[] = $validated_map['scope'] . ' .ssi-native-control-shell{display:contents}';
 				$rules[] = $validated_map['scope'] . '.ssi-native-form-topology{padding:0;border:0}';
@@ -559,10 +567,10 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		$native_safe = false;
 		if ( preg_match( '/^(\.ssi-form-[a-f0-9]{12})/', $matches[1], $scope_match ) ) {
-			$scope = $scope_match[1];
-			$selector = str_starts_with( $matches[1], $scope . $scope ) ? substr( $matches[1], strlen( $scope ) ) : $matches[1];
+			$scope       = $scope_match[1];
+			$selector    = str_starts_with( $matches[1], $scope . $scope ) ? substr( $matches[1], strlen( $scope ) ) : $matches[1];
 			$native_safe = ( str_contains( $selector, '.ssi-native-form-topology' ) && self::safe_selector( $selector, $scope ) )
-				|| ( in_array( $selector, array( $scope . ' .ssi-native-control-shell', $scope . ' .ssi-native-control-shell-wrap' ), true ) && 'display:contents' === $matches[2] );
+				|| ( in_array( $selector, array( $scope . ' .ssi-native-control-shell', $scope . ' .ssi-native-control-shell-wrap', $scope . ' .wp-block-button.form-button-submit' ), true ) && 'display:contents' === $matches[2] );
 		}
 		if ( ! preg_match( '/^' . $scope_selector . '$/D', $matches[1] ) && ! $native_safe ) {
 			return false;
@@ -605,8 +613,8 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	private static function safe_selector( string $selector, string $scope ): bool {
 		$native_scope = $scope . '.ssi-native-form-topology';
 		if ( str_contains( $selector, '.ssi-native-form-topology' ) ) {
-			$parts = explode( ', ', $selector );
-			$allowed = array( $native_scope, $native_scope . '.jetpack-contact-form-container', $native_scope . ' form.jetpack-contact-form__form', $native_scope . '.wp-block-jetpack-contact-form:not(:has(form.jetpack-contact-form__form))', $native_scope . ' > div.jetpack-contact-form' );
+			$parts   = explode( ', ', $selector );
+			$allowed = array( $native_scope, $native_scope . '.jetpack-contact-form-container', $native_scope . ' form.jetpack-contact-form__form', $native_scope . '.wp-block-jetpack-contact-form:not(:has(form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *)', $native_scope . ' > div.jetpack-contact-form', $native_scope . '.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form)', $native_scope . '.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *)' );
 			return count( $parts ) <= 2 && empty( array_diff( $parts, $allowed ) );
 		}
 		if ( str_ends_with( $selector, ' > div.jetpack-field__control' ) ) {

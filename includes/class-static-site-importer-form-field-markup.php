@@ -333,7 +333,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 				'wrapper'     => 'ul',
 			);
 		} elseif ( ! in_array( $lookup, array( 'checkbox', 'radio' ), true ) ) {
-			$input_attrs  = array(
+			$input_attrs = array(
 				'style' => array( 'border' => array( 'style' => 'solid' ) ),
 			);
 			if ( in_array( $control_styles['border_style'] ?? null, array( 'none', 'solid', 'dotted', 'dashed', 'double', 'groove', 'ridge', 'inset', 'outset' ), true ) ) {
