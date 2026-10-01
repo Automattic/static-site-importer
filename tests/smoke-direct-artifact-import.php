@@ -1001,6 +1001,14 @@ $assert( ! empty( $amnesiac_terminal['success'] ) && empty( $amnesiac_terminal['
 $post_completion = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
 $assert( '' !== (string) ( $post_completion['import_id'] ?? '' ) && $amnesiac_id !== (string) ( $post_completion['import_id'] ?? '' ), 'a completed run must never be adopted by discovery; identical new requests start their own run' );
 
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array( static fn ( array $policy ): array => array_merge( $policy, array( 'compile_in_process_pages' => 1, 'compile_batches_per_invocation' => 10 ) ) );
+$batched_input         = $input( 'plan' );
+$batched_input['slug'] = 'direct-artifact-batched-fixture';
+$batched               = Static_Site_Importer_Canonical_Import_Service::import( $batched_input );
+$batched_work          = $batched['artifact_run']['work'] ?? array();
+$assert( ! empty( $batched['success'] ) && 3 === ( $batched_work['pages_compiled'] ?? 0 ) && 3 === ( $batched_work['compile_batches'] ?? 0 ) && 'pages_remaining' !== ( $batched['continuation_reason'] ?? '' ), 'a multi-batch policy compiles every pending batch in one invocation, each batch durable on its own' );
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array();
+
 Static_Site_Importer_Artifact_Run_Workspace::purge_expired_in( $test_root );
 $primitive_workspace->purge();
 echo "Direct artifact import smoke passed.\n";
