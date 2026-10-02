@@ -401,6 +401,12 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			'post_parent'  => $parent,
 			'post_content' => wp_slash( (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ) ),
 		);
+		if ( array_key_exists( 'excerpt', $page['metadata'] ?? array() ) ) {
+			if ( ! is_string( $page['metadata']['excerpt'] ) ) {
+				return new WP_Error( 'invalid_source_excerpt', 'The source-backed post excerpt must be a string.' );
+			}
+			$post['post_excerpt'] = wp_slash( $page['metadata']['excerpt'] );
+		}
 		if ( ! empty( $page['metadata']['detected_date'] ) ) {
 			// The classifier emits UTC. post_date_gmt stores that absolute value;
 			// wp_insert_post derives the site-local post_date from it using the

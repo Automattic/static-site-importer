@@ -3170,6 +3170,25 @@ $tz_id       = (int) ( ( $tz_receipt['completed']['pages'] ?? array() )['essays/
 $assert( '2024-03-12 10:00:00' === ( $GLOBALS['ssi_plan_posts'][ $tz_id ]['post_date_gmt'] ?? null ), 'non-UTC timezone does not shift the detected publish date stored as GMT' );
 date_default_timezone_set( $previous_tz );
 
+// Authored excerpts are a distinct native field and never a clipped copy of
+// post_content. The stub retains slashed insertion bytes; runtime proof also
+// checks WordPress's persisted field and the actual core/post-excerpt render.
+$source_excerpt = "Author's description " . str_repeat( 'complete summary ', 70 );
+$excerpt_page = array(
+	'post_type' => 'post',
+	'parent_source_path' => '',
+	'title' => 'Excerpt ownership',
+	'slug' => 'excerpt-ownership',
+	'resolved_block_markup' => '<!-- wp:paragraph --><p>Entire independent article.</p><!-- /wp:paragraph -->',
+	'metadata' => array( 'excerpt' => $source_excerpt ),
+);
+$excerpt_id = Static_Site_Importer_Site_Plan_Persistence::materialize_page( $excerpt_page, array() );
+$assert( is_int( $excerpt_id ) && wp_slash( $source_excerpt ) === ( $GLOBALS['ssi_plan_posts'][ $excerpt_id ]['post_excerpt'] ?? null ), 'source-backed excerpt persists in its native field without a character or word truncation' );
+$assert( str_contains( $GLOBALS['ssi_plan_posts'][ $excerpt_id ]['post_content'] ?? '', 'Entire independent article.' ), 'excerpt persistence retains independent full article content' );
+$excerpt_page['metadata']['excerpt'] = array( 'invalid' );
+$excerpt_error = Static_Site_Importer_Site_Plan_Persistence::materialize_page( $excerpt_page, array() );
+$assert( is_wp_error( $excerpt_error ) && 'invalid_source_excerpt' === $excerpt_error->get_error_code(), 'malformed source excerpt is rejected before insertion' );
+
 // A page first imported undated, then re-imported with a date signal: the
 // reconciliation identity is stable across post types, so the existing row is
 // reused and reclassified as a post rather than duplicated.
