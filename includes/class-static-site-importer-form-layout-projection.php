@@ -924,12 +924,16 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'control_count' => count( $branch_fields ),
 			);
 		}
-		// A nested plain fieldset around exactly one labelled text, email, tel, or
-		// textarea control is that control's own group. Jetpack keeps the editable
-		// pair; the runtime restores the fieldset, including ancestor fieldsets, from
-		// these depth markers. Labelled, unlabelled, and multi-control groups stay losses.
+		// A plain fieldset around exactly one labelled text, email, tel, or textarea
+		// control is that control's own group, whether it is nested or a peer root.
+		// Jetpack keeps the editable pair; the runtime restores one fieldset from
+		// the depth marker. An all-controls root fieldset stays on its own projection.
+		// Labelled, unlabelled, and multi-control groups stay losses.
 		foreach ( $s->nodes as $node ) {
-			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? null ) || 'fieldset' !== ( $node['tag'] ?? null ) || 'plain_group' !== ( $node['fieldset_semantics'] ?? null ) || null === ( $node['parent'] ?? null ) || ! is_string( $node['id'] ?? null ) ) {
+			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? null ) || 'fieldset' !== ( $node['tag'] ?? null ) || 'plain_group' !== ( $node['fieldset_semantics'] ?? null ) || ! is_string( $node['id'] ?? null ) ) {
+				continue;
+			}
+			if ( self::projectable_plain_root_fieldset( $node, $s->nodes, $s->field_blocks ) ) {
 				continue;
 			}
 			$branch_controls = ( $s->collect_controls )( $node );

@@ -3288,6 +3288,78 @@ namespace {
 	$nested_plain_wrap   = array() === $nested_plain_tokens ? '' : implode( '-wrap ', $nested_plain_tokens ) . '-wrap';
 	$nested_plain_rendered = apply_filters( 'grunion_contact_form_field_html', '<div class="grunion-field-email-wrap ' . $nested_plain_wrap . '"><label>Email</label><input type="email"></div>', 'Email', null );
 	$assert( empty( $nested_plain_validation['errors'] ) && 'mapped' === ( $nested_plain_row['status'] ?? '' ) && array( hash( 'sha256', 'wrapper-1' ), hash( 'sha256', 'wrapper-2' ) ) === array_values( $nested_plain_hashes ) && 1 === preg_match( '/^<fieldset class="outer-group"><fieldset class="inner-group"><p class="row"><div class="grunion-field-email-wrap\b/', $nested_plain_rendered ) && str_contains( $nested_plain_rendered, '<label>Email</label>' ) && ! str_contains( $nested_plain_rendered, 'ssi-source-semantic-wrapper' ), 'nested-plain-fieldset-ancestry-restores-outer-fieldset-then-inner-fieldset-then-paragraph', $nested_plain_rendered );
+	$peer_root_fieldset_form = array(
+		'forms' => array(
+			array(
+				'selector'          => 'form.inquiry',
+				'controls'          => array(
+					array( 'tag' => 'input', 'type' => 'text', 'name' => 'name', 'id' => 'name', 'label' => 'Name', 'required' => true ),
+					array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'id' => 'email', 'label' => 'Email', 'required' => true ),
+					array( 'tag' => 'input', 'type' => 'tel', 'name' => 'phone', 'id' => 'phone', 'label' => 'Phone' ),
+					array( 'tag' => 'textarea', 'type' => 'textarea', 'name' => 'message', 'id' => 'message', 'label' => 'Message' ),
+					array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+				),
+				'control_topology'  => array(
+					'schema'    => 'generic/form-control-topology/v1',
+					'max_depth' => 8,
+					'max_nodes' => 128,
+					'truncated' => false,
+					'nodes'     => array(
+						array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'fieldset', 'fieldset_semantics' => 'plain_group' ),
+						array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'control' => 0 ),
+						array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => null, 'order' => 1, 'depth' => 0, 'tag' => 'fieldset', 'fieldset_semantics' => 'plain_group' ),
+						array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 1, 'control' => 1 ),
+						array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => null, 'order' => 2, 'depth' => 0, 'tag' => 'fieldset', 'fieldset_semantics' => 'plain_group' ),
+						array( 'id' => 'control-2', 'kind' => 'control', 'parent' => 'wrapper-2', 'order' => 0, 'depth' => 1, 'control' => 2 ),
+						array( 'id' => 'wrapper-3', 'kind' => 'wrapper', 'parent' => null, 'order' => 3, 'depth' => 0, 'tag' => 'fieldset', 'fieldset_semantics' => 'plain_group' ),
+						array( 'id' => 'control-3', 'kind' => 'control', 'parent' => 'wrapper-3', 'order' => 0, 'depth' => 1, 'control' => 3 ),
+						array( 'id' => 'control-4', 'kind' => 'control', 'parent' => null, 'order' => 4, 'depth' => 0, 'control' => 4 ),
+					),
+				),
+				'sibling_relations' => array( 'schema' => 'generic/form-sibling-relations/v1', 'max_pairs' => 128, 'truncated' => false, 'pairs' => array( array( 'control' => 0 ), array( 'control' => 1 ), array( 'control' => 2 ), array( 'control' => 3 ) ) ),
+				'layout_graph'      => $v2_layout_graph( array( array( 'id' => 'form', 'kind' => 'container', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'form', 'classes' => array( 'inquiry' ) ), 'layout' => array( 'display' => 'flex', 'direction' => 'column', 'gap' => '1.2rem' ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'd', 64 ), 'selector' => '.inquiry', 'condition' => null, 'properties' => array( 'display', 'flex-direction', 'gap' ) ) ) ) ) ),
+			),
+		),
+	);
+	$peer_root_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $peer_root_fieldset_form );
+	$peer_root_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $peer_root_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$peer_root_ops        = array_column( $peer_root_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' );
+	$peer_root_targets    = array_column( array_filter( $peer_root_row['computed_layout_receipt']['operations'] ?? array(), static fn( array $operation ): bool => 'provider_plain_single_field_fieldset_projection' === ( $operation['strategy'] ?? '' ) ), 'target_hash' );
+	$peer_root_css        = (string) ( $peer_root_row['provider_layout_overlay_css']['css'] ?? '' );
+	$peer_root_block      = null;
+	foreach ( parse_blocks( (string) ( $peer_root_row['block_markup'] ?? '' ) ) as $peer_root_candidate ) {
+		if ( 'jetpack/contact-form' === ( $peer_root_candidate['blockName'] ?? '' ) ) {
+			$peer_root_block = $peer_root_candidate;
+			break;
+		}
+	}
+	$peer_root_fields = array_values( array_filter( is_array( $peer_root_block['innerBlocks'] ?? null ) ? $peer_root_block['innerBlocks'] : array(), static fn( array $block ): bool => str_starts_with( (string) ( $block['blockName'] ?? '' ), 'jetpack/field-' ) ) );
+	$peer_root_rendered = array();
+	foreach ( $peer_root_fields as $peer_root_field ) {
+		$peer_root_tokens = array_values( array_filter( explode( ' ', (string) ( $peer_root_field['attrs']['className'] ?? '' ) ) ) );
+		$peer_root_wrap   = array() === $peer_root_tokens ? '' : implode( '-wrap ', $peer_root_tokens ) . '-wrap';
+		$peer_root_type   = substr( (string) ( $peer_root_field['blockName'] ?? '' ), strlen( 'jetpack/field-' ) );
+		$peer_root_label  = '';
+		foreach ( $peer_root_field['innerBlocks'] ?? array() as $peer_root_inner ) {
+			if ( 'jetpack/label' === ( $peer_root_inner['blockName'] ?? '' ) ) {
+				$peer_root_label = (string) ( $peer_root_inner['attrs']['label'] ?? '' );
+			}
+		}
+		$peer_root_control = 'textarea' === $peer_root_type ? '<textarea name="message"></textarea>' : '<input type="' . ( 'telephone' === $peer_root_type ? 'tel' : ( 'email' === $peer_root_type ? 'email' : 'text' ) ) . '">';
+		$peer_root_rendered[] = apply_filters( 'grunion_contact_form_field_html', '<div class="grunion-field-' . $peer_root_type . '-wrap ' . $peer_root_wrap . '"><label>' . $peer_root_label . '</label>' . $peer_root_control . '</div>', $peer_root_label, null );
+	}
+	$assert( empty( $peer_root_validation['errors'] ) && 'mapped' === ( $peer_root_row['status'] ?? '' ) && true === ( $peer_root_row['runtime_mapped'] ?? false ) && ! array_intersect( array( 'unsupported_semantic_wrapper', 'provider_wrapper_layout_unrepresentable' ), array_column( $peer_root_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ) ) && array( hash( 'sha256', 'wrapper-0' ), hash( 'sha256', 'wrapper-1' ), hash( 'sha256', 'wrapper-2' ), hash( 'sha256', 'wrapper-3' ) ) === array_values( $peer_root_targets ) && ! in_array( 'provider_plain_root_fieldset_projection', $peer_root_ops, true ) && in_array( 'provider_direct_label_control_gap', $peer_root_ops, true ) && str_contains( $peer_root_css, 'gap:1.2rem' ), 'peer-root-plain-single-field-fieldsets-materialize-and-keep-label-gap', wp_json_encode( $peer_root_row ) );
+	$assert( array( 'Name', 'Email', 'Phone', 'Message' ) === array_map( static fn( string $html ): string => 1 === preg_match( '/<label>(.*?)<\/label>/', $html, $label_match ) ? $label_match[1] : '', $peer_root_rendered ) && 4 === count( array_filter( $peer_root_rendered, static fn( string $html ): bool => 1 === substr_count( $html, '<fieldset' ) && str_starts_with( $html, '<fieldset>' ) && ! str_contains( $html, 'ssi-source-semantic-wrapper' ) ) ), 'peer-root-rendered-fieldset-is-exactly-one-ancestor-per-labelled-control', wp_json_encode( $peer_root_rendered ) );
+	$lone_root_fieldset_form = $peer_root_fieldset_form;
+	$lone_root_fieldset_form['forms'][0]['controls'] = array( array( 'tag' => 'input', 'type' => 'text', 'name' => 'name', 'label' => 'Name' ) );
+	$lone_root_fieldset_form['forms'][0]['control_topology']['nodes'] = array(
+		array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'fieldset', 'fieldset_semantics' => 'plain_group' ),
+		array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'control' => 0 ),
+	);
+	$lone_root_fieldset_form['forms'][0]['sibling_relations']['pairs'] = array( array( 'control' => 0 ) );
+	$lone_root_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $lone_root_fieldset_form )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$lone_root_ops = array_column( $lone_root_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' );
+	$assert( 'mapped' === ( $lone_root_row['status'] ?? '' ) && in_array( 'provider_plain_root_fieldset_projection', $lone_root_ops, true ) && ! in_array( 'provider_plain_single_field_fieldset_projection', $lone_root_ops, true ), 'all-controls-root-fieldset-is-not-duplicated-as-a-single-field-wrapper', wp_json_encode( $lone_root_ops ) );
 	$ambiguous_plain_fieldset_form = $plain_fieldset_form;
 	$ambiguous_plain_fieldset_form['forms'][0]['controls'] = array(
 		array( 'tag' => 'input', 'type' => 'text', 'name' => 'first', 'label' => 'First' ),
@@ -3891,7 +3963,7 @@ namespace {
 	$plain_root_fieldset_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $plain_root_fieldset );
 	$plain_root_fieldset_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $plain_root_fieldset_validation['forms'] ?? array() ) );
 	$plain_root_fieldset_markup = (string) ( $plain_root_fieldset_seed['forms'][0]['block_markup'] ?? '' );
-	$assert( empty( $plain_root_fieldset_validation['errors'] ) && 'mapped' === ( $plain_root_fieldset_seed['forms'][0]['status'] ?? '' ) && empty( $plain_root_fieldset_seed['forms'][0]['form_receipt_unaccepted_losses'] ?? array() ) && str_contains( $plain_root_fieldset_markup, 'ssi-source-root-fieldset\u002d\u002dsource-root' ) && in_array( 'provider_plain_root_fieldset_projection', array_column( $plain_root_fieldset_seed['forms'][0]['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'provider-form-transports-proven-plain-root-fieldset-grouping', wp_json_encode( array( 'validation' => $plain_root_fieldset_validation, 'seed' => $plain_root_fieldset_seed ) ) );
+	$assert( empty( $plain_root_fieldset_validation['errors'] ) && 'mapped' === ( $plain_root_fieldset_seed['forms'][0]['status'] ?? '' ) && empty( $plain_root_fieldset_seed['forms'][0]['form_receipt_unaccepted_losses'] ?? array() ) && str_contains( $plain_root_fieldset_markup, 'ssi-source-root-fieldset\u002d\u002dsource-root' ) && in_array( 'provider_plain_root_fieldset_projection', array_column( $plain_root_fieldset_seed['forms'][0]['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ) && ! in_array( 'provider_plain_single_field_fieldset_projection', array_column( $plain_root_fieldset_seed['forms'][0]['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'provider-form-transports-proven-plain-root-fieldset-grouping', wp_json_encode( array( 'validation' => $plain_root_fieldset_validation, 'seed' => $plain_root_fieldset_seed ) ) );
 	$plain_root_runtime = Static_Site_Importer_Form_Seeder::project_provider_plain_root_fieldset(
 		'<div class="jetpack-contact-form-container"><form class="jetpack-contact-form__form" action="/submit"><div class="wp-block-jetpack-contact-form ssi-source-root-fieldset ssi-source-root-fieldset--source-root"><div class="grunion-field-text-wrap"><label>Name</label><input name="name"><svg><path d="M0 0"></path></svg></div><div class="wp-block-button"><button type="submit">Send</button></div></div><input type="hidden" name="_wpnonce" value="nonce"></form></div>',
 		array( 'attrs' => array( 'className' => 'ssi-source-root-fieldset ssi-source-root-fieldset--source-root' ) )
