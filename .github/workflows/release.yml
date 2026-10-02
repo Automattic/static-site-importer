@@ -95,6 +95,10 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ github.token }}
+          # This job runs after prior serialized releases may have advanced main.
+          # Prepare the current source, including their version commit, rather
+          # than the older push-event SHA that entered the queue.
+          ref: main
 
       # Homeboy CLI acquisition is left at the composite action's default
       # ("latest" released binary): `homeboy release resolve` and the
