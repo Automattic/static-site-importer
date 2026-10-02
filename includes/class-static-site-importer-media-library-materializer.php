@@ -488,10 +488,16 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	/** Inspect bounded local ICO bytes before any upload or identity mutation. */
 	private static function ico_asset_metadata( string $file ): array {
 		if ( ! is_readable( $file ) || filesize( $file ) > 2 * 1024 * 1024 ) {
-			return array( 'status' => 'invalid_ico', 'reason' => 'unreadable_or_byte_limit' );
+			return array(
+				'status' => 'invalid_ico',
+				'reason' => 'unreadable_or_byte_limit',
+			);
 		}
 		$bytes = file_get_contents( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local canonical asset written by this import.
-		return false === $bytes ? array( 'status' => 'invalid_ico', 'reason' => 'unreadable' ) : Static_Site_Importer_Ico_Asset::inspect( $bytes );
+		return false === $bytes ? array(
+			'status' => 'invalid_ico',
+			'reason' => 'unreadable',
+		) : Static_Site_Importer_Ico_Asset::inspect( $bytes );
 	}
 
 	/** Reuse the owning compiler's standalone artwork contract for native media. */
