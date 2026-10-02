@@ -51,6 +51,11 @@ namespace {
 			return $value;
 		}
 	}
+	if ( ! function_exists( 'has_filter' ) ) {
+		function has_filter( string $hook ): bool {
+			return ! empty( $GLOBALS['ssi_test_hooks'][ $hook ] );
+		}
+	}
 
 	if ( ! function_exists( 'get_option' ) ) {
 		function get_option( $name, $default = false ) {

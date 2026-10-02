@@ -4,6 +4,7 @@
     "tests/smoke-option-idempotence.php": {
       "environment": "standalone-php"
     },
+    "tests/smoke-form-mapping-plan.php": { "environment": "standalone-php" },
     "tests/form-fallback-contract-equivalence.php": { "environment": "standalone-php" },
     "tests/provider-adapter-runtime-smoke.php": { "environment": "standalone-php" },
     "tests/provider-field-list-order.php": { "environment": "standalone-php" },
