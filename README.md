@@ -78,6 +78,14 @@ default-value behavior and switching to another companion plugin remain separate
 concerns. Run `tests/companion-persistence.php` in a disposable WordPress site for
 the real multi-request regression and legitimate-refresh proof.
 
+## Form Provider Mapping
+
+Jetpack form materialization prepares normalized controls, topology, provider layout/presentation destinations, and bounded receipt losses as a `Static_Site_Importer_Form_Mapping_Plan`. The plan resolves one mapped/declined decision before final form serialization; runtime binding and report projection consume that same decision. Visual-state collection reads the admitted plan without serializing a provider form.
+
+The existing `static_site_importer_form_receipt_loss_accepted` waiver filter receives the complete proposed emission row, including markup and overlays. When that filter is installed and a loss needs its decision, the plan lazily serializes the proposal and reuses those exact bytes for the final report. Declined proposals remain report evidence and do not become runtime bindings.
+
+Run `php tests/smoke-form-mapping-plan.php` for the phase-ordering, waiver, and loss-overflow contract, and the form-materializer smoke/topology and rendered-layout suites for output and presentation coverage.
+
 ## Content-Only Security Boundary
 
 All HTML, folders, ZIPs, URLs, and website artifact objects are untrusted static content. SSI accepts only explicit static asset extensions and rejects server-side source markers before compilation. Compiler-produced companion payloads are independently revalidated before any generated plugin file is written or activated. Companion block renders accept static HTML only; SSI emits its own fixed PHP wrapper to output that markup, so source PHP cannot be preserved or executed. Existing payloads that relied on PHP render templates or PHP companion assets must migrate their behavior to blocks, data bindings, or client-side JavaScript.

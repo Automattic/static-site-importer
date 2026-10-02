@@ -41,6 +41,11 @@ namespace {
 			return $value;
 		}
 	}
+	if ( ! function_exists( 'has_filter' ) ) {
+		function has_filter( string $hook ): bool {
+			return ! empty( $GLOBALS['ssi_test_hooks'][ $hook ] );
+		}
+	}
 	if ( ! function_exists( 'get_option' ) ) {
 		function get_option( $name, $default = false ) {
 			return $GLOBALS['ssi_test_options'][ $name ] ?? $default;
@@ -66,6 +71,9 @@ namespace {
 	if ( ! function_exists( 'serialize_block' ) ) {
 		function serialize_block( array $block ): string {
 			$name  = (string) ( $block['blockName'] ?? '' );
+			if ( 'jetpack/contact-form' === $name ) {
+				$GLOBALS['ssi_test_form_serializations'] = (int) ( $GLOBALS['ssi_test_form_serializations'] ?? 0 ) + 1;
+			}
 			$attrs = is_array( $block['attrs'] ?? null ) && ! empty( $block['attrs'] ) ? ' ' . (string) wp_json_encode( $block['attrs'] ) : '';
 			$inner = '';
 			$index = 0;
