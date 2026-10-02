@@ -7,6 +7,8 @@
 
 defined( 'ABSPATH' ) || exit;
 
+require_once __DIR__ . '/class-static-site-importer-ico-asset.php';
+
 /**
  * Moves page-owned raster images into the Media Library.
  *
@@ -114,8 +116,10 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			unset( $resolved_page );
 			$report['bound_block_count'] += $bound;
 		}
-		$error               = null;
-		$report['site_icon'] = self::materialize_site_icon( $state, $theme_uri, $theme_dir, $attachments, $by_hash, $error );
+		$error = null;
+		// Explicit branding is resolved together after activation. Keep the early
+		// raster fallback only for legacy plans without native icon evidence.
+		$report['site_icon'] = empty( $state['args']['native_site_identity_evidence']['icon'] ) ? self::materialize_site_icon( $state, $theme_uri, $theme_dir, $attachments, $by_hash, $error ) : 0;
 		if ( $error instanceof WP_Error ) {
 			return $error;
 		}
@@ -161,7 +165,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				$report[ $option ]      = $entry;
 				continue;
 			}
-			$id = 'icon' === $field ? (int) ( $state['pending_site_icon'] ?? 0 ) : 0;
+			$id = 'icon' === $field && empty( $evidence['icon'] ) ? (int) ( $state['pending_site_icon'] ?? 0 ) : 0;
 			if ( $id <= 0 && ! empty( $evidence[ $field ] ) ) {
 				$write = null;
 				foreach ( $state['resolved']['writes'] ?? array() as $candidate ) {
@@ -176,14 +180,22 @@ final class Static_Site_Importer_Media_Library_Materializer {
 					$url      = rtrim( $theme_uri, '/' ) . '/' . $write['target_path'];
 					$relative = self::theme_relative_raster( $url, $theme_uri );
 					$svg      = null;
+					$ico      = null;
 					if ( null === $relative && 'svg' === strtolower( pathinfo( $write['target_path'], PATHINFO_EXTENSION ) ) ) {
 						$relative = self::theme_relative_asset( $url, $theme_uri, array( 'svg' ) );
 						$svg      = null === $relative ? null : self::svg_asset_metadata( $theme_dir . '/' . $relative );
+					}
+					if ( null === $relative && 'ico' === strtolower( pathinfo( $write['target_path'], PATHINFO_EXTENSION ) ) ) {
+						$relative = self::theme_relative_asset( $url, $theme_uri, array( 'ico' ) );
+						$ico      = null === $relative ? null : self::ico_asset_metadata( $theme_dir . '/' . $relative );
 					}
 					if ( null === $relative ) {
 						$entry['status'] = 'unsupported_format';
 					} elseif ( null !== $svg && 'supported' !== $svg['status'] ) {
 						$entry['status'] = $svg['status'];
+					} elseif ( null !== $ico && 'supported' !== $ico['status'] ) {
+						$entry['status'] = $ico['status'];
+						$entry['reason'] = $ico['reason'];
 					} elseif ( ! function_exists( 'wp_insert_attachment' ) ) {
 						$entry['status'] = 'runtime_unavailable';
 					} else {
@@ -402,6 +414,9 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		if ( null !== $svg && 'supported' !== $svg['status'] ) {
 			return 0;
 		}
+		if ( 'ico' === strtolower( pathinfo( $relative, PATHINFO_EXTENSION ) ) && 'supported' !== Static_Site_Importer_Ico_Asset::inspect( $bytes )['status'] ) {
+			return 0;
+		}
 		// Admit only compiler-validated artwork during this synchronous upload.
 		// Ordinary uploads keep WordPress's existing SVG MIME policy.
 		$svg_mime = static function ( array $mimes ): array {
@@ -470,6 +485,21 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		}
 
 		return (int) $attachment_id;
+	}
+
+	/** Inspect bounded local ICO bytes before any upload or identity mutation. */
+	private static function ico_asset_metadata( string $file ): array {
+		if ( ! is_readable( $file ) || filesize( $file ) > 2 * 1024 * 1024 ) {
+			return array(
+				'status' => 'invalid_ico',
+				'reason' => 'unreadable_or_byte_limit',
+			);
+		}
+		$bytes = file_get_contents( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local canonical asset written by this import.
+		return false === $bytes ? array(
+			'status' => 'invalid_ico',
+			'reason' => 'unreadable',
+		) : Static_Site_Importer_Ico_Asset::inspect( $bytes );
 	}
 
 	/** Reuse the owning compiler's standalone artwork contract for native media. */
