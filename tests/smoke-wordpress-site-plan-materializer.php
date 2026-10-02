@@ -3180,11 +3180,12 @@ $excerpt_page = array(
 	'title' => 'Excerpt ownership',
 	'slug' => 'excerpt-ownership',
 	'resolved_block_markup' => '<!-- wp:paragraph --><p>Entire independent article.</p><!-- /wp:paragraph -->',
-	'metadata' => array( 'excerpt' => $source_excerpt ),
+	'metadata' => array( 'excerpt' => $source_excerpt, 'post_meta' => array( 'blocks_engine_listing_labels_test' => '<a href="/topic/">Owner\'s topic</a>' ) ),
 );
 $excerpt_id = Static_Site_Importer_Site_Plan_Persistence::materialize_page( $excerpt_page, array() );
 $assert( is_int( $excerpt_id ) && wp_slash( $source_excerpt ) === ( $GLOBALS['ssi_plan_posts'][ $excerpt_id ]['post_excerpt'] ?? null ), 'source-backed excerpt persists in its native field without a character or word truncation' );
 $assert( str_contains( $GLOBALS['ssi_plan_posts'][ $excerpt_id ]['post_content'] ?? '', 'Entire independent article.' ), 'excerpt persistence retains independent full article content' );
+$assert( wp_slash( '<a href="/topic/">Owner\'s topic</a>' ) === ( $GLOBALS['ssi_plan_posts'][ $excerpt_id ]['meta_input']['blocks_engine_listing_labels_test'] ?? null ), 'source-backed binding fields use native post metadata insertion with correct slashing' );
 $excerpt_page['metadata']['excerpt'] = array( 'invalid' );
 $excerpt_error = Static_Site_Importer_Site_Plan_Persistence::materialize_page( $excerpt_page, array() );
 $assert( is_wp_error( $excerpt_error ) && 'invalid_source_excerpt' === $excerpt_error->get_error_code(), 'malformed source excerpt is rejected before insertion' );
