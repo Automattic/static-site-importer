@@ -43,6 +43,10 @@ Entrypoint-relative and root-relative URIs resolve inside the artifact root;
 manifest icon URIs resolve against the manifest document. Canonical resolved
 asset writes supply the final theme path. The existing Media Library materializer
 creates or reuses attachments, so identical logo/icon bytes share an attachment.
+Explicit entrypoint icon evidence is resolved in the activation transaction;
+an unrelated raster touch-icon fallback cannot override a declared ICO choice
+or create an unused fallback attachment. Plans without explicit native icon
+evidence retain the existing legacy favicon path.
 
 Native branding is applied after generated-theme activation. `site_logo` uses
 WordPress core's existing global setting and custom-logo filter, `site_icon` uses

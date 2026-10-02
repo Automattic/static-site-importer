@@ -116,8 +116,10 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			unset( $resolved_page );
 			$report['bound_block_count'] += $bound;
 		}
-		$error               = null;
-		$report['site_icon'] = self::materialize_site_icon( $state, $theme_uri, $theme_dir, $attachments, $by_hash, $error );
+		$error = null;
+		// Explicit branding is resolved together after activation. Keep the early
+		// raster fallback only for legacy plans without native icon evidence.
+		$report['site_icon'] = empty( $state['args']['native_site_identity_evidence']['icon'] ) ? self::materialize_site_icon( $state, $theme_uri, $theme_dir, $attachments, $by_hash, $error ) : 0;
 		if ( $error instanceof WP_Error ) {
 			return $error;
 		}
@@ -163,7 +165,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				$report[ $option ]      = $entry;
 				continue;
 			}
-			$id = 'icon' === $field ? (int) ( $state['pending_site_icon'] ?? 0 ) : 0;
+			$id = 'icon' === $field && empty( $evidence['icon'] ) ? (int) ( $state['pending_site_icon'] ?? 0 ) : 0;
 			if ( $id <= 0 && ! empty( $evidence[ $field ] ) ) {
 				$write = null;
 				foreach ( $state['resolved']['writes'] ?? array() as $candidate ) {

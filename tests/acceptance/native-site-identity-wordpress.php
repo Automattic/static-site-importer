@@ -398,6 +398,29 @@ $ico_reimport = Static_Site_Importer_WordPress_Site_Plan_Materializer::materiali
 identity_assert( 'completed' === ( $ico_reimport['status'] ?? '' ) && (int) get_option( 'site_logo' ) === $ico_logo && (int) get_option( 'site_icon' ) === $ico_logo, 'ICO reimport after clearing settings must reuse the shared attachment' );
 identity_assert( get_posts( $svg_query ) === $ico_ids, 'ICO reimport must not duplicate attachments' );
 
+// A common favicon.ico + PNG touch-icon source must keep the declared ICO
+// evidence authoritative instead of inheriting an unrelated early raster choice.
+$ico_mixed_artifact                        = $ico_artifact;
+$ico_mixed_artifact['files'][0]['content'] = str_replace( '</head>', '<link rel="apple-touch-icon" href="touch.png"></head>', $ico_mixed_artifact['files'][0]['content'] );
+$ico_mixed_artifact['files'][]             = array(
+	'path'           => 'website/touch.png',
+	// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Binary touch-icon fixture uses the existing portable artifact transport.
+	'content_base64' => base64_encode( $png ),
+);
+delete_option( 'site_logo' );
+delete_option( 'site_icon' );
+$ico_mixed_ids = get_posts( $svg_query );
+$ico_mixed     = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $ico_mixed_artifact, array(
+	'slug'     => 'ico-identity-mixed-icons',
+	'activate' => true,
+) );
+identity_assert( ! is_wp_error( $ico_mixed ), 'Mixed ICO/PNG icon source must compile' );
+$ico_mixed_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $ico_mixed['plan'], $ico_mixed['args'] );
+identity_assert( 'completed' === ( $ico_mixed_receipt['status'] ?? '' ), 'Mixed ICO/PNG icon source must materialize' );
+$ico_mixed_icon = (int) get_option( 'site_icon' );
+identity_assert( $ico_mixed_icon > 0 && (int) get_option( 'site_logo' ) === $ico_mixed_icon && 'image/x-icon' === get_post_mime_type( $ico_mixed_icon ), 'Declared ICO must remain authoritative when a separate PNG touch icon is present' );
+identity_assert( 1 === count( array_diff( get_posts( $svg_query ), $ico_mixed_ids ) ), 'Mixed icon evidence must not create an unused fallback attachment' );
+
 // Use different real attachments as owner values, so preservation cannot pass by coincidence.
 update_option( 'site_logo', $logo );
 update_option( 'site_icon', $svg_logo );
