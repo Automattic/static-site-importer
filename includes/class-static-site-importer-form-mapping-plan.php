@@ -23,7 +23,7 @@ final class Static_Site_Importer_Form_Mapping_Plan {
 	 * @param array<string,mixed>      $source_form Normalized producer form.
 	 * @param array<int,array>         $fields Planned blocks keyed by source control.
 	 * @param array<string,mixed>|null $contact_form Complete, unserialized provider block.
-	 * @param array<string,mixed>|null $source_shell Source-owned containing shell.
+	 * @param array{name:string,wrappers:array<int,array<string,mixed>>,open:string,close:string}|null $source_shell Source-owned containing shell.
 	 * @param array<string,mixed>      $report_facts Receipt, destinations and capabilities.
 	 */
 	private function __construct(
@@ -41,7 +41,11 @@ final class Static_Site_Importer_Form_Mapping_Plan {
 		return new self( $source_form, array(), null, null, $row );
 	}
 
-	/** Resolve support from planned fields, destinations and losses before emission. */
+	/**
+	 * Resolve support from planned fields, destinations and losses before emission.
+	 *
+	 * @param array{name:string,wrappers:array<int,array<string,mixed>>,open:string,close:string}|null $source_shell Source-owned containing shell.
+	 */
 	public static function prepared( array $source_form, array $fields, array $contact_form, ?array $source_shell, array $report_facts ): self {
 		return new self( $source_form, $fields, $contact_form, $source_shell, $report_facts );
 	}
