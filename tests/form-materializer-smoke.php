@@ -3171,6 +3171,180 @@ namespace {
 	$phone_fieldset_reasons    = array_column( $phone_fieldset_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' );
 	$phone_fieldset_ops        = array_column( $phone_fieldset_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' );
 	$assert( empty( $phone_fieldset_validation['errors'] ) && 'mapped' === ( $phone_fieldset_row['status'] ?? '' ) && true === ( $phone_fieldset_row['runtime_mapped'] ?? false ) && in_array( 'provider_labelled_text_fieldset_projection', $phone_fieldset_ops, true ) && ! array_intersect( array( 'unsupported_semantic_wrapper', 'provider_wrapper_layout_unrepresentable' ), $phone_fieldset_reasons ), 'nested-labelled-phone-fieldset-without-legend-materializes', wp_json_encode( $phone_fieldset_row ) );
+	$plain_fieldset_form = array(
+		'forms' => array(
+			array(
+				'selector'         => 'form.contact',
+				'controls'         => array(
+					array( 'tag' => 'input', 'type' => 'text', 'name' => 'name', 'id' => 'name', 'label' => 'Name', 'required' => true ),
+					array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'id' => 'email', 'label' => 'Email', 'required' => true ),
+					array( 'tag' => 'input', 'type' => 'tel', 'name' => 'phone', 'id' => 'phone', 'label' => 'Phone' ),
+					array( 'tag' => 'textarea', 'type' => 'textarea', 'name' => 'message', 'id' => 'message', 'label' => 'Message' ),
+					array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+				),
+				'control_topology' => array(
+					'schema'    => 'generic/form-control-topology/v1',
+					'max_depth' => 8,
+					'max_nodes' => 128,
+					'truncated' => false,
+					'nodes'     => array(
+						array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div', 'class' => 'fields' ),
+						array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'fieldset', 'fieldset_semantics' => 'plain_group' ),
+						array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'control' => 0 ),
+						array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 1, 'depth' => 1, 'tag' => 'fieldset', 'fieldset_semantics' => 'plain_group' ),
+						array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-2', 'order' => 0, 'depth' => 2, 'control' => 1 ),
+						array( 'id' => 'wrapper-3', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 2, 'depth' => 1, 'tag' => 'fieldset', 'fieldset_semantics' => 'plain_group' ),
+						array( 'id' => 'control-2', 'kind' => 'control', 'parent' => 'wrapper-3', 'order' => 0, 'depth' => 2, 'control' => 2 ),
+						array( 'id' => 'wrapper-4', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 3, 'depth' => 1, 'tag' => 'fieldset', 'class' => 'fields-item', 'fieldset_semantics' => 'plain_group' ),
+						array( 'id' => 'control-3', 'kind' => 'control', 'parent' => 'wrapper-4', 'order' => 0, 'depth' => 2, 'control' => 3 ),
+						array( 'id' => 'control-4', 'kind' => 'control', 'parent' => null, 'order' => 4, 'depth' => 0, 'control' => 4 ),
+					),
+				),
+				'layout_graph'     => $v2_layout_graph(
+					array(
+						$layout_node( 'form', array(), 'form' ),
+					)
+				),
+			),
+		),
+	);
+	$plain_fieldset_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $plain_fieldset_form );
+	$plain_fieldset_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $plain_fieldset_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$plain_fieldset_reasons    = array_column( $plain_fieldset_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' );
+	$plain_fieldset_ops        = array_column( $plain_fieldset_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' );
+	$plain_fieldset_markup     = (string) ( $plain_fieldset_row['block_markup'] ?? '' );
+	$plain_fieldset_targets    = array_column(
+		array_filter( $plain_fieldset_row['computed_layout_receipt']['operations'] ?? array(), static fn( array $operation ): bool => 'provider_plain_single_field_fieldset_projection' === ( $operation['strategy'] ?? '' ) ),
+		'target_hash'
+	);
+	$assert( empty( $plain_fieldset_validation['errors'] ) && 'mapped' === ( $plain_fieldset_row['status'] ?? '' ) && true === ( $plain_fieldset_row['runtime_mapped'] ?? false ) && ! array_intersect( array( 'unsupported_semantic_wrapper', 'provider_wrapper_layout_unrepresentable' ), $plain_fieldset_reasons ), 'nested-plain-single-field-fieldsets-materialize-without-semantic-loss', wp_json_encode( $plain_fieldset_row ) );
+	$assert( 4 === count( $plain_fieldset_targets ) && 4 === count( array_unique( $plain_fieldset_targets ) ) && array_values( array_intersect( $plain_fieldset_targets, array( hash( 'sha256', 'wrapper-1' ), hash( 'sha256', 'wrapper-2' ), hash( 'sha256', 'wrapper-3' ), hash( 'sha256', 'wrapper-4' ) ) ) ) === array( hash( 'sha256', 'wrapper-1' ), hash( 'sha256', 'wrapper-2' ), hash( 'sha256', 'wrapper-3' ), hash( 'sha256', 'wrapper-4' ) ), 'nested-plain-fieldset-receipt-represents-exactly-the-four-source-fieldsets', wp_json_encode( $plain_fieldset_ops ) );
+	$assert( str_contains( $plain_fieldset_markup, 'Name' ) && str_contains( $plain_fieldset_markup, 'Email' ) && str_contains( $plain_fieldset_markup, 'Phone' ) && str_contains( $plain_fieldset_markup, 'Message' ) && str_contains( $plain_fieldset_markup, 'wp:jetpack/field-telephone' ) && str_contains( $plain_fieldset_markup, 'wp:jetpack/field-textarea' ), 'nested-plain-fieldset-fields-stay-editable-provider-blocks-with-labels', $plain_fieldset_markup );
+	$assert( $plain_fieldset_markup === serialize_blocks( parse_blocks( $plain_fieldset_markup ) ), 'nested-plain-fieldset-markup-round-trips-through-wordpress-block-parser', $plain_fieldset_markup );
+	$assert( ! in_array( 'provider_plain_single_field_fieldset_projection', $name_fieldset_ops, true ), 'labelled-text-fieldset-is-not-consumed-by-plain-single-field-projection', wp_json_encode( $name_fieldset_ops ) );
+	Static_Site_Importer_Provider_Form_Runtime_V1::register();
+	$plain_fieldset_form_block = null;
+	foreach ( parse_blocks( $plain_fieldset_markup ) as $plain_fieldset_candidate ) {
+		if ( 'jetpack/contact-form' === ( $plain_fieldset_candidate['blockName'] ?? '' ) ) {
+			$plain_fieldset_form_block = $plain_fieldset_candidate;
+			break;
+		}
+	}
+	$plain_fieldset_fields = array_values( array_filter( is_array( $plain_fieldset_form_block['innerBlocks'] ?? null ) ? $plain_fieldset_form_block['innerBlocks'] : array(), static fn( array $block ): bool => str_starts_with( (string) ( $block['blockName'] ?? '' ), 'jetpack/field-' ) ) );
+	$plain_fieldset_rendered = array();
+	foreach ( $plain_fieldset_fields as $plain_fieldset_field ) {
+		$plain_fieldset_class_name = (string) ( $plain_fieldset_field['attrs']['className'] ?? '' );
+		$plain_fieldset_tokens     = array_values( array_filter( explode( ' ', $plain_fieldset_class_name ) ) );
+		$plain_fieldset_wrap       = array() === $plain_fieldset_tokens ? '' : implode( '-wrap ', $plain_fieldset_tokens ) . '-wrap';
+		$plain_fieldset_type       = substr( (string) ( $plain_fieldset_field['blockName'] ?? '' ), strlen( 'jetpack/field-' ) );
+		$plain_fieldset_label      = '';
+		foreach ( $plain_fieldset_field['innerBlocks'] ?? array() as $plain_fieldset_inner ) {
+			if ( 'jetpack/label' === ( $plain_fieldset_inner['blockName'] ?? '' ) ) {
+				$plain_fieldset_label = (string) ( $plain_fieldset_inner['attrs']['label'] ?? '' );
+			}
+		}
+		$plain_fieldset_control = 'textarea' === $plain_fieldset_type ? '<textarea name="message"></textarea>' : '<input type="' . ( 'telephone' === $plain_fieldset_type ? 'tel' : ( 'email' === $plain_fieldset_type ? 'email' : 'text' ) ) . '">';
+		$plain_fieldset_shell   = '<div class="grunion-field-' . $plain_fieldset_type . '-wrap ' . $plain_fieldset_wrap . '"><label>' . $plain_fieldset_label . '</label>' . $plain_fieldset_control . '</div>';
+		$plain_fieldset_rendered[] = apply_filters( 'grunion_contact_form_field_html', $plain_fieldset_shell, $plain_fieldset_label, null );
+	}
+	$plain_fieldset_message_class = '';
+	if ( preg_match( '/^<fieldset\b([^>]*)>/', (string) ( $plain_fieldset_rendered[3] ?? '' ), $plain_fieldset_open ) ) {
+		$plain_fieldset_message_class = 1 === preg_match( '/\bclass=(["\'])(.*?)\1/', $plain_fieldset_open[1], $plain_fieldset_class_match ) ? $plain_fieldset_class_match[2] : '';
+	}
+	$assert( 4 === count( $plain_fieldset_rendered ) && array( 'Name', 'Email', 'Phone', 'Message' ) === array_map( static fn( string $html ): string => 1 === preg_match( '/<label>(.*?)<\/label>/', $html, $label_match ) ? $label_match[1] : '', $plain_fieldset_rendered ), 'rendered-provider-fields-keep-source-label-order', wp_json_encode( $plain_fieldset_rendered ) );
+	$assert( 4 === count( array_filter( $plain_fieldset_rendered, static fn( string $html ): bool => str_starts_with( $html, '<fieldset' ) && str_contains( $html, '<label>' ) && ! str_contains( $html, 'ssi-source-semantic-wrapper' ) ) ) && 'fields-item' === $plain_fieldset_message_class && str_contains( (string) ( $plain_fieldset_fields[3]['attrs']['className'] ?? '' ), 'ssi-source-semantic-wrapper-1--fieldset--fields-item' ), 'provider-filter-restores-fieldset-ancestry-and-safe-classes', wp_json_encode( $plain_fieldset_rendered ) );
+	$assert( $plain_fieldset_rendered === array_map( static fn( string $html ): string => apply_filters( 'grunion_contact_form_field_html', $html, '', null ), $plain_fieldset_rendered ), 'rendered-fieldset-restoration-is-idempotent' );
+	$nested_plain_fieldset_form = $plain_fieldset_form;
+	$nested_plain_fieldset_form['forms'][0]['controls'] = array(
+		array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'id' => 'email', 'label' => 'Email', 'required' => true ),
+		array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+	);
+	$nested_plain_fieldset_form['forms'][0]['control_topology']['nodes'] = array(
+		array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div' ),
+		array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'fieldset', 'class' => 'outer-group', 'fieldset_semantics' => 'plain_group' ),
+		array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'tag' => 'fieldset', 'class' => 'inner-group', 'fieldset_semantics' => 'plain_group' ),
+		array( 'id' => 'wrapper-3', 'kind' => 'wrapper', 'parent' => 'wrapper-2', 'order' => 0, 'depth' => 3, 'tag' => 'p', 'class' => 'row' ),
+		array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-3', 'order' => 0, 'depth' => 4, 'control' => 0 ),
+		array( 'id' => 'control-1', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 1 ),
+	);
+	$nested_plain_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $nested_plain_fieldset_form );
+	$nested_plain_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $nested_plain_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$nested_plain_hashes     = array_column( array_filter( $nested_plain_row['computed_layout_receipt']['operations'] ?? array(), static fn( array $operation ): bool => 'provider_plain_single_field_fieldset_projection' === ( $operation['strategy'] ?? '' ) ), 'target_hash' );
+	$nested_plain_block      = null;
+	foreach ( parse_blocks( (string) ( $nested_plain_row['block_markup'] ?? '' ) ) as $nested_plain_candidate ) {
+		if ( 'jetpack/contact-form' === ( $nested_plain_candidate['blockName'] ?? '' ) ) {
+			$nested_plain_block = $nested_plain_candidate;
+			break;
+		}
+	}
+	$nested_plain_field = null;
+	foreach ( is_array( $nested_plain_block['innerBlocks'] ?? null ) ? $nested_plain_block['innerBlocks'] : array() as $nested_plain_inner ) {
+		if ( str_starts_with( (string) ( $nested_plain_inner['blockName'] ?? '' ), 'jetpack/field-' ) ) {
+			$nested_plain_field = $nested_plain_inner;
+			break;
+		}
+	}
+	$nested_plain_tokens = array_values( array_filter( explode( ' ', (string) ( $nested_plain_field['attrs']['className'] ?? '' ) ) ) );
+	$nested_plain_wrap   = array() === $nested_plain_tokens ? '' : implode( '-wrap ', $nested_plain_tokens ) . '-wrap';
+	$nested_plain_rendered = apply_filters( 'grunion_contact_form_field_html', '<div class="grunion-field-email-wrap ' . $nested_plain_wrap . '"><label>Email</label><input type="email"></div>', 'Email', null );
+	$assert( empty( $nested_plain_validation['errors'] ) && 'mapped' === ( $nested_plain_row['status'] ?? '' ) && array( hash( 'sha256', 'wrapper-1' ), hash( 'sha256', 'wrapper-2' ) ) === array_values( $nested_plain_hashes ) && 1 === preg_match( '/^<fieldset class="outer-group"><fieldset class="inner-group"><p class="row"><div class="grunion-field-email-wrap\b/', $nested_plain_rendered ) && str_contains( $nested_plain_rendered, '<label>Email</label>' ) && ! str_contains( $nested_plain_rendered, 'ssi-source-semantic-wrapper' ), 'nested-plain-fieldset-ancestry-restores-outer-fieldset-then-inner-fieldset-then-paragraph', $nested_plain_rendered );
+	$ambiguous_plain_fieldset_form = $plain_fieldset_form;
+	$ambiguous_plain_fieldset_form['forms'][0]['controls'] = array(
+		array( 'tag' => 'input', 'type' => 'text', 'name' => 'first', 'label' => 'First' ),
+		array( 'tag' => 'input', 'type' => 'text', 'name' => 'last', 'label' => 'Last' ),
+		array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+	);
+	$ambiguous_plain_fieldset_form['forms'][0]['control_topology']['nodes'] = array(
+		array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div', 'class' => 'fields' ),
+		array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'fieldset', 'fieldset_semantics' => 'plain_group' ),
+		array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'control' => 0 ),
+		array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 1, 'depth' => 2, 'control' => 1 ),
+		array( 'id' => 'control-2', 'kind' => 'control', 'parent' => null, 'order' => 2, 'depth' => 0, 'control' => 2 ),
+	);
+	$ambiguous_plain_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $ambiguous_plain_fieldset_form );
+	$ambiguous_plain_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $ambiguous_plain_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$ambiguous_plain_reasons    = array_column( $ambiguous_plain_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' );
+	$assert( empty( $ambiguous_plain_validation['errors'] ) && 'skipped' === ( $ambiguous_plain_row['status'] ?? '' ) && 'form_receipt_loss_unaccepted' === ( $ambiguous_plain_row['reason'] ?? '' ) && in_array( 'unsupported_semantic_wrapper', $ambiguous_plain_reasons, true ), 'multi-field-plain-fieldset-remains-semantically-gated', wp_json_encode( $ambiguous_plain_row ) );
+	$select_plain_fieldset_form = $plain_fieldset_form;
+	$select_plain_fieldset_form['forms'][0]['controls'] = array(
+		array( 'tag' => 'select', 'type' => 'select', 'name' => 'topic', 'label' => 'Topic', 'options' => array( array( 'label' => 'Support', 'value' => 'support' ) ) ),
+		array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+	);
+	$select_plain_fieldset_form['forms'][0]['control_topology']['nodes'] = array(
+		array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div', 'class' => 'fields' ),
+		array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'fieldset', 'fieldset_semantics' => 'plain_group' ),
+		array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'control' => 0 ),
+		array( 'id' => 'control-1', 'kind' => 'control', 'parent' => null, 'order' => 1, 'depth' => 0, 'control' => 1 ),
+	);
+	$select_plain_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $select_plain_fieldset_form );
+	$select_plain_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $select_plain_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$select_plain_reasons    = array_column( $select_plain_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' );
+	$assert( empty( $select_plain_validation['errors'] ) && 'skipped' === ( $select_plain_row['status'] ?? '' ) && in_array( 'unsupported_semantic_wrapper', $select_plain_reasons, true ), 'plain-fieldset-around-unsupported-control-remains-gated', wp_json_encode( $select_plain_row ) );
+	$neutral_div_fieldset_form = $plain_fieldset_form;
+	foreach ( $neutral_div_fieldset_form['forms'][0]['control_topology']['nodes'] as &$neutral_div_node ) {
+		if ( 'fieldset' === ( $neutral_div_node['tag'] ?? '' ) ) {
+			$neutral_div_node['tag'] = 'div';
+			unset( $neutral_div_node['fieldset_semantics'], $neutral_div_node['class'] );
+		}
+	}
+	unset( $neutral_div_node );
+	$neutral_div_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $neutral_div_fieldset_form );
+	$neutral_div_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $neutral_div_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$neutral_div_ops        = array_column( $neutral_div_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' );
+	$assert( empty( $neutral_div_validation['errors'] ) && 'mapped' === ( $neutral_div_row['status'] ?? '' ) && ! in_array( 'unsupported_semantic_wrapper', array_column( $neutral_div_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true ) && ! in_array( 'provider_plain_single_field_fieldset_projection', $neutral_div_ops, true ) && ! str_contains( (string) ( $neutral_div_row['block_markup'] ?? '' ), 'ssi-source-semantic-wrapper-' ), 'neutral-div-field-wrappers-stay-flat-without-fieldset-projection', wp_json_encode( $neutral_div_row ) );
+	$unlabelled_plain_fieldset_form = $select_plain_fieldset_form;
+	$unlabelled_plain_fieldset_form['forms'][0]['controls'][0] = array( 'tag' => 'input', 'type' => 'text', 'name' => 'name' );
+	$unlabelled_plain_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unlabelled_plain_fieldset_form );
+	$unlabelled_plain_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $unlabelled_plain_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$unlabelled_plain_ops        = array_column( $unlabelled_plain_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' );
+	$assert( empty( $unlabelled_plain_validation['errors'] ) && 'skipped' === ( $unlabelled_plain_row['status'] ?? '' ) && in_array( 'unsupported_semantic_wrapper', array_column( $unlabelled_plain_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true ) && ! in_array( 'provider_plain_single_field_fieldset_projection', $unlabelled_plain_ops, true ), 'plain-fieldset-around-unlabelled-control-remains-gated', wp_json_encode( $unlabelled_plain_row ) );
+	$labelled_textarea_form = $select_plain_fieldset_form;
+	$labelled_textarea_form['forms'][0]['controls'][0] = array( 'tag' => 'textarea', 'type' => 'textarea', 'name' => 'message', 'label' => 'Message' );
+	$labelled_textarea_form['forms'][0]['control_topology']['nodes'][1]['fieldset_semantics'] = 'labelled_group';
+	$labelled_textarea_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $labelled_textarea_form );
+	$labelled_textarea_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $labelled_textarea_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$labelled_textarea_ops        = array_column( $labelled_textarea_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' );
+	$assert( empty( $labelled_textarea_validation['errors'] ) && 'skipped' === ( $labelled_textarea_row['status'] ?? '' ) && in_array( 'unsupported_semantic_wrapper', array_column( $labelled_textarea_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true ) && ! array_intersect( array( 'provider_plain_single_field_fieldset_projection', 'provider_labelled_text_fieldset_projection' ), $labelled_textarea_ops ), 'labelled-textarea-fieldset-remains-semantically-gated', wp_json_encode( $labelled_textarea_row ) );
 	$deep_topology_form = $topology_form;
 	$deep_nodes         = array();
 	$parent             = null;
