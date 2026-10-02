@@ -275,3 +275,191 @@ identity_assert( 0 === (int) get_option( 'site_logo', 0 ) && 0 === (int) get_opt
 identity_assert( get_posts( $svg_query ) === $svg_ids, 'SVG rollback must remove newly created attachments' );
 identity_assert( wp_check_filetype( 'unrelated.svg' ) === $svg_upload_policy, 'Rollback must not leave SVG upload filters installed' );
 echo "Native SVG logo/icon rendering, vector preservation, deduplication, owner preservation and rollback passed.\n";
+
+// Real PNG-backed ICO: smaller frame first, with both directory reserved bytes zero.
+$ico_frames = array();
+foreach ( array( 16, 32 ) as $size ) {
+	$ico_frames[] = "\x89PNG\r\n\x1a\n"
+		. identity_png_chunk( 'IHDR', pack( 'NNCCCCC', $size, $size, 8, 6, 0, 0, 0 ) )
+		. identity_png_chunk( 'IDAT', gzcompress( str_repeat( "\0" . str_repeat( "\x14\x28\x3c\xff", $size ), $size ) ) )
+		. identity_png_chunk( 'IEND', '' );
+}
+$ico = pack( 'vvv', 0, 1, 2 )
+	. pack( 'CCCCvvVV', 16, 16, 0, 0, 1, 32, strlen( $ico_frames[0] ), 38 )
+	. pack( 'CCCCvvVV', 32, 32, 0, 0, 1, 32, strlen( $ico_frames[1] ), 38 + strlen( $ico_frames[0] ) )
+	. implode( '', $ico_frames );
+identity_assert( "\0" === $ico[9] && "\0" === $ico[25], 'ICO directory reserved bytes must be zero' );
+$ico_artifact = array(
+	'entrypoint' => 'website/index.html',
+	'files'      => array(
+		array(
+			'path'    => 'website/index.html',
+			'content' => '<html><head><title>ICO Identity</title><link rel="icon" href="brand.ico"><script type="application/ld+json">{"@type":"Organization","logo":"brand.ico","slogan":"ICO source slogan"}</script></head><body><h1>ICO identity</h1></body></html>',
+		),
+		array(
+			'path'           => 'website/brand.ico',
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Real binary ICO artifact transport.
+			'content_base64' => base64_encode( $ico ),
+		),
+	),
+);
+
+// Snapshot actual files, not just receipt claims, including uploads and theme assets.
+function identity_file_snapshot( string $directory ): array {
+	$files = array();
+	if ( is_dir( $directory ) ) {
+		$iterator = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $directory, FilesystemIterator::SKIP_DOTS ) );
+		foreach ( $iterator as $file ) {
+			if ( $file->isFile() ) {
+				$files[ $file->getPathname() ] = hash_file( 'sha256', $file->getPathname() );
+			}
+		}
+	}
+	ksort( $files );
+	return $files;
+}
+function identity_option_snapshot(): array {
+	$options = array();
+	foreach ( array( 'stylesheet', 'template', 'show_on_front', 'page_on_front', 'use_smilies', 'blogname', 'blogdescription', 'site_logo', 'site_icon', 'theme_mods_' . get_stylesheet() ) as $name ) {
+		$options[ $name ] = get_option( $name, null );
+	}
+	return $options;
+}
+
+delete_option( 'site_logo' );
+delete_option( 'site_icon' );
+update_option( 'blogdescription', '' );
+$ico_ids_before = get_posts( $svg_query );
+$ico_compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $ico_artifact, array(
+	'slug'     => 'ico-identity-oracle',
+	'activate' => true,
+) );
+identity_assert( ! is_wp_error( $ico_compiled ), 'ICO identity must compile: ' . ( is_wp_error( $ico_compiled ) ? $ico_compiled->get_error_message() : '' ) );
+$ico_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $ico_compiled['plan'], $ico_compiled['args'] );
+identity_assert( 'completed' === ( $ico_receipt['status'] ?? '' ), 'ICO identity must materialize: ' . wp_json_encode( $ico_receipt['errors'] ?? array() ) );
+identity_assert( 'ico-identity-oracle' === get_stylesheet(), 'ICO branding must follow generated-theme activation' );
+require_once ABSPATH . 'wp-admin/includes/image.php';
+foreach ( $ico_receipt['completed']['files'] ?? array() as $ico_file ) {
+	if ( str_ends_with( (string) ( $ico_file['target_path'] ?? '' ), '/brand.ico' ) ) {
+		$ico_source_file = get_stylesheet_directory() . '/' . $ico_file['target_path'];
+		$ico_source_crop = wp_crop_image( $ico_source_file, 0, 0, 32, 32, 16, 16 );
+		identity_assert( is_wp_error( $ico_source_crop ) && 'image_no_editor' === $ico_source_crop->get_error_code(), 'Actual core ICO source cropping must report image_no_editor' );
+		identity_assert( file_get_contents( $ico_source_file ) === $ico, 'Failed source cropping must leave ICO bytes untouched' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Disposable source readback.
+		echo 'Observed core ICO source cropping: ' . $ico_source_crop->get_error_code() . "\n";
+		break;
+	}
+}
+identity_assert( isset( $ico_source_crop ), 'ICO source cropping must exercise a real completed asset file' );
+$ico_logo = (int) get_option( 'site_logo' );
+identity_assert( $ico_logo > 0 && 'attachment' === get_post_type( $ico_logo ) && (int) get_option( 'site_icon' ) === $ico_logo, 'ICO logo/icon must share a real attachment: ' . wp_json_encode( $ico_receipt['completed']['site_identity'] ?? array() ) );
+identity_assert( 1 === count( array_diff( get_posts( $svg_query ), $ico_ids_before ) ), 'Shared ICO identity must create exactly one attachment' );
+identity_assert( 'applied' === ( $ico_receipt['completed']['site_identity']['site_logo']['status'] ?? '' ) && 'applied' === ( $ico_receipt['completed']['site_identity']['site_icon']['status'] ?? '' ), 'ICO receipt must confirm both native settings were applied' );
+identity_assert( 'image/x-icon' === get_post_mime_type( $ico_logo ), 'Actual core ICO attachment MIME must be image/x-icon' );
+$ico_metadata = wp_get_attachment_metadata( $ico_logo );
+identity_assert( 32 === ( $ico_metadata['width'] ?? null ) && 32 === ( $ico_metadata['height'] ?? null ), 'ICO metadata must select the largest frame, not the first 16px frame' );
+identity_assert( file_get_contents( get_attached_file( $ico_logo ) ) === $ico, 'ICO attachment must retain exact container/frame bytes' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Disposable attachment readback.
+$ico_url = wp_get_attachment_url( $ico_logo );
+identity_assert( is_string( $ico_url ) && str_ends_with( $ico_url, '.ico' ), 'ICO attachment URL must retain its format' );
+identity_assert( (int) get_theme_mod( 'custom_logo' ) === $ico_logo && str_contains( get_custom_logo(), esc_url( $ico_url ) ), 'Core custom logo must render the ICO attachment URL' );
+identity_assert( str_contains( do_blocks( '<!-- wp:site-logo /-->' ), esc_url( $ico_url ) ), 'Core site-logo block must render the ICO attachment URL' );
+identity_assert( $ico_url === get_site_icon_url( 32 ) && $ico_url === get_site_icon_url( 512 ), 'Core icon size requests must retain the original ICO URL without invented derivatives' );
+ob_start();
+wp_site_icon();
+$ico_icon_markup = (string) ob_get_clean();
+identity_assert( str_contains( $ico_icon_markup, 'rel="icon"' ) && str_contains( $ico_icon_markup, esc_url( $ico_url ) ), 'Core favicon markup must reference the actual ICO attachment' );
+identity_assert( 'ICO source slogan' === get_option( 'blogdescription' ), 'ICO activation must seed the explicit source slogan' );
+
+$ico_crop = wp_crop_image( $ico_logo, 0, 0, 32, 32, 16, 16 );
+identity_assert( is_wp_error( $ico_crop ) && 'image_no_editor' === $ico_crop->get_error_code(), 'Actual core ICO cropping must report image_no_editor, not claim editor support' );
+identity_assert( file_get_contents( get_attached_file( $ico_logo ) ) === $ico, 'Failed core cropping must leave ICO bytes untouched' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Disposable attachment readback.
+echo 'Observed core ICO cropping: ' . $ico_crop->get_error_code() . "\n";
+
+$ico_ids = get_posts( $svg_query );
+delete_option( 'site_logo' );
+delete_option( 'site_icon' );
+$ico_reimport = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $ico_compiled['plan'], $ico_compiled['args'] );
+identity_assert( 'completed' === ( $ico_reimport['status'] ?? '' ) && $ico_logo === (int) get_option( 'site_logo' ) && $ico_logo === (int) get_option( 'site_icon' ), 'ICO reimport after clearing settings must reuse the shared attachment' );
+identity_assert( get_posts( $svg_query ) === $ico_ids, 'ICO reimport must not duplicate attachments' );
+
+// Use different real attachments as owner values, so preservation cannot pass by coincidence.
+update_option( 'site_logo', $logo );
+update_option( 'site_icon', $svg_logo );
+update_option( 'blogdescription', 'ICO owner slogan' );
+$ico_owner = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $ico_artifact, array(
+	'slug'     => 'ico-identity-owner',
+	'activate' => true,
+) );
+identity_assert( ! is_wp_error( $ico_owner ), 'Owner-preserving ICO must compile' );
+$ico_owner_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $ico_owner['plan'], $ico_owner['args'] );
+identity_assert( 'completed' === ( $ico_owner_receipt['status'] ?? '' ) && $logo === (int) get_option( 'site_logo' ) && $svg_logo === (int) get_option( 'site_icon' ) && 'ICO owner slogan' === get_option( 'blogdescription' ), 'ICO activation must preserve distinct owner images and slogan' );
+foreach ( array( 'site_logo', 'site_icon', 'blogdescription' ) as $setting ) {
+	identity_assert( 'preserved_owner_value' === ( $ico_owner_receipt['completed']['site_identity'][ $setting ]['status'] ?? '' ), 'ICO owner receipt must report preservation: ' . $setting );
+}
+
+// Empty settings ensure previews cannot pass merely by preserving an owner value.
+delete_option( 'site_logo' );
+delete_option( 'site_icon' );
+update_option( 'blogdescription', '' );
+$ico_boundary_options = identity_option_snapshot();
+$ico_host_files = identity_file_snapshot( get_stylesheet_directory() );
+foreach ( array( 'preview', 'existing_theme' ) as $boundary ) {
+	$ico_boundary = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $ico_artifact, array(
+		'slug'        => 'ico-identity-' . $boundary,
+		'activate'    => false,
+		'destination' => 'preview' === $boundary ? 'generated_theme' : 'existing_theme',
+	) );
+	identity_assert( ! is_wp_error( $ico_boundary ), 'ICO boundary must compile: ' . $boundary );
+	$ico_boundary_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $ico_boundary['plan'], $ico_boundary['args'] );
+	identity_assert( 'completed' === ( $ico_boundary_receipt['status'] ?? '' ), 'ICO boundary must complete: ' . $boundary . ' ' . wp_json_encode( $ico_boundary_receipt['errors'] ?? array() ) );
+	identity_assert( $ico_boundary_options === identity_option_snapshot(), 'ICO boundary must not activate or change global identity/options: ' . $boundary );
+	identity_assert( $ico_host_files === identity_file_snapshot( get_stylesheet_directory() ), 'ICO boundary must leave active-theme files byte-identical: ' . $boundary );
+}
+
+$ico_forbidden_args = $ico_boundary['args'];
+$ico_forbidden_args['activate'] = true;
+$ico_forbidden = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $ico_boundary['plan'], $ico_forbidden_args );
+identity_assert( 'completed' !== ( $ico_forbidden['status'] ?? '' ) && str_contains( wp_json_encode( $ico_forbidden['errors'] ?? array() ), 'destination_forbids_theme_activation' ), 'Existing-theme ICO import must reject requested activation' );
+identity_assert( $ico_boundary_options === identity_option_snapshot() && $ico_host_files === identity_file_snapshot( get_stylesheet_directory() ), 'Forbidden ICO activation must leave identity and active theme unchanged' );
+
+// Force new ICO bytes so rollback must delete a newly created upload, not a reused one.
+$ico_rollback_artifact = $ico_artifact;
+// A valid ancillary PNG chunk changes the hash without changing frame dimensions.
+$ico_rollback_frame = substr( $ico_frames[1], 0, -12 ) . identity_png_chunk( 'tEXt', "Comment\0Rollback fixture" ) . substr( $ico_frames[1], -12 );
+$ico_rollback_bytes = pack( 'vvv', 0, 1, 2 )
+	. pack( 'CCCCvvVV', 16, 16, 0, 0, 1, 32, strlen( $ico_frames[0] ), 38 )
+	. pack( 'CCCCvvVV', 32, 32, 0, 0, 1, 32, strlen( $ico_rollback_frame ), 38 + strlen( $ico_frames[0] ) )
+	. $ico_frames[0] . $ico_rollback_frame;
+// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Binary rollback fixture transport.
+$ico_rollback_artifact['files'][1]['content_base64'] = base64_encode( $ico_rollback_bytes );
+$ico_rollback = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $ico_rollback_artifact, array(
+	'slug'                           => 'ico-identity-rollback',
+	'activate'                       => true,
+	'site_title'                     => 'ICO rollback title',
+	'inject_materialization_failure' => 'after_blogname',
+) );
+identity_assert( ! is_wp_error( $ico_rollback ), 'ICO rollback fixture must compile' );
+set_theme_mod( 'custom_logo', $logo );
+$ico_rollback_options = identity_option_snapshot();
+$ico_rollback_ids = get_posts( $svg_query );
+$ico_rollback_files = identity_file_snapshot( WP_CONTENT_DIR );
+$ico_before_failure = array();
+$ico_observe_failure = static function () use ( &$ico_before_failure, $svg_query ): void {
+	$file = get_attached_file( (int) get_option( 'site_logo' ) );
+	$ico_before_failure = array(
+		'logo'    => (int) get_option( 'site_logo' ),
+		'icon'    => (int) get_option( 'site_icon' ),
+		'ids'     => get_posts( $svg_query ),
+		'tagline' => get_option( 'blogdescription' ),
+		'hash'    => is_string( $file ) && is_file( $file ) ? hash_file( 'sha256', $file ) : null,
+	);
+};
+add_action( 'update_option_blogname', $ico_observe_failure );
+$ico_failed = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $ico_rollback['plan'], $ico_rollback['args'] );
+remove_action( 'update_option_blogname', $ico_observe_failure );
+identity_assert( 'completed' !== ( $ico_failed['status'] ?? '' ) && str_contains( wp_json_encode( $ico_failed['errors'] ?? array() ), 'injected_after_blogname_failure' ), 'ICO rollback must reach the injected post-identity failure' );
+identity_assert( ( $ico_before_failure['logo'] ?? 0 ) > 0 && $ico_before_failure['logo'] === $ico_before_failure['icon'] && 'ICO source slogan' === $ico_before_failure['tagline'] && 1 === count( array_diff( $ico_before_failure['ids'], $ico_rollback_ids ) ), 'ICO rollback must actually undo new shared attachment and applied branding, not a no-op' );
+identity_assert( hash( 'sha256', $ico_rollback_bytes ) === $ico_before_failure['hash'], 'ICO rollback must have created the exact unique upload before failure' );
+identity_assert( $ico_rollback_options === identity_option_snapshot(), 'ICO rollback must restore activation, native options and old theme mods exactly' );
+identity_assert( $ico_rollback_ids === get_posts( $svg_query ), 'ICO rollback must remove new attachments and preserve existing ones' );
+identity_assert( $ico_rollback_files === identity_file_snapshot( WP_CONTENT_DIR ), 'ICO rollback must restore theme/upload/companion files byte-for-byte' );
+echo "Native ICO MIME, largest-frame metadata, exact bytes, logo/block/favicon rendering, shared deduplication, owner preservation, activation boundaries and rollback passed.\n";

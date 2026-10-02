@@ -22,8 +22,13 @@ bytes, local gradients/definitions, and viewBox-derived attachment metadata.
 The import scopes SVG MIME admission to the validated upload; ordinary upload
 policy remains unchanged. Stylesheet-dependent, active/external, malformed, and
 dimensionless SVGs retain explicit receipt statuses instead of guessed output.
-ICO and other formats remain theme-owned assets and are reported as unsupported
-for native attachment handoff. SVG favicon markup is emitted by core; platform
+Verified ICO branding is expected to become native logo/site-icon attachments
+with core's `image/x-icon` MIME, largest-frame intrinsic dimensions, and exact
+container bytes. The disposable oracle uses a real PNG-backed ICO with a 16px
+frame first and a 32px frame second; directory reserved bytes are zero. It checks
+the native handoff rather than accepting `unsupported_format` as success.
+Other unsupported formats remain theme-owned assets with explicit receipts.
+SVG favicon markup is emitted by core; platform
 support for SVG touch icons varies and this handoff does not create PNG derivatives. Relative
 resources must resolve to canonical artifact writes. SSI does not fetch network
 resources during application. Missing, unresolved, and unsupported evidence is
@@ -61,6 +66,25 @@ This boots disposable WordPress, checks real attachment IDs, native logo/icon
 rendering, shared image ownership, reimport deduplication, preservation, and
 rollback. It does not modify the host site. The fixture requires its explicitly
 declared disposable-test constant.
+
+The ICO assertions additionally check actual attachment MIME and largest-frame
+metadata, exact uploaded bytes, core custom-logo and site-logo block rendering,
+and core favicon markup/URLs. Logo and favicon share one attachment; reimport
+after clearing both settings must reuse it. Distinct owner-selected attachments
+and an owner slogan must survive an activated import. Preview and existing-theme
+imports are checked with empty branding settings so preservation cannot mask an
+unauthorized write; they must leave global options and active-theme files intact.
+An existing-theme import explicitly requesting activation must be rejected.
+A unique, valid ICO in a post-identity injected failure exercises rollback of
+new attachments, uploads, theme/companion files, options, and old theme mods.
+
+Native rendering is not an image-editor guarantee. In the disposable WordPress
+runtime, ICO cropping is expected to return the observed core `image_no_editor`
+error. The oracle calls `wp_crop_image()` and checks that error and unchanged
+source bytes; it does not mock an editor, convert the ICO to PNG, or claim that
+core creates resized ICO derivatives. Requested favicon sizes retain the
+original ICO attachment URL. A runtime without native ICO handoff fails these
+assertions rather than silently skipping them.
 
 To exercise the owning block-template compiler candidate and both template
 strategies in the same workload, add `SSI_TEMPLATE_COMPILER_ROOT=/path/to/blocks-engine/php-transformer`

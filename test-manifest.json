@@ -5,6 +5,7 @@
     "tests/figma-zstd-decoder.php": "CLI diagnostic helper; exercised by tests/smoke-rest-import.php."
   },
   "tests": [
+    { "path": "tests/acceptance/ico-browser.mjs", "environment": "operator-only", "command": ["node", "tests/acceptance/ico-browser.mjs"], "reason": "Independent Playwright Chromium decoding of generated PNG multiframe and palette DIB ICO fixtures; requires playwright, pngjs and installed Chromium (or CHROMIUM_PATH). Retains evidence under artifacts/ico-browser or SSI_ICO_BROWSER_EVIDENCE." },
     { "path": "tests/acceptance/native-site-identity-wordpress.php", "environment": "operator-only", "command": ["node", "tests/acceptance/run-native-site-identity.mjs"], "reason": "Real WordPress fixture runs only inside the disposable WP Codebox workload declared by the native identity runner." },
     { "path": "tests/acceptance/run-native-site-identity.mjs", "environment": "operator-only", "command": ["node", "tests/acceptance/run-native-site-identity.mjs"], "reason": "Set WP_CODEBOX_CLI to the native managed CLI; SSI_TEMPLATE_COMPILER_ROOT enables owning block and classic lifecycle acceptance." },
     { "path": "tests/shared-chrome-runtime.php", "environment": "operator-only", "reason": "Disposable paired producer/consumer WordPress proof; tools/run-shared-chrome-acceptance.sh owns its Docker runtime." },
@@ -78,6 +79,7 @@
     { "path": "tests/smoke-provider-overlay-compaction.php", "environment": "standalone-php" },
     { "path": "tests/smoke-provider-presentation.php", "environment": "standalone-php" },
     { "path": "tests/smoke-site-identity.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-ico-site-identity.php", "environment": "standalone-php" },
     { "path": "tests/smoke-source-normalizer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-url-import-runtime.php", "environment": "standalone-php" },
     { "path": "tests/smoke-rest-url-import-helpers.php", "environment": "standalone-php" },
