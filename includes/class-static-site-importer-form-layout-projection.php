@@ -969,7 +969,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$s->field_blocks[ $control_index ]['attrs']['className'] = trim( implode( ' ', array_filter( array_merge( array( (string) ( $s->field_blocks[ $control_index ]['attrs']['className'] ?? '' ) ), $markers ) ) ) );
 			$s->represented_topology_nodes[]                         = $node['id'];
 			$s->represented_layout_nodes[]                           = $node['id'];
-			$s->operations[]                                         = array(
+			$s->operations[] = array(
 				'dimension'   => 'topology',
 				'strategy'    => 'provider_plain_single_field_fieldset_projection',
 				'target_hash' => hash( 'sha256', $node['id'] ),
