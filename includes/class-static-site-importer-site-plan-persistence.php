@@ -401,6 +401,24 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			'post_parent'  => $parent,
 			'post_content' => wp_slash( (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ) ),
 		);
+		if ( array_key_exists( 'excerpt', $page['metadata'] ?? array() ) ) {
+			if ( ! is_string( $page['metadata']['excerpt'] ) ) {
+				return new WP_Error( 'invalid_source_excerpt', 'The source-backed post excerpt must be a string.' );
+			}
+			$post['post_excerpt'] = wp_slash( $page['metadata']['excerpt'] );
+		}
+		if ( array_key_exists( 'post_meta', $page['metadata'] ?? array() ) ) {
+			$fields = $page['metadata']['post_meta'];
+			if ( ! is_array( $fields ) ) {
+				return new WP_Error( 'invalid_source_post_meta', 'Source-backed post fields must be a string map.' );
+			}
+			foreach ( $fields as $key => $value ) {
+				if ( ! is_string( $key ) || '' === $key || ! is_string( $value ) ) {
+					return new WP_Error( 'invalid_source_post_meta', 'Source-backed post fields must be a string map.' );
+				}
+			}
+			$post['meta_input'] = wp_slash( $fields );
+		}
 		if ( ! empty( $page['metadata']['detected_date'] ) ) {
 			// The classifier emits UTC. post_date_gmt stores that absolute value;
 			// wp_insert_post derives the site-local post_date from it using the
