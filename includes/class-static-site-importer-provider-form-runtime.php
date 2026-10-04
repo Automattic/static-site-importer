@@ -803,7 +803,17 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		return is_string( $added ) ? $added : $html;
 	}
 
-	/** Restore a bounded source paragraph around a provider-owned field or button. */
+	/**
+	 * Restore bounded source paragraph and single-field fieldset wrappers onto a
+	 * provider field.
+	 *
+	 * The projection stores `ssi-source-semantic-wrapper-N--TAG--CLASS` tokens on
+	 * the field block it owns. Jetpack copies those classes onto the field shell
+	 * and appends `-wrap` to each one. Each depth is one source ancestor, so the
+	 * marker is consumed here and the element is rebuilt around the provider
+	 * field's label and control, outer ancestor last. Tokens that do not match
+	 * the bounded shape are left alone, and consumed markers never persist.
+	 */
 	private static function project_semantic_wrappers( string $html ): string {
 		$wrappers  = array();
 		$projected = preg_replace_callback(
@@ -812,8 +822,20 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 				$classes = preg_split( '/\s+/', trim( $matches[2] ) );
 				$output  = array();
 				foreach ( false === $classes ? array() : $classes as $class ) {
-					if ( preg_match( '/^ssi-source-semantic-wrapper-([0-9]{1,2})--p(?:--([A-Za-z_][A-Za-z0-9_-]{0,79}))?$/D', $class, $marker ) ) {
-						$wrappers[ (int) $marker[1] ][] = $marker[2] ?? '';
+					$marker  = array();
+					$matched = preg_match( '/^ssi-source-semantic-wrapper-([0-9]{1,2})--(p|fieldset)(?:--([A-Za-z_][A-Za-z0-9_-]{0,79}))?-wrap$/D', $class, $marker )
+						|| preg_match( '/^ssi-source-semantic-wrapper-([0-9]{1,2})--(p|fieldset)(?:--([A-Za-z_][A-Za-z0-9_-]{0,79}))?$/D', $class, $marker );
+					if ( $matched ) {
+						$depth = (int) $marker[1];
+						if ( ! isset( $wrappers[ $depth ] ) ) {
+							$wrappers[ $depth ] = array(
+								'tag'     => $marker[2],
+								'classes' => array(),
+							);
+						}
+						if ( '' !== ( $marker[3] ?? '' ) ) {
+							$wrappers[ $depth ]['classes'][] = $marker[3];
+						}
 						continue;
 					}
 					$output[] = $class;
@@ -827,10 +849,10 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			return is_string( $projected ) ? $projected : $html;
 		}
 		ksort( $wrappers );
-		foreach ( array_reverse( $wrappers, true ) as $classes ) {
-			$classes   = array_values( array_filter( array_unique( $classes ) ) );
+		foreach ( array_reverse( $wrappers, true ) as $layer ) {
+			$classes   = array_values( array_unique( $layer['classes'] ) );
 			$attribute = empty( $classes ) ? '' : ' class="' . implode( ' ', $classes ) . '"';
-			$projected = '<p' . $attribute . '>' . $projected . '</p>';
+			$projected = '<' . $layer['tag'] . $attribute . '>' . $projected . '</' . $layer['tag'] . '>';
 		}
 		return $projected;
 	}

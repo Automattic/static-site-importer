@@ -924,6 +924,57 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'control_count' => count( $branch_fields ),
 			);
 		}
+		// A plain fieldset around exactly one labelled text, email, tel, or textarea
+		// control is that control's own group, whether it is nested or a peer root.
+		// Jetpack keeps the editable pair; the runtime restores one fieldset from
+		// the depth marker. An all-controls root fieldset stays on its own projection.
+		// Labelled, unlabelled, and multi-control groups stay losses.
+		foreach ( $s->nodes as $node ) {
+			if ( ! is_array( $node ) || 'wrapper' !== ( $node['kind'] ?? null ) || 'fieldset' !== ( $node['tag'] ?? null ) || 'plain_group' !== ( $node['fieldset_semantics'] ?? null ) || ! is_string( $node['id'] ?? null ) ) {
+				continue;
+			}
+			if ( self::projectable_plain_root_fieldset( $node, $s->nodes, $s->field_blocks ) ) {
+				continue;
+			}
+			$branch_controls = ( $s->collect_controls )( $node );
+			if ( 1 !== count( $branch_controls ) ) {
+				continue;
+			}
+			$control_index = $branch_controls[0];
+			if ( isset( $s->suppressed_controls[ $control_index ] ) || ! isset( $s->field_blocks[ $control_index ] ) || 'core/button' === ( $s->field_blocks[ $control_index ]['name'] ?? '' ) ) {
+				continue;
+			}
+			$type  = strtolower( trim( (string) ( $s->controls[ $control_index ]['type'] ?? $s->controls[ $control_index ]['tag'] ?? '' ) ) );
+			$label = $s->controls[ $control_index ]['label'] ?? null;
+			if ( ! in_array( $type, array( 'text', 'email', 'tel', 'textarea' ), true ) || ! is_string( $label ) || '' === trim( $label ) ) {
+				continue;
+			}
+			$owns_label = false;
+			foreach ( is_array( $s->field_blocks[ $control_index ]['innerBlocks'] ?? null ) ? $s->field_blocks[ $control_index ]['innerBlocks'] : array() as $inner ) {
+				if ( is_array( $inner ) && 'jetpack/label' === ( $inner['name'] ?? null ) && trim( $label ) === trim( (string) ( $inner['attrs']['label'] ?? '' ) ) ) {
+					$owns_label = true;
+					break;
+				}
+			}
+			if ( ! $owns_label ) {
+				continue;
+			}
+			$classes = self::class_tokens( $node );
+			$classes = false === $classes ? array() : array_values( array_unique( array_filter( $classes, static fn( string $class_name ): bool => 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) ) );
+			$depth   = min( 99, max( 0, (int) $node['depth'] ) );
+			$markers = array( 'ssi-source-semantic-wrapper-' . $depth . '--fieldset' );
+			foreach ( $classes as $class ) {
+				$markers[] = 'ssi-source-semantic-wrapper-' . $depth . '--fieldset--' . $class;
+			}
+			$s->field_blocks[ $control_index ]['attrs']['className'] = trim( implode( ' ', array_filter( array_merge( array( (string) ( $s->field_blocks[ $control_index ]['attrs']['className'] ?? '' ) ), $markers ) ) ) );
+			$s->represented_topology_nodes[]                         = $node['id'];
+			$s->represented_layout_nodes[]                           = $node['id'];
+			$s->operations[] = array(
+				'dimension'   => 'topology',
+				'strategy'    => 'provider_plain_single_field_fieldset_projection',
+				'target_hash' => hash( 'sha256', $node['id'] ),
+			);
+		}
 		$s->mapped_controls = array_keys( $s->field_blocks );
 		sort( $s->mapped_controls );
 		// Jetpack owns the form and its handler nodes, but a plain root fieldset that
