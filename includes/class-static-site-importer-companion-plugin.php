@@ -38,6 +38,9 @@ if ( ! class_exists( 'Static_Site_Importer_Provider_Form_Runtime_V1' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Build_Provenance' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-build-provenance.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Companion_Inventory' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-companion-inventory.php';
+}
 
 /**
  * Scaffolds a one-per-site companion plugin from a generated block payload.
@@ -233,6 +236,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$files             = array();
 		$block_names       = array();
 		$block_directories = array();
+		$block_assets      = array();
 
 		foreach ( $blocks as $block ) {
 			$built = self::build_block( $block, $block_namespace );
@@ -242,6 +246,7 @@ class Static_Site_Importer_Companion_Plugin {
 
 			$block_names[]       = $built['block_name'];
 			$block_directories[] = $built['dir'];
+			$block_assets[ $built['block_name'] ] = array_map( static fn ( string $path ): string => 'blocks/' . $built['dir'] . '/' . $path, array_merge( array( 'block.json' ), array_keys( $built['files'] ) ) );
 			foreach ( $built['files'] as $relative => $content ) {
 				$files[ $plugin_slug . '/blocks/' . $built['dir'] . '/' . $relative ] = $content;
 			}
@@ -311,9 +316,26 @@ class Static_Site_Importer_Companion_Plugin {
 		$files[ $plugin_slug . '/includes/provider-form-runtime-v1.php' ] = self::provider_form_runtime_file( $provider_form_runtime, $runtime_class );
 		$files[ $plugin_slug . '/includes/internal-link-runtime.php' ]    = self::internal_link_runtime_file( $internal_link_runtime, $link_runtime_class );
 		$files[ $plugin_slug . '/includes/source-route-redirect.php' ]    = self::source_route_redirect_file( $source_route_runtime, $redirect_runtime_class );
+		$artifact_provenance = self::artifact_provenance( $payload );
+		$inventory           = Static_Site_Importer_Companion_Inventory::compose(
+			array(
+				'site_name'          => $site_name,
+				'plugin_slug'        => $plugin_slug,
+				'mu_plugin'          => $mu_plugin,
+				'blocks'             => self::payload_blocks( $payload ),
+				'block_names'        => $block_names,
+				'block_assets'       => $block_assets,
+				'islands'            => $preserved,
+				'editor_scripts'     => $editor_scripts,
+				'form_visual_states' => $form_visual_states,
+				'provenance'         => $artifact_provenance,
+				'handoff'            => is_array( $payload['owner_handoff_evidence'] ?? null ) ? $payload['owner_handoff_evidence'] : null,
+			)
+		);
 		$files = array_merge(
 			array(
-				$main_file => self::main_plugin_file( $plugin_slug, $inventory_hash, $runtime_class, $link_runtime_class, $redirect_runtime_class, self::artifact_provenance( $payload ) ),
+				$main_file => self::main_plugin_file( $site_name, $inventory, $plugin_slug, $inventory_hash, $runtime_class, $link_runtime_class, $redirect_runtime_class, $artifact_provenance ),
+				$plugin_slug . '/README.md' => Static_Site_Importer_Companion_Inventory::render_readme( $inventory ),
 			),
 			$files
 		);
@@ -356,7 +378,7 @@ class Static_Site_Importer_Companion_Plugin {
 			$loader                    = $plugin_slug . '.php';
 			$descriptor['loader_file'] = $loader;
 			$descriptor['files']       = array_merge(
-				array( $loader => self::mu_loader_file( $main_file ) ),
+				array( $loader => self::mu_loader_file( $main_file, $site_name ) ),
 				$descriptor['files']
 			);
 		}
@@ -711,6 +733,8 @@ class Static_Site_Importer_Companion_Plugin {
 	 * @return string
 	 */
 	private static function main_plugin_file(
+		string $site_name,
+		array $inventory,
 		string $plugin_slug,
 		string $inventory_hash,
 		string $runtime_class,
@@ -723,8 +747,8 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines   = array();
 		$lines[] = '<?php';
 		$lines[] = '/**';
-		$lines[] = ' * Plugin Name: SSI Companion';
-		$lines[] = ' * Description: Generated companion plugin housing metadata blocks and preserved island JS.';
+		$lines[] = ' * Plugin Name: ' . Static_Site_Importer_Companion_Inventory::plugin_name( $site_name );
+		$lines[] = ' * Description: ' . Static_Site_Importer_Companion_Inventory::plugin_description( $inventory );
 		// A provenance-carrying build stamps the real producing-build version
 		// and an Update URI identifying this artifact, so the plugin remains
 		// attributable and updatable after SSI itself is removed.
@@ -948,12 +972,12 @@ JS;
 	 * @param string $main_file   Main plugin file relative to plugins dir.
 	 * @return string
 	 */
-	private static function mu_loader_file( string $main_file ): string {
+	private static function mu_loader_file( string $main_file, string $site_name ): string {
 		$lines   = array();
 		$lines[] = '<?php';
 		$lines[] = '/**';
-		$lines[] = ' * Plugin Name: SSI Companion Loader';
-		$lines[] = ' * Description: Must-use loader for a generated SSI companion plugin.';
+		$lines[] = ' * Plugin Name: ' . Static_Site_Importer_Companion_Inventory::plugin_loader_name( $site_name );
+		$lines[] = ' * Description: Must-use loader for the generated ' . Static_Site_Importer_Companion_Inventory::plugin_name( $site_name ) . ' plugin.';
 		$lines[] = ' *';
 		$lines[] = ' * @package StaticSiteImporterCompanion';
 		$lines[] = ' */';

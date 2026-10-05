@@ -21,6 +21,7 @@
     "tests/smoke-content-only-policy.php": { "environment": "standalone-php" },
     "tests/smoke-companion-plugin-js.php": { "environment": "standalone-php" },
     "tests/smoke-companion-plugin.php": { "environment": "standalone-php" },
+    "tests/smoke-companion-inventory-readme.php": { "environment": "standalone-php" },
     "tests/smoke-contact-layout-transformer.php": { "environment": "standalone-php" },
     "tests/smoke-diagnostic-loss-classes.php": { "environment": "standalone-php" },
     "tests/smoke-compiler-file-limits.php": { "environment": "standalone-php" },
