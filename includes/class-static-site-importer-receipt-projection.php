@@ -92,6 +92,18 @@ class Static_Site_Importer_Receipt_Projection {
 				array_values( array_filter( $args['captured_interaction_diagnostics'], 'is_array' ) )
 			);
 		}
+		if ( is_array( $args['theme_screenshot_evidence'] ?? null ) ) {
+			$preview_status = (string) ( $args['theme_screenshot_evidence']['status'] ?? '' );
+			if ( in_array( $preview_status, array( Static_Site_Importer_Theme_Screenshot::STATUS_INVALID, Static_Site_Importer_Theme_Screenshot::STATUS_UNAVAILABLE ), true ) ) {
+				$diagnostics[] = array(
+					'code'    => 'static_site_importer_theme_preview_' . $preview_status,
+					'type'    => 'static-site-importer',
+					'message' => 'invalid' === $preview_status
+						? sprintf( 'The artifact preview at %s is present but not a usable PNG thumbnail.', (string) ( $args['theme_screenshot_evidence']['source_path'] ?? 'site-preview.png' ) )
+						: sprintf( 'The declared artifact preview at %s could not be read through the source payload transport.', (string) ( $args['theme_screenshot_evidence']['source_path'] ?? 'site-preview.png' ) ),
+				);
+			}
+		}
 		$quality = is_array( $plan['quality'] ?? null ) ? $plan['quality'] : array();
 		if ( isset( $args['captured_interaction_state_count'] ) && is_numeric( $args['captured_interaction_state_count'] ) ) {
 			$quality['interaction_candidate_count'] = max(
@@ -166,6 +178,9 @@ class Static_Site_Importer_Receipt_Projection {
 			)
 		);
 		$report['source_artifact']         = array( 'hash' => (string) ( $args['artifact_hash'] ?? $plan['source']['source_hash'] ) );
+		if ( is_array( $args['theme_screenshot_evidence'] ?? null ) ) {
+			$report->set_section( 'theme_preview', Static_Site_Importer_Theme_Screenshot::bounded_evidence( $args['theme_screenshot_evidence'] ) );
+		}
 		$report['materialization_receipt'] = self::report_receipt( $receipt );
 		Static_Site_Importer_Block_Document_Reporter::analyze_materialized_block_documents( $report['generated_theme']['block_documents'], $report );
 		// Page markup is persisted in WordPress and analyzed above; the report
