@@ -1081,10 +1081,14 @@ function static_site_importer_rest_archive_limits(): array {
  * inline <style>/<script> bodies before measuring against MAX_TOTAL_BYTES
  * (320 MiB), so the bytes accepted here are not the bytes it weighs.
  *
- * Intake is therefore 256 MiB, and `generated_bytes_headroom` is what
- * static_site_importer_staged_archive_compiler_limits() adds on top when it
- * declares the compiler's budget -- the same arithmetic the CLI path does in
- * static_site_importer_cli_request_bundle_limits(). 256 + 64 = 320.
+ * Intake bounds two different things, so keep them apart when reading these:
+ * max_archive_bytes (256 MiB) is the compressed zip, and
+ * max_total_uncompressed_bytes (250 MiB) is the tree inside it. The compile is
+ * measured against the second, so that is the one `generated_bytes_headroom`
+ * attaches to: static_site_importer_staged_archive_compiler_limits() declares
+ * 250 + 64 = 314 MiB as the compiler's budget, the same arithmetic the CLI
+ * path does in static_site_importer_cli_request_bundle_limits(). It stays
+ * under the 320 MiB cap, and resolve() clamps it there regardless.
  *
  * Without that headroom a near-limit archive compiles past the declared budget
  * and the generated files are dropped, which
