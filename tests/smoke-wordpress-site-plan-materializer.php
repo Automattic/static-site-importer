@@ -2898,7 +2898,7 @@ foreach ( $font_before as $path => $bytes ) {
 	$assert( $bytes === ( is_file( $path ) ? file_get_contents( $path ) : false ), 'font verification rollback restores theme bytes exactly: ' . $path );
 }
 
-$repeat = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan' ) );
+$repeat = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan', 'site_title' => 'Repeat Policy' ) );
 $assert( 'completed' === $repeat['status'], 'reconciliation repeat completes' );
 $plan_page_identities   = array_column( $plan['pages'], 'reconciliation_identity' );
 $reconciled_plan_posts = array_filter(
@@ -4069,12 +4069,20 @@ $identity_update_uri       = array();
 $assert( 1 === preg_match( '/^Version: [0-9][0-9A-Za-z.\-]*\+cafecafe$/m', $identity_provenance_style, $identity_version ) && 1 === preg_match( '/^Update URI: (\S+)$/m', $identity_provenance_style, $identity_update_uri ) && 'static-site-importer.invalid' === ( parse_url( (string) $identity_update_uri[1], PHP_URL_HOST ) ?? '' ) && 'identity-provenance' === trim( (string) parse_url( (string) $identity_update_uri[1], PHP_URL_PATH ), '/' ), 'provenance-carrying scaffold headers keep the producing-build version and parseable artifact Update URI', $identity_provenance_style );
 $identity_retry = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $identity_plan, array( 'slug' => 'identity-scaffold' ) );
 $assert( 'completed' === $identity_retry['status'] && file_get_contents( $identity_style_path ) === $identity_style, 'identity scaffold reconciles byte-identically on retry' );
-$classic_identity_compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $identity_artifact, array( 'slug' => 'identity-classic', 'theme_materialization' => 'classic' ) );
-$assert( ! is_wp_error( $classic_identity_compiled ), 'classic identity compilation prepares', is_wp_error( $classic_identity_compiled ) ? $classic_identity_compiled->get_error_message() : '' );
+$classic_identity_artifact = array(
+	'entrypoint' => $identity_artifact['entrypoint'],
+	'files'      => array_map(
+		static fn( string $path, string $content ): array => array( 'path' => $path, 'content' => $content ),
+		array_keys( $identity_artifact['files'] ),
+		array_values( $identity_artifact['files'] )
+	),
+);
+$classic_identity_compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $classic_identity_artifact, array( 'slug' => 'identity-classic', 'theme_materialization' => 'classic' ) );
+$assert( ! is_wp_error( $classic_identity_compiled ), 'classic identity compilation prepares: ' . ( is_wp_error( $classic_identity_compiled ) ? $classic_identity_compiled->get_error_message() : '' ) );
 $classic_identity_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $classic_identity_compiled['plan'], array( 'slug' => 'identity-classic', 'theme_materialization' => 'classic', 'classic_theme_projection' => $classic_identity_compiled['args']['classic_theme_projection'] ) );
 $classic_identity_style   = (string) file_get_contents( $GLOBALS['ssi_plan_root'] . '/identity-classic/style.css' );
 $assert( 'completed' === $classic_identity_receipt['status'] && str_starts_with( $classic_identity_style, "/*\nTheme Name: Dana Whitfield\nText Domain: static-site-importer\n" ), 'classic scaffold resolves the source-backed identity when no explicit name is supplied', $classic_identity_style );
-$classic_named_compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $identity_artifact, array( 'slug' => 'identity-classic-named', 'name' => 'Whitfield Atelier', 'theme_materialization' => 'classic' ) );
+$classic_named_compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $classic_identity_artifact, array( 'slug' => 'identity-classic-named', 'name' => 'Whitfield Atelier', 'theme_materialization' => 'classic' ) );
 $classic_named_receipt  = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $classic_named_compiled['plan'], array( 'slug' => 'identity-classic-named', 'name' => 'Whitfield Atelier', 'theme_materialization' => 'classic', 'classic_theme_projection' => $classic_named_compiled['args']['classic_theme_projection'] ) );
 $assert( 'completed' === $classic_named_receipt['status'] && str_starts_with( (string) file_get_contents( $GLOBALS['ssi_plan_root'] . '/identity-classic-named/style.css' ), "/*\nTheme Name: Whitfield Atelier\n" ), 'classic scaffold keeps an explicit identity name', (string) file_get_contents( $GLOBALS['ssi_plan_root'] . '/identity-classic-named/style.css' ) );
 
