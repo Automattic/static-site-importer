@@ -681,6 +681,43 @@ step (the slowest per-site step, it launches a browser per fixture); the run
 still produces native-rate, loss-classes, pattern-families, and the rest of the
 findings — just no `validateBlock` editor-validity data.
 
+## Editor Chrome Probe
+
+Per surface, the matrix also emits a `wordpress.editor-canvas-probe` step that
+probes the imported post's real editor canvas for visible placeholder and
+invalid-block warnings (`editor_visible_placeholder` selector group). Its
+evidence stays separate from the `wordpress.editor-validate-blocks` step: block
+validation runs the editor's `wp.blocks.validateBlock` pass, while the chrome
+probe observes what the canvas actually renders.
+
+The Codebox `editor-canvas-probe` contract only accepts a literal
+`url=<path-or-url>` argument: unlike its sibling editor commands it has no
+post-id/post-slug/front-page target interpreter and installs no WordPress admin
+auth itself (#1965). Because an imported surface's numeric post ID is only known
+after the import step runs, the chrome probe cannot carry a literal admin edit
+URL at recipe-build time and must not substitute a front-end source URL. Instead:
+
+- `buildFixtureMatrixRecipe` stages one matrix-owned runtime resolver per
+  fixture (`editor-chrome-target.php` at the WordPress document root) right
+  after import. It resolves a surface identity with the same primitives as the
+  materialized-surface-identity receipt — `page_on_front` for the front page and
+  `get_page_by_path` for secondary routes — then signs the probe browser in as
+  the sandbox admin (`wp_set_auth_cookie`) and redirects to the imported post's
+  canonical admin edit URL (`get_edit_post_link`). It is disposable sandbox
+  plumbing owned by the matrix recipe, not a product route.
+- `editorChromeValidationStep` always targets an explicit editor URL: an
+  explicit `editor_url` wins, a build-time post ID becomes
+  `/wp-admin/post.php?post=<id>&action=edit`, and otherwise the step targets the
+  runtime resolver with the surface identity (`?surface=<slug>&post_type=page`).
+  Unknown surfaces fail the probe as `editor_chrome_target_unavailable` instead
+  of silently probing a different page.
+
+Upstream ownership: aligning `editor-canvas-probe` with its sibling editor
+commands (post-id/post-slug/front-page targeting plus `wordpress-admin` auth)
+belongs in WP Codebox; until such a contract lands there, this resolver keeps
+the generated recipes valid against the installed Codebox validator without
+weakening its schema or dropping chrome evidence.
+
 ## Bounded Surface Coverage
 
 Browser evidence defaults to the imported front page only. Multi-page evidence is
