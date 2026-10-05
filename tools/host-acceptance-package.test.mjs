@@ -5,12 +5,27 @@ import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, readFile, mkdir, symlink, writeFile, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { buildHostAcceptance, HOST_ACCEPTANCE_API } from './build-host-acceptance.mjs';
 
-test('relocated public host bundle has only caller-owned Playwright and records missing/fatal evidence honestly', async () => {
+// Playwright is a devDependency whose Chromium download lives in the caller's
+// browser cache (or `PLAYWRIGHT_BROWSERS_PATH`); the deterministic gate
+// environment runs with an isolated HOME that has no downloaded browser
+// binary. Probe the executable the caller-owned Playwright package would
+// launch so this suite skips instead of failing a browser launch, and still
+// exercises the relocated bundle wherever the full browser toolchain exists.
+const { chromium } = ( await import( 'playwright' ).catch( () => null ) ) ?? {};
+const chromiumExecutableAvailable = Boolean( chromium ) && existsSync( chromium.executablePath() );
+const skipWithoutChromium = chromiumExecutableAvailable
+	? false
+	: 'playwright chromium is not installed; run `npm install` and `npx playwright install chromium` to run this relocated host bundle suite';
+
+test('relocated public host bundle has only caller-owned Playwright and records missing/fatal evidence honestly', {
+  skip: skipWithoutChromium,
+}, async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'ssi-host-acceptance-'));
   let fatal = false;
   const server = createServer((_request, response) => {
