@@ -982,7 +982,7 @@ if ( class_exists( 'ZipArchive' ) ) {
 		array(
 			'max_files'       => 5000,
 			'max_file_bytes'  => 10485760,
-			'max_total_bytes' => 268435456,
+			'max_total_bytes' => 335544320,
 		) === $compiler_contract,
 		'staged-zip-projects-its-intake-policy-as-a-compiler-contract'
 	);

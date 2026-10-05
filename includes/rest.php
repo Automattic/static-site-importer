@@ -1076,25 +1076,25 @@ function static_site_importer_rest_archive_limits(): array {
 /**
  * Return hard-bounded limits for server-owned staged ZIP archives.
  *
- * The byte limits stop short of the compiler contract, with room to spare.
- * ArtifactNormalizer caps a compile at MAX_TOTAL_BYTES (320 MiB), but it keeps
- * every source file AND writes more of its own for inline <style>/<script>
- * bodies before measuring against that budget. Source bytes accepted here are
- * therefore not the bytes the compiler weighs.
+ * Intake stops below the compiler ceiling so the compile has room to grow into.
+ * ArtifactNormalizer keeps every source file AND writes more of its own for
+ * inline <style>/<script> bodies before measuring against MAX_TOTAL_BYTES
+ * (320 MiB), so the bytes accepted here are not the bytes it weighs.
  *
- * So intake stops at 256 MiB and leaves the same 64 MiB of expansion headroom
- * the CLI path reserves by name -- see `generated_bytes_headroom` in
- * static_site_importer_cli_request_bundle_limits(). 256 + 64 = the 320 MiB
- * compiler ceiling.
+ * Intake is therefore 256 MiB, and `generated_bytes_headroom` is what
+ * static_site_importer_staged_archive_compiler_limits() adds on top when it
+ * declares the compiler's budget -- the same arithmetic the CLI path does in
+ * static_site_importer_cli_request_bundle_limits(). 256 + 64 = 320.
  *
- * Setting intake at the ceiling itself would not hold the contract: the
- * expansion would push a near-limit archive past the compiler budget and the
- * generated files would be dropped. ArtifactNormalizer reports that loss in
- * `truncation_impact`, which nothing here reads, so it would surface as a
- * quietly incomplete import rather than a refusal.
+ * Without that headroom a near-limit archive compiles past the declared budget
+ * and the generated files are dropped, which
+ * Static_Site_Importer_Direct_Artifact_Import refuses outright as
+ * static_site_importer_artifact_files_omitted rather than importing a partial
+ * site. So the cost of getting this wrong is a late refusal after a full
+ * capture and compile, not a quiet loss -- but late and avoidable.
  *
- * Raising these means raising the compiler cap first, keeping the headroom,
- * and teaching this library to treat a truncated compile as a failure.
+ * Raising intake means raising the compiler cap first and keeping the headroom
+ * between them.
  *
  * @return array<string,int>
  */
@@ -1105,6 +1105,7 @@ function static_site_importer_staged_archive_limits(): array {
 		'max_entry_uncompressed_bytes' => 67108864,
 		'max_total_uncompressed_bytes' => 268435456,
 		'max_compression_ratio'        => 200,
+		'generated_bytes_headroom'     => 67108864,
 	);
 	$defaults    = array(
 		'max_archive_bytes'            => 268435456,
@@ -1112,6 +1113,7 @@ function static_site_importer_staged_archive_limits(): array {
 		'max_entry_uncompressed_bytes' => 52428800,
 		'max_total_uncompressed_bytes' => 268435456,
 		'max_compression_ratio'        => 100,
+		'generated_bytes_headroom'     => 67108864,
 	);
 	$limits      = apply_filters( 'static_site_importer_staged_archive_limits', $defaults );
 	$limits      = is_array( $limits ) ? $limits : $defaults;
@@ -1132,11 +1134,17 @@ function static_site_importer_staged_archive_limits(): array {
 function static_site_importer_staged_archive_compiler_limits(): array {
 	$staged = static_site_importer_staged_archive_limits();
 
+	// The compiler is told what it may grow to, not what came in: it writes its
+	// own files for inline <style>/<script> before measuring. resolve() clamps
+	// the sum to the Blocks Engine cap, so this can never over-promise.
+	$total    = (int) $staged['max_total_uncompressed_bytes'];
+	$headroom = min( (int) $staged['generated_bytes_headroom'], $total );
+
 	return Static_Site_Importer_Compiler_Limits::resolve(
 		array(
 			'max_files'       => (int) $staged['max_entries'],
 			'max_file_bytes'  => (int) $staged['max_entry_uncompressed_bytes'],
-			'max_total_bytes' => (int) $staged['max_total_uncompressed_bytes'],
+			'max_total_bytes' => $total + $headroom,
 		)
 	);
 }
