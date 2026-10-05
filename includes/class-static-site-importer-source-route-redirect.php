@@ -24,7 +24,9 @@ final class Static_Site_Importer_Source_Route_Redirect {
 			return;
 		}
 		$GLOBALS['static_site_importer_source_route_redirect_registered'] = true;
-		add_action( 'template_redirect', array( self::class, 'redirect' ), 11 );
+		// Run before redirect_canonical so extension-bearing source paths resolve
+		// to the imported permalink instead of being normalized by WordPress first.
+		add_action( 'template_redirect', array( self::class, 'redirect' ), 9 );
 	}
 
 	public static function redirect(): void {
@@ -32,16 +34,17 @@ final class Static_Site_Importer_Source_Route_Redirect {
 			return;
 		}
 		$GLOBALS['static_site_importer_source_route_redirected'] = true;
-		if ( ! function_exists( 'is_404' ) || ! is_404() ) {
-			return;
-		}
 		$method = strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) );
 		if ( ! in_array( $method, array( 'GET', 'HEAD' ), true ) ) {
 			return;
 		}
-		$request = '';
-		if ( isset( $GLOBALS['wp'] ) && is_object( $GLOBALS['wp'] ) && isset( $GLOBALS['wp']->request ) && is_string( $GLOBALS['wp']->request ) ) {
+		$request = (string) ( $_SERVER['REQUEST_URI'] ?? '' );
+		if ( '' === $request && isset( $GLOBALS['wp'] ) && is_object( $GLOBALS['wp'] ) && isset( $GLOBALS['wp']->request ) && is_string( $GLOBALS['wp']->request ) ) {
 			$request = $GLOBALS['wp']->request;
+		}
+		$path = self::request_path( $request );
+		if ( ( ! function_exists( 'is_404' ) || ! is_404() ) && 1 !== preg_match( '~(?:^|/)[^/]+\.html?$~i', $path ) ) {
+			return;
 		}
 		$target = self::target_url( '' !== $request ? $request : null );
 		if ( ! is_string( $target ) || '' === $target || ! function_exists( 'wp_safe_redirect' ) ) {
