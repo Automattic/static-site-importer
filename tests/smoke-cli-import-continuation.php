@@ -99,7 +99,14 @@ mkdir( $bundle_dir );
 $bundle_request = $bundle_dir . '/request.json';
 $bundle_source  = $bundle_dir . '/source';
 mkdir( $bundle_source );
-file_put_contents( $bundle_source . '/index.html', '<h1>Bundle</h1>' );
+mkdir( $bundle_source . '/_files/ugd', 0777, true );
+// CWCTU-style portable download: the link, manifest hash, and referenced
+// binary must survive intake and the paired compiler as one asset.
+$word_path   = '_files/ugd/guide.docx';
+$word_bytes  = "PK\x03\x04\x00\x00\x00\x00word/document.xml\x00<?php\x00\xFF";
+$bundle_html = '<h1>Bundle</h1><a href="_files/ugd/guide.docx">Download guide</a>';
+file_put_contents( $bundle_source . '/index.html', $bundle_html );
+file_put_contents( $bundle_source . '/' . $word_path, $word_bytes );
 file_put_contents(
 	$bundle_source . '/' . Static_Site_Importer_Portable_Source_Manifest::FILENAME,
 	wp_json_encode(
@@ -110,7 +117,11 @@ file_put_contents(
 			'files'      => array(
 				array(
 					'path'   => 'index.html',
-					'sha256' => hash( 'sha256', '<h1>Bundle</h1>' ),
+					'sha256' => hash( 'sha256', $bundle_html ),
+				),
+				array(
+					'path'   => $word_path,
+					'sha256' => hash( 'sha256', $word_bytes ),
 				),
 			),
 		)
@@ -135,12 +146,34 @@ $assert( realpath( $bundle_source ) === static_site_importer_cli_request_bundle_
 $resolved_bundle = apply_filters( 'static_site_importer_resolve_source_reference', null, 'request-bundle:source', 'files' );
 $bundle_files    = array_column( $resolved_bundle['source']['files'] ?? array(), null, 'path' );
 $assert( isset( $bundle_files['index.html'] ), 'request-bundle-registers-opaque-resolver' );
-$assert( '<h1>Bundle</h1>' === $resolved_bundle['payload_reader']->read( $bundle_files['index.html']['payload_reference'] ), 'request-bundle-reader-returns-source-bytes' );
+$assert( $bundle_html === $resolved_bundle['payload_reader']->read( $bundle_files['index.html']['payload_reference'] ), 'request-bundle-reader-returns-source-bytes' );
+$assert( isset( $bundle_files[ $word_path ] ) && strlen( $word_bytes ) === $bundle_files[ $word_path ]['payload_reference']['bytes'] && hash( 'sha256', $word_bytes ) === $bundle_files[ $word_path ]['payload_reference']['sha256'], 'request-bundle-retains-word-payload-reference-and-digest' );
+if ( isset( $bundle_files[ $word_path ] ) ) {
+	$assert( $word_bytes === $resolved_bundle['payload_reader']->read( $bundle_files[ $word_path ]['payload_reference'] ), 'request-bundle-reader-retains-portable-word-bytes' );
+}
+$assert( ! static_site_importer_cli_request_bundle_is_read_source( $word_path ), 'request-bundle-budgets-word-as-opaque-media' );
+$assert( 104857600 === static_site_importer_cli_request_bundle_file_byte_limit( $word_path, static_site_importer_cli_request_bundle_limits(), 0 ), 'request-bundle-bounds-word-by-media-file-cap' );
 $projected_bundle = Static_Site_Importer_Portable_Source_Manifest::project(
 	array( 'files' => $resolved_bundle['source']['files'] ),
 	$resolved_bundle['payload_reader']
 );
-$assert( ! is_wp_error( $projected_bundle ) && array( 'index.html' ) === array_column( $projected_bundle['files'] ?? array(), 'path' ), 'request-bundle-projects-portable-manifest-through-payload-reader' );
+$assert( ! is_wp_error( $projected_bundle ) && array( 'index.html', $word_path ) === array_column( $projected_bundle['files'] ?? array(), 'path' ), 'request-bundle-projects-portable-manifest-through-payload-reader' );
+$assert( ! is_wp_error( $projected_bundle ) && $bundle_html === $resolved_bundle['payload_reader']->read( $projected_bundle['files'][0]['payload_reference'] ) && $word_bytes === $resolved_bundle['payload_reader']->read( $projected_bundle['files'][1]['payload_reference'] ), 'projected-source-link-points-at-portable-word-bytes' );
+$word_compiler = new \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler();
+$word_shared   = $word_compiler->prepareShared( $projected_bundle, $resolved_bundle['payload_reader'] );
+$word_pages    = $word_compiler->preparePages( $projected_bundle, $word_shared, $resolved_bundle['payload_reader'] );
+$word_result   = $word_compiler->compose( $word_shared, $word_pages, $resolved_bundle['payload_reader'] )->toArray();
+$word_plan     = $word_result['source_reports']['wordpress_site_plan'] ?? array();
+$word_assets   = array_values( array_filter( $word_plan['assets'] ?? array(), static fn( array $asset ): bool => $word_path === ( $asset['source_path'] ?? '' ) ) );
+$assert( 1 === count( $word_plan['pages'] ?? array() ), 'word-document-is-not-compiled-as-a-page' );
+$assert( 1 === count( $word_assets ), 'compiled-source-retains-portable-word-asset' );
+$word_asset = $word_assets[0] ?? array();
+$assert( hash( 'sha256', $word_bytes ) === ( $word_asset['payload_reference']['sha256'] ?? '' ) && $word_path === ( $word_asset['references'][0]['value'] ?? '' ), 'compiled-asset-retains-portable-word-bytes-and-source-link' );
+$assert( '' !== ( $word_asset['token'] ?? '' ) && str_contains( (string) ( $word_plan['pages'][0]['canonical_block_markup'] ?? '' ), '{{wordpress-site-plan:asset:' . $word_asset['token'] . '}}' ), 'compiled-page-links-to-portable-word-asset-token' );
+file_put_contents( $bundle_source . '/' . $word_path . '.php', $word_bytes );
+$executable_word_bundle = static_site_importer_cli_request_bundle_files( realpath( $bundle_source ) );
+$assert( is_wp_error( $executable_word_bundle ) && 'static_site_importer_executable_source_rejected' === $executable_word_bundle->get_error_code(), 'request-bundle-rejects-word-document-with-executable-suffix' );
+unlink( $bundle_source . '/' . $word_path . '.php' );
 
 $report_bundle_dir  = sys_get_temp_dir() . '/ssi-report-request-bundle-' . bin2hex( random_bytes( 6 ) );
 $report_source      = $report_bundle_dir . '/report-source';
@@ -197,6 +230,9 @@ unlink( $bundle_link );
 unlink( $figma_source );
 unlink( $bundle_source . '/' . Static_Site_Importer_Portable_Source_Manifest::FILENAME );
 unlink( $bundle_source . '/index.html' );
+unlink( $bundle_source . '/' . $word_path );
+rmdir( $bundle_source . '/_files/ugd' );
+rmdir( $bundle_source . '/_files' );
 rmdir( $bundle_source );
 unlink( $bundle_request );
 rmdir( $bundle_dir );
@@ -832,6 +868,35 @@ $bounded = static_site_importer_cli_run_import_host(
 );
 $assert( 'failed' === ( $bounded['status'] ?? '' ) && 2 === ( $bounded['steps'] ?? 0 ), 'bound-exceeded-steps' );
 $assert( 'static_site_importer_cli_continuation_bound_exceeded' === ( $bounded['response']['error']['code'] ?? '' ), 'bound-exceeded-code' );
+
+$stalled = static_site_importer_cli_run_import_host(
+	array( 'source' => array( 'type' => 'zip' ) ),
+	static fn (): array => array(
+		'success'      => true,
+		'continuation' => true,
+		'import_id'    => 'opaque-stalled-id',
+		'artifact_run' => array( 'phase' => 'compile_pages', 'progress' => array( 'receipt_count' => 3 ) ),
+	)
+);
+$assert( 'static_site_importer_cli_continuation_stalled' === ( $stalled['response']['error']['code'] ?? '' ) && static_site_importer_cli_import_stall_limit() + 1 === ( $stalled['steps'] ?? 0 ), 'stall-guard-stops-a-run-without-progress' );
+
+$advancing_calls = 0;
+$advancing       = static_site_importer_cli_run_import_host(
+	array( 'source' => array( 'type' => 'zip' ) ),
+	static function () use ( &$advancing_calls ): array {
+		++$advancing_calls;
+		if ( $advancing_calls > 600 ) {
+			return array( 'success' => true, 'result' => array( 'status' => 'completed' ) );
+		}
+		return array(
+			'success'      => true,
+			'continuation' => true,
+			'import_id'    => 'opaque-large-id',
+			'artifact_run' => array( 'phase' => 'compile_pages', 'progress' => array( 'receipt_count' => $advancing_calls ) ),
+		);
+	}
+);
+$assert( 'completed' === ( $advancing['status'] ?? '' ) && 601 === ( $advancing['steps'] ?? 0 ), 'advancing-runs-are-not-bounded-by-a-fixed-step-budget' );
 
 $leaked = static_site_importer_cli_import_receipt(
 	array(

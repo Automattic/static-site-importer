@@ -282,6 +282,37 @@ namespace {
 	$unmappable_lifecycle = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $unmappable_plan, array() );
 	$assert( is_wp_error( $unmappable_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $unmappable_lifecycle->get_error_code(), 'entity-declaration-without-one-valid-row-is-still-rejected' );
 
+	// --- Manifest-schema declarations carry content-hash refs, not entity bodies.
+	// Their rows are validated once resolved, not as empty ref rows here.
+	$ref_id   = str_repeat( 'd', 64 );
+	$ref_plan = array(
+		'runtime_declarations' => array(
+			array(
+				'kind'                    => 'entity_collection',
+				'type'                    => 'forms',
+				'reconciliation_identity' => $ref_id,
+				'payload'                 => array(
+					'schema'        => 'blocks-engine/runtime-entity-manifest/v1',
+					'entity_schema' => 'generic/forms/v1',
+					'entities'      => array( array( 'content_hash' => str_repeat( 'e', 64 ) ) ),
+				),
+			),
+		),
+	);
+	$ref_lifecycle = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $ref_plan, array() );
+	$assert( ! is_wp_error( $ref_lifecycle ) && isset( $ref_lifecycle['entities'][ $ref_id ] ), 'manifest-ref-declaration-defers-validation-to-resolution', (string) wp_json_encode( is_wp_error( $ref_lifecycle ) ? $ref_lifecycle->get_error_data() : $ref_lifecycle ) );
+	$ref_resolved = array(
+		'runtime_declarations'      => $ref_plan['runtime_declarations'],
+		'runtime_entity_resolution' => array(
+			array( 'reconciliation_identity' => $ref_id, 'kind' => 'entity_collection', 'type' => 'forms', 'entity_schema' => 'generic/forms/v1', 'entities' => array( $mixed_entity( 'form.subscribe', array( $mappable_control, $submit_control ) ) ) ),
+		),
+	);
+	$ref_expanded = is_wp_error( $ref_lifecycle ) ? $ref_lifecycle : Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $ref_lifecycle, $ref_resolved );
+	$assert( ! is_wp_error( $ref_expanded ) && array( 'form.subscribe' ) === array_column( $ref_expanded['entities'][ $ref_id ]['manifest']['forms'] ?? array(), 'selector' ), 'manifest-ref-declaration-validates-resolved-entities' );
+	$ref_unmappable = $ref_resolved;
+	$ref_unmappable['runtime_entity_resolution'][0]['entities'][0]['controls'] = array( $submit_control );
+	$assert( ! is_wp_error( $ref_lifecycle ) && is_wp_error( Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $ref_lifecycle, $ref_unmappable ) ), 'manifest-ref-declaration-still-rejects-unmappable-resolved-entities' );
+
 	$legacy_lifecycle = array( 'entities' => array( 'legacy' => array( 'manifest' => array( 'forms' => array( $manifest_entity ) ) ) ) );
 	$assert( $legacy_lifecycle === Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $legacy_lifecycle, array( 'runtime_declarations' => array() ) ), 'direct-payload-entity-lifecycle-remains-unchanged-without-manifests' );
 

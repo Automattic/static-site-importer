@@ -7,6 +7,8 @@
 
 defined( 'ABSPATH' ) || exit;
 
+require_once __DIR__ . '/class-static-site-importer-ico-asset.php';
+
 /**
  * Moves page-owned raster images into the Media Library.
  *
@@ -114,13 +116,122 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			unset( $resolved_page );
 			$report['bound_block_count'] += $bound;
 		}
-		$error               = null;
-		$report['site_icon'] = self::materialize_site_icon( $state, $theme_uri, $theme_dir, $attachments, $by_hash, $error );
+		$error = null;
+		// Explicit branding is resolved together after activation. Keep the early
+		// raster fallback only for legacy plans without native icon evidence.
+		$report['site_icon'] = empty( $state['args']['native_site_identity_evidence']['icon'] ) ? self::materialize_site_icon( $state, $theme_uri, $theme_dir, $attachments, $by_hash, $error ) : 0;
 		if ( $error instanceof WP_Error ) {
 			return $error;
 		}
 		$report['attachment_count'] = count( array_unique( array_filter( $attachments ) ) );
 
+		return $report;
+	}
+
+	/** Apply explicit branding through native WordPress settings after activation. */
+	public static function materialize_identity( array &$state ) {
+		if ( empty( $state['args']['activate'] ) || Static_Site_Importer_Import_Destination::EXISTING_THEME === ( $state['args']['destination'] ?? '' ) ) {
+			return array( 'status' => 'not_applied' );
+		}
+		$evidence    = is_array( $state['args']['native_site_identity_evidence'] ?? null ) ? $state['args']['native_site_identity_evidence'] : array();
+		$theme_uri   = (string) ( $state['theme']['uri'] ?? '' );
+		$theme_dir   = (string) ( $state['theme_dir'] ?? '' );
+		$attachments = array();
+		$by_hash     = array();
+		$report      = array();
+		foreach ( array(
+			'logo' => 'site_logo',
+			'icon' => 'site_icon',
+		) as $field => $option ) {
+			$current = (int) get_option( $option, 0 );
+			$source  = $evidence[ $field . '_source_path' ] ?? null;
+			$entry   = array(
+				'status'        => 'absent',
+				'attachment_id' => 0,
+				'source_path'   => $source,
+			);
+			if ( ! empty( $evidence['truncated'] ) || ! empty( $evidence['invalid_jsonld'] ) ) {
+				$entry['status'] = 'unknown_evidence';
+			}
+			if ( 'icon' === $field && isset( $evidence['manifest_status'] ) && 'parsed' !== $evidence['manifest_status'] ) {
+				$entry['status'] = 'unresolved_manifest';
+			}
+			if ( 'logo' === $field && isset( $evidence['logo_status'] ) ) {
+				$entry['status'] = $evidence['logo_status'];
+			}
+			if ( $current > 0 ) {
+				$entry['status']        = 'preserved_owner_value';
+				$entry['attachment_id'] = $current;
+				$report[ $option ]      = $entry;
+				continue;
+			}
+			$id = 'icon' === $field && empty( $evidence['icon'] ) ? (int) ( $state['pending_site_icon'] ?? 0 ) : 0;
+			if ( $id <= 0 && ! empty( $evidence[ $field ] ) ) {
+				$write = null;
+				foreach ( $state['resolved']['writes'] ?? array() as $candidate ) {
+					if ( is_string( $source ) && ( $candidate['source_path'] ?? null ) === $source && 'theme_asset' === ( $candidate['kind'] ?? '' ) ) {
+						$write = $candidate;
+						break;
+					}
+				}
+				if ( null === $write ) {
+					$entry['status'] = 'unresolved_asset';
+				} else {
+					$url      = rtrim( $theme_uri, '/' ) . '/' . $write['target_path'];
+					$relative = self::theme_relative_raster( $url, $theme_uri );
+					$svg      = null;
+					$ico      = null;
+					if ( null === $relative && 'svg' === strtolower( pathinfo( $write['target_path'], PATHINFO_EXTENSION ) ) ) {
+						$relative = self::theme_relative_asset( $url, $theme_uri, array( 'svg' ) );
+						$svg      = null === $relative ? null : self::svg_asset_metadata( $theme_dir . '/' . $relative );
+					}
+					if ( null === $relative && 'ico' === strtolower( pathinfo( $write['target_path'], PATHINFO_EXTENSION ) ) ) {
+						$relative = self::theme_relative_asset( $url, $theme_uri, array( 'ico' ) );
+						$ico      = null === $relative ? null : self::ico_asset_metadata( $theme_dir . '/' . $relative );
+					}
+					if ( null === $relative ) {
+						$entry['status'] = 'unsupported_format';
+					} elseif ( null !== $svg && 'supported' !== $svg['status'] ) {
+						$entry['status'] = $svg['status'];
+					} elseif ( null !== $ico && 'supported' !== $ico['status'] ) {
+						$entry['status'] = $ico['status'];
+						$entry['reason'] = $ico['reason'];
+					} elseif ( ! function_exists( 'wp_insert_attachment' ) ) {
+						$entry['status'] = 'runtime_unavailable';
+					} else {
+						$error = null;
+						$id    = self::ensure_attachment( $theme_dir, $relative, 'Site ' . $field, $state, $attachments, $by_hash, $error );
+						if ( null !== $error ) {
+							return $error;
+						}
+						if ( $id <= 0 ) {
+							$entry['status'] = 'unresolved_asset';
+						}
+					}
+				}
+			}
+			if ( $id > 0 ) {
+				Static_Site_Importer_Site_Plan_Persistence::journal_option( $state, $option );
+				if ( ! Static_Site_Importer_Site_Plan_Persistence::write_option( $option, $id ) ) {
+					return new WP_Error( 'native_' . $option . '_not_applied' );
+				}
+				$entry['status']        = 'applied';
+				$entry['attachment_id'] = $id;
+			}
+			$report[ $option ] = $entry;
+		}
+		$tagline = trim( (string) ( $state['args']['site_tagline'] ?? $evidence['tagline'] ?? '' ) );
+		if ( '' === $tagline ) {
+			$tagline = trim( (string) ( $evidence['tagline'] ?? '' ) );
+		}
+		$report['blogdescription'] = array( 'status' => '' === $tagline ? 'absent' : 'preserved_owner_value' );
+		if ( '' !== $tagline && '' === trim( (string) get_option( 'blogdescription', '' ) ) ) {
+			Static_Site_Importer_Site_Plan_Persistence::journal_option( $state, 'blogdescription' );
+			if ( ! Static_Site_Importer_Site_Plan_Persistence::write_option( 'blogdescription', sanitize_text_field( $tagline ) ) ) {
+				return new WP_Error( 'site_tagline_not_applied' );
+			}
+			$report['blogdescription']['status'] = 'applied';
+		}
 		return $report;
 	}
 
@@ -165,7 +276,9 @@ final class Static_Site_Importer_Media_Library_Materializer {
 								'value'  => get_option( 'site_icon', 0 ),
 							);
 						}
-						update_option( 'site_icon', $attachments[ $relative ] );
+						// Attachment creation may precede activation, but global Site
+						// Identity is only changed in the authorized activation transaction.
+						$state['pending_site_icon'] = $attachments[ $relative ];
 						return $attachments[ $relative ];
 					}
 				}
@@ -229,13 +342,18 @@ final class Static_Site_Importer_Media_Library_Materializer {
 
 	/** Theme-relative path of a raster file the generated theme serves, or null. */
 	private static function theme_relative_raster( string $src, string $theme_uri ): ?string {
+		return self::theme_relative_asset( $src, $theme_uri, self::RASTER_EXTENSIONS );
+	}
+
+	/** Resolve only the explicitly supported formats within the generated theme. */
+	private static function theme_relative_asset( string $src, string $theme_uri, array $extensions ): ?string {
 		$path = (string) wp_parse_url( $src, PHP_URL_PATH );
 		$base = (string) wp_parse_url( $theme_uri, PHP_URL_PATH );
 		if ( '' === $path || '' === $base || ! str_starts_with( $path, $base . '/' ) ) {
 			return null;
 		}
 		$relative = rawurldecode( substr( $path, strlen( $base ) + 1 ) );
-		if ( str_contains( $relative, '..' ) || ! in_array( strtolower( pathinfo( $relative, PATHINFO_EXTENSION ) ), self::RASTER_EXTENSIONS, true ) ) {
+		if ( str_contains( $relative, '..' ) || ! in_array( strtolower( pathinfo( $relative, PATHINFO_EXTENSION ) ), $extensions, true ) ) {
 			return null;
 		}
 		return $relative;
@@ -292,12 +410,34 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		if ( false === $bytes ) {
 			return 0;
 		}
-		$upload = wp_upload_bits( sanitize_file_name( basename( $relative ) ), null, $bytes );
+		$svg = 'svg' === strtolower( pathinfo( $relative, PATHINFO_EXTENSION ) ) ? self::svg_asset_metadata( $file ) : null;
+		if ( null !== $svg && 'supported' !== $svg['status'] ) {
+			return 0;
+		}
+		if ( 'ico' === strtolower( pathinfo( $relative, PATHINFO_EXTENSION ) ) && 'supported' !== Static_Site_Importer_Ico_Asset::inspect( $bytes )['status'] ) {
+			return 0;
+		}
+		// Admit only compiler-validated artwork during this synchronous upload.
+		// Ordinary uploads keep WordPress's existing SVG MIME policy.
+		$svg_mime = static function ( array $mimes ): array {
+			$mimes['svg'] = 'image/svg+xml';
+			return $mimes;
+		};
+		if ( null !== $svg ) {
+			add_filter( 'upload_mimes', $svg_mime );
+		}
+		try {
+			$upload = wp_upload_bits( sanitize_file_name( basename( $relative ) ), null, $bytes );
+		} finally {
+			if ( null !== $svg ) {
+				remove_filter( 'upload_mimes', $svg_mime );
+			}
+		}
 		if ( ! empty( $upload['error'] ) ) {
 			$error = new WP_Error( 'media_library_upload_failed', 'An imported page image could not be added to the Media Library.', array( 'source_asset' => $relative ) );
 			return 0;
 		}
-		$mime = (string) wp_check_filetype( $upload['file'] )['type'];
+		$mime = null !== $svg ? 'image/svg+xml' : (string) wp_check_filetype( $upload['file'] )['type'];
 		if ( ! str_starts_with( $mime, 'image/' ) ) {
 			wp_delete_file( $upload['file'] );
 			return 0;
@@ -328,7 +468,15 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				require_once ABSPATH . $include;
 			}
 		}
-		if ( function_exists( 'wp_generate_attachment_metadata' ) ) {
+		if ( null !== $svg ) {
+			wp_update_attachment_metadata( $attachment_id, array(
+				'width'    => $svg['width'],
+				'height'   => $svg['height'],
+				'file'     => _wp_relative_upload_path( $upload['file'] ),
+				'filesize' => strlen( $bytes ),
+				'sizes'    => array(),
+			) );
+		} elseif ( function_exists( 'wp_generate_attachment_metadata' ) ) {
 			wp_update_attachment_metadata( $attachment_id, wp_generate_attachment_metadata( $attachment_id, $upload['file'] ) );
 		}
 		update_post_meta( $attachment_id, self::SOURCE_ASSET_META_KEY, $identity );
@@ -337,6 +485,33 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		}
 
 		return (int) $attachment_id;
+	}
+
+	/** Inspect bounded local ICO bytes before any upload or identity mutation. */
+	private static function ico_asset_metadata( string $file ): array {
+		if ( ! is_readable( $file ) || filesize( $file ) > 2 * 1024 * 1024 ) {
+			return array(
+				'status' => 'invalid_ico',
+				'reason' => 'unreadable_or_byte_limit',
+			);
+		}
+		$bytes = file_get_contents( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local canonical asset written by this import.
+		return false === $bytes ? array(
+			'status' => 'invalid_ico',
+			'reason' => 'unreadable',
+		) : Static_Site_Importer_Ico_Asset::inspect( $bytes );
+	}
+
+	/** Reuse the owning compiler's standalone artwork contract for native media. */
+	private static function svg_asset_metadata( string $file ): array {
+		if ( ! class_exists( \Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Support\StandaloneSvgAsset::class ) ) {
+			return array( 'status' => 'svg_runtime_unavailable' );
+		}
+		if ( ! is_readable( $file ) || filesize( $file ) > 2 * 1024 * 1024 ) {
+			return array( 'status' => 'invalid_svg' );
+		}
+		$bytes = file_get_contents( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local canonical asset written by this import.
+		return false === $bytes ? array( 'status' => 'invalid_svg' ) : \Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Support\StandaloneSvgAsset::inspect( $bytes );
 	}
 
 	/** Page markup that may reference a replaceable raster, including escaped block attributes. */
@@ -380,18 +555,37 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		$spans      = self::comment_spans( $rewritten );
 		$bound_html = '';
 		$cursor     = 0;
+		$owners     = array();
+		$openers    = array_column( self::block_openers( $rewritten ), null, 'start' );
 		foreach ( $spans as $span ) {
-			$bound_html .= self::rewrite_markup( substr( $rewritten, $cursor, $span['start'] - $cursor ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error )['html'];
+			$image_class = self::image_class_for_owner( $owners[ count( $owners ) - 1 ] ?? null );
+			$bound_html .= self::rewrite_markup( substr( $rewritten, $cursor, $span['start'] - $cursor ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error, $image_class )['html'];
 			if ( null !== $error ) {
 				return $rewritten;
 			}
-			$bound_html .= substr( $rewritten, $span['start'], $span['end'] - $span['start'] );
-			$cursor      = $span['end'];
+			$comment     = substr( $rewritten, $span['start'], $span['end'] - $span['start'] );
+			$bound_html .= $comment;
+			if ( isset( $openers[ $span['start'] ] ) && ! $openers[ $span['start'] ]['self'] ) {
+				$owners[] = $openers[ $span['start'] ];
+			} elseif ( preg_match( '~^<!--\s+/wp:([a-z0-9/-]+)\s+-->$~', $comment, $closing ) && ( $owners[ count( $owners ) - 1 ]['name'] ?? null ) === $closing[1] ) {
+				array_pop( $owners );
+			}
+			$cursor = $span['end'];
 		}
-		$tail        = self::rewrite_markup( substr( $rewritten, $cursor ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error );
+		$tail        = self::rewrite_markup( substr( $rewritten, $cursor ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error, self::image_class_for_owner( $owners[ count( $owners ) - 1 ] ?? null ) );
 		$bound_html .= $tail['html'];
 
 		return null === $error ? $bound_html : $rewritten;
+	}
+
+	/** The media-text save contract derives both image classes from mediaId. */
+	private static function image_class_for_owner( ?array $owner ): ?string {
+		if ( ! in_array( $owner['name'] ?? '', array( 'media-text', 'core/media-text' ), true ) ) {
+			return null;
+		}
+		$attrs = json_decode( $owner['json'], true );
+		$id    = (int) ( $attrs['mediaId'] ?? 0 );
+		return $id > 0 ? 'wp-image-' . $id . ' size-' . ( $attrs['mediaSizeSlug'] ?? 'full' ) : '';
 	}
 
 	/**
@@ -471,7 +665,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
 	 * @return array{html:string,ids:array<int,int>}
 	 */
-	private static function rewrite_markup( string $html, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, ?WP_Error &$error ): array {
+	private static function rewrite_markup( string $html, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, ?WP_Error &$error, ?string $image_class = null ): array {
 		$ids = array();
 		if ( ! str_contains( $html, '<img' ) && ! str_contains( $html, '<source' ) ) {
 			return array(
@@ -481,11 +675,11 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		}
 		$rewritten = preg_replace_callback(
 			'/<(?:img|source)\b[^>]*>/i',
-			static function ( array $tag ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$bound, &$error, &$ids ): string {
+			static function ( array $tag ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$bound, &$error, &$ids, $image_class ): string {
 				if ( null !== $error ) {
 					return $tag[0];
 				}
-				return self::rewrite_media_tag( $tag[0], $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $ids, $error );
+				return self::rewrite_media_tag( $tag[0], $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $ids, $error, $image_class );
 			},
 			$html
 		);
@@ -503,7 +697,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
 	 * @param array<int,int>    $ids
 	 */
-	private static function rewrite_media_tag( string $tag, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, array &$ids, ?WP_Error &$error ): string {
+	private static function rewrite_media_tag( string $tag, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, array &$ids, ?WP_Error &$error, ?string $image_class ): string {
 		$src_id = 0;
 		if ( preg_match( '/\bsrc="([^"]*)"/i', $tag, $src_match ) ) {
 			$src_id = self::attachment_id_for_url( html_entity_decode( $src_match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8' ), self::alt_from_tag( $tag ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
@@ -528,14 +722,15 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				$tag = str_replace( 'srcset="' . $srcset_match[1] . '"', 'srcset="' . esc_attr( $srcset ) . '"', $tag );
 			}
 		}
-		if ( $src_id <= 0 || ! str_starts_with( strtolower( $tag ), '<img' ) ) {
+		if ( '' === $image_class || $src_id <= 0 || ! str_starts_with( strtolower( $tag ), '<img' ) ) {
 			return $tag;
 		}
+		$class = esc_attr( $image_class ?? 'wp-image-' . $src_id );
 		if ( preg_match( '/\bclass="[^"]*"/i', $tag ) ) {
-			return (string) preg_replace( '/\bclass="([^"]*)"/i', 'class="$1 wp-image-' . $src_id . '"', $tag, 1 );
+			return (string) preg_replace( '/\bclass="([^"]*)"/i', 'class="$1 ' . $class . '"', $tag, 1 );
 		}
 
-		return (string) preg_replace( '/^<img\b/i', '<img class="wp-image-' . $src_id . '"', $tag, 1 );
+		return (string) preg_replace( '/^<img\b/i', '<img class="' . $class . '"', $tag, 1 );
 	}
 
 	/**

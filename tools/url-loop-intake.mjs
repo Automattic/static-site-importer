@@ -58,12 +58,51 @@ export function createHandoff(input = {}) {
     finding_packet_refs: input.findingPacketRefs || [],
     failures: input.failures || [],
     commands: input.commands || [],
+    runtime_failure: input.runtimeFailure || null,
     acceptance: {
       solved: false,
       reason: 'url_loop_intake_does_not certify solved-site acceptance',
     },
   };
   return handoff;
+}
+
+/** One SSI-owned matrix boundary for initial URL intake and candidate re-evaluation. */
+export async function runUrlLoopMatrix(input, dependencies = {}) {
+  if (!input.staticSiteImporter || !input.blocksEngine) throw new Error('matrix_component_identities_missing');
+  const { buildFixtureMatrixRunPlan, summarizeBenchRun } = await (dependencies.matrixModule || import('./run-fixture-matrix.mjs'));
+  const output = path.resolve(input.output || path.join(input.outputRoot, 'homeboy-bench-result.json'));
+  const matrixInput = {
+    ...(input.matrixOptions || {}),
+    fixtureRoot: input.fixtureRoot,
+    targetFixture: input.fixtureId,
+    staticSiteImporter: input.staticSiteImporter,
+    blocksEngine: input.blocksEngine,
+    ssiIdentity: input.ssiIdentity,
+    blocksEngineIdentity: input.blocksEngineIdentity,
+    output,
+  };
+  const plan = buildFixtureMatrixRunPlan(matrixInput);
+  const args = [path.join(path.dirname(fileURLToPath(import.meta.url)), 'run-fixture-matrix.mjs'), '--static-site-importer', input.staticSiteImporter, '--blocks-engine', input.blocksEngine, '--fixture-root', input.fixtureRoot, '--target-fixture', input.fixtureId, '--output', output, ...(input.matrixArgs || [])];
+  const command = { stage: 'matrix', command: process.execPath, args };
+  const matrix = { status: 'planned', plan, command: plan.steps.at(-1)?.retry_command || '' };
+  const result = (dependencies.spawn || spawnSync)(process.execPath, args, { cwd: input.cwd || process.cwd(), stdio: 'inherit' });
+  const failures = [];
+  let summary = null;
+  try { summary = summarizeBenchRun({ plan, benchStatus: result.status ?? 1 }).summary; } catch { /* A crash has no authoritative result. */ }
+  if (summary?.matrix_evidence_readiness) {
+    matrix.summary = summary;
+    matrix.status = summary.status;
+    matrix.artifact_refs = summary.artifact_urls || [];
+    matrix.evidence = summary.matrix_evidence_readiness;
+    const evidence = validateMatrixEvidence(summary, input.fixtureId);
+    matrix.evidence_complete = evidence.valid;
+    if (!evidence.valid) failures.push({ stage: 'matrix', reason: evidence.reason, fixture_id: input.fixtureId, readiness: matrix.evidence });
+  } else {
+    matrix.status = 'blocked';
+    failures.push(matrixRuntimeFailure(result, output));
+  }
+  return { matrix, summary, result, failures, commands: [command] };
 }
 
 export async function runUrlLoopIntake(input = {}, dependencies = {}) {
@@ -84,8 +123,20 @@ export async function runUrlLoopIntake(input = {}, dependencies = {}) {
     const captureArgs = config.captureArgs.map((arg) => String(arg).replaceAll('{url}', url).replaceAll('{output}', captureRoot));
     const command = { command: config.cli, args: captureArgs };
     commands.push({ stage: 'capture', ...command, shell: shellCommand(command) });
-    const result = (dependencies.spawn || spawnSync)(config.cli, captureArgs, { stdio: 'inherit' });
-    if ((result.status ?? 1) !== 0) failures.push(`capture_command_failed:${result.status ?? 1}`);
+    const prerequisite = capturePrerequisiteFailure(config);
+    if (prerequisite) failures.push(prerequisite);
+    else {
+      let result;
+      try {
+        result = (dependencies.spawn || spawnSync)(config.cli, captureArgs, {
+          stdio: 'inherit', timeout: config.timeout,
+          env: { ...process.env, ...(config.env || {}), PATH: config.path || process.env.PATH },
+        });
+      } catch (error) {
+        result = { status: null, signal: null, error: { code: error.code || null, message: error.message } };
+      }
+      if (result.error || result.signal || result.status !== 0) failures.push(captureRuntimeFailure(result));
+    }
   }
 
   const selectedCapture = findRetainedCapture(captureRoot, url);
@@ -114,45 +165,16 @@ export async function runUrlLoopIntake(input = {}, dependencies = {}) {
   let matrix = null;
   if (!failures.length && input.runMatrix) {
     try {
-      // Keep capture/intake diagnostics usable without the optional visual-matrix
-      // dependencies. The canonical matrix module is loaded only when requested.
-      const { buildFixtureMatrixRunPlan, summarizeBenchRun } = await import('./run-fixture-matrix.mjs');
-      if (typeof input.staticSiteImporter !== 'string' || !input.staticSiteImporter || typeof input.blocksEngine !== 'string' || !input.blocksEngine) throw new Error('matrix_component_identities_missing');
-      const matrixInput = { ...input.matrix, fixtureRoot, targetFixture: fixture.id, staticSiteImporter: input.staticSiteImporter, blocksEngine: input.blocksEngine, ssiIdentity: input.ssiIdentity, blocksEngineIdentity: input.blocksEngineIdentity, output: path.join(outputRoot, 'matrix', 'homeboy-bench-result.json') };
-      const plan = buildFixtureMatrixRunPlan(matrixInput);
-      matrix = { status: 'planned', plan, command: plan.steps.at(-1)?.retry_command || '' };
-      if (!input.dryRun) {
-        const args = [fileURLToPath(import.meta.url).replace('url-loop-intake.mjs', 'run-fixture-matrix.mjs'), '--static-site-importer', input.staticSiteImporter, '--blocks-engine', input.blocksEngine, '--fixture-root', fixtureRoot, '--target-fixture', fixture.id, '--output', matrixInput.output, ...(input.matrixArgs || [])];
-        const result = (dependencies.spawn || spawnSync)(process.execPath, args, { stdio: 'inherit' });
-        let matrixSummary = null;
-        try {
-          matrixSummary = summarizeBenchRun({ plan, benchStatus: result.status ?? 1 }).summary;
-        } catch {
-          // A timeout, crash, or unparseable bench output is a typed runtime blocker.
-        }
-        if (matrixSummary?.matrix_evidence_readiness) {
-          matrix.summary = matrixSummary;
-          matrix.status = matrixSummary.status;
-          matrix.artifact_refs = matrixSummary.artifact_urls || [];
-          matrix.evidence = matrixSummary.matrix_evidence_readiness;
-          const evidence = validateMatrixEvidence(matrixSummary, fixture.id);
-          matrix.evidence_complete = evidence.valid;
-        }
-        if (!matrixSummary?.matrix_evidence_readiness) {
-          failures.push(matrixRuntimeFailure(result, matrixInput.output));
-        } else if (!matrix.evidence_complete) {
-          const evidenceReason = validateMatrixEvidence(matrixSummary, fixture.id);
-          failures.push(result.status !== 0
-            ? matrixRuntimeFailure(result, matrixInput.output)
-            : { stage: 'matrix', reason: evidenceReason.reason, fixture_id: fixture.id, readiness: matrix.evidence || null });
-        }
-      }
-      commands.push({ stage: 'matrix', command: process.execPath, args: [ 'tools/run-fixture-matrix.mjs', '--static-site-importer', input.staticSiteImporter, '--blocks-engine', input.blocksEngine, '--fixture-root', fixtureRoot, '--target-fixture', fixture.id, '--output', matrixInput.output, ...(input.matrixArgs || [])] });
+      const evaluated = await runUrlLoopMatrix({ fixtureRoot, fixtureId: fixture.id, staticSiteImporter: input.staticSiteImporter, blocksEngine: input.blocksEngine, ssiIdentity: input.ssiIdentity, blocksEngineIdentity: input.blocksEngineIdentity, matrixOptions: input.matrix, matrixArgs: input.matrixArgs, output: path.join(outputRoot, 'matrix', 'homeboy-bench-result.json') }, dependencies);
+      matrix = evaluated.matrix;
+      failures.push(...evaluated.failures);
+      commands.push(...evaluated.commands);
     } catch (error) {
       failures.push(`matrix_setup_failed:${error.message}`);
     }
   }
-  const handoff = createHandoff({ url, provenance, captureReceipt, fixture, matrix, failures, commands, findingPacketRefs: [], identities: { dla: config.identity, ssi: input.ssiIdentity, blocks_engine: input.blocksEngineIdentity, wordpress: input.wordpressIdentity } });
+  const runtimeFailure = failures.find((failure) => failure?.stage === 'capture') || null;
+  const handoff = createHandoff({ url, provenance, captureReceipt, fixture, matrix, failures, commands, runtimeFailure, findingPacketRefs: [], identities: { dla: config.identity, ssi: input.ssiIdentity, blocks_engine: input.blocksEngineIdentity, wordpress: input.wordpressIdentity } });
   if (input.dryRun) return { ...handoff, handoff_path: null };
   fs.mkdirSync(path.dirname(handoffPath), { recursive: true });
   fs.writeFileSync(handoffPath, `${JSON.stringify(handoff, null, 2)}\n`);
@@ -163,7 +185,23 @@ function normalizeUrl(value) { const url = new URL(String(value || '')); if (!['
 function normalizeDlaConfig(input) {
   const identity = { ...DLA_RELEASE, executable: 'data-liberation' };
   if (input.dlaVersion && input.dlaVersion !== identity.version || input.dlaCommit && input.dlaCommit !== identity.commit || input.dlaAsset && input.dlaAsset !== identity.asset || input.dlaSha256 && input.dlaSha256 !== identity.sha256) throw new Error('declared DLA release identity does not match v0.6.5');
-  return { cli: 'npx', captureArgs: ['--yes', `--package=${identity.asset}`, identity.executable, '{url}', '--output', '{output}'], identity };
+  const toolchain = input.runtimeToolchain || {};
+  const node = path.resolve(toolchain.node || process.execPath);
+  const launcher = path.resolve(toolchain.npx || path.join(path.dirname(node), 'npx'));
+  const pathValue = [path.dirname(node), '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(path.delimiter);
+  return { cli: launcher, node, captureArgs: ['--yes', `--package=${identity.asset}`, identity.executable, '{url}', '--output', '{output}'], identity, path: pathValue, timeout: toolchain.timeout || 600000, env: toolchain.env || {} };
+}
+function capturePrerequisiteFailure(config) {
+  for (const [executable, reason] of [[config.node, 'node_unavailable'], [config.cli, 'launcher_unavailable']]) {
+    try { fs.accessSync(executable, fs.constants.X_OK); }
+    catch (error) { return { stage: 'capture', reason, outcome: 'prerequisite_unavailable', exit_status: null, error_code: error.code || null, error_message: String(error.message).slice(0, 1024), signal: null }; }
+  }
+  return null;
+}
+function captureRuntimeFailure(result) {
+  const timedOut = result?.error?.code === 'ETIMEDOUT';
+  const unavailable = result?.error?.code === 'ENOENT';
+  return { stage: 'capture', reason: timedOut ? 'command_timeout' : unavailable ? 'launcher_unavailable' : result?.error ? 'spawn_failed' : result?.signal ? 'child_signaled' : 'child_nonzero_exit', outcome: timedOut ? 'timed_out' : unavailable ? 'launcher_unavailable' : 'nonzero_or_missing_output', exit_status: result?.status ?? null, error_code: result?.error?.code || null, error_message: result?.error?.message ? String(result.error.message).slice(0, 1024) : null, signal: result?.signal || null };
 }
 function readJson(file) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } }
 function findRetainedCapture(root, url) {

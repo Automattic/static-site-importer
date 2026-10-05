@@ -91,8 +91,10 @@ function wp_json_encode( $value, int $options = 0 ) {
 		$GLOBALS['ssi_plan_json_array_calls'] = (int) ( $GLOBALS['ssi_plan_json_array_calls'] ?? 0 ) + 1;
 	}
 	return json_encode( $value, $options ); }
-function wp_slash( string $value ): string {
-	return addslashes( $value ); }
+function wp_slash( $value ) {
+	return is_array( $value ) ? array_map( 'wp_slash', $value ) : ( is_string( $value ) ? addslashes( $value ) : $value ); }
+function wp_unslash( $value ) {
+	return is_array( $value ) ? array_map( 'wp_unslash', $value ) : ( is_string( $value ) ? stripslashes( $value ) : $value ); }
 function wp_mkdir_p( string $path ): bool {
 	return is_dir( $path ) || mkdir( $path, 0777, true ); }
 function WP_Filesystem(): bool {
@@ -219,7 +221,7 @@ function get_post( int $id, $output = OBJECT ) {
 	if ( ! isset( $GLOBALS['ssi_plan_posts'][ $id ] ) ) {
 		return null;
 	}
-	return ARRAY_A === $output ? array_merge( array( 'ID' => $id ), $GLOBALS['ssi_plan_posts'][ $id ] ) : new WP_Post( $id );
+	return ARRAY_A === $output ? wp_unslash( array_merge( array( 'ID' => $id ), $GLOBALS['ssi_plan_posts'][ $id ] ) ) : new WP_Post( $id );
 }
 function wp_insert_post( array $post, bool $wp_error ) {
 	++$GLOBALS['ssi_plan_insert_calls'];
@@ -2025,7 +2027,7 @@ $binding_post_id = (int) ( $binding_receipt['completed']['pages']['index.html'] 
 $assert( str_contains( $GLOBALS['ssi_plan_posts'][ $binding_post_id ]['post_content'] ?? '', '[add_to_cart id=\"42\"]' ), 'page write uses provider-bound markup rather than the static fallback' );
 $assert( 'completed' === ( reset( $binding_receipt['completed']['runtime_declarations']['entity_bindings'] )['status'] ?? '' ), 'receipt proves canonical runtime entity binding completion' );
 $assert( array( '.add-to-cart' ) === ( reset( $binding_receipt['completed']['runtime_declarations']['entity_bindings'] )['superseded_runtime_selectors'] ?? null ), 'completed receipt retains provider runtime-selector coverage' );
-$reconcile_diagnostics = new ReflectionMethod( Static_Site_Importer_Report_Diagnostics::class, 'after_completed_entity_bindings' );
+$reconcile_diagnostics = new ReflectionMethod( Static_Site_Importer_Diagnostic_Projection::class, 'after_completed_entity_bindings' );
 $runtime_diagnostics   = array(
 	array(
 		'code'        => 'preserved_runtime_island',
@@ -2263,17 +2265,17 @@ $form_quality_report                              = Static_Site_Importer_Report_
 $form_quality_report->merge_quality( array( 'fallback_count' => 1 ) );
 $form_quality_report['diagnostics']               = array( $form_fallback );
 $form_quality_report['materialization_receipt']   = $form_binding_receipt;
-Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $form_quality_report );
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $form_quality_report );
 $assert( 'completed' === ( $form_binding_report['status'] ?? '' ) && ( $form_binding_report['materialized_content_hash'] ?? '' ) === hash( 'sha256', $form_binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '' ), 'form quality receipt is emitted after the persisted page replacement' );
 $assert( str_contains( Static_Site_Importer_Internal_Link_Runtime::resolve_urls( (string) ( $form_binding_receipt['completed']['materialized_pages']['index.html']['block_markup'] ?? '' ) ), 'https://example.test/' ), 'form quality receipt retains final route-rewritten page content' );
 $assert( 0 === ( $form_quality_report['quality']['fallback_count'] ?? -1 ) && 1 === ( $form_quality_report['quality']['source_fallback_count'] ?? 0 ) && 'resolved_by_provider' === ( $form_quality_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'persisted form receipt resolves only its identity-and-hash-bound source fallback' );
-$resolved_form_quality    = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $form_quality_report, array( 'fail_on_quality' => true ) );
-$resolved_form_validation = Static_Site_Importer_Report_Diagnostics::import_validation_result( $form_quality_report, $resolved_form_quality );
+$resolved_form_quality    = Static_Site_Importer_Quality_Gates::finalize_quality_report( $form_quality_report, array( 'fail_on_quality' => true ) );
+$resolved_form_validation = Static_Site_Importer_Diagnostic_Projection::import_validation_result( $form_quality_report, $resolved_form_quality );
 $assert( true === ( $resolved_form_quality['pass'] ?? false ) && false === ( $resolved_form_quality['fail_import'] ?? true ) && array() === ( $resolved_form_quality['failure_reasons'] ?? null ) && 'passed' === ( $resolved_form_validation['status'] ?? '' ), 'receipt-resolved form fallback clears derived quality gates and validation status' );
 $other_failure_report                                     = Static_Site_Importer_Import_Report::from_array( $form_quality_report->to_array() );
 $other_failure_report->merge_quality( array( 'core_html_block_count' => 1 ) );
-$other_failure_quality                                    = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $other_failure_report, array( 'fail_on_quality' => true ) );
-$other_failure_validation                                 = Static_Site_Importer_Report_Diagnostics::import_validation_result( $other_failure_report, $other_failure_quality );
+$other_failure_quality                                    = Static_Site_Importer_Quality_Gates::finalize_quality_report( $other_failure_report, array( 'fail_on_quality' => true ) );
+$other_failure_validation                                 = Static_Site_Importer_Diagnostic_Projection::import_validation_result( $other_failure_report, $other_failure_quality );
 $assert( 0 === ( $other_failure_quality['fallback_count'] ?? -1 ) && false === ( $other_failure_quality['pass'] ?? true ) && true === ( $other_failure_quality['fail_import'] ?? false ) && array( 'core_html_block' ) === ( $other_failure_quality['failure_reasons'] ?? null ) && 'failed' === ( $other_failure_validation['status'] ?? '' ), 'receipt reconciliation preserves unrelated quality failures and validation status' );
 // Exercise the production result composition path with the partial compiler
 // quality envelope that website-artifact imports supply.
@@ -2336,7 +2338,7 @@ $tampered_fragment_report                              = Static_Site_Importer_Re
 $tampered_fragment_report->merge_quality( array( 'fallback_count' => 1 ) );
 $tampered_fragment_report['diagnostics']               = array( $form_fallback );
 $tampered_fragment_report['materialization_receipt']   = $tampered_fragment_receipt;
-Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $tampered_fragment_report );
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $tampered_fragment_report );
 $assert( 1 === ( $tampered_fragment_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $tampered_fragment_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'tampered persisted fragment digest cannot resolve a fallback' );
 $tampered_content_receipt = $form_binding_receipt;
 $tampered_content_receipt['completed']['runtime_declarations']['entity_bindings'][ hash( 'sha256', 'form-fallback-binding' ) ]['materialized_content_hash'] = hash( 'sha256', 'tampered page' );
@@ -2344,7 +2346,7 @@ $tampered_content_report                              = Static_Site_Importer_Rep
 $tampered_content_report->merge_quality( array( 'fallback_count' => 1 ) );
 $tampered_content_report['diagnostics']               = array( $form_fallback );
 $tampered_content_report['materialization_receipt']   = $tampered_content_receipt;
-Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $tampered_content_report );
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $tampered_content_report );
 $assert( 1 === ( $tampered_content_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $tampered_content_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'tampered persisted page digest cannot resolve a fallback' );
 $deferred_form_plan                = $binding_plan;
 $deferred_form_receipt             = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
@@ -2629,7 +2631,7 @@ $resumed_form_quality_report                              = Static_Site_Importer
 $resumed_form_quality_report->merge_quality( array( 'fallback_count' => 1 ) );
 $resumed_form_quality_report['diagnostics']               = array( $form_fallback );
 $resumed_form_quality_report['materialization_receipt']   = $resumed_form_binding_receipt;
-Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $resumed_form_quality_report );
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $resumed_form_quality_report );
 $assert( $form_quality_report['quality_resolutions'] === $resumed_form_quality_report['quality_resolutions'], 'form quality resolution receipts remain deterministic on retry' );
 
 $publication_svg         = '<svg xmlns="http://www.w3.org/2000/svg"><text style="font-family:Example">Example</text></svg>';
@@ -3167,6 +3169,26 @@ $tz_id       = (int) ( ( $tz_receipt['completed']['pages'] ?? array() )['essays/
 // is asserted here. The runtime smoke covers the local-time derivation.
 $assert( '2024-03-12 10:00:00' === ( $GLOBALS['ssi_plan_posts'][ $tz_id ]['post_date_gmt'] ?? null ), 'non-UTC timezone does not shift the detected publish date stored as GMT' );
 date_default_timezone_set( $previous_tz );
+
+// Authored excerpts are a distinct native field and never a clipped copy of
+// post_content. The stub retains slashed insertion bytes; runtime proof also
+// checks WordPress's persisted field and the actual core/post-excerpt render.
+$source_excerpt = "Author's description " . str_repeat( 'complete summary ', 70 );
+$excerpt_page = array(
+	'post_type' => 'post',
+	'parent_source_path' => '',
+	'title' => 'Excerpt ownership',
+	'slug' => 'excerpt-ownership',
+	'resolved_block_markup' => '<!-- wp:paragraph --><p>Entire independent article.</p><!-- /wp:paragraph -->',
+	'metadata' => array( 'excerpt' => $source_excerpt, 'post_meta' => array( 'blocks_engine_listing_labels_test' => '<a href="/topic/">Owner\'s topic</a>' ) ),
+);
+$excerpt_id = Static_Site_Importer_Site_Plan_Persistence::materialize_page( $excerpt_page, array() );
+$assert( is_int( $excerpt_id ) && wp_slash( $source_excerpt ) === ( $GLOBALS['ssi_plan_posts'][ $excerpt_id ]['post_excerpt'] ?? null ), 'source-backed excerpt persists in its native field without a character or word truncation' );
+$assert( str_contains( $GLOBALS['ssi_plan_posts'][ $excerpt_id ]['post_content'] ?? '', 'Entire independent article.' ), 'excerpt persistence retains independent full article content' );
+$assert( wp_slash( '<a href="/topic/">Owner\'s topic</a>' ) === ( $GLOBALS['ssi_plan_posts'][ $excerpt_id ]['meta_input']['blocks_engine_listing_labels_test'] ?? null ), 'source-backed binding fields use native post metadata insertion with correct slashing' );
+$excerpt_page['metadata']['excerpt'] = array( 'invalid' );
+$excerpt_error = Static_Site_Importer_Site_Plan_Persistence::materialize_page( $excerpt_page, array() );
+$assert( is_wp_error( $excerpt_error ) && 'invalid_source_excerpt' === $excerpt_error->get_error_code(), 'malformed source excerpt is rejected before insertion' );
 
 // A page first imported undated, then re-imported with a date signal: the
 // reconciliation identity is stable across post types, so the existing row is
@@ -3973,5 +3995,40 @@ foreach ( array( 'completed' => $part_bound_write['payload']['data'], 'unresolve
 	$part_completed = $part_state['applied']['runtime_declarations']['entity_bindings'][ $part_binding['reconciliation_identity'] ];
 	$assert( $part_expected_status === $part_completed['status'] && ( 'unresolved' === $part_expected_status || 'parts/footer.html' === ( $part_completed['template_part'] ?? null ) ), 'a part binding completes only when the written part file carries the provider fragment (' . $part_expected_status . ')' );
 }
+
+// A preview is consumed automatically at the artifact boundary and uses the
+// same conflict/rollback contract as the rest of the generated theme.
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-compilation-preparation.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-theme-exporter.php';
+$preview_png = getenv( 'SSI_THEME_PREVIEW' ) ? file_get_contents( getenv( 'SSI_THEME_PREVIEW' ) ) : base64_decode( 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jXioAAAAASUVORK5CYII=' );
+$preview_artifact = array(
+	'entrypoint' => 'website/index.html',
+	'files'      => array(
+		array( 'path' => 'website/index.html', 'content' => '<!doctype html><title>Preview</title><main><h1>Preview homepage</h1></main>' ),
+		array( 'path' => 'website/site-preview.png', 'content_base64' => base64_encode( $preview_png ) ),
+	),
+);
+foreach ( array( 'block', 'classic' ) as $preview_strategy ) {
+	$preview_compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $preview_artifact, array( 'slug' => 'preview-' . $preview_strategy, 'theme_materialization' => $preview_strategy ) );
+	$assert( ! is_wp_error( $preview_compiled ) && isset( $preview_compiled['args']['theme_screenshot'] ), 'artifact compilation discovers the portable preview (' . $preview_strategy . '): ' . ( is_wp_error( $preview_compiled ) ? $preview_compiled->get_error_code() . ' ' . $preview_compiled->get_error_message() : 'missing preview' ) );
+	$preview_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $preview_compiled['plan'], $preview_compiled['args'] );
+	$preview_theme = $GLOBALS['ssi_plan_root'] . '/preview-' . $preview_strategy;
+	$assert( 'completed' === $preview_receipt['status'] && file_get_contents( $preview_theme . '/screenshot.png' ) === $preview_png, 'generated theme contains the exact producer PNG (' . $preview_strategy . ')' );
+	$preview_files = array_filter( $preview_receipt['completed']['files'], static fn( array $file ): bool => 'screenshot.png' === $file['target_path'] );
+	$assert( 1 === count( $preview_files ), 'thumbnail has a canonical completed-file receipt (' . $preview_strategy . ')' );
+	$preview_retry = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $preview_compiled['plan'], $preview_compiled['args'] );
+	$assert( 'completed' === $preview_retry['status'], 'byte-identical thumbnail reconciles on retry (' . $preview_strategy . ')' );
+	if ( getenv( 'SSI_THEME_PREVIEW' ) ) {
+		echo 'Generated preview theme: ' . $preview_theme . "\n";
+	}
+}
+$missing_preview = $preview_artifact;
+unset( $missing_preview['files'][1] );
+$assert( null === Static_Site_Importer_Theme_Screenshot::from_artifact( $missing_preview ), 'legacy artifacts without previews remain supported' );
+$invalid_preview = $preview_artifact;
+$invalid_preview['files'][1]['content_base64'] = base64_encode( 'not a PNG' );
+$assert( null === Static_Site_Importer_Theme_Screenshot::from_artifact( $invalid_preview ), 'invalid optional previews are ignored' );
+$existing_preview = Static_Site_Importer_Theme_Screenshot::with_write( array( 'writes' => array() ), array( 'destination' => 'existing_theme', 'theme_screenshot' => $preview_compiled['args']['theme_screenshot'] ) );
+$assert( array() === $existing_preview['writes'], 'existing-theme imports do not replace the host theme thumbnail' );
 
 echo "WordPress site plan materializer smoke passed.\n";

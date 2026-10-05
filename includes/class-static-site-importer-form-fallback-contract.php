@@ -51,9 +51,11 @@ class Static_Site_Importer_Form_Fallback_Contract {
 				}
 			}
 		}
-		$submit         = $form['submit_presentation'] ?? ( $metadata['form_presentation']['submit_presentation'] ?? null );
-		$submit         = is_array( $submit ) ? self::submit_presentation( $submit ) : null;
-		$fingerprint    = array(
+		$submit              = $form['submit_presentation'] ?? ( $metadata['form_presentation']['submit_presentation'] ?? null );
+		$submit              = is_array( $submit ) ? self::submit_presentation( $submit ) : null;
+		$unrepresented       = $form['unrepresented_context'] ?? ( $metadata['form_presentation']['unrepresented_context'] ?? null );
+		$unrepresented_count = is_array( $unrepresented ) ? count( $unrepresented ) : (int) ( $form['unrepresented_context_count'] ?? ( $metadata['form_presentation']['unrepresented_context_count'] ?? 0 ) );
+		$fingerprint         = array(
 			'class'               => $manifest['form']['class'] ?? '',
 			'action'              => $manifest['form']['action'] ?? '',
 			'method'              => $manifest['form']['method'] ?? '',
@@ -62,12 +64,12 @@ class Static_Site_Importer_Form_Fallback_Contract {
 			'context_before_hash' => hash( 'sha256', (string) wp_json_encode( $before ) ),
 			'context_after_hash'  => hash( 'sha256', (string) wp_json_encode( $after ) ),
 		);
-		$stored_heights = array_slice( $heights, 0, 16, true );
-		$omitted        = isset( $form['textarea_height_omitted_count'] ) && is_int( $form['textarea_height_omitted_count'] )
+		$stored_heights      = array_slice( $heights, 0, 16, true );
+		$omitted             = isset( $form['textarea_height_omitted_count'] ) && is_int( $form['textarea_height_omitted_count'] )
 			? $form['textarea_height_omitted_count']
 			: ( isset( $metadata['form_presentation']['textarea_height_omitted_count'] ) && is_int( $metadata['form_presentation']['textarea_height_omitted_count'] ) ? $metadata['form_presentation']['textarea_height_omitted_count'] : max( 0, count( $heights ) - count( $stored_heights ) ) );
-		$interleaved    = ! empty( $form['interleaved_context'] ) || ! empty( $metadata['form_presentation']['interleaved_context'] );
-		$presentation   = array_filter(
+		$interleaved         = ! empty( $form['interleaved_context'] ) || ! empty( $metadata['form_presentation']['interleaved_context'] );
+		$presentation        = array_filter(
 			array(
 				'schema'                        => 'generic/form-presentation/v1',
 				'selector'                      => $selector,
@@ -75,6 +77,7 @@ class Static_Site_Importer_Form_Fallback_Contract {
 				'fingerprint'                   => hash( 'sha256', (string) wp_json_encode( $fingerprint ) ),
 				'context_before'                => array_slice( $before, 0, 8 ),
 				'context_after'                 => array_slice( $after, 0, 8 ),
+				'unrepresented_context_count'   => max( 0, min( 8, $unrepresented_count ) ),
 				'interleaved_context'           => $interleaved,
 				'submit_presentation'           => $submit,
 				'textarea_heights'              => $stored_heights,
@@ -188,7 +191,7 @@ class Static_Site_Importer_Form_Fallback_Contract {
 				'controls' => $controls,
 			);
 		}
-		foreach ( array( 'context_before', 'context_after', 'submit_presentation' ) as $key ) {
+		foreach ( array( 'context_before', 'context_after', 'submit_presentation', 'unrepresented_context_count' ) as $key ) {
 			if ( isset( $presentation[ $key ] ) ) {
 				$form[ $key ] = $presentation[ $key ];
 			}
@@ -249,7 +252,9 @@ class Static_Site_Importer_Form_Fallback_Contract {
 			if ( is_string( $class_name ) && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) {
 				$classes[] = $class_name;
 			}
-			if ( 8 <= count( $classes ) ) {
+			// The producer bounds context class hooks at 64 and reports exhaustion
+			// itself; a smaller consumer bound silently dropped late responsive hooks.
+			if ( 64 <= count( $classes ) ) {
 				break;
 			}
 		}
@@ -293,33 +298,42 @@ class Static_Site_Importer_Form_Fallback_Contract {
 			if ( ! is_array( $item ) || ! is_string( $item['text'] ?? null ) || '' === trim( $item['text'] ) ) {
 				continue;
 			}
-			$text   = substr( preg_replace( '/\s+/', ' ', trim( $item['text'] ) ) ?? '', 0, 200 );
+			$text  = substr( preg_replace( '/\s+/', ' ', trim( $item['text'] ) ) ?? '', 0, 200 );
+			$class = self::context_class( $item['class'] ?? null );
+			// Retain both classes and resolved facts. The materializer chooses their
+			// cascade placement without inferring ownership from a class token.
 			$styles = self::context_styles( $item['styles'] ?? null );
+			// The source element identity joins this copy to its source graph node.
+			$selector = is_string( $item['source_selector'] ?? null ) && '' !== trim( $item['source_selector'] ) && strlen( $item['source_selector'] ) <= 2048 && ! preg_match( '/[\x00-\x1f{};]/', $item['source_selector'] ) ? $item['source_selector'] : '';
 			if ( 'heading' === ( $item['type'] ?? '' ) ) {
-				$row   = array(
+				$row = array(
 					'type'  => 'heading',
 					'level' => min( 6, max( 1, (int) ( $item['level'] ?? 2 ) ) ),
 					'text'  => $text,
 				);
-				$class = self::context_class( $item['class'] ?? null );
 				if ( '' !== $class ) {
 					$row['class'] = $class;
 				}
 				if ( array() !== $styles ) {
 					$row['styles'] = $styles;
+				}
+				if ( '' !== $selector ) {
+					$row['source_selector'] = $selector;
 				}
 				$context[] = $row;
 			} elseif ( 'paragraph' === ( $item['type'] ?? '' ) ) {
-				$row   = array(
+				$row = array(
 					'type' => 'paragraph',
 					'text' => $text,
 				);
-				$class = self::context_class( $item['class'] ?? null );
 				if ( '' !== $class ) {
 					$row['class'] = $class;
 				}
 				if ( array() !== $styles ) {
 					$row['styles'] = $styles;
+				}
+				if ( '' !== $selector ) {
+					$row['source_selector'] = $selector;
 				}
 				$context[] = $row;
 			}
@@ -343,7 +357,7 @@ class Static_Site_Importer_Form_Fallback_Contract {
 		}
 		$row           = array(
 			'text'    => substr( $text, 0, 200 ),
-			'classes' => array_slice( array_values( array_unique( $classes ) ), 0, 8 ),
+			'classes' => array_slice( array_values( array_unique( $classes ) ), 0, 16 ),
 		);
 		$label_classes = array();
 		if ( isset( $presentation['label_classes'] ) && is_array( $presentation['label_classes'] ) ) {
@@ -354,7 +368,7 @@ class Static_Site_Importer_Form_Fallback_Contract {
 			}
 		}
 		if ( array() !== $label_classes ) {
-			$row['label_classes'] = array_slice( array_values( array_unique( $label_classes ) ), 0, 8 );
+			$row['label_classes'] = array_slice( array_values( array_unique( $label_classes ) ), 0, 16 );
 		}
 		return $row;
 	}

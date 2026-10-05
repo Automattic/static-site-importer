@@ -269,6 +269,225 @@ class Static_Site_Importer_Site_Identity {
 		return '';
 	}
 
+	/** Extract explicit native branding evidence from the ordinary entrypoint document. */
+	public static function evidence_from_website_artifact( array $artifact, ?object $payload_reader = null, string $site_tagline = '' ): array {
+		$entrypoint = isset( $artifact['entrypoint'] ) ? self::normalize_route_path( (string) $artifact['entrypoint'] ) : '';
+		$html       = '';
+		foreach ( $artifact['files'] ?? array() as $file ) {
+			if ( ! is_array( $file ) || self::normalize_route_path( (string) ( $file['path'] ?? '' ) ) !== $entrypoint ) {
+				continue;
+			}
+			$html = self::artifact_file_content( $file, $payload_reader );
+			break;
+		}
+		$evidence = array(
+			'tagline'  => trim( $site_tagline ),
+			'logo'     => null,
+			'icon'     => null,
+			'manifest' => null,
+			'status'   => 'entrypoint_missing',
+		);
+		if ( '' === $html ) {
+			return $evidence;
+		}
+		$evidence['status'] = 'explicit_evidence';
+		$json_bytes         = 0;
+		$json_count         = 0;
+		if ( preg_match_all( '~<script\b([^>]*)>(.*?)</script\s*>~is', $html, $scripts, PREG_SET_ORDER ) ) {
+			foreach ( $scripts as $script ) {
+				$attributes = self::evidence_attributes( $script[1] );
+				if ( 'application/ld+json' !== strtolower( trim( $attributes['type'] ?? '' ) ) ) {
+					continue;
+				}
+				$json_bytes += strlen( $script[2] );
+				if ( ++$json_count > 64 || $json_bytes > 256 * 1024 ) {
+					$evidence['truncated'] = true;
+					break;
+				}
+				$data = json_decode( $script[2], true );
+				if ( ! is_array( $data ) ) {
+					$evidence['invalid_jsonld'] = true;
+					continue;
+				}
+				foreach ( self::jsonld_nodes( $data ) as $node ) {
+					$type = $node['@type'] ?? array();
+					$type = array_filter( is_array( $type ) ? $type : array( $type ), 'is_string' );
+					if ( array_intersect( array( 'Organization', 'WebSite' ), $type ) ) {
+						if ( empty( $evidence['logo'] ) && isset( $node['logo'] ) ) {
+							$evidence['logo'] = self::logo_reference( $node['logo'] );
+							if ( null === $evidence['logo'] ) {
+								$evidence['logo_status'] = 'unsupported_evidence';
+							}
+						}
+						if ( '' === $evidence['tagline'] && is_string( $node['slogan'] ?? null ) ) {
+							$evidence['tagline'] = trim( $node['slogan'] );
+						}
+					}
+				}
+			}
+		}
+		if ( preg_match_all( '~<link\\b([^>]+)>~i', $html, $links ) ) {
+			foreach ( $links[1] as $attributes ) {
+				$attrs = self::evidence_attributes( $attributes );
+				$rels  = preg_split( '/\\s+/', strtolower( trim( $attrs['rel'] ?? '' ) ) );
+				$rels  = false === $rels ? array() : $rels;
+				if ( in_array( 'manifest', $rels, true ) ) {
+					$evidence['manifest'] = $attrs['href'] ?? null;
+				}
+				if ( in_array( 'icon', $rels, true ) || in_array( 'apple-touch-icon', $rels, true ) ) {
+					$evidence['icon'] = $evidence['icon'] ?? ( $attrs['href'] ?? null );
+				}
+			}
+		}
+		$evidence['logo_source_path'] = self::evidence_asset_path( (string) ( $evidence['logo'] ?? '' ), $entrypoint, $artifact );
+		$evidence['icon_source_path'] = self::evidence_asset_path( (string) ( $evidence['icon'] ?? '' ), $entrypoint, $artifact );
+		$manifest_path                = self::evidence_asset_path( (string) ( $evidence['manifest'] ?? '' ), $entrypoint, $artifact );
+		if ( null !== $manifest_path ) {
+			foreach ( $artifact['files'] ?? array() as $file ) {
+				if ( ! is_array( $file ) || ( $file['path'] ?? '' ) !== $manifest_path ) {
+					continue;
+				}
+				$content  = self::artifact_file_content( $file, $payload_reader );
+				$manifest = strlen( $content ) <= 256 * 1024 ? json_decode( $content, true ) : null;
+				$icons    = is_array( $manifest['icons'] ?? null ) ? array_slice( $manifest['icons'], 0, 64 ) : array();
+				usort( $icons, static fn( $left, $right ): int => self::icon_size( $right ) <=> self::icon_size( $left ) );
+				foreach ( $icons as $icon ) {
+					if ( ! is_array( $icon ) || ! is_string( $icon['src'] ?? null ) || null !== $evidence['icon'] ) {
+						continue;
+					}
+					$evidence['icon']             = $icon['src'];
+					$evidence['icon_source_path'] = self::evidence_asset_path( $icon['src'], $manifest_path, $artifact );
+					$evidence['icon_source']      = 'web_app_manifest';
+				}
+				$evidence['manifest_status'] = is_array( $manifest ) ? 'parsed' : 'invalid';
+				break;
+			}
+		}
+		if ( ! empty( $evidence['manifest'] ) && ! isset( $evidence['manifest_status'] ) ) {
+			$evidence['manifest_status'] = 'unresolved';
+		}
+		return $evidence;
+	}
+
+	/** Parse source declarations, including quoted and unquoted HTML attributes. */
+	private static function evidence_attributes( string $source ): array {
+		$attributes = array();
+		preg_match_all( '~([a-zA-Z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|\x27([^\x27]*)\x27|([^\s"\x27=<>`]+))~', $source, $pairs, PREG_SET_ORDER | PREG_UNMATCHED_AS_NULL );
+		foreach ( $pairs as $pair ) {
+			$attributes[ strtolower( $pair[1] ) ] = html_entity_decode( (string) ( $pair[2] ?? $pair[3] ?? $pair[4] ?? '' ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		}
+		return $attributes;
+	}
+
+	private static function icon_size( mixed $icon ): int {
+		if ( ! is_array( $icon ) || ! is_string( $icon['sizes'] ?? null ) ) {
+			return 0;
+		}
+		preg_match_all( '/\b(\d+)x(\d+)\b/', $icon['sizes'], $sizes, PREG_SET_ORDER );
+		return array_reduce( $sizes, static fn( int $largest, array $size ): int => max( $largest, min( 4096, (int) $size[1] ) * min( 4096, (int) $size[2] ) ), 0 );
+	}
+
+	/** Prefer the ImageObject's media bytes over its descriptive page URL. */
+	private static function logo_reference( mixed $value, int $depth = 0 ): ?string {
+		if ( $depth > 4 ) {
+			return null;
+		}
+		if ( is_string( $value ) ) {
+			return '' !== trim( $value ) ? trim( $value ) : null;
+		}
+		if ( ! is_array( $value ) ) {
+			return null;
+		}
+		foreach ( array( 'contentUrl', 'url' ) as $key ) {
+			if ( is_string( $value[ $key ] ?? null ) ) {
+				return self::logo_reference( $value[ $key ], $depth + 1 );
+			}
+		}
+		if ( array_is_list( $value ) ) {
+			foreach ( array_slice( $value, 0, 64 ) as $image ) {
+				$reference = self::logo_reference( $image, $depth + 1 );
+				if ( null !== $reference ) {
+					return $reference;
+				}
+			}
+		}
+		return null;
+	}
+
+	/** Resolve a portable URI inside its declared artifact root, never onto the network. */
+	public static function evidence_asset_path( string $reference, string $document, array $artifact ): ?string {
+		if ( '' === trim( $reference ) || str_starts_with( $reference, '//' ) || preg_match( '~^[a-z][a-z0-9+.-]*:~i', $reference ) ) {
+			return null;
+		}
+		$root  = trim( (string) ( $artifact['root'] ?? dirname( (string) ( $artifact['entrypoint'] ?? $document ) ) ), '/' );
+		$root  = '.' === $root ? '' : $root;
+		$path  = rawurldecode( (string) wp_parse_url( $reference, PHP_URL_PATH ) );
+		$path  = str_starts_with( $path, '/' ) ? $root . $path : dirname( $document ) . '/' . $path;
+		$parts = array();
+		foreach ( explode( '/', $path ) as $part ) {
+			if ( '' === $part || '.' === $part ) {
+				continue;
+			}
+			if ( '..' === $part ) {
+				if ( array() === $parts ) {
+					return null;
+				}
+				array_pop( $parts );
+			} else {
+				$parts[] = $part;
+			}
+		}
+		$path = implode( '/', $parts );
+		return '' !== $root && ! str_starts_with( $path, $root . '/' ) ? null : $path;
+	}
+
+	/** @return array<int,array<string,mixed>> */
+	private static function jsonld_nodes( array $data ): array {
+		$nodes   = array();
+		$pending = array( array( $data, 0 ) );
+		$visited = 0;
+		while ( $pending && ++$visited <= 512 ) {
+			list( $node, $depth ) = array_pop( $pending );
+			if ( isset( $node['@type'] ) ) {
+				$nodes[] = $node;
+			}
+			if ( $depth >= 8 ) {
+				continue;
+			}
+			foreach ( $node as $child ) {
+				if ( is_array( $child ) ) {
+					$pending[] = array( $child, $depth + 1 );
+				}
+			}
+		}
+		return $nodes;
+	}
+
+	/** Read inline, base64, or verified reference-backed artifact content. */
+	private static function artifact_file_content( array $file, ?object $payload_reader ): string {
+		$content = is_scalar( $file['content'] ?? null ) ? (string) $file['content'] : '';
+		if ( 'base64' === ( $file['encoding'] ?? '' ) ) {
+			$decoded = base64_decode( $content, true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Declared artifact transport.
+			$content = is_string( $decoded ) ? $decoded : '';
+		}
+		if ( '' === $content && is_string( $file['content_base64'] ?? null ) ) {
+			$decoded = base64_decode( $file['content_base64'], true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Declared artifact transport.
+			$content = is_string( $decoded ) ? $decoded : '';
+		}
+		$reference = $file['payload_reference'] ?? null;
+		if ( '' === $content && is_array( $reference ) && is_object( $payload_reader ) && is_callable( array( $payload_reader, 'read' ) ) ) {
+			try {
+				$bytes = $payload_reader->read( $reference );
+			} catch ( Throwable $error ) {
+				$bytes = null;
+			}
+			if ( is_string( $bytes ) && strlen( $bytes ) === ( $reference['bytes'] ?? null ) && hash_equals( (string) ( $reference['sha256'] ?? '' ), hash( 'sha256', $bytes ) ) ) {
+				$content = $bytes;
+			}
+		}
+		return $content;
+	}
+
 	/**
 	 * Resolve the bare host (minus a leading www.) from a source URL.
 	 *

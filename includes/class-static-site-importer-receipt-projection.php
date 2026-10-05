@@ -51,7 +51,7 @@ class Static_Site_Importer_Receipt_Projection {
 		$plan        = $receipt['plan'];
 		$theme       = $receipt['theme'];
 		$diagnostics = Static_Site_Importer_Route_Head_Metadata::reword_handled_diagnostics(
-			Static_Site_Importer_Report_Diagnostics::after_completed_entity_bindings(
+			Static_Site_Importer_Diagnostic_Projection::after_completed_entity_bindings(
 				array_merge(
 					is_array( $plan['diagnostics'] ?? null ) ? $plan['diagnostics'] : array(),
 					Static_Site_Importer_Compiler_Diagnostic_Normalizer::normalize( is_array( $args['compiler_diagnostics'] ?? null ) ? $args['compiler_diagnostics'] : array() )
@@ -70,7 +70,7 @@ class Static_Site_Importer_Receipt_Projection {
 		$diagnostics    = array_merge(
 			$diagnostics,
 			$lifecycle['diagnostics'] ?? array(),
-			Static_Site_Importer_Report_Diagnostics::provider_entity_decline_diagnostics( $entities )
+			Static_Site_Importer_Diagnostic_Projection::provider_entity_decline_diagnostics( $entities )
 		);
 		$gutenberg_gaps = is_array( $receipt['extensions']['gutenberg_gaps'] ?? null ) ? $receipt['extensions']['gutenberg_gaps'] : array();
 		$diagnostics    = array_merge( $diagnostics, $gutenberg_gaps );
@@ -168,6 +168,19 @@ class Static_Site_Importer_Receipt_Projection {
 		$report['source_artifact']         = array( 'hash' => (string) ( $args['artifact_hash'] ?? $plan['source']['source_hash'] ) );
 		$report['materialization_receipt'] = self::report_receipt( $receipt );
 		Static_Site_Importer_Block_Document_Reporter::analyze_materialized_block_documents( $report['generated_theme']['block_documents'], $report );
+		// Page markup is persisted in WordPress and analyzed above; the report
+		// keeps each document's identity, not a second copy of its content.
+		$report->set_in_section(
+			'generated_theme',
+			'block_documents',
+			array_map(
+				static function ( array $document ): array {
+					unset( $document['content'] );
+					return $document;
+				},
+				$report['generated_theme']['block_documents']
+			)
+		);
 		$artifact         = array_merge(
 			is_array( $args['source_artifact_reference'] ?? null ) ? $args['source_artifact_reference'] : array(),
 			array_filter(
@@ -306,8 +319,16 @@ class Static_Site_Importer_Receipt_Projection {
 	 * @param array<array-key,mixed> $receipt Materialization receipt.
 	 * @return array<array-key,mixed>
 	 */
+	/**
+	 * The report carries the canonical plan once, under blocks_engine; its
+	 * receipt references that plan by identity and each materialized page by
+	 * content hash instead of embedding copies.
+	 */
 	private static function report_receipt( array $receipt ): array {
-		unset( $receipt['transaction'] );
+		unset( $receipt['transaction'], $receipt['plan'] );
+		foreach ( $receipt['completed']['materialized_pages'] ?? array() as $source_path => $page ) {
+			unset( $receipt['completed']['materialized_pages'][ $source_path ]['block_markup'] );
+		}
 		return $receipt;
 	}
 
@@ -320,7 +341,7 @@ class Static_Site_Importer_Receipt_Projection {
 		$report['materialization_receipt']                        = self::report_receipt( $receipt );
 
 		return array(
-			'fixture_diagnostics' => Static_Site_Importer_Report_Diagnostics::refresh_projections( $report, $quality ),
+			'fixture_diagnostics' => Static_Site_Importer_Diagnostic_Projection::refresh_projections( $report, $quality ),
 			'validation'          => $report['import_validation_result'],
 			'findings'            => $report['finding_packets'],
 		);

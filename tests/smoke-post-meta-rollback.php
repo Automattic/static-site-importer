@@ -35,6 +35,8 @@ $GLOBALS['ssi_rollback_meta'] = array(
 		'_blocks_engine_reconciliation_identity'        => 'producer-before',
 	),
 );
+$GLOBALS['ssi_rollback_posts'][1]['post_content'] = $ssi_rollback_provenance_1;
+$GLOBALS['ssi_rollback_posts'][2]['post_content'] = $ssi_rollback_provenance_2;
 
 function get_post( int $id, string $output ): ?array {
 	unset( $output );
@@ -48,11 +50,19 @@ function metadata_exists( string $meta_type, int $id, string $key ): bool {
 	return 'post' === $meta_type && array_key_exists( $key, $GLOBALS['ssi_rollback_meta'][ $id ] ?? array() );
 }
 function wp_update_post( array $post ): int {
+	foreach ( $post as &$value ) {
+		if ( is_string( $value ) ) {
+			$value = stripslashes( $value );
+		}
+	}
 	$GLOBALS['ssi_rollback_posts'][ $post['ID'] ] = $post;
 	return (int) $post['ID'];
 }
-function wp_slash( string $value ): string {
-	return addslashes( $value );
+function wp_slash( $value ) {
+	if ( is_array( $value ) ) {
+		return array_map( 'wp_slash', $value );
+	}
+	return is_string( $value ) ? addslashes( $value ) : $value;
 }
 function update_post_meta( int $id, string $key, string $value ): void {
 	$GLOBALS['ssi_rollback_meta'][ $id ][ $key ] = stripslashes( $value );
@@ -91,6 +101,9 @@ if ( ! str_contains( $ssi_rollback_provenance_1, '\u2013' ) || ! str_contains( $
 }
 if ( $ssi_rollback_provenance_1 !== $restored_provenance_1 || $ssi_rollback_provenance_2 !== $restored_provenance_2 ) {
 	throw new RuntimeException( 'rollback did not restore provenance JSON exactly through metadata unslashing' );
+}
+if ( $ssi_rollback_provenance_1 !== $GLOBALS['ssi_rollback_posts'][1]['post_content'] || $ssi_rollback_provenance_2 !== $GLOBALS['ssi_rollback_posts'][2]['post_content'] ) {
+	throw new RuntimeException( 'rollback did not restore escaped post content exactly through WordPress unslashing' );
 }
 if ( 'Services – Southern Multi Product ltd' !== ( json_decode( $restored_provenance_1, true )['document_title'] ?? '' ) || 'C:\\captures\\services.html' !== ( json_decode( $restored_provenance_1, true )['source_path'] ?? '' ) ) {
 	throw new RuntimeException( 'restored provenance JSON did not retain escaped Unicode and backslashes' );

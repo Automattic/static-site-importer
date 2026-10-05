@@ -102,6 +102,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return self::failed_receipt_from_error( $state, $handoffs );
 		}
 
+		require_once __DIR__ . '/class-static-site-importer-navigation-entity-materializer.php';
+		$navigation_entities = Static_Site_Importer_Navigation_Entity_Materializer::materialize( $state );
+		if ( is_wp_error( $navigation_entities ) ) {
+			return self::failed_receipt_from_error( $state, $navigation_entities );
+		}
 		foreach ( $state['ordered_pages'] as $page ) {
 			if ( ! empty( $page['skip_materialization'] ) ) {
 				continue;
@@ -170,13 +175,6 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				}
 			}
 			unset( $binding_report );
-		}
-		if ( ! class_exists( 'Static_Site_Importer_Navigation_Entity_Materializer' ) ) {
-			require_once __DIR__ . '/class-static-site-importer-navigation-entity-materializer.php';
-		}
-		$navigation_entities = Static_Site_Importer_Navigation_Entity_Materializer::materialize( $state );
-		if ( is_wp_error( $navigation_entities ) ) {
-			return self::failed_receipt_from_error( $state, $navigation_entities );
 		}
 		$route_links = self::rewrite_materialized_route_links( $state );
 		if ( is_wp_error( $route_links ) ) {
@@ -323,6 +321,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			if ( self::injected_failure( $args, 'after_activation' ) ) {
 				return self::failed_receipt( $state, 'injected_after_activation_failure' );
 			}
+			$identity = Static_Site_Importer_Media_Library_Materializer::materialize_identity( $state );
+			if ( is_wp_error( $identity ) ) {
+				return self::failed_receipt_from_error( $state, $identity );
+			}
+			$state['applied']['site_identity'] = $identity;
 			if ( ! isset( $args['disable_smilies'] ) || false !== (bool) $args['disable_smilies'] ) {
 				if ( ! self::write_option( 'use_smilies', false ) ) {
 					return self::failed_receipt( $state, 'disable_smilies_not_applied' );
@@ -444,6 +447,24 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			'post_parent'  => $parent,
 			'post_content' => wp_slash( (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ) ),
 		);
+		if ( array_key_exists( 'excerpt', $page['metadata'] ?? array() ) ) {
+			if ( ! is_string( $page['metadata']['excerpt'] ) ) {
+				return new WP_Error( 'invalid_source_excerpt', 'The source-backed post excerpt must be a string.' );
+			}
+			$post['post_excerpt'] = wp_slash( $page['metadata']['excerpt'] );
+		}
+		if ( array_key_exists( 'post_meta', $page['metadata'] ?? array() ) ) {
+			$fields = $page['metadata']['post_meta'];
+			if ( ! is_array( $fields ) ) {
+				return new WP_Error( 'invalid_source_post_meta', 'Source-backed post fields must be a string map.' );
+			}
+			foreach ( $fields as $key => $value ) {
+				if ( ! is_string( $key ) || '' === $key || ! is_string( $value ) ) {
+					return new WP_Error( 'invalid_source_post_meta', 'Source-backed post fields must be a string map.' );
+				}
+			}
+			$post['meta_input'] = wp_slash( $fields );
+		}
 		if ( ! empty( $page['metadata']['detected_date'] ) ) {
 			// The classifier emits UTC. post_date_gmt stores that absolute value;
 			// wp_insert_post derives the site-local post_date from it using the
@@ -1416,12 +1437,12 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		);
 	}
 
-	public static function reconciled_post( string $identity ) {
-		// The reconciliation meta key is unique per document, so no post_type
-		// filter is needed; 'any' covers posts, pages, and custom import types.
+	public static function reconciled_post( string $identity, string|array $post_types = 'any' ) {
+		// WordPress 'any' excludes internal/search-excluded types. Entity owners
+		// supply their declared types rather than losing reconciliation on reimport.
 		$posts = get_posts(
 			array(
-				'post_type'   => 'any',
+				'post_type'   => $post_types,
 				'post_status' => 'any',
 				'meta_key'    => self::RECONCILIATION_META_KEY,
 				'meta_value'  => $identity,
@@ -1525,22 +1546,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 	/** @param array<string,mixed> $state */
 	public static function failed_receipt_from_error( array $state, WP_Error $error ): array {
-		$state['diagnostics'][]  = array( 'reason_code' => $error->get_error_code() );
-		$state['failure_reason'] = $error->get_error_code();
-		$data                    = $error->get_error_data();
-		if ( is_array( $data ) ) {
-			$diagnostics = is_array( $data['diagnostics'] ?? null ) ? $data['diagnostics'] : $data;
-			$diagnostics = 'static_site_importer_entity_materialization_failed' === $error->get_error_code() ? Static_Site_Importer_Public_Error_Projection::project_public_diagnostics( $diagnostics ) : $diagnostics;
-			foreach ( $diagnostics as $diagnostic ) {
-				if ( ! is_array( $diagnostic ) ) {
-					continue;
-				}
-				$reason = (string) ( $diagnostic['reason_code'] ?? $diagnostic['reason'] ?? $diagnostic['code'] ?? '' );
-				if ( '' !== $reason ) {
-					$state['diagnostics'][] = array_merge( $diagnostic, array( 'reason_code' => $reason ) );
-				}
-			}
-		}
+		$state = Static_Site_Importer_Site_Plan_Receipt::with_error_diagnostics( $state, $error );
 		self::rollback( $state );
 		return Static_Site_Importer_Site_Plan_Receipt::receipt( 'partial', $state );
 	}
@@ -1614,7 +1620,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 	/** Snapshot all runtime state this materializer can mutate before activation. */
 	public static function journal_runtime( array &$state ): void {
-		foreach ( array( 'stylesheet', 'template', 'show_on_front', 'page_on_front', 'use_smilies', 'blogname', 'site_icon' ) as $option ) {
+		// Core's site-logo deletion hook can remove the restored theme's custom
+		// logo. Restore its option after the global logo option during rollback.
+		$stylesheet = (string) get_option( 'stylesheet', '' );
+		if ( '' !== $stylesheet ) {
+			self::journal_option( $state, 'theme_mods_' . $stylesheet );
+		}
+		foreach ( array( 'stylesheet', 'template', 'show_on_front', 'page_on_front', 'use_smilies', 'blogname', 'blogdescription', 'site_icon', 'site_logo' ) as $option ) {
 			self::journal_option( $state, $option );
 		}
 	}
@@ -1636,10 +1648,16 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		// WordPress sanitizes on write ('blogname' runs through esc_html()), so a title containing
 		// & < > " or ' is stored escaped. Verify against what core stores, not the raw value.
 		$stored = function_exists( 'sanitize_option' ) ? sanitize_option( $option, $value ) : $value;
-		if ( get_option( $option, null ) === $stored ) {
+		// Database scalars are strings on a fresh request, while the write cache
+		// retains PHP types. Verify their storage value, including no-op updates.
+		$matches = static fn( $actual ): bool => is_scalar( $actual ) && is_scalar( $stored )
+			? (string) $actual === (string) $stored
+			: $actual === $stored;
+		if ( $matches( get_option( $option, null ) ) ) {
 			return true;
 		}
-		return false !== update_option( $option, $value ) && get_option( $option, null ) === $stored;
+		update_option( $option, $value );
+		return $matches( get_option( $option, null ) );
 	}
 
 	public static function active_theme_matches( string $stylesheet, ?string $template = null ): bool {
@@ -1737,7 +1755,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				continue; }
 			try {
 				if ( ! empty( $before['existing'] ) ) {
-					wp_update_post( $before['post'] );
+					wp_update_post( (array) wp_slash( $before['post'] ) );
 					if ( ! self::write_post_meta( $id, '_static_site_importer_provenance', (string) $before['provenance'] ) || ! self::write_post_meta( $id, self::RECONCILIATION_META_KEY, (string) $before['reconciliation_identity'] ) ) {
 						throw new RuntimeException( 'materialization_rollback_post_meta_restore_failed' );
 					}

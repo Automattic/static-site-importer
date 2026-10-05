@@ -405,7 +405,7 @@ function static_site_importer_rest_apply_to_current_site( array $source, array $
 		return $decorate_current_site_preview( static_site_importer_rest_execute_import_ability( 'static-site-importer/import', $input, 'static_site_importer_ability_import' ) );
 	}
 
-	$runtime = static_site_importer_rest_source_runtime( $source, $input );
+	$runtime = static_site_importer_source_runtime( $source );
 	if ( is_wp_error( $runtime ) ) {
 		return $runtime;
 	}
@@ -716,19 +716,6 @@ function static_site_importer_source_runtime( array $source ) {
 		'source_metadata' => array(),
 		'provider'        => 'rest-source',
 	);
-}
-
-/**
- * Backward-compatible REST wrapper around the canonical source normalizer.
- *
- * @param array<string,mixed> $source Source payload.
- * @param array<string,mixed> $input  Import input.
- * @return array{artifact:array<string,mixed>,source_metadata:array<string,mixed>,provider:string}|WP_Error
- */
-function static_site_importer_rest_source_runtime( array $source, array $input = array() ) {
-	unset( $input ); // Retained for compatibility with callers using the former provider-args parameter.
-
-	return static_site_importer_source_runtime( $source );
 }
 
 /**
@@ -1089,22 +1076,48 @@ function static_site_importer_rest_archive_limits(): array {
 /**
  * Return hard-bounded limits for server-owned staged ZIP archives.
  *
+ * Intake stops below the compiler ceiling so the compile has room to grow into.
+ * ArtifactNormalizer keeps every source file AND writes more of its own for
+ * inline <style>/<script> bodies before measuring against MAX_TOTAL_BYTES
+ * (320 MiB), so the bytes accepted here are not the bytes it weighs.
+ *
+ * Intake bounds two different things, so keep them apart when reading these:
+ * max_archive_bytes (256 MiB) is the compressed zip, and
+ * max_total_uncompressed_bytes (250 MiB) is the tree inside it. The compile is
+ * measured against the second, so that is the one `generated_bytes_headroom`
+ * attaches to: static_site_importer_staged_archive_compiler_limits() declares
+ * 250 + 64 = 314 MiB as the compiler's budget, the same arithmetic the CLI
+ * path does in static_site_importer_cli_request_bundle_limits(). It stays
+ * under the 320 MiB cap, and resolve() clamps it there regardless.
+ *
+ * Without that headroom a near-limit archive compiles past the declared budget
+ * and the generated files are dropped, which
+ * Static_Site_Importer_Direct_Artifact_Import refuses outright as
+ * static_site_importer_artifact_files_omitted rather than importing a partial
+ * site. So the cost of getting this wrong is a late refusal after a full
+ * capture and compile, not a quiet loss -- but late and avoidable.
+ *
+ * Raising intake means raising the compiler cap first and keeping the headroom
+ * between them.
+ *
  * @return array<string,int>
  */
 function static_site_importer_staged_archive_limits(): array {
 	$hard_limits = array(
-		'max_archive_bytes'            => 262144000,
+		'max_archive_bytes'            => 268435456,
 		'max_entries'                  => 10000,
 		'max_entry_uncompressed_bytes' => 67108864,
 		'max_total_uncompressed_bytes' => 268435456,
 		'max_compression_ratio'        => 200,
+		'generated_bytes_headroom'     => 67108864,
 	);
 	$defaults    = array(
-		'max_archive_bytes'            => 209715200,
+		'max_archive_bytes'            => 268435456,
 		'max_entries'                  => 5000,
 		'max_entry_uncompressed_bytes' => 52428800,
 		'max_total_uncompressed_bytes' => 262144000,
 		'max_compression_ratio'        => 100,
+		'generated_bytes_headroom'     => 67108864,
 	);
 	$limits      = apply_filters( 'static_site_importer_staged_archive_limits', $defaults );
 	$limits      = is_array( $limits ) ? $limits : $defaults;
@@ -1120,34 +1133,24 @@ function static_site_importer_staged_archive_limits(): array {
 /**
  * Project the compiler contract a verified staged archive is entitled to.
  *
- * A staged ZIP is admitted against static_site_importer_staged_archive_limits(),
- * which accepts far more than the compiler assumes when an artifact declares no
- * contract of its own. Without this projection the compiler falls back to its
- * own defaults and rejects payload references SSI has already verified, so the
- * bounded intake policy is carried forward, clamped to the compiler's hard caps.
- *
  * @return array{max_files:int,max_file_bytes:int,max_total_bytes:int}
  */
 function static_site_importer_staged_archive_compiler_limits(): array {
-	// Blocks Engine ArtifactNormalizer hard caps; the same numbers the CLI
-	// request-bundle contract in includes/cli.php declares.
-	$compiler_limits = array(
-		'max_files'       => 5000,
-		'max_file_bytes'  => 10485760,
-		'max_total_bytes' => 335544320,
-	);
-	$staged          = static_site_importer_staged_archive_limits();
-	$intake          = array(
-		'max_files'       => (int) $staged['max_entries'],
-		'max_file_bytes'  => (int) $staged['max_entry_uncompressed_bytes'],
-		'max_total_bytes' => (int) $staged['max_total_uncompressed_bytes'],
-	);
+	$staged = static_site_importer_staged_archive_limits();
 
-	foreach ( $compiler_limits as $key => $maximum ) {
-		$compiler_limits[ $key ] = min( $maximum, max( 1, $intake[ $key ] ) );
-	}
+	// The compiler is told what it may grow to, not what came in: it writes its
+	// own files for inline <style>/<script> before measuring. resolve() clamps
+	// the sum to the Blocks Engine cap, so this can never over-promise.
+	$total    = (int) $staged['max_total_uncompressed_bytes'];
+	$headroom = min( (int) $staged['generated_bytes_headroom'], $total );
 
-	return $compiler_limits;
+	return Static_Site_Importer_Compiler_Limits::resolve(
+		array(
+			'max_files'       => (int) $staged['max_entries'],
+			'max_file_bytes'  => (int) $staged['max_entry_uncompressed_bytes'],
+			'max_total_bytes' => $total + $headroom,
+		)
+	);
 }
 
 /**

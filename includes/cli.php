@@ -66,6 +66,9 @@ if ( ! function_exists( 'static_site_importer_cli_direct_artifact_run_policy' ) 
 			$policy['compile_workers']      = 4;
 			$policy['compile_shard_pages']  = 4;
 			$policy['compile_fanout']       = 'static_site_importer_cli_compile_artifact_pages_fanout';
+			// Receipt workers are separate processes, so the host step stays small;
+			// keep compiling until the invocation deadline instead of one batch per step.
+			$policy['compile_batches_per_invocation'] = 1000;
 		}
 		return $policy;
 	}
@@ -120,7 +123,8 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 			return null;
 		}
 
-		$failures = array();
+		$failures      = array();
+		$first_failure = '';
 		while ( ! empty( $processes ) ) {
 			foreach ( $processes as $index => &$worker ) {
 				$worker['output'] = substr( $worker['output'] . (string) stream_get_contents( $worker['pipes'][1] ), -16000 );
@@ -135,6 +139,18 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 				fclose( $worker['pipes'][2] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the worker stderr pipe before process collection.
 				proc_close( $worker['process'] );
 				if ( 0 !== (int) $status['exitcode'] ) {
+					if ( empty( $failures ) ) {
+						$first_failure = sprintf(
+							'Compile worker %d of %d exited with status %d',
+							(int) $index + 1,
+							count( $shards ),
+							(int) $status['exitcode']
+						);
+						$cause         = static_site_importer_cli_worker_failure_cause( $worker['error'], $worker['output'] );
+						if ( '' !== $cause ) {
+							$first_failure .= ': ' . $cause;
+						}
+					}
 					$failures[] = substr( trim( $worker['error'] . "\n" . $worker['output'] ), 0, 1000 );
 					$diagnostic = sprintf( 'Compile worker %d exited with status %d.', (int) $index + 1, (int) $status['exitcode'] );
 					if ( '' !== trim( $worker['error'] ) ) {
@@ -153,13 +169,46 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 			}
 		}
 		if ( $spawn_error || ! empty( $failures ) ) {
+			// The message is the only part of this error that reaches the import's
+			// public failure (redacted and bounded there), so it names the first
+			// failing worker and why, not just that some worker failed.
 			return new WP_Error(
 				'static_site_importer_direct_artifact_worker_process_failed',
-				'One or more compile workers failed.',
+				'' === $first_failure ? 'A compile worker could not be started.' : $first_failure . '.',
 				array( 'worker_errors' => array_slice( $failures, 0, 4 ) )
 			);
 		}
 		return true;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_worker_failure_cause' ) ) {
+	/**
+	 * The line that says why a compile worker died: the last PHP fatal, uncaught
+	 * exception or WP-CLI error it printed, else its last line of stderr, else of
+	 * stdout. One line; the public projection redacts and bounds it further.
+	 *
+	 * @param string $stderr Worker stderr tail.
+	 * @param string $stdout Worker stdout tail.
+	 * @return string Cause, or '' when the worker printed nothing.
+	 */
+	function static_site_importer_cli_worker_failure_cause( string $stderr, string $stdout ): string {
+		foreach ( array( $stderr, $stdout ) as $stream ) {
+			$split = preg_split( '/\R/', $stream );
+			$lines = array_values( array_filter( array_map( 'trim', false === $split ? array() : $split ) ) );
+			if ( empty( $lines ) ) {
+				continue;
+			}
+			$cause = end( $lines );
+			foreach ( array_reverse( $lines ) as $line ) {
+				if ( preg_match( '/(?:Fatal error|Uncaught|Exception|^Error:|exhausted|Killed)/i', $line ) ) {
+					$cause = $line;
+					break;
+				}
+			}
+			return substr( (string) preg_replace( '/^(?:PHP\s+)?(?:Error:\s+)?/i', '', $cause ), 0, 300 );
+		}
+		return '';
 	}
 }
 
@@ -182,9 +231,34 @@ if ( ! function_exists( 'static_site_importer_cli_import' ) ) {
 	}
 }
 
-if ( ! function_exists( 'static_site_importer_cli_import_max_steps' ) ) {
-	function static_site_importer_cli_import_max_steps(): int {
-		return 256;
+if ( ! function_exists( 'static_site_importer_cli_import_stall_limit' ) ) {
+	/** Consecutive continuations without any observable progress before the host stops. */
+	function static_site_importer_cli_import_stall_limit(): int {
+		return 16;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_import_progress_fingerprint' ) ) {
+	/**
+	 * Identify the observable state a continuation reached.
+	 *
+	 * Durable runs report their phase, page progress and work counters; any
+	 * change means the step advanced the import.
+	 */
+	function static_site_importer_cli_import_progress_fingerprint( array $result ): string {
+		$evidence = is_array( $result['artifact_run'] ?? null ) ? $result['artifact_run'] : array();
+
+		return hash(
+			'sha256',
+			(string) wp_json_encode(
+				array(
+					$result['continuation_reason'] ?? null,
+					$evidence['phase'] ?? null,
+					$evidence['progress'] ?? null,
+					$evidence['work'] ?? null,
+				)
+			)
+		);
 	}
 }
 
@@ -681,6 +755,7 @@ if ( ! function_exists( 'static_site_importer_cli_import_options' ) ) {
 			'slug'                         => isset( $assoc_args['slug'] ) ? (string) $assoc_args['slug'] : '',
 			'name'                         => isset( $assoc_args['name'] ) ? (string) $assoc_args['name'] : '',
 			'site_title'                   => isset( $assoc_args['site-title'] ) ? (string) $assoc_args['site-title'] : '',
+			'site_tagline'                 => isset( $assoc_args['site-tagline'] ) ? (string) $assoc_args['site-tagline'] : '',
 			'activate'                     => isset( $assoc_args['activate'] ),
 			'overwrite'                    => isset( $assoc_args['overwrite'] ),
 			'disable_smilies'              => ! isset( $assoc_args['no-disable-smilies'] ),
@@ -1063,18 +1138,25 @@ if ( ! function_exists( 'static_site_importer_cli_next_import_input' ) ) {
 
 if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 	/**
-	 * Drive bounded ability steps until a terminal result.
+	 * Drive ability steps until a terminal result.
+	 *
+	 * The host continues while each step advances the durable run, so import
+	 * size never exhausts a fixed step budget. It stops when the run stalls:
+	 * {@see static_site_importer_cli_import_stall_limit()} consecutive
+	 * continuations that report no progress. An operator `$max_steps` adds an
+	 * explicit hard cap.
 	 *
 	 * @param array<string,mixed> $input
 	 * @return array<string,mixed>
 	 */
 	function static_site_importer_cli_run_import_host( array $input, ?callable $invoke = null, int $max_steps = 0, ?callable $emit_progress = null, string $resume_command = '' ): array {
-		$invoke     = $invoke ?? 'static_site_importer_cli_import_run_fresh_runtime';
-		$max_steps  = min( 1024, max( 1, $max_steps > 0 ? $max_steps : static_site_importer_cli_import_max_steps() ) );
-		$steps      = 0;
-		$started_at = microtime( true );
-		$previous   = null;
-		while ( $steps < $max_steps ) {
+		$invoke      = $invoke ?? 'static_site_importer_cli_import_run_fresh_runtime';
+		$steps       = 0;
+		$stalled     = 0;
+		$fingerprint = '';
+		$started_at  = microtime( true );
+		$previous    = null;
+		while ( $max_steps <= 0 || $steps < $max_steps ) {
 			++$steps;
 			if ( is_array( $previous ) && null !== $emit_progress ) {
 				$emit_progress( static_site_importer_cli_import_progress( $previous, $steps, $started_at, 'heartbeat', $resume_command ) );
@@ -1093,11 +1175,20 @@ if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 			if ( null !== $emit_progress ) {
 				$emit_progress( static_site_importer_cli_import_progress( $result, $steps, $started_at, 'continuation', $resume_command ) );
 			}
+			$next        = static_site_importer_cli_import_progress_fingerprint( $result );
+			$stalled     = $next === $fingerprint ? $stalled + 1 : 0;
+			$fingerprint = $next;
+			if ( $stalled >= static_site_importer_cli_import_stall_limit() ) {
+				return static_site_importer_cli_import_receipt(
+					static_site_importer_cli_import_error( 'static_site_importer_cli_continuation_stalled', 'The import stopped advancing across consecutive continuation steps.' ),
+					$steps
+				);
+			}
 			$input    = static_site_importer_cli_next_import_input( $input, $result );
 			$previous = $result;
 		}
 		return static_site_importer_cli_import_receipt(
-			static_site_importer_cli_import_error( 'static_site_importer_cli_continuation_bound_exceeded', 'The import exceeded its bounded continuation steps.' ),
+			static_site_importer_cli_import_error( 'static_site_importer_cli_continuation_bound_exceeded', 'The import exceeded its operator step bound.' ),
 			$max_steps
 		);
 	}
@@ -1213,6 +1304,7 @@ if ( defined( 'WP_CLI' ) && class_exists( 'WP_CLI' ) ) {
 					'slug'                   => (string) $assoc_args['slug'],
 					'activate'               => isset( $assoc_args['activate'] ),
 					'site_title'             => isset( $assoc_args['site-title'] ) ? (string) $assoc_args['site-title'] : '',
+					'site_tagline'           => isset( $assoc_args['site-tagline'] ) ? (string) $assoc_args['site-tagline'] : '',
 					'overwrite'              => isset( $assoc_args['overwrite'] ),
 					'disable_smilies'        => ! isset( $assoc_args['no-disable-smilies'] ),
 					'remove_default_content' => ! isset( $assoc_args['keep-default-content'] ),

@@ -13,6 +13,8 @@ use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan;
 use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanResolver;
 use Automattic\BlocksEngine\PhpTransformer\WordPress\Runtime as Blocks_Engine_WordPress_Runtime;
 
+require_once __DIR__ . '/class-static-site-importer-theme-screenshot.php';
+
 /** Validates, resolves, and admits a plan before persistence. */
 final class Static_Site_Importer_Site_Plan_Preparation {
 	private const BLOCK_PROVENANCE_LIMIT = 50;
@@ -115,7 +117,6 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			} catch ( InvalidArgumentException $error ) {
 				throw new InvalidArgumentException( $error->getMessage(), 0, $error );
 			}
-			$state['base_resolved'] = $resolved;
 			if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === $strategy['strategy'] ) {
 				$projection = Static_Site_Importer_Classic_Theme_Projection::prepare_for_materialization( $args['classic_theme_projection'], $resolved );
 				if ( is_wp_error( $projection ) ) {
@@ -127,8 +128,9 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 					$page['resolved_block_markup'] = '';
 				}
 				unset( $page );
-				$state['base_resolved'] = $resolved;
 			}
+			$resolved                                   = Static_Site_Importer_Theme_Screenshot::with_write( $resolved, $args );
+			$state['base_resolved']                     = $resolved;
 			$state['prepared_resolved_projection_hash'] = self::prepared_resolved_projection_hash( $resolved );
 			$state['resolved']                          = $resolved;
 			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
@@ -458,6 +460,13 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 
 	/** @param array<string,mixed> $state */
 	public static function preflight_state( array &$state, bool $overwrite, string $import_run_id = '' ): void {
+		if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC !== ( $state['args']['theme_materialization'] ?? null ) ) {
+			require_once __DIR__ . '/class-static-site-importer-navigation-entity-materializer.php';
+			$navigation_error = Static_Site_Importer_Navigation_Entity_Materializer::preflight( $state['resolved'] );
+			if ( $navigation_error ) {
+				throw new InvalidArgumentException( esc_html( (string) $navigation_error->get_error_code() ) );
+			}
+		}
 		$pages_by_route      = array();
 		$state['page_ids']   = array();
 		$state['source_ids'] = array();

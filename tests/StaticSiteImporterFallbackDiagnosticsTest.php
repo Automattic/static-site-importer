@@ -14,7 +14,7 @@ class StaticSiteImporterFallbackDiagnosticsTest extends WP_UnitTestCase {
 	 * Import report summaries include compact machine-actionable diagnostics.
 	 */
 	public function test_import_report_summary_includes_compact_diagnostics(): void {
-		$result = Static_Site_Importer_Report_Diagnostics::import_report_summary(
+		$result = Static_Site_Importer_Diagnostic_Projection::import_report_summary(
 			array(
 				'entry_file'              => '/tmp/source/index.html',
 				'version'                 => 1,

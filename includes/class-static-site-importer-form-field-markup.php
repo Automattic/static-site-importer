@@ -197,7 +197,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 * @param array<string, mixed> $control Source control metadata.
 	 * @return array<string, mixed>|null
 	 */
-	public static function field_block_from_control( string $tag, string $type, array $control, string $control_class = '', string $label_class = '' ): ?array {
+	public static function field_block_from_control( string $tag, string $type, array $control, string $control_class = '', string $label_class = '', array $control_styles = array() ): ?array {
 		$map = Static_Site_Importer_Jetpack_Forms_Runtime::field_block_map();
 
 		$lookup = 'textarea' === $tag ? 'textarea' : ( 'select' === $tag ? 'select' : $type );
@@ -272,6 +272,18 @@ final class Static_Site_Importer_Form_Field_Markup {
 		}
 
 		$inner_blocks = array();
+		// An omitted label child makes Jetpack synthesize its type's default
+		// visible label. Preserve source controls named only by name/placeholder
+		// through Jetpack's own hidden-label/accessible-name contract instead.
+		if ( '' === $label && ! in_array( $lookup, array( 'checkbox', 'radio', 'select' ), true ) ) {
+			$inner_blocks[] = array(
+				'name'  => 'jetpack/label',
+				'attrs' => array(
+					'label'    => trim( (string) ( $control['name'] ?? $control['placeholder'] ?? '' ) ),
+					'metadata' => array( 'blockVisibility' => false ),
+				),
+			);
+		}
 		if ( 'checkbox' === $lookup && empty( $attrs['options'] ) ) {
 			$inner_blocks[] = array(
 				'name'  => 'jetpack/option',
@@ -294,6 +306,12 @@ final class Static_Site_Importer_Form_Field_Markup {
 			if ( '' !== $label_class ) {
 				$label_attrs['className'] = $label_class;
 			}
+			if ( false === ( $control['label_visible'] ?? null ) ) {
+				// The source names this control without a rendered label box. Jetpack's
+				// own label visibility keeps the name as the control's accessible name
+				// without adding a label line the source never had.
+				$label_attrs['metadata'] = array( 'blockVisibility' => false );
+			}
 			$inner_blocks[] = array(
 				'name'  => 'jetpack/label',
 				'attrs' => $label_attrs,
@@ -315,9 +333,12 @@ final class Static_Site_Importer_Form_Field_Markup {
 				'wrapper'     => 'ul',
 			);
 		} elseif ( ! in_array( $lookup, array( 'checkbox', 'radio' ), true ) ) {
-			$input_attrs  = array(
+			$input_attrs = array(
 				'style' => array( 'border' => array( 'style' => 'solid' ) ),
 			);
+			if ( in_array( $control_styles['border_style'] ?? null, array( 'none', 'solid', 'dotted', 'dashed', 'double', 'groove', 'ridge', 'inset', 'outset' ), true ) ) {
+				$input_attrs['style']['border']['style'] = $control_styles['border_style'];
+			}
 			$source_class = isset( $control['class'] ) && is_scalar( $control['class'] ) ? trim( (string) $control['class'] ) : '';
 			$input_class  = trim( $source_class . ' ' . $control_class );
 			if ( '' !== $input_class ) {
@@ -508,47 +529,276 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 */
 	public static function context_blocks( array $form, string $position ): array {
 		$context = isset( $form['form'][ $position ] ) && is_array( $form['form'][ $position ] ) ? $form['form'][ $position ] : array();
-		$blocks  = array();
-		foreach ( $context as $block ) {
-			if ( ! is_array( $block ) || ! is_string( $block['text'] ?? null ) || '' === trim( $block['text'] ) ) {
+		$boxes   = self::context_source_boxes( $form );
+		$entries = array();
+		foreach ( $context as $index => $block ) {
+			if ( ! is_array( $block ) || ! is_string( $block['text'] ?? null ) || '' === trim( $block['text'] ) || ! in_array( $block['type'] ?? null, array( 'heading', 'paragraph' ), true ) ) {
 				continue;
 			}
-			if ( 'heading' === ( $block['type'] ?? null ) ) {
+			$source  = $boxes['items'][ $position ][ $index ] ?? null;
+			$class   = isset( $block['class'] ) && is_scalar( $block['class'] ) ? trim( (string) $block['class'] ) : '';
+			$styles  = is_array( $block['styles'] ?? null ) ? $block['styles'] : array();
+			$attrs   = array();
+			$heading = 'heading' === $block['type'];
+			if ( $heading ) {
 				$level = min( 6, max( 1, (int) ( $block['level'] ?? 2 ) ) );
-				$attrs = 2 === $level ? array() : array( 'level' => $level );
-				$class = isset( $block['class'] ) && is_scalar( $block['class'] ) ? trim( (string) $block['class'] ) : '';
-				if ( '' !== $class ) {
-					$attrs['className'] = $class;
+				if ( 2 !== $level ) {
+					$attrs['level'] = $level;
 				}
-				$style = self::block_style_attributes( $block['styles'] ?? null );
-				if ( array() !== $style ) {
-					$attrs['style'] = $style;
+			}
+			$style = array();
+			if ( null !== $source ) {
+				// The source graph resolved this element's own cascade, so its
+				// identity hook carries base and conditional facts as scoped CSS.
+				$class = trim( $class . ' ' . $source['identity'] );
+				$style = array();
+			} else {
+				if ( '' !== $class && ! empty( $styles ) ) {
+					$class .= ' ' . self::context_style_identity( $position, (int) $index, $block );
 				}
-				$blocks[] = array(
-					'name'    => 'core/heading',
+				$style = '' === trim( (string) ( $block['class'] ?? '' ) ) ? self::block_style_attributes( $styles ) : array();
+			}
+			if ( '' !== $class ) {
+				$attrs['className'] = $class;
+			}
+			if ( array() !== $style ) {
+				$attrs['style'] = $style;
+			}
+			$entries[] = array(
+				'block'    => array(
+					'name'    => $heading ? 'core/heading' : 'core/paragraph',
 					'attrs'   => $attrs,
-					'wrapper' => 'heading',
+					'wrapper' => $heading ? 'heading' : 'paragraph',
 					'content' => $block['text'],
-				);
-			} elseif ( 'paragraph' === ( $block['type'] ?? null ) ) {
-				$attrs = array();
-				$class = isset( $block['class'] ) && is_scalar( $block['class'] ) ? trim( (string) $block['class'] ) : '';
-				if ( '' !== $class ) {
-					$attrs['className'] = $class;
+				),
+				'wrappers' => null === $source ? array() : $source['wrappers'],
+			);
+		}
+		return self::nest_context_wrappers( $entries, 0 );
+	}
+
+	/**
+	 * Recreate copy-only source boxes around the context blocks they contain.
+	 * Consecutive blocks sharing one source wrapper share one group, so the
+	 * nesting follows source parentage rather than duplicating a box per item.
+	 *
+	 * @param array<int,array{block:array<string,mixed>,wrappers:array<int,array<string,string>>}> $entries
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function nest_context_wrappers( array $entries, int $depth ): array {
+		$blocks = array();
+		for ( $offset = 0, $count = count( $entries ); $offset < $count; ) {
+			$wrapper = $entries[ $offset ]['wrappers'][ $depth ] ?? null;
+			if ( null === $wrapper ) {
+				$blocks[] = $entries[ $offset ]['block'];
+				++$offset;
+				continue;
+			}
+			$members = array();
+			while ( $offset < $count && ( $entries[ $offset ]['wrappers'][ $depth ]['node'] ?? null ) === $wrapper['node'] ) {
+				$members[] = $entries[ $offset ];
+				++$offset;
+			}
+			$blocks[] = array(
+				'name'        => 'core/group',
+				'attrs'       => array( 'className' => $wrapper['class'] ),
+				'innerBlocks' => self::nest_context_wrappers( $members, $depth + 1 ),
+			);
+		}
+		return $blocks;
+	}
+
+	/** Serialize in-form context as editable core blocks. */
+	public static function context_block_markup( array $form, string $position ): string {
+		$markup = '';
+		foreach ( self::context_blocks( $form, $position ) as $block ) {
+			$markup .= self::serialize_block( $block );
+		}
+		return $markup;
+	}
+
+	/**
+	 * Presentation properties a recreated context element may carry. Copy keeps
+	 * its typography and own box; a recreated wrapper keeps only its box.
+	 */
+	private const CONTEXT_TEXT_PROPERTIES = array( 'color', 'font_family', 'font_size', 'font_style', 'font_weight', 'letter_spacing', 'line_height', 'text_transform', 'text_align' );
+	private const CONTEXT_BOX_PROPERTIES  = array( 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block_start', 'padding_block_end', 'padding_inline_start', 'padding_inline_end', 'min_height' );
+
+	/**
+	 * Join in-form context copy to its v3 source graph element by identity.
+	 *
+	 * Each item's `source_selector` names exactly one `context-N` graph node; its
+	 * copy-only ancestors are the boxes the provider must recreate. Nothing is
+	 * matched by class tokens. Graph boxes no recorded item reaches, and items
+	 * the graph cannot identify, are reported as losses.
+	 *
+	 * @return array{items:array<string,array<int,array{identity:string,wrappers:array<int,array<string,string>>}>>,fallbacks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>}
+	 */
+	public static function context_source_boxes( array $form ): array {
+		$result = array(
+			'items'     => array(),
+			'fallbacks' => array(),
+			'losses'    => array(),
+		);
+		$nodes  = array();
+		foreach ( $form['source_context_graph']['nodes'] ?? array() as $node ) {
+			if ( is_array( $node ) && is_string( $node['id'] ?? null ) && is_string( $node['source']['selector'] ?? null ) ) {
+				$nodes[ $node['id'] ] = $node;
+			}
+		}
+		if ( array() === $nodes ) {
+			return $result;
+		}
+		$by_selector = array();
+		foreach ( $nodes as $id => $node ) {
+			$by_selector[ $node['source']['selector'] ] = $id;
+		}
+		$covered = array();
+		foreach ( array( 'context_before', 'context_after' ) as $position ) {
+			foreach ( is_array( $form['form'][ $position ] ?? null ) ? $form['form'][ $position ] : array() as $index => $item ) {
+				$selector = is_array( $item ) && is_string( $item['source_selector'] ?? null ) ? $item['source_selector'] : '';
+				$id       = $by_selector[ $selector ] ?? null;
+				if ( null === $id ) {
+					$result['losses'][] = array(
+						'dimension'   => 'presentation',
+						'reason_code' => 'provider_context_identity_unmatched',
+						'node_hash'   => hash( 'sha256', $position . ':' . $index ),
+					);
+					continue;
 				}
-				$style = self::block_style_attributes( $block['styles'] ?? null );
-				if ( array() !== $style ) {
-					$attrs['style'] = $style;
+				$covered[ $id ] = true;
+				$identity       = self::context_node_identity( $nodes[ $id ] );
+				if ( ! self::push_context_fallback( $result['fallbacks'], $identity, $nodes[ $id ], array_merge( self::CONTEXT_TEXT_PROPERTIES, self::CONTEXT_BOX_PROPERTIES ) ) ) {
+					// Nothing resolved for this copy: its source classes alone carry it.
+					$identity = '';
 				}
-				$blocks[] = array(
-					'name'    => 'core/paragraph',
-					'attrs'   => $attrs,
-					'wrapper' => 'paragraph',
-					'content' => $block['text'],
+				$wrappers  = array();
+				$ancestors = array();
+				$parent    = $nodes[ $id ]['parent'] ?? null;
+				while ( is_string( $parent ) && isset( $nodes[ $parent ] ) && ! in_array( $parent, $ancestors, true ) ) {
+					$ancestors[] = $parent;
+					$parent      = $nodes[ $parent ]['parent'] ?? null;
+				}
+				foreach ( $ancestors as $parent ) {
+					$covered[ $parent ] = true;
+					if ( ! self::context_node_has_box( $nodes[ $parent ] ) ) {
+						continue;
+					}
+					$wrapper_identity = self::context_node_identity( $nodes[ $parent ] );
+					self::push_context_fallback( $result['fallbacks'], $wrapper_identity, $nodes[ $parent ], self::CONTEXT_BOX_PROPERTIES );
+					$classes = array_values( array_filter( $nodes[ $parent ]['source']['classes'] ?? array(), static fn( $class_name ): bool => is_string( $class_name ) && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) );
+					array_unshift(
+						$wrappers,
+						array(
+							'node'  => $parent,
+							'class' => trim( implode( ' ', $classes ) . ' ' . $wrapper_identity ),
+						)
+					);
+				}
+				$result['items'][ $position ][ $index ] = array(
+					'identity' => $identity,
+					'wrappers' => $wrappers,
 				);
 			}
 		}
-		return $blocks;
+		foreach ( $nodes as $id => $node ) {
+			if ( ! isset( $covered[ $id ] ) && self::context_node_has_box( $node ) ) {
+				$result['losses'][] = array(
+					'dimension'   => 'presentation',
+					'reason_code' => 'provider_context_box_unrepresented',
+					'node_hash'   => hash( 'sha256', $id ),
+				);
+			}
+		}
+		return $result;
+	}
+
+	private static function context_node_identity( array $node ): string {
+		return 'ssi-context-' . substr( hash( 'sha256', 'source-node' . "\n" . (string) ( $node['source']['selector'] ?? '' ) ), 0, 12 );
+	}
+
+	/** Whether a copy-only source box declares its own box facts. */
+	private static function context_node_has_box( array $node ): bool {
+		$presentation = is_array( $node['presentation'] ?? null ) ? $node['presentation'] : array();
+		$box          = array_flip( self::CONTEXT_BOX_PROPERTIES );
+		foreach ( array_merge( array( $presentation['styles'] ?? array() ), array_column( is_array( $presentation['variants'] ?? null ) ? $presentation['variants'] : array(), 'styles' ) ) as $styles ) {
+			foreach ( is_array( $styles ) ? $styles : array() as $property => $value ) {
+				if ( isset( $box[ $property ] ) && is_string( $value ) && ! Static_Site_Importer_Form_Layout_Projection::is_initial_box_value( $property, $value ) ) {
+					return true;
+				}
+			}
+		}
+		foreach ( is_array( $node['layout'] ?? null ) ? $node['layout'] : array() as $fact => $value ) {
+			if ( isset( Static_Site_Importer_Provider_Layout_Overlay::box_property_map()[ $fact ] ) && is_string( $value ) && ! Static_Site_Importer_Form_Layout_Projection::is_initial_box_value( $fact, $value ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * @param array<int,array<string,mixed>> $fallbacks
+	 * @param array<int,string>              $properties
+	 * @return bool Whether this identity carries resolved facts.
+	 */
+	private static function push_context_fallback( array &$fallbacks, string $identity, array $node, array $properties ): bool {
+		foreach ( $fallbacks as $fallback ) {
+			if ( $identity === $fallback['identity'] ) {
+				return true;
+			}
+		}
+		$allowed      = array_flip( $properties );
+		$presentation = is_array( $node['presentation'] ?? null ) ? $node['presentation'] : array();
+		$styles       = array_intersect_key( is_array( $presentation['styles'] ?? null ) ? $presentation['styles'] : array(), $allowed );
+		$variants     = array();
+		foreach ( is_array( $presentation['variants'] ?? null ) ? $presentation['variants'] : array() as $variant ) {
+			$patch = array_intersect_key( is_array( $variant['styles'] ?? null ) ? $variant['styles'] : array(), $allowed );
+			if ( array() !== $patch && is_array( $variant['condition'] ?? null ) ) {
+				$variants[] = array(
+					'condition' => $variant['condition'],
+					'styles'    => $patch,
+				);
+			}
+		}
+		if ( array() === $styles && array() === $variants ) {
+			return false;
+		}
+		$fallbacks[] = array(
+			'identity' => $identity,
+			'styles'   => $styles,
+			'variants' => $variants,
+		);
+		return true;
+	}
+
+	/** @return array<int,array<string,mixed>> */
+	public static function context_style_fallbacks( array $form ): array {
+		$boxes     = self::context_source_boxes( $form );
+		$fallbacks = $boxes['fallbacks'];
+		$metadata  = is_array( $form['form'] ?? null ) ? $form['form'] : array();
+		foreach ( array( 'context_before', 'context_after' ) as $position ) {
+			foreach ( $metadata[ $position ] ?? array() as $index => $block ) {
+				if ( isset( $boxes['items'][ $position ][ $index ] ) ) {
+					continue;
+				}
+				$class  = is_array( $block ) && is_string( $block['class'] ?? null ) ? trim( $block['class'] ) : '';
+				$styles = is_array( $block['styles'] ?? null ) ? $block['styles'] : array();
+				if ( '' !== $class && ! empty( $styles ) ) {
+					$fallbacks[] = array(
+						'identity'    => self::context_style_identity( $position, (int) $index, $block ),
+						'tag'         => 'heading' === ( $block['type'] ?? null ) ? 'h' . min( 6, max( 1, (int) ( $block['level'] ?? 2 ) ) ) : 'p',
+						'owner_class' => (string) ( preg_split( '/\s+/', $class )[0] ?? '' ),
+						'styles'      => $styles,
+					);
+				}
+			}
+		}
+		return $fallbacks;
+	}
+
+	private static function context_style_identity( string $position, int $index, array $block ): string {
+		$fingerprint = array_intersect_key( $block, array_flip( array( 'type', 'level', 'text', 'class', 'styles' ) ) );
+		return 'ssi-context-' . substr( hash( 'sha256', $position . "\n" . $index . "\n" . (string) wp_json_encode( $fingerprint ) ), 0, 12 );
 	}
 
 	/**
@@ -592,15 +842,6 @@ final class Static_Site_Importer_Form_Field_Markup {
 			$style['typography'] = $typography;
 		}
 		return $style;
-	}
-
-	/** Serialize in-form context as editable core blocks. */
-	public static function context_block_markup( array $form, string $position ): string {
-		$markup = '';
-		foreach ( self::context_blocks( $form, $position ) as $block ) {
-			$markup .= self::serialize_block( $block );
-		}
-		return $markup;
 	}
 
 	/**
@@ -712,6 +953,25 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 */
 	public static function serialize_block( array $block ): string {
 		return serialize_block( self::parsed_block( $block ) );
+	}
+
+	/**
+	 * Serialize a generated block inside the source layout shell it replaces,
+	 * reusing the shell's exact saved ancestor markup.
+	 *
+	 * @param array<string,mixed>                                                               $block Generated block.
+	 * @param array{name:string,wrappers:array<int,array<string,mixed>>,open:string,close:string} $shell Restored ancestors.
+	 */
+	public static function serialize_in_shell( array $block, array $shell ): string {
+		return serialize_block(
+			array(
+				'blockName'    => $shell['name'],
+				'attrs'        => array( 'wrappers' => $shell['wrappers'] ),
+				'innerBlocks'  => array( self::parsed_block( $block ) ),
+				'innerHTML'    => $shell['open'] . $shell['close'],
+				'innerContent' => array( $shell['open'], null, $shell['close'] ),
+			)
+		);
 	}
 
 	/**

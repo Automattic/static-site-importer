@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 import { compareVisualParityPngFiles } from '../lib/fixture-matrix/image-comparison.mjs';
 import { captureEditorPresentation, normalizePresentationMap, presentationEvidencePassed } from '../lib/editor-presentation.mjs';
@@ -68,6 +68,7 @@ export function studioAutoLoginUrl(options, postId = options.post_id) {
 }
 
 export function parseExistingRuntimeReviewArgs(args) {
+  if (args[0] === '--acceptance-config' && args.length === 2) return { acceptance_config: path.resolve(args[1]) };
   const input = {};
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -118,14 +119,14 @@ async function visit(page, url) {
 }
 
 async function validatePersistedPost(page, options, postId = options.post_id, expectedMarker = '') {
-  await visit(page, studioAutoLoginUrl(options, postId));
+  await openEditor(page, options, postId);
   await page.waitForFunction(() => Boolean(window.wp?.blocks?.validateBlock && window.wp?.apiFetch), { timeout: 30_000 });
   const persisted = await page.evaluate(async ({ postType, postId }) => {
     const [post, user] = await Promise.all([
       window.wp.apiFetch({ path: `/wp/v2/${postType}/${postId}?context=edit` }),
       window.wp.apiFetch({ path: '/wp/v2/users/me?context=edit' }),
     ]);
-    return { content: post.content?.raw || '', author: post.author, user: { id: user.id, slug: user.slug || '' } };
+    return { content: post.content?.raw || '', link: post.link, author: post.author, user: { id: user.id, slug: user.slug || '' } };
   }, { postType: options.post_type, postId });
   if (persisted.user.id !== options.editor_id) throw new Error(`Authenticated editor ${persisted.user.id} does not match requested editor ${options.editor_id}.`);
   const validation = await page.evaluate((content) => {
@@ -142,7 +143,156 @@ async function validatePersistedPost(page, options, postId = options.post_id, ex
     return { schema: 'static-site-importer/runtime-editor-validation/v1', provider: 'playwright', validation_method: 'wp.blocks.validateBlock', content_source: 'rest-post-content-raw', total_blocks: results.length, valid_blocks: results.filter((row) => row.is_valid).length, invalid_blocks: results.filter((row) => !row.is_valid).length, results };
   }, persisted.content);
   if (validation.total_blocks === 0) throw new Error(`Persisted ${options.post_type}/${postId} contains zero blocks.`);
-  return { ...validation, content_sha256: contentHash(persisted.content), ...(expectedMarker ? { marker_present: persisted.content.includes(expectedMarker) } : {}), author: persisted.author, editor: persisted.user };
+  return { ...validation, content_sha256: contentHash(persisted.content), link: persisted.link, ...(expectedMarker ? { marker_present: persisted.content.includes(expectedMarker) } : {}), author: persisted.author, editor: persisted.user };
+}
+
+async function openEditor(page, options, postId) {
+  if (options.authenticate) {
+    await options.authenticate({ page, candidateOrigin: options.candidate_origin, postId });
+    await visit(page, new URL(`/wp-admin/post.php?post=${postId}&action=edit`, options.candidate_origin).href);
+  } else await visit(page, studioAutoLoginUrl(options, postId));
+}
+
+/** Real registered block attributes + core/editor persistence, on a disposable draft. */
+export async function reviewAcceptanceEditor(browser, options, scope, mapping) {
+  fs.mkdirSync(options.output_directory, { recursive: true });
+  // A shared authenticated context owns both editor and unpublished preview.
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const result = { route: mapping.route, stage: 'editor', status: 'pending', cleanup: { status: 'pending' }, presentations: [] };
+  let id;
+  let original;
+  let mediaBefore;
+  let originalPostHash;
+  const fatals = [];
+  page.on('pageerror', () => fatals.push('uncaught_editor_error'));
+  try {
+    if (!mapping.text || !mapping.image?.attachmentId || !mapping.image.frontendSelector) { result.reason = 'editable_text_image_mapping_required'; return result; }
+    original = await validatePersistedPost(page, options);
+    result.original_validation = original;
+    if (new URL(original.link).href !== new URL(mapping.route, options.candidate_origin).href) { result.reason = 'route_post_permalink_identity_mismatch'; return result; }
+    if (original.invalid_blocks) throw new Error('Original Gutenberg validation failed.');
+    const baseline = await page.evaluate(async ({ postType, postId, mediaId }) => {
+      const source = await window.wp.apiFetch({ path: `/wp/v2/${postType}/${postId}?context=edit` });
+      let media;
+      try { media = await window.wp.apiFetch({ path: `/wp/v2/media/${mediaId}?context=edit` }); } catch { return { source, media: null }; }
+      return { source, media };
+    }, { postType: options.post_type, postId: options.post_id, mediaId: mapping.image?.attachmentId });
+    if (!baseline.media?.source_url || !baseline.media.mime_type?.startsWith('image/')) { result.reason = 'existing_media_library_image_unavailable'; return result; }
+    originalPostHash = contentHash(JSON.stringify(baseline.source));
+    const mediaIds = await page.evaluate(({ content, image }) => {
+      const ids = new Set();
+      const walk = blocks => blocks.forEach(block => {
+        if (Number.isInteger(block.attributes?.id) && window.wp.blocks.getBlockType(block.name)?.attributes?.url) ids.add(block.attributes.id);
+        if (Number.isInteger(block.attributes?.mediaId) && window.wp.blocks.getBlockType(block.name)?.attributes?.mediaUrl) ids.add(block.attributes.mediaId);
+        if (block.name === image.blockName && Number.isInteger(block.attributes?.[image.idAttribute])) ids.add(block.attributes[image.idAttribute]);
+        walk(block.innerBlocks || []);
+      });
+      walk(window.wp.blocks.parse(content));
+      return [...ids];
+    }, { content: baseline.source.content.raw, image: mapping.image });
+    mediaBefore = { [baseline.media.id]: contentHash(JSON.stringify(baseline.media)) };
+    for (const mediaId of mediaIds) {
+      const media = await page.evaluate(async id => window.wp.apiFetch({ path: `/wp/v2/media/${id}?context=edit` }), mediaId);
+      mediaBefore[mediaId] = contentHash(JSON.stringify(media));
+    }
+    id = await page.evaluate(async ({ postType, content }) => (await window.wp.apiFetch({ path: `/wp/v2/${postType}`, method: 'POST', data: { title: 'SSI disposable acceptance review', status: 'draft', content } })).id, { postType: options.post_type, content: baseline.source.content.raw });
+    result.draft_id = id;
+    await validatePersistedPost(page, options, id);
+    await page.waitForFunction(id => window.wp?.data?.select('core/editor')?.getCurrentPostId() === id && window.wp.data.select('core/block-editor').getBlocks().length > 0, id);
+    assertEditorCanvasUsable(await captureEditorCanvas(page));
+    const marker = `SSI acceptance ${Date.now()} ${id}`;
+    const edit = await page.evaluate(async ({ text, image, marker, media }) => {
+      const select = window.wp.data.select('core/block-editor');
+      const blocks = [];
+      const walk = rows => rows.forEach(block => { blocks.push(block); walk(block.innerBlocks || []); });
+      walk(select.getBlocks());
+      const find = spec => blocks.filter(block => block.name === spec?.blockName && (spec.attributeValue === undefined || block.attributes[spec.identityAttribute] === spec.attributeValue));
+      const texts = find(text), images = find(image);
+      if (texts.length !== 1 || images.length !== 1) return { status: 'pending', reason: 'missing_or_ambiguous_editable_text_image_surface' };
+      const textBlock = texts[0], imageBlock = images[0];
+      const textType = window.wp.blocks.getBlockType(textBlock.name), imageType = window.wp.blocks.getBlockType(imageBlock.name);
+      if (!textType?.attributes?.[text.attribute] || !imageType?.attributes?.[image.urlAttribute] || !imageType?.attributes?.[image.idAttribute]) return { status: 'pending', reason: 'unregistered_editable_attributes' };
+      if (imageBlock.attributes[image.idAttribute] === media.id || imageBlock.attributes[image.urlAttribute] === media.source_url) return { status: 'pending', reason: 'replacement_image_must_differ' };
+      const dispatch = window.wp.data.dispatch('core/block-editor');
+      dispatch.updateBlockAttributes(textBlock.clientId, { [text.attribute]: marker });
+      dispatch.updateBlockAttributes(imageBlock.clientId, { [image.urlAttribute]: media.source_url, [image.idAttribute]: media.id });
+      await window.wp.data.dispatch('core/editor').savePost();
+      const editor = window.wp.data.select('core/editor');
+      if (editor.isEditedPostDirty() || editor.didPostSaveRequestFail()) return { status: 'failed', reason: 'editor_save_failed' };
+      return { status: 'passed', marker, text_index: blocks.indexOf(textBlock), image_index: blocks.indexOf(imageBlock) };
+    }, { text: mapping.text, image: mapping.image, marker, media: baseline.media });
+    result.edit = edit;
+    if (edit.status !== 'passed') { result.status = edit.status; return result; }
+    const reloaded = await validatePersistedPost(page, options, id, marker);
+    await page.waitForFunction(id => window.wp?.data?.select('core/editor')?.getCurrentPostId() === id && window.wp.data.select('core/block-editor').getBlocks().length > 0, id);
+    result.reloaded_validation = reloaded;
+    const persisted = await page.evaluate(({ text, image, marker, media, textIndex, imageIndex }) => {
+      const blocks = [];
+      const walk = rows => rows.forEach(block => { blocks.push(block); walk(block.innerBlocks || []); });
+      walk(window.wp.data.select('core/block-editor').getBlocks());
+      const savedText = blocks[textIndex], savedImage = blocks[imageIndex];
+      // Gutenberg may hydrate rich-text attributes as RichTextData after reload.
+      // Compare their public string value, not object identity with the edit input.
+      return { text: savedText?.name === text.blockName && String(savedText.attributes[text.attribute]) === marker, image: savedImage?.name === image.blockName && savedImage.attributes[image.idAttribute] === media.id && savedImage.attributes[image.urlAttribute] === media.source_url };
+    }, { text: mapping.text, image: mapping.image, marker, media: baseline.media, textIndex: edit.text_index, imageIndex: edit.image_index });
+    result.persisted = persisted;
+    if (!reloaded.marker_present || reloaded.invalid_blocks || !persisted.text || !persisted.image || original.content_sha256 === reloaded.content_sha256) throw new Error('Saved edits did not survive editor reload.');
+    const preview = await page.context().newPage();
+    try {
+      // Same authenticated context; draft stays unpublished.
+      const previewUrl = new URL(reloaded.link);
+      if (previewUrl.origin !== options.candidate_origin) throw new Error('Draft preview leaves the candidate runtime.');
+      previewUrl.searchParams.set('preview', 'true');
+      await visit(preview, previewUrl.href);
+      result.frontend = await preview.evaluate(({ marker, url, selector }) => {
+        const images = [...document.querySelectorAll(selector)];
+        return { text: document.body.innerText.includes(marker), image: images.length === 1 && images[0].tagName === 'IMG' && images[0].src === url && images[0].complete && images[0].naturalWidth > 0 };
+      }, { marker, url: baseline.media.source_url, selector: mapping.image.frontendSelector });
+      if (!result.frontend.text || !result.frontend.image) throw new Error('Draft frontend does not render saved text/image edits.');
+    } finally { await preview.close(); }
+    // Reuse presentation/oracle against the frozen portable surface, never live origin.
+    if (mapping.presentationMap && options.portable_origin) {
+      await validatePersistedPost(page, options);
+      const map = normalizePresentationMap(JSON.parse(fs.readFileSync(mapping.presentationMap, 'utf8')));
+      for (const width of scope.widths) result.presentations.push(await captureEditorPresentation(browser, page, { ...options, source_url: new URL(mapping.route, options.portable_origin).href, candidate_url: new URL(mapping.route, options.candidate_origin).href }, map, { name: `width-${width}`, width, height: 1000 }));
+      result.status = result.presentations.every(presentationEvidencePassed) ? 'passed' : result.presentations.some(row => row.findings?.some(finding => finding.kind === 'presentation_mismatch')) ? 'failed' : 'pending';
+    } else { result.status = 'pending'; result.reason = 'frozen_editor_presentation_required'; }
+  } catch (error) {
+    result.status = error.name === 'TimeoutError' ? 'pending' : 'failed';
+    result.reason = redactRuntimeError(error.message);
+  } finally {
+    try {
+      if (id) {
+        await openEditor(page, options, id);
+        await page.waitForFunction(() => Boolean(window.wp?.apiFetch));
+        await page.evaluate(async ({ id, type }) => {
+          await window.wp.apiFetch({ path: `/wp/v2/${type}/${id}?force=true`, method: 'DELETE' });
+          try { await window.wp.apiFetch({ path: `/wp/v2/${type}/${id}` }); throw new Error('Draft still exists'); } catch (error) { if (error?.data?.status !== 404 && error?.code !== 'rest_post_invalid_id') throw error; }
+        }, { id, type: options.post_type });
+      }
+      if (original) {
+        const after = await validatePersistedPost(page, options);
+        assertReviewDraftLifecycle({ target_baseline_sha256: original.content_sha256, target_after_sha256: after.content_sha256, target: mapping.route });
+        if (originalPostHash) {
+          const afterPost = await page.evaluate(async ({ type, id }) => window.wp.apiFetch({ path: `/wp/v2/${type}/${id}?context=edit` }), { type: options.post_type, id: options.post_id });
+          result.isolation = { original_before_sha256: originalPostHash, original_after_sha256: contentHash(JSON.stringify(afterPost)), media: [] };
+          if (result.isolation.original_after_sha256 !== originalPostHash) throw new Error('Original post changed during review.');
+        }
+        if (mediaBefore) for (const [mediaId, beforeHash] of Object.entries(mediaBefore)) {
+          const afterMedia = await page.evaluate(async mediaId => window.wp.apiFetch({ path: `/wp/v2/media/${mediaId}?context=edit` }), Number(mediaId));
+          const afterHash = contentHash(JSON.stringify(afterMedia));
+          result.isolation.media.push({ attachment_id: Number(mediaId), before_sha256: beforeHash, after_sha256: afterHash });
+          if (afterHash !== beforeHash) throw new Error('Media attachment changed during review.');
+        }
+      }
+      result.cleanup.status = 'passed';
+    } catch (error) { result.cleanup = { status: 'failed', reason: redactRuntimeError(error.message) }; result.status = 'failed'; }
+    if (fatals.length) { result.fatals = fatals; result.status = 'failed'; }
+    try { await page.close(); } catch { result.cleanup.status = 'failed'; result.status = 'failed'; }
+    try { await context.close(); } catch { result.cleanup.status = 'failed'; result.status = 'failed'; }
+  }
+  return result;
 }
 
 async function captureEditorCanvas(page) {
@@ -257,13 +407,23 @@ export function assertReviewDraftLifecycle(state) {
   if (state.target_baseline_sha256 && state.target_after_sha256 !== state.target_baseline_sha256) throw new Error(`Target ${state.target} content changed during review.`);
 }
 function redactRuntimeError(message) { return String(message).replace(/https?:\/\/[^\s/@]+(?::[^\s/@]*)?@/gi, (match) => match.slice(0, match.indexOf('//') + 2)).replace(/(authorization|cookie|token|password)=([^\s&]+)/gi, '$1=[redacted]'); }
-function printHelp() { process.stdout.write('Usage: node tools/run-existing-runtime-review.mjs --source-origin <url> --candidate-origin <url> --route </path> --post-id <id> --post-type <pages> --editor-id <id> --auth-provider studio-auto-login --presentation-map <json-file> --output-directory <dir>\n'); }
+function printHelp() { process.stdout.write('Unified acceptance: node tools/run-existing-runtime-review.mjs --acceptance-config <caller-config.mjs>\nLegacy review: node tools/run-existing-runtime-review.mjs --source-origin <url> --candidate-origin <url> --route </path> --post-id <id> --post-type <pages> --editor-id <id> --auth-provider studio-auto-login --presentation-map <json-file> --output-directory <dir>\n'); }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const options = parseExistingRuntimeReviewArgs(process.argv.slice(2));
   if (options.help) printHelp(); else {
-    const result = await runExistingRuntimeReview(options);
-    process.stdout.write(`${JSON.stringify({ status: result.status, artifact: path.join(options.output_directory, 'existing-runtime-review.json') })}\n`);
-    if (result.status !== 'passed') process.exitCode = 1;
+    let result;
+    let artifact;
+    if (options.acceptance_config) {
+      const { runExistingRuntimeAcceptance } = await import('../lib/run-existing-runtime-acceptance.mjs');
+      const config = (await import(pathToFileURL(options.acceptance_config))).default;
+      result = await runExistingRuntimeAcceptance(config);
+      artifact = path.resolve(config.outputDirectory, 'existing-runtime-acceptance.json');
+    } else {
+      result = await runExistingRuntimeReview(options);
+      artifact = path.join(options.output_directory, 'existing-runtime-review.json');
+    }
+    process.stdout.write(`${JSON.stringify({ status: result.status, artifact })}\n`);
+    if (!['passed', 'accepted'].includes(result.status)) process.exitCode = 1;
   }
 }

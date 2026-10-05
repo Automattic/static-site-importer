@@ -226,7 +226,7 @@ namespace {
 		'free'       => '',
 	);
 	foreach ( $price_cases as $input => $expected ) {
-		$actual = Static_Site_Importer_Report_Diagnostics::normalize_product_price( (string) $input );
+		$actual = Static_Site_Importer_Product_Finding_Materializer::normalize_product_price( (string) $input );
 		$assert( $expected === $actual, 'price-normalize-' . sanitize_key( (string) $input ), 'input "' . $input . '" => "' . $actual . '" expected "' . $expected . '"' );
 	}
 
@@ -268,7 +268,7 @@ namespace {
 		)
 	);
 
-	$seeding = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $report, array() );
+	$seeding = Static_Site_Importer_Product_Finding_Materializer::materialize_product_findings( $report, array() );
 	$assert( 'woocommerce' === ( $seeding['provider'] ?? '' ), 'materialize-provider-woocommerce' );
 	$assert( 1 === ( $seeding['finding_count'] ?? 0 ), 'materialize-one-finding' );
 	$assert( 2 === ( $seeding['product_count'] ?? 0 ), 'materialize-two-products' );
@@ -374,7 +374,7 @@ namespace {
 	$graft_report->set_diagnostics( $graft_diagnostics );
 	$button_region                 = serialize_blocks( $graft_report->diagnostics()[0]['readable_blocks'] );
 	$page_contents                 = array( 'website/shop.html' => $button_region );
-	$graft_seeding                 = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $graft_report, array(), $page_contents );
+	$graft_seeding                 = Static_Site_Importer_Product_Finding_Materializer::materialize_product_findings( $graft_report, array(), $page_contents );
 	$assert( 1 === ( $graft_seeding['shortcode_grafted_count'] ?? 0 ), 'shortcode-grafted-count' );
 	$assert( true === ( $graft_report['diagnostics'][0]['product_shortcode_grafted'] ?? false ), 'finding-product-shortcode-grafted' );
 	$assert( str_contains( $page_contents['website/shop.html'], '<!-- wp:shortcode -->[add_to_cart id="' ) && str_contains( $page_contents['website/shop.html'], 'class="ssi-commerce-control"' ), 'page-content-has-marked-add-to-cart-shortcode' );
@@ -391,7 +391,7 @@ namespace {
 		'website/owned-shop.html' => '<!-- wp:paragraph --><p>owner anchor is absent</p><!-- /wp:paragraph -->',
 		'website/other-shop.html' => $button_region,
 	);
-	$owned_graft_seeding = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $owned_graft_report, array(), $owned_graft_contents );
+	$owned_graft_seeding = Static_Site_Importer_Product_Finding_Materializer::materialize_product_findings( $owned_graft_report, array(), $owned_graft_contents );
 	$owned_graft_diag    = array_values( array_filter( $owned_graft_report['diagnostics'], static fn ( array $diagnostic ): bool => 'product_add_to_cart_graft_unanchorable' === ( $diagnostic['type'] ?? '' ) ) );
 	$assert( 0 === ( $owned_graft_seeding['shortcode_grafted_count'] ?? -1 ) && false === ( $owned_graft_report['diagnostics'][0]['product_shortcode_grafted'] ?? true ), 'product-graft-resolved-source-missing-anchor-is-not-grafted' );
 	$assert( 1 === count( $owned_graft_diag ) && 'fallback_region_not_found_in_post_content' === ( $owned_graft_diag[0]['reason'] ?? '' ) && 'website/owned-shop.html' === ( $owned_graft_diag[0]['source_path'] ?? '' ), 'product-graft-resolved-source-emits-bounded-owner-diagnostic' );
@@ -422,7 +422,7 @@ namespace {
 	$unsafe_finding['products'][0]['has_quantity_control'] = true;
 	$unsafe_report->append_diagnostic( $unsafe_finding );
 	$unsafe_contents = array( 'website/shop.html' => str_replace( '<!-- wp:buttons -->', '<button class="qty-btn">+</button><span class="qty-display">1</span><!-- wp:buttons -->', $button_region ) );
-	$unsafe_seeding  = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $unsafe_report, array(), $unsafe_contents );
+	$unsafe_seeding  = Static_Site_Importer_Product_Finding_Materializer::materialize_product_findings( $unsafe_report, array(), $unsafe_contents );
 	$assert( 0 === ( $unsafe_seeding['shortcode_grafted_count'] ?? -1 ), 'unsafe-shortcode-not-grafted' );
 	$assert( str_contains( $unsafe_contents['website/shop.html'], '>Add to cart<' ), 'unsafe-static-control-preserved' );
 	$assert( ! str_contains( $unsafe_contents['website/shop.html'], '[add_to_cart id=' ), 'unsafe-no-fake-woo-shortcode' );
@@ -453,7 +453,7 @@ namespace {
 	$alternate_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/alternate.html' );
 	$alternate_report->append_diagnostic( array( 'diagnostic_code' => 'html_product_grid_fallback', 'products' => array( array( 'name' => 'Alternate Mug', 'slug' => 'alternate-mug', 'regular_price' => '8' ) ) ) );
 	$woo_products_before = count( $GLOBALS['ssi_seeded_products'] );
-	$alternate_seeding   = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $alternate_report );
+	$alternate_seeding   = Static_Site_Importer_Product_Finding_Materializer::materialize_product_findings( $alternate_report );
 	$assert( 1 === $alternate_shop_calls && 'alternate-shop' === ( $alternate_seeding['provider'] ?? '' ), 'alternate-shop-adapter-executes-and-is-attributed' );
 	$assert( $woo_products_before === count( $GLOBALS['ssi_seeded_products'] ), 'alternate-shop-never-executes-woo-seeder' );
 
@@ -461,18 +461,18 @@ namespace {
 	add_filter( 'ssi_shop_plugin', $unsupported_shop );
 	$unsupported_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/unsupported.html' );
 	$unsupported_report->append_diagnostic( array( 'diagnostic_code' => 'html_product_grid_fallback', 'products' => array( array( 'name' => 'Unsupported Mug', 'slug' => 'unsupported-mug', 'regular_price' => '8' ) ) ) );
-	$unsupported_seeding = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $unsupported_report );
+	$unsupported_seeding = Static_Site_Importer_Product_Finding_Materializer::materialize_product_findings( $unsupported_report );
 	$assert( 'configured_shop_provider_unsupported' === ( $unsupported_seeding['reason'] ?? '' ) && 'unsupported-shop' === ( $unsupported_seeding['provider'] ?? '' ), 'unsupported-shop-declines-without-woo-fallback' );
 	$assert( $woo_products_before === count( $GLOBALS['ssi_seeded_products'] ), 'unsupported-shop-does-not-mutate-through-woo' );
 
 	// --- No product findings => skipped report ------------------------------
 	$empty_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/about.html' );
-	$empty_seed   = Static_Site_Importer_Report_Diagnostics::materialize_product_findings( $empty_report, array() );
+	$empty_seed   = Static_Site_Importer_Product_Finding_Materializer::materialize_product_findings( $empty_report, array() );
 	$assert( 'skipped' === ( $empty_seed['status'] ?? '' ), 'no-findings-skipped' );
 	$assert( 'no_product_findings' === ( $empty_seed['reason'] ?? '' ), 'no-findings-reason' );
 
 	// --- product_grid_finding_indexes detects plan and fallback discriminator fields
-	$indexes = Static_Site_Importer_Report_Diagnostics::product_grid_finding_indexes(
+	$indexes = Static_Site_Importer_Product_Finding_Materializer::product_grid_finding_indexes(
 		array(
 			array( 'diagnostic_code' => 'html_form_fallback' ),
 			array( 'kind' => 'html_product_grid_fallback' ),

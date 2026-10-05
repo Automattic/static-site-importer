@@ -52,7 +52,7 @@ jobs:
         with:
           prepare-only: true
           extension: wordpress
-          extension-ref: 7a58eb1d3f0e39380ae9e7bcd2f6afde54aa2141 # homeboy-extensions main, Composer adapter lockfile (#2876)
+          extension-ref: dd63b7befe89820c8704229f8b15486346e1e317 # empty workspace defaults do not require sibling helpers (#2907)
           component: static-site-importer
 
       # Exit 0: every edge current. 1: at least one behind. 2: at least one
@@ -95,6 +95,10 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ github.token }}
+          # This job runs after prior serialized releases may have advanced main.
+          # Prepare the current source, including their version commit, rather
+          # than the older push-event SHA that entered the queue.
+          ref: main
 
       # Homeboy CLI acquisition is left at the composite action's default
       # ("latest" released binary): `homeboy release resolve` and the
@@ -108,7 +112,7 @@ jobs:
         with:
           prepare-only: true
           extension: wordpress
-          extension-ref: 7a58eb1d3f0e39380ae9e7bcd2f6afde54aa2141 # homeboy-extensions main, Composer adapter lockfile (#2876)
+          extension-ref: dd63b7befe89820c8704229f8b15486346e1e317 # empty workspace defaults do not require sibling helpers (#2907)
           component: static-site-importer
 
       - name: Run Homeboy dependency refresh action
@@ -184,9 +188,9 @@ jobs:
     env:
       NODE_VERSION: '20.19.4'
       PHP_VERSION: '8.2.33'
-      HOMEBOY_VERSION: v0.298.1
-      HOMEBOY_SHA256: 543a1eb7348a9dcde3bee671dbbeaabb9486781d350792bed8a77424fdad60d5
-      HOMEBOY_EXTENSIONS_REF: 615fe3632d0cd30e9a70d5aea82be80460d733d5
+      HOMEBOY_VERSION: v0.398.10
+      HOMEBOY_SHA256: 2c9c54fc4b62a0c03237219f58085f0dee2bb209adecedb745137674da198991
+      HOMEBOY_EXTENSIONS_REF: dd63b7befe89820c8704229f8b15486346e1e317
     steps:
       - name: Checkout prepared source
         uses: actions/checkout@v6
@@ -286,7 +290,7 @@ jobs:
       release-branch: main
       dry-run: ${{ inputs.dry-run || false }}
       extension: wordpress
-      extension-ref: 7a58eb1d3f0e39380ae9e7bcd2f6afde54aa2141 # homeboy-extensions main, Composer adapter lockfile (#2876)
+      extension-ref: dd63b7befe89820c8704229f8b15486346e1e317 # empty workspace defaults do not require sibling helpers (#2907)
       component: static-site-importer
       action-ref: cad123d49bc1ef414d0ac802a436643294d3a45c # v2.20.3
     secrets: inherit

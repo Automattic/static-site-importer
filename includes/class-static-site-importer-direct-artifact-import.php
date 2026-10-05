@@ -32,10 +32,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	private const RUN_SCHEMA                    = 'static-site-importer/direct-artifact-run/v1';
 	private const CHECKPOINT_SCHEMA             = 'static-site-importer/direct-artifact-checkpoint/v1';
 	private const EVIDENCE_SCHEMA               = 'static-site-importer/direct-artifact-run-evidence/v1';
-	private const RECEIPT_SCHEMAS               = array(
-		'blocks-engine/php-transformer/compiled-page-receipt/v2',
-		'blocks-engine/php-transformer/compiled-page-receipt/v3',
-	);
+	private const RECEIPT_SCHEMAS               = array( 'blocks-engine/php-transformer/compiled-page-receipt/v3' );
 	private const TTL                           = 604800;
 	private const CLEANUP_HOOK                  = 'static_site_importer_purge_direct_artifact_imports';
 	private static array $checkpoint_read_cache = array();
@@ -545,12 +542,25 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				}
 			}
 
-			$pending     = array_values( array_diff( $run['page_ids'], array_keys( $run['refs']['receipts'] ?? array() ) ) );
-			$batch_limit = 'fanout' === $policy['compile_mode']
+			// Each batch is durable before the next starts, so a host whose runtime
+			// is not bounded by a request deadline can compile several per step.
+			// Batch-local checkpoint reads are released between batches.
+			$batches = 0;
+			do {
+				self::$checkpoint_read_cache = array_filter(
+					self::$checkpoint_read_cache,
+					static fn ( string $key ): bool => ! str_contains( $key, ':receipt:' ) && ! str_contains( $key, ':page_plan:' ),
+					ARRAY_FILTER_USE_KEY
+				);
+				$pending                     = array_values( array_diff( $run['page_ids'], array_keys( $run['refs']['receipts'] ?? array() ) ) );
+				$batch_limit                 = 'fanout' === $policy['compile_mode']
 				? min( $policy['compile_fanout_pages'], $policy['compile_workers'] * $policy['compile_shard_pages'] )
 				: $policy['compile_in_process_pages'];
-			$batch_ids   = self::deadline_reached( $deadline, $clock ) ? array() : array_slice( $pending, 0, $batch_limit );
-			if ( ! empty( $batch_ids ) ) {
+				$batch_ids                   = self::deadline_reached( $deadline, $clock ) ? array() : array_slice( $pending, 0, $batch_limit );
+				if ( empty( $batch_ids ) ) {
+					break;
+				}
+				{
 				$started = microtime( true );
 				$entered = self::enter_phase( $workspace, $run, 'compile_pages', $batch_ids );
 				if ( is_wp_error( $entered ) ) {
@@ -632,7 +642,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 						return self::fail( $workspace, $run, 'compile_pages_checkpoint', $write, $batch_ids );
 					}
 				}
-			}
+				}
+				++$batches;
+			} while ( $policy['compile_batches_per_invocation'] > $batches );
 
 			$remaining = count( $run['page_ids'] ) - count( $run['refs']['receipts'] ?? array() );
 			if ( 0 < $remaining ) {
@@ -703,6 +715,20 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			$composed_state = self::read_checkpoint( $workspace, $run, $run['refs']['composed'], 'composed' );
 			if ( is_wp_error( $composed_state ) ) {
 				return $composed_state;
+			}
+			$omitted_files = Static_Site_Importer_Diagnostic_Loss_Classes::omitted_artifact_file_count( $composed_state['result']['wordpress_site_plan']['diagnostics'] ?? array() );
+			if ( $omitted_files > 0 ) {
+				// A partial site is never imported: refuse before any WordPress mutation.
+				return self::fail(
+					$workspace,
+					$run,
+					'compose',
+					new WP_Error(
+						'static_site_importer_artifact_files_omitted',
+						sprintf( 'The compiler omitted %d source file(s) at its declared limits; refusing to import a partial site.', $omitted_files ),
+						array( 'omitted_file_count' => $omitted_files )
+					)
+				);
 			}
 			if ( self::deadline_reached( $deadline, $clock ) ) {
 				return self::continuation( $run, 'deadline_exhausted' );
@@ -895,11 +921,20 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			if ( is_wp_error( $final_ref ) ) {
 				return self::fail( $workspace, $run, 'terminal_checkpoint', $final_ref );
 			}
-			$run['refs']['final'] = $final_ref;
-			$write                = self::write_run( $workspace, $run );
+			$run['refs'] = array( 'final' => $final_ref );
+			$write       = self::write_run( $workspace, $run );
 			if ( is_wp_error( $write ) ) {
 				return self::fail( $workspace, $run, 'terminal_checkpoint', $write );
 			}
+			// A completed run replays only its terminal response. Intermediate
+			// checkpoints (source artifact, plans, receipts, the composed site)
+			// exist to resume work and would otherwise stay on disk until expiry.
+			// A returned plan still references retained payloads by identity.
+			$retained = array( 'workspace.json', 'run.json', 'final-response.json', 'execution.lock', 'materialization-claim', 'failed-plan' );
+			if ( 'plan' === $run['binding']['operation'] ) {
+				$retained[] = 'payloads';
+			}
+			$workspace->prune_except( $retained );
 			return $response;
 		} catch ( Throwable $error ) {
 			return self::fail( $workspace, $run, (string) ( $run['progress']['phase'] ?? $run['phase'] ?? 'runtime' ), $error );
@@ -1027,9 +1062,6 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$receipt_schema     = $receipt['receipt_schema'] ?? '';
 		$reduction          = is_array( $receipt['terminal_reduction'] ?? null ) ? $receipt['terminal_reduction'] : array();
 		$required_reduction = array( 'normalization', 'source_documents', 'owned_transformable_paths', 'stylesheet_occurrence_files', 'component_facts', 'block_types' );
-		if ( 'blocks-engine/php-transformer/compiled-page-receipt/v2' === $receipt_schema ) {
-			$required_reduction[] = 'files';
-		}
 		$reduction_complete = empty( array_diff( $required_reduction, array_keys( $reduction ) ) );
 		if ( ! is_array( $receipt ) || ! in_array( $receipt_schema, self::RECEIPT_SCHEMAS, true ) || ( $page_plan['page_id'] ?? '' ) !== ( $receipt['page_id'] ?? '' ) || ( $shared['digest'] ?? '' ) !== ( $receipt['shared_digest'] ?? '' ) || ( $shared['shared_reduction_digest'] ?? '' ) !== ( $receipt['shared_reduction_digest'] ?? '' ) || ( $page_plan['compiler_options'] ?? null ) !== ( $receipt['compiler_options'] ?? null ) || ( $page_plan['output_schema'] ?? null ) !== ( $receipt['output_schema'] ?? null ) || ( $page_plan['digest'] ?? '' ) === ( $receipt['digest'] ?? '' ) || empty( $receipt['digest'] ) || ! is_array( $receipt['compiled_documents'] ?? null ) || ! is_array( $receipt['owned_document_paths'] ?? null ) || ! $reduction_complete ) {
 			return new WP_Error( 'static_site_importer_direct_artifact_receipt_invalid', 'A compiled page receipt does not satisfy a published terminal receipt contract.' );
@@ -1555,16 +1587,18 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 
 	private static function run_policy(): array {
 		$policy = array(
-			'compile_fanout_pages'      => 2,
-			'compile_in_process_pages'  => 1,
-			'compile_workers'           => 1,
-			'compile_shard_pages'       => 2,
-			'compile_fanout'            => null,
-			'max_invocation_seconds'    => 20.0,
+			'compile_fanout_pages'           => 2,
+			'compile_in_process_pages'       => 1,
+			'compile_workers'                => 1,
+			'compile_shard_pages'            => 2,
+			'compile_fanout'                 => null,
+			// Compile batches one invocation may run before yielding a continuation.
+			'compile_batches_per_invocation' => 1,
+			'max_invocation_seconds'         => 20.0,
 			// Keep browser-originated artifacts below the Playground worker deadline by
 			// releasing the source request before compiler and materializer work begins.
-			'freeze_continuation_bytes' => 64 * 1024,
-			'clock'                     => static fn (): float => microtime( true ),
+			'freeze_continuation_bytes'      => 64 * 1024,
+			'clock'                          => static fn (): float => microtime( true ),
 		);
 		if ( function_exists( 'apply_filters' ) ) {
 			$filtered = apply_filters( 'static_site_importer_direct_artifact_run_policy', $policy );
@@ -1572,15 +1606,16 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				$policy = array_merge( $policy, $filtered );
 			}
 		}
-		$policy['compile_fanout_pages']      = min( 20, max( 1, (int) $policy['compile_fanout_pages'] ) );
-		$policy['compile_in_process_pages']  = min( 4, max( 1, (int) $policy['compile_in_process_pages'] ) );
-		$policy['compile_workers']           = min( 4, max( 1, (int) $policy['compile_workers'] ) );
-		$policy['compile_shard_pages']       = min( 4, max( 1, (int) $policy['compile_shard_pages'] ) );
-		$policy['compile_fanout']            = is_callable( $policy['compile_fanout'] ) ? $policy['compile_fanout'] : null;
-		$policy['compile_mode']              = null === $policy['compile_fanout'] ? 'in_process' : 'fanout';
-		$policy['max_invocation_seconds']    = max( 0.001, (float) $policy['max_invocation_seconds'] );
-		$policy['freeze_continuation_bytes'] = max( 1, (int) $policy['freeze_continuation_bytes'] );
-		$policy['clock']                     = is_callable( $policy['clock'] ) ? $policy['clock'] : static fn (): float => microtime( true );
+		$policy['compile_fanout_pages']           = min( 20, max( 1, (int) $policy['compile_fanout_pages'] ) );
+		$policy['compile_in_process_pages']       = min( 4, max( 1, (int) $policy['compile_in_process_pages'] ) );
+		$policy['compile_workers']                = min( 4, max( 1, (int) $policy['compile_workers'] ) );
+		$policy['compile_shard_pages']            = min( 4, max( 1, (int) $policy['compile_shard_pages'] ) );
+		$policy['compile_batches_per_invocation'] = min( 1000, max( 1, (int) $policy['compile_batches_per_invocation'] ) );
+		$policy['compile_fanout']                 = is_callable( $policy['compile_fanout'] ) ? $policy['compile_fanout'] : null;
+		$policy['compile_mode']                   = null === $policy['compile_fanout'] ? 'in_process' : 'fanout';
+		$policy['max_invocation_seconds']         = max( 0.001, (float) $policy['max_invocation_seconds'] );
+		$policy['freeze_continuation_bytes']      = max( 1, (int) $policy['freeze_continuation_bytes'] );
+		$policy['clock']                          = is_callable( $policy['clock'] ) ? $policy['clock'] : static fn (): float => microtime( true );
 		return $policy;
 	}
 

@@ -276,7 +276,7 @@ $partial_quality_warning_handler = set_error_handler(
 	}
 );
 try {
-	$partial_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $partial_quality_report, array( 'fail_on_quality' => true ) );
+	$partial_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $partial_quality_report, array( 'fail_on_quality' => true ) );
 } finally {
 	restore_error_handler();
 }
@@ -557,7 +557,7 @@ $finalized_report['materialization_receipt'] = array(
 	'status'    => 'completed',
 	'completed' => array( 'pages' => array( 1 ) ),
 );
-$cached_contract = Static_Site_Importer_Report_Diagnostics::refresh_projections( $finalized_report, $finalized_quality );
+$cached_contract = Static_Site_Importer_Diagnostic_Projection::refresh_projections( $finalized_report, $finalized_quality );
 $assert( 1 === ( $cached_contract['diagnostic_summary']['total'] ?? 0 ), 'finalized-report-is-sole-diagnostic-source' );
 $assert( 'invalid_block_content' === ( $cached_contract['diagnostics'][0]['type'] ?? '' ), 'finalized-report-builds-fixture-projection' );
 $assert( $cached_contract === Static_Site_Importer_Canonical_Import_Service::success_diagnostics_contract( array( 'fixture_diagnostics' => $cached_contract, 'import_report' => $finalized_report->to_array() ) ), 'canonical-service-reuses-finalized-fixture-projection' );
@@ -628,7 +628,7 @@ $normalized_form_report = Static_Site_Importer_Import_Report::from_array(
 	),
 	)
 );
-Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $normalized_form_report, array( $provider_receipt ) );
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $normalized_form_report, array( $provider_receipt ) );
 $assert( 1 === ( $normalized_form_report['quality']['fallback_count'] ?? 0 ) && 2 === ( $normalized_form_report['quality']['source_fallback_count'] ?? 0 ) && 1 === ( $normalized_form_report['quality_resolutions']['resolved_by_provider'] ?? 0 ), 'normalized-form-diagnostic-reconciles-exact-provider-receipt' );
 $assert( 'resolved_by_provider' === ( $normalized_form_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ) && 'unresolved' === ( $normalized_form_report['quality_resolutions']['resolutions'][1]['state'] ?? '' ), 'unreceipted-hidden-response-iframe-remains-unresolved' );
 
@@ -637,7 +637,7 @@ $mismatched_receipt['fallback_hash'] = hash( 'sha256', 'mismatched fallback' );
 $mismatched_form_report                = Static_Site_Importer_Import_Report::from_array( $normalized_form_report->to_array() );
 $mismatched_form_report['quality']     = array( 'fallback_count' => 1 );
 $mismatched_form_report['diagnostics'] = array( $normalized_form_fallback );
-Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $mismatched_form_report, array( $mismatched_receipt ) );
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $mismatched_form_report, array( $mismatched_receipt ) );
 $assert( 1 === ( $mismatched_form_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $mismatched_form_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'normalized-form-diagnostic-rejects-mismatched-provider-receipt' );
 
 $providerless_receipt = $provider_receipt;
@@ -645,7 +645,7 @@ $providerless_receipt['provider'] = '';
 $providerless_form_report = Static_Site_Importer_Import_Report::from_array( $normalized_form_report->to_array() );
 $providerless_form_report['quality'] = array( 'fallback_count' => 1 );
 $providerless_form_report['diagnostics'] = array( $normalized_form_fallback );
-Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $providerless_form_report, array( $providerless_receipt ) );
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $providerless_form_report, array( $providerless_receipt ) );
 $assert( 1 === ( $providerless_form_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $providerless_form_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'form-fallback-requires-provider-resolved-persisted-receipt' );
 
 // BusyBears' captured contract has four source fallbacks without a producer
@@ -700,7 +700,7 @@ $captured_form_report = Static_Site_Importer_Import_Report::from_array(
 		),
 	)
 );
-Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $captured_form_report );
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $captured_form_report );
 $captured_resolutions = $captured_form_report['quality_resolutions']['resolutions'] ?? array();
 $assert( 2 === ( $captured_form_report['quality_resolutions']['resolved_by_provider'] ?? 0 ) && 2 === ( $captured_form_report['quality_resolutions']['unresolved_fallback_count'] ?? 0 ) && 'resolved_by_provider' === ( $captured_resolutions[0]['state'] ?? '' ) && 'unresolved' === ( $captured_resolutions[1]['state'] ?? '' ) && 'resolved_by_provider' === ( $captured_resolutions[2]['state'] ?? '' ) && 'unresolved' === ( $captured_resolutions[3]['state'] ?? '' ), 'captured-form-contract-joins-only-persisted-provider-identities' );
 $assert( ( $captured_form_receipts[0]['fallback_reconciliation_identity'] ?? '' ) === ( $captured_resolutions[0]['fallback_reconciliation_identity'] ?? '' ) && ( $captured_form_receipts[1]['fallback_reconciliation_identity'] ?? '' ) === ( $captured_resolutions[2]['fallback_reconciliation_identity'] ?? '' ), 'captured-form-contract-preserves-persisted-producer-identities' );
@@ -713,7 +713,7 @@ $ambiguous_captured_report = Static_Site_Importer_Import_Report::from_array(
 		'materialization_receipt' => $captured_form_report['materialization_receipt'],
 	)
 );
-Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $ambiguous_captured_report, array( $captured_form_receipts[0], $ambiguous_captured_receipt ) );
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $ambiguous_captured_report, array( $captured_form_receipts[0], $ambiguous_captured_receipt ) );
 $assert( 1 === ( $ambiguous_captured_report['quality_resolutions']['unresolved_fallback_count'] ?? 0 ) && 'unresolved' === ( $ambiguous_captured_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'captured-form-contract-rejects-ambiguous-source-hash-identity-join' );
 
 // Producer-owned identities distinguish responsive copies even when their
@@ -733,7 +733,7 @@ $responsive_form_report                           = Static_Site_Importer_Import_
 		'materialization_receipt' => $normalized_form_report['materialization_receipt'],
 	)
 );
-Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $responsive_form_report, array( $desktop_receipt, $mobile_receipt ) );
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $responsive_form_report, array( $desktop_receipt, $mobile_receipt ) );
 $assert( 0 === ( $responsive_form_report['quality']['fallback_count'] ?? -1 ) && 2 === ( $responsive_form_report['quality_resolutions']['resolved_by_provider'] ?? 0 ) && $desktop_form_fallback['source_fallback_identity'] === ( $responsive_form_report['quality_resolutions']['resolutions'][0]['fallback_reconciliation_identity'] ?? '' ) && $mobile_form_fallback['source_fallback_identity'] === ( $responsive_form_report['quality_resolutions']['resolutions'][1]['fallback_reconciliation_identity'] ?? '' ), 'responsive-form-duplicates-resolve-by-distinct-producer-identities' );
 
 $partial_form_report = Static_Site_Importer_Import_Report::from_array(
@@ -743,7 +743,7 @@ $partial_form_report = Static_Site_Importer_Import_Report::from_array(
 		'materialization_receipt' => $normalized_form_report['materialization_receipt'],
 	)
 );
-Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $partial_form_report, array( $desktop_receipt ) );
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $partial_form_report, array( $desktop_receipt ) );
 $assert( 1 === ( $partial_form_report['quality']['fallback_count'] ?? 0 ) && 1 === ( $partial_form_report['quality_resolutions']['resolved_by_provider'] ?? 0 ) && 'unresolved' === ( $partial_form_report['quality_resolutions']['resolutions'][1]['state'] ?? '' ), 'partial-form-projection-leaves-unconsumed-source-identity-unresolved' );
 
 $ambiguous_form_report = Static_Site_Importer_Import_Report::from_array(
@@ -753,7 +753,7 @@ $ambiguous_form_report = Static_Site_Importer_Import_Report::from_array(
 		'materialization_receipt' => $normalized_form_report['materialization_receipt'],
 	)
 );
-Static_Site_Importer_Report_Diagnostics::reconcile_provider_materialized_fallbacks( $ambiguous_form_report, array( $desktop_receipt, $desktop_receipt ) );
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $ambiguous_form_report, array( $desktop_receipt, $desktop_receipt ) );
 $assert( 1 === ( $ambiguous_form_report['quality']['fallback_count'] ?? 0 ) && 'unresolved' === ( $ambiguous_form_report['quality_resolutions']['resolutions'][0]['state'] ?? '' ), 'ambiguous-form-projection-does-not-consume-source-identity' );
 
 $safe_runtime_report = Static_Site_Importer_Import_Report::from_array(
@@ -786,7 +786,7 @@ $unsafe_runtime_report = Static_Site_Importer_Import_Report::from_array( $safe_r
 $unsafe_diagnostics    = $unsafe_runtime_report->diagnostics();
 $unsafe_diagnostics[0]['source_html_preview'] = '<iframe srcdoc="<script>alert(1)</script>"></iframe>';
 $unsafe_runtime_report->set_diagnostics( $unsafe_diagnostics );
-$unsafe_runtime_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $unsafe_runtime_report, array( 'fail_on_quality' => true ) );
+$unsafe_runtime_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $unsafe_runtime_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $unsafe_runtime_quality['pass'] ?? true ) && true === ( $unsafe_runtime_quality['fail_import'] ?? false ), 'unsafe-runtime-iframe-remains-fail-closed' );
 $assert( 0 === ( $unsafe_runtime_quality['accepted_preserved_runtime_island_count'] ?? -1 ) && 1 === ( $unsafe_runtime_quality['unsupported_fallback_count'] ?? 0 ), 'unsafe-runtime-iframe-is-counted-as-unsupported-fallback' );
 
@@ -794,7 +794,7 @@ $incomplete_runtime_report = Static_Site_Importer_Import_Report::from_array( $sa
 $incomplete_diagnostics    = $incomplete_runtime_report->diagnostics();
 unset( $incomplete_diagnostics[0]['materialization_path'] );
 $incomplete_runtime_report->set_diagnostics( $incomplete_diagnostics );
-$incomplete_runtime_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $incomplete_runtime_report, array( 'fail_on_quality' => true ) );
+$incomplete_runtime_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $incomplete_runtime_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $incomplete_runtime_quality['pass'] ?? true ) && true === ( $incomplete_runtime_quality['fail_import'] ?? false ), 'missing-runtime-materialization-contract-remains-fail-closed' );
 
 $declined_form_fallback = array(
@@ -897,7 +897,7 @@ $rating_form_report   = Static_Site_Importer_Import_Report::from_array(
 		),
 	)
 );
-$rating_form_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $rating_form_report, array( 'fail_on_quality' => true ) );
+$rating_form_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $rating_form_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $rating_form_quality['pass'] ?? true ) && true === ( $rating_form_quality['fail_import'] ?? false ) && 1 === ( $rating_form_quality['unsupported_fallback_count'] ?? 0 ), 'actual-rating-button-form-decline-remains-unresolved' );
 
 $undeclined_form_report = Static_Site_Importer_Import_Report::from_array(
@@ -915,7 +915,7 @@ $undeclined_form_report = Static_Site_Importer_Import_Report::from_array(
 		'diagnostics' => array( $declined_form_fallback ),
 	)
 );
-$undeclined_form_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $undeclined_form_report, array( 'fail_on_quality' => true ) );
+$undeclined_form_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $undeclined_form_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $undeclined_form_quality['pass'] ?? true ) && true === ( $undeclined_form_quality['fail_import'] ?? false ) && in_array( 'unsupported_html_fallback', $undeclined_form_quality['failure_reasons'] ?? array(), true ), 'form-fallback-without-provider-decline-remains-fail-closed' );
 $assert( 0 === ( $undeclined_form_quality['accepted_preserved_runtime_island_count'] ?? -1 ) && 1 === ( $undeclined_form_quality['unsupported_fallback_count'] ?? 0 ), 'form-fallback-without-provider-decline-is-unsupported' );
 
@@ -934,7 +934,7 @@ $unsafe_declined_form_report = Static_Site_Importer_Import_Report::from_array(
 		'diagnostics' => array( $declined_form_fallback, $provider_form_decline ),
 	)
 );
-$unsafe_declined_form_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $unsafe_declined_form_report, array( 'fail_on_quality' => true ) );
+$unsafe_declined_form_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $unsafe_declined_form_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $unsafe_declined_form_quality['pass'] ?? true ) && true === ( $unsafe_declined_form_quality['fail_import'] ?? false ), 'unsafe-declined-form-island-remains-fail-closed' );
 $assert( 0 === ( $unsafe_declined_form_quality['accepted_preserved_runtime_island_count'] ?? -1 ) && 1 === ( $unsafe_declined_form_quality['unsupported_fallback_count'] ?? 0 ), 'unsafe-declined-form-island-is-unsupported' );
 
@@ -952,7 +952,7 @@ $unsupported_html_report = Static_Site_Importer_Import_Report::from_array(
 		),
 	)
 );
-$unsupported_html_quality = Static_Site_Importer_Report_Diagnostics::finalize_quality_report( $unsupported_html_report, array( 'fail_on_quality' => true ) );
+$unsupported_html_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $unsupported_html_report, array( 'fail_on_quality' => true ) );
 $assert( false === ( $unsupported_html_quality['pass'] ?? true ) && true === ( $unsupported_html_quality['fail_import'] ?? false ) && in_array( 'unsupported_html_fallback', $unsupported_html_quality['failure_reasons'] ?? array(), true ), 'genuine-unsupported-fallback-still-fails-quality-admission' );
 
 /*

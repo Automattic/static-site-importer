@@ -74,6 +74,10 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 		$report = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
 
 		$this->assertGreaterThan( 0, $report['site_icon'] );
+		$this->assertSame( 0, (int) get_option( 'site_icon', 0 ), 'attachment creation does not apply global branding before activation' );
+		$state['args']['activate'] = true;
+		$identity                  = Static_Site_Importer_Media_Library_Materializer::materialize_identity( $state );
+		$this->assertSame( 'applied', $identity['site_icon']['status'] );
 		$this->assertSame( $report['site_icon'], (int) get_option( 'site_icon' ) );
 		$this->assertSame( 1, $report['attachment_count'], 'the icon reuses the page image attachment for the same file' );
 
@@ -143,7 +147,7 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 			}
 			if ( 'core/media-text' === $block['blockName'] ) {
 				$this->assertGreaterThan( 0, (int) ( $block['attrs']['mediaId'] ?? 0 ) );
-				$this->assertStringContainsString( 'wp-image-' . $block['attrs']['mediaId'], $block['innerHTML'] );
+				$this->assertStringContainsString( 'wp-image-' . $block['attrs']['mediaId'] . ' size-full', $block['innerHTML'], 'media-text save() emits attachment and size classes together' );
 				$this->assertContains( (int) $block['attrs']['mediaId'], $ids );
 			}
 		}

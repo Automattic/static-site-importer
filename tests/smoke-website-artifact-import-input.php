@@ -139,6 +139,7 @@ $input  = array(
 	'slug'                                 => 'contract-theme',
 	'name'                                 => 'Contract Theme',
 	'site_title'                           => 'Contract Site',
+	'site_tagline'                         => 'Contract tagline',
 	'stale_page_action'                    => 'draft',
 	'activate'                             => true,
 	'overwrite'                            => true,

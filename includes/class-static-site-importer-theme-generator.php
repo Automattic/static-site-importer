@@ -250,7 +250,7 @@ class Static_Site_Importer_Theme_Generator {
 			return $plan;
 		}
 
-		$anchors_by_slug = Static_Site_Importer_Report_Diagnostics::product_grid_binding_anchors( $diagnostics );
+		$anchors_by_slug = Static_Site_Importer_Product_Finding_Materializer::product_grid_binding_anchors( $diagnostics );
 		if ( empty( $anchors_by_slug ) ) {
 			return $plan;
 		}

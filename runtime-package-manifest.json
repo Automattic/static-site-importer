@@ -29,10 +29,16 @@
         },
         {
           "type": "prefix",
+          "path": "assets/host-acceptance/"
+        },
+        {
+          "type": "prefix",
           "path": "vendor/automattic/blocks-engine-php-transformer/"
         }
       ],
       "required_files": [
+        "assets/host-acceptance/index.mjs",
+        "assets/host-acceptance/manifest.json",
         "runtime-package-manifest.json",
         "static-site-importer.php",
         "includes/abilities.php",
@@ -95,6 +101,10 @@
         },
         {
           "type": "prefix",
+          "path": "assets/host-acceptance/"
+        },
+        {
+          "type": "prefix",
           "path": "vendor/"
         },
         {
@@ -103,6 +113,8 @@
         }
       ],
       "required_files": [
+        "assets/host-acceptance/index.mjs",
+        "assets/host-acceptance/manifest.json",
         "runtime-package-manifest.json",
         "static-site-importer.php",
         "composer.json",

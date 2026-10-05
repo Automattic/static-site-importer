@@ -975,14 +975,19 @@ if ( class_exists( 'ZipArchive' ) ) {
 	);
 	$hard_staged_limits = static_site_importer_staged_archive_limits();
 	unset( $GLOBALS['ssi_filters']['static_site_importer_staged_archive_limits'] );
-	$assert( 262144000 === $hard_staged_limits['max_archive_bytes'], 'staged-zip-filter-cannot-exceed-hard-ceiling' );
+	$assert( 268435456 === $hard_staged_limits['max_archive_bytes'], 'staged-zip-filter-cannot-exceed-hard-ceiling' );
+
+	$unfiltered_staged_limits = static_site_importer_staged_archive_limits();
+	$assert( 268435456 === $unfiltered_staged_limits['max_archive_bytes'], 'staged-zip-default-archive-byte-limit' );
+	$assert( 262144000 === $unfiltered_staged_limits['max_total_uncompressed_bytes'], 'staged-zip-default-uncompressed-limit' );
+	$assert( 67108864 === $unfiltered_staged_limits['generated_bytes_headroom'], 'staged-zip-default-generated-bytes-headroom' );
 
 	$compiler_contract = static_site_importer_staged_archive_compiler_limits();
 	$assert(
 		array(
 			'max_files'       => 5000,
 			'max_file_bytes'  => 10485760,
-			'max_total_bytes' => 262144000,
+			'max_total_bytes' => 329252864,
 		) === $compiler_contract,
 		'staged-zip-projects-its-intake-policy-as-a-compiler-contract'
 	);

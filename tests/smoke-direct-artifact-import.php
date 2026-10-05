@@ -167,6 +167,55 @@ $assert = static function ( bool $condition, string $message ): void {
 		throw new RuntimeException( $message );
 	}
 };
+// Run with SSI_FINALIZATION_PROBE=74 php -d memory_limit=512M tests/smoke-direct-artifact-import.php.
+// Public-safe compiler/checkpoint probe: the materializer here is a stub and
+// continuations share one PHP process (unlike separate CLI invocations). This
+// cannot establish live WordPress materialization cost or CWCTU parity.
+if ( getenv( 'SSI_FINALIZATION_PROBE' ) ) {
+	$count = min( 74, max( 2, (int) getenv( 'SSI_FINALIZATION_PROBE' ) ) );
+	$root  = dirname( __DIR__ ) . '/tests/fixtures/direct-artifact-multi-page/';
+	$html  = (string) file_get_contents( $root . 'about.html' );
+	$files = array( array( 'path' => 'website/index.html', 'content' => (string) file_get_contents( $root . 'index.html' ) ) );
+	for ( $i = 1; $i < $count; ++$i ) {
+		$files[] = array( 'path' => sprintf( 'website/page-%03d.html', $i ), 'content' => str_replace( 'About', 'Page ' . $i, $html ) );
+	}
+	$files[] = array( 'path' => 'website/styles.css', 'content' => (string) file_get_contents( $root . 'styles.css' ) );
+	$stages = array();
+	$sample = static function ( string $stage ) use ( &$stages ): void {
+		$usage = getrusage();
+		$stages[] = array( 'stage' => $stage, 'php_bytes' => memory_get_usage( true ), 'php_peak_bytes' => memory_get_peak_usage( true ), 'rss_max_native' => $usage['ru_maxrss'] );
+	};
+	$compile_batches = 0;
+	$GLOBALS['ssi_direct_actions']['static_site_importer_direct_artifact_before_phase'][] = static function ( string $phase ) use ( $sample, &$compile_batches, $count ): void {
+		if ( 'compile_pages' === $phase ) {
+			++$compile_batches;
+			if ( 1 !== $compile_batches && $count !== $compile_batches ) { return; }
+		}
+		$sample( 'before_' . $phase . ( 'compile_pages' === $phase ? '_' . $compile_batches : '' ) );
+	};
+	$GLOBALS['ssi_direct_actions']['static_site_importer_direct_artifact_checkpoint_read'][] = static function ( string $kind ) use ( $sample ): void {
+		if ( in_array( $kind, array( 'composed', 'artifact', 'materialization' ), true ) ) { $sample( 'read_' . $kind ); }
+	};
+	$input = array( 'operation' => 'apply', 'slug' => 'direct-artifact-fixture', 'source_metadata' => array( 'source_path' => 'https://source.example.test/' ), 'source' => array( 'type' => 'files', 'entrypoint' => 'website/index.html', 'files' => $files ) );
+	$sample( 'start' );
+	for ( $attempt = 0; $attempt < $count + 10; ++$attempt ) {
+		$result = Static_Site_Importer_Canonical_Import_Service::import( $input );
+		if ( empty( $result['success'] ) ) { throw new RuntimeException( 'Probe failed: ' . json_encode( $result['error'] ?? $result ) ); }
+		if ( empty( $result['continuation'] ) ) { break; }
+		$input['source'] = array( 'type' => 'files', 'import_id' => $result['import_id'] );
+		if ( 'dependencies_prepared' === ( $result['continuation_reason'] ?? '' ) ) {
+			$input['runtime_lifecycle_phase'] = 'resume';
+			$input['runtime_lifecycle_request_id'] = $result['result']['fresh_runtime']['request_id'];
+			$input['runtime_lifecycle_checkpoint'] = $result['result']['runtime_lifecycle_checkpoint'];
+		}
+	}
+	$assert( empty( $result['continuation'] ), 'probe must complete' );
+	$plan = $GLOBALS['ssi_direct_compiled_results'][0]['wordpress_site_plan'] ?? array();
+	$assert( $count === count( $plan['pages'] ?? array() ) && $count === ( $result['artifact_run']['work']['pages_compiled'] ?? 0 ), 'probe must retain every generated page in the completed output' );
+	$sample( 'completed' );
+	print json_encode( array( 'fixture' => 'public-safe direct-artifact-multi-page, synthetic about-page variants', 'source_pages' => $count, 'rss_max_units' => 'Darwin bytes; Linux KiB', 'stages' => $stages, 'output_sha256' => hash( 'sha256', json_encode( $plan ) ), 'output_pages' => count( $plan['pages'] ), 'compile_batches' => $compile_batches, 'materializations' => $result['artifact_run']['work']['materializations'] ?? null ), JSON_PRETTY_PRINT ) . "\n";
+	exit( 0 );
+}
 $validate_receipt = new ReflectionMethod( Static_Site_Importer_Direct_Artifact_Import::class, 'validate_receipt' );
 $shared_receipt_contract = array( 'digest' => 'shared-digest', 'shared_reduction_digest' => 'shared-reduction-digest' );
 $page_receipt_contract = array( 'page_id' => 'website/index.html', 'digest' => 'page-digest', 'compiler_options' => array(), 'output_schema' => 'blocks-engine/php-transformer/result/v1' );
@@ -185,9 +234,7 @@ $compact_receipt = array(
 $assert( true === $validate_receipt->invoke( null, $compact_receipt, $page_receipt_contract, $shared_receipt_contract ), 'compact v3 receipts must validate without duplicated shared files' );
 $legacy_receipt = $compact_receipt;
 $legacy_receipt['receipt_schema'] = 'blocks-engine/php-transformer/compiled-page-receipt/v2';
-$assert( is_wp_error( $validate_receipt->invoke( null, $legacy_receipt, $page_receipt_contract, $shared_receipt_contract ) ), 'v2 receipts must retain their files reduction contract' );
-$legacy_receipt['terminal_reduction']['files'] = array();
-$assert( true === $validate_receipt->invoke( null, $legacy_receipt, $page_receipt_contract, $shared_receipt_contract ), 'complete v2 receipts must remain compatible' );
+$assert( is_wp_error( $validate_receipt->invoke( null, $legacy_receipt, $page_receipt_contract, $shared_receipt_contract ) ), 'retired v2 receipts are rejected' );
 $hash_json = new ReflectionMethod( Static_Site_Importer_Direct_Artifact_Import::class, 'hash_json' );
 $ordered = array( 'z' => array( 'b' => 2, 'a' => 1 ), 'a' => 'https://example.com/a/b' );
 $canonical = array( 'a' => 'https://example.com/a/b', 'z' => array( 'a' => 1, 'b' => 2 ) );
@@ -323,10 +370,9 @@ $assert( 1 === ( $work['content_policy_applications'] ?? 0 ) && 1 === ( $work['c
 $assert( 1 === ( $work['materialization_claims'] ?? 0 ) && 1 === ( $work['materializations'] ?? 0 ) && true === ( $GLOBALS['ssi_direct_last_args']['_static_site_importer_precompiled_source'] ?? false ), 'apply must claim once and use the precompiled source handoff' );
 $assert( 0 === ( $terminal_work['html_document_transform_count'] ?? -1 ) && 0 === ( $terminal_work['normalization_count'] ?? -1 ), 'terminal composition must perform zero HTML transforms and normalization' );
 $assert( ! str_contains( (string) json_encode( $terminal['artifact_run'] ), $test_root ) && ! str_contains( (string) json_encode( $terminal['artifact_run'] ), 'website/index.html' ), 'public run evidence must remain bounded and path-free' );
-$persisted_composed = json_decode( (string) $frozen_workspace->read_raw( 'composed-result.json' ), true, 512, JSON_THROW_ON_ERROR );
-$persisted_view = $persisted_composed['payload']['result'] ?? array();
-$materialized_view = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanView::materialize( $persisted_view );
-$assert( 'blocks-engine/wordpress-site-plan-view/v2' === ( $persisted_view['schema'] ?? '' ) && \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::canonicalHash( $materialized_view['wordpress_site_plan'] ) === \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::canonicalHash( $GLOBALS['ssi_direct_compiled_results'][0]['wordpress_site_plan'] ?? array() ), 'composed result persists compact v2 JSON and materializes its exact canonical plan before consumption' );
+$assert( null === $frozen_workspace->read_raw( 'composed-result.json' ) && null === $frozen_workspace->read_raw( 'artifact.json' ) && null === $frozen_workspace->read_raw( 'shared-plan.json' ) && is_string( $frozen_workspace->read_raw( 'final-response.json' ) ), 'a completed run prunes resume-only checkpoints and keeps its terminal response' );
+$replayed = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
+$assert( ( $replayed['artifact_run']['receipt_identities'] ?? null ) === ( $terminal['artifact_run']['receipt_identities'] ?? array() ) && 1 === $GLOBALS['ssi_direct_mutations'], 'a pruned completed run still replays its terminal response without mutation' );
 $composed_plan = $GLOBALS['ssi_direct_compiled_results'][0]['wordpress_site_plan'] ?? array();
 $form_declarations = array_values( array_filter( $composed_plan['runtime_declarations'] ?? array(), static fn( $declaration ): bool => is_array( $declaration ) && 'entity_collection' === ( $declaration['kind'] ?? '' ) && 'forms' === ( $declaration['type'] ?? '' ) ) );
 $form_dependencies = array_values( array_filter( $composed_plan['runtime_declarations'] ?? array(), static fn( $declaration ): bool => is_array( $declaration ) && 'dependency' === ( $declaration['kind'] ?? '' ) && 'form' === ( $declaration['capability'] ?? '' ) ) );
@@ -660,7 +706,9 @@ $run_failure_data = $run_failed['error']['data'] ?? array();
 $assert( 'injected_run_publication_failure' === ( $run_failed['error']['code'] ?? '' ) && preg_match( '/^[a-f0-9]{64}$/', (string) ( $run_failure_data['import_id'] ?? '' ) ), 'run checkpoint failures after immutable work publication must retain a structured resumable import id' );
 $run_recovered = Static_Site_Importer_Canonical_Import_Service::import( $resume( (string) $run_failure_data['import_id'], 'plan' ) );
 $assert( ! empty( $run_recovered['success'] ) && array( 1, 1, 1 ) === ( $run_recovered['artifact_run']['work']['page_compile_counts'] ?? null ), 'resume must adopt the immutable receipt and never recompile completed page work' );
-$source_artifact = static_site_importer_source_runtime( $input( 'plan' )['source'] )['artifact'];
+$identity_source = $input( 'plan' )['source'];
+$identity_source['metadata']['compiler_limits'] = Static_Site_Importer_Compiler_Limits::resolve();
+$source_artifact = static_site_importer_source_runtime( $identity_source )['artifact'];
 $source_artifact['provenance'] = array( 'source_url' => 'https://source.example.test/' );
 $assert( hash( 'sha256', (string) wp_json_encode( $source_artifact ) ) === ( $run_recovered['source']['identity'] ?? '' ), 'staged planning must preserve the canonical normalized source identity from before script policy transforms' );
 
@@ -881,7 +929,7 @@ $worker_source = '#!' . PHP_BINARY . "\n<?php\n"
 	. 'file_put_contents($events, "start:" . $marker . "\\n", FILE_APPEND | LOCK_EX);' . "\n"
 	. 'usleep(500000);' . "\n"
 	. 'file_put_contents($events, "end:" . $marker . "\\n", FILE_APPEND | LOCK_EX);' . "\n"
-	. 'if ("fail" === $marker) { fwrite(STDERR, "worker failure\\n" . str_repeat("x", 15000)); fwrite(STDOUT, "worker output\\n" . str_repeat("y", 15000)); exit(2); }' . "\n"
+	. 'if ("fail" === $marker) { fwrite(STDERR, "worker failure\\n" . str_repeat("x", 15000) . "\\nPHP Fatal error:  Allowed memory size of 402653184 bytes exhausted in /srv/wp/blocks.php on line 12\\n"); fwrite(STDOUT, "worker output\\n" . str_repeat("y", 15000)); exit(2); }' . "\n"
 	. 'exit(0);' . "\n";
 $assert( false !== file_put_contents( $worker_script, $worker_source ) && chmod( $worker_script, 0600 ), 'the process fan-out fixture must match a readable, non-executable WP-CLI PHAR' );
 $original_argv_zero = $_SERVER['argv'][0] ?? null;
@@ -895,6 +943,25 @@ sort( $starts, SORT_STRING );
 $assert( true === $process_fanout && array( 'start:one', 'start:three', 'start:two' ) === $starts, 'the CLI fan-out adapter must start every bounded worker before waiting for completion' );
 $process_failure = static_site_importer_cli_compile_artifact_pages_fanout( str_repeat( 'b', 64 ), array( array( $worker_events, 'ok' ), array( $worker_events, 'fail' ) ) );
 $assert( is_wp_error( $process_failure ) && 'static_site_importer_direct_artifact_worker_process_failed' === $process_failure->get_error_code(), 'the CLI fan-out adapter must surface a nonzero worker exit as a structured compile failure' );
+$assert( is_wp_error( $process_failure ) && 'Compile worker 2 of 2 exited with status 2: Fatal error:  Allowed memory size of 402653184 bytes exhausted in /srv/wp/blocks.php on line 12.' === $process_failure->get_error_message(), 'a failed CLI worker must name itself, its status and its fatal in the error message, not only that some worker failed' );
+$worker_public = Static_Site_Importer_Public_Error_Projection::project_public_error_message(
+	$process_failure->get_error_code(),
+	Static_Site_Importer_Public_Error_Projection::project_public_diagnostics(
+		array(
+			array(
+				'type'        => 'validation_error',
+				'severity'    => 'error',
+				'code'        => $process_failure->get_error_code(),
+				'reason_code' => $process_failure->get_error_code(),
+				'message'     => $process_failure->get_error_message(),
+			),
+		)
+	)
+);
+$assert( 'Materialization failed (static_site_importer_direct_artifact_worker_process_failed): Compile worker 2 of 2 exited with status 2: Fatal error: Allowed memory size of 402653184 bytes exhausted in [path] on line 12.' === $worker_public, 'the worker failure must reach the public failure message with its path redacted: ' . $worker_public );
+$assert( 'Fatal error:  Uncaught TypeError: bad block' === static_site_importer_cli_worker_failure_cause( "notice one\nPHP Fatal error:  Uncaught TypeError: bad block\nStack trace:\n#0 {main}", '' ), 'the cause is the fatal line, not the stack trace after it' );
+$assert( 'last words' === static_site_importer_cli_worker_failure_cause( '', "noise\nlast words\n" ), 'without stderr the cause falls back to the last stdout line' );
+$assert( '' === static_site_importer_cli_worker_failure_cause( '', '' ), 'a silent worker has no cause to report' );
 $worker_warning = WP_CLI::$warnings[0] ?? '';
 $assert( 1 === count( WP_CLI::$warnings ) && str_contains( $worker_warning, 'Compile worker 2 exited with status 2.' ) && str_contains( $worker_warning, "Stderr:\nworker failure" ) && str_contains( $worker_warning, "Stdout:\nworker output" ) && strlen( $worker_warning ) <= 1100, 'a failed CLI worker must emit one bounded operator diagnostic with its exit status, stderr, and stdout' );
 ini_set( 'memory_limit', $original_memory_limit );
@@ -933,6 +1000,14 @@ $amnesiac_work = $amnesiac_terminal['artifact_run']['work'] ?? array();
 $assert( ! empty( $amnesiac_terminal['success'] ) && empty( $amnesiac_terminal['continuation'] ) && array( 1, 1, 1 ) === ( $amnesiac_work['page_compile_counts'] ?? null ), 'a run driven only by amnesiac re-requests must complete with every page compiled exactly once' );
 $post_completion = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
 $assert( '' !== (string) ( $post_completion['import_id'] ?? '' ) && $amnesiac_id !== (string) ( $post_completion['import_id'] ?? '' ), 'a completed run must never be adopted by discovery; identical new requests start their own run' );
+
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array( static fn ( array $policy ): array => array_merge( $policy, array( 'compile_in_process_pages' => 1, 'compile_batches_per_invocation' => 10 ) ) );
+$batched_input         = $input( 'plan' );
+$batched_input['slug'] = 'direct-artifact-batched-fixture';
+$batched               = Static_Site_Importer_Canonical_Import_Service::import( $batched_input );
+$batched_work          = $batched['artifact_run']['work'] ?? array();
+$assert( ! empty( $batched['success'] ) && 3 === ( $batched_work['pages_compiled'] ?? 0 ) && 3 === ( $batched_work['compile_batches'] ?? 0 ) && 'pages_remaining' !== ( $batched['continuation_reason'] ?? '' ), 'a multi-batch policy compiles every pending batch in one invocation, each batch durable on its own' );
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array();
 
 Static_Site_Importer_Artifact_Run_Workspace::purge_expired_in( $test_root );
 $primitive_workspace->purge();
