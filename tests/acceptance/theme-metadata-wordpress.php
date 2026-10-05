@@ -11,16 +11,17 @@ require_once WP_CONTENT_DIR . '/plugins/static-site-importer/includes/class-stat
 require_once WP_CONTENT_DIR . '/plugins/static-site-importer/includes/class-static-site-importer-wordpress-site-plan-materializer.php';
 require_once WP_CONTENT_DIR . '/plugins/static-site-importer/includes/class-static-site-importer-theme-exporter.php';
 
-$assert = static function ( bool $condition, string $message ): void {
+$assert     = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) {
 		throw new RuntimeException( esc_html( $message ) );
 	}
 };
-$artifact = array(
+$artifact   = array(
 	'entrypoint' => 'website/index.html',
 	'files'      => array(
 		array(
 			'path'    => 'website/index.html',
+			// phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedStylesheet -- This is literal website source fixture HTML, not a plugin stylesheet reference.
 			'content' => '<!doctype html><html><head><title>Nick Diego &mdash; Home</title><link rel="stylesheet" href="assets/site.css"></head><body><main><h1>Nick Diego</h1><p>Theme metadata acceptance fixture.</p></main></body></html>',
 		),
 		array(
@@ -39,7 +40,7 @@ $provenance = array(
 	'engine_version' => '0.32.3',
 	'artifact_hash'  => hash( 'sha256', wp_json_encode( $artifact ) ),
 );
-$compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact(
+$compiled   = Static_Site_Importer_Compilation_Preparation::compile_website_artifact(
 	$artifact,
 	array(
 		'slug'                => 'nick-diego-metadata',
@@ -86,7 +87,7 @@ $theme_snapshot = static function (): array {
 	$walk  = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $root, FilesystemIterator::SKIP_DOTS ) );
 	foreach ( $walk as $file ) {
 		if ( $file->isFile() ) {
-			$path          = substr( $file->getPathname(), strlen( $root ) + 1 );
+			$path           = substr( $file->getPathname(), strlen( $root ) + 1 );
 			$files[ $path ] = hash_file( 'sha256', $file->getPathname() );
 		}
 	}
@@ -107,11 +108,11 @@ $assert( ! is_wp_error( $rollback ), 'Rollback artifact compiles' );
 $failed = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $rollback['plan'], $rollback['args'] );
 $assert( 'partial' === ( $failed['status'] ?? '' ) && 'rolled_back' === ( $failed['rollback']['status'] ?? '' ), 'Injected late materialization failure is rolled back' );
 $assert( $before_files === $theme_snapshot(), 'Rollback restores all persisted theme files byte-for-byte' );
-$assert( $before_options === array( get_option( 'stylesheet' ), get_option( 'template' ), get_option( 'blogname' ), get_option( 'show_on_front' ), get_option( 'page_on_front' ) ), 'Rollback restores active theme and site options' );
+$assert( array( get_option( 'stylesheet' ), get_option( 'template' ), get_option( 'blogname' ), get_option( 'show_on_front' ), get_option( 'page_on_front' ) ) === $before_options, 'Rollback restores active theme and site options' );
 
 $export = Static_Site_Importer_Theme_Exporter::export_theme( array( 'theme_slug' => 'nick-diego-metadata' ) );
 $assert( ! is_wp_error( $export ) && is_array( $export['website_artifact'] ?? null ), 'SSI exports the persisted generated theme as a website artifact' );
-$exported = $export['website_artifact'];
+$exported               = $export['website_artifact'];
 $exported['entrypoint'] = preg_replace( '~^website/~', '', (string) ( $exported['entrypoint'] ?? 'website/index.html' ) );
 $exported['files']      = array_map(
 	static function ( array $file ): array {
@@ -120,7 +121,7 @@ $exported['files']      = array_map(
 	},
 	$exported['files'] ?? array()
 );
-$round_trip = Static_Site_Importer_Compilation_Preparation::compile_website_artifact(
+$round_trip             = Static_Site_Importer_Compilation_Preparation::compile_website_artifact(
 	$exported,
 	array(
 		'slug'                => 'nick-diego-export-roundtrip',
@@ -135,15 +136,16 @@ $assert( 'completed' === ( $round_trip_receipt['status'] ?? '' ), 'Exported arti
 $assert( str_contains( $round_trip_style, 'Theme Name: Nick Diego' ) && str_contains( $round_trip_style, 'Author: Static Site Importer' ) && ! str_contains( $round_trip_style, 'Blocks Engine Site' ), 'Export/reimport keeps neutral source identity and SSI attribution' );
 
 $evidence = array(
-	'core_version'           => get_bloginfo( 'version' ),
-	'first_theme'            => 'nick-diego-metadata',
-	'first_theme_headers'    => array_values( array_filter( explode( "\n", $style ), static fn( string $line ): bool => preg_match( '/^(Theme Name|Text Domain|Author|Description|Version|Update URI):/', $line ) ) ),
-	'reimport_status'        => $reimport['status'],
-	'rollback_status'        => $failed['status'],
+	'core_version'            => get_bloginfo( 'version' ),
+	'first_theme'             => 'nick-diego-metadata',
+	'first_theme_headers'     => array_values( array_filter( explode( "\n", $style ), static fn( string $line ): bool => preg_match( '/^(Theme Name|Text Domain|Author|Description|Version|Update URI):/', $line ) ) ),
+	'reimport_status'         => $reimport['status'],
+	'rollback_status'         => $failed['status'],
 	'rollback_files_restored' => true,
-	'export_file_count'      => count( $exported['files'] ?? array() ),
-	'round_trip_theme'       => 'nick-diego-export-roundtrip',
-	'round_trip_identity'    => 'Nick Diego',
+	'export_file_count'       => count( $exported['files'] ?? array() ),
+	'round_trip_theme'        => 'nick-diego-export-roundtrip',
+	'round_trip_identity'     => 'Nick Diego',
 );
+// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- WP-CLI fixture writes only to its mounted disposable evidence directory.
 file_put_contents( '/evidence/theme-metadata-result.json', wp_json_encode( $evidence, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) );
 echo wp_json_encode( $evidence, JSON_UNESCAPED_SLASHES ) . "\n";
