@@ -1111,7 +1111,7 @@ function static_site_importer_staged_archive_limits(): array {
 		'max_archive_bytes'            => 268435456,
 		'max_entries'                  => 5000,
 		'max_entry_uncompressed_bytes' => 52428800,
-		'max_total_uncompressed_bytes' => 268435456,
+		'max_total_uncompressed_bytes' => 262144000,
 		'max_compression_ratio'        => 100,
 		'generated_bytes_headroom'     => 67108864,
 	);
