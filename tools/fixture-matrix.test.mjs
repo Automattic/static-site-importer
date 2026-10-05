@@ -6563,9 +6563,135 @@ test('editor chrome validation probes placeholder visibility inside the canvas',
   const step = editorChromeValidationStep({ fixture: { id: 'simple' } });
   assert.equal(step.command, 'wordpress.editor-canvas-probe');
   assert.equal(step.allowFailure, true);
-  assert.ok(step.args.includes('target=front-page'));
+  // The Codebox editor-canvas-probe contract requires url= and has no
+  // post-id/post-slug/target interpreter (#1965), so the chrome probe always
+  // carries an explicit editor URL.
+  assert.match(step.args[0], /^url=\/editor-chrome-target\.php\?surface=front-page&post_type=page$/);
+  assert.equal(step.args.some((arg) => /^(target|post-id|post-type|post-slug)=/.test(arg)), false);
   assert.ok(step.args.some((arg) => arg.includes('editor_visible_placeholder') && arg.includes('wp-block-group__placeholder')));
   assert.equal(step.metadata.phase, 'editor-chrome');
+  assert.equal(step.metadata.editor_url_resolution, 'runtime-editor-chrome-target');
+  assert.equal(step.metadata.url, step.args[0].slice('url='.length));
+});
+
+test('editor chrome validation keeps block validation targeting distinct from the canvas probe', () => {
+  const blockValidation = editorBlockValidationStep({ fixture: { id: 'simple' } });
+  assert.deepEqual(blockValidation.args, ['target=front-page']);
+  const chrome = editorChromeValidationStep({ fixture: { id: 'simple' } });
+  assert.equal(chrome.command, 'wordpress.editor-canvas-probe');
+  assert.notDeepEqual(chrome.args, blockValidation.args);
+  assert.ok(chrome.args.some((arg) => arg.startsWith('url=')));
+});
+
+test('editor chrome validation honors explicit editor URLs without target arguments', () => {
+  const step = editorChromeValidationStep({ fixture: { id: 'shop', editor_url: '/wp-admin/post.php?post=42&action=edit' } });
+  assert.deepEqual(step.args.filter((arg) => arg.startsWith('url=')), ['url=/wp-admin/post.php?post=42&action=edit']);
+  assert.equal(step.metadata.editor_url_resolution, 'explicit-url');
+  assert.equal(step.args.some((arg) => /^(target|post-id|post-type|post-slug)=/.test(arg)), false);
+});
+
+test('editor chrome validation builds the canonical admin edit URL from a known imported post id', () => {
+  const step = editorChromeValidationStep({ fixture: { id: 'shop', post_id: 99 } });
+  assert.match(step.args[0], /^url=\/wp-admin\/post\.php\?post=99&action=edit$/);
+  assert.equal(step.metadata.editor_url_resolution, 'post-id');
+  assert.equal(step.metadata.post_id, 99);
+});
+
+test('editor chrome validation resolves secondary surfaces through the runtime editor-chrome resolver', () => {
+  const step = editorChromeValidationStep({
+    fixture: { id: 'shop' },
+    surface: { id: '203issue', post_slug: '203issue', post_type: 'page', target: '/203issue/', source_entry: '203issue/index.html' },
+  });
+  assert.match(step.args[0], /^url=\/editor-chrome-target\.php\?surface=203issue&post_type=page$/);
+  assert.equal(step.metadata.surface_id, '203issue');
+  assert.equal(step.metadata.route, '/203issue/');
+  assert.equal(step.metadata.post_slug, '203issue');
+  assert.equal(step.metadata.editor_url_resolution, 'runtime-editor-chrome-target');
+
+  const hierarchical = editorChromeValidationStep({
+    fixture: { id: 'shop' },
+    surface: { id: 'guide', post_slug: 'docs/guide', post_type: 'page', target: '/docs/guide/' },
+  });
+  assert.match(hierarchical.args[0], /^url=\/editor-chrome-target\.php\?surface=docs%2Fguide&post_type=page$/);
+});
+
+test('buildFixtureMatrixRecipe stages the runtime editor-chrome resolver and keeps every canvas probe Codebox-valid', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'ssi-editor-chrome-fixture-'));
+  const fixtureDirectory = path.join(root, 'routes');
+  mkdirSync(fixtureDirectory, { recursive: true });
+  writeFileSync(path.join(fixtureDirectory, 'fixture.json'), JSON.stringify({ id: 'routes', label: 'Routes' }));
+  writeFileSync(path.join(fixtureDirectory, 'index.html'), '<main>Home</main>');
+  for (const route of ['issue-a', 'issue-b', 'issue-c', 'issue-d', 'issue-e', 'issue-f', 'issue-g']) {
+    writeFileSync(path.join(fixtureDirectory, `${route}.html`), `<main>${route}</main>`);
+  }
+  const discoveredMatrix = createFixtureMatrix({ fixture_root: root, id: 'editor-chrome-recipe-test' });
+  const matrix = { ...discoveredMatrix, fixtures: discoveredMatrix.fixtures.filter((fixture) => fixture.id === 'routes'), count: 1 };
+  const recipe = buildFixtureMatrixRecipe({
+    matrix,
+    artifactsDirectory: '/tmp/artifacts',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+    surfaceCoverage: 7,
+  });
+  const steps = recipe.workflow.steps;
+
+  const resolverSteps = steps.filter((step) => step.metadata?.phase === 'editor-chrome-target');
+  assert.equal(resolverSteps.length, matrix.fixtures.length);
+  for (const resolver of resolverSteps) {
+    assert.equal(resolver.command, 'wordpress.wp-cli');
+    const stagedPath = path.join(root, 'editor-chrome-target.php');
+    const staging = spawnSync('sh', ['-c', `php -r ${resolver.args[0].slice('command=eval '.length).replace('/wordpress/editor-chrome-target.php', stagedPath)}`], { encoding: 'utf8' });
+    assert.equal(staging.status, 0, `resolver staging must write PHP rather than execute it: ${staging.stderr}`);
+    const php = Buffer.from(resolver.args[0].match(/[A-Za-z0-9+/]{40,}={0,2}/)?.[0] || '', 'base64').toString('utf8');
+    assert.match(php, /^<\?php/);
+    assert.match(php, /get_page_by_path/);
+    assert.match(php, /get_option\('page_on_front'\)/);
+    assert.match(php, /wp_set_auth_cookie/);
+    assert.match(php, /get_edit_post_link/);
+    assert.match(php, /wp_safe_redirect/);
+    assert.equal(readFileSync(stagedPath, 'utf8'), php);
+    const lint = spawnSync('php', ['-l', stagedPath], { encoding: 'utf8' });
+    assert.equal(lint.status, 0, lint.stderr);
+  }
+
+  const chromeSteps = steps.filter((step) => step.command === 'wordpress.editor-canvas-probe');
+  const blockSteps = steps.filter((step) => step.command === 'wordpress.editor-validate-blocks');
+  assert.equal(chromeSteps.length, 8);
+  assert.equal(blockSteps.length, 8);
+  // Every chrome probe carries a Codebox-valid intended editor target: either a
+  // canonical admin edit URL or the runtime resolver for post-import identity.
+  const chromeRoutes = new Set();
+  for (const step of chromeSteps) {
+    const url = step.args.find((arg) => arg.startsWith('url='))?.slice('url='.length);
+    assert.ok(url, 'every editor-canvas-probe step requires url=');
+    assert.ok(
+      /^\/wp-admin\/post\.php\?post=\d+&action=edit$/.test(url) || url.startsWith('/editor-chrome-target.php?surface='),
+      `unexpected chrome probe target: ${url}`,
+    );
+    assert.equal(step.metadata.phase, 'editor-chrome');
+    chromeRoutes.add(step.metadata.route);
+  }
+  // No route is dropped and the front page is not hardcoded across surfaces.
+  assert.equal(chromeRoutes.size, 8);
+  // Block validation keeps its own native Codebox targeting contract.
+  for (const step of blockSteps) {
+    assert.equal(step.command, 'wordpress.editor-validate-blocks');
+    assert.ok(step.args.some((arg) => /^(target|post-id|post-type|post-slug|url)=/.test(arg)));
+  }
+  const resolverIndex = steps.findIndex((step) => step.metadata?.phase === 'editor-chrome-target');
+  const firstImportIndex = steps.findIndex((step) => /static-site-importer validate-artifact/.test(step.args?.[0] || ''));
+  const firstChromeIndex = steps.findIndex((step) => step.command === 'wordpress.editor-canvas-probe');
+  assert.ok(firstImportIndex > -1 && resolverIndex > firstImportIndex && firstChromeIndex > resolverIndex, 'the resolver stages after import and before the first chrome probe');
+
+  // Disabling editor validation also omits the resolver: no editor-owned
+  // runtime artifacts are staged when no chrome probes run.
+  const disabled = buildFixtureMatrixRecipe({
+    matrix,
+    artifactsDirectory: '/tmp/artifacts',
+    staticSiteImporterPath: '/tmp/static-site-importer',
+    editorValidation: false,
+  });
+  assert.equal(disabled.workflow.steps.some((step) => step.metadata?.phase === 'editor-chrome-target'), false);
+  assert.equal(disabled.workflow.steps.some((step) => step.command === 'wordpress.editor-canvas-probe'), false);
 });
 
 test('per-block editor validity (isValid=false) becomes an editor_block_invalid finding with block name and selector', () => {
