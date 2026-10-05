@@ -408,12 +408,13 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			return $relative;
 		}
 		$family = $match[1];
-		$best = $relative;
+		$best   = $relative;
 		if ( is_file( $theme_dir . '/' . $family ) && in_array( strtolower( pathinfo( $family, PATHINFO_EXTENSION ) ), self::RASTER_EXTENSIONS, true ) ) {
 			$best = $family;
 		} else {
 			$best_area = -1;
 			$siblings  = glob( $theme_dir . '/' . $family . '/v1/*/*/*', GLOB_NOSORT );
+			$siblings  = is_array( $siblings ) ? $siblings : array();
 			sort( $siblings );
 			foreach ( $siblings as $sibling ) {
 				$sibling_relative = substr( $sibling, strlen( $theme_dir ) + 1 );
