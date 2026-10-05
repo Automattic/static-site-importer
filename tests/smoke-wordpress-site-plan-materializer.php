@@ -4031,4 +4031,51 @@ $assert( null === Static_Site_Importer_Theme_Screenshot::from_artifact( $invalid
 $existing_preview = Static_Site_Importer_Theme_Screenshot::with_write( array( 'writes' => array() ), array( 'destination' => 'existing_theme', 'theme_screenshot' => $preview_compiled['args']['theme_screenshot'] ) );
 $assert( array() === $existing_preview['writes'], 'existing-theme imports do not replace the host theme thumbnail' );
 
+// The canonical scaffold consumption must apply the consumer-resolved site
+// identity through the canonical scaffold contract: the producer's generic
+// placeholder style.css header may never reach a generated theme (issue 1970).
+$identity_artifact = array(
+	'entrypoint' => 'index.html',
+	'files'      => array(
+		'index.html'      => '<!doctype html><html><head><title>Dana Whitfield &mdash; Home</title><link rel="stylesheet" href="/assets/site.css"></head><body><main><h1>Home</h1></main></body></html>',
+		'about.html'      => '<main><h1>About</h1></main>',
+		'assets/logo.svg' => '<svg xmlns="http://www.w3.org/2000/svg"/>',
+		'assets/site.css' => 'main { background: url(assets/logo.svg); }',
+	),
+);
+$identity_plan        = ( new ArtifactCompiler() )->compile( $identity_artifact )->toArray()['source_reports']['wordpress_site_plan'];
+$identity_receipt     = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $identity_plan, array( 'slug' => 'identity-scaffold' ) );
+$identity_style_path  = $GLOBALS['ssi_plan_root'] . '/identity-scaffold/style.css';
+$identity_style       = is_file( $identity_style_path ) ? (string) file_get_contents( $identity_style_path ) : '';
+$assert( 'completed' === $identity_receipt['status'] && '' !== $identity_style, 'identity scaffold plan materializes a generated block theme' );
+$assert( 'Dana Whitfield' === ( $identity_receipt['theme']['name'] ?? '' ), 'the materialization receipt carries the resolved consumer identity name', (string) wp_json_encode( $identity_receipt['theme'] ?? array() ) );
+$assert( str_starts_with( $identity_style, "/*\nTheme Name: Dana Whitfield\n" ), 'generated block theme header carries the source-backed site name resolved from the plan entrypoint', $identity_style );
+$assert( str_contains( $identity_style, "\nText Domain: identity-scaffold\n" ), 'generated block theme header carries the generated theme text domain', $identity_style );
+$assert( str_contains( $identity_style, "\nAuthor: Static Site Importer\n" ) && str_contains( $identity_style, "\nDescription: Materialized from a compiled website artifact.\n" ), 'generated block theme header carries generator attribution and description', $identity_style );
+$assert( ! str_contains( $identity_style, 'Blocks Engine Site' ), 'the producer placeholder header never reaches the generated theme', $identity_style );
+$named_receipt        = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $identity_plan, array( 'slug' => 'identity-named', 'name' => 'Whitfield Atelier' ) );
+$identity_named_style = (string) file_get_contents( $GLOBALS['ssi_plan_root'] . '/identity-named/style.css' );
+$assert( 'completed' === $named_receipt['status'] && str_starts_with( $identity_named_style, "/*\nTheme Name: Whitfield Atelier\n" ), 'an explicit identity name wins over the extracted source title', $identity_named_style );
+$identity_provenance  = array(
+	'schema'         => 'blocks-engine/generated-artifact-provenance/v1',
+	'generator'      => 'blocks-engine/php-transformer',
+	'engine_version' => '9.9.9',
+	'artifact_hash'  => str_repeat( 'cafe', 8 ),
+);
+Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $identity_plan, array( 'slug' => 'identity-provenance', 'artifact_provenance' => $identity_provenance ) );
+$identity_provenance_style = (string) file_get_contents( $GLOBALS['ssi_plan_root'] . '/identity-provenance/style.css' );
+$identity_version          = array();
+$identity_update_uri       = array();
+$assert( 1 === preg_match( '/^Version: [0-9][0-9A-Za-z.\-]*\+cafecafe$/m', $identity_provenance_style, $identity_version ) && 1 === preg_match( '/^Update URI: (\S+)$/m', $identity_provenance_style, $identity_update_uri ) && 'static-site-importer.invalid' === ( parse_url( (string) $identity_update_uri[1], PHP_URL_HOST ) ?? '' ) && 'identity-provenance' === trim( (string) parse_url( (string) $identity_update_uri[1], PHP_URL_PATH ), '/' ), 'provenance-carrying scaffold headers keep the producing-build version and parseable artifact Update URI', $identity_provenance_style );
+$identity_retry = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $identity_plan, array( 'slug' => 'identity-scaffold' ) );
+$assert( 'completed' === $identity_retry['status'] && file_get_contents( $identity_style_path ) === $identity_style, 'identity scaffold reconciles byte-identically on retry' );
+$classic_identity_compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $identity_artifact, array( 'slug' => 'identity-classic', 'theme_materialization' => 'classic' ) );
+$assert( ! is_wp_error( $classic_identity_compiled ), 'classic identity compilation prepares', is_wp_error( $classic_identity_compiled ) ? $classic_identity_compiled->get_error_message() : '' );
+$classic_identity_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $classic_identity_compiled['plan'], array( 'slug' => 'identity-classic', 'theme_materialization' => 'classic', 'classic_theme_projection' => $classic_identity_compiled['args']['classic_theme_projection'] ) );
+$classic_identity_style   = (string) file_get_contents( $GLOBALS['ssi_plan_root'] . '/identity-classic/style.css' );
+$assert( 'completed' === $classic_identity_receipt['status'] && str_starts_with( $classic_identity_style, "/*\nTheme Name: Dana Whitfield\nText Domain: static-site-importer\n" ), 'classic scaffold resolves the source-backed identity when no explicit name is supplied', $classic_identity_style );
+$classic_named_compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $identity_artifact, array( 'slug' => 'identity-classic-named', 'name' => 'Whitfield Atelier', 'theme_materialization' => 'classic' ) );
+$classic_named_receipt  = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $classic_named_compiled['plan'], array( 'slug' => 'identity-classic-named', 'name' => 'Whitfield Atelier', 'theme_materialization' => 'classic', 'classic_theme_projection' => $classic_named_compiled['args']['classic_theme_projection'] ) );
+$assert( 'completed' === $classic_named_receipt['status'] && str_starts_with( (string) file_get_contents( $GLOBALS['ssi_plan_root'] . '/identity-classic-named/style.css' ), "/*\nTheme Name: Whitfield Atelier\n" ), 'classic scaffold keeps an explicit identity name', (string) file_get_contents( $GLOBALS['ssi_plan_root'] . '/identity-classic-named/style.css' ) );
+
 echo "WordPress site plan materializer smoke passed.\n";
