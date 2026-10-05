@@ -814,6 +814,14 @@ namespace {
 	$topology_ops = array_column( $topology_receipt['operations'] ?? array(), 'strategy' );
 	$assert( 'applied' === ( $topology_receipt['status'] ?? '' ) && in_array( 'provider_equal_width_fields', $topology_ops, true ) && in_array( 'provider_interaction_carrier', $topology_ops, true ) && 2 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - 0\.5rem\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - 0\.5rem\);margin-block-start:0!important\}/', $expand_selector_lists( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ) ), 'computed-layout-equal-grid-applies-with-bounded-receipt', wp_json_encode( array( 'ops' => $topology_ops, 'css' => $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) ) );
 	$assert( str_contains( $topology_markup, 'ssi-textarea-rows-2' ) && str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:auto' ) && ! str_contains( (string) ( $topology_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'height:200px' ), 'topology-unstyled-source-textarea-carries-two-rows-and-neutralizes-the-provider-height' );
+	$min_height_textarea_form = $topology_form;
+	$min_height_textarea_form['forms'][0]['presentation_graph'] = array(
+		'schema'   => 'generic/form-presentation-graph/v1',
+		'controls' => array( array( 'index' => 2, 'control' => array( 'styles' => array( 'min_height' => '80px' ) ) ) ),
+	);
+	$min_height_textarea_seed = Static_Site_Importer_Form_Seeder::seed( $min_height_textarea_form );
+	$min_height_textarea_css  = (string) ( $min_height_textarea_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' );
+	$assert( str_contains( $min_height_textarea_css, 'min-height:80px' ) && str_contains( $min_height_textarea_css, 'height:auto' ), 'source-textarea-min-height-is-preserved-while-provider-fixed-height-is-released', $min_height_textarea_css );
 
 	// A layout graph may contain the complete control ancestry while the producer
 	// omits its parallel topology document. Recover that tree so proven grid rows
