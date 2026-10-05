@@ -169,6 +169,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			unset( $binding_report );
 		}
+		$taxonomy_entities = self::materialize_taxonomy_entities( $state );
+		if ( is_wp_error( $taxonomy_entities ) ) {
+			return self::failed_receipt_from_error( $state, $taxonomy_entities );
+		}
+		$state['applied']['taxonomy_entities'] = $taxonomy_entities;
 		$route_links = self::rewrite_materialized_route_links( $state );
 		if ( is_wp_error( $route_links ) ) {
 			return self::failed_receipt_from_error( $state, $route_links );
@@ -364,6 +369,123 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		return Static_Site_Importer_Site_Plan_Receipt::receipt( 'completed', $state );
 	}
 
+	/** Apply the producer-proven term set while preserving destination-owned terms. */
+	private static function materialize_taxonomy_entities( array &$state ) {
+		$term_ids_by_source = array();
+		$reports            = array();
+		foreach ( $state['plan']['taxonomy_entities'] ?? array() as $entity ) {
+			if ( ! is_array( $entity ) || 'taxonomy_term' !== ( $entity['kind'] ?? '' ) || ! in_array( $entity['taxonomy'] ?? '', array( 'category', 'post_tag' ), true ) || ( $entity['evidence'] ?? null ) !== array( 'membership' => true, 'name' => true, 'archive' => true ) || ! is_string( $entity['slug'] ?? null ) || ! preg_match( '/^[a-z0-9][a-z0-9-]{0,199}$/', $entity['slug'] ) || ! is_string( $entity['name'] ?? null ) || '' === trim( $entity['name'] ) || ! is_array( $entity['membership_source_paths'] ?? null ) || ! is_array( $entity['archive'] ?? null ) || ! is_string( $entity['archive']['source_route'] ?? null ) ) {
+				return new WP_Error( 'taxonomy_entity_contract_invalid' );
+			}
+			$taxonomy = $entity['taxonomy'];
+			if ( ! taxonomy_exists( $taxonomy ) ) {
+				return new WP_Error( 'taxonomy_unavailable' );
+			}
+			$route_result = self::register_taxonomy_archive_route( $state, $entity );
+			if ( is_wp_error( $route_result ) ) {
+				return $route_result;
+			}
+			$existing = term_exists( $entity['slug'], $taxonomy );
+			$created  = false;
+			if ( ! $existing ) {
+				$inserted = wp_insert_term( $entity['name'], $taxonomy, array( 'slug' => $entity['slug'] ) );
+				if ( is_wp_error( $inserted ) ) {
+					return $inserted;
+				}
+				$term_id = (int) ( $inserted['term_id'] ?? 0 );
+				$created = true;
+				if ( $term_id > 0 ) {
+					$state['rollback']['terms'][ $taxonomy . ':' . $term_id ] = array( 'term_id' => $term_id, 'taxonomy' => $taxonomy );
+				}
+			} else {
+				$term_id = (int) ( is_array( $existing ) ? ( $existing['term_id'] ?? 0 ) : $existing );
+			}
+			if ( $term_id <= 0 || is_wp_error( get_term( $term_id, $taxonomy ) ) ) {
+				return new WP_Error( 'taxonomy_term_resolution_failed' );
+			}
+			foreach ( $entity['membership_source_paths'] as $source_path ) {
+				if ( ! is_string( $source_path ) || ! isset( $state['source_ids'][ $source_path ] ) || 'post' !== get_post_type( (int) $state['source_ids'][ $source_path ] ) ) {
+					return new WP_Error( 'taxonomy_member_not_materialized' );
+				}
+				$term_ids_by_source[ $source_path ][ $taxonomy ][] = $term_id;
+			}
+			$reports[] = array( 'term_id' => $term_id, 'taxonomy' => $taxonomy, 'slug' => $entity['slug'], 'archive_route' => $entity['archive']['source_route'], 'membership_source_paths' => $entity['membership_source_paths'], 'post_ids' => array_map( static fn( string $path ): int => (int) $state['source_ids'][ $path ], $entity['membership_source_paths'] ), 'created' => $created );
+		}
+
+		foreach ( $state['ordered_pages'] as $page ) {
+			$source_path = (string) ( $page['source_path'] ?? '' );
+			$post_id     = (int) ( $state['source_ids'][ $source_path ] ?? 0 );
+			if ( $post_id <= 0 || 'post' !== get_post_type( $post_id ) ) {
+				continue;
+			}
+			$meta_key = '_static_site_importer_taxonomy_memberships';
+			$previous = get_post_meta( $post_id, $meta_key, true );
+			$previous = is_array( $previous ) ? $previous : array();
+			$desired  = $term_ids_by_source[ $source_path ] ?? array();
+			$taxonomies = array_unique( array_merge( array_keys( $previous ), array_keys( $desired ) ) );
+			$next_owned = array();
+			foreach ( $taxonomies as $taxonomy ) {
+				if ( ! in_array( $taxonomy, array( 'category', 'post_tag' ), true ) ) {
+					continue;
+				}
+				$current = wp_get_object_terms( $post_id, $taxonomy, array( 'fields' => 'ids' ) );
+				if ( is_wp_error( $current ) ) {
+					return $current;
+				}
+				$current = array_values( array_unique( array_map( 'intval', $current ) ) );
+				$old_owned = array_values( array_unique( array_map( 'intval', is_array( $previous[ $taxonomy ] ?? null ) ? $previous[ $taxonomy ] : array() ) ) );
+				$desired_ids = array_values( array_unique( array_map( 'intval', $desired[ $taxonomy ] ?? array() ) ) );
+				$new_owned = array_values( array_unique( array_merge( array_intersect( $desired_ids, $old_owned ), array_diff( $desired_ids, $current ) ) ) );
+				$preserved = array_values( array_diff( $current, $old_owned ) );
+				$next = array_values( array_unique( array_merge( $preserved, $desired_ids ) ) );
+				if ( $next !== $current ) {
+					$key = $post_id . ':' . $taxonomy;
+					$state['rollback']['term_memberships'][ $key ] ??= array( 'post_id' => $post_id, 'taxonomy' => $taxonomy, 'term_ids' => $current );
+					$result = wp_set_object_terms( $post_id, $next, $taxonomy, false );
+					if ( is_wp_error( $result ) ) {
+						return $result;
+					}
+				}
+				if ( array() !== $new_owned ) {
+					$next_owned[ $taxonomy ] = $new_owned;
+				}
+			}
+			if ( $previous !== $next_owned ) {
+				$state['rollback']['taxonomy_post_meta'][ $post_id ] ??= array( 'exists' => metadata_exists( 'post', $post_id, $meta_key ), 'value' => $previous );
+				update_post_meta( $post_id, $meta_key, $next_owned );
+			}
+		}
+		return $reports;
+	}
+
+	/** Register an exact source archive route without changing site-wide taxonomy bases. */
+	private static function register_taxonomy_archive_route( array &$state, array $entity ) {
+		$route  = trim( (string) $entity['archive']['source_route'], '/' );
+		$slug = (string) $entity['slug'];
+		if ( '' === $route || ! preg_match( '~^/?[a-z0-9-]+(?:/[a-z0-9-]+)*$~', $route ) || basename( $route ) !== $slug ) {
+			return new WP_Error( 'taxonomy_archive_route_invalid' );
+		}
+		$regex = '^' . $route . '/?$';
+		$query_var = 'category' === $entity['taxonomy'] ? 'category_name' : 'tag';
+		$query = 'index.php?' . $query_var . '=' . rawurlencode( $slug );
+		$rules = get_option( 'rewrite_rules', array() );
+		$rules = is_array( $rules ) ? $rules : array();
+		if ( isset( $rules[ $regex ] ) && $rules[ $regex ] !== $query ) {
+			return new WP_Error( 'taxonomy_archive_rewrite_conflict' );
+		}
+		if ( ( $rules[ $regex ] ?? null ) === $query ) {
+			return true;
+		}
+		self::journal_option( $state, 'rewrite_rules' );
+		add_rewrite_rule( $regex, $query, 'top' );
+		flush_rewrite_rules( false );
+		$rules = get_option( 'rewrite_rules', array() );
+		if ( ! is_array( $rules ) || ( $rules[ $regex ] ?? null ) !== $query ) {
+			return new WP_Error( 'taxonomy_archive_rewrite_failed' );
+		}
+		return true;
+	}
+
 	/** @param array<string,mixed> $page @param array<string,int> $source_ids */
 	public static function materialize_page( array $page, array $source_ids, string $import_run_id = '' ) {
 		$post_type = sanitize_key( (string) ( $page['post_type'] ?? 'page' ) );
@@ -463,6 +585,14 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			if ( '' !== $route && $post_id > 0 ) {
 				$routes[ $route ] = self::portable_internal_reference( $post_id, $post_type );
+			}
+		}
+		foreach ( $state['applied']['taxonomy_entities'] ?? array() as $entity ) {
+			$source_route = self::normalized_route_path( (string) ( $entity['archive_route'] ?? '' ) );
+			$term_id      = (int) ( $entity['term_id'] ?? 0 );
+			$taxonomy     = (string) ( $entity['taxonomy'] ?? '' );
+			if ( '' !== $source_route && $term_id > 0 && in_array( $taxonomy, array( 'category', 'post_tag' ), true ) ) {
+				$routes[ $source_route ] = $source_route;
 			}
 		}
 		if ( array() === $routes ) {
@@ -1702,6 +1832,38 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 		}
 		$state['applied']['attachments'] = array();
+		foreach ( array_reverse( $state['rollback']['term_memberships'] ?? array(), true ) as $membership ) {
+			try {
+				$restored = wp_set_object_terms( (int) $membership['post_id'], array_map( 'intval', $membership['term_ids'] ), (string) $membership['taxonomy'], false );
+				if ( is_wp_error( $restored ) ) {
+					throw new RuntimeException( 'materialization_rollback_taxonomy_membership_restore_failed' );
+				}
+			} catch ( Throwable $error ) {
+				self::record_rollback_failure( $state, 'taxonomy_membership', (string) $membership['post_id'], $error );
+			}
+		}
+		foreach ( $state['rollback']['taxonomy_post_meta'] ?? array() as $post_id => $before ) {
+			try {
+				$key = '_static_site_importer_taxonomy_memberships';
+				if ( ! empty( $before['exists'] ) ) {
+					update_post_meta( (int) $post_id, $key, $before['value'] );
+				} else {
+					delete_post_meta( (int) $post_id, $key );
+				}
+			} catch ( Throwable $error ) {
+				self::record_rollback_failure( $state, 'taxonomy_post_meta', (string) $post_id, $error );
+			}
+		}
+		foreach ( array_reverse( $state['rollback']['terms'] ?? array(), true ) as $term ) {
+			try {
+				$deleted = wp_delete_term( (int) $term['term_id'], (string) $term['taxonomy'] );
+				if ( is_wp_error( $deleted ) || false === $deleted ) {
+					throw new RuntimeException( 'materialization_rollback_taxonomy_term_delete_failed' );
+				}
+			} catch ( Throwable $error ) {
+				self::record_rollback_failure( $state, 'taxonomy_term', (string) $term['term_id'], $error );
+			}
+		}
 		foreach ( array_reverse( $state['applied']['posts'] ?? array() ) as $applied ) {
 			$id     = (int) ( $applied['id'] ?? 0 );
 			$before = $state['rollback']['posts'][ $id ] ?? $state['rollback']['posts'][ 'new:' . (string) ( $applied['source_path'] ?? '' ) ] ?? null;

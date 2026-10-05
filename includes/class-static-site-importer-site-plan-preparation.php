@@ -437,6 +437,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 					'receipt' => Static_Site_Importer_Site_Plan_Receipt::receipt( 'rejected', $state ),
 				);
 			}
+			self::mark_taxonomy_archive_pages( $state );
 			self::validate_materialized_block_documents( $state['resolved'], $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
 			self::preflight_state( $state, ! empty( $args['overwrite'] ), (string) ( $args['import_run_id'] ?? '' ) );
 		} catch ( InvalidArgumentException $error ) {
@@ -470,6 +471,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		$pages_by_route      = array();
 		$state['page_ids']   = array();
 		$state['source_ids'] = array();
+		self::mark_taxonomy_archive_pages( $state );
 		foreach ( $state['resolved']['pages'] as &$page ) {
 			if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC !== ( $state['args']['theme_materialization'] ?? null ) && ( ! isset( $page['resolved_block_markup'] ) || ! is_string( $page['resolved_block_markup'] ) || '' === trim( $page['resolved_block_markup'] ) ) ) {
 				throw new InvalidArgumentException( 'page_missing_final_block_markup' );
@@ -479,6 +481,14 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				throw new InvalidArgumentException( 'duplicate_page_route' );
 			}
 			$pages_by_route[ $route ] = true;
+			if ( ! empty( $page['skip_materialization'] ) ) {
+				$archive_match = Static_Site_Importer_Site_Plan_Persistence::reconciled_post( (string) $page['reconciliation_identity'] );
+				$archive_conflict = '' === trim( $route, '/' ) ? null : get_page_by_path( trim( $route, '/' ), OBJECT, 'page' );
+				if ( ! $archive_match && $archive_conflict && ! Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $archive_conflict ) && ! self::post_belongs_to_run( $archive_conflict, $import_run_id ) ) {
+					throw new InvalidArgumentException( 'taxonomy_archive_route_conflict' );
+				}
+				continue;
+			}
 
 			// The materializer is the consumer boundary: producer content_decision
 			// and declared post_type win. Consumer dated-meta / dated-route
@@ -593,6 +603,28 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				throw new InvalidArgumentException( 'report_destination_not_ready' );
 			}
 		}
+	}
+
+	/** Exclude producer-owned taxonomy archive source documents from page writes and page validation. */
+	private static function mark_taxonomy_archive_pages( array &$state ): void {
+		$archives = array();
+		foreach ( $state['resolved']['taxonomy_entities'] ?? array() as $entity ) {
+			if ( is_array( $entity ) && is_array( $entity['archive'] ?? null ) && is_string( $entity['archive']['source_path'] ?? null ) ) {
+				$archives[ $entity['archive']['source_path'] ] = (string) ( $entity['archive']['source_route'] ?? '' );
+			}
+		}
+		foreach ( $state['resolved']['pages'] as &$page ) {
+			$source_path = (string) ( $page['source_path'] ?? '' );
+			if ( ! isset( $archives[ $source_path ] ) || ! empty( $page['skip_materialization'] ) ) {
+				continue;
+			}
+			if ( ( $page['route']['path'] ?? null ) !== $archives[ $source_path ] ) {
+				throw new InvalidArgumentException( 'taxonomy_archive_route_mismatch' );
+			}
+			$page['skip_materialization'] = true;
+			$state['skipped'][]           = array( 'source_path' => $source_path, 'route' => $archives[ $source_path ], 'reason' => 'native_taxonomy_archive' );
+		}
+		unset( $page );
 	}
 
 	/**
@@ -808,7 +840,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	 */
 	public static function validate_materialized_block_documents( array $plan, array $bindings, array &$diagnostics ): void {
 		foreach ( array_merge( $plan['pages'] ?? array(), array_values( array_filter( $plan['template_parts'] ?? array(), static fn( $part ): bool => is_array( $part ) && isset( $part['materialized_block_markup'] ) ) ) ) as $page ) {
-			if ( ! is_array( $page ) ) {
+			if ( ! is_array( $page ) || ! empty( $page['skip_materialization'] ) ) {
 				continue;
 			}
 			$markup        = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' );
