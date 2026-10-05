@@ -370,6 +370,14 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		if ( array_key_exists( $relative, $attachments ) ) {
 			return $attachments[ $relative ];
 		}
+		// An image service can serve one picture at several sizes, each under its
+		// own path. Different sizes are different bytes, so the content hash alone
+		// would keep one attachment per size. Use the largest captured size.
+		$source = self::largest_rendition( $theme_dir, $relative );
+		if ( $source !== $relative ) {
+			$attachments[ $relative ] = self::ensure_attachment( $theme_dir, $source, $alt, $state, $attachments, $by_hash, $error );
+			return $attachments[ $relative ];
+		}
 		$file = $theme_dir . '/' . $relative;
 		$hash = is_readable( $file ) ? (string) hash_file( 'sha256', $file ) : '';
 		if ( '' !== $hash && isset( $by_hash[ $hash ] ) ) {
@@ -385,6 +393,42 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			$by_hash[ $hash ] = $attachments[ $relative ];
 		}
 		return $attachments[ $relative ];
+	}
+
+	/**
+	 * The largest captured size of an image served by a path-based image service.
+	 *
+	 * A transformed URL looks like `<image>/v1/fill/w_48,h_48,.../<name>`. Other
+	 * sizes of the same image sit next to it under the same `<image>` path. The
+	 * untransformed original wins when it was captured as a file. Any other path
+	 * is returned unchanged.
+	 */
+	private static function largest_rendition( string $theme_dir, string $relative ): string {
+		if ( ! preg_match( '#^(.+?)/v1/(?:fill|fit|crop)/[^/]+/[^/]+$#i', $relative, $match ) ) {
+			return $relative;
+		}
+		$family = $match[1];
+		$best = $relative;
+		if ( is_file( $theme_dir . '/' . $family ) && in_array( strtolower( pathinfo( $family, PATHINFO_EXTENSION ) ), self::RASTER_EXTENSIONS, true ) ) {
+			$best = $family;
+		} else {
+			$best_area = -1;
+			$siblings  = glob( $theme_dir . '/' . $family . '/v1/*/*/*', GLOB_NOSORT );
+			sort( $siblings );
+			foreach ( $siblings as $sibling ) {
+				$sibling_relative = substr( $sibling, strlen( $theme_dir ) + 1 );
+				if ( ! is_file( $sibling ) || ! in_array( strtolower( pathinfo( $sibling, PATHINFO_EXTENSION ) ), self::RASTER_EXTENSIONS, true ) ) {
+					continue;
+				}
+				$size = @getimagesize( $sibling ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Unreadable images rank by file size below.
+				$area = is_array( $size ) ? (int) $size[0] * (int) $size[1] : (int) filesize( $sibling );
+				if ( $area > $best_area ) {
+					$best      = $sibling_relative;
+					$best_area = $area;
+				}
+			}
+		}
+		return $best;
 	}
 
 	/** Create (or reuse) the attachment for one theme-relative image file. */
