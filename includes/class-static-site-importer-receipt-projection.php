@@ -111,7 +111,7 @@ class Static_Site_Importer_Receipt_Projection {
 				max( 0, (int) $args['captured_interaction_state_count'] )
 			);
 		}
-		$report                            = Static_Site_Importer_Import_Report::from_array(
+		$report                    = Static_Site_Importer_Import_Report::from_array(
 			array(
 				'schema'                           => Static_Site_Importer_Import_Report::SCHEMA,
 				'import_run_id'                    => $import_run_id,
@@ -177,7 +177,7 @@ class Static_Site_Importer_Receipt_Projection {
 				),
 			)
 		);
-		$report['source_artifact']         = array( 'hash' => (string) ( $args['artifact_hash'] ?? $plan['source']['source_hash'] ) );
+		$report['source_artifact'] = array( 'hash' => (string) ( $args['artifact_hash'] ?? $plan['source']['source_hash'] ) );
 		if ( is_array( $args['theme_screenshot_evidence'] ?? null ) ) {
 			$report->set_section( 'theme_preview', Static_Site_Importer_Theme_Screenshot::bounded_evidence( $args['theme_screenshot_evidence'] ) );
 		}
