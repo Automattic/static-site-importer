@@ -1076,21 +1076,31 @@ function static_site_importer_rest_archive_limits(): array {
 /**
  * Return hard-bounded limits for server-owned staged ZIP archives.
  *
+ * The byte limits stop at the compiler contract. Blocks Engine's
+ * ArtifactNormalizer caps a compile at MAX_TOTAL_BYTES (320 MiB) and truncates
+ * past it, reporting the loss in `truncation_impact` -- which nothing here
+ * reads. Accepting an archive the compiler cannot finish would turn a loud
+ * intake refusal into a quiet, incomplete import, so these do not go above
+ * Static_Site_Importer_Compiler_Limits::HARD_CAPS['max_total_bytes'].
+ *
+ * Raising them further means raising that cap first, and teaching this library
+ * to treat a truncated compile as a failure.
+ *
  * @return array<string,int>
  */
 function static_site_importer_staged_archive_limits(): array {
 	$hard_limits = array(
-		'max_archive_bytes'            => 262144000,
+		'max_archive_bytes'            => 335544320,
 		'max_entries'                  => 10000,
 		'max_entry_uncompressed_bytes' => 67108864,
-		'max_total_uncompressed_bytes' => 268435456,
+		'max_total_uncompressed_bytes' => 335544320,
 		'max_compression_ratio'        => 200,
 	);
 	$defaults    = array(
-		'max_archive_bytes'            => 209715200,
+		'max_archive_bytes'            => 335544320,
 		'max_entries'                  => 5000,
 		'max_entry_uncompressed_bytes' => 52428800,
-		'max_total_uncompressed_bytes' => 262144000,
+		'max_total_uncompressed_bytes' => 335544320,
 		'max_compression_ratio'        => 100,
 	);
 	$limits      = apply_filters( 'static_site_importer_staged_archive_limits', $defaults );
