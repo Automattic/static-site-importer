@@ -8,6 +8,9 @@ const root = resolve( dirname( fileURLToPath( import.meta.url ) ), '../..' );
 const engineRoot = resolve( process.env.BLOCKS_ENGINE_PHP_TRANSFORMER_ROOT ?? join( root, '../blocks-engine-2468/php-transformer' ) );
 const cli = process.env.WP_CODEBOX_CLI ?? '/home/chubes/.local/bin/wp-codebox';
 const evidenceRoot = resolve( process.env.SSI_TAXONOMY_EVIDENCE ?? join( root, 'artifacts/taxonomy-archives' ) );
+if ( ! statSync( join( engineRoot, 'src/WordPressSitePlan/TaxonomyProjection.php' ), { throwIfNoEntry: false } )?.isFile() ) {
+	throw new Error( 'Set BLOCKS_ENGINE_PHP_TRANSFORMER_ROOT to the paired producer candidate source checkout.' );
+}
 mkdirSync( evidenceRoot, { recursive: true } );
 const sessionDir = mkdtempSync( join( tmpdir(), 'ssi-taxonomy-wordpress-' ) );
 const workloadFile = join( sessionDir, 'workload.json' );
