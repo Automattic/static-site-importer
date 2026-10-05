@@ -189,6 +189,9 @@ $assert( 1 === count( $unsafe_layout_diagnostics ) && 50 === ( $unsafe_layout_di
 $safe_topology_plan = $unsafe_layout_plan;
 $safe_topology_plan['assets'][0]['content'] = '.fixed-height{height:auto !important}';
 $assert( array() === Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $safe_topology_plan ), 'topology-warning-without-generated-fixed-height-remains-reportable-not-fatal' );
+$min_height_plan = $unsafe_layout_plan;
+$min_height_plan['assets'][0]['content'] = '.fixed-height{min-height:640px !important}';
+$assert( array() === Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $min_height_plan ), 'min-height-floor-on-topology-changed-css-container-is-not-unsafe-layout-evidence' );
 $page_scope_coincidence_plan = $unsafe_layout_plan;
 $page_scope_coincidence_plan['pages'][0]['resolved_block_markup'] = '<div class="topology-target blocks-engine-css-owned-layout"></div><div class="fixed-height blocks-engine-css-owned-layout"></div>';
 $assert( array() === Static_Site_Importer_Diagnostic_Projection::unsafe_layout_constraint_diagnostics( $page_scope_coincidence_plan ), 'fixed-height-on-different-css-container-is-not-unsafe-layout-evidence' );

@@ -559,7 +559,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			if ( ! is_array( $asset ) || 'engine-support' !== ( $asset['source'] ?? '' ) || ! is_string( $asset['content'] ?? null ) ) {
 				continue;
 			}
-			if ( preg_match_all( '/\.([A-Za-z0-9_-]+)\{[^}]*\bheight\s*:\s*([1-9][0-9]*)px\s*!important/i', $asset['content'], $matches, PREG_SET_ORDER ) ) {
+			if ( preg_match_all( '/\.([A-Za-z0-9_-]+)\{[^}]*(?<![\w-])height\s*:\s*([1-9][0-9]*)px\s*!important/i', $asset['content'], $matches, PREG_SET_ORDER ) ) {
 				foreach ( $matches as $match ) {
 					$fixed_heights[ $match[1] ] = (int) $match[2];
 				}
