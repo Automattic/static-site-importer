@@ -305,7 +305,7 @@ final class Static_Site_Importer_Companion_Inventory {
 	 * @return string
 	 */
 	private static function header_value( string $value ): string {
-		$value = str_replace( array( "*/", "\r", "\n", "\0" ), array( '* /', ' ', ' ', ' ' ), $value );
+		$value = str_replace( array( '*/', "\r", "\n", "\0" ), array( '* /', ' ', ' ', ' ' ), $value );
 
 		return (string) preg_replace( '/\s+/', ' ', trim( $value ) );
 	}

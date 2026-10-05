@@ -11,6 +11,7 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI ) {
 
 $phase = (string) ( $args[0] ?? '' );
 $json  = static function ( array $value ): void {
+	// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- WP-CLI output is machine-readable JSON acceptance evidence.
 	echo (string) wp_json_encode( $value, JSON_UNESCAPED_SLASHES ) . "\n";
 };
 $fail = static function ( string $message ): never {
@@ -18,7 +19,7 @@ $fail = static function ( string $message ): never {
 };
 
 if ( 'export' === $phase ) {
-	$pages = get_posts(
+	$published_pages = get_posts(
 		array(
 			'post_type'   => 'page',
 			'post_status' => 'publish',
@@ -26,9 +27,9 @@ if ( 'export' === $phase ) {
 		)
 	);
 	$source_page = null;
-	foreach ( $pages as $page ) {
-		if ( str_contains( (string) $page->post_content, 'https://example.test/updated-map' ) ) {
-			$source_page = $page;
+	foreach ( $published_pages as $candidate_page ) {
+		if ( str_contains( (string) $candidate_page->post_content, 'https://example.test/updated-map' ) ) {
+			$source_page = $candidate_page;
 			break;
 		}
 	}
@@ -45,9 +46,9 @@ if ( 'export' === $phase ) {
 	if ( empty( $result['success'] ) || 'blocks-engine/php-transformer/site-artifact/v1' !== ( $artifact['schema'] ?? '' ) || empty( $artifact['files'] ) ) {
 		$fail( 'Canonical theme exporter did not return a website artifact.' );
 	}
-	$path = '/work/output/export-envelope.json';
-	$raw  = wp_json_encode( $result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
-	if ( ! is_string( $raw ) || false === file_put_contents( $path, $raw . "\n" ) ) {
+	$export_envelope_path = '/work/output/export-envelope.json';
+	$raw                  = wp_json_encode( $result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+	if ( ! is_string( $raw ) || false === file_put_contents( $export_envelope_path, $raw . "\n" ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Writes a retained artifact in the disposable WP-CLI acceptance container.
 		$fail( 'Could not retain canonical website artifact export.' );
 	}
 	$files = array();
@@ -61,7 +62,7 @@ if ( 'export' === $phase ) {
 		array(
 			'status'         => 'exported',
 			'artifact_id'    => (string) ( $artifact['id'] ?? '' ),
-			'artifact_schema'=> (string) $artifact['schema'],
+			'artifact_schema' => (string) $artifact['schema'],
 			'entrypoint'     => (string) ( $artifact['entrypoint'] ?? '' ),
 			'provenance'     => $artifact['provenance'] ?? array(),
 			'files'          => $files,
@@ -105,11 +106,14 @@ foreach ( is_array( $config['block_directories'] ?? null ) ? $config['block_dire
 	foreach ( array_unique( $references ) as $relative ) {
 		$exists                    = is_file( $plugin_root . '/' . $relative );
 		$asset_paths_match_readme = $asset_paths_match_readme && $exists && str_contains( $readme, $relative );
-		$assets[]                  = array( 'path' => $relative, 'exists' => $exists );
+		$assets[]                  = array(
+			'path'   => $relative,
+			'exists' => $exists,
+		);
 	}
 }
 
-$pages = get_posts(
+$published_pages = get_posts(
 	array(
 		'post_type'   => 'page',
 		'post_status' => 'publish',
@@ -117,16 +121,17 @@ $pages = get_posts(
 	)
 );
 $entry = null;
-foreach ( $pages as $page ) {
-	if ( str_contains( (string) $page->post_content, 'https://example.test/updated-map' ) ) {
-		$entry = $page;
+foreach ( $published_pages as $candidate_page ) {
+	if ( str_contains( (string) $candidate_page->post_content, 'https://example.test/updated-map' ) ) {
+		$entry = $candidate_page;
 		break;
 	}
 }
 $route_target = null;
 if ( null !== $entry ) {
 	$redirect_source = '';
-	foreach ( glob( $plugin_root . '/includes/source-route-redirect.php' ) ?: array() as $source_file ) {
+	$source_files = glob( $plugin_root . '/includes/source-route-redirect.php' );
+	foreach ( is_array( $source_files ) ? $source_files : array() as $source_file ) {
 		$source = (string) file_get_contents( $source_file );
 		if ( 1 === preg_match( '/final class ([A-Za-z_][A-Za-z0-9_]*)/', $source, $match ) ) {
 			$redirect_source = $match[1];
@@ -197,6 +202,21 @@ $result = array(
 );
 
 $json( $result );
-if ( ! $result['companion_active'] || $result['importer_active'] !== ( 'verify-reimport' === $phase ) || ! $result['generated_readme_present'] || ! $result['plugin_identity_truth'] || ! $result['readme_inventory_truth'] || ! $result['readme_snapshot_truth'] || ! $result['provenance_truth'] || empty( $registered ) || empty( $assets ) || false === $asset_paths_match_readme || null === $route_target || null === $entry || 'index.html' !== $result['route_source_path'] || false === $result['source_provenance_truth'] ) {
+$importer_state_invalid = ( 'verify-reimport' === $phase && ! $result['importer_active'] ) || ( 'verify-removed' === $phase && $result['importer_active'] );
+$verification_failed    = $importer_state_invalid
+	|| ! $result['companion_active']
+	|| ! $result['generated_readme_present']
+	|| ! $result['plugin_identity_truth']
+	|| ! $result['readme_inventory_truth']
+	|| ! $result['readme_snapshot_truth']
+	|| ! $result['provenance_truth']
+	|| empty( $registered )
+	|| empty( $assets )
+	|| false === $asset_paths_match_readme
+	|| null === $route_target
+	|| null === $entry
+	|| 'index.html' !== $result['route_source_path']
+	|| false === $result['source_provenance_truth'];
+if ( $verification_failed ) {
 	$fail( 'Reimported companion inventory, provenance, route, or lifecycle proof failed.' );
 }
