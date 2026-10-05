@@ -48,7 +48,7 @@ $assert( 5000 === $defaults['max_files'], 'default max_files is the 5,000-file c
 $assert( 12 === Static_Site_Importer_Compiler_Limits::resolve( array( 'max_files' => 12 ) )['max_files'], 'a tighter intake bound applies' );
 $assert( 5000 === Static_Site_Importer_Compiler_Limits::resolve( array( 'max_files' => 90000 ) )['max_files'], 'a bound never widens the hard cap' );
 $staged = static_site_importer_staged_archive_compiler_limits();
-$assert( 5000 === $staged['max_files'] && 10485760 === $staged['max_file_bytes'] && 262144000 === $staged['max_total_bytes'], 'staged archives clamp through the same owner' );
+$assert( 5000 === $staged['max_files'] && 10485760 === $staged['max_file_bytes'] && 329252864 === $staged['max_total_bytes'], 'staged archives clamp through the same owner' );
 
 // The canonical service declares limits for every non-Figma source type.
 $service = (string) file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-canonical-import-service.php' );
