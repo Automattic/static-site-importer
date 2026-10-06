@@ -456,8 +456,10 @@ $companion_owned_runtime = ( new ArtifactCompiler() )->compile(
 	)
 )->toArray();
 $companion_owned_payload = $companion_owned_runtime['source_reports']['companion_plugin_payload'] ?? array();
-$companion_descriptor    = Static_Site_Importer_Companion_Plugin::scaffold( $companion_owned_payload );
-$assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $companion_owned_payload ) && 1 === count( $companion_owned_payload['preserved_js'] ?? array() ) && is_array( $companion_descriptor ) && in_array( 'window.__companionOnly=true;', $companion_descriptor['files'] ?? array(), true ), 'released producer keeps standalone runtime exclusively in the generated companion payload' );
+$standalone_plan         = $companion_owned_runtime['source_reports']['wordpress_site_plan'];
+$standalone_scripts      = $standalone_plan['pages'][0]['document_metadata']['scripts'] ?? array();
+$standalone_assets       = array_values( array_filter( $standalone_plan['assets'] ?? array(), static fn( array $asset ): bool => 'script' === ( $asset['role'] ?? '' ) ) );
+$assert( array() === $companion_owned_payload && 1 === count( $standalone_scripts ) && 1 === count( $standalone_assets ) && 'window.__companionOnly=true;' === ( $standalone_assets[0]['content'] ?? '' ) && '{{wordpress-site-plan:asset:' . $standalone_assets[0]['token'] . '}}' === ( $standalone_scripts[0]['asset_reference'] ?? '' ), 'released producer preserves standalone script bytes with exactly one generated-theme owner and no duplicate companion enqueue' );
 
 $same_content_cross_route = ( new ArtifactCompiler() )->compile(
 	array(
@@ -4087,5 +4089,166 @@ $assert( 'completed' === $classic_identity_receipt['status'] && str_starts_with(
 $classic_named_compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $classic_identity_artifact, array( 'slug' => 'identity-classic-named', 'name' => 'Whitfield Atelier', 'theme_materialization' => 'classic' ) );
 $classic_named_receipt  = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $classic_named_compiled['plan'], array( 'slug' => 'identity-classic-named', 'name' => 'Whitfield Atelier', 'theme_materialization' => 'classic', 'classic_theme_projection' => $classic_named_compiled['args']['classic_theme_projection'] ) );
 $assert( 'completed' === $classic_named_receipt['status'] && str_starts_with( (string) file_get_contents( $GLOBALS['ssi_plan_root'] . '/identity-classic-named/style.css' ), "/*\nTheme Name: Whitfield Atelier\n" ), 'classic scaffold keeps an explicit identity name', (string) file_get_contents( $GLOBALS['ssi_plan_root'] . '/identity-classic-named/style.css' ) );
+// Preview omission is diagnosable through one bounded evidence vocabulary: a
+// closed status set projected into the import report, never a silent null.
+$bounded_statuses   = array(
+	Static_Site_Importer_Theme_Screenshot::STATUS_ABSENT,
+	Static_Site_Importer_Theme_Screenshot::STATUS_INVALID,
+	Static_Site_Importer_Theme_Screenshot::STATUS_UNAVAILABLE,
+	Static_Site_Importer_Theme_Screenshot::STATUS_MATERIALIZED,
+);
+$evidence_assert    = static function ( array $evidence, string $status, string $label ) use ( $assert, $bounded_statuses ): void {
+	$assert(
+		'static-site-importer/theme-preview-evidence/v1' === ( $evidence['schema'] ?? '' )
+		&& in_array( $status, $bounded_statuses, true )
+		&& $status === ( $evidence['status'] ?? '' )
+		&& '' !== (string) ( $evidence['source_path'] ?? '' ),
+		$label . ' carries the bounded evidence record (' . $status . ')',
+		wp_json_encode( $evidence )
+	);
+};
+$inline_evidence    = Static_Site_Importer_Theme_Screenshot::evidence_from_artifact( $preview_artifact );
+$evidence_assert( $inline_evidence, 'materialized', 'inline content transport' );
+$assert(
+	'content' === $inline_evidence['transport'] && 'website/site-preview.png' === $inline_evidence['source_path']
+	&& strlen( $preview_png ) === $inline_evidence['bytes'] && hash( 'sha256', $preview_png ) === $inline_evidence['sha256'],
+	'materialized evidence records the resolved preview bytes and digest'
+);
+$absent_evidence    = Static_Site_Importer_Theme_Screenshot::evidence_from_artifact( $missing_preview );
+$evidence_assert( $absent_evidence, 'absent', 'legacy artifact' );
+$invalid_evidence   = Static_Site_Importer_Theme_Screenshot::evidence_from_artifact( $invalid_preview );
+$evidence_assert( $invalid_evidence, 'invalid', 'non-PNG preview bytes' );
+$assert(
+	'content' === $invalid_evidence['transport'] && hash( 'sha256', 'not a PNG' ) === $invalid_evidence['sha256'],
+	'invalid evidence digests the rejected preview bytes for lineage comparison'
+);
+$orphan_reference   = array(
+	'entrypoint' => 'website/index.html',
+	'files'      => array(
+		array( 'path' => 'website/index.html', 'content' => '<!doctype html><title>Preview</title><main><h1>Preview homepage</h1></main>' ),
+		array(
+			'path'              => 'website/site-preview.png',
+			'payload_reference' => array(
+				'schema' => 'blocks-engine/payload-reference/v1',
+				'id'     => 'zip-entry:site-preview.png',
+				'bytes'  => strlen( $preview_png ),
+				'sha256' => hash( 'sha256', $preview_png ),
+			),
+		),
+	),
+);
+$unavailable_evidence = Static_Site_Importer_Theme_Screenshot::evidence_from_artifact( $orphan_reference );
+$evidence_assert( $unavailable_evidence, 'unavailable', 'reference transport without a reader' );
+$assert( 'payload_reference' === $unavailable_evidence['transport'], 'unavailable evidence names the declared transport' );
+
+// A staged ZIP-style payload reference resolves through the existing reader at
+// the compile boundary, without adding a second archive-reading path.
+$reference_reader   = new class( $preview_png ) implements Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader {
+	public function __construct( private string $bytes ) {}
+	public function read( array $reference ): string {
+		if ( hash( 'sha256', $this->bytes ) !== ( $reference['sha256'] ?? '' ) ) {
+			throw new RuntimeException( 'The declared payload reference changed.' );
+		}
+		return $this->bytes;
+	}
+};
+$reference_evidence = Static_Site_Importer_Theme_Screenshot::evidence_from_artifact( $orphan_reference, $reference_reader );
+$evidence_assert( $reference_evidence, 'materialized', 'payload-reference transport with a reader' );
+$assert( hash( 'sha256', $preview_png ) === $reference_evidence['sha256'], 'reference-backed discovery resolves the exact staged bytes' );
+$reference_compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact(
+	$orphan_reference,
+	array(
+		'slug'                 => 'preview-reference',
+		'theme_materialization' => 'block',
+		'_static_site_importer_payload_reader' => $reference_reader,
+	)
+);
+$assert(
+	! is_wp_error( $reference_compiled ) && isset( $reference_compiled['args']['theme_screenshot'] ),
+	'compile discovers a reference-backed preview through the existing payload reader' . ( is_wp_error( $reference_compiled ) ? ' [' . $reference_compiled->get_error_code() . ' ' . $reference_compiled->get_error_message() . ']' : ( isset( $reference_compiled['args']['theme_screenshot'] ) ? '' : ' [evidence=' . wp_json_encode( $reference_compiled['args']['theme_screenshot_evidence'] ?? null ) . ']' ) )
+);
+if ( ! is_wp_error( $reference_compiled ) ) {
+	$reference_write_evidence = $reference_compiled['args']['theme_screenshot_evidence'];
+	$evidence_assert( $reference_write_evidence, 'materialized', 'compile-level evidence' );
+	$assert( 'payload_reference' === $reference_write_evidence['transport'], 'compile-level evidence records the payload-reference transport' );
+	$reference_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $reference_compiled['plan'], $reference_compiled['args'] );
+	$assert(
+		'completed' === $reference_receipt['status'] && file_get_contents( $GLOBALS['ssi_plan_root'] . '/preview-reference/screenshot.png' ) === $preview_png,
+		'a staged-ZIP-equivalent preview materializes byte-identical PNG bytes'
+	);
+	$reference_report = Static_Site_Importer_Receipt_Projection::compose(
+		$reference_receipt,
+		$reference_compiled['args'],
+		array(),
+		array(),
+		array(),
+		'00000000-0000-4000-8000-000000000000',
+		array(),
+		array()
+	);
+	$reference_section = $reference_report['report']->section( 'theme_preview' );
+	$evidence_assert( $reference_section, 'materialized', 'import-report projection' );
+	$reference_diagnostics = array_column( $reference_report['report']->section( 'diagnostics' ), 'code' );
+	$assert( ! in_array( 'static_site_importer_theme_preview_materialized', $reference_diagnostics, true ), 'materialized previews raise no anomaly diagnostic' );
+}
+$unavailable_compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact(
+	$orphan_reference,
+	array(
+		'slug'                  => 'preview-unavailable',
+		'theme_materialization' => 'block',
+		'_static_site_importer_payload_reader' => new class() implements Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader {
+			public function read( array $reference ): string {
+				throw new RuntimeException( 'The staged payload is unavailable.' );
+			}
+		},
+	)
+);
+$assert( ! is_wp_error( $unavailable_compiled ), 'an unreadable optional preview does not fail the import' );
+if ( ! is_wp_error( $unavailable_compiled ) ) {
+	$evidence_assert( $unavailable_compiled['args']['theme_screenshot_evidence'], 'unavailable', 'compile without a payload reader' );
+	$assert( ! isset( $unavailable_compiled['args']['theme_screenshot'] ), 'unavailable previews attach no theme write payload' );
+	$unavailable_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $unavailable_compiled['plan'], $unavailable_compiled['args'] );
+	$assert( 'completed' === $unavailable_receipt['status'] && ! file_exists( $GLOBALS['ssi_plan_root'] . '/preview-unavailable/screenshot.png' ), 'unavailable previews leave legacy imports with no partial thumbnail [' . $unavailable_receipt['status'] . ' ' . wp_json_encode( array_slice( $unavailable_receipt['errors'] ?? array(), 0, 2 ) ) . ']' );
+	$unavailable_report = Static_Site_Importer_Receipt_Projection::compose(
+		$unavailable_receipt,
+		$unavailable_compiled['args'],
+		array(),
+		array(),
+		array(),
+		'00000000-0000-4000-8000-000000000000',
+		array(),
+		array()
+	);
+	$unavailable_section = $unavailable_report['report']->section( 'theme_preview' );
+	$evidence_assert( $unavailable_section, 'unavailable', 'import-report projection' );
+	$unavailable_codes = array_column( $unavailable_report['report']->section( 'diagnostics' ), 'code' );
+	$assert( in_array( 'static_site_importer_theme_preview_unavailable', $unavailable_codes, true ), 'unavailable previews report one bounded diagnostic instead of silent omission' );
+}
+$invalid_compiled    = Static_Site_Importer_Compilation_Preparation::compile_website_artifact(
+	$invalid_preview,
+	array(
+		'slug'                  => 'preview-invalid',
+		'theme_materialization' => 'block',
+	)
+);
+$assert( ! is_wp_error( $invalid_compiled ) && Static_Site_Importer_Theme_Screenshot::STATUS_INVALID === ( $invalid_compiled['args']['theme_screenshot_evidence']['status'] ?? '' ), 'non-PNG preview bytes stay invalid at the compile boundary' );
+if ( ! is_wp_error( $invalid_compiled ) ) {
+	$invalid_report = Static_Site_Importer_Receipt_Projection::compose(
+		Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $invalid_compiled['plan'], $invalid_compiled['args'] ),
+		$invalid_compiled['args'],
+		array(),
+		array(),
+		array(),
+		'00000000-0000-4000-8000-000000000000',
+		array(),
+		array()
+	);
+	$invalid_codes  = array_column( $invalid_report['report']->section( 'diagnostics' ), 'code' );
+	$assert( in_array( 'static_site_importer_theme_preview_invalid', $invalid_codes, true ), 'invalid previews report one bounded diagnostic instead of silent omission' );
+	$assert(
+		Static_Site_Importer_Theme_Screenshot::STATUS_INVALID === ( $invalid_report['report']->section( 'theme_preview' )['status'] ?? '' ),
+		'the import report keeps the invalid preview status for lineage diagnosis'
+	);
+}
 
 echo "WordPress site plan materializer smoke passed.\n";

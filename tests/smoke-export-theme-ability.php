@@ -158,6 +158,22 @@ if ( ! function_exists( 'get_posts' ) ) {
 				'post_title'   => 'About Page',
 				'post_content' => '<!-- wp:paragraph --><p>Edited About page</p><!-- /wp:paragraph -->',
 			),
+			(object) array(
+				'ID'           => 46,
+				'post_type'    => 'page',
+				'post_name'    => 'projects',
+				'post_title'   => 'Projects Category',
+				'post_path'    => 'writing/category/projects',
+				'post_content' => '<!-- wp:paragraph --><p>Nested projects archive</p><!-- /wp:paragraph -->',
+			),
+			(object) array(
+				'ID'           => 47,
+				'post_type'    => 'page',
+				'post_name'    => 'projects',
+				'post_title'   => 'Top-Level Projects',
+				'post_path'    => 'projects',
+				'post_content' => '<!-- wp:paragraph --><p>Top-level projects page</p><!-- /wp:paragraph -->',
+			),
 		);
 		// The exporter must enumerate imported posts as well as pages; a query
 		// that includes 'post' returns the dated blog entries too. The colliding
@@ -185,6 +201,12 @@ if ( ! function_exists( 'get_posts' ) ) {
 			$docs = $GLOBALS['ssi_export_posts_first'] ? array_merge( $posts, $docs ) : array_merge( $docs, $posts );
 		}
 		return $docs;
+	}
+}
+
+if ( ! function_exists( 'get_page_uri' ) ) {
+	function get_page_uri( object $page ): string {
+		return (string) ( $page->post_path ?? $page->post_name ?? '' );
 	}
 }
 
@@ -282,7 +304,7 @@ $assert( 'website' === ( $artifact['artifact_type'] ?? '' ), 'artifact-type' );
 $assert( 1 === ( $artifact['version'] ?? 0 ), 'artifact-version' );
 $assert( 'website' === ( $artifact['root'] ?? '' ), 'artifact-root' );
 $assert( 'website/index.html' === ( $artifact['entrypoint'] ?? '' ), 'entrypoint' );
-$assert( 9 === count( $artifact['files'] ?? array() ), 'exports-entrypoint-posts-assets-and-metadata' );
+$assert( 11 === count( $artifact['files'] ?? array() ), 'exports-entrypoint-posts-assets-and-metadata' );
 $assert( 'website/style.css' === ( $artifact['files'][0]['path'] ?? '' ), 'stylesheet-exported' );
 $assert( 'website/index.html' === ( $artifact['files'][1]['path'] ?? '' ), 'entrypoint-exported' );
 $assert( 'text/html' === ( $artifact['files'][1]['mime_type'] ?? '' ), 'entrypoint-mime' );
@@ -304,8 +326,10 @@ $assert( 'source-document' === ( $files_by_path['website/source-documents.json']
 $assert( isset( $files_by_path['website/hello/index.html'] ), 'imported-post-survives-export' );
 $assert( str_contains( (string) ( $files_by_path['website/hello/index.html']['content'] ?? '' ), 'Edited Post content' ), 'imported-post-content-exported' );
 $assert( isset( $files_by_path['website/about/index.html'] ), 'page-keeps-clean-path' );
+$assert( isset( $files_by_path['website/writing/category/projects/index.html'] ), 'nested-page-path-preserves-its-ancestor-route' );
+$assert( isset( $files_by_path['website/projects/index.html'] ), 'same-slug-top-level-page-keeps-its-clean-route' );
 $assert( isset( $files_by_path['website/post/about/index.html'] ), 'same-slug-post-namespaced-under-post' );
-$assert( 2 === ( $artifact['report']['page_count'] ?? 0 ), 'report-page-count-is-pages-only' );
+$assert( 4 === ( $artifact['report']['page_count'] ?? 0 ), 'report-page-count-is-pages-only' );
 $assert( 2 === ( $artifact['report']['post_count'] ?? 0 ), 'report-post-count-reported-separately' );
 $assert( 'completed' === ( $artifact['report']['status'] ?? '' ), 'report-completed' );
 $assert( 'passed' === ( $artifact['validation']['status'] ?? '' ), 'validation-passed' );
@@ -380,6 +404,7 @@ foreach ( ( $flipped['website_artifact']['files'] ?? array() ) as $file ) {
 	$flipped_files[ $file['path'] ?? '' ] = true;
 }
 $assert( isset( $flipped_files['website/about/index.html'] ), 'flipped-order-page-keeps-clean-path' );
+$assert( isset( $flipped_files['website/writing/category/projects/index.html'] ) && isset( $flipped_files['website/projects/index.html'] ), 'flipped-order-hierarchical-page-routes-stay-distinct' );
 $assert( isset( $flipped_files['website/post/about/index.html'] ), 'flipped-order-same-slug-post-namespaced' );
 $assert( isset( $flipped_files['website/hello/index.html'] ), 'flipped-order-noncolliding-post-exported' );
 $assert( count( $flipped_files ) === count( $files_by_path ), 'flipped-order-file-count-stable' );

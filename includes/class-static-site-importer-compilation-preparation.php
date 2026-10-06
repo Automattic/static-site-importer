@@ -67,6 +67,17 @@ final class Static_Site_Importer_Compilation_Preparation {
 		if ( ! class_exists( $compiler_class ) ) {
 			return new WP_Error( 'static_site_importer_missing_transformer', 'Blocks Engine php-transformer is required to import a website artifact.' );
 		}
+		$payload_reader                    = is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null;
+		$preview_evidence                  = Static_Site_Importer_Theme_Screenshot::evidence_from_artifact( $artifact, $payload_reader );
+		$args['theme_screenshot_evidence'] = Static_Site_Importer_Theme_Screenshot::bounded_evidence( $preview_evidence );
+		if ( Static_Site_Importer_Theme_Screenshot::STATUS_UNAVAILABLE === $preview_evidence['status'] ) {
+			$artifact['files'] = array_values(
+				array_filter(
+					is_array( $artifact['files'] ?? null ) ? $artifact['files'] : array(),
+					static fn( mixed $file ): bool => ! is_array( $file ) || (string) ( $file['path'] ?? '' ) !== $preview_evidence['source_path']
+				)
+			);
+		}
 		// site_title (blogname) intentionally stays restricted to an explicit arg
 		// or a real extracted document title; it never falls back to the host or
 		// generic constant the way the theme name/slug do.
@@ -138,9 +149,8 @@ final class Static_Site_Importer_Compilation_Preparation {
 				return new WP_Error( 'static_site_importer_invalid_transformer_result', $error->getMessage() );
 			}
 		}
-		$preview = Static_Site_Importer_Theme_Screenshot::from_artifact( $artifact );
-		if ( null !== $preview ) {
-			$args['theme_screenshot'] = $preview;
+		if ( null !== $preview_evidence['preview'] ) {
+			$args['theme_screenshot'] = $preview_evidence['preview'];
 		}
 		$args['compiler_diagnostics'] = Static_Site_Importer_Compiler_Diagnostic_Normalizer::normalize( is_array( $compiled['diagnostics'] ?? null ) ? $compiled['diagnostics'] : array() );
 		$source_reports               = is_array( $compiled['source_reports'] ?? null ) ? $compiled['source_reports'] : array();
