@@ -180,6 +180,17 @@ class Static_Site_Importer_Companion_Plugin {
 		if ( isset( $payload['form_visual_states'] ) && ( ! is_array( $payload['form_visual_states'] ) || ! array_is_list( $payload['form_visual_states'] ) || count( $payload['form_visual_states'] ) > 128 || array_filter( $payload['form_visual_states'], static fn( $state ): bool => ! Static_Site_Importer_Provider_Form_Runtime_V1::valid_visual_state( $state ) ) ) ) {
 			return new WP_Error( 'static_site_importer_companion_plugin_form_visual_states_invalid', 'Companion form visual states must be a list.' );
 		}
+		if ( array_key_exists( 'external_metrics', $payload ) ) {
+			$metrics = $payload['external_metrics'];
+			if ( ! is_array( $metrics ) || ! array_is_list( $metrics ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_external_metrics_invalid', 'Companion external metric configuration is invalid.' );
+			}
+			if ( ! empty( $metrics ) ) {
+				$metric_validation = class_exists( 'Static_Site_Importer_External_Metric_Runtime' ) ? Static_Site_Importer_External_Metric_Runtime::validate_manifest( array( 'external_metrics' => $metrics ) ) : array( 'errors' => array( array( 'message' => 'External metric validator is unavailable.' ) ) );
+				if ( ! empty( $metric_validation['errors'] ) ) {
+					return new WP_Error( 'static_site_importer_companion_plugin_external_metrics_invalid', 'Companion external metric configuration is invalid.', $metric_validation['errors'] ); }
+			}
+		}
 		$editor_scripts = self::validate_editor_scripts( $payload );
 		if ( is_wp_error( $editor_scripts ) ) {
 			return $editor_scripts;
@@ -223,7 +234,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$preserved          = self::preserved_js( $payload, $block_namespace );
 		$editor_scripts     = self::editor_scripts( $payload );
 		$form_visual_states = is_array( $payload['form_visual_states'] ?? null ) ? $payload['form_visual_states'] : array();
-		if ( empty( $blocks ) && empty( $preserved ) && empty( $editor_scripts ) && empty( $form_visual_states ) ) {
+		if ( empty( $blocks ) && empty( $preserved ) && empty( $editor_scripts ) && empty( $form_visual_states ) && empty( $payload['external_metrics'] ) ) {
 			return new WP_Error(
 				'static_site_importer_companion_plugin_content_missing',
 				'Companion-plugin payload must declare at least one block, preserved script, or editor script.'
@@ -270,8 +281,18 @@ class Static_Site_Importer_Companion_Plugin {
 		if ( ! is_string( $source_route_runtime ) || '' === $source_route_runtime ) {
 			return new WP_Error( 'static_site_importer_companion_plugin_source_route_runtime_missing', 'Source route redirect runtime projection file is unavailable.' );
 		}
+		$external_metric_runtime = file_get_contents( __DIR__ . '/class-static-site-importer-external-metric-runtime.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Generated companions own their provider runtime independently.
+		if ( ! is_string( $external_metric_runtime ) || '' === $external_metric_runtime ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_external_metric_runtime_missing', 'External metric runtime projection file is unavailable.' );
+		}
 
-		$inventory_source = array( $block_names, $preserved, $form_visual_states, hash( 'sha256', $provider_form_runtime ), hash( 'sha256', $internal_link_runtime ), hash( 'sha256', $source_route_runtime ) );
+		$external_metrics = is_array( $payload['external_metrics'] ?? null ) ? array_values( $payload['external_metrics'] ) : array();
+		if ( ! empty( $external_metrics ) ) {
+			$validated_metrics = Static_Site_Importer_External_Metric_Runtime::validate_manifest( array( 'external_metrics' => $external_metrics ) );
+			if ( ! empty( $validated_metrics['errors'] ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_external_metrics_invalid', 'Companion external metric configuration failed validation.', $validated_metrics['errors'] ); }
+		}
+		$inventory_source = array( $block_names, $preserved, $form_visual_states, $external_metrics, hash( 'sha256', $provider_form_runtime ), hash( 'sha256', $internal_link_runtime ), hash( 'sha256', $source_route_runtime ), hash( 'sha256', $external_metric_runtime ) );
 		if ( ! empty( $editor_scripts ) ) {
 			$inventory_source[] = $editor_scripts;
 		}
@@ -280,6 +301,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$runtime_class          = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Provider_Form_Runtime_V1';
 		$link_runtime_class     = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Internal_Link_Runtime';
 		$redirect_runtime_class = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Source_Route_Redirect';
+		$metric_runtime_class   = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_External_Metric_Runtime';
 		$main_file              = $plugin_slug . '/' . $plugin_slug . '.php';
 		$config                 = wp_json_encode(
 			array(
@@ -305,6 +327,7 @@ class Static_Site_Importer_Companion_Plugin {
 					$editor_scripts
 				),
 				'form_visual_states' => $form_visual_states,
+				'external_metrics'   => $external_metrics,
 			),
 			JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES
 		);
@@ -312,10 +335,12 @@ class Static_Site_Importer_Companion_Plugin {
 			return new WP_Error( 'static_site_importer_companion_plugin_config_invalid', 'Companion configuration could not be encoded as JSON.' );
 		}
 		$files[ $plugin_slug . '/editor/imported-media-replace.js' ]      = self::imported_media_replace_script();
+		$files[ $plugin_slug . '/editor/external-metric-controls.js' ]    = self::external_metric_editor_script();
 		$files[ $plugin_slug . '/companion.json' ]                        = $config . "\n";
 		$files[ $plugin_slug . '/includes/provider-form-runtime-v1.php' ] = self::provider_form_runtime_file( $provider_form_runtime, $runtime_class );
 		$files[ $plugin_slug . '/includes/internal-link-runtime.php' ]    = self::internal_link_runtime_file( $internal_link_runtime, $link_runtime_class );
 		$files[ $plugin_slug . '/includes/source-route-redirect.php' ]    = self::source_route_redirect_file( $source_route_runtime, $redirect_runtime_class );
+		$files[ $plugin_slug . '/includes/external-metric-runtime.php' ]  = self::external_metric_runtime_file( $external_metric_runtime, $metric_runtime_class );
 		$artifact_provenance = self::artifact_provenance( $payload );
 		$inventory           = Static_Site_Importer_Companion_Inventory::compose(
 			array(
@@ -328,13 +353,14 @@ class Static_Site_Importer_Companion_Plugin {
 				'islands'            => $preserved,
 				'editor_scripts'     => $editor_scripts,
 				'form_visual_states' => $form_visual_states,
+				'external_metrics'   => $external_metrics,
 				'provenance'         => $artifact_provenance,
 				'handoff'            => is_array( $payload['owner_handoff_evidence'] ?? null ) ? $payload['owner_handoff_evidence'] : null,
 			)
 		);
 		$files               = array_merge(
 			array(
-				$main_file                  => self::main_plugin_file( $site_name, $inventory, $plugin_slug, $inventory_hash, $runtime_class, $link_runtime_class, $redirect_runtime_class, $artifact_provenance ),
+				$main_file                  => self::main_plugin_file( $site_name, $inventory, $plugin_slug, $inventory_hash, $runtime_class, $link_runtime_class, $redirect_runtime_class, $metric_runtime_class, $artifact_provenance ),
 				$plugin_slug . '/README.md' => Static_Site_Importer_Companion_Inventory::render_readme( $inventory ),
 			),
 			$files
@@ -455,6 +481,8 @@ class Static_Site_Importer_Companion_Plugin {
 				return true;
 			}
 		}
+		if ( ! empty( $payload['external_metrics'] ) ) {
+			return true; }
 
 		return false;
 	}
@@ -571,10 +599,12 @@ class Static_Site_Importer_Companion_Plugin {
 			if ( isset( $files[ $manifest_path ] ) || isset( $files[ $json_path ] ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_asset_conflict', 'Source assets cannot replace generated dependency manifests.' );
 			}
-			$files[ $json_path ]     = wp_json_encode( array(
-				'dependencies' => $dependencies,
-				'version'      => hash( 'sha256', (string) $assets[ $relative ] ),
-			) ) . "\n";
+			$files[ $json_path ]     = wp_json_encode(
+				array(
+					'dependencies' => $dependencies,
+					'version'      => hash( 'sha256', (string) $assets[ $relative ] ),
+				)
+			) . "\n";
 			$files[ $manifest_path ] = "<?php\nreturn json_decode( (string) file_get_contents( substr( __FILE__, 0, -4 ) . '.json' ), true, 512, JSON_THROW_ON_ERROR );\n";
 		}
 		$block_json         = $block['block_json'];
@@ -727,9 +757,9 @@ class Static_Site_Importer_Companion_Plugin {
 	/**
 	 * Render the main plugin PHP file.
 	 *
-	 * @param string $plugin_slug Plugin slug.
-	 * @param string                          $inventory_hash  Deterministic generated inventory hash.
-	 * @param array<string,mixed>             $artifact_provenance Producer artifact provenance, when carried.
+	 * @param string              $plugin_slug Plugin slug.
+	 * @param string              $inventory_hash  Deterministic generated inventory hash.
+	 * @param array<string,mixed> $artifact_provenance Producer artifact provenance, when carried.
 	 * @return string
 	 */
 	private static function main_plugin_file(
@@ -740,6 +770,7 @@ class Static_Site_Importer_Companion_Plugin {
 		string $runtime_class,
 		string $link_runtime_class,
 		string $redirect_runtime_class,
+		string $metric_runtime_class,
 		array $artifact_provenance = array()
 	): string {
 		$fn_prefix = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash;
@@ -786,10 +817,13 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "require_once __DIR__ . '/includes/provider-form-runtime-v1.php';";
 		$lines[] = "require_once __DIR__ . '/includes/internal-link-runtime.php';";
 		$lines[] = "require_once __DIR__ . '/includes/source-route-redirect.php';";
+		$lines[] = "require_once __DIR__ . '/includes/external-metric-runtime.php';";
 		$lines[] = $runtime_class . '::configure_visual_states( ' . $fn_prefix . "_config()['form_visual_states'] ?? array() );";
 		$lines[] = $runtime_class . '::register();';
 		$lines[] = $link_runtime_class . '::register();';
 		$lines[] = $redirect_runtime_class . '::register();';
+		$lines[] = $metric_runtime_class . '::configure( ' . $fn_prefix . "_config()['external_metrics'] ?? array() );";
+		$lines[] = $metric_runtime_class . '::register();';
 		$lines[] = '';
 		$lines[] = '/**';
 		$lines[] = ' * Register generated blocks from their metadata directories.';
@@ -888,6 +922,10 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "\t\twp_enqueue_script( \$handle );";
 		$lines[] = "\t}";
 		$lines[] = "\twp_enqueue_script( 'ssi-imported-media-replace', plugin_dir_url( __FILE__ ) . 'editor/imported-media-replace.js', array( 'wp-blocks', 'wp-block-editor', 'wp-element', 'wp-components', 'wp-hooks' ), '1', true );";
+		$lines[] = sprintf( "\tif ( ! empty( %s_config()['external_metrics'] ) ) {", $fn_prefix );
+		$lines[] = "\t\twp_enqueue_script( 'ssi-external-metric-controls', plugin_dir_url( __FILE__ ) . 'editor/external-metric-controls.js', array( 'wp-api-fetch', 'wp-block-editor', 'wp-element', 'wp-components', 'wp-hooks' ), '1', true );";
+		$lines[] = sprintf( "\t\tif ( function_exists( 'wp_add_inline_script' ) ) { wp_add_inline_script( 'ssi-external-metric-controls', 'window.ssiExternalMetricConfig = ' . wp_json_encode( %s_config()['external_metrics'] ), 'before' ); }", $fn_prefix );
+		$lines[] = "\t}";
 		$lines[] = '}';
 		$lines[] = sprintf( "add_action( 'enqueue_block_editor_assets', '%s_enqueue_editor_scripts' );", $fn_prefix );
 		$lines[] = '';
@@ -956,6 +994,93 @@ JS;
 	 */
 	private static function provider_form_runtime_file( string $source, string $runtime_class ): string {
 		return str_replace( 'Static_Site_Importer_Provider_Form_Runtime_V1', $runtime_class, $source );
+	}
+
+	private static function external_metric_runtime_file( string $source, string $runtime_class ): string {
+		return str_replace( 'Static_Site_Importer_External_Metric_Runtime', $runtime_class, $source );
+	}
+
+	/** Editor-side refresh and detach controls for native paragraph/heading bindings. */
+	private static function external_metric_editor_script(): string {
+		return <<<'JS'
+( function( wp ) {
+	if ( ! wp || ! wp.hooks || ! wp.element || ! wp.components || ! wp.element.useState ) { return; }
+	var el = wp.element.createElement;
+	wp.hooks.addFilter( 'editor.BlockEdit', 'ssi/external-metric-controls', function( BlockEdit ) {
+		return function( props ) {
+			var statePair = wp.element.useState( null );
+			var refreshState = statePair[0];
+			var setRefreshState = statePair[1];
+			var attrs = props && props.attributes ? props.attributes : {};
+			var binding = attrs.metadata && attrs.metadata.bindings && attrs.metadata.bindings.content;
+			if ( ! binding || binding.source !== 'ssi/external-metric' || ! binding.args || ! binding.args.metric_id ) { return el( BlockEdit, props ); }
+			var id = String( binding.args.metric_id );
+			var config = ( window.ssiExternalMetricConfig || [] ).filter( function( item ) { return item && item.id === id; } )[0] || {};
+			function textAsRichText( value ) {
+				var node = document.createElement( 'span' );
+				node.textContent = value;
+				return node.innerHTML;
+			}
+			function detach() {
+				var metadata = Object.assign( {}, attrs.metadata || {} );
+				var bindings = Object.assign( {}, metadata.bindings || {} );
+				delete bindings.content;
+				var hasRefreshedValue = refreshState && typeof refreshState.value === 'string';
+				var content = hasRefreshedValue ? textAsRichText( refreshState.value ) : ( typeof attrs.content === 'string' ? attrs.content : '' );
+				var nextAttributes = { content: content };
+				if ( Object.keys( bindings ).length ) {
+					metadata.bindings = bindings;
+					nextAttributes.metadata = metadata;
+				} else {
+					delete metadata.bindings;
+					nextAttributes.metadata = Object.keys( metadata ).length ? metadata : {};
+				}
+				props.setAttributes( nextAttributes );
+			}
+			function refresh() {
+				if ( ! wp.apiFetch ) { return; }
+				setRefreshState( { loading: true, status: 'loading', value: null, receipt: null, message: 'Refreshing the WordPress.org metric…' } );
+				return wp.apiFetch( { path: '/ssi/v1/external-metrics/' + encodeURIComponent( id ) + '/refresh', method: 'POST' } ).then( function( response ) {
+					var receipt = response && response.receipt ? response.receipt : {};
+					setRefreshState( {
+						loading: false,
+						status: receipt.status || response.status || 'unresolved',
+						value: typeof response.value === 'string' ? response.value : null,
+						receipt: receipt,
+						message: response.message || 'The metric refresh returned without freshness details.',
+					} );
+					return response;
+				} ).catch( function( error ) {
+					var data = error && error.data ? error.data : {};
+					var receipt = data.receipt || {};
+					setRefreshState( {
+						loading: false,
+						status: receipt.status || data.freshness || 'unresolved',
+						value: typeof data.value === 'string' ? data.value : null,
+						receipt: receipt,
+						message: data.message || ( error && error.message ) || 'No current or captured value is available.',
+					} );
+					return null;
+				} );
+			}
+			return el( wp.element.Fragment, null,
+				el( wp.blockEditor.InspectorControls, null,
+					el( wp.components.PanelBody, { title: 'External metric', initialOpen: false },
+						el( 'p', null, 'Source: WordPress.org · Metric: ' + id + ' · Slugs: ' + ( config.provider && config.provider.slugs ? config.provider.slugs.join( ', ' ) : 'configured source' ) ),
+						refreshState && refreshState.loading ? el( 'p', { role: 'status' }, refreshState.message ) : null,
+						refreshState && ! refreshState.loading ? el( 'p', { role: 'status' }, null !== refreshState.value ? 'Current value: ' + refreshState.value + ' · Freshness: ' + refreshState.status : 'Value unavailable · Freshness: ' + refreshState.status ) : null,
+						refreshState && ! refreshState.loading ? el( 'p', { className: 'description' }, refreshState.message ) : null,
+						refreshState && refreshState.receipt && refreshState.receipt.fetched_at ? el( 'p', { className: 'description' }, 'Fetched at: ' + refreshState.receipt.fetched_at ) : null,
+						el( wp.components.Button, { variant: 'secondary', onClick: refresh, disabled: !! ( refreshState && refreshState.loading ) }, 'Refresh value' ),
+						el( wp.components.Button, { variant: 'tertiary', isDestructive: true, onClick: detach }, 'Detach to static text' )
+					)
+				),
+				el( BlockEdit, props )
+			);
+		};
+	} );
+} )( window.wp );
+JS;
 	}
 
 	private static function internal_link_runtime_file( string $source, string $runtime_class ): string {

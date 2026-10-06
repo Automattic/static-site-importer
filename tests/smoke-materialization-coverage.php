@@ -118,7 +118,9 @@ $assert = static function ( bool $condition, string $message ): void {
 
 $coverage = Static_Site_Importer_Materialization_Coverage::declare_coverage();
 $assert( Static_Site_Importer_Materialization_Coverage::SCHEMA === $coverage['schema'], 'coverage carries its versioned schema' );
-$assert( array( 'events', 'form', 'shop' ) === array_keys( $coverage['capabilities'] ), 'coverage answers for every registered capability and invents none' );
+$assert( array( 'events', 'external_metrics', 'form', 'multilingual', 'shop' ) === array_keys( $coverage['capabilities'] ), 'coverage answers for every registered capability and invents none' );
+$multilingual = $coverage['capabilities']['multilingual'];
+$assert( 'translatepress-multilingual' === $multilingual['provider'] && 'provider_unavailable' === $multilingual['status'], 'multilingual coverage distinguishes its configured provider from an actually available runtime' );
 
 // The importer describes its own runtime. It must not borrow a capture
 // producer's vocabulary, because a destination that does stops accepting

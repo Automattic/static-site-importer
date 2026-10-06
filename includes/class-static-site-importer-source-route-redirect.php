@@ -1,6 +1,6 @@
 <?php
 /**
- * Redirects source-file routes to materialized WordPress permalinks.
+ * Resolves imported source routes and redirects source-file aliases.
  *
  * @package StaticSiteImporter
  */
@@ -10,11 +10,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Maps a materialized page's original static path onto a 301.
+ * Owns exact imported directory routes and static-file aliases.
  *
  * WordPress permalinks drop `.html` / `index.html`, so inbound links to the
  * source site 404 after import. The public source route is stored as post
- * meta at materialization; this runtime looks it up only on 404s.
+ * meta at materialization. Directory documents must resolve before a native
+ * taxonomy or pagination query can serve another document at the same URL.
  */
 final class Static_Site_Importer_Source_Route_Redirect {
 	public const META_KEY = '_static_site_importer_source_route';
@@ -27,6 +28,70 @@ final class Static_Site_Importer_Source_Route_Redirect {
 		// Run before redirect_canonical so extension-bearing source paths resolve
 		// to the imported permalink instead of being normalized by WordPress first.
 		add_action( 'template_redirect', array( self::class, 'redirect' ), 9 );
+		if ( function_exists( 'add_filter' ) ) {
+			add_filter( 'request', array( self::class, 'resolve_request' ) );
+			add_filter( 'page_link', array( self::class, 'filter_permalink' ), 20, 2 );
+			add_filter( 'post_link', array( self::class, 'filter_permalink' ), 20, 2 );
+			add_filter( 'post_type_link', array( self::class, 'filter_permalink' ), 20, 2 );
+		}
+	}
+
+	/** Resolve only a published, unambiguous imported index document. */
+	public static function resolve_request( array $query_vars ): array {
+		if ( ( function_exists( 'is_admin' ) && is_admin() ) || isset( $query_vars['rest_route'] ) || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) || ! in_array( strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) ), array( 'GET', 'HEAD' ), true ) ) {
+			return $query_vars;
+		}
+		$request = isset( $GLOBALS['wp']->request ) && is_string( $GLOBALS['wp']->request ) ? $GLOBALS['wp']->request : '';
+		$path    = self::request_path( '' !== $request ? $request : (string) ( $_SERVER['REQUEST_URI'] ?? '' ) );
+		if ( '' === $path ) {
+			return $query_vars;
+		}
+		$id = self::find_post_id( $path . '/index.html' );
+		if ( $id <= 0 || ! function_exists( 'get_post_type' ) ) {
+			return $query_vars;
+		}
+		$type = get_post_type( $id );
+		if ( ! is_string( $type ) || '' === $type ) {
+			return $query_vars;
+		}
+		// An owned document is singular. Keep its endpoint state; archive
+		// selectors from any native or custom taxonomy cannot constrain it.
+		// The request's original query string remains available to the document.
+		$query_vars                                       = array_intersect_key( $query_vars, array_flip( array( 'feed', 'embed', 'cpage', 'preview', 'preview_id', 'preview_nonce', 'withcomments', 'withoutcomments' ) ) );
+		$query_vars[ 'page' === $type ? 'page_id' : 'p' ] = $id;
+		if ( 'page' !== $type ) {
+			$query_vars['post_type'] = $type;
+		}
+		return $query_vars;
+	}
+
+	/** Canonical links use the same exact source route as request ownership. */
+	public static function filter_permalink( string $permalink, $post ): string {
+		$id = is_object( $post ) ? (int) ( $post->ID ?? 0 ) : (int) $post;
+		if ( ! function_exists( 'get_option' ) || ! get_option( 'permalink_structure' ) ) {
+			return $permalink;
+		}
+		$route = self::directory_route( $id );
+		return null !== $route ? home_url( user_trailingslashit( $route ) ) : $permalink;
+	}
+
+	/** Shared route identity for canonical links and portable document export. */
+	public static function directory_route( int $id ): ?string {
+		if ( $id <= 0 || ! function_exists( 'get_post_meta' ) || ! function_exists( 'get_post_status' ) || 'publish' !== get_post_status( $id ) ) {
+			return null;
+		}
+		$routes = array();
+		foreach ( (array) get_post_meta( $id, self::META_KEY, false ) as $source ) {
+			$source = self::public_source_route( (string) $source );
+			if ( str_ends_with( $source, '/index.html' ) ) {
+				$routes[] = substr( $source, 0, -strlen( '/index.html' ) );
+			}
+		}
+		$routes = array_values( array_unique( $routes ) );
+		if ( 1 !== count( $routes ) || self::find_post_id( $routes[0] . '/index.html' ) !== $id ) {
+			return null;
+		}
+		return $routes[0];
 	}
 
 	public static function redirect(): void {
