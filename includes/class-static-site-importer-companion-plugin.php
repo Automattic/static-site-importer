@@ -1004,20 +1004,30 @@ JS;
 	private static function external_metric_editor_script(): string {
 		return <<<'JS'
 ( function( wp ) {
-	if ( ! wp || ! wp.hooks || ! wp.element || ! wp.components ) { return; }
+	if ( ! wp || ! wp.hooks || ! wp.element || ! wp.components || ! wp.element.useState ) { return; }
 	var el = wp.element.createElement;
 	wp.hooks.addFilter( 'editor.BlockEdit', 'ssi/external-metric-controls', function( BlockEdit ) {
 		return function( props ) {
+			var statePair = wp.element.useState( null );
+			var refreshState = statePair[0];
+			var setRefreshState = statePair[1];
 			var attrs = props && props.attributes ? props.attributes : {};
 			var binding = attrs.metadata && attrs.metadata.bindings && attrs.metadata.bindings.content;
 			if ( ! binding || binding.source !== 'ssi/external-metric' || ! binding.args || ! binding.args.metric_id ) { return el( BlockEdit, props ); }
 			var id = String( binding.args.metric_id );
 			var config = ( window.ssiExternalMetricConfig || [] ).filter( function( item ) { return item && item.id === id; } )[0] || {};
+			function textAsRichText( value ) {
+				var node = document.createElement( 'span' );
+				node.textContent = value;
+				return node.innerHTML;
+			}
 			function detach() {
-				var metadata = Object.assign( {}, attrs.metadata );
+				var metadata = Object.assign( {}, attrs.metadata || {} );
 				var bindings = Object.assign( {}, metadata.bindings || {} );
 				delete bindings.content;
-				var nextAttributes = { content: typeof attrs.content === 'string' ? attrs.content : '' };
+				var hasRefreshedValue = refreshState && typeof refreshState.value === 'string';
+				var content = hasRefreshedValue ? textAsRichText( refreshState.value ) : ( typeof attrs.content === 'string' ? attrs.content : '' );
+				var nextAttributes = { content: content };
 				if ( Object.keys( bindings ).length ) {
 					metadata.bindings = bindings;
 					nextAttributes.metadata = metadata;
@@ -1029,13 +1039,39 @@ JS;
 			}
 			function refresh() {
 				if ( ! wp.apiFetch ) { return; }
-				wp.apiFetch( { path: '/ssi/v1/external-metrics/' + encodeURIComponent( id ) + '/refresh', method: 'POST' } );
+				setRefreshState( { loading: true, status: 'loading', value: null, receipt: null, message: 'Refreshing the WordPress.org metric…' } );
+				return wp.apiFetch( { path: '/ssi/v1/external-metrics/' + encodeURIComponent( id ) + '/refresh', method: 'POST' } ).then( function( response ) {
+					var receipt = response && response.receipt ? response.receipt : {};
+					setRefreshState( {
+						loading: false,
+						status: receipt.status || response.status || 'unresolved',
+						value: typeof response.value === 'string' ? response.value : null,
+						receipt: receipt,
+						message: response.message || 'The metric refresh returned without freshness details.',
+					} );
+					return response;
+				} ).catch( function( error ) {
+					var data = error && error.data ? error.data : {};
+					var receipt = data.receipt || {};
+					setRefreshState( {
+						loading: false,
+						status: receipt.status || data.freshness || 'unresolved',
+						value: typeof data.value === 'string' ? data.value : null,
+						receipt: receipt,
+						message: data.message || ( error && error.message ) || 'No current or captured value is available.',
+					} );
+					return null;
+				} );
 			}
 			return el( wp.element.Fragment, null,
 				el( wp.blockEditor.InspectorControls, null,
 					el( wp.components.PanelBody, { title: 'External metric', initialOpen: false },
 						el( 'p', null, 'Source: WordPress.org · Metric: ' + id + ' · Slugs: ' + ( config.provider && config.provider.slugs ? config.provider.slugs.join( ', ' ) : 'configured source' ) ),
-						el( wp.components.Button, { variant: 'secondary', onClick: refresh }, 'Refresh value' ),
+						refreshState && refreshState.loading ? el( 'p', { role: 'status' }, refreshState.message ) : null,
+						refreshState && ! refreshState.loading ? el( 'p', { role: 'status' }, null !== refreshState.value ? 'Current value: ' + refreshState.value + ' · Freshness: ' + refreshState.status : 'Value unavailable · Freshness: ' + refreshState.status ) : null,
+						refreshState && ! refreshState.loading ? el( 'p', { className: 'description' }, refreshState.message ) : null,
+						refreshState && refreshState.receipt && refreshState.receipt.fetched_at ? el( 'p', { className: 'description' }, 'Fetched at: ' + refreshState.receipt.fetched_at ) : null,
+						el( wp.components.Button, { variant: 'secondary', onClick: refresh, disabled: !! ( refreshState && refreshState.loading ) }, 'Refresh value' ),
 						el( wp.components.Button, { variant: 'tertiary', isDestructive: true, onClick: detach }, 'Detach to static text' )
 					)
 				),

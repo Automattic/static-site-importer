@@ -117,8 +117,8 @@ test "$(<"$evidence/wordpress-second-site-core-version.txt")" = '7.1'
 "${wp2[@]}" plugin deactivate static-site-importer
 "${wp2[@]}" eval-file wp-content/plugins/static-site-importer/tests/acceptance/external-metrics-standalone-wordpress.php \
 	| tee "$evidence/standalone-result.jsonl"
-post_id="$(node -e 'const fs=require("fs");const r=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(String(r.post_id))' "$evidence/materialization.jsonl")"
-SSI_EXTERNAL_METRICS_WP_URL="http://127.0.0.1:${port}" SSI_EXTERNAL_METRICS_POST_ID="$post_id" \
+editor_post_id="$(node -e 'const fs=require("fs");const r=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(String(r.editor_post_id))' "$evidence/runtime.jsonl")"
+SSI_EXTERNAL_METRICS_WP_URL="http://127.0.0.1:${port}" SSI_EXTERNAL_METRICS_POST_ID="$editor_post_id" \
 	SSI_EXTERNAL_METRICS_USER=admin SSI_EXTERNAL_METRICS_PASSWORD=password SSI_EXTERNAL_METRICS_EVIDENCE="$evidence" \
 	node "$root/tests/acceptance/external-metrics-editor.mjs" | tee "$evidence/editor-run.jsonl"
 printf 'core_archive_sha256=%s\ncore_version=%s\nphp_transformer_version=%s\nphp_transformer_source_ref=%s\n' \

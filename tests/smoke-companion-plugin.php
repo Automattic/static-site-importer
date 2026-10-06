@@ -1635,7 +1635,8 @@ foreach ( array( false, true ) as $hostile_mu ) {
 			continue;
 		}
 		$assert( ! preg_match( '/[\r\n]Requires Plugins:/', $hostile_source ), 'hostile-title-cannot-inject-header-' . $hostile_path );
-		require_once ( $hostile_mu ? WPMU_PLUGIN_DIR : WP_PLUGIN_DIR ) . '/' . $hostile_path;
+		$hostile_plugin_dir = $hostile_mu ? WPMU_PLUGIN_DIR : WP_PLUGIN_DIR;
+		require_once $hostile_plugin_dir . '/' . $hostile_path;
 	}
 	$assert( false === $GLOBALS['ssi_header_injected'], 'hostile-title-executes-no-php-' . $hostile_mode );
 }

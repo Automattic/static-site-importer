@@ -57,12 +57,34 @@ final class Static_Site_Importer_External_Metric_Runtime {
 						'methods'             => 'POST',
 						'permission_callback' => static fn(): bool => current_user_can( 'edit_posts' ),
 						'callback'            => static function ( WP_REST_Request $request ) {
-							$id = (string) $request['id'];
-							$value = self::value( $id, self::$metrics, null, null, true );
+							$id       = (string) $request['id'];
+							$value    = self::value( $id, self::$metrics, null, null, true );
+							$receipts = get_option( 'static_site_importer_external_metric_receipts', array() );
+							$receipt  = is_array( $receipts ) && is_array( $receipts[ $id ] ?? null ) ? $receipts[ $id ] : array();
+							$status   = (string) ( $receipt['status'] ?? 'unresolved' );
+							if ( null === $value || 'unresolved' === $status ) {
+								return new WP_Error(
+									'static_site_importer_external_metric_refresh_unresolved',
+									'No current or captured value is available for this metric.',
+									array(
+										'status'    => 503,
+										'freshness' => 'unresolved',
+										'value'     => $value,
+										'receipt'   => $receipt,
+									)
+								);
+							}
+							$messages = array(
+								'fresh'             => 'WordPress.org returned a fresh value.',
+								'stale'             => 'WordPress.org is unavailable; showing the last-known value.',
+								'captured_fallback' => 'WordPress.org did not return a valid value; showing the captured fallback.',
+							);
 							return rest_ensure_response(
 								array(
-									'status' => null === $value ? 'unresolved' : 'refreshed',
-									'value'  => $value,
+									'status'  => $status,
+									'value'   => $value,
+									'receipt' => $receipt,
+									'message' => $messages[ $status ] ?? 'WordPress.org value status: ' . $status,
 								)
 							);
 						},
@@ -76,7 +98,18 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		if ( ! empty( $GLOBALS['static_site_importer_external_metric_export_fallback'] ) ) {
 			return null; }
 		$id = is_string( $source_args['metric_id'] ?? null ) ? $source_args['metric_id'] : '';
-		return '' === $id ? null : self::value( $id, self::$metrics );
+		if ( '' === $id ) {
+			return null; }
+		$value = self::value( $id, self::$metrics );
+		if ( null === $value ) {
+			return null; }
+		$receipts = get_option( 'static_site_importer_external_metric_receipts', array() );
+		$status   = is_array( $receipts ) && is_array( $receipts[ $id ] ?? null ) ? ( $receipts[ $id ]['status'] ?? '' ) : '';
+		// The saved native text is authoritative fallback markup. Returning its
+		// decoded text to WP_Block::replace_html() would promote literal tags into
+		// rich-text markup, so let WordPress keep the original HTML when no trusted
+		// provider value or last-known-good value is available.
+		return in_array( $status, array( 'fresh', 'stale' ), true ) ? $value : null;
 	}
 
 	/** External metrics have no persistent WordPress entities to seed. */
