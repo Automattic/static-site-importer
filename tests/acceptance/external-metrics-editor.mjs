@@ -163,7 +163,8 @@ try {
 	await page.goto( `${ base }/?page_id=${ postId }`, { waitUntil: 'domcontentloaded' } );
 	const frontendText = await page.locator( 'body' ).innerText();
 	assert.match( frontendText, /222\+/, 'Frontend renders the saved current value as static text.' );
-	assert.match( frontendText, /444\+/, 'Frontend still renders the sibling metric binding.' );
+	assert.ok( ( frontendText.match( /222\+/g ) || [] ).length >= 2, 'Frontend renders both same-semantics metric bindings with the shared current value.' );
+	assert.doesNotMatch( frontendText, /999\+/, 'Sibling native binding does not fall back to its distinct captured value after the cache hit.' );
 	assert.ok( frontendText.includes( '<em>pending</em> "quoted" & &' ), 'Frontend renders captured literal markup tags, quotes and entity characters as text.' );
 	assert.equal( await page.locator( 'em' ).filter( { hasText: 'pending' } ).count(), 0, 'Captured literal fallback does not become an HTML emphasis element.' );
 	assert.deepEqual( errors, [], 'Editor emitted no browser errors.' );

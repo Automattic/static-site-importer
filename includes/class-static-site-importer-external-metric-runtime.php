@@ -326,10 +326,13 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		$key    = 'ssi_external_metric_' . hash( 'sha256', $cache_material );
 		$now    = $now ?? time();
 		$cached = function_exists( 'get_transient' ) ? get_transient( $key ) : false;
-		if ( ! $force && is_array( $cached ) && isset( $cached['value'], $cached['fetched_at'] ) && $now - (int) $cached['fetched_at'] < self::CACHE_TTL ) {
-			$cached_value                 = (string) $cached['value'];
-			$request_values[ $metric_id ] = $cached_value;
-			return $cached_value; }
+		if ( ! $force && is_array( $cached ) && 'fresh' === ( $cached['status'] ?? null ) && is_string( $cached['value'] ?? null ) && is_int( $cached['fetched_at'] ?? null ) && $now >= $cached['fetched_at'] && self::CACHE_TTL > ( $now - $cached['fetched_at'] ) && self::PROVIDER === ( $cached['provider'] ?? null ) && ( $cached['source'] ?? null ) === $fact['provider']['source'] ) {
+			// The transient is a canonical source receipt shared by facts with the
+			// same provider semantics. Hand that exact receipt to this fact so its
+			// binding can render the cached value without inventing freshness data.
+			self::store_receipt( $metric_id, $cached );
+			$request_values[ $metric_id ] = $cached['value'];
+			return $cached['value']; }
 		$retry_at = get_option( 'static_site_importer_external_metric_retry_after', array() );
 		if ( ! $force && is_array( $retry_at ) && (int) ( $retry_at[ $key ] ?? 0 ) > $now ) {
 			return self::stale_or_fallback( $metric_id, $fact, $key, $cached, $request_values ); }

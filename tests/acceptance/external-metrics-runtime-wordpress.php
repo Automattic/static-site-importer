@@ -53,7 +53,7 @@ $make_editor_metric = static function ( array $template, string $id, string $slu
 };
 $editor_facts       = array(
 	$make_editor_metric( $metric_map['active-installs'], 'editor-detach-metric', 'ssi-editor-controlled', '111+', 'paragraph' ),
-	$make_editor_metric( $metric_map['active-installs'], 'editor-sibling-metric', 'ssi-editor-sibling', '444+', 'paragraph' ),
+	$make_editor_metric( $metric_map['active-installs'], 'editor-sibling-metric', 'ssi-editor-controlled', '999+', 'paragraph' ),
 	$make_editor_metric( $metric_map['project-version'], 'literal-fallback-paragraph', 'ssi-literal-paragraph', '<em>pending</em> "quoted" &amp; &#38;', 'paragraph' ),
 	$make_editor_metric( $metric_map['project-version'], 'literal-fallback-heading', 'ssi-literal-heading', '<em>pending</em> "quoted" &amp; &#38;', 'heading' ),
 );
@@ -100,11 +100,55 @@ $editor_content = implode(
 				'custom' => 'preserve-me',
 			)
 		),
-		$editor_block( 'editor-sibling-binding', 'editor-sibling-metric', 'p', '444+', array( 'name' => 'Preserve sibling binding' ) ),
+		$editor_block( 'editor-sibling-binding', 'editor-sibling-metric', 'p', '999+', array( 'name' => 'Preserve sibling binding' ) ),
 		$editor_block( 'literal-fallback-paragraph', 'literal-fallback-paragraph', 'p', $editor_facts[2]['fallback']['text'] ),
 		$editor_block( 'literal-fallback-heading', 'literal-fallback-heading', 'h2', $editor_facts[3]['fallback']['text'] ),
 	)
 );
+
+// Exercise the generated companion's shared transient path with two distinct
+// metric IDs and different captured fallbacks but identical provider semantics.
+call_user_func( array( $runtime_class, 'configure' ), array_merge( array_values( $metric_map ), $editor_facts ) );
+$alias_cache_key = 'ssi_external_metric_' . hash( 'sha256', (string) wp_json_encode( array( $editor_facts[0]['provider'], $editor_facts[0]['metric'], $editor_facts[0]['aggregation'], $editor_facts[0]['format'] ) ) );
+delete_transient( $alias_cache_key );
+$alias_receipts = get_option( 'static_site_importer_external_metric_receipts', array() );
+unset( $alias_receipts['editor-detach-metric'], $alias_receipts['editor-sibling-metric'] );
+update_option( 'static_site_importer_external_metric_receipts', $alias_receipts, false );
+$alias_fetches = 0;
+$alias_http    = static function ( mixed $preempt, array $args, string $url ) use ( &$alias_fetches ): mixed {
+	parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
+	if ( 'ssi-editor-controlled' !== ( $query['slug'] ?? '' ) ) {
+		return $preempt; }
+	++$alias_fetches;
+	return array(
+		'headers'  => array( 'content-type' => 'application/json' ),
+		'body'     => wp_json_encode(
+			array(
+				'active_installs' => 222,
+				'slug'            => 'ssi-editor-controlled',
+			)
+		),
+		'response' => array(
+			'code'    => 200,
+			'message' => 'OK',
+		),
+		'cookies'  => array(),
+	);
+};
+add_filter( 'pre_http_request', $alias_http, 10, 3 );
+try {
+	$alias_render = do_blocks(
+		$editor_block( 'alias-cache-first', 'editor-detach-metric', 'p', '111+' ) . "\n" . $editor_block( 'alias-cache-second', 'editor-sibling-metric', 'p', '999+' )
+	);
+} finally {
+	remove_filter( 'pre_http_request', $alias_http, 10 );
+}
+$alias_receipts = get_option( 'static_site_importer_external_metric_receipts', array() );
+$first_receipt  = $alias_receipts['editor-detach-metric'] ?? array();
+$second_receipt = $alias_receipts['editor-sibling-metric'] ?? array();
+$assert( 1 === $alias_fetches && 2 === substr_count( $alias_render, '222+' ), 'Generated companion shares one provider fetch across two distinct same-semantics metric IDs and replaces fallbacks 111+/999+: ' . $alias_render );
+$assert( 'fresh' === ( $first_receipt['status'] ?? '' ) && '222+' === ( $first_receipt['value'] ?? '' ) && is_int( $first_receipt['fetched_at'] ?? null ), 'First alias receives the canonical fresh source receipt.' );
+$assert( 'fresh' === ( $second_receipt['status'] ?? '' ) && '222+' === ( $second_receipt['value'] ?? '' ) && ( $second_receipt['fetched_at'] ?? null ) === ( $first_receipt['fetched_at'] ?? null ) && 'wordpress.org' === ( $second_receipt['provider'] ?? '' ) && 'plugin_information' === ( $second_receipt['source'] ?? '' ), 'Cache-hit alias receives the same truthful canonical source receipt without a fabricated timestamp.' );
 $admin_user     = get_user_by( 'login', 'admin' );
 $editor_post_id = wp_insert_post(
 	array(
@@ -138,7 +182,6 @@ add_filter(
 		}
 		$values = array(
 			'ssi-editor-controlled' => 222,
-			'ssi-editor-sibling'    => 444,
 		);
 		if ( ! isset( $values[ $slug ] ) ) {
 			return $preempt;
@@ -165,5 +208,13 @@ echo wp_json_encode(
 		'companion'      => $plugin_file,
 		'content_sha256' => $before_hash,
 		'receipts'       => $receipts,
+		'alias_cache'    => array(
+			'provider_fetches' => $alias_fetches,
+			'rendered'         => $alias_render,
+			'receipts'         => array(
+				'editor-detach-metric'  => $first_receipt,
+				'editor-sibling-metric' => $second_receipt,
+			),
+		),
 	)
 ) . "\n";
