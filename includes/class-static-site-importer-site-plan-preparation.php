@@ -459,7 +459,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		return $state;
 	}
 
-	/** @param array<string,mixed> $state */
+	/** @param array $state */
 	public static function preflight_state( array &$state, bool $overwrite, string $import_run_id = '' ): void {
 		if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC !== ( $state['args']['theme_materialization'] ?? null ) ) {
 			require_once __DIR__ . '/class-static-site-importer-navigation-entity-materializer.php';
@@ -482,7 +482,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			}
 			$pages_by_route[ $route ] = true;
 			if ( ! empty( $page['skip_materialization'] ) ) {
-				$archive_match = Static_Site_Importer_Site_Plan_Persistence::reconciled_post( (string) $page['reconciliation_identity'] );
+				$archive_match    = Static_Site_Importer_Site_Plan_Persistence::reconciled_post( (string) $page['reconciliation_identity'] );
 				$archive_conflict = '' === trim( $route, '/' ) ? null : get_page_by_path( trim( $route, '/' ), OBJECT, 'page' );
 				if ( ! $archive_match && $archive_conflict && ! Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $archive_conflict ) && ! self::post_belongs_to_run( $archive_conflict, $import_run_id ) ) {
 					throw new InvalidArgumentException( 'taxonomy_archive_route_conflict' );
@@ -622,7 +622,11 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				throw new InvalidArgumentException( 'taxonomy_archive_route_mismatch' );
 			}
 			$page['skip_materialization'] = true;
-			$state['skipped'][]           = array( 'source_path' => $source_path, 'route' => $archives[ $source_path ], 'reason' => 'native_taxonomy_archive' );
+			$state['skipped'][]           = array(
+				'source_path' => $source_path,
+				'route'       => $archives[ $source_path ],
+				'reason'      => 'native_taxonomy_archive',
+			);
 		}
 		unset( $page );
 	}
@@ -764,8 +768,8 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	 * order: each binding's resolved block maps to the canonical block at the same
 	 * index, and the provider replacement is spliced there, last offset first.
 	 *
-	 * @param array<string,mixed>                                                 $plan    Resolved plan.
-	 * @param int|string                                                          $index   Template part index.
+	 * @param array<string,mixed>                                                $plan    Resolved plan.
+	 * @param int|string                                                         $index   Template part index.
 	 * @param array<int,array{offset:int|null,search:string,replacement:string}> $patches Bindings applied to this part.
 	 */
 	private static function apply_template_part_binding_patches( array &$plan, int|string $index, array $patches ): void {

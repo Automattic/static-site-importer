@@ -45,6 +45,7 @@ class Static_Site_Importer_Theme_Exporter {
 		$source_metadata = isset( $args['source_metadata'] ) && is_array( $args['source_metadata'] ) ? $args['source_metadata'] : array();
 		$diagnostics     = array();
 		$files           = array();
+		$used_paths      = array();
 
 		$stylesheet = self::export_theme_stylesheet_file( $theme_dir, $root );
 		if ( null !== $stylesheet ) {
@@ -58,22 +59,22 @@ class Static_Site_Importer_Theme_Exporter {
 		$pages      = self::export_pages( $include_pages );
 		$post_count = 0;
 		if ( empty( $pages ) ) {
-			$diagnostics[] = array(
+			$diagnostics[]             = array(
 				'level'   => 'warning',
 				'code'    => 'static_site_importer_export_no_pages',
 				'message' => 'No published pages were available to export; generated an entrypoint from theme templates only.',
 			);
-			$files[]       = self::export_file_entry(
+			$files[]                   = self::export_file_entry(
 				$entrypoint,
 				self::export_html_document( '', self::export_theme_chrome_html( $theme_dir, 'front-page' ), $theme_slug, null !== $stylesheet, null !== $global_stylesheet ),
 				'document',
 				'entrypoint'
 			);
+			$used_paths[ $entrypoint ] = true;
 		} else {
 			$front_page_id = self::export_front_page_id();
 			$first         = true;
 			$planned       = array();
-			$used_paths    = array();
 			// Reserve every page route before assigning post routes so shared
 			// slugs resolve identically regardless of get_posts() ordering: pages
 			// keep the clean /root/<slug>/ path and a colliding post moves under
@@ -143,6 +144,10 @@ class Static_Site_Importer_Theme_Exporter {
 			}
 		}
 
+		$taxonomy_archive_files = self::export_taxonomy_archive_files( $theme_slug, $root, $used_paths, null !== $global_stylesheet, $diagnostics );
+		$files                  = array_merge( $files, $taxonomy_archive_files );
+		$taxonomy_archive_count = count( array_unique( array_map( static fn( array $file ): string => (string) ( $file['taxonomy'] ?? '' ) . ':' . (string) ( $file['term_id'] ?? '' ), $taxonomy_archive_files ) ) );
+
 		$files = array_merge( $files, self::export_theme_asset_files( $theme_dir, $root, $diagnostics ) );
 
 		$import_report = self::read_theme_import_report( $theme_dir );
@@ -176,16 +181,18 @@ class Static_Site_Importer_Theme_Exporter {
 		}
 
 		$report = array(
-			'status'          => 'completed',
-			'theme_slug'      => $theme_slug,
-			'theme_dir'       => $theme_dir,
-			'root'            => $root,
-			'entrypoint'      => $entrypoint,
-			'file_count'      => count( $files ),
-			'page_count'      => count( $pages ) - $post_count, // pages keep the page_count contract; posts are reported separately
-			'post_count'      => $post_count,
-			'source_metadata' => $source_metadata,
-			'diagnostics'     => $diagnostics,
+			'status'                      => 'completed',
+			'theme_slug'                  => $theme_slug,
+			'theme_dir'                   => $theme_dir,
+			'root'                        => $root,
+			'entrypoint'                  => $entrypoint,
+			'file_count'                  => count( $files ),
+			'page_count'                  => count( $pages ) - $post_count, // pages keep the page_count contract; posts are reported separately
+			'post_count'                  => $post_count,
+			'taxonomy_archive_count'      => $taxonomy_archive_count,
+			'taxonomy_archive_page_count' => count( $taxonomy_archive_files ),
+			'source_metadata'             => $source_metadata,
+			'diagnostics'                 => $diagnostics,
 		);
 		if ( ! empty( $import_report ) ) {
 			$report['import_report'] = $import_report;
@@ -196,6 +203,139 @@ class Static_Site_Importer_Theme_Exporter {
 		return array(
 			'website_artifact' => $website_artifact,
 		);
+	}
+
+	/** Export current native taxonomy archives through the active theme's block templates. */
+	private static function export_taxonomy_archive_files( string $theme_slug, string $root, array $used_paths, bool $include_global_styles, array &$diagnostics ): array {
+		if ( ! function_exists( 'get_terms' ) || ! function_exists( 'get_term_link' ) || ! function_exists( 'get_block_template' ) || ! function_exists( 'do_blocks' ) ) {
+			return array();
+		}
+
+		$files = array();
+		global $wp;
+		foreach ( array( 'category', 'post_tag' ) as $taxonomy ) {
+			$terms = get_terms(
+				array(
+					'taxonomy'   => $taxonomy,
+					'hide_empty' => true,
+				)
+			);
+			if ( is_wp_error( $terms ) ) {
+				$diagnostics[] = array(
+					'level'    => 'warning',
+					'code'     => 'static_site_importer_export_taxonomy_query_failed',
+					'taxonomy' => $taxonomy,
+				);
+				continue;
+			}
+
+			foreach ( $terms as $term ) {
+				$term_url = get_term_link( $term );
+				if ( is_wp_error( $term_url ) ) {
+					continue;
+				}
+				$route = wp_parse_url( (string) $term_url, PHP_URL_PATH );
+				if ( ! is_string( $route ) || '' === trim( $route, '/' ) ) {
+					continue;
+				}
+				$path = self::export_artifact_path( $root . '/' . trim( $route, '/' ) . '/index.html', '' );
+				if ( '' === $path || isset( $used_paths[ $path ] ) ) {
+					$diagnostics[] = array(
+						'level'    => 'warning',
+						'code'     => 'static_site_importer_export_taxonomy_route_conflict',
+						'taxonomy' => $taxonomy,
+						'term_id'  => (int) $term->term_id,
+						'path'     => $path,
+					);
+					continue;
+				}
+
+				$template_slug = ( 'category' === $taxonomy ? 'category-' : 'tag-' ) . sanitize_title( (string) $term->slug );
+				$template      = get_block_template( $theme_slug . '//' . $template_slug );
+				if ( ! $template instanceof WP_Block_Template ) {
+					continue;
+				}
+
+				$query_args = array(
+					'post_type'      => 'post',
+					'post_status'    => 'publish',
+					'posts_per_page' => max( 1, (int) get_option( 'posts_per_page', 10 ) ),
+					'paged'          => 1,
+				);
+				if ( 'category' === $taxonomy ) {
+					$query_args['category_name'] = (string) $term->slug;
+				} else {
+					$query_args['tag'] = (string) $term->slug;
+				}
+				$max_pages = max( 1, (int) ( new WP_Query( $query_args ) )->max_num_pages );
+				for ( $page_number = 1; $page_number <= $max_pages; ++$page_number ) {
+					$query_args['paged'] = $page_number;
+					$previous_query      = $GLOBALS['wp_query'] ?? null;
+					$previous_post       = $GLOBALS['post'] ?? null;
+					$previous_request    = (string) $wp->request;
+					// The inherited Query Loop reads the archive query and path from WordPress's normal globals.
+					// phpcs:disable WordPress.WP.GlobalVariablesOverride.Prohibited -- The exporter renders the native archive template against its real query context.
+					$GLOBALS['wp_query'] = new WP_Query( $query_args );
+					$GLOBALS['post']     = null;
+					$wp->request         = trim( $route, '/' );
+					try {
+						$html = do_blocks( $template->content );
+					} finally {
+						$GLOBALS['wp_query'] = $previous_query;
+						$GLOBALS['post']     = $previous_post;
+						$wp->request         = $previous_request;
+					}
+					// phpcs:enable WordPress.WP.GlobalVariablesOverride.Prohibited
+					if ( '' === trim( $html ) ) {
+						continue;
+					}
+
+					$page_route = 1 === $page_number ? $route : trailingslashit( $route ) . 'page/' . $page_number;
+					$page_path  = self::export_artifact_path( $root . '/' . trim( $page_route, '/' ) . '/index.html', '' );
+					if ( '' === $page_path || isset( $used_paths[ $page_path ] ) ) {
+						$diagnostics[] = array(
+							'level'        => 'warning',
+							'code'         => 'static_site_importer_export_taxonomy_route_conflict',
+							'taxonomy'     => $taxonomy,
+							'term_id'      => (int) $term->term_id,
+							'source_route' => $page_route,
+							'path'         => $page_path,
+						);
+						continue;
+					}
+					$used_paths[ $page_path ] = true;
+					$site_origin              = untrailingslashit( home_url( '/' ) );
+					$html                     = str_replace( $site_origin . '/', '/', $html );
+					$html                     = preg_replace( '#href="/page/([0-9]+)/"#', 'href="' . trailingslashit( $route ) . 'page/$1/"', $html ) ?? $html;
+					if ( $page_number >= $max_pages ) {
+						$html = preg_replace( '#<a href="[^"]+" class="wp-block-query-pagination-next">.*?</a>#s', '', $html ) ?? $html;
+					}
+					$files[] = self::export_file_entry(
+						$page_path,
+						self::export_html_document(
+							$html,
+							array(
+								'before' => '',
+								'after'  => '',
+							),
+							(string) $term->name,
+							true,
+							$include_global_styles
+						),
+						'document',
+						'taxonomy-archive',
+						array(
+							'taxonomy'     => $taxonomy,
+							'term_id'      => (int) $term->term_id,
+							'source_route' => $page_route,
+							'page'         => $page_number,
+						)
+					);
+				}
+			}
+		}
+
+		return $files;
 	}
 
 	/**
