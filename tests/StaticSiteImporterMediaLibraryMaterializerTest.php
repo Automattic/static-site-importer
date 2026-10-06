@@ -49,6 +49,96 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 		$this->assertSame( array( $ids[0] ), $state['applied']['attachments'] );
 	}
 
+	/** Source attachment numbers never establish destination ownership. */
+	public function test_foreign_image_identity_is_rebound_by_asset_and_reused(): void {
+		$foreign_id = self::factory()->attachment->create( array( 'post_title' => 'Unrelated owner image' ) );
+		$this->assert_rebound_image_identity( $foreign_id );
+		$this->assertSame( 'Unrelated owner image', get_post( $foreign_id )->post_title );
+		$this->assertSame( '', get_post_meta( $foreign_id, Static_Site_Importer_Media_Library_Materializer::SOURCE_ASSET_META_KEY, true ) );
+	}
+
+	public function test_absent_foreign_image_identity_is_rebound_by_asset(): void {
+		$this->assert_rebound_image_identity( 987654321 );
+	}
+
+	private function assert_rebound_image_identity( int $foreign_id ): void {
+		$uri       = get_theme_root_uri() . '/' . $this->slug();
+		$figure    = 'wp-block-image size-full source-presentation wp-image-' . $foreign_id;
+		$paragraph = '<!-- wp:paragraph {"className":"keep\u002d\u002dexact"} --><p class="keep--exact">Unrelated</p><!-- /wp:paragraph -->';
+		$attrs     = array(
+			'id'        => $foreign_id,
+			'sizeSlug'  => 'full',
+			'className' => 'source-presentation wp-image-' . $foreign_id,
+		);
+		$image     = '<!-- wp:image ' . serialize_block_attributes( $attrs ) . ' --><figure class="' . $figure . '"><a href="https://example.org/art"><img src="' . $uri . '/media/photo.png" alt="Studio &amp; photo" class="wp-image-' . $foreign_id . '"/></a><figcaption class="wp-element-caption">Original caption</figcaption></figure><!-- /wp:image -->';
+		$state     = $this->state_with_page( $image . $paragraph . $image );
+		$page      = $state['source_ids']['website/index.html'];
+		$report    = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
+		$this->assertIsArray( $report );
+		$this->assertSame( 1, $report['attachment_count'] );
+		$this->assertSame( 2, $report['bound_block_count'] );
+		$content = get_post_field( 'post_content', $page );
+		$blocks  = parse_blocks( $content );
+		$id      = (int) $blocks[0]['attrs']['id'];
+		$this->assertGreaterThan( 0, $id );
+		$this->assertNotSame( $foreign_id, $id, 'a foreign number, even an existing attachment, is not asset ownership' );
+		$this->assertSame( $id, $blocks[2]['attrs']['id'] );
+		$this->assertSame( array_replace( $attrs, array( 'id' => $id ) ), $blocks[0]['attrs'] );
+		$tag = new WP_HTML_Tag_Processor( $blocks[0]['innerHTML'] );
+		$this->assertTrue( $tag->next_tag( 'IMG' ) );
+		$this->assertSame( 'wp-image-' . $id, $tag->get_attribute( 'class' ) );
+		$this->assertSame( wp_get_attachment_url( $id ), $tag->get_attribute( 'src' ) );
+		$this->assertSame( 'Studio & photo', $tag->get_attribute( 'alt' ) );
+		$this->assertStringContainsString( '<figure class="' . $figure . '">', $content, 'source presentation selectors remain on the figure' );
+		$this->assertStringContainsString( '<a href="https://example.org/art">', $content );
+		$this->assertStringContainsString( '<figcaption class="wp-element-caption">Original caption</figcaption>', $content );
+		$this->assertStringContainsString( $paragraph, $content );
+		$this->assertSame( array( $id ), $state['applied']['attachments'] );
+
+		$again = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
+		$this->assertSame( 0, $again['bound_block_count'] );
+		$this->assertSame( $content, get_post_field( 'post_content', $page ), 'already bound content is byte-idempotent' );
+		wp_update_post( array(
+			'ID'           => $page,
+			'post_content' => wp_slash( $image . $paragraph . $image ),
+		) );
+		$state['applied']['attachments'] = array();
+		$reimport                        = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
+		$this->assertSame( 1, $reimport['attachment_count'] );
+		$this->assertSame( array(), $state['applied']['attachments'], 'reimport reuses the asset-identity attachment' );
+		$this->assertSame( $content, get_post_field( 'post_content', $page ) );
+	}
+
+	public function test_image_border_dimensions_and_quoted_markup_survive_binding(): void {
+		$uri    = get_theme_root_uri() . '/' . $this->slug();
+		$attrs  = array(
+			'id'     => 987654321,
+			'url'    => $uri . '/media/photo.png',
+			'width'  => '120px',
+			'height' => '80px',
+			'style'  => array( 'border' => array( 'color' => '#123456' ) ),
+		);
+		$inner  = "<figure class='wp-block-image is-resized has-custom-border'><img src='" . $attrs['url'] . "' alt='Border photo' class='has-border-color wp-image-987654321' style='border-color:#123456;width:120px;height:80px'/></figure>";
+		$state  = $this->state_with_page( '<!-- wp:image ' . serialize_block_attributes( $attrs ) . ' -->' . $inner . '<!-- /wp:image -->' );
+		$report = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
+		$this->assertIsArray( $report );
+		$block = parse_blocks( get_post_field( 'post_content', $state['source_ids']['website/index.html'] ) )[0];
+		$id    = $block['attrs']['id'];
+		$this->assertNotSame( 987654321, $id );
+		$this->assertSame( array_replace( $attrs, array(
+			'id'  => $id,
+			'url' => wp_get_attachment_url( $id ),
+		) ), $block['attrs'] );
+		$tag = new WP_HTML_Tag_Processor( $block['innerHTML'] );
+		$this->assertTrue( $tag->next_tag( 'IMG' ) );
+		$this->assertSame( 'has-border-color wp-image-' . $id, $tag->get_attribute( 'class' ) );
+		$this->assertSame( 'border-color:#123456;width:120px;height:80px', $tag->get_attribute( 'style' ) );
+		$this->assertSame( wp_get_attachment_url( $id ), $tag->get_attribute( 'src' ) );
+		$figure = new WP_HTML_Tag_Processor( $block['innerHTML'] );
+		$this->assertTrue( $figure->next_tag( 'FIGURE' ) );
+		$this->assertSame( 'wp-block-image is-resized has-custom-border', $figure->get_attribute( 'class' ) );
+	}
+
 	/** Rollback removes attachments the import created. */
 	public function test_rollback_deletes_created_attachments(): void {
 		$state = $this->state_with_page( $this->page_markup() );
@@ -65,10 +155,15 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 	/** The source favicon becomes the site icon; rollback restores the prior value. */
 	public function test_source_favicon_becomes_site_icon_and_rolls_back(): void {
 		delete_option( 'site_icon' );
-		$state = $this->state_with_page( $this->page_markup() );
-		$state['resolved']['pages'][0]['entrypoint']        = true;
+		$state                                       = $this->state_with_page( $this->page_markup() );
+		$state['resolved']['pages'][0]['entrypoint'] = true;
 		$state['resolved']['pages'][0]['document_metadata'] = array(
-			'links' => array( array( 'rel' => 'icon', 'resolved_url' => get_theme_root_uri() . '/' . $this->slug() . '/media/photo.png' ) ),
+			'links' => array(
+				array(
+					'rel'          => 'icon',
+					'resolved_url' => get_theme_root_uri() . '/' . $this->slug() . '/media/photo.png',
+				),
+			),
 		);
 
 		$report = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
@@ -109,13 +204,17 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 					'content' => '<img src="' . $copy . '" alt="Studio photo"/>',
 				)
 			) . ' /-->'
-			. '<!-- wp:cover ' . serialize_block_attributes( array( 'url' => $other ) ) . ' --><div class="wp-block-cover"><img class="wp-block-cover__image-background" alt="" src="' . $other . '"/></div><!-- /wp:cover -->'
+			. '<!-- wp:cover ' . serialize_block_attributes( array(
+				'url' => $other,
+				'id'  => 987654321,
+			) ) . ' --><div class="wp-block-cover"><img class="wp-block-cover__image-background wp-image-987654321" alt="" src="' . $other . '"/></div><!-- /wp:cover -->'
 			. '<!-- wp:media-text ' . serialize_block_attributes(
 				array(
 					'mediaUrl'  => $photo,
 					'mediaType' => 'image',
+					'mediaId'   => 987654321,
 				)
-			) . ' --><div class="wp-block-media-text"><figure class="wp-block-media-text__media"><img src="' . $photo . '" alt="Item photo"/></figure><div class="wp-block-media-text__content">' . $paragraph . '</div></div><!-- /wp:media-text -->'
+			) . ' --><div class="wp-block-media-text"><figure class="wp-block-media-text__media"><img class="wp-image-987654321 size-large" src="' . $photo . '" alt="Item photo"/></figure><div class="wp-block-media-text__content">' . $paragraph . '</div></div><!-- /wp:media-text -->'
 			. '<!-- wp:group --><div class="wp-block-group" style="background-image:url(' . $background . ')"></div><!-- /wp:group -->';
 		$state      = $this->state_with_page( $markup );
 		copy( $this->theme_dir . '/media/photo.png', $this->theme_dir . '/media/photo-copy.png' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_copy -- Test fixture.
@@ -131,6 +230,7 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 		$content = get_post_field( 'post_content', $state['source_ids']['website/index.html'] );
 		$this->assertStringContainsString( $paragraph, $content, 'unrelated blocks are not re-serialized' );
 		$this->assertStringContainsString( 'background-image:url(' . $background . ')', $content, 'CSS backgrounds stay theme assets' );
+		$this->assertStringNotContainsString( 'wp-image-987654321', $content );
 		$blocks = parse_blocks( $content );
 		$ids    = array();
 		foreach ( $blocks as $block ) {
@@ -198,7 +298,12 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 		update_option( 'site_icon', 999999 );
 		$state = $this->state_with_page( $this->page_markup() );
 		$state['resolved']['pages'][0]['document_metadata'] = array(
-			'links' => array( array( 'rel' => 'icon', 'resolved_url' => get_theme_root_uri() . '/' . $this->slug() . '/media/photo.png' ) ),
+			'links' => array(
+				array(
+					'rel'          => 'icon',
+					'resolved_url' => get_theme_root_uri() . '/' . $this->slug() . '/media/photo.png',
+				),
+			),
 		);
 
 		$report = Static_Site_Importer_Media_Library_Materializer::materialize( $state );

@@ -213,10 +213,12 @@ export async function reviewAcceptanceEditor(browser, options, scope, mapping) {
       const textBlock = texts[0], imageBlock = images[0];
       const textType = window.wp.blocks.getBlockType(textBlock.name), imageType = window.wp.blocks.getBlockType(imageBlock.name);
       if (!textType?.attributes?.[text.attribute] || !imageType?.attributes?.[image.urlAttribute] || !imageType?.attributes?.[image.idAttribute]) return { status: 'pending', reason: 'unregistered_editable_attributes' };
+      const altAttribute = image.altAttribute || (image.blockName === 'core/image' ? 'alt' : null);
+      if (altAttribute && !imageType.attributes[altAttribute]) return { status: 'pending', reason: 'unregistered_editable_alt_attribute' };
       if (imageBlock.attributes[image.idAttribute] === media.id || imageBlock.attributes[image.urlAttribute] === media.source_url) return { status: 'pending', reason: 'replacement_image_must_differ' };
       const dispatch = window.wp.data.dispatch('core/block-editor');
       dispatch.updateBlockAttributes(textBlock.clientId, { [text.attribute]: marker });
-      dispatch.updateBlockAttributes(imageBlock.clientId, { [image.urlAttribute]: media.source_url, [image.idAttribute]: media.id });
+      dispatch.updateBlockAttributes(imageBlock.clientId, { [image.urlAttribute]: media.source_url, [image.idAttribute]: media.id, ...(altAttribute ? { [altAttribute]: `${marker} image alt` } : {}) });
       await window.wp.data.dispatch('core/editor').savePost();
       const editor = window.wp.data.select('core/editor');
       if (editor.isEditedPostDirty() || editor.didPostSaveRequestFail()) return { status: 'failed', reason: 'editor_save_failed' };
@@ -234,10 +236,11 @@ export async function reviewAcceptanceEditor(browser, options, scope, mapping) {
       const savedText = blocks[textIndex], savedImage = blocks[imageIndex];
       // Gutenberg may hydrate rich-text attributes as RichTextData after reload.
       // Compare their public string value, not object identity with the edit input.
-      return { text: savedText?.name === text.blockName && String(savedText.attributes[text.attribute]) === marker, image: savedImage?.name === image.blockName && savedImage.attributes[image.idAttribute] === media.id && savedImage.attributes[image.urlAttribute] === media.source_url };
+      const altAttribute = image.altAttribute || (image.blockName === 'core/image' ? 'alt' : null);
+      return { text: savedText?.name === text.blockName && String(savedText.attributes[text.attribute]) === marker, image: savedImage?.name === image.blockName && savedImage.attributes[image.idAttribute] === media.id && savedImage.attributes[image.urlAttribute] === media.source_url, alt: !altAttribute || savedImage?.attributes[altAttribute] === `${marker} image alt` };
     }, { text: mapping.text, image: mapping.image, marker, media: baseline.media, textIndex: edit.text_index, imageIndex: edit.image_index });
     result.persisted = persisted;
-    if (!reloaded.marker_present || reloaded.invalid_blocks || !persisted.text || !persisted.image || original.content_sha256 === reloaded.content_sha256) throw new Error('Saved edits did not survive editor reload.');
+    if (!reloaded.marker_present || reloaded.invalid_blocks || !persisted.text || !persisted.image || !persisted.alt || original.content_sha256 === reloaded.content_sha256) throw new Error('Saved edits did not survive editor reload.');
     const preview = await page.context().newPage();
     try {
       // Same authenticated context; draft stays unpublished.
@@ -245,11 +248,11 @@ export async function reviewAcceptanceEditor(browser, options, scope, mapping) {
       if (previewUrl.origin !== options.candidate_origin) throw new Error('Draft preview leaves the candidate runtime.');
       previewUrl.searchParams.set('preview', 'true');
       await visit(preview, previewUrl.href);
-      result.frontend = await preview.evaluate(({ marker, url, selector }) => {
+      result.frontend = await preview.evaluate(({ marker, url, selector, checkAlt }) => {
         const images = [...document.querySelectorAll(selector)];
-        return { text: document.body.innerText.includes(marker), image: images.length === 1 && images[0].tagName === 'IMG' && images[0].src === url && images[0].complete && images[0].naturalWidth > 0 };
-      }, { marker, url: baseline.media.source_url, selector: mapping.image.frontendSelector });
-      if (!result.frontend.text || !result.frontend.image) throw new Error('Draft frontend does not render saved text/image edits.');
+        return { text: document.body.innerText.includes(marker), image: images.length === 1 && images[0].tagName === 'IMG' && images[0].src === url && images[0].complete && images[0].naturalWidth > 0, alt: !checkAlt || (images.length === 1 && images[0].getAttribute('alt') === `${marker} image alt`) };
+      }, { marker, url: baseline.media.source_url, selector: mapping.image.frontendSelector, checkAlt: Boolean(mapping.image.altAttribute || mapping.image.blockName === 'core/image') });
+      if (!result.frontend.text || !result.frontend.image || !result.frontend.alt) throw new Error('Draft frontend does not render saved text/image edits.');
     } finally { await preview.close(); }
     // Reuse presentation/oracle against the frozen portable surface, never live origin.
     if (mapping.presentationMap && options.portable_origin) {
