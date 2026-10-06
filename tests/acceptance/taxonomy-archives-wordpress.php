@@ -88,7 +88,15 @@ $rollback_probe = array(
 	'theme_files' => $rollback_files,
 	'rollback'    => $rollback_receipt['rollback'] ?? null,
 );
-$taxonomy_assert( 'partial' === ( $rollback_receipt['status'] ?? '' ) && 'theme_write_failed' === ( $rollback_receipt['errors'][0]['code'] ?? '' ), 'An injected late write failure must return a rolled-back partial receipt: ' . wp_json_encode( array( 'status' => $rollback_receipt['status'] ?? null, 'errors' => $rollback_receipt['errors'] ?? array(), 'rollback' => $rollback_receipt['rollback'] ?? null ) ) );
+$rollback_summary = array(
+	'status'   => $rollback_receipt['status'] ?? null,
+	'errors'   => $rollback_receipt['errors'] ?? array(),
+	'rollback' => $rollback_receipt['rollback'] ?? null,
+);
+$taxonomy_assert(
+	'partial' === ( $rollback_receipt['status'] ?? '' ) && 'theme_write_failed' === ( $rollback_receipt['errors'][0]['code'] ?? '' ),
+	'An injected late write failure must return a rolled-back partial receipt: ' . wp_json_encode( $rollback_summary )
+);
 $taxonomy_assert( ! $rollback_probe['term_exists'] && ! $rollback_probe['source_post'] && null === $rollback_probe['route_rule'] && 0 === $rollback_probe['theme_files'], 'Rollback must remove transaction-owned terms, source posts, exact routes and theme files: ' . wp_json_encode( $rollback_probe ) );
 
 $receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, $compiled['args'] );
@@ -132,7 +140,19 @@ remove_filter( 'update_post_metadata', $metadata_fault, 10 );
 $owned_meta_after_fault = get_post_meta( $source_member_id, '_static_site_importer_taxonomy_memberships', true );
 $terms_after_fault = wp_get_object_terms( $source_member_id, 'category', array( 'fields' => 'ids' ) );
 $rollback_failures = $ownership_fault_receipt['rollback']['failures'] ?? array();
-$taxonomy_assert( 'partial' === ( $ownership_fault_receipt['status'] ?? '' ) && ! empty( $rollback_failures ) && in_array( 'taxonomy_post_meta', array_column( $rollback_failures, 'kind', 'target' ), true ) && $terms_before_fault === $terms_after_fault && $owned_meta_before === $owned_meta_after_fault, 'Fault-injected ownership metadata restoration failure must retain exact relationship and ownership values while explicitly reporting rollback failure: ' . wp_json_encode( array( 'status' => $ownership_fault_receipt['status'] ?? null, 'errors' => $ownership_fault_receipt['errors'] ?? array(), 'receipt' => $ownership_fault_receipt['rollback'] ?? null, 'terms_before' => $terms_before_fault, 'terms_after' => $terms_after_fault, 'metadata_before' => $owned_meta_before, 'metadata_after' => $owned_meta_after_fault ) ) );
+$ownership_failure_summary = array(
+	'status'         => $ownership_fault_receipt['status'] ?? null,
+	'errors'         => $ownership_fault_receipt['errors'] ?? array(),
+	'receipt'        => $ownership_fault_receipt['rollback'] ?? null,
+	'terms_before'   => $terms_before_fault,
+	'terms_after'    => $terms_after_fault,
+	'metadata_before' => $owned_meta_before,
+	'metadata_after' => $owned_meta_after_fault,
+);
+$taxonomy_assert(
+	'partial' === ( $ownership_fault_receipt['status'] ?? '' ) && ! empty( $rollback_failures ) && in_array( 'taxonomy_post_meta', array_column( $rollback_failures, 'kind', 'target' ), true ) && $terms_before_fault === $terms_after_fault && $owned_meta_before === $owned_meta_after_fault,
+	'Fault-injected ownership metadata restoration failure must retain exact relationship and ownership values while explicitly reporting rollback failure: ' . wp_json_encode( $ownership_failure_summary )
+);
 $owner_term = wp_insert_term( 'Owner selected', 'category', array( 'slug' => 'owner-selected' ) );
 $taxonomy_assert( ! is_wp_error( $owner_term ), 'A destination-owned category must be available for preservation checks.' );
 $owner_term_id = (int) $owner_term['term_id'];
@@ -222,4 +242,9 @@ $taxonomy_assert( ! $ssi_plugin_active, 'Browser route proof must exercise the g
 echo 'WordPress ' . esc_html( get_bloginfo( 'version' ) ) . "\n";
 echo "Taxonomy archive WordPress store acceptance passed.\n";
 echo "SSI is inactive for the subsequent real base/page-2 HTTP requests.\n";
-echo 'SSI-TAXONOMY-ADOPTION-PLAN:' . wp_json_encode( array( 'plan' => $plan, 'args' => $compiled['args'] ) ) . "\n";
+echo 'SSI-TAXONOMY-ADOPTION-PLAN:' . wp_json_encode(
+	array(
+		'plan' => $plan,
+		'args' => $compiled['args'],
+	)
+) . "\n";

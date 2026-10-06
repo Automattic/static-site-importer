@@ -113,8 +113,9 @@ if ( ! function_exists( 'wp_parse_url' ) ) {
 }
 
 if ( ! function_exists( 'get_permalink' ) ) {
-	function get_permalink( object $post ): string {
-		return home_url( '/?p=' . (int) ( $post->ID ?? 0 ) );
+	function get_permalink( int|object $post ): string {
+		$post_id = is_int( $post ) ? $post : (int) ( $post->ID ?? 0 );
+		return home_url( '/?p=' . $post_id );
 	}
 }
 

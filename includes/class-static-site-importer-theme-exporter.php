@@ -157,7 +157,7 @@ class Static_Site_Importer_Theme_Exporter {
 				if ( 'post' === ( $page->post_type ?? '' ) ) {
 					$target_route = '/' . trim( (string) preg_replace( '#/index\.html$#', '', substr( $path, strlen( $root ) ) ), '/' );
 					$source_routes = array_merge(
-						array( (string) wp_parse_url( get_permalink( $page ), PHP_URL_PATH ) ),
+						array( (string) wp_parse_url( (string) get_permalink( $page_id ), PHP_URL_PATH ) ),
 						function_exists( 'get_post_meta' ) ? array_map( 'strval', get_post_meta( $page_id, '_static_site_importer_source_route', false ) ) : array()
 					);
 					foreach ( array_unique( array_filter( $source_routes ) ) as $source_route ) {
@@ -381,7 +381,7 @@ class Static_Site_Importer_Theme_Exporter {
 						},
 						$html
 					) ?? $html;
-					foreach ( $archive_query->posts ?? array() as $archive_post ) {
+					foreach ( $archive_query->posts as $archive_post ) {
 						if ( ! $archive_post instanceof WP_Post || 'post' !== $archive_post->post_type ) {
 							continue;
 						}

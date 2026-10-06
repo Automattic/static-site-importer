@@ -112,7 +112,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				if ( ! empty( $page['retire_archive_page'] ) ) {
 					$archive_id = (int) ( $page['planned_existing_id'] ?? 0 );
 					self::journal_post( $state, $page );
-					$updated = wp_update_post( array( 'ID' => $archive_id, 'post_status' => 'draft' ), true );
+					$updated = wp_update_post(
+						array(
+							'ID'          => $archive_id,
+							'post_status' => 'draft',
+						),
+						true
+					);
 					if ( is_wp_error( $updated ) || (int) $updated !== $archive_id || 'draft' !== get_post_status( $archive_id ) ) {
 						return self::failed_receipt( $state, 'taxonomy_archive_page_retirement_failed' );
 					}
