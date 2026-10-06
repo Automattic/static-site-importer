@@ -6,6 +6,10 @@ and the canonical WordPress site plan; SSI persists that plan through its
 existing materializer. No expanded authoring bundle or SSI include resolver is
 added.
 
+Acceptance depends on the artifact contract and compiler capabilities, not the
+identity of the source producer. SSI adds no producer-specific dependency or
+detection.
+
 ## Disposable acceptance
 
 `tests/acceptance/run-shared-html-chrome.mjs` runs six independent Codebox sites:
@@ -48,8 +52,8 @@ explicit evidence directory. The tests are operator-only in `test-manifest.json`
 
 ## Rollout
 
-The current exact transformer requirement remains 0.32.7. Publish the owning
-Blocks Engine include release, repin SSI to that actual release through normal
-dependency tooling, and rerun the proof with released dependencies. Ship the
+Publish the owning Blocks Engine include release, repin SSI to that actual
+release through normal dependency tooling, and rerun the proof with released
+dependencies. Ship the
 consumer changes before the producer starts emitting compact references. The
 test-only source override is verification machinery, not production integration.
