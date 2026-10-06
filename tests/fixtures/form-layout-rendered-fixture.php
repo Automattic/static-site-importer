@@ -97,6 +97,7 @@ namespace {
 			'status'    => (string) ( $row['status'] ?? '' ),
 			'css'       => (string) ( $row['provider_layout_overlay_css']['css'] ?? '' ),
 			'sourceCss' => $source_css,
+			'sourceHtml' => $html,
 			'materializedStyleCss' => (string) ( $style_writes['/tmp/ssi-form-context-matrix/style.css'] ?? '' ),
 			'materializedEditorCss' => (string) ( $style_writes['/tmp/ssi-form-context-matrix/assets/css/editor-style.css'] ?? '' ),
 			'contextCss' => (string) ( $row['provider_layout_overlay_css']['context_css'] ?? '' ),

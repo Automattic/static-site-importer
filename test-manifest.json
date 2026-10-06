@@ -5,6 +5,9 @@
     "tests/figma-zstd-decoder.php": "CLI diagnostic helper; exercised by tests/smoke-rest-import.php."
   },
   "tests": [
+    { "path": "tests/acceptance/form-boxes-wordpress.php", "environment": "operator-only", "reason": "Disposable real WordPress and Jetpack workload owned by run-form-boxes.mjs." },
+    { "path": "tests/acceptance/run-form-boxes.mjs", "environment": "operator-only", "reason": "Requires declared Codebox CLI, paired compiler and Jetpack runtime roots." },
+    { "path": "tests/acceptance/form-boxes-browser.mjs", "environment": "operator-only", "reason": "Exact neutral source/provider geometry from the paired real WordPress workload." },
     { "path": "tests/acceptance/tec-wordpress.php", "environment": "operator-only", "reason": "Requires an explicitly disposable real WordPress runtime with The Events Calendar; verifies canonical source adoption, native images, occurrences and reimport." },
     { "path": "tests/acceptance/tec-browser.mjs", "environment": "operator-only", "reason": "Real TEC Docker browser/editor verification; requires a successful native-tec.jsonl and a live disposable site." },
     { "path": "tests/smoke-whole-page-handoff.php", "environment": "standalone-php" },

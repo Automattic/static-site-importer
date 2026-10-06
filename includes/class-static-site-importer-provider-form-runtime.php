@@ -577,6 +577,9 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	 */
 	public static function project_wrapper_classes( string $html ): string {
 		$wrapper_layers            = array();
+		$field_ancestors           = array();
+		$choice_box                = array();
+		$choice_label              = array();
 		$composite_layers          = array();
 		$fullspan_child_classes    = array();
 		$phone_destination_classes = array();
@@ -584,13 +587,22 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		$is_phone                  = (bool) preg_match( '/\bclass=(["\'])[^"\']*\bgrunion-field-(?:phone|telephone)-wrap\b[^"\']*\1/i', $html );
 		$projected                 = preg_replace_callback(
 			'/\bclass=(["\'])(.*?)\1/s',
-			static function ( array $matches ) use ( &$wrapper_layers, &$composite_layers, &$fullspan_child_classes, &$phone_destination_classes, &$textarea_rows ): string {
+			static function ( array $matches ) use ( &$wrapper_layers, &$field_ancestors, &$choice_box, &$choice_label, &$composite_layers, &$fullspan_child_classes, &$phone_destination_classes, &$textarea_rows ): string {
 				$classes        = preg_split( '/\s+/', trim( $matches[2] ) );
 				$classes        = false === $classes ? array() : $classes;
 				$is_wrapper     = (bool) array_filter( $classes, static fn ( string $class_name ): bool => 1 === preg_match( '/^grunion-field-[A-Za-z0-9_-]+-wrap$/D', $class_name ) );
 				$is_phone_shell = in_array( 'jetpack-field__input-phone-wrapper', $classes, true );
 				$output         = array();
 				foreach ( $classes as $class_name ) {
+					$transport = $is_wrapper && str_ends_with( $class_name, '-wrap' ) ? substr( $class_name, 0, -5 ) : $class_name;
+					if ( preg_match( '/^ssi-source-(field-ancestor-([0-9]{1,2})|choice-box|choice-label)--([A-Za-z_][A-Za-z0-9_-]{0,79})$/D', $transport, $marker ) ) {
+						if ( $is_wrapper ) {
+							if ( str_starts_with( $marker[1], 'field-ancestor-' ) ) $field_ancestors[ (int) $marker[2] ][] = $marker[3];
+							elseif ( 'choice-box' === $marker[1] ) $choice_box[] = $marker[3];
+							else $choice_label[] = $marker[3];
+						}
+						continue;
+					}
 					if ( preg_match( '/^ssi-textarea-rows-([1-9][0-9]{0,1})$/D', $class_name, $marker ) ) {
 						$textarea_rows = $marker[1];
 						continue;
@@ -646,7 +658,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			$html
 		);
 		if ( ! is_string( $projected ) || ( empty( $wrapper_layers ) && empty( $composite_layers ) && empty( $fullspan_child_classes ) && empty( $phone_destination_classes ) ) ) {
-			return self::with_textarea_rows( is_string( $projected ) ? self::project_semantic_wrappers( $projected ) : $html, $textarea_rows );
+			return self::with_textarea_rows( self::project_whole_choice_field( is_string( $projected ) ? self::project_semantic_wrappers( $projected ) : $html, $field_ancestors, $choice_box, $choice_label ), $textarea_rows );
 		}
 
 		ksort( $wrapper_layers );
@@ -756,7 +768,40 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			);
 			$wrapped        = is_string( $prefixed ) ? $prefixed : $wrapped;
 		}
-		return self::with_textarea_rows( self::project_semantic_wrappers( $wrapped ), $textarea_rows );
+		return self::with_textarea_rows( self::project_whole_choice_field( self::project_semantic_wrappers( $wrapped ), $field_ancestors, $choice_box, $choice_label ), $textarea_rows );
+	}
+
+	/** Restore source ancestry outside the complete choice field and its label. */
+	private static function project_whole_choice_field( string $html, array $ancestors, array $choice_box, array $choice_label ): string {
+		if ( empty( $choice_box ) || strlen( $html ) > 262144 ) return $html;
+		$document = new \DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$loaded = $document->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_NONET );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		if ( ! $loaded ) return $html;
+		$body = $document->getElementsByTagName( 'body' )->item( 0 );
+		if ( ! $body instanceof \DOMElement ) return $html;
+		$field = null;
+		$choice = null;
+		foreach ( $body->getElementsByTagName( 'div' ) as $element ) {
+			$classes = preg_split( '/\s+/', trim( $element->getAttribute( 'class' ) ) );
+			if ( in_array( 'grunion-field-wrap', $classes, true ) ) $field ??= $element;
+			if ( in_array( 'contact-form__checkbox-wrap', $classes, true ) ) $choice ??= $element;
+		}
+		if ( ! $field instanceof \DOMElement || ! $choice instanceof \DOMElement ) return $html;
+		$choice->setAttribute( 'class', implode( ' ', array_unique( array_merge( preg_split( '/\s+/', $choice->getAttribute( 'class' ) ), $choice_box, $choice_label ) ) ) );
+		ksort( $ancestors );
+		foreach ( array_reverse( $ancestors, true ) as $classes ) {
+			$wrapper = $document->createElement( 'div' );
+			$wrapper->setAttribute( 'class', implode( ' ', array_unique( $classes ) ) );
+			$field->parentNode->replaceChild( $wrapper, $field );
+			$wrapper->appendChild( $field );
+			$field = $wrapper;
+		}
+		$output = '';
+		foreach ( $body->childNodes as $child ) $output .= $document->saveHTML( $child );
+		return $output;
 	}
 
 	/**
