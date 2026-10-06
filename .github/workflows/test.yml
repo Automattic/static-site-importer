@@ -76,6 +76,9 @@ jobs:
   homeboy-test:
     name: Homeboy Test (PHP ${{ matrix.php-version }})
     runs-on: ubuntu-latest
+    env:
+      WORDPRESS_VERSION: '7.1.2'
+      STATIC_SITE_IMPORTER_WP_ROOT: ${{ runner.temp }}/wordpress
     strategy:
       fail-fast: false
       matrix:
@@ -85,6 +88,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Provision core HTML API for content-policy regressions
+        run: curl -fsSL "https://wordpress.org/wordpress-${WORDPRESS_VERSION}.tar.gz" | tar -xz -C "$RUNNER_TEMP"
 
       - uses: Extra-Chill/homeboy-action@4e5564566f21d0a95dd0ce5e6e0b910c8d753925  # v2.20.9
         with:

@@ -50,6 +50,7 @@ if ( ! function_exists( 'add_filter' ) ) {
 }
 
 require dirname( __DIR__ ) . '/vendor/autoload.php';
+require_once __DIR__ . '/fixtures/core-html-api.php';
 require dirname( __DIR__ ) . '/includes/cli.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-portable-source-manifest.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';
@@ -66,6 +67,27 @@ $assert     = static function ( bool $condition, string $label ) use ( &$asserti
 
 $compiler_version = \Composer\InstalledVersions::getPrettyVersion( 'automattic/blocks-engine-php-transformer' );
 $assert( is_string( $compiler_version ) && '' !== $compiler_version, 'dla-regression-records-installed-locked-blocks-engine-php-transformer-version' );
+
+require_once __DIR__ . '/fixtures/content-policy-intakes.php';
+ssi_test_content_policy_intakes( static function ( string $label, bool $accepted, $runtime, array $artifact, ?object $reader ) use ( $assert ): void {
+	$assert( $accepted ? is_array( $runtime ) : is_wp_error( $runtime ) && 'static_site_importer_executable_source_rejected' === $runtime->get_error_code(), 'real-normalizer:' . $label );
+	$policy = Static_Site_Importer_Content_Policy::validate_artifact( $artifact, $reader );
+	$assert( $accepted ? true === $policy : is_wp_error( $policy ) && 'static_site_importer_executable_source_rejected' === $policy->get_error_code(), 'real-intake-policy:' . $label );
+	if ( $accepted && isset( $artifact['files'][0]['payload_reference'] ) ) {
+		$files = $artifact['files'];
+		unset( $files[0]['payload_reference']['bytes'] );
+		$malformed = static_site_importer_source_runtime( array( 'files' => $files ), $reader );
+		$assert( is_wp_error( $malformed ) && 'static_site_importer_payload_reference_invalid' === $malformed->get_error_code(), 'normalizer-reference-requires-bounded-size:' . $label );
+		$files[0]['payload_reference'] = 'string-reference';
+		$malformed = static_site_importer_source_runtime( array( 'files' => $files ), $reader );
+		$assert( is_wp_error( $malformed ) && 'static_site_importer_payload_reference_invalid' === $malformed->get_error_code(), 'normalizer-preserves-malformed-reference-for-rejection:' . $label );
+		$files = $artifact['files'];
+		$files[0]['payload'] = array( 'reference' => $files[0]['payload_reference'] );
+		unset( $files[0]['payload_reference'] );
+		$aliased = static_site_importer_source_runtime( array( 'files' => $files ), $reader );
+		$assert( is_array( $aliased ) && $files[0]['payload']['reference'] === ( $aliased['artifact']['files'][0]['payload_reference'] ?? null ), 'normalizer-preserves-canonical-reference-alias:' . $label );
+	}
+} );
 
 $missing = static_site_importer_cli_import_input( array(), array() );
 $assert( is_wp_error( $missing ) && 'static_site_importer_cli_request_invalid' === $missing->get_error_code(), 'malformed-missing-request' );
@@ -197,7 +219,7 @@ file_put_contents(
 $report_input    = static_site_importer_cli_import_input( array(), array( 'request' => $report_request ) );
 $resolved_report = apply_filters( 'static_site_importer_resolve_source_reference', null, 'request-bundle:report-source', 'files' );
 $assert( is_array( $report_input ) && array( 'scroll-states.json' ) === ( $resolved_report['source']['metadata']['reports'] ?? null ), 'request-bundle-preserves-declared-report-paths' );
-$report_runtime = static_site_importer_source_runtime( is_array( $resolved_report ) ? $resolved_report['source'] : array() );
+$report_runtime = static_site_importer_source_runtime( is_array( $resolved_report ) ? $resolved_report['source'] : array(), $resolved_report['payload_reader'] ?? null );
 $report_paths   = is_array( $report_runtime ) ? array_column( $report_runtime['artifact']['files'] ?? array(), 'path' ) : array();
 $assert( array( 'website/index.html', 'scroll-states.json' ) === $report_paths, 'request-bundle-keeps-declared-reports-at-artifact-root' );
 foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $report_bundle_dir, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST ) as $item ) {
@@ -310,7 +332,7 @@ try {
 	file_put_contents( $dla_request, wp_json_encode( array( 'operation' => 'plan', 'source' => array( 'type' => 'files', 'ref' => 'request-bundle:dla-source' ) ) ) );
 	$dla_input    = static_site_importer_cli_import_input( array(), array( 'request' => $dla_request ) );
 	$dla_resolved = apply_filters( 'static_site_importer_resolve_source_reference', null, 'request-bundle:dla-source', 'files' );
-	$dla_runtime  = is_array( $dla_resolved ) ? static_site_importer_source_runtime( $dla_resolved['source'] ) : new WP_Error( 'static_site_importer_cli_request_bundle_invalid' );
+	$dla_runtime  = is_array( $dla_resolved ) ? static_site_importer_source_runtime( $dla_resolved['source'], $dla_resolved['payload_reader'] ) : new WP_Error( 'static_site_importer_cli_request_bundle_invalid' );
 	$dla_artifact = is_array( $dla_runtime ) ? $dla_runtime['artifact'] : array();
 	$dla_reader   = is_array( $dla_resolved ) ? $dla_resolved['payload_reader'] : null;
 	$dla_files    = is_array( $dla_artifact['files'] ?? null ) ? $dla_artifact['files'] : array();

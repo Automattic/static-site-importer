@@ -93,8 +93,13 @@ final class Static_Site_Importer_Content_Policy {
 		'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
 	);
 
-	/** @return true|WP_Error */
-	public static function validate_artifact( array $artifact ) {
+	/**
+	 * @param array<string,mixed> $artifact Website artifact.
+	 * @param object|null $payload_reader Canonical source payload reader.
+	 * @param callable|null $retain_text_payload Optional freeze-boundary consumer of verified textual bytes.
+	 * @return true|WP_Error
+	 */
+	public static function validate_artifact( array $artifact, ?object $payload_reader = null, ?callable $retain_text_payload = null ) {
 		$files = $artifact['files'] ?? null;
 		if ( ! is_array( $files ) ) {
 			return new WP_Error( 'static_site_importer_artifact_files_invalid', 'Website artifacts must declare files as an array.' );
@@ -124,9 +129,20 @@ final class Static_Site_Importer_Content_Policy {
 					return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s is not static content.', $path ), array( 'path' => $path ) );
 				}
 			}
-			$content = self::file_content( $file );
-			if ( null !== $content && self::is_textual_path( $path ) && self::contains_server_code( $content ) ) {
-				return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s contains server-side code.', $path ), array( 'path' => $path ) );
+			if ( self::is_textual_path( $path ) ) {
+				$content = self::file_bytes( $file, $payload_reader );
+				if ( $content instanceof WP_Error ) {
+					return $content;
+				}
+				if ( null !== $content && self::path_contains_server_code( $path, $content ) ) {
+					return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s contains server-side code.', $path ), array( 'path' => $path ) );
+				}
+				if ( null !== $content && null !== $retain_text_payload && ( isset( $file['payload_reference'] ) || isset( $file['payload']['reference'] ) ) ) {
+					$retained = $retain_text_payload( $file, $content );
+					if ( $retained instanceof WP_Error ) {
+						return $retained;
+					}
+				}
 			}
 		}
 		return true;
@@ -189,6 +205,67 @@ final class Static_Site_Importer_Content_Policy {
 
 	public static function contains_server_code( string $content ): bool {
 		return preg_match( '/<\?(?:php|=|[[:space:]])/i', $content ) === 1;
+	}
+
+	/** Only HTML honors inert markup; SVG, JS, CSS, and other sources stay raw. */
+	public static function path_contains_server_code( string $path, string $content ): bool {
+		if ( ! self::contains_server_code( $content ) ) {
+			return false;
+		}
+		if ( ! in_array( strtolower( pathinfo( $path, PATHINFO_EXTENSION ) ), array( 'html', 'htm' ), true ) ) {
+			return true;
+		}
+		if ( ! class_exists( 'WP_HTML_Tag_Processor' ) ) {
+			return true;
+		}
+
+		// Preserve encoded examples when core decodes text nodes. This does not
+		// change tag/comment boundaries, and raw-text bodies are never decoded.
+		$tokens = new WP_HTML_Tag_Processor( str_replace( '&', '&amp;', $content ) );
+		while ( $tokens->next_token() ) {
+			$type = $tokens->get_token_type();
+			// Core 7.1 exposes PHP-style instructions separately from bogus
+			// comments. Their target is part of the original server-code opener.
+			if ( '#processing-instruction' === $type && self::contains_server_code( '<?' . $tokens->get_tag() ) ) {
+				return true;
+			}
+			if ( '#comment' === $type ) {
+				// Only actual HTML comments are inert. PHP processing instructions
+				// become bogus comments in HTML, but remain active source here.
+				if ( in_array( $tokens->get_comment_type(), array( WP_HTML_Tag_Processor::COMMENT_AS_HTML_COMMENT, WP_HTML_Tag_Processor::COMMENT_AS_ABRUPTLY_CLOSED_COMMENT ), true ) ) {
+					continue;
+				}
+				if ( self::contains_server_code( '<' . $tokens->get_full_comment_text() ) ) {
+					return true;
+				}
+			}
+			// Completed tag syntax (including attribute values) is inert. Core
+			// exposes SCRIPT/STYLE and other raw-text bodies on the tag token,
+			// so these must be scanned even though next_token skips their markup.
+			if ( self::contains_server_code( $tokens->get_modifiable_text() ) ) {
+				return true;
+			}
+		}
+		// A marker in incomplete markup cannot establish an inert context.
+		return $tokens->paused_at_incomplete_token();
+	}
+
+	/** Resolve textual references using the owning retention contract, before scanning. */
+	private static function file_bytes( array $file, ?object $payload_reader ) {
+		if ( ! array_key_exists( 'payload_reference', $file ) && ! ( is_array( $file['payload'] ?? null ) && array_key_exists( 'reference', $file['payload'] ) ) ) {
+			return self::file_content( $file );
+		}
+		require_once __DIR__ . '/class-static-site-importer-site-plan-persistence.php';
+		require_once __DIR__ . '/class-static-site-importer-compiler-limits.php';
+		$reference = Static_Site_Importer_Site_Plan_Persistence::payload_reference( $file );
+		$maximum   = Static_Site_Importer_Compiler_Limits::resolve()['max_file_bytes'];
+		if ( self::is_redirects_manifest_path( (string) $file['path'] ) ) {
+			$maximum = self::REDIRECTS_MANIFEST_MAX_BYTES;
+		}
+		if ( ! Static_Site_Importer_Site_Plan_Persistence::valid_payload_reference( $reference ) || ! is_int( $reference['bytes'] ?? null ) || $reference['bytes'] > $maximum ) {
+			return new WP_Error( 'static_site_importer_payload_reference_invalid', 'Textual source references require a bounded byte count and SHA-256 digest.' );
+		}
+		return Static_Site_Importer_Site_Plan_Persistence::write_payload_bytes( $file, $payload_reader );
 	}
 
 	/** @param array<string,mixed> $file */
