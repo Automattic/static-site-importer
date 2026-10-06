@@ -107,7 +107,11 @@ final class Static_Site_Importer_Compilation_Preparation {
 		if ( $supplied_compiled ) {
 			$compiled = $args['compiled_artifact_result'];
 		} else {
-			$compiled = ( new $compiler_class() )->compile( $artifact )->toWordPressSitePlanView();
+			try {
+				$compiled = ( new $compiler_class() )->compile( $artifact )->toWordPressSitePlanView();
+			} catch ( InvalidArgumentException $error ) {
+				return new WP_Error( 'static_site_importer_artifact_compile_failed', $error->getMessage() );
+			}
 			// An unproven dynamic client script becomes a typed, reported loss
 			// instead of failing materialization: the offending scripts are
 			// dropped from the artifact, the plan recompiles proven, and the

@@ -1662,6 +1662,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				unset( $args['source_metadata']['collection'] );
 			}
 		}
+		if ( array() === ( $args['source_metadata'] ?? null ) ) {
+			unset( $args['source_metadata'] );
+		}
 		return self::canonical( $args );
 	}
 
