@@ -48,23 +48,31 @@ $assert( '<p>no links</p>' === Static_Site_Importer_Internal_Link_Runtime::filte
 $absolute = 'data-pin-url=\\u0022https://sandbox.test/?p=6\\u0022';
 $assert( 'data-pin-url=\\u0022https://destination.test/2026/01/news/\\u0022' === Static_Site_Importer_Internal_Link_Runtime::resolve_urls( $absolute ), 'Absolute query permalinks from a build host still resolve on the destination.' );
 
-$result = Static_Site_Importer_Internal_Link_Runtime::prepare_overlay(
+$result        = Static_Site_Importer_Internal_Link_Runtime::prepare_overlay(
 	array( 'writes' => array() ),
-	array( 'writes' => array( array( 'target_path' => 'functions.php', 'content' => "<?php\n// Existing bootstrap.\n" ) ) ),
+	array(
+'writes' => array(
+array(
+'target_path' => 'functions.php',
+'content' => "<?php\n// Existing bootstrap.\n"
+) ) ),
 	'89-hearth-bistro'
 );
-$bootstrap = (string) ( $result['writes'][0]['content'] ?? '' );
-$runtime   = (string) ( $result['writes'][1]['content'] ?? '' );
+$bootstrap     = (string) ( $result['writes'][0]['content'] ?? '' );
+$runtime       = (string) ( $result['writes'][1]['content'] ?? '' );
+$route_runtime = (string) ( $result['writes'][2]['content'] ?? '' );
 $assert( 'materialized' === ( $result['status'] ?? '' ), 'Portable internal links should always materialize into the generated theme.' );
 $assert( str_contains( $bootstrap, '// Existing bootstrap.' ) && str_contains( $bootstrap, 'Static Site Importer portable internal links' ), 'The overlay should keep prior bootstrap code and add the resolver marker.' );
 $assert( str_contains( $bootstrap, "require_once get_stylesheet_directory() . '/portable-internal-links.php'" ) && str_contains( $bootstrap, 'SSI_Theme_89_HEARTH_BISTRO_Internal_Link_Runtime::register()' ), 'The portable theme bootstrap must load and register the resolver after SSI is gone.' );
 $assert( str_contains( $runtime, 'final class SSI_Theme_89_HEARTH_BISTRO_Internal_Link_Runtime' ) && ! str_contains( $runtime, 'Static_Site_Importer_Internal_Link_Runtime' ), 'The generated theme owns a theme-scoped copy of the resolver.' );
+$assert( str_contains( $route_runtime, 'final class SSI_Theme_89_HEARTH_BISTRO_Source_Route_Redirect' ) && str_contains( $bootstrap, "'/portable-source-routes.php'" ), 'Core-only themes deliver the canonical source route resolver without an importer or companion plugin.' );
 
 // The theme copy and the plugin class coexist in either load order (#1820).
 foreach ( array( 'theme-first', 'plugin-first' ) as $order ) {
 	$dir = sys_get_temp_dir() . '/ssi-1820-' . $order . '-' . bin2hex( random_bytes( 4 ) );
 	mkdir( $dir );
 	file_put_contents( $dir . '/portable-internal-links.php', $runtime );
+	file_put_contents( $dir . '/portable-source-routes.php', (string) ( $result['writes'][2]['content'] ?? '' ) );
 	file_put_contents( $dir . '/functions.php', $bootstrap );
 	$plugin = dirname( __DIR__ ) . '/includes/class-static-site-importer-internal-link-runtime.php';
 	$stub   = '<?php define( "ABSPATH", "/" ); function add_filter() {} function get_stylesheet_directory() { return ' . var_export( $dir, true ) . '; } ';
@@ -87,7 +95,12 @@ $assert( 'ok' === trim( $legacy_output ), 'Loading the plugin after a legacy gen
 
 $repeat = Static_Site_Importer_Internal_Link_Runtime::prepare_overlay(
 	array(),
-	array( 'writes' => array( array( 'target_path' => 'functions.php', 'content' => $bootstrap ) ) )
+	array(
+'writes' => array(
+array(
+'target_path' => 'functions.php',
+'content' => $bootstrap
+) ) )
 );
 $assert( 1 === substr_count( (string) ( $repeat['writes'][0]['content'] ?? '' ), 'Static Site Importer portable internal links' ), 'The overlay should be idempotent.' );
 
