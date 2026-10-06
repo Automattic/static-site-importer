@@ -298,43 +298,38 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 */
 	private static function bind_image_block( array $block_match, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, ?WP_Error &$error ): string {
 		$attrs = '' !== trim( (string) ( $block_match[1] ?? '' ) ) ? json_decode( trim( $block_match[1] ), true ) : array();
-		if ( ! is_array( $attrs ) || ! empty( $attrs['id'] ) || str_contains( $block_match[2], '<!-- wp:' ) ) {
+		if ( ! is_array( $attrs ) || str_contains( $block_match[2], '<!-- wp:' ) ) {
 			return $block_match[0];
 		}
-		if ( ! preg_match( '/<img\b[^>]*\bsrc="([^"]+)"/i', $block_match[2], $src_match ) ) {
+		$tags = new WP_HTML_Tag_Processor( $block_match[2] );
+		if ( ! $tags->next_tag( 'IMG' ) ) {
 			return $block_match[0];
 		}
-		$relative = self::theme_relative_raster( html_entity_decode( $src_match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8' ), $theme_uri );
-		if ( null === $relative ) {
+		// Captured IDs belong to the source site, even when the number happens
+		// to exist here. Only the generated theme asset establishes ownership.
+		$attachment_id = self::attachment_id_for_url( (string) $tags->get_attribute( 'src' ), (string) $tags->get_attribute( 'alt' ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
+		if ( null !== $error ) {
 			return $block_match[0];
 		}
-		++$report['replaceable_media_count'];
-		if ( ! array_key_exists( $relative, $attachments ) ) {
-			$alt = preg_match( '/<img\b[^>]*\balt="([^"]*)"/i', $block_match[2], $alt_match ) ? html_entity_decode( $alt_match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8' ) : '';
-			self::ensure_attachment( $theme_dir, $relative, $alt, $state, $attachments, $by_hash, $error );
-			if ( null !== $error ) {
-				return $block_match[0];
-			}
-		}
-		$attachment_id = $attachments[ $relative ];
-		$url           = $attachment_id > 0 ? wp_get_attachment_url( $attachment_id ) : false;
+		$url = $attachment_id > 0 ? wp_get_attachment_url( $attachment_id ) : false;
 		if ( ! is_string( $url ) || '' === $url ) {
 			return $block_match[0];
 		}
 
 		$attrs['id'] = $attachment_id;
-		$inner       = (string) preg_replace_callback(
-			'/<img\b[^>]*>/i',
-			static function ( array $img ) use ( $src_match, $url, $attachment_id ): string {
-				$tag = str_replace( 'src="' . $src_match[1] . '"', 'src="' . esc_url( $url ) . '"', $img[0] );
-				if ( preg_match( '/\bclass="[^"]*"/i', $tag ) ) {
-					return (string) preg_replace( '/\bclass="([^"]*)"/i', 'class="$1 wp-image-' . $attachment_id . '"', $tag, 1 );
-				}
-				return (string) preg_replace( '/^<img\b/i', '<img class="wp-image-' . $attachment_id . '"', $tag, 1 );
-			},
-			$block_match[2],
-			1
-		);
+		if ( isset( $attrs['url'] ) ) {
+			$attrs['url'] = $url;
+		}
+		$tags->set_attribute( 'src', $url );
+		// Change the img identity alone. Figure/className presentation and its
+		// source CSS selectors, including source wp-image classes, stay intact.
+		foreach ( $tags->class_list() as $class ) {
+			if ( preg_match( '/^wp-image-\d+$/', $class ) ) {
+				$tags->remove_class( $class );
+			}
+		}
+		$tags->add_class( 'wp-image-' . $attachment_id );
+		$inner = $tags->get_updated_html();
 		++$bound;
 
 		return '<!-- wp:image ' . serialize_block_attributes( $attrs ) . ' -->' . $inner . '<!-- /wp:image -->';
@@ -597,7 +592,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 */
 	private static function bind_block_opener( array $opener, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, ?WP_Error &$error ): string {
 		$raw = $opener['raw'];
-		if ( 'core/image' === $opener['name'] || '' === $opener['json'] ) {
+		if ( in_array( $opener['name'], array( 'image', 'core/image' ), true ) || '' === $opener['json'] ) {
 			return $raw;
 		}
 		$attrs = json_decode( $opener['json'], true );
@@ -611,7 +606,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			'mediaUrl' => 'mediaId',
 		);
 		foreach ( $id_keys as $source_key => $id_key ) {
-			if ( ! isset( $attrs[ $source_key ] ) || ! is_string( $attrs[ $source_key ] ) || ! empty( $attrs[ $id_key ] ) ) {
+			if ( ! isset( $attrs[ $source_key ] ) || ! is_string( $attrs[ $source_key ] ) ) {
 				continue;
 			}
 			$id = self::attachment_id_for_url( $attrs[ $source_key ], '', $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
@@ -725,12 +720,19 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		if ( '' === $image_class || $src_id <= 0 || ! str_starts_with( strtolower( $tag ), '<img' ) ) {
 			return $tag;
 		}
-		$class = esc_attr( $image_class ?? 'wp-image-' . $src_id );
-		if ( preg_match( '/\bclass="[^"]*"/i', $tag ) ) {
-			return (string) preg_replace( '/\bclass="([^"]*)"/i', 'class="$1 ' . $class . '"', $tag, 1 );
+		$tags = new WP_HTML_Tag_Processor( $tag );
+		if ( ! $tags->next_tag( 'IMG' ) ) {
+			return $tag;
 		}
-
-		return (string) preg_replace( '/^<img\b/i', '<img class="' . $class . '"', $tag, 1 );
+		foreach ( $tags->class_list() as $class ) {
+			if ( preg_match( '/^wp-image-\d+$/', $class ) || ( null !== $image_class && str_starts_with( $class, 'size-' ) ) ) {
+				$tags->remove_class( $class );
+			}
+		}
+		foreach ( explode( ' ', $image_class ?? 'wp-image-' . $src_id ) as $class ) {
+			$tags->add_class( $class );
+		}
+		return $tags->get_updated_html();
 	}
 
 	/**
