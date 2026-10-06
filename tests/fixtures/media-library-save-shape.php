@@ -9,30 +9,7 @@ function esc_url( string $url ): string { return htmlspecialchars( $url, ENT_QUO
 function esc_attr( string $value ): string { return htmlspecialchars( $value, ENT_QUOTES ); }
 function serialize_block_attributes( array $attrs ): string { return json_encode( $attrs, JSON_UNESCAPED_SLASHES ); } // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Standalone serialization-boundary stub.
 
-/** HTML API boundary for this standalone save-shape fixture; real WP tests cover binding. */
-class WP_HTML_Tag_Processor {
-	private DOMDocument $document;
-	private ?DOMElement $image = null;
-	private string $original = '';
-	public function __construct( private string $html ) {
-		$this->document = new DOMDocument();
-	}
-	public function next_tag( string $name ): bool {
-		if ( 'IMG' !== $name || ! preg_match( '/<img\b[^>]*>/i', $this->html, $match ) ) {
-			return false;
-		}
-		$this->original = $match[0];
-		$this->document->loadHTML( $this->original, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD );
-		$this->image = $this->document->getElementsByTagName( 'img' )->item( 0 );
-		return null !== $this->image;
-	}
-	public function get_attribute( string $name ): string { return $this->image->getAttribute( $name ); }
-	public function set_attribute( string $name, string $value ): void { $this->image->setAttribute( $name, $value ); }
-	public function class_list(): array { return array_filter( preg_split( '/\s+/', trim( $this->get_attribute( 'class' ) ) ) ); }
-	public function remove_class( string $class ): void { $this->set_attribute( 'class', implode( ' ', array_diff( $this->class_list(), array( $class ) ) ) ); }
-	public function add_class( string $class ): void { $this->set_attribute( 'class', implode( ' ', array_unique( array_merge( $this->class_list(), array( $class ) ) ) ) ); }
-	public function get_updated_html(): string { return str_replace( $this->original, $this->document->saveHTML( $this->image ), $this->html ); }
-}
+require __DIR__ . '/class-media-library-tag-processor.php';
 
 $source_file = getenv( 'SSI_MEDIA_LIBRARY_SOURCE' );
 require false !== $source_file && '' !== $source_file ? $source_file : dirname( __DIR__, 2 ) . '/includes/class-static-site-importer-media-library-materializer.php';

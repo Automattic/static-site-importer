@@ -302,7 +302,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			return $block_match[0];
 		}
 		$tags = new WP_HTML_Tag_Processor( $block_match[2] );
-		if ( ! $tags->next_tag( 'IMG' ) ) {
+		if ( ! $tags->next_tag( array( 'tag_name' => 'IMG' ) ) ) {
 			return $block_match[0];
 		}
 		// Captured IDs belong to the source site, even when the number happens
@@ -323,7 +323,8 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		$tags->set_attribute( 'src', $url );
 		// Change the img identity alone. Figure/className presentation and its
 		// source CSS selectors, including source wp-image classes, stay intact.
-		foreach ( $tags->class_list() as $class ) {
+		$classes = preg_split( '/\s+/', (string) $tags->get_attribute( 'class' ), -1, PREG_SPLIT_NO_EMPTY );
+		foreach ( is_array( $classes ) ? $classes : array() as $class ) {
 			if ( preg_match( '/^wp-image-\d+$/', $class ) ) {
 				$tags->remove_class( $class );
 			}
@@ -721,10 +722,11 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			return $tag;
 		}
 		$tags = new WP_HTML_Tag_Processor( $tag );
-		if ( ! $tags->next_tag( 'IMG' ) ) {
+		if ( ! $tags->next_tag( array( 'tag_name' => 'IMG' ) ) ) {
 			return $tag;
 		}
-		foreach ( $tags->class_list() as $class ) {
+		$classes = preg_split( '/\s+/', (string) $tags->get_attribute( 'class' ), -1, PREG_SPLIT_NO_EMPTY );
+		foreach ( is_array( $classes ) ? $classes : array() as $class ) {
 			if ( preg_match( '/^wp-image-\d+$/', $class ) || ( null !== $image_class && str_starts_with( $class, 'size-' ) ) ) {
 				$tags->remove_class( $class );
 			}
