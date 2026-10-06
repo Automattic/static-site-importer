@@ -78,7 +78,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       WORDPRESS_VERSION: '7.1.2'
-      STATIC_SITE_IMPORTER_WP_ROOT: ${{ runner.temp }}/wordpress
     strategy:
       fail-fast: false
       matrix:
@@ -93,6 +92,8 @@ jobs:
         run: curl -fsSL "https://wordpress.org/wordpress-${WORDPRESS_VERSION}.tar.gz" | tar -xz -C "$RUNNER_TEMP"
 
       - uses: Extra-Chill/homeboy-action@4e5564566f21d0a95dd0ce5e6e0b910c8d753925  # v2.20.9
+        env:
+          STATIC_SITE_IMPORTER_WP_ROOT: ${{ runner.temp }}/wordpress
         with:
           commands: review test
           args: --extension wordpress
