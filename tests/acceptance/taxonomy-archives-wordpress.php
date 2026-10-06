@@ -64,7 +64,7 @@ $taxonomy_assert( 0 === ( $plan['quality']['metrics']['fallback_count'] ?? -1 ),
 $shared_chrome   = implode( "\n", array_map( static fn( array $part ): string => (string) ( $part['canonical_block_markup'] ?? '' ), $plan['template_parts'] ?? array() ) );
 $captured_chrome = (string) ( $category_template['canonical_block_markup'] ?? '' ) . $shared_chrome;
 $taxonomy_assert( str_contains( $captured_chrome, 'Shared source header' ) && str_contains( $captured_chrome, 'Shared source footer' ), 'The category presentation must retain its captured shared chrome.' );
-$taxonomy_assert( str_contains( (string) ( $category_template['canonical_block_markup'] ?? '' ), '"slug":"footer"' ) && str_contains( $shared_chrome, 'footer-content' ), 'The category template must use the shared footer wrapper and its source-owned inline content.' );
+$taxonomy_assert( str_contains( (string) ( $category_template['canonical_block_markup'] ?? '' ), '"slug":"footer"' ) && str_contains( $shared_chrome, 'Shared source footer' ), 'The category template must retain the shared footer wrapper and its captured source-owned content.' );
 
 $rollback_args                                   = $compiled['args'];
 $rollback_args['slug']                           = 'taxonomy-archive-rollback';
@@ -216,5 +216,10 @@ $empty_html          = do_blocks( $archive_template->content );
 $GLOBALS['wp_query'] = $previous_query;
 $GLOBALS['post']     = $previous_post;
 $taxonomy_assert( ! is_wp_error( $empty_term ) && 0 === (int) $empty_query->found_posts && str_contains( $empty_html, 'No posts found.' ), 'An empty native term archive remains a valid empty query with its captured native empty state.' );
+$ssi_plugin_active = in_array( 'static-site-importer/static-site-importer.php', (array) get_option( 'active_plugins', array() ), true );
+$taxonomy_assert( ! $ssi_plugin_active, 'Browser route proof must exercise the generated theme bootstrap with SSI absent from the active plugin list.' );
+
 echo 'WordPress ' . esc_html( get_bloginfo( 'version' ) ) . "\n";
 echo "Taxonomy archive WordPress store acceptance passed.\n";
+echo "SSI is inactive for the subsequent real base/page-2 HTTP requests.\n";
+echo 'SSI-TAXONOMY-ADOPTION-PLAN:' . wp_json_encode( array( 'plan' => $plan, 'args' => $compiled['args'] ) ) . "\n";

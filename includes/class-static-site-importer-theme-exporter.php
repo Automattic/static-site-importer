@@ -46,6 +46,7 @@ class Static_Site_Importer_Theme_Exporter {
 		$diagnostics     = array();
 		$files           = array();
 		$used_paths      = array();
+		$post_artifact_paths = array();
 
 		$stylesheet = self::export_theme_stylesheet_file( $theme_dir, $root );
 		if ( null !== $stylesheet ) {
@@ -108,6 +109,7 @@ class Static_Site_Importer_Theme_Exporter {
 					$path = self::export_artifact_path( $root . '/post/' . ( isset( $page->post_name ) ? sanitize_title( (string) $page->post_name ) : (string) ( isset( $page->ID ) ? (int) $page->ID : 0 ) ) . '/index.html', $root . '/post/page/index.html' );
 				}
 				$used_paths[ $path ] = true;
+				$post_artifact_paths[ (int) ( $page->ID ?? 0 ) ] = $path;
 				$planned[]           = array(
 					'page'     => $page,
 					'path'     => $path,
@@ -130,6 +132,18 @@ class Static_Site_Importer_Theme_Exporter {
 				if ( '' === $page_html ) {
 					$page_html = self::blocks_to_html( isset( $page->post_content ) ? (string) $page->post_content : '' );
 				}
+				$site_origin = rtrim( home_url( '/' ), '/' );
+				$page_html   = str_replace( $site_origin . '/', '/', $page_html );
+				if ( 'post' === ( $page->post_type ?? '' ) ) {
+					$target_route = '/' . trim( (string) preg_replace( '#/index\.html$#', '', substr( $path, strlen( $root ) ) ), '/' );
+					$source_routes = array_merge(
+						array( (string) wp_parse_url( get_permalink( $page ), PHP_URL_PATH ) ),
+						function_exists( 'get_post_meta' ) ? array_map( 'strval', get_post_meta( $page_id, '_static_site_importer_source_route', false ) ) : array()
+					);
+					foreach ( array_unique( array_filter( $source_routes ) ) as $source_route ) {
+						$page_html = str_replace( 'href="' . trailingslashit( $source_route ) . '"', 'href="' . trailingslashit( $target_route ) . '"', $page_html );
+					}
+				}
 
 				$files[] = self::export_file_entry(
 					$path,
@@ -139,12 +153,16 @@ class Static_Site_Importer_Theme_Exporter {
 					array(
 						'post_id'   => $page_id,
 						'post_name' => isset( $page->post_name ) ? (string) $page->post_name : '',
+						'metadata'  => 'post' === ( $page->post_type ?? '' ) ? array(
+							'post_type' => 'post',
+							'route_path' => '/' . trim( (string) preg_replace( '#/index\.html$#', '', substr( $path, strlen( $root ) ) ), '/' ),
+						) : array(),
 					)
 				);
 			}
 		}
 
-		$taxonomy_archive_files = self::export_taxonomy_archive_files( $theme_slug, $root, $used_paths, null !== $global_stylesheet, $diagnostics );
+		$taxonomy_archive_files = self::export_taxonomy_archive_files( $theme_slug, $root, $used_paths, $post_artifact_paths, null !== $global_stylesheet, $diagnostics );
 		$files                  = array_merge( $files, $taxonomy_archive_files );
 		$taxonomy_archive_count = count( array_unique( array_map( static fn( array $file ): string => (string) ( $file['taxonomy'] ?? '' ) . ':' . (string) ( $file['term_id'] ?? '' ), $taxonomy_archive_files ) ) );
 
@@ -206,7 +224,7 @@ class Static_Site_Importer_Theme_Exporter {
 	}
 
 	/** Export current native taxonomy archives through the active theme's block templates. */
-	private static function export_taxonomy_archive_files( string $theme_slug, string $root, array $used_paths, bool $include_global_styles, array &$diagnostics ): array {
+	private static function export_taxonomy_archive_files( string $theme_slug, string $root, array $used_paths, array $post_artifact_paths, bool $include_global_styles, array &$diagnostics ): array {
 		if ( ! function_exists( 'get_terms' ) || ! function_exists( 'get_term_link' ) || ! function_exists( 'get_block_template' ) || ! function_exists( 'do_blocks' ) ) {
 			return array();
 		}
@@ -331,20 +349,17 @@ class Static_Site_Importer_Theme_Exporter {
 						if ( ! $archive_post instanceof WP_Post || 'post' !== $archive_post->post_type ) {
 							continue;
 						}
-						$artifact_post_path = self::export_page_artifact_path( $archive_post, $root );
-						if ( isset( $used_paths[ $artifact_post_path ] ) ) {
-							$artifact_post_path = self::export_artifact_path( $root . '/post/' . sanitize_title( (string) $archive_post->post_name ) . '/index.html', $root . '/post/page/index.html' );
-						}
+						$artifact_post_path = (string) ( $post_artifact_paths[ (int) $archive_post->ID ] ?? self::export_page_artifact_path( $archive_post, $root ) );
 						$target_route = preg_replace( '#/index\.html$#', '', substr( $artifact_post_path, strlen( $root ) ) );
-						$portable_href = self::relative_export_href( $page_route, (string) $target_route );
+						$portable_href = '/' . trim( (string) $target_route, '/' ) . '/';
 						$escaped_href  = function_exists( 'esc_attr' ) ? esc_attr( $portable_href ) : htmlspecialchars( $portable_href, ENT_QUOTES, 'UTF-8' );
 						$source_routes = array_merge(
 							array( (string) wp_parse_url( get_permalink( $archive_post ), PHP_URL_PATH ) ),
-							function_exists( 'get_post_meta' ) ? array_map( 'strval', get_post_meta( (int) $archive_post->ID, Static_Site_Importer_Source_Route_Redirect::META_KEY, false ) ) : array()
+							function_exists( 'get_post_meta' ) ? array_map( 'strval', get_post_meta( (int) $archive_post->ID, '_static_site_importer_source_route', false ) ) : array()
 						);
 						foreach ( array_unique( array_filter( $source_routes ) ) as $source_post_route ) {
 							$source_relative = str_repeat( '../', substr_count( trim( $page_route, '/' ), '/' ) + 1 ) . ltrim( $source_post_route, '/' );
-							$html            = str_replace( 'href="' . untrailingslashit( home_url( $source_post_route ) ) . '"', 'href="' . $escaped_href . '"', $html );
+							$html            = str_replace( 'href="' . rtrim( home_url( $source_post_route ), '/' ) . '"', 'href="' . $escaped_href . '"', $html );
 							$html            = str_replace( 'href="' . trailingslashit( $source_post_route ) . '"', 'href="' . $escaped_href . '"', $html );
 							$html            = str_replace( 'href="' . $source_relative . '"', 'href="' . $escaped_href . '"', $html );
 						}
@@ -923,17 +938,6 @@ class Static_Site_Importer_Theme_Exporter {
 			}
 		}
 		return self::export_artifact_path( $root . '/' . $slug . '/index.html', $root . '/page/index.html' );
-	}
-
-	/** Resolve a root-contained export route relative to a taxonomy archive page. */
-	private static function relative_export_href( string $from_route, string $to_route ): string {
-		$from = array_values( array_filter( explode( '/', trim( $from_route, '/' ) ), 'strlen' ) );
-		$to   = array_values( array_filter( explode( '/', trim( $to_route, '/' ) ), 'strlen' ) );
-		while ( array() !== $from && array() !== $to && $from[0] === $to[0] ) {
-			array_shift( $from );
-			array_shift( $to );
-		}
-		return str_repeat( '../', count( $from ) + 1 ) . implode( '/', $to ) . '/';
 	}
 
 	/**

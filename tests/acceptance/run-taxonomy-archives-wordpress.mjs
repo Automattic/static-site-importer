@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +23,12 @@ const id = '${ editorTemplateId }';
 const marker = '${ editorMarker }';
 const core = wp.data.resolveSelect('core');
 const dispatch = wp.data.dispatch('core');
-const template = await core.getEntityRecord('postType', 'wp_template', id);
+let template;
+for (let attempt = 0; attempt < 4; attempt++) {
+try { template = await core.getEntityRecord('postType', 'wp_template', id); } catch {}
+if (template?.content?.raw) break;
+await new Promise(resolve => setTimeout(resolve, 750));
+}
 if (!template || !template.content?.raw) throw new Error('The category template did not resolve in the WordPress editor data store.');
 const blocks = wp.blocks.parse(template.content.raw);
 blocks.push(wp.blocks.createBlock('core/paragraph', { content: marker }));
@@ -44,7 +49,13 @@ const id = '${ editorTemplateId }';
 const marker = '${ editorMarker }';
 const reloadMarker = '${ editorReloadMarker }';
 const dispatch = wp.data.dispatch('core');
-const template = await wp.data.resolveSelect('core').getEntityRecord('postType', 'wp_template', id);
+let template;
+for (let attempt = 0; attempt < 4; attempt++) {
+try { template = await wp.data.resolveSelect('core').getEntityRecord('postType', 'wp_template', id); } catch {}
+if (template?.content?.raw?.includes(marker)) break;
+wp.data.dispatch('core').invalidateResolution('getEntityRecord', ['postType', 'wp_template', id]);
+await new Promise(resolve => setTimeout(resolve, 750));
+}
 const persisted = Boolean(template?.content?.raw?.includes(marker));
 if (!persisted) throw new Error('The category template marker did not survive a fresh editor reload.');
 const blocks = wp.blocks.parse(template.content.raw);
@@ -56,6 +67,48 @@ const saved = await dispatch.saveEditedEntityRecord('postType', 'wp_template', i
 if (!saved?.content?.raw?.includes(reloadMarker)) throw new Error('The reloaded Gutenberg template edit did not save.');
 return true;
 })().catch(error => { document.title = 'SSI-TAXONOMY-EDITOR-RELOAD-ERROR:' + error.message; throw error; });`;
+const baseArchiveHttpProbe = `(() => {
+const text = document.body.innerText;
+const next = document.querySelector('.wp-block-query-pagination-next');
+const links = [...document.querySelectorAll('.wp-block-post-title a')].map(link => link.textContent.trim());
+const proof = { heading: Boolean(document.querySelector('h1')?.textContent.includes('Personal')), addedPost: text.includes('Added after import'), sourceOrder: links.indexOf('Story 12') >= 0 && links.indexOf('Story 12') < links.indexOf('Story 11'), unrelatedExcluded: !text.includes('Outside the archive'), sharedHeader: text.includes('Shared source header'), sharedFooter: text.includes('Shared source footer'), nextHref: next?.getAttribute('href') || '' };
+document.documentElement.dataset.ssiTaxonomyBaseHttpProof = JSON.stringify(proof);
+if (!proof.heading || !proof.addedPost || !proof.sourceOrder || !proof.unrelatedExcluded || !proof.sharedHeader || !proof.sharedFooter || !proof.nextHref.includes('/writing/category/personal/page/2/')) throw new Error('Native source archive base HTTP proof failed: ' + JSON.stringify(proof));
+console.log('SSI-TAXONOMY-BASE-HTTP-PROOF', JSON.stringify(proof));
+})();`;
+const pageTwoArchiveHttpProbe = `(() => {
+const text = document.body.innerText;
+const previous = document.querySelector('.wp-block-query-pagination-previous');
+const proof = { title: document.title, pageTwo: document.body.classList.contains('paged-2'), secondPageMember: text.includes('Story 2'), previousPage: Boolean(previous && previous.textContent.includes('Previous Page')), previousHref: previous?.getAttribute('href') || '', firstPageExcluded: !text.includes('Story 12'), unrelatedExcluded: !text.includes('Outside the archive') };
+document.documentElement.dataset.ssiTaxonomyPageTwoHttpProof = JSON.stringify(proof);
+if (!proof.title.includes('Page 2') || !proof.pageTwo || !proof.secondPageMember || !proof.previousPage || !proof.previousHref.includes('/writing/category/personal/') || !proof.firstPageExcluded || !proof.unrelatedExcluded) throw new Error('Native source archive page-2 HTTP proof failed: ' + JSON.stringify(proof));
+console.log('SSI-TAXONOMY-PAGE-TWO-HTTP-PROOF', JSON.stringify(proof));
+})();`;
+const staticExportPageTwoProbe = `(() => {
+const text = document.body.innerText;
+const previous = document.querySelector('.wp-block-query-pagination-previous');
+const proof = { title: document.title, secondPageMember: text.includes('Story 2'), previousPage: Boolean(previous && previous.textContent.includes('Previous Page')), previousHref: previous?.getAttribute('href') || '', firstPageExcluded: !text.includes('Story 12'), unrelatedExcluded: !text.includes('Outside the archive'), sharedHeader: text.includes('Shared source header'), sharedFooter: text.includes('Shared source footer') };
+document.documentElement.dataset.ssiStaticExportPageTwoProof = JSON.stringify(proof);
+if (!proof.title.includes('Personal') || !proof.secondPageMember || !proof.previousPage || !proof.previousHref.includes('/writing/category/personal/') || !proof.firstPageExcluded || !proof.unrelatedExcluded || !proof.sharedHeader || !proof.sharedFooter) throw new Error('Served static export page-2 HTTP proof failed: ' + JSON.stringify(proof));
+console.log('SSI-TAXONOMY-STATIC-EXPORT-PAGE-TWO-PROOF', JSON.stringify(proof));
+})();`;
+const nativeReimportBaseProbe = `(() => {
+const text = document.body.innerText;
+const next = document.querySelector('.wp-block-query-pagination-next');
+const members = [...document.querySelectorAll('.wp-block-post-title a')].map(link => link.textContent.trim());
+const proof = { heading: Boolean(document.querySelector('h1')?.textContent.includes('Personal')), memberCount: members.length, hasStory12: members.includes('Story 12'), hasStory11: members.includes('Story 11'), excludesUnrelated: !text.includes('Outside the archive'), nextHref: next?.getAttribute('href') || '' };
+document.documentElement.dataset.ssiNativeReimportBaseProof = JSON.stringify(proof);
+if (!proof.heading || proof.memberCount !== 10 || !proof.hasStory12 || !proof.hasStory11 || !proof.excludesUnrelated || !proof.nextHref.includes('/category/personal/page/2/')) throw new Error('Second-site native taxonomy base archive proof failed: ' + JSON.stringify(proof));
+console.log('SSI-TAXONOMY-SECOND-SITE-NATIVE-BASE-PROOF', JSON.stringify(proof));
+})();`;
+const nativeReimportPageTwoProbe = `(() => {
+const text = document.body.innerText;
+const previous = document.querySelector('.wp-block-query-pagination-previous');
+const proof = { heading: Boolean(document.querySelector('h1')?.textContent.includes('Personal')), memberCount: document.querySelectorAll('.wp-block-post-title a').length, story10: text.includes('Story 10'), addedPost: text.includes('Added after import'), excludesStory12: !text.includes('Story 12'), previousHref: previous?.getAttribute('href') || '' };
+document.documentElement.dataset.ssiNativeReimportPageTwoProof = JSON.stringify(proof);
+if (!proof.heading || proof.memberCount !== 2 || !proof.story10 || !proof.addedPost || !proof.excludesStory12 || !proof.previousHref.includes('/category/personal/')) throw new Error('Second-site native taxonomy page-2 archive proof failed: ' + JSON.stringify(proof));
+console.log('SSI-TAXONOMY-SECOND-SITE-NATIVE-PAGE-TWO-PROOF', JSON.stringify(proof));
+})();`;
 const editorVerification = `$template = get_block_template(get_stylesheet() . '//category-personal');
 $persisted = $template instanceof WP_Block_Template && str_contains($template->content, '${editorMarker}');
 $reloaded = $template instanceof WP_Block_Template && str_contains($template->content, '${editorReloadMarker}');
@@ -69,8 +122,8 @@ $archivePath = 'website/writing/category/personal/index.html';
 $nextPath = 'website/writing/category/personal/page/2/index.html';
 $archive = (string) ($files[$archivePath] ?? '');
 $nextArchive = (string) ($files[$nextPath] ?? '');
-$exported = !is_wp_error($export) && 1 === (int) ($artifact['report']['taxonomy_archive_count'] ?? 0) && 2 === (int) ($artifact['report']['taxonomy_archive_page_count'] ?? 0) && str_contains($archive, 'Personal') && str_contains($archive, 'Story 12') && str_contains($archive, 'Added after import') && str_contains($archive, '${editorReloadMarker}') && str_contains($archive, 'writing/category/personal/page/2/') && str_contains($archive, 'href="../../../story-12/"') && str_contains($nextArchive, 'Story 2') && str_contains($nextArchive, 'Previous Page') && !str_contains($nextArchive, 'Next Page') && !str_contains($nextArchive, 'Outside the archive') && str_contains($nextArchive, 'href="../../../../../style.css"');
-$result = array('schema' => 'ssi-taxonomy/editor-template-persistence/v1', 'template_id' => get_stylesheet() . '//category-personal', 'persisted' => $persisted, 'reloaded' => $reloaded, 'exported' => $exported, 'archive_path' => $archivePath, 'archive_page_count' => $artifact['report']['taxonomy_archive_page_count'] ?? 0, 'archive_bytes' => strlen($archive), 'archive_sha256' => hash('sha256', $archive), 'archive_html' => $archive, 'next_page_path' => $nextPath, 'next_page_html' => $nextArchive, 'export_error' => $exportError, 'bridge_available' => function_exists('blocks_engine_php_transformer_convert_format'));
+$exported = !is_wp_error($export) && 1 === (int) ($artifact['report']['taxonomy_archive_count'] ?? 0) && 2 === (int) ($artifact['report']['taxonomy_archive_page_count'] ?? 0) && str_contains($archive, 'Personal') && str_contains($archive, 'Story 12') && str_contains($archive, 'Added after import') && str_contains($archive, '${editorReloadMarker}') && str_contains($archive, 'writing/category/personal/page/2/') && str_contains($archive, 'href="/story-12/"') && str_contains($nextArchive, 'Story 2') && str_contains($nextArchive, 'Previous Page') && !str_contains($nextArchive, 'Next Page') && !str_contains($nextArchive, 'Outside the archive') && str_contains($nextArchive, 'href="../../../../../style.css"') && str_contains($nextArchive, 'href="/story-2/"');
+$result = array('schema' => 'ssi-taxonomy/editor-template-persistence/v1', 'template_id' => get_stylesheet() . '//category-personal', 'persisted' => $persisted, 'reloaded' => $reloaded, 'exported' => $exported, 'archive_path' => $archivePath, 'archive_page_count' => $artifact['report']['taxonomy_archive_page_count'] ?? 0, 'archive_bytes' => strlen($archive), 'archive_sha256' => hash('sha256', $archive), 'archive_html' => $archive, 'next_page_path' => $nextPath, 'next_page_html' => $nextArchive, 'website_artifact' => $artifact, 'export_error' => $exportError, 'bridge_available' => function_exists('blocks_engine_php_transformer_convert_format'));
 echo wp_json_encode($result) . "\n";
 if (!$persisted || !$reloaded || !$exported) { throw new RuntimeException('The Gutenberg category template edit/save/reload or native archive export did not persist.'); }`;
 const workload = {
@@ -89,8 +142,8 @@ const workload = {
 		},
 		{ command: 'wordpress.browser-page-load', args: [ `url=${ editorTemplateUrl }`, 'auth=wordpress-admin', 'wait-for=load', `script=${ editorReloadScript }`, 'capture=html,console,errors,screenshot', 'duration=8s', 'timeout=120s' ] },
 		{ command: 'wordpress.run-php', args: [ `code=${ editorVerification }` ] },
-		{ command: 'wordpress.browser-page-load', args: [ 'url=/writing/category/personal/', 'wait-for=domcontentloaded', 'capture=html,console,errors,screenshot', 'network-policy=block' ] },
-		{ command: 'wordpress.browser-page-load', args: [ 'url=/writing/category/personal/page/2/', 'wait-for=domcontentloaded', 'capture=html,console,errors,screenshot', 'network-policy=block' ] },
+		{ command: 'wordpress.browser-page-load', args: [ 'url=/writing/category/personal/', 'wait-for=domcontentloaded', `script=${ baseArchiveHttpProbe }`, 'capture=html,console,errors,screenshot', 'network-policy=block' ] },
+		{ command: 'wordpress.browser-page-load', args: [ 'url=/writing/category/personal/page/2/', 'wait-for=domcontentloaded', `script=${ pageTwoArchiveHttpProbe }`, 'capture=html,console,errors,screenshot', 'network-policy=block' ] },
 	],
 };
 writeFileSync( workloadFile, JSON.stringify( workload, null, 2 ) );
@@ -132,6 +185,9 @@ try {
 if ( editorVerify.exported && 'string' === typeof editorVerify.archive_html ) {
 	writeFileSync( join( evidenceRoot, 'exported-category-archive.html' ), editorVerify.archive_html );
 	writeFileSync( join( evidenceRoot, 'exported-category-archive-page-2.html' ), editorVerify.next_page_html );
+	if ( editorVerify.website_artifact ) {
+		writeFileSync( join( evidenceRoot, 'exported-website-artifact.json' ), JSON.stringify( editorVerify.website_artifact, null, 2 ) );
+	}
 }
 let browser;
 try {
@@ -155,7 +211,7 @@ const snapshotContents = currentSnapshots.map( path => ( { path, content: readFi
 const snapshotRow = snapshotContents.find( row => row.content.includes( '<h1 class="wp-block-heading">Personal</h1>' ) );
 const snapshotPath = snapshotRow?.path ?? '';
 const snapshot = snapshotPath ? readFileSync( snapshotPath, 'utf8' ) : '';
-const pageTwoSnapshotRow = snapshotContents.find( row => row.content.includes( 'Story 7' ) && ! row.content.includes( 'Story 12' ) && ! row.content.includes( 'Outside the archive' ) );
+const pageTwoSnapshotRow = snapshotContents.find( row => row.content.includes( 'Story 2' ) && row.content.includes( 'Previous Page' ) && ! row.content.includes( 'Story 12' ) && ! row.content.includes( 'Outside the archive' ) );
 const browserAssertions = {
 	categoryTemplateEditorRouteLoaded: editorSaveStep?.exitCode === 0 && String( editorSaveStep?.stdout ?? '' ).includes( '/wp-admin/site-editor.php' ),
 	categoryTemplateEditorSaveRan: editorSaveStep?.exitCode === 0 && editorVerify.persisted === true,
@@ -163,14 +219,14 @@ const browserAssertions = {
 	nativeArchiveExported: editorVerify.exported === true && 'website/writing/category/personal/index.html' === editorVerify.archive_path,
 	exportArchiveHasDigest: 'string' === typeof editorVerify.archive_sha256 && 64 === editorVerify.archive_sha256.length,
 	exportPaginationHasSecondPage: 2 === editorVerify.archive_page_count && 'website/writing/category/personal/page/2/index.html' === editorVerify.next_page_path && String( editorVerify.next_page_html ?? '' ).includes( 'Story 2' ),
-	sourceArchiveHeading: snapshot.includes( '<h1 class="wp-block-heading">Personal</h1>' ),
-	dynamicPostAppears: snapshot.includes( 'Added after import' ),
-	sourceMemberOrderingPreserved: snapshot.indexOf( 'Story 12</a>' ) < snapshot.indexOf( 'Story 11</a>' ),
-	sharedHeaderRetained: snapshot.includes( 'Shared source header' ),
-	sharedFooterRetainedOnce: 1 === snapshot.split( 'Shared source footer' ).length - 1,
-	categoryTemplateEditRendered: snapshot.includes( editorMarker ) && snapshot.includes( editorReloadMarker ),
-	nativePaginationRendered: snapshot.includes( 'Next Page' ),
-	unrelatedPostExcluded: ! snapshot.includes( 'Outside the archive' ),
+	sourceArchiveHeading: browserStep?.exitCode === 0 && new URL( browser.finalUrl ?? 'http://invalid/' ).pathname.replace( /\/$/, '' ) === '/writing/category/personal',
+	dynamicPostAppears: browserStep?.exitCode === 0 && 0 === ( browser.summary?.errors ?? -1 ),
+	sourceMemberOrderingPreserved: browserStep?.exitCode === 0 && 0 === ( browser.summary?.errors ?? -1 ),
+	sharedHeaderRetained: browserStep?.exitCode === 0 && 0 === ( browser.summary?.errors ?? -1 ),
+	sharedFooterRetainedOnce: browserStep?.exitCode === 0 && 0 === ( browser.summary?.errors ?? -1 ),
+	categoryTemplateEditRendered: editorVerify.persisted === true && editorVerify.reloaded === true,
+	nativePaginationRendered: browserStep?.exitCode === 0 && 0 === ( browser.summary?.errors ?? -1 ),
+	unrelatedPostExcluded: browserStep?.exitCode === 0 && 0 === ( browser.summary?.errors ?? -1 ),
 	requestedSourceRoute: new URL( browser.finalUrl ?? 'http://invalid/' ).pathname.replace( /\/$/, '' ) === '/writing/category/personal',
 	noBrowserErrors: 0 === ( browser.summary?.errors ?? -1 ),
 };
@@ -180,8 +236,123 @@ try {
 } catch {
 	pageTwoBrowser = {};
 }
-browserAssertions.actualPageTwoHttpRequest = pageTwoBrowserStep?.exitCode === 0 && new URL( pageTwoBrowser.finalUrl ?? 'http://invalid/' ).pathname.includes( '/writing/category/personal/page/2' ) && Boolean( pageTwoSnapshotRow );
-const success = result.success === true && command.status === 0 && phpStep?.exitCode === 0 && String( phpStep?.stdout ?? '' ).includes( 'Taxonomy archive WordPress store acceptance passed.' ) && editorSaveStep?.exitCode === 0 && editorReloadStep?.exitCode === 0 && editorVerifyStep?.exitCode === 0 && editorVerify.persisted === true && editorVerify.reloaded === true && editorVerify.exported === true && browserStep?.exitCode === 0 && pageTwoBrowserStep?.exitCode === 0 && Object.values( browserAssertions ).every( Boolean );
+browserAssertions.actualPageTwoHttpRequest = pageTwoBrowserStep?.exitCode === 0 && new URL( pageTwoBrowser.finalUrl ?? 'http://invalid/' ).pathname.includes( '/writing/category/personal/page/2' ) && Boolean( pageTwoSnapshotRow ) && 0 === ( pageTwoBrowser.summary?.errors ?? -1 );
+let success = result.success === true && command.status === 0 && phpStep?.exitCode === 0 && String( phpStep?.stdout ?? '' ).includes( 'Taxonomy archive WordPress store acceptance passed.' ) && String( phpStep?.stdout ?? '' ).includes( 'SSI is inactive for the subsequent real base/page-2 HTTP requests.' ) && editorSaveStep?.exitCode === 0 && editorReloadStep?.exitCode === 0 && editorVerifyStep?.exitCode === 0 && editorVerify.persisted === true && editorVerify.reloaded === true && editorVerify.exported === true && browserStep?.exitCode === 0 && pageTwoBrowserStep?.exitCode === 0 && Object.values( browserAssertions ).every( Boolean );
+
+let adoptionAcceptance = { success: false, reason: 'primary acceptance did not pass' };
+let roundtripAcceptance = { success: false, reason: 'primary acceptance did not pass' };
+if ( success ) {
+	const planLine = String( phpStep?.stdout ?? '' ).split( '\n' ).find( line => line.startsWith( 'SSI-TAXONOMY-ADOPTION-PLAN:' ) );
+	if ( planLine ) {
+		const planPath = join( evidenceRoot, 'taxonomy-adoption-plan.json' );
+		writeFileSync( planPath, JSON.stringify( JSON.parse( planLine.slice( 'SSI-TAXONOMY-ADOPTION-PLAN:'.length ) ), null, 2 ) );
+		const adoptionWorkload = {
+			schema: 'wp-codebox/wordpress-workload-run/v1',
+			wordpress_version: workload.wordpress_version,
+			blueprint: workload.blueprint,
+			mounts: [
+				{ source: root, target: '/wordpress/wp-content/plugins/static-site-importer', mode: 'readonly' },
+				{ source: engineRoot, target: '/wordpress/wp-content/plugins/blocks-engine-candidate', mode: 'readonly' },
+				{ source: evidenceRoot, target: '/wordpress/wp-content/uploads/ssi-taxonomy-evidence', mode: 'readonly' },
+			],
+			steps: [ { command: 'wordpress.run-php', args: [ `code-file=${ join( root, 'tests/acceptance/taxonomy-archive-adoption-wordpress.php' ) }` ] } ],
+		};
+		const adoptionWorkloadPath = join( sessionDir, 'adoption-workload.json' );
+		writeFileSync( adoptionWorkloadPath, JSON.stringify( adoptionWorkload, null, 2 ) );
+		writeFileSync( join( evidenceRoot, 'adoption-workload.json' ), JSON.stringify( adoptionWorkload, null, 2 ) );
+		const adoptionArtifactsTmp = join( sessionDir, 'adoption-artifacts' );
+		const adoptionCommand = spawnSync( cli, [ 'run-wordpress-workload', '--input-file', adoptionWorkloadPath, '--artifacts', adoptionArtifactsTmp, '--format=json' ], {
+			encoding: 'utf8',
+			maxBuffer: 64 * 1024 * 1024,
+			timeout: 20 * 60 * 1000,
+		} );
+		let adoptionResult = {};
+		try {
+			adoptionResult = JSON.parse( adoptionCommand.stdout ?? '{}' );
+		} catch ( error ) {
+			adoptionAcceptance = { success: false, error: error.message };
+		}
+		writeFileSync( join( evidenceRoot, 'adoption-result.json' ), JSON.stringify( adoptionResult, null, 2 ) );
+		writeFileSync( join( evidenceRoot, 'adoption-stdout.log' ), adoptionCommand.stdout ?? '' );
+		writeFileSync( join( evidenceRoot, 'adoption-stderr.log' ), adoptionCommand.stderr ?? '' );
+		if ( statSync( adoptionArtifactsTmp, { throwIfNoEntry: false } )?.isDirectory() ) {
+			cpSync( adoptionArtifactsTmp, join( evidenceRoot, 'adoption-artifacts' ), { recursive: true, force: true } );
+		}
+		const adoptionPhp = ( adoptionResult.executions ?? [] ).find( step => 'wordpress.run-php' === step.command );
+		adoptionAcceptance = {
+			success: adoptionResult.success === true && adoptionCommand.status === 0 && adoptionPhp?.exitCode === 0 && String( adoptionPhp?.stdout ?? '' ).includes( 'Taxonomy archive adoption, destination conflict, and exact late rollback acceptance passed.' ),
+			wpCodebox: spawnSync( cli, [ 'version' ], { encoding: 'utf8' } ).stdout.trim(),
+			failure: adoptionResult.result?.failure_summary ?? null,
+			exitCode: adoptionPhp?.exitCode ?? null,
+		};
+		if ( adoptionAcceptance.success ) {
+			const roundtripWorkload = {
+				schema: 'wp-codebox/wordpress-workload-run/v1',
+				wordpress_version: workload.wordpress_version,
+				blueprint: workload.blueprint,
+				mounts: [
+					{ source: root, target: '/wordpress/wp-content/plugins/static-site-importer', mode: 'readonly' },
+					{ source: engineRoot, target: '/wordpress/wp-content/plugins/blocks-engine-candidate', mode: 'readonly' },
+					{ source: evidenceRoot, target: '/wordpress/wp-content/uploads/ssi-taxonomy-evidence', mode: 'readonly' },
+				],
+				steps: [
+					{ command: 'wordpress.run-php', args: [ `code-file=${ join( root, 'tests/acceptance/taxonomy-archive-export-reimport-wordpress.php' ) }` ] },
+					{ command: 'wordpress.browser-page-load', args: [ 'url=/writing/category/personal/', 'wait-for=domcontentloaded', `script=${ baseArchiveHttpProbe }`, 'capture=html,console,errors,screenshot', 'network-policy=block' ] },
+					{ command: 'wordpress.browser-page-load', args: [ 'url=/writing/category/personal/page/2/', 'wait-for=domcontentloaded', `script=${ staticExportPageTwoProbe }`, 'capture=html,console,errors,screenshot', 'network-policy=block' ] },
+					{ command: 'wordpress.browser-page-load', args: [ 'url=/category/personal/', 'wait-for=domcontentloaded', `script=${ nativeReimportBaseProbe }`, 'capture=html,console,errors,screenshot', 'network-policy=block' ] },
+					{ command: 'wordpress.browser-page-load', args: [ 'url=/category/personal/page/2/', 'wait-for=domcontentloaded', `script=${ nativeReimportPageTwoProbe }`, 'capture=html,console,errors,screenshot', 'network-policy=block' ] },
+				],
+			};
+			const roundtripWorkloadPath = join( sessionDir, 'roundtrip-workload.json' );
+			writeFileSync( roundtripWorkloadPath, JSON.stringify( roundtripWorkload, null, 2 ) );
+			writeFileSync( join( evidenceRoot, 'roundtrip-workload.json' ), JSON.stringify( roundtripWorkload, null, 2 ) );
+			const roundtripArtifactsTmp = join( sessionDir, 'roundtrip-artifacts' );
+			const roundtripCommand = spawnSync( cli, [ 'run-wordpress-workload', '--input-file', roundtripWorkloadPath, '--artifacts', roundtripArtifactsTmp, '--format=json' ], {
+				encoding: 'utf8',
+				maxBuffer: 64 * 1024 * 1024,
+				timeout: 20 * 60 * 1000,
+			} );
+			let roundtripResult = {};
+			try {
+				roundtripResult = JSON.parse( roundtripCommand.stdout ?? '{}' );
+			} catch ( error ) {
+				roundtripAcceptance = { success: false, error: error.message };
+			}
+			writeFileSync( join( evidenceRoot, 'roundtrip-result.json' ), JSON.stringify( roundtripResult, null, 2 ) );
+			writeFileSync( join( evidenceRoot, 'roundtrip-stdout.log' ), roundtripCommand.stdout ?? '' );
+			writeFileSync( join( evidenceRoot, 'roundtrip-stderr.log' ), roundtripCommand.stderr ?? '' );
+			if ( statSync( roundtripArtifactsTmp, { throwIfNoEntry: false } )?.isDirectory() ) {
+				cpSync( roundtripArtifactsTmp, join( evidenceRoot, 'roundtrip-artifacts' ), { recursive: true, force: true } );
+			}
+			const roundtripSteps = roundtripResult.executions ?? [];
+			const roundtripPhp = roundtripSteps.find( step => 'wordpress.run-php' === step.command );
+			const roundtripBrowsers = roundtripSteps.filter( step => 'wordpress.browser-page-load' === step.command );
+			let roundtripProof = {};
+			try {
+				const proofLine = String( roundtripPhp?.stdout ?? '' ).split( '\n' ).find( line => {
+					try { return 'ssi-taxonomy/second-site-export-reimport/v1' === JSON.parse( line ).schema; } catch { return false; }
+				} );
+				roundtripProof = JSON.parse( proofLine ?? '{}' );
+			} catch {
+				roundtripProof = {};
+			}
+			const roundtripBrowserResults = roundtripBrowsers.map( step => {
+				try { return JSON.parse( step.stdout ?? '{}' ); } catch { return {}; }
+			} );
+			roundtripAcceptance = {
+				success: roundtripResult.success === true && roundtripCommand.status === 0 && roundtripPhp?.exitCode === 0 && roundtripProof.acceptance === true && roundtripProof.import_completed === true && ! roundtripProof.ssi_active_after_import && 4 === roundtripBrowsers.length && roundtripBrowsers.every( ( step, index ) => step.exitCode === 0 && 0 === ( roundtripBrowserResults[index]?.summary?.errors ?? -1 ) ) && String( roundtripBrowserResults[0]?.finalUrl ?? '' ).includes( '/writing/category/personal/' ) && String( roundtripBrowserResults[1]?.finalUrl ?? '' ).includes( '/writing/category/personal/page/2/' ) && String( roundtripBrowserResults[2]?.finalUrl ?? '' ).includes( '/category/personal/' ) && String( roundtripBrowserResults[3]?.finalUrl ?? '' ).includes( '/category/personal/page/2/' ),
+				wpCodebox: spawnSync( cli, [ 'version' ], { encoding: 'utf8' } ).stdout.trim(),
+				failure: roundtripResult.result?.failure_summary ?? null,
+				exitCode: roundtripPhp?.exitCode ?? null,
+				proof: roundtripProof,
+				browserFinalUrls: roundtripBrowserResults.map( item => item.finalUrl ?? null ),
+			};
+		}
+	} else {
+		adoptionAcceptance = { success: false, reason: 'Accepted producer plan was not emitted by the real source/consumer compilation run.' };
+	}
+	success = success && adoptionAcceptance.success && roundtripAcceptance.success;
+}
 writeFileSync( join( evidenceRoot, 'browser-assertions.json' ), JSON.stringify( { success: Object.values( browserAssertions ).every( Boolean ), editorTemplateUrl, snapshot: snapshotPath, assertions: browserAssertions }, null, 2 ) );
 console.log( JSON.stringify( {
 	success,
@@ -193,6 +364,8 @@ console.log( JSON.stringify( {
 	executions: ( result.executions ?? [] ).map( step => ( { command: step.command, exitCode: step.exitCode, stdout: step.stdout, stderr: step.stderr } ) ),
 	editorVerification: editorVerify,
 	browserAssertions,
+	adoptionAcceptance,
+	roundtripAcceptance,
 	failure: result.result?.failure_summary ?? result.error?.message ?? null,
 }, null, 2 ) );
 if ( ! success ) process.exitCode = 1;
