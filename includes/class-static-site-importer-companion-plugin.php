@@ -917,8 +917,10 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "\t\twp_enqueue_script( \$handle );";
 		$lines[] = "\t}";
 		$lines[] = "\twp_enqueue_script( 'ssi-imported-media-replace', plugin_dir_url( __FILE__ ) . 'editor/imported-media-replace.js', array( 'wp-blocks', 'wp-block-editor', 'wp-element', 'wp-components', 'wp-hooks' ), '1', true );";
-		$lines[] = "\twp_enqueue_script( 'ssi-external-metric-controls', plugin_dir_url( __FILE__ ) . 'editor/external-metric-controls.js', array( 'wp-api-fetch', 'wp-block-editor', 'wp-element', 'wp-components', 'wp-hooks' ), '1', true );";
-		$lines[] = sprintf( "\tif ( function_exists( 'wp_add_inline_script' ) ) { wp_add_inline_script( 'ssi-external-metric-controls', 'window.ssiExternalMetricConfig = ' . wp_json_encode( %s_config()['external_metrics'] ?? array() ), 'before' ); }", $fn_prefix );
+		$lines[] = sprintf( "\tif ( ! empty( %s_config()['external_metrics'] ) ) {", $fn_prefix );
+		$lines[] = "\t\twp_enqueue_script( 'ssi-external-metric-controls', plugin_dir_url( __FILE__ ) . 'editor/external-metric-controls.js', array( 'wp-api-fetch', 'wp-block-editor', 'wp-element', 'wp-components', 'wp-hooks' ), '1', true );";
+		$lines[] = sprintf( "\t\tif ( function_exists( 'wp_add_inline_script' ) ) { wp_add_inline_script( 'ssi-external-metric-controls', 'window.ssiExternalMetricConfig = ' . wp_json_encode( %s_config()['external_metrics'] ), 'before' ); }", $fn_prefix );
+		$lines[] = "\t}";
 		$lines[] = '}';
 		$lines[] = sprintf( "add_action( 'enqueue_block_editor_assets', '%s_enqueue_editor_scripts' );", $fn_prefix );
 		$lines[] = '';

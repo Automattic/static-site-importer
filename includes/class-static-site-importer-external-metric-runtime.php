@@ -23,6 +23,7 @@ final class Static_Site_Importer_External_Metric_Runtime {
 	}
 
 	public static function register(): void {
+		if ( empty( self::$metrics ) ) { return; }
 		add_action( 'init', static function (): void {
 			if ( ! class_exists( 'WP_Block_Bindings_Registry' ) ) { return; }
 			$registry = WP_Block_Bindings_Registry::get_instance();

@@ -252,14 +252,18 @@ final class Static_Site_Importer_Companion_Inventory {
 			$lines[] = 'GitHub stars/forks are not covered by this provider and remain unresolved.';
 			$lines[] = '';
 		}
-	$lines[] = '### Captured snapshot';
-	$lines[] = '';
-	if ( empty( $external_metrics ) ) {
-		$lines[] = 'Ordinary imported text, images and numbers begin as static values captured at import time. External figures are snapshots unless a trusted source declaration and working runtime are listed above; a number appearing in content does not imply a live data source.';
-	} else {
-		$lines[] = 'Ordinary imported text, images and values without one of the explicit bindings above remain static snapshots. Numbers are never classified as dynamic by appearance alone.';
-	}
-	$lines[] = '';
+		$lines[] = '### Captured snapshot';
+		$lines[] = '';
+		if ( empty( $external_metrics ) ) {
+			$lines[] = 'Ordinary imported text, images and numbers begin as static values captured at import time. This includes figures that';
+			$lines[] = 'originated outside the site itself (for example plugin download or install totals from an external directory):';
+			$lines[] = 'their status is snapshot. Snapshot values do not update automatically; no live data source or refresh mechanism is installed';
+			$lines[] = 'merely because a number appears in the content. Explicit runtime blocks and scripts listed above may implement updates;';
+			$lines[] = 'their owned fields are not classified as static by this note. Other external figures remain unverified source claims.';
+		} else {
+			$lines[] = 'Ordinary imported text, images and values without one of the explicit bindings above remain static snapshots. Numbers are never classified as dynamic by appearance alone.';
+		}
+		$lines[] = '';
 
 		$lines[]    = '### Unresolved behavior';
 		$lines[]    = '';
