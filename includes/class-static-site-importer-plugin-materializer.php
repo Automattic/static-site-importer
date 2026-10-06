@@ -96,11 +96,21 @@ class Static_Site_Importer_Plugin_Materializer {
 			$report['attempted_actions'][] = 'activate';
 			$lifecycle                     = self::prepare_activation_lifecycle_replay();
 			self::refresh_plugin_metadata_cache();
+			// Native activation hooks still run, but the import is headless: plugins
+			// must not redirect it into interactive onboarding and exit the CLI worker.
+			$headless_activation = static fn(): bool => true;
+			if ( function_exists( 'add_filter' ) ) {
+				add_filter( 'wp_doing_ajax', $headless_activation, PHP_INT_MAX );
+			}
 			try {
 				$activate = activate_plugin( $plugin_file );
 			} catch ( Throwable $error ) {
 				self::restore_activation_lifecycle_actions( $lifecycle );
 				$activate = new WP_Error( 'static_site_importer_plugin_activation_failed', sprintf( 'Plugin %s activation failed: %s', $slug, $error->getMessage() ) );
+			} finally {
+				if ( function_exists( 'remove_filter' ) ) {
+					remove_filter( 'wp_doing_ajax', $headless_activation, PHP_INT_MAX );
+				}
 			}
 			if ( is_wp_error( $activate ) ) {
 				self::restore_activation_lifecycle_actions( $lifecycle );

@@ -49,20 +49,25 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'option'           => '',
 				'filter'           => '',
 			),
-			'form'             => array(
+			'form'         => array(
 				'default_provider' => 'jetpack',
 				'option'           => 'static_site_importer_form_plugin',
 				'filter'           => 'ssi_form_plugin',
 			),
-			'shop'             => array(
+			'shop'         => array(
 				'default_provider' => 'woocommerce',
 				'option'           => 'static_site_importer_shop_plugin',
 				'filter'           => 'ssi_shop_plugin',
 			),
-			'events'           => array(
+			'events'       => array(
 				'default_provider' => 'the-events-calendar',
 				'option'           => 'static_site_importer_events_plugin',
 				'filter'           => 'ssi_events_plugin',
+			),
+			'multilingual' => array(
+				'default_provider' => 'translatepress-multilingual',
+				'option'           => 'static_site_importer_multilingual_plugin',
+				'filter'           => 'ssi_multilingual_plugin',
 			),
 		);
 	}
@@ -340,7 +345,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$required   = self::runtime_declaration_is_required( $declaration, $declarations );
 			// Reference-backed event manifests have no inline rows during prepare.
 			// Their declared capability still requires native provider hydration.
-			$required = $required || ( 'entity_collection' === $kind && 'events' === $capability );
+			$required = $required || 'multilingual' === $capability || ( 'entity_collection' === $kind && 'events' === $capability );
 			if ( '' === $capability ) {
 				if ( $required ) {
 					return new WP_Error(
@@ -546,8 +551,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	private static function runtime_declaration_capability( string $kind, string $name ): string {
 		$name = strtolower( $name );
-		if ( 'dependency' === $kind && in_array( $name, array( 'shop', 'form', 'events' ), true ) ) {
+		if ( 'dependency' === $kind && array_key_exists( $name, self::capabilities() ) ) {
 			return $name;
+		}
+		if ( 'entity_collection' === $kind && 'multilingual' === $name ) {
+			return 'multilingual';
 		}
 		if ( 'entity_collection' === $kind && in_array( $name, array( 'event', 'events' ), true ) ) {
 			return 'events';
@@ -1182,7 +1190,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( ! class_exists( 'Static_Site_Importer_TEC_Event_Seeder' ) ) {
 			require_once __DIR__ . '/class-static-site-importer-tec-event-seeder.php';
 		}
-		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_TEC_Event_Seeder', 'Static_Site_Importer_External_Metric_Runtime' ) as $owner ) {
+		require_once __DIR__ . '/class-static-site-importer-translatepress-materializer.php';
+		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_TEC_Event_Seeder', 'Static_Site_Importer_External_Metric_Runtime', 'Static_Site_Importer_TranslatePress_Materializer' ) as $owner ) {
 			// Seeders may be absent or stubbed in standalone harnesses.
 			// @phpstan-ignore-next-line booleanNot.alwaysFalse -- Optional classes are stubbed in standalone coverage harnesses.
 			if ( ! is_callable( array( $owner, 'adapter' ) ) ) {

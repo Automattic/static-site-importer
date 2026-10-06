@@ -12,6 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-site-identity.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Source_Route_Redirect' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-source-route-redirect.php';
+}
 
 /**
  * Exports WordPress block themes to website artifacts.
@@ -828,8 +831,11 @@ class Static_Site_Importer_Theme_Exporter {
 	 * @return string
 	 */
 	private static function export_page_artifact_path( object $page, string $root ): string {
-		$slug = isset( $page->post_name ) && '' !== trim( (string) $page->post_name ) ? sanitize_title( (string) $page->post_name ) : 'page-' . ( isset( $page->ID ) ? (int) $page->ID : uniqid() );
-		if ( 'page' === ( $page->post_type ?? '' ) && function_exists( 'get_page_uri' ) ) {
+		$slug         = isset( $page->post_name ) && '' !== trim( (string) $page->post_name ) ? sanitize_title( (string) $page->post_name ) : 'page-' . ( isset( $page->ID ) ? (int) $page->ID : uniqid() );
+		$source_route = Static_Site_Importer_Source_Route_Redirect::directory_route( (int) ( $page->ID ?? 0 ) );
+		if ( null !== $source_route ) {
+			$slug = $source_route;
+		} elseif ( 'page' === ( $page->post_type ?? '' ) && function_exists( 'get_page_uri' ) ) {
 			$page_uri = get_page_uri( $page );
 			if ( is_string( $page_uri ) && '' !== trim( $page_uri ) ) {
 				$slug = $page_uri;
