@@ -52,6 +52,7 @@ final class Static_Site_Importer_Form_Topology_State {
 	public mixed $suppressed_layout_properties = array();
 	public mixed $class_carried_variants       = array();
 	public mixed $submit_block_rows            = array();
+	public array $whole_field_controls         = array();
 	public mixed $overlay_node_targets         = array();
 	public mixed $responsive_variant_targets   = array();
 	public mixed $native_visibility_targets    = array();
