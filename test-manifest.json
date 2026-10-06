@@ -5,6 +5,7 @@
     "tests/figma-zstd-decoder.php": "CLI diagnostic helper; exercised by tests/smoke-rest-import.php."
   },
   "tests": [
+    { "path": "tests/acceptance/source-route-ownership-wordpress.php", "environment": "operator-only", "reason": "Requires SSI_ROUTE_OWNERSHIP_TEST=1 and a disposable HTTP-serving WordPress site; verifies native rewrite collisions, canonical links and an unrelated archive through real requests." },
     { "path": "tests/acceptance/tec-wordpress.php", "environment": "operator-only", "reason": "Requires an explicitly disposable real WordPress runtime with The Events Calendar; verifies canonical source adoption, native images, occurrences and reimport." },
     { "path": "tests/acceptance/tec-browser.mjs", "environment": "operator-only", "reason": "Real TEC Docker browser/editor verification; requires a successful native-tec.jsonl and a live disposable site." },
     { "path": "tests/smoke-whole-page-handoff.php", "environment": "standalone-php" },
