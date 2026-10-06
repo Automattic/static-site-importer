@@ -614,7 +614,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	private static function safe_selector( string $selector, string $scope ): bool {
-		if ( str_ends_with( $selector, ' > .wp-block-button__link > span' ) ) return self::safe_selector( substr( $selector, 0, -strlen( ' > span' ) ), $scope );
+		if ( str_ends_with( $selector, ' > .wp-block-button__link > span' ) ) {
+			return self::safe_selector( substr( $selector, 0, -strlen( ' > span' ) ), $scope );
+		}
 		$native_scope = $scope . '.ssi-native-form-topology';
 		if ( str_contains( $selector, '.ssi-native-form-topology' ) ) {
 			$parts   = explode( ', ', $selector );
@@ -678,7 +680,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	private static function declarations( array $layout, array $capabilities, string $node, array &$losses, array $important = array() ): array {
 		// Authored grid ownership includes its initial zero gap; the provider's
 		// own field-stack gap is not a declaration on that source box.
-		if ( 'grid' === ( $layout['display'] ?? null ) && ! array_intersect_key( $layout, array_flip( array( 'gap', 'row_gap', 'column_gap' ) ) ) ) $layout = array( 'gap' => '0' ) + $layout;
+		if ( 'grid' === ( $layout['display'] ?? null ) && ! array_intersect_key( $layout, array_flip( array( 'gap', 'row_gap', 'column_gap' ) ) ) ) {
+			$layout = array( 'gap' => '0' ) + $layout;
+		}
 		$map          = self::layout_property_map();
 		$declarations = array();
 		foreach ( $layout as $fact => $value ) {
@@ -788,7 +792,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			if ( str_starts_with( $token, 'calc(' ) ? ! self::safe_calc_value( $token ) : ! preg_match( '/^(?:0|auto|-?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:px|rem|em|%|vw|vh|vmin|vmax|ch|ex|svh|dvh|lvh)|var\(--[a-zA-Z][a-zA-Z0-9_-]{0,79}\))$/D', $token ) ) {
 				return false;
 			}
-			if ( str_starts_with( $token, '-' ) && ! str_starts_with( $fact, 'margin_' ) ) return false;
+			if ( str_starts_with( $token, '-' ) && ! str_starts_with( $fact, 'margin_' ) ) {
+				return false;
+			}
 		}
 		return 'auto' !== $value || 'min_height' === $fact || str_starts_with( $fact, 'margin_' );
 	}
@@ -809,8 +815,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		if ( in_array( $fact, array( 'rows', 'columns' ), true ) ) {
 			$tracks = \Automattic\BlocksEngine\PhpTransformer\Css\CssValueSplitter::splitTopLevelWhitespace( $value );
-			if ( count( $tracks ) > 1 ) return ! array_filter( $tracks, static fn( string $track ): bool => ! self::safe_value( 'width', $track ) );
-			if ( in_array( $value, array( 'min-content', 'max-content' ), true ) ) return true;
+			if ( count( $tracks ) > 1 ) {
+				return ! array_filter( $tracks, static fn( string $track ): bool => ! self::safe_value( 'width', $track ) );
+			}
+			if ( in_array( $value, array( 'min-content', 'max-content' ), true ) ) {
+				return true;
+			}
 		}
 		if ( 'display' === $fact && 'contents' === $value ) {
 			return true;
@@ -836,7 +846,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( 'position' === $fact ) {
 			return in_array( $value, array( 'relative', 'static' ), true );
 		}
-		if ( in_array( $fact, array( 'top', 'right', 'bottom', 'left' ), true ) ) return 'auto' === $value || self::safe_calc_value( $value ) || (bool) preg_match( '/^(?:0|-?[0-9]+(?:\.[0-9]+)?(?:px|rem|em|%|vw|vh))$/D', $value );
+		if ( in_array( $fact, array( 'top', 'right', 'bottom', 'left' ), true ) ) {
+			return 'auto' === $value || self::safe_calc_value( $value ) || (bool) preg_match( '/^(?:0|-?[0-9]+(?:\.[0-9]+)?(?:px|rem|em|%|vw|vh))$/D', $value );
+		}
 		if ( 'z-index' === $fact ) {
 			return '1' === $value;
 		}

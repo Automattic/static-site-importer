@@ -358,7 +358,7 @@ class Static_Site_Importer_Form_Seeder {
 				$skipped[]                             = 'hidden_bookkeeping';
 				continue;
 			}
-			$choice_box = null !== Static_Site_Importer_Form_Layout_Projection::source_choice_label( $form, $control_index );
+			$choice_box                                 = null !== Static_Site_Importer_Form_Layout_Projection::source_choice_label( $form, $control_index );
 			$presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $scope, $control_index, $type, $presentation_roles[ $control_index ] ?? array(), isset( $control['label_classes'] ) || isset( $control['label_marker'] ), $choice_box );
 			if ( isset( $suppressed_controls[ $control_index ] ) ) {
 				continue;
@@ -701,9 +701,21 @@ class Static_Site_Importer_Form_Seeder {
 		// layout node. Only native control-owned facts target the inner button.
 		$overlay_form['provider_source_box_submits'] = array_values( array_diff( $topology['submit_block_rows'] ?? array(), $topology['grid_span_submit_controls'] ?? array() ) );
 		if ( ! empty( $topology['whole_field_controls'] ) ) {
-			foreach ( $overlay_form['layout_graph']['nodes'] as &$node ) if ( 'form' === ( $node['id'] ?? '' ) ) $node['layout'] += array( 'display' => 'block', 'gap' => '0' );
+			foreach ( $overlay_form['layout_graph']['nodes'] as &$node ) {
+				if ( 'form' === ( $node['id'] ?? '' ) ) {
+					$node['layout'] += array(
+						'display' => 'block',
+						'gap'     => '0',
+					);
+				}
+			}
 			unset( $node );
-			foreach ( $topology['whole_field_controls'] as $index ) $overlay_form['layout_graph']['nodes'][] = array( 'id' => 'field-' . $index, 'layout' => array( 'display' => 'contents' ) );
+			foreach ( $topology['whole_field_controls'] as $index ) {
+				$overlay_form['layout_graph']['nodes'][] = array(
+					'id'     => 'field-' . $index,
+					'layout' => array( 'display' => 'contents' ),
+				);
+			}
 			$overlay_graph = $overlay_form['layout_graph'];
 		}
 		foreach ( array_keys( $suppressed_controls ) as $control_index ) {

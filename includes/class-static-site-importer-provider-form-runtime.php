@@ -597,9 +597,13 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 					$transport = $is_wrapper && str_ends_with( $class_name, '-wrap' ) ? substr( $class_name, 0, -5 ) : $class_name;
 					if ( preg_match( '/^ssi-source-(field-ancestor-([0-9]{1,2})|choice-box|choice-label)--([A-Za-z_][A-Za-z0-9_-]{0,79})$/D', $transport, $marker ) ) {
 						if ( $is_wrapper ) {
-							if ( str_starts_with( $marker[1], 'field-ancestor-' ) ) $field_ancestors[ (int) $marker[2] ][] = $marker[3];
-							elseif ( 'choice-box' === $marker[1] ) $choice_box[] = $marker[3];
-							else $choice_label[] = $marker[3];
+							if ( str_starts_with( $marker[1], 'field-ancestor-' ) ) {
+								$field_ancestors[ (int) $marker[2] ][] = $marker[3];
+							} elseif ( 'choice-box' === $marker[1] ) {
+								$choice_box[] = $marker[3];
+							} else {
+								$choice_label[] = $marker[3];
+							}
 						}
 						continue;
 					}
@@ -773,24 +777,39 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 
 	/** Restore source ancestry outside the complete choice field and its label. */
 	private static function project_whole_choice_field( string $html, array $ancestors, array $choice_box, array $choice_label ): string {
-		if ( empty( $choice_box ) || strlen( $html ) > 262144 ) return $html;
+		if ( empty( $choice_box ) || strlen( $html ) > 262144 ) {
+			return $html;
+		}
 		$document = new \DOMDocument();
 		$previous = libxml_use_internal_errors( true );
-		$loaded = $document->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_NONET );
+		$loaded   = $document->loadHTML( '<?xml encoding="utf-8" ?><body>' . $html . '</body>', LIBXML_NONET );
 		libxml_clear_errors();
 		libxml_use_internal_errors( $previous );
-		if ( ! $loaded ) return $html;
+		if ( ! $loaded ) {
+			return $html;
+		}
 		$body = $document->getElementsByTagName( 'body' )->item( 0 );
-		if ( ! $body instanceof \DOMElement ) return $html;
-		$field = null;
+		if ( ! $body instanceof \DOMElement ) {
+			return $html;
+		}
+		$field  = null;
 		$choice = null;
 		foreach ( $body->getElementsByTagName( 'div' ) as $element ) {
 			$classes = preg_split( '/\s+/', trim( $element->getAttribute( 'class' ) ) );
-			if ( in_array( 'grunion-field-wrap', $classes, true ) ) $field ??= $element;
-			if ( in_array( 'contact-form__checkbox-wrap', $classes, true ) ) $choice ??= $element;
+			$classes = false === $classes ? array() : $classes;
+			if ( in_array( 'grunion-field-wrap', $classes, true ) ) {
+				$field ??= $element;
+			}
+			if ( in_array( 'contact-form__checkbox-wrap', $classes, true ) ) {
+				$choice ??= $element;
+			}
 		}
-		if ( ! $field instanceof \DOMElement || ! $choice instanceof \DOMElement ) return $html;
-		$choice->setAttribute( 'class', implode( ' ', array_unique( array_merge( preg_split( '/\s+/', $choice->getAttribute( 'class' ) ), $choice_box, $choice_label ) ) ) );
+		if ( ! $field instanceof \DOMElement || ! $choice instanceof \DOMElement ) {
+			return $html;
+		}
+		$existing_classes = preg_split( '/\s+/', $choice->getAttribute( 'class' ) );
+		$existing_classes = false === $existing_classes ? array() : $existing_classes;
+		$choice->setAttribute( 'class', implode( ' ', array_unique( array_merge( $existing_classes, $choice_box, $choice_label ) ) ) );
 		ksort( $ancestors );
 		foreach ( array_reverse( $ancestors, true ) as $classes ) {
 			$wrapper = $document->createElement( 'div' );
@@ -800,7 +819,9 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			$field = $wrapper;
 		}
 		$output = '';
-		foreach ( $body->childNodes as $child ) $output .= $document->saveHTML( $child );
+		foreach ( $body->childNodes as $child ) {
+			$output .= $document->saveHTML( $child );
+		}
 		return $output;
 	}
 

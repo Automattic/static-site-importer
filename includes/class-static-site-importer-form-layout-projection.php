@@ -406,7 +406,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 *
 	 * @param array<int,array<string,mixed>> $field_blocks
 	 * @param array<int,array<string,mixed>> $controls
-	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,suppressed_layout_properties:array<string,array<int,string>>,suppressed_variant_properties?:array<string,array<int,string>>,submit_block_rows?:array<int,int>,overlay_node_targets:array<int,array<string,mixed>>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>,provider_layout_targets:array<string,string>,phone_popup_targets:array<int,int>,grid_span_submit_controls?:array<int,int>}|null
+	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,suppressed_layout_properties:array<string,array<int,string>>,suppressed_variant_properties?:array<string,array<int,string>>,submit_block_rows?:array<int,int>,whole_field_controls?:array<int,int>,overlay_node_targets:array<int,array<string,mixed>>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>,provider_layout_targets:array<string,string>,phone_popup_targets:array<int,int>,grid_span_submit_controls?:array<int,int>}|null
 	 */
 	public static function topology_inner_blocks( array $form, array $field_blocks, array $controls, array $suppressed_controls = array() ): ?array {
 		$s = new Static_Site_Importer_Form_Topology_State( $form, $field_blocks, $controls, $suppressed_controls );
@@ -691,7 +691,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		}
 		foreach ( $wrapper_chains as $control_index => $chain ) {
 			usort( $chain, static fn ( array $left, array $right ): int => (int) ( $left['depth'] ?? 0 ) <=> (int) ( $right['depth'] ?? 0 ) );
-			$class_names = array( (string) ( $s->field_blocks[ $control_index ]['attrs']['className'] ?? '' ) );
+			$class_names  = array( (string) ( $s->field_blocks[ $control_index ]['attrs']['className'] ?? '' ) );
 			$choice_label = self::source_choice_label( $s->form, $control_index );
 			// A button control is rendered by Core, which carries the source box as its
 			// own block element and has no provider field shell to rebuild layers inside.
@@ -700,7 +700,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$button_hook                          = self::layout_node_class( self::layout_scope( $s->form ), $outermost['id'] );
 				$class_names[]                        = $button_hook;
 				$s->wrapper_hooks[ $outermost['id'] ] = $button_hook;
-				$s->submit_block_rows[] = $control_index;
+				$s->submit_block_rows[]               = $control_index;
 
 				$s->field_blocks[ $control_index ]['attrs']['className'] = trim( (string) preg_replace( '/\s+/', ' ', implode( ' ', array_filter( $class_names ) ) ) );
 
@@ -729,10 +729,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			foreach ( $chain as $offset => $node ) {
 				$generated_class = self::layout_node_class( self::layout_scope( $s->form ), $node['id'] );
 				if ( null !== $choice_label && (int) $node['depth'] <= (int) $choice_label['depth'] ) {
-					$classes = array_merge( self::class_tokens( $node ) ?: array(), array( $generated_class ) );
-					$role = $node['id'] === $choice_label['id'] ? 'choice-box' : 'field-ancestor-' . (int) $node['depth'];
-					foreach ( $classes as $class ) $class_names[] = 'ssi-source-' . $role . '--' . $class;
-					$s->wrapper_hooks[ $node['id'] ] = $generated_class;
+					$source_classes = self::class_tokens( $node );
+					$classes        = array_merge( false === $source_classes ? array() : $source_classes, array( $generated_class ) );
+					$role           = $node['id'] === $choice_label['id'] ? 'choice-box' : 'field-ancestor-' . (int) $node['depth'];
+					foreach ( $classes as $class ) {
+						$class_names[] = 'ssi-source-' . $role . '--' . $class;
+					}
+					$s->wrapper_hooks[ $node['id'] ]           = $generated_class;
 					$s->provider_layout_targets[ $node['id'] ] = $generated_class;
 					$s->whole_field_controls[ $control_index ] = $control_index;
 					continue;
@@ -2209,7 +2212,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * @param array<string,array<string,mixed>> $layout_nodes
 	 * @param array<string,array<string,mixed>> $layouts
 	 * @param array<string,array<int,array<string,mixed>>> $variants
-	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,suppressed_layout_properties:array<string,array<int,string>>,suppressed_variant_properties?:array<string,array<int,string>>,submit_block_rows?:array<int,int>,overlay_node_targets:array<int,array<string,mixed>>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>,provider_layout_targets:array<string,string>,phone_popup_targets:array<int,int>,grid_span_submit_controls?:array<int,int>}|null
+	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,suppressed_layout_properties:array<string,array<int,string>>,suppressed_variant_properties?:array<string,array<int,string>>,submit_block_rows?:array<int,int>,whole_field_controls?:array<int,int>,overlay_node_targets:array<int,array<string,mixed>>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>,provider_layout_targets:array<string,string>,phone_popup_targets:array<int,int>,grid_span_submit_controls?:array<int,int>}|null
 	 */
 	private static function exact_native_topology( array $nodes, array $children, array $field_blocks, array $suppressed_controls, array $layout_nodes, array $layouts, array $variants, string $scope ): ?array {
 		$contains_label = static function ( array $block ) use ( &$contains_label ): bool {
@@ -3026,7 +3029,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 							'line-height' => 'submit' === $type ? 'inherit' : 'revert',
 						),
 						'submit' === $type ? array( 'min-height' => '0' ) : array(),
-						'checkbox' === $type ? array( 'min-width' => '0', 'padding' => '0' ) : array(),
+						'checkbox' === $type ? array(
+							'min-width' => '0',
+							'padding'   => '0',
+						) : array(),
 						// Jetpack renders the native control with `appearance: none`,
 						// which removes the platform chevron the authored select had.
 						// Reverting to `auto` restores it alongside the authored
@@ -3040,8 +3046,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				}
 				$destinations[] = $destination;
 				if ( 'submit' === $type && $has_caption ) {
-					$typography = array( 'font', 'font_family', 'font_size', 'font_style', 'font_variant', 'font_weight', 'line_height', 'letter_spacing', 'text_transform' );
-					$destinations[] = array( 'role' => 'control', 'selector' => '.' . $scope . ' .' . $control_class . ' > .wp-block-button__link > span', 'properties' => $typography );
+					$typography     = array( 'font', 'font_family', 'font_size', 'font_style', 'font_variant', 'font_weight', 'line_height', 'letter_spacing', 'text_transform' );
+					$destinations[] = array(
+						'role'       => 'control',
+						'selector'   => '.' . $scope . ' .' . $control_class . ' > .wp-block-button__link > span',
+						'properties' => $typography,
+					);
 				}
 				if ( 'submit' === $type ) {
 					// A submit control sits as a bare direct child of its source
@@ -3080,7 +3090,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		}
 		if ( isset( $roles['label'] ) ) {
 			$text_properties = array( 'color', 'font', 'font_family', 'font_size', 'font_style', 'font_variant', 'font_weight', 'letter_spacing', 'line_height', 'text_align', 'text_decoration', 'text_transform' );
-			$destinations[] = array(
+			$destinations[]  = array(
 				'role'       => 'label',
 				'selector'   => '.' . $scope . ' .' . $label_class . ( $choice_box ? ' > label' : '' ),
 				'properties' => $choice_box ? $text_properties : array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ),
@@ -3089,7 +3099,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'font-weight' => 'inherit',
 				),
 			);
-			if ( $choice_box ) $destinations[] = array( 'role' => 'label', 'selector' => '.' . $scope . ' .' . $label_class, 'properties' => array_values( array_diff( array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ), $text_properties ) ) );
+			if ( $choice_box ) {
+				$destinations[] = array(
+					'role'       => 'label',
+					'selector'   => '.' . $scope . ' .' . $label_class,
+					'properties' => array_values( array_diff( array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ), $text_properties ) ),
+				);
+			}
 		}
 		if ( isset( $roles['required_marker'] ) ) {
 			$destinations[] = array(
@@ -3112,13 +3128,20 @@ final class Static_Site_Importer_Form_Layout_Projection {
 
 	/** A source implicit choice label owns the complete field, not just its input. */
 	public static function source_choice_label( array $form, int $index ): ?array {
-		if ( 'checkbox' !== ( $form['controls'][ $index ]['type'] ?? '' ) || ! empty( $form['controls'][ $index ]['options'] ) ) return null;
-		$nodes = array_column( $form['control_topology']['nodes'] ?? array(), null, 'id' );
-		$control = current( array_filter( $nodes, static fn( array $node ): bool => 'control' === ( $node['kind'] ?? '' ) && $index === ( $node['control'] ?? null ) ) );
-		$label = null;
-		for ( $parent = $control['parent'] ?? null; is_string( $parent ) && isset( $nodes[ $parent ] ); $parent = $nodes[ $parent ]['parent'] ?? null ) {
-			if ( 'label' === ( $nodes[ $parent ]['tag'] ?? '' ) ) $label ??= $nodes[ $parent ];
-			elseif ( 'div' !== ( $nodes[ $parent ]['tag'] ?? '' ) ) return null;
+		if ( 'checkbox' !== ( $form['controls'][ $index ]['type'] ?? '' ) || ! empty( $form['controls'][ $index ]['options'] ) ) {
+			return null;
+		}
+		$nodes   = array_column( $form['control_topology']['nodes'] ?? array(), null, 'id' );
+		$control = current( array_filter( $nodes, static fn( array $node ): bool => 'control' === ( $node['kind'] ?? '' ) && ( $node['control'] ?? null ) === $index ) );
+		$label   = null;
+		$parent  = $control['parent'] ?? null;
+		while ( is_string( $parent ) && isset( $nodes[ $parent ] ) ) {
+			if ( 'label' === ( $nodes[ $parent ]['tag'] ?? '' ) ) {
+				$label ??= $nodes[ $parent ];
+			} elseif ( 'div' !== ( $nodes[ $parent ]['tag'] ?? '' ) ) {
+				return null;
+			}
+			$parent = $nodes[ $parent ]['parent'] ?? null;
 		}
 		return $label;
 	}
@@ -3766,8 +3789,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$selector     = $selector_scope . ' .' . self::layout_node_class( $scope, 'control-' . $matches[1] ) . '-wrap';
 				$capabilities = array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' );
 			} else {
-				$selector     = $selector_scope . ' .' . ( $box_targets[ $id ] ?? self::layout_node_class( $scope, $id ) );
-				if ( preg_match( '/^control-([0-9]+)$/D', $id, $control ) && in_array( (int) $control[1], $form['provider_source_box_submits'] ?? array(), true ) ) $selector .= ' > .wp-block-button__link';
+				$selector = $selector_scope . ' .' . ( $box_targets[ $id ] ?? self::layout_node_class( $scope, $id ) );
+				if ( preg_match( '/^control-([0-9]+)$/D', $id, $control ) && in_array( (int) $control[1], $form['provider_source_box_submits'] ?? array(), true ) ) {
+					$selector .= ' > .wp-block-button__link';
+				}
 				$capabilities = array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' );
 			}
 			$targets[] = array(

@@ -285,7 +285,9 @@ final class Static_Site_Importer_Form_Field_Markup {
 			);
 		}
 		if ( 'checkbox' === $lookup && empty( $attrs['options'] ) ) {
-			if ( ! empty( $control['checked'] ) ) $attrs['defaultValue'] = true;
+			if ( ! empty( $control['checked'] ) ) {
+				$attrs['defaultValue'] = true;
+			}
 			$inner_blocks[] = array(
 				'name'  => 'jetpack/option',
 				'attrs' => array_filter( array(
