@@ -143,8 +143,8 @@ $assert( 'https://imported.test/about-me/' === Static_Site_Importer_Source_Route
 $assert( ! method_exists( Static_Site_Importer_Source_Route_Redirect::class, 'prepare_overlay' ), 'Source-route redirects must not materialize a theme overlay.' );
 $assert( ! method_exists( Static_Site_Importer_Source_Route_Redirect::class, 'theme_runtime_class' ), 'Source-route redirects must not own a theme-scoped class name.' );
 
-$companion_source    = (string) file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-companion-plugin.php' );
-$preparation_source  = (string) file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-site-plan-preparation.php' );
+$companion_source   = (string) file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-companion-plugin.php' );
+$preparation_source = (string) file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-site-plan-preparation.php' );
 $assert( str_contains( $companion_source, "class-static-site-importer-source-route-redirect.php" ) && str_contains( $companion_source, "'/includes/source-route-redirect.php'" ) && str_contains( $companion_source, '_Source_Route_Redirect' ), 'The companion plugin must copy and register the source-route redirect runtime.' );
 $assert( ! str_contains( $preparation_source, 'Static_Site_Importer_Source_Route_Redirect::prepare_overlay' ), 'Theme preparation must not overlay source-route redirects into functions.php.' );
 
@@ -160,7 +160,7 @@ require $copy_file;
 Static_Site_Importer_Source_Route_Redirect::register();
 SSI_TEST_SITE_Source_Route_Redirect::register();
 $assert( 1 === count( $GLOBALS['ssi_redirect_actions'] ), 'SSI and the companion copy must not both register template_redirect.' );
-$assert( 'template_redirect' === ( $GLOBALS['ssi_redirect_actions'][0][0] ?? '' ) && 11 === ( $GLOBALS['ssi_redirect_actions'][0][2] ?? 0 ), 'The single source-route runtime registers template_redirect at priority 11.' );
+$assert( 'template_redirect' === ( $GLOBALS['ssi_redirect_actions'][0][0] ?? '' ) && 9 === ( $GLOBALS['ssi_redirect_actions'][0][2] ?? 0 ), 'The single source-route runtime runs before WordPress canonical redirects.' );
 $assert( array( Static_Site_Importer_Source_Route_Redirect::class, 'redirect' ) === ( $GLOBALS['ssi_redirect_actions'][0][1] ?? null ) || array( SSI_TEST_SITE_Source_Route_Redirect::class, 'redirect' ) === ( $GLOBALS['ssi_redirect_actions'][0][1] ?? null ), 'The registered callback belongs to exactly one runtime class.' );
 
 foreach ( array( $copy_file, $copy_dir ) as $path ) {
