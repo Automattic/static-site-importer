@@ -6,12 +6,77 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { runUrlLoopIntake, runUrlLoopMatrix, validateCapture, validateMatrixEvidence } from './url-loop-intake.mjs';
+import { resolveBlocksEnginePhpTransformerPath } from '../bench/static-site-fixture-matrix.bench.mjs';
 
 export const CAPTURE_ARTIFACT_SCHEMA = 'static-site-importer/url-loop-capture/v1';
 export const EVALUATION_ARTIFACT_SCHEMA = 'static-site-importer/url-loop-evaluation/v1';
 const CONTROLLER_SCHEMA = 'homeboy/controller-spec/v1';
 const MODULE_PATH = fileURLToPath(import.meta.url);
 const SOURCE_VIEWS = [390, 768, 1440];
+const TRANSFORMER_PACKAGE = 'automattic/blocks-engine-php-transformer';
+
+// Snapshot explicit candidates before handing them to Codebox. The reference is
+// the digest of the bytes Codebox will provision, not the independent CLI repo.
+export function prepareTransformer(context, directory) {
+  if (!context.transformer_path) {
+    const lockBytes = fs.readFileSync(path.join(context.workspace, 'composer.lock'));
+    const lock = JSON.parse(lockBytes);
+    const compiler = lock.packages?.find((item) => item.name === TRANSFORMER_PACKAGE);
+    const reference = compiler?.source?.reference || compiler?.dist?.reference;
+    if (!compiler?.version || !/^[a-f0-9]{40,64}$/i.test(reference || '')) throw new Error('transformer_lock_identity_missing');
+    return { transformer: { package: compiler.name, version: compiler.version, reference }, composer_lock_sha256: digest(lockBytes), path: '' };
+  }
+  const source = resolveBlocksEnginePhpTransformerPath(context.transformer_path);
+  const snapshot = path.join(directory, 'php-transformer');
+  fs.mkdirSync(directory, { recursive: true });
+  fs.cpSync(source, snapshot, { recursive: true, dereference: true, errorOnExist: true, force: false, filter: (file) => !['.git', 'vendor'].includes(path.basename(file)) });
+  const files = [];
+  const visit = (root) => {
+    for (const entry of fs.readdirSync(root, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const file = path.join(root, entry.name);
+      if (entry.isDirectory()) visit(file);
+      else if (entry.isFile()) files.push(Buffer.from(`${path.relative(snapshot, file)}\0`), fs.readFileSync(file));
+    }
+  };
+  visit(snapshot);
+  const reference = digest(Buffer.concat(files));
+  const manifest = readJson(path.join(snapshot, 'composer.json'));
+  if (manifest.name !== TRANSFORMER_PACKAGE) throw new Error('transformer_package_identity_mismatch');
+  const transformer = { package: manifest.name, version: manifest.version || null, reference };
+  // Exercise actual PHP autoload exports, rather than accepting filenames or
+  // a package name as evidence of compatibility. Codebox owns dependency install.
+  const proof = spawnSync('php', ['-r', String.raw`
+    $root = realpath($argv[1]);
+    $manifest = json_decode(file_get_contents($root . '/composer.json'), true);
+    spl_autoload_register(static function ($class) use ($root, $manifest) {
+      foreach ($manifest['autoload']['psr-4'] ?? [] as $prefix => $directories) {
+        if (!str_starts_with($class, $prefix)) continue;
+        foreach ((array) $directories as $directory) {
+          $file = $root . '/' . $directory . str_replace('\\', '/', substr($class, strlen($prefix))) . '.php';
+          if (is_file($file)) { require_once $file; return; }
+        }
+      }
+    });
+    $exports = [];
+    foreach (['CssUrlRewriter' => 'rewrite', 'SrcsetParser' => 'parse'] as $name => $method) {
+      $class = 'Automattic\\BlocksEngine\\PhpTransformer\\AssetAnalysis\\' . $name;
+      $exports[$class] = class_exists($class) && is_callable([$class, $method])
+        && str_starts_with((new ReflectionClass($class))->getFileName(), $root . '/');
+    }
+    echo json_encode($exports);
+    exit(in_array(false, $exports, true) ? 1 : 0);
+  `, snapshot], { encoding: 'utf8', timeout: 30000, maxBuffer: 1024 * 1024 });
+  let exports = null;
+  try { exports = JSON.parse(proof.stdout); } catch { /* Keep fatal/noisy PHP output as preparation evidence. */ }
+  const evidence = { transformer, source, snapshot, required_exports: exports, exit_status: proof.status, error: proof.error?.message || proof.stderr || null, stdout: exports ? null : proof.stdout };
+  writeJson(path.join(directory, 'transformer-preparation.json'), evidence);
+  if (proof.status !== 0 || !exports || Object.values(exports).some((value) => value !== true)) {
+    const error = new Error(`transformer_preparation_blocked:${proof.error?.code === 'ENOENT' ? 'php_unavailable' : 'required_exports_incompatible'}`);
+    error.evidence = evidence;
+    throw error;
+  }
+  return { transformer, path: snapshot, evidence };
+}
 
 function digest(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
 function normalizeUrl(value) {
@@ -130,17 +195,28 @@ export async function runEvaluation(request, dependencies = {}) {
   if (!/^action-[0-9]+$/.test(actionId)) throw new Error('controller_action_identity_invalid');
   const runId = `${context.loop_id}-matrix-${candidateSha.slice(0, 12)}-${actionId}`;
   const output = path.join(context.root, 'evaluations', candidateSha, actionId, 'homeboy-bench-result.json');
-  if (fs.existsSync(output)) throw new Error('matrix_output_not_fresh');
-  const transformer = context.transformer_path || context.blocks_engine;
+  const directory = path.dirname(output);
+  if (fs.existsSync(directory)) throw new Error('matrix_output_not_fresh');
+  let compiler;
+  try { compiler = prepareTransformer(context, directory); }
+  catch (error) {
+    const evaluation = evaluateMatrixSummary({ summary: null, capture, candidateSha, runId });
+    evaluation.preparation_blocker = { stage: 'preparation', reason: 'transformer_dependency_incompatible', message: error.message, evidence: error.evidence || { source: context.transformer_path || path.join(context.workspace, 'composer.lock'), package: TRANSFORMER_PACKAGE } };
+    writeJson(path.join(directory, 'evaluation.json'), evaluation);
+    return { evaluation };
+  }
   const coverage = Math.min(10, capture.routes - 1);
   const evaluated = await runUrlLoopMatrix({
     fixtureRoot: capture.fixture_root, fixtureId: capture.fixture_id,
     staticSiteImporter: context.workspace, blocksEngine: context.blocks_engine, output, cwd: context.workspace,
-    matrixOptions: { runId, local: true, surfaceCoverage: coverage, blocksEnginePhpTransformerPath: transformer },
-    matrixArgs: ['--blocks-engine-php-transformer-path', transformer, '--run-id', runId, '--wp-codebox-bin', context.wp_codebox_bin, '--surface-coverage', String(coverage), '--local', '--skip-install', '--skip-sync'],
+    matrixOptions: { runId, local: true, surfaceCoverage: coverage, mode: compiler.path ? 'development-override' : 'release-proof', blocksEnginePhpTransformerPath: compiler.path, ...(compiler.path ? { blocksEnginePhpTransformerReference: compiler.transformer.reference } : {}) },
+    matrixArgs: [...(compiler.path ? ['--blocks-engine-php-transformer-path', compiler.path, '--blocks-engine-php-transformer-reference', compiler.transformer.reference] : ['--mode', 'release-proof']), '--run-id', runId, '--wp-codebox-bin', context.wp_codebox_bin, '--surface-coverage', String(coverage), '--local', '--skip-install', '--skip-sync'],
   }, dependencies);
   const { summary, result } = evaluated;
   const evaluation = evaluateMatrixSummary({ summary, benchStatus: result.status, capture, candidateSha, runId });
+  evaluation.transformer = compiler.transformer;
+  if (compiler.composer_lock_sha256) evaluation.composer_lock_sha256 = compiler.composer_lock_sha256;
+  if (compiler.evidence) evaluation.transformer_preparation = compiler.evidence;
   evaluation.versions = { dla: capture.dla, ssi: candidateSha, blocks_engine: context.blocks_engine_sha || null, wordpress: context.wordpress_version || null, browser: summary?.lane_identity?.browser || null };
   if (!observedCommit) evaluation.missing.push('candidate_commit_unverified');
   evaluation.command = evaluated.commands[0];
