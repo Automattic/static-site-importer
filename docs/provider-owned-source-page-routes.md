@@ -1,29 +1,32 @@
 # Provider-owned source-page routes (#1898)
 
-## Current boundary
+## Implemented boundary
 
-`Static_Site_Importer_Prepared_Plan_Application::materialize()` provisions provider
-entities before `materialize_prepared()`, then passes only block bindings and layout
-overlays to page persistence. `Static_Site_Importer_Site_Plan_Preparation::preflight_state()`
-rechecks every resolved page's route and existing post, and
-`Static_Site_Importer_Site_Plan_Persistence::materialize_prepared()` publishes
-every non-protected page. A seeded provider CPT therefore does not replace its
-original imported page. A block binding replaces a fragment, not the page.
+`Static_Site_Importer_Prepared_Plan_Application::materialize()` passes exact
+resolved Gutenberg source documents to providers before page persistence.
+`Static_Site_Importer_Whole_Page_Handoff` verifies canonical producer candidates
+and the actual saved provider content. Page persistence then adopts the native
+destination, journals source-page publication and route metadata, and uses the
+destination for page IDs, links, provenance and native media binding. Fragment
+bindings remain a separate contract.
 
-The source-route runtime resolves only 404 requests and queries published
-`page`/`post` records. It cannot redirect an occupied source route or find a
-provider CPT. The page journal restores posts it updates, while provider
-compensation uses the provider's independent receipt and rollback callback.
-Neither journal currently covers an inferred transfer of content, image, route
-metadata, or publication status between those two owners. In particular,
-`rewrite_materialized_route_links()` expects source IDs for the planned pages,
-and reading operations can refer to a page reconciliation identity.
+The source-route runtime looks up published provider CPTs as well as pages and
+posts. Accepted ownership makes an existing importer-owned source page
+non-public, allowing GET/HEAD requests to redirect to the native permalink.
+Unrelated occupied routes reject ownership. Page/media journals and provider
+compensation restore their respective mutations after a later failure.
+
+The Events Calendar implements this boundary; see
+[native event migration](events-calendar-migration.md) for source admission,
+provider behavior and disposable runtime verification.
 
 ## Smallest contract needed before accepting ownership
 
 The producer must declare a **whole-page ownership candidate** on the canonical
-page and corresponding runtime entity, with the exact `source_path`, canonical
-`route.path`, page reconciliation identity, and entity declaration/row identity.
+page and corresponding runtime entity. The canonical
+`blocks-engine/whole-page-candidate/v1` fields are `source_path`, `source_route`,
+`page_reconciliation_identity`, `declaration_reconciliation_identity`, and
+`entity_id`; `source_route` must equal the page's `route.path`.
 This is separate from a fragment binding or a date/slug classifier result. The
 candidate must survive canonical validation, resolution, and checkpoint replay;
 an unrecognized candidate cannot authorize suppression, and a mismatched
@@ -63,8 +66,8 @@ against the refreshed prepared plan and the live destination:
 
 This contract can extend the existing entity result and canonical page/entity
 declaration; it does not require an event-specific path rule in SSI. The provider
-adapter in #1896 can opt in once it supplies the declared document and rollback
-proof. Until then, keep the original imported page when the provider is absent
+adapter opts in by supplying the declared document and rollback proof.
+Keep the original imported page when the provider is absent
 or declines, and do not interpret a successfully seeded entity as a route claim.
 
 ## Neutral acceptance fixture for the implementation

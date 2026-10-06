@@ -55,7 +55,7 @@ export function buildUrlLoopSpec(input) {
   });
   const spec = {
     schema: CONTROLLER_SCHEMA,
-    controller_id: loopId,
+    loop_id: loopId,
     phase: 'evaluate',
     config_version: 'ssi-url-loop-v1',
     metadata: { source_url_sha256: `sha256:${digest(url)}`, dispatch_defaults: { cwd: workspace, repo: 'static-site-importer' }, max_actions: context.max_actions },

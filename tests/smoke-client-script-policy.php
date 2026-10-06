@@ -27,10 +27,26 @@ $artifact = array(
 	'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
 	'entrypoint' => 'website/index.html',
 	'files'      => array(
-		array( 'path' => 'website/index.html', 'mime_type' => 'text/html', 'content' => '<link rel="preload" href="assets/app.js" as="script"><link rel="modulepreload" href="assets/module.mjs"><link rel="stylesheet" href="assets/site.css"><link rel="preload" href="assets/font.woff2" as="font"><main>Safe content</main><script>window.inline=true</script><script src="assets/app.js"></script><script src="https://cdn.example.test/app.js"></script><script type="module" src="assets/module.mjs"></script><script type="application/ld+json">{"@type":"Organization"}</script><script src="data:text/javascript,alert(1)"></script><script>window.gtag("config", "UA-test")</script>' ),
-		array( 'path' => 'website/assets/app.js', 'mime_type' => 'application/javascript', 'content' => 'window.local=true;' ),
-		array( 'path' => 'website/assets/module.mjs', 'mime_type' => 'text/javascript', 'content' => 'export default true;' ),
-		array( 'path' => 'website/assets/site.css', 'mime_type' => 'text/css', 'content' => 'main{color:green}' ),
+		array(
+			'path'      => 'website/index.html',
+			'mime_type' => 'text/html',
+			'content'   => '<link rel="preload" href="assets/app.js" as="script"><link rel="modulepreload" href="assets/module.mjs"><link rel="stylesheet" href="assets/site.css"><link rel="preload" href="assets/font.woff2" as="font"><main>Safe content</main><script>window.inline=true</script><script src="assets/app.js"></script><script src="https://cdn.example.test/app.js"></script><script type="module" src="assets/module.mjs"></script><script type="application/ld+json">{"@type":"Organization"}</script><script src="data:text/javascript,alert(1)"></script><script>window.gtag("config", "UA-test")</script>',
+		),
+		array(
+			'path'      => 'website/assets/app.js',
+			'mime_type' => 'application/javascript',
+			'content'   => 'window.local=true;',
+		),
+		array(
+			'path'      => 'website/assets/module.mjs',
+			'mime_type' => 'text/javascript',
+			'content'   => 'export default true;',
+		),
+		array(
+			'path'      => 'website/assets/site.css',
+			'mime_type' => 'text/css',
+			'content'   => 'main{color:green}',
+		),
 	),
 );
 
@@ -47,11 +63,38 @@ $assert( ! in_array( 'website/assets/app.js', $paths, true ) && ! in_array( 'web
 $assert( ! str_contains( $inert_html, 'modulepreload' ) && ! str_contains( $inert_html, 'as="script"' ) && str_contains( $inert_html, 'stylesheet' ) && str_contains( $inert_html, 'as="font"' ), 'inert-removes-script-preloads-only' );
 $assert( array( 'data', 'data', 'inline', 'local', 'local', 'local', 'module', 'preload', 'preload', 'remote', 'telemetry' ) === $classes, 'inert-classifies-inline-local-remote-module-data-telemetry-and-preloads' );
 $assert( 2 === count( $inert['report']['quarantined'] ) && 'data' === $inert['report']['quarantined'][0]['class'], 'data-is-quarantined-and-never-executed' );
+$structured = $inert['artifact']['files'][0]['metadata']['structured_data'] ?? array();
+$assert( 1 === count( $structured ) && 'Organization' === $structured[0]['data']['@type'] && 'application/ld+json' === $structured[0]['type'], 'quarantined-jsonld-facts-remain-available-to-the-provider-neutral-producer' );
+$invalid_data = Static_Site_Importer_Client_Script_Policy::apply(
+	array(
+		'files' => array(
+			array(
+				'path'    => 'index.html',
+				'content' => '<script type="application/ld+json">invalid</script><script type="application/ld+json" src="https://example.test/data">{"@type":"Event"}</script>',
+			),
+		),
+	),
+	array()
+);
+$assert( empty( $invalid_data['artifact']['files'][0]['metadata']['structured_data'] ) && ! str_contains( $invalid_data['artifact']['files'][0]['content'], '<script' ), 'invalid-and-externally-sourced-data-do-not-become-structured-facts' );
 
-$unproven = Static_Site_Importer_Client_Script_Policy::apply( $artifact, array( 'client_script_policy' => 'isolated_preview', 'client_script_provenance' => array( 'ref' => 'upload:sha256:abc123' ) ) );
+$unproven = Static_Site_Importer_Client_Script_Policy::apply(
+	$artifact,
+	array(
+		'client_script_policy'     => 'isolated_preview',
+		'client_script_provenance' => array( 'ref' => 'upload:sha256:abc123' ),
+	)
+);
 $assert( 'inert' === $unproven['report']['policy'] && empty( $unproven['report']['preserved'] ), 'isolated-policy-without-runtime-isolation-remains-inert' );
 
-$preview      = Static_Site_Importer_Client_Script_Policy::apply( $artifact, array( 'client_script_policy' => 'isolated_preview', 'client_script_isolated' => true, 'client_script_provenance' => array( 'ref' => 'upload:sha256:abc123' ) ) );
+$preview      = Static_Site_Importer_Client_Script_Policy::apply(
+	$artifact,
+	array(
+		'client_script_policy'     => 'isolated_preview',
+		'client_script_isolated'   => true,
+		'client_script_provenance' => array( 'ref' => 'upload:sha256:abc123' ),
+	)
+);
 $preview_html = (string) ( $preview['artifact']['files'][0]['content'] ?? '' );
 $assert( 'isolated_preview' === $preview['report']['policy'] && 'untrusted_imported_code' === $preview['report']['trust'] && 'upload:sha256:abc123' === $preview['report']['provenance'], 'isolated-policy-requires-and-records-provenance' );
 $assert( str_contains( $preview_html, 'window.inline=true' ) && str_contains( $preview_html, 'modulepreload' ) && 11 === count( $preview['report']['preserved'] ) && empty( $preview['report']['dropped'] ) && empty( $preview['report']['quarantined'] ), 'isolated-preview-preserves-scripts-and-preloads-without-granting-trust' );
@@ -62,8 +105,16 @@ $base64_artifact = array(
 	'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
 	'entrypoint' => 'website/index.html',
 	'files'      => array(
-		array( 'path' => 'website/index.html', 'mime_type' => 'text/html', 'content_base64' => base64_encode( $base64_html ) ),
-		array( 'path' => 'website/js/main.js', 'mime_type' => 'application/javascript', 'content_base64' => base64_encode( $base64_script ) ),
+		array(
+			'path'           => 'website/index.html',
+			'mime_type'      => 'text/html',
+			'content_base64' => base64_encode( $base64_html ),
+		),
+		array(
+			'path'           => 'website/js/main.js',
+			'mime_type'      => 'application/javascript',
+			'content_base64' => base64_encode( $base64_script ),
+		),
 	),
 );
 $base64_inert    = Static_Site_Importer_Client_Script_Policy::apply( $base64_artifact, array() );
@@ -75,7 +126,14 @@ $assert( is_string( $base64_filtered ) && str_contains( $base64_filtered, 'Base6
 $assert( ! isset( $base64_files['website/js/main.js'] ), 'inert-removes-base64-script-assets' );
 $assert( hash( 'sha256', $base64_script ) === ( $base64_dropped['website/js/main.js']['sha256'] ?? '' ), 'base64-script-report-hashes-decoded-bytes' );
 
-$base64_preview = Static_Site_Importer_Client_Script_Policy::apply( $base64_artifact, array( 'client_script_policy' => 'isolated_preview', 'client_script_isolated' => true, 'client_script_provenance' => 'fixture:base64' ) );
+$base64_preview = Static_Site_Importer_Client_Script_Policy::apply(
+	$base64_artifact,
+	array(
+		'client_script_policy'     => 'isolated_preview',
+		'client_script_isolated'   => true,
+		'client_script_provenance' => 'fixture:base64',
+	)
+);
 $assert( $base64_artifact['files'] === $base64_preview['artifact']['files'], 'isolated-preview-preserves-base64-artifact-bytes' );
 
 $dynamic_html     = '<main>Dynamic assets</main><script src="js/runtime.js"></script><script>window.inlineDynamic = document.createElement("script"); document.body.appendChild(document.createElement("img"));</script><script src="js/proven.js"></script>';
@@ -84,39 +142,76 @@ $dynamic_artifact = array(
 	'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
 	'entrypoint' => 'website/index.html',
 	'files'      => array(
-		array( 'path' => 'website/index.html', 'mime_type' => 'text/html', 'content' => $dynamic_html ),
-		array( 'path' => 'website/js/runtime.js', 'mime_type' => 'application/javascript', 'content' => $dynamic_script ),
-		array( 'path' => 'website/js/proven.js', 'mime_type' => 'application/javascript', 'content' => 'window.proven = true;' ),
+		array(
+			'path'      => 'website/index.html',
+			'mime_type' => 'text/html',
+			'content'   => $dynamic_html,
+		),
+		array(
+			'path'      => 'website/js/runtime.js',
+			'mime_type' => 'application/javascript',
+			'content'   => $dynamic_script,
+		),
+		array(
+			'path'      => 'website/js/proven.js',
+			'mime_type' => 'application/javascript',
+			'content'   => 'window.proven = true;',
+		),
 	),
 );
-$dynamic_plan    = array(
+$dynamic_plan     = array(
 	'reference_semantics' => array( 'dynamic_client_assets' => array( 'status' => 'not_proven' ) ),
-	'reference_tokens'    => array( array( 'token' => 'asset-aaaaaaaaaaaaaaaa', 'target_path' => 'assets/js/runtime.js' ) ),
-	'assets'              => array( array( 'target_path' => 'assets/js/runtime.js', 'source_path' => 'website/js/runtime.js' ) ),
+	'reference_tokens'    => array(
+		array(
+			'token'       => 'asset-aaaaaaaaaaaaaaaa',
+			'target_path' => 'assets/js/runtime.js',
+		),
+	),
+	'assets'              => array(
+		array(
+			'target_path' => 'assets/js/runtime.js',
+			'source_path' => 'website/js/runtime.js',
+		),
+	),
 	'pages'               => array(
 		array(
-			'source_path'        => 'website/index.html',
-			'document_metadata'  => array(
+			'source_path'       => 'website/index.html',
+			'document_metadata' => array(
 				'scripts' => array(
-					array( 'order' => 0, 'asset_reference' => '{{wordpress-site-plan:asset:asset-aaaaaaaaaaaaaaaa}}' ),
+					array(
+						'order'           => 0,
+						'asset_reference' => '{{wordpress-site-plan:asset:asset-aaaaaaaaaaaaaaaa}}',
+					),
 					array( 'order' => 1 ),
-					array( 'order' => 2, 'asset_reference' => '{{wordpress-site-plan:asset:asset-bbbbbbbbbbbbbbbb}}' ),
+					array(
+						'order'           => 2,
+						'asset_reference' => '{{wordpress-site-plan:asset:asset-bbbbbbbbbbbbbbbb}}',
+					),
 				),
 			),
 		),
 	),
 	'diagnostics'         => array(
-		array( 'code' => 'wordpress_site_plan_script_dynamic_references', 'source_path' => 'website/index.html#0' ),
-		array( 'code' => 'wordpress_site_plan_script_dynamic_references', 'source_path' => 'website/index.html#1' ),
-		array( 'code' => 'wordpress_site_plan_script_external_unproven', 'source_path' => 'website/index.html#2' ),
+		array(
+			'code'        => 'wordpress_site_plan_script_dynamic_references',
+			'source_path' => 'website/index.html#0',
+		),
+		array(
+			'code'        => 'wordpress_site_plan_script_dynamic_references',
+			'source_path' => 'website/index.html#1',
+		),
+		array(
+			'code'        => 'wordpress_site_plan_script_external_unproven',
+			'source_path' => 'website/index.html#2',
+		),
 	),
 );
-$dynamic_loss    = Static_Site_Importer_Client_Script_Policy::drop_unproven_dynamic_scripts( $dynamic_artifact, $dynamic_plan );
-$dynamic_files   = array_column( $dynamic_loss['artifact']['files'], null, 'path' );
-$filtered_html   = (string) ( $dynamic_files['website/index.html']['content'] ?? '' );
-$loss_rows       = $dynamic_loss['dropped'];
-$asset_rows      = array_values( array_filter( $loss_rows, static fn( array $row ): bool => 'asset' === ( $row['type'] ?? '' ) ) );
-$inline_rows     = array_values( array_filter( $loss_rows, static fn( array $row ): bool => 'inline' === ( $row['type'] ?? '' ) ) );
+$dynamic_loss     = Static_Site_Importer_Client_Script_Policy::drop_unproven_dynamic_scripts( $dynamic_artifact, $dynamic_plan );
+$dynamic_files    = array_column( $dynamic_loss['artifact']['files'], null, 'path' );
+$filtered_html    = (string) ( $dynamic_files['website/index.html']['content'] ?? '' );
+$loss_rows        = $dynamic_loss['dropped'];
+$asset_rows       = array_values( array_filter( $loss_rows, static fn( array $row ): bool => 'asset' === ( $row['type'] ?? '' ) ) );
+$inline_rows      = array_values( array_filter( $loss_rows, static fn( array $row ): bool => 'inline' === ( $row['type'] ?? '' ) ) );
 
 $assert( ! isset( $dynamic_files['website/js/runtime.js'] ) && isset( $dynamic_files['website/js/proven.js'] ), 'loss-pass-removes-only-the-unproven-script-file' );
 $assert( ! str_contains( $filtered_html, 'runtime.js' ) && ! str_contains( $filtered_html, 'inlineDynamic' ) && str_contains( $filtered_html, 'js/proven.js' ) && str_contains( $filtered_html, 'Dynamic assets' ), 'loss-pass-strips-only-the-unproven-script-tags' );
@@ -133,4 +228,4 @@ if ( $failures ) {
 	exit( 1 );
 }
 
-echo sprintf( "Client script policy smoke passed (%d assertions).\n", $assertions );
+printf( "Client script policy smoke passed (%d assertions).\n", $assertions );

@@ -97,7 +97,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				)
 			)
 		);
-		$handoffs = self::apply_whole_page_handoffs( $state );
+		$handoffs                      = self::apply_whole_page_handoffs( $state );
 		if ( is_wp_error( $handoffs ) ) {
 			return self::failed_receipt_from_error( $state, $handoffs );
 		}
@@ -373,37 +373,90 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 
 	/** Apply only a complete provider proof; otherwise normal page writes proceed. */
 	private static function apply_whole_page_handoffs( array &$state ) {
-		$results = isset( $state['args']['whole_page_provider_results'] ) && is_array( $state['args']['whole_page_provider_results'] ) ? $state['args']['whole_page_provider_results'] : array();
-		$validated = Static_Site_Importer_Whole_Page_Handoff::validate( $state['ordered_pages'], $results );
+		$results              = isset( $state['args']['whole_page_provider_results'] ) && is_array( $state['args']['whole_page_provider_results'] ) ? $state['args']['whole_page_provider_results'] : array();
+		$validated            = Static_Site_Importer_Whole_Page_Handoff::validate( $state['ordered_pages'], $results );
 		$state['diagnostics'] = array_merge( $state['diagnostics'], $validated['diagnostics'] );
+		if ( ! empty( $validated['diagnostics'] ) && ! empty( $results ) ) {
+			return new WP_Error( 'whole_page_claim_unproven', 'The provider did not prove canonical source-page ownership.' );
+		}
 		foreach ( $validated['claims'] as $source => $claim ) {
-			$page = $claim['page'];
-			$existing = (int) ( $page['planned_existing_id'] ?? 0 );
-			if ( $existing > 0 ) {
+			$page        = $claim['page'];
+			$existing    = (int) ( $page['planned_existing_id'] ?? 0 );
+			$destination = (int) $claim['post_id'];
+			$occupied    = get_page_by_path( trim( $claim['route'], '/' ), OBJECT, array( 'page', 'post' ) );
+			if ( $occupied && (int) $occupied->ID !== $destination && (int) $occupied->ID !== $existing && 'publish' === $occupied->post_status ) {
+				return new WP_Error( 'whole_page_source_route_occupied', 'An unrelated published post occupies the source route.' );
+			}
+			if ( $existing > 0 && $existing !== $destination ) {
 				$post = function_exists( 'get_post' ) ? get_post( $existing ) : null;
-				if ( ! $post || ! self::post_belongs_to_run( $post, (string) ( $state['args']['import_run_id'] ?? '' ) ) ) {
-					$state['diagnostics'][] = array( 'reason_code' => 'whole_page_source_route_occupied', 'source_path' => $source );
-					continue;
+				if ( ! $post || (string) get_post_meta( $existing, self::RECONCILIATION_META_KEY, true ) !== $page['reconciliation_identity'] ) {
+					return new WP_Error( 'whole_page_source_route_occupied', 'An unrelated post occupies the source route.' );
 				}
 				self::journal_post( $state, $page );
-				if ( is_wp_error( wp_update_post( array( 'ID' => $existing, 'post_status' => 'draft' ), true ) ) ) {
+				if ( is_wp_error(
+					wp_update_post(
+						array(
+							'ID'          => $existing,
+							'post_status' => 'draft',
+						),
+						true
+					)
+				) ) {
 					return new WP_Error( 'whole_page_source_page_update_failed' );
 				}
-				$state['applied']['posts'][] = array( 'id' => $existing, 'source_path' => $source, 'reconciliation_identity' => $page['reconciliation_identity'] );
+				$state['applied']['posts'][] = array(
+					'id'                      => $existing,
+					'source_path'             => $source,
+					'reconciliation_identity' => $page['reconciliation_identity'],
+				);
+				delete_post_meta( $existing, self::RECONCILIATION_META_KEY );
+				delete_post_meta( $existing, self::PRODUCER_RECONCILIATION_META_KEY );
 			}
-			$destination = (int) $claim['post_id'];
-			self::journal_post( $state, array( 'planned_existing_id' => $destination, 'source_path' => $source ) );
-			if ( ! self::write_post_meta( $destination, Static_Site_Importer_Source_Route_Redirect::META_KEY, Static_Site_Importer_Source_Route_Redirect::public_source_route( $source ) ) ) {
-				return new WP_Error( 'whole_page_destination_route_metadata_failed' );
+			self::journal_post(
+				$state,
+				array(
+					'planned_existing_id' => $destination,
+					'source_path'         => $source,
+				)
+			);
+			$route_key = Static_Site_Importer_Source_Route_Redirect::META_KEY;
+			delete_post_meta( $destination, $route_key );
+			$aliases = array_merge( array( ltrim( $claim['route'], '/' ), Static_Site_Importer_Source_Route_Redirect::public_source_route( $source ) ), $state['source_route_aliases'][ $source ] ?? array() );
+			foreach ( array_unique( $aliases ) as $alias ) {
+				if ( '' !== $alias && ! self::add_post_meta_value( $destination, $route_key, $alias ) ) {
+					return new WP_Error( 'whole_page_destination_route_metadata_failed' );
+				}
 			}
-			$state['applied']['posts'][] = array( 'id' => $destination, 'source_path' => $source, 'reconciliation_identity' => $page['reconciliation_identity'] );
-			$page['skip_materialization'] = true;
-			$page['planned_existing_id']  = $destination;
-			$page['post_type']            = get_post_type( $destination );
-			$state['source_ids'][ $source ] = $destination;
+			$persisted_markup = get_post_field( 'post_content', $destination );
+			if ( ! is_string( $persisted_markup ) ) {
+				return new WP_Error( 'whole_page_destination_content_unavailable', 'The committed provider document could not be read.' );
+			}
+			$provenance = array(
+				'schema'                  => 'static-site-importer/page-provenance/v1',
+				'import_run_id'           => $state['args']['import_run_id'] ?? '',
+				'source_path'             => $source,
+				'reconciliation_identity' => $page['reconciliation_identity'],
+				'content_hash'            => hash( 'sha256', $persisted_markup ),
+			);
+			if ( ! self::write_post_meta( $destination, self::RECONCILIATION_META_KEY, $page['reconciliation_identity'] ) || ! self::write_post_meta( $destination, self::PRODUCER_RECONCILIATION_META_KEY, $page['reconciliation_identity'] ) || ! self::write_post_meta( $destination, '_static_site_importer_provenance', (string) wp_json_encode( $provenance ) ) ) {
+				return new WP_Error( 'whole_page_destination_provenance_failed' );
+			}
+			$state['applied']['posts'][]                           = array(
+				'id'                      => $destination,
+				'source_path'             => $source,
+				'reconciliation_identity' => $page['reconciliation_identity'],
+			);
+			$page['skip_materialization']                          = true;
+			$page['provider_owned']                                = true;
+			$page['provider_featured_image_target_path']           = (string) ( $claim['result']['featured_image_target_path'] ?? '' );
+			$page['planned_existing_id']                           = $destination;
+			$page['post_type']                                     = get_post_type( $destination );
+			$state['source_ids'][ $source ]                        = $destination;
 			$state['page_ids'][ $page['reconciliation_identity'] ] = $destination;
 			foreach ( $state['ordered_pages'] as &$ordered ) {
-				if ( (string) ( $ordered['source_path'] ?? '' ) === $source ) { $ordered = $page; break; }
+				if ( (string) ( $ordered['source_path'] ?? '' ) === $source ) {
+					$ordered = $page;
+					break; }
 			}
 			unset( $ordered );
 		}
@@ -516,7 +569,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		}
 
 		foreach ( $state['ordered_pages'] as $page ) {
-			if ( ! empty( $page['skip_materialization'] ) ) {
+			if ( ! empty( $page['skip_materialization'] ) && empty( $page['provider_owned'] ) ) {
 				continue;
 			}
 			$source_path = (string) ( $page['source_path'] ?? '' );
@@ -1565,6 +1618,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				'reconciliation_identity'                 => get_post_meta( $id, self::RECONCILIATION_META_KEY, true ),
 				'producer_reconciliation_identity'        => get_post_meta( $id, self::PRODUCER_RECONCILIATION_META_KEY, true ),
 				'producer_reconciliation_identity_exists' => metadata_exists( 'post', $id, self::PRODUCER_RECONCILIATION_META_KEY ),
+				'source_routes'                           => get_post_meta( $id, Static_Site_Importer_Source_Route_Redirect::META_KEY, false ),
+				'thumbnail'                               => get_post_meta( $id, '_thumbnail_id', false ),
 			);
 			return;
 		}
@@ -1767,6 +1822,20 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 						delete_post_meta( $id, self::PRODUCER_RECONCILIATION_META_KEY );
 						if ( metadata_exists( 'post', $id, self::PRODUCER_RECONCILIATION_META_KEY ) ) {
 							throw new RuntimeException( 'materialization_rollback_post_meta_delete_failed' );
+						}
+					}
+					foreach ( array(
+						'source_routes' => Static_Site_Importer_Source_Route_Redirect::META_KEY,
+						'thumbnail'     => '_thumbnail_id',
+					) as $snapshot => $meta_key ) {
+						if ( ! array_key_exists( $snapshot, $before ) ) {
+							continue;
+						}
+						delete_post_meta( $id, $meta_key );
+						foreach ( is_array( $before[ $snapshot ] ) ? $before[ $snapshot ] : array() as $value ) {
+							if ( ! self::add_post_meta_value( $id, $meta_key, (string) $value ) ) {
+								throw new RuntimeException( 'materialization_rollback_route_meta_restore_failed' );
+							}
 						}
 					}
 				} elseif ( function_exists( 'wp_delete_post' ) && ! wp_delete_post( $id, true ) ) {

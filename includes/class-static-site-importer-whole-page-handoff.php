@@ -1,71 +1,117 @@
 <?php
-/** Validates provider-owned whole-page transfers. */
-if ( ! defined( 'ABSPATH' ) ) { exit; }
+/**
+ * Provider-owned source documents and verified whole-page ownership.
+ *
+ * @package StaticSiteImporter
+ */
 
-/** Keeps whole-page ownership separate from fragment bindings and HTML inference. */
+defined( 'ABSPATH' ) || exit;
+
 final class Static_Site_Importer_Whole_Page_Handoff {
-	public const SCHEMA = 'static-site-importer/whole-page-handoff/v1';
 
-	/** @param array<int,array<string,mixed>> $pages @param array<int,array<string,mixed>> $results */
+	public const SCHEMA            = 'static-site-importer/whole-page-handoff/v1';
+	private const CANDIDATE_SCHEMA = 'blocks-engine/whole-page-candidate/v1';
+
+	/** Give providers only source documents authorized by the canonical producer. */
+	public static function documents( array $pages ): array {
+		$documents = array();
+		$parents   = array_filter( array_column( $pages, 'parent_source_path' ) );
+		foreach ( $pages as $page ) {
+			$candidates = $page['whole_page_candidates'] ?? array();
+			if ( 1 !== count( $candidates ) || ! self::candidate_matches_page( $candidates[0], $page ) ) {
+				continue;
+			}
+			$candidate = $candidates[0];
+			$markup    = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' );
+			if ( '' === $markup || '/' === $candidate['source_route'] || ! empty( $page['synthetic'] ) || ! empty( $page['skip_materialization'] ) || in_array( $page['source_path'], $parents, true ) ) {
+				continue;
+			}
+			$declaration = $candidate['declaration_reconciliation_identity'];
+			$entity      = $candidate['entity_id'];
+			if ( isset( $documents[ $declaration ][ $entity ] ) ) {
+				throw new InvalidArgumentException( 'Whole-page source documents must be unambiguous.' );
+			}
+			$documents[ $declaration ][ $entity ] = $candidate + array(
+				'post_content'   => $markup,
+				'content_sha256' => hash( 'sha256', $markup ),
+			);
+		}
+		return $documents;
+	}
+
+	/** Verify canonical identities and the actual persisted document before route mutation. */
 	public static function validate( array $pages, array $results ): array {
-		$by_source = array(); $page_routes = array();
-		foreach ( $pages as $page ) {
-			if ( is_array( $page ) && '' !== (string) ( $page['source_path'] ?? '' ) ) {
-				$source = (string) $page['source_path'];
-				$route  = self::route( $page['route']['path'] ?? '' );
-				$by_source[ $source ][] = $page;
-				$page_routes[ $route ][] = $page;
-			}
-		}
-		$candidates = array();
+		$claims      = array();
 		$diagnostics = array();
+		$by_source   = array();
+		$routes      = array();
+		$posts       = array();
 		foreach ( $pages as $page ) {
-			foreach ( is_array( $page['whole_page_candidates'] ?? null ) ? $page['whole_page_candidates'] : array() as $candidate ) {
-				$source = is_array( $candidate ) ? (string) ( $candidate['source_path'] ?? '' ) : '';
-				$route  = is_array( $candidate ) ? self::route( $candidate['route']['path'] ?? $candidate['route_path'] ?? '' ) : '';
-				$owner  = is_array( $page ) ? (string) ( $page['reconciliation_identity'] ?? '' ) : '';
-				$key    = $source . "\n" . $route;
-				$matching_pages = array_values( array_filter( $by_source[ $source ] ?? array(), static fn( $item ): bool => $route === self::route( $item['route']['path'] ?? '' ) ) );
-				if ( ! is_array( $candidate ) || '' === $source || '' === $route || 1 !== count( $matching_pages ) || $owner !== (string) ( $candidate['page_reconciliation_identity'] ?? $candidate['reconciliation_identity'] ?? '' ) || isset( $candidates[ $key ] ) ) {
-					$diagnostics[] = array( 'reason_code' => 'whole_page_candidate_invalid', 'source_path' => $source, 'route' => $route );
-					continue;
-				}
-				$candidates[ $key ] = array( 'candidate' => $candidate, 'page' => $matching_pages[0] );
+			$by_source[ (string) ( $page['source_path'] ?? '' ) ][] = $page;
+		}
+		foreach ( $results as $result ) {
+			if ( ! is_array( $result ) || self::SCHEMA !== ( $result['schema'] ?? null ) || 'committed' !== ( $result['status'] ?? null ) ) {
+				$diagnostics[] = array( 'reason_code' => 'whole_page_claim_invalid' );
+				continue;
+			}
+			$source           = (string) ( $result['source_path'] ?? '' );
+			$route            = (string) ( $result['source_route'] ?? '' );
+			$id               = (int) ( $result['destination_post_id'] ?? 0 );
+			$routes[ $route ] = ( $routes[ $route ] ?? 0 ) + 1;
+			$posts[ $id ]     = ( $posts[ $id ] ?? 0 ) + 1;
+			$matching         = $by_source[ $source ] ?? array();
+			$page             = 1 === count( $matching ) ? $matching[0] : array();
+			$candidates       = $page['whole_page_candidates'] ?? array();
+			$candidate        = 1 === count( $candidates ) ? $candidates[0] : array();
+			$valid            = self::candidate_matches_page( $candidate, $page ) && '/' !== $route && $id > 0;
+			foreach ( array( 'source_path', 'source_route', 'page_reconciliation_identity', 'declaration_reconciliation_identity', 'entity_id' ) as $field ) {
+				$valid = $valid && ( $result[ $field ] ?? null ) === ( $candidate[ $field ] ?? null );
+			}
+			$post   = $id > 0 ? get_post( $id ) : null;
+			$markup = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' );
+			$valid  = $valid && $post && 'publish' === $post->post_status && ( $result['post_type'] ?? '' ) === $post->post_type
+				&& '' !== $markup && hash_equals( hash( 'sha256', $markup ), hash( 'sha256', (string) $post->post_content ) );
+			if ( ! $valid || isset( $claims[ $source ] ) ) {
+				$diagnostics[] = array(
+					'reason_code' => 'whole_page_claim_unproven',
+					'source_path' => $source,
+				);
+				continue;
+			}
+			$claims[ $source ] = array(
+				'page'      => $page,
+				'candidate' => $candidate,
+				'result'    => $result,
+				'post_id'   => $id,
+				'route'     => $route,
+			);
+		}
+		foreach ( $claims as $source => $claim ) {
+			if ( 1 !== $routes[ $claim['route'] ] || 1 !== $posts[ $claim['post_id'] ] ) {
+				unset( $claims[ $source ] );
+				$diagnostics[] = array(
+					'reason_code' => 'whole_page_claim_ambiguous',
+					'source_path' => $source,
+				);
 			}
 		}
-		$claims = array(); $routes = array(); $posts = array(); $result_keys = array(); $result_posts = array();
-		foreach ( $results as $result ) {
-			if ( ! is_array( $result ) || ! in_array( $result['status'] ?? '', array( 'committed', 'completed', 'materialized', 'mapped' ), true ) ) { continue; }
-			$key = (string) ( $result['source_path'] ?? '' ) . "\n" . self::route( $result['route']['path'] ?? $result['route_path'] ?? '' );
-			$id  = (int) ( $result['destination_post_id'] ?? $result['post_id'] ?? 0 );
-			$result_keys[ $key ] = ( $result_keys[ $key ] ?? 0 ) + 1;
-			if ( $id > 0 ) { $result_posts[ $id ] = ( $result_posts[ $id ] ?? 0 ) + 1; }
-		}
-		foreach ( $results as $result ) {
-			if ( ! is_array( $result ) || ! in_array( $result['status'] ?? '', array( 'committed', 'completed', 'materialized', 'mapped' ), true ) ) { continue; }
-			$source = (string) ( $result['source_path'] ?? '');
-			$route  = self::route( $result['route']['path'] ?? $result['route_path'] ?? '' );
-			$key    = $source . "\n" . $route;
-			$entry  = $candidates[ $key ] ?? array();
-			$candidate = $entry['candidate'] ?? array(); $page = $entry['page'] ?? array();
-			$id = (int) ( $result['destination_post_id'] ?? $result['post_id'] ?? 0 );
-			$valid = 1 === ( $result_keys[ $key ] ?? 0 ) && 1 === ( $result_posts[ $id ] ?? 0 ) && $id > 0 && is_array( $candidate ) && is_array( $page ) && (string) ( $result['post_type'] ?? '' ) !== '' && (string) ( $result['page_reconciliation_identity'] ?? $result['reconciliation_identity'] ?? '' ) === (string) ( $page['reconciliation_identity'] ?? '' ) && (string) ( $result['declaration_id'] ?? '' ) === (string) ( $candidate['declaration_id'] ?? '' ) && (string) ( $result['row_identity'] ?? '' ) === (string) ( $candidate['row_identity'] ?? '' ) && ! isset( $routes[ $route ] ) && ! isset( $posts[ $id ] ) && self::destination_proves_document( $id, $result, $page );
-			if ( ! $valid ) { $diagnostics[] = array( 'reason_code' => 'whole_page_claim_unproven', 'source_path' => $source, 'route' => $route, 'post_id' => $id ); continue; }
-			$claims[ $source ] = array( 'page' => $page, 'candidate' => $candidate, 'result' => $result, 'post_id' => $id, 'route' => $route );
-			$routes[ $route ] = true; $posts[ $id ] = true;
-		}
-		return array( 'claims' => $claims, 'diagnostics' => $diagnostics );
+		return array(
+			'claims'      => $claims,
+			'diagnostics' => $diagnostics,
+		);
 	}
 
-	public static function route( $route ): string {
-		if ( ! is_string( $route ) || '' === trim( $route ) || str_contains( $route, '://' ) ) { return ''; }
-		return '/' . trim( preg_replace( '~/{2,}~', '/', trim( $route ) ), '/' );
-	}
-
-	private static function destination_proves_document( int $id, array $result, array $page ): bool {
-		$post = function_exists( 'get_post' ) ? get_post( $id ) : null;
-		$hash = (string) ( $result['content_sha256'] ?? $result['content_hash'] ?? '' );
-		$markup = (string) ( $page['materialized_block_markup'] ?? $page['resolved_block_markup'] ?? '' );
-		return $post && 'publish' === $post->post_status && (string) $result['post_type'] === (string) $post->post_type && true === ( $result['images_preserved'] ?? false ) && '' !== $hash && hash_equals( $hash, hash( 'sha256', (string) $post->post_content ) ) && ( '' === (string) ( $result['source_content_sha256'] ?? '' ) || hash_equals( (string) $result['source_content_sha256'], hash( 'sha256', $markup ) ) );
+	private static function candidate_matches_page( array $candidate, array $page ): bool {
+		if ( self::CANDIDATE_SCHEMA !== ( $candidate['schema'] ?? null ) ) {
+			return false;
+		}
+		foreach ( array( 'source_path', 'source_route', 'page_reconciliation_identity', 'declaration_reconciliation_identity', 'entity_id' ) as $field ) {
+			if ( ! is_string( $candidate[ $field ] ?? null ) || '' === $candidate[ $field ] ) {
+				return false;
+			}
+		}
+		return ( $page['source_path'] ?? null ) === $candidate['source_path']
+			&& ( $page['route']['path'] ?? null ) === $candidate['source_route']
+			&& ( $page['reconciliation_identity'] ?? null ) === $candidate['page_reconciliation_identity'];
 	}
 }

@@ -44,6 +44,11 @@ class Static_Site_Importer_Client_Script_Policy {
 				}
 			}
 			if ( self::is_html_file( $file ) ) {
+				$structured_data = self::structured_data( self::file_content( $file ) );
+				if ( ! empty( $structured_data ) ) {
+					$file['metadata']                    = is_array( $file['metadata'] ?? null ) ? $file['metadata'] : array();
+					$file['metadata']['structured_data'] = $structured_data;
+				}
 				$content = self::filter_html( self::file_content( $file ), $path, $preserve, $report );
 				if ( ! $preserve ) {
 					$file = self::with_file_content( $file, $content );
@@ -211,9 +216,9 @@ class Static_Site_Importer_Client_Script_Policy {
 	}
 
 	/**
-	 * @param array<string,true>   $script_files  Artifact paths of dropped script files.
-	 * @param array<int,int>       $inline_orders Document-order indexes of dropped inline scripts.
-	 * @param array<int,array<string,mixed>>     $dropped       Loss rows, stamped in place.
+	 * @param array<string,true>             $script_files  Artifact paths of dropped script files.
+	 * @param array<int,int>                 $inline_orders Document-order indexes of dropped inline scripts.
+	 * @param array<int,array<string,mixed>> $dropped       Loss rows, stamped in place.
 	 */
 	private static function strip_unproven_dynamic_markup( string $html, string $path, array $script_files, array $inline_orders, array &$dropped ): string {
 		$index = -1;
@@ -310,6 +315,30 @@ class Static_Site_Importer_Client_Script_Policy {
 		$path = strtolower( (string) ( $file['path'] ?? '' ) );
 		$mime = strtolower( (string) ( $file['mime_type'] ?? '' ) );
 		return (bool) preg_match( '/\.(?:js|mjs|cjs)$/', $path ) || str_contains( $mime, 'javascript' ) || str_contains( $mime, 'ecmascript' );
+	}
+
+	/** Preserve bounded non-executable JSON-LD facts for the producer before stripping script markup. */
+	private static function structured_data( string $html ): array {
+		$records = array();
+		$bytes   = 0;
+		preg_match_all( '#<script\b([^>]*)>(.*?)</script\s*>#is', $html, $scripts, PREG_SET_ORDER );
+		foreach ( array_slice( $scripts, 0, 32 ) as $script ) {
+			if ( null !== self::attribute( $script[1], 'src' ) || 'application/ld+json' !== strtolower( trim( (string) self::attribute( $script[1], 'type' ) ) ) || strlen( $script[2] ) > 262144 ) {
+				continue;
+			}
+			$data = json_decode( $script[2], true, 24 );
+			if ( is_array( $data ) ) {
+				$bytes += strlen( $script[2] );
+				if ( $bytes > 262144 ) {
+					break;
+				}
+				$records[] = array(
+					'type' => 'application/ld+json',
+					'data' => $data,
+				);
+			}
+		}
+		return $records;
 	}
 
 	private static function filter_html( string $html, string $path, bool $preserve, Static_Site_Importer_Client_Script_Policy_Report $report ): string {

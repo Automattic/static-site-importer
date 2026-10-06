@@ -30,11 +30,11 @@ test('one URL yields a stable bounded Homeboy controller with typed capture-to-e
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-controller-spec-'));
   const { spec, context: inputs } = context(root);
   assert.equal(spec.schema, 'homeboy/controller-spec/v1');
-  assert.equal(spec.controller_id, sourceIdentity(url));
-  assert.equal(spec.controller_id, sourceIdentity('https://example.com/#fragment'));
+  assert.equal(spec.loop_id, sourceIdentity(url));
+  assert.equal(spec.loop_id, sourceIdentity('https://example.com/#fragment'));
   const proof = buildUrlLoopSpec({ url, workspace: root, blocksEngine: root, wpCodeboxBin: root, instance: 'proof-r2' });
-  assert.equal(proof.context.source_id, spec.controller_id);
-  assert.equal(proof.spec.controller_id, `${spec.controller_id}-proof-r2`);
+  assert.equal(proof.context.source_id, spec.loop_id);
+  assert.equal(proof.spec.loop_id, `${spec.loop_id}-proof-r2`);
   assert.throws(() => buildUrlLoopSpec({ url, workspace: root, blocksEngine: root, wpCodeboxBin: root, instance: '../invalid' }), /path-safe/);
   assert.equal(spec.workflows[0].runtime_execution.kind, 'command');
   assert.deepEqual(spec.workflows[0].emits, ['capture']);
@@ -152,7 +152,7 @@ test('managed Homeboy WorkJob persists capture, evaluates, and resumes one dedup
   homeboy(['agent-task', 'loop', 'define', JSON.stringify(spec), '--on', '--resume', '--revolution-limit', '4']);
   let first;
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    first = homeboy(['agent-task', 'loop', 'status', spec.controller_id]).data;
+    first = homeboy(['agent-task', 'loop', 'status', spec.loop_id]).data;
     if (first.status.controller.next_actions.filter((action) => action.status === 'completed').length === 2) break;
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
@@ -160,13 +160,13 @@ test('managed Homeboy WorkJob persists capture, evaluates, and resumes one dedup
   assert.ok(first.work.job_id, 'the actions belong to a durable Homeboy WorkJob');
   const policy = candidatePolicy(inputs, { provenance }, sha);
   policy.transitions[0].actions[0].request.execution.args = ['-e', evaluateScript];
-  const event = ['agent-task', 'controller', 'events', spec.controller_id, '--event-type', 'ssi.candidate.updated', '--event-id', `candidate-${sha}`, '--event-key', sha, '--payload', JSON.stringify({ policy })];
+  const event = ['agent-task', 'controller', 'events', spec.loop_id, '--event-type', 'ssi.candidate.updated', '--event-id', `candidate-${sha}`, '--event-key', sha, '--payload', JSON.stringify({ policy })];
   homeboy(event);
   homeboy(event);
-  homeboy(['agent-task', 'loop', 'resume', spec.controller_id]);
+  homeboy(['agent-task', 'loop', 'resume', spec.loop_id]);
   let status;
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    status = homeboy(['agent-task', 'controller', 'status', spec.controller_id]).data.controller;
+    status = homeboy(['agent-task', 'controller', 'status', spec.loop_id]).data.controller;
     if (status.next_actions.filter((action) => action.status === 'completed').length === 3) break;
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
