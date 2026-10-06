@@ -81,7 +81,7 @@ final class Static_Site_Importer_Companion_Inventory {
 		}
 		$scripts = array_merge( is_array( $inventory['scripts'] ?? null ) ? $inventory['scripts'] : array(), is_array( $inventory['editor_scripts'] ?? null ) ? $inventory['editor_scripts'] : array() );
 		if ( ! empty( $scripts ) ) {
-			$parts[] = count( $scripts ) . ' preserved site script' . ( 1 === count( $scripts ) ? '' : 's' );
+			$parts[] = count( $scripts ) . ' runtime script' . ( 1 === count( $scripts ) ? '' : 's' );
 		}
 		if ( ! empty( $inventory['forms']['carried'] ?? false ) ) {
 			$parts[] = 'imported form field presentation';
@@ -90,7 +90,7 @@ final class Static_Site_Importer_Companion_Inventory {
 		$site    = self::header_value( (string) ( $inventory['site_name'] ?? '' ) );
 
 		return sprintf(
-			'Houses %1$s for the %2$s site. Deactivating or deleting it breaks the imported pages, scripts and old-source redirects that use them.',
+			'Houses %1$s for the %2$s site. Deactivating or deleting it removes their registrations, runtime scripts and old-source redirects.',
 			implode( ', ', $parts ),
 			'' !== $site ? $site : 'imported'
 		);
@@ -206,15 +206,15 @@ final class Static_Site_Importer_Companion_Inventory {
 		}
 		$lines[] = '';
 
-		$lines[] = '### Preserved source runtime';
+		$lines[] = '### Preserved runtime assets';
 		$lines[] = '';
 		if ( array() === $scripts && array() === $editor ) {
-			$lines[] = 'No source scripts were preserved in this build.';
+			$lines[] = 'No frontend or editor runtime scripts were included in this build.';
 		}
 		foreach ( $scripts as $script ) {
 			$owning   = '' !== (string) ( $script['block'] ?? '' ) ? 'loads when `' . (string) $script['block'] . '` renders' : 'loads on the imported frontend';
-			$origin   = '' !== (string) ( $script['source_path'] ?? '' ) ? ', preserved from `' . (string) $script['source_path'] . '`' : '';
-			$lines[] = '- `' . (string) ( $script['handle'] ?? '' ) . '` (`' . (string) ( $script['path'] ?? '' ) . '`) — preserved source JavaScript' . $origin . '; ' . $owning . '.';
+			$origin   = '' !== (string) ( $script['source_path'] ?? '' ) ? ', artifact scope `' . (string) $script['source_path'] . '`' : '';
+			$lines[] = '- `' . (string) ( $script['handle'] ?? '' ) . '` (`' . (string) ( $script['path'] ?? '' ) . '`) — included frontend JavaScript' . $origin . '; ' . $owning . '.';
 		}
 		foreach ( $editor as $script ) {
 			$lines[] = '- `' . (string) ( $script['handle'] ?? '' ) . '` (`' . (string) ( $script['path'] ?? '' ) . '`) — preserved editor-only JavaScript, enqueued in the block editor only.';
@@ -223,11 +223,11 @@ final class Static_Site_Importer_Companion_Inventory {
 
 		$lines[] = '### Captured snapshot';
 		$lines[] = '';
-		$lines[] = 'All imported text, images and numbers are static values captured at import time. This includes any figures that';
+		$lines[] = 'Ordinary imported text, images and numbers begin as static values captured at import time. This includes figures that';
 		$lines[] = 'originated outside the site itself (for example plugin download or install totals from an external directory):';
-		$lines[] = 'their status is snapshot. They do not update, and no live data source or refresh mechanism is installed by this';
-		$lines[] = 'plugin. External numbers in the content are unverified claims from the source page, not values this plugin';
-		$lines[] = 'recomputes or refreshes.';
+		$lines[] = 'their status is snapshot. Snapshot values do not update automatically; no live data source or refresh mechanism is installed';
+		$lines[] = 'merely because a number appears in the content. Explicit runtime blocks and scripts listed above may implement updates;';
+		$lines[] = 'their owned fields are not classified as static by this note. Other external figures remain unverified source claims.';
 		$lines[] = '';
 
 		$lines[] = '### Unresolved behavior';
@@ -256,7 +256,7 @@ final class Static_Site_Importer_Companion_Inventory {
 		$lines[] = '';
 		$lines[] = 'The imported blocks and scripts listed above live in this plugin. Deactivating or deleting it:';
 		$lines[] = '';
-		$lines[] = '- unregisters the imported blocks, so pages using them stop rendering their content;';
+		$lines[] = '- unregisters the imported blocks; saved static markup may remain, while dynamic rendering and editor support can be lost;';
 		$lines[] = '- stops the preserved source scripts from loading, breaking the interactive behavior they provide;';
 		$lines[] = '- stops source-route redirects, so old source routes begin to 404;';
 		$lines[] = '- stops the imported form field presentation and its WordPress form rendering hooks.';

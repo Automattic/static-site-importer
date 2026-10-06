@@ -209,7 +209,7 @@ if ( is_array( $descriptor ) ) {
 
 		// Status vocabulary: rebuilt / preserved / snapshot / unresolved / unknown.
 		$assert( str_contains( $readme, 'Rebuilt in WordPress' ), 'readme-labels-rebuilt-status' );
-		$assert( str_contains( $readme, 'Preserved source runtime' ), 'readme-labels-preserved-status' );
+		$assert( str_contains( $readme, 'Preserved runtime assets' ), 'readme-labels-preserved-status' );
 		$assert( str_contains( $readme, 'Captured snapshot' ), 'readme-labels-snapshot-status' );
 		$assert( str_contains( $readme, 'Unresolved behavior' ), 'readme-labels-unresolved-status' );
 		$assert( str_contains( $readme, 'Unknown evidence' ), 'readme-labels-unknown-status' );
@@ -227,6 +227,8 @@ if ( is_array( $descriptor ) ) {
 		// invented refresh provider, no fabricated wordpress.org fetching.
 		$assert( str_contains( $readme, 'snapshot' ) && str_contains( $readme, 'do not update' ), 'readme-states-snapshot-content-does-not-update' );
 		$assert( str_contains( $readme, 'no live data source or refresh mechanism is installed' ) && ! str_contains( $readme, 'api.wordpress.org' ), 'readme-claims-no-live-refresh-provider' );
+		$assert( ! str_contains( $readme, 'All imported text, images and numbers are static' ) && str_contains( $readme, 'Explicit runtime blocks and scripts listed above may implement updates' ), 'readme-does-not-misclassify-rebuilt-runtime-fields-as-static' );
+		$assert( ! str_contains( $readme, 'preserved source JavaScript' ) && str_contains( $readme, 'included frontend JavaScript' ), 'readme-does-not-invent-source-origin-for-generated-frontend-scripts' );
 		$assert( ! str_contains( $readme, 'api.wordpress.org' ), 'readme-hardcodes-no-wordpress-org-fetching' );
 
 		// Build version/provenance policy: explain the real producing build; never
