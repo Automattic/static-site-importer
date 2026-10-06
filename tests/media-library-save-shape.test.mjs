@@ -42,3 +42,21 @@ test( 'nested and following image owners retain their own saved image classes', 
 	assert.equal( ( bound.match( /wp-image-8/g ) || [] ).length, 2 );
 	assert.equal( validateMarkup( bound ).ok, true );
 } );
+
+test( 'foreign image identity rebinds coherently while registered figure and border presentation stay valid', () => {
+	const original = serialize( createBlock( 'core/image', {
+		id: 987654321, url: source, alt: 'Original image', caption: 'Original caption',
+		className: 'source-presentation wp-image-987654321', sizeSlug: 'full',
+		href: 'https://example.org/art', width: '120px', height: '80px',
+		style: { border: { color: '#123456', width: '2px' } },
+	} ) );
+	assert.equal( validateMarkup( original ).ok, true );
+	const bound = bind( original );
+	const block = parse( bound )[ 0 ];
+	assert.equal( block.attributes.id, 7 );
+	assert.equal( block.attributes.url, 'https://example.test/uploads/7.png' );
+	assert.equal( block.attributes.className, 'source-presentation wp-image-987654321' );
+	assert.match( bound, /class="has-border-color wp-image-7"/ );
+	assert.equal( validateMarkup( bound ).ok, true );
+	assert.equal( bind( bound ), bound );
+} );
