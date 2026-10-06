@@ -15,6 +15,7 @@
     { "path": "tests/form-layout-rendered.test.mjs", "environment": "operator-only", "reason": "Chromium rendering regression; executed by the Editor Presentation Browser CI job." },
     { "path": "tests/form-materializer-smoke.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-option-idempotence.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-media-rendition-equivalence.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-mapping-plan.php", "environment": "standalone-php" },
     { "path": "tests/form-fallback-contract-equivalence.php", "environment": "standalone-php" },
     { "path": "tests/provider-adapter-runtime-smoke.php", "environment": "standalone-php" },
