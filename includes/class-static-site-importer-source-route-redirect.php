@@ -124,11 +124,11 @@ final class Static_Site_Importer_Source_Route_Redirect {
 		foreach ( $candidates as $value ) {
 			$found = get_posts(
 				array(
-					'post_type'              => array( 'page', 'post' ),
+					'post_type'              => 'any',
 					'post_status'            => 'publish',
 					'meta_key'               => self::META_KEY,
 					'meta_value'             => $value,
-					'posts_per_page'         => 1,
+					'posts_per_page'         => 2,
 					'no_found_rows'          => true,
 					'update_post_meta_cache' => false,
 					'update_post_term_cache' => false,
@@ -137,6 +137,9 @@ final class Static_Site_Importer_Source_Route_Redirect {
 			);
 			if ( array() === $found ) {
 				continue;
+			}
+			if ( 1 !== count( $found ) ) {
+				return 0;
 			}
 
 			return (int) $found[0];

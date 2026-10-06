@@ -124,6 +124,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-quality-budget-admission.php',
 	'class-static-site-importer-materialization-coverage.php',
 	'class-static-site-importer-owner-handoff-evidence.php',
+	'class-static-site-importer-whole-page-handoff.php',
 	'class-static-site-importer-site-plan-receipt.php',
 	'class-static-site-importer-site-plan-preparation.php',
 	'class-static-site-importer-rewrite-base-collision.php',

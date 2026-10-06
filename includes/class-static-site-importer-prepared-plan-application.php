@@ -53,7 +53,9 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 		}
 		$entity_args = $args;
 		if ( ! $page_ready ) {
-			$entity_args['resolved_product_images'] = self::resolve_product_image_references( $lifecycle, $prepared );
+			$entity_args['whole_page_documents']    = Static_Site_Importer_Whole_Page_Handoff::documents( $prepared['resolved']['pages'] ?? array() );
+			$entity_args['resolved_entity_images']  = self::resolve_product_image_references( $lifecycle, $prepared );
+			$entity_args['resolved_product_images'] = $entity_args['resolved_entity_images'];
 		}
 		$entity_result = $page_ready ? array(
 			'reports' => array(),
@@ -110,6 +112,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			$prepared['args']['classic_runtime_bindings']  = $classic_bindings;
 		}
 		$prepared['args']['provider_layout_overlays']     = $page_ready ? array() : Static_Site_Importer_Entity_Materializer_Registry::provider_layout_overlays( $entities );
+		$prepared['args']['whole_page_provider_results']  = $page_ready ? array() : self::whole_page_provider_results( $entities );
 		$prepared['args']['activate']                     = $page_ready ? false : ! empty( $prepared['args']['activate'] );
 		$prepared['args']['defer_materialization_commit'] = true;
 
@@ -134,6 +137,23 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			'dependencies' => $dependencies,
 			'entities'     => $entities,
 		);
+	}
+
+	/** Flatten opt-in provider receipts without interpreting provider HTML. */
+	private static function whole_page_provider_results( array $entities ): array {
+		$results = array();
+		foreach ( $entities as $report ) {
+			if ( ! is_array( $report ) ) {
+				continue;
+			}
+			$rows = is_array( $report['whole_page_results'] ?? null ) ? $report['whole_page_results'] : array();
+			foreach ( $rows as $row ) {
+				if ( is_array( $row ) ) {
+					$results[] = $row;
+				}
+			}
+		}
+		return $results;
 	}
 
 	/** Add topology-derived provider field states before the established companion phase. */
@@ -261,10 +281,11 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 
 		$sources = array();
 		foreach ( $lifecycle['entities'] ?? array() as $prepared_entity ) {
-			if ( ! is_array( $prepared_entity ) || 'products' !== (string) ( $prepared_entity['adapter']['entity_collection'] ?? '' ) ) {
+			if ( ! is_array( $prepared_entity ) ) {
 				continue;
 			}
-			$products = isset( $prepared_entity['manifest']['products'] ) && is_array( $prepared_entity['manifest']['products'] ) ? $prepared_entity['manifest']['products'] : array();
+			$collection = (string) ( $prepared_entity['adapter']['entity_collection'] ?? '' );
+			$products   = is_array( $prepared_entity['manifest'][ $collection ] ?? null ) ? $prepared_entity['manifest'][ $collection ] : array();
 			foreach ( $products as $product ) {
 				if ( is_array( $product ) && isset( $product['image'] ) && is_string( $product['image'] ) && '' !== $product['image'] ) {
 					$sources[ $product['image'] ] = true;
