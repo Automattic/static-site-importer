@@ -7,6 +7,7 @@
   "tests": [
     { "path": "tests/acceptance/ico-browser.mjs", "environment": "operator-only", "command": ["node", "tests/acceptance/ico-browser.mjs"], "reason": "Independent Playwright Chromium decoding of generated PNG multiframe and palette DIB ICO fixtures; requires playwright, pngjs and installed Chromium (or CHROMIUM_PATH). Retains evidence under artifacts/ico-browser or SSI_ICO_BROWSER_EVIDENCE." },
     { "path": "tests/acceptance/native-site-identity-wordpress.php", "environment": "operator-only", "command": ["node", "tests/acceptance/run-native-site-identity.mjs"], "reason": "Real WordPress fixture runs only inside the disposable WP Codebox workload declared by the native identity runner." },
+    { "path": "tests/acceptance/theme-metadata-wordpress.php", "environment": "operator-only", "command": ["bash", "tools/run-theme-metadata-acceptance.sh"], "reason": "Real WordPress 7.1 metadata, reimport, rollback, and export round-trip proof runs only in the dedicated disposable Docker volume." },
     { "path": "tests/acceptance/run-native-site-identity.mjs", "environment": "operator-only", "command": ["node", "tests/acceptance/run-native-site-identity.mjs"], "reason": "Set WP_CODEBOX_CLI to the native managed CLI; SSI_TEMPLATE_COMPILER_ROOT enables owning block and classic lifecycle acceptance." },
     { "path": "tests/acceptance/companion-roundtrip.php", "environment": "operator-only", "reason": "The helper runs only inside the disposable two-site Docker acceptance owned by tools/run-editor-companion-acceptance.sh." },
     { "path": "tests/shared-chrome-runtime.php", "environment": "operator-only", "reason": "Disposable paired producer/consumer WordPress proof; tools/run-shared-chrome-acceptance.sh owns its Docker runtime." },
@@ -16,6 +17,7 @@
     { "path": "tests/form-layout-rendered.test.mjs", "environment": "operator-only", "reason": "Chromium rendering regression; executed by the Editor Presentation Browser CI job." },
     { "path": "tests/form-materializer-smoke.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-option-idempotence.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-media-rendition-equivalence.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-mapping-plan.php", "environment": "standalone-php" },
     { "path": "tests/form-fallback-contract-equivalence.php", "environment": "standalone-php" },
     { "path": "tests/provider-adapter-runtime-smoke.php", "environment": "standalone-php" },

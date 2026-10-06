@@ -14,10 +14,86 @@ use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanRe
 use Automattic\BlocksEngine\PhpTransformer\WordPress\Runtime as Blocks_Engine_WordPress_Runtime;
 
 require_once __DIR__ . '/class-static-site-importer-theme-screenshot.php';
+if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-site-identity.php';
+}
 
 /** Validates, resolves, and admits a plan before persistence. */
 final class Static_Site_Importer_Site_Plan_Preparation {
 	private const BLOCK_PROVENANCE_LIMIT = 50;
+
+	/**
+	 * The producer's generic canonical style.css scaffold placeholder.
+	 *
+	 * The consumer replaces exactly this payload with the resolved site
+	 * identity; any other scaffold payload is producer-owned and kept.
+	 */
+	private const PRODUCER_GENERIC_SCAFFOLD_STYLE_CSS = "/*\nTheme Name: Blocks Engine Site\nText Domain: blocks-engine-site\n*/\n";
+
+	/**
+	 * Resolve the consumer-owned theme identity once for one materialization.
+	 *
+	 * Priority follows the site-identity primitive: explicit name, site title,
+	 * the plan's entrypoint document title, then the defaults. The destination
+	 * slug stays authoritative for the slug so the text domain and theme
+	 * directory agree by construction.
+	 *
+	 * @param array<string,mixed> $args Materialization args.
+	 * @param array<string,mixed> $plan Canonical plan.
+	 * @param string              $slug Destination theme slug.
+	 * @return array{name:string,slug:string,title:string,block_namespace:string}
+	 */
+	private static function resolve_theme_identity( array $args, array $plan, string $slug ): array {
+		return Static_Site_Importer_Site_Identity::resolve(
+			array(
+				'name'       => isset( $args['name'] ) && is_scalar( $args['name'] ) ? (string) $args['name'] : '',
+				'site_title' => isset( $args['site_title'] ) && is_scalar( $args['site_title'] ) ? (string) $args['site_title'] : '',
+				'slug'       => $slug,
+				'plan'       => $plan,
+			)
+		);
+	}
+
+	/**
+	 * Replace the producer's generic scaffold header with the resolved identity.
+	 *
+	 * Only the canonical style.css placeholder is rewritten, byte-for-byte
+	 * recognizable, so a producer that already supplies a real header keeps its
+	 * payload untouched. The composed header follows the stylesheet materializer
+	 * header contract, and payload hashes are recomputed so preflight conflict
+	 * detection, reconciliation, and rollback keep operating on the real bytes.
+	 *
+	 * @param array<string,mixed> $resolved Resolved plan projection.
+	 * @param array<string,mixed> $identity Resolved consumer identity.
+	 * @param array<string,mixed> $args     Materialization args.
+	 * @return array<string,mixed>
+	 */
+	private static function with_consumer_theme_scaffold( array $resolved, array $identity, array $args ): array {
+		if ( ! isset( $resolved['writes'] ) || ! is_array( $resolved['writes'] ) ) {
+			return $resolved;
+		}
+		foreach ( $resolved['writes'] as &$write ) {
+			if ( ! is_array( $write ) || 'theme_scaffold' !== ( $write['kind'] ?? '' ) || 'style.css' !== ( $write['target_path'] ?? '' ) ) {
+				continue;
+			}
+			if ( 'utf8' !== ( $write['payload']['encoding'] ?? '' ) || self::PRODUCER_GENERIC_SCAFFOLD_STYLE_CSS !== (string) ( $write['payload']['data'] ?? '' ) ) {
+				continue;
+			}
+			$composed              = Static_Site_Importer_Stylesheet_Materializer::scaffold_style_css(
+				(string) $identity['name'],
+				(string) $identity['slug'],
+				isset( $args['artifact_provenance'] ) && is_array( $args['artifact_provenance'] ) ? $args['artifact_provenance'] : array()
+			);
+			$write['payload']      = array(
+				'encoding' => 'utf8',
+				'data'     => $composed,
+			);
+			$write['payload_hash'] = hash( 'sha256', $composed );
+			break;
+		}
+		unset( $write );
+		return $resolved;
+	}
 
 	/**
 	 * Validate and resolve every destination without mutating WordPress or the filesystem.
@@ -104,6 +180,10 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			// directory it owns, or the companion publication home it borrows.
 			$theme_dir = (string) ( $destination['asset_dir'] ?? $destination['theme_dir'] );
 			$theme_uri = (string) ( $destination['asset_uri'] ?? $destination['theme_uri'] );
+			// One consumer-owned identity, resolved once: generated block and
+			// classic scaffolds carry this name instead of the producer's
+			// generic placeholder header.
+			$identity = self::resolve_theme_identity( $args, $plan, $slug );
 			try {
 				// Resolver proof is canonical semantics, not an inference from copied files.
 				$resolved = ( new WordPressSitePlanResolver() )->resolve(
@@ -123,13 +203,14 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 					throw new InvalidArgumentException( (string) $projection->get_error_code() );
 				}
 				$args['classic_theme_projection'] = $projection;
-				$resolved['writes']               = Static_Site_Importer_Classic_Theme_Projection::resolved_writes( $resolved, Static_Site_Importer_Classic_Theme_Projection::writes( $args['classic_theme_projection'], $resolved, $theme_uri, (string) ( $args['name'] ?? $slug ), isset( $args['artifact_provenance'] ) && is_array( $args['artifact_provenance'] ) ? $args['artifact_provenance'] : array() ) );
+				$resolved['writes']               = Static_Site_Importer_Classic_Theme_Projection::resolved_writes( $resolved, Static_Site_Importer_Classic_Theme_Projection::writes( $args['classic_theme_projection'], $resolved, $theme_uri, $identity['name'], isset( $args['artifact_provenance'] ) && is_array( $args['artifact_provenance'] ) ? $args['artifact_provenance'] : array() ) );
 				foreach ( $resolved['pages'] as &$page ) {
 					$page['resolved_block_markup'] = '';
 				}
 				unset( $page );
 			}
 			$resolved                                   = Static_Site_Importer_Theme_Screenshot::with_write( $resolved, $args );
+			$resolved                                   = self::with_consumer_theme_scaffold( $resolved, $identity, $args );
 			$state['base_resolved']                     = $resolved;
 			$state['prepared_resolved_projection_hash'] = self::prepared_resolved_projection_hash( $resolved );
 			$state['resolved']                          = $resolved;
@@ -137,6 +218,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			$state['theme_dir']                = $theme_dir;
 			$state['destination']              = $destination;
 			$state['theme']                    = array(
+				'name'              => $identity['name'],
 				'slug'              => $slug,
 				'dir'               => $theme_dir,
 				'uri'               => $theme_uri,
@@ -376,6 +458,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			'theme_dir'                         => $theme_dir,
 			'destination'                       => $destination,
 			'theme'                             => array(
+				'name'              => (string) ( $prepared['theme']['name'] ?? '' ) !== '' ? (string) $prepared['theme']['name'] : (string) ( $args['name'] ?? '' ),
 				'slug'              => $slug,
 				'dir'               => $theme_dir,
 				'uri'               => $theme_uri,
