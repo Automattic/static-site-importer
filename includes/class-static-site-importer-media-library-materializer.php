@@ -49,13 +49,13 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		$attachments = array();
 		$by_hash     = array();
 		foreach ( $state['ordered_pages'] ?? array() as $page ) {
-			if ( ! empty( $page['skip_materialization'] ) ) {
+			if ( ! empty( $page['skip_materialization'] ) && empty( $page['provider_owned'] ) ) {
 				continue;
 			}
 			$source_path = (string) ( $page['source_path'] ?? '' );
 			$post_id     = (int) ( $state['source_ids'][ $source_path ] ?? 0 );
 			$content     = $post_id > 0 ? get_post_field( 'post_content', $post_id ) : null;
-			if ( ! is_string( $content ) || ! self::content_references_media( $content ) ) {
+			if ( ! is_string( $content ) || ( ! self::content_references_media( $content ) && empty( $page['provider_featured_image_target_path'] ) ) ) {
 				continue;
 			}
 
@@ -83,6 +83,17 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			$rewritten = self::bind_referenced_images( $rewritten, $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error );
 			if ( $error instanceof WP_Error ) {
 				return $error;
+			}
+			if ( ! empty( $page['provider_featured_image_target_path'] ) ) {
+				$relative = self::theme_relative_asset( $theme_uri . '/' . $page['provider_featured_image_target_path'], $theme_uri, array_merge( self::RASTER_EXTENSIONS, array( 'svg' ) ) );
+				$featured = null === $relative ? 0 : self::ensure_attachment( $theme_dir, $relative, '', $state, $attachments, $by_hash, $error );
+				if ( null !== $error || $featured <= 0 ) {
+					return $error ?? new WP_Error( 'provider_featured_image_unresolved', 'The provider source image could not be materialized.' );
+				}
+				set_post_thumbnail( $post_id, $featured );
+				if ( (int) get_post_thumbnail_id( $post_id ) !== $featured ) {
+					return new WP_Error( 'provider_featured_image_write_failed', 'The native provider image was not persisted.' );
+				}
 			}
 			if ( $rewritten === $content ) {
 				continue;
@@ -290,10 +301,10 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	/**
 	 * Bind one serialized core/image block to its attachment.
 	 *
-	 * @param array<int,string>   $block_match       Regex match: whole block, attribute JSON, inner HTML.
-	 * @param array<mixed>        $state
-	 * @param array<string,int>   $attachments Attachment ID per theme-relative source (0 when not bindable).
-	 * @param array<string,int>   $by_hash     Attachment ID per content hash.
+	 * @param array<int,string>                                                             $block_match       Regex match: whole block, attribute JSON, inner HTML.
+	 * @param array<mixed>                                                                  $state
+	 * @param array<string,int>                                                             $attachments Attachment ID per theme-relative source (0 when not bindable).
+	 * @param array<string,int>                                                             $by_hash     Attachment ID per content hash.
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
 	 */
 	private static function bind_image_block( array $block_match, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, ?WP_Error &$error ): string {
@@ -370,6 +381,14 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		if ( array_key_exists( $relative, $attachments ) ) {
 			return $attachments[ $relative ];
 		}
+		// An image service can serve one picture at several sizes, each under its
+		// own path. Different sizes are different bytes, so the content hash alone
+		// would keep one attachment per size. Use the largest captured size.
+		$source = self::largest_rendition( $theme_dir, $relative );
+		if ( $source !== $relative ) {
+			$attachments[ $relative ] = self::ensure_attachment( $theme_dir, $source, $alt, $state, $attachments, $by_hash, $error );
+			return $attachments[ $relative ];
+		}
 		$file = $theme_dir . '/' . $relative;
 		$hash = is_readable( $file ) ? (string) hash_file( 'sha256', $file ) : '';
 		if ( '' !== $hash && isset( $by_hash[ $hash ] ) ) {
@@ -385,6 +404,57 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			$by_hash[ $hash ] = $attachments[ $relative ];
 		}
 		return $attachments[ $relative ];
+	}
+
+	/**
+	 * The largest captured size of an image served by a path-based image service.
+	 *
+	 * A transformed URL looks like `<image>/v1/fill/w_48,h_48,.../<name>`. Other
+	 * sizes of the same image sit next to it under the same `<image>` path. The
+	 * Resize variants must retain the same operation, non-size parameters and
+	 * decoded aspect ratio. Crops and different focal points are not equivalent.
+	 */
+	private static function largest_rendition( string $theme_dir, string $relative ): string {
+		if ( ! preg_match( '#^(.+?)/v1/(?:fill|fit)/[^/]+/[^/]+$#i', $relative, $match ) ) {
+			return $relative;
+		}
+		$family      = $match[1];
+		$best        = $relative;
+		$identity    = self::resize_identity( $relative );
+		$source_size = @getimagesize( $theme_dir . '/' . $relative ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid images cannot establish equivalent geometry.
+		if ( null === $identity || ! is_array( $source_size ) || $source_size[0] <= 0 || $source_size[1] <= 0 ) {
+			return $relative;
+		}
+		$best_area = -1;
+		$siblings  = glob( $theme_dir . '/' . $family . '/v1/*/*/*', GLOB_NOSORT );
+		$siblings  = is_array( $siblings ) ? $siblings : array();
+		sort( $siblings );
+		foreach ( $siblings as $sibling ) {
+			$sibling_relative = substr( $sibling, strlen( $theme_dir ) + 1 );
+			if ( ! is_file( $sibling ) || self::resize_identity( $sibling_relative ) !== $identity || ! in_array( strtolower( pathinfo( $sibling, PATHINFO_EXTENSION ) ), self::RASTER_EXTENSIONS, true ) ) {
+				continue;
+			}
+			$size = @getimagesize( $sibling ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Unreadable or differently cropped images are excluded.
+			if ( ! is_array( $size ) || $size[0] * $source_size[1] !== $source_size[0] * $size[1] ) {
+				continue;
+			}
+			$area = (int) $size[0] * (int) $size[1];
+			if ( $area > $best_area ) {
+				$best      = $sibling_relative;
+				$best_area = $area;
+			}
+		}
+		return $best;
+	}
+
+	/** Source operation identity with only pixel-size parameters removed. */
+	private static function resize_identity( string $relative ): ?string {
+		if ( ! preg_match( '#^(.+?)/v1/(fill|fit)/([^/]+)/[^/]+$#i', $relative, $match ) ) {
+			return null;
+		}
+		$parameters = array_values( array_filter( explode( ',', $match[3] ), static fn( string $parameter ): bool => ! preg_match( '/^(?:w|h)_[1-9][0-9]*$/i', $parameter ) ) );
+		sort( $parameters );
+		return $match[1] . '/' . strtolower( $match[2] ) . '/' . implode( ',', $parameters );
 	}
 
 	/** Create (or reuse) the attachment for one theme-relative image file. */
@@ -469,13 +539,16 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			}
 		}
 		if ( null !== $svg ) {
-			wp_update_attachment_metadata( $attachment_id, array(
-				'width'    => $svg['width'],
-				'height'   => $svg['height'],
-				'file'     => _wp_relative_upload_path( $upload['file'] ),
-				'filesize' => strlen( $bytes ),
-				'sizes'    => array(),
-			) );
+			wp_update_attachment_metadata(
+				$attachment_id,
+				array(
+					'width'    => $svg['width'],
+					'height'   => $svg['height'],
+					'file'     => _wp_relative_upload_path( $upload['file'] ),
+					'filesize' => strlen( $bytes ),
+					'sizes'    => array(),
+				)
+			);
 		} elseif ( function_exists( 'wp_generate_attachment_metadata' ) ) {
 			wp_update_attachment_metadata( $attachment_id, wp_generate_attachment_metadata( $attachment_id, $upload['file'] ) );
 		}
@@ -530,9 +603,9 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * media-text keep it in a media URL attribute plus inner HTML. Only those
 	 * references are rewritten; surrounding blocks keep their exact bytes.
 	 *
-	 * @param array<mixed>        $state
-	 * @param array<string,int>   $attachments
-	 * @param array<string,int>   $by_hash
+	 * @param array<mixed>                                                                  $state
+	 * @param array<string,int>                                                             $attachments
+	 * @param array<string,int>                                                             $by_hash
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
 	 */
 	private static function bind_referenced_images( string $content, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, ?WP_Error &$error ): string {
@@ -589,10 +662,10 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	}
 
 	/**
-	 * @param array{start:int,end:int,name:string,json:string,self:bool,raw:string} $opener
-	 * @param array<mixed>      $state
-	 * @param array<string,int> $attachments
-	 * @param array<string,int> $by_hash
+	 * @param array{start:int,end:int,name:string,json:string,self:bool,raw:string}         $opener
+	 * @param array<mixed>                                                                  $state
+	 * @param array<string,int>                                                             $attachments
+	 * @param array<string,int>                                                             $by_hash
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
 	 */
 	private static function bind_block_opener( array $opener, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, ?WP_Error &$error ): string {
@@ -659,9 +732,9 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	/**
 	 * Rewrite img and source tags whose raster sources live in the generated theme.
 	 *
-	 * @param array<mixed>      $state
-	 * @param array<string,int> $attachments
-	 * @param array<string,int> $by_hash
+	 * @param array<mixed>                                                                  $state
+	 * @param array<string,int>                                                             $attachments
+	 * @param array<string,int>                                                             $by_hash
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
 	 * @return array{html:string,ids:array<int,int>}
 	 */
@@ -691,11 +764,11 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	}
 
 	/**
-	 * @param array<mixed>      $state
-	 * @param array<string,int> $attachments
-	 * @param array<string,int> $by_hash
+	 * @param array<mixed>                                                                  $state
+	 * @param array<string,int>                                                             $attachments
+	 * @param array<string,int>                                                             $by_hash
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
-	 * @param array<int,int>    $ids
+	 * @param array<int,int>                                                                $ids
 	 */
 	private static function rewrite_media_tag( string $tag, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, array &$ids, ?WP_Error &$error, ?string $image_class ): string {
 		$src_id = 0;
@@ -734,9 +807,9 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	}
 
 	/**
-	 * @param array<mixed>      $state
-	 * @param array<string,int> $attachments
-	 * @param array<string,int> $by_hash
+	 * @param array<mixed>                                                                  $state
+	 * @param array<string,int>                                                             $attachments
+	 * @param array<string,int>                                                             $by_hash
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
 	 */
 	private static function rewrite_srcset( string $srcset, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, ?WP_Error &$error ): string {
@@ -756,9 +829,9 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	}
 
 	/**
-	 * @param array<mixed>      $state
-	 * @param array<string,int> $attachments
-	 * @param array<string,int> $by_hash
+	 * @param array<mixed>                                                                  $state
+	 * @param array<string,int>                                                             $attachments
+	 * @param array<string,int>                                                             $by_hash
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
 	 */
 	private static function attachment_id_for_url( string $url, string $alt, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, ?WP_Error &$error ): int {

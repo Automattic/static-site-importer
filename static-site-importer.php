@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Static Site Importer
  * Description: Materialize compiled website artifacts into WordPress block and classic themes.
- * Version: 1.24.21
+ * Version: 1.24.23
  * Author: Chris Huber
  * Requires at least: 7.1
  * Requires PHP: 8.2
@@ -17,7 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 define( 'STATIC_SITE_IMPORTER_PATH', plugin_dir_path( __FILE__ ) );
 define( 'STATIC_SITE_IMPORTER_URL', plugin_dir_url( __FILE__ ) );
-define( 'STATIC_SITE_IMPORTER_VERSION', '1.24.21' );
+define( 'STATIC_SITE_IMPORTER_VERSION', '1.24.23' );
 
 $static_site_importer_autoload = STATIC_SITE_IMPORTER_PATH . 'vendor/autoload.php';
 if ( is_readable( $static_site_importer_autoload ) ) {
@@ -124,6 +124,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-quality-budget-admission.php',
 	'class-static-site-importer-materialization-coverage.php',
 	'class-static-site-importer-owner-handoff-evidence.php',
+	'class-static-site-importer-whole-page-handoff.php',
 	'class-static-site-importer-site-plan-receipt.php',
 	'class-static-site-importer-site-plan-preparation.php',
 	'class-static-site-importer-rewrite-base-collision.php',

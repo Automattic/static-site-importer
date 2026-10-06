@@ -337,8 +337,9 @@ class Static_Site_Importer_Dependency_Manager {
 	}
 
 	private static function lifecycle_entity_has_bindings( array $prepared ): bool {
-		$manifest = is_array( $prepared['manifest'] ?? null ) ? $prepared['manifest'] : array();
-		$entities = is_array( $manifest['products'] ?? null ) ? $manifest['products'] : ( is_array( $manifest['forms'] ?? null ) ? $manifest['forms'] : array() );
+		$manifest   = is_array( $prepared['manifest'] ?? null ) ? $prepared['manifest'] : array();
+		$collection = (string) ( $prepared['adapter']['entity_collection'] ?? '' );
+		$entities   = is_array( $manifest[ $collection ] ?? null ) ? $manifest[ $collection ] : array();
 		foreach ( $entities as $entity ) {
 			if ( is_array( $entity ) && ! empty( $entity['bindings'] ) ) {
 				return true;
