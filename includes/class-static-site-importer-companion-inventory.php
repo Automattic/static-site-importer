@@ -148,6 +148,24 @@ final class Static_Site_Importer_Companion_Inventory {
 		}
 
 		$form_states = is_array( $input['form_visual_states'] ?? null ) ? $input['form_visual_states'] : array();
+		$external_metrics = array();
+		foreach ( is_array( $input['external_metrics'] ?? null ) ? $input['external_metrics'] : array() as $fact ) {
+			if ( ! is_array( $fact ) || ! is_array( $fact['provider'] ?? null ) ) { continue; }
+			$external_metrics[] = array(
+				'id'                  => (string) ( $fact['id'] ?? '' ),
+				'provider'            => (string) ( $fact['provider']['id'] ?? '' ),
+				'source'              => (string) ( $fact['provider']['source'] ?? '' ),
+				'slugs'               => array_values( array_filter( is_array( $fact['provider']['slugs'] ?? null ) ? $fact['provider']['slugs'] : array(), 'is_string' ) ),
+				'metric'              => (string) ( $fact['metric'] ?? '' ),
+				'aggregation'         => (string) ( $fact['aggregation'] ?? '' ),
+				'fallback_hash'       => (string) ( $fact['fallback']['hash'] ?? '' ),
+				'provenance_kind'     => (string) ( $fact['provenance']['kind'] ?? '' ),
+				'provenance_repository' => (string) ( $fact['provenance']['repository'] ?? '' ),
+				'provenance_revision' => (string) ( $fact['provenance']['revision'] ?? '' ),
+				'provenance_source'   => (string) ( $fact['provenance']['source_path'] ?? '' ),
+				'status'              => '' === (string) ( $fact['fallback']['text'] ?? '' ) ? 'unresolved' : 'captured_fallback',
+			);
+		}
 
 		return array(
 			'schema'         => self::SCHEMA,
@@ -157,6 +175,7 @@ final class Static_Site_Importer_Companion_Inventory {
 			'blocks'         => $blocks,
 			'scripts'        => $scripts,
 			'editor_scripts' => $editor_scripts,
+			'external_metrics' => $external_metrics,
 			'forms'          => array(
 				'carried' => array() !== $form_states,
 				'count'   => count( $form_states ),
@@ -166,7 +185,7 @@ final class Static_Site_Importer_Companion_Inventory {
 				'redirects'      => array( 'status' => self::STATUS_REBUILT ),
 				'internal_links' => array( 'status' => self::STATUS_REBUILT ),
 			),
-			'content'        => array( 'status' => self::STATUS_SNAPSHOT ),
+			'content'        => array( 'status' => empty( $external_metrics ) ? self::STATUS_SNAPSHOT : 'partially_dynamic', 'snapshot_status' => self::STATUS_SNAPSHOT, 'external_metric_status' => empty( $external_metrics ) ? 'not_present' : 'configured' ),
 			'provenance'     => self::project_provenance( is_array( $input['provenance'] ?? null ) ? $input['provenance'] : array(), (string) ( $input['plugin_slug'] ?? '' ) ),
 			'handoff'        => self::project_handoff( $input['handoff'] ?? null ),
 		);
@@ -183,6 +202,7 @@ final class Static_Site_Importer_Companion_Inventory {
 		$blocks  = is_array( $inventory['blocks'] ?? null ) ? $inventory['blocks'] : array();
 		$scripts = is_array( $inventory['scripts'] ?? null ) ? $inventory['scripts'] : array();
 		$editor  = is_array( $inventory['editor_scripts'] ?? null ) ? $inventory['editor_scripts'] : array();
+		$external_metrics = is_array( $inventory['external_metrics'] ?? null ) ? $inventory['external_metrics'] : array();
 		$forms   = is_array( $inventory['forms'] ?? null ) ? $inventory['forms'] : array();
 
 		$lines   = array();
@@ -221,14 +241,25 @@ final class Static_Site_Importer_Companion_Inventory {
 		}
 		$lines[] = '';
 
-		$lines[] = '### Captured snapshot';
-		$lines[] = '';
-		$lines[] = 'Ordinary imported text, images and numbers begin as static values captured at import time. This includes figures that';
-		$lines[] = 'originated outside the site itself (for example plugin download or install totals from an external directory):';
-		$lines[] = 'their status is snapshot. Snapshot values do not update automatically; no live data source or refresh mechanism is installed';
-		$lines[] = 'merely because a number appears in the content. Explicit runtime blocks and scripts listed above may implement updates;';
-		$lines[] = 'their owned fields are not classified as static by this note. Other external figures remain unverified source claims.';
-		$lines[] = '';
+		if ( ! empty( $external_metrics ) ) {
+			$lines[] = '### Live WordPress.org metrics';
+			$lines[] = '';
+			$lines[] = 'These native text bindings use the fixed WordPress.org APIs. Their initial freshness receipt status is `captured_fallback` (or `unresolved` for an empty fallback); a successful frontend request changes it to `fresh`. Failed values use the last-known-good receipt as `stale`, or preserve the captured fallback. Partial aggregates are never shown as complete totals.';
+			foreach ( $external_metrics as $metric ) {
+				$source = trim( (string) ( $metric['provenance_repository'] ?? '' ) . '@' . (string) ( $metric['provenance_revision'] ?? '' ) . ':' . (string) ( $metric['provenance_source'] ?? '' ), '@:' );
+				$lines[] = '- `' . (string) ( $metric['id'] ?? '' ) . '` — ' . (string) ( $metric['provider'] ?? '' ) . ' `' . (string) ( $metric['source'] ?? '' ) . '` / `' . (string) ( $metric['metric'] ?? '' ) . '` (`' . (string) ( $metric['aggregation'] ?? '' ) . '`) for ' . implode( ', ', array_map( static fn ( string $slug ): string => '`' . $slug . '`', is_array( $metric['slugs'] ?? null ) ? $metric['slugs'] : array() ) ) . '; provenance `' . $source . '`; configuration status `' . (string) ( $metric['status'] ?? 'unknown' ) . '`.';
+			}
+			$lines[] = 'GitHub stars/forks are not covered by this provider and remain unresolved.';
+			$lines[] = '';
+		}
+	$lines[] = '### Captured snapshot';
+	$lines[] = '';
+	if ( empty( $external_metrics ) ) {
+		$lines[] = 'Ordinary imported text, images and numbers begin as static values captured at import time. External figures are snapshots unless a trusted source declaration and working runtime are listed above; a number appearing in content does not imply a live data source.';
+	} else {
+		$lines[] = 'Ordinary imported text, images and values without one of the explicit bindings above remain static snapshots. Numbers are never classified as dynamic by appearance alone.';
+	}
+	$lines[] = '';
 
 		$lines[]    = '### Unresolved behavior';
 		$lines[]    = '';

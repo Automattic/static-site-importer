@@ -330,6 +330,7 @@ if ( ! function_exists( 'update_option' ) ) {
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-product-handoff-contract.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-diagnostics-adapter.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-external-metric-runtime.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-companion-plugin.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-plugin-materializer.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-manager.php';
@@ -1573,6 +1574,30 @@ $cleanup = static function ( string $dir ) use ( &$cleanup ): void {
 	rmdir( $dir );
 };
 $cleanup( $ssi_companion_tmp );
+
+$metric_fallback = '12,000+';
+$metric_fact = array(
+	'id' => 'project-installs',
+	'provider' => array( 'schema' => 'generic/external-metric-provider/v1', 'id' => 'wordpress.org', 'source' => 'plugin_information', 'slugs' => array( 'block-visibility' ) ),
+	'metric' => 'active_installs', 'aggregation' => 'sum',
+	'format' => array( 'locale' => 'en-US', 'grouping' => true, 'prefix' => '', 'suffix' => '+', 'decimals' => 0 ),
+	'provenance' => array( 'kind' => 'source_corroboration', 'repository' => 'ndiego/nickdiego.com', 'revision' => str_repeat( 'a', 40 ), 'source_path' => 'src/components/wp-plugin-stat.tsx' ),
+	'fallback' => array( 'text' => $metric_fallback, 'hash' => hash( 'sha256', $metric_fallback ) ),
+	'bindings' => array( array( 'schema' => 'generic/block-binding/v1', 'role' => 'paragraph', 'source_path' => 'projects.html', 'search_block_markup' => '<!-- wp:paragraph --><p>12,000+</p><!-- /wp:paragraph -->', 'occurrence' => 1, 'leaf' => array( 'block' => 'core/paragraph', 'attribute' => 'content' ) ) ),
+);
+$metric_payload = array( 'schema' => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA, 'site_slug' => 'metric-site', 'site_name' => 'Metric Site', 'blocks' => array(), 'external_metrics' => array( $metric_fact ) );
+$metric_scaffold = Static_Site_Importer_Companion_Plugin::scaffold( $metric_payload );
+$assert( ! is_wp_error( $metric_scaffold ), 'external-metric-companion-scaffolds', is_wp_error( $metric_scaffold ) ? $metric_scaffold->get_error_message() : '' );
+if ( ! is_wp_error( $metric_scaffold ) ) {
+	$metric_files = $metric_scaffold['files'];
+	$metric_runtime = $metric_files['ssi-metric-site/includes/external-metric-runtime.php'] ?? '';
+	$metric_main = $metric_files['ssi-metric-site/ssi-metric-site.php'] ?? '';
+	$assert( str_contains( $metric_runtime, 'https://api.wordpress.org/plugins/info/1.2/' ) && str_contains( $metric_runtime, 'generic/external-metric-provider/v1' ), 'external-metric-companion-owns-fixed-provider-runtime' );
+	$assert( str_contains( $metric_main, '::configure(' ) && str_contains( $metric_main, '::register()' ), 'external-metric-companion-configures-native-binding-source' );
+	$assert( str_contains( $metric_files['ssi-metric-site/editor/external-metric-controls.js'] ?? '', 'Detach to static text' ), 'external-metric-companion-packages-detach-control' );
+	$config = json_decode( $metric_files['ssi-metric-site/companion.json'] ?? '', true );
+	$assert( $metric_fact === ( $config['external_metrics'][0] ?? null ), 'external-metric-companion-preserves-fallback-and-source-provenance' );
+}
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
