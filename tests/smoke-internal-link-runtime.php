@@ -48,13 +48,18 @@ $assert( '<p>no links</p>' === Static_Site_Importer_Internal_Link_Runtime::filte
 $absolute = 'data-pin-url=\\u0022https://sandbox.test/?p=6\\u0022';
 $assert( 'data-pin-url=\\u0022https://destination.test/2026/01/news/\\u0022' === Static_Site_Importer_Internal_Link_Runtime::resolve_urls( $absolute ), 'Absolute query permalinks from a build host still resolve on the destination.' );
 
-$result = Static_Site_Importer_Internal_Link_Runtime::prepare_overlay(
+$result        = Static_Site_Importer_Internal_Link_Runtime::prepare_overlay(
 	array( 'writes' => array() ),
-	array( 'writes' => array( array( 'target_path' => 'functions.php', 'content' => "<?php\n// Existing bootstrap.\n" ) ) ),
+	array(
+'writes' => array(
+array(
+'target_path' => 'functions.php',
+'content' => "<?php\n// Existing bootstrap.\n"
+) ) ),
 	'89-hearth-bistro'
 );
-$bootstrap = (string) ( $result['writes'][0]['content'] ?? '' );
-$runtime   = (string) ( $result['writes'][1]['content'] ?? '' );
+$bootstrap     = (string) ( $result['writes'][0]['content'] ?? '' );
+$runtime       = (string) ( $result['writes'][1]['content'] ?? '' );
 $route_runtime = (string) ( $result['writes'][2]['content'] ?? '' );
 $assert( 'materialized' === ( $result['status'] ?? '' ), 'Portable internal links should always materialize into the generated theme.' );
 $assert( str_contains( $bootstrap, '// Existing bootstrap.' ) && str_contains( $bootstrap, 'Static Site Importer portable internal links' ), 'The overlay should keep prior bootstrap code and add the resolver marker.' );
@@ -90,7 +95,12 @@ $assert( 'ok' === trim( $legacy_output ), 'Loading the plugin after a legacy gen
 
 $repeat = Static_Site_Importer_Internal_Link_Runtime::prepare_overlay(
 	array(),
-	array( 'writes' => array( array( 'target_path' => 'functions.php', 'content' => $bootstrap ) ) )
+	array(
+'writes' => array(
+array(
+'target_path' => 'functions.php',
+'content' => $bootstrap
+) ) )
 );
 $assert( 1 === substr_count( (string) ( $repeat['writes'][0]['content'] ?? '' ), 'Static Site Importer portable internal links' ), 'The overlay should be idempotent.' );
 

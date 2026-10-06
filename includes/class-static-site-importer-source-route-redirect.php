@@ -57,7 +57,7 @@ final class Static_Site_Importer_Source_Route_Redirect {
 		// An owned document is singular. Keep its endpoint state; archive
 		// selectors from any native or custom taxonomy cannot constrain it.
 		// The request's original query string remains available to the document.
-		$query_vars = array_intersect_key( $query_vars, array_flip( array( 'feed', 'embed', 'cpage', 'preview', 'preview_id', 'preview_nonce', 'withcomments', 'withoutcomments' ) ) );
+		$query_vars                                       = array_intersect_key( $query_vars, array_flip( array( 'feed', 'embed', 'cpage', 'preview', 'preview_id', 'preview_nonce', 'withcomments', 'withoutcomments' ) ) );
 		$query_vars[ 'page' === $type ? 'page_id' : 'p' ] = $id;
 		if ( 'page' !== $type ) {
 			$query_vars['post_type'] = $type;

@@ -168,10 +168,10 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 		$bootstrap = self::bootstrap_content( $resolved_plan, $bootstrap_overlay );
 		// The theme copy gets a theme-scoped class name, so it can never
 		// collide with this plugin class or with another generated theme.
-		$class       = self::theme_runtime_class( $theme_slug );
-		$route_class = str_replace( '_Internal_Link_Runtime', '_Source_Route_Redirect', $class );
-		$marker      = '/* Static Site Importer portable internal links. */';
-		$source      = file_get_contents( __FILE__ ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the runtime source the generated theme owns independently.
+		$class        = self::theme_runtime_class( $theme_slug );
+		$route_class  = str_replace( '_Internal_Link_Runtime', '_Source_Route_Redirect', $class );
+		$marker       = '/* Static Site Importer portable internal links. */';
+		$source       = file_get_contents( __FILE__ ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the runtime source the generated theme owns independently.
 		$route_source = file_get_contents( __DIR__ . '/class-static-site-importer-source-route-redirect.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Projects the canonical route runtime into core-only themes.
 		if ( ! is_string( $source ) || '' === $source || ! is_string( $route_source ) || '' === $route_source ) {
 			return isset( $bootstrap_overlay['writes'] ) ? $bootstrap_overlay : array(

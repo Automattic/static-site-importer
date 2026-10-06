@@ -42,7 +42,7 @@ function get_post_status( int $id ): string {
 	return $GLOBALS['ssi_redirect_statuses'][ $id ] ?? 'publish';
 }
 function get_post_meta( int $id, string $key, bool $single = false ) {
-	$meta = $GLOBALS['ssi_redirect_meta'][ $id ] ?? array();
+	$meta   = $GLOBALS['ssi_redirect_meta'][ $id ] ?? array();
 	$values = $key === ( $meta['key'] ?? '' ) ? ( $meta['values'] ?? array( $meta['value'] ?? '' ) ) : array();
 	return $single ? ( $values[0] ?? '' ) : $values;
 }
@@ -112,7 +112,11 @@ $extracted = Static_Site_Importer_Redirects_Manifest::extract(
 	)
 );
 $assert( is_array( $extracted ) && array( 'website/index.html', 'website/blog/index.html' ) === array_column( $extracted['artifact']['files'], 'path' ), '_redirects is excluded from page and asset materialization.' );
-$assert( array( array( 'from' => 'blog.html', 'to' => 'blog/index.html' ) ) === ( $extracted['aliases'] ?? null ), 'Extracted aliases keep the public from and target source path.' );
+$assert( array(
+array(
+'from' => 'blog.html',
+'to' => 'blog/index.html'
+) ) === ( $extracted['aliases'] ?? null ), 'Extracted aliases keep the public from and target source path.' );
 $aliases = Static_Site_Importer_Redirects_Manifest::aliases_for_source_paths(
 	$extracted['aliases'],
 	array( 'website/index.html', 'website/blog/index.html', 'website/about-me.html' )
@@ -164,12 +168,28 @@ $assert( null === Static_Site_Importer_Source_Route_Redirect::target_url( '/abou
 $GLOBALS['ssi_redirect_home'] = 'https://playground.test/scope:abc/';
 $assert( 'https://imported.test/about-me/' === Static_Site_Importer_Source_Route_Redirect::target_url( '/scope:abc/about-me.html' ), 'Subdirectory homes still match the source path after the home prefix.' );
 
-$GLOBALS['ssi_redirect_meta'][25] = array( 'key' => Static_Site_Importer_Source_Route_Redirect::META_KEY, 'value' => 'tag/topic/page/1/index.html' );
-$GLOBALS['wp'] = (object) array( 'request' => 'tag/topic/page/1' );
-$vars = array( 'tag' => 'topic', 'paged' => 1, 'feed' => 'rss2' );
-$assert( array( 'feed' => 'rss2', 'page_id' => 25 ) === Static_Site_Importer_Source_Route_Redirect::resolve_request( $vars ), 'An exact imported route replaces native archive identities and retains feed state.' );
-$assert( array( 'page_id' => 25 ) === Static_Site_Importer_Source_Route_Redirect::resolve_request( array( 'custom_topic' => 'topic', 'paged' => 1 ) ), 'Custom-taxonomy query variables cannot constrain an owned singular document.' );
-$rest = array( 'rest_route' => '/wp/v2/pages', 'tag' => 'topic' );
+$GLOBALS['ssi_redirect_meta'][25] = array(
+'key' => Static_Site_Importer_Source_Route_Redirect::META_KEY,
+'value' => 'tag/topic/page/1/index.html'
+);
+$GLOBALS['wp']                    = (object) array( 'request' => 'tag/topic/page/1' );
+$vars                             = array(
+'tag' => 'topic',
+'paged' => 1,
+'feed' => 'rss2'
+);
+$assert( array(
+'feed' => 'rss2',
+'page_id' => 25
+) === Static_Site_Importer_Source_Route_Redirect::resolve_request( $vars ), 'An exact imported route replaces native archive identities and retains feed state.' );
+$assert( array( 'page_id' => 25 ) === Static_Site_Importer_Source_Route_Redirect::resolve_request( array(
+'custom_topic' => 'topic',
+'paged' => 1
+) ), 'Custom-taxonomy query variables cannot constrain an owned singular document.' );
+$rest = array(
+'rest_route' => '/wp/v2/pages',
+'tag' => 'topic'
+);
 $assert( $rest === Static_Site_Importer_Source_Route_Redirect::resolve_request( $rest ), 'REST query routing is preserved before WordPress defines REST_REQUEST.' );
 $assert( 'https://playground.test/scope:abc/tag/topic/page/1/' === Static_Site_Importer_Source_Route_Redirect::filter_permalink( 'https://playground.test/scope:abc/tag/topic/page/1-2/', 25 ), 'Canonical links use the owned source URL even when WordPress renamed the numeric slug.' );
 $_SERVER['REQUEST_METHOD'] = 'POST';
