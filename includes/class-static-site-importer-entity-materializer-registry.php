@@ -64,6 +64,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'option'           => 'static_site_importer_multilingual_plugin',
 				'filter'           => 'ssi_multilingual_plugin',
 			),
+			'redirects'    => array(
+				'default_provider' => 'redirection',
+				'option'           => 'static_site_importer_redirects_plugin',
+				'filter'           => 'ssi_redirects_plugin',
+			),
 		);
 	}
 
@@ -340,7 +345,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$required   = self::runtime_declaration_is_required( $declaration, $declarations );
 			// Reference-backed event manifests have no inline rows during prepare.
 			// Their declared capability still requires native provider hydration.
-			$required = $required || 'multilingual' === $capability || ( 'entity_collection' === $kind && 'events' === $capability );
+			$required = $required || in_array( $capability, array( 'multilingual', 'redirects' ), true ) || ( 'entity_collection' === $kind && 'events' === $capability );
 			if ( '' === $capability ) {
 				if ( $required ) {
 					return new WP_Error(
@@ -372,6 +377,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					)
 				);
 			}
+			if ( ! in_array( $adapter['materialization_stage'] ?? 'before_pages', array( 'before_pages', 'after_pages' ), true ) ) {
+				return new WP_Error( 'static_site_importer_runtime_adapter_stage_invalid', 'The selected native provider has an unsupported materialization stage.' );
+			}
 			if ( (string) ( $adapter['capability'] ?? '' ) !== $capability ) {
 				return new WP_Error(
 					'static_site_importer_runtime_adapter_invalid',
@@ -388,6 +396,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					'declaration' => $declaration,
 					'required'    => $required,
 				);
+				if ( 'after_pages' === ( $adapter['materialization_stage'] ?? '' ) ) {
+					$lifecycle['entities'][ $key ] = array(
+						'adapter'     => $adapter,
+						'declaration' => $declaration,
+						'manifest'    => array( $adapter['entity_collection'] => array() ),
+						'required'    => $required,
+					);
+				}
 				continue;
 			}
 			if ( 'entity_collection' !== $kind ) {
@@ -453,6 +469,46 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			if ( 'events' === $capability && ! empty( $entities ) ) {
 				$lifecycle['dependencies'][ $key ]['required'] = true;
+			}
+		}
+		// Providers may declare intent from canonical facts or their owned state.
+		// The selected capability still resolves through the ordinary provider boundary.
+		foreach ( self::adapters() as $detector ) {
+			$callback   = $detector['intent_callback'] ?? null;
+			$capability = (string) ( $detector['capability'] ?? '' );
+			if ( ! is_callable( $callback ) || ! call_user_func( $callback, $plan, $args ) ) {
+				continue; }
+			$declared = false;
+			foreach ( $lifecycle['dependencies'] as $dependency ) {
+				$declared = $declared || ( $dependency['adapter']['capability'] ?? '' ) === $capability;
+			}
+			if ( $declared ) {
+				continue; }
+			$adapter = self::adapter_for_capability( $capability );
+			if ( empty( $adapter ) ) {
+				return new WP_Error( 'static_site_importer_runtime_provider_unavailable', 'No provider is configured for required canonical capability: ' . $capability . '.' );
+			}
+			if ( ! in_array( $adapter['materialization_stage'] ?? 'before_pages', array( 'before_pages', 'after_pages' ), true ) ) {
+				return new WP_Error( 'static_site_importer_runtime_adapter_stage_invalid', 'The selected native provider has an unsupported materialization stage.' );
+			}
+			$id                               = hash( 'sha256', "static-site-importer/provider-intent/v1\n" . $capability . "\n" . (string) ( $plan['source']['entry_path'] ?? '' ) );
+			$declaration                      = array(
+				'kind'                    => 'dependency',
+				'capability'              => $capability,
+				'reconciliation_identity' => $id,
+			);
+			$lifecycle['dependencies'][ $id ] = array(
+				'adapter'     => $adapter,
+				'declaration' => $declaration,
+				'required'    => true,
+			);
+			if ( 'after_pages' === ( $adapter['materialization_stage'] ?? '' ) ) {
+				$lifecycle['entities'][ $id ] = array(
+					'adapter'     => $adapter,
+					'declaration' => $declaration,
+					'manifest'    => array( $adapter['entity_collection'] => array() ),
+					'required'    => true,
+				);
 			}
 		}
 		if ( isset( $args['products_manifest'] ) && is_array( $args['products_manifest'] ) && ! empty( $args['products_manifest'] ) ) {
@@ -728,6 +784,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		}
 		foreach ( $lifecycle['entities'] ?? array() as $id => $prepared ) {
 			$adapter = $prepared['adapter'];
+			if ( ( $adapter['materialization_stage'] ?? 'before_pages' ) !== ( $args['materialization_stage'] ?? 'before_pages' ) ) {
+				continue;
+			}
 			if ( ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? '' ) ] ) ) {
 				$reports[ $id ] = array(
 					'status'   => 'waived',
@@ -1179,7 +1238,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			require_once __DIR__ . '/class-static-site-importer-tec-event-seeder.php';
 		}
 		require_once __DIR__ . '/class-static-site-importer-translatepress-materializer.php';
-		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_TEC_Event_Seeder', 'Static_Site_Importer_TranslatePress_Materializer' ) as $owner ) {
+		require_once __DIR__ . '/class-static-site-importer-redirection-materializer.php';
+		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_TEC_Event_Seeder', 'Static_Site_Importer_TranslatePress_Materializer', 'Static_Site_Importer_Redirection_Materializer' ) as $owner ) {
 			// Seeders may be absent or stubbed in standalone harnesses.
 			// @phpstan-ignore-next-line booleanNot.alwaysFalse -- Optional classes are stubbed in standalone coverage harnesses.
 			if ( ! is_callable( array( $owner, 'adapter' ) ) ) {
@@ -1246,6 +1306,22 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$registered[ $presentation ] = true;
 			call_user_func( array( $presentation, 'register' ) );
 		}
+	}
+
+	/** Let native providers retain portable runtime state through the shared export. */
+	public static function export_runtime_features( array $artifact, array $args ) {
+		foreach ( self::adapters() as $adapter ) {
+			$callback = $adapter['export_callback'] ?? null;
+			if ( ! is_callable( $callback ) ) {
+				continue; }
+			$artifact = call_user_func( $callback, $artifact, $args );
+			if ( is_wp_error( $artifact ) ) {
+				return $artifact; }
+			if ( ! is_array( $artifact ) ) {
+				return new WP_Error( 'static_site_importer_provider_export_invalid', 'A native provider returned no portable export artifact.' );
+			}
+		}
+		return $artifact;
 	}
 
 	/**

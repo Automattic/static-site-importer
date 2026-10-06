@@ -131,6 +131,19 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			Static_Site_Importer_Entity_Compensation::append( $receipt, $lifecycle, $entities, 'wordpress_site_plan_materialization', (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ) );
 			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan materialization failed.' ), $receipt );
 		}
+		if ( ! $page_ready ) {
+			$late_args                          = $entity_args;
+			$late_args['materialization_stage'] = 'after_pages';
+			$late_args['materialized_receipt']  = $receipt;
+			$late                               = Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $lifecycle, $late_args );
+			$entities                           = array_replace( $entities, $late['reports'] );
+			$receipt['completed']['runtime_declarations']['entities'] = $entities;
+			if ( null !== $late['error'] ) {
+				$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $receipt, (string) $late['error']['code'] );
+				Static_Site_Importer_Entity_Compensation::append( $receipt, $lifecycle, $entities, 'after_pages', (string) $late['error']['code'] );
+				return new WP_Error( (string) $late['error']['code'], (string) $late['error']['message'], $receipt );
+			}
+		}
 		return array(
 			'receipt'      => $receipt,
 			'lifecycle'    => $lifecycle,

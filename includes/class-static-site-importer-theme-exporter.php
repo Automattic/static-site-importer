@@ -195,6 +195,12 @@ class Static_Site_Importer_Theme_Exporter {
 		}
 
 		$website_artifact = self::export_website_artifact( $theme_slug, $root, $entrypoint, $files, $report, $source_metadata );
+		if ( class_exists( 'Static_Site_Importer_Entity_Materializer_Registry' ) ) {
+			$website_artifact = Static_Site_Importer_Entity_Materializer_Registry::export_runtime_features( $website_artifact, array( 'theme_slug' => $theme_slug ) );
+			if ( is_wp_error( $website_artifact ) ) {
+				return $website_artifact; }
+			$website_artifact['id'] = 'website-artifact-' . $theme_slug . '-' . substr( hash( 'sha256', self::json_encode_pretty( array( $entrypoint, $website_artifact['files'] ) ) ), 0, 12 );
+		}
 
 		return array(
 			'website_artifact' => $website_artifact,
