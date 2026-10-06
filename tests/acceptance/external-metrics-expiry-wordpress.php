@@ -2,16 +2,16 @@
 /** A separate PHP request proves hourly cache expiry triggers a public refetch. */
 if ( ! defined( 'ABSPATH' ) || '1' !== getenv( 'SSI_EXTERNAL_METRICS_DISPOSABLE' ) ) {
 	throw new RuntimeException( 'External metric expiry proof requires its disposable site.' ); }
-$assert       = static function ( bool $condition, string $message ): void {
+$assert         = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) {
 		throw new RuntimeException( esc_html( $message ) );
 	} };
 $metric_post_id = (int) get_option( 'ssi_external_metric_acceptance_post_id', 0 );
 $content_hash   = hash( 'sha256', (string) get_post_field( 'post_content', $metric_post_id ) );
-$facts        = get_option( 'ssi_external_metric_acceptance_facts', array() );
-$plugin_file  = (string) get_option( 'static_site_importer_active_companion_plugin', '' );
-$runtime_file = WP_PLUGIN_DIR . '/' . dirname( $plugin_file ) . '/includes/external-metric-runtime.php';
-$source       = is_readable( $runtime_file ) ? (string) file_get_contents( $runtime_file ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads generated local companion runtime source for the acceptance assertion.
+$facts          = get_option( 'ssi_external_metric_acceptance_facts', array() );
+$plugin_file    = (string) get_option( 'static_site_importer_active_companion_plugin', '' );
+$runtime_file   = WP_PLUGIN_DIR . '/' . dirname( $plugin_file ) . '/includes/external-metric-runtime.php';
+$source         = is_readable( $runtime_file ) ? (string) file_get_contents( $runtime_file ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads generated local companion runtime source for the acceptance assertion.
 preg_match( '/final class ([A-Za-z_][A-Za-z0-9_]*)/', $source, $class_match );
 $runtime_class = $class_match[1] ?? '';
 $assert( '' !== $runtime_class && class_exists( $runtime_class ), 'Standalone companion runtime loaded in a fresh PHP request.' );

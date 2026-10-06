@@ -2,14 +2,14 @@
 /** Re-render exported metrics after deactivating SSI and without Blocks Engine. */
 if ( ! defined( 'ABSPATH' ) || '1' !== getenv( 'SSI_EXTERNAL_METRICS_DISPOSABLE' ) ) {
 	throw new RuntimeException( 'External metric standalone test requires disposable WordPress.' ); }
-$assert   = static function ( bool $condition, string $message ): void {
+$assert         = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) {
 		throw new RuntimeException( esc_html( $message ) );
 	} };
 $metric_post_id = (int) get_option( 'ssi_external_metric_acceptance_post_id', 0 );
 $content        = (string) get_post_field( 'post_content', $metric_post_id );
-$hash     = hash( 'sha256', $content );
-$rendered = do_blocks( $content );
+$hash           = hash( 'sha256', $content );
+$rendered       = do_blocks( $content );
 $assert( ! is_plugin_active( 'static-site-importer/static-site-importer.php' ), 'SSI is inactive on the second disposable site.' );
 $assert( ! class_exists( 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\RuntimeDeclarations' ), 'Blocks Engine PHP transformer runtime is absent.' );
 $assert( is_string( $rendered ) && '' !== $rendered, 'Standalone companion renders the imported page.' );

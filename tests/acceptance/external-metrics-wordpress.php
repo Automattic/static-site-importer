@@ -66,8 +66,8 @@ foreach ( $compiled['plan']['pages'] ?? array() as $candidate ) {
 }
 $assert( is_array( $metric_page ), 'Compiler emits all five captured metric text leaves as native paragraphs. Plan pages: ' . wp_json_encode( $compiled['plan']['pages'] ?? array() ) );
 
-$slugs             = array( 'block-visibility', 'icon-block', 'social-sharing-block', 'genesis-featured-page-advanced', 'genesis-columns-advanced' );
-$source_provenance = static function ( string $file ): array {
+$slugs                  = array( 'block-visibility', 'icon-block', 'social-sharing-block', 'genesis-featured-page-advanced', 'genesis-columns-advanced' );
+$source_provenance      = static function ( string $file ): array {
 	return array(
 		'kind'        => 'source_corroboration',
 		'repository'  => 'ndiego/nickdiego.com',
@@ -75,7 +75,7 @@ $source_provenance = static function ( string $file ): array {
 		'source_path' => $file,
 	);
 };
-$make_fact         = static function ( string $id, string $source, string $metric, string $aggregation, array $plugin_slugs, string $text, array $format, string $source_file ) use ( $metric_page ): array {
+$make_fact              = static function ( string $id, string $source, string $metric, string $aggregation, array $plugin_slugs, string $text, array $format, string $source_file ) use ( $metric_page ): array {
 	return array(
 		'id'          => $id,
 		'provider'    => array(
@@ -101,8 +101,8 @@ $make_fact         = static function ( string $id, string $source, string $metri
 			array(
 				'schema'              => 'generic/block-binding/v1',
 				'role'                => 'paragraph',
-			'source_path'         => $metric_page['source_path'],
-			'search_block_markup' => $metric_page['contents'][ $text ],
+				'source_path'         => $metric_page['source_path'],
+				'search_block_markup' => $metric_page['contents'][ $text ],
 				'occurrence'          => 1,
 				'leaf'                => array(
 					'block'     => 'core/paragraph',
@@ -112,14 +112,14 @@ $make_fact         = static function ( string $id, string $source, string $metri
 		),
 	);
 };
-$numeric           = array(
+$numeric                = array(
 	'locale'   => 'en-US',
 	'grouping' => true,
 	'prefix'   => '',
 	'suffix'   => '',
 	'decimals' => 0,
 );
-$facts             = array(
+$facts                  = array(
 	$make_fact( 'project-count', 'plugin_information', 'plugin_response_count', 'success_count', $slugs, $fallbacks['project-count'], $numeric, 'src/components/wp-plugin-stat.tsx' ),
 	$make_fact( 'active-installs', 'plugin_information', 'active_installs', 'sum', $slugs, $fallbacks['active-installs'], array_merge( $numeric, array( 'suffix' => '+' ) ), 'src/components/wp-plugin-stat.tsx' ),
 	$make_fact( 'all-time-downloads', 'plugin_download_history', 'downloads_all_time', 'sum', $slugs, $fallbacks['all-time-downloads'], array_merge( $numeric, array( 'suffix' => '+' ) ), 'src/components/wp-plugin-stat.tsx' ),
@@ -142,48 +142,54 @@ $facts             = array(
 	$make_fact( 'project-ratings', 'plugin_information', 'num_ratings', 'identity', array( $slugs[0] ), $fallbacks['project-ratings'], $numeric, 'src/components/wp-plugin-card.tsx' ),
 );
 $expected_live_contract = array(
-	'project-count' => array(
-		'source'       => 'plugin_information',
-		'source_key'   => 'http_200_response_count',
-		'metric'       => 'plugin_response_count',
-		'aggregation'  => 'success_count',
-		'slugs'        => $slugs,
-		'format'       => $numeric,
+	'project-count'      => array(
+		'source'      => 'plugin_information',
+		'source_key'  => 'http_200_response_count',
+		'metric'      => 'plugin_response_count',
+		'aggregation' => 'success_count',
+		'slugs'       => $slugs,
+		'format'      => $numeric,
 	),
-	'active-installs' => array(
-		'source'       => 'plugin_information',
-		'source_key'   => 'active_installs',
-		'metric'       => 'active_installs',
-		'aggregation'  => 'sum',
-		'slugs'        => $slugs,
-		'format'       => array_merge( $numeric, array( 'suffix' => '+' ) ),
+	'active-installs'    => array(
+		'source'      => 'plugin_information',
+		'source_key'  => 'active_installs',
+		'metric'      => 'active_installs',
+		'aggregation' => 'sum',
+		'slugs'       => $slugs,
+		'format'      => array_merge( $numeric, array( 'suffix' => '+' ) ),
 	),
 	'all-time-downloads' => array(
-		'source'       => 'plugin_download_history',
-		'source_key'   => 'all_time',
-		'metric'       => 'downloads_all_time',
-		'aggregation'  => 'sum',
-		'slugs'        => $slugs,
-		'format'       => array_merge( $numeric, array( 'suffix' => '+' ) ),
+		'source'      => 'plugin_download_history',
+		'source_key'  => 'all_time',
+		'metric'      => 'downloads_all_time',
+		'aggregation' => 'sum',
+		'slugs'       => $slugs,
+		'format'      => array_merge( $numeric, array( 'suffix' => '+' ) ),
 	),
-	'project-version' => array(
-		'source'       => 'plugin_information',
-		'source_key'   => 'version',
-		'metric'       => 'version',
-		'aggregation'  => 'identity',
-		'slugs'        => array( $slugs[0] ),
-		'format'       => array_merge( $numeric, array( 'grouping' => false, 'prefix' => 'v' ) ),
+	'project-version'    => array(
+		'source'      => 'plugin_information',
+		'source_key'  => 'version',
+		'metric'      => 'version',
+		'aggregation' => 'identity',
+		'slugs'       => array( $slugs[0] ),
+		'format'      => array_merge(
+			$numeric,
+			array(
+				'grouping' => false,
+				'prefix'   => 'v',
+			)
+		),
 	),
-	'project-ratings' => array(
-		'source'       => 'plugin_information',
-		'source_key'   => 'num_ratings',
-		'metric'       => 'num_ratings',
-		'aggregation'  => 'identity',
-		'slugs'        => array( $slugs[0] ),
-		'format'       => $numeric,
+	'project-ratings'    => array(
+		'source'      => 'plugin_information',
+		'source_key'  => 'num_ratings',
+		'metric'      => 'num_ratings',
+		'aggregation' => 'identity',
+		'slugs'       => array( $slugs[0] ),
+		'format'      => $numeric,
 	),
 );
-$actual_live_contract = array();
+$actual_live_contract   = array();
 foreach ( $facts as $fact ) {
 	$actual_live_contract[ $fact['id'] ] = array(
 		'source'      => $fact['provider']['source'],
@@ -238,11 +244,11 @@ update_option( 'ssi_external_metric_acceptance_post_id', $post_ids[0], false );
 update_option( 'ssi_external_metric_acceptance_facts', $facts, false );
 echo wp_json_encode(
 	array(
-		'status'    => 'materialized',
-		'core'      => get_bloginfo( 'version' ),
-		'post_id'   => $post_ids[0],
-		'metrics'   => array_column( $facts, 'id' ),
+		'status'          => 'materialized',
+		'core'            => get_bloginfo( 'version' ),
+		'post_id'         => $post_ids[0],
+		'metrics'         => array_column( $facts, 'id' ),
 		'source_contract' => $actual_live_contract,
-		'companion' => get_option( 'static_site_importer_active_companion_plugin', '' ),
+		'companion'       => get_option( 'static_site_importer_active_companion_plugin', '' ),
 	)
 ) . "\n";

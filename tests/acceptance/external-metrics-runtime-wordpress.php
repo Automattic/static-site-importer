@@ -2,12 +2,12 @@
 /** Prove public fetch, native binding render and no post rewrite. */
 if ( ! defined( 'ABSPATH' ) || '1' !== getenv( 'SSI_EXTERNAL_METRICS_DISPOSABLE' ) ) {
 	throw new RuntimeException( 'External metric verification must run in its disposable WordPress site.' ); }
-$assert  = static function ( bool $condition, string $message ): void {
+$assert         = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) {
 		throw new RuntimeException( esc_html( $message ) );
 	} };
 $metric_post_id = (int) get_option( 'ssi_external_metric_acceptance_post_id', 0 );
-$facts   = get_option( 'ssi_external_metric_acceptance_facts', array() );
+$facts          = get_option( 'ssi_external_metric_acceptance_facts', array() );
 $assert( $metric_post_id > 0 && is_array( $facts ) && 5 === count( $facts ), 'A completed five-fact imported page is persisted.' );
 $post_content = (string) get_post_field( 'post_content', $metric_post_id );
 $before_hash  = hash( 'sha256', $post_content );

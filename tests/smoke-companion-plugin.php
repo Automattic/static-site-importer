@@ -1465,7 +1465,7 @@ $script_change['blocks'][0]['assets']['index.js'] = 'window.SSIEditor = "updated
 $script_before                                    = file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/index.js' );
 $script_report                                    = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $script_change, static fn (): bool => true, true );
 $assert( 'refreshed' === ( $script_report['status'] ?? '' ), 'same-identity-editor-implementation-update-accepted' );
-$assert( $script_change['blocks'][0]['assets']['index.js'] === file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/index.js' ), 'implementation-update-reaches-installed-file' );
+$assert( file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/index.js' ) === $script_change['blocks'][0]['assets']['index.js'], 'implementation-update-reaches-installed-file' );
 file_put_contents( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/index.js', $script_before );
 
 $style_change                                     = $payload;
@@ -1485,7 +1485,7 @@ $render_change                        = $payload;
 $render_change['blocks'][0]['render'] = '<div>Changed shared rendering</div>';
 $renderer_before                      = file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/render.php' );
 $render_report                        = Static_Site_Importer_Plugin_Materializer::ensure_generated_plugin( $render_change, static fn (): bool => true, true );
-$assert( 'refreshed' === ( $render_report['status'] ?? '' ) && $renderer_before === file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/render.php' ), 'unused-render-proposal-does-not-block-identical-content-owned-renderer' );
+$assert( 'refreshed' === ( $render_report['status'] ?? '' ) && file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/blocks/custom-hero/render.php' ) === $renderer_before, 'unused-render-proposal-does-not-block-identical-content-owned-renderer' );
 
 $config_before = file_get_contents( WP_PLUGIN_DIR . '/ssi-example-site/companion.json' );
 file_put_contents( WP_PLUGIN_DIR . '/ssi-example-site/companion.json', '{invalid' );
@@ -1804,7 +1804,7 @@ if ( ! is_wp_error( $metric_scaffold ) ) {
 	$assert( str_contains( $metric_main, '::configure(' ) && str_contains( $metric_main, '::register()' ), 'external-metric-companion-configures-native-binding-source' );
 	$assert( str_contains( $metric_files['ssi-metric-site/editor/external-metric-controls.js'] ?? '', 'Detach to static text' ), 'external-metric-companion-packages-detach-control' );
 	$config = json_decode( $metric_files['ssi-metric-site/companion.json'] ?? '', true );
-	$assert( $metric_fact === ( $config['external_metrics'][0] ?? null ), 'external-metric-companion-preserves-fallback-and-source-provenance' );
+	$assert( ( $config['external_metrics'][0] ?? null ) === $metric_fact, 'external-metric-companion-preserves-fallback-and-source-provenance' );
 }
 
 if ( $failures ) {

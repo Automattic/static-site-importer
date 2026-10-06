@@ -165,7 +165,7 @@ final class Static_Site_Importer_External_Metric_Runtime {
 				continue;
 			}
 			$metric = $fact['metric'] ?? null;
-			if ( ! is_string( $metric ) || ! isset( $allowed[ $metric ] ) || $allowed[ $metric ] !== ( $fact['aggregation'] ?? null ) || ( in_array( $metric, array( 'version', 'num_ratings' ), true ) && count( $slugs ) !== 1 ) ) {
+			if ( ! is_string( $metric ) || ! isset( $allowed[ $metric ] ) || ! in_array( $fact['aggregation'] ?? null, array( $allowed[ $metric ] ), true ) || ( in_array( $metric, array( 'version', 'num_ratings' ), true ) && 1 !== count( $slugs ) ) ) {
 				$errors[] = array(
 					'path'    => $path . '.metric',
 					'message' => 'Metric and aggregation are not supported for this source.',
