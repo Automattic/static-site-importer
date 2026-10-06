@@ -68,6 +68,7 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 		'source_region_selection',
 		'status',
 		'theme_materialization',
+		'theme_preview',
 		'theme_slug',
 		'version',
 		'visual_fidelity',
