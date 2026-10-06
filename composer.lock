@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "11b6b10dbc53759daec548f7eebeb2b4",
+    "content-hash": "034df5f2005b0099fd059e55a68d9aa1",
     "packages": [
         {
             "name": "automattic/blocks-engine-figma-transformer",
@@ -43,19 +43,20 @@
         },
         {
             "name": "automattic/blocks-engine-php-transformer",
-            "version": "v0.32.6",
+            "version": "v0.32.7",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Automattic/blocks-engine-php-transformer.git",
-                "reference": "2c72ec43755f8556a201709d43f23f2fa1a40bfe"
+                "reference": "389c9c6d74b8ce1b970ea857b5c2a3514255559d"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Automattic/blocks-engine-php-transformer/zipball/2c72ec43755f8556a201709d43f23f2fa1a40bfe",
-                "reference": "2c72ec43755f8556a201709d43f23f2fa1a40bfe",
+                "url": "https://api.github.com/repos/Automattic/blocks-engine-php-transformer/zipball/389c9c6d74b8ce1b970ea857b5c2a3514255559d",
+                "reference": "389c9c6d74b8ce1b970ea857b5c2a3514255559d",
                 "shasum": ""
             },
             "require": {
+                "ext-mbstring": "*",
                 "league/commonmark": "^2.5",
                 "league/html-to-markdown": "^5.1",
                 "php": ">=8.2"
@@ -91,7 +92,7 @@
                 "issues": "https://github.com/Automattic/blocks-engine/issues",
                 "source": "https://github.com/Automattic/blocks-engine-php-transformer"
             },
-            "time": "2026-10-06T09:52:39+00:00"
+            "time": "2026-10-06T14:36:00+00:00"
         },
         {
             "name": "dflydev/dot-access-data",
