@@ -139,7 +139,7 @@ class Static_Site_Importer_Receipt_Projection {
 					'template_parts'    => array_map(
 						static fn( array $part ): array => array(
 							'path'    => 'parts/' . $part['slug'] . '.html',
-							'content' => $part['materialized_block_markup'] ?? $part['resolved_block_markup'],
+							'content' => $part['materialized_block_markup'] ?? $part['resolved_block_markup'] ?? $part['canonical_block_markup'] ?? '',
 						),
 						$plan['template_parts']
 					),
