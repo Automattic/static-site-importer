@@ -5,12 +5,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { CAPTURE_ARTIFACT_SCHEMA, EVALUATION_ARTIFACT_SCHEMA, buildUrlLoopSpec, candidatePolicy, evaluateMatrixSummary, runCapture, runEvaluation, sourceIdentity, verifyCandidateWorkspace } from './url-loop-controller.mjs';
+import { CAPTURE_ARTIFACT_SCHEMA, EVALUATION_ARTIFACT_SCHEMA, buildUrlLoopSpec, candidatePolicy, evaluateMatrixSummary, prepareTransformer, runCapture, runEvaluation, sourceIdentity, verifyCandidateWorkspace } from './url-loop-controller.mjs';
 
 const url = 'https://example.com/';
 const sha = 'a'.repeat(40);
 const provenance = { source_url_sha256: `sha256:${'1'.repeat(64)}`, captured_content_sha256: `sha256:${'2'.repeat(64)}`, capture_receipt_sha256: `sha256:${'3'.repeat(64)}` };
 function context(root) {
+  fs.copyFileSync(new URL('../composer.lock', import.meta.url), path.join(root, 'composer.lock'));
   return buildUrlLoopSpec({ url, workspace: root, outputRoot: path.join(root, 'output'), blocksEngine: root, wpCodeboxBin: path.join(root, 'codebox'), maxActions: 4 });
 }
 function capture(root, properties = {}) {
@@ -116,6 +117,102 @@ test('candidate event routes one capture-bound re-evaluation per immutable candi
   assert.notEqual(a.transitions[0].actions[0].dedupe_key, changed.transitions[0].actions[0].dedupe_key);
   assert.equal(a.transitions[0].actions[0].request.consumes[0], 'capture');
   assert.throws(() => candidatePolicy(inputs, artifact, 'short'), /full Git commit/);
+});
+
+test('default evaluation and candidate replay use the consumer lock without overlaying the independent CLI', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-pinned-replay-'));
+  const { context: inputs } = context(root);
+  const { capture: artifact } = await runCapture(inputs, { capture: async () => capture(root, {
+    capture_receipt: { schema: 'data-liberation/capture-receipt/v1', source: { url }, summary: { complete: true, routesDiscovered: 8, routesCaptured: 8, routesFailed: 0, routesSkipped: 0 } },
+  }) });
+  const retained = fs.readFileSync(artifact.handoff_path);
+  const locked = JSON.parse(fs.readFileSync(path.join(root, 'composer.lock'))).packages.find((item) => item.name === 'automattic/blocks-engine-php-transformer');
+  for (const candidate of [sha, 'b'.repeat(40)]) {
+    const policy = candidatePolicy(inputs, artifact, candidate);
+    const request = policy.transitions[0].actions[0].request;
+    const result = await runEvaluation({ ...request, action_id: 'action-4', inputs: { ...request.inputs, artifacts: { capture: artifact } } }, {
+      matrixModule: {
+        buildFixtureMatrixRunPlan: (input) => {
+          assert.equal(input.mode, 'release-proof');
+          assert.equal(input.blocksEnginePhpTransformerPath, '');
+          assert.equal(input.surfaceCoverage, 7);
+          assert.equal(input.fixtureRoot, artifact.fixture_root);
+          return { steps: [] };
+        },
+        summarizeBenchRun: () => ({ summary: { matrix_evidence_readiness: { fixtures: [] } } }),
+      },
+      spawn: (_command, args) => {
+        assert.ok(args.includes('release-proof'));
+        assert.ok(!args.includes('--blocks-engine-php-transformer-path'));
+        return { status: 0 };
+      },
+    });
+    assert.deepEqual(result.evaluation.transformer, { package: locked.name, version: locked.version, reference: locked.source.reference });
+    assert.equal(result.evaluation.routes, 8);
+    assert.equal(result.evaluation.captured_content_sha256, provenance.captured_content_sha256);
+    assert.deepEqual(fs.readFileSync(artifact.handoff_path), retained);
+  }
+});
+
+test('explicit installed compiler snapshot proves real PHP exports and refuses an incompatible overlay before activation', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-explicit-compiler-'));
+  const { context: inputs } = context(root);
+  const packagePath = fileURLToPath(new URL('../vendor/automattic/blocks-engine-php-transformer/', import.meta.url));
+  const compatible = prepareTransformer({ ...inputs, transformer_path: packagePath }, path.join(root, 'compatible'));
+  assert.match(compatible.transformer.reference, /^[a-f0-9]{64}$/);
+  assert.ok(Object.values(compatible.evidence.required_exports).every((value) => value === true));
+  assert.notEqual(compatible.path, packagePath);
+  // PHP resolves loaded files to canonical paths. A caller-owned alias to the
+  // same snapshot directory must retain the same export and byte-identity proof.
+  const canonicalDirectory = path.join(root, 'canonical');
+  const aliasedDirectory = path.join(root, 'canonical-alias');
+  fs.mkdirSync(canonicalDirectory);
+  fs.symlinkSync(canonicalDirectory, aliasedDirectory, 'dir');
+  const aliased = prepareTransformer({ ...inputs, transformer_path: packagePath }, aliasedDirectory);
+  assert.equal(aliased.transformer.reference, compatible.transformer.reference);
+  assert.ok(Object.values(aliased.evidence.required_exports).every((value) => value === true));
+  const { capture: artifact } = await runCapture(inputs, { capture: async () => capture(root) });
+  const accepted = await runEvaluation({ action_id: 'action-3', inputs: { ...inputs, candidate_sha: sha, transformer_path: packagePath, artifacts: { capture: artifact } } }, {
+    matrixModule: {
+      buildFixtureMatrixRunPlan: (input) => {
+        assert.equal(input.mode, 'development-override');
+        assert.equal(input.blocksEnginePhpTransformerReference, compatible.transformer.reference);
+        assert.notEqual(input.blocksEnginePhpTransformerPath, packagePath);
+        assert.ok(fs.existsSync(path.join(input.blocksEnginePhpTransformerPath, 'src', 'AssetAnalysis', 'SrcsetParser.php')));
+        return { steps: [] };
+      },
+      summarizeBenchRun: () => ({ summary: { matrix_evidence_readiness: { fixtures: [] } } }),
+    },
+    spawn: (_command, args) => {
+      assert.ok(args.includes('--blocks-engine-php-transformer-reference'));
+      assert.ok(args.includes(compatible.transformer.reference));
+      return { status: 0 };
+    },
+  });
+  assert.equal(accepted.evaluation.transformer.reference, compatible.transformer.reference);
+  const incompatible = path.join(root, 'incompatible');
+  fs.cpSync(compatible.path, incompatible, { recursive: true });
+  fs.rmSync(path.join(incompatible, 'src', 'AssetAnalysis', 'SrcsetParser.php'));
+  let activations = 0;
+  const result = await runEvaluation({ inputs: { ...inputs, candidate_sha: sha, transformer_path: incompatible, artifacts: { capture: artifact } } }, {
+    spawn: () => { ++activations; throw new Error('must not launch Codebox'); },
+  });
+  assert.equal(activations, 0);
+  assert.equal(result.evaluation.status, 'blocked');
+  assert.match(result.evaluation.preparation_blocker.message, /required_exports_incompatible/);
+  assert.equal(Object.values(result.evaluation.preparation_blocker.evidence.required_exports).filter(Boolean).length, 1);
+  assert.notEqual(result.evaluation.preparation_blocker.evidence.transformer.reference, compatible.transformer.reference);
+  await assert.rejects(runEvaluation({ inputs: { ...inputs, candidate_sha: sha, transformer_path: incompatible, artifacts: { capture: artifact } } }), /matrix_output_not_fresh/);
+  // A filename alone is not an export, and invalid package identities cannot
+  // silently select the consumer or independent CLI implementation.
+  fs.writeFileSync(path.join(incompatible, 'src', 'AssetAnalysis', 'SrcsetParser.php'), '<?php // not an export');
+  const forged = await runEvaluation({ action_id: 'action-2', inputs: { ...inputs, candidate_sha: sha, transformer_path: incompatible, artifacts: { capture: artifact } } });
+  assert.match(forged.evaluation.preparation_blocker.message, /required_exports_incompatible/);
+  for (const [action, source] of [['action-5', path.join(root, 'missing')], ['action-6', root]]) {
+    const blocked = await runEvaluation({ action_id: action, inputs: { ...inputs, candidate_sha: sha, transformer_path: source, artifacts: { capture: artifact } } });
+    assert.equal(blocked.evaluation.status, 'blocked');
+    assert.equal(blocked.evaluation.preparation_blocker.evidence.source, source);
+  }
 });
 
 test('candidate events bind a clean Git checkout to the exact supplied revision', () => {
