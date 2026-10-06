@@ -44,22 +44,27 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 */
 	public static function capabilities(): array {
 		return array(
-			'form'         => array(
+			'external_metrics' => array(
+				'default_provider' => 'wordpress.org',
+				'option'           => '',
+				'filter'           => '',
+			),
+			'form'             => array(
 				'default_provider' => 'jetpack',
 				'option'           => 'static_site_importer_form_plugin',
 				'filter'           => 'ssi_form_plugin',
 			),
-			'shop'         => array(
+			'shop'             => array(
 				'default_provider' => 'woocommerce',
 				'option'           => 'static_site_importer_shop_plugin',
 				'filter'           => 'ssi_shop_plugin',
 			),
-			'events'       => array(
+			'events'           => array(
 				'default_provider' => 'the-events-calendar',
 				'option'           => 'static_site_importer_events_plugin',
 				'filter'           => 'ssi_events_plugin',
 			),
-			'multilingual' => array(
+			'multilingual'     => array(
 				'default_provider' => 'translatepress-multilingual',
 				'option'           => 'static_site_importer_multilingual_plugin',
 				'filter'           => 'ssi_multilingual_plugin',
@@ -399,6 +404,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			$collection = (string) ( $adapter['entity_collection'] ?? '' );
 			$manifest   = array( $collection => $entities );
+			if ( 'external_metrics' === $collection ) {
+				$manifest['source_path']             = (string) ( $declaration['source_path'] ?? '' );
+				$manifest['validate_anchor_content'] = true;
+			}
 			if ( 'products' === $collection ) {
 				$manifest['schema_version'] = 1;
 			}
@@ -554,6 +563,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( 'entity_collection' === $kind && in_array( $name, array( 'product', 'products' ), true ) ) {
 			return 'shop';
 		}
+		if ( 'entity_collection' === $kind && 'external_metrics' === $name ) {
+			return 'external_metrics';
+		}
 		return 'entity_collection' === $kind && in_array( $name, array( 'form', 'forms' ), true ) ? 'form' : '';
 	}
 
@@ -644,7 +656,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					if ( ! is_array( $entity ) ) {
 						continue;
 					}
-					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : self::form_entity_key( $entity );
+					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : ( 'external_metrics' === $key ? (string) ( $entity['id'] ?? '' ) : self::form_entity_key( $entity ) );
 					if ( '' !== $entity_key ) {
 						$resolved_by_key[ $entity_key ] = $entity;
 					}
@@ -653,7 +665,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					if ( ! is_array( $entity ) ) {
 						continue;
 					}
-					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : self::form_entity_key( $entity );
+					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : ( 'external_metrics' === $key ? (string) ( $entity['id'] ?? '' ) : self::form_entity_key( $entity ) );
 					if ( isset( $resolved_by_key[ $entity_key ]['bindings'] ) && is_array( $resolved_by_key[ $entity_key ]['bindings'] ) ) {
 						$prepared['manifest'][ $key ][ $index ]['bindings'] = $resolved_by_key[ $entity_key ]['bindings'];
 					}
@@ -939,7 +951,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$results           = array();
 			foreach ( $result_entities as $result ) {
 				if ( is_array( $result ) ) {
-					$key             = 'products' === $entity_key ? (string) ( $result['slug'] ?? '' ) : self::form_entity_key( $result );
+					$key             = 'products' === $entity_key ? (string) ( $result['slug'] ?? '' ) : ( 'external_metrics' === $entity_key ? (string) ( $result['id'] ?? '' ) : self::form_entity_key( $result ) );
 					$results[ $key ] = $result;
 				}
 			}
@@ -963,7 +975,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				if ( ! is_array( $entity ) || empty( $entity['bindings'] ) || ! is_array( $entity['bindings'] ) ) {
 					continue;
 				}
-				$key    = 'products' === $entity_key ? (string) ( $entity['slug'] ?? '' ) : self::form_entity_key( $entity );
+				$key    = 'products' === $entity_key ? (string) ( $entity['slug'] ?? '' ) : ( 'external_metrics' === $entity_key ? (string) ( $entity['id'] ?? '' ) : self::form_entity_key( $entity ) );
 				$result = is_array( $results[ $key ] ?? null ) ? $results[ $key ] : array();
 				if ( self::entity_result_declined( $result ) ) {
 					continue;
@@ -1179,7 +1191,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			require_once __DIR__ . '/class-static-site-importer-tec-event-seeder.php';
 		}
 		require_once __DIR__ . '/class-static-site-importer-translatepress-materializer.php';
-		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_TEC_Event_Seeder', 'Static_Site_Importer_TranslatePress_Materializer' ) as $owner ) {
+		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_TEC_Event_Seeder', 'Static_Site_Importer_External_Metric_Runtime', 'Static_Site_Importer_TranslatePress_Materializer' ) as $owner ) {
 			// Seeders may be absent or stubbed in standalone harnesses.
 			// @phpstan-ignore-next-line booleanNot.alwaysFalse -- Optional classes are stubbed in standalone coverage harnesses.
 			if ( ! is_callable( array( $owner, 'adapter' ) ) ) {
