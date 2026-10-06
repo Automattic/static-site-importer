@@ -1240,7 +1240,7 @@ class Static_Site_Importer_Form_Seeder {
 				$existing_styles['display'] = 'inline-block';
 				$display_projected          = true;
 			}
-			if ( isset( $existing_styles['height'] ) || isset( $existing_styles['min_height'] ) ) {
+			if ( isset( $existing_styles['height'] ) ) {
 				if ( $display_projected ) {
 					if ( null !== $row_index ) {
 						$controls_graph[ $row_index ]['control']['styles'] = $existing_styles;
@@ -1255,6 +1255,9 @@ class Static_Site_Importer_Form_Seeder {
 				}
 				continue;
 			}
+			// Jetpack applies a fixed 200px textarea height. A source min-height
+			// constrains the browser-sized rows but does not replace that provider
+			// height, so preserve the min-height and still release the fixed height.
 			$existing_styles['height'] = 'auto';
 			if ( null !== $row_index ) {
 				$controls_graph[ $row_index ]['control']['styles'] = $existing_styles;
