@@ -5,7 +5,6 @@
     "static-site-importer": {
       "component_id": "static-site-importer",
       "default_ref": "origin/main",
-      "path_setting": "HOMEBOY_RIG_COMPONENT_PATH__STATIC_SITE_IMPORTER_FIXTURE_MATRIX__STATIC_SITE_IMPORTER",
       "branch": "main"
     }
   },
