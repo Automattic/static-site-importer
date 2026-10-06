@@ -197,8 +197,9 @@ function update_post_meta( int $id, string $key, string $value ): void {
 	}
 	// Core update_metadata() unslashes values before persistence.
 	$GLOBALS['ssi_plan_meta'][ $id ][ $key ] = stripslashes( $value ); }
-function get_post_meta( int $id, string $key, bool $single = true ): string {
-	return (string) ( $GLOBALS['ssi_plan_meta'][ $id ][ $key ] ?? '' ); }
+function get_post_meta( int $id, string $key, bool $single = true ): string|array {
+	$value = $GLOBALS['ssi_plan_meta'][ $id ][ $key ] ?? null;
+	return $single ? (string) ( $value ?? '' ) : ( null === $value ? array() : array( $value ) ); }
 function metadata_exists( string $meta_type, int $id, string $key ): bool {
 	return 'post' === $meta_type && array_key_exists( $key, $GLOBALS['ssi_plan_meta'][ $id ] ?? array() ); }
 function delete_post_meta( int $id, string $key ): void {
@@ -635,6 +636,7 @@ $unicode_title_page_id                                     = (int) ( $unicode_ti
 $unicode_title_provenance                                  = json_decode( (string) get_post_meta( $unicode_title_page_id, '_static_site_importer_provenance', true ), true );
 $assert( 'completed' === ( $unicode_title_receipt['status'] ?? '' ) && 'Services – Southern Multi Product ltd' === ( $unicode_title_provenance['document_title'] ?? '' ), 'provenance JSON survives the WordPress metadata unslash round trip' );
 
+WP_Block_Type_Registry::get_instance()->register( 'core/paragraph', array() );
 $initial_meta_failure_plan = ( new ArtifactCompiler() )->compile(
 	array(
 		'entrypoint' => 'metadata-failure/index.html',
@@ -2279,7 +2281,7 @@ $other_failure_validation                                 = Static_Site_Importer
 $assert( 0 === ( $other_failure_quality['fallback_count'] ?? -1 ) && false === ( $other_failure_quality['pass'] ?? true ) && true === ( $other_failure_quality['fail_import'] ?? false ) && array( 'core_html_block' ) === ( $other_failure_quality['failure_reasons'] ?? null ) && 'failed' === ( $other_failure_validation['status'] ?? '' ), 'receipt reconciliation preserves unrelated quality failures and validation status' );
 // Exercise the production result composition path with the partial compiler
 // quality envelope that website-artifact imports supply.
-$partial_quality_plan                = $plan;
+$partial_quality_plan                = $receipt['plan'];
 $partial_quality_plan['quality']     = array(
 	'metrics' => array(
 		'block_count'    => 1,
@@ -2325,7 +2327,7 @@ $partial_quality_counters = array(
 	'source_fallback_count'                 => 1,
 );
 $assert(
-	$partial_quality_counters === array_intersect_key( $partial_quality, $partial_quality_counters ) && 6 === ( $partial_quality['block_count'] ?? 0 ) && array(
+	$partial_quality_counters === array_intersect_key( $partial_quality, $partial_quality_counters ) && 4 === ( $partial_quality['block_count'] ?? 0 ) && array(
 		'block_count'    => 1,
 		'fallback_count' => 1,
 	) === ( $partial_quality['metrics'] ?? null ),

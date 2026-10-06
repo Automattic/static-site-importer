@@ -354,7 +354,7 @@ final class Static_Site_Importer_TEC_Event_Seeder {
 			}
 			++$report['counts'][ $status ];
 		}
-		$options = get_option( 'tribe_events_calendar_options', array() );
+		$options          = get_option( 'tribe_events_calendar_options', array() );
 		$configure_editor = array( 'Tribe__Settings_Manager', 'set_option' );
 		if ( 'completed' === $report['status'] && ( $report['counts']['created'] + $report['counts']['updated'] ) > 0 && is_array( $options ) && ! array_key_exists( 'toggle_blocks_editor', $options ) && is_callable( $configure_editor ) ) {
 			// Configure after ORM date-range updates, which also write provider options.
