@@ -940,7 +940,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( isset( $stylesheets[ $state['theme_dir'] . '/style.css' ], $stylesheets[ $state['theme_dir'] . '/assets/css/editor-style.css' ] ) ) {
 			$writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], '', '', array(), array(), $overlays, $stylesheets );
 		} elseif ( '' !== $source_css ) {
-			$writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], (string) $state['theme']['slug'], $source_css, array(), array(), $overlays, null, isset( $state['args']['artifact_provenance'] ) && is_array( $state['args']['artifact_provenance'] ) ? $state['args']['artifact_provenance'] : array() );
+			$overlay_theme_name = isset( $state['theme']['name'] ) && is_scalar( $state['theme']['name'] ) && '' !== trim( (string) $state['theme']['name'] ) ? (string) $state['theme']['name'] : (string) $state['theme']['slug'];
+			$writes             = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( $state['theme_dir'], $overlay_theme_name, $source_css, array(), array(), $overlays, null, isset( $state['args']['artifact_provenance'] ) && is_array( $state['args']['artifact_provenance'] ) ? $state['args']['artifact_provenance'] : array() );
 		} else {
 			return new WP_Error( 'provider_layout_stylesheet_missing' );
 		}

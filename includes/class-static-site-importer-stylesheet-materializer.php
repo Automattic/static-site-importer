@@ -213,6 +213,51 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	}
 
 	/**
+	 * Compose the canonical producer scaffold header from consumer-owned identity.
+	 *
+	 * The canonical plan's style.css scaffold is a generic producer placeholder;
+	 * the materializer replaces its payload with the resolved site identity using
+	 * the same header contract as stylesheet_writes() plus the generated theme's
+	 * own text domain. Provenance-carrying builds replace the frozen placeholder
+	 * version and add an Update URI identifying this theme; an absent provenance
+	 * record keeps the frozen header.
+	 *
+	 * @param string              $theme_name          Resolved theme name.
+	 * @param string              $text_domain         Generated theme text domain (theme slug).
+	 * @param array<string,mixed> $artifact_provenance Producer artifact provenance, when carried.
+	 * @return string Header-only style.css content.
+	 */
+	public static function scaffold_style_css( string $theme_name, string $text_domain, array $artifact_provenance = array() ): string {
+		$theme_name = Static_Site_Importer_Generated_File::comment_header_value( $theme_name );
+		$domain     = strtolower( trim( $text_domain ) );
+		$domain     = (string) preg_replace( '/[^a-z0-9_-]+/', '', $domain );
+		if ( '' === $domain ) {
+			$domain = 'static-site-importer';
+		}
+		$headers         = array(
+			'Theme Name: ' . $theme_name,
+			'Text Domain: ' . $domain,
+			'Author: Static Site Importer',
+			'Description: Materialized from a compiled website artifact.',
+			'Version: 0.1.0',
+			'Requires at least: 7.1',
+		);
+		$update_uri_line = '';
+		foreach ( Static_Site_Importer_Build_Provenance::artifact_header_lines( $artifact_provenance, $domain ) as $header_line ) {
+			if ( str_starts_with( $header_line, 'Version: ' ) ) {
+				$headers[4] = $header_line;
+			} else {
+				$update_uri_line = $header_line;
+			}
+		}
+		if ( '' !== $update_uri_line ) {
+			$headers[] = $update_uri_line;
+		}
+
+		return "/*\n" . implode( "\n", $headers ) . "\n*/\n";
+	}
+
+	/**
 	 * Build editor-style.css.
 	 *
 	 * @param string                          $css                  Source CSS.
