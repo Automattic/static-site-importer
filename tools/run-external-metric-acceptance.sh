@@ -10,6 +10,35 @@ test "$actual_sha256" = "$expected_sha256"
 test -f "$root/vendor/autoload.php"
 mkdir -p "$evidence"
 chmod 0733 "$evidence"
+composer show automattic/blocks-engine-php-transformer --format=json --no-ansi > "$evidence/php-transformer-package.json"
+node -e '
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const [lockPath, showPath, root, outputPath] = process.argv.slice(1);
+const lock = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+const show = JSON.parse(fs.readFileSync(showPath, "utf8"));
+const locked = lock.packages.find((item) => item.name === "automattic/blocks-engine-php-transformer");
+if (!locked || show.name !== locked.name || show.versions?.[0] !== locked.version || show.source?.reference !== locked.source?.reference || show.dist?.reference !== locked.dist?.reference || locked.source?.reference !== locked.dist?.reference) {
+  throw new Error("Installed transformer package does not match the immutable Composer lock reference.");
+}
+const expectedPath = path.join(root, "vendor", "automattic", "blocks-engine-php-transformer");
+if (show.path !== expectedPath) throw new Error("Transformer acceptance is not using the normal Composer-installed vendor package.");
+const runtimeSource = path.join(show.path, "src/ArtifactCompiler/RuntimeDeclarations.php");
+const shellSource = path.join(show.path, "src/WordPressSitePlan/ShellExtraction.php");
+const digest = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+const identity = {
+  package: locked.name,
+  version: locked.version,
+  source_ref: locked.source.reference,
+  dist_ref: locked.dist.reference,
+  installed_path: show.path,
+  runtime_declarations_sha256: digest(runtimeSource),
+  shell_extraction_sha256: digest(shellSource),
+};
+fs.writeFileSync(outputPath, `${JSON.stringify(identity, null, 2)}\n`);
+console.log(`Verified released Composer package ${identity.package}@${identity.version} (${identity.source_ref})`);
+' "$root/composer.lock" "$evidence/php-transformer-package.json" "$root" "$evidence/release-package-identity.json"
 project="ssi_metrics_${RANDOM}_$$"
 network="${project}_net"
 volume="${project}_wp"
@@ -92,5 +121,8 @@ post_id="$(node -e 'const fs=require("fs");const r=JSON.parse(fs.readFileSync(pr
 SSI_EXTERNAL_METRICS_WP_URL="http://127.0.0.1:${port}" SSI_EXTERNAL_METRICS_POST_ID="$post_id" \
 	SSI_EXTERNAL_METRICS_USER=admin SSI_EXTERNAL_METRICS_PASSWORD=password SSI_EXTERNAL_METRICS_EVIDENCE="$evidence" \
 	node "$root/tests/acceptance/external-metrics-editor.mjs" | tee "$evidence/editor-run.jsonl"
-printf 'core_archive_sha256=%s\ncore_version=%s\n' "$actual_sha256" "$(<"$evidence/wordpress-core-version.txt")" > "$evidence/runtime-identity.txt"
+printf 'core_archive_sha256=%s\ncore_version=%s\nphp_transformer_version=%s\nphp_transformer_source_ref=%s\n' \
+	"$actual_sha256" "$(<"$evidence/wordpress-core-version.txt")" \
+	"$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).version)' "$evidence/release-package-identity.json")" \
+	"$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).source_ref)' "$evidence/release-package-identity.json")" > "$evidence/runtime-identity.txt"
 printf 'External metric materialization evidence retained at %s\n' "$evidence"

@@ -42,7 +42,17 @@ try {
 	const welcomeClose = page.getByRole( 'button', { name: /close|dismiss/i } );
 	if ( await welcomeClose.count() ) { await welcomeClose.last().click().catch( () => {} ); }
 	const welcomeOverlay = page.locator( '.components-modal__screen-overlay' );
-	if ( await welcomeOverlay.count() ) { await welcomeOverlay.locator( 'button' ).last().click().catch( () => {} ); }
+	if ( await welcomeOverlay.isVisible().catch( () => false ) ) {
+		const welcomeAction = welcomeOverlay.getByRole( 'button', { name: /close|get started/i } ).first();
+		if ( await welcomeAction.count() ) {
+			await welcomeAction.click();
+			await welcomeOverlay.waitFor( { state: 'hidden', timeout: 5000 } );
+		} else {
+			await page.screenshot( { path: `${ evidenceDir }/editor-welcome-debug.png`, fullPage: true } );
+			await writeFile( `${ evidenceDir }/editor-welcome-debug.json`, JSON.stringify( { body: ( await page.locator( 'body' ).innerText() ).slice( 0, 2000 ), buttons: await welcomeOverlay.getByRole( 'button' ).allTextContents() }, null, 2 ) );
+			throw new Error( 'WordPress editor welcome guide is visible without its expected Close or Get started action.' );
+		}
+	}
 	const canvas = page.frameLocator( 'iframe[name="editor-canvas"]' );
 	const metricBlock = canvas.locator( '[data-type="core/paragraph"]' ).first();
 	await metricBlock.click();
