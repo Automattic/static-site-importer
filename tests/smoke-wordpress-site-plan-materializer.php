@@ -357,6 +357,7 @@ function wp_parse_args( $args, array $defaults = array() ): array {
 }
 
 require_once __DIR__ . '/support/wordpress-block-registry.inc';
+WP_Block_Type_Registry::get_instance()->register( 'core/paragraph', array() );
 
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-font-materializer.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-viewport-metadata-materializer.php';
@@ -455,8 +456,14 @@ $companion_owned_runtime = ( new ArtifactCompiler() )->compile(
 	)
 )->toArray();
 $companion_owned_payload = $companion_owned_runtime['source_reports']['companion_plugin_payload'] ?? array();
-$companion_descriptor    = Static_Site_Importer_Companion_Plugin::scaffold( $companion_owned_payload );
-$assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $companion_owned_payload ) && 1 === count( $companion_owned_payload['preserved_js'] ?? array() ) && is_array( $companion_descriptor ) && in_array( 'window.__companionOnly=true;', $companion_descriptor['files'] ?? array(), true ), 'released producer keeps standalone runtime exclusively in the generated companion payload' );
+$companion_owned_plan    = $companion_owned_runtime['source_reports']['wordpress_site_plan'] ?? array();
+$theme_owned_script_writes = array_values(
+	array_filter(
+		$companion_owned_plan['writes'] ?? array(),
+		static fn( array $write ): bool => str_contains( (string) ( $write['payload']['data'] ?? '' ), 'window.__companionOnly=true;' )
+	)
+);
+$assert( 1 === count( $theme_owned_script_writes ) && array() === ( $companion_owned_payload['preserved_js'] ?? array() ), 'released producer carries standalone inline runtime in one generated-theme script asset without duplicating it in the companion payload' );
 
 $same_content_cross_route = ( new ArtifactCompiler() )->compile(
 	array(
@@ -2325,7 +2332,7 @@ $partial_quality_counters = array(
 	'source_fallback_count'                 => 1,
 );
 $assert(
-	$partial_quality_counters === array_intersect_key( $partial_quality, $partial_quality_counters ) && 6 === ( $partial_quality['block_count'] ?? 0 ) && array(
+	$partial_quality_counters === array_intersect_key( $partial_quality, $partial_quality_counters ) && 4 === ( $partial_quality['block_count'] ?? 0 ) && array(
 		'block_count'    => 1,
 		'fallback_count' => 1,
 	) === ( $partial_quality['metrics'] ?? null ),
