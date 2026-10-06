@@ -275,7 +275,8 @@ class Static_Site_Importer_Theme_Exporter {
 					$previous_request    = (string) $wp->request;
 					// The inherited Query Loop reads the archive query and path from WordPress's normal globals.
 					// phpcs:disable WordPress.WP.GlobalVariablesOverride.Prohibited -- The exporter renders the native archive template against its real query context.
-					$GLOBALS['wp_query'] = new WP_Query( $query_args );
+					$archive_query      = new WP_Query( $query_args );
+					$GLOBALS['wp_query'] = $archive_query;
 					$GLOBALS['post']     = null;
 					$wp->request         = trim( $route, '/' );
 					try {
@@ -311,6 +312,9 @@ class Static_Site_Importer_Theme_Exporter {
 					if ( $page_number > 1 ) {
 						$previous_route = 2 === $page_number ? trailingslashit( $route ) : trailingslashit( $route ) . 'page/' . ( $page_number - 1 ) . '/';
 						$html           = preg_replace( '#href="/page/([0-9]+)/"#', 'href="' . $previous_route . '"', $html ) ?? $html;
+						if ( ! str_contains( $html, 'wp-block-query-pagination-previous' ) ) {
+							$html = preg_replace( '#(<nav\b[^>]*class="[^"]*wp-block-query-pagination[^"]*"[^>]*>)#', '$1<a href="' . esc_url( $previous_route ) . '" class="wp-block-query-pagination-previous">Previous Page</a>', $html, 1 ) ?? $html;
+						}
 					}
 					if ( $page_number >= $max_pages ) {
 						$html = preg_replace( '#<a href="[^"]+" class="wp-block-query-pagination-next">.*?</a>#s', '', $html ) ?? $html;
@@ -323,6 +327,28 @@ class Static_Site_Importer_Theme_Exporter {
 						},
 						$html
 					) ?? $html;
+					foreach ( $archive_query->posts ?? array() as $archive_post ) {
+						if ( ! $archive_post instanceof WP_Post || 'post' !== $archive_post->post_type ) {
+							continue;
+						}
+						$artifact_post_path = self::export_page_artifact_path( $archive_post, $root );
+						if ( isset( $used_paths[ $artifact_post_path ] ) ) {
+							$artifact_post_path = self::export_artifact_path( $root . '/post/' . sanitize_title( (string) $archive_post->post_name ) . '/index.html', $root . '/post/page/index.html' );
+						}
+						$target_route = preg_replace( '#/index\.html$#', '', substr( $artifact_post_path, strlen( $root ) ) );
+						$portable_href = self::relative_export_href( $page_route, (string) $target_route );
+						$escaped_href  = function_exists( 'esc_attr' ) ? esc_attr( $portable_href ) : htmlspecialchars( $portable_href, ENT_QUOTES, 'UTF-8' );
+						$source_routes = array_merge(
+							array( (string) wp_parse_url( get_permalink( $archive_post ), PHP_URL_PATH ) ),
+							function_exists( 'get_post_meta' ) ? array_map( 'strval', get_post_meta( (int) $archive_post->ID, Static_Site_Importer_Source_Route_Redirect::META_KEY, false ) ) : array()
+						);
+						foreach ( array_unique( array_filter( $source_routes ) ) as $source_post_route ) {
+							$source_relative = str_repeat( '../', substr_count( trim( $page_route, '/' ), '/' ) + 1 ) . ltrim( $source_post_route, '/' );
+							$html            = str_replace( 'href="' . untrailingslashit( home_url( $source_post_route ) ) . '"', 'href="' . $escaped_href . '"', $html );
+							$html            = str_replace( 'href="' . trailingslashit( $source_post_route ) . '"', 'href="' . $escaped_href . '"', $html );
+							$html            = str_replace( 'href="' . $source_relative . '"', 'href="' . $escaped_href . '"', $html );
+						}
+					}
 					$files[] = self::export_file_entry(
 						$page_path,
 						self::export_html_document(
@@ -333,7 +359,8 @@ class Static_Site_Importer_Theme_Exporter {
 							),
 							(string) $term->name,
 							true,
-							$include_global_styles
+							$include_global_styles,
+							str_repeat( '../', substr_count( trim( $page_route, '/' ), '/' ) + 1 )
 						),
 						'document',
 						'taxonomy-archive',
@@ -654,15 +681,15 @@ class Static_Site_Importer_Theme_Exporter {
 	 * @param bool                              $include_styles  Whether to link exported CSS.
 	 * @return string
 	 */
-	private static function export_html_document( string $page_html, array $chrome, string $title, bool $include_styles, bool $include_global_styles = false ): string {
+	private static function export_html_document( string $page_html, array $chrome, string $title, bool $include_styles, bool $include_global_styles = false, string $asset_prefix = '' ): string {
 		$head = '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">';
 		if ( $include_styles ) {
 			// phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedStylesheet -- This method emits standalone static HTML, not a WordPress-rendered page.
-			$head .= '<link rel="stylesheet" href="style.css">';
+			$head .= '<link rel="stylesheet" href="' . htmlspecialchars( $asset_prefix, ENT_QUOTES, 'UTF-8' ) . 'style.css">';
 		}
 		if ( $include_global_styles ) {
 			// phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedStylesheet -- This method emits standalone static HTML, not a WordPress-rendered page.
-			$head .= '<link rel="stylesheet" href="global-styles.css">';
+			$head .= '<link rel="stylesheet" href="' . htmlspecialchars( $asset_prefix, ENT_QUOTES, 'UTF-8' ) . 'global-styles.css">';
 		}
 
 		return '<!doctype html>' . "\n"
@@ -896,6 +923,17 @@ class Static_Site_Importer_Theme_Exporter {
 			}
 		}
 		return self::export_artifact_path( $root . '/' . $slug . '/index.html', $root . '/page/index.html' );
+	}
+
+	/** Resolve a root-contained export route relative to a taxonomy archive page. */
+	private static function relative_export_href( string $from_route, string $to_route ): string {
+		$from = array_values( array_filter( explode( '/', trim( $from_route, '/' ) ), 'strlen' ) );
+		$to   = array_values( array_filter( explode( '/', trim( $to_route, '/' ) ), 'strlen' ) );
+		while ( array() !== $from && array() !== $to && $from[0] === $to[0] ) {
+			array_shift( $from );
+			array_shift( $to );
+		}
+		return str_repeat( '../', count( $from ) + 1 ) . implode( '/', $to ) . '/';
 	}
 
 	/**

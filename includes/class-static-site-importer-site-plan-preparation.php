@@ -567,7 +567,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			if ( ! empty( $page['skip_materialization'] ) ) {
 				$archive_match    = Static_Site_Importer_Site_Plan_Persistence::reconciled_post( (string) $page['reconciliation_identity'] );
 				$archive_conflict = '' === trim( $route, '/' ) ? null : get_page_by_path( trim( $route, '/' ), OBJECT, 'page' );
-				if ( ! $archive_match && $archive_conflict && ! Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $archive_conflict ) && ! self::post_belongs_to_run( $archive_conflict, $import_run_id ) ) {
+				if ( $archive_conflict && ( ! $archive_match || (int) $archive_match->ID !== (int) $archive_conflict->ID ) && ! Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $archive_conflict ) ) {
 					throw new InvalidArgumentException( 'taxonomy_archive_route_conflict' );
 				}
 				continue;

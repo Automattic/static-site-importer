@@ -512,22 +512,25 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( '' === $route || ! preg_match( '~^/?[a-z0-9-]+(?:/[a-z0-9-]+)*$~', $route ) || basename( $route ) !== $slug ) {
 			return new WP_Error( 'taxonomy_archive_route_invalid' );
 		}
-		$regex     = '^' . $route . '(?:/page/([0-9]+))?/?$';
+		$base_regex = '^' . $route . '/?$';
+		$page_regex = '^' . $route . '/page/([0-9]+)/?$';
 		$query_var = 'category' === $entity['taxonomy'] ? 'category_name' : 'tag';
-		$query     = 'index.php?' . $query_var . '=' . rawurlencode( $slug ) . '&paged=$matches[1]';
+		$base_query = 'index.php?' . $query_var . '=' . rawurlencode( $slug );
+		$page_query = $base_query . '&paged=$matches[1]';
 		$rules     = get_option( 'rewrite_rules', array() );
 		$rules     = is_array( $rules ) ? $rules : array();
-		if ( isset( $rules[ $regex ] ) && $rules[ $regex ] !== $query ) {
+		if ( ( isset( $rules[ $base_regex ] ) && $rules[ $base_regex ] !== $base_query ) || ( isset( $rules[ $page_regex ] ) && $rules[ $page_regex ] !== $page_query ) ) {
 			return new WP_Error( 'taxonomy_archive_rewrite_conflict' );
 		}
-		if ( ( $rules[ $regex ] ?? null ) === $query ) {
+		if ( ( $rules[ $base_regex ] ?? null ) === $base_query && ( $rules[ $page_regex ] ?? null ) === $page_query ) {
 			return true;
 		}
 		self::journal_option( $state, 'rewrite_rules' );
-		add_rewrite_rule( $regex, $query, 'top' );
+		add_rewrite_rule( $base_regex, $base_query, 'top' );
+		add_rewrite_rule( $page_regex, $page_query, 'top' );
 		flush_rewrite_rules( false );
 		$rules = get_option( 'rewrite_rules', array() );
-		if ( ! is_array( $rules ) || ( $rules[ $regex ] ?? null ) !== $query ) {
+		if ( ! is_array( $rules ) || ( $rules[ $base_regex ] ?? null ) !== $base_query || ( $rules[ $page_regex ] ?? null ) !== $page_query ) {
 			return new WP_Error( 'taxonomy_archive_rewrite_failed' );
 		}
 		return true;
