@@ -41,7 +41,7 @@ $args     = array(
 );
 $compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $artifact, $args );
 $assert( ! is_wp_error( $compiled ), 'Base source fixture compiles before declaration anchors are attached.' );
-$page = null;
+$metric_page = null;
 foreach ( $compiled['plan']['pages'] ?? array() as $candidate ) {
 	$markup   = (string) ( $candidate['canonical_block_markup'] ?? '' );
 	$blocks   = parse_blocks( $markup );
@@ -58,13 +58,13 @@ foreach ( $compiled['plan']['pages'] ?? array() as $candidate ) {
 	$walk( $blocks );
 	$matched = count( array_filter( $fallbacks, static fn( $text ): bool => isset( $contents[ $text ] ) ) );
 	if ( count( $fallbacks ) === $matched ) {
-		$page = array(
+		$metric_page = array(
 			'source_path' => (string) $candidate['source_path'],
 			'contents'    => $contents,
 		);
 		break; }
 }
-$assert( is_array( $page ), 'Compiler emits all five captured metric text leaves as native paragraphs. Plan pages: ' . wp_json_encode( $compiled['plan']['pages'] ?? array() ) );
+$assert( is_array( $metric_page ), 'Compiler emits all five captured metric text leaves as native paragraphs. Plan pages: ' . wp_json_encode( $compiled['plan']['pages'] ?? array() ) );
 
 $slugs             = array( 'block-visibility', 'icon-block', 'social-sharing-block', 'genesis-featured-page-advanced', 'genesis-columns-advanced' );
 $source_provenance = static function ( string $file ): array {
@@ -75,7 +75,7 @@ $source_provenance = static function ( string $file ): array {
 		'source_path' => $file,
 	);
 };
-$make_fact         = static function ( string $id, string $source, string $metric, string $aggregation, array $plugin_slugs, string $text, array $format, string $source_file ) use ( $page ): array {
+$make_fact         = static function ( string $id, string $source, string $metric, string $aggregation, array $plugin_slugs, string $text, array $format, string $source_file ) use ( $metric_page ): array {
 	return array(
 		'id'          => $id,
 		'provider'    => array(
@@ -101,8 +101,8 @@ $make_fact         = static function ( string $id, string $source, string $metri
 			array(
 				'schema'              => 'generic/block-binding/v1',
 				'role'                => 'paragraph',
-				'source_path'         => $page['source_path'],
-				'search_block_markup' => $page['contents'][ $text ],
+			'source_path'         => $metric_page['source_path'],
+			'search_block_markup' => $metric_page['contents'][ $text ],
 				'occurrence'          => 1,
 				'leaf'                => array(
 					'block'     => 'core/paragraph',
@@ -146,7 +146,7 @@ $assert( empty( $direct_validation['errors'] ), 'Consumer validates producer fac
 $declaration                      = array(
 	'kind'        => 'entity_collection',
 	'type'        => 'external_metrics',
-	'source_path' => $page['source_path'],
+	'source_path' => $metric_page['source_path'],
 	'payload'     => array(
 		'schema'   => 'generic/external-metric/v1',
 		'entities' => $facts,
@@ -161,6 +161,7 @@ $compiled_rows      = $compiled_lifecycle['entities'][ $second_compile['plan']['
 $assert( ( $compiled_rows[0]['bindings'][0]['search_block_markup'] ?? '' ) === $facts[0]['bindings'][0]['search_block_markup'], 'Compiled lifecycle manifest preserves the owning projected text-leaf anchor.' );
 $result = Static_Site_Importer_Theme_Generator::import_website_artifact( $artifact, $args );
 if ( is_wp_error( $result ) ) {
+	// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Retains disposable acceptance diagnostics in a mounted evidence directory.
 	file_put_contents(
 		'/evidence/materialization-error.json',
 		wp_json_encode(

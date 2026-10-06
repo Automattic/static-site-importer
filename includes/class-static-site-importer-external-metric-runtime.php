@@ -164,7 +164,7 @@ final class Static_Site_Importer_External_Metric_Runtime {
 				continue;
 			}
 			$metric = $fact['metric'] ?? null;
-			if ( ! is_string( $metric ) || ! isset( $allowed[ $metric ] ) || $allowed[ $metric ] !== ( $fact['aggregation'] ?? null ) || ( in_array( $metric, array( 'version', 'num_ratings' ), true ) && 1 !== count( $slugs ) ) ) {
+			if ( ! is_string( $metric ) || ! isset( $allowed[ $metric ] ) || $allowed[ $metric ] !== ( $fact['aggregation'] ?? null ) || ( in_array( $metric, array( 'version', 'num_ratings' ), true ) && count( $slugs ) !== 1 ) ) {
 				$errors[] = array(
 					'path'    => $path . '.metric',
 					'message' => 'Metric and aggregation are not supported for this source.',
@@ -252,7 +252,7 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		$id      = (string) $entity['id'];
 		$content = (string) $entity['fallback']['text'];
 		$parsed  = function_exists( 'parse_blocks' ) ? parse_blocks( (string) ( $entity['bindings'][0]['search_block_markup'] ?? '' ) ) : array();
-		if ( ! is_array( $parsed[0] ?? null ) || $block !== ( $parsed[0]['blockName'] ?? '' ) ) {
+		if ( ! is_array( $parsed[0] ?? null ) || ( $parsed[0]['blockName'] ?? '' ) !== $block ) {
 			return ''; }
 		$attributes             = $parsed[0]['attrs'];
 		$metadata               = is_array( $attributes['metadata'] ?? null ) ? $attributes['metadata'] : array();
@@ -289,11 +289,13 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		if ( ! is_string( $cache_material ) ) {
 			return null;
 		}
-		$key = 'ssi_external_metric_' . hash( 'sha256', $cache_material );
+		$key    = 'ssi_external_metric_' . hash( 'sha256', $cache_material );
 		$now    = $now ?? time();
 		$cached = function_exists( 'get_transient' ) ? get_transient( $key ) : false;
 		if ( ! $force && is_array( $cached ) && isset( $cached['value'], $cached['fetched_at'] ) && $now - (int) $cached['fetched_at'] < self::CACHE_TTL ) {
-			return $request_values[ $metric_id ] = (string) $cached['value']; }
+			$cached_value                 = (string) $cached['value'];
+			$request_values[ $metric_id ] = $cached_value;
+			return $cached_value; }
 		$retry_at = get_option( 'static_site_importer_external_metric_retry_after', array() );
 		if ( ! $force && is_array( $retry_at ) && (int) ( $retry_at[ $key ] ?? 0 ) > $now ) {
 			return self::stale_or_fallback( $metric_id, $fact, $key, $cached, $request_values ); }
@@ -341,7 +343,7 @@ final class Static_Site_Importer_External_Metric_Runtime {
 			if ( is_wp_error( $response ) || (int) wp_remote_retrieve_response_code( $response ) !== 200 ) {
 				return self::stale_or_fallback( $metric_id, $fact, $key, $cached, $request_values ); }
 			$body = wp_remote_retrieve_body( $response );
-			if ( ! is_string( $body ) || strlen( $body ) > self::MAX_BODY ) {
+			if ( strlen( $body ) > self::MAX_BODY ) {
 				return self::stale_or_fallback( $metric_id, $fact, $key, $cached, $request_values ); }
 			$data = json_decode( $body, true );
 			if ( ! is_array( $data ) ) {
@@ -388,7 +390,8 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		$lkg[ $key ] = $receipt;
 		update_option( 'static_site_importer_external_metric_last_good', $lkg, false );
 		self::store_receipt( $metric_id, $receipt );
-		return $request_values[ $metric_id ] = $formatted;
+		$request_values[ $metric_id ] = $formatted;
+		return $formatted;
 	}
 
 	private static function stale_or_fallback( string $id, array $fact, string $key, mixed $cached, array &$request_values ): string {
@@ -408,7 +411,8 @@ final class Static_Site_Importer_External_Metric_Runtime {
 			'source'     => $fact['provider']['source'],
 		);
 		self::store_receipt( $id, $receipt );
-		return $request_values[ $id ] = $value;
+		$request_values[ $id ] = $value;
+		return $value;
 	}
 
 	private static function format_value( mixed $value, array $format, string $metric ): string {

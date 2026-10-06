@@ -18,19 +18,20 @@ $result = Static_Site_Importer_Theme_Generator::import_website_artifact(
 	)
 );
 if ( is_wp_error( $result ) ) {
+	// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- This diagnostic is consumed by the disposable CLI runner, not emitted as HTML.
 	throw new RuntimeException( $result->get_error_message() . ' ' . wp_json_encode( $result->get_error_data() ) ); }
 $receipt = $result['materialization_receipt'] ?? $result['receipt'] ?? array();
 if ( 'completed' !== ( $receipt['status'] ?? '' ) ) {
 	throw new RuntimeException( 'Second-site imported materialization receipt did not complete.' ); }
-$pages = array_values( array_filter( $receipt['completed']['pages'] ?? array(), static fn( $id ): bool => is_int( $id ) && $id > 0 ) );
-if ( 1 !== count( $pages ) ) {
+$imported_pages = array_values( array_filter( $receipt['completed']['pages'] ?? array(), static fn( $id ): bool => is_int( $id ) && $id > 0 ) );
+if ( 1 !== count( $imported_pages ) ) {
 	throw new RuntimeException( 'Second-site receipt lacks its imported projects page.' ); }
-update_option( 'ssi_external_metric_acceptance_post_id', $pages[0], false );
+update_option( 'ssi_external_metric_acceptance_post_id', $imported_pages[0], false );
 echo wp_json_encode(
 	array(
 		'status'               => 'reimported',
 		'core'                 => get_bloginfo( 'version' ),
-		'post_id'              => $pages[0],
+		'post_id'              => $imported_pages[0],
 		'companion'            => get_option( 'static_site_importer_active_companion_plugin', '' ),
 		'runtime_declarations' => count( $artifact['runtime_declarations'] ),
 	)

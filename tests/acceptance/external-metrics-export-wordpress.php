@@ -2,14 +2,15 @@
 /** Export native external metrics as producer-contract runtime declarations. */
 if ( ! defined( 'ABSPATH' ) || '1' !== getenv( 'SSI_EXTERNAL_METRICS_DISPOSABLE' ) ) {
 	throw new RuntimeException( 'External metric export test requires disposable WordPress.' ); }
-$post_id = (int) get_option( 'ssi_external_metric_acceptance_post_id', 0 );
+$metric_post_id = (int) get_option( 'ssi_external_metric_acceptance_post_id', 0 );
 $export  = Static_Site_Importer_Theme_Exporter::export_theme(
 	array(
 		'theme_slug'    => get_stylesheet(),
-		'include_pages' => array( $post_id ),
+		'include_pages' => array( $metric_post_id ),
 	)
 );
 if ( is_wp_error( $export ) ) {
+	// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The exception is caught by the disposable CLI runner; export details are not rendered as HTML.
 	throw new RuntimeException( $export->get_error_message() ); }
 $artifact     = $export['website_artifact'] ?? array();
 $declarations = $artifact['runtime_declarations'] ?? array();
