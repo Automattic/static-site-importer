@@ -86,6 +86,10 @@ The existing `static_site_importer_form_receipt_loss_accepted` waiver filter rec
 
 Run `php tests/smoke-form-mapping-plan.php` for the phase-ordering, waiver, and loss-overflow contract, and the form-materializer smoke/topology and rendered-layout suites for output and presentation coverage.
 
+## Portable External Metric Bindings
+
+Producer-declared WordPress.org metrics bind directly to native Paragraph and Heading text leaves. The generated companion carries fixed provider endpoints, validated configuration and source provenance, one-hour caching, per-request request deduplication, last-known-good fallback, editor refresh/detach controls, and runtime freshness receipts. Materialization receipts report the configured binding; after a frontend request, `static_site_importer_external_metric_receipts` records `fresh`, `stale`, `captured_fallback`, or `unresolved` with the fetch timestamp. Failed or partial aggregates never become zero. GitHub stars/forks remain unresolved until their separate bounded provider is implemented. See [the external metric runtime contract](docs/contracts/external-metric-runtime-v1.md).
+
 ## Content-Only Security Boundary
 
 All HTML, folders, ZIPs, URLs, and website artifact objects are untrusted static content. SSI accepts only explicit static asset extensions and rejects server-side source markers before compilation. Compiler-produced companion payloads are independently revalidated before any generated plugin file is written or activated. Companion block renders accept static HTML only; SSI emits its own fixed PHP wrapper to output that markup, so source PHP cannot be preserved or executed. Existing payloads that relied on PHP render templates or PHP companion assets must migrate their behavior to blocks, data bindings, or client-side JavaScript.

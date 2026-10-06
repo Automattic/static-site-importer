@@ -177,11 +177,24 @@ final class Static_Site_Importer_Compilation_Preparation {
 		$companion_payload                             = null;
 		$gutenberg_gaps                                = is_array( $compiled['gutenberg_gaps'] ?? null ) ? $compiled['gutenberg_gaps'] : array();
 		$artifact_provenance                           = null;
-		if ( ! empty( $compiled['companion_plugin_payload'] ) ) {
-			$companion_payload = $compiled['companion_plugin_payload'];
+		$external_metrics                              = array();
+		foreach ( $plan['runtime_declarations'] ?? array() as $runtime_declaration ) {
+			if ( is_array( $runtime_declaration ) && 'entity_collection' === ( $runtime_declaration['kind'] ?? '' ) && 'external_metrics' === ( $runtime_declaration['type'] ?? '' ) && is_array( $runtime_declaration['payload']['entities'] ?? null ) ) {
+				$external_metrics = array_merge( $external_metrics, $runtime_declaration['payload']['entities'] );
+			}
+		}
+		if ( ! empty( $compiled['companion_plugin_payload'] ) || ! empty( $external_metrics ) ) {
+			$companion_payload = ! empty( $compiled['companion_plugin_payload'] ) ? $compiled['companion_plugin_payload'] : array(
+				'schema'    => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+				'site_slug' => $args['slug'],
+				'site_name' => $args['name'],
+				'blocks'    => array(),
+			);
 			if ( ! is_array( $companion_payload ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_payload_invalid', 'Compiled companion_plugin_payload must be an object.' );
 			}
+			if ( ! empty( $external_metrics ) ) {
+				$companion_payload['external_metrics'] = $external_metrics; }
 			$artifact_provenance = array_key_exists( 'provenance', $companion_payload ) ? $companion_payload['provenance'] : null;
 			if ( null !== $artifact_provenance && ! Static_Site_Importer_Build_Provenance::valid_artifact_provenance( $artifact_provenance ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_payload_invalid', 'Compiled companion_plugin_payload carries a malformed provenance record.' );
