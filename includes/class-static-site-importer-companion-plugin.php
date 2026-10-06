@@ -244,8 +244,8 @@ class Static_Site_Importer_Companion_Plugin {
 				return $built;
 			}
 
-			$block_names[]       = $built['block_name'];
-			$block_directories[] = $built['dir'];
+			$block_names[]                        = $built['block_name'];
+			$block_directories[]                  = $built['dir'];
 			$block_assets[ $built['block_name'] ] = array_map( static fn ( string $path ): string => 'blocks/' . $built['dir'] . '/' . $path, array_merge( array( 'block.json' ), array_keys( $built['files'] ) ) );
 			foreach ( $built['files'] as $relative => $content ) {
 				$files[ $plugin_slug . '/blocks/' . $built['dir'] . '/' . $relative ] = $content;
@@ -332,9 +332,9 @@ class Static_Site_Importer_Companion_Plugin {
 				'handoff'            => is_array( $payload['owner_handoff_evidence'] ?? null ) ? $payload['owner_handoff_evidence'] : null,
 			)
 		);
-		$files = array_merge(
+		$files               = array_merge(
 			array(
-				$main_file => self::main_plugin_file( $site_name, $inventory, $plugin_slug, $inventory_hash, $runtime_class, $link_runtime_class, $redirect_runtime_class, $artifact_provenance ),
+				$main_file                  => self::main_plugin_file( $site_name, $inventory, $plugin_slug, $inventory_hash, $runtime_class, $link_runtime_class, $redirect_runtime_class, $artifact_provenance ),
 				$plugin_slug . '/README.md' => Static_Site_Importer_Companion_Inventory::render_readme( $inventory ),
 			),
 			$files

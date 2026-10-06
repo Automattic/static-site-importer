@@ -115,10 +115,10 @@ $ssi_1972_rrmdir = static function ( string $dir ) use ( &$ssi_1972_rrmdir ): vo
 // Generic payload: one metadata block, one scoped island, one editor script, and
 // imported form visual states so every owned functionality family is present.
 $payload = array(
-	'schema'       => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
-	'site_slug'    => 'Example Site',
-	'site_name'    => 'Example Site',
-	'blocks'       => array(
+	'schema'             => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+	'site_slug'          => 'Example Site',
+	'site_name'          => 'Example Site',
+	'blocks'             => array(
 		array(
 			'name'       => 'custom-hero',
 			'block_json' => array(
@@ -138,7 +138,7 @@ $payload = array(
 			),
 		),
 	),
-	'preserved_js' => array(
+	'preserved_js'       => array(
 		array(
 			'handle'      => 'hero-island',
 			'content'     => 'document.addEventListener("DOMContentLoaded",function(){});',
@@ -146,7 +146,7 @@ $payload = array(
 			'source_path' => '/wp-content/themes/source/hero.js',
 		),
 	),
-	'editor_scripts' => array(
+	'editor_scripts'     => array(
 		array(
 			'handle'       => 'ssi-example-site-editor',
 			'src'          => 'editor/core-enhancement.js',
@@ -156,18 +156,18 @@ $payload = array(
 	),
 	'form_visual_states' => array(
 		array(
-			'schema'   => 'static-site-importer/form-visual-state/v1',
-			'field_id' => 'ssi-form-123456789abc-field-0',
+			'schema'        => 'static-site-importer/form-visual-state/v1',
+			'field_id'      => 'ssi-form-123456789abc-field-0',
 			'trigger_class' => 'ssi-node-123456789abc-destination-country-trigger',
-			'group'    => array( 'id' => 'visual-group-1234567890abcdef', 'class' => 'ssi-fvg-123456789abc' ),
-			'parts'    => array(
+			'group'         => array( 'id' => 'visual-group-1234567890abcdef', 'class' => 'ssi-fvg-123456789abc' ),
+			'parts'         => array(
 				array( 'id' => 'control-0-svg-0', 'class' => 'ssi-fvs-123456789abc', 'markup' => '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h22v22H1z"/></svg>' ),
 				array( 'id' => 'control-0-svg-1', 'class' => 'ssi-fvs-abcdef123456', 'markup' => '<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M1 1l7 7 7-7"/></svg>' ),
 			),
-			'css' => '.ssi-form-123456789abc .ssi-form-visual-state .ssi-fvs-123456789abc{width:24px!important}',
+			'css'           => '.ssi-form-123456789abc .ssi-form-visual-state .ssi-fvs-123456789abc{width:24px!important}',
 		),
 	),
-	'provenance'   => array(
+	'provenance'         => array(
 		'schema'         => 'blocks-engine/generated-artifact-provenance/v1',
 		'generator'      => 'blocks-engine@2.3.4',
 		'engine_version' => 'php-transformer@0.32.3',
@@ -182,8 +182,8 @@ $descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $payload );
 $assert( is_array( $descriptor ), 'scaffold-succeeds', is_wp_error( $descriptor ) ? $descriptor->get_error_message() : '' );
 
 if ( is_array( $descriptor ) ) {
-	$main_file   = (string) $descriptor['files'][ $descriptor['plugin_file'] ] ?? '';
-	$headers     = $ssi_1972_headers( $main_file );
+	$main_file = (string) $descriptor['files'][ $descriptor['plugin_file'] ] ?? '';
+	$headers   = $ssi_1972_headers( $main_file );
 	$assert( 'Example Site Companion' === ( $headers['Plugin Name'] ?? '' ), 'plugin-name-is-site-specific', (string) ( $headers['Plugin Name'] ?? 'missing' ) );
 	$assert( 'SSI Companion' !== ( $headers['Plugin Name'] ?? '' ), 'plugin-name-is-not-generic' );
 	$description = (string) ( $headers['Description'] ?? '' );
@@ -240,7 +240,7 @@ if ( is_array( $descriptor ) ) {
 		$assert( ! str_contains( $readme, 'Version: 1.0.0' ), 'readme-does-not-reset-version-to-placeholder' );
 
 		// Deterministic: same payload scaffolds byte-identical owner metadata.
-		$again  = Static_Site_Importer_Companion_Plugin::scaffold( $payload );
+		$again = Static_Site_Importer_Companion_Plugin::scaffold( $payload );
 		$assert( is_array( $again ) && ( $again['files']['ssi-example-site/README.md'] ?? '' ) === $readme, 'readme-is-deterministic' );
 		$assert( is_array( $again ) && ( $again['files'][ $again['plugin_file'] ] ?? '' ) === $main_file, 'main-plugin-file-is-deterministic' );
 	}
@@ -266,7 +266,7 @@ if ( is_array( $descriptor ) ) {
 // 4. A canonical owner-handoff document projects unresolved rows; an absent
 // document is reported as unknown evidence rather than invented success.
 // ---------------------------------------------------------------------------
-$handoff_plan = array( 'schema' => Static_Site_Importer_Owner_Handoff_Evidence::PLAN_IDENTITY_SCHEMA, 'hash' => str_repeat( 'a', 64 ) );
+$handoff_plan     = array( 'schema' => Static_Site_Importer_Owner_Handoff_Evidence::PLAN_IDENTITY_SCHEMA, 'hash' => str_repeat( 'a', 64 ) );
 $handoff_document = Static_Site_Importer_Owner_Handoff_Evidence::compose(
 	array(
 		'plan_identity'           => $handoff_plan,
@@ -275,7 +275,7 @@ $handoff_document = Static_Site_Importer_Owner_Handoff_Evidence::compose(
 			'status'        => 'completed',
 			'plan_identity' => $handoff_plan,
 		),
-		'dimensions'    => array(
+		'dimensions'              => array(
 			'provider_functionality' => array(
 				'receipts' => array(
 					array( 'status' => 'failed' ),
@@ -286,9 +286,9 @@ $handoff_document = Static_Site_Importer_Owner_Handoff_Evidence::compose(
 );
 $assert( is_array( $handoff_document ) && Static_Site_Importer_Owner_Handoff_Evidence::SCHEMA === ( $handoff_document['schema'] ?? '' ), 'handoff-document-composes' );
 
-$with_handoff = $payload;
+$with_handoff                           = $payload;
 $with_handoff['owner_handoff_evidence'] = $handoff_document;
-$handoff_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $with_handoff );
+$handoff_descriptor                     = Static_Site_Importer_Companion_Plugin::scaffold( $with_handoff );
 $assert( is_array( $handoff_descriptor ), 'handoff-carrying-payload-scaffolds' );
 if ( is_array( $handoff_descriptor ) ) {
 	$handoff_readme = (string) ( $handoff_descriptor['files']['ssi-example-site/README.md'] ?? '' );
@@ -300,9 +300,9 @@ if ( is_array( $handoff_descriptor ) ) {
 	}
 }
 
-$malformed_handoff = $payload;
+$malformed_handoff                           = $payload;
 $malformed_handoff['owner_handoff_evidence'] = array( 'schema' => 'not-the-canonical-schema', 'findings' => array( array( 'dimension' => 'fabricated' ) ) );
-$malformed_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $malformed_handoff );
+$malformed_descriptor                        = Static_Site_Importer_Companion_Plugin::scaffold( $malformed_handoff );
 $assert( is_array( $malformed_descriptor ), 'malformed-handoff-still-scaffolds' );
 if ( is_array( $malformed_descriptor ) ) {
 	$malformed_readme = (string) ( $malformed_descriptor['files']['ssi-example-site/README.md'] ?? '' );
@@ -382,9 +382,9 @@ if ( is_array( $descriptor ) ) {
 // ---------------------------------------------------------------------------
 // 6. Must-use loader metadata is site-specific too.
 // ---------------------------------------------------------------------------
-$mu_payload = $payload;
+$mu_payload              = $payload;
 $mu_payload['mu_plugin'] = true;
-$mu_descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $mu_payload );
+$mu_descriptor           = Static_Site_Importer_Companion_Plugin::scaffold( $mu_payload );
 $assert( is_array( $mu_descriptor ) && '' !== ( $mu_descriptor['loader_file'] ?? '' ), 'mu-payload-emits-loader' );
 if ( is_array( $mu_descriptor ) && '' !== ( $mu_descriptor['loader_file'] ?? '' ) ) {
 	$loader = (string) $mu_descriptor['files'][ $mu_descriptor['loader_file'] ] ?? '';

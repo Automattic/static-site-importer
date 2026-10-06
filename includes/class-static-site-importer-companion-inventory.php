@@ -110,8 +110,8 @@ final class Static_Site_Importer_Companion_Inventory {
 		$names  = is_array( $input['block_names'] ?? null ) ? array_values( $input['block_names'] ) : array();
 		$raw    = array_values( array_filter( is_array( $input['blocks'] ?? null ) ? $input['blocks'] : array(), 'is_array' ) );
 		foreach ( $names as $index => $name ) {
-			$source  = $raw[ $index ] ?? array();
-			$title   = is_string( $source['block_json']['title'] ?? null ) ? trim( (string) $source['block_json']['title'] ) : '';
+			$source   = $raw[ $index ] ?? array();
+			$title    = is_string( $source['block_json']['title'] ?? null ) ? trim( (string) $source['block_json']['title'] ) : '';
 			$blocks[] = array(
 				'name'     => (string) $name,
 				'title'    => '' !== $title ? $title : (string) $name,
@@ -163,7 +163,7 @@ final class Static_Site_Importer_Companion_Inventory {
 				'status'  => self::STATUS_REBUILT,
 			),
 			'routes'         => array(
-				'redirects'     => array( 'status' => self::STATUS_REBUILT ),
+				'redirects'      => array( 'status' => self::STATUS_REBUILT ),
 				'internal_links' => array( 'status' => self::STATUS_REBUILT ),
 			),
 			'content'        => array( 'status' => self::STATUS_SNAPSHOT ),
@@ -179,11 +179,11 @@ final class Static_Site_Importer_Companion_Inventory {
 	 * @return string
 	 */
 	public static function render_readme( array $inventory ): string {
-		$site   = '' !== (string) ( $inventory['site_name'] ?? '' ) ? (string) $inventory['site_name'] : 'the imported site';
-		$blocks = is_array( $inventory['blocks'] ?? null ) ? $inventory['blocks'] : array();
+		$site    = '' !== (string) ( $inventory['site_name'] ?? '' ) ? (string) $inventory['site_name'] : 'the imported site';
+		$blocks  = is_array( $inventory['blocks'] ?? null ) ? $inventory['blocks'] : array();
 		$scripts = is_array( $inventory['scripts'] ?? null ) ? $inventory['scripts'] : array();
-		$editor = is_array( $inventory['editor_scripts'] ?? null ) ? $inventory['editor_scripts'] : array();
-		$forms  = is_array( $inventory['forms'] ?? null ) ? $inventory['forms'] : array();
+		$editor  = is_array( $inventory['editor_scripts'] ?? null ) ? $inventory['editor_scripts'] : array();
+		$forms   = is_array( $inventory['forms'] ?? null ) ? $inventory['forms'] : array();
 
 		$lines   = array();
 		$lines[] = '# ' . self::plugin_name( (string) ( $inventory['site_name'] ?? '' ) );
@@ -212,8 +212,8 @@ final class Static_Site_Importer_Companion_Inventory {
 			$lines[] = 'No frontend or editor runtime scripts were included in this build.';
 		}
 		foreach ( $scripts as $script ) {
-			$owning   = '' !== (string) ( $script['block'] ?? '' ) ? 'loads when `' . (string) $script['block'] . '` renders' : 'loads on the imported frontend';
-			$origin   = '' !== (string) ( $script['source_path'] ?? '' ) ? ', artifact scope `' . (string) $script['source_path'] . '`' : '';
+			$owning  = '' !== (string) ( $script['block'] ?? '' ) ? 'loads when `' . (string) $script['block'] . '` renders' : 'loads on the imported frontend';
+			$origin  = '' !== (string) ( $script['source_path'] ?? '' ) ? ', artifact scope `' . (string) $script['source_path'] . '`' : '';
 			$lines[] = '- `' . (string) ( $script['handle'] ?? '' ) . '` (`' . (string) ( $script['path'] ?? '' ) . '`) — included frontend JavaScript' . $origin . '; ' . $owning . '.';
 		}
 		foreach ( $editor as $script ) {
@@ -230,8 +230,8 @@ final class Static_Site_Importer_Companion_Inventory {
 		$lines[] = 'their owned fields are not classified as static by this note. Other external figures remain unverified source claims.';
 		$lines[] = '';
 
-		$lines[] = '### Unresolved behavior';
-		$lines[] = '';
+		$lines[]    = '### Unresolved behavior';
+		$lines[]    = '';
 		$handoff    = is_array( $inventory['handoff'] ?? null ) ? $inventory['handoff'] : array();
 		$unresolved = is_array( $handoff['unresolved'] ?? null ) ? $handoff['unresolved'] : array();
 		if ( array() === $unresolved ) {
@@ -281,8 +281,8 @@ final class Static_Site_Importer_Companion_Inventory {
 		}
 		$lines[] = '';
 
-		$lines[] = '## Build version and provenance';
-		$lines[] = '';
+		$lines[]    = '## Build version and provenance';
+		$lines[]    = '';
 		$provenance = is_array( $inventory['provenance'] ?? null ) ? $inventory['provenance'] : array();
 		if ( ! empty( $provenance['recorded'] ?? false ) ) {
 			$lines[] = 'This build was produced by `' . (string) ( $provenance['generator'] ?? '' ) . '` using `' . (string) ( $provenance['engine_version'] ?? '' ) . '`.';
@@ -323,12 +323,12 @@ final class Static_Site_Importer_Companion_Inventory {
 	private static function project_provenance( array $provenance, string $plugin_slug ): array {
 		if ( array() === $provenance || ! Static_Site_Importer_Build_Provenance::valid_artifact_provenance( $provenance ) ) {
 			return array(
-				'recorded'          => false,
-				'generator'         => '',
-				'engine_version'    => '',
-				'artifact_hash'     => '',
-				'version_header'    => '',
-				'update_uri'        => '',
+				'recorded'       => false,
+				'generator'      => '',
+				'engine_version' => '',
+				'artifact_hash'  => '',
+				'version_header' => '',
+				'update_uri'     => '',
 			);
 		}
 
