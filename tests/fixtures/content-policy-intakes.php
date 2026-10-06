@@ -34,6 +34,7 @@ function ssi_test_content_policy_intakes( callable $check ): void {
 				'name'        => 'source.zip',
 				'staged_path' => $zip_path,
 			);
+
 			$zip_files  = static_site_importer_staged_archive_files( $archive, true );
 			$zip_reader = static_site_importer_staged_archive_payload_reader( $archive );
 			if ( is_wp_error( $zip_files ) || is_wp_error( $zip_reader ) ) {
@@ -43,13 +44,14 @@ function ssi_test_content_policy_intakes( callable $check ): void {
 				'path'    => 'index.html',
 				'content' => $html,
 			);
+
 			$intakes = array(
 				'inline'    => array( array( $inline_file ), null ),
 				'directory' => array( $directory['files'], $directory['payload_reader'] ),
 				'zip'       => array( $zip_files, $zip_reader ),
 			);
 			foreach ( $intakes as $transport => list( $files, $reader ) ) {
-				$source = array(
+				$source  = array(
 					'files'      => $files,
 					'entrypoint' => 'index.html',
 				);
@@ -76,13 +78,17 @@ function ssi_test_content_policy_intakes( callable $check ): void {
 				'bytes'  => strlen( $html ),
 				'sha256' => hash( 'sha256', $html ),
 			);
+
 			$reference_file = array(
 				'path'              => 'index.html',
 				'payload_reference' => $zip_reference,
 			);
+
 			$source  = array( 'files' => array( $reference_file ) );
 			$runtime = static_site_importer_source_runtime( $source, $zip_reader );
+
 			$source['files'][0]['path'] = 'website/index.html';
+
 			$artifact = array(
 				'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
 				'entrypoint' => 'website/index.html',
