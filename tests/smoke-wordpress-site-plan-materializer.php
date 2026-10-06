@@ -660,6 +660,12 @@ $taxonomy_contract_available = array_key_exists( 'taxonomy_entities', $taxonomy_
 if ( $taxonomy_contract_available ) {
 $taxonomy_entities = array_column( $taxonomy_plan['taxonomy_entities'], null, 'slug' );
 $taxonomy_template = array_values( array_filter( $taxonomy_plan['templates'], static fn( array $row ): bool => 'category-personal' === ( $row['slug'] ?? '' ) ) )[0] ?? array();
+foreach ( array_merge( $taxonomy_plan['pages'] ?? array(), $taxonomy_plan['templates'] ?? array(), $taxonomy_plan['template_parts'] ?? array() ) as $taxonomy_document ) {
+	if ( ! is_array( $taxonomy_document ) ) {
+		continue;
+	}
+	$register_document_blocks( $block_runtime->parseBlocks( (string) ( $taxonomy_document['canonical_block_markup'] ?? '' ) ) );
+}
 $assert( 2 === count( $taxonomy_entities ) && array( 'stories/story-1.html', 'stories/story-2.html', 'stories/story-3.html' ) === ( $taxonomy_entities['personal']['membership_source_paths'] ?? null ), 'canonical source analysis emits reciprocal category memberships for both collections' );
 $assert( str_contains( (string) ( $taxonomy_template['canonical_block_markup'] ?? '' ), '"inherit":true' ) && str_contains( (string) ( $taxonomy_template['canonical_block_markup'] ?? '' ), '<!-- wp:query-pagination ' ), 'the archive template inherits category query scope and keeps native pagination' );
 $taxonomy_saved = array( 'posts' => $GLOBALS['ssi_plan_posts'], 'meta' => $GLOBALS['ssi_plan_meta'], 'options' => $GLOBALS['ssi_plan_options'], 'terms' => $GLOBALS['ssi_plan_terms'], 'memberships' => $GLOBALS['ssi_plan_term_memberships'], 'rewrite_rules' => $GLOBALS['ssi_plan_rewrite_rules'] );
