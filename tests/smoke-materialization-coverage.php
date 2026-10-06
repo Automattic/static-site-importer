@@ -118,7 +118,7 @@ $assert = static function ( bool $condition, string $message ): void {
 
 $coverage = Static_Site_Importer_Materialization_Coverage::declare_coverage();
 $assert( Static_Site_Importer_Materialization_Coverage::SCHEMA === $coverage['schema'], 'coverage carries its versioned schema' );
-$assert( array( 'events', 'form', 'multilingual', 'redirects', 'shop' ) === array_keys( $coverage['capabilities'] ), 'coverage answers for every registered capability and invents none' );
+$assert( array( 'events', 'external_metrics', 'form', 'multilingual', 'redirects', 'shop' ) === array_keys( $coverage['capabilities'] ), 'coverage answers for every registered capability and invents none' );
 $redirects = $coverage['capabilities']['redirects'];
 $assert( 'redirection' === $redirects['provider'] && 'provider_unavailable' === $redirects['status'], 'A configured redirect provider is not mistaken for an installed native database.' );
 $multilingual = $coverage['capabilities']['multilingual'];
