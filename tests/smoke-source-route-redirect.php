@@ -19,6 +19,9 @@ function get_posts( array $args ): array {
 	$key   = (string) ( $args['meta_key'] ?? '' );
 	$ids   = array();
 	foreach ( $GLOBALS['ssi_redirect_meta'] as $id => $meta ) {
+		if ( 'publish' !== ( $GLOBALS['ssi_redirect_statuses'][ $id ] ?? 'publish' ) ) {
+			continue;
+		}
 		$values = $meta['values'] ?? array( $meta['value'] ?? '' );
 		if ( $key === ( $meta['key'] ?? '' ) && in_array( $value, $values, true ) ) {
 			$ids[] = $id;
@@ -29,11 +32,32 @@ function get_posts( array $args ): array {
 function add_action( string $hook, callable|array|string $callback, int $priority = 10, int $accepted_args = 1 ): void {
 	$GLOBALS['ssi_redirect_actions'][] = array( $hook, $callback, $priority );
 }
+function add_filter( string $hook, $callback, int $priority = 10, int $accepted_args = 1 ): void {
+	$GLOBALS['ssi_redirect_filters'][] = array( $hook, $callback, $priority );
+}
+function get_post_type( int $id ): string {
+	return $GLOBALS['ssi_redirect_types'][ $id ] ?? 'page';
+}
+function get_post_status( int $id ): string {
+	return $GLOBALS['ssi_redirect_statuses'][ $id ] ?? 'publish';
+}
+function get_post_meta( int $id, string $key, bool $single = false ) {
+	$meta = $GLOBALS['ssi_redirect_meta'][ $id ] ?? array();
+	$values = $key === ( $meta['key'] ?? '' ) ? ( $meta['values'] ?? array( $meta['value'] ?? '' ) ) : array();
+	return $single ? ( $values[0] ?? '' ) : $values;
+}
+function get_option( string $name ) {
+	return 'permalink_structure' === $name ? '/%postname%/' : null;
+}
+function user_trailingslashit( string $path ): string {
+	return rtrim( $path, '/' ) . '/';
+}
 
 $GLOBALS['ssi_redirect_home']       = 'https://imported.test/';
 $GLOBALS['ssi_redirect_permalinks'] = array();
 $GLOBALS['ssi_redirect_meta']       = array();
 $GLOBALS['ssi_redirect_actions']    = array();
+$GLOBALS['ssi_redirect_filters']    = array();
 
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-source-route-redirect.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';
@@ -140,6 +164,28 @@ $assert( null === Static_Site_Importer_Source_Route_Redirect::target_url( '/abou
 $GLOBALS['ssi_redirect_home'] = 'https://playground.test/scope:abc/';
 $assert( 'https://imported.test/about-me/' === Static_Site_Importer_Source_Route_Redirect::target_url( '/scope:abc/about-me.html' ), 'Subdirectory homes still match the source path after the home prefix.' );
 
+$GLOBALS['ssi_redirect_meta'][25] = array( 'key' => Static_Site_Importer_Source_Route_Redirect::META_KEY, 'value' => 'tag/topic/page/1/index.html' );
+$GLOBALS['wp'] = (object) array( 'request' => 'tag/topic/page/1' );
+$vars = array( 'tag' => 'topic', 'paged' => 1, 'feed' => 'rss2' );
+$assert( array( 'feed' => 'rss2', 'page_id' => 25 ) === Static_Site_Importer_Source_Route_Redirect::resolve_request( $vars ), 'An exact imported route replaces native archive identities and retains feed state.' );
+$assert( array( 'page_id' => 25 ) === Static_Site_Importer_Source_Route_Redirect::resolve_request( array( 'custom_topic' => 'topic', 'paged' => 1 ) ), 'Custom-taxonomy query variables cannot constrain an owned singular document.' );
+$rest = array( 'rest_route' => '/wp/v2/pages', 'tag' => 'topic' );
+$assert( $rest === Static_Site_Importer_Source_Route_Redirect::resolve_request( $rest ), 'REST query routing is preserved before WordPress defines REST_REQUEST.' );
+$assert( 'https://playground.test/scope:abc/tag/topic/page/1/' === Static_Site_Importer_Source_Route_Redirect::filter_permalink( 'https://playground.test/scope:abc/tag/topic/page/1-2/', 25 ), 'Canonical links use the owned source URL even when WordPress renamed the numeric slug.' );
+$_SERVER['REQUEST_METHOD'] = 'POST';
+$assert( $vars === Static_Site_Importer_Source_Route_Redirect::resolve_request( $vars ), 'POST requests keep their native query.' );
+$_SERVER['REQUEST_METHOD'] = 'HEAD';
+$assert( 25 === Static_Site_Importer_Source_Route_Redirect::resolve_request( $vars )['page_id'], 'HEAD resolves the same published imported document.' );
+$GLOBALS['ssi_redirect_statuses'][25] = 'draft';
+$assert( $vars === Static_Site_Importer_Source_Route_Redirect::resolve_request( $vars ), 'Draft route claims do not shadow native public routes.' );
+unset( $GLOBALS['ssi_redirect_statuses'][25] );
+$GLOBALS['ssi_redirect_meta'][26] = $GLOBALS['ssi_redirect_meta'][25];
+$assert( $vars === Static_Site_Importer_Source_Route_Redirect::resolve_request( $vars ), 'Ambiguous source claims stay unowned.' );
+unset( $GLOBALS['ssi_redirect_meta'][26] );
+$GLOBALS['wp']->request = 'tag/native/page/1';
+$assert( $vars === Static_Site_Importer_Source_Route_Redirect::resolve_request( $vars ), 'Unrelated native archive and pagination paths remain native.' );
+unset( $GLOBALS['wp'], $_SERVER['REQUEST_METHOD'] );
+
 $assert( ! method_exists( Static_Site_Importer_Source_Route_Redirect::class, 'prepare_overlay' ), 'Source-route redirects must not materialize a theme overlay.' );
 $assert( ! method_exists( Static_Site_Importer_Source_Route_Redirect::class, 'theme_runtime_class' ), 'Source-route redirects must not own a theme-scoped class name.' );
 
@@ -160,6 +206,7 @@ require $copy_file;
 Static_Site_Importer_Source_Route_Redirect::register();
 SSI_TEST_SITE_Source_Route_Redirect::register();
 $assert( 1 === count( $GLOBALS['ssi_redirect_actions'] ), 'SSI and the companion copy must not both register template_redirect.' );
+$assert( array( 'request', 'page_link', 'post_link', 'post_type_link' ) === array_column( $GLOBALS['ssi_redirect_filters'], 0 ), 'Companion and importer copies register request ownership and canonical links only once.' );
 $assert( 'template_redirect' === ( $GLOBALS['ssi_redirect_actions'][0][0] ?? '' ) && 9 === ( $GLOBALS['ssi_redirect_actions'][0][2] ?? 0 ), 'The single source-route runtime runs before WordPress canonical redirects.' );
 $assert( array( Static_Site_Importer_Source_Route_Redirect::class, 'redirect' ) === ( $GLOBALS['ssi_redirect_actions'][0][1] ?? null ) || array( SSI_TEST_SITE_Source_Route_Redirect::class, 'redirect' ) === ( $GLOBALS['ssi_redirect_actions'][0][1] ?? null ), 'The registered callback belongs to exactly one runtime class.' );
 

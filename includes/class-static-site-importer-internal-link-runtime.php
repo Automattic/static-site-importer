@@ -168,10 +168,12 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 		$bootstrap = self::bootstrap_content( $resolved_plan, $bootstrap_overlay );
 		// The theme copy gets a theme-scoped class name, so it can never
 		// collide with this plugin class or with another generated theme.
-		$class  = self::theme_runtime_class( $theme_slug );
-		$marker = '/* Static Site Importer portable internal links. */';
-		$source = file_get_contents( __FILE__ ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the runtime source the generated theme owns independently.
-		if ( ! is_string( $source ) || '' === $source ) {
+		$class       = self::theme_runtime_class( $theme_slug );
+		$route_class = str_replace( '_Internal_Link_Runtime', '_Source_Route_Redirect', $class );
+		$marker      = '/* Static Site Importer portable internal links. */';
+		$source      = file_get_contents( __FILE__ ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the runtime source the generated theme owns independently.
+		$route_source = file_get_contents( __DIR__ . '/class-static-site-importer-source-route-redirect.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Projects the canonical route runtime into core-only themes.
+		if ( ! is_string( $source ) || '' === $source || ! is_string( $route_source ) || '' === $route_source ) {
 			return isset( $bootstrap_overlay['writes'] ) ? $bootstrap_overlay : array(
 				'status' => 'skipped',
 				'writes' => array(),
@@ -179,6 +181,10 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 		}
 		if ( ! str_contains( $bootstrap, $marker ) ) {
 			$bootstrap .= "\n{$marker}\nif ( ! class_exists( '{$class}' ) ) {\n\trequire_once get_stylesheet_directory() . '/portable-internal-links.php';\n}\n{$class}::register();\n";
+		}
+		$route_marker = '/* Static Site Importer portable source routes. */';
+		if ( ! str_contains( $bootstrap, $route_marker ) ) {
+			$bootstrap .= "\n{$route_marker}\nif ( ! class_exists( '{$route_class}' ) ) {\n\trequire_once get_stylesheet_directory() . '/portable-source-routes.php';\n}\n{$route_class}::register();\n";
 		}
 
 		return array(
@@ -195,6 +201,12 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 					'content'     => str_replace( 'Static_Site_Importer_Internal_Link_Runtime', $class, $source ),
 					'encoding'    => 'utf8',
 					'source_path' => 'static-site-importer/portable-internal-links',
+				),
+				array(
+					'target_path' => 'portable-source-routes.php',
+					'content'     => str_replace( 'Static_Site_Importer_Source_Route_Redirect', $route_class, $route_source ),
+					'encoding'    => 'utf8',
+					'source_path' => 'static-site-importer/portable-source-routes',
 				),
 			),
 		);
