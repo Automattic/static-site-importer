@@ -54,6 +54,8 @@ test "$(<"$evidence/wordpress-core-version.txt")" = '7.1'
 	| tee "$evidence/materialization.jsonl"
 "${wp[@]}" eval-file wp-content/plugins/static-site-importer/tests/acceptance/external-metrics-runtime-wordpress.php \
 	| tee "$evidence/runtime.jsonl"
+"${wp[@]}" eval-file wp-content/plugins/static-site-importer/tests/acceptance/external-metrics-provider-responses-wordpress.php \
+	| tee "$evidence/provider-responses.jsonl"
 "${wp[@]}" eval-file wp-content/plugins/static-site-importer/tests/acceptance/external-metrics-expiry-wordpress.php \
 	| tee "$evidence/expiry.jsonl"
 "${wp[@]}" eval-file wp-content/plugins/static-site-importer/tests/acceptance/external-metrics-export-wordpress.php \

@@ -141,6 +141,60 @@ $facts             = array(
 	),
 	$make_fact( 'project-ratings', 'plugin_information', 'num_ratings', 'identity', array( $slugs[0] ), $fallbacks['project-ratings'], $numeric, 'src/components/wp-plugin-card.tsx' ),
 );
+$expected_live_contract = array(
+	'project-count' => array(
+		'source'       => 'plugin_information',
+		'source_key'   => 'http_200_response_count',
+		'metric'       => 'plugin_response_count',
+		'aggregation'  => 'success_count',
+		'slugs'        => $slugs,
+		'format'       => $numeric,
+	),
+	'active-installs' => array(
+		'source'       => 'plugin_information',
+		'source_key'   => 'active_installs',
+		'metric'       => 'active_installs',
+		'aggregation'  => 'sum',
+		'slugs'        => $slugs,
+		'format'       => array_merge( $numeric, array( 'suffix' => '+' ) ),
+	),
+	'all-time-downloads' => array(
+		'source'       => 'plugin_download_history',
+		'source_key'   => 'all_time',
+		'metric'       => 'downloads_all_time',
+		'aggregation'  => 'sum',
+		'slugs'        => $slugs,
+		'format'       => array_merge( $numeric, array( 'suffix' => '+' ) ),
+	),
+	'project-version' => array(
+		'source'       => 'plugin_information',
+		'source_key'   => 'version',
+		'metric'       => 'version',
+		'aggregation'  => 'identity',
+		'slugs'        => array( $slugs[0] ),
+		'format'       => array_merge( $numeric, array( 'grouping' => false, 'prefix' => 'v' ) ),
+	),
+	'project-ratings' => array(
+		'source'       => 'plugin_information',
+		'source_key'   => 'num_ratings',
+		'metric'       => 'num_ratings',
+		'aggregation'  => 'identity',
+		'slugs'        => array( $slugs[0] ),
+		'format'       => $numeric,
+	),
+);
+$actual_live_contract = array();
+foreach ( $facts as $fact ) {
+	$actual_live_contract[ $fact['id'] ] = array(
+		'source'      => $fact['provider']['source'],
+		'source_key'  => 'plugin_download_history' === $fact['provider']['source'] ? 'all_time' : ( 'plugin_response_count' === $fact['metric'] ? 'http_200_response_count' : $fact['metric'] ),
+		'metric'      => $fact['metric'],
+		'aggregation' => $fact['aggregation'],
+		'slugs'       => $fact['provider']['slugs'],
+		'format'      => $fact['format'],
+	);
+}
+$assert( $expected_live_contract === $actual_live_contract, 'Bounded live-API evidence exactly matches independently expected source fields, aggregation and formatting: ' . wp_json_encode( $actual_live_contract ) );
 $direct_validation = Static_Site_Importer_External_Metric_Runtime::validate_manifest( array( 'external_metrics' => $facts ) );
 $assert( empty( $direct_validation['errors'] ), 'Consumer validates producer facts: ' . wp_json_encode( $direct_validation['errors'] ?? array() ) );
 $declaration                      = array(
@@ -188,6 +242,7 @@ echo wp_json_encode(
 		'core'      => get_bloginfo( 'version' ),
 		'post_id'   => $post_ids[0],
 		'metrics'   => array_column( $facts, 'id' ),
+		'source_contract' => $actual_live_contract,
 		'companion' => get_option( 'static_site_importer_active_companion_plugin', '' ),
 	)
 ) . "\n";

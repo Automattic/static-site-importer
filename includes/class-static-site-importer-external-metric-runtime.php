@@ -15,6 +15,7 @@ final class Static_Site_Importer_External_Metric_Runtime {
 	public const SOURCE           = 'ssi/external-metric';
 	private const CACHE_TTL       = 3600;
 	private const MAX_BODY        = 1048576;
+	private const MAX_COUNT       = 9007199254740991;
 	private static array $metrics = array();
 
 	public static function configure( array $metrics ): void {
@@ -349,31 +350,48 @@ final class Static_Site_Importer_External_Metric_Runtime {
 			if ( ! is_array( $data ) ) {
 				return self::stale_or_fallback( $metric_id, $fact, $key, $cached, $request_values ); }
 			if ( 'plugin_download_history' === $fact['provider']['source'] ) {
-				if ( ! isset( $data['all_time'] ) || ! is_scalar( $data['all_time'] ) || ! preg_match( '/^\d+$/', (string) $data['all_time'] ) ) {
+				$count = self::count_value( $data['all_time'] ?? null );
+				if ( null === $count ) {
 					return self::stale_or_fallback( $metric_id, $fact, $key, $cached, $request_values ); }
-				$values[] = (int) $data['all_time'];
+				$values[] = $count;
 			} else {
 				if ( isset( $data['error'] ) || empty( $data ) ) {
 					return self::stale_or_fallback( $metric_id, $fact, $key, $cached, $request_values ); }
 				if ( 'plugin_response_count' !== $fact['metric'] && ! array_key_exists( $fact['metric'], $data ) ) {
 					return self::stale_or_fallback( $metric_id, $fact, $key, $cached, $request_values ); }
 				if ( 'plugin_response_count' === $fact['metric'] ) {
-					$values[] = 1; } elseif ( 'active_installs' === $fact['metric'] ) {
-					if ( ! is_numeric( $data['active_installs'] ) || (float) $data['active_installs'] < 0 ) {
+					$values[] = 1;
+				} elseif ( 'active_installs' === $fact['metric'] ) {
+					$count = self::count_value( $data['active_installs'] ?? null );
+					if ( null === $count ) {
 						return self::stale_or_fallback( $metric_id, $fact, $key, $cached, $request_values );
-					} $values[] = (float) $data['active_installs']; } elseif ( 'num_ratings' === $fact['metric'] ) {
-						if ( ! is_numeric( $data['num_ratings'] ) || (float) $data['num_ratings'] < 0 ) {
-							return self::stale_or_fallback( $metric_id, $fact, $key, $cached, $request_values );
-						} $values[] = (int) $data['num_ratings']; } else {
-						if ( '' === $data['version'] ) {
-							return self::stale_or_fallback( $metric_id, $fact, $key, $cached, $request_values );
-						} $values[] = $data['version']; }
+					}
+					$values[] = $count;
+				} elseif ( 'num_ratings' === $fact['metric'] ) {
+					$count = self::count_value( $data['num_ratings'] ?? null );
+					if ( null === $count ) {
+						return self::stale_or_fallback( $metric_id, $fact, $key, $cached, $request_values ); }
+					$values[] = $count;
+				} else {
+					$version = $data['version'] ?? null;
+					if ( ! is_string( $version ) || ! preg_match( '/\A[0-9][A-Za-z0-9.+_-]{0,63}\z/D', $version ) ) {
+						return self::stale_or_fallback( $metric_id, $fact, $key, $cached, $request_values ); }
+					$values[] = $version;
+				}
 			}
 		}
 		if ( empty( $values ) ) {
 			return self::stale_or_fallback( $metric_id, $fact, $key, $cached, $request_values ); }
-		$value = 'identity' === $fact['aggregation'] ? $values[0] : array_sum( $values );
-		if ( 'version' !== $fact['metric'] && ! is_numeric( $value ) ) {
+		$value = $values[0];
+		if ( in_array( $fact['aggregation'], array( 'sum', 'success_count' ), true ) ) {
+			$value = 0;
+			foreach ( $values as $count ) {
+				if ( $count > self::MAX_COUNT - $value ) {
+					return self::stale_or_fallback( $metric_id, $fact, $key, $cached, $request_values ); }
+				$value += $count;
+			}
+		}
+		if ( 'version' !== $fact['metric'] && ( ! is_int( $value ) || $value < 0 || $value > self::MAX_COUNT ) ) {
 			return self::stale_or_fallback( $metric_id, $fact, $key, $cached, $request_values ); }
 		$formatted = self::format_value( $value, $fact['format'], (string) $fact['metric'] );
 		$receipt   = array(
@@ -434,6 +452,25 @@ final class Static_Site_Importer_External_Metric_Runtime {
 			$value = $formatted;
 		}
 		return (string) $format['prefix'] . (string) $value . (string) $format['suffix'];
+	}
+
+	/** Parse a provider count without accepting fractions, overflow, NaN or infinity. */
+	private static function count_value( mixed $value ): ?int {
+		if ( is_int( $value ) ) {
+			$count = $value;
+		} elseif ( is_float( $value ) ) {
+			if ( ! is_finite( $value ) || floor( $value ) !== $value || $value < 0 || $value > self::MAX_COUNT ) {
+				return null; }
+			$count = (int) $value;
+		} elseif ( is_string( $value ) && preg_match( '/\A(?:0|[1-9][0-9]*)\z/D', $value ) ) {
+			$maximum = (string) self::MAX_COUNT;
+			if ( strlen( $value ) > strlen( $maximum ) || ( strlen( $value ) === strlen( $maximum ) && strcmp( $value, $maximum ) > 0 ) ) {
+				return null; }
+			$count = (int) $value;
+		} else {
+			return null;
+		}
+		return $count >= 0 && $count <= self::MAX_COUNT ? $count : null;
 	}
 
 	private static function store_receipt( string $id, array $receipt ): void {
