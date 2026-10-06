@@ -370,6 +370,14 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		if ( array_key_exists( $relative, $attachments ) ) {
 			return $attachments[ $relative ];
 		}
+		// An image service can serve one picture at several sizes, each under its
+		// own path. Different sizes are different bytes, so the content hash alone
+		// would keep one attachment per size. Use the largest captured size.
+		$source = self::largest_rendition( $theme_dir, $relative );
+		if ( $source !== $relative ) {
+			$attachments[ $relative ] = self::ensure_attachment( $theme_dir, $source, $alt, $state, $attachments, $by_hash, $error );
+			return $attachments[ $relative ];
+		}
 		$file = $theme_dir . '/' . $relative;
 		$hash = is_readable( $file ) ? (string) hash_file( 'sha256', $file ) : '';
 		if ( '' !== $hash && isset( $by_hash[ $hash ] ) ) {
@@ -385,6 +393,57 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			$by_hash[ $hash ] = $attachments[ $relative ];
 		}
 		return $attachments[ $relative ];
+	}
+
+	/**
+	 * The largest captured size of an image served by a path-based image service.
+	 *
+	 * A transformed URL looks like `<image>/v1/fill/w_48,h_48,.../<name>`. Other
+	 * sizes of the same image sit next to it under the same `<image>` path. The
+	 * Resize variants must retain the same operation, non-size parameters and
+	 * decoded aspect ratio. Crops and different focal points are not equivalent.
+	 */
+	private static function largest_rendition( string $theme_dir, string $relative ): string {
+		if ( ! preg_match( '#^(.+?)/v1/(?:fill|fit)/[^/]+/[^/]+$#i', $relative, $match ) ) {
+			return $relative;
+		}
+		$family      = $match[1];
+		$best        = $relative;
+		$identity    = self::resize_identity( $relative );
+		$source_size = @getimagesize( $theme_dir . '/' . $relative ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Invalid images cannot establish equivalent geometry.
+		if ( null === $identity || ! is_array( $source_size ) || $source_size[0] <= 0 || $source_size[1] <= 0 ) {
+			return $relative;
+		}
+		$best_area = -1;
+		$siblings  = glob( $theme_dir . '/' . $family . '/v1/*/*/*', GLOB_NOSORT );
+		$siblings  = is_array( $siblings ) ? $siblings : array();
+		sort( $siblings );
+		foreach ( $siblings as $sibling ) {
+			$sibling_relative = substr( $sibling, strlen( $theme_dir ) + 1 );
+			if ( ! is_file( $sibling ) || self::resize_identity( $sibling_relative ) !== $identity || ! in_array( strtolower( pathinfo( $sibling, PATHINFO_EXTENSION ) ), self::RASTER_EXTENSIONS, true ) ) {
+				continue;
+			}
+			$size = @getimagesize( $sibling ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Unreadable or differently cropped images are excluded.
+			if ( ! is_array( $size ) || $size[0] * $source_size[1] !== $source_size[0] * $size[1] ) {
+				continue;
+			}
+			$area = (int) $size[0] * (int) $size[1];
+			if ( $area > $best_area ) {
+				$best      = $sibling_relative;
+				$best_area = $area;
+			}
+		}
+		return $best;
+	}
+
+	/** Source operation identity with only pixel-size parameters removed. */
+	private static function resize_identity( string $relative ): ?string {
+		if ( ! preg_match( '#^(.+?)/v1/(fill|fit)/([^/]+)/[^/]+$#i', $relative, $match ) ) {
+			return null;
+		}
+		$parameters = array_values( array_filter( explode( ',', $match[3] ), static fn( string $parameter ): bool => ! preg_match( '/^(?:w|h)_[1-9][0-9]*$/i', $parameter ) ) );
+		sort( $parameters );
+		return $match[1] . '/' . strtolower( $match[2] ) . '/' . implode( ',', $parameters );
 	}
 
 	/** Create (or reuse) the attachment for one theme-relative image file. */
