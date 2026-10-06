@@ -39,12 +39,12 @@ class Static_Site_Importer_Theme_Exporter {
 			return new WP_Error( 'static_site_importer_theme_not_found', sprintf( 'Theme directory not found for %s.', $theme_slug ) );
 		}
 
-		$entrypoint      = self::export_artifact_path( isset( $args['entrypoint'] ) ? (string) $args['entrypoint'] : 'website/index.html', 'website/index.html' );
-		$root            = self::export_artifact_root( isset( $args['root'] ) ? (string) $args['root'] : '', $entrypoint );
-		$include_pages   = $args['include_pages'] ?? true;
-		$source_metadata = isset( $args['source_metadata'] ) && is_array( $args['source_metadata'] ) ? $args['source_metadata'] : array();
-		$diagnostics     = array();
-		$files           = array();
+		$entrypoint                   = self::export_artifact_path( isset( $args['entrypoint'] ) ? (string) $args['entrypoint'] : 'website/index.html', 'website/index.html' );
+		$root                         = self::export_artifact_root( isset( $args['root'] ) ? (string) $args['root'] : '', $entrypoint );
+		$include_pages                = $args['include_pages'] ?? true;
+		$source_metadata              = isset( $args['source_metadata'] ) && is_array( $args['source_metadata'] ) ? $args['source_metadata'] : array();
+		$diagnostics                  = array();
+		$files                        = array();
 		$external_metric_declarations = array();
 
 		$stylesheet = self::export_theme_stylesheet_file( $theme_dir, $root );
@@ -115,20 +115,21 @@ class Static_Site_Importer_Theme_Exporter {
 				);
 			}
 			foreach ( $planned as $plan ) {
-				$page      = $plan['page'];
-				$path      = $plan['path'];
-				$is_front  = $plan['is_front'];
-				$page_id   = isset( $page->ID ) ? (int) $page->ID : 0;
-				$template  = $is_front ? 'front-page' : 'page';
+				$page                  = $plan['page'];
+				$path                  = $plan['path'];
+				$is_front              = $plan['is_front'];
+				$page_id               = isset( $page->ID ) ? (int) $page->ID : 0;
+				$template              = $is_front ? 'front-page' : 'page';
 				$was_exporting_metrics = ! empty( $GLOBALS['static_site_importer_external_metric_export_fallback'] );
 				$GLOBALS['static_site_importer_external_metric_export_fallback'] = true;
 				try {
 					$page_html = self::export_resolved_template_html( $page, $theme_slug, $is_front );
 				} finally {
-					if ( $was_exporting_metrics ) { $GLOBALS['static_site_importer_external_metric_export_fallback'] = true; }
-					else { unset( $GLOBALS['static_site_importer_external_metric_export_fallback'] ); }
+					if ( $was_exporting_metrics ) {
+						$GLOBALS['static_site_importer_external_metric_export_fallback'] = true; } else {
+						unset( $GLOBALS['static_site_importer_external_metric_export_fallback'] ); }
 				}
-				$chrome    = '' === $page_html
+				$chrome = '' === $page_html
 					? self::export_theme_chrome_html( $theme_dir, $template )
 					: array(
 						'before' => '',
@@ -137,12 +138,27 @@ class Static_Site_Importer_Theme_Exporter {
 				if ( '' === $page_html ) {
 					$was_exporting_metrics = ! empty( $GLOBALS['static_site_importer_external_metric_export_fallback'] );
 					$GLOBALS['static_site_importer_external_metric_export_fallback'] = true;
-					try { $page_html = self::blocks_to_html( isset( $page->post_content ) ? (string) $page->post_content : '' ); }
-					finally { if ( $was_exporting_metrics ) { $GLOBALS['static_site_importer_external_metric_export_fallback'] = true; } else { unset( $GLOBALS['static_site_importer_external_metric_export_fallback'] ); } }
+					try {
+						$page_html = self::blocks_to_html( isset( $page->post_content ) ? (string) $page->post_content : '' ); } finally {
+						if ( $was_exporting_metrics ) {
+							$GLOBALS['static_site_importer_external_metric_export_fallback'] = true;
+						} else {
+							unset( $GLOBALS['static_site_importer_external_metric_export_fallback'] ); }
+						}
 				}
 				$page_metrics = self::external_metric_declaration_entities( $page, $path );
-				if ( is_wp_error( $page_metrics ) ) { return $page_metrics; }
-				if ( ! empty( $page_metrics ) ) { $external_metric_declarations[] = array( 'kind' => 'entity_collection', 'type' => 'external_metrics', 'source_path' => $path, 'payload' => array( 'schema' => 'generic/external-metric/v1', 'entities' => $page_metrics ) ); }
+				if ( is_wp_error( $page_metrics ) ) {
+					return $page_metrics; }
+				if ( ! empty( $page_metrics ) ) {
+					$external_metric_declarations[] = array(
+						'kind'        => 'entity_collection',
+						'type'        => 'external_metrics',
+						'source_path' => $path,
+						'payload'     => array(
+							'schema'   => 'generic/external-metric/v1',
+							'entities' => $page_metrics,
+						),
+					); }
 
 				$files[] = self::export_file_entry(
 					$path,
@@ -215,39 +231,57 @@ class Static_Site_Importer_Theme_Exporter {
 	/** Rehydrate only companion-authored external metric bindings into export declarations. */
 	private static function external_metric_declaration_entities( object $page, string $source_path ) {
 		$companion = (string) get_option( 'static_site_importer_active_companion_plugin', '' );
-		if ( '' === $companion || ! defined( 'WP_PLUGIN_DIR' ) ) { return array(); }
+		if ( '' === $companion || ! defined( 'WP_PLUGIN_DIR' ) ) {
+			return array(); }
 		$config_path = WP_PLUGIN_DIR . '/' . dirname( $companion ) . '/companion.json';
-		$config = is_readable( $config_path ) ? json_decode( (string) file_get_contents( $config_path ), true ) : null; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the active generated companion's trusted declarative metric inventory.
+		$config      = is_readable( $config_path ) ? json_decode( (string) file_get_contents( $config_path ), true ) : null; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the active generated companion's trusted declarative metric inventory.
 		$config_rows = is_array( $config['external_metrics'] ?? null ) ? $config['external_metrics'] : array();
-		$facts = array_column( $config_rows, null, 'id' );
-		$blocks = function_exists( 'parse_blocks' ) ? parse_blocks( (string) ( $page->post_content ?? '' ) ) : array();
-		$entities = array();
-		$visit = static function ( array $nodes ) use ( &$visit, &$entities, $facts, $source_path ): void {
+		$facts       = array_column( $config_rows, null, 'id' );
+		$blocks      = function_exists( 'parse_blocks' ) ? parse_blocks( (string) ( $page->post_content ?? '' ) ) : array();
+		$entities    = array();
+		$visit       = static function ( array $nodes ) use ( &$visit, &$entities, $facts, $source_path ): void {
 			foreach ( $nodes as $block ) {
 				$binding = $block['attrs']['metadata']['bindings']['content'] ?? null;
 				if ( is_array( $binding ) && 'ssi/external-metric' === ( $binding['source'] ?? '' ) ) {
-					$id = is_string( $binding['args']['metric_id'] ?? null ) ? $binding['args']['metric_id'] : '';
-					$fact = $facts[ $id ] ?? null;
+					$id         = is_string( $binding['args']['metric_id'] ?? null ) ? $binding['args']['metric_id'] : '';
+					$fact       = $facts[ $id ] ?? null;
 					$block_name = (string) ( $block['blockName'] ?? '' );
 					if ( ! is_array( $fact ) || ! in_array( $block_name, array( 'core/paragraph', 'core/heading' ), true ) ) {
 						$entities[] = array( '__invalid_external_metric_binding' => $id );
 						continue;
 					}
-					$fallback = is_string( $block['attrs']['content'] ?? null ) ? $block['attrs']['content'] : trim( html_entity_decode( wp_strip_all_tags( (string) ( $block['innerHTML'] ?? '' ) ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
-					$anchor = $block;
+					$fallback   = is_string( $block['attrs']['content'] ?? null ) ? $block['attrs']['content'] : trim( html_entity_decode( wp_strip_all_tags( (string) ( $block['innerHTML'] ?? '' ) ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
+					$anchor     = $block;
 					$attributes = is_array( $anchor['attrs'] ?? null ) ? $anchor['attrs'] : array();
 					unset( $attributes['metadata'], $attributes['content'] );
-					$anchor['attrs'] = $attributes;
-					$fact['fallback'] = array( 'text' => $fallback, 'hash' => hash( 'sha256', $fallback ) );
-					$fact['bindings'] = array( array( 'schema' => 'generic/block-binding/v1', 'role' => 'core/heading' === $block_name ? 'heading' : 'paragraph', 'source_path' => $source_path, 'search_block_markup' => serialize_block( $anchor ), 'occurrence' => 1, 'leaf' => array( 'block' => $block_name, 'attribute' => 'content' ) ) );
-					$entities[] = $fact;
+					$anchor['attrs']  = $attributes;
+					$fact['fallback'] = array(
+						'text' => $fallback,
+						'hash' => hash( 'sha256', $fallback ),
+					);
+					$fact['bindings'] = array(
+						array(
+							'schema'              => 'generic/block-binding/v1',
+							'role'                => 'core/heading' === $block_name ? 'heading' : 'paragraph',
+							'source_path'         => $source_path,
+							'search_block_markup' => serialize_block( $anchor ),
+							'occurrence'          => 1,
+							'leaf'                => array(
+								'block'     => $block_name,
+								'attribute' => 'content',
+							),
+						),
+					);
+					$entities[]       = $fact;
 				}
-				if ( ! empty( $block['innerBlocks'] ) ) { $visit( $block['innerBlocks'] ); }
+				if ( ! empty( $block['innerBlocks'] ) ) {
+					$visit( $block['innerBlocks'] ); }
 			}
 		};
 		$visit( $blocks );
 		foreach ( $entities as $entity ) {
-			if ( isset( $entity['__invalid_external_metric_binding'] ) ) { return new WP_Error( 'static_site_importer_export_external_metric_binding_unresolved', 'Export found a native external metric binding without its trusted companion configuration.' ); }
+			if ( isset( $entity['__invalid_external_metric_binding'] ) ) {
+				return new WP_Error( 'static_site_importer_export_external_metric_binding_unresolved', 'Export found a native external metric binding without its trusted companion configuration.' ); }
 		}
 		return $entities;
 	}
@@ -615,10 +649,10 @@ class Static_Site_Importer_Theme_Exporter {
 	 * @return array<string,mixed>
 	 */
 	private static function export_website_artifact( string $theme_slug, string $root, string $entrypoint, array $files, array $report, array $source_metadata, array $runtime_declarations = array() ): array {
-		$generated_at = self::export_generated_at();
-		$id           = 'website-artifact-' . $theme_slug . '-' . substr( hash( 'sha256', self::json_encode_pretty( array( $entrypoint, $files, $runtime_declarations ) ) ), 0, 12 );
+		$generated_at                   = self::export_generated_at();
+		$id                             = 'website-artifact-' . $theme_slug . '-' . substr( hash( 'sha256', self::json_encode_pretty( array( $entrypoint, $files, $runtime_declarations ) ) ), 0, 12 );
 		$runtime_declaration_normalizer = 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\RuntimeDeclarations';
-		$runtime_declarations = ! empty( $runtime_declarations ) && class_exists( $runtime_declaration_normalizer ) ? call_user_func( array( $runtime_declaration_normalizer, 'normalizeList' ), $runtime_declarations ) : array();
+		$runtime_declarations           = ! empty( $runtime_declarations ) && class_exists( $runtime_declaration_normalizer ) ? call_user_func( array( $runtime_declaration_normalizer, 'normalizeList' ), $runtime_declarations ) : array();
 
 		$artifact = array(
 			'schema'        => 'blocks-engine/php-transformer/site-artifact/v1',
@@ -659,7 +693,8 @@ class Static_Site_Importer_Theme_Exporter {
 				),
 			),
 		);
-		if ( ! empty( $runtime_declarations ) ) { $artifact['runtime_declarations'] = $runtime_declarations; }
+		if ( ! empty( $runtime_declarations ) ) {
+			$artifact['runtime_declarations'] = $runtime_declarations; }
 		return $artifact;
 	}
 

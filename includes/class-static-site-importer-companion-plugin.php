@@ -187,7 +187,8 @@ class Static_Site_Importer_Companion_Plugin {
 			}
 			if ( ! empty( $metrics ) ) {
 				$metric_validation = class_exists( 'Static_Site_Importer_External_Metric_Runtime' ) ? Static_Site_Importer_External_Metric_Runtime::validate_manifest( array( 'external_metrics' => $metrics ) ) : array( 'errors' => array( array( 'message' => 'External metric validator is unavailable.' ) ) );
-				if ( ! empty( $metric_validation['errors'] ) ) { return new WP_Error( 'static_site_importer_companion_plugin_external_metrics_invalid', 'Companion external metric configuration is invalid.', $metric_validation['errors'] ); }
+				if ( ! empty( $metric_validation['errors'] ) ) {
+					return new WP_Error( 'static_site_importer_companion_plugin_external_metrics_invalid', 'Companion external metric configuration is invalid.', $metric_validation['errors'] ); }
 			}
 		}
 		$editor_scripts = self::validate_editor_scripts( $payload );
@@ -288,7 +289,8 @@ class Static_Site_Importer_Companion_Plugin {
 		$external_metrics = is_array( $payload['external_metrics'] ?? null ) ? array_values( $payload['external_metrics'] ) : array();
 		if ( ! empty( $external_metrics ) ) {
 			$validated_metrics = Static_Site_Importer_External_Metric_Runtime::validate_manifest( array( 'external_metrics' => $external_metrics ) );
-			if ( ! empty( $validated_metrics['errors'] ) ) { return new WP_Error( 'static_site_importer_companion_plugin_external_metrics_invalid', 'Companion external metric configuration failed validation.', $validated_metrics['errors'] ); }
+			if ( ! empty( $validated_metrics['errors'] ) ) {
+				return new WP_Error( 'static_site_importer_companion_plugin_external_metrics_invalid', 'Companion external metric configuration failed validation.', $validated_metrics['errors'] ); }
 		}
 		$inventory_source = array( $block_names, $preserved, $form_visual_states, $external_metrics, hash( 'sha256', $provider_form_runtime ), hash( 'sha256', $internal_link_runtime ), hash( 'sha256', $source_route_runtime ), hash( 'sha256', $external_metric_runtime ) );
 		if ( ! empty( $editor_scripts ) ) {
@@ -479,7 +481,8 @@ class Static_Site_Importer_Companion_Plugin {
 				return true;
 			}
 		}
-		if ( ! empty( $payload['external_metrics'] ) ) { return true; }
+		if ( ! empty( $payload['external_metrics'] ) ) {
+			return true; }
 
 		return false;
 	}
@@ -596,10 +599,12 @@ class Static_Site_Importer_Companion_Plugin {
 			if ( isset( $files[ $manifest_path ] ) || isset( $files[ $json_path ] ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_asset_conflict', 'Source assets cannot replace generated dependency manifests.' );
 			}
-			$files[ $json_path ]     = wp_json_encode( array(
-				'dependencies' => $dependencies,
-				'version'      => hash( 'sha256', (string) $assets[ $relative ] ),
-			) ) . "\n";
+			$files[ $json_path ]     = wp_json_encode(
+				array(
+					'dependencies' => $dependencies,
+					'version'      => hash( 'sha256', (string) $assets[ $relative ] ),
+				)
+			) . "\n";
 			$files[ $manifest_path ] = "<?php\nreturn json_decode( (string) file_get_contents( substr( __FILE__, 0, -4 ) . '.json' ), true, 512, JSON_THROW_ON_ERROR );\n";
 		}
 		$block_json         = $block['block_json'];
@@ -752,9 +757,9 @@ class Static_Site_Importer_Companion_Plugin {
 	/**
 	 * Render the main plugin PHP file.
 	 *
-	 * @param string $plugin_slug Plugin slug.
-	 * @param string                          $inventory_hash  Deterministic generated inventory hash.
-	 * @param array<string,mixed>             $artifact_provenance Producer artifact provenance, when carried.
+	 * @param string              $plugin_slug Plugin slug.
+	 * @param string              $inventory_hash  Deterministic generated inventory hash.
+	 * @param array<string,mixed> $artifact_provenance Producer artifact provenance, when carried.
 	 * @return string
 	 */
 	private static function main_plugin_file(

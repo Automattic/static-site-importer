@@ -147,47 +147,52 @@ final class Static_Site_Importer_Companion_Inventory {
 			);
 		}
 
-		$form_states = is_array( $input['form_visual_states'] ?? null ) ? $input['form_visual_states'] : array();
+		$form_states      = is_array( $input['form_visual_states'] ?? null ) ? $input['form_visual_states'] : array();
 		$external_metrics = array();
 		foreach ( is_array( $input['external_metrics'] ?? null ) ? $input['external_metrics'] : array() as $fact ) {
-			if ( ! is_array( $fact ) || ! is_array( $fact['provider'] ?? null ) ) { continue; }
+			if ( ! is_array( $fact ) || ! is_array( $fact['provider'] ?? null ) ) {
+				continue; }
 			$external_metrics[] = array(
-				'id'                  => (string) ( $fact['id'] ?? '' ),
-				'provider'            => (string) ( $fact['provider']['id'] ?? '' ),
-				'source'              => (string) ( $fact['provider']['source'] ?? '' ),
-				'slugs'               => array_values( array_filter( is_array( $fact['provider']['slugs'] ?? null ) ? $fact['provider']['slugs'] : array(), 'is_string' ) ),
-				'metric'              => (string) ( $fact['metric'] ?? '' ),
-				'aggregation'         => (string) ( $fact['aggregation'] ?? '' ),
-				'fallback_hash'       => (string) ( $fact['fallback']['hash'] ?? '' ),
-				'provenance_kind'     => (string) ( $fact['provenance']['kind'] ?? '' ),
+				'id'                    => (string) ( $fact['id'] ?? '' ),
+				'provider'              => (string) ( $fact['provider']['id'] ?? '' ),
+				'source'                => (string) ( $fact['provider']['source'] ?? '' ),
+				'slugs'                 => array_values( array_filter( is_array( $fact['provider']['slugs'] ?? null ) ? $fact['provider']['slugs'] : array(), 'is_string' ) ),
+				'metric'                => (string) ( $fact['metric'] ?? '' ),
+				'aggregation'           => (string) ( $fact['aggregation'] ?? '' ),
+				'fallback_hash'         => (string) ( $fact['fallback']['hash'] ?? '' ),
+				'provenance_kind'       => (string) ( $fact['provenance']['kind'] ?? '' ),
 				'provenance_repository' => (string) ( $fact['provenance']['repository'] ?? '' ),
-				'provenance_revision' => (string) ( $fact['provenance']['revision'] ?? '' ),
-				'provenance_source'   => (string) ( $fact['provenance']['source_path'] ?? '' ),
-				'status'              => '' === (string) ( $fact['fallback']['text'] ?? '' ) ? 'unresolved' : 'captured_fallback',
+				'provenance_revision'   => (string) ( $fact['provenance']['revision'] ?? '' ),
+				'provenance_source'     => (string) ( $fact['provenance']['source_path'] ?? '' ),
+				'status'                => '' === (string) ( $fact['fallback']['text'] ?? '' ) ? 'unresolved' : 'captured_fallback',
 			);
 		}
 
 		return array(
-			'schema'         => self::SCHEMA,
-			'site_name'      => self::header_value( (string) ( $input['site_name'] ?? '' ) ),
-			'plugin_slug'    => (string) ( $input['plugin_slug'] ?? '' ),
-			'mu_plugin'      => ! empty( $input['mu_plugin'] ),
-			'blocks'         => $blocks,
-			'scripts'        => $scripts,
-			'editor_scripts' => $editor_scripts,
+			'schema'           => self::SCHEMA,
+			'site_name'        => self::header_value( (string) ( $input['site_name'] ?? '' ) ),
+			'plugin_slug'      => (string) ( $input['plugin_slug'] ?? '' ),
+			'mu_plugin'        => ! empty( $input['mu_plugin'] ),
+			'blocks'           => $blocks,
+			'scripts'          => $scripts,
+			'editor_scripts'   => $editor_scripts,
 			'external_metrics' => $external_metrics,
-			'forms'          => array(
+			'forms'            => array(
 				'carried' => array() !== $form_states,
 				'count'   => count( $form_states ),
 				'status'  => self::STATUS_REBUILT,
 			),
-			'routes'         => array(
+			'routes'           => array(
 				'redirects'      => array( 'status' => self::STATUS_REBUILT ),
 				'internal_links' => array( 'status' => self::STATUS_REBUILT ),
 			),
-			'content'        => array( 'status' => empty( $external_metrics ) ? self::STATUS_SNAPSHOT : 'partially_dynamic', 'snapshot_status' => self::STATUS_SNAPSHOT, 'external_metric_status' => empty( $external_metrics ) ? 'not_present' : 'configured' ),
-			'provenance'     => self::project_provenance( is_array( $input['provenance'] ?? null ) ? $input['provenance'] : array(), (string) ( $input['plugin_slug'] ?? '' ) ),
-			'handoff'        => self::project_handoff( $input['handoff'] ?? null ),
+			'content'          => array(
+				'status'                 => empty( $external_metrics ) ? self::STATUS_SNAPSHOT : 'partially_dynamic',
+				'snapshot_status'        => self::STATUS_SNAPSHOT,
+				'external_metric_status' => empty( $external_metrics ) ? 'not_present' : 'configured',
+			),
+			'provenance'       => self::project_provenance( is_array( $input['provenance'] ?? null ) ? $input['provenance'] : array(), (string) ( $input['plugin_slug'] ?? '' ) ),
+			'handoff'          => self::project_handoff( $input['handoff'] ?? null ),
 		);
 	}
 
@@ -198,12 +203,12 @@ final class Static_Site_Importer_Companion_Inventory {
 	 * @return string
 	 */
 	public static function render_readme( array $inventory ): string {
-		$site    = '' !== (string) ( $inventory['site_name'] ?? '' ) ? (string) $inventory['site_name'] : 'the imported site';
-		$blocks  = is_array( $inventory['blocks'] ?? null ) ? $inventory['blocks'] : array();
-		$scripts = is_array( $inventory['scripts'] ?? null ) ? $inventory['scripts'] : array();
-		$editor  = is_array( $inventory['editor_scripts'] ?? null ) ? $inventory['editor_scripts'] : array();
+		$site             = '' !== (string) ( $inventory['site_name'] ?? '' ) ? (string) $inventory['site_name'] : 'the imported site';
+		$blocks           = is_array( $inventory['blocks'] ?? null ) ? $inventory['blocks'] : array();
+		$scripts          = is_array( $inventory['scripts'] ?? null ) ? $inventory['scripts'] : array();
+		$editor           = is_array( $inventory['editor_scripts'] ?? null ) ? $inventory['editor_scripts'] : array();
 		$external_metrics = is_array( $inventory['external_metrics'] ?? null ) ? $inventory['external_metrics'] : array();
-		$forms   = is_array( $inventory['forms'] ?? null ) ? $inventory['forms'] : array();
+		$forms            = is_array( $inventory['forms'] ?? null ) ? $inventory['forms'] : array();
 
 		$lines   = array();
 		$lines[] = '# ' . self::plugin_name( (string) ( $inventory['site_name'] ?? '' ) );
@@ -246,7 +251,7 @@ final class Static_Site_Importer_Companion_Inventory {
 			$lines[] = '';
 			$lines[] = 'These native text bindings use the fixed WordPress.org APIs. Their initial freshness receipt status is `captured_fallback` (or `unresolved` for an empty fallback); a successful frontend request changes it to `fresh`. Failed values use the last-known-good receipt as `stale`, or preserve the captured fallback. Partial aggregates are never shown as complete totals.';
 			foreach ( $external_metrics as $metric ) {
-				$source = trim( (string) ( $metric['provenance_repository'] ?? '' ) . '@' . (string) ( $metric['provenance_revision'] ?? '' ) . ':' . (string) ( $metric['provenance_source'] ?? '' ), '@:' );
+				$source  = trim( (string) ( $metric['provenance_repository'] ?? '' ) . '@' . (string) ( $metric['provenance_revision'] ?? '' ) . ':' . (string) ( $metric['provenance_source'] ?? '' ), '@:' );
 				$lines[] = '- `' . (string) ( $metric['id'] ?? '' ) . '` — ' . (string) ( $metric['provider'] ?? '' ) . ' `' . (string) ( $metric['source'] ?? '' ) . '` / `' . (string) ( $metric['metric'] ?? '' ) . '` (`' . (string) ( $metric['aggregation'] ?? '' ) . '`) for ' . implode( ', ', array_map( static fn ( string $slug ): string => '`' . $slug . '`', is_array( $metric['slugs'] ?? null ) ? $metric['slugs'] : array() ) ) . '; provenance `' . $source . '`; configuration status `' . (string) ( $metric['status'] ?? 'unknown' ) . '`.';
 			}
 			$lines[] = 'GitHub stars/forks are not covered by this provider and remain unresolved.';

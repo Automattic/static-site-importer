@@ -49,17 +49,17 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'option'           => '',
 				'filter'           => '',
 			),
-			'form'   => array(
+			'form'             => array(
 				'default_provider' => 'jetpack',
 				'option'           => 'static_site_importer_form_plugin',
 				'filter'           => 'ssi_form_plugin',
 			),
-			'shop'   => array(
+			'shop'             => array(
 				'default_provider' => 'woocommerce',
 				'option'           => 'static_site_importer_shop_plugin',
 				'filter'           => 'ssi_shop_plugin',
 			),
-			'events' => array(
+			'events'           => array(
 				'default_provider' => 'the-events-calendar',
 				'option'           => 'static_site_importer_events_plugin',
 				'filter'           => 'ssi_events_plugin',
@@ -400,7 +400,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$collection = (string) ( $adapter['entity_collection'] ?? '' );
 			$manifest   = array( $collection => $entities );
 			if ( 'external_metrics' === $collection ) {
-				$manifest['source_path'] = (string) ( $declaration['source_path'] ?? '' );
+				$manifest['source_path']             = (string) ( $declaration['source_path'] ?? '' );
 				$manifest['validate_anchor_content'] = true;
 			}
 			if ( 'products' === $collection ) {

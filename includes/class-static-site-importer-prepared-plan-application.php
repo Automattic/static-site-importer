@@ -158,12 +158,14 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 
 	/** Add generated runtime configuration before standalone companion packaging. */
 	private static function with_runtime_companion_configuration( $payload, array $lifecycle, array $args ) {
-		$states = array();
+		$states  = array();
 		$metrics = array();
 		foreach ( $lifecycle['entities'] ?? array() as $prepared_entity ) {
 			$manifest = is_array( $prepared_entity['manifest'] ?? null ) ? $prepared_entity['manifest'] : array();
-			if ( isset( $manifest['forms'] ) ) { $states = array_merge( $states, Static_Site_Importer_Form_Seeder::visual_states( $manifest ) ); }
-			if ( isset( $manifest['external_metrics'] ) ) { $metrics = array_merge( $metrics, array_values( $manifest['external_metrics'] ) ); }
+			if ( isset( $manifest['forms'] ) ) {
+				$states = array_merge( $states, Static_Site_Importer_Form_Seeder::visual_states( $manifest ) ); }
+			if ( isset( $manifest['external_metrics'] ) ) {
+				$metrics = array_merge( $metrics, array_values( $manifest['external_metrics'] ) ); }
 		}
 		if ( empty( $states ) && empty( $metrics ) ) {
 			return $payload;
@@ -176,8 +178,10 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 				'blocks'    => array(),
 			);
 		}
-		if ( ! empty( $states ) ) { $payload['form_visual_states'] = array_values( array_unique( $states, SORT_REGULAR ) ); }
-		if ( ! empty( $metrics ) ) { $payload['external_metrics'] = $metrics; }
+		if ( ! empty( $states ) ) {
+			$payload['form_visual_states'] = array_values( array_unique( $states, SORT_REGULAR ) ); }
+		if ( ! empty( $metrics ) ) {
+			$payload['external_metrics'] = $metrics; }
 		return $payload;
 	}
 
