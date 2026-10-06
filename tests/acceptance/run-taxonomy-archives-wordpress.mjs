@@ -69,7 +69,7 @@ $archivePath = 'website/writing/category/personal/index.html';
 $nextPath = 'website/writing/category/personal/page/2/index.html';
 $archive = (string) ($files[$archivePath] ?? '');
 $nextArchive = (string) ($files[$nextPath] ?? '');
-$exported = !is_wp_error($export) && 1 === (int) ($artifact['report']['taxonomy_archive_count'] ?? 0) && 2 === (int) ($artifact['report']['taxonomy_archive_page_count'] ?? 0) && str_contains($archive, 'Personal') && str_contains($archive, 'Story 12') && str_contains($archive, 'Added after import') && str_contains($archive, '${editorReloadMarker}') && str_contains($archive, 'href="/writing/category/personal/page/2/"') && str_contains($nextArchive, 'Story 2') && !str_contains($nextArchive, 'Next Page') && !str_contains($nextArchive, 'Outside the archive');
+$exported = !is_wp_error($export) && 1 === (int) ($artifact['report']['taxonomy_archive_count'] ?? 0) && 2 === (int) ($artifact['report']['taxonomy_archive_page_count'] ?? 0) && str_contains($archive, 'Personal') && str_contains($archive, 'Story 12') && str_contains($archive, 'Added after import') && str_contains($archive, '${editorReloadMarker}') && str_contains($archive, 'writing/category/personal/page/2/') && str_contains($nextArchive, 'Story 2') && str_contains($nextArchive, 'Previous Page') && !str_contains($nextArchive, 'Next Page') && !str_contains($nextArchive, 'Outside the archive') && str_contains($nextArchive, 'href="../../../../../style.css"');
 $result = array('schema' => 'ssi-taxonomy/editor-template-persistence/v1', 'template_id' => get_stylesheet() . '//category-personal', 'persisted' => $persisted, 'reloaded' => $reloaded, 'exported' => $exported, 'archive_path' => $archivePath, 'archive_page_count' => $artifact['report']['taxonomy_archive_page_count'] ?? 0, 'archive_bytes' => strlen($archive), 'archive_sha256' => hash('sha256', $archive), 'archive_html' => $archive, 'next_page_path' => $nextPath, 'next_page_html' => $nextArchive, 'export_error' => $exportError, 'bridge_available' => function_exists('blocks_engine_php_transformer_convert_format'));
 echo wp_json_encode($result) . "\n";
 if (!$persisted || !$reloaded || !$exported) { throw new RuntimeException('The Gutenberg category template edit/save/reload or native archive export did not persist.'); }`;
@@ -90,6 +90,7 @@ const workload = {
 		{ command: 'wordpress.browser-page-load', args: [ `url=${ editorTemplateUrl }`, 'auth=wordpress-admin', 'wait-for=load', `script=${ editorReloadScript }`, 'capture=html,console,errors,screenshot', 'duration=8s', 'timeout=120s' ] },
 		{ command: 'wordpress.run-php', args: [ `code=${ editorVerification }` ] },
 		{ command: 'wordpress.browser-page-load', args: [ 'url=/writing/category/personal/', 'wait-for=domcontentloaded', 'capture=html,console,errors,screenshot', 'network-policy=block' ] },
+		{ command: 'wordpress.browser-page-load', args: [ 'url=/writing/category/personal/page/2/', 'wait-for=domcontentloaded', 'capture=html,console,errors,screenshot', 'network-policy=block' ] },
 	],
 };
 writeFileSync( workloadFile, JSON.stringify( workload, null, 2 ) );
@@ -120,6 +121,7 @@ const editorSaveStep = editorSteps[0];
 const editorReloadStep = editorSteps[1];
 const editorVerifyStep = ( result.executions ?? [] ).filter( step => 'wordpress.run-php' === step.command )[1];
 const browserStep = editorSteps[2];
+const pageTwoBrowserStep = editorSteps[3];
 let editorVerify;
 try {
 	const lines = String( editorVerifyStep?.stdout ?? '' ).split( '\n' );
@@ -171,7 +173,14 @@ const browserAssertions = {
 	requestedSourceRoute: new URL( browser.finalUrl ?? 'http://invalid/' ).pathname.replace( /\/$/, '' ) === '/writing/category/personal',
 	noBrowserErrors: 0 === ( browser.summary?.errors ?? -1 ),
 };
-const success = result.success === true && command.status === 0 && phpStep?.exitCode === 0 && String( phpStep?.stdout ?? '' ).includes( 'Taxonomy archive WordPress store acceptance passed.' ) && editorSaveStep?.exitCode === 0 && editorReloadStep?.exitCode === 0 && editorVerifyStep?.exitCode === 0 && editorVerify.persisted === true && editorVerify.reloaded === true && editorVerify.exported === true && browserStep?.exitCode === 0 && Object.values( browserAssertions ).every( Boolean );
+let pageTwoBrowser;
+try {
+	pageTwoBrowser = JSON.parse( pageTwoBrowserStep?.stdout ?? '{}' );
+} catch {
+	pageTwoBrowser = {};
+}
+browserAssertions.actualPageTwoHttpRequest = pageTwoBrowserStep?.exitCode === 0 && new URL( pageTwoBrowser.finalUrl ?? 'http://invalid/' ).pathname.includes( '/writing/category/personal/page/2' ) && String( pageTwoBrowser.html ?? pageTwoBrowser.snapshot ?? '' ).includes( 'Story 7' );
+const success = result.success === true && command.status === 0 && phpStep?.exitCode === 0 && String( phpStep?.stdout ?? '' ).includes( 'Taxonomy archive WordPress store acceptance passed.' ) && editorSaveStep?.exitCode === 0 && editorReloadStep?.exitCode === 0 && editorVerifyStep?.exitCode === 0 && editorVerify.persisted === true && editorVerify.reloaded === true && editorVerify.exported === true && browserStep?.exitCode === 0 && pageTwoBrowserStep?.exitCode === 0 && Object.values( browserAssertions ).every( Boolean );
 writeFileSync( join( evidenceRoot, 'browser-assertions.json' ), JSON.stringify( { success: Object.values( browserAssertions ).every( Boolean ), editorTemplateUrl, snapshot: snapshotPath, assertions: browserAssertions }, null, 2 ) );
 console.log( JSON.stringify( {
 	success,

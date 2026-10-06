@@ -103,7 +103,7 @@ $source_archive_url = untrailingslashit( home_url( $archive_route ) );
 $native_term_url    = untrailingslashit( (string) get_term_link( $personal_term ) );
 $taxonomy_assert( $source_archive_url === $native_term_url, 'Native term permalink must own the exact canonical source archive route.' );
 $rewrite_rules = get_option( 'rewrite_rules', array() );
-$taxonomy_assert( 'index.php?category_name=personal' === ( $rewrite_rules['^writing/category/personal/?$'] ?? null ), 'The source path is stored as one exact taxonomy rewrite without moving the global category base: ' . wp_json_encode( array_intersect_key( $rewrite_rules, array_flip( array_filter( array_keys( $rewrite_rules ), static fn( string $key ): bool => str_contains( $key, 'writing/category/personal' ) ) ) ) ) );
+$taxonomy_assert( 'index.php?category_name=personal&paged=$matches[1]' === ( $rewrite_rules['^writing/category/personal(?:/page/([0-9]+))?/?$'] ?? null ), 'The source base and /page/N routes share one pagination-aware taxonomy rewrite without moving the global category base.' );
 $archive_template = get_block_template( get_stylesheet() . '//category-' . $slug );
 $taxonomy_assert( $archive_template instanceof WP_Block_Template && str_contains( $archive_template->content, '"inherit":true' ) && str_contains( $archive_template->content, 'query-pagination' ), 'WordPress must resolve the contextual inherited category template with pagination.' );
 
@@ -175,6 +175,7 @@ $recategorized = new WP_Query(
 );
 $taxonomy_assert( ! in_array( $source_member_id, wp_list_pluck( $recategorized->posts, 'ID' ), true ) && 12 === (int) $recategorized->found_posts, 'Recategorizing a post must update the archive query without changing a page.' );
 $taxonomy_assert( untrailingslashit( (string) get_term_link( $personal_term ) ) === $native_term_url, 'Source route identity remains stable after membership changes.' );
+
 
 $empty_term          = wp_insert_term( 'Empty category', 'category', array( 'slug' => 'empty-category' ) );
 $empty_query         = new WP_Query(

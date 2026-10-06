@@ -704,6 +704,15 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			if ( ( $page['route']['path'] ?? null ) !== $archives[ $source_path ] ) {
 				throw new InvalidArgumentException( 'taxonomy_archive_route_mismatch' );
 			}
+			$archive_match = Static_Site_Importer_Site_Plan_Persistence::reconciled_post( (string) ( $page['reconciliation_identity'] ?? '' ) );
+			$conflict      = get_page_by_path( trim( $archives[ $source_path ], '/' ), OBJECT, 'page' );
+			if ( $conflict && ( ! $archive_match || (int) $archive_match->ID !== (int) $conflict->ID ) && ! Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $conflict ) ) {
+				throw new InvalidArgumentException( 'taxonomy_archive_route_conflict' );
+			}
+			if ( $archive_match ) {
+				$page['planned_existing_id'] = (int) $archive_match->ID;
+				$page['retire_archive_page'] = true;
+			}
 			$page['skip_materialization'] = true;
 			$state['skipped'][]           = array(
 				'source_path' => $source_path,

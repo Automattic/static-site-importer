@@ -109,6 +109,21 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		}
 		foreach ( $state['ordered_pages'] as $page ) {
 			if ( ! empty( $page['skip_materialization'] ) ) {
+				if ( ! empty( $page['retire_archive_page'] ) ) {
+					$archive_id = (int) ( $page['planned_existing_id'] ?? 0 );
+					self::journal_post( $state, $page );
+					$updated = wp_update_post( array( 'ID' => $archive_id, 'post_status' => 'draft' ), true );
+					if ( is_wp_error( $updated ) || (int) $updated !== $archive_id || 'draft' !== get_post_status( $archive_id ) ) {
+						return self::failed_receipt( $state, 'taxonomy_archive_page_retirement_failed' );
+					}
+					$state['applied']['posts'][] = array(
+						'id'                      => $archive_id,
+						'source_path'             => $page['source_path'],
+						'reconciliation_identity' => $page['reconciliation_identity'],
+					);
+					delete_post_meta( $archive_id, self::RECONCILIATION_META_KEY );
+					delete_post_meta( $archive_id, self::PRODUCER_RECONCILIATION_META_KEY );
+				}
 				continue;
 			}
 			self::journal_post( $state, $page );
@@ -481,7 +496,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					'exists' => metadata_exists( 'post', $post_id, $meta_key ),
 					'value'  => $previous,
 				);
-				update_post_meta( $post_id, $meta_key, $next_owned );
+				update_post_meta( $post_id, $meta_key, wp_slash( $next_owned ) );
+				if ( ! metadata_exists( 'post', $post_id, $meta_key ) || get_post_meta( $post_id, $meta_key, true ) !== $next_owned ) {
+					return new WP_Error( 'taxonomy_ownership_metadata_write_failed' );
+				}
 			}
 		}
 		return $reports;
@@ -494,9 +512,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( '' === $route || ! preg_match( '~^/?[a-z0-9-]+(?:/[a-z0-9-]+)*$~', $route ) || basename( $route ) !== $slug ) {
 			return new WP_Error( 'taxonomy_archive_route_invalid' );
 		}
-		$regex     = '^' . $route . '/?$';
+		$regex     = '^' . $route . '(?:/page/([0-9]+))?/?$';
 		$query_var = 'category' === $entity['taxonomy'] ? 'category_name' : 'tag';
-		$query     = 'index.php?' . $query_var . '=' . rawurlencode( $slug );
+		$query     = 'index.php?' . $query_var . '=' . rawurlencode( $slug ) . '&paged=$matches[1]';
 		$rules     = get_option( 'rewrite_rules', array() );
 		$rules     = is_array( $rules ) ? $rules : array();
 		if ( isset( $rules[ $regex ] ) && $rules[ $regex ] !== $query ) {
@@ -1773,6 +1791,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				'producer_reconciliation_identity_exists' => metadata_exists( 'post', $id, self::PRODUCER_RECONCILIATION_META_KEY ),
 				'source_routes'                           => get_post_meta( $id, Static_Site_Importer_Source_Route_Redirect::META_KEY, false ),
 				'thumbnail'                               => get_post_meta( $id, '_thumbnail_id', false ),
+				'taxonomy_memberships'                    => get_post_meta( $id, '_static_site_importer_taxonomy_memberships', true ),
+				'taxonomy_memberships_exists'              => metadata_exists( 'post', $id, '_static_site_importer_taxonomy_memberships' ),
 			);
 			return;
 		}
@@ -1970,9 +1990,15 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			try {
 				$key = '_static_site_importer_taxonomy_memberships';
 				if ( ! empty( $before['exists'] ) ) {
-					update_post_meta( (int) $post_id, $key, $before['value'] );
+					update_post_meta( (int) $post_id, $key, wp_slash( $before['value'] ) );
+					if ( ! metadata_exists( 'post', (int) $post_id, $key ) || get_post_meta( (int) $post_id, $key, true ) !== $before['value'] ) {
+						throw new RuntimeException( 'materialization_rollback_taxonomy_post_meta_restore_failed' );
+					}
 				} else {
 					delete_post_meta( (int) $post_id, $key );
+					if ( metadata_exists( 'post', (int) $post_id, $key ) ) {
+						throw new RuntimeException( 'materialization_rollback_taxonomy_post_meta_delete_failed' );
+					}
 				}
 			} catch ( Throwable $error ) {
 				self::record_rollback_failure( $state, 'taxonomy_post_meta', (string) $post_id, $error );
@@ -2007,6 +2033,18 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 						delete_post_meta( $id, self::PRODUCER_RECONCILIATION_META_KEY );
 						if ( metadata_exists( 'post', $id, self::PRODUCER_RECONCILIATION_META_KEY ) ) {
 							throw new RuntimeException( 'materialization_rollback_post_meta_delete_failed' );
+						}
+					}
+					$taxonomy_key = '_static_site_importer_taxonomy_memberships';
+					if ( ! empty( $before['taxonomy_memberships_exists'] ) ) {
+						update_post_meta( $id, $taxonomy_key, wp_slash( $before['taxonomy_memberships'] ) );
+						if ( get_post_meta( $id, $taxonomy_key, true ) !== $before['taxonomy_memberships'] ) {
+							throw new RuntimeException( 'materialization_rollback_taxonomy_post_meta_restore_failed' );
+						}
+					} else {
+						delete_post_meta( $id, $taxonomy_key );
+						if ( metadata_exists( 'post', $id, $taxonomy_key ) ) {
+							throw new RuntimeException( 'materialization_rollback_taxonomy_post_meta_delete_failed' );
 						}
 					}
 					foreach ( array(

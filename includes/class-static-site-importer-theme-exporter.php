@@ -307,9 +307,22 @@ class Static_Site_Importer_Theme_Exporter {
 					$site_origin              = untrailingslashit( home_url( '/' ) );
 					$html                     = str_replace( $site_origin . '/', '/', $html );
 					$html                     = preg_replace( '#href="/page/([0-9]+)/"#', 'href="' . trailingslashit( $route ) . 'page/$1/"', $html ) ?? $html;
+					$html                     = preg_replace( '#href="' . preg_quote( $site_origin, '#' ) . '/page/([0-9]+)/"#', 'href="' . trailingslashit( $route ) . 'page/$1/"', $html ) ?? $html;
+					if ( $page_number > 1 ) {
+						$previous_route = 2 === $page_number ? trailingslashit( $route ) : trailingslashit( $route ) . 'page/' . ( $page_number - 1 ) . '/';
+						$html           = preg_replace( '#href="/page/([0-9]+)/"#', 'href="' . $previous_route . '"', $html ) ?? $html;
+					}
 					if ( $page_number >= $max_pages ) {
 						$html = preg_replace( '#<a href="[^"]+" class="wp-block-query-pagination-next">.*?</a>#s', '', $html ) ?? $html;
 					}
+					$html = preg_replace_callback(
+						'#(?:href|src)="/([^\"]+)"#',
+						static function ( array $match ) use ( $page_route ): string {
+							$prefix = str_repeat( '../', substr_count( trim( $page_route, '/' ), '/' ) + 1 );
+							return str_replace( '="/', '="' . $prefix, $match[0] );
+						},
+						$html
+					) ?? $html;
 					$files[] = self::export_file_entry(
 						$page_path,
 						self::export_html_document(
