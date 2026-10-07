@@ -177,7 +177,7 @@ final class Static_Site_Importer_External_Metric_Runtime {
 				continue;
 			}
 			$seen[ $fact['id'] ] = true;
-			$source_errors = self::validate_source( $fact['source'] ?? null );
+			$source_errors       = self::validate_source( $fact['source'] ?? null );
 			if ( ! empty( $source_errors ) ) {
 				$errors[] = array(
 					'path'    => $path . '.source',
@@ -186,19 +186,19 @@ final class Static_Site_Importer_External_Metric_Runtime {
 				);
 				continue;
 			}
-			$metric = $fact['metric'] ?? null;
-			$aggregation = $fact['aggregation'] ?? null;
-			$extraction  = $fact['extraction'] ?? null;
-			$resources   = $fact['source']['resources'];
-			$type        = is_array( $extraction ) ? ( $extraction['value_type'] ?? null ) : null;
-			$extract_keys = is_array( $extraction ) ? array_keys( $extraction ) : array();
+			$metric           = $fact['metric'] ?? null;
+			$aggregation      = $fact['aggregation'] ?? null;
+			$extraction       = $fact['extraction'] ?? null;
+			$resources        = $fact['source']['resources'];
+			$type             = is_array( $extraction ) ? ( $extraction['value_type'] ?? null ) : null;
+			$extract_keys     = is_array( $extraction ) ? array_keys( $extraction ) : array();
 			$extract_required = array( 'kind', 'pointer', 'value_type' );
 			if ( is_array( $extraction ) && 'string' === $type ) {
 				$extract_required[] = 'max_length'; }
 			sort( $extract_keys );
 			sort( $extract_required );
-			$extract_ok  = is_array( $extraction ) && $extract_keys === $extract_required && 'json_pointer' === ( $extraction['kind'] ?? null ) && self::valid_json_pointer( $extraction['pointer'] ?? null ) && in_array( $type, array( 'nonnegative_integer', 'string' ), true ) && ( 'string' !== $type || ( is_int( $extraction['max_length'] ?? null ) && $extraction['max_length'] >= 1 && $extraction['max_length'] <= 255 ) );
-			$extract_ok  = 'success_count' === $aggregation && null === $extraction ? true : $extract_ok;
+			$extract_ok     = is_array( $extraction ) && $extract_keys === $extract_required && 'json_pointer' === ( $extraction['kind'] ?? null ) && self::valid_json_pointer( $extraction['pointer'] ?? null ) && in_array( $type, array( 'nonnegative_integer', 'string' ), true ) && ( 'string' !== $type || ( is_int( $extraction['max_length'] ?? null ) && $extraction['max_length'] >= 1 && $extraction['max_length'] <= 255 ) );
+			$extract_ok     = 'success_count' === $aggregation && null === $extraction ? true : $extract_ok;
 			$aggregation_ok = in_array( $aggregation, array( 'identity', 'sum', 'success_count' ), true )
 				&& ( 'identity' !== $aggregation || 1 === count( $resources ) )
 				&& ( 'success_count' === $aggregation || $extract_ok )
@@ -267,7 +267,7 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		$url = $request['url_template'] ?? null;
 		if ( ! is_string( $url ) || strlen( $url ) > 2048 || strpbrk( $url, "\r\n\\" ) ) {
 			$errors['url_template'] = false;
-			$url = '';
+			$url                    = '';
 		}
 		preg_match_all( '/\\{([a-z][a-z0-9_]*)\\}/', $url, $matches );
 		if ( str_contains( str_replace( $matches[0], '', $url ), '{' ) || str_contains( str_replace( $matches[0], '', $url ), '}' ) ) {
@@ -290,7 +290,7 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		$query = $request['query'] ?? null;
 		if ( ! is_array( $query ) || count( $query ) > 32 ) {
 			$errors['query'] = false;
-			$query = array(); }
+			$query           = array(); }
 		foreach ( $query as $name => $value ) {
 			if ( ! is_string( $name ) || ! preg_match( '/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/', $name ) || preg_match( '/(?:token|secret|password|credential|auth|api[-_]?key)/i', $name ) || ! ( is_string( $value ) || is_int( $value ) || is_bool( $value ) ) || strlen( (string) $value ) > 255 || preg_match( '/[\\x00-\\x1f\\x7f]/', (string) $value ) ) {
 				$errors['query_values'] = false; }
@@ -298,7 +298,7 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		$query_variables = $request['query_variables'] ?? null;
 		if ( ! is_array( $query_variables ) || ! array_is_list( $query_variables ) || count( $query_variables ) > 16 || count( $query_variables ) !== count( array_unique( $query_variables, SORT_REGULAR ) ) ) {
 			$errors['query_variables'] = false;
-			$query_variables = array(); }
+			$query_variables           = array(); }
 		foreach ( $query_variables as $name ) {
 			if ( ! is_string( $name ) || ! preg_match( '/^[a-z][a-z0-9_]{0,63}$/', $name ) || preg_match( '/(?:token|secret|password|credential|auth|api[-_]?key)/i', $name ) || in_array( $name, $path_matches[1], true ) || array_key_exists( $name, $query ) ) {
 				$errors['query_variables'] = false; }
@@ -311,8 +311,8 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		if ( count( $variables ) > 32 || $variables !== $variable_names ) {
 			$errors['resource_variable_schema'] = false; }
 		foreach ( $variable_schemas as $name => $schema ) {
-			$location = in_array( $name, $path_matches[1], true ) ? 'path' : 'query';
-			$schema_keys = is_array( $schema ) ? array_keys( $schema ) : array();
+			$location     = in_array( $name, $path_matches[1], true ) ? 'path' : 'query';
+			$schema_keys  = is_array( $schema ) ? array_keys( $schema ) : array();
 			$allowed_keys = array( 'location', 'min_length', 'max_length', 'allowed_characters', 'first_characters', 'last_characters', 'prohibited_values' );
 			if ( ! is_array( $schema ) || preg_match( '/(?:token|secret|password|credential|auth|api[-_]?key)/i', (string) $name ) || array_diff( $schema_keys, $allowed_keys ) || ! in_array( count( $schema ), array( 5, 6, 7 ), true ) || ! is_string( $schema['location'] ?? null ) || ! hash_equals( $location, (string) $schema['location'] ) || ! is_int( $schema['min_length'] ?? null ) || $schema['min_length'] < 1 || ! is_int( $schema['max_length'] ?? null ) || $schema['max_length'] < $schema['min_length'] || $schema['max_length'] > 255 || ! is_string( $schema['allowed_characters'] ?? null ) || '' === $schema['allowed_characters'] || strlen( $schema['allowed_characters'] ) > 128 || 1 !== preg_match( '/\\A[\\x21-\\x7e]+\\z/D', $schema['allowed_characters'] ) || strlen( count_chars( $schema['allowed_characters'], 3 ) ) !== strlen( $schema['allowed_characters'] ) || ! is_array( $schema['prohibited_values'] ?? null ) || ! array_is_list( $schema['prohibited_values'] ) || count( $schema['prohibited_values'] ) > 16 ) {
 				$errors['resource_variable_constraints'] = false;
@@ -329,7 +329,7 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		$headers = $request['headers'] ?? null;
 		if ( ! is_array( $headers ) || count( $headers ) > 16 ) {
 			$errors['headers'] = false;
-			$headers = array(); }
+			$headers           = array(); }
 		foreach ( $headers as $name => $value ) {
 			$lower = strtolower( (string) $name );
 			if ( ! is_string( $name ) || ! preg_match( '/^[A-Za-z][A-Za-z0-9-]{0,63}$/', $name ) || preg_match( '/(?:token|secret|password|credential|auth|api[-_]?key)/i', $lower ) || in_array( $lower, array( 'host', 'authorization', 'cookie', 'content-length', 'connection', 'transfer-encoding', 'proxy-authorization' ), true ) || str_starts_with( $lower, 'proxy-' ) || ! is_string( $value ) || strlen( $value ) > 255 || preg_match( '/[\\x00-\\x1f\\x7f]/', $value ) ) {
@@ -456,8 +456,8 @@ final class Static_Site_Importer_External_Metric_Runtime {
 
 	/** Interpret one declarative source recipe through the shared fetch/cache lifecycle. */
 	public static function value( string $metric_id, array $metrics, ?callable $request = null, ?int $now = null, bool $force = false ): ?string {
-		static $request_values    = array();
-		static $request_responses = array();
+		static $request_values        = array();
+		static $request_responses     = array();
 		static $request_source_hashes = array();
 		if ( $force ) {
 			unset( $request_values[ $metric_id ] ); }
@@ -474,13 +474,13 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		) ) {
 			return null; }
 		$cache_material = self::canonical_json( array( $fact['source'], $fact['metric'], $fact['extraction'] ?? null, $fact['aggregation'], $fact['format'] ) );
-		$recipe_hash = hash( 'sha256', $cache_material );
-		$key         = 'ssi_external_metric_' . $recipe_hash;
-		$now         = $now ?? time();
-		$max_age     = (int) $fact['source']['freshness']['max_age_seconds'];
-		$source_id   = (string) $fact['source']['id'];
-		$source_hash = hash( 'sha256', self::canonical_json( $fact['source'] ) );
-		$source_key  = 'ssi_external_metric_source_' . $source_hash;
+		$recipe_hash    = hash( 'sha256', $cache_material );
+		$key            = 'ssi_external_metric_' . $recipe_hash;
+		$now            = $now ?? time();
+		$max_age        = (int) $fact['source']['freshness']['max_age_seconds'];
+		$source_id      = (string) $fact['source']['id'];
+		$source_hash    = hash( 'sha256', self::canonical_json( $fact['source'] ) );
+		$source_key     = 'ssi_external_metric_source_' . $source_hash;
 		foreach ( $metrics as $candidate_id => $candidate ) {
 			if ( is_string( $candidate_id ) && is_array( $candidate['source'] ?? null ) ) {
 				$request_source_hashes[ $candidate_id ] = hash( 'sha256', self::canonical_json( $candidate['source'] ) ); }
@@ -491,10 +491,10 @@ final class Static_Site_Importer_External_Metric_Runtime {
 					unset( $request_values[ $candidate_id ] ); }
 			}
 		}
-		$source_cached = function_exists( 'get_transient' ) ? get_transient( $source_key ) : false;
-		$use_source_cache = ! $force && is_array( $source_cached ) && 'fresh' === ( $source_cached['status'] ?? null ) && is_string( $source_cached['source_hash'] ?? null ) && hash_equals( $source_hash, $source_cached['source_hash'] ) && is_int( $source_cached['fetched_at'] ?? null ) && $now >= $source_cached['fetched_at'] && $max_age > ( $now - $source_cached['fetched_at'] ) && is_array( $source_cached['documents'] ?? null ) && array_is_list( $source_cached['documents'] ) && count( $source_cached['documents'] ) === count( $fact['source']['resources'] );
+		$source_cached     = function_exists( 'get_transient' ) ? get_transient( $source_key ) : false;
+		$use_source_cache  = ! $force && is_array( $source_cached ) && 'fresh' === ( $source_cached['status'] ?? null ) && is_string( $source_cached['source_hash'] ?? null ) && hash_equals( $source_hash, $source_cached['source_hash'] ) && is_int( $source_cached['fetched_at'] ?? null ) && $now >= $source_cached['fetched_at'] && $max_age > ( $now - $source_cached['fetched_at'] ) && is_array( $source_cached['documents'] ?? null ) && array_is_list( $source_cached['documents'] ) && count( $source_cached['documents'] ) === count( $fact['source']['resources'] );
 		$source_fetched_at = $use_source_cache ? (int) $source_cached['fetched_at'] : $now;
-		$cached      = function_exists( 'get_transient' ) ? get_transient( $key ) : false;
+		$cached            = function_exists( 'get_transient' ) ? get_transient( $key ) : false;
 		if ( ! $force && is_array( $cached ) && 'fresh' === ( $cached['status'] ?? null ) && is_string( $cached['value'] ?? null ) && is_int( $cached['fetched_at'] ?? null ) && $now >= $cached['fetched_at'] && $max_age > ( $now - $cached['fetched_at'] ) && is_string( $cached['source_id'] ?? null ) && hash_equals( $source_id, $cached['source_id'] ) && is_string( $cached['recipe_hash'] ?? null ) && hash_equals( $recipe_hash, $cached['recipe_hash'] ) && ( ! $use_source_cache || ( $cached['source_fetched_at'] ?? null ) === $source_fetched_at ) ) {
 			// The transient is a canonical source receipt shared by facts with the
 			// same provider semantics. Hand that exact receipt to this fact so its
@@ -505,9 +505,9 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		$retry_at = get_option( 'static_site_importer_external_metric_retry_after', array() );
 		if ( ! $force && is_array( $retry_at ) && (int) ( $retry_at[ $key ] ?? 0 ) > $now ) {
 			return self::stale_or_fallback( $metric_id, $fact, $key, $cached, $request_values ); }
-		$documents = $use_source_cache ? $source_cached['documents'] : array();
+		$documents  = $use_source_cache ? $source_cached['documents'] : array();
 		$fetched_at = $source_fetched_at;
-		$deadline = microtime( true ) + 15.0;
+		$deadline   = microtime( true ) + 15.0;
 		if ( ! $use_source_cache ) {
 			foreach ( $fact['source']['resources'] as $resource ) {
 				if ( microtime( true ) >= $deadline ) {
@@ -515,8 +515,8 @@ final class Static_Site_Importer_External_Metric_Runtime {
 				$parts = self::request_parts( $fact['source'], $resource );
 				if ( ! is_array( $parts ) || ! self::public_request_url( $parts['url'] ) ) {
 					return self::stale_or_fallback( $metric_id, $fact, $key, $cached, $request_values ); }
-				$url           = $parts['url'];
-				$response_key  = hash( 'sha256', $url . self::canonical_json( $parts['headers'] ) );
+				$url          = $parts['url'];
+				$response_key = hash( 'sha256', $url . self::canonical_json( $parts['headers'] ) );
 				if ( $force ) {
 					unset( $request_responses[ $response_key ] ); }
 				if ( array_key_exists( $response_key, $request_responses ) ) {
@@ -579,16 +579,16 @@ final class Static_Site_Importer_External_Metric_Runtime {
 				set_transient(
 					$source_key,
 					array(
-						'status'     => 'fresh',
+						'status'      => 'fresh',
 						'source_hash' => $source_hash,
-						'fetched_at' => $fetched_at,
-						'documents'  => $documents,
+						'fetched_at'  => $fetched_at,
+						'documents'   => $documents,
 					),
 					$max_age
 				);
 			}
 		}
-		$receipt   = array(
+		$receipt = array(
 			'status'            => 'fresh',
 			'value'             => $formatted,
 			'fetched_at'        => $fetched_at,
@@ -614,10 +614,10 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		$retry         = is_array( $retry ) ? $retry : array();
 		$retry[ $key ] = time() + 60;
 		update_option( 'static_site_importer_external_metric_retry_after', $retry, false );
-		$lkg       = get_option( 'static_site_importer_external_metric_last_good', array() );
-		$last_good = is_array( $lkg ) && is_array( $lkg[ $key ] ?? null ) ? $lkg[ $key ] : null;
-		$value     = is_array( $last_good ) && is_string( $last_good['value'] ?? null ) ? $last_good['value'] : (string) $fact['fallback']['text'];
-		$status    = is_array( $last_good ) ? 'stale' : ( '' !== $value ? 'captured_fallback' : 'unresolved' );
+		$lkg         = get_option( 'static_site_importer_external_metric_last_good', array() );
+		$last_good   = is_array( $lkg ) && is_array( $lkg[ $key ] ?? null ) ? $lkg[ $key ] : null;
+		$value       = is_array( $last_good ) && is_string( $last_good['value'] ?? null ) ? $last_good['value'] : (string) $fact['fallback']['text'];
+		$status      = is_array( $last_good ) ? 'stale' : ( '' !== $value ? 'captured_fallback' : 'unresolved' );
 		$recipe_hash = hash( 'sha256', self::canonical_json( array( $fact['source'], $fact['metric'], $fact['extraction'] ?? null, $fact['aggregation'], $fact['format'] ) ) );
 		$receipt     = array(
 			'status'            => $status,
@@ -662,12 +662,12 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		return (string) $format['prefix'] . (string) $value . (string) $format['suffix'];
 	}
 
-	private static function request_parts( array $source, array $resource ): ?array {
+	private static function request_parts( array $source, array $resource_values ): ?array {
 		$request = $source['request'];
 		$url     = preg_replace_callback(
 			'/\\{([A-Za-z][A-Za-z0-9_]*)\\}/',
-			static function ( array $placeholder_parts ) use ( $resource ): string {
-				$value = (string) ( $resource[ $placeholder_parts[1] ] ?? '' );
+			static function ( array $placeholder_parts ) use ( $resource_values ): string {
+				$value = (string) ( $resource_values[ $placeholder_parts[1] ] ?? '' );
 				return in_array( $value, array( '.', '..' ), true ) ? '' : rawurlencode( $value );
 			},
 			(string) $request['url_template']
@@ -676,9 +676,9 @@ final class Static_Site_Importer_External_Metric_Runtime {
 			return null; }
 		$query = $request['query'];
 		foreach ( $request['query_variables'] as $name ) {
-			if ( ! array_key_exists( $name, $resource ) ) {
+			if ( ! array_key_exists( $name, $resource_values ) ) {
 				return null; }
-			$query[ $name ] = (string) $resource[ $name ];
+			$query[ $name ] = (string) $resource_values[ $name ];
 		}
 		if ( ! empty( $query ) ) {
 			$url = add_query_arg( $query, $url ); }

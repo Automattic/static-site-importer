@@ -15,38 +15,38 @@ $source       = is_readable( $runtime_file ) ? (string) file_get_contents( $runt
 preg_match( '/final class ([A-Za-z_][A-Za-z0-9_]*)/', $source, $class_match );
 $runtime_class = $class_match[1] ?? '';
 $assert( '' !== $runtime_class && class_exists( $runtime_class ), 'Generated companion owns its independent generic runtime.' );
-$fact_map = array_column( $facts, null, 'id' );
-$success_count_fact = $fact_map['active-installs'];
-$success_count_fact['id'] = 'project-count';
-$success_count_fact['metric'] = 'plugin_response_count';
+$fact_map                          = array_column( $facts, null, 'id' );
+$success_count_fact                = $fact_map['active-installs'];
+$success_count_fact['id']          = 'project-count';
+$success_count_fact['metric']      = 'plugin_response_count';
 $success_count_fact['aggregation'] = 'success_count';
-$success_count_fact['extraction'] = array(
+$success_count_fact['extraction']  = array(
 	'kind'       => 'json_pointer',
 	'pointer'    => '/slug',
 	'value_type' => 'string',
 	'max_length' => 255,
 );
-$success_count_fact['format'] = array(
+$success_count_fact['format']      = array(
 	'locale'   => 'en-US',
 	'grouping' => true,
 	'prefix'   => '',
 	'suffix'   => '',
 	'decimals' => 0,
 );
-$success_count_fact['fallback'] = array(
+$success_count_fact['fallback']    = array(
 	'text' => 'Captured successful project count',
 	'hash' => hash( 'sha256', 'Captured successful project count' ),
 );
 $success_count_fact['bindings'][0]['search_block_markup'] = '<!-- wp:paragraph --><p>Captured successful project count</p><!-- /wp:paragraph -->';
-$fact_map['project-count'] = $success_count_fact;
-$facts[] = $success_count_fact;
-$companion_path = WP_PLUGIN_DIR . '/' . dirname( $plugin_file );
-$config_path = $companion_path . '/companion.json';
-$config = json_decode( (string) file_get_contents( $config_path ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the generated disposable companion config for the generic typed response prerequisite test.
+$fact_map['project-count']                                = $success_count_fact;
+$facts[]                      = $success_count_fact;
+$companion_path               = WP_PLUGIN_DIR . '/' . dirname( $plugin_file );
+$config_path                  = $companion_path . '/companion.json';
+$config                       = json_decode( (string) file_get_contents( $config_path ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the generated disposable companion config for the generic typed response prerequisite test.
 $config['external_metrics'][] = $success_count_fact;
 file_put_contents( $config_path, wp_json_encode( $config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Adds the canonical source fact to the disposable standalone consumer while producer source transport adopts its typed success_count prerequisite.
 update_option( 'ssi_external_metric_acceptance_facts', $facts, false );
-$runtime_metrics = array_column( $facts, null, 'id' );
+$runtime_metrics     = array_column( $facts, null, 'id' );
 $success_count_value = call_user_func( array( $runtime_class, 'value' ), 'project-count', $runtime_metrics, null, null, true );
 $assert( '5' === $success_count_value && 'fresh' === ( get_option( 'static_site_importer_external_metric_receipts', array() )['project-count']['status'] ?? '' ), 'Real WordPress.org success_count performs a typed /slug prerequisite over its five public resources.' );
 $post_content = (string) get_post_field( 'post_content', $metric_post_id );
@@ -64,7 +64,7 @@ $receipts = get_option( 'static_site_importer_external_metric_receipts', array()
 foreach ( $facts as $fact ) {
 	$row = $receipts[ $fact['id'] ] ?? array();
 	$assert( 'fresh' === ( $row['status'] ?? '' ) && is_int( $row['fetched_at'] ?? null ) && '' !== (string) ( $row['value'] ?? '' ) && ( $row['source_id'] ?? '' ) === ( $fact['source']['id'] ?? '' ), 'Timestamped fresh source receipt exists for ' . $fact['id'] ); }
-$github_api = wp_safe_remote_get(
+$github_api  = wp_safe_remote_get(
 	'https://api.github.com/repos/Automattic/.github',
 	array(
 		'timeout'     => 5,
@@ -79,7 +79,7 @@ $github_data = ! is_wp_error( $github_api ) && 200 === (int) wp_remote_retrieve_
 $assert( is_array( $github_data ) && is_int( $github_data['stargazers_count'] ?? null ) && is_int( $github_data['forks_count'] ?? null ), 'Independent live GitHub API observation contains exact integer stargazers_count and forks_count fields: status=' . ( is_wp_error( $github_api ) ? $github_api->get_error_message() : wp_remote_retrieve_response_code( $github_api ) ) . ' body=' . wp_remote_retrieve_body( $github_api ) );
 $assert( (string) ( $github_data['stargazers_count'] ?? '' ) === ( $receipts['github-stars']['value'] ?? null ) && (string) ( $github_data['forks_count'] ?? '' ) === ( $receipts['github-forks']['value'] ?? null ), 'Generated runtime receipts equal the independently queried GitHub API fields exactly.' );
 $assert( ( $receipts['github-stars']['fetched_at'] ?? null ) === ( $receipts['github-forks']['fetched_at'] ?? null ), 'GitHub stars and forks reuse the same source response timestamp.' );
-$neutral_api = wp_safe_remote_get(
+$neutral_api  = wp_safe_remote_get(
 	'https://jsonplaceholder.typicode.com/todos/1',
 	array(
 		'timeout'     => 5,
@@ -94,15 +94,15 @@ $assert( hash( 'sha256', (string) get_post_field( 'post_content', $metric_post_i
 // A separate editor page proves that refresh returns a new value for the
 // existing native binding controls, and that detach freezes that exact value.
 $metric_map         = array_column( $facts, null, 'id' );
-$make_editor_metric = static function ( array $template, string $id, array $resource, string $fallback, string $role ): array {
-	$fact                      = $template;
-	$fact['id']                = $id;
-	$fact['source']['resources'] = array( $resource );
-	$fact['fallback']['text']  = $fallback;
-	$fact['fallback']['hash']  = hash( 'sha256', $fallback );
-	$block                     = 'heading' === $role ? 'core/heading' : 'core/paragraph';
-	$tag                       = 'heading' === $role ? 'h2' : 'p';
-	$fact['bindings'][0]       = array(
+$make_editor_metric = static function ( array $template, string $id, array $resource_values, string $fallback, string $role ): array {
+	$fact                        = $template;
+	$fact['id']                  = $id;
+	$fact['source']['resources'] = array( $resource_values );
+	$fact['fallback']['text']    = $fallback;
+	$fact['fallback']['hash']    = hash( 'sha256', $fallback );
+	$block                       = 'heading' === $role ? 'core/heading' : 'core/paragraph';
+	$tag                         = 'heading' === $role ? 'h2' : 'p';
+	$fact['bindings'][0]         = array(
 		'schema'              => 'generic/block-binding/v1',
 		'role'                => $role,
 		'source_path'         => 'editor-acceptance.html',
@@ -219,8 +219,8 @@ $alias_http    = static function ( mixed $preempt, array $args, string $url ) us
 add_filter( 'pre_http_request', $alias_http, 10, 3 );
 try {
 	$alias_metrics = array_column( array_merge( array_values( $metric_map ), $editor_facts ), null, 'id' );
-	$alias_seed = call_user_func( array( $runtime_class, 'value' ), 'editor-detach-metric', $alias_metrics, null, null, true );
-	$alias_render = do_blocks(
+	$alias_seed    = call_user_func( array( $runtime_class, 'value' ), 'editor-detach-metric', $alias_metrics, null, null, true );
+	$alias_render  = do_blocks(
 		$editor_block( 'alias-cache-first', 'editor-detach-metric', 'p', 'captured-editor-stars' ) . "\n" . $editor_block( 'alias-cache-second', 'editor-sibling-metric', 'p', 'captured-editor-forks' )
 	);
 } finally {
@@ -293,11 +293,11 @@ echo wp_json_encode(
 		'content_sha256' => $before_hash,
 		'receipts'       => $receipts,
 		'alias_cache'    => array(
-			'provider_fetches' => $alias_fetches,
-			'github_value'     => $receipts['github-stars']['value'] ?? null,
+			'provider_fetches'   => $alias_fetches,
+			'github_value'       => $receipts['github-stars']['value'] ?? null,
 			'github_forks_value' => $receipts['github-forks']['value'] ?? null,
-			'rendered'         => $alias_render,
-			'receipts'         => array(
+			'rendered'           => $alias_render,
+			'receipts'           => array(
 				'editor-detach-metric'  => $first_receipt,
 				'editor-sibling-metric' => $second_receipt,
 			),

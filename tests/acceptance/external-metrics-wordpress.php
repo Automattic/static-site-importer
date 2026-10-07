@@ -11,7 +11,7 @@ require_once WP_CONTENT_DIR . '/plugins/static-site-importer/includes/class-stat
 require_once __DIR__ . '/blocks-engine-source-autoloader.php';
 $producer_source = $GLOBALS['ssi_external_metric_producer_source'];
 
-$assert    = static function ( bool $ok, string $message ): void {
+$assert           = static function ( bool $ok, string $message ): void {
 	if ( ! $ok ) {
 		throw new RuntimeException( esc_html( $message ) ); }
 };
@@ -83,7 +83,7 @@ $source_provenance      = static function ( string $file ): array {
 	);
 };
 $make_fact              = static function ( string $id, string $source, string $metric, string $aggregation, array $plugin_slugs, string $text, array $format, string $source_file ) use ( $metric_page ): array {
-	$download   = 'plugin_download_history' === $source;
+	$download    = 'plugin_download_history' === $source;
 	$extractions = array(
 		'active_installs'       => array( '/active_installs', 'nonnegative_integer' ),
 		'downloads_all_time'    => array( '/all_time', 'nonnegative_integer' ),
@@ -94,10 +94,10 @@ $make_fact              = static function ( string $id, string $source, string $
 	return array(
 		'id'          => $id,
 		'source'      => array(
-			'schema'    => 'generic/external-metric-source/v1',
-			'id'        => $download ? 'wordpress.org.plugin-download-history' : 'wordpress.org.plugin-information',
-			'intent'    => 'external_public_json',
-			'request'   => array(
+			'schema'             => 'generic/external-metric-source/v1',
+			'id'                 => $download ? 'wordpress.org.plugin-download-history' : 'wordpress.org.plugin-information',
+			'intent'             => 'external_public_json',
+			'request'            => array(
 				'method'              => 'GET',
 				'url_template'        => $download ? 'https://api.wordpress.org/stats/plugin/1.0/downloads.php' : 'https://api.wordpress.org/plugins/info/1.2/',
 				'query'               => $download ? array( 'historical_summary' => 1 ) : array( 'action' => 'plugin_information' ),
@@ -117,8 +117,8 @@ $make_fact              = static function ( string $id, string $source, string $
 					'prohibited_values'  => array(),
 				),
 			),
-			'resources' => array_map( static fn( string $slug ): array => array( 'slug' => $slug ), $plugin_slugs ),
-			'freshness' => array( 'max_age_seconds' => 3600 ),
+			'resources'          => array_map( static fn( string $slug ): array => array( 'slug' => $slug ), $plugin_slugs ),
+			'freshness'          => array( 'max_age_seconds' => 3600 ),
 		),
 		'metric'      => $metric,
 		'extraction'  => array_merge(
@@ -278,7 +278,7 @@ $make_generic_fact = static function ( string $id, array $source, string $metric
 		),
 	);
 };
-$github_source = array(
+$github_source     = array(
 	'schema'             => 'generic/external-metric-source/v1',
 	'id'                 => 'github.repository-information',
 	'intent'             => 'external_public_json',
@@ -296,7 +296,7 @@ $github_source = array(
 		'timeout_seconds'     => 5,
 	),
 	'resource_variables' => array(
-		'owner' => array(
+		'owner'      => array(
 			'location'           => 'path',
 			'min_length'         => 1,
 			'max_length'         => 39,
@@ -321,7 +321,7 @@ $github_source = array(
 	),
 	'freshness'          => array( 'max_age_seconds' => 86400 ),
 );
-$neutral_source = array(
+$neutral_source    = array(
 	'schema'             => 'generic/external-metric-source/v1',
 	'id'                 => 'neutral.example-records',
 	'intent'             => 'external_public_json',
@@ -349,9 +349,9 @@ $neutral_source = array(
 	),
 	'freshness'          => array( 'max_age_seconds' => 600 ),
 );
-$facts[] = $make_generic_fact( 'github-stars', $github_source, 'stargazers_count', '/stargazers_count', 'nonnegative_integer', '7', $source_provenance( 'src/components/gh-repo-card.tsx' ) );
-$facts[] = $make_generic_fact( 'github-forks', $github_source, 'forks_count', '/forks_count', 'nonnegative_integer', '9', $source_provenance( 'src/components/gh-repo-card.tsx' ) );
-$facts[] = $make_generic_fact(
+$facts[]           = $make_generic_fact( 'github-stars', $github_source, 'stargazers_count', '/stargazers_count', 'nonnegative_integer', '7', $source_provenance( 'src/components/gh-repo-card.tsx' ) );
+$facts[]           = $make_generic_fact( 'github-forks', $github_source, 'forks_count', '/forks_count', 'nonnegative_integer', '9', $source_provenance( 'src/components/gh-repo-card.tsx' ) );
+$facts[]           = $make_generic_fact(
 	'neutral-score',
 	$neutral_source,
 	'user_id',

@@ -96,12 +96,12 @@ $version_cases = array(
 );
 $results       = array();
 foreach ( $version_cases as $label => $payload ) {
-	$fact                      = $version_fact;
-	$fact['id']                = 'review-' . $label;
+	$fact                        = $version_fact;
+	$fact['id']                  = 'review-' . $label;
 	$fact['source']['resources'] = array( array( 'slug' => 'review-' . str_replace( '_', '-', $label ) ) );
-	$fact['fallback']['text']  = 'v-captured';
-	$fact['fallback']['hash']  = hash( 'sha256', $fact['fallback']['text'] );
-	$results[ $label ]         = $run_response( $fact, array( $fact['source']['resources'][0]['slug'] => array( $payload ) ) );
+	$fact['fallback']['text']    = 'v-captured';
+	$fact['fallback']['hash']    = hash( 'sha256', $fact['fallback']['text'] );
+	$results[ $label ]           = $run_response( $fact, array( $fact['source']['resources'][0]['slug'] => array( $payload ) ) );
 }
 
 $installs_fact = $metric_facts['active-installs'] ?? array();
@@ -112,12 +112,12 @@ $numeric_cases = array(
 	'downloads_overflow' => array( 'all_time' => '9223372036854775808' ),
 );
 foreach ( $numeric_cases as $label => $payload ) {
-	$fact                      = str_starts_with( $label, 'ratings' ) ? ( $metric_facts['project-ratings'] ?? array() ) : ( str_starts_with( $label, 'downloads' ) ? ( $metric_facts['all-time-downloads'] ?? array() ) : $installs_fact );
-	$fact['id']                = 'review-' . $label;
+	$fact                        = str_starts_with( $label, 'ratings' ) ? ( $metric_facts['project-ratings'] ?? array() ) : ( str_starts_with( $label, 'downloads' ) ? ( $metric_facts['all-time-downloads'] ?? array() ) : $installs_fact );
+	$fact['id']                  = 'review-' . $label;
 	$fact['source']['resources'] = array( array( 'slug' => 'review-' . str_replace( '_', '-', $label ) ) );
-	$fact['fallback']['text']  = 'captured-count';
-	$fact['fallback']['hash']  = hash( 'sha256', $fact['fallback']['text'] );
-	$results[ $label ]         = $run_response( $fact, array( $fact['source']['resources'][0]['slug'] => array( $payload ) ) );
+	$fact['fallback']['text']    = 'captured-count';
+	$fact['fallback']['hash']    = hash( 'sha256', $fact['fallback']['text'] );
+	$results[ $label ]           = $run_response( $fact, array( $fact['source']['resources'][0]['slug'] => array( $payload ) ) );
 }
 
 $failures = array();
@@ -133,25 +133,25 @@ foreach ( array_merge( $version_cases, $numeric_cases ) as $label => $payload ) 
 	$assert( 'captured_fallback' === ( $result['receipt']['status'] ?? '' ), 'Malformed provider response is not labeled fresh: ' . $label );
 }
 
-$http200_error_fact = $metric_facts['project-count'] ?? array();
-$http200_error_fact['id'] = 'review-http200-error-json-count';
+$http200_error_fact                        = $metric_facts['project-count'] ?? array();
+$http200_error_fact['id']                  = 'review-http200-error-json-count';
 $http200_error_fact['source']['resources'] = array( array( 'slug' => 'review-http200-error-json-count' ) );
-$http200_error_fact['fallback']['text'] = 'captured-success-count';
-$http200_error_fact['fallback']['hash'] = hash( 'sha256', 'captured-success-count' );
-$http200_error_count = $run_response( $http200_error_fact, array( 'review-http200-error-json-count' => array( array( 'error' => 'temporarily unavailable' ) ) ) );
+$http200_error_fact['fallback']['text']    = 'captured-success-count';
+$http200_error_fact['fallback']['hash']    = hash( 'sha256', 'captured-success-count' );
+$http200_error_count                       = $run_response( $http200_error_fact, array( 'review-http200-error-json-count' => array( array( 'error' => 'temporarily unavailable' ) ) ) );
 $assert( 'captured-success-count' === ( $http200_error_count['value'] ?? null ) && 'captured_fallback' === ( $http200_error_count['receipt']['status'] ?? '' ), 'Generic typed extraction prerequisite prevents HTTP-200 JSON error objects from incrementing success_count.' );
 
-$route_fact                                 = $installs_fact;
-$route_fact['id']                           = 'review-route-last-good';
-$route_fact['source']['resources']           = array( array( 'slug' => 'review-route-last-good' ) );
-$route_fact['fallback']['text']             = 'route-captured';
-$route_fact['fallback']['hash']             = hash( 'sha256', $route_fact['fallback']['text'] );
-$route_unresolved_fact                      = $installs_fact;
-$route_unresolved_fact['id']                = 'review-route-unresolved';
+$route_fact                                   = $installs_fact;
+$route_fact['id']                             = 'review-route-last-good';
+$route_fact['source']['resources']            = array( array( 'slug' => 'review-route-last-good' ) );
+$route_fact['fallback']['text']               = 'route-captured';
+$route_fact['fallback']['hash']               = hash( 'sha256', $route_fact['fallback']['text'] );
+$route_unresolved_fact                        = $installs_fact;
+$route_unresolved_fact['id']                  = 'review-route-unresolved';
 $route_unresolved_fact['source']['resources'] = array( array( 'slug' => 'review-route-unresolved' ) );
-$route_unresolved_fact['fallback']['text']  = '';
-$route_unresolved_fact['fallback']['hash']  = hash( 'sha256', '' );
-$editor_facts                               = get_option( 'ssi_external_metric_editor_test_facts', array() );
+$route_unresolved_fact['fallback']['text']    = '';
+$route_unresolved_fact['fallback']['hash']    = hash( 'sha256', '' );
+$editor_facts                                 = get_option( 'ssi_external_metric_editor_test_facts', array() );
 $assert( is_array( $editor_facts ) && 4 === count( $editor_facts ), 'Generated companion carries controlled editor and literal-fallback facts.' );
 call_user_func( array( $runtime_class, 'configure' ), array_merge( array_values( $metric_facts ), $editor_facts, array( $route_fact, $route_unresolved_fact ) ) );
 $route_validation = call_user_func(
@@ -171,20 +171,20 @@ $assert( 200 === ( $route_fresh['http_status'] ?? null ) && 'fresh' === ( $route
 $assert( 200 === ( $route_stale['http_status'] ?? null ) && 'stale' === ( $route_stale['data']['status'] ?? '' ) && 'stale' === ( $route_stale['data']['receipt']['status'] ?? '' ) && '321+' === ( $route_stale['data']['value'] ?? null ), 'Injected upstream HTTP 503 reaches the route as stale LKG, never refreshed: ' . wp_json_encode( $route_stale ) );
 $assert( 503 === ( $route_unresolved['http_status'] ?? null ) && 'unresolved' === ( $route_unresolved['data']['data']['freshness'] ?? '' ), 'Refresh route returns a meaningful 503 freshness error when no captured or last-good value exists: ' . wp_json_encode( $route_unresolved ) );
 
-$invalid_route_fact                      = $installs_fact;
-$invalid_route_fact['id']                = 'review-route-invalid';
+$invalid_route_fact                        = $installs_fact;
+$invalid_route_fact['id']                  = 'review-route-invalid';
 $invalid_route_fact['source']['resources'] = array( array( 'slug' => 'review-route-invalid' ) );
-$invalid_route_fact['fallback']['text']  = 'route-invalid-fallback';
-$invalid_route_fact['fallback']['hash']  = hash( 'sha256', $invalid_route_fact['fallback']['text'] );
+$invalid_route_fact['fallback']['text']    = 'route-invalid-fallback';
+$invalid_route_fact['fallback']['hash']    = hash( 'sha256', $invalid_route_fact['fallback']['text'] );
 call_user_func( array( $runtime_class, 'configure' ), array_merge( array_values( $metric_facts ), $editor_facts, array( $route_fact, $invalid_route_fact ) ) );
 $invalid_route = $run_route_response( $invalid_route_fact, array( 'review-route-invalid' => array( array( 'active_installs' => 12.5 ) ) ) );
 $assert( 'captured_fallback' === ( $invalid_route['data']['status'] ?? '' ) && 'route-invalid-fallback' === ( $invalid_route['data']['value'] ?? null ), 'Refresh route returns an invalid fractional-count response as the captured fallback: ' . wp_json_encode( $invalid_route ) );
 
-$partial_route_fact                      = $installs_fact;
-$partial_route_fact['id']                = 'review-route-partial';
+$partial_route_fact                        = $installs_fact;
+$partial_route_fact['id']                  = 'review-route-partial';
 $partial_route_fact['source']['resources'] = array( array( 'slug' => 'review-route-partial-a' ), array( 'slug' => 'review-route-partial-b' ) );
-$partial_route_fact['fallback']['text']  = 'route-partial-fallback';
-$partial_route_fact['fallback']['hash']  = hash( 'sha256', $partial_route_fact['fallback']['text'] );
+$partial_route_fact['fallback']['text']    = 'route-partial-fallback';
+$partial_route_fact['fallback']['hash']    = hash( 'sha256', $partial_route_fact['fallback']['text'] );
 call_user_func( array( $runtime_class, 'configure' ), array_merge( array_values( $metric_facts ), $editor_facts, array( $route_fact, $invalid_route_fact, $partial_route_fact ) ) );
 $partial_route   = $run_route_response(
 	$partial_route_fact,
@@ -233,14 +233,14 @@ $assert( str_contains( $paragraph_literal, esc_html( $literal_text ) ) && ! str_
 $assert( str_contains( $heading_literal, esc_html( $literal_text ) ) && ! str_contains( $heading_literal, '<em>pending</em>' ), 'Generated companion outage preserves literal Heading fallback tags, quotes and entities as text: ' . $heading_literal );
 $assert( str_contains( $literal_content, '321+' ) && str_contains( $literal_content, '50+' ), 'Generated companion renders stale and fresh numeric values alongside literal fallbacks: ' . $literal_content );
 
-$github_rate_fact = $metric_facts['github-stars'] ?? array();
-$github_rate_fact['id'] = 'github-rate-limit-recovery';
-$github_rate_fact['source']['id'] = 'github.rate-limit-recovery';
+$github_rate_fact                     = $metric_facts['github-stars'] ?? array();
+$github_rate_fact['id']               = 'github-rate-limit-recovery';
+$github_rate_fact['source']['id']     = 'github.rate-limit-recovery';
 $github_rate_fact['fallback']['text'] = 'captured-github-stars';
 $github_rate_fact['fallback']['hash'] = hash( 'sha256', 'captured-github-stars' );
-$github_seed = $run_response( $github_rate_fact, array( '' => array( array( 'stargazers_count' => 777 ) ) ) );
-$github_rate_limited = $run_response( $github_rate_fact, array( '' => array( array( '_http_status' => 429 ) ) ) );
-$github_recovered = $run_response( $github_rate_fact, array( '' => array( array( 'stargazers_count' => 888 ) ) ) );
+$github_seed                          = $run_response( $github_rate_fact, array( '' => array( array( 'stargazers_count' => 777 ) ) ) );
+$github_rate_limited                  = $run_response( $github_rate_fact, array( '' => array( array( '_http_status' => 429 ) ) ) );
+$github_recovered                     = $run_response( $github_rate_fact, array( '' => array( array( 'stargazers_count' => 888 ) ) ) );
 $assert( '777' === ( $github_seed['value'] ?? null ) && 'fresh' === ( $github_seed['receipt']['status'] ?? '' ), 'Generic GitHub recipe records a fresh exact count before rate limiting.' );
 $assert( '777' === ( $github_rate_limited['value'] ?? null ) && 'stale' === ( $github_rate_limited['receipt']['status'] ?? '' ) && ( $github_rate_limited['receipt']['fetched_at'] ?? null ) === ( $github_seed['receipt']['fetched_at'] ?? null ), 'GitHub 429 preserves the exact last-known-good count and original source timestamp.' );
 $assert( '888' === ( $github_recovered['value'] ?? null ) && 'fresh' === ( $github_recovered['receipt']['status'] ?? '' ), 'GitHub recipe recovers after rate-limit backoff on the same generic lifecycle.' );
@@ -248,29 +248,29 @@ $assert( '888' === ( $github_recovered['value'] ?? null ) && 'fresh' === ( $gith
 if ( ! empty( $failures ) ) {
 	throw new RuntimeException( esc_html( "External metric generated-companion acceptance failed:\n- " . implode( "\n- ", $failures ) ) ); }
 
-$lkg_fact                      = $installs_fact;
-$lkg_fact['id']                = 'review-lkg-outage';
+$lkg_fact                        = $installs_fact;
+$lkg_fact['id']                  = 'review-lkg-outage';
 $lkg_fact['source']['resources'] = array( array( 'slug' => 'review-lkg-outage' ) );
-$lkg_fact['fallback']['text']  = 'captured-lkg';
-$lkg_fact['fallback']['hash']  = hash( 'sha256', $lkg_fact['fallback']['text'] );
-$lkg_seed                      = $run_response( $lkg_fact, array( 'review-lkg-outage' => array( array( 'active_installs' => 321 ) ) ) );
-$lkg_outage                    = $run_response( $lkg_fact, array( 'review-lkg-outage' => array( array( '_http_status' => 503 ) ) ) );
+$lkg_fact['fallback']['text']    = 'captured-lkg';
+$lkg_fact['fallback']['hash']    = hash( 'sha256', $lkg_fact['fallback']['text'] );
+$lkg_seed                        = $run_response( $lkg_fact, array( 'review-lkg-outage' => array( array( 'active_installs' => 321 ) ) ) );
+$lkg_outage                      = $run_response( $lkg_fact, array( 'review-lkg-outage' => array( array( '_http_status' => 503 ) ) ) );
 $assert( '321+' === ( $lkg_seed['value'] ?? null ) && 'fresh' === ( $lkg_seed['receipt']['status'] ?? '' ), 'Valid provider response seeds a generated-companion last-known-good value.' );
 $assert( '321+' === ( $lkg_outage['value'] ?? null ) && 'stale' === ( $lkg_outage['receipt']['status'] ?? '' ) && ( $lkg_outage['receipt']['fetched_at'] ?? null ) === $lkg_seed['receipt']['fetched_at'], 'HTTP outage retains the exact generated-companion last-known-good value and timestamp.' );
 
-$partial_fact                      = $installs_fact;
-$partial_fact['id']                = 'review-partial-recovery';
+$partial_fact                        = $installs_fact;
+$partial_fact['id']                  = 'review-partial-recovery';
 $partial_fact['source']['resources'] = array( array( 'slug' => 'review-partial-a' ), array( 'slug' => 'review-partial-b' ) );
-$partial_fact['fallback']['text']  = 'captured-total';
-$partial_fact['fallback']['hash']  = hash( 'sha256', $partial_fact['fallback']['text'] );
-$partial_result                    = $run_response(
+$partial_fact['fallback']['text']    = 'captured-total';
+$partial_fact['fallback']['hash']    = hash( 'sha256', $partial_fact['fallback']['text'] );
+$partial_result                      = $run_response(
 	$partial_fact,
 	array(
 		'review-partial-a' => array( array( 'active_installs' => 10 ) ),
 		'review-partial-b' => array( array( 'error' => 'temporarily unavailable' ) ),
 	)
 );
-$recovered_result                  = $run_response(
+$recovered_result                    = $run_response(
 	$partial_fact,
 	array(
 		'review-partial-a' => array( array( 'active_installs' => 20 ) ),
@@ -282,18 +282,18 @@ $assert( '50+' === ( $recovered_result['value'] ?? null ) && 'fresh' === ( $reco
 
 echo wp_json_encode(
 	array(
-		'status'         => 'provider_response_contract_passed',
-		'core'           => get_bloginfo( 'version' ),
-		'results'        => $results,
-		'lkg'            => $lkg_outage,
+		'status'            => 'provider_response_contract_passed',
+		'core'              => get_bloginfo( 'version' ),
+		'results'           => $results,
+		'lkg'               => $lkg_outage,
 		'github_rate_limit' => array(
 			'seed'         => $github_seed,
 			'rate_limited' => $github_rate_limited,
 			'recovered'    => $github_recovered,
 		),
-		'partial'        => $partial_result,
-		'recovered'      => $recovered_result,
-		'refresh_routes' => array(
+		'partial'           => $partial_result,
+		'recovered'         => $recovered_result,
+		'refresh_routes'    => array(
 			'fresh'      => $route_fresh,
 			'stale'      => $route_stale,
 			'unresolved' => $route_unresolved,
@@ -301,6 +301,6 @@ echo wp_json_encode(
 			'partial'    => $partial_route,
 			'recovered'  => $recovered_route,
 		),
-		'literal_render' => $literal_content,
+		'literal_render'    => $literal_content,
 	)
 ) . "\n";

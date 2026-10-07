@@ -7,14 +7,14 @@ $ssi_external_metric_producer_source = getenv( 'SSI_BLOCKS_ENGINE_PHP_TRANSFORME
 if ( ! is_string( $ssi_external_metric_producer_source ) || '' === $ssi_external_metric_producer_source || ! is_file( $ssi_external_metric_producer_source . '/composer.json' ) ) {
 	throw new RuntimeException( 'The committed producer source checkout must be explicitly mounted for prototype acceptance.' );
 }
-$ssi_external_metric_producer_source = realpath( $ssi_external_metric_producer_source );
+$ssi_external_metric_producer_source            = realpath( $ssi_external_metric_producer_source );
 $GLOBALS['ssi_external_metric_producer_source'] = $ssi_external_metric_producer_source;
 spl_autoload_register(
-	static function ( string $class ) use ( $ssi_external_metric_producer_source ): void {
+	static function ( string $class_name ) use ( $ssi_external_metric_producer_source ): void {
 		$prefix = 'Automattic\\BlocksEngine\\PhpTransformer\\';
-		if ( ! str_starts_with( $class, $prefix ) ) {
+		if ( ! str_starts_with( $class_name, $prefix ) ) {
 			return; }
-		$file = $ssi_external_metric_producer_source . '/src/' . str_replace( '\\', '/', substr( $class, strlen( $prefix ) ) ) . '.php';
+		$file = $ssi_external_metric_producer_source . '/src/' . str_replace( '\\', '/', substr( $class_name, strlen( $prefix ) ) ) . '.php';
 		if ( is_file( $file ) ) {
 			require_once $file; }
 	},

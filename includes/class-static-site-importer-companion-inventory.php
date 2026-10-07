@@ -251,9 +251,9 @@ final class Static_Site_Importer_Companion_Inventory {
 			$lines[] = '';
 			$lines[] = 'These native text bindings use validated, declarative HTTPS JSON source recipes. Their initial freshness receipt status is `captured_fallback` (or `unresolved` for an empty fallback); a successful frontend request changes it to `fresh`. Failed values use the last-known-good receipt as `stale`, or preserve the captured fallback. Partial aggregates are never shown as complete totals.';
 			foreach ( $external_metrics as $metric ) {
-				$source  = trim( (string) ( $metric['provenance_repository'] ?? '' ) . '@' . (string) ( $metric['provenance_revision'] ?? '' ) . ':' . (string) ( $metric['provenance_source'] ?? '' ), '@:' );
+				$source    = trim( (string) ( $metric['provenance_repository'] ?? '' ) . '@' . (string) ( $metric['provenance_revision'] ?? '' ) . ':' . (string) ( $metric['provenance_source'] ?? '' ), '@:' );
 				$resources = wp_json_encode( $metric['resources'] ?? array(), JSON_UNESCAPED_SLASHES );
-				$lines[] = '- `' . (string) ( $metric['id'] ?? '' ) . '` — source `' . (string) ( $metric['source_id'] ?? '' ) . '` / metric `' . (string) ( $metric['metric'] ?? '' ) . '` (`' . (string) ( $metric['aggregation'] ?? '' ) . '`) with freshness `' . (int) ( $metric['freshness_seconds'] ?? 0 ) . 's`, resources `' . ( is_string( $resources ) ? $resources : '[]' ) . '`; provenance `' . $source . '`; configuration status `' . (string) ( $metric['status'] ?? 'unknown' ) . '`.';
+				$lines[]   = '- `' . (string) ( $metric['id'] ?? '' ) . '` — source `' . (string) ( $metric['source_id'] ?? '' ) . '` / metric `' . (string) ( $metric['metric'] ?? '' ) . '` (`' . (string) ( $metric['aggregation'] ?? '' ) . '`) with freshness `' . (int) ( $metric['freshness_seconds'] ?? 0 ) . 's`, resources `' . ( is_string( $resources ) ? $resources : '[]' ) . '`; provenance `' . $source . '`; configuration status `' . (string) ( $metric['status'] ?? 'unknown' ) . '`.';
 			}
 			$lines[] = '';
 		}
