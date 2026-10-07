@@ -67,6 +67,7 @@
         "includes/class-static-site-importer-source-route-redirect.php",
         "includes/class-static-site-importer-redirects-manifest.php",
         "includes/class-static-site-importer-prepared-plan-application.php",
+        "includes/class-static-site-importer-generated-runtime-package.php",
         "vendor/automattic/blocks-engine-php-transformer/php-transformer.php"
       ]
     },
@@ -144,6 +145,7 @@
         "includes/class-static-site-importer-source-route-redirect.php",
         "includes/class-static-site-importer-redirects-manifest.php",
         "includes/class-static-site-importer-prepared-plan-application.php",
+        "includes/class-static-site-importer-generated-runtime-package.php",
         "vendor/autoload.php",
         "vendor/composer/autoload_real.php",
         "vendor/automattic/blocks-engine-php-transformer/php-transformer.php"

@@ -27,6 +27,10 @@ function run() {
     ? environments
     : new Set(["standalone-php", "node"])
   const selected = manifest.tests.filter((test) => selectedEnvironments.has(test.environment))
+  if (selected.some((test) => test.environment === "standalone-php")) {
+    execFileSync("bash", [resolve(root, "tools/prepare-wordpress-core-fixture.sh")], { cwd: root, stdio: "inherit", env: process.env })
+    process.env.STATIC_SITE_IMPORTER_WP_ROOT ||= resolve(root, "vendor/wordpress-core")
+  }
   const results = { passed: [], failed: [], skipped: [] }
 
   for (const test of selected) {

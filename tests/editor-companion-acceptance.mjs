@@ -26,11 +26,14 @@ assert.equal( receipt.status, 'completed', 'import completed through the public 
 assert.equal( receipt.response.fixture_diagnostics.quality_counts.consistent, true, 'public quality counts agree within their owning phases' );
 assert.equal( validation.quality_pass, true, 'persisted validation passed' );
 assert.equal( validation.fail_import, false, 'persisted validation retains no import failure' );
-assert.equal( lifecycle.importer_active, true, 'SSI is active with the generated companion' );
-assert.equal( lifecycle.companion_active, true, 'generated companion is active with SSI' );
+assert.equal( lifecycle.importer_active, true, 'SSI is active with the generated theme' );
+assert.equal( lifecycle.theme_runtime_loaded, true, 'generated theme runtime is loaded with SSI' );
+assert.equal( lifecycle.no_generated_plugin, true, 'no generated plugin or MU-loader is installed' );
 assert.equal( lifecycle.provider_runtime_loaded, true, 'SSI owns the loaded provider runtime' );
-assert.equal( lifecycle.companion_provider_runtime_loaded, true, 'generated companion owns a distinct versioned provider runtime' );
-assert.notEqual( lifecycle.provider_runtime_class, lifecycle.companion_provider_runtime_class, 'SSI and companion provider runtimes have distinct class identities' );
+assert.equal( lifecycle.theme_provider_runtime_loaded, true, 'generated theme owns a distinct versioned provider runtime' );
+assert.equal( lifecycle.theme_provider_projection_verified, true, 'theme-owned provider presentation hook executes in WordPress' );
+assert.notEqual( lifecycle.provider_runtime_class, lifecycle.theme_provider_runtime_class, 'SSI and theme provider runtimes have distinct class identities' );
+assert.equal( receipt.response.result.import_report_summary.fallback_count, 0, 'native import has zero fallback' );
 const expectedBlockNames = [ ...new Set( inventory.documents.flatMap( ( document ) => document.blocks ) ) ];
 const browser = await chromium.launch( { headless: true } );
 const page = await browser.newPage( { viewport: { width: 1440, height: 1000 } } );

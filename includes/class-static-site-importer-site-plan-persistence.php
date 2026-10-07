@@ -73,11 +73,45 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( is_wp_error( $capabilities ) ) {
 			return self::failed_receipt_from_error( $state, $capabilities );
 		}
+		// Theme package writes participate in the normal journal and are installed
+		// before editor admission, including page-ready imports before activation.
+		$runtime_payload = $state['args']['theme_runtime_payload'] ?? null;
+		if ( is_array( $runtime_payload ) ) {
+			require_once __DIR__ . '/class-static-site-importer-generated-runtime-package.php';
+			$package = Static_Site_Importer_Generated_Runtime_Package::theme( $runtime_payload, (string) $state['theme']['slug'] );
+			if ( is_wp_error( $package ) ) {
+				return self::failed_receipt_from_error( $state, $package );
+			}
+			$collision = Static_Site_Importer_Generated_Runtime_Package::preflight_blocks( $package, $state['theme_dir'] );
+			if ( is_wp_error( $collision ) ) {
+				return self::failed_receipt_from_error( $state, $collision );
+			}
+			$runtime_writes = array_column( $state['resolved']['writes'], null, 'target_path' );
+			foreach ( $package['files'] as $target => $bytes ) {
+				if ( ! isset( $runtime_writes[ $target ] ) || ! hash_equals( hash( 'sha256', $bytes ), self::payload_hash( $runtime_writes[ $target ] ) ) ) {
+					return self::failed_receipt( $state, 'generated_runtime_projection_changed' );
+				}
+			}
+			foreach ( $state['resolved']['writes'] as $write ) {
+				if ( ! isset( $package['files'][ $write['target_path'] ] ) ) {
+					continue;
+				}
+				self::journal_file( $state, $state['theme_dir'] . '/' . $write['target_path'] );
+				$result = self::write_file( $state['theme_dir'], $write, $state['payload_reader'] );
+				if ( is_wp_error( $result ) ) {
+					return self::failed_receipt_from_error( $state, $result );
+				}
+			}
+			$result = Static_Site_Importer_Generated_Runtime_Package::register( $package, $state['theme_dir'] );
+			if ( is_wp_error( $result ) ) {
+				return self::failed_receipt_from_error( $state, $result );
+			}
+		}
 		try {
 			Static_Site_Importer_Site_Plan_Preparation::validate_materialized_block_documents( $state['resolved'], $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
 		} catch ( InvalidArgumentException $error ) {
 			$state['failure_reason'] = $error->getMessage();
-			return Static_Site_Importer_Site_Plan_Receipt::receipt( 'rejected', $state );
+			return is_array( $runtime_payload ) ? self::failed_receipt( $state, $error->getMessage() ) : Static_Site_Importer_Site_Plan_Receipt::receipt( 'rejected', $state );
 		}
 		$args                        = $state['args'];
 		$font_overlay                = $state['font_overlay'];
@@ -238,7 +272,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				$state['applied']['files'][] = self::canonical_file_receipt( $path, $write ) + array( 'publication' => $publication );
 				continue;
 			}
-			if ( ! empty( $args['preserve_existing_theme_bootstrap'] ) && 'theme_bootstrap' === ( $write['kind'] ?? '' ) && is_file( $state['theme_dir'] . '/' . $write['target_path'] ) ) {
+			if ( ! empty( $args['preserve_existing_theme_bootstrap'] ) && 'functions.php' === $write['target_path'] && 'theme_bootstrap' === ( $write['kind'] ?? '' ) && is_file( $state['theme_dir'] . '/' . $write['target_path'] ) ) {
 				$result = self::merge_batch_bootstrap( $state['theme_dir'], $write );
 				if ( is_wp_error( $result ) ) {
 					return self::failed_receipt( $state, $result->get_error_code() );
@@ -246,7 +280,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				$state['applied']['files'][] = $result + array( 'publication' => $publication );
 				continue;
 			}
-			if ( ! empty( $args['preserve_existing_theme_bootstrap'] ) && in_array( $write['kind'] ?? '', array( 'theme_scaffold', 'theme_bootstrap', 'theme_template' ), true ) && is_file( $state['theme_dir'] . '/' . $write['target_path'] ) ) {
+			if ( ! empty( $args['preserve_existing_theme_bootstrap'] ) && ! isset( $package['files'][ $write['target_path'] ] ) && in_array( $write['kind'] ?? '', array( 'theme_scaffold', 'theme_bootstrap', 'theme_template' ), true ) && is_file( $state['theme_dir'] . '/' . $write['target_path'] ) ) {
 				continue;
 			}
 			$chunk_writer = self::injected_failure( $args, 'theme_write_short' ) ? static function ( $stream, string $data ) use ( &$short_write_attempt ): int {

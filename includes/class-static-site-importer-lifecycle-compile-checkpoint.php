@@ -282,6 +282,7 @@ final class Static_Site_Importer_Lifecycle_Compile_Checkpoint {
 					'class-static-site-importer-site-identity.php',
 					'class-static-site-importer-classic-theme-projection.php',
 					'class-static-site-importer-companion-plugin.php',
+					'class-static-site-importer-generated-runtime-package.php',
 				)
 			),
 			'compiler'             => self::class_binding( 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\ArtifactCompiler', true ),

@@ -78,21 +78,22 @@ if ( 'verify-reimport' !== $phase && 'verify-removed' !== $phase ) {
 }
 
 $expected_artifact_id = (string) ( $args[1] ?? '' );
-$plugin_file          = (string) get_option( 'static_site_importer_active_companion_plugin', '' );
-if ( '' === $plugin_file || ! is_file( WP_PLUGIN_DIR . '/' . $plugin_file ) ) {
-	$fail( 'The reimported companion plugin is not installed.' );
+$runtime_root = get_stylesheet_directory() . '/ssi-runtime';
+if ( ! is_file( $runtime_root . '/runtime.php' ) ) {
+	$fail( 'The reimported theme runtime is not installed.' );
 }
 require_once ABSPATH . 'wp-admin/includes/plugin.php';
-$plugin_root              = WP_PLUGIN_DIR . '/' . dirname( $plugin_file );
-$headers                  = get_plugin_data( WP_PLUGIN_DIR . '/' . $plugin_file, false, false );
-$config                   = json_decode( (string) file_get_contents( $plugin_root . '/companion.json' ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the generated companion config in this disposable acceptance runtime.
-$readme                   = (string) file_get_contents( $plugin_root . '/README.md' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the generated companion README in this disposable acceptance runtime.
+$headers                  = get_file_data( $runtime_root . '/runtime.php', array( 'Version' => 'Version', 'UpdateURI' => 'Update URI' ) );
+$config                   = json_decode( (string) file_get_contents( $runtime_root . '/companion.json' ), true );
+$readme                   = (string) file_get_contents( $runtime_root . '/README.md' );
+$generated_plugins        = array_filter( array_keys( get_plugins() ), static fn( string $file ): bool => str_starts_with( $file, 'ssi-' ) );
+$generated_mu_loaders     = array_filter( array_keys( get_mu_plugins() ), static fn( string $file ): bool => str_starts_with( $file, 'ssi-' ) );
 $registered               = array();
 $assets                   = array();
 $asset_paths_match_readme = true;
 
 foreach ( is_array( $config['block_directories'] ?? null ) ? $config['block_directories'] : array() as $directory ) {
-	$metadata_path = $plugin_root . '/blocks/' . $directory . '/block.json';
+	$metadata_path = $runtime_root . '/blocks/' . $directory . '/block.json';
 	$metadata      = json_decode( (string) file_get_contents( $metadata_path ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads generated block metadata in the disposable acceptance runtime.
 	$name          = (string) ( $metadata['name'] ?? '' );
 	if ( '' !== $name && WP_Block_Type_Registry::get_instance()->is_registered( $name ) ) {
@@ -104,7 +105,7 @@ foreach ( is_array( $config['block_directories'] ?? null ) ? $config['block_dire
 		$references[] = 'blocks/' . $directory . '/' . $relative;
 	}
 	foreach ( array_unique( $references ) as $relative ) {
-		$exists                   = is_file( $plugin_root . '/' . $relative );
+		$exists                   = is_file( $runtime_root . '/' . $relative );
 		$asset_paths_match_readme = $asset_paths_match_readme && $exists && str_contains( $readme, $relative );
 		$assets[]                 = array(
 			'path'   => $relative,
@@ -130,7 +131,7 @@ foreach ( $published_pages as $candidate_page ) {
 $route_target = null;
 if ( null !== $entry ) {
 	$redirect_source = '';
-	$source_files    = glob( $plugin_root . '/includes/source-route-redirect.php' );
+	$source_files    = glob( $runtime_root . '/includes/source-route-redirect.php' );
 	foreach ( is_array( $source_files ) ? $source_files : array() as $source_file ) {
 		$source = (string) file_get_contents( $source_file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads generated companion code in the disposable acceptance runtime.
 		if ( 1 === preg_match( '/final class ([A-Za-z_][A-Za-z0-9_]*)/', $source, $match ) ) {
@@ -157,10 +158,11 @@ $readme_truth          = str_contains( $readme, 'Captured snapshot' )
 	&& str_contains( $readme, 'do not update' )
 	&& str_contains( $readme, 'no live data source or refresh mechanism is installed' )
 	&& str_contains( $readme, 'unverified claims from the source page' );
-$plugin_identity_truth = str_ends_with( (string) ( $headers['Name'] ?? '' ), ' Companion' )
-	&& 'SSI Companion' !== (string) ( $headers['Name'] ?? '' )
-	&& str_contains( $readme, '# ' . (string) ( $headers['Name'] ?? '' ) )
-	&& str_contains( (string) ( $headers['Description'] ?? '' ), 'Deactivating or deleting it' );
+$theme_identity_truth = 'theme' === ( $config['owner'] ?? '' )
+	&& get_stylesheet() === ( $config['owner_slug'] ?? '' )
+	&& str_contains( $readme, 'generated theme owns these blocks' )
+	&& str_contains( $readme, 'Switching away from or deleting the theme' )
+	&& ! str_contains( $readme, 'It is theme-independent' );
 $provenance_row        = $report_source['provenance'][0] ?? array();
 $producer_match        = 1 === preg_match( '/This build was produced by `([^`]+)` using `([^`]+)`\./', $readme, $producer );
 $build_hash            = str_contains( (string) ( $headers['Version'] ?? '' ), '+' ) ? substr( (string) $headers['Version'], strpos( (string) $headers['Version'], '+' ) + 1 ) : '';
@@ -179,18 +181,17 @@ $version_truth         = $source_truth && $build_truth;
 $result = array(
 	'phase'                    => $phase,
 	'importer_active'          => function_exists( 'is_plugin_active' ) && is_plugin_active( 'static-site-importer/static-site-importer.php' ),
-	'companion_active'         => function_exists( 'is_plugin_active' ) && is_plugin_active( $plugin_file ),
-	'plugin_file'              => $plugin_file,
-	'plugin_name'              => (string) ( $headers['Name'] ?? '' ),
-	'plugin_description'       => (string) ( $headers['Description'] ?? '' ),
-	'plugin_version'           => (string) ( $headers['Version'] ?? '' ),
-	'plugin_update_uri'        => (string) ( $headers['UpdateURI'] ?? '' ),
-	'generated_readme_present' => is_file( $plugin_root . '/README.md' ),
-	'plugin_identity_truth'    => $plugin_identity_truth,
+	'theme_runtime_loaded'     => count( $registered ) > 0,
+	'no_generated_plugin'      => empty( $generated_plugins ) && empty( $generated_mu_loaders ) && '' === (string) get_option( 'static_site_importer_active_companion_plugin', '' ),
+	'runtime_owner'            => 'theme',
+	'runtime_version'          => (string) ( $headers['Version'] ?? '' ),
+	'runtime_update_uri'       => (string) ( $headers['UpdateURI'] ?? '' ),
+	'generated_readme_present' => is_file( $runtime_root . '/README.md' ),
+	'theme_identity_truth'     => $theme_identity_truth,
 	'readme_inventory_truth'   => count( $registered ) > 0 && str_contains( $readme, $registered[0] ) && $asset_paths_match_readme,
 	'readme_snapshot_truth'    => $readme_truth,
 	'provenance_truth'         => $version_truth,
-	'source_provenance_truth'  => ( 'static-site-importer' === ( $export_artifact['provenance']['producer'] ?? '' ) && 'editor-acceptance' === ( $export_artifact['provenance']['materialized_from']['theme_slug'] ?? '' ) ),
+	'source_provenance_truth'  => ( 'static-site-importer' === ( $export_artifact['provenance']['producer'] ?? '' ) && 'editor-acceptance' === ( $export_artifact['provenance']['materialized_from']['theme_slug'] ?? '' ) && 'theme' === ( $export_artifact['provenance']['materialized_from']['runtime_owner']['type'] ?? '' ) ),
 	'source_artifact'          => $report_source,
 	'registered_blocks'        => $registered,
 	'owned_assets'             => $assets,
@@ -204,9 +205,10 @@ $result = array(
 $json( $result );
 $importer_state_invalid = ( 'verify-reimport' === $phase && ! $result['importer_active'] ) || ( 'verify-removed' === $phase && $result['importer_active'] );
 $verification_failed    = $importer_state_invalid
-	|| ! $result['companion_active']
+	|| ! $result['theme_runtime_loaded']
+	|| ! $result['no_generated_plugin']
 	|| ! $result['generated_readme_present']
-	|| ! $result['plugin_identity_truth']
+	|| ! $result['theme_identity_truth']
 	|| ! $result['readme_inventory_truth']
 	|| ! $result['readme_snapshot_truth']
 	|| ! $result['provenance_truth']

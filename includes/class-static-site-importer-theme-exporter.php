@@ -437,11 +437,14 @@ class Static_Site_Importer_Theme_Exporter {
 
 	/** Rehydrate only companion-authored external metric bindings into export declarations. */
 	private static function external_metric_declaration_entities( object $page, string $source_path ) {
-		$companion = (string) get_option( 'static_site_importer_active_companion_plugin', '' );
-		if ( '' === $companion || ! defined( 'WP_PLUGIN_DIR' ) ) {
-			return array();
+		$config_path = get_stylesheet_directory() . '/ssi-runtime/companion.json';
+		if ( ! is_readable( $config_path ) ) {
+			$companion = (string) get_option( 'static_site_importer_active_companion_plugin', '' );
+			if ( '' === $companion || ! defined( 'WP_PLUGIN_DIR' ) ) {
+				return array();
+			}
+			$config_path = WP_PLUGIN_DIR . '/' . dirname( $companion ) . '/companion.json';
 		}
-		$config_path = WP_PLUGIN_DIR . '/' . dirname( $companion ) . '/companion.json';
 		$config      = is_readable( $config_path ) ? json_decode( (string) file_get_contents( $config_path ), true ) : null; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the active generated companion's trusted declarative metric inventory.
 		$config_rows = is_array( $config['external_metrics'] ?? null ) ? $config['external_metrics'] : array();
 		$facts       = array_column( $config_rows, null, 'id' );
@@ -905,6 +908,11 @@ class Static_Site_Importer_Theme_Exporter {
 		);
 		if ( ! empty( $runtime_declarations ) ) {
 			$artifact['runtime_declarations'] = $runtime_declarations; }
+		$runtime_config_path = get_theme_root( $theme_slug ) . '/' . $theme_slug . '/ssi-runtime/companion.json';
+		$runtime_config = is_readable( $runtime_config_path ) ? json_decode( (string) file_get_contents( $runtime_config_path ), true ) : null;
+		if ( 'theme' === ( $runtime_config['owner'] ?? '' ) && $theme_slug === ( $runtime_config['owner_slug'] ?? '' ) ) {
+			$artifact['provenance']['materialized_from']['runtime_owner'] = array( 'type' => 'theme', 'slug' => $theme_slug, 'directory' => 'ssi-runtime' );
+		}
 		return $artifact;
 	}
 

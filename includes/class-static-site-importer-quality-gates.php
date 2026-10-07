@@ -360,7 +360,7 @@ final class Static_Site_Importer_Quality_Gates {
 	 * @param string                         $slug             Companion plugin slug.
 	 * @return void
 	 */
-	public static function mark_companion_script_fallbacks_materialized( Static_Site_Importer_Import_Report $report, array $runtime_scripts, string $slug ): void {
+	public static function mark_companion_script_fallbacks_materialized( Static_Site_Importer_Import_Report $report, array $runtime_scripts, string $slug, string $owner = 'companion_plugin' ): void {
 		$selectors = array();
 		foreach ( $runtime_scripts as $script ) {
 			$selector = Static_Site_Importer_Diagnostic_Projection::first_scalar( $script, array( 'selector' ) );
@@ -393,9 +393,9 @@ final class Static_Site_Importer_Quality_Gates {
 			$diagnostic['diagnostic_class']              = Static_Site_Importer_Diagnostic_Loss_Classes::NATIVE_CONVERSION;
 			$diagnostic['repair_bucket']                 = Static_Site_Importer_Diagnostic_Loss_Classes::NATIVE_CONVERSION;
 			$diagnostic['runtime_carried']               = true;
-			$diagnostic['materialized_runtime_provider'] = 'companion_plugin';
-			$diagnostic['companion_plugin']              = $slug;
-			$diagnostic['message']                       = sprintf( 'Runtime script is materialized by active companion plugin %s.', $slug );
+			$diagnostic['materialized_runtime_provider'] = $owner;
+			$diagnostic[ 'generated_theme' === $owner ? 'theme' : 'companion_plugin' ] = $slug;
+			$diagnostic['message']                       = 'generated_theme' === $owner ? sprintf( 'Runtime script is materialized by generated theme %s.', $slug ) : sprintf( 'Runtime script is materialized by active companion plugin %s.', $slug );
 			$resolved[ $selector ]                       = true;
 		}
 		unset( $diagnostic );

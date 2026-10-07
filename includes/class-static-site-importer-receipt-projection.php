@@ -132,7 +132,7 @@ class Static_Site_Importer_Receipt_Projection {
 				),
 				'companion_plugin_materialization' => $receipt['completed']['companion_plugin'] ?? array(
 					'status' => 'skipped',
-					'reason' => 'companion_plugin_payload_absent',
+					'reason' => isset( $receipt['completed']['theme_runtime'] ) ? 'runtime_owned_by_generated_theme' : 'companion_plugin_payload_absent',
 				),
 				'generated_theme'                  => array(
 					'document_metadata' => self::document_metadata( $plan ),
@@ -182,6 +182,11 @@ class Static_Site_Importer_Receipt_Projection {
 			$report->set_section( 'theme_preview', Static_Site_Importer_Theme_Screenshot::bounded_evidence( $args['theme_screenshot_evidence'] ) );
 		}
 		$report['materialization_receipt'] = self::report_receipt( $receipt );
+		if ( 'completed' === ( $receipt['status'] ?? '' ) && isset( $receipt['completed']['theme_runtime'] ) ) {
+			$runtime = $receipt['completed']['theme_runtime'];
+			$report->set_section( 'theme_runtime', $runtime );
+			Static_Site_Importer_Quality_Gates::mark_companion_script_fallbacks_materialized( $report, $runtime['runtime_scripts'] ?? array(), (string) $runtime['owner_slug'], 'generated_theme' );
+		}
 		Static_Site_Importer_Block_Document_Reporter::analyze_materialized_block_documents( $report['generated_theme']['block_documents'], $report );
 		// Page markup is persisted in WordPress and analyzed above; the report
 		// keeps each document's identity, not a second copy of its content.

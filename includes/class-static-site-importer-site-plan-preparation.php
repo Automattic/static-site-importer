@@ -644,7 +644,9 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			: Static_Site_Importer_Route_Document_Metadata::prepare_overlay( $font_resolved, $title_bootstrap_overlay );
 		$internal_link_overlay                = isset( $state['internal_link_overlay'] ) && is_array( $state['internal_link_overlay'] )
 			? $state['internal_link_overlay']
-			: Static_Site_Importer_Internal_Link_Runtime::prepare_overlay( $font_resolved, $route_title_overlay, (string) ( $state['args']['slug'] ?? '' ) );
+			: ( is_array( $state['args']['theme_runtime_payload'] ?? null )
+				? array( 'status' => 'skipped', 'reason' => 'theme_runtime_package_owns_routes', 'writes' => array() )
+				: Static_Site_Importer_Internal_Link_Runtime::prepare_overlay( $font_resolved, $route_title_overlay, (string) ( $state['args']['slug'] ?? '' ) ) );
 		$head_bootstrap_overlay               = 'materialized' === ( $internal_link_overlay['status'] ?? '' )
 			? $internal_link_overlay
 			: ( 'materialized' === ( $route_title_overlay['status'] ?? '' ) ? $route_title_overlay : $title_bootstrap_overlay );
@@ -1017,6 +1019,9 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 					$owners         = $GLOBALS['static_site_importer_companion_block_owners'] ?? array();
 					if ( 'registered_provider' === $classification && is_array( $owners ) && isset( $owners[ $name ] ) && is_array( $owners[ $name ] ) ) {
 						$classification = 'declared_companion_dependency';
+					}
+					if ( 'registered_provider' === $classification && 'theme' === ( $GLOBALS['static_site_importer_runtime_block_owners'][ $name ]['owner'] ?? '' ) ) {
+						$classification = 'generated_theme_runtime';
 					}
 					if ( is_array( $block_type->parent ) && ! in_array( $parent_name, $block_type->parent, true ) && self::BLOCK_PROVENANCE_LIMIT > count( $diagnostics ) ) {
 						$diagnostics[] = array(
