@@ -620,6 +620,29 @@ $assert( is_wp_error( $nested_redirects ) && 'static_site_importer_executable_so
 foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $redirects_bundle_dir, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST ) as $redirects_item ) {
 	$redirects_item->isDir() ? rmdir( $redirects_item->getPathname() ) : unlink( $redirects_item->getPathname() );
 }
+
+// A rejected source tree names the file that is not static, like the content-policy
+// and URL-collector variants do, so the operator can find it in a large bundle.
+$named_bundle_dir = sys_get_temp_dir() . '/ssi-named-rejection-request-bundle-' . bin2hex( random_bytes( 6 ) );
+mkdir( $named_bundle_dir . '/assets', 0777, true );
+$named_bundle_dir = realpath( $named_bundle_dir );
+file_put_contents( $named_bundle_dir . '/index.html', '<link rel="stylesheet" href="assets/site.scss"><main>Home</main>' );
+file_put_contents( $named_bundle_dir . '/assets/site.scss', 'body{margin:0}' );
+$named_rejection = static_site_importer_cli_request_bundle_files( $named_bundle_dir );
+$assert( is_wp_error( $named_rejection ) && 'static_site_importer_executable_source_rejected' === $named_rejection->get_error_code(), 'request-bundle-rejects-unknown-stylesheet-suffix' );
+$assert( is_wp_error( $named_rejection ) && str_contains( $named_rejection->get_error_message(), 'assets/site.scss' ), 'request-bundle-rejection-names-the-offending-path' );
+$assert( is_wp_error( $named_rejection ) && 'assets/site.scss' === ( $named_rejection->get_error_data()['path'] ?? null ), 'request-bundle-rejection-carries-the-offending-path-as-data' );
+unlink( $named_bundle_dir . '/assets/site.scss' );
+$oversized_redirects = fopen( $named_bundle_dir . '/_redirects', 'w' );
+ftruncate( $oversized_redirects, Static_Site_Importer_Content_Policy::REDIRECTS_MANIFEST_MAX_BYTES + 1 );
+fclose( $oversized_redirects );
+$oversized_rejection = static_site_importer_cli_request_bundle_files( $named_bundle_dir );
+$assert( is_wp_error( $oversized_rejection ) && 'static_site_importer_executable_source_rejected' === $oversized_rejection->get_error_code(), 'request-bundle-rejects-oversized-redirects-manifest' );
+$assert( is_wp_error( $oversized_rejection ) && str_contains( $oversized_rejection->get_error_message(), '_redirects' ) && '_redirects' === ( $oversized_rejection->get_error_data()['path'] ?? null ), 'request-bundle-oversized-redirects-rejection-names-the-path' );
+unlink( $named_bundle_dir . '/_redirects' );
+unlink( $named_bundle_dir . '/index.html' );
+rmdir( $named_bundle_dir . '/assets' );
+rmdir( $named_bundle_dir );
 rmdir( $redirects_bundle_dir );
 
 $total_limit_dir = sys_get_temp_dir() . '/ssi-request-bundle-total-' . bin2hex( random_bytes( 6 ) );
