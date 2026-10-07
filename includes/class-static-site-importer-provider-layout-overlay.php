@@ -256,6 +256,17 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				'strategy'    => 'provider_interaction_carrier',
 				'target_hash' => hash( 'sha256', $validated_map['scope'] ),
 			);
+		} elseif ( ! empty( $rules ) ) {
+			// Source boxes merged onto the provider form can carry their classes'
+			// `pointer-events: none` (Wix sets it on mesh containers and restores it
+			// only on their own direct children). Without the stacking lift, the
+			// provider form must still receive clicks and typing (#2005).
+			$rules[]      = $validated_map['scope'] . '{pointer-events:auto}';
+			$operations[] = array(
+				'dimension'   => 'interaction',
+				'strategy'    => 'provider_pointer_events_carrier',
+				'target_hash' => hash( 'sha256', $validated_map['scope'] ),
+			);
 		}
 		if ( ! empty( $rules ) ) {
 			// Jetpack paints `.jetpack-contact-form-container` with an unauthored
