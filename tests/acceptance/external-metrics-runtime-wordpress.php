@@ -8,7 +8,7 @@ $assert         = static function ( bool $condition, string $message ): void {
 	} };
 $metric_post_id = (int) get_option( 'ssi_external_metric_acceptance_post_id', 0 );
 $facts          = get_option( 'ssi_external_metric_acceptance_facts', array() );
-$assert( $metric_post_id > 0 && is_array( $facts ) && 8 === count( $facts ), 'A completed mixed-source eight-fact imported page is persisted.' );
+$assert( $metric_post_id > 0 && is_array( $facts ) && 10 === count( $facts ), 'A completed mixed-source ten-fact imported page is persisted.' );
 $plugin_file  = (string) get_option( 'static_site_importer_active_companion_plugin', '' );
 $runtime_file = WP_PLUGIN_DIR . '/' . dirname( $plugin_file ) . '/includes/external-metric-runtime.php';
 $source       = is_readable( $runtime_file ) ? (string) file_get_contents( $runtime_file ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads generated local companion runtime source for the acceptance assertion.
@@ -48,6 +48,7 @@ $github_data = ! is_wp_error( $github_api ) && 200 === (int) wp_remote_retrieve_
 $assert( is_array( $github_data ) && is_int( $github_data['stargazers_count'] ?? null ) && is_int( $github_data['forks_count'] ?? null ), 'Independent live GitHub API observation contains exact integer stargazers_count and forks_count fields: status=' . ( is_wp_error( $github_api ) ? $github_api->get_error_message() : wp_remote_retrieve_response_code( $github_api ) ) . ' body=' . wp_remote_retrieve_body( $github_api ) );
 $assert( (string) ( $github_data['stargazers_count'] ?? '' ) === ( $receipts['github-stars']['value'] ?? null ) && (string) ( $github_data['forks_count'] ?? '' ) === ( $receipts['github-forks']['value'] ?? null ), 'Generated runtime receipts equal the independently queried GitHub API fields exactly.' );
 $assert( ( $receipts['github-stars']['fetched_at'] ?? null ) === ( $receipts['github-forks']['fetched_at'] ?? null ), 'GitHub stars and forks reuse the same source response timestamp.' );
+$metric_map   = array_column( $facts, null, 'id' );
 $neutral_api  = wp_safe_remote_get(
 	'https://jsonplaceholder.typicode.com/todos/1',
 	array(
@@ -58,11 +59,74 @@ $neutral_api  = wp_safe_remote_get(
 );
 $neutral_data = ! is_wp_error( $neutral_api ) && 200 === (int) wp_remote_retrieve_response_code( $neutral_api ) ? json_decode( wp_remote_retrieve_body( $neutral_api ), true ) : array();
 $assert( is_array( $neutral_data ) && is_int( $neutral_data['userId'] ?? null ) && is_string( $receipts['neutral-score']['value'] ?? null ) && hash_equals( (string) $neutral_data['userId'], $receipts['neutral-score']['value'] ), 'Third neutral public JSON source renders its independently observed userId field through the same companion interpreter.' );
+$neutral_title   = '0012';
+$neutral_fetches = 0;
+$neutral_http    = static function ( mixed $preempt, array $args, string $url ) use ( &$neutral_title, &$neutral_fetches ): mixed {
+	if ( 'https://jsonplaceholder.typicode.com/todos/1' !== $url ) {
+		return $preempt; }
+	++$neutral_fetches;
+	return array(
+		'headers'  => array( 'content-type' => 'application/json' ),
+		'body'     => wp_json_encode(
+			array(
+				'userId'    => 1,
+				'id'        => 1,
+				'title'     => $neutral_title,
+				'completed' => false,
+			)
+		),
+		'response' => array(
+			'code'    => 200,
+			'message' => 'OK',
+		),
+		'cookies'  => array(),
+	);
+};
+add_filter( 'pre_http_request', $neutral_http, 10, 3 );
+try {
+	$neutral_numeric_string = call_user_func( array( $runtime_class, 'value' ), 'neutral-title-paragraph', $runtime_metrics, null, null, true );
+	$neutral_title          = '<em>1.20</em> &lt;neutral&gt; & "quoted"';
+	$neutral_paragraph      = call_user_func( array( $runtime_class, 'value' ), 'neutral-title-paragraph', $runtime_metrics, null, null, true );
+	$neutral_heading        = call_user_func( array( $runtime_class, 'value' ), 'neutral-title-heading', $runtime_metrics );
+	$neutral_binding        = static function ( string $metric_id, string $tag, string $fallback ): string {
+		$block_name = 'h2' === $tag ? 'heading' : 'paragraph';
+		$attributes = array(
+			'metadata' => array(
+				'bindings' => array(
+					'content' => array(
+						'source' => 'ssi/external-metric',
+						'args'   => array( 'metric_id' => $metric_id ),
+					),
+				),
+			),
+		);
+		if ( 'heading' === $block_name ) {
+			$attributes['level'] = 2; }
+		return '<!-- wp:' . $block_name . ' ' . wp_json_encode( $attributes ) . ' --><' . $tag . '>' . esc_html( $fallback ) . '</' . $tag . '><!-- /wp:' . $block_name . ' -->';
+	};
+	$neutral_native_render  = do_blocks(
+		$neutral_binding( 'neutral-title-paragraph', 'p', 'Captured neutral paragraph' ) . "\n" . $neutral_binding( 'neutral-title-heading', 'h2', 'Captured neutral heading' )
+	);
+} finally {
+	remove_filter( 'pre_http_request', $neutral_http, 10 );
+}
+$assert( '0012' === $neutral_numeric_string, 'Neutral JSON string extraction preserves leading zeros instead of numeric coercion.' );
+$assert(
+	$neutral_title === $neutral_paragraph && $neutral_title === $neutral_heading && 2 === $neutral_fetches,
+	'Neutral JSON string extraction retains angle/entity text and reuses the shared source response across Paragraph and Heading facts: ' . wp_json_encode(
+		array(
+			'expected'  => $neutral_title,
+			'paragraph' => $neutral_paragraph,
+			'heading'   => $neutral_heading,
+			'fetches'   => $neutral_fetches,
+		)
+	)
+);
+$assert( str_contains( $neutral_native_render, esc_html( $neutral_title ) ) && ! str_contains( $neutral_native_render, '<em>1.20</em>' ), 'Native Paragraph and Heading binding callbacks escape plain text at the rich-text boundary.' );
 $assert( hash( 'sha256', (string) get_post_field( 'post_content', $metric_post_id ) ) === $before_hash, 'Fetch and cache expiry refresh leave saved post content unchanged.' );
 
 // A separate editor page proves that refresh returns a new value for the
 // existing native binding controls, and that detach freezes that exact value.
-$metric_map           = array_column( $facts, null, 'id' );
 $editor_block         = static function ( string $name, string $metric_id, string $tag, string $text, array $metadata = array() ): string {
 	$metadata['name'] = $metadata['name'] ?? $name;
 	$attributes       = array(
@@ -197,14 +261,14 @@ PHP;
 file_put_contents( $mu_plugin_path, $mu_plugin_source );
 echo wp_json_encode(
 	array(
-		'status'         => 'verified',
-		'core'           => get_bloginfo( 'version' ),
-		'post_id'        => $metric_post_id,
-		'editor_post_id' => (int) $editor_post_id,
-		'companion'      => $plugin_file,
-		'content_sha256' => $before_hash,
-		'receipts'       => $receipts,
-		'alias_cache'    => array(
+		'status'                => 'verified',
+		'core'                  => get_bloginfo( 'version' ),
+		'post_id'               => $metric_post_id,
+		'editor_post_id'        => (int) $editor_post_id,
+		'companion'             => $plugin_file,
+		'content_sha256'        => $before_hash,
+		'receipts'              => $receipts,
+		'alias_cache'           => array(
 			'provider_fetches'   => $alias_fetches,
 			'github_value'       => $first_receipt['value'] ?? null,
 			'github_forks_value' => $second_receipt['value'] ?? null,
@@ -213,6 +277,13 @@ echo wp_json_encode(
 				'github-stars' => $first_receipt,
 				'github-forks' => $second_receipt,
 			),
+		),
+		'neutral_text_boundary' => array(
+			'fetches'         => $neutral_fetches,
+			'numeric_string'  => $neutral_numeric_string,
+			'paragraph_value' => $neutral_paragraph,
+			'heading_value'   => $neutral_heading,
+			'rendered_markup' => $neutral_native_render,
 		),
 	)
 ) . "\n";

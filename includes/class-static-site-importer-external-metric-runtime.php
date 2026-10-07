@@ -109,11 +109,9 @@ final class Static_Site_Importer_External_Metric_Runtime {
 			return null; }
 		$receipts = get_option( 'static_site_importer_external_metric_receipts', array() );
 		$status   = is_array( $receipts ) && is_array( $receipts[ $id ] ?? null ) ? ( $receipts[ $id ]['status'] ?? '' ) : '';
-		// The saved native text is authoritative fallback markup. Returning its
-		// decoded text to WP_Block::replace_html() would promote literal tags into
-		// rich-text markup, so let WordPress keep the original HTML when no trusted
-		// provider value or last-known-good value is available.
-		return in_array( $status, array( 'fresh', 'stale' ), true ) ? $value : null;
+		// The binding callback is the native rich-text boundary: encode the
+		// configured plain-text value here so literal tags/entities stay text.
+		return in_array( $status, array( 'fresh', 'stale' ), true ) ? esc_html( $value ) : null;
 	}
 
 	/** External metrics have no persistent WordPress entities to seed. */
@@ -188,7 +186,8 @@ final class Static_Site_Importer_External_Metric_Runtime {
 			}
 			$metric           = $fact['metric'] ?? null;
 			$aggregation      = $fact['aggregation'] ?? null;
-			$extraction       = $fact['extraction'] ?? null;
+			$has_extraction   = array_key_exists( 'extraction', $fact );
+			$extraction       = $has_extraction ? $fact['extraction'] : null;
 			$resources        = $fact['source']['resources'];
 			$type             = is_array( $extraction ) ? ( $extraction['value_type'] ?? null ) : null;
 			$extract_keys     = is_array( $extraction ) ? array_keys( $extraction ) : array();
@@ -198,10 +197,10 @@ final class Static_Site_Importer_External_Metric_Runtime {
 			sort( $extract_keys );
 			sort( $extract_required );
 			$extract_ok     = is_array( $extraction ) && $extract_keys === $extract_required && 'json_pointer' === ( $extraction['kind'] ?? null ) && self::valid_json_pointer( $extraction['pointer'] ?? null ) && in_array( $type, array( 'nonnegative_integer', 'string' ), true ) && ( 'string' !== $type || ( is_int( $extraction['max_length'] ?? null ) && $extraction['max_length'] >= 1 && $extraction['max_length'] <= 255 ) );
-			$extract_ok     = 'success_count' === $aggregation && null === $extraction ? true : $extract_ok;
+			$extraction_ok  = 'success_count' === $aggregation && ! $has_extraction ? true : $extract_ok;
 			$aggregation_ok = in_array( $aggregation, array( 'identity', 'sum', 'success_count' ), true )
 				&& ( 'identity' !== $aggregation || 1 === count( $resources ) )
-				&& ( 'success_count' === $aggregation || $extract_ok )
+				&& $extraction_ok
 				&& ( 'sum' !== $aggregation || 'nonnegative_integer' === $type );
 			if ( ! is_string( $metric ) || ! preg_match( '/^[A-Za-z][A-Za-z0-9._-]{0,127}$/', $metric ) || ! $aggregation_ok ) {
 				$errors[] = array(
@@ -216,7 +215,7 @@ final class Static_Site_Importer_External_Metric_Runtime {
 			$fact_bindings = is_array( $fact['bindings'] ?? null ) ? $fact['bindings'] : array();
 			$binding       = $fact_bindings[0] ?? null;
 			$format_ok     = is_array( $format ) && is_string( $format['locale'] ?? null ) && preg_match( '/^[a-zA-Z]{2,3}(?:[-_][a-zA-Z0-9]{2,8})*$/', $format['locale'] ) && is_bool( $format['grouping'] ?? null ) && is_string( $format['prefix'] ?? null ) && strlen( $format['prefix'] ) <= 16 && ! preg_match( '/[\\x00-\\x1f\\x7f]/', $format['prefix'] ) && is_string( $format['suffix'] ?? null ) && strlen( $format['suffix'] ) <= 16 && ! preg_match( '/[\\x00-\\x1f\\x7f]/', $format['suffix'] ) && is_int( $format['decimals'] ?? null ) && $format['decimals'] >= 0 && $format['decimals'] <= 4;
-			if ( $format_ok && ( preg_match( '/[<>]/', (string) $format['prefix'] ) || preg_match( '/[<>]/', (string) $format['suffix'] ) || ( 'string' === $type && 'success_count' !== $aggregation && ( $format['grouping'] || 0 !== $format['decimals'] || '' !== $format['suffix'] ) ) ) ) {
+			if ( $format_ok && ( 'string' === $type && 'success_count' !== $aggregation && ( $format['grouping'] || 0 !== $format['decimals'] || '' !== $format['suffix'] ) ) ) {
 				$format_ok = false; }
 			$provenance_ok  = is_array( $provenance ) && ( ( 'source_corroboration' === ( $provenance['kind'] ?? '' ) && is_string( $provenance['repository'] ?? null ) && is_string( $provenance['revision'] ?? null ) && preg_match( '/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/', $provenance['revision'] ) && is_string( $provenance['source_path'] ?? null ) ) || ( 'operator_mapping' === ( $provenance['kind'] ?? '' ) && ! empty( $provenance['author'] ) && ! empty( $provenance['source_relationship'] ) ) );
 			$fallback_ok    = is_array( $fallback ) && is_string( $fallback['text'] ?? null ) && strlen( $fallback['text'] ) <= 4096 && is_string( $fallback['hash'] ?? null ) && hash_equals( hash( 'sha256', $fallback['text'] ), $fallback['hash'] );
@@ -488,7 +487,21 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		if ( $force ) {
 			foreach ( $request_source_hashes as $candidate_id => $candidate_hash ) {
 				if ( hash_equals( $source_hash, $candidate_hash ) ) {
-					unset( $request_values[ $candidate_id ] ); }
+					unset( $request_values[ $candidate_id ] );
+					$candidate = $metrics[ $candidate_id ] ?? null;
+					if ( is_array( $candidate ) && function_exists( 'delete_transient' ) ) {
+						$alias_material = self::canonical_json(
+							array(
+								$candidate['source'],
+								$candidate['metric'] ?? null,
+								$candidate['extraction'] ?? null,
+								$candidate['aggregation'] ?? null,
+								$candidate['format'] ?? null,
+							)
+						);
+						delete_transient( 'ssi_external_metric_' . hash( 'sha256', $alias_material ) );
+					}
+				}
 			}
 		}
 		$source_cached     = function_exists( 'get_transient' ) ? get_transient( $source_key ) : false;
@@ -633,7 +646,11 @@ final class Static_Site_Importer_External_Metric_Runtime {
 	}
 
 	private static function format_value( mixed $value, array $format ): string {
-		if ( is_int( $value ) && 0 === (int) $format['decimals'] ) {
+		if ( is_string( $value ) ) {
+			return (string) $format['prefix'] . $value . (string) $format['suffix']; }
+		if ( ! is_int( $value ) ) {
+			return (string) $format['prefix'] . (string) $value . (string) $format['suffix']; }
+		if ( 0 === (int) $format['decimals'] ) {
 			$locale   = strtolower( str_replace( '_', '-', (string) $format['locale'] ) );
 			$decimal  = preg_match( '/^(de|es|it|pt|nl|ru|tr|pl|fr|da|sv|no|fi|cs|sk|hu)(-|$)/', $locale ) ? ',' : '.';
 			$thousand = ',' === $decimal ? ( str_starts_with( $locale, 'fr' ) ? "\u{202f}" : '.' ) : ',';
@@ -642,24 +659,21 @@ final class Static_Site_Importer_External_Metric_Runtime {
 				$digits = preg_replace( '/\\B(?=(?:[0-9]{3})+(?![0-9]))/', $thousand, $digits ); }
 			return (string) $format['prefix'] . $digits . (string) $format['suffix'];
 		}
-		if ( is_numeric( $value ) ) {
-			$formatted = false;
-			if ( class_exists( 'NumberFormatter' ) ) {
-				$formatter = new NumberFormatter( (string) $format['locale'], NumberFormatter::DECIMAL );
-				$formatter->setAttribute( NumberFormatter::GROUPING_USED, ! empty( $format['grouping'] ) ? 1 : 0 );
-				$formatter->setAttribute( NumberFormatter::MIN_FRACTION_DIGITS, (int) $format['decimals'] );
-				$formatter->setAttribute( NumberFormatter::MAX_FRACTION_DIGITS, (int) $format['decimals'] );
-				$formatted = $formatter->format( (float) $value );
-			}
-			if ( ! is_string( $formatted ) ) {
-				$locale    = strtolower( str_replace( '_', '-', (string) $format['locale'] ) );
-				$decimal   = preg_match( '/^(de|es|it|pt|nl|ru|tr|pl|fr|da|sv|no|fi|cs|sk|hu)(-|$)/', $locale ) ? ',' : '.';
-				$thousand  = ',' === $decimal ? ( str_starts_with( $locale, 'fr' ) ? "\u{202f}" : '.' ) : ',';
-				$formatted = number_format( (float) $value, (int) $format['decimals'], $decimal, ! empty( $format['grouping'] ) ? $thousand : '' );
-			}
-			$value = $formatted;
+		$formatted = false;
+		if ( class_exists( 'NumberFormatter' ) ) {
+			$formatter = new NumberFormatter( (string) $format['locale'], NumberFormatter::DECIMAL );
+			$formatter->setAttribute( NumberFormatter::GROUPING_USED, ! empty( $format['grouping'] ) ? 1 : 0 );
+			$formatter->setAttribute( NumberFormatter::MIN_FRACTION_DIGITS, (int) $format['decimals'] );
+			$formatter->setAttribute( NumberFormatter::MAX_FRACTION_DIGITS, (int) $format['decimals'] );
+			$formatted = $formatter->format( (float) $value );
 		}
-		return (string) $format['prefix'] . (string) $value . (string) $format['suffix'];
+		if ( ! is_string( $formatted ) ) {
+			$locale    = strtolower( str_replace( '_', '-', (string) $format['locale'] ) );
+			$decimal   = preg_match( '/^(de|es|it|pt|nl|ru|tr|pl|fr|da|sv|no|fi|cs|sk|hu)(-|$)/', $locale ) ? ',' : '.';
+			$thousand  = ',' === $decimal ? ( str_starts_with( $locale, 'fr' ) ? "\u{202f}" : '.' ) : ',';
+			$formatted = number_format( (float) $value, (int) $format['decimals'], $decimal, ! empty( $format['grouping'] ) ? $thousand : '' );
+		}
+		return (string) $format['prefix'] . $formatted . (string) $format['suffix'];
 	}
 
 	private static function request_parts( array $source, array $resource_values ): ?array {
@@ -745,7 +759,7 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		$type = (string) ( $extraction['value_type'] ?? '' );
 		if ( 'nonnegative_integer' === $type ) {
 			return self::count_value( $value ); }
-		if ( 'string' === $type && is_string( $value ) && '' !== $value && strlen( $value ) <= (int) ( $extraction['max_length'] ?? 0 ) && 1 === preg_match( '//u', $value ) && ! preg_match( '/[<>\\x00-\\x1f\\x7f]/', $value ) ) {
+		if ( 'string' === $type && is_string( $value ) && '' !== $value && strlen( $value ) <= (int) ( $extraction['max_length'] ?? 0 ) && 1 === preg_match( '//u', $value ) && ! preg_match( '/[\\x00-\\x1f\\x7f]/', $value ) ) {
 			return $value; }
 		return null;
 	}

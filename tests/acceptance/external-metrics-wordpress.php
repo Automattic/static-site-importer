@@ -18,18 +18,23 @@ $assert           = static function ( bool $ok, string $message ): void {
 $producer_runtime = new ReflectionClass( Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\RuntimeDeclarations::class );
 $assert( false !== $producer_source && str_starts_with( (string) $producer_runtime->getFileName(), $producer_source . '/src/' ), 'Prototype paired compiler comes from the explicitly supplied committed producer checkout.' );
 $fallbacks = array(
-	'project-count'      => 'Captured successful project count',
-	'active-installs'    => 'Captured install total',
-	'all-time-downloads' => 'Captured download total',
-	'project-version'    => '<em>pending</em> "quoted" & &',
-	'project-ratings'    => 'Captured rating count',
-	'github-stars'       => '7',
-	'github-forks'       => '9',
-	'neutral-score'      => '1',
+	'project-count'           => 'Captured successful project count',
+	'active-installs'         => 'Captured install total',
+	'all-time-downloads'      => 'Captured download total',
+	'project-version'         => '<em>pending</em> "quoted" & &',
+	'project-ratings'         => 'Captured rating count',
+	'github-stars'            => '7',
+	'github-forks'            => '9',
+	'neutral-score'           => '1',
+	'neutral-title-paragraph' => 'Captured neutral paragraph',
+	'neutral-title-heading'   => 'Captured neutral heading',
 );
 $html      = '<!doctype html><html><head><title>Projects</title></head><body><main><h1>Projects</h1>';
-foreach ( $fallbacks as $fallback ) {
+foreach ( $fallbacks as $fallback_id => $fallback ) {
+	if ( 'neutral-title-heading' === $fallback_id ) {
+		continue; }
 	$html .= '<p>' . esc_html( $fallback ) . '</p>'; }
+$html    .= '<h2>' . esc_html( $fallbacks['neutral-title-heading'] ) . '</h2>';
 $html    .= '</main></body></html>';
 $artifact = array(
 	'entrypoint' => 'projects.html',
@@ -57,7 +62,7 @@ foreach ( $compiled['plan']['pages'] ?? array() as $candidate ) {
 		foreach ( $nodes as $node ) {
 			$text         = trim( wp_strip_all_tags( (string) ( $node['innerHTML'] ?? '' ) ) );
 			$literal_text = html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-			if ( 'core/paragraph' === ( $node['blockName'] ?? '' ) && '' !== $text ) {
+			if ( in_array( $node['blockName'] ?? '', array( 'core/paragraph', 'core/heading' ), true ) && '' !== $text ) {
 				$contents[ $text ]         = serialize_block( $node );
 				$contents[ $literal_text ] = serialize_block( $node ); }
 			if ( ! empty( $node['innerBlocks'] ) ) {
@@ -73,7 +78,7 @@ foreach ( $compiled['plan']['pages'] ?? array() as $candidate ) {
 		);
 		break; }
 }
-$assert( is_array( $metric_page ), 'Compiler emits all eight captured metric text leaves as native paragraphs. Plan pages: ' . wp_json_encode( $compiled['plan']['pages'] ?? array() ) );
+$assert( is_array( $metric_page ), 'Compiler emits ten captured metric text leaves as native Paragraph and Heading blocks. Plan pages: ' . wp_json_encode( $compiled['plan']['pages'] ?? array() ) );
 
 $slugs                  = array( 'block-visibility', 'icon-block', 'social-sharing-block', 'genesis-featured-page-advanced', 'genesis-columns-advanced' );
 $source_provenance      = static function ( string $file ): array {
@@ -259,7 +264,8 @@ foreach ( $facts as $fact ) {
 	);
 }
 $assert( $expected_live_contract === $actual_live_contract, 'Bounded live-API evidence exactly matches independently expected source fields, aggregation and formatting: ' . wp_json_encode( $actual_live_contract ) );
-$make_generic_fact = static function ( string $id, array $source, string $metric, string $pointer, string $type, string $fallback, array $provenance ) use ( $metric_page, $numeric ): array {
+$make_generic_fact        = static function ( string $id, array $source, string $metric, string $pointer, string $type, string $fallback, array $provenance, ?array $format = null, string $role = 'paragraph' ) use ( $metric_page, $numeric ): array {
+	$block = 'heading' === $role ? 'core/heading' : 'core/paragraph';
 	return array(
 		'id'          => $id,
 		'source'      => $source,
@@ -270,7 +276,7 @@ $make_generic_fact = static function ( string $id, array $source, string $metric
 			'value_type' => $type,
 		) + ( 'string' === $type ? array( 'max_length' => 255 ) : array() ),
 		'aggregation' => 'identity',
-		'format'      => $numeric,
+		'format'      => $format ?? $numeric,
 		'provenance'  => $provenance,
 		'fallback'    => array(
 			'text' => $fallback,
@@ -279,19 +285,19 @@ $make_generic_fact = static function ( string $id, array $source, string $metric
 		'bindings'    => array(
 			array(
 				'schema'              => 'generic/block-binding/v1',
-				'role'                => 'paragraph',
+				'role'                => $role,
 				'source_path'         => $metric_page['source_path'],
 				'search_block_markup' => $metric_page['contents'][ $fallback ],
 				'occurrence'          => 1,
 				'leaf'                => array(
-					'block'     => 'core/paragraph',
+					'block'     => $block,
 					'attribute' => 'content',
 				),
 			),
 		),
 	);
 };
-$github_source     = array(
+$github_source            = array(
 	'schema'             => 'generic/external-metric-source/v1',
 	'id'                 => 'github.repository-information',
 	'intent'             => 'external_public_json',
@@ -334,7 +340,7 @@ $github_source     = array(
 	),
 	'freshness'          => array( 'max_age_seconds' => 86400 ),
 );
-$neutral_source    = array(
+$neutral_source           = array(
 	'schema'             => 'generic/external-metric-source/v1',
 	'id'                 => 'neutral.example-records',
 	'intent'             => 'external_public_json',
@@ -362,9 +368,9 @@ $neutral_source    = array(
 	),
 	'freshness'          => array( 'max_age_seconds' => 600 ),
 );
-$facts[]           = $make_generic_fact( 'github-stars', $github_source, 'stargazers_count', '/stargazers_count', 'nonnegative_integer', '7', $source_provenance( 'src/components/gh-repo-card.tsx' ) );
-$facts[]           = $make_generic_fact( 'github-forks', $github_source, 'forks_count', '/forks_count', 'nonnegative_integer', '9', $source_provenance( 'src/components/gh-repo-card.tsx' ) );
-$facts[]           = $make_generic_fact(
+$facts[]                  = $make_generic_fact( 'github-stars', $github_source, 'stargazers_count', '/stargazers_count', 'nonnegative_integer', '7', $source_provenance( 'src/components/gh-repo-card.tsx' ) );
+$facts[]                  = $make_generic_fact( 'github-forks', $github_source, 'forks_count', '/forks_count', 'nonnegative_integer', '9', $source_provenance( 'src/components/gh-repo-card.tsx' ) );
+$facts[]                  = $make_generic_fact(
 	'neutral-score',
 	$neutral_source,
 	'user_id',
@@ -377,7 +383,21 @@ $facts[]           = $make_generic_fact(
 		'source_relationship' => 'Neutral public JSON record userId is rendered as the configured source statistic.',
 	)
 );
-$direct_validation = Static_Site_Importer_External_Metric_Runtime::validate_manifest( array( 'external_metrics' => $facts ) );
+$neutral_string_format    = array(
+	'locale'   => 'en-US',
+	'grouping' => false,
+	'prefix'   => '',
+	'suffix'   => '',
+	'decimals' => 0,
+);
+$neutral_title_provenance = array(
+	'kind'                => 'operator_mapping',
+	'author'              => 'Chris Huber',
+	'source_relationship' => 'Neutral public JSON record title is rendered as configured bounded native plain text.',
+);
+$facts[]                  = $make_generic_fact( 'neutral-title-paragraph', $neutral_source, 'neutral_title', '/title', 'string', $fallbacks['neutral-title-paragraph'], $neutral_title_provenance, $neutral_string_format );
+$facts[]                  = $make_generic_fact( 'neutral-title-heading', $neutral_source, 'neutral_title_heading', '/title', 'string', $fallbacks['neutral-title-heading'], $neutral_title_provenance, $neutral_string_format, 'heading' );
+$direct_validation        = Static_Site_Importer_External_Metric_Runtime::validate_manifest( array( 'external_metrics' => $facts ) );
 $assert( empty( $direct_validation['errors'] ), 'Consumer validates producer facts: ' . wp_json_encode( $direct_validation['errors'] ?? array() ) );
 $declaration                      = array(
 	'kind'        => 'entity_collection',

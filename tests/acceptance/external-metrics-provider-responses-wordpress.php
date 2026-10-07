@@ -92,10 +92,22 @@ $version_cases = array(
 	'version_array'   => array( 'version' => array( '1.2.3' ) ),
 	'version_object'  => array( 'version' => array( 'number' => '1.2.3' ) ),
 	'version_boolean' => array( 'version' => true ),
-	'version_markup'  => array( 'version' => '<img src=x onerror=alert(1)>' ),
 );
 $results       = array();
 foreach ( $version_cases as $label => $payload ) {
+	$fact                        = $version_fact;
+	$fact['id']                  = 'review-' . $label;
+	$fact['source']['resources'] = array( array( 'slug' => 'review-' . str_replace( '_', '-', $label ) ) );
+	$fact['fallback']['text']    = 'v-captured';
+	$fact['fallback']['hash']    = hash( 'sha256', $fact['fallback']['text'] );
+	$results[ $label ]           = $run_response( $fact, array( $fact['source']['resources'][0]['slug'] => array( $payload ) ) );
+}
+$numeric_version_cases = array(
+	'version_decimal_string'      => array( 'version' => '1.20' ),
+	'version_leading_zero_string' => array( 'version' => '0012' ),
+	'version_literal_angle_text'  => array( 'version' => '<img src=x onerror=alert(1)>' ),
+);
+foreach ( $numeric_version_cases as $label => $payload ) {
 	$fact                        = $version_fact;
 	$fact['id']                  = 'review-' . $label;
 	$fact['source']['resources'] = array( array( 'slug' => 'review-' . str_replace( '_', '-', $label ) ) );
@@ -132,6 +144,9 @@ foreach ( array_merge( $version_cases, $numeric_cases ) as $label => $payload ) 
 	$assert( ( $result['value'] ?? null ) === $expected_fallback, 'Malformed provider response returns exact captured fallback: ' . $label . '; observed ' . wp_json_encode( $result ) );
 	$assert( 'captured_fallback' === ( $result['receipt']['status'] ?? '' ), 'Malformed provider response is not labeled fresh: ' . $label );
 }
+$assert( 'v1.20' === ( $results['version_decimal_string']['value'] ?? null ) && 'fresh' === ( $results['version_decimal_string']['receipt']['status'] ?? '' ), 'WordPress.org string version 1.20 keeps its exact lexical value at decimals zero.' );
+$assert( 'v0012' === ( $results['version_leading_zero_string']['value'] ?? null ) && 'fresh' === ( $results['version_leading_zero_string']['receipt']['status'] ?? '' ), 'WordPress.org string version 0012 preserves leading zeros through the generic formatter.' );
+$assert( 'v<img src=x onerror=alert(1)>' === ( $results['version_literal_angle_text']['value'] ?? null ) && 'fresh' === ( $results['version_literal_angle_text']['receipt']['status'] ?? '' ), 'WordPress.org version extraction retains literal angle text for escaping at the native rich-text boundary.' );
 
 $http200_error_fact                        = $metric_facts['project-count'] ?? array();
 $http200_error_fact['id']                  = 'review-http200-error-json-count';
@@ -151,7 +166,7 @@ $route_unresolved_fact['id']                  = 'review-route-unresolved';
 $route_unresolved_fact['source']['resources'] = array( array( 'slug' => 'review-route-unresolved' ) );
 $route_unresolved_fact['fallback']['text']    = '';
 $route_unresolved_fact['fallback']['hash']    = hash( 'sha256', '' );
-$assert( 8 === count( $metric_facts ) && isset( $metric_facts['project-count'] ), 'Generated companion contains every producer-compiled metric declaration, including typed success_count.' );
+$assert( 10 === count( $metric_facts ) && isset( $metric_facts['project-count'], $metric_facts['neutral-title-paragraph'], $metric_facts['neutral-title-heading'] ), 'Generated companion contains every producer-compiled metric declaration, including typed success_count and neutral plain-text leaves.' );
 call_user_func( array( $runtime_class, 'configure' ), array_merge( array_values( $metric_facts ), array( $route_fact, $route_unresolved_fact ) ) );
 $route_validation = call_user_func(
 	array( $runtime_class, 'validate_manifest' ),

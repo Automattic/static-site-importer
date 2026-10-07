@@ -52,7 +52,7 @@ $assert     = static function ( bool $condition, string $message ) use ( &$asser
 		throw new RuntimeException( $message );
 	} };
 $fact       = static function ( string $id, string $source, string $metric, string $aggregation, array $slugs, string $fallback, array $format ): array {
-	$markup = '<!-- wp:paragraph --><p>' . esc_html( $fallback ) . '</p><!-- /wp:paragraph -->';
+	$markup   = '<!-- wp:paragraph --><p>' . esc_html( $fallback ) . '</p><!-- /wp:paragraph -->';
 	$download = 'plugin_download_history' === $source;
 	$fields   = array(
 		'active_installs'       => array( '/active_installs', 'nonnegative_integer' ),
@@ -64,27 +64,41 @@ $fact       = static function ( string $id, string $source, string $metric, stri
 	return array(
 		'id'          => $id,
 		'source'      => array(
-			'schema'     => 'generic/external-metric-source/v1',
-			'id'         => $download ? 'wordpress.org.plugin-download-history' : 'wordpress.org.plugin-information',
-			'intent'     => 'external_public_json',
-			'request'    => array(
-				'method'               => 'GET',
-				'url_template'         => $download ? 'https://api.wordpress.org/stats/plugin/1.0/downloads.php' : 'https://api.wordpress.org/plugins/info/1.2/',
-				'query'                => $download ? array( 'historical_summary' => 1 ) : array( 'action' => 'plugin_information' ),
-				'query_variables'      => array( 'slug' ),
-				'headers'              => array( 'Accept' => 'application/json' ),
-				'response_media_type'  => 'application/json',
-				'max_response_bytes'   => 1048576,
-				'timeout_seconds'      => 5,
+			'schema'             => 'generic/external-metric-source/v1',
+			'id'                 => $download ? 'wordpress.org.plugin-download-history' : 'wordpress.org.plugin-information',
+			'intent'             => 'external_public_json',
+			'request'            => array(
+				'method'              => 'GET',
+				'url_template'        => $download ? 'https://api.wordpress.org/stats/plugin/1.0/downloads.php' : 'https://api.wordpress.org/plugins/info/1.2/',
+				'query'               => $download ? array( 'historical_summary' => 1 ) : array( 'action' => 'plugin_information' ),
+				'query_variables'     => array( 'slug' ),
+				'headers'             => array( 'Accept' => 'application/json' ),
+				'response_media_type' => 'application/json',
+				'max_response_bytes'  => 1048576,
+				'timeout_seconds'     => 5,
 			),
 			'resource_variables' => array(
-				'slug' => array( 'location' => 'query', 'min_length' => 1, 'max_length' => 100, 'allowed_characters' => 'abcdefghijklmnopqrstuvwxyz0123456789-', 'first_characters' => 'abcdefghijklmnopqrstuvwxyz0123456789', 'prohibited_values' => array() ),
+				'slug' => array(
+					'location'           => 'query',
+					'min_length'         => 1,
+					'max_length'         => 100,
+					'allowed_characters' => 'abcdefghijklmnopqrstuvwxyz0123456789-',
+					'first_characters'   => 'abcdefghijklmnopqrstuvwxyz0123456789',
+					'prohibited_values'  => array(),
+				),
 			),
-			'resources'  => array_map( static fn( string $slug ): array => array( 'slug' => $slug ), $slugs ),
-			'freshness'  => array( 'max_age_seconds' => 3600 ),
+			'resources'          => array_map( static fn( string $slug ): array => array( 'slug' => $slug ), $slugs ),
+			'freshness'          => array( 'max_age_seconds' => 3600 ),
 		),
 		'metric'      => $metric,
-		'extraction'  => array_merge( array( 'kind' => 'json_pointer', 'pointer' => ( $fields[ $metric ] ?? array( '/score', 'nonnegative_integer' ) )[0], 'value_type' => ( $fields[ $metric ] ?? array( '/score', 'nonnegative_integer' ) )[1] ), 'string' === ( $fields[ $metric ][1] ?? null ) ? array( 'max_length' => 255 ) : array() ),
+		'extraction'  => array_merge(
+			array(
+				'kind'       => 'json_pointer',
+				'pointer'    => ( $fields[ $metric ] ?? array( '/score', 'nonnegative_integer' ) )[0],
+				'value_type' => ( $fields[ $metric ] ?? array( '/score', 'nonnegative_integer' ) )[1],
+			),
+			'string' === ( $fields[ $metric ][1] ?? null ) ? array( 'max_length' => 255 ) : array()
+		),
 		'aggregation' => $aggregation,
 		'format'      => $format,
 		'provenance'  => array(
@@ -175,7 +189,7 @@ $validated  = Static_Site_Importer_External_Metric_Runtime::validate_manifest(
 	)
 );
 $assert( 5 === count( $validated['external_metrics'] ) && empty( $validated['errors'] ), 'accepts source-proven native text bindings and supported WordPress.org facts: ' . wp_json_encode( $validated['errors'] ) );
-$bad                                            = $metrics;
+$bad = $metrics;
 $bad[0]['source']['request']['url_template'] = 'http://127.0.0.1/private';
 $assert(
 	! empty(
@@ -256,6 +270,38 @@ $assert( '3,500+' === $install_result, 'sums active_installs and applies source 
 $assert( '3,456+' === Static_Site_Importer_External_Metric_Runtime::value( 'downloads-a', array_column( $metrics, null, 'id' ), $fetch ), 'sums integer historical all_time, not plugin-info downloaded' );
 $assert( '42' === Static_Site_Importer_External_Metric_Runtime::value( 'ratings-a', array_column( $metrics, null, 'id' ), $fetch ), 'uses individual num_ratings' );
 $assert( 'v1.2.3' === Static_Site_Importer_External_Metric_Runtime::value( 'version-a', array_column( $metrics, null, 'id' ), $fetch ), 'preserves version prefix' );
+$numeric_version_fact                     = $metrics[3];
+$numeric_version_fact['id']               = 'numeric-version-string';
+$numeric_version_fact['fallback']['text'] = 'v-captured';
+$numeric_version_fact['fallback']['hash'] = hash( 'sha256', 'v-captured' );
+$assert(
+	'v1.20' === Static_Site_Importer_External_Metric_Runtime::value(
+		'numeric-version-string',
+		array( 'numeric-version-string' => $numeric_version_fact ),
+		static fn( string $url ): array => array(
+			'response' => array( 'code' => 200 ),
+			'body'     => '{"version":"1.20"}',
+		),
+		1001,
+		true
+	),
+	'WordPress.org version strings preserve numeric-looking decimals byte-for-byte'
+);
+$leading_zero_version       = $numeric_version_fact;
+$leading_zero_version['id'] = 'leading-zero-version-string';
+$assert(
+	'v0012' === Static_Site_Importer_External_Metric_Runtime::value(
+		'leading-zero-version-string',
+		array( 'leading-zero-version-string' => $leading_zero_version ),
+		static fn( string $url ): array => array(
+			'response' => array( 'code' => 200 ),
+			'body'     => '{"version":"0012"}',
+		),
+		1002,
+		true
+	),
+	'WordPress.org version strings preserve leading-zero numeric identifiers'
+);
 $before = count( $requests );
 Static_Site_Importer_External_Metric_Runtime::value( 'count-a', array_column( $metrics, null, 'id' ), $fetch );
 $count_calls = count( $requests ) - $before;
@@ -327,68 +373,310 @@ $invalid_fact = $fact(
 $assert( 'captured' === Static_Site_Importer_External_Metric_Runtime::value( 'invalid-a', array( 'invalid-a' => $invalid_fact ), $invalid ), 'treats successful HTTP with invalid provider payload as failure, never zero' );
 
 $legacy_fact             = $metrics[2];
-$legacy_fact['provider'] = array( 'schema' => 'generic/external-metric-provider/v1', 'id' => 'wordpress.org' );
+$legacy_fact['provider'] = array(
+	'schema' => 'generic/external-metric-provider/v1',
+	'id'     => 'wordpress.org',
+);
 $assert( ! empty( Static_Site_Importer_External_Metric_Runtime::validate_manifest( array( 'external_metrics' => array( $legacy_fact ) ) )['errors'] ), 'rejects the retired provider-reader contract rather than preserving a compatibility path' );
 
-$http200_error_fact = $fact( 'http200-error-json', 'plugin_information', 'plugin_response_count', 'success_count', array( 'block-visibility', 'missing-plugin' ), '2', array( 'locale' => 'en-US', 'grouping' => false, 'prefix' => '', 'suffix' => '', 'decimals' => 0 ) );
-$http200_error_fetch = static function ( string $url ): array {
+$http200_error_fact                 = $fact(
+	'http200-error-json',
+	'plugin_information',
+	'plugin_response_count',
+	'success_count',
+	array( 'block-visibility', 'missing-plugin' ),
+	'2',
+	array(
+		'locale'   => 'en-US',
+		'grouping' => false,
+		'prefix'   => '',
+		'suffix'   => '',
+		'decimals' => 0,
+	)
+);
+$success_count_without_prerequisite = $http200_error_fact;
+unset( $success_count_without_prerequisite['extraction'] );
+$assert( empty( Static_Site_Importer_External_Metric_Runtime::validate_manifest( array( 'external_metrics' => array( $success_count_without_prerequisite ) ) )['errors'] ), 'allows success_count to omit its optional typed response prerequisite' );
+$invalid_success_count_extractions = array(
+	'unknown kind'         => array(
+		'kind'       => 'expression',
+		'pointer'    => '/slug',
+		'value_type' => 'string',
+		'max_length' => 64,
+	),
+	'unknown value type'   => array(
+		'kind'       => 'json_pointer',
+		'pointer'    => '/slug',
+		'value_type' => 'object',
+	),
+	'malformed pointer'    => array(
+		'kind'       => 'json_pointer',
+		'pointer'    => '/bad~2pointer',
+		'value_type' => 'string',
+		'max_length' => 64,
+	),
+	'extra descriptor key' => array(
+		'kind'       => 'json_pointer',
+		'pointer'    => '/slug',
+		'value_type' => 'string',
+		'max_length' => 64,
+		'default'    => 'anything',
+	),
+	'explicit null'        => null,
+);
+foreach ( $invalid_success_count_extractions as $index => $descriptor ) {
+	$invalid_fact               = $success_count_without_prerequisite;
+	$invalid_fact['extraction'] = $descriptor;
+	$invalid_fact['id']         = 'invalid-success-extraction-' . $index;
+	$assert( ! empty( Static_Site_Importer_External_Metric_Runtime::validate_manifest( array( 'external_metrics' => array( $invalid_fact ) ) )['errors'] ), 'rejects success_count with malformed present extraction: ' . $index ); }
+$http200_error_fetch                    = static function ( string $url ): array {
 	parse_str( (string) parse_url( $url, PHP_URL_QUERY ), $query );
-	return array( 'response' => array( 'code' => 200 ), 'body' => 'missing-plugin' === ( $query['slug'] ?? '' ) ? '{"error":"not found"}' : '{"slug":"block-visibility"}' );
+	return array(
+		'response' => array( 'code' => 200 ),
+		'body'     => 'missing-plugin' === ( $query['slug'] ?? '' ) ? '{"error":"not found"}' : '{"slug":"block-visibility"}',
+	);
 };
 $http200_error_fact['fallback']['text'] = 'captured-count';
 $http200_error_fact['fallback']['hash'] = hash( 'sha256', 'captured-count' );
 $assert( 'captured-count' === Static_Site_Importer_External_Metric_Runtime::value( 'http200-error-json', array( 'http200-error-json' => $http200_error_fact ), $http200_error_fetch, null, true ), 'success_count requires its declarative typed response prerequisite and fails atomically on HTTP 200 error JSON' );
-$partial_success_fact = $http200_error_fact;
-$partial_success_fact['id'] = 'partial-success-count';
+$partial_success_fact                     = $http200_error_fact;
+$partial_success_fact['id']               = 'partial-success-count';
 $partial_success_fact['fallback']['text'] = 'captured-successes';
 $partial_success_fact['fallback']['hash'] = hash( 'sha256', 'captured-successes' );
-$assert( 'captured-successes' === Static_Site_Importer_External_Metric_Runtime::value( 'partial-success-count', array( 'partial-success-count' => $partial_success_fact ), static fn( string $url ): array => array( 'response' => array( 'code' => 200 ), 'body' => '{"error":"provider error"}' ), null, true ), 'typed extraction failure prevents HTTP 200 error JSON from counting as a successful resource' );
+$assert(
+	'captured-successes' === Static_Site_Importer_External_Metric_Runtime::value(
+		'partial-success-count',
+		array( 'partial-success-count' => $partial_success_fact ),
+		static fn( string $url ): array => array(
+			'response' => array( 'code' => 200 ),
+			'body'     => '{"error":"provider error"}',
+		),
+		null,
+		true
+	),
+	'typed extraction failure prevents HTTP 200 error JSON from counting as a successful resource'
+);
 
-$github_fact = $fact( 'github-stars', 'plugin_information', 'active_installs', 'identity', array(), '7', array( 'locale' => 'en-US', 'grouping' => false, 'prefix' => '', 'suffix' => '', 'decimals' => 0 ) );
-$github_fact['source'] = array( 'schema' => 'generic/external-metric-source/v1', 'id' => 'github.repository-information', 'intent' => 'external_public_json', 'request' => array( 'method' => 'GET', 'url_template' => 'https://api.github.com/repos/{owner}/{repository}', 'query' => array(), 'query_variables' => array(), 'headers' => array( 'Accept' => 'application/vnd.github+json', 'X-GitHub-Api-Version' => '2022-11-28' ), 'response_media_type' => 'application/json', 'max_response_bytes' => 1048576, 'timeout_seconds' => 5 ), 'resource_variables' => array( 'owner' => array( 'location' => 'path', 'min_length' => 1, 'max_length' => 39, 'allowed_characters' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-', 'first_characters' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', 'last_characters' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', 'prohibited_values' => array() ), 'repository' => array( 'location' => 'path', 'min_length' => 1, 'max_length' => 100, 'allowed_characters' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-', 'prohibited_values' => array( '.', '..' ) ) ), 'resources' => array( array( 'owner' => 'Automattic', 'repository' => '.github' ) ), 'freshness' => array( 'max_age_seconds' => 86400 ) );
-$github_fact['metric'] = 'stargazers_count';
-$github_fact['extraction'] = array( 'kind' => 'json_pointer', 'pointer' => '/stargazers_count', 'value_type' => 'nonnegative_integer' );
-$github_requests = array();
-$github_fetch = static function ( string $url ) use ( &$github_requests ): array {
+$github_fact               = $fact(
+	'github-stars',
+	'plugin_information',
+	'active_installs',
+	'identity',
+	array(),
+	'7',
+	array(
+		'locale'   => 'en-US',
+		'grouping' => false,
+		'prefix'   => '',
+		'suffix'   => '',
+		'decimals' => 0,
+	)
+);
+$github_fact['source']     = array(
+	'schema'             => 'generic/external-metric-source/v1',
+	'id'                 => 'github.repository-information',
+	'intent'             => 'external_public_json',
+	'request'            => array(
+		'method'              => 'GET',
+		'url_template'        => 'https://api.github.com/repos/{owner}/{repository}',
+		'query'               => array(),
+		'query_variables'     => array(),
+		'headers'             => array(
+			'Accept'               => 'application/vnd.github+json',
+			'X-GitHub-Api-Version' => '2022-11-28',
+		),
+		'response_media_type' => 'application/json',
+		'max_response_bytes'  => 1048576,
+		'timeout_seconds'     => 5,
+	),
+	'resource_variables' => array(
+		'owner'      => array(
+			'location'           => 'path',
+			'min_length'         => 1,
+			'max_length'         => 39,
+			'allowed_characters' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-',
+			'first_characters'   => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
+			'last_characters'    => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
+			'prohibited_values'  => array(),
+		),
+		'repository' => array(
+			'location'           => 'path',
+			'min_length'         => 1,
+			'max_length'         => 100,
+			'allowed_characters' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-',
+			'prohibited_values'  => array( '.', '..' ),
+		),
+	),
+	'resources'          => array(
+		array(
+			'owner'      => 'Automattic',
+			'repository' => '.github',
+		),
+	),
+	'freshness'          => array( 'max_age_seconds' => 86400 ),
+);
+$github_fact['metric']     = 'stargazers_count';
+$github_fact['extraction'] = array(
+	'kind'       => 'json_pointer',
+	'pointer'    => '/stargazers_count',
+	'value_type' => 'nonnegative_integer',
+);
+$github_requests           = array();
+$github_fetch              = static function ( string $url ) use ( &$github_requests ): array {
 	$github_requests[] = $url;
-	return array( 'response' => array( 'code' => 200 ), 'body' => '{"stargazers_count":7,"forks_count":9}' );
+	return array(
+		'response' => array( 'code' => 200 ),
+		'body'     => '{"stargazers_count":7,"forks_count":9}',
+	);
 };
 $assert( empty( Static_Site_Importer_External_Metric_Runtime::validate_manifest( array( 'external_metrics' => array( $github_fact ) ) )['errors'] ) && '7' === Static_Site_Importer_External_Metric_Runtime::value( 'github-stars', array( 'github-stars' => $github_fact ), $github_fetch, 100000, true ) && array( 'https://api.github.com/repos/Automattic/.github' ) === $github_requests, 'generic interpreter accepts and fetches GitHub source data, preserving exact count extraction' );
-$forks_fact = $github_fact;
-$forks_fact['id'] = 'github-forks';
-$forks_fact['metric'] = 'forks_count';
+$forks_fact                          = $github_fact;
+$forks_fact['id']                    = 'github-forks';
+$forks_fact['metric']                = 'forks_count';
 $forks_fact['extraction']['pointer'] = '/forks_count';
 $assert( '9' === Static_Site_Importer_External_Metric_Runtime::value( 'github-forks', array( 'github-forks' => $forks_fact ), $github_fetch, 100001 ) && 1 === count( $github_requests ), 'GitHub stars and forks share one canonical HTTP/JSON source-cache entry' );
 $github_refetches = 0;
-$github_refetch = static function ( string $url ) use ( &$github_refetches ): array {
+$github_refetch   = static function ( string $url ) use ( &$github_refetches ): array {
 	++$github_refetches;
-	return array( 'response' => array( 'code' => 200 ), 'body' => '{"stargazers_count":17,"forks_count":18}' );
+	return array(
+		'response' => array( 'code' => 200 ),
+		'body'     => '{"stargazers_count":17,"forks_count":18}',
+	);
 };
-$github_facts = array( 'github-stars' => $github_fact, 'github-forks' => $forks_fact );
+$github_facts     = array(
+	'github-stars' => $github_fact,
+	'github-forks' => $forks_fact,
+);
 $assert( '17' === Static_Site_Importer_External_Metric_Runtime::value( 'github-stars', $github_facts, $github_refetch, 100002, true ) && '18' === Static_Site_Importer_External_Metric_Runtime::value( 'github-forks', $github_facts, $github_refetch, 100003 ) && 1 === $github_refetches, 'Visible source refresh invalidates per-metric aliases so sibling extraction follows the refreshed shared response.' );
-$github_receipt  = get_option( 'static_site_importer_external_metric_receipts', array() )['github-stars'] ?? array();
+$same_second_star = $github_fact;
+$same_second_star['id'] = 'same-second-stars';
+$same_second_star['source']['id'] = 'github.same-second-cache-test';
+$same_second_fork = $forks_fact;
+$same_second_fork['id'] = 'same-second-forks';
+$same_second_fork['source']['id'] = 'github.same-second-cache-test';
+$same_second_facts = array(
+	'same-second-stars' => $same_second_star,
+	'same-second-forks' => $same_second_fork,
+);
+$same_second_fetches = 0;
+$same_second_fetch = static function ( string $url ) use ( &$same_second_fetches ): array {
+	++$same_second_fetches;
+	$values = 1 === $same_second_fetches ? array( 41, 42 ) : array( 51, 52 );
+	return array(
+		'response' => array( 'code' => 200 ),
+		'body'     => wp_json_encode( array( 'stargazers_count' => $values[0], 'forks_count' => $values[1] ) ),
+	);
+};
+$same_second_now = 200000;
+$assert( '41' === Static_Site_Importer_External_Metric_Runtime::value( 'same-second-stars', $same_second_facts, $same_second_fetch, $same_second_now, true ) && '42' === Static_Site_Importer_External_Metric_Runtime::value( 'same-second-forks', $same_second_facts, $same_second_fetch, $same_second_now ), 'Initial same-second source aliases receive distinct extracted values from one response.' );
+$assert( '51' === Static_Site_Importer_External_Metric_Runtime::value( 'same-second-stars', $same_second_facts, $same_second_fetch, $same_second_now, true ) && '52' === Static_Site_Importer_External_Metric_Runtime::value( 'same-second-forks', $same_second_facts, $same_second_fetch, $same_second_now ) && 2 === $same_second_fetches, 'Forced refresh invalidates sibling metric receipts even when fetch timestamps share the same second.' );
+$github_receipt = get_option( 'static_site_importer_external_metric_receipts', array() )['github-stars'] ?? array();
 $assert( 'github.repository-information' === ( $github_receipt['source_id'] ?? '' ) && in_array( 86400, $GLOBALS['ssi_metric_ttl'] ?? array(), true ), 'source receipt/cache identity and one-day freshness come from the recipe' );
-$unsafe_resource = $github_fact;
+$unsafe_resource       = $github_fact;
 $unsafe_resource['id'] = 'github-unsafe-path';
 $unsafe_resource['source']['resources'][0]['repository'] = '..';
 $assert( ! empty( Static_Site_Importer_External_Metric_Runtime::validate_manifest( array( 'external_metrics' => array( $unsafe_resource ) ) )['errors'] ), 'resource variable schema rejects dot-segment path selectors' );
-$unsafe_header = $github_fact;
+$unsafe_header       = $github_fact;
 $unsafe_header['id'] = 'github-unsafe-header';
 $unsafe_header['source']['request']['headers']['X-Api-Key'] = 'credential-value';
 $assert( ! empty( Static_Site_Importer_External_Metric_Runtime::validate_manifest( array( 'external_metrics' => array( $unsafe_header ) ) )['errors'] ), 'declarative source transport refuses credential-bearing header data' );
-$fractional_fact = $github_fact;
-$fractional_fact['id'] = 'github-fractional';
-$fractional_fact['source']['id'] = 'github.fractional-test';
+$fractional_fact                     = $github_fact;
+$fractional_fact['id']               = 'github-fractional';
+$fractional_fact['source']['id']     = 'github.fractional-test';
 $fractional_fact['fallback']['text'] = 'captured-stars';
 $fractional_fact['fallback']['hash'] = hash( 'sha256', 'captured-stars' );
-$fractional_fetch = static fn( string $url ): array => array( 'response' => array( 'code' => 200 ), 'body' => '{"stargazers_count":1.5}' );
+$fractional_fetch                    = static fn( string $url ): array => array(
+	'response' => array( 'code' => 200 ),
+	'body'     => '{"stargazers_count":1.5}',
+);
 $assert( 'captured-stars' === Static_Site_Importer_External_Metric_Runtime::value( 'github-fractional', array( 'github-fractional' => $fractional_fact ), $fractional_fetch, null, true ), 'generic integer extraction rejects fractional JSON values and preserves the literal fallback' );
 
-$neutral_fact = $fact( 'neutral-score', 'plugin_information', 'score', 'identity', array(), '0', array( 'locale' => 'en-US', 'grouping' => false, 'prefix' => '', 'suffix' => '', 'decimals' => 0 ) );
-$neutral_fact['source'] = array( 'schema' => 'generic/external-metric-source/v1', 'id' => 'neutral.example-records', 'intent' => 'external_public_json', 'request' => array( 'method' => 'GET', 'url_template' => 'https://jsonplaceholder.typicode.com/todos/{record}', 'query' => array(), 'query_variables' => array(), 'headers' => array( 'Accept' => 'application/json' ), 'response_media_type' => 'application/json', 'max_response_bytes' => 1048576, 'timeout_seconds' => 5 ), 'resource_variables' => array( 'record' => array( 'location' => 'path', 'min_length' => 1, 'max_length' => 3, 'allowed_characters' => '0123456789', 'prohibited_values' => array() ) ), 'resources' => array( array( 'record' => '1' ) ), 'freshness' => array( 'max_age_seconds' => 600 ) );
-$neutral_fact['metric'] = 'user_id';
-$neutral_fact['extraction'] = array( 'kind' => 'json_pointer', 'pointer' => '/userId', 'value_type' => 'nonnegative_integer' );
-$neutral_fetch = static fn( string $url ): array => array( 'response' => array( 'code' => 200 ), 'body' => '{"userId":31,"id":1,"title":"neutral JSON proof","completed":false}' );
+$neutral_fact                            = $fact(
+	'neutral-score',
+	'plugin_information',
+	'score',
+	'identity',
+	array(),
+	'0',
+	array(
+		'locale'   => 'en-US',
+		'grouping' => false,
+		'prefix'   => '',
+		'suffix'   => '',
+		'decimals' => 0,
+	)
+);
+$neutral_fact['source']                  = array(
+	'schema'             => 'generic/external-metric-source/v1',
+	'id'                 => 'neutral.example-records',
+	'intent'             => 'external_public_json',
+	'request'            => array(
+		'method'              => 'GET',
+		'url_template'        => 'https://jsonplaceholder.typicode.com/todos/{record}',
+		'query'               => array(),
+		'query_variables'     => array(),
+		'headers'             => array( 'Accept' => 'application/json' ),
+		'response_media_type' => 'application/json',
+		'max_response_bytes'  => 1048576,
+		'timeout_seconds'     => 5,
+	),
+	'resource_variables' => array(
+		'record' => array(
+			'location'           => 'path',
+			'min_length'         => 1,
+			'max_length'         => 3,
+			'allowed_characters' => '0123456789',
+			'prohibited_values'  => array(),
+		),
+	),
+	'resources'          => array( array( 'record' => '1' ) ),
+	'freshness'          => array( 'max_age_seconds' => 600 ),
+);
+$neutral_fact['metric']                  = 'user_id';
+$neutral_fact['extraction']              = array(
+	'kind'       => 'json_pointer',
+	'pointer'    => '/userId',
+	'value_type' => 'nonnegative_integer',
+);
+$neutral_fetch                           = static fn( string $url ): array => array(
+	'response' => array( 'code' => 200 ),
+	'body'     => '{"userId":31,"id":1,"title":"neutral JSON proof","completed":false}',
+);
 $assert( empty( Static_Site_Importer_External_Metric_Runtime::validate_manifest( array( 'external_metrics' => array( $neutral_fact ) ) )['errors'] ) && '31' === Static_Site_Importer_External_Metric_Runtime::value( 'neutral-score', array( 'neutral-score' => $neutral_fact ), $neutral_fetch, 200000, true ), 'third neutral source recipe runs through the same interpreter without a core source branch' );
+$neutral_string_fact                     = $neutral_fact;
+$neutral_string_fact['id']               = 'neutral-numeric-string';
+$neutral_string_fact['metric']           = 'neutral_title';
+$neutral_string_fact['extraction']       = array(
+	'kind'       => 'json_pointer',
+	'pointer'    => '/title',
+	'value_type' => 'string',
+	'max_length' => 255,
+);
+$neutral_string_fact['fallback']['text'] = 'captured-neutral-title';
+$neutral_string_fact['fallback']['hash'] = hash( 'sha256', $neutral_string_fact['fallback']['text'] );
+$neutral_string_fact['format']           = array(
+	'locale'   => 'en-US',
+	'grouping' => false,
+	'prefix'   => '',
+	'suffix'   => '',
+	'decimals' => 0,
+);
+$neutral_string_fetch                    = static fn( string $url ): array => array(
+	'response' => array( 'code' => 200 ),
+	'body'     => '{"title":"0012"}',
+);
+$assert( '0012' === Static_Site_Importer_External_Metric_Runtime::value( 'neutral-numeric-string', array( 'neutral-numeric-string' => $neutral_string_fact ), $neutral_string_fetch, 200001, true ), 'neutral JSON numeric-looking strings retain their original lexical form' );
+$neutral_rich_fact                       = $neutral_string_fact;
+$neutral_rich_fact['id']                 = 'neutral-rich-title';
+$neutral_rich_fact['fallback']['text']   = 'captured-neutral-rich-title';
+$neutral_rich_fact['fallback']['hash']   = hash( 'sha256', $neutral_rich_fact['fallback']['text'] );
+$neutral_rich_value                      = '<em>1.20</em> &lt;literal&gt; & "quoted"';
+$neutral_rich_fetch                      = static fn( string $url ): array => array(
+	'response' => array( 'code' => 200 ),
+	'body'     => wp_json_encode( array( 'title' => $neutral_rich_value ) ),
+);
+$assert( $neutral_rich_value === Static_Site_Importer_External_Metric_Runtime::value( 'neutral-rich-title', array( 'neutral-rich-title' => $neutral_rich_fact ), $neutral_rich_fetch, 200002, true ), 'neutral bounded plain-string extraction permits literal markup and entity text' );
+Static_Site_Importer_External_Metric_Runtime::configure( array( $neutral_rich_fact ) );
+$assert( esc_html( $neutral_rich_value ) === Static_Site_Importer_External_Metric_Runtime::binding_value( array( 'metric_id' => 'neutral-rich-title' ) ), 'native rich-text binding encodes literal angle brackets and entities at the rendering boundary' );
 
 echo 'External metric runtime regression passed: ' . $assertions . " assertions\n";

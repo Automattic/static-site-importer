@@ -14,7 +14,7 @@ $assert( ! is_plugin_active( 'static-site-importer/static-site-importer.php' ), 
 $assert( ! class_exists( 'Automattic\\BlocksEngine\\PhpTransformer\\ArtifactCompiler\\RuntimeDeclarations' ), 'Blocks Engine PHP transformer runtime is absent.' );
 $assert( is_string( $rendered ) && '' !== $rendered, 'Standalone companion renders the imported page.' );
 $receipts = get_option( 'static_site_importer_external_metric_receipts', array() );
-foreach ( array( 'active-installs', 'all-time-downloads', 'project-version', 'project-ratings', 'project-count', 'github-stars', 'github-forks', 'neutral-score' ) as $metric_id ) {
+foreach ( array( 'active-installs', 'all-time-downloads', 'project-version', 'project-ratings', 'project-count', 'github-stars', 'github-forks', 'neutral-score', 'neutral-title-paragraph', 'neutral-title-heading' ) as $metric_id ) {
 	$receipt = $receipts[ $metric_id ] ?? array();
 	$assert( 'fresh' === ( $receipt['status'] ?? '' ) && ! empty( $receipt['value'] ), 'Standalone provider fetches and renders ' . $metric_id . ' without SSI or Blocks Engine.' );
 }
