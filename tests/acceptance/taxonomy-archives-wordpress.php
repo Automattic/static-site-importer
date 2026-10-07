@@ -81,7 +81,7 @@ if ( is_dir( $rollback_theme_dir ) ) {
 		}
 	}
 }
-$rollback_probe = array(
+$rollback_probe   = array(
 	'term_exists' => term_exists( $slug, 'category' ),
 	'source_post' => get_page_by_path( 'story-1', OBJECT, 'post' ) instanceof WP_Post,
 	'route_rule'  => $rollback_rules['^writing/category/personal/?$'] ?? null,
@@ -117,14 +117,14 @@ $taxonomy_assert( $archive_template instanceof WP_Block_Template && str_contains
 $source_page_ids  = $receipt['completed']['pages'] ?? array();
 $source_member_id = (int) ( $source_page_ids['writing/story-1.html'] ?? 0 );
 $taxonomy_assert( $source_member_id > 0 && has_term( $personal_term->term_id, 'category', $source_member_id ), 'The materialized article must carry its source-proven category membership.' );
-$owned_meta_before = get_post_meta( $source_member_id, '_static_site_importer_taxonomy_memberships', true );
+$owned_meta_before  = get_post_meta( $source_member_id, '_static_site_importer_taxonomy_memberships', true );
 $terms_before_fault = wp_get_object_terms( $source_member_id, 'category', array( 'fields' => 'ids' ) );
-$stale_owner_term = wp_insert_term( 'Stale SSI owner marker', 'category', array( 'slug' => 'stale-ssi-owner-marker' ) );
+$stale_owner_term   = wp_insert_term( 'Stale SSI owner marker', 'category', array( 'slug' => 'stale-ssi-owner-marker' ) );
 $taxonomy_assert( ! is_wp_error( $stale_owner_term ), 'A stale importer ownership marker term must be available for update/readback fault injection.' );
 $owned_meta_before = array( 'category' => array( $personal_term->term_id, (int) $stale_owner_term['term_id'] ) );
 update_post_meta( $source_member_id, '_static_site_importer_taxonomy_memberships', $owned_meta_before );
 $ownership_writes = 0;
-$metadata_fault = static function ( $check, int $object_id, string $meta_key ) use ( &$ownership_writes, $source_member_id ) {
+$metadata_fault   = static function ( $check, int $object_id, string $meta_key ) use ( &$ownership_writes, $source_member_id ) {
 	if ( $source_member_id === $object_id && '_static_site_importer_taxonomy_memberships' === $meta_key ) {
 		++$ownership_writes;
 		return 2 === $ownership_writes ? false : $check;
@@ -132,22 +132,22 @@ $metadata_fault = static function ( $check, int $object_id, string $meta_key ) u
 	return $check;
 };
 add_filter( 'update_post_metadata', $metadata_fault, 10, 3 );
-$ownership_fault_args = $compiled['args'];
-$ownership_fault_args['slug'] = 'taxonomy-archive-ownership-fault';
+$ownership_fault_args                                   = $compiled['args'];
+$ownership_fault_args['slug']                           = 'taxonomy-archive-ownership-fault';
 $ownership_fault_args['inject_materialization_failure'] = 'theme_write_short';
-$ownership_fault_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, $ownership_fault_args );
+$ownership_fault_receipt                                = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, $ownership_fault_args );
 remove_filter( 'update_post_metadata', $metadata_fault, 10 );
-$owned_meta_after_fault = get_post_meta( $source_member_id, '_static_site_importer_taxonomy_memberships', true );
-$terms_after_fault = wp_get_object_terms( $source_member_id, 'category', array( 'fields' => 'ids' ) );
-$rollback_failures = $ownership_fault_receipt['rollback']['failures'] ?? array();
+$owned_meta_after_fault    = get_post_meta( $source_member_id, '_static_site_importer_taxonomy_memberships', true );
+$terms_after_fault         = wp_get_object_terms( $source_member_id, 'category', array( 'fields' => 'ids' ) );
+$rollback_failures         = $ownership_fault_receipt['rollback']['failures'] ?? array();
 $ownership_failure_summary = array(
-	'status'         => $ownership_fault_receipt['status'] ?? null,
-	'errors'         => $ownership_fault_receipt['errors'] ?? array(),
-	'receipt'        => $ownership_fault_receipt['rollback'] ?? null,
-	'terms_before'   => $terms_before_fault,
-	'terms_after'    => $terms_after_fault,
+	'status'          => $ownership_fault_receipt['status'] ?? null,
+	'errors'          => $ownership_fault_receipt['errors'] ?? array(),
+	'receipt'         => $ownership_fault_receipt['rollback'] ?? null,
+	'terms_before'    => $terms_before_fault,
+	'terms_after'     => $terms_after_fault,
 	'metadata_before' => $owned_meta_before,
-	'metadata_after' => $owned_meta_after_fault,
+	'metadata_after'  => $owned_meta_after_fault,
 );
 $taxonomy_assert(
 	'partial' === ( $ownership_fault_receipt['status'] ?? '' ) && ! empty( $rollback_failures ) && in_array( 'taxonomy_post_meta', array_column( $rollback_failures, 'kind', 'target' ), true ) && $terms_before_fault === $terms_after_fault && $owned_meta_before === $owned_meta_after_fault,

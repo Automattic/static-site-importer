@@ -5,7 +5,7 @@ if ( ! defined( 'SSI_TAXONOMY_DISPOSABLE_TEST' ) || true !== SSI_TAXONOMY_DISPOS
 }
 wp_set_current_user( 1 );
 $active_plugins = get_option( 'active_plugins', array() );
-$ssi_basename    = 'static-site-importer/static-site-importer.php';
+$ssi_basename   = 'static-site-importer/static-site-importer.php';
 if ( is_array( $active_plugins ) && in_array( $ssi_basename, $active_plugins, true ) && function_exists( 'deactivate_plugins' ) ) {
 	deactivate_plugins( $ssi_basename, true );
 }
@@ -22,15 +22,15 @@ if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
 require_once '/wordpress/wp-content/plugins/static-site-importer/static-site-importer.php';
 require_once '/wordpress/wp-content/plugins/static-site-importer/includes/class-static-site-importer-compilation-preparation.php';
 require_once '/wordpress/wp-content/plugins/static-site-importer/includes/class-static-site-importer-wordpress-site-plan-materializer.php';
-$assert = static function ( bool $condition, string $message ): void {
+$assert                = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) {
 		throw new RuntimeException( $message ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Disposable runtime CLI acceptance evidence.
 	}
 };
-$acceptance_issues = array();
-$exported_paths = array_fill_keys( array_map( static fn( array $file ): string => (string) ( $file['path'] ?? '' ), $bundle['files'] ?? array() ), true );
+$acceptance_issues     = array();
+$exported_paths        = array_fill_keys( array_map( static fn( array $file ): string => (string) ( $file['path'] ?? '' ), $bundle['files'] ?? array() ), true );
 $resolved_archive_refs = 0;
-$broken_archive_refs = array();
+$broken_archive_refs   = array();
 foreach ( $bundle['files'] ?? array() as $export_file ) {
 	if ( 'taxonomy-archive' !== ( $export_file['role'] ?? '' ) || ! is_string( $export_file['content'] ?? null ) ) {
 		continue;
@@ -121,7 +121,7 @@ $compiled = Static_Site_Importer_Compilation_Preparation::compile_website_artifa
 $assert( ! is_wp_error( $compiled ), 'Second-site compiler rejected the complete served export: ' . ( is_wp_error( $compiled ) ? $compiled->get_error_message() : '' ) );
 $plan = $compiled['plan'];
 $assert( 0 === ( $plan['quality']['metrics']['fallback_count'] ?? -1 ), 'Second-site export reimport has nonzero fallback blocks.' );
-$entities = array_values(
+$entities              = array_values(
 	array_filter(
 		$plan['taxonomy_entities'] ?? array(),
 		static fn( array $entity ): bool => 'personal' === ( $entity['slug'] ?? '' ) && 'category' === ( $entity['taxonomy'] ?? '' )
@@ -136,12 +136,12 @@ $assert(
 	'Second-site producer plan failed to recover a reciprocal Personal collection: ' . wp_json_encode( $plan_taxonomy_summary )
 );
 $expected_members = 12;
-$proven_members = count( $entities[0]['membership_source_paths'] ?? array() );
+$proven_members   = count( $entities[0]['membership_source_paths'] ?? array() );
 if ( $expected_members !== $proven_members ) {
 	$acceptance_issues[] = array(
-		'case'                => 'export-reimport-memberships',
-		'expected'            => $expected_members,
-		'producer_proven'     => $proven_members,
+		'case'                 => 'export-reimport-memberships',
+		'expected'             => $expected_members,
+		'producer_proven'      => $proven_members,
 		'missing_source_paths' => array_values(
 			array_diff(
 				array( 'website/story-2/index.html', 'website/story-3/index.html' ),
@@ -150,10 +150,10 @@ if ( $expected_members !== $proven_members ) {
 		),
 	);
 }
-$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, $compiled['args'] );
+$receipt          = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, $compiled['args'] );
 $import_completed = 'completed' === ( $receipt['status'] ?? '' );
 if ( ! $import_completed ) {
-	$acceptance_issues[] = array(
+	$acceptance_issues[]     = array(
 		'case'              => 'second-site-native-import',
 		'status'            => $receipt['status'] ?? null,
 		'errors'            => $receipt['errors'] ?? array(),
@@ -169,10 +169,10 @@ if ( ! $import_completed ) {
 	$ssi_active_after_import = in_array( $ssi_basename, (array) get_option( 'active_plugins', array() ), true );
 	echo wp_json_encode(
 		array(
-			'schema'                 => 'ssi-taxonomy/second-site-export-reimport/v1',
-			'import_completed'       => false,
+			'schema'                  => 'ssi-taxonomy/second-site-export-reimport/v1',
+			'import_completed'        => false,
 			'ssi_active_after_import' => $ssi_active_after_import,
-			'served_files'           => count( $served_files ),
+			'served_files'            => count( $served_files ),
 			'archive_refs_resolved'   => $resolved_archive_refs,
 			'broken_archive_refs'     => $broken_archive_refs,
 			'acceptance_issues'       => $acceptance_issues,
@@ -221,22 +221,22 @@ $assert( count( $native_routes ) === $proven_members, 'Every producer-proven rei
 $ssi_active_after_import = in_array( $ssi_basename, (array) get_option( 'active_plugins', array() ), true );
 $assert( ! $ssi_active_after_import, 'SSI must be absent during second-site archive HTTP route proof.' );
 $result = array(
-	'schema'             => 'ssi-taxonomy/second-site-export-reimport/v1',
-	'wordpress'          => get_bloginfo( 'version' ),
-	'import_completed'   => $import_completed,
-	'plan_fallback_count' => $plan['quality']['metrics']['fallback_count'] ?? null,
-	'archive_route'      => (string) get_term_link( $personal_term ),
-	'membership_count'   => count( $member_ids ),
-	'proven_members'     => count( $native_routes ),
-	'expected_members'   => $expected_members,
-	'archive_refs_resolved' => $resolved_archive_refs,
-	'broken_archive_refs' => $broken_archive_refs,
-	'acceptance'         => array() === $acceptance_issues,
-	'acceptance_issues'  => $acceptance_issues,
-	'pagination_template' => str_contains( $archive_template->content, 'query-pagination' ),
-	'editor_marker'      => str_contains( $archive_template->content, 'SSI Gutenberg category template reload persisted' ),
+	'schema'                  => 'ssi-taxonomy/second-site-export-reimport/v1',
+	'wordpress'               => get_bloginfo( 'version' ),
+	'import_completed'        => $import_completed,
+	'plan_fallback_count'     => $plan['quality']['metrics']['fallback_count'] ?? null,
+	'archive_route'           => (string) get_term_link( $personal_term ),
+	'membership_count'        => count( $member_ids ),
+	'proven_members'          => count( $native_routes ),
+	'expected_members'        => $expected_members,
+	'archive_refs_resolved'   => $resolved_archive_refs,
+	'broken_archive_refs'     => $broken_archive_refs,
+	'acceptance'              => array() === $acceptance_issues,
+	'acceptance_issues'       => $acceptance_issues,
+	'pagination_template'     => str_contains( $archive_template->content, 'query-pagination' ),
+	'editor_marker'           => str_contains( $archive_template->content, 'SSI Gutenberg category template reload persisted' ),
 	'ssi_active_after_import' => $ssi_active_after_import,
-	'native_post_routes' => $native_routes,
+	'native_post_routes'      => $native_routes,
 );
 echo wp_json_encode( $result ) . "\n";
 echo ( array() === $acceptance_issues ? 'Taxonomy full export and second-site native reimport acceptance passed.' : 'Taxonomy full export and second-site import completed with acceptance gaps: ' . wp_json_encode( $acceptance_issues ) ) . "\n";

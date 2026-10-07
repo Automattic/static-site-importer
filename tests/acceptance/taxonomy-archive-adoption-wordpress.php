@@ -18,7 +18,7 @@ require_once '/wordpress/wp-content/plugins/static-site-importer/static-site-imp
 require_once '/wordpress/wp-content/plugins/static-site-importer/includes/class-static-site-importer-compilation-preparation.php';
 require_once '/wordpress/wp-content/plugins/static-site-importer/includes/class-static-site-importer-wordpress-site-plan-materializer.php';
 
-$assert = static function ( bool $condition, string $message ): void {
+$assert      = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) {
 		throw new RuntimeException( $message ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- CLI assertion output is evidence, not rendered HTML.
 	}
@@ -37,14 +37,14 @@ $segments    = explode( '/', $route );
 $parent      = 0;
 $parent_path = '';
 foreach ( array_slice( $segments, 0, -1 ) as $segment ) {
-	$parent_path = '' === $parent_path ? $segment : $parent_path . '/' . $segment;
+	$parent_path  = '' === $parent_path ? $segment : $parent_path . '/' . $segment;
 	$parent_pages = array_values(
 		array_filter(
 			$plan['pages'] ?? array(),
 			static fn( array $page ): bool => trim( (string) ( $page['route']['path'] ?? '' ), '/' ) === $parent_path
 		)
 	);
-	$parent_plan = $parent_pages[0] ?? array();
+	$parent_plan  = $parent_pages[0] ?? array();
 	$assert( is_string( $parent_plan['reconciliation_identity'] ?? null ), 'The producer plan must contain a canonical reconciled archive ancestor at ' . $parent_path );
 	$parent = (int) wp_insert_post(
 		array(
@@ -80,21 +80,21 @@ foreach ( $plan['pages'] ?? array() as $planned_page ) {
 	$existing_page = '' === $planned_route ? null : get_page_by_path( $planned_route, OBJECT, $planned_type );
 	if ( $existing_page && (string) get_post_meta( $existing_page->ID, '_static_site_importer_reconciliation_identity', true ) !== (string) ( $planned_page['reconciliation_identity'] ?? '' ) ) {
 		$route_conflicts[] = array(
-			'route'    => $planned_route,
-			'type'     => $planned_type,
-			'post_id'  => (int) $existing_page->ID,
-			'status'   => get_post_status( $existing_page->ID ),
-			'source'   => $planned_page['source_path'] ?? '',
+			'route'   => $planned_route,
+			'type'    => $planned_type,
+			'post_id' => (int) $existing_page->ID,
+			'status'  => get_post_status( $existing_page->ID ),
+			'source'  => $planned_page['source_path'] ?? '',
 		);
 	}
 }
-$before = get_post( $frozen_id, ARRAY_A );
-$failure_args = $args;
+$before               = get_post( $frozen_id, ARRAY_A );
+$failure_args         = $args;
 $failure_args['slug'] = 'taxonomy-adoption-late-failure';
 $failure_args['inject_materialization_failure'] = 'theme_write_short';
-$failure = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, $failure_args );
-$after = get_post( $frozen_id, ARRAY_A );
-$restored_identity = get_post_meta( $frozen_id, '_static_site_importer_reconciliation_identity', true );
+$failure                                        = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, $failure_args );
+$after                   = get_post( $frozen_id, ARRAY_A );
+$restored_identity       = get_post_meta( $frozen_id, '_static_site_importer_reconciliation_identity', true );
 $failure_receipt_summary = array(
 	'status' => $failure['status'] ?? null,
 	'errors' => $failure['errors'] ?? array(),
@@ -118,7 +118,7 @@ wp_update_post(
 		'post_content' => $owner_body,
 	)
 );
-$rejected = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, $args );
+$rejected             = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, $args );
 $remaining_owner_body = get_post_field( 'post_content', $frozen_id );
 $assert( 'rejected' === ( $rejected['status'] ?? '' ) && 'taxonomy_archive_route_conflict' === ( $rejected['errors'][0]['code'] ?? '' ), 'Destination-owned archive route was not rejected: ' . wp_json_encode( $rejected ) );
 $assert( 'publish' === get_post_status( $frozen_id ) && $owner_body === $remaining_owner_body && ! metadata_exists( 'post', $frozen_id, '_static_site_importer_reconciliation_identity' ), 'Destination-owned archive changed during conflict rejection.' );

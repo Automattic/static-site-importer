@@ -112,9 +112,9 @@ class Static_Site_Importer_Theme_Exporter {
 				if ( isset( $used_paths[ $path ] ) ) {
 					$path = self::export_artifact_path( $root . '/post/' . ( isset( $page->post_name ) ? sanitize_title( (string) $page->post_name ) : (string) ( isset( $page->ID ) ? (int) $page->ID : 0 ) ) . '/index.html', $root . '/post/page/index.html' );
 				}
-				$used_paths[ $path ] = true;
+				$used_paths[ $path ]                             = true;
 				$post_artifact_paths[ (int) ( $page->ID ?? 0 ) ] = $path;
-				$planned[]           = array(
+				$planned[]                                       = array(
 					'page'     => $page,
 					'path'     => $path,
 					'is_front' => false,
@@ -155,7 +155,7 @@ class Static_Site_Importer_Theme_Exporter {
 				$site_origin = rtrim( home_url( '/' ), '/' );
 				$page_html   = str_replace( $site_origin . '/', '/', $page_html );
 				if ( 'post' === ( $page->post_type ?? '' ) ) {
-					$target_route = '/' . trim( (string) preg_replace( '#/index\.html$#', '', substr( $path, strlen( $root ) ) ), '/' );
+					$target_route  = '/' . trim( (string) preg_replace( '#/index\.html$#', '', substr( $path, strlen( $root ) ) ), '/' );
 					$source_routes = array_merge(
 						array( (string) wp_parse_url( (string) get_permalink( $page_id ), PHP_URL_PATH ) ),
 						function_exists( 'get_post_meta' ) ? array_map( 'strval', get_post_meta( $page_id, '_static_site_importer_source_route', false ) ) : array()
@@ -190,7 +190,7 @@ class Static_Site_Importer_Theme_Exporter {
 						'post_id'   => $page_id,
 						'post_name' => isset( $page->post_name ) ? (string) $page->post_name : '',
 						'metadata'  => 'post' === ( $page->post_type ?? '' ) ? array(
-							'post_type' => 'post',
+							'post_type'  => 'post',
 							'route_path' => '/' . trim( (string) preg_replace( '#/index\.html$#', '', substr( $path, strlen( $root ) ) ), '/' ),
 						) : array(),
 					)
@@ -329,7 +329,7 @@ class Static_Site_Importer_Theme_Exporter {
 					$previous_request    = (string) $wp->request;
 					// The inherited Query Loop reads the archive query and path from WordPress's normal globals.
 					// phpcs:disable WordPress.WP.GlobalVariablesOverride.Prohibited -- The exporter renders the native archive template against its real query context.
-					$archive_query      = new WP_Query( $query_args );
+					$archive_query       = new WP_Query( $query_args );
 					$GLOBALS['wp_query'] = $archive_query;
 					$GLOBALS['post']     = null;
 					$wp->request         = trim( $route, '/' );
@@ -375,9 +375,9 @@ class Static_Site_Importer_Theme_Exporter {
 					}
 					$html = preg_replace_callback(
 						'#(?:href|src)="/([^\"]+)"#',
-						static function ( array $match ) use ( $page_route ): string {
+						static function ( array $matched ) use ( $page_route ): string {
 							$prefix = str_repeat( '../', substr_count( trim( $page_route, '/' ), '/' ) + 1 );
-							return str_replace( '="/', '="' . $prefix, $match[0] );
+							return str_replace( '="/', '="' . $prefix, $matched[0] );
 						},
 						$html
 					) ?? $html;
@@ -386,10 +386,10 @@ class Static_Site_Importer_Theme_Exporter {
 							continue;
 						}
 						$artifact_post_path = (string) ( $post_artifact_paths[ (int) $archive_post->ID ] ?? self::export_page_artifact_path( $archive_post, $root ) );
-						$target_route = preg_replace( '#/index\.html$#', '', substr( $artifact_post_path, strlen( $root ) ) );
-						$portable_href = '/' . trim( (string) $target_route, '/' ) . '/';
-						$escaped_href  = function_exists( 'esc_attr' ) ? esc_attr( $portable_href ) : htmlspecialchars( $portable_href, ENT_QUOTES, 'UTF-8' );
-						$source_routes = array_merge(
+						$target_route       = preg_replace( '#/index\.html$#', '', substr( $artifact_post_path, strlen( $root ) ) );
+						$portable_href      = '/' . trim( (string) $target_route, '/' ) . '/';
+						$escaped_href       = function_exists( 'esc_attr' ) ? esc_attr( $portable_href ) : htmlspecialchars( $portable_href, ENT_QUOTES, 'UTF-8' );
+						$source_routes      = array_merge(
 							array( (string) wp_parse_url( get_permalink( $archive_post ), PHP_URL_PATH ) ),
 							function_exists( 'get_post_meta' ) ? array_map( 'strval', get_post_meta( (int) $archive_post->ID, '_static_site_importer_source_route', false ) ) : array()
 						);

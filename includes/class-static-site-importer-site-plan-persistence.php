@@ -520,11 +520,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		}
 		$base_regex = '^' . $route . '/?$';
 		$page_regex = '^' . $route . '/page/([0-9]+)/?$';
-		$query_var = 'category' === $entity['taxonomy'] ? 'category_name' : 'tag';
+		$query_var  = 'category' === $entity['taxonomy'] ? 'category_name' : 'tag';
 		$base_query = 'index.php?' . $query_var . '=' . rawurlencode( $slug );
 		$page_query = $base_query . '&paged=$matches[1]';
-		$rules     = get_option( 'rewrite_rules', array() );
-		$rules     = is_array( $rules ) ? $rules : array();
+		$rules      = get_option( 'rewrite_rules', array() );
+		$rules      = is_array( $rules ) ? $rules : array();
 		if ( ( isset( $rules[ $base_regex ] ) && $rules[ $base_regex ] !== $base_query ) || ( isset( $rules[ $page_regex ] ) && $rules[ $page_regex ] !== $page_query ) ) {
 			return new WP_Error( 'taxonomy_archive_rewrite_conflict' );
 		}
@@ -1801,7 +1801,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				'source_routes'                           => get_post_meta( $id, Static_Site_Importer_Source_Route_Redirect::META_KEY, false ),
 				'thumbnail'                               => get_post_meta( $id, '_thumbnail_id', false ),
 				'taxonomy_memberships'                    => get_post_meta( $id, '_static_site_importer_taxonomy_memberships', true ),
-				'taxonomy_memberships_exists'              => metadata_exists( 'post', $id, '_static_site_importer_taxonomy_memberships' ),
+				'taxonomy_memberships_exists'             => metadata_exists( 'post', $id, '_static_site_importer_taxonomy_memberships' ),
 			);
 			return;
 		}
