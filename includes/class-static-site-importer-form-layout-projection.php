@@ -3720,8 +3720,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * @return array<string,bool>
 	 */
 	private static function shared_source_grid_row_nodes( array $graph, ?array $placed = null ): array {
-		$parents = array();
-		$rows    = array();
+		$parents    = array();
+		$rows       = array();
 		$placements = array();
 		$conditions = array();
 		foreach ( $graph['nodes'] ?? array() as $node ) {
@@ -3731,8 +3731,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$parents[ $node['id'] ] = is_string( $node['parent'] ?? null ) ? $node['parent'] : '';
 			$row                    = self::declared_grid_row( is_array( $node['layout'] ?? null ) ? $node['layout'] : array() );
 			if ( '' !== $row ) {
-				$rows[ $node['id'] ][ $row ]          = true;
-				$placements[ $node['id'] ]['null']    = self::grid_placement_is_explicit( $node['layout'] );
+				$rows[ $node['id'] ][ $row ]                   = true;
+				$placements[ $node['id'] ]['null']             = self::grid_placement_is_explicit( $node['layout'] );
 				$conditions[ $parents[ $node['id'] ] ]['null'] = true;
 			}
 		}
@@ -3743,9 +3743,9 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 			$row = self::declared_grid_row( self::layout_patch( $variant ) );
 			if ( '' !== $row ) {
-				$condition                             = (string) wp_json_encode( $variant['condition'] ?? null );
-				$rows[ $id ][ $row ]                   = true;
-				$placements[ $id ][ $condition ]       = self::grid_placement_is_explicit( self::layout_patch( $variant ) );
+				$condition                                   = (string) wp_json_encode( $variant['condition'] ?? null );
+				$rows[ $id ][ $row ]                         = true;
+				$placements[ $id ][ $condition ]             = self::grid_placement_is_explicit( self::layout_patch( $variant ) );
 				$conditions[ $parents[ $id ] ][ $condition ] = true;
 			}
 		}
