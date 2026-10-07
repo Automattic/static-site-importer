@@ -12,6 +12,7 @@ exec > >(tee -a "$evidence/runner.log") 2>&1
 printf 'SSI_EDITOR_EVIDENCE_DIR=%s npm run test:editor-companion-acceptance\n' "$evidence" > "$evidence/acceptance-command.txt"
 git -C "$root" rev-parse HEAD > "$evidence/source-commit.txt"
 git -C "$root" diff --binary > "$evidence/source-change.patch"
+cp "$root/docs/theme-runtime-2014-remediation.md" "$evidence/remediation-record.md"
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/ssi-editor-acceptance.XXXXXX")"
 project="ssi_editor_${RANDOM}_$$"
@@ -34,6 +35,9 @@ wait_for() { local label="$1" command="$2"; local attempt; for attempt in $(seq 
 cat > "$work/request.json" <<'EOF'
 {"operation":"apply","source":{"type":"files","entrypoint":"index.html","files":[{"path":"index.html","content":"<!doctype html><html><head><style>.map { box-sizing: border-box; max-width: 100%; }</style></head><body><header><p>Editor acceptance</p></header><main><h1>Iframe acceptance</h1><iframe class=\"map\" title=\"Map\" src=\"https://example.test/map\" width=\"640\" height=\"360\" loading=\"lazy\"></iframe><canvas id=\"acceptance-chart\" width=\"100\" height=\"60\"></canvas><script>const ctx = document.getElementById(\"acceptance-chart\").getContext(\"2d\"); ctx.fillStyle = \"rgb(220, 20, 60)\"; ctx.fillRect(0, 0, 100, 60);</script><a href=\"index.html\">Source home route</a></main><footer><p>Generated theme document</p></footer></body></html>"}]},"slug":"editor-acceptance","name":"Editor acceptance","activate":true,"overwrite":true}
 EOF
+# This disposable preview explicitly admits the retained fixture's authored
+# client script through the existing provenance-bound policy.
+node -e 'const fs=require("fs");const p=process.argv[1];const r=JSON.parse(fs.readFileSync(p,"utf8"));Object.assign(r,{client_script_policy:"isolated_preview",client_script_isolated:true,client_script_provenance:{ref:"tests/acceptance/issue-2014-retained-canvas-fixture"}});fs.writeFileSync(p,JSON.stringify(r));' "$work/request.json"
 # The CLI runs as www-data. It can traverse this unlistable mount, read the fixture, and write only in its unlistable output directory.
 chmod 0711 "$work"
 chmod 0644 "$work/request.json"
@@ -43,7 +47,9 @@ chmod 0733 "$work/output"
 
 run docker network create "$network" >/dev/null
 run docker volume create "$volume" >/dev/null
-run docker run --detach --name "${project}_db" --network "$network" --network-alias "$db_host" -e MYSQL_DATABASE="$db_name" -e MYSQL_USER="$db_user" -e MYSQL_PASSWORD="$db_password" -e MYSQL_RANDOM_ROOT_PASSWORD=yes mysql:8.4 >/dev/null
+# Shared Lab hosts can exhaust kernel native-AIO slots. These tiny disposable
+# databases use InnoDB's supported synchronous IO backend instead.
+run docker run --detach --name "${project}_db" --network "$network" --network-alias "$db_host" -e MYSQL_DATABASE="$db_name" -e MYSQL_USER="$db_user" -e MYSQL_PASSWORD="$db_password" -e MYSQL_RANDOM_ROOT_PASSWORD=yes mysql:8.4 --innodb-use-native-aio=0 >/dev/null
 wait_for 'MySQL' "run docker exec ${project}_db mysqladmin ping -u${db_user} -p${db_password}"
 run docker run --detach --name "${project}_wordpress" --network "$network" --publish "127.0.0.1:${port}:80" -e WORDPRESS_DB_HOST="$db_host" -e WORDPRESS_DB_NAME="$db_name" -e WORDPRESS_DB_USER="$db_user" -e WORDPRESS_DB_PASSWORD="$db_password" -v "${volume}:/var/www/html" -v "${root}:/var/www/html/wp-content/plugins/static-site-importer" "$wordpress_image" >/dev/null
 wp=(run docker run --rm --network "$network" --user 33:33 -e WORDPRESS_DB_HOST="$db_host" -e WORDPRESS_DB_NAME="$db_name" -e WORDPRESS_DB_USER="$db_user" -e WORDPRESS_DB_PASSWORD="$db_password" -v "${volume}:/var/www/html" -v "${root}:/var/www/html/wp-content/plugins/static-site-importer" -v "${work}:/work" "$cli_image" wp --allow-root)
@@ -54,9 +60,11 @@ docker image inspect "$wordpress_image" "$cli_image" --format '{{json .RepoDiges
 "${wp[@]}" plugin activate static-site-importer
 "${wp[@]}" plugin install gutenberg --activate
 "${wp[@]}" plugin get gutenberg --field=version | tee "$evidence/gutenberg-version.txt"
+"${wp[@]}" eval-file wp-content/plugins/static-site-importer/tests/acceptance/theme-runtime-refresh.php | tee "$evidence/registration-refresh.json"
 "${wp[@]}" static-site-importer import --request=/work/request.json --report=/work/output/import-report.json | tee "$evidence/import-result.jsonl"
 "${wp[@]}" plugin is-active static-site-importer
 "${wp[@]}" eval-file wp-content/plugins/static-site-importer/tests/acceptance/theme-runtime-inventory.php | tee "$evidence/provider-runtime-lifecycle.json"
+"${wp[@]}" eval 'echo file_get_contents( get_stylesheet_directory() . "/functions.php" );' > "$evidence/generated-functions.php"
 run node "$root/tools/theme-runtime-browser-proof.mjs" "http://127.0.0.1:${port}/" "$evidence/source-request.json" "$evidence" initial
 for report in import-report import-validation-result finding-packets; do
 	run docker run --rm --user 33:33 --entrypoint cat -v "${work}:/work" "$cli_image" "/work/output/${report}.json" > "$evidence/${report}.json"
@@ -74,9 +82,10 @@ SSI_EDITOR_WP_URL="http://127.0.0.1:${port}" SSI_EDITOR_POST_ID="$post_id" SSI_E
 "${wp[@]}" eval-file wp-content/plugins/static-site-importer/tests/acceptance/companion-roundtrip.php export | tee "$evidence/theme-export-summary.json"
 run docker run --rm --user 33:33 --entrypoint cat -v "${work}:/work" "$cli_image" /work/output/export-envelope.json > "$evidence/export-envelope.json"
 node -e 'const fs=require("fs");const crypto=require("crypto");const envelope=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const a=envelope.website_artifact;if(!a||a.schema!=="blocks-engine/php-transformer/site-artifact/v1"||!a.id||!Array.isArray(a.files)||!a.files.length)process.exit(1);for(const f of a.files){if(!f.sha256)throw new Error(`missing export digest: ${f.path}`);const bytes=f.encoding==="base64"?Buffer.from(f.content_base64||"","base64"):Buffer.from(f.content||"");if(crypto.createHash("sha256").update(bytes).digest("hex")!==f.sha256)throw new Error(`export digest mismatch: ${f.path}`)}const {schema,entrypoint,files,...metadata}=a;fs.writeFileSync(process.argv[2],JSON.stringify({operation:"apply",source:{type:"files",entrypoint,files,metadata},slug:"editor-acceptance-reimport",name:"Editor Acceptance Reimport",activate:true,overwrite:true}));process.stdout.write(JSON.stringify({artifact_id:a.id,file_count:files.length,provenance:a.provenance||{},request:process.argv[2]}))' "$work/output/export-envelope.json" "$work/reimport-request.json" | tee "$evidence/reimport-request-summary.json"
+node -e 'const fs=require("fs");const p=process.argv[1];const r=JSON.parse(fs.readFileSync(p,"utf8"));Object.assign(r,{client_script_policy:"isolated_preview",client_script_isolated:true,client_script_provenance:{ref:"tests/acceptance/issue-2014-retained-export"}});fs.writeFileSync(p,JSON.stringify(r));' "$work/reimport-request.json"
 run docker volume create "$volume2" >/dev/null
-run docker run --detach --name "${project}_db_reimport" --network "$network" --network-alias mysql-reimport -e MYSQL_DATABASE=wordpress_reimport -e MYSQL_USER=wordpress -e MYSQL_PASSWORD=wordpress -e MYSQL_RANDOM_ROOT_PASSWORD=yes mysql:8.4 >/dev/null
-wait_for 'reimport MySQL' "run docker exec ${project}_db_reimport mysqladmin ping -u${db_user} -p${db_password}"
+run docker run --detach --name "${project}_db_reimport" --network "$network" --network-alias mysql-reimport -e MYSQL_DATABASE=wordpress_reimport -e MYSQL_USER=wordpress -e MYSQL_PASSWORD=wordpress -e MYSQL_RANDOM_ROOT_PASSWORD=yes mysql:8.4 --innodb-use-native-aio=0 >/dev/null
+wait_for 'reimport MySQL' "run docker exec ${project}_db_reimport mysqladmin ping -u${db_user} -p${db_password}" || { docker logs "${project}_db_reimport"; exit 1; }
 run docker run --detach --name "${project}_wordpress_reimport" --network "$network" --publish "127.0.0.1:${port2}:80" -e WORDPRESS_DB_HOST=mysql-reimport -e WORDPRESS_DB_NAME=wordpress_reimport -e WORDPRESS_DB_USER="$db_user" -e WORDPRESS_DB_PASSWORD="$db_password" -v "${volume2}:/var/www/html" -v "${root}:/var/www/html/wp-content/plugins/static-site-importer" "$wordpress_image" >/dev/null
 wp2=(run docker run --rm --network "$network" --user 33:33 -e WORDPRESS_DB_HOST=mysql-reimport -e WORDPRESS_DB_NAME=wordpress_reimport -e WORDPRESS_DB_USER="$db_user" -e WORDPRESS_DB_PASSWORD="$db_password" -v "${volume2}:/var/www/html" -v "${root}:/var/www/html/wp-content/plugins/static-site-importer" -v "${work}:/work" "$cli_image" wp --allow-root)
 wait_for 'reimport WordPress files' "curl --silent --fail http://127.0.0.1:${port2}/wp-login.php >/dev/null"

@@ -875,12 +875,18 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = ' * Register generated blocks from their metadata directories.';
 		$lines[] = ' */';
 		$lines[] = sprintf( 'function %s_register_blocks() {', $fn_prefix );
+		// Config is read afresh on same-request package refresh, even when its
+		// callable already exists and require_once does not reload the runtime.
+		$lines[] = "\t" . $runtime_class . '::configure_visual_states( ' . $fn_prefix . "_config()['form_visual_states'] ?? array() );";
+		$lines[] = "\t" . $metric_runtime_class . '::configure( ' . $fn_prefix . "_config()['external_metrics'] ?? array() );";
 		$lines[] = "\tif ( ! function_exists( 'register_block_type' ) ) {";
 		$lines[] = "\t\treturn;";
 		$lines[] = "\t}";
 		$lines[] = '';
 		$lines[] = sprintf( "\tforeach ( %s_config()['block_directories'] ?? array() as \$block_dir ) {", $fn_prefix );
 		$lines[] = "\t\tif ( ! is_string( \$block_dir ) ) { continue; }";
+		$lines[] = "\t\t\$metadata = json_decode( (string) file_get_contents( __DIR__ . '/blocks/' . \$block_dir . '/block.json' ), true );";
+		$lines[] = "\t\tif ( class_exists( 'WP_Block_Type_Registry' ) && WP_Block_Type_Registry::get_instance()->is_registered( (string) ( \$metadata['name'] ?? '' ) ) ) { continue; }";
 		$lines[] = "\t\t\$registered = register_block_type( __DIR__ . '/blocks/' . \$block_dir );";
 		$lines[] = "\t\tif ( \$registered instanceof WP_Block_Type ) {";
 		if ( 'plugin' === $owner ) {

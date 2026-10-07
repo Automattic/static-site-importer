@@ -88,6 +88,39 @@ final class Static_Site_Importer_Generated_Runtime_Package {
 		return true;
 	}
 
+	/** Snapshot new and previously owned registrations for this destination. */
+	public static function registration_snapshot( array $package, string $directory ): array {
+		$names = $package['block_names'];
+		foreach ( $GLOBALS['static_site_importer_runtime_block_owners'] ?? array() as $name => $owner ) {
+			if ( 'theme' === ( $owner['owner'] ?? '' ) && $directory . '/' . $package['entrypoint'] === ( $owner['path'] ?? '' ) ) {
+				$names[] = $name;
+			}
+		}
+		$registry = WP_Block_Type_Registry::get_instance();
+		$snapshot = array();
+		foreach ( array_unique( $names ) as $name ) {
+			$snapshot[ $name ] = array( 'block' => $registry->get_registered( $name ), 'owner' => $GLOBALS['static_site_importer_runtime_block_owners'][ $name ] ?? null );
+		}
+		return $snapshot;
+	}
+
+	/** Restore only the registrations touched by this destination transaction. */
+	public static function restore_registration( array $snapshot ): void {
+		$registry = WP_Block_Type_Registry::get_instance();
+		foreach ( $snapshot as $name => $before ) {
+			if ( $registry->is_registered( $name ) ) {
+				$registry->unregister( $name );
+			}
+			unset( $GLOBALS['static_site_importer_runtime_block_owners'][ $name ] );
+			if ( $before['block'] ) {
+				$registry->register( $before['block'] );
+			}
+			if ( null !== $before['owner'] ) {
+				$GLOBALS['static_site_importer_runtime_block_owners'][ $name ] = $before['owner'];
+			}
+		}
+	}
+
 	/** Load the installed theme package immediately for page-ready/editor admission. */
 	public static function register( array $package, string $directory ) {
 		$callback = $package['registration_callback'];
@@ -101,11 +134,15 @@ final class Static_Site_Importer_Generated_Runtime_Package {
 		if ( ! is_callable( $callback ) ) {
 			return new WP_Error( 'static_site_importer_theme_runtime_registration_missing', 'Theme runtime registration callback is unavailable.' );
 		}
+		if ( realpath( ( new ReflectionFunction( $callback ) )->getFileName() ) !== realpath( $directory . '/' . $package['entrypoint'] ) ) {
+			return new WP_Error( 'static_site_importer_theme_runtime_callback_collision', 'Theme runtime callback belongs to another destination.' );
+		}
 		$registry = WP_Block_Type_Registry::get_instance();
-		foreach ( $package['block_names'] as $name ) {
+		foreach ( self::registration_snapshot( $package, $directory ) as $name => $before ) {
 			if ( $registry->is_registered( $name ) ) {
 				$registry->unregister( $name );
 			}
+			unset( $GLOBALS['static_site_importer_runtime_block_owners'][ $name ] );
 		}
 		call_user_func( $callback );
 		foreach ( $package['block_names'] as $name ) {

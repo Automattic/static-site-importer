@@ -157,7 +157,7 @@ $report_source         = array(
 $readme_truth          = str_contains( $readme, 'Captured snapshot' )
 	&& str_contains( $readme, 'do not update' )
 	&& str_contains( $readme, 'no live data source or refresh mechanism is installed' )
-	&& str_contains( $readme, 'unverified claims from the source page' );
+	&& str_contains( $readme, 'unverified source claims' );
 $theme_identity_truth = 'theme' === ( $config['owner'] ?? '' )
 	&& get_stylesheet() === ( $config['owner_slug'] ?? '' )
 	&& str_contains( $readme, 'generated theme owns these blocks' )

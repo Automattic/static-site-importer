@@ -21,12 +21,18 @@ try {
 	await painted();
 	const sourceBytes = await page.locator( '#acceptance-chart' ).screenshot( { path: `${evidence}/${phase}-source-runtime.png` } );
 	const scripts = [];
+	const errors = [];
+	page.on( 'pageerror', ( error ) => errors.push( error.message ) );
 	page.on( 'response', ( response ) => {
 		if ( response.request().resourceType() === 'script' ) scripts.push( { url: response.url(), status: response.status() } );
 	} );
 	await page.goto( url, { waitUntil: 'networkidle' } );
+	await writeFile( `${evidence}/${phase}-frontend.html`, await page.content() );
+	await writeFile( `${evidence}/${phase}-script-responses.json`, JSON.stringify( { scripts, errors }, null, 2 ) );
+	console.log( JSON.stringify( { phase, scripts, errors, canvases: await page.locator( 'canvas' ).evaluateAll( ( nodes ) => nodes.map( ( node ) => node.outerHTML ) ) } ) );
 	await painted();
 	const importedBytes = await page.locator( '#acceptance-chart' ).screenshot( { path: `${evidence}/${phase}-import-runtime.png` } );
+	assert.deepEqual( errors, [], 'frontend runtime has no JavaScript errors' );
 	const source = PNG.sync.read( sourceBytes );
 	const imported = PNG.sync.read( importedBytes );
 	assert.equal( imported.width, source.width );

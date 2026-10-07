@@ -785,7 +785,7 @@ namespace {
 	$escaped_label_markup = (string) ( $escaped_label['forms'][0]['block_markup'] ?? '' );
 	$expected_sensitive_attrs = serialize_block_attributes( array( 'label' => $sensitive_label ) );
 	$assert( str_contains( $escaped_label_markup, '<!-- wp:jetpack/label ' . $expected_sensitive_attrs . ' /-->' ), 'field-attributes-byte-match-core-escaping', $escaped_label_markup );
-	$assert( str_contains( $expected_sensitive_attrs, '\\u005c' ) && str_contains( $expected_sensitive_attrs, '\\u0022' ) && str_contains( $expected_sensitive_attrs, '\\u002d\\u002d' ) && str_contains( $expected_sensitive_attrs, '\\u003c' ) && str_contains( $expected_sensitive_attrs, '\\u003e' ) && str_contains( $expected_sensitive_attrs, '\\u0026' ), 'field-attributes-core-escapes-every-comment-sensitive-character', $expected_sensitive_attrs );
+	$assert( $sensitive_label === ( json_decode( $expected_sensitive_attrs, true )['label'] ?? null ) && ! str_contains( $expected_sensitive_attrs, '-->' ) && str_contains( $expected_sensitive_attrs, '\\u0022' ) && str_contains( $expected_sensitive_attrs, '\\u002d\\u002d' ) && str_contains( $expected_sensitive_attrs, '\\u003c' ) && str_contains( $expected_sensitive_attrs, '\\u003e' ) && str_contains( $expected_sensitive_attrs, '\\u0026' ), 'field-attributes-core-preserves-backslashes-and-escapes-comment-sensitive-characters', $expected_sensitive_attrs );
 	$assert( $escaped_label_markup === serialize_blocks( parse_blocks( $escaped_label_markup ) ), 'field-attributes-round-trip-through-wordpress-block-parser', $escaped_label_markup );
 
 	// --- Composed route forms materialize directly without caller seeding ----

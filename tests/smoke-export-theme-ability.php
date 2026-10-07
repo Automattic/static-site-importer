@@ -30,6 +30,19 @@ $GLOBALS['ssi_export_theme_root'] = $theme_root;
 $GLOBALS['ssi_export_format_conversion_calls'] = array();
 $GLOBALS['ssi_export_posts_first'] = false;
 
+function get_post_meta( int $post_id, string $key, bool $single = false ) {
+	return '_static_site_importer_provenance' === $key ? json_encode( array(
+		'schema' => 'static-site-importer/page-provenance/v1',
+		'document_scripts' => array(
+			array( 'target_path' => 'assets/app.js', 'attributes' => array( 'defer' => true, 'async' => false, 'type' => 'module', 'onclick' => 'unsafe' ) ),
+			array( 'target_path' => 'assets/../style.css' ),
+			array( 'target_path' => 'assets/app.js?unsafe' ),
+			array( 'target_path' => 'assets/logo.png' ),
+			array( 'target_path' => 'https://example.test/foreign.js' ),
+		),
+	) ) : ( $single ? '' : array() );
+}
+
 function blocks_engine_php_transformer_convert_format( string $content, string $from, string $to, array $options = array() ): array {
 	$GLOBALS['ssi_export_format_conversion_calls'][] = array( $from, $to, $options );
 	return array(
@@ -338,6 +351,9 @@ foreach ( $artifact['files'] ?? array() as $file ) {
 }
 $assert( 'script' === ( $files_by_path['website/assets/app.js']['role'] ?? '' ), 'script-role' );
 $assert( 'text/javascript' === ( $files_by_path['website/assets/app.js']['mime_type'] ?? '' ), 'script-mime' );
+$assert( str_contains( $files_by_path['website/index.html']['content'], '<script src="assets/app.js" type="module" defer></script>' ), 'route-script-linked-with-supported-attributes' );
+$assert( str_contains( $files_by_path['website/writing/category/projects/index.html']['content'], '<script src="../../../assets/app.js"' ), 'nested-route-script-reference-is-portable' );
+$assert( 1 === substr_count( $files_by_path['website/index.html']['content'], '<script ' ) && ! str_contains( $files_by_path['website/index.html']['content'], 'onclick' ), 'script-export-rejects-traversal-query-non-script-and-foreign-targets' );
 $assert( 'base64' === ( $files_by_path['website/assets/logo.png']['encoding'] ?? '' ), 'binary-base64-encoding' );
 $assert( 'image/png' === ( $files_by_path['website/assets/logo.png']['mime_type'] ?? '' ), 'binary-mime' );
 $assert( 'report' === ( $files_by_path['website/import-report.json']['role'] ?? '' ), 'report-role' );

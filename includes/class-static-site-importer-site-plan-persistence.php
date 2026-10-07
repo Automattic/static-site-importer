@@ -102,6 +102,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					return self::failed_receipt_from_error( $state, $result );
 				}
 			}
+			$state['rollback']['theme_runtime_registration'] = Static_Site_Importer_Generated_Runtime_Package::registration_snapshot( $package, $state['theme_dir'] );
 			$result = Static_Site_Importer_Generated_Runtime_Package::register( $package, $state['theme_dir'] );
 			if ( is_wp_error( $result ) ) {
 				return self::failed_receipt_from_error( $state, $result );
@@ -197,6 +198,19 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				$provenance['document_title'] = $document_title;
 			}
 			$head_metadata = Static_Site_Importer_Route_Head_Metadata::from_page( $page, is_array( $state['resolved'] ?? null ) ? $state['resolved'] : array() );
+			// Retain route-scoped, materialized document script references for a
+			// portable export. Store declarations, never executable source bytes.
+			$document_scripts = array();
+			$theme_uri_prefix = trailingslashit( (string) $state['theme']['uri'] );
+			foreach ( $page['document_metadata']['scripts'] ?? array() as $script ) {
+				$url = is_array( $script ) ? (string) ( $script['resolved_url'] ?? '' ) : '';
+				if ( '' !== $url && str_starts_with( $url, $theme_uri_prefix ) ) {
+					$document_scripts[] = array( 'target_path' => substr( $url, strlen( $theme_uri_prefix ) ), 'attributes' => array_intersect_key( $script, array_flip( array( 'type', 'defer', 'async', 'crossorigin', 'integrity' ) ) ) );
+				}
+			}
+			if ( array() !== $document_scripts ) {
+				$provenance['document_scripts'] = $document_scripts;
+			}
 			if ( array() !== $head_metadata ) {
 				$provenance['head_metadata'] = $head_metadata;
 			}
@@ -2112,6 +2126,9 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 		}
 		$state['applied']['files'] = array();
+		if ( isset( $state['rollback']['theme_runtime_registration'] ) ) {
+			Static_Site_Importer_Generated_Runtime_Package::restore_registration( $state['rollback']['theme_runtime_registration'] );
+		}
 		$state['applied']['posts'] = array();
 		$state['diagnostics'][]    = array( 'reason_code' => 'materialization_rolled_back' );
 	}

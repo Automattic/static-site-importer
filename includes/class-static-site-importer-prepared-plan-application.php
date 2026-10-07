@@ -144,6 +144,9 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			$prepared['args']['classic_theme_projection']  = $projection;
 			$prepared['base_resolved']                     = Static_Site_Importer_Classic_Theme_Projection::with_projection_writes( $prepared['base_resolved'], $projection, (string) $prepared['theme']['uri'], (string) ( ( $prepared['theme']['name'] ?? '' ) !== '' ? $prepared['theme']['name'] : ( $prepared['args']['name'] ?? $prepared['theme']['slug'] ) ), isset( $args['artifact_provenance'] ) && is_array( $args['artifact_provenance'] ) ? $args['artifact_provenance'] : array() );
 			if ( $theme_owned ) {
+				// The earlier composition owns these writes. Classic projection
+				// replaces the bootstrap; recompose its loader without duplicating files.
+				$prepared['base_resolved']['writes'] = array_values( array_filter( $prepared['base_resolved']['writes'], static fn( array $write ): bool => ! isset( $package['files'][ $write['target_path'] ] ) ) );
 				$prepared['base_resolved'] = Static_Site_Importer_Generated_Runtime_Package::with_writes( $prepared['base_resolved'], $package );
 				foreach ( array( 'font_overlay', 'viewport_overlay', 'route_title_overlay', 'internal_link_overlay', 'route_head_metadata_overlay' ) as $overlay ) {
 					unset( $prepared[ $overlay ] );
