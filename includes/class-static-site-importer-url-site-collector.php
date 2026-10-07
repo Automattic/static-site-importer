@@ -443,7 +443,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			} elseif ( 'text/css' === $resource['content_type'] || str_ends_with( strtolower( $path ), '.css' ) ) {
 				$body = self::rewrite_css( $body, $resource_url, $path, $reference_paths, $external_assets );
 			}
-			if ( ! Static_Site_Importer_Content_Policy::is_static_path( $path ) || ( Static_Site_Importer_Content_Policy::is_textual_path( $path ) && Static_Site_Importer_Content_Policy::contains_server_code( $body ) ) ) {
+			if ( ! Static_Site_Importer_Content_Policy::is_static_path( $path ) || ( Static_Site_Importer_Content_Policy::is_textual_path( $path ) && Static_Site_Importer_Content_Policy::path_contains_server_code( $path, $body ) ) ) {
 				return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s is not static content.', $path ), array( 'path' => $path ) );
 			}
 

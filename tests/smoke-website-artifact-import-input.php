@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/fixtures/core-html-api.php';
 /**
  * Contract coverage for website artifact import input normalization.
  *
@@ -11,6 +12,8 @@
 if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 }
+function __( string $message ): string { return $message; }
+function apply_filters( string $hook, $value, ...$args ) { return $value; }
 
 if ( ! function_exists( 'sanitize_text_field' ) ) {
 	function sanitize_text_field( $value ) {
@@ -104,19 +107,7 @@ if ( ! class_exists( 'Static_Site_Importer_Theme_Generator' ) ) {
 	}
 }
 
-if ( ! function_exists( 'static_site_importer_source_runtime' ) ) {
-	function static_site_importer_source_runtime( array $source ): array {
-		return array(
-			'artifact'        => array(
-				'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
-				'entrypoint' => (string) ( $source['entrypoint'] ?? '' ),
-				'files'      => isset( $source['files'] ) && is_array( $source['files'] ) ? $source['files'] : array(),
-			),
-			'source_metadata' => array(),
-			'provider'        => 'test',
-		);
-	}
-}
+require_once dirname( __DIR__ ) . '/includes/rest.php';
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-website-artifact-import-input.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';
@@ -187,7 +178,7 @@ static_site_importer_ability_import(
 		array(
 			'source' => array(
 				'type'  => 'files',
-				'files' => array(),
+				'files' => array( array( 'path' => 'index.html', 'content' => '<main>Input normalization</main>' ) ),
 			),
 		)
 	)
@@ -219,7 +210,7 @@ $cli_result = static_site_importer_cli_import(
 			'report' => $cli_report,
 			'source' => array(
 				'type'  => 'files',
-				'files' => array(),
+				'files' => array( array( 'path' => 'index.html', 'content' => '<main>CLI normalization</main>' ) ),
 			),
 		)
 	)
@@ -296,6 +287,29 @@ $assert( 'static_site_importer_executable_source_rejected' === $policy_validatio
 if ( is_dir( $artifact_dir ) ) {
 	rmdir( $artifact_dir );
 }
+
+// Exercise the real compilation policy guard with core and real readers. This
+// smoke intentionally stops at the compiler-capability boundary after admission;
+// the direct/CLI smokes separately exercise the installed compiler.
+require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/ArtifactCompiler/PayloadReader.php';
+require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/Support/StyleTagScanner.php';
+require_once dirname( __DIR__ ) . '/vendor/automattic/blocks-engine-php-transformer/src/Support/HtmlTagScanner.php';
+require_once dirname( __DIR__ ) . '/includes/cli.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-compilation-preparation.php';
+require_once __DIR__ . '/fixtures/content-policy-intakes.php';
+ssi_test_content_policy_intakes( static function ( string $label, bool $accepted, $runtime, array $artifact, ?object $reader ) use ( $assert ): void {
+	$assert( $accepted ? is_array( $runtime ) : is_wp_error( $runtime ) && 'static_site_importer_executable_source_rejected' === $runtime->get_error_code(), 'normalization-guard:' . $label );
+	$result = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $artifact, array( '_static_site_importer_payload_reader' => $reader ) );
+	$expected = $accepted ? 'static_site_importer_missing_transformer' : 'static_site_importer_executable_source_rejected';
+	$assert( is_wp_error( $result ) && $expected === $result->get_error_code(), 'compilation-guard:' . $label );
+	if ( $accepted && isset( $artifact['files'][0]['payload_reference'] ) ) {
+		$missing = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $artifact );
+		$assert( is_wp_error( $missing ) && 'static_site_importer_payload_reader_missing' === $missing->get_error_code(), 'compilation-requires-reader:' . $label );
+		unset( $artifact['files'][0]['payload_reference']['bytes'] );
+		$malformed = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $artifact, array( '_static_site_importer_payload_reader' => $reader ) );
+		$assert( is_wp_error( $malformed ) && 'static_site_importer_payload_reference_invalid' === $malformed->get_error_code(), 'compilation-requires-bounded-reference:' . $label );
+	}
+} );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( PHP_EOL, $failures ) . PHP_EOL );

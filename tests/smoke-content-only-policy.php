@@ -1,12 +1,13 @@
 <?php
 /** Adversarial coverage for the static artifact content-only boundary. */
+require_once __DIR__ . '/fixtures/core-html-api.php';
 
 if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 }
 if ( ! class_exists( 'WP_Error' ) ) {
 	class WP_Error {
-		public function __construct( private string $code, private string $message, private mixed $data = null ) {}
+		public function __construct( private string $code, private string $message = '', private mixed $data = null ) {}
 		public function get_error_code(): string { return $this->code; }
 	}
 }
@@ -70,6 +71,90 @@ $assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $a
 $assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/blog/_redirects', "/a /b 301\n" ) ) ), 'nested-redirects-artifact-rejected' );
 $assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/_redirects', '<?php system("id");' ) ) ), 'redirects-manifest-server-code-rejected' );
 $assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/_redirects', str_repeat( "/a /b 301\n", 7000 ) ) ) ), 'oversized-redirects-manifest-rejected' );
+
+// Neutral source examples exercise core tokenization, not a parser shape stub.
+$html_cases = array(
+	'double-quoted-tutorial' => array( '<span data-code="<?php echo 1; ?>">Copy</span>', true ),
+	'single-quoted-tutorial' => array( "<span data-code='<?php echo 1; ?>'>Copy</span>", true ),
+	'comment' => array( '<!-- <?php echo 1; ?> -->', true ),
+	'core-comment-close' => array( '<!-- <?php echo 1; ?> --!>', true ),
+	'completed-tag-residue' => array( '<span data-code=<?php echo 1; ?>>Copy</span>', true ),
+	'encoded-text' => array( '<pre>&lt;?php echo 1; ?&gt;</pre>', true ),
+	'encoded-text-and-inert-marker' => array( '<i data-code="<?php ?>">&lt;?php echo 1;</i>', true ),
+	'xml-declaration' => array( '<?xml version="1.0"?><p>Text</p>', true ),
+	'bogus-comment' => array( '<!example <?php echo 1; ?>>', false ),
+	'xml-with-marker' => array( '<?xml <?php echo 1; ?>', false ),
+	'outside-php' => array( '<main><?php echo 1; ?></main>', false ),
+	'outside-uppercase-php' => array( '<main><?PHP echo 1; ?></main>', false ),
+	'outside-php-processing-target' => array( '<main><?phpx echo 1; ?></main>', false ),
+	'outside-short-echo' => array( '<main><?= 1 ?></main>', false ),
+	'outside-short-open' => array( '<? echo 1; ?>', false ),
+	'script-tag-looking-example' => array( '<script>const example = "<span data-code=\'<?php echo 1; ?>\'>";</script>', false ),
+	'style-tag-looking-example' => array( '<style>p::before { content: "<span data-code=\'<?php echo 1; ?>\'>"; }</style>', false ),
+	'script-comment-looking-example' => array( '<script><!-- <?php echo 1; ?> --></script>', false ),
+	'unterminated-script' => array( '<script>"<?php echo 1; ?>"', false ),
+	'unterminated-style' => array( '<style>"<?php echo 1; ?>"', false ),
+	'unterminated-double-quote' => array( '<span data-code="<?php echo 1; ?>', false ),
+	'unterminated-single-quote' => array( "<span data-code='<?php echo 1; ?>", false ),
+	'unterminated-comment' => array( '<!-- <?php echo 1; ?>', false ),
+	'inert-then-active' => array( '<span data-code="<?php ?>"></span><?php echo 1; ?>', false ),
+);
+foreach ( $html_cases as $label => list( $html, $accepted ) ) {
+	$result = Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/index.html', $html ) );
+	$assert( $accepted ? true === $result : is_wp_error( $result ), 'core-tokenizer:' . $label );
+}
+foreach ( array( 'js', 'css', 'svg', 'xml', 'txt' ) as $extension ) {
+	$assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/example.' . $extension, '<!-- <?php echo 1; ?> -->' ) ) ), 'non-html-raw:' . $extension );
+}
+
+// A filesystem reader makes corruption/unavailability checks inspect real bytes.
+$payload_path = tempnam( sys_get_temp_dir(), 'ssi-policy-payload-' );
+$payload = '<main>Reference-backed content</main>';
+file_put_contents( $payload_path, $payload );
+$reader = new class( $payload_path ) {
+	public int $reads = 0;
+	public function __construct( private string $path ) {}
+	public function read( array $reference ): string {
+		++$this->reads;
+		if ( ! is_readable( $this->path ) ) {
+			throw new RuntimeException( 'Missing test payload.' );
+		}
+		return file_get_contents( $this->path );
+	}
+};
+$reference = array( 'schema' => 'blocks-engine/payload-reference/v1', 'id' => 'source/index.html', 'bytes' => strlen( $payload ), 'sha256' => hash( 'sha256', $payload ) );
+$referenced = array( 'files' => array( array( 'path' => 'website/index.html', 'payload_reference' => $reference ) ) );
+$assert( true === Static_Site_Importer_Content_Policy::validate_artifact( $referenced, $reader ), 'reference-filesystem-accepted' );
+$alias = array( 'files' => array( array( 'path' => 'website/index.html', 'payload' => array( 'reference' => $reference ) ) ) );
+$assert( true === Static_Site_Importer_Content_Policy::validate_artifact( $alias, $reader ), 'reference-canonical-alias-accepted' );
+$error_code = static function ( $result ): string { return is_wp_error( $result ) ? $result->get_error_code() : ''; };
+$assert( 'static_site_importer_payload_reader_missing' === $error_code( Static_Site_Importer_Content_Policy::validate_artifact( $referenced ) ), 'reference-missing-reader-rejected' );
+$assert( 'static_site_importer_payload_reader_missing' === $error_code( Static_Site_Importer_Content_Policy::validate_artifact( $referenced, new stdClass() ) ), 'reference-non-reader-rejected' );
+foreach ( array( 'string-reference', array_diff_key( $reference, array( 'bytes' => true ) ), array_diff_key( $reference, array( 'sha256' => true ) ), array_diff_key( $reference, array( 'id' => true ) ), array_replace( $reference, array( 'bytes' => -1 ) ), array_replace( $reference, array( 'bytes' => 10485761 ) ), array_replace( $reference, array( 'bytes' => '36' ) ) ) as $invalid ) {
+	$bad = $referenced;
+	$bad['files'][0]['payload_reference'] = $invalid;
+	$before = $reader->reads;
+	$assert( 'static_site_importer_payload_reference_invalid' === $error_code( Static_Site_Importer_Content_Policy::validate_artifact( $bad, $reader ) ) && $before === $reader->reads, 'reference-invalid-before-read:' . json_encode( $invalid ) );
+}
+$bad = $referenced;
+$bad['files'][0]['payload_reference']['sha256'] = str_repeat( '0', 64 );
+$assert( 'static_site_importer_payload_reference_hash_mismatch' === $error_code( Static_Site_Importer_Content_Policy::validate_artifact( $bad, $reader ) ), 'reference-hash-mismatch' );
+$bad = $referenced;
+++$bad['files'][0]['payload_reference']['bytes'];
+$assert( 'static_site_importer_payload_reference_hash_mismatch' === $error_code( Static_Site_Importer_Content_Policy::validate_artifact( $bad, $reader ) ), 'reference-size-mismatch' );
+$active = '<?php echo 1; ?>';
+file_put_contents( $payload_path, $active );
+$bad = $referenced;
+$bad['files'][0]['content'] = '<main>Inline decoy</main>';
+$bad['files'][0]['payload_reference']['bytes'] = strlen( $active );
+$bad['files'][0]['payload_reference']['sha256'] = hash( 'sha256', $active );
+$assert( 'static_site_importer_executable_source_rejected' === $error_code( Static_Site_Importer_Content_Policy::validate_artifact( $bad, $reader ) ), 'reference-authoritative-over-inline-decoy' );
+$media = $referenced;
+$media['files'][0]['path'] = 'website/preview.png';
+$before = $reader->reads;
+unlink( $payload_path );
+$assert( true === Static_Site_Importer_Content_Policy::validate_artifact( $media, $reader ) && $before === $reader->reads, 'optional-media-reference-not-read' );
+$assert( 'static_site_importer_payload_reference_unavailable' === $error_code( Static_Site_Importer_Content_Policy::validate_artifact( $referenced, $reader ) ), 'reference-unreadable-rejected' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
