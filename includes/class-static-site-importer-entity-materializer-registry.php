@@ -69,7 +69,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'option'           => 'static_site_importer_multilingual_plugin',
 				'filter'           => 'ssi_multilingual_plugin',
 			),
-			'redirects'    => array(
+			'redirects'        => array(
 				'default_provider' => 'redirection',
 				'option'           => 'static_site_importer_redirects_plugin',
 				'filter'           => 'ssi_redirects_plugin',

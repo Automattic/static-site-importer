@@ -135,8 +135,14 @@ try {
 		array(
 			'materialized_receipt' => $receipt,
 			'source_route_aliases' => array(
-				array( 'from' => 'old', 'to' => 'destination.html' ),
-				array( 'from' => 'readback-failure', 'to' => 'destination.html' ),
+				array(
+					'from' => 'old',
+					'to'   => 'destination.html',
+				),
+				array(
+					'from' => 'readback-failure',
+					'to'   => 'destination.html',
+				),
 			),
 		)
 	);
@@ -209,7 +215,7 @@ if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
 	require_once dirname( __DIR__, 2 ) . '/vendor/automattic/blocks-engine-php-transformer/php-transformer.php';
 }
 require_once dirname( __DIR__, 2 ) . '/includes/class-static-site-importer-theme-exporter.php';
-$unsupported_config = $edited['item'];
+$unsupported_config                                       = $edited['item'];
 $unsupported_config['match_data']['source']['flag_query'] = 'ignore';
 $unsupported_edit = Static_Site_Importer_Redirection_Materializer::api( 'POST', 'redirect/' . $rule_id, $unsupported_config );
 $assert( ! is_wp_error( $unsupported_edit ), 'Native owner query behavior can change.' );
@@ -233,6 +239,7 @@ $transport_files = array_map(
 	},
 	$artifact['files']
 );
+// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Disposable second-site request artifact.
 file_put_contents(
 	$evidence . '/reimport-request.json',
 	wp_json_encode(
@@ -248,7 +255,7 @@ file_put_contents(
 			),
 		)
 	)
-); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Disposable second-site request artifact.
+);
 $event_request = array(
 	'operation' => 'apply',
 	'slug'      => 'native-event-redirect',
