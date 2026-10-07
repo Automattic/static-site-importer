@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# SSI is fully decoupled from Blocks Engine: this script never receives an
-# external payload, so these checks exercise the one behavior the wrapper
-# actually has left — always resolving both Blocks Engine coordinates itself
-# and forwarding them through `extension action --payload`, with dry-run
-# propagated to both, and a real invoke failure aborting before the second
-# (Figma) call runs.
+# The registry-backed PHP Transformer uses the Composer-owned latest-stable
+# discovery contract. The inline Figma package still resolves exact upstream
+# tag/SHA coordinates. Verify both payload shapes, dry-run propagation, and
+# that a failed PHP action stops before the Figma coordinate lookup.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT="${ROOT_DIR}/scripts/release/refresh-blocks-engine.sh"
@@ -19,9 +17,6 @@ set -euo pipefail
 if [[ "$1 $2 $3" == "release resolve https://github.com/Automattic/blocks-engine.git" ]]; then
   printf 'resolve %s\n' "$5" >> "${HOMEBOY_RESOLVE_CAPTURE}"
   case "$5" in
-    php-transformer)
-      printf '%s\n' '{"data":{"version":"0.17.0","tag":"php-transformer-v0.17.0","commit":"abcdefabcdefabcdefabcdefabcdefabcdefabcd"}}'
-      ;;
     figma-transformer)
       printf '%s\n' '{"data":{"version":"0.3.0","tag":"figma-transformer-v0.3.0","commit":"0123456789012345678901234567890123456789"}}'
       ;;
@@ -43,7 +38,7 @@ fi
 SH
 chmod +x "${TMP_DIR}/homeboy"
 
-# --- Normal run: both packages always self-resolved, no external input ---
+# --- Normal run: PHP uses Composer discovery; inline Figma self-resolves ---
 : >"${TMP_DIR}/capture"
 : >"${TMP_DIR}/resolve"
 HOMEBOY_RESOLVE_CAPTURE="${TMP_DIR}/resolve" HOMEBOY_CAPTURE="${TMP_DIR}/capture" PATH="${TMP_DIR}:${PATH}" "${SCRIPT}" >/dev/null
@@ -53,19 +48,22 @@ figma_call="$(sed -n '2p' "${TMP_DIR}/capture")"
 
 grep -F -- 'release.update_dependency' <<<"${php_call}" >/dev/null
 grep -F -- 'automattic/blocks-engine-php-transformer' <<<"${php_call}" >/dev/null
-# The PHP transformer is pinned to the exact newest release, including one
-# that crosses a minor line — no hand-maintained discovery constraint.
-grep -F -- '"version":"0.17.0"' <<<"${php_call}" >/dev/null
+grep -F -- '"version":"latest"' <<<"${php_call}" >/dev/null
+grep -F -- '"discovery_constraint":">=0.1.0 <1.0.0"' <<<"${php_call}" >/dev/null
+grep -F -- '"allow_constraint_replacement":true' <<<"${php_call}" >/dev/null
 grep -F -- '"expected_source":"https://github.com/Automattic/blocks-engine-php-transformer.git"' <<<"${php_call}" >/dev/null
-for stale in discovery_constraint latest_stable allow_constraint_replacement expected_source_sha; do
+for stale in expected_source_sha tag sha; do
   if grep -F -- "\"${stale}\"" <<<"${php_call}" >/dev/null; then
-    printf 'FAIL: PHP transformer payload must not carry %s\n' "${stale}" >&2
+    printf 'FAIL: registry PHP payload must not carry monorepo coordinate %s\n' "${stale}" >&2
     exit 1
   fi
 done
 
-# Both components resolve their coordinates from the same resolver.
-grep -Fx -- 'resolve php-transformer' "${TMP_DIR}/resolve" >/dev/null
+# Only the inline package asks the monorepo resolver for coordinates.
+if grep -F -- 'resolve php-transformer' "${TMP_DIR}/resolve" >/dev/null; then
+  printf 'FAIL: PHP registry package must be resolved by Composer\n' >&2
+  exit 1
+fi
 grep -Fx -- 'resolve figma-transformer' "${TMP_DIR}/resolve" >/dev/null
 
 grep -F -- 'automattic/blocks-engine-figma-transformer' <<<"${figma_call}" >/dev/null
