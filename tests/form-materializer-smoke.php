@@ -4294,6 +4294,62 @@ namespace {
 		wp_json_encode( $reduced_row_layout )
 	);
 	$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $kmr[2]['provider_layout_overlay_css'] ?? null ), 'kmr-overlay-passes-stylesheet-admission' );
+	// Wix's mesh layout makes the form and its first box `position: relative` and
+	// leaves the field grid inside them `static` (#2005). All three collapse into the
+	// provider's one form element; a relative box without insets paints where a
+	// static one does and stays the containing block of everything inside the
+	// static box, so the pair is not a layout contradiction. The fixture is the
+	// captured device-split (desktop + phone) entity, with selector diagnostics
+	// trimmed.
+	$mesh_form = static function ( array $wrapper_patch ): array {
+		$fixture = json_decode( (string) gzdecode( (string) file_get_contents( __DIR__ . '/fixtures/wix-mesh-contact-form-v3.json.gz' ) ), true );
+		foreach ( $fixture['layout_graph']['variants'] as &$variant ) {
+			if ( 'wrapper-1' !== $variant['node'] ) {
+				continue;
+			}
+			foreach ( $wrapper_patch as $fact => $value ) {
+				$variant['layout_patch'][ $fact ]         = $value;
+				$variant['precedence'][ $fact ]           = $variant['precedence']['position'];
+				$variant['provenance'][0]['properties'][] = $fact;
+			}
+			ksort( $variant['layout_patch'] );
+			ksort( $variant['precedence'] );
+			$variant['provenance'][0]['properties'] = array_values( array_unique( $variant['provenance'][0]['properties'] ) );
+		}
+		unset( $variant );
+		$valid = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $fixture ) ) );
+		$row   = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $valid['forms'] ?? array() ) )['forms'][0] ?? array();
+		return array( 'errors' => $valid['errors'] ?? array(), 'row' => $row, 'unaccepted' => array_column( $row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ) );
+	};
+	$mesh_static_grid = $mesh_form( array() );
+	$assert(
+		empty( $mesh_static_grid['errors'] ) && 'mapped' === ( $mesh_static_grid['row']['status'] ?? '' ) && true === ( $mesh_static_grid['row']['runtime_mapped'] ?? false ) && array() === $mesh_static_grid['unaccepted'] && str_contains( (string) ( $mesh_static_grid['row']['block_markup'] ?? '' ), '<!-- wp:jetpack/contact-form' ),
+		'static-field-grid-inside-relative-form-boxes-merges-into-the-provider-form',
+		wp_json_encode( array( 'errors' => $mesh_static_grid['errors'], 'status' => $mesh_static_grid['row']['status'] ?? null, 'unaccepted' => $mesh_static_grid['unaccepted'] ) )
+	);
+	$mesh_markup = (string) ( $mesh_static_grid['row']['block_markup'] ?? '' );
+	$assert(
+		array( 'jetpack/field-text', 'jetpack/field-text', 'jetpack/field-email', 'jetpack/field-textarea' ) === array_values( array_filter( $mesh_static_grid['row']['field_blocks'] ?? array(), static fn( string $name ): bool => 'core/button' !== $name ) )
+			&& 'Send' === ( $mesh_static_grid['row']['submit_text'] ?? '' )
+			&& str_contains( $mesh_markup, 'First Name' ) && str_contains( $mesh_markup, 'Last Name' )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-email (?=[^\n]*"required":true)[^\n]* -->/', $mesh_markup ),
+		'merged-wix-mesh-form-keeps-its-fields-labels-required-email-and-submit-text',
+		$mesh_markup
+	);
+	$mesh_static_grid_css = (string) ( $mesh_static_grid['row']['provider_layout_overlay_css']['css'] ?? '' );
+	$assert( ! str_contains( $mesh_static_grid_css, 'position:static' ), 'merged-static-field-grid-does-not-unset-the-relative-form-box', $mesh_static_grid_css );
+	$mesh_static_inset = $mesh_form( array( 'left' => '12px' ) );
+	$assert(
+		empty( $mesh_static_inset['errors'] ) && 'skipped' === ( $mesh_static_inset['row']['status'] ?? '' ) && in_array( 'provider_wrapper_layout_unrepresentable', $mesh_static_inset['unaccepted'], true ),
+		'static-box-with-an-inert-inset-still-fails-closed-against-a-relative-form-box',
+		wp_json_encode( array( 'errors' => $mesh_static_inset['errors'], 'status' => $mesh_static_inset['row']['status'] ?? null, 'unaccepted' => $mesh_static_inset['unaccepted'] ) )
+	);
+	$mesh_absolute_grid = $mesh_form( array( 'position' => 'absolute' ) );
+	$assert(
+		empty( $mesh_absolute_grid['errors'] ) && 'skipped' === ( $mesh_absolute_grid['row']['status'] ?? '' ) && in_array( 'provider_wrapper_layout_unrepresentable', $mesh_absolute_grid['unaccepted'], true ),
+		'absolute-field-grid-inside-relative-form-boxes-still-fails-closed',
+		wp_json_encode( array( 'errors' => $mesh_absolute_grid['errors'], 'status' => $mesh_absolute_grid['row']['status'] ?? null, 'unaccepted' => $mesh_absolute_grid['unaccepted'] ) )
+	);
 	// A source box chain deeper than the provider's own element pair cannot keep every
 	// box, so it stays a decline instead of claiming an equivalence it cannot hold.
 	$assert(

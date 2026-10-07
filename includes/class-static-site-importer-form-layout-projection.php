@@ -1822,7 +1822,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		// element. Their container layout is what positions the fields, so it is merged
 		// onto that element. A nested box declaring a full-width value repeats the box it
 		// fills rather than contradicting it; any other disagreement fails closed.
-		$resolve_fact = static function ( mixed $current, mixed $value, string $property ): mixed {
+		// A relative box with no inset paints where a static box does, and an outer
+		// relative box is already the containing block for everything inside an inner
+		// static one, so the merged element can stay relative (#2005). A static box
+		// that declares a non-zero inset is not neutral: static ignores the inset but
+		// a merged relative element would apply it.
+		$resolve_fact = static function ( mixed $current, mixed $value, string $property, array $current_facts = array(), array $value_facts = array() ): mixed {
 			if ( null === $current || $current === $value ) {
 				return $value;
 			}
@@ -1831,6 +1836,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 			if ( 'width' === $property && '100%' === $current ) {
 				return $value;
+			}
+			if ( 'position' === $property && in_array( array( $current, $value ), array( array( 'static', 'relative' ), array( 'relative', 'static' ) ), true ) ) {
+				$static_facts = 'static' === $current ? $current_facts : $value_facts;
+				return self::declares_nonzero_inset( $static_facts ) ? null : 'relative';
 			}
 			return null;
 		};
@@ -1891,7 +1900,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$box_patches = $merged_patches;
 			$accepted    = true;
 			foreach ( $base as $property => $value ) {
-				$resolved              = $resolve_fact( $form_base[ $property ] ?? ( $box_base[ $property ] ?? null ), $value, (string) $property );
+				$resolved              = $resolve_fact( $form_base[ $property ] ?? ( $box_base[ $property ] ?? null ), $value, (string) $property, array_merge( $box_base, $form_base ), $base );
 				$accepted              = $accepted && null !== $resolved;
 				$box_base[ $property ] = $resolved;
 			}
@@ -1927,7 +1936,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					$merged_patch = $box_patches[ $condition ]['patch'] ?? array();
 					$current      = $form_patches[ $condition ][ $property ] ?? ( $merged_patch[ $property ] ?? null );
 
-					$resolved                                        = $resolve_fact( $current, $value, (string) $property );
+					$resolved                                        = $resolve_fact( $current, $value, (string) $property, array_merge( $box_base, $form_base, $merged_patch, $form_patches[ $condition ] ?? array() ), array_merge( $base, $patch ) );
 					$accepted                                        = $accepted && null !== $resolved;
 					$box_patches[ $condition ]['condition']          = $variant['condition'] ?? null;
 					$box_patches[ $condition ]['patch'][ $property ] = $resolved;
@@ -2106,6 +2115,25 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'node_hash'   => hash( 'sha256', $node_id ),
 			);
 		}
+	}
+
+	/**
+	 * Whether layout facts declare a top/right/bottom/left offset that would move a
+	 * relatively positioned box.
+	 *
+	 * @param array<string,mixed> $facts
+	 */
+	private static function declares_nonzero_inset( array $facts ): bool {
+		foreach ( array( 'top', 'right', 'bottom', 'left' ) as $inset ) {
+			if ( ! array_key_exists( $inset, $facts ) ) {
+				continue;
+			}
+			$value = is_string( $facts[ $inset ] ) || is_int( $facts[ $inset ] ) || is_float( $facts[ $inset ] ) ? strtolower( trim( (string) $facts[ $inset ] ) ) : null;
+			if ( null === $value || ( 'auto' !== $value && 1 !== preg_match( '/^[+-]?(?:0+(?:\.0*)?|\.0+)(?:px|r?em|%|v[wh]|v(?:min|max)|ch|ex)?$/D', $value ) ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
