@@ -519,7 +519,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			return new WP_Error( 'taxonomy_archive_route_invalid' );
 		}
 		$base_regex = '^' . $route . '/?$';
-		$page_regex = '^' . $route . '/page/([0-9]+)/?$';
+		$page_regex = '^' . $route . '/page/' . \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::TAXONOMY_ARCHIVE_PAGED_CAPTURE . '/?$';
 		$query_var  = 'category' === $entity['taxonomy'] ? 'category_name' : 'tag';
 		$base_query = 'index.php?' . $query_var . '=' . rawurlencode( $slug );
 		$page_query = $base_query . '&paged=$matches[1]';
