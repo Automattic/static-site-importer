@@ -22,17 +22,17 @@ invoke() {
   homeboy extension action wordpress release.update_dependency --payload "${action_payload}"
 }
 
-# Both packages track the newest stable Blocks Engine release of their
-# component. Homeboy's release coordinate resolver reads that exact tag
-# straight from the Blocks Engine repository, so there is one source of truth
-# for "what is released" and no version policy to keep in step by hand.
+# The registry-backed PHP transformer is resolved from Composer's available
+# stable releases, not from a raw Blocks Engine monorepo tag. Its declared
+# 0.x discovery range intentionally admits cross-minor releases; the owning
+# release import gate tests the refreshed package before the SSI release.
+# `release.update_dependency` resolves Composer's stable version, verifies the
+# published source, replaces the exact pin and lock atomically, and refuses a
+# downgrade. A minor release not yet mirrored to Packagist therefore cannot
+# become an unavailable Composer pin.
 #
-# Blocks Engine is pre-1.0 and bumps its minor version for any breaking or
-# feature change, so a release routinely crosses a minor line. Accepting it is
-# deliberate: whether the new version actually works is decided by this
-# repository's release import gate, which installs the built artifact and
-# imports a real site before anything is tagged. The update itself never
-# downgrades — the extension action refuses a version older than the lock.
+# Figma transformer is an inline monorepo-archive package, so it still needs
+# exact upstream tag and commit coordinates.
 resolve_coordinates() {
   local coordinates
   coordinates="$(homeboy release resolve https://github.com/Automattic/blocks-engine.git --prefix "${1}")"
@@ -47,14 +47,10 @@ dry_run() {
   fi
 }
 
-# automattic/blocks-engine-php-transformer is published to Packagist from the
-# blocks-engine-php-transformer subtree mirror. Mirror commits are rewritten
-# by the subtree split, so the monorepo commit is not a mirror commit and is
-# deliberately not asserted; the exact version is.
-php="$(resolve_coordinates php-transformer)"
-php_payload="$(jq -cn \
-  --arg version "$(jq -r '.version' <<<"${php}")" \
-  '{release:{component_id:"static-site-importer"},dependency:{package:"automattic/blocks-engine-php-transformer",version:$version,expected_source:"https://github.com/Automattic/blocks-engine-php-transformer.git"}}')"
+# The PHP Transformer's Packagist source/dist refs belong to its subtree
+# mirror; Composer resolves those refs with the selected available version.
+# Do not derive or assert them from the separate monorepo tag SHA.
+php_payload='{"release":{"component_id":"static-site-importer"},"dependency":{"package":"automattic/blocks-engine-php-transformer","version":"latest","discovery_constraint":">=0.1.0 <1.0.0","allow_constraint_replacement":true,"expected_source":"https://github.com/Automattic/blocks-engine-php-transformer.git"}}'
 invoke "$(dry_run "${php_payload}")"
 
 # automattic/blocks-engine-figma-transformer is an inline monorepo-archive
