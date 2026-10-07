@@ -3239,12 +3239,18 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * Placement is judged against the complete source graph, because a partly
 	 * represented sibling set can look like an ordered sequence on its own.
 	 *
+	 * A grid whose every child keeps its own provider element and declares an
+	 * explicit placement is the exception (#2005): explicit placement does not
+	 * depend on the provider's row sequence, so Wix's mesh rows (several boxes
+	 * sharing one cell, offset by their own insets) are reproduced as authored.
+	 *
 	 * @param array<string,mixed> $graph
 	 * @param array<string,mixed>|null $source_graph
+	 * @param array<string,mixed>|null $placed Source node ids rendered as their own provider element.
 	 * @return array<string,mixed>
 	 */
-	public static function without_shared_source_grid_rows( array $graph, ?array $source_graph = null ): array {
-		$shared = self::shared_source_grid_row_nodes( is_array( $source_graph ) ? $source_graph : $graph );
+	public static function without_shared_source_grid_rows( array $graph, ?array $source_graph = null, ?array $placed = null ): array {
+		$shared = self::shared_source_grid_row_nodes( is_array( $source_graph ) ? $source_graph : $graph, $placed );
 		if ( empty( $shared ) ) {
 			return $graph;
 		}
@@ -3713,9 +3719,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * @param array<string,mixed> $graph
 	 * @return array<string,bool>
 	 */
-	private static function shared_source_grid_row_nodes( array $graph ): array {
+	private static function shared_source_grid_row_nodes( array $graph, ?array $placed = null ): array {
 		$parents = array();
 		$rows    = array();
+		$placements = array();
+		$conditions = array();
 		foreach ( $graph['nodes'] ?? array() as $node ) {
 			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) ) {
 				continue;
@@ -3723,7 +3731,9 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$parents[ $node['id'] ] = is_string( $node['parent'] ?? null ) ? $node['parent'] : '';
 			$row                    = self::declared_grid_row( is_array( $node['layout'] ?? null ) ? $node['layout'] : array() );
 			if ( '' !== $row ) {
-				$rows[ $node['id'] ][ $row ] = true;
+				$rows[ $node['id'] ][ $row ]          = true;
+				$placements[ $node['id'] ]['null']    = self::grid_placement_is_explicit( $node['layout'] );
+				$conditions[ $parents[ $node['id'] ] ]['null'] = true;
 			}
 		}
 		foreach ( $graph['variants'] ?? array() as $variant ) {
@@ -3733,7 +3743,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 			$row = self::declared_grid_row( self::layout_patch( $variant ) );
 			if ( '' !== $row ) {
-				$rows[ $id ][ $row ] = true;
+				$condition                             = (string) wp_json_encode( $variant['condition'] ?? null );
+				$rows[ $id ][ $row ]                   = true;
+				$placements[ $id ][ $condition ]       = self::grid_placement_is_explicit( self::layout_patch( $variant ) );
+				$conditions[ $parents[ $id ] ][ $condition ] = true;
 			}
 		}
 		$by_parent = array();
@@ -3750,7 +3763,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			// One row for every box transposes as an ordered sequence, and a single
 			// shared row transposes as one band. Any other mix means the provider's
 			// own row sequence no longer lines up with these row indexes.
-			if ( 1 < $distinct && $summary['boxes'] !== $distinct ) {
+			if ( 1 < $distinct && $summary['boxes'] !== $distinct && ! self::grid_children_explicitly_placed( (string) $parent, $parents, $placements, $conditions[ $parent ] ?? array(), $placed ) ) {
 				$scrambled[ $parent ] = true;
 			}
 		}
@@ -3761,6 +3774,53 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 		}
 		return $shared;
+	}
+
+	/**
+	 * Whether every source child of a grid keeps its own provider element and
+	 * places itself explicitly under every condition that places any sibling.
+	 * Only then are the source row indexes independent of the provider's own
+	 * child order. The grid itself must have collapsed onto the provider form
+	 * element, whose direct children those provider elements are.
+	 *
+	 * @param array<string,string>                $parents
+	 * @param array<string,array<string,bool>>    $placements
+	 * @param array<string,bool>                  $conditions
+	 * @param array<string,mixed>|null            $placed
+	 */
+	private static function grid_children_explicitly_placed( string $parent, array $parents, array $placements, array $conditions, ?array $placed ): bool {
+		if ( null === $placed || '' === $parent || isset( $placed[ $parent ] ) || array() === $conditions ) {
+			return false;
+		}
+		$children = array_keys( array_filter( $parents, static fn ( string $candidate ): bool => $candidate === $parent ) );
+		if ( count( $children ) < 2 ) {
+			return false;
+		}
+		foreach ( $children as $child ) {
+			if ( ! isset( $placed[ $child ] ) ) {
+				return false;
+			}
+			foreach ( array_keys( $conditions ) as $condition ) {
+				if ( true !== ( $placements[ $child ][ $condition ] ?? false ) ) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * A placement that names both its row and column lines, so it never relies on
+	 * auto-placement order.
+	 *
+	 * @param array<string,mixed> $layout
+	 */
+	private static function grid_placement_is_explicit( array $layout ): bool {
+		$area = trim( (string) ( $layout['area'] ?? '' ) );
+		if ( '' !== $area ) {
+			return 1 === preg_match( '#^[0-9]+ / [0-9]+ / [0-9]+ / [0-9]+$#D', preg_replace( '#\s*/\s*#', ' / ', $area ) ?? '' );
+		}
+		return 1 === preg_match( '#^[0-9]+(?:\s*/\s*(?:[0-9]+|span [0-9]+))?$#D', trim( (string) ( $layout['row'] ?? '' ) ) ) && 1 === preg_match( '#^[0-9]+(?:\s*/\s*(?:[0-9]+|span [0-9]+))?$#D', trim( (string) ( $layout['column'] ?? '' ) ) );
 	}
 
 	/** @param array<string,mixed> $layout */

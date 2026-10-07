@@ -4283,6 +4283,17 @@ namespace {
 		'source-rows-that-neither-pair-with-each-box-nor-share-one-band-drop-their-provider-placement',
 		wp_json_encode( array( 'mixed' => $mixed_row_layout, 'uniform' => array_column( $uniform_row_result['nodes'], 'layout', 'id' ) ) )
 	);
+	// Explicit placement does not depend on the provider's row sequence: when every
+	// child keeps its own provider element, the mixed rows are kept as authored (#2005).
+	$placed_all    = array( 'wrapper-0' => 'a', 'wrapper-1' => 'b', 'wrapper-2' => 'c' );
+	$placed_layout = array_column( Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( $mixed_row_graph, null, $placed_all )['nodes'], 'layout', 'id' );
+	$partly_placed = array_column( Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( $mixed_row_graph, null, array( 'wrapper-0' => 'a', 'wrapper-2' => 'c' ) )['nodes'], 'layout', 'id' );
+	$assert(
+		'1 / 1 / 2 / 2' === ( $placed_layout['wrapper-0']['area'] ?? '' ) && '1 / 1 / 2 / 2' === ( $placed_layout['wrapper-1']['area'] ?? '' ) && '2 / 1 / 3 / 2' === ( $placed_layout['wrapper-2']['area'] ?? '' ) && array( 'display' => 'grid', 'columns' => '100%' ) === $placed_layout['grid']
+			&& ! isset( $partly_placed['wrapper-0']['area'] ) && array( 'display' => 'grid' ) === $partly_placed['grid'],
+		'explicitly-placed-mesh-rows-keep-their-source-grid-only-when-every-child-is-a-provider-element',
+		wp_json_encode( array( 'placed' => $placed_layout, 'partly' => $partly_placed ) )
+	);
 	// A sibling that another strategy already represented is absent from the overlay
 	// graph; on its own the remainder looks like an ordered sequence.
 	$reduced_row_graph          = $mixed_row_graph;
@@ -4337,7 +4348,13 @@ namespace {
 		$mesh_markup
 	);
 	$mesh_static_grid_css = (string) ( $mesh_static_grid['row']['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		3 === preg_match_all( '/-wrap\{[^}]*grid-area:1 \/ 1 \/ 2 \/ 2[^}]*left:(?:19|219|419)px[^}]*width:180px[^}]*\}/', $mesh_static_grid_css ) && str_contains( $mesh_static_grid_css, 'grid-template-columns:100%' ) && 1 === preg_match( '/-wrap\{[^}]*grid-area:2 \/ 1 \/ 3 \/ 2[^}]*\}/', $mesh_static_grid_css ),
+		'wix-mesh-row-keeps-its-three-fields-in-one-source-grid-cell',
+		$mesh_static_grid_css
+	);
 	$assert( ! str_contains( $mesh_static_grid_css, 'position:static' ), 'merged-static-field-grid-does-not-unset-the-relative-form-box', $mesh_static_grid_css );
+	$assert( 1 === preg_match( '/^\.ssi-form-[a-f0-9]{12}\{pointer-events:auto\}$/m', $mesh_static_grid_css ), 'merged-mesh-box-pointer-events-none-does-not-disable-the-provider-form', $mesh_static_grid_css );
 	$mesh_static_inset = $mesh_form( array( 'left' => '12px' ) );
 	$assert(
 		empty( $mesh_static_inset['errors'] ) && 'skipped' === ( $mesh_static_inset['row']['status'] ?? '' ) && in_array( 'provider_wrapper_layout_unrepresentable', $mesh_static_inset['unaccepted'], true ),
