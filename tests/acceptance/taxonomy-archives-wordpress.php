@@ -119,8 +119,16 @@ $taxonomy_assert( '' === trim( (string) get_option( 'category_base', '' ), '/' )
 $source_archive_url = untrailingslashit( home_url( $archive_route ) );
 $native_term_url    = untrailingslashit( (string) get_term_link( $personal_term ) );
 $taxonomy_assert( $source_archive_url === $native_term_url, 'Native term permalink must own the exact canonical source archive route.' );
-$rewrite_rules = get_option( 'rewrite_rules', array() );
-$taxonomy_assert( 'index.php?category_name=personal' === ( $rewrite_rules['^writing/category/personal/?$'] ?? null ) && 'index.php?category_name=personal&paged=$matches[1]' === ( $rewrite_rules['^writing/category/personal/page/([0-9]+)/?$'] ?? null ), 'The source base and /page/N routes have exact taxonomy rewrites without moving the global category base.' );
+$rewrite_rules         = get_option( 'rewrite_rules', array() );
+$taxonomy_page_capture = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::TAXONOMY_ARCHIVE_PAGED_CAPTURE;
+$taxonomy_page_regex   = '^writing/category/personal/page/' . $taxonomy_page_capture . '/?$';
+$taxonomy_assert( 'index.php?category_name=personal' === ( $rewrite_rules['^writing/category/personal/?$'] ?? null ) && 'index.php?category_name=personal&paged=$matches[1]' === ( $rewrite_rules[ $taxonomy_page_regex ] ?? null ), 'The source base and vendor-canonical paged routes have exact taxonomy rewrites without moving the global category base.' );
+foreach ( array( '1', '2', '999999' ) as $valid_taxonomy_page ) {
+	$taxonomy_assert( 1 === preg_match( '~' . $taxonomy_page_regex . '~', 'writing/category/personal/page/' . $valid_taxonomy_page . '/' ), 'Vendor-canonical pagination capture must admit page ' . $valid_taxonomy_page . '.' );
+}
+foreach ( array( '0', '-2', '1000000' ) as $invalid_taxonomy_page ) {
+	$taxonomy_assert( 0 === preg_match( '~' . $taxonomy_page_regex . '~', 'writing/category/personal/page/' . $invalid_taxonomy_page . '/' ), 'Vendor-canonical pagination capture must reject invalid page ' . $invalid_taxonomy_page . '.' );
+}
 $archive_template = get_block_template( get_stylesheet() . '//category-' . $slug );
 $taxonomy_assert( $archive_template instanceof WP_Block_Template && str_contains( $archive_template->content, '"inherit":true' ) && str_contains( $archive_template->content, 'query-pagination' ), 'WordPress must resolve the contextual inherited category template with pagination.' );
 
@@ -251,7 +259,7 @@ $taxonomy_assert( ! $ssi_plugin_active, 'Browser route proof must exercise the g
 
 echo 'WordPress ' . esc_html( get_bloginfo( 'version' ) ) . "\n";
 echo "Taxonomy archive WordPress store acceptance passed.\n";
-echo "SSI is inactive for the subsequent real base/page-2 HTTP requests.\n";
+echo "SSI is inactive for the subsequent real base/page-2 and invalid-page HTTP requests.\n";
 echo 'SSI-TAXONOMY-ADOPTION-PLAN:' . wp_json_encode(
 	array(
 		'plan' => $plan,

@@ -677,7 +677,14 @@ $personal_term = $GLOBALS['ssi_plan_terms']['category:personal']['term_id'] ?? 0
 $work_term = $GLOBALS['ssi_plan_terms']['category:work']['term_id'] ?? 0;
 $assert( 'completed' === ( $taxonomy_receipt['status'] ?? '' ) && ! isset( $taxonomy_pages['archives/personal.html'], $taxonomy_pages['archives/work.html'] ), 'SSI materializes native terms without writing either captured archive as a frozen page: ' . wp_json_encode( array( 'status' => $taxonomy_receipt['status'] ?? null, 'errors' => $taxonomy_receipt['errors'] ?? array(), 'pages' => $taxonomy_pages ) ) );
 $assert( $personal_term > 0 && $work_term > 0 && in_array( $personal_term, $GLOBALS['ssi_plan_term_memberships'][ $taxonomy_first ]['category'] ?? array(), true ) && in_array( $work_term, $GLOBALS['ssi_plan_term_memberships'][ $taxonomy_second ]['category'] ?? array(), true ), 'SSI assigns only source-proven memberships to canonical imported posts' );
-$assert( '' === (string) ( $GLOBALS['ssi_plan_options']['category_base'] ?? '' ) && 'index.php?category_name=personal' === ( $GLOBALS['ssi_plan_rewrite_rules']['^writing/category/personal/?$'] ?? null ) && 'index.php?category_name=personal&paged=$matches[1]' === ( $GLOBALS['ssi_plan_rewrite_rules']['^writing/category/personal/page/([0-9]+)/?$'] ?? null ) && isset( $taxonomy_receipt['plan']['writes'] ), 'source-specific base and paginated native rewrites preserve the owner category base' );
+$taxonomy_page_regex = '^writing/category/personal/page/' . WordPressSitePlan::TAXONOMY_ARCHIVE_PAGED_CAPTURE . '/?$';
+$assert( '' === (string) ( $GLOBALS['ssi_plan_options']['category_base'] ?? '' ) && 'index.php?category_name=personal' === ( $GLOBALS['ssi_plan_rewrite_rules']['^writing/category/personal/?$'] ?? null ) && 'index.php?category_name=personal&paged=$matches[1]' === ( $GLOBALS['ssi_plan_rewrite_rules'][ $taxonomy_page_regex ] ?? null ) && isset( $taxonomy_receipt['plan']['writes'] ), 'source-specific base and vendor-canonical paginated native rewrites preserve the owner category base' );
+foreach ( array( '1', '2', '999999' ) as $valid_taxonomy_page ) {
+	$assert( 1 === preg_match( '~' . $taxonomy_page_regex . '~', 'writing/category/personal/page/' . $valid_taxonomy_page . '/' ), 'the published route capture admits page ' . $valid_taxonomy_page );
+}
+foreach ( array( '0', '-2', '1000000' ) as $invalid_taxonomy_page ) {
+	$assert( 0 === preg_match( '~' . $taxonomy_page_regex . '~', 'writing/category/personal/page/' . $invalid_taxonomy_page . '/' ), 'the published route capture rejects page ' . $invalid_taxonomy_page );
+}
 $owner_term = wp_insert_term( 'Owner selected', 'category', array( 'slug' => 'owner-selected' ) );
 wp_set_object_terms( $taxonomy_second, array( $personal_term, $work_term, (int) $owner_term['term_id'] ), 'category', false );
 $recategorized_plan = ( new ArtifactCompiler() )->compile( $taxonomy_source_for( true ) )->toArray()['source_reports']['wordpress_site_plan'];

@@ -87,7 +87,13 @@ const packageProofMatchesPin = proof => ! releasePackageMode || (
 	proof?.version === releasePackageIdentity.version &&
 	proof?.source_reference === releasePackageIdentity.sourceReference
 );
+const editorStoreReadiness = `const readinessDeadline = Date.now() + 60000;
+while (typeof window.wp?.data?.select('core')?.getEntityRecord !== 'function' || typeof window.wp?.data?.dispatch('core')?.saveEditedEntityRecord !== 'function' || typeof window.wp?.blocks?.parse !== 'function') {
+if (Date.now() >= readinessDeadline) throw new Error('The real Gutenberg entity store and block parser did not become ready.');
+await new Promise(resolve => setTimeout(resolve, 200));
+}`;
 const editorSaveScript = `window.__taxonomyEditorSave = (async () => {
+${ editorStoreReadiness }
 const id = '${ editorTemplateId }';
 const marker = '${ editorMarker }';
 const core = wp.data.resolveSelect('core');
@@ -117,6 +123,7 @@ return true;
 })().catch(error => { document.title = 'SSI-TAXONOMY-EDITOR-ERROR:' + error.message; throw error; });
 return await window.__taxonomyEditorSave;`;
 const editorReloadScript = `window.__taxonomyEditorReload = (async () => {
+${ editorStoreReadiness }
 const id = '${ editorTemplateId }';
 const marker = '${ editorMarker }';
 const reloadMarker = '${ editorReloadMarker }';
@@ -149,14 +156,38 @@ document.documentElement.dataset.ssiTaxonomyBaseHttpProof = JSON.stringify(proof
 if (!proof.heading || !proof.addedPost || !proof.sourceOrder || !proof.unrelatedExcluded || !proof.sharedHeader || !proof.sharedFooter || !proof.nextHref.includes('/writing/category/personal/page/2/')) throw new Error('Native source archive base HTTP proof failed: ' + JSON.stringify(proof));
 console.log('SSI-TAXONOMY-BASE-HTTP-PROOF', JSON.stringify(proof));
 })();`;
-const pageTwoArchiveHttpProbe = `(() => {
+const pageTwoArchiveHttpProbe = `return (async () => {
 const text = document.body.innerText;
 const previous = document.querySelector('.wp-block-query-pagination-previous');
 const proof = { title: document.title, pageTwo: document.body.classList.contains('paged-2'), secondPageMember: text.includes('Story 2'), previousPage: Boolean(previous && previous.textContent.includes('Previous Page')), previousHref: previous?.getAttribute('href') || '', firstPageExcluded: !text.includes('Story 12'), unrelatedExcluded: !text.includes('Outside the archive') };
 document.documentElement.dataset.ssiTaxonomyPageTwoHttpProof = JSON.stringify(proof);
 if (!proof.title.includes('Page 2') || !proof.pageTwo || !proof.secondPageMember || !proof.previousPage || !proof.previousHref.includes('/writing/category/personal/') || !proof.firstPageExcluded || !proof.unrelatedExcluded) throw new Error('Native source archive page-2 HTTP proof failed: ' + JSON.stringify(proof));
 console.log('SSI-TAXONOMY-PAGE-TWO-HTTP-PROOF', JSON.stringify(proof));
-})();`;
+const paths = ['/writing/category/personal/page/0/', '/writing/category/personal/page/-2/', '/writing/category/personal/page/1000000/'];
+const responses = await Promise.all(paths.map(async path => {
+const original = await fetch(path, { cache: 'no-store', redirect: 'manual' });
+const originalLocation = original.headers.get('location') || '';
+const finalResponse = await fetch(path, { cache: 'no-store', redirect: 'follow' });
+const body = await finalResponse.text();
+return {
+requested_path: path,
+original_status: original.status,
+original_location: originalLocation,
+final_status: finalResponse.status,
+final_url: finalResponse.url,
+final_path: new URL(finalResponse.url || path, window.location.origin).pathname,
+taxonomy_archive_rendered: body.includes('Story 12') || body.includes('Added after import')
+};
+}));
+const invalidProof = { schema: 'ssi-taxonomy/invalid-paged-routes/v1', responses };
+const invalidRecord = document.createElement('pre');
+invalidRecord.id = 'ssi-taxonomy-invalid-paged-http-proof';
+invalidRecord.textContent = JSON.stringify(invalidProof);
+document.body.append(invalidRecord);
+document.documentElement.dataset.ssiTaxonomyInvalidPagedHttpProof = JSON.stringify(invalidProof);
+console.log('SSI-TAXONOMY-INVALID-PAGED-HTTP-PROOF', JSON.stringify(invalidProof));
+if (responses.some(response => response.original_status >= 200 && response.original_status < 300 || response.final_status !== 404 || response.taxonomy_archive_rendered)) throw new Error('Invalid taxonomy page numbers must retain invalid native HTTP semantics: ' + JSON.stringify(invalidProof));
+})().catch(error => { document.title = 'SSI-TAXONOMY-PAGE-TWO-ERROR:' + error.message; throw error; });`;
 const staticExportPageTwoProbe = `(() => {
 const text = document.body.innerText;
 const previous = document.querySelector('.wp-block-query-pagination-previous');
@@ -214,7 +245,7 @@ const workload = {
 		{ command: 'wordpress.browser-page-load', args: [ `url=${ editorTemplateUrl }`, 'auth=wordpress-admin', 'wait-for=load', `script=${ editorReloadScript }`, 'capture=html,console,errors,screenshot', 'duration=8s', 'timeout=120s' ] },
 		{ command: 'wordpress.run-php', args: [ `code=${ editorVerification }` ] },
 		{ command: 'wordpress.browser-page-load', args: [ 'url=/writing/category/personal/', 'wait-for=domcontentloaded', `script=${ baseArchiveHttpProbe }`, 'capture=html,console,errors,screenshot', 'network-policy=block' ] },
-		{ command: 'wordpress.browser-page-load', args: [ 'url=/writing/category/personal/page/2/', 'wait-for=domcontentloaded', `script=${ pageTwoArchiveHttpProbe }`, 'capture=html,console,errors,screenshot', 'network-policy=block' ] },
+		{ command: 'wordpress.browser-page-load', args: [ 'url=/writing/category/personal/page/2/', 'wait-for=domcontentloaded', `script=${ pageTwoArchiveHttpProbe }`, 'capture=html,console,errors,network,screenshot', 'network-policy=block', 'duration=3s' ] },
 	],
 };
 writeFileSync( workloadFile, JSON.stringify( workload, null, 2 ) );
@@ -247,6 +278,7 @@ const editorReloadStep = editorSteps[1];
 const editorVerifyStep = ( result.executions ?? [] ).filter( step => 'wordpress.run-php' === step.command )[1];
 const browserStep = editorSteps[2];
 const pageTwoBrowserStep = editorSteps[3];
+const invalidPagedBrowserStep = pageTwoBrowserStep;
 let editorVerify;
 try {
 	const lines = String( editorVerifyStep?.stdout ?? '' ).split( '\n' );
@@ -284,6 +316,17 @@ const snapshotRow = snapshotContents.find( row => row.content.includes( '<h1 cla
 const snapshotPath = snapshotRow?.path ?? '';
 const snapshot = snapshotPath ? readFileSync( snapshotPath, 'utf8' ) : '';
 const pageTwoSnapshotRow = snapshotContents.find( row => row.content.includes( 'Story 2' ) && row.content.includes( 'Previous Page' ) && ! row.content.includes( 'Story 12' ) && ! row.content.includes( 'Outside the archive' ) );
+const invalidPagedSnapshotRow = snapshotContents.find( row => row.content.includes( 'id="ssi-taxonomy-invalid-paged-http-proof"' ) );
+const invalidPagedProofMatch = invalidPagedSnapshotRow?.content.match( /<pre id="ssi-taxonomy-invalid-paged-http-proof">([^<]+)<\/pre>/ );
+let invalidPagedProof = {};
+try {
+	invalidPagedProof = JSON.parse( invalidPagedProofMatch?.[1] ?? '{}' );
+} catch {
+	invalidPagedProof = {};
+}
+if ( 3 === ( invalidPagedProof.responses ?? [] ).length ) {
+	writeFileSync( join( evidenceRoot, 'invalid-taxonomy-paged-http-proof.json' ), JSON.stringify( invalidPagedProof, null, 2 ) );
+}
 const browserAssertions = {
 	categoryTemplateEditorRouteLoaded: editorSaveStep?.exitCode === 0 && String( editorSaveStep?.stdout ?? '' ).includes( '/wp-admin/site-editor.php' ),
 	categoryTemplateEditorSaveRan: editorSaveStep?.exitCode === 0 && editorVerify.persisted === true,
@@ -309,7 +352,8 @@ try {
 	pageTwoBrowser = {};
 }
 browserAssertions.actualPageTwoHttpRequest = pageTwoBrowserStep?.exitCode === 0 && new URL( pageTwoBrowser.finalUrl ?? 'http://invalid/' ).pathname.includes( '/writing/category/personal/page/2' ) && Boolean( pageTwoSnapshotRow ) && 0 === ( pageTwoBrowser.summary?.errors ?? -1 );
-let success = result.success === true && command.status === 0 && phpStep?.exitCode === 0 && String( phpStep?.stdout ?? '' ).includes( 'Taxonomy archive WordPress store acceptance passed.' ) && String( phpStep?.stdout ?? '' ).includes( 'SSI is inactive for the subsequent real base/page-2 HTTP requests.' ) && packageProofMatchesPin( primaryPackageProof ) && editorSaveStep?.exitCode === 0 && editorReloadStep?.exitCode === 0 && editorVerifyStep?.exitCode === 0 && editorVerify.persisted === true && editorVerify.reloaded === true && editorVerify.exported === true && browserStep?.exitCode === 0 && pageTwoBrowserStep?.exitCode === 0 && Object.values( browserAssertions ).every( Boolean );
+browserAssertions.invalidPagedRoutesRejected = invalidPagedBrowserStep?.exitCode === 0 && 'ssi-taxonomy/invalid-paged-routes/v1' === invalidPagedProof.schema && 3 === invalidPagedProof.responses?.length && invalidPagedProof.responses.every( response => !( response.original_status >= 200 && response.original_status < 300 ) && 404 === response.final_status && false === response.taxonomy_archive_rendered );
+let success = result.success === true && command.status === 0 && phpStep?.exitCode === 0 && String( phpStep?.stdout ?? '' ).includes( 'Taxonomy archive WordPress store acceptance passed.' ) && String( phpStep?.stdout ?? '' ).includes( 'SSI is inactive for the subsequent real base/page-2 and invalid-page HTTP requests.' ) && packageProofMatchesPin( primaryPackageProof ) && editorSaveStep?.exitCode === 0 && editorReloadStep?.exitCode === 0 && editorVerifyStep?.exitCode === 0 && editorVerify.persisted === true && editorVerify.reloaded === true && editorVerify.exported === true && browserStep?.exitCode === 0 && pageTwoBrowserStep?.exitCode === 0 && invalidPagedBrowserStep?.exitCode === 0 && Object.values( browserAssertions ).every( Boolean );
 
 let adoptionAcceptance = { success: false, reason: 'primary acceptance did not pass' };
 let roundtripAcceptance = { success: false, reason: 'primary acceptance did not pass' };
@@ -417,7 +461,7 @@ if ( success ) {
 	}
 	success = success && adoptionAcceptance.success && roundtripAcceptance.success;
 }
-writeFileSync( join( evidenceRoot, 'browser-assertions.json' ), JSON.stringify( { success: Object.values( browserAssertions ).every( Boolean ), editorTemplateUrl, snapshot: snapshotPath, assertions: browserAssertions }, null, 2 ) );
+writeFileSync( join( evidenceRoot, 'browser-assertions.json' ), JSON.stringify( { success: Object.values( browserAssertions ).every( Boolean ), editorTemplateUrl, snapshot: snapshotPath, assertions: browserAssertions, invalidPagedProof }, null, 2 ) );
 console.log( JSON.stringify( {
 	success,
 	wpCodebox: spawnSync( cli, [ 'version' ], { encoding: 'utf8' } ).stdout.trim(),
@@ -427,8 +471,9 @@ console.log( JSON.stringify( {
 	workloadStatus: result.status ?? null,
 	executions: ( result.executions ?? [] ).map( step => ( { command: step.command, exitCode: step.exitCode, stdout: step.stdout, stderr: step.stderr } ) ),
 	editorVerification: editorVerify,
-				browserAssertions,
-			releasePackageIdentity,
+	browserAssertions,
+	releasePackageIdentity,
+	invalidPagedProof,
 	adoptionAcceptance,
 	roundtripAcceptance,
 	failure: result.result?.failure_summary ?? result.error?.message ?? null,
