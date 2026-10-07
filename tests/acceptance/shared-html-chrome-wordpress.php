@@ -10,11 +10,17 @@ function chrome_assert( bool $condition, string $message ): void {
 		throw new RuntimeException( esc_html( $message ) );
 	}
 }
-$prefix    = 'Automattic\\BlocksEngine\\PhpTransformer\\';
-$candidate = defined( 'SSI_SHARED_CHROME_CANDIDATE' ) && SSI_SHARED_CHROME_CANDIDATE;
+$prefix     = 'Automattic\\BlocksEngine\\PhpTransformer\\';
+$candidate  = defined( 'SSI_SHARED_CHROME_CANDIDATE' ) && SSI_SHARED_CHROME_CANDIDATE;
+$released   = defined( 'SSI_SHARED_CHROME_RELEASED' ) && SSI_SHARED_CHROME_RELEASED;
+$acceptance = $candidate || $released;
+chrome_assert( ! ( $candidate && $released ), 'Choose released or source-override compiler proof' );
 // Composer may prepend its own loader; install the source override after that
 // registration but before loading any plugin/compiler class.
 require_once '/wordpress/wp-content/plugins/static-site-importer/vendor/autoload.php';
+if ( $released ) {
+	chrome_assert( defined( 'SSI_SHARED_CHROME_COMPILER_VERSION' ) && SSI_SHARED_CHROME_COMPILER_VERSION === ltrim( Composer\InstalledVersions::getPrettyVersion( 'automattic/blocks-engine-php-transformer' ), 'v' ), 'Released compiler must match the exact SSI dependency pin' );
+}
 if ( $candidate ) {
 	foreach ( array_merge( get_declared_classes(), get_declared_interfaces(), get_declared_traits() ) as $class ) {
 		chrome_assert( ! str_starts_with( $class, $prefix ), 'Compiler already loaded before source override: ' . $class );
@@ -45,6 +51,7 @@ foreach ( array( 'ArtifactCompiler\\ArtifactCompiler', 'WordPressSitePlan\\WordP
 }
 echo wp_json_encode( array(
 	'compiler_sources' => $reflection,
+	'compiler_mode'    => $candidate ? 'source-override' : ( $released ? 'released' : 'baseline' ),
 	'php'              => PHP_VERSION,
 	'wordpress'        => get_bloginfo( 'version' ),
 ) ) . "\n";
@@ -224,7 +231,7 @@ $evidence = array();
 foreach ( defined( 'SSI_SHARED_CHROME_ROOT' ) ? array( SSI_SHARED_CHROME_ROOT ) : array( '', 'website/' ) as $root ) {
 	foreach ( defined( 'SSI_SHARED_CHROME_INGRESS' ) ? array( SSI_SHARED_CHROME_INGRESS ) : array( 'artifact', 'files', 'zip' ) as $kind ) {
 		$artifact = chrome_ingress( chrome_fixture( $root ), $kind );
-		if ( ! $candidate ) {
+		if ( ! $acceptance ) {
 			$before   = chrome_pages();
 			$observed = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $artifact, array( 'slug' => 'released-chrome-probe' ) );
 			chrome_assert( chrome_pages() === $before, 'Adapter/baseline probes must not write pages' );
@@ -386,7 +393,7 @@ foreach ( defined( 'SSI_SHARED_CHROME_ROOT' ) ? array( SSI_SHARED_CHROME_ROOT ) 
 		}
 	}
 }
-if ( $candidate ) {
+if ( $acceptance ) {
 	foreach ( array_merge( get_declared_classes(), get_declared_interfaces(), get_declared_traits() ) as $class ) {
 		if ( str_starts_with( $class, $prefix ) ) {
 			$reflection = new ReflectionClass( $class );
@@ -395,12 +402,12 @@ if ( $candidate ) {
 			if ( $reflection->isAnonymous() ) {
 				continue;
 			}
-			chrome_assert( str_starts_with( $reflection->getFileName(), '/wordpress/wp-content/plugins/owning-compiler/src/' ), 'Loaded mixed vendor/candidate compiler: ' . $class );
+			chrome_assert( str_starts_with( $reflection->getFileName(), $candidate ? '/wordpress/wp-content/plugins/owning-compiler/src/' : '/wordpress/wp-content/plugins/static-site-importer/vendor/' ), 'Loaded mixed compiler sources: ' . $class );
 		}
 	}
 }
 echo wp_json_encode( array(
-	'status'             => $candidate ? 'shared-chrome-acceptance-passed' : 'baseline-adapter-passed',
-	'compact_acceptance' => $candidate ? 'passed' : 'not_run',
+	'status'             => $acceptance ? 'shared-chrome-acceptance-passed' : 'baseline-adapter-passed',
+	'compact_acceptance' => $acceptance ? 'passed' : 'not_run',
 	'cases'              => $evidence,
 ) ) . "\n";
