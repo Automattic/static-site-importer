@@ -285,6 +285,10 @@ class Static_Site_Importer_Companion_Plugin {
 		if ( ! is_string( $external_metric_runtime ) || '' === $external_metric_runtime ) {
 			return new WP_Error( 'static_site_importer_companion_plugin_external_metric_runtime_missing', 'External metric runtime projection file is unavailable.' );
 		}
+		$ip_classifier_runtime = file_get_contents( __DIR__ . '/class-static-site-importer-ip-classifier.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Generated companions package the shared public-IP classifier used by bounded outbound requests.
+		if ( ! is_string( $ip_classifier_runtime ) || '' === $ip_classifier_runtime ) {
+			return new WP_Error( 'static_site_importer_companion_plugin_ip_classifier_missing', 'Public IP classifier projection file is unavailable.' );
+		}
 
 		$external_metrics = is_array( $payload['external_metrics'] ?? null ) ? array_values( $payload['external_metrics'] ) : array();
 		if ( ! empty( $external_metrics ) ) {
@@ -292,7 +296,7 @@ class Static_Site_Importer_Companion_Plugin {
 			if ( ! empty( $validated_metrics['errors'] ) ) {
 				return new WP_Error( 'static_site_importer_companion_plugin_external_metrics_invalid', 'Companion external metric configuration failed validation.', $validated_metrics['errors'] ); }
 		}
-		$inventory_source = array( $block_names, $preserved, $form_visual_states, $external_metrics, hash( 'sha256', $provider_form_runtime ), hash( 'sha256', $internal_link_runtime ), hash( 'sha256', $source_route_runtime ), hash( 'sha256', $external_metric_runtime ) );
+		$inventory_source = array( $block_names, $preserved, $form_visual_states, $external_metrics, hash( 'sha256', $provider_form_runtime ), hash( 'sha256', $internal_link_runtime ), hash( 'sha256', $source_route_runtime ), hash( 'sha256', $external_metric_runtime ), hash( 'sha256', $ip_classifier_runtime ) );
 		if ( ! empty( $editor_scripts ) ) {
 			$inventory_source[] = $editor_scripts;
 		}
@@ -302,6 +306,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$link_runtime_class     = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Internal_Link_Runtime';
 		$redirect_runtime_class = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Source_Route_Redirect';
 		$metric_runtime_class   = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_External_Metric_Runtime';
+		$ip_classifier_class    = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_IP_Classifier';
 		$main_file              = $plugin_slug . '/' . $plugin_slug . '.php';
 		$config                 = wp_json_encode(
 			array(
@@ -340,7 +345,8 @@ class Static_Site_Importer_Companion_Plugin {
 		$files[ $plugin_slug . '/includes/provider-form-runtime-v1.php' ] = self::provider_form_runtime_file( $provider_form_runtime, $runtime_class );
 		$files[ $plugin_slug . '/includes/internal-link-runtime.php' ]    = self::internal_link_runtime_file( $internal_link_runtime, $link_runtime_class );
 		$files[ $plugin_slug . '/includes/source-route-redirect.php' ]    = self::source_route_redirect_file( $source_route_runtime, $redirect_runtime_class );
-		$files[ $plugin_slug . '/includes/external-metric-runtime.php' ]  = self::external_metric_runtime_file( $external_metric_runtime, $metric_runtime_class );
+		$files[ $plugin_slug . '/includes/external-metric-runtime.php' ]  = self::external_metric_runtime_file( $external_metric_runtime, $metric_runtime_class, $ip_classifier_class );
+		$files[ $plugin_slug . '/includes/ip-classifier.php' ]            = self::ip_classifier_runtime_file( $ip_classifier_runtime, $ip_classifier_class );
 		$artifact_provenance = self::artifact_provenance( $payload );
 		$inventory           = Static_Site_Importer_Companion_Inventory::compose(
 			array(
@@ -996,8 +1002,13 @@ JS;
 		return str_replace( 'Static_Site_Importer_Provider_Form_Runtime_V1', $runtime_class, $source );
 	}
 
-	private static function external_metric_runtime_file( string $source, string $runtime_class ): string {
-		return str_replace( 'Static_Site_Importer_External_Metric_Runtime', $runtime_class, $source );
+	private static function external_metric_runtime_file( string $source, string $runtime_class, string $ip_classifier_class ): string {
+		$source = str_replace( 'Static_Site_Importer_External_Metric_Runtime', $runtime_class, $source );
+		return str_replace( 'Static_Site_Importer_IP_Classifier', $ip_classifier_class, $source );
+	}
+
+	private static function ip_classifier_runtime_file( string $source, string $runtime_class ): string {
+		return str_replace( 'Static_Site_Importer_IP_Classifier', $runtime_class, $source );
 	}
 
 	/** Editor-side refresh and detach controls for native paragraph/heading bindings. */
@@ -1039,7 +1050,7 @@ JS;
 			}
 			function refresh() {
 				if ( ! wp.apiFetch ) { return; }
-				setRefreshState( { loading: true, status: 'loading', value: null, receipt: null, message: 'Refreshing the WordPress.org metric…' } );
+				setRefreshState( { loading: true, status: 'loading', value: null, receipt: null, message: 'Refreshing the configured external source…' } );
 				return wp.apiFetch( { path: '/ssi/v1/external-metrics/' + encodeURIComponent( id ) + '/refresh', method: 'POST' } ).then( function( response ) {
 					var receipt = response && response.receipt ? response.receipt : {};
 					setRefreshState( {
@@ -1066,7 +1077,7 @@ JS;
 			return el( wp.element.Fragment, null,
 				el( wp.blockEditor.InspectorControls, null,
 					el( wp.components.PanelBody, { title: 'External metric', initialOpen: false },
-						el( 'p', null, 'Source: WordPress.org · Metric: ' + id + ' · Slugs: ' + ( config.provider && config.provider.slugs ? config.provider.slugs.join( ', ' ) : 'configured source' ) ),
+						el( 'p', null, 'Source: ' + ( config.source && config.source.id ? config.source.id : 'configured source' ) + ' · Metric: ' + config.metric ),
 						refreshState && refreshState.loading ? el( 'p', { role: 'status' }, refreshState.message ) : null,
 						refreshState && ! refreshState.loading ? el( 'p', { role: 'status' }, null !== refreshState.value ? 'Current value: ' + refreshState.value + ' · Freshness: ' + refreshState.status : 'Value unavailable · Freshness: ' + refreshState.status ) : null,
 						refreshState && ! refreshState.loading ? el( 'p', { className: 'description' }, refreshState.message ) : null,

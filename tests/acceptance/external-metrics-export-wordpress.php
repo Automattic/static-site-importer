@@ -2,6 +2,7 @@
 /** Export native external metrics as producer-contract runtime declarations. */
 if ( ! defined( 'ABSPATH' ) || '1' !== getenv( 'SSI_EXTERNAL_METRICS_DISPOSABLE' ) ) {
 	throw new RuntimeException( 'External metric export test requires disposable WordPress.' ); }
+require_once __DIR__ . '/blocks-engine-source-autoloader.php';
 $metric_post_id = (int) get_option( 'ssi_external_metric_acceptance_post_id', 0 );
 $export         = Static_Site_Importer_Theme_Exporter::export_theme(
 	array(
@@ -19,9 +20,9 @@ foreach ( $declarations as $declaration ) {
 	if ( is_array( $declaration ) && 'external_metrics' === ( $declaration['type'] ?? '' ) ) {
 		$external = $declaration['payload']['entities'] ?? array(); }
 }
-if ( 5 !== count( $external ) ) {
+if ( 7 !== count( $external ) ) {
 	throw new RuntimeException(
-		'SSI export did not preserve all five trusted external metric declarations: ' . wp_json_encode(
+		'SSI export did not preserve all seven source-recipe-bound native metric declarations: ' . wp_json_encode(
 			array(
 				'declaration_count' => count( $declarations ),
 				'metric_count'      => count( $external ),

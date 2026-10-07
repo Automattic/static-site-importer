@@ -1749,13 +1749,26 @@ $cleanup( $ssi_companion_tmp );
 $metric_fallback = '12,000+';
 $metric_fact     = array(
 	'id'          => 'project-installs',
-	'provider'    => array(
-		'schema' => 'generic/external-metric-provider/v1',
-		'id'     => 'wordpress.org',
-		'source' => 'plugin_information',
-		'slugs'  => array( 'block-visibility' ),
+	'source'      => array(
+		'schema'    => 'generic/external-metric-source/v1',
+		'id'        => 'wordpress.org.plugin-information',
+		'intent'    => 'external_public_json',
+		'request'   => array(
+			'method'              => 'GET',
+			'url_template'        => 'https://api.wordpress.org/plugins/info/1.2/',
+			'query'               => array( 'action' => 'plugin_information' ),
+			'query_variables'     => array( 'slug' ),
+			'headers'             => array( 'Accept' => 'application/json' ),
+			'response_media_type' => 'application/json',
+			'max_response_bytes'  => 1048576,
+			'timeout_seconds'     => 5,
+		),
+		'resource_variables' => array( 'slug' => array( 'location' => 'query', 'min_length' => 1, 'max_length' => 100, 'allowed_characters' => 'abcdefghijklmnopqrstuvwxyz0123456789-', 'first_characters' => 'abcdefghijklmnopqrstuvwxyz0123456789', 'prohibited_values' => array() ) ),
+		'resources' => array( array( 'slug' => 'block-visibility' ) ),
+		'freshness' => array( 'max_age_seconds' => 3600 ),
 	),
 	'metric'      => 'active_installs',
+	'extraction'  => array( 'kind' => 'json_pointer', 'pointer' => '/active_installs', 'value_type' => 'nonnegative_integer' ),
 	'aggregation' => 'sum',
 	'format'      => array(
 		'locale'   => 'en-US',
@@ -1801,7 +1814,8 @@ if ( ! is_wp_error( $metric_scaffold ) ) {
 	$metric_files   = $metric_scaffold['files'];
 	$metric_runtime = $metric_files['ssi-metric-site/includes/external-metric-runtime.php'] ?? '';
 	$metric_main    = $metric_files['ssi-metric-site/ssi-metric-site.php'] ?? '';
-	$assert( str_contains( $metric_runtime, 'https://api.wordpress.org/plugins/info/1.2/' ) && str_contains( $metric_runtime, 'generic/external-metric-provider/v1' ), 'external-metric-companion-owns-fixed-provider-runtime' );
+	$assert( str_contains( $metric_runtime, 'generic/external-metric-source/v1' ) && str_contains( $metric_runtime, 'json_pointer_value' ) && str_contains( $metric_runtime, 'wp_safe_remote_get' ), 'external-metric-companion-owns-generic-bounded-http-json-runtime' );
+	$assert( isset( $metric_files['ssi-metric-site/includes/ip-classifier.php'] ), 'external-metric-companion-packages-public-ip-classifier' );
 	$assert( str_contains( $metric_main, '::configure(' ) && str_contains( $metric_main, '::register()' ), 'external-metric-companion-configures-native-binding-source' );
 	$assert( str_contains( $metric_files['ssi-metric-site/editor/external-metric-controls.js'] ?? '', 'Detach to static text' ), 'external-metric-companion-packages-detach-control' );
 	$config = json_decode( $metric_files['ssi-metric-site/companion.json'] ?? '', true );

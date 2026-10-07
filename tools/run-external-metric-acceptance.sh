@@ -4,6 +4,11 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 evidence="${SSI_EXTERNAL_METRICS_EVIDENCE:?Supply a task evidence directory outside this checkout}"
 core_archive="${SSI_WORDPRESS_CORE_ARCHIVE:?Supply the verified WordPress 7.1 core-only archive}"
+producer_source="${SSI_BLOCKS_ENGINE_PHP_TRANSFORMER_SOURCE:?Supply the committed paired Blocks Engine php-transformer source checkout for prototype acceptance}"
+test -f "$producer_source/composer.json"
+test -f "$producer_source/vendor/autoload.php"
+test -z "$(git -C "$producer_source" status --porcelain)"
+producer_sha="$(git -C "$producer_source" rev-parse HEAD)"
 expected_sha256="a874a9c66927ba4e21f30dd88b31c1df12f5a25049e81efb4ceab856da43c27b"
 actual_sha256="$(sha256sum "$core_archive" | cut -d' ' -f1)"
 test "$actual_sha256" = "$expected_sha256"
@@ -64,11 +69,13 @@ for attempt in $(seq 1 60); do if docker exec "${project}_db" mysqladmin ping -u
 docker run --detach --name "${project}_wp" --network "$network" --publish "127.0.0.1:${port}:80" \
 	-e WORDPRESS_DB_HOST=mysql -e WORDPRESS_DB_USER=wordpress -e WORDPRESS_DB_PASSWORD=wordpress -e WORDPRESS_DB_NAME=wordpress \
 	-v "$volume:/var/www/html" -v "$root:/var/www/html/wp-content/plugins/static-site-importer:ro" \
+	-v "$producer_source:/producer-transformer:ro" \
 	-v "$evidence:/evidence" wordpress:7.0.4-php8.3-apache >/dev/null
 wp=(docker run --rm --network "$network" --user 33:33 -e WP_CLI_CACHE_DIR=/tmp/wp-cli-cache \
 	-e WORDPRESS_DB_HOST=mysql -e WORDPRESS_DB_USER=wordpress -e WORDPRESS_DB_PASSWORD=wordpress -e WORDPRESS_DB_NAME=wordpress \
-	-e SSI_EXTERNAL_METRICS_DISPOSABLE=1 -v "$volume:/var/www/html" \
+	-e SSI_EXTERNAL_METRICS_DISPOSABLE=1 -e SSI_BLOCKS_ENGINE_PHP_TRANSFORMER_SOURCE=/producer-transformer -v "$volume:/var/www/html" \
 	-v "$root:/var/www/html/wp-content/plugins/static-site-importer:ro" -v "$evidence:/evidence" \
+	-v "$producer_source:/producer-transformer:ro" \
 	wordpress:cli-php8.3 wp --allow-root)
 for attempt in $(seq 1 60); do if curl --silent --fail "http://127.0.0.1:${port}/wp-login.php" >/dev/null; then break; fi; sleep 2; done
 "${wp[@]}" core install --url="http://127.0.0.1:${port}" --title='External Metrics Acceptance' \
@@ -100,8 +107,9 @@ docker run --detach --name "${project}_wp2" --network "$network" --publish "127.
 	wordpress:7.0.4-php8.3-apache >/dev/null
 wp2=(docker run --rm --network "$network" --user 33:33 -e WP_CLI_CACHE_DIR=/tmp/wp-cli-cache \
 	-e WORDPRESS_DB_HOST=mysql2 -e WORDPRESS_DB_USER=wordpress -e WORDPRESS_DB_PASSWORD=wordpress -e WORDPRESS_DB_NAME=wordpress \
-	-e SSI_EXTERNAL_METRICS_DISPOSABLE=1 -v "$volume2:/var/www/html" \
+	-e SSI_EXTERNAL_METRICS_DISPOSABLE=1 -e SSI_BLOCKS_ENGINE_PHP_TRANSFORMER_SOURCE=/producer-transformer -v "$volume2:/var/www/html" \
 	-v "$root:/var/www/html/wp-content/plugins/static-site-importer:ro" -v "$evidence:/evidence" \
+	-v "$producer_source:/producer-transformer:ro" \
 	wordpress:cli-php8.3 wp --allow-root)
 for attempt in $(seq 1 60); do if curl --silent --fail "http://127.0.0.1:${port2}/wp-login.php" >/dev/null; then break; fi; sleep 2; done
 "${wp2[@]}" core install --url="http://127.0.0.1:${port2}" --title='External Metrics Reimport' \
@@ -125,4 +133,5 @@ printf 'core_archive_sha256=%s\ncore_version=%s\nphp_transformer_version=%s\nphp
 	"$actual_sha256" "$(<"$evidence/wordpress-core-version.txt")" \
 	"$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).version)' "$evidence/release-package-identity.json")" \
 	"$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).source_ref)' "$evidence/release-package-identity.json")" > "$evidence/runtime-identity.txt"
+printf 'producer_source=%s\nproducer_sha=%s\n' "$producer_source" "$producer_sha" > "$evidence/producer-source-identity.txt"
 printf 'External metric materialization evidence retained at %s\n' "$evidence"

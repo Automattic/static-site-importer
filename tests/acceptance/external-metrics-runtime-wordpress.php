@@ -8,32 +8,65 @@ $assert         = static function ( bool $condition, string $message ): void {
 	} };
 $metric_post_id = (int) get_option( 'ssi_external_metric_acceptance_post_id', 0 );
 $facts          = get_option( 'ssi_external_metric_acceptance_facts', array() );
-$assert( $metric_post_id > 0 && is_array( $facts ) && 5 === count( $facts ), 'A completed five-fact imported page is persisted.' );
-$post_content = (string) get_post_field( 'post_content', $metric_post_id );
-$before_hash  = hash( 'sha256', $post_content );
-$rendered     = do_blocks( $post_content );
-$assert( is_string( $rendered ) && '' !== $rendered, 'WordPress renders persisted native text blocks.' );
-foreach ( $facts as $fact ) {
-	$assert( ! str_contains( $rendered, (string) $fact['fallback']['text'] ), 'Fresh WordPress.org value replaces fallback for ' . $fact['id'] ); }
-$receipts = get_option( 'static_site_importer_external_metric_receipts', array() );
-foreach ( $facts as $fact ) {
-	$row = $receipts[ $fact['id'] ] ?? array();
-	$assert( 'fresh' === ( $row['status'] ?? '' ) && is_int( $row['fetched_at'] ?? null ) && ! empty( $row['value'] ), 'Timestamped fresh provider receipt exists for ' . $fact['id'] ); }
+$assert( $metric_post_id > 0 && is_array( $facts ) && 7 === count( $facts ), 'A completed mixed-source seven-fact imported page is persisted.' );
 $plugin_file  = (string) get_option( 'static_site_importer_active_companion_plugin', '' );
 $runtime_file = WP_PLUGIN_DIR . '/' . dirname( $plugin_file ) . '/includes/external-metric-runtime.php';
 $source       = is_readable( $runtime_file ) ? (string) file_get_contents( $runtime_file ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads generated local companion runtime source for the acceptance assertion.
 preg_match( '/final class ([A-Za-z_][A-Za-z0-9_]*)/', $source, $class_match );
 $runtime_class = $class_match[1] ?? '';
-$assert( '' !== $runtime_class && class_exists( $runtime_class ), 'Generated companion owns its independent provider runtime.' );
+$assert( '' !== $runtime_class && class_exists( $runtime_class ), 'Generated companion owns its independent generic runtime.' );
+$fact_map = array_column( $facts, null, 'id' );
+$success_count_fact = $fact_map['active-installs'];
+$success_count_fact['id'] = 'project-count';
+$success_count_fact['metric'] = 'plugin_response_count';
+$success_count_fact['aggregation'] = 'success_count';
+$success_count_fact['extraction'] = array( 'kind' => 'json_pointer', 'pointer' => '/slug', 'value_type' => 'string', 'max_length' => 255 );
+$success_count_fact['format'] = array( 'locale' => 'en-US', 'grouping' => true, 'prefix' => '', 'suffix' => '', 'decimals' => 0 );
+$success_count_fact['fallback'] = array( 'text' => 'Captured successful project count', 'hash' => hash( 'sha256', 'Captured successful project count' ) );
+$success_count_fact['bindings'][0]['search_block_markup'] = '<!-- wp:paragraph --><p>Captured successful project count</p><!-- /wp:paragraph -->';
+$fact_map['project-count'] = $success_count_fact;
+$facts[] = $success_count_fact;
+$companion_path = WP_PLUGIN_DIR . '/' . dirname( $plugin_file );
+$config_path = $companion_path . '/companion.json';
+$config = json_decode( (string) file_get_contents( $config_path ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the generated disposable companion config for the generic typed response prerequisite test.
+$config['external_metrics'][] = $success_count_fact;
+file_put_contents( $config_path, wp_json_encode( $config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Adds the canonical source fact to the disposable standalone consumer while producer source transport adopts its typed success_count prerequisite.
+update_option( 'ssi_external_metric_acceptance_facts', $facts, false );
+$runtime_metrics = array_column( $facts, null, 'id' );
+$success_count_value = call_user_func( array( $runtime_class, 'value' ), 'project-count', $runtime_metrics, null, null, true );
+$assert( '5' === $success_count_value && 'fresh' === ( get_option( 'static_site_importer_external_metric_receipts', array() )['project-count']['status'] ?? '' ), 'Real WordPress.org success_count performs a typed /slug prerequisite over its five public resources.' );
+$post_content = (string) get_post_field( 'post_content', $metric_post_id );
+$before_hash  = hash( 'sha256', $post_content );
+$rendered     = do_blocks( $post_content );
+$assert( is_string( $rendered ) && '' !== $rendered, 'WordPress renders persisted native text blocks.' );
+foreach ( $facts as $fact ) {
+	$receipt_value = get_option( 'static_site_importer_external_metric_receipts', array() )[ $fact['id'] ]['value'] ?? null;
+	if ( 'project-count' !== $fact['id'] ) {
+		$assert( is_string( $receipt_value ) && str_contains( $rendered, $receipt_value ), 'Fresh declarative-source value renders for ' . $fact['id'] ); }
+	if ( 'project-count' !== $fact['id'] && $receipt_value !== (string) $fact['fallback']['text'] ) {
+		$assert( ! str_contains( $rendered, (string) $fact['fallback']['text'] ), 'Fresh value replaces captured fallback for ' . $fact['id'] ); }
+}
+$receipts = get_option( 'static_site_importer_external_metric_receipts', array() );
+foreach ( $facts as $fact ) {
+	$row = $receipts[ $fact['id'] ] ?? array();
+	$assert( 'fresh' === ( $row['status'] ?? '' ) && is_int( $row['fetched_at'] ?? null ) && '' !== (string) ( $row['value'] ?? '' ) && ( $row['source_id'] ?? '' ) === ( $fact['source']['id'] ?? '' ), 'Timestamped fresh source receipt exists for ' . $fact['id'] ); }
+$github_api = wp_safe_remote_get( 'https://api.github.com/repos/Automattic/.github', array( 'timeout' => 5, 'redirection' => 0, 'headers' => array( 'Accept' => 'application/vnd.github+json', 'X-GitHub-Api-Version' => '2022-11-28' ) ) );
+$github_data = ! is_wp_error( $github_api ) && 200 === (int) wp_remote_retrieve_response_code( $github_api ) ? json_decode( wp_remote_retrieve_body( $github_api ), true ) : array();
+$assert( is_array( $github_data ) && is_int( $github_data['stargazers_count'] ?? null ) && is_int( $github_data['forks_count'] ?? null ), 'Independent live GitHub API observation contains exact integer stargazers_count and forks_count fields: status=' . ( is_wp_error( $github_api ) ? $github_api->get_error_message() : wp_remote_retrieve_response_code( $github_api ) ) . ' body=' . wp_remote_retrieve_body( $github_api ) );
+$assert( (string) ( $github_data['stargazers_count'] ?? '' ) === ( $receipts['github-stars']['value'] ?? null ) && (string) ( $github_data['forks_count'] ?? '' ) === ( $receipts['github-forks']['value'] ?? null ), 'Generated runtime receipts equal the independently queried GitHub API fields exactly.' );
+$assert( ( $receipts['github-stars']['fetched_at'] ?? null ) === ( $receipts['github-forks']['fetched_at'] ?? null ), 'GitHub stars and forks reuse the same source response timestamp.' );
+$neutral_api = wp_safe_remote_get( 'https://jsonplaceholder.typicode.com/todos/1', array( 'timeout' => 5, 'redirection' => 0, 'headers' => array( 'Accept' => 'application/json' ) ) );
+$neutral_data = ! is_wp_error( $neutral_api ) && 200 === (int) wp_remote_retrieve_response_code( $neutral_api ) ? json_decode( wp_remote_retrieve_body( $neutral_api ), true ) : array();
+$assert( is_array( $neutral_data ) && is_int( $neutral_data['userId'] ?? null ) && (string) $neutral_data['userId'] === ( $receipts['neutral-score']['value'] ?? null ), 'Third neutral public JSON source renders its independently observed userId field through the same companion interpreter.' );
 $assert( hash( 'sha256', (string) get_post_field( 'post_content', $metric_post_id ) ) === $before_hash, 'Fetch and cache expiry refresh leave saved post content unchanged.' );
 
 // A separate editor page proves that refresh returns a new value for the
 // existing native binding controls, and that detach freezes that exact value.
 $metric_map         = array_column( $facts, null, 'id' );
-$make_editor_metric = static function ( array $template, string $id, string $slug, string $fallback, string $role ): array {
+$make_editor_metric = static function ( array $template, string $id, array $resource, string $fallback, string $role ): array {
 	$fact                      = $template;
 	$fact['id']                = $id;
-	$fact['provider']['slugs'] = array( $slug );
+	$fact['source']['resources'] = array( $resource );
 	$fact['fallback']['text']  = $fallback;
 	$fact['fallback']['hash']  = hash( 'sha256', $fallback );
 	$block                     = 'heading' === $role ? 'core/heading' : 'core/paragraph';
@@ -52,14 +85,11 @@ $make_editor_metric = static function ( array $template, string $id, string $slu
 	return $fact;
 };
 $editor_facts       = array(
-	$make_editor_metric( $metric_map['active-installs'], 'editor-detach-metric', 'ssi-editor-controlled', '111+', 'paragraph' ),
-	$make_editor_metric( $metric_map['active-installs'], 'editor-sibling-metric', 'ssi-editor-controlled', '999+', 'paragraph' ),
-	$make_editor_metric( $metric_map['project-version'], 'literal-fallback-paragraph', 'ssi-literal-paragraph', '<em>pending</em> "quoted" &amp; &#38;', 'paragraph' ),
-	$make_editor_metric( $metric_map['project-version'], 'literal-fallback-heading', 'ssi-literal-heading', '<em>pending</em> "quoted" &amp; &#38;', 'heading' ),
+	$make_editor_metric( $metric_map['github-stars'], 'editor-detach-metric', array( 'owner' => 'Automattic', 'repository' => '.github' ), 'captured-editor-stars', 'paragraph' ),
+	$make_editor_metric( $metric_map['github-forks'], 'editor-sibling-metric', array( 'owner' => 'Automattic', 'repository' => '.github' ), 'captured-editor-forks', 'paragraph' ),
+	$make_editor_metric( $metric_map['project-version'], 'literal-fallback-paragraph', array( 'slug' => 'ssi-literal-paragraph' ), '<em>pending</em> "quoted" &amp; &#38;', 'paragraph' ),
+	$make_editor_metric( $metric_map['project-version'], 'literal-fallback-heading', array( 'slug' => 'ssi-literal-heading' ), '<em>pending</em> "quoted" &amp; &#38;', 'heading' ),
 );
-$companion_path     = WP_PLUGIN_DIR . '/' . dirname( $plugin_file );
-$config_path        = $companion_path . '/companion.json';
-$config             = json_decode( (string) file_get_contents( $config_path ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the generated disposable companion config for editor setup.
 $assert( is_array( $config ) && is_array( $config['external_metrics'] ?? null ), 'Generated companion config is available for controlled editor acceptance.' );
 $config['external_metrics'] = array_merge( $config['external_metrics'], $editor_facts );
 // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Writes only the generated disposable companion fixture.
@@ -100,32 +130,34 @@ $editor_content = implode(
 				'custom' => 'preserve-me',
 			)
 		),
-		$editor_block( 'editor-sibling-binding', 'editor-sibling-metric', 'p', '999+', array( 'name' => 'Preserve sibling binding' ) ),
+		$editor_block( 'editor-sibling-binding', 'editor-sibling-metric', 'p', 'captured-editor-forks', array( 'name' => 'Preserve sibling binding' ) ),
 		$editor_block( 'literal-fallback-paragraph', 'literal-fallback-paragraph', 'p', $editor_facts[2]['fallback']['text'] ),
 		$editor_block( 'literal-fallback-heading', 'literal-fallback-heading', 'h2', $editor_facts[3]['fallback']['text'] ),
 	)
 );
 
-// Exercise the generated companion's shared transient path with two distinct
-// metric IDs and different captured fallbacks but identical provider semantics.
-call_user_func( array( $runtime_class, 'configure' ), array_merge( array_values( $metric_map ), $editor_facts ) );
-$alias_cache_key = 'ssi_external_metric_' . hash( 'sha256', (string) wp_json_encode( array( $editor_facts[0]['provider'], $editor_facts[0]['metric'], $editor_facts[0]['aggregation'], $editor_facts[0]['format'] ) ) );
+// Exercise one shared source response across GitHub star and fork extraction.
+call_user_func( array( $runtime_class, 'configure' ), array_merge( array_values( $metric_map ), $editor_facts, array( $success_count_fact ) ) );
+$alias_cache_key = 'ssi_external_metric_' . hash( 'sha256', (string) wp_json_encode( array( $editor_facts[0]['source'], $editor_facts[0]['metric'], $editor_facts[0]['extraction'], $editor_facts[0]['aggregation'], $editor_facts[0]['format'] ) ) );
 delete_transient( $alias_cache_key );
+$fork_cache_key = 'ssi_external_metric_' . hash( 'sha256', (string) wp_json_encode( array( $editor_facts[1]['source'], $editor_facts[1]['metric'], $editor_facts[1]['extraction'], $editor_facts[1]['aggregation'], $editor_facts[1]['format'] ) ) );
+delete_transient( $fork_cache_key );
+$source_cache_key = 'ssi_external_metric_source_' . hash( 'sha256', (string) wp_json_encode( $editor_facts[0]['source'] ) );
+delete_transient( $source_cache_key );
 $alias_receipts = get_option( 'static_site_importer_external_metric_receipts', array() );
 unset( $alias_receipts['editor-detach-metric'], $alias_receipts['editor-sibling-metric'] );
 update_option( 'static_site_importer_external_metric_receipts', $alias_receipts, false );
 $alias_fetches = 0;
 $alias_http    = static function ( mixed $preempt, array $args, string $url ) use ( &$alias_fetches ): mixed {
-	parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
-	if ( 'ssi-editor-controlled' !== ( $query['slug'] ?? '' ) ) {
+	if ( 'https://api.github.com/repos/Automattic/.github' !== $url ) {
 		return $preempt; }
 	++$alias_fetches;
 	return array(
 		'headers'  => array( 'content-type' => 'application/json' ),
 		'body'     => wp_json_encode(
 			array(
-				'active_installs' => 222,
-				'slug'            => 'ssi-editor-controlled',
+				'stargazers_count' => 222,
+				'forks_count'      => 333,
 			)
 		),
 		'response' => array(
@@ -137,18 +169,21 @@ $alias_http    = static function ( mixed $preempt, array $args, string $url ) us
 };
 add_filter( 'pre_http_request', $alias_http, 10, 3 );
 try {
+	$alias_metrics = array_column( array_merge( array_values( $metric_map ), $editor_facts ), null, 'id' );
+	$alias_seed = call_user_func( array( $runtime_class, 'value' ), 'editor-detach-metric', $alias_metrics, null, null, true );
 	$alias_render = do_blocks(
-		$editor_block( 'alias-cache-first', 'editor-detach-metric', 'p', '111+' ) . "\n" . $editor_block( 'alias-cache-second', 'editor-sibling-metric', 'p', '999+' )
+		$editor_block( 'alias-cache-first', 'editor-detach-metric', 'p', 'captured-editor-stars' ) . "\n" . $editor_block( 'alias-cache-second', 'editor-sibling-metric', 'p', 'captured-editor-forks' )
 	);
 } finally {
 	remove_filter( 'pre_http_request', $alias_http, 10 );
 }
+$assert( '222' === $alias_seed, 'Visible source refresh reads a fresh injected GitHub stars response before checking source cache reuse.' );
 $alias_receipts = get_option( 'static_site_importer_external_metric_receipts', array() );
 $first_receipt  = $alias_receipts['editor-detach-metric'] ?? array();
 $second_receipt = $alias_receipts['editor-sibling-metric'] ?? array();
-$assert( 1 === $alias_fetches && 2 === substr_count( $alias_render, '222+' ), 'Generated companion shares one provider fetch across two distinct same-semantics metric IDs and replaces fallbacks 111+/999+: ' . $alias_render );
-$assert( 'fresh' === ( $first_receipt['status'] ?? '' ) && '222+' === ( $first_receipt['value'] ?? '' ) && is_int( $first_receipt['fetched_at'] ?? null ), 'First alias receives the canonical fresh source receipt.' );
-$assert( 'fresh' === ( $second_receipt['status'] ?? '' ) && '222+' === ( $second_receipt['value'] ?? '' ) && ( $second_receipt['fetched_at'] ?? null ) === ( $first_receipt['fetched_at'] ?? null ) && 'wordpress.org' === ( $second_receipt['provider'] ?? '' ) && 'plugin_information' === ( $second_receipt['source'] ?? '' ), 'Cache-hit alias receives the same truthful canonical source receipt without a fabricated timestamp.' );
+$assert( 1 === $alias_fetches && str_contains( $alias_render, '>222</p>' ) && str_contains( $alias_render, '>333</p>' ), 'Generated companion shares one GitHub source request across distinct stars/forks JSON pointers: fetches=' . $alias_fetches . ' html=' . $alias_render );
+$assert( 'fresh' === ( $first_receipt['status'] ?? '' ) && '222' === ( $first_receipt['value'] ?? '' ) && is_int( $first_receipt['fetched_at'] ?? null ), 'GitHub stars receives the canonical fresh source receipt.' );
+$assert( 'fresh' === ( $second_receipt['status'] ?? '' ) && '333' === ( $second_receipt['value'] ?? '' ) && ( $second_receipt['fetched_at'] ?? null ) === ( $first_receipt['fetched_at'] ?? null ) && 'github.repository-information' === ( $second_receipt['source_id'] ?? '' ), 'GitHub forks reuses the same source receipt timestamp after extracting its own JSON pointer.' );
 $admin_user     = get_user_by( 'login', 'admin' );
 $editor_post_id = wp_insert_post(
 	array(
@@ -210,6 +245,8 @@ echo wp_json_encode(
 		'receipts'       => $receipts,
 		'alias_cache'    => array(
 			'provider_fetches' => $alias_fetches,
+			'github_value'     => $receipts['github-stars']['value'] ?? null,
+			'github_forks_value' => $receipts['github-forks']['value'] ?? null,
 			'rendered'         => $alias_render,
 			'receipts'         => array(
 				'editor-detach-metric'  => $first_receipt,

@@ -150,13 +150,13 @@ final class Static_Site_Importer_Companion_Inventory {
 		$form_states      = is_array( $input['form_visual_states'] ?? null ) ? $input['form_visual_states'] : array();
 		$external_metrics = array();
 		foreach ( is_array( $input['external_metrics'] ?? null ) ? $input['external_metrics'] : array() as $fact ) {
-			if ( ! is_array( $fact ) || ! is_array( $fact['provider'] ?? null ) ) {
+			if ( ! is_array( $fact ) || ! is_array( $fact['source'] ?? null ) ) {
 				continue; }
 			$external_metrics[] = array(
 				'id'                    => (string) ( $fact['id'] ?? '' ),
-				'provider'              => (string) ( $fact['provider']['id'] ?? '' ),
-				'source'                => (string) ( $fact['provider']['source'] ?? '' ),
-				'slugs'                 => array_values( array_filter( is_array( $fact['provider']['slugs'] ?? null ) ? $fact['provider']['slugs'] : array(), 'is_string' ) ),
+				'source_id'             => (string) ( $fact['source']['id'] ?? '' ),
+				'resources'             => is_array( $fact['source']['resources'] ?? null ) ? $fact['source']['resources'] : array(),
+				'freshness_seconds'     => (int) ( $fact['source']['freshness']['max_age_seconds'] ?? 0 ),
 				'metric'                => (string) ( $fact['metric'] ?? '' ),
 				'aggregation'           => (string) ( $fact['aggregation'] ?? '' ),
 				'fallback_hash'         => (string) ( $fact['fallback']['hash'] ?? '' ),
@@ -247,14 +247,14 @@ final class Static_Site_Importer_Companion_Inventory {
 		$lines[] = '';
 
 		if ( ! empty( $external_metrics ) ) {
-			$lines[] = '### Live WordPress.org metrics';
+			$lines[] = '### Live external metrics';
 			$lines[] = '';
-			$lines[] = 'These native text bindings use the fixed WordPress.org APIs. Their initial freshness receipt status is `captured_fallback` (or `unresolved` for an empty fallback); a successful frontend request changes it to `fresh`. Failed values use the last-known-good receipt as `stale`, or preserve the captured fallback. Partial aggregates are never shown as complete totals.';
+			$lines[] = 'These native text bindings use validated, declarative HTTPS JSON source recipes. Their initial freshness receipt status is `captured_fallback` (or `unresolved` for an empty fallback); a successful frontend request changes it to `fresh`. Failed values use the last-known-good receipt as `stale`, or preserve the captured fallback. Partial aggregates are never shown as complete totals.';
 			foreach ( $external_metrics as $metric ) {
 				$source  = trim( (string) ( $metric['provenance_repository'] ?? '' ) . '@' . (string) ( $metric['provenance_revision'] ?? '' ) . ':' . (string) ( $metric['provenance_source'] ?? '' ), '@:' );
-				$lines[] = '- `' . (string) ( $metric['id'] ?? '' ) . '` — ' . (string) ( $metric['provider'] ?? '' ) . ' `' . (string) ( $metric['source'] ?? '' ) . '` / `' . (string) ( $metric['metric'] ?? '' ) . '` (`' . (string) ( $metric['aggregation'] ?? '' ) . '`) for ' . implode( ', ', array_map( static fn ( string $slug ): string => '`' . $slug . '`', is_array( $metric['slugs'] ?? null ) ? $metric['slugs'] : array() ) ) . '; provenance `' . $source . '`; configuration status `' . (string) ( $metric['status'] ?? 'unknown' ) . '`.';
+				$resources = wp_json_encode( $metric['resources'] ?? array(), JSON_UNESCAPED_SLASHES );
+				$lines[] = '- `' . (string) ( $metric['id'] ?? '' ) . '` — source `' . (string) ( $metric['source_id'] ?? '' ) . '` / metric `' . (string) ( $metric['metric'] ?? '' ) . '` (`' . (string) ( $metric['aggregation'] ?? '' ) . '`) with freshness `' . (int) ( $metric['freshness_seconds'] ?? 0 ) . 's`, resources `' . ( is_string( $resources ) ? $resources : '[]' ) . '`; provenance `' . $source . '`; configuration status `' . (string) ( $metric['status'] ?? 'unknown' ) . '`.';
 			}
-			$lines[] = 'GitHub stars/forks are not covered by this provider and remain unresolved.';
 			$lines[] = '';
 		}
 		$lines[] = '### Captured snapshot';
