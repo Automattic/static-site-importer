@@ -117,23 +117,45 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 	 * Point member sign-in controls at this site's login.
 	 *
 	 * Data Liberation marks the source platform's member sign-in entry points
-	 * (`data-dla-member-login`) once it has removed the platform's own login,
-	 * and leaves the target to the destination. Here that is `wp_login_url()`,
-	 * returning the reader to the page they signed in from. Any source `href`
-	 * (the old platform's members area) is replaced.
+	 * once it has removed the platform's own login, and leaves the target to
+	 * the destination. The marker is the class `dla-member-login-<provider>`
+	 * (block conversion keeps classes), with `data-dla-member-login` where it
+	 * survived. Here the target is `wp_login_url()`, returning the reader to
+	 * the page they signed in from.
+	 *
+	 * - A marked link gets that `href`, replacing any source one (the old
+	 *   platform's members area).
+	 * - A marked button, or the button inside a marked core/button wrapper,
+	 *   becomes a link to it with the same classes and children (icon and
+	 *   label), since signing in is navigation once the platform's dialog is
+	 *   gone.
 	 */
 	public static function resolve_member_login_links( string $content ): string {
-		if ( ! str_contains( $content, 'data-dla-member-login' ) || ! function_exists( 'wp_login_url' ) ) {
+		if ( ! str_contains( $content, 'dla-member-login' ) || ! function_exists( 'wp_login_url' ) ) {
 			return $content;
 		}
-		$login = esc_url( wp_login_url( self::current_url() ) );
+		$login  = esc_url( wp_login_url( self::current_url() ) );
+		$marked = '(?=[^>]*(?:\sdata-dla-member-login\b|\sclass\s*=\s*["\'][^"\']*\bdla-member-login-[a-z0-9_-]+))';
+		$href   = '~\s+href\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)~i';
+		$type   = '~\s+type\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)~i';
+		$link   = static fn( string $attributes ): string => '<a href="' . $login . '"' . (string) preg_replace( array( $href, $type ), '', $attributes ) . '>';
+
+		// The button inside a marked core/button wrapper.
+		$content = preg_replace_callback(
+			'~(<div\b' . $marked . '[^>]*>\s*)<button\b([^>]*)>(.*?)</button>~is',
+			static fn( array $m ): string => $m[1] . $link( $m[2] ) . $m[3] . '</a>',
+			$content
+		) ?? $content;
+		// A marked button itself (buttons cannot nest, so the first close is its own).
+		$content = preg_replace_callback(
+			'~<button\b' . $marked . '([^>]*)>(.*?)</button>~is',
+			static fn( array $m ): string => $link( $m[1] ) . $m[2] . '</a>',
+			$content
+		) ?? $content;
 
 		return preg_replace_callback(
-			'~<a\b(?=[^>]*\sdata-dla-member-login\b)([^>]*)>~i',
-			static function ( array $matches ) use ( $login ): string {
-				$attributes = (string) preg_replace( '~\s+href\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)~i', '', $matches[1] );
-				return '<a href="' . $login . '"' . $attributes . '>';
-			},
+			'~<a\b' . $marked . '([^>]*)>~i',
+			static fn( array $m ): string => $link( $m[1] ),
 			$content
 		) ?? $content;
 	}
