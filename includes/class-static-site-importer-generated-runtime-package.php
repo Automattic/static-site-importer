@@ -23,8 +23,8 @@ final class Static_Site_Importer_Generated_Runtime_Package {
 		foreach ( $package['files'] as $path => $bytes ) {
 			$files[ self::DIRECTORY . '/' . substr( $path, strlen( $package['slug'] ) + 1 ) ] = $bytes;
 		}
-		$package['files']       = $files;
-		$package['entrypoint']  = self::DIRECTORY . '/runtime.php';
+		$package['files']      = $files;
+		$package['entrypoint'] = self::DIRECTORY . '/runtime.php';
 		unset( $package['plugin_file'], $package['mu_plugin'], $package['loader_file'] );
 		return $package;
 	}
@@ -35,7 +35,7 @@ final class Static_Site_Importer_Generated_Runtime_Package {
 		$found     = false;
 		$targets   = array();
 		foreach ( $resolved['writes'] as &$write ) {
-			$target = (string) ( $write['target_path'] ?? '' );
+			$target             = (string) ( $write['target_path'] ?? '' );
 			$targets[ $target ] = true;
 			if ( 'functions.php' !== $target ) {
 				continue;
@@ -44,9 +44,12 @@ final class Static_Site_Importer_Generated_Runtime_Package {
 			if ( ! str_contains( $content, $bootstrap ) ) {
 				$content .= $bootstrap;
 			}
-			$write['payload']      = array( 'encoding' => 'utf8', 'data' => $content );
+			$write['payload']      = array(
+				'encoding' => 'utf8',
+				'data'     => $content,
+			);
 			$write['payload_hash'] = hash( 'sha256', $content );
-			$found                = true;
+			$found                 = true;
 		}
 		unset( $write );
 		if ( ! $found ) {
@@ -64,11 +67,15 @@ final class Static_Site_Importer_Generated_Runtime_Package {
 	private static function write( string $path, string $bytes, string $kind ): array {
 		$binary = 1 !== preg_match( '//u', $bytes );
 		return array(
-			'kind' => $kind,
-			'source_path' => '',
-			'target_path' => $path,
-			'payload' => array( 'encoding' => $binary ? 'base64' : 'utf8', 'data' => $binary ? base64_encode( $bytes ) : $bytes ),
-			'payload_hash' => hash( 'sha256', $bytes ),
+			'kind'                    => $kind,
+			'source_path'             => '',
+			'target_path'             => $path,
+			'payload'                 => array(
+				'encoding' => $binary ? 'base64' : 'utf8',
+				// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Binary artifact payloads use explicit base64 transport encoding.
+				'data'     => $binary ? base64_encode( $bytes ) : $bytes,
+			),
+			'payload_hash'            => hash( 'sha256', $bytes ),
 			'reconciliation_identity' => hash( 'sha256', 'theme-runtime:' . $path ),
 		);
 	}
@@ -81,7 +88,7 @@ final class Static_Site_Importer_Generated_Runtime_Package {
 				continue;
 			}
 			$owner = $GLOBALS['static_site_importer_runtime_block_owners'][ $name ] ?? array();
-			if ( 'theme' !== ( $owner['owner'] ?? '' ) || $directory . '/' . $package['entrypoint'] !== ( $owner['path'] ?? '' ) ) {
+			if ( 'theme' !== ( $owner['owner'] ?? '' ) || ( $owner['path'] ?? '' ) !== $directory . '/' . $package['entrypoint'] ) {
 				return new WP_Error( 'static_site_importer_runtime_block_name_collision', 'Generated block name is already owned by another destination.', array( 'block_name' => $name ) );
 			}
 		}
@@ -92,14 +99,17 @@ final class Static_Site_Importer_Generated_Runtime_Package {
 	public static function registration_snapshot( array $package, string $directory ): array {
 		$names = $package['block_names'];
 		foreach ( $GLOBALS['static_site_importer_runtime_block_owners'] ?? array() as $name => $owner ) {
-			if ( 'theme' === ( $owner['owner'] ?? '' ) && $directory . '/' . $package['entrypoint'] === ( $owner['path'] ?? '' ) ) {
+			if ( 'theme' === ( $owner['owner'] ?? '' ) && ( $owner['path'] ?? '' ) === $directory . '/' . $package['entrypoint'] ) {
 				$names[] = $name;
 			}
 		}
 		$registry = WP_Block_Type_Registry::get_instance();
 		$snapshot = array();
 		foreach ( array_unique( $names ) as $name ) {
-			$snapshot[ $name ] = array( 'block' => $registry->get_registered( $name ), 'owner' => $GLOBALS['static_site_importer_runtime_block_owners'][ $name ] ?? null );
+			$snapshot[ $name ] = array(
+				'block' => $registry->get_registered( $name ),
+				'owner' => $GLOBALS['static_site_importer_runtime_block_owners'][ $name ] ?? null,
+			);
 		}
 		return $snapshot;
 	}
@@ -123,7 +133,7 @@ final class Static_Site_Importer_Generated_Runtime_Package {
 
 	/** Load the installed theme package immediately for page-ready/editor admission. */
 	public static function register( array $package, string $directory ) {
-		$callback = $package['registration_callback'];
+		$callback  = $package['registration_callback'];
 		$collision = self::preflight_blocks( $package, $directory );
 		if ( is_wp_error( $collision ) ) {
 			return $collision;

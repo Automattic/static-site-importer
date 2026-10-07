@@ -182,7 +182,7 @@ class Static_Site_Importer_Theme_Exporter {
 				}
 
 				$chrome['after'] .= self::export_document_scripts( $page_id, $theme_dir, str_repeat( '../', substr_count( substr( $path, strlen( $root ) + 1 ), '/' ) ) );
-				$files[] = self::export_file_entry(
+				$files[]          = self::export_file_entry(
 					$path,
 					self::export_html_document( $page_html, $chrome, self::export_page_title( $page, $theme_slug ), null !== $stylesheet, null !== $global_stylesheet ),
 					'document',
@@ -448,6 +448,7 @@ class Static_Site_Importer_Theme_Exporter {
 			if ( ! str_starts_with( $path, 'assets/' ) || preg_match( '~(?:^|/)(?:\.|\.\.)(?:/|$)|[\\\\?#\x00]~', $path ) || ! self::export_is_supported_asset_path( $path ) || 'script' !== self::export_role_from_path( $path ) || ! is_readable( $theme_dir . '/' . $path ) ) {
 				continue;
 			}
+			// phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedScript -- Emits a portable HTML artifact rather than a live WordPress response.
 			$html .= '<script src="' . htmlspecialchars( $asset_prefix . $path, ENT_QUOTES, 'UTF-8' ) . '"';
 			foreach ( array( 'type', 'defer', 'async', 'crossorigin', 'integrity' ) as $attribute ) {
 				$value = $script['attributes'][ $attribute ] ?? null;
@@ -936,9 +937,13 @@ class Static_Site_Importer_Theme_Exporter {
 		if ( ! empty( $runtime_declarations ) ) {
 			$artifact['runtime_declarations'] = $runtime_declarations; }
 		$runtime_config_path = self::export_theme_dir( $theme_slug ) . '/ssi-runtime/companion.json';
-		$runtime_config = is_readable( $runtime_config_path ) ? json_decode( (string) file_get_contents( $runtime_config_path ), true ) : null;
-		if ( 'theme' === ( $runtime_config['owner'] ?? '' ) && $theme_slug === ( $runtime_config['owner_slug'] ?? '' ) ) {
-			$artifact['provenance']['materialized_from']['runtime_owner'] = array( 'type' => 'theme', 'slug' => $theme_slug, 'directory' => 'ssi-runtime' );
+		$runtime_config      = is_readable( $runtime_config_path ) ? json_decode( (string) file_get_contents( $runtime_config_path ), true ) : null; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the exported theme's local declarative runtime inventory.
+		if ( 'theme' === ( $runtime_config['owner'] ?? '' ) && ( $runtime_config['owner_slug'] ?? '' ) === $theme_slug ) {
+			$artifact['provenance']['materialized_from']['runtime_owner'] = array(
+				'type'      => 'theme',
+				'slug'      => $theme_slug,
+				'directory' => 'ssi-runtime',
+			);
 		}
 		return $artifact;
 	}

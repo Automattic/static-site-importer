@@ -327,8 +327,8 @@ class Static_Site_Importer_Companion_Plugin {
 			$metric_runtime_class   = $class_prefix . '_External_Metric_Runtime';
 			$ip_classifier_class    = $class_prefix . '_IP_Classifier';
 		}
-		$main_file              = $plugin_slug . '/' . ( 'theme' === $owner ? 'runtime.php' : $plugin_slug . '.php' );
-		$config                 = wp_json_encode(
+		$main_file = $plugin_slug . '/' . ( 'theme' === $owner ? 'runtime.php' : $plugin_slug . '.php' );
+		$config    = wp_json_encode(
 			array(
 				'site_name'          => $site_name,
 				'owner'              => $owner,
@@ -895,6 +895,7 @@ class Static_Site_Importer_Companion_Plugin {
 			$lines[] = "\t\t\t}";
 			$lines[] = sprintf( "\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'][ \$registered->name ] = array( 'plugin_file' => (string) ( %s_config()['plugin_file'] ?? '' ), 'plugin_path' => __FILE__ );", $fn_prefix );
 		}
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Serializes the validated destination owner into trusted generated PHP.
 		$lines[] = sprintf( "\t\t\t\$GLOBALS['static_site_importer_runtime_block_owners'][ \$registered->name ] = array( 'owner' => %s, 'path' => __FILE__ );", var_export( $owner, true ) );
 		$lines[] = "\t\t}";
 		$lines[] = "\t}";

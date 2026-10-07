@@ -78,14 +78,17 @@ if ( 'verify-reimport' !== $phase && 'verify-removed' !== $phase ) {
 }
 
 $expected_artifact_id = (string) ( $args[1] ?? '' );
-$runtime_root = get_stylesheet_directory() . '/ssi-runtime';
+$runtime_root         = get_stylesheet_directory() . '/ssi-runtime';
 if ( ! is_file( $runtime_root . '/runtime.php' ) ) {
 	$fail( 'The reimported theme runtime is not installed.' );
 }
 require_once ABSPATH . 'wp-admin/includes/plugin.php';
-$headers                  = get_file_data( $runtime_root . '/runtime.php', array( 'Version' => 'Version', 'UpdateURI' => 'Update URI' ) );
-$config                   = json_decode( (string) file_get_contents( $runtime_root . '/companion.json' ), true );
-$readme                   = (string) file_get_contents( $runtime_root . '/README.md' );
+$headers                  = get_file_data( $runtime_root . '/runtime.php', array(
+	'Version'   => 'Version',
+	'UpdateURI' => 'Update URI',
+) );
+$config                   = json_decode( (string) file_get_contents( $runtime_root . '/companion.json' ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Inspects the local generated runtime configuration in disposable CLI acceptance.
+$readme                   = (string) file_get_contents( $runtime_root . '/README.md' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Inspects the local generated runtime inventory in disposable CLI acceptance.
 $generated_plugins        = array_filter( array_keys( get_plugins() ), static fn( string $file ): bool => str_starts_with( $file, 'ssi-' ) );
 $generated_mu_loaders     = array_filter( array_keys( get_mu_plugins() ), static fn( string $file ): bool => str_starts_with( $file, 'ssi-' ) );
 $registered               = array();
@@ -144,17 +147,17 @@ if ( null !== $entry ) {
 	}
 }
 
-$export_envelope       = is_file( '/work/output/export-envelope.json' ) ? json_decode( (string) file_get_contents( '/work/output/export-envelope.json' ), true ) : array(); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the retained canonical export in the disposable acceptance runtime.
-$export_artifact       = is_array( $export_envelope['website_artifact'] ?? null ) ? $export_envelope['website_artifact'] : array();
-$theme_dir             = get_theme_root( get_stylesheet() ) . '/' . get_stylesheet();
-$manifest              = is_file( $theme_dir . '/static-site-importer-manifest.json' ) ? json_decode( (string) file_get_contents( $theme_dir . '/static-site-importer-manifest.json' ), true ) : array(); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the generated source-of-truth manifest in the disposable acceptance runtime.
-$manifest_artifact     = is_array( $manifest['artifact'] ?? null ) ? $manifest['artifact'] : array();
-$report_source         = array(
+$export_envelope      = is_file( '/work/output/export-envelope.json' ) ? json_decode( (string) file_get_contents( '/work/output/export-envelope.json' ), true ) : array(); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the retained canonical export in the disposable acceptance runtime.
+$export_artifact      = is_array( $export_envelope['website_artifact'] ?? null ) ? $export_envelope['website_artifact'] : array();
+$theme_dir            = get_theme_root( get_stylesheet() ) . '/' . get_stylesheet();
+$manifest             = is_file( $theme_dir . '/static-site-importer-manifest.json' ) ? json_decode( (string) file_get_contents( $theme_dir . '/static-site-importer-manifest.json' ), true ) : array(); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the generated source-of-truth manifest in the disposable acceptance runtime.
+$manifest_artifact    = is_array( $manifest['artifact'] ?? null ) ? $manifest['artifact'] : array();
+$report_source        = array(
 	'id'         => (string) ( $manifest_artifact['id'] ?? '' ),
 	'hash'       => (string) ( $manifest_artifact['hash'] ?? '' ),
 	'provenance' => is_array( $manifest_artifact['provenance'] ?? null ) ? $manifest_artifact['provenance'] : array(),
 );
-$readme_truth          = str_contains( $readme, 'Captured snapshot' )
+$readme_truth         = str_contains( $readme, 'Captured snapshot' )
 	&& str_contains( $readme, 'do not update' )
 	&& str_contains( $readme, 'no live data source or refresh mechanism is installed' )
 	&& str_contains( $readme, 'unverified source claims' );
@@ -163,20 +166,20 @@ $theme_identity_truth = 'theme' === ( $config['owner'] ?? '' )
 	&& str_contains( $readme, 'generated theme owns these blocks' )
 	&& str_contains( $readme, 'Switching away from or deleting the theme' )
 	&& ! str_contains( $readme, 'It is theme-independent' );
-$provenance_row        = $report_source['provenance'][0] ?? array();
-$producer_match        = 1 === preg_match( '/This build was produced by `([^`]+)` using `([^`]+)`\./', $readme, $producer );
-$build_hash            = str_contains( (string) ( $headers['Version'] ?? '' ), '+' ) ? substr( (string) $headers['Version'], strpos( (string) $headers['Version'], '+' ) + 1 ) : '';
-$build_truth           = '' !== $build_hash
+$provenance_row       = $report_source['provenance'][0] ?? array();
+$producer_match       = 1 === preg_match( '/This build was produced by `([^`]+)` using `([^`]+)`\./', $readme, $producer );
+$build_hash           = str_contains( (string) ( $headers['Version'] ?? '' ), '+' ) ? substr( (string) $headers['Version'], strpos( (string) $headers['Version'], '+' ) + 1 ) : '';
+$build_truth          = '' !== $build_hash
 	? $producer_match && 1 === preg_match( '/^[a-f0-9]{8}$/', $build_hash ) && str_contains( $readme, $build_hash ) && str_contains( $readme, (string) ( $headers['Version'] ?? '' ) )
 	: '1.0.0' === (string) ( $headers['Version'] ?? '' ) && str_contains( $readme, 'no producer provenance' );
-$source_truth          = ! empty( $report_source['id'] )
+$source_truth         = ! empty( $report_source['id'] )
 	&& $expected_artifact_id === (string) $report_source['id']
 	&& is_array( $provenance_row )
 	&& 'artifact' === ( $provenance_row['source_format'] ?? '' )
 	&& preg_match( '/^[a-f0-9]{64}$/', (string) ( $provenance_row['source_hash'] ?? '' ) )
 	&& in_array( 'id', $provenance_row['input_keys'] ?? array(), true )
 	&& in_array( 'provenance', $provenance_row['input_keys'] ?? array(), true );
-$version_truth         = $source_truth && $build_truth;
+$version_truth        = $source_truth && $build_truth;
 
 $result = array(
 	'phase'                    => $phase,

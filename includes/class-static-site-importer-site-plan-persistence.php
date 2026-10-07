@@ -205,7 +205,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			foreach ( $page['document_metadata']['scripts'] ?? array() as $script ) {
 				$url = is_array( $script ) ? (string) ( $script['resolved_url'] ?? '' ) : '';
 				if ( '' !== $url && str_starts_with( $url, $theme_uri_prefix ) ) {
-					$document_scripts[] = array( 'target_path' => substr( $url, strlen( $theme_uri_prefix ) ), 'attributes' => array_intersect_key( $script, array_flip( array( 'type', 'defer', 'async', 'crossorigin', 'integrity' ) ) ) );
+					$document_scripts[] = array(
+						'target_path' => substr( $url, strlen( $theme_uri_prefix ) ),
+						'attributes'  => array_intersect_key( $script, array_flip( array( 'type', 'defer', 'async', 'crossorigin', 'integrity' ) ) ),
+					);
 				}
 			}
 			if ( array() !== $document_scripts ) {

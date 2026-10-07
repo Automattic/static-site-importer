@@ -395,8 +395,8 @@ final class Static_Site_Importer_Quality_Gates {
 			$diagnostic['runtime_carried']               = true;
 			$diagnostic['materialized_runtime_provider'] = $owner;
 			$diagnostic[ 'generated_theme' === $owner ? 'theme' : 'companion_plugin' ] = $slug;
-			$diagnostic['message']                       = 'generated_theme' === $owner ? sprintf( 'Runtime script is materialized by generated theme %s.', $slug ) : sprintf( 'Runtime script is materialized by active companion plugin %s.', $slug );
-			$resolved[ $selector ]                       = true;
+			$diagnostic['message'] = 'generated_theme' === $owner ? sprintf( 'Runtime script is materialized by generated theme %s.', $slug ) : sprintf( 'Runtime script is materialized by active companion plugin %s.', $slug );
+			$resolved[ $selector ] = true;
 		}
 		unset( $diagnostic );
 		$report->set_diagnostics( $diagnostics );
