@@ -1,0 +1,21 @@
+{
+  "schema": "wp-codebox/wordpress-workload-run/v1",
+  "wordpress_version": "7.1.2",
+  "blueprint": {
+    "steps": [
+      {
+        "step": "defineWpConfigConsts",
+        "consts": {
+          "SSI_SHARED_CHROME_DISPOSABLE_TEST": true,
+          "SSI_SHARED_CHROME_CANDIDATE": true
+        }
+      },
+      { "step": "mkdir", "path": "/wordpress/wp-content/themes/shared-chrome-test-baseline" },
+      { "step": "writeFile", "path": "/wordpress/wp-content/themes/shared-chrome-test-baseline/style.css", "data": "/*\nTheme Name: Shared Chrome Test Baseline\n*/\n" },
+      { "step": "writeFile", "path": "/wordpress/wp-content/themes/shared-chrome-test-baseline/index.php", "data": "<?php // Disposable test bootstrap; no theme callbacks.\n" },
+      { "step": "activateTheme", "themeFolderName": "shared-chrome-test-baseline" }
+    ]
+  },
+  "mounts": [],
+  "steps": []
+}
