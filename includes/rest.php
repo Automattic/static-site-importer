@@ -582,9 +582,10 @@ function static_site_importer_rest_source_artifact( array $source ) {
  * Convert REST source input into the normalized website artifact runtime envelope.
  *
  * @param array<string,mixed> $source Source payload.
+ * @param object|null $payload_reader Canonical source payload reader.
  * @return array{artifact:array<string,mixed>,source_metadata:array<string,mixed>,provider:string}|WP_Error
  */
-function static_site_importer_source_runtime( array $source ) {
+function static_site_importer_source_runtime( array $source, ?object $payload_reader = null ) {
 	if ( isset( $source['artifact'] ) && is_array( $source['artifact'] ) ) {
 		return array(
 			'artifact'        => $source['artifact'],
@@ -640,18 +641,18 @@ function static_site_importer_source_runtime( array $source ) {
 				continue;
 			}
 
-			if ( isset( $file['content'] ) ) {
+			if ( array_key_exists( 'payload_reference', $file ) || ( is_array( $file['payload'] ?? null ) && array_key_exists( 'reference', $file['payload'] ) ) ) {
 				$files[] = array(
-					'path'    => $path,
-					'content' => (string) $file['content'],
+					'path'              => $path,
+					'payload_reference' => $file['payload_reference'] ?? $file['payload']['reference'] ?? null,
 				);
 				continue;
 			}
 
-			if ( isset( $file['payload_reference'] ) && is_array( $file['payload_reference'] ) ) {
+			if ( isset( $file['content'] ) ) {
 				$files[] = array(
-					'path'              => $path,
-					'payload_reference' => $file['payload_reference'],
+					'path'    => $path,
+					'content' => (string) $file['content'],
 				);
 				continue;
 			}
@@ -706,7 +707,7 @@ function static_site_importer_source_runtime( array $source ) {
 			'files'      => $files,
 		)
 	);
-	$source_policy = Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
+	$source_policy = Static_Site_Importer_Content_Policy::validate_artifact( $artifact, $payload_reader );
 	if ( is_wp_error( $source_policy ) ) {
 		return $source_policy;
 	}

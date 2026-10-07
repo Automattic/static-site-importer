@@ -149,7 +149,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 			if ( ! function_exists( 'static_site_importer_source_runtime' ) ) {
 				return self::error( 'static_site_importer_source_normalizer_unavailable', 'The canonical source normalizer is unavailable.' );
 			}
-			$runtime = static_site_importer_source_runtime( $runtime_source );
+			$runtime = static_site_importer_source_runtime( $runtime_source, $payload_reader ?? null );
 			if ( is_wp_error( $runtime ) ) {
 				return self::error( (string) $runtime->get_error_code(), $runtime->get_error_message(), $runtime->get_error_data() );
 			}

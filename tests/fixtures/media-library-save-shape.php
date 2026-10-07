@@ -9,6 +9,8 @@ function esc_url( string $url ): string { return htmlspecialchars( $url, ENT_QUO
 function esc_attr( string $value ): string { return htmlspecialchars( $value, ENT_QUOTES ); }
 function serialize_block_attributes( array $attrs ): string { return json_encode( $attrs, JSON_UNESCAPED_SLASHES ); } // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Standalone serialization-boundary stub.
 
+require __DIR__ . '/class-media-library-tag-processor.php';
+
 $source_file = getenv( 'SSI_MEDIA_LIBRARY_SOURCE' );
 require false !== $source_file && '' !== $source_file ? $source_file : dirname( __DIR__, 2 ) . '/includes/class-static-site-importer-media-library-materializer.php';
 

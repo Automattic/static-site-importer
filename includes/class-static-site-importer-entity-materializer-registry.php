@@ -44,20 +44,35 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 */
 	public static function capabilities(): array {
 		return array(
-			'form'   => array(
+			'external_metrics' => array(
+				'default_provider' => 'wordpress.org',
+				'option'           => '',
+				'filter'           => '',
+			),
+			'form'             => array(
 				'default_provider' => 'jetpack',
 				'option'           => 'static_site_importer_form_plugin',
 				'filter'           => 'ssi_form_plugin',
 			),
-			'shop'   => array(
+			'shop'             => array(
 				'default_provider' => 'woocommerce',
 				'option'           => 'static_site_importer_shop_plugin',
 				'filter'           => 'ssi_shop_plugin',
 			),
-			'events' => array(
+			'events'           => array(
 				'default_provider' => 'the-events-calendar',
 				'option'           => 'static_site_importer_events_plugin',
 				'filter'           => 'ssi_events_plugin',
+			),
+			'multilingual'     => array(
+				'default_provider' => 'translatepress-multilingual',
+				'option'           => 'static_site_importer_multilingual_plugin',
+				'filter'           => 'ssi_multilingual_plugin',
+			),
+			'redirects'    => array(
+				'default_provider' => 'redirection',
+				'option'           => 'static_site_importer_redirects_plugin',
+				'filter'           => 'ssi_redirects_plugin',
 			),
 		);
 	}
@@ -335,7 +350,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$required   = self::runtime_declaration_is_required( $declaration, $declarations );
 			// Reference-backed event manifests have no inline rows during prepare.
 			// Their declared capability still requires native provider hydration.
-			$required = $required || ( 'entity_collection' === $kind && 'events' === $capability );
+			$required = $required || in_array( $capability, array( 'multilingual', 'redirects' ), true ) || ( 'entity_collection' === $kind && 'events' === $capability );
 			if ( '' === $capability ) {
 				if ( $required ) {
 					return new WP_Error(
@@ -367,6 +382,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					)
 				);
 			}
+			if ( ! in_array( $adapter['materialization_stage'] ?? 'before_pages', array( 'before_pages', 'after_pages' ), true ) ) {
+				return new WP_Error( 'static_site_importer_runtime_adapter_stage_invalid', 'The selected native provider has an unsupported materialization stage.' );
+			}
 			if ( (string) ( $adapter['capability'] ?? '' ) !== $capability ) {
 				return new WP_Error(
 					'static_site_importer_runtime_adapter_invalid',
@@ -383,6 +401,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					'declaration' => $declaration,
 					'required'    => $required,
 				);
+				if ( 'after_pages' === ( $adapter['materialization_stage'] ?? '' ) ) {
+					$lifecycle['entities'][ $key ] = array(
+						'adapter'     => $adapter,
+						'declaration' => $declaration,
+						'manifest'    => array( $adapter['entity_collection'] => array() ),
+						'required'    => $required,
+					);
+				}
 				continue;
 			}
 			if ( 'entity_collection' !== $kind ) {
@@ -394,6 +420,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			$collection = (string) ( $adapter['entity_collection'] ?? '' );
 			$manifest   = array( $collection => $entities );
+			if ( 'external_metrics' === $collection ) {
+				$manifest['source_path']             = (string) ( $declaration['source_path'] ?? '' );
+				$manifest['validate_anchor_content'] = true;
+			}
 			if ( 'products' === $collection ) {
 				$manifest['schema_version'] = 1;
 			}
@@ -448,6 +478,46 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			if ( 'events' === $capability && ! empty( $entities ) ) {
 				$lifecycle['dependencies'][ $key ]['required'] = true;
+			}
+		}
+		// Providers may declare intent from canonical facts or their owned state.
+		// The selected capability still resolves through the ordinary provider boundary.
+		foreach ( self::adapters() as $detector ) {
+			$callback   = $detector['intent_callback'] ?? null;
+			$capability = (string) ( $detector['capability'] ?? '' );
+			if ( ! is_callable( $callback ) || ! call_user_func( $callback, $plan, $args ) ) {
+				continue; }
+			$declared = false;
+			foreach ( $lifecycle['dependencies'] as $dependency ) {
+				$declared = $declared || ( $dependency['adapter']['capability'] ?? '' ) === $capability;
+			}
+			if ( $declared ) {
+				continue; }
+			$adapter = self::adapter_for_capability( $capability );
+			if ( empty( $adapter ) ) {
+				return new WP_Error( 'static_site_importer_runtime_provider_unavailable', 'No provider is configured for required canonical capability: ' . $capability . '.' );
+			}
+			if ( ! in_array( $adapter['materialization_stage'] ?? 'before_pages', array( 'before_pages', 'after_pages' ), true ) ) {
+				return new WP_Error( 'static_site_importer_runtime_adapter_stage_invalid', 'The selected native provider has an unsupported materialization stage.' );
+			}
+			$id                               = hash( 'sha256', "static-site-importer/provider-intent/v1\n" . $capability . "\n" . (string) ( $plan['source']['entry_path'] ?? '' ) );
+			$declaration                      = array(
+				'kind'                    => 'dependency',
+				'capability'              => $capability,
+				'reconciliation_identity' => $id,
+			);
+			$lifecycle['dependencies'][ $id ] = array(
+				'adapter'     => $adapter,
+				'declaration' => $declaration,
+				'required'    => true,
+			);
+			if ( 'after_pages' === ( $adapter['materialization_stage'] ?? '' ) ) {
+				$lifecycle['entities'][ $id ] = array(
+					'adapter'     => $adapter,
+					'declaration' => $declaration,
+					'manifest'    => array( $adapter['entity_collection'] => array() ),
+					'required'    => true,
+				);
 			}
 		}
 		if ( isset( $args['products_manifest'] ) && is_array( $args['products_manifest'] ) && ! empty( $args['products_manifest'] ) ) {
@@ -537,14 +607,20 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	private static function runtime_declaration_capability( string $kind, string $name ): string {
 		$name = strtolower( $name );
-		if ( 'dependency' === $kind && in_array( $name, array( 'shop', 'form', 'events' ), true ) ) {
+		if ( 'dependency' === $kind && array_key_exists( $name, self::capabilities() ) ) {
 			return $name;
+		}
+		if ( 'entity_collection' === $kind && 'multilingual' === $name ) {
+			return 'multilingual';
 		}
 		if ( 'entity_collection' === $kind && in_array( $name, array( 'event', 'events' ), true ) ) {
 			return 'events';
 		}
 		if ( 'entity_collection' === $kind && in_array( $name, array( 'product', 'products' ), true ) ) {
 			return 'shop';
+		}
+		if ( 'entity_collection' === $kind && 'external_metrics' === $name ) {
+			return 'external_metrics';
 		}
 		return 'entity_collection' === $kind && in_array( $name, array( 'form', 'forms' ), true ) ? 'form' : '';
 	}
@@ -636,7 +712,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					if ( ! is_array( $entity ) ) {
 						continue;
 					}
-					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : self::form_entity_key( $entity );
+					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : ( 'external_metrics' === $key ? (string) ( $entity['id'] ?? '' ) : self::form_entity_key( $entity ) );
 					if ( '' !== $entity_key ) {
 						$resolved_by_key[ $entity_key ] = $entity;
 					}
@@ -645,7 +721,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					if ( ! is_array( $entity ) ) {
 						continue;
 					}
-					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : self::form_entity_key( $entity );
+					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : ( 'external_metrics' === $key ? (string) ( $entity['id'] ?? '' ) : self::form_entity_key( $entity ) );
 					if ( isset( $resolved_by_key[ $entity_key ]['bindings'] ) && is_array( $resolved_by_key[ $entity_key ]['bindings'] ) ) {
 						$prepared['manifest'][ $key ][ $index ]['bindings'] = $resolved_by_key[ $entity_key ]['bindings'];
 					}
@@ -720,6 +796,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		}
 		foreach ( $lifecycle['entities'] ?? array() as $id => $prepared ) {
 			$adapter = $prepared['adapter'];
+			if ( ( $adapter['materialization_stage'] ?? 'before_pages' ) !== ( $args['materialization_stage'] ?? 'before_pages' ) ) {
+				continue;
+			}
 			if ( ! empty( $args[ (string) ( $adapter['waiver_arg'] ?? '' ) ] ) ) {
 				$reports[ $id ] = array(
 					'status'   => 'waived',
@@ -931,7 +1010,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$results           = array();
 			foreach ( $result_entities as $result ) {
 				if ( is_array( $result ) ) {
-					$key             = 'products' === $entity_key ? (string) ( $result['slug'] ?? '' ) : self::form_entity_key( $result );
+					$key             = 'products' === $entity_key ? (string) ( $result['slug'] ?? '' ) : ( 'external_metrics' === $entity_key ? (string) ( $result['id'] ?? '' ) : self::form_entity_key( $result ) );
 					$results[ $key ] = $result;
 				}
 			}
@@ -955,7 +1034,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				if ( ! is_array( $entity ) || empty( $entity['bindings'] ) || ! is_array( $entity['bindings'] ) ) {
 					continue;
 				}
-				$key    = 'products' === $entity_key ? (string) ( $entity['slug'] ?? '' ) : self::form_entity_key( $entity );
+				$key    = 'products' === $entity_key ? (string) ( $entity['slug'] ?? '' ) : ( 'external_metrics' === $entity_key ? (string) ( $entity['id'] ?? '' ) : self::form_entity_key( $entity ) );
 				$result = is_array( $results[ $key ] ?? null ) ? $results[ $key ] : array();
 				if ( self::entity_result_declined( $result ) ) {
 					continue;
@@ -1170,7 +1249,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( ! class_exists( 'Static_Site_Importer_TEC_Event_Seeder' ) ) {
 			require_once __DIR__ . '/class-static-site-importer-tec-event-seeder.php';
 		}
-		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_TEC_Event_Seeder' ) as $owner ) {
+		require_once __DIR__ . '/class-static-site-importer-translatepress-materializer.php';
+		require_once __DIR__ . '/class-static-site-importer-redirection-materializer.php';
+		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_TEC_Event_Seeder', 'Static_Site_Importer_External_Metric_Runtime', 'Static_Site_Importer_TranslatePress_Materializer', 'Static_Site_Importer_Redirection_Materializer' ) as $owner ) {
 			// Seeders may be absent or stubbed in standalone harnesses.
 			// @phpstan-ignore-next-line booleanNot.alwaysFalse -- Optional classes are stubbed in standalone coverage harnesses.
 			if ( ! is_callable( array( $owner, 'adapter' ) ) ) {
@@ -1237,6 +1318,22 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$registered[ $presentation ] = true;
 			call_user_func( array( $presentation, 'register' ) );
 		}
+	}
+
+	/** Let native providers retain portable runtime state through the shared export. */
+	public static function export_runtime_features( array $artifact, array $args ) {
+		foreach ( self::adapters() as $adapter ) {
+			$callback = $adapter['export_callback'] ?? null;
+			if ( ! is_callable( $callback ) ) {
+				continue; }
+			$artifact = call_user_func( $callback, $artifact, $args );
+			if ( is_wp_error( $artifact ) ) {
+				return $artifact; }
+			if ( ! is_array( $artifact ) ) {
+				return new WP_Error( 'static_site_importer_provider_export_invalid', 'A native provider returned no portable export artifact.' );
+			}
+		}
+		return $artifact;
 	}
 
 	/**

@@ -285,12 +285,15 @@ final class Static_Site_Importer_Form_Field_Markup {
 			);
 		}
 		if ( 'checkbox' === $lookup && empty( $attrs['options'] ) ) {
+			if ( ! empty( $control['checked'] ) ) {
+				$attrs['defaultValue'] = true;
+			}
 			$inner_blocks[] = array(
 				'name'  => 'jetpack/option',
 				'attrs' => array_filter( array(
 					'label'        => $label,
 					'isStandalone' => true,
-					'className'    => $label_class,
+					'className'    => trim( $control_class . ' ' . $label_class ),
 				) ),
 			);
 		} elseif ( '' !== $label ) {
@@ -533,6 +536,13 @@ final class Static_Site_Importer_Form_Field_Markup {
 		$entries = array();
 		foreach ( $context as $index => $block ) {
 			if ( ! is_array( $block ) || ! is_string( $block['text'] ?? null ) || '' === trim( $block['text'] ) || ! in_array( $block['type'] ?? null, array( 'heading', 'paragraph' ), true ) ) {
+				continue;
+			}
+			// Copy the source hides in every condition is a form builder's own
+			// status text, shown only after submission. The provider renders its
+			// own confirmation, so a permanently visible copy would read as a
+			// submission that never happened (Automattic/blocks-engine#2560).
+			if ( null !== Static_Site_Importer_Form_Fallback_Contract::context_hidden( $block['hidden'] ?? null ) ) {
 				continue;
 			}
 			$source  = $boxes['items'][ $position ][ $index ] ?? null;

@@ -51,6 +51,9 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 	 * @return mixed
 	 */
 	public static function filter_rendered_block( $content ) {
+		if ( is_string( $content ) ) {
+			$content = self::resolve_member_login_links( $content );
+		}
 		if ( ! is_string( $content ) || ! str_contains( $content, 'href="/' ) || ! function_exists( 'home_url' ) ) {
 			return $content;
 		}
@@ -107,7 +110,68 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 
 	/** @param mixed $content */
 	public static function filter_content( $content ) {
-		return is_string( $content ) ? self::resolve_urls( $content ) : $content;
+		return is_string( $content ) ? self::resolve_urls( self::resolve_member_login_links( $content ) ) : $content;
+	}
+
+	/**
+	 * Point member sign-in controls at this site's login.
+	 *
+	 * Data Liberation marks the source platform's member sign-in entry points
+	 * once it has removed the platform's own login, and leaves the target to
+	 * the destination. The marker is the class `dla-member-login-<provider>`
+	 * (block conversion keeps classes), with `data-dla-member-login` where it
+	 * survived. Here the target is `wp_login_url()`, returning the reader to
+	 * the page they signed in from.
+	 *
+	 * - A marked link gets that `href`, replacing any source one (the old
+	 *   platform's members area).
+	 * - A marked button, or the button inside a marked core/button wrapper,
+	 *   becomes a link to it with the same classes and children (icon and
+	 *   label), since signing in is navigation once the platform's dialog is
+	 *   gone.
+	 */
+	public static function resolve_member_login_links( string $content ): string {
+		if ( ! str_contains( $content, 'dla-member-login' ) || ! function_exists( 'wp_login_url' ) ) {
+			return $content;
+		}
+		$login  = esc_url( wp_login_url( self::current_url() ) );
+		$marked = '(?=[^>]*(?:\sdata-dla-member-login\b|\sclass\s*=\s*["\'][^"\']*\bdla-member-login-[a-z0-9_-]+))';
+		$href   = '~\s+href\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)~i';
+		$type   = '~\s+type\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)~i';
+		$link   = static fn( string $attributes ): string => '<a href="' . $login . '"' . (string) preg_replace( array( $href, $type ), '', $attributes ) . '>';
+
+		// The button inside a marked core/button wrapper.
+		$content = preg_replace_callback(
+			'~(<div\b' . $marked . '[^>]*>\s*)<button\b([^>]*)>(.*?)</button>~is',
+			static fn( array $m ): string => $m[1] . $link( $m[2] ) . $m[3] . '</a>',
+			$content
+		) ?? $content;
+		// A marked button itself (buttons cannot nest, so the first close is its own).
+		$content = preg_replace_callback(
+			'~<button\b' . $marked . '([^>]*)>(.*?)</button>~is',
+			static fn( array $m ): string => $link( $m[1] ) . $m[2] . '</a>',
+			$content
+		) ?? $content;
+
+		return preg_replace_callback(
+			'~<a\b' . $marked . '([^>]*)>~i',
+			static fn( array $m ): string => $link( $m[1] ),
+			$content
+		) ?? $content;
+	}
+
+	/**
+	 * The requested URL, for the post-login redirect. wp-login.php validates
+	 * `redirect_to` itself, so a foreign host cannot be smuggled through it.
+	 */
+	private static function current_url(): string {
+		$host = isset( $_SERVER['HTTP_HOST'] ) ? (string) $_SERVER['HTTP_HOST'] : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Only passed to wp_login_url(), whose redirect wp-login.php validates.
+		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Same as above.
+		if ( '' === $host || '' === $uri ) {
+			return '';
+		}
+
+		return ( function_exists( 'is_ssl' ) && is_ssl() ? 'https://' : 'http://' ) . $host . $uri;
 	}
 
 	public static function resolve_urls( string $content ): string {
@@ -168,10 +232,12 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 		$bootstrap = self::bootstrap_content( $resolved_plan, $bootstrap_overlay );
 		// The theme copy gets a theme-scoped class name, so it can never
 		// collide with this plugin class or with another generated theme.
-		$class  = self::theme_runtime_class( $theme_slug );
-		$marker = '/* Static Site Importer portable internal links. */';
-		$source = file_get_contents( __FILE__ ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the runtime source the generated theme owns independently.
-		if ( ! is_string( $source ) || '' === $source ) {
+		$class        = self::theme_runtime_class( $theme_slug );
+		$route_class  = str_replace( '_Internal_Link_Runtime', '_Source_Route_Redirect', $class );
+		$marker       = '/* Static Site Importer portable internal links. */';
+		$source       = file_get_contents( __FILE__ ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the runtime source the generated theme owns independently.
+		$route_source = file_get_contents( __DIR__ . '/class-static-site-importer-source-route-redirect.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Projects the canonical route runtime into core-only themes.
+		if ( ! is_string( $source ) || '' === $source || ! is_string( $route_source ) || '' === $route_source ) {
 			return isset( $bootstrap_overlay['writes'] ) ? $bootstrap_overlay : array(
 				'status' => 'skipped',
 				'writes' => array(),
@@ -179,6 +245,10 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 		}
 		if ( ! str_contains( $bootstrap, $marker ) ) {
 			$bootstrap .= "\n{$marker}\nif ( ! class_exists( '{$class}' ) ) {\n\trequire_once get_stylesheet_directory() . '/portable-internal-links.php';\n}\n{$class}::register();\n";
+		}
+		$route_marker = '/* Static Site Importer portable source routes. */';
+		if ( ! str_contains( $bootstrap, $route_marker ) ) {
+			$bootstrap .= "\n{$route_marker}\nif ( ! class_exists( '{$route_class}' ) ) {\n\trequire_once get_stylesheet_directory() . '/portable-source-routes.php';\n}\n{$route_class}::register();\n";
 		}
 
 		return array(
@@ -195,6 +265,12 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 					'content'     => str_replace( 'Static_Site_Importer_Internal_Link_Runtime', $class, $source ),
 					'encoding'    => 'utf8',
 					'source_path' => 'static-site-importer/portable-internal-links',
+				),
+				array(
+					'target_path' => 'portable-source-routes.php',
+					'content'     => str_replace( 'Static_Site_Importer_Source_Route_Redirect', $route_class, $route_source ),
+					'encoding'    => 'utf8',
+					'source_path' => 'static-site-importer/portable-source-routes',
 				),
 			),
 		);

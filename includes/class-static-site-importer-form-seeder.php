@@ -358,7 +358,8 @@ class Static_Site_Importer_Form_Seeder {
 				$skipped[]                             = 'hidden_bookkeeping';
 				continue;
 			}
-			$presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $scope, $control_index, $type, $presentation_roles[ $control_index ] ?? array() );
+			$choice_box                                 = null !== Static_Site_Importer_Form_Layout_Projection::source_choice_label( $form, $control_index );
+			$presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $scope, $control_index, $type, $presentation_roles[ $control_index ] ?? array(), isset( $control['label_classes'] ) || isset( $control['label_marker'] ), $choice_box );
 			if ( isset( $suppressed_controls[ $control_index ] ) ) {
 				continue;
 			}
@@ -437,7 +438,7 @@ class Static_Site_Importer_Form_Seeder {
 				$type,
 				$control,
 				empty( $control_phone_destinations ) ? $presentation_descriptor['control_class'] : '',
-				$presentation_descriptor['label_class'],
+				$choice_box && '' !== $presentation_descriptor['label_class'] ? 'ssi-source-choice-label--' . $presentation_descriptor['label_class'] : $presentation_descriptor['label_class'],
 				$control_presentations[ $control_index ]['control']['styles'] ?? array()
 			);
 			if ( null === $field_block ) {
@@ -583,8 +584,8 @@ class Static_Site_Importer_Form_Seeder {
 		self::append_receipt_entries( $layout['receipt'], 'losses', $control_attribute_losses );
 		$inner_blocks           = $layout['blocks'];
 		$form_attrs             = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $form, $scope, $topology['form_classes'] );
-		$overlay_graph          = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( Static_Site_Importer_Form_Layout_Projection::split_form_box( $provider_graph ), is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array() );
 		$box_targets            = $topology['provider_layout_targets'];
+		$overlay_graph          = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( Static_Site_Importer_Form_Layout_Projection::split_form_box( $provider_graph ), is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array(), $box_targets );
 		$overlay_graph['nodes'] = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || 'form-box' === ( $node['id'] ?? '' ) || isset( $box_targets[ (string) ( $node['id'] ?? '' ) ] ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
 		foreach ( $topology['overlay_node_targets'] as $target ) {
 			$merged = false;
@@ -693,9 +694,30 @@ class Static_Site_Importer_Form_Seeder {
 		// Box transposition and responsive targets reinstate the source container's
 		// own layout, so the track definition is reconsidered once every box and
 		// variant has been merged.
-		$overlay_graph                = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( $overlay_graph, is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array() );
+		$overlay_graph                = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( $overlay_graph, is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array(), $box_targets );
 		$overlay_form                 = $form;
 		$overlay_form['layout_graph'] = $overlay_graph;
+		// Grid-span projection already transposes the parent box onto this
+		// layout node. Only native control-owned facts target the inner button.
+		$overlay_form['provider_source_box_submits'] = array_values( array_diff( $topology['submit_block_rows'] ?? array(), $topology['grid_span_submit_controls'] ?? array() ) );
+		if ( ! empty( $topology['whole_field_controls'] ) ) {
+			foreach ( $overlay_form['layout_graph']['nodes'] as &$node ) {
+				if ( 'form' === ( $node['id'] ?? '' ) ) {
+					$node['layout'] += array(
+						'display' => 'block',
+						'gap'     => '0',
+					);
+				}
+			}
+			unset( $node );
+			foreach ( $topology['whole_field_controls'] as $index ) {
+				$overlay_form['layout_graph']['nodes'][] = array(
+					'id'     => 'field-' . $index,
+					'layout' => array( 'display' => 'contents' ),
+				);
+			}
+			$overlay_graph = $overlay_form['layout_graph'];
+		}
 		foreach ( array_keys( $suppressed_controls ) as $control_index ) {
 			unset( $overlay_form['presentation_graph']['controls'][ $control_index ] );
 		}

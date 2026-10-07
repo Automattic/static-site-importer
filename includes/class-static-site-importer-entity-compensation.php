@@ -71,7 +71,7 @@ final class Static_Site_Importer_Entity_Compensation {
 
 	/** Only callbacks with an explicit mutation receipt may perform destructive compensation. */
 	private static function entity_report_requires_rollback( array $report ): bool {
-		if ( ! in_array( $report['status'] ?? null, array( 'completed', 'materialized', 'mapped', 'mutated' ), true ) ) {
+		if ( ! in_array( $report['status'] ?? null, array( 'completed', 'materialized', 'mapped', 'mutated', 'partial', 'failed', 'error' ), true ) ) {
 			return false;
 		}
 		foreach ( array( 'products', 'forms', 'events', 'entities', 'mutations' ) as $key ) {
