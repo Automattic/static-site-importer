@@ -8,15 +8,22 @@ $bundle = json_decode( (string) file_get_contents( '/wordpress/wp-content/upload
 if ( ! is_array( $bundle ) || ! is_array( $bundle['plan'] ?? null ) || ! is_array( $bundle['args'] ?? null ) ) {
 	throw new RuntimeException( 'The paired producer plan artifact could not be loaded.' );
 }
-$autoload = require_once '/wordpress/wp-content/plugins/static-site-importer/vendor/autoload.php';
-$engine   = '/wordpress/wp-content/plugins/blocks-engine-candidate';
-$autoload->setPsr4( 'Automattic\\BlocksEngine\\PhpTransformer\\', $engine . '/src/', true );
-if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
-	require_once $engine . '/php-transformer.php';
+$autoload             = require_once '/wordpress/wp-content/plugins/static-site-importer/vendor/autoload.php';
+$release_package_mode = defined( 'SSI_TAXONOMY_RELEASE_PACKAGE' ) && true === SSI_TAXONOMY_RELEASE_PACKAGE;
+if ( ! $release_package_mode ) {
+	$engine = '/wordpress/wp-content/plugins/blocks-engine-candidate';
+	$autoload->setPsr4( 'Automattic\\BlocksEngine\\PhpTransformer\\', $engine . '/src/', true );
+	if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
+		require_once $engine . '/php-transformer.php';
+	}
 }
 require_once '/wordpress/wp-content/plugins/static-site-importer/static-site-importer.php';
 require_once '/wordpress/wp-content/plugins/static-site-importer/includes/class-static-site-importer-compilation-preparation.php';
 require_once '/wordpress/wp-content/plugins/static-site-importer/includes/class-static-site-importer-wordpress-site-plan-materializer.php';
+if ( $release_package_mode ) {
+	require_once '/wordpress/wp-content/plugins/static-site-importer/tests/acceptance/taxonomy-release-package-proof.php';
+	echo 'SSI-TAXONOMY-RELEASE-PACKAGE:' . wp_json_encode( ssi_taxonomy_release_package_proof() ) . "\n";
+}
 
 $assert      = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) {

@@ -13,15 +13,23 @@ $bundle = json_decode( (string) file_get_contents( '/wordpress/wp-content/upload
 if ( ! is_array( $bundle ) || 'blocks-engine/php-transformer/site-artifact/v1' !== ( $bundle['schema'] ?? null ) || 'website' !== ( $bundle['artifact_type'] ?? null ) ) {
 	throw new RuntimeException( 'The complete first-site export artifact could not be read from the evidence mount.' );
 }
-$autoload = require_once '/wordpress/wp-content/plugins/static-site-importer/vendor/autoload.php';
-$engine   = '/wordpress/wp-content/plugins/blocks-engine-candidate';
-$autoload->setPsr4( 'Automattic\\BlocksEngine\\PhpTransformer\\', $engine . '/src/', true );
-if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
-	require_once $engine . '/php-transformer.php';
+$autoload             = require_once '/wordpress/wp-content/plugins/static-site-importer/vendor/autoload.php';
+$release_package_mode = defined( 'SSI_TAXONOMY_RELEASE_PACKAGE' ) && true === SSI_TAXONOMY_RELEASE_PACKAGE;
+if ( ! $release_package_mode ) {
+	$engine = '/wordpress/wp-content/plugins/blocks-engine-candidate';
+	$autoload->setPsr4( 'Automattic\\BlocksEngine\\PhpTransformer\\', $engine . '/src/', true );
+	if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
+		require_once $engine . '/php-transformer.php';
+	}
 }
 require_once '/wordpress/wp-content/plugins/static-site-importer/static-site-importer.php';
 require_once '/wordpress/wp-content/plugins/static-site-importer/includes/class-static-site-importer-compilation-preparation.php';
 require_once '/wordpress/wp-content/plugins/static-site-importer/includes/class-static-site-importer-wordpress-site-plan-materializer.php';
+if ( $release_package_mode ) {
+	require_once '/wordpress/wp-content/plugins/static-site-importer/tests/acceptance/taxonomy-release-package-proof.php';
+	$release_package_proof = ssi_taxonomy_release_package_proof();
+	echo 'SSI-TAXONOMY-RELEASE-PACKAGE:' . wp_json_encode( $release_package_proof ) . "\n";
+}
 $assert                = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) {
 		throw new RuntimeException( $message ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Disposable runtime CLI acceptance evidence.
@@ -171,6 +179,7 @@ if ( ! $import_completed ) {
 		array(
 			'schema'                  => 'ssi-taxonomy/second-site-export-reimport/v1',
 			'import_completed'        => false,
+			'release_package'         => $release_package_proof ?? null,
 			'ssi_active_after_import' => $ssi_active_after_import,
 			'served_files'            => count( $served_files ),
 			'archive_refs_resolved'   => $resolved_archive_refs,
@@ -223,6 +232,7 @@ $assert( ! $ssi_active_after_import, 'SSI must be absent during second-site arch
 $result = array(
 	'schema'                  => 'ssi-taxonomy/second-site-export-reimport/v1',
 	'wordpress'               => get_bloginfo( 'version' ),
+	'release_package'         => $release_package_proof ?? null,
 	'import_completed'        => $import_completed,
 	'plan_fallback_count'     => $plan['quality']['metrics']['fallback_count'] ?? null,
 	'archive_route'           => (string) get_term_link( $personal_term ),

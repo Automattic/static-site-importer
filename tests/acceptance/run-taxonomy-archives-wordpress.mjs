@@ -1,23 +1,92 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const root = resolve( dirname( fileURLToPath( import.meta.url ) ), '../..' );
-const engineRoot = resolve( process.env.BLOCKS_ENGINE_PHP_TRANSFORMER_ROOT ?? join( root, '../blocks-engine-2468/php-transformer' ) );
+const releasePackageMode = 'true' === process.env.SSI_TAXONOMY_USE_RELEASED_PACKAGE;
+const transformerPackage = 'automattic/blocks-engine-php-transformer';
+const engineRoot = releasePackageMode
+	? null
+	: resolve( process.env.BLOCKS_ENGINE_PHP_TRANSFORMER_ROOT ?? join( root, '../blocks-engine-2468/php-transformer' ) );
+const installedTransformerRoot = join( root, 'vendor/automattic/blocks-engine-php-transformer' );
 const cli = process.env.WP_CODEBOX_CLI ?? '/home/chubes/.local/bin/wp-codebox';
 const evidenceRoot = resolve( process.env.SSI_TAXONOMY_EVIDENCE ?? join( root, 'artifacts/taxonomy-archives' ) );
 const editorMarker = 'SSI Gutenberg category template edit persisted';
 const editorReloadMarker = 'SSI Gutenberg category template reload persisted';
 const editorTemplateUrl = '/wp-admin/site-editor.php?p=%2Fwp_template%2Ftaxonomy-archive-acceptance%2F%2Fcategory-personal&canvas=edit';
-if ( ! statSync( join( engineRoot, 'src/WordPressSitePlan/TaxonomyProjection.php' ), { throwIfNoEntry: false } )?.isFile() ) {
+
+let releasePackageIdentity = null;
+if ( releasePackageMode ) {
+	const composerLock = JSON.parse( readFileSync( join( root, 'composer.lock' ), 'utf8' ) );
+	const composerManifest = JSON.parse( readFileSync( join( root, 'composer.json' ), 'utf8' ) );
+	const lockPackage = ( composerLock.packages ?? [] ).find( item => item.name === transformerPackage );
+	const vendorVersion = readFileSync( join( installedTransformerRoot, 'VERSION' ), 'utf8' ).trim();
+	const expectedVersion = process.env.SSI_TAXONOMY_RELEASE_VERSION;
+	if ( ! lockPackage || ! expectedVersion || vendorVersion !== expectedVersion || lockPackage.version !== `v${ expectedVersion }` || composerManifest.require?.[ transformerPackage ] !== expectedVersion || lockPackage.source?.reference !== lockPackage.dist?.reference ) {
+		throw new Error( 'Release-package proof requires the expected installed and locked immutable Blocks Engine PHP transformer package.' );
+	}
+	releasePackageIdentity = {
+		package: transformerPackage,
+		version: lockPackage.version,
+		sourceReference: lockPackage.source.reference,
+		distReference: lockPackage.dist.reference,
+		distUrl: lockPackage.dist.url,
+	};
+} else if ( ! statSync( join( engineRoot, 'src/WordPressSitePlan/TaxonomyProjection.php' ), { throwIfNoEntry: false } )?.isFile() ) {
 	throw new Error( 'Set BLOCKS_ENGINE_PHP_TRANSFORMER_ROOT to the paired producer candidate source checkout.' );
 }
 mkdirSync( evidenceRoot, { recursive: true } );
+if ( releasePackageIdentity ) {
+	writeFileSync( join( evidenceRoot, 'release-package-identity.json' ), JSON.stringify( releasePackageIdentity, null, 2 ) );
+}
 const sessionDir = mkdtempSync( join( tmpdir(), 'ssi-taxonomy-wordpress-' ) );
 const workloadFile = join( sessionDir, 'workload.json' );
+const runtimePluginRoot = releasePackageMode ? join( sessionDir, 'static-site-importer' ) : root;
+if ( releasePackageMode ) {
+	cpSync( root, runtimePluginRoot, {
+		recursive: true,
+		filter: sourcePath => {
+			const firstPathSegment = relative( root, sourcePath ).split( /[\\/]/ )[0];
+			return ! [ '.git', 'node_modules', 'artifacts' ].includes( firstPathSegment );
+		},
+	} );
+}
 const editorTemplateId = 'taxonomy-archive-acceptance//category-personal';
+const mounts = [
+	{ source: runtimePluginRoot, target: '/wordpress/wp-content/plugins/static-site-importer', mode: 'readonly' },
+];
+if ( engineRoot ) {
+	mounts.push( { source: engineRoot, target: '/wordpress/wp-content/plugins/blocks-engine-candidate', mode: 'readonly' } );
+}
+const blueprintConsts = { SSI_TAXONOMY_DISPOSABLE_TEST: true };
+if ( releasePackageIdentity ) {
+	blueprintConsts.SSI_TAXONOMY_RELEASE_PACKAGE = true;
+	blueprintConsts.SSI_TAXONOMY_RELEASE_VERSION = releasePackageIdentity.version.replace( /^v/, '' );
+	blueprintConsts.SSI_TAXONOMY_RELEASE_REFERENCE = releasePackageIdentity.sourceReference;
+}
+const blueprint = { steps: [ { step: 'defineWpConfigConsts', consts: blueprintConsts } ] };
+const releasePackageProofInPhp = releasePackageMode
+	? `require_once '/wordpress/wp-content/plugins/static-site-importer/tests/acceptance/taxonomy-release-package-proof.php';
+$packageProof = ssi_taxonomy_release_package_proof();
+echo 'SSI-TAXONOMY-RELEASE-PACKAGE:' . wp_json_encode($packageProof) . "\n";
+`
+	: '';
+const packageProofFrom = stdout => {
+	const line = String( stdout ?? '' ).split( '\n' ).find( row => row.startsWith( 'SSI-TAXONOMY-RELEASE-PACKAGE:' ) );
+	if ( ! line ) return null;
+	try {
+		return JSON.parse( line.slice( 'SSI-TAXONOMY-RELEASE-PACKAGE:'.length ) );
+	} catch {
+		return null;
+	}
+};
+const packageProofMatchesPin = proof => ! releasePackageMode || (
+	proof?.package === releasePackageIdentity.package &&
+	proof?.version === releasePackageIdentity.version &&
+	proof?.source_reference === releasePackageIdentity.sourceReference
+);
 const editorSaveScript = `window.__taxonomyEditorSave = (async () => {
 const id = '${ editorTemplateId }';
 const marker = '${ editorMarker }';
@@ -109,10 +178,11 @@ document.documentElement.dataset.ssiNativeReimportPageTwoProof = JSON.stringify(
 if (!proof.heading || proof.memberCount !== 2 || !proof.story10 || !proof.addedPost || !proof.excludesStory12 || !proof.previousHref.includes('/category/personal/')) throw new Error('Second-site native taxonomy page-2 archive proof failed: ' + JSON.stringify(proof));
 console.log('SSI-TAXONOMY-SECOND-SITE-NATIVE-PAGE-TWO-PROOF', JSON.stringify(proof));
 })();`;
-const editorVerification = `$template = get_block_template(get_stylesheet() . '//category-personal');
+const editorVerification = `${ releasePackageMode ? "require_once '/wordpress/wp-content/plugins/static-site-importer/static-site-importer.php';" : engineRoot ? "if (!function_exists('blocks_engine_php_transformer_convert_format')) { require_once '/wordpress/wp-content/plugins/blocks-engine-candidate/php-transformer.php'; }" : '' }
+$template = get_block_template(get_stylesheet() . '//category-personal');
 $persisted = $template instanceof WP_Block_Template && str_contains($template->content, '${editorMarker}');
 $reloaded = $template instanceof WP_Block_Template && str_contains($template->content, '${editorReloadMarker}');
-if (!function_exists('blocks_engine_php_transformer_convert_format')) { require_once '/wordpress/wp-content/plugins/blocks-engine-candidate/php-transformer.php'; }
+${ releasePackageProofInPhp }
 require_once '/wordpress/wp-content/plugins/static-site-importer/includes/class-static-site-importer-theme-exporter.php';
 $export = Static_Site_Importer_Theme_Exporter::export_theme(array('theme_slug' => get_stylesheet()));
 $exportError = is_wp_error($export) ? array('code' => $export->get_error_code(), 'message' => $export->get_error_message()) : null;
@@ -129,11 +199,8 @@ if (!$persisted || !$reloaded || !$exported) { throw new RuntimeException('The G
 const workload = {
 	schema: 'wp-codebox/wordpress-workload-run/v1',
 	wordpress_version: process.env.SSI_TAXONOMY_WORDPRESS_VERSION ?? '7.1',
-	blueprint: { steps: [ { step: 'defineWpConfigConsts', consts: { SSI_TAXONOMY_DISPOSABLE_TEST: true } } ] },
-	mounts: [
-		{ source: root, target: '/wordpress/wp-content/plugins/static-site-importer', mode: 'readonly' },
-		{ source: engineRoot, target: '/wordpress/wp-content/plugins/blocks-engine-candidate', mode: 'readonly' },
-	],
+	blueprint,
+	mounts,
 	steps: [
 		{ command: 'wordpress.run-php', args: [ `code-file=${ join( root, 'tests/acceptance/taxonomy-archives-wordpress.php' ) }` ] },
 		{
@@ -169,6 +236,7 @@ writeFileSync( join( evidenceRoot, 'result.json' ), JSON.stringify( result, null
 writeFileSync( join( evidenceRoot, 'stdout.log' ), command.stdout ?? '' );
 writeFileSync( join( evidenceRoot, 'stderr.log' ), command.stderr ?? '' );
 const phpStep = ( result.executions ?? [] ).find( step => 'wordpress.run-php' === step.command );
+const primaryPackageProof = packageProofFrom( phpStep?.stdout );
 const editorSteps = ( result.executions ?? [] ).filter( step => 'wordpress.browser-page-load' === step.command );
 const editorSaveStep = editorSteps[0];
 const editorReloadStep = editorSteps[1];
@@ -237,7 +305,7 @@ try {
 	pageTwoBrowser = {};
 }
 browserAssertions.actualPageTwoHttpRequest = pageTwoBrowserStep?.exitCode === 0 && new URL( pageTwoBrowser.finalUrl ?? 'http://invalid/' ).pathname.includes( '/writing/category/personal/page/2' ) && Boolean( pageTwoSnapshotRow ) && 0 === ( pageTwoBrowser.summary?.errors ?? -1 );
-let success = result.success === true && command.status === 0 && phpStep?.exitCode === 0 && String( phpStep?.stdout ?? '' ).includes( 'Taxonomy archive WordPress store acceptance passed.' ) && String( phpStep?.stdout ?? '' ).includes( 'SSI is inactive for the subsequent real base/page-2 HTTP requests.' ) && editorSaveStep?.exitCode === 0 && editorReloadStep?.exitCode === 0 && editorVerifyStep?.exitCode === 0 && editorVerify.persisted === true && editorVerify.reloaded === true && editorVerify.exported === true && browserStep?.exitCode === 0 && pageTwoBrowserStep?.exitCode === 0 && Object.values( browserAssertions ).every( Boolean );
+let success = result.success === true && command.status === 0 && phpStep?.exitCode === 0 && String( phpStep?.stdout ?? '' ).includes( 'Taxonomy archive WordPress store acceptance passed.' ) && String( phpStep?.stdout ?? '' ).includes( 'SSI is inactive for the subsequent real base/page-2 HTTP requests.' ) && packageProofMatchesPin( primaryPackageProof ) && editorSaveStep?.exitCode === 0 && editorReloadStep?.exitCode === 0 && editorVerifyStep?.exitCode === 0 && editorVerify.persisted === true && editorVerify.reloaded === true && editorVerify.exported === true && browserStep?.exitCode === 0 && pageTwoBrowserStep?.exitCode === 0 && Object.values( browserAssertions ).every( Boolean );
 
 let adoptionAcceptance = { success: false, reason: 'primary acceptance did not pass' };
 let roundtripAcceptance = { success: false, reason: 'primary acceptance did not pass' };
@@ -250,11 +318,7 @@ if ( success ) {
 			schema: 'wp-codebox/wordpress-workload-run/v1',
 			wordpress_version: workload.wordpress_version,
 			blueprint: workload.blueprint,
-			mounts: [
-				{ source: root, target: '/wordpress/wp-content/plugins/static-site-importer', mode: 'readonly' },
-				{ source: engineRoot, target: '/wordpress/wp-content/plugins/blocks-engine-candidate', mode: 'readonly' },
-				{ source: evidenceRoot, target: '/wordpress/wp-content/uploads/ssi-taxonomy-evidence', mode: 'readonly' },
-			],
+			mounts: [ ...mounts, { source: evidenceRoot, target: '/wordpress/wp-content/uploads/ssi-taxonomy-evidence', mode: 'readonly' } ],
 			steps: [ { command: 'wordpress.run-php', args: [ `code-file=${ join( root, 'tests/acceptance/taxonomy-archive-adoption-wordpress.php' ) }` ] } ],
 		};
 		const adoptionWorkloadPath = join( sessionDir, 'adoption-workload.json' );
@@ -280,7 +344,7 @@ if ( success ) {
 		}
 		const adoptionPhp = ( adoptionResult.executions ?? [] ).find( step => 'wordpress.run-php' === step.command );
 		adoptionAcceptance = {
-			success: adoptionResult.success === true && adoptionCommand.status === 0 && adoptionPhp?.exitCode === 0 && String( adoptionPhp?.stdout ?? '' ).includes( 'Taxonomy archive adoption, destination conflict, and exact late rollback acceptance passed.' ),
+			success: adoptionResult.success === true && adoptionCommand.status === 0 && adoptionPhp?.exitCode === 0 && String( adoptionPhp?.stdout ?? '' ).includes( 'Taxonomy archive adoption, destination conflict, and exact late rollback acceptance passed.' ) && packageProofMatchesPin( packageProofFrom( adoptionPhp?.stdout ) ),
 			wpCodebox: spawnSync( cli, [ 'version' ], { encoding: 'utf8' } ).stdout.trim(),
 			failure: adoptionResult.result?.failure_summary ?? null,
 			exitCode: adoptionPhp?.exitCode ?? null,
@@ -290,11 +354,7 @@ if ( success ) {
 				schema: 'wp-codebox/wordpress-workload-run/v1',
 				wordpress_version: workload.wordpress_version,
 				blueprint: workload.blueprint,
-				mounts: [
-					{ source: root, target: '/wordpress/wp-content/plugins/static-site-importer', mode: 'readonly' },
-					{ source: engineRoot, target: '/wordpress/wp-content/plugins/blocks-engine-candidate', mode: 'readonly' },
-					{ source: evidenceRoot, target: '/wordpress/wp-content/uploads/ssi-taxonomy-evidence', mode: 'readonly' },
-				],
+				mounts: [ ...mounts, { source: evidenceRoot, target: '/wordpress/wp-content/uploads/ssi-taxonomy-evidence', mode: 'readonly' } ],
 				steps: [
 					{ command: 'wordpress.run-php', args: [ `code-file=${ join( root, 'tests/acceptance/taxonomy-archive-export-reimport-wordpress.php' ) }` ] },
 					{ command: 'wordpress.browser-page-load', args: [ 'url=/writing/category/personal/', 'wait-for=domcontentloaded', `script=${ baseArchiveHttpProbe }`, 'capture=html,console,errors,screenshot', 'network-policy=block' ] },
@@ -340,7 +400,7 @@ if ( success ) {
 				try { return JSON.parse( step.stdout ?? '{}' ); } catch { return {}; }
 			} );
 			roundtripAcceptance = {
-				success: roundtripResult.success === true && roundtripCommand.status === 0 && roundtripPhp?.exitCode === 0 && roundtripProof.acceptance === true && roundtripProof.import_completed === true && ! roundtripProof.ssi_active_after_import && 4 === roundtripBrowsers.length && roundtripBrowsers.every( ( step, index ) => step.exitCode === 0 && 0 === ( roundtripBrowserResults[index]?.summary?.errors ?? -1 ) ) && String( roundtripBrowserResults[0]?.finalUrl ?? '' ).includes( '/writing/category/personal/' ) && String( roundtripBrowserResults[1]?.finalUrl ?? '' ).includes( '/writing/category/personal/page/2/' ) && String( roundtripBrowserResults[2]?.finalUrl ?? '' ).includes( '/category/personal/' ) && String( roundtripBrowserResults[3]?.finalUrl ?? '' ).includes( '/category/personal/page/2/' ),
+				success: roundtripResult.success === true && roundtripCommand.status === 0 && roundtripPhp?.exitCode === 0 && roundtripProof.acceptance === true && roundtripProof.import_completed === true && ! roundtripProof.ssi_active_after_import && packageProofMatchesPin( roundtripProof.release_package ) && 4 === roundtripBrowsers.length && roundtripBrowsers.every( ( step, index ) => step.exitCode === 0 && 0 === ( roundtripBrowserResults[index]?.summary?.errors ?? -1 ) ) && String( roundtripBrowserResults[0]?.finalUrl ?? '' ).includes( '/writing/category/personal/' ) && String( roundtripBrowserResults[1]?.finalUrl ?? '' ).includes( '/writing/category/personal/page/2/' ) && String( roundtripBrowserResults[2]?.finalUrl ?? '' ).includes( '/category/personal/' ) && String( roundtripBrowserResults[3]?.finalUrl ?? '' ).includes( '/category/personal/page/2/' ),
 				wpCodebox: spawnSync( cli, [ 'version' ], { encoding: 'utf8' } ).stdout.trim(),
 				failure: roundtripResult.result?.failure_summary ?? null,
 				exitCode: roundtripPhp?.exitCode ?? null,
@@ -363,7 +423,8 @@ console.log( JSON.stringify( {
 	workloadStatus: result.status ?? null,
 	executions: ( result.executions ?? [] ).map( step => ( { command: step.command, exitCode: step.exitCode, stdout: step.stdout, stderr: step.stderr } ) ),
 	editorVerification: editorVerify,
-	browserAssertions,
+				browserAssertions,
+			releasePackageIdentity,
 	adoptionAcceptance,
 	roundtripAcceptance,
 	failure: result.result?.failure_summary ?? result.error?.message ?? null,

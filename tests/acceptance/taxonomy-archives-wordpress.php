@@ -7,10 +7,14 @@ if ( ! defined( 'SSI_TAXONOMY_DISPOSABLE_TEST' ) || true !== SSI_TAXONOMY_DISPOS
 wp_set_current_user( 1 );
 
 $ssi_autoloader = require_once '/wordpress/wp-content/plugins/static-site-importer/vendor/autoload.php';
-$engine_root    = '/wordpress/wp-content/plugins/blocks-engine-candidate';
-$ssi_autoloader->setPsr4( 'Automattic\\BlocksEngine\\PhpTransformer\\', $engine_root . '/src/', true );
-if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
-	require_once $engine_root . '/php-transformer.php';
+
+$release_package_mode = defined( 'SSI_TAXONOMY_RELEASE_PACKAGE' ) && true === SSI_TAXONOMY_RELEASE_PACKAGE;
+if ( ! $release_package_mode ) {
+	$engine_root = '/wordpress/wp-content/plugins/blocks-engine-candidate';
+	$ssi_autoloader->setPsr4( 'Automattic\\BlocksEngine\\PhpTransformer\\', $engine_root . '/src/', true );
+	if ( ! function_exists( 'blocks_engine_php_transformer_convert_format' ) ) {
+		require_once $engine_root . '/php-transformer.php';
+	}
 }
 require_once '/wordpress/wp-content/plugins/static-site-importer/static-site-importer.php';
 require_once '/wordpress/wp-content/plugins/static-site-importer/includes/class-static-site-importer-compilation-preparation.php';
@@ -21,6 +25,12 @@ $taxonomy_assert = static function ( bool $condition, string $message ): void {
 		throw new RuntimeException( $message ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- CLI assertion text is not rendered as HTML.
 	}
 };
+
+if ( $release_package_mode ) {
+	require_once '/wordpress/wp-content/plugins/static-site-importer/tests/acceptance/taxonomy-release-package-proof.php';
+	$release_package_proof = ssi_taxonomy_release_package_proof();
+	echo 'SSI-TAXONOMY-RELEASE-PACKAGE:' . wp_json_encode( $release_package_proof ) . "\n";
+}
 
 $slug                 = 'personal';
 $archive_route        = '/writing/category/' . $slug;
