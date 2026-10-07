@@ -373,16 +373,14 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @param array<string,int> $attachments Attachment ID per theme-relative source (0 when not bindable).
 	 * @param array<string,int> $by_hash     Attachment ID per content hash.
 	 */
-	private static function ensure_attachment( string $theme_dir, string $relative, string $alt, array &$state, array &$attachments, array &$by_hash, ?WP_Error &$error ): int {
-		if ( array_key_exists( $relative, $attachments ) ) {
-			return $attachments[ $relative ];
-		}
-		// An image service can serve one picture at several sizes, each under its
-		// own path. Different sizes are different bytes, so the content hash alone
-		// would keep one attachment per size. Use the largest captured size.
-		$source = self::largest_rendition( $theme_dir, $relative );
+	private static function ensure_attachment( string $theme_dir, string $relative, string $alt, array &$state, array &$attachments, array &$by_hash, ?WP_Error &$error, bool $authored_selection = false ): int {
+		// Explicit selection descriptors apply to these exact bytes. Largest-
+		// rendition promotion remains for native images without a source family.
+		$source = $authored_selection ? $relative : self::largest_rendition( $theme_dir, $relative );
 		if ( $source !== $relative ) {
-			$attachments[ $relative ] = self::ensure_attachment( $theme_dir, $source, $alt, $state, $attachments, $by_hash, $error );
+			return self::ensure_attachment( $theme_dir, $source, $alt, $state, $attachments, $by_hash, $error, true );
+		}
+		if ( array_key_exists( $relative, $attachments ) ) {
 			return $attachments[ $relative ];
 		}
 		$file = $theme_dir . '/' . $relative;
@@ -768,13 +766,14 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 */
 	private static function rewrite_media_tag( string $tag, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, array &$ids, ?WP_Error &$error, ?string $image_class ): string {
 		$src_id = 0;
+		$authored_selection = (bool) preg_match( '/\bsrcset="[^"\s]/i', $tag );
 		if ( preg_match( '/\bsrc="([^"]*)"/i', $tag, $src_match ) ) {
-			$src_id = self::attachment_id_for_url( html_entity_decode( $src_match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8' ), self::alt_from_tag( $tag ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
+			$src_id = self::attachment_id_for_url( html_entity_decode( $src_match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8' ), self::alt_from_tag( $tag ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error, $authored_selection );
 			if ( null !== $error ) {
 				return $tag;
 			}
 			if ( $src_id > 0 ) {
-				$url = wp_get_attachment_url( $src_id );
+				$url = $authored_selection ? wp_get_original_image_url( $src_id ) : wp_get_attachment_url( $src_id );
 				if ( is_string( $url ) && '' !== $url ) {
 					$tag   = str_replace( 'src="' . $src_match[1] . '"', 'src="' . esc_url( $url ) . '"', $tag );
 					$ids[] = $src_id;
@@ -817,19 +816,19 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
 	 */
 	private static function rewrite_srcset( string $srcset, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, ?WP_Error &$error ): string {
-		$urls = self::theme_urls_in( $srcset, $theme_uri );
-		usort( $urls, static fn ( string $left, string $right ): int => strlen( $right ) <=> strlen( $left ) );
-		foreach ( $urls as $url ) {
-			$id = self::attachment_id_for_url( $url, '', $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
+		// Candidate commas belong to the shared producer parser, not the URL
+		// scanner used for arbitrary markup. Descriptorless candidates end in
+		// commas while URL-internal commas remain part of the asset identity.
+		return \Automattic\BlocksEngine\PhpTransformer\AssetAnalysis\SrcsetParser::rewrite( html_entity_decode( $srcset, ENT_QUOTES | ENT_HTML5, 'UTF-8' ), static function ( string $url ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$error ): string {
+			$id = self::attachment_id_for_url( $url, '', $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error, true );
 			if ( null !== $error || $id <= 0 ) {
-				continue;
+				return $url;
 			}
-			$canonical = wp_get_attachment_url( $id );
-			if ( is_string( $canonical ) && '' !== $canonical ) {
-				$srcset = str_replace( $url, $canonical, $srcset );
-			}
-		}
-		return $srcset;
+			// Core may replace attachment "full" with a scaled upload. Authored
+			// descriptors and pixel identity belong to the original image bytes.
+			$canonical = wp_get_original_image_url( $id );
+			return is_string( $canonical ) && '' !== $canonical ? $canonical : $url;
+		} );
 	}
 
 	/**
@@ -838,13 +837,13 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @param array<string,int>                                                             $by_hash
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
 	 */
-	private static function attachment_id_for_url( string $url, string $alt, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, ?WP_Error &$error ): int {
+	private static function attachment_id_for_url( string $url, string $alt, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, ?WP_Error &$error, bool $authored_selection = false ): int {
 		$relative = self::theme_relative_raster( $url, $theme_uri );
 		if ( null === $relative ) {
 			return 0;
 		}
 		++$report['replaceable_media_count'];
-		$id = self::ensure_attachment( $theme_dir, $relative, $alt, $state, $attachments, $by_hash, $error );
+		$id = self::ensure_attachment( $theme_dir, $relative, $alt, $state, $attachments, $by_hash, $error, $authored_selection );
 		return null === $error ? $id : 0;
 	}
 
