@@ -107,12 +107,28 @@ $make_fact              = static function ( string $id, string $source, string $
 				'max_response_bytes'  => 1048576,
 				'timeout_seconds'     => 5,
 			),
-			'resource_variables' => array( 'slug' => array( 'location' => 'query', 'min_length' => 1, 'max_length' => 100, 'allowed_characters' => 'abcdefghijklmnopqrstuvwxyz0123456789-', 'first_characters' => 'abcdefghijklmnopqrstuvwxyz0123456789', 'prohibited_values' => array() ) ),
+			'resource_variables' => array(
+				'slug' => array(
+					'location'           => 'query',
+					'min_length'         => 1,
+					'max_length'         => 100,
+					'allowed_characters' => 'abcdefghijklmnopqrstuvwxyz0123456789-',
+					'first_characters'   => 'abcdefghijklmnopqrstuvwxyz0123456789',
+					'prohibited_values'  => array(),
+				),
+			),
 			'resources' => array_map( static fn( string $slug ): array => array( 'slug' => $slug ), $plugin_slugs ),
 			'freshness' => array( 'max_age_seconds' => 3600 ),
 		),
 		'metric'      => $metric,
-		'extraction'  => array_merge( array( 'kind' => 'json_pointer', 'pointer' => $extractions[ $metric ][0], 'value_type' => $extractions[ $metric ][1] ), 'string' === $extractions[ $metric ][1] ? array( 'max_length' => 255 ) : array() ),
+		'extraction'  => array_merge(
+			array(
+				'kind'       => 'json_pointer',
+				'pointer'    => $extractions[ $metric ][0],
+				'value_type' => $extractions[ $metric ][1],
+			),
+			'string' === $extractions[ $metric ][1] ? array( 'max_length' => 255 ) : array()
+		),
 		'aggregation' => $aggregation,
 		'format'      => $format,
 		'provenance'  => array(
@@ -235,35 +251,119 @@ $make_generic_fact = static function ( string $id, array $source, string $metric
 		'id'          => $id,
 		'source'      => $source,
 		'metric'      => $metric,
-		'extraction'  => array( 'kind' => 'json_pointer', 'pointer' => $pointer, 'value_type' => $type ) + ( 'string' === $type ? array( 'max_length' => 255 ) : array() ),
+		'extraction'  => array(
+			'kind'       => 'json_pointer',
+			'pointer'    => $pointer,
+			'value_type' => $type,
+		) + ( 'string' === $type ? array( 'max_length' => 255 ) : array() ),
 		'aggregation' => 'identity',
 		'format'      => $numeric,
 		'provenance'  => $provenance,
-		'fallback'    => array( 'text' => $fallback, 'hash' => hash( 'sha256', $fallback ) ),
-		'bindings'    => array( array( 'schema' => 'generic/block-binding/v1', 'role' => 'paragraph', 'source_path' => $metric_page['source_path'], 'search_block_markup' => $metric_page['contents'][ $fallback ], 'occurrence' => 1, 'leaf' => array( 'block' => 'core/paragraph', 'attribute' => 'content' ) ) ),
+		'fallback'    => array(
+			'text' => $fallback,
+			'hash' => hash( 'sha256', $fallback ),
+		),
+		'bindings'    => array(
+			array(
+				'schema'              => 'generic/block-binding/v1',
+				'role'                => 'paragraph',
+				'source_path'         => $metric_page['source_path'],
+				'search_block_markup' => $metric_page['contents'][ $fallback ],
+				'occurrence'          => 1,
+				'leaf'                => array(
+					'block'     => 'core/paragraph',
+					'attribute' => 'content',
+				),
+			),
+		),
 	);
 };
 $github_source = array(
 	'schema'             => 'generic/external-metric-source/v1',
 	'id'                 => 'github.repository-information',
 	'intent'             => 'external_public_json',
-	'request'            => array( 'method' => 'GET', 'url_template' => 'https://api.github.com/repos/{owner}/{repository}', 'query' => array(), 'query_variables' => array(), 'headers' => array( 'Accept' => 'application/vnd.github+json', 'X-GitHub-Api-Version' => '2022-11-28' ), 'response_media_type' => 'application/json', 'max_response_bytes' => 1048576, 'timeout_seconds' => 5 ),
-	'resource_variables' => array( 'owner' => array( 'location' => 'path', 'min_length' => 1, 'max_length' => 39, 'allowed_characters' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-', 'first_characters' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', 'last_characters' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', 'prohibited_values' => array() ), 'repository' => array( 'location' => 'path', 'min_length' => 1, 'max_length' => 100, 'allowed_characters' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-', 'prohibited_values' => array( '.', '..' ) ) ),
-	'resources'          => array( array( 'owner' => 'Automattic', 'repository' => '.github' ) ),
+	'request'            => array(
+		'method'              => 'GET',
+		'url_template'        => 'https://api.github.com/repos/{owner}/{repository}',
+		'query'               => array(),
+		'query_variables'     => array(),
+		'headers'             => array(
+			'Accept'               => 'application/vnd.github+json',
+			'X-GitHub-Api-Version' => '2022-11-28',
+		),
+		'response_media_type' => 'application/json',
+		'max_response_bytes'  => 1048576,
+		'timeout_seconds'     => 5,
+	),
+	'resource_variables' => array(
+		'owner' => array(
+			'location'           => 'path',
+			'min_length'         => 1,
+			'max_length'         => 39,
+			'allowed_characters' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-',
+			'first_characters'   => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
+			'last_characters'    => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
+			'prohibited_values'  => array(),
+		),
+		'repository' => array(
+			'location'           => 'path',
+			'min_length'         => 1,
+			'max_length'         => 100,
+			'allowed_characters' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-',
+			'prohibited_values'  => array( '.', '..' ),
+		),
+	),
+	'resources'          => array(
+		array(
+			'owner'      => 'Automattic',
+			'repository' => '.github',
+		),
+	),
 	'freshness'          => array( 'max_age_seconds' => 86400 ),
 );
 $neutral_source = array(
 	'schema'             => 'generic/external-metric-source/v1',
 	'id'                 => 'neutral.example-records',
 	'intent'             => 'external_public_json',
-	'request'            => array( 'method' => 'GET', 'url_template' => 'https://jsonplaceholder.typicode.com/todos/{record}', 'query' => array(), 'query_variables' => array(), 'headers' => array( 'Accept' => 'application/json' ), 'response_media_type' => 'application/json', 'max_response_bytes' => 1048576, 'timeout_seconds' => 5 ),
-	'resource_variables' => array( 'record' => array( 'location' => 'path', 'min_length' => 1, 'max_length' => 3, 'allowed_characters' => '0123456789', 'prohibited_values' => array() ) ),
-	'resources'          => array( array( 'record' => '1' ) ),
+	'request'            => array(
+		'method'              => 'GET',
+		'url_template'        => 'https://jsonplaceholder.typicode.com/todos/{record}',
+		'query'               => array(),
+		'query_variables'     => array(),
+		'headers'             => array( 'Accept' => 'application/json' ),
+		'response_media_type' => 'application/json',
+		'max_response_bytes'  => 1048576,
+		'timeout_seconds'     => 5,
+	),
+	'resource_variables' => array(
+		'record' => array(
+			'location'           => 'path',
+			'min_length'         => 1,
+			'max_length'         => 3,
+			'allowed_characters' => '0123456789',
+			'prohibited_values'  => array(),
+		),
+	),
+	'resources'          => array(
+		array( 'record' => '1' ),
+	),
 	'freshness'          => array( 'max_age_seconds' => 600 ),
 );
 $facts[] = $make_generic_fact( 'github-stars', $github_source, 'stargazers_count', '/stargazers_count', 'nonnegative_integer', '7', $source_provenance( 'src/components/gh-repo-card.tsx' ) );
 $facts[] = $make_generic_fact( 'github-forks', $github_source, 'forks_count', '/forks_count', 'nonnegative_integer', '9', $source_provenance( 'src/components/gh-repo-card.tsx' ) );
-$facts[] = $make_generic_fact( 'neutral-score', $neutral_source, 'user_id', '/userId', 'nonnegative_integer', '1', array( 'kind' => 'operator_mapping', 'author' => 'Chris Huber', 'source_relationship' => 'Neutral public JSON record userId is rendered as the configured source statistic.' ) );
+$facts[] = $make_generic_fact(
+	'neutral-score',
+	$neutral_source,
+	'user_id',
+	'/userId',
+	'nonnegative_integer',
+	'1',
+	array(
+		'kind'                => 'operator_mapping',
+		'author'              => 'Chris Huber',
+		'source_relationship' => 'Neutral public JSON record userId is rendered as the configured source statistic.',
+	)
+);
 $direct_validation = Static_Site_Importer_External_Metric_Runtime::validate_manifest( array( 'external_metrics' => $facts ) );
 $assert( empty( $direct_validation['errors'] ), 'Consumer validates producer facts: ' . wp_json_encode( $direct_validation['errors'] ?? array() ) );
 $declaration                      = array(

@@ -170,7 +170,10 @@ final class Static_Site_Importer_External_Metric_Runtime {
 				continue;
 			}
 			if ( array_key_exists( 'provider', $fact ) ) {
-				$errors[] = array( 'path' => $path . '.provider', 'message' => 'The retired provider reader shape is unsupported; declare a generic source recipe.' );
+				$errors[] = array(
+					'path'    => $path . '.provider',
+					'message' => 'The retired provider reader shape is unsupported; declare a generic source recipe.',
+				);
 				continue;
 			}
 			$seen[ $fact['id'] ] = true;
@@ -267,18 +270,18 @@ final class Static_Site_Importer_External_Metric_Runtime {
 			$url = '';
 		}
 		preg_match_all( '/\\{([a-z][a-z0-9_]*)\\}/', $url, $matches );
-		if ( str_contains( str_replace( $matches[0] ?? array(), '', $url ), '{' ) || str_contains( str_replace( $matches[0] ?? array(), '', $url ), '}' ) ) {
+		if ( str_contains( str_replace( $matches[0], '', $url ), '{' ) || str_contains( str_replace( $matches[0], '', $url ), '}' ) ) {
 			$errors['url_template_variables'] = false; }
-		$parsed_template = parse_url( $url );
-		$parsed_url      = parse_url( str_replace( $matches[0] ?? array(), 'resource', $url ) );
+		$parsed_template = function_exists( 'wp_parse_url' ) ? wp_parse_url( $url ) : parse_url( $url ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Standalone companion validation runs without WordPress URL helpers.
+		$parsed_url      = function_exists( 'wp_parse_url' ) ? wp_parse_url( str_replace( $matches[0], 'resource', $url ) ) : parse_url( str_replace( $matches[0], 'resource', $url ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Standalone companion validation runs without WordPress URL helpers.
 		$host            = is_array( $parsed_url ) ? strtolower( (string) ( $parsed_url['host'] ?? '' ) ) : '';
 		if ( ! is_array( $parsed_template ) || ! is_array( $parsed_url ) || str_contains( (string) ( $parsed_template['host'] ?? '' ), '{' ) || 'https' !== strtolower( (string) ( $parsed_url['scheme'] ?? '' ) ) || '' === $host || filter_var( $host, FILTER_VALIDATE_IP ) || ! preg_match( '/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$/', $host ) || isset( $parsed_url['user'] ) || isset( $parsed_url['pass'] ) || ( isset( $parsed_url['port'] ) && 443 !== $parsed_url['port'] ) || isset( $parsed_url['query'] ) || isset( $parsed_url['fragment'] ) ) {
 			$errors['url_template'] = false; }
 		$path = (string) ( $parsed_template['path'] ?? '' );
 		preg_match_all( '/\\{([a-z][a-z0-9_]*)\\}/', $path, $path_matches );
-		if ( count( $matches[1] ?? array() ) !== count( $path_matches[1] ?? array() ) || count( $path_matches[1] ?? array() ) > 16 ) {
+		if ( count( $matches[1] ) !== count( $path_matches[1] ) || count( $path_matches[1] ) > 16 ) {
 			$errors['url_path_variables'] = false; }
-		foreach ( explode( '/', rawurldecode( str_replace( $path_matches[0] ?? array(), 'resource', $path ) ) ) as $segment ) {
+		foreach ( explode( '/', rawurldecode( str_replace( $path_matches[0], 'resource', $path ) ) ) as $segment ) {
 			if ( in_array( $segment, array( '.', '..' ), true ) ) {
 				$errors['url_path_segments'] = false; }
 		}
@@ -297,10 +300,10 @@ final class Static_Site_Importer_External_Metric_Runtime {
 			$errors['query_variables'] = false;
 			$query_variables = array(); }
 		foreach ( $query_variables as $name ) {
-			if ( ! is_string( $name ) || ! preg_match( '/^[a-z][a-z0-9_]{0,63}$/', $name ) || preg_match( '/(?:token|secret|password|credential|auth|api[-_]?key)/i', $name ) || in_array( $name, $path_matches[1] ?? array(), true ) || array_key_exists( $name, $query ) ) {
+			if ( ! is_string( $name ) || ! preg_match( '/^[a-z][a-z0-9_]{0,63}$/', $name ) || preg_match( '/(?:token|secret|password|credential|auth|api[-_]?key)/i', $name ) || in_array( $name, $path_matches[1], true ) || array_key_exists( $name, $query ) ) {
 				$errors['query_variables'] = false; }
 		}
-		$variables = array_values( array_unique( array_merge( $path_matches[1] ?? array(), $query_variables ) ) );
+		$variables = array_values( array_unique( array_merge( $path_matches[1], $query_variables ) ) );
 		sort( $variables, SORT_STRING );
 		$variable_schemas = $source['resource_variables'];
 		$variable_names   = array_keys( $variable_schemas );
@@ -308,10 +311,10 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		if ( count( $variables ) > 32 || $variables !== $variable_names ) {
 			$errors['resource_variable_schema'] = false; }
 		foreach ( $variable_schemas as $name => $schema ) {
-			$location = in_array( $name, $path_matches[1] ?? array(), true ) ? 'path' : 'query';
+			$location = in_array( $name, $path_matches[1], true ) ? 'path' : 'query';
 			$schema_keys = is_array( $schema ) ? array_keys( $schema ) : array();
 			$allowed_keys = array( 'location', 'min_length', 'max_length', 'allowed_characters', 'first_characters', 'last_characters', 'prohibited_values' );
-			if ( ! is_array( $schema ) || preg_match( '/(?:token|secret|password|credential|auth|api[-_]?key)/i', (string) $name ) || array_diff( $schema_keys, $allowed_keys ) || ! in_array( count( $schema ), array( 5, 6, 7 ), true ) || $location !== ( $schema['location'] ?? null ) || ! is_int( $schema['min_length'] ?? null ) || $schema['min_length'] < 1 || ! is_int( $schema['max_length'] ?? null ) || $schema['max_length'] < $schema['min_length'] || $schema['max_length'] > 255 || ! is_string( $schema['allowed_characters'] ?? null ) || '' === $schema['allowed_characters'] || strlen( $schema['allowed_characters'] ) > 128 || 1 !== preg_match( '/\\A[\\x21-\\x7e]+\\z/D', $schema['allowed_characters'] ) || strlen( count_chars( $schema['allowed_characters'], 3 ) ) !== strlen( $schema['allowed_characters'] ) || ! is_array( $schema['prohibited_values'] ?? null ) || ! array_is_list( $schema['prohibited_values'] ) || count( $schema['prohibited_values'] ) > 16 ) {
+			if ( ! is_array( $schema ) || preg_match( '/(?:token|secret|password|credential|auth|api[-_]?key)/i', (string) $name ) || array_diff( $schema_keys, $allowed_keys ) || ! in_array( count( $schema ), array( 5, 6, 7 ), true ) || ! is_string( $schema['location'] ?? null ) || ! hash_equals( $location, (string) $schema['location'] ) || ! is_int( $schema['min_length'] ?? null ) || $schema['min_length'] < 1 || ! is_int( $schema['max_length'] ?? null ) || $schema['max_length'] < $schema['min_length'] || $schema['max_length'] > 255 || ! is_string( $schema['allowed_characters'] ?? null ) || '' === $schema['allowed_characters'] || strlen( $schema['allowed_characters'] ) > 128 || 1 !== preg_match( '/\\A[\\x21-\\x7e]+\\z/D', $schema['allowed_characters'] ) || strlen( count_chars( $schema['allowed_characters'], 3 ) ) !== strlen( $schema['allowed_characters'] ) || ! is_array( $schema['prohibited_values'] ?? null ) || ! array_is_list( $schema['prohibited_values'] ) || count( $schema['prohibited_values'] ) > 16 ) {
 				$errors['resource_variable_constraints'] = false;
 				continue; }
 			foreach ( array( 'first_characters', 'last_characters' ) as $edge ) {
@@ -471,9 +474,6 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		) ) {
 			return null; }
 		$cache_material = self::canonical_json( array( $fact['source'], $fact['metric'], $fact['extraction'] ?? null, $fact['aggregation'], $fact['format'] ) );
-		if ( ! is_string( $cache_material ) ) {
-			return null;
-		}
 		$recipe_hash = hash( 'sha256', $cache_material );
 		$key         = 'ssi_external_metric_' . $recipe_hash;
 		$now         = $now ?? time();
@@ -487,15 +487,15 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		}
 		if ( $force ) {
 			foreach ( $request_source_hashes as $candidate_id => $candidate_hash ) {
-				if ( $source_hash === $candidate_hash ) {
+				if ( hash_equals( $source_hash, $candidate_hash ) ) {
 					unset( $request_values[ $candidate_id ] ); }
 			}
 		}
 		$source_cached = function_exists( 'get_transient' ) ? get_transient( $source_key ) : false;
-		$use_source_cache = ! $force && is_array( $source_cached ) && 'fresh' === ( $source_cached['status'] ?? null ) && $source_hash === ( $source_cached['source_hash'] ?? null ) && is_int( $source_cached['fetched_at'] ?? null ) && $now >= $source_cached['fetched_at'] && $max_age > ( $now - $source_cached['fetched_at'] ) && is_array( $source_cached['documents'] ?? null ) && array_is_list( $source_cached['documents'] ) && count( $source_cached['documents'] ) === count( $fact['source']['resources'] );
+		$use_source_cache = ! $force && is_array( $source_cached ) && 'fresh' === ( $source_cached['status'] ?? null ) && is_string( $source_cached['source_hash'] ?? null ) && hash_equals( $source_hash, $source_cached['source_hash'] ) && is_int( $source_cached['fetched_at'] ?? null ) && $now >= $source_cached['fetched_at'] && $max_age > ( $now - $source_cached['fetched_at'] ) && is_array( $source_cached['documents'] ?? null ) && array_is_list( $source_cached['documents'] ) && count( $source_cached['documents'] ) === count( $fact['source']['resources'] );
 		$source_fetched_at = $use_source_cache ? (int) $source_cached['fetched_at'] : $now;
 		$cached      = function_exists( 'get_transient' ) ? get_transient( $key ) : false;
-		if ( ! $force && is_array( $cached ) && 'fresh' === ( $cached['status'] ?? null ) && is_string( $cached['value'] ?? null ) && is_int( $cached['fetched_at'] ?? null ) && $now >= $cached['fetched_at'] && $max_age > ( $now - $cached['fetched_at'] ) && $source_id === ( $cached['source_id'] ?? null ) && $recipe_hash === ( $cached['recipe_hash'] ?? null ) && ( ! $use_source_cache || ( $cached['source_fetched_at'] ?? null ) === $source_fetched_at ) ) {
+		if ( ! $force && is_array( $cached ) && 'fresh' === ( $cached['status'] ?? null ) && is_string( $cached['value'] ?? null ) && is_int( $cached['fetched_at'] ?? null ) && $now >= $cached['fetched_at'] && $max_age > ( $now - $cached['fetched_at'] ) && is_string( $cached['source_id'] ?? null ) && hash_equals( $source_id, $cached['source_id'] ) && is_string( $cached['recipe_hash'] ?? null ) && hash_equals( $recipe_hash, $cached['recipe_hash'] ) && ( ! $use_source_cache || ( $cached['source_fetched_at'] ?? null ) === $source_fetched_at ) ) {
 			// The transient is a canonical source receipt shared by facts with the
 			// same provider semantics. Hand that exact receipt to this fact so its
 			// binding can render the cached value without inventing freshness data.
@@ -576,15 +576,25 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		if ( ! $use_source_cache && function_exists( 'set_transient' ) ) {
 			$source_documents = wp_json_encode( $documents );
 			if ( is_string( $source_documents ) && strlen( $source_documents ) <= self::MAX_BODY ) {
-				set_transient( $source_key, array( 'status' => 'fresh', 'source_hash' => $source_hash, 'fetched_at' => $fetched_at, 'documents' => $documents ), $max_age ); }
+				set_transient(
+					$source_key,
+					array(
+						'status'     => 'fresh',
+						'source_hash' => $source_hash,
+						'fetched_at' => $fetched_at,
+						'documents'  => $documents,
+					),
+					$max_age
+				);
+			}
 		}
 		$receipt   = array(
-			'status'     => 'fresh',
-			'value'      => $formatted,
-			'fetched_at' => $fetched_at,
+			'status'            => 'fresh',
+			'value'             => $formatted,
+			'fetched_at'        => $fetched_at,
 			'source_fetched_at' => $fetched_at,
-			'source_id'  => $source_id,
-			'recipe_hash' => $recipe_hash,
+			'source_id'         => $source_id,
+			'recipe_hash'       => $recipe_hash,
 		);
 		if ( function_exists( 'set_transient' ) ) {
 			set_transient( $key, $receipt, $max_age ); }
@@ -609,12 +619,13 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		$value     = is_array( $last_good ) && is_string( $last_good['value'] ?? null ) ? $last_good['value'] : (string) $fact['fallback']['text'];
 		$status    = is_array( $last_good ) ? 'stale' : ( '' !== $value ? 'captured_fallback' : 'unresolved' );
 		$recipe_hash = hash( 'sha256', self::canonical_json( array( $fact['source'], $fact['metric'], $fact['extraction'] ?? null, $fact['aggregation'], $fact['format'] ) ) );
-		$receipt   = array(
-			'status'     => $status,
-			'value'      => $value,
-			'fetched_at' => (int) ( $last_good['fetched_at'] ?? 0 ),
-			'source_id'  => (string) ( $fact['source']['id'] ?? '' ),
-			'recipe_hash' => $recipe_hash,
+		$receipt     = array(
+			'status'            => $status,
+			'value'             => $value,
+			'fetched_at'        => (int) ( $last_good['fetched_at'] ?? 0 ),
+			'source_fetched_at' => (int) ( $last_good['source_fetched_at'] ?? $last_good['fetched_at'] ?? 0 ),
+			'source_id'         => (string) ( $fact['source']['id'] ?? '' ),
+			'recipe_hash'       => $recipe_hash,
 		);
 		self::store_receipt( $id, $receipt );
 		$request_values[ $id ] = $value;
@@ -655,8 +666,8 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		$request = $source['request'];
 		$url     = preg_replace_callback(
 			'/\\{([A-Za-z][A-Za-z0-9_]*)\\}/',
-			static function ( array $match ) use ( $resource ): string {
-				$value = (string) ( $resource[ $match[1] ] ?? '' );
+			static function ( array $placeholder_parts ) use ( $resource ): string {
+				$value = (string) ( $resource[ $placeholder_parts[1] ] ?? '' );
 				return in_array( $value, array( '.', '..' ), true ) ? '' : rawurlencode( $value );
 			},
 			(string) $request['url_template']
@@ -671,11 +682,14 @@ final class Static_Site_Importer_External_Metric_Runtime {
 		}
 		if ( ! empty( $query ) ) {
 			$url = add_query_arg( $query, $url ); }
-		return array( 'url' => $url, 'headers' => $request['headers'] );
+		return array(
+			'url'     => $url,
+			'headers' => $request['headers'],
+		);
 	}
 
 	private static function public_request_url( string $url ): bool {
-		$parts = function_exists( 'wp_parse_url' ) ? wp_parse_url( $url ) : parse_url( $url );
+		$parts = function_exists( 'wp_parse_url' ) ? wp_parse_url( $url ) : parse_url( $url ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Standalone companion runtime tests run without WordPress URL helpers.
 		if ( ! is_array( $parts ) || 'https' !== strtolower( (string) ( $parts['scheme'] ?? '' ) ) || empty( $parts['host'] ) || isset( $parts['user'] ) || isset( $parts['pass'] ) || ( isset( $parts['port'] ) && 443 !== $parts['port'] ) ) {
 			return false; }
 		$host = (string) $parts['host'];
@@ -698,9 +712,11 @@ final class Static_Site_Importer_External_Metric_Runtime {
 
 	private static function json_response( mixed $response, int $max_bytes ): bool {
 		$body = wp_remote_retrieve_body( $response );
-		if ( ! is_string( $body ) || strlen( $body ) > $max_bytes ) {
+		if ( strlen( $body ) > $max_bytes ) {
 			return false; }
-		$content_type = function_exists( 'wp_remote_retrieve_header' ) ? (string) wp_remote_retrieve_header( $response, 'content-type' ) : '';
+		$content_type = function_exists( 'wp_remote_retrieve_header' ) ? wp_remote_retrieve_header( $response, 'content-type' ) : '';
+		if ( ! is_string( $content_type ) ) {
+			return false; }
 		return (bool) preg_match( '~^application/(?:[a-z0-9.+-]*\\+)?json(?:\\s*;|$)~i', trim( $content_type ) );
 	}
 

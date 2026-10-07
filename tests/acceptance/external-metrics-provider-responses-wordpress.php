@@ -286,7 +286,11 @@ echo wp_json_encode(
 		'core'           => get_bloginfo( 'version' ),
 		'results'        => $results,
 		'lkg'            => $lkg_outage,
-		'github_rate_limit' => array( 'seed' => $github_seed, 'rate_limited' => $github_rate_limited, 'recovered' => $github_recovered ),
+		'github_rate_limit' => array(
+			'seed'         => $github_seed,
+			'rate_limited' => $github_rate_limited,
+			'recovered'    => $github_recovered,
+		),
 		'partial'        => $partial_result,
 		'recovered'      => $recovered_result,
 		'refresh_routes' => array(

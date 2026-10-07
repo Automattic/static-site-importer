@@ -20,9 +20,23 @@ $success_count_fact = $fact_map['active-installs'];
 $success_count_fact['id'] = 'project-count';
 $success_count_fact['metric'] = 'plugin_response_count';
 $success_count_fact['aggregation'] = 'success_count';
-$success_count_fact['extraction'] = array( 'kind' => 'json_pointer', 'pointer' => '/slug', 'value_type' => 'string', 'max_length' => 255 );
-$success_count_fact['format'] = array( 'locale' => 'en-US', 'grouping' => true, 'prefix' => '', 'suffix' => '', 'decimals' => 0 );
-$success_count_fact['fallback'] = array( 'text' => 'Captured successful project count', 'hash' => hash( 'sha256', 'Captured successful project count' ) );
+$success_count_fact['extraction'] = array(
+	'kind'       => 'json_pointer',
+	'pointer'    => '/slug',
+	'value_type' => 'string',
+	'max_length' => 255,
+);
+$success_count_fact['format'] = array(
+	'locale'   => 'en-US',
+	'grouping' => true,
+	'prefix'   => '',
+	'suffix'   => '',
+	'decimals' => 0,
+);
+$success_count_fact['fallback'] = array(
+	'text' => 'Captured successful project count',
+	'hash' => hash( 'sha256', 'Captured successful project count' ),
+);
 $success_count_fact['bindings'][0]['search_block_markup'] = '<!-- wp:paragraph --><p>Captured successful project count</p><!-- /wp:paragraph -->';
 $fact_map['project-count'] = $success_count_fact;
 $facts[] = $success_count_fact;
@@ -50,14 +64,31 @@ $receipts = get_option( 'static_site_importer_external_metric_receipts', array()
 foreach ( $facts as $fact ) {
 	$row = $receipts[ $fact['id'] ] ?? array();
 	$assert( 'fresh' === ( $row['status'] ?? '' ) && is_int( $row['fetched_at'] ?? null ) && '' !== (string) ( $row['value'] ?? '' ) && ( $row['source_id'] ?? '' ) === ( $fact['source']['id'] ?? '' ), 'Timestamped fresh source receipt exists for ' . $fact['id'] ); }
-$github_api = wp_safe_remote_get( 'https://api.github.com/repos/Automattic/.github', array( 'timeout' => 5, 'redirection' => 0, 'headers' => array( 'Accept' => 'application/vnd.github+json', 'X-GitHub-Api-Version' => '2022-11-28' ) ) );
+$github_api = wp_safe_remote_get(
+	'https://api.github.com/repos/Automattic/.github',
+	array(
+		'timeout'     => 5,
+		'redirection' => 0,
+		'headers'     => array(
+			'Accept'               => 'application/vnd.github+json',
+			'X-GitHub-Api-Version' => '2022-11-28',
+		),
+	)
+);
 $github_data = ! is_wp_error( $github_api ) && 200 === (int) wp_remote_retrieve_response_code( $github_api ) ? json_decode( wp_remote_retrieve_body( $github_api ), true ) : array();
 $assert( is_array( $github_data ) && is_int( $github_data['stargazers_count'] ?? null ) && is_int( $github_data['forks_count'] ?? null ), 'Independent live GitHub API observation contains exact integer stargazers_count and forks_count fields: status=' . ( is_wp_error( $github_api ) ? $github_api->get_error_message() : wp_remote_retrieve_response_code( $github_api ) ) . ' body=' . wp_remote_retrieve_body( $github_api ) );
 $assert( (string) ( $github_data['stargazers_count'] ?? '' ) === ( $receipts['github-stars']['value'] ?? null ) && (string) ( $github_data['forks_count'] ?? '' ) === ( $receipts['github-forks']['value'] ?? null ), 'Generated runtime receipts equal the independently queried GitHub API fields exactly.' );
 $assert( ( $receipts['github-stars']['fetched_at'] ?? null ) === ( $receipts['github-forks']['fetched_at'] ?? null ), 'GitHub stars and forks reuse the same source response timestamp.' );
-$neutral_api = wp_safe_remote_get( 'https://jsonplaceholder.typicode.com/todos/1', array( 'timeout' => 5, 'redirection' => 0, 'headers' => array( 'Accept' => 'application/json' ) ) );
+$neutral_api = wp_safe_remote_get(
+	'https://jsonplaceholder.typicode.com/todos/1',
+	array(
+		'timeout'     => 5,
+		'redirection' => 0,
+		'headers'     => array( 'Accept' => 'application/json' ),
+	)
+);
 $neutral_data = ! is_wp_error( $neutral_api ) && 200 === (int) wp_remote_retrieve_response_code( $neutral_api ) ? json_decode( wp_remote_retrieve_body( $neutral_api ), true ) : array();
-$assert( is_array( $neutral_data ) && is_int( $neutral_data['userId'] ?? null ) && (string) $neutral_data['userId'] === ( $receipts['neutral-score']['value'] ?? null ), 'Third neutral public JSON source renders its independently observed userId field through the same companion interpreter.' );
+$assert( is_array( $neutral_data ) && is_int( $neutral_data['userId'] ?? null ) && is_string( $receipts['neutral-score']['value'] ?? null ) && hash_equals( (string) $neutral_data['userId'], $receipts['neutral-score']['value'] ), 'Third neutral public JSON source renders its independently observed userId field through the same companion interpreter.' );
 $assert( hash( 'sha256', (string) get_post_field( 'post_content', $metric_post_id ) ) === $before_hash, 'Fetch and cache expiry refresh leave saved post content unchanged.' );
 
 // A separate editor page proves that refresh returns a new value for the
@@ -85,8 +116,26 @@ $make_editor_metric = static function ( array $template, string $id, array $reso
 	return $fact;
 };
 $editor_facts       = array(
-	$make_editor_metric( $metric_map['github-stars'], 'editor-detach-metric', array( 'owner' => 'Automattic', 'repository' => '.github' ), 'captured-editor-stars', 'paragraph' ),
-	$make_editor_metric( $metric_map['github-forks'], 'editor-sibling-metric', array( 'owner' => 'Automattic', 'repository' => '.github' ), 'captured-editor-forks', 'paragraph' ),
+	$make_editor_metric(
+		$metric_map['github-stars'],
+		'editor-detach-metric',
+		array(
+			'owner'      => 'Automattic',
+			'repository' => '.github',
+		),
+		'captured-editor-stars',
+		'paragraph'
+	),
+	$make_editor_metric(
+		$metric_map['github-forks'],
+		'editor-sibling-metric',
+		array(
+			'owner'      => 'Automattic',
+			'repository' => '.github',
+		),
+		'captured-editor-forks',
+		'paragraph'
+	),
 	$make_editor_metric( $metric_map['project-version'], 'literal-fallback-paragraph', array( 'slug' => 'ssi-literal-paragraph' ), '<em>pending</em> "quoted" &amp; &#38;', 'paragraph' ),
 	$make_editor_metric( $metric_map['project-version'], 'literal-fallback-heading', array( 'slug' => 'ssi-literal-heading' ), '<em>pending</em> "quoted" &amp; &#38;', 'heading' ),
 );
