@@ -4386,6 +4386,22 @@ namespace {
 	);
 	$assert( ! str_contains( $mesh_static_grid_css, 'position:static' ), 'merged-static-field-grid-does-not-unset-the-relative-form-box', $mesh_static_grid_css );
 	$assert( 1 === preg_match( '/^\.ssi-form-[a-f0-9]{12}\{pointer-events:auto\}$/m', $mesh_static_grid_css ), 'merged-mesh-box-pointer-events-none-does-not-disable-the-provider-form', $mesh_static_grid_css );
+	// Every presentation fact in a responsive capture is scoped to a media query,
+	// so the form has no unconditional presentation pass. Provider-default resets
+	// still belong outside every query: without them Jetpack's
+	// `min-height: var(--jetpack--contact-form--input-height)` (46px at runtime)
+	// floors the 36px source Send button and its wrapper.
+	$mesh_unconditional_css = (string) preg_replace( '/@media[^{]*\{(?:[^{}]*\{[^}]*\})*[^{}]*\}/', '', $mesh_static_grid_css );
+	$assert(
+		1 === preg_match( '/(?:^|\})\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? \.ssi-node-[a-f0-9]{12} > \.wp-block-button__link\{[^}]*min-height:0[;}]/m', $mesh_unconditional_css ),
+		'media-only-mesh-submit-link-still-releases-the-provider-min-height',
+		$mesh_unconditional_css
+	);
+	$assert(
+		1 === preg_match( '/(?:^|\})\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? \.ssi-node-[a-f0-9]{12}\{min-height:0\}/m', $mesh_unconditional_css ),
+		'mesh-submit-button-wrapper-releases-the-provider-min-height-so-the-source-height-holds',
+		$mesh_unconditional_css
+	);
 	$mesh_static_inset = $mesh_form( array( 'left' => '12px' ) );
 	$assert(
 		empty( $mesh_static_inset['errors'] ) && 'skipped' === ( $mesh_static_inset['row']['status'] ?? '' ) && in_array( 'provider_wrapper_layout_unrepresentable', $mesh_static_inset['unaccepted'], true ),

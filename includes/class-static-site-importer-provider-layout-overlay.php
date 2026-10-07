@@ -188,6 +188,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				}
 			}
 		}
+		$base_presented = array();
 		foreach ( $presentation_graph['controls'] ?? array() as $control ) {
 			if ( ! is_array( $control ) || ! is_int( $control['index'] ?? null ) ) {
 				continue;
@@ -203,6 +204,23 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					continue;
 				}
 				self::compile_presentation_destinations( $destinations, $control[ $role ]['styles'], $control['index'], $role, null, $rules, $operations, $losses );
+				$base_presented[ $control['index'] . "\n" . $role ] = true;
+			}
+		}
+		// A responsive capture can scope every presentation fact to a media query,
+		// leaving a destination with no unconditional pass. Its provider-default
+		// resets still belong outside every query, ahead of the conditional patches
+		// that may override them, exactly as they would beside a base style set.
+		foreach ( $presentation_graph['variants'] ?? array() as $variant ) {
+			$index = $variant['index'] ?? null;
+			$role  = $variant['role'] ?? null;
+			if ( ! is_int( $index ) || ! in_array( $role, array( 'control', 'label', 'required_marker' ), true ) || isset( $base_presented[ $index . "\n" . $role ] ) ) {
+				continue;
+			}
+			$base_presented[ $index . "\n" . $role ] = true;
+			$destinations                            = array_filter( $presentation_targets[ $index ]['destinations'] ?? array(), static fn( array $destination ): bool => $role === $destination['role'] && ! empty( $destination['resets'] ) );
+			if ( ! empty( $destinations ) ) {
+				self::compile_presentation_destinations( $destinations, array(), $index, $role, null, $rules, $operations, $losses );
 			}
 		}
 		foreach ( $presentation_graph['variants'] ?? array() as $variant ) {
