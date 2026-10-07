@@ -43,6 +43,9 @@ final class Static_Site_Importer_Source_Route_Redirect {
 		}
 		$request = isset( $GLOBALS['wp']->request ) && is_string( $GLOBALS['wp']->request ) ? $GLOBALS['wp']->request : '';
 		$path    = self::request_path( '' !== $request ? $request : (string) ( $_SERVER['REQUEST_URI'] ?? '' ) );
+		if ( class_exists( 'Static_Site_Importer_Redirection_Materializer' ) && Static_Site_Importer_Redirection_Materializer::owns_route( $path ) ) {
+			return $query_vars;
+		}
 		if ( '' === $path ) {
 			return $query_vars;
 		}
@@ -133,6 +136,9 @@ final class Static_Site_Importer_Source_Route_Redirect {
 
 	public static function target_url( ?string $request_uri = null, ?string $query_string = null ): ?string {
 		$path = self::request_path( $request_uri ?? (string) ( $_SERVER['REQUEST_URI'] ?? '' ) );
+		if ( class_exists( 'Static_Site_Importer_Redirection_Materializer' ) && Static_Site_Importer_Redirection_Materializer::owns_route( $path ) ) {
+			return null;
+		}
 		if ( '' === $path || ! function_exists( 'get_permalink' ) ) {
 			return null;
 		}

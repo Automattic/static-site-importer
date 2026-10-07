@@ -1,0 +1,30 @@
+import { writeFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
+const { chromium } = await import(process.env.SSI_REDIRECTION_PLAYWRIGHT_MODULE ? pathToFileURL(process.env.SSI_REDIRECTION_PLAYWRIGHT_MODULE).href : 'playwright');
+const [base, evidence] = process.argv.slice(2);
+const browser = await chromium.launch({ headless: true });
+try {
+  const page = await browser.newPage();
+  await page.goto(`${base}/wp-login.php`, { waitUntil: 'domcontentloaded' });
+  await page.locator('#user_login').fill('admin');
+  await page.locator('#user_pass').fill('password');
+  await page.locator('#wp-submit').click();
+  await page.waitForURL('**/wp-admin/**');
+  await page.goto(`${base}/wp-admin/tools.php?page=redirection.php`, { waitUntil: 'domcontentloaded' });
+  await page.getByText('/old', { exact: true }).first().waitFor({ state: 'visible', timeout: 60000 });
+  await page.screenshot({ path: `${evidence}/native-admin.png`, fullPage: true });
+  const response = await page.goto(`${base}/old?trace=browser`, { waitUntil: 'domcontentloaded' });
+  if (response.status() !== 200 || !page.url().includes('/owner-destination/') || !page.url().includes('trace=browser')) throw new Error('Native owner-edited route did not reach its final document');
+  await page.getByText('Owner-managed route.', { exact: true }).waitFor();
+  await page.goto('http://127.0.0.1:19605/owner-destination/', { waitUntil: 'domcontentloaded' });
+  await page.getByText('Owner-managed route.', { exact: true }).waitFor();
+  await page.screenshot({ path: `${evidence}/served-export.png`, fullPage: true });
+  await page.goto('http://127.0.0.1:19604/old', { waitUntil: 'domcontentloaded' });
+  if (!page.url().includes('/owner-destination/')) throw new Error('The second-site native route failed');
+  await page.getByText('Owner-managed route.', { exact: true }).waitFor();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.getByText('Owner-managed route.', { exact: true }).waitFor();
+  const result = { status: 'passed', nativeAdminRuleVisible: true, nativeOwnerEditRendered: true, servedFullExport: true, secondSiteNativeNavigation: true, secondSiteReload: true };
+  await writeFile(`${evidence}/browser.json`, JSON.stringify(result, null, 2));
+  console.log(JSON.stringify(result));
+} finally { await browser.close(); }

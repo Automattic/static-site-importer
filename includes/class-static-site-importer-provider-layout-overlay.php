@@ -188,6 +188,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				}
 			}
 		}
+		$base_presented = array();
 		foreach ( $presentation_graph['controls'] ?? array() as $control ) {
 			if ( ! is_array( $control ) || ! is_int( $control['index'] ?? null ) ) {
 				continue;
@@ -203,6 +204,23 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					continue;
 				}
 				self::compile_presentation_destinations( $destinations, $control[ $role ]['styles'], $control['index'], $role, null, $rules, $operations, $losses );
+				$base_presented[ $control['index'] . "\n" . $role ] = true;
+			}
+		}
+		// A responsive capture can scope every presentation fact to a media query,
+		// leaving a destination with no unconditional pass. Its provider-default
+		// resets still belong outside every query, ahead of the conditional patches
+		// that may override them, exactly as they would beside a base style set.
+		foreach ( $presentation_graph['variants'] ?? array() as $variant ) {
+			$index = $variant['index'] ?? null;
+			$role  = $variant['role'] ?? null;
+			if ( ! is_int( $index ) || ! in_array( $role, array( 'control', 'label', 'required_marker' ), true ) || isset( $base_presented[ $index . "\n" . $role ] ) ) {
+				continue;
+			}
+			$base_presented[ $index . "\n" . $role ] = true;
+			$destinations                            = array_filter( $presentation_targets[ $index ]['destinations'] ?? array(), static fn( array $destination ): bool => $role === $destination['role'] && ! empty( $destination['resets'] ) );
+			if ( ! empty( $destinations ) ) {
+				self::compile_presentation_destinations( $destinations, array(), $index, $role, null, $rules, $operations, $losses );
 			}
 		}
 		foreach ( $presentation_graph['variants'] ?? array() as $variant ) {
@@ -254,6 +272,17 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			$operations[] = array(
 				'dimension'   => 'interaction',
 				'strategy'    => 'provider_interaction_carrier',
+				'target_hash' => hash( 'sha256', $validated_map['scope'] ),
+			);
+		} elseif ( ! empty( $rules ) ) {
+			// Source boxes merged onto the provider form can carry their classes'
+			// `pointer-events: none` (Wix sets it on mesh containers and restores it
+			// only on their own direct children). Without the stacking lift, the
+			// provider form must still receive clicks and typing (#2005).
+			$rules[]      = $validated_map['scope'] . '{pointer-events:auto}';
+			$operations[] = array(
+				'dimension'   => 'interaction',
+				'strategy'    => 'provider_pointer_events_carrier',
 				'target_hash' => hash( 'sha256', $validated_map['scope'] ),
 			);
 		}
@@ -1023,7 +1052,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		) === $resets ) {
 			return true;
 		}
-		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'line-height', 'gap', 'display', 'align-items', 'height', 'appearance' ) ) ) {
+		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'line-height', 'gap', 'display', 'align-items', 'height', 'appearance', '--jetpack--contact-form--input-height' ) ) ) {
 			return false;
 		}
 		foreach ( $resets as $property => $value ) {

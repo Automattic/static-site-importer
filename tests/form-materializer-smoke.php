@@ -382,6 +382,37 @@ namespace {
 	$assert( 3 === ( $interleaved_row['field_count'] ?? 0 ) && str_contains( $interleaved_markup, 'wp:jetpack/field-text' ) && str_contains( $interleaved_markup, 'wp:jetpack/field-email' ) && str_contains( $interleaved_markup, 'wp:jetpack/field-textarea' ), 'interleaved-context-supported-fields-remain-submittable-provider-fields' );
 	$assert( str_contains( $interleaved_markup, 'wp:heading' ) && str_contains( $interleaved_markup, 'Contact us' ) && str_contains( $interleaved_markup, 'wp:paragraph' ) && str_contains( $interleaved_markup, 'We will reply soon.' ), 'interleaved-context-is-editable-block-content' );
 	$assert( in_array( 'file', $interleaved_row['skipped_types'] ?? array(), true ) && 'file_upload' === ( $interleaved_row['unsupported_capabilities'][0]['capability'] ?? '' ) && 'jetpack_upload_endpoint_requires_connected_site_and_supported_plan' === ( $interleaved_row['unsupported_capabilities'][0]['reason_code'] ?? '' ) && str_contains( $interleaved_markup, 'Attach files' ) && str_contains( $interleaved_markup, 'requires Jetpack connection and a supported plan' ), 'unsupported-file-upload-is-diagnostic-and-retains-labelled-position' );
+	// A form builder keeps its own status copy hidden in the form until a
+	// submission succeeds (Wix: "Thanks for submitting!"). Jetpack renders its
+	// own confirmation, so hidden copy is left out while visible copy stays
+	// (Automattic/blocks-engine#2560).
+	$status_entity = Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity(
+		array(
+			'form'     => array(
+				'context_after' => array(
+					array( 'type' => 'paragraph', 'text' => 'Thanks for submitting!', 'hidden' => array( 'property' => 'visibility', 'value' => 'hidden', 'selector' => '#msg', 'source_path' => 'inline-style' ) ),
+					array( 'type' => 'paragraph', 'text' => 'Something went wrong.', 'hidden' => array( 'property' => 'display', 'value' => 'none', 'selector' => '#err', 'source_path' => 'site.css' ) ),
+					array( 'type' => 'paragraph', 'text' => 'We reply within a day.' ),
+				),
+			),
+			'controls' => array(
+				array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email', 'required' => true ),
+				array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+			),
+		)
+	);
+	$status_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $status_entity ) ) )['forms'][0] ?? array();
+	$status_markup = (string) ( $status_row['block_markup'] ?? '' );
+	$assert(
+		'visibility' === ( $status_entity['form']['context_after'][0]['hidden']['property'] ?? null ) && 'none' === ( $status_entity['form']['context_after'][1]['hidden']['value'] ?? null ) && ! isset( $status_entity['form']['context_after'][2]['hidden'] ),
+		'producer-hidden-context-fact-survives-form-normalization',
+		wp_json_encode( $status_entity['form'] )
+	);
+	$assert(
+		'mapped' === ( $status_row['status'] ?? '' ) && str_contains( $status_markup, 'We reply within a day.' ) && ! str_contains( $status_markup, 'Thanks for submitting!' ) && ! str_contains( $status_markup, 'Something went wrong.' ),
+		'hidden-form-status-copy-is-left-out-while-visible-copy-stays',
+		$status_markup
+	);
 	$assert( str_contains( $markup, 'wp:button' ) && ! str_contains( $markup, 'wp:jetpack/button' ), 'markup-canonical-core-submit-button' );
 	$assert( 1 === substr_count( $markup, '<!-- wp:button ' ) && str_contains( $markup, '<button type="submit" class="wp-block-button__link wp-element-button">Send message</button>' ), 'source-submit-control-emits-one-canonical-button' );
 	$labelled_submit_markup = Static_Site_Importer_Form_Seeder::seed(
@@ -4283,6 +4314,17 @@ namespace {
 		'source-rows-that-neither-pair-with-each-box-nor-share-one-band-drop-their-provider-placement',
 		wp_json_encode( array( 'mixed' => $mixed_row_layout, 'uniform' => array_column( $uniform_row_result['nodes'], 'layout', 'id' ) ) )
 	);
+	// Explicit placement does not depend on the provider's row sequence: when every
+	// child keeps its own provider element, the mixed rows are kept as authored (#2005).
+	$placed_all    = array( 'wrapper-0' => 'a', 'wrapper-1' => 'b', 'wrapper-2' => 'c' );
+	$placed_layout = array_column( Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( $mixed_row_graph, null, $placed_all )['nodes'], 'layout', 'id' );
+	$partly_placed = array_column( Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( $mixed_row_graph, null, array( 'wrapper-0' => 'a', 'wrapper-2' => 'c' ) )['nodes'], 'layout', 'id' );
+	$assert(
+		'1 / 1 / 2 / 2' === ( $placed_layout['wrapper-0']['area'] ?? '' ) && '1 / 1 / 2 / 2' === ( $placed_layout['wrapper-1']['area'] ?? '' ) && '2 / 1 / 3 / 2' === ( $placed_layout['wrapper-2']['area'] ?? '' ) && array( 'display' => 'grid', 'columns' => '100%' ) === $placed_layout['grid']
+			&& ! isset( $partly_placed['wrapper-0']['area'] ) && array( 'display' => 'grid' ) === $partly_placed['grid'],
+		'explicitly-placed-mesh-rows-keep-their-source-grid-only-when-every-child-is-a-provider-element',
+		wp_json_encode( array( 'placed' => $placed_layout, 'partly' => $partly_placed ) )
+	);
 	// A sibling that another strategy already represented is absent from the overlay
 	// graph; on its own the remainder looks like an ordered sequence.
 	$reduced_row_graph          = $mixed_row_graph;
@@ -4294,6 +4336,84 @@ namespace {
 		wp_json_encode( $reduced_row_layout )
 	);
 	$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $kmr[2]['provider_layout_overlay_css'] ?? null ), 'kmr-overlay-passes-stylesheet-admission' );
+	// Wix's mesh layout makes the form and its first box `position: relative` and
+	// leaves the field grid inside them `static` (#2005). All three collapse into the
+	// provider's one form element; a relative box without insets paints where a
+	// static one does and stays the containing block of everything inside the
+	// static box, so the pair is not a layout contradiction. The fixture is the
+	// captured device-split (desktop + phone) entity, with selector diagnostics
+	// trimmed.
+	$mesh_form = static function ( array $wrapper_patch ): array {
+		$fixture = json_decode( (string) gzdecode( (string) file_get_contents( __DIR__ . '/fixtures/wix-mesh-contact-form-v3.json.gz' ) ), true );
+		foreach ( $fixture['layout_graph']['variants'] as &$variant ) {
+			if ( 'wrapper-1' !== $variant['node'] ) {
+				continue;
+			}
+			foreach ( $wrapper_patch as $fact => $value ) {
+				$variant['layout_patch'][ $fact ]         = $value;
+				$variant['precedence'][ $fact ]           = $variant['precedence']['position'];
+				$variant['provenance'][0]['properties'][] = $fact;
+			}
+			ksort( $variant['layout_patch'] );
+			ksort( $variant['precedence'] );
+			$variant['provenance'][0]['properties'] = array_values( array_unique( $variant['provenance'][0]['properties'] ) );
+		}
+		unset( $variant );
+		$valid = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $fixture ) ) );
+		$row   = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $valid['forms'] ?? array() ) )['forms'][0] ?? array();
+		return array( 'errors' => $valid['errors'] ?? array(), 'row' => $row, 'unaccepted' => array_column( $row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ) );
+	};
+	$mesh_static_grid = $mesh_form( array() );
+	$assert(
+		empty( $mesh_static_grid['errors'] ) && 'mapped' === ( $mesh_static_grid['row']['status'] ?? '' ) && true === ( $mesh_static_grid['row']['runtime_mapped'] ?? false ) && array() === $mesh_static_grid['unaccepted'] && str_contains( (string) ( $mesh_static_grid['row']['block_markup'] ?? '' ), '<!-- wp:jetpack/contact-form' ),
+		'static-field-grid-inside-relative-form-boxes-merges-into-the-provider-form',
+		wp_json_encode( array( 'errors' => $mesh_static_grid['errors'], 'status' => $mesh_static_grid['row']['status'] ?? null, 'unaccepted' => $mesh_static_grid['unaccepted'] ) )
+	);
+	$mesh_markup = (string) ( $mesh_static_grid['row']['block_markup'] ?? '' );
+	$assert(
+		array( 'jetpack/field-text', 'jetpack/field-text', 'jetpack/field-email', 'jetpack/field-textarea' ) === array_values( array_filter( $mesh_static_grid['row']['field_blocks'] ?? array(), static fn( string $name ): bool => 'core/button' !== $name ) )
+			&& 'Send' === ( $mesh_static_grid['row']['submit_text'] ?? '' )
+			&& str_contains( $mesh_markup, 'First Name' ) && str_contains( $mesh_markup, 'Last Name' )
+			&& 1 === preg_match( '/<!-- wp:jetpack\/field-email (?=[^\n]*"required":true)[^\n]* -->/', $mesh_markup ),
+		'merged-wix-mesh-form-keeps-its-fields-labels-required-email-and-submit-text',
+		$mesh_markup
+	);
+	$mesh_static_grid_css = (string) ( $mesh_static_grid['row']['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		3 === preg_match_all( '/-wrap\{[^}]*grid-area:1 \/ 1 \/ 2 \/ 2[^}]*left:(?:19|219|419)px[^}]*width:180px[^}]*\}/', $mesh_static_grid_css ) && str_contains( $mesh_static_grid_css, 'grid-template-columns:100%' ) && 1 === preg_match( '/-wrap\{[^}]*grid-area:2 \/ 1 \/ 3 \/ 2[^}]*\}/', $mesh_static_grid_css ),
+		'wix-mesh-row-keeps-its-three-fields-in-one-source-grid-cell',
+		$mesh_static_grid_css
+	);
+	$assert( ! str_contains( $mesh_static_grid_css, 'position:static' ), 'merged-static-field-grid-does-not-unset-the-relative-form-box', $mesh_static_grid_css );
+	$assert( 1 === preg_match( '/^\.ssi-form-[a-f0-9]{12}\{pointer-events:auto\}$/m', $mesh_static_grid_css ), 'merged-mesh-box-pointer-events-none-does-not-disable-the-provider-form', $mesh_static_grid_css );
+	// Every presentation fact in a responsive capture is scoped to a media query,
+	// so the form has no unconditional presentation pass. Provider-default resets
+	// still belong outside every query: without them Jetpack's
+	// `min-height: var(--jetpack--contact-form--input-height)` (46px at runtime)
+	// floors the 36px source Send button and its wrapper.
+	$mesh_unconditional_css = (string) preg_replace( '/@media[^{]*\{(?:[^{}]*\{[^}]*\})*[^{}]*\}/', '', $mesh_static_grid_css );
+	$assert(
+		1 === preg_match( '/(?:^|\})\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? \.ssi-node-[a-f0-9]{12} > \.wp-block-button__link\{[^}]*min-height:0[;}]/m', $mesh_unconditional_css ),
+		'media-only-mesh-submit-link-still-releases-the-provider-min-height',
+		$mesh_unconditional_css
+	);
+	$assert(
+		1 === preg_match( '/(?:^|\})\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? \.ssi-node-[a-f0-9]{12}\{--jetpack--contact-form--input-height:auto\}/m', $mesh_unconditional_css ),
+		'mesh-submit-button-wrapper-releases-the-provider-min-height-so-the-source-height-holds',
+		$mesh_unconditional_css
+	);
+	$mesh_static_inset = $mesh_form( array( 'left' => '12px' ) );
+	$assert(
+		empty( $mesh_static_inset['errors'] ) && 'skipped' === ( $mesh_static_inset['row']['status'] ?? '' ) && in_array( 'provider_wrapper_layout_unrepresentable', $mesh_static_inset['unaccepted'], true ),
+		'static-box-with-an-inert-inset-still-fails-closed-against-a-relative-form-box',
+		wp_json_encode( array( 'errors' => $mesh_static_inset['errors'], 'status' => $mesh_static_inset['row']['status'] ?? null, 'unaccepted' => $mesh_static_inset['unaccepted'] ) )
+	);
+	$mesh_absolute_grid = $mesh_form( array( 'position' => 'absolute' ) );
+	$assert(
+		empty( $mesh_absolute_grid['errors'] ) && 'skipped' === ( $mesh_absolute_grid['row']['status'] ?? '' ) && in_array( 'provider_wrapper_layout_unrepresentable', $mesh_absolute_grid['unaccepted'], true ),
+		'absolute-field-grid-inside-relative-form-boxes-still-fails-closed',
+		wp_json_encode( array( 'errors' => $mesh_absolute_grid['errors'], 'status' => $mesh_absolute_grid['row']['status'] ?? null, 'unaccepted' => $mesh_absolute_grid['unaccepted'] ) )
+	);
 	// A source box chain deeper than the provider's own element pair cannot keep every
 	// box, so it stays a decline instead of claiming an equivalence it cannot hold.
 	$assert(

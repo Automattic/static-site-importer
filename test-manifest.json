@@ -5,6 +5,8 @@
     "tests/figma-zstd-decoder.php": "CLI diagnostic helper; exercised by tests/smoke-rest-import.php."
   },
   "tests": [
+    { "path": "tests/acceptance/redirection-browser.mjs", "environment": "operator-only", "command": ["bash", "tools/run-redirection-acceptance.sh"], "reason": "Real native admin rule and owner-edited navigation, served complete export, and second disposable WordPress navigation/reload proof." },
+    { "path": "tests/acceptance/redirection-wordpress.php", "environment": "operator-only", "command": ["bash", "tools/run-redirection-acceptance.sh"], "reason": "Disposable Docker WordPress; real Redirection install, native rule ownership, reimport, reversible retirement, compensation and GET/HEAD/query behavior." },
     { "path": "tests/acceptance/form-boxes-wordpress.php", "environment": "operator-only", "reason": "Disposable real WordPress and Jetpack workload owned by run-form-boxes.mjs." },
     { "path": "tests/acceptance/run-form-boxes.mjs", "environment": "operator-only", "reason": "Requires declared Codebox CLI, paired compiler and Jetpack runtime roots." },
     { "path": "tests/acceptance/form-boxes-browser.mjs", "environment": "operator-only", "reason": "Exact neutral source/provider geometry from the paired real WordPress workload." },

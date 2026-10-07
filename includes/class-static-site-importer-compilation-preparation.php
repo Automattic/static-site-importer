@@ -37,7 +37,10 @@ final class Static_Site_Importer_Compilation_Preparation {
 			return $strategy;
 		}
 		$args['theme_materialization'] = $strategy['strategy'];
-		$source_policy                 = $precompiled ? true : Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
+		$source_policy                 = $precompiled ? true : Static_Site_Importer_Content_Policy::validate_artifact(
+			$artifact,
+			is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null
+		);
 		if ( is_wp_error( $source_policy ) ) {
 			return $source_policy;
 		}
