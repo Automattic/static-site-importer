@@ -11,8 +11,6 @@ $GLOBALS['ssi_direct_mutations'] = 0;
 $GLOBALS['ssi_direct_last_args'] = array();
 $GLOBALS['ssi_direct_compiled_results'] = array();
 $GLOBALS['ssi_direct_checkpoint_reads'] = array();
-$GLOBALS['ssi_direct_staged_files'] = array();
-$GLOBALS['ssi_direct_staged_payloads'] = array();
 $GLOBALS['ssi_direct_lifecycle_preparations'] = 0;
 
 class WP_Error {
@@ -56,55 +54,12 @@ function do_action( string $hook, ...$args ): void {
 		$callback( ...$args );
 	}
 }
-function static_site_importer_source_runtime( array $source ): array {
-	$files = array();
-	foreach ( $source['files'] ?? array() as $file ) {
-		$path = (string) ( $file['path'] ?? '' );
-		$file['mime_type'] = str_ends_with( $path, '.html' ) ? 'text/html' : ( str_ends_with( $path, '.css' ) ? 'text/css' : 'application/octet-stream' );
-		$files[] = $file;
-	}
-	$entrypoint = (string) ( $source['entrypoint'] ?? '' );
-	if ( '' === $entrypoint ) {
-		$entrypoint = 'website/index.html';
-	}
-	return array(
-		// Source metadata carries the artifact envelope, compiler contract
-		// included, exactly as the real normalizer merges it.
-		'artifact' => array_merge(
-			is_array( $source['metadata'] ?? null ) ? $source['metadata'] : array(),
-			array(
-				'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
-				'entrypoint' => $entrypoint,
-				'files'      => $files,
-			)
-		),
-		'provider' => 'direct-artifact-smoke',
-		'source_metadata' => array( 'fixture' => 'direct-artifact-multi-page' ),
-	);
-}
-function static_site_importer_staged_archive_files( array $archive, bool $payload_references = false ): array {
-	return $GLOBALS['ssi_direct_staged_files'];
-}
-function static_site_importer_staged_archive_compiler_limits(): array {
-	return array(
-		'max_files'       => 5000,
-		'max_file_bytes'  => 10485760,
-		'max_total_bytes' => 335544320,
-	);
-}
-function static_site_importer_staged_archive_payload_reader( array $archive ): object {
-	return new class() implements \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\PayloadReader {
-		public function read( array $reference ): string {
-			$id = (string) ( $reference['id'] ?? '' );
-			if ( ! isset( $GLOBALS['ssi_direct_staged_payloads'][ $id ] ) ) {
-				throw new RuntimeException( 'The staged fixture payload is unavailable.' );
-			}
-			return $GLOBALS['ssi_direct_staged_payloads'][ $id ];
-		}
-	};
-}
+function __( string $message ): string { return $message; }
 
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
+require_once __DIR__ . '/fixtures/core-html-api.php';
+require_once dirname( __DIR__ ) . '/includes/rest.php';
+require_once dirname( __DIR__ ) . '/includes/cli.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-run.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-client-script-policy.php';
@@ -241,6 +196,23 @@ $canonical = array( 'a' => 'https://example.com/a/b', 'z' => array( 'a' => 1, 'b
 $assert( hash( 'sha256', (string) wp_json_encode( $ordered ) ) === $hash_json->invoke( null, $ordered, false ), 'streamed source identity must preserve the exact ordered JSON hash' );
 $assert( hash( 'sha256', (string) wp_json_encode( $canonical ) ) === $hash_json->invoke( null, $ordered, true ), 'streamed checkpoint identity must preserve the exact recursively canonical JSON hash' );
 $assert( wp_mkdir_p( $test_root ), 'the fixture workspace root must be created' );
+require_once __DIR__ . '/fixtures/content-policy-intakes.php';
+$freeze_policy = static fn ( array $policy ): array => array_merge( $policy, array( 'freeze_continuation_bytes' => 1 ) );
+add_filter( 'static_site_importer_direct_artifact_run_policy', $freeze_policy );
+ssi_test_content_policy_intakes( static function ( string $label, bool $accepted, $runtime, array $artifact, ?object $reader ) use ( $assert ): void {
+	$assert( $accepted ? is_array( $runtime ) : is_wp_error( $runtime ) && 'static_site_importer_executable_source_rejected' === $runtime->get_error_code(), 'real normalizer verdict: ' . $label );
+	$counted_reader = null === $reader ? null : new class( $reader ) {
+		public int $reads = 0;
+		public function __construct( private object $reader ) {}
+		public function read( array $reference ): string { ++$this->reads; return $this->reader->read( $reference ); }
+	};
+	$result = Static_Site_Importer_Direct_Artifact_Import::start( $artifact, array(), 'files', 'plan', array(), $counted_reader );
+	$assert( $accepted ? is_array( $result ) && 'artifact_frozen' === ( $result['continuation_reason'] ?? '' ) : is_wp_error( $result ) && 'static_site_importer_executable_source_rejected' === $result->get_error_code(), 'direct freeze verdict: ' . $label );
+	if ( $accepted && null !== $counted_reader && isset( $artifact['files'][0]['payload_reference'] ) ) {
+		$assert( 1 === $counted_reader->reads, 'direct freeze must scan and retain textual source in one read: ' . $label );
+	}
+} );
+remove_filter( 'static_site_importer_direct_artifact_run_policy', $freeze_policy );
 $primitive_workspace = new Static_Site_Importer_Artifact_Run_Workspace( $test_root, 'direct-checkpoint-primitives' );
 $assert( ! is_wp_error( $primitive_workspace->publish_json_once( 'ordered.json', $ordered ) ) && wp_json_encode( $ordered, JSON_PRETTY_PRINT | JSON_PRESERVE_ZERO_FRACTION ) === $primitive_workspace->read_raw( 'ordered.json' ), 'streamed immutable JSON must preserve exact pretty-printed checkpoint bytes' );
 $exclusive_copy        = new ReflectionMethod( Static_Site_Importer_Artifact_Run_Workspace::class, 'copy_exclusively' );
@@ -574,16 +546,22 @@ $binary_ref = array(
 	'sha256' => hash( 'sha256', $binary ),
 	'bytes'  => strlen( $binary ),
 );
-$GLOBALS['ssi_direct_staged_payloads'][ $binary_ref['id'] ] = $binary;
-$GLOBALS['ssi_direct_staged_files'] = $files;
-$GLOBALS['ssi_direct_staged_files'][] = array(
-	'path'              => 'website/assets/photo.png',
-	'mime_type'         => 'image/png',
-	'payload_reference' => $binary_ref,
-);
-$GLOBALS['ssi_direct_filters']['static_site_importer_resolve_source_reference'][] = static function ( $resolved, string $reference, string $type ) {
+$zip_path = $test_root . '/website.zip';
+$zip = new ZipArchive();
+$zip->open( $zip_path, ZipArchive::CREATE );
+foreach ( $files as $file ) {
+	$entry = preg_replace( '#^website/#', '', $file['path'] );
+	$zip->addFromString( $entry, $file['content'] );
+	$zip->setCompressionName( $entry, ZipArchive::CM_STORE );
+}
+$zip->addFromString( 'assets/photo.png', $binary );
+$zip->setCompressionName( 'assets/photo.png', ZipArchive::CM_STORE );
+$zip->close();
+$zip_source = array( 'name' => 'website.zip', 'staged_path' => $zip_path );
+$zip_files = static_site_importer_staged_archive_files( $zip_source, true );
+$GLOBALS['ssi_direct_filters']['static_site_importer_resolve_source_reference'][] = static function ( $resolved, string $reference, string $type ) use ( $zip_source ) {
 	return 'durable-zip' === $reference && 'zip' === $type ? array(
-		'source' => array( 'zip' => array( 'name' => 'website.zip', 'staged_path' => '/resolver-owned/website.zip' ) ),
+		'source' => array( 'zip' => $zip_source ),
 		'provenance' => array( 'owner' => 'server' ),
 	) : $resolved;
 };
@@ -601,11 +579,11 @@ $zip_workspace = new Static_Site_Importer_Artifact_Run_Workspace( $test_root . '
 $assert( $binary === $zip_workspace->read_raw( 'payloads/' . hash( 'sha256', $binary_ref['id'] ) . '.bin' ), 'the direct run must own verified payload bytes without changing their canonical reference id' );
 $zip_artifact = static_site_importer_source_runtime(
 	array(
-		'files'    => $GLOBALS['ssi_direct_staged_files'],
+		'files'    => $zip_files,
 		'metadata' => array( 'compiler_limits' => static_site_importer_staged_archive_compiler_limits() ),
 	)
 )['artifact'];
-$zip_reader = static_site_importer_staged_archive_payload_reader( array() );
+$zip_reader = static_site_importer_staged_archive_payload_reader( $zip_source );
 // Both uninterrupted and resumed compilation receive the consumer-owned namespace.
 $zip_artifact['block_namespace'] = Static_Site_Importer_Site_Identity::resolve( array( 'artifact' => $zip_artifact, 'payload_reader' => $zip_reader ) )['block_namespace'];
 $zip_compiler = new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler();
@@ -613,7 +591,7 @@ $zip_shared = $zip_compiler->prepareShared( $zip_artifact, $zip_reader );
 $zip_pages = $zip_compiler->preparePages( $zip_artifact, $zip_shared, $zip_reader );
 $zip_receipts = $zip_compiler->compilePreparedPages( $zip_shared, array_values( $zip_pages ), $zip_reader );
 $zip_uninterrupted_plan = $zip_compiler->compose( $zip_shared, array_values( $zip_receipts ) )->toArray()['source_reports']['wordpress_site_plan'];
-$GLOBALS['ssi_direct_staged_payloads'] = array();
+unlink( $zip_path );
 $GLOBALS['ssi_direct_compose_payload_reader'] = null;
 $GLOBALS['ssi_direct_compose_reused_compile_reader'] = false;
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_compiler'][] = static function ( object $compiler ): object {

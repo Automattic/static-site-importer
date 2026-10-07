@@ -188,6 +188,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				}
 			}
 		}
+		$base_presented = array();
 		foreach ( $presentation_graph['controls'] ?? array() as $control ) {
 			if ( ! is_array( $control ) || ! is_int( $control['index'] ?? null ) ) {
 				continue;
@@ -203,6 +204,23 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					continue;
 				}
 				self::compile_presentation_destinations( $destinations, $control[ $role ]['styles'], $control['index'], $role, null, $rules, $operations, $losses );
+				$base_presented[ $control['index'] . "\n" . $role ] = true;
+			}
+		}
+		// A responsive capture can scope every presentation fact to a media query,
+		// leaving a destination with no unconditional pass. Its provider-default
+		// resets still belong outside every query, ahead of the conditional patches
+		// that may override them, exactly as they would beside a base style set.
+		foreach ( $presentation_graph['variants'] ?? array() as $variant ) {
+			$index = $variant['index'] ?? null;
+			$role  = $variant['role'] ?? null;
+			if ( ! is_int( $index ) || ! in_array( $role, array( 'control', 'label', 'required_marker' ), true ) || isset( $base_presented[ $index . "\n" . $role ] ) ) {
+				continue;
+			}
+			$base_presented[ $index . "\n" . $role ] = true;
+			$destinations                            = array_filter( $presentation_targets[ $index ]['destinations'] ?? array(), static fn( array $destination ): bool => $role === $destination['role'] && ! empty( $destination['resets'] ) );
+			if ( ! empty( $destinations ) ) {
+				self::compile_presentation_destinations( $destinations, array(), $index, $role, null, $rules, $operations, $losses );
 			}
 		}
 		foreach ( $presentation_graph['variants'] ?? array() as $variant ) {
@@ -254,6 +272,17 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			$operations[] = array(
 				'dimension'   => 'interaction',
 				'strategy'    => 'provider_interaction_carrier',
+				'target_hash' => hash( 'sha256', $validated_map['scope'] ),
+			);
+		} elseif ( ! empty( $rules ) ) {
+			// Source boxes merged onto the provider form can carry their classes'
+			// `pointer-events: none` (Wix sets it on mesh containers and restores it
+			// only on their own direct children). Without the stacking lift, the
+			// provider form must still receive clicks and typing (#2005).
+			$rules[]      = $validated_map['scope'] . '{pointer-events:auto}';
+			$operations[] = array(
+				'dimension'   => 'interaction',
+				'strategy'    => 'provider_pointer_events_carrier',
 				'target_hash' => hash( 'sha256', $validated_map['scope'] ),
 			);
 		}
@@ -564,7 +593,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		// The provider form target is admitted as both of its rendered spellings,
 		// so a compiled rule may carry that two-part selector list.
-		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?:\.jetpack-contact-form-container)?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-source-field-list| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label| select)?| \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap \.contact-form__field-hints| \.grunion-field-wrap \.contact-form__field-format| \.grunion-field-wrap \.ssi-field-row > label| \.grunion-field-wrap > \.ssi-field-row| \.grunion-field-wrap \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\))?';
+		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?:\.jetpack-contact-form-container)?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-source-field-list| (?:input)?\.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link(?: > span)?| > \.grunion-label-required| > label| select)?| \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap \.contact-form__field-hints| \.grunion-field-wrap \.contact-form__field-format| \.grunion-field-wrap \.ssi-field-row > label| \.grunion-field-wrap > \.ssi-field-row| \.grunion-field-wrap \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\))?';
 		if ( ! preg_match( '/^([^{}]+)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
@@ -614,6 +643,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	private static function safe_selector( string $selector, string $scope ): bool {
+		if ( str_ends_with( $selector, ' > .wp-block-button__link > span' ) ) {
+			return self::safe_selector( substr( $selector, 0, -strlen( ' > span' ) ), $scope );
+		}
 		$native_scope = $scope . '.ssi-native-form-topology';
 		if ( str_contains( $selector, '.ssi-native-form-topology' ) ) {
 			$parts   = explode( ', ', $selector );
@@ -647,7 +679,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		$element = '[a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*';
 		foreach ( $parts as $part ) {
-			if ( ! preg_match( '/^' . preg_quote( $scope, '/' ) . '(?:\.jetpack-contact-form-container)?(?: > ' . $element . '| \.ssi-source-field-list| \.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label)?|:not\(:has\(> ' . $element . '\)\))?$/D', $part ) ) {
+			if ( ! preg_match( '/^' . preg_quote( $scope, '/' ) . '(?:\.jetpack-contact-form-container)?(?: > ' . $element . '| \.ssi-source-field-list| (?:input)?\.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label)?|:not\(:has\(> ' . $element . '\)\))?$/D', $part ) ) {
 				return false;
 			}
 		}
@@ -675,6 +707,11 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 *                                     the specificity of any carried source rule.
 	 */
 	private static function declarations( array $layout, array $capabilities, string $node, array &$losses, array $important = array() ): array {
+		// Authored grid ownership includes its initial zero gap; the provider's
+		// own field-stack gap is not a declaration on that source box.
+		if ( 'grid' === ( $layout['display'] ?? null ) && ! array_intersect_key( $layout, array_flip( array( 'gap', 'row_gap', 'column_gap' ) ) ) ) {
+			$layout = array( 'gap' => '0' ) + $layout;
+		}
 		$map          = self::layout_property_map();
 		$declarations = array();
 		foreach ( $layout as $fact => $value ) {
@@ -715,6 +752,11 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	public static function layout_property_map(): array {
 		return array(
 			'display'             => 'display',
+			'position'            => 'position',
+			'top'                 => 'top',
+			'right'               => 'right',
+			'bottom'              => 'bottom',
+			'left'                => 'left',
 			'width'               => 'width',
 			'height'              => 'height',
 			'columns'             => 'grid-template-columns',
@@ -753,6 +795,10 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	public static function box_property_map(): array {
 		return array(
 			'min_height'           => 'min-height',
+			'margin_top'           => 'margin-top',
+			'margin_right'         => 'margin-right',
+			'margin_bottom'        => 'margin-bottom',
+			'margin_left'          => 'margin-left',
 			'padding'              => 'padding',
 			'padding_top'          => 'padding-top',
 			'padding_right'        => 'padding-right',
@@ -767,16 +813,19 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 
 	/** One to four box lengths; `min-height` and the longhands take exactly one. */
 	private static function safe_box_value( string $fact, string $value ): bool {
-		$tokens = preg_split( '/\s+/', trim( $value ) );
-		if ( false === $tokens || array() === $tokens || count( $tokens ) > ( 'padding' === $fact ? 4 : 1 ) ) {
+		$tokens = \Automattic\BlocksEngine\PhpTransformer\Css\CssValueSplitter::splitTopLevelWhitespace( trim( $value ) );
+		if ( array() === $tokens || count( $tokens ) > ( 'padding' === $fact ? 4 : 1 ) ) {
 			return false;
 		}
 		foreach ( $tokens as $token ) {
-			if ( str_starts_with( $token, 'calc(' ) ? ! self::safe_calc_value( $token ) : ! preg_match( '/^(?:0|auto|(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:px|rem|em|%|vw|vh|vmin|vmax|ch|ex|svh|dvh|lvh)|var\(--[a-zA-Z][a-zA-Z0-9_-]{0,79}\))$/D', $token ) ) {
+			if ( str_starts_with( $token, 'calc(' ) ? ! self::safe_calc_value( $token ) : ! preg_match( '/^(?:0|auto|-?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:px|rem|em|%|vw|vh|vmin|vmax|ch|ex|svh|dvh|lvh)|var\(--[a-zA-Z][a-zA-Z0-9_-]{0,79}\))$/D', $token ) ) {
+				return false;
+			}
+			if ( str_starts_with( $token, '-' ) && ! str_starts_with( $fact, 'margin_' ) ) {
 				return false;
 			}
 		}
-		return 'auto' !== $value || 'min_height' === $fact;
+		return 'auto' !== $value || 'min_height' === $fact || str_starts_with( $fact, 'margin_' );
 	}
 
 	private static function safe_value( string $fact, mixed $value ): bool {
@@ -792,6 +841,15 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		if ( in_array( $fact, array( 'width', 'height', 'flex_basis' ), true ) && in_array( $value, array( 'min-content', 'max-content', 'fit-content' ), true ) ) {
 			return true;
+		}
+		if ( in_array( $fact, array( 'rows', 'columns' ), true ) ) {
+			$tracks = \Automattic\BlocksEngine\PhpTransformer\Css\CssValueSplitter::splitTopLevelWhitespace( $value );
+			if ( count( $tracks ) > 1 ) {
+				return ! array_filter( $tracks, static fn( string $track ): bool => ! self::safe_value( 'width', $track ) );
+			}
+			if ( in_array( $value, array( 'min-content', 'max-content' ), true ) ) {
+				return true;
+			}
 		}
 		if ( 'display' === $fact && 'contents' === $value ) {
 			return true;
@@ -815,7 +873,10 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			return (bool) preg_match( '/^(?:none|(?:[0-9]+(?:\.[0-9]+)?)(?: [0-9]+(?:\.[0-9]+)?)? (?:auto|0|(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh)))$/D', $value );
 		}
 		if ( 'position' === $fact ) {
-			return 'relative' === $value;
+			return in_array( $value, array( 'relative', 'static' ), true );
+		}
+		if ( in_array( $fact, array( 'top', 'right', 'bottom', 'left' ), true ) ) {
+			return 'auto' === $value || self::safe_calc_value( $value ) || (bool) preg_match( '/^(?:0|-?[0-9]+(?:\.[0-9]+)?(?:px|rem|em|%|vw|vh))$/D', $value );
 		}
 		if ( 'z-index' === $fact ) {
 			return '1' === $value;
@@ -871,7 +932,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	/** @return array<string,string> */
 	public static function presentation_property_map(): array {
 		$keys = array( 'appearance', 'background', 'background_color', 'border', 'border_color', 'border_style', 'border_width', 'border_top_color', 'border_right_color', 'border_bottom_color', 'border_left_color', 'border_top_style', 'border_right_style', 'border_bottom_style', 'border_left_style', 'border_top_width', 'border_right_width', 'border_bottom_width', 'border_left_width', 'border_radius', 'border_top_left_radius', 'border_top_right_radius', 'border_bottom_right_radius', 'border_bottom_left_radius', 'box_sizing', 'color', 'display', 'font_family', 'font_size', 'font_style', 'font_variant', 'font_weight', 'height', 'inset', 'letter_spacing', 'line_height', 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end', 'max_width', 'min_height', 'min_width', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block_start', 'padding_block_end', 'padding_inline_start', 'padding_inline_end', 'text_align', 'text_decoration', 'text_indent', 'text_transform', 'vertical_align', 'width', 'flex_shrink', 'position', 'transform' );
-		$keys = array_merge( $keys, array( 'align_items', 'flex_direction', 'gap', 'justify_content' ) );
+		$keys = array_merge( $keys, array( 'font', 'align_items', 'flex_direction', 'gap', 'justify_content' ) );
 		$keys = array_merge( $keys, array( 'align_self', 'justify_self', 'top', 'right', 'bottom', 'left' ) );
 		$keys = array_merge( $keys, array( 'flex', 'flex_basis', 'flex_grow', 'margin_block', 'margin_inline', 'order', 'z_index' ) );
 		// A source can author vertical/horizontal padding through the same two-value
@@ -991,7 +1052,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		) === $resets ) {
 			return true;
 		}
-		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'line-height', 'gap', 'display', 'align-items', 'height', 'appearance' ) ) ) {
+		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'line-height', 'gap', 'display', 'align-items', 'height', 'appearance', '--jetpack--contact-form--input-height' ) ) ) {
 			return false;
 		}
 		foreach ( $resets as $property => $value ) {

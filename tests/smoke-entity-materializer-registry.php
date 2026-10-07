@@ -36,14 +36,18 @@ namespace {
 	if ( ! class_exists( 'WP_Error' ) ) {
 		class WP_Error {
 			public function __construct( private string $code, private string $message, private $data = null ) {}
-			public function get_error_code(): string { return $this->code; }
-			public function get_error_message(): string { return $this->message; }
-			public function get_error_data() { return $this->data; }
+			public function get_error_code(): string {
+				return $this->code; }
+			public function get_error_message(): string {
+				return $this->message; }
+			public function get_error_data() {
+				return $this->data; }
 		}
 	}
 
 	if ( ! function_exists( 'is_wp_error' ) ) {
-		function is_wp_error( mixed $value ): bool { return $value instanceof WP_Error; }
+		function is_wp_error( mixed $value ): bool {
+			return $value instanceof WP_Error; }
 	}
 
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
@@ -80,7 +84,14 @@ namespace {
 	$waived_dependencies = Static_Site_Importer_Dependency_Manager::dependency_rows( $adapter, $intent, true );
 	$assert( true === ( $waived_dependencies['woocommerce']['waived'] ?? false ), 'waived-row-records-waiver' );
 	$dependency_plan = Static_Site_Importer_Dependency_Manager::dependency_plan(
-		array( 'dependencies' => array( 'products' => array( 'adapter' => $adapter, 'required' => true ) ) ),
+		array(
+			'dependencies' => array(
+				'products' => array(
+					'adapter'  => $adapter,
+					'required' => true,
+				),
+			),
+		),
 		str_repeat( 'a', 64 )
 	);
 	$assert( 'woocommerce' === ( $dependency_plan['entries'][0]['slug'] ?? '' ) && array( 'products' ) === ( $dependency_plan['entries'][0]['provenance']['declaration_ids'] ?? array() ), 'dependency-manager-projects-adapter-declarations-to-runtime-plan' );
@@ -109,13 +120,79 @@ namespace {
 	$assert( is_wp_error( $failing ), 'failing-adapter-wp-error-is-preserved' );
 	$assert( 'adapter_failed' === $failing->get_error_code(), 'failing-adapter-error-code-is-preserved' );
 
-	$duplicate_products = Static_Site_Importer_Entity_Materializer_Registry::validate_woo_products_manifest( array( 'schema_version' => 1, 'products' => array( array( 'name' => 'One', 'slug' => 'same', 'regular_price' => '10' ), array( 'name' => 'Two', 'slug' => 'same', 'regular_price' => '12' ) ) ) );
+	$duplicate_products = Static_Site_Importer_Entity_Materializer_Registry::validate_woo_products_manifest(
+		array(
+			'schema_version' => 1,
+			'products'       => array(
+				array(
+					'name'          => 'One',
+					'slug'          => 'same',
+					'regular_price' => '10',
+				),
+				array(
+					'name'          => 'Two',
+					'slug'          => 'same',
+					'regular_price' => '12',
+				),
+			),
+		)
+	);
 	$assert( ! empty( $duplicate_products['errors'] ), 'duplicate-product-slugs-reject-provider-result-ambiguity' );
-	$duplicate_forms = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( array( 'source_path' => 'index.html', 'selector' => 'form', 'controls' => array( array( 'tag' => 'input', 'type' => 'email' ) ) ), array( 'source_path' => 'index.html', 'selector' => 'form', 'controls' => array( array( 'tag' => 'input', 'type' => 'email' ) ) ) ) ) );
+	$duplicate_forms = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest(
+		array(
+			'forms' => array(
+				array(
+					'source_path' => 'index.html',
+					'selector'    => 'form',
+					'controls'    => array(
+						array(
+							'tag'  => 'input',
+							'type' => 'email',
+						),
+					),
+				),
+				array(
+					'source_path' => 'index.html',
+					'selector'    => 'form',
+					'controls'    => array(
+						array(
+							'tag'  => 'input',
+							'type' => 'email',
+						),
+					),
+				),
+			),
+		)
+	);
 	$assert( ! empty( $duplicate_forms['errors'] ), 'duplicate-form-identities-reject-provider-result-ambiguity' );
 
 	$materializer_calls = 0;
-	$bound_adapter      = array(
+	$stage_calls        = array();
+	$staged             = array( 'entities' => array() );
+	foreach ( array( 'before_pages', 'after_pages' ) as $stage ) {
+		$staged['entities'][ $stage ] = array(
+			'required' => true,
+			'manifest' => array( 'entities' => array() ),
+			'adapter'  => array(
+				'provider'              => 'neutral-stage-fixture',
+				'entity_collection'     => 'entities',
+				'materialization_stage' => $stage,
+				'materializer'          => static function ( array $manifest, array $args ) use ( $stage, &$stage_calls ): array {
+					$stage_calls[] = $stage;
+					return array(
+						'status'   => 'completed',
+						'counts'   => array(),
+						'entities' => array(),
+					);
+				},
+			),
+		);
+	}
+	$before_stage = Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $staged, array() );
+	$assert( array( 'before_pages' ) === $stage_calls && array( 'before_pages' ) === array_keys( $before_stage['reports'] ), 'Deferred providers cannot run before canonical page persistence.' );
+	$after_stage = Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $staged, array( 'materialization_stage' => 'after_pages' ) );
+	$assert( array( 'before_pages', 'after_pages' ) === $stage_calls && array( 'after_pages' ) === array_keys( $after_stage['reports'] ), 'The committed stage runs only deferred providers and never replays early providers.' );
+	$bound_adapter   = array(
 		'provider'          => 'test-provider',
 		'entity_collection' => 'forms',
 		'waiver_arg'        => 'allow_missing_test_provider',
@@ -128,18 +205,30 @@ namespace {
 			);
 		},
 	);
-	$bound_forms = array(
+	$bound_forms     = array(
 		'forms' => array(
-			array( 'source_path' => 'about.html', 'selector' => 'form.desktop', 'bindings' => array( array( 'role' => 'form' ) ) ),
-			array( 'source_path' => 'contact.html', 'selector' => 'form.mobile', 'bindings' => array( array( 'role' => 'form' ) ) ),
+			array(
+				'source_path' => 'about.html',
+				'selector'    => 'form.desktop',
+				'bindings'    => array( array( 'role' => 'form' ) ),
+			),
+			array(
+				'source_path' => 'contact.html',
+				'selector'    => 'form.mobile',
+				'bindings'    => array( array( 'role' => 'form' ) ),
+			),
 		),
 	);
 	$bound_lifecycle = array(
 		'entities' => array(
-			'forms' => array( 'adapter' => $bound_adapter, 'manifest' => $bound_forms, 'required' => false ),
+			'forms' => array(
+				'adapter'  => $bound_adapter,
+				'manifest' => $bound_forms,
+				'required' => false,
+			),
 		),
 	);
-	$bound_result = Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $bound_lifecycle, array( 'seed_entities' => false ) );
+	$bound_result    = Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $bound_lifecycle, array( 'seed_entities' => false ) );
 	$assert( 1 === $materializer_calls && 2 === ( $bound_result['reports']['forms']['counts']['mapped'] ?? 0 ), 'bound-entities-materialize-without-opt-in-seeding' );
 
 	$event_materializer_calls = 0;
@@ -156,15 +245,50 @@ namespace {
 			);
 		},
 		'binding_callback'         => static fn( array $entity, array $result ): string => '<!-- wp:paragraph --><p>' . (string) ( $result['title'] ?? $entity['title'] ?? '' ) . '</p><!-- /wp:paragraph -->',
-		'classic_binding_callback' => static fn(): array => array( 'kind' => 'shortcode', 'content' => '[test-event]' ),
+		'classic_binding_callback' => static fn(): array => array(
+			'kind'    => 'shortcode',
+			'content' => '[test-event]',
+		),
 	);
 	$event_manifest           = array(
 		'events' => array(
-			array( 'title' => 'Launch', 'source_path' => 'events.html', 'selector' => '.launch', 'bindings' => array( array( 'source_path' => 'events.html', 'search_block_markup' => '<!-- wp:paragraph --><p>Launch</p><!-- /wp:paragraph -->', 'occurrence' => 1, 'role' => 'event' ) ) ),
-			array( 'title' => 'Closing', 'source_path' => 'events.html', 'selector' => '.closing', 'bindings' => array( array( 'source_path' => 'events.html', 'search_block_markup' => '<!-- wp:paragraph --><p>Closing</p><!-- /wp:paragraph -->', 'occurrence' => 1, 'role' => 'event' ) ) ),
+			array(
+				'title'       => 'Launch',
+				'source_path' => 'events.html',
+				'selector'    => '.launch',
+				'bindings'    => array(
+					array(
+						'source_path'         => 'events.html',
+						'search_block_markup' => '<!-- wp:paragraph --><p>Launch</p><!-- /wp:paragraph -->',
+						'occurrence'          => 1,
+						'role'                => 'event',
+					),
+				),
+			),
+			array(
+				'title'       => 'Closing',
+				'source_path' => 'events.html',
+				'selector'    => '.closing',
+				'bindings'    => array(
+					array(
+						'source_path'         => 'events.html',
+						'search_block_markup' => '<!-- wp:paragraph --><p>Closing</p><!-- /wp:paragraph -->',
+						'occurrence'          => 1,
+						'role'                => 'event',
+					),
+				),
+			),
 		),
 	);
-	$event_lifecycle          = array( 'entities' => array( 'events' => array( 'adapter' => $event_adapter, 'manifest' => $event_manifest, 'required' => false ) ) );
+	$event_lifecycle          = array(
+		'entities' => array(
+			'events' => array(
+				'adapter'  => $event_adapter,
+				'manifest' => $event_manifest,
+				'required' => false,
+			),
+		),
+	);
 	$event_result             = Static_Site_Importer_Entity_Materializer_Registry::materialize_lifecycle_entities( $event_lifecycle, array( 'seed_entities' => false ) );
 	$assert( 1 === $event_materializer_calls && 2 === ( $event_result['reports']['events']['counts']['mapped'] ?? 0 ), 'adapter-declared-generic-collection-materializes-bound-entities' );
 	$assert( Static_Site_Importer_Entity_Materializer_Registry::page_ready_requires_final_hydration( $event_lifecycle, array() ), 'adapter-declared-generic-collection-requires-final-hydration-for-bindings' );
@@ -173,28 +297,49 @@ namespace {
 	$event_classic_bindings = Static_Site_Importer_Entity_Materializer_Registry::classic_bindings( $event_lifecycle, $event_result['reports'] );
 	$assert( ! is_wp_error( $event_classic_bindings ) && 2 === count( $event_classic_bindings ) && '[test-event]' === ( $event_classic_bindings[0]['render']['content'] ?? '' ), 'adapter-declared-generic-collection-resolves-classic-binding-results' );
 
-	$form_adapter = Static_Site_Importer_Entity_Materializer_Registry::form_adapter();
+	$form_adapter               = Static_Site_Importer_Entity_Materializer_Registry::form_adapter();
 	$missing_provider_lifecycle = array(
 		'dependencies' => array(
-			'forms' => array( 'adapter' => $form_adapter, 'required' => false ),
+			'forms' => array(
+				'adapter'  => $form_adapter,
+				'required' => false,
+			),
 		),
-		'entities' => array(
-			'forms' => array( 'adapter' => $form_adapter, 'manifest' => $bound_forms, 'required' => false ),
+		'entities'     => array(
+			'forms' => array(
+				'adapter'  => $form_adapter,
+				'manifest' => $bound_forms,
+				'required' => false,
+			),
 		),
 	);
-	$missing_provider = Static_Site_Importer_Dependency_Manager::materialize_lifecycle_dependencies( $missing_provider_lifecycle, array( 'materialize_dependencies' => false ) );
+	$missing_provider           = Static_Site_Importer_Dependency_Manager::materialize_lifecycle_dependencies( $missing_provider_lifecycle, array( 'materialize_dependencies' => false ) );
 	$assert( is_wp_error( $missing_provider ) && 'static_site_importer_required_runtime_dependency_missing' === $missing_provider->get_error_code(), 'bound-entity-missing-provider-rejects-admission' );
 
-	$manifest_id     = str_repeat( 'a', 64 );
-	$manifest_entity = array(
+	$manifest_id          = str_repeat( 'a', 64 );
+	$manifest_entity      = array(
 		'source_path'        => 'contact.html',
 		'selector'           => 'form.contact',
-		'controls'           => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email' ) ),
-		'bindings'           => array( array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'contact.html', 'search_block_markup' => '<!-- wp:paragraph --><p>Contact</p><!-- /wp:paragraph -->', 'occurrence' => 1, 'role' => 'form' ) ),
+		'controls'           => array(
+			array(
+				'tag'  => 'input',
+				'type' => 'email',
+				'name' => 'email',
+			),
+		),
+		'bindings'           => array(
+			array(
+				'schema'              => 'generic/block-binding/v1',
+				'source_path'         => 'contact.html',
+				'search_block_markup' => '<!-- wp:paragraph --><p>Contact</p><!-- /wp:paragraph -->',
+				'occurrence'          => 1,
+				'role'                => 'form',
+			),
+		),
 		'layout_graph'       => array( 'hash' => 'layout-graph-sha256' ),
 		'presentation_graph' => array( 'hash' => 'presentation-graph-sha256' ),
 	);
-	$manifest_lifecycle = array(
+	$manifest_lifecycle   = array(
 		'entities' => array(
 			$manifest_id => array(
 				'adapter'     => array(
@@ -206,7 +351,10 @@ namespace {
 						foreach ( $forms as $form ) {
 							$valid = $valid && is_array( $form ) && 'contact.html' === ( $form['source_path'] ?? '' ) && ! empty( $form['selector'] ) && ! empty( $form['bindings'] ) && ! empty( $form['controls'] ) && isset( $form['layout_graph']['hash'], $form['presentation_graph']['hash'] );
 						}
-						return array( 'forms' => $forms, 'errors' => $valid ? array() : array( array( 'message' => 'expanded forms are incomplete' ) ) );
+						return array(
+							'forms'  => $forms,
+							'errors' => $valid ? array() : array( array( 'message' => 'expanded forms are incomplete' ) ),
+						);
 					},
 				),
 				'manifest'    => array( 'forms' => array() ),
@@ -218,22 +366,32 @@ namespace {
 		'reconciliation_identity' => $manifest_id,
 		'kind'                    => 'entity_collection',
 		'type'                    => 'forms',
-		'payload'                 => array( 'schema' => 'blocks-engine/runtime-entity-manifest/v1', 'entity_schema' => 'generic/forms/v1', 'entities' => array( array( 'content_hash' => str_repeat( 'b', 64 ) ) ) ),
+		'payload'                 => array(
+			'schema'        => 'blocks-engine/runtime-entity-manifest/v1',
+			'entity_schema' => 'generic/forms/v1',
+			'entities'      => array( array( 'content_hash' => str_repeat( 'b', 64 ) ) ),
+		),
 	);
 	$manifest_lifecycle['entities'][ $manifest_id ]['declaration'] = $manifest_declaration;
-	$manifest_resolved = array(
+	$manifest_resolved  = array(
 		'runtime_declarations'      => array( $manifest_declaration ),
 		'runtime_entity_resolution' => array(
-			array( 'reconciliation_identity' => $manifest_id, 'kind' => 'entity_collection', 'type' => 'forms', 'entity_schema' => 'generic/forms/v1', 'entities' => array( $manifest_entity, array_merge( $manifest_entity, array( 'selector' => 'form.newsletter' ) ) ) ),
+			array(
+				'reconciliation_identity' => $manifest_id,
+				'kind'                    => 'entity_collection',
+				'type'                    => 'forms',
+				'entity_schema'           => 'generic/forms/v1',
+				'entities'                => array( $manifest_entity, array_merge( $manifest_entity, array( 'selector' => 'form.newsletter' ) ) ),
+			),
 		),
 	);
 	$expanded_lifecycle = Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $manifest_lifecycle, $manifest_resolved );
 	$expanded_forms     = $expanded_lifecycle['entities'][ $manifest_id ]['manifest']['forms'] ?? array();
 	$assert( ! is_wp_error( $expanded_lifecycle ) && 2 === count( $expanded_forms ) && 'contact.html' === ( $expanded_forms[0]['source_path'] ?? '' ) && 1 === count( $expanded_forms[0]['bindings'] ?? array() ) && 'email' === ( $expanded_forms[0]['controls'][0]['name'] ?? '' ) && 'layout-graph-sha256' === ( $expanded_forms[0]['layout_graph']['hash'] ?? '' ) && 'presentation-graph-sha256' === ( $expanded_forms[0]['presentation_graph']['hash'] ?? '' ), 'resolver-expanded-manifest-retains-all-entity-source-binding-control-and-graph-data' );
-	$missing_resolution = $manifest_resolved;
+	$missing_resolution                              = $manifest_resolved;
 	$missing_resolution['runtime_entity_resolution'] = array();
 	$assert( is_wp_error( Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $manifest_lifecycle, $missing_resolution ) ), 'resolver-expanded-manifest-rejects-missing-entity-resolution' );
-	$duplicate_resolution = $manifest_resolved;
+	$duplicate_resolution                                = $manifest_resolved;
 	$duplicate_resolution['runtime_entity_resolution'][] = $duplicate_resolution['runtime_entity_resolution'][0];
 	$assert( is_wp_error( Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $manifest_lifecycle, $duplicate_resolution ) ), 'resolver-expanded-manifest-rejects-duplicate-entity-resolution' );
 	$mismatched_resolution = $manifest_resolved;
@@ -244,8 +402,17 @@ namespace {
 	$assert( is_wp_error( Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $manifest_lifecycle, $incomplete_entity_resolution ) ), 'resolver-expanded-manifest-rejects-incomplete-expanded-entity-data' );
 	// --- Entity validators report per row, so the lifecycle keeps the valid rows -
 	$mixed_id         = str_repeat( 'c', 64 );
-	$mappable_control = array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' );
-	$submit_control   = array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' );
+	$mappable_control = array(
+		'tag'   => 'input',
+		'type'  => 'email',
+		'name'  => 'email',
+		'label' => 'Email',
+	);
+	$submit_control   = array(
+		'tag'   => 'button',
+		'type'  => 'submit',
+		'label' => 'Send',
+	);
 	$mixed_entity     = static fn( string $selector, array $controls ): array => array(
 		'source_path' => 'contact.html',
 		'selector'    => $selector,
@@ -284,8 +451,8 @@ namespace {
 
 	// --- Manifest-schema declarations carry content-hash refs, not entity bodies.
 	// Their rows are validated once resolved, not as empty ref rows here.
-	$ref_id   = str_repeat( 'd', 64 );
-	$ref_plan = array(
+	$ref_id        = str_repeat( 'd', 64 );
+	$ref_plan      = array(
 		'runtime_declarations' => array(
 			array(
 				'kind'                    => 'entity_collection',
@@ -304,7 +471,13 @@ namespace {
 	$ref_resolved = array(
 		'runtime_declarations'      => $ref_plan['runtime_declarations'],
 		'runtime_entity_resolution' => array(
-			array( 'reconciliation_identity' => $ref_id, 'kind' => 'entity_collection', 'type' => 'forms', 'entity_schema' => 'generic/forms/v1', 'entities' => array( $mixed_entity( 'form.subscribe', array( $mappable_control, $submit_control ) ) ) ),
+			array(
+				'reconciliation_identity' => $ref_id,
+				'kind'                    => 'entity_collection',
+				'type'                    => 'forms',
+				'entity_schema'           => 'generic/forms/v1',
+				'entities'                => array( $mixed_entity( 'form.subscribe', array( $mappable_control, $submit_control ) ) ),
+			),
 		),
 	);
 	$ref_expanded = is_wp_error( $ref_lifecycle ) ? $ref_lifecycle : Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $ref_lifecycle, $ref_resolved );

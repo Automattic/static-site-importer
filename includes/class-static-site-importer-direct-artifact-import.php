@@ -43,8 +43,29 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 
 		$freeze_started  = microtime( true );
 		$source_identity = self::hash_json( $artifact, false );
-		$source_policy   = Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
+		$import_id       = bin2hex( random_bytes( 32 ) );
+		$workspace       = self::workspace( $import_id, true );
+		if ( is_wp_error( $workspace ) ) {
+			return $workspace;
+		}
+		$verified_text = array();
+		$source_policy = Static_Site_Importer_Content_Policy::validate_artifact(
+			$artifact,
+			$payload_reader,
+			static function ( array $file, string $bytes ) use ( $workspace, &$verified_text ) {
+				$reference = Static_Site_Importer_Site_Plan_Persistence::payload_reference( $file );
+				$published = $workspace->publish_raw_once( self::payload_file( $reference['id'] ), $bytes );
+				if ( ! is_wp_error( $published ) ) {
+					$verified_text[ $reference['id'] ] = array(
+						'sha256' => $reference['sha256'],
+						'bytes'  => $reference['bytes'],
+					);
+				}
+				return $published;
+			}
+		);
 		if ( is_wp_error( $source_policy ) ) {
+			$workspace->purge();
 			return $source_policy;
 		}
 		if ( ! class_exists( 'Static_Site_Importer_Redirects_Manifest' ) ) {
@@ -52,17 +73,13 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		}
 		$redirects = Static_Site_Importer_Redirects_Manifest::extract( $artifact, $payload_reader );
 		if ( is_wp_error( $redirects ) ) {
+			$workspace->purge();
 			return $redirects;
 		}
 		$artifact                     = $redirects['artifact'];
 		$args['source_route_aliases'] = $redirects['aliases'];
 
-		$import_id = bin2hex( random_bytes( 32 ) );
-		$workspace = self::workspace( $import_id, true );
-		if ( is_wp_error( $workspace ) ) {
-			return $workspace;
-		}
-		$retained = self::retain_payloads( $artifact, $payload_reader, $workspace );
+		$retained = self::retain_payloads( $artifact, $payload_reader, $workspace, $verified_text );
 		if ( is_wp_error( $retained ) ) {
 			$workspace->purge();
 			return $retained;
@@ -1515,7 +1532,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	}
 
 	/** Retain every reference-backed artifact payload before the source archive can disappear. */
-	private static function retain_payloads( array $artifact, ?object $reader, Static_Site_Importer_Artifact_Run_Workspace $workspace ) {
+	private static function retain_payloads( array $artifact, ?object $reader, Static_Site_Importer_Artifact_Run_Workspace $workspace, array $verified_text = array() ) {
 		$references = array();
 		foreach ( is_array( $artifact['files'] ?? null ) ? $artifact['files'] : array() as $file ) {
 			if ( ! is_array( $file ) ) {
@@ -1545,6 +1562,11 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			return new WP_Error( 'static_site_importer_direct_artifact_payload_reader_missing', 'Reference-backed direct artifacts require a payload reader.' );
 		}
 		foreach ( $references as $id => $contract ) {
+			// Textual bytes were verified, scanned, and frozen together. Do not
+			// reread the source or hydrate the artifact just to retain them again.
+			if ( ( $verified_text[ $id ] ?? null ) === $contract ) {
+				continue;
+			}
 			$reference = array(
 				'schema' => 'blocks-engine/payload-reference/v1',
 				'id'     => $id,

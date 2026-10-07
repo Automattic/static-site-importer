@@ -60,8 +60,9 @@ test( 'simulated Jetpack field markup preserves source field pitch and bounded s
 			:where(.has-no-jetpack-form-layout) .jetpack-contact-form__form>:not(.wp-block-button){box-sizing:border-box;flex:0 0 100%}
 			.wp-block-button{display:block;width:100%}
 			.wp-block-jetpack-field-text label{display:block}
+			.source-oracle{visibility:hidden}
 			${seeded.css}
-		</style><div class="page"><div class="wp-block-jetpack-contact-form ${seeded.className}"><form class="jetpack-contact-form__form has-no-jetpack-form-layout">${fields}${seeded.runtimeHtml.replace( '<div class="wp-block-button', '<div data-field="Send" class="wp-block-button' )}</form></div></div>` );
+		</style><div class="page"><div class="source-oracle">${seeded.sourceHtml}</div><div class="wp-block-jetpack-contact-form ${seeded.className}"><form class="jetpack-contact-form__form has-no-jetpack-form-layout">${fields}${seeded.runtimeHtml.replace( '<div class="wp-block-button', '<div data-field="Send" class="wp-block-button' )}</form></div></div>` );
 		for ( const width of [ 390, 768, 1440, 1600 ] ) {
 			await page.setViewportSize( { width, height: 900 } );
 			const boxes = await page.locator( '[data-field]:has(input)' ).evaluateAll( ( nodes ) => nodes.map( ( node ) => {
@@ -83,7 +84,13 @@ test( 'simulated Jetpack field markup preserves source field pitch and bounded s
 			assert.ok( Math.abs( last.left - first.left - first.width - 24 ) <= 1, `field grid/flex column gap at ${width}: ${JSON.stringify( boxes )}` );
 			assert.ok( first.pitch >= 8, `source label margin-bottom at ${width}: ${JSON.stringify( boxes )}` );
 			assert.ok( send.width <= send.parentWidth * 0.25 + 24, `bounded submit at ${width}: ${JSON.stringify( send )}` );
-			assert.ok( Math.abs( send.parentRight - send.parentPaddingRight - send.right ) <= 1, `right-aligned submit at ${width}: ${JSON.stringify( send )}` );
+			// The source parent owns grid-column:1 / span 3. Its nested
+			// button's margin-left:auto cannot move that parent to the last column.
+			const sourceSubmit = await page.locator( '.source-oracle [style*="grid-column:1 / span 3"]' ).evaluate( node => {
+				const box = node.getBoundingClientRect();
+				return { width:box.width, left:box.left, right:box.right };
+			} );
+			assert.equal( send.left, sourceSubmit.left, `source-owned first-column submit parent placement at ${width}` );
 			const container = await page.locator( '.wp-block-jetpack-contact-form' ).evaluate( ( node ) => {
 				const style = getComputedStyle( node );
 				return { background: style.backgroundColor, paddingTop: style.paddingTop, paddingRight: style.paddingRight, paddingBottom: style.paddingBottom, paddingLeft: style.paddingLeft, gap: style.gap, display: style.display, flexDirection: style.flexDirection };
