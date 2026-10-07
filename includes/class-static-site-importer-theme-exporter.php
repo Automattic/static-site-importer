@@ -48,6 +48,8 @@ class Static_Site_Importer_Theme_Exporter {
 		$source_metadata              = isset( $args['source_metadata'] ) && is_array( $args['source_metadata'] ) ? $args['source_metadata'] : array();
 		$diagnostics                  = array();
 		$files                        = array();
+		$used_paths                   = array();
+		$post_artifact_paths          = array();
 		$external_metric_declarations = array();
 
 		$stylesheet = self::export_theme_stylesheet_file( $theme_dir, $root );
@@ -62,22 +64,22 @@ class Static_Site_Importer_Theme_Exporter {
 		$pages      = self::export_pages( $include_pages );
 		$post_count = 0;
 		if ( empty( $pages ) ) {
-			$diagnostics[] = array(
+			$diagnostics[]             = array(
 				'level'   => 'warning',
 				'code'    => 'static_site_importer_export_no_pages',
 				'message' => 'No published pages were available to export; generated an entrypoint from theme templates only.',
 			);
-			$files[]       = self::export_file_entry(
+			$files[]                   = self::export_file_entry(
 				$entrypoint,
 				self::export_html_document( '', self::export_theme_chrome_html( $theme_dir, 'front-page' ), $theme_slug, null !== $stylesheet, null !== $global_stylesheet ),
 				'document',
 				'entrypoint'
 			);
+			$used_paths[ $entrypoint ] = true;
 		} else {
 			$front_page_id = self::export_front_page_id();
 			$first         = true;
 			$planned       = array();
-			$used_paths    = array();
 			// Reserve every page route before assigning post routes so shared
 			// slugs resolve identically regardless of get_posts() ordering: pages
 			// keep the clean /root/<slug>/ path and a colliding post moves under
@@ -110,8 +112,9 @@ class Static_Site_Importer_Theme_Exporter {
 				if ( isset( $used_paths[ $path ] ) ) {
 					$path = self::export_artifact_path( $root . '/post/' . ( isset( $page->post_name ) ? sanitize_title( (string) $page->post_name ) : (string) ( isset( $page->ID ) ? (int) $page->ID : 0 ) ) . '/index.html', $root . '/post/page/index.html' );
 				}
-				$used_paths[ $path ] = true;
-				$planned[]           = array(
+				$used_paths[ $path ]                             = true;
+				$post_artifact_paths[ (int) ( $page->ID ?? 0 ) ] = $path;
+				$planned[]                                       = array(
 					'page'     => $page,
 					'path'     => $path,
 					'is_front' => false,
@@ -149,9 +152,23 @@ class Static_Site_Importer_Theme_Exporter {
 							unset( $GLOBALS['static_site_importer_external_metric_export_fallback'] ); }
 						}
 				}
+				$site_origin = rtrim( home_url( '/' ), '/' );
+				$page_html   = str_replace( $site_origin . '/', '/', $page_html );
+				if ( 'post' === ( $page->post_type ?? '' ) ) {
+					$target_route  = '/' . trim( (string) preg_replace( '#/index\.html$#', '', substr( $path, strlen( $root ) ) ), '/' );
+					$source_routes = array_merge(
+						array( (string) wp_parse_url( (string) get_permalink( $page_id ), PHP_URL_PATH ) ),
+						function_exists( 'get_post_meta' ) ? array_map( 'strval', get_post_meta( $page_id, '_static_site_importer_source_route', false ) ) : array()
+					);
+					foreach ( array_unique( array_filter( $source_routes ) ) as $source_route ) {
+						$page_html = str_replace( 'href="' . trailingslashit( $source_route ) . '"', 'href="' . trailingslashit( $target_route ) . '"', $page_html );
+					}
+				}
+
 				$page_metrics = self::external_metric_declaration_entities( $page, $path );
 				if ( is_wp_error( $page_metrics ) ) {
-					return $page_metrics; }
+					return $page_metrics;
+				}
 				if ( ! empty( $page_metrics ) ) {
 					$external_metric_declarations[] = array(
 						'kind'        => 'entity_collection',
@@ -161,7 +178,8 @@ class Static_Site_Importer_Theme_Exporter {
 							'schema'   => 'generic/external-metric/v1',
 							'entities' => $page_metrics,
 						),
-					); }
+					);
+				}
 
 				$files[] = self::export_file_entry(
 					$path,
@@ -171,10 +189,18 @@ class Static_Site_Importer_Theme_Exporter {
 					array(
 						'post_id'   => $page_id,
 						'post_name' => isset( $page->post_name ) ? (string) $page->post_name : '',
+						'metadata'  => 'post' === ( $page->post_type ?? '' ) ? array(
+							'post_type'  => 'post',
+							'route_path' => '/' . trim( (string) preg_replace( '#/index\.html$#', '', substr( $path, strlen( $root ) ) ), '/' ),
+						) : array(),
 					)
 				);
 			}
 		}
+
+		$taxonomy_archive_files = self::export_taxonomy_archive_files( $theme_slug, $root, $used_paths, $post_artifact_paths, null !== $global_stylesheet, $diagnostics );
+		$files                  = array_merge( $files, $taxonomy_archive_files );
+		$taxonomy_archive_count = count( array_unique( array_map( static fn( array $file ): string => (string) ( $file['taxonomy'] ?? '' ) . ':' . (string) ( $file['term_id'] ?? '' ), $taxonomy_archive_files ) ) );
 
 		$files = array_merge( $files, self::export_theme_asset_files( $theme_dir, $root, $diagnostics ) );
 
@@ -209,16 +235,18 @@ class Static_Site_Importer_Theme_Exporter {
 		}
 
 		$report = array(
-			'status'          => 'completed',
-			'theme_slug'      => $theme_slug,
-			'theme_dir'       => $theme_dir,
-			'root'            => $root,
-			'entrypoint'      => $entrypoint,
-			'file_count'      => count( $files ),
-			'page_count'      => count( $pages ) - $post_count, // pages keep the page_count contract; posts are reported separately
-			'post_count'      => $post_count,
-			'source_metadata' => $source_metadata,
-			'diagnostics'     => $diagnostics,
+			'status'                      => 'completed',
+			'theme_slug'                  => $theme_slug,
+			'theme_dir'                   => $theme_dir,
+			'root'                        => $root,
+			'entrypoint'                  => $entrypoint,
+			'file_count'                  => count( $files ),
+			'page_count'                  => count( $pages ) - $post_count, // pages keep the page_count contract; posts are reported separately
+			'post_count'                  => $post_count,
+			'taxonomy_archive_count'      => $taxonomy_archive_count,
+			'taxonomy_archive_page_count' => count( $taxonomy_archive_files ),
+			'source_metadata'             => $source_metadata,
+			'diagnostics'                 => $diagnostics,
 		);
 		if ( ! empty( $import_report ) ) {
 			$report['import_report'] = $import_report;
@@ -237,11 +265,182 @@ class Static_Site_Importer_Theme_Exporter {
 		);
 	}
 
+	/** Export current native taxonomy archives through the active theme's block templates. */
+	private static function export_taxonomy_archive_files( string $theme_slug, string $root, array $used_paths, array $post_artifact_paths, bool $include_global_styles, array &$diagnostics ): array {
+		if ( ! function_exists( 'get_terms' ) || ! function_exists( 'get_term_link' ) || ! function_exists( 'get_block_template' ) || ! function_exists( 'do_blocks' ) ) {
+			return array();
+		}
+
+		$files = array();
+		global $wp;
+		foreach ( array( 'category', 'post_tag' ) as $taxonomy ) {
+			$terms = get_terms(
+				array(
+					'taxonomy'   => $taxonomy,
+					'hide_empty' => true,
+				)
+			);
+			if ( is_wp_error( $terms ) ) {
+				$diagnostics[] = array(
+					'level'    => 'warning',
+					'code'     => 'static_site_importer_export_taxonomy_query_failed',
+					'taxonomy' => $taxonomy,
+				);
+				continue;
+			}
+
+			foreach ( $terms as $term ) {
+				$term_url = get_term_link( $term );
+				if ( is_wp_error( $term_url ) ) {
+					continue;
+				}
+				$route = wp_parse_url( (string) $term_url, PHP_URL_PATH );
+				if ( ! is_string( $route ) || '' === trim( $route, '/' ) ) {
+					continue;
+				}
+				$path = self::export_artifact_path( $root . '/' . trim( $route, '/' ) . '/index.html', '' );
+				if ( '' === $path || isset( $used_paths[ $path ] ) ) {
+					$diagnostics[] = array(
+						'level'    => 'warning',
+						'code'     => 'static_site_importer_export_taxonomy_route_conflict',
+						'taxonomy' => $taxonomy,
+						'term_id'  => (int) $term->term_id,
+						'path'     => $path,
+					);
+					continue;
+				}
+
+				$template_slug = ( 'category' === $taxonomy ? 'category-' : 'tag-' ) . sanitize_title( (string) $term->slug );
+				$template      = get_block_template( $theme_slug . '//' . $template_slug );
+				if ( ! $template instanceof WP_Block_Template ) {
+					continue;
+				}
+
+				$query_args = array(
+					'post_type'      => 'post',
+					'post_status'    => 'publish',
+					'posts_per_page' => max( 1, (int) get_option( 'posts_per_page', 10 ) ),
+					'paged'          => 1,
+				);
+				if ( 'category' === $taxonomy ) {
+					$query_args['category_name'] = (string) $term->slug;
+				} else {
+					$query_args['tag'] = (string) $term->slug;
+				}
+				$max_pages = max( 1, (int) ( new WP_Query( $query_args ) )->max_num_pages );
+				for ( $page_number = 1; $page_number <= $max_pages; ++$page_number ) {
+					$query_args['paged'] = $page_number;
+					$previous_query      = $GLOBALS['wp_query'] ?? null;
+					$previous_post       = $GLOBALS['post'] ?? null;
+					$previous_request    = (string) $wp->request;
+					// The inherited Query Loop reads the archive query and path from WordPress's normal globals.
+					// phpcs:disable WordPress.WP.GlobalVariablesOverride.Prohibited -- The exporter renders the native archive template against its real query context.
+					$archive_query       = new WP_Query( $query_args );
+					$GLOBALS['wp_query'] = $archive_query;
+					$GLOBALS['post']     = null;
+					$wp->request         = trim( $route, '/' );
+					try {
+						$html = do_blocks( $template->content );
+					} finally {
+						$GLOBALS['wp_query'] = $previous_query;
+						$GLOBALS['post']     = $previous_post;
+						$wp->request         = $previous_request;
+					}
+					// phpcs:enable WordPress.WP.GlobalVariablesOverride.Prohibited
+					if ( '' === trim( $html ) ) {
+						continue;
+					}
+
+					$page_route = 1 === $page_number ? $route : trailingslashit( $route ) . 'page/' . $page_number;
+					$page_path  = self::export_artifact_path( $root . '/' . trim( $page_route, '/' ) . '/index.html', '' );
+					if ( '' === $page_path || isset( $used_paths[ $page_path ] ) ) {
+						$diagnostics[] = array(
+							'level'        => 'warning',
+							'code'         => 'static_site_importer_export_taxonomy_route_conflict',
+							'taxonomy'     => $taxonomy,
+							'term_id'      => (int) $term->term_id,
+							'source_route' => $page_route,
+							'path'         => $page_path,
+						);
+						continue;
+					}
+					$used_paths[ $page_path ] = true;
+					$site_origin              = untrailingslashit( home_url( '/' ) );
+					$html                     = str_replace( $site_origin . '/', '/', $html );
+					$html                     = preg_replace( '#href="/page/([0-9]+)/"#', 'href="' . trailingslashit( $route ) . 'page/$1/"', $html ) ?? $html;
+					$html                     = preg_replace( '#href="' . preg_quote( $site_origin, '#' ) . '/page/([0-9]+)/"#', 'href="' . trailingslashit( $route ) . 'page/$1/"', $html ) ?? $html;
+					if ( $page_number > 1 ) {
+						$previous_route = 2 === $page_number ? trailingslashit( $route ) : trailingslashit( $route ) . 'page/' . ( $page_number - 1 ) . '/';
+						$html           = preg_replace( '#href="/page/([0-9]+)/"#', 'href="' . $previous_route . '"', $html ) ?? $html;
+						if ( ! str_contains( $html, 'wp-block-query-pagination-previous' ) ) {
+							$html = preg_replace( '#(<nav\b[^>]*class="[^"]*wp-block-query-pagination[^"]*"[^>]*>)#', '$1<a href="' . esc_url( $previous_route ) . '" class="wp-block-query-pagination-previous">Previous Page</a>', $html, 1 ) ?? $html;
+						}
+					}
+					if ( $page_number >= $max_pages ) {
+						$html = preg_replace( '#<a href="[^"]+" class="wp-block-query-pagination-next">.*?</a>#s', '', $html ) ?? $html;
+					}
+					$html = preg_replace_callback(
+						'#(?:href|src)="/([^\"]+)"#',
+						static function ( array $matched ) use ( $page_route ): string {
+							$prefix = str_repeat( '../', substr_count( trim( $page_route, '/' ), '/' ) + 1 );
+							return str_replace( '="/', '="' . $prefix, $matched[0] );
+						},
+						$html
+					) ?? $html;
+					foreach ( $archive_query->posts as $archive_post ) {
+						if ( ! $archive_post instanceof WP_Post || 'post' !== $archive_post->post_type ) {
+							continue;
+						}
+						$artifact_post_path = (string) ( $post_artifact_paths[ (int) $archive_post->ID ] ?? self::export_page_artifact_path( $archive_post, $root ) );
+						$target_route       = preg_replace( '#/index\.html$#', '', substr( $artifact_post_path, strlen( $root ) ) );
+						$portable_href      = '/' . trim( (string) $target_route, '/' ) . '/';
+						$escaped_href       = function_exists( 'esc_attr' ) ? esc_attr( $portable_href ) : htmlspecialchars( $portable_href, ENT_QUOTES, 'UTF-8' );
+						$source_routes      = array_merge(
+							array( (string) wp_parse_url( get_permalink( $archive_post ), PHP_URL_PATH ) ),
+							function_exists( 'get_post_meta' ) ? array_map( 'strval', get_post_meta( (int) $archive_post->ID, '_static_site_importer_source_route', false ) ) : array()
+						);
+						foreach ( array_unique( array_filter( $source_routes ) ) as $source_post_route ) {
+							$source_relative = str_repeat( '../', substr_count( trim( $page_route, '/' ), '/' ) + 1 ) . ltrim( $source_post_route, '/' );
+							$html            = str_replace( 'href="' . rtrim( home_url( $source_post_route ), '/' ) . '"', 'href="' . $escaped_href . '"', $html );
+							$html            = str_replace( 'href="' . trailingslashit( $source_post_route ) . '"', 'href="' . $escaped_href . '"', $html );
+							$html            = str_replace( 'href="' . $source_relative . '"', 'href="' . $escaped_href . '"', $html );
+						}
+					}
+					$files[] = self::export_file_entry(
+						$page_path,
+						self::export_html_document(
+							$html,
+							array(
+								'before' => '',
+								'after'  => '',
+							),
+							(string) $term->name,
+							true,
+							$include_global_styles,
+							str_repeat( '../', substr_count( trim( $page_route, '/' ), '/' ) + 1 )
+						),
+						'document',
+						'taxonomy-archive',
+						array(
+							'taxonomy'     => $taxonomy,
+							'term_id'      => (int) $term->term_id,
+							'source_route' => $page_route,
+							'page'         => $page_number,
+						)
+					);
+				}
+			}
+		}
+
+		return $files;
+	}
+
 	/** Rehydrate only companion-authored external metric bindings into export declarations. */
 	private static function external_metric_declaration_entities( object $page, string $source_path ) {
 		$companion = (string) get_option( 'static_site_importer_active_companion_plugin', '' );
 		if ( '' === $companion || ! defined( 'WP_PLUGIN_DIR' ) ) {
-			return array(); }
+			return array();
+		}
 		$config_path = WP_PLUGIN_DIR . '/' . dirname( $companion ) . '/companion.json';
 		$config      = is_readable( $config_path ) ? json_decode( (string) file_get_contents( $config_path ), true ) : null; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the active generated companion's trusted declarative metric inventory.
 		$config_rows = is_array( $config['external_metrics'] ?? null ) ? $config['external_metrics'] : array();
@@ -284,13 +483,15 @@ class Static_Site_Importer_Theme_Exporter {
 					$entities[]       = $fact;
 				}
 				if ( ! empty( $block['innerBlocks'] ) ) {
-					$visit( $block['innerBlocks'] ); }
+					$visit( $block['innerBlocks'] );
+				}
 			}
 		};
 		$visit( $blocks );
 		foreach ( $entities as $entity ) {
 			if ( isset( $entity['__invalid_external_metric_binding'] ) ) {
-				return new WP_Error( 'static_site_importer_export_external_metric_binding_unresolved', 'Export found a native external metric binding without its trusted companion configuration.' ); }
+				return new WP_Error( 'static_site_importer_export_external_metric_binding_unresolved', 'Export found a native external metric binding without its trusted companion configuration.' );
+			}
 		}
 		return $entities;
 	}
@@ -598,15 +799,15 @@ class Static_Site_Importer_Theme_Exporter {
 	 * @param bool                              $include_styles  Whether to link exported CSS.
 	 * @return string
 	 */
-	private static function export_html_document( string $page_html, array $chrome, string $title, bool $include_styles, bool $include_global_styles = false ): string {
+	private static function export_html_document( string $page_html, array $chrome, string $title, bool $include_styles, bool $include_global_styles = false, string $asset_prefix = '' ): string {
 		$head = '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">';
 		if ( $include_styles ) {
 			// phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedStylesheet -- This method emits standalone static HTML, not a WordPress-rendered page.
-			$head .= '<link rel="stylesheet" href="style.css">';
+			$head .= '<link rel="stylesheet" href="' . htmlspecialchars( $asset_prefix, ENT_QUOTES, 'UTF-8' ) . 'style.css">';
 		}
 		if ( $include_global_styles ) {
 			// phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedStylesheet -- This method emits standalone static HTML, not a WordPress-rendered page.
-			$head .= '<link rel="stylesheet" href="global-styles.css">';
+			$head .= '<link rel="stylesheet" href="' . htmlspecialchars( $asset_prefix, ENT_QUOTES, 'UTF-8' ) . 'global-styles.css">';
 		}
 
 		return '<!doctype html>' . "\n"

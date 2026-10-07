@@ -101,6 +101,7 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 			'completed'                 => array(
 				'pages'                      => $pages,
 				'navigation_entities'        => $state['applied']['navigation_entities'] ?? array(),
+				'taxonomy_entities'          => $state['applied']['taxonomy_entities'] ?? array(),
 				'files'                      => $state['applied']['files'],
 				'operations'                 => $state['applied']['operations'],
 				'site_identity'              => $state['applied']['site_identity'] ?? array( 'status' => 'not_applied' ),

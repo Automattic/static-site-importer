@@ -100,6 +100,25 @@ if ( ! function_exists( 'trailingslashit' ) ) {
 	}
 }
 
+if ( ! function_exists( 'home_url' ) ) {
+	function home_url( string $path = '' ): string {
+		return 'https://example.test/' . ltrim( $path, '/' );
+	}
+}
+
+if ( ! function_exists( 'wp_parse_url' ) ) {
+	function wp_parse_url( string $url, int $component = -1 ): mixed {
+		return parse_url( $url, $component );
+	}
+}
+
+if ( ! function_exists( 'get_permalink' ) ) {
+	function get_permalink( int|object $post ): string {
+		$post_id = is_int( $post ) ? $post : (int) ( $post->ID ?? 0 );
+		return home_url( '/?p=' . $post_id );
+	}
+}
+
 if ( ! function_exists( 'esc_html' ) ) {
 	function esc_html( string $text ): string {
 		return htmlspecialchars( $text, ENT_QUOTES, 'UTF-8' );
