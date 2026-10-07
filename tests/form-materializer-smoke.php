@@ -382,6 +382,37 @@ namespace {
 	$assert( 3 === ( $interleaved_row['field_count'] ?? 0 ) && str_contains( $interleaved_markup, 'wp:jetpack/field-text' ) && str_contains( $interleaved_markup, 'wp:jetpack/field-email' ) && str_contains( $interleaved_markup, 'wp:jetpack/field-textarea' ), 'interleaved-context-supported-fields-remain-submittable-provider-fields' );
 	$assert( str_contains( $interleaved_markup, 'wp:heading' ) && str_contains( $interleaved_markup, 'Contact us' ) && str_contains( $interleaved_markup, 'wp:paragraph' ) && str_contains( $interleaved_markup, 'We will reply soon.' ), 'interleaved-context-is-editable-block-content' );
 	$assert( in_array( 'file', $interleaved_row['skipped_types'] ?? array(), true ) && 'file_upload' === ( $interleaved_row['unsupported_capabilities'][0]['capability'] ?? '' ) && 'jetpack_upload_endpoint_requires_connected_site_and_supported_plan' === ( $interleaved_row['unsupported_capabilities'][0]['reason_code'] ?? '' ) && str_contains( $interleaved_markup, 'Attach files' ) && str_contains( $interleaved_markup, 'requires Jetpack connection and a supported plan' ), 'unsupported-file-upload-is-diagnostic-and-retains-labelled-position' );
+	// A form builder keeps its own status copy hidden in the form until a
+	// submission succeeds (Wix: "Thanks for submitting!"). Jetpack renders its
+	// own confirmation, so hidden copy is left out while visible copy stays
+	// (Automattic/blocks-engine#2560).
+	$status_entity = Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity(
+		array(
+			'form'     => array(
+				'context_after' => array(
+					array( 'type' => 'paragraph', 'text' => 'Thanks for submitting!', 'hidden' => array( 'property' => 'visibility', 'value' => 'hidden', 'selector' => '#msg', 'source_path' => 'inline-style' ) ),
+					array( 'type' => 'paragraph', 'text' => 'Something went wrong.', 'hidden' => array( 'property' => 'display', 'value' => 'none', 'selector' => '#err', 'source_path' => 'site.css' ) ),
+					array( 'type' => 'paragraph', 'text' => 'We reply within a day.' ),
+				),
+			),
+			'controls' => array(
+				array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email', 'required' => true ),
+				array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ),
+			),
+		)
+	);
+	$status_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( $status_entity ) ) )['forms'][0] ?? array();
+	$status_markup = (string) ( $status_row['block_markup'] ?? '' );
+	$assert(
+		'visibility' === ( $status_entity['form']['context_after'][0]['hidden']['property'] ?? null ) && 'none' === ( $status_entity['form']['context_after'][1]['hidden']['value'] ?? null ) && ! isset( $status_entity['form']['context_after'][2]['hidden'] ),
+		'producer-hidden-context-fact-survives-form-normalization',
+		wp_json_encode( $status_entity['form'] )
+	);
+	$assert(
+		'mapped' === ( $status_row['status'] ?? '' ) && str_contains( $status_markup, 'We reply within a day.' ) && ! str_contains( $status_markup, 'Thanks for submitting!' ) && ! str_contains( $status_markup, 'Something went wrong.' ),
+		'hidden-form-status-copy-is-left-out-while-visible-copy-stays',
+		$status_markup
+	);
 	$assert( str_contains( $markup, 'wp:button' ) && ! str_contains( $markup, 'wp:jetpack/button' ), 'markup-canonical-core-submit-button' );
 	$assert( 1 === substr_count( $markup, '<!-- wp:button ' ) && str_contains( $markup, '<button type="submit" class="wp-block-button__link wp-element-button">Send message</button>' ), 'source-submit-control-emits-one-canonical-button' );
 	$labelled_submit_markup = Static_Site_Importer_Form_Seeder::seed(
