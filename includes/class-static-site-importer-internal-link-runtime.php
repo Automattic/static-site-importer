@@ -51,6 +51,9 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 	 * @return mixed
 	 */
 	public static function filter_rendered_block( $content ) {
+		if ( is_string( $content ) ) {
+			$content = self::resolve_member_login_links( $content );
+		}
 		if ( ! is_string( $content ) || ! str_contains( $content, 'href="/' ) || ! function_exists( 'home_url' ) ) {
 			return $content;
 		}
@@ -107,7 +110,46 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 
 	/** @param mixed $content */
 	public static function filter_content( $content ) {
-		return is_string( $content ) ? self::resolve_urls( $content ) : $content;
+		return is_string( $content ) ? self::resolve_urls( self::resolve_member_login_links( $content ) ) : $content;
+	}
+
+	/**
+	 * Point member sign-in controls at this site's login.
+	 *
+	 * Data Liberation marks the source platform's member sign-in entry points
+	 * (`data-dla-member-login`) once it has removed the platform's own login,
+	 * and leaves the target to the destination. Here that is `wp_login_url()`,
+	 * returning the reader to the page they signed in from. Any source `href`
+	 * (the old platform's members area) is replaced.
+	 */
+	public static function resolve_member_login_links( string $content ): string {
+		if ( ! str_contains( $content, 'data-dla-member-login' ) || ! function_exists( 'wp_login_url' ) ) {
+			return $content;
+		}
+		$login = esc_url( wp_login_url( self::current_url() ) );
+
+		return preg_replace_callback(
+			'~<a\b(?=[^>]*\sdata-dla-member-login\b)([^>]*)>~i',
+			static function ( array $matches ) use ( $login ): string {
+				$attributes = (string) preg_replace( '~\s+href\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)~i', '', $matches[1] );
+				return '<a href="' . $login . '"' . $attributes . '>';
+			},
+			$content
+		) ?? $content;
+	}
+
+	/**
+	 * The requested URL, for the post-login redirect. wp-login.php validates
+	 * `redirect_to` itself, so a foreign host cannot be smuggled through it.
+	 */
+	private static function current_url(): string {
+		$host = isset( $_SERVER['HTTP_HOST'] ) ? (string) $_SERVER['HTTP_HOST'] : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Only passed to wp_login_url(), whose redirect wp-login.php validates.
+		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Same as above.
+		if ( '' === $host || '' === $uri ) {
+			return '';
+		}
+
+		return ( function_exists( 'is_ssl' ) && is_ssl() ? 'https://' : 'http://' ) . $host . $uri;
 	}
 
 	public static function resolve_urls( string $content ): string {

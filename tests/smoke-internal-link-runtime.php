@@ -18,6 +18,15 @@ function get_page_by_path( string $path ) {
 	$id = $GLOBALS['ssi_link_pages'][ $path ] ?? 0;
 	return $id ? (object) array( 'ID' => $id ) : null;
 }
+function wp_login_url( string $redirect = '' ): string {
+	return 'https://playground.test/scope:abc/wp-login.php' . ( '' !== $redirect ? '?redirect_to=' . urlencode( $redirect ) : '' );
+}
+function esc_url( string $url ): string {
+	return htmlspecialchars( $url, ENT_QUOTES );
+}
+function is_ssl(): bool {
+	return true;
+}
 $GLOBALS['ssi_link_home']  = 'https://playground.test/scope:abc/';
 $GLOBALS['ssi_link_pages'] = array( 'how-it-works' => 5 );
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-internal-link-runtime.php';
@@ -44,6 +53,24 @@ $assert(
 	'Rendered root-relative routes resolve to page permalinks, other root-relative links rebase onto the home path, and external links stay.'
 );
 $assert( '<p>no links</p>' === Static_Site_Importer_Internal_Link_Runtime::filter_rendered_block( '<p>no links</p>' ), 'Blocks without root-relative links are untouched.' );
+
+// Data Liberation marks member sign-in controls (`data-dla-member-login`)
+// without choosing a target; WordPress points them at its own login and
+// brings the reader back to the page they signed in from.
+$_SERVER['HTTP_HOST']   = 'playground.test';
+$_SERVER['REQUEST_URI'] = '/scope:abc/bylaws/';
+$login                  = 'https://playground.test/scope:abc/wp-login.php?redirect_to=https%3A%2F%2Fplayground.test%2Fscope%3Aabc%2Fbylaws%2F';
+$header                 = '<div class="wixui-login-social-bar"><a class="O4eQsz" data-testid="handle-button" data-dla-member-login="wix"><span>Sign In</span></a></div>';
+$assert(
+	'<div class="wixui-login-social-bar"><a href="' . esc_url( $login ) . '" class="O4eQsz" data-testid="handle-button" data-dla-member-login="wix"><span>Sign In</span></a></div>' === Static_Site_Importer_Internal_Link_Runtime::filter_rendered_block( $header ),
+	'A marked sign-in control without a target links to the WordPress login.'
+);
+$hero = '<a data-testid="linkElement" href="https://www.source.test/account/my-account" class="wixui-button" data-dla-member-login="wix">Sign In</a> <a href="https://www.source.test/account/other">Unmarked</a>';
+$assert(
+	'<a href="' . esc_url( $login ) . '" data-testid="linkElement" class="wixui-button" data-dla-member-login="wix">Sign In</a> <a href="https://www.source.test/account/other">Unmarked</a>' === Static_Site_Importer_Internal_Link_Runtime::filter_content( $hero ),
+	'A marked link into the source members area is replaced by the WordPress login in post content; unmarked links stay.'
+);
+$assert( str_contains( Static_Site_Importer_Internal_Link_Runtime::filter_rendered_block( $hero ), 'href="' . esc_url( $login ) . '" data-testid="linkElement"' ), 'Rendered blocks resolve marked links too.' );
 
 $absolute = 'data-pin-url=\\u0022https://sandbox.test/?p=6\\u0022';
 $assert( 'data-pin-url=\\u0022https://destination.test/2026/01/news/\\u0022' === Static_Site_Importer_Internal_Link_Runtime::resolve_urls( $absolute ), 'Absolute query permalinks from a build host still resolve on the destination.' );
