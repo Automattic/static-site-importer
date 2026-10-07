@@ -3788,11 +3788,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * @param array<string,bool>                  $conditions
 	 * @param array<string,mixed>|null            $placed
 	 */
-	private static function grid_children_explicitly_placed( string $parent, array $parents, array $placements, array $conditions, ?array $placed ): bool {
-		if ( null === $placed || '' === $parent || isset( $placed[ $parent ] ) || array() === $conditions ) {
+	private static function grid_children_explicitly_placed( string $grid, array $parents, array $placements, array $conditions, ?array $placed ): bool {
+		if ( null === $placed || '' === $grid || isset( $placed[ $grid ] ) || array() === $conditions ) {
 			return false;
 		}
-		$children = array_keys( array_filter( $parents, static fn ( string $candidate ): bool => $candidate === $parent ) );
+		$children = array_keys( array_filter( $parents, static fn ( string $candidate ): bool => $candidate === $grid ) );
 		if ( count( $children ) < 2 ) {
 			return false;
 		}
