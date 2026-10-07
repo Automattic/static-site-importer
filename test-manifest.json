@@ -3,7 +3,8 @@
   "exclusions": {
     "tests/fixtures/**": "Fixture inputs are data, not executable tests.",
     "tests/figma-zstd-decoder.php": "CLI diagnostic helper; exercised by tests/smoke-rest-import.php.",
-    "tests/acceptance/blocks-engine-source-autoloader.php": "Acceptance-only PSR-4 loader for the explicitly mounted committed producer checkout; exercised by the paired external-metric WordPress acceptance runner."
+    "tests/acceptance/blocks-engine-source-autoloader.php": "Acceptance-only PSR-4 loader for the explicitly mounted committed producer checkout; exercised by the paired external-metric WordPress acceptance runner.",
+    "tests/phpstan-bootstrap.php": "PHPStan-only WordPress constant bootstrap loaded from phpstan.neon.dist; it is analysis support, not an executable test."
   },
   "tests": [
     { "path": "tests/acceptance/multilingual-browser.mjs", "environment": "operator-only", "command": ["bash", "tools/run-multilingual-acceptance.sh"], "reason": "Real TranslatePress browser proof at desktop and phone widths; click the visible native selector and reload the target language route." },

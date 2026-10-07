@@ -151,9 +151,8 @@ $route_unresolved_fact['id']                  = 'review-route-unresolved';
 $route_unresolved_fact['source']['resources'] = array( array( 'slug' => 'review-route-unresolved' ) );
 $route_unresolved_fact['fallback']['text']    = '';
 $route_unresolved_fact['fallback']['hash']    = hash( 'sha256', '' );
-$editor_facts                                 = get_option( 'ssi_external_metric_editor_test_facts', array() );
-$assert( is_array( $editor_facts ) && 4 === count( $editor_facts ), 'Generated companion carries controlled editor and literal-fallback facts.' );
-call_user_func( array( $runtime_class, 'configure' ), array_merge( array_values( $metric_facts ), $editor_facts, array( $route_fact, $route_unresolved_fact ) ) );
+$assert( 8 === count( $metric_facts ) && isset( $metric_facts['project-count'] ), 'Generated companion contains every producer-compiled metric declaration, including typed success_count.' );
+call_user_func( array( $runtime_class, 'configure' ), array_merge( array_values( $metric_facts ), array( $route_fact, $route_unresolved_fact ) ) );
 $route_validation = call_user_func(
 	array( $runtime_class, 'validate_manifest' ),
 	array(
@@ -176,7 +175,7 @@ $invalid_route_fact['id']                  = 'review-route-invalid';
 $invalid_route_fact['source']['resources'] = array( array( 'slug' => 'review-route-invalid' ) );
 $invalid_route_fact['fallback']['text']    = 'route-invalid-fallback';
 $invalid_route_fact['fallback']['hash']    = hash( 'sha256', $invalid_route_fact['fallback']['text'] );
-call_user_func( array( $runtime_class, 'configure' ), array_merge( array_values( $metric_facts ), $editor_facts, array( $route_fact, $invalid_route_fact ) ) );
+call_user_func( array( $runtime_class, 'configure' ), array_merge( array_values( $metric_facts ), array( $route_fact, $invalid_route_fact ) ) );
 $invalid_route = $run_route_response( $invalid_route_fact, array( 'review-route-invalid' => array( array( 'active_installs' => 12.5 ) ) ) );
 $assert( 'captured_fallback' === ( $invalid_route['data']['status'] ?? '' ) && 'route-invalid-fallback' === ( $invalid_route['data']['value'] ?? null ), 'Refresh route returns an invalid fractional-count response as the captured fallback: ' . wp_json_encode( $invalid_route ) );
 
@@ -185,7 +184,7 @@ $partial_route_fact['id']                  = 'review-route-partial';
 $partial_route_fact['source']['resources'] = array( array( 'slug' => 'review-route-partial-a' ), array( 'slug' => 'review-route-partial-b' ) );
 $partial_route_fact['fallback']['text']    = 'route-partial-fallback';
 $partial_route_fact['fallback']['hash']    = hash( 'sha256', $partial_route_fact['fallback']['text'] );
-call_user_func( array( $runtime_class, 'configure' ), array_merge( array_values( $metric_facts ), $editor_facts, array( $route_fact, $invalid_route_fact, $partial_route_fact ) ) );
+call_user_func( array( $runtime_class, 'configure' ), array_merge( array_values( $metric_facts ), array( $route_fact, $invalid_route_fact, $partial_route_fact ) ) );
 $partial_route   = $run_route_response(
 	$partial_route_fact,
 	array(
@@ -203,9 +202,9 @@ $recovered_route = $run_route_response(
 $assert( 'captured_fallback' === ( $partial_route['data']['status'] ?? '' ) && 'route-partial-fallback' === ( $partial_route['data']['value'] ?? null ), 'Refresh route never reports a partial aggregate as refreshed: ' . wp_json_encode( $partial_route ) );
 $assert( 'fresh' === ( $recovered_route['data']['status'] ?? '' ) && '50+' === ( $recovered_route['data']['value'] ?? null ), 'Refresh route reports a full fresh aggregate after recovery: ' . wp_json_encode( $recovered_route ) );
 
-$all_facts = array_merge( array_values( $metric_facts ), $editor_facts, array( $route_fact, $invalid_route_fact, $partial_route_fact ) );
+$all_facts = array_merge( array_values( $metric_facts ), array( $route_fact, $invalid_route_fact, $partial_route_fact ) );
 call_user_func( array( $runtime_class, 'configure' ), $all_facts );
-$native_markup     = static function ( array $fact, string $tag ): string {
+$native_markup = static function ( array $fact, string $tag ): string {
 	$block_name = 'h2' === $tag ? 'heading' : 'paragraph';
 	$attributes = array(
 		'metadata' => array(
@@ -223,12 +222,38 @@ $native_markup     = static function ( array $fact, string $tag ): string {
 	}
 	return '<!-- wp:' . $block_name . ' ' . wp_json_encode( $attributes ) . ' --><' . $tag . '>' . esc_html( $fact['fallback']['text'] ) . '</' . $tag . '><!-- /wp:' . $block_name . ' -->';
 };
-$literal_content   = do_blocks(
-	$native_markup( $editor_facts[2], 'p' ) . "\n" . $native_markup( $editor_facts[3], 'h2' ) . "\n" . $native_markup( $route_fact, 'p' ) . "\n" . $native_markup( $partial_route_fact, 'p' )
-);
-$literal_text      = $editor_facts[2]['fallback']['text'];
-$paragraph_literal = do_blocks( $native_markup( $editor_facts[2], 'p' ) );
-$heading_literal   = do_blocks( $native_markup( $editor_facts[3], 'h2' ) );
+$literal_fact  = $metric_facts['project-version'];
+$version_key   = 'ssi_external_metric_' . (string) ( get_option( 'static_site_importer_external_metric_receipts', array() )['project-version']['recipe_hash'] ?? '' );
+delete_transient( $version_key );
+$last_good = get_option( 'static_site_importer_external_metric_last_good', array() );
+$last_good = is_array( $last_good ) ? $last_good : array();
+unset( $last_good[ $version_key ] );
+update_option( 'static_site_importer_external_metric_last_good', $last_good, false );
+$literal_http = static function ( mixed $preempt, array $args, string $url ): mixed {
+	parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
+	if ( 'https://api.wordpress.org/plugins/info/1.2/' === strtok( $url, '?' ) && 'plugin_information' === ( $query['action'] ?? '' ) && 'block-visibility' === ( $query['slug'] ?? '' ) ) {
+		return array(
+			'headers'  => array(),
+			'body'     => '{}',
+			'response' => array(
+				'code'    => 503,
+				'message' => 'Injected unavailable source.',
+			),
+			'cookies'  => array(),
+		); }
+	return $preempt;
+};
+add_filter( 'pre_http_request', $literal_http, 10, 3 );
+try {
+	$literal_content   = do_blocks(
+		$native_markup( $literal_fact, 'p' ) . "\n" . $native_markup( $literal_fact, 'h2' ) . "\n" . $native_markup( $route_fact, 'p' ) . "\n" . $native_markup( $partial_route_fact, 'p' )
+	);
+	$literal_text      = $literal_fact['fallback']['text'];
+	$paragraph_literal = do_blocks( $native_markup( $literal_fact, 'p' ) );
+	$heading_literal   = do_blocks( $native_markup( $literal_fact, 'h2' ) );
+} finally {
+	remove_filter( 'pre_http_request', $literal_http, 10 );
+}
 $assert( str_contains( $paragraph_literal, esc_html( $literal_text ) ) && ! str_contains( $paragraph_literal, '<em>pending</em>' ), 'Generated companion outage preserves literal Paragraph fallback tags, quotes and entities as text: ' . $paragraph_literal );
 $assert( str_contains( $heading_literal, esc_html( $literal_text ) ) && ! str_contains( $heading_literal, '<em>pending</em>' ), 'Generated companion outage preserves literal Heading fallback tags, quotes and entities as text: ' . $heading_literal );
 $assert( str_contains( $literal_content, '321+' ) && str_contains( $literal_content, '50+' ), 'Generated companion renders stale and fresh numeric values alongside literal fallbacks: ' . $literal_content );

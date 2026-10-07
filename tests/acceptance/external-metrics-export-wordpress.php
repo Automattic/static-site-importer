@@ -20,9 +20,9 @@ foreach ( $declarations as $declaration ) {
 	if ( is_array( $declaration ) && 'external_metrics' === ( $declaration['type'] ?? '' ) ) {
 		$external = $declaration['payload']['entities'] ?? array(); }
 }
-if ( 7 !== count( $external ) ) {
+if ( 8 !== count( $external ) ) {
 	throw new RuntimeException(
-		'SSI export did not preserve all seven source-recipe-bound native metric declarations: ' . wp_json_encode(
+		'SSI export did not preserve all eight source-recipe-bound native metric declarations: ' . wp_json_encode(
 			array(
 				'declaration_count' => count( $declarations ),
 				'metric_count'      => count( $external ),

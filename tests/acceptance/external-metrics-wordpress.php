@@ -21,7 +21,7 @@ $fallbacks = array(
 	'project-count'      => 'Captured successful project count',
 	'active-installs'    => 'Captured install total',
 	'all-time-downloads' => 'Captured download total',
-	'project-version'    => 'v0.0.0',
+	'project-version'    => '<em>pending</em> "quoted" & &',
 	'project-ratings'    => 'Captured rating count',
 	'github-stars'       => '7',
 	'github-forks'       => '9',
@@ -55,9 +55,11 @@ foreach ( $compiled['plan']['pages'] ?? array() as $candidate ) {
 	$contents = array();
 	$walk     = static function ( array $nodes ) use ( &$walk, &$contents ): void {
 		foreach ( $nodes as $node ) {
-			$text = trim( wp_strip_all_tags( (string) ( $node['innerHTML'] ?? '' ) ) );
+			$text         = trim( wp_strip_all_tags( (string) ( $node['innerHTML'] ?? '' ) ) );
+			$literal_text = html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
 			if ( 'core/paragraph' === ( $node['blockName'] ?? '' ) && '' !== $text ) {
-				$contents[ $text ] = serialize_block( $node ); }
+				$contents[ $text ]         = serialize_block( $node );
+				$contents[ $literal_text ] = serialize_block( $node ); }
 			if ( ! empty( $node['innerBlocks'] ) ) {
 				$walk( $node['innerBlocks'] ); }
 		}
@@ -71,7 +73,7 @@ foreach ( $compiled['plan']['pages'] ?? array() as $candidate ) {
 		);
 		break; }
 }
-$assert( is_array( $metric_page ), 'Compiler emits all five captured metric text leaves as native paragraphs. Plan pages: ' . wp_json_encode( $compiled['plan']['pages'] ?? array() ) );
+$assert( is_array( $metric_page ), 'Compiler emits all eight captured metric text leaves as native paragraphs. Plan pages: ' . wp_json_encode( $compiled['plan']['pages'] ?? array() ) );
 
 $slugs                  = array( 'block-visibility', 'icon-block', 'social-sharing-block', 'genesis-featured-page-advanced', 'genesis-columns-advanced' );
 $source_provenance      = static function ( string $file ): array {
@@ -183,6 +185,7 @@ $facts                  = array(
 		'src/components/wp-plugin-card.tsx'
 	),
 	$make_fact( 'project-ratings', 'plugin_information', 'num_ratings', 'identity', array( $slugs[0] ), $fallbacks['project-ratings'], $numeric, 'src/components/wp-plugin-card.tsx' ),
+	$make_fact( 'project-count', 'plugin_information', 'plugin_response_count', 'success_count', $slugs, $fallbacks['project-count'], $numeric, 'src/components/wp-plugin-stat.tsx' ),
 );
 $expected_live_contract = array(
 	'active-installs'    => array(
@@ -228,6 +231,16 @@ $expected_live_contract = array(
 		'metric'      => 'num_ratings',
 		'aggregation' => 'identity',
 		'resources'   => array( array( 'slug' => $slugs[0] ) ),
+		'freshness'   => 3600,
+		'format'      => $numeric,
+	),
+	'project-count'      => array(
+		'source_id'   => 'wordpress.org.plugin-information',
+		'pointer'     => '/slug',
+		'value_type'  => 'string',
+		'metric'      => 'plugin_response_count',
+		'aggregation' => 'success_count',
+		'resources'   => array_map( static fn( string $slug ): array => array( 'slug' => $slug ), $slugs ),
 		'freshness'   => 3600,
 		'format'      => $numeric,
 	),

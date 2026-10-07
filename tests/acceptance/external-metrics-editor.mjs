@@ -66,7 +66,7 @@ try {
 	const targetClientId = await page.evaluate( () => {
 		const visit = ( blocks ) => {
 			for ( const block of blocks || [] ) {
-				if ( block.attributes?.metadata?.bindings?.content?.args?.metric_id === 'editor-detach-metric' ) { return block.clientId; }
+				if ( block.attributes?.metadata?.bindings?.content?.args?.metric_id === 'github-stars' ) { return block.clientId; }
 				const nested = visit( block.innerBlocks );
 				if ( nested ) { return nested; }
 			}
@@ -144,7 +144,7 @@ try {
 		};
 		return visit( window.wp.data.select( 'core/block-editor' ).getBlocks() );
 	} );
-	assert.equal( siblingBlock?.attributes?.metadata?.bindings?.content?.args?.metric_id, 'editor-sibling-metric', 'Detach preserves the sibling native metric binding.' );
+	assert.equal( siblingBlock?.attributes?.metadata?.bindings?.content?.args?.metric_id, 'github-forks', 'Detach preserves the sibling native metric binding.' );
 	const editedPost = await page.evaluate( () => ( { dirty: window.wp.data.select( 'core/editor' ).isEditedPostDirty(), content: window.wp.data.select( 'core/editor' ).getEditedPostAttribute( 'content' ) } ) );
 	assert.equal( editedPost.dirty, true, 'Detaching the current value creates an unsaved editor edit without a compensating text edit.' );
 	assert.ok( editedPost.content.includes( expectedValue ), 'Canonical edited post serialization contains the frozen current value.' );
@@ -166,14 +166,14 @@ try {
 		return {
 			raw,
 			targetMarkup: blockFor( '<p>' + value + '</p>', '<!-- /wp:paragraph -->' ),
-			siblingMarkup: blockFor( 'editor-sibling-metric', '<!-- /wp:paragraph -->' ),
+			siblingMarkup: blockFor( 'github-forks', '<!-- /wp:paragraph -->' ),
 		};
 	}, { id: postId, value: expectedValue } );
 	assert.ok( saved.targetMarkup.includes( `<p>${ expectedValue }</p>` ), 'The detached current GitHub value persists as static text after editor reload.' );
 	assert.equal( saved.targetMarkup.includes( 'ssi/external-metric' ), false, 'Detached target remains unbound after editor reload.' );
 	assert.ok( saved.targetMarkup.includes( 'Preserve target metadata' ), 'Target metadata survives save and reload.' );
 	assert.ok( saved.targetMarkup.includes( 'preserve-me' ), 'Unrelated target metadata survives save and reload.' );
-	assert.ok( saved.siblingMarkup.includes( 'ssi/external-metric' ) && saved.siblingMarkup.includes( 'editor-sibling-metric' ), 'Sibling binding survives save and reload.' );
+	assert.ok( saved.siblingMarkup.includes( 'ssi/external-metric' ) && saved.siblingMarkup.includes( 'github-forks' ), 'Sibling binding survives save and reload.' );
 	assert.ok( restSaves.some( ( status ) => status >= 200 && status < 300 ), 'Editor save returned a successful WordPress REST response.' );
 	await page.goto( `${ base }/?page_id=${ postId }`, { waitUntil: 'domcontentloaded' } );
 	const frontendText = await page.locator( 'body' ).innerText();
