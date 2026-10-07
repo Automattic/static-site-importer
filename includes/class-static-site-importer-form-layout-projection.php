@@ -3104,16 +3104,19 @@ final class Static_Site_Importer_Form_Layout_Projection {
 						),
 						'priority'   => 'important',
 					);
-					// Jetpack floors the submit's `.wp-block-button` wrapper, as well as
-					// the link released above, at the runtime input height. The source
-					// button had no such floor, and its captured box height lands on this
-					// wrapper, so the floor would otherwise outgrow the source button.
+					// Jetpack floors the submit's `.wp-block-button` wrapper and its link
+					// at `min-height: var(--jetpack--contact-form--input-height)`, which
+					// its view script sets to the runtime input height. The source button
+					// had no such floor, and its captured box height lands on this
+					// wrapper, so the floor would outgrow it. Releasing the variable here
+					// rather than `min-height` itself leaves any authored minimum on the
+					// wrapper or the link in charge.
 					$destinations[] = array(
 						'role'       => 'control',
 						'selector'   => '.' . $scope . ' .' . $control_class,
 						'properties' => array(),
 						'resets'     => array(
-							'min-height' => '0',
+							'--jetpack--contact-form--input-height' => 'auto',
 						),
 					);
 				}

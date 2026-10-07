@@ -4398,7 +4398,7 @@ namespace {
 		$mesh_unconditional_css
 	);
 	$assert(
-		1 === preg_match( '/(?:^|\})\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? \.ssi-node-[a-f0-9]{12}\{min-height:0\}/m', $mesh_unconditional_css ),
+		1 === preg_match( '/(?:^|\})\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? \.ssi-node-[a-f0-9]{12}\{--jetpack--contact-form--input-height:auto\}/m', $mesh_unconditional_css ),
 		'mesh-submit-button-wrapper-releases-the-provider-min-height-so-the-source-height-holds',
 		$mesh_unconditional_css
 	);
