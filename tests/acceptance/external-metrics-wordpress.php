@@ -8,15 +8,14 @@ if ( ! defined( 'ABSPATH' ) || '1' !== getenv( 'SSI_EXTERNAL_METRICS_DISPOSABLE'
 require_once WP_CONTENT_DIR . '/plugins/static-site-importer/vendor/autoload.php';
 require_once WP_CONTENT_DIR . '/plugins/static-site-importer/static-site-importer.php';
 require_once WP_CONTENT_DIR . '/plugins/static-site-importer/includes/class-static-site-importer-theme-generator.php';
-require_once __DIR__ . '/blocks-engine-source-autoloader.php';
-$producer_source = $GLOBALS['ssi_external_metric_producer_source'];
 
-$assert           = static function ( bool $ok, string $message ): void {
+$assert                  = static function ( bool $ok, string $message ): void {
 	if ( ! $ok ) {
 		throw new RuntimeException( esc_html( $message ) ); }
 };
-$producer_runtime = new ReflectionClass( Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\RuntimeDeclarations::class );
-$assert( false !== $producer_source && str_starts_with( (string) $producer_runtime->getFileName(), $producer_source . '/src/' ), 'Prototype paired compiler comes from the explicitly supplied committed producer checkout.' );
+$producer_runtime        = new ReflectionClass( Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\RuntimeDeclarations::class );
+$transformer_vendor_root = WP_CONTENT_DIR . '/plugins/static-site-importer/vendor/automattic/blocks-engine-php-transformer/src/';
+$assert( str_starts_with( (string) $producer_runtime->getFileName(), $transformer_vendor_root ), 'Producer compiler loads from the immutable Composer package installed in the normal consumer vendor tree.' );
 $fallbacks = array(
 	'project-count'           => 'Captured successful project count',
 	'active-installs'         => 'Captured install total',

@@ -2,7 +2,6 @@
 /** Export native external metrics as producer-contract runtime declarations. */
 if ( ! defined( 'ABSPATH' ) || '1' !== getenv( 'SSI_EXTERNAL_METRICS_DISPOSABLE' ) ) {
 	throw new RuntimeException( 'External metric export test requires disposable WordPress.' ); }
-require_once __DIR__ . '/blocks-engine-source-autoloader.php';
 $metric_post_id = (int) get_option( 'ssi_external_metric_acceptance_post_id', 0 );
 $export         = Static_Site_Importer_Theme_Exporter::export_theme(
 	array(

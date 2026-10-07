@@ -5,7 +5,6 @@ if ( ! defined( 'ABSPATH' ) || '1' !== getenv( 'SSI_EXTERNAL_METRICS_DISPOSABLE'
 require_once WP_CONTENT_DIR . '/plugins/static-site-importer/vendor/autoload.php';
 require_once WP_CONTENT_DIR . '/plugins/static-site-importer/static-site-importer.php';
 require_once WP_CONTENT_DIR . '/plugins/static-site-importer/includes/class-static-site-importer-theme-generator.php';
-require_once __DIR__ . '/blocks-engine-source-autoloader.php';
 $artifact = json_decode( (string) file_get_contents( '/evidence/export.json' ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads task-generated export artifact from the evidence mount.
 if ( ! is_array( $artifact ) || empty( $artifact['runtime_declarations'] ) ) {
 	throw new RuntimeException( 'SSI export lost external metric runtime declarations.' ); }
