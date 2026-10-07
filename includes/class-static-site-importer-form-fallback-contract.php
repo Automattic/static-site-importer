@@ -305,6 +305,10 @@ class Static_Site_Importer_Form_Fallback_Contract {
 			$styles = self::context_styles( $item['styles'] ?? null );
 			// The source element identity joins this copy to its source graph node.
 			$selector = is_string( $item['source_selector'] ?? null ) && '' !== trim( $item['source_selector'] ) && strlen( $item['source_selector'] ) <= 2048 && ! preg_match( '/[\x00-\x1f{};]/', $item['source_selector'] ) ? $item['source_selector'] : '';
+			// The producer reports copy the source hides unconditionally (status
+			// text a form builder shows only after submission) with the deciding
+			// declaration; it is carried so the materializer can leave it out.
+			$hidden = self::context_hidden( $item['hidden'] ?? null );
 			if ( 'heading' === ( $item['type'] ?? '' ) ) {
 				$row = array(
 					'type'  => 'heading',
@@ -319,6 +323,9 @@ class Static_Site_Importer_Form_Fallback_Contract {
 				}
 				if ( '' !== $selector ) {
 					$row['source_selector'] = $selector;
+				}
+				if ( null !== $hidden ) {
+					$row['hidden'] = $hidden;
 				}
 				$context[] = $row;
 			} elseif ( 'paragraph' === ( $item['type'] ?? '' ) ) {
@@ -335,10 +342,40 @@ class Static_Site_Importer_Form_Fallback_Contract {
 				if ( '' !== $selector ) {
 					$row['source_selector'] = $selector;
 				}
+				if ( null !== $hidden ) {
+					$row['hidden'] = $hidden;
+				}
 				$context[] = $row;
 			}
 		}
 		return $context;
+	}
+
+	/**
+	 * A producer `hidden` fact: the `display: none` or `visibility: hidden|collapse`
+	 * declaration that hides a context item in every source condition.
+	 *
+	 * @return array{property:string,value:string,selector?:string,source_path?:string}|null
+	 */
+	public static function context_hidden( mixed $hidden ): ?array {
+		if ( ! is_array( $hidden ) ) {
+			return null;
+		}
+		$property = $hidden['property'] ?? null;
+		$value    = $hidden['value'] ?? null;
+		if ( ! ( 'display' === $property && 'none' === $value ) && ! ( 'visibility' === $property && in_array( $value, array( 'hidden', 'collapse' ), true ) ) ) {
+			return null;
+		}
+		$fact = array(
+			'property' => $property,
+			'value'    => $value,
+		);
+		foreach ( array( 'selector', 'source_path' ) as $key ) {
+			if ( is_string( $hidden[ $key ] ?? null ) && '' !== trim( $hidden[ $key ] ) && strlen( $hidden[ $key ] ) <= 2048 && ! preg_match( '/[\x00-\x1f{}]/', $hidden[ $key ] ) ) {
+				$fact[ $key ] = $hidden[ $key ];
+			}
+		}
+		return $fact;
 	}
 
 	/** @param array<string,mixed> $presentation @return array{text:string,classes:array<int,string>}|null */
