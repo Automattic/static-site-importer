@@ -62,8 +62,8 @@ $assert( hash( 'sha256', (string) get_post_field( 'post_content', $metric_post_i
 
 // A separate editor page proves that refresh returns a new value for the
 // existing native binding controls, and that detach freezes that exact value.
-$metric_map     = array_column( $facts, null, 'id' );
-$editor_block   = static function ( string $name, string $metric_id, string $tag, string $text, array $metadata = array() ): string {
+$metric_map           = array_column( $facts, null, 'id' );
+$editor_block         = static function ( string $name, string $metric_id, string $tag, string $text, array $metadata = array() ): string {
 	$metadata['name'] = $metadata['name'] ?? $name;
 	$attributes       = array(
 		'metadata' => array_merge(
@@ -84,7 +84,14 @@ $editor_block   = static function ( string $name, string $metric_id, string $tag
 	}
 	return '<!-- wp:' . $block_name . ' ' . wp_json_encode( $attributes ) . ' --><' . $tag . '>' . esc_html( $text ) . '</' . $tag . '><!-- /wp:' . $block_name . ' -->';
 };
-$editor_content = implode(
+$literal_editor_block = static function ( string $name, string $tag, string $text ): string {
+	$block_name = 'h2' === $tag ? 'heading' : 'paragraph';
+	$attributes = array( 'metadata' => array( 'name' => $name ) );
+	if ( 'heading' === $block_name ) {
+		$attributes['level'] = 2; }
+	return '<!-- wp:' . $block_name . ' ' . wp_json_encode( $attributes ) . ' --><' . $tag . '>' . esc_html( $text ) . '</' . $tag . '><!-- /wp:' . $block_name . ' -->';
+};
+$editor_content       = implode(
 	"\n\n",
 	array(
 		$editor_block(
@@ -98,8 +105,8 @@ $editor_content = implode(
 			)
 		),
 		$editor_block( 'editor-sibling-binding', 'github-forks', 'p', 'captured-editor-forks', array( 'name' => 'Preserve sibling binding' ) ),
-		$editor_block( 'literal-fallback-paragraph', 'project-version', 'p', $metric_map['project-version']['fallback']['text'] ),
-		$editor_block( 'literal-fallback-heading', 'project-version', 'h2', $metric_map['project-version']['fallback']['text'] ),
+		$literal_editor_block( 'literal-fallback-paragraph', 'p', $metric_map['project-version']['fallback']['text'] ),
+		$literal_editor_block( 'literal-fallback-heading', 'h2', $metric_map['project-version']['fallback']['text'] ),
 	)
 );
 
@@ -172,18 +179,6 @@ $mu_plugin_source = <<<'PHP'
 add_filter(
 	'pre_http_request',
 	static function ( $preempt, array $args, string $url ) {
-		$host = (string) wp_parse_url( $url, PHP_URL_HOST );
-		if ( 'api.wordpress.org' === $host ) {
-			parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
-			if ( 'plugin_information' === ( $query['action'] ?? '' ) && 'block-visibility' === ( $query['slug'] ?? '' ) ) {
-				return array(
-					'headers'  => array(),
-					'body'     => '{}',
-					'response' => array( 'code' => 503, 'message' => 'Injected unavailable source.' ),
-					'cookies'  => array(),
-				);
-			}
-		}
 		if ( 'https://api.github.com/repos/Automattic/.github' !== $url ) {
 			return $preempt;
 		}
@@ -200,30 +195,6 @@ add_filter(
 PHP;
 // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Installs an HTTP fixture only in the disposable site's must-use plugin directory.
 file_put_contents( $mu_plugin_path, $mu_plugin_source );
-$version_fact = $metric_map['project-version'];
-$version_key  = 'ssi_external_metric_' . (string) ( $receipts['project-version']['recipe_hash'] ?? '' );
-delete_transient( $version_key );
-$last_good = get_option( 'static_site_importer_external_metric_last_good', array() );
-$last_good = is_array( $last_good ) ? $last_good : array();
-unset( $last_good[ $version_key ] );
-update_option( 'static_site_importer_external_metric_last_good', $last_good, false );
-$retry_after = get_option( 'static_site_importer_external_metric_retry_after', array() );
-$retry_after = is_array( $retry_after ) ? $retry_after : array();
-unset( $retry_after[ $version_key ] );
-update_option( 'static_site_importer_external_metric_retry_after', $retry_after, false );
-$canonicalize     = null;
-$canonicalize     = static function ( mixed $value ) use ( &$canonicalize ): mixed {
-	if ( ! is_array( $value ) ) {
-		return $value; }
-	if ( array_is_list( $value ) ) {
-		return array_map( $canonicalize, $value ); }
-	ksort( $value, SORT_STRING );
-	foreach ( $value as $key => $entry ) {
-		$value[ $key ] = $canonicalize( $entry ); }
-	return $value;
-};
-$canonical_source = wp_json_encode( $canonicalize( $version_fact['source'] ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
-delete_transient( 'ssi_external_metric_source_' . hash( 'sha256', (string) $canonical_source ) );
 echo wp_json_encode(
 	array(
 		'status'         => 'verified',

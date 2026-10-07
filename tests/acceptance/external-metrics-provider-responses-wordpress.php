@@ -229,6 +229,23 @@ $last_good = get_option( 'static_site_importer_external_metric_last_good', array
 $last_good = is_array( $last_good ) ? $last_good : array();
 unset( $last_good[ $version_key ] );
 update_option( 'static_site_importer_external_metric_last_good', $last_good, false );
+$retry_after = get_option( 'static_site_importer_external_metric_retry_after', array() );
+$retry_after = is_array( $retry_after ) ? $retry_after : array();
+unset( $retry_after[ $version_key ] );
+update_option( 'static_site_importer_external_metric_retry_after', $retry_after, false );
+$canonicalize     = null;
+$canonicalize     = static function ( mixed $value ) use ( &$canonicalize ): mixed {
+	if ( ! is_array( $value ) ) {
+		return $value; }
+	if ( array_is_list( $value ) ) {
+		return array_map( $canonicalize, $value ); }
+	ksort( $value, SORT_STRING );
+	foreach ( $value as $key => $entry ) {
+		$value[ $key ] = $canonicalize( $entry ); }
+	return $value;
+};
+$canonical_source = wp_json_encode( $canonicalize( $literal_fact['source'] ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+delete_transient( 'ssi_external_metric_source_' . hash( 'sha256', (string) $canonical_source ) );
 $literal_http = static function ( mixed $preempt, array $args, string $url ): mixed {
 	parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
 	if ( 'https://api.wordpress.org/plugins/info/1.2/' === strtok( $url, '?' ) && 'plugin_information' === ( $query['action'] ?? '' ) && 'block-visibility' === ( $query['slug'] ?? '' ) ) {
@@ -254,6 +271,8 @@ try {
 } finally {
 	remove_filter( 'pre_http_request', $literal_http, 10 );
 }
+$literal_recovery = $run_response( $literal_fact, array( 'block-visibility' => array( array( 'version' => '3.8.1' ) ) ) );
+$assert( 'v3.8.1' === ( $literal_recovery['value'] ?? null ) && 'fresh' === ( $literal_recovery['receipt']['status'] ?? '' ), 'Literal-fallback outage test restores the producer-declared version source and last-good state.' );
 $assert( str_contains( $paragraph_literal, esc_html( $literal_text ) ) && ! str_contains( $paragraph_literal, '<em>pending</em>' ), 'Generated companion outage preserves literal Paragraph fallback tags, quotes and entities as text: ' . $paragraph_literal );
 $assert( str_contains( $heading_literal, esc_html( $literal_text ) ) && ! str_contains( $heading_literal, '<em>pending</em>' ), 'Generated companion outage preserves literal Heading fallback tags, quotes and entities as text: ' . $heading_literal );
 $assert( str_contains( $literal_content, '321+' ) && str_contains( $literal_content, '50+' ), 'Generated companion renders stale and fresh numeric values alongside literal fallbacks: ' . $literal_content );
