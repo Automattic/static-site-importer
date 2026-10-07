@@ -1,6 +1,8 @@
 # The producer's WordPress entrypoint declares its public function bridge;
 # Composer class autoloading alone does not expose these symbols to PHPStan.
 parameters:
+    bootstrapFiles:
+        - tests/phpstan-bootstrap.php
     scanFiles:
         - phpstan-wordpress-constants.stub.php
         - vendor/automattic/blocks-engine-php-transformer/php-transformer.php

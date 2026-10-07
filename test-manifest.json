@@ -2,7 +2,9 @@
   "schema": "static-site-importer/test-manifest/v1",
   "exclusions": {
     "tests/fixtures/**": "Fixture inputs are data, not executable tests.",
-    "tests/figma-zstd-decoder.php": "CLI diagnostic helper; exercised by tests/smoke-rest-import.php."
+    "tests/figma-zstd-decoder.php": "CLI diagnostic helper; exercised by tests/smoke-rest-import.php.",
+    "tests/acceptance/blocks-engine-source-autoloader.php": "Retired prototype source-overlay acceptance helper; final external-metric acceptance uses the normal Composer vendor package.",
+    "tests/phpstan-bootstrap.php": "PHPStan-only WordPress constant bootstrap loaded from phpstan.neon.dist; it is analysis support, not an executable test."
   },
   "tests": [
     { "path": "tests/acceptance/redirection-browser.mjs", "environment": "operator-only", "command": ["bash", "tools/run-redirection-acceptance.sh"], "reason": "Real native admin rule and owner-edited navigation, served complete export, and second disposable WordPress navigation/reload proof." },

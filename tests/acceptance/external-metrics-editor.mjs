@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 
 const required = [ 'SSI_EXTERNAL_METRICS_WP_URL', 'SSI_EXTERNAL_METRICS_POST_ID', 'SSI_EXTERNAL_METRICS_USER', 'SSI_EXTERNAL_METRICS_PASSWORD', 'SSI_EXTERNAL_METRICS_EVIDENCE' ];
 for ( const key of required ) assert.ok( process.env[ key ], `Missing ${ key }` );
 const evidenceDir = process.env.SSI_EXTERNAL_METRICS_EVIDENCE;
 await mkdir( evidenceDir, { recursive: true } );
+const runtimeEvidence = JSON.parse( await readFile( `${ evidenceDir }/runtime.jsonl`, 'utf8' ) );
+const expectedValue = runtimeEvidence.alias_cache?.github_value;
+const expectedForks = runtimeEvidence.alias_cache?.github_forks_value;
+assert.equal( typeof expectedValue, 'string', 'Independent GitHub runtime proof supplies the exact current editor value.' );
+assert.equal( typeof expectedForks, 'string', 'Independent GitHub runtime proof supplies the exact current sibling field.' );
 const browser = await chromium.launch( { headless: true } );
 const page = await browser.newPage( { viewport: { width: 1440, height: 1000 } } );
 const errors = [];
@@ -57,11 +62,11 @@ try {
 	const metricBlock = canvas.locator( '[data-type="core/paragraph"]' ).first();
 	await metricBlock.click();
 	const settingsButton = page.getByRole( 'button', { name: 'Settings' } );
-	if ( await settingsButton.count() ) { await settingsButton.click(); }
+	if ( await settingsButton.count() && 'true' !== await settingsButton.getAttribute( 'aria-pressed' ) ) { await settingsButton.click(); }
 	const targetClientId = await page.evaluate( () => {
 		const visit = ( blocks ) => {
 			for ( const block of blocks || [] ) {
-				if ( block.attributes?.metadata?.bindings?.content?.args?.metric_id === 'editor-detach-metric' ) { return block.clientId; }
+				if ( block.attributes?.metadata?.bindings?.content?.args?.metric_id === 'github-stars' ) { return block.clientId; }
 				const nested = visit( block.innerBlocks );
 				if ( nested ) { return nested; }
 			}
@@ -69,10 +74,12 @@ try {
 		};
 		return visit( window.wp.data.select( 'core/block-editor' ).getBlocks() );
 	} );
-	assert.ok( targetClientId, 'Controlled 111 fallback native paragraph is present in the generated companion editor.' );
+	assert.ok( targetClientId, 'Controlled native GitHub metric paragraph is present in the generated companion editor.' );
 	const targetBlock = canvas.locator( `[data-block="${ targetClientId }"]` );
 	await targetBlock.click();
-	const metricPanel = page.getByText( 'External metric', { exact: true } ).last();
+	const blockTab = page.getByRole( 'tab', { name: 'Block' } );
+	if ( await blockTab.count() && 'true' !== await blockTab.getAttribute( 'aria-selected' ) ) { await blockTab.click(); }
+	const metricPanel = page.getByRole( 'button', { name: 'External metric', exact: true } ).first();
 	await metricPanel.waitFor( { timeout: 5000 } ).catch( async () => {
 		const selected = await page.evaluate( () => { const id = window.wp.data.select( 'core/block-editor' ).getSelectedBlockClientId(); return id ? window.wp.data.select( 'core/block-editor' ).getBlock( id ) : null; } );
 		const runtime = await page.evaluate( () => ( { hooks: !! window.wp?.hooks, components: !! window.wp?.components, blockEditor: !! window.wp?.blockEditor, config: window.ssiExternalMetricConfig || null } ) );
@@ -81,9 +88,17 @@ try {
 		await writeFile( `${ evidenceDir }/editor-debug.json`, JSON.stringify( { selected, scripts, runtime, errors, body: ( await page.locator( 'body' ).innerText() ).slice( 0, 2000 ) }, null, 2 ) );
 		throw new Error( 'External metric inspector was not registered; state retained in editor-debug.json.' );
 	} );
-	await metricPanel.click();
-	await page.getByText( /Source: WordPress\.org · Metric: editor-detach-metric/ ).waitFor();
-	const sourceIdentity = await page.getByText( /Source: WordPress\.org · Metric: editor-detach-metric/ ).innerText();
+	try {
+		await metricPanel.click( { timeout: 5000 } );
+	} catch ( error ) {
+		const selected = await page.evaluate( () => { const id = window.wp.data.select( 'core/block-editor' ).getSelectedBlockClientId(); return id ? window.wp.data.select( 'core/block-editor' ).getBlock( id ) : null; } );
+		const buttons = await page.getByRole( 'button' ).evaluateAll( ( nodes ) => nodes.map( ( node ) => ( { text: node.innerText, disabled: node.disabled, expanded: node.getAttribute( 'aria-expanded' ), label: node.getAttribute( 'aria-label' ) } ) ).filter( ( item ) => item.text.includes( 'External' ) || item.label?.includes( 'External' ) ) );
+		await page.screenshot( { path: `${ evidenceDir }/editor-disabled-source-control.png`, fullPage: true } );
+		await writeFile( `${ evidenceDir }/editor-disabled-source-control.json`, JSON.stringify( { selected, buttons, body: ( await page.locator( 'body' ).innerText() ).slice( 0, 4000 ), error: error.message }, null, 2 ) );
+		throw error;
+	}
+	await page.getByText( /Source: github\.repository-information · Metric: stargazers_count/ ).waitFor();
+	const sourceIdentity = await page.getByText( /Source: github\.repository-information · Metric: stargazers_count/ ).innerText();
 	const contentBeforeRefresh = await page.evaluate( async ( id ) => ( await window.wp.apiFetch( { path: '/wp/v2/pages/' + id + '?context=edit' } ) ).content.raw, postId );
 	const dirtyBeforeRefresh = await page.evaluate( () => window.wp.data.select( 'core/editor' ).isEditedPostDirty() );
 	assert.equal( dirtyBeforeRefresh, false, 'The controlled fallback page is initially clean.' );
@@ -97,10 +112,10 @@ try {
 	assert.equal( refreshResponse.status(), 200, 'Editor refresh endpoint succeeds.' );
 	const refreshResult = await refreshResponse.json();
 	assert.equal( refreshResult.status, 'fresh', 'Editor refresh reports the canonical provider receipt status.' );
-	assert.equal( refreshResult.value, '222+', 'Injected current value differs from the captured 111+ fallback.' );
+	assert.equal( refreshResult.value, expectedValue, 'Editor refresh returns the independently checked current GitHub stars value.' );
 	assert.equal( refreshResult.receipt?.status, 'fresh', 'Editor refresh includes the actual canonical freshness receipt.' );
 	assert.ok( Number.isInteger( refreshResult.receipt?.fetched_at ), 'Fresh editor value exposes its fetch timestamp.' );
-	await page.getByText( 'Current value: 222+ · Freshness: fresh', { exact: true } ).waitFor();
+	await page.getByText( `Current value: ${ expectedValue } · Freshness: fresh`, { exact: true } ).waitFor();
 	const contentAfterRefresh = await page.evaluate( async ( id ) => ( await window.wp.apiFetch( { path: '/wp/v2/pages/' + id + '?context=edit' } ) ).content.raw, postId );
 	assert.deepEqual( contentAfterRefresh, contentBeforeRefresh, 'Editor refresh changes no persisted post content.' );
 	assert.equal( await page.evaluate( () => window.wp.data.select( 'core/editor' ).isEditedPostDirty() ), false, 'Refresh does not dirty the editor post.' );
@@ -115,7 +130,7 @@ try {
 		return window.wp.data.select( 'core/block-editor' ).getBlock( clientId );
 	} );
 	assert.equal( detached.attributes.metadata?.bindings?.content, undefined, 'Detach removes only the external text binding.' );
-	assert.equal( detached.attributes.content, '222+', 'Detach freezes the visibly refreshed provider value without another text edit.' );
+	assert.equal( detached.attributes.content, expectedValue, 'Detach freezes the visibly refreshed current GitHub value without another text edit.' );
 	assert.equal( detached.attributes.metadata?.name, 'Preserve target metadata', 'Detach preserves the target block metadata.' );
 	assert.equal( detached.attributes.metadata?.custom, 'preserve-me', 'Detach preserves unrelated target metadata.' );
 	const siblingBlock = await page.evaluate( () => {
@@ -129,16 +144,16 @@ try {
 		};
 		return visit( window.wp.data.select( 'core/block-editor' ).getBlocks() );
 	} );
-	assert.equal( siblingBlock?.attributes?.metadata?.bindings?.content?.args?.metric_id, 'editor-sibling-metric', 'Detach preserves the sibling native metric binding.' );
+	assert.equal( siblingBlock?.attributes?.metadata?.bindings?.content?.args?.metric_id, 'github-forks', 'Detach preserves the sibling native metric binding.' );
 	const editedPost = await page.evaluate( () => ( { dirty: window.wp.data.select( 'core/editor' ).isEditedPostDirty(), content: window.wp.data.select( 'core/editor' ).getEditedPostAttribute( 'content' ) } ) );
 	assert.equal( editedPost.dirty, true, 'Detaching the current value creates an unsaved editor edit without a compensating text edit.' );
-	assert.match( editedPost.content, /222\+/, 'Canonical edited post serialization contains the frozen current value.' );
+	assert.ok( editedPost.content.includes( expectedValue ), 'Canonical edited post serialization contains the frozen current value.' );
 	await page.getByRole( 'button', { name: /^Save$/ } ).click();
 	await page.waitForFunction( () => { const editor = window.wp.data.select( 'core/editor' ); return ! editor.isSavingPost() && ! editor.isEditedPostDirty(); } );
 	await page.reload( { waitUntil: 'domcontentloaded' } );
 	await page.locator( 'iframe[name="editor-canvas"]' ).waitFor();
 	await page.frameLocator( 'iframe[name="editor-canvas"]' ).locator( '[data-type="core/paragraph"]' ).first().waitFor();
-	const saved = await page.evaluate( async ( id ) => {
+	const saved = await page.evaluate( async ( { id, value } ) => {
 		const post = await window.wp.apiFetch( { path: '/wp/v2/pages/' + id + '?context=edit' } );
 		const raw = post.content.raw;
 		const blockFor = ( marker, closing ) => {
@@ -150,21 +165,21 @@ try {
 		};
 		return {
 			raw,
-			targetMarkup: blockFor( '<p>222+</p>', '<!-- /wp:paragraph -->' ),
-			siblingMarkup: blockFor( 'editor-sibling-metric', '<!-- /wp:paragraph -->' ),
+			targetMarkup: blockFor( '<p>' + value + '</p>', '<!-- /wp:paragraph -->' ),
+			siblingMarkup: blockFor( 'github-forks', '<!-- /wp:paragraph -->' ),
 		};
-	}, postId );
-	assert.ok( saved.targetMarkup.includes( '<p>222+</p>' ), 'The detached 222 value persists as static text after editor reload.' );
+	}, { id: postId, value: expectedValue } );
+	assert.ok( saved.targetMarkup.includes( `<p>${ expectedValue }</p>` ), 'The detached current GitHub value persists as static text after editor reload.' );
 	assert.equal( saved.targetMarkup.includes( 'ssi/external-metric' ), false, 'Detached target remains unbound after editor reload.' );
 	assert.ok( saved.targetMarkup.includes( 'Preserve target metadata' ), 'Target metadata survives save and reload.' );
 	assert.ok( saved.targetMarkup.includes( 'preserve-me' ), 'Unrelated target metadata survives save and reload.' );
-	assert.ok( saved.siblingMarkup.includes( 'ssi/external-metric' ) && saved.siblingMarkup.includes( 'editor-sibling-metric' ), 'Sibling binding survives save and reload.' );
+	assert.ok( saved.siblingMarkup.includes( 'ssi/external-metric' ) && saved.siblingMarkup.includes( 'github-forks' ), 'Sibling binding survives save and reload.' );
 	assert.ok( restSaves.some( ( status ) => status >= 200 && status < 300 ), 'Editor save returned a successful WordPress REST response.' );
 	await page.goto( `${ base }/?page_id=${ postId }`, { waitUntil: 'domcontentloaded' } );
 	const frontendText = await page.locator( 'body' ).innerText();
-	assert.match( frontendText, /222\+/, 'Frontend renders the saved current value as static text.' );
-	assert.ok( ( frontendText.match( /222\+/g ) || [] ).length >= 2, 'Frontend renders both same-semantics metric bindings with the shared current value.' );
-	assert.doesNotMatch( frontendText, /999\+/, 'Sibling native binding does not fall back to its distinct captured value after the cache hit.' );
+	assert.ok( frontendText.includes( expectedValue ), 'Frontend renders the saved current GitHub value as static text.' );
+	assert.ok( frontendText.includes( expectedForks ), 'Sibling bound block refreshes from the newly updated shared source response.' );
+	assert.doesNotMatch( frontendText, /captured-editor-forks/, 'Sibling GitHub binding does not fall back to its captured value after the shared response cache hit.' );
 	assert.ok( frontendText.includes( '<em>pending</em> "quoted" & &' ), 'Frontend renders captured literal markup tags, quotes and entity characters as text.' );
 	assert.equal( await page.locator( 'em' ).filter( { hasText: 'pending' } ).count(), 0, 'Captured literal fallback does not become an HTML emphasis element.' );
 	assert.deepEqual( errors, [], 'Editor emitted no browser errors.' );

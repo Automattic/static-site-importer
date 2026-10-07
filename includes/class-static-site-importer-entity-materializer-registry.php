@@ -45,7 +45,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	public static function capabilities(): array {
 		return array(
 			'external_metrics' => array(
-				'default_provider' => 'wordpress.org',
+				'default_provider' => 'external_source',
 				'option'           => '',
 				'filter'           => '',
 			),
