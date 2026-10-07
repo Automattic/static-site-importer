@@ -104,7 +104,9 @@ blocks.push(wp.blocks.createBlock('core/paragraph', { content: marker }));
 dispatch.editEntityRecord('postType', 'wp_template', id, { content: wp.blocks.serialize(blocks) });
 const saved = await dispatch.saveEditedEntityRecord('postType', 'wp_template', id);
 if (!saved?.content?.raw?.includes(marker)) throw new Error('The category template edit was not saved by the WordPress editor data store.');
-const invalid = blocks.filter(block => !wp.blocks.validateBlock(block)[0]).map(block => block.name);
+const persistedBlocks = wp.blocks.parse(saved.content.raw);
+const flatten = items => items.flatMap(block => [block, ...flatten(block.innerBlocks || [])]);
+const invalid = flatten(persistedBlocks).filter(block => !wp.blocks.validateBlock(block)[0]).map(block => block.name);
 if (invalid.length) throw new Error('The saved category template contains invalid blocks: ' + invalid.join(', '));
 const proof = document.createElement('pre');
 proof.id = 'ssi-taxonomy-editor-save-proof';
@@ -112,7 +114,8 @@ proof.textContent = JSON.stringify({ id, marker, blockCount: blocks.length, bloc
 document.body.append(proof);
 console.log('SSI-TAXONOMY-EDITOR-SAVED', JSON.stringify({ id, marker, blockCount: blocks.length }));
 return true;
-})().catch(error => { document.title = 'SSI-TAXONOMY-EDITOR-ERROR:' + error.message; throw error; });`;
+})().catch(error => { document.title = 'SSI-TAXONOMY-EDITOR-ERROR:' + error.message; throw error; });
+return await window.__taxonomyEditorSave;`;
 const editorReloadScript = `window.__taxonomyEditorReload = (async () => {
 const id = '${ editorTemplateId }';
 const marker = '${ editorMarker }';
@@ -135,7 +138,8 @@ dispatch.editEntityRecord('postType', 'wp_template', id, { content: wp.blocks.se
 const saved = await dispatch.saveEditedEntityRecord('postType', 'wp_template', id);
 if (!saved?.content?.raw?.includes(reloadMarker)) throw new Error('The reloaded Gutenberg template edit did not save.');
 return true;
-})().catch(error => { document.title = 'SSI-TAXONOMY-EDITOR-RELOAD-ERROR:' + error.message; throw error; });`;
+})().catch(error => { document.title = 'SSI-TAXONOMY-EDITOR-RELOAD-ERROR:' + error.message; throw error; });
+return await window.__taxonomyEditorReload;`;
 const baseArchiveHttpProbe = `(() => {
 const text = document.body.innerText;
 const next = document.querySelector('.wp-block-query-pagination-next');
