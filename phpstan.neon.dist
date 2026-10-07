@@ -2,4 +2,5 @@
 # Composer class autoloading alone does not expose these symbols to PHPStan.
 parameters:
     scanFiles:
+        - phpstan-wordpress-constants.stub.php
         - vendor/automattic/blocks-engine-php-transformer/php-transformer.php

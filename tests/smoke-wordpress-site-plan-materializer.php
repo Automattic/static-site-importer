@@ -7,7 +7,11 @@
  * @package StaticSiteImporter
  */
 
-require dirname( __DIR__ ) . '/vendor/autoload.php';
+$autoload = require dirname( __DIR__ ) . '/vendor/autoload.php';
+$producer_source = getenv( 'BLOCKS_ENGINE_PHP_TRANSFORMER_ROOT' );
+if ( is_string( $producer_source ) && is_file( $producer_source . '/src/WordPressSitePlan/WordPressSitePlan.php' ) ) {
+	$autoload->setPsr4( 'Automattic\\BlocksEngine\\PhpTransformer\\', $producer_source . '/src/', true );
+}
 
 if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', dirname( __DIR__ ) . '/' );
@@ -22,6 +26,9 @@ define( 'OBJECT', 'OBJECT' );
 define( 'ARRAY_A', 'ARRAY_A' );
 $GLOBALS['ssi_plan_root']                    = sys_get_temp_dir() . '/ssi-plan-' . bin2hex( random_bytes( 4 ) );
 $GLOBALS['ssi_plan_posts']                   = array();
+$GLOBALS['ssi_plan_terms']                   = array();
+$GLOBALS['ssi_plan_term_memberships']        = array();
+$GLOBALS['ssi_plan_rewrite_rules']           = array();
 $GLOBALS['ssi_plan_meta']                    = array();
 $GLOBALS['ssi_plan_options']                 = array(
 	'show_on_front' => 'posts',
@@ -69,8 +76,9 @@ class WP_Post {
 function apply_filters( string $hook, $value, ...$args ) {
 	unset( $hook, $args );
 	return $value; }
-function get_page_uri( WP_Post $post ): string {
-	return (string) ( $GLOBALS['ssi_plan_posts'][ $post->ID ]['post_name'] ?? '' ); }
+function get_page_uri( WP_Post|int $post ): string {
+	$id = $post instanceof WP_Post ? $post->ID : $post;
+	return (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_name'] ?? '' ); }
 function is_wp_error( $value ): bool {
 	return $value instanceof WP_Error; }
 function get_current_user_id(): int {
@@ -169,6 +177,11 @@ function update_option( string $key, $value ): bool {
 	$GLOBALS['ssi_plan_options'][ $key ] = $value;
 	return true;
 }
+function delete_option( string $key ): bool {
+	unset( $GLOBALS['ssi_plan_options'][ $key ] );
+	if ( 'rewrite_rules' === $key ) $GLOBALS['ssi_plan_rewrite_rules'] = array();
+	return true;
+}
 function switch_theme( string $slug ): void {
 	if ( isset( $GLOBALS['ssi_plan_rollback_events'] ) ) {
 		$GLOBALS['ssi_plan_rollback_events'][] = 'theme:' . $slug;
@@ -189,17 +202,16 @@ function convert_smilies( string $content, string $which = 'content' ): string {
 	return ( $GLOBALS['ssi_plan_options']['use_smilies'] ?? true ) ? 'smilied-' . $which : $content; }
 function sanitize_text_field( string $value ): string {
 	return $value; }
-function update_post_meta( int $id, string $key, string $value ): void {
+function update_post_meta( int $id, string $key, mixed $value ): void {
 	$GLOBALS['ssi_plan_meta_write_counts'][ $key ] = (int) ( $GLOBALS['ssi_plan_meta_write_counts'][ $key ] ?? 0 ) + 1;
 	$failure                                       = $GLOBALS['ssi_plan_meta_write_failure'] ?? null;
 	if ( is_array( $failure ) && $key === ( $failure['key'] ?? '' ) && $GLOBALS['ssi_plan_meta_write_counts'][ $key ] === ( $failure['occurrence'] ?? 0 ) ) {
 		return;
 	}
 	// Core update_metadata() unslashes values before persistence.
-	$GLOBALS['ssi_plan_meta'][ $id ][ $key ] = stripslashes( $value ); }
-function get_post_meta( int $id, string $key, bool $single = true ): string|array {
-	$value = $GLOBALS['ssi_plan_meta'][ $id ][ $key ] ?? null;
-	return $single ? (string) ( $value ?? '' ) : ( null === $value ? array() : array( $value ) ); }
+	$GLOBALS['ssi_plan_meta'][ $id ][ $key ] = wp_unslash( $value ); }
+function get_post_meta( int $id, string $key, bool $single = true ): mixed {
+	return $GLOBALS['ssi_plan_meta'][ $id ][ $key ] ?? ( $single ? '' : array() ); }
 function metadata_exists( string $meta_type, int $id, string $key ): bool {
 	return 'post' === $meta_type && array_key_exists( $key, $GLOBALS['ssi_plan_meta'][ $id ] ?? array() ); }
 function delete_post_meta( int $id, string $key ): void {
@@ -277,16 +289,21 @@ function wp_kses_post( string $value ): string {
 function post_type_exists( string $type ): bool {
 	return 'product' === $type; }
 function taxonomy_exists( string $taxonomy ): bool {
-	return 'product_cat' === $taxonomy; }
+	return in_array( $taxonomy, array( 'product_cat', 'category', 'post_tag' ), true ); }
 function term_exists( string $term, string $taxonomy ) {
-	unset( $term, $taxonomy );
-	return null; }
+	return $GLOBALS['ssi_plan_terms'][ $taxonomy . ':' . $term ] ?? null; }
 function wp_insert_term( string $term, string $taxonomy ) {
-	unset( $term, $taxonomy );
-	return array( 'term_id' => 9001 ); }
+	$id = 9000 + count( $GLOBALS['ssi_plan_terms'] ) + 1;
+	$GLOBALS['ssi_plan_terms'][ $taxonomy . ':' . sanitize_title( $term ) ] = array( 'term_id' => $id, 'name' => $term, 'slug' => sanitize_title( $term ), 'taxonomy' => $taxonomy );
+	return array( 'term_id' => $id ); }
 function wp_set_object_terms( int $object_id, array $terms, string $taxonomy ) {
-	unset( $object_id, $taxonomy );
-	return $terms; }
+	$GLOBALS['ssi_plan_term_memberships'][ $object_id ][ $taxonomy ] = array_values( array_unique( array_map( 'intval', $terms ) ) );
+	return $GLOBALS['ssi_plan_term_memberships'][ $object_id ][ $taxonomy ]; }
+function wp_get_object_terms( int $object_id, string $taxonomy, array $args = array() ) {
+	unset( $args );
+	return $GLOBALS['ssi_plan_term_memberships'][ $object_id ][ $taxonomy ] ?? array(); }
+function get_post_type( int $id ): string {
+	return (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_type'] ?? '' ); }
 function wp_delete_post( int $id, bool $force_delete ) {
 	unset( $force_delete );
 	if ( isset( $GLOBALS['ssi_plan_rollback_events'] ) ) {
@@ -301,14 +318,34 @@ function wp_delete_post( int $id, bool $force_delete ) {
 	return $post;
 }
 function get_term( int $id, string $taxonomy ) {
-	unset( $taxonomy );
-	return 9001 === $id ? (object) array(
-		'term_id' => $id,
-		'count'   => 0,
-	) : null; }
+	foreach ( $GLOBALS['ssi_plan_terms'] as $term ) if ( $term['term_id'] === $id && $term['taxonomy'] === $taxonomy ) return (object) $term;
+	return null; }
 function wp_delete_term( int $id, string $taxonomy ) {
-	unset( $id, $taxonomy );
+	foreach ( $GLOBALS['ssi_plan_terms'] as $key => $term ) if ( $term['term_id'] === $id && $term['taxonomy'] === $taxonomy ) unset( $GLOBALS['ssi_plan_terms'][ $key ] );
 	return empty( $GLOBALS['ssi_plan_woo_cleanup_failures'] ); }
+function get_term_link( int $id, string $taxonomy ) {
+	foreach ( $GLOBALS['ssi_plan_terms'] as $term ) if ( $term['term_id'] === $id && $term['taxonomy'] === $taxonomy ) return home_url( '/' . trim( (string) get_option( 'category_base' ), '/' ) . '/' . $term['slug'] . '/' );
+	return new WP_Error( 'missing_term' ); }
+if ( ! class_exists( 'WP_Rewrite' ) ) {
+	class WP_Rewrite {}
+}
+class SSI_Plan_Test_Rewrite extends WP_Rewrite {
+	public function set_category_base( $category_base ) { update_option( 'category_base', ltrim( (string) $category_base, '/' ) ); }
+	public function set_tag_base( $tag_base ) { update_option( 'tag_base', ltrim( (string) $tag_base, '/' ) ); }
+	public function get_extra_permastruct( $taxonomy ) { return ( 'post_tag' === $taxonomy ? (string) get_option( 'tag_base', 'tag' ) : (string) get_option( 'category_base', 'category' ) ) . '/%' . ( 'post_tag' === $taxonomy ? 'post_tag' : 'category' ) . '%'; }
+	public function get_author_permastruct() { return 'author/%author%'; }
+	public function get_search_permastruct() { return '?s=%search%'; }
+}
+$GLOBALS['wp_rewrite'] = new SSI_Plan_Test_Rewrite();
+function create_initial_taxonomies(): void {}
+function add_rewrite_rule( string $regex, string $query, string $after = 'bottom' ): void {
+	unset( $after );
+	$GLOBALS['ssi_plan_rewrite_rules'][ $regex ] = $query;
+}
+function flush_rewrite_rules( bool $hard = true ): void {
+	unset( $hard );
+	update_option( 'rewrite_rules', $GLOBALS['ssi_plan_rewrite_rules'] );
+}
 class WC_Product_Simple {
 	private array $data = array();
 	public function set_name( string $value ): void {
@@ -594,6 +631,86 @@ $gap_contract    = Static_Site_Importer_Diagnostic_Contract::build(
 );
 $gap_diagnostics = array_values( array_filter( $gap_contract['diagnostics'] ?? array(), static fn( array $diagnostic ): bool => 'gap-plan-contract' === ( $diagnostic['id'] ?? '' ) ) );
 $assert( 'installed_activated' === ( $gap_diagnostics[0]['materialization_status'] ?? '' ) && array( 'file:./view.js' ) === ( $gap_diagnostics[0]['references'] ?? array() ), 'gutenberg-gap-diagnostics-retain-materialization-status-and-references' );
+
+$taxonomy_source_for = static function ( bool $recategorized ): array {
+	$members = $recategorized
+		? array( 'personal' => array( 1, 3 ), 'work' => array( 2, 3, 4 ) )
+		: array( 'personal' => array( 1, 2, 3 ), 'work' => array( 2, 3, 4 ) );
+	$files = array( 'index.html' => '<main><h1>Taxonomy test</h1></main>' );
+	foreach ( array( 'personal' => 'Personal', 'work' => 'Work' ) as $slug => $name ) {
+		$cards = '';
+		foreach ( $members[ $slug ] as $index ) {
+			$cards .= '<article><h2><a href="/stories/story-' . $index . '">Story ' . $index . '</a></h2><p>Summary ' . $index . '.</p></article>';
+		}
+		$files[] = array( 'path' => 'archives/' . $slug . '.html', 'content' => '<main><h1>' . $name . '</h1>' . $cards . '</main>', 'metadata' => array( 'route_path' => '/writing/category/' . $slug ) );
+	}
+	foreach ( range( 1, 4 ) as $index ) {
+		$term_links = array();
+		foreach ( $members as $slug => $indexes ) if ( in_array( $index, $indexes, true ) ) {
+			if ( $recategorized && 2 === $index && 'personal' === $slug ) continue;
+			$term_links[] = '<a href="/writing/category/' . $slug . '">' . ucfirst( $slug ) . '</a>';
+		}
+		$files[] = array( 'path' => 'stories/story-' . $index . '.html', 'content' => '<article><h1>Story ' . $index . '</h1><p>Full story body.</p>' . implode( '', $term_links ) . '</article>', 'metadata' => array( 'post_type' => 'post' ) );
+	}
+	return array( 'entrypoint' => 'index.html', 'files' => $files );
+};
+$taxonomy_source = $taxonomy_source_for( false );
+$taxonomy_plan = ( new ArtifactCompiler() )->compile( $taxonomy_source )->toArray()['source_reports']['wordpress_site_plan'];
+$taxonomy_contract_available = array_key_exists( 'taxonomy_entities', $taxonomy_plan );
+if ( $taxonomy_contract_available ) {
+$taxonomy_entities = array_column( $taxonomy_plan['taxonomy_entities'], null, 'slug' );
+$taxonomy_template = array_values( array_filter( $taxonomy_plan['templates'], static fn( array $row ): bool => 'category-personal' === ( $row['slug'] ?? '' ) ) )[0] ?? array();
+foreach ( array_merge( $taxonomy_plan['pages'] ?? array(), $taxonomy_plan['templates'] ?? array(), $taxonomy_plan['template_parts'] ?? array() ) as $taxonomy_document ) {
+	if ( ! is_array( $taxonomy_document ) ) {
+		continue;
+	}
+	$register_document_blocks( $block_runtime->parseBlocks( (string) ( $taxonomy_document['canonical_block_markup'] ?? '' ) ) );
+}
+$assert( 2 === count( $taxonomy_entities ) && array( 'stories/story-1.html', 'stories/story-2.html', 'stories/story-3.html' ) === ( $taxonomy_entities['personal']['membership_source_paths'] ?? null ), 'canonical source analysis emits reciprocal category memberships for both collections' );
+$assert( str_contains( (string) ( $taxonomy_template['canonical_block_markup'] ?? '' ), '"inherit":true' ) && str_contains( (string) ( $taxonomy_template['canonical_block_markup'] ?? '' ), '<!-- wp:query-pagination ' ), 'the archive template inherits category query scope and keeps native pagination' );
+$taxonomy_saved = array( 'posts' => $GLOBALS['ssi_plan_posts'], 'meta' => $GLOBALS['ssi_plan_meta'], 'options' => $GLOBALS['ssi_plan_options'], 'terms' => $GLOBALS['ssi_plan_terms'], 'memberships' => $GLOBALS['ssi_plan_term_memberships'], 'rewrite_rules' => $GLOBALS['ssi_plan_rewrite_rules'] );
+$taxonomy_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $taxonomy_plan, array( 'slug' => 'taxonomy-archive-contract' ) );
+$taxonomy_pages = $taxonomy_receipt['completed']['pages'] ?? array();
+$taxonomy_first = (int) ( $taxonomy_pages['stories/story-1.html'] ?? 0 );
+$taxonomy_second = (int) ( $taxonomy_pages['stories/story-2.html'] ?? 0 );
+$personal_term = $GLOBALS['ssi_plan_terms']['category:personal']['term_id'] ?? 0;
+$work_term = $GLOBALS['ssi_plan_terms']['category:work']['term_id'] ?? 0;
+$assert( 'completed' === ( $taxonomy_receipt['status'] ?? '' ) && ! isset( $taxonomy_pages['archives/personal.html'], $taxonomy_pages['archives/work.html'] ), 'SSI materializes native terms without writing either captured archive as a frozen page: ' . wp_json_encode( array( 'status' => $taxonomy_receipt['status'] ?? null, 'errors' => $taxonomy_receipt['errors'] ?? array(), 'pages' => $taxonomy_pages ) ) );
+$assert( $personal_term > 0 && $work_term > 0 && in_array( $personal_term, $GLOBALS['ssi_plan_term_memberships'][ $taxonomy_first ]['category'] ?? array(), true ) && in_array( $work_term, $GLOBALS['ssi_plan_term_memberships'][ $taxonomy_second ]['category'] ?? array(), true ), 'SSI assigns only source-proven memberships to canonical imported posts' );
+$taxonomy_page_regex = '^writing/category/personal/page/' . WordPressSitePlan::TAXONOMY_ARCHIVE_PAGED_CAPTURE . '/?$';
+$assert( '' === (string) ( $GLOBALS['ssi_plan_options']['category_base'] ?? '' ) && 'index.php?category_name=personal' === ( $GLOBALS['ssi_plan_rewrite_rules']['^writing/category/personal/?$'] ?? null ) && 'index.php?category_name=personal&paged=$matches[1]' === ( $GLOBALS['ssi_plan_rewrite_rules'][ $taxonomy_page_regex ] ?? null ) && isset( $taxonomy_receipt['plan']['writes'] ), 'source-specific base and vendor-canonical paginated native rewrites preserve the owner category base' );
+foreach ( array( '1', '2', '999999' ) as $valid_taxonomy_page ) {
+	$assert( 1 === preg_match( '~' . $taxonomy_page_regex . '~', 'writing/category/personal/page/' . $valid_taxonomy_page . '/' ), 'the published route capture admits page ' . $valid_taxonomy_page );
+}
+foreach ( array( '0', '-2', '1000000' ) as $invalid_taxonomy_page ) {
+	$assert( 0 === preg_match( '~' . $taxonomy_page_regex . '~', 'writing/category/personal/page/' . $invalid_taxonomy_page . '/' ), 'the published route capture rejects page ' . $invalid_taxonomy_page );
+}
+$owner_term = wp_insert_term( 'Owner selected', 'category', array( 'slug' => 'owner-selected' ) );
+wp_set_object_terms( $taxonomy_second, array( $personal_term, $work_term, (int) $owner_term['term_id'] ), 'category', false );
+$recategorized_plan = ( new ArtifactCompiler() )->compile( $taxonomy_source_for( true ) )->toArray()['source_reports']['wordpress_site_plan'];
+$recategorized_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $recategorized_plan, array( 'slug' => 'taxonomy-archive-contract', 'overwrite' => true ) );
+$personal_after = wp_get_object_terms( $taxonomy_second, 'category', array( 'fields' => 'ids' ) );
+$assert( 'completed' === ( $recategorized_receipt['status'] ?? '' ) && ! in_array( $personal_term, $personal_after, true ) && in_array( $work_term, $personal_after, true ) && in_array( (int) $owner_term['term_id'], $personal_after, true ), 'Reimport recategorization moves only importer-owned membership and preserves a destination-owned category.' );
+$GLOBALS['ssi_plan_posts'][ 99001 ] = array( 'post_type' => 'page', 'post_name' => 'writing/category/personal', 'post_status' => 'publish' );
+$before_conflict_inserts = $GLOBALS['ssi_plan_insert_calls'];
+$archive_conflict = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare( $recategorized_plan, array( 'slug' => 'taxonomy-archive-owner-conflict' ) );
+$assert( 'rejected' === ( $archive_conflict['status'] ?? '' ) && 'taxonomy_archive_route_conflict' === ( $archive_conflict['receipt']['diagnostics'][0]['reason_code'] ?? '' ) && $before_conflict_inserts === $GLOBALS['ssi_plan_insert_calls'], 'A destination-owned page route blocks archive takeover before post writes.' );
+unset( $GLOBALS['ssi_plan_posts'][ 99001 ] );
+foreach ( array_diff( array_keys( $GLOBALS['ssi_plan_posts'] ), array_keys( $taxonomy_saved['posts'] ) ) as $created_id ) wp_delete_post( (int) $created_id, true );
+$GLOBALS['ssi_plan_posts'] = $taxonomy_saved['posts'];
+$GLOBALS['ssi_plan_meta'] = $taxonomy_saved['meta'];
+$GLOBALS['ssi_plan_options'] = $taxonomy_saved['options'];
+$GLOBALS['ssi_plan_terms'] = $taxonomy_saved['terms'];
+$GLOBALS['ssi_plan_term_memberships'] = $taxonomy_saved['memberships'];
+$GLOBALS['ssi_plan_rewrite_rules'] = $taxonomy_saved['rewrite_rules'];
+$rollback_taxonomy_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $taxonomy_plan, array( 'slug' => 'taxonomy-archive-rollback', 'defer_materialization_commit' => true ) );
+$rollback_taxonomy_term_ids = array_column( $rollback_taxonomy_receipt['completed']['taxonomy_entities'] ?? array(), 'term_id' );
+$rollback_taxonomy_result = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $rollback_taxonomy_receipt, 'taxonomy_rollback_smoke' );
+$taxonomy_terms_remaining = array_filter( $GLOBALS['ssi_plan_terms'], static fn( array $term ): bool => in_array( $term['term_id'], $rollback_taxonomy_term_ids, true ) );
+$assert( 'completed' === ( $rollback_taxonomy_receipt['status'] ?? '' ) && 'rolled_back' === ( $rollback_taxonomy_result['rollback']['status'] ?? '' ) && array() === $taxonomy_terms_remaining && array() === $GLOBALS['ssi_plan_rewrite_rules'] && ! is_file( $GLOBALS['ssi_plan_root'] . '/taxonomy-archive-rollback/templates/category-personal.html' ), 'Rollback removes transaction-owned terms, memberships, archive rules, posts, and files.' );
+} else {
+	fwrite( STDERR, "SKIP paired taxonomy consumer smoke: installed Blocks Engine release does not expose taxonomy_entities; run with BLOCKS_ENGINE_PHP_TRANSFORMER_ROOT pointing at the linked producer candidate.\n" );
+}
 
 $receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'site-plan' ) );
 $assert( 'completed' === $receipt['status'], 'valid plan completes' );
