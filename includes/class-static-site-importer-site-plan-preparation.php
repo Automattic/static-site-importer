@@ -521,7 +521,19 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				);
 			}
 			self::mark_taxonomy_archive_pages( $state );
-			self::validate_materialized_block_documents( $state['resolved'], $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
+			$pending_blocks = array();
+			if ( is_array( $args['theme_runtime_payload'] ?? null ) ) {
+				require_once __DIR__ . '/class-static-site-importer-generated-runtime-package.php';
+				$package = Static_Site_Importer_Generated_Runtime_Package::theme( $args['theme_runtime_payload'], (string) $state['theme']['slug'] );
+				if ( is_wp_error( $package ) ) {
+					$state['preflight_error'] = $package;
+					throw new InvalidArgumentException( $package->get_error_code() );
+				}
+				$pending_blocks = $package['block_names'];
+			}
+			// Only validated destination declarations may await installation. Persistence
+			// repeats admission against the real registry before writing any documents.
+			self::validate_materialized_block_documents( $state['resolved'], $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'], $pending_blocks );
 			self::preflight_state( $state, ! empty( $args['overwrite'] ), (string) ( $args['import_run_id'] ?? '' ) );
 		} catch ( InvalidArgumentException $error ) {
 			if ( isset( $state['preflight_error'] ) && is_wp_error( $state['preflight_error'] ) ) {
@@ -644,7 +656,13 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			: Static_Site_Importer_Route_Document_Metadata::prepare_overlay( $font_resolved, $title_bootstrap_overlay );
 		$internal_link_overlay                = isset( $state['internal_link_overlay'] ) && is_array( $state['internal_link_overlay'] )
 			? $state['internal_link_overlay']
-			: Static_Site_Importer_Internal_Link_Runtime::prepare_overlay( $font_resolved, $route_title_overlay, (string) ( $state['args']['slug'] ?? '' ) );
+			: ( is_array( $state['args']['theme_runtime_payload'] ?? null )
+				? array(
+					'status' => 'skipped',
+					'reason' => 'theme_runtime_package_owns_routes',
+					'writes' => array(),
+				)
+				: Static_Site_Importer_Internal_Link_Runtime::prepare_overlay( $font_resolved, $route_title_overlay, (string) ( $state['args']['slug'] ?? '' ) ) );
 		$head_bootstrap_overlay               = 'materialized' === ( $internal_link_overlay['status'] ?? '' )
 			? $internal_link_overlay
 			: ( 'materialized' === ( $route_title_overlay['status'] ?? '' ) ? $route_title_overlay : $title_bootstrap_overlay );
@@ -934,7 +952,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	 * @param array<int,mixed>    $diagnostics Admission diagnostics.
 	 * @return void
 	 */
-	public static function validate_materialized_block_documents( array $plan, array $bindings, array &$diagnostics ): void {
+	public static function validate_materialized_block_documents( array $plan, array $bindings, array &$diagnostics, array $pending_blocks = array() ): void {
 		foreach ( array_merge( $plan['pages'] ?? array(), array_values( array_filter( $plan['template_parts'] ?? array(), static fn( $part ): bool => is_array( $part ) && isset( $part['materialized_block_markup'] ) ) ) ) as $page ) {
 			if ( ! is_array( $page ) || ! empty( $page['skip_materialization'] ) ) {
 				continue;
@@ -958,7 +976,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				$diagnostics[] = $diagnostic;
 				throw new InvalidArgumentException( 'runtime_entity_bound_block_document_invalid' );
 			}
-			$admission   = self::block_document_editor_admission( $markup, $source_path );
+			$admission   = self::block_document_editor_admission( $markup, $source_path, $pending_blocks );
 			$diagnostics = array_merge( $diagnostics, $admission['diagnostics'] );
 			if ( ! $admission['admitted'] ) {
 				throw new InvalidArgumentException( 'unsupported_persisted_block' );
@@ -988,21 +1006,21 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	 *
 	 * @return array{admitted:bool,diagnostics:array<int,array<string,mixed>>}
 	 */
-	public static function block_document_editor_admission( string $markup, string $source_path ): array {
+	public static function block_document_editor_admission( string $markup, string $source_path, array $pending_blocks = array() ): array {
 		if ( ! class_exists( 'WP_Block_Type_Registry' ) ) {
 			throw new InvalidArgumentException( 'block_editor_admission_unavailable' );
 		}
 		$registry    = WP_Block_Type_Registry::get_instance();
 		$diagnostics = array();
 		$unsupported = false;
-		$inspect     = static function ( array $blocks, ?string $parent_name = null ) use ( &$inspect, $registry, $source_path, &$diagnostics, &$unsupported ): void {
+		$inspect     = static function ( array $blocks, ?string $parent_name = null ) use ( &$inspect, $registry, $source_path, &$diagnostics, &$unsupported, $pending_blocks ): void {
 			foreach ( $blocks as $block ) {
 				if ( ! is_array( $block ) || ! is_string( $block['blockName'] ?? null ) || '' === $block['blockName'] ) {
 					continue;
 				}
 				$name       = $block['blockName'];
 				$block_type = $registry->get_registered( $name );
-				if ( ! $block_type ) {
+				if ( ! $block_type && ! in_array( $name, $pending_blocks, true ) ) {
 					$unsupported = true;
 					if ( self::BLOCK_PROVENANCE_LIMIT > count( $diagnostics ) ) {
 						$diagnostics[] = array(
@@ -1012,11 +1030,14 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 							'block_classification' => 'unsupported',
 						);
 					}
-				} else {
+				} elseif ( $block_type ) {
 					$classification = str_starts_with( $name, 'core/' ) ? 'registered_core' : 'registered_provider';
 					$owners         = $GLOBALS['static_site_importer_companion_block_owners'] ?? array();
 					if ( 'registered_provider' === $classification && is_array( $owners ) && isset( $owners[ $name ] ) && is_array( $owners[ $name ] ) ) {
 						$classification = 'declared_companion_dependency';
+					}
+					if ( 'registered_provider' === $classification && 'theme' === ( $GLOBALS['static_site_importer_runtime_block_owners'][ $name ]['owner'] ?? '' ) ) {
+						$classification = 'generated_theme_runtime';
 					}
 					if ( is_array( $block_type->parent ) && ! in_array( $parent_name, $block_type->parent, true ) && self::BLOCK_PROVENANCE_LIMIT > count( $diagnostics ) ) {
 						$diagnostics[] = array(

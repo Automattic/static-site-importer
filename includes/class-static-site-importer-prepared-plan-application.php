@@ -43,7 +43,53 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 		}
 		// Keep the established companion/dependency transaction ordering. A companion
 		// failure must occur before any runtime dependency can require compensation.
-		$companion = self::materialize_companion_dependency( self::with_runtime_companion_configuration( $companion_payload, $lifecycle, $args ), $prepared );
+		$runtime_payload = self::with_runtime_companion_configuration( $companion_payload, $lifecycle, $args );
+		$theme_owned     = Static_Site_Importer_Import_Destination::GENERATED_THEME === ( $prepared['destination']['mode'] ?? Static_Site_Importer_Import_Destination::GENERATED_THEME );
+		if ( $theme_owned ) {
+			require_once __DIR__ . '/class-static-site-importer-generated-runtime-package.php';
+			$runtime_payload = is_array( $runtime_payload ) ? $runtime_payload : array(
+				'schema'    => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA,
+				'site_slug' => $prepared['theme']['slug'],
+				'site_name' => $prepared['theme']['name'],
+				'blocks'    => array(),
+			);
+			$runtime_payload = self::resolve_companion_asset_references( $runtime_payload, $prepared['plan'], $prepared['resolved'] );
+			$package         = Static_Site_Importer_Generated_Runtime_Package::theme( $runtime_payload, (string) $prepared['theme']['slug'] );
+			if ( is_wp_error( $package ) ) {
+				return $package;
+			}
+			$collision = Static_Site_Importer_Generated_Runtime_Package::preflight_blocks( $package, $prepared['theme_dir'] );
+			if ( is_wp_error( $collision ) ) {
+				return $collision;
+			}
+			try {
+				$prepared['base_resolved'] = Static_Site_Importer_Generated_Runtime_Package::with_writes( $prepared['base_resolved'], $package );
+			} catch ( InvalidArgumentException $error ) {
+				return new WP_Error( $error->getMessage(), 'Source writes collide with the generated runtime package.' );
+			}
+			$prepared['prepared_resolved_projection_hash'] = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepared_resolved_projection_hash( $prepared['base_resolved'] );
+			$prepared['args']['theme_runtime_payload']     = $runtime_payload;
+			// Bootstrap overlays cached before owner composition must be rebuilt
+			// from the new bootstrap, or a later overlay could drop its loader.
+			foreach ( array( 'font_overlay', 'viewport_overlay', 'route_title_overlay', 'internal_link_overlay', 'route_head_metadata_overlay' ) as $overlay ) {
+				unset( $prepared[ $overlay ] );
+			}
+			$prepared = Static_Site_Importer_Site_Plan_Preparation::refresh_prepared_destination( $prepared );
+			if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
+				$rejection = $prepared['receipt'] ?? array();
+				$error     = $rejection['errors'][0] ?? array();
+				return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_theme_runtime_preflight_failed' ), (string) ( $error['message'] ?? 'Theme runtime destination preflight failed.' ), $rejection );
+			}
+			$companion = array(
+				'status'          => 'theme_owned',
+				'owner'           => 'theme',
+				'owner_slug'      => $package['owner_slug'],
+				'block_names'     => $package['block_names'],
+				'runtime_scripts' => $package['runtime_scripts'],
+			);
+		} else {
+			$companion = self::materialize_companion_dependency( $runtime_payload, $prepared );
+		}
 		if ( is_wp_error( $companion ) ) {
 			return $companion;
 		}
@@ -106,8 +152,17 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 					'classic_runtime_projection'
 				);
 			}
-			$prepared['args']['classic_theme_projection']  = $projection;
-			$prepared['base_resolved']                     = Static_Site_Importer_Classic_Theme_Projection::with_projection_writes( $prepared['base_resolved'], $projection, (string) $prepared['theme']['uri'], (string) ( ( $prepared['theme']['name'] ?? '' ) !== '' ? $prepared['theme']['name'] : ( $prepared['args']['name'] ?? $prepared['theme']['slug'] ) ), isset( $args['artifact_provenance'] ) && is_array( $args['artifact_provenance'] ) ? $args['artifact_provenance'] : array() );
+			$prepared['args']['classic_theme_projection'] = $projection;
+			$prepared['base_resolved']                    = Static_Site_Importer_Classic_Theme_Projection::with_projection_writes( $prepared['base_resolved'], $projection, (string) $prepared['theme']['uri'], (string) ( ( $prepared['theme']['name'] ?? '' ) !== '' ? $prepared['theme']['name'] : ( $prepared['args']['name'] ?? $prepared['theme']['slug'] ) ), isset( $args['artifact_provenance'] ) && is_array( $args['artifact_provenance'] ) ? $args['artifact_provenance'] : array() );
+			if ( $theme_owned ) {
+				// The earlier composition owns these writes. Classic projection
+				// replaces the bootstrap; recompose its loader without duplicating files.
+				$prepared['base_resolved']['writes'] = array_values( array_filter( $prepared['base_resolved']['writes'], static fn( array $write ): bool => ! isset( $package['files'][ $write['target_path'] ] ) ) );
+				$prepared['base_resolved']           = Static_Site_Importer_Generated_Runtime_Package::with_writes( $prepared['base_resolved'], $package );
+				foreach ( array( 'font_overlay', 'viewport_overlay', 'route_title_overlay', 'internal_link_overlay', 'route_head_metadata_overlay' ) as $overlay ) {
+					unset( $prepared[ $overlay ] );
+				}
+			}
 			$prepared['prepared_resolved_projection_hash'] = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepared_resolved_projection_hash( $prepared['base_resolved'] );
 			$prepared['args']['classic_runtime_bindings']  = $classic_bindings;
 		}
@@ -116,12 +171,12 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 		$prepared['args']['activate']                     = $page_ready ? false : ! empty( $prepared['args']['activate'] );
 		$prepared['args']['defer_materialization_commit'] = true;
 
-		$receipt                                  = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared );
-		$receipt['completed']['companion_plugin'] = $companion;
-		$receipt['extensions']['gutenberg_gaps']  = Static_Site_Importer_Receipt_Projection::project_gutenberg_gaps( $gutenberg_gaps, (string) ( $companion['status'] ?? 'not_materialized' ) );
-		$receipt['completed']['runtime_declarations']['dependencies'] = $dependencies;
-		$receipt['completed']['runtime_declarations']['entities']     = $entities;
-		$receipt['runtime_lifecycle']                                 = $lifecycle;
+		$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize_prepared( $prepared );
+		$receipt['completed'][ $theme_owned ? 'theme_runtime' : 'companion_plugin' ] = $companion;
+		$receipt['extensions']['gutenberg_gaps']                                     = Static_Site_Importer_Receipt_Projection::project_gutenberg_gaps( $gutenberg_gaps, (string) ( $companion['status'] ?? 'not_materialized' ) );
+		$receipt['completed']['runtime_declarations']['dependencies']                = $dependencies;
+		$receipt['completed']['runtime_declarations']['entities']                    = $entities;
+		$receipt['runtime_lifecycle'] = $lifecycle;
 		if ( $classic ) {
 			$receipt['completed']['runtime_declarations']['classic_html_bindings'] = $prepared['args']['classic_runtime_bindings'] ?? array();
 		}

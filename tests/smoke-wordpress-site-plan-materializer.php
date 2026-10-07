@@ -1679,7 +1679,23 @@ $assert( 'completed' === $font_without_svg_receipt['status'], 'canonical font ma
 $font_without_svg_css = (string) file_get_contents( $font_without_svg_root . '/assets/css/embedded-fonts.css' );
 $assert( 1 === preg_match( '#src:url\(\.\./fonts/([a-f0-9]{64}\.woff2)\)#', $font_without_svg_css, $font_without_svg_asset_match ) && 'font-payload' === file_get_contents( $font_without_svg_root . '/assets/fonts/' . $font_without_svg_asset_match[1] ), 'page fonts materialize locally without SVG consumers' );
 $assert( str_contains( (string) file_get_contents( $font_without_svg_root . '/functions.php' ), "wp_enqueue_style( 'static-site-importer-embedded-fonts'" ), 'page fonts load without SVG consumers' );
-$assert( 11 === count( $GLOBALS['ssi_plan_font_requests'] ), 'each successful and rejected font materialization resolves only its declared stylesheet or typed payload URLs' );
+// Includes the deferred report-publication import above: it resolves the same
+// typed stylesheet and payload once before streaming the receipt.
+$assert( array(
+	'https://fonts.googleapis.com/css2?family=Example+Font:wght@400&display=swap',
+	'https://fonts.gstatic.com/s/example/font.woff2',
+	'https://fonts.googleapis.com/css2?family=Example+Font:wght@400&display=swap',
+	'https://fonts.gstatic.com/s/example/font.woff2',
+	'https://fonts.googleapis.com/css2?family=Example+Font:wght@400&display=swap',
+	'https://fonts.gstatic.com/s/example/font.woff2',
+	'https://fonts.googleapis.com/css2?family=Inter-like:wght@400;700',
+	'https://fonts.example.test/inter.woff2',
+	'https://fonts.googleapis.com/css2?family=Inter-like:wght@400;700',
+	'https://fonts.example.test/inter.woff2',
+	'https://fonts.googleapis.com/css2?family=Inter-like:wght@400;700',
+	'https://fonts.googleapis.com/css2?family=Example+Font:wght@400&display=swap',
+	'https://fonts.gstatic.com/s/example/font.woff2',
+) === array_column( $GLOBALS['ssi_plan_font_requests'], 'url' ), 'each successful and rejected font materialization resolves only its declared stylesheet or typed payload URLs' );
 
 $nested_route_result = ( new ArtifactCompiler() )->compile(
 	array(
@@ -3981,6 +3997,8 @@ $assert(
 // the frontend and in the editor — never for unrelated pages.
 function add_action( string $hook, $callback ): void {
 	$GLOBALS['ssi_plan_hooks'][ $hook ] = $callback; }
+function add_filter( string $hook, $callback, int $priority = 10, int $accepted_args = 1 ): void {
+	$GLOBALS['ssi_plan_filters'][ $hook ][ $priority ][] = array( 'callback' => $callback, 'accepted_args' => $accepted_args ); }
 function wp_enqueue_style( string $handle, string $src, array $deps = array(), string $version = '' ): void {
 	$GLOBALS['ssi_plan_styles'][] = array( 'handle' => $handle, 'src' => $src, 'version' => $version, 'hook' => (string) ( $GLOBALS['ssi_plan_style_hook'] ?? '' ) ); } // phpcs:ignore WordPress.WP.EnqueuedResourcesParameters.NonEnqueuedScript -- Deterministic test-only enqueue capture.
 function get_the_ID(): int {

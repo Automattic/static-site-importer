@@ -206,21 +206,30 @@ class Static_Site_Importer_Companion_Plugin {
 	}
 
 	/**
-	 * Build the standalone plugin scaffold from a generated payload.
+	 * Build a validated runtime scaffold for an explicitly selected destination owner.
 	 *
 	 * The returned descriptor carries the namespaced slug, the plugin basename
 	 * used as a satisfied-dependency key, the fully-qualified block names, and
 	 * the relative-path => file-content map that the install path materializes.
 	 *
 	 * @param array<string,mixed> $payload Generated companion-plugin payload.
+	 * @param string              $owner Destination owner, selected by SSI rather than source data.
+	 * @param string              $owner_slug Destination identity independent of saved block names.
 	 * @return array<string,mixed>|WP_Error
 	 */
-	public static function scaffold( array $payload ) {
+	public static function scaffold( array $payload, string $owner = 'plugin', string $owner_slug = '' ) {
+		if ( ! in_array( $owner, array( 'plugin', 'theme' ), true ) ) {
+			return new WP_Error( 'static_site_importer_runtime_owner_invalid', 'Runtime owner must be a theme or a destination-owned plugin.' );
+		}
 		$validation = self::validate_payload( $payload );
 		if ( is_wp_error( $validation ) ) {
 			return $validation;
 		}
-		$site_slug = self::site_slug( $payload );
+		$site_slug  = self::site_slug( $payload );
+		$owner_slug = '' === $owner_slug ? $site_slug : $owner_slug;
+		if ( ! preg_match( '/\A[a-z0-9]+(?:[-_][a-z0-9]+)*\z/', $owner_slug ) ) {
+			return new WP_Error( 'static_site_importer_runtime_owner_slug_invalid', 'Runtime owner must have a safe destination slug.' );
+		}
 		if ( '' === $site_slug ) {
 			return new WP_Error(
 				'static_site_importer_companion_plugin_site_slug_missing',
@@ -234,14 +243,14 @@ class Static_Site_Importer_Companion_Plugin {
 		$preserved          = self::preserved_js( $payload, $block_namespace );
 		$editor_scripts     = self::editor_scripts( $payload );
 		$form_visual_states = is_array( $payload['form_visual_states'] ?? null ) ? $payload['form_visual_states'] : array();
-		if ( empty( $blocks ) && empty( $preserved ) && empty( $editor_scripts ) && empty( $form_visual_states ) && empty( $payload['external_metrics'] ) ) {
+		if ( 'plugin' === $owner && empty( $blocks ) && empty( $preserved ) && empty( $editor_scripts ) && empty( $form_visual_states ) && empty( $payload['external_metrics'] ) ) {
 			return new WP_Error(
 				'static_site_importer_companion_plugin_content_missing',
 				'Companion-plugin payload must declare at least one block, preserved script, or editor script.'
 			);
 		}
 
-		$mu_plugin = ! empty( $payload['mu_plugin'] );
+		$mu_plugin = 'plugin' === $owner && ! empty( $payload['mu_plugin'] );
 		$site_name = self::site_name( $payload, $site_slug );
 
 		$files             = array();
@@ -297,6 +306,9 @@ class Static_Site_Importer_Companion_Plugin {
 				return new WP_Error( 'static_site_importer_companion_plugin_external_metrics_invalid', 'Companion external metric configuration failed validation.', $validated_metrics['errors'] ); }
 		}
 		$inventory_source = array( $block_names, $preserved, $form_visual_states, $external_metrics, hash( 'sha256', $provider_form_runtime ), hash( 'sha256', $internal_link_runtime ), hash( 'sha256', $source_route_runtime ), hash( 'sha256', $external_metric_runtime ), hash( 'sha256', $ip_classifier_runtime ) );
+		if ( 'theme' === $owner ) {
+			$inventory_source[] = array( 'theme', $owner_slug );
+		}
 		if ( ! empty( $editor_scripts ) ) {
 			$inventory_source[] = $editor_scripts;
 		}
@@ -307,11 +319,21 @@ class Static_Site_Importer_Companion_Plugin {
 		$redirect_runtime_class = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_Source_Route_Redirect';
 		$metric_runtime_class   = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_External_Metric_Runtime';
 		$ip_classifier_class    = strtoupper( str_replace( '-', '_', $plugin_slug ) ) . '_IP_Classifier';
-		$main_file              = $plugin_slug . '/' . $plugin_slug . '.php';
-		$config                 = wp_json_encode(
+		if ( 'theme' === $owner ) {
+			$class_prefix           = 'SSI_THEME_' . strtoupper( str_replace( '-', '_', $owner_slug ) );
+			$runtime_class          = $class_prefix . '_Provider_Form_Runtime_V1';
+			$link_runtime_class     = $class_prefix . '_Internal_Link_Runtime';
+			$redirect_runtime_class = $class_prefix . '_Source_Route_Redirect';
+			$metric_runtime_class   = $class_prefix . '_External_Metric_Runtime';
+			$ip_classifier_class    = $class_prefix . '_IP_Classifier';
+		}
+		$main_file = $plugin_slug . '/' . ( 'theme' === $owner ? 'runtime.php' : $plugin_slug . '.php' );
+		$config    = wp_json_encode(
 			array(
 				'site_name'          => $site_name,
-				'plugin_file'        => $main_file,
+				'owner'              => $owner,
+				'owner_slug'         => $owner_slug,
+				'plugin_file'        => 'plugin' === $owner ? $main_file : '',
 				'block_directories'  => $block_directories,
 				'islands'            => array_map(
 					static fn ( array $island ): array => array(
@@ -351,6 +373,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$inventory           = Static_Site_Importer_Companion_Inventory::compose(
 			array(
 				'site_name'          => $site_name,
+				'owner'              => $owner,
 				'plugin_slug'        => $plugin_slug,
 				'mu_plugin'          => $mu_plugin,
 				'blocks'             => self::payload_blocks( $payload ),
@@ -366,13 +389,15 @@ class Static_Site_Importer_Companion_Plugin {
 		);
 		$files               = array_merge(
 			array(
-				$main_file                  => self::main_plugin_file( $site_name, $inventory, $plugin_slug, $inventory_hash, $runtime_class, $link_runtime_class, $redirect_runtime_class, $metric_runtime_class, $artifact_provenance ),
+				$main_file                  => self::main_plugin_file( $site_name, $inventory, $plugin_slug, $inventory_hash, $runtime_class, $link_runtime_class, $redirect_runtime_class, $metric_runtime_class, $artifact_provenance, $owner ),
 				$plugin_slug . '/README.md' => Static_Site_Importer_Companion_Inventory::render_readme( $inventory ),
 			),
 			$files
 		);
 
 		$descriptor = array(
+			'owner'                 => $owner,
+			'owner_slug'            => $owner_slug,
 			'schema'                => self::PAYLOAD_SCHEMA,
 			'slug'                  => $plugin_slug,
 			'namespace'             => $block_namespace,
@@ -777,14 +802,19 @@ class Static_Site_Importer_Companion_Plugin {
 		string $link_runtime_class,
 		string $redirect_runtime_class,
 		string $metric_runtime_class,
-		array $artifact_provenance = array()
+		array $artifact_provenance = array(),
+		string $owner = 'plugin'
 	): string {
 		$fn_prefix = str_replace( '-', '_', $plugin_slug ) . '_' . $inventory_hash;
 
 		$lines   = array();
 		$lines[] = '<?php';
 		$lines[] = '/**';
-		$lines[] = ' * Plugin Name: ' . Static_Site_Importer_Companion_Inventory::plugin_name( $site_name );
+		if ( 'plugin' === $owner ) {
+			$lines[] = ' * Plugin Name: ' . Static_Site_Importer_Companion_Inventory::plugin_name( $site_name );
+		} else {
+			$lines[] = ' * Theme-owned generated runtime. Loaded by functions.php.';
+		}
 		$lines[] = ' * Description: ' . Static_Site_Importer_Companion_Inventory::plugin_description( $inventory );
 		// A provenance-carrying build stamps the real producing-build version
 		// and an Update URI identifying this artifact, so the plugin remains
@@ -820,6 +850,16 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "\treturn is_array( \$config ) ? \$config : array();";
 		$lines[] = '}';
 		$lines[] = '';
+		$lines[] = sprintf( 'function %s_asset_uri() {', $fn_prefix );
+		$lines[] = 'theme' === $owner
+			? "\treturn trailingslashit( get_theme_file_uri( 'ssi-runtime' ) );"
+			: "\treturn plugin_dir_url( __FILE__ );";
+		$lines[] = '}';
+		$lines[] = sprintf( 'function %s_is_current_owner() {', $fn_prefix );
+		$lines[] = 'theme' === $owner
+			? sprintf( "\treturn get_stylesheet() === (string) ( %s_config()['owner_slug'] ?? '' );", $fn_prefix )
+			: sprintf( "\treturn ! function_exists( 'get_option' ) || (string) ( %s_config()['plugin_file'] ?? '' ) === (string) get_option( 'static_site_importer_active_companion_plugin', '' );", $fn_prefix );
+		$lines[] = '}';
 		$lines[] = "require_once __DIR__ . '/includes/provider-form-runtime-v1.php';";
 		$lines[] = "require_once __DIR__ . '/includes/internal-link-runtime.php';";
 		$lines[] = "require_once __DIR__ . '/includes/source-route-redirect.php';";
@@ -835,18 +875,28 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = ' * Register generated blocks from their metadata directories.';
 		$lines[] = ' */';
 		$lines[] = sprintf( 'function %s_register_blocks() {', $fn_prefix );
+		// Config is read afresh on same-request package refresh, even when its
+		// callable already exists and require_once does not reload the runtime.
+		$lines[] = "\t" . $runtime_class . '::configure_visual_states( ' . $fn_prefix . "_config()['form_visual_states'] ?? array() );";
+		$lines[] = "\t" . $metric_runtime_class . '::configure( ' . $fn_prefix . "_config()['external_metrics'] ?? array() );";
 		$lines[] = "\tif ( ! function_exists( 'register_block_type' ) ) {";
 		$lines[] = "\t\treturn;";
 		$lines[] = "\t}";
 		$lines[] = '';
 		$lines[] = sprintf( "\tforeach ( %s_config()['block_directories'] ?? array() as \$block_dir ) {", $fn_prefix );
 		$lines[] = "\t\tif ( ! is_string( \$block_dir ) ) { continue; }";
+		$lines[] = "\t\t\$metadata = json_decode( (string) file_get_contents( __DIR__ . '/blocks/' . \$block_dir . '/block.json' ), true );";
+		$lines[] = "\t\tif ( class_exists( 'WP_Block_Type_Registry' ) && WP_Block_Type_Registry::get_instance()->is_registered( (string) ( \$metadata['name'] ?? '' ) ) ) { continue; }";
 		$lines[] = "\t\t\$registered = register_block_type( __DIR__ . '/blocks/' . \$block_dir );";
 		$lines[] = "\t\tif ( \$registered instanceof WP_Block_Type ) {";
-		$lines[] = "\t\t\tif ( ! isset( \$GLOBALS['static_site_importer_companion_block_owners'] ) || ! is_array( \$GLOBALS['static_site_importer_companion_block_owners'] ) ) {";
-		$lines[] = "\t\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'] = array();";
-		$lines[] = "\t\t\t}";
-		$lines[] = sprintf( "\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'][ \$registered->name ] = array( 'plugin_file' => (string) ( %s_config()['plugin_file'] ?? '' ), 'plugin_path' => __FILE__ );", $fn_prefix );
+		if ( 'plugin' === $owner ) {
+			$lines[] = "\t\t\tif ( ! isset( \$GLOBALS['static_site_importer_companion_block_owners'] ) || ! is_array( \$GLOBALS['static_site_importer_companion_block_owners'] ) ) {";
+			$lines[] = "\t\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'] = array();";
+			$lines[] = "\t\t\t}";
+			$lines[] = sprintf( "\t\t\t\$GLOBALS['static_site_importer_companion_block_owners'][ \$registered->name ] = array( 'plugin_file' => (string) ( %s_config()['plugin_file'] ?? '' ), 'plugin_path' => __FILE__ );", $fn_prefix );
+		}
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_var_export -- Serializes the validated destination owner into trusted generated PHP.
+		$lines[] = sprintf( "\t\t\t\$GLOBALS['static_site_importer_runtime_block_owners'][ \$registered->name ] = array( 'owner' => %s, 'path' => __FILE__ );", var_export( $owner, true ) );
 		$lines[] = "\t\t}";
 		$lines[] = "\t}";
 		$lines[] = '}';
@@ -869,7 +919,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "\t\tif ( ( \$island['block'] ?? '' ) !== \$name || '' === ( \$island['src'] ?? '' ) ) {";
 		$lines[] = "\t\t\tcontinue;";
 		$lines[] = "\t\t}";
-		$lines[] = "\t\twp_enqueue_script( \$island['handle'], plugin_dir_url( __FILE__ ) . \$island['src'], array(), '1.0.0', true );";
+		$lines[] = sprintf( "\t\twp_enqueue_script( \$island['handle'], %s_asset_uri() . \$island['src'], array(), '1.0.0', true );", $fn_prefix );
 		$lines[] = "\t}";
 		$lines[] = '';
 		$lines[] = "\treturn \$content;";
@@ -881,14 +931,14 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "\tif ( ! function_exists( 'wp_enqueue_script' ) ) {";
 		$lines[] = "\t\treturn;";
 		$lines[] = "\t}";
-		$lines[] = sprintf( "\tif ( function_exists( 'get_option' ) && (string) ( %s_config()['plugin_file'] ?? '' ) !== (string) get_option( 'static_site_importer_active_companion_plugin', '' ) ) {", $fn_prefix );
+		$lines[] = sprintf( "\tif ( ! %s_is_current_owner() ) {", $fn_prefix );
 		$lines[] = "\t\treturn;";
 		$lines[] = "\t}";
 		$lines[] = sprintf( "\tforeach ( %s_config()['islands'] ?? array() as \$island ) {", $fn_prefix );
 		$lines[] = "\t\tif ( '' !== ( \$island['block'] ?? '' ) || '' === ( \$island['src'] ?? '' ) ) {";
 		$lines[] = "\t\t\tcontinue;";
 		$lines[] = "\t\t}";
-		$lines[] = "\t\twp_enqueue_script( \$island['handle'], plugin_dir_url( __FILE__ ) . \$island['src'], array(), '1.0.0', true );";
+		$lines[] = sprintf( "\t\twp_enqueue_script( \$island['handle'], %s_asset_uri() . \$island['src'], array(), '1.0.0', true );", $fn_prefix );
 		$lines[] = "\t}";
 		$lines[] = '}';
 		$lines[] = sprintf( "add_action( 'wp_enqueue_scripts', '%s_enqueue_global_islands' );", $fn_prefix );
@@ -914,7 +964,7 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "\tif ( ! function_exists( 'wp_register_script' ) || ! function_exists( 'wp_enqueue_script' ) ) {";
 		$lines[] = "\t\treturn;";
 		$lines[] = "\t}";
-		$lines[] = sprintf( "\tif ( function_exists( 'get_option' ) && (string) ( %s_config()['plugin_file'] ?? '' ) !== (string) get_option( 'static_site_importer_active_companion_plugin', '' ) ) {", $fn_prefix );
+		$lines[] = sprintf( "\tif ( ! %s_is_current_owner() ) {", $fn_prefix );
 		$lines[] = "\t\treturn;";
 		$lines[] = "\t}";
 		$lines[] = sprintf( "\tforeach ( %s_config()['editor_scripts'] ?? array() as \$script ) {", $fn_prefix );
@@ -924,12 +974,12 @@ class Static_Site_Importer_Companion_Plugin {
 		$lines[] = "\t\t\tcontinue;";
 		$lines[] = "\t\t}";
 		$lines[] = "\t\t\$dependencies = isset( \$script['dependencies'] ) && is_array( \$script['dependencies'] ) ? \$script['dependencies'] : array();";
-		$lines[] = "\t\twp_register_script( \$handle, plugin_dir_url( __FILE__ ) . \$src, \$dependencies, '1.0.0', true );";
+		$lines[] = sprintf( "\t\twp_register_script( \$handle, %s_asset_uri() . \$src, \$dependencies, '1.0.0', true );", $fn_prefix );
 		$lines[] = "\t\twp_enqueue_script( \$handle );";
 		$lines[] = "\t}";
-		$lines[] = "\twp_enqueue_script( 'ssi-imported-media-replace', plugin_dir_url( __FILE__ ) . 'editor/imported-media-replace.js', array( 'wp-blocks', 'wp-block-editor', 'wp-element', 'wp-components', 'wp-hooks' ), '1', true );";
+		$lines[] = sprintf( "\twp_enqueue_script( 'ssi-imported-media-replace', %s_asset_uri() . 'editor/imported-media-replace.js', array( 'wp-blocks', 'wp-block-editor', 'wp-element', 'wp-components', 'wp-hooks' ), '1', true );", $fn_prefix );
 		$lines[] = sprintf( "\tif ( ! empty( %s_config()['external_metrics'] ) ) {", $fn_prefix );
-		$lines[] = "\t\twp_enqueue_script( 'ssi-external-metric-controls', plugin_dir_url( __FILE__ ) . 'editor/external-metric-controls.js', array( 'wp-api-fetch', 'wp-block-editor', 'wp-element', 'wp-components', 'wp-hooks' ), '1', true );";
+		$lines[] = sprintf( "\t\twp_enqueue_script( 'ssi-external-metric-controls', %s_asset_uri() . 'editor/external-metric-controls.js', array( 'wp-api-fetch', 'wp-block-editor', 'wp-element', 'wp-components', 'wp-hooks' ), '1', true );", $fn_prefix );
 		$lines[] = sprintf( "\t\tif ( function_exists( 'wp_add_inline_script' ) ) { wp_add_inline_script( 'ssi-external-metric-controls', 'window.ssiExternalMetricConfig = ' . wp_json_encode( %s_config()['external_metrics'] ), 'before' ); }", $fn_prefix );
 		$lines[] = "\t}";
 		$lines[] = '}';

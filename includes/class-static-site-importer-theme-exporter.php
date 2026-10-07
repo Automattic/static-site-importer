@@ -165,7 +165,7 @@ class Static_Site_Importer_Theme_Exporter {
 					}
 				}
 
-				$page_metrics = self::external_metric_declaration_entities( $page, $path );
+				$page_metrics = self::external_metric_declaration_entities( $page, $path, $theme_dir );
 				if ( is_wp_error( $page_metrics ) ) {
 					return $page_metrics;
 				}
@@ -181,7 +181,8 @@ class Static_Site_Importer_Theme_Exporter {
 					);
 				}
 
-				$files[] = self::export_file_entry(
+				$chrome['after'] .= self::export_document_scripts( $page_id, $theme_dir, str_repeat( '../', substr_count( substr( $path, strlen( $root ) + 1 ), '/' ) ) );
+				$files[]          = self::export_file_entry(
 					$path,
 					self::export_html_document( $page_html, $chrome, self::export_page_title( $page, $theme_slug ), null !== $stylesheet, null !== $global_stylesheet ),
 					'document',
@@ -435,13 +436,43 @@ class Static_Site_Importer_Theme_Exporter {
 		return $files;
 	}
 
-	/** Rehydrate only companion-authored external metric bindings into export declarations. */
-	private static function external_metric_declaration_entities( object $page, string $source_path ) {
-		$companion = (string) get_option( 'static_site_importer_active_companion_plugin', '' );
-		if ( '' === $companion || ! defined( 'WP_PLUGIN_DIR' ) ) {
-			return array();
+	/** Export only provenance-bound local assets that the theme export packages. */
+	private static function export_document_scripts( int $page_id, string $theme_dir, string $asset_prefix ): string {
+		$provenance = function_exists( 'get_post_meta' ) ? json_decode( (string) get_post_meta( $page_id, '_static_site_importer_provenance', true ), true ) : null;
+		if ( 'static-site-importer/page-provenance/v1' !== ( $provenance['schema'] ?? '' ) ) {
+			return '';
 		}
-		$config_path = WP_PLUGIN_DIR . '/' . dirname( $companion ) . '/companion.json';
+		$html = '';
+		foreach ( $provenance['document_scripts'] ?? array() as $script ) {
+			$path = is_array( $script ) ? (string) ( $script['target_path'] ?? '' ) : '';
+			if ( ! str_starts_with( $path, 'assets/' ) || preg_match( '~(?:^|/)(?:\.|\.\.)(?:/|$)|[\\\\?#\x00]~', $path ) || ! self::export_is_supported_asset_path( $path ) || 'script' !== self::export_role_from_path( $path ) || ! is_readable( $theme_dir . '/' . $path ) ) {
+				continue;
+			}
+			// phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedScript -- Emits a portable HTML artifact rather than a live WordPress response.
+			$html .= '<script src="' . htmlspecialchars( $asset_prefix . $path, ENT_QUOTES, 'UTF-8' ) . '"';
+			foreach ( array( 'type', 'defer', 'async', 'crossorigin', 'integrity' ) as $attribute ) {
+				$value = $script['attributes'][ $attribute ] ?? null;
+				if ( in_array( $attribute, array( 'defer', 'async' ), true ) ) {
+					$html .= true === $value ? ' ' . $attribute : '';
+				} elseif ( is_string( $value ) && '' !== $value ) {
+					$html .= ' ' . $attribute . '="' . htmlspecialchars( $value, ENT_QUOTES, 'UTF-8' ) . '"';
+				}
+			}
+			$html .= '></script>';
+		}
+		return $html;
+	}
+
+	/** Rehydrate only destination-authored external metric bindings into export declarations. */
+	private static function external_metric_declaration_entities( object $page, string $source_path, string $theme_dir ) {
+		$config_path = '' === $theme_dir ? '' : $theme_dir . '/ssi-runtime/companion.json';
+		if ( ! is_readable( $config_path ) ) {
+			$companion = (string) get_option( 'static_site_importer_active_companion_plugin', '' );
+			if ( '' === $companion || ! defined( 'WP_PLUGIN_DIR' ) ) {
+				return array();
+			}
+			$config_path = WP_PLUGIN_DIR . '/' . dirname( $companion ) . '/companion.json';
+		}
 		$config      = is_readable( $config_path ) ? json_decode( (string) file_get_contents( $config_path ), true ) : null; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the active generated companion's trusted declarative metric inventory.
 		$config_rows = is_array( $config['external_metrics'] ?? null ) ? $config['external_metrics'] : array();
 		$facts       = array_column( $config_rows, null, 'id' );
@@ -905,6 +936,15 @@ class Static_Site_Importer_Theme_Exporter {
 		);
 		if ( ! empty( $runtime_declarations ) ) {
 			$artifact['runtime_declarations'] = $runtime_declarations; }
+		$runtime_config_path = self::export_theme_dir( $theme_slug ) . '/ssi-runtime/companion.json';
+		$runtime_config      = is_readable( $runtime_config_path ) ? json_decode( (string) file_get_contents( $runtime_config_path ), true ) : null; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the exported theme's local declarative runtime inventory.
+		if ( 'theme' === ( $runtime_config['owner'] ?? '' ) && ( $runtime_config['owner_slug'] ?? '' ) === $theme_slug ) {
+			$artifact['provenance']['materialized_from']['runtime_owner'] = array(
+				'type'      => 'theme',
+				'slug'      => $theme_slug,
+				'directory' => 'ssi-runtime',
+			);
+		}
 		return $artifact;
 	}
 

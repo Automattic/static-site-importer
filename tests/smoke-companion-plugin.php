@@ -661,6 +661,30 @@ $assert( true === Static_Site_Importer_Companion_Plugin::validate_payload( $edit
 $descriptor = Static_Site_Importer_Companion_Plugin::scaffold( $payload );
 $assert( is_array( $descriptor ), 'scaffold-returns-descriptor', is_array( $descriptor ) ? '' : 'WP_Error returned' );
 
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-generated-runtime-package.php';
+$theme_package = Static_Site_Importer_Generated_Runtime_Package::theme( array_merge( $payload, array( 'mu_plugin' => true ) ) );
+$assert( is_array( $theme_package ), 'theme-owner-reuses-validated-scaffold' );
+if ( is_array( $theme_package ) ) {
+	$assert( $descriptor['block_names'] === $theme_package['block_names'], 'destination-owner-preserves-saved-block-identities' );
+	$assert( ! isset( $theme_package['plugin_file'] ) && ! isset( $theme_package['loader_file'] ) && ! isset( $theme_package['mu_plugin'] ), 'theme-owner-has-no-plugin-install-contract' );
+	$theme_source = $theme_package['files']['ssi-runtime/runtime.php'];
+	$assert( ! str_contains( $theme_source, 'Plugin Name:' ) && ! str_contains( $theme_source, 'plugin_dir_url' ) && ! str_contains( $theme_source, 'static_site_importer_active_companion_plugin' ), 'theme-lifecycle-has-no-plugin-paths-or-option-guards' );
+	$assert( str_contains( $theme_source, "get_theme_file_uri( 'ssi-runtime' )" ) && str_contains( $theme_source, 'get_stylesheet()' ), 'theme-owner-resolves-assets-and-active-lifecycle-directly' );
+	foreach ( $theme_package['files'] as $path => $bytes ) {
+		$assert( str_starts_with( $path, 'ssi-runtime/' ), 'theme-package-files-have-one-owned-root:' . $path );
+		if ( str_starts_with( $path, 'ssi-runtime/blocks/' ) ) {
+			$plugin_path = $descriptor['slug'] . '/' . substr( $path, strlen( 'ssi-runtime/' ) );
+			$assert( $descriptor['files'][ $plugin_path ] === $bytes, 'owner-change-preserves-audited-renderers-and-assets:' . $path );
+		}
+	}
+	$assert( str_contains( $theme_package['files']['ssi-runtime/README.md'], 'generated theme owns these blocks' ) && ! str_contains( $theme_package['files']['ssi-runtime/README.md'], 'It is theme-independent' ), 'theme-inventory-describes-real-owner' );
+	$reimport_package = Static_Site_Importer_Generated_Runtime_Package::theme( $payload, 'separate-destination' );
+	$reimport_config = is_array( $reimport_package ) ? json_decode( $reimport_package['files']['ssi-runtime/companion.json'], true ) : array();
+	$assert( is_array( $reimport_package ) && $payload['site_slug'] !== $reimport_package['owner_slug'] && 'separate-destination' === ( $reimport_config['owner_slug'] ?? '' ) && $theme_package['block_names'] === $reimport_package['block_names'], 'destination-owner-is-independent-of-producer-block-identity' );
+}
+$assert( is_wp_error( Static_Site_Importer_Generated_Runtime_Package::theme( $php_asset ) ), 'theme-owner-retains-server-code-rejection' );
+$assert( is_wp_error( Static_Site_Importer_Companion_Plugin::scaffold( $payload, 'foreign' ) ), 'runtime-contract-rejects-unknown-owner' );
+
 if ( is_array( $descriptor ) ) {
 	$assert( 'ssi-example-site' === $descriptor['slug'], 'scaffold-namespaces-slug', (string) $descriptor['slug'] );
 	$assert( 'ssi-example-site/ssi-example-site.php' === $descriptor['plugin_file'], 'scaffold-plugin-file-path', (string) $descriptor['plugin_file'] );
