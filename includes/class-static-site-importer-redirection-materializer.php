@@ -140,22 +140,22 @@ final class Static_Site_Importer_Redirection_Materializer {
 
 	/** Bind typed source paths to the actual destination, never to guessed slugs. */
 	public static function routes( array $receipt, array $args ) {
-		$pages   = $receipt['plan']['pages'] ?? array();
-		$ids     = $receipt['completed']['pages'] ?? array();
-		$aliases = Static_Site_Importer_Redirects_Manifest::aliases_for_source_paths( $args['source_route_aliases'] ?? array(), array_column( $pages, 'source_path' ) );
+		$pages       = $receipt['plan']['pages'] ?? array();
+		$ids         = $receipt['completed']['pages'] ?? array();
+		$aliases     = Static_Site_Importer_Redirects_Manifest::aliases_for_source_paths( $args['source_route_aliases'] ?? array(), array_column( $pages, 'source_path' ) );
 		$alias_paths = array();
 		foreach ( $aliases as $source => $paths ) {
 			foreach ( $paths as $path ) {
 				$alias_paths[ '/' . ltrim( $path, '/' ) ] = $source;
 			}
 		}
-		$routes  = array();
+		$routes = array();
 		foreach ( $pages as $page ) {
 			$source = (string) ( $page['source_path'] ?? '' );
 			$id     = (int) ( $ids[ $source ] ?? 0 );
 			if ( $id <= 0 ) {
 				continue; }
-			if ( ! empty( $page['synthetic'] ) && 'draft' === ( $page['materialized_post_status'] ?? '' ) && isset( $page['alias_target_source_path'] ) && $page['alias_target_source_path'] === ( $alias_paths[ $page['route']['path'] ?? '' ] ?? null ) && 'draft' === get_post_status( $id ) ) {
+			if ( ! empty( $page['synthetic'] ) && 'draft' === ( $page['materialized_post_status'] ?? '' ) && isset( $page['alias_target_source_path'] ) && ( $alias_paths[ $page['route']['path'] ?? '' ] ?? null ) === $page['alias_target_source_path'] && 'draft' === get_post_status( $id ) ) {
 				// This native row supplies descendant ancestry; its exact public URL
 				// is explicitly owned by the alias bound to a different page receipt.
 				continue;
