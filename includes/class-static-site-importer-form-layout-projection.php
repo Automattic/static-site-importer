@@ -680,9 +680,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( isset( $compound_ancestors[ $node['id'] ][ $control_index ] ) && ! isset( $node['destination_role'] ) ) {
 				$node['destination_role'] = 'shell';
 			}
+			// A classless paragraph around one control (a newsletter row's
+			// `<p id="subscribe-email">`, styled by id) is the same proven box as a
+			// classless div: its layout must reach the provider field shell, or the
+			// facts become an unrepresentable topology loss that declines the form.
 			$source_class                 = trim( (string) ( $node['class'] ?? '' ) );
 			$is_projectable_classless_box = '' === $source_class
-				&& in_array( $node['tag'] ?? '', array( 'div', 'span' ), true )
+				&& in_array( $node['tag'] ?? '', array( 'div', 'span', 'p' ), true )
 				&& ( ! empty( $s->layout_by_node[ $node['id'] ] ?? array() ) || ! empty( $s->variants_by_node[ $node['id'] ] ?? array() ) );
 			if ( ! is_int( $control_index ) || ! isset( $s->field_blocks[ $control_index ] ) || ( '' === $source_class && ! $is_projectable_classless_box ) ) {
 				continue;
@@ -890,10 +894,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 			$control_index = $branch_controls[0];
 			$classes       = self::class_tokens( $node );
-			$classes       = false === $classes ? array() : $classes;
-			$markers       = array( 'ssi-source-semantic-wrapper-' . min( 99, max( 0, (int) $node['depth'] ) ) . '--p' );
+			$classes       = false === $classes ? array() : array_values( array_filter( $classes ) );
+			$depth         = min( 99, max( 0, (int) $node['depth'] ) );
+			$markers       = array( 'ssi-source-semantic-wrapper-' . $depth . '--p' );
 			foreach ( $classes as $class ) {
-				$markers[] = 'ssi-source-semantic-wrapper-' . min( 99, max( 0, (int) $node['depth'] ) ) . '--p--' . $class;
+				$markers[] = 'ssi-source-semantic-wrapper-' . $depth . '--p--' . $class;
 			}
 			$s->field_blocks[ $control_index ]['attrs']['className'] = trim( implode( ' ', array_filter( array_merge( array( (string) ( $s->field_blocks[ $control_index ]['attrs']['className'] ?? '' ) ), $markers ) ) ) );
 			$s->represented_topology_nodes[]                         = $node['id'];
@@ -2870,6 +2875,33 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				),
 				'priority'   => 'important',
 			),
+		);
+	}
+
+	/**
+	 * State the initial flex-container values a source flex box leaves implicit.
+	 *
+	 * A source box that declares only `display: flex` is a non-wrapping row. The
+	 * producer records declared facts only, so `row`/`nowrap` never reach the
+	 * graph. Jetpack's form element is a wrapping flex layout of its own, so a
+	 * source row transposed onto it would keep that wrap and stack its field and
+	 * submit. A fact the source declares (in `$layout` or in `$declared`, the base
+	 * facts a conditional patch builds on) is never replaced.
+	 *
+	 * @param array<string,mixed> $layout
+	 * @param array<string,mixed> $declared
+	 * @return array<string,mixed>
+	 */
+	public static function with_flex_container_defaults( array $layout, array $declared = array() ): array {
+		if ( ! in_array( strtolower( trim( (string) ( $layout['display'] ?? '' ) ) ), array( 'flex', 'inline-flex' ), true ) ) {
+			return $layout;
+		}
+		return $layout + array_diff_key(
+			array(
+				'direction' => 'row',
+				'wrap'      => 'nowrap',
+			),
+			$declared
 		);
 	}
 

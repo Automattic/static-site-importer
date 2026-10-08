@@ -646,8 +646,24 @@ class Static_Site_Importer_Form_Seeder {
 				'target_hash' => hash( 'sha256', $target_id ),
 			);
 		}
+		// The source container laid out on Jetpack's form element keeps its own
+		// flex direction and wrap, not the provider's wrapping row. Jetpack also
+		// renders in-form copy and the status output as items of that element,
+		// which the source row did not arrange, so the row is stated only when the
+		// element holds nothing but the fields and the submit.
+		$form_holds_only_controls = array() === Static_Site_Importer_Form_Field_Markup::context_blocks( $form, 'context_before' )
+			&& array() === Static_Site_Importer_Form_Field_Markup::context_blocks( $form, 'context_after' )
+			&& 'status' !== ( is_array( $form['form']['trailing_status'] ?? null ) ? ( $form['form']['trailing_status']['role'] ?? null ) : null );
+		$form_base_layout         = array();
 		foreach ( $overlay_graph['nodes'] as &$overlay_node ) {
-			if ( ! is_array( $overlay_node ) || ! preg_match( '/^(?:control|wrapper)-[0-9]+$/D', (string) ( $overlay_node['id'] ?? '' ) ) || ! Static_Site_Importer_Form_Layout_Projection::fixed_width_uses_default_flex( $overlay_node ) ) {
+			if ( ! is_array( $overlay_node ) ) {
+				continue;
+			}
+			if ( $form_holds_only_controls && 'form' === ( $overlay_node['id'] ?? null ) && is_array( $overlay_node['layout'] ?? null ) ) {
+				$overlay_node['layout'] = Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( $overlay_node['layout'] );
+				$form_base_layout       = $overlay_node['layout'];
+			}
+			if ( ! preg_match( '/^(?:control|wrapper)-[0-9]+$/D', (string) ( $overlay_node['id'] ?? '' ) ) || ! Static_Site_Importer_Form_Layout_Projection::fixed_width_uses_default_flex( $overlay_node ) ) {
 				continue;
 			}
 			$overlay_node['layout']['flex'] = '0 1 auto';
@@ -655,7 +671,13 @@ class Static_Site_Importer_Form_Seeder {
 		unset( $overlay_node );
 		$overlay_graph['variants'] = array_merge( $overlay_graph['variants'] ?? array(), $topology['responsive_variant_targets'] );
 		foreach ( $overlay_graph['variants'] as &$overlay_variant ) {
-			if ( ! is_array( $overlay_variant ) || ! preg_match( '/^(?:control|wrapper)-[0-9]+$/D', (string) ( $overlay_variant['node'] ?? '' ) ) || ! Static_Site_Importer_Form_Layout_Projection::fixed_width_uses_default_flex( $overlay_variant ) ) {
+			if ( ! is_array( $overlay_variant ) ) {
+				continue;
+			}
+			if ( $form_holds_only_controls && 'form' === ( $overlay_variant['node'] ?? null ) && is_array( $overlay_variant['layout_patch'] ?? null ) ) {
+				$overlay_variant['layout_patch'] = Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( $overlay_variant['layout_patch'], $form_base_layout );
+			}
+			if ( ! preg_match( '/^(?:control|wrapper)-[0-9]+$/D', (string) ( $overlay_variant['node'] ?? '' ) ) || ! Static_Site_Importer_Form_Layout_Projection::fixed_width_uses_default_flex( $overlay_variant ) ) {
 				continue;
 			}
 			$overlay_variant['layout_patch']['flex'] = '0 1 auto';
