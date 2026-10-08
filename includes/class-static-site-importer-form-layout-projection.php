@@ -2905,6 +2905,38 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		);
 	}
 
+	/**
+	 * State the initial flex values a source flex item leaves implicit.
+	 *
+	 * A child of a source flex container is a flex item with `flex: 0 1 auto`
+	 * unless it declares otherwise, and a box that declares `flex-grow` or
+	 * `flex-shrink` is a flex item too. Jetpack sizes its own items: a field
+	 * shell is `flex: 1 1 100%`, and on narrow screens the submit wrapper is
+	 * `flex: 0 1 100%`. A transposed item would then start from a full-row basis
+	 * and squeeze or stretch its row siblings (a field and the submit beside it).
+	 * A fact the source declares (in `$layout`, or in `$declared`, the base facts
+	 * a conditional patch builds on) is never replaced.
+	 *
+	 * @param array<string,mixed> $layout
+	 * @param array<string,mixed> $declared
+	 * @param bool                $flex_item Whether the box's source parent is a flex container.
+	 * @return array<string,mixed>
+	 */
+	public static function with_flex_item_defaults( array $layout, array $declared = array(), bool $flex_item = false ): array {
+		$facts = $layout + $declared;
+		if ( isset( $facts['flex'] ) || ( ! $flex_item && array() === array_intersect_key( $layout, array_flip( array( 'flex_grow', 'flex_shrink' ) ) ) ) ) {
+			return $layout;
+		}
+		return $layout + array_diff_key(
+			array(
+				'flex_grow'   => '0',
+				'flex_shrink' => '1',
+				'flex_basis'  => 'auto',
+			),
+			$facts
+		);
+	}
+
 	/** Jetpack fields default to flex:1 1 100%; preserve a source fixed width's default flex behavior. */
 	public static function fixed_width_uses_default_flex( array $node ): bool {
 		$layout = is_array( $node['layout'] ?? null ) ? $node['layout'] : ( self::layout_patch( $node ) );
@@ -3126,13 +3158,16 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					// double it a second time inside the button's own wrapper. The
 					// margin properties stay listed above so a captured fact is still
 					// represented (not a receipt loss); this unconditional, later,
-					// `!important` reset is what actually wins the cascade.
+					// `!important` reset is what actually wins the cascade. It resets
+					// the block axis only: an authored inline margin (a newsletter
+					// row's `margin-left: 10px` between the email field and its
+					// submit) is the row's own spacing, which nothing else carries.
 					$destinations[] = array(
 						'role'       => 'control',
 						'selector'   => '.' . $scope . ' .' . $control_class . ' > .wp-block-button__link',
 						'properties' => array(),
 						'resets'     => array(
-							'margin' => '0',
+							'margin-block' => '0',
 						),
 						'priority'   => 'important',
 					);

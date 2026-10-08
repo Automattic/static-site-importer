@@ -1892,8 +1892,8 @@ namespace {
 			&& '-' !== $styled_paragraph_field_hook
 			&& '-' !== $styled_paragraph_submit_hook
 			&& $styled_paragraph_field_hook !== $styled_paragraph_submit_hook
-			&& str_contains( $styled_paragraph_css_out, ' .' . $styled_paragraph_field_hook . '-wrap{flex-grow:1}' )
-			&& str_contains( $styled_paragraph_css_out, ' .' . $styled_paragraph_submit_hook . '{display:flex;justify-content:center}' )
+			&& str_contains( $styled_paragraph_css_out, ' .' . $styled_paragraph_field_hook . '-wrap{flex-grow:1;flex-shrink:1;flex-basis:auto}' )
+			&& str_contains( $styled_paragraph_css_out, ' .' . $styled_paragraph_submit_hook . '{display:flex;justify-content:center;flex-grow:0;flex-shrink:1;flex-basis:auto}' )
 			&& 1 === preg_match( '/form\.jetpack-contact-form__form[^{]*\{[^}]*display:flex[^}]*\}/', $styled_paragraph_css_out, $styled_paragraph_form_rule )
 			&& str_contains( $styled_paragraph_form_rule[0], 'flex-direction:row' )
 			&& str_contains( $styled_paragraph_form_rule[0], 'flex-wrap:nowrap' )
@@ -1931,6 +1931,19 @@ namespace {
 			// A conditional patch keeps the wrap its base rule declares.
 			&& array( 'display' => 'flex', 'direction' => 'row' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'display' => 'flex' ), array( 'display' => 'block', 'wrap' => 'wrap' ) ),
 		'transposed-flex-container-states-only-the-implicit-initial-direction-and-wrap'
+	);
+	// A child of a source flex container (or a box that declares a grow or
+	// shrink) keeps the initial `flex: 0 1 auto` for what it leaves implicit,
+	// not Jetpack's own full-row item flex.
+	$assert(
+		method_exists( Static_Site_Importer_Form_Layout_Projection::class, 'with_flex_item_defaults' )
+			&& array( 'flex_grow' => '1', 'flex_shrink' => '1', 'flex_basis' => 'auto' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_item_defaults( array( 'flex_grow' => '1' ) )
+			&& array( 'flex_grow' => '1', 'flex_basis' => '50%', 'flex_shrink' => '1' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_item_defaults( array( 'flex_grow' => '1', 'flex_basis' => '50%' ) )
+			&& array( 'flex' => '1 1 0%' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_item_defaults( array( 'flex' => '1 1 0%' ), array(), true )
+			&& array( 'flex_grow' => '0', 'flex_shrink' => '1' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_item_defaults( array( 'flex_grow' => '0' ), array( 'flex_basis' => '200px' ) )
+			&& array( 'width' => '10rem' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_item_defaults( array( 'width' => '10rem' ) )
+			&& array( 'display' => 'flex', 'flex_grow' => '0', 'flex_shrink' => '1', 'flex_basis' => 'auto' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_item_defaults( array( 'display' => 'flex' ), array(), true ),
+		'transposed-flex-item-states-only-the-implicit-initial-flex'
 	);
 	// A source field-group grid that groups every mapped control except a
 	// submit sitting outside it (a submit is always the field container's
@@ -2062,7 +2075,7 @@ namespace {
 			&& str_contains( (string) ( $sibling_submit_row['block_markup'] ?? '' ), 'ssi-source-field-list' )
 			&& ! preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{[^}]*margin-block-start:calc\(0px - 1\.5rem\)/', $sibling_submit_overlay )
 			&& 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{[^}]*margin-top:2\.25rem/', $sibling_submit_overlay )
-			&& 1 === preg_match( '/> \.wp-block-button__link\{[^}]*margin:0!important/', $sibling_submit_overlay ),
+			&& 1 === preg_match( '/> \.wp-block-button__link\{[^}]*margin-block:0!important/', $sibling_submit_overlay ),
 		'source-sibling-submit-keeps-its-authored-margin-and-does-not-also-consume-the-field-list-gap',
 		wp_json_encode( array( 'validation' => $sibling_submit_validated, 'css' => $sibling_submit_overlay, 'markup' => $sibling_submit_row['block_markup'] ?? '' ) )
 	);
@@ -2415,10 +2428,40 @@ namespace {
 		empty( $submit_sibling_margin_validation['errors'] )
 			&& array() === ( $submit_sibling_margin_row['form_receipt_unaccepted_losses'] ?? array() )
 			&& str_contains( $submit_sibling_margin_css, 'margin-top:calc(1.5rem * calc(1 - var(--tw-space-y-reverse)))' )
-			&& 1 === preg_match( '/> \.wp-block-button__link\{margin:0!important\}$/m', trim( $submit_sibling_margin_css ) )
+			&& 1 === preg_match( '/> \.wp-block-button__link\{margin-block:0!important\}$/m', trim( $submit_sibling_margin_css ) )
 			&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $submit_sibling_margin_row['provider_layout_overlay_css'] ?? null ),
 		'captured-submit-sibling-margin-is-represented-but-an-unconditional-important-reset-wins-the-cascade',
 		wp_json_encode( array( 'css' => $submit_sibling_margin_css, 'losses' => $submit_sibling_margin_row['form_receipt_unaccepted_losses'] ?? array() ) )
+	);
+	// The reset covers the block axis only. An authored inline margin on the
+	// submit (a newsletter row's `margin-left: 10px` between the field and the
+	// button) is the row's own spacing and stays on the rendered link. The row
+	// is compiled by Blocks Engine from neutral markup: classless paragraphs
+	// styled by id inside a flex row, as a newsletter widget renders them.
+	$signup_row_html = '<style>.signup-row{display:flex;align-items:flex-start}'
+		. 'form p#signup-email{flex-grow:1;margin:0;padding:0}'
+		. '.signup-row p#signup-submit{display:flex;justify-content:center;margin:0;padding:0}</style>'
+		. '<form method="post" id="signup"><div class="signup-row">'
+		. '<p id="signup-email"><input required type="email" name="email" aria-label="Email" placeholder="Email" style="padding:15px 23px;border-width:1px"></p>'
+		. '<p id="signup-submit"><input type="hidden" name="action" value="signup">'
+		. '<button type="submit" style="padding:15px 23px;margin:0;margin-left:10px">Join</button></p>'
+		. '</div></form>';
+	$signup_row_source    = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'signup.html', 'files' => array( 'signup.html' => $signup_row_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$signup_row_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $signup_row_source ) ) );
+	$signup_row_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $signup_row_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$signup_row_css       = (string) ( $signup_row_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		empty( $signup_row_validated['errors'] )
+			&& 'mapped' === ( $signup_row_row['status'] ?? '' )
+			&& array() === ( $signup_row_row['form_receipt_unaccepted_losses'] ?? array() )
+			&& 1 === preg_match( '/form\.jetpack-contact-form__form[^{]*\{[^}]*display:flex[^}]*flex-wrap:nowrap[^}]*\}/', $signup_row_css )
+			&& 1 === preg_match( '/-wrap\{flex-grow:1;flex-shrink:1;flex-basis:auto\}/', $signup_row_css )
+			&& 1 === preg_match( '/\{display:flex;justify-content:center;flex-grow:0;flex-shrink:1;flex-basis:auto\}/', $signup_row_css )
+			&& 1 === preg_match( '/> \.wp-block-button__link\{[^}]*margin-left:10px/', $signup_row_css )
+			&& 1 === preg_match( '/> \.wp-block-button__link\{margin-block:0!important\}$/m', $signup_row_css )
+			&& ! str_contains( $signup_row_css, 'margin:0!important' ),
+		'compiled-signup-row-keeps-a-non-wrapping-row-the-field-basis-and-the-submit-inline-margin',
+		wp_json_encode( array( 'errors' => $signup_row_validated['errors'] ?? array(), 'status' => $signup_row_row['status'] ?? '', 'reason' => $signup_row_row['reason'] ?? '', 'losses' => $signup_row_row['form_receipt_unaccepted_losses'] ?? array(), 'css' => $signup_row_css ) )
 	);
 	$authored_submit_line_height_form = $presentation_form;
 	$authored_submit_line_height_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 3, 'control' => $presentation_role( array( 'padding' => '16px', 'font_size' => '11.2px', 'line_height' => '16.8px' ), array( 'padding', 'font-size', 'line-height' ), 'button' ) ) );
