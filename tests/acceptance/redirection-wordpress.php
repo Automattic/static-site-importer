@@ -3,17 +3,19 @@
 if ( '1' !== getenv( 'SSI_REDIRECTION_DISPOSABLE' ) || ! defined( 'WP_CLI' ) || ! WP_CLI ) {
 	throw new RuntimeException( 'Use an explicitly disposable WordPress CLI runtime.' );
 }
-$assert  = static function ( bool $condition, string $message ): void {
+$assert = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) {
 		throw new RuntimeException( $message ); } // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- CLI-only assertion evidence.
 };
-$import  = static function ( array $request ): array {
+// Studio and other hosts run the canonical CLI as the identity-less site operator.
+$assert( 0 === get_current_user_id(), 'The acceptance process runs as the identity-less CLI operator.' );
+$import  = static function ( array $request, string $user = '' ): array {
 	require_once ABSPATH . 'wp-admin/includes/file.php';
 	$file = wp_tempnam( 'ssi-redirection-request.json' );
 	file_put_contents( $file, wp_json_encode( $request ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Operator-owned temporary request fixture.
 	try {
 		$output = WP_CLI::runcommand(
-			'static-site-importer import --request=' . escapeshellarg( $file ) . ' --user=admin --keep-source',
+			'static-site-importer import --request=' . escapeshellarg( $file ) . ( '' === $user ? '' : ' --user=' . escapeshellarg( $user ) ) . ' --keep-source',
 			array(
 				'return'     => true,
 				'launch'     => true,
@@ -59,7 +61,7 @@ $request['source']['files'][] = array(
 	'content' => "/old /destination.html 301\n",
 );
 $result                       = $import( $request );
-$assert( true === ( $result['success'] ?? false ), 'Typed captured aliases install and configure native Redirection: ' . wp_json_encode( $result ) );
+$assert( true === ( $result['success'] ?? false ), 'The identity-less CLI operator installs, prepares and configures native Redirection from typed captured aliases: ' . wp_json_encode( $result ) );
 // The parent proof request began before installation. Use the provider's own bootstrap.
 if ( ! defined( 'REDIRECTION_VERSION' ) ) {
 	require_once WP_PLUGIN_DIR . '/redirection/redirection.php'; }
@@ -69,8 +71,12 @@ $owned   = get_option( Static_Site_Importer_Redirection_Materializer::OWNERSHIP_
 $scope   = $owned['redirection-acceptance'] ?? array();
 $rule_id = (int) ( $scope['rules']['/old']['id'] ?? 0 );
 $assert( $rule_id > 0 && Static_Site_Importer_Redirection_Materializer::available(), 'A real native rule and ready provider database exist.' );
-$again = $import( $request );
-$assert( true === ( $again['success'] ?? false ) && get_option( Static_Site_Importer_Redirection_Materializer::OWNERSHIP_OPTION, array() ) === $owned, 'Reimport retains exact native IDs and configuration.' );
+$again = $import( $request, 'admin' );
+$assert( true === ( $again['success'] ?? false ) && get_option( Static_Site_Importer_Redirection_Materializer::OWNERSHIP_OPTION, array() ) === $owned, 'An authenticated administrator reimport retains exact native IDs and configuration.' );
+// The operator grant is scoped to SSI's own provider dispatch: a direct anonymous call stays refused.
+$assert( false === has_filter( 'redirection_capability_check', array( Static_Site_Importer_Redirection_Materializer::class, 'operator_access' ) ), 'No operator provider grant remains registered after SSI provider calls.' );
+$anonymous = rest_do_request( new WP_REST_Request( 'GET', '/redirection/v1/redirect' ) );
+$assert( $anonymous->is_error() && in_array( $anonymous->get_status(), array( 401, 403 ), true ), 'A direct provider REST call without a user is still refused: ' . $anonymous->get_status() );
 $destination = get_page_by_path( 'destination', OBJECT, 'page' );
 $assert( $destination instanceof WP_Post, 'Native destination page exists.' );
 $receipt   = array(

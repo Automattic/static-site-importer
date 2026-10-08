@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 final class Static_Site_Importer_Current_Site_Capabilities {
 	/** @return bool|WP_Error */
 	public static function check_plan( array $state ): bool|WP_Error {
-		if ( self::is_cli() ) {
+		if ( self::is_operator_process() ) {
 			return true;
 		}
 
@@ -74,7 +74,7 @@ final class Static_Site_Importer_Current_Site_Capabilities {
 
 	/** @return bool|WP_Error */
 	public static function check_plugin_install( bool $activate, bool $install = true ): bool|WP_Error {
-		if ( self::is_cli() ) {
+		if ( self::is_operator_process() ) {
 			return true;
 		}
 		if ( $install && function_exists( 'wp_is_file_mod_allowed' ) && ! wp_is_file_mod_allowed( 'static_site_importer_plugin_materialization' ) ) {
@@ -102,7 +102,14 @@ final class Static_Site_Importer_Current_Site_Capabilities {
 		return true;
 	}
 
-	private static function is_cli(): bool {
+	/**
+	 * Whether the import runs as the site operator rather than a request user.
+	 *
+	 * WP-CLI is operator-authorized and may have no current user. Materialization
+	 * uses this to run provider calls it already owns on the operator's behalf;
+	 * web requests keep their authenticated user's own capabilities.
+	 */
+	public static function is_operator_process(): bool {
 		return defined( 'WP_CLI' );
 	}
 }
