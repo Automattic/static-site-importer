@@ -777,6 +777,11 @@ if ( is_array( $descriptor ) ) {
 	}
 	$assert( ! str_contains( $disclosure_output, 'open=' ), 'editable-render-leaves-closed-disclosure-closed', $disclosure_output );
 
+	// A thematic break is flow content with its own box: its height and margins
+	// hold the content below it in place, so dropping it shifts the page up.
+	$rule_output = $render_frontend( $render, array( 'content' => '<div class="thread"><h2>Comments</h2><hr class="divider" data-hook="header-divider" onclick="x()"><div class="box">Write</div></div>' ) );
+	$assert( str_contains( $rule_output, '<hr class="divider" data-hook="header-divider">' ) && ! str_contains( $rule_output, 'onclick' ), 'editable-render-preserves-thematic-break-box', $rule_output );
+
 	// A picture carried only by an inline background must survive the boundary.
 	// WordPress core's safecss_filter_attr() has no allowance for image-set(),
 	// so it discards the declaration and, with it, the whole style attribute --
