@@ -1085,9 +1085,11 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	}
 
 	private static function validate_receipt( $receipt, array $page_plan, array $shared ) {
+		// Stylesheet instances are derived from each owned document by the compiler;
+		// occurrence-file copies are no longer part of its terminal reduction.
 		$receipt_schema     = $receipt['receipt_schema'] ?? '';
 		$reduction          = is_array( $receipt['terminal_reduction'] ?? null ) ? $receipt['terminal_reduction'] : array();
-		$required_reduction = array( 'normalization', 'source_documents', 'owned_transformable_paths', 'stylesheet_occurrence_files', 'component_facts', 'block_types' );
+		$required_reduction = array( 'normalization', 'source_documents', 'owned_transformable_paths', 'component_facts', 'block_types' );
 		$reduction_complete = empty( array_diff( $required_reduction, array_keys( $reduction ) ) );
 		if ( ! is_array( $receipt ) || ! in_array( $receipt_schema, self::RECEIPT_SCHEMAS, true ) || ( $page_plan['page_id'] ?? '' ) !== ( $receipt['page_id'] ?? '' ) || ( $shared['digest'] ?? '' ) !== ( $receipt['shared_digest'] ?? '' ) || ( $shared['shared_reduction_digest'] ?? '' ) !== ( $receipt['shared_reduction_digest'] ?? '' ) || ( $page_plan['compiler_options'] ?? null ) !== ( $receipt['compiler_options'] ?? null ) || ( $page_plan['output_schema'] ?? null ) !== ( $receipt['output_schema'] ?? null ) || ( $page_plan['digest'] ?? '' ) === ( $receipt['digest'] ?? '' ) || empty( $receipt['digest'] ) || ! is_array( $receipt['compiled_documents'] ?? null ) || ! is_array( $receipt['owned_document_paths'] ?? null ) || ! $reduction_complete ) {
 			return new WP_Error( 'static_site_importer_direct_artifact_receipt_invalid', 'A compiled page receipt does not satisfy a published terminal receipt contract.' );
