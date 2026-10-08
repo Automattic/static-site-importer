@@ -545,7 +545,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			// Preparation is durable. Workers read their own checkpoints; the host
 			// only needs shared analysis until composition and can reload the source
 			// for materialization through $load_artifact.
-			$artifact_state = null;
+			$artifact_state              = null;
 			self::$checkpoint_read_cache = array();
 			gc_mem_caches();
 
