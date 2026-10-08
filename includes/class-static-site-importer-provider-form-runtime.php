@@ -916,6 +916,17 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		}
 		ksort( $wrappers );
 		foreach ( array_reverse( $wrappers, true ) as $layer ) {
+			// A paragraph holds phrasing content only. Around the provider's block
+			// markup (the field shell and the Button wrapper are divs) the browser
+			// closes it before the first div and adds a second, empty paragraph
+			// after it. Those two empty paragraphs become extra items of the
+			// provider's flex row and push the field and the submit apart. The
+			// provider box already sits at the paragraph's position: the projection
+			// carries the paragraph's proven layout onto it, and a classed field
+			// paragraph's classes onto the rebuilt field row.
+			if ( 'p' === $layer['tag'] && 1 === preg_match( '/<(?:address|article|aside|blockquote|details|dialog|div|dl|fieldset|figure|footer|form|h[1-6]|header|hr|main|nav|ol|p|pre|section|table|ul)\b/i', $projected ) ) {
+				continue;
+			}
 			$classes   = array_values( array_unique( $layer['classes'] ) );
 			$attribute = empty( $classes ) ? '' : ' class="' . implode( ' ', $classes ) . '"';
 			$projected = '<' . $layer['tag'] . $attribute . '>' . $projected . '</' . $layer['tag'] . '>';
