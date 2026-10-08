@@ -680,9 +680,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( isset( $compound_ancestors[ $node['id'] ][ $control_index ] ) && ! isset( $node['destination_role'] ) ) {
 				$node['destination_role'] = 'shell';
 			}
+			// A classless paragraph around one control (a newsletter row's
+			// `<p id="subscribe-email">`, styled by id) is the same proven box as a
+			// classless div: its layout must reach the provider field shell, or the
+			// facts become an unrepresentable topology loss that declines the form.
 			$source_class                 = trim( (string) ( $node['class'] ?? '' ) );
 			$is_projectable_classless_box = '' === $source_class
-				&& in_array( $node['tag'] ?? '', array( 'div', 'span' ), true )
+				&& in_array( $node['tag'] ?? '', array( 'div', 'span', 'p' ), true )
 				&& ( ! empty( $s->layout_by_node[ $node['id'] ] ?? array() ) || ! empty( $s->variants_by_node[ $node['id'] ] ?? array() ) );
 			if ( ! is_int( $control_index ) || ! isset( $s->field_blocks[ $control_index ] ) || ( '' === $source_class && ! $is_projectable_classless_box ) ) {
 				continue;
@@ -890,10 +894,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 			$control_index = $branch_controls[0];
 			$classes       = self::class_tokens( $node );
-			$classes       = false === $classes ? array() : $classes;
-			$markers       = array( 'ssi-source-semantic-wrapper-' . min( 99, max( 0, (int) $node['depth'] ) ) . '--p' );
+			$classes       = false === $classes ? array() : array_values( array_filter( $classes ) );
+			$depth         = min( 99, max( 0, (int) $node['depth'] ) );
+			$markers       = array( 'ssi-source-semantic-wrapper-' . $depth . '--p' );
 			foreach ( $classes as $class ) {
-				$markers[] = 'ssi-source-semantic-wrapper-' . min( 99, max( 0, (int) $node['depth'] ) ) . '--p--' . $class;
+				$markers[] = 'ssi-source-semantic-wrapper-' . $depth . '--p--' . $class;
 			}
 			$s->field_blocks[ $control_index ]['attrs']['className'] = trim( implode( ' ', array_filter( array_merge( array( (string) ( $s->field_blocks[ $control_index ]['attrs']['className'] ?? '' ) ), $markers ) ) ) );
 			$s->represented_topology_nodes[]                         = $node['id'];
@@ -2873,6 +2878,65 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		);
 	}
 
+	/**
+	 * State the initial flex-container values a source flex box leaves implicit.
+	 *
+	 * A source box that declares only `display: flex` is a non-wrapping row. The
+	 * producer records declared facts only, so `row`/`nowrap` never reach the
+	 * graph. Jetpack's form element is a wrapping flex layout of its own, so a
+	 * source row transposed onto it would keep that wrap and stack its field and
+	 * submit. A fact the source declares (in `$layout` or in `$declared`, the base
+	 * facts a conditional patch builds on) is never replaced.
+	 *
+	 * @param array<string,mixed> $layout
+	 * @param array<string,mixed> $declared
+	 * @return array<string,mixed>
+	 */
+	public static function with_flex_container_defaults( array $layout, array $declared = array() ): array {
+		if ( ! in_array( strtolower( trim( (string) ( $layout['display'] ?? '' ) ) ), array( 'flex', 'inline-flex' ), true ) ) {
+			return $layout;
+		}
+		return $layout + array_diff_key(
+			array(
+				'direction' => 'row',
+				'wrap'      => 'nowrap',
+			),
+			$declared
+		);
+	}
+
+	/**
+	 * State the initial flex values a source flex item leaves implicit.
+	 *
+	 * A child of a source flex container is a flex item with `flex: 0 1 auto`
+	 * unless it declares otherwise, and a box that declares `flex-grow` or
+	 * `flex-shrink` is a flex item too. Jetpack sizes its own items: a field
+	 * shell is `flex: 1 1 100%`, and on narrow screens the submit wrapper is
+	 * `flex: 0 1 100%`. A transposed item would then start from a full-row basis
+	 * and squeeze or stretch its row siblings (a field and the submit beside it).
+	 * A fact the source declares (in `$layout`, or in `$declared`, the base facts
+	 * a conditional patch builds on) is never replaced.
+	 *
+	 * @param array<string,mixed> $layout
+	 * @param array<string,mixed> $declared
+	 * @param bool                $flex_item Whether the box's source parent is a flex container.
+	 * @return array<string,mixed>
+	 */
+	public static function with_flex_item_defaults( array $layout, array $declared = array(), bool $flex_item = false ): array {
+		$facts = $layout + $declared;
+		if ( isset( $facts['flex'] ) || ( ! $flex_item && array() === array_intersect_key( $layout, array_flip( array( 'flex_grow', 'flex_shrink' ) ) ) ) ) {
+			return $layout;
+		}
+		return $layout + array_diff_key(
+			array(
+				'flex_grow'   => '0',
+				'flex_shrink' => '1',
+				'flex_basis'  => 'auto',
+			),
+			$facts
+		);
+	}
+
 	/** Jetpack fields default to flex:1 1 100%; preserve a source fixed width's default flex behavior. */
 	public static function fixed_width_uses_default_flex( array $node ): bool {
 		$layout = is_array( $node['layout'] ?? null ) ? $node['layout'] : ( self::layout_patch( $node ) );
@@ -3094,13 +3158,16 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					// double it a second time inside the button's own wrapper. The
 					// margin properties stay listed above so a captured fact is still
 					// represented (not a receipt loss); this unconditional, later,
-					// `!important` reset is what actually wins the cascade.
+					// `!important` reset is what actually wins the cascade. It resets
+					// the block axis only: an authored inline margin (a newsletter
+					// row's `margin-left: 10px` between the email field and its
+					// submit) is the row's own spacing, which nothing else carries.
 					$destinations[] = array(
 						'role'       => 'control',
 						'selector'   => '.' . $scope . ' .' . $control_class . ' > .wp-block-button__link',
 						'properties' => array(),
 						'resets'     => array(
-							'margin' => '0',
+							'margin-block' => '0',
 						),
 						'priority'   => 'important',
 					);

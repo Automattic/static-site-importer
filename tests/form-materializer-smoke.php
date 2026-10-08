@@ -1831,7 +1831,13 @@ namespace {
 	$assert( empty( $aetna_validation['errors'] ) && 'mapped' === ( $aetna_row['status'] ?? '' ) && true === ( $aetna_row['runtime_mapped'] ?? false ) && 2 === substr_count( $aetna_markup, '"width":50' ) && ! in_array( 'unsupported_semantic_wrapper', $aetna_losses, true ) && ! in_array( 'provider_wrapper_layout_unrepresentable', $aetna_losses, true ) && $aetna_markup === serialize_blocks( parse_blocks( $aetna_markup ) ), 'unconditional-media-grid-and-paragraph-field-wrappers-materialize-as-editable-valid-blocks', wp_json_encode( $aetna_row ) );
 	$aetna_field_runtime = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-text-wrap ssi-source-semantic-wrapper-1--p--field"><label>Name</label><input></div>' );
 	$aetna_submit_runtime = Static_Site_Importer_Form_Seeder::project_provider_submit_presentation( '<div class="wp-block-button ssi-source-semantic-wrapper-1--p"><button>Send</button></div>', array( 'attrs' => array( 'className' => 'ssi-source-semantic-wrapper-1--p' ) ) );
-	$assert( '<p class="field"><div class="grunion-field-text-wrap"><label>Name</label><input></div></p>' === $aetna_field_runtime && '<p><div class="wp-block-button"><button>Send</button></div></p>' === $aetna_submit_runtime, 'provider-runtime-restores-safe-paragraph-wrapper-semantics-around-editable-fields-and-submits', $aetna_field_runtime . "\n" . $aetna_submit_runtime );
+	// A paragraph cannot hold the provider's div markup: the browser would close
+	// it before the div and add an empty paragraph after it, and both empty
+	// paragraphs would become items of the provider's flex row. The marker is
+	// consumed without emitting that paragraph. Phrasing-only markup still gets
+	// the paragraph back.
+	$aetna_phrasing_runtime = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<span class="note ssi-source-semantic-wrapper-1--p--field"><input></span>' );
+	$assert( '<div class="grunion-field-text-wrap"><label>Name</label><input></div>' === $aetna_field_runtime && '<div class="wp-block-button"><button>Send</button></div>' === $aetna_submit_runtime && '<p class="field"><span class="note"><input></span></p>' === $aetna_phrasing_runtime, 'provider-runtime-consumes-paragraph-wrapper-markers-without-nesting-block-markup-in-a-paragraph', $aetna_field_runtime . "\n" . $aetna_submit_runtime . "\n" . $aetna_phrasing_runtime );
 	$aetna_subscription_form = array(
 		'forms' => array( array(
 			'selector' => 'form.subscribe',
@@ -1844,6 +1850,101 @@ namespace {
 	$aetna_subscription_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $aetna_subscription_form );
 	$aetna_subscription_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $aetna_subscription_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$assert( empty( $aetna_subscription_validation['errors'] ) && 'mapped' === ( $aetna_subscription_row['status'] ?? '' ) && true === ( $aetna_subscription_row['runtime_mapped'] ?? false ) && ! array_intersect( array( 'unsupported_semantic_wrapper', 'provider_wrapper_layout_unrepresentable' ), array_column( $aetna_subscription_row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' ) ), 'unconditional-subscription-row-with-hidden-bookkeeping-materializes-without-source-form-runtime', wp_json_encode( $aetna_subscription_row ) );
+	// The same subscription row when the stylesheet lays out the classless
+	// paragraphs by id (`form p#subscribe-email { flex-grow: 1 }`, the submit
+	// paragraph centred with flex) and the producer omits the hidden inputs, as
+	// Blocks Engine does. A classless paragraph was not a projectable box like
+	// a classless div, so its proven layout became an unrepresentable topology
+	// loss that declined the whole form. Now the email paragraph's facts reach
+	// the provider field shell and the submit paragraph's facts reach the Button
+	// wrapper, as they do for a classed paragraph. The source row declares only
+	// `display: flex`, so the form element it is laid out on also states the
+	// initial `row`/`nowrap` instead of keeping Jetpack's own wrapping row.
+	$styled_paragraph_css  = array( 'source_path' => 'assets/subscription.css', 'source_sha256' => str_repeat( 'b', 64 ), 'condition' => null );
+	$styled_paragraph_form = array(
+		'forms' => array( array(
+			'selector'         => 'form.subscribe',
+			'controls'         => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Subscribe' ) ),
+			'control_topology' => array( 'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false, 'nodes' => array( array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 0, 'depth' => 0, 'tag' => 'div', 'class' => 'subscription-row' ), array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'p', 'source_id' => 'subscribe-email' ), array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'control' => 0 ), array( 'id' => 'wrapper-2', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 1, 'depth' => 1, 'tag' => 'p', 'source_id' => 'subscribe-submit' ), array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-2', 'order' => 0, 'depth' => 2, 'control' => 1 ) ) ),
+			'layout_graph'     => $v2_layout_graph( array(
+				array( 'id' => 'form', 'kind' => 'container', 'parent' => null, 'order' => 0, 'source' => array( 'tag' => 'form', 'classes' => array( 'subscribe' ) ), 'layout' => array(), 'provenance' => array() ),
+				array( 'id' => 'wrapper-0', 'kind' => 'container', 'parent' => 'form', 'order' => 0, 'source' => array( 'tag' => 'div', 'classes' => array( 'subscription-row' ) ), 'layout' => array( 'display' => 'flex', 'align_items' => 'flex-start' ), 'provenance' => array( $styled_paragraph_css + array( 'selector' => '.subscription-row', 'properties' => array( 'display', 'align-items' ) ) ) ),
+				array( 'id' => 'wrapper-1', 'kind' => 'container', 'parent' => 'wrapper-0', 'order' => 0, 'source' => array( 'tag' => 'p', 'id' => 'subscribe-email', 'classes' => array() ), 'layout' => array( 'flex_grow' => '1' ), 'provenance' => array( $styled_paragraph_css + array( 'selector' => 'form p#subscribe-email', 'properties' => array( 'flex-grow' ) ) ) ),
+				array( 'id' => 'wrapper-2', 'kind' => 'container', 'parent' => 'wrapper-0', 'order' => 1, 'source' => array( 'tag' => 'p', 'id' => 'subscribe-submit', 'classes' => array() ), 'layout' => array( 'display' => 'flex', 'justify_content' => 'center' ), 'provenance' => array( $styled_paragraph_css + array( 'selector' => '.subscription-row p#subscribe-submit', 'properties' => array( 'display', 'justify-content' ) ) ) ),
+			) ),
+		) ),
+	);
+	$styled_paragraph_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $styled_paragraph_form );
+	$styled_paragraph_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $styled_paragraph_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$styled_paragraph_markup     = (string) ( $styled_paragraph_row['block_markup'] ?? '' );
+	$styled_paragraph_css_out    = (string) ( $styled_paragraph_row['provider_layout_overlay_css']['css'] ?? '' );
+	$styled_paragraph_ops        = array_column( $styled_paragraph_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' );
+	// The email paragraph's hook rides the field-shell marker; the submit paragraph's hook is the generated class right before the Button block's semantic marker.
+	$styled_paragraph_field_hook  = 1 === preg_match( '/ssi-source-wrapper-1\\\\u002d\\\\u002d(ssi-node-[a-f0-9]{12})/', $styled_paragraph_markup, $styled_paragraph_field_match ) ? $styled_paragraph_field_match[1] : '-';
+	$styled_paragraph_submit_hook = 1 === preg_match( '/<!-- wp:button \{[^\n]*"className":"[^"\n]* (ssi-node-[a-f0-9]{12}) ssi-source-semantic-wrapper-1/', $styled_paragraph_markup, $styled_paragraph_submit_match ) ? $styled_paragraph_submit_match[1] : '-';
+	$assert(
+		empty( $styled_paragraph_validation['errors'] )
+			&& 'mapped' === ( $styled_paragraph_row['status'] ?? '' )
+			&& true === ( $styled_paragraph_row['runtime_mapped'] ?? false )
+			&& ! in_array( 'provider_wrapper_layout_unrepresentable', array_column( $styled_paragraph_row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' ), true )
+			&& 2 === count( array_keys( $styled_paragraph_ops, 'provider_field_wrapper_class_projection', true ) )
+			&& 2 === count( array_keys( $styled_paragraph_ops, 'provider_source_box_transposition', true ) )
+			&& '-' !== $styled_paragraph_field_hook
+			&& '-' !== $styled_paragraph_submit_hook
+			&& $styled_paragraph_field_hook !== $styled_paragraph_submit_hook
+			&& str_contains( $styled_paragraph_css_out, ' .' . $styled_paragraph_field_hook . '-wrap{flex-grow:1;flex-shrink:1;flex-basis:auto}' )
+			&& str_contains( $styled_paragraph_css_out, ' .' . $styled_paragraph_submit_hook . '{display:flex;justify-content:center;flex-grow:0;flex-shrink:1;flex-basis:auto}' )
+			&& 1 === preg_match( '/form\.jetpack-contact-form__form[^{]*\{[^}]*display:flex[^}]*\}/', $styled_paragraph_css_out, $styled_paragraph_form_rule )
+			&& str_contains( $styled_paragraph_form_rule[0], 'flex-direction:row' )
+			&& str_contains( $styled_paragraph_form_rule[0], 'flex-wrap:nowrap' )
+			&& array() === array_diff( array( 'wrapper-1', 'wrapper-2' ), array_column( $styled_paragraph_row['provider_layout_target_map']['targets'] ?? array(), 'node' ) ),
+		'id-styled-classless-paragraph-wrappers-carry-their-layout-onto-the-provider-shells-in-a-non-wrapping-row',
+		wp_json_encode( array( 'errors' => $styled_paragraph_validation['errors'] ?? array(), 'status' => $styled_paragraph_row['status'] ?? '', 'reason' => $styled_paragraph_row['reason'] ?? '', 'losses' => $styled_paragraph_row['computed_layout_receipt']['losses'] ?? array(), 'ops' => $styled_paragraph_ops, 'markup' => $styled_paragraph_markup, 'css' => $styled_paragraph_css_out ) )
+	);
+	// Jetpack renders in-form copy as an item of the same form element. The
+	// source row arranged only the field and the submit, so with copy in the
+	// form the element keeps Jetpack's own wrapping row.
+	$styled_paragraph_copy_form                                    = $styled_paragraph_form;
+	$styled_paragraph_copy_form['forms'][0]['form']['context_before'] = array( array( 'type' => 'paragraph', 'text' => 'Join our list.' ) );
+	$styled_paragraph_copy_validation                              = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $styled_paragraph_copy_form );
+	$styled_paragraph_copy_row                                     = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $styled_paragraph_copy_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$styled_paragraph_copy_css                                     = (string) ( $styled_paragraph_copy_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		empty( $styled_paragraph_copy_validation['errors'] )
+			&& 'mapped' === ( $styled_paragraph_copy_row['status'] ?? '' )
+			&& str_contains( (string) ( $styled_paragraph_copy_row['block_markup'] ?? '' ), 'Join our list.' )
+			&& 1 === preg_match( '/form\.jetpack-contact-form__form[^{]*\{[^}]*display:flex[^}]*\}/', $styled_paragraph_copy_css, $styled_paragraph_copy_rule )
+			&& ! str_contains( $styled_paragraph_copy_rule[0], 'flex-wrap' ),
+		'transposed-row-keeps-the-provider-wrap-when-in-form-copy-shares-the-form-element',
+		wp_json_encode( array( 'errors' => $styled_paragraph_copy_validation['errors'] ?? array(), 'status' => $styled_paragraph_copy_row['status'] ?? '', 'css' => $styled_paragraph_copy_css ) )
+	);
+	// A paragraph without layout facts keeps the bare marker: no hook, no empty class suffix.
+	$assert( str_contains( (string) ( $aetna_subscription_row['block_markup'] ?? '' ), 'ssi-source-semantic-wrapper-1--p' ) && ! str_contains( (string) ( $aetna_subscription_row['block_markup'] ?? '' ), 'ssi-source-semantic-wrapper-1--p--' ), 'plain-classless-paragraph-wrapper-keeps-the-bare-semantic-marker', (string) ( $aetna_subscription_row['block_markup'] ?? '' ) );
+	// The initial values are stated only for a flex container that leaves them implicit.
+	$assert(
+		method_exists( Static_Site_Importer_Form_Layout_Projection::class, 'with_flex_container_defaults' )
+			&& array( 'display' => 'flex', 'direction' => 'row', 'wrap' => 'nowrap' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'display' => 'flex' ) )
+			&& array( 'display' => 'flex', 'wrap' => 'wrap', 'direction' => 'row' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'display' => 'flex', 'wrap' => 'wrap' ) )
+			&& array( 'display' => 'flex', 'direction' => 'column', 'wrap' => 'nowrap' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'display' => 'flex', 'direction' => 'column' ) )
+			&& array( 'display' => 'grid', 'columns' => 'repeat(2, 1fr)' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'display' => 'grid', 'columns' => 'repeat(2, 1fr)' ) )
+			&& array( 'gap' => '1rem' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'gap' => '1rem' ) )
+			// A conditional patch keeps the wrap its base rule declares.
+			&& array( 'display' => 'flex', 'direction' => 'row' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_container_defaults( array( 'display' => 'flex' ), array( 'display' => 'block', 'wrap' => 'wrap' ) ),
+		'transposed-flex-container-states-only-the-implicit-initial-direction-and-wrap'
+	);
+	// A child of a source flex container (or a box that declares a grow or
+	// shrink) keeps the initial `flex: 0 1 auto` for what it leaves implicit,
+	// not Jetpack's own full-row item flex.
+	$assert(
+		method_exists( Static_Site_Importer_Form_Layout_Projection::class, 'with_flex_item_defaults' )
+			&& array( 'flex_grow' => '1', 'flex_shrink' => '1', 'flex_basis' => 'auto' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_item_defaults( array( 'flex_grow' => '1' ) )
+			&& array( 'flex_grow' => '1', 'flex_basis' => '50%', 'flex_shrink' => '1' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_item_defaults( array( 'flex_grow' => '1', 'flex_basis' => '50%' ) )
+			&& array( 'flex' => '1 1 0%' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_item_defaults( array( 'flex' => '1 1 0%' ), array(), true )
+			&& array( 'flex_grow' => '0', 'flex_shrink' => '1' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_item_defaults( array( 'flex_grow' => '0' ), array( 'flex_basis' => '200px' ) )
+			&& array( 'width' => '10rem' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_item_defaults( array( 'width' => '10rem' ) )
+			&& array( 'display' => 'flex', 'flex_grow' => '0', 'flex_shrink' => '1', 'flex_basis' => 'auto' ) === Static_Site_Importer_Form_Layout_Projection::with_flex_item_defaults( array( 'display' => 'flex' ), array(), true ),
+		'transposed-flex-item-states-only-the-implicit-initial-flex'
+	);
 	// A source field-group grid that groups every mapped control except a
 	// submit sitting outside it (a submit is always the field container's
 	// sibling in Jetpack's own rendering, never its descendant, so requiring
@@ -1974,7 +2075,7 @@ namespace {
 			&& str_contains( (string) ( $sibling_submit_row['block_markup'] ?? '' ), 'ssi-source-field-list' )
 			&& ! preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{[^}]*margin-block-start:calc\(0px - 1\.5rem\)/', $sibling_submit_overlay )
 			&& 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12}\{[^}]*margin-top:2\.25rem/', $sibling_submit_overlay )
-			&& 1 === preg_match( '/> \.wp-block-button__link\{[^}]*margin:0!important/', $sibling_submit_overlay ),
+			&& 1 === preg_match( '/> \.wp-block-button__link\{[^}]*margin-block:0!important/', $sibling_submit_overlay ),
 		'source-sibling-submit-keeps-its-authored-margin-and-does-not-also-consume-the-field-list-gap',
 		wp_json_encode( array( 'validation' => $sibling_submit_validated, 'css' => $sibling_submit_overlay, 'markup' => $sibling_submit_row['block_markup'] ?? '' ) )
 	);
@@ -2327,10 +2428,40 @@ namespace {
 		empty( $submit_sibling_margin_validation['errors'] )
 			&& array() === ( $submit_sibling_margin_row['form_receipt_unaccepted_losses'] ?? array() )
 			&& str_contains( $submit_sibling_margin_css, 'margin-top:calc(1.5rem * calc(1 - var(--tw-space-y-reverse)))' )
-			&& 1 === preg_match( '/> \.wp-block-button__link\{margin:0!important\}$/m', trim( $submit_sibling_margin_css ) )
+			&& 1 === preg_match( '/> \.wp-block-button__link\{margin-block:0!important\}$/m', trim( $submit_sibling_margin_css ) )
 			&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $submit_sibling_margin_row['provider_layout_overlay_css'] ?? null ),
 		'captured-submit-sibling-margin-is-represented-but-an-unconditional-important-reset-wins-the-cascade',
 		wp_json_encode( array( 'css' => $submit_sibling_margin_css, 'losses' => $submit_sibling_margin_row['form_receipt_unaccepted_losses'] ?? array() ) )
+	);
+	// The reset covers the block axis only. An authored inline margin on the
+	// submit (a newsletter row's `margin-left: 10px` between the field and the
+	// button) is the row's own spacing and stays on the rendered link. The row
+	// is compiled by Blocks Engine from neutral markup: classless paragraphs
+	// styled by id inside a flex row, as a newsletter widget renders them.
+	$signup_row_html = '<style>.signup-row{display:flex;align-items:flex-start}'
+		. 'form p#signup-email{flex-grow:1;margin:0;padding:0}'
+		. '.signup-row p#signup-submit{display:flex;justify-content:center;margin:0;padding:0}</style>'
+		. '<form method="post" id="signup"><div class="signup-row">'
+		. '<p id="signup-email"><input required type="email" name="email" aria-label="Email" placeholder="Email" style="padding:15px 23px;border-width:1px"></p>'
+		. '<p id="signup-submit"><input type="hidden" name="action" value="signup">'
+		. '<button type="submit" style="padding:15px 23px;margin:0;margin-left:10px">Join</button></p>'
+		. '</div></form>';
+	$signup_row_source    = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'signup.html', 'files' => array( 'signup.html' => $signup_row_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$signup_row_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $signup_row_source ) ) );
+	$signup_row_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $signup_row_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$signup_row_css       = (string) ( $signup_row_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		empty( $signup_row_validated['errors'] )
+			&& 'mapped' === ( $signup_row_row['status'] ?? '' )
+			&& array() === ( $signup_row_row['form_receipt_unaccepted_losses'] ?? array() )
+			&& 1 === preg_match( '/form\.jetpack-contact-form__form[^{]*\{[^}]*display:flex[^}]*flex-wrap:nowrap[^}]*\}/', $signup_row_css )
+			&& 1 === preg_match( '/-wrap\{flex-grow:1;flex-shrink:1;flex-basis:auto\}/', $signup_row_css )
+			&& 1 === preg_match( '/\{display:flex;justify-content:center;flex-grow:0;flex-shrink:1;flex-basis:auto\}/', $signup_row_css )
+			&& 1 === preg_match( '/> \.wp-block-button__link\{[^}]*margin-left:10px/', $signup_row_css )
+			&& 1 === preg_match( '/> \.wp-block-button__link\{margin-block:0!important\}$/m', $signup_row_css )
+			&& ! str_contains( $signup_row_css, 'margin:0!important' ),
+		'compiled-signup-row-keeps-a-non-wrapping-row-the-field-basis-and-the-submit-inline-margin',
+		wp_json_encode( array( 'errors' => $signup_row_validated['errors'] ?? array(), 'status' => $signup_row_row['status'] ?? '', 'reason' => $signup_row_row['reason'] ?? '', 'losses' => $signup_row_row['form_receipt_unaccepted_losses'] ?? array(), 'css' => $signup_row_css ) )
 	);
 	$authored_submit_line_height_form = $presentation_form;
 	$authored_submit_line_height_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 3, 'control' => $presentation_role( array( 'padding' => '16px', 'font_size' => '11.2px', 'line_height' => '16.8px' ), array( 'padding', 'font-size', 'line-height' ), 'button' ) ) );
@@ -3326,7 +3457,7 @@ namespace {
 	$nested_plain_tokens = array_values( array_filter( explode( ' ', (string) ( $nested_plain_field['attrs']['className'] ?? '' ) ) ) );
 	$nested_plain_wrap   = array() === $nested_plain_tokens ? '' : implode( '-wrap ', $nested_plain_tokens ) . '-wrap';
 	$nested_plain_rendered = apply_filters( 'grunion_contact_form_field_html', '<div class="grunion-field-email-wrap ' . $nested_plain_wrap . '"><label>Email</label><input type="email"></div>', 'Email', null );
-	$assert( empty( $nested_plain_validation['errors'] ) && 'mapped' === ( $nested_plain_row['status'] ?? '' ) && array( hash( 'sha256', 'wrapper-1' ), hash( 'sha256', 'wrapper-2' ) ) === array_values( $nested_plain_hashes ) && 1 === preg_match( '/^<fieldset class="outer-group"><fieldset class="inner-group"><p class="row"><div class="grunion-field-email-wrap\b/', $nested_plain_rendered ) && str_contains( $nested_plain_rendered, '<label>Email</label>' ) && ! str_contains( $nested_plain_rendered, 'ssi-source-semantic-wrapper' ), 'nested-plain-fieldset-ancestry-restores-outer-fieldset-then-inner-fieldset-then-paragraph', $nested_plain_rendered );
+	$assert( empty( $nested_plain_validation['errors'] ) && 'mapped' === ( $nested_plain_row['status'] ?? '' ) && array( hash( 'sha256', 'wrapper-1' ), hash( 'sha256', 'wrapper-2' ) ) === array_values( $nested_plain_hashes ) && 1 === preg_match( '/^<fieldset class="outer-group"><fieldset class="inner-group"><div class="grunion-field-email-wrap\b/', $nested_plain_rendered ) && 1 === preg_match( '/<div class="row ssi-node-[a-f0-9]{12}">/', $nested_plain_rendered ) && ! str_contains( $nested_plain_rendered, '<p' ) && str_contains( $nested_plain_rendered, '<label>Email</label>' ) && ! str_contains( $nested_plain_rendered, 'ssi-source-semantic-wrapper' ), 'nested-plain-fieldset-ancestry-restores-outer-fieldset-then-inner-fieldset-and-keeps-the-paragraph-class-on-the-field-row', $nested_plain_rendered );
 	$peer_root_fieldset_form = array(
 		'forms' => array(
 			array(
