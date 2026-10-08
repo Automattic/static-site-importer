@@ -3,7 +3,7 @@
 if ( '1' !== getenv( 'SSI_REDIRECTION_DISPOSABLE' ) || ! defined( 'WP_CLI' ) || ! WP_CLI ) {
 	throw new RuntimeException( 'Use an explicitly disposable WordPress CLI runtime.' );
 }
-$assert  = static function ( bool $condition, string $message ): void {
+$assert = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) {
 		throw new RuntimeException( $message ); } // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- CLI-only assertion evidence.
 };
