@@ -187,6 +187,11 @@ $compact_receipt = array(
 	'terminal_reduction'      => array_fill_keys( array( 'normalization', 'source_documents', 'owned_transformable_paths', 'component_facts', 'block_types' ), array() ),
 );
 $assert( true === $validate_receipt->invoke( null, $compact_receipt, $page_receipt_contract, $shared_receipt_contract ), 'compact v3 receipts must validate without duplicated shared files' );
+foreach ( array_keys( $compact_receipt['terminal_reduction'] ) as $required_fact ) {
+	$incomplete_receipt = $compact_receipt;
+	unset( $incomplete_receipt['terminal_reduction'][ $required_fact ] );
+	$assert( is_wp_error( $validate_receipt->invoke( null, $incomplete_receipt, $page_receipt_contract, $shared_receipt_contract ) ), 'compact v3 receipts must retain required terminal facts: ' . $required_fact );
+}
 $legacy_receipt = $compact_receipt;
 $legacy_receipt['receipt_schema'] = 'blocks-engine/php-transformer/compiled-page-receipt/v2';
 $assert( is_wp_error( $validate_receipt->invoke( null, $legacy_receipt, $page_receipt_contract, $shared_receipt_contract ) ), 'retired v2 receipts are rejected' );

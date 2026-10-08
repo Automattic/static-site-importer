@@ -1085,6 +1085,8 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 	}
 
 	private static function validate_receipt( $receipt, array $page_plan, array $shared ) {
+		// Stylesheet instances are derived from each owned document by the compiler;
+		// occurrence-file copies are no longer part of its terminal reduction.
 		$receipt_schema     = $receipt['receipt_schema'] ?? '';
 		$reduction          = is_array( $receipt['terminal_reduction'] ?? null ) ? $receipt['terminal_reduction'] : array();
 		$required_reduction = array( 'normalization', 'source_documents', 'owned_transformable_paths', 'component_facts', 'block_types' );

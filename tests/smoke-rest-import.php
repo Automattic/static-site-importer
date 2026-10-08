@@ -432,7 +432,7 @@ $apply_response = static_site_importer_rest_create_import(
 		)
 	)
 );
-$assert( true === ( $apply_response['success'] ?? null ), 'rest-import-applies-to-current-site' );
+$assert( true === ( $apply_response['success'] ?? null ), 'rest-import-applies-to-current-site', json_encode( $apply_response ) );
 $assert( true === ( $apply_response['continuation'] ?? false ) && 'prepare' === ( Static_Site_Importer_Theme_Generator::$last_args['runtime_lifecycle_phase'] ?? '' ), 'single-page-rest-import-prepares-fresh-runtime-continuation' );
 $assert( true === ( Static_Site_Importer_Theme_Generator::$last_args['activate'] ?? null ), 'rest-import-preserves-activate' );
 $assert( isset( $apply_response['result'] ), 'rest-import-returns-ability-envelope' );
