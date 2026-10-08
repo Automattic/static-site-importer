@@ -1,0 +1,5 @@
+{
+	"producer": "Automattic/data-liberation-agent src/lib/document-selection.ts installDeviceSelection()",
+	"commit": "1a14c1d04f4db90aafb15275ba8acee5de2de697",
+	"generator": "tools/regenerate-dla-device-selection-fixture.mjs"
+}
