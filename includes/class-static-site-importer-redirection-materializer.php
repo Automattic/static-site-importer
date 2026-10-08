@@ -125,12 +125,23 @@ final class Static_Site_Importer_Redirection_Materializer {
 		$pages   = $receipt['plan']['pages'] ?? array();
 		$ids     = $receipt['completed']['pages'] ?? array();
 		$aliases = Static_Site_Importer_Redirects_Manifest::aliases_for_source_paths( $args['source_route_aliases'] ?? array(), array_column( $pages, 'source_path' ) );
+		$alias_paths = array();
+		foreach ( $aliases as $paths ) {
+			foreach ( $paths as $path ) {
+				$alias_paths[ '/' . ltrim( $path, '/' ) ] = true;
+			}
+		}
 		$routes  = array();
 		foreach ( $pages as $page ) {
 			$source = (string) ( $page['source_path'] ?? '' );
 			$id     = (int) ( $ids[ $source ] ?? 0 );
 			if ( $id <= 0 ) {
 				continue; }
+			if ( ! empty( $page['synthetic'] ) && isset( $alias_paths[ $page['route']['path'] ?? '' ] ) && 'draft' === get_post_status( $id ) ) {
+				// This native row supplies descendant ancestry; its exact public URL
+				// is explicitly owned by the alias bound to a different page receipt.
+				continue;
+			}
 			$target = get_permalink( $id );
 			if ( ! is_string( $target ) || '' === $target ) {
 				return new WP_Error( 'static_site_importer_redirect_destination_missing', 'A committed source document has no native destination URL.' );
@@ -144,7 +155,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 				if ( isset( $routes[ $from ] ) && $routes[ $from ] !== $target ) {
 					return new WP_Error( 'static_site_importer_redirect_ambiguous', 'More than one destination claims a source route.' );
 				}
-				$occupied = get_page_by_path( trim( $from, '/' ), OBJECT, array( 'page', 'post' ) );
+				$occupied = self::published_route_owner( $from );
 				if ( $occupied && 'publish' === $occupied->post_status && (int) $occupied->ID !== $id ) {
 					return new WP_Error( 'static_site_importer_redirect_route_occupied', 'Unrelated published content owns a requested source route.' );
 				}
@@ -162,6 +173,24 @@ final class Static_Site_Importer_Redirection_Materializer {
 		}
 		ksort( $routes, SORT_STRING );
 		return $routes;
+	}
+
+	/** Draft hierarchy rows must never hide a genuine published route owner. */
+	public static function published_route_owner( string $path ) {
+		$parts = array_map( 'sanitize_title_for_query', explode( '/', rawurldecode( trim( $path, '/' ) ) ) );
+		$path  = implode( '/', $parts );
+		$posts = get_posts( array(
+			'name'        => end( $parts ),
+			'post_type'   => array( 'page', 'post' ),
+			'post_status' => 'publish',
+			'numberposts' => -1,
+		) );
+		foreach ( $posts as $post ) {
+			if ( trim( (string) get_page_uri( $post ), '/' ) === $path ) {
+				return $post;
+			}
+		}
+		return null;
 	}
 
 	private static function find( array $filter ) {
