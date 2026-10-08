@@ -24,7 +24,8 @@ docker volume create "$volume" >/dev/null
 # Synchronous I/O keeps this disposable proof independent of shared-host AIO quotas.
 docker run --detach --name "${project}_db" --network "$network" --network-alias mysql -e MYSQL_DATABASE=wordpress -e MYSQL_USER=wordpress -e MYSQL_PASSWORD=wordpress -e MYSQL_RANDOM_ROOT_PASSWORD=yes mysql:8.4 --innodb-use-native-aio=0 >/dev/null
 docker run --detach --name "${project}_wordpress" --network "$network" --publish "127.0.0.1:$port:80" -e WORDPRESS_DB_HOST=mysql -e WORDPRESS_DB_NAME=wordpress -e WORDPRESS_DB_USER=wordpress -e WORDPRESS_DB_PASSWORD=wordpress "${mounts[@]}" wordpress:beta-php8.3-apache >/dev/null
-wp=(timeout 900 docker run --rm --network "$network" --user 33:33 -e SSI_REDIRECTION_DISPOSABLE=1 -e WORDPRESS_DB_HOST=mysql -e WORDPRESS_DB_NAME=wordpress -e WORDPRESS_DB_USER=wordpress -e WORDPRESS_DB_PASSWORD=wordpress "${mounts[@]}" wordpress:cli-php8.3 wp --allow-root --user=admin)
+wp_operator=(timeout 900 docker run --rm --network "$network" --user 33:33 -e SSI_REDIRECTION_DISPOSABLE=1 -e WORDPRESS_DB_HOST=mysql -e WORDPRESS_DB_NAME=wordpress -e WORDPRESS_DB_USER=wordpress -e WORDPRESS_DB_PASSWORD=wordpress "${mounts[@]}" wordpress:cli-php8.3 wp --allow-root)
+wp=("${wp_operator[@]}" --user=admin)
 ready=0
 for attempt in $(seq 1 60); do
   if docker exec "${project}_db" mysql -uwordpress -pwordpress wordpress -e 'SELECT 1' >/dev/null 2>&1 && curl --silent --fail "http://127.0.0.1:$port/wp-login.php" >/dev/null; then ready=1; break; fi
@@ -35,7 +36,13 @@ if test "$ready" != 1; then exit 1; fi
 "${wp[@]}" rewrite structure '/%postname%/' --hard
 "${wp[@]}" plugin activate static-site-importer
 "${wp[@]}" eval '$GLOBALS["is_apache"] = true; add_filter("got_rewrite", "__return_true"); flush_rewrite_rules(true);'
-"${wp[@]}" eval-file wp-content/plugins/static-site-importer/tests/acceptance/redirection-wordpress.php | tee "$evidence/native.jsonl"
+# Hosts such as Studio run the canonical CLI without --user; prove that operator path.
+"${wp_operator[@]}" eval-file wp-content/plugins/static-site-importer/tests/acceptance/redirection-wordpress.php | tee "$evidence/native.jsonl"
+# Unauthenticated web callers remain refused by both SSI and the provider.
+anonymous_provider=$(curl --silent --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:$port/?rest_route=/redirection/v1/redirect")
+anonymous_import=$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST --header 'Content-Type: application/json' --data '{"operation":"apply","slug":"anonymous","source":{"type":"files","files":[]}}' "http://127.0.0.1:$port/?rest_route=/static-site-importer/v1/imports")
+anonymous_ability=$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST --header 'Content-Type: application/json' --data '{"input":{"operation":"apply","slug":"anonymous","source":{"type":"files","files":[]}}}' "http://127.0.0.1:$port/?rest_route=/wp-abilities/v1/abilities/static-site-importer/import/run")
+node -e 'const codes=process.argv.slice(1).map(Number);if(!codes.every((code)=>code===401||code===403))throw Error("An unauthenticated caller reached a provider or import mutation: "+codes.join(","));console.log(JSON.stringify({status:"passed",anonymousProvider:codes[0],anonymousImport:codes[1],anonymousAbility:codes[2]}));' "$anonymous_provider" "$anonymous_import" "$anonymous_ability" | tee "$evidence/anonymous.json"
 curl --silent --show-error --dump-header "$evidence/get.headers" --output /dev/null "http://127.0.0.1:$port/old?trace=preserved"
 curl --silent --show-error --head "http://127.0.0.1:$port/old" --output "$evidence/head.headers"
 curl --silent --show-error --fail "http://127.0.0.1:$port/owner-destination/" --output "$evidence/owner.html"
