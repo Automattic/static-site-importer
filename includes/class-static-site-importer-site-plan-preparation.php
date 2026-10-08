@@ -880,7 +880,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		}
 		foreach ( $state['resolved']['pages'] as &$page ) {
 			$path = (string) ( $page['route']['path'] ?? '' );
-			if ( empty( $page['synthetic'] ) || ! isset( $synthetic[ $page['source_path'] ], $targets[ $path ] ) ) {
+			if ( empty( $page['synthetic'] ) || ! isset( $synthetic[ $page['source_path'] ], $targets[ $path ] ) || $targets[ $path ] === $page['source_path'] ) {
 				continue;
 			}
 			$occupied = Static_Site_Importer_Redirection_Materializer::published_route_owner( $path );

@@ -66,6 +66,13 @@ $failure = $import( $blocked );
 $assert( empty( $failure['success'] ) && 'static_site_importer_redirect_route_occupied' === ( $failure['error']['code'] ?? '' ), 'A genuine published alias occupant remains a failure even with overwrite requested.' );
 $assert( 'publish' === get_post_status( $protected ) && 'Owner content' === get_post_field( 'post_content', $protected ), 'Protected real content is never drafted, replaced or deleted.' );
 
+$real = $request;
+$real['slug'] = 'alias-real-page-neutral';
+$real['source']['files'][] = array( 'path' => 'website/projects/index.html', 'content' => '<html><head><title>Real projects</title></head><body><p>Real captured parent</p></body></html>' );
+$real_failure = $import( $real );
+$assert( empty( $real_failure['success'] ) && in_array( $real_failure['error']['code'] ?? '', array( 'static_site_importer_redirect_route_occupied', 'static_site_importer_redirect_ambiguous' ), true ), 'A captured real page competing with an explicit alias is rejected, rather than treated as a hierarchy-only row: ' . wp_json_encode( $real_failure['error'] ?? array() ) );
+$assert( 'draft' === get_post_status( $parent->ID ) && (int) get_post_field( 'post_parent', $child->ID ) === (int) $parent->ID && $owned === get_option( Static_Site_Importer_Redirection_Materializer::OWNERSHIP_OPTION ), 'Competing real-page rollback restores the prior native hierarchy and alias.' );
+
 $compiler = new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler();
 $plan = $compiler->compile( array( 'entrypoint' => 'website/index.html', 'files' => array_column( array_slice( $files, 0, 3 ), 'content', 'path' ) ) )->toArray()['source_reports']['wordpress_site_plan'];
 $before = array( 'parent_status' => get_post_status( $parent->ID ), 'child_content' => get_post_field( 'post_content', $child->ID ), 'theme' => get_stylesheet(), 'front' => get_option( 'page_on_front' ) );
