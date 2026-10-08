@@ -1831,7 +1831,13 @@ namespace {
 	$assert( empty( $aetna_validation['errors'] ) && 'mapped' === ( $aetna_row['status'] ?? '' ) && true === ( $aetna_row['runtime_mapped'] ?? false ) && 2 === substr_count( $aetna_markup, '"width":50' ) && ! in_array( 'unsupported_semantic_wrapper', $aetna_losses, true ) && ! in_array( 'provider_wrapper_layout_unrepresentable', $aetna_losses, true ) && $aetna_markup === serialize_blocks( parse_blocks( $aetna_markup ) ), 'unconditional-media-grid-and-paragraph-field-wrappers-materialize-as-editable-valid-blocks', wp_json_encode( $aetna_row ) );
 	$aetna_field_runtime = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<div class="grunion-field-text-wrap ssi-source-semantic-wrapper-1--p--field"><label>Name</label><input></div>' );
 	$aetna_submit_runtime = Static_Site_Importer_Form_Seeder::project_provider_submit_presentation( '<div class="wp-block-button ssi-source-semantic-wrapper-1--p"><button>Send</button></div>', array( 'attrs' => array( 'className' => 'ssi-source-semantic-wrapper-1--p' ) ) );
-	$assert( '<p class="field"><div class="grunion-field-text-wrap"><label>Name</label><input></div></p>' === $aetna_field_runtime && '<p><div class="wp-block-button"><button>Send</button></div></p>' === $aetna_submit_runtime, 'provider-runtime-restores-safe-paragraph-wrapper-semantics-around-editable-fields-and-submits', $aetna_field_runtime . "\n" . $aetna_submit_runtime );
+	// A paragraph cannot hold the provider's div markup: the browser would close
+	// it before the div and add an empty paragraph after it, and both empty
+	// paragraphs would become items of the provider's flex row. The marker is
+	// consumed without emitting that paragraph. Phrasing-only markup still gets
+	// the paragraph back.
+	$aetna_phrasing_runtime = Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( '<span class="note ssi-source-semantic-wrapper-1--p--field"><input></span>' );
+	$assert( '<div class="grunion-field-text-wrap"><label>Name</label><input></div>' === $aetna_field_runtime && '<div class="wp-block-button"><button>Send</button></div>' === $aetna_submit_runtime && '<p class="field"><span class="note"><input></span></p>' === $aetna_phrasing_runtime, 'provider-runtime-consumes-paragraph-wrapper-markers-without-nesting-block-markup-in-a-paragraph', $aetna_field_runtime . "\n" . $aetna_submit_runtime . "\n" . $aetna_phrasing_runtime );
 	$aetna_subscription_form = array(
 		'forms' => array( array(
 			'selector' => 'form.subscribe',
@@ -3408,7 +3414,7 @@ namespace {
 	$nested_plain_tokens = array_values( array_filter( explode( ' ', (string) ( $nested_plain_field['attrs']['className'] ?? '' ) ) ) );
 	$nested_plain_wrap   = array() === $nested_plain_tokens ? '' : implode( '-wrap ', $nested_plain_tokens ) . '-wrap';
 	$nested_plain_rendered = apply_filters( 'grunion_contact_form_field_html', '<div class="grunion-field-email-wrap ' . $nested_plain_wrap . '"><label>Email</label><input type="email"></div>', 'Email', null );
-	$assert( empty( $nested_plain_validation['errors'] ) && 'mapped' === ( $nested_plain_row['status'] ?? '' ) && array( hash( 'sha256', 'wrapper-1' ), hash( 'sha256', 'wrapper-2' ) ) === array_values( $nested_plain_hashes ) && 1 === preg_match( '/^<fieldset class="outer-group"><fieldset class="inner-group"><p class="row"><div class="grunion-field-email-wrap\b/', $nested_plain_rendered ) && str_contains( $nested_plain_rendered, '<label>Email</label>' ) && ! str_contains( $nested_plain_rendered, 'ssi-source-semantic-wrapper' ), 'nested-plain-fieldset-ancestry-restores-outer-fieldset-then-inner-fieldset-then-paragraph', $nested_plain_rendered );
+	$assert( empty( $nested_plain_validation['errors'] ) && 'mapped' === ( $nested_plain_row['status'] ?? '' ) && array( hash( 'sha256', 'wrapper-1' ), hash( 'sha256', 'wrapper-2' ) ) === array_values( $nested_plain_hashes ) && 1 === preg_match( '/^<fieldset class="outer-group"><fieldset class="inner-group"><div class="grunion-field-email-wrap\b/', $nested_plain_rendered ) && 1 === preg_match( '/<div class="row ssi-node-[a-f0-9]{12}">/', $nested_plain_rendered ) && ! str_contains( $nested_plain_rendered, '<p' ) && str_contains( $nested_plain_rendered, '<label>Email</label>' ) && ! str_contains( $nested_plain_rendered, 'ssi-source-semantic-wrapper' ), 'nested-plain-fieldset-ancestry-restores-outer-fieldset-then-inner-fieldset-and-keeps-the-paragraph-class-on-the-field-row', $nested_plain_rendered );
 	$peer_root_fieldset_form = array(
 		'forms' => array(
 			array(
