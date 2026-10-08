@@ -4,6 +4,8 @@ SSI preserves supported source URLs directly. When captured `_redirects` aliases
 
 The provider uses Redirection's local REST API for database setup, groups, rules, and enabled state. Default selection is `redirection`; hosts can select a registered provider through `static_site_importer_redirects_plugin` or `ssi_redirects_plugin`. Unavailable providers produce an explicit required-dependency failure.
 
+Authorization follows the import. Web requests call the provider as their authenticated user, so Redirection's own capability checks still apply. WP-CLI imports are operator-authorized and may run without `--user`, as Studio does; for those, SSI satisfies Redirection's `redirection_capability_check` filter only for the duration of each provider call it makes. Direct provider calls outside SSI keep their normal checks.
+
 ## Ownership and reconciliation
 
 - Rules live in a source-scope group and remain editable in **Tools → Redirection**.
@@ -22,4 +24,4 @@ Provider `export_callback` hooks add portable runtime state to the shared websit
 
 Run `bash tools/run-redirection-acceptance.sh /absolute/checkout` with Docker, Node, and Playwright available. Set `SSI_REDIRECTION_PLAYWRIGHT_MODULE` to an absolute Playwright module path when it is supplied by the caller, and `PLAYWRIGHT_BROWSERS_PATH` for a caller-owned browser cache.
 
-The harness creates two disposable WordPress sites and a complete exported-artifact server. Evidence in `artifacts/redirection` covers native installation, idempotence, retirement, rollback, denied ownership writes, committed-write/readback failure, false-success deletion responses, owner conflicts, actual GET/HEAD/query behavior, a producer-generated TEC route, native admin visibility, served export, and second-site navigation/reload. The acceptance scope is redirect behavior and portability; visual parity is evaluated separately.
+The harness creates two disposable WordPress sites and a complete exported-artifact server. Evidence in `artifacts/redirection` covers native installation by an identity-less CLI operator, refusal of unauthenticated provider and import callers, idempotence, retirement, rollback, denied ownership writes, committed-write/readback failure, false-success deletion responses, owner conflicts, actual GET/HEAD/query behavior, a producer-generated TEC route, native admin visibility, served export, and second-site navigation/reload. The acceptance scope is redirect behavior and portability; visual parity is evaluated separately.

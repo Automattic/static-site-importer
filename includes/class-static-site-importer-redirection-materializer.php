@@ -95,12 +95,30 @@ final class Static_Site_Importer_Redirection_Materializer {
 		return new WP_Error( 'static_site_importer_redirection_setup_incomplete', 'Redirection did not complete its bounded native installation.' );
 	}
 
+	/** Grant Redirection's own access check to the identity-less operator process. */
+	public static function operator_access(): string {
+		return 'exist';
+	}
+
 	public static function api( string $method, string $path, array $params = array() ) {
 		$request = new WP_REST_Request( $method, '/redirection/v1/' . $path );
 		if ( 'GET' === $method ) {
 			$request->set_query_params( $params ); } else {
 			$request->set_body_params( $params ); }
-			$response = rest_do_request( $request );
+			// WP-CLI imports are operator-authorized but may have no current user. Satisfy
+			// Redirection's documented capability filter only for this in-process call;
+			// web requests keep their authenticated user's provider capabilities.
+			$operator = Static_Site_Importer_Current_Site_Capabilities::is_operator_process();
+			if ( $operator ) {
+				add_filter( 'redirection_capability_check', array( self::class, 'operator_access' ), PHP_INT_MAX, 0 );
+			}
+			try {
+				$response = rest_do_request( $request );
+			} finally {
+				if ( $operator ) {
+					remove_filter( 'redirection_capability_check', array( self::class, 'operator_access' ), PHP_INT_MAX );
+				}
+			}
 			if ( $response->is_error() ) {
 				return $response->as_error(); }
 			$data = $response->get_data();
