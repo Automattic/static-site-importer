@@ -182,6 +182,12 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			);
 			$state['page_ids'][ $page['reconciliation_identity'] ] = $post;
 			$state['source_ids'][ $page['source_path'] ]           = $post;
+			if ( 'draft' === ( $page['materialized_post_status'] ?? '' ) ) {
+				$last = array_key_last( $state['applied']['posts'] );
+				$state['applied']['posts'][ $last ]['post_status']              = get_post_status( $post );
+				$state['applied']['posts'][ $last ]['route_ownership']          = 'alias_hierarchy_parent';
+				$state['applied']['posts'][ $last ]['alias_target_source_path'] = $page['alias_target_source_path'];
+			}
 			if ( ! self::write_post_meta( $post, self::RECONCILIATION_META_KEY, (string) $page['reconciliation_identity'] ) || ! self::write_post_meta( $post, self::PRODUCER_RECONCILIATION_META_KEY, (string) $page['reconciliation_identity'] ) ) {
 				return self::failed_receipt( $state, 'materialization_reconciliation_metadata_write_failed' );
 			}
@@ -716,7 +722,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			'ID'           => (int) ( $page['planned_existing_id'] ?? 0 ),
 			'post_author'  => $user_id > 0 ? $user_id : 1,
 			'post_type'    => $post_type,
-			'post_status'  => 'publish',
+			'post_status'  => (string) ( $page['materialized_post_status'] ?? 'publish' ),
 			'post_title'   => (string) $page['title'],
 			'post_name'    => (string) $page['slug'],
 			'post_parent'  => $parent,

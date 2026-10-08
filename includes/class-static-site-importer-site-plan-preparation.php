@@ -567,6 +567,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		$state['page_ids']   = array();
 		$state['source_ids'] = array();
 		self::mark_taxonomy_archive_pages( $state );
+		self::plan_alias_hierarchy_parents( $state );
 		foreach ( $state['resolved']['pages'] as &$page ) {
 			if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC !== ( $state['args']['theme_materialization'] ?? null ) && ( ! isset( $page['resolved_block_markup'] ) || ! is_string( $page['resolved_block_markup'] ) || '' === trim( $page['resolved_block_markup'] ) ) ) {
 				throw new InvalidArgumentException( 'page_missing_final_block_markup' );
@@ -854,6 +855,45 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			$report['materialized_content_hash'] = hash( 'sha256', (string) ( $plan[ $document['group'] ][ $document['index'] ]['materialized_block_markup'] ?? $plan[ $document['group'] ][ $document['index'] ]['resolved_block_markup'] ) );
 		}
 		unset( $report );
+	}
+
+	/** Resolve native hierarchy status from existing typed route and alias intent. */
+	private static function plan_alias_hierarchy_parents( array &$state ): void {
+		$rules = $state['args']['source_route_aliases'] ?? array();
+		if ( empty( $rules ) ) {
+			return;
+		}
+		require_once __DIR__ . '/class-static-site-importer-redirects-manifest.php';
+		require_once __DIR__ . '/class-static-site-importer-redirection-materializer.php';
+		$aliases = Static_Site_Importer_Redirects_Manifest::aliases_for_source_paths( $rules, array_column( $state['resolved']['pages'], 'source_path' ) );
+		$targets = array();
+		foreach ( $aliases as $source => $paths ) {
+			foreach ( $paths as $path ) {
+				$targets[ '/' . ltrim( $path, '/' ) ] = $source;
+			}
+		}
+		$synthetic = array();
+		foreach ( $state['plan']['routes'] ?? array() as $route ) {
+			if ( 'synthetic_parent' === ( $route['source_relation'] ?? '' ) ) {
+				$synthetic[ $route['source_path'] ] = true;
+			}
+		}
+		foreach ( $state['resolved']['pages'] as &$page ) {
+			$path = (string) ( $page['route']['path'] ?? '' );
+			if ( empty( $page['synthetic'] ) || ! isset( $synthetic[ $page['source_path'] ], $targets[ $path ] ) ) {
+				continue;
+			}
+			$occupied = Static_Site_Importer_Redirection_Materializer::published_route_owner( $path );
+			$owned    = Static_Site_Importer_Site_Plan_Persistence::reconciled_post( $page['reconciliation_identity'] );
+			if ( $occupied && ( ! $owned || (int) $occupied->ID !== (int) $owned->ID ) ) {
+				throw new InvalidArgumentException( 'static_site_importer_redirect_route_occupied' );
+			}
+			// A draft is still an editable native parent and contributes its slug to
+			// published descendants, but the exact parent URL belongs to the alias.
+			$page['materialized_post_status'] = 'draft';
+			$page['alias_target_source_path'] = $targets[ $path ];
+		}
+		unset( $page );
 	}
 
 	/** Byte offset of the nth occurrence of a search string, or null when it has fewer. */
