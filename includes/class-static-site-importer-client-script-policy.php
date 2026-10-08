@@ -15,6 +15,9 @@ if ( ! class_exists( 'Static_Site_Importer_Client_Script_Policy_Report' ) ) {
 
 /** Applies an explicit, provenance-bound client-script policy before compilation. */
 class Static_Site_Importer_Client_Script_Policy {
+	/** Data Liberation Agent commit whose installDeviceSelection() template the device-selection allowance matches. */
+	public const DLA_DEVICE_SELECTION_SOURCE = '1a14c1d04f4db90aafb15275ba8acee5de2de697';
+
 	/**
 	 * Make executable client code inert unless an isolated preview explicitly opts in.
 	 *
@@ -361,6 +364,11 @@ class Static_Site_Importer_Client_Script_Policy {
 					self::record( $report, 'preserved', $row );
 					return $matches[0];
 				}
+				if ( null === $source && self::is_generated_device_selection_script( $attributes, $matches[2] ) ) {
+					$row['class'] = 'device_selection';
+					self::record( $report, 'preserved', $row );
+					return $matches[0];
+				}
 				self::record( $report, 'data' === $row['class'] ? 'quarantined' : 'dropped', $row );
 				return '';
 			},
@@ -389,6 +397,205 @@ class Static_Site_Importer_Client_Script_Policy {
 				return $preserve ? $matches[0] : '';
 			},
 			$html
+		);
+	}
+
+	/**
+	 * Is this one of the two scripts Data Liberation Agent generates to select a device document?
+	 *
+	 * The capture keeps every device stylesheet inert (`media="not all"`) and relies on the selection script to
+	 * activate the matching document's styles, viewport, and root attributes. The policy still treats imported
+	 * code as untrusted: a script is kept only when its attributes are exactly one marker, its body is the
+	 * generated template byte for byte, and the data embedded in it passes a strict allowlist. Anything else,
+	 * including a near miss or output from an older producer template, is dropped like every other script.
+	 *
+	 * @param string $attributes Raw attribute string of the script tag.
+	 * @param string $body       Script body.
+	 */
+	private static function is_generated_device_selection_script( string $attributes, string $body ): bool {
+		if ( strlen( $body ) > 262144 || 1 !== preg_match( '/^\s+data-dla-device-(selection|body)(?:=(?:""|\'\'))?\s*$/', $attributes, $marker ) ) {
+			return false;
+		}
+		$open = '(function(){' . self::device_overlay_runtime();
+		if ( 'selection' === $marker[1] ) {
+			$config = self::device_script_data( $body, $open . 'var c=', self::device_selection_tail() );
+			return null !== $config && self::is_valid_device_config( $config );
+		}
+		$roots = self::device_script_data( $body, $open . 'var roots=', self::device_body_tail() );
+		return null !== $roots && self::is_valid_device_roots( $roots, null );
+	}
+
+	/**
+	 * Decode the JSON object a generated script embeds between its fixed prefix and suffix.
+	 *
+	 * The producer escapes every `<` in the data as `\u003c`, so a literal `<` can only come from a forged
+	 * script; rejecting it keeps sequences such as `<!--` or `</script` from changing where the browser ends
+	 * the script relative to what was validated here.
+	 *
+	 * @return array<string,mixed>|null Null unless the whole middle section is one JSON object.
+	 */
+	private static function device_script_data( string $body, string $prefix, string $suffix ): ?array {
+		if ( strlen( $body ) <= strlen( $prefix ) + strlen( $suffix ) || ! str_starts_with( $body, $prefix ) || ! str_ends_with( $body, $suffix ) ) {
+			return null;
+		}
+		$json = substr( $body, strlen( $prefix ), -strlen( $suffix ) );
+		if ( str_contains( $json, '<' ) ) {
+			return null;
+		}
+		$data = json_decode( $json, true, 8 );
+		return is_array( $data ) ? $data : null;
+	}
+
+	/** @param array<string,mixed> $config Data embedded in the selection script. */
+	private static function is_valid_device_config( array $config ): bool {
+		$selection = $config['selection'] ?? null;
+		if ( array( 'roots', 'selection', 'viewports' ) !== self::sorted_keys( $config ) || ! is_array( $selection ) || ! self::keys_within( $selection, array( 'kind', 'id', 'rules', 'defaultDocument', 'documents', 'evidence' ) ) ) {
+			return false;
+		}
+		$documents = $selection['documents'] ?? null;
+		if ( 'device' !== ( $selection['kind'] ?? null ) || ! self::is_device_key( $selection['defaultDocument'] ?? null ) || ! self::is_bounded_list( $documents, 16 ) || ! in_array( $selection['defaultDocument'], $documents, true ) ) {
+			return false;
+		}
+		foreach ( $documents as $key ) {
+			if ( ! self::is_device_key( $key ) ) {
+				return false;
+			}
+		}
+		$field_limits = array(
+			'id'       => 128,
+			'evidence' => 4096,
+		);
+		foreach ( $field_limits as $field => $limit ) {
+			if ( isset( $selection[ $field ] ) && ( ! is_string( $selection[ $field ] ) || strlen( $selection[ $field ] ) > $limit ) ) {
+				return false;
+			}
+		}
+		if ( ! self::is_bounded_list( $selection['rules'] ?? null, 32 ) ) {
+			return false;
+		}
+		foreach ( $selection['rules'] as $rule ) {
+			if ( ! is_array( $rule ) || ! self::keys_within( $rule, array( 'userAgent', 'flags', 'document' ) ) || ! self::is_safe_user_agent_pattern( $rule['userAgent'] ?? null )
+				|| ( isset( $rule['flags'] ) && ( ! is_string( $rule['flags'] ) || 1 !== preg_match( '/^[im]*$/', $rule['flags'] ) ) )
+				|| ! in_array( $rule['document'] ?? null, $documents, true ) ) {
+				return false;
+			}
+		}
+		$viewports = $config['viewports'];
+		if ( ! is_array( $viewports ) || ! self::keys_within( $viewports, $documents ) ) {
+			return false;
+		}
+		foreach ( $viewports as $viewport ) {
+			// Only these names are ever passed to setAttribute() on the viewport <meta>.
+			if ( ! is_array( $viewport ) || ! self::keys_within( $viewport, array( 'name', 'content', 'id' ) ) || ( isset( $viewport['name'] ) && 'viewport' !== $viewport['name'] )
+				|| ! is_string( $viewport['content'] ?? null ) || strlen( $viewport['content'] ) > 512 || 1 === preg_match( '/[\x00-\x1f\x7f]/', $viewport['content'] )
+				|| ( isset( $viewport['id'] ) && ( ! is_string( $viewport['id'] ) || 1 !== preg_match( '/^[A-Za-z][A-Za-z0-9:._-]{0,127}$/', $viewport['id'] ) ) ) ) {
+				return false;
+			}
+		}
+		return self::is_valid_device_roots( $config['roots'], $documents );
+	}
+
+	/**
+	 * Root attributes the overlay applies to <html> and <body>.
+	 *
+	 * @param mixed                  $roots     Decoded roots map.
+	 * @param array<int,string>|null $documents Declared document keys, when known.
+	 */
+	private static function is_valid_device_roots( $roots, ?array $documents ): bool {
+		if ( ! is_array( $roots ) || count( $roots ) > 16 ) {
+			return false;
+		}
+		foreach ( $roots as $key => $targets ) {
+			if ( ! self::is_device_key( (string) $key ) || ( null !== $documents && ! in_array( (string) $key, $documents, true ) ) || ! is_array( $targets ) || ! self::keys_within( $targets, array( 'html', 'body' ) ) ) {
+				return false;
+			}
+			foreach ( $targets as $attributes ) {
+				if ( ! is_array( $attributes ) || ! self::keys_within( $attributes, array( 'class', 'style', 'lang', 'dir' ) ) ) {
+					return false;
+				}
+				foreach ( $attributes as $name => $value ) {
+					$limit = 'style' === $name ? 8192 : ( 'class' === $name ? 2048 : 35 );
+					if ( ! is_string( $value ) || strlen( $value ) > $limit || ( 'lang' === $name && 1 !== preg_match( '/^[A-Za-z0-9-]*$/', $value ) ) || ( 'dir' === $name && ! in_array( $value, array( '', 'ltr', 'rtl', 'auto' ), true ) ) ) {
+						return false;
+					}
+				}
+			}
+		}
+		return true;
+	}
+
+	/** The pattern is compiled with `new RegExp()` in the visitor's browser, so keep it small and non-backtracking-prone. */
+	private static function is_safe_user_agent_pattern( $pattern ): bool {
+		return is_string( $pattern ) && '' !== $pattern && strlen( $pattern ) <= 512 && 1 !== preg_match( '/\)\s*(?:[+*]|\{\d)|\\\\[1-9k]|\(\?[=!<]/', $pattern );
+	}
+
+	/** @param mixed $key Candidate document key. */
+	private static function is_device_key( $key ): bool {
+		return is_string( $key ) && 1 === preg_match( '/^[a-z][a-z0-9_-]{0,63}$/', $key );
+	}
+
+	/** @param mixed $items Candidate list. */
+	private static function is_bounded_list( $items, int $max ): bool {
+		return is_array( $items ) && array() !== $items && count( $items ) <= $max && array_keys( $items ) === range( 0, count( $items ) - 1 );
+	}
+
+	/** @param array<int|string,mixed> $map Map to check. @param array<int,string> $allowed Allowed keys. */
+	private static function keys_within( array $map, array $allowed ): bool {
+		return array() === array_diff( array_map( 'strval', array_keys( $map ) ), $allowed );
+	}
+
+	/** @param array<int|string,mixed> $map Map to inspect. @return array<int,string> */
+	private static function sorted_keys( array $map ): array {
+		$keys = array_map( 'strval', array_keys( $map ) );
+		sort( $keys, SORT_STRING );
+		return $keys;
+	}
+
+	/**
+	 * Template pieces of the scripts Data Liberation Agent's installDeviceSelection() generates.
+	 *
+	 * Source: data-liberation-agent/src/lib/document-selection.ts at DLA_DEVICE_SELECTION_SOURCE. These must
+	 * stay byte-identical to that template. tests/fixtures/dla-device-selection/index.html is generated by the
+	 * real producer at the same commit (tools/regenerate-dla-device-selection-fixture.mjs), and the smoke test
+	 * fails when the fixture's recorded commit or generated scripts differ from these pieces.
+	 */
+	private static function device_overlay_runtime(): string {
+		return implode(
+			"\n",
+			array(
+				'function overlayRoot(node,roots,kind,key){',
+				'var selected=roots[key]&&roots[key][kind];if(!selected)return;',
+				'var parser=document.createElement(\'div\');',
+				'Object.keys(roots).forEach(function(id){var attrs=roots[id][kind];',
+				'(attrs.class||\'\').split(/\\s+/).filter(Boolean).forEach(function(token){node.classList.remove(token);});',
+				'parser.style.cssText=attrs.style||\'\';',
+				'for(var i=0;i<parser.style.length;i++)node.style.removeProperty(parser.style.item(i));',
+				'[\'lang\',\'dir\'].forEach(function(name){if(Object.prototype.hasOwnProperty.call(attrs,name))node.removeAttribute(name);});',
+				'});',
+				'(selected.class||\'\').split(/\\s+/).filter(Boolean).forEach(function(token){node.classList.add(token);});',
+				'parser.style.cssText=selected.style||\'\';',
+				'for(var i=0;i<parser.style.length;i++){var property=parser.style.item(i);node.style.setProperty(property,parser.style.getPropertyValue(property),parser.style.getPropertyPriority(property));}',
+				'[\'lang\',\'dir\'].forEach(function(name){if(Object.prototype.hasOwnProperty.call(selected,name))node.setAttribute(name,selected[name]);});',
+				'}',
+			)
+		);
+	}
+
+	private static function device_selection_tail(): string {
+		return implode(
+			"\n",
+			array(
+				',s=c.selection,ua=navigator.userAgent,key=s.defaultDocument;for(var i=0;i<s.rules.length;i++){var r=s.rules[i];if(new RegExp(r.userAgent,r.flags||\'\').test(ua)){key=r.document;break;}}var root=document.documentElement;root.setAttribute(\'data-dla-selected-document\',key);var vp=c.viewports[key],meta=document.querySelector(\'meta[data-dla-selected-viewport]\');meta.removeAttribute(\'content\');meta.removeAttribute(\'id\');if(vp){overlayRoot(root,c.roots,\'html\',key);Object.keys(vp).forEach(function(k){meta.setAttribute(k,vp[k]);});root.removeAttribute(\'data-dla-document-unavailable\');}else{root.setAttribute(\'data-dla-document-unavailable\',key);}var styles=document.querySelectorAll(\'[data-dla-device-style]\');for(var j=0;j<styles.length;j++){var node=styles[j];if(node.getAttribute(\'data-dla-device-style\')!==key)continue;var copy=node.cloneNode(true);copy.setAttribute(\'media\',node.getAttribute(\'data-dla-source-media\'));copy.removeAttribute(\'data-dla-device-style\');copy.setAttribute(\'blocking\',\'render\');node.after(copy);}})();',
+			)
+		);
+	}
+
+	private static function device_body_tail(): string {
+		return implode(
+			"\n",
+			array(
+				',key=document.documentElement.getAttribute(\'data-dla-selected-document\');overlayRoot(document.body,roots,\'body\',key);})();',
+			)
 		);
 	}
 
