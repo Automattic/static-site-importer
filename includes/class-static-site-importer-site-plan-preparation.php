@@ -527,7 +527,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				$package = Static_Site_Importer_Generated_Runtime_Package::theme( $args['theme_runtime_payload'], (string) $state['theme']['slug'] );
 				if ( is_wp_error( $package ) ) {
 					$state['preflight_error'] = $package;
-					throw new InvalidArgumentException( $package->get_error_code() );
+					throw new InvalidArgumentException( (string) $package->get_error_code() );
 				}
 				$pending_blocks = $package['block_names'];
 			}
