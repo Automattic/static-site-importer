@@ -41,6 +41,11 @@ function get_stylesheet(): string {
 function get_stylesheet_directory(): string {
 	return $GLOBALS['ssi_stylesheet_root'] . '/' . get_stylesheet(); }
 
+$autoload        = require dirname( __DIR__ ) . '/vendor/autoload.php';
+$producer_source = getenv( 'BLOCKS_ENGINE_PHP_TRANSFORMER_ROOT' );
+if ( is_string( $producer_source ) && is_file( $producer_source . '/src/WordPressSitePlan/WordPressSitePlan.php' ) ) {
+	$autoload->setPsr4( 'Automattic\\BlocksEngine\\PhpTransformer\\', $producer_source . '/src/', true );
+}
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-companion-asset-publication.php';
 
 $failures = 0;
@@ -80,23 +85,47 @@ $assert(
 );
 
 // The scoped loader is deterministic and enqueues the configuration only.
-$config    = Static_Site_Importer_Companion_Asset_Publication::scoped_asset_config(
+// Each imported page replays its canonical document's stylesheet sequence.
+$plan      = ( new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler() )->compile(
 	array(
-		array( 'src' => 'assets/assets/page.css', 'version' => str_repeat( 'a', 64 ) ),
-		array( 'src' => 'assets/assets/deep/font.css', 'version' => str_repeat( 'b', 64 ) ),
-	),
-	array( 42, 42, 0, 7 ),
-	(string) $publication['uri']
-);
-$json      = Static_Site_Importer_Companion_Asset_Publication::scoped_assets_json( $config );
-$decoded   = json_decode( $json, true );
+		'entrypoint' => 'index.html',
+		'files'      => array(
+			'index.html'      => '<!doctype html><html><head><link rel="stylesheet" href="page.css"></head><body><main><p class="home">Home</p></main></body></html>',
+			'about.html'      => '<!doctype html><html><head><link rel="stylesheet" href="page.css" media="print"></head><body><main><p class="about">About</p></main></body></html>',
+			'page.css'        => '.home,.about{color:orchid}',
+		),
+	)
+)->toArray()['source_reports']['wordpress_site_plan'];
+$page_target = array_column( $plan['assets'], 'target_path', 'source_path' )['page.css'];
+$published   = array();
+foreach ( $plan['assets'] as $asset ) {
+	if ( 'css' === $asset['kind'] ) {
+		$published[] = array( 'src' => $asset['target_path'], 'version' => hash( 'sha256', $asset['target_path'] ) );
+	}
+}
+$published[] = array( 'src' => 'assets/css/overlay.css', 'version' => str_repeat( 'b', 64 ) );
+$posts       = array( array( 'id' => 42, 'source_path' => 'index.html' ), array( 'id' => 42, 'source_path' => 'index.html' ), array( 'id' => 0, 'source_path' => 'about.html' ), array( 'id' => 7, 'source_path' => 'about.html' ), array( 'id' => 9, 'source_path' => 'unplanned.html' ) );
+$config      = Static_Site_Importer_Companion_Asset_Publication::scoped_asset_config( $plan, $posts, $published, (string) $publication['uri'] );
+$json        = Static_Site_Importer_Companion_Asset_Publication::scoped_assets_json( $config );
+$decoded     = json_decode( $json, true );
 $assert(
-	is_array( $decoded ) && 2 === count( $decoded['stylesheets'] ) && array( 42, 7 ) === $decoded['post_ids'],
-	'scoped configuration resolves unique positive page identities'
+	is_array( $decoded ) && array( 42, 7 ) === array_keys( $decoded['posts'] ),
+	'scoped configuration maps unique positive planned page identities'
+);
+$sources_for = static fn( int $id ): array => array_map( static fn( string $handle ): string => $decoded['stylesheets'][ $handle ]['src'], $decoded['posts'][ $id ] );
+$assert(
+	in_array( $page_target, $sources_for( 42 ), true ) && 'assets/css/overlay.css' === array_slice( $sources_for( 42 ), -1 )[0],
+	'a page replays its planned stylesheets, then importer overlay stylesheets'
+);
+$about_rows = array_values( array_filter( $decoded['posts'][7], static fn( string $handle ): bool => $page_target === $decoded['stylesheets'][ $handle ]['src'] ) );
+$home_rows  = array_values( array_filter( $decoded['posts'][42], static fn( string $handle ): bool => $page_target === $decoded['stylesheets'][ $handle ]['src'] ) );
+$assert(
+	1 === count( $about_rows ) && 1 === count( $home_rows ) && $about_rows !== $home_rows && 'print' === $decoded['stylesheets'][ $about_rows[0] ]['media'] && 'all' === $decoded['stylesheets'][ $home_rows[0] ]['media'],
+	'each page occurrence of one stylesheet file keeps its own handle and media'
 );
 $assert(
-	$decoded['stylesheets'][0]['handle'] === ( Static_Site_Importer_Companion_Asset_Publication::scoped_asset_config( array( array( 'src' => 'assets/assets/page.css', 'version' => str_repeat( 'a', 64 ) ) ), array( 42 ), (string) $publication['uri'] )['stylesheets'][0]['handle'] ?? '' ) && 'assets/assets/page.css' === $decoded['stylesheets'][0]['src'],
-	'style handles stay deterministic per stylesheet src'
+	$config === Static_Site_Importer_Companion_Asset_Publication::scoped_asset_config( $plan, $posts, $published, (string) $publication['uri'] ),
+	'style handles stay deterministic per page occurrence'
 );
 $loader_one = Static_Site_Importer_Companion_Asset_Publication::scoped_loader_source();
 $loader_two = Static_Site_Importer_Companion_Asset_Publication::scoped_loader_source();
@@ -114,8 +143,8 @@ $GLOBALS['ssi_test_current_post_id'] = 0;
 $GLOBALS['ssi_test_style_hook']      = 'frontend';
 function add_action( string $hook, $callback ): void {
 	$GLOBALS['ssi_test_hooks'][ $hook ] = $callback; }
-function wp_enqueue_style( string $handle, string $src, array $deps = array(), string $version = '' ): void {
-	$GLOBALS['ssi_test_style_calls'][] = array( 'handle' => $handle, 'src' => $src, 'version' => $version, 'hook' => (string) ( $GLOBALS['ssi_test_style_hook'] ?? '' ) ); }
+function wp_enqueue_style( string $handle, string $src, array $deps = array(), string $version = '', string $media = 'all' ): void {
+	$GLOBALS['ssi_test_style_calls'][] = array( 'handle' => $handle, 'src' => $src, 'version' => $version, 'media' => $media, 'hook' => (string) ( $GLOBALS['ssi_test_style_hook'] ?? '' ) ); }
 function get_the_ID(): int {
 	return (int) ( $GLOBALS['ssi_test_current_post_id'] ?? 0 ); }
 function get_current_screen(): ?object {
@@ -131,7 +160,7 @@ $GLOBALS['ssi_test_current_post_id'] = 42;
 $frontend();
 $frontend_imported = $GLOBALS['ssi_test_style_calls'];
 $assert(
-	2 === count( $frontend_imported ) && WP_PLUGIN_URL . '/ssi-imported-site/assets/assets/assets/page.css' === $frontend_imported[0]['src'] && str_repeat( 'a', 64 ) === $frontend_imported[0]['version'],
+	count( $decoded['posts'][42] ) === count( $frontend_imported ) && in_array( WP_PLUGIN_URL . '/ssi-imported-site/assets/' . $page_target, array_column( $frontend_imported, 'src' ), true ) && hash( 'sha256', $page_target ) === array_column( $frontend_imported, 'version', 'src' )[ WP_PLUGIN_URL . '/ssi-imported-site/assets/' . $page_target ],
 	'imported page loads its published styles from the companion publication URI'
 );
 $GLOBALS['ssi_test_current_post_id'] = 999;
@@ -148,7 +177,7 @@ $editor_imported = $GLOBALS['ssi_test_style_calls'];
 $GLOBALS['ssi_test_screen'] = (object) array( 'post' => (object) array( 'ID' => 999 ) );
 $editor();
 $assert(
-	2 === count( $editor_imported ) && $editor_imported === $GLOBALS['ssi_test_style_calls'],
+	count( $decoded['posts'][42] ) === count( $editor_imported ) && $editor_imported === $GLOBALS['ssi_test_style_calls'],
 	'imported pages keep their scoped styles inside the editor and unrelated posts keep none'
 );
 

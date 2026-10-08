@@ -3999,8 +3999,8 @@ function add_action( string $hook, $callback ): void {
 	$GLOBALS['ssi_plan_hooks'][ $hook ] = $callback; }
 function add_filter( string $hook, $callback, int $priority = 10, int $accepted_args = 1 ): void {
 	$GLOBALS['ssi_plan_filters'][ $hook ][ $priority ][] = array( 'callback' => $callback, 'accepted_args' => $accepted_args ); }
-function wp_enqueue_style( string $handle, string $src, array $deps = array(), string $version = '' ): void {
-	$GLOBALS['ssi_plan_styles'][] = array( 'handle' => $handle, 'src' => $src, 'version' => $version, 'hook' => (string) ( $GLOBALS['ssi_plan_style_hook'] ?? '' ) ); } // phpcs:ignore WordPress.WP.EnqueuedResourcesParameters.NonEnqueuedScript -- Deterministic test-only enqueue capture.
+function wp_enqueue_style( string $handle, string $src, array $deps = array(), string $version = '', string $media = 'all' ): void {
+	$GLOBALS['ssi_plan_styles'][] = array( 'handle' => $handle, 'src' => $src, 'version' => $version, 'media' => $media, 'hook' => (string) ( $GLOBALS['ssi_plan_style_hook'] ?? '' ) ); } // phpcs:ignore WordPress.WP.EnqueuedResourcesParameters.NonEnqueuedScript -- Deterministic test-only enqueue capture.
 function get_the_ID(): int {
 	return (int) ( $GLOBALS['ssi_plan_current_post_id'] ?? 0 ); }
 function get_current_screen(): ?object {
@@ -4035,6 +4035,99 @@ $GLOBALS['ssi_plan_styles']         = array();
 $GLOBALS['ssi_plan_current_screen'] = (object) array( 'post' => (object) array( 'ID' => 246810 ) );
 $editor_enqueue();
 $assert( count( $existing_surface_editor_enqueues ) === count( $existing_surface_frontend_enqueues ) && array() === $GLOBALS['ssi_plan_styles'], 'the editor loads the scoped styles only while an imported page is being edited' );
+
+// #2025: an existing-theme import replays each page's ordered stylesheet
+// instances. Linked A, B, A applies A twice (ordinary rules and a named
+// !important layer), each occurrence keeps its own media, every route keeps
+// its own sequence, and a repeated stylesheet is still one published file.
+$instances_link  = static fn( string $href, string $media = '' ): string => '<link rel="stylesheet" href="' . $href . '"' . ( '' === $media ? '' : ' media="' . $media . '"' ) . '>';
+$instances_doc   = static fn( array $links ): string => '<!doctype html><html><head>' . implode( '', $links ) . '</head><body><main><p class="ordinary">Ordinary</p><p class="named">Named</p></main></body></html>';
+$instances_links = array(
+	'index.html' => array( array( 'css/a.css', '' ), array( 'css/b.css', '' ), array( 'css/a.css', '' ), array( 'css/named-a.css', '' ), array( 'css/named-b.css', '' ), array( 'css/named-a.css', '' ) ),
+	'about.html' => array( array( 'css/b.css', '' ), array( 'css/a.css', '' ), array( 'css/b.css', '' ), array( 'css/named-b.css', '' ), array( 'css/named-a.css', '' ), array( 'css/named-b.css', '' ) ),
+	'media.html' => array( array( 'css/a.css', '(max-width:700px)' ), array( 'css/b.css', '' ), array( 'css/a.css', '(min-width:1200px)' ), array( 'css/named-a.css', '(max-width:700px)' ), array( 'css/named-b.css', '' ), array( 'css/named-a.css', '(min-width:1200px)' ) ),
+);
+$instances_css   = array(
+	'css/a.css'       => '.ordinary{color:rgb(255,0,0)}',
+	'css/b.css'       => '.ordinary{color:rgb(0,0,255)}',
+	'css/named-a.css' => '@layer named{.named{color:rgb(255,0,0)!important}}',
+	'css/named-b.css' => '@layer named{.named{color:rgb(0,0,255)!important}}',
+);
+$instances_files = $instances_css;
+foreach ( $instances_links as $instances_source => $instances_page_links ) {
+	$instances_files[ $instances_source ] = $instances_doc( array_map( static fn( array $link ): string => $instances_link( $link[0], $link[1] ), $instances_page_links ) );
+}
+$instances_plan    = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'index.html',
+		'files'      => $instances_files,
+	)
+)->toArray()['source_reports']['wordpress_site_plan'];
+$instances_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize(
+	$instances_plan,
+	array(
+		'slug'        => 'instances-site',
+		'destination' => 'existing_theme',
+		'overwrite'   => true,
+	)
+);
+$instances_dir     = WP_PLUGIN_DIR . '/ssi-instances-site/assets';
+$instances_uri     = WP_PLUGIN_URL . '/ssi-instances-site/assets/';
+$instances_targets = array_column( $instances_plan['assets'], 'target_path', 'source_path' );
+$GLOBALS['ssi_plan_hooks'] = array();
+include $instances_dir . '/asset-loader.php';
+$instances_frontend  = $GLOBALS['ssi_plan_hooks']['wp_enqueue_scripts'] ?? static function (): void {};
+$instances_published = array();
+foreach ( $instances_receipt['wordpress'] ?? array() as $instances_post ) {
+	if ( ! isset( $instances_links[ $instances_post['source_path'] ?? '' ] ) ) {
+		continue;
+	}
+	$GLOBALS['ssi_plan_styles']          = array();
+	$GLOBALS['ssi_plan_style_hook']      = 'frontend';
+	$GLOBALS['ssi_plan_current_post_id'] = (int) $instances_post['id'];
+	$instances_frontend();
+	$instances_published[ $instances_post['source_path'] ] = array_map(
+		static fn( array $style ): array => array(
+			'handle' => $style['handle'],
+			'target' => str_starts_with( $style['src'], $instances_uri ) ? substr( $style['src'], strlen( $instances_uri ) ) : $style['src'],
+			'media'  => $style['media'],
+		),
+		$GLOBALS['ssi_plan_styles']
+	);
+}
+$instances_json_argument = array_values( array_filter( $argv, static fn( string $argument ): bool => str_starts_with( $argument, '--existing-theme-stylesheet-instances-json=' ) ) );
+if ( array() !== $instances_json_argument ) {
+	// The browser regression renders each source page and its published
+	// sequence; emit the evidence before asserting so a failing consumer still
+	// produces the cascade it would publish.
+	$instances_published_css = array();
+	foreach ( $instances_published as $instances_rows ) {
+		foreach ( $instances_rows as $instances_row ) {
+			$instances_published_css[ $instances_row['target'] ] = (string) file_get_contents( $instances_dir . '/' . $instances_row['target'] );
+		}
+	}
+	file_put_contents(
+		substr( $instances_json_argument[0], strlen( '--existing-theme-stylesheet-instances-json=' ) ),
+		(string) wp_json_encode(
+			array(
+				'source'        => $instances_files,
+				'pages'         => array_column( $instances_plan['pages'], 'canonical_block_markup', 'source_path' ),
+				'published'     => $instances_published,
+				'published_css' => $instances_published_css,
+			),
+			JSON_UNESCAPED_SLASHES
+		)
+	);
+}
+$assert( 'completed' === ( $instances_receipt['status'] ?? '' ) && array( 'about.html', 'index.html', 'media.html' ) === ( static function ( array $keys ): array { sort( $keys ); return $keys; } )( array_keys( $instances_published ) ), 'the stylesheet-instance fixture imports three routes into an existing theme: ' . wp_json_encode( $instances_receipt['errors'] ?? array() ) );
+foreach ( $instances_links as $instances_source => $instances_page_links ) {
+	$instances_expected = array_map( static fn( array $link ): array => array( 'target' => $instances_targets[ $link[0] ], 'media' => '' === $link[1] ? 'all' : $link[1] ), $instances_page_links );
+	$instances_actual   = array_values( array_filter( array_map( static fn( array $row ): array => array( 'target' => $row['target'], 'media' => $row['media'] ), $instances_published[ $instances_source ] ), static fn( array $row ): bool => in_array( $row['target'], $instances_targets, true ) && isset( $instances_css[ array_search( $row['target'], $instances_targets, true ) ] ) ) );
+	$assert( $instances_expected === $instances_actual, $instances_source . ' publishes every stylesheet occurrence in source order with its own media: ' . wp_json_encode( $instances_actual ) );
+	$assert( count( $instances_published[ $instances_source ] ) === count( array_unique( array_column( $instances_published[ $instances_source ], 'handle' ) ) ), $instances_source . ' gives each occurrence its own handle' );
+}
+$instances_css_files = array_values( array_filter( array_column( $instances_receipt['completed']['files'] ?? array(), 'target_path' ), static fn( string $target ): bool => in_array( $target, array_intersect_key( $instances_targets, $instances_css ), true ) ) );
+$assert( count( $instances_css ) === count( $instances_css_files ) && count( $instances_css_files ) === count( array_unique( $instances_css_files ) ), 'each repeated stylesheet is published as one file: ' . wp_json_encode( $instances_css_files ) );
 
 // A generated-theme import keeps publishing into its own theme exactly as before.
 $generated_surface_plan    = ( new ArtifactCompiler() )->compile(
