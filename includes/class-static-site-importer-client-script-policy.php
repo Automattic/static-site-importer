@@ -410,14 +410,14 @@ class Static_Site_Importer_Client_Script_Policy {
 	 * @param string $body       Script body.
 	 */
 	private static function is_generated_device_selection_script( string $attributes, string $body ): bool {
-		if ( strlen( $body ) > 262144 || 1 !== preg_match( '/^\s+(data-dla-device-(?:selection|styles|body))(?:=(?:""|\'\'))?\s*$/', $attributes, $marker ) ) {
+		if ( strlen( $body ) > 262144 || 1 !== preg_match( '/^\s+data-dla-device-(selection|styles|body)(?:=(?:""|\'\'))?\s*$/', $attributes, $marker ) ) {
 			return false;
 		}
-		if ( 'data-dla-device-styles' === $marker[1] ) {
+		if ( 'styles' === $marker[1] ) {
 			return self::device_styles_script() === $body;
 		}
 		$open = '(function(){' . self::device_overlay_runtime();
-		if ( 'data-dla-device-selection' === $marker[1] ) {
+		if ( 'selection' === $marker[1] ) {
 			$config = self::device_script_data( $body, $open . 'var c=', self::device_selection_tail() );
 			return null !== $config && self::is_valid_device_config( $config );
 		}
@@ -453,7 +453,11 @@ class Static_Site_Importer_Client_Script_Policy {
 				return false;
 			}
 		}
-		foreach ( array( 'id' => 128, 'evidence' => 4096 ) as $field => $limit ) {
+		$field_limits = array(
+			'id'       => 128,
+			'evidence' => 4096,
+		);
+		foreach ( $field_limits as $field => $limit ) {
 			if ( isset( $selection[ $field ] ) && ( ! is_string( $selection[ $field ] ) || strlen( $selection[ $field ] ) > $limit ) ) {
 				return false;
 			}
@@ -522,9 +526,9 @@ class Static_Site_Importer_Client_Script_Policy {
 		return is_string( $key ) && 1 === preg_match( '/^[a-z][a-z0-9_-]{0,63}$/', $key );
 	}
 
-	/** @param mixed $list Candidate list. */
-	private static function is_bounded_list( $list, int $max ): bool {
-		return is_array( $list ) && array() !== $list && count( $list ) <= $max && array_keys( $list ) === range( 0, count( $list ) - 1 );
+	/** @param mixed $items Candidate list. */
+	private static function is_bounded_list( $items, int $max ): bool {
+		return is_array( $items ) && array() !== $items && count( $items ) <= $max && array_keys( $items ) === range( 0, count( $items ) - 1 );
 	}
 
 	/** @param array<int|string,mixed> $map Map to check. @param array<int,string> $allowed Allowed keys. */
