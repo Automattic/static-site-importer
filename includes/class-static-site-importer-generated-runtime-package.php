@@ -141,10 +141,11 @@ final class Static_Site_Importer_Generated_Runtime_Package {
 		if ( ! is_callable( $callback ) ) {
 			require $directory . '/' . $package['entrypoint'];
 		}
-		if ( ! is_callable( $callback ) ) {
+		if ( ! is_string( $callback ) || ! is_callable( $callback ) ) {
 			return new WP_Error( 'static_site_importer_theme_runtime_registration_missing', 'Theme runtime registration callback is unavailable.' );
 		}
-		if ( realpath( ( new ReflectionFunction( $callback ) )->getFileName() ) !== realpath( $directory . '/' . $package['entrypoint'] ) ) {
+		$callback_file = ( new ReflectionFunction( $callback ) )->getFileName();
+		if ( false === $callback_file || realpath( $callback_file ) !== realpath( $directory . '/' . $package['entrypoint'] ) ) {
 			return new WP_Error( 'static_site_importer_theme_runtime_callback_collision', 'Theme runtime callback belongs to another destination.' );
 		}
 		$registry = WP_Block_Type_Registry::get_instance();

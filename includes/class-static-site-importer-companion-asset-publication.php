@@ -26,7 +26,7 @@ if ( ! class_exists( 'Static_Site_Importer_Companion_Plugin' ) ) {
 final class Static_Site_Importer_Companion_Asset_Publication {
 
 	public const SCHEMA           = 'static-site-importer/companion-asset-publication/v1';
-	public const SCOPING_SCHEMA   = 'static-site-importer/companion-asset-scoping/v1';
+	public const SCOPING_SCHEMA   = 'static-site-importer/companion-asset-scoping/v2';
 	public const GENERATED_THEME  = 'generated_theme';
 	public const COMPANION_PLUGIN = 'companion_plugin';
 
@@ -63,27 +63,79 @@ final class Static_Site_Importer_Companion_Asset_Publication {
 	/**
 	 * Scope configuration for published stylesheets.
 	 *
-	 * @param array<int,array<string,int|string>> $stylesheet_targets Relative published stylesheet targets with versions.
-	 * @param array<int,int>                      $post_ids           Materialized page IDs the styles scope to.
-	 * @param string                              $publication_uri    Publication base URI.
+	 * Each materialized page replays the stylesheet sequence its canonical
+	 * document publishes (WordPressSitePlan::documentStylesheets()): every
+	 * ordered occurrence gets its own handle and media while repeated
+	 * occurrences share one published file, so linked A, B, A still ends at A.
+	 * Published stylesheets the plan does not sequence (importer overlays)
+	 * follow each page's plan sequence in publication order.
+	 *
+	 * @param array<string,mixed>              $plan                  Canonical WordPress site plan.
+	 * @param array<int,array<string,mixed>>   $posts                 Materialized posts with `id` and `source_path`.
+	 * @param array<int,array<string,string>>  $published_stylesheets Published stylesheet `src` targets with versions, in publication order.
+	 * @param string                           $publication_uri       Publication base URI.
 	 * @return array<string,mixed>
 	 */
-	public static function scoped_asset_config( array $stylesheet_targets, array $post_ids, string $publication_uri ): array {
+	public static function scoped_asset_config( array $plan, array $posts, array $published_stylesheets, string $publication_uri ): array {
+		$versions = array();
+		foreach ( $published_stylesheets as $published ) {
+			$versions[ (string) ( $published['src'] ?? '' ) ] = (string) ( $published['version'] ?? '' );
+		}
+		unset( $versions[''] );
+		$planned = array();
+		$sources = array();
+		foreach ( is_array( $plan['assets'] ?? null ) ? $plan['assets'] : array() as $asset ) {
+			if ( 'css' === ( $asset['kind'] ?? null ) ) {
+				$planned[ (string) ( $asset['target_path'] ?? '' ) ] = true;
+			}
+		}
+		foreach ( is_array( $plan['pages'] ?? null ) ? $plan['pages'] : array() as $page ) {
+			$sources[ (string) ( $page['source_path'] ?? '' ) ] = true;
+		}
 		$stylesheets = array();
-		foreach ( $stylesheet_targets as $index => $target ) {
-			$src           = (string) ( $target['src'] ?? '' );
-			$version       = (string) ( $target['version'] ?? '' );
-			$stylesheets[] = array(
-				'handle'  => 'ssi-page-style-' . ( $index + 1 ) . '-' . substr( hash( 'sha256', $src ), 0, 12 ),
+		$overlays    = array();
+		foreach ( array_diff_key( $versions, $planned ) as $src => $version ) {
+			$handle                 = 'ssi-page-style-' . substr( hash( 'sha256', $src ), 0, 12 );
+			$stylesheets[ $handle ] = array(
 				'src'     => $src,
 				'version' => $version,
+				'media'   => 'all',
+				'context' => 'both',
 			);
+			$overlays[]             = $handle;
+		}
+		$sequences    = array();
+		$posts_config = array();
+		foreach ( $posts as $post ) {
+			$id     = (int) ( $post['id'] ?? 0 );
+			$source = (string) ( $post['source_path'] ?? '' );
+			if ( $id <= 0 || ! isset( $sources[ $source ] ) ) {
+				continue;
+			}
+			if ( ! isset( $sequences[ $source ] ) ) {
+				$sequences[ $source ] = array();
+				foreach ( \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlan::documentStylesheets( $plan, $source ) as $row ) {
+					if ( ! isset( $versions[ $row['target_path'] ] ) ) {
+						continue;
+					}
+					$handle                 = 'ssi-' . $row['handle'];
+					$stylesheets[ $handle ] = array(
+						'src'     => $row['target_path'],
+						'version' => $versions[ $row['target_path'] ],
+						'media'   => '' === $row['media'] ? 'all' : $row['media'],
+						'context' => $row['stylesheet_target'],
+					);
+					$sequences[ $source ][] = $handle;
+				}
+				array_push( $sequences[ $source ], ...$overlays );
+			}
+			$posts_config[ (string) $id ] = $sequences[ $source ];
 		}
 		return array(
 			'schema'          => self::SCOPING_SCHEMA,
 			'publication_uri' => $publication_uri,
-			'post_ids'        => array_values( array_map( 'intval', array_unique( array_filter( $post_ids, static fn( $id ): bool => (int) $id > 0 ) ) ) ),
 			'stylesheets'     => $stylesheets,
+			'posts'           => $posts_config,
 		);
 	}
 
@@ -126,18 +178,18 @@ final class Static_Site_Importer_Companion_Asset_Publication {
 		$lines[] = "\t} else {";
 		$lines[] = "\t\t\$post_id = function_exists( 'get_the_ID' ) ? (int) get_the_ID() : 0;";
 		$lines[] = "\t}";
-		$lines[] = "\tif ( \$post_id <= 0 || ! in_array( \$post_id, array_map( 'intval', (array) ( \$static_site_importer_scoped_assets['post_ids'] ?? array() ) ), true ) ) {";
+		$lines[] = "\t\$handles = \$post_id > 0 ? ( \$static_site_importer_scoped_assets['posts'][ (string) \$post_id ] ?? null ) : null;";
+		$lines[] = "\t\$base    = (string) ( \$static_site_importer_scoped_assets['publication_uri'] ?? '' );";
+		$lines[] = "\tif ( ! is_array( \$handles ) || '' === \$base ) {";
 		$lines[] = "\t\treturn;";
 		$lines[] = "\t}";
-		$lines[] = "\t\$base = (string) ( \$static_site_importer_scoped_assets['publication_uri'] ?? '' );";
-		$lines[] = "\tif ( '' === \$base ) {";
-		$lines[] = "\t\treturn;";
-		$lines[] = "\t}";
-		$lines[] = "\tforeach ( (array) \$static_site_importer_scoped_assets['stylesheets'] as \$stylesheet ) {";
-		$lines[] = "\t\tif ( ! is_array( \$stylesheet ) || '' === (string) ( \$stylesheet['handle'] ?? '' ) || '' === (string) ( \$stylesheet['src'] ?? '' ) ) {";
+		$lines[] = "\t// One handle per ordered stylesheet occurrence; repeated occurrences share a file.";
+		$lines[] = "\tforeach ( \$handles as \$handle ) {";
+		$lines[] = "\t\t\$stylesheet = \$static_site_importer_scoped_assets['stylesheets'][ \$handle ] ?? null;";
+		$lines[] = "\t\tif ( ! is_array( \$stylesheet ) || '' === (string) ( \$stylesheet['src'] ?? '' ) || ( 'editor' === \$context ? 'frontend' : 'editor' ) === ( \$stylesheet['context'] ?? 'both' ) ) {";
 		$lines[] = "\t\t\tcontinue;";
 		$lines[] = "\t\t}";
-		$lines[] = "\t\twp_enqueue_style( (string) \$stylesheet['handle'], \$base . '/' . ltrim( (string) \$stylesheet['src'], '/' ), array(), (string) ( \$stylesheet['version'] ?? '' ) );";
+		$lines[] = "\t\twp_enqueue_style( (string) \$handle, \$base . '/' . ltrim( (string) \$stylesheet['src'], '/' ), array(), (string) ( \$stylesheet['version'] ?? '' ), (string) ( \$stylesheet['media'] ?? 'all' ) );";
 		$lines[] = "\t}";
 		$lines[] = '};';
 		$lines[] = "add_action( 'wp_enqueue_scripts', static function () use ( \$static_site_importer_scoped_enqueue ): void {";

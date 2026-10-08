@@ -184,7 +184,7 @@ $compact_receipt = array(
 	'digest'                  => 'compact-receipt-digest',
 	'compiled_documents'      => array(),
 	'owned_document_paths'    => array(),
-	'terminal_reduction'      => array_fill_keys( array( 'normalization', 'source_documents', 'owned_transformable_paths', 'stylesheet_occurrence_files', 'component_facts', 'block_types' ), array() ),
+	'terminal_reduction'      => array_fill_keys( array( 'normalization', 'source_documents', 'owned_transformable_paths', 'component_facts', 'block_types' ), array() ),
 );
 $assert( true === $validate_receipt->invoke( null, $compact_receipt, $page_receipt_contract, $shared_receipt_contract ), 'compact v3 receipts must validate without duplicated shared files' );
 $legacy_receipt = $compact_receipt;

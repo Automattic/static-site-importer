@@ -1498,11 +1498,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				'diagnostics' => array(),
 			);
 		}
-		$post_ids = array_map( 'intval', array_column( $state['applied']['posts'] ?? array(), 'id' ) );
-		$config   = Static_Site_Importer_Companion_Asset_Publication::scoped_asset_config( $stylesheet_targets, $post_ids, (string) ( $state['theme']['uri'] ?? '' ) );
-		$loading  = array(
+		$config  = Static_Site_Importer_Companion_Asset_Publication::scoped_asset_config( is_array( $state['plan'] ?? null ) ? $state['plan'] : array(), $state['applied']['posts'] ?? array(), $stylesheet_targets, (string) ( $state['theme']['uri'] ?? '' ) );
+		$loading = array(
 			'status'      => 'completed',
-			'post_ids'    => $post_ids,
+			'post_ids'    => array_map( 'intval', array_keys( $config['posts'] ) ),
 			'files'       => array(),
 			'diagnostics' => array(),
 		);

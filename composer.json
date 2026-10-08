@@ -44,7 +44,7 @@
   "require": {
     "php": "^8.2",
     "automattic/blocks-engine-figma-transformer": "0.3.0",
-    "automattic/blocks-engine-php-transformer": "v0.37.20"
+    "automattic/blocks-engine-php-transformer": "v0.37.25"
   },
   "minimum-stability": "dev",
   "prefer-stable": true,
