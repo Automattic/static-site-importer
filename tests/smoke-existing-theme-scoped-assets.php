@@ -86,13 +86,13 @@ $assert(
 
 // The scoped loader is deterministic and enqueues the configuration only.
 // Each imported page replays its canonical document's stylesheet sequence.
-$plan      = ( new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler() )->compile(
+$plan = ( new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler() )->compile(
 	array(
 		'entrypoint' => 'index.html',
 		'files'      => array(
-			'index.html'      => '<!doctype html><html><head><link rel="stylesheet" href="page.css"></head><body><main><p class="home">Home</p></main></body></html>',
-			'about.html'      => '<!doctype html><html><head><link rel="stylesheet" href="page.css" media="print"></head><body><main><p class="about">About</p></main></body></html>',
-			'page.css'        => '.home,.about{color:orchid}',
+			'index.html' => '<!doctype html><html><head><link rel="stylesheet" href="page.css"></head><body><main><p class="home">Home</p></main></body></html>',
+			'about.html' => '<!doctype html><html><head><link rel="stylesheet" href="page.css" media="print"></head><body><main><p class="about">About</p></main></body></html>',
+			'page.css'   => '.home,.about{color:orchid}',
 		),
 	)
 )->toArray()['source_reports']['wordpress_site_plan'];
@@ -104,8 +104,8 @@ foreach ( $plan['assets'] as $asset ) {
 	}
 }
 $published[] = array( 'src' => 'assets/css/overlay.css', 'version' => str_repeat( 'b', 64 ) );
-$posts       = array( array( 'id' => 42, 'source_path' => 'index.html' ), array( 'id' => 42, 'source_path' => 'index.html' ), array( 'id' => 0, 'source_path' => 'about.html' ), array( 'id' => 7, 'source_path' => 'about.html' ), array( 'id' => 9, 'source_path' => 'unplanned.html' ) );
-$config      = Static_Site_Importer_Companion_Asset_Publication::scoped_asset_config( $plan, $posts, $published, (string) $publication['uri'] );
+$scoped_posts = array( array( 'id' => 42, 'source_path' => 'index.html' ), array( 'id' => 42, 'source_path' => 'index.html' ), array( 'id' => 0, 'source_path' => 'about.html' ), array( 'id' => 7, 'source_path' => 'about.html' ), array( 'id' => 9, 'source_path' => 'unplanned.html' ) );
+$config      = Static_Site_Importer_Companion_Asset_Publication::scoped_asset_config( $plan, $scoped_posts, $published, (string) $publication['uri'] );
 $json        = Static_Site_Importer_Companion_Asset_Publication::scoped_assets_json( $config );
 $decoded     = json_decode( $json, true );
 $assert(
@@ -124,7 +124,7 @@ $assert(
 	'each page occurrence of one stylesheet file keeps its own handle and media'
 );
 $assert(
-	$config === Static_Site_Importer_Companion_Asset_Publication::scoped_asset_config( $plan, $posts, $published, (string) $publication['uri'] ),
+	$config === Static_Site_Importer_Companion_Asset_Publication::scoped_asset_config( $plan, $scoped_posts, $published, (string) $publication['uri'] ),
 	'style handles stay deterministic per page occurrence'
 );
 $loader_one = Static_Site_Importer_Companion_Asset_Publication::scoped_loader_source();
