@@ -223,6 +223,67 @@ $proven_plan       = array( 'reference_semantics' => array( 'dynamic_client_asse
 $proven_plan_input = Static_Site_Importer_Client_Script_Policy::drop_unproven_dynamic_scripts( $dynamic_artifact, $proven_plan );
 $assert( $dynamic_artifact === $proven_plan_input['artifact'] && array() === $proven_plan_input['dropped'], 'proven-plans-take-no-loss' );
 
+// Data Liberation Agent hides every device document by default and generates three scripts that reveal the
+// matching one. The fixture is the output of its installDeviceSelection() (data-liberation-agent v0.20.3,
+// src/lib/document-selection.ts) for a neutral two-document page. Without these scripts the page is blank.
+$device_page = (string) file_get_contents( __DIR__ . '/fixtures/dla-device-selection/index.html' );
+$markers     = array( 'data-dla-device-selection', 'data-dla-device-styles', 'data-dla-device-body' );
+$run_policy  = static function ( string $html ): array {
+	$result = Static_Site_Importer_Client_Script_Policy::apply(
+		array(
+			'entrypoint' => 'website/index.html',
+			'files'      => array( array( 'path' => 'website/index.html', 'mime_type' => 'text/html', 'content' => $html ) ),
+		),
+		array()
+	);
+	return array( (string) $result['artifact']['files'][0]['content'], $result['report'] );
+};
+$kept_markers = static function ( string $html ) use ( $markers ): array {
+	return array_values( array_filter( $markers, static fn( string $marker ): bool => str_contains( $html, '<script ' . $marker ) ) );
+};
+$mutate       = static function ( string $html, string $from, string $to ) use ( $assert ): string {
+	$assert( 1 === substr_count( $html, $from ), 'mutation-target-is-unique: ' . substr( $from, 0, 40 ) );
+	return str_replace( $from, $to, $html );
+};
+
+// The roots data is embedded in both the selection and the body script; change only the body script's copy.
+$mutate_in_body_script = static function ( string $html, string $from, string $to ) use ( $mutate ): string {
+	$offset = (int) strpos( $html, '<script data-dla-device-body' );
+	return substr( $html, 0, $offset ) . $mutate( substr( $html, $offset ), $from, $to );
+};
+
+$assert( str_contains( $device_page, 'data-dla-device-selection' ) && str_contains( $device_page, 'data-dla-device-styles' ) && str_contains( $device_page, 'data-dla-device-body' ), 'device-fixture-has-the-generated-scripts' );
+
+list( $device_html, $device_report ) = $run_policy( $device_page );
+$assert( $markers === $kept_markers( $device_html ), 'device-selection-scripts-survive-the-inert-policy' );
+$assert( $device_page === $device_html, 'device-selection-page-is-unchanged' );
+$assert( array() === $device_report['dropped'] && array() === $device_report['quarantined'] && 3 === count( $device_report['preserved'] ) && array( 'device_selection' ) === array_values( array_unique( array_column( $device_report['preserved'], 'class' ) ) ), 'device-selection-scripts-are-reported-as-preserved' );
+
+// Every other script on the same page is still dropped.
+list( $mixed_html, $mixed_report ) = $run_policy( str_replace( '</body>', '<script>window.tracker=1;</script><script data-dla-device-selection="">window.evil=1;</script></body>', $device_page ) );
+$assert( $markers === $kept_markers( $mixed_html ) && ! str_contains( $mixed_html, 'window.tracker' ) && ! str_contains( $mixed_html, 'window.evil' ), 'unrelated-and-marker-lookalike-scripts-are-still-dropped' );
+$assert( 2 === count( $mixed_report['dropped'] ), 'unrelated-and-marker-lookalike-scripts-are-reported-as-dropped' );
+
+// A near miss of the template, or data outside the allowlist, falls back to dropping the script.
+$selection_tail = "key);}})();</script>";
+$rejected       = array(
+	'appended-code-after-the-template'     => array( 'data-dla-device-selection', $mutate( $device_page, $selection_tail, "key);}fetch('//example.test/x');})();</script>" ) ),
+	'prepended-code-before-the-template'   => array( 'data-dla-device-selection', $mutate( $device_page, '<script data-dla-device-selection="">(function(){', '<script data-dla-device-selection="">fetch("//example.test/x");(function(){' ) ),
+	'extra-script-attribute'               => array( 'data-dla-device-selection', $mutate( $device_page, '<script data-dla-device-selection="">', '<script data-dla-device-selection="" type="module">' ) ),
+	'external-source'                      => array( 'data-dla-device-selection', $mutate( $device_page, '<script data-dla-device-selection="">', '<script data-dla-device-selection="" src="https://example.test/x.js">' ) ),
+	'unknown-top-level-config-key'         => array( 'data-dla-device-selection', $mutate( $device_page, '{"selection":', '{"extra":1,"selection":' ) ),
+	'unknown-viewport-attribute-name'      => array( 'data-dla-device-selection', $mutate( $device_page, '"id":"mobile-viewport"', '"http-equiv":"refresh"' ) ),
+	'catastrophic-backtracking-pattern'    => array( 'data-dla-device-selection', $mutate( $device_page, 'Mobile|Android|iPhone', '(a+)+$' ) ),
+	'unknown-root-attribute'               => array( 'data-dla-device-body', $mutate_in_body_script( $device_page, '"body":{"class":"body-mobile"}', '"body":{"onload":"x"}' ) ),
+	'altered-styles-script'                => array( 'data-dla-device-styles', $mutate( $device_page, 'document.write(copy.outerHTML);', 'document.write(copy.outerHTML);fetch("//example.test/x");' ) ),
+);
+foreach ( $rejected as $label => $case ) {
+	list( $marker, $html )  = $case;
+	list( $filtered_html )  = $run_policy( $html );
+	$assert( ! in_array( $marker, $kept_markers( $filtered_html ), true ), 'device-script-rejected: ' . $label );
+	$assert( array_values( array_diff( $markers, array( $marker ) ) ) === $kept_markers( $filtered_html ), 'device-script-rejection-is-scoped: ' . $label );
+}
+
 if ( $failures ) {
 	fwrite( STDERR, implode( PHP_EOL, $failures ) . PHP_EOL );
 	exit( 1 );
