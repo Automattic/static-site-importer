@@ -525,6 +525,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 						return self::fail( $workspace, $run, 'prepare_pages_checkpoint', $write, array( $page_id ) );
 					}
 				}
+				// Workers consume the durable page checkpoints. Release the complete
+				// preparation projection before their allocations overlap this host.
+				unset( $page_plans, $page_plan );
 				$run['timings']['prepare_pages_seconds'] = (float) ( $run['timings']['prepare_pages_seconds'] ?? 0 ) + microtime( true ) - $started;
 				$run['phase']                            = 'compiling_pages';
 				$run['progress']['phase']                = 'compiling_pages';
@@ -539,6 +542,12 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				$reason = self::deadline_reached( $deadline, $clock ) ? 'deadline_exhausted' : 'pages_remaining';
 				return self::continuation( $run, $reason );
 			}
+			// Preparation is durable. Workers read their own checkpoints; the host
+			// only needs shared analysis until composition and can reload the source
+			// for materialization through $load_artifact.
+			$artifact_state = null;
+			self::$checkpoint_read_cache = array();
+			gc_mem_caches();
 
 			$adopted = self::adopt_receipts( $workspace, $run, $shared );
 			if ( is_wp_error( $adopted ) ) {
