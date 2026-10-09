@@ -35,6 +35,42 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 		self::$registered = true;
 		add_filter( 'the_content', array( self::class, 'filter_content' ), 8 );
 		add_filter( 'render_block', array( self::class, 'filter_rendered_block' ), 10, 1 );
+		add_filter( 'render_block_core/tabs', array( self::class, 'maybe_enqueue_tab_query_script' ), 10, 1 );
+	}
+
+	/**
+	 * Select a core Tabs tab named by the source's `?tab=` deep link.
+	 *
+	 * Enqueued only when a rendered core/tabs block has panels that carry a
+	 * source tab key as their id (generated ids start with
+	 * `blocks-engine-set-`). The script activates the real core tab by
+	 * clicking it, so core's own store selects the panel. It never changes the
+	 * URL and ignores values that match no tab.
+	 *
+	 * @param mixed $content Rendered core/tabs markup.
+	 * @return mixed
+	 */
+	public static function maybe_enqueue_tab_query_script( $content ) {
+		if ( ! is_string( $content ) || ! function_exists( 'wp_register_script' ) || ! function_exists( 'wp_enqueue_script' ) || ! function_exists( 'wp_add_inline_script' ) ) {
+			return $content;
+		}
+		if ( ! preg_match_all( '~<section\b[^>]*\brole="tabpanel"[^>]*>~i', $content, $panels ) ) {
+			return $content;
+		}
+		foreach ( $panels[0] as $panel ) {
+			if ( preg_match( '~\bid="([^"]+)"~', $panel, $id ) && ! str_starts_with( $id[1], 'blocks-engine-set-' ) ) {
+				wp_register_script( 'static-site-importer-tab-query', false, array(), '1', true );
+				wp_enqueue_script( 'static-site-importer-tab-query' );
+				wp_add_inline_script( 'static-site-importer-tab-query', self::tab_query_script() );
+				break;
+			}
+		}
+
+		return $content;
+	}
+
+	public static function tab_query_script(): string {
+		return '(function(){var key=new URLSearchParams(window.location.search).get("tab");if(!key)return;var tries=0;function select(){var tab=document.getElementById("tab__"+key);if(!tab||tab.getAttribute("role")!=="tab")return;if(tab.getAttribute("aria-selected")==="true")return;tab.click();if(++tries<50)setTimeout(select,100);}if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",select);else select();})();';
 	}
 
 	/**

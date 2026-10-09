@@ -27,6 +27,18 @@ function esc_url( string $url ): string {
 function is_ssl(): bool {
 	return true;
 }
+$GLOBALS['ssi_scripts'] = array();
+function wp_register_script( string $handle, $src, array $deps = array(), $ver = false, $in_footer = false ): bool {
+	$GLOBALS['ssi_scripts'][ $handle ] = array( 'enqueued' => false, 'inline' => '' );
+	return true;
+}
+function wp_enqueue_script( string $handle ): void {
+	$GLOBALS['ssi_scripts'][ $handle ]['enqueued'] = true;
+}
+function wp_add_inline_script( string $handle, string $data ): bool {
+	$GLOBALS['ssi_scripts'][ $handle ]['inline'] .= $data;
+	return true;
+}
 $GLOBALS['ssi_link_home']  = 'https://playground.test/scope:abc/';
 $GLOBALS['ssi_link_pages'] = array( 'how-it-works' => 5 );
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-internal-link-runtime.php';
@@ -152,5 +164,14 @@ array(
 ) ) )
 );
 $assert( 1 === substr_count( (string) ( $repeat['writes'][0]['content'] ?? '' ), 'Static Site Importer portable internal links' ), 'The overlay should be idempotent.' );
+
+// A core/tabs block whose panels carry source tab keys gets the `?tab=` selection script; generated ids do not.
+$keyed = '<div class="wp-block-tabs"><section id="oral-habits" role="tabpanel"></section><section id="braces" role="tabpanel"></section></div>';
+$assert( $keyed === Static_Site_Importer_Internal_Link_Runtime::maybe_enqueue_tab_query_script( $keyed ), 'Tab markup is returned unchanged.' );
+$assert( true === ( $GLOBALS['ssi_scripts']['static-site-importer-tab-query']['enqueued'] ?? false ), 'A tabs block with source tab keys enqueues the tab query script.' );
+$assert( str_contains( $GLOBALS['ssi_scripts']['static-site-importer-tab-query']['inline'], 'tab__' ) && ! str_contains( $GLOBALS['ssi_scripts']['static-site-importer-tab-query']['inline'], 'pushState' ) && ! str_contains( $GLOBALS['ssi_scripts']['static-site-importer-tab-query']['inline'], 'replaceState' ), 'The script clicks the real core tab and never rewrites the URL.' );
+$GLOBALS['ssi_scripts'] = array();
+Static_Site_Importer_Internal_Link_Runtime::maybe_enqueue_tab_query_script( '<div class="wp-block-tabs"><section id="blocks-engine-set-abc-1-panel-0" role="tabpanel"></section></div>' );
+$assert( array() === $GLOBALS['ssi_scripts'], 'A tabs block with only generated panel ids does not enqueue the script.' );
 
 echo "internal link runtime smoke passed\n";
