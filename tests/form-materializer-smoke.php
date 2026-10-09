@@ -2380,6 +2380,13 @@ namespace {
 	$responsive_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $responsive_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$responsive_css = (string) ( $responsive_row['provider_layout_overlay_css']['css'] ?? '' );
 	$assert( empty( $responsive_validation['errors'] ) && str_contains( $responsive_css, 'font-family:Georgia;line-height:1.75' ) && str_contains( $responsive_css, '@media (min-width: 1536px)' ) && 1 === preg_match( '/@media \(min-width: 1536px\)\{[^}]*font-size:18px[^}]*\}/', $responsive_css ) && 0 === preg_match( '/@media \(min-width: 1536px\)\{[^}]*font-family:revert/', $responsive_css ), 'responsive font size retains base family and line height instead of reverting them', $responsive_css );
+	// System font stacks such as Tailwind's default `--font-sans` exceed 160 bytes.
+	$long_stack = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"';
+	$long_stack_presentation = $expanded_presentation;
+	$long_stack_presentation['forms'][0]['presentation_graph']['controls'][0]['control'] = $presentation_role( array( 'font_family' => $long_stack ), array( 'font-family' ), 'input' );
+	$long_stack_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $long_stack_presentation );
+	$long_stack_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $long_stack_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( strlen( $long_stack ) > 160 && empty( $long_stack_validation['errors'] ) && str_contains( (string) ( $long_stack_row['provider_layout_overlay_css']['css'] ?? '' ), 'font-family:' . $long_stack ), 'form-presentation-carries-long-authored-font-stack', wp_json_encode( $long_stack_validation['errors'] ?? array() ) . ' ' . (string) ( $long_stack_row['provider_layout_overlay_css']['css'] ?? '' ) );
 	$unbounded_presentation = $expanded_presentation;
 	$unbounded_presentation['forms'][0]['presentation_graph']['limits']['rules_per_role'] = 97;
 	$assert( ! empty( Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $unbounded_presentation )['errors'] ), 'presentation graph still rejects an unrecognized rule budget' );
