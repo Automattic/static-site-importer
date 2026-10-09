@@ -585,9 +585,12 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		$phone_destination_classes = array();
 		$textarea_rows             = null;
 		$is_phone                  = (bool) preg_match( '/\bclass=(["\'])[^"\']*\bgrunion-field-(?:phone|telephone)-wrap\b[^"\']*\1/i', $html );
+		// A telephone field without the country selector renders as a plain tel
+		// input. It has no shell, carrier, or prefix box for those hooks to style.
+		$is_plain_tel              = $is_phone && ! str_contains( $html, 'jetpack-field__input-phone-wrapper' );
 		$projected                 = preg_replace_callback(
 			'/\bclass=(["\'])(.*?)\1/s',
-			static function ( array $matches ) use ( &$wrapper_layers, &$field_ancestors, &$choice_box, &$choice_label, &$composite_layers, &$fullspan_child_classes, &$phone_destination_classes, &$textarea_rows ): string {
+			static function ( array $matches ) use ( $is_plain_tel, &$wrapper_layers, &$field_ancestors, &$choice_box, &$choice_label, &$composite_layers, &$fullspan_child_classes, &$phone_destination_classes, &$textarea_rows ): string {
 				$classes        = preg_split( '/\s+/', trim( $matches[2] ) );
 				$classes        = false === $classes ? array() : $classes;
 				$is_wrapper     = (bool) array_filter( $classes, static fn ( string $class_name ): bool => 1 === preg_match( '/^grunion-field-[A-Za-z0-9_-]+-wrap$/D', $class_name ) );
@@ -624,6 +627,11 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 						continue;
 					}
 					if ( preg_match( '/^ssi-source-wrapper-(?:prefix|shell)-[0-9]{1,2}--[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) {
+						continue;
+					}
+					if ( $is_plain_tel && 1 === preg_match( '/^ssi-node-[a-f0-9]{12}-destination-(?:shell|carrier|prefix)$/D', $class_name ) ) {
+						// Their resets (`height:100%`, zero padding and border) would
+						// land on the input itself and override its captured box.
 						continue;
 					}
 					if ( $is_phone_shell && 1 === preg_match( '/^ssi-node-[a-f0-9]{12}-destination-(?:primary|carrier|prefix)$/D', $class_name ) ) {
