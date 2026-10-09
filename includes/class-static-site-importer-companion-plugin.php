@@ -1018,10 +1018,18 @@ class Static_Site_Importer_Companion_Plugin {
 							if ( ! media || ! media.url || ! media.id ) {
 								return;
 							}
-							var next = content.replace( /(<img\b[^>]*\bsrc=")[^"]*(")/i, function( matched, start, end ) {
-								return start + media.url + end;
-							} );
-							next = next.replace( /wp-image-\d+/, 'wp-image-' + media.id );
+							var document = new DOMParser().parseFromString( content, 'text/html' );
+							var image = document.querySelector( 'img.wp-image-' + currentId );
+							if ( ! image ) return;
+							image.setAttribute( 'src', media.url );
+							image.removeAttribute( 'srcset' );
+							image.removeAttribute( 'sizes' );
+							if ( image.parentElement && image.parentElement.tagName === 'PICTURE' ) {
+								Array.from( image.parentElement.children ).forEach( function( child ) { if ( child.tagName === 'SOURCE' ) child.remove(); } );
+							}
+							image.classList.remove( 'wp-image-' + currentId );
+							image.classList.add( 'wp-image-' + media.id );
+							var next = document.body.innerHTML;
 							var attrs = { content: next };
 							if ( typeof props.attributes.id === 'number' ) {
 								attrs.id = media.id;
