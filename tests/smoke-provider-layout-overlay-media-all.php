@@ -96,4 +96,47 @@ $assert( 1 === preg_match( '/@media \(max-width:767px\)\{[^{}]*\.ssi-node-000000
 $assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $compiled['overlay'] ), 'the overlay is admitted' );
 
 
+
+// A promoted `media all` patch follows the base rule, so it must carry only its
+// own declarations. Repeating the destination's provider resets there would
+// undo the authored base values (font-family/line-height back to `revert`).
+$map['presentation_targets'][0]['destinations'][0]['properties'][] = 'font_family';
+$map['presentation_targets'][0]['destinations'][0]['properties'][] = 'line_height';
+$map['presentation_targets'][0]['destinations'][0]['resets']       = array(
+	'font-family' => 'revert',
+	'line-height' => 'revert',
+);
+$with_base = array(
+	'controls' => array(
+		array(
+			'index'   => 0,
+			'control' => array(
+				'styles' => array(
+					'font_family' => 'Inter',
+					'line_height' => '1.5',
+				),
+			),
+		),
+	),
+	'variants' => array(
+		array(
+			'index'       => 0,
+			'role'        => 'control',
+			'condition'   => array(
+				'kind'  => 'media',
+				'query' => 'all',
+			),
+			'style_patch' => array( 'background_color' => 'rgb(1,2,3)' ),
+		),
+	),
+);
+$based = (string) ( Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $with_base )['css'] ?? '' );
+$assert( str_contains( $based, 'font-family:Inter;line-height:1.5' ) && str_contains( $based, 'background-color:rgb(1,2,3)' ), 'base and promoted patch both compile: ' . $based );
+$assert( ! str_contains( $based, 'revert' ), 'a promoted media all patch does not repeat provider resets after the base rule: ' . $based );
+
+// Without a base pass the provider resets are emitted once, ahead of the patch.
+$without_base = array( 'variants' => $with_base['variants'] );
+$alone        = (string) ( Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $without_base )['css'] ?? '' );
+$assert( 1 === substr_count( $alone, 'font-family:revert' ) && strpos( $alone, 'font-family:revert' ) < strpos( $alone, 'background-color:rgb(1,2,3)' ), 'resets are emitted once, before the promoted patch: ' . $alone );
+
 echo "provider layout overlay media all smoke passed ({$assertions} assertions)\n";

@@ -235,6 +235,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			// A producer can keep a stylesheet's implicit `media="all"` wrapper
 			// (a device-split capture tags each device sheet that way). It holds at
 			// every width, so its patch is unconditional rather than a lost variant.
+			// It is still a patch: the base pass (or the reset pass above) already
+			// released provider defaults, so it must not repeat those resets after
+			// the base rule and undo the authored values there.
 			$condition = self::is_media_all( $variant['condition'] ?? null ) ? null : ( $variant['condition'] ?? null );
 			if ( 'control_container' === $role ) {
 				$destinations = is_int( $index ) ? array_filter( $presentation_targets[ $index ]['destinations'] ?? array(), static fn( array $destination ): bool => 'control_container' === $destination['role'] ) : array();
@@ -243,7 +246,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					continue;
 				}
 				foreach ( $destinations as $destination ) {
-					self::compile_presentation_destinations( array( $destination ), $variant['style_patch'], $index, 'control_container', $condition, $rules, $operations, $losses );
+					self::compile_presentation_destinations( array( $destination ), $variant['style_patch'], $index, 'control_container', $condition, $rules, $operations, $losses, false );
 					$declarations = self::presentation_declarations( $variant['style_patch'], $index, 'control_container', $losses, $destination['properties'] );
 					if ( ! empty( $declarations ) ) {
 						$editor_rule    = '.editor-styles-wrapper ' . self::authoritative_presentation_selector( $destination['selector'] ) . '{' . implode( ';', $declarations ) . '}';
@@ -257,7 +260,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				$losses[] = self::presentation_loss( 'responsive_layout_ownership', is_int( $index ) ? $index : 0, is_string( $role ) ? $role : 'control' );
 				continue;
 			}
-			self::compile_presentation_destinations( $destinations, $variant['style_patch'], $index, $role, $condition, $rules, $operations, $losses );
+			self::compile_presentation_destinations( $destinations, $variant['style_patch'], $index, $role, $condition, $rules, $operations, $losses, false );
 		}
 		if ( 'generic/form-container-presentation/v1' === ( $container['schema'] ?? null ) ) {
 			$destination = array(
@@ -994,7 +997,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	/** Compile one adapter-owned destination without knowing its provider or markup. */
-	private static function compile_presentation_destinations( array $destinations, array $styles, int $index, string $role, ?array $condition, array &$rules, array &$operations, array &$losses ): void {
+	private static function compile_presentation_destinations( array $destinations, array $styles, int $index, string $role, ?array $condition, array &$rules, array &$operations, array &$losses, bool $emit_resets = true ): void {
 		$represented = array();
 		foreach ( $destinations as $destination ) {
 			$represented = array_merge( $represented, $destination['properties'] );
@@ -1007,7 +1010,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			// Provider defaults need one base reset. A responsive patch must carry
 			// only its authored changes; repeating the reset in every media query
 			// otherwise overrides a complete base font family or line-height.
-			foreach ( null === $condition ? ( $destination['resets'] ?? array() ) : array() as $property => $value ) {
+			foreach ( null === $condition && $emit_resets ? ( $destination['resets'] ?? array() ) : array() as $property => $value ) {
 				// An explicit source declaration is authoritative over a provider-default
 				// neutralization at the same destination.
 				if ( 'required_marker' !== $role && in_array( str_replace( '-', '_', $property ), $destination['properties'], true ) && array_key_exists( str_replace( '-', '_', $property ), $styles ) ) {
