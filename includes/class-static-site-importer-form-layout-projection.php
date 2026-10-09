@@ -2678,6 +2678,9 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					$roles[ $row['index'] ][ $role ] = true;
 				}
 			}
+			if ( is_array( $row['control'] ?? null ) && self::has_sibling_combinator_margin( $row['control']['provenance'] ?? null ) ) {
+				$roles[ $row['index'] ]['sibling_stacked_margin'] = true;
+			}
 		}
 		foreach ( $graph['control_containers'] ?? array() as $container ) {
 			if ( is_array( $container ) && is_int( $container['index'] ?? null ) ) {
@@ -2691,6 +2694,40 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		}
 		ksort( $roles, SORT_NUMERIC );
 		return $roles;
+	}
+
+	/**
+	 * Whether a margin fact was captured through a sibling-combinator rule.
+	 *
+	 * A sibling-stacking utility (Tailwind's `space-y-*`) is authored as
+	 * `.x > :not([hidden]) ~ :not([hidden])`, so it lands on every flat control
+	 * after the first. Only the combinator is looked at, never a class name.
+	 *
+	 * @param mixed $provenance
+	 */
+	private static function has_sibling_combinator_margin( $provenance ): bool {
+		foreach ( is_array( $provenance ) ? $provenance : array() as $entry ) {
+			if ( ! is_array( $entry ) || ! is_string( $entry['selector'] ?? null ) || ! is_array( $entry['properties'] ?? null ) ) {
+				continue;
+			}
+			$has_margin = false;
+			foreach ( $entry['properties'] as $property ) {
+				$has_margin = $has_margin || ( is_string( $property ) && str_starts_with( $property, 'margin' ) );
+			}
+			if ( ! $has_margin ) {
+				continue;
+			}
+			// Drop attribute selectors and functional arguments, where `~` and `+`
+			// are not combinators (`[a~=b]`, `:nth-child(2n+1)`).
+			$selector = preg_replace( '/\[[^\]]*\]/', '', $entry['selector'] );
+			do {
+				$selector = preg_replace( '/\([^()]*\)/', '', (string) $selector, -1, $count );
+			} while ( $count > 0 );
+			if ( 1 === preg_match( '/[~+]/', (string) $selector ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Build only a topology-owned source-captured empty-country group. */
@@ -3228,6 +3265,23 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'selector'   => '.' . $scope . ' .' . $label_class . ' > .grunion-label-required',
 				'properties' => array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ),
 				'resets'     => array( 'font-size' => 'inherit' ),
+				'priority'   => 'important',
+			);
+		}
+
+		if ( isset( $roles['sibling_stacked_margin'] ) && '' !== $control_class && 'submit' !== $type ) {
+			// The captured sibling-stacking margin stays represented above. The
+			// provider wraps each field and spaces the wrappers with the form gap,
+			// so the same margin on the control itself would add a second gap
+			// inside every wrapper. Inline margins are left to the source.
+			$stacked_selector = in_array( $type, array( 'phone', 'tel' ), true )
+				? '.' . $scope . ' .' . self::presentation_destination_class( $scope, $index, 'primary' )
+				: '.' . $scope . ' .' . $control_class . ( 'select' === $type ? ' select' : '' );
+			$destinations[]   = array(
+				'role'       => 'control',
+				'selector'   => $stacked_selector,
+				'properties' => array(),
+				'resets'     => array( 'margin-block' => '0' ),
 				'priority'   => 'important',
 			);
 		}

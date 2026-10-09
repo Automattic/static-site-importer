@@ -2470,6 +2470,34 @@ namespace {
 		'compiled-signup-row-keeps-a-non-wrapping-row-the-field-basis-and-the-submit-inline-margin',
 		wp_json_encode( array( 'errors' => $signup_row_validated['errors'] ?? array(), 'status' => $signup_row_row['status'] ?? '', 'reason' => $signup_row_row['reason'] ?? '', 'losses' => $signup_row_row['form_receipt_unaccepted_losses'] ?? array(), 'css' => $signup_row_css ) )
 	);
+	// The same sibling-stacking utility also matches every flat input after the
+	// first. The provider wraps each field in its own box and spaces those boxes
+	// with the form gap, so the margin captured against the input itself would
+	// add a second gap inside each wrapper. Only a margin that came from a
+	// sibling-combinator rule is neutralised; an authored margin on the control
+	// is left alone.
+	$stacked_margin_styles = array( 'margin_top' => 'calc(1.25rem * calc(1 - 0))', 'margin_bottom' => 'calc(1.25rem * 0)' );
+	$stacked_margin_fixture = static function ( string $selector, string $margin_top, int $index ) use ( $presentation_form, $presentation_role ): array {
+		$form = $presentation_form;
+		$form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => $index, 'control' => $presentation_role( array( 'margin_top' => $margin_top, 'height' => '3rem' ), array( 'margin-top', 'height' ), $selector ) ) );
+		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $form );
+		$row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validation['forms'] ?? array() ) )['forms'][0] ?? array();
+		return array( 'errors' => $validation['errors'] ?? array(), 'row' => $row, 'css' => (string) ( $row['provider_layout_overlay_css']['css'] ?? '' ) );
+	};
+	foreach ( array( 'input' => 0, 'textarea' => 2 ) as $stacked_label => $stacked_index ) {
+		$stacked = $stacked_margin_fixture( '.space-y-5>:not([hidden])~:not([hidden])', $stacked_margin_styles['margin_top'], $stacked_index );
+		$assert(
+			empty( $stacked['errors'] )
+				&& array() === ( $stacked['row']['form_receipt_unaccepted_losses'] ?? array() )
+				&& str_contains( $stacked['css'], 'margin-top:' . $stacked_margin_styles['margin_top'] )
+				&& 1 === preg_match( '/\{margin-block:0!important\}/', $stacked['css'] )
+				&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $stacked['row']['provider_layout_overlay_css'] ?? null ),
+			'sibling-stacking-margin-on-a-wrapped-' . $stacked_label . '-is-represented-but-reset-so-the-form-gap-is-not-doubled',
+			wp_json_encode( array( 'css' => $stacked['css'], 'losses' => $stacked['row']['form_receipt_unaccepted_losses'] ?? array() ) )
+		);
+	}
+	$authored_margin = $stacked_margin_fixture( 'input', '12px', 0 );
+	$assert( empty( $authored_margin['errors'] ) && str_contains( $authored_margin['css'], 'margin-top:12px' ) && ! str_contains( $authored_margin['css'], 'margin-block:0' ), 'authored-control-margin-without-a-sibling-combinator-is-kept', $authored_margin['css'] );
 	$authored_submit_line_height_form = $presentation_form;
 	$authored_submit_line_height_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 3, 'control' => $presentation_role( array( 'padding' => '16px', 'font_size' => '11.2px', 'line_height' => '16.8px' ), array( 'padding', 'font-size', 'line-height' ), 'button' ) ) );
 	$authored_submit_line_height_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $authored_submit_line_height_form );
