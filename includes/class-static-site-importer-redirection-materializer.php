@@ -330,7 +330,12 @@ final class Static_Site_Importer_Redirection_Materializer {
 				}
 			}
 			if ( array() !== $routes && 0 === $next['group_id'] ) {
-				$name   = 'Imported source routes: ' . $scope;
+				$name = 'Imported source routes: ' . $scope;
+				// Redirection truncates native group names at 50 bytes. Keep the
+				// full scope's identity before calling its create/readback contract.
+				if ( strlen( $name ) > 50 ) {
+					$name = 'Imported source routes: ' . substr( hash( 'sha256', $scope ), 0, 26 );
+				}
 				$groups = self::api(
 					'GET',
 					'group',
