@@ -9,7 +9,7 @@ $assert = static function ( bool $condition, string $message ): void {
 };
 // Studio and other hosts run the canonical CLI as the identity-less site operator.
 $assert( 0 === get_current_user_id(), 'The acceptance process runs as the identity-less CLI operator.' );
-$import  = static function ( array $request, string $user = '' ): array {
+$import     = static function ( array $request, string $user = '' ): array {
 	require_once ABSPATH . 'wp-admin/includes/file.php';
 	$file = wp_tempnam( 'ssi-redirection-request.json' );
 	file_put_contents( $file, wp_json_encode( $request ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Operator-owned temporary request fixture.
@@ -33,9 +33,10 @@ $import  = static function ( array $request, string $user = '' ): array {
 	} finally {
 		wp_delete_file( $file ); }
 };
-$request = array(
+$scope_name = 'redirection-acceptance-with-a-long-stable-source-identity';
+$request    = array(
 	'operation' => 'apply',
-	'slug'      => 'redirection-acceptance',
+	'slug'      => $scope_name,
 	'activate'  => true,
 	'overwrite' => true,
 	'source'    => array(
@@ -53,7 +54,7 @@ $request = array(
 		),
 	),
 );
-$plain   = $import( $request );
+$plain      = $import( $request );
 $assert( true === ( $plain['success'] ?? false ), 'Ordinary import completes.' );
 $assert( ! is_dir( WP_PLUGIN_DIR . '/redirection' ), 'Exact source routes without redirect intent install no redirect plugin.' );
 $request['source']['files'][] = array(
@@ -68,9 +69,12 @@ if ( ! defined( 'REDIRECTION_VERSION' ) ) {
 if ( function_exists( 'red_start_rest' ) ) {
 	red_start_rest(); }
 $owned   = get_option( Static_Site_Importer_Redirection_Materializer::OWNERSHIP_OPTION, array() );
-$scope   = $owned['redirection-acceptance'] ?? array();
+$scope   = $owned[ $scope_name ] ?? array();
 $rule_id = (int) ( $scope['rules']['/old']['id'] ?? 0 );
 $assert( $rule_id > 0 && Static_Site_Importer_Redirection_Materializer::available(), 'A real native rule and ready provider database exist.' );
+$groups       = Static_Site_Importer_Redirection_Materializer::api( 'GET', 'group', array( 'per_page' => 200 ) );
+$native_group = array_values( array_filter( $groups['items'] ?? array(), static fn( array $group ): bool => (int) $group['id'] === (int) $scope['group_id'] ) );
+$assert( 1 === count( $native_group ) && 50 === strlen( $native_group[0]['name'] ) && 'Imported source routes: ' . substr( hash( 'sha256', $scope_name ), 0, 26 ) === $native_group[0]['name'], 'Long scope identity is preserved within the native provider name bound.' );
 $again = $import( $request, 'admin' );
 $assert( true === ( $again['success'] ?? false ) && get_option( Static_Site_Importer_Redirection_Materializer::OWNERSHIP_OPTION, array() ) === $owned, 'An authenticated administrator reimport retains exact native IDs and configuration.' );
 // The operator grant is scoped to SSI's own provider dispatch: a direct anonymous call stays refused.
@@ -80,7 +84,7 @@ $assert( $anonymous->is_error() && in_array( $anonymous->get_status(), array( 40
 $destination = get_page_by_path( 'destination', OBJECT, 'page' );
 $assert( $destination instanceof WP_Post, 'Native destination page exists.' );
 $receipt   = array(
-	'theme'     => array( 'slug' => 'redirection-acceptance' ),
+	'theme'     => array( 'slug' => $scope_name ),
 	'plan'      => array(
 		'pages' => array(
 			array(
@@ -225,11 +229,11 @@ $unsupported_config                                       = $edited['item'];
 $unsupported_config['match_data']['source']['flag_query'] = 'ignore';
 $unsupported_edit = Static_Site_Importer_Redirection_Materializer::api( 'POST', 'redirect/' . $rule_id, $unsupported_config );
 $assert( ! is_wp_error( $unsupported_edit ), 'Native owner query behavior can change.' );
-$unsupported_export = Static_Site_Importer_Theme_Exporter::export_theme( array( 'theme_slug' => 'redirection-acceptance' ) );
+$unsupported_export = Static_Site_Importer_Theme_Exporter::export_theme( array( 'theme_slug' => $scope_name ) );
 $assert( is_wp_error( $unsupported_export ) && 'static_site_importer_redirect_export_unproven' === $unsupported_export->get_error_code(), 'Export explicitly rejects native matcher changes that exact-path aliases cannot preserve.' );
 $restored_edit = Static_Site_Importer_Redirection_Materializer::api( 'POST', 'redirect/' . $rule_id, $edited['item'] );
 $assert( ! is_wp_error( $restored_edit ), 'Owner query behavior is restored before portable export.' );
-$exported = Static_Site_Importer_Theme_Exporter::export_theme( array( 'theme_slug' => 'redirection-acceptance' ) );
+$exported = Static_Site_Importer_Theme_Exporter::export_theme( array( 'theme_slug' => $scope_name ) );
 $assert( ! is_wp_error( $exported ), 'The full current site exports native rules and their actual target documents: ' . ( is_wp_error( $exported ) ? $exported->get_error_message() : '' ) );
 $artifact = $exported['website_artifact'];
 $assert( 1 === ( $artifact['report']['redirect_count'] ?? 0 ) && 'redirects' === ( $artifact['metadata']['runtime_declarations'][0]['capability'] ?? '' ), 'Export retains native rule inventory and provider dependency intent.' );
