@@ -3638,7 +3638,12 @@ $root_media_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::mat
 $root_media_page_id = (int) ( $root_media_receipt['completed']['pages']['website/index.html'] ?? 0 );
 $root_media_content = stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $root_media_page_id ]['post_content'] ?? '' ) );
 $root_media_url     = 'https://example.test/wp-content/themes/root-media-plan/assets/website/media/example.jpg';
-$assert( 'completed' === $root_media_receipt['status'] && 2 === substr_count( $root_media_content, $root_media_url ) && str_contains( $root_media_content, 'src="' . $root_media_url . '?size=large#hero"' ) && str_contains( $root_media_content, 'blocks-engine-background-image' ) && ! str_contains( $root_media_content, 'src="/media/example.jpg' ), 'root-relative captured media resolves through the canonical theme asset map while preserving query and fragment suffixes' );
+// Every captured reference (img src, any preserved srcset candidate, and the
+// background) resolves through the asset map with its suffix intact. The count
+// is a floor, not an exact shape: the producer may keep an authored srcset in
+// its responsive-media carrier instead of lowering the img to core/image.
+$root_media_unsuffixed = preg_match_all( '#' . preg_quote( $root_media_url, '#' ) . '(?!\?size=(?:large|small)\#hero)#', $root_media_content );
+$assert( 'completed' === $root_media_receipt['status'] && 2 <= substr_count( $root_media_content, $root_media_url ) && 0 === $root_media_unsuffixed && ! str_contains( str_replace( $root_media_url, '', $root_media_content ), 'media/example.jpg' ) && str_contains( $root_media_content, 'src="' . $root_media_url . '?size=large#hero"' ) && str_contains( $root_media_content, 'blocks-engine-background-image' ), 'root-relative captured media resolves through the canonical theme asset map while preserving query and fragment suffixes' );
 $assert( ( $root_media_plan['pages'][0]['reconciliation_identity'] ?? '' ) === ( $GLOBALS['ssi_plan_meta'][ $root_media_page_id ]['_blocks_engine_reconciliation_identity'] ?? '' ), 'materialized posts expose the producer reconciliation identity required by scoped theme bootstrap assets' );
 unset( $GLOBALS['ssi_plan_meta'][ $root_media_page_id ]['_blocks_engine_reconciliation_identity'] );
 $assert( wp_delete_file( (string) $root_media_receipt['theme']['dir'] . '/style.css' ), 'rollback fixture removes one generated target to force overwrite materialization' );
