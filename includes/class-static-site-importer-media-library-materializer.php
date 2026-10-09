@@ -765,7 +765,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @param array<int,int>                                                                $ids
 	 */
 	private static function rewrite_media_tag( string $tag, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, array &$ids, ?WP_Error &$error, ?string $image_class ): string {
-		$src_id = 0;
+		$src_id             = 0;
 		$authored_selection = (bool) preg_match( '/\bsrcset="[^"\s]/i', $tag );
 		if ( preg_match( '/\bsrc="([^"]*)"/i', $tag, $src_match ) ) {
 			$src_id = self::attachment_id_for_url( html_entity_decode( $src_match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8' ), self::alt_from_tag( $tag ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error, $authored_selection );
@@ -852,29 +852,6 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			return '';
 		}
 		return html_entity_decode( $alt_match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-	}
-
-	/**
-	 * Theme URLs in a fragment, longest first when replaced by the caller.
-	 *
-	 * @return array<int,string>
-	 */
-	private static function theme_urls_in( string $text, string $theme_uri ): array {
-		$base  = (string) wp_parse_url( $theme_uri, PHP_URL_PATH );
-		$found = array();
-		foreach ( array( $theme_uri, $base ) as $prefix ) {
-			if ( '' === $prefix || ! str_contains( $text, $prefix . '/' ) ) {
-				continue;
-			}
-			if ( preg_match_all( '#' . preg_quote( $prefix, '#' ) . '/[^"\'\s>]+#', $text, $matches ) ) {
-				foreach ( $matches[0] as $url ) {
-					if ( null !== self::theme_relative_raster( $url, $theme_uri ) ) {
-						$found[ $url ] = $url;
-					}
-				}
-			}
-		}
-		return array_values( $found );
 	}
 
 	/**
