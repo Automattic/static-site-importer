@@ -3138,11 +3138,16 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				}
 				$destinations[] = $destination;
 				if ( 'submit' === $type && $has_caption ) {
-					$typography     = array( 'font', 'font_family', 'font_size', 'font_style', 'font_variant', 'font_weight', 'line_height', 'letter_spacing', 'text_transform' );
+					// The caption span keeps its source classes, so a source rule
+					// that paints the label (Wix's `.mu5PoX .OR4Nv8{color:rgb(var(--txt))}`)
+					// still matches it, but the wrapper that defined its variables is
+					// gone. Restate the captured text colour with the typography so the
+					// label shows the button's own colour, not a fallback.
+					$caption        = array( 'color', 'font', 'font_family', 'font_size', 'font_style', 'font_variant', 'font_weight', 'line_height', 'letter_spacing', 'text_transform' );
 					$destinations[] = array(
 						'role'       => 'control',
 						'selector'   => '.' . $scope . ' .' . $control_class . ' > .wp-block-button__link > span',
-						'properties' => $typography,
+						'properties' => $caption,
 					);
 				}
 				if ( 'submit' === $type ) {

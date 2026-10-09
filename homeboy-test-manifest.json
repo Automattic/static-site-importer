@@ -62,6 +62,7 @@
     "tests/smoke-provider-entity-decline.php": { "environment": "standalone-php" },
     "tests/smoke-provider-layout-overlay-editor-bound.php": { "environment": "standalone-php" },
     "tests/smoke-provider-layout-overlay-media-all.php": { "environment": "standalone-php" },
+    "tests/smoke-submit-caption-color.php": { "environment": "standalone-php" },
     "tests/smoke-provider-overlay-compaction.php": { "environment": "standalone-php" },
     "tests/smoke-provider-presentation.php": { "environment": "standalone-php" },
     "tests/smoke-site-identity.php": { "environment": "standalone-php" },

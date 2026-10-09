@@ -117,6 +117,7 @@
     { "path": "tests/smoke-provider-entity-decline.php", "environment": "standalone-php" },
     { "path": "tests/smoke-provider-layout-overlay-editor-bound.php", "environment": "standalone-php" },
     { "path": "tests/smoke-provider-layout-overlay-media-all.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-submit-caption-color.php", "environment": "standalone-php" },
     { "path": "tests/smoke-provider-overlay-compaction.php", "environment": "standalone-php" },
     { "path": "tests/smoke-provider-presentation.php", "environment": "standalone-php" },
     { "path": "tests/smoke-site-identity.php", "environment": "standalone-php" },
