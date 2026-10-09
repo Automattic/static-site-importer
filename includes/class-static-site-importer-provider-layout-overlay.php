@@ -14,6 +14,8 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	public const OVERLAY_SCHEMA            = 'static-site-importer/provider-layout-overlay/v1';
 	private const MAX_LAYOUT_OVERLAY_BYTES = 16384;
 	private const MAX_OVERLAY_BYTES        = 32768;
+	/** Authored values such as system font stacks exceed a few hundred bytes; bounded like the producer contract. */
+	public const MAX_PRESENTATION_VALUE_BYTES = 1024;
 	// A source stylesheet can author a media feature with the legacy `min-width:`/
 	// `max-width:` prefix syntax or the modern comparison range syntax
 	// (`width >= 40rem`) - Tailwind v4 emits every default breakpoint with the
@@ -833,7 +835,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			return false;
 		}
 		$value = (string) $value;
-		if ( '' === $value || strlen( $value ) > 160 || preg_match( '/(?:url\(|[;{}\\\\]|!important|expression\()/i', $value ) ) {
+		if ( '' === $value || strlen( $value ) > self::MAX_PRESENTATION_VALUE_BYTES || preg_match( '/(?:url\(|[;{}\\\\]|!important|expression\()/i', $value ) ) {
 			return false;
 		}
 		if ( isset( self::box_property_map()[ $fact ] ) ) {
@@ -1069,7 +1071,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 
 	/** A captured CSS value admitted into provider output must stay a plain declaration value. */
 	public static function safe_presentation_value( mixed $value ): bool {
-		return is_string( $value ) && '' !== trim( $value ) && strlen( $value ) <= 160 && ! preg_match( '/(?:url\(|@import|[;{}\\\\]|!important|expression\(|javascript:)/i', $value ) && (bool) preg_match( "~^[a-zA-Z0-9_#%.,()\\s+\\-*/'\"]+$~D", $value );
+		return is_string( $value ) && '' !== trim( $value ) && strlen( $value ) <= self::MAX_PRESENTATION_VALUE_BYTES && ! preg_match( '/(?:url\(|@import|[;{}\\\\]|!important|expression\(|javascript:)/i', $value ) && (bool) preg_match( "~^[a-zA-Z0-9_#%.,()\\s+\\-*/'\"]+$~D", $value );
 	}
 
 	private static function presentation_operation( int $index, string $role, string $target, bool $responsive ): array {
