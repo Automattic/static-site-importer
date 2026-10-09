@@ -1614,7 +1614,7 @@ $output = wp_kses(
 		'footer' => $flow, 'nav' => $flow, 'div' => $flow, 'span' => $global, 'p' => $flow,
 		'h1' => $flow, 'h2' => $flow, 'h3' => $flow, 'h4' => $flow, 'h5' => $flow, 'h6' => $flow,
 		'ul' => $flow, 'ol' => $flow, 'li' => $flow, 'dl' => $flow, 'dt' => $flow, 'dd' => $flow,
-		'strong' => $global, 'b' => $global, 'em' => $global, 'i' => $global, 'small' => $global, 'br' => $global,
+		'strong' => $global, 'b' => $global, 'em' => $global, 'i' => $global, 'small' => $global, 'br' => $global, 'hr' => $global,
 		'a' => array_merge( $global, array( 'download' => true, 'href' => true, 'rel' => true, 'target' => true ) ),
 		'button' => array_merge( $global, array( 'disabled' => true, 'name' => true, 'type' => true, 'value' => true ) ),
 		'form' => array_merge( $flow, array( 'action' => true, 'method' => true ) ),
