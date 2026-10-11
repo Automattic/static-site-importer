@@ -73,8 +73,14 @@ function static_site_importer_source_runtime( $source ) {
 		'source_metadata' => array(),
 	);
 }
-function static_site_importer_staged_archive_files( $archive ) {
+function static_site_importer_staged_archive_files( $archive, $return_payload_references = false, ?array &$skipped = null ) {
 	$GLOBALS['ssi_staged_archives'][] = $archive;
+	if ( 'mixed.zip' === ( $archive['name'] ?? '' ) ) {
+		$skipped[] = array(
+			'code'        => 'static_site_importer_non_static_file_skipped',
+			'source_path' => 'website/assets/style.php',
+		);
+	}
 	return array(
 		array(
 			'path'    => 'website/index.html',
@@ -416,6 +422,27 @@ if ( empty( $staged_zip['success'] ) || '/srv/private/website.zip' !== ( $GLOBAL
 	throw new RuntimeException( 'resolved staged archives must normalize through files without inline archive bytes' ); }
 if ( static_site_importer_staged_archive_compiler_limits() !== ( Static_Site_Importer_Compilation_Preparation::$last_artifact['compiler_limits'] ?? null ) ) {
 	throw new RuntimeException( 'staged ZIP artifacts must declare the compiler contract their payload references were verified against' ); }
+$GLOBALS['ssi_filters']['static_site_importer_resolve_source_reference'] = static function ( $value, $reference, $type ) {
+	return 'staged-mixed-zip' === $reference && 'zip' === $type ? array(
+		'source' => array(
+			'zip' => array(
+				'name'        => 'mixed.zip',
+				'staged_path' => '/srv/private/mixed.zip',
+			),
+		),
+	) : $value;
+};
+$mixed_staged_zip = static_site_importer_ability_import(
+	array(
+		'operation' => 'plan',
+		'source'    => array(
+			'type' => 'zip',
+			'ref'  => 'staged-mixed-zip',
+		),
+	)
+);
+if ( empty( $mixed_staged_zip['success'] ) || 'website/assets/style.php' !== ( Static_Site_Importer_Compilation_Preparation::$last_args['source_metadata']['intake_findings'][0]['source_path'] ?? '' ) ) {
+	throw new RuntimeException( 'a staged ZIP whose intake skipped a non-static asset must import and carry the finding into the import args' ); }
 $GLOBALS['ssi_filters']['static_site_importer_resolve_source_reference'] = static function ( $value, $reference, $type ) {
 	return 'staged-zip-2' === $reference && 'zip' === $type ? array(
 		'source' => array(
