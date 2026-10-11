@@ -1,6 +1,6 @@
 <?php
 /** Load the real core tokenizer without booting a site or database. */
-$ssi_wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' );
+$ssi_wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: getenv( 'HOMEBOY_WORDPRESS_CORE_ROOT' );
 if ( ! $ssi_wp_root ) {
 	foreach ( array( '/vendor/johnpbloch/wordpress-core', '/vendor/wordpress-core' ) as $ssi_core_candidate ) {
 		$ssi_wp_root = dirname( __DIR__, 2 ) . $ssi_core_candidate;
@@ -11,7 +11,7 @@ if ( ! $ssi_wp_root ) {
 }
 $ssi_html_api = rtrim( (string) $ssi_wp_root, '/\\' ) . '/wp-includes/html-api/';
 if ( ! is_readable( $ssi_html_api . 'class-wp-html-tag-processor.php' ) ) {
-	fwrite( STDERR, "FAIL: Core HTML API unavailable; supply STATIC_SITE_IMPORTER_WP_ROOT or vendored WordPress core.\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Standalone dependency bootstrap reports to CLI stderr.
+	fwrite( STDERR, "FAIL: Core HTML API unavailable; supply STATIC_SITE_IMPORTER_WP_ROOT, HOMEBOY_WORDPRESS_CORE_ROOT, or vendored WordPress core.\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Standalone dependency bootstrap reports to CLI stderr.
 	exit( 1 );
 }
 require_once dirname( $ssi_html_api ) . '/class-wp-token-map.php';
