@@ -33,6 +33,18 @@ try {
 	$assert( $crop === $select->invoke( null, $root, $crop ), 'an explicit crop retains its captured composition' );
 	$assert( $focus === $select->invoke( null, $root, $focus ), 'a changed focal point retains its captured composition' );
 	$assert( $wide === $select->invoke( null, $root, $wide ), 'a changed aspect ratio retains its captured composition' );
+	// The same transaction can bind native fallback images and explicit source
+	// families. Their source-path cache must not substitute the promoted file.
+	$bind        = new ReflectionMethod( Static_Site_Importer_Media_Library_Materializer::class, 'ensure_attachment' );
+	$attachments = array( $small => 7, $large => 9 );
+	$state       = $hashes = array();
+	$error       = null;
+	$arguments   = array( $root, $small, '', &$state, &$attachments, &$hashes, &$error, false );
+	$assert( 9 === $bind->invokeArgs( null, $arguments ), 'a native source still selects the largest captured rendition' );
+	$arguments[7] = true;
+	$assert( 7 === $bind->invokeArgs( null, $arguments ), 'an authored candidate binds its exact rendition in the same transaction' );
+	$arguments[7] = false;
+	$assert( 9 === $bind->invokeArgs( null, $arguments ), 'an exact candidate cache cannot change subsequent native promotion' );
 } finally {
 	foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $root, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST ) as $item ) {
 		$item->isDir() ? rmdir( $item->getPathname() ) : unlink( $item->getPathname() );
@@ -40,4 +52,4 @@ try {
 	rmdir( $root );
 }
 if ( $failures ) exit( 1 );
-echo "Media rendition equivalence passed: 5 assertions\n";
+echo "Media rendition equivalence passed: 8 assertions\n";
