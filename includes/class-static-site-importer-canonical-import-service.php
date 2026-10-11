@@ -116,7 +116,8 @@ class Static_Site_Importer_Canonical_Import_Service {
 			$input      = array_merge( $input, $prepared['input'] );
 			$provenance = array_merge( $provenance, isset( $artifact['provenance'] ) && is_array( $artifact['provenance'] ) ? $artifact['provenance'] : array() );
 		} else {
-			$runtime_source = array(
+			$intake_findings = array();
+			$runtime_source  = array(
 				'entrypoint' => (string) ( $source['entrypoint'] ?? '' ),
 				'metadata'   => isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array(),
 			);
@@ -125,7 +126,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 			} elseif ( 'files' === $type ) {
 				$runtime_source['files'] = isset( $source['files'] ) && is_array( $source['files'] ) ? $source['files'] : array();
 			} elseif ( ! empty( $source['zip']['staged_path'] ) ) {
-				$runtime_source['files'] = static_site_importer_staged_archive_files( $source['zip'], true );
+				$runtime_source['files'] = static_site_importer_staged_archive_files( $source['zip'], true, $intake_findings );
 				if ( is_wp_error( $runtime_source['files'] ) ) {
 					return self::error( (string) $runtime_source['files']->get_error_code(), $runtime_source['files']->get_error_message(), $runtime_source['files']->get_error_data() );
 				}
@@ -154,6 +155,12 @@ class Static_Site_Importer_Canonical_Import_Service {
 				return self::error( (string) $runtime->get_error_code(), $runtime->get_error_message(), $runtime->get_error_data() );
 			}
 			$runtime_artifact = $runtime['artifact'];
+			$intake_findings  = array_merge( $intake_findings, is_array( $runtime['source_metadata']['intake_findings'] ?? null ) ? $runtime['source_metadata']['intake_findings'] : array() );
+			if ( array() !== $intake_findings ) {
+				// Skipped non-static assets surface as report diagnostics through the import args.
+				$input['source_metadata']                    = is_array( $input['source_metadata'] ?? null ) ? $input['source_metadata'] : array();
+				$input['source_metadata']['intake_findings'] = $intake_findings;
+			}
 			$source_path      = is_string( $input['source_metadata']['source_path'] ?? null ) ? trim( $input['source_metadata']['source_path'] ) : '';
 			$source_parts     = '' !== $source_path ? ( function_exists( 'wp_parse_url' ) ? wp_parse_url( $source_path ) : parse_url( $source_path ) ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Standalone import smoke tests run without WordPress URL helpers.
 			if (

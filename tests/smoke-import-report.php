@@ -177,6 +177,21 @@ $persisted  = $projection['report']->to_array();
 $assert( array( $compiler_warning ) === ( $persisted['diagnostics'] ?? null ), 'persisted-import-report-retains-compiler-warning' );
 $summary = Static_Site_Importer_Diagnostic_Projection::import_report_summary( $persisted, array() );
 $assert( $compiler_warning['context'] === ( $summary['diagnostics'][0]['context'] ?? null ), 'compact-summary-retains-bounded-compiler-warning-context' );
+$skipped_asset_finding = array(
+	'code'        => 'static_site_importer_non_static_file_skipped',
+	'type'        => 'static-site-importer',
+	'severity'    => 'warning',
+	'stage'       => 'archive_intake',
+	'source_path' => 'website/assets/style.php',
+	'path'        => 'website/assets/style.php',
+	'reason_code' => 'non_static_extension',
+	'message'     => 'Skipped website/assets/style.php: only static content can be imported, so references to it are unresolved.',
+);
+$intake_projection     = Static_Site_Importer_Receipt_Projection::compose( $receipt, array( 'source_metadata' => array( 'intake_findings' => array( $skipped_asset_finding ) ) ), array(), array(), array(), 'intake-finding-run', array(), array() );
+$intake_persisted      = $intake_projection['report']->to_array();
+$assert( in_array( $skipped_asset_finding, $intake_persisted['diagnostics'] ?? array(), true ), 'persisted-import-report-retains-skipped-archive-asset-finding' );
+$intake_summary = Static_Site_Importer_Diagnostic_Projection::import_report_summary( $intake_persisted, array() );
+$assert( 'non_static_extension' === ( array_column( $intake_summary['diagnostics'] ?? array(), 'reason_code', 'source_path' )['website/assets/style.php'] ?? '' ), 'compact-summary-surfaces-skipped-archive-asset-finding' );
 
 $unsafe_layout_plan = array(
 	'quality'     => array( 'metrics' => array( 'block_count' => 179, 'diagnostic_count' => 1 ) ),

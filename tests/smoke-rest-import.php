@@ -938,6 +938,41 @@ if ( class_exists( 'ZipArchive' ) ) {
 	$tampered_bytes = $staged_reader->read( $referenced_by_path['website/assets/photo.png']['payload_reference'] );
 	$assert( ! hash_equals( $referenced_by_path['website/assets/photo.png']['payload_reference']['sha256'], hash( 'sha256', $tampered_bytes ) ), 'staged-zip-reader-does-not-cache-tampered-payloads-before-materializer-verification' );
 
+	$mixed_zip = new ZipArchive();
+	$mixed_zip->open( $staged_path, ZipArchive::OVERWRITE );
+	$mixed_zip->addFromString( 'website/index.html', '<main>Staged</main>' );
+	$mixed_zip->addFromString( 'website/assets/style.php', 'body{color:red}' );
+	$mixed_zip->close();
+	$mixed_skipped = array();
+	$mixed_files   = static_site_importer_staged_archive_files( array( 'name' => 'website.zip', 'staged_path' => $staged_path ), false, $mixed_skipped );
+	$assert( is_array( $mixed_files ) && array( 'website/index.html' ) === array_column( $mixed_files, 'path' ), 'staged-zip-skips-non-static-asset-instead-of-rejecting-archive' );
+	$assert( 1 === count( $mixed_skipped ) && 'website/assets/style.php' === ( $mixed_skipped[0]['source_path'] ?? '' ) && 'static_site_importer_non_static_file_skipped' === ( $mixed_skipped[0]['code'] ?? '' ), 'staged-zip-records-finding-for-skipped-asset' );
+
+	$page_zip = new ZipArchive();
+	$page_zip->open( $staged_path, ZipArchive::OVERWRITE );
+	$page_zip->addFromString( 'website/index.php', '<?php echo 1;' );
+	$page_zip->addFromString( 'website/about.html', '<main>About</main>' );
+	$page_zip->close();
+	$page_rejected = static_site_importer_staged_archive_files( array( 'name' => 'website.zip', 'staged_path' => $staged_path ) );
+	$assert( is_wp_error( $page_rejected ) && 'static_site_importer_executable_source_rejected' === $page_rejected->get_error_code(), 'staged-zip-still-rejects-non-static-page-document' );
+	$assert( is_wp_error( $page_rejected ) && str_contains( $page_rejected->get_error_message(), 'website/index.php' ), 'staged-zip-rejection-message-names-the-path' );
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-public-error-projection.php';
+	$page_public = Static_Site_Importer_Public_Error_Projection::project_public_error_message(
+		'static_site_importer_executable_source_rejected',
+		Static_Site_Importer_Public_Error_Projection::project_public_diagnostics(
+			array(
+				array(
+					'type'        => 'validation_error',
+					'severity'    => 'error',
+					'code'        => 'static_site_importer_executable_source_rejected',
+					'reason_code' => 'static_site_importer_executable_source_rejected',
+					'message'     => is_wp_error( $page_rejected ) ? $page_rejected->get_error_message() : '',
+				),
+			)
+		)
+	);
+	$assert( str_contains( $page_public, 'website/index.php is not static content' ), 'staged-zip-public-rejection-names-the-path' );
+
 	$symlink_path = $staged_path . '.link';
 	if ( function_exists( 'symlink' ) && @symlink( $staged_path, $symlink_path ) ) {
 		$symlinked = static_site_importer_staged_archive_files(

@@ -615,9 +615,10 @@ function static_site_importer_source_runtime( array $source, ?object $payload_re
 		);
 	}
 
-	$files        = array();
-	$metadata     = isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array();
-	$report_paths = isset( $metadata['reports'] ) && is_array( $metadata['reports'] ) ? $metadata['reports'] : array();
+	$files           = array();
+	$archive_skipped = array();
+	$metadata        = isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array();
+	$report_paths    = isset( $metadata['reports'] ) && is_array( $metadata['reports'] ) ? $metadata['reports'] : array();
 
 	if ( isset( $source['html'] ) && '' !== trim( (string) $source['html'] ) ) {
 		$files[] = array(
@@ -674,7 +675,7 @@ function static_site_importer_source_runtime( array $source, ?object $payload_re
 	}
 
 	if ( isset( $source['archive'] ) && is_array( $source['archive'] ) ) {
-		$archive_files = static_site_importer_rest_archive_files( $source['archive'] );
+		$archive_files = static_site_importer_rest_archive_files( $source['archive'], $archive_skipped );
 		if ( is_wp_error( $archive_files ) ) {
 			return $archive_files;
 		}
@@ -714,7 +715,7 @@ function static_site_importer_source_runtime( array $source, ?object $payload_re
 
 	return array(
 		'artifact'        => $artifact,
-		'source_metadata' => array(),
+		'source_metadata' => array() === $archive_skipped ? array() : array( 'intake_findings' => $archive_skipped ),
 		'provider'        => 'rest-source',
 	);
 }
@@ -792,7 +793,7 @@ function static_site_importer_rest_is_url_only_source( array $source ): bool {
  * @param array<string,mixed> $archive Archive payload.
  * @return array<int,array<string,mixed>>|WP_Error
  */
-function static_site_importer_rest_archive_files( array $archive ) {
+function static_site_importer_rest_archive_files( array $archive, ?array &$skipped = null ) {
 	$name = isset( $archive['name'] ) ? (string) $archive['name'] : ( isset( $archive['path'] ) ? (string) $archive['path'] : '' );
 	if ( ! preg_match( '/\.zip$/i', $name ) ) {
 		return new WP_Error( 'static_site_importer_invalid_archive_type', __( 'ZIP uploads must use a .zip file.', 'static-site-importer' ), array( 'status' => 400 ) );
@@ -825,7 +826,7 @@ function static_site_importer_rest_archive_files( array $archive ) {
 		return new WP_Error( 'static_site_importer_archive_tempfile_failed', __( 'Uploaded ZIP archive could not be staged for extraction.', 'static-site-importer' ), array( 'status' => 500 ) );
 	}
 
-	return static_site_importer_archive_files_from_path( $tmp, $limits, true );
+	return static_site_importer_archive_files_from_path( $tmp, $limits, true, false, $skipped );
 }
 
 /**
@@ -837,13 +838,13 @@ function static_site_importer_rest_archive_files( array $archive ) {
  * @param array<string,mixed> $archive Resolved archive payload.
  * @return array<int,array<string,mixed>>|WP_Error
  */
-function static_site_importer_staged_archive_files( array $archive, bool $return_payload_references = false ) {
+function static_site_importer_staged_archive_files( array $archive, bool $return_payload_references = false, ?array &$skipped = null ) {
 	$path = static_site_importer_staged_archive_path( $archive );
 	if ( is_wp_error( $path ) ) {
 		return $path;
 	}
 
-	return static_site_importer_archive_files_from_path( $path, static_site_importer_staged_archive_limits(), false, $return_payload_references );
+	return static_site_importer_archive_files_from_path( $path, static_site_importer_staged_archive_limits(), false, $return_payload_references, $skipped );
 }
 
 /** Resolve a server-owned staged archive without transferring ownership to SSI. */
@@ -928,9 +929,11 @@ function static_site_importer_staged_archive_payload_reader( array $archive ) {
  * @param string            $archive_path Local ZIP path.
  * @param array<string,int> $limits       Bounded archive policy.
  * @param bool              $delete_path  Whether this importer owns the path.
+ * @param bool              $return_payload_references Whether binary entries are returned as payload references.
+ * @param array|null        $skipped      Receives one finding per non-static asset entry that was left out.
  * @return array<int,array<string,mixed>>|WP_Error
  */
-function static_site_importer_archive_files_from_path( string $archive_path, array $limits, bool $delete_path, bool $return_payload_references = false ) {
+function static_site_importer_archive_files_from_path( string $archive_path, array $limits, bool $delete_path, bool $return_payload_references = false, ?array &$skipped = null ) {
 	if ( ! class_exists( 'ZipArchive' ) ) {
 		return new WP_Error( 'static_site_importer_zip_unavailable', __( 'ZIP archive extraction is unavailable on this server.', 'static-site-importer' ), array( 'status' => 500 ) );
 	}
@@ -999,15 +1002,36 @@ function static_site_importer_archive_files_from_path( string $archive_path, arr
 		}
 
 		if ( ! Static_Site_Importer_Content_Policy::is_static_path( $path ) ) {
-			$cleanup( $zip );
-			return new WP_Error(
-				'static_site_importer_executable_source_rejected',
-				__( 'ZIP archives may contain static content only.', 'static-site-importer' ),
-				array(
-					'status' => 400,
-					'path'   => $path,
-				)
+			// A non-static page document cannot be imported, so it still rejects the
+			// archive. Any other entry is an asset: leave it out and report it, so
+			// references to it resolve like any other missing asset.
+			if ( static_site_importer_rest_is_page_document_path( $path ) ) {
+				$cleanup( $zip );
+				return new WP_Error(
+					'static_site_importer_executable_source_rejected',
+					sprintf(
+						/* translators: %s: archive entry path. */
+						__( 'ZIP archives may contain static content only; %s is not static content.', 'static-site-importer' ),
+						$path
+					),
+					array(
+						'status' => 400,
+						'path'   => $path,
+					)
+				);
+			}
+			$skipped   = is_array( $skipped ) ? $skipped : array();
+			$skipped[] = array(
+				'code'        => 'static_site_importer_non_static_file_skipped',
+				'type'        => 'static-site-importer',
+				'severity'    => 'warning',
+				'stage'       => 'archive_intake',
+				'source_path' => $path,
+				'path'        => $path,
+				'reason_code' => 'non_static_extension',
+				'message'     => sprintf( 'Skipped %s: only static content can be imported, so references to it are unresolved.', $path ),
 			);
+			continue;
 		}
 
 		$file_content = $zip->getFromIndex( $i );
@@ -1039,6 +1063,19 @@ function static_site_importer_archive_files_from_path( string $archive_path, arr
 	$cleanup( $zip );
 
 	return $files;
+}
+
+/**
+ * Whether a non-static archive entry is a page document rather than an asset.
+ *
+ * Page documents are the entry documents an import starts from (index, default
+ * and home pages); a server-side one cannot be imported as static content.
+ *
+ * @param string $path Normalized artifact path.
+ * @return bool
+ */
+function static_site_importer_rest_is_page_document_path( string $path ): bool {
+	return in_array( strtolower( pathinfo( $path, PATHINFO_FILENAME ) ), array( 'index', 'default', 'home' ), true );
 }
 
 /**

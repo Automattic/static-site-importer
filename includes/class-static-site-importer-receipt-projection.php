@@ -92,6 +92,12 @@ class Static_Site_Importer_Receipt_Projection {
 				array_values( array_filter( $args['captured_interaction_diagnostics'], 'is_array' ) )
 			);
 		}
+		if ( is_array( $args['source_metadata']['intake_findings'] ?? null ) ) {
+			$diagnostics = array_merge(
+				$diagnostics,
+				array_values( array_filter( $args['source_metadata']['intake_findings'], 'is_array' ) )
+			);
+		}
 		if ( is_array( $args['theme_screenshot_evidence'] ?? null ) ) {
 			$preview_status = (string) ( $args['theme_screenshot_evidence']['status'] ?? '' );
 			if ( in_array( $preview_status, array( Static_Site_Importer_Theme_Screenshot::STATUS_INVALID, Static_Site_Importer_Theme_Screenshot::STATUS_UNAVAILABLE ), true ) ) {
