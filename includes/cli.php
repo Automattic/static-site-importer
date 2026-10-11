@@ -75,11 +75,86 @@ if ( ! function_exists( 'static_site_importer_cli_direct_artifact_run_policy' ) 
 }
 
 if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout' ) ) {
-	/** Run bounded receipt workers concurrently; return null when process spawning is unavailable. */
+	/**
+	 * Run bounded receipt workers concurrently; return null when process spawning is unavailable.
+	 *
+	 * A worker killed by SIGKILL most likely met the out-of-memory killer while
+	 * its siblings held memory too, so its shard is retried on its own, one shard
+	 * at a time. Workers skip receipts they already published, so a retry only
+	 * compiles the pages the killed worker did not finish.
+	 */
 	function static_site_importer_cli_compile_artifact_pages_fanout( string $import_id, array $shards ) {
 		if ( ! function_exists( 'proc_open' ) || empty( $_SERVER['argv'][0] ) ) {
 			return null;
 		}
+		$run = static_site_importer_cli_run_compile_workers( $import_id, $shards );
+		if ( $run['spawn_error'] && empty( $run['results'] ) ) {
+			return null;
+		}
+		$results = $run['results'];
+		if ( 1 < count( $results ) ) {
+			foreach ( array_keys( $results ) as $index ) {
+				if ( 9 !== $results[ $index ]['signal'] ) {
+					continue;
+				}
+				WP_CLI::warning( sprintf( 'Compile worker %d was killed by signal 9 (likely out of memory); retrying its shard on its own.', (int) $index + 1 ) );
+				$retry = static_site_importer_cli_run_compile_workers( $import_id, array( $index => $shards[ $index ] ) );
+				if ( isset( $retry['results'][ $index ] ) ) {
+					$results[ $index ] = $retry['results'][ $index ];
+				}
+			}
+		}
+
+		$failures      = array();
+		$first_failure = '';
+		foreach ( $results as $index => $result ) {
+			if ( 0 === $result['signal'] && 0 === $result['exitcode'] ) {
+				continue;
+			}
+			$outcome = 0 !== $result['signal']
+				? sprintf( 'was killed by signal %d%s', $result['signal'], static_site_importer_cli_signal_hint( $result['signal'] ) )
+				: sprintf( 'exited with status %d', $result['exitcode'] );
+			if ( empty( $failures ) ) {
+				$first_failure = sprintf( 'Compile worker %d of %d %s', (int) $index + 1, count( $shards ), $outcome );
+				// A signal is the cause; whatever the worker printed before it died is not.
+				$cause = 0 === $result['signal'] ? static_site_importer_cli_worker_failure_cause( $result['error'], $result['output'] ) : '';
+				if ( '' !== $cause ) {
+					$first_failure .= ': ' . $cause;
+				}
+			}
+			$failures[] = substr( trim( $result['error'] . "\n" . $result['output'] ), 0, 1000 );
+			$diagnostic = sprintf( 'Compile worker %d %s.', (int) $index + 1, $outcome );
+			if ( '' !== trim( $result['error'] ) ) {
+				$diagnostic .= "\nStderr:\n" . substr( trim( $result['error'] ), 0, 500 );
+			}
+			if ( '' !== trim( $result['output'] ) ) {
+				$diagnostic .= "\nStdout:\n" . substr( trim( $result['output'] ), 0, 500 );
+			}
+			WP_CLI::warning( $diagnostic );
+		}
+		if ( $run['spawn_error'] || ! empty( $failures ) ) {
+			// The message is the only part of this error that reaches the import's
+			// public failure (redacted and bounded there), so it names the first
+			// failing worker and why, not just that some worker failed.
+			return new WP_Error(
+				'static_site_importer_direct_artifact_worker_process_failed',
+				'' === $first_failure ? 'A compile worker could not be started.' : $first_failure . '.',
+				array( 'worker_errors' => array_slice( $failures, 0, 4 ) )
+			);
+		}
+		return true;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_run_compile_workers' ) ) {
+	/**
+	 * Run one receipt worker per shard concurrently and collect how each ended.
+	 *
+	 * @param string                 $import_id Retained run id.
+	 * @param array<int|string,array> $shards    Page id shards keyed by worker index.
+	 * @return array{spawn_error:bool,results:array<int|string,array{signal:int,exitcode:int,error:string,output:string}>}
+	 */
+	function static_site_importer_cli_run_compile_workers( string $import_id, array $shards ): array {
 		// Bundled WP-CLI PHARs are readable PHP entrypoints, not necessarily executables.
 		$base_command = array( PHP_BINARY, '-d', 'memory_limit=' . ini_get( 'memory_limit' ), (string) $_SERVER['argv'][0], '--path=' . ABSPATH );
 		$config       = WP_CLI::get_runner()->config ?? array();
@@ -119,17 +194,15 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 				'error'   => '',
 			);
 		}
-		if ( $spawn_error && empty( $processes ) ) {
-			return null;
-		}
 
-		$failures      = array();
-		$first_failure = '';
+		$results = array();
 		while ( ! empty( $processes ) ) {
 			foreach ( $processes as $index => &$worker ) {
 				$worker['output'] = substr( $worker['output'] . (string) stream_get_contents( $worker['pipes'][1] ), -16000 );
 				$worker['error']  = substr( $worker['error'] . (string) stream_get_contents( $worker['pipes'][2] ), -16000 );
-				$status           = proc_get_status( $worker['process'] );
+				// Only the first status read after exit carries the real exit code
+				// and signal, so this one read is the worker's outcome.
+				$status = proc_get_status( $worker['process'] );
 				if ( $status['running'] ) {
 					continue;
 				}
@@ -138,29 +211,13 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 				fclose( $worker['pipes'][1] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the worker stdout pipe before process collection.
 				fclose( $worker['pipes'][2] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the worker stderr pipe before process collection.
 				proc_close( $worker['process'] );
-				if ( 0 !== (int) $status['exitcode'] ) {
-					if ( empty( $failures ) ) {
-						$first_failure = sprintf(
-							'Compile worker %d of %d exited with status %d',
-							(int) $index + 1,
-							count( $shards ),
-							(int) $status['exitcode']
-						);
-						$cause         = static_site_importer_cli_worker_failure_cause( $worker['error'], $worker['output'] );
-						if ( '' !== $cause ) {
-							$first_failure .= ': ' . $cause;
-						}
-					}
-					$failures[] = substr( trim( $worker['error'] . "\n" . $worker['output'] ), 0, 1000 );
-					$diagnostic = sprintf( 'Compile worker %d exited with status %d.', (int) $index + 1, (int) $status['exitcode'] );
-					if ( '' !== trim( $worker['error'] ) ) {
-						$diagnostic .= "\nStderr:\n" . substr( trim( $worker['error'] ), 0, 500 );
-					}
-					if ( '' !== trim( $worker['output'] ) ) {
-						$diagnostic .= "\nStdout:\n" . substr( trim( $worker['output'] ), 0, 500 );
-					}
-					WP_CLI::warning( $diagnostic );
-				}
+				$signaled          = ! empty( $status['signaled'] );
+				$results[ $index ] = array(
+					'signal'   => $signaled ? max( 1, (int) $status['termsig'] ) : 0,
+					'exitcode' => $signaled ? 0 : (int) $status['exitcode'],
+					'error'    => $worker['error'],
+					'output'   => $worker['output'],
+				);
 				unset( $processes[ $index ] );
 			}
 			unset( $worker );
@@ -168,17 +225,24 @@ if ( ! function_exists( 'static_site_importer_cli_compile_artifact_pages_fanout'
 				usleep( 10000 );
 			}
 		}
-		if ( $spawn_error || ! empty( $failures ) ) {
-			// The message is the only part of this error that reaches the import's
-			// public failure (redacted and bounded there), so it names the first
-			// failing worker and why, not just that some worker failed.
-			return new WP_Error(
-				'static_site_importer_direct_artifact_worker_process_failed',
-				'' === $first_failure ? 'A compile worker could not be started.' : $first_failure . '.',
-				array( 'worker_errors' => array_slice( $failures, 0, 4 ) )
-			);
-		}
-		return true;
+		ksort( $results );
+		return array(
+			'spawn_error' => $spawn_error,
+			'results'     => $results,
+		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_signal_hint' ) ) {
+	/**
+	 * Suffix naming the likely reason a process died from a signal. SIGKILL (9)
+	 * is the out-of-memory killer's signature.
+	 *
+	 * @param int $signal Terminating signal.
+	 * @return string Suffix, or '' when the signal has no known likely cause.
+	 */
+	function static_site_importer_cli_signal_hint( int $signal ): string {
+		return 9 === $signal ? ' (likely out of memory)' : '';
 	}
 }
 
@@ -196,6 +260,8 @@ if ( ! function_exists( 'static_site_importer_cli_worker_failure_cause' ) ) {
 		foreach ( array( $stderr, $stdout ) as $stream ) {
 			$split = preg_split( '/\R/', $stream );
 			$lines = array_values( array_filter( array_map( 'trim', false === $split ? array() : $split ) ) );
+			// PHP deprecation and notice lines (e.g. from the bundled WP-CLI phar) are noise, never the cause.
+			$lines = array_values( array_filter( $lines, static fn( string $line ): bool => 1 !== preg_match( '/^(?:PHP\s+)?(?:Deprecated|Notice):/i', $line ) ) );
 			if ( empty( $lines ) ) {
 				continue;
 			}
@@ -2008,6 +2074,8 @@ function static_site_importer_cli_fresh_runtime_bootstrap( ?string $memory_limit
 function static_site_importer_cli_invalid_step_message( $result ): string {
 	$return_code = is_object( $result ) ? (int) ( $result->return_code ?? 0 ) : 0;
 	$stderr      = is_object( $result ) ? trim( (string) ( $result->stderr ?? '' ) ) : '';
-	$stderr      = substr( preg_replace( '/\s+/', ' ', $stderr ) ?? '', 0, 1000 );
-	return sprintf( 'A fresh import runtime exited with code %d without a JSON response.', $return_code ) . ( '' === $stderr ? '' : ' ' . $stderr );
+	$stderr      = preg_replace( '/^(?:PHP\s+)?(?:Deprecated|Notice):.*$/mi', '', $stderr ) ?? '';
+	$stderr      = substr( preg_replace( '/\s+/', ' ', trim( $stderr ) ) ?? '', 0, 1000 );
+	$killed      = 137 === $return_code ? ' (killed by signal 9, likely out of memory)' : '';
+	return sprintf( 'A fresh import runtime exited with code %d%s without a JSON response.', $return_code, $killed ) . ( '' === $stderr ? '' : ' ' . $stderr );
 }
