@@ -913,6 +913,8 @@ $worker_source = '#!' . PHP_BINARY . "\n<?php\n"
 	. 'usleep(500000);' . "\n"
 	. 'file_put_contents($events, "end:" . $marker . "\\n", FILE_APPEND | LOCK_EX);' . "\n"
 	. 'if ("fail" === $marker) { fwrite(STDERR, "worker failure\\n" . str_repeat("x", 15000) . "\\nPHP Fatal error:  Allowed memory size of 402653184 bytes exhausted in /srv/wp/blocks.php on line 12\\n"); fwrite(STDOUT, "worker output\\n" . str_repeat("y", 15000)); exit(2); }' . "\n"
+	. 'if ("kill" === $marker) { fwrite(STDERR, "Deprecated: Case statements followed by a semicolon (;) are deprecated, use a colon (:) instead in /srv/wp/promise.php on line 369\n"); exec("kill -9 " . getmypid()); sleep(5); exit(0); }' . "\n"
+	. 'if ("oom-once" === $marker && ! file_exists($events . ".oom")) { touch($events . ".oom"); exec("kill -9 " . getmypid()); sleep(5); }' . "\n"
 	. 'exit(0);' . "\n";
 $assert( false !== file_put_contents( $worker_script, $worker_source ) && chmod( $worker_script, 0600 ), 'the process fan-out fixture must match a readable, non-executable WP-CLI PHAR' );
 $original_argv_zero = $_SERVER['argv'][0] ?? null;
@@ -947,6 +949,16 @@ $assert( 'last words' === static_site_importer_cli_worker_failure_cause( '', "no
 $assert( '' === static_site_importer_cli_worker_failure_cause( '', '' ), 'a silent worker has no cause to report' );
 $worker_warning = WP_CLI::$warnings[0] ?? '';
 $assert( 1 === count( WP_CLI::$warnings ) && str_contains( $worker_warning, 'Compile worker 2 exited with status 2.' ) && str_contains( $worker_warning, "Stderr:\nworker failure" ) && str_contains( $worker_warning, "Stdout:\nworker output" ) && strlen( $worker_warning ) <= 1100, 'a failed CLI worker must emit one bounded operator diagnostic with its exit status, stderr, and stdout' );
+$killed_failure = static_site_importer_cli_compile_artifact_pages_fanout( str_repeat( 'c', 64 ), array( array( $worker_events, 'ok' ), array( $worker_events, 'kill' ) ) );
+$assert( is_wp_error( $killed_failure ) && 'Compile worker 2 of 2 was killed by signal 9 (likely out of memory).' === $killed_failure->get_error_message(), 'a SIGKILLed CLI worker must report the signal, not status -1 or a deprecation line: ' . ( is_wp_error( $killed_failure ) ? $killed_failure->get_error_message() : '' ) );
+$kill_starts = array_values( array_filter( (array) file( $worker_events, FILE_IGNORE_NEW_LINES ), static fn ( string $event ): bool => 'start:kill' === $event ) );
+$assert( 2 === count( $kill_starts ) && str_contains( implode( "\n", WP_CLI::$warnings ), 'Compile worker 2 was killed by signal 9 (likely out of memory); retrying its shard on its own.' ), 'a SIGKILLed CLI worker shard must be retried on its own before the import fails with the out-of-memory cause' );
+WP_CLI::$warnings = array();
+$oom_recovered    = static_site_importer_cli_compile_artifact_pages_fanout( str_repeat( 'd', 64 ), array( array( $worker_events, 'ok' ), array( $worker_events, 'oom-once' ) ) );
+$assert( true === $oom_recovered && 1 === count( WP_CLI::$warnings ) && str_contains( WP_CLI::$warnings[0], 'retrying its shard on its own' ), 'a shard whose worker was killed for memory alongside its siblings must complete when retried on its own' );
+$assert( 'Fatal error: boom' === static_site_importer_cli_worker_failure_cause( "Fatal error: boom\nDeprecated: noise on line 369\nPHP Notice:  more noise", '' ), 'deprecation and notice lines never win as the failure cause' );
+$assert( 'last words' === static_site_importer_cli_worker_failure_cause( "Deprecated: noise", "last words" ), 'a stream holding only deprecations falls through to the next stream' );
+$assert( str_contains( static_site_importer_cli_invalid_step_message( (object) array( 'return_code' => 137, 'stderr' => "Deprecated: noise\nKilled" ) ), 'code 137 (killed by signal 9, likely out of memory) without a JSON response. Killed' ), 'a 137 fresh runtime must name the likely out-of-memory kill and drop deprecation noise' );
 ini_set( 'memory_limit', $original_memory_limit );
 if ( null === $original_argv_zero ) {
 	unset( $_SERVER['argv'][0] );
