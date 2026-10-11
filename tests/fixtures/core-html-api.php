@@ -1,6 +1,9 @@
 <?php
 /** Load the real core tokenizer without booting a site or database. */
-$ssi_wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: getenv( 'HOMEBOY_WORDPRESS_CORE_ROOT' );
+$ssi_wp_root = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' );
+if ( ! $ssi_wp_root ) {
+	$ssi_wp_root = getenv( 'HOMEBOY_WORDPRESS_CORE_ROOT' );
+}
 if ( ! $ssi_wp_root ) {
 	foreach ( array( '/vendor/johnpbloch/wordpress-core', '/vendor/wordpress-core' ) as $ssi_core_candidate ) {
 		$ssi_wp_root = dirname( __DIR__, 2 ) . $ssi_core_candidate;
