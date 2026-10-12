@@ -1993,7 +1993,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			// acceptable conversion if left untouched. Re-owning gives the row an
 			// importer-owned type and explicit loss class so the loss is counted
 			// and gated instead of filed as a clean conversion.
-			$diagnostic  = Static_Site_Importer_Diagnostic_Loss_Classes::reown_compiler_file_drop( $diagnostic );
+			$diagnostic = Static_Site_Importer_Diagnostic_Loss_Classes::reown_compiler_file_drop( $diagnostic );
 			// Degrade codes are accepted, reported losses with a named unit and layer.
 			$diagnostic  = Static_Site_Importer_Diagnostic_Loss_Classes::reown_reported_loss( $diagnostic );
 			$type        = isset( $diagnostic['type'] ) && is_scalar( $diagnostic['type'] ) ? (string) $diagnostic['type'] : 'import_diagnostic';
@@ -2673,6 +2673,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			Static_Site_Importer_Diagnostic_Loss_Classes::UNACCEPTABLE_IMPORTED_OUTPUT_DEFECT => 0,
 			Static_Site_Importer_Diagnostic_Loss_Classes::ACCEPTED_REPORTED_LOSS => 1,
 		);
+
 		$ranked = array();
 		foreach ( $diagnostics as $index => $diagnostic ) {
 			$class    = isset( $diagnostic['loss_class'] ) && is_scalar( $diagnostic['loss_class'] ) ? (string) $diagnostic['loss_class'] : Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic );
