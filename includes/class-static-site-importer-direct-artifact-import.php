@@ -742,9 +742,26 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			if ( is_wp_error( $composed_state ) ) {
 				return $composed_state;
 			}
-			$omitted_files = Static_Site_Importer_Diagnostic_Loss_Classes::omitted_artifact_file_count( $composed_state['result']['wordpress_site_plan']['diagnostics'] ?? array() );
+			// Acceptance is decided here, once, before any WordPress mutation. A
+			// non-entrypoint page Blocks Engine omitted is a page-level loss: the
+			// remaining plan pages import and the omission travels as a finding.
+			// A site without its entrypoint or with dropped source files is partial.
+			$plan_diagnostics = $composed_state['result']['wordpress_site_plan']['diagnostics'] ?? array();
+			$entry_path       = (string) ( $composed_state['result']['wordpress_site_plan']['source']['entry_path'] ?? '' );
+			if ( in_array( $entry_path, array_column( Static_Site_Importer_Diagnostic_Loss_Classes::omitted_pages( $plan_diagnostics ), 'source_path' ), true ) ) {
+				return self::fail(
+					$workspace,
+					$run,
+					'compose',
+					new WP_Error(
+						'static_site_importer_omitted_entrypoint',
+						'The compiler omitted the entrypoint page; refusing to import a site without it.',
+						array( 'source_path' => $entry_path )
+					)
+				);
+			}
+			$omitted_files = Static_Site_Importer_Diagnostic_Loss_Classes::omitted_artifact_file_count( $plan_diagnostics );
 			if ( $omitted_files > 0 ) {
-				// A partial site is never imported: refuse before any WordPress mutation.
 				return self::fail(
 					$workspace,
 					$run,

@@ -34,6 +34,11 @@ if ( ! defined( 'ABSPATH' ) ) {
  * though the files are gone. Consumers re-own them first via
  * {@see reown_compiler_file_drop()} and stamp the loss class explicitly.
  *
+ * A `page_compile_omitted` row is a page-level loss owned by Blocks Engine: a
+ * non-entrypoint page it could not represent is absent from the plan. It is
+ * classified {@see PAGE_COMPILE_OMITTED} by its code, and consumers stamp the
+ * finding shape via {@see reown_page_compile_omission()}.
+ *
  * Keeping those two paths distinct is the point: previously every row went
  * through the heuristic, so an upstream vocabulary change silently rerouted
  * findings into the wrong product bucket instead of failing.
@@ -49,6 +54,7 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	public const NATIVE_CONVERSION            = 'native_conversion';
 	public const EDITABLE_APPROXIMATION       = 'editable_approximation';
 	public const PRESERVED_RUNTIME_ISLAND     = 'preserved_runtime_island';
+	public const PAGE_COMPILE_OMITTED         = 'page_compile_omitted';
 	public const UNSUPPORTED_LOSS             = 'unsupported_loss';
 	public const IMPORTER_MATERIALIZATION_BUG = 'importer_materialization_bug';
 
@@ -77,6 +83,9 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 		'artifact_file_too_large'  => self::OMITTED_ARTIFACT_FILE_TYPE,
 		'artifact_total_too_large' => self::OMITTED_ARTIFACT_FILE_TYPE,
 	);
+
+	/** Layer that owns a {@see PAGE_COMPILE_OMITTED} loss. */
+	public const PAGE_COMPILE_OMITTED_OWNING_LAYER = 'blocks-engine';
 
 	/**
 	 * Classification provenance markers, returned by {@see classify_with_provenance()}.
@@ -350,6 +359,46 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	}
 
 	/**
+	 * Pages Blocks Engine omitted from a compiled site plan.
+	 *
+	 * Blocks Engine drops a non-entrypoint page whose conversion hits a
+	 * representability limit and names it once, as a `page_compile_omitted`
+	 * row in the plan diagnostics. The plan no longer contains that page.
+	 *
+	 * @param array<int,mixed> $diagnostics Plan diagnostic rows.
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function omitted_pages( array $diagnostics ): array {
+		return array_values(
+			array_filter(
+				$diagnostics,
+				static fn( $diagnostic ): bool => is_array( $diagnostic ) && self::PAGE_COMPILE_OMITTED === ( $diagnostic['code'] ?? null )
+			)
+		);
+	}
+
+	/**
+	 * Stamp an omitted-page row as a Blocks Engine page-unit loss finding.
+	 *
+	 * Returns the row unchanged when it is not a page omission.
+	 *
+	 * @param array<string,mixed> $diagnostic Raw diagnostic row.
+	 * @return array<string,mixed>
+	 */
+	public static function reown_page_compile_omission( array $diagnostic ): array {
+		if ( self::PAGE_COMPILE_OMITTED !== ( $diagnostic['code'] ?? null ) ) {
+			return $diagnostic;
+		}
+
+		$diagnostic['unit']             = 'page';
+		$diagnostic['owning_layer']     = self::PAGE_COMPILE_OMITTED_OWNING_LAYER;
+		$diagnostic['loss_class']       = self::PAGE_COMPILE_OMITTED;
+		$diagnostic['diagnostic_class'] = self::PAGE_COMPILE_OMITTED;
+
+		return $diagnostic;
+	}
+
+	/**
 	 * Classify a diagnostic and report which path produced the answer.
 	 *
 	 * Provenance is what makes the remaining heuristic auditable: a producer
@@ -359,6 +408,15 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	 * @return array{class:string,source:string,repair_bucket:string}
 	 */
 	public static function classify_with_provenance( array $diagnostic ): array {
+		// A page omission is identified by its code on every consumer path,
+		// stamped or not, like the compiler file drops.
+		if ( self::PAGE_COMPILE_OMITTED === ( $diagnostic['code'] ?? null ) ) {
+			return array(
+				'class'         => self::PAGE_COMPILE_OMITTED,
+				'source'        => self::SOURCE_EXPLICIT,
+				'repair_bucket' => '',
+			);
+		}
 		$explicit  = self::scalar( $diagnostic, array( 'loss_class', 'diagnostic_class' ) );
 		$canonical = self::canonicalize( $explicit );
 		if ( '' !== $canonical ) {
@@ -544,6 +602,7 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 			self::NATIVE_CONVERSION,
 			self::EDITABLE_APPROXIMATION,
 			self::PRESERVED_RUNTIME_ISLAND,
+			self::PAGE_COMPILE_OMITTED,
 			self::UNSUPPORTED_LOSS,
 			self::IMPORTER_MATERIALIZATION_BUG,
 		);
