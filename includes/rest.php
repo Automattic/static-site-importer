@@ -886,10 +886,12 @@ function static_site_importer_staged_archive_payload_reader( array $archive ) {
 		public function read( array $reference ): string {
 			$id = $reference['id'];
 			if ( ! str_starts_with( $id, 'zip-entry:' ) ) {
+				// ssi-error-class: integrity
 				throw new RuntimeException( 'The staged payload reference is invalid.' );
 			}
 			$entry = rawurldecode( substr( $id, strlen( 'zip-entry:' ) ) );
 			if ( '' === $entry || static_site_importer_rest_artifact_path( $entry ) === '' ) {
+				// ssi-error-class: integrity
 				throw new RuntimeException( 'The staged payload reference is invalid.' );
 			}
 			$path = static_site_importer_staged_archive_path(
@@ -899,16 +901,19 @@ function static_site_importer_staged_archive_payload_reader( array $archive ) {
 				)
 			);
 			if ( is_wp_error( $path ) ) {
+				// ssi-error-class: operational
 				throw new RuntimeException( 'The staged archive is unavailable.' );
 			}
 			$zip = new ZipArchive();
 			if ( true !== $zip->open( $path ) ) {
+				// ssi-error-class: operational
 				throw new RuntimeException( 'The staged archive is unavailable.' );
 			}
 			try {
 				$stat   = $zip->statName( $entry );
 				$limits = static_site_importer_staged_archive_limits();
 				if ( ! is_array( $stat ) || (int) $stat['size'] !== $reference['bytes'] || (int) $stat['size'] > $limits['max_entry_uncompressed_bytes'] || ( 0 === (int) $stat['comp_size'] ? (int) $stat['size'] > 0 : (int) $stat['size'] / (int) $stat['comp_size'] > $limits['max_compression_ratio'] ) ) {
+					// ssi-error-class: integrity
 					throw new RuntimeException( 'The staged payload byte count changed.' );
 				}
 				$bytes = $zip->getFromName( $entry );
@@ -916,6 +921,7 @@ function static_site_importer_staged_archive_payload_reader( array $archive ) {
 				$zip->close();
 			}
 			if ( false === $bytes ) {
+				// ssi-error-class: operational
 				throw new RuntimeException( 'The staged payload is unavailable.' );
 			}
 			return $bytes;
@@ -1200,6 +1206,7 @@ function static_site_importer_staged_archive_compiler_limits(): array {
 function static_site_importer_rest_archive_limit_error( string $reason ): WP_Error {
 	$code = 'static_site_importer_archive_' . $reason;
 
+	// ssi-error-class: operational
 	return new WP_Error(
 		$code,
 		__( 'The ZIP archive exceeds the configured safety limit.', 'static-site-importer' ),

@@ -57,6 +57,7 @@ final class Static_Site_Importer_Generated_Runtime_Package {
 		}
 		foreach ( $package['files'] as $path => $bytes ) {
 			if ( isset( $targets[ $path ] ) ) {
+				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'generated_runtime_file_collision' );
 			}
 			$resolved['writes'][] = self::write( $path, $bytes, 'theme_bootstrap' );

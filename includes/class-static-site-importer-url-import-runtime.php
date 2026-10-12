@@ -198,6 +198,7 @@ class Static_Site_Importer_URL_Import_Runtime {
 			if ( is_array( $data ) ) {
 				unset( $data['expired_manifest'], $data['archived_manifest'], $data['cleanup'] );
 			}
+			// ssi-error-class: propagated
 			return new WP_Error( $result->get_error_code(), $result->get_error_message(), $data );
 		}
 		$result['import_id'] = (string) $record['identity'];

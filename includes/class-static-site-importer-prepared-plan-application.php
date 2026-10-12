@@ -65,6 +65,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			try {
 				$prepared['base_resolved'] = Static_Site_Importer_Generated_Runtime_Package::with_writes( $prepared['base_resolved'], $package );
 			} catch ( InvalidArgumentException $error ) {
+				// ssi-error-class: integrity
 				return new WP_Error( $error->getMessage(), 'Source writes collide with the generated runtime package.' );
 			}
 			$prepared['prepared_resolved_projection_hash'] = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepared_resolved_projection_hash( $prepared['base_resolved'] );
@@ -78,6 +79,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			if ( 'prepared' !== ( $prepared['status'] ?? '' ) ) {
 				$rejection = $prepared['receipt'] ?? array();
 				$error     = $rejection['errors'][0] ?? array();
+				// ssi-error-class: propagated
 				return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_theme_runtime_preflight_failed' ), (string) ( $error['message'] ?? 'Theme runtime destination preflight failed.' ), $rejection );
 			}
 			$companion = array(
@@ -184,6 +186,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 		if ( 'completed' !== $receipt['status'] ) {
 			$error = $receipt['errors'][0] ?? array();
 			Static_Site_Importer_Entity_Compensation::append( $receipt, $lifecycle, $entities, 'wordpress_site_plan_materialization', (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ) );
+			// ssi-error-class: propagated
 			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan materialization failed.' ), $receipt );
 		}
 		if ( ! $page_ready ) {
@@ -196,6 +199,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			if ( null !== $late['error'] ) {
 				$receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::rollback_receipt( $receipt, (string) $late['error']['code'] );
 				Static_Site_Importer_Entity_Compensation::append( $receipt, $lifecycle, $entities, 'after_pages', (string) $late['error']['code'] );
+				// ssi-error-class: propagated
 				return new WP_Error( (string) $late['error']['code'], (string) $late['error']['message'], $receipt );
 			}
 		}
@@ -267,6 +271,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 			'diagnostics'       => $diagnostics,
 		);
 		Static_Site_Importer_Entity_Compensation::append( $failure, $lifecycle, $entities, $stage, (string) $error['code'] );
+		// ssi-error-class: propagated
 		return new WP_Error( (string) $error['code'], (string) $error['message'], $failure );
 	}
 
@@ -290,6 +295,7 @@ final class Static_Site_Importer_Prepared_Plan_Application {
 		$result     = Static_Site_Importer_Dependency_Manager::materialize_companion_dependency( $dependency, ! empty( $args['overwrite'] ) );
 		if ( 'failed' === ( $result['status'] ?? '' ) ) {
 			$error = $result['error'] ?? array();
+			// ssi-error-class: propagated
 			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_companion_plugin_materialization_failed' ), (string) ( $error['message'] ?? 'Companion-plugin materialization failed.' ), $result );
 		}
 		return $result;

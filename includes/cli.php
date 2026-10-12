@@ -537,6 +537,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 	function static_site_importer_cli_inline_expansion_count( string $path ): int {
 		$content = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a verified, bounded CLI request-bundle file.
 		if ( false === $content ) {
+			// ssi-error-class: operational
 			throw new RuntimeException( 'The request-bundle HTML payload is unavailable.' );
 		}
 		return static_site_importer_cli_inline_style_expansion_count( $content )
@@ -670,6 +671,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 							sprintf( 'The declared capture report %1$s exceeds the %2$s report limit.', $relative, static_site_importer_cli_request_bundle_mib( $file_byte_limit ) )
 						);
 					}
+					// ssi-error-class: operational
 					return new WP_Error(
 						$read_source ? 'static_site_importer_cli_request_bundle_file_too_large' : 'static_site_importer_cli_request_bundle_media_file_too_large',
 						sprintf(
@@ -737,6 +739,7 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 					$real = '' !== $path && ! is_link( $path ) ? realpath( $path ) : false;
 					$data = $path === $real ? file_get_contents( $path ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a verified CLI request-bundle payload on demand.
 					if ( false === $data ) {
+						// ssi-error-class: operational
 						throw new RuntimeException( 'The request-bundle payload is unavailable.' );
 					}
 					return $data;

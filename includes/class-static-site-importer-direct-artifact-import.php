@@ -439,6 +439,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				self::before_phase( 'prepare_shared', $run );
 				$shared = call_user_func( $prepare_shared, $artifact_state['artifact'], $payload_reader );
 				if ( 'blocks-engine/php-transformer/staged-shared-plan/v1' !== ( $shared['schema'] ?? '' ) || empty( $shared['digest'] ) || ! is_array( $shared['analysis']['page_ids'] ?? null ) ) {
+					// ssi-error-class: integrity
 					throw new RuntimeException( 'Blocks Engine returned an invalid shared plan.' );
 				}
 				$ref = self::publish_checkpoint( $workspace, $run, 'shared', 'shared-plan.json', array( 'plan' => $shared ) );
@@ -705,6 +706,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				self::before_phase( 'compose', $run, $run['page_ids'] );
 				$result = call_user_func( $compose, $shared, array_values( $receipts ), $payload_reader );
 				if ( ! is_object( $result ) || ! is_callable( array( $result, 'toCompactWordPressSitePlanView' ) ) ) {
+					// ssi-error-class: integrity
 					throw new RuntimeException( 'Blocks Engine returned an invalid composed result.' );
 				}
 				if ( 'failed' === ( $result->status ?? null ) && empty( $result->sourceReports['wordpress_site_plan'] ?? null ) ) {
@@ -713,10 +715,12 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				}
 				$composed = $result->toCompactWordPressSitePlanView();
 				if ( 'blocks-engine/wordpress-site-plan-view/v2' !== ( $composed['schema'] ?? '' ) ) {
+					// ssi-error-class: integrity
 					throw new RuntimeException( 'Blocks Engine did not compact the composed WordPress site plan view.' );
 				}
 				$metrics = is_array( $result->metrics ?? null ) ? $result->metrics : array();
 				if ( 0 !== (int) ( $metrics['html_document_transform_count'] ?? 0 ) || 0 !== (int) ( $metrics['normalization_count'] ?? 0 ) ) {
+					// ssi-error-class: integrity
 					throw new RuntimeException( sprintf( 'Terminal receipt composition performed %d HTML transforms and %d normalization passes.', (int) ( $metrics['html_document_transform_count'] ?? 0 ), (int) ( $metrics['normalization_count'] ?? 0 ) ) );
 				}
 				$ref = self::publish_checkpoint( $workspace, $run, 'composed', 'composed-result.json', array(
@@ -1310,6 +1314,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				'message' => $write->get_error_message(),
 			);
 		}
+		// ssi-error-class: propagated
 		return new WP_Error( $code, $message, $error_data );
 	}
 
@@ -1624,6 +1629,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			public function read( array $reference ): string {
 				$bytes = $this->workspace->read_raw( 'payloads/' . hash( 'sha256', $reference['id'] ) . '.bin' );
 				if ( null === $bytes || strlen( $bytes ) !== $reference['bytes'] || ! hash_equals( $reference['sha256'], hash( 'sha256', $bytes ) ) ) {
+					// ssi-error-class: operational
 					throw new RuntimeException( 'A retained direct artifact payload is unavailable or corrupt.' );
 				}
 				return $bytes;
@@ -1735,6 +1741,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 
 	private static function response_error( array $response ): WP_Error {
 		$error = is_array( $response['error'] ?? null ) ? $response['error'] : array();
+		// ssi-error-class: propagated
 		return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_direct_artifact_canonical_plan_failed' ), (string) ( $error['message'] ?? 'The composed artifact did not produce a canonical plan.' ), $error['data'] ?? null );
 	}
 

@@ -396,11 +396,13 @@ class Static_Site_Importer_Woo_Product_Seeder {
 
 			$category_ids = self::ensure_category_ids( self::category_names( $manifest_product ), $created_terms );
 			if ( is_wp_error( $category_ids ) ) {
+				// ssi-error-class: propagated
 				throw new RuntimeException( $category_ids->get_error_message() );
 			}
 			if ( ! empty( $category_ids ) ) {
 				$assigned = self::assign_product_categories( $product_id, $category_ids );
 				if ( is_wp_error( $assigned ) ) {
+					// ssi-error-class: propagated
 					throw new RuntimeException( $assigned->get_error_message() );
 				}
 			}

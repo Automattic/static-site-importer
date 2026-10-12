@@ -224,6 +224,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			if ( $id > 0 ) {
 				Static_Site_Importer_Site_Plan_Persistence::journal_option( $state, $option );
 				if ( ! Static_Site_Importer_Site_Plan_Persistence::write_option( $option, $id ) ) {
+					// ssi-error-class: operational
 					return new WP_Error( 'native_' . $option . '_not_applied' );
 				}
 				$entry['status']        = 'applied';
