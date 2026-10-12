@@ -2478,6 +2478,8 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'category',
 			'loss_class',
 			'diagnostic_class',
+			'unit',
+			'owning_layer',
 			'acceptability',
 			'reason_code',
 			'suggested_repair_class',

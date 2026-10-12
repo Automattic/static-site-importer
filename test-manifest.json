@@ -97,6 +97,7 @@
     { "path": "tests/smoke-default-content-wp-eval.php", "environment": "operator-only", "reason": "Disposable WordPress regression for the core privacy-policy seed; run with `wp eval-file` against a freshly installed site." },
     { "path": "tests/smoke-dependency-manager-readiness.php", "environment": "standalone-php" },
     { "path": "tests/smoke-direct-artifact-import.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-direct-artifact-omitted-page.php", "environment": "standalone-php" },
     { "path": "tests/smoke-run-storage.php", "environment": "standalone-php" },
     { "path": "tests/smoke-rest-import.php", "environment": "standalone-php" },
     { "path": "tests/smoke-lifecycle-compile-checkpoint.php", "environment": "standalone-php" },

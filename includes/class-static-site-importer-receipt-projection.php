@@ -53,7 +53,10 @@ class Static_Site_Importer_Receipt_Projection {
 		$diagnostics = Static_Site_Importer_Route_Head_Metadata::reword_handled_diagnostics(
 			Static_Site_Importer_Diagnostic_Projection::after_completed_entity_bindings(
 				array_merge(
-					is_array( $plan['diagnostics'] ?? null ) ? $plan['diagnostics'] : array(),
+					array_map(
+						static fn( $diagnostic ) => is_array( $diagnostic ) ? Static_Site_Importer_Diagnostic_Loss_Classes::reown_page_compile_omission( $diagnostic ) : $diagnostic,
+						is_array( $plan['diagnostics'] ?? null ) ? $plan['diagnostics'] : array()
+					),
 					Static_Site_Importer_Compiler_Diagnostic_Normalizer::normalize( is_array( $args['compiler_diagnostics'] ?? null ) ? $args['compiler_diagnostics'] : array() )
 				),
 				$receipt
