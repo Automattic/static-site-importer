@@ -1718,6 +1718,8 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				unset( $args['source_metadata']['collection'] );
 			}
 		}
+		// Intake findings are derived from the source bytes, which a resume does not resend.
+		unset( $args['source_metadata']['intake_findings'] );
 		if ( array() === ( $args['source_metadata'] ?? null ) ) {
 			unset( $args['source_metadata'] );
 		}

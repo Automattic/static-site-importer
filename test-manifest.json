@@ -99,6 +99,7 @@
     { "path": "tests/smoke-dependency-manager-readiness.php", "environment": "standalone-php" },
     { "path": "tests/smoke-direct-artifact-import.php", "environment": "standalone-php" },
     { "path": "tests/smoke-direct-artifact-omitted-page.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-capture-findings.php", "environment": "standalone-php" },
     { "path": "tests/smoke-run-storage.php", "environment": "standalone-php" },
     { "path": "tests/smoke-rest-import.php", "environment": "standalone-php" },
     { "path": "tests/smoke-lifecycle-compile-checkpoint.php", "environment": "standalone-php" },
