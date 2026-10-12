@@ -269,29 +269,36 @@ $stored  = $with['stored'];
 $summary = $with['summary'];
 $capture = $rows( $stored['diagnostics'] ?? array(), 'owning_layer', 'data-liberation-agent' );
 $assert( 3 === count( $capture ), 'with-findings: the stored report carries the two findings and the uncovered missing route' );
+$accepted = Static_Site_Importer_Diagnostic_Loss_Classes::ACCEPTED_REPORTED_LOSS;
+$omitted  = Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_UNIT;
+$reduced  = Static_Site_Importer_Diagnostic_Loss_Classes::DEGRADED_UNIT;
+foreach ( $capture as $row ) {
+	$missing = array_diff( Static_Site_Importer_Diagnostic_Projection::CANONICAL_FINDING_FIELDS, array_keys( $row ) );
+	$assert( array() === $missing, 'with-findings: ' . ( $row['code'] ?? '?' ) . ' carries every canonical finding field' );
+}
 $degraded = $rows( $capture, 'code', 'route_capture_degraded' )[0] ?? array();
-$assert( 'route' === ( $degraded['unit'] ?? '' ) && 'warning' === ( $degraded['severity'] ?? '' ) && 'website/about.html' === ( $degraded['source_path'] ?? '' ), 'with-findings: the degraded row is a route-unit warning located at its exported page' );
-$assert( Static_Site_Importer_Diagnostic_Loss_Classes::UNSUPPORTED_LOSS === ( $degraded['loss_class'] ?? '' ) && 'route_capture_degraded' === ( $degraded['reason_code'] ?? '' ), 'with-findings: the degraded row is a degraded-family loss' );
-$assert( 1 === ( $degraded['context']['metrics']['failedStages'] ?? null ) && 'https://example.test/about/' === ( $degraded['context']['url'] ?? '' ), 'with-findings: the degraded row keeps its url and metrics' );
+$assert( 'route' === ( $degraded['unit'] ?? '' ) && 'warning' === ( $degraded['severity'] ?? '' ) && 'website/about.html' === ( $degraded['location'] ?? '' ), 'with-findings: the degraded row is a route-unit warning located at its exported page' );
+$assert( $reduced === ( $degraded['loss_class'] ?? '' ) && $accepted === ( $degraded['acceptability'] ?? '' ) && 'route_capture_degraded' === ( $degraded['reason_code'] ?? '' ), 'with-findings: the degraded row is an accepted, reported degraded unit' );
+$assert( array( 'failedStages' => 1 ) === ( $degraded['metrics'] ?? null ) && 'https://example.test/about/' === ( $degraded['url'] ?? '' ), 'with-findings: the degraded row keeps its url and metrics' );
 $assert( 'mobile/screenshot-scrolled: screenshot timeout' === ( $degraded['message'] ?? '' ), 'with-findings: the degraded row keeps its reason as the message' );
 $dropped = $rows( $capture, 'code', 'route_export_failed' )[0] ?? array();
-$assert( 'route' === ( $dropped['unit'] ?? '' ) && 'error' === ( $dropped['severity'] ?? '' ) && 'https://example.test/pricing/' === ( $dropped['source_path'] ?? '' ), 'with-findings: the dropped route is a route-unit error located at its URL' );
-$assert( Static_Site_Importer_Diagnostic_Loss_Classes::PAGE_COMPILE_OMITTED === ( $dropped['loss_class'] ?? '' ), 'with-findings: the dropped route is an omitted-family loss' );
+$assert( 'route' === ( $dropped['unit'] ?? '' ) && 'error' === ( $dropped['severity'] ?? '' ) && 'https://example.test/pricing/' === ( $dropped['location'] ?? '' ), 'with-findings: the dropped route is a route-unit error located at its URL' );
+$assert( $omitted === ( $dropped['loss_class'] ?? '' ) && $accepted === ( $dropped['acceptability'] ?? '' ), 'with-findings: the dropped route is an accepted, reported omitted unit' );
 $slow = $rows( $capture, 'code', 'route_capture_failed' )[0] ?? array();
-$assert( 'https://example.test/slow/' === ( $slow['source_path'] ?? '' ) && Static_Site_Importer_Diagnostic_Loss_Classes::PAGE_COMPILE_OMITTED === ( $slow['loss_class'] ?? '' ), 'with-findings: a missing route without a finding row is still counted once' );
-$assert( 2 === ( $summary['loss_class_summary'][ Static_Site_Importer_Diagnostic_Loss_Classes::PAGE_COMPILE_OMITTED ] ?? 0 ), 'with-findings: the compact summary counts both missing routes' );
-$assert( 1 <= ( $summary['loss_class_summary'][ Static_Site_Importer_Diagnostic_Loss_Classes::UNSUPPORTED_LOSS ] ?? 0 ), 'with-findings: the compact summary counts the degraded route' );
+$assert( 'https://example.test/slow/' === ( $slow['location'] ?? '' ) && $omitted === ( $slow['loss_class'] ?? '' ), 'with-findings: a missing route without a finding row is still counted once' );
+$assert( 2 === ( $summary['loss_class_summary'][ $omitted ] ?? 0 ) && 1 === ( $summary['loss_class_summary'][ $reduced ] ?? 0 ), 'with-findings: the compact summary counts both missing routes and the degraded route' );
+$assert( 2 === ( $summary['loss_counts'][ $omitted ] ?? 0 ) && 3 <= ( $summary['loss_count'] ?? 0 ), 'with-findings: the compact summary counts the capture rows as losses' );
 // The inline response bounds its item count; the stored report keeps the full compact summary.
 $compact = $rows( $stored['compact_summary']['diagnostics'] ?? array(), 'owning_layer', 'data-liberation-agent' );
 $assert( 3 === count( $compact ), 'with-findings: the stored compact summary carries the capture rows' );
-$assert( 2 === ( $stored['compact_summary']['loss_class_summary'][ Static_Site_Importer_Diagnostic_Loss_Classes::PAGE_COMPILE_OMITTED ] ?? 0 ), 'with-findings: the stored compact summary counts both missing routes' );
-$compact_codes = array_column( $compact, 'reason_code' );
+$assert( 2 === ( $stored['compact_summary']['loss_class_summary'][ $omitted ] ?? 0 ), 'with-findings: the stored compact summary counts both missing routes' );
+$compact_codes = array_column( $compact, 'code' );
 sort( $compact_codes );
 $assert( array( 'route_capture_degraded', 'route_capture_failed', 'route_export_failed' ) === $compact_codes, 'with-findings: compact rows keep the capture codes' );
-$compact_dropped = $rows( $compact, 'reason_code', 'route_export_failed' )[0] ?? array();
-$assert( 'route' === ( $compact_dropped['unit'] ?? '' ) && 'https://example.test/pricing/' === ( $compact_dropped['source_path'] ?? '' ) && 'error' === ( $compact_dropped['severity'] ?? '' ), 'with-findings: the compact row names unit, location and severity' );
-$compact_degraded = $rows( $compact, 'reason_code', 'route_capture_degraded' )[0] ?? array();
-$assert( 'website/about.html' === ( $compact_degraded['source_path'] ?? '' ) && 1 === ( $compact_degraded['context']['metrics']['failedStages'] ?? null ) && '' !== ( $compact_degraded['message'] ?? '' ), 'with-findings: the compact degraded row keeps location, metrics and message' );
+$compact_dropped = $rows( $compact, 'code', 'route_export_failed' )[0] ?? array();
+$assert( 'route' === ( $compact_dropped['unit'] ?? '' ) && 'https://example.test/pricing/' === ( $compact_dropped['location'] ?? '' ) && 'error' === ( $compact_dropped['severity'] ?? '' ) && $accepted === ( $compact_dropped['acceptability'] ?? '' ), 'with-findings: the compact row names unit, location, severity and acceptability' );
+$compact_degraded = $rows( $compact, 'code', 'route_capture_degraded' )[0] ?? array();
+$assert( 'website/about.html' === ( $compact_degraded['location'] ?? '' ) && 1 === ( $compact_degraded['metrics']['failedStages'] ?? null ) && '' !== ( $compact_degraded['message'] ?? '' ), 'with-findings: the compact degraded row keeps location, metrics and message' );
 $assert( array() === $rows( $stored['diagnostics'] ?? array(), 'code', Static_Site_Importer_Capture_Findings::UNREADABLE ), 'with-findings: a valid file records no unreadable warning' );
 
 // Older captures without the file import exactly as before.
@@ -336,9 +343,39 @@ $extracted = Static_Site_Importer_Capture_Findings::extract(
 );
 $assert( array( 'website/index.html' ) === array_column( $extracted['files'], 'path' ) && 3 === count( $extracted['findings'] ), 'payload-reference: the file is read through the payload reader and removed' );
 
-// Codes outside the registry are degraded losses; off-origin URLs are not losses.
-$assert( Static_Site_Importer_Diagnostic_Loss_Classes::UNSUPPORTED_LOSS === Static_Site_Importer_Capture_Findings::loss_class( 'a_future_capture_code' ), 'registry: an unknown capture code is a degraded loss' );
-$assert( Static_Site_Importer_Diagnostic_Loss_Classes::NATIVE_CONVERSION === Static_Site_Importer_Capture_Findings::loss_class( 'route_off_origin' ), 'registry: an off-origin URL is not a loss' );
+// Every capture code is registered by code; a code the importer does not know yet is still a degraded unit.
+$registry = Static_Site_Importer_Diagnostic_Loss_Classes::reported_loss_codes();
+foreach (
+	array(
+		'route_capture_failed'     => array( $omitted, 'route' ),
+		'route_export_failed'      => array( $omitted, 'route' ),
+		'route_path_collision'     => array( $omitted, 'route' ),
+		'route_off_origin'         => array( $omitted, 'route' ),
+		'route_profile_uncaptured' => array( $omitted, 'profile' ),
+		'route_capture_degraded'   => array( $reduced, 'route' ),
+		'stylesheet_unparseable'   => array( $reduced, 'stylesheet' ),
+		'native_timeline_unproven' => array( $reduced, 'block' ),
+		'disclosure_unrestored'    => array( $reduced, 'block' ),
+	) as $code => [ $class, $unit ]
+) {
+	$entry = $registry[ $code ] ?? array();
+	$assert( $class === ( $entry['loss_class'] ?? '' ) && $unit === ( $entry['unit'] ?? '' ) && 'data-liberation-agent' === ( $entry['owning_layer'] ?? '' ), "registry: $code is a data-liberation-agent $class $unit" );
+	$assert( $accepted === Static_Site_Importer_Diagnostic_Loss_Classes::acceptability( $class ), "registry: $code is an accepted, reported loss" );
+}
+$future = Static_Site_Importer_Capture_Findings::findings(
+	array(
+		'findings'       => array(
+			array(
+				'code'   => 'a_future_capture_code',
+				'url'    => 'https://example.test/',
+				'unit'   => 'block',
+				'reason' => 'later',
+			),
+		),
+		'missing_routes' => array(),
+	)
+);
+$assert( is_array( $future ) && $reduced === ( $future[0]['loss_class'] ?? '' ), 'registry: an unknown capture code is a degraded unit' );
 
 if ( array() !== $failures ) {
 	fwrite( STDERR, 'FAIL: ' . implode( "\nFAIL: ", $failures ) . "\n" );

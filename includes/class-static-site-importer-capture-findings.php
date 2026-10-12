@@ -29,38 +29,15 @@ if ( ! class_exists( 'Static_Site_Importer_Diagnostic_Loss_Classes' ) ) {
  */
 class Static_Site_Importer_Capture_Findings {
 
-	public const SCHEMA       = 'data-liberation-agent/capture-findings/v1';
-	public const PATH         = 'website/capture-findings.json';
-	public const OWNING_LAYER = 'data-liberation-agent';
-	public const UNREADABLE   = 'capture_findings_unreadable';
+	public const SCHEMA     = 'data-liberation-agent/capture-findings/v1';
+	public const PATH       = 'website/capture-findings.json';
+	public const UNREADABLE = 'capture_findings_unreadable';
 
 	/** Largest file read; DLA bounds the file well below this. */
 	public const MAX_BYTES = 1048576;
 
 	/** Most finding rows carried into the report. */
 	public const MAX_FINDINGS = 500;
-
-	/**
-	 * Capture code => SSI loss class.
-	 *
-	 * Omitted family: the route produced no page. Degraded family: the page
-	 * imported without part of its source. Both import and are reported. A
-	 * code not listed here is a degraded loss.
-	 *
-	 * @var array<string,string>
-	 */
-	private const LOSS_CLASSES = array(
-		'route_capture_failed'     => Static_Site_Importer_Diagnostic_Loss_Classes::PAGE_COMPILE_OMITTED,
-		'route_export_failed'      => Static_Site_Importer_Diagnostic_Loss_Classes::PAGE_COMPILE_OMITTED,
-		'route_path_collision'     => Static_Site_Importer_Diagnostic_Loss_Classes::PAGE_COMPILE_OMITTED,
-		'route_capture_degraded'   => Static_Site_Importer_Diagnostic_Loss_Classes::UNSUPPORTED_LOSS,
-		'route_profile_uncaptured' => Static_Site_Importer_Diagnostic_Loss_Classes::UNSUPPORTED_LOSS,
-		'stylesheet_unparseable'   => Static_Site_Importer_Diagnostic_Loss_Classes::UNSUPPORTED_LOSS,
-		'native_timeline_unproven' => Static_Site_Importer_Diagnostic_Loss_Classes::UNSUPPORTED_LOSS,
-		'disclosure_unrestored'    => Static_Site_Importer_Diagnostic_Loss_Classes::UNSUPPORTED_LOSS,
-		// Outside the site's origin: not part of the site, so nothing was lost.
-		'route_off_origin'         => Static_Site_Importer_Diagnostic_Loss_Classes::NATIVE_CONVERSION,
-	);
 
 	private const UNITS = array( 'route', 'profile', 'stylesheet', 'block' );
 
@@ -117,20 +94,19 @@ class Static_Site_Importer_Capture_Findings {
 				return 'A finding row has no code or url.';
 			}
 			$rows[] = self::row( $finding );
-			if ( Static_Site_Importer_Diagnostic_Loss_Classes::PAGE_COMPILE_OMITTED === self::loss_class( $finding['code'] ) ) {
-				$covered[ $finding['url'] ] = true;
-			}
+			$covered[ $finding['code'] . ' ' . $finding['url'] ] = true;
 		}
 		// Every missing route is counted once, even when its finding row was bounded out.
 		foreach ( $document['missing_routes'] as $route ) {
 			if ( ! is_array( $route ) || ! is_string( $route['url'] ?? null ) || ! is_string( $route['code'] ?? null ) ) {
 				return 'A missing route has no code or url.';
 			}
-			if ( isset( $covered[ $route['url'] ] ) ) {
+			$key = $route['code'] . ' ' . $route['url'];
+			if ( isset( $covered[ $key ] ) ) {
 				continue;
 			}
-			$covered[ $route['url'] ] = true;
-			$rows[]                   = self::row(
+			$covered[ $key ] = true;
+			$rows[]          = self::row(
 				array(
 					'code'   => $route['code'],
 					'url'    => $route['url'],
@@ -144,16 +120,13 @@ class Static_Site_Importer_Capture_Findings {
 	}
 
 	/**
-	 * Loss class for a capture finding code.
-	 *
-	 * @param string $code Capture finding code.
-	 */
-	public static function loss_class( string $code ): string {
-		return self::LOSS_CLASSES[ $code ] ?? Static_Site_Importer_Diagnostic_Loss_Classes::UNSUPPORTED_LOSS;
-	}
-
-	/**
 	 * Report row for one capture finding.
+	 *
+	 * Registered capture codes are classified by code
+	 * ({@see Static_Site_Importer_Diagnostic_Loss_Classes::reported_loss()}).
+	 * A capture code this importer does not know yet is still a unit loss, so
+	 * it is stamped {@see Static_Site_Importer_Diagnostic_Loss_Classes::DEGRADED_UNIT}
+	 * rather than left to the heuristic, which would file it as a conversion.
 	 *
 	 * @param array<string,mixed> $finding Capture finding.
 	 * @return array<string,mixed>
@@ -164,29 +137,31 @@ class Static_Site_Importer_Capture_Findings {
 		$path     = is_string( $finding['path'] ?? null ) && '' !== $finding['path'] ? 'website/' . ltrim( $finding['path'], '/' ) : '';
 		$unit     = in_array( $finding['unit'] ?? null, self::UNITS, true ) ? $finding['unit'] : 'route';
 		$severity = in_array( $finding['severity'] ?? null, array( 'warning', 'error' ), true ) ? $finding['severity'] : 'warning';
+		$metrics  = is_array( $finding['metrics'] ?? null ) ? array_filter( $finding['metrics'], 'is_numeric' ) : array();
 		$context  = array( 'url' => $url );
 		if ( is_string( $finding['profile'] ?? null ) && '' !== $finding['profile'] ) {
 			$context['profile'] = $finding['profile'];
 		}
-		if ( is_array( $finding['metrics'] ?? null ) ) {
-			$context['metrics'] = array_filter( $finding['metrics'], 'is_numeric' );
-		}
-
-		return array(
+		$row = array(
 			'code'            => $code,
 			'diagnostic_code' => $code,
-			'type'            => self::OWNING_LAYER,
+			'type'            => Static_Site_Importer_Diagnostic_Loss_Classes::OWNING_LAYER_DATA_LIBERATION_AGENT,
 			'severity'        => $severity,
 			'stage'           => 'capture',
 			'unit'            => $unit,
-			'owning_layer'    => self::OWNING_LAYER,
-			'loss_class'      => self::loss_class( $code ),
+			'owning_layer'    => Static_Site_Importer_Diagnostic_Loss_Classes::OWNING_LAYER_DATA_LIBERATION_AGENT,
 			'reason_code'     => $code,
 			'source_path'     => '' !== $path ? $path : $url,
 			'url'             => $url,
 			'message'         => substr( is_scalar( $finding['reason'] ?? null ) ? (string) $finding['reason'] : '', 0, 512 ),
+			'metrics'         => $metrics,
 			'context'         => $context,
 		);
+		if ( array() === Static_Site_Importer_Diagnostic_Loss_Classes::reported_loss( $row ) ) {
+			$row['loss_class'] = Static_Site_Importer_Diagnostic_Loss_Classes::DEGRADED_UNIT;
+		}
+
+		return $row;
 	}
 
 	/**

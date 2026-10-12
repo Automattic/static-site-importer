@@ -535,8 +535,21 @@ Degrade codes are classified by code, before any explicit `loss_class`, contract
 | `document_head_attribute_dropped` | `omitted_unit` | `item` | `blocks-engine` |
 | `document_head_element_dropped` | `omitted_unit` | `item` | `blocks-engine` |
 | `static_site_importer_non_static_file_skipped` | `omitted_unit` | `file` | `static-site-importer` |
+| `route_capture_failed` | `omitted_unit` | `route` | `data-liberation-agent` |
+| `route_export_failed` | `omitted_unit` | `route` | `data-liberation-agent` |
+| `route_path_collision` | `omitted_unit` | `route` | `data-liberation-agent` |
+| `route_off_origin` | `omitted_unit` | `route` | `data-liberation-agent` |
+| `route_profile_uncaptured` | `omitted_unit` | `profile` | `data-liberation-agent` |
+| `route_capture_degraded` | `degraded_unit` | `route` | `data-liberation-agent` |
+| `stylesheet_unparseable` | `degraded_unit` | `stylesheet` | `data-liberation-agent` |
+| `native_timeline_unproven` | `degraded_unit` | `block` | `data-liberation-agent` |
+| `disclosure_unrestored` | `degraded_unit` | `block` | `data-liberation-agent` |
 
 `degraded_unit` keeps the unit with reduced fidelity; `omitted_unit` removes it from the import. Blocks Engine repair lanes `restore_compiled_document_identity` and `restore_projected_selector_binding` map to `unsupported_loss` and `editable_approximation`.
+
+#### Data Liberation Agent capture findings
+
+A Data Liberation Agent website artifact carries `website/capture-findings.json` (schema `data-liberation-agent/capture-findings/v1`): the routes, profiles, stylesheets and evidence blocks capture dropped or degraded. At intake, `Static_Site_Importer_Capture_Findings` removes the file from the site and adds one report row per finding, plus one per missing route without a finding row. Rows carry `owning_layer: data-liberation-agent`, `unit`, `location` (`website/<path>`, else the source URL), `url`, `message` (DLA `reason`) and numeric `metrics`, and are classified by code from the table above. A capture code this importer does not know yet is stamped `degraded_unit`. None of these rows fails the import. An artifact without the file imports unchanged; a file that cannot be read or fails validation adds one `capture_findings_unreadable` warning. The producer contract is `docs/contracts/loss-ledger.md` in Automattic/data-liberation-agent.
 
 #### Canonical finding fields
 
