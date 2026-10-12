@@ -1410,6 +1410,9 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'diagnostic_count'                        => count( $diagnostics ),
 			'diagnostic_summary'                      => self::compact_import_report_diagnostic_summary( $diagnostics ),
 			'loss_class_summary'                      => Static_Site_Importer_Diagnostic_Loss_Classes::counts( $diagnostics ),
+			'loss_count'                              => array_sum( Static_Site_Importer_Diagnostic_Loss_Classes::loss_counts( $diagnostics ) ),
+			'loss_counts'                             => Static_Site_Importer_Diagnostic_Loss_Classes::loss_counts( $diagnostics ),
+			'omitted_page_count'                      => count( Static_Site_Importer_Diagnostic_Loss_Classes::omitted_pages( $diagnostics ) ),
 			'warning_summaries'                       => self::compact_import_report_diagnostic_summaries_by_severity( $diagnostics, 'warning' ),
 			'error_summaries'                         => self::compact_import_report_diagnostic_summaries_by_severity( $diagnostics, 'error' ),
 			'diagnostics'                             => self::compact_import_report_diagnostics( $diagnostics ),
@@ -1814,7 +1817,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'loss_class'           => isset( $diagnostic['loss_class'] ) && is_scalar( $diagnostic['loss_class'] ) ? (string) $diagnostic['loss_class'] : Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic ),
 			'diagnostic_class'     => isset( $diagnostic['diagnostic_class'] ) && is_scalar( $diagnostic['diagnostic_class'] ) ? (string) $diagnostic['diagnostic_class'] : Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic ),
 			'repair_class'         => isset( $diagnostic['repair_class'] ) && is_scalar( $diagnostic['repair_class'] ) ? (string) $diagnostic['repair_class'] : self::diagnostic_repair_class( $type ),
-			'acceptability'        => isset( $diagnostic['acceptability'] ) && is_scalar( $diagnostic['acceptability'] ) ? (string) $diagnostic['acceptability'] : self::diagnostic_acceptability( Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic ) ),
+			'acceptability'        => isset( $diagnostic['acceptability'] ) && is_scalar( $diagnostic['acceptability'] ) ? (string) $diagnostic['acceptability'] : Static_Site_Importer_Diagnostic_Loss_Classes::acceptability( Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic ) ),
 			'source_diagnostic'    => isset( $diagnostic['source_diagnostic'] ) && is_array( $diagnostic['source_diagnostic'] ) ? $diagnostic['source_diagnostic'] : self::source_diagnostic_identity( $diagnostic, $diagnostic ),
 			'owner'                => self::finding_owner( $diagnostic ),
 			'routing'              => array(
@@ -1824,7 +1827,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 				'repair_class'           => isset( $diagnostic['repair_class'] ) && is_scalar( $diagnostic['repair_class'] ) ? (string) $diagnostic['repair_class'] : self::diagnostic_repair_class( $type ),
 				'repair_bucket'          => isset( $diagnostic['repair_bucket'] ) && is_scalar( $diagnostic['repair_bucket'] ) ? (string) $diagnostic['repair_bucket'] : '',
 				'loss_class'             => isset( $diagnostic['loss_class'] ) && is_scalar( $diagnostic['loss_class'] ) ? (string) $diagnostic['loss_class'] : Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic ),
-				'acceptability'          => isset( $diagnostic['acceptability'] ) && is_scalar( $diagnostic['acceptability'] ) ? (string) $diagnostic['acceptability'] : self::diagnostic_acceptability( Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic ) ),
+				'acceptability'          => isset( $diagnostic['acceptability'] ) && is_scalar( $diagnostic['acceptability'] ) ? (string) $diagnostic['acceptability'] : Static_Site_Importer_Diagnostic_Loss_Classes::acceptability( Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic ) ),
 			),
 			'preservation'         => array_filter(
 				array(
@@ -1977,13 +1980,22 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			}
 
 			$source      = isset( $diagnostic['source'] ) && is_scalar( $diagnostic['source'] ) ? (string) $diagnostic['source'] : '';
-			$source_path = isset( $diagnostic['source_path'] ) && is_scalar( $diagnostic['source_path'] ) ? (string) $diagnostic['source_path'] : self::diagnostic_source_path( $source );
+			$source_path = isset( $diagnostic['source_path'] ) && is_scalar( $diagnostic['source_path'] ) ? (string) $diagnostic['source_path'] : '';
+			if ( '' === $source_path ) {
+				// Blocks Engine's ArtifactCompiler::diagnostic() nests the page in context.
+				$source_path = is_array( $diagnostic['context'] ?? null ) ? self::first_scalar( $diagnostic['context'], array( 'source_path' ) ) : '';
+			}
+			if ( '' === $source_path ) {
+				$source_path = self::diagnostic_source_path( $source );
+			}
 
 			// The compiler reports dropped files as warnings that classify as
 			// acceptable conversion if left untouched. Re-owning gives the row an
 			// importer-owned type and explicit loss class so the loss is counted
 			// and gated instead of filed as a clean conversion.
 			$diagnostic  = Static_Site_Importer_Diagnostic_Loss_Classes::reown_compiler_file_drop( $diagnostic );
+			// Degrade codes are accepted, reported losses with a named unit and layer.
+			$diagnostic  = Static_Site_Importer_Diagnostic_Loss_Classes::reown_reported_loss( $diagnostic );
 			$type        = isset( $diagnostic['type'] ) && is_scalar( $diagnostic['type'] ) ? (string) $diagnostic['type'] : 'import_diagnostic';
 			$reason_code = self::diagnostic_reason_code( $type, $diagnostic );
 
@@ -1998,7 +2010,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			);
 			$machine['loss_class']       = Static_Site_Importer_Diagnostic_Loss_Classes::classify( array_merge( $diagnostic, $machine ) );
 			$machine['diagnostic_class'] = $machine['loss_class'];
-			$machine['acceptability']    = self::diagnostic_acceptability( $machine['loss_class'] );
+			$machine['acceptability']    = Static_Site_Importer_Diagnostic_Loss_Classes::acceptability( $machine['loss_class'] );
 			$source_diagnostic           = self::source_diagnostic_identity( $diagnostic, $machine );
 			if ( ! empty( $source_diagnostic ) ) {
 				$machine['source_diagnostic'] = $source_diagnostic;
@@ -2034,6 +2046,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 					$row['group_key']     = Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND;
 				}
 			}
+			$row = self::with_canonical_finding_fields( $row );
 			$key = self::diagnostic_dedupe_key( $row );
 			if ( isset( $seen[ $key ] ) ) {
 				$normalized[ $seen[ $key ] ] = self::merge_diagnostic_context( $normalized[ $seen[ $key ] ], $row );
@@ -2045,6 +2058,108 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		}
 
 		$report['diagnostics'] = $normalized;
+	}
+
+	/**
+	 * Canonical finding fields every normalized import-report row carries.
+	 *
+	 * @var array<int,string>
+	 */
+	public const CANONICAL_FINDING_FIELDS = array( 'code', 'severity', 'unit', 'location', 'message', 'reason_code', 'metrics', 'owning_layer', 'loss_class', 'acceptability' );
+
+	/**
+	 * Project producer field variants onto the canonical finding fields.
+	 *
+	 * Additive: every producer field stays on the row under its own name, so
+	 * no data is lost; the canonical fields are filled from them.
+	 *
+	 * - `code`: `code`, else `diagnostic_code`, else `type`.
+	 * - `location`: `source_path`, else `path`, else `url`, else Blocks Engine's
+	 *   `context.source_path`.
+	 * - `message`: `message`, else `summary`, else `reason` (DLA free text),
+	 *   else `error_message`.
+	 * - `metrics`: numeric `metrics` entries, Blocks Engine editability
+	 *   `context.metric`/`actual`/`maximum` as `<metric>` and `<metric>_maximum`,
+	 *   and `omitted_count`.
+	 * - `unit` and `owning_layer`: the producer value, else the reported-loss
+	 *   registry, else `owning_layer` from a `static_site_importer_` code or a
+	 *   Blocks Engine `source` class; '' when no producer names it.
+	 * - `acceptability`: always derived from the final `loss_class`.
+	 *
+	 * @param array<string,mixed> $row Normalized diagnostic row.
+	 * @return array<string,mixed>
+	 */
+	public static function with_canonical_finding_fields( array $row ): array {
+		$context = is_array( $row['context'] ?? null ) ? $row['context'] : array();
+
+		$row['code']     = self::first_scalar( $row, array( 'code', 'diagnostic_code', 'type' ) );
+		$row['severity'] = self::first_scalar( $row, array( 'severity' ) );
+		$row['unit']     = self::first_scalar( $row, array( 'unit' ) );
+		$row['location'] = self::first_scalar( $row, array( 'source_path', 'path', 'url' ) );
+		if ( '' === $row['location'] ) {
+			$row['location'] = self::first_scalar( $context, array( 'source_path' ) );
+		}
+		$row['message']       = self::first_scalar( $row, array( 'message', 'summary', 'reason', 'error_message' ) );
+		$row['reason_code']   = self::first_scalar( $row, array( 'reason_code' ) );
+		$row['metrics']       = self::diagnostic_metrics( $row );
+		$row['owning_layer']  = self::diagnostic_owning_layer( $row );
+		$row['loss_class']    = self::first_scalar( $row, array( 'loss_class' ) );
+		$row['acceptability'] = Static_Site_Importer_Diagnostic_Loss_Classes::acceptability( $row['loss_class'] );
+
+		return $row;
+	}
+
+	/**
+	 * Numeric metrics from the producer field variants.
+	 *
+	 * @param array<string,mixed> $row Diagnostic row.
+	 * @return array<string,int|float>
+	 */
+	public static function diagnostic_metrics( array $row ): array {
+		$metrics = array();
+		foreach ( is_array( $row['metrics'] ?? null ) ? $row['metrics'] : array() as $name => $value ) {
+			if ( is_string( $name ) && is_numeric( $value ) ) {
+				$metrics[ $name ] = 0 + $value;
+			}
+		}
+		$context = is_array( $row['context'] ?? null ) ? $row['context'] : array();
+		$metric  = isset( $context['metric'] ) && is_string( $context['metric'] ) ? sanitize_key( $context['metric'] ) : '';
+		if ( '' !== $metric && is_numeric( $context['actual'] ?? null ) && ! isset( $metrics[ $metric ] ) ) {
+			$metrics[ $metric ] = 0 + $context['actual'];
+			if ( is_numeric( $context['maximum'] ?? null ) ) {
+				$metrics[ $metric . '_maximum' ] = 0 + $context['maximum'];
+			}
+		}
+		if ( is_numeric( $row['omitted_count'] ?? null ) && ! isset( $metrics['omitted_count'] ) ) {
+			$metrics['omitted_count'] = 0 + $row['omitted_count'];
+		}
+
+		return $metrics;
+	}
+
+	/**
+	 * Layer that owns a finding, when a producer or the registry names it.
+	 *
+	 * @param array<string,mixed> $row Diagnostic row.
+	 * @return string
+	 */
+	public static function diagnostic_owning_layer( array $row ): string {
+		$layer = self::first_scalar( $row, array( 'owning_layer' ) );
+		if ( '' !== $layer ) {
+			return $layer;
+		}
+		$reported = Static_Site_Importer_Diagnostic_Loss_Classes::reported_loss( $row );
+		if ( array() !== $reported ) {
+			return $reported['owning_layer'];
+		}
+		if ( str_starts_with( self::first_scalar( $row, array( 'code' ) ), 'static_site_importer_' ) ) {
+			return Static_Site_Importer_Diagnostic_Loss_Classes::OWNING_LAYER_STATIC_SITE_IMPORTER;
+		}
+		if ( str_starts_with( ltrim( self::first_scalar( $row, array( 'source' ) ), '\\' ), 'Automattic\\BlocksEngine\\' ) ) {
+			return Static_Site_Importer_Diagnostic_Loss_Classes::OWNING_LAYER_BLOCKS_ENGINE;
+		}
+
+		return '';
 	}
 
 	/**
@@ -2272,23 +2387,6 @@ final class Static_Site_Importer_Diagnostic_Projection {
 	}
 
 	/**
-	 * Classify whether a diagnostic is acceptable preservation/conversion or an imported-output defect.
-	 *
-	 * @param string $loss_class Normalized loss class.
-	 * @return string
-	 */
-	public static function diagnostic_acceptability( string $loss_class ): string {
-		if ( Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND === $loss_class ) {
-			return 'acceptable_preservation';
-		}
-		if ( in_array( $loss_class, array( Static_Site_Importer_Diagnostic_Loss_Classes::NATIVE_CONVERSION, Static_Site_Importer_Diagnostic_Loss_Classes::EDITABLE_APPROXIMATION ), true ) ) {
-			return 'acceptable_conversion';
-		}
-
-		return 'unacceptable_imported_output_defect';
-	}
-
-	/**
 	 * Preserve source diagnostic identity fields alongside the normalized row.
 	 *
 	 * @param array<string,mixed> $diagnostic Raw diagnostic row.
@@ -2464,8 +2562,17 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		return isset( $diagnostic['type'] ) && is_scalar( $diagnostic['type'] ) ? (string) $diagnostic['type'] : 'static_site_importer_diagnostic';
 	}
 
+	/** Rows kept in the compact summary's `diagnostics` list. */
+	public const COMPACT_DIAGNOSTIC_LIMIT = 50;
+
 	/**
 	 * Keep summary diagnostics compact while preserving repair-agent evidence.
+	 *
+	 * At most {@see COMPACT_DIAGNOSTIC_LIMIT} rows are kept. When there are
+	 * more, rows are retained by acceptability tier so losses are never crowded
+	 * out by informational rows: imported-output defects first, then accepted
+	 * reported losses, then acceptable conversions and preservations, in report
+	 * order within each tier. Retained rows are emitted in report order.
 	 *
 	 * @param array<int,array<string,mixed>> $diagnostics Normalized diagnostics.
 	 * @return array<int,array<string,mixed>> Compact diagnostics for validation harnesses.
@@ -2473,6 +2580,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 	public static function compact_import_report_diagnostics( array $diagnostics ): array {
 		$fields = array(
 			'id',
+			'code',
 			'type',
 			'severity',
 			'category',
@@ -2482,6 +2590,11 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'owning_layer',
 			'acceptability',
 			'reason_code',
+			'location',
+			'url',
+			'path',
+			'value',
+			'metrics',
 			'suggested_repair_class',
 			'repair_class',
 			'repair_bucket',
@@ -2525,7 +2638,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		);
 
 		$compact = array();
-		foreach ( array_slice( $diagnostics, 0, 50 ) as $diagnostic ) {
+		foreach ( self::compact_diagnostic_selection( $diagnostics ) as $diagnostic ) {
 			$diagnostic = self::with_matrix_diagnostic_aliases( $diagnostic );
 			$row        = array();
 			foreach ( $fields as $field ) {
@@ -2542,6 +2655,34 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		}
 
 		return $compact;
+	}
+
+	/**
+	 * Select the rows the compact summary keeps, in report order.
+	 *
+	 * @param array<int,array<string,mixed>> $diagnostics Normalized diagnostics.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function compact_diagnostic_selection( array $diagnostics ): array {
+		$diagnostics = array_values( array_filter( $diagnostics, 'is_array' ) );
+		if ( count( $diagnostics ) <= self::COMPACT_DIAGNOSTIC_LIMIT ) {
+			return $diagnostics;
+		}
+
+		$tiers = array(
+			Static_Site_Importer_Diagnostic_Loss_Classes::UNACCEPTABLE_IMPORTED_OUTPUT_DEFECT => 0,
+			Static_Site_Importer_Diagnostic_Loss_Classes::ACCEPTED_REPORTED_LOSS => 1,
+		);
+		$ranked = array();
+		foreach ( $diagnostics as $index => $diagnostic ) {
+			$class    = isset( $diagnostic['loss_class'] ) && is_scalar( $diagnostic['loss_class'] ) ? (string) $diagnostic['loss_class'] : Static_Site_Importer_Diagnostic_Loss_Classes::classify( $diagnostic );
+			$ranked[] = array( $tiers[ Static_Site_Importer_Diagnostic_Loss_Classes::acceptability( $class ) ] ?? 2, $index );
+		}
+		sort( $ranked );
+		$kept = array_column( array_slice( $ranked, 0, self::COMPACT_DIAGNOSTIC_LIMIT ), 1 );
+		sort( $kept );
+
+		return array_map( static fn( int $index ): array => $diagnostics[ $index ], $kept );
 	}
 
 	/**
