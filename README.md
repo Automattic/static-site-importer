@@ -504,6 +504,65 @@ Every `new WP_Error(` and `throw new` in `includes/*.php` is classified in `test
 
 `php tests/smoke-error-classification.php --list` prints every site with its key as JSON lines.
 
+### Loss Ledger Findings
+
+The import report records each finding once, with a loss class and an acceptability. Classes come from `Static_Site_Importer_Diagnostic_Loss_Classes`; the cross-layer contract is `docs/contracts/loss-ledger.md` in Automattic/data-liberation-agent.
+
+| Acceptability | Loss classes | Meaning |
+|---|---|---|
+| `acceptable_conversion` | `native_conversion`, `editable_approximation` | Converted to editable blocks. |
+| `acceptable_preservation` | `preserved_runtime_island` | Preserved as a bounded runtime island. |
+| `accepted_reported_loss` | `page_compile_omitted`, `degraded_unit`, `omitted_unit` | A producer hit a representability limit confined to one unit. The import completes and the loss is reported. |
+| `unacceptable_imported_output_defect` | `unsupported_loss`, `importer_materialization_bug`, `unrecognized_loss_class` | The imported output is defective. |
+
+Degrade codes are classified by code, before any explicit `loss_class`, contract repair lane or heuristic. `unit` and `owning_layer` fill in only when the producer row names none:
+
+| Code | Loss class | Unit | Owning layer |
+|---|---|---|---|
+| `page_compile_omitted` | `page_compile_omitted` | `page` | `blocks-engine` |
+| `editability_policy_degraded` | `degraded_unit` | `page` | `blocks-engine` |
+| `html_include_budget_exceeded` | `degraded_unit` | `page` | `blocks-engine` |
+| `html_include_directive_ignored` | `degraded_unit` | `page` | `blocks-engine` |
+| `glyph_color_undecodable` | `degraded_unit` | `item` | `blocks-engine` |
+| `wordpress_site_plan_unresolved_navigation_link` | `degraded_unit` | `item` | `blocks-engine` |
+| `runtime_dependency_target_missing` | `degraded_unit` | `block` | `blocks-engine` |
+| `wordpress_site_plan_colliding_asset_target` | `degraded_unit` | `asset` | `blocks-engine` |
+| `wordpress_site_plan_omitted_link_declaration` | `omitted_unit` | `item` | `blocks-engine` |
+| `runtime_entity_dropped` | `omitted_unit` | `item` | `blocks-engine` |
+| `runtime_declaration_dropped` | `omitted_unit` | `declaration` | `blocks-engine` |
+| `runtime_entity_binding_unanchored` | `omitted_unit` | `binding` | `blocks-engine` |
+| `runtime_form_graph_rejected` | `omitted_unit` | `item` | `blocks-engine` |
+| `document_head_attribute_dropped` | `omitted_unit` | `item` | `blocks-engine` |
+| `document_head_element_dropped` | `omitted_unit` | `item` | `blocks-engine` |
+| `static_site_importer_non_static_file_skipped` | `omitted_unit` | `file` | `static-site-importer` |
+
+`degraded_unit` keeps the unit with reduced fidelity; `omitted_unit` removes it from the import. Blocks Engine repair lanes `restore_compiled_document_identity` and `restore_projected_selector_binding` map to `unsupported_loss` and `editable_approximation`.
+
+#### Canonical finding fields
+
+`Static_Site_Importer_Diagnostic_Projection::normalize_import_diagnostics()` gives every report row the same canonical fields. The mapping is additive: each producer field also stays on the row under its own name.
+
+| Canonical field | Filled from, first non-empty |
+|---|---|
+| `code` | `code`, `diagnostic_code`, `type` |
+| `severity` | producer `severity`, else derived from `type` |
+| `unit` | producer `unit`, then the degrade-code table, else `''` |
+| `location` | `source_path`, `path`, `url`, then Blocks Engine `context.source_path`. A nested `context.source_path` also fills a missing top-level `source_path`. |
+| `message` | `message`, `summary`, `reason` (free text from Data Liberation Agent), `error_message` |
+| `reason_code` | `reason_code`, `reason`, `error_code`, else `type` |
+| `metrics` | numeric `metrics` entries. Blocks Engine editability `context.metric`/`actual`/`maximum` becomes `<metric>` and `<metric>_maximum`, and `omitted_count` is copied in. Empty map when none. |
+| `owning_layer` | producer `owning_layer`, then the degrade-code table, then `static-site-importer` for a `static_site_importer_*` code or `blocks-engine` for a Blocks Engine `source` class, else `''` |
+| `loss_class` | classification above |
+| `acceptability` | derived from the final `loss_class` |
+
+Single compiler diagnostics keep `unit`, `owning_layer`, `reason_code`, `source_path`, `path`, `url`, `selector`, numeric `metrics` and `omitted_count` through the compiler diagnostic bound.
+
+#### Compact summary
+
+`compact_summary` (`static-site-importer/import-metrics/v1`) carries `loss_class_summary` (every class), `loss_count` and `loss_counts` (classes whose acceptability is `accepted_reported_loss` or `unacceptable_imported_output_defect`), and `omitted_page_count`. Its `diagnostics` list keeps `code`, `location`, `url`, `path`, `value` and `metrics` along with the classification fields.
+
+The list holds at most 50 rows. When the report has more, rows are kept by tier: imported-output defects, then accepted reported losses, then acceptable conversions and preservations, in report order within each tier. Kept rows are emitted in report order.
+
 `php tests/smoke-wordpress-site-plan-materializer.php` runs outside WordPress and verifies that Blocks Engine's direct `ArtifactCompiler` output is consumed through `source_reports.wordpress_site_plan` v2 and materialized into the stable receipt contract.
 
 The `wordpress-is-dead` smoke verifies the multi-page fixture, generated block-theme artifacts, internal-link rewrites, persistent navigation entities, source CSS preservation, editor style support, plan-owned `theme.json` / `style.css`, and selector fidelity across stored/rendered paths. The `mixed-source-site` smoke verifies an Astro-like source tree with `index.html`, nested Markdown content documents, explicit skipped-MDX diagnostics, report source counts, and generated page block markup.

@@ -202,13 +202,16 @@ $verify_omission = static function ( array $result, string $label ) use ( $asser
 	$assert( 'website/pricing.html' === ( $finding['source_path'] ?? '' ) && 'page_compile_representability_limit' === ( $finding['reason_code'] ?? '' ) && 'Form layout graph exceeds its node limit.' === ( $finding['message'] ?? '' ), "$label: the stored finding names the page, reason and message" );
 	$assert( 'page' === ( $finding['unit'] ?? '' ) && 'blocks-engine' === ( $finding['owning_layer'] ?? '' ) && 'warning' === ( $finding['severity'] ?? '' ), "$label: the stored finding is a blocks-engine page-unit warning" );
 	$assert( Static_Site_Importer_Diagnostic_Loss_Classes::PAGE_COMPILE_OMITTED === ( $finding['loss_class'] ?? '' ), "$label: the stored finding carries the page_compile_omitted loss class" );
+	$assert( Static_Site_Importer_Diagnostic_Loss_Classes::ACCEPTED_REPORTED_LOSS === ( $finding['acceptability'] ?? '' ) && 'website/pricing.html' === ( $finding['location'] ?? '' ), "$label: the stored finding is an accepted, reported loss at its page" );
 	$assert( 2 === ( $stored['source_documents']['total_count'] ?? 0 ), "$label: the stored report counts two source documents" );
 
 	$assert( 'completed' === ( $summary['status'] ?? '' ) && true === ( $summary['quality_pass'] ?? false ) && false === ( $summary['fail_import'] ?? true ), "$label: the compact summary reports a passing completed import" );
 	$assert( 1 === ( $summary['loss_class_summary'][ Static_Site_Importer_Diagnostic_Loss_Classes::PAGE_COMPILE_OMITTED ] ?? 0 ), "$label: the compact summary counts the omission by loss class" );
+	$assert( 1 === ( $summary['omitted_page_count'] ?? 0 ) && 1 === ( $summary['loss_counts'][ Static_Site_Importer_Diagnostic_Loss_Classes::PAGE_COMPILE_OMITTED ] ?? 0 ), "$label: the compact summary counts the omitted page and the loss" );
 	$compact = array_values( array_filter( $summary['diagnostics'] ?? array(), static fn ( $row ): bool => is_array( $row ) && Static_Site_Importer_Diagnostic_Loss_Classes::PAGE_COMPILE_OMITTED === ( $row['loss_class'] ?? '' ) ) );
 	$compact = $compact[0] ?? array();
 	$assert( 'website/pricing.html' === ( $compact['source_path'] ?? '' ) && 'page_compile_representability_limit' === ( $compact['reason_code'] ?? '' ) && 'page' === ( $compact['unit'] ?? '' ) && 'blocks-engine' === ( $compact['owning_layer'] ?? '' ) && '' !== ( $compact['message'] ?? '' ), "$label: the compact summary carries the omission finding" );
+	$assert( 'page_compile_omitted' === ( $compact['code'] ?? '' ) && 'website/pricing.html' === ( $compact['location'] ?? '' ) && Static_Site_Importer_Diagnostic_Loss_Classes::ACCEPTED_REPORTED_LOSS === ( $compact['acceptability'] ?? '' ), "$label: the compact omission row keeps its code, location and acceptability" );
 	$assert( ! empty( $summary['warning_summaries'] ) && empty( $summary['error_summaries'] ), "$label: the omission is a warning, not an error" );
 };
 
