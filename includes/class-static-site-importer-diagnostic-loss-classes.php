@@ -78,8 +78,9 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	public const UNACCEPTABLE_IMPORTED_OUTPUT_DEFECT = 'unacceptable_imported_output_defect';
 
 	/** Owning layers named on reported-loss rows. */
-	public const OWNING_LAYER_BLOCKS_ENGINE        = 'blocks-engine';
-	public const OWNING_LAYER_STATIC_SITE_IMPORTER = 'static-site-importer';
+	public const OWNING_LAYER_BLOCKS_ENGINE         = 'blocks-engine';
+	public const OWNING_LAYER_STATIC_SITE_IMPORTER  = 'static-site-importer';
+	public const OWNING_LAYER_DATA_LIBERATION_AGENT = 'data-liberation-agent';
 
 	/**
 	 * Producer sent a `loss_class` this plugin does not recognize.
@@ -203,6 +204,55 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 			'loss_class'   => self::OMITTED_UNIT,
 			'unit'         => 'file',
 			'owning_layer' => self::OWNING_LAYER_STATIC_SITE_IMPORTER,
+		),
+		// Data Liberation Agent capture findings, read from the artifact's
+		// `capture-findings.json` ({@see Static_Site_Importer_Capture_Findings}).
+		// Missing and dropped routes are omitted units; a route, stylesheet or
+		// evidence block saved with part of its source is a degraded unit.
+		'route_capture_failed'                           => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'route',
+			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
+		),
+		'route_export_failed'                            => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'route',
+			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
+		),
+		'route_path_collision'                           => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'route',
+			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
+		),
+		'route_off_origin'                               => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'route',
+			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
+		),
+		'route_profile_uncaptured'                       => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'profile',
+			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
+		),
+		'route_capture_degraded'                         => array(
+			'loss_class'   => self::DEGRADED_UNIT,
+			'unit'         => 'route',
+			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
+		),
+		'stylesheet_unparseable'                         => array(
+			'loss_class'   => self::DEGRADED_UNIT,
+			'unit'         => 'stylesheet',
+			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
+		),
+		'native_timeline_unproven'                       => array(
+			'loss_class'   => self::DEGRADED_UNIT,
+			'unit'         => 'block',
+			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
+		),
+		'disclosure_unrestored'                          => array(
+			'loss_class'   => self::DEGRADED_UNIT,
+			'unit'         => 'block',
+			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
 		),
 	);
 

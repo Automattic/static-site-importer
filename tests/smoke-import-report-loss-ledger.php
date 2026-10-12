@@ -49,6 +49,7 @@ if ( is_readable( $static_site_importer_autoload ) ) {
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-product-handoff-contract.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-import-report.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-loss-classes.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-capture-findings.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-diagnostics-adapter.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
@@ -249,6 +250,33 @@ $intake_row = array(
 	'reason_code' => 'non_static_extension',
 	'message'     => 'Skipped website/assets/style.php: only static content can be imported, so references to it are unresolved.',
 );
+// Data Liberation Agent capture findings, as intake reads them from `capture-findings.json`.
+$capture_finding = static fn( string $code, string $unit, string $route, string $path = '' ): array => array_filter(
+	array(
+		'code'     => $code,
+		'severity' => 'warning',
+		'unit'     => $unit,
+		'url'      => 'https://example.com/' . $route,
+		'path'     => $path,
+		'reason'   => $code . ' on ' . $route,
+	)
+);
+$capture_rows    = Static_Site_Importer_Capture_Findings::findings(
+	array(
+		'findings'       => array(
+			$capture_finding( 'route_capture_failed', 'route', 'slow/' ),
+			$capture_finding( 'route_export_failed', 'route', 'pricing-export/' ),
+			$capture_finding( 'route_path_collision', 'route', 'a.html' ),
+			$capture_finding( 'route_off_origin', 'route', 'elsewhere/' ),
+			$capture_finding( 'route_profile_uncaptured', 'profile', 'tablet/', 'tablet/index.html' ),
+			$capture_finding( 'route_capture_degraded', 'route', 'about/', 'about/index.html' ),
+			$capture_finding( 'stylesheet_unparseable', 'stylesheet', 'styled/', 'assets/site.css' ),
+			$capture_finding( 'native_timeline_unproven', 'block', 'motion/', 'motion/index.html' ),
+			$capture_finding( 'disclosure_unrestored', 'block', 'faq/', 'faq/index.html' ),
+		),
+		'missing_routes' => array(),
+	)
+);
 
 $expected = array(
 	'page_compile_omitted'                           => array( 'page_compile_omitted', 'page', 'blocks-engine', 'website/pricing.html' ),
@@ -267,6 +295,15 @@ $expected = array(
 	'document_head_attribute_dropped'                => array( 'omitted_unit', 'item', 'blocks-engine', 'website/index.html' ),
 	'document_head_element_dropped'                  => array( 'omitted_unit', 'item', 'blocks-engine', 'website/index.html' ),
 	'static_site_importer_non_static_file_skipped'   => array( 'omitted_unit', 'file', 'static-site-importer', 'website/assets/style.php' ),
+	'route_capture_failed'                           => array( 'omitted_unit', 'route', 'data-liberation-agent', 'https://example.com/slow/' ),
+	'route_export_failed'                            => array( 'omitted_unit', 'route', 'data-liberation-agent', 'https://example.com/pricing-export/' ),
+	'route_path_collision'                           => array( 'omitted_unit', 'route', 'data-liberation-agent', 'https://example.com/a.html' ),
+	'route_off_origin'                               => array( 'omitted_unit', 'route', 'data-liberation-agent', 'https://example.com/elsewhere/' ),
+	'route_profile_uncaptured'                       => array( 'omitted_unit', 'profile', 'data-liberation-agent', 'website/tablet/index.html' ),
+	'route_capture_degraded'                         => array( 'degraded_unit', 'route', 'data-liberation-agent', 'website/about/index.html' ),
+	'stylesheet_unparseable'                         => array( 'degraded_unit', 'stylesheet', 'data-liberation-agent', 'website/assets/site.css' ),
+	'native_timeline_unproven'                       => array( 'degraded_unit', 'block', 'data-liberation-agent', 'website/motion/index.html' ),
+	'disclosure_unrestored'                          => array( 'degraded_unit', 'block', 'data-liberation-agent', 'website/faq/index.html' ),
 );
 
 // The registry names every ledger code, and nothing else.
@@ -274,7 +311,7 @@ $registry = Static_Site_Importer_Diagnostic_Loss_Classes::reported_loss_codes();
 $assert( array_keys( $expected ) == array_keys( $registry ), 'registry-covers-ledger-codes', implode( ',', array_diff( array_keys( $expected ), array_keys( $registry ) ) ) ); // phpcs:ignore Universal.Operators.StrictComparisons.LooseEqual -- Order-insensitive key set comparison.
 
 // Classification by code beats the contract lane and the heuristic.
-foreach ( array_merge( $plan_rows, array( $intake_row ) ) as $row ) {
+foreach ( array_merge( $plan_rows, array( $intake_row ), $capture_rows ) as $row ) {
 	$provenance = Static_Site_Importer_Diagnostic_Loss_Classes::classify_with_provenance( $row );
 	$assert(
 		$expected[ $row['code'] ][0] === $provenance['class'] && Static_Site_Importer_Diagnostic_Loss_Classes::SOURCE_CODE === $provenance['source'],
@@ -311,7 +348,7 @@ $receipt = array(
 	'existing_matches' => array( 'pages' => array() ),
 	'extensions'       => array(),
 );
-$args    = array( 'source_metadata' => array( 'intake_findings' => array( $intake_row ) ) );
+$args    = array( 'source_metadata' => array( 'intake_findings' => array_merge( array( $intake_row ), $capture_rows ) ) );
 
 $projection = Static_Site_Importer_Receipt_Projection::compose( $receipt, $args, array(), array(), array(), 'loss-ledger-run', array(), array() );
 $report     = $projection['report'];
@@ -388,12 +425,12 @@ foreach ( $expected as $code => list( $loss_class, $unit, $owning_layer, $locati
 $assert( array( 'bytes' => 70000, 'limit_bytes' => 65536 ) === ( $compact['runtime_entity_dropped']['metrics'] ?? null ), 'compact-row-keeps-metrics' );
 $assert( '/manifest.json' === ( $compact['wordpress_site_plan_omitted_link_declaration']['value'] ?? '' ), 'compact-row-keeps-value' );
 $assert( 1 === ( $summary['omitted_page_count'] ?? null ), 'compact-omitted-page-count' );
-$assert( 16 === ( $summary['loss_count'] ?? null ), 'compact-loss-count', wp_json_encode_fallback( $summary['loss_counts'] ?? null ) );
+$assert( 25 === ( $summary['loss_count'] ?? null ), 'compact-loss-count', wp_json_encode_fallback( $summary['loss_counts'] ?? null ) );
 $assert(
 	array(
 		'page_compile_omitted'         => 1,
-		'degraded_unit'                => 7,
-		'omitted_unit'                 => 8,
+		'degraded_unit'                => 11,
+		'omitted_unit'                 => 13,
 		'unsupported_loss'             => 0,
 		'importer_materialization_bug' => 0,
 	) === ( $summary['loss_counts'] ?? null ),

@@ -49,6 +49,7 @@
     "tests/smoke-dependency-manager-readiness.php": { "environment": "standalone-php" },
     "tests/smoke-direct-artifact-import.php": { "environment": "standalone-php" },
     "tests/smoke-direct-artifact-omitted-page.php": { "environment": "standalone-php" },
+    "tests/smoke-capture-findings.php": { "environment": "standalone-php" },
     "tests/smoke-run-storage.php": { "environment": "standalone-php" },
     "tests/smoke-rest-import.php": { "environment": "standalone-php" },
     "tests/smoke-lifecycle-compile-checkpoint.php": { "environment": "standalone-php" },
