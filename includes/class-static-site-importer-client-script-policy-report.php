@@ -46,7 +46,7 @@ final class Static_Site_Importer_Client_Script_Policy_Report {
 	public function record( string $disposition, array $row ): void {
 		if ( ! in_array( $disposition, self::DISPOSITIONS, true ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Internal contract violation message; this class runs before any WordPress escaping API is guaranteed.
-			throw new InvalidArgumentException( sprintf( 'Unknown client-script disposition "%s".', $disposition ) );
+			throw new InvalidArgumentException( sprintf( 'Unknown client-script disposition "%s".', $disposition ) ); // ssi-error-class: programmer
 		}
 
 		$this->{$disposition}[] = $row;

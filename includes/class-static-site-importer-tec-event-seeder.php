@@ -119,6 +119,7 @@ final class Static_Site_Importer_TEC_Event_Seeder {
 				try {
 					$date = new DateTimeImmutable( $value );
 					if ( $date->format( 'Y-m-d\TH:i' ) !== substr( $value, 0, 16 ) ) {
+						// ssi-error-class: representability:item
 						throw new Exception( 'Invalid date.' );
 					}
 					$dates[ $field ] = $date;
@@ -272,6 +273,7 @@ final class Static_Site_Importer_TEC_Event_Seeder {
 				if ( ! empty( $row['venue'] ) ) {
 					$venue_id = self::venue( array_merge( $row, array( 'source_identity' => $source_identity ) ), $report );
 					if ( $venue_id <= 0 ) {
+						// ssi-error-class: operational
 						throw new RuntimeException( 'TEC venue creation failed.' );
 					}
 					$fields['venue'] = $venue_id;
@@ -508,6 +510,7 @@ final class Static_Site_Importer_TEC_Event_Seeder {
 	/** Resolve an optional provider factory only while its plugin is active. */
 	private static function repository( string $factory ) {
 		if ( ! is_callable( $factory ) ) {
+			// ssi-error-class: operational
 			throw new RuntimeException( 'TEC repository is unavailable.' );
 		}
 		return $factory();

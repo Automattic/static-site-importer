@@ -1442,6 +1442,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			return $response;
 		}
 		unset( $data['_static_site_importer_negative_cache_hit'] );
+		// ssi-error-class: propagated
 		return new WP_Error( $response->get_error_code(), $response->get_error_message(), ! empty( $data ) ? $data : null );
 	}
 
@@ -1518,6 +1519,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			$data = is_array( $response->get_error_data() ) ? $response->get_error_data() : array();
 			if ( ! empty( $data['_static_site_importer_cache_aware'] ) ) {
 				unset( $data['_static_site_importer_cache_aware'] );
+				// ssi-error-class: propagated
 				$response = new WP_Error( $response->get_error_code(), $response->get_error_message(), ! empty( $data ) ? $data : null );
 				$fetch_resource( $resource_url, $fetch_args + array( '_static_site_importer_cache_failure' => $response ) );
 			}

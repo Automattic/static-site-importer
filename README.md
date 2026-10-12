@@ -486,6 +486,24 @@ npm run test:validation -- --json
 
 PHP smokes are declared in `test-manifest.json`; run the standalone lane with `npm test` or the complete configured lanes with `npm run test:all`.
 
+### Error Classification
+
+Every `new WP_Error(` and `throw new` in `includes/*.php` is classified in `tests/fixtures/error-classification.json`, and `php tests/smoke-error-classification.php` fails on any site that is not. Classes are `integrity` (paths, containment, permissions, digests, identity, producer contracts), `operational` (size, time, memory, runtime availability), `representability` (source content this layer cannot express, with a `unit` of `item`, `block`, `page`, `route` or `asset`), `propagated` (an error from another layer passed through) and `programmer`.
+
+- A `WP_Error` with a literal code is registered by its code.
+- A computed code, or any `throw new`, is registered as `<file>#<normalized expression>` and needs a comment on its line or the line above:
+
+  ```php
+  // ssi-error-class: integrity
+  throw new RuntimeException( 'Artifact workspace directory cannot be a symlink.' );
+  ```
+
+  Use `representability:<unit>` for representability, for example `// ssi-error-class: representability:page`.
+- Registry entries whose site no longer exists fail, so remove them with the code.
+- `representability_pending` can only shrink. A new limit should degrade the smallest unit and record a finding instead of failing the import. When a pending site is converted, move its key to `representability_converted` with `finding_code`, `unit`, `owning_layer` and `proof_smoke`, a registered smoke that shows the finding reaching `Static_Site_Importer_Receipt_Projection::compose()`.
+
+`php tests/smoke-error-classification.php --list` prints every site with its key as JSON lines.
+
 `php tests/smoke-wordpress-site-plan-materializer.php` runs outside WordPress and verifies that Blocks Engine's direct `ArtifactCompiler` output is consumed through `source_reports.wordpress_site_plan` v2 and materialized into the stable receipt contract.
 
 The `wordpress-is-dead` smoke verifies the multi-page fixture, generated block-theme artifacts, internal-link rewrites, persistent navigation entities, source CSS preservation, editor style support, plan-owned `theme.json` / `style.css`, and selector fidelity across stored/rendered paths. The `mixed-source-site` smoke verifies an Astro-like source tree with `index.html`, nested Markdown content documents, explicit skipped-MDX diagnostics, report source counts, and generated page block markup.

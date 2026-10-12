@@ -818,6 +818,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			public function read( array $reference ): string {
 				$bytes = $this->workspace->read_raw( $reference['id'] );
 				if ( ! is_string( $bytes ) ) {
+					// ssi-error-class: operational
 					throw new RuntimeException( 'A retained artifact payload is unavailable.' );
 				}
 				return $bytes;
@@ -987,6 +988,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				}return $error;
 			}$failure = $cache->get_failure( $key, $now );
 			if ( is_array( $failure ) ) {
+				// ssi-error-class: propagated
 				return new WP_Error( (string) $failure['code'], (string) $failure['message'], $failure['data'] ?? null );
 			}$cached = $cache->get( $key );
 			if ( is_array( $cached ) ) {
@@ -1001,6 +1003,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			if ( is_wp_error( $response ) ) {
 				$data                                      = is_array( $response->get_error_data() ) ? $response->get_error_data() : array();
 				$data['_static_site_importer_cache_aware'] = true;
+				// ssi-error-class: propagated
 				return new WP_Error( $response->get_error_code(), $response->get_error_message(), $data );
 			}if ( is_array( $response ) && is_string( $response['body'] ?? null ) && is_array( $response['metadata'] ?? null ) ) {
 				$cache->put( $key, $response['body'], $response['metadata'] );
@@ -1062,7 +1065,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				'code'    => $write->get_error_code(),
 				'message' => $write->get_error_message(),
 			);
-		}return new WP_Error( $error->get_error_code(), $error->get_error_message(), $data );
+		}return new WP_Error( $error->get_error_code(), $error->get_error_message(), $data ); // ssi-error-class: propagated
 	}
 	private static function checkpoint_cache( array &$manifest, Static_Site_Importer_Artifact_Byte_Cache $cache ): void {
 		foreach ( $cache->consume() as $key => $delta ) {

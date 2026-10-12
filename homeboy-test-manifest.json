@@ -27,6 +27,7 @@
     "tests/smoke-companion-inventory-readme.php": { "environment": "standalone-php" },
     "tests/smoke-contact-layout-transformer.php": { "environment": "standalone-php" },
     "tests/smoke-diagnostic-loss-classes.php": { "environment": "standalone-php" },
+    "tests/smoke-error-classification.php": { "environment": "standalone-php" },
     "tests/smoke-compiler-file-limits.php": { "environment": "standalone-php" },
     "tests/smoke-entity-materializer-registry.php": { "environment": "standalone-php" },
     "tests/smoke-external-metric-runtime.php": { "environment": "standalone-php" },
