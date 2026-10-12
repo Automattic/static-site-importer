@@ -54,7 +54,7 @@ class Static_Site_Importer_Receipt_Projection {
 			Static_Site_Importer_Diagnostic_Projection::after_completed_entity_bindings(
 				array_merge(
 					array_map(
-						static fn( $diagnostic ) => is_array( $diagnostic ) ? Static_Site_Importer_Diagnostic_Loss_Classes::reown_page_compile_omission( $diagnostic ) : $diagnostic,
+						static fn( $diagnostic ) => is_array( $diagnostic ) ? Static_Site_Importer_Diagnostic_Loss_Classes::reown_reported_loss( $diagnostic ) : $diagnostic,
 						is_array( $plan['diagnostics'] ?? null ) ? $plan['diagnostics'] : array()
 					),
 					Static_Site_Importer_Compiler_Diagnostic_Normalizer::normalize( is_array( $args['compiler_diagnostics'] ?? null ) ? $args['compiler_diagnostics'] : array() )

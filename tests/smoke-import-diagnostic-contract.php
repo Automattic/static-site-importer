@@ -159,7 +159,10 @@ $assert( 'acceptable_preservation' === ( $diagnostics['by_repair_bucket']['fallb
 $assert( 'fallback-block-replacement' === ( $diagnostics['by_repair_bucket']['fallback_block'][0]['repair_class'] ?? '' ), 'canvas-fallback-repair-class' );
 $assert( 'unsupported_html_fallback' === ( $diagnostics['by_repair_bucket']['fallback_block'][0]['source_diagnostic']['type'] ?? '' ), 'canvas-fallback-source-diagnostic-type' );
 $assert( 1 === ( $diagnostics['loss_class_summary']['unsupported_loss'] ?? 0 ), 'loss-class-summary-unsupported' );
-$assert( 2 === ( $diagnostics['loss_class_summary']['importer_materialization_bug'] ?? 0 ), 'loss-class-summary-importer' );
+$assert( 1 === ( $diagnostics['loss_class_summary']['importer_materialization_bug'] ?? 0 ), 'loss-class-summary-importer' );
+// A missing runtime DOM target costs one block its runtime behavior: an accepted, reported loss.
+$assert( 1 === ( $diagnostics['loss_class_summary']['degraded_unit'] ?? 0 ), 'loss-class-summary-runtime-target-degraded-unit' );
+$assert( 'degraded_unit' === ( $diagnostics['by_repair_bucket']['runtime_target_gap'][0]['loss_class'] ?? '' ) && 'accepted_reported_loss' === ( $diagnostics['by_repair_bucket']['runtime_target_gap'][0]['acceptability'] ?? '' ), 'runtime-target-accepted-reported-loss' );
 $assert( 1 === ( $diagnostics['loss_class_summary']['preserved_runtime_island'] ?? 0 ), 'loss-class-summary-preserved-runtime' );
 $assert( '#canvas' === ( $diagnostics['runtime_dependency_target_gaps'][0]['selector'] ?? '' ), 'runtime-target-selector' );
 $assert( 'header nav' === ( $diagnostics['by_repair_bucket']['semantic_parity'][0]['selector'] ?? '' ), 'semantic-selector' );

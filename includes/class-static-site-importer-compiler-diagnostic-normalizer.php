@@ -14,6 +14,7 @@ class Static_Site_Importer_Compiler_Diagnostic_Normalizer {
 	private const CODE_BYTES    = 128;
 	private const SOURCE_BYTES  = 128;
 	private const STAGE_BYTES   = 128;
+	private const PATH_BYTES    = 256;
 	private const CONTEXT_BYTES = 4096;
 	private const CONTEXT_ITEMS = 20;
 	private const CONTEXT_DEPTH = 3;
@@ -105,13 +106,33 @@ class Static_Site_Importer_Compiler_Diagnostic_Normalizer {
 		);
 		foreach (
 			array(
-				'source' => self::SOURCE_BYTES,
-				'stage'  => self::STAGE_BYTES,
+				'source'       => self::SOURCE_BYTES,
+				'stage'        => self::STAGE_BYTES,
+				// Canonical finding fields a flat producer row carries at top level.
+				'unit'         => self::CODE_BYTES,
+				'owning_layer' => self::CODE_BYTES,
+				'reason_code'  => self::CODE_BYTES,
+				'source_path'  => self::PATH_BYTES,
+				'path'         => self::PATH_BYTES,
+				'url'          => self::PATH_BYTES,
+				'selector'     => self::PATH_BYTES,
 			) as $field => $limit
 		) {
 			if ( isset( $row[ $field ] ) && is_scalar( $row[ $field ] ) ) {
 				$normalized[ $field ] = self::string( $row[ $field ], $limit );
 			}
+		}
+		$metrics = array();
+		foreach ( array_slice( is_array( $row['metrics'] ?? null ) ? $row['metrics'] : array(), 0, self::CONTEXT_ITEMS, true ) as $name => $value ) {
+			if ( is_string( $name ) && is_numeric( $value ) ) {
+				$metrics[ self::string( $name, self::CODE_BYTES ) ] = 0 + $value;
+			}
+		}
+		if ( array() !== $metrics ) {
+			$normalized['metrics'] = $metrics;
+		}
+		if ( isset( $row['omitted_count'] ) && is_int( $row['omitted_count'] ) ) {
+			$normalized['omitted_count'] = $row['omitted_count'];
 		}
 		if ( isset( $row['context'] ) && is_array( $row['context'] ) ) {
 			$nodes   = self::CONTEXT_NODES;
