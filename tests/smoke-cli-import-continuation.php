@@ -68,18 +68,35 @@ $assert     = static function ( bool $condition, string $label ) use ( &$asserti
 $compiler_version = \Composer\InstalledVersions::getPrettyVersion( 'automattic/blocks-engine-php-transformer' );
 $assert( is_string( $compiler_version ) && '' !== $compiler_version, 'dla-regression-records-installed-locked-blocks-engine-php-transformer-version' );
 
+// Normalize a source, then apply the one static-content decision, as the freeze boundary does.
+$admit_normalized = static function ( array $source, ?object $reader ) {
+	$runtime = static_site_importer_source_runtime( $source, $reader );
+	return is_wp_error( $runtime ) ? $runtime : Static_Site_Importer_Content_Policy::admit_artifact( $runtime['artifact'], $reader );
+};
+// A CLI request bundle through the same normalization and admission as REST and staged ZIPs.
+$admit_bundle = static function ( string $directory ) use ( $admit_normalized ) {
+	$bundle = static_site_importer_cli_request_bundle_files( $directory );
+	return is_wp_error( $bundle ) ? $bundle : $admit_normalized( array( 'files' => $bundle['files'] ), $bundle['payload_reader'] );
+};
+// Left out of the import with exactly one finding for the path.
+$left_out = static fn ( $admission, string $code, string $path ): bool => is_array( $admission ) && ! in_array( $path, array_column( $admission['artifact']['files'], 'path' ), true ) && array( $path ) === array_column( array_filter( $admission['findings'], static fn ( array $finding ): bool => $code === $finding['code'] ), 'source_path' );
 require_once __DIR__ . '/fixtures/content-policy-intakes.php';
-ssi_test_content_policy_intakes( static function ( string $label, bool $accepted, $runtime, array $artifact, ?object $reader ) use ( $assert ): void {
-	$assert( $accepted ? is_array( $runtime ) : is_wp_error( $runtime ) && 'static_site_importer_executable_source_rejected' === $runtime->get_error_code(), 'real-normalizer:' . $label );
-	$policy = Static_Site_Importer_Content_Policy::validate_artifact( $artifact, $reader );
-	$assert( $accepted ? true === $policy : is_wp_error( $policy ) && 'static_site_importer_executable_source_rejected' === $policy->get_error_code(), 'real-intake-policy:' . $label );
+ssi_test_content_policy_intakes( static function ( string $label, bool $accepted, $runtime, array $artifact, ?object $reader ) use ( $assert, $admit_normalized ): void {
+	// Normalization carries every file; the one static-content decision is admission.
+	$assert( is_array( $runtime ), 'real-normalizer-defers-static-content-decision:' . $label );
+	$policy = Static_Site_Importer_Content_Policy::admit_artifact( $artifact, $reader );
+	$assert( $accepted ? is_array( $policy ) && array() === $policy['findings'] : is_wp_error( $policy ) && 'static_site_importer_executable_source_rejected' === $policy->get_error_code(), 'real-intake-policy:' . $label );
+	if ( is_array( $runtime ) ) {
+		$runtime_policy = Static_Site_Importer_Content_Policy::admit_artifact( $runtime['artifact'], $reader );
+		$assert( $accepted ? is_array( $runtime_policy ) : is_wp_error( $runtime_policy ) && 'static_site_importer_executable_source_rejected' === $runtime_policy->get_error_code(), 'normalized-entrypoint-admission:' . $label );
+	}
 	if ( $accepted && isset( $artifact['files'][0]['payload_reference'] ) ) {
 		$files = $artifact['files'];
 		unset( $files[0]['payload_reference']['bytes'] );
-		$malformed = static_site_importer_source_runtime( array( 'files' => $files ), $reader );
-		$assert( is_wp_error( $malformed ) && 'static_site_importer_payload_reference_invalid' === $malformed->get_error_code(), 'normalizer-reference-requires-bounded-size:' . $label );
+		$malformed = $admit_normalized( array( 'files' => $files ), $reader );
+		$assert( is_wp_error( $malformed ) && 'static_site_importer_payload_reference_invalid' === $malformed->get_error_code(), 'admission-reference-requires-bounded-size:' . $label );
 		$files[0]['payload_reference'] = 'string-reference';
-		$malformed = static_site_importer_source_runtime( array( 'files' => $files ), $reader );
+		$malformed = $admit_normalized( array( 'files' => $files ), $reader );
 		$assert( is_wp_error( $malformed ) && 'static_site_importer_payload_reference_invalid' === $malformed->get_error_code(), 'normalizer-preserves-malformed-reference-for-rejection:' . $label );
 		$files = $artifact['files'];
 		$files[0]['payload'] = array( 'reference' => $files[0]['payload_reference'] );
@@ -193,8 +210,8 @@ $word_asset = $word_assets[0] ?? array();
 $assert( hash( 'sha256', $word_bytes ) === ( $word_asset['payload_reference']['sha256'] ?? '' ) && $word_path === ( $word_asset['references'][0]['value'] ?? '' ), 'compiled-asset-retains-portable-word-bytes-and-source-link' );
 $assert( '' !== ( $word_asset['token'] ?? '' ) && str_contains( (string) ( $word_plan['pages'][0]['canonical_block_markup'] ?? '' ), '{{wordpress-site-plan:asset:' . $word_asset['token'] . '}}' ), 'compiled-page-links-to-portable-word-asset-token' );
 file_put_contents( $bundle_source . '/' . $word_path . '.php', $word_bytes );
-$executable_word_bundle = static_site_importer_cli_request_bundle_files( realpath( $bundle_source ) );
-$assert( is_wp_error( $executable_word_bundle ) && 'static_site_importer_executable_source_rejected' === $executable_word_bundle->get_error_code(), 'request-bundle-rejects-word-document-with-executable-suffix' );
+$executable_word_bundle = $admit_bundle( realpath( $bundle_source ) );
+$assert( $left_out( $executable_word_bundle, Static_Site_Importer_Content_Policy::PAGE_DROPPED, 'website/' . $word_path . '.php' ) && in_array( 'website/' . $word_path, array_column( $executable_word_bundle['artifact']['files'], 'path' ), true ), 'request-bundle-drops-word-document-with-executable-suffix-and-keeps-the-document' );
 unlink( $bundle_source . '/' . $word_path . '.php' );
 
 $report_bundle_dir  = sys_get_temp_dir() . '/ssi-report-request-bundle-' . bin2hex( random_bytes( 6 ) );
@@ -273,8 +290,8 @@ try {
 		$assert( $cursor_bytes === $cursor_bundle['payload_reader']->read( $cursor_files['assets/pointer.cur']['payload_reference'] ), 'request-bundle-preserves-cursor-bytes' );
 	}
 	file_put_contents( $cursor_bundle_dir . '/assets/pointer.cur.php', '<?php echo "unsafe";' );
-	$executable_bundle = static_site_importer_cli_request_bundle_files( $cursor_bundle_dir );
-	$assert( is_wp_error( $executable_bundle ) && 'static_site_importer_executable_source_rejected' === $executable_bundle->get_error_code(), 'request-bundle-rejects-executable-cursor-suffix' );
+	$executable_bundle = $admit_bundle( $cursor_bundle_dir );
+	$assert( $left_out( $executable_bundle, Static_Site_Importer_Content_Policy::PAGE_DROPPED, 'website/assets/pointer.cur.php' ) && array( 'website/assets/pointer.cur', 'website/index.html' ) === array_column( $executable_bundle['artifact']['files'], 'path' ), 'request-bundle-drops-executable-cursor-suffix-and-keeps-the-cursor' );
 } finally {
 	foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $cursor_bundle_dir, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST ) as $item ) {
 		$item->isDir() ? rmdir( $item->getPathname() ) : unlink( $item->getPathname() );
@@ -610,16 +627,16 @@ foreach ( array( 'jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'mp4', 'webm', 'mp
 	$assert( ! static_site_importer_cli_request_bundle_is_read_source( 'media.' . $extension ), 'request-bundle-budgets-' . $extension . '-as-media' );
 }
 
-// The wider media ceiling never loosens the executable/static-content
-// policy: a large file with a disallowed extension is still rejected before
-// any byte check runs, regardless of how far under the media ceiling it is.
+// The wider media ceiling never loosens the static-content decision: a
+// large file with a disallowed extension is still left out at admission,
+// however far under the media ceiling it is.
 $executable_media_dir = sys_get_temp_dir() . '/ssi-request-bundle-executable-media-' . bin2hex( random_bytes( 6 ) );
 mkdir( $executable_media_dir );
 $executable_media_handle = fopen( $executable_media_dir . '/clip.mp4.php', 'w' );
 ftruncate( $executable_media_handle, 13600000 );
 fclose( $executable_media_handle );
-$executable_media = static_site_importer_cli_request_bundle_files( $executable_media_dir );
-$assert( is_wp_error( $executable_media ) && 'static_site_importer_executable_source_rejected' === $executable_media->get_error_code(), 'request-bundle-wider-media-ceiling-does-not-loosen-the-executable-policy' );
+$executable_media = $admit_bundle( realpath( $executable_media_dir ) );
+$assert( $left_out( $executable_media, Static_Site_Importer_Content_Policy::PAGE_DROPPED, 'website/clip.mp4.php' ), 'request-bundle-wider-media-ceiling-does-not-loosen-the-static-content-decision' );
 unlink( $executable_media_dir . '/clip.mp4.php' );
 rmdir( $executable_media_dir );
 
@@ -632,35 +649,34 @@ $redirects_bundle = static_site_importer_cli_request_bundle_files( $redirects_bu
 $redirects_files  = is_array( $redirects_bundle ) ? array_column( $redirects_bundle['files'], 'path' ) : array();
 $assert( is_array( $redirects_bundle ) && in_array( '_redirects', $redirects_files, true ), 'request-bundle-accepts-root-redirects-manifest' );
 file_put_contents( $redirects_bundle_dir . '/evil', 'payload' );
-$evil_bundle = static_site_importer_cli_request_bundle_files( $redirects_bundle_dir );
-$assert( is_wp_error( $evil_bundle ) && 'static_site_importer_executable_source_rejected' === $evil_bundle->get_error_code(), 'request-bundle-still-rejects-extensionless-evil-beside-redirects' );
+$evil_bundle = $admit_bundle( $redirects_bundle_dir );
+$assert( $left_out( $evil_bundle, Static_Site_Importer_Content_Policy::FILE_SKIPPED, 'website/evil' ) && in_array( 'website/_redirects', array_column( $evil_bundle['artifact']['files'], 'path' ), true ), 'request-bundle-skips-extensionless-evil-beside-redirects' );
 unlink( $redirects_bundle_dir . '/evil' );
 mkdir( $redirects_bundle_dir . '/nested' );
 file_put_contents( $redirects_bundle_dir . '/nested/_redirects', "/a /b 301\n" );
-$nested_redirects = static_site_importer_cli_request_bundle_files( $redirects_bundle_dir );
-$assert( is_wp_error( $nested_redirects ) && 'static_site_importer_executable_source_rejected' === $nested_redirects->get_error_code(), 'request-bundle-rejects-nested-redirects-manifest' );
+$nested_redirects = $admit_bundle( $redirects_bundle_dir );
+$assert( $left_out( $nested_redirects, Static_Site_Importer_Content_Policy::FILE_SKIPPED, 'website/nested/_redirects' ), 'request-bundle-skips-nested-redirects-manifest' );
 foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $redirects_bundle_dir, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST ) as $redirects_item ) {
 	$redirects_item->isDir() ? rmdir( $redirects_item->getPathname() ) : unlink( $redirects_item->getPathname() );
 }
 
-// A rejected source tree names the file that is not static, like the content-policy
-// and URL-collector variants do, so the operator can find it in a large bundle.
+// A file left out of a source tree is named in its finding, so the operator
+// can find it in a large bundle.
 $named_bundle_dir = sys_get_temp_dir() . '/ssi-named-rejection-request-bundle-' . bin2hex( random_bytes( 6 ) );
 mkdir( $named_bundle_dir . '/assets', 0777, true );
 $named_bundle_dir = realpath( $named_bundle_dir );
 file_put_contents( $named_bundle_dir . '/index.html', '<link rel="stylesheet" href="assets/site.scss"><main>Home</main>' );
 file_put_contents( $named_bundle_dir . '/assets/site.scss', 'body{margin:0}' );
-$named_rejection = static_site_importer_cli_request_bundle_files( $named_bundle_dir );
-$assert( is_wp_error( $named_rejection ) && 'static_site_importer_executable_source_rejected' === $named_rejection->get_error_code(), 'request-bundle-rejects-unknown-stylesheet-suffix' );
-$assert( is_wp_error( $named_rejection ) && str_contains( $named_rejection->get_error_message(), 'assets/site.scss' ), 'request-bundle-rejection-names-the-offending-path' );
-$assert( is_wp_error( $named_rejection ) && 'assets/site.scss' === ( $named_rejection->get_error_data()['path'] ?? null ), 'request-bundle-rejection-carries-the-offending-path-as-data' );
+$named_rejection = $admit_bundle( $named_bundle_dir );
+$assert( $left_out( $named_rejection, Static_Site_Importer_Content_Policy::FILE_SKIPPED, 'website/assets/site.scss' ), 'request-bundle-skips-unknown-stylesheet-suffix' );
+$assert( is_array( $named_rejection ) && str_contains( (string) ( $named_rejection['findings'][0]['message'] ?? '' ), 'assets/site.scss' ), 'request-bundle-finding-names-the-offending-path' );
 unlink( $named_bundle_dir . '/assets/site.scss' );
 $oversized_redirects = fopen( $named_bundle_dir . '/_redirects', 'w' );
 ftruncate( $oversized_redirects, Static_Site_Importer_Content_Policy::REDIRECTS_MANIFEST_MAX_BYTES + 1 );
 fclose( $oversized_redirects );
-$oversized_rejection = static_site_importer_cli_request_bundle_files( $named_bundle_dir );
-$assert( is_wp_error( $oversized_rejection ) && 'static_site_importer_executable_source_rejected' === $oversized_rejection->get_error_code(), 'request-bundle-rejects-oversized-redirects-manifest' );
-$assert( is_wp_error( $oversized_rejection ) && str_contains( $oversized_rejection->get_error_message(), '_redirects' ) && '_redirects' === ( $oversized_rejection->get_error_data()['path'] ?? null ), 'request-bundle-oversized-redirects-rejection-names-the-path' );
+$oversized_rejection = $admit_bundle( $named_bundle_dir );
+$assert( is_wp_error( $oversized_rejection ) && 'static_site_importer_executable_source_rejected' === $oversized_rejection->get_error_code(), 'request-bundle-oversized-redirects-manifest-fails-closed' );
+$assert( is_wp_error( $oversized_rejection ) && str_contains( $oversized_rejection->get_error_message(), '_redirects' ) && 'website/_redirects' === ( $oversized_rejection->get_error_data()['path'] ?? null ) && 'redirects_manifest_too_large' === ( $oversized_rejection->get_error_data()['reason_code'] ?? null ), 'request-bundle-oversized-redirects-rejection-names-the-path' );
 unlink( $named_bundle_dir . '/_redirects' );
 unlink( $named_bundle_dir . '/index.html' );
 rmdir( $named_bundle_dir . '/assets' );

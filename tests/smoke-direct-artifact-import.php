@@ -205,7 +205,8 @@ require_once __DIR__ . '/fixtures/content-policy-intakes.php';
 $freeze_policy = static fn ( array $policy ): array => array_merge( $policy, array( 'freeze_continuation_bytes' => 1 ) );
 add_filter( 'static_site_importer_direct_artifact_run_policy', $freeze_policy );
 ssi_test_content_policy_intakes( static function ( string $label, bool $accepted, $runtime, array $artifact, ?object $reader ) use ( $assert ): void {
-	$assert( $accepted ? is_array( $runtime ) : is_wp_error( $runtime ) && 'static_site_importer_executable_source_rejected' === $runtime->get_error_code(), 'real normalizer verdict: ' . $label );
+	// Normalization carries every file; the freeze boundary owns the one static-content decision.
+	$assert( is_array( $runtime ), 'real normalizer defers the static-content decision: ' . $label );
 	$counted_reader = null === $reader ? null : new class( $reader ) {
 		public int $reads = 0;
 		public function __construct( private object $reader ) {}

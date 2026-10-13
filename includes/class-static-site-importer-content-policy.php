@@ -93,17 +93,47 @@ final class Static_Site_Importer_Content_Policy {
 		'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
 	);
 
+	/** Server-rendered page formats: a file with one of these extensions is a page, not an asset. */
+	private const SERVER_PAGE_EXTENSIONS = array( 'php', 'php3', 'php4', 'php5', 'php7', 'php8', 'phtml', 'asp', 'aspx', 'jsp', 'jspx', 'cfm', 'cgi', 'shtml' );
+
+	/** Document names a server answers a directory request with; at the site root they are the entrypoint. */
+	private const ENTRY_DOCUMENT_NAMES = array( 'index', 'default', 'home' );
+
+	/** Finding for a non-static asset left out of the import. */
+	public const FILE_SKIPPED = 'static_site_importer_non_static_file_skipped';
+
+	/** Finding for a non-entry page left out of the import because it is not static content. */
+	public const PAGE_DROPPED = 'static_site_importer_non_static_page_dropped';
+
 	/**
-	 * @param array<string,mixed> $artifact Website artifact.
-	 * @param object|null $payload_reader Canonical source payload reader.
-	 * @param callable|null $retain_text_payload Optional freeze-boundary consumer of verified textual bytes.
-	 * @return true|WP_Error
+	 * Admit an untrusted website artifact: the one static-content decision.
+	 *
+	 * Every intake (REST files and archives, staged archives, CLI request
+	 * bundles, provided artifacts) reaches this once, at the boundary where the
+	 * artifact is frozen for compilation. A file that is not static content, or
+	 * whose source carries server-side code, is left out:
+	 *
+	 * - an asset is skipped with a {@see FILE_SKIPPED} finding, so references to
+	 *   it resolve like any other missing asset;
+	 * - a non-entry page is dropped with a {@see PAGE_DROPPED} finding, and the
+	 *   remaining pages import;
+	 * - the entrypoint (the declared one, or a root index/default/home
+	 *   document) and the root `_redirects` manifest fail closed, because
+	 *   the site cannot be imported without them.
+	 *
+	 * @param array<string,mixed> $artifact            Website artifact.
+	 * @param object|null         $payload_reader      Canonical source payload reader.
+	 * @param callable|null       $retain_text_payload Optional freeze-boundary consumer of verified textual bytes.
+	 * @return array{artifact:array<string,mixed>,findings:array<int,array<string,mixed>>}|WP_Error
 	 */
-	public static function validate_artifact( array $artifact, ?object $payload_reader = null, ?callable $retain_text_payload = null ) {
+	public static function admit_artifact( array $artifact, ?object $payload_reader = null, ?callable $retain_text_payload = null ) {
 		$files = $artifact['files'] ?? null;
 		if ( ! is_array( $files ) ) {
 			return new WP_Error( 'static_site_importer_artifact_files_invalid', 'Website artifacts must declare files as an array.' );
 		}
+		$entrypoint = is_scalar( $artifact['entrypoint'] ?? null ) ? (string) $artifact['entrypoint'] : '';
+		$admitted   = array();
+		$findings   = array();
 		foreach ( $files as $file ) {
 			if ( ! is_array( $file ) || ! isset( $file['path'] ) || ! is_scalar( $file['path'] ) ) {
 				return new WP_Error( 'static_site_importer_artifact_file_invalid', 'Website artifacts must declare a path for every file.' );
@@ -120,32 +150,164 @@ final class Static_Site_Importer_Content_Policy {
 					)
 				);
 			}
-			if ( ! self::is_static_path( $path ) ) {
-				return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s is not static content.', $path ), array( 'path' => $path ) );
+			$reason = self::exclusion_reason( $file, $path, $payload_reader, $retain_text_payload );
+			if ( $reason instanceof WP_Error ) {
+				return $reason;
 			}
-			if ( self::is_redirects_manifest_path( $path ) ) {
-				$bytes = self::declared_bytes( $file );
-				if ( null !== $bytes && $bytes > self::REDIRECTS_MANIFEST_MAX_BYTES ) {
-					return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s is not static content.', $path ), array( 'path' => $path ) );
-				}
+			if ( '' === $reason ) {
+				$admitted[] = $file;
+				continue;
 			}
-			if ( self::is_textual_path( $path ) ) {
-				$content = self::file_bytes( $file, $payload_reader );
-				if ( $content instanceof WP_Error ) {
-					return $content;
-				}
-				if ( null !== $content && self::path_contains_server_code( $path, $content ) ) {
-					return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s contains server-side code.', $path ), array( 'path' => $path ) );
-				}
-				if ( null !== $content && null !== $retain_text_payload && ( isset( $file['payload_reference'] ) || isset( $file['payload']['reference'] ) ) ) {
-					$retained = $retain_text_payload( $file, $content );
-					if ( $retained instanceof WP_Error ) {
-						return $retained;
-					}
-				}
+			if ( self::fails_closed( $path, $entrypoint ) ) {
+				return new WP_Error(
+					'static_site_importer_executable_source_rejected',
+					sprintf( 'Untrusted artifact file %s is not static content, and the site cannot be imported without it.', $path ),
+					array(
+						'path'        => $path,
+						'reason_code' => $reason,
+					)
+				);
+			}
+			$findings[] = self::exclusion_finding( $path, $reason );
+		}
+		$artifact['files'] = $admitted;
+
+		return array(
+			'artifact' => $artifact,
+			'findings' => $findings,
+		);
+	}
+
+	/**
+	 * Carry admission findings into import args, where Receipt_Projection::compose() reports them.
+	 *
+	 * @param array<string,mixed>            $args     Import args.
+	 * @param array<int,array<string,mixed>> $findings Admission findings.
+	 * @return array<string,mixed>
+	 */
+	public static function with_intake_findings( array $args, array $findings ): array {
+		if ( array() === $findings ) {
+			return $args;
+		}
+		$args['source_metadata']                    = is_array( $args['source_metadata'] ?? null ) ? $args['source_metadata'] : array();
+		$args['source_metadata']['intake_findings'] = array_merge(
+			is_array( $args['source_metadata']['intake_findings'] ?? null ) ? $args['source_metadata']['intake_findings'] : array(),
+			$findings
+		);
+
+		return $args;
+	}
+
+	/**
+	 * Whether a file that is not static content fails the whole import.
+	 *
+	 * Only the entrypoint and the root redirects manifest do: every other file
+	 * is left out with a finding.
+	 *
+	 * @param string $path       Artifact path.
+	 * @param string $entrypoint Declared artifact entrypoint, or '' when none is known yet.
+	 */
+	public static function fails_closed( string $path, string $entrypoint = '' ): bool {
+		if ( self::is_redirects_manifest_path( $path ) ) {
+			return true;
+		}
+		$site_path = self::site_path( $path );
+		if ( '' !== $entrypoint && self::site_path( $entrypoint ) === $site_path ) {
+			return true;
+		}
+
+		return ! str_contains( $site_path, '/' ) && in_array( strtolower( pathinfo( $site_path, PATHINFO_FILENAME ) ), self::ENTRY_DOCUMENT_NAMES, true );
+	}
+
+	/**
+	 * Why a file is left out of the import, or '' when it is admitted.
+	 *
+	 * Textual sources are read once here; admitted referenced bytes go to the
+	 * freeze-boundary consumer in the same read.
+	 *
+	 * @param array<string,mixed> $file                Artifact file.
+	 * @param string              $path                Artifact path.
+	 * @param object|null         $payload_reader      Canonical source payload reader.
+	 * @param callable|null       $retain_text_payload Optional freeze-boundary consumer of verified textual bytes.
+	 * @return string|WP_Error
+	 */
+	private static function exclusion_reason( array $file, string $path, ?object $payload_reader, ?callable $retain_text_payload ) {
+		if ( ! self::is_static_path( $path ) ) {
+			return 'non_static_extension';
+		}
+		$redirects = self::is_redirects_manifest_path( $path );
+		if ( $redirects ) {
+			$bytes = self::declared_bytes( $file );
+			if ( null !== $bytes && $bytes > self::REDIRECTS_MANIFEST_MAX_BYTES ) {
+				return 'redirects_manifest_too_large';
 			}
 		}
-		return true;
+		if ( ! self::is_textual_path( $path ) ) {
+			return '';
+		}
+		$content = self::file_bytes( $file, $payload_reader );
+		if ( $content instanceof WP_Error ) {
+			return $content;
+		}
+		if ( null === $content ) {
+			return $redirects ? 'redirects_manifest_unreadable' : '';
+		}
+		if ( self::path_contains_server_code( $path, $content ) ) {
+			return 'server_side_code';
+		}
+		if ( null !== $retain_text_payload && ( isset( $file['payload_reference'] ) || isset( $file['payload']['reference'] ) ) ) {
+			$retained = $retain_text_payload( $file, $content );
+			if ( $retained instanceof WP_Error ) {
+				return $retained;
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * The finding for a file left out of the import.
+	 *
+	 * @param string $path   Artifact path.
+	 * @param string $reason Exclusion reason code.
+	 * @return array<string,string>
+	 */
+	private static function exclusion_finding( string $path, string $reason ): array {
+		$page   = self::is_page_path( $path );
+		$detail = 'server_side_code' === $reason ? 'its source contains server-side code' : 'it is not static content';
+
+		return array(
+			'code'        => $page ? self::PAGE_DROPPED : self::FILE_SKIPPED,
+			'type'        => 'static-site-importer',
+			'severity'    => 'warning',
+			'stage'       => 'content_policy',
+			'source_path' => $path,
+			'path'        => $path,
+			'reason_code' => $reason,
+			'message'     => $page
+				? sprintf( 'Dropped page %1$s because %2$s; the remaining pages import.', $path, $detail )
+				: sprintf( 'Skipped %1$s because %2$s, so references to it are unresolved.', $path, $detail ),
+		);
+	}
+
+	/**
+	 * Whether an artifact path names a page document rather than an asset.
+	 *
+	 * @param string $path Artifact path.
+	 */
+	private static function is_page_path( string $path ): bool {
+		$extension = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
+		return in_array( $extension, array( 'html', 'htm' ), true ) || in_array( $extension, self::SERVER_PAGE_EXTENSIONS, true );
+	}
+
+	/**
+	 * An artifact path relative to the website root.
+	 *
+	 * @param string $path Artifact path.
+	 */
+	private static function site_path( string $path ): string {
+		$normalized = ltrim( str_replace( '\\', '/', $path ), '/' );
+		return str_starts_with( $normalized, 'website/' ) ? substr( $normalized, strlen( 'website/' ) ) : $normalized;
 	}
 
 	private static function source_format( string $path ): ?string {
@@ -166,13 +328,7 @@ final class Static_Site_Importer_Content_Policy {
 	}
 
 	public static function is_redirects_manifest_path( string $path ): bool {
-		$normalized = str_replace( '\\', '/', $path );
-		$normalized = ltrim( $normalized, '/' );
-		if ( str_starts_with( $normalized, 'website/' ) ) {
-			$normalized = substr( $normalized, strlen( 'website/' ) );
-		}
-
-		return '_redirects' === $normalized;
+		return '_redirects' === self::site_path( $path );
 	}
 
 	/**
@@ -250,8 +406,14 @@ final class Static_Site_Importer_Content_Policy {
 		return $tokens->paused_at_incomplete_token();
 	}
 
-	/** Resolve textual references using the owning retention contract, before scanning. */
-	private static function file_bytes( array $file, ?object $payload_reader ) {
+	/**
+	 * Read a textual file's bytes, verifying a payload reference against its bounded size and digest.
+	 *
+	 * @param array<string,mixed> $file           Artifact file.
+	 * @param object|null         $payload_reader Canonical source payload reader.
+	 * @return string|null|WP_Error Bytes, null when the file carries none, or the verification error.
+	 */
+	public static function file_bytes( array $file, ?object $payload_reader ) {
 		if ( ! array_key_exists( 'payload_reference', $file ) && ! ( is_array( $file['payload'] ?? null ) && array_key_exists( 'reference', $file['payload'] ) ) ) {
 			return self::file_content( $file );
 		}

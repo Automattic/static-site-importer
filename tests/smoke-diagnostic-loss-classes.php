@@ -251,14 +251,15 @@ foreach ( $raw_drop_rows as $code => $row ) {
 		$code === ( $reowned['original_code'] ?? '' ) && $code === ( $reowned['reason_code'] ?? '' ),
 		'reowned-drop-preserves-producer-code-' . $code
 	);
+	// Omitted files are an accepted, reported loss: the rest of the site imports.
 	$assert(
-		'unsupported_loss' === ( $reowned['loss_class'] ?? '' ) && 'not_materialized' === ( $reowned['materialization_status'] ?? '' ),
-		'reowned-drop-stamps-unsupported-loss-' . $code
+		'omitted_unit' === ( $reowned['loss_class'] ?? '' ) && 'accepted_reported_loss' === ( $reowned['acceptability'] ?? '' ) && 'file' === ( $reowned['unit'] ?? '' ) && 'blocks-engine' === ( $reowned['owning_layer'] ?? '' ) && 'not_materialized' === ( $reowned['materialization_status'] ?? '' ),
+		'reowned-drop-stamps-omitted-unit-' . $code
 	);
 	$provenance = Static_Site_Importer_Diagnostic_Loss_Classes::classify_with_provenance( $reowned );
 	$assert(
-		'unsupported_loss' === $provenance['class'] && Static_Site_Importer_Diagnostic_Loss_Classes::SOURCE_EXPLICIT === $provenance['source'],
-		'reowned-drop-classifies-explicitly-' . $code,
+		'omitted_unit' === $provenance['class'] && Static_Site_Importer_Diagnostic_Loss_Classes::SOURCE_CODE === $provenance['source'],
+		'reowned-drop-classifies-by-code-' . $code,
 		'got: ' . $provenance['class'] . ' via ' . $provenance['source']
 	);
 }

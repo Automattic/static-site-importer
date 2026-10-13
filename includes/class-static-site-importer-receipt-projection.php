@@ -101,6 +101,12 @@ class Static_Site_Importer_Receipt_Projection {
 				array_values( array_filter( $args['source_metadata']['intake_findings'], 'is_array' ) )
 			);
 		}
+		// Font materialization reports a face it could not localize as a finding.
+		foreach ( is_array( $receipt['completed']['font_materialization']['diagnostics'] ?? null ) ? $receipt['completed']['font_materialization']['diagnostics'] : array() as $font_diagnostic ) {
+			if ( is_array( $font_diagnostic ) && array() !== Static_Site_Importer_Diagnostic_Loss_Classes::reported_loss( $font_diagnostic ) ) {
+				$diagnostics[] = $font_diagnostic;
+			}
+		}
 		if ( is_array( $args['theme_screenshot_evidence'] ?? null ) ) {
 			$preview_status = (string) ( $args['theme_screenshot_evidence']['status'] ?? '' );
 			if ( in_array( $preview_status, array( Static_Site_Importer_Theme_Screenshot::STATUS_INVALID, Static_Site_Importer_Theme_Screenshot::STATUS_UNAVAILABLE ), true ) ) {

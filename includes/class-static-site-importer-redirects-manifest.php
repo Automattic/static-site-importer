@@ -38,14 +38,14 @@ final class Static_Site_Importer_Redirects_Manifest {
 				$kept[] = $file;
 				continue;
 			}
-			$content = self::file_bytes( $file, $payload_reader );
-			if ( null === $content ) {
-				return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s is not static content.', $path ), array( 'path' => $path ) );
+			// Content_Policy::admit_artifact() decided this manifest's size,
+			// readability and content before the artifact reached extraction; a
+			// reference is re-read against the digest that decision verified.
+			$content = Static_Site_Importer_Content_Policy::file_bytes( $file, $payload_reader );
+			if ( $content instanceof WP_Error ) {
+				return $content;
 			}
-			if ( strlen( $content ) > Static_Site_Importer_Content_Policy::REDIRECTS_MANIFEST_MAX_BYTES || Static_Site_Importer_Content_Policy::contains_server_code( $content ) ) {
-				return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s is not static content.', $path ), array( 'path' => $path ) );
-			}
-			$aliases = array_merge( $aliases, self::parse( $content ) );
+			$aliases = array_merge( $aliases, self::parse( (string) $content ) );
 		}
 		$artifact['files'] = $kept;
 
@@ -144,28 +144,5 @@ final class Static_Site_Importer_Redirects_Manifest {
 
 	private static function is_same_site_path( string $path ): bool {
 		return str_starts_with( $path, '/' ) && ! str_starts_with( $path, '//' ) && ! str_contains( $path, '://' ) && ! str_contains( $path, '*' ) && ! str_contains( $path, '?' ) && ! str_contains( $path, ':' );
-	}
-
-	/** @param array<string,mixed> $file */
-	private static function file_bytes( array $file, ?object $payload_reader ): ?string {
-		if ( isset( $file['content'] ) && is_scalar( $file['content'] ) ) {
-			return (string) $file['content'];
-		}
-		if ( isset( $file['content_base64'] ) && is_scalar( $file['content_base64'] ) ) {
-			$decoded = base64_decode( (string) $file['content_base64'], true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decodes declared artifact transport encoding.
-			return false === $decoded ? null : $decoded;
-		}
-		$reference = isset( $file['payload_reference'] ) && is_array( $file['payload_reference'] ) ? $file['payload_reference'] : null;
-		if ( null === $reference || ! is_object( $payload_reader ) || ! is_callable( array( $payload_reader, 'read' ) ) ) {
-			return null;
-		}
-		try {
-			$bytes = $payload_reader->read( $reference );
-		} catch ( Throwable $error ) {
-			unset( $error );
-			return null;
-		}
-
-		return is_string( $bytes ) ? $bytes : null;
 	}
 }

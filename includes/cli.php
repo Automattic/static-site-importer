@@ -646,21 +646,9 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 				if ( function_exists( 'static_site_importer_rest_should_include_artifact_file' ) && ! static_site_importer_rest_should_include_artifact_file( $relative ) ) {
 					continue;
 				}
-				if ( class_exists( 'Static_Site_Importer_Content_Policy' ) && ! Static_Site_Importer_Content_Policy::is_static_path( $relative ) ) {
-					return new WP_Error(
-						'static_site_importer_executable_source_rejected',
-						sprintf( 'Request-bundle source trees may contain static content only; %s is not static content.', $relative ),
-						array( 'path' => $relative )
-					);
-				}
-				$bytes = $item->getSize();
-				if ( class_exists( 'Static_Site_Importer_Content_Policy' ) && Static_Site_Importer_Content_Policy::is_redirects_manifest_path( $relative ) && $bytes > Static_Site_Importer_Content_Policy::REDIRECTS_MANIFEST_MAX_BYTES ) {
-					return new WP_Error(
-						'static_site_importer_executable_source_rejected',
-						sprintf( 'Request-bundle source trees may contain static content only; %s exceeds the redirects manifest size limit.', $relative ),
-						array( 'path' => $relative )
-					);
-				}
+				// Static-content admission is decided once, where the artifact is
+				// frozen (Static_Site_Importer_Content_Policy::admit_artifact()).
+				$bytes           = $item->getSize();
 				$read_source     = static_site_importer_cli_request_bundle_is_read_source( $relative );
 				$report          = $read_source && static_site_importer_cli_request_bundle_is_declared_report( $relative, $reports );
 				$file_byte_limit = static_site_importer_cli_request_bundle_file_byte_limit( $relative, $limits, $media_bytes, $report_bytes, $reports );

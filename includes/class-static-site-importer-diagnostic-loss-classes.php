@@ -200,10 +200,42 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 			'unit'         => 'item',
 			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
 		),
+		// Static-content admission: an asset skipped or a non-entry page
+		// dropped because it is not static content.
 		'static_site_importer_non_static_file_skipped'   => array(
 			'loss_class'   => self::OMITTED_UNIT,
 			'unit'         => 'file',
 			'owning_layer' => self::OWNING_LAYER_STATIC_SITE_IMPORTER,
+		),
+		'static_site_importer_non_static_page_dropped'   => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'page',
+			'owning_layer' => self::OWNING_LAYER_STATIC_SITE_IMPORTER,
+		),
+		// An archive entry skipped unread at a per-entry size or ratio limit.
+		'static_site_importer_archive_entry_skipped'     => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'file',
+			'owning_layer' => self::OWNING_LAYER_STATIC_SITE_IMPORTER,
+		),
+		// A web font face that could not be fetched or resolved is dropped, or
+		// its remote stylesheet import is kept instead of a local copy.
+		'font_face_unavailable'                          => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'asset',
+			'owning_layer' => self::OWNING_LAYER_STATIC_SITE_IMPORTER,
+		),
+		// Source files the compiler dropped at a declared file-count or byte
+		// limit, re-owned by {@see reown_compiler_file_drop()}.
+		self::OMITTED_ARTIFACT_FILES_TYPE                => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'file',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
+		),
+		self::OMITTED_ARTIFACT_FILE_TYPE                 => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'file',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
 		),
 		// Data Liberation Agent capture findings, read from the artifact's
 		// `capture-findings.json` ({@see Static_Site_Importer_Capture_Findings}).
@@ -510,8 +542,9 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	 * Returns the row unchanged when it is not a file drop. Left as-is, these
 	 * warnings classify as acceptable conversion even though the omitted files
 	 * are gone from the import. The rewrite keeps the producer code as
-	 * `original_code` / `reason_code` and stamps the loss class explicitly so
-	 * classification is deterministic on every consumer path.
+	 * `original_code` / `reason_code` and stamps it as an accepted, reported
+	 * {@see OMITTED_UNIT} loss: the rest of the site imports, and the dropped
+	 * files are counted.
 	 *
 	 * @param array<string,mixed> $diagnostic Raw diagnostic row.
 	 * @return array<string,mixed>
@@ -529,10 +562,9 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 		$diagnostic['kind']                   = $type;
 		$diagnostic['type']                   = $type;
 		$diagnostic['reason_code']            = $original_code;
-		$diagnostic['loss_class']             = self::UNSUPPORTED_LOSS;
 		$diagnostic['materialization_status'] = 'not_materialized';
 
-		return $diagnostic;
+		return self::reown_reported_loss( $diagnostic );
 	}
 
 	/**

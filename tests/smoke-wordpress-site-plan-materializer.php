@@ -1657,7 +1657,7 @@ $invalid_typed_receipt                                    = Static_Site_Importer
 	$invalid_typed_site_plan,
 	array( 'slug' => 'invalid-typed-font-site-plan' )
 );
-$assert( 'rejected' === $invalid_typed_receipt['status'] && 'static_site_importer_font_materialization_producer_stylesheet_failed' === ( $invalid_typed_receipt['errors'][0]['code'] ?? '' ) && ! is_dir( $GLOBALS['ssi_plan_root'] . '/invalid-typed-font-site-plan' ) && is_string( wp_json_encode( $invalid_typed_receipt ) ) && ! str_contains( (string) wp_json_encode( $invalid_typed_receipt ), 'font_overlay' ), 'invalid canonical font intent rejects before filesystem mutation with a serializable public receipt' );
+$assert( 'rejected' === $invalid_typed_receipt['status'] && 'static_site_importer_font_materialization_producer_stylesheet_digest_mismatch' === ( $invalid_typed_receipt['errors'][0]['code'] ?? '' ) && ! is_dir( $GLOBALS['ssi_plan_root'] . '/invalid-typed-font-site-plan' ) && is_string( wp_json_encode( $invalid_typed_receipt ) ) && ! str_contains( (string) wp_json_encode( $invalid_typed_receipt ), 'font_overlay' ), 'invalid canonical font intent rejects before filesystem mutation with a serializable public receipt' );
 $assert( 'producer_stylesheet_digest_mismatch' === ( $invalid_typed_receipt['diagnostics'][1]['reason_code'] ?? '' ), 'font materialization receipts retain the producer failure reason instead of only the generic error code' );
 
 $font_without_svg_result = ( new ArtifactCompiler() )->compile(
