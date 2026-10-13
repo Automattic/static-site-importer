@@ -341,7 +341,9 @@ if ( null !== $original_argv_zero ) {
 array_pop( $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] );
 $composed_cache = array_keys( ( new ReflectionProperty( Static_Site_Importer_Direct_Artifact_Import::class, 'checkpoint_read_cache' ) )->getValue() );
 $assert( 'composed' === ( $composed['continuation_reason'] ?? '' ) && 'composed' === ( $composed['artifact_run']['phase'] ?? '' ) && 3 === ( $composed['artifact_run']['progress']['receipt_count'] ?? 0 ) && 0 === ( $GLOBALS['ssi_direct_checkpoint_reads']['composed'] ?? 0 ) && array() === $composed_cache && 0 === $GLOBALS['ssi_direct_mutations'], 'a fresh-runtime host must yield once composition is durable, without reading it back or retaining receipts, page plans or the shared plan' );
+$GLOBALS['ssi_direct_checkpoint_reads'] = array();
 $third = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
+$assert( 1 === ( $GLOBALS['ssi_direct_checkpoint_reads']['composed'] ?? 0 ) && 0 === ( $GLOBALS['ssi_direct_checkpoint_reads']['shared'] ?? 0 ) && 0 === ( $GLOBALS['ssi_direct_checkpoint_reads']['page_plan'] ?? 0 ) && 0 === ( $GLOBALS['ssi_direct_checkpoint_reads']['receipt'] ?? 0 ), 'a run whose composition is durable must read only the composed checkpoint, never the shared plan, page plans or receipts it replaced' );
 $third_work = $third['artifact_run']['work'] ?? array();
 $assert( 'dependencies_prepared' === ( $third['continuation_reason'] ?? '' ) && 0 === ( $third_work['materialization_claims'] ?? -1 ) && 0 === $GLOBALS['ssi_direct_mutations'], 'ordinary apply must prepare dependencies before reserving its only materialization attempt' );
 $terminal_request = $resume( $import_id );

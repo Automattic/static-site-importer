@@ -411,277 +411,284 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				return $artifact_state;
 			};
 
-			if ( empty( $run['refs']['shared'] ) ) {
-				$shared_ref = self::existing_checkpoint_ref( $workspace, $run, 'shared-plan.json', 'shared' );
-				if ( is_wp_error( $shared_ref ) ) {
-					return $shared_ref;
-				}
-				if ( ! empty( $shared_ref ) ) {
-					$shared_state = self::read_checkpoint( $workspace, $run, $shared_ref, 'shared' );
-					if ( is_wp_error( $shared_state ) ) {
-						return $shared_state;
-					}
-					$run['refs']['shared'] = $shared_ref;
-					$run['page_ids']       = array_values( $shared_state['plan']['analysis']['page_ids'] );
-					sort( $run['page_ids'], SORT_STRING );
-					$run['work']['shared_prepares'] = 1;
-				}
-			}
-			if ( empty( $run['refs']['shared'] ) ) {
-				$artifact_state = $load_artifact();
-				if ( is_wp_error( $artifact_state ) ) {
-					return $artifact_state;
-				}
-				$started = microtime( true );
-				$entered = self::enter_phase( $workspace, $run, 'prepare_shared' );
-				if ( is_wp_error( $entered ) ) {
-					return $entered;
-				}
-				$run = $entered;
-				self::before_phase( 'prepare_shared', $run );
-				$shared = call_user_func( $prepare_shared, $artifact_state['artifact'], $payload_reader );
-				if ( 'blocks-engine/php-transformer/staged-shared-plan/v1' !== ( $shared['schema'] ?? '' ) || empty( $shared['digest'] ) || ! is_array( $shared['analysis']['page_ids'] ?? null ) ) {
-					// ssi-error-class: integrity
-					throw new RuntimeException( 'Blocks Engine returned an invalid shared plan.' );
-				}
-				$ref = self::publish_checkpoint( $workspace, $run, 'shared', 'shared-plan.json', array( 'plan' => $shared ) );
-				if ( is_wp_error( $ref ) ) {
-					return self::fail( $workspace, $run, 'prepare_shared', $ref );
-				}
-				$run['refs']['shared'] = $ref;
-				$run['page_ids']       = array_values( $shared['analysis']['page_ids'] );
-				sort( $run['page_ids'], SORT_STRING );
-				$run['work']['shared_prepares']           = 1;
-				$run['timings']['prepare_shared_seconds'] = microtime( true ) - $started;
-				$run['phase']                             = 'preparing_pages';
-				$run['progress']['phase']                 = 'preparing_pages';
-				$run['progress']['page_count']            = count( $run['page_ids'] );
-				$run['progress']['updated_at']            = gmdate( 'c' );
-				$write                                    = self::write_run( $workspace, $run );
-				if ( is_wp_error( $write ) ) {
-					return self::fail( $workspace, $run, 'prepare_shared_checkpoint', $write );
-				}
-			}
-
-			$shared_state = self::read_checkpoint( $workspace, $run, $run['refs']['shared'], 'shared' );
-			if ( is_wp_error( $shared_state ) ) {
-				return $shared_state;
-			}
-			$shared  = $shared_state['plan'];
-			$adopted = self::adopt_page_plans( $workspace, $run, $shared );
-			if ( is_wp_error( $adopted ) ) {
-				return $adopted;
-			}
-			if ( ( $run['refs']['pages'] ?? array() ) !== $adopted ) {
-				$run['refs']['pages']                   = $adopted;
-				$run['work']['page_plans_prepared']     = count( $adopted );
-				$run['progress']['prepared_page_count'] = count( $adopted );
-				$run['progress']['updated_at']          = gmdate( 'c' );
-				$write                                  = self::write_run( $workspace, $run );
-				if ( is_wp_error( $write ) ) {
-					return self::fail( $workspace, $run, 'prepare_pages_checkpoint', $write );
-				}
-			}
-			// Retained-state validation is prerequisite work; reserve the full
-			// invocation budget for a new bounded prepare/compile unit.
+			// Once composition is durable it is the only input materialization reads. Retained
+			// shared plans, page plans and receipts would only inflate this runtime's heap, so
+			// a run that already holds its composed checkpoint skips every earlier phase.
+			$shared   = array();
 			$deadline = call_user_func( $clock ) + $policy['max_invocation_seconds'];
-
-			$pending_plans = array_values( array_diff( $run['page_ids'], array_keys( $run['refs']['pages'] ?? array() ) ) );
-			$prepare_ids   = self::deadline_reached( $deadline, $clock ) ? array() : $pending_plans;
-			if ( ! empty( $prepare_ids ) ) {
-				if ( self::deadline_reached( $deadline, $clock ) ) {
-					return self::continuation( $run, 'deadline_exhausted' );
-				}
-				$started = microtime( true );
-				$entered = self::enter_phase( $workspace, $run, 'prepare_pages', $prepare_ids );
-				if ( is_wp_error( $entered ) ) {
-					return $entered;
-				}
-				$run            = $entered;
-				$artifact_state = $load_artifact();
-				if ( is_wp_error( $artifact_state ) ) {
-					return $artifact_state;
-				}
-				self::before_phase( 'prepare_pages', $run, $prepare_ids );
-				$run['work']['page_prepare_passes'] = (int) $run['work']['page_prepare_passes'] + 1;
-				$page_plans                         = call_user_func( $prepare_pages, $artifact_state['artifact'], $shared, $payload_reader );
-				foreach ( $prepare_ids as $page_id ) {
-					$page_plan = $page_plans[ $page_id ] ?? null;
-					$validated = self::validate_page_plan( $page_plan, $shared, $page_id );
-					if ( is_wp_error( $validated ) ) {
-						return self::fail( $workspace, $run, 'prepare_pages', $validated, array( $page_id ) );
+			if ( empty( $run['refs']['composed'] ) ) {
+				if ( empty( $run['refs']['shared'] ) ) {
+					$shared_ref = self::existing_checkpoint_ref( $workspace, $run, 'shared-plan.json', 'shared' );
+					if ( is_wp_error( $shared_ref ) ) {
+						return $shared_ref;
 					}
-					$relative = self::page_file( 'page-plans', $page_id );
-					$ref      = self::publish_checkpoint( $workspace, $run, 'page_plan', $relative, array(
-						'page_id' => $page_id,
-						'plan'    => $page_plan,
-					) );
+					if ( ! empty( $shared_ref ) ) {
+						$shared_state = self::read_checkpoint( $workspace, $run, $shared_ref, 'shared' );
+						if ( is_wp_error( $shared_state ) ) {
+							return $shared_state;
+						}
+						$run['refs']['shared'] = $shared_ref;
+						$run['page_ids']       = array_values( $shared_state['plan']['analysis']['page_ids'] );
+						sort( $run['page_ids'], SORT_STRING );
+						$run['work']['shared_prepares'] = 1;
+					}
+				}
+				if ( empty( $run['refs']['shared'] ) ) {
+					$artifact_state = $load_artifact();
+					if ( is_wp_error( $artifact_state ) ) {
+						return $artifact_state;
+					}
+					$started = microtime( true );
+					$entered = self::enter_phase( $workspace, $run, 'prepare_shared' );
+					if ( is_wp_error( $entered ) ) {
+						return $entered;
+					}
+					$run = $entered;
+					self::before_phase( 'prepare_shared', $run );
+					$shared = call_user_func( $prepare_shared, $artifact_state['artifact'], $payload_reader );
+					if ( 'blocks-engine/php-transformer/staged-shared-plan/v1' !== ( $shared['schema'] ?? '' ) || empty( $shared['digest'] ) || ! is_array( $shared['analysis']['page_ids'] ?? null ) ) {
+						// ssi-error-class: integrity
+						throw new RuntimeException( 'Blocks Engine returned an invalid shared plan.' );
+					}
+					$ref = self::publish_checkpoint( $workspace, $run, 'shared', 'shared-plan.json', array( 'plan' => $shared ) );
 					if ( is_wp_error( $ref ) ) {
-						return self::fail( $workspace, $run, 'prepare_pages', $ref, array( $page_id ) );
+						return self::fail( $workspace, $run, 'prepare_shared', $ref );
 					}
-					$run['refs']['pages'][ $page_id ]       = $ref;
-					$run['work']['page_plans_prepared']     = count( $run['refs']['pages'] );
-					$run['progress']['prepared_page_count'] = count( $run['refs']['pages'] );
+					$run['refs']['shared'] = $ref;
+					$run['page_ids']       = array_values( $shared['analysis']['page_ids'] );
+					sort( $run['page_ids'], SORT_STRING );
+					$run['work']['shared_prepares']           = 1;
+					$run['timings']['prepare_shared_seconds'] = microtime( true ) - $started;
+					$run['phase']                             = 'preparing_pages';
+					$run['progress']['phase']                 = 'preparing_pages';
+					$run['progress']['page_count']            = count( $run['page_ids'] );
+					$run['progress']['updated_at']            = gmdate( 'c' );
+					$write                                    = self::write_run( $workspace, $run );
+					if ( is_wp_error( $write ) ) {
+						return self::fail( $workspace, $run, 'prepare_shared_checkpoint', $write );
+					}
+				}
+
+				$shared_state = self::read_checkpoint( $workspace, $run, $run['refs']['shared'], 'shared' );
+				if ( is_wp_error( $shared_state ) ) {
+					return $shared_state;
+				}
+				$shared  = $shared_state['plan'];
+				$adopted = self::adopt_page_plans( $workspace, $run, $shared );
+				if ( is_wp_error( $adopted ) ) {
+					return $adopted;
+				}
+				if ( ( $run['refs']['pages'] ?? array() ) !== $adopted ) {
+					$run['refs']['pages']                   = $adopted;
+					$run['work']['page_plans_prepared']     = count( $adopted );
+					$run['progress']['prepared_page_count'] = count( $adopted );
 					$run['progress']['updated_at']          = gmdate( 'c' );
 					$write                                  = self::write_run( $workspace, $run );
 					if ( is_wp_error( $write ) ) {
-						return self::fail( $workspace, $run, 'prepare_pages_checkpoint', $write, array( $page_id ) );
+						return self::fail( $workspace, $run, 'prepare_pages_checkpoint', $write );
 					}
 				}
-				// Workers consume the durable page checkpoints. Release the complete
-				// preparation projection before their allocations overlap this host.
-				unset( $page_plans, $page_plan );
-				$run['timings']['prepare_pages_seconds'] = (float) ( $run['timings']['prepare_pages_seconds'] ?? 0 ) + microtime( true ) - $started;
-				$run['phase']                            = 'compiling_pages';
-				$run['progress']['phase']                = 'compiling_pages';
-				$run['progress']['updated_at']           = gmdate( 'c' );
-				$write                                   = self::write_run( $workspace, $run );
-				if ( is_wp_error( $write ) ) {
-					return self::fail( $workspace, $run, 'prepare_pages_checkpoint', $write, $prepare_ids );
-				}
-			}
-			$remaining_plans = count( $run['page_ids'] ) - count( $run['refs']['pages'] ?? array() );
-			if ( 0 < $remaining_plans ) {
-				$reason = self::deadline_reached( $deadline, $clock ) ? 'deadline_exhausted' : 'pages_remaining';
-				return self::continuation( $run, $reason );
-			}
-			// Preparation is durable. Workers read their own checkpoints; the host
-			// only needs shared analysis until composition and can reload the source
-			// for materialization through $load_artifact.
-			$artifact_state              = null;
-			self::$checkpoint_read_cache = array();
-			gc_mem_caches();
+				// Retained-state validation is prerequisite work; reserve the full
+				// invocation budget for a new bounded prepare/compile unit.
+				$deadline = call_user_func( $clock ) + $policy['max_invocation_seconds'];
 
-			$adopted = self::adopt_receipts( $workspace, $run, $shared );
-			if ( is_wp_error( $adopted ) ) {
-				return $adopted;
-			}
-			if ( ( $run['refs']['receipts'] ?? array() ) !== $adopted ) {
-				$run['refs']['receipts'] = $adopted;
-				foreach ( array_keys( $adopted ) as $page_id ) {
-					$run['work']['page_compile_counts'][ $page_id ] = 1;
+				$pending_plans = array_values( array_diff( $run['page_ids'], array_keys( $run['refs']['pages'] ?? array() ) ) );
+				$prepare_ids   = self::deadline_reached( $deadline, $clock ) ? array() : $pending_plans;
+				if ( ! empty( $prepare_ids ) ) {
+					if ( self::deadline_reached( $deadline, $clock ) ) {
+						return self::continuation( $run, 'deadline_exhausted' );
+					}
+					$started = microtime( true );
+					$entered = self::enter_phase( $workspace, $run, 'prepare_pages', $prepare_ids );
+					if ( is_wp_error( $entered ) ) {
+						return $entered;
+					}
+					$run            = $entered;
+					$artifact_state = $load_artifact();
+					if ( is_wp_error( $artifact_state ) ) {
+						return $artifact_state;
+					}
+					self::before_phase( 'prepare_pages', $run, $prepare_ids );
+					$run['work']['page_prepare_passes'] = (int) $run['work']['page_prepare_passes'] + 1;
+					$page_plans                         = call_user_func( $prepare_pages, $artifact_state['artifact'], $shared, $payload_reader );
+					foreach ( $prepare_ids as $page_id ) {
+						$page_plan = $page_plans[ $page_id ] ?? null;
+						$validated = self::validate_page_plan( $page_plan, $shared, $page_id );
+						if ( is_wp_error( $validated ) ) {
+							return self::fail( $workspace, $run, 'prepare_pages', $validated, array( $page_id ) );
+						}
+						$relative = self::page_file( 'page-plans', $page_id );
+						$ref      = self::publish_checkpoint( $workspace, $run, 'page_plan', $relative, array(
+							'page_id' => $page_id,
+							'plan'    => $page_plan,
+						) );
+						if ( is_wp_error( $ref ) ) {
+							return self::fail( $workspace, $run, 'prepare_pages', $ref, array( $page_id ) );
+						}
+						$run['refs']['pages'][ $page_id ]       = $ref;
+						$run['work']['page_plans_prepared']     = count( $run['refs']['pages'] );
+						$run['progress']['prepared_page_count'] = count( $run['refs']['pages'] );
+						$run['progress']['updated_at']          = gmdate( 'c' );
+						$write                                  = self::write_run( $workspace, $run );
+						if ( is_wp_error( $write ) ) {
+							return self::fail( $workspace, $run, 'prepare_pages_checkpoint', $write, array( $page_id ) );
+						}
+					}
+					// Workers consume the durable page checkpoints. Release the complete
+					// preparation projection before their allocations overlap this host.
+					unset( $page_plans, $page_plan );
+					$run['timings']['prepare_pages_seconds'] = (float) ( $run['timings']['prepare_pages_seconds'] ?? 0 ) + microtime( true ) - $started;
+					$run['phase']                            = 'compiling_pages';
+					$run['progress']['phase']                = 'compiling_pages';
+					$run['progress']['updated_at']           = gmdate( 'c' );
+					$write                                   = self::write_run( $workspace, $run );
+					if ( is_wp_error( $write ) ) {
+						return self::fail( $workspace, $run, 'prepare_pages_checkpoint', $write, $prepare_ids );
+					}
 				}
-				$run['work']['pages_compiled']    = count( $adopted );
-				$run['work']['compile_batches']   = max( (int) ( $run['work']['compile_batches'] ?? 0 ), empty( $adopted ) ? 0 : 1 );
-				$run['progress']['receipt_count'] = count( $adopted );
-				$run['progress']['updated_at']    = gmdate( 'c' );
-				$write                            = self::write_run( $workspace, $run );
-				if ( is_wp_error( $write ) ) {
-					return self::fail( $workspace, $run, 'compile_pages_checkpoint', $write, array_keys( $adopted ) );
+				$remaining_plans = count( $run['page_ids'] ) - count( $run['refs']['pages'] ?? array() );
+				if ( 0 < $remaining_plans ) {
+					$reason = self::deadline_reached( $deadline, $clock ) ? 'deadline_exhausted' : 'pages_remaining';
+					return self::continuation( $run, $reason );
 				}
-			}
+				// Preparation is durable. Workers read their own checkpoints; the host
+				// only needs shared analysis until composition and can reload the source
+				// for materialization through $load_artifact.
+				$artifact_state              = null;
+				self::$checkpoint_read_cache = array();
+				gc_mem_caches();
 
-			// Each batch is durable before the next starts, so a host whose runtime
-			// is not bounded by a request deadline can compile several per step.
-			// Batch-local checkpoint reads are released between batches.
-			$batches = 0;
-			do {
-				self::$checkpoint_read_cache = array_filter(
-					self::$checkpoint_read_cache,
-					static fn ( string $key ): bool => ! str_contains( $key, ':receipt:' ) && ! str_contains( $key, ':page_plan:' ),
-					ARRAY_FILTER_USE_KEY
-				);
-				$pending                     = array_values( array_diff( $run['page_ids'], array_keys( $run['refs']['receipts'] ?? array() ) ) );
-				$batch_limit                 = 'fanout' === $policy['compile_mode']
-				? min( $policy['compile_fanout_pages'], $policy['compile_workers'] * $policy['compile_shard_pages'] )
-				: $policy['compile_in_process_pages'];
-				$batch_ids                   = self::deadline_reached( $deadline, $clock ) ? array() : array_slice( $pending, 0, $batch_limit );
-				if ( empty( $batch_ids ) ) {
-					break;
+				$adopted = self::adopt_receipts( $workspace, $run, $shared );
+				if ( is_wp_error( $adopted ) ) {
+					return $adopted;
 				}
-				{
-				$started = microtime( true );
-				$entered = self::enter_phase( $workspace, $run, 'compile_pages', $batch_ids );
-				if ( is_wp_error( $entered ) ) {
-					return $entered;
-				}
-				$run = $entered;
-				self::before_phase( 'compile_pages', $run, $batch_ids );
-				$plans  = array();
-				$shards = array_chunk( $batch_ids, $policy['compile_shard_pages'] );
-				$fanout = 'fanout' === $policy['compile_mode'] && 1 < count( $shards ) ? call_user_func( $policy['compile_fanout'], $run['import_id'], $shards ) : null;
-				if ( is_wp_error( $fanout ) ) {
-					return self::fail( $workspace, $run, 'compile_pages', $fanout, $batch_ids );
-				}
-				if ( true === $fanout ) {
-					$adopted = self::adopt_receipts( $workspace, $run, $shared );
-					if ( is_wp_error( $adopted ) ) {
-						return self::fail( $workspace, $run, 'compile_pages', $adopted, $batch_ids );
-					}
-					if ( array_values( array_intersect( array_keys( $adopted ), $batch_ids ) ) !== $batch_ids ) {
-						return self::fail( $workspace, $run, 'compile_pages', new WP_Error( 'static_site_importer_direct_artifact_receipt_set_mismatch', 'Compile workers did not publish the exact requested receipt shards.' ), $batch_ids );
-					}
+				if ( ( $run['refs']['receipts'] ?? array() ) !== $adopted ) {
 					$run['refs']['receipts'] = $adopted;
 					foreach ( array_keys( $adopted ) as $page_id ) {
 						$run['work']['page_compile_counts'][ $page_id ] = 1;
 					}
-					$run['work']['compile_batches']          = (int) $run['work']['compile_batches'] + count( $shards );
-					$run['work']['pages_compiled']           = count( $adopted );
-					$run['progress']['receipt_count']        = count( $adopted );
-					$run['progress']['updated_at']           = gmdate( 'c' );
-					$run['timings']['compile_pages_seconds'] = (float) ( $run['timings']['compile_pages_seconds'] ?? 0 ) + microtime( true ) - $started;
-					$write                                   = self::write_run( $workspace, $run );
+					$run['work']['pages_compiled']    = count( $adopted );
+					$run['work']['compile_batches']   = max( (int) ( $run['work']['compile_batches'] ?? 0 ), empty( $adopted ) ? 0 : 1 );
+					$run['progress']['receipt_count'] = count( $adopted );
+					$run['progress']['updated_at']    = gmdate( 'c' );
+					$write                            = self::write_run( $workspace, $run );
 					if ( is_wp_error( $write ) ) {
-						return self::fail( $workspace, $run, 'compile_pages_checkpoint', $write, $batch_ids );
+						return self::fail( $workspace, $run, 'compile_pages_checkpoint', $write, array_keys( $adopted ) );
 					}
-					$batch = null;
-				} else {
-					foreach ( $batch_ids as $page_id ) {
-						$page_state = self::read_checkpoint( $workspace, $run, $run['refs']['pages'][ $page_id ] ?? array(), 'page_plan' );
-						if ( is_wp_error( $page_state ) ) {
-							return $page_state;
-						}
-						$plans[ $page_id ] = $page_state['plan'];
-					}
-					$batch = call_user_func( $compile_pages, $shared, array_values( $plans ), $payload_reader );
 				}
-				if ( null !== $batch && ( ! is_array( $batch ) || array_keys( $batch ) !== $batch_ids ) ) {
-					return self::fail( $workspace, $run, 'compile_pages', new WP_Error( 'static_site_importer_direct_artifact_receipt_set_mismatch', 'Blocks Engine did not return the exact requested compiled receipt batch.' ), $batch_ids );
-				}
-				if ( null !== $batch ) {
-					foreach ( $batch_ids as $page_id ) {
-						$valid = self::validate_receipt( $batch[ $page_id ], $plans[ $page_id ], $shared );
-						if ( is_wp_error( $valid ) ) {
-							return self::fail( $workspace, $run, 'compile_pages', $valid, $batch_ids );
-						}
+
+				// Each batch is durable before the next starts, so a host whose runtime
+				// is not bounded by a request deadline can compile several per step.
+				// Batch-local checkpoint reads are released between batches.
+				$batches = 0;
+				do {
+					self::$checkpoint_read_cache = array_filter(
+						self::$checkpoint_read_cache,
+						static fn ( string $key ): bool => ! str_contains( $key, ':receipt:' ) && ! str_contains( $key, ':page_plan:' ),
+						ARRAY_FILTER_USE_KEY
+					);
+					$pending                     = array_values( array_diff( $run['page_ids'], array_keys( $run['refs']['receipts'] ?? array() ) ) );
+					$batch_limit                 = 'fanout' === $policy['compile_mode']
+					? min( $policy['compile_fanout_pages'], $policy['compile_workers'] * $policy['compile_shard_pages'] )
+					: $policy['compile_in_process_pages'];
+					$batch_ids                   = self::deadline_reached( $deadline, $clock ) ? array() : array_slice( $pending, 0, $batch_limit );
+					if ( empty( $batch_ids ) ) {
+						break;
 					}
-					$run['work']['compile_batches'] = (int) $run['work']['compile_batches'] + 1;
-					foreach ( $batch_ids as $page_id ) {
-						$receipt = $batch[ $page_id ];
-						$ref     = self::publish_checkpoint( $workspace, $run, 'receipt', self::page_file( 'receipts', $page_id ), array(
-							'page_id' => $page_id,
-							'receipt' => $receipt,
-						) );
-						if ( is_wp_error( $ref ) ) {
-							return self::fail( $workspace, $run, 'compile_pages', $ref, $batch_ids );
+					{
+					$started = microtime( true );
+					$entered = self::enter_phase( $workspace, $run, 'compile_pages', $batch_ids );
+					if ( is_wp_error( $entered ) ) {
+						return $entered;
+					}
+					$run = $entered;
+					self::before_phase( 'compile_pages', $run, $batch_ids );
+					$plans  = array();
+					$shards = array_chunk( $batch_ids, $policy['compile_shard_pages'] );
+					$fanout = 'fanout' === $policy['compile_mode'] && 1 < count( $shards ) ? call_user_func( $policy['compile_fanout'], $run['import_id'], $shards ) : null;
+					if ( is_wp_error( $fanout ) ) {
+						return self::fail( $workspace, $run, 'compile_pages', $fanout, $batch_ids );
+					}
+					if ( true === $fanout ) {
+						$adopted = self::adopt_receipts( $workspace, $run, $shared );
+						if ( is_wp_error( $adopted ) ) {
+							return self::fail( $workspace, $run, 'compile_pages', $adopted, $batch_ids );
 						}
-						$run['refs']['receipts'][ $page_id ]            = $ref;
-						$run['work']['pages_compiled']                  = (int) $run['work']['pages_compiled'] + 1;
-						$run['work']['page_compile_counts'][ $page_id ] = (int) ( $run['work']['page_compile_counts'][ $page_id ] ?? 0 ) + 1;
-						$run['progress']['receipt_count']               = count( $run['refs']['receipts'] );
-						$run['progress']['updated_at']                  = gmdate( 'c' );
-						$write = self::write_run( $workspace, $run );
+						if ( array_values( array_intersect( array_keys( $adopted ), $batch_ids ) ) !== $batch_ids ) {
+							return self::fail( $workspace, $run, 'compile_pages', new WP_Error( 'static_site_importer_direct_artifact_receipt_set_mismatch', 'Compile workers did not publish the exact requested receipt shards.' ), $batch_ids );
+						}
+						$run['refs']['receipts'] = $adopted;
+						foreach ( array_keys( $adopted ) as $page_id ) {
+							$run['work']['page_compile_counts'][ $page_id ] = 1;
+						}
+						$run['work']['compile_batches']          = (int) $run['work']['compile_batches'] + count( $shards );
+						$run['work']['pages_compiled']           = count( $adopted );
+						$run['progress']['receipt_count']        = count( $adopted );
+						$run['progress']['updated_at']           = gmdate( 'c' );
+						$run['timings']['compile_pages_seconds'] = (float) ( $run['timings']['compile_pages_seconds'] ?? 0 ) + microtime( true ) - $started;
+						$write                                   = self::write_run( $workspace, $run );
 						if ( is_wp_error( $write ) ) {
-							return self::fail( $workspace, $run, 'compile_pages_checkpoint', $write, array( $page_id ) );
+							return self::fail( $workspace, $run, 'compile_pages_checkpoint', $write, $batch_ids );
+						}
+						$batch = null;
+					} else {
+						foreach ( $batch_ids as $page_id ) {
+							$page_state = self::read_checkpoint( $workspace, $run, $run['refs']['pages'][ $page_id ] ?? array(), 'page_plan' );
+							if ( is_wp_error( $page_state ) ) {
+								return $page_state;
+							}
+							$plans[ $page_id ] = $page_state['plan'];
+						}
+						$batch = call_user_func( $compile_pages, $shared, array_values( $plans ), $payload_reader );
+					}
+					if ( null !== $batch && ( ! is_array( $batch ) || array_keys( $batch ) !== $batch_ids ) ) {
+						return self::fail( $workspace, $run, 'compile_pages', new WP_Error( 'static_site_importer_direct_artifact_receipt_set_mismatch', 'Blocks Engine did not return the exact requested compiled receipt batch.' ), $batch_ids );
+					}
+					if ( null !== $batch ) {
+						foreach ( $batch_ids as $page_id ) {
+							$valid = self::validate_receipt( $batch[ $page_id ], $plans[ $page_id ], $shared );
+							if ( is_wp_error( $valid ) ) {
+								return self::fail( $workspace, $run, 'compile_pages', $valid, $batch_ids );
+							}
+						}
+						$run['work']['compile_batches'] = (int) $run['work']['compile_batches'] + 1;
+						foreach ( $batch_ids as $page_id ) {
+							$receipt = $batch[ $page_id ];
+							$ref     = self::publish_checkpoint( $workspace, $run, 'receipt', self::page_file( 'receipts', $page_id ), array(
+								'page_id' => $page_id,
+								'receipt' => $receipt,
+							) );
+							if ( is_wp_error( $ref ) ) {
+								return self::fail( $workspace, $run, 'compile_pages', $ref, $batch_ids );
+							}
+							$run['refs']['receipts'][ $page_id ]            = $ref;
+							$run['work']['pages_compiled']                  = (int) $run['work']['pages_compiled'] + 1;
+							$run['work']['page_compile_counts'][ $page_id ] = (int) ( $run['work']['page_compile_counts'][ $page_id ] ?? 0 ) + 1;
+							$run['progress']['receipt_count']               = count( $run['refs']['receipts'] );
+							$run['progress']['updated_at']                  = gmdate( 'c' );
+							$write = self::write_run( $workspace, $run );
+							if ( is_wp_error( $write ) ) {
+								return self::fail( $workspace, $run, 'compile_pages_checkpoint', $write, array( $page_id ) );
+							}
+						}
+						$run['timings']['compile_pages_seconds'] = (float) ( $run['timings']['compile_pages_seconds'] ?? 0 ) + microtime( true ) - $started;
+						$write                                   = self::write_run( $workspace, $run );
+						if ( is_wp_error( $write ) ) {
+							return self::fail( $workspace, $run, 'compile_pages_checkpoint', $write, $batch_ids );
 						}
 					}
-					$run['timings']['compile_pages_seconds'] = (float) ( $run['timings']['compile_pages_seconds'] ?? 0 ) + microtime( true ) - $started;
-					$write                                   = self::write_run( $workspace, $run );
-					if ( is_wp_error( $write ) ) {
-						return self::fail( $workspace, $run, 'compile_pages_checkpoint', $write, $batch_ids );
 					}
-				}
-				}
-				++$batches;
-			} while ( $policy['compile_batches_per_invocation'] > $batches );
+					++$batches;
+				} while ( $policy['compile_batches_per_invocation'] > $batches );
 
 			$remaining = count( $run['page_ids'] ) - count( $run['refs']['receipts'] ?? array() );
-			if ( 0 < $remaining ) {
-				$reason = self::deadline_reached( $deadline, $clock ) ? 'deadline_exhausted' : 'pages_remaining';
-				return self::continuation( $run, $reason );
-			}
-			if ( self::deadline_reached( $deadline, $clock ) && empty( $run['refs']['composed'] ) ) {
-				return self::continuation( $run, 'deadline_exhausted' );
+				if ( 0 < $remaining ) {
+					$reason = self::deadline_reached( $deadline, $clock ) ? 'deadline_exhausted' : 'pages_remaining';
+					return self::continuation( $run, $reason );
+				}
+				if ( self::deadline_reached( $deadline, $clock ) && empty( $run['refs']['composed'] ) ) {
+					return self::continuation( $run, 'deadline_exhausted' );
+				}
 			}
 
 			if ( empty( $run['refs']['composed'] ) ) {
@@ -725,6 +732,13 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					// ssi-error-class: integrity
 					throw new RuntimeException( sprintf( 'Terminal receipt composition performed %d HTML transforms and %d normalization passes.', (int) ( $metrics['html_document_transform_count'] ?? 0 ), (int) ( $metrics['normalization_count'] ?? 0 ) ) );
 				}
+				// Publication encodes and hashes the whole composed payload; release the
+				// uncompacted result, the receipts and the shared plan it was built from first.
+				unset( $result, $receipts );
+				$shared                      = array();
+				self::$checkpoint_read_cache = array();
+				gc_collect_cycles();
+				gc_mem_caches();
 				$ref = self::publish_checkpoint( $workspace, $run, 'composed', 'composed-result.json', array(
 					'result'        => $composed,
 					'terminal_work' => $metrics,
