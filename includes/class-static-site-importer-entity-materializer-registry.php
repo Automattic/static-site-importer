@@ -436,14 +436,16 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( ! empty( $validation['errors'] ) ) {
 				// Entity validators report per row: an unmappable row is rejected
 				// without discarding the rows that did validate, so partial feature
-				// parity is still materialized. Honour that here -- only a
-				// declaration that produced no usable row is rejected outright.
-				//
-				// The rejection carries the collection and error count alongside the
-				// errors themselves, because the user-facing gate message is built
-				// from this data and "failed validation" without the facts is not
-				// actionable (#1785).
-				if ( empty( $accepted ) ) {
+				// parity is still materialized. A rejected form row keeps the page's
+				// converted source form, so a forms declaration with no usable row
+				// is skipped the same way instead of failing the import (#2054).
+				// Other collections with no usable row, and an error about the
+				// manifest itself rather than one of its rows, are rejected
+				// outright. The rejection carries the collection and error count
+				// alongside the errors themselves, because the user-facing gate
+				// message is built from this data and "failed validation" without
+				// the facts is not actionable (#1785).
+				if ( empty( $accepted ) && ( 'form' !== $capability || ! self::errors_are_row_scoped( $validation['errors'], $collection ) ) ) {
 					return new WP_Error(
 						'static_site_importer_runtime_entity_invalid',
 						'Runtime entity declaration failed SSI provider validation.',
@@ -457,6 +459,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					);
 				}
 				$lifecycle['diagnostics'][] = self::rejected_runtime_entity_rows_diagnostic( $key, $adapter, count( $entities ), count( $accepted ), $validation['errors'] );
+				if ( empty( $accepted ) ) {
+					continue;
+				}
 			}
 			// Deferred validation must still retain every declared entity.
 			$normalized_manifest = $defer_validation ? $manifest : array( $collection => $accepted );
@@ -559,9 +564,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 * Report the rows of a runtime entity declaration a provider validator rejected.
 	 *
 	 * Entity validators are per row by contract, so the declaration is still
-	 * materialized from the rows that validated. The rejected rows keep the
-	 * converted source markup already on the page, which is the same loss class
-	 * as a provider decline.
+	 * materialized from the rows that validated, and a forms declaration with
+	 * no valid row is skipped. The rejected rows keep the converted source
+	 * markup already on the page, which is the same loss class as a provider
+	 * decline. The finding names the first rejected row's path; `errors` lists
+	 * every row.
 	 *
 	 * @param string              $declaration_id Declaration reconciliation identity.
 	 * @param array<string,mixed> $adapter        Adapter definition.
@@ -573,6 +580,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	private static function rejected_runtime_entity_rows_diagnostic( string $declaration_id, array $adapter, int $declared, int $accepted, array $errors ): array {
 		$collection = (string) ( $adapter['entity_collection'] ?? 'entities' );
 		$rejected   = max( 0, $declared - $accepted );
+		$errors     = array_values( array_filter( $errors, 'is_array' ) );
+		$path       = (string) ( $errors[0]['path'] ?? '' );
+		$reason     = (string) ( $errors[0]['message'] ?? '' );
 		return array(
 			'id'                      => 'runtime-entity-rows-rejected-' . hash( 'sha256', $declaration_id . "\n" . $collection ),
 			'code'                    => 'runtime_entity_rows_rejected',
@@ -580,6 +590,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'severity'                => 'warning',
 			'stage'                   => 'entity_materialization',
 			'loss_class'              => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+			'unit'                    => 'item',
+			'owning_layer'            => Static_Site_Importer_Diagnostic_Loss_Classes::OWNING_LAYER_BLOCKS_ENGINE,
+			'path'                    => $path,
 			'declaration_id'          => $declaration_id,
 			'reconciliation_identity' => $declaration_id,
 			'provider'                => (string) ( $adapter['provider'] ?? '' ),
@@ -587,9 +600,19 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'declared_count'          => $declared,
 			'accepted_count'          => $accepted,
 			'rejected_count'          => $rejected,
-			'errors'                  => array_slice( array_values( array_filter( $errors, 'is_array' ) ), 0, 16 ),
-			'message'                 => $rejected . ' of ' . $declared . ' declared ' . $collection . ' failed SSI provider validation and were skipped; the remaining ' . $accepted . ' materialized. The imported pages keep their converted source markup for the skipped rows.',
+			'errors'                  => array_slice( $errors, 0, 16 ),
+			'message'                 => $rejected . ' of ' . $declared . ' declared ' . $collection . ' failed SSI provider validation and were skipped (' . $path . ': ' . $reason . '); ' . $accepted . ' materialized. The imported pages keep their converted source markup for the skipped rows.',
 		);
+	}
+
+	/** Whether every validator error names one row of the collection rather than the manifest itself. */
+	private static function errors_are_row_scoped( array $errors, string $collection ): bool {
+		foreach ( $errors as $error ) {
+			if ( ! is_array( $error ) || ! str_starts_with( (string) ( $error['path'] ?? '' ), '$.' . $collection . '[' ) ) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private static function runtime_declaration_is_required( array $declaration, array $declarations ): bool {
