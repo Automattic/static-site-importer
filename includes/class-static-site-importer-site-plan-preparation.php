@@ -147,24 +147,11 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			),
 		);
 
-		try {
-			if ( array() === $state['plan_identity'] ) {
-				// ssi-error-class: integrity
-				throw new InvalidArgumentException( 'canonical_plan_identity_mismatch' );
-			}
-			WordPressSitePlan::assertValid( $plan );
-		} catch ( InvalidArgumentException $error ) {
-			$state['diagnostics'][]  = array( 'reason_code' => 'canonical_plan_rejected' );
-			$state['failure_reason'] = 'canonical_plan_rejected';
-			return array(
-				'status'  => 'rejected',
-				'receipt' => Static_Site_Importer_Site_Plan_Receipt::receipt( 'rejected', $state ),
-			);
-		}
-		$state['editability_report'] = self::editability_report_admission( $plan );
-		if ( in_array( $state['editability_report']['status'], array( 'rejected', 'failed' ), true ) ) {
+		// Blocks Engine owns the editability policy: honour its decision once.
+		$state['editability_report'] = self::editability_decision( $plan );
+		if ( 'failed' === $state['editability_report']['status'] ) {
 			$state['diagnostics'][]  = $state['editability_report']['diagnostic'];
-			$state['failure_reason'] = (string) ( $state['editability_report']['diagnostic']['reason_code'] ?? 'editability_report_rejected' );
+			$state['failure_reason'] = 'editability_policy_failed';
 			return array(
 				'status'  => 'rejected',
 				'receipt' => Static_Site_Importer_Site_Plan_Receipt::receipt( 'rejected', $state ),
@@ -186,20 +173,23 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			// classic scaffolds carry this name instead of the producer's
 			// generic placeholder header.
 			$identity = self::resolve_theme_identity( $args, $plan, $slug );
-			try {
-				// Resolver proof is canonical semantics, not an inference from copied files.
-				$resolved = ( new WordPressSitePlanResolver() )->resolve(
-					$plan,
-					array(
-						'theme_uri'            => $theme_uri,
-						'require_proven_dynamic_client_assets' => $args['require_proven_dynamic_client_assets'] ?? true,
-						'runtime_capabilities' => array( 'asset_materialization' ),
-					)
-				);
-			} catch ( InvalidArgumentException $error ) {
-				// ssi-error-class: propagated
-				throw new InvalidArgumentException( $error->getMessage(), 0, $error );
-			}
+			// Trust boundary: this is where a plan enters SSI materialization,
+			// whether Blocks Engine composed it in this request or it was read
+			// back from a lifecycle checkpoint, a retained run workspace, or a
+			// public materialize() caller. The Blocks Engine resolver is the one
+			// validation of that plan: it asserts the canonical plan contract
+			// (including the editability policy shape), rejects a stale or
+			// forged plan_identity, and anchors head assets and entity bindings
+			// while binding asset tokens to this destination. SSI does not
+			// repeat those checks; a rejection propagates as its reason code.
+			$resolved = ( new WordPressSitePlanResolver() )->resolve(
+				$plan,
+				array(
+					'theme_uri'                            => $theme_uri,
+					'require_proven_dynamic_client_assets' => $args['require_proven_dynamic_client_assets'] ?? true,
+					'runtime_capabilities'                 => array( 'asset_materialization' ),
+				)
+			);
 			if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === $strategy['strategy'] ) {
 				$projection = Static_Site_Importer_Classic_Theme_Projection::prepare_for_materialization( $args['classic_theme_projection'], $resolved );
 				if ( is_wp_error( $projection ) ) {
@@ -1340,107 +1330,46 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	}
 
 	/**
-	 * Admit producer-owned editability evidence without recreating its metrics or policy.
+	 * Read the Blocks Engine editability decision; SSI keeps no policy of its own.
 	 *
-	 * Current Blocks Engine plans carry the required policy but not the report binding.
-	 * That compatibility path is explicit and can be retired by setting
-	 * quality.editability_report_required on plans from upgraded producers.
+	 * The producer measures every page and blocks only on the entrypoint wrapper
+	 * ratio. A `failed` status still fails the import; per-page `findings` are
+	 * carried as reported losses (the producer also emits them as
+	 * `editability_policy_degraded` warnings that the loss ledger classifies).
+	 * The policy shape is part of the canonical plan contract the resolver
+	 * asserts, so it is not re-validated here.
 	 *
-	 * @param array<string,mixed> $plan
+	 * @param array<string,mixed> $plan Canonical plan.
 	 * @return array<string,mixed>
 	 */
-	public static function editability_report_admission( array $plan ): array {
-		$quality = isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array();
-		$policy  = isset( $quality['editability_policy'] ) && is_array( $quality['editability_policy'] ) ? $quality['editability_policy'] : array();
-		$base    = array(
+	public static function editability_decision( array $plan ): array {
+		$policy   = is_array( $plan['quality']['editability_policy'] ?? null ) ? $plan['quality']['editability_policy'] : array();
+		$findings = is_array( $policy['findings'] ?? null ) ? array_values( array_filter( $policy['findings'], 'is_array' ) ) : array();
+		$decision = array(
 			'schema'        => 'static-site-importer/editability-report-admission/v1',
 			'owning_layer'  => 'blocks-engine',
 			'policy_schema' => (string) ( $policy['schema'] ?? '' ),
+			'status'        => 'failed' === ( $policy['status'] ?? null ) ? 'failed' : 'passed',
+			'finding_count' => (int) ( $policy['finding_totals']['observed'] ?? count( $findings ) ),
+			'findings'      => array_slice( $findings, 0, 10 ),
 		);
-		if ( array() !== $policy && ( 'blocks-engine/php-transformer/editability-policy/v1' !== ( $policy['schema'] ?? null ) || 'required' !== ( $policy['enforcement'] ?? null ) || ! in_array( $policy['status'] ?? null, array( 'passed', 'failed' ), true ) || ! isset( $policy['failures'] ) || ! is_array( $policy['failures'] ) ) ) {
-			return self::rejected_editability_report_admission( $base, 'editability_policy_invalid' );
+		if ( 'failed' !== $decision['status'] ) {
+			return $decision;
 		}
-		if ( 'failed' === ( $policy['status'] ?? null ) ) {
-			$failures = array_values( array_filter( $policy['failures'], 'is_array' ) );
-			return array_merge(
-				$base,
-				array(
-					'status'     => 'failed',
-					'diagnostic' => array(
-						// The producer already measured and phrased every breach; state it as a
-						// failing diagnostic so the public projection can carry it to the reader.
-						'code'                    => 'editability_policy_failed',
-						'severity'                => 'error',
-						'reason_code'             => 'editability_policy_failed',
-						'owning_layer'            => 'blocks-engine',
-						'source_path'             => (string) ( $failures[0]['source_path'] ?? '' ),
-						'detail'                  => (string) ( $failures[0]['message'] ?? '' ),
-						'threshold_failure_count' => count( $failures ),
-						'threshold_failures'      => array_slice( $failures, 0, 10 ),
-					),
-				)
-			);
-		}
-
-		$report = $quality['editability_report'] ?? null;
-		if ( null === $report ) {
-			if ( ! empty( $quality['editability_report_required'] ) ) {
-				return self::rejected_editability_report_admission( $base, 'editability_report_required' );
-			}
-			return array_merge(
-				$base,
-				array(
-					'status'     => 'compatibility_policy_only',
-					'diagnostic' => array(
-						'reason_code'  => 'editability_report_compatibility_policy_only',
-						'owning_layer' => 'blocks-engine',
-					),
-				)
-			);
-		}
-		if ( ! is_array( $report ) || 'blocks-engine/php-transformer/editability-report/v2' !== ( $report['schema'] ?? null ) || ! is_array( $report['metrics'] ?? null ) || ! is_array( $report['block_types'] ?? null ) || ! is_array( $report['signals'] ?? null ) || ! is_array( $report['signal_totals'] ?? null ) ) {
-			return self::rejected_editability_report_admission( $base, 'editability_report_schema_invalid' );
-		}
-		$bound_hash = $quality['editability_report_plan_hash'] ?? null;
-		if ( ! is_string( $bound_hash ) || ! preg_match( '/^[a-f0-9]{64}$/', $bound_hash ) ) {
-			return self::rejected_editability_report_admission( $base, 'editability_report_plan_hash_invalid' );
-		}
-		$unbound_plan = $plan;
-		unset( $unbound_plan['plan_identity'], $unbound_plan['quality']['editability_report'], $unbound_plan['quality']['editability_report_plan_hash'], $unbound_plan['quality']['editability_report_required'] );
-		$expected_hash = WordPressSitePlan::planIdentity( $unbound_plan )['hash'];
-		if ( ! hash_equals( $expected_hash, $bound_hash ) ) {
-			return self::rejected_editability_report_admission( $base, 'editability_report_plan_hash_mismatch' );
-		}
-		return array_merge(
-			$base,
-			array(
-				'status'        => 'passed',
-				'report_schema' => $report['schema'],
-				'plan_hash'     => $bound_hash,
-				'diagnostic'    => array(
-					'reason_code'  => 'editability_report_verified',
-					'owning_layer' => 'blocks-engine',
-				),
-			)
+		$failures               = is_array( $policy['failures'] ?? null ) ? array_values( array_filter( $policy['failures'], 'is_array' ) ) : array();
+		$decision['diagnostic'] = array(
+			// The producer already measured and phrased every breach; state it as a
+			// failing diagnostic so the public projection can carry it to the reader.
+			'code'                    => 'editability_policy_failed',
+			'severity'                => 'error',
+			'reason_code'             => 'editability_policy_failed',
+			'owning_layer'            => 'blocks-engine',
+			'source_path'             => (string) ( $failures[0]['source_path'] ?? '' ),
+			'detail'                  => (string) ( $failures[0]['message'] ?? '' ),
+			'threshold_failure_count' => count( $failures ),
+			'threshold_failures'      => array_slice( $failures, 0, 10 ),
 		);
-	}
-
-	/** @param array<string,mixed> $base @param array<int,mixed> $failures @return array<string,mixed> */
-	public static function rejected_editability_report_admission( array $base, string $reason_code, array $failures = array() ): array {
-		$diagnostic = array(
-			'reason_code'  => $reason_code,
-			'owning_layer' => 'blocks-engine',
-		);
-		if ( array() !== $failures ) {
-			$diagnostic['threshold_failures'] = array_slice( array_values( array_filter( $failures, 'is_array' ) ), 0, 10 );
-		}
-		return array_merge(
-			$base,
-			array(
-				'status'     => 'rejected',
-				'diagnostic' => $diagnostic,
-			)
-		);
+		return $decision;
 	}
 
 	/** @param array<string,mixed> $plan */
