@@ -20,7 +20,7 @@ function capture(root, properties = {}) {
   const handoff = {
     url, status: 'needs_evaluation', fixture: { id: 'website', fixture_root: path.join(root, 'fixtures') },
     capture_receipt: { schema: 'blocks-engine-capture/capture-receipt/v1', source: { url }, summary: { complete: true, routesDiscovered: 2, routesCaptured: 2, routesFailed: 0, routesSkipped: 0 } },
-    provenance, identities: { dla: { version: 'v0.6.5' } }, failures: [], handoff_path: handoffPath,
+    provenance, identities: { dla: { version: 'v0.27.0' } }, failures: [], handoff_path: handoffPath,
     ...properties,
   };
   fs.mkdirSync(path.dirname(handoffPath), { recursive: true });
