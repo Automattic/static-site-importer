@@ -179,13 +179,14 @@ array(
 );
 $assert( 1 === substr_count( (string) ( $repeat['writes'][0]['content'] ?? '' ), 'Static Site Importer portable internal links' ), 'The overlay should be idempotent.' );
 
-// A core/tabs block whose panels carry source tab keys gets the `?tab=` selection script; generated ids do not.
+// A core/tabs block whose panels carry source tab keys gets the `?tab=` selection script once per request; generated ids do not.
+Static_Site_Importer_Internal_Link_Runtime::maybe_enqueue_tab_query_script( '<div class="wp-block-tabs"><section data-id="oral-habits" id="blocks-engine-set-abc-1-panel-0" role="tabpanel"></section></div>' );
+$assert( array() === $GLOBALS['ssi_scripts'], 'A tabs block with only generated panel ids does not enqueue the script.' );
 $keyed = '<div class="wp-block-tabs"><section id="oral-habits" role="tabpanel"></section><section id="braces" role="tabpanel"></section></div>';
 $assert( $keyed === Static_Site_Importer_Internal_Link_Runtime::maybe_enqueue_tab_query_script( $keyed ), 'Tab markup is returned unchanged.' );
 $assert( true === ( $GLOBALS['ssi_scripts']['static-site-importer-tab-query']['enqueued'] ?? false ), 'A tabs block with source tab keys enqueues the tab query script.' );
 $assert( str_contains( $GLOBALS['ssi_scripts']['static-site-importer-tab-query']['inline'], 'tab__' ) && ! str_contains( $GLOBALS['ssi_scripts']['static-site-importer-tab-query']['inline'], 'pushState' ) && ! str_contains( $GLOBALS['ssi_scripts']['static-site-importer-tab-query']['inline'], 'replaceState' ), 'The script clicks the real core tab and never rewrites the URL.' );
-$GLOBALS['ssi_scripts'] = array();
-Static_Site_Importer_Internal_Link_Runtime::maybe_enqueue_tab_query_script( '<div class="wp-block-tabs"><section id="blocks-engine-set-abc-1-panel-0" role="tabpanel"></section></div>' );
-$assert( array() === $GLOBALS['ssi_scripts'], 'A tabs block with only generated panel ids does not enqueue the script.' );
+Static_Site_Importer_Internal_Link_Runtime::maybe_enqueue_tab_query_script( $keyed );
+$assert( Static_Site_Importer_Internal_Link_Runtime::tab_query_script() === $GLOBALS['ssi_scripts']['static-site-importer-tab-query']['inline'], 'A second tabs block on the page does not add the script again.' );
 
 echo "internal link runtime smoke passed\n";

@@ -28,6 +28,8 @@ if ( class_exists( 'Static_Site_Importer_Internal_Link_Runtime', false ) ) {
 final class Static_Site_Importer_Internal_Link_Runtime {
 	private static bool $registered = false;
 
+	private static bool $tab_query_enqueued = false;
+
 	public static function register(): void {
 		if ( self::$registered || ! function_exists( 'add_filter' ) ) {
 			return;
@@ -51,14 +53,15 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 	 * @return mixed
 	 */
 	public static function maybe_enqueue_tab_query_script( $content ) {
-		if ( ! is_string( $content ) || ! function_exists( 'wp_register_script' ) || ! function_exists( 'wp_enqueue_script' ) || ! function_exists( 'wp_add_inline_script' ) ) {
+		if ( self::$tab_query_enqueued || ! is_string( $content ) || ! function_exists( 'wp_register_script' ) || ! function_exists( 'wp_enqueue_script' ) || ! function_exists( 'wp_add_inline_script' ) ) {
 			return $content;
 		}
 		if ( ! preg_match_all( '~<section\b[^>]*\brole="tabpanel"[^>]*>~i', $content, $panels ) ) {
 			return $content;
 		}
 		foreach ( $panels[0] as $panel ) {
-			if ( preg_match( '~\bid="([^"]+)"~', $panel, $id ) && ! str_starts_with( $id[1], 'blocks-engine-set-' ) ) {
+			if ( preg_match( '~\sid="([^"]+)"~', $panel, $id ) && ! str_starts_with( $id[1], 'blocks-engine-set-' ) ) {
+				self::$tab_query_enqueued = true;
 				wp_register_script( 'static-site-importer-tab-query', false, array(), '1', true );
 				wp_enqueue_script( 'static-site-importer-tab-query' );
 				wp_add_inline_script( 'static-site-importer-tab-query', self::tab_query_script() );
