@@ -742,6 +742,15 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				if ( is_wp_error( $write ) ) {
 					return self::fail( $workspace, $run, 'compose_checkpoint', $write, $run['page_ids'] );
 				}
+				// The composed checkpoint is durable and is all that materialization
+				// reads. A host that runs each step in a fresh runtime yields here,
+				// so composition's working set (the full result, and the receipts and
+				// page plans the read cache pins) unwinds before that checkpoint is
+				// read back into a clean runtime instead of on top of compose's peak.
+				if ( $policy['yield_after_compose'] ) {
+					self::$checkpoint_read_cache = array();
+					return self::continuation( $run, 'composed' );
+				}
 			}
 
 			$composed_state = self::read_checkpoint( $workspace, $run, $run['refs']['composed'], 'composed' );
@@ -1644,6 +1653,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			// Keep browser-originated artifacts below the Playground worker deadline by
 			// releasing the source request before compiler and materializer work begins.
 			'freeze_continuation_bytes'      => 64 * 1024,
+			// Yield once composition is durable, before reading it back. Only a
+			// host whose next step is a fresh runtime gains a clean heap from it.
+			'yield_after_compose'            => false,
 			'clock'                          => static fn (): float => microtime( true ),
 		);
 		if ( function_exists( 'apply_filters' ) ) {
@@ -1661,6 +1673,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$policy['compile_mode']                   = null === $policy['compile_fanout'] ? 'in_process' : 'fanout';
 		$policy['max_invocation_seconds']         = max( 0.001, (float) $policy['max_invocation_seconds'] );
 		$policy['freeze_continuation_bytes']      = max( 1, (int) $policy['freeze_continuation_bytes'] );
+		$policy['yield_after_compose']            = ! empty( $policy['yield_after_compose'] );
 		$policy['clock']                          = is_callable( $policy['clock'] ) ? $policy['clock'] : static fn (): float => microtime( true );
 		return $policy;
 	}
