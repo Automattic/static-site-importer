@@ -439,6 +439,7 @@ tracker.
 node tools/url-loop-controller.mjs start \
   --url https://housing-resolutions.com/ \
   --capture-producer "$(cat capture-producer.json)" \
+  --task-url https://github.com/<owner>/<repo>/issues/<n> \
   --blocks-engine /path/to/blocks-engine \
   --wp-codebox-bin /path/to/wp-codebox \
   --max-iterations 3 --max-step-runs 20 --deadline 10h
@@ -482,8 +483,10 @@ materialization-comparison failures go to SSI. Each routed repository gets
 `evaluations/<instance>/i<n>/repairs/<repo>.json` with its findings, the
 composed component SHAs, stage reports and import quality.
 
-**Options.** `--ssi-task-url` and `--blocks-engine-task-url` name trackers
-(default: issue #1874). `--ssi-verify` and `--blocks-engine-verify`
+**Options.** `--task-url` (or `SSI_URL_LOOP_TASK_URL`) names the tracker every
+repair Cook works on; it is required unless every repository names its own
+through `--ssi-task-url`, `--blocks-engine-task-url` and the producer's
+`task_url`. `--ssi-verify` and `--blocks-engine-verify`
 (repeatable) override the Cook gates, which default to `npm test` and
 `composer --working-dir=php-transformer test`. `SSI_BLOCKS_ENGINE_PATH` and
 `HOMEBOY_WP_CODEBOX_BIN` configure the Blocks Engine checkout and Codebox CLI on

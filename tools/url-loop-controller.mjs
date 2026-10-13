@@ -11,7 +11,6 @@ export const EVALUATION_ARTIFACT_SCHEMA = 'static-site-importer/url-loop-evaluat
 export const REPAIR_EVIDENCE_SCHEMA = 'static-site-importer/url-loop-repair-evidence/v1';
 export const WORKFLOW_SCHEMA = 'homeboy/workflow/v1';
 export const WORKFLOW_ID = 'ssi-url-proof';
-export const REPAIR_TRACKER = 'https://github.com/Automattic/static-site-importer/issues/1874';
 const MODULE_PATH = fileURLToPath(import.meta.url);
 const STAGE_MOUNT = '/url-loop';
 const LOSS_COUNTS = ['unsupported_fallback_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count'];
@@ -128,6 +127,13 @@ export function buildUrlProofWorkflow(input) {
   const wpCodeboxBin = input.wpCodeboxBin || process.env.HOMEBOY_WP_CODEBOX_BIN;
   if (!blocksEngine || !wpCodeboxBin) throw new Error('blocks-engine and wp-codebox-bin must be configured on this runner');
   const producer = resolveCaptureProducer(input);
+  // Every repair Cook works on a tracker the operator names: `--task-url` for
+  // the loop, overridable per repository.
+  const taskUrl = (value) => {
+    const tracker = value || input.taskUrl || process.env.SSI_URL_LOOP_TASK_URL;
+    if (!tracker) throw new Error('task-url must name the tracker the repair Cooks work on');
+    return normalizeUrl(tracker);
+  };
   const maxIterations = boundedInteger(input.maxIterations, 3, 1, 5, 'max-iterations');
   const maxStepRuns = boundedInteger(input.maxStepRuns, 20, 4, 30, 'max-step-runs');
   const deadline = String(input.deadline || '10h');
@@ -159,9 +165,9 @@ export function buildUrlProofWorkflow(input) {
   // The context is part of the pinned definition, so it is digested into the
   // instance identity and can never drift under a running instance.
   const evaluate = { program: node, args: [MODULE_PATH, 'evaluate', '--url', '{{inputs.url}}', '--instance', '{{instance}}', '--iteration', '{{iteration}}', '--context', JSON.stringify(context)], cwd: workspace };
-  const cook = (repo, taskUrl, verify) => ({
+  const cook = (repo, tracker, verify) => ({
     repo,
-    'task-url': taskUrl || REPAIR_TRACKER,
+    'task-url': taskUrl(tracker),
     head: repairBranch('{{instance}}', repo, '{{iteration}}'),
     placement: input.fixPlacement || 'local',
     ...(input.fixBackend ? { backend: input.fixBackend } : {}),
@@ -514,7 +520,7 @@ function writeStepOutput(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
 }
 
-const USAGE = 'usage: url-loop-controller.mjs start|workflow --url <url> --capture-producer <JSON> [--blocks-engine <path>] [--wp-codebox-bin <path>] [--output-root <path>] [--instance <token>] [--ssi-task-url <url>] [--blocks-engine-task-url <url>] [--ssi-verify <command>]... [--blocks-engine-verify <command>]... [--fix-placement local] [--fix-backend <backend>] [--wordpress-version 7.1] [--import-steps 24] [--max-iterations 3] [--max-step-runs 20] [--deadline 10h]';
+const USAGE = 'usage: url-loop-controller.mjs start|workflow --url <url> --capture-producer <JSON> --task-url <url> [--blocks-engine <path>] [--wp-codebox-bin <path>] [--output-root <path>] [--instance <token>] [--ssi-task-url <url>] [--blocks-engine-task-url <url>] [--ssi-verify <command>]... [--blocks-engine-verify <command>]... [--fix-placement local] [--fix-backend <backend>] [--wordpress-version 7.1] [--import-steps 24] [--max-iterations 3] [--max-step-runs 20] [--deadline 10h]';
 
 async function main() {
   const [operation, ...argv] = process.argv.slice(2);

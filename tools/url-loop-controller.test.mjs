@@ -5,13 +5,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
-  CAPTURE_PRODUCER_ENV, LoopBlocker, REPAIR_TRACKER, WORKFLOW_ID, WORKFLOW_SCHEMA,
+  CAPTURE_PRODUCER_ENV, LoopBlocker, WORKFLOW_ID, WORKFLOW_SCHEMA,
   buildUrlProofWorkflow, captureCommands, codeboxArgs, codeboxRecipe, compareResult, composeRepository, evaluateLocalEvidence,
   evaluationVerdict, expandTemplate, importRequest, locateCapture, orderRepairBranches, parseArgs, readImportState, repairBranch,
   resolveCaptureProducer, routeFindings, sourceIdentity, writeRepairEvidence,
 } from './url-loop-controller.mjs';
 
 const url = 'https://example.com/';
+const taskUrl = 'https://github.com/example/tracker/issues/1';
 const tmp = (prefix) => fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 // A neutral stand-in: the capture producer is operator configuration.
 const CAPTURE_REPO = 'capture-tool';
@@ -24,7 +25,7 @@ const producer = (root, properties = {}) => ({
   ...properties,
 });
 function build(root, properties = {}) {
-  return buildUrlProofWorkflow({ url, workspace: root, outputRoot: path.join(root, 'output'), blocksEngine: path.join(root, 'be'), wpCodeboxBin: path.join(root, 'codebox'), captureProducer: JSON.stringify(producer(root)), ...properties });
+  return buildUrlProofWorkflow({ url, workspace: root, outputRoot: path.join(root, 'output'), blocksEngine: path.join(root, 'be'), wpCodeboxBin: path.join(root, 'codebox'), captureProducer: JSON.stringify(producer(root)), taskUrl, ...properties });
 }
 const step = (workflow, id) => workflow.steps.find((item) => item.id === id);
 const argOf = (args, flag) => args[args.indexOf(flag) + 1];
@@ -59,7 +60,7 @@ test('one URL yields a bounded three-repository repair loop', () => {
     assert.deepEqual(fix.needs, ['evaluate']);
     assert.deepEqual(fix.when, { step: 'evaluate', output: `/repairs/${repo}`, exists: true });
     assert.equal(fix.cook.repo, repo);
-    assert.equal(fix.cook['task-url'], REPAIR_TRACKER);
+    assert.equal(fix.cook['task-url'], taskUrl);
     assert.deepEqual(fix.cook.verify, [verify]);
     assert.equal(fix.cook['draft-pr'], false);
     // Cook head and candidate discovery share one branch definition.
@@ -78,7 +79,15 @@ test('one URL yields a bounded three-repository repair loop', () => {
   assert.throws(() => build(root, { maxIterations: 9 }), /max-iterations/);
   assert.throws(() => build(root, { maxStepRuns: 1 }), /max-step-runs/);
   assert.throws(() => build(root, { deadline: 'soon' }), /deadline/);
-  assert.throws(() => buildUrlProofWorkflow({ url, workspace: root, wpCodeboxBin: root, captureProducer: producer(root) }), /must be configured/);
+  assert.throws(() => buildUrlProofWorkflow({ url, workspace: root, wpCodeboxBin: root, captureProducer: producer(root), taskUrl }), /must be configured/);
+  const previous = process.env.SSI_URL_LOOP_TASK_URL;
+  try {
+    delete process.env.SSI_URL_LOOP_TASK_URL;
+    assert.throws(() => build(root, { taskUrl: undefined }), /task-url must name the tracker/, 'there is no default tracker');
+    assert.equal(step(build(root, { taskUrl: undefined, ssiTaskUrl: 'https://example.com/ssi/1', blocksEngineTaskUrl: 'https://example.com/be/1', captureProducer: producer(root, { task_url: 'https://example.com/capture/1' }) }).workflow, 'fix-ssi').cook['task-url'], 'https://example.com/ssi/1', 'per-repository trackers alone suffice');
+  } finally {
+    if (previous !== undefined) process.env.SSI_URL_LOOP_TASK_URL = previous;
+  }
 });
 
 test('the capture producer is validated operator configuration', () => {
