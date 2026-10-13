@@ -104,6 +104,7 @@
     { "path": "tests/smoke-url-intake-admission.php", "environment": "standalone-php" },
     { "path": "tests/smoke-omitted-files-findings.php", "environment": "standalone-php" },
     { "path": "tests/smoke-font-face-unavailable.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-runtime-form-entity-degraded.php", "environment": "standalone-php" },
     { "path": "tests/smoke-source-findings.php", "environment": "standalone-php" },
     { "path": "tests/smoke-source-findings-equivalence.php", "environment": "standalone-php" },
     { "path": "tests/smoke-producer-neutrality.php", "environment": "standalone-php" },

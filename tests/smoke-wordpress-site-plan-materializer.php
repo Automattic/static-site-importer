@@ -2054,24 +2054,32 @@ $scalar_bindings_form['bindings'] = 'invalid';
 $assert( $scalar_bindings_form === Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $scalar_bindings_form ), 'malformed binding collections remain unchanged for structured provider validation' );
 $malformed_entity_plan = $runtime_form_plan;
 $malformed_entity_plan['runtime_declarations'][1]['payload']['entities'] = array( 'invalid' );
+// A form row the provider cannot admit never reaches it: the declaration is
+// skipped with one finding naming the rejected row, and the import continues.
+$form_row_rejected = static function ( $lifecycle ) use ( $form_declaration_id ): array {
+	if ( is_wp_error( $lifecycle ) || isset( $lifecycle['entities'][ $form_declaration_id ] ) ) {
+		return array();
+	}
+	return array_values( array_filter( $lifecycle['diagnostics'] ?? array(), static fn( $row ): bool => is_array( $row ) && 'runtime_entity_rows_rejected' === ( $row['code'] ?? '' ) && $form_declaration_id === ( $row['declaration_id'] ?? '' ) ) )[0] ?? array();
+};
 $malformed_entity_lifecycle = $prepare_lifecycle->invoke( null, $malformed_entity_plan, array() );
-$assert( is_wp_error( $malformed_entity_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $malformed_entity_lifecycle->get_error_code(), 'malformed form entities retain structured pre-provider rejection' );
-$malformed_entity_data = $malformed_entity_lifecycle->get_error_data();
-$assert( 'forms' === ( $malformed_entity_data['entity_collection'] ?? '' ) && count( $malformed_entity_data['errors'] ?? array() ) === ( $malformed_entity_data['error_count'] ?? 0 ) && '' !== (string) ( $malformed_entity_data['errors'][0]['path'] ?? '' ), 'a rejected declaration states which collection it belongs to and how many findings it carries' );
+$malformed_entity_finding   = $form_row_rejected( $malformed_entity_lifecycle );
+$assert( '$.forms[0]' === ( $malformed_entity_finding['path'] ?? '' ), 'malformed form entities are rejected before provider traversal' );
+$assert( 'forms' === ( $malformed_entity_finding['entity_collection'] ?? '' ) && 1 === count( $malformed_entity_finding['errors'] ?? array() ) && 1 === ( $malformed_entity_finding['rejected_count'] ?? 0 ), 'a rejected form row states which collection it belongs to and how many findings it carries' );
 
 $unknown_topology_form                                  = $topology_form;
 $unknown_topology_form['control_topology']['untrusted'] = 'reject-me';
 $unknown_topology_plan                                  = $runtime_form_plan;
 $unknown_topology_plan['runtime_declarations'][1]['payload']['entities'] = array( $unknown_topology_form );
 $unknown_topology_lifecycle = $prepare_lifecycle->invoke( null, $unknown_topology_plan, array() );
-$assert( is_wp_error( $unknown_topology_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $unknown_topology_lifecycle->get_error_code(), 'unknown runtime topology keys are rejected before provider traversal' );
+$assert( '$.forms[0].control_topology' === ( $form_row_rejected( $unknown_topology_lifecycle )['path'] ?? '' ), 'unknown runtime topology keys are rejected before provider traversal' );
 
 $self_referential_form = $topology_form;
 $self_referential_form['control_topology']['nodes'][0]['parent'] = 'wrapper-0';
 $self_referential_plan = $runtime_form_plan;
 $self_referential_plan['runtime_declarations'][1]['payload']['entities'] = array( $self_referential_form );
 $self_referential_lifecycle = $prepare_lifecycle->invoke( null, $self_referential_plan, array() );
-$assert( is_wp_error( $self_referential_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $self_referential_lifecycle->get_error_code(), 'self-referential runtime topology is rejected before provider traversal' );
+$assert( '$.forms[0].control_topology' === ( $form_row_rejected( $self_referential_lifecycle )['path'] ?? '' ), 'self-referential runtime topology is rejected before provider traversal' );
 
 $duplicate_topology_form                                       = $topology_form;
 $duplicate_topology_form['control_topology']['nodes'][1]['id'] = 'wrapper-0';
@@ -2080,7 +2088,7 @@ unset( $duplicate_topology_form['control_topology']['nodes'][1]['control'] );
 $duplicate_topology_plan = $runtime_form_plan;
 $duplicate_topology_plan['runtime_declarations'][1]['payload']['entities'] = array( $duplicate_topology_form );
 $duplicate_topology_lifecycle = $prepare_lifecycle->invoke( null, $duplicate_topology_plan, array() );
-$assert( is_wp_error( $duplicate_topology_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $duplicate_topology_lifecycle->get_error_code(), 'duplicate runtime topology identifiers are rejected before provider traversal' );
+$assert( '$.forms[0].control_topology' === ( $form_row_rejected( $duplicate_topology_lifecycle )['path'] ?? '' ), 'duplicate runtime topology identifiers are rejected before provider traversal' );
 
 $binding_method        = new ReflectionMethod( Static_Site_Importer_Entity_Materializer_Registry::class, 'block_bindings' );
 $entity_declaration_id = (string) array_key_first( $entity_lifecycle['entities'] );
