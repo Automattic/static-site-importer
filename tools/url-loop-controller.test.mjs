@@ -56,7 +56,9 @@ test('one URL yields a bounded homeboy/workflow/v1 proof: capture, evaluation ga
   assert.equal(fix.cook.repo, 'static-site-importer');
   assert.equal(fix.cook['task-url'], taskUrl);
   assert.deepEqual(fix.cook.verify, ['npm test']);
-  assert.match(fix.cook.prompt, /\{\{steps\.evaluate\.output\/report_path\}\}/);
+  assert.deepEqual(JSON.parse(fix.cook['provider-evidence']), { id: 'evaluation', source: '{{steps.evaluate.output/report_path}}' });
+  assert.doesNotMatch(fix.cook.prompt, /report_path/, 'the prompt names the evidence id, never a host path');
+  assert.match(fix.cook.prompt, /`evaluation` provider evidence/);
   // The context is pinned inside the definition, so it is part of its digest.
   assert.deepEqual(contextOf(workflow), context);
   assert.equal(context.candidate_sha, undefined, 'the candidate is an instance input, not definition state');
@@ -65,7 +67,7 @@ test('one URL yields a bounded homeboy/workflow/v1 proof: capture, evaluation ga
   assert.equal(proof.context.loop_id, `${context.loop_id}-proof-r2`);
   assert.deepEqual(proof.workflow.budget, { max_step_runs: 4, deadline: '3h' });
   assert.equal(proof.workflow.iterate.max_iterations, 2);
-  assert.deepEqual(step(proof.workflow, 'fix').cook, { repo: 'scratch', 'task-url': taskUrl, placement: 'local', backend: 'opencode', prompt: 'Fix {{inputs.url}}', verify: ['test -f FIXED', 'true'] });
+  assert.deepEqual(step(proof.workflow, 'fix').cook, { repo: 'scratch', 'task-url': taskUrl, placement: 'local', backend: 'opencode', 'provider-evidence': step(build(root).workflow, 'fix').cook['provider-evidence'], prompt: 'Fix {{inputs.url}}', verify: ['test -f FIXED', 'true'] });
   assert.throws(() => build(root, { instance: '../invalid' }), /path-safe/);
   assert.throws(() => build(root, { maxIterations: 9 }), /max-iterations/);
   assert.throws(() => build(root, { maxStepRuns: 1 }), /max-step-runs/);

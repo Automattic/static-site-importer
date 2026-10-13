@@ -12,6 +12,7 @@ export const CAPTURE_ARTIFACT_SCHEMA = 'static-site-importer/url-loop-capture/v1
 export const EVALUATION_ARTIFACT_SCHEMA = 'static-site-importer/url-loop-evaluation/v1';
 export const WORKFLOW_SCHEMA = 'homeboy/workflow/v1';
 export const WORKFLOW_ID = 'ssi-url-proof';
+export const EVALUATION_EVIDENCE_ID = 'evaluation';
 const MODULE_PATH = fileURLToPath(import.meta.url);
 const SOURCE_VIEWS = [390, 768, 1440];
 const TRANSFORMER_PACKAGE = 'automattic/blocks-engine-php-transformer';
@@ -137,12 +138,15 @@ export function buildUrlProofWorkflow(input) {
   // instance identity and can never drift under a running instance.
   const command = (stage, args) => ({ program: node, args: [MODULE_PATH, stage, '--url', '{{inputs.url}}', '--context', JSON.stringify(context), ...args], cwd: workspace });
   const verify = [input.fixVerify || 'npm test'].flat();
+  // Cook projects the evaluation report into the provider workspace as
+  // declared evidence; the prompt names it by id, never by host path.
   const cook = {
     repo: input.fixRepo || 'static-site-importer',
     'task-url': fixTaskUrl,
     placement: input.fixPlacement || 'local',
     ...(input.fixBackend ? { backend: input.fixBackend } : {}),
-    prompt: input.fixPrompt || 'Repair the static-site-importer findings for {{inputs.url}} at candidate {{inputs.candidate_sha}}. The evaluation report at {{steps.evaluate.output/report_path}} lists the findings and the missing evidence to resolve (workflow {{instance}}, iteration {{iteration}}).',
+    'provider-evidence': JSON.stringify({ id: EVALUATION_EVIDENCE_ID, source: '{{steps.evaluate.output/report_path}}' }),
+    prompt: input.fixPrompt || `Repair the static-site-importer findings for {{inputs.url}} at candidate {{inputs.candidate_sha}}. The \`${EVALUATION_EVIDENCE_ID}\` provider evidence is the evaluation report; its findings and missing evidence are the work list (workflow {{instance}}, iteration {{iteration}}).`,
     verify,
   };
   const workflow = {

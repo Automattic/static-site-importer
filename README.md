@@ -404,9 +404,10 @@ The workflow has three steps:
    `findings` when the matrix reports repairable failures, `accepted` only for a
    solved site, otherwise the evaluation status (`needs_evidence`, `needs_review`).
 3. **`fix`** is a Homeboy Cook that the `findings` verdict launches, on the
-   tracker named by `--fix-task-url` (`--fix-repo`, `--fix-verify` (repeatable,
-   default `npm test`), `--fix-placement`, `--fix-backend`, and `--fix-prompt`
-   adjust it).
+   tracker named by `--fix-task-url`. The evaluation report reaches it as the
+   `evaluation` provider evidence, so the prompt names that id rather than a
+   host path (`--fix-repo`, `--fix-verify` (repeatable, default `npm test`),
+   `--fix-placement`, `--fix-backend`, and `--fix-prompt` adjust it).
 
 The `until` gate re-runs the graph until the verdict is `accepted`. The
 `--max-iterations` and `--max-step-runs` budgets and the `--deadline` stop it
