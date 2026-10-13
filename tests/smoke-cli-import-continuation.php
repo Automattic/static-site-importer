@@ -1007,10 +1007,18 @@ class WP_CLI {
 		self::$warnings[] = $message;
 	}
 	public static function runcommand( string $command, array $options ) {
+		$request = null;
+		if ( 1 === preg_match( "/--request='([^']+)'/", $command, $match ) && is_file( $match[1] ) ) {
+			$request = json_decode( (string) file_get_contents( $match[1] ), true );
+		}
 		self::$commands[] = array(
 			'command' => $command,
 			'options' => $options,
+			'request' => $request,
 		);
+		if ( ! empty( $GLOBALS['ssi_cli_runtime_queue'] ) ) {
+			return array_shift( $GLOBALS['ssi_cli_runtime_queue'] );
+		}
 		return $GLOBALS['ssi_cli_runtime_result'] ?? (object) array(
 			'stdout'      => "notice\n" . wp_json_encode(
 				array(
@@ -1073,6 +1081,92 @@ $GLOBALS['ssi_cli_runtime_result'] = (object) array(
 $fresh_invalid = static_site_importer_cli_import_run_fresh_runtime( array( 'source' => array( 'type' => 'html' ) ) );
 $assert( 'static_site_importer_cli_step_response_invalid' === ( $fresh_invalid['error']['code'] ?? '' ), 'fresh-runtime-invalid-response-code' );
 $assert( str_contains( (string) ( $fresh_invalid['error']['message'] ?? '' ), 'code 255' ) && str_contains( (string) ( $fresh_invalid['error']['message'] ?? '' ), 'Allowed memory size exhausted' ), 'fresh-runtime-invalid-response-reports-process-failure' );
+
+// A fresh runtime the kernel kills for memory (#1634) is continued once from its
+// last durable checkpoint with the smallest units; a second kill is final.
+$killed          = static fn (): object => (object) array( 'stdout' => '', 'stderr' => 'Killed', 'return_code' => 137 );
+$step_json       = static fn ( array $body ): object => (object) array( 'stdout' => wp_json_encode( $body ), 'stderr' => '', 'return_code' => 0 );
+$resume_step     = array( 'source' => array( 'type' => 'files', 'import_id' => 'run-oom' ) );
+$continuation    = array( 'success' => true, 'continuation' => true, 'import_id' => 'run-oom', 'continuation_reason' => 'pages_remaining', 'artifact_run' => array( 'phase' => 'compiling_pages', 'progress' => array( 'receipt_count' => 1 ) ) );
+$continuation_2  = array( 'success' => true, 'continuation' => true, 'import_id' => 'run-oom', 'continuation_reason' => 'pages_remaining', 'artifact_run' => array( 'phase' => 'compiling_pages', 'progress' => array( 'receipt_count' => 2 ) ) );
+$terminal_ok     = array( 'success' => true, 'continuation' => false, 'import_id' => 'run-oom', 'theme_slug' => 'oom-site' );
+$reset_oom_state = static function () use ( $step_json ): void {
+	WP_CLI::$commands            = array();
+	WP_CLI::$warnings            = array();
+	$GLOBALS['ssi_cli_runtime_queue'] = array();
+	unset( $GLOBALS['ssi_cli_runtime_result'] );
+	static_site_importer_cli_constrained_runtime( false );
+};
+
+$reset_oom_state();
+$GLOBALS['ssi_cli_runtime_queue'] = array( $killed(), $step_json( $continuation ) );
+$recovered                        = static_site_importer_cli_import_run_fresh_runtime( $resume_step );
+$assert( ! empty( $recovered['continuation'] ) && 'run-oom' === ( $recovered['import_id'] ?? '' ), 'oom-killed-runtime-is-continued-and-returns-the-retry-result' );
+$assert( 2 === count( WP_CLI::$commands ), 'oom-killed-runtime-is-retried-exactly-once' );
+$assert( empty( WP_CLI::$commands[0]['request']['_cli_constrained_runtime'] ) && true === ( WP_CLI::$commands[1]['request']['_cli_constrained_runtime'] ?? null ), 'oom-retry-requests-the-smallest-units-and-the-first-attempt-does-not' );
+$assert( 'run-oom' === ( WP_CLI::$commands[1]['request']['source']['import_id'] ?? '' ), 'oom-retry-resumes-the-same-durable-run' );
+$assert( 1 === count( WP_CLI::$warnings ) && str_contains( WP_CLI::$warnings[0], 'signal 9' ) && str_contains( WP_CLI::$warnings[0], 'last durable checkpoint' ), 'oom-retry-is-announced' );
+$GLOBALS['ssi_cli_runtime_queue'] = array( $step_json( $continuation_2 ) );
+static_site_importer_cli_import_run_fresh_runtime( $resume_step );
+$assert( true === ( WP_CLI::$commands[2]['request']['_cli_constrained_runtime'] ?? null ), 'oom-smallest-units-persist-for-the-rest-of-the-import' );
+
+$reset_oom_state();
+$GLOBALS['ssi_cli_runtime_queue'] = array( (object) array( 'stdout' => '', 'stderr' => '', 'return_code' => 9 ), $step_json( $continuation ) );
+$direct_kill                      = static_site_importer_cli_import_run_fresh_runtime( $resume_step );
+$assert( ! empty( $direct_kill['continuation'] ) && 2 === count( WP_CLI::$commands ), 'oom-kill-reported-as-the-bare-signal-number-is-retried-too' );
+
+$reset_oom_state();
+$GLOBALS['ssi_cli_runtime_queue'] = array( $killed(), $killed() );
+$final                            = static_site_importer_cli_import_run_fresh_runtime( $resume_step );
+$assert( false === $final['success'] && 'static_site_importer_cli_import_runtime_out_of_memory' === ( $final['error']['code'] ?? '' ), 'oom-killed-twice-is-an-explicit-out-of-memory-failure' );
+$assert( 2 === count( WP_CLI::$commands ), 'oom-killed-twice-is-not-retried-again' );
+$assert( 'run-oom' === ( $final['error']['data']['import_id'] ?? '' ) && true === ( $final['error']['data']['resumable'] ?? null ), 'oom-failure-names-the-durable-run-it-can-resume' );
+$assert( str_contains( (string) ( $final['error']['message'] ?? '' ), 'out of memory' ) && ! str_contains( (string) ( $final['error']['message'] ?? '' ), 'without a JSON response' ), 'oom-failure-says-what-happened' );
+
+$reset_oom_state();
+static_site_importer_cli_constrained_runtime( true );
+$GLOBALS['ssi_cli_runtime_queue'] = array( $killed() );
+$late                             = static_site_importer_cli_import_run_fresh_runtime( $resume_step );
+$assert( 'static_site_importer_cli_import_runtime_out_of_memory' === ( $late['error']['code'] ?? '' ) && 1 === count( WP_CLI::$commands ), 'oom-kill-after-the-retry-budget-is-spent-fails-immediately' );
+
+$reset_oom_state();
+$GLOBALS['ssi_cli_runtime_queue'] = array( $killed(), $step_json( array( 'success' => false, 'error' => array( 'code' => 'static_site_importer_direct_artifact_materialization_ambiguous', 'message' => 'claimed' ) ) ) );
+$claimed                          = static_site_importer_cli_import_run_fresh_runtime( $resume_step );
+$assert( 'static_site_importer_cli_import_runtime_out_of_memory' === ( $claimed['error']['code'] ?? '' ), 'oom-kill-during-a-claimed-materialization-reports-the-kill-not-the-claim' );
+$assert( false === ( $claimed['error']['data']['resumable'] ?? null ) && str_contains( (string) ( $claimed['error']['message'] ?? '' ), 'never repeated' ), 'oom-kill-during-a-claimed-materialization-is-not-offered-as-resumable' );
+
+$reset_oom_state();
+$GLOBALS['ssi_cli_runtime_queue'] = array( $killed(), $step_json( array( 'success' => false, 'error' => array( 'code' => 'materialization_failed', 'message' => 'real failure' ) ) ) );
+$real_failure                     = static_site_importer_cli_import_run_fresh_runtime( $resume_step );
+$assert( 'materialization_failed' === ( $real_failure['error']['code'] ?? '' ), 'oom-retry-keeps-an-unrelated-failure-it-reaches' );
+
+$reset_oom_state();
+$GLOBALS['ssi_cli_runtime_queue'] = array( (object) array( 'stdout' => '', 'stderr' => "PHP Fatal error: Allowed memory size exhausted\n", 'return_code' => 255 ) );
+$php_oom                          = static_site_importer_cli_import_run_fresh_runtime( $resume_step );
+$assert( 'static_site_importer_cli_step_response_invalid' === ( $php_oom['error']['code'] ?? '' ) && 1 === count( WP_CLI::$commands ), 'only-signal-9-is-retried' );
+
+// The whole host: a killed step is continued and the import still completes.
+$reset_oom_state();
+$GLOBALS['ssi_cli_runtime_queue'] = array( $step_json( $continuation ), $killed(), $step_json( $continuation_2 ), $step_json( $terminal_ok ) );
+$host_ok                          = static_site_importer_cli_run_import_host( array( 'source' => array( 'type' => 'files', 'entrypoint' => 'index.html', 'files' => array() ) ) );
+$assert( 'completed' === $host_ok['status'] && 'oom-site' === ( $host_ok['response']['theme_slug'] ?? '' ) && 3 === $host_ok['steps'], 'host-completes-an-import-whose-runtime-was-killed-once' );
+$host_flags = array_map( static fn ( array $command ): bool => ! empty( $command['request']['_cli_constrained_runtime'] ), WP_CLI::$commands );
+$assert( array( false, false, true, true ) === $host_flags, 'host-carries-the-smallest-units-flag-only-from-the-retry-onward' );
+
+$reset_oom_state();
+$GLOBALS['ssi_cli_runtime_queue'] = array( $step_json( $continuation ), $killed(), $killed() );
+$host_oom                         = static_site_importer_cli_run_import_host( array( 'source' => array( 'type' => 'files', 'entrypoint' => 'index.html', 'files' => array() ) ) );
+$assert( 'failed' === $host_oom['status'] && 'static_site_importer_cli_import_runtime_out_of_memory' === ( $host_oom['response']['error']['code'] ?? '' ), 'host-fails-explicitly-when-the-runtime-is-killed-twice' );
+$reset_oom_state();
+
+// The smallest units a retried runtime works in.
+$base_policy = array( 'compile_fanout_pages' => 2, 'compile_workers' => 1, 'compile_shard_pages' => 2, 'compile_fanout' => null, 'compile_in_process_pages' => 1, 'compile_batches_per_invocation' => 1 );
+$normal      = static_site_importer_cli_direct_artifact_run_policy( $base_policy );
+static_site_importer_cli_constrained_runtime( true );
+$small = static_site_importer_cli_direct_artifact_run_policy( $base_policy );
+static_site_importer_cli_constrained_runtime( false );
+$assert( true === $small['yield_after_compose'] && null === $small['compile_fanout'] && 1 === $small['compile_in_process_pages'] && 1 === $small['compile_batches_per_invocation'], 'constrained-runtime-compiles-one-page-in-process-and-yields-after-each-batch' );
+$assert( ! isset( $small['compile_workers'] ) || 1 === $small['compile_workers'], 'constrained-runtime-never-fans-out-workers' );
 
 // Externally driven continuation (#1779).
 //
