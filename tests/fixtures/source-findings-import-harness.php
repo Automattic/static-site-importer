@@ -24,6 +24,7 @@ $GLOBALS['ssi_harness_filters']    = array();
 $GLOBALS['ssi_harness_imports']    = array();
 $GLOBALS['ssi_harness_theme_slug'] = 'source-findings-fixture';
 
+// phpcs:ignore Generic.Classes.DuplicateClassName.Found -- Standalone harness; never loaded with direct-import-harness.php.
 class WP_Error {
 	public function __construct( private string $code, private string $message = '', private $data = null ) {}
 	public function get_error_code(): string {
@@ -89,6 +90,7 @@ foreach (
 	require_once $ssi_harness_root . '/includes/' . $ssi_harness_include;
 }
 
+// phpcs:ignore Generic.Classes.DuplicateClassName.Found -- Standalone harness; never loaded with direct-import-harness.php.
 class Static_Site_Importer_Theme_Generator {
 	public static function import_website_artifact( array $artifact, array $args = array() ) {
 		if ( 'prepare' === ( $args['runtime_lifecycle_phase'] ?? '' ) ) {
