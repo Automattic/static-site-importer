@@ -1,0 +1,168 @@
+{
+	"schema": "static-site-importer/source-findings/v1",
+	"entrypoint": "index.html",
+	"complete": false,
+	"usable": true,
+	"summary": {
+		"routes_discovered": 9,
+		"routes_captured": 7,
+		"routes_failed": 2,
+		"routes_omitted": 0,
+		"unresolved_anchors": 0
+	},
+	"findings": [
+		{
+			"code": "route_capture_degraded",
+			"severity": "warning",
+			"unit": "route",
+			"loss_class": "degraded_unit",
+			"location": {
+				"url": "https://example.test/about/",
+				"path": "about.html"
+			},
+			"message": "mobile/screenshot-scrolled: screenshot timeout",
+			"owning_layer": "data-liberation-agent",
+			"metrics": {
+				"failedStages": 1,
+				"stage": "mobile"
+			}
+		},
+		{
+			"code": "route_export_failed",
+			"severity": "error",
+			"unit": "route",
+			"loss_class": "omitted_unit",
+			"location": {
+				"url": "https://example.test/pricing/"
+			},
+			"message": "cannot export Pricing",
+			"owning_layer": "data-liberation-agent"
+		},
+		{
+			"code": "route_path_collision",
+			"severity": "warning",
+			"unit": "route",
+			"loss_class": "omitted_unit",
+			"location": {
+				"url": "https://example.test/a.html"
+			},
+			"message": "two routes export to a.html",
+			"owning_layer": "data-liberation-agent"
+		},
+		{
+			"code": "route_off_origin",
+			"severity": "warning",
+			"unit": "route",
+			"loss_class": "omitted_unit",
+			"location": {
+				"url": "https://elsewhere.test/x/"
+			},
+			"message": "route resolves off the capture origin",
+			"owning_layer": "data-liberation-agent"
+		},
+		{
+			"code": "route_profile_uncaptured",
+			"severity": "error",
+			"unit": "profile",
+			"loss_class": "omitted_unit",
+			"location": {
+				"url": "https://example.test/",
+				"profile": "tablet"
+			},
+			"message": "no tablet document",
+			"owning_layer": "data-liberation-agent"
+		},
+		{
+			"code": "route_capture_skipped_budget",
+			"severity": "warning",
+			"unit": "route",
+			"loss_class": "omitted_unit",
+			"location": {
+				"url": "https://example.test/archive/page-9/"
+			},
+			"message": "capture budget exhausted",
+			"owning_layer": "data-liberation-agent",
+			"metrics": {
+				"budgetMs": 600000,
+				"elapsedMs": 600412
+			}
+		},
+		{
+			"code": "asset_exceeds_file_limit",
+			"severity": "warning",
+			"unit": "asset",
+			"loss_class": "omitted_unit",
+			"location": {
+				"url": "https://example.test/assets/tour.mp4",
+				"path": "assets/tour.mp4"
+			},
+			"message": "asset exceeds the per-file limit",
+			"owning_layer": "data-liberation-agent",
+			"metrics": {
+				"bytes": 99000000,
+				"limit": 52428800
+			}
+		},
+		{
+			"code": "stylesheet_unparseable",
+			"severity": "warning",
+			"unit": "stylesheet",
+			"loss_class": "degraded_unit",
+			"location": {
+				"url": "https://example.test/assets/site.css",
+				"path": "assets/site.css"
+			},
+			"message": "stylesheet could not be parsed",
+			"owning_layer": "data-liberation-agent"
+		},
+		{
+			"code": "native_timeline_unproven",
+			"severity": "warning",
+			"unit": "block",
+			"loss_class": "degraded_unit",
+			"location": {
+				"url": "https://example.test/motion/",
+				"path": "motion/index.html"
+			},
+			"message": "timeline not proven native",
+			"owning_layer": "data-liberation-agent"
+		},
+		{
+			"code": "disclosure_unrestored",
+			"severity": "warning",
+			"unit": "block",
+			"loss_class": "degraded_unit",
+			"location": {
+				"url": "https://example.test/faq/",
+				"path": "faq/index.html"
+			},
+			"message": "disclosure state not restored",
+			"owning_layer": "data-liberation-agent",
+			"metrics": {
+				"count": 2
+			}
+		},
+		{
+			"code": "a_future_capture_code",
+			"severity": "warning",
+			"unit": "block",
+			"loss_class": "degraded_unit",
+			"location": {
+				"url": "https://example.test/"
+			},
+			"message": "a code the importer does not register",
+			"owning_layer": "data-liberation-agent"
+		},
+		{
+			"code": "route_capture_failed",
+			"severity": "warning",
+			"unit": "route",
+			"loss_class": "omitted_unit",
+			"location": {
+				"url": "https://example.test/slow/"
+			},
+			"message": "desktop/goto: Navigation timeout",
+			"owning_layer": "data-liberation-agent"
+		}
+	]
+}

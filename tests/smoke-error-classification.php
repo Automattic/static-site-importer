@@ -36,7 +36,7 @@ const SSI_REPRESENTABILITY_BASELINE = 45;
 
 const SSI_ERROR_CLASSES = array( 'integrity', 'operational', 'representability', 'propagated', 'programmer' );
 const SSI_ERROR_UNITS   = array( 'item', 'block', 'page', 'route', 'asset' );
-const SSI_ERROR_LAYERS  = array( 'static-site-importer', 'blocks-engine', 'data-liberation-agent', 'wordpress' );
+const SSI_ERROR_LAYERS  = array( 'static-site-importer', 'blocks-engine', 'wordpress' );
 
 /**
  * Normalize a token list into a whitespace-free expression string.

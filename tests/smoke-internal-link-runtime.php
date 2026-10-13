@@ -29,6 +29,7 @@ function is_ssl(): bool {
 }
 $GLOBALS['ssi_link_home']  = 'https://playground.test/scope:abc/';
 $GLOBALS['ssi_link_pages'] = array( 'how-it-works' => 5 );
+require dirname( __DIR__ ) . '/includes/class-static-site-importer-capture-evidence.php';
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-internal-link-runtime.php';
 
 $assert = static function ( bool $condition, string $message ): void {
@@ -54,41 +55,41 @@ $assert(
 );
 $assert( '<p>no links</p>' === Static_Site_Importer_Internal_Link_Runtime::filter_rendered_block( '<p>no links</p>' ), 'Blocks without root-relative links are untouched.' );
 
-// Data Liberation marks member sign-in controls (`data-dla-member-login`)
+// A capture producer marks member sign-in controls (`data-blocks-engine-capture-member-login`)
 // without choosing a target; WordPress points them at its own login and
 // brings the reader back to the page they signed in from.
 $_SERVER['HTTP_HOST']   = 'playground.test';
 $_SERVER['REQUEST_URI'] = '/scope:abc/bylaws/';
 $login                  = 'https://playground.test/scope:abc/wp-login.php?redirect_to=https%3A%2F%2Fplayground.test%2Fscope%3Aabc%2Fbylaws%2F';
-$header                 = '<div class="wixui-login-social-bar"><a class="O4eQsz" data-testid="handle-button" data-dla-member-login="wix"><span>Sign In</span></a></div>';
+$header                 = '<div class="wixui-login-social-bar"><a class="O4eQsz" data-testid="handle-button" data-blocks-engine-capture-member-login="wix"><span>Sign In</span></a></div>';
 $assert(
-	'<div class="wixui-login-social-bar"><a href="' . esc_url( $login ) . '" class="O4eQsz" data-testid="handle-button" data-dla-member-login="wix"><span>Sign In</span></a></div>' === Static_Site_Importer_Internal_Link_Runtime::filter_rendered_block( $header ),
+	'<div class="wixui-login-social-bar"><a href="' . esc_url( $login ) . '" class="O4eQsz" data-testid="handle-button" data-blocks-engine-capture-member-login="wix"><span>Sign In</span></a></div>' === Static_Site_Importer_Internal_Link_Runtime::filter_rendered_block( $header ),
 	'A marked sign-in control without a target links to the WordPress login.'
 );
-$hero = '<a data-testid="linkElement" href="https://www.source.test/account/my-account" class="wixui-button" data-dla-member-login="wix">Sign In</a> <a href="https://www.source.test/account/other">Unmarked</a>';
+$hero = '<a data-testid="linkElement" href="https://www.source.test/account/my-account" class="wixui-button" data-blocks-engine-capture-member-login="wix">Sign In</a> <a href="https://www.source.test/account/other">Unmarked</a>';
 $assert(
-	'<a href="' . esc_url( $login ) . '" data-testid="linkElement" class="wixui-button" data-dla-member-login="wix">Sign In</a> <a href="https://www.source.test/account/other">Unmarked</a>' === Static_Site_Importer_Internal_Link_Runtime::filter_content( $hero ),
+	'<a href="' . esc_url( $login ) . '" data-testid="linkElement" class="wixui-button" data-blocks-engine-capture-member-login="wix">Sign In</a> <a href="https://www.source.test/account/other">Unmarked</a>' === Static_Site_Importer_Internal_Link_Runtime::filter_content( $hero ),
 	'A marked link into the source members area is replaced by the WordPress login in post content; unmarked links stay.'
 );
 $assert( str_contains( Static_Site_Importer_Internal_Link_Runtime::filter_rendered_block( $hero ), 'href="' . esc_url( $login ) . '" data-testid="linkElement"' ), 'Rendered blocks resolve marked links too.' );
 
-// Data Liberation's durable marker is a class: Blocks Engine keeps it on the
+// The durable capture marker is a class: Blocks Engine keeps it on the
 // core/button wrapper (dropping data attributes), so the Wix login-bar button
 // arrives as a styled core/button. Its inner button becomes a login link with
 // the same classes, icon and label.
-$core_button = '<div class="wp-block-button O4eQsz dla-member-login-wix blocks-engine-control-x-48"><button type="button" class="wp-block-button__link wp-element-button"><img src="avatar.svg" alt="" class="be-inline-geometry-1"><mark class="HuH6Ex">Sign In</mark></button></div>';
+$core_button = '<div class="wp-block-button O4eQsz blocks-engine-capture-member-login-wix blocks-engine-control-x-48"><button type="button" class="wp-block-button__link wp-element-button"><img src="avatar.svg" alt="" class="be-inline-geometry-1"><mark class="HuH6Ex">Sign In</mark></button></div>';
 $assert(
-	'<div class="wp-block-button O4eQsz dla-member-login-wix blocks-engine-control-x-48"><a href="' . esc_url( $login ) . '" class="wp-block-button__link wp-element-button"><img src="avatar.svg" alt="" class="be-inline-geometry-1"><mark class="HuH6Ex">Sign In</mark></a></div>' === Static_Site_Importer_Internal_Link_Runtime::filter_rendered_block( $core_button ),
+	'<div class="wp-block-button O4eQsz blocks-engine-capture-member-login-wix blocks-engine-control-x-48"><a href="' . esc_url( $login ) . '" class="wp-block-button__link wp-element-button"><img src="avatar.svg" alt="" class="be-inline-geometry-1"><mark class="HuH6Ex">Sign In</mark></a></div>' === Static_Site_Importer_Internal_Link_Runtime::filter_rendered_block( $core_button ),
 	'The button inside a marked core/button becomes a link to the WordPress login, keeping its classes and children.'
 );
-$bare_button = '<button type="button" class="O4eQsz dla-member-login-wix"><span>Sign In</span></button><button type="button">Menu</button>';
+$bare_button = '<button type="button" class="O4eQsz blocks-engine-capture-member-login-wix"><span>Sign In</span></button><button type="button">Menu</button>';
 $assert(
-	'<a href="' . esc_url( $login ) . '" class="O4eQsz dla-member-login-wix"><span>Sign In</span></a><button type="button">Menu</button>' === Static_Site_Importer_Internal_Link_Runtime::filter_rendered_block( $bare_button ),
+	'<a href="' . esc_url( $login ) . '" class="O4eQsz blocks-engine-capture-member-login-wix"><span>Sign In</span></a><button type="button">Menu</button>' === Static_Site_Importer_Internal_Link_Runtime::filter_rendered_block( $bare_button ),
 	'A marked button becomes a login link; other buttons stay buttons.'
 );
-$class_link = '<a href="https://www.source.test/account/my-account" class="twJknM wixui-button dla-member-login-wix">Sign In</a>';
+$class_link = '<a href="https://www.source.test/account/my-account" class="twJknM wixui-button blocks-engine-capture-member-login-wix">Sign In</a>';
 $assert(
-	'<a href="' . esc_url( $login ) . '" class="twJknM wixui-button dla-member-login-wix">Sign In</a>' === Static_Site_Importer_Internal_Link_Runtime::filter_content( $class_link ),
+	'<a href="' . esc_url( $login ) . '" class="twJknM wixui-button blocks-engine-capture-member-login-wix">Sign In</a>' === Static_Site_Importer_Internal_Link_Runtime::filter_content( $class_link ),
 	'A link marked only by class is pointed at the WordPress login.'
 );
 $plain = '<div class="wp-block-button"><button type="button" class="wp-block-button__link">Go</button></div>';
@@ -115,6 +116,19 @@ $assert( str_contains( $bootstrap, '// Existing bootstrap.' ) && str_contains( $
 $assert( str_contains( $bootstrap, "require_once get_stylesheet_directory() . '/portable-internal-links.php'" ) && str_contains( $bootstrap, 'SSI_Theme_89_HEARTH_BISTRO_Internal_Link_Runtime::register()' ), 'The portable theme bootstrap must load and register the resolver after SSI is gone.' );
 $assert( str_contains( $runtime, 'final class SSI_Theme_89_HEARTH_BISTRO_Internal_Link_Runtime' ) && ! str_contains( $runtime, 'Static_Site_Importer_Internal_Link_Runtime' ), 'The generated theme owns a theme-scoped copy of the resolver.' );
 $assert( str_contains( $route_runtime, 'final class SSI_Theme_89_HEARTH_BISTRO_Source_Route_Redirect' ) && str_contains( $bootstrap, "'/portable-source-routes.php'" ), 'Core-only themes deliver the canonical source route resolver without an importer or companion plugin.' );
+
+// The theme copy runs without the plugin: the capture-evidence names it reads are literals, and it still
+// points a marked sign-in control at the WordPress login in a process that never loads SSI.
+$assert( 1 !== preg_match( '/Static_Site_Importer_Capture_Evidence::[A-Z]/', $runtime ) && str_contains( $runtime, var_export( Static_Site_Importer_Capture_Evidence::MEMBER_LOGIN_CLASS_PREFIX, true ) ), 'The generated theme copy inlines the capture-evidence names.' );
+$standalone_dir = sys_get_temp_dir() . '/ssi-standalone-links-' . bin2hex( random_bytes( 4 ) );
+mkdir( $standalone_dir );
+file_put_contents( $standalone_dir . '/portable-internal-links.php', $runtime );
+file_put_contents(
+	$standalone_dir . '/run.php',
+	'<?php define( "ABSPATH", "/" ); $GLOBALS["ssi_link_home"] = "https://playground.test/scope:abc/"; $_SERVER["HTTP_HOST"] = "playground.test"; $_SERVER["REQUEST_URI"] = "/scope:abc/bylaws/"; require ' . var_export( __DIR__ . '/fixtures/link-runtime-stubs.php', true ) . '; require ' . var_export( $standalone_dir . '/portable-internal-links.php', true ) . '; echo SSI_Theme_89_HEARTH_BISTRO_Internal_Link_Runtime::filter_content( ' . var_export( $class_link, true ) . ' );'
+);
+$standalone_output = (string) shell_exec( escapeshellarg( PHP_BINARY ) . ' ' . escapeshellarg( $standalone_dir . '/run.php' ) . ' 2>&1' );
+$assert( Static_Site_Importer_Internal_Link_Runtime::filter_content( $class_link ) === $standalone_output, 'The generated theme copy resolves member sign-in without the plugin.', $standalone_output );
 
 // The theme copy and the plugin class coexist in either load order (#1820).
 foreach ( array( 'theme-first', 'plugin-first' ) as $order ) {

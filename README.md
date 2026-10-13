@@ -513,7 +513,7 @@ Every `new WP_Error(` and `throw new` in `includes/*.php` is classified in `test
 
 ### Loss Ledger Findings
 
-The import report records each finding once, with a loss class and an acceptability. Classes come from `Static_Site_Importer_Diagnostic_Loss_Classes`; the cross-layer contract is `docs/contracts/loss-ledger.md` in Automattic/data-liberation-agent.
+The import report records each finding once, with a loss class and an acceptability. Classes come from `Static_Site_Importer_Diagnostic_Loss_Classes`. Producers report their own losses through `website/source-findings.json` ([`docs/contracts/website-artifact-evidence.md`](docs/contracts/website-artifact-evidence.md)).
 
 | Acceptability | Loss classes | Meaning |
 |---|---|---|
@@ -522,7 +522,7 @@ The import report records each finding once, with a loss class and an acceptabil
 | `accepted_reported_loss` | `page_compile_omitted`, `degraded_unit`, `omitted_unit` | A producer hit a representability limit confined to one unit. The import completes and the loss is reported. |
 | `unacceptable_imported_output_defect` | `unsupported_loss`, `importer_materialization_bug`, `unrecognized_loss_class` | The imported output is defective. |
 
-Degrade codes are classified by code, before any explicit `loss_class`, contract repair lane or heuristic. `unit` and `owning_layer` fill in only when the producer row names none:
+Degrade codes SSI and Blocks Engine own are classified by code, before any explicit `loss_class`, contract repair lane or heuristic. `unit` and `owning_layer` fill in only when the producer row names none. Other producers' rows carry their own `loss_class`, `unit` and `owning_layer` (see source findings below):
 
 | Code | Loss class | Unit | Owning layer |
 |---|---|---|---|
@@ -547,23 +547,12 @@ Degrade codes are classified by code, before any explicit `loss_class`, contract
 | `static_site_importer_url_route_omitted` | `omitted_unit` | `route` | `static-site-importer` |
 | `font_face_unavailable` | `omitted_unit` | `asset` | `static-site-importer` |
 | `omitted_artifact_files`, `omitted_artifact_file` | `omitted_unit` | `file` | `blocks-engine` |
-| `route_capture_failed` | `omitted_unit` | `route` | `data-liberation-agent` |
-| `route_export_failed` | `omitted_unit` | `route` | `data-liberation-agent` |
-| `route_path_collision` | `omitted_unit` | `route` | `data-liberation-agent` |
-| `route_off_origin` | `omitted_unit` | `route` | `data-liberation-agent` |
-| `route_profile_uncaptured` | `omitted_unit` | `profile` | `data-liberation-agent` |
-| `route_capture_skipped_budget` | `omitted_unit` | `route` | `data-liberation-agent` |
-| `asset_exceeds_file_limit` | `omitted_unit` | `asset` | `data-liberation-agent` |
-| `route_capture_degraded` | `degraded_unit` | `route` | `data-liberation-agent` |
-| `stylesheet_unparseable` | `degraded_unit` | `stylesheet` | `data-liberation-agent` |
-| `native_timeline_unproven` | `degraded_unit` | `block` | `data-liberation-agent` |
-| `disclosure_unrestored` | `degraded_unit` | `block` | `data-liberation-agent` |
 
 `degraded_unit` keeps the unit with reduced fidelity; `omitted_unit` removes it from the import. Blocks Engine's file-drop codes (`file_limit_exceeded`, `artifact_file_too_large`, `artifact_total_too_large`, and the aggregate `artifact_inputs_rejected`) are re-owned as `omitted_artifact_files` / `omitted_artifact_file`; the rest of the site imports, and `dropped_artifact_files` stays a quality failure reason, so a `fail_on_quality` caller can still refuse the import. A `font_face_unavailable` row carries a `resolution` of `dropped` (the theme uses its fallback font) or `remote_import_retained` (the source's Google `@import` is kept); a font digest mismatch fails closed. Blocks Engine repair lanes `restore_compiled_document_identity` and `restore_projected_selector_binding` map to `unsupported_loss` and `editable_approximation`.
 
-#### Data Liberation Agent capture findings
+#### Source findings
 
-A Data Liberation Agent website artifact carries `website/capture-findings.json` (schema `data-liberation-agent/capture-findings/v1`): the routes, profiles, stylesheets and evidence blocks capture dropped or degraded. At intake, `Static_Site_Importer_Capture_Findings` removes the file from the site and adds one report row per finding, plus one per missing route without a finding row. Rows carry `owning_layer: data-liberation-agent`, `unit`, `location` (`website/<path>`, else the source URL), `url`, `message` (DLA `reason`) and numeric `metrics`, and are classified by code from the table above. A capture code this importer does not know yet is stamped `degraded_unit`. None of these rows fails the import. An artifact without the file imports unchanged; a file that cannot be read or fails validation adds one `capture_findings_unreadable` warning. The producer contract is `docs/contracts/loss-ledger.md` in Automattic/data-liberation-agent.
+A website artifact may carry `website/source-findings.json` (schema `static-site-importer/source-findings/v1`): the routes, pages, blocks, assets, stylesheets or profiles its producer dropped or degraded. At intake, `Static_Site_Importer_Source_Findings` removes the file from the site and adds one report row per finding, with the row's own `code`, `severity`, `unit`, `loss_class` (`omitted_unit` or `degraded_unit`), `owning_layer`, `location`, `message` and numeric `metrics`. None of these rows fails the import. A row outside SSI's vocabulary stays visibly `unrecognized_loss_class`. An artifact without the file imports unchanged; a file that cannot be read or fails validation adds one `source_findings_unreadable` warning. The contract, including the capture evidence names SSI reads from Blocks Engine's vocabulary, is [`docs/contracts/website-artifact-evidence.md`](docs/contracts/website-artifact-evidence.md).
 
 #### Canonical finding fields
 
@@ -575,7 +564,7 @@ A Data Liberation Agent website artifact carries `website/capture-findings.json`
 | `severity` | producer `severity`, else derived from `type` |
 | `unit` | producer `unit`, then the degrade-code table, else `''` |
 | `location` | `source_path`, `path`, `url`, then Blocks Engine `context.source_path`. A nested `context.source_path` also fills a missing top-level `source_path`. |
-| `message` | `message`, `summary`, `reason` (free text from Data Liberation Agent), `error_message` |
+| `message` | `message`, `summary`, `reason` (producer free text), `error_message` |
 | `reason_code` | `reason_code`, `reason`, `error_code`, else `type` |
 | `metrics` | numeric `metrics` entries. Blocks Engine editability `context.metric`/`actual`/`maximum` becomes `<metric>` and `<metric>_maximum`, and `omitted_count` is copied in. Empty map when none. |
 | `owning_layer` | producer `owning_layer`, then the degrade-code table, then `static-site-importer` for a `static_site_importer_*` code or `blocks-engine` for a Blocks Engine `source` class, else `''` |

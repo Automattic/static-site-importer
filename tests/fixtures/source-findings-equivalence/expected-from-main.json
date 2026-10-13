@@ -1,0 +1,1432 @@
+{
+    "recorded_from": "static-site-importer@1fe42098b46b5176d30591deca75dfeab18812fe",
+    "command": "php tests/smoke-source-findings-equivalence.php --record=<checkout>",
+    "findings": {
+        "success": true,
+        "pages": [
+            "website/about.html",
+            "website/index.html"
+        ],
+        "loss_rows": [
+            {
+                "id": "diag-003-data-liberation-agent-route_capture_degraded-websiteabouthtml",
+                "severity": "warning",
+                "category": "import_quality",
+                "reason_code": "route_capture_degraded",
+                "suggested_repair_class": "inspect_import_diagnostic",
+                "repair_class": "inspect_import_diagnostic",
+                "source_path": "website/about.html",
+                "loss_class": "degraded_unit",
+                "diagnostic_class": "degraded_unit",
+                "acceptability": "accepted_reported_loss",
+                "source_diagnostic": {
+                    "id": "diag-003-data-liberation-agent-route_capture_degraded-websiteabouthtml",
+                    "type": "data-liberation-agent",
+                    "code": "route_capture_degraded",
+                    "reason_code": "route_capture_degraded",
+                    "message": "mobile/screenshot-scrolled: screenshot timeout",
+                    "source_path": "website/about.html",
+                    "stage": "capture"
+                },
+                "context": {
+                    "url": "https://example.test/about/"
+                },
+                "code": "route_capture_degraded",
+                "diagnostic_code": "route_capture_degraded",
+                "type": "data-liberation-agent",
+                "stage": "capture",
+                "unit": "route",
+                "owning_layer": "data-liberation-agent",
+                "url": "https://example.test/about/",
+                "message": "mobile/screenshot-scrolled: screenshot timeout",
+                "metrics": {
+                    "failedStages": 1
+                },
+                "location": "website/about.html"
+            },
+            {
+                "id": "diag-004-data-liberation-agent-route_export_failed-httpsexampletestpricing",
+                "severity": "error",
+                "category": "import_quality",
+                "reason_code": "route_export_failed",
+                "suggested_repair_class": "inspect_import_diagnostic",
+                "repair_class": "inspect_import_diagnostic",
+                "source_path": "https://example.test/pricing/",
+                "loss_class": "omitted_unit",
+                "diagnostic_class": "omitted_unit",
+                "acceptability": "accepted_reported_loss",
+                "source_diagnostic": {
+                    "id": "diag-004-data-liberation-agent-route_export_failed-httpsexampletestpricing",
+                    "type": "data-liberation-agent",
+                    "code": "route_export_failed",
+                    "reason_code": "route_export_failed",
+                    "message": "cannot export Pricing",
+                    "source_path": "https://example.test/pricing/",
+                    "stage": "capture"
+                },
+                "context": {
+                    "url": "https://example.test/pricing/"
+                },
+                "code": "route_export_failed",
+                "diagnostic_code": "route_export_failed",
+                "type": "data-liberation-agent",
+                "stage": "capture",
+                "unit": "route",
+                "owning_layer": "data-liberation-agent",
+                "url": "https://example.test/pricing/",
+                "message": "cannot export Pricing",
+                "metrics": [],
+                "location": "https://example.test/pricing/"
+            },
+            {
+                "id": "diag-005-data-liberation-agent-route_path_collision-httpsexampletestahtml",
+                "severity": "warning",
+                "category": "import_quality",
+                "reason_code": "route_path_collision",
+                "suggested_repair_class": "inspect_import_diagnostic",
+                "repair_class": "inspect_import_diagnostic",
+                "source_path": "https://example.test/a.html",
+                "loss_class": "omitted_unit",
+                "diagnostic_class": "omitted_unit",
+                "acceptability": "accepted_reported_loss",
+                "source_diagnostic": {
+                    "id": "diag-005-data-liberation-agent-route_path_collision-httpsexampletestahtml",
+                    "type": "data-liberation-agent",
+                    "code": "route_path_collision",
+                    "reason_code": "route_path_collision",
+                    "message": "two routes export to a.html",
+                    "source_path": "https://example.test/a.html",
+                    "stage": "capture"
+                },
+                "context": {
+                    "url": "https://example.test/a.html"
+                },
+                "code": "route_path_collision",
+                "diagnostic_code": "route_path_collision",
+                "type": "data-liberation-agent",
+                "stage": "capture",
+                "unit": "route",
+                "owning_layer": "data-liberation-agent",
+                "url": "https://example.test/a.html",
+                "message": "two routes export to a.html",
+                "metrics": [],
+                "location": "https://example.test/a.html"
+            },
+            {
+                "id": "diag-006-data-liberation-agent-route_off_origin-httpselsewheretestx",
+                "severity": "warning",
+                "category": "import_quality",
+                "reason_code": "route_off_origin",
+                "suggested_repair_class": "inspect_import_diagnostic",
+                "repair_class": "inspect_import_diagnostic",
+                "source_path": "https://elsewhere.test/x/",
+                "loss_class": "omitted_unit",
+                "diagnostic_class": "omitted_unit",
+                "acceptability": "accepted_reported_loss",
+                "source_diagnostic": {
+                    "id": "diag-006-data-liberation-agent-route_off_origin-httpselsewheretestx",
+                    "type": "data-liberation-agent",
+                    "code": "route_off_origin",
+                    "reason_code": "route_off_origin",
+                    "message": "route resolves off the capture origin",
+                    "source_path": "https://elsewhere.test/x/",
+                    "stage": "capture"
+                },
+                "context": {
+                    "url": "https://elsewhere.test/x/"
+                },
+                "code": "route_off_origin",
+                "diagnostic_code": "route_off_origin",
+                "type": "data-liberation-agent",
+                "stage": "capture",
+                "unit": "route",
+                "owning_layer": "data-liberation-agent",
+                "url": "https://elsewhere.test/x/",
+                "message": "route resolves off the capture origin",
+                "metrics": [],
+                "location": "https://elsewhere.test/x/"
+            },
+            {
+                "id": "diag-007-data-liberation-agent-route_profile_uncaptured-httpsexampletest",
+                "severity": "error",
+                "category": "import_quality",
+                "reason_code": "route_profile_uncaptured",
+                "suggested_repair_class": "inspect_import_diagnostic",
+                "repair_class": "inspect_import_diagnostic",
+                "source_path": "https://example.test/",
+                "loss_class": "omitted_unit",
+                "diagnostic_class": "omitted_unit",
+                "acceptability": "accepted_reported_loss",
+                "source_diagnostic": {
+                    "id": "diag-007-data-liberation-agent-route_profile_uncaptured-httpsexampletest",
+                    "type": "data-liberation-agent",
+                    "code": "route_profile_uncaptured",
+                    "reason_code": "route_profile_uncaptured",
+                    "message": "no tablet document",
+                    "source_path": "https://example.test/",
+                    "stage": "capture"
+                },
+                "context": {
+                    "url": "https://example.test/",
+                    "profile": "tablet"
+                },
+                "code": "route_profile_uncaptured",
+                "diagnostic_code": "route_profile_uncaptured",
+                "type": "data-liberation-agent",
+                "stage": "capture",
+                "unit": "profile",
+                "owning_layer": "data-liberation-agent",
+                "url": "https://example.test/",
+                "message": "no tablet document",
+                "metrics": [],
+                "location": "https://example.test/"
+            },
+            {
+                "id": "diag-008-data-liberation-agent-route_capture_skipped_budget-httpsexampletestarchivepage-9",
+                "severity": "warning",
+                "category": "import_quality",
+                "reason_code": "route_capture_skipped_budget",
+                "suggested_repair_class": "inspect_import_diagnostic",
+                "repair_class": "inspect_import_diagnostic",
+                "source_path": "https://example.test/archive/page-9/",
+                "loss_class": "omitted_unit",
+                "diagnostic_class": "omitted_unit",
+                "acceptability": "accepted_reported_loss",
+                "source_diagnostic": {
+                    "id": "diag-008-data-liberation-agent-route_capture_skipped_budget-httpsexampletestarchivepage-9",
+                    "type": "data-liberation-agent",
+                    "code": "route_capture_skipped_budget",
+                    "reason_code": "route_capture_skipped_budget",
+                    "message": "capture budget exhausted",
+                    "source_path": "https://example.test/archive/page-9/",
+                    "stage": "capture"
+                },
+                "context": {
+                    "url": "https://example.test/archive/page-9/"
+                },
+                "code": "route_capture_skipped_budget",
+                "diagnostic_code": "route_capture_skipped_budget",
+                "type": "data-liberation-agent",
+                "stage": "capture",
+                "unit": "route",
+                "owning_layer": "data-liberation-agent",
+                "url": "https://example.test/archive/page-9/",
+                "message": "capture budget exhausted",
+                "metrics": {
+                    "budgetMs": 600000,
+                    "elapsedMs": 600412
+                },
+                "location": "https://example.test/archive/page-9/"
+            },
+            {
+                "id": "diag-009-data-liberation-agent-asset_exceeds_file_limit-websiteassetstourmp4",
+                "severity": "warning",
+                "category": "import_quality",
+                "reason_code": "asset_exceeds_file_limit",
+                "suggested_repair_class": "inspect_import_diagnostic",
+                "repair_class": "inspect_import_diagnostic",
+                "source_path": "website/assets/tour.mp4",
+                "loss_class": "omitted_unit",
+                "diagnostic_class": "omitted_unit",
+                "acceptability": "accepted_reported_loss",
+                "source_diagnostic": {
+                    "id": "diag-009-data-liberation-agent-asset_exceeds_file_limit-websiteassetstourmp4",
+                    "type": "data-liberation-agent",
+                    "code": "asset_exceeds_file_limit",
+                    "reason_code": "asset_exceeds_file_limit",
+                    "message": "asset exceeds the per-file limit",
+                    "source_path": "website/assets/tour.mp4",
+                    "stage": "capture"
+                },
+                "context": {
+                    "url": "https://example.test/assets/tour.mp4"
+                },
+                "code": "asset_exceeds_file_limit",
+                "diagnostic_code": "asset_exceeds_file_limit",
+                "type": "data-liberation-agent",
+                "stage": "capture",
+                "unit": "asset",
+                "owning_layer": "data-liberation-agent",
+                "url": "https://example.test/assets/tour.mp4",
+                "message": "asset exceeds the per-file limit",
+                "metrics": {
+                    "bytes": 99000000,
+                    "limit": 52428800
+                },
+                "location": "website/assets/tour.mp4"
+            },
+            {
+                "id": "diag-010-data-liberation-agent-stylesheet_unparseable-websiteassetssitecss",
+                "severity": "warning",
+                "category": "import_quality",
+                "reason_code": "stylesheet_unparseable",
+                "suggested_repair_class": "inspect_import_diagnostic",
+                "repair_class": "inspect_import_diagnostic",
+                "source_path": "website/assets/site.css",
+                "loss_class": "degraded_unit",
+                "diagnostic_class": "degraded_unit",
+                "acceptability": "accepted_reported_loss",
+                "source_diagnostic": {
+                    "id": "diag-010-data-liberation-agent-stylesheet_unparseable-websiteassetssitecss",
+                    "type": "data-liberation-agent",
+                    "code": "stylesheet_unparseable",
+                    "reason_code": "stylesheet_unparseable",
+                    "message": "stylesheet could not be parsed",
+                    "source_path": "website/assets/site.css",
+                    "stage": "capture"
+                },
+                "context": {
+                    "url": "https://example.test/assets/site.css"
+                },
+                "code": "stylesheet_unparseable",
+                "diagnostic_code": "stylesheet_unparseable",
+                "type": "data-liberation-agent",
+                "stage": "capture",
+                "unit": "stylesheet",
+                "owning_layer": "data-liberation-agent",
+                "url": "https://example.test/assets/site.css",
+                "message": "stylesheet could not be parsed",
+                "metrics": [],
+                "location": "website/assets/site.css"
+            },
+            {
+                "id": "diag-011-data-liberation-agent-native_timeline_unproven-websitemotionindexhtml",
+                "severity": "warning",
+                "category": "import_quality",
+                "reason_code": "native_timeline_unproven",
+                "suggested_repair_class": "inspect_import_diagnostic",
+                "repair_class": "inspect_import_diagnostic",
+                "source_path": "website/motion/index.html",
+                "loss_class": "degraded_unit",
+                "diagnostic_class": "degraded_unit",
+                "acceptability": "accepted_reported_loss",
+                "source_diagnostic": {
+                    "id": "diag-011-data-liberation-agent-native_timeline_unproven-websitemotionindexhtml",
+                    "type": "data-liberation-agent",
+                    "code": "native_timeline_unproven",
+                    "reason_code": "native_timeline_unproven",
+                    "message": "timeline not proven native",
+                    "source_path": "website/motion/index.html",
+                    "stage": "capture"
+                },
+                "context": {
+                    "url": "https://example.test/motion/"
+                },
+                "code": "native_timeline_unproven",
+                "diagnostic_code": "native_timeline_unproven",
+                "type": "data-liberation-agent",
+                "stage": "capture",
+                "unit": "block",
+                "owning_layer": "data-liberation-agent",
+                "url": "https://example.test/motion/",
+                "message": "timeline not proven native",
+                "metrics": [],
+                "location": "website/motion/index.html"
+            },
+            {
+                "id": "diag-012-data-liberation-agent-disclosure_unrestored-websitefaqindexhtml",
+                "severity": "warning",
+                "category": "import_quality",
+                "reason_code": "disclosure_unrestored",
+                "suggested_repair_class": "inspect_import_diagnostic",
+                "repair_class": "inspect_import_diagnostic",
+                "source_path": "website/faq/index.html",
+                "loss_class": "degraded_unit",
+                "diagnostic_class": "degraded_unit",
+                "acceptability": "accepted_reported_loss",
+                "source_diagnostic": {
+                    "id": "diag-012-data-liberation-agent-disclosure_unrestored-websitefaqindexhtml",
+                    "type": "data-liberation-agent",
+                    "code": "disclosure_unrestored",
+                    "reason_code": "disclosure_unrestored",
+                    "message": "disclosure state not restored",
+                    "source_path": "website/faq/index.html",
+                    "stage": "capture"
+                },
+                "context": {
+                    "url": "https://example.test/faq/"
+                },
+                "code": "disclosure_unrestored",
+                "diagnostic_code": "disclosure_unrestored",
+                "type": "data-liberation-agent",
+                "stage": "capture",
+                "unit": "block",
+                "owning_layer": "data-liberation-agent",
+                "url": "https://example.test/faq/",
+                "message": "disclosure state not restored",
+                "metrics": {
+                    "count": 2
+                },
+                "location": "website/faq/index.html"
+            },
+            {
+                "id": "diag-013-data-liberation-agent-a_future_capture_code-httpsexampletest",
+                "severity": "warning",
+                "category": "import_quality",
+                "reason_code": "a_future_capture_code",
+                "suggested_repair_class": "inspect_import_diagnostic",
+                "repair_class": "inspect_import_diagnostic",
+                "source_path": "https://example.test/",
+                "loss_class": "degraded_unit",
+                "diagnostic_class": "degraded_unit",
+                "acceptability": "accepted_reported_loss",
+                "source_diagnostic": {
+                    "id": "diag-013-data-liberation-agent-a_future_capture_code-httpsexampletest",
+                    "type": "data-liberation-agent",
+                    "code": "a_future_capture_code",
+                    "reason_code": "a_future_capture_code",
+                    "message": "a code the importer does not register",
+                    "source_path": "https://example.test/",
+                    "stage": "capture"
+                },
+                "context": {
+                    "url": "https://example.test/"
+                },
+                "code": "a_future_capture_code",
+                "diagnostic_code": "a_future_capture_code",
+                "type": "data-liberation-agent",
+                "stage": "capture",
+                "unit": "block",
+                "owning_layer": "data-liberation-agent",
+                "url": "https://example.test/",
+                "message": "a code the importer does not register",
+                "metrics": [],
+                "location": "https://example.test/"
+            },
+            {
+                "id": "diag-014-data-liberation-agent-route_capture_failed-httpsexampletestslow",
+                "severity": "warning",
+                "category": "import_quality",
+                "reason_code": "route_capture_failed",
+                "suggested_repair_class": "inspect_import_diagnostic",
+                "repair_class": "inspect_import_diagnostic",
+                "source_path": "https://example.test/slow/",
+                "loss_class": "omitted_unit",
+                "diagnostic_class": "omitted_unit",
+                "acceptability": "accepted_reported_loss",
+                "source_diagnostic": {
+                    "id": "diag-014-data-liberation-agent-route_capture_failed-httpsexampletestslow",
+                    "type": "data-liberation-agent",
+                    "code": "route_capture_failed",
+                    "reason_code": "route_capture_failed",
+                    "message": "desktop/goto: Navigation timeout",
+                    "source_path": "https://example.test/slow/",
+                    "stage": "capture"
+                },
+                "context": {
+                    "url": "https://example.test/slow/"
+                },
+                "code": "route_capture_failed",
+                "diagnostic_code": "route_capture_failed",
+                "type": "data-liberation-agent",
+                "stage": "capture",
+                "unit": "route",
+                "owning_layer": "data-liberation-agent",
+                "url": "https://example.test/slow/",
+                "message": "desktop/goto: Navigation timeout",
+                "metrics": [],
+                "location": "https://example.test/slow/"
+            }
+        ],
+        "counts": {
+            "loss_class_summary": {
+                "native_conversion": 2,
+                "editable_approximation": 0,
+                "preserved_runtime_island": 0,
+                "page_compile_omitted": 0,
+                "degraded_unit": 5,
+                "omitted_unit": 7,
+                "unsupported_loss": 0,
+                "importer_materialization_bug": 0
+            },
+            "loss_counts": {
+                "page_compile_omitted": 0,
+                "degraded_unit": 5,
+                "omitted_unit": 7,
+                "unsupported_loss": 0,
+                "importer_materialization_bug": 0
+            },
+            "loss_count": 12
+        },
+        "acceptability": {
+            "status": "completed",
+            "fail_import": false,
+            "rows": {
+                "acceptable_conversion": 2,
+                "accepted_reported_loss": 12
+            }
+        },
+        "compact_summary": {
+            "schema": "static-site-importer/import-metrics/v1",
+            "version": 1,
+            "report_version": 0,
+            "status": "completed",
+            "theme_slug": "",
+            "entry_file": "",
+            "compiler": {
+                "available": true,
+                "fragment_count": 0,
+                "plan_available": true,
+                "page_count": 2,
+                "block_count": 4,
+                "diagnostic_count": 0
+            },
+            "quality_pass": true,
+            "fail_import": false,
+            "failure_reasons": [],
+            "fallback_count": 0,
+            "unsupported_fallback_count": 0,
+            "accepted_preserved_runtime_island_count": 0,
+            "content_loss_count": 0,
+            "empty_conversion_count": 0,
+            "core_html_block_count": 0,
+            "freeform_block_count": 0,
+            "invalid_block_count": 0,
+            "invalid_block_document_count": 0,
+            "gutenberg_save_validation": "unverified",
+            "image_missing_source_count": 0,
+            "interaction_candidate_count": 0,
+            "runtime_dependency_parity_issue_count": 0,
+            "semantic_parity_failure_count": 0,
+            "unsafe_layout_constraint_count": 0,
+            "omitted_file_count": 0,
+            "visual_parity_failure_count": 0,
+            "source_document_count": 2,
+            "unresolved_link_count": 0,
+            "commerce": [],
+            "commerce_context": [],
+            "plugin_materialization": [],
+            "product_seeding": [],
+            "visual_parity_artifacts": {
+                "schema": "static-site-importer/visual-parity-artifacts/v1",
+                "status": "pending",
+                "owner": "codebox_runtime",
+                "contract": "durable_artifact_refs_only",
+                "missing": [
+                    "browser_render",
+                    "source_screenshot",
+                    "imported_screenshot",
+                    "visual_diff",
+                    "block_validation"
+                ],
+                "artifacts": {
+                    "browser_render": {
+                        "status": "pending",
+                        "kind": "browser_render_evidence",
+                        "capture_state": "not_captured",
+                        "reason": "Codebox/runtime browser render evidence was not provided."
+                    },
+                    "source_screenshot": {
+                        "status": "pending",
+                        "kind": "source_screenshot",
+                        "capture_state": "not_captured",
+                        "reason": "Source screenshot was not captured by the runtime."
+                    },
+                    "imported_screenshot": {
+                        "status": "pending",
+                        "kind": "imported_screenshot",
+                        "capture_state": "not_captured",
+                        "reason": "Imported WordPress screenshot was not captured by the runtime."
+                    },
+                    "visual_diff": {
+                        "status": "pending",
+                        "kind": "visual_diff",
+                        "capture_state": "not_captured",
+                        "reason": "Visual diff output was not captured by the runtime."
+                    },
+                    "import_report": {
+                        "status": "captured",
+                        "kind": "static-site-importer/import-report",
+                        "ref": {
+                            "kind": "static-site-importer/import-report",
+                            "artifact_name": "import-report.json"
+                        }
+                    },
+                    "import_validation_result": {
+                        "status": "captured",
+                        "kind": "static-site-importer/import-validation-result",
+                        "ref": {
+                            "kind": "static-site-importer/import-validation-result",
+                            "artifact_name": "import-validation-result.json"
+                        }
+                    },
+                    "finding_packets": {
+                        "status": "captured",
+                        "kind": "static-site-importer/finding-packets",
+                        "ref": {
+                            "kind": "static-site-importer/finding-packets",
+                            "artifact_name": "finding-packets.json"
+                        }
+                    },
+                    "block_validation": {
+                        "status": "unverified",
+                        "kind": "gutenberg_block_validation",
+                        "capture_state": "not_captured",
+                        "reason": "Gutenberg validateBlock/save() was not executed. PHP parse_blocks/serialize_blocks is a structural round-trip only and cannot detect a registered save() mismatch.",
+                        "gutenberg_save_validation": "unverified",
+                        "validation_method": "not_run"
+                    }
+                },
+                "local_paths": "omitted",
+                "notes": [
+                    "Screenshot and diff slots stay pending until Codebox/runtime validation supplies durable artifact refs.",
+                    "The block_validation slot stays unverified until a JS runtime runs wp.blocks.validateBlock; PHP parse_blocks/serialize_blocks cannot detect a registered save() mismatch.",
+                    "Reviewer-facing refs use artifact IDs, URLs, or artifact names; local filesystem paths are intentionally omitted."
+                ]
+            },
+            "semantic_parity": {
+                "status": "requires_external_render_check",
+                "owner": "benchmark_harness"
+            },
+            "diagnostic_count": 14,
+            "diagnostic_summary": {
+                "total": 14,
+                "error": 2,
+                "warning": 10,
+                "notice": 0,
+                "info": 2,
+                "loss_class": {
+                    "native_conversion": 2,
+                    "editable_approximation": 0,
+                    "preserved_runtime_island": 0,
+                    "page_compile_omitted": 0,
+                    "degraded_unit": 5,
+                    "omitted_unit": 7,
+                    "unsupported_loss": 0,
+                    "importer_materialization_bug": 0
+                }
+            },
+            "loss_class_summary": {
+                "native_conversion": 2,
+                "editable_approximation": 0,
+                "preserved_runtime_island": 0,
+                "page_compile_omitted": 0,
+                "degraded_unit": 5,
+                "omitted_unit": 7,
+                "unsupported_loss": 0,
+                "importer_materialization_bug": 0
+            },
+            "loss_count": 12,
+            "loss_counts": {
+                "page_compile_omitted": 0,
+                "degraded_unit": 5,
+                "omitted_unit": 7,
+                "unsupported_loss": 0,
+                "importer_materialization_bug": 0
+            },
+            "omitted_page_count": 0,
+            "warning_summaries": [
+                {
+                    "id": "diag-003-data-liberation-agent-route_capture_degraded-websiteabouthtml",
+                    "type": "data-liberation-agent",
+                    "loss_class": "degraded_unit",
+                    "source": "website/about.html",
+                    "message": "mobile/screenshot-scrolled: screenshot timeout"
+                },
+                {
+                    "id": "diag-005-data-liberation-agent-route_path_collision-httpsexampletestahtml",
+                    "type": "data-liberation-agent",
+                    "loss_class": "omitted_unit",
+                    "source": "https://example.test/a.html",
+                    "message": "two routes export to a.html"
+                },
+                {
+                    "id": "diag-006-data-liberation-agent-route_off_origin-httpselsewheretestx",
+                    "type": "data-liberation-agent",
+                    "loss_class": "omitted_unit",
+                    "source": "https://elsewhere.test/x/",
+                    "message": "route resolves off the capture origin"
+                },
+                {
+                    "id": "diag-008-data-liberation-agent-route_capture_skipped_budget-httpsexampletestarchivepage-9",
+                    "type": "data-liberation-agent",
+                    "loss_class": "omitted_unit",
+                    "source": "https://example.test/archive/page-9/",
+                    "message": "capture budget exhausted"
+                },
+                {
+                    "id": "diag-009-data-liberation-agent-asset_exceeds_file_limit-websiteassetstourmp4",
+                    "type": "data-liberation-agent",
+                    "loss_class": "omitted_unit",
+                    "source": "website/assets/tour.mp4",
+                    "message": "asset exceeds the per-file limit"
+                },
+                {
+                    "id": "diag-010-data-liberation-agent-stylesheet_unparseable-websiteassetssitecss",
+                    "type": "data-liberation-agent",
+                    "loss_class": "degraded_unit",
+                    "source": "website/assets/site.css",
+                    "message": "stylesheet could not be parsed"
+                },
+                {
+                    "id": "diag-011-data-liberation-agent-native_timeline_unproven-websitemotionindexhtml",
+                    "type": "data-liberation-agent",
+                    "loss_class": "degraded_unit",
+                    "source": "website/motion/index.html",
+                    "message": "timeline not proven native"
+                },
+                {
+                    "id": "diag-012-data-liberation-agent-disclosure_unrestored-websitefaqindexhtml",
+                    "type": "data-liberation-agent",
+                    "loss_class": "degraded_unit",
+                    "source": "website/faq/index.html",
+                    "message": "disclosure state not restored"
+                },
+                {
+                    "id": "diag-013-data-liberation-agent-a_future_capture_code-httpsexampletest",
+                    "type": "data-liberation-agent",
+                    "loss_class": "degraded_unit",
+                    "source": "https://example.test/",
+                    "message": "a code the importer does not register"
+                },
+                {
+                    "id": "diag-014-data-liberation-agent-route_capture_failed-httpsexampletestslow",
+                    "type": "data-liberation-agent",
+                    "loss_class": "omitted_unit",
+                    "source": "https://example.test/slow/",
+                    "message": "desktop/goto: Navigation timeout"
+                }
+            ],
+            "error_summaries": [
+                {
+                    "id": "diag-004-data-liberation-agent-route_export_failed-httpsexampletestpricing",
+                    "type": "data-liberation-agent",
+                    "loss_class": "omitted_unit",
+                    "source": "https://example.test/pricing/",
+                    "message": "cannot export Pricing"
+                },
+                {
+                    "id": "diag-007-data-liberation-agent-route_profile_uncaptured-httpsexampletest",
+                    "type": "data-liberation-agent",
+                    "loss_class": "omitted_unit",
+                    "source": "https://example.test/",
+                    "message": "no tablet document"
+                }
+            ],
+            "diagnostics": [
+                {
+                    "id": "diag-001-import_diagnostic-import_diagnostic-",
+                    "code": "wordpress_site_plan_shell_retained_incomplete",
+                    "severity": "info",
+                    "category": "import_quality",
+                    "loss_class": "native_conversion",
+                    "diagnostic_class": "native_conversion",
+                    "acceptability": "acceptable_conversion",
+                    "reason_code": "import_diagnostic",
+                    "suggested_repair_class": "inspect_import_diagnostic",
+                    "repair_class": "inspect_import_diagnostic",
+                    "source_diagnostic": {
+                        "id": "diag-001-import_diagnostic-import_diagnostic-",
+                        "code": "wordpress_site_plan_shell_retained_incomplete",
+                        "reason_code": "import_diagnostic",
+                        "message": "footer shell candidates do not establish a dominant semantic cluster."
+                    },
+                    "message": "footer shell candidates do not establish a dominant semantic cluster."
+                },
+                {
+                    "id": "diag-002-import_diagnostic-import_diagnostic-",
+                    "code": "wordpress_site_plan_shell_retained_incomplete",
+                    "severity": "info",
+                    "category": "import_quality",
+                    "loss_class": "native_conversion",
+                    "diagnostic_class": "native_conversion",
+                    "acceptability": "acceptable_conversion",
+                    "reason_code": "import_diagnostic",
+                    "suggested_repair_class": "inspect_import_diagnostic",
+                    "repair_class": "inspect_import_diagnostic",
+                    "source_diagnostic": {
+                        "id": "diag-002-import_diagnostic-import_diagnostic-",
+                        "code": "wordpress_site_plan_shell_retained_incomplete",
+                        "reason_code": "import_diagnostic",
+                        "message": "header shell candidates do not establish a dominant semantic cluster."
+                    },
+                    "message": "header shell candidates do not establish a dominant semantic cluster."
+                },
+                {
+                    "id": "diag-003-data-liberation-agent-route_capture_degraded-websiteabouthtml",
+                    "code": "route_capture_degraded",
+                    "type": "data-liberation-agent",
+                    "severity": "warning",
+                    "category": "import_quality",
+                    "loss_class": "degraded_unit",
+                    "diagnostic_class": "degraded_unit",
+                    "unit": "route",
+                    "owning_layer": "data-liberation-agent",
+                    "acceptability": "accepted_reported_loss",
+                    "reason_code": "route_capture_degraded",
+                    "location": "website/about.html",
+                    "url": "https://example.test/about/",
+                    "metrics": {
+                        "failedStages": 1
+                    },
+                    "suggested_repair_class": "inspect_import_diagnostic",
+                    "repair_class": "inspect_import_diagnostic",
+                    "context": {
+                        "url": "https://example.test/about/"
+                    },
+                    "source_diagnostic": {
+                        "id": "diag-003-data-liberation-agent-route_capture_degraded-websiteabouthtml",
+                        "type": "data-liberation-agent",
+                        "code": "route_capture_degraded",
+                        "reason_code": "route_capture_degraded",
+                        "message": "mobile/screenshot-scrolled: screenshot timeout",
+                        "source_path": "website/about.html",
+                        "stage": "capture"
+                    },
+                    "source_path": "website/about.html",
+                    "stage": "capture",
+                    "message": "mobile/screenshot-scrolled: screenshot timeout",
+                    "diagnostic_code": "route_capture_degraded"
+                },
+                {
+                    "id": "diag-004-data-liberation-agent-route_export_failed-httpsexampletestpricing",
+                    "code": "route_export_failed",
+                    "type": "data-liberation-agent",
+                    "severity": "error",
+                    "category": "import_quality",
+                    "loss_class": "omitted_unit",
+                    "diagnostic_class": "omitted_unit",
+                    "unit": "route",
+                    "owning_layer": "data-liberation-agent",
+                    "acceptability": "accepted_reported_loss",
+                    "reason_code": "route_export_failed",
+                    "location": "https://example.test/pricing/",
+                    "url": "https://example.test/pricing/",
+                    "suggested_repair_class": "inspect_import_diagnostic",
+                    "repair_class": "inspect_import_diagnostic",
+                    "context": {
+                        "url": "https://example.test/pricing/"
+                    },
+                    "source_diagnostic": {
+                        "id": "diag-004-data-liberation-agent-route_export_failed-httpsexampletestpricing",
+                        "type": "data-liberation-agent",
+                        "code": "route_export_failed",
+                        "reason_code": "route_export_failed",
+                        "message": "cannot export Pricing",
+                        "source_path": "https://example.test/pricing/",
+                        "stage": "capture"
+                    },
+                    "source_path": "https://example.test/pricing/",
+                    "stage": "capture",
+                    "message": "cannot export Pricing",
+                    "diagnostic_code": "route_export_failed"
+                },
+                {
+                    "id": "diag-005-data-liberation-agent-route_path_collision-httpsexampletestahtml",
+                    "code": "route_path_collision",
+                    "type": "data-liberation-agent",
+                    "severity": "warning",
+                    "category": "import_quality",
+                    "loss_class": "omitted_unit",
+                    "diagnostic_class": "omitted_unit",
+                    "unit": "route",
+                    "owning_layer": "data-liberation-agent",
+                    "acceptability": "accepted_reported_loss",
+                    "reason_code": "route_path_collision",
+                    "location": "https://example.test/a.html",
+                    "url": "https://example.test/a.html",
+                    "suggested_repair_class": "inspect_import_diagnostic",
+                    "repair_class": "inspect_import_diagnostic",
+                    "context": {
+                        "url": "https://example.test/a.html"
+                    },
+                    "source_diagnostic": {
+                        "id": "diag-005-data-liberation-agent-route_path_collision-httpsexampletestahtml",
+                        "type": "data-liberation-agent",
+                        "code": "route_path_collision",
+                        "reason_code": "route_path_collision",
+                        "message": "two routes export to a.html",
+                        "source_path": "https://example.test/a.html",
+                        "stage": "capture"
+                    },
+                    "source_path": "https://example.test/a.html",
+                    "stage": "capture",
+                    "message": "two routes export to a.html",
+                    "diagnostic_code": "route_path_collision"
+                },
+                {
+                    "id": "diag-006-data-liberation-agent-route_off_origin-httpselsewheretestx",
+                    "code": "route_off_origin",
+                    "type": "data-liberation-agent",
+                    "severity": "warning",
+                    "category": "import_quality",
+                    "loss_class": "omitted_unit",
+                    "diagnostic_class": "omitted_unit",
+                    "unit": "route",
+                    "owning_layer": "data-liberation-agent",
+                    "acceptability": "accepted_reported_loss",
+                    "reason_code": "route_off_origin",
+                    "location": "https://elsewhere.test/x/",
+                    "url": "https://elsewhere.test/x/",
+                    "suggested_repair_class": "inspect_import_diagnostic",
+                    "repair_class": "inspect_import_diagnostic",
+                    "context": {
+                        "url": "https://elsewhere.test/x/"
+                    },
+                    "source_diagnostic": {
+                        "id": "diag-006-data-liberation-agent-route_off_origin-httpselsewheretestx",
+                        "type": "data-liberation-agent",
+                        "code": "route_off_origin",
+                        "reason_code": "route_off_origin",
+                        "message": "route resolves off the capture origin",
+                        "source_path": "https://elsewhere.test/x/",
+                        "stage": "capture"
+                    },
+                    "source_path": "https://elsewhere.test/x/",
+                    "stage": "capture",
+                    "message": "route resolves off the capture origin",
+                    "diagnostic_code": "route_off_origin"
+                },
+                {
+                    "id": "diag-007-data-liberation-agent-route_profile_uncaptured-httpsexampletest",
+                    "code": "route_profile_uncaptured",
+                    "type": "data-liberation-agent",
+                    "severity": "error",
+                    "category": "import_quality",
+                    "loss_class": "omitted_unit",
+                    "diagnostic_class": "omitted_unit",
+                    "unit": "profile",
+                    "owning_layer": "data-liberation-agent",
+                    "acceptability": "accepted_reported_loss",
+                    "reason_code": "route_profile_uncaptured",
+                    "location": "https://example.test/",
+                    "url": "https://example.test/",
+                    "suggested_repair_class": "inspect_import_diagnostic",
+                    "repair_class": "inspect_import_diagnostic",
+                    "context": {
+                        "url": "https://example.test/",
+                        "profile": "tablet"
+                    },
+                    "source_diagnostic": {
+                        "id": "diag-007-data-liberation-agent-route_profile_uncaptured-httpsexampletest",
+                        "type": "data-liberation-agent",
+                        "code": "route_profile_uncaptured",
+                        "reason_code": "route_profile_uncaptured",
+                        "message": "no tablet document",
+                        "source_path": "https://example.test/",
+                        "stage": "capture"
+                    },
+                    "source_path": "https://example.test/",
+                    "stage": "capture",
+                    "message": "no tablet document",
+                    "diagnostic_code": "route_profile_uncaptured"
+                },
+                {
+                    "id": "diag-008-data-liberation-agent-route_capture_skipped_budget-httpsexampletestarchivepage-9",
+                    "code": "route_capture_skipped_budget",
+                    "type": "data-liberation-agent",
+                    "severity": "warning",
+                    "category": "import_quality",
+                    "loss_class": "omitted_unit",
+                    "diagnostic_class": "omitted_unit",
+                    "unit": "route",
+                    "owning_layer": "data-liberation-agent",
+                    "acceptability": "accepted_reported_loss",
+                    "reason_code": "route_capture_skipped_budget",
+                    "location": "https://example.test/archive/page-9/",
+                    "url": "https://example.test/archive/page-9/",
+                    "metrics": {
+                        "budgetMs": 600000,
+                        "elapsedMs": 600412
+                    },
+                    "suggested_repair_class": "inspect_import_diagnostic",
+                    "repair_class": "inspect_import_diagnostic",
+                    "context": {
+                        "url": "https://example.test/archive/page-9/"
+                    },
+                    "source_diagnostic": {
+                        "id": "diag-008-data-liberation-agent-route_capture_skipped_budget-httpsexampletestarchivepage-9",
+                        "type": "data-liberation-agent",
+                        "code": "route_capture_skipped_budget",
+                        "reason_code": "route_capture_skipped_budget",
+                        "message": "capture budget exhausted",
+                        "source_path": "https://example.test/archive/page-9/",
+                        "stage": "capture"
+                    },
+                    "source_path": "https://example.test/archive/page-9/",
+                    "stage": "capture",
+                    "message": "capture budget exhausted",
+                    "diagnostic_code": "route_capture_skipped_budget"
+                },
+                {
+                    "id": "diag-009-data-liberation-agent-asset_exceeds_file_limit-websiteassetstourmp4",
+                    "code": "asset_exceeds_file_limit",
+                    "type": "data-liberation-agent",
+                    "severity": "warning",
+                    "category": "import_quality",
+                    "loss_class": "omitted_unit",
+                    "diagnostic_class": "omitted_unit",
+                    "unit": "asset",
+                    "owning_layer": "data-liberation-agent",
+                    "acceptability": "accepted_reported_loss",
+                    "reason_code": "asset_exceeds_file_limit",
+                    "location": "website/assets/tour.mp4",
+                    "url": "https://example.test/assets/tour.mp4",
+                    "metrics": {
+                        "bytes": 99000000,
+                        "limit": 52428800
+                    },
+                    "suggested_repair_class": "inspect_import_diagnostic",
+                    "repair_class": "inspect_import_diagnostic",
+                    "context": {
+                        "url": "https://example.test/assets/tour.mp4"
+                    },
+                    "source_diagnostic": {
+                        "id": "diag-009-data-liberation-agent-asset_exceeds_file_limit-websiteassetstourmp4",
+                        "type": "data-liberation-agent",
+                        "code": "asset_exceeds_file_limit",
+                        "reason_code": "asset_exceeds_file_limit",
+                        "message": "asset exceeds the per-file limit",
+                        "source_path": "website/assets/tour.mp4",
+                        "stage": "capture"
+                    },
+                    "source_path": "website/assets/tour.mp4",
+                    "stage": "capture",
+                    "message": "asset exceeds the per-file limit",
+                    "diagnostic_code": "asset_exceeds_file_limit"
+                },
+                {
+                    "id": "diag-010-data-liberation-agent-stylesheet_unparseable-websiteassetssitecss",
+                    "code": "stylesheet_unparseable",
+                    "type": "data-liberation-agent",
+                    "severity": "warning",
+                    "category": "import_quality",
+                    "loss_class": "degraded_unit",
+                    "diagnostic_class": "degraded_unit",
+                    "unit": "stylesheet",
+                    "owning_layer": "data-liberation-agent",
+                    "acceptability": "accepted_reported_loss",
+                    "reason_code": "stylesheet_unparseable",
+                    "location": "website/assets/site.css",
+                    "url": "https://example.test/assets/site.css",
+                    "suggested_repair_class": "inspect_import_diagnostic",
+                    "repair_class": "inspect_import_diagnostic",
+                    "context": {
+                        "url": "https://example.test/assets/site.css"
+                    },
+                    "source_diagnostic": {
+                        "id": "diag-010-data-liberation-agent-stylesheet_unparseable-websiteassetssitecss",
+                        "type": "data-liberation-agent",
+                        "code": "stylesheet_unparseable",
+                        "reason_code": "stylesheet_unparseable",
+                        "message": "stylesheet could not be parsed",
+                        "source_path": "website/assets/site.css",
+                        "stage": "capture"
+                    },
+                    "source_path": "website/assets/site.css",
+                    "stage": "capture",
+                    "message": "stylesheet could not be parsed",
+                    "diagnostic_code": "stylesheet_unparseable"
+                },
+                {
+                    "id": "diag-011-data-liberation-agent-native_timeline_unproven-websitemotionindexhtml",
+                    "code": "native_timeline_unproven",
+                    "type": "data-liberation-agent",
+                    "severity": "warning",
+                    "category": "import_quality",
+                    "loss_class": "degraded_unit",
+                    "diagnostic_class": "degraded_unit",
+                    "unit": "block",
+                    "owning_layer": "data-liberation-agent",
+                    "acceptability": "accepted_reported_loss",
+                    "reason_code": "native_timeline_unproven",
+                    "location": "website/motion/index.html",
+                    "url": "https://example.test/motion/",
+                    "suggested_repair_class": "inspect_import_diagnostic",
+                    "repair_class": "inspect_import_diagnostic",
+                    "context": {
+                        "url": "https://example.test/motion/"
+                    },
+                    "source_diagnostic": {
+                        "id": "diag-011-data-liberation-agent-native_timeline_unproven-websitemotionindexhtml",
+                        "type": "data-liberation-agent",
+                        "code": "native_timeline_unproven",
+                        "reason_code": "native_timeline_unproven",
+                        "message": "timeline not proven native",
+                        "source_path": "website/motion/index.html",
+                        "stage": "capture"
+                    },
+                    "source_path": "website/motion/index.html",
+                    "stage": "capture",
+                    "message": "timeline not proven native",
+                    "diagnostic_code": "native_timeline_unproven"
+                },
+                {
+                    "id": "diag-012-data-liberation-agent-disclosure_unrestored-websitefaqindexhtml",
+                    "code": "disclosure_unrestored",
+                    "type": "data-liberation-agent",
+                    "severity": "warning",
+                    "category": "import_quality",
+                    "loss_class": "degraded_unit",
+                    "diagnostic_class": "degraded_unit",
+                    "unit": "block",
+                    "owning_layer": "data-liberation-agent",
+                    "acceptability": "accepted_reported_loss",
+                    "reason_code": "disclosure_unrestored",
+                    "location": "website/faq/index.html",
+                    "url": "https://example.test/faq/",
+                    "metrics": {
+                        "count": 2
+                    },
+                    "suggested_repair_class": "inspect_import_diagnostic",
+                    "repair_class": "inspect_import_diagnostic",
+                    "context": {
+                        "url": "https://example.test/faq/"
+                    },
+                    "source_diagnostic": {
+                        "id": "diag-012-data-liberation-agent-disclosure_unrestored-websitefaqindexhtml",
+                        "type": "data-liberation-agent",
+                        "code": "disclosure_unrestored",
+                        "reason_code": "disclosure_unrestored",
+                        "message": "disclosure state not restored",
+                        "source_path": "website/faq/index.html",
+                        "stage": "capture"
+                    },
+                    "source_path": "website/faq/index.html",
+                    "stage": "capture",
+                    "message": "disclosure state not restored",
+                    "diagnostic_code": "disclosure_unrestored"
+                },
+                {
+                    "id": "diag-013-data-liberation-agent-a_future_capture_code-httpsexampletest",
+                    "code": "a_future_capture_code",
+                    "type": "data-liberation-agent",
+                    "severity": "warning",
+                    "category": "import_quality",
+                    "loss_class": "degraded_unit",
+                    "diagnostic_class": "degraded_unit",
+                    "unit": "block",
+                    "owning_layer": "data-liberation-agent",
+                    "acceptability": "accepted_reported_loss",
+                    "reason_code": "a_future_capture_code",
+                    "location": "https://example.test/",
+                    "url": "https://example.test/",
+                    "suggested_repair_class": "inspect_import_diagnostic",
+                    "repair_class": "inspect_import_diagnostic",
+                    "context": {
+                        "url": "https://example.test/"
+                    },
+                    "source_diagnostic": {
+                        "id": "diag-013-data-liberation-agent-a_future_capture_code-httpsexampletest",
+                        "type": "data-liberation-agent",
+                        "code": "a_future_capture_code",
+                        "reason_code": "a_future_capture_code",
+                        "message": "a code the importer does not register",
+                        "source_path": "https://example.test/",
+                        "stage": "capture"
+                    },
+                    "source_path": "https://example.test/",
+                    "stage": "capture",
+                    "message": "a code the importer does not register",
+                    "diagnostic_code": "a_future_capture_code"
+                },
+                {
+                    "id": "diag-014-data-liberation-agent-route_capture_failed-httpsexampletestslow",
+                    "code": "route_capture_failed",
+                    "type": "data-liberation-agent",
+                    "severity": "warning",
+                    "category": "import_quality",
+                    "loss_class": "omitted_unit",
+                    "diagnostic_class": "omitted_unit",
+                    "unit": "route",
+                    "owning_layer": "data-liberation-agent",
+                    "acceptability": "accepted_reported_loss",
+                    "reason_code": "route_capture_failed",
+                    "location": "https://example.test/slow/",
+                    "url": "https://example.test/slow/",
+                    "suggested_repair_class": "inspect_import_diagnostic",
+                    "repair_class": "inspect_import_diagnostic",
+                    "context": {
+                        "url": "https://example.test/slow/"
+                    },
+                    "source_diagnostic": {
+                        "id": "diag-014-data-liberation-agent-route_capture_failed-httpsexampletestslow",
+                        "type": "data-liberation-agent",
+                        "code": "route_capture_failed",
+                        "reason_code": "route_capture_failed",
+                        "message": "desktop/goto: Navigation timeout",
+                        "source_path": "https://example.test/slow/",
+                        "stage": "capture"
+                    },
+                    "source_path": "https://example.test/slow/",
+                    "stage": "capture",
+                    "message": "desktop/goto: Navigation timeout",
+                    "diagnostic_code": "route_capture_failed"
+                }
+            ]
+        },
+        "inline_compact_summary": {
+            "schema": "static-site-importer/import-metrics/v1",
+            "version": 1,
+            "report_version": 0,
+            "status": "completed",
+            "theme_slug": "",
+            "entry_file": "",
+            "compiler": {
+                "available": true,
+                "fragment_count": 0,
+                "plan_available": true,
+                "page_count": 2,
+                "block_count": 4,
+                "diagnostic_count": 0
+            },
+            "quality_pass": true,
+            "fail_import": false,
+            "failure_reasons": [],
+            "fallback_count": 0,
+            "unsupported_fallback_count": 0,
+            "accepted_preserved_runtime_island_count": 0,
+            "content_loss_count": 0,
+            "empty_conversion_count": 0,
+            "core_html_block_count": 0,
+            "freeform_block_count": 0,
+            "invalid_block_count": 0,
+            "invalid_block_document_count": 0,
+            "gutenberg_save_validation": "unverified",
+            "image_missing_source_count": 0,
+            "interaction_candidate_count": 0,
+            "runtime_dependency_parity_issue_count": 0,
+            "semantic_parity_failure_count": 0,
+            "unsafe_layout_constraint_count": 0,
+            "omitted_file_count": 0,
+            "visual_parity_failure_count": 0,
+            "source_document_count": 2,
+            "unresolved_link_count": 0,
+            "commerce": [],
+            "commerce_context": [],
+            "plugin_materialization": [],
+            "product_seeding": [],
+            "visual_parity_artifacts": {
+                "schema": "static-site-importer/visual-parity-artifacts/v1",
+                "status": "pending",
+                "owner": "codebox_runtime",
+                "contract": "durable_artifact_refs_only",
+                "missing": [
+                    "browser_render",
+                    "source_screenshot",
+                    "imported_screenshot",
+                    "visual_diff",
+                    "block_validation"
+                ],
+                "artifacts": {
+                    "browser_render": {
+                        "status": "pending",
+                        "kind": "browser_render_evidence",
+                        "capture_state": "not_captured",
+                        "reason": "Codebox/runtime browser render evidence was not provided."
+                    },
+                    "source_screenshot": {
+                        "status": "pending",
+                        "kind": "source_screenshot",
+                        "capture_state": "not_captured",
+                        "reason": "Source screenshot was not captured by the runtime."
+                    },
+                    "imported_screenshot": {
+                        "status": "pending",
+                        "kind": "imported_screenshot",
+                        "capture_state": "not_captured",
+                        "reason": "Imported WordPress screenshot was not captured by the runtime."
+                    },
+                    "visual_diff": {
+                        "status": "pending",
+                        "kind": "visual_diff",
+                        "capture_state": "not_captured",
+                        "reason": "Visual diff output was not captured by the runtime."
+                    },
+                    "import_report": {
+                        "status": "captured",
+                        "kind": "static-site-importer/import-report",
+                        "ref": {
+                            "kind": "static-site-importer/import-report",
+                            "artifact_name": "import-report.json"
+                        }
+                    },
+                    "import_validation_result": {
+                        "status": "captured",
+                        "kind": "static-site-importer/import-validation-result",
+                        "ref": {
+                            "kind": "static-site-importer/import-validation-result",
+                            "artifact_name": "import-validation-result.json"
+                        }
+                    },
+                    "finding_packets": {
+                        "status": "captured",
+                        "kind": "static-site-importer/finding-packets",
+                        "ref": {
+                            "kind": "static-site-importer/finding-packets",
+                            "artifact_name": "finding-packets.json"
+                        }
+                    },
+                    "block_validation": {
+                        "status": "unverified",
+                        "kind": "gutenberg_block_validation",
+                        "capture_state": "not_captured",
+                        "reason": "Gutenberg validateBlock/save() was not executed. PHP parse_blocks/serialize_blocks is a structural round-trip only and cannot detect a registered save() mismatch.",
+                        "gutenberg_save_validation": "unverified",
+                        "validation_method": "not_run"
+                    }
+                },
+                "local_paths": "omitted",
+                "notes": [
+                    "Screenshot and diff slots stay pending until Codebox/runtime validation supplies durable artifact refs.",
+                    "The block_validation slot stays unverified until a JS runtime runs wp.blocks.validateBlock; PHP parse_blocks/serialize_blocks cannot detect a registered save() mismatch.",
+                    "Reviewer-facing refs use artifact IDs, URLs, or artifact names; local filesystem paths are intentionally omitted."
+                ]
+            },
+            "semantic_parity": {
+                "status": "requires_external_render_check",
+                "owner": "benchmark_harness"
+            },
+            "diagnostic_count": 14,
+            "diagnostic_summary": {
+                "total": 14,
+                "error": 2,
+                "warning": 10,
+                "notice": 0,
+                "info": 2,
+                "loss_class": {
+                    "native_conversion": 2,
+                    "editable_approximation": 0,
+                    "preserved_runtime_island": 0,
+                    "page_compile_omitted": 0,
+                    "degraded_unit": 5,
+                    "omitted_unit": 7,
+                    "unsupported_loss": 0,
+                    "importer_materialization_bug": 0
+                }
+            },
+            "loss_class_summary": {
+                "native_conversion": 2,
+                "editable_approximation": 0,
+                "preserved_runtime_island": 0,
+                "page_compile_omitted": 0,
+                "degraded_unit": 5,
+                "omitted_unit": 7,
+                "unsupported_loss": 0,
+                "importer_materialization_bug": 0
+            },
+            "loss_count": 12,
+            "loss_counts": {
+                "page_compile_omitted": 0,
+                "degraded_unit": 5,
+                "omitted_unit": 7,
+                "unsupported_loss": 0,
+                "importer_materialization_bug": 0
+            },
+            "omitted_page_count": 0,
+            "warning_summaries": [
+                {
+                    "id": "diag-003-data-liberation-agent-route_capture_degraded-websiteabouthtml",
+                    "type": "data-liberation-agent",
+                    "loss_class": "degraded_unit",
+                    "source": "website/about.html",
+                    "message": "mobile/screenshot-scrolled: screenshot timeout"
+                },
+                {
+                    "id": "diag-005-data-liberation-agent-route_path_collision-httpsexampletestahtml",
+                    "type": "data-liberation-agent",
+                    "loss_class": "omitted_unit",
+                    "source": "https://example.test/a.html",
+                    "message": "two routes export to a.html"
+                },
+                {
+                    "id": "diag-006-data-liberation-agent-route_off_origin-httpselsewheretestx",
+                    "type": "data-liberation-agent",
+                    "loss_class": "omitted_unit",
+                    "source": "https://elsewhere.test/x/",
+                    "message": "route resolves off the capture origin"
+                },
+                {
+                    "id": "diag-008-data-liberation-agent-route_capture_skipped_budget-httpsexampletestarchivepage-9",
+                    "type": "data-liberation-agent",
+                    "loss_class": "omitted_unit",
+                    "source": "https://example.test/archive/page-9/",
+                    "message": "capture budget exhausted"
+                },
+                {
+                    "id": "diag-009-data-liberation-agent-asset_exceeds_file_limit-websiteassetstourmp4",
+                    "type": "data-liberation-agent",
+                    "loss_class": "omitted_unit",
+                    "source": "website/assets/tour.mp4",
+                    "message": "asset exceeds the per-file limit"
+                },
+                {
+                    "id": "diag-010-data-liberation-agent-stylesheet_unparseable-websiteassetssitecss",
+                    "type": "data-liberation-agent",
+                    "loss_class": "degraded_unit",
+                    "source": "website/assets/site.css",
+                    "message": "stylesheet could not be parsed"
+                },
+                {
+                    "id": "diag-011-data-liberation-agent-native_timeline_unproven-websitemotionindexhtml",
+                    "type": "data-liberation-agent",
+                    "loss_class": "degraded_unit",
+                    "source": "website/motion/index.html",
+                    "message": "timeline not proven native"
+                },
+                {
+                    "id": "diag-012-data-liberation-agent-disclosure_unrestored-websitefaqindexhtml",
+                    "type": "data-liberation-agent",
+                    "loss_class": "degraded_unit",
+                    "source": "website/faq/index.html",
+                    "message": "disclosure state not restored"
+                },
+                {
+                    "id": "diag-013-data-liberation-agent-a_future_capture_code-httpsexampletest",
+                    "type": "data-liberation-agent",
+                    "loss_class": "degraded_unit",
+                    "source": "https://example.test/",
+                    "message": "a code the importer does not register"
+                },
+                {
+                    "id": "diag-014-data-liberation-agent-route_capture_failed-httpsexampletestslow"
+                }
+            ]
+        }
+    },
+    "attributes": {
+        "device_page": "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" data-dla-selected-viewport=\"\"><style data-dla-device-visibility=\"\">[data-dla-device-document]{display:none!important}[data-dla-device-unavailable]{display:none}html:not([data-dla-selected-document]) [data-dla-device-document=\"desktop\"]{display:contents!important}html[data-dla-selected-document=\"desktop\"] [data-dla-device-document=\"desktop\"]{display:contents!important}html[data-dla-selected-document=\"mobile\"] [data-dla-device-document=\"mobile\"]{display:contents!important}html[data-dla-document-unavailable] [data-dla-device-unavailable]{display:block!important}</style><style data-dla-device-style=\"desktop\" data-dla-source-media=\"all\" media=\"not all\">:where([data-dla-device-document=\"desktop\"]) p{color:red}</style><style data-dla-device-style=\"mobile\" data-dla-source-media=\"all\" media=\"not all\">:where([data-dla-device-document=\"mobile\"]) p{color:blue}</style><script data-dla-device-selection=\"\">(function(){function overlayRoot(node,roots,kind,key){\nvar selected=roots[key]&&roots[key][kind];if(!selected)return;\nvar parser=document.createElement('div');\nObject.keys(roots).forEach(function(id){var attrs=roots[id][kind];\n(attrs.class||'').split(/\\s+/).filter(Boolean).forEach(function(token){node.classList.remove(token);});\nparser.style.cssText=attrs.style||'';\nfor(var i=0;i<parser.style.length;i++)node.style.removeProperty(parser.style.item(i));\n['lang','dir'].forEach(function(name){if(Object.prototype.hasOwnProperty.call(attrs,name))node.removeAttribute(name);});\n});\n(selected.class||'').split(/\\s+/).filter(Boolean).forEach(function(token){node.classList.add(token);});\nparser.style.cssText=selected.style||'';\nfor(var i=0;i<parser.style.length;i++){var property=parser.style.item(i);node.style.setProperty(property,parser.style.getPropertyValue(property),parser.style.getPropertyPriority(property));}\n['lang','dir'].forEach(function(name){if(Object.prototype.hasOwnProperty.call(selected,name))node.setAttribute(name,selected[name]);});\n}var c={\"selection\":{\"kind\":\"device\",\"id\":\"fixture-platform\",\"defaultDocument\":\"desktop\",\"documents\":[\"desktop\",\"mobile\"],\"evidence\":\"neutral fixture\",\"rules\":[{\"userAgent\":\"Mobile|Android|iPhone\",\"flags\":\"i\",\"document\":\"mobile\"}]},\"viewports\":{\"desktop\":{\"name\":\"viewport\",\"content\":\"width=device-width, initial-scale=1\"},\"mobile\":{\"name\":\"viewport\",\"content\":\"width=device-width, initial-scale=1, maximum-scale=1\",\"id\":\"mobile-viewport\"}},\"roots\":{\"desktop\":{\"html\":{\"lang\":\"en\",\"class\":\"root-desktop\"},\"body\":{\"class\":\"body-desktop\",\"style\":\"margin:0\"}},\"mobile\":{\"html\":{\"lang\":\"en\",\"class\":\"root-mobile\"},\"body\":{\"class\":\"body-mobile\"}}}},s=c.selection,ua=navigator.userAgent,key=s.defaultDocument;for(var i=0;i<s.rules.length;i++){var r=s.rules[i];if(new RegExp(r.userAgent,r.flags||'').test(ua)){key=r.document;break;}}var root=document.documentElement;root.setAttribute('data-dla-selected-document',key);var vp=c.viewports[key],meta=document.querySelector('meta[data-dla-selected-viewport]');meta.removeAttribute('content');meta.removeAttribute('id');if(vp){overlayRoot(root,c.roots,'html',key);Object.keys(vp).forEach(function(k){meta.setAttribute(k,vp[k]);});root.removeAttribute('data-dla-document-unavailable');}else{root.setAttribute('data-dla-document-unavailable',key);}var styles=document.querySelectorAll('[data-dla-device-style]');for(var j=0;j<styles.length;j++){var node=styles[j];if(node.getAttribute('data-dla-device-style')!==key)continue;var copy=node.cloneNode(true);copy.setAttribute('media',node.getAttribute('data-dla-source-media'));copy.removeAttribute('data-dla-device-style');copy.setAttribute('blocking','render');node.after(copy);}})();</script></head><body><script data-dla-device-body=\"\">(function(){function overlayRoot(node,roots,kind,key){\nvar selected=roots[key]&&roots[key][kind];if(!selected)return;\nvar parser=document.createElement('div');\nObject.keys(roots).forEach(function(id){var attrs=roots[id][kind];\n(attrs.class||'').split(/\\s+/).filter(Boolean).forEach(function(token){node.classList.remove(token);});\nparser.style.cssText=attrs.style||'';\nfor(var i=0;i<parser.style.length;i++)node.style.removeProperty(parser.style.item(i));\n['lang','dir'].forEach(function(name){if(Object.prototype.hasOwnProperty.call(attrs,name))node.removeAttribute(name);});\n});\n(selected.class||'').split(/\\s+/).filter(Boolean).forEach(function(token){node.classList.add(token);});\nparser.style.cssText=selected.style||'';\nfor(var i=0;i<parser.style.length;i++){var property=parser.style.item(i);node.style.setProperty(property,parser.style.getPropertyValue(property),parser.style.getPropertyPriority(property));}\n['lang','dir'].forEach(function(name){if(Object.prototype.hasOwnProperty.call(selected,name))node.setAttribute(name,selected[name]);});\n}var roots={\"desktop\":{\"html\":{\"lang\":\"en\",\"class\":\"root-desktop\"},\"body\":{\"class\":\"body-desktop\",\"style\":\"margin:0\"}},\"mobile\":{\"html\":{\"lang\":\"en\",\"class\":\"root-mobile\"},\"body\":{\"class\":\"body-mobile\"}}},key=document.documentElement.getAttribute('data-dla-selected-document');overlayRoot(document.body,roots,'body',key);})();</script><div class=\"body-desktop data-liberation-desktop-document\" style=\"margin:0\" data-dla-device-document=\"desktop\" data-dla-document-scope=\"\"><p>Desktop</p></div><div class=\"body-mobile data-liberation-mobile-document\" data-dla-device-document=\"mobile\" data-dla-document-scope=\"\"><p>Mobile</p></div></body></html>\n",
+        "device_report": {
+            "preserved": [
+                {
+                    "path": "website/index.html",
+                    "class": "device_selection",
+                    "type": "classic"
+                },
+                {
+                    "path": "website/index.html",
+                    "class": "device_selection",
+                    "type": "classic"
+                }
+            ],
+            "dropped": [],
+            "quarantined": []
+        },
+        "member_login": {
+            "header": {
+                "content": "<div class=\"wixui-login-social-bar\"><a href=\"https://playground.test/scope:abc/wp-login.php?redirect_to=https%3A%2F%2Fplayground.test%2Fscope%3Aabc%2Fbylaws%2F\" class=\"O4eQsz\" data-testid=\"handle-button\" data-dla-member-login=\"wix\"><span>Sign In</span></a></div>",
+                "rendered_block": "<div class=\"wixui-login-social-bar\"><a href=\"https://playground.test/scope:abc/wp-login.php?redirect_to=https%3A%2F%2Fplayground.test%2Fscope%3Aabc%2Fbylaws%2F\" class=\"O4eQsz\" data-testid=\"handle-button\" data-dla-member-login=\"wix\"><span>Sign In</span></a></div>"
+            },
+            "hero": {
+                "content": "<a href=\"https://playground.test/scope:abc/wp-login.php?redirect_to=https%3A%2F%2Fplayground.test%2Fscope%3Aabc%2Fbylaws%2F\" data-testid=\"linkElement\" class=\"wixui-button\" data-dla-member-login=\"wix\">Sign In</a> <a href=\"https://www.source.test/account/other\">Unmarked</a>",
+                "rendered_block": "<a href=\"https://playground.test/scope:abc/wp-login.php?redirect_to=https%3A%2F%2Fplayground.test%2Fscope%3Aabc%2Fbylaws%2F\" data-testid=\"linkElement\" class=\"wixui-button\" data-dla-member-login=\"wix\">Sign In</a> <a href=\"https://www.source.test/account/other\">Unmarked</a>"
+            },
+            "core_button": {
+                "content": "<div class=\"wp-block-button O4eQsz dla-member-login-wix blocks-engine-control-x-48\"><a href=\"https://playground.test/scope:abc/wp-login.php?redirect_to=https%3A%2F%2Fplayground.test%2Fscope%3Aabc%2Fbylaws%2F\" class=\"wp-block-button__link wp-element-button\"><img src=\"avatar.svg\" alt=\"\" class=\"be-inline-geometry-1\"><mark class=\"HuH6Ex\">Sign In</mark></a></div>",
+                "rendered_block": "<div class=\"wp-block-button O4eQsz dla-member-login-wix blocks-engine-control-x-48\"><a href=\"https://playground.test/scope:abc/wp-login.php?redirect_to=https%3A%2F%2Fplayground.test%2Fscope%3Aabc%2Fbylaws%2F\" class=\"wp-block-button__link wp-element-button\"><img src=\"avatar.svg\" alt=\"\" class=\"be-inline-geometry-1\"><mark class=\"HuH6Ex\">Sign In</mark></a></div>"
+            },
+            "bare_button": {
+                "content": "<a href=\"https://playground.test/scope:abc/wp-login.php?redirect_to=https%3A%2F%2Fplayground.test%2Fscope%3Aabc%2Fbylaws%2F\" class=\"O4eQsz dla-member-login-wix\"><span>Sign In</span></a><button type=\"button\">Menu</button>",
+                "rendered_block": "<a href=\"https://playground.test/scope:abc/wp-login.php?redirect_to=https%3A%2F%2Fplayground.test%2Fscope%3Aabc%2Fbylaws%2F\" class=\"O4eQsz dla-member-login-wix\"><span>Sign In</span></a><button type=\"button\">Menu</button>"
+            },
+            "class_link": {
+                "content": "<a href=\"https://playground.test/scope:abc/wp-login.php?redirect_to=https%3A%2F%2Fplayground.test%2Fscope%3Aabc%2Fbylaws%2F\" class=\"twJknM wixui-button dla-member-login-wix\">Sign In</a>",
+                "rendered_block": "<a href=\"https://playground.test/scope:abc/wp-login.php?redirect_to=https%3A%2F%2Fplayground.test%2Fscope%3Aabc%2Fbylaws%2F\" class=\"twJknM wixui-button dla-member-login-wix\">Sign In</a>"
+            },
+            "plain": {
+                "content": "<div class=\"wp-block-button\"><button type=\"button\" class=\"wp-block-button__link\">Go</button></div>",
+                "rendered_block": "<div class=\"wp-block-button\"><button type=\"button\" class=\"wp-block-button__link\">Go</button></div>"
+            }
+        }
+    }
+}

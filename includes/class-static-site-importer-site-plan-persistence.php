@@ -19,6 +19,9 @@ if ( ! class_exists( 'Static_Site_Importer_Build_Provenance' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Rewrite_Base_Collision' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-rewrite-base-collision.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Capture_Evidence' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-capture-evidence.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Internal_Link_Runtime' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-internal-link-runtime.php';
 }

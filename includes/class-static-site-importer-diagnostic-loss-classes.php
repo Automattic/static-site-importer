@@ -44,6 +44,11 @@ if ( ! defined( 'ABSPATH' ) ) {
  * `page_compile_omitted` row is the page-unit case: a non-entrypoint page
  * Blocks Engine could not represent is absent from the plan.
  *
+ * The registry holds only codes this importer and Blocks Engine own. Rows
+ * from any other producer describe themselves: a source finding
+ * ({@see Static_Site_Importer_Source_Findings}) carries its own `loss_class`,
+ * `unit` and `owning_layer` and is classified by its explicit loss class.
+ *
  * Keeping those two paths distinct is the point: previously every row went
  * through the heuristic, so an upstream vocabulary change silently rerouted
  * findings into the wrong product bucket instead of failing.
@@ -78,9 +83,8 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	public const UNACCEPTABLE_IMPORTED_OUTPUT_DEFECT = 'unacceptable_imported_output_defect';
 
 	/** Owning layers named on reported-loss rows. */
-	public const OWNING_LAYER_BLOCKS_ENGINE         = 'blocks-engine';
-	public const OWNING_LAYER_STATIC_SITE_IMPORTER  = 'static-site-importer';
-	public const OWNING_LAYER_DATA_LIBERATION_AGENT = 'data-liberation-agent';
+	public const OWNING_LAYER_BLOCKS_ENGINE        = 'blocks-engine';
+	public const OWNING_LAYER_STATIC_SITE_IMPORTER = 'static-site-importer';
 
 	/**
 	 * Producer sent a `loss_class` this plugin does not recognize.
@@ -242,67 +246,6 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 			'loss_class'   => self::OMITTED_UNIT,
 			'unit'         => 'file',
 			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
-		),
-		// Data Liberation Agent capture findings, read from the artifact's
-		// `capture-findings.json` ({@see Static_Site_Importer_Capture_Findings}).
-		// Missing and dropped routes are omitted units; a route, stylesheet or
-		// evidence block saved with part of its source is a degraded unit.
-		'route_capture_failed'                           => array(
-			'loss_class'   => self::OMITTED_UNIT,
-			'unit'         => 'route',
-			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
-		),
-		'route_export_failed'                            => array(
-			'loss_class'   => self::OMITTED_UNIT,
-			'unit'         => 'route',
-			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
-		),
-		'route_path_collision'                           => array(
-			'loss_class'   => self::OMITTED_UNIT,
-			'unit'         => 'route',
-			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
-		),
-		'route_off_origin'                               => array(
-			'loss_class'   => self::OMITTED_UNIT,
-			'unit'         => 'route',
-			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
-		),
-		'route_profile_uncaptured'                       => array(
-			'loss_class'   => self::OMITTED_UNIT,
-			'unit'         => 'profile',
-			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
-		),
-		// A route left uncaptured once the capture budget ran out, and an asset
-		// over the capture's per-file limit (Automattic/data-liberation-agent#785).
-		'route_capture_skipped_budget'                   => array(
-			'loss_class'   => self::OMITTED_UNIT,
-			'unit'         => 'route',
-			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
-		),
-		'asset_exceeds_file_limit'                       => array(
-			'loss_class'   => self::OMITTED_UNIT,
-			'unit'         => 'asset',
-			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
-		),
-		'route_capture_degraded'                         => array(
-			'loss_class'   => self::DEGRADED_UNIT,
-			'unit'         => 'route',
-			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
-		),
-		'stylesheet_unparseable'                         => array(
-			'loss_class'   => self::DEGRADED_UNIT,
-			'unit'         => 'stylesheet',
-			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
-		),
-		'native_timeline_unproven'                       => array(
-			'loss_class'   => self::DEGRADED_UNIT,
-			'unit'         => 'block',
-			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
-		),
-		'disclosure_unrestored'                          => array(
-			'loss_class'   => self::DEGRADED_UNIT,
-			'unit'         => 'block',
-			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
 		),
 	);
 
