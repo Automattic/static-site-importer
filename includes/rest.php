@@ -991,7 +991,7 @@ function static_site_importer_archive_files_from_path( string $archive_path, arr
 			$entry_limit = 'compression_ratio_exceeded';
 		}
 		if ( '' !== $entry_limit ) {
-			$entry_path = static_site_importer_rest_archive_entry_path( (string) ( $stat['name'] ?? '' ) );
+			$entry_path = static_site_importer_rest_archive_entry_path( $stat['name'] );
 			if ( '' !== $entry_path && Static_Site_Importer_Content_Policy::fails_closed( $entry_path ) ) {
 				$cleanup( $zip );
 				return static_site_importer_rest_archive_limit_error( $entry_limit );
@@ -1032,7 +1032,10 @@ function static_site_importer_archive_files_from_path( string $archive_path, arr
 			continue;
 		}
 		$entry = $zip->getNameIndex( $i );
-		$path  = false === $entry ? '' : static_site_importer_rest_archive_entry_path( $entry );
+		if ( false === $entry ) {
+			continue;
+		}
+		$path = static_site_importer_rest_archive_entry_path( $entry );
 		if ( '' === $path ) {
 			continue;
 		}

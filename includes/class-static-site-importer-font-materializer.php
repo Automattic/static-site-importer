@@ -81,9 +81,6 @@ final class Static_Site_Importer_Font_Materializer {
 		}
 
 		$font_faces = self::resolve_google_font_faces( $plan, $families, $diagnostics, microtime( true ) + self::request_budget() );
-		if ( is_wp_error( $font_faces ) ) {
-			return $font_faces;
-		}
 		if ( 'preserved' === $font_faces['state'] ) {
 			$preserved_url = (string) $font_faces['url'];
 			$fallback_url  = self::is_google_stylesheet_url( $preserved_url ) ? $preserved_url : '';
@@ -460,8 +457,9 @@ final class Static_Site_Importer_Font_Materializer {
 						);
 					}
 				}
-				$unavailable = (string) ( $stylesheet_cache[ $url ]['unavailable'] ?? '' );
-				$blocks      = '' === $unavailable ? self::matching_producer_blocks( $stylesheet_cache[ $url ]['css'], $face ) : array();
+				$cached      = $stylesheet_cache[ $url ];
+				$unavailable = (string) ( $cached['unavailable'] ?? '' );
+				$blocks      = isset( $cached['css'] ) ? self::matching_producer_blocks( $cached['css'], $face ) : array();
 				if ( '' === $unavailable && empty( $blocks ) ) {
 					$unavailable = 'producer_face_source_missing';
 				}
@@ -835,9 +833,8 @@ final class Static_Site_Importer_Font_Materializer {
 	/** @param array<int,string> $families @param array<int,array<string,string>> $diagnostics
 	 *  @return array{state:'embedded',css:string}
 	 *          | array{state:'preserved',reason:string,observed_bytes:int,url:string,aggregate_bytes?:int}
-	 *          | WP_Error
 	 */
-	private static function resolve_google_font_faces( array $plan, array $families, array &$diagnostics, float $deadline ): array|WP_Error {
+	private static function resolve_google_font_faces( array $plan, array $families, array &$diagnostics, float $deadline ): array {
 		$imports = array();
 		foreach ( $plan['stylesheets'] ?? array() as $stylesheet ) {
 			$content = is_array( $stylesheet ) && is_scalar( $stylesheet['content'] ?? null ) ? (string) $stylesheet['content'] : '';
@@ -908,9 +905,6 @@ final class Static_Site_Importer_Font_Materializer {
 				);
 			}
 			$embedded = self::embed_font_sources( $css, $families, $font_payloads, $font_payload_bytes, $diagnostics, $deadline );
-			if ( is_wp_error( $embedded ) ) {
-				return $embedded;
-			}
 			if ( 'preserved' === $embedded['state'] ) {
 				if ( '' === (string) $embedded['url'] ) {
 					$embedded['url'] = $import;
@@ -928,9 +922,8 @@ final class Static_Site_Importer_Font_Materializer {
 	/** @param array<int,string> $families @param array<string,string> $payloads @param array<int,array<string,string>> $diagnostics
 	 *  @return array{state:'embedded',css:string}
 	 *          | array{state:'preserved',reason:string,observed_bytes:int,url:string,aggregate_bytes?:int}
-	 *          | WP_Error
 	 */
-	private static function embed_font_sources( string $css, array $families, array &$payloads, int &$payload_bytes, array &$diagnostics, float $deadline ): array|WP_Error {
+	private static function embed_font_sources( string $css, array $families, array &$payloads, int &$payload_bytes, array &$diagnostics, float $deadline ): array {
 		if ( ! preg_match_all( '/@font-face\s*\{([^{}]*)\}/is', $css, $faces ) ) {
 			$diagnostics[] = self::diagnostic_with_detail(
 				'stylesheet_font_faces_missing',

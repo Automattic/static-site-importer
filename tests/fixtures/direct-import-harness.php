@@ -11,12 +11,12 @@
  * @package StaticSiteImporter
  */
 
-// phpcs:disable WordPress.WP.AlternativeFunctions, Universal.Files.SeparateFunctionsFromOO -- Standalone harness without a WordPress bootstrap.
+// phpcs:disable WordPress.WP.AlternativeFunctions, Universal.Files.SeparateFunctionsFromOO, Generic.Files.OneObjectStructurePerFile.MultipleFound -- Standalone harness: the WP_Error and Theme_Generator stubs replace the WordPress bootstrap, as in tests/smoke-capture-findings.php.
 
 define( 'ABSPATH', dirname( __DIR__, 2 ) . '/' );
 define( 'STATIC_SITE_IMPORTER_PATH', dirname( __DIR__, 2 ) . '/' );
 
-$GLOBALS['test_root']          = sys_get_temp_dir() . '/ssi-direct-harness-' . bin2hex( random_bytes( 4 ) );
+$GLOBALS['test_root']           = sys_get_temp_dir() . '/ssi-direct-harness-' . bin2hex( random_bytes( 4 ) );
 $GLOBALS['ssi_harness_filters'] = array();
 $GLOBALS['ssi_harness_imports'] = array();
 
@@ -172,7 +172,7 @@ function ssi_harness_last_import(): array {
  * @return array<int,array<string,mixed>>
  */
 function ssi_harness_findings( array $report, string $code ): array {
-	return array_values( array_filter( $report['diagnostics'] ?? array(), static fn ( $row ): bool => is_array( $row ) && $code === ( $row['code'] ?? '' ) ) );
+	return array_values( array_filter( $report['diagnostics'] ?? array(), static fn ( $row ): bool => is_array( $row ) && ( $row['code'] ?? '' ) === $code ) );
 }
 
 /** Remove the harness workspace. */

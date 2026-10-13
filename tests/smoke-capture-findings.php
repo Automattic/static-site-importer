@@ -352,6 +352,8 @@ foreach (
 		'route_path_collision'     => array( $omitted, 'route' ),
 		'route_off_origin'         => array( $omitted, 'route' ),
 		'route_profile_uncaptured' => array( $omitted, 'profile' ),
+		'route_capture_skipped_budget' => array( $omitted, 'route' ),
+		'asset_exceeds_file_limit' => array( $omitted, 'asset' ),
 		'route_capture_degraded'   => array( $reduced, 'route' ),
 		'stylesheet_unparseable'   => array( $reduced, 'stylesheet' ),
 		'native_timeline_unproven' => array( $reduced, 'block' ),

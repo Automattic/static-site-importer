@@ -12,6 +12,7 @@ function ssi_test_content_policy_intakes( callable $check ): void {
 	mkdir( $root );
 	// The bundle walker reports real paths; resolve a symlinked temp root (macOS /var).
 	$root = realpath( $root );
+
 	$cases = array(
 		'tutorial'      => array( '<!doctype html><html><body><h1>Tutorial</h1><button data-code="<?php echo 1; ?>">Copy</button></body></html>', true ),
 		'php-source'    => array( '<!doctype html><html><body><?php echo 1; ?></body></html>', false ),

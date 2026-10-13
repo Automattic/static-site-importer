@@ -266,6 +266,18 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 			'unit'         => 'profile',
 			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
 		),
+		// A route left uncaptured once the capture budget ran out, and an asset
+		// over the capture's per-file limit (Automattic/data-liberation-agent#785).
+		'route_capture_skipped_budget'                   => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'route',
+			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
+		),
+		'asset_exceeds_file_limit'                       => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'asset',
+			'owning_layer' => self::OWNING_LAYER_DATA_LIBERATION_AGENT,
+		),
 		'route_capture_degraded'                         => array(
 			'loss_class'   => self::DEGRADED_UNIT,
 			'unit'         => 'route',

@@ -321,6 +321,8 @@ $capture_rows    = Static_Site_Importer_Capture_Findings::findings(
 			$capture_finding( 'route_path_collision', 'route', 'a.html' ),
 			$capture_finding( 'route_off_origin', 'route', 'elsewhere/' ),
 			$capture_finding( 'route_profile_uncaptured', 'profile', 'tablet/', 'tablet/index.html' ),
+			$capture_finding( 'route_capture_skipped_budget', 'route', 'archive/page-9/' ),
+			$capture_finding( 'asset_exceeds_file_limit', 'asset', 'media/', 'assets/tour.mp4' ),
 			$capture_finding( 'route_capture_degraded', 'route', 'about/', 'about/index.html' ),
 			$capture_finding( 'stylesheet_unparseable', 'stylesheet', 'styled/', 'assets/site.css' ),
 			$capture_finding( 'native_timeline_unproven', 'block', 'motion/', 'motion/index.html' ),
@@ -357,6 +359,8 @@ $expected = array(
 	'route_path_collision'                           => array( 'omitted_unit', 'route', 'data-liberation-agent', 'https://example.com/a.html' ),
 	'route_off_origin'                               => array( 'omitted_unit', 'route', 'data-liberation-agent', 'https://example.com/elsewhere/' ),
 	'route_profile_uncaptured'                       => array( 'omitted_unit', 'profile', 'data-liberation-agent', 'website/tablet/index.html' ),
+	'route_capture_skipped_budget'                   => array( 'omitted_unit', 'route', 'data-liberation-agent', 'https://example.com/archive/page-9/' ),
+	'asset_exceeds_file_limit'                       => array( 'omitted_unit', 'asset', 'data-liberation-agent', 'website/assets/tour.mp4' ),
 	'route_capture_degraded'                         => array( 'degraded_unit', 'route', 'data-liberation-agent', 'website/about/index.html' ),
 	'stylesheet_unparseable'                         => array( 'degraded_unit', 'stylesheet', 'data-liberation-agent', 'website/assets/site.css' ),
 	'native_timeline_unproven'                       => array( 'degraded_unit', 'block', 'data-liberation-agent', 'website/motion/index.html' ),
@@ -489,12 +493,12 @@ foreach ( $expected as $code => list( $loss_class, $unit, $owning_layer, $locati
 $assert( array( 'bytes' => 70000, 'limit_bytes' => 65536 ) === ( $compact['runtime_entity_dropped']['metrics'] ?? null ), 'compact-row-keeps-metrics' );
 $assert( '/manifest.json' === ( $compact['wordpress_site_plan_omitted_link_declaration']['value'] ?? '' ), 'compact-row-keeps-value' );
 $assert( 1 === ( $summary['omitted_page_count'] ?? null ), 'compact-omitted-page-count' );
-$assert( 30 === ( $summary['loss_count'] ?? null ), 'compact-loss-count', wp_json_encode_fallback( $summary['loss_counts'] ?? null ) );
+$assert( 32 === ( $summary['loss_count'] ?? null ), 'compact-loss-count', wp_json_encode_fallback( $summary['loss_counts'] ?? null ) );
 $assert(
 	array(
 		'page_compile_omitted'         => 1,
 		'degraded_unit'                => 11,
-		'omitted_unit'                 => 18,
+		'omitted_unit'                 => 20,
 		'unsupported_loss'             => 0,
 		'importer_materialization_bug' => 0,
 	) === ( $summary['loss_counts'] ?? null ),

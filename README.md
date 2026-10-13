@@ -549,6 +549,8 @@ Degrade codes are classified by code, before any explicit `loss_class`, contract
 | `route_path_collision` | `omitted_unit` | `route` | `data-liberation-agent` |
 | `route_off_origin` | `omitted_unit` | `route` | `data-liberation-agent` |
 | `route_profile_uncaptured` | `omitted_unit` | `profile` | `data-liberation-agent` |
+| `route_capture_skipped_budget` | `omitted_unit` | `route` | `data-liberation-agent` |
+| `asset_exceeds_file_limit` | `omitted_unit` | `asset` | `data-liberation-agent` |
 | `route_capture_degraded` | `degraded_unit` | `route` | `data-liberation-agent` |
 | `stylesheet_unparseable` | `degraded_unit` | `stylesheet` | `data-liberation-agent` |
 | `native_timeline_unproven` | `degraded_unit` | `block` | `data-liberation-agent` |
