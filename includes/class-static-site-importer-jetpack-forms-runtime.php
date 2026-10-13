@@ -192,6 +192,7 @@ final class Static_Site_Importer_Jetpack_Forms_Runtime {
 
 	/** Build a bounded provider-readiness error. */
 	public static function jetpack_forms_runtime_error( string $code, array $missing, array $details = array() ): WP_Error {
+		// ssi-error-class: operational
 		return new WP_Error(
 			$code,
 			'Jetpack Forms provider runtime is not ready.',

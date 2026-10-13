@@ -34,6 +34,21 @@ if ( ! defined( 'ABSPATH' ) ) {
  * though the files are gone. Consumers re-own them first via
  * {@see reown_compiler_file_drop()} and stamp the loss class explicitly.
  *
+ * Degrade codes are classified by code before either path runs. A producer
+ * that hits a representability limit confined to one unit drops or degrades
+ * that unit, keeps going, and names the loss once. Those rows are accepted,
+ * reported losses: the import completes, and the loss is counted rather than
+ * filed as a clean conversion or as an imported-output defect. Each code in
+ * {@see REPORTED_LOSS_CODES} names its loss class, unit and owning layer, and
+ * consumers stamp that finding shape via {@see reown_reported_loss()}. A
+ * `page_compile_omitted` row is the page-unit case: a non-entrypoint page
+ * Blocks Engine could not represent is absent from the plan.
+ *
+ * The registry holds only codes this importer and Blocks Engine own. Rows
+ * from any other producer describe themselves: a source finding
+ * ({@see Static_Site_Importer_Source_Findings}) carries its own `loss_class`,
+ * `unit` and `owning_layer` and is classified by its explicit loss class.
+ *
  * Keeping those two paths distinct is the point: previously every row went
  * through the heuristic, so an upstream vocabulary change silently rerouted
  * findings into the wrong product bucket instead of failing.
@@ -49,8 +64,27 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	public const NATIVE_CONVERSION            = 'native_conversion';
 	public const EDITABLE_APPROXIMATION       = 'editable_approximation';
 	public const PRESERVED_RUNTIME_ISLAND     = 'preserved_runtime_island';
+	public const PAGE_COMPILE_OMITTED         = 'page_compile_omitted';
+	public const DEGRADED_UNIT                = 'degraded_unit';
+	public const OMITTED_UNIT                 = 'omitted_unit';
 	public const UNSUPPORTED_LOSS             = 'unsupported_loss';
 	public const IMPORTER_MATERIALIZATION_BUG = 'importer_materialization_bug';
+
+	/**
+	 * Acceptability of a loss class, stamped on every normalized row.
+	 *
+	 * `accepted_reported_loss` means the import completes and the loss is
+	 * reported: the unit is degraded or omitted by design at a representability
+	 * limit, so it is neither a clean conversion nor an imported-output defect.
+	 */
+	public const ACCEPTABLE_PRESERVATION             = 'acceptable_preservation';
+	public const ACCEPTABLE_CONVERSION               = 'acceptable_conversion';
+	public const ACCEPTED_REPORTED_LOSS              = 'accepted_reported_loss';
+	public const UNACCEPTABLE_IMPORTED_OUTPUT_DEFECT = 'unacceptable_imported_output_defect';
+
+	/** Owning layers named on reported-loss rows. */
+	public const OWNING_LAYER_BLOCKS_ENGINE        = 'blocks-engine';
+	public const OWNING_LAYER_STATIC_SITE_IMPORTER = 'static-site-importer';
 
 	/**
 	 * Producer sent a `loss_class` this plugin does not recognize.
@@ -79,8 +113,146 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	);
 
 	/**
+	 * Degrade code => accepted, reported loss.
+	 *
+	 * Each producer code that degrades or omits one unit at a representability
+	 * limit is classified here by code, never by the contract's generic
+	 * `review_generic_mapping` lane (an acceptable conversion) or the heuristic
+	 * (which files runtime targets and form graphs as importer bugs).
+	 *
+	 * - {@see DEGRADED_UNIT}: the unit stays, with reduced fidelity.
+	 * - {@see OMITTED_UNIT}: the unit is gone from the import.
+	 * - {@see PAGE_COMPILE_OMITTED}: the omitted unit is a whole page.
+	 *
+	 * `unit` is the default when the producer row names none.
+	 *
+	 * @var array<string,array{loss_class:string,unit:string,owning_layer:string}>
+	 */
+	private const REPORTED_LOSS_CODES = array(
+		'page_compile_omitted'                           => array(
+			'loss_class'   => self::PAGE_COMPILE_OMITTED,
+			'unit'         => 'page',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
+		),
+		'editability_policy_degraded'                    => array(
+			'loss_class'   => self::DEGRADED_UNIT,
+			'unit'         => 'page',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
+		),
+		'html_include_budget_exceeded'                   => array(
+			'loss_class'   => self::DEGRADED_UNIT,
+			'unit'         => 'page',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
+		),
+		'html_include_directive_ignored'                 => array(
+			'loss_class'   => self::DEGRADED_UNIT,
+			'unit'         => 'page',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
+		),
+		'glyph_color_undecodable'                        => array(
+			'loss_class'   => self::DEGRADED_UNIT,
+			'unit'         => 'item',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
+		),
+		'wordpress_site_plan_unresolved_navigation_link' => array(
+			'loss_class'   => self::DEGRADED_UNIT,
+			'unit'         => 'item',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
+		),
+		'runtime_dependency_target_missing'              => array(
+			'loss_class'   => self::DEGRADED_UNIT,
+			'unit'         => 'block',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
+		),
+		'wordpress_site_plan_colliding_asset_target'     => array(
+			'loss_class'   => self::DEGRADED_UNIT,
+			'unit'         => 'asset',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
+		),
+		'wordpress_site_plan_omitted_link_declaration'   => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'item',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
+		),
+		'runtime_entity_dropped'                         => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'item',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
+		),
+		'runtime_declaration_dropped'                    => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'declaration',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
+		),
+		'runtime_entity_binding_unanchored'              => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'binding',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
+		),
+		'runtime_form_graph_rejected'                    => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'item',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
+		),
+		'document_head_attribute_dropped'                => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'item',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
+		),
+		'document_head_element_dropped'                  => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'item',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
+		),
+		// Static-content admission: an asset skipped or a non-entry page
+		// dropped because it is not static content.
+		'static_site_importer_non_static_file_skipped'   => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'file',
+			'owning_layer' => self::OWNING_LAYER_STATIC_SITE_IMPORTER,
+		),
+		'static_site_importer_non_static_page_dropped'   => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'page',
+			'owning_layer' => self::OWNING_LAYER_STATIC_SITE_IMPORTER,
+		),
+		// An archive entry skipped unread at a per-entry size or ratio limit.
+		'static_site_importer_archive_entry_skipped'     => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'file',
+			'owning_layer' => self::OWNING_LAYER_STATIC_SITE_IMPORTER,
+		),
+		// A non-entry URL route that could not be collected.
+		'static_site_importer_url_route_omitted'         => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'route',
+			'owning_layer' => self::OWNING_LAYER_STATIC_SITE_IMPORTER,
+		),
+		// A web font face that could not be fetched or resolved is dropped, or
+		// its remote stylesheet import is kept instead of a local copy.
+		'font_face_unavailable'                          => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'asset',
+			'owning_layer' => self::OWNING_LAYER_STATIC_SITE_IMPORTER,
+		),
+		// Source files the compiler dropped at a declared file-count or byte
+		// limit, re-owned by {@see reown_compiler_file_drop()}.
+		self::OMITTED_ARTIFACT_FILES_TYPE                => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'file',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
+		),
+		self::OMITTED_ARTIFACT_FILE_TYPE                 => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'file',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
+		),
+	);
+
+	/**
 	 * Classification provenance markers, returned by {@see classify_with_provenance()}.
 	 */
+	public const SOURCE_CODE         = 'code';
 	public const SOURCE_EXPLICIT     = 'explicit';
 	public const SOURCE_CONTRACT     = 'contract';
 	public const SOURCE_HEURISTIC    = 'heuristic';
@@ -119,6 +291,10 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 		'informational_var_density'                   => self::NATIVE_CONVERSION,
 		'runtime_behavior_superseded_by_native_block' => self::NATIVE_CONVERSION,
 
+		// A compiled site document lacks a safe identity or block markup: the
+		// plan is not self-contained, so its content did not survive.
+		'restore_compiled_document_identity'          => self::UNSUPPORTED_LOSS,
+
 		// Source behavior deliberately preserved as a bounded runtime island.
 		'preserve_runtime_island'                     => self::PRESERVED_RUNTIME_ISLAND,
 		'runtime_canvas_target_preservation'          => self::PRESERVED_RUNTIME_ISLAND,
@@ -148,6 +324,9 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 		'preserve_responsive_image_markup'            => self::EDITABLE_APPROXIMATION,
 		'layout_direction_misrecognition'             => self::EDITABLE_APPROXIMATION,
 		'cover_gate_rejection'                        => self::EDITABLE_APPROXIMATION,
+		// An author selector projection binds no emitted element: the content
+		// converted, but that styling does not apply.
+		'restore_projected_selector_binding'          => self::EDITABLE_APPROXIMATION,
 	);
 
 	/**
@@ -324,8 +503,9 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	 * Returns the row unchanged when it is not a file drop. Left as-is, these
 	 * warnings classify as acceptable conversion even though the omitted files
 	 * are gone from the import. The rewrite keeps the producer code as
-	 * `original_code` / `reason_code` and stamps the loss class explicitly so
-	 * classification is deterministic on every consumer path.
+	 * `original_code` / `reason_code` and stamps it as an accepted, reported
+	 * {@see OMITTED_UNIT} loss: the rest of the site imports, and the dropped
+	 * files are counted.
 	 *
 	 * @param array<string,mixed> $diagnostic Raw diagnostic row.
 	 * @return array<string,mixed>
@@ -343,8 +523,79 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 		$diagnostic['kind']                   = $type;
 		$diagnostic['type']                   = $type;
 		$diagnostic['reason_code']            = $original_code;
-		$diagnostic['loss_class']             = self::UNSUPPORTED_LOSS;
 		$diagnostic['materialization_status'] = 'not_materialized';
+
+		return self::reown_reported_loss( $diagnostic );
+	}
+
+	/**
+	 * Pages Blocks Engine omitted from a compiled site plan.
+	 *
+	 * Blocks Engine drops a non-entrypoint page whose conversion hits a
+	 * representability limit and names it once, as a `page_compile_omitted`
+	 * row in the plan diagnostics. The plan no longer contains that page.
+	 *
+	 * @param array<int,mixed> $diagnostics Plan diagnostic rows.
+	 * @return array<int,array<string,mixed>>
+	 */
+	public static function omitted_pages( array $diagnostics ): array {
+		return array_values(
+			array_filter(
+				$diagnostics,
+				static fn( $diagnostic ): bool => is_array( $diagnostic ) && self::PAGE_COMPILE_OMITTED === ( $diagnostic['code'] ?? null )
+			)
+		);
+	}
+
+	/**
+	 * The reported-loss registry entry for a degrade code.
+	 *
+	 * @param array<string,mixed> $diagnostic Diagnostic row.
+	 * @return array{loss_class:string,unit:string,owning_layer:string}|array{}
+	 */
+	public static function reported_loss( array $diagnostic ): array {
+		// Some report sections carry the producer code as `type`.
+		foreach ( array( 'code', 'diagnostic_code', 'type' ) as $key ) {
+			if ( isset( $diagnostic[ $key ] ) && is_string( $diagnostic[ $key ] ) && isset( self::REPORTED_LOSS_CODES[ $diagnostic[ $key ] ] ) ) {
+				return self::REPORTED_LOSS_CODES[ $diagnostic[ $key ] ];
+			}
+		}
+
+		return array();
+	}
+
+	/**
+	 * Degrade codes classified as accepted, reported losses.
+	 *
+	 * @return array<string,array{loss_class:string,unit:string,owning_layer:string}>
+	 */
+	public static function reported_loss_codes(): array {
+		return self::REPORTED_LOSS_CODES;
+	}
+
+	/**
+	 * Stamp a degrade-code row as an accepted, reported loss finding.
+	 *
+	 * The producer's own `unit` and `owning_layer` win; the registry fills
+	 * them when absent. Returns the row unchanged when it is not a degrade code.
+	 *
+	 * @param array<string,mixed> $diagnostic Raw diagnostic row.
+	 * @return array<string,mixed>
+	 */
+	public static function reown_reported_loss( array $diagnostic ): array {
+		$loss = self::reported_loss( $diagnostic );
+		if ( array() === $loss ) {
+			return $diagnostic;
+		}
+
+		foreach ( array( 'unit', 'owning_layer' ) as $field ) {
+			if ( ! isset( $diagnostic[ $field ] ) || ! is_string( $diagnostic[ $field ] ) || '' === $diagnostic[ $field ] ) {
+				$diagnostic[ $field ] = $loss[ $field ];
+			}
+		}
+		$diagnostic['loss_class']       = $loss['loss_class'];
+		$diagnostic['diagnostic_class'] = $loss['loss_class'];
+		$diagnostic['acceptability']    = self::acceptability( $loss['loss_class'] );
 
 		return $diagnostic;
 	}
@@ -359,6 +610,16 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	 * @return array{class:string,source:string,repair_bucket:string}
 	 */
 	public static function classify_with_provenance( array $diagnostic ): array {
+		// A degrade code is identified by its code on every consumer path,
+		// stamped or not, like the compiler file drops.
+		$reported = self::reported_loss( $diagnostic );
+		if ( array() !== $reported ) {
+			return array(
+				'class'         => $reported['loss_class'],
+				'source'        => self::SOURCE_CODE,
+				'repair_bucket' => '',
+			);
+		}
 		$explicit  = self::scalar( $diagnostic, array( 'loss_class', 'diagnostic_class' ) );
 		$canonical = self::canonicalize( $explicit );
 		if ( '' !== $canonical ) {
@@ -535,6 +796,53 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 	}
 
 	/**
+	 * Count loss rows by loss class, including zeroes for every loss class.
+	 *
+	 * A loss is any row whose class is not an acceptable conversion or
+	 * preservation: accepted, reported losses and imported-output defects.
+	 *
+	 * @param array<int,array<string,mixed>> $diagnostics Diagnostics.
+	 * @return array<string,int>
+	 */
+	public static function loss_counts( array $diagnostics ): array {
+		return array_filter(
+			self::counts( $diagnostics ),
+			static fn( string $loss_class ): bool => self::is_loss( $loss_class ),
+			ARRAY_FILTER_USE_KEY
+		);
+	}
+
+	/**
+	 * Whether a loss class records a loss rather than a conversion.
+	 *
+	 * @param string $loss_class Canonical loss class.
+	 * @return bool
+	 */
+	public static function is_loss( string $loss_class ): bool {
+		return ! in_array( self::acceptability( $loss_class ), array( self::ACCEPTABLE_CONVERSION, self::ACCEPTABLE_PRESERVATION ), true );
+	}
+
+	/**
+	 * Acceptability of a loss class.
+	 *
+	 * @param string $loss_class Canonical loss class.
+	 * @return string
+	 */
+	public static function acceptability( string $loss_class ): string {
+		if ( self::PRESERVED_RUNTIME_ISLAND === $loss_class ) {
+			return self::ACCEPTABLE_PRESERVATION;
+		}
+		if ( in_array( $loss_class, array( self::NATIVE_CONVERSION, self::EDITABLE_APPROXIMATION ), true ) ) {
+			return self::ACCEPTABLE_CONVERSION;
+		}
+		if ( in_array( $loss_class, array( self::PAGE_COMPILE_OMITTED, self::DEGRADED_UNIT, self::OMITTED_UNIT ), true ) ) {
+			return self::ACCEPTED_REPORTED_LOSS;
+		}
+
+		return self::UNACCEPTABLE_IMPORTED_OUTPUT_DEFECT;
+	}
+
+	/**
 	 * Stable class names.
 	 *
 	 * @return array<int,string>
@@ -544,6 +852,9 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 			self::NATIVE_CONVERSION,
 			self::EDITABLE_APPROXIMATION,
 			self::PRESERVED_RUNTIME_ISLAND,
+			self::PAGE_COMPILE_OMITTED,
+			self::DEGRADED_UNIT,
+			self::OMITTED_UNIT,
 			self::UNSUPPORTED_LOSS,
 			self::IMPORTER_MATERIALIZATION_BUG,
 		);

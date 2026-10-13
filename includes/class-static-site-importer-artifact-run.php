@@ -19,6 +19,7 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		$root     = rtrim( $root, '/\\' );
 		$resolved = realpath( $root );
 		if ( '' === $root || is_link( $root ) || false === $resolved || ! is_dir( $resolved ) ) {
+			// ssi-error-class: integrity
 			throw new RuntimeException( 'Artifact workspace root must be an existing non-symlink directory.' );
 		}
 
@@ -27,15 +28,18 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 		$this->directory = $this->root . '/.ssi-artifact-run-' . $token;
 		$directory       = $this->directory;
 		if ( ! is_dir( $directory ) && ! self::filesystem_operation( static fn () => mkdir( $directory, 0700 ) ) && ! is_dir( $directory ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir -- Creates the importer-owned workspace without initializing a global filesystem transport.
+			// ssi-error-class: operational
 			throw new RuntimeException( 'Artifact workspace could not be created.' );
 		}
 		if ( is_link( $directory ) ) {
+			// ssi-error-class: integrity
 			throw new RuntimeException( 'Artifact workspace directory cannot be a symlink.' );
 		}
 
 		$existing = $this->read_raw( 'workspace.json' );
 		$record   = is_string( $existing ) ? json_decode( $existing, true ) : null;
 		if ( ( is_file( $this->directory . '/workspace.json' ) || is_string( $existing ) ) && ( ! is_array( $record ) || 'static-site-importer/artifact-workspace/v1' !== ( $record['schema'] ?? '' ) || ( $record['purpose'] ?? '' ) !== $token ) ) {
+			// ssi-error-class: integrity
 			throw new RuntimeException( 'Artifact workspace ownership record is invalid.' );
 		}
 		$this->record = is_array( $record ) ? $record : array(
@@ -45,6 +49,7 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 			'retention'  => $retention,
 		);
 		if ( ! is_array( $record ) && is_wp_error( $this->publish_json( 'workspace.json', $this->record ) ) ) {
+			// ssi-error-class: operational
 			throw new RuntimeException( 'Artifact workspace ownership record could not be published.' );
 		}
 	}
@@ -578,6 +583,7 @@ final class Static_Site_Importer_Artifact_Run_Workspace {
 				if ( E_WARNING !== $severity ) {
 					return false;
 				}
+				// ssi-error-class: propagated
 				throw new ErrorException();
 			}
 		);
@@ -946,6 +952,7 @@ final class Static_Site_Importer_Artifact_Batch_Cursor {
 				'split_from'           => $row['split_from'] ?? null,
 				'effective_batch_size' => $row['effective_batch_size'] ?? null,
 				'page_ready_deferred'  => ! empty( $row['page_ready_deferred'] ),
+				'omitted'              => is_array( $row['omitted'] ?? null ) ? $row['omitted'] : null,
 			);
 		}
 		unset( $row );

@@ -116,7 +116,8 @@ class Static_Site_Importer_Canonical_Import_Service {
 			$input      = array_merge( $input, $prepared['input'] );
 			$provenance = array_merge( $provenance, isset( $artifact['provenance'] ) && is_array( $artifact['provenance'] ) ? $artifact['provenance'] : array() );
 		} else {
-			$runtime_source = array(
+			$intake_findings = array();
+			$runtime_source  = array(
 				'entrypoint' => (string) ( $source['entrypoint'] ?? '' ),
 				'metadata'   => isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array(),
 			);
@@ -125,7 +126,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 			} elseif ( 'files' === $type ) {
 				$runtime_source['files'] = isset( $source['files'] ) && is_array( $source['files'] ) ? $source['files'] : array();
 			} elseif ( ! empty( $source['zip']['staged_path'] ) ) {
-				$runtime_source['files'] = static_site_importer_staged_archive_files( $source['zip'], true );
+				$runtime_source['files'] = static_site_importer_staged_archive_files( $source['zip'], true, $intake_findings );
 				if ( is_wp_error( $runtime_source['files'] ) ) {
 					return self::error( (string) $runtime_source['files']->get_error_code(), $runtime_source['files']->get_error_message(), $runtime_source['files']->get_error_data() );
 				}
@@ -154,8 +155,14 @@ class Static_Site_Importer_Canonical_Import_Service {
 				return self::error( (string) $runtime->get_error_code(), $runtime->get_error_message(), $runtime->get_error_data() );
 			}
 			$runtime_artifact = $runtime['artifact'];
-			$source_path      = is_string( $input['source_metadata']['source_path'] ?? null ) ? trim( $input['source_metadata']['source_path'] ) : '';
-			$source_parts     = '' !== $source_path ? ( function_exists( 'wp_parse_url' ) ? wp_parse_url( $source_path ) : parse_url( $source_path ) ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Standalone import smoke tests run without WordPress URL helpers.
+			$intake_findings  = array_merge( $intake_findings, is_array( $runtime['source_metadata']['intake_findings'] ?? null ) ? $runtime['source_metadata']['intake_findings'] : array() );
+			if ( array() !== $intake_findings ) {
+				// Skipped non-static assets surface as report diagnostics through the import args.
+				$input['source_metadata']                    = is_array( $input['source_metadata'] ?? null ) ? $input['source_metadata'] : array();
+				$input['source_metadata']['intake_findings'] = $intake_findings;
+			}
+			$source_path  = is_string( $input['source_metadata']['source_path'] ?? null ) ? trim( $input['source_metadata']['source_path'] ) : '';
+			$source_parts = '' !== $source_path ? ( function_exists( 'wp_parse_url' ) ? wp_parse_url( $source_path ) : parse_url( $source_path ) ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- Standalone import smoke tests run without WordPress URL helpers.
 			if (
 				! isset( $runtime_artifact['provenance']['source_url'] ) &&
 				is_array( $source_parts ) &&
@@ -394,6 +401,8 @@ class Static_Site_Importer_Canonical_Import_Service {
 		$args['_static_site_importer_precompiled_source']         = true;
 		$args['import_run_id']                                    = $runtime['record']['identity'];
 		$args['_static_site_importer_lifecycle_reference_backed'] = true;
+		// The URL run admitted its collection once; its findings join this import's report.
+		$args = Static_Site_Importer_Content_Policy::with_intake_findings( $args, is_array( $runtime['terminal']['intake_findings'] ?? null ) ? $runtime['terminal']['intake_findings'] : array() );
 
 		$result = Static_Site_Importer_Theme_Generator::import_website_artifact( $runtime['terminal']['artifact'], $args );
 		if ( is_wp_error( $result ) ) {
@@ -526,7 +535,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 			$continuation,
 			array(
 				'plan'        => $terminal['plan'],
-				'diagnostics' => array_merge( is_array( $continuation['url_batch_run']['diagnostics'] ?? null ) ? $continuation['url_batch_run']['diagnostics'] : array(), is_array( $terminal['diagnostics'] ?? null ) ? $terminal['diagnostics'] : array() ),
+				'diagnostics' => array_merge( is_array( $continuation['url_batch_run']['diagnostics'] ?? null ) ? $continuation['url_batch_run']['diagnostics'] : array(), is_array( $terminal['diagnostics'] ?? null ) ? $terminal['diagnostics'] : array(), is_array( $terminal['intake_findings'] ?? null ) ? $terminal['intake_findings'] : array() ),
 				'quality'     => is_array( $terminal['quality'] ?? null ) ? $terminal['quality'] : array(),
 				'source'      => array(
 					'type'       => 'url',

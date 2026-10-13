@@ -8,19 +8,44 @@ import { fileURLToPath } from 'node:url';
 import { materializeGeneratedArtifactFixtures, discoverGeneratedArtifacts } from '../lib/artifact-intake.mjs';
 
 export const URL_LOOP_INTAKE_SCHEMA = 'static-site-importer/url-loop-intake/v1';
-export const CAPTURE_RECEIPT_SCHEMA = 'data-liberation/capture-receipt/v1';
+export const CAPTURE_RECEIPT_SCHEMA = 'blocks-engine-capture/capture-receipt/v1';
 export const MATRIX_EVIDENCE_READINESS_SCHEMA = 'static-site-importer/fixture-matrix-runtime-evidence-summary/v1';
-export const DLA_RELEASE = Object.freeze({
-  version: 'v0.6.5',
-  commit: '880575b81cd837322520d05d260f5d682506afbb',
-  asset: 'https://github.com/Automattic/data-liberation-agent/releases/download/v0.6.5/data-liberation-0.6.5.tgz',
-  sha256: 'dd6ce344a37fbe7e06af973aec0cf576cdb2fc88f3a4e155e49723953c4200b8',
-});
+export const CAPTURE_COMMAND_ENV = 'SSI_URL_LOOP_CAPTURE_COMMAND';
+export const CAPTURE_RECEIPT_SCHEMA_ENV = 'SSI_URL_LOOP_CAPTURE_RECEIPT_SCHEMA';
 
-export function validateCapture(input = {}) {
+/**
+ * The capture producer is caller configuration, never harness code: an argv
+ * array that must contain the `{url}` and `{output}` placeholders, plus the
+ * receipt schema the produced `capture-receipt.json` must declare. Explicit
+ * input wins over the environment; the schema defaults to the published
+ * Blocks Engine capture receipt contract.
+ */
+export function resolveCaptureConfig(input = {}, env = process.env) {
+  const declared = input.capture || {};
+  let command = declared.command ?? input.captureCommand ?? env[CAPTURE_COMMAND_ENV];
+  if (command === undefined || command === null || command === '') {
+    throw new Error(`capture_command_missing: pass --capture-command '<JSON argv>' or set ${CAPTURE_COMMAND_ENV}`);
+  }
+  if (typeof command === 'string') {
+    try { command = JSON.parse(command); } catch { throw new Error('capture_command_invalid: expected a JSON array of argv strings'); }
+  }
+  if (!Array.isArray(command) || command.length === 0 || command.some((arg) => typeof arg !== 'string' || arg === '')) {
+    throw new Error('capture_command_invalid: expected a non-empty JSON array of non-empty argv strings');
+  }
+  for (const placeholder of ['{url}', '{output}']) {
+    if (!command.some((arg) => arg.includes(placeholder))) throw new Error(`capture_command_invalid: argv must contain the ${placeholder} placeholder`);
+  }
+  const receiptSchema = declared.receipt_schema ?? input.captureReceiptSchema ?? env[CAPTURE_RECEIPT_SCHEMA_ENV] ?? CAPTURE_RECEIPT_SCHEMA;
+  if (typeof receiptSchema !== 'string' || !/^[a-z0-9][a-z0-9.-]*(?:\/[a-z0-9][a-z0-9.-]*)*\/v[0-9]+$/.test(receiptSchema)) {
+    throw new Error('capture_receipt_schema_invalid: expected a versioned schema id such as <namespace>/capture-receipt/v1');
+  }
+  return { command: [...command], receipt_schema: receiptSchema };
+}
+
+export function validateCapture(input = {}, options = {}) {
   const receipt = input.receipt || input;
   const failures = [];
-  if (receipt.schema !== CAPTURE_RECEIPT_SCHEMA) failures.push('capture_receipt_schema_unknown');
+  if (receipt.schema !== (options.schema || CAPTURE_RECEIPT_SCHEMA)) failures.push('capture_receipt_schema_unknown');
   const summary = receipt.summary;
   if (summary?.complete !== true || !Number.isInteger(summary?.routesCaptured) || summary.routesCaptured < 1 || summary.routesCaptured !== summary.routesDiscovered || summary.routesFailed !== 0 || summary.routesSkipped !== 0) {
     failures.push('capture_incomplete');
@@ -107,8 +132,8 @@ export async function runUrlLoopMatrix(input, dependencies = {}) {
 
 export async function runUrlLoopIntake(input = {}, dependencies = {}) {
   const url = normalizeUrl(input.url);
-  const configInput = typeof input.dlaConfig === 'string' ? readJson(path.resolve(input.dlaConfig)) : (input.dlaConfig || input);
-  const config = normalizeDlaConfig(configInput || {});
+  const capture = resolveCaptureConfig(input, dependencies.env || process.env);
+  const config = normalizeToolchain(input.runtimeToolchain || {});
   const outputRoot = path.resolve(input.outputRoot || path.join(process.cwd(), 'artifacts', sourceSlug(url)));
   const captureRoot = path.join(outputRoot, 'capture');
   const fixtureRoot = path.join(outputRoot, 'fixtures', 'websites');
@@ -120,15 +145,16 @@ export async function runUrlLoopIntake(input = {}, dependencies = {}) {
   if (fs.existsSync(outputRoot) && fs.readdirSync(outputRoot).length > 0 && !input.allowExistingOutput) failures.push('output_root_not_fresh');
   if (!failures.length) {
     fs.mkdirSync(captureRoot, { recursive: true });
-    const captureArgs = config.captureArgs.map((arg) => String(arg).replaceAll('{url}', url).replaceAll('{output}', captureRoot));
-    const command = { command: config.cli, args: captureArgs };
+    const [executable, ...captureArgs] = capture.command.map((arg) => arg.replaceAll('{url}', url).replaceAll('{output}', captureRoot));
+    const cli = resolveExecutable(executable, config.path);
+    const command = { command: cli, args: captureArgs };
     commands.push({ stage: 'capture', ...command, shell: shellCommand(command) });
-    const prerequisite = capturePrerequisiteFailure(config);
+    const prerequisite = capturePrerequisiteFailure(config.node, cli);
     if (prerequisite) failures.push(prerequisite);
     else {
       let result;
       try {
-        result = (dependencies.spawn || spawnSync)(config.cli, captureArgs, {
+        result = (dependencies.spawn || spawnSync)(cli, captureArgs, {
           stdio: 'inherit', timeout: config.timeout,
           env: { ...process.env, ...(config.env || {}), PATH: config.path || process.env.PATH },
         });
@@ -141,7 +167,7 @@ export async function runUrlLoopIntake(input = {}, dependencies = {}) {
 
   const selectedCapture = findRetainedCapture(captureRoot, url);
   const captureReceipt = selectedCapture?.receipt || null;
-  const captureValidation = validateCapture(captureReceipt || {});
+  const captureValidation = validateCapture(captureReceipt || {}, { schema: capture.receipt_schema });
   failures.push(...captureValidation.failures);
   if (!selectedCapture) failures.push('capture_directory_missing_or_ambiguous');
   if (captureReceipt && captureReceipt.source?.url !== url) failures.push('capture_source_url_mismatch');
@@ -174,7 +200,7 @@ export async function runUrlLoopIntake(input = {}, dependencies = {}) {
     }
   }
   const runtimeFailure = failures.find((failure) => failure?.stage === 'capture') || null;
-  const handoff = createHandoff({ url, provenance, captureReceipt, fixture, matrix, failures, commands, runtimeFailure, findingPacketRefs: [], identities: { dla: config.identity, ssi: input.ssiIdentity, blocks_engine: input.blocksEngineIdentity, wordpress: input.wordpressIdentity } });
+  const handoff = createHandoff({ url, provenance, captureReceipt, fixture, matrix, failures, commands, runtimeFailure, findingPacketRefs: [], identities: { capture: { command: capture.command, command_sha256: sha256(JSON.stringify(capture.command)), receipt_schema: capture.receipt_schema }, ssi: input.ssiIdentity, blocks_engine: input.blocksEngineIdentity, wordpress: input.wordpressIdentity } });
   if (input.dryRun) return { ...handoff, handoff_path: null };
   fs.mkdirSync(path.dirname(handoffPath), { recursive: true });
   fs.writeFileSync(handoffPath, `${JSON.stringify(handoff, null, 2)}\n`);
@@ -182,17 +208,23 @@ export async function runUrlLoopIntake(input = {}, dependencies = {}) {
 }
 
 function normalizeUrl(value) { const url = new URL(String(value || '')); if (!['http:', 'https:'].includes(url.protocol)) throw new Error('url must be a public http(s) URL'); return url.href; }
-function normalizeDlaConfig(input) {
-  const identity = { ...DLA_RELEASE, executable: 'data-liberation' };
-  if (input.dlaVersion && input.dlaVersion !== identity.version || input.dlaCommit && input.dlaCommit !== identity.commit || input.dlaAsset && input.dlaAsset !== identity.asset || input.dlaSha256 && input.dlaSha256 !== identity.sha256) throw new Error('declared DLA release identity does not match v0.6.5');
-  const toolchain = input.runtimeToolchain || {};
+function normalizeToolchain(toolchain) {
   const node = path.resolve(toolchain.node || process.execPath);
-  const launcher = path.resolve(toolchain.npx || path.join(path.dirname(node), 'npx'));
   const pathValue = [path.dirname(node), '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(path.delimiter);
-  return { cli: launcher, node, captureArgs: ['--yes', `--package=${identity.asset}`, identity.executable, '{url}', '--output', '{output}'], identity, path: pathValue, timeout: toolchain.timeout || 600000, env: toolchain.env || {} };
+  return { node, path: pathValue, timeout: toolchain.timeout || 600000, env: toolchain.env || {} };
 }
-function capturePrerequisiteFailure(config) {
-  for (const [executable, reason] of [[config.node, 'node_unavailable'], [config.cli, 'launcher_unavailable']]) {
+// A bare executable name resolves against the same bounded PATH the child runs
+// with, so the recorded command is the absolute program that actually ran.
+function resolveExecutable(executable, pathValue) {
+  if (executable.includes('/')) return path.resolve(executable);
+  for (const directory of pathValue.split(path.delimiter)) {
+    const candidate = path.join(directory, executable);
+    try { fs.accessSync(candidate, fs.constants.X_OK); return candidate; } catch { /* Try the next PATH entry. */ }
+  }
+  return path.join(pathValue.split(path.delimiter)[0], executable);
+}
+function capturePrerequisiteFailure(node, cli) {
+  for (const [executable, reason] of [[node, 'node_unavailable'], [cli, 'launcher_unavailable']]) {
     try { fs.accessSync(executable, fs.constants.X_OK); }
     catch (error) { return { stage: 'capture', reason, outcome: 'prerequisite_unavailable', exit_status: null, error_code: error.code || null, error_message: String(error.message).slice(0, 1024), signal: null }; }
   }

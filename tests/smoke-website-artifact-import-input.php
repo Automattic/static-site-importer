@@ -98,7 +98,7 @@ if ( ! class_exists( 'Static_Site_Importer_Theme_Generator' ) ) {
 
 		public static function import_website_artifact( array $artifact, array $args = array() ) {
 			self::$last_args = $args;
-			$policy = Static_Site_Importer_Content_Policy::validate_artifact( $artifact );
+			$policy = Static_Site_Importer_Content_Policy::admit_artifact( $artifact );
 			if ( is_wp_error( $policy ) ) {
 				return $policy;
 			}
@@ -269,20 +269,23 @@ $assert( str_ends_with( $validation_args['report'], '/import-report.json' ), 'va
 $assert( 'contract-1' === ( $validation_args['source_metadata']['request_id'] ?? '' ), 'validation-preserves-caller-metadata' );
 $assert( 'static-site-importer/current-runtime' === ( $validation_args['source_metadata']['validation_provider'] ?? '' ), 'validation-adds-provider-metadata' );
 
-$policy_validation = Static_Site_Importer_Validation_Runtime::validate_artifact(
+$policy_validation_of = static fn ( string $path, string $content ) => Static_Site_Importer_Validation_Runtime::validate_artifact(
 	array_merge(
 		$input,
 		array(
-			'artifact' => array(
+			'artifact'     => array(
 				'schema' => 'blocks-engine/php-transformer/site-artifact/v1',
-				'files'  => array( array( 'path' => 'website/quartz.config.ts', 'content_base64' => base64_encode( 'export default {};' ) ) ),
+				'files'  => array( array( 'path' => $path, 'content_base64' => base64_encode( $content ) ) ),
 			),
 			'artifact_dir' => sys_get_temp_dir() . '/ssi-import-input-policy-' . uniqid( '', true ),
 		)
 	)
 );
-$assert( is_wp_error( $policy_validation ), 'validation-runtime-import-pipeline-rejects-excluded-source' );
-$assert( 'static_site_importer_executable_source_rejected' === $policy_validation->get_error_code(), 'validation-runtime-import-pipeline-preserves-policy-rejection' );
+// The entrypoint fails closed; a non-static asset is left out and the import continues.
+$policy_validation = $policy_validation_of( 'website/index.php', '<?php echo 1;' );
+$assert( is_wp_error( $policy_validation ), 'validation-runtime-import-pipeline-rejects-non-static-entrypoint' );
+$assert( is_wp_error( $policy_validation ) && 'static_site_importer_executable_source_rejected' === $policy_validation->get_error_code(), 'validation-runtime-import-pipeline-preserves-policy-rejection' );
+$assert( ! is_wp_error( $policy_validation_of( 'website/quartz.config.ts', 'export default {};' ) ), 'validation-runtime-import-pipeline-skips-non-static-asset' );
 
 if ( is_dir( $artifact_dir ) ) {
 	rmdir( $artifact_dir );
@@ -298,7 +301,7 @@ require_once dirname( __DIR__ ) . '/includes/cli.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-compilation-preparation.php';
 require_once __DIR__ . '/fixtures/content-policy-intakes.php';
 ssi_test_content_policy_intakes( static function ( string $label, bool $accepted, $runtime, array $artifact, ?object $reader ) use ( $assert ): void {
-	$assert( $accepted ? is_array( $runtime ) : is_wp_error( $runtime ) && 'static_site_importer_executable_source_rejected' === $runtime->get_error_code(), 'normalization-guard:' . $label );
+	$assert( is_array( $runtime ), 'normalization-defers-static-content-decision:' . $label );
 	$result = Static_Site_Importer_Compilation_Preparation::compile_website_artifact( $artifact, array( '_static_site_importer_payload_reader' => $reader ) );
 	$expected = $accepted ? 'static_site_importer_missing_transformer' : 'static_site_importer_executable_source_rejected';
 	$assert( is_wp_error( $result ) && $expected === $result->get_error_code(), 'compilation-guard:' . $label );

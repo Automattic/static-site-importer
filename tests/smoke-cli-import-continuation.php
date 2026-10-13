@@ -66,20 +66,37 @@ $assert     = static function ( bool $condition, string $label ) use ( &$asserti
 };
 
 $compiler_version = \Composer\InstalledVersions::getPrettyVersion( 'automattic/blocks-engine-php-transformer' );
-$assert( is_string( $compiler_version ) && '' !== $compiler_version, 'dla-regression-records-installed-locked-blocks-engine-php-transformer-version' );
+$assert( is_string( $compiler_version ) && '' !== $compiler_version, 'export-regression-records-installed-locked-blocks-engine-php-transformer-version' );
 
+// Normalize a source, then apply the one static-content decision, as the freeze boundary does.
+$admit_normalized = static function ( array $source, ?object $reader ) {
+	$runtime = static_site_importer_source_runtime( $source, $reader );
+	return is_wp_error( $runtime ) ? $runtime : Static_Site_Importer_Content_Policy::admit_artifact( $runtime['artifact'], $reader );
+};
+// A CLI request bundle through the same normalization and admission as REST and staged ZIPs.
+$admit_bundle = static function ( string $directory ) use ( $admit_normalized ) {
+	$bundle = static_site_importer_cli_request_bundle_files( $directory );
+	return is_wp_error( $bundle ) ? $bundle : $admit_normalized( array( 'files' => $bundle['files'] ), $bundle['payload_reader'] );
+};
+// Left out of the import with exactly one finding for the path.
+$left_out = static fn ( $admission, string $code, string $path ): bool => is_array( $admission ) && ! in_array( $path, array_column( $admission['artifact']['files'], 'path' ), true ) && array( $path ) === array_column( array_filter( $admission['findings'], static fn ( array $finding ): bool => $code === $finding['code'] ), 'source_path' );
 require_once __DIR__ . '/fixtures/content-policy-intakes.php';
-ssi_test_content_policy_intakes( static function ( string $label, bool $accepted, $runtime, array $artifact, ?object $reader ) use ( $assert ): void {
-	$assert( $accepted ? is_array( $runtime ) : is_wp_error( $runtime ) && 'static_site_importer_executable_source_rejected' === $runtime->get_error_code(), 'real-normalizer:' . $label );
-	$policy = Static_Site_Importer_Content_Policy::validate_artifact( $artifact, $reader );
-	$assert( $accepted ? true === $policy : is_wp_error( $policy ) && 'static_site_importer_executable_source_rejected' === $policy->get_error_code(), 'real-intake-policy:' . $label );
+ssi_test_content_policy_intakes( static function ( string $label, bool $accepted, $runtime, array $artifact, ?object $reader ) use ( $assert, $admit_normalized ): void {
+	// Normalization carries every file; the one static-content decision is admission.
+	$assert( is_array( $runtime ), 'real-normalizer-defers-static-content-decision:' . $label );
+	$policy = Static_Site_Importer_Content_Policy::admit_artifact( $artifact, $reader );
+	$assert( $accepted ? is_array( $policy ) && array() === $policy['findings'] : is_wp_error( $policy ) && 'static_site_importer_executable_source_rejected' === $policy->get_error_code(), 'real-intake-policy:' . $label );
+	if ( is_array( $runtime ) ) {
+		$runtime_policy = Static_Site_Importer_Content_Policy::admit_artifact( $runtime['artifact'], $reader );
+		$assert( $accepted ? is_array( $runtime_policy ) : is_wp_error( $runtime_policy ) && 'static_site_importer_executable_source_rejected' === $runtime_policy->get_error_code(), 'normalized-entrypoint-admission:' . $label );
+	}
 	if ( $accepted && isset( $artifact['files'][0]['payload_reference'] ) ) {
 		$files = $artifact['files'];
 		unset( $files[0]['payload_reference']['bytes'] );
-		$malformed = static_site_importer_source_runtime( array( 'files' => $files ), $reader );
-		$assert( is_wp_error( $malformed ) && 'static_site_importer_payload_reference_invalid' === $malformed->get_error_code(), 'normalizer-reference-requires-bounded-size:' . $label );
+		$malformed = $admit_normalized( array( 'files' => $files ), $reader );
+		$assert( is_wp_error( $malformed ) && 'static_site_importer_payload_reference_invalid' === $malformed->get_error_code(), 'admission-reference-requires-bounded-size:' . $label );
 		$files[0]['payload_reference'] = 'string-reference';
-		$malformed = static_site_importer_source_runtime( array( 'files' => $files ), $reader );
+		$malformed = $admit_normalized( array( 'files' => $files ), $reader );
 		$assert( is_wp_error( $malformed ) && 'static_site_importer_payload_reference_invalid' === $malformed->get_error_code(), 'normalizer-preserves-malformed-reference-for-rejection:' . $label );
 		$files = $artifact['files'];
 		$files[0]['payload'] = array( 'reference' => $files[0]['payload_reference'] );
@@ -193,8 +210,8 @@ $word_asset = $word_assets[0] ?? array();
 $assert( hash( 'sha256', $word_bytes ) === ( $word_asset['payload_reference']['sha256'] ?? '' ) && $word_path === ( $word_asset['references'][0]['value'] ?? '' ), 'compiled-asset-retains-portable-word-bytes-and-source-link' );
 $assert( '' !== ( $word_asset['token'] ?? '' ) && str_contains( (string) ( $word_plan['pages'][0]['canonical_block_markup'] ?? '' ), '{{wordpress-site-plan:asset:' . $word_asset['token'] . '}}' ), 'compiled-page-links-to-portable-word-asset-token' );
 file_put_contents( $bundle_source . '/' . $word_path . '.php', $word_bytes );
-$executable_word_bundle = static_site_importer_cli_request_bundle_files( realpath( $bundle_source ) );
-$assert( is_wp_error( $executable_word_bundle ) && 'static_site_importer_executable_source_rejected' === $executable_word_bundle->get_error_code(), 'request-bundle-rejects-word-document-with-executable-suffix' );
+$executable_word_bundle = $admit_bundle( realpath( $bundle_source ) );
+$assert( $left_out( $executable_word_bundle, Static_Site_Importer_Content_Policy::PAGE_DROPPED, 'website/' . $word_path . '.php' ) && in_array( 'website/' . $word_path, array_column( $executable_word_bundle['artifact']['files'], 'path' ), true ), 'request-bundle-drops-word-document-with-executable-suffix-and-keeps-the-document' );
 unlink( $bundle_source . '/' . $word_path . '.php' );
 
 $report_bundle_dir  = sys_get_temp_dir() . '/ssi-report-request-bundle-' . bin2hex( random_bytes( 6 ) );
@@ -273,8 +290,8 @@ try {
 		$assert( $cursor_bytes === $cursor_bundle['payload_reader']->read( $cursor_files['assets/pointer.cur']['payload_reference'] ), 'request-bundle-preserves-cursor-bytes' );
 	}
 	file_put_contents( $cursor_bundle_dir . '/assets/pointer.cur.php', '<?php echo "unsafe";' );
-	$executable_bundle = static_site_importer_cli_request_bundle_files( $cursor_bundle_dir );
-	$assert( is_wp_error( $executable_bundle ) && 'static_site_importer_executable_source_rejected' === $executable_bundle->get_error_code(), 'request-bundle-rejects-executable-cursor-suffix' );
+	$executable_bundle = $admit_bundle( $cursor_bundle_dir );
+	$assert( $left_out( $executable_bundle, Static_Site_Importer_Content_Policy::PAGE_DROPPED, 'website/assets/pointer.cur.php' ) && array( 'website/assets/pointer.cur', 'website/index.html' ) === array_column( $executable_bundle['artifact']['files'], 'path' ), 'request-bundle-drops-executable-cursor-suffix-and-keeps-the-cursor' );
 } finally {
 	foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $cursor_bundle_dir, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST ) as $item ) {
 		$item->isDir() ? rmdir( $item->getPathname() ) : unlink( $item->getPathname() );
@@ -311,53 +328,53 @@ foreach ( scandir( $bounded_bundle_dir ) as $entry ) {
 }
 rmdir( $bounded_bundle_dir );
 
-$dla_bundle_dir = sys_get_temp_dir() . '/ssi-dla-request-bundle-' . bin2hex( random_bytes( 6 ) );
-mkdir( $dla_bundle_dir );
+$export_bundle_dir = sys_get_temp_dir() . '/ssi-export-request-bundle-' . bin2hex( random_bytes( 6 ) );
+mkdir( $export_bundle_dir );
 try {
-	$dla_source_dir          = $dla_bundle_dir . '/dla-source';
-	$dla_request             = $dla_bundle_dir . '/request.json';
-	$dla_stylesheet_content  = 'main{color:#123456}';
-	$dla_stylesheet_path     = 'assets/dla-' . hash( 'sha256', $dla_stylesheet_content ) . '.css';
-	mkdir( $dla_source_dir . '/assets', 0777, true );
-	file_put_contents( $dla_source_dir . '/' . $dla_stylesheet_path, $dla_stylesheet_content );
+	$export_source_dir          = $export_bundle_dir . '/export-source';
+	$export_request             = $export_bundle_dir . '/request.json';
+	$export_stylesheet_content  = 'main{color:#123456}';
+	$export_stylesheet_path     = 'assets/export-' . hash( 'sha256', $export_stylesheet_content ) . '.css';
+	mkdir( $export_source_dir . '/assets', 0777, true );
+	file_put_contents( $export_source_dir . '/' . $export_stylesheet_path, $export_stylesheet_content );
 	for ( $index = 0; $index < 186; ++$index ) {
 		$path    = 0 === $index ? 'index.html' : 'practice-' . $index . '/index.html';
 		$dirname = dirname( $path );
 		if ( '.' !== $dirname ) {
-			mkdir( $dla_source_dir . '/' . $dirname, 0777, true );
+			mkdir( $export_source_dir . '/' . $dirname, 0777, true );
 		}
 		// This is the one remaining unsafe-inline author stylesheet in the export.
-		file_put_contents( $dla_source_dir . '/' . $path, '<html><head><link rel="stylesheet" href="/' . $dla_stylesheet_path . '">' . ( 0 === $index ? '<style>main{display:grid}</style>' : '' ) . '</head><body><main><h1>DLA ' . $index . '</h1></main></body></html>' );
+		file_put_contents( $export_source_dir . '/' . $path, '<html><head><link rel="stylesheet" href="/' . $export_stylesheet_path . '">' . ( 0 === $index ? '<style>main{display:grid}</style>' : '' ) . '</head><body><main><h1>Export ' . $index . '</h1></main></body></html>' );
 	}
-	file_put_contents( $dla_request, wp_json_encode( array( 'operation' => 'plan', 'source' => array( 'type' => 'files', 'ref' => 'request-bundle:dla-source' ) ) ) );
-	$dla_input    = static_site_importer_cli_import_input( array(), array( 'request' => $dla_request ) );
-	$dla_resolved = apply_filters( 'static_site_importer_resolve_source_reference', null, 'request-bundle:dla-source', 'files' );
-	$dla_runtime  = is_array( $dla_resolved ) ? static_site_importer_source_runtime( $dla_resolved['source'], $dla_resolved['payload_reader'] ) : new WP_Error( 'static_site_importer_cli_request_bundle_invalid' );
-	$dla_artifact = is_array( $dla_runtime ) ? $dla_runtime['artifact'] : array();
-	$dla_reader   = is_array( $dla_resolved ) ? $dla_resolved['payload_reader'] : null;
-	$dla_files    = is_array( $dla_artifact['files'] ?? null ) ? $dla_artifact['files'] : array();
-	$assert( is_array( $dla_input ) && 187 === count( $dla_files ) && 187 === count( array_filter( $dla_files, static fn( array $file ): bool => isset( $file['payload_reference'] ) && ! isset( $file['content'] ) ) ), 'dla-request-bundle-resolver-hands-canonical-payload-references-to-ssi-source-runtime' );
-	$assert( 188 === ( $dla_artifact['compiler_limits']['max_files'] ?? 0 ), 'dla-request-bundle-resolver-hands-exact-compiler-limits-through-ssi-source-runtime' );
+	file_put_contents( $export_request, wp_json_encode( array( 'operation' => 'plan', 'source' => array( 'type' => 'files', 'ref' => 'request-bundle:export-source' ) ) ) );
+	$export_input    = static_site_importer_cli_import_input( array(), array( 'request' => $export_request ) );
+	$export_resolved = apply_filters( 'static_site_importer_resolve_source_reference', null, 'request-bundle:export-source', 'files' );
+	$export_runtime  = is_array( $export_resolved ) ? static_site_importer_source_runtime( $export_resolved['source'], $export_resolved['payload_reader'] ) : new WP_Error( 'static_site_importer_cli_request_bundle_invalid' );
+	$export_artifact = is_array( $export_runtime ) ? $export_runtime['artifact'] : array();
+	$export_reader   = is_array( $export_resolved ) ? $export_resolved['payload_reader'] : null;
+	$export_files    = is_array( $export_artifact['files'] ?? null ) ? $export_artifact['files'] : array();
+	$assert( is_array( $export_input ) && 187 === count( $export_files ) && 187 === count( array_filter( $export_files, static fn( array $file ): bool => isset( $file['payload_reference'] ) && ! isset( $file['content'] ) ) ), 'export-request-bundle-resolver-hands-canonical-payload-references-to-ssi-source-runtime' );
+	$assert( 188 === ( $export_artifact['compiler_limits']['max_files'] ?? 0 ), 'export-request-bundle-resolver-hands-exact-compiler-limits-through-ssi-source-runtime' );
 
-	$dla_compiler   = new \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler();
-	$dla_shared     = $dla_compiler->prepareShared( $dla_artifact, $dla_reader );
-	$dla_page_plans = $dla_compiler->preparePages( $dla_artifact, $dla_shared, $dla_reader );
-	$dla_result     = $dla_compiler->compose( $dla_shared, $dla_page_plans, $dla_reader )->toArray();
-	$dla_plan        = $dla_result['source_reports']['wordpress_site_plan'] ?? array();
-	$dla_diagnostics = $dla_result['source_reports']['wordpress_site_plan_diagnostics'] ?? array();
-	$dla_assets      = $dla_plan['assets'] ?? array();
-	$assert( 186 === count( $dla_plan['pages'] ?? array() ), 'locked-transformer-compiles-every-dla-page-through-referenced-request-bundle-path' );
-	$assert( array() === array_filter( $dla_diagnostics, static fn( array $diagnostic ): bool => 'file_limit_exceeded' === ( $diagnostic['code'] ?? '' ) ), 'locked-transformer-does-not-truncate-dla-export-at-request-bundle-compiler-limit' );
-	$dla_pages_with_styles = count( array_filter( $dla_plan['pages'] ?? array(), static fn( array $page ): bool => str_contains( (string) ( $page['canonical_block_markup'] ?? '' ), '#123456' ) ) );
-	$assert( 186 === $dla_pages_with_styles, 'locked-transformer-applies-the-shared-linked-stylesheet-to-every-dla-document-' . $dla_pages_with_styles );
-	$assert( 1 === count( array_filter( $dla_assets, static fn( array $asset ): bool => 'website/' . $dla_stylesheet_path === ( $asset['source_path'] ?? '' ) ) ), 'locked-transformer-keeps-the-reused-linked-content-addressed-stylesheet-as-one-theme-asset' );
-	$assert( 1 === count( array_filter( $dla_assets, static fn( array $asset ): bool => 'inline-style' === ( $asset['source'] ?? '' ) ) ), 'locked-transformer-materializes-the-remaining-inline-stylesheet' );
+	$export_compiler   = new \Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler();
+	$export_shared     = $export_compiler->prepareShared( $export_artifact, $export_reader );
+	$export_page_plans = $export_compiler->preparePages( $export_artifact, $export_shared, $export_reader );
+	$export_result     = $export_compiler->compose( $export_shared, $export_page_plans, $export_reader )->toArray();
+	$export_plan        = $export_result['source_reports']['wordpress_site_plan'] ?? array();
+	$export_diagnostics = $export_result['source_reports']['wordpress_site_plan_diagnostics'] ?? array();
+	$export_assets      = $export_plan['assets'] ?? array();
+	$assert( 186 === count( $export_plan['pages'] ?? array() ), 'locked-transformer-compiles-every-export-page-through-referenced-request-bundle-path' );
+	$assert( array() === array_filter( $export_diagnostics, static fn( array $diagnostic ): bool => 'file_limit_exceeded' === ( $diagnostic['code'] ?? '' ) ), 'locked-transformer-does-not-truncate-export-export-at-request-bundle-compiler-limit' );
+	$export_pages_with_styles = count( array_filter( $export_plan['pages'] ?? array(), static fn( array $page ): bool => str_contains( (string) ( $page['canonical_block_markup'] ?? '' ), '#123456' ) ) );
+	$assert( 186 === $export_pages_with_styles, 'locked-transformer-applies-the-shared-linked-stylesheet-to-every-export-document-' . $export_pages_with_styles );
+	$assert( 1 === count( array_filter( $export_assets, static fn( array $asset ): bool => 'website/' . $export_stylesheet_path === ( $asset['source_path'] ?? '' ) ) ), 'locked-transformer-keeps-the-reused-linked-content-addressed-stylesheet-as-one-theme-asset' );
+	$assert( 1 === count( array_filter( $export_assets, static fn( array $asset ): bool => 'inline-style' === ( $asset['source'] ?? '' ) ) ), 'locked-transformer-materializes-the-remaining-inline-stylesheet' );
 } finally {
-	if ( is_dir( $dla_bundle_dir ) ) {
-		foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $dla_bundle_dir, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST ) as $item ) {
+	if ( is_dir( $export_bundle_dir ) ) {
+		foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $export_bundle_dir, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST ) as $item ) {
 			$item->isDir() ? rmdir( $item->getPathname() ) : unlink( $item->getPathname() );
 		}
-		rmdir( $dla_bundle_dir );
+		rmdir( $export_bundle_dir );
 	}
 }
 
@@ -514,7 +531,7 @@ mkdir( $report_dir . '/website', 0777, true );
 $report_dir = realpath( $report_dir );
 $declared_reports = array( 'capture-receipt.json', 'asset-evidence.json' );
 file_put_contents( $report_dir . '/website/index.html', '<main><h1>Ghestilistes</h1></main>' );
-file_put_contents( $report_dir . '/capture-receipt.json', '{"schema":"data-liberation/capture-receipt/v1"}' );
+file_put_contents( $report_dir . '/capture-receipt.json', '{"schema":"blocks-engine-capture/capture-receipt/v1"}' );
 file_put_contents( $report_dir . '/asset-evidence.json', '{"assets":"' . str_repeat( 'x', 10666142 - 13 ) . '"}' );
 $report_bundle = static_site_importer_cli_request_bundle_files( $report_dir, $declared_reports );
 $report_files  = is_array( $report_bundle ) ? array_column( $report_bundle['files'], null, 'path' ) : array();
@@ -610,16 +627,16 @@ foreach ( array( 'jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'mp4', 'webm', 'mp
 	$assert( ! static_site_importer_cli_request_bundle_is_read_source( 'media.' . $extension ), 'request-bundle-budgets-' . $extension . '-as-media' );
 }
 
-// The wider media ceiling never loosens the executable/static-content
-// policy: a large file with a disallowed extension is still rejected before
-// any byte check runs, regardless of how far under the media ceiling it is.
+// The wider media ceiling never loosens the static-content decision: a
+// large file with a disallowed extension is still left out at admission,
+// however far under the media ceiling it is.
 $executable_media_dir = sys_get_temp_dir() . '/ssi-request-bundle-executable-media-' . bin2hex( random_bytes( 6 ) );
 mkdir( $executable_media_dir );
 $executable_media_handle = fopen( $executable_media_dir . '/clip.mp4.php', 'w' );
 ftruncate( $executable_media_handle, 13600000 );
 fclose( $executable_media_handle );
-$executable_media = static_site_importer_cli_request_bundle_files( $executable_media_dir );
-$assert( is_wp_error( $executable_media ) && 'static_site_importer_executable_source_rejected' === $executable_media->get_error_code(), 'request-bundle-wider-media-ceiling-does-not-loosen-the-executable-policy' );
+$executable_media = $admit_bundle( realpath( $executable_media_dir ) );
+$assert( $left_out( $executable_media, Static_Site_Importer_Content_Policy::PAGE_DROPPED, 'website/clip.mp4.php' ), 'request-bundle-wider-media-ceiling-does-not-loosen-the-static-content-decision' );
 unlink( $executable_media_dir . '/clip.mp4.php' );
 rmdir( $executable_media_dir );
 
@@ -632,35 +649,34 @@ $redirects_bundle = static_site_importer_cli_request_bundle_files( $redirects_bu
 $redirects_files  = is_array( $redirects_bundle ) ? array_column( $redirects_bundle['files'], 'path' ) : array();
 $assert( is_array( $redirects_bundle ) && in_array( '_redirects', $redirects_files, true ), 'request-bundle-accepts-root-redirects-manifest' );
 file_put_contents( $redirects_bundle_dir . '/evil', 'payload' );
-$evil_bundle = static_site_importer_cli_request_bundle_files( $redirects_bundle_dir );
-$assert( is_wp_error( $evil_bundle ) && 'static_site_importer_executable_source_rejected' === $evil_bundle->get_error_code(), 'request-bundle-still-rejects-extensionless-evil-beside-redirects' );
+$evil_bundle = $admit_bundle( $redirects_bundle_dir );
+$assert( $left_out( $evil_bundle, Static_Site_Importer_Content_Policy::FILE_SKIPPED, 'website/evil' ) && in_array( 'website/_redirects', array_column( $evil_bundle['artifact']['files'], 'path' ), true ), 'request-bundle-skips-extensionless-evil-beside-redirects' );
 unlink( $redirects_bundle_dir . '/evil' );
 mkdir( $redirects_bundle_dir . '/nested' );
 file_put_contents( $redirects_bundle_dir . '/nested/_redirects', "/a /b 301\n" );
-$nested_redirects = static_site_importer_cli_request_bundle_files( $redirects_bundle_dir );
-$assert( is_wp_error( $nested_redirects ) && 'static_site_importer_executable_source_rejected' === $nested_redirects->get_error_code(), 'request-bundle-rejects-nested-redirects-manifest' );
+$nested_redirects = $admit_bundle( $redirects_bundle_dir );
+$assert( $left_out( $nested_redirects, Static_Site_Importer_Content_Policy::FILE_SKIPPED, 'website/nested/_redirects' ), 'request-bundle-skips-nested-redirects-manifest' );
 foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $redirects_bundle_dir, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST ) as $redirects_item ) {
 	$redirects_item->isDir() ? rmdir( $redirects_item->getPathname() ) : unlink( $redirects_item->getPathname() );
 }
 
-// A rejected source tree names the file that is not static, like the content-policy
-// and URL-collector variants do, so the operator can find it in a large bundle.
+// A file left out of a source tree is named in its finding, so the operator
+// can find it in a large bundle.
 $named_bundle_dir = sys_get_temp_dir() . '/ssi-named-rejection-request-bundle-' . bin2hex( random_bytes( 6 ) );
 mkdir( $named_bundle_dir . '/assets', 0777, true );
 $named_bundle_dir = realpath( $named_bundle_dir );
 file_put_contents( $named_bundle_dir . '/index.html', '<link rel="stylesheet" href="assets/site.scss"><main>Home</main>' );
 file_put_contents( $named_bundle_dir . '/assets/site.scss', 'body{margin:0}' );
-$named_rejection = static_site_importer_cli_request_bundle_files( $named_bundle_dir );
-$assert( is_wp_error( $named_rejection ) && 'static_site_importer_executable_source_rejected' === $named_rejection->get_error_code(), 'request-bundle-rejects-unknown-stylesheet-suffix' );
-$assert( is_wp_error( $named_rejection ) && str_contains( $named_rejection->get_error_message(), 'assets/site.scss' ), 'request-bundle-rejection-names-the-offending-path' );
-$assert( is_wp_error( $named_rejection ) && 'assets/site.scss' === ( $named_rejection->get_error_data()['path'] ?? null ), 'request-bundle-rejection-carries-the-offending-path-as-data' );
+$named_rejection = $admit_bundle( $named_bundle_dir );
+$assert( $left_out( $named_rejection, Static_Site_Importer_Content_Policy::FILE_SKIPPED, 'website/assets/site.scss' ), 'request-bundle-skips-unknown-stylesheet-suffix' );
+$assert( is_array( $named_rejection ) && str_contains( (string) ( $named_rejection['findings'][0]['message'] ?? '' ), 'assets/site.scss' ), 'request-bundle-finding-names-the-offending-path' );
 unlink( $named_bundle_dir . '/assets/site.scss' );
 $oversized_redirects = fopen( $named_bundle_dir . '/_redirects', 'w' );
 ftruncate( $oversized_redirects, Static_Site_Importer_Content_Policy::REDIRECTS_MANIFEST_MAX_BYTES + 1 );
 fclose( $oversized_redirects );
-$oversized_rejection = static_site_importer_cli_request_bundle_files( $named_bundle_dir );
-$assert( is_wp_error( $oversized_rejection ) && 'static_site_importer_executable_source_rejected' === $oversized_rejection->get_error_code(), 'request-bundle-rejects-oversized-redirects-manifest' );
-$assert( is_wp_error( $oversized_rejection ) && str_contains( $oversized_rejection->get_error_message(), '_redirects' ) && '_redirects' === ( $oversized_rejection->get_error_data()['path'] ?? null ), 'request-bundle-oversized-redirects-rejection-names-the-path' );
+$oversized_rejection = $admit_bundle( $named_bundle_dir );
+$assert( is_wp_error( $oversized_rejection ) && 'static_site_importer_executable_source_rejected' === $oversized_rejection->get_error_code(), 'request-bundle-oversized-redirects-manifest-fails-closed' );
+$assert( is_wp_error( $oversized_rejection ) && str_contains( $oversized_rejection->get_error_message(), '_redirects' ) && 'website/_redirects' === ( $oversized_rejection->get_error_data()['path'] ?? null ) && 'redirects_manifest_too_large' === ( $oversized_rejection->get_error_data()['reason_code'] ?? null ), 'request-bundle-oversized-redirects-rejection-names-the-path' );
 unlink( $named_bundle_dir . '/_redirects' );
 unlink( $named_bundle_dir . '/index.html' );
 rmdir( $named_bundle_dir . '/assets' );

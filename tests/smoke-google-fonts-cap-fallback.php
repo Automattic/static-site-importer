@@ -165,7 +165,7 @@ $producer_diagnostic_failure = Static_Site_Importer_Font_Materializer::prepare_o
 );
 $assert( is_wp_error( $producer_diagnostic_failure ) && 'static_site_importer_font_materialization_producer_diagnostic' === $producer_diagnostic_failure->get_error_code(), 'case 3: required producer diagnostics still gate materialization' );
 
-// Case 4: empty plan + empty stylesheets is preserved as preserved (no import URL to import) but a WP_Error is surfaced because no @import can be written.
+// Case 4: with no Google @import to keep, the faces are dropped with a font_face_unavailable finding; the import continues.
 $GLOBALS['ssi_cap_response'] = function () { return new WP_Error( 'unexpected_request' ); };
 $plan_no_imports = array(
 	'schema'      => 'blocks-engine/php-transformer/font-materialization-plan/v1',
@@ -174,9 +174,13 @@ $plan_no_imports = array(
 	'stylesheets' => array( array( 'path' => 'assets/css/fonts.css', 'content' => ':root { color: red; }' ) ),
 );
 $overlay_no_imports = Static_Site_Importer_Font_Materializer::prepare_overlay( $plan_no_imports, array( 'writes' => array( $functions_php ) ) );
-$assert( is_wp_error( $overlay_no_imports ) && 'static_site_importer_font_materialization_failed' === $overlay_no_imports->get_error_code(), 'case 4: absent Google @import with no fallback URL still reports materialization failure' );
-$no_imports_diagnostics = $overlay_no_imports->get_error_data();
-$assert( is_array( $no_imports_diagnostics ) && count( array_filter( $no_imports_diagnostics, static fn( array $row ): bool => ( $row['reason'] ?? '' ) === 'stylesheet_import_missing' ) ) >= 1, 'case 4: surfaces the stylesheet_import_missing reason before failing closed' );
+$assert( ! is_wp_error( $overlay_no_imports ), 'case 4: absent Google @import no longer fails the import' );
+$assert( array() === array_filter( $overlay_no_imports['writes'] ?? array(), static fn( array $write ): bool => 'assets/css/embedded-fonts.css' === $write['target_path'] ), 'case 4: no embedded-fonts.css is written without a face or import to carry' );
+$functions_write = array_values( array_filter( $overlay_no_imports['writes'] ?? array(), static fn( array $write ): bool => 'functions.php' === $write['target_path'] ) );
+$assert( 1 === count( $functions_write ) && ! str_contains( $functions_write[0]['content'], 'embedded-fonts.css' ), 'case 4: the theme does not enqueue an absent embedded-fonts.css' );
+$no_imports_diagnostics = $overlay_no_imports['diagnostics'] ?? array();
+$assert( count( array_filter( $no_imports_diagnostics, static fn( array $row ): bool => ( $row['reason'] ?? '' ) === 'stylesheet_import_missing' ) ) >= 1, 'case 4: surfaces the stylesheet_import_missing reason' );
+$assert( 1 === count( array_filter( $no_imports_diagnostics, static fn( array $row ): bool => 'font_face_unavailable' === ( $row['code'] ?? '' ) && 'dropped' === ( $row['resolution'] ?? '' ) ) ), 'case 4: reports one font_face_unavailable finding' );
 
 // Case 5: legacy v1 css path (fontfamily=...) -- same preservation contract.
 $GLOBALS['ssi_cap_response'] = function ( string $url ) use ( $google_url_legacy ) {

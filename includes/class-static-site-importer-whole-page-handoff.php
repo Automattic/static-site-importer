@@ -29,6 +29,7 @@ final class Static_Site_Importer_Whole_Page_Handoff {
 			$declaration = $candidate['declaration_reconciliation_identity'];
 			$entity      = $candidate['entity_id'];
 			if ( isset( $documents[ $declaration ][ $entity ] ) ) {
+				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'Whole-page source documents must be unambiguous.' );
 			}
 			$documents[ $declaration ][ $entity ] = $candidate + array(

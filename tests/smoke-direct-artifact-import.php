@@ -205,7 +205,8 @@ require_once __DIR__ . '/fixtures/content-policy-intakes.php';
 $freeze_policy = static fn ( array $policy ): array => array_merge( $policy, array( 'freeze_continuation_bytes' => 1 ) );
 add_filter( 'static_site_importer_direct_artifact_run_policy', $freeze_policy );
 ssi_test_content_policy_intakes( static function ( string $label, bool $accepted, $runtime, array $artifact, ?object $reader ) use ( $assert ): void {
-	$assert( $accepted ? is_array( $runtime ) : is_wp_error( $runtime ) && 'static_site_importer_executable_source_rejected' === $runtime->get_error_code(), 'real normalizer verdict: ' . $label );
+	// Normalization carries every file; the freeze boundary owns the one static-content decision.
+	$assert( is_array( $runtime ), 'real normalizer defers the static-content decision: ' . $label );
 	$counted_reader = null === $reader ? null : new class( $reader ) {
 		public int $reads = 0;
 		public function __construct( private object $reader ) {}
@@ -326,6 +327,20 @@ $GLOBALS['ssi_direct_checkpoint_reads'] = array();
 $second = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
 $assert( ! empty( $second['continuation'] ) && 3 === ( $second['artifact_run']['progress']['prepared_count'] ?? 0 ) && 2 === ( $second['artifact_run']['progress']['receipt_count'] ?? -1 ), 'resume must reuse every durable page plan and compile only the next receipt batch' );
 $assert( 0 === ( $GLOBALS['ssi_direct_checkpoint_reads']['artifact'] ?? 0 ) && 1 === ( $GLOBALS['ssi_direct_checkpoint_reads']['shared'] ?? 0 ) && 1 === ( $GLOBALS['ssi_direct_checkpoint_reads']['page_plan'] ?? 0 ), 'a compile-only resume must skip the source artifact and decode each consumed checkpoint once' );
+// A fresh-runtime host (the CLI policy) yields once composition is durable: the
+// composing runtime never reads that checkpoint back on top of composition's
+// working set, and the read cache no longer pins the receipts and page plans.
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'][] = 'static_site_importer_cli_direct_artifact_run_policy';
+$GLOBALS['ssi_direct_checkpoint_reads'] = array();
+$original_argv_zero = $_SERVER['argv'][0] ?? null;
+unset( $_SERVER['argv'][0] );
+$composed = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
+if ( null !== $original_argv_zero ) {
+	$_SERVER['argv'][0] = $original_argv_zero;
+}
+array_pop( $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] );
+$composed_cache = array_keys( ( new ReflectionProperty( Static_Site_Importer_Direct_Artifact_Import::class, 'checkpoint_read_cache' ) )->getValue() );
+$assert( 'composed' === ( $composed['continuation_reason'] ?? '' ) && 'composed' === ( $composed['artifact_run']['phase'] ?? '' ) && 3 === ( $composed['artifact_run']['progress']['receipt_count'] ?? 0 ) && 0 === ( $GLOBALS['ssi_direct_checkpoint_reads']['composed'] ?? 0 ) && array() === $composed_cache && 0 === $GLOBALS['ssi_direct_mutations'], 'a fresh-runtime host must yield once composition is durable, without reading it back or retaining receipts, page plans or the shared plan' );
 $third = Static_Site_Importer_Canonical_Import_Service::import( $resume( $import_id ) );
 $third_work = $third['artifact_run']['work'] ?? array();
 $assert( 'dependencies_prepared' === ( $third['continuation_reason'] ?? '' ) && 0 === ( $third_work['materialization_claims'] ?? -1 ) && 0 === $GLOBALS['ssi_direct_mutations'], 'ordinary apply must prepare dependencies before reserving its only materialization attempt' );
@@ -913,6 +928,8 @@ $worker_source = '#!' . PHP_BINARY . "\n<?php\n"
 	. 'usleep(500000);' . "\n"
 	. 'file_put_contents($events, "end:" . $marker . "\\n", FILE_APPEND | LOCK_EX);' . "\n"
 	. 'if ("fail" === $marker) { fwrite(STDERR, "worker failure\\n" . str_repeat("x", 15000) . "\\nPHP Fatal error:  Allowed memory size of 402653184 bytes exhausted in /srv/wp/blocks.php on line 12\\n"); fwrite(STDOUT, "worker output\\n" . str_repeat("y", 15000)); exit(2); }' . "\n"
+	. 'if ("kill" === $marker) { fwrite(STDERR, "Deprecated: Case statements followed by a semicolon (;) are deprecated, use a colon (:) instead in /srv/wp/promise.php on line 369\n"); exec("kill -9 " . getmypid()); sleep(5); exit(0); }' . "\n"
+	. 'if ("oom-once" === $marker && ! file_exists($events . ".oom")) { touch($events . ".oom"); exec("kill -9 " . getmypid()); sleep(5); }' . "\n"
 	. 'exit(0);' . "\n";
 $assert( false !== file_put_contents( $worker_script, $worker_source ) && chmod( $worker_script, 0600 ), 'the process fan-out fixture must match a readable, non-executable WP-CLI PHAR' );
 $original_argv_zero = $_SERVER['argv'][0] ?? null;
@@ -947,6 +964,16 @@ $assert( 'last words' === static_site_importer_cli_worker_failure_cause( '', "no
 $assert( '' === static_site_importer_cli_worker_failure_cause( '', '' ), 'a silent worker has no cause to report' );
 $worker_warning = WP_CLI::$warnings[0] ?? '';
 $assert( 1 === count( WP_CLI::$warnings ) && str_contains( $worker_warning, 'Compile worker 2 exited with status 2.' ) && str_contains( $worker_warning, "Stderr:\nworker failure" ) && str_contains( $worker_warning, "Stdout:\nworker output" ) && strlen( $worker_warning ) <= 1100, 'a failed CLI worker must emit one bounded operator diagnostic with its exit status, stderr, and stdout' );
+$killed_failure = static_site_importer_cli_compile_artifact_pages_fanout( str_repeat( 'c', 64 ), array( array( $worker_events, 'ok' ), array( $worker_events, 'kill' ) ) );
+$assert( is_wp_error( $killed_failure ) && 'Compile worker 2 of 2 was killed by signal 9 (likely out of memory).' === $killed_failure->get_error_message(), 'a SIGKILLed CLI worker must report the signal, not status -1 or a deprecation line: ' . ( is_wp_error( $killed_failure ) ? $killed_failure->get_error_message() : '' ) );
+$kill_starts = array_values( array_filter( (array) file( $worker_events, FILE_IGNORE_NEW_LINES ), static fn ( string $event ): bool => 'start:kill' === $event ) );
+$assert( 2 === count( $kill_starts ) && str_contains( implode( "\n", WP_CLI::$warnings ), 'Compile worker 2 was killed by signal 9 (likely out of memory); retrying its shard on its own.' ), 'a SIGKILLed CLI worker shard must be retried on its own before the import fails with the out-of-memory cause' );
+WP_CLI::$warnings = array();
+$oom_recovered    = static_site_importer_cli_compile_artifact_pages_fanout( str_repeat( 'd', 64 ), array( array( $worker_events, 'ok' ), array( $worker_events, 'oom-once' ) ) );
+$assert( true === $oom_recovered && 1 === count( WP_CLI::$warnings ) && str_contains( WP_CLI::$warnings[0], 'retrying its shard on its own' ), 'a shard whose worker was killed for memory alongside its siblings must complete when retried on its own' );
+$assert( 'Fatal error: boom' === static_site_importer_cli_worker_failure_cause( "Fatal error: boom\nDeprecated: noise on line 369\nPHP Notice:  more noise", '' ), 'deprecation and notice lines never win as the failure cause' );
+$assert( 'last words' === static_site_importer_cli_worker_failure_cause( "Deprecated: noise", "last words" ), 'a stream holding only deprecations falls through to the next stream' );
+$assert( str_contains( static_site_importer_cli_invalid_step_message( (object) array( 'return_code' => 137, 'stderr' => "Deprecated: noise\nKilled" ) ), 'code 137 (killed by signal 9, likely out of memory) without a JSON response. Killed' ), 'a 137 fresh runtime must name the likely out-of-memory kill and drop deprecation noise' );
 ini_set( 'memory_limit', $original_memory_limit );
 if ( null === $original_argv_zero ) {
 	unset( $_SERVER['argv'][0] );

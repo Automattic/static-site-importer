@@ -539,59 +539,42 @@ foreach ( $plan['pages'] as $page ) {
 	$register_document_blocks( $block_runtime->parseBlocks( (string) ( $page['canonical_block_markup'] ?? '' ) ) );
 }
 
-$plan_hash                  = static function ( array $candidate ): string {
-	unset( $candidate['plan_identity'], $candidate['quality']['editability_report'], $candidate['quality']['editability_report_plan_hash'], $candidate['quality']['editability_report_required'] );
-	return WordPressSitePlan::planIdentity( $candidate )['hash'];
-};
-$with_editability_report    = static function ( array $candidate ) use ( $result, $plan_hash ): array {
-	$candidate['quality']['editability_report_required']  = true;
-	$candidate['quality']['editability_report']           = $result['source_reports']['editability_report'];
-	$candidate['quality']['editability_report_plan_hash'] = $plan_hash( $candidate );
-	$candidate['plan_identity']                           = WordPressSitePlan::planIdentity( $candidate );
-	return $candidate;
-};
-$strict_editability_plan    = $with_editability_report( $plan );
-$strict_editability_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $strict_editability_plan, array( 'slug' => 'strict-editability-plan' ) );
-$assert( 'completed' === $strict_editability_receipt['status'] && 'passed' === ( $strict_editability_receipt['editability_report']['status'] ?? '' ) && 'blocks-engine/php-transformer/editability-report/v2' === ( $strict_editability_receipt['editability_report']['report_schema'] ?? '' ), 'valid hash-bound Blocks Engine editability reports are admitted before materialization' );
+$editability_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'producer-editability-plan' ) );
+$assert( 'completed' === $editability_receipt['status'] && 'passed' === ( $editability_receipt['editability_report']['status'] ?? '' ) && 'blocks-engine/php-transformer/editability-policy/v1' === ( $editability_receipt['editability_report']['policy_schema'] ?? '' ), 'a passed producer editability policy is honoured as the single decision' );
 
-$compatibility_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $plan, array( 'slug' => 'compatibility-editability-plan' ) );
-$assert( 'completed' === $compatibility_receipt['status'] && 'compatibility_policy_only' === ( $compatibility_receipt['editability_report']['status'] ?? '' ) && 'editability_report_compatibility_policy_only' === ( $compatibility_receipt['editability_report']['diagnostic']['reason_code'] ?? '' ), 'current producer plans retain explicit compatibility evidence' );
+$finding_policy_plan = $plan;
+$finding_policy_plan['quality']['editability_policy']['findings']       = array(
+	array(
+		'metric'      => 'empty_wrapper_count',
+		'actual'      => 12,
+		'maximum'     => 10,
+		'source_path' => 'about.html',
+		'message'     => 'empty_wrapper_count is 12; meaningful editability allows at most 10.',
+	),
+);
+$finding_policy_plan['quality']['editability_policy']['finding_totals'] = array(
+	'observed'  => 1,
+	'reported'  => 1,
+	'omitted'   => 0,
+	'truncated' => false,
+);
+$finding_policy_plan['plan_identity']                                   = WordPressSitePlan::planIdentity( $finding_policy_plan );
+$finding_policy_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $finding_policy_plan, array( 'slug' => 'producer-editability-findings' ) );
+$assert( 'completed' === $finding_policy_receipt['status'] && 'passed' === ( $finding_policy_receipt['editability_report']['status'] ?? '' ) && 1 === ( $finding_policy_receipt['editability_report']['finding_count'] ?? 0 ) && 'about.html' === ( $finding_policy_receipt['editability_report']['findings'][0]['source_path'] ?? '' ), 'per-page producer editability findings are carried, not re-gated' );
 
-$missing_report_plan = $plan;
-$missing_report_plan['quality']['editability_report_required'] = true;
-$insert_calls_before_missing                                   = $GLOBALS['ssi_plan_insert_calls'];
-$missing_report_receipt                                        = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $missing_report_plan, array( 'slug' => 'missing-editability-report' ) );
-$assert( 'rejected' === $missing_report_receipt['status'] && 'editability_report_required' === ( $missing_report_receipt['errors'][0]['code'] ?? '' ) && $insert_calls_before_missing === $GLOBALS['ssi_plan_insert_calls'], 'required reports reject missing producer evidence before any write' );
-
-$malformed_report_plan = $strict_editability_plan;
-$malformed_report_plan['quality']['editability_report']['schema'] = 'blocks-engine/php-transformer/editability-report/v0';
-$malformed_report_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $malformed_report_plan, array( 'slug' => 'malformed-editability-report' ) );
-$assert( 'rejected' === $malformed_report_receipt['status'] && 'editability_report_schema_invalid' === ( $malformed_report_receipt['errors'][0]['code'] ?? '' ), 'malformed editability reports are rejected deterministically' );
-
-$legacy_report_plan = $strict_editability_plan;
-$legacy_report_plan['quality']['editability_report']['schema'] = 'blocks-engine/php-transformer/editability-report/v1';
-$legacy_report_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $legacy_report_plan, array( 'slug' => 'legacy-editability-report' ) );
-$assert( 'rejected' === $legacy_report_receipt['status'] && 'editability_report_schema_invalid' === ( $legacy_report_receipt['errors'][0]['code'] ?? '' ), 'legacy editability report schemas cannot satisfy the current hash-bound admission contract' );
-
-$hash_mismatch_plan = $strict_editability_plan;
-$hash_mismatch_plan['quality']['editability_report_plan_hash'] = str_repeat( '0', 64 );
-$hash_mismatch_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $hash_mismatch_plan, array( 'slug' => 'mismatched-editability-report' ) );
-$assert( 'rejected' === $hash_mismatch_receipt['status'] && 'editability_report_plan_hash_mismatch' === ( $hash_mismatch_receipt['errors'][0]['code'] ?? '' ), 'reports bound to a different canonical plan are rejected' );
-
-$forged_identity_plan                          = $strict_editability_plan;
+$forged_identity_plan                          = $plan;
 $forged_identity_plan['plan_identity']['hash'] = str_repeat( '0', 64 );
 $insert_calls_before_forged_identity           = $GLOBALS['ssi_plan_insert_calls'];
 $forged_identity_receipt                       = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $forged_identity_plan, array( 'slug' => 'forged-plan-identity' ) );
 $assert( 'rejected' === $forged_identity_receipt['status'] && 'WordPress site plan identity is stale.' === ( $forged_identity_receipt['errors'][0]['code'] ?? '' ) && $insert_calls_before_forged_identity === $GLOBALS['ssi_plan_insert_calls'], 'forged canonical plan identities reject before materialization' );
 
-$failed_policy_plan                      = $strict_editability_plan;
+$failed_policy_plan                      = $plan;
 $failed_policy_plan['quality']['status'] = 'failed';
 $failed_policy_plan['quality']['pass']   = false;
 $failed_policy_plan['quality']['editability_policy']['schema']      = 'blocks-engine/php-transformer/editability-policy/v1';
 $failed_policy_plan['quality']['editability_policy']['enforcement'] = 'required';
 $failed_policy_plan['quality']['editability_policy']['status']      = 'failed';
 $failed_policy_plan['quality']['editability_policy']['failures']    = array( array( 'metric' => 'max_nesting_depth', 'actual' => 21, 'maximum' => 20, 'source_path' => 'about.html' ) );
-$failed_policy_plan['quality']['editability_report_plan_hash']      = $plan_hash( $failed_policy_plan );
 $failed_policy_plan['plan_identity']                                = WordPressSitePlan::planIdentity( $failed_policy_plan );
 $insert_calls_before_failed_policy                                  = $GLOBALS['ssi_plan_insert_calls'];
 $failed_policy_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $failed_policy_plan, array( 'slug' => 'failed-editability-policy' ) );
@@ -1657,7 +1640,7 @@ $invalid_typed_receipt                                    = Static_Site_Importer
 	$invalid_typed_site_plan,
 	array( 'slug' => 'invalid-typed-font-site-plan' )
 );
-$assert( 'rejected' === $invalid_typed_receipt['status'] && 'static_site_importer_font_materialization_producer_stylesheet_failed' === ( $invalid_typed_receipt['errors'][0]['code'] ?? '' ) && ! is_dir( $GLOBALS['ssi_plan_root'] . '/invalid-typed-font-site-plan' ) && is_string( wp_json_encode( $invalid_typed_receipt ) ) && ! str_contains( (string) wp_json_encode( $invalid_typed_receipt ), 'font_overlay' ), 'invalid canonical font intent rejects before filesystem mutation with a serializable public receipt' );
+$assert( 'rejected' === $invalid_typed_receipt['status'] && 'static_site_importer_font_materialization_producer_stylesheet_digest_mismatch' === ( $invalid_typed_receipt['errors'][0]['code'] ?? '' ) && ! is_dir( $GLOBALS['ssi_plan_root'] . '/invalid-typed-font-site-plan' ) && is_string( wp_json_encode( $invalid_typed_receipt ) ) && ! str_contains( (string) wp_json_encode( $invalid_typed_receipt ), 'font_overlay' ), 'invalid canonical font intent rejects before filesystem mutation with a serializable public receipt' );
 $assert( 'producer_stylesheet_digest_mismatch' === ( $invalid_typed_receipt['diagnostics'][1]['reason_code'] ?? '' ), 'font materialization receipts retain the producer failure reason instead of only the generic error code' );
 
 $font_without_svg_result = ( new ArtifactCompiler() )->compile(
@@ -2071,24 +2054,32 @@ $scalar_bindings_form['bindings'] = 'invalid';
 $assert( $scalar_bindings_form === Static_Site_Importer_Entity_Materializer_Registry::prepare_form_entity( $scalar_bindings_form ), 'malformed binding collections remain unchanged for structured provider validation' );
 $malformed_entity_plan = $runtime_form_plan;
 $malformed_entity_plan['runtime_declarations'][1]['payload']['entities'] = array( 'invalid' );
+// A form row the provider cannot admit never reaches it: the declaration is
+// skipped with one finding naming the rejected row, and the import continues.
+$form_row_rejected = static function ( $lifecycle ) use ( $form_declaration_id ): array {
+	if ( is_wp_error( $lifecycle ) || isset( $lifecycle['entities'][ $form_declaration_id ] ) ) {
+		return array();
+	}
+	return array_values( array_filter( $lifecycle['diagnostics'] ?? array(), static fn( $row ): bool => is_array( $row ) && 'runtime_entity_rows_rejected' === ( $row['code'] ?? '' ) && $form_declaration_id === ( $row['declaration_id'] ?? '' ) ) )[0] ?? array();
+};
 $malformed_entity_lifecycle = $prepare_lifecycle->invoke( null, $malformed_entity_plan, array() );
-$assert( is_wp_error( $malformed_entity_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $malformed_entity_lifecycle->get_error_code(), 'malformed form entities retain structured pre-provider rejection' );
-$malformed_entity_data = $malformed_entity_lifecycle->get_error_data();
-$assert( 'forms' === ( $malformed_entity_data['entity_collection'] ?? '' ) && count( $malformed_entity_data['errors'] ?? array() ) === ( $malformed_entity_data['error_count'] ?? 0 ) && '' !== (string) ( $malformed_entity_data['errors'][0]['path'] ?? '' ), 'a rejected declaration states which collection it belongs to and how many findings it carries' );
+$malformed_entity_finding   = $form_row_rejected( $malformed_entity_lifecycle );
+$assert( '$.forms[0]' === ( $malformed_entity_finding['path'] ?? '' ), 'malformed form entities are rejected before provider traversal' );
+$assert( 'forms' === ( $malformed_entity_finding['entity_collection'] ?? '' ) && 1 === count( $malformed_entity_finding['errors'] ?? array() ) && 1 === ( $malformed_entity_finding['rejected_count'] ?? 0 ), 'a rejected form row states which collection it belongs to and how many findings it carries' );
 
 $unknown_topology_form                                  = $topology_form;
 $unknown_topology_form['control_topology']['untrusted'] = 'reject-me';
 $unknown_topology_plan                                  = $runtime_form_plan;
 $unknown_topology_plan['runtime_declarations'][1]['payload']['entities'] = array( $unknown_topology_form );
 $unknown_topology_lifecycle = $prepare_lifecycle->invoke( null, $unknown_topology_plan, array() );
-$assert( is_wp_error( $unknown_topology_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $unknown_topology_lifecycle->get_error_code(), 'unknown runtime topology keys are rejected before provider traversal' );
+$assert( '$.forms[0].control_topology' === ( $form_row_rejected( $unknown_topology_lifecycle )['path'] ?? '' ), 'unknown runtime topology keys are rejected before provider traversal' );
 
 $self_referential_form = $topology_form;
 $self_referential_form['control_topology']['nodes'][0]['parent'] = 'wrapper-0';
 $self_referential_plan = $runtime_form_plan;
 $self_referential_plan['runtime_declarations'][1]['payload']['entities'] = array( $self_referential_form );
 $self_referential_lifecycle = $prepare_lifecycle->invoke( null, $self_referential_plan, array() );
-$assert( is_wp_error( $self_referential_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $self_referential_lifecycle->get_error_code(), 'self-referential runtime topology is rejected before provider traversal' );
+$assert( '$.forms[0].control_topology' === ( $form_row_rejected( $self_referential_lifecycle )['path'] ?? '' ), 'self-referential runtime topology is rejected before provider traversal' );
 
 $duplicate_topology_form                                       = $topology_form;
 $duplicate_topology_form['control_topology']['nodes'][1]['id'] = 'wrapper-0';
@@ -2097,7 +2088,7 @@ unset( $duplicate_topology_form['control_topology']['nodes'][1]['control'] );
 $duplicate_topology_plan = $runtime_form_plan;
 $duplicate_topology_plan['runtime_declarations'][1]['payload']['entities'] = array( $duplicate_topology_form );
 $duplicate_topology_lifecycle = $prepare_lifecycle->invoke( null, $duplicate_topology_plan, array() );
-$assert( is_wp_error( $duplicate_topology_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $duplicate_topology_lifecycle->get_error_code(), 'duplicate runtime topology identifiers are rejected before provider traversal' );
+$assert( '$.forms[0].control_topology' === ( $form_row_rejected( $duplicate_topology_lifecycle )['path'] ?? '' ), 'duplicate runtime topology identifiers are rejected before provider traversal' );
 
 $binding_method        = new ReflectionMethod( Static_Site_Importer_Entity_Materializer_Registry::class, 'block_bindings' );
 $entity_declaration_id = (string) array_key_first( $entity_lifecycle['entities'] );
@@ -3063,7 +3054,7 @@ $assert( $before_files === count( glob( $GLOBALS['ssi_plan_root'] . '/reject/**/
 $missing_identity = $plan;
 unset( $missing_identity['plan_identity'] );
 $missing_identity_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $missing_identity, array( 'slug' => 'missing-plan-identity' ) );
-$assert( 'rejected' === $missing_identity_receipt['status'] && 'canonical_plan_rejected' === ( $missing_identity_receipt['errors'][0]['code'] ?? '' ), 'plans require a versioned producer identity before materialization' );
+$assert( 'rejected' === $missing_identity_receipt['status'] && 'WordPress site plan plan_identity must be an array.' === ( $missing_identity_receipt['errors'][0]['code'] ?? '' ), 'the Blocks Engine resolver rejects a plan without a versioned producer identity before materialization' );
 
 $tampered_prepared = Static_Site_Importer_WordPress_Site_Plan_Materializer::prepare(
 	$plan,
@@ -3638,12 +3629,8 @@ $root_media_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::mat
 $root_media_page_id = (int) ( $root_media_receipt['completed']['pages']['website/index.html'] ?? 0 );
 $root_media_content = stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $root_media_page_id ]['post_content'] ?? '' ) );
 $root_media_url     = 'https://example.test/wp-content/themes/root-media-plan/assets/website/media/example.jpg';
-// Every captured reference (img src, any preserved srcset candidate, and the
-// background) resolves through the asset map with its suffix intact. The count
-// is a floor, not an exact shape: the producer may keep an authored srcset in
-// its responsive-media carrier instead of lowering the img to core/image.
-$root_media_unsuffixed = preg_match_all( '#' . preg_quote( $root_media_url, '#' ) . '(?!\?size=(?:large|small)\#hero)#', $root_media_content );
-$assert( 'completed' === $root_media_receipt['status'] && 2 <= substr_count( $root_media_content, $root_media_url ) && 0 === $root_media_unsuffixed && ! str_contains( str_replace( $root_media_url, '', $root_media_content ), 'media/example.jpg' ) && str_contains( $root_media_content, 'src="' . $root_media_url . '?size=large#hero"' ) && str_contains( $root_media_content, 'blocks-engine-background-image' ), 'root-relative captured media resolves through the canonical theme asset map while preserving query and fragment suffixes' );
+$root_media_markup  = str_replace( '\u0022', '"', $root_media_content );
+$assert( 'completed' === $root_media_receipt['status'] && 3 === substr_count( $root_media_markup, $root_media_url ) && 2 === substr_count( $root_media_markup, 'src="' . $root_media_url . '?size=large#hero"' ) && str_contains( $root_media_markup, 'srcset="' . $root_media_url . '?size=small#hero 1x, https://cdn.example.test/example.jpg 2x, data:image/png;base64,AA== 3x"' ) && str_contains( $root_media_markup, 'blocks-engine-background-image' ) && ! str_contains( $root_media_markup, '"/media/example.jpg' ), 'root-relative captured media and authored srcset candidates resolve through the canonical theme asset map while preserving query and fragment suffixes' );
 $assert( ( $root_media_plan['pages'][0]['reconciliation_identity'] ?? '' ) === ( $GLOBALS['ssi_plan_meta'][ $root_media_page_id ]['_blocks_engine_reconciliation_identity'] ?? '' ), 'materialized posts expose the producer reconciliation identity required by scoped theme bootstrap assets' );
 unset( $GLOBALS['ssi_plan_meta'][ $root_media_page_id ]['_blocks_engine_reconciliation_identity'] );
 $assert( wp_delete_file( (string) $root_media_receipt['theme']['dir'] . '/style.css' ), 'rollback fixture removes one generated target to force overwrite materialization' );

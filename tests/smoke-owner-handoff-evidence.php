@@ -139,13 +139,13 @@ foreach ( $text_only_document['owner_tasks']['tasks'] as $task ) {
 	$assert( 'evidence_gap' === $task['status'], $task['id'] . ' remains an evidence gap' );
 }
 
-$compat = $complete;
-$compat['dimensions']['editability_shared_regions'] = array(
+$failed_editability = $complete;
+$failed_editability['dimensions']['editability_shared_regions'] = array(
 	'schema' => 'static-site-importer/editability-report-admission/v1',
-	'status' => 'compatibility_policy_only',
+	'status' => 'failed',
 );
-$compat_document = Static_Site_Importer_Owner_Handoff_Evidence::compose( $compat );
-$assert( 'not_proven' === $compat_document['disposition'], 'compatibility editability is not a pass' );
+$failed_editability_document = Static_Site_Importer_Owner_Handoff_Evidence::compose( $failed_editability );
+$assert( 'failed' === $failed_editability_document['disposition'], 'a failed producer editability decision is a hard failure' );
 
 $desktop_only = $complete;
 $desktop_only['dimensions']['visual_acceptance'] = array(

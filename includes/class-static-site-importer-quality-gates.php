@@ -121,10 +121,8 @@ final class Static_Site_Importer_Quality_Gates {
 		if ( array_key_exists( 'max_fallbacks', $args ) && null !== $args['max_fallbacks'] && $quality['unsupported_fallback_count'] > (int) $args['max_fallbacks'] ) {
 			$quality['fail_import'] = true;
 		}
-		if ( in_array( 'dropped_artifact_files', $reasons, true ) ) {
-			// A partial site is never a successful import.
-			$quality['fail_import'] = true;
-		}
+		// Dropped artifact files are reported losses: they stay a quality reason,
+		// so a caller's acceptance policy (fail_on_quality) can still refuse them.
 		if ( in_array( 'woocommerce_missing', $reasons, true ) ) {
 			$quality['fail_import'] = true;
 		}

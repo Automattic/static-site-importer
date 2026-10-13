@@ -27,6 +27,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * Collects server-rendered pages and their referenced assets into one artifact.
+ *
+ * Fetch safety (public-address guards, same-origin discovery, response-size
+ * and deadline limits) is decided here. Whether a collected file is static
+ * content is not: the importer admits the artifact through
+ * Static_Site_Importer_Content_Policy::admit_artifact(), as for every other source.
  */
 class Static_Site_Importer_URL_Site_Collector {
 
@@ -443,9 +448,6 @@ class Static_Site_Importer_URL_Site_Collector {
 			} elseif ( 'text/css' === $resource['content_type'] || str_ends_with( strtolower( $path ), '.css' ) ) {
 				$body = self::rewrite_css( $body, $resource_url, $path, $reference_paths, $external_assets );
 			}
-			if ( ! Static_Site_Importer_Content_Policy::is_static_path( $path ) || ( Static_Site_Importer_Content_Policy::is_textual_path( $path ) && Static_Site_Importer_Content_Policy::path_contains_server_code( $path, $body ) ) ) {
-				return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s is not static content.', $path ), array( 'path' => $path ) );
-			}
 
 			$file = array(
 				'path'       => $path,
@@ -485,10 +487,6 @@ class Static_Site_Importer_URL_Site_Collector {
 					return $retained_file;
 				}
 				$finalization['files'][ $index ] = $retained_file;
-				$path                            = (string) ( $retained_file['path'] ?? '' );
-				if ( ! Static_Site_Importer_Content_Policy::is_static_path( $path ) ) {
-					return new WP_Error( 'static_site_importer_executable_source_rejected', sprintf( 'Untrusted artifact file %s is not static content.', $path ), array( 'path' => $path ) );
-				}
 				if ( ! is_string( $retained_file['body_ref'] ?? null ) || ! is_string( $retained_file['sha256'] ?? null ) || ! isset( $retained_file['bytes'] ) ) {
 					return new WP_Error( 'static_site_importer_collection_cursor_resource_invalid', 'A finalized URL collection resource could not be retained by reference.' );
 				}
@@ -1442,6 +1440,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			return $response;
 		}
 		unset( $data['_static_site_importer_negative_cache_hit'] );
+		// ssi-error-class: propagated
 		return new WP_Error( $response->get_error_code(), $response->get_error_message(), ! empty( $data ) ? $data : null );
 	}
 
@@ -1518,6 +1517,7 @@ class Static_Site_Importer_URL_Site_Collector {
 			$data = is_array( $response->get_error_data() ) ? $response->get_error_data() : array();
 			if ( ! empty( $data['_static_site_importer_cache_aware'] ) ) {
 				unset( $data['_static_site_importer_cache_aware'] );
+				// ssi-error-class: propagated
 				$response = new WP_Error( $response->get_error_code(), $response->get_error_message(), ! empty( $data ) ? $data : null );
 				$fetch_resource( $resource_url, $fetch_args + array( '_static_site_importer_cache_failure' => $response ) );
 			}

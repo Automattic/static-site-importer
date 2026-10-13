@@ -53,7 +53,7 @@ must contain:
 
 ```json
 {
-  "schema": "static-site-importer/dla-runtime-validation/v1",
+  "schema": "static-site-importer/fidelity-runtime-validation/v1",
   "runtime_identity": "caller-verified-checkout-or-package-identity",
   "public_entry_sha256": "SHA256_OF_RESOLVED_PUBLIC_ENTRY_BYTES",
   "status": "passed",

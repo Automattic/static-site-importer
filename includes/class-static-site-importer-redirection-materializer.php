@@ -52,6 +52,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 	private static function invoke( object|string $receiver, string $method, mixed ...$args ): mixed {
 		$callback = array( $receiver, $method );
 		if ( ! is_callable( $callback ) ) {
+			// ssi-error-class: operational
 			throw new RuntimeException( 'Redirection does not expose the required native API.' );
 		}
 		return call_user_func( $callback, ...$args );
@@ -239,6 +240,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 		$url_class   = 'Redirection\\Url\\Url';
 		$flags_class = 'Redirection\\Url\\SourceFlags';
 		if ( ! class_exists( $url_class ) || ! class_exists( $flags_class ) ) {
+			// ssi-error-class: operational
 			throw new RuntimeException( 'Redirection did not expose its native source matcher.' );
 		}
 		$flags               = is_array( $item['match_data']['source'] ?? null ) ? $item['match_data']['source'] : array();
@@ -369,6 +371,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 						break; }
 				}
 				if ( $next['group_id'] <= 0 ) {
+					// ssi-error-class: operational
 					throw new RuntimeException( 'The native provider did not return its created group.' ); }
 				$report['rollback']['created_group'] = $next['group_id'];
 				$report['mutations'][]               = array(
@@ -400,11 +403,13 @@ final class Static_Site_Importer_Redirection_Materializer {
 				$old    = $existing[ $from ] ?? null;
 				$result = self::api( 'POST', null === $old ? 'redirect' : 'redirect/' . $old['id'], $params );
 				if ( is_wp_error( $result ) ) {
+					// ssi-error-class: propagated
 					throw new RuntimeException( $result->get_error_message() ); }
 				// Journal the native write response before any follow-up request can fail.
 				$written_items = null === $old ? ( $result['items'] ?? array() ) : ( isset( $result['item'] ) ? array( $result['item'] ) : array() );
 				$saved         = array_values( array_filter( $written_items, static fn( array $item ): bool => ( $item['url'] ?? '' ) === $from && ( $item['title'] ?? '' ) === $params['title'] ) );
 				if ( 1 !== count( $saved ) ) {
+					// ssi-error-class: operational
 					throw new RuntimeException( 'The native write response did not identify its committed rule.' );
 				}
 				$item          = $saved[0];
@@ -426,20 +431,24 @@ final class Static_Site_Importer_Redirection_Materializer {
 				if ( null !== $old && empty( $old['enabled'] ) ) {
 					$enabled = self::api( 'POST', 'bulk/redirect/enable', array( 'items' => array( $old['id'] ) ) );
 					if ( is_wp_error( $enabled ) ) {
+						// ssi-error-class: propagated
 						throw new RuntimeException( $enabled->get_error_message() ); }
 					$report['rollback']['rules'][ $journal_index ]['after']['enabled'] = true;
 				}
 				$items = self::find( array( 'url' => $from ) );
 				if ( is_wp_error( $items ) ) {
+					// ssi-error-class: propagated
 					throw new RuntimeException( $items->get_error_message() ); }
 				$saved = array_values( array_filter( $items, static fn( array $item ): bool => ( $item['url'] ?? '' ) === $from && ( $item['title'] ?? '' ) === $params['title'] ) );
 				if ( 1 !== count( $saved ) ) {
+					// ssi-error-class: operational
 					throw new RuntimeException( 'The committed native rule is missing or ambiguous.' ); }
 				$item = $saved[0];
 				if ( null !== $journal_index ) {
 					$report['rollback']['rules'][ $journal_index ]['after'] = self::config( $item );
 				}
 				if ( ( $item['action_data']['url'] ?? null ) !== $target || 301 !== (int) ( $item['action_code'] ?? 0 ) || ! empty( $item['regex'] ) || empty( $item['enabled'] ) ) {
+					// ssi-error-class: operational
 					throw new RuntimeException( 'The native rule did not commit its required exact source and destination behavior.' );
 				}
 				$next['rules'][ $from ] = array(
@@ -455,6 +464,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 					continue; }
 				$items = self::find( array( 'id' => (string) $stale['id'] ) );
 				if ( is_wp_error( $items ) || 1 !== count( $items ) || self::config( $items[0] ) !== $stale['config'] ) {
+					// ssi-error-class: integrity
 					throw new RuntimeException( 'An owner changed a stale rule; it cannot be removed by reimport.' );
 				}
 				$old = $items[0];
@@ -465,6 +475,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 				// Retire the owned rule without destroying its native ID or admin history.
 				$result = self::api( 'POST', 'bulk/redirect/disable', array( 'items' => array( $stale['id'] ) ) );
 				if ( is_wp_error( $result ) ) {
+					// ssi-error-class: propagated
 					throw new RuntimeException( $result->get_error_message() ); }
 				$retired_config                = self::config( $old );
 				$retired_config['enabled']     = false;
@@ -480,6 +491,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 				);
 				$retired                       = self::find( array( 'id' => (string) $stale['id'] ) );
 				if ( is_wp_error( $retired ) || 1 !== count( $retired ) || ! empty( $retired[0]['enabled'] ) ) {
+					// ssi-error-class: operational
 					throw new RuntimeException( 'The native provider did not prove rule retirement.' );
 				}
 				$next['rules'][ $from ]                                 = array(
@@ -493,6 +505,7 @@ final class Static_Site_Importer_Redirection_Materializer {
 			$report['rollback']['ownership_after'] = $after;
 			update_option( self::OWNERSHIP_OPTION, $after );
 			if ( get_option( self::OWNERSHIP_OPTION, array() ) !== $after ) {
+				// ssi-error-class: operational
 				throw new RuntimeException( 'Native rule ownership could not be committed.' ); }
 			return $report;
 		} catch ( Throwable $error ) {

@@ -17,6 +17,10 @@ if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-content-policy.php';
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Source_Findings' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-source-findings.php';
+}
+
 if ( ! class_exists( 'Static_Site_Importer_URL_Import_Runtime' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-url-import-runtime.php';
 }
@@ -615,9 +619,10 @@ function static_site_importer_source_runtime( array $source, ?object $payload_re
 		);
 	}
 
-	$files        = array();
-	$metadata     = isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array();
-	$report_paths = isset( $metadata['reports'] ) && is_array( $metadata['reports'] ) ? $metadata['reports'] : array();
+	$files           = array();
+	$archive_skipped = array();
+	$metadata        = isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array();
+	$report_paths    = isset( $metadata['reports'] ) && is_array( $metadata['reports'] ) ? $metadata['reports'] : array();
 
 	if ( isset( $source['html'] ) && '' !== trim( (string) $source['html'] ) ) {
 		$files[] = array(
@@ -674,13 +679,17 @@ function static_site_importer_source_runtime( array $source, ?object $payload_re
 	}
 
 	if ( isset( $source['archive'] ) && is_array( $source['archive'] ) ) {
-		$archive_files = static_site_importer_rest_archive_files( $source['archive'] );
+		$archive_files = static_site_importer_rest_archive_files( $source['archive'], $archive_skipped );
 		if ( is_wp_error( $archive_files ) ) {
 			return $archive_files;
 		}
 
 		$files = array_merge( $files, $archive_files );
 	}
+
+	$source_findings = Static_Site_Importer_Source_Findings::extract( $files, $payload_reader );
+	$files           = $source_findings['files'];
+	$archive_skipped = array_merge( $archive_skipped, $source_findings['findings'] );
 
 	if ( empty( $files ) ) {
 		return new WP_Error( 'static_site_importer_missing_source', __( 'Add a website URL, upload file(s), or paste HTML to start.', 'static-site-importer' ), array( 'status' => 400 ) );
@@ -699,7 +708,9 @@ function static_site_importer_source_runtime( array $source, ?object $payload_re
 		}
 	}
 
-	$artifact      = array_merge(
+	// The static-content decision runs once, where the artifact is frozen for
+	// compilation (Static_Site_Importer_Content_Policy::admit_artifact()).
+	$artifact = array_merge(
 		$metadata,
 		array(
 			'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
@@ -707,14 +718,10 @@ function static_site_importer_source_runtime( array $source, ?object $payload_re
 			'files'      => $files,
 		)
 	);
-	$source_policy = Static_Site_Importer_Content_Policy::validate_artifact( $artifact, $payload_reader );
-	if ( is_wp_error( $source_policy ) ) {
-		return $source_policy;
-	}
 
 	return array(
 		'artifact'        => $artifact,
-		'source_metadata' => array(),
+		'source_metadata' => array() === $archive_skipped ? array() : array( 'intake_findings' => $archive_skipped ),
 		'provider'        => 'rest-source',
 	);
 }
@@ -792,7 +799,7 @@ function static_site_importer_rest_is_url_only_source( array $source ): bool {
  * @param array<string,mixed> $archive Archive payload.
  * @return array<int,array<string,mixed>>|WP_Error
  */
-function static_site_importer_rest_archive_files( array $archive ) {
+function static_site_importer_rest_archive_files( array $archive, ?array &$skipped = null ) {
 	$name = isset( $archive['name'] ) ? (string) $archive['name'] : ( isset( $archive['path'] ) ? (string) $archive['path'] : '' );
 	if ( ! preg_match( '/\.zip$/i', $name ) ) {
 		return new WP_Error( 'static_site_importer_invalid_archive_type', __( 'ZIP uploads must use a .zip file.', 'static-site-importer' ), array( 'status' => 400 ) );
@@ -825,7 +832,7 @@ function static_site_importer_rest_archive_files( array $archive ) {
 		return new WP_Error( 'static_site_importer_archive_tempfile_failed', __( 'Uploaded ZIP archive could not be staged for extraction.', 'static-site-importer' ), array( 'status' => 500 ) );
 	}
 
-	return static_site_importer_archive_files_from_path( $tmp, $limits, true );
+	return static_site_importer_archive_files_from_path( $tmp, $limits, true, false, $skipped );
 }
 
 /**
@@ -837,13 +844,13 @@ function static_site_importer_rest_archive_files( array $archive ) {
  * @param array<string,mixed> $archive Resolved archive payload.
  * @return array<int,array<string,mixed>>|WP_Error
  */
-function static_site_importer_staged_archive_files( array $archive, bool $return_payload_references = false ) {
+function static_site_importer_staged_archive_files( array $archive, bool $return_payload_references = false, ?array &$skipped = null ) {
 	$path = static_site_importer_staged_archive_path( $archive );
 	if ( is_wp_error( $path ) ) {
 		return $path;
 	}
 
-	return static_site_importer_archive_files_from_path( $path, static_site_importer_staged_archive_limits(), false, $return_payload_references );
+	return static_site_importer_archive_files_from_path( $path, static_site_importer_staged_archive_limits(), false, $return_payload_references, $skipped );
 }
 
 /** Resolve a server-owned staged archive without transferring ownership to SSI. */
@@ -885,10 +892,12 @@ function static_site_importer_staged_archive_payload_reader( array $archive ) {
 		public function read( array $reference ): string {
 			$id = $reference['id'];
 			if ( ! str_starts_with( $id, 'zip-entry:' ) ) {
+				// ssi-error-class: integrity
 				throw new RuntimeException( 'The staged payload reference is invalid.' );
 			}
 			$entry = rawurldecode( substr( $id, strlen( 'zip-entry:' ) ) );
 			if ( '' === $entry || static_site_importer_rest_artifact_path( $entry ) === '' ) {
+				// ssi-error-class: integrity
 				throw new RuntimeException( 'The staged payload reference is invalid.' );
 			}
 			$path = static_site_importer_staged_archive_path(
@@ -898,16 +907,19 @@ function static_site_importer_staged_archive_payload_reader( array $archive ) {
 				)
 			);
 			if ( is_wp_error( $path ) ) {
+				// ssi-error-class: operational
 				throw new RuntimeException( 'The staged archive is unavailable.' );
 			}
 			$zip = new ZipArchive();
 			if ( true !== $zip->open( $path ) ) {
+				// ssi-error-class: operational
 				throw new RuntimeException( 'The staged archive is unavailable.' );
 			}
 			try {
 				$stat   = $zip->statName( $entry );
 				$limits = static_site_importer_staged_archive_limits();
 				if ( ! is_array( $stat ) || (int) $stat['size'] !== $reference['bytes'] || (int) $stat['size'] > $limits['max_entry_uncompressed_bytes'] || ( 0 === (int) $stat['comp_size'] ? (int) $stat['size'] > 0 : (int) $stat['size'] / (int) $stat['comp_size'] > $limits['max_compression_ratio'] ) ) {
+					// ssi-error-class: integrity
 					throw new RuntimeException( 'The staged payload byte count changed.' );
 				}
 				$bytes = $zip->getFromName( $entry );
@@ -915,6 +927,7 @@ function static_site_importer_staged_archive_payload_reader( array $archive ) {
 				$zip->close();
 			}
 			if ( false === $bytes ) {
+				// ssi-error-class: operational
 				throw new RuntimeException( 'The staged payload is unavailable.' );
 			}
 			return $bytes;
@@ -928,9 +941,11 @@ function static_site_importer_staged_archive_payload_reader( array $archive ) {
  * @param string            $archive_path Local ZIP path.
  * @param array<string,int> $limits       Bounded archive policy.
  * @param bool              $delete_path  Whether this importer owns the path.
+ * @param bool              $return_payload_references Whether binary entries are returned as payload references.
+ * @param array|null        $skipped      Receives one finding per entry skipped at a per-entry limit.
  * @return array<int,array<string,mixed>>|WP_Error
  */
-function static_site_importer_archive_files_from_path( string $archive_path, array $limits, bool $delete_path, bool $return_payload_references = false ) {
+function static_site_importer_archive_files_from_path( string $archive_path, array $limits, bool $delete_path, bool $return_payload_references = false, ?array &$skipped = null ) {
 	if ( ! class_exists( 'ZipArchive' ) ) {
 		return new WP_Error( 'static_site_importer_zip_unavailable', __( 'ZIP archive extraction is unavailable on this server.', 'static-site-importer' ), array( 'status' => 500 ) );
 	}
@@ -955,7 +970,11 @@ function static_site_importer_archive_files_from_path( string $archive_path, arr
 		return static_site_importer_rest_archive_limit_error( 'entry_count_exceeded' );
 	}
 
+	// Entry count and total size bound the whole archive and fail closed. A
+	// per-entry limit bounds one entry: an oversize entry is skipped unread and
+	// reported, unless the site cannot be imported without it.
 	$total_uncompressed_bytes = 0;
+	$oversize                 = array();
 	for ( $i = 0; $i < $zip->numFiles; $i++ ) {
 		$stat = $zip->statIndex( $i );
 		if ( ! is_array( $stat ) || $stat['size'] < 0 || $stat['comp_size'] < 0 ) {
@@ -965,9 +984,39 @@ function static_site_importer_archive_files_from_path( string $archive_path, arr
 
 		$entry_uncompressed_bytes = (int) $stat['size'];
 		$entry_compressed_bytes   = (int) $stat['comp_size'];
+		$entry_limit              = '';
 		if ( $entry_uncompressed_bytes > $limits['max_entry_uncompressed_bytes'] ) {
-			$cleanup( $zip );
-			return static_site_importer_rest_archive_limit_error( 'entry_uncompressed_bytes_exceeded' );
+			$entry_limit = 'entry_uncompressed_bytes_exceeded';
+		} elseif ( 0 === $entry_compressed_bytes ? $entry_uncompressed_bytes > 0 : $entry_uncompressed_bytes / $entry_compressed_bytes > $limits['max_compression_ratio'] ) {
+			$entry_limit = 'compression_ratio_exceeded';
+		}
+		if ( '' !== $entry_limit ) {
+			$entry_path = static_site_importer_rest_archive_entry_path( $stat['name'] );
+			if ( '' !== $entry_path && Static_Site_Importer_Content_Policy::fails_closed( $entry_path ) ) {
+				$cleanup( $zip );
+				return static_site_importer_rest_archive_limit_error( $entry_limit );
+			}
+			$oversize[ $i ] = true;
+			if ( '' !== $entry_path ) {
+				$skipped   = is_array( $skipped ) ? $skipped : array();
+				$skipped[] = array(
+					'code'        => 'static_site_importer_archive_entry_skipped',
+					'type'        => 'static-site-importer',
+					'severity'    => 'warning',
+					'stage'       => 'archive_intake',
+					'source_path' => $entry_path,
+					'path'        => $entry_path,
+					'reason_code' => $entry_limit,
+					'metrics'     => array(
+						'uncompressed_bytes'           => $entry_uncompressed_bytes,
+						'compressed_bytes'             => $entry_compressed_bytes,
+						'max_entry_uncompressed_bytes' => (int) $limits['max_entry_uncompressed_bytes'],
+						'max_compression_ratio'        => (int) $limits['max_compression_ratio'],
+					),
+					'message'     => sprintf( 'Skipped %1$s: the archive entry exceeds the %2$s limit, so references to it are unresolved.', $entry_path, str_replace( '_exceeded', '', $entry_limit ) ),
+				);
+			}
+			continue;
 		}
 
 		$total_uncompressed_bytes += $entry_uncompressed_bytes;
@@ -975,39 +1024,20 @@ function static_site_importer_archive_files_from_path( string $archive_path, arr
 			$cleanup( $zip );
 			return static_site_importer_rest_archive_limit_error( 'total_uncompressed_bytes_exceeded' );
 		}
-
-		if ( 0 === $entry_compressed_bytes ? $entry_uncompressed_bytes > 0 : $entry_uncompressed_bytes / $entry_compressed_bytes > $limits['max_compression_ratio'] ) {
-			$cleanup( $zip );
-			return static_site_importer_rest_archive_limit_error( 'compression_ratio_exceeded' );
-		}
 	}
 
 	$files = array();
 	for ( $i = 0; $i < $zip->numFiles; $i++ ) {
-		$entry = $zip->getNameIndex( $i );
-		if ( false === $entry || str_ends_with( $entry, '/' ) || str_starts_with( $entry, '__MACOSX/' ) ) {
+		if ( isset( $oversize[ $i ] ) ) {
 			continue;
 		}
-
-		$path = static_site_importer_rest_artifact_path( $entry );
+		$entry = $zip->getNameIndex( $i );
+		if ( false === $entry ) {
+			continue;
+		}
+		$path = static_site_importer_rest_archive_entry_path( $entry );
 		if ( '' === $path ) {
 			continue;
-		}
-
-		if ( ! static_site_importer_rest_should_include_artifact_file( $path ) ) {
-			continue;
-		}
-
-		if ( ! Static_Site_Importer_Content_Policy::is_static_path( $path ) ) {
-			$cleanup( $zip );
-			return new WP_Error(
-				'static_site_importer_executable_source_rejected',
-				__( 'ZIP archives may contain static content only.', 'static-site-importer' ),
-				array(
-					'status' => 400,
-					'path'   => $path,
-				)
-			);
 		}
 
 		$file_content = $zip->getFromIndex( $i );
@@ -1039,6 +1069,23 @@ function static_site_importer_archive_files_from_path( string $archive_path, arr
 	$cleanup( $zip );
 
 	return $files;
+}
+
+/**
+ * The artifact path an archive entry contributes, or '' when the entry is not part of the site.
+ *
+ * Directories, macOS resource forks and excluded files contribute nothing.
+ *
+ * @param string $entry ZIP entry name.
+ * @return string
+ */
+function static_site_importer_rest_archive_entry_path( string $entry ): string {
+	if ( '' === $entry || str_ends_with( $entry, '/' ) || str_starts_with( $entry, '__MACOSX/' ) ) {
+		return '';
+	}
+	$path = static_site_importer_rest_artifact_path( $entry );
+
+	return '' !== $path && static_site_importer_rest_should_include_artifact_file( $path ) ? $path : '';
 }
 
 /**
@@ -1092,11 +1139,10 @@ function static_site_importer_rest_archive_limits(): array {
  * under the 320 MiB cap, and resolve() clamps it there regardless.
  *
  * Without that headroom a near-limit archive compiles past the declared budget
- * and the generated files are dropped, which
- * Static_Site_Importer_Direct_Artifact_Import refuses outright as
- * static_site_importer_artifact_files_omitted rather than importing a partial
- * site. So the cost of getting this wrong is a late refusal after a full
- * capture and compile, not a quiet loss -- but late and avoidable.
+ * and the generated files are dropped. The import still completes and reports
+ * each dropped file as an `omitted_artifact_file(s)` finding, so the cost of
+ * getting this wrong is a reported loss after a full capture and compile, not
+ * a quiet one -- but avoidable.
  *
  * Raising intake means raising the compiler cap first and keeping the headroom
  * between them.
@@ -1163,6 +1209,7 @@ function static_site_importer_staged_archive_compiler_limits(): array {
 function static_site_importer_rest_archive_limit_error( string $reason ): WP_Error {
 	$code = 'static_site_importer_archive_' . $reason;
 
+	// ssi-error-class: operational
 	return new WP_Error(
 		$code,
 		__( 'The ZIP archive exceeds the configured safety limit.', 'static-site-importer' ),

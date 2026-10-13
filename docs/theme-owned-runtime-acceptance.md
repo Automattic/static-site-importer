@@ -45,7 +45,9 @@ into the existing harness-supported `vendor/wordpress-core` location. `npm test`
 prepares it before standalone PHP tests and sets `STATIC_SITE_IMPORTER_WP_ROOT`
 to its absolute checkout-relative path, so isolated HOME directories do not
 change resolution. An explicit `STATIC_SITE_IMPORTER_WP_ROOT` remains authoritative
-and fails if unavailable; tests are not skipped or weakened. Preparation reads
+and fails if unavailable; tests are not skipped or weakened. When it is unset, the
+core HTML API fixture next uses `HOMEBOY_WORDPRESS_CORE_ROOT` (an absolute WordPress
+core root provided by Homeboy's WordPress extension) before the vendored locations. Preparation reads
 core source only and does not bootstrap a site or database. An incomplete existing
 fixture directory is rejected rather than overwritten.
 

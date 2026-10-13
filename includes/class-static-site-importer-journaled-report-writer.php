@@ -36,6 +36,7 @@ class Static_Site_Importer_Journaled_Report_Writer {
 			if ( is_string( $temp ) && file_exists( $temp ) ) {
 				unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes a failed atomic projection temporary file.
 			}
+			// ssi-error-class: operational
 			throw new RuntimeException( 'Failed to write a preflighted import artifact.' );
 		}
 	}

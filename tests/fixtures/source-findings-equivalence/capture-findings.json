@@ -1,0 +1,126 @@
+{
+	"schema": "data-liberation-agent/capture-findings/v1",
+	"entrypoint": "index.html",
+	"complete": false,
+	"usable": true,
+	"summary": {
+		"routes_discovered": 9,
+		"routes_captured": 7,
+		"routes_failed": 2,
+		"routes_omitted": 0,
+		"unresolved_anchors": 0
+	},
+	"findings": [
+		{
+			"code": "route_capture_degraded",
+			"severity": "warning",
+			"unit": "route",
+			"url": "https://example.test/about/",
+			"path": "about.html",
+			"reason": "mobile/screenshot-scrolled: screenshot timeout",
+			"metrics": {
+				"failedStages": 1,
+				"stage": "mobile"
+			}
+		},
+		{
+			"code": "route_export_failed",
+			"severity": "error",
+			"unit": "route",
+			"url": "https://example.test/pricing/",
+			"reason": "cannot export Pricing"
+		},
+		{
+			"code": "route_path_collision",
+			"severity": "warning",
+			"unit": "route",
+			"url": "https://example.test/a.html",
+			"reason": "two routes export to a.html"
+		},
+		{
+			"code": "route_off_origin",
+			"severity": "warning",
+			"unit": "route",
+			"url": "https://elsewhere.test/x/",
+			"reason": "route resolves off the capture origin"
+		},
+		{
+			"code": "route_profile_uncaptured",
+			"severity": "error",
+			"unit": "profile",
+			"url": "https://example.test/",
+			"profile": "tablet",
+			"reason": "no tablet document"
+		},
+		{
+			"code": "route_capture_skipped_budget",
+			"severity": "warning",
+			"unit": "route",
+			"url": "https://example.test/archive/page-9/",
+			"reason": "capture budget exhausted",
+			"metrics": {
+				"budgetMs": 600000,
+				"elapsedMs": 600412
+			}
+		},
+		{
+			"code": "asset_exceeds_file_limit",
+			"severity": "warning",
+			"unit": "asset",
+			"url": "https://example.test/assets/tour.mp4",
+			"path": "assets/tour.mp4",
+			"reason": "asset exceeds the per-file limit",
+			"metrics": {
+				"bytes": 99000000,
+				"limit": 52428800
+			}
+		},
+		{
+			"code": "stylesheet_unparseable",
+			"severity": "warning",
+			"unit": "stylesheet",
+			"url": "https://example.test/assets/site.css",
+			"path": "assets/site.css",
+			"reason": "stylesheet could not be parsed"
+		},
+		{
+			"code": "native_timeline_unproven",
+			"severity": "warning",
+			"unit": "block",
+			"url": "https://example.test/motion/",
+			"path": "motion/index.html",
+			"reason": "timeline not proven native"
+		},
+		{
+			"code": "disclosure_unrestored",
+			"severity": "warning",
+			"unit": "block",
+			"url": "https://example.test/faq/",
+			"path": "faq/index.html",
+			"reason": "disclosure state not restored",
+			"metrics": {
+				"count": 2
+			}
+		},
+		{
+			"code": "a_future_capture_code",
+			"severity": "warning",
+			"unit": "block",
+			"url": "https://example.test/",
+			"reason": "a code the importer does not register"
+		}
+	],
+	"omitted_findings": 0,
+	"missing_routes": [
+		{
+			"url": "https://example.test/pricing/",
+			"code": "route_export_failed",
+			"reason": "cannot export Pricing"
+		},
+		{
+			"url": "https://example.test/slow/",
+			"code": "route_capture_failed",
+			"reason": "desktop/goto: Navigation timeout"
+		}
+	]
+}

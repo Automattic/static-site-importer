@@ -1,5 +1,5 @@
 {
-  "schema": "data-liberation/capture-receipt/v1",
+  "schema": "blocks-engine-capture/capture-receipt/v1",
   "source": {
     "url": "https://example.com/"
   },

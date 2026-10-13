@@ -15,7 +15,7 @@ namespace {
 	function get_current_blog_id(): int { return 17; }
 	function get_current_user_id(): int { return 23; }
 	class Static_Site_Importer_Theme_Materialization_Strategy { const CLASSIC = 'classic'; public static function normalize( array $args ) { return array( 'strategy' => 'block', 'evidence' => array() ); } }
-	class Static_Site_Importer_Content_Policy { public static function validate_artifact( array $artifact ) { return true; } }
+	class Static_Site_Importer_Content_Policy { public static function admit_artifact( array $artifact ) { return array( 'artifact' => $artifact, 'findings' => array() ); } public static function with_intake_findings( array $args, array $findings ): array { return $args; } }
 	class Static_Site_Importer_Client_Script_Policy { public static function apply( array $artifact, array $args ): array { $artifact['script_policy_applied'] = true; return array( 'artifact' => $artifact, 'report' => array( 'policy' => 'inert' ) ); } }
 	class Static_Site_Importer_Site_Identity { public static function resolve( array $args ): array { return array( 'name' => 'Checkpoint', 'slug' => 'checkpoint', 'title' => 'Checkpoint', 'block_namespace' => 'ssi-checkpoint' ); } public static function title_from_website_artifact( array $artifact ): string { return ''; } public static function evidence_from_website_artifact( array $artifact, ?object $payload_reader = null, string $site_tagline = '' ): array { return array( 'tagline' => $site_tagline ); } }
 	class Static_Site_Importer_Companion_Plugin { public static function validate_payload( array $payload ) { return true; } }

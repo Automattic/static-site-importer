@@ -92,7 +92,13 @@ Producer-declared WordPress.org metrics bind directly to native Paragraph and He
 
 ## Content-Only Security Boundary
 
-All HTML, folders, ZIPs, URLs, and website artifact objects are untrusted static content. SSI accepts only explicit static asset extensions and rejects server-side source markers before compilation. Compiler-produced companion payloads are independently revalidated before any generated plugin file is written or activated. Companion block renders accept static HTML only; SSI emits its own fixed PHP wrapper to output that markup, so source PHP cannot be preserved or executed. Existing payloads that relied on PHP render templates or PHP companion assets must migrate their behavior to blocks, data bindings, or client-side JavaScript.
+All HTML, folders, ZIPs, URLs, and website artifact objects are untrusted static content. SSI accepts only explicit static asset extensions and server-side source markers never reach compilation. One decision, `Static_Site_Importer_Content_Policy::admit_artifact()`, runs once per import where the artifact is frozen for compilation, whatever the intake (REST files or ZIP, staged ZIP, CLI request bundle, URL collection, provided artifact):
+
+- a non-static asset is skipped with a `static_site_importer_non_static_file_skipped` finding;
+- a non-entry page that is not static content (a server page, or HTML carrying server code) is dropped with a `static_site_importer_non_static_page_dropped` finding, and the remaining pages import;
+- the entrypoint (the declared one, or a root `index`/`default`/`home` document) and the root `_redirects` manifest fail closed with `static_site_importer_executable_source_rejected`. Compiler-produced companion payloads are independently revalidated before any generated plugin file is written or activated. Companion block renders accept static HTML only; SSI emits its own fixed PHP wrapper to output that markup, so source PHP cannot be preserved or executed. Existing payloads that relied on PHP render templates or PHP companion assets must migrate their behavior to blocks, data bindings, or client-side JavaScript.
+
+A URL import admits each collected batch through the same decision, with the site entry URL's page as the entrypoint. Its fetch guards stay its own: a private or reserved address, a disallowed scheme, embedded credentials, a TLS failure, a deadline, or a failure to fetch the site entry fails the import. A non-entry route that cannot be fetched (an HTTP error status, an oversize or empty response, a timeout, a client-rendered shell) is left out with a `static_site_importer_url_route_omitted` finding, and an asset that cannot be fetched keeps its source URL.
 
 When a generated artifact contains full-document HTML, Static Site Importer routes document metadata, head content, styles, scripts, and page body fragments to the right WordPress destinations before calling the conversion stack. A `core/html` block in imported page content is therefore a materialization/conversion quality issue to fix in this stack, not a product-layer workaround to hide upstream.
 
@@ -176,7 +182,8 @@ ZIP intake rules:
 - A root-level `index.html` wins when present.
 - If there is no root-level `index.html`, the ZIP may contain exactly one nested `index.html`, such as `site-export/index.html`.
 - If there are multiple nested `index.html` files and no root `index.html`, the import fails so the entry point is not guessed.
-- Archive entries with absolute paths, `../` traversal segments, or server-side executable extensions are rejected before extraction when PHP's `ZipArchive` inspection is available.
+- Archive entries with absolute paths or `../` traversal segments are normalized before extraction. Entries that are not static content follow the content-only decision above.
+- The entry-count and total-uncompressed-size limits reject the archive. An entry over a per-entry limit (uncompressed size or compression ratio) is skipped unread with a `static_site_importer_archive_entry_skipped` finding, unless it is the entrypoint or the redirects manifest, which fail closed.
 - `.md` and `.markdown` files under the selected source tree are imported as pages. `.mdx` files are not executed or parsed as Markdown; they are skipped and listed in `import-report.json` diagnostics.
 
 ## Generated Store Contract
@@ -337,29 +344,57 @@ The default root is `website` with `entrypoint: "website/index.html"`. Callers c
 
 ## URL Loop Intake
 
-The bounded URL entrypoint retains one fresh Data Liberation Agent capture, then
-passes that exact generated-artifact tree through SSI's existing fixture intake.
-It never interprets fallback counts as solved-site acceptance and does not run a
-matrix unless explicitly requested:
+The bounded URL entrypoint retains one fresh capture from a caller-configured
+capture command, then passes that exact generated-artifact tree through SSI's
+existing fixture intake. It never interprets fallback counts as solved-site
+acceptance and does not run a matrix unless explicitly requested:
 
 ```bash
 node tools/url-loop-intake.mjs https://quinn-fluid-demo.squarespace.com/ \
+  --capture-command '["npx","--yes","--package=<package spec>","<bin>","{url}","--output","{output}"]' \
   --output-root /path/to/retained/quinn-capture \
   --run-matrix --static-site-importer /path/to/static-site-importer \
   --blocks-engine /path/to/blocks-engine
 ```
 
-The entrypoint configures the pinned DLA v0.6.5 asset and invokes
-`npx --yes --package=<asset> data-liberation <url> --output <dir>`. The operator
-supplies only the URL on later runs. The resulting `url-loop-handoff.json` records
+#### Capture configuration
+
+The harness names no capture producer. The caller supplies it:
+
+| Setting | Flag | Environment | Default |
+|---|---|---|---|
+| Capture command: a JSON argv array. `{url}` (the normalized source URL) and `{output}` (the retained capture directory) are substituted in every element and must each appear at least once. | `--capture-command` | `SSI_URL_LOOP_CAPTURE_COMMAND` | none: the run is refused with `capture_command_missing` |
+| Expected receipt schema | `--capture-receipt-schema` | `SSI_URL_LOOP_CAPTURE_RECEIPT_SCHEMA` | `blocks-engine-capture/capture-receipt/v1` |
+
+A flag wins over the environment. A bare `argv[0]` resolves against the bounded
+child `PATH` (the configured Node directory plus the standard system
+directories), and the recorded command is the absolute program that ran. The
+command must write exactly one directory under `{output}` holding
+`capture-receipt.json` and a `website/` tree.
+
+To run with Data Liberation Agent, use **v0.27.0 or later**; earlier releases
+write the retired `data-liberation/capture-receipt/v1` receipt and are blocked
+with `capture_receipt_schema_unknown`. For v0.27.0 (commit
+`2986ca1e386e994696d41a47e94edb8dd3665c43`, asset SHA256
+`2611d686a804f0db20c1306fbfc807d8785a62040e462a555c2f02fb53cfedc3`):
+
+```bash
+export SSI_URL_LOOP_CAPTURE_COMMAND='["npx","--yes","--package=https://github.com/Automattic/data-liberation-agent/releases/download/v0.27.0/data-liberation-0.27.0.tgz","data-liberation","{url}","--output","{output}"]'
+```
+
+Pin an immutable release asset rather than a moving npm tag so repeated runs use
+the same producer bytes. The operator then supplies only the URL on later runs.
+
+The resulting `url-loop-handoff.json` records
 derived SHA256 provenance for the normalized URL, receipt bytes, and retained
 capture content, plus the capture receipt,
-observed component identities, normalized fixture, canonical matrix summary and
-artifact references when requested, stage failures, and replay commands. A capture receipt must be
-`data-liberation/capture-receipt/v1`, with `source.url` bound to the normalized
+observed component identities (the capture identity is the configured argv, its
+SHA256 and the expected receipt schema), normalized fixture, canonical matrix summary and
+artifact references when requested, stage failures, and replay commands. A capture receipt must
+declare the expected receipt schema, with `source.url` bound to the normalized
 URL and a complete route summary (`routesCaptured === routesDiscovered`, with no
 failed or skipped routes). Ambiguous artifact directories, partial captures,
-missing files, and missing declared release identity are blocked before SSI intake. A complete capture
+missing files, and a missing capture command are blocked before SSI intake. A complete capture
 without a requested matrix is `needs_evaluation`; matrix evidence is accepted only
 when the selected fixture is explicitly `verified` in the canonical runtime
 evidence summary. WordPress/editor evidence remains owned by the existing fixture
@@ -368,56 +403,76 @@ status.
 
 ### Durable, bounded evaluation
 
-`tools/url-loop-controller.mjs` composes this capture with Homeboy's generic
-`run_command` WorkJobs. Run it **inside a dependency-hydrated Lab workspace**
-with the installed Homeboy controller and a WP Codebox binary that supports the
-fixture-matrix browser steps:
+`tools/url-loop-controller.mjs` turns one URL into a Homeboy workflow
+(`homeboy/workflow/v1`, see Homeboy's `docs/commands/workflow.md`) and admits it
+with `homeboy workflow run`. Run it **inside a dependency-hydrated Lab workspace**
+with a Homeboy build that has `homeboy workflow` and a WP Codebox binary that
+supports the fixture-matrix browser steps:
 
 ```bash
 node tools/url-loop-controller.mjs start \
   --url https://quinn-fluid-demo.squarespace.com/ \
+  --capture-command '["npx","--yes","--package=<package spec>","<bin>","{url}","--output","{output}"]' \
+  --fix-task-url https://github.com/<owner>/<repo>/issues/<n> \
   --blocks-engine /path/to/blocks-engine \
   --transformer-path /path/to/pinned/php-transformer \
   --wp-codebox-bin /path/to/wp-codebox \
   --candidate-sha <full-40-character-commit> \
   --output-root /path/to/retained/loop \
-  --max-actions 4
-homeboy agent-task loop status ssi-url-e40fb1ae670f7b0acf36
+  --max-iterations 3 --max-step-runs 12 --deadline 10h
+homeboy workflow status <instance printed by start>
 ```
 
-Configure `SSI_BLOCKS_ENGINE_PATH`, `HOMEBOY_WP_CODEBOX_BIN`, and (when the
-synced workspace has no `.git`) `SSI_CANDIDATE_SHA` on the Lab runner to make
-`start --url <url>` the only per-site input.
-For independent proof runs of the same source, `--instance <token>` forks the
-controller identity while retaining the stable `source_id` in its handoff.
+The workflow has three steps:
 
-The first action retains DLA's source capture and normalized SSI fixture. The
-second runs the canonical WordPress/Codebox matrix and records its typed browser
-findings and component inputs. Homeboy owns the durable action history, event and
-revolution budget; SSI owns the evidence/acceptance decision. A subsequent
-candidate SHA can queue **one deduplicated re-evaluation of that same capture**:
+1. **`capture`** retains the configured producer's source capture and normalized
+   SSI fixture. It runs
+   once per instance (its `when` gate is false once it has succeeded), and every
+   later instance for the same proof root reuses the retained capture.
+2. **`evaluate`** runs the canonical WordPress/Codebox matrix for the candidate
+   and writes `evaluation.json`. Its step output carries the gate's `verdict`:
+   `findings` when the matrix reports repairable failures, `accepted` only for a
+   solved site, otherwise the evaluation status (`needs_evidence`, `needs_review`).
+3. **`fix`** is a Homeboy Cook that the `findings` verdict launches, on the
+   tracker named by `--fix-task-url`. The evaluation report reaches it as the
+   `evaluation` provider evidence, so the prompt names that id rather than a
+   host path (`--fix-repo`, `--fix-verify` (repeatable, default `npm test`),
+   `--fix-placement`, `--fix-backend`, and `--fix-prompt` adjust it).
 
-```bash
-node tools/url-loop-controller.mjs candidate \
-  --output-root /path/to/retained/loop \
-  --candidate-sha <full-40-character-commit> \
-  --candidate-workspace /path/to/clean/candidate-checkout
-```
+The `until` gate re-runs the graph until the verdict is `accepted`. The
+`--max-iterations` and `--max-step-runs` budgets and the `--deadline` stop it
+otherwise, ending the instance `budget_exhausted`. A typed capture or evaluation
+blocker exits non-zero, which fails the step and the instance with the blocker in
+the step log; nothing parks. Homeboy owns the durable step ledger and budgets;
+SSI owns the evidence/acceptance decision.
 
-The controller stops on a typed capture/matrix blocker or its action budget.
+Configure `SSI_URL_LOOP_CAPTURE_COMMAND` (and `SSI_URL_LOOP_CAPTURE_RECEIPT_SCHEMA`
+when it differs from the default), `SSI_BLOCKS_ENGINE_PATH`, `HOMEBOY_WP_CODEBOX_BIN`,
+`SSI_FIX_TASK_URL` and (when the synced workspace has no `.git`) `SSI_CANDIDATE_SHA`
+on the Lab runner to make `start --url <url>` the only per-site input.
+`--capture-command` and `--capture-receipt-schema` override them per proof. `start`
+resolves the capture configuration once and pins it in the workflow definition, so
+every step and later candidate instance of that proof uses the same command and
+schema; a proof without a capture command is refused before admission. Steps run with an
+empty environment plus the declared public toolchain names (`PATH`, `HOME`,
+`XDG_*`, `PLAYWRIGHT_*`, npm cache) captured where `start` runs. For independent
+proof runs of the same source, `--instance <token>` forks the proof root while
+retaining the stable `source_id` in its handoff.
+
+**A new candidate SHA** is a new workflow instance over the same definition:
+rerun `start` with `--candidate-sha <sha>` from a clean checkout whose `HEAD` is
+that SHA. It evaluates the same retained capture; the same inputs are a no-op.
 `--candidate-sha` is required when Lab sync has no `.git` metadata; the operator
 can omit it for an ordinary Git checkout. Pin the Blocks Engine candidate with
-`--blocks-engine-sha` and WordPress with `--wordpress-version` when known.
-Candidate events require a clean checkout whose `HEAD` matches the supplied SHA;
-the re-evaluation action then verifies it again before running the matrix. A Lab
+`--blocks-engine-sha` and WordPress with `--wordpress-version` when known. A Lab
 snapshot without Git metadata remains usable for initial diagnostic collection,
 but its candidate revision stays visibly unverified and cannot earn acceptance.
 Matrix quality findings remain actionable, but neither zero fallback blocks nor
 completed browser steps imply a solved site. A solved verdict requires SSI's
 separate fail-closed solved-site promotion receipt and full viewport/editor
-evidence; this first vertical records absent evidence explicitly. `spec` instead
-of `start` prints the generated controller spec for `homeboy agent-task
-controller plan -` without creating controller state.
+evidence; this first vertical records absent evidence explicitly. `workflow`
+instead of `start` prints the generated definition for
+`homeboy workflow validate -` without admitting an instance.
 
 ## Product Handoff Contract
 
@@ -485,6 +540,92 @@ npm run test:validation -- --json
 ### PHP Smokes
 
 PHP smokes are declared in `test-manifest.json`; run the standalone lane with `npm test` or the complete configured lanes with `npm run test:all`.
+
+### Error Classification
+
+Every `new WP_Error(` and `throw new` in `includes/*.php` is classified in `tests/fixtures/error-classification.json`, and `php tests/smoke-error-classification.php` fails on any site that is not. Classes are `integrity` (paths, containment, permissions, digests, identity, producer contracts), `operational` (size, time, memory, runtime availability), `representability` (source content this layer cannot express, with a `unit` of `item`, `block`, `page`, `route` or `asset`), `propagated` (an error from another layer passed through) and `programmer`.
+
+- A `WP_Error` with a literal code is registered by its code.
+- A computed code, or any `throw new`, is registered as `<file>#<normalized expression>` and needs a comment on its line or the line above:
+
+  ```php
+  // ssi-error-class: integrity
+  throw new RuntimeException( 'Artifact workspace directory cannot be a symlink.' );
+  ```
+
+  Use `representability:<unit>` for representability, for example `// ssi-error-class: representability:page`.
+- Registry entries whose site no longer exists fail, so remove them with the code.
+- `representability_pending` can only shrink. A new limit should degrade the smallest unit and record a finding instead of failing the import. When a pending site is converted, move its key to `representability_converted` with `finding_code`, `unit`, `owning_layer` and `proof_smoke`, a registered smoke that shows the finding reaching `Static_Site_Importer_Receipt_Projection::compose()`.
+
+`php tests/smoke-error-classification.php --list` prints every site with its key as JSON lines.
+
+### Loss Ledger Findings
+
+The import report records each finding once, with a loss class and an acceptability. Classes come from `Static_Site_Importer_Diagnostic_Loss_Classes`. Producers report their own losses through `website/source-findings.json` ([`docs/contracts/website-artifact-evidence.md`](docs/contracts/website-artifact-evidence.md)).
+
+| Acceptability | Loss classes | Meaning |
+|---|---|---|
+| `acceptable_conversion` | `native_conversion`, `editable_approximation` | Converted to editable blocks. |
+| `acceptable_preservation` | `preserved_runtime_island` | Preserved as a bounded runtime island. |
+| `accepted_reported_loss` | `page_compile_omitted`, `degraded_unit`, `omitted_unit` | A producer hit a representability limit confined to one unit. The import completes and the loss is reported. |
+| `unacceptable_imported_output_defect` | `unsupported_loss`, `importer_materialization_bug`, `unrecognized_loss_class` | The imported output is defective. |
+
+Degrade codes SSI and Blocks Engine own are classified by code, before any explicit `loss_class`, contract repair lane or heuristic. `unit` and `owning_layer` fill in only when the producer row names none. Other producers' rows carry their own `loss_class`, `unit` and `owning_layer` (see source findings below):
+
+| Code | Loss class | Unit | Owning layer |
+|---|---|---|---|
+| `page_compile_omitted` | `page_compile_omitted` | `page` | `blocks-engine` |
+| `editability_policy_degraded` | `degraded_unit` | `page` | `blocks-engine` |
+| `html_include_budget_exceeded` | `degraded_unit` | `page` | `blocks-engine` |
+| `html_include_directive_ignored` | `degraded_unit` | `page` | `blocks-engine` |
+| `glyph_color_undecodable` | `degraded_unit` | `item` | `blocks-engine` |
+| `wordpress_site_plan_unresolved_navigation_link` | `degraded_unit` | `item` | `blocks-engine` |
+| `runtime_dependency_target_missing` | `degraded_unit` | `block` | `blocks-engine` |
+| `wordpress_site_plan_colliding_asset_target` | `degraded_unit` | `asset` | `blocks-engine` |
+| `wordpress_site_plan_omitted_link_declaration` | `omitted_unit` | `item` | `blocks-engine` |
+| `runtime_entity_dropped` | `omitted_unit` | `item` | `blocks-engine` |
+| `runtime_declaration_dropped` | `omitted_unit` | `declaration` | `blocks-engine` |
+| `runtime_entity_binding_unanchored` | `omitted_unit` | `binding` | `blocks-engine` |
+| `runtime_form_graph_rejected` | `omitted_unit` | `item` | `blocks-engine` |
+| `document_head_attribute_dropped` | `omitted_unit` | `item` | `blocks-engine` |
+| `document_head_element_dropped` | `omitted_unit` | `item` | `blocks-engine` |
+| `static_site_importer_non_static_file_skipped` | `omitted_unit` | `file` | `static-site-importer` |
+| `static_site_importer_non_static_page_dropped` | `omitted_unit` | `page` | `static-site-importer` |
+| `static_site_importer_archive_entry_skipped` | `omitted_unit` | `file` | `static-site-importer` |
+| `static_site_importer_url_route_omitted` | `omitted_unit` | `route` | `static-site-importer` |
+| `font_face_unavailable` | `omitted_unit` | `asset` | `static-site-importer` |
+| `omitted_artifact_files`, `omitted_artifact_file` | `omitted_unit` | `file` | `blocks-engine` |
+
+`degraded_unit` keeps the unit with reduced fidelity; `omitted_unit` removes it from the import. Blocks Engine's file-drop codes (`file_limit_exceeded`, `artifact_file_too_large`, `artifact_total_too_large`, and the aggregate `artifact_inputs_rejected`) are re-owned as `omitted_artifact_files` / `omitted_artifact_file`; the rest of the site imports, and `dropped_artifact_files` stays a quality failure reason, so a `fail_on_quality` caller can still refuse the import. A `font_face_unavailable` row carries a `resolution` of `dropped` (the theme uses its fallback font) or `remote_import_retained` (the source's Google `@import` is kept); a font digest mismatch fails closed. Blocks Engine repair lanes `restore_compiled_document_identity` and `restore_projected_selector_binding` map to `unsupported_loss` and `editable_approximation`.
+
+#### Source findings
+
+A website artifact may carry `website/source-findings.json` (schema `static-site-importer/source-findings/v1`): the routes, pages, blocks, assets, stylesheets or profiles its producer dropped or degraded. At intake, `Static_Site_Importer_Source_Findings` removes the file from the site and adds one report row per finding, with the row's own `code`, `severity`, `unit`, `loss_class` (`omitted_unit` or `degraded_unit`), `owning_layer`, `location`, `message` and numeric `metrics`. None of these rows fails the import. A row outside SSI's vocabulary stays visibly `unrecognized_loss_class`. An artifact without the file imports unchanged; a file that cannot be read or fails validation adds one `source_findings_unreadable` warning. The contract, including the capture evidence names SSI reads from Blocks Engine's vocabulary, is [`docs/contracts/website-artifact-evidence.md`](docs/contracts/website-artifact-evidence.md).
+
+#### Canonical finding fields
+
+`Static_Site_Importer_Diagnostic_Projection::normalize_import_diagnostics()` gives every report row the same canonical fields. The mapping is additive: each producer field also stays on the row under its own name.
+
+| Canonical field | Filled from, first non-empty |
+|---|---|
+| `code` | `code`, `diagnostic_code`, `type` |
+| `severity` | producer `severity`, else derived from `type` |
+| `unit` | producer `unit`, then the degrade-code table, else `''` |
+| `location` | `source_path`, `path`, `url`, then Blocks Engine `context.source_path`. A nested `context.source_path` also fills a missing top-level `source_path`. |
+| `message` | `message`, `summary`, `reason` (producer free text), `error_message` |
+| `reason_code` | `reason_code`, `reason`, `error_code`, else `type` |
+| `metrics` | numeric `metrics` entries. Blocks Engine editability `context.metric`/`actual`/`maximum` becomes `<metric>` and `<metric>_maximum`, and `omitted_count` is copied in. Empty map when none. |
+| `owning_layer` | producer `owning_layer`, then the degrade-code table, then `static-site-importer` for a `static_site_importer_*` code or `blocks-engine` for a Blocks Engine `source` class, else `''` |
+| `loss_class` | classification above |
+| `acceptability` | derived from the final `loss_class` |
+
+Single compiler diagnostics keep `unit`, `owning_layer`, `reason_code`, `source_path`, `path`, `url`, `selector`, numeric `metrics` and `omitted_count` through the compiler diagnostic bound.
+
+#### Compact summary
+
+`compact_summary` (`static-site-importer/import-metrics/v1`) carries `loss_class_summary` (every class), `loss_count` and `loss_counts` (classes whose acceptability is `accepted_reported_loss` or `unacceptable_imported_output_defect`), and `omitted_page_count`. Its `diagnostics` list keeps `code`, `location`, `url`, `path`, `value` and `metrics` along with the classification fields.
+
+The list holds at most 50 rows. When the report has more, rows are kept by tier: imported-output defects, then accepted reported losses, then acceptable conversions and preservations, in report order within each tier. Kept rows are emitted in report order.
 
 `php tests/smoke-wordpress-site-plan-materializer.php` runs outside WordPress and verifies that Blocks Engine's direct `ArtifactCompiler` output is consumed through `source_reports.wordpress_site_plan` v2 and materialized into the stable receipt contract.
 

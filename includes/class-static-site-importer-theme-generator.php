@@ -163,6 +163,7 @@ class Static_Site_Importer_Theme_Generator {
 			if ( 'failed' === ( $receipt['editability_report']['status'] ?? '' ) ) {
 				return self::failed_editability_admission( $plan, $args, $compiled_import, $receipt );
 			}
+			// ssi-error-class: propagated
 			return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_materialization_failed' ), (string) ( $error['message'] ?? 'WordPress site plan destination preflight failed.' ), $receipt );
 		}
 		$args = $prepared['args'];
@@ -353,6 +354,7 @@ class Static_Site_Importer_Theme_Generator {
 		$manifest['existing_matches'] = $receipt['existing_matches'] ?? array( 'pages' => array() );
 		$cleanup = Static_Site_Importer_Generated_State_Reconciliation::cleanup_stale_generated_theme_files( $theme['dir'], $manifest, $args, $receipt );
 		if ( is_wp_error( $cleanup ) ) {
+			// ssi-error-class: propagated
 			throw new RuntimeException( $cleanup->get_error_message() ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The internal cleanup error is propagated as an exception message.
 		}
 		$manifest['cleanup'] = $cleanup;
@@ -383,6 +385,7 @@ class Static_Site_Importer_Theme_Generator {
 			$external_finding_packets_path   = trailingslashit( $external_dir ) . 'finding-packets.json';
 			foreach ( array( $external_report_path, $external_validation_result_path, $external_finding_packets_path ) as $path ) {
 				if ( ! Static_Site_Importer_WordPress_Site_Plan_Materializer::safe_external_report_destination( $path ) ) {
+					// ssi-error-class: integrity
 					throw new RuntimeException( 'External report destination changed after preflight.' );
 				}
 			}
@@ -391,6 +394,7 @@ class Static_Site_Importer_Theme_Generator {
 			Static_Site_Importer_Journaled_Report_Writer::write( $external_finding_packets_path, $findings, $receipt );
 		}
 		if ( 'report_persistence' === (string) ( $args['inject_materialization_failure'] ?? '' ) ) {
+			// ssi-error-class: programmer
 			throw new RuntimeException( 'Injected report persistence failure.' );
 		}
 		Static_Site_Importer_WordPress_Site_Plan_Materializer::commit_receipt( $receipt );

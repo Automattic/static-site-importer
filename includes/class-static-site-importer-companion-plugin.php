@@ -22,6 +22,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Capture_Evidence' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-capture-evidence.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-site-identity.php';
 }
@@ -1018,10 +1021,18 @@ class Static_Site_Importer_Companion_Plugin {
 							if ( ! media || ! media.url || ! media.id ) {
 								return;
 							}
-							var next = content.replace( /(<img\b[^>]*\bsrc=")[^"]*(")/i, function( matched, start, end ) {
-								return start + media.url + end;
-							} );
-							next = next.replace( /wp-image-\d+/, 'wp-image-' + media.id );
+							var document = new DOMParser().parseFromString( content, 'text/html' );
+							var image = document.querySelector( 'img.wp-image-' + currentId );
+							if ( ! image ) return;
+							image.setAttribute( 'src', media.url );
+							image.removeAttribute( 'srcset' );
+							image.removeAttribute( 'sizes' );
+							if ( image.parentElement && image.parentElement.tagName === 'PICTURE' ) {
+								Array.from( image.parentElement.children ).forEach( function( child ) { if ( child.tagName === 'SOURCE' ) child.remove(); } );
+							}
+							image.classList.remove( 'wp-image-' + currentId );
+							image.classList.add( 'wp-image-' + media.id );
+							var next = document.body.innerHTML;
 							var attrs = { content: next };
 							if ( typeof props.attributes.id === 'number' ) {
 								attrs.id = media.id;
@@ -1144,8 +1155,14 @@ JS;
 JS;
 	}
 
+	/**
+	 * The internal-link runtime under the companion's class name.
+	 *
+	 * A companion runs without this plugin, so the capture-evidence names the
+	 * runtime reads are inlined as literals.
+	 */
 	private static function internal_link_runtime_file( string $source, string $runtime_class ): string {
-		return str_replace( 'Static_Site_Importer_Internal_Link_Runtime', $runtime_class, $source );
+		return Static_Site_Importer_Capture_Evidence::inline( str_replace( 'Static_Site_Importer_Internal_Link_Runtime', $runtime_class, $source ) );
 	}
 
 	private static function source_route_redirect_file( string $source, string $runtime_class ): string {

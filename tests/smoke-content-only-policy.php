@@ -31,25 +31,59 @@ $artifact = static function ( string $path, string $content, bool $encoded = fal
 	);
 };
 
-$assert( true === Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/index.html', '<main>Safe</main>' ) ), 'html-source-accepted' );
-$assert( true === Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/assets/pointer.CUR', file_get_contents( __DIR__ . '/fixtures/cursor.cur' ), true ) ), 'binary-cursor-source-accepted' );
+$admit = static fn ( array $candidate, ?object $reader = null ) => Static_Site_Importer_Content_Policy::admit_artifact( $candidate, $reader );
+// Fully admitted: every file kept, nothing reported.
+$admitted = static fn ( $result ): bool => is_array( $result ) && array() === $result['findings'];
+// Left out with one finding: the import continues without the file.
+$left_out = static fn ( $result, string $code, string $reason = '' ): bool => is_array( $result ) && array() === $result['artifact']['files'] && 1 === count( $result['findings'] ) && $code === ( $result['findings'][0]['code'] ?? '' ) && ( '' === $reason || $reason === ( $result['findings'][0]['reason_code'] ?? '' ) );
+// Fails closed: the site cannot be imported without the file.
+$rejected = static fn ( $result ): bool => is_wp_error( $result ) && 'static_site_importer_executable_source_rejected' === $result->get_error_code();
+$skipped  = Static_Site_Importer_Content_Policy::FILE_SKIPPED;
+$dropped  = Static_Site_Importer_Content_Policy::PAGE_DROPPED;
+
+$assert( $admitted( $admit( $artifact( 'website/index.html', '<main>Safe</main>' ) ) ), 'html-source-accepted' );
+$assert( $admitted( $admit( $artifact( 'website/assets/pointer.CUR', file_get_contents( __DIR__ . '/fixtures/cursor.cur' ), true ) ) ), 'binary-cursor-source-accepted' );
 $word_bytes = "PK\x03\x04\x00\x00\x00\x00word/document.xml\x00<?php\x00\xFF";
-$assert( true === Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/_files/ugd/guide.docx', $word_bytes, true ) ), 'binary-word-source-accepted' );
+$assert( $admitted( $admit( $artifact( 'website/_files/ugd/guide.docx', $word_bytes, true ) ) ), 'binary-word-source-accepted' );
 $assert( false === Static_Site_Importer_Content_Policy::is_textual_path( 'website/_files/ugd/guide.docx' ), 'word-document-is-not-page-source' );
 $assert( false === Static_Site_Importer_Content_Policy::is_companion_asset_path( 'website/_files/ugd/guide.docx' ), 'word-document-is-not-companion-code' );
 $assert( false === Static_Site_Importer_Content_Policy::is_static_path( 'website/.config.ts' ), 'dotfile-typescript-rejected-with-pathinfo-semantics' );
 $assert( true === Static_Site_Importer_Content_Policy::is_static_path( 'website/.mjs' ), 'dotfile-mjs-accepted-with-pathinfo-semantics' );
-foreach ( array( 'website/shell.php', 'website/shell.phtml', 'website/shell.jsp', 'website/shell.cgi', 'website/pointer.cur.php' ) as $path ) {
-	$assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( $path, 'payload' ) ) ), 'executable-extension-rejected:' . $path );
+// A non-entry server page is dropped with a page finding; the rest imports.
+foreach ( array( 'website/shell.php', 'website/shell.phtml', 'website/shell.jsp', 'website/shell.cgi', 'website/pointer.cur.php', 'website/blog/index.php' ) as $path ) {
+	$assert( $left_out( $admit( $artifact( $path, 'payload' ) ), $dropped, 'non_static_extension' ), 'non-entry-server-page-dropped:' . $path );
 }
-// Negative-policy lane: matrix collection may omit build sources, but public
-// intake must continue rejecting a TypeScript file supplied by any caller.
-$assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/quartz.config.ts', 'export default {};' ) ) ), 'typescript-source-rejected' );
-$assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/index.html', '<?php system("id");', true ) ) ), 'base64-server-code-rejected' );
-$assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/site.js', '<?php system("id");' ) ) ), 'server-code-marker-in-static-extension-rejected' );
-$assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/logo.svg', '<svg><?php system("id");</svg>', true ) ) ), 'textual-svg-server-code-rejected' );
-$assert( true === Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/photo.jpeg', "\xFF\xD8\xFF\xFE\x00\x07<?php\xFF\xD9", true ) ), 'binary-jpeg-php-tag-bytes-accepted' );
-$assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/_files/ugd/guide.docx.php', $word_bytes, true ) ) ), 'executable-word-suffix-rejected' );
+// Any other non-static file is an asset: skipped with a file finding. Matrix
+// collection may omit build sources; a TypeScript file from any caller is skipped.
+$assert( $left_out( $admit( $artifact( 'website/quartz.config.ts', 'export default {};' ) ), $skipped, 'non_static_extension' ), 'typescript-source-skipped' );
+$assert( $rejected( $admit( $artifact( 'website/index.html', '<?php system("id");', true ) ) ), 'base64-server-code-entrypoint-rejected' );
+$assert( $left_out( $admit( $artifact( 'website/site.js', '<?php system("id");' ) ), $skipped, 'server_side_code' ), 'server-code-marker-in-static-asset-skipped' );
+$assert( $left_out( $admit( $artifact( 'website/logo.svg', '<svg><?php system("id");</svg>', true ) ), $skipped, 'server_side_code' ), 'textual-svg-server-code-skipped' );
+$assert( $admitted( $admit( $artifact( 'website/photo.jpeg', "\xFF\xD8\xFF\xFE\x00\x07<?php\xFF\xD9", true ) ) ), 'binary-jpeg-php-tag-bytes-accepted' );
+$assert( $left_out( $admit( $artifact( 'website/_files/ugd/guide.docx.php', $word_bytes, true ) ), $dropped ), 'executable-word-suffix-dropped' );
+$assert( $left_out( $admit( $artifact( 'website/about.html', '<main><?php echo 1; ?></main>' ) ), $dropped, 'server_side_code' ), 'non-entry-page-with-server-code-dropped' );
+// The entrypoint fails closed: the declared one, or a root entry document.
+$assert( $rejected( $admit( $artifact( 'website/index.php', 'payload' ) ) ), 'root-entry-document-rejected' );
+$assert( $rejected( $admit( $artifact( 'website/home.asp', 'payload' ) ) ), 'root-home-document-rejected' );
+$declared_entry               = $artifact( 'website/start.html', '<main><?php echo 1; ?></main>' );
+$declared_entry['entrypoint'] = 'website/start.html';
+$assert( $rejected( $admit( $declared_entry ) ), 'declared-entrypoint-with-server-code-rejected' );
+// One decision over a mixed artifact: the clean files stay, each loss is reported once.
+$mixed  = array(
+	'entrypoint' => 'website/index.html',
+	'files'      => array(
+		array( 'path' => 'website/index.html', 'content' => '<main>Home</main>' ),
+		array( 'path' => 'website/about.php', 'content' => '<?php echo 1;' ),
+		array( 'path' => 'website/assets/app.ts', 'content' => 'export {}' ),
+		array( 'path' => 'website/assets/site.css', 'content' => 'body{color:red}' ),
+	),
+);
+$result = $admit( $mixed );
+$assert( is_array( $result ) && array( 'website/index.html', 'website/assets/site.css' ) === array_column( $result['artifact']['files'], 'path' ), 'mixed-artifact-keeps-static-files' );
+$assert( is_array( $result ) && array( $dropped, $skipped ) === array_column( $result['findings'], 'code' ) && array( 'website/about.php', 'website/assets/app.ts' ) === array_column( $result['findings'], 'source_path' ), 'mixed-artifact-reports-each-loss-once' );
+$assert( is_array( $result ) && $admitted( $admit( $result['artifact'] ) ), 'admission-is-idempotent-on-its-own-output' );
+$args = Static_Site_Importer_Content_Policy::with_intake_findings( array( 'source_metadata' => array( 'intake_findings' => array( array( 'code' => 'earlier' ) ) ) ), is_array( $result ) ? $result['findings'] : array() );
+$assert( array( 'earlier', $dropped, $skipped ) === array_column( $args['source_metadata']['intake_findings'], 'code' ), 'admission-findings-append-to-intake-findings' );
 // Extensionless downloads keep a portable extension inferred from the fetched
 // static content type; unknown or executable types infer none and stay rejected.
 $assert( 'jpg' === Static_Site_Importer_Content_Policy::portable_extension( 'image/jpeg' ), 'extensionless-jpeg-download-infers-portable-jpg' );
@@ -64,13 +98,15 @@ $assert( Static_Site_Importer_Content_Policy::is_static_path( 'website/_external
 $assert( true === Static_Site_Importer_Content_Policy::is_static_path( '_redirects' ), 'root-redirects-manifest-is-static' );
 $assert( true === Static_Site_Importer_Content_Policy::is_static_path( 'website/_redirects' ), 'website-root-redirects-manifest-is-static' );
 $assert( true === Static_Site_Importer_Content_Policy::is_textual_path( '_redirects' ), 'root-redirects-manifest-is-textual' );
-$assert( true === Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/_redirects', "/blog.html  /blog/index.html  301\n" ) ), 'root-redirects-manifest-accepted' );
+$assert( $admitted( $admit( $artifact( 'website/_redirects', "/blog.html  /blog/index.html  301\n" ) ) ), 'root-redirects-manifest-accepted' );
 $assert( false === Static_Site_Importer_Content_Policy::is_static_path( 'evil' ), 'extensionless-evil-rejected' );
 $assert( false === Static_Site_Importer_Content_Policy::is_static_path( 'website/blog/_redirects' ), 'nested-redirects-manifest-rejected' );
-$assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'evil', 'payload' ) ) ), 'extensionless-evil-artifact-rejected' );
-$assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/blog/_redirects', "/a /b 301\n" ) ) ), 'nested-redirects-artifact-rejected' );
-$assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/_redirects', '<?php system("id");' ) ) ), 'redirects-manifest-server-code-rejected' );
-$assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/_redirects', str_repeat( "/a /b 301\n", 7000 ) ) ) ), 'oversized-redirects-manifest-rejected' );
+$assert( $left_out( $admit( $artifact( 'evil', 'payload' ) ), $skipped ), 'extensionless-evil-artifact-skipped' );
+$assert( $left_out( $admit( $artifact( 'website/blog/_redirects', "/a /b 301\n" ) ), $skipped ), 'nested-redirects-artifact-skipped' );
+// The root redirects manifest fails closed.
+$assert( $rejected( $admit( $artifact( 'website/_redirects', '<?php system("id");' ) ) ), 'redirects-manifest-server-code-rejected' );
+$assert( $rejected( $admit( $artifact( 'website/_redirects', str_repeat( "/a /b 301\n", 7000 ) ) ) ), 'oversized-redirects-manifest-rejected' );
+$assert( $rejected( $admit( array( 'files' => array( array( 'path' => 'website/_redirects' ) ) ) ) ), 'unreadable-redirects-manifest-rejected' );
 
 // Neutral source examples exercise core tokenization, not a parser shape stub.
 $html_cases = array(
@@ -100,11 +136,11 @@ $html_cases = array(
 	'inert-then-active' => array( '<span data-code="<?php ?>"></span><?php echo 1; ?>', false ),
 );
 foreach ( $html_cases as $label => list( $html, $accepted ) ) {
-	$result = Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/index.html', $html ) );
-	$assert( $accepted ? true === $result : is_wp_error( $result ), 'core-tokenizer:' . $label );
+	$result = $admit( $artifact( 'website/index.html', $html ) );
+	$assert( $accepted ? $admitted( $result ) : $rejected( $result ), 'core-tokenizer:' . $label );
 }
 foreach ( array( 'js', 'css', 'svg', 'xml', 'txt' ) as $extension ) {
-	$assert( is_wp_error( Static_Site_Importer_Content_Policy::validate_artifact( $artifact( 'website/example.' . $extension, '<!-- <?php echo 1; ?> -->' ) ) ), 'non-html-raw:' . $extension );
+	$assert( $left_out( $admit( $artifact( 'website/example.' . $extension, '<!-- <?php echo 1; ?> -->' ) ), $skipped, 'server_side_code' ), 'non-html-raw:' . $extension );
 }
 
 // A filesystem reader makes corruption/unavailability checks inspect real bytes.
@@ -124,37 +160,37 @@ $reader = new class( $payload_path ) {
 };
 $reference = array( 'schema' => 'blocks-engine/payload-reference/v1', 'id' => 'source/index.html', 'bytes' => strlen( $payload ), 'sha256' => hash( 'sha256', $payload ) );
 $referenced = array( 'files' => array( array( 'path' => 'website/index.html', 'payload_reference' => $reference ) ) );
-$assert( true === Static_Site_Importer_Content_Policy::validate_artifact( $referenced, $reader ), 'reference-filesystem-accepted' );
+$assert( $admitted( $admit( $referenced, $reader ) ), 'reference-filesystem-accepted' );
 $alias = array( 'files' => array( array( 'path' => 'website/index.html', 'payload' => array( 'reference' => $reference ) ) ) );
-$assert( true === Static_Site_Importer_Content_Policy::validate_artifact( $alias, $reader ), 'reference-canonical-alias-accepted' );
+$assert( $admitted( $admit( $alias, $reader ) ), 'reference-canonical-alias-accepted' );
 $error_code = static function ( $result ): string { return is_wp_error( $result ) ? $result->get_error_code() : ''; };
-$assert( 'static_site_importer_payload_reader_missing' === $error_code( Static_Site_Importer_Content_Policy::validate_artifact( $referenced ) ), 'reference-missing-reader-rejected' );
-$assert( 'static_site_importer_payload_reader_missing' === $error_code( Static_Site_Importer_Content_Policy::validate_artifact( $referenced, new stdClass() ) ), 'reference-non-reader-rejected' );
+$assert( 'static_site_importer_payload_reader_missing' === $error_code( Static_Site_Importer_Content_Policy::admit_artifact( $referenced ) ), 'reference-missing-reader-rejected' );
+$assert( 'static_site_importer_payload_reader_missing' === $error_code( Static_Site_Importer_Content_Policy::admit_artifact( $referenced, new stdClass() ) ), 'reference-non-reader-rejected' );
 foreach ( array( 'string-reference', array_diff_key( $reference, array( 'bytes' => true ) ), array_diff_key( $reference, array( 'sha256' => true ) ), array_diff_key( $reference, array( 'id' => true ) ), array_replace( $reference, array( 'bytes' => -1 ) ), array_replace( $reference, array( 'bytes' => 10485761 ) ), array_replace( $reference, array( 'bytes' => '36' ) ) ) as $invalid ) {
 	$bad = $referenced;
 	$bad['files'][0]['payload_reference'] = $invalid;
 	$before = $reader->reads;
-	$assert( 'static_site_importer_payload_reference_invalid' === $error_code( Static_Site_Importer_Content_Policy::validate_artifact( $bad, $reader ) ) && $before === $reader->reads, 'reference-invalid-before-read:' . json_encode( $invalid ) );
+	$assert( 'static_site_importer_payload_reference_invalid' === $error_code( Static_Site_Importer_Content_Policy::admit_artifact( $bad, $reader ) ) && $before === $reader->reads, 'reference-invalid-before-read:' . json_encode( $invalid ) );
 }
 $bad = $referenced;
 $bad['files'][0]['payload_reference']['sha256'] = str_repeat( '0', 64 );
-$assert( 'static_site_importer_payload_reference_hash_mismatch' === $error_code( Static_Site_Importer_Content_Policy::validate_artifact( $bad, $reader ) ), 'reference-hash-mismatch' );
+$assert( 'static_site_importer_payload_reference_hash_mismatch' === $error_code( Static_Site_Importer_Content_Policy::admit_artifact( $bad, $reader ) ), 'reference-hash-mismatch' );
 $bad = $referenced;
 ++$bad['files'][0]['payload_reference']['bytes'];
-$assert( 'static_site_importer_payload_reference_hash_mismatch' === $error_code( Static_Site_Importer_Content_Policy::validate_artifact( $bad, $reader ) ), 'reference-size-mismatch' );
+$assert( 'static_site_importer_payload_reference_hash_mismatch' === $error_code( Static_Site_Importer_Content_Policy::admit_artifact( $bad, $reader ) ), 'reference-size-mismatch' );
 $active = '<?php echo 1; ?>';
 file_put_contents( $payload_path, $active );
 $bad = $referenced;
 $bad['files'][0]['content'] = '<main>Inline decoy</main>';
 $bad['files'][0]['payload_reference']['bytes'] = strlen( $active );
 $bad['files'][0]['payload_reference']['sha256'] = hash( 'sha256', $active );
-$assert( 'static_site_importer_executable_source_rejected' === $error_code( Static_Site_Importer_Content_Policy::validate_artifact( $bad, $reader ) ), 'reference-authoritative-over-inline-decoy' );
+$assert( 'static_site_importer_executable_source_rejected' === $error_code( Static_Site_Importer_Content_Policy::admit_artifact( $bad, $reader ) ), 'reference-authoritative-over-inline-decoy' );
 $media = $referenced;
 $media['files'][0]['path'] = 'website/preview.png';
 $before = $reader->reads;
 unlink( $payload_path );
-$assert( true === Static_Site_Importer_Content_Policy::validate_artifact( $media, $reader ) && $before === $reader->reads, 'optional-media-reference-not-read' );
-$assert( 'static_site_importer_payload_reference_unavailable' === $error_code( Static_Site_Importer_Content_Policy::validate_artifact( $referenced, $reader ) ), 'reference-unreadable-rejected' );
+$assert( $admitted( $admit( $media, $reader ) ) && $before === $reader->reads, 'optional-media-reference-not-read' );
+$assert( 'static_site_importer_payload_reference_unavailable' === $error_code( Static_Site_Importer_Content_Policy::admit_artifact( $referenced, $reader ) ), 'reference-unreadable-rejected' );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
