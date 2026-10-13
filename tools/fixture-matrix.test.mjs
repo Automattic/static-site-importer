@@ -3792,6 +3792,8 @@ test('positive matrix artifacts retain compiled static output and receipt build-
   const policyArtifact = buildFixturePolicyArtifact(matrix.fixtures[0]);
   assert.deepEqual(policyArtifact.files.map((file) => file.path), ['website/quartz.config.ts']);
   assert.equal(policyArtifact.files[0].source_path, realpathSync(path.join(fixtureDirectory, 'quartz.config.ts')));
+  // The probe's entrypoint is the excluded file, which SSI refuses rather than skips.
+  assert.equal(policyArtifact.entrypoint, 'website/quartz.config.ts');
   assert.equal(stageFixtureSource(matrix.fixtures[0], mkdtempSync(path.join(tmpdir(), 'ssi-compiled-static-stage-'))).includes('quartz.config.ts'), false);
 });
 

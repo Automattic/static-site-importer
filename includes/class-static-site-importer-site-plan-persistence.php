@@ -19,6 +19,9 @@ if ( ! class_exists( 'Static_Site_Importer_Build_Provenance' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Rewrite_Base_Collision' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-rewrite-base-collision.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Capture_Evidence' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-capture-evidence.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Internal_Link_Runtime' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-internal-link-runtime.php';
 }
@@ -2025,6 +2028,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				if ( ! empty( $before['exists'] ) && is_string( $before['content'] ?? null ) ) {
 					self::restore_file( $path, $before['content'] );
 				} elseif ( is_file( $path ) && ! wp_delete_file( $path ) ) {
+					// ssi-error-class: operational
 					throw new RuntimeException( 'materialization_rollback_file_delete_failed' );
 				}
 			} catch ( Throwable $error ) {
@@ -2034,6 +2038,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		foreach ( array_reverse( $state['applied']['attachments'] ?? array() ) as $attachment_id ) {
 			try {
 				if ( function_exists( 'wp_delete_attachment' ) && ! wp_delete_attachment( (int) $attachment_id, true ) ) {
+					// ssi-error-class: operational
 					throw new RuntimeException( 'materialization_rollback_attachment_delete_failed' );
 				}
 			} catch ( Throwable $error ) {
@@ -2045,6 +2050,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			try {
 				$restored = wp_set_object_terms( (int) $membership['post_id'], array_map( 'intval', $membership['term_ids'] ), (string) $membership['taxonomy'], false );
 				if ( is_wp_error( $restored ) ) {
+					// ssi-error-class: operational
 					throw new RuntimeException( 'materialization_rollback_taxonomy_membership_restore_failed' );
 				}
 			} catch ( Throwable $error ) {
@@ -2057,11 +2063,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				if ( ! empty( $before['exists'] ) ) {
 					update_post_meta( (int) $post_id, $key, wp_slash( $before['value'] ) );
 					if ( ! metadata_exists( 'post', (int) $post_id, $key ) || get_post_meta( (int) $post_id, $key, true ) !== $before['value'] ) {
+						// ssi-error-class: operational
 						throw new RuntimeException( 'materialization_rollback_taxonomy_post_meta_restore_failed' );
 					}
 				} else {
 					delete_post_meta( (int) $post_id, $key );
 					if ( metadata_exists( 'post', (int) $post_id, $key ) ) {
+						// ssi-error-class: operational
 						throw new RuntimeException( 'materialization_rollback_taxonomy_post_meta_delete_failed' );
 					}
 				}
@@ -2073,6 +2081,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			try {
 				$deleted = wp_delete_term( (int) $term['term_id'], (string) $term['taxonomy'] );
 				if ( is_wp_error( $deleted ) || false === $deleted ) {
+					// ssi-error-class: operational
 					throw new RuntimeException( 'materialization_rollback_taxonomy_term_delete_failed' );
 				}
 			} catch ( Throwable $error ) {
@@ -2088,15 +2097,18 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				if ( ! empty( $before['existing'] ) ) {
 					wp_update_post( (array) wp_slash( $before['post'] ) );
 					if ( ! self::write_post_meta( $id, '_static_site_importer_provenance', (string) $before['provenance'] ) || ! self::write_post_meta( $id, self::RECONCILIATION_META_KEY, (string) $before['reconciliation_identity'] ) ) {
+						// ssi-error-class: operational
 						throw new RuntimeException( 'materialization_rollback_post_meta_restore_failed' );
 					}
 					if ( ! empty( $before['producer_reconciliation_identity_exists'] ) ) {
 						if ( ! self::write_post_meta( $id, self::PRODUCER_RECONCILIATION_META_KEY, (string) $before['producer_reconciliation_identity'] ) ) {
+							// ssi-error-class: operational
 							throw new RuntimeException( 'materialization_rollback_post_meta_restore_failed' );
 						}
 					} else {
 						delete_post_meta( $id, self::PRODUCER_RECONCILIATION_META_KEY );
 						if ( metadata_exists( 'post', $id, self::PRODUCER_RECONCILIATION_META_KEY ) ) {
+							// ssi-error-class: operational
 							throw new RuntimeException( 'materialization_rollback_post_meta_delete_failed' );
 						}
 					}
@@ -2104,11 +2116,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 					if ( ! empty( $before['taxonomy_memberships_exists'] ) ) {
 						update_post_meta( $id, $taxonomy_key, wp_slash( $before['taxonomy_memberships'] ) );
 						if ( get_post_meta( $id, $taxonomy_key, true ) !== $before['taxonomy_memberships'] ) {
+							// ssi-error-class: operational
 							throw new RuntimeException( 'materialization_rollback_taxonomy_post_meta_restore_failed' );
 						}
 					} else {
 						delete_post_meta( $id, $taxonomy_key );
 						if ( metadata_exists( 'post', $id, $taxonomy_key ) ) {
+							// ssi-error-class: operational
 							throw new RuntimeException( 'materialization_rollback_taxonomy_post_meta_delete_failed' );
 						}
 					}
@@ -2122,11 +2136,13 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 						delete_post_meta( $id, $meta_key );
 						foreach ( is_array( $before[ $snapshot ] ) ? $before[ $snapshot ] : array() as $value ) {
 							if ( ! self::add_post_meta_value( $id, $meta_key, (string) $value ) ) {
+								// ssi-error-class: operational
 								throw new RuntimeException( 'materialization_rollback_route_meta_restore_failed' );
 							}
 						}
 					}
 				} elseif ( function_exists( 'wp_delete_post' ) && ! wp_delete_post( $id, true ) ) {
+					// ssi-error-class: operational
 					throw new RuntimeException( 'materialization_rollback_post_delete_failed' );
 				}
 			} catch ( Throwable $error ) {
@@ -2150,6 +2166,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			try {
 				switch_theme( $stylesheet );
 				if ( ! self::active_theme_matches( $stylesheet, $template ) ) {
+					// ssi-error-class: operational
 					throw new RuntimeException( 'materialization_rollback_theme_restore_failed' );
 				}
 			} catch ( Throwable $error ) {
@@ -2196,6 +2213,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		WP_Filesystem();
 		global $wp_filesystem;
 		if ( ! is_object( $wp_filesystem ) || ! is_callable( array( $wp_filesystem, 'put_contents' ) ) || ! call_user_func( array( $wp_filesystem, 'put_contents' ), $path, $content, 0644 ) ) {
+			// ssi-error-class: operational
 			throw new RuntimeException( 'materialization_rollback_file_restore_failed' );
 		}
 	}

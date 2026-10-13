@@ -49,7 +49,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			return $workspace;
 		}
 		$verified_text = array();
-		$source_policy = Static_Site_Importer_Content_Policy::validate_artifact(
+		$admission     = Static_Site_Importer_Content_Policy::admit_artifact(
 			$artifact,
 			$payload_reader,
 			static function ( array $file, string $bytes ) use ( $workspace, &$verified_text ) {
@@ -64,10 +64,12 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				return $published;
 			}
 		);
-		if ( is_wp_error( $source_policy ) ) {
+		if ( is_wp_error( $admission ) ) {
 			$workspace->purge();
-			return $source_policy;
+			return $admission;
 		}
+		$artifact = $admission['artifact'];
+		$args     = Static_Site_Importer_Content_Policy::with_intake_findings( $args, $admission['findings'] );
 		if ( ! class_exists( 'Static_Site_Importer_Redirects_Manifest' ) ) {
 			require_once __DIR__ . '/class-static-site-importer-redirects-manifest.php';
 		}
@@ -439,6 +441,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				self::before_phase( 'prepare_shared', $run );
 				$shared = call_user_func( $prepare_shared, $artifact_state['artifact'], $payload_reader );
 				if ( 'blocks-engine/php-transformer/staged-shared-plan/v1' !== ( $shared['schema'] ?? '' ) || empty( $shared['digest'] ) || ! is_array( $shared['analysis']['page_ids'] ?? null ) ) {
+					// ssi-error-class: integrity
 					throw new RuntimeException( 'Blocks Engine returned an invalid shared plan.' );
 				}
 				$ref = self::publish_checkpoint( $workspace, $run, 'shared', 'shared-plan.json', array( 'plan' => $shared ) );
@@ -705,6 +708,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				self::before_phase( 'compose', $run, $run['page_ids'] );
 				$result = call_user_func( $compose, $shared, array_values( $receipts ), $payload_reader );
 				if ( ! is_object( $result ) || ! is_callable( array( $result, 'toCompactWordPressSitePlanView' ) ) ) {
+					// ssi-error-class: integrity
 					throw new RuntimeException( 'Blocks Engine returned an invalid composed result.' );
 				}
 				if ( 'failed' === ( $result->status ?? null ) && empty( $result->sourceReports['wordpress_site_plan'] ?? null ) ) {
@@ -713,10 +717,12 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				}
 				$composed = $result->toCompactWordPressSitePlanView();
 				if ( 'blocks-engine/wordpress-site-plan-view/v2' !== ( $composed['schema'] ?? '' ) ) {
+					// ssi-error-class: integrity
 					throw new RuntimeException( 'Blocks Engine did not compact the composed WordPress site plan view.' );
 				}
 				$metrics = is_array( $result->metrics ?? null ) ? $result->metrics : array();
 				if ( 0 !== (int) ( $metrics['html_document_transform_count'] ?? 0 ) || 0 !== (int) ( $metrics['normalization_count'] ?? 0 ) ) {
+					// ssi-error-class: integrity
 					throw new RuntimeException( sprintf( 'Terminal receipt composition performed %d HTML transforms and %d normalization passes.', (int) ( $metrics['html_document_transform_count'] ?? 0 ), (int) ( $metrics['normalization_count'] ?? 0 ) ) );
 				}
 				$ref = self::publish_checkpoint( $workspace, $run, 'composed', 'composed-result.json', array(
@@ -736,23 +742,37 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				if ( is_wp_error( $write ) ) {
 					return self::fail( $workspace, $run, 'compose_checkpoint', $write, $run['page_ids'] );
 				}
+				// The composed checkpoint is durable and is all that materialization
+				// reads. A host that runs each step in a fresh runtime yields here,
+				// so composition's working set (the full result, and the receipts and
+				// page plans the read cache pins) unwinds before that checkpoint is
+				// read back into a clean runtime instead of on top of compose's peak.
+				if ( $policy['yield_after_compose'] ) {
+					self::$checkpoint_read_cache = array();
+					return self::continuation( $run, 'composed' );
+				}
 			}
 
 			$composed_state = self::read_checkpoint( $workspace, $run, $run['refs']['composed'], 'composed' );
 			if ( is_wp_error( $composed_state ) ) {
 				return $composed_state;
 			}
-			$omitted_files = Static_Site_Importer_Diagnostic_Loss_Classes::omitted_artifact_file_count( $composed_state['result']['wordpress_site_plan']['diagnostics'] ?? array() );
-			if ( $omitted_files > 0 ) {
-				// A partial site is never imported: refuse before any WordPress mutation.
+			// Acceptance is decided here, once, before any WordPress mutation. A
+			// non-entrypoint page Blocks Engine omitted is a page-level loss, and a
+			// source file it dropped at a declared limit is a file-level loss: the
+			// rest of the plan imports and each omission travels as a finding in
+			// the plan diagnostics. Only a site without its entrypoint is refused.
+			$plan_diagnostics = $composed_state['result']['wordpress_site_plan']['diagnostics'] ?? array();
+			$entry_path       = (string) ( $composed_state['result']['wordpress_site_plan']['source']['entry_path'] ?? '' );
+			if ( in_array( $entry_path, array_column( Static_Site_Importer_Diagnostic_Loss_Classes::omitted_pages( $plan_diagnostics ), 'source_path' ), true ) ) {
 				return self::fail(
 					$workspace,
 					$run,
 					'compose',
 					new WP_Error(
-						'static_site_importer_artifact_files_omitted',
-						sprintf( 'The compiler omitted %d source file(s) at its declared limits; refusing to import a partial site.', $omitted_files ),
-						array( 'omitted_file_count' => $omitted_files )
+						'static_site_importer_omitted_entrypoint',
+						'The compiler omitted the entrypoint page; refusing to import a site without it.',
+						array( 'source_path' => $entry_path )
 					)
 				);
 			}
@@ -1293,6 +1313,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				'message' => $write->get_error_message(),
 			);
 		}
+		// ssi-error-class: propagated
 		return new WP_Error( $code, $message, $error_data );
 	}
 
@@ -1607,6 +1628,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			public function read( array $reference ): string {
 				$bytes = $this->workspace->read_raw( 'payloads/' . hash( 'sha256', $reference['id'] ) . '.bin' );
 				if ( null === $bytes || strlen( $bytes ) !== $reference['bytes'] || ! hash_equals( $reference['sha256'], hash( 'sha256', $bytes ) ) ) {
+					// ssi-error-class: operational
 					throw new RuntimeException( 'A retained direct artifact payload is unavailable or corrupt.' );
 				}
 				return $bytes;
@@ -1631,6 +1653,9 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			// Keep browser-originated artifacts below the Playground worker deadline by
 			// releasing the source request before compiler and materializer work begins.
 			'freeze_continuation_bytes'      => 64 * 1024,
+			// Yield once composition is durable, before reading it back. Only a
+			// host whose next step is a fresh runtime gains a clean heap from it.
+			'yield_after_compose'            => false,
 			'clock'                          => static fn (): float => microtime( true ),
 		);
 		if ( function_exists( 'apply_filters' ) ) {
@@ -1648,6 +1673,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 		$policy['compile_mode']                   = null === $policy['compile_fanout'] ? 'in_process' : 'fanout';
 		$policy['max_invocation_seconds']         = max( 0.001, (float) $policy['max_invocation_seconds'] );
 		$policy['freeze_continuation_bytes']      = max( 1, (int) $policy['freeze_continuation_bytes'] );
+		$policy['yield_after_compose']            = ! empty( $policy['yield_after_compose'] );
 		$policy['clock']                          = is_callable( $policy['clock'] ) ? $policy['clock'] : static fn (): float => microtime( true );
 		return $policy;
 	}
@@ -1695,6 +1721,8 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				unset( $args['source_metadata']['collection'] );
 			}
 		}
+		// Intake findings are derived from the source bytes, which a resume does not resend.
+		unset( $args['source_metadata']['intake_findings'] );
 		if ( array() === ( $args['source_metadata'] ?? null ) ) {
 			unset( $args['source_metadata'] );
 		}
@@ -1718,6 +1746,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 
 	private static function response_error( array $response ): WP_Error {
 		$error = is_array( $response['error'] ?? null ) ? $response['error'] : array();
+		// ssi-error-class: propagated
 		return new WP_Error( (string) ( $error['code'] ?? 'static_site_importer_direct_artifact_canonical_plan_failed' ), (string) ( $error['message'] ?? 'The composed artifact did not produce a canonical plan.' ), $error['data'] ?? null );
 	}
 

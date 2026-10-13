@@ -98,18 +98,21 @@ $assert( 3 === ( $GLOBALS['ssi_retry_attempts'][ $woff2_url ] ?? 0 ), 'case 2: f
 $css_writes_payload = array_values( array_filter( $overlay_payload['writes'] ?? array(), static fn( array $write ): bool => 'assets/css/embedded-fonts.css' === $write['target_path'] ) );
 $assert( 1 === count( $css_writes_payload ) && str_contains( $css_writes_payload[0]['content'], 'data:font/woff2;base64,' ), 'case 2: embedded stylesheet is self-contained after payload recovery' );
 
-// Case 3: exhausted stylesheet retries fail closed with the specific diagnostic retained.
+// Case 3: exhausted stylesheet retries keep the remote @import and report font_face_unavailable.
 $GLOBALS['ssi_retry_attempts']  = array();
 $GLOBALS['ssi_retry_responder'] = static function ( string $url ) use ( $google_url ) {
 	return $url === $google_url ? new WP_Error( 'http_request_failed' ) : new WP_Error( 'unexpected_request' );
 };
 $overlay_exhausted_stylesheet = Static_Site_Importer_Font_Materializer::prepare_overlay( $plan, array( 'writes' => array( $functions_php ) ) );
-$assert( is_wp_error( $overlay_exhausted_stylesheet ) && 'static_site_importer_font_materialization_failed' === $overlay_exhausted_stylesheet->get_error_code(), 'case 3: exhausted stylesheet retries produce an evidence failure' );
+$assert( ! is_wp_error( $overlay_exhausted_stylesheet ), 'case 3: exhausted stylesheet retries no longer fail the import' );
+$exhausted_css = array_values( array_filter( $overlay_exhausted_stylesheet['writes'] ?? array(), static fn( array $write ): bool => 'assets/css/embedded-fonts.css' === $write['target_path'] ) );
+$assert( 1 === count( $exhausted_css ) && str_contains( $exhausted_css[0]['content'], '@import "' . $google_url . '"' ), 'case 3: the remote Google @import is kept' );
 $assert( 3 === ( $GLOBALS['ssi_retry_attempts'][ $google_url ] ?? 0 ), 'case 3: stylesheet request exhausts the bounded retry budget' );
-$stylesheet_diagnostics = $overlay_exhausted_stylesheet->get_error_data();
-$assert( is_array( $stylesheet_diagnostics ) && count( array_filter( $stylesheet_diagnostics, static fn( array $row ): bool => 'stylesheet_fetch_failed' === ( $row['reason'] ?? '' ) ) ) >= 1, 'case 3: retains the stylesheet_fetch_failed diagnostic' );
+$stylesheet_diagnostics = $overlay_exhausted_stylesheet['diagnostics'] ?? array();
+$assert( count( array_filter( $stylesheet_diagnostics, static fn( array $row ): bool => 'stylesheet_fetch_failed' === ( $row['reason'] ?? '' ) ) ) >= 1, 'case 3: retains the stylesheet_fetch_failed diagnostic' );
+$assert( 1 === count( array_filter( $stylesheet_diagnostics, static fn( array $row ): bool => 'font_face_unavailable' === ( $row['code'] ?? '' ) && 'remote_import_retained' === ( $row['resolution'] ?? '' ) && 'stylesheet_fetch_failed' === ( $row['reason_code'] ?? '' ) ) ), 'case 3: reports one font_face_unavailable finding' );
 
-// Case 4: exhausted font-payload retries fail closed with the specific diagnostic retained.
+// Case 4: exhausted font-payload retries keep the remote @import and report font_face_unavailable.
 $GLOBALS['ssi_retry_attempts']  = array();
 $GLOBALS['ssi_retry_responder'] = static function ( string $url ) use ( $google_url, $woff2_url, $css_body ) {
 	if ( $url === $google_url ) {
@@ -118,9 +121,12 @@ $GLOBALS['ssi_retry_responder'] = static function ( string $url ) use ( $google_
 	return $url === $woff2_url ? new WP_Error( 'http_request_failed' ) : new WP_Error( 'unexpected_request' );
 };
 $overlay_exhausted_payload = Static_Site_Importer_Font_Materializer::prepare_overlay( $plan, array( 'writes' => array( $functions_php ) ) );
-$assert( is_wp_error( $overlay_exhausted_payload ) && 'static_site_importer_font_materialization_failed' === $overlay_exhausted_payload->get_error_code(), 'case 4: exhausted font-payload retries produce an evidence failure' );
+$assert( ! is_wp_error( $overlay_exhausted_payload ), 'case 4: exhausted font-payload retries no longer fail the import' );
+$exhausted_payload_css = array_values( array_filter( $overlay_exhausted_payload['writes'] ?? array(), static fn( array $write ): bool => 'assets/css/embedded-fonts.css' === $write['target_path'] ) );
+$assert( 1 === count( $exhausted_payload_css ) && str_contains( $exhausted_payload_css[0]['content'], '@import "' . $google_url . '"' ) && ! str_contains( $exhausted_payload_css[0]['content'], 'data:font/' ), 'case 4: the remote Google @import is kept instead of a partial embed' );
 $assert( 3 === ( $GLOBALS['ssi_retry_attempts'][ $woff2_url ] ?? 0 ), 'case 4: font-payload request exhausts the bounded retry budget' );
-$payload_diagnostics = $overlay_exhausted_payload->get_error_data();
-$assert( is_array( $payload_diagnostics ) && count( array_filter( $payload_diagnostics, static fn( array $row ): bool => 'font_payload_fetch_failed' === ( $row['reason'] ?? '' ) ) ) >= 1, 'case 4: retains the font_payload_fetch_failed diagnostic' );
+$payload_diagnostics = $overlay_exhausted_payload['diagnostics'] ?? array();
+$assert( count( array_filter( $payload_diagnostics, static fn( array $row ): bool => 'font_payload_fetch_failed' === ( $row['reason'] ?? '' ) ) ) >= 1, 'case 4: retains the font_payload_fetch_failed diagnostic' );
+$assert( 1 === count( array_filter( $payload_diagnostics, static fn( array $row ): bool => 'font_face_unavailable' === ( $row['code'] ?? '' ) && 'remote_import_retained' === ( $row['resolution'] ?? '' ) && $woff2_url === ( $row['url'] ?? '' ) ) ), 'case 4: reports one font_face_unavailable finding naming the font URL' );
 
 echo "Google Fonts retry determinism smoke passed.\n";

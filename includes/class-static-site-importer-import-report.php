@@ -87,6 +87,7 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 	private function __construct( array $data ) {
 		foreach ( $data as $key => $value ) {
 			if ( ! is_string( $key ) ) {
+				// ssi-error-class: programmer
 				throw new InvalidArgumentException( 'Import report keys must be strings.' );
 			}
 			$this->data[ $key ] = $value;
@@ -152,7 +153,7 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 	public function set( string $key, mixed $value ): void {
 		if ( ! self::is_known_key( $key ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Internal schema violation message; this class runs before any WordPress escaping API is guaranteed.
-			throw new InvalidArgumentException( sprintf( 'Unknown import-report top-level key "%s".', $key ) );
+			throw new InvalidArgumentException( sprintf( 'Unknown import-report top-level key "%s".', $key ) ); // ssi-error-class: programmer
 		}
 		$this->data[ $key ] = $value;
 	}
@@ -248,7 +249,7 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 		$diagnostics = $this->diagnostics();
 		if ( ! array_key_exists( $index, $diagnostics ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Internal schema violation message; this class runs before any WordPress escaping API is guaranteed.
-			throw new InvalidArgumentException( sprintf( 'Import report has no diagnostic at index %d.', $index ) );
+			throw new InvalidArgumentException( sprintf( 'Import report has no diagnostic at index %d.', $index ) ); // ssi-error-class: programmer
 		}
 		$diagnostics[ $index ] = $diagnostic;
 		$this->set_diagnostics( $diagnostics );
@@ -290,6 +291,7 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 	 */
 	public function offsetGet( mixed $offset ): mixed {
 		if ( ! is_string( $offset ) ) {
+			// ssi-error-class: programmer
 			throw new InvalidArgumentException( 'Import report keys must be strings.' );
 		}
 		return $this->get( $offset );
@@ -297,6 +299,7 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 
 	public function offsetSet( mixed $offset, mixed $value ): void {
 		if ( ! is_string( $offset ) ) {
+			// ssi-error-class: programmer
 			throw new InvalidArgumentException( 'Import report keys must be strings.' );
 		}
 		$this->set( $offset, $value );

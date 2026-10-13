@@ -147,23 +147,11 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			),
 		);
 
-		try {
-			if ( array() === $state['plan_identity'] ) {
-				throw new InvalidArgumentException( 'canonical_plan_identity_mismatch' );
-			}
-			WordPressSitePlan::assertValid( $plan );
-		} catch ( InvalidArgumentException $error ) {
-			$state['diagnostics'][]  = array( 'reason_code' => 'canonical_plan_rejected' );
-			$state['failure_reason'] = 'canonical_plan_rejected';
-			return array(
-				'status'  => 'rejected',
-				'receipt' => Static_Site_Importer_Site_Plan_Receipt::receipt( 'rejected', $state ),
-			);
-		}
-		$state['editability_report'] = self::editability_report_admission( $plan );
-		if ( in_array( $state['editability_report']['status'], array( 'rejected', 'failed' ), true ) ) {
+		// Blocks Engine owns the editability policy: honour its decision once.
+		$state['editability_report'] = self::editability_decision( $plan );
+		if ( 'failed' === $state['editability_report']['status'] ) {
 			$state['diagnostics'][]  = $state['editability_report']['diagnostic'];
-			$state['failure_reason'] = (string) ( $state['editability_report']['diagnostic']['reason_code'] ?? 'editability_report_rejected' );
+			$state['failure_reason'] = 'editability_policy_failed';
 			return array(
 				'status'  => 'rejected',
 				'receipt' => Static_Site_Importer_Site_Plan_Receipt::receipt( 'rejected', $state ),
@@ -173,6 +161,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		try {
 			$destination = Static_Site_Importer_Import_Destination::normalize( $args );
 			if ( is_wp_error( $destination ) ) {
+				// ssi-error-class: propagated
 				throw new InvalidArgumentException( (string) $destination->get_error_code() );
 			}
 			$slug = (string) $destination['slug'];
@@ -184,22 +173,27 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			// classic scaffolds carry this name instead of the producer's
 			// generic placeholder header.
 			$identity = self::resolve_theme_identity( $args, $plan, $slug );
-			try {
-				// Resolver proof is canonical semantics, not an inference from copied files.
-				$resolved = ( new WordPressSitePlanResolver() )->resolve(
-					$plan,
-					array(
-						'theme_uri'            => $theme_uri,
-						'require_proven_dynamic_client_assets' => $args['require_proven_dynamic_client_assets'] ?? true,
-						'runtime_capabilities' => array( 'asset_materialization' ),
-					)
-				);
-			} catch ( InvalidArgumentException $error ) {
-				throw new InvalidArgumentException( $error->getMessage(), 0, $error );
-			}
+			// Trust boundary: this is where a plan enters SSI materialization,
+			// whether Blocks Engine composed it in this request or it was read
+			// back from a lifecycle checkpoint, a retained run workspace, or a
+			// public materialize() caller. The Blocks Engine resolver is the one
+			// validation of that plan: it asserts the canonical plan contract
+			// (including the editability policy shape), rejects a stale or
+			// forged plan_identity, and anchors head assets and entity bindings
+			// while binding asset tokens to this destination. SSI does not
+			// repeat those checks; a rejection propagates as its reason code.
+			$resolved = ( new WordPressSitePlanResolver() )->resolve(
+				$plan,
+				array(
+					'theme_uri'                            => $theme_uri,
+					'require_proven_dynamic_client_assets' => $args['require_proven_dynamic_client_assets'] ?? true,
+					'runtime_capabilities'                 => array( 'asset_materialization' ),
+				)
+			);
 			if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC === $strategy['strategy'] ) {
 				$projection = Static_Site_Importer_Classic_Theme_Projection::prepare_for_materialization( $args['classic_theme_projection'], $resolved );
 				if ( is_wp_error( $projection ) ) {
+					// ssi-error-class: propagated
 					throw new InvalidArgumentException( (string) $projection->get_error_code() );
 				}
 				$args['classic_theme_projection'] = $projection;
@@ -487,24 +481,30 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 
 		try {
 			if ( '' !== $recheck_error ) {
+				// ssi-error-class: propagated
 				throw new InvalidArgumentException( $recheck_error );
 			}
 			if ( '' === $slug ) {
+				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'invalid_theme_slug' );
 			}
 			if ( Static_Site_Importer_Import_Destination::EXISTING_THEME === ( $destination['mode'] ?? '' ) ) {
 				// Revalidate the host theme instead of the generated theme root
 				// the destination does not own.
 				if ( ! is_dir( (string) $destination['theme_dir'] ) ) {
+					// ssi-error-class: operational
 					throw new InvalidArgumentException( 'theme_destination_not_ready' );
 				}
 			} elseif ( ! is_dir( $theme_root ) || ! is_writable( $theme_root ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- Revalidates the prepared native theme destination before mutation.
+				// ssi-error-class: operational
 				throw new InvalidArgumentException( 'theme_destination_not_ready' );
 			}
 			if ( is_link( $theme_dir ) || ( file_exists( $theme_dir ) && ! is_dir( $theme_dir ) ) ) {
+				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'unsafe_theme_destination' );
 			}
 			if ( ( $prepared['theme']['dir'] ?? null ) !== $theme_dir || ( $prepared['theme']['uri'] ?? null ) !== $theme_uri ) {
+				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'prepared_destination_changed' );
 			}
 			self::apply_runtime_entity_bindings( $state['resolved'], isset( $args['runtime_entity_bindings'] ) && is_array( $args['runtime_entity_bindings'] ) ? $args['runtime_entity_bindings'] : array(), $state['applied']['runtime_declarations']['entity_bindings'], $state['diagnostics'] );
@@ -527,6 +527,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				$package = Static_Site_Importer_Generated_Runtime_Package::theme( $args['theme_runtime_payload'], (string) $state['theme']['slug'] );
 				if ( is_wp_error( $package ) ) {
 					$state['preflight_error'] = $package;
+					// ssi-error-class: propagated
 					throw new InvalidArgumentException( (string) $package->get_error_code() );
 				}
 				$pending_blocks = $package['block_names'];
@@ -560,6 +561,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			require_once __DIR__ . '/class-static-site-importer-navigation-entity-materializer.php';
 			$navigation_error = Static_Site_Importer_Navigation_Entity_Materializer::preflight( $state['resolved'] );
 			if ( $navigation_error ) {
+				// ssi-error-class: propagated
 				throw new InvalidArgumentException( esc_html( (string) $navigation_error->get_error_code() ) );
 			}
 		}
@@ -570,10 +572,12 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		self::plan_alias_hierarchy_parents( $state );
 		foreach ( $state['resolved']['pages'] as &$page ) {
 			if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC !== ( $state['args']['theme_materialization'] ?? null ) && ( ! isset( $page['resolved_block_markup'] ) || ! is_string( $page['resolved_block_markup'] ) || '' === trim( $page['resolved_block_markup'] ) ) ) {
+				// ssi-error-class: representability:page
 				throw new InvalidArgumentException( 'page_missing_final_block_markup' );
 			}
 			$route = (string) ( $page['route']['path'] ?? '' );
 			if ( isset( $pages_by_route[ $route ] ) ) {
+				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'duplicate_page_route' );
 			}
 			$pages_by_route[ $route ] = true;
@@ -581,6 +585,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				$archive_match    = Static_Site_Importer_Site_Plan_Persistence::reconciled_post( (string) $page['reconciliation_identity'] );
 				$archive_conflict = '' === trim( $route, '/' ) ? null : get_page_by_path( trim( $route, '/' ), OBJECT, 'page' );
 				if ( $archive_conflict && ( ! $archive_match || (int) $archive_match->ID !== (int) $archive_conflict->ID ) && ! Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $archive_conflict ) ) {
+					// ssi-error-class: integrity
 					throw new InvalidArgumentException( 'taxonomy_archive_route_conflict' );
 				}
 				continue;
@@ -602,6 +607,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			}
 			$conflict = '' === trim( $route, '/' ) ? null : get_page_by_path( trim( $route, '/' ), OBJECT, $page['post_type'] );
 			if ( $conflict && ! $overwrite && ! self::post_belongs_to_run( $conflict, $import_run_id ) && ! Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $conflict ) ) {
+				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'post_conflict' );
 			}
 			if ( $conflict ) {
@@ -611,6 +617,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		unset( $page );
 		$state['ordered_pages'] = self::parent_ordered_pages( $state['resolved']['pages'], $import_run_id );
 		if ( null === $state['ordered_pages'] ) {
+			// ssi-error-class: representability:page
 			throw new InvalidArgumentException( 'invalid_page_parent_identity' );
 		}
 		foreach ( $state['resolved']['operations'] as $operation ) {
@@ -618,11 +625,13 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				continue;
 			}
 			if ( 'site_reading' !== $operation['kind'] || ( ! isset( $state['page_ids'][ $operation['front_page_reconciliation_identity'] ] ) && ! self::page_exists_in_plan( $state['resolved']['pages'], $operation['front_page_reconciliation_identity'] ) ) ) {
+				// ssi-error-class: programmer
 				throw new InvalidArgumentException( 'unsupported_operation' );
 			}
 		}
 		$overlay_writes = Static_Site_Importer_Site_Plan_Persistence::provider_layout_stylesheet_writes( $state, $state['args']['provider_layout_overlays'] ?? array() );
 		if ( is_wp_error( $overlay_writes ) ) {
+			// ssi-error-class: integrity
 			throw new InvalidArgumentException( 'provider_layout_overlay_rejected' );
 		}
 		$state['provider_layout_overlay_writes'] = $overlay_writes;
@@ -646,6 +655,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			);
 		if ( is_wp_error( $font_overlay ) ) {
 			$state['preflight_error'] = $font_overlay;
+			// ssi-error-class: propagated
 			throw new InvalidArgumentException( sanitize_key( (string) $font_overlay->get_error_code() ) );
 		}
 		$viewport_overlay                     = isset( $state['viewport_overlay'] ) && is_array( $state['viewport_overlay'] )
@@ -678,16 +688,20 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		$state['composed_theme_writes']       = array_merge( $overlay_writes, Static_Site_Importer_Site_Plan_Persistence::font_overlay_writes( $state['theme_dir'], $font_overlay ), Static_Site_Importer_Site_Plan_Persistence::viewport_overlay_writes( $state['theme_dir'], $viewport_overlay ), Static_Site_Importer_Site_Plan_Persistence::viewport_overlay_writes( $state['theme_dir'], $internal_link_overlay ), Static_Site_Importer_Site_Plan_Persistence::viewport_overlay_writes( $state['theme_dir'], $route_head_metadata_overlay ) );
 		foreach ( $state['resolved']['writes'] as $write ) {
 			if ( null !== Static_Site_Importer_Site_Plan_Persistence::payload_reference( $write ) && ! Static_Site_Importer_Site_Plan_Persistence::valid_payload_reference( Static_Site_Importer_Site_Plan_Persistence::payload_reference( $write ) ) ) {
+				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'payload_reference_invalid' );
 			}
 			$path = $state['theme_dir'] . '/' . $write['target_path'];
 			if ( ! Static_Site_Importer_Site_Plan_Persistence::safe_destination( $state['theme_dir'], $write['target_path'] ) ) {
+				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'unsafe_destination_path' );
 			}
 			if ( is_dir( $path ) || ( file_exists( $path ) && ! $overwrite && ! self::theme_belongs_to_run( $state['theme_dir'], $import_run_id ) && Static_Site_Importer_Site_Plan_Persistence::file_hash( $path ) !== Static_Site_Importer_Site_Plan_Persistence::payload_hash( $write ) && ( ! isset( $state['composed_theme_writes'][ $path ] ) || Static_Site_Importer_Site_Plan_Persistence::file_hash( $path ) !== hash( 'sha256', $state['composed_theme_writes'][ $path ] ) ) ) ) {
 				if ( isset( $overlay_writes[ $path ] ) ) {
+					// ssi-error-class: integrity
 					throw new InvalidArgumentException( 'provider_layout_overlay_rejected' );
 				}
+				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'file_conflict' );
 			}
 		}
@@ -697,11 +711,13 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				$parent = dirname( $parent );
 			}
 			if ( ! is_string( $path ) || '' === $path || is_link( $path ) || ( file_exists( $path ) && ! is_writable( $path ) ) || '' === $parent || is_link( $parent ) || ! is_dir( $parent ) || ! is_writable( $parent ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- Preflights native report destinations used by atomic local writes.
+				// ssi-error-class: operational
 				throw new InvalidArgumentException( 'report_destination_not_ready' );
 			}
 		}
 		foreach ( $state['external_report_destinations'] ?? array() as $path ) {
 			if ( ! self::safe_external_report_destination( $path ) ) {
+				// ssi-error-class: operational
 				throw new InvalidArgumentException( 'report_destination_not_ready' );
 			}
 		}
@@ -721,11 +737,13 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				continue;
 			}
 			if ( ( $page['route']['path'] ?? null ) !== $archives[ $source_path ] ) {
+				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'taxonomy_archive_route_mismatch' );
 			}
 			$archive_match = Static_Site_Importer_Site_Plan_Persistence::reconciled_post( (string) ( $page['reconciliation_identity'] ?? '' ) );
 			$conflict      = get_page_by_path( trim( $archives[ $source_path ], '/' ), OBJECT, 'page' );
 			if ( $conflict && ( ! $archive_match || (int) $archive_match->ID !== (int) $conflict->ID ) && ! Static_Site_Importer_Default_Content::is_untouched_seed( $state['default_content'], $conflict ) ) {
+				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'taxonomy_archive_route_conflict' );
 			}
 			if ( $archive_match ) {
@@ -791,6 +809,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		$documents = self::runtime_binding_documents( $plan );
 		foreach ( $bindings as $binding ) {
 			if ( ! is_array( $binding ) ) {
+				// ssi-error-class: representability:block
 				throw new InvalidArgumentException( 'runtime_entity_binding_invalid' );
 			}
 		}
@@ -806,11 +825,13 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		foreach ( $bindings as $binding ) {
 			$selectors = $binding['superseded_runtime_selectors'] ?? array();
 			if ( ! is_array( $binding ) || 'static-site-importer/runtime-entity-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! isset( $documents[ $binding['source_path'] ] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || ! is_string( $binding['replacement_block_markup'] ?? null ) || '' === trim( $binding['replacement_block_markup'] ) || ! is_string( $binding['reconciliation_identity'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/', $binding['reconciliation_identity'] ) || isset( $seen[ $binding['reconciliation_identity'] ] ) || ! is_array( $selectors ) ) {
+				// ssi-error-class: representability:block
 				throw new InvalidArgumentException( 'runtime_entity_binding_invalid' );
 			}
 			$selectors = array_values( array_unique( $selectors ) );
 			foreach ( $selectors as $selector ) {
 				if ( ! is_string( $selector ) || '' === trim( $selector ) || strlen( $selector ) > 1024 ) {
+					// ssi-error-class: representability:block
 					throw new InvalidArgumentException( 'runtime_entity_binding_invalid' );
 				}
 			}
@@ -822,6 +843,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			$content  = (string) ( $plan[ $group ][ $index ]['materialized_block_markup'] ?? $pristine );
 			$position = self::binding_occurrence_offset( $content, $binding['search_block_markup'], $binding['occurrence'] );
 			if ( null === $position ) {
+				// ssi-error-class: representability:block
 				throw new InvalidArgumentException( 'runtime_entity_binding_cardinality_mismatch' );
 			}
 			if ( 'template_parts' === $group ) {
@@ -886,6 +908,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			$occupied = Static_Site_Importer_Redirection_Materializer::published_route_owner( $path );
 			$owned    = Static_Site_Importer_Site_Plan_Persistence::reconciled_post( $page['reconciliation_identity'] );
 			if ( $occupied && ( ! $owned || (int) $occupied->ID !== (int) $owned->ID ) ) {
+				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'static_site_importer_redirect_route_occupied' );
 			}
 			// A draft is still an editable native parent and contributes its slug to
@@ -933,6 +956,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			}
 		}
 		if ( null === $write ) {
+			// ssi-error-class: representability:block
 			throw new InvalidArgumentException( 'runtime_entity_binding_template_part_write_missing' );
 		}
 		$resolved         = (string) ( $part['resolved_block_markup'] ?? '' );
@@ -940,6 +964,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		$resolved_ranges  = WordPressSitePlan::blockRanges( $resolved );
 		$canonical_ranges = WordPressSitePlan::blockRanges( $canonical );
 		if ( count( $resolved_ranges ) !== count( $canonical_ranges ) ) {
+			// ssi-error-class: representability:block
 			throw new InvalidArgumentException( 'runtime_entity_binding_template_part_write_mismatch' );
 		}
 		$splices = array();
@@ -952,6 +977,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				}
 			}
 			if ( null === $block ) {
+				// ssi-error-class: representability:block
 				throw new InvalidArgumentException( 'runtime_entity_binding_template_part_write_mismatch' );
 			}
 			$splices[] = $canonical_ranges[ $block ] + array( 'replacement' => $patch['replacement'] );
@@ -980,6 +1006,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				'declaration_id'          => $binding['declaration_id'] ?? '',
 				'provider'                => $binding['provider'] ?? '',
 			);
+			// ssi-error-class: representability:block
 			throw new InvalidArgumentException( 'runtime_entity_binding_replacement_invalid' );
 		}
 	}
@@ -1014,11 +1041,13 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 					$diagnostic['binding_reconciliation_identities'] = array_values( array_filter( array_column( $page_bindings, 'reconciliation_identity' ), 'is_string' ) );
 				}
 				$diagnostics[] = $diagnostic;
+				// ssi-error-class: integrity
 				throw new InvalidArgumentException( 'runtime_entity_bound_block_document_invalid' );
 			}
 			$admission   = self::block_document_editor_admission( $markup, $source_path, $pending_blocks );
 			$diagnostics = array_merge( $diagnostics, $admission['diagnostics'] );
 			if ( ! $admission['admitted'] ) {
+				// ssi-error-class: representability:block
 				throw new InvalidArgumentException( 'unsupported_persisted_block' );
 			}
 		}
@@ -1048,6 +1077,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	 */
 	public static function block_document_editor_admission( string $markup, string $source_path, array $pending_blocks = array() ): array {
 		if ( ! class_exists( 'WP_Block_Type_Registry' ) ) {
+			// ssi-error-class: operational
 			throw new InvalidArgumentException( 'block_editor_admission_unavailable' );
 		}
 		$registry    = WP_Block_Type_Registry::get_instance();
@@ -1300,107 +1330,46 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	}
 
 	/**
-	 * Admit producer-owned editability evidence without recreating its metrics or policy.
+	 * Read the Blocks Engine editability decision; SSI keeps no policy of its own.
 	 *
-	 * Current Blocks Engine plans carry the required policy but not the report binding.
-	 * That compatibility path is explicit and can be retired by setting
-	 * quality.editability_report_required on plans from upgraded producers.
+	 * The producer measures every page and blocks only on the entrypoint wrapper
+	 * ratio. A `failed` status still fails the import; per-page `findings` are
+	 * carried as reported losses (the producer also emits them as
+	 * `editability_policy_degraded` warnings that the loss ledger classifies).
+	 * The policy shape is part of the canonical plan contract the resolver
+	 * asserts, so it is not re-validated here.
 	 *
-	 * @param array<string,mixed> $plan
+	 * @param array<string,mixed> $plan Canonical plan.
 	 * @return array<string,mixed>
 	 */
-	public static function editability_report_admission( array $plan ): array {
-		$quality = isset( $plan['quality'] ) && is_array( $plan['quality'] ) ? $plan['quality'] : array();
-		$policy  = isset( $quality['editability_policy'] ) && is_array( $quality['editability_policy'] ) ? $quality['editability_policy'] : array();
-		$base    = array(
+	public static function editability_decision( array $plan ): array {
+		$policy   = is_array( $plan['quality']['editability_policy'] ?? null ) ? $plan['quality']['editability_policy'] : array();
+		$findings = is_array( $policy['findings'] ?? null ) ? array_values( array_filter( $policy['findings'], 'is_array' ) ) : array();
+		$decision = array(
 			'schema'        => 'static-site-importer/editability-report-admission/v1',
 			'owning_layer'  => 'blocks-engine',
 			'policy_schema' => (string) ( $policy['schema'] ?? '' ),
+			'status'        => 'failed' === ( $policy['status'] ?? null ) ? 'failed' : 'passed',
+			'finding_count' => (int) ( $policy['finding_totals']['observed'] ?? count( $findings ) ),
+			'findings'      => array_slice( $findings, 0, 10 ),
 		);
-		if ( array() !== $policy && ( 'blocks-engine/php-transformer/editability-policy/v1' !== ( $policy['schema'] ?? null ) || 'required' !== ( $policy['enforcement'] ?? null ) || ! in_array( $policy['status'] ?? null, array( 'passed', 'failed' ), true ) || ! isset( $policy['failures'] ) || ! is_array( $policy['failures'] ) ) ) {
-			return self::rejected_editability_report_admission( $base, 'editability_policy_invalid' );
+		if ( 'failed' !== $decision['status'] ) {
+			return $decision;
 		}
-		if ( 'failed' === ( $policy['status'] ?? null ) ) {
-			$failures = array_values( array_filter( $policy['failures'], 'is_array' ) );
-			return array_merge(
-				$base,
-				array(
-					'status'     => 'failed',
-					'diagnostic' => array(
-						// The producer already measured and phrased every breach; state it as a
-						// failing diagnostic so the public projection can carry it to the reader.
-						'code'                    => 'editability_policy_failed',
-						'severity'                => 'error',
-						'reason_code'             => 'editability_policy_failed',
-						'owning_layer'            => 'blocks-engine',
-						'source_path'             => (string) ( $failures[0]['source_path'] ?? '' ),
-						'detail'                  => (string) ( $failures[0]['message'] ?? '' ),
-						'threshold_failure_count' => count( $failures ),
-						'threshold_failures'      => array_slice( $failures, 0, 10 ),
-					),
-				)
-			);
-		}
-
-		$report = $quality['editability_report'] ?? null;
-		if ( null === $report ) {
-			if ( ! empty( $quality['editability_report_required'] ) ) {
-				return self::rejected_editability_report_admission( $base, 'editability_report_required' );
-			}
-			return array_merge(
-				$base,
-				array(
-					'status'     => 'compatibility_policy_only',
-					'diagnostic' => array(
-						'reason_code'  => 'editability_report_compatibility_policy_only',
-						'owning_layer' => 'blocks-engine',
-					),
-				)
-			);
-		}
-		if ( ! is_array( $report ) || 'blocks-engine/php-transformer/editability-report/v2' !== ( $report['schema'] ?? null ) || ! is_array( $report['metrics'] ?? null ) || ! is_array( $report['block_types'] ?? null ) || ! is_array( $report['signals'] ?? null ) || ! is_array( $report['signal_totals'] ?? null ) ) {
-			return self::rejected_editability_report_admission( $base, 'editability_report_schema_invalid' );
-		}
-		$bound_hash = $quality['editability_report_plan_hash'] ?? null;
-		if ( ! is_string( $bound_hash ) || ! preg_match( '/^[a-f0-9]{64}$/', $bound_hash ) ) {
-			return self::rejected_editability_report_admission( $base, 'editability_report_plan_hash_invalid' );
-		}
-		$unbound_plan = $plan;
-		unset( $unbound_plan['plan_identity'], $unbound_plan['quality']['editability_report'], $unbound_plan['quality']['editability_report_plan_hash'], $unbound_plan['quality']['editability_report_required'] );
-		$expected_hash = WordPressSitePlan::planIdentity( $unbound_plan )['hash'];
-		if ( ! hash_equals( $expected_hash, $bound_hash ) ) {
-			return self::rejected_editability_report_admission( $base, 'editability_report_plan_hash_mismatch' );
-		}
-		return array_merge(
-			$base,
-			array(
-				'status'        => 'passed',
-				'report_schema' => $report['schema'],
-				'plan_hash'     => $bound_hash,
-				'diagnostic'    => array(
-					'reason_code'  => 'editability_report_verified',
-					'owning_layer' => 'blocks-engine',
-				),
-			)
+		$failures               = is_array( $policy['failures'] ?? null ) ? array_values( array_filter( $policy['failures'], 'is_array' ) ) : array();
+		$decision['diagnostic'] = array(
+			// The producer already measured and phrased every breach; state it as a
+			// failing diagnostic so the public projection can carry it to the reader.
+			'code'                    => 'editability_policy_failed',
+			'severity'                => 'error',
+			'reason_code'             => 'editability_policy_failed',
+			'owning_layer'            => 'blocks-engine',
+			'source_path'             => (string) ( $failures[0]['source_path'] ?? '' ),
+			'detail'                  => (string) ( $failures[0]['message'] ?? '' ),
+			'threshold_failure_count' => count( $failures ),
+			'threshold_failures'      => array_slice( $failures, 0, 10 ),
 		);
-	}
-
-	/** @param array<string,mixed> $base @param array<int,mixed> $failures @return array<string,mixed> */
-	public static function rejected_editability_report_admission( array $base, string $reason_code, array $failures = array() ): array {
-		$diagnostic = array(
-			'reason_code'  => $reason_code,
-			'owning_layer' => 'blocks-engine',
-		);
-		if ( array() !== $failures ) {
-			$diagnostic['threshold_failures'] = array_slice( array_values( array_filter( $failures, 'is_array' ) ), 0, 10 );
-		}
-		return array_merge(
-			$base,
-			array(
-				'status'     => 'rejected',
-				'diagnostic' => $diagnostic,
-			)
-		);
+		return $decision;
 	}
 
 	/** @param array<string,mixed> $plan */

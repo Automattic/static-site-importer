@@ -447,7 +447,8 @@ namespace {
 	}
 	unset( $unused_entity );
 	$unmappable_lifecycle = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $unmappable_plan, array() );
-	$assert( is_wp_error( $unmappable_lifecycle ) && 'static_site_importer_runtime_entity_invalid' === $unmappable_lifecycle->get_error_code(), 'entity-declaration-without-one-valid-row-is-still-rejected' );
+	$unmappable_codes     = is_wp_error( $unmappable_lifecycle ) ? array() : array_column( $unmappable_lifecycle['diagnostics'] ?? array(), 'code' );
+	$assert( ! is_wp_error( $unmappable_lifecycle ) && ! isset( $unmappable_lifecycle['entities'][ $mixed_id ] ) && array( 'runtime_entity_rows_rejected' ) === $unmappable_codes, 'forms-declaration-without-one-valid-row-is-skipped-with-a-finding' );
 
 	// --- Manifest-schema declarations carry content-hash refs, not entity bodies.
 	// Their rows are validated once resolved, not as empty ref rows here.

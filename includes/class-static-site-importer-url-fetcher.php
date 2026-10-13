@@ -345,6 +345,7 @@ class Static_Site_Importer_URL_Fetcher {
 		$normalized_content_type = strtolower( trim( explode( ';', $content_type, 2 )[0] ) );
 		$allowed                 = $options['has_content_types_arg'] ? ( empty( $options['content_types'] ) || in_array( $normalized_content_type, $options['content_types'], true ) ) : self::is_html_content_type( $content_type );
 		if ( ! $allowed ) {
+			// ssi-error-class: representability:route
 			return array( 'result' => new WP_Error( $options['has_content_types_arg'] ? 'static_site_importer_url_unexpected_content_type' : 'static_site_importer_url_non_html', $options['has_content_types_arg'] ? sprintf( 'The URL returned unsupported content type %s.', '' !== $content_type ? $content_type : '(missing)' ) : 'The URL did not return an HTML content type.' ) );
 		}
 		if ( '' === trim( $body ) && ( ! $options['has_content_types_arg'] || ! empty( $options['content_types'] ) ) ) {
@@ -527,6 +528,7 @@ class Static_Site_Importer_URL_Fetcher {
 			if ( self::native_retry( $handle ) ) {
 				return null;
 			}
+			// ssi-error-class: operational
 			return new WP_Error( $deadline_exhausted ? 'static_site_importer_url_deadline_exhausted' : 'static_site_importer_url_timeout', $deadline_exhausted ? 'The URL request deadline was exhausted.' : 'The URL request timed out.' );
 		}
 		if ( ! $handle->crypto && ! empty( $handle->options['deadline_limited'] ) ) {
@@ -624,6 +626,7 @@ class Static_Site_Importer_URL_Fetcher {
 			}
 			self::cancel_transport( null, $handle, 'curl_failed' );
 			if ( CURLE_OPERATION_TIMEDOUT === $result ) {
+				// ssi-error-class: operational
 				return new WP_Error( $deadline_exhausted ? 'static_site_importer_url_deadline_exhausted' : 'static_site_importer_url_timeout', $deadline_exhausted ? 'The URL request deadline was exhausted.' : 'The URL request timed out.' );
 			}
 			return new WP_Error( 'static_site_importer_url_connect_failed', '' !== $error ? $error : 'Could not connect to the URL.' );

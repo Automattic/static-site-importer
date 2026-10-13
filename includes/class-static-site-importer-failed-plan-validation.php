@@ -139,6 +139,7 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 		);
 		foreach ( $paths as $path ) {
 			if ( ! self::safe_destination( $path ) ) {
+				// ssi-error-class: integrity
 				throw new RuntimeException( 'Failed-plan report destination is not ready.' );
 			}
 		}
@@ -212,6 +213,7 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 	private static function write( string $path, array $payload ): void {
 		$json = function_exists( 'wp_json_encode' ) ? wp_json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) : json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Standalone smoke tests do not load WordPress encoding helpers.
 		if ( is_string( $json ) && strlen( $json ) + 1 > self::MAX_ARTIFACT_BYTES ) {
+			// ssi-error-class: operational
 			throw new RuntimeException( 'Failed-plan report artifact exceeds its 10 MiB bound.' );
 		}
 		$temp = tempnam( dirname( $path ), '.ssi-failed-plan-' );
@@ -219,6 +221,7 @@ final class Static_Site_Importer_Failed_Plan_Validation {
 			if ( is_string( $temp ) && file_exists( $temp ) ) {
 				unlink( $temp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes a failed atomic report temporary file.
 			}
+			// ssi-error-class: operational
 			throw new RuntimeException( 'Failed to write failed-plan report artifact.' );
 		}
 	}

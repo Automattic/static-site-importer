@@ -133,7 +133,7 @@ test("supplied HTML archive boots its local transformer without optional depende
       class WP_Error { public function __construct(private $code = '', private $message = '') {} public function get_error_code() { return $this->code; } }
       require $root . '/includes/class-static-site-importer-runtime-capabilities.php';
       require $root . '/includes/class-static-site-importer-content-policy.php';
-      $markdown = Static_Site_Importer_Content_Policy::validate_artifact(array('files' => array(array('path' => 'notes.md', 'content' => '# unavailable'))));
+      $markdown = Static_Site_Importer_Content_Policy::admit_artifact(array('files' => array(array('path' => 'notes.md', 'content' => '# unavailable'))));
       if (!($markdown instanceof WP_Error) || 'static_site_importer_source_format_unsupported' !== $markdown->get_error_code()) throw new RuntimeException('Markdown availability was not reported');
     `
     execFileSync("php", ["-r", script, packageRoot], { stdio: "pipe" })

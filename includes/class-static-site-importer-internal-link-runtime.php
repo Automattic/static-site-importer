@@ -152,12 +152,14 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 	/**
 	 * Point member sign-in controls at this site's login.
 	 *
-	 * Data Liberation marks the source platform's member sign-in entry points
-	 * once it has removed the platform's own login, and leaves the target to
-	 * the destination. The marker is the class `dla-member-login-<provider>`
-	 * (block conversion keeps classes), with `data-dla-member-login` where it
-	 * survived. Here the target is `wp_login_url()`, returning the reader to
-	 * the page they signed in from.
+	 * A capture producer marks the source platform's member sign-in entry
+	 * points once it has removed the platform's own login, and leaves the
+	 * target to the destination. The marker is the capture-evidence member
+	 * sign-in class `<prefix><provider>` (block conversion keeps classes),
+	 * with the member sign-in attribute where it survived. Both names come
+	 * from {@see Static_Site_Importer_Capture_Evidence}; generated theme and
+	 * companion copies receive them inlined. Here the target is
+	 * `wp_login_url()`, returning the reader to the page they signed in from.
 	 *
 	 * - A marked link gets that `href`, replacing any source one (the old
 	 *   platform's members area).
@@ -167,11 +169,14 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 	 *   gone.
 	 */
 	public static function resolve_member_login_links( string $content ): string {
-		if ( ! str_contains( $content, 'dla-member-login' ) || ! function_exists( 'wp_login_url' ) ) {
+		$attribute = Static_Site_Importer_Capture_Evidence::MEMBER_LOGIN;
+		$prefix    = Static_Site_Importer_Capture_Evidence::MEMBER_LOGIN_CLASS_PREFIX;
+		// The class prefix extends the attribute name, so one check finds either marker.
+		if ( ! str_contains( $content, $attribute ) || ! function_exists( 'wp_login_url' ) ) {
 			return $content;
 		}
 		$login  = esc_url( wp_login_url( self::current_url() ) );
-		$marked = '(?=[^>]*(?:\sdata-dla-member-login\b|\sclass\s*=\s*["\'][^"\']*\bdla-member-login-[a-z0-9_-]+))';
+		$marked = '(?=[^>]*(?:\s' . preg_quote( $attribute, '~' ) . '(?=[\s=/>])|\sclass\s*=\s*["\'][^"\']*(?<![\w-])' . preg_quote( $prefix, '~' ) . '[a-z0-9_-]+))';
 		$href   = '~\s+href\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)~i';
 		$type   = '~\s+type\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)~i';
 		$link   = static fn( string $attributes ): string => '<a href="' . $login . '"' . (string) preg_replace( array( $href, $type ), '', $attributes ) . '>';
@@ -267,7 +272,8 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 	public static function prepare_overlay( array $resolved_plan, array $bootstrap_overlay = array(), string $theme_slug = '' ): array {
 		$bootstrap = self::bootstrap_content( $resolved_plan, $bootstrap_overlay );
 		// The theme copy gets a theme-scoped class name, so it can never
-		// collide with this plugin class or with another generated theme.
+		// collide with this plugin class or with another generated theme, and
+		// carries the capture-evidence names it reads as literals.
 		$class        = self::theme_runtime_class( $theme_slug );
 		$route_class  = str_replace( '_Internal_Link_Runtime', '_Source_Route_Redirect', $class );
 		$marker       = '/* Static Site Importer portable internal links. */';
@@ -298,7 +304,7 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 				),
 				array(
 					'target_path' => 'portable-internal-links.php',
-					'content'     => str_replace( 'Static_Site_Importer_Internal_Link_Runtime', $class, $source ),
+					'content'     => Static_Site_Importer_Capture_Evidence::inline( str_replace( 'Static_Site_Importer_Internal_Link_Runtime', $class, $source ) ),
 					'encoding'    => 'utf8',
 					'source_path' => 'static-site-importer/portable-internal-links',
 				),

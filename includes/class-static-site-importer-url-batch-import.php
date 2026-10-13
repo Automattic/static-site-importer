@@ -14,10 +14,36 @@ if ( ! class_exists( 'Static_Site_Importer_Final_Hydration_Effects' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Shared_Resource_Plan' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-shared-resource-plan.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-content-policy.php';
+}
 final class Static_Site_Importer_URL_Batch_Import {
 
 	private const VERSION         = 2;
 	private const MAX_BATCH_PAGES = 100;
+
+	/** Finding for a non-entry route left out because it could not be collected. */
+	public const ROUTE_OMITTED = 'static_site_importer_url_route_omitted';
+
+	/**
+	 * Fetch outcomes confined to one route. A non-entry route that ends in one
+	 * is omitted with a {@see ROUTE_OMITTED} finding; the site entry still fails.
+	 * Address, scheme, credential and TLS refusals are not listed: they stay fail-closed.
+	 */
+	private const ROUTE_OMISSION_CODES = array(
+		'static_site_importer_url_http_status',
+		'static_site_importer_url_too_large',
+		'static_site_importer_url_timeout',
+		'static_site_importer_url_connect_failed',
+		'static_site_importer_url_dns_failed',
+		'static_site_importer_url_empty_body',
+		'static_site_importer_url_non_html',
+		'static_site_importer_url_unexpected_content_type',
+		'static_site_importer_url_redirect_limit',
+		'static_site_importer_url_redirect_missing_location',
+		'static_site_importer_url_malformed_response',
+		'static_site_importer_url_client_rendered_app',
+	);
 	public static function import( array $request, array $input, ?callable $fetcher = null, ?callable $importer = null, ?Static_Site_Importer_Final_Hydration_Adapter $final_hydration_adapter = null ) {
 		$args        = is_array( $request['provider_args'] ?? null ) ? $request['provider_args'] : array();
 		$batch_pages = (int) ( $args['batch_pages'] ?? 0 );
@@ -228,7 +254,9 @@ final class Static_Site_Importer_URL_Batch_Import {
 			}
 			$batch                = $cursor[ $index ];
 			$routes               = array_values( array_intersect_key( $manifest['routes'], array_flip( $batch['units'] ) ) );
-			$batch_entry          = in_array( $url, $routes, true ) ? $url : ( $routes[0] ?? $url );
+			$site_entry           = in_array( $url, $routes, true );
+			$batch_entry          = $site_entry ? $url : ( $routes[0] ?? $url );
+			$omitted              = is_array( $batch['omitted'] ?? null );
 			$cache_name           = 'batches/' . $batch['batch_id'] . '.json';
 			$ready_cache_name     = 'batches/' . $batch['batch_id'] . '.page-ready.json';
 			$old_cache            = trailingslashit( $work_dir ) . 'url-site-batch-cache-' . $identity . '-' . $index . '.json';
@@ -243,7 +271,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			if ( is_wp_error( $write ) ) {
 				return $write;
 			}
-			if ( null !== $deadline ) {
+			if ( null !== $deadline && ! $omitted ) {
 				$known_asset_paths = $shared_plan->source_paths();
 				$ready_raw         = self::retained_runtime( $workspace, $ready_cache_name, $ready_cache_name, $ready_cache_name, $routes );
 				$ready_runtime     = array();
@@ -302,18 +330,28 @@ final class Static_Site_Importer_URL_Batch_Import {
 							}
 							return self::continuation_result( $manifest, $manifest_path, $index, $effective_batches, $max_effective_batches, $max_invocation_seconds, 'deadline_exhausted' );
 						}
-						return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $ready_runtime, $cache );
+						if ( '' === self::route_failure( $ready_runtime, $routes, $url ) ) {
+							return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $ready_runtime, $cache );
+						}
+						// A failure confined to these routes is decided once, by the complete collection below.
+						$workspace->delete( $ready_collection_cursor_name );
+						$ready_runtime = array();
+					} else {
+						$ready_runtime = self::admit_runtime( $ready_runtime, $payload_reader, $site_entry );
+						if ( is_wp_error( $ready_runtime ) ) {
+							return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $ready_runtime, $cache );
+						}
+						$write = $workspace->publish_json( $ready_cache_name, $ready_runtime );
+						if ( is_wp_error( $write ) ) {
+							return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $write, $cache );
+						}
+						$workspace->delete( $ready_collection_cursor_name );
 					}
-					$write = $workspace->publish_json( $ready_cache_name, $ready_runtime );
-					if ( is_wp_error( $write ) ) {
-						return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $write, $cache );
-					}
-					$workspace->delete( $ready_collection_cursor_name );
 				}
-				if ( 'page_ready' === $batch['state'] && ( $batch['result']['snapshot_sha256'] ?? '' ) !== ( $ready_runtime['source_metadata']['snapshot']['sha256'] ?? '' ) ) {
+				if ( ! empty( $ready_runtime ) && 'page_ready' === $batch['state'] && ( $batch['result']['snapshot_sha256'] ?? '' ) !== ( $ready_runtime['source_metadata']['snapshot']['sha256'] ?? '' ) ) {
 					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, new WP_Error( 'static_site_importer_page_ready_checkpoint_mismatch', 'The immutable page-ready checkpoint no longer matches its persisted receipt.' ), $cache );
 				}
-				if ( 'plan' !== (string) ( $input['operation'] ?? 'apply' ) && 'page_ready' !== $batch['state'] && empty( $batch['page_ready_deferred'] ) && 'pending' === ( $ready_runtime['source_metadata']['collection']['readiness']['optional_assets'] ?? '' ) ) {
+				if ( array() !== self::page_paths( $ready_runtime['artifact'] ?? array() ) && 'plan' !== (string) ( $input['operation'] ?? 'apply' ) && 'page_ready' !== $batch['state'] && empty( $batch['page_ready_deferred'] ) && 'pending' === ( $ready_runtime['source_metadata']['collection']['readiness']['optional_assets'] ?? '' ) ) {
 					$ready_import_args                                      = Static_Site_Importer_URL_Import_Runtime::batch_import_args( $input, $ready_runtime );
 					$ready_import_args['activate']                          = false;
 					$ready_import_args['batch_import']                      = true;
@@ -351,10 +389,10 @@ final class Static_Site_Importer_URL_Batch_Import {
 					}
 				}
 			}
-			$raw     = self::retained_runtime( $workspace, $cache_name, 'batches/' . $index . '.json', $old_cache, $routes );
+			$raw     = $omitted ? null : self::retained_runtime( $workspace, $cache_name, 'batches/' . $index . '.json', $old_cache, $routes );
 			$decoded = is_string( $raw ) ? json_decode( $raw, true ) : null;
 			$runtime = is_array( $decoded ) ? $decoded : array();
-			if ( empty( $runtime ) ) {
+			if ( ! $omitted && empty( $runtime ) ) {
 				$known_asset_paths                           = $shared_plan->source_paths();
 				$collect_args                                = $args;
 				$collect_args['_route_set']                  = array_values( array_unique( $routes ) );
@@ -409,7 +447,8 @@ final class Static_Site_Importer_URL_Batch_Import {
 							return $write;
 						}return self::continuation_result( $manifest, $manifest_path, $index, $effective_batches, $max_effective_batches, $max_invocation_seconds, 'deadline_exhausted' );
 					}
-					if ( count( $routes ) > 1 && self::splittable_collection_error( $runtime ) ) {
+					$route_failure = self::route_failure( $runtime, $routes, $url );
+					if ( 'split' === $route_failure ) {
 						$cursor              = Static_Site_Importer_Artifact_Batch_Cursor::split( $cursor, $index );
 						$manifest['batches'] = self::legacy_batches( $cursor );
 						self::checkpoint_cache( $manifest, $cache );
@@ -426,14 +465,55 @@ final class Static_Site_Importer_URL_Batch_Import {
 							return self::continuation_result( $manifest, $manifest_path, $index, $effective_batches, $max_effective_batches, $max_invocation_seconds, 'batch_subdivided' );
 						}
 						continue;
-					}return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $runtime, $cache );
-				}$write = $workspace->publish_json( $cache_name, $runtime );
-				if ( is_wp_error( $write ) ) {
-					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $write, $cache );
+					}
+					if ( 'omit' !== $route_failure ) {
+						return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $runtime, $cache );
+					}
+					$cursor[ $index ]['omitted'] = array( self::route_omitted_finding( (string) $routes[0], $runtime ) );
+					$omitted                     = true;
+					$runtime                     = array();
+				} else {
+					$runtime = self::admit_runtime( $runtime, $payload_reader, $site_entry );
+					if ( is_wp_error( $runtime ) ) {
+						return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $runtime, $cache );
+					}
+					$write = $workspace->publish_json( $cache_name, $runtime );
+					if ( is_wp_error( $write ) ) {
+						return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $write, $cache );
+					}
 				}
 				$workspace->delete( $collection_cursor_name );
 			}
-			$staged = self::retained_staged_plans( $workspace, $runtime );
+			if ( ! $omitted && array() === self::page_paths( $runtime['artifact'] ?? array() ) ) {
+				// Admission dropped every page these routes collected.
+				$cursor[ $index ]['omitted'] = is_array( $runtime['source_metadata']['intake_findings'] ?? null ) ? $runtime['source_metadata']['intake_findings'] : array();
+				$omitted                     = true;
+			}
+			if ( $omitted ) {
+				$manifest['batches'] = self::legacy_batches( $cursor );
+				// Only an applied run whose last batch is omitted still owes the
+				// whole-site composition; every other omitted batch is complete.
+				if ( 'plan' === (string) ( $input['operation'] ?? 'apply' ) || array_key_last( $cursor ) !== $index ) {
+					$cursor[ $index ]['state']           = 'completed';
+					$cursor[ $index ]['completed_units'] = 0;
+					$manifest['batches']                 = self::legacy_batches( $cursor );
+					self::checkpoint_cache( $manifest, $cache );
+					$write = $run_manifest->save( $manifest );
+					if ( is_wp_error( $write ) ) {
+						return $write;
+					}
+					continue;
+				}
+				$write = $run_manifest->save( $manifest );
+				if ( is_wp_error( $write ) ) {
+					return $write;
+				}
+				$runtime = self::last_collected_runtime( $workspace, $cursor, $index );
+				if ( is_wp_error( $runtime ) ) {
+					return self::failed( $run_manifest, $workspace, $manifest, $cursor, $index, $runtime, $cache );
+				}
+			}
+			$staged = $omitted ? array() : self::retained_staged_plans( $workspace, $runtime );
 			if ( null === $staged ) {
 				$shared_started = microtime( true );
 				$shared         = $shared_plan->reconcile( $runtime['artifact'] );
@@ -539,6 +619,11 @@ final class Static_Site_Importer_URL_Batch_Import {
 				$import_args['import_run_id']                     = $identity;
 				$import_args['compiled_artifact_result']          = $compiled_staged;
 				$import_args['_static_site_importer_precompiled_source'] = null !== $payload_reader;
+				if ( $terminal ) {
+					// The whole-site import reports every batch's admission and omission findings.
+					unset( $import_args['source_metadata']['intake_findings'] );
+					$import_args = Static_Site_Importer_Content_Policy::with_intake_findings( $import_args, $complete['intake_findings'] );
+				}
 				// This reader is invocation-local workspace access, never plan state.
 				$import_args['_static_site_importer_payload_reader'] = $payload_reader;
 
@@ -606,7 +691,10 @@ final class Static_Site_Importer_URL_Batch_Import {
 					}
 				}
 			}
-			$cursor                     = Static_Site_Importer_Artifact_Batch_Cursor::complete( $cursor, $index );
+			$cursor = Static_Site_Importer_Artifact_Batch_Cursor::complete( $cursor, $index );
+			if ( $omitted ) {
+				$cursor[ $index ]['completed_units'] = 0;
+			}
 			$cursor[ $index ]['result'] = self::result_evidence( $result, $runtime );
 			$manifest['batches']        = self::legacy_batches( $cursor );
 			$manifest['diagnostics']    = array_slice( array_merge( $manifest['diagnostics'], $result['import_validation_result']['diagnostics'] ?? array() ), -100 );
@@ -818,6 +906,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			public function read( array $reference ): string {
 				$bytes = $this->workspace->read_raw( $reference['id'] );
 				if ( ! is_string( $bytes ) ) {
+					// ssi-error-class: operational
 					throw new RuntimeException( 'A retained artifact payload is unavailable.' );
 				}
 				return $bytes;
@@ -859,8 +948,13 @@ final class Static_Site_Importer_URL_Batch_Import {
 	private static function compose_complete_plan( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $cursor, ?object $payload_reader = null, ?callable $should_yield = null, ?array $identity_args = null ): array|WP_Error {
 		$snapshots  = array();
 		$files      = array();
+		$findings   = array();
 		$entrypoint = '';
 		foreach ( $cursor as $batch ) {
+			if ( is_array( $batch['omitted'] ?? null ) ) {
+				$findings = array_merge( $findings, $batch['omitted'] );
+				continue;
+			}
 			$batch_id = (string) ( $batch['batch_id'] ?? '' );
 			$raw      = '' !== $batch_id ? $workspace->read_raw( 'batches/' . $batch_id . '.json' ) : null;
 			$runtime  = is_string( $raw ) ? json_decode( $raw, true ) : null;
@@ -871,6 +965,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			if ( is_string( $snapshot ) && '' !== $snapshot ) {
 				$snapshots[] = $snapshot;
 			}
+			$findings = array_merge( $findings, is_array( $runtime['source_metadata']['intake_findings'] ?? null ) ? $runtime['source_metadata']['intake_findings'] : array() );
 			if ( is_array( $runtime['artifact'] ?? null ) ) {
 				$entrypoint = '' === $entrypoint ? (string) ( $runtime['artifact']['entrypoint'] ?? '' ) : $entrypoint;
 				foreach ( $runtime['artifact']['files'] ?? array() as $file ) {
@@ -933,6 +1028,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			'plan'                     => $plan,
 			'quality'                  => is_array( $plan['quality'] ?? null ) ? $plan['quality'] : array(),
 			'diagnostics'              => is_array( $plan['diagnostics'] ?? null ) ? $plan['diagnostics'] : array(),
+			'intake_findings'          => self::unique_findings( $findings ),
 			'provenance'               => array(
 				'snapshot_identity' => hash( 'sha256', (string) wp_json_encode( $snapshots ) ),
 				'snapshots'         => $snapshots,
@@ -987,6 +1083,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				}return $error;
 			}$failure = $cache->get_failure( $key, $now );
 			if ( is_array( $failure ) ) {
+				// ssi-error-class: propagated
 				return new WP_Error( (string) $failure['code'], (string) $failure['message'], $failure['data'] ?? null );
 			}$cached = $cache->get( $key );
 			if ( is_array( $cached ) ) {
@@ -1001,6 +1098,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			if ( is_wp_error( $response ) ) {
 				$data                                      = is_array( $response->get_error_data() ) ? $response->get_error_data() : array();
 				$data['_static_site_importer_cache_aware'] = true;
+				// ssi-error-class: propagated
 				return new WP_Error( $response->get_error_code(), $response->get_error_message(), $data );
 			}if ( is_array( $response ) && is_string( $response['body'] ?? null ) && is_array( $response['metadata'] ?? null ) ) {
 				$cache->put( $key, $response['body'], $response['metadata'] );
@@ -1031,6 +1129,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 					'split_from'           => $row['split_from'] ?? null,
 					'effective_batch_size' => $row['effective_batch_size'] ?? null,
 					'page_ready_deferred'  => ! empty( $row['page_ready_deferred'] ) ? true : null,
+					'omitted'              => $row['omitted'] ?? null,
 				),
 				static fn ( $value ): bool => null !== $value
 			),
@@ -1062,7 +1161,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 				'code'    => $write->get_error_code(),
 				'message' => $write->get_error_message(),
 			);
-		}return new WP_Error( $error->get_error_code(), $error->get_error_message(), $data );
+		}return new WP_Error( $error->get_error_code(), $error->get_error_message(), $data ); // ssi-error-class: propagated
 	}
 	private static function checkpoint_cache( array &$manifest, Static_Site_Importer_Artifact_Byte_Cache $cache ): void {
 		foreach ( $cache->consume() as $key => $delta ) {
@@ -1193,10 +1292,127 @@ final class Static_Site_Importer_URL_Batch_Import {
 		}if ( array_intersect( $data['collection']['truncated'] ?? array(), array( 'assets', 'bytes' ) ) ) {
 			return true;
 		}foreach ( $data['collection']['failures'] ?? array() as $failure ) {
-			if ( 'asset' === ( $failure['kind'] ?? '' ) ) {
+			if ( 'asset' === ( $failure['kind'] ?? '' ) || in_array( (string) ( $failure['code'] ?? '' ), self::ROUTE_OMISSION_CODES, true ) ) {
 				return true;
 			}
 		}return false;
+	}
+
+	/**
+	 * Decide a batch collection failure confined to its routes.
+	 *
+	 * A multi-route batch is split until each route stands alone ('split'); a
+	 * lone route that is not the site entry is omitted with a finding ('omit').
+	 * '' fails the import: the site entry, deadlines and every refusal outside
+	 * {@see ROUTE_OMISSION_CODES}, which includes the public-address guards.
+	 *
+	 * @param WP_Error          $error     Collection failure.
+	 * @param array<int,string> $routes    Batch routes.
+	 * @param string            $entry_url Site entry URL.
+	 */
+	private static function route_failure( WP_Error $error, array $routes, string $entry_url ): string {
+		$confined = in_array( $error->get_error_code(), self::ROUTE_OMISSION_CODES, true );
+		if ( count( $routes ) > 1 ) {
+			return $confined || self::splittable_collection_error( $error ) ? 'split' : '';
+		}
+		return $confined && ! in_array( $entry_url, $routes, true ) ? 'omit' : '';
+	}
+
+	/**
+	 * The finding for a non-entry route that could not be collected.
+	 *
+	 * @return array<string,string>
+	 */
+	private static function route_omitted_finding( string $route, WP_Error $error ): array {
+		return array(
+			'code'        => self::ROUTE_OMITTED,
+			'type'        => 'static-site-importer',
+			'severity'    => 'warning',
+			'stage'       => 'url_collection',
+			'url'         => $route,
+			'reason_code' => (string) $error->get_error_code(),
+			'message'     => sprintf( 'Omitted route %1$s because it could not be collected (%2$s); the remaining routes import.', $route, $error->get_error_message() ),
+		);
+	}
+
+	/**
+	 * Admit a collected batch through the one static-content decision.
+	 *
+	 * A batch without the site entry declares one of its own pages as its
+	 * compiler entrypoint. The site can import without that page, so it is
+	 * admitted like every other non-entry page; when admission drops it, the
+	 * batch's next remaining page becomes its compiler entrypoint.
+	 *
+	 * @param array<string,mixed> $runtime        Collected batch runtime.
+	 * @param object|null         $payload_reader Retained payload reader.
+	 * @param bool                $site_entry     Whether the batch carries the site entry.
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private static function admit_runtime( array $runtime, ?object $payload_reader, bool $site_entry ) {
+		$artifact   = is_array( $runtime['artifact'] ?? null ) ? $runtime['artifact'] : array();
+		$entrypoint = (string) ( $artifact['entrypoint'] ?? '' );
+		$admission  = Static_Site_Importer_Content_Policy::admit_artifact( $site_entry ? $artifact : array_merge( $artifact, array( 'entrypoint' => '' ) ), $payload_reader );
+		if ( is_wp_error( $admission ) ) {
+			return $admission;
+		}
+		$pages                               = self::page_paths( $admission['artifact'] );
+		$admission['artifact']['entrypoint'] = in_array( $entrypoint, $pages, true ) ? $entrypoint : (string) ( $pages[0] ?? '' );
+		$runtime['artifact']                 = $admission['artifact'];
+
+		return Static_Site_Importer_Content_Policy::with_intake_findings( $runtime, $admission['findings'] );
+	}
+
+	/**
+	 * The page paths a batch artifact stages.
+	 *
+	 * @param array<string,mixed> $artifact Batch artifact.
+	 * @return array<int,string>
+	 */
+	private static function page_paths( array $artifact ): array {
+		$pages = array();
+		foreach ( is_array( $artifact['files'] ?? null ) ? $artifact['files'] : array() as $file ) {
+			if ( is_array( $file ) && 'text/html' === strtolower( (string) ( $file['mime_type'] ?? '' ) ) && '' !== (string) ( $file['path'] ?? '' ) ) {
+				$pages[] = (string) $file['path'];
+			}
+		}
+		return $pages;
+	}
+
+	/**
+	 * The runtime of the last batch before $index that collected pages.
+	 *
+	 * An applied run whose last batch is omitted composes the whole site from it.
+	 *
+	 * @return array<string,mixed>|WP_Error
+	 */
+	private static function last_collected_runtime( Static_Site_Importer_Artifact_Run_Workspace $workspace, array $cursor, int $index ) {
+		for ( $previous = $index - 1; $previous >= 0; --$previous ) {
+			if ( is_array( $cursor[ $previous ]['omitted'] ?? null ) ) {
+				continue;
+			}
+			$raw     = $workspace->read_raw( 'batches/' . $cursor[ $previous ]['batch_id'] . '.json' );
+			$runtime = is_string( $raw ) ? json_decode( $raw, true ) : null;
+			if ( is_array( $runtime ) ) {
+				return $runtime;
+			}
+		}
+		return new WP_Error( 'static_site_importer_url_plan_batch_missing', 'The frozen URL run has an incomplete staged batch.' );
+	}
+
+	/**
+	 * Findings once per code and location: a skipped shared asset is reported by every batch that references it.
+	 *
+	 * @param array<int,mixed> $findings Findings.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function unique_findings( array $findings ): array {
+		$unique = array();
+		foreach ( $findings as $finding ) {
+			if ( is_array( $finding ) ) {
+				$unique[ (string) ( $finding['code'] ?? '' ) . "\n" . (string) ( $finding['source_path'] ?? $finding['url'] ?? '' ) ] = $finding;
+			}
+		}
+		return array_values( $unique );
 	}
 	private static function deadline_error( WP_Error $error ): bool {
 		if ( 'static_site_importer_invocation_deadline_exceeded' === $error->get_error_code() ) {
@@ -1257,6 +1473,7 @@ final class Static_Site_Importer_URL_Batch_Import {
 			'per_batch_limits'           => $manifest['per_batch_limits'] ?? array(),
 			'total_routes'               => $manifest['total_routes'],
 			'completed_routes'           => array_sum( array_column( $manifest['batches'], 'completed_routes' ) ),
+			'omitted_routes'             => array_sum( array_map( static fn ( array $batch ): int => isset( $batch['omitted'] ) ? count( $batch['route_indexes'] ?? array() ) : 0, $manifest['batches'] ) ),
 			'total_batches'              => count( $manifest['batches'] ),
 			'completed_batches'          => count( array_filter( $manifest['batches'], static fn ( array $batch ): bool => 'completed' === $batch['state'] ) ),
 			'failures'                   => $manifest['failures'],

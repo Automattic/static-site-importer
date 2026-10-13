@@ -190,7 +190,7 @@ test('neutral browser smoke: unavailable DLA stays pending and candidate fatal f
         fs.writeFileSync(path.join(directory, 'compare', stage, 'report.json'), JSON.stringify(report));
         return report;
       }`);
-    const runtimeValidation = writeEvidence(root, 'runtime-validation.json', { schema: 'static-site-importer/dla-runtime-validation/v1', runtime_identity: 'public-seam-fixture', public_entry_sha256: hash(fs.readFileSync(runtimeModule)), status: 'passed', frozen_capture: true, materialization_no_origin_visits: true });
+    const runtimeValidation = writeEvidence(root, 'runtime-validation.json', { schema: 'static-site-importer/fidelity-runtime-validation/v1', runtime_identity: 'public-seam-fixture', public_entry_sha256: hash(fs.readFileSync(runtimeModule)), status: 'passed', frozen_capture: true, materialization_no_origin_visits: true });
     const composed = await runExistingRuntimeAcceptance({ ...config, reference, runtimeModule, runtimeIdentity: 'public-seam-fixture', runtimeValidation });
     assert.equal(composed.status, 'pending');
     const calls = JSON.parse(fs.readFileSync(path.join(root, 'calls.json')));

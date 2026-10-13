@@ -37,12 +37,16 @@ final class Static_Site_Importer_Compilation_Preparation {
 			return $strategy;
 		}
 		$args['theme_materialization'] = $strategy['strategy'];
-		$source_policy                 = $precompiled ? true : Static_Site_Importer_Content_Policy::validate_artifact(
-			$artifact,
-			is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null
-		);
-		if ( is_wp_error( $source_policy ) ) {
-			return $source_policy;
+		if ( ! $precompiled ) {
+			$admission = Static_Site_Importer_Content_Policy::admit_artifact(
+				$artifact,
+				is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null
+			);
+			if ( is_wp_error( $admission ) ) {
+				return $admission;
+			}
+			$artifact = $admission['artifact'];
+			$args     = Static_Site_Importer_Content_Policy::with_intake_findings( $args, $admission['findings'] );
 		}
 		$redirects = Static_Site_Importer_Redirects_Manifest::extract( $artifact, is_object( $args['_static_site_importer_payload_reader'] ?? null ) ? $args['_static_site_importer_payload_reader'] : null );
 		if ( is_wp_error( $redirects ) ) {
@@ -145,11 +149,13 @@ final class Static_Site_Importer_Compilation_Preparation {
 				$args['client_script_policy_report'] = $report;
 			}
 		}
-		$expected_schema = $supplied_compiled ? 'blocks-engine/wordpress-site-plan-view/v2' : 'blocks-engine/wordpress-site-plan-view/v1';
-		if ( ( $compiled['schema'] ?? '' ) !== $expected_schema ) {
-			return new WP_Error( 'static_site_importer_invalid_transformer_result', 'Blocks Engine php-transformer returned an invalid WordPress site plan view.' );
-		}
 		if ( $supplied_compiled ) {
+			// A supplied result is the compact v2 view a URL batch or direct
+			// artifact run composed in an earlier request and retained in its
+			// workspace. Decoding it is the boundary step: Blocks Engine checks
+			// the compact schema and every payload digest while restoring the
+			// canonical plan, which the resolver then validates in preparation.
+			// A view compiled above in this request is used as returned.
 			try {
 				$compiled = \Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanView::materialize( $compiled );
 			} catch ( Throwable $error ) {

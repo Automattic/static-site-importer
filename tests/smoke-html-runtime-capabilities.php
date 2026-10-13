@@ -24,9 +24,9 @@ if ( ! class_exists( 'WP_Error' ) ) {
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-runtime-capabilities.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-content-policy.php';
 
-assert( true === Static_Site_Importer_Content_Policy::validate_artifact( array( 'files' => array( array( 'path' => 'index.html', 'content' => '<main>HTML works without Markdown classes.</main>' ) ) ) ) );
-$markdown = Static_Site_Importer_Content_Policy::validate_artifact( array( 'files' => array( array( 'path' => 'notes.md', 'content' => '# Unsupported here' ) ) ) );
-$mdx = Static_Site_Importer_Content_Policy::validate_artifact( array( 'files' => array( array( 'path' => 'component.mdx', 'content' => '# Unsupported here' ) ) ) );
+assert( array() === ( Static_Site_Importer_Content_Policy::admit_artifact( array( 'files' => array( array( 'path' => 'index.html', 'content' => '<main>HTML works without Markdown classes.</main>' ) ) ) )['findings'] ?? null ) );
+$markdown = Static_Site_Importer_Content_Policy::admit_artifact( array( 'files' => array( array( 'path' => 'notes.md', 'content' => '# Unsupported here' ) ) ) );
+$mdx = Static_Site_Importer_Content_Policy::admit_artifact( array( 'files' => array( array( 'path' => 'component.mdx', 'content' => '# Unsupported here' ) ) ) );
 assert( $markdown instanceof WP_Error && 'static_site_importer_source_format_unsupported' === $markdown->get_error_code() );
 assert( $mdx instanceof WP_Error && 'static_site_importer_source_format_unsupported' === $mdx->get_error_code() );
 assert( str_contains( $markdown->get_error_message(), 'markdown conversion capability' ) );

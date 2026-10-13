@@ -204,7 +204,7 @@ class Static_Site_Importer_Diagnostic_Contract {
 			$diagnostic['loss_class']       = $loss_class;
 			$diagnostic['diagnostic_class'] = $diagnostic['loss_class'];
 			$diagnostic['repair_class']     = $diagnostic['repair_mode'];
-			$diagnostic['acceptability']    = self::diagnostic_acceptability( $diagnostic['loss_class'] );
+			$diagnostic['acceptability']    = Static_Site_Importer_Diagnostic_Loss_Classes::acceptability( $diagnostic['loss_class'] );
 			$source_diagnostic              = self::source_diagnostic_identity( $row, $diagnostic );
 			if ( ! empty( $source_diagnostic ) ) {
 				$diagnostic['source_diagnostic'] = $source_diagnostic;
@@ -1173,23 +1173,6 @@ class Static_Site_Importer_Diagnostic_Contract {
 		);
 
 		return $modes[ $repair_bucket ] ?? 'import-validation';
-	}
-
-	/**
-	 * Classify whether a diagnostic represents acceptable preservation or an imported-output defect.
-	 *
-	 * @param string $loss_class Normalized loss class.
-	 * @return string
-	 */
-	private static function diagnostic_acceptability( string $loss_class ): string {
-		if ( Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND === $loss_class ) {
-			return 'acceptable_preservation';
-		}
-		if ( in_array( $loss_class, array( Static_Site_Importer_Diagnostic_Loss_Classes::NATIVE_CONVERSION, Static_Site_Importer_Diagnostic_Loss_Classes::EDITABLE_APPROXIMATION ), true ) ) {
-			return 'acceptable_conversion';
-		}
-
-		return 'unacceptable_imported_output_defect';
 	}
 
 	/**

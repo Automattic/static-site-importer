@@ -53,7 +53,10 @@ class Static_Site_Importer_Receipt_Projection {
 		$diagnostics = Static_Site_Importer_Route_Head_Metadata::reword_handled_diagnostics(
 			Static_Site_Importer_Diagnostic_Projection::after_completed_entity_bindings(
 				array_merge(
-					is_array( $plan['diagnostics'] ?? null ) ? $plan['diagnostics'] : array(),
+					array_map(
+						static fn( $diagnostic ) => is_array( $diagnostic ) ? Static_Site_Importer_Diagnostic_Loss_Classes::reown_reported_loss( $diagnostic ) : $diagnostic,
+						is_array( $plan['diagnostics'] ?? null ) ? $plan['diagnostics'] : array()
+					),
 					Static_Site_Importer_Compiler_Diagnostic_Normalizer::normalize( is_array( $args['compiler_diagnostics'] ?? null ) ? $args['compiler_diagnostics'] : array() )
 				),
 				$receipt
@@ -91,6 +94,18 @@ class Static_Site_Importer_Receipt_Projection {
 				$diagnostics,
 				array_values( array_filter( $args['captured_interaction_diagnostics'], 'is_array' ) )
 			);
+		}
+		if ( is_array( $args['source_metadata']['intake_findings'] ?? null ) ) {
+			$diagnostics = array_merge(
+				$diagnostics,
+				array_values( array_filter( $args['source_metadata']['intake_findings'], 'is_array' ) )
+			);
+		}
+		// Font materialization reports a face it could not localize as a finding.
+		foreach ( is_array( $receipt['completed']['font_materialization']['diagnostics'] ?? null ) ? $receipt['completed']['font_materialization']['diagnostics'] : array() as $font_diagnostic ) {
+			if ( is_array( $font_diagnostic ) && array() !== Static_Site_Importer_Diagnostic_Loss_Classes::reported_loss( $font_diagnostic ) ) {
+				$diagnostics[] = $font_diagnostic;
+			}
 		}
 		if ( is_array( $args['theme_screenshot_evidence'] ?? null ) ) {
 			$preview_status = (string) ( $args['theme_screenshot_evidence']['status'] ?? '' );

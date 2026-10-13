@@ -703,6 +703,7 @@ if ( is_array( $descriptor ) ) {
 	$assert( str_contains( $main, "require_once __DIR__ . '/includes/source-route-redirect.php'" ) && str_contains( $main, 'SSI_EXAMPLE_SITE_Source_Route_Redirect::register();' ), 'main-file-registers-companion-source-route-redirect' );
 	$assert( isset( $files['ssi-example-site/includes/provider-form-runtime-v1.php'] ) && str_contains( $files['ssi-example-site/includes/provider-form-runtime-v1.php'], 'final class SSI_EXAMPLE_SITE_Provider_Form_Runtime_V1' ), 'provider-form-runtime-is-emitted-under-companion-namespace' );
 	$assert( isset( $files['ssi-example-site/includes/internal-link-runtime.php'] ) && str_contains( $files['ssi-example-site/includes/internal-link-runtime.php'], 'final class SSI_EXAMPLE_SITE_Internal_Link_Runtime' ), 'internal-link-runtime-is-emitted-under-companion-namespace' );
+	$assert( 1 !== preg_match( '/Static_Site_Importer_Capture_Evidence::[A-Z]/', $files['ssi-example-site/includes/internal-link-runtime.php'] ?? '' ) && str_contains( $files['ssi-example-site/includes/internal-link-runtime.php'] ?? '', var_export( Static_Site_Importer_Capture_Evidence::MEMBER_LOGIN, true ) ), 'companion-internal-link-runtime-inlines-capture-evidence-names' );
 	$assert( isset( $files['ssi-example-site/includes/source-route-redirect.php'] ) && str_contains( $files['ssi-example-site/includes/source-route-redirect.php'], 'final class SSI_EXAMPLE_SITE_Source_Route_Redirect' ) && ! str_contains( $files['ssi-example-site/includes/source-route-redirect.php'], 'Static_Site_Importer_Source_Route_Redirect' ), 'source-route-redirect-is-emitted-under-companion-namespace' );
 	$config = json_decode( (string) ( $files['ssi-example-site/companion.json'] ?? '' ), true );
 	$assert( is_array( $config ) && 'Example Site' === ( $config['site_name'] ?? '' ) && array( 'custom-hero' ) === ( $config['block_directories'] ?? null ) && 'ssi-example-site/ssi-example-site.php' === ( $config['plugin_file'] ?? '' ), 'companion-config-contains-imported-runtime-data' );
@@ -770,9 +771,9 @@ if ( is_array( $descriptor ) ) {
 	// tag but keeps its children, so a missing <details>/<summary> entry
 	// unrolls the closed disclosure and its hidden dialog body flows into the
 	// tile layout, clipping the sibling imagery below the fold (#1840).
-	$disclosure_markup = '<div style="position:relative;width:200px;height:200px;overflow:hidden"><details class="dla-disclosure"><summary aria-label="open">Gallery item</summary><div class="dla-dialog" style="height:500px">viewer</div></details><img src="https://example.test/a.jpg" width="200" height="200" alt=""></div>';
+	$disclosure_markup = '<div style="position:relative;width:200px;height:200px;overflow:hidden"><details class="source-disclosure"><summary aria-label="open">Gallery item</summary><div class="source-dialog" style="height:500px">viewer</div></details><img src="https://example.test/a.jpg" width="200" height="200" alt=""></div>';
 	$disclosure_output = $render_frontend( $render, array( 'content' => $disclosure_markup ) );
-	foreach ( array( '<details class="dla-disclosure">', '<summary aria-label="open">Gallery item</summary>', '<div class="dla-dialog" style="height:500px">viewer</div>', '</details>', '<img src="https://example.test/a.jpg" width="200" height="200" alt="">' ) as $disclosure_fragment ) {
+	foreach ( array( '<details class="source-disclosure">', '<summary aria-label="open">Gallery item</summary>', '<div class="source-dialog" style="height:500px">viewer</div>', '</details>', '<img src="https://example.test/a.jpg" width="200" height="200" alt="">' ) as $disclosure_fragment ) {
 		$assert( str_contains( $disclosure_output, $disclosure_fragment ), 'editable-render-preserves-closed-disclosure-wrappers', $disclosure_output );
 	}
 	$assert( ! str_contains( $disclosure_output, 'open=' ), 'editable-render-leaves-closed-disclosure-closed', $disclosure_output );

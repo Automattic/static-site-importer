@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Static Site Importer
  * Description: Materialize compiled website artifacts into WordPress block and classic themes.
- * Version: 1.28.19
+ * Version: 1.29.11
  * Author: Chris Huber
  * Requires at least: 7.1
  * Requires PHP: 8.2
@@ -17,7 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 define( 'STATIC_SITE_IMPORTER_PATH', plugin_dir_path( __FILE__ ) );
 define( 'STATIC_SITE_IMPORTER_URL', plugin_dir_url( __FILE__ ) );
-define( 'STATIC_SITE_IMPORTER_VERSION', '1.28.19' );
+define( 'STATIC_SITE_IMPORTER_VERSION', '1.29.11' );
 
 $static_site_importer_autoload = STATIC_SITE_IMPORTER_PATH . 'vendor/autoload.php';
 if ( is_readable( $static_site_importer_autoload ) ) {
@@ -63,6 +63,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-theme-materialization-strategy.php',
 	'class-static-site-importer-compilation-preparation.php',
 	'class-static-site-importer-classic-theme-projection.php',
+	'class-static-site-importer-capture-evidence.php',
 	'class-static-site-importer-client-script-policy-report.php',
 	'class-static-site-importer-client-script-policy.php',
 	'class-static-site-importer-document.php',
@@ -107,6 +108,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-provider-submission-evidence.php',
 	'class-static-site-importer-product-handoff-contract.php',
 	'class-static-site-importer-diagnostic-loss-classes.php',
+	'class-static-site-importer-source-findings.php',
 	'class-static-site-importer-compiler-diagnostic-normalizer.php',
 	'class-static-site-importer-import-report.php',
 	'class-static-site-importer-diagnostic-contract.php',
