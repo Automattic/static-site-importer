@@ -58,12 +58,39 @@ if ( ! function_exists( 'static_site_importer_cli_approved_plan' ) ) {
 	}
 }
 
+if ( ! function_exists( 'static_site_importer_cli_constrained_runtime' ) ) {
+	/**
+	 * Whether this runtime was started after its predecessor was killed for memory.
+	 *
+	 * @param bool|null $set New value, or null to read it.
+	 */
+	function static_site_importer_cli_constrained_runtime( ?bool $set = null ): bool {
+		static $constrained = false;
+		if ( null !== $set ) {
+			$constrained = $set;
+		}
+		return $constrained;
+	}
+}
+
 if ( ! function_exists( 'static_site_importer_cli_direct_artifact_run_policy' ) ) {
-	/** Use fanout only when this CLI runtime can launch receipt workers. */
+	/**
+	 * Use fanout only when this CLI runtime can launch receipt workers.
+	 *
+	 * A runtime that replaces one the kernel killed for memory works in the
+	 * smallest unit instead: no concurrent workers, one page per batch, and a
+	 * fresh runtime after every batch so no heap outlives it.
+	 */
 	function static_site_importer_cli_direct_artifact_run_policy( array $policy ): array {
 		// Each CLI host step is a fresh runtime, so yielding after composition
 		// reads the composed checkpoint into a clean heap.
 		$policy['yield_after_compose'] = true;
+		if ( static_site_importer_cli_constrained_runtime() ) {
+			$policy['compile_fanout']                 = null;
+			$policy['compile_in_process_pages']       = 1;
+			$policy['compile_batches_per_invocation'] = 1;
+			return $policy;
+		}
 		if ( function_exists( 'proc_open' ) && ! empty( $_SERVER['argv'][0] ) ) {
 			$policy['compile_fanout_pages'] = 20;
 			$policy['compile_workers']      = 4;
@@ -285,7 +312,10 @@ if ( ! function_exists( 'static_site_importer_cli_import' ) ) {
 	/** Run an import with the explicit, local WP-CLI report output seam. */
 	function static_site_importer_cli_import( array $input ): array {
 		$report = isset( $input['report'] ) ? (string) $input['report'] : '';
-		unset( $input['report'], $input['_cli_request_bundle_dir'] );
+		if ( ! empty( $input['_cli_constrained_runtime'] ) ) {
+			static_site_importer_cli_constrained_runtime( true );
+		}
+		unset( $input['report'], $input['_cli_request_bundle_dir'], $input['_cli_constrained_runtime'] );
 		$policy_added = function_exists( 'add_filter' );
 		if ( $policy_added ) {
 			add_filter( 'static_site_importer_direct_artifact_run_policy', 'static_site_importer_cli_direct_artifact_run_policy' );
@@ -1027,16 +1057,27 @@ if ( ! function_exists( 'static_site_importer_cli_write_step_request' ) ) {
 	}
 }
 
-if ( ! function_exists( 'static_site_importer_cli_import_run_fresh_runtime' ) ) {
-	/** @param array<string,mixed> $input @return array<string,mixed> */
-	function static_site_importer_cli_import_run_fresh_runtime( array $input ): array {
+if ( ! function_exists( 'static_site_importer_cli_import_run_fresh_runtime_once' ) ) {
+	/**
+	 * Run one fresh runtime and report whether the kernel killed it.
+	 *
+	 * @param array<string,mixed> $input Import step request.
+	 * @return array{result:array<string,mixed>,killed:bool}
+	 */
+	function static_site_importer_cli_import_run_fresh_runtime_once( array $input ): array {
 		$path = static_site_importer_cli_write_step_request( $input );
 		if ( is_wp_error( $path ) ) {
-			return static_site_importer_cli_import_error( (string) $path->get_error_code(), $path->get_error_message() );
+			return array(
+				'result' => static_site_importer_cli_import_error( (string) $path->get_error_code(), $path->get_error_message() ),
+				'killed' => false,
+			);
 		}
 		try {
 			if ( ! class_exists( 'WP_CLI' ) ) {
-				return static_site_importer_cli_import_error( 'static_site_importer_cli_runtime_unavailable', 'WP-CLI is unavailable for a fresh import runtime.' );
+				return array(
+					'result' => static_site_importer_cli_import_error( 'static_site_importer_cli_runtime_unavailable', 'WP-CLI is unavailable for a fresh import runtime.' ),
+					'killed' => false,
+				);
 			}
 			$spec    = static_site_importer_cli_import_fresh_runtime_spec( $path );
 			$raw     = WP_CLI::runcommand( $spec['command'], $spec['options'] );
@@ -1044,17 +1085,85 @@ if ( ! function_exists( 'static_site_importer_cli_import_run_fresh_runtime' ) ) 
 			$stderr  = is_object( $raw ) ? trim( (string) ( $raw->stderr ?? '' ) ) : '';
 			$decoded = static_site_importer_cli_decode_import_step( $stdout );
 			if ( ! is_array( $decoded ) ) {
-				return static_site_importer_cli_import_error( 'static_site_importer_cli_step_response_invalid', static_site_importer_cli_invalid_step_message( $raw ) );
+				return array(
+					'result' => static_site_importer_cli_import_error( 'static_site_importer_cli_step_response_invalid', static_site_importer_cli_invalid_step_message( $raw ) ),
+					'killed' => is_object( $raw ) && 137 === (int) ( $raw->return_code ?? 0 ),
+				);
 			}
 			if ( empty( $decoded['success'] ) && '' !== $stderr ) {
 				WP_CLI::warning( "Fresh import runtime diagnostics:\n" . substr( $stderr, 0, 5000 ) );
 			}
-			return $decoded;
+			return array(
+				'result' => $decoded,
+				'killed' => false,
+			);
 		} finally {
 			if ( is_file( $path ) ) {
 				unlink( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes the host-owned continuation request after the fresh runtime returns.
 			}
 		}
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_import_oom_error' ) ) {
+	/**
+	 * The terminal failure for a fresh runtime the kernel killed for memory.
+	 *
+	 * @param array<string,mixed> $input Import step request that was killed.
+	 * @return array<string,mixed>
+	 */
+	function static_site_importer_cli_import_oom_error( array $input ): array {
+		$error = static_site_importer_cli_import_error(
+			'static_site_importer_cli_import_runtime_out_of_memory',
+			'The import ran out of memory: a fresh import runtime was killed by signal 9 (out of memory) again after the import continued from its last durable checkpoint with smaller units. Rerun with more memory available to the import, or import fewer pages at a time.'
+		);
+		$import_id = (string) ( $input['source']['import_id'] ?? '' );
+		if ( '' !== $import_id ) {
+			$error['error']['data'] = array(
+				'import_id' => $import_id,
+				'resumable' => true,
+			);
+		}
+		return $error;
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_import_run_fresh_runtime' ) ) {
+	/**
+	 * Run one import step in a fresh runtime, recovering once from a memory kill.
+	 *
+	 * SIGKILL of a fresh runtime is the kernel's out-of-memory killer. Everything
+	 * the runtime finished is already a durable checkpoint, so the step is
+	 * repeated once with the smallest units and every later step of this import
+	 * keeps them. A kill after that is final and reported as out of memory.
+	 *
+	 * @param array<string,mixed> $input Import step request.
+	 * @return array<string,mixed>
+	 */
+	function static_site_importer_cli_import_run_fresh_runtime( array $input ): array {
+		$constrained = static_site_importer_cli_constrained_runtime();
+		$attempt     = static_site_importer_cli_import_run_fresh_runtime_once( $constrained ? array_merge( $input, array( '_cli_constrained_runtime' => true ) ) : $input );
+		if ( ! $attempt['killed'] ) {
+			return $attempt['result'];
+		}
+		if ( $constrained ) {
+			return static_site_importer_cli_import_oom_error( $input );
+		}
+		static_site_importer_cli_constrained_runtime( true );
+		if ( class_exists( 'WP_CLI' ) ) {
+			WP_CLI::warning( 'A fresh import runtime was killed by signal 9 (likely out of memory); continuing once from the last durable checkpoint with smaller units.' );
+		}
+		$retry = static_site_importer_cli_import_run_fresh_runtime_once( array_merge( $input, array( '_cli_constrained_runtime' => true ) ) );
+		if ( $retry['killed'] ) {
+			return static_site_importer_cli_import_oom_error( $input );
+		}
+		$code = (string) ( $retry['result']['error']['code'] ?? '' );
+		// A materialization the killed runtime had already claimed is never repeated,
+		// so its retry can only report that the claim exists; the cause is the kill.
+		if ( in_array( $code, array( 'static_site_importer_direct_artifact_materialization_ambiguous', 'static_site_importer_direct_artifact_lifecycle_preparation_ambiguous' ), true ) ) {
+			return static_site_importer_cli_import_oom_error( $input );
+		}
+		return $retry['result'];
 	}
 }
 
@@ -1219,6 +1328,7 @@ if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 	 */
 	function static_site_importer_cli_run_import_host( array $input, ?callable $invoke = null, int $max_steps = 0, ?callable $emit_progress = null, string $resume_command = '' ): array {
 		$invoke      = $invoke ?? 'static_site_importer_cli_import_run_fresh_runtime';
+		static_site_importer_cli_constrained_runtime( false );
 		$steps       = 0;
 		$stalled     = 0;
 		$fingerprint = '';
