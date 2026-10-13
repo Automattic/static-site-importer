@@ -11,10 +11,10 @@ export const URL_LOOP_INTAKE_SCHEMA = 'static-site-importer/url-loop-intake/v1';
 export const CAPTURE_RECEIPT_SCHEMA = 'blocks-engine-capture/capture-receipt/v1';
 export const MATRIX_EVIDENCE_READINESS_SCHEMA = 'static-site-importer/fixture-matrix-runtime-evidence-summary/v1';
 export const DLA_RELEASE = Object.freeze({
-  version: 'v0.6.5',
-  commit: '880575b81cd837322520d05d260f5d682506afbb',
-  asset: 'https://github.com/Automattic/data-liberation-agent/releases/download/v0.6.5/data-liberation-0.6.5.tgz',
-  sha256: 'dd6ce344a37fbe7e06af973aec0cf576cdb2fc88f3a4e155e49723953c4200b8',
+  version: 'v0.27.0',
+  commit: '2986ca1e386e994696d41a47e94edb8dd3665c43',
+  asset: 'https://github.com/Automattic/data-liberation-agent/releases/download/v0.27.0/data-liberation-0.27.0.tgz',
+  sha256: '2611d686a804f0db20c1306fbfc807d8785a62040e462a555c2f02fb53cfedc3',
 });
 
 export function validateCapture(input = {}) {
@@ -184,7 +184,7 @@ export async function runUrlLoopIntake(input = {}, dependencies = {}) {
 function normalizeUrl(value) { const url = new URL(String(value || '')); if (!['http:', 'https:'].includes(url.protocol)) throw new Error('url must be a public http(s) URL'); return url.href; }
 function normalizeDlaConfig(input) {
   const identity = { ...DLA_RELEASE, executable: 'data-liberation' };
-  if (input.dlaVersion && input.dlaVersion !== identity.version || input.dlaCommit && input.dlaCommit !== identity.commit || input.dlaAsset && input.dlaAsset !== identity.asset || input.dlaSha256 && input.dlaSha256 !== identity.sha256) throw new Error('declared DLA release identity does not match v0.6.5');
+  if (input.dlaVersion && input.dlaVersion !== identity.version || input.dlaCommit && input.dlaCommit !== identity.commit || input.dlaAsset && input.dlaAsset !== identity.asset || input.dlaSha256 && input.dlaSha256 !== identity.sha256) throw new Error(`declared DLA release identity does not match ${DLA_RELEASE.version}`);
   const toolchain = input.runtimeToolchain || {};
   const node = path.resolve(toolchain.node || process.execPath);
   const launcher = path.resolve(toolchain.npx || path.join(path.dirname(node), 'npx'));
