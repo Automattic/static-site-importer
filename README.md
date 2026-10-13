@@ -92,11 +92,13 @@ Producer-declared WordPress.org metrics bind directly to native Paragraph and He
 
 ## Content-Only Security Boundary
 
-All HTML, folders, ZIPs, URLs, and website artifact objects are untrusted static content. SSI accepts only explicit static asset extensions and server-side source markers never reach compilation. One decision, `Static_Site_Importer_Content_Policy::admit_artifact()`, runs once per import where the artifact is frozen for compilation, whatever the intake (REST files or ZIP, staged ZIP, CLI request bundle, provided artifact):
+All HTML, folders, ZIPs, URLs, and website artifact objects are untrusted static content. SSI accepts only explicit static asset extensions and server-side source markers never reach compilation. One decision, `Static_Site_Importer_Content_Policy::admit_artifact()`, runs once per import where the artifact is frozen for compilation, whatever the intake (REST files or ZIP, staged ZIP, CLI request bundle, URL collection, provided artifact):
 
 - a non-static asset is skipped with a `static_site_importer_non_static_file_skipped` finding;
 - a non-entry page that is not static content (a server page, or HTML carrying server code) is dropped with a `static_site_importer_non_static_page_dropped` finding, and the remaining pages import;
 - the entrypoint (the declared one, or a root `index`/`default`/`home` document) and the root `_redirects` manifest fail closed with `static_site_importer_executable_source_rejected`. Compiler-produced companion payloads are independently revalidated before any generated plugin file is written or activated. Companion block renders accept static HTML only; SSI emits its own fixed PHP wrapper to output that markup, so source PHP cannot be preserved or executed. Existing payloads that relied on PHP render templates or PHP companion assets must migrate their behavior to blocks, data bindings, or client-side JavaScript.
+
+A URL import admits each collected batch through the same decision, with the site entry URL's page as the entrypoint. Its fetch guards stay its own: a private or reserved address, a disallowed scheme, embedded credentials, a TLS failure, a deadline, or a failure to fetch the site entry fails the import. A non-entry route that cannot be fetched (an HTTP error status, an oversize or empty response, a timeout, a client-rendered shell) is left out with a `static_site_importer_url_route_omitted` finding, and an asset that cannot be fetched keeps its source URL.
 
 When a generated artifact contains full-document HTML, Static Site Importer routes document metadata, head content, styles, scripts, and page body fragments to the right WordPress destinations before calling the conversion stack. A `core/html` block in imported page content is therefore a materialization/conversion quality issue to fix in this stack, not a product-layer workaround to hide upstream.
 
@@ -542,6 +544,7 @@ Degrade codes are classified by code, before any explicit `loss_class`, contract
 | `static_site_importer_non_static_file_skipped` | `omitted_unit` | `file` | `static-site-importer` |
 | `static_site_importer_non_static_page_dropped` | `omitted_unit` | `page` | `static-site-importer` |
 | `static_site_importer_archive_entry_skipped` | `omitted_unit` | `file` | `static-site-importer` |
+| `static_site_importer_url_route_omitted` | `omitted_unit` | `route` | `static-site-importer` |
 | `font_face_unavailable` | `omitted_unit` | `asset` | `static-site-importer` |
 | `omitted_artifact_files`, `omitted_artifact_file` | `omitted_unit` | `file` | `blocks-engine` |
 | `route_capture_failed` | `omitted_unit` | `route` | `data-liberation-agent` |

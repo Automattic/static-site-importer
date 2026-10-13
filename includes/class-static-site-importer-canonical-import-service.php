@@ -401,6 +401,8 @@ class Static_Site_Importer_Canonical_Import_Service {
 		$args['_static_site_importer_precompiled_source']         = true;
 		$args['import_run_id']                                    = $runtime['record']['identity'];
 		$args['_static_site_importer_lifecycle_reference_backed'] = true;
+		// The URL run admitted its collection once; its findings join this import's report.
+		$args = Static_Site_Importer_Content_Policy::with_intake_findings( $args, is_array( $runtime['terminal']['intake_findings'] ?? null ) ? $runtime['terminal']['intake_findings'] : array() );
 
 		$result = Static_Site_Importer_Theme_Generator::import_website_artifact( $runtime['terminal']['artifact'], $args );
 		if ( is_wp_error( $result ) ) {
@@ -533,7 +535,7 @@ class Static_Site_Importer_Canonical_Import_Service {
 			$continuation,
 			array(
 				'plan'        => $terminal['plan'],
-				'diagnostics' => array_merge( is_array( $continuation['url_batch_run']['diagnostics'] ?? null ) ? $continuation['url_batch_run']['diagnostics'] : array(), is_array( $terminal['diagnostics'] ?? null ) ? $terminal['diagnostics'] : array() ),
+				'diagnostics' => array_merge( is_array( $continuation['url_batch_run']['diagnostics'] ?? null ) ? $continuation['url_batch_run']['diagnostics'] : array(), is_array( $terminal['diagnostics'] ?? null ) ? $terminal['diagnostics'] : array(), is_array( $terminal['intake_findings'] ?? null ) ? $terminal['intake_findings'] : array() ),
 				'quality'     => is_array( $terminal['quality'] ?? null ) ? $terminal['quality'] : array(),
 				'source'      => array(
 					'type'       => 'url',

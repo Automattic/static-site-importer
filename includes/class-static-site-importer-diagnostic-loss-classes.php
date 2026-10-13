@@ -218,6 +218,12 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 			'unit'         => 'file',
 			'owning_layer' => self::OWNING_LAYER_STATIC_SITE_IMPORTER,
 		),
+		// A non-entry URL route that could not be collected.
+		'static_site_importer_url_route_omitted'         => array(
+			'loss_class'   => self::OMITTED_UNIT,
+			'unit'         => 'route',
+			'owning_layer' => self::OWNING_LAYER_STATIC_SITE_IMPORTER,
+		),
 		// A web font face that could not be fetched or resolved is dropped, or
 		// its remote stylesheet import is kept instead of a local copy.
 		'font_face_unavailable'                          => array(

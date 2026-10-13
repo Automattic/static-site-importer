@@ -273,6 +273,15 @@ $more_intake_rows = array(
 		'metrics'     => array( 'uncompressed_bytes' => 30000000 ),
 		'message'     => 'Skipped website/assets/clip.mp4: the archive entry exceeds the entry_uncompressed_bytes limit, so references to it are unresolved.',
 	),
+	array(
+		'code'        => 'static_site_importer_url_route_omitted',
+		'type'        => 'static-site-importer',
+		'severity'    => 'warning',
+		'stage'       => 'url_collection',
+		'url'         => 'https://example.com/gone/',
+		'reason_code' => 'static_site_importer_url_http_status',
+		'message'     => 'Omitted route https://example.com/gone/ because it could not be collected (The URL returned HTTP status 404.); the remaining routes import.',
+	),
 );
 // Compiler file drops, as Blocks Engine emits them in the plan; re-owned as omitted files.
 $compiler_drop_rows = array(
@@ -351,6 +360,7 @@ $expected = array(
 	'static_site_importer_non_static_file_skipped'   => array( 'omitted_unit', 'file', 'static-site-importer', 'website/assets/style.php' ),
 	'static_site_importer_non_static_page_dropped'   => array( 'omitted_unit', 'page', 'static-site-importer', 'website/blog/feed.php' ),
 	'static_site_importer_archive_entry_skipped'     => array( 'omitted_unit', 'file', 'static-site-importer', 'website/assets/clip.mp4' ),
+	'static_site_importer_url_route_omitted'         => array( 'omitted_unit', 'route', 'static-site-importer', 'https://example.com/gone/' ),
 	'font_face_unavailable'                          => array( 'omitted_unit', 'asset', 'static-site-importer', 'https://fonts.example.test/inter.woff2' ),
 	'omitted_artifact_files'                         => array( 'omitted_unit', 'file', 'blocks-engine', 'artifact_normalization' ),
 	'omitted_artifact_file'                          => array( 'omitted_unit', 'file', 'blocks-engine', 'artifact_normalization' ),
@@ -493,12 +503,12 @@ foreach ( $expected as $code => list( $loss_class, $unit, $owning_layer, $locati
 $assert( array( 'bytes' => 70000, 'limit_bytes' => 65536 ) === ( $compact['runtime_entity_dropped']['metrics'] ?? null ), 'compact-row-keeps-metrics' );
 $assert( '/manifest.json' === ( $compact['wordpress_site_plan_omitted_link_declaration']['value'] ?? '' ), 'compact-row-keeps-value' );
 $assert( 1 === ( $summary['omitted_page_count'] ?? null ), 'compact-omitted-page-count' );
-$assert( 32 === ( $summary['loss_count'] ?? null ), 'compact-loss-count', wp_json_encode_fallback( $summary['loss_counts'] ?? null ) );
+$assert( 33 === ( $summary['loss_count'] ?? null ), 'compact-loss-count', wp_json_encode_fallback( $summary['loss_counts'] ?? null ) );
 $assert(
 	array(
 		'page_compile_omitted'         => 1,
 		'degraded_unit'                => 11,
-		'omitted_unit'                 => 20,
+		'omitted_unit'                 => 21,
 		'unsupported_loss'             => 0,
 		'importer_materialization_bug' => 0,
 	) === ( $summary['loss_counts'] ?? null ),
