@@ -219,6 +219,22 @@ $plan_rows = array(
 		'source'                 => $be_compiler,
 	),
 	array(
+		'code'                    => 'runtime_declaration_rejected',
+		'type'                    => 'static-site-importer',
+		'severity'                => 'warning',
+		'stage'                   => 'entity_materialization',
+		'unit'                    => 'item',
+		'owning_layer'            => 'blocks-engine',
+		'message'                 => 'The forms declaration was dropped: 1 of 1 declared forms failed SSI provider validation ($.forms[0].control_topology: control_topology violates the producer contract). The imported pages keep their converted source markup and its runtime bindings are ignored.',
+		'source_path'             => 'website/contact.html',
+		'path'                    => '$.forms[0].control_topology',
+		'declaration_id'          => str_repeat( 'a', 64 ),
+		'entity_collection'       => 'forms',
+		'declared_count'          => 1,
+		'accepted_count'          => 0,
+		'rejected_count'          => 1,
+	),
+	array(
 		'code'          => 'document_head_attribute_dropped',
 		'severity'      => 'warning',
 		'unit'          => 'item',
@@ -371,6 +387,7 @@ $expected = array(
 	'runtime_declaration_dropped'                    => array( 'omitted_unit', 'declaration', 'blocks-engine', 'website/shop.html' ),
 	'runtime_entity_binding_unanchored'              => array( 'omitted_unit', 'binding', 'blocks-engine', 'website/shop.html' ),
 	'runtime_form_graph_rejected'                    => array( 'omitted_unit', 'item', 'blocks-engine', 'website/contact.html' ),
+	'runtime_declaration_rejected'                   => array( 'degraded_unit', 'item', 'blocks-engine', 'website/contact.html' ),
 	'document_head_attribute_dropped'                => array( 'omitted_unit', 'item', 'blocks-engine', 'website/index.html' ),
 	'document_head_element_dropped'                  => array( 'omitted_unit', 'item', 'blocks-engine', 'website/index.html' ),
 	'static_site_importer_non_static_file_skipped'   => array( 'omitted_unit', 'file', 'static-site-importer', 'website/assets/style.php' ),
@@ -519,11 +536,11 @@ foreach ( $expected as $code => list( $loss_class, $unit, $owning_layer, $locati
 $assert( array( 'bytes' => 70000, 'limit_bytes' => 65536 ) === ( $compact['runtime_entity_dropped']['metrics'] ?? null ), 'compact-row-keeps-metrics' );
 $assert( '/manifest.json' === ( $compact['wordpress_site_plan_omitted_link_declaration']['value'] ?? '' ), 'compact-row-keeps-value' );
 $assert( 1 === ( $summary['omitted_page_count'] ?? null ), 'compact-omitted-page-count' );
-$assert( 33 === ( $summary['loss_count'] ?? null ), 'compact-loss-count', wp_json_encode_fallback( $summary['loss_counts'] ?? null ) );
+$assert( 34 === ( $summary['loss_count'] ?? null ), 'compact-loss-count', wp_json_encode_fallback( $summary['loss_counts'] ?? null ) );
 $assert(
 	array(
 		'page_compile_omitted'         => 1,
-		'degraded_unit'                => 11,
+		'degraded_unit'                => 12,
 		'omitted_unit'                 => 21,
 		'unsupported_loss'             => 0,
 		'importer_materialization_bug' => 0,

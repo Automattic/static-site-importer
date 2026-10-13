@@ -2060,7 +2060,7 @@ $form_row_rejected = static function ( $lifecycle ) use ( $form_declaration_id )
 	if ( is_wp_error( $lifecycle ) || isset( $lifecycle['entities'][ $form_declaration_id ] ) ) {
 		return array();
 	}
-	return array_values( array_filter( $lifecycle['diagnostics'] ?? array(), static fn( $row ): bool => is_array( $row ) && 'runtime_entity_rows_rejected' === ( $row['code'] ?? '' ) && $form_declaration_id === ( $row['declaration_id'] ?? '' ) ) )[0] ?? array();
+	return array_values( array_filter( $lifecycle['diagnostics'] ?? array(), static fn( $row ): bool => is_array( $row ) && 'runtime_declaration_rejected' === ( $row['code'] ?? '' ) && $form_declaration_id === ( $row['declaration_id'] ?? '' ) ) )[0] ?? array();
 };
 $malformed_entity_lifecycle = $prepare_lifecycle->invoke( null, $malformed_entity_plan, array() );
 $malformed_entity_finding   = $form_row_rejected( $malformed_entity_lifecycle );
