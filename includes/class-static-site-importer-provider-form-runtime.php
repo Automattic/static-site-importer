@@ -576,6 +576,9 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	 * content.
 	 */
 	public static function project_wrapper_classes( string $html ): string {
+		// A telephone field without the country selector renders as a plain tel
+		// input ($is_plain_tel). It has no shell, carrier, or prefix box for those
+		// hooks to style.
 		$wrapper_layers            = array();
 		$field_ancestors           = array();
 		$choice_box                = array();
@@ -585,8 +588,6 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		$phone_destination_classes = array();
 		$textarea_rows             = null;
 		$is_phone                  = (bool) preg_match( '/\bclass=(["\'])[^"\']*\bgrunion-field-(?:phone|telephone)-wrap\b[^"\']*\1/i', $html );
-		// A telephone field without the country selector renders as a plain tel
-		// input. It has no shell, carrier, or prefix box for those hooks to style.
 		$is_plain_tel              = $is_phone && ! str_contains( $html, 'jetpack-field__input-phone-wrapper' );
 		$projected                 = preg_replace_callback(
 			'/\bclass=(["\'])(.*?)\1/s',
