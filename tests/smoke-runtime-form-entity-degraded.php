@@ -4,10 +4,10 @@
  * (Automattic/static-site-importer#2054).
  *
  * A forms runtime declaration whose only form violates the producer control
- * topology contract is skipped with one `runtime_entity_rows_rejected` finding;
- * the page keeps its converted source form, the other declarations still
- * materialize, and the finding reaches Receipt_Projection::compose() with its
- * unit, path and owning layer.
+ * topology contract is dropped with one `runtime_declaration_rejected` finding
+ * (a degraded unit and an accepted, reported loss); the page keeps its converted
+ * source form, the other declarations still materialize, and the finding
+ * reaches Receipt_Projection::compose() with its unit, path and owning layer.
  *
  * Run from the repository root:
  * php tests/smoke-runtime-form-entity-degraded.php
@@ -111,7 +111,7 @@ $assert( ! is_wp_error( $lifecycle ), 'lifecycle: a form that violates the produ
 $lifecycle = is_wp_error( $lifecycle ) ? array() : $lifecycle;
 $assert( ! isset( $lifecycle['entities'][ $invalid_id ] ) && ! isset( $lifecycle['dependencies'][ $invalid_id ] ), 'lifecycle: the rejected form never reaches the provider' );
 $assert( array( 'form.newsletter' ) === array_column( $lifecycle['entities'][ $valid_id ]['manifest']['forms'] ?? array(), 'selector' ), 'lifecycle: the other forms declaration still materializes' );
-$findings = array_values( array_filter( $lifecycle['diagnostics'] ?? array(), static fn ( $row ): bool => is_array( $row ) && 'runtime_entity_rows_rejected' === ( $row['code'] ?? '' ) ) );
+$findings = array_values( array_filter( $lifecycle['diagnostics'] ?? array(), static fn ( $row ): bool => is_array( $row ) && 'runtime_declaration_rejected' === ( $row['code'] ?? '' ) ) );
 $finding  = $findings[0] ?? array();
 $assert( 1 === count( $findings ) && $invalid_id === ( $finding['declaration_id'] ?? '' ), 'lifecycle: one finding names the rejected declaration', wp_json_encode( $lifecycle['diagnostics'] ?? null ) );
 $assert(
@@ -150,15 +150,25 @@ $projection = Static_Site_Importer_Receipt_Projection::compose( $receipt, array(
 $report     = $projection['report'];
 $quality    = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, array() );
 $stored     = json_decode( (string) json_encode( $report->to_array() ), true );
-$rows       = array_values( array_filter( $stored['diagnostics'] ?? array(), static fn ( $row ): bool => is_array( $row ) && 'runtime_entity_rows_rejected' === ( $row['code'] ?? '' ) ) );
+$rows       = array_values( array_filter( $stored['diagnostics'] ?? array(), static fn ( $row ): bool => is_array( $row ) && 'runtime_declaration_rejected' === ( $row['code'] ?? '' ) ) );
 $row        = $rows[0] ?? array();
-$assert( 1 === count( $rows ), 'compose: the runtime_entity_rows_rejected finding reaches the stored report' );
+$assert( 1 === count( $rows ), 'compose: the runtime_declaration_rejected finding reaches the stored report' );
 $assert(
-	'item' === ( $row['unit'] ?? '' ) && 'blocks-engine' === ( $row['owning_layer'] ?? '' ) && '$.forms[0].control_topology' === ( $row['location'] ?? '' ) && 'preserved_runtime_island' === ( $row['loss_class'] ?? '' ) && 'acceptable_preservation' === ( $row['acceptability'] ?? '' ),
-	'compose: the finding is a preserved form at its declaration path, owned by Blocks Engine',
+	'item' === ( $row['unit'] ?? '' ) && 'blocks-engine' === ( $row['owning_layer'] ?? '' ) && '$.forms[0].control_topology' === ( $row['location'] ?? '' ) && 'degraded_unit' === ( $row['loss_class'] ?? '' ) && 'accepted_reported_loss' === ( $row['acceptability'] ?? '' ),
+	'compose: the finding is a degraded unit at its declaration path, an accepted reported loss owned by Blocks Engine',
 	wp_json_encode( $row )
 );
 $assert( false === $quality['fail_import'], 'compose: a rejected form does not fail the import' );
+
+// Each producer graph that breaks its contract drops its declaration the same way.
+foreach ( array( 'layout_graph', 'presentation_graph', 'sibling_relations' ) as $graph_key ) {
+	$graph_id               = str_repeat( 'f', 64 );
+	$graph_form             = $form( 'website/contact.html', 'form.contact' );
+	$graph_form[ $graph_key ] = array( 'schema' => 'not-a-producer-contract' );
+	$graph_lifecycle        = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( array( 'runtime_declarations' => array( $declaration( $graph_id, 'website/contact.html', array( $graph_form ) ) ) ), array() );
+	$graph_findings         = is_wp_error( $graph_lifecycle ) ? array() : array_values( array_filter( $graph_lifecycle['diagnostics'] ?? array(), static fn ( $row ): bool => is_array( $row ) && 'runtime_declaration_rejected' === ( $row['code'] ?? '' ) ) );
+	$assert( ! is_wp_error( $graph_lifecycle ) && ! isset( $graph_lifecycle['entities'][ $graph_id ] ) && 1 === count( $graph_findings ) && '$.forms[0].' . $graph_key === ( $graph_findings[0]['path'] ?? '' ), 'graphs: an invalid ' . $graph_key . ' drops its declaration with a finding', is_wp_error( $graph_lifecycle ) ? $graph_lifecycle->get_error_message() : wp_json_encode( $graph_lifecycle['diagnostics'] ?? null ) );
+}
 
 // Collections without a source-form fallback keep rejecting a declaration with no valid row.
 $products = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle(

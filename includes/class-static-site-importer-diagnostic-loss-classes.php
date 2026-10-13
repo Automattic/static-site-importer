@@ -194,6 +194,15 @@ class Static_Site_Importer_Diagnostic_Loss_Classes {
 			'unit'         => 'item',
 			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
 		),
+		// A runtime entity declaration the importer's provider validation rejected
+		// (a layout graph, presentation graph or control topology that breaks the
+		// Blocks Engine producer contract). The declaration is dropped, its element
+		// keeps the compiled static markup, and its bindings are ignored.
+		'runtime_declaration_rejected'                   => array(
+			'loss_class'   => self::DEGRADED_UNIT,
+			'unit'         => 'item',
+			'owning_layer' => self::OWNING_LAYER_BLOCKS_ENGINE,
+		),
 		'document_head_attribute_dropped'                => array(
 			'loss_class'   => self::OMITTED_UNIT,
 			'unit'         => 'item',
