@@ -609,6 +609,7 @@ Degrade codes SSI and Blocks Engine own are classified by code, before any expli
 | `runtime_declaration_dropped` | `omitted_unit` | `declaration` | `blocks-engine` |
 | `runtime_entity_binding_unanchored` | `omitted_unit` | `binding` | `blocks-engine` |
 | `runtime_form_graph_rejected` | `omitted_unit` | `item` | `blocks-engine` |
+| `runtime_declaration_rejected` | `degraded_unit` | `item` | `blocks-engine` |
 | `document_head_attribute_dropped` | `omitted_unit` | `item` | `blocks-engine` |
 | `document_head_element_dropped` | `omitted_unit` | `item` | `blocks-engine` |
 | `static_site_importer_non_static_file_skipped` | `omitted_unit` | `file` | `static-site-importer` |

@@ -448,7 +448,7 @@ namespace {
 	unset( $unused_entity );
 	$unmappable_lifecycle = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $unmappable_plan, array() );
 	$unmappable_codes     = is_wp_error( $unmappable_lifecycle ) ? array() : array_column( $unmappable_lifecycle['diagnostics'] ?? array(), 'code' );
-	$assert( ! is_wp_error( $unmappable_lifecycle ) && ! isset( $unmappable_lifecycle['entities'][ $mixed_id ] ) && array( 'runtime_entity_rows_rejected' ) === $unmappable_codes, 'forms-declaration-without-one-valid-row-is-skipped-with-a-finding' );
+	$assert( ! is_wp_error( $unmappable_lifecycle ) && ! isset( $unmappable_lifecycle['entities'][ $mixed_id ] ) && array( 'runtime_declaration_rejected' ) === $unmappable_codes, 'forms-declaration-without-one-valid-row-is-skipped-with-a-finding' );
 
 	// --- Manifest-schema declarations carry content-hash refs, not entity bodies.
 	// Their rows are validated once resolved, not as empty ref rows here.
@@ -485,7 +485,17 @@ namespace {
 	$assert( ! is_wp_error( $ref_expanded ) && array( 'form.subscribe' ) === array_column( $ref_expanded['entities'][ $ref_id ]['manifest']['forms'] ?? array(), 'selector' ), 'manifest-ref-declaration-validates-resolved-entities' );
 	$ref_unmappable = $ref_resolved;
 	$ref_unmappable['runtime_entity_resolution'][0]['entities'][0]['controls'] = array( $submit_control );
-	$assert( ! is_wp_error( $ref_lifecycle ) && is_wp_error( Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $ref_lifecycle, $ref_unmappable ) ), 'manifest-ref-declaration-still-rejects-unmappable-resolved-entities' );
+	$ref_degraded = is_wp_error( $ref_lifecycle ) ? $ref_lifecycle : Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $ref_lifecycle, $ref_unmappable );
+	$assert( ! is_wp_error( $ref_degraded ) && ! isset( $ref_degraded['entities'][ $ref_id ] ) && ! isset( $ref_degraded['dependencies'][ $ref_id ] ), 'manifest-ref-declaration-drops-a-declaration-with-no-valid-resolved-form', (string) wp_json_encode( is_wp_error( $ref_degraded ) ? $ref_degraded->get_error_data() : null ) );
+	$ref_degraded_codes = is_wp_error( $ref_degraded ) ? array() : array_column( $ref_degraded['diagnostics'] ?? array(), 'code' );
+	$assert( array( 'runtime_declaration_rejected' ) === $ref_degraded_codes, 'manifest-ref-declaration-reports-the-dropped-declaration-once', (string) wp_json_encode( $ref_degraded_codes ) );
+	$ref_partial                                                   = $ref_resolved;
+	$ref_partial['runtime_entity_resolution'][0]['entities']       = array( $mixed_entity( 'form.subscribe', array( $mappable_control, $submit_control ) ), $mixed_entity( 'form.search', array( $submit_control ) ) );
+	$ref_partial_expanded                                          = is_wp_error( $ref_lifecycle ) ? $ref_lifecycle : Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $ref_lifecycle, $ref_partial );
+	$assert( ! is_wp_error( $ref_partial_expanded ) && array( 'form.subscribe' ) === array_column( $ref_partial_expanded['entities'][ $ref_id ]['manifest']['forms'] ?? array(), 'selector' ) && array( 'runtime_entity_rows_rejected' ) === array_column( $ref_partial_expanded['diagnostics'] ?? array(), 'code' ), 'manifest-ref-declaration-keeps-the-valid-resolved-forms' );
+	$ref_manifest_level = $ref_resolved;
+	$ref_manifest_level['runtime_entity_resolution'][0]['entities'] = 'not-a-list';
+	$assert( ! is_wp_error( $ref_lifecycle ) && is_wp_error( Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $ref_lifecycle, $ref_manifest_level ) ), 'manifest-ref-declaration-still-rejects-a-malformed-resolution' );
 
 	$legacy_lifecycle = array( 'entities' => array( 'legacy' => array( 'manifest' => array( 'forms' => array( $manifest_entity ) ) ) ) );
 	$assert( $legacy_lifecycle === Static_Site_Importer_Entity_Materializer_Registry::with_resolved_binding_manifests( $legacy_lifecycle, array( 'runtime_declarations' => array() ) ), 'direct-payload-entity-lifecycle-remains-unchanged-without-manifests' );

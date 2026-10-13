@@ -564,11 +564,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 * Report the rows of a runtime entity declaration a provider validator rejected.
 	 *
 	 * Entity validators are per row by contract, so the declaration is still
-	 * materialized from the rows that validated, and a forms declaration with
-	 * no valid row is skipped. The rejected rows keep the converted source
-	 * markup already on the page, which is the same loss class as a provider
-	 * decline. The finding names the first rejected row's path; `errors` lists
-	 * every row.
+	 * materialized from the rows that validated (`runtime_entity_rows_rejected`),
+	 * and a forms declaration with no valid row is dropped whole
+	 * (`runtime_declaration_rejected`, a degraded unit and an accepted, reported
+	 * loss). The rejected rows keep the converted source markup already on the
+	 * page and their bindings are ignored. The finding names the first rejected
+	 * row's path; `errors` lists every row.
 	 *
 	 * @param string              $declaration_id Declaration reconciliation identity.
 	 * @param array<string,mixed> $adapter        Adapter definition.
@@ -583,13 +584,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$errors     = array_values( array_filter( $errors, 'is_array' ) );
 		$path       = (string) ( $errors[0]['path'] ?? '' );
 		$reason     = (string) ( $errors[0]['message'] ?? '' );
+		$dropped    = 0 === $accepted;
 		return array(
-			'id'                      => 'runtime-entity-rows-rejected-' . hash( 'sha256', $declaration_id . "\n" . $collection ),
-			'code'                    => 'runtime_entity_rows_rejected',
+			'id'                      => ( $dropped ? 'runtime-declaration-rejected-' : 'runtime-entity-rows-rejected-' ) . hash( 'sha256', $declaration_id . "\n" . $collection ),
+			'code'                    => $dropped ? 'runtime_declaration_rejected' : 'runtime_entity_rows_rejected',
 			'type'                    => 'static-site-importer',
 			'severity'                => 'warning',
 			'stage'                   => 'entity_materialization',
-			'loss_class'              => Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
+			'loss_class'              => $dropped ? Static_Site_Importer_Diagnostic_Loss_Classes::DEGRADED_UNIT : Static_Site_Importer_Diagnostic_Loss_Classes::PRESERVED_RUNTIME_ISLAND,
 			'unit'                    => 'item',
 			'owning_layer'            => Static_Site_Importer_Diagnostic_Loss_Classes::OWNING_LAYER_BLOCKS_ENGINE,
 			'path'                    => $path,
@@ -601,7 +603,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'accepted_count'          => $accepted,
 			'rejected_count'          => $rejected,
 			'errors'                  => array_slice( $errors, 0, 16 ),
-			'message'                 => $rejected . ' of ' . $declared . ' declared ' . $collection . ' failed SSI provider validation and were skipped (' . $path . ': ' . $reason . '); ' . $accepted . ' materialized. The imported pages keep their converted source markup for the skipped rows.',
+			'message'                 => $dropped
+				? 'The ' . $collection . ' declaration was dropped: ' . $rejected . ' of ' . $declared . ' declared ' . $collection . ' failed SSI provider validation (' . $path . ': ' . $reason . '). The imported pages keep their converted source markup and its runtime bindings are ignored.'
+				: $rejected . ' of ' . $declared . ' declared ' . $collection . ' failed SSI provider validation and were skipped (' . $path . ': ' . $reason . '); ' . $accepted . ' materialized. The imported pages keep their converted source markup for the skipped rows.',
 		);
 	}
 
@@ -722,6 +726,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				$resolved_direct_entities[ $id ] = $declaration['payload']['entities'];
 			}
 		}
+		$dropped = array();
 		foreach ( $lifecycle['entities'] as $id => &$prepared ) {
 			if ( ! isset( $manifests[ $id ] ) ) {
 				$entities = $resolved_direct_entities[ $id ] ?? null;
@@ -765,15 +770,27 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			$validation = self::validate_manifest_generic( $prepared['adapter'], $manifest );
 			if ( ! empty( $validation['errors'] ) ) {
-				return new WP_Error(
-					'static_site_importer_runtime_entity_resolution_invalid',
-					'Resolver-expanded runtime entities failed SSI provider validation.',
-					array(
-						'status'         => 'rejected',
-						'declaration_id' => $id,
-						'errors'         => $validation['errors'],
-					)
-				);
+				// A resolved forms row the validator rejects degrades the same way an
+				// inline one does: the rejected rows keep their converted source
+				// markup, and a declaration with no valid row is dropped whole.
+				if ( 'form' !== ( $prepared['adapter']['capability'] ?? null ) || ! self::errors_are_row_scoped( $validation['errors'], $key ) ) {
+					return new WP_Error(
+						'static_site_importer_runtime_entity_resolution_invalid',
+						'Resolver-expanded runtime entities failed SSI provider validation.',
+						array(
+							'status'         => 'rejected',
+							'declaration_id' => $id,
+							'errors'         => $validation['errors'],
+						)
+					);
+				}
+				$accepted                   = is_array( $validation[ $key ] ?? null ) ? $validation[ $key ] : array();
+				$lifecycle['diagnostics'][] = self::rejected_runtime_entity_rows_diagnostic( $id, $prepared['adapter'], count( $entities ), count( $accepted ), $validation['errors'] );
+				if ( empty( $accepted ) ) {
+					$dropped[] = $id;
+					continue;
+				}
+				$validation[ $key ] = $accepted;
 			}
 			$prepared['manifest'] = array( $key => $validation[ $key ] ?? array() );
 			if ( 'products' === $key ) {
@@ -781,6 +798,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 		}
 		unset( $prepared );
+		foreach ( $dropped as $id ) {
+			unset( $lifecycle['entities'][ $id ], $lifecycle['dependencies'][ $id ] );
+		}
 		return $lifecycle;
 	}
 
