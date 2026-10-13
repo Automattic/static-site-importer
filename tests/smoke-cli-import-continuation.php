@@ -1111,6 +1111,11 @@ static_site_importer_cli_import_run_fresh_runtime( $resume_step );
 $assert( true === ( WP_CLI::$commands[2]['request']['_cli_constrained_runtime'] ?? null ), 'oom-smallest-units-persist-for-the-rest-of-the-import' );
 
 $reset_oom_state();
+$GLOBALS['ssi_cli_runtime_queue'] = array( (object) array( 'stdout' => '', 'stderr' => '', 'return_code' => 9 ), $step_json( $continuation ) );
+$direct_kill                      = static_site_importer_cli_import_run_fresh_runtime( $resume_step );
+$assert( ! empty( $direct_kill['continuation'] ) && 2 === count( WP_CLI::$commands ), 'oom-kill-reported-as-the-bare-signal-number-is-retried-too' );
+
+$reset_oom_state();
 $GLOBALS['ssi_cli_runtime_queue'] = array( $killed(), $killed() );
 $final                            = static_site_importer_cli_import_run_fresh_runtime( $resume_step );
 $assert( false === $final['success'] && 'static_site_importer_cli_import_runtime_out_of_memory' === ( $final['error']['code'] ?? '' ), 'oom-killed-twice-is-an-explicit-out-of-memory-failure' );
@@ -1128,6 +1133,7 @@ $reset_oom_state();
 $GLOBALS['ssi_cli_runtime_queue'] = array( $killed(), $step_json( array( 'success' => false, 'error' => array( 'code' => 'static_site_importer_direct_artifact_materialization_ambiguous', 'message' => 'claimed' ) ) ) );
 $claimed                          = static_site_importer_cli_import_run_fresh_runtime( $resume_step );
 $assert( 'static_site_importer_cli_import_runtime_out_of_memory' === ( $claimed['error']['code'] ?? '' ), 'oom-kill-during-a-claimed-materialization-reports-the-kill-not-the-claim' );
+$assert( false === ( $claimed['error']['data']['resumable'] ?? null ) && str_contains( (string) ( $claimed['error']['message'] ?? '' ), 'never repeated' ), 'oom-kill-during-a-claimed-materialization-is-not-offered-as-resumable' );
 
 $reset_oom_state();
 $GLOBALS['ssi_cli_runtime_queue'] = array( $killed(), $step_json( array( 'success' => false, 'error' => array( 'code' => 'materialization_failed', 'message' => 'real failure' ) ) ) );

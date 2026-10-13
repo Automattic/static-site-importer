@@ -263,6 +263,20 @@ if ( ! function_exists( 'static_site_importer_cli_run_compile_workers' ) ) {
 	}
 }
 
+if ( ! function_exists( 'static_site_importer_cli_exit_code_is_sigkill' ) ) {
+	/**
+	 * Did a child process end from SIGKILL, the out-of-memory killer's signal?
+	 *
+	 * Through a shell the status is 128 + 9; WP-CLI reports a directly signalled
+	 * child by the bare signal number.
+	 *
+	 * @param int $return_code Exit status reported for the child.
+	 */
+	function static_site_importer_cli_exit_code_is_sigkill( int $return_code ): bool {
+		return 137 === $return_code || 9 === $return_code;
+	}
+}
+
 if ( ! function_exists( 'static_site_importer_cli_signal_hint' ) ) {
 	/**
 	 * Suffix naming the likely reason a process died from a signal. SIGKILL (9)
@@ -1087,7 +1101,7 @@ if ( ! function_exists( 'static_site_importer_cli_import_run_fresh_runtime_once'
 			if ( ! is_array( $decoded ) ) {
 				return array(
 					'result' => static_site_importer_cli_import_error( 'static_site_importer_cli_step_response_invalid', static_site_importer_cli_invalid_step_message( $raw ) ),
-					'killed' => is_object( $raw ) && 137 === (int) ( $raw->return_code ?? 0 ),
+					'killed' => is_object( $raw ) && static_site_importer_cli_exit_code_is_sigkill( (int) ( $raw->return_code ?? 0 ) ),
 				);
 			}
 			if ( empty( $decoded['success'] ) && '' !== $stderr ) {
@@ -1112,16 +1126,18 @@ if ( ! function_exists( 'static_site_importer_cli_import_oom_error' ) ) {
 	 * @param array<string,mixed> $input Import step request that was killed.
 	 * @return array<string,mixed>
 	 */
-	function static_site_importer_cli_import_oom_error( array $input ): array {
+	function static_site_importer_cli_import_oom_error( array $input, bool $mutating = false ): array {
 		$error = static_site_importer_cli_import_error(
 			'static_site_importer_cli_import_runtime_out_of_memory',
-			'The import ran out of memory: a fresh import runtime was killed by signal 9 (out of memory) again after the import continued from its last durable checkpoint with smaller units. Rerun with more memory available to the import, or import fewer pages at a time.'
+			$mutating
+				? 'The import ran out of memory: a fresh import runtime was killed by signal 9 (out of memory) while it was changing WordPress. That step is never repeated automatically; rerun the import with more memory available to it.'
+				: 'The import ran out of memory: a fresh import runtime was killed by signal 9 (out of memory) again after the import continued from its last durable checkpoint with smaller units. Rerun with more memory available to the import, or import fewer pages at a time.'
 		);
 		$import_id = (string) ( $input['source']['import_id'] ?? '' );
 		if ( '' !== $import_id ) {
 			$error['error']['data'] = array(
 				'import_id' => $import_id,
-				'resumable' => true,
+				'resumable' => ! $mutating,
 			);
 		}
 		return $error;
@@ -1161,7 +1177,7 @@ if ( ! function_exists( 'static_site_importer_cli_import_run_fresh_runtime' ) ) 
 		// A materialization the killed runtime had already claimed is never repeated,
 		// so its retry can only report that the claim exists; the cause is the kill.
 		if ( in_array( $code, array( 'static_site_importer_direct_artifact_materialization_ambiguous', 'static_site_importer_direct_artifact_lifecycle_preparation_ambiguous' ), true ) ) {
-			return static_site_importer_cli_import_oom_error( $input );
+			return static_site_importer_cli_import_oom_error( $input, true );
 		}
 		return $retry['result'];
 	}
@@ -2180,6 +2196,6 @@ function static_site_importer_cli_invalid_step_message( $result ): string {
 	$stderr      = is_object( $result ) ? trim( (string) ( $result->stderr ?? '' ) ) : '';
 	$stderr      = preg_replace( '/^(?:PHP\s+)?(?:Deprecated|Notice):.*$/mi', '', $stderr ) ?? '';
 	$stderr      = substr( preg_replace( '/\s+/', ' ', trim( $stderr ) ) ?? '', 0, 1000 );
-	$killed      = 137 === $return_code ? ' (killed by signal 9, likely out of memory)' : '';
+	$killed      = static_site_importer_cli_exit_code_is_sigkill( $return_code ) ? ' (killed by signal 9, likely out of memory)' : '';
 	return sprintf( 'A fresh import runtime exited with code %d%s without a JSON response.', $return_code, $killed ) . ( '' === $stderr ? '' : ' ' . $stderr );
 }
