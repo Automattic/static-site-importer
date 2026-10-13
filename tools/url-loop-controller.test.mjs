@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { CAPTURE_ARTIFACT_SCHEMA, EVALUATION_ARTIFACT_SCHEMA, WORKFLOW_ID, WORKFLOW_SCHEMA, buildUrlProofWorkflow, evaluateMatrixSummary, evaluationVerdict, parseArgs, prepareTransformer, runCapture, runEvaluation, sourceIdentity, verifyCandidateWorkspace } from './url-loop-controller.mjs';
+import { CAPTURE_ARTIFACT_SCHEMA, EVALUATION_ARTIFACT_SCHEMA, WORKFLOW_ID, WORKFLOW_SCHEMA, buildUrlProofWorkflow, evaluateLocalEvidence, evaluateMatrixSummary, evaluationVerdict, parseArgs, prepareTransformer, repairBranchPrefix, routeFindings, runCapture, runEvaluation, sourceIdentity, verifyCandidateWorkspace } from './url-loop-controller.mjs';
 
 const url = 'https://example.com/';
 const sha = 'a'.repeat(40);
@@ -40,9 +40,9 @@ test('one URL yields a bounded homeboy/workflow/v1 proof: capture, evaluation ga
   assert.deepEqual(inputs, { url });
   assert.equal(context.loop_id, sourceIdentity(url));
   assert.equal(context.loop_id, sourceIdentity('https://example.com/#fragment'));
-  assert.deepEqual(workflow.budget, { max_step_runs: 12, deadline: '10h' });
+  assert.deepEqual(workflow.budget, { max_step_runs: 20, deadline: '10h' });
   assert.deepEqual(workflow.iterate, { until: { step: 'evaluate', output: '/verdict', equals: 'accepted' }, max_iterations: 3 });
-  assert.deepEqual(workflow.steps.map((item) => item.id), ['capture', 'evaluate', 'fix']);
+  assert.deepEqual(workflow.steps.map((item) => item.id), ['capture', 'evaluate', 'fix-ssi', 'fix-blocks-engine', 'fix-dla']);
   // Capture runs once; later iterations keep its carried output.
   assert.deepEqual(step(workflow, 'capture').when, { not: { step: 'capture', outcome: ['succeeded'] } });
   assert.equal(step(workflow, 'capture').exec.program, process.execPath);
@@ -52,28 +52,27 @@ test('one URL yields a bounded homeboy/workflow/v1 proof: capture, evaluation ga
   assert.equal(evaluate[evaluate.indexOf('--capture') + 1], '{{steps.capture.output}}');
   assert.equal(evaluate[evaluate.indexOf('--candidate-sha') + 1], '{{inputs.candidate_sha}}');
   assert.equal(evaluate[evaluate.indexOf('--action') + 1], '{{instance}}-i{{iteration}}');
-  const fix = step(workflow, 'fix');
-  assert.deepEqual(fix.when, { step: 'evaluate', output: '/verdict', equals: 'findings' });
+  const fix = step(workflow, 'fix-ssi');
+  assert.deepEqual(fix.when, { step: 'evaluate', output: '/repairs/static-site-importer', exists: true });
   assert.equal(fix.cook.repo, 'static-site-importer');
-  assert.equal(fix.cook['task-url'], taskUrl);
+  assert.equal(fix.cook['task-url'], 'https://github.com/Automattic/static-site-importer/issues/1874');
   assert.deepEqual(fix.cook.verify, ['npm test']);
-  assert.deepEqual(JSON.parse(fix.cook['provider-evidence']), { id: 'evaluation', source: '{{steps.evaluate.output/report_path}}' });
-  assert.doesNotMatch(fix.cook.prompt, /report_path/, 'the prompt names the evidence id, never a host path');
-  assert.match(fix.cook.prompt, /`evaluation` provider evidence/);
+  assert.equal(fix.cook['draft-pr'], false);
+  assert.ok(workflow.steps.slice(2).every((item) => item.needs.includes('evaluate')));
   // The context is pinned inside the definition, so it is part of its digest.
   assert.deepEqual(contextOf(workflow), context);
   assert.equal(context.candidate_sha, undefined, 'the candidate is an instance input, not definition state');
-  const proof = build(root, { instance: 'proof-r2', maxIterations: '2', maxStepRuns: '4', deadline: '3h', fixRepo: 'scratch', fixVerify: ['test -f FIXED', 'true'], fixBackend: 'opencode', fixPrompt: 'Fix {{inputs.url}}' });
+  const proof = build(root, { instance: 'proof-r2', maxIterations: '2', maxStepRuns: '5', deadline: '3h', fixBackend: 'opencode' });
   assert.equal(proof.context.source_id, context.loop_id);
   assert.equal(proof.context.loop_id, `${context.loop_id}-proof-r2`);
-  assert.deepEqual(proof.workflow.budget, { max_step_runs: 4, deadline: '3h' });
+  assert.deepEqual(proof.workflow.budget, { max_step_runs: 5, deadline: '3h' });
   assert.equal(proof.workflow.iterate.max_iterations, 2);
-  assert.deepEqual(step(proof.workflow, 'fix').cook, { repo: 'scratch', 'task-url': taskUrl, placement: 'local', backend: 'opencode', 'provider-evidence': step(build(root).workflow, 'fix').cook['provider-evidence'], prompt: 'Fix {{inputs.url}}', verify: ['test -f FIXED', 'true'] });
+  assert.equal(proof.workflow.steps[2].cook.backend, 'opencode');
   assert.throws(() => build(root, { instance: '../invalid' }), /path-safe/);
   assert.throws(() => build(root, { maxIterations: 9 }), /max-iterations/);
   assert.throws(() => build(root, { maxStepRuns: 1 }), /max-step-runs/);
   assert.throws(() => build(root, { deadline: 'soon' }), /deadline/);
-  assert.throws(() => buildUrlProofWorkflow({ url, workspace: root, blocksEngine: root, wpCodeboxBin: root, captureCommand }), /fix-task-url/);
+  assert.doesNotThrow(() => buildUrlProofWorkflow({ url, workspace: root, blocksEngine: root, wpCodeboxBin: root, dla: root, captureCommand }));
   assert.deepEqual(context.capture, { command: JSON.parse(captureCommand), receipt_schema: 'blocks-engine-capture/capture-receipt/v1' });
   const previous = process.env.SSI_URL_LOOP_CAPTURE_COMMAND;
   try {
@@ -298,5 +297,19 @@ test('Homeboy accepts the generated definition', (context) => {
   assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
   const data = JSON.parse(result.stdout).data;
   assert.equal(data.id, WORKFLOW_ID);
-  assert.deepEqual(data.steps.map((item) => [item.id, item.kind]), [['capture', 'exec'], ['evaluate', 'exec'], ['fix', 'cook']]);
+  assert.deepEqual(data.steps.map((item) => [item.id, item.kind]), [['capture', 'exec'], ['evaluate', 'exec'], ['fix-ssi', 'cook'], ['fix-blocks-engine', 'cook'], ['fix-dla', 'cook']]);
+});
+
+test('candidate branch prefix and routing map findings to owning repositories', () => {
+  assert.equal(repairBranchPrefix('loop', 'blocks-engine', 2), 'url-loop/loop/blocks-engine-i2');
+  const repairs = routeFindings({ captureFailures: [{}], packets: [{ owner: 'blocks-engine/php-transformer' }] });
+  assert.equal(repairs['data-liberation-agent'].findings.length, 1);
+  assert.equal(repairs['blocks-engine'].findings.length, 1);
+});
+
+test('local verdict requires complete evidence and a clean quality result', () => {
+  const good = { capture_compare: { passed: true }, materialization_compare: { passed: true }, quality: { quality_pass: true, unsupported_fallback_count: 0, core_html_block_count: 0, freeform_block_count: 0, invalid_block_count: 0 } };
+  assert.equal(evaluateLocalEvidence(good).verdict, 'accepted');
+  assert.equal(evaluateLocalEvidence({ ...good, quality: { ...good.quality, invalid_block_count: 1 } }).verdict, 'findings');
+  assert.equal(evaluateLocalEvidence({}).verdict, 'blocked');
 });

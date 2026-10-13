@@ -403,41 +403,45 @@ status.
 
 ### Durable, bounded evaluation
 
-`tools/url-loop-controller.mjs` turns one URL into a Homeboy workflow
-(`homeboy/workflow/v1`, see Homeboy's `docs/commands/workflow.md`) and admits it
-with `homeboy workflow run`. Run it **inside a dependency-hydrated Lab workspace**
-with a Homeboy build that has `homeboy workflow` and a WP Codebox binary that
-supports the fixture-matrix browser steps:
+`tools/url-loop-controller.mjs` turns one URL into a bounded three-repository
+Homeboy repair loop (`homeboy/workflow/v1`). Each evaluation composes SSI
+`origin/main`, Blocks Engine `origin/trunk`, and Data Liberation Agent
+`origin/main`, then overlays this instance's open repair branches. The
+evaluation records each base and branch SHA; merge conflicts block evaluation
+with a typed reason. Accepted means capture compare and WordPress
+materialization compare pass, `quality_pass` is true, and fallback, core HTML,
+freeform, and invalid block counts are all zero. This is the loop stop rule;
+the fail-closed solved-site promotion receipt remains a separate publication
+step.
 
 ```bash
 node tools/url-loop-controller.mjs start \
   --url https://quinn-fluid-demo.squarespace.com/ \
   --capture-command '["npx","--yes","--package=<package spec>","<bin>","{url}","--output","{output}"]' \
-  --fix-task-url https://github.com/<owner>/<repo>/issues/<n> \
+  --dla /path/to/data-liberation-agent \
   --blocks-engine /path/to/blocks-engine \
   --transformer-path /path/to/pinned/php-transformer \
   --wp-codebox-bin /path/to/wp-codebox \
-  --candidate-sha <full-40-character-commit> \
   --output-root /path/to/retained/loop \
-  --max-iterations 3 --max-step-runs 12 --deadline 10h
+  --max-iterations 3 --max-step-runs 20 --deadline 10h
 homeboy workflow status <instance printed by start>
 ```
 
-The workflow has three steps:
+The workflow has five steps per iteration:
 
 1. **`capture`** retains the configured producer's source capture and normalized
    SSI fixture. It runs
    once per instance (its `when` gate is false once it has succeeded), and every
    later instance for the same proof root reuses the retained capture.
-2. **`evaluate`** runs the canonical WordPress/Codebox matrix for the candidate
-   and writes `evaluation.json`. Its step output carries the gate's `verdict`:
-   `findings` when the matrix reports repairable failures, `accepted` only for a
-   solved site, otherwise the evaluation status (`needs_evidence`, `needs_review`).
-3. **`fix`** is a Homeboy Cook that the `findings` verdict launches, on the
-   tracker named by `--fix-task-url`. The evaluation report reaches it as the
-   `evaluation` provider evidence, so the prompt names that id rather than a
-   host path (`--fix-repo`, `--fix-verify` (repeatable, default `npm test`),
-   `--fix-placement`, `--fix-backend`, and `--fix-prompt` adjust it).
+2. **`evaluate`** composes current repository tips and discovered open repair
+   branches, runs capture comparison, SSI import/materialization comparison,
+   and quality checks, then writes an artifact with per-repository work lists.
+3. **`fix-ssi`, `fix-blocks-engine`, and `fix-dla`** are separately gated Homeboy
+   Cooks. Each receives only its repository's report evidence and opens a ready
+   for review PR on `url-loop/<instance>/<repo>-i<iteration>`; nothing merges
+   automatically. Use `--ssi-task-url`, `--blocks-engine-task-url`, and
+   `--dla-task-url` for repository-specific trackers (each defaults to issue
+   #1874); the matching `--<repo>-verify` options override verification.
 
 The `until` gate re-runs the graph until the verdict is `accepted`. The
 `--max-iterations` and `--max-step-runs` budgets and the `--deadline` stop it
@@ -447,9 +451,8 @@ the step log; nothing parks. Homeboy owns the durable step ledger and budgets;
 SSI owns the evidence/acceptance decision.
 
 Configure `SSI_URL_LOOP_CAPTURE_COMMAND` (and `SSI_URL_LOOP_CAPTURE_RECEIPT_SCHEMA`
-when it differs from the default), `SSI_BLOCKS_ENGINE_PATH`, `HOMEBOY_WP_CODEBOX_BIN`,
-`SSI_FIX_TASK_URL` and (when the synced workspace has no `.git`) `SSI_CANDIDATE_SHA`
-on the Lab runner to make `start --url <url>` the only per-site input.
+when it differs from the default), `SSI_BLOCKS_ENGINE_PATH`, `SSI_DLA_PATH`, and
+`HOMEBOY_WP_CODEBOX_BIN` on the Lab runner. `start --url <url>` admits the loop.
 `--capture-command` and `--capture-receipt-schema` override them per proof. `start`
 resolves the capture configuration once and pins it in the workflow definition, so
 every step and later candidate instance of that proof uses the same command and

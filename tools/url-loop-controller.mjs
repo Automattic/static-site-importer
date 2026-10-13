@@ -13,6 +13,8 @@ export const EVALUATION_ARTIFACT_SCHEMA = 'static-site-importer/url-loop-evaluat
 export const WORKFLOW_SCHEMA = 'homeboy/workflow/v1';
 export const WORKFLOW_ID = 'ssi-url-proof';
 export const EVALUATION_EVIDENCE_ID = 'evaluation';
+export const REPAIR_REPOS = ['static-site-importer', 'blocks-engine', 'data-liberation-agent'];
+export const REPAIR_TRACKER = 'https://github.com/Automattic/static-site-importer/issues/1874';
 const MODULE_PATH = fileURLToPath(import.meta.url);
 const SOURCE_VIEWS = [390, 768, 1440];
 const TRANSFORMER_PACKAGE = 'automattic/blocks-engine-php-transformer';
@@ -119,11 +121,13 @@ export function buildUrlProofWorkflow(input) {
   const blocksEngine = input.blocksEngine || process.env.SSI_BLOCKS_ENGINE_PATH;
   const wpCodeboxBin = input.wpCodeboxBin || process.env.HOMEBOY_WP_CODEBOX_BIN;
   if (!blocksEngine || !wpCodeboxBin) throw new Error('blocks-engine and wp-codebox-bin must be configured on this runner');
-  const fixTaskUrl = input.fixTaskUrl || process.env.SSI_FIX_TASK_URL;
-  if (!fixTaskUrl) throw new Error('fix-task-url must name the tracker the repair Cook works on');
-  normalizeUrl(fixTaskUrl);
+  const taskUrls = {
+    'static-site-importer': input.ssiTaskUrl || REPAIR_TRACKER,
+    'blocks-engine': input.blocksEngineTaskUrl || REPAIR_TRACKER,
+    'data-liberation-agent': input.dlaTaskUrl || REPAIR_TRACKER,
+  };
   const maxIterations = boundedInteger(input.maxIterations, 3, 1, 5, 'max-iterations');
-  const maxStepRuns = boundedInteger(input.maxStepRuns, 12, 2, 30, 'max-step-runs');
+  const maxStepRuns = boundedInteger(input.maxStepRuns, 20, 5, 30, 'max-step-runs');
   const deadline = String(input.deadline || '10h');
   if (!/^[1-9][0-9]*[smhd]$/.test(deadline)) throw new Error('deadline must be a duration such as 90m or 10h');
   const sourceId = sourceIdentity(url);
@@ -134,22 +138,13 @@ export function buildUrlProofWorkflow(input) {
   const node = path.resolve(input.nodeExecutable || process.execPath);
   const capture = resolveCaptureConfig(input);
   const runtimeToolchain = { node, env: Object.fromEntries(RUNTIME_ENV.filter((key) => key !== 'PATH' && process.env[key]).map((key) => [key, process.env[key]])) };
-  const context = { source_id: sourceId, loop_id: loopId, root, workspace, blocks_engine: path.resolve(blocksEngine), wp_codebox_bin: path.resolve(wpCodeboxBin), transformer_path: input.transformerPath ? path.resolve(input.transformerPath) : '', capture, runtime_toolchain: runtimeToolchain, blocks_engine_sha: input.blocksEngineSha || null, wordpress_version: input.wordpressVersion || null };
+  const dla = input.dla || process.env.SSI_DLA_PATH || workspace;
+  const context = { source_id: sourceId, loop_id: loopId, root, workspace, blocks_engine: path.resolve(blocksEngine), dla: path.resolve(dla), wp_codebox_bin: path.resolve(wpCodeboxBin), transformer_path: input.transformerPath ? path.resolve(input.transformerPath) : '', capture, runtime_toolchain: runtimeToolchain, blocks_engine_sha: input.blocksEngineSha || null, wordpress_version: input.wordpressVersion || null };
   // The context is part of the pinned definition, so it is digested into the
   // instance identity and can never drift under a running instance.
   const command = (stage, args) => ({ program: node, args: [MODULE_PATH, stage, '--url', '{{inputs.url}}', '--context', JSON.stringify(context), ...args], cwd: workspace });
-  const verify = [input.fixVerify || 'npm test'].flat();
-  // Cook projects the evaluation report into the provider workspace as
-  // declared evidence; the prompt names it by id, never by host path.
-  const cook = {
-    repo: input.fixRepo || 'static-site-importer',
-    'task-url': fixTaskUrl,
-    placement: input.fixPlacement || 'local',
-    ...(input.fixBackend ? { backend: input.fixBackend } : {}),
-    'provider-evidence': JSON.stringify({ id: EVALUATION_EVIDENCE_ID, source: '{{steps.evaluate.output/report_path}}' }),
-    prompt: input.fixPrompt || `Repair the static-site-importer findings for {{inputs.url}} at candidate {{inputs.candidate_sha}}. The \`${EVALUATION_EVIDENCE_ID}\` provider evidence is the evaluation report; its findings and missing evidence are the work list (workflow {{instance}}, iteration {{iteration}}).`,
-    verify,
-  };
+  const verifyDefaults = { 'static-site-importer': 'npm test', 'blocks-engine': 'npm test', 'data-liberation-agent': 'npm test' };
+  const cook = (repo, short) => ({ repo, 'task-url': taskUrls[repo], head: `url-loop/{{instance}}/${repo}-i{{iteration}}`, placement: input.fixPlacement || 'local', ...(input.fixBackend ? { backend: input.fixBackend } : {}), 'provider-evidence': JSON.stringify({ id: `${repo}-evaluation`, source: `{{steps.evaluate.output/repairs/${repo}/report_path}}` }), prompt: `Repair the ${repo} findings for {{inputs.url}}. Provider evidence ${repo}-evaluation contains the scoped work list. Branch prefix: url-loop/{{instance}}/${repo}-i{{iteration}}.`, verify: [input[`${short}Verify`] || verifyDefaults[repo]], 'draft-pr': false });
   const workflow = {
     schema: WORKFLOW_SCHEMA,
     id: WORKFLOW_ID,
@@ -160,7 +155,7 @@ export function buildUrlProofWorkflow(input) {
     steps: [
       { id: 'capture', timeout: '15m', when: { not: { step: 'capture', outcome: ['succeeded'] } }, exec: command('capture', []) },
       { id: 'evaluate', needs: ['capture'], timeout: '90m', exec: command('evaluate', ['--capture', '{{steps.capture.output}}', '--candidate-sha', '{{inputs.candidate_sha}}', '--action', '{{instance}}-i{{iteration}}']) },
-      { id: 'fix', needs: ['evaluate'], when: { step: 'evaluate', output: '/verdict', equals: 'findings' }, retry: { max: 1, on: ['failed'] }, cook },
+      ...REPAIR_REPOS.map((repo, index) => ({ id: ['fix-ssi', 'fix-blocks-engine', 'fix-dla'][index], needs: ['evaluate'], when: { step: 'evaluate', output: `/repairs/${repo}`, exists: true }, retry: { max: 1, on: ['failed'] }, cook: cook(repo, ['ssi', 'blocksEngine', 'dla'][index]) })),
     ],
   };
   return { workflow, context, inputs: { url } };
@@ -210,6 +205,8 @@ export function evaluateMatrixSummary({ summary, benchStatus, capture, candidate
   const observedViewports = summary?.surface_coverage?.viewports || [];
   const missing = [...new Set([...(row?.missing || []), ...(evidence.valid ? [] : [evidence.reason]), 'solved_site_promotion_receipt', ...SOURCE_VIEWS.filter((width) => !observedViewports.includes(width)).map((width) => `visual_viewport_${width}_missing`)])];
   const findings = Array.isArray(summary?.gate_failure_reasons) ? summary.gate_failure_reasons : [];
+  const repairs = routeFindings({ packets: summary?.finding_packets || [], importFailures: findings });
+  if (findings.length && !Object.keys(repairs).length) repairs['static-site-importer'] = { findings, report_path: null };
   return {
     schema: EVALUATION_ARTIFACT_SCHEMA,
     status: !summary ? 'blocked' : findings.length ? 'needs_repair' : missing.length ? 'needs_evidence' : benchStatus !== 0 ? 'needs_repair' : 'needs_review',
@@ -224,9 +221,10 @@ export function evaluateMatrixSummary({ summary, benchStatus, capture, candidate
     evidence_readiness: readiness || null,
     missing,
     findings,
+    repairs,
     matrix_refs: summary?.run_refs || null,
     matrix_output_file: summary?.output_file || null,
-    acceptance: { solved: false, reason: 'solved_site_promotion_receipt_required' },
+    acceptance: { solved: false, reason: 'local_capture_import_materialization_evidence_required' },
   };
 }
 
@@ -236,8 +234,9 @@ export function evaluateMatrixSummary({ summary, benchStatus, capture, candidate
  * evaluation status (`needs_evidence`, `needs_review`, `blocked`).
  */
 export function evaluationVerdict(evaluation, reportPath) {
+  const verdict = evaluation.verdict || (evaluation.acceptance?.solved === true ? 'accepted' : evaluation.status === 'needs_repair' ? 'findings' : evaluation.status);
   return {
-    verdict: evaluation.acceptance?.solved === true ? 'accepted' : evaluation.status === 'needs_repair' ? 'findings' : evaluation.status,
+    verdict,
     status: evaluation.status,
     report_path: reportPath,
     candidate_sha: evaluation.candidate_sha,
@@ -246,7 +245,33 @@ export function evaluationVerdict(evaluation, reportPath) {
     findings: evaluation.findings.length,
     missing: evaluation.missing,
     blocker: evaluation.preparation_blocker?.reason || null,
+    repairs: evaluation.repairs || {},
   };
+}
+
+export function repairBranchPrefix(loopId, repo, iteration) {
+  if (!REPAIR_REPOS.includes(repo)) throw new Error(`unknown_repair_repository:${repo}`);
+  return `url-loop/${loopId}/${repo}-i${iteration}`;
+}
+
+/** Route evidence to exactly the repository that owns the repair. */
+export function routeFindings({ captureFailures = [], captureCompare, packets = [], importFailures = [], materializationCompare } = {}) {
+  const repairs = Object.fromEntries(REPAIR_REPOS.map((repo) => [repo, { findings: [], report_path: null }]));
+  const add = (repo, item) => repairs[repo].findings.push(item);
+  for (const failure of [...captureFailures, ...(captureCompare?.passed === false ? [captureCompare] : [])]) add('data-liberation-agent', failure);
+  for (const packet of packets) add(String(packet.owner || '').startsWith('blocks-engine/') ? 'blocks-engine' : 'static-site-importer', packet);
+  for (const failure of [...importFailures, ...(materializationCompare?.passed === false ? [materializationCompare] : [])]) add('static-site-importer', failure);
+  return Object.fromEntries(Object.entries(repairs).filter(([, work]) => work.findings.length));
+}
+
+export function evaluateLocalEvidence(evidence) {
+  const missing = evidence.capture_compare == null || evidence.materialization_compare == null || evidence.quality == null;
+  const quality = evidence.quality || {};
+  const losses = ['unsupported_fallback_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count'].reduce((sum, key) => sum + Number(quality[key] || 0), 0);
+  const repairs = routeFindings({ captureFailures: evidence.capture_failures || [], captureCompare: evidence.capture_compare, packets: evidence.finding_packets || [], importFailures: evidence.import_failures || [], materializationCompare: evidence.materialization_compare });
+  const failed = evidence.capture_compare?.passed === false || evidence.materialization_compare?.passed === false || quality.quality_pass !== true || losses !== 0;
+  const verdict = missing ? 'blocked' : failed ? (Object.keys(repairs).length || losses ? 'findings' : 'blocked') : 'accepted';
+  return { verdict, repairs, acceptance: { solved: verdict === 'accepted', stop_condition: 'loop_acceptance_only; solved-site promotion receipt remains a separate publication step' }, blocker: missing ? 'evaluation_evidence_missing' : null, loss_count: losses };
 }
 
 export async function runEvaluation({ context, url, capture, candidateSha: requestedSha, actionId }, dependencies = {}) {
@@ -312,7 +337,7 @@ export function verifyCandidateWorkspace(workspace, candidateSha) {
   return root;
 }
 
-const REPEATABLE = new Set(['fixVerify']);
+const REPEATABLE = new Set(['ssiVerify', 'blocksEngineVerify', 'dlaVerify', 'fixVerify']);
 export function parseArgs(argv) {
   const options = {};
   for (let i = 0; i < argv.length; i += 1) {
@@ -357,7 +382,7 @@ async function main() {
     process.stdout.write(`${JSON.stringify({ instance, loop_id: context.loop_id, workflow_file: file, status_command: `homeboy workflow status ${instance}` })}\n`);
     return;
   }
-  throw new Error('usage: url-loop-controller.mjs start|workflow --url <url> --capture-command <JSON argv> --fix-task-url <url> [--capture-receipt-schema <id>] [--blocks-engine <path>] [--wp-codebox-bin <path>] [--candidate-sha <sha>] [--output-root <path>] [--instance <token>] [--max-iterations 3] [--max-step-runs 12] [--deadline 10h] [--fix-repo <repo>] [--fix-verify <command>]... [--fix-placement local] [--fix-backend <backend>] [--fix-prompt <template>]');
+  throw new Error('usage: url-loop-controller.mjs start|workflow --url <url> --capture-command <JSON argv> [--blocks-engine <path>] --dla <path> --wp-codebox-bin <path> [--ssi-task-url <url>] [--blocks-engine-task-url <url>] [--dla-task-url <url>] [--ssi-verify <command>] [--blocks-engine-verify <command>] [--dla-verify <command>] [--max-iterations 3] [--max-step-runs 20] [--deadline 10h]');
 }
 
 if (process.argv[1] === MODULE_PATH) main().catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
