@@ -1127,7 +1127,7 @@ if ( ! function_exists( 'static_site_importer_cli_import_oom_error' ) ) {
 	 * @return array<string,mixed>
 	 */
 	function static_site_importer_cli_import_oom_error( array $input, bool $mutating = false ): array {
-		$error = static_site_importer_cli_import_error(
+		$error     = static_site_importer_cli_import_error(
 			'static_site_importer_cli_import_runtime_out_of_memory',
 			$mutating
 				? 'The import ran out of memory: a fresh import runtime was killed by signal 9 (out of memory) while it was changing WordPress. That step is never repeated automatically; rerun the import with more memory available to it.'
@@ -1343,8 +1343,8 @@ if ( ! function_exists( 'static_site_importer_cli_run_import_host' ) ) {
 	 * @return array<string,mixed>
 	 */
 	function static_site_importer_cli_run_import_host( array $input, ?callable $invoke = null, int $max_steps = 0, ?callable $emit_progress = null, string $resume_command = '' ): array {
-		$invoke      = $invoke ?? 'static_site_importer_cli_import_run_fresh_runtime';
 		static_site_importer_cli_constrained_runtime( false );
+		$invoke      = $invoke ?? 'static_site_importer_cli_import_run_fresh_runtime';
 		$steps       = 0;
 		$stalled     = 0;
 		$fingerprint = '';

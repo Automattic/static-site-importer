@@ -681,7 +681,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 					++$batches;
 				} while ( $policy['compile_batches_per_invocation'] > $batches );
 
-			$remaining = count( $run['page_ids'] ) - count( $run['refs']['receipts'] ?? array() );
+				$remaining = count( $run['page_ids'] ) - count( $run['refs']['receipts'] ?? array() );
 				if ( 0 < $remaining ) {
 					$reason = self::deadline_reached( $deadline, $clock ) ? 'deadline_exhausted' : 'pages_remaining';
 					return self::continuation( $run, $reason );
