@@ -1,5 +1,5 @@
 {
-    "recorded_from": "static-site-importer@1fe42098b46b5176d30591deca75dfeab18812fe",
+    "recorded_from": "static-site-importer@ccde89036f9d93ba83c1355e4c6b920271b26a07",
     "command": "php tests/smoke-source-findings-equivalence.php --record=<checkout>",
     "findings": {
         "success": true,

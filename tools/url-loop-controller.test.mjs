@@ -18,7 +18,7 @@ function capture(root, properties = {}) {
   const handoffPath = path.join(root, 'output', 'capture-intake', 'url-loop-handoff.json');
   const handoff = {
     url, status: 'needs_evaluation', fixture: { id: 'website', fixture_root: path.join(root, 'fixtures') },
-    capture_receipt: { schema: 'data-liberation/capture-receipt/v1', source: { url }, summary: { complete: true, routesDiscovered: 2, routesCaptured: 2, routesFailed: 0, routesSkipped: 0 } },
+    capture_receipt: { schema: 'blocks-engine-capture/capture-receipt/v1', source: { url }, summary: { complete: true, routesDiscovered: 2, routesCaptured: 2, routesFailed: 0, routesSkipped: 0 } },
     provenance, identities: { dla: { version: 'v0.6.5' } }, failures: [], handoff_path: handoffPath,
     ...properties,
   };
@@ -123,7 +123,7 @@ test('default evaluation and candidate replay use the consumer lock without over
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-pinned-replay-'));
   const { context: inputs } = context(root);
   const { capture: artifact } = await runCapture(inputs, { capture: async () => capture(root, {
-    capture_receipt: { schema: 'data-liberation/capture-receipt/v1', source: { url }, summary: { complete: true, routesDiscovered: 8, routesCaptured: 8, routesFailed: 0, routesSkipped: 0 } },
+    capture_receipt: { schema: 'blocks-engine-capture/capture-receipt/v1', source: { url }, summary: { complete: true, routesDiscovered: 8, routesCaptured: 8, routesFailed: 0, routesSkipped: 0 } },
   }) });
   const retained = fs.readFileSync(artifact.handoff_path);
   const locked = JSON.parse(fs.readFileSync(path.join(root, 'composer.lock'))).packages.find((item) => item.name === 'automattic/blocks-engine-php-transformer');

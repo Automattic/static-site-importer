@@ -77,19 +77,19 @@ $assert( str_contains( Static_Site_Importer_Internal_Link_Runtime::filter_render
 // core/button wrapper (dropping data attributes), so the Wix login-bar button
 // arrives as a styled core/button. Its inner button becomes a login link with
 // the same classes, icon and label.
-$core_button = '<div class="wp-block-button O4eQsz blocks-engine-capture-member-login-wix blocks-engine-control-x-48"><button type="button" class="wp-block-button__link wp-element-button"><img src="avatar.svg" alt="" class="be-inline-geometry-1"><mark class="HuH6Ex">Sign In</mark></button></div>';
+$core_button = '<div class="wp-block-button O4eQsz data-blocks-engine-capture-member-login-wix blocks-engine-control-x-48"><button type="button" class="wp-block-button__link wp-element-button"><img src="avatar.svg" alt="" class="be-inline-geometry-1"><mark class="HuH6Ex">Sign In</mark></button></div>';
 $assert(
-	'<div class="wp-block-button O4eQsz blocks-engine-capture-member-login-wix blocks-engine-control-x-48"><a href="' . esc_url( $login ) . '" class="wp-block-button__link wp-element-button"><img src="avatar.svg" alt="" class="be-inline-geometry-1"><mark class="HuH6Ex">Sign In</mark></a></div>' === Static_Site_Importer_Internal_Link_Runtime::filter_rendered_block( $core_button ),
+	'<div class="wp-block-button O4eQsz data-blocks-engine-capture-member-login-wix blocks-engine-control-x-48"><a href="' . esc_url( $login ) . '" class="wp-block-button__link wp-element-button"><img src="avatar.svg" alt="" class="be-inline-geometry-1"><mark class="HuH6Ex">Sign In</mark></a></div>' === Static_Site_Importer_Internal_Link_Runtime::filter_rendered_block( $core_button ),
 	'The button inside a marked core/button becomes a link to the WordPress login, keeping its classes and children.'
 );
-$bare_button = '<button type="button" class="O4eQsz blocks-engine-capture-member-login-wix"><span>Sign In</span></button><button type="button">Menu</button>';
+$bare_button = '<button type="button" class="O4eQsz data-blocks-engine-capture-member-login-wix"><span>Sign In</span></button><button type="button">Menu</button>';
 $assert(
-	'<a href="' . esc_url( $login ) . '" class="O4eQsz blocks-engine-capture-member-login-wix"><span>Sign In</span></a><button type="button">Menu</button>' === Static_Site_Importer_Internal_Link_Runtime::filter_rendered_block( $bare_button ),
+	'<a href="' . esc_url( $login ) . '" class="O4eQsz data-blocks-engine-capture-member-login-wix"><span>Sign In</span></a><button type="button">Menu</button>' === Static_Site_Importer_Internal_Link_Runtime::filter_rendered_block( $bare_button ),
 	'A marked button becomes a login link; other buttons stay buttons.'
 );
-$class_link = '<a href="https://www.source.test/account/my-account" class="twJknM wixui-button blocks-engine-capture-member-login-wix">Sign In</a>';
+$class_link = '<a href="https://www.source.test/account/my-account" class="twJknM wixui-button data-blocks-engine-capture-member-login-wix">Sign In</a>';
 $assert(
-	'<a href="' . esc_url( $login ) . '" class="twJknM wixui-button blocks-engine-capture-member-login-wix">Sign In</a>' === Static_Site_Importer_Internal_Link_Runtime::filter_content( $class_link ),
+	'<a href="' . esc_url( $login ) . '" class="twJknM wixui-button data-blocks-engine-capture-member-login-wix">Sign In</a>' === Static_Site_Importer_Internal_Link_Runtime::filter_content( $class_link ),
 	'A link marked only by class is pointed at the WordPress login.'
 );
 $plain = '<div class="wp-block-button"><button type="button" class="wp-block-button__link">Go</button></div>';

@@ -531,7 +531,7 @@ mkdir( $report_dir . '/website', 0777, true );
 $report_dir = realpath( $report_dir );
 $declared_reports = array( 'capture-receipt.json', 'asset-evidence.json' );
 file_put_contents( $report_dir . '/website/index.html', '<main><h1>Ghestilistes</h1></main>' );
-file_put_contents( $report_dir . '/capture-receipt.json', '{"schema":"data-liberation/capture-receipt/v1"}' );
+file_put_contents( $report_dir . '/capture-receipt.json', '{"schema":"blocks-engine-capture/capture-receipt/v1"}' );
 file_put_contents( $report_dir . '/asset-evidence.json', '{"assets":"' . str_repeat( 'x', 10666142 - 13 ) . '"}' );
 $report_bundle = static_site_importer_cli_request_bundle_files( $report_dir, $declared_reports );
 $report_files  = is_array( $report_bundle ) ? array_column( $report_bundle['files'], null, 'path' ) : array();

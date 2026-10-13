@@ -135,11 +135,12 @@ final class Static_Site_Importer_Internal_Link_Runtime {
 	public static function resolve_member_login_links( string $content ): string {
 		$attribute = Static_Site_Importer_Capture_Evidence::MEMBER_LOGIN;
 		$prefix    = Static_Site_Importer_Capture_Evidence::MEMBER_LOGIN_CLASS_PREFIX;
-		if ( ( ! str_contains( $content, $attribute ) && ! str_contains( $content, $prefix ) ) || ! function_exists( 'wp_login_url' ) ) {
+		// The class prefix extends the attribute name, so one check finds either marker.
+		if ( ! str_contains( $content, $attribute ) || ! function_exists( 'wp_login_url' ) ) {
 			return $content;
 		}
 		$login  = esc_url( wp_login_url( self::current_url() ) );
-		$marked = '(?=[^>]*(?:\s' . preg_quote( $attribute, '~' ) . '\b|\sclass\s*=\s*["\'][^"\']*\b' . preg_quote( $prefix, '~' ) . '[a-z0-9_-]+))';
+		$marked = '(?=[^>]*(?:\s' . preg_quote( $attribute, '~' ) . '(?=[\s=/>])|\sclass\s*=\s*["\'][^"\']*(?<![\w-])' . preg_quote( $prefix, '~' ) . '[a-z0-9_-]+))';
 		$href   = '~\s+href\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)~i';
 		$type   = '~\s+type\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)~i';
 		$link   = static fn( string $attributes ): string => '<a href="' . $login . '"' . (string) preg_replace( array( $href, $type ), '', $attributes ) . '>';

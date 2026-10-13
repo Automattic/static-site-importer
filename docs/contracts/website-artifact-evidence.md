@@ -3,7 +3,7 @@
 A website artifact can carry evidence about how it was produced, next to its pages. Static Site Importer reads that evidence through producer-neutral contracts, so any producer (a capture tool, an exporter, a site generator) can supply it:
 
 - **Source findings**: `website/source-findings.json`, schema `static-site-importer/source-findings/v1`. SSI owns this contract.
-- **Capture evidence names**: attributes and classes in captured HTML. Blocks Engine owns this vocabulary (Automattic/blocks-engine `docs/contracts/capture-evidence.md`, php-transformer `Contract\CaptureEvidence`).
+- **Capture evidence names**: attributes and classes in captured HTML, and capture sidecar schemas. Blocks Engine owns this vocabulary (Automattic/blocks-engine php-transformer `docs/contracts/capture-evidence.md`, `Contract\CaptureEvidence`).
 - **Device selection scripts**: two generated scripts SSI's client-script policy keeps byte for byte.
 
 ## Source findings
@@ -81,7 +81,7 @@ Each row describes itself; SSI keeps no registry of producer codes.
 
 ## Capture evidence names
 
-Captured HTML can mark what the producer observed. Blocks Engine publishes the names; an attribute is `data-blocks-engine-capture-<name>` and a class is `blocks-engine-capture-<name>`. `Static_Site_Importer_Capture_Evidence` is the one place SSI names the ones it reads:
+Captured HTML can mark what the producer observed. Blocks Engine publishes the names under one prefix: every attribute, class and id suffix starts with `data-blocks-engine-capture-` (`--data-blocks-engine-capture-` for id suffixes), and sidecar schemas are `blocks-engine-capture/<name>/v<n>`. Classes share the attribute prefix because `blocks-engine-*` classes are the engine's own generated classes. `Static_Site_Importer_Capture_Evidence` is the one place SSI names the ones it reads:
 
 | Name | Read by | Meaning |
 |---|---|---|
@@ -93,9 +93,11 @@ Captured HTML can mark what the producer observed. Blocks Engine publishes the n
 | `data-blocks-engine-capture-device-style` | device selection scripts | Device document key of an inert stylesheet |
 | `data-blocks-engine-capture-source-media` | device selection scripts | Original `media` of an inert stylesheet |
 | `data-blocks-engine-capture-member-login` | internal-link runtime | Provider of a member sign-in control |
-| `blocks-engine-capture-member-login-<provider>` | internal-link runtime | Class form of the member sign-in marker, which block conversion keeps |
+| `data-blocks-engine-capture-member-login-<provider>` | internal-link runtime | Class form of the member sign-in marker, which block conversion keeps |
 
 A marked member sign-in control links to `wp_login_url()`. Generated themes and companion plugins carry their own copy of the internal-link runtime with these names inlined as literals.
+
+`tests/smoke-capture-vocabulary-lockstep.php` fails when the locked Blocks Engine has no `Contract\CaptureEvidence`, or when a name above is not one it publishes, so SSI and Blocks Engine always ship the same names.
 
 ## Device selection scripts
 

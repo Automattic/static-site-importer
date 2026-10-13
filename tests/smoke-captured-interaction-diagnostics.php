@@ -51,7 +51,7 @@ $state = static function ( string $status, string $kind = 'selectable-set' ): ar
 
 $page = static function ( string $source_url, array $states ): array {
 	return array(
-		'schema'    => 'data-liberation/interaction-states/v2',
+		'schema'    => 'blocks-engine-capture/interaction-states/v2',
 		'sourceUrl' => $source_url,
 		'states'    => $states,
 	);
@@ -71,7 +71,7 @@ $artifact = static function ( array $envelope, string $path = 'interaction-state
 };
 
 $envelope = array(
-	'schema' => 'data-liberation/captured-interactions/v1',
+	'schema' => 'blocks-engine-capture/captured-interactions/v1',
 	'pages'  => array(
 		$page(
 			'https://example.test/alpha',
@@ -134,7 +134,7 @@ $malformed = Static_Site_Importer_Diagnostic_Projection::captured_interaction_in
 $assert( 0 === ( $malformed['recorded_state_count'] ?? -1 ) && array() === ( $malformed['diagnostics'] ?? null ), 'malformed-json-degrades-without-throwing' );
 
 $legacy = array(
-	'schema'    => 'data-liberation/interaction-states/v1',
+	'schema'    => 'blocks-engine-capture/interaction-states/v1',
 	'sourceUrl' => 'https://example.test/alpha',
 	'states'    => array(
 		$state( 'captured', 'disclosure' ),
@@ -152,7 +152,7 @@ $website_rooted = Static_Site_Importer_Diagnostic_Projection::captured_interacti
 $assert( 3 === ( $website_rooted['recorded_state_count'] ?? -1 ), 'website-rooted-sidecar-is-found' );
 
 $mixed = array(
-	'schema' => 'data-liberation/captured-interactions/v1',
+	'schema' => 'blocks-engine-capture/captured-interactions/v1',
 	'pages'  => array(
 		$page(
 			'https://example.test/beta',
@@ -199,7 +199,7 @@ $assert( 'importer' === ( $mixed_inventory['diagnostics'][2]['context']['omissio
 $assert( 4 === ( $mixed_inventory['unrepresented_member_count'] ?? -1 ), 'unrepresented-count-sums-capture-gap-and-unmaterialized' );
 
 $no_dialog_only = array(
-	'schema' => 'data-liberation/captured-interactions/v1',
+	'schema' => 'blocks-engine-capture/captured-interactions/v1',
 	'pages'  => array(
 		$page(
 			'https://example.test/beta',
@@ -219,7 +219,7 @@ $assert( 'capture_side' === ( $no_dialog_inventory['diagnostics'][0]['context'][
 $assert( 1 === ( $no_dialog_inventory['diagnostics'][0]['context']['status_counts']['no-dialog'] ?? -1 ), 'click-failed-gap-still-counts-recorded-no-dialog' );
 
 $disproved_only = array(
-	'schema' => 'data-liberation/captured-interactions/v1',
+	'schema' => 'blocks-engine-capture/captured-interactions/v1',
 	'pages'  => array(
 		$page(
 			'https://example.test/beta',
@@ -239,7 +239,7 @@ $assert( 0 === ( $disproved_inventory['unrepresented_member_count'] ?? -1 ), 'di
 $dialog_no_dialog = Static_Site_Importer_Diagnostic_Projection::captured_interaction_inventory(
 	$artifact(
 		array(
-			'schema' => 'data-liberation/captured-interactions/v1',
+			'schema' => 'blocks-engine-capture/captured-interactions/v1',
 			'pages'  => array(
 				$page( 'https://example.test/beta', array( $state( 'no-dialog', 'dialog' ) ) ),
 			),
@@ -300,7 +300,7 @@ $selectable_states = static function ( int $captured, int $gaps ) use ( $state )
 };
 
 $partial_envelope = array(
-	'schema' => 'data-liberation/captured-interactions/v1',
+	'schema' => 'blocks-engine-capture/captured-interactions/v1',
 	'pages'  => array(
 		$page( 'https://example.test/alpha', $selectable_states( 19, 0 ) ),
 	),
@@ -320,7 +320,7 @@ $assert( 0 === ( $full['unrepresented_member_count'] ?? -1 ), 'fully-materialize
 $assert( array() === ( $full['diagnostics'] ?? null ), 'fully-materialized-set-emits-no-diagnostic' );
 
 $gap_envelope = array(
-	'schema' => 'data-liberation/captured-interactions/v1',
+	'schema' => 'blocks-engine-capture/captured-interactions/v1',
 	'pages'  => array(
 		$page( 'https://example.test/alpha', $selectable_states( 19, 9 ) ),
 	),
@@ -429,7 +429,7 @@ $truncated_inventory = Static_Site_Importer_Diagnostic_Projection::captured_inte
 $assert( 9 === ( $truncated_inventory['unrepresented_member_count'] ?? -1 ), 'truncated-members-are-not-added-on-top-of-tab-panel-residual' );
 
 $disclosure_envelope = array(
-	'schema' => 'data-liberation/captured-interactions/v1',
+	'schema' => 'blocks-engine-capture/captured-interactions/v1',
 	'pages'  => array(
 		$page(
 			'https://example.test/alpha',

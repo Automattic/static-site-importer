@@ -14,10 +14,11 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * Blocks Engine owns the producer-neutral capture vocabulary: any capture
  * producer writes these names, and every consumer reads them. The contract is
- * Automattic/blocks-engine `docs/contracts/capture-evidence.md`, published in
- * php-transformer as `Contract\CaptureEvidence`. Names follow its rule: an
- * attribute is `data-blocks-engine-capture-<name>`, a class is
- * `blocks-engine-capture-<name>`; values and semantics belong to the contract.
+ * Automattic/blocks-engine php-transformer `docs/contracts/capture-evidence.md`,
+ * published as `Contract\CaptureEvidence`. Every attribute and class shares
+ * one prefix, `data-blocks-engine-capture-` (classes too: `blocks-engine-*`
+ * classes are engine-generated, so capture classes stay outside them); values
+ * and semantics belong to the contract.
  *
  * The literals stand in until the locked Blocks Engine package ships
  * `Contract\CaptureEvidence`; then each constant points at its Blocks Engine
@@ -50,7 +51,7 @@ final class Static_Site_Importer_Capture_Evidence {
 	public const MEMBER_LOGIN = 'data-blocks-engine-capture-member-login';
 
 	/** Class prefix for a member sign-in control: `<prefix><provider>`, kept by block conversion. */
-	public const MEMBER_LOGIN_CLASS_PREFIX = 'blocks-engine-capture-member-login-';
+	public const MEMBER_LOGIN_CLASS_PREFIX = 'data-blocks-engine-capture-member-login-';
 
 	/**
 	 * Inline every name this holder defines into PHP source as a literal.

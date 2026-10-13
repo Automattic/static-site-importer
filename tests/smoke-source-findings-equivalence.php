@@ -32,10 +32,16 @@
 
 const SSI_EQUIVALENCE_DIR = __DIR__ . '/fixtures/source-findings-equivalence';
 
-/** Map producer-specific capture names onto the Blocks Engine capture vocabulary (data-liberation-agent#787). */
+/**
+ * Map producer-specific capture names onto the Blocks Engine capture vocabulary (Automattic/blocks-engine#2725).
+ *
+ * One prefix for everything: attributes `data-dla-<name>` and `data-liberation-<name>`, classes `dla-<name>`
+ * and the id suffix `--dla-` all become `data-blocks-engine-capture-<name>`; sidecar schemas
+ * `data-liberation/<name>/v<n>` become `blocks-engine-capture/<name>/v<n>`.
+ */
 function ssi_equivalence_rename( string $text ): string {
-	$text = str_replace( array( 'data-dla-', 'data-liberation-' ), 'data-blocks-engine-capture-', $text );
-	return (string) preg_replace( '/(?<![A-Za-z0-9_-])dla-/', 'blocks-engine-capture-', $text );
+	$text = str_replace( array( 'data-liberation/', '--dla-', 'data-dla-', 'data-liberation-' ), array( 'blocks-engine-capture/', '--data-blocks-engine-capture-', 'data-blocks-engine-capture-', 'data-blocks-engine-capture-' ), $text );
+	return (string) preg_replace( '/(?<![A-Za-z0-9_-])dla-/', 'data-blocks-engine-capture-', $text );
 }
 
 /** Drop run-specific values so two imports of the same artifact compare equal. */

@@ -107,6 +107,7 @@
     { "path": "tests/smoke-source-findings.php", "environment": "standalone-php" },
     { "path": "tests/smoke-source-findings-equivalence.php", "environment": "standalone-php" },
     { "path": "tests/smoke-producer-neutrality.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-capture-vocabulary-lockstep.php", "environment": "standalone-php" },
     { "path": "tests/smoke-run-storage.php", "environment": "standalone-php" },
     { "path": "tests/smoke-rest-import.php", "environment": "standalone-php" },
     { "path": "tests/smoke-lifecycle-compile-checkpoint.php", "environment": "standalone-php" },
