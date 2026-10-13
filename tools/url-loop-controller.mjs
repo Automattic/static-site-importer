@@ -16,16 +16,57 @@ const MODULE_PATH = fileURLToPath(import.meta.url);
 const STAGE_MOUNT = '/url-loop';
 const LOSS_COUNTS = ['unsupported_fallback_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count'];
 
-/**
- * The three repositories the loop composes and repairs. `option` is the CLI
- * option prefix (`--<option>-task-url`, `--<option>-verify`, `--<option>` path).
- */
-export const REPOSITORIES = {
-  'static-site-importer': { step: 'fix-ssi', option: 'ssi', base: 'main', remote: 'https://github.com/Automattic/static-site-importer.git', verify: 'npm test' },
-  'blocks-engine': { step: 'fix-blocks-engine', option: 'blocksEngine', base: 'trunk', remote: 'https://github.com/Automattic/blocks-engine.git', verify: 'composer --working-dir=php-transformer test' },
-  'data-liberation-agent': { step: 'fix-dla', option: 'dla', base: 'main', remote: 'https://github.com/Automattic/data-liberation-agent.git', verify: 'npm test' },
+/** Repositories the loop always composes and repairs. */
+export const FIXED_REPOSITORIES = {
+  'static-site-importer': { role: 'importer', step: 'fix-ssi', option: 'ssi', base: 'main', remote: 'https://github.com/Automattic/static-site-importer.git', verify: ['npm test'] },
+  'blocks-engine': { role: 'compiler', step: 'fix-blocks-engine', option: 'blocksEngine', base: 'trunk', remote: 'https://github.com/Automattic/blocks-engine.git', verify: ['composer --working-dir=php-transformer test'] },
 };
-export const REPAIR_REPOS = Object.keys(REPOSITORIES);
+export const CAPTURE_PRODUCER_ENV = 'SSI_URL_LOOP_CAPTURE_PRODUCER';
+const CAPTURE_RECEIPT_FILE = 'capture-receipt.json';
+const SLUG = /^[a-z0-9][a-z0-9._-]{0,99}$/;
+
+function argvList(value, name, placeholders = []) {
+  if (!Array.isArray(value) || !value.length || value.some((arg) => typeof arg !== 'string' || arg === '')) throw new Error(`capture_producer_invalid: ${name} must be a non-empty JSON array of non-empty strings`);
+  for (const placeholder of placeholders) if (!value.some((arg) => arg.includes(placeholder))) throw new Error(`capture_producer_invalid: ${name} must contain ${placeholder}`);
+  return [...value];
+}
+
+/**
+ * The capture producer is operator configuration, never harness code: the
+ * repository the loop composes and repairs for capture, and the commands that
+ * build it, capture a URL and compare a capture. Placeholders: `{checkout}`
+ * (the composed checkout), `{url}`, `{output}`, `{capture}` (the directory
+ * holding the Blocks Engine capture receipt), `{stage}` (`capture` or
+ * `materialization`) and `{candidate}` (the served WordPress origin).
+ */
+export function resolveCaptureProducer(input = {}, env = process.env) {
+  let producer = input.captureProducer ?? env[CAPTURE_PRODUCER_ENV];
+  if (!producer) throw new Error(`capture_producer_missing: pass --capture-producer '<JSON>' or set ${CAPTURE_PRODUCER_ENV}`);
+  if (typeof producer === 'string') {
+    try { producer = JSON.parse(producer); } catch { throw new Error('capture_producer_invalid: expected a JSON object'); }
+  }
+  if (!SLUG.test(String(producer.repository || '')) || FIXED_REPOSITORIES[producer.repository]) throw new Error('capture_producer_invalid: repository must name the capture repository');
+  if (!producer.checkout || !producer.remote || !producer.base) throw new Error('capture_producer_invalid: checkout, remote and base are required');
+  return {
+    repository: producer.repository,
+    checkout: path.resolve(producer.checkout),
+    remote: String(producer.remote),
+    base: String(producer.base),
+    build: (producer.build || []).map((command, index) => argvList(command, `build[${index}]`)),
+    capture: argvList(producer.capture, 'capture', ['{url}', '{output}']),
+    compare: argvList(producer.compare, 'compare', ['{capture}', '{stage}']),
+    compare_candidate: argvList(producer.compare_candidate, 'compare_candidate', ['{candidate}']),
+    compare_report: String(producer.compare_report || '{capture}/compare/{stage}/report.json'),
+    verify: [producer.verify || 'npm test'].flat(),
+    ...(producer.task_url ? { task_url: String(producer.task_url) } : {}),
+  };
+}
+
+/** Substitute `{name}` placeholders in an argv array or template string. */
+export function expandTemplate(template, values) {
+  const expand = (value) => value.replace(/\{([a-z_]+)\}/g, (match, key) => (Object.hasOwn(values, key) ? String(values[key]) : match));
+  return Array.isArray(template) ? template.map(expand) : expand(template);
+}
 
 function digest(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
 function normalizeUrl(value) {
@@ -49,7 +90,7 @@ export function sourceIdentity(url) {
 
 /** The one place repair branch names are defined: Cook `head` and candidate discovery both use it. */
 export function repairBranch(instance, repo, iteration) {
-  if (!REPOSITORIES[repo]) throw new Error(`unknown_repair_repository:${repo}`);
+  if (!SLUG.test(String(repo))) throw new Error(`repair_repository_invalid:${repo}`);
   return `url-loop/${instance}/${repo}-i${iteration}`;
 }
 
@@ -75,20 +116,18 @@ function boundedInteger(value, fallback, min, max, name) {
 
 /**
  * One URL as a `homeboy/workflow/v1` repair loop: every iteration evaluates a
- * candidate composed from the three repository tips plus this instance's
- * repair branches, and each repository with routed findings gets a repair
- * Cook. The loop stops when the verdict is `accepted` or a budget ends it.
+ * candidate composed from the importer, compiler and configured capture
+ * repository tips plus this instance's repair branches, and each repository
+ * with routed findings gets a repair Cook. The loop stops when the verdict is
+ * `accepted` or a budget ends it.
  */
 export function buildUrlProofWorkflow(input) {
   const url = normalizeUrl(input.url);
   const workspace = path.resolve(input.workspace || process.cwd());
-  const paths = {
-    'static-site-importer': workspace,
-    'blocks-engine': input.blocksEngine || process.env.SSI_BLOCKS_ENGINE_PATH,
-    'data-liberation-agent': input.dla || process.env.SSI_DLA_PATH,
-  };
+  const blocksEngine = input.blocksEngine || process.env.SSI_BLOCKS_ENGINE_PATH;
   const wpCodeboxBin = input.wpCodeboxBin || process.env.HOMEBOY_WP_CODEBOX_BIN;
-  if (!paths['blocks-engine'] || !paths['data-liberation-agent'] || !wpCodeboxBin) throw new Error('blocks-engine, dla and wp-codebox-bin checkouts must be configured on this runner');
+  if (!blocksEngine || !wpCodeboxBin) throw new Error('blocks-engine and wp-codebox-bin must be configured on this runner');
+  const producer = resolveCaptureProducer(input);
   const maxIterations = boundedInteger(input.maxIterations, 3, 1, 5, 'max-iterations');
   const maxStepRuns = boundedInteger(input.maxStepRuns, 20, 4, 30, 'max-step-runs');
   const deadline = String(input.deadline || '10h');
@@ -98,37 +137,43 @@ export function buildUrlProofWorkflow(input) {
   const loopId = input.instance ? `${sourceId}-${input.instance}` : sourceId;
   const root = path.resolve(input.outputRoot || path.join(workspace, 'artifacts', 'url-loop', loopId));
   const node = path.resolve(input.nodeExecutable || process.execPath);
+  const fixed = (repo, checkout) => ({ role: FIXED_REPOSITORIES[repo].role, path: path.resolve(checkout), remote: FIXED_REPOSITORIES[repo].remote, base: FIXED_REPOSITORIES[repo].base });
+  const { checkout, remote, base, repository } = producer;
+  const commands = { build: producer.build, capture: producer.capture, compare: producer.compare, compare_candidate: producer.compare_candidate, compare_report: producer.compare_report };
   const context = {
     source_id: sourceId,
     loop_id: loopId,
     root,
     workspace,
-    repositories: Object.fromEntries(REPAIR_REPOS.map((repo) => [repo, { path: path.resolve(paths[repo]), remote: REPOSITORIES[repo].remote, base: REPOSITORIES[repo].base }])),
+    repositories: {
+      'static-site-importer': fixed('static-site-importer', workspace),
+      'blocks-engine': fixed('blocks-engine', blocksEngine),
+      [repository]: { role: 'capture', path: checkout, remote, base },
+    },
+    capture_producer: { repository, ...commands },
     wp_codebox_bin: path.resolve(wpCodeboxBin),
     wordpress_version: String(input.wordpressVersion || '7.1'),
-    route_limit: boundedInteger(input.routeLimit, 12, 1, 200, 'route-limit'),
-    reference_sample: String(input.referenceSample || 'all'),
     import_steps: boundedInteger(input.importSteps, 24, 1, 200, 'import-steps'),
     runtime_toolchain: { node, env: Object.fromEntries(RUNTIME_ENV.filter((key) => key !== 'PATH' && process.env[key]).map((key) => [key, process.env[key]])) },
   };
   // The context is part of the pinned definition, so it is digested into the
   // instance identity and can never drift under a running instance.
   const evaluate = { program: node, args: [MODULE_PATH, 'evaluate', '--url', '{{inputs.url}}', '--instance', '{{instance}}', '--iteration', '{{iteration}}', '--context', JSON.stringify(context)], cwd: workspace };
-  const cook = (repo) => {
-    const { option, verify } = REPOSITORIES[repo];
-    const head = repairBranch('{{instance}}', repo, '{{iteration}}');
-    return {
-      repo,
-      'task-url': input[`${option}TaskUrl`] || REPAIR_TRACKER,
-      head,
-      placement: input.fixPlacement || 'local',
-      ...(input.fixBackend ? { backend: input.fixBackend } : {}),
-      'provider-evidence': JSON.stringify({ id: `${repo}-evaluation`, source: `{{steps.evaluate.output/repairs/${repo}/report_path}}` }),
-      prompt: `Repair the ${repo} findings for {{inputs.url}} (URL repair loop {{instance}}, iteration {{iteration}}). The ${repo}-evaluation provider evidence is the scoped work list with the composed candidate SHAs and stage reports. Fix the cause generically in ${repo}; the next iteration measures this branch.`,
-      verify: [input[`${option}Verify`] || verify].flat(),
-      'draft-pr': false,
-    };
-  };
+  const cook = (repo, taskUrl, verify) => ({
+    repo,
+    'task-url': taskUrl || REPAIR_TRACKER,
+    head: repairBranch('{{instance}}', repo, '{{iteration}}'),
+    placement: input.fixPlacement || 'local',
+    ...(input.fixBackend ? { backend: input.fixBackend } : {}),
+    'provider-evidence': JSON.stringify({ id: `${repo}-evaluation`, source: `{{steps.evaluate.output/repairs/${repo}/report_path}}` }),
+    prompt: `Repair the ${repo} findings for {{inputs.url}} (URL repair loop {{instance}}, iteration {{iteration}}). The ${repo}-evaluation provider evidence is the scoped work list with the composed candidate SHAs and stage reports. Fix the cause generically in ${repo}; the next iteration measures this branch.`,
+    verify,
+    'draft-pr': false,
+  });
+  const repairSteps = [
+    ...Object.entries(FIXED_REPOSITORIES).map(([repo, settings]) => ({ id: settings.step, repo, cook: cook(repo, input[`${settings.option}TaskUrl`], [input[`${settings.option}Verify`] || settings.verify].flat()) })),
+    { id: 'fix-capture', repo: repository, cook: cook(repository, producer.task_url, producer.verify) },
+  ];
   const workflow = {
     schema: WORKFLOW_SCHEMA,
     id: WORKFLOW_ID,
@@ -138,22 +183,22 @@ export function buildUrlProofWorkflow(input) {
     iterate: { until: { step: 'evaluate', output: '/verdict', equals: 'accepted' }, max_iterations: maxIterations },
     steps: [
       { id: 'evaluate', timeout: '90m', exec: evaluate },
-      ...REPAIR_REPOS.map((repo) => ({ id: REPOSITORIES[repo].step, needs: ['evaluate'], when: { step: 'evaluate', output: `/repairs/${repo}`, exists: true }, retry: { max: 1, on: ['failed'] }, cook: cook(repo) })),
+      ...repairSteps.map(({ id, repo, cook: definition }) => ({ id, needs: ['evaluate'], when: { step: 'evaluate', output: `/repairs/${repo}`, exists: true }, retry: { max: 1, on: ['failed'] }, cook: definition })),
     ],
   };
   return { workflow, context, inputs: { url } };
 }
 
 /** Route evidence to exactly the repository that owns the repair. */
-export function routeFindings({ captureFailures = [], captureCompare, packets = [], importFailures = [], materializationCompare } = {}) {
-  const repairs = Object.fromEntries(REPAIR_REPOS.map((repo) => [repo, { findings: [], report_path: null }]));
-  const add = (repo, item) => repairs[repo].findings.push(item);
-  for (const failure of captureFailures) add('data-liberation-agent', { kind: 'capture_failure', ...failure });
-  if (captureCompare?.passed === false) add('data-liberation-agent', { kind: 'capture_compare_failed', ...captureCompare });
+export function routeFindings({ captureRepository, captureFailures = [], captureCompare, packets = [], importFailures = [], materializationCompare } = {}) {
+  const repairs = {};
+  const add = (repo, item) => { (repairs[repo] ||= { findings: [], report_path: null }).findings.push(item); };
+  for (const failure of captureFailures) add(captureRepository, { kind: 'capture_failure', ...failure });
+  if (captureCompare?.passed === false) add(captureRepository, { kind: 'capture_compare_failed', ...captureCompare });
   for (const packet of packets) add(String(packet.owner || '').startsWith('blocks-engine/') ? 'blocks-engine' : 'static-site-importer', { kind: 'finding_packet', ...packet });
   for (const failure of importFailures) add('static-site-importer', { kind: 'import_failure', ...failure });
   if (materializationCompare?.passed === false) add('static-site-importer', { kind: 'materialization_compare_failed', ...materializationCompare });
-  return Object.fromEntries(Object.entries(repairs).filter(([, work]) => work.findings.length));
+  return repairs;
 }
 
 /**
@@ -168,7 +213,7 @@ export function evaluateLocalEvidence(evidence) {
   const quality = evidence.quality || {};
   const lossCount = LOSS_COUNTS.reduce((sum, key) => sum + Number(quality[key] || 0), 0);
   const failed = evidence.capture_compare?.passed !== true || evidence.materialization_compare?.passed !== true || quality.quality_pass !== true || lossCount !== 0;
-  const routed = routeFindings({ captureFailures: evidence.capture_failures, captureCompare: evidence.capture_compare, packets: evidence.finding_packets, importFailures: evidence.import_failures, materializationCompare: evidence.materialization_compare });
+  const routed = routeFindings({ captureRepository: evidence.capture_repository, captureFailures: evidence.capture_failures, captureCompare: evidence.capture_compare, packets: evidence.finding_packets, importFailures: evidence.import_failures, materializationCompare: evidence.materialization_compare });
   const verdict = missing ? 'blocked' : !failed ? 'accepted' : Object.keys(routed).length ? 'findings' : 'blocked';
   return {
     verdict,
@@ -226,12 +271,26 @@ export function codeboxArgs({ recipe, artifacts, port, timeoutMs }) {
   return ['recipe-run', '--recipe', recipe, '--artifacts', artifacts, '--timeout', String(timeoutMs), '--preview-hold-seconds', String(Math.ceil(timeoutMs / 1000)), '--preview-hold-blocking', '--preview-port', String(port), '--preview-bind', '127.0.0.1'];
 }
 
-export function dlaCaptureArgs(cli, { url, output, routeLimit, referenceSample }) {
-  return [cli, url, '--output', output, '--route-limit', String(routeLimit), '--reference-sample', String(referenceSample)];
+/** The configured producer's capture and compare argv for one composed checkout. */
+export function captureCommands(producer, { checkout, url, output, capture, candidate }) {
+  return {
+    capture: expandTemplate(producer.capture, { checkout, url, output }),
+    compare: (stage) => [...expandTemplate(producer.compare, { checkout, capture, stage }), ...(stage === 'materialization' ? expandTemplate(producer.compare_candidate, { candidate }) : [])],
+    report: (stage) => expandTemplate(producer.compare_report, { capture, stage }),
+  };
 }
 
-export function dlaCompareArgs(cli, { captureDir, stage, candidate }) {
-  return [cli, 'compare', captureDir, '--stage', stage, ...(candidate ? ['--candidate', candidate] : [])];
+/** Find the single capture under `output` by its Blocks Engine capture receipt. */
+export function locateCapture(output) {
+  const receipts = [output, ...(fs.existsSync(output) ? fs.readdirSync(output, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => path.join(output, entry.name)) : [])]
+    .filter((directory) => fs.existsSync(path.join(directory, CAPTURE_RECEIPT_FILE)));
+  if (receipts.length !== 1) return null;
+  const receipt = readJson(path.join(receipts[0], CAPTURE_RECEIPT_FILE));
+  const website = path.join(receipts[0], receipt.websiteRoot || 'website');
+  if (!fs.existsSync(path.join(website, 'index.html'))) return null;
+  const summary = receipt.summary || {};
+  const failures = Number(summary.routesFailed || 0) > 0 ? [{ routes_failed: summary.routesFailed, routes_captured: summary.routesCaptured ?? null, receipt_path: path.join(receipts[0], CAPTURE_RECEIPT_FILE) }] : [];
+  return { directory: receipts[0], website, failures };
 }
 
 /** Read the SSI CLI state file: terminal quality, failures and success. */
@@ -244,7 +303,7 @@ export function readImportState(state) {
   return { success: terminal.success === true, quality, import_failures: importFailures };
 }
 
-/** Compact, citable result from a DLA compare report. */
+/** Compact, citable result from a capture producer compare report (`pass`, `status`). */
 export function compareResult(reportPath) {
   const report = readJsonIfPresent(reportPath);
   if (!report) return null;
@@ -287,11 +346,6 @@ export function composeRepository({ repo, source, remote, base, instance, direct
     }
   }
   return { repository: repo, base, base_sha: baseSha, merged: branches.map(({ branch, sha }) => ({ branch, sha })), head_sha: git(directory, ['rev-parse', 'HEAD'], `candidate_head_missing:${repo}`), path: directory };
-}
-
-function captureFailures(captureDir) {
-  const diagnostics = readJsonIfPresent(path.join(captureDir, 'diagnostics.json'));
-  return (diagnostics?.failures || []).map((failure) => ({ url: failure.url, viewport: failure.viewport, stage: failure.stage, error: String(failure.error || '').slice(0, 500) }));
 }
 
 function freePort() {
@@ -343,7 +397,7 @@ async function importAndMeasure({ context, pluginZip, captureWebsite, url, direc
 }
 
 /**
- * One iteration: compose the candidate, build DLA and the SSI development
+ * One iteration: compose the candidate, build the capture producer and the SSI development
  * package, capture and compare the live source, import into Codebox, compare
  * WordPress against the capture, and decide the verdict with routed repairs.
  */
@@ -360,13 +414,14 @@ export async function runEvaluation({ context, url, instance, iteration }) {
   const evidence = {};
   let blocker = null;
   try {
-    for (const repo of REPAIR_REPOS) {
-      const { path: source, remote, base } = context.repositories[repo];
+    for (const [repo, { path: source, remote, base }] of Object.entries(context.repositories)) {
       components[repo] = composeRepository({ repo, source, remote, base, instance, directory: path.join(directory, 'candidate', repo) });
     }
-    const dla = components['data-liberation-agent'].path;
-    for (const [args, reason] of [[['ci', '--no-audit', '--no-fund'], 'dla_install_failed'], [['run', 'build'], 'dla_build_failed']]) {
-      if (run('npm', args, { cwd: dla, env, log: path.join(directory, 'logs', `dla-${args[0]}.log`) }).status !== 0) throw new LoopBlocker(reason);
+    const producer = context.capture_producer;
+    const captureCheckout = components[producer.repository].path;
+    for (const [index, command] of producer.build.entries()) {
+      const [program, ...args] = expandTemplate(command, { checkout: captureCheckout });
+      if (run(program, args, { cwd: captureCheckout, env, log: path.join(directory, 'logs', `capture-build-${index}.log`) }).status !== 0) throw new LoopBlocker(`capture_build_failed:${index}`);
     }
     const ssi = components['static-site-importer'].path;
     const packageDir = path.join(directory, 'ssi-package');
@@ -374,21 +429,24 @@ export async function runEvaluation({ context, url, instance, iteration }) {
     const pluginZip = fs.readdirSync(packageDir).filter((file) => file.endsWith('.zip')).map((file) => path.join(packageDir, file))[0];
     if (!pluginZip) throw new LoopBlocker('ssi_package_missing');
 
-    const cli = path.join(dla, 'dist', 'cli.js');
-    const captureRoot = path.join(directory, 'capture');
-    run(context.runtime_toolchain.node, dlaCaptureArgs(cli, { url: normalized, output: captureRoot, routeLimit: context.route_limit, referenceSample: context.reference_sample }), { cwd: directory, env, log: path.join(directory, 'logs', 'dla-capture.log') });
-    const captureDir = path.join(captureRoot, new URL(normalized).hostname);
-    if (!fs.existsSync(path.join(captureDir, 'website', 'index.html'))) throw new LoopBlocker('capture_failed', path.join(directory, 'logs', 'dla-capture.log'));
-    evidence.capture_failures = captureFailures(captureDir);
-    run(context.runtime_toolchain.node, dlaCompareArgs(cli, { captureDir, stage: 'capture' }), { cwd: directory, env, log: path.join(directory, 'logs', 'compare-capture.log') });
-    evidence.capture_compare = compareResult(path.join(captureDir, 'compare', 'capture', 'report.json'));
+    const output = path.join(directory, 'capture');
+    const [captureProgram, ...captureArgs] = captureCommands(producer, { checkout: captureCheckout, url: normalized, output }).capture;
+    run(captureProgram, captureArgs, { cwd: directory, env, log: path.join(directory, 'logs', 'capture.log') });
+    const located = locateCapture(output);
+    if (!located) throw new LoopBlocker('capture_receipt_missing', path.join(directory, 'logs', 'capture.log'));
+    evidence.capture_repository = producer.repository;
+    evidence.capture_failures = located.failures;
+    const commands = captureCommands(producer, { checkout: captureCheckout, capture: located.directory });
+    const compare = (stage, candidate) => {
+      const [program, ...args] = captureCommands(producer, { checkout: captureCheckout, capture: located.directory, candidate }).compare(stage);
+      run(program, args, { cwd: directory, env, log: path.join(directory, 'logs', `compare-${stage}.log`) });
+      return compareResult(commands.report(stage));
+    };
+    evidence.capture_compare = compare('capture');
 
     const measured = await importAndMeasure({
-      context, pluginZip, captureWebsite: path.join(captureDir, 'website'), url: normalized, directory,
-      materialize: (origin) => {
-        run(context.runtime_toolchain.node, dlaCompareArgs(cli, { captureDir, stage: 'materialization', candidate: origin }), { cwd: directory, env, log: path.join(directory, 'logs', 'compare-materialization.log') });
-        return compareResult(path.join(captureDir, 'compare', 'materialization', 'report.json'));
-      },
+      context, pluginZip, captureWebsite: located.website, url: normalized, directory,
+      materialize: (origin) => compare('materialization', origin),
     });
     evidence.quality = measured.imported.quality;
     evidence.import_failures = measured.imported.import_failures;
@@ -400,14 +458,14 @@ export async function runEvaluation({ context, url, instance, iteration }) {
     blocker = { reason: error.reason, detail: error.detail };
   } finally {
     // Includes a checkout left behind by a merge conflict.
-    for (const repo of REPAIR_REPOS) {
+    for (const [repo, { path: source }] of Object.entries(context.repositories)) {
       const checkout = path.join(directory, 'candidate', repo);
-      if (fs.existsSync(checkout)) run('git', ['worktree', 'remove', '--force', checkout], { cwd: context.repositories[repo].path });
+      if (fs.existsSync(checkout)) run('git', ['worktree', 'remove', '--force', checkout], { cwd: source });
     }
   }
 
   const decided = blocker ? { verdict: 'blocked', repairs: {}, loss_count: null, blocker: blocker.reason, acceptance: { solved: false, scope: 'loop_stop_condition' } } : evaluateLocalEvidence(evidence);
-  const componentRecord = Object.fromEntries(Object.entries(components).map(([repo, { path: _path, ...record }]) => [repo, record]));
+  const componentRecord = Object.fromEntries(Object.entries(components).map(([repo, record]) => [repo, { base: record.base, base_sha: record.base_sha, merged: record.merged, head_sha: record.head_sha }]));
   writeRepairEvidence(directory, decided.repairs, {
     url: normalized,
     instance,
@@ -439,7 +497,7 @@ export function evaluationVerdict(evaluation, reportPath) {
   };
 }
 
-const REPEATABLE = new Set(['ssiVerify', 'blocksEngineVerify', 'dlaVerify']);
+const REPEATABLE = new Set(['ssiVerify', 'blocksEngineVerify']);
 export function parseArgs(argv) {
   const options = {};
   for (let i = 0; i < argv.length; i += 1) {
@@ -456,7 +514,7 @@ function writeStepOutput(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
 }
 
-const USAGE = 'usage: url-loop-controller.mjs start|workflow --url <url> [--blocks-engine <path>] [--dla <path>] [--wp-codebox-bin <path>] [--output-root <path>] [--instance <token>] [--ssi-task-url <url>] [--blocks-engine-task-url <url>] [--dla-task-url <url>] [--ssi-verify <command>]... [--blocks-engine-verify <command>]... [--dla-verify <command>]... [--fix-placement local] [--fix-backend <backend>] [--wordpress-version 7.1] [--route-limit 12] [--reference-sample all] [--import-steps 24] [--max-iterations 3] [--max-step-runs 20] [--deadline 10h]';
+const USAGE = 'usage: url-loop-controller.mjs start|workflow --url <url> --capture-producer <JSON> [--blocks-engine <path>] [--wp-codebox-bin <path>] [--output-root <path>] [--instance <token>] [--ssi-task-url <url>] [--blocks-engine-task-url <url>] [--ssi-verify <command>]... [--blocks-engine-verify <command>]... [--fix-placement local] [--fix-backend <backend>] [--wordpress-version 7.1] [--import-steps 24] [--max-iterations 3] [--max-step-runs 20] [--deadline 10h]';
 
 async function main() {
   const [operation, ...argv] = process.argv.slice(2);
