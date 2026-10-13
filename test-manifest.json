@@ -101,6 +101,7 @@
     { "path": "tests/smoke-direct-artifact-import.php", "environment": "standalone-php" },
     { "path": "tests/smoke-direct-artifact-omitted-page.php", "environment": "standalone-php" },
     { "path": "tests/smoke-intake-admission.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-url-intake-admission.php", "environment": "standalone-php" },
     { "path": "tests/smoke-omitted-files-findings.php", "environment": "standalone-php" },
     { "path": "tests/smoke-font-face-unavailable.php", "environment": "standalone-php" },
     { "path": "tests/smoke-capture-findings.php", "environment": "standalone-php" },
