@@ -17,9 +17,9 @@ test('complete DLA receipt does not require invented top-level fields', () => {
 });
 
 test('the configured DLA release identity is immutable and uses the published CLI shape', () => {
-  assert.equal(DLA_RELEASE.version, 'v0.6.5');
-  assert.equal(DLA_RELEASE.commit, '880575b81cd837322520d05d260f5d682506afbb');
-  assert.match(DLA_RELEASE.asset, /data-liberation-0\.6\.5\.tgz$/);
+  assert.equal(DLA_RELEASE.version, 'v0.27.0');
+  assert.equal(DLA_RELEASE.commit, '2986ca1e386e994696d41a47e94edb8dd3665c43');
+  assert.match(DLA_RELEASE.asset, /data-liberation-0\.27\.0\.tgz$/);
 });
 
 test('artifact selection rejects ambiguous generated artifact directories', () => {

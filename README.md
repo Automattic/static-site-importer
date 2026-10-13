@@ -356,14 +356,14 @@ node tools/url-loop-intake.mjs https://quinn-fluid-demo.squarespace.com/ \
   --blocks-engine /path/to/blocks-engine
 ```
 
-The entrypoint configures the pinned DLA v0.6.5 asset and invokes
+The entrypoint configures the pinned DLA v0.27.0 asset and invokes
 `npx --yes --package=<asset> data-liberation <url> --output <dir>`. The operator
 supplies only the URL on later runs. The resulting `url-loop-handoff.json` records
 derived SHA256 provenance for the normalized URL, receipt bytes, and retained
 capture content, plus the capture receipt,
 observed component identities, normalized fixture, canonical matrix summary and
 artifact references when requested, stage failures, and replay commands. A capture receipt must be
-`data-liberation/capture-receipt/v1`, with `source.url` bound to the normalized
+`blocks-engine-capture/capture-receipt/v1`, with `source.url` bound to the normalized
 URL and a complete route summary (`routesCaptured === routesDiscovered`, with no
 failed or skipped routes). Ambiguous artifact directories, partial captures,
 missing files, and missing declared release identity are blocked before SSI intake. A complete capture
