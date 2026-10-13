@@ -862,6 +862,41 @@ if ( class_exists( 'ZipArchive' ) ) {
 	$assert_archive_limit( 'rest-zip-entry-size', array( 'max_entry_uncompressed_bytes' => 16 ), array( 'index.html' => str_repeat( 'a', 32 ) ), 'static_site_importer_archive_entry_uncompressed_bytes_exceeded' );
 	$assert_archive_limit( 'rest-zip-aggregate-size', array( 'max_entry_uncompressed_bytes' => 1024, 'max_total_uncompressed_bytes' => 32 ), array( 'index.html' => str_repeat( 'a', 20 ), 'about.html' => str_repeat( 'b', 20 ) ), 'static_site_importer_archive_total_uncompressed_bytes_exceeded' );
 	$assert_archive_limit( 'rest-zip-compression-ratio', array( 'max_entry_uncompressed_bytes' => 4096, 'max_compression_ratio' => 2 ), array( 'index.html' => str_repeat( 'a', 2048 ) ), 'static_site_importer_archive_compression_ratio_exceeded' );
+	// A per-entry limit skips one non-entry entry unread and reports it; the
+	// entrypoint and redirects manifest fail closed (above, and here).
+	$archive_with_limits = static function ( array $limits, array $entries, ?array &$skipped ) {
+		$zip_path = tempnam( sys_get_temp_dir(), 'ssi-limit-' );
+		$zip      = new ZipArchive();
+		$zip->open( $zip_path, ZipArchive::OVERWRITE );
+		foreach ( $entries as $path => $content ) {
+			$zip->addFromString( $path, $content );
+		}
+		$zip->close();
+		$GLOBALS['ssi_filters']['static_site_importer_archive_limits'] = array(
+			static fn ( array $configured_limits ): array => array_merge( $configured_limits, $limits ),
+		);
+		$result = static_site_importer_rest_archive_files(
+			array(
+				'name'           => 'oversize-entry.zip',
+				'content_base64' => base64_encode( file_get_contents( $zip_path ) ),
+			),
+			$skipped
+		);
+		unset( $GLOBALS['ssi_filters']['static_site_importer_archive_limits'] );
+		@unlink( $zip_path );
+		return $result;
+	};
+	$entry_skipped = array();
+	$entry_result  = $archive_with_limits( array( 'max_entry_uncompressed_bytes' => 64, 'max_total_uncompressed_bytes' => 96 ), array( 'index.html' => '<main>Home</main>', 'assets/clip.mp4' => str_repeat( 'v', 128 ) ), $entry_skipped );
+	$assert( is_array( $entry_result ) && array( 'website/index.html' ) === array_column( $entry_result, 'path' ), 'rest-zip-skips-oversize-non-entry-entry' );
+	$assert( 1 === count( $entry_skipped ) && 'static_site_importer_archive_entry_skipped' === ( $entry_skipped[0]['code'] ?? '' ) && 'website/assets/clip.mp4' === ( $entry_skipped[0]['source_path'] ?? '' ) && 'entry_uncompressed_bytes_exceeded' === ( $entry_skipped[0]['reason_code'] ?? '' ) && 128 === ( $entry_skipped[0]['metrics']['uncompressed_bytes'] ?? 0 ), 'rest-zip-reports-oversize-entry-finding', wp_json_encode( $entry_skipped ) );
+	$ratio_skipped = array();
+	$ratio_result  = $archive_with_limits( array( 'max_entry_uncompressed_bytes' => 4096, 'max_compression_ratio' => 2 ), array( 'index.html' => '<main>Home</main>', 'assets/data.json' => str_repeat( 'a', 2048 ) ), $ratio_skipped );
+	$assert( is_array( $ratio_result ) && array( 'website/index.html' ) === array_column( $ratio_result, 'path' ) && 'compression_ratio_exceeded' === ( $ratio_skipped[0]['reason_code'] ?? '' ), 'rest-zip-skips-high-ratio-non-entry-entry' );
+	$redirects_skipped = array();
+	$redirects_result  = $archive_with_limits( array( 'max_entry_uncompressed_bytes' => 64 ), array( 'index.html' => '<main>Home</main>', '_redirects' => str_repeat( "/a /b 301\n", 20 ) ), $redirects_skipped );
+	$assert( is_wp_error( $redirects_result ) && 'static_site_importer_archive_entry_uncompressed_bytes_exceeded' === $redirects_result->get_error_code(), 'rest-zip-oversize-redirects-manifest-fails-closed' );
+
 	$GLOBALS['ssi_filters']['static_site_importer_archive_limits'] = array(
 		static function ( array $limits ): array {
 			$limits['max_encoded_bytes'] = PHP_INT_MAX;
@@ -941,20 +976,25 @@ if ( class_exists( 'ZipArchive' ) ) {
 	$mixed_zip = new ZipArchive();
 	$mixed_zip->open( $staged_path, ZipArchive::OVERWRITE );
 	$mixed_zip->addFromString( 'website/index.html', '<main>Staged</main>' );
-	$mixed_zip->addFromString( 'website/assets/style.php', 'body{color:red}' );
+	$mixed_zip->addFromString( 'website/assets/app.ts', 'export {}' );
 	$mixed_zip->close();
+	// Extraction carries every entry; admission is the one static-content decision.
 	$mixed_skipped = array();
 	$mixed_files   = static_site_importer_staged_archive_files( array( 'name' => 'website.zip', 'staged_path' => $staged_path ), false, $mixed_skipped );
-	$assert( is_array( $mixed_files ) && array( 'website/index.html' ) === array_column( $mixed_files, 'path' ), 'staged-zip-skips-non-static-asset-instead-of-rejecting-archive' );
-	$assert( 1 === count( $mixed_skipped ) && 'website/assets/style.php' === ( $mixed_skipped[0]['source_path'] ?? '' ) && 'static_site_importer_non_static_file_skipped' === ( $mixed_skipped[0]['code'] ?? '' ), 'staged-zip-records-finding-for-skipped-asset' );
+	$assert( is_array( $mixed_files ) && array( 'website/index.html', 'website/assets/app.ts' ) === array_column( $mixed_files, 'path' ) && array() === $mixed_skipped, 'staged-zip-extraction-leaves-static-content-decision-to-admission' );
+	$mixed_admission = Static_Site_Importer_Content_Policy::admit_artifact( array( 'entrypoint' => 'website/index.html', 'files' => is_array( $mixed_files ) ? $mixed_files : array() ) );
+	$assert( is_array( $mixed_admission ) && array( 'website/index.html' ) === array_column( $mixed_admission['artifact']['files'], 'path' ), 'staged-zip-admission-skips-non-static-asset-instead-of-rejecting-archive' );
+	$assert( is_array( $mixed_admission ) && 1 === count( $mixed_admission['findings'] ) && 'website/assets/app.ts' === ( $mixed_admission['findings'][0]['source_path'] ?? '' ) && 'static_site_importer_non_static_file_skipped' === ( $mixed_admission['findings'][0]['code'] ?? '' ), 'staged-zip-admission-records-finding-for-skipped-asset' );
 
 	$page_zip = new ZipArchive();
 	$page_zip->open( $staged_path, ZipArchive::OVERWRITE );
 	$page_zip->addFromString( 'website/index.php', '<?php echo 1;' );
 	$page_zip->addFromString( 'website/about.html', '<main>About</main>' );
+	$page_zip->addFromString( 'website/blog/feed.php', '<?php echo 2;' );
 	$page_zip->close();
-	$page_rejected = static_site_importer_staged_archive_files( array( 'name' => 'website.zip', 'staged_path' => $staged_path ) );
-	$assert( is_wp_error( $page_rejected ) && 'static_site_importer_executable_source_rejected' === $page_rejected->get_error_code(), 'staged-zip-still-rejects-non-static-page-document' );
+	$page_files    = static_site_importer_staged_archive_files( array( 'name' => 'website.zip', 'staged_path' => $staged_path ) );
+	$page_rejected = Static_Site_Importer_Content_Policy::admit_artifact( array( 'entrypoint' => 'website/about.html', 'files' => is_array( $page_files ) ? $page_files : array() ) );
+	$assert( is_wp_error( $page_rejected ) && 'static_site_importer_executable_source_rejected' === $page_rejected->get_error_code(), 'staged-zip-root-entry-document-fails-closed' );
 	$assert( is_wp_error( $page_rejected ) && str_contains( $page_rejected->get_error_message(), 'website/index.php' ), 'staged-zip-rejection-message-names-the-path' );
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-public-error-projection.php';
 	$page_public = Static_Site_Importer_Public_Error_Projection::project_public_error_message(
@@ -972,6 +1012,8 @@ if ( class_exists( 'ZipArchive' ) ) {
 		)
 	);
 	$assert( str_contains( $page_public, 'website/index.php is not static content' ), 'staged-zip-public-rejection-names-the-path' );
+	$nested_page = Static_Site_Importer_Content_Policy::admit_artifact( array( 'entrypoint' => 'website/about.html', 'files' => array_values( array_filter( is_array( $page_files ) ? $page_files : array(), static fn ( array $file ): bool => 'website/index.php' !== $file['path'] ) ) ) );
+	$assert( is_array( $nested_page ) && array( 'website/about.html' ) === array_column( $nested_page['artifact']['files'], 'path' ) && 'static_site_importer_non_static_page_dropped' === ( $nested_page['findings'][0]['code'] ?? '' ), 'staged-zip-admission-drops-non-entry-server-page' );
 
 	$symlink_path = $staged_path . '.link';
 	if ( function_exists( 'symlink' ) && @symlink( $staged_path, $symlink_path ) ) {

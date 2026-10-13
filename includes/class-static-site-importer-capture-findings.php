@@ -39,7 +39,7 @@ class Static_Site_Importer_Capture_Findings {
 	/** Most finding rows carried into the report. */
 	public const MAX_FINDINGS = 500;
 
-	private const UNITS = array( 'route', 'profile', 'stylesheet', 'block' );
+	private const UNITS = array( 'route', 'profile', 'stylesheet', 'block', 'asset' );
 
 	/**
 	 * Remove the findings file from an artifact file list and project its rows.

@@ -49,7 +49,7 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 			return $workspace;
 		}
 		$verified_text = array();
-		$source_policy = Static_Site_Importer_Content_Policy::validate_artifact(
+		$admission     = Static_Site_Importer_Content_Policy::admit_artifact(
 			$artifact,
 			$payload_reader,
 			static function ( array $file, string $bytes ) use ( $workspace, &$verified_text ) {
@@ -64,10 +64,12 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				return $published;
 			}
 		);
-		if ( is_wp_error( $source_policy ) ) {
+		if ( is_wp_error( $admission ) ) {
 			$workspace->purge();
-			return $source_policy;
+			return $admission;
 		}
+		$artifact = $admission['artifact'];
+		$args     = Static_Site_Importer_Content_Policy::with_intake_findings( $args, $admission['findings'] );
 		if ( ! class_exists( 'Static_Site_Importer_Redirects_Manifest' ) ) {
 			require_once __DIR__ . '/class-static-site-importer-redirects-manifest.php';
 		}
@@ -747,9 +749,10 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 				return $composed_state;
 			}
 			// Acceptance is decided here, once, before any WordPress mutation. A
-			// non-entrypoint page Blocks Engine omitted is a page-level loss: the
-			// remaining plan pages import and the omission travels as a finding.
-			// A site without its entrypoint or with dropped source files is partial.
+			// non-entrypoint page Blocks Engine omitted is a page-level loss, and a
+			// source file it dropped at a declared limit is a file-level loss: the
+			// rest of the plan imports and each omission travels as a finding in
+			// the plan diagnostics. Only a site without its entrypoint is refused.
 			$plan_diagnostics = $composed_state['result']['wordpress_site_plan']['diagnostics'] ?? array();
 			$entry_path       = (string) ( $composed_state['result']['wordpress_site_plan']['source']['entry_path'] ?? '' );
 			if ( in_array( $entry_path, array_column( Static_Site_Importer_Diagnostic_Loss_Classes::omitted_pages( $plan_diagnostics ), 'source_path' ), true ) ) {
@@ -761,19 +764,6 @@ final class Static_Site_Importer_Direct_Artifact_Import {
 						'static_site_importer_omitted_entrypoint',
 						'The compiler omitted the entrypoint page; refusing to import a site without it.',
 						array( 'source_path' => $entry_path )
-					)
-				);
-			}
-			$omitted_files = Static_Site_Importer_Diagnostic_Loss_Classes::omitted_artifact_file_count( $plan_diagnostics );
-			if ( $omitted_files > 0 ) {
-				return self::fail(
-					$workspace,
-					$run,
-					'compose',
-					new WP_Error(
-						'static_site_importer_artifact_files_omitted',
-						sprintf( 'The compiler omitted %d source file(s) at its declared limits; refusing to import a partial site.', $omitted_files ),
-						array( 'omitted_file_count' => $omitted_files )
 					)
 				);
 			}

@@ -708,7 +708,9 @@ function static_site_importer_source_runtime( array $source, ?object $payload_re
 		}
 	}
 
-	$artifact      = array_merge(
+	// The static-content decision runs once, where the artifact is frozen for
+	// compilation (Static_Site_Importer_Content_Policy::admit_artifact()).
+	$artifact = array_merge(
 		$metadata,
 		array(
 			'schema'     => 'blocks-engine/php-transformer/site-artifact/v1',
@@ -716,10 +718,6 @@ function static_site_importer_source_runtime( array $source, ?object $payload_re
 			'files'      => $files,
 		)
 	);
-	$source_policy = Static_Site_Importer_Content_Policy::validate_artifact( $artifact, $payload_reader );
-	if ( is_wp_error( $source_policy ) ) {
-		return $source_policy;
-	}
 
 	return array(
 		'artifact'        => $artifact,
@@ -944,7 +942,7 @@ function static_site_importer_staged_archive_payload_reader( array $archive ) {
  * @param array<string,int> $limits       Bounded archive policy.
  * @param bool              $delete_path  Whether this importer owns the path.
  * @param bool              $return_payload_references Whether binary entries are returned as payload references.
- * @param array|null        $skipped      Receives one finding per non-static asset entry that was left out.
+ * @param array|null        $skipped      Receives one finding per entry skipped at a per-entry limit.
  * @return array<int,array<string,mixed>>|WP_Error
  */
 function static_site_importer_archive_files_from_path( string $archive_path, array $limits, bool $delete_path, bool $return_payload_references = false, ?array &$skipped = null ) {
@@ -972,7 +970,11 @@ function static_site_importer_archive_files_from_path( string $archive_path, arr
 		return static_site_importer_rest_archive_limit_error( 'entry_count_exceeded' );
 	}
 
+	// Entry count and total size bound the whole archive and fail closed. A
+	// per-entry limit bounds one entry: an oversize entry is skipped unread and
+	// reported, unless the site cannot be imported without it.
 	$total_uncompressed_bytes = 0;
+	$oversize                 = array();
 	for ( $i = 0; $i < $zip->numFiles; $i++ ) {
 		$stat = $zip->statIndex( $i );
 		if ( ! is_array( $stat ) || $stat['size'] < 0 || $stat['comp_size'] < 0 ) {
@@ -982,9 +984,39 @@ function static_site_importer_archive_files_from_path( string $archive_path, arr
 
 		$entry_uncompressed_bytes = (int) $stat['size'];
 		$entry_compressed_bytes   = (int) $stat['comp_size'];
+		$entry_limit              = '';
 		if ( $entry_uncompressed_bytes > $limits['max_entry_uncompressed_bytes'] ) {
-			$cleanup( $zip );
-			return static_site_importer_rest_archive_limit_error( 'entry_uncompressed_bytes_exceeded' );
+			$entry_limit = 'entry_uncompressed_bytes_exceeded';
+		} elseif ( 0 === $entry_compressed_bytes ? $entry_uncompressed_bytes > 0 : $entry_uncompressed_bytes / $entry_compressed_bytes > $limits['max_compression_ratio'] ) {
+			$entry_limit = 'compression_ratio_exceeded';
+		}
+		if ( '' !== $entry_limit ) {
+			$entry_path = static_site_importer_rest_archive_entry_path( $stat['name'] );
+			if ( '' !== $entry_path && Static_Site_Importer_Content_Policy::fails_closed( $entry_path ) ) {
+				$cleanup( $zip );
+				return static_site_importer_rest_archive_limit_error( $entry_limit );
+			}
+			$oversize[ $i ] = true;
+			if ( '' !== $entry_path ) {
+				$skipped   = is_array( $skipped ) ? $skipped : array();
+				$skipped[] = array(
+					'code'        => 'static_site_importer_archive_entry_skipped',
+					'type'        => 'static-site-importer',
+					'severity'    => 'warning',
+					'stage'       => 'archive_intake',
+					'source_path' => $entry_path,
+					'path'        => $entry_path,
+					'reason_code' => $entry_limit,
+					'metrics'     => array(
+						'uncompressed_bytes'           => $entry_uncompressed_bytes,
+						'compressed_bytes'             => $entry_compressed_bytes,
+						'max_entry_uncompressed_bytes' => (int) $limits['max_entry_uncompressed_bytes'],
+						'max_compression_ratio'        => (int) $limits['max_compression_ratio'],
+					),
+					'message'     => sprintf( 'Skipped %1$s: the archive entry exceeds the %2$s limit, so references to it are unresolved.', $entry_path, str_replace( '_exceeded', '', $entry_limit ) ),
+				);
+			}
+			continue;
 		}
 
 		$total_uncompressed_bytes += $entry_uncompressed_bytes;
@@ -992,59 +1024,19 @@ function static_site_importer_archive_files_from_path( string $archive_path, arr
 			$cleanup( $zip );
 			return static_site_importer_rest_archive_limit_error( 'total_uncompressed_bytes_exceeded' );
 		}
-
-		if ( 0 === $entry_compressed_bytes ? $entry_uncompressed_bytes > 0 : $entry_uncompressed_bytes / $entry_compressed_bytes > $limits['max_compression_ratio'] ) {
-			$cleanup( $zip );
-			return static_site_importer_rest_archive_limit_error( 'compression_ratio_exceeded' );
-		}
 	}
 
 	$files = array();
 	for ( $i = 0; $i < $zip->numFiles; $i++ ) {
+		if ( isset( $oversize[ $i ] ) ) {
+			continue;
+		}
 		$entry = $zip->getNameIndex( $i );
-		if ( false === $entry || str_ends_with( $entry, '/' ) || str_starts_with( $entry, '__MACOSX/' ) ) {
+		if ( false === $entry ) {
 			continue;
 		}
-
-		$path = static_site_importer_rest_artifact_path( $entry );
+		$path = static_site_importer_rest_archive_entry_path( $entry );
 		if ( '' === $path ) {
-			continue;
-		}
-
-		if ( ! static_site_importer_rest_should_include_artifact_file( $path ) ) {
-			continue;
-		}
-
-		if ( ! Static_Site_Importer_Content_Policy::is_static_path( $path ) ) {
-			// A non-static page document cannot be imported, so it still rejects the
-			// archive. Any other entry is an asset: leave it out and report it, so
-			// references to it resolve like any other missing asset.
-			if ( static_site_importer_rest_is_page_document_path( $path ) ) {
-				$cleanup( $zip );
-				return new WP_Error(
-					'static_site_importer_executable_source_rejected',
-					sprintf(
-						/* translators: %s: archive entry path. */
-						__( 'ZIP archives may contain static content only; %s is not static content.', 'static-site-importer' ),
-						$path
-					),
-					array(
-						'status' => 400,
-						'path'   => $path,
-					)
-				);
-			}
-			$skipped   = is_array( $skipped ) ? $skipped : array();
-			$skipped[] = array(
-				'code'        => 'static_site_importer_non_static_file_skipped',
-				'type'        => 'static-site-importer',
-				'severity'    => 'warning',
-				'stage'       => 'archive_intake',
-				'source_path' => $path,
-				'path'        => $path,
-				'reason_code' => 'non_static_extension',
-				'message'     => sprintf( 'Skipped %s: only static content can be imported, so references to it are unresolved.', $path ),
-			);
 			continue;
 		}
 
@@ -1080,16 +1072,20 @@ function static_site_importer_archive_files_from_path( string $archive_path, arr
 }
 
 /**
- * Whether a non-static archive entry is a page document rather than an asset.
+ * The artifact path an archive entry contributes, or '' when the entry is not part of the site.
  *
- * Page documents are the entry documents an import starts from (index, default
- * and home pages); a server-side one cannot be imported as static content.
+ * Directories, macOS resource forks and excluded files contribute nothing.
  *
- * @param string $path Normalized artifact path.
- * @return bool
+ * @param string $entry ZIP entry name.
+ * @return string
  */
-function static_site_importer_rest_is_page_document_path( string $path ): bool {
-	return in_array( strtolower( pathinfo( $path, PATHINFO_FILENAME ) ), array( 'index', 'default', 'home' ), true );
+function static_site_importer_rest_archive_entry_path( string $entry ): string {
+	if ( '' === $entry || str_ends_with( $entry, '/' ) || str_starts_with( $entry, '__MACOSX/' ) ) {
+		return '';
+	}
+	$path = static_site_importer_rest_artifact_path( $entry );
+
+	return '' !== $path && static_site_importer_rest_should_include_artifact_file( $path ) ? $path : '';
 }
 
 /**
@@ -1143,11 +1139,10 @@ function static_site_importer_rest_archive_limits(): array {
  * under the 320 MiB cap, and resolve() clamps it there regardless.
  *
  * Without that headroom a near-limit archive compiles past the declared budget
- * and the generated files are dropped, which
- * Static_Site_Importer_Direct_Artifact_Import refuses outright as
- * static_site_importer_artifact_files_omitted rather than importing a partial
- * site. So the cost of getting this wrong is a late refusal after a full
- * capture and compile, not a quiet loss -- but late and avoidable.
+ * and the generated files are dropped. The import still completes and reports
+ * each dropped file as an `omitted_artifact_file(s)` finding, so the cost of
+ * getting this wrong is a reported loss after a full capture and compile, not
+ * a quiet one -- but avoidable.
  *
  * Raising intake means raising the compiler cap first and keeping the headroom
  * between them.

@@ -1002,9 +1002,9 @@ $drop_diagnostics = $compiler_drop_report->diagnostics();
 
 $assert( 'omitted_artifact_files' === ( $drop_diagnostics[0]['type'] ?? '' ) && 'omitted_artifact_files' === ( $drop_diagnostics[0]['code'] ?? '' ), 'compiler-file-limit-row-rewritten-to-importer-type' );
 $assert( 'file_limit_exceeded' === ( $drop_diagnostics[0]['original_code'] ?? '' ) && 'file_limit_exceeded' === ( $drop_diagnostics[0]['reason_code'] ?? '' ), 'compiler-file-limit-row-preserves-producer-code' );
-$assert( 'unsupported_loss' === ( $drop_diagnostics[0]['loss_class'] ?? '' ) && 'unacceptable_imported_output_defect' === ( $drop_diagnostics[0]['acceptability'] ?? '' ), 'compiler-file-limit-row-classifies-as-defect' );
+$assert( 'omitted_unit' === ( $drop_diagnostics[0]['loss_class'] ?? '' ) && 'accepted_reported_loss' === ( $drop_diagnostics[0]['acceptability'] ?? '' ), 'compiler-file-limit-row-classifies-as-reported-loss' );
 $assert( 'not_materialized' === ( $drop_diagnostics[0]['materialization_status'] ?? '' ), 'compiler-file-limit-row-reports-not-materialized' );
-$assert( 'omitted_artifact_file' === ( $drop_diagnostics[1]['type'] ?? '' ) && 'unsupported_loss' === ( $drop_diagnostics[1]['loss_class'] ?? '' ), 'compiler-byte-limit-row-rewritten-to-importer-type' );
+$assert( 'omitted_artifact_file' === ( $drop_diagnostics[1]['type'] ?? '' ) && 'omitted_unit' === ( $drop_diagnostics[1]['loss_class'] ?? '' ), 'compiler-byte-limit-row-rewritten-to-importer-type' );
 $assert( 'svg_materialization_failure' === ( $drop_diagnostics[2]['type'] ?? '' ) && 'importer_materialization_bug' === ( $drop_diagnostics[2]['loss_class'] ?? '' ), 'unrelated-diagnostics-untouched-by-drop-rewrite' );
 
 $assert( 2 === ( $drop_quality['omitted_file_count'] ?? -1 ), 'quality-counts-omitted-artifact-files' );
@@ -1020,7 +1020,7 @@ $drop_report_packets = $compiler_drop_report['finding_packets']['packets'] ?? ar
 $drop_packet_types   = array_column( $drop_report_packets, 'type' );
 $assert( in_array( 'omitted_artifact_files', $drop_packet_types, true ) && in_array( 'omitted_artifact_file', $drop_packet_types, true ), 'finding-packets-include-omitted-file-diagnostics' );
 $first_omitted_packet = $drop_report_packets[ array_search( 'omitted_artifact_files', $drop_packet_types, true ) ] ?? array();
-$assert( 'raise_compiler_file_limit' === ( $first_omitted_packet['repair_class'] ?? '' ) && 'unsupported_loss' === ( $first_omitted_packet['loss_class'] ?? '' ), 'finding-packet-routes-omitted-files-to-compiler-limit-repair' );
+$assert( 'raise_compiler_file_limit' === ( $first_omitted_packet['repair_class'] ?? '' ) && 'omitted_unit' === ( $first_omitted_packet['loss_class'] ?? '' ), 'finding-packet-routes-omitted-files-to-compiler-limit-repair' );
 
 // The diagnostic-contract envelope, which is what the canonical service reads on
 // error paths where the finalized report is absent, must agree with the report.
@@ -1039,8 +1039,8 @@ $drop_envelope = Static_Site_Importer_Diagnostic_Contract::build(
 	)
 );
 $envelope_row = $drop_envelope['diagnostics'][0] ?? array();
-$assert( 'omitted_artifact_file' === ( $envelope_row['type'] ?? '' ) && 'unsupported_loss' === ( $envelope_row['loss_class'] ?? '' ) && 'unacceptable_imported_output_defect' === ( $envelope_row['acceptability'] ?? '' ), 'contract-envelope-reowns-byte-limit-drop' );
-$assert( 'unsupported_loss' === ( $drop_envelope['by_loss_class']['unsupported_loss'][0]['type'] ?? null ) || in_array( 'omitted_artifact_file', array_column( $drop_envelope['by_loss_class']['unsupported_loss'] ?? array(), 'type' ), true ), 'contract-envelope-loss-summary-includes-omitted-files' );
+$assert( 'omitted_artifact_file' === ( $envelope_row['type'] ?? '' ) && 'omitted_unit' === ( $envelope_row['loss_class'] ?? '' ) && 'accepted_reported_loss' === ( $envelope_row['acceptability'] ?? '' ), 'contract-envelope-reowns-byte-limit-drop' );
+$assert( in_array( 'omitted_artifact_file', array_column( $drop_envelope['by_loss_class']['omitted_unit'] ?? array(), 'type' ), true ), 'contract-envelope-loss-summary-includes-omitted-files', wp_json_encode( array_keys( $drop_envelope['by_loss_class'] ?? array() ) ) );
 
 if ( $failures ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );

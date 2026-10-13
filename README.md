@@ -92,7 +92,11 @@ Producer-declared WordPress.org metrics bind directly to native Paragraph and He
 
 ## Content-Only Security Boundary
 
-All HTML, folders, ZIPs, URLs, and website artifact objects are untrusted static content. SSI accepts only explicit static asset extensions and rejects server-side source markers before compilation. Compiler-produced companion payloads are independently revalidated before any generated plugin file is written or activated. Companion block renders accept static HTML only; SSI emits its own fixed PHP wrapper to output that markup, so source PHP cannot be preserved or executed. Existing payloads that relied on PHP render templates or PHP companion assets must migrate their behavior to blocks, data bindings, or client-side JavaScript.
+All HTML, folders, ZIPs, URLs, and website artifact objects are untrusted static content. SSI accepts only explicit static asset extensions and server-side source markers never reach compilation. One decision, `Static_Site_Importer_Content_Policy::admit_artifact()`, runs once per import where the artifact is frozen for compilation, whatever the intake (REST files or ZIP, staged ZIP, CLI request bundle, provided artifact):
+
+- a non-static asset is skipped with a `static_site_importer_non_static_file_skipped` finding;
+- a non-entry page that is not static content (a server page, or HTML carrying server code) is dropped with a `static_site_importer_non_static_page_dropped` finding, and the remaining pages import;
+- the entrypoint (the declared one, or a root `index`/`default`/`home` document) and the root `_redirects` manifest fail closed with `static_site_importer_executable_source_rejected`. Compiler-produced companion payloads are independently revalidated before any generated plugin file is written or activated. Companion block renders accept static HTML only; SSI emits its own fixed PHP wrapper to output that markup, so source PHP cannot be preserved or executed. Existing payloads that relied on PHP render templates or PHP companion assets must migrate their behavior to blocks, data bindings, or client-side JavaScript.
 
 When a generated artifact contains full-document HTML, Static Site Importer routes document metadata, head content, styles, scripts, and page body fragments to the right WordPress destinations before calling the conversion stack. A `core/html` block in imported page content is therefore a materialization/conversion quality issue to fix in this stack, not a product-layer workaround to hide upstream.
 
@@ -176,7 +180,8 @@ ZIP intake rules:
 - A root-level `index.html` wins when present.
 - If there is no root-level `index.html`, the ZIP may contain exactly one nested `index.html`, such as `site-export/index.html`.
 - If there are multiple nested `index.html` files and no root `index.html`, the import fails so the entry point is not guessed.
-- Archive entries with absolute paths, `../` traversal segments, or server-side executable extensions are rejected before extraction when PHP's `ZipArchive` inspection is available.
+- Archive entries with absolute paths or `../` traversal segments are normalized before extraction. Entries that are not static content follow the content-only decision above.
+- The entry-count and total-uncompressed-size limits reject the archive. An entry over a per-entry limit (uncompressed size or compression ratio) is skipped unread with a `static_site_importer_archive_entry_skipped` finding, unless it is the entrypoint or the redirects manifest, which fail closed.
 - `.md` and `.markdown` files under the selected source tree are imported as pages. `.mdx` files are not executed or parsed as Markdown; they are skipped and listed in `import-report.json` diagnostics.
 
 ## Generated Store Contract
@@ -535,17 +540,23 @@ Degrade codes are classified by code, before any explicit `loss_class`, contract
 | `document_head_attribute_dropped` | `omitted_unit` | `item` | `blocks-engine` |
 | `document_head_element_dropped` | `omitted_unit` | `item` | `blocks-engine` |
 | `static_site_importer_non_static_file_skipped` | `omitted_unit` | `file` | `static-site-importer` |
+| `static_site_importer_non_static_page_dropped` | `omitted_unit` | `page` | `static-site-importer` |
+| `static_site_importer_archive_entry_skipped` | `omitted_unit` | `file` | `static-site-importer` |
+| `font_face_unavailable` | `omitted_unit` | `asset` | `static-site-importer` |
+| `omitted_artifact_files`, `omitted_artifact_file` | `omitted_unit` | `file` | `blocks-engine` |
 | `route_capture_failed` | `omitted_unit` | `route` | `data-liberation-agent` |
 | `route_export_failed` | `omitted_unit` | `route` | `data-liberation-agent` |
 | `route_path_collision` | `omitted_unit` | `route` | `data-liberation-agent` |
 | `route_off_origin` | `omitted_unit` | `route` | `data-liberation-agent` |
 | `route_profile_uncaptured` | `omitted_unit` | `profile` | `data-liberation-agent` |
+| `route_capture_skipped_budget` | `omitted_unit` | `route` | `data-liberation-agent` |
+| `asset_exceeds_file_limit` | `omitted_unit` | `asset` | `data-liberation-agent` |
 | `route_capture_degraded` | `degraded_unit` | `route` | `data-liberation-agent` |
 | `stylesheet_unparseable` | `degraded_unit` | `stylesheet` | `data-liberation-agent` |
 | `native_timeline_unproven` | `degraded_unit` | `block` | `data-liberation-agent` |
 | `disclosure_unrestored` | `degraded_unit` | `block` | `data-liberation-agent` |
 
-`degraded_unit` keeps the unit with reduced fidelity; `omitted_unit` removes it from the import. Blocks Engine repair lanes `restore_compiled_document_identity` and `restore_projected_selector_binding` map to `unsupported_loss` and `editable_approximation`.
+`degraded_unit` keeps the unit with reduced fidelity; `omitted_unit` removes it from the import. Blocks Engine's file-drop codes (`file_limit_exceeded`, `artifact_file_too_large`, `artifact_total_too_large`, and the aggregate `artifact_inputs_rejected`) are re-owned as `omitted_artifact_files` / `omitted_artifact_file`; the rest of the site imports, and `dropped_artifact_files` stays a quality failure reason, so a `fail_on_quality` caller can still refuse the import. A `font_face_unavailable` row carries a `resolution` of `dropped` (the theme uses its fallback font) or `remote_import_retained` (the source's Google `@import` is kept); a font digest mismatch fails closed. Blocks Engine repair lanes `restore_compiled_document_identity` and `restore_projected_selector_binding` map to `unsupported_loss` and `editable_approximation`.
 
 #### Data Liberation Agent capture findings
 

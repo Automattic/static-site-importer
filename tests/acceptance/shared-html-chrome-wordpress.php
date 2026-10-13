@@ -89,7 +89,8 @@ function chrome_fixture( string $root ): array {
 }
 function chrome_ingress( array $artifact, string $kind ): array {
 	if ( 'artifact' === $kind ) {
-		chrome_assert( true === Static_Site_Importer_Content_Policy::validate_artifact( $artifact ), 'Canonical artifact policy' );
+		$admission = Static_Site_Importer_Content_Policy::admit_artifact( $artifact );
+		chrome_assert( is_array( $admission ) && array() === $admission['findings'], 'Canonical artifact policy' );
 		return $artifact;
 	}
 	$source = array( 'entrypoint' => $artifact['entrypoint'] );

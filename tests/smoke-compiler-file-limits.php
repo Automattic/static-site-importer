@@ -90,10 +90,11 @@ $reowned   = Static_Site_Importer_Diagnostic_Loss_Classes::reown_compiler_file_d
 $assert( Static_Site_Importer_Diagnostic_Loss_Classes::OMITTED_ARTIFACT_FILES_TYPE === ( $reowned['type'] ?? '' ), 'aggregate rejection becomes an omitted-files diagnostic' );
 $assert( 20 === Static_Site_Importer_Diagnostic_Loss_Classes::omitted_artifact_file_count( array( $reowned ) ), 'the reowned row keeps its dropped count' );
 
-// Direct imports refuse a partial site before materialization.
+// The reowned rows are accepted, reported losses: direct imports carry them
+// as findings instead of refusing the site (Automattic/static-site-importer#2054).
+$assert( 'omitted_unit' === ( $reowned['loss_class'] ?? '' ) && 'accepted_reported_loss' === ( $reowned['acceptability'] ?? '' ), 'omitted files are an accepted, reported loss' );
 $direct = (string) file_get_contents( dirname( __DIR__ ) . '/includes/class-static-site-importer-direct-artifact-import.php' );
-$refuse = strpos( $direct, 'static_site_importer_artifact_files_omitted' );
-$assert( false !== $refuse && $refuse < strpos( $direct, 'import_website_artifact( $artifact, $args )' ), 'omitted files fail before materialization' );
+$assert( ! str_contains( $direct, 'static_site_importer_artifact_files_omitted' ), 'direct imports no longer refuse a site with omitted files' );
 
 if ( array() !== $failures ) {
 	fwrite( STDERR, 'FAIL: ' . implode( "\nFAIL: ", $failures ) . "\n" );

@@ -250,6 +250,58 @@ $intake_row = array(
 	'reason_code' => 'non_static_extension',
 	'message'     => 'Skipped website/assets/style.php: only static content can be imported, so references to it are unresolved.',
 );
+// The other intake decisions: a dropped non-entry page and an oversize archive entry.
+$more_intake_rows = array(
+	array(
+		'code'        => 'static_site_importer_non_static_page_dropped',
+		'type'        => 'static-site-importer',
+		'severity'    => 'warning',
+		'stage'       => 'content_policy',
+		'source_path' => 'website/blog/feed.php',
+		'path'        => 'website/blog/feed.php',
+		'reason_code' => 'non_static_extension',
+		'message'     => 'Dropped page website/blog/feed.php because it is not static content; the remaining pages import.',
+	),
+	array(
+		'code'        => 'static_site_importer_archive_entry_skipped',
+		'type'        => 'static-site-importer',
+		'severity'    => 'warning',
+		'stage'       => 'archive_intake',
+		'source_path' => 'website/assets/clip.mp4',
+		'path'        => 'website/assets/clip.mp4',
+		'reason_code' => 'entry_uncompressed_bytes_exceeded',
+		'metrics'     => array( 'uncompressed_bytes' => 30000000 ),
+		'message'     => 'Skipped website/assets/clip.mp4: the archive entry exceeds the entry_uncompressed_bytes limit, so references to it are unresolved.',
+	),
+);
+// Compiler file drops, as Blocks Engine emits them in the plan; re-owned as omitted files.
+$compiler_drop_rows = array(
+	array(
+		'code'     => 'artifact_inputs_rejected',
+		'severity' => 'warning',
+		'source'   => 'artifact_normalization',
+		'context'  => array( 'rejected_by_code' => array( 'file_limit_exceeded' => 20 ) ),
+	),
+	array(
+		'code'     => 'artifact_file_too_large',
+		'severity' => 'warning',
+		'source'   => 'artifact_normalization',
+		'path'     => 'website/assets/huge.svg',
+		'context'  => array( 'file_size' => 10485761 ),
+	),
+);
+// A font face the materializer could not localize, as the receipt records it.
+$font_row = array(
+	'code'        => 'font_face_unavailable',
+	'type'        => 'font_face_unavailable',
+	'severity'    => 'warning',
+	'stage'       => 'font_materialization',
+	'reason'      => 'producer_font_fetch_failed',
+	'reason_code' => 'producer_font_fetch_failed',
+	'resolution'  => 'dropped',
+	'url'         => 'https://fonts.example.test/inter.woff2',
+	'message'     => 'The font face for Inter was unavailable (producer_font_fetch_failed) and was dropped; the theme uses its fallback font.',
+);
 // Data Liberation Agent capture findings, as intake reads them from `capture-findings.json`.
 $capture_finding = static fn( string $code, string $unit, string $route, string $path = '' ): array => array_filter(
 	array(
@@ -269,6 +321,8 @@ $capture_rows    = Static_Site_Importer_Capture_Findings::findings(
 			$capture_finding( 'route_path_collision', 'route', 'a.html' ),
 			$capture_finding( 'route_off_origin', 'route', 'elsewhere/' ),
 			$capture_finding( 'route_profile_uncaptured', 'profile', 'tablet/', 'tablet/index.html' ),
+			$capture_finding( 'route_capture_skipped_budget', 'route', 'archive/page-9/' ),
+			$capture_finding( 'asset_exceeds_file_limit', 'asset', 'media/', 'assets/tour.mp4' ),
 			$capture_finding( 'route_capture_degraded', 'route', 'about/', 'about/index.html' ),
 			$capture_finding( 'stylesheet_unparseable', 'stylesheet', 'styled/', 'assets/site.css' ),
 			$capture_finding( 'native_timeline_unproven', 'block', 'motion/', 'motion/index.html' ),
@@ -295,11 +349,18 @@ $expected = array(
 	'document_head_attribute_dropped'                => array( 'omitted_unit', 'item', 'blocks-engine', 'website/index.html' ),
 	'document_head_element_dropped'                  => array( 'omitted_unit', 'item', 'blocks-engine', 'website/index.html' ),
 	'static_site_importer_non_static_file_skipped'   => array( 'omitted_unit', 'file', 'static-site-importer', 'website/assets/style.php' ),
+	'static_site_importer_non_static_page_dropped'   => array( 'omitted_unit', 'page', 'static-site-importer', 'website/blog/feed.php' ),
+	'static_site_importer_archive_entry_skipped'     => array( 'omitted_unit', 'file', 'static-site-importer', 'website/assets/clip.mp4' ),
+	'font_face_unavailable'                          => array( 'omitted_unit', 'asset', 'static-site-importer', 'https://fonts.example.test/inter.woff2' ),
+	'omitted_artifact_files'                         => array( 'omitted_unit', 'file', 'blocks-engine', 'artifact_normalization' ),
+	'omitted_artifact_file'                          => array( 'omitted_unit', 'file', 'blocks-engine', 'artifact_normalization' ),
 	'route_capture_failed'                           => array( 'omitted_unit', 'route', 'data-liberation-agent', 'https://example.com/slow/' ),
 	'route_export_failed'                            => array( 'omitted_unit', 'route', 'data-liberation-agent', 'https://example.com/pricing-export/' ),
 	'route_path_collision'                           => array( 'omitted_unit', 'route', 'data-liberation-agent', 'https://example.com/a.html' ),
 	'route_off_origin'                               => array( 'omitted_unit', 'route', 'data-liberation-agent', 'https://example.com/elsewhere/' ),
 	'route_profile_uncaptured'                       => array( 'omitted_unit', 'profile', 'data-liberation-agent', 'website/tablet/index.html' ),
+	'route_capture_skipped_budget'                   => array( 'omitted_unit', 'route', 'data-liberation-agent', 'https://example.com/archive/page-9/' ),
+	'asset_exceeds_file_limit'                       => array( 'omitted_unit', 'asset', 'data-liberation-agent', 'website/assets/tour.mp4' ),
 	'route_capture_degraded'                         => array( 'degraded_unit', 'route', 'data-liberation-agent', 'website/about/index.html' ),
 	'stylesheet_unparseable'                         => array( 'degraded_unit', 'stylesheet', 'data-liberation-agent', 'website/assets/site.css' ),
 	'native_timeline_unproven'                       => array( 'degraded_unit', 'block', 'data-liberation-agent', 'website/motion/index.html' ),
@@ -311,7 +372,7 @@ $registry = Static_Site_Importer_Diagnostic_Loss_Classes::reported_loss_codes();
 $assert( array_keys( $expected ) == array_keys( $registry ), 'registry-covers-ledger-codes', implode( ',', array_diff( array_keys( $expected ), array_keys( $registry ) ) ) ); // phpcs:ignore Universal.Operators.StrictComparisons.LooseEqual -- Order-insensitive key set comparison.
 
 // Classification by code beats the contract lane and the heuristic.
-foreach ( array_merge( $plan_rows, array( $intake_row ), $capture_rows ) as $row ) {
+foreach ( array_merge( $plan_rows, array( $intake_row ), $more_intake_rows, array( $font_row ), array_map( array( Static_Site_Importer_Diagnostic_Loss_Classes::class, 'reown_compiler_file_drop' ), $compiler_drop_rows ), $capture_rows ) as $row ) {
 	$provenance = Static_Site_Importer_Diagnostic_Loss_Classes::classify_with_provenance( $row );
 	$assert(
 		$expected[ $row['code'] ][0] === $provenance['class'] && Static_Site_Importer_Diagnostic_Loss_Classes::SOURCE_CODE === $provenance['source'],
@@ -322,7 +383,7 @@ foreach ( array_merge( $plan_rows, array( $intake_row ), $capture_rows ) as $row
 
 $plan    = array(
 	'schema'         => 'blocks-engine/wordpress-site-plan/v2',
-	'diagnostics'    => $plan_rows,
+	'diagnostics'    => array_merge( $plan_rows, $compiler_drop_rows ),
 	'quality'        => array(),
 	'source'         => array(
 		'schema'      => 'blocks-engine/php-transformer/site-artifact/v1',
@@ -343,12 +404,15 @@ $receipt = array(
 	),
 	'completed'        => array(
 		'files'                => array(),
-		'font_materialization' => array( 'files' => array() ),
+		'font_materialization' => array(
+			'files'       => array(),
+			'diagnostics' => array( $font_row ),
+		),
 	),
 	'existing_matches' => array( 'pages' => array() ),
 	'extensions'       => array(),
 );
-$args    = array( 'source_metadata' => array( 'intake_findings' => array_merge( array( $intake_row ), $capture_rows ) ) );
+$args    = array( 'source_metadata' => array( 'intake_findings' => array_merge( array( $intake_row ), $more_intake_rows, $capture_rows ) ) );
 
 $projection = Static_Site_Importer_Receipt_Projection::compose( $receipt, $args, array(), array(), array(), 'loss-ledger-run', array(), array() );
 $report     = $projection['report'];
@@ -372,7 +436,11 @@ foreach ( $expected as $code => list( $loss_class, $unit, $owning_layer, $locati
 	$assert( $location === ( $row['location'] ?? null ), 'location-' . $code, 'got: ' . wp_json_encode_fallback( $row['location'] ?? null ) );
 }
 $assert( 'importer_materialization_bug' !== ( $rows['runtime_form_graph_rejected']['loss_class'] ?? '' ), 'form-graph-rejection-is-not-an-importer-bug' );
-$assert( 'completed' === ( $stored['compact_summary']['status'] ?? '' ) && true === $quality['pass'], 'reported-losses-keep-the-import-passing', wp_json_encode_fallback( $quality['failure_reasons'] ?? array() ) );
+// Reported losses never fail the import. Omitted files stay a quality reason
+// (dropped_artifact_files) that a caller's fail_on_quality policy can refuse.
+$assert( 'completed' === ( $stored['compact_summary']['status'] ?? '' ) && false === $quality['fail_import'] && array( 'dropped_artifact_files' ) === $quality['failure_reasons'], 'reported-losses-keep-the-import-passing', wp_json_encode_fallback( $quality['failure_reasons'] ?? array() ) );
+$strict_quality = Static_Site_Importer_Report_Diagnostics::finalize_report( $report, array_merge( $args, array( 'fail_on_quality' => true ) ) );
+$assert( true === $strict_quality['fail_import'], 'fail-on-quality-callers-can-still-refuse-omitted-files' );
 
 // Item 6: every row carries the canonical finding fields; producer fields survive.
 foreach ( $stored['diagnostics'] ?? array() as $row ) {
@@ -425,12 +493,12 @@ foreach ( $expected as $code => list( $loss_class, $unit, $owning_layer, $locati
 $assert( array( 'bytes' => 70000, 'limit_bytes' => 65536 ) === ( $compact['runtime_entity_dropped']['metrics'] ?? null ), 'compact-row-keeps-metrics' );
 $assert( '/manifest.json' === ( $compact['wordpress_site_plan_omitted_link_declaration']['value'] ?? '' ), 'compact-row-keeps-value' );
 $assert( 1 === ( $summary['omitted_page_count'] ?? null ), 'compact-omitted-page-count' );
-$assert( 25 === ( $summary['loss_count'] ?? null ), 'compact-loss-count', wp_json_encode_fallback( $summary['loss_counts'] ?? null ) );
+$assert( 32 === ( $summary['loss_count'] ?? null ), 'compact-loss-count', wp_json_encode_fallback( $summary['loss_counts'] ?? null ) );
 $assert(
 	array(
 		'page_compile_omitted'         => 1,
 		'degraded_unit'                => 11,
-		'omitted_unit'                 => 13,
+		'omitted_unit'                 => 20,
 		'unsupported_loss'             => 0,
 		'importer_materialization_bug' => 0,
 	) === ( $summary['loss_counts'] ?? null ),
