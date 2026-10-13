@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { runUrlLoopIntake, runUrlLoopMatrix, validateCapture, validateMatrixEvidence } from './url-loop-intake.mjs';
+import { resolveCaptureConfig, runUrlLoopIntake, runUrlLoopMatrix, validateCapture, validateMatrixEvidence } from './url-loop-intake.mjs';
 import { resolveBlocksEnginePhpTransformerPath } from '../bench/static-site-fixture-matrix.bench.mjs';
 
 export const CAPTURE_ARTIFACT_SCHEMA = 'static-site-importer/url-loop-capture/v1';
@@ -109,8 +109,9 @@ export function buildUrlLoopSpec(input) {
   const workspace = path.resolve(input.workspace || process.cwd());
   const root = path.resolve(input.outputRoot || path.join(workspace, 'artifacts', 'url-loop', loopId));
   const node = path.resolve(input.nodeExecutable || process.execPath);
-  const runtimeToolchain = { node, npx: path.resolve(input.npxExecutable || path.join(path.dirname(node), 'npx')), env: Object.fromEntries(['HOME', 'XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'PLAYWRIGHT_BROWSERS_PATH', 'PLAYWRIGHT_HOST_PLATFORM_OVERRIDE', 'NPM_CONFIG_CACHE', 'npm_config_cache'].filter((key) => process.env[key]).map((key) => [key, process.env[key]])) };
-  const context = { url, loop_id: loopId, source_id: sourceId, root, workspace, blocks_engine: path.resolve(blocksEngine), wp_codebox_bin: path.resolve(wpCodeboxBin), transformer_path: input.transformerPath ? path.resolve(input.transformerPath) : '', runtime_toolchain: runtimeToolchain, candidate_sha: input.candidateSha || process.env.SSI_CANDIDATE_SHA || null, blocks_engine_sha: input.blocksEngineSha || null, wordpress_version: input.wordpressVersion || null, max_actions: maxActions };
+  const capture = resolveCaptureConfig(input);
+  const runtimeToolchain = { node, env: Object.fromEntries(['HOME', 'XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'PLAYWRIGHT_BROWSERS_PATH', 'PLAYWRIGHT_HOST_PLATFORM_OVERRIDE', 'NPM_CONFIG_CACHE', 'npm_config_cache'].filter((key) => process.env[key]).map((key) => [key, process.env[key]])) };
+  const context = { url, loop_id: loopId, source_id: sourceId, root, workspace, blocks_engine: path.resolve(blocksEngine), wp_codebox_bin: path.resolve(wpCodeboxBin), transformer_path: input.transformerPath ? path.resolve(input.transformerPath) : '', capture, runtime_toolchain: runtimeToolchain, candidate_sha: input.candidateSha || process.env.SSI_CANDIDATE_SHA || null, blocks_engine_sha: input.blocksEngineSha || null, wordpress_version: input.wordpressVersion || null, max_actions: maxActions };
   const action = (stage, timeout, artifacts, consumes = []) => ({
     workflow_id: stage,
     tasks: [stage === 'capture' ? 'Retain the source URL capture and normalized SSI fixture.' : 'Evaluate the retained fixture in disposable WordPress and report browser findings.'],
@@ -134,8 +135,8 @@ export function buildUrlLoopSpec(input) {
   return { spec, context };
 }
 
-function captureArtifact(handoff) {
-  if (handoff.status !== 'needs_evaluation' || !handoff.fixture?.fixture_root || !validateCapture(handoff.capture_receipt).valid || handoff.capture_receipt?.source?.url !== handoff.url || !handoff.provenance?.captured_content_sha256) {
+function captureArtifact(handoff, capture) {
+  if (handoff.status !== 'needs_evaluation' || !handoff.fixture?.fixture_root || !validateCapture(handoff.capture_receipt, { schema: capture.receipt_schema }).valid || handoff.capture_receipt?.source?.url !== handoff.url || !handoff.provenance?.captured_content_sha256) {
     throw new Error(`capture_blocked:${JSON.stringify(handoff.failures || [])}`);
   }
   return {
@@ -146,13 +147,13 @@ function captureArtifact(handoff) {
     handoff_path: handoff.handoff_path,
     provenance: handoff.provenance,
     routes: handoff.capture_receipt.summary.routesCaptured,
-    dla: handoff.identities.dla,
+    producer: handoff.identities.capture,
   };
 }
 
 export async function runCapture(context, dependencies = {}) {
-  const handoff = await (dependencies.capture || runUrlLoopIntake)({ url: context.url, outputRoot: path.join(context.root, 'capture-intake'), runtimeToolchain: context.runtime_toolchain });
-  return { capture: captureArtifact(handoff) };
+  const handoff = await (dependencies.capture || runUrlLoopIntake)({ url: context.url, outputRoot: path.join(context.root, 'capture-intake'), capture: context.capture, runtimeToolchain: context.runtime_toolchain });
+  return { capture: captureArtifact(handoff, context.capture) };
 }
 
 export function evaluateMatrixSummary({ summary, benchStatus, capture, candidateSha, runId }) {
@@ -217,7 +218,7 @@ export async function runEvaluation(request, dependencies = {}) {
   evaluation.transformer = compiler.transformer;
   if (compiler.composer_lock_sha256) evaluation.composer_lock_sha256 = compiler.composer_lock_sha256;
   if (compiler.evidence) evaluation.transformer_preparation = compiler.evidence;
-  evaluation.versions = { dla: capture.dla, ssi: candidateSha, blocks_engine: context.blocks_engine_sha || null, wordpress: context.wordpress_version || null, browser: summary?.lane_identity?.browser || null };
+  evaluation.versions = { capture: capture.producer, ssi: candidateSha, blocks_engine: context.blocks_engine_sha || null, wordpress: context.wordpress_version || null, browser: summary?.lane_identity?.browser || null };
   if (!observedCommit) evaluation.missing.push('candidate_commit_unverified');
   evaluation.command = evaluated.commands[0];
   writeJson(path.join(context.root, 'evaluations', candidateSha, actionId, 'evaluation.json'), evaluation);
@@ -282,7 +283,7 @@ async function main() {
   if (operation === 'candidate') {
     const context = readJson(path.join(path.resolve(options.outputRoot), 'loop-context.json'));
     const handoffPath = path.join(context.root, 'capture-intake', 'url-loop-handoff.json');
-    const capture = captureArtifact({ ...readJson(handoffPath), handoff_path: handoffPath });
+    const capture = captureArtifact({ ...readJson(handoffPath), handoff_path: handoffPath }, resolveCaptureConfig(context));
     const sha = requiredCommit(options.candidateSha, 'candidate_sha');
     const candidateWorkspace = verifyCandidateWorkspace(options.candidateWorkspace || context.workspace, sha);
     const eventId = `candidate-${sha}-${capture.provenance.captured_content_sha256.slice(-12)}`;
@@ -294,7 +295,7 @@ async function main() {
     return;
   }
   if (operation === 'spec') { process.stdout.write(`${JSON.stringify(buildUrlLoopSpec(options).spec, null, 2)}\n`); return; }
-  throw new Error('usage: url-loop-controller.mjs start|candidate|spec --url <url> --blocks-engine <path> --wp-codebox-bin <path> [--output-root <path>]');
+  throw new Error('usage: url-loop-controller.mjs start|candidate|spec --url <url> --capture-command <JSON argv> --blocks-engine <path> --wp-codebox-bin <path> [--capture-receipt-schema <id>] [--output-root <path>]');
 }
 
 if (process.argv[1] === MODULE_PATH) main().catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });

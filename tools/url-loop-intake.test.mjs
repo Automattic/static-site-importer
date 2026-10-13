@@ -1,25 +1,50 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CAPTURE_RECEIPT_SCHEMA, DLA_RELEASE, createHandoff, runUrlLoopIntake, runUrlLoopMatrix, validateArtifactSelection, validateCapture, validateMatrixEvidence } from './url-loop-intake.mjs';
+import { CAPTURE_COMMAND_ENV, CAPTURE_RECEIPT_SCHEMA, CAPTURE_RECEIPT_SCHEMA_ENV, createHandoff, resolveCaptureConfig, runUrlLoopIntake, runUrlLoopMatrix, validateArtifactSelection, validateCapture, validateMatrixEvidence } from './url-loop-intake.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-test('capture validation follows the real DLA receipt contract', () => {
+// A stub capture command: no producer is named or downloaded by these tests.
+const stubCapture = { command: ['stub-capture', '--source', '{url}', '--into', '{output}'] };
+const outputOf = (args) => args[args.indexOf('--into') + 1];
+// A Node directory holding the stub executable, so a bare argv[0] resolves on the bounded PATH.
+function stubToolchain() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-url-loop-stub-'));
+  fs.symlinkSync(process.execPath, path.join(root, 'node'));
+  fs.writeFileSync(path.join(root, 'stub-capture'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  return path.join(root, 'node');
+}
+
+test('capture validation follows the capture receipt contract', () => {
   const result = validateCapture({ schema: CAPTURE_RECEIPT_SCHEMA, source: { url: 'https://example.com/' }, summary: { complete: false, routesCaptured: 1, routesDiscovered: 2, routesFailed: 1, routesSkipped: 0 } });
   assert.equal(result.valid, false);
   assert.deepEqual(result.failures, ['capture_incomplete']);
 });
 
-test('complete DLA receipt does not require invented top-level fields', () => {
+test('a complete receipt does not require invented top-level fields', () => {
   const result = validateCapture({ schema: CAPTURE_RECEIPT_SCHEMA, source: { url: 'https://example.com/' }, summary: { complete: true, routesCaptured: 8, routesDiscovered: 8, routesFailed: 0, routesSkipped: 0 } });
   assert.equal(result.valid, true);
 });
 
-test('the configured DLA release identity is immutable and uses the published CLI shape', () => {
-  assert.equal(DLA_RELEASE.version, 'v0.27.0');
-  assert.equal(DLA_RELEASE.commit, '2986ca1e386e994696d41a47e94edb8dd3665c43');
-  assert.match(DLA_RELEASE.asset, /data-liberation-0\.27\.0\.tgz$/);
+test('the capture command and receipt schema are caller configuration with a contract default', () => {
+  assert.throws(() => resolveCaptureConfig({}, {}), /capture_command_missing/);
+  assert.throws(() => resolveCaptureConfig({ captureCommand: 'stub-capture {url} {output}' }, {}), /capture_command_invalid: expected a JSON array/);
+  assert.throws(() => resolveCaptureConfig({ captureCommand: '["stub-capture","{url}"]' }, {}), /\{output\} placeholder/);
+  assert.throws(() => resolveCaptureConfig({ captureCommand: '["stub-capture",""]' }, {}), /non-empty argv/);
+  const fromFlag = resolveCaptureConfig({ captureCommand: JSON.stringify(stubCapture.command) }, {});
+  assert.deepEqual(fromFlag, { command: stubCapture.command, receipt_schema: CAPTURE_RECEIPT_SCHEMA });
+  assert.equal(CAPTURE_RECEIPT_SCHEMA, 'blocks-engine-capture/capture-receipt/v1');
+  const fromEnv = resolveCaptureConfig({}, { [CAPTURE_COMMAND_ENV]: JSON.stringify(['env-capture', '{url}', '{output}']), [CAPTURE_RECEIPT_SCHEMA_ENV]: 'example-capture/capture-receipt/v2' });
+  assert.deepEqual(fromEnv, { command: ['env-capture', '{url}', '{output}'], receipt_schema: 'example-capture/capture-receipt/v2' });
+  assert.deepEqual(resolveCaptureConfig({ capture: stubCapture }, { [CAPTURE_COMMAND_ENV]: '["ignored","{url}","{output}"]' }).command, stubCapture.command, 'explicit configuration wins over the environment');
+  assert.throws(() => resolveCaptureConfig({ capture: { ...stubCapture, receipt_schema: 'not a schema' } }, {}), /capture_receipt_schema_invalid/);
+});
+
+test('the receipt schema check follows the configured schema', () => {
+  const receipt = { schema: 'example-capture/capture-receipt/v2', source: { url: 'https://example.com/' }, summary: { complete: true, routesCaptured: 1, routesDiscovered: 1, routesFailed: 0, routesSkipped: 0 } };
+  assert.deepEqual(validateCapture(receipt).failures, ['capture_receipt_schema_unknown']);
+  assert.equal(validateCapture(receipt, { schema: 'example-capture/capture-receipt/v2' }).valid, true);
 });
 
 test('artifact selection rejects ambiguous generated artifact directories', () => {
@@ -40,11 +65,11 @@ test('real receipt fixture selects its website directory for SSI materialization
 
 test('intake records derived provenance and materializes the retained website', async () => {
   const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-url-loop-run-'));
-  const result = await runUrlLoopIntake({ url: 'https://example.com', outputRoot }, {
+  const result = await runUrlLoopIntake({ url: 'https://example.com', outputRoot, capture: stubCapture, runtimeToolchain: { node: stubToolchain() } }, {
     spawn(command, args) {
-      assert.match(command, /\/npx$/);
-      assert.deepEqual(args.slice(0, 3), ['--yes', `--package=${DLA_RELEASE.asset}`, 'data-liberation']);
-      const captureRoot = args[args.indexOf('--output') + 1];
+      assert.match(command, /\/stub-capture$/);
+      assert.deepEqual(args.slice(0, 2), ['--source', 'https://example.com/']);
+      const captureRoot = outputOf(args);
       const sourceRoot = path.join(captureRoot, 'example.com');
       fs.mkdirSync(path.join(sourceRoot, 'website'), { recursive: true });
       fs.writeFileSync(path.join(sourceRoot, 'capture-receipt.json'), JSON.stringify({ schema: CAPTURE_RECEIPT_SCHEMA, source: { url: 'https://example.com/' }, summary: { complete: true, routesCaptured: 8, routesDiscovered: 8, routesFailed: 0, routesSkipped: 0 } }));
@@ -56,18 +81,21 @@ test('intake records derived provenance and materializes the retained website', 
   assert.equal(result.status, 'needs_evaluation');
   assert.match(result.provenance.source_url_sha256, /^sha256:[a-f0-9]{64}$/);
   assert.equal(fs.readFileSync(path.join(result.fixture.directory, 'index.html'), 'utf8'), '<!doctype html><main>fixture</main>');
+  assert.deepEqual(result.identities.capture.command, stubCapture.command);
+  assert.match(result.identities.capture.command_sha256, /^sha256:[a-f0-9]{64}$/);
+  assert.equal(result.identities.capture.receipt_schema, CAPTURE_RECEIPT_SCHEMA);
 });
 
 test('capture launcher, child exit, and timeout failures retain bounded typed spawn evidence', async () => {
   for (const [result, reason, code, status, signal] of [
-    [{ status: null, error: { code: 'ENOENT', message: 'spawnSync npx ENOENT' } }, 'launcher_unavailable', 'ENOENT', null, null],
+    [{ status: null, error: { code: 'ENOENT', message: 'spawnSync stub-capture ENOENT' } }, 'launcher_unavailable', 'ENOENT', null, null],
     [{ status: 7, signal: null }, 'child_nonzero_exit', null, 7, null],
     [{ status: null, signal: 'SIGTERM', error: { code: 'ETIMEDOUT', message: 'timed out' } }, 'command_timeout', 'ETIMEDOUT', null, 'SIGTERM'],
     [{ status: null, signal: 'SIGTERM' }, 'child_signaled', null, null, 'SIGTERM'],
     [{ status: null, error: { code: 'EACCES', message: 'permission denied' } }, 'spawn_failed', 'EACCES', null, null],
   ]) {
     const outputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-url-loop-failure-'));
-    const handoff = await runUrlLoopIntake({ url: 'https://example.com/', outputRoot }, { spawn: () => result });
+    const handoff = await runUrlLoopIntake({ url: 'https://example.com/', outputRoot, capture: stubCapture, runtimeToolchain: { node: stubToolchain() } }, { spawn: () => result });
     assert.equal(handoff.runtime_failure.reason, reason);
     assert.equal(handoff.runtime_failure.error_code, code);
     assert.equal(handoff.runtime_failure.exit_status, status);
@@ -76,25 +104,26 @@ test('capture launcher, child exit, and timeout failures retain bounded typed sp
   }
 });
 
-test('a paired absolute launcher captures successfully with only standard system PATH entries', async () => {
+test('a configured capture command runs for real with only standard system PATH entries', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-url-loop-toolchain-'));
-  const launcher = path.join(root, 'npx');
-  const source = `#!/usr/bin/env node\nconst fs=require('node:fs');const path=require('node:path');const args=process.argv.slice(2);const output=args[args.indexOf('--output')+1];const site=path.join(output,'example.com');fs.mkdirSync(path.join(site,'website'),{recursive:true});fs.writeFileSync(path.join(site,'capture-receipt.json'),JSON.stringify({schema:'${CAPTURE_RECEIPT_SCHEMA}',source:{url:'https://example.com/'},summary:{complete:true,routesCaptured:1,routesDiscovered:1,routesFailed:0,routesSkipped:0}}));fs.writeFileSync(path.join(site,'website','index.html'),'<main>captured</main>');`;
+  const launcher = path.join(root, 'stub-capture');
+  const source = `#!/usr/bin/env node\nconst fs=require('node:fs');const path=require('node:path');const args=process.argv.slice(2);const output=args[args.indexOf('--into')+1];const site=path.join(output,'example.com');fs.mkdirSync(path.join(site,'website'),{recursive:true});fs.writeFileSync(path.join(site,'capture-receipt.json'),JSON.stringify({schema:'${CAPTURE_RECEIPT_SCHEMA}',source:{url:'https://example.com/'},summary:{complete:true,routesCaptured:1,routesDiscovered:1,routesFailed:0,routesSkipped:0}}));fs.writeFileSync(path.join(site,'website','index.html'),'<main>captured</main>');`;
   fs.writeFileSync(launcher, source, { mode: 0o755 });
   const outputRoot = path.join(root, 'output');
-  const result = await runUrlLoopIntake({ url: 'https://example.com/', outputRoot, runtimeToolchain: { node: process.execPath, npx: launcher } });
+  const result = await runUrlLoopIntake({ url: 'https://example.com/', outputRoot, capture: { command: [launcher, '--source', '{url}', '--into', '{output}'] }, runtimeToolchain: { node: process.execPath } });
   assert.equal(result.status, 'needs_evaluation');
   assert.equal(result.failures.length, 0);
   assert.equal(result.capture_receipt.summary.routesCaptured, 1);
   assert.equal(fs.readFileSync(path.join(result.fixture.directory, 'index.html'), 'utf8'), '<main>captured</main>');
 });
 
-test('missing declared Node and launcher fail before capture with precise prerequisites', async () => {
-  for (const kind of ['node', 'npx']) {
+test('missing declared Node and capture executable fail before capture with precise prerequisites', async () => {
+  for (const kind of ['node', 'command']) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-toolchain-missing-'));
     let spawned = false;
-    const runtimeToolchain = { [kind]: path.join(root, `missing-${kind}`) };
-    const handoff = await runUrlLoopIntake({ url: 'https://example.com/', outputRoot: root, runtimeToolchain }, { spawn: () => { spawned = true; return { status: 0 }; } });
+    const runtimeToolchain = { node: kind === 'node' ? path.join(root, 'missing-node') : process.execPath };
+    const capture = { command: [kind === 'node' ? 'stub-capture' : 'missing-capture-command', '{url}', '{output}'] };
+    const handoff = await runUrlLoopIntake({ url: 'https://example.com/', outputRoot: root, capture, runtimeToolchain }, { spawn: () => { spawned = true; return { status: 0 }; } });
     assert.equal(spawned, false);
     assert.equal(handoff.runtime_failure.reason, kind === 'node' ? 'node_unavailable' : 'launcher_unavailable');
     assert.equal(handoff.runtime_failure.error_code, 'ENOENT');
@@ -102,10 +131,10 @@ test('missing declared Node and launcher fail before capture with precise prereq
   }
 });
 
-test('dry run does not invoke DLA or SSI materialization and remains blocked', async () => {
+test('dry run does not invoke the capture command or SSI materialization and remains blocked', async () => {
   let invoked = false;
   const outputRoot = path.join(os.tmpdir(), `ssi-url-loop-dry-${Date.now()}`);
-  const result = await runUrlLoopIntake({ url: 'https://example.com', outputRoot, dryRun: true }, {
+  const result = await runUrlLoopIntake({ url: 'https://example.com', outputRoot, dryRun: true, capture: stubCapture }, {
     spawn() { invoked = true; return { status: 0 }; },
   });
   assert.equal(invoked, false);
@@ -197,12 +226,12 @@ test('initial URL intake and candidate replay share one canonical summarizable m
   assert.deepEqual(shared.failures, [], 'a measured visual gate failure is not a runtime-command crash');
 
   let calls = 0;
-  const handoff = await runUrlLoopIntake({ url: 'https://example.com/', outputRoot: path.join(outputRoot, 'intake'), runMatrix: true, staticSiteImporter: '/tmp/ssi', blocksEngine: '/tmp/blocks-engine' }, {
+  const handoff = await runUrlLoopIntake({ url: 'https://example.com/', outputRoot: path.join(outputRoot, 'intake'), capture: stubCapture, runtimeToolchain: { node: stubToolchain() }, runMatrix: true, staticSiteImporter: '/tmp/ssi', blocksEngine: '/tmp/blocks-engine' }, {
     matrixModule,
     spawn(command, args) {
       calls += 1;
       if (calls === 1) {
-        const captureRoot = args[args.indexOf('--output') + 1];
+        const captureRoot = outputOf(args);
         const site = path.join(captureRoot, 'example.com');
         fs.mkdirSync(path.join(site, 'website'), { recursive: true });
         fs.writeFileSync(path.join(site, 'website', 'index.html'), '<main>one route</main>');

@@ -9,17 +9,18 @@ import { CAPTURE_ARTIFACT_SCHEMA, EVALUATION_ARTIFACT_SCHEMA, buildUrlLoopSpec, 
 
 const url = 'https://example.com/';
 const sha = 'a'.repeat(40);
+const captureCommand = JSON.stringify(['stub-capture', '{url}', '{output}']);
 const provenance = { source_url_sha256: `sha256:${'1'.repeat(64)}`, captured_content_sha256: `sha256:${'2'.repeat(64)}`, capture_receipt_sha256: `sha256:${'3'.repeat(64)}` };
 function context(root) {
   fs.copyFileSync(new URL('../composer.lock', import.meta.url), path.join(root, 'composer.lock'));
-  return buildUrlLoopSpec({ url, workspace: root, outputRoot: path.join(root, 'output'), blocksEngine: root, wpCodeboxBin: path.join(root, 'codebox'), maxActions: 4 });
+  return buildUrlLoopSpec({ url, workspace: root, outputRoot: path.join(root, 'output'), blocksEngine: root, wpCodeboxBin: path.join(root, 'codebox'), captureCommand, maxActions: 4 });
 }
 function capture(root, properties = {}) {
   const handoffPath = path.join(root, 'output', 'capture-intake', 'url-loop-handoff.json');
   const handoff = {
     url, status: 'needs_evaluation', fixture: { id: 'website', fixture_root: path.join(root, 'fixtures') },
     capture_receipt: { schema: 'blocks-engine-capture/capture-receipt/v1', source: { url }, summary: { complete: true, routesDiscovered: 2, routesCaptured: 2, routesFailed: 0, routesSkipped: 0 } },
-    provenance, identities: { dla: { version: 'v0.6.5' } }, failures: [], handoff_path: handoffPath,
+    provenance, identities: { capture: { command: JSON.parse(captureCommand), receipt_schema: 'blocks-engine-capture/capture-receipt/v1' } }, failures: [], handoff_path: handoffPath,
     ...properties,
   };
   fs.mkdirSync(path.dirname(handoffPath), { recursive: true });
@@ -33,10 +34,10 @@ test('one URL yields a stable bounded Homeboy controller with typed capture-to-e
   assert.equal(spec.schema, 'homeboy/controller-spec/v1');
   assert.equal(spec.loop_id, sourceIdentity(url));
   assert.equal(spec.loop_id, sourceIdentity('https://example.com/#fragment'));
-  const proof = buildUrlLoopSpec({ url, workspace: root, blocksEngine: root, wpCodeboxBin: root, instance: 'proof-r2' });
+  const proof = buildUrlLoopSpec({ url, workspace: root, blocksEngine: root, wpCodeboxBin: root, captureCommand, instance: 'proof-r2' });
   assert.equal(proof.context.source_id, spec.loop_id);
   assert.equal(proof.spec.loop_id, `${spec.loop_id}-proof-r2`);
-  assert.throws(() => buildUrlLoopSpec({ url, workspace: root, blocksEngine: root, wpCodeboxBin: root, instance: '../invalid' }), /path-safe/);
+  assert.throws(() => buildUrlLoopSpec({ url, workspace: root, blocksEngine: root, wpCodeboxBin: root, captureCommand, instance: '../invalid' }), /path-safe/);
   assert.equal(spec.workflows[0].runtime_execution.kind, 'command');
   assert.deepEqual(spec.workflows[0].emits, ['capture']);
   assert.deepEqual(spec.workflows[1].consumes, ['capture']);
@@ -44,19 +45,27 @@ test('one URL yields a stable bounded Homeboy controller with typed capture-to-e
   assert.equal(spec.actions, undefined, 'an initial wait must not block capture and evaluation');
   assert.equal(inputs.max_actions, 4);
   assert.equal(spec.workflows[0].inputs.runtime_toolchain.node, process.execPath);
-  assert.equal(spec.workflows[0].inputs.runtime_toolchain.npx, path.join(path.dirname(process.execPath), 'npx'));
-  assert.throws(() => buildUrlLoopSpec({ url, workspace: root, blocksEngine: root, wpCodeboxBin: root, maxActions: 100 }), /max-actions/);
+  assert.deepEqual(spec.workflows[0].inputs.capture, { command: JSON.parse(captureCommand), receipt_schema: 'blocks-engine-capture/capture-receipt/v1' });
+  assert.throws(() => buildUrlLoopSpec({ url, workspace: root, blocksEngine: root, wpCodeboxBin: root, captureCommand, maxActions: 100 }), /max-actions/);
+  const previous = process.env.SSI_URL_LOOP_CAPTURE_COMMAND;
+  try {
+    delete process.env.SSI_URL_LOOP_CAPTURE_COMMAND;
+    assert.throws(() => buildUrlLoopSpec({ url, workspace: root, blocksEngine: root, wpCodeboxBin: root }), /capture_command_missing/, 'a loop without a capture command is refused before admission');
+  } finally {
+    if (previous !== undefined) process.env.SSI_URL_LOOP_CAPTURE_COMMAND = previous;
+  }
 });
 
-test('complete DLA capture is retained once and handed to Homeboy without claiming solved', async () => {
+test('a complete capture is retained once and handed to Homeboy without claiming solved', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-controller-capture-'));
   const { context: inputs } = context(root);
   let count = 0;
-  const { capture: artifact } = await runCapture(inputs, { capture: async (request) => { ++count; assert.deepEqual(request.runtimeToolchain, inputs.runtime_toolchain); return capture(root); } });
+  const { capture: artifact } = await runCapture(inputs, { capture: async (request) => { ++count; assert.deepEqual(request.runtimeToolchain, inputs.runtime_toolchain); assert.deepEqual(request.capture, inputs.capture); return capture(root); } });
   assert.equal(count, 1);
   assert.equal(artifact.schema, CAPTURE_ARTIFACT_SCHEMA);
   assert.equal(artifact.routes, 2);
   assert.equal(artifact.provenance.captured_content_sha256, provenance.captured_content_sha256);
+  assert.deepEqual(artifact.producer.command, JSON.parse(captureCommand));
   await assert.rejects(runCapture(inputs, { capture: async () => capture(root, { capture_receipt: { schema: 'unknown' } }) }), /capture_blocked/);
 });
 
@@ -236,7 +245,7 @@ test('candidate events bind a clean Git checkout to the exact supplied revision'
 test('managed Homeboy WorkJob persists capture, evaluates, and resumes one deduped candidate recheck', async () => {
   const workspace = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-homeboy-workjob-'));
-  const { spec, context: inputs } = buildUrlLoopSpec({ url, workspace, outputRoot: path.join(home, 'loop'), blocksEngine: workspace, wpCodeboxBin: '/usr/bin/true' });
+  const { spec, context: inputs } = buildUrlLoopSpec({ url, workspace, outputRoot: path.join(home, 'loop'), blocksEngine: workspace, wpCodeboxBin: '/usr/bin/true', captureCommand });
   const captureScript = `require('node:fs').writeFileSync(process.env.HOMEBOY_LOOP_ACTION_OUTPUT,JSON.stringify({artifacts:{capture:{schema:'${CAPTURE_ARTIFACT_SCHEMA}',url:'${url}',provenance:{captured_content_sha256:'${provenance.captured_content_sha256}'}}}}))`;
   const evaluateScript = `const fs=require('node:fs');const input=JSON.parse(fs.readFileSync(process.env.HOMEBOY_LOOP_ACTION_INPUT,'utf8'));if(input.request.inputs.artifacts?.capture?.url!=='${url}')process.exit(2);fs.writeFileSync(process.env.HOMEBOY_LOOP_ACTION_OUTPUT,JSON.stringify({artifacts:{evaluation:{schema:'${EVALUATION_ARTIFACT_SCHEMA}',acceptance:{solved:false}}}}))`;
   for (const [index, script] of [captureScript, evaluateScript].entries()) spec.workflows[index].runtime_execution = { kind: 'command', command: process.execPath, args: ['-e', script], cwd: workspace, timeout_seconds: 10 };
