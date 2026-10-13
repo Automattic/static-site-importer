@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { materializeGeneratedArtifactFixtures, discoverGeneratedArtifacts } from '../lib/artifact-intake.mjs';
 
 export const URL_LOOP_INTAKE_SCHEMA = 'static-site-importer/url-loop-intake/v1';
-export const CAPTURE_RECEIPT_SCHEMA = 'data-liberation/capture-receipt/v1';
+export const CAPTURE_RECEIPT_SCHEMA = 'blocks-engine-capture/capture-receipt/v1';
 export const MATRIX_EVIDENCE_READINESS_SCHEMA = 'static-site-importer/fixture-matrix-runtime-evidence-summary/v1';
 export const DLA_RELEASE = Object.freeze({
   version: 'v0.6.5',

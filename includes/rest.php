@@ -17,8 +17,8 @@ if ( ! class_exists( 'Static_Site_Importer_Content_Policy' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-content-policy.php';
 }
 
-if ( ! class_exists( 'Static_Site_Importer_Capture_Findings' ) ) {
-	require_once __DIR__ . '/class-static-site-importer-capture-findings.php';
+if ( ! class_exists( 'Static_Site_Importer_Source_Findings' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-source-findings.php';
 }
 
 if ( ! class_exists( 'Static_Site_Importer_URL_Import_Runtime' ) ) {
@@ -687,9 +687,9 @@ function static_site_importer_source_runtime( array $source, ?object $payload_re
 		$files = array_merge( $files, $archive_files );
 	}
 
-	$capture_findings = Static_Site_Importer_Capture_Findings::extract( $files, $payload_reader );
-	$files            = $capture_findings['files'];
-	$archive_skipped  = array_merge( $archive_skipped, $capture_findings['findings'] );
+	$source_findings = Static_Site_Importer_Source_Findings::extract( $files, $payload_reader );
+	$files           = $source_findings['files'];
+	$archive_skipped = array_merge( $archive_skipped, $source_findings['findings'] );
 
 	if ( empty( $files ) ) {
 		return new WP_Error( 'static_site_importer_missing_source', __( 'Add a website URL, upload file(s), or paste HTML to start.', 'static-site-importer' ), array( 'status' => 400 ) );

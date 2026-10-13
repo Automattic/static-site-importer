@@ -2,9 +2,9 @@
 /**
  * Loss-ledger coverage for the import report.
  *
- * A site plan carrying every degrade code from the cross-layer loss ledger
- * (Automattic/data-liberation-agent docs/contracts/loss-ledger.md) is projected
- * through Receipt_Projection::compose() and finalized. Each code must land as an
+ * A site plan carrying every degrade code SSI and Blocks Engine register, plus
+ * self-describing source findings (docs/contracts/website-artifact-evidence.md),
+ * is projected through Receipt_Projection::compose() and finalized. Each code must land as an
  * accepted, reported loss with its unit and owning layer; every row must carry
  * the canonical finding fields; and the compact summary must keep code,
  * location and metrics, count losses, and keep losses ahead of informational
@@ -49,7 +49,7 @@ if ( is_readable( $static_site_importer_autoload ) ) {
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-product-handoff-contract.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-import-report.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-loss-classes.php';
-require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-capture-findings.php';
+require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-source-findings.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnostic-contract.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-artifact-diagnostics-adapter.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-report-diagnostics.php';
@@ -311,34 +311,50 @@ $font_row = array(
 	'url'         => 'https://fonts.example.test/inter.woff2',
 	'message'     => 'The font face for Inter was unavailable (producer_font_fetch_failed) and was dropped; the theme uses its fallback font.',
 );
-// Data Liberation Agent capture findings, as intake reads them from `capture-findings.json`.
-$capture_finding = static fn( string $code, string $unit, string $route, string $path = '' ): array => array_filter(
+// Source findings, as intake reads them from `source-findings.json`: each row names its own class, unit and layer.
+$source_finding = static fn( string $code, string $loss_class, string $unit, string $route, string $path = '' ): array => array(
+	'code'         => $code,
+	'severity'     => 'warning',
+	'unit'         => $unit,
+	'loss_class'   => $loss_class,
+	'location'     => array_filter(
+		array(
+			'url'  => 'https://example.com/' . $route,
+			'path' => $path,
+		)
+	),
+	'message'      => $code . ' on ' . $route,
+	'owning_layer' => 'example-capture',
+);
+$source_rows    = Static_Site_Importer_Source_Findings::findings(
 	array(
-		'code'     => $code,
-		'severity' => 'warning',
-		'unit'     => $unit,
-		'url'      => 'https://example.com/' . $route,
-		'path'     => $path,
-		'reason'   => $code . ' on ' . $route,
+		'findings' => array(
+			$source_finding( 'route_capture_failed', 'omitted_unit', 'route', 'slow/' ),
+			$source_finding( 'route_export_failed', 'omitted_unit', 'route', 'pricing-export/' ),
+			$source_finding( 'route_path_collision', 'omitted_unit', 'route', 'a.html' ),
+			$source_finding( 'route_off_origin', 'omitted_unit', 'route', 'elsewhere/' ),
+			$source_finding( 'route_profile_uncaptured', 'omitted_unit', 'profile', 'tablet/', 'tablet/index.html' ),
+			$source_finding( 'route_capture_skipped_budget', 'omitted_unit', 'route', 'archive/page-9/' ),
+			$source_finding( 'asset_exceeds_file_limit', 'omitted_unit', 'asset', 'media/', 'assets/tour.mp4' ),
+			$source_finding( 'route_capture_degraded', 'degraded_unit', 'route', 'about/', 'about/index.html' ),
+			$source_finding( 'stylesheet_unparseable', 'degraded_unit', 'stylesheet', 'styled/', 'assets/site.css' ),
+			$source_finding( 'native_timeline_unproven', 'degraded_unit', 'block', 'motion/', 'motion/index.html' ),
+			$source_finding( 'disclosure_unrestored', 'degraded_unit', 'block', 'faq/', 'faq/index.html' ),
+		),
 	)
 );
-$capture_rows    = Static_Site_Importer_Capture_Findings::findings(
-	array(
-		'findings'       => array(
-			$capture_finding( 'route_capture_failed', 'route', 'slow/' ),
-			$capture_finding( 'route_export_failed', 'route', 'pricing-export/' ),
-			$capture_finding( 'route_path_collision', 'route', 'a.html' ),
-			$capture_finding( 'route_off_origin', 'route', 'elsewhere/' ),
-			$capture_finding( 'route_profile_uncaptured', 'profile', 'tablet/', 'tablet/index.html' ),
-			$capture_finding( 'route_capture_skipped_budget', 'route', 'archive/page-9/' ),
-			$capture_finding( 'asset_exceeds_file_limit', 'asset', 'media/', 'assets/tour.mp4' ),
-			$capture_finding( 'route_capture_degraded', 'route', 'about/', 'about/index.html' ),
-			$capture_finding( 'stylesheet_unparseable', 'stylesheet', 'styled/', 'assets/site.css' ),
-			$capture_finding( 'native_timeline_unproven', 'block', 'motion/', 'motion/index.html' ),
-			$capture_finding( 'disclosure_unrestored', 'block', 'faq/', 'faq/index.html' ),
-		),
-		'missing_routes' => array(),
-	)
+$source_expected = array(
+	'route_capture_failed'         => array( 'omitted_unit', 'route', 'example-capture', 'https://example.com/slow/' ),
+	'route_export_failed'          => array( 'omitted_unit', 'route', 'example-capture', 'https://example.com/pricing-export/' ),
+	'route_path_collision'         => array( 'omitted_unit', 'route', 'example-capture', 'https://example.com/a.html' ),
+	'route_off_origin'             => array( 'omitted_unit', 'route', 'example-capture', 'https://example.com/elsewhere/' ),
+	'route_profile_uncaptured'     => array( 'omitted_unit', 'profile', 'example-capture', 'website/tablet/index.html' ),
+	'route_capture_skipped_budget' => array( 'omitted_unit', 'route', 'example-capture', 'https://example.com/archive/page-9/' ),
+	'asset_exceeds_file_limit'     => array( 'omitted_unit', 'asset', 'example-capture', 'website/assets/tour.mp4' ),
+	'route_capture_degraded'       => array( 'degraded_unit', 'route', 'example-capture', 'website/about/index.html' ),
+	'stylesheet_unparseable'       => array( 'degraded_unit', 'stylesheet', 'example-capture', 'website/assets/site.css' ),
+	'native_timeline_unproven'     => array( 'degraded_unit', 'block', 'example-capture', 'website/motion/index.html' ),
+	'disclosure_unrestored'        => array( 'degraded_unit', 'block', 'example-capture', 'website/faq/index.html' ),
 );
 
 $expected = array(
@@ -364,17 +380,6 @@ $expected = array(
 	'font_face_unavailable'                          => array( 'omitted_unit', 'asset', 'static-site-importer', 'https://fonts.example.test/inter.woff2' ),
 	'omitted_artifact_files'                         => array( 'omitted_unit', 'file', 'blocks-engine', 'artifact_normalization' ),
 	'omitted_artifact_file'                          => array( 'omitted_unit', 'file', 'blocks-engine', 'artifact_normalization' ),
-	'route_capture_failed'                           => array( 'omitted_unit', 'route', 'data-liberation-agent', 'https://example.com/slow/' ),
-	'route_export_failed'                            => array( 'omitted_unit', 'route', 'data-liberation-agent', 'https://example.com/pricing-export/' ),
-	'route_path_collision'                           => array( 'omitted_unit', 'route', 'data-liberation-agent', 'https://example.com/a.html' ),
-	'route_off_origin'                               => array( 'omitted_unit', 'route', 'data-liberation-agent', 'https://example.com/elsewhere/' ),
-	'route_profile_uncaptured'                       => array( 'omitted_unit', 'profile', 'data-liberation-agent', 'website/tablet/index.html' ),
-	'route_capture_skipped_budget'                   => array( 'omitted_unit', 'route', 'data-liberation-agent', 'https://example.com/archive/page-9/' ),
-	'asset_exceeds_file_limit'                       => array( 'omitted_unit', 'asset', 'data-liberation-agent', 'website/assets/tour.mp4' ),
-	'route_capture_degraded'                         => array( 'degraded_unit', 'route', 'data-liberation-agent', 'website/about/index.html' ),
-	'stylesheet_unparseable'                         => array( 'degraded_unit', 'stylesheet', 'data-liberation-agent', 'website/assets/site.css' ),
-	'native_timeline_unproven'                       => array( 'degraded_unit', 'block', 'data-liberation-agent', 'website/motion/index.html' ),
-	'disclosure_unrestored'                          => array( 'degraded_unit', 'block', 'data-liberation-agent', 'website/faq/index.html' ),
 );
 
 // The registry names every ledger code, and nothing else.
@@ -382,7 +387,7 @@ $registry = Static_Site_Importer_Diagnostic_Loss_Classes::reported_loss_codes();
 $assert( array_keys( $expected ) == array_keys( $registry ), 'registry-covers-ledger-codes', implode( ',', array_diff( array_keys( $expected ), array_keys( $registry ) ) ) ); // phpcs:ignore Universal.Operators.StrictComparisons.LooseEqual -- Order-insensitive key set comparison.
 
 // Classification by code beats the contract lane and the heuristic.
-foreach ( array_merge( $plan_rows, array( $intake_row ), $more_intake_rows, array( $font_row ), array_map( array( Static_Site_Importer_Diagnostic_Loss_Classes::class, 'reown_compiler_file_drop' ), $compiler_drop_rows ), $capture_rows ) as $row ) {
+foreach ( array_merge( $plan_rows, array( $intake_row ), $more_intake_rows, array( $font_row ), array_map( array( Static_Site_Importer_Diagnostic_Loss_Classes::class, 'reown_compiler_file_drop' ), $compiler_drop_rows ) ) as $row ) {
 	$provenance = Static_Site_Importer_Diagnostic_Loss_Classes::classify_with_provenance( $row );
 	$assert(
 		$expected[ $row['code'] ][0] === $provenance['class'] && Static_Site_Importer_Diagnostic_Loss_Classes::SOURCE_CODE === $provenance['source'],
@@ -390,6 +395,17 @@ foreach ( array_merge( $plan_rows, array( $intake_row ), $more_intake_rows, arra
 		'got: ' . $provenance['class'] . ' via ' . $provenance['source']
 	);
 }
+
+// A source finding is classified by the loss class it declares.
+foreach ( $source_rows as $row ) {
+	$provenance = Static_Site_Importer_Diagnostic_Loss_Classes::classify_with_provenance( $row );
+	$assert(
+		$source_expected[ $row['code'] ][0] === $provenance['class'] && Static_Site_Importer_Diagnostic_Loss_Classes::SOURCE_EXPLICIT === $provenance['source'],
+		'classified-by-declared-class-' . $row['code'],
+		'got: ' . $provenance['class'] . ' via ' . $provenance['source']
+	);
+}
+$expected = array_merge( $expected, $source_expected );
 
 $plan    = array(
 	'schema'         => 'blocks-engine/wordpress-site-plan/v2',
@@ -422,7 +438,7 @@ $receipt = array(
 	'existing_matches' => array( 'pages' => array() ),
 	'extensions'       => array(),
 );
-$args    = array( 'source_metadata' => array( 'intake_findings' => array_merge( array( $intake_row ), $more_intake_rows, $capture_rows ) ) );
+$args    = array( 'source_metadata' => array( 'intake_findings' => array_merge( array( $intake_row ), $more_intake_rows, $source_rows ) ) );
 
 $projection = Static_Site_Importer_Receipt_Projection::compose( $receipt, $args, array(), array(), array(), 'loss-ledger-run', array(), array() );
 $report     = $projection['report'];
@@ -473,8 +489,8 @@ $assert( 'website/assets/style.php' === ( $intake['path'] ?? '' ) && 'non_static
 $omitted = $rows['page_compile_omitted'] ?? array();
 $assert( 'page_compile_representability_limit' === ( $omitted['reason_code'] ?? '' ) && 'warning' === ( $omitted['severity'] ?? '' ) && 'Form layout graph exceeds its node limit.' === ( $omitted['message'] ?? '' ), 'page-omission-row-canonical' );
 
-// DLA-shaped row: `reason` is the human text, `url` the location.
-$dla = Static_Site_Importer_Diagnostic_Projection::with_canonical_finding_fields(
+// A row naming its text `reason` and its location `url` maps onto the canonical fields.
+$reason_row = Static_Site_Importer_Diagnostic_Projection::with_canonical_finding_fields(
 	array(
 		'code'       => 'route_capture_degraded',
 		'severity'   => 'warning',
@@ -485,7 +501,7 @@ $dla = Static_Site_Importer_Diagnostic_Projection::with_canonical_finding_fields
 		'loss_class' => 'degraded_unit',
 	)
 );
-$assert( 'https://example.com/about' === $dla['location'] && 'Two capture stages failed.' === $dla['message'] && array( 'failedStages' => 2 ) === $dla['metrics'] && 'accepted_reported_loss' === $dla['acceptability'], 'dla-row-variants-map-to-canonical-fields' );
+$assert( 'https://example.com/about' === $reason_row['location'] && 'Two capture stages failed.' === $reason_row['message'] && array( 'failedStages' => 2 ) === $reason_row['metrics'] && 'accepted_reported_loss' === $reason_row['acceptability'], 'reason-row-variants-map-to-canonical-fields' );
 
 // Item 5: compact summary keeps code, location and metrics, and counts losses.
 $summary = $stored['compact_summary'] ?? array();

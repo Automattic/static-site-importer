@@ -2076,7 +2076,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 	 * - `code`: `code`, else `diagnostic_code`, else `type`.
 	 * - `location`: `source_path`, else `path`, else `url`, else Blocks Engine's
 	 *   `context.source_path`.
-	 * - `message`: `message`, else `summary`, else `reason` (DLA free text),
+	 * - `message`: `message`, else `summary`, else `reason` (producer free text),
 	 *   else `error_message`.
 	 * - `metrics`: numeric `metrics` entries, Blocks Engine editability
 	 *   `context.metric`/`actual`/`maximum` as `<metric>` and `<metric>_maximum`,

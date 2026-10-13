@@ -42,7 +42,7 @@ function wp_safe_remote_get( string $url, array $args ) {
 }
 
 require_once dirname( __DIR__ ) . '/vendor/autoload.php';
-foreach ( array( 'product-handoff-contract', 'import-report', 'diagnostic-loss-classes', 'capture-findings', 'diagnostic-contract', 'artifact-diagnostics-adapter', 'report-diagnostics', 'asset-reporter', 'document-metadata-reporter', 'block-document-reporter', 'receipt-projection', 'font-materializer' ) as $class_file ) {
+foreach ( array( 'product-handoff-contract', 'import-report', 'diagnostic-loss-classes', 'source-findings', 'diagnostic-contract', 'artifact-diagnostics-adapter', 'report-diagnostics', 'asset-reporter', 'document-metadata-reporter', 'block-document-reporter', 'receipt-projection', 'font-materializer' ) as $class_file ) {
 	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-' . $class_file . '.php';
 }
 
