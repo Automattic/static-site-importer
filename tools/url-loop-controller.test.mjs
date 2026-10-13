@@ -106,6 +106,9 @@ test('the capture producer is validated operator configuration', () => {
   assert.throws(() => resolveCaptureProducer({ captureProducer: producer(root, { remote: '' }) }), /required/);
   assert.throws(() => resolveCaptureProducer({ captureProducer: producer(root, { capture: ['node', 'cli.js', '{url}'] }) }), /must contain \{output\}/);
   assert.throws(() => resolveCaptureProducer({ captureProducer: producer(root, { compare_candidate: ['--candidate'] }) }), /must contain \{candidate\}/);
+  assert.throws(() => resolveCaptureProducer({ captureProducer: producer(root, { failure_details: { file: 'diagnostics.json', pointer: '/failures' } }) }), /failure_details/);
+  assert.throws(() => resolveCaptureProducer({ captureProducer: producer(root, { failure_details: { file: '{capture}/diagnostics.json', pointer: 'failures' } }) }), /failure_details/);
+  assert.deepEqual(resolveCaptureProducer({ captureProducer: producer(root, { failure_details: { file: '{capture}/diagnostics.json', pointer: '/failures' } }) }).failure_details, { file: '{capture}/diagnostics.json', pointer: '/failures' });
   assert.equal(resolveCaptureProducer({ captureProducer: producer(root) }).compare_report, '{capture}/compare/{stage}/report.json');
 });
 
@@ -260,6 +263,13 @@ test('producer commands expand per composed checkout, and the capture is found b
   assert.equal(located.directory, site);
   assert.equal(located.website, path.join(site, 'website'));
   assert.deepEqual(located.failures, [{ routes_failed: 1, routes_captured: 11, receipt_path: path.join(site, 'capture-receipt.json') }]);
+  const diagnostics = path.join(site, 'diagnostics.json');
+  fs.writeFileSync(diagnostics, JSON.stringify({ failures: [{ url: 'x'.repeat(600), error: 'route drift' }] }));
+  assert.equal(locateCapture(output, { file: '{capture}/diagnostics.json', pointer: '/failures' }).failures[0].routes[0].url.length, 500);
+  assert.equal(locateCapture(output, { file: '{capture}/absent.json', pointer: '/failures' }).failures[0].routes, undefined);
+  assert.equal(locateCapture(output, { file: '{capture}/diagnostics.json', pointer: '/wrong' }).failures[0].routes, undefined);
+  fs.writeFileSync(diagnostics, JSON.stringify({ failures: Array.from({ length: 60 }, (_, index) => ({ index })) }));
+  assert.equal(locateCapture(output, { file: '{capture}/diagnostics.json', pointer: '/failures' }).failures[0].routes.length, 50);
 });
 
 test('import state and compare reports become verdict evidence', () => {
@@ -272,8 +282,10 @@ test('import state and compare reports become verdict evidence', () => {
   const directory = tmp('ssi-compare-');
   const report = path.join(directory, 'report.json');
   assert.equal(compareResult(report), null);
-  fs.writeFileSync(report, JSON.stringify({ pass: false, status: 'failed', failed: [{ route: '/' }] }));
-  assert.deepEqual(compareResult(report), { passed: false, status: 'failed', report_path: report, failed: [{ route: '/' }] });
+  fs.writeFileSync(report, JSON.stringify({ pass: false, status: 'failed', scores: [{ route: '/', viewport: 768, pass: false, failures: ['mismatch'] }, { route: '/ok', pass: true }, { pass: false, width: 500, state: 'desktop' }], pending: ['later'] }));
+  assert.deepEqual(compareResult(report), { passed: false, status: 'failed', report_path: report, failing_count: 2, scores: [{ route: '/', viewport: 768, failures: ['mismatch'] }, { width: 500, state: 'desktop' }], pending: ['later'] });
+  fs.writeFileSync(report, JSON.stringify({ pass: false, status: 'failed', scores: Array.from({ length: 60 }, () => ({ pass: false })) }));
+  assert.deepEqual([compareResult(report).failing_count, compareResult(report).scores.length], [60, 50]);
 });
 
 test('repeated per-repository verify flags accumulate', () => {
