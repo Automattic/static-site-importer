@@ -10,7 +10,8 @@ import { resolveBlocksEnginePhpTransformerPath } from '../bench/static-site-fixt
 
 export const CAPTURE_ARTIFACT_SCHEMA = 'static-site-importer/url-loop-capture/v1';
 export const EVALUATION_ARTIFACT_SCHEMA = 'static-site-importer/url-loop-evaluation/v1';
-const CONTROLLER_SCHEMA = 'homeboy/controller-spec/v1';
+export const WORKFLOW_SCHEMA = 'homeboy/workflow/v1';
+export const WORKFLOW_ID = 'ssi-url-proof';
 const MODULE_PATH = fileURLToPath(import.meta.url);
 const SOURCE_VIEWS = [390, 768, 1440];
 const TRANSFORMER_PACKAGE = 'automattic/blocks-engine-php-transformer';
@@ -96,42 +97,73 @@ export function sourceIdentity(url) {
   return `ssi-url-${digest(normalizeUrl(url)).slice(0, 20)}`;
 }
 
-export function buildUrlLoopSpec(input) {
+// Homeboy starts every workflow step with an empty environment plus the names
+// the definition declares, captured where the workflow is admitted. These are
+// the public toolchain names capture and evaluation need; nothing else is inherited.
+const RUNTIME_ENV = ['PATH', 'HOME', 'XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'PLAYWRIGHT_BROWSERS_PATH', 'PLAYWRIGHT_HOST_PLATFORM_OVERRIDE', 'NPM_CONFIG_CACHE', 'npm_config_cache'];
+
+function boundedInteger(value, fallback, min, max, name) {
+  const number = Number(value ?? fallback);
+  if (!Number.isInteger(number) || number < min || number > max) throw new Error(`${name} must be an integer between ${min} and ${max}`);
+  return number;
+}
+
+/**
+ * One URL proof as a `homeboy/workflow/v1` definition: capture once, evaluate
+ * the candidate, let the evaluation verdict gate a repair Cook, and re-check
+ * until the verdict is `accepted` or the iteration/step budget stops it.
+ */
+export function buildUrlProofWorkflow(input) {
   const url = normalizeUrl(input.url);
   const blocksEngine = input.blocksEngine || process.env.SSI_BLOCKS_ENGINE_PATH;
   const wpCodeboxBin = input.wpCodeboxBin || process.env.HOMEBOY_WP_CODEBOX_BIN;
   if (!blocksEngine || !wpCodeboxBin) throw new Error('blocks-engine and wp-codebox-bin must be configured on this runner');
-  const maxActions = Number(input.maxActions ?? 4);
-  if (!Number.isInteger(maxActions) || maxActions < 3 || maxActions > 10) throw new Error('max-actions must be an integer between 3 and 10');
+  const fixTaskUrl = input.fixTaskUrl || process.env.SSI_FIX_TASK_URL;
+  if (!fixTaskUrl) throw new Error('fix-task-url must name the tracker the repair Cook works on');
+  normalizeUrl(fixTaskUrl);
+  const maxIterations = boundedInteger(input.maxIterations, 3, 1, 5, 'max-iterations');
+  const maxStepRuns = boundedInteger(input.maxStepRuns, 12, 2, 30, 'max-step-runs');
+  const deadline = String(input.deadline || '10h');
+  if (!/^[1-9][0-9]*[smhd]$/.test(deadline)) throw new Error('deadline must be a duration such as 90m or 10h');
   const sourceId = sourceIdentity(url);
   if (input.instance && !/^[A-Za-z0-9_-]{1,32}$/.test(input.instance)) throw new Error('instance must be a short path-safe token');
   const loopId = input.instance ? `${sourceId}-${input.instance}` : sourceId;
   const workspace = path.resolve(input.workspace || process.cwd());
   const root = path.resolve(input.outputRoot || path.join(workspace, 'artifacts', 'url-loop', loopId));
   const node = path.resolve(input.nodeExecutable || process.execPath);
-  const runtimeToolchain = { node, npx: path.resolve(input.npxExecutable || path.join(path.dirname(node), 'npx')), env: Object.fromEntries(['HOME', 'XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'PLAYWRIGHT_BROWSERS_PATH', 'PLAYWRIGHT_HOST_PLATFORM_OVERRIDE', 'NPM_CONFIG_CACHE', 'npm_config_cache'].filter((key) => process.env[key]).map((key) => [key, process.env[key]])) };
-  const context = { url, loop_id: loopId, source_id: sourceId, root, workspace, blocks_engine: path.resolve(blocksEngine), wp_codebox_bin: path.resolve(wpCodeboxBin), transformer_path: input.transformerPath ? path.resolve(input.transformerPath) : '', runtime_toolchain: runtimeToolchain, candidate_sha: input.candidateSha || process.env.SSI_CANDIDATE_SHA || null, blocks_engine_sha: input.blocksEngineSha || null, wordpress_version: input.wordpressVersion || null, max_actions: maxActions };
-  const action = (stage, timeout, artifacts, consumes = []) => ({
-    workflow_id: stage,
-    tasks: [stage === 'capture' ? 'Retain the source URL capture and normalized SSI fixture.' : 'Evaluate the retained fixture in disposable WordPress and report browser findings.'],
-    runtime_execution: { kind: 'command', command: process.execPath, args: [MODULE_PATH, stage], cwd: workspace, timeout_seconds: timeout },
-    artifacts, emits: artifacts, consumes,
-    inputs: context,
-  });
-  const spec = {
-    schema: CONTROLLER_SCHEMA,
-    loop_id: loopId,
-    phase: 'evaluate',
-    config_version: 'ssi-url-loop-v1',
-    metadata: { source_url_sha256: `sha256:${digest(url)}`, dispatch_defaults: { cwd: workspace, repo: 'static-site-importer' }, max_actions: context.max_actions },
-    artifacts: [
-      { artifact_id: 'capture', kind: CAPTURE_ARTIFACT_SCHEMA, required: true },
-      { artifact_id: 'evaluation', kind: EVALUATION_ARTIFACT_SCHEMA, required: true },
-    ],
-    workflows: [action('capture', 900, ['capture']), action('evaluate', 5400, ['evaluation'], ['capture'])],
-    artifact_graph: [{ artifact_id: 'capture', from_workflow_id: 'capture', to_workflow_id: 'evaluate', required: true }],
+  const runtimeToolchain = { node, npx: path.resolve(input.npxExecutable || path.join(path.dirname(node), 'npx')), env: Object.fromEntries(RUNTIME_ENV.filter((key) => key !== 'PATH' && process.env[key]).map((key) => [key, process.env[key]])) };
+  const context = { source_id: sourceId, loop_id: loopId, root, workspace, blocks_engine: path.resolve(blocksEngine), wp_codebox_bin: path.resolve(wpCodeboxBin), transformer_path: input.transformerPath ? path.resolve(input.transformerPath) : '', runtime_toolchain: runtimeToolchain, blocks_engine_sha: input.blocksEngineSha || null, wordpress_version: input.wordpressVersion || null };
+  // The context is part of the pinned definition, so it is digested into the
+  // instance identity and can never drift under a running instance.
+  const command = (stage, args) => ({ program: node, args: [MODULE_PATH, stage, '--url', '{{inputs.url}}', '--context', JSON.stringify(context), ...args], cwd: workspace });
+  const verify = [input.fixVerify || 'npm test'].flat();
+  const cook = {
+    repo: input.fixRepo || 'static-site-importer',
+    'task-url': fixTaskUrl,
+    placement: input.fixPlacement || 'local',
+    ...(input.fixBackend ? { backend: input.fixBackend } : {}),
+    prompt: input.fixPrompt || 'Repair the static-site-importer findings for {{inputs.url}} at candidate {{inputs.candidate_sha}}. The evaluation report at {{steps.evaluate.output/report_path}} lists the findings and the missing evidence to resolve (workflow {{instance}}, iteration {{iteration}}).',
+    verify,
   };
-  return { spec, context };
+  const workflow = {
+    schema: WORKFLOW_SCHEMA,
+    id: WORKFLOW_ID,
+    inputs: { url: { required: true }, candidate_sha: { required: true } },
+    env: { public: RUNTIME_ENV.filter((name) => process.env[name]) },
+    budget: { max_step_runs: maxStepRuns, deadline },
+    iterate: { until: { step: 'evaluate', output: '/verdict', equals: 'accepted' }, max_iterations: maxIterations },
+    steps: [
+      { id: 'capture', timeout: '15m', when: { not: { step: 'capture', outcome: ['succeeded'] } }, exec: command('capture', []) },
+      { id: 'evaluate', needs: ['capture'], timeout: '90m', exec: command('evaluate', ['--capture', '{{steps.capture.output}}', '--candidate-sha', '{{inputs.candidate_sha}}', '--action', '{{instance}}-i{{iteration}}']) },
+      { id: 'fix', needs: ['evaluate'], when: { step: 'evaluate', output: '/verdict', equals: 'findings' }, retry: { max: 1, on: ['failed'] }, cook },
+    ],
+  };
+  return { workflow, context, inputs: { url } };
+}
+
+function requireContext(context, url) {
+  if (!context?.root || !context.workspace || context.source_id !== sourceIdentity(url)) throw new Error('workflow_context_url_mismatch');
+  return context;
 }
 
 function captureArtifact(handoff) {
@@ -150,9 +182,20 @@ function captureArtifact(handoff) {
   };
 }
 
-export async function runCapture(context, dependencies = {}) {
-  const handoff = await (dependencies.capture || runUrlLoopIntake)({ url: context.url, outputRoot: path.join(context.root, 'capture-intake'), runtimeToolchain: context.runtime_toolchain });
-  return { capture: captureArtifact(handoff) };
+// A URL proof captures its source once. Later instances for the same proof
+// root (new candidate SHAs) evaluate that same retained capture; a retained
+// blocked capture stays blocked rather than being silently replaced.
+export async function runCapture(context, url, dependencies = {}) {
+  const normalized = normalizeUrl(url);
+  requireContext(context, normalized);
+  const outputRoot = path.join(context.root, 'capture-intake');
+  const retained = path.join(outputRoot, 'url-loop-handoff.json');
+  const handoff = fs.existsSync(retained)
+    ? { ...readJson(retained), handoff_path: retained }
+    : await (dependencies.capture || runUrlLoopIntake)({ url: normalized, outputRoot, runtimeToolchain: context.runtime_toolchain });
+  const artifact = captureArtifact(handoff);
+  if (artifact.url !== normalized) throw new Error('capture_url_mismatch');
+  return artifact;
 }
 
 export function evaluateMatrixSummary({ summary, benchStatus, capture, candidateSha, runId }) {
@@ -182,28 +225,47 @@ export function evaluateMatrixSummary({ summary, benchStatus, capture, candidate
   };
 }
 
-export async function runEvaluation(request, dependencies = {}) {
-  const context = request.inputs;
-  const capture = context?.artifacts?.capture;
-  if (capture?.schema !== CAPTURE_ARTIFACT_SCHEMA || capture.url !== normalizeUrl(context.url) || !fs.existsSync(capture.handoff_path)) throw new Error('capture_handoff_missing');
+/**
+ * The workflow gate reads `verdict`: `accepted` only for a solved site,
+ * `findings` when the matrix reports repairable failures, otherwise the
+ * evaluation status (`needs_evidence`, `needs_review`, `blocked`).
+ */
+export function evaluationVerdict(evaluation, reportPath) {
+  return {
+    verdict: evaluation.acceptance?.solved === true ? 'accepted' : evaluation.status === 'needs_repair' ? 'findings' : evaluation.status,
+    status: evaluation.status,
+    report_path: reportPath,
+    candidate_sha: evaluation.candidate_sha,
+    run_id: evaluation.run_id,
+    fixture_id: evaluation.fixture_id,
+    findings: evaluation.findings.length,
+    missing: evaluation.missing,
+    blocker: evaluation.preparation_blocker?.reason || null,
+  };
+}
+
+export async function runEvaluation({ context, url, capture, candidateSha: requestedSha, actionId }, dependencies = {}) {
+  const normalized = normalizeUrl(url);
+  requireContext(context, normalized);
+  if (capture?.schema !== CAPTURE_ARTIFACT_SCHEMA || capture.url !== normalized || !fs.existsSync(capture.handoff_path)) throw new Error('capture_handoff_missing');
   const handoff = readJson(capture.handoff_path);
   if (handoff.provenance?.captured_content_sha256 !== capture.provenance.captured_content_sha256 || handoff.provenance?.source_url_sha256 !== capture.provenance.source_url_sha256 || handoff.fixture?.fixture_root !== capture.fixture_root) throw new Error('capture_handoff_identity_mismatch');
-  const candidateSha = requiredCommit(context.candidate_sha || (dependencies.commit || gitCommit)(context.workspace), 'candidate_sha');
+  const candidateSha = requiredCommit(requestedSha || (dependencies.commit || gitCommit)(context.workspace), 'candidate_sha');
   const observedCommit = (dependencies.observedCommit || gitCommitIfAvailable)(context.workspace);
   if (observedCommit && observedCommit !== candidateSha) throw new Error('candidate_workspace_commit_mismatch');
-  const actionId = String(request.action_id || 'action-1');
-  if (!/^action-[0-9]+$/.test(actionId)) throw new Error('controller_action_identity_invalid');
+  if (!/^[A-Za-z0-9_-]{1,96}$/.test(String(actionId || ''))) throw new Error('evaluation_action_identity_invalid');
   const runId = `${context.loop_id}-matrix-${candidateSha.slice(0, 12)}-${actionId}`;
-  const output = path.join(context.root, 'evaluations', candidateSha, actionId, 'homeboy-bench-result.json');
-  const directory = path.dirname(output);
+  const directory = path.join(context.root, 'evaluations', candidateSha, actionId);
+  const output = path.join(directory, 'homeboy-bench-result.json');
+  const reportPath = path.join(directory, 'evaluation.json');
   if (fs.existsSync(directory)) throw new Error('matrix_output_not_fresh');
   let compiler;
   try { compiler = prepareTransformer(context, directory); }
   catch (error) {
     const evaluation = evaluateMatrixSummary({ summary: null, capture, candidateSha, runId });
     evaluation.preparation_blocker = { stage: 'preparation', reason: 'transformer_dependency_incompatible', message: error.message, evidence: error.evidence || { source: context.transformer_path || path.join(context.workspace, 'composer.lock'), package: TRANSFORMER_PACKAGE } };
-    writeJson(path.join(directory, 'evaluation.json'), evaluation);
-    return { evaluation };
+    writeJson(reportPath, evaluation);
+    return { evaluation, report_path: reportPath };
   }
   const coverage = Math.min(10, capture.routes - 1);
   const evaluated = await runUrlLoopMatrix({
@@ -220,9 +282,9 @@ export async function runEvaluation(request, dependencies = {}) {
   evaluation.versions = { dla: capture.dla, ssi: candidateSha, blocks_engine: context.blocks_engine_sha || null, wordpress: context.wordpress_version || null, browser: summary?.lane_identity?.browser || null };
   if (!observedCommit) evaluation.missing.push('candidate_commit_unverified');
   evaluation.command = evaluated.commands[0];
-  writeJson(path.join(context.root, 'evaluations', candidateSha, actionId, 'evaluation.json'), evaluation);
+  writeJson(reportPath, evaluation);
   if (evaluation.status === 'blocked') throw new Error(`matrix_runtime_blocked:${result.status ?? 'signal'}`);
-  return { evaluation };
+  return { evaluation, report_path: reportPath };
 }
 
 function gitCommit(cwd) {
@@ -245,56 +307,52 @@ export function verifyCandidateWorkspace(workspace, candidateSha) {
   return root;
 }
 
-export function candidatePolicy(context, capture, candidateSha) {
-  const sha = requiredCommit(candidateSha, 'candidate_sha');
-  const dedupeKey = `evaluate:${capture.provenance.captured_content_sha256}:${sha}`;
-  const request = { mode: 'command', consumes: ['capture'], artifacts: ['evaluation'], inputs: { ...context, candidate_sha: sha }, execution: { kind: 'command', command: process.execPath, args: [MODULE_PATH, 'evaluate'], cwd: context.workspace, timeout_seconds: 5400 } };
-  return { policy_id: 'ssi-url-candidate-evaluation', transitions: [{ transition_id: 'candidate-recheck', on_event_type: 'ssi.candidate.updated', actions: [{ action: 'run_command', dedupe_key: dedupeKey, request }] }] };
+const REPEATABLE = new Set(['fixVerify']);
+export function parseArgs(argv) {
+  const options = {};
+  for (let i = 0; i < argv.length; i += 1) {
+    if (!argv[i].startsWith('--')) continue;
+    const key = argv[i].slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+    const value = argv[++i];
+    options[key] = REPEATABLE.has(key) ? [...(options[key] || []), value] : value;
+  }
+  return options;
 }
 
-function parseArgs(argv) {
-  const options = {};
-  for (let i = 0; i < argv.length; i += 1) if (argv[i].startsWith('--')) options[argv[i].slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = argv[++i];
-  return options;
+function writeStepOutput(value) {
+  if (process.env.HOMEBOY_STEP_OUTPUT) writeJson(process.env.HOMEBOY_STEP_OUTPUT, value);
+  process.stdout.write(`${JSON.stringify(value)}\n`);
 }
 
 async function main() {
   const [operation, ...argv] = process.argv.slice(2);
   const options = parseArgs(argv);
-  if (operation === 'capture' || operation === 'evaluate') {
-    const input = readJson(process.env.HOMEBOY_LOOP_ACTION_INPUT);
-    const artifacts = operation === 'capture' ? await runCapture(input.request.inputs) : await runEvaluation(input.request);
-    writeJson(process.env.HOMEBOY_LOOP_ACTION_OUTPUT, { artifacts });
+  if (operation === 'capture') {
+    writeStepOutput(await runCapture(JSON.parse(options.context), options.url));
     return;
   }
+  if (operation === 'evaluate') {
+    const { evaluation, report_path: reportPath } = await runEvaluation({ context: JSON.parse(options.context), url: options.url, capture: JSON.parse(options.capture), candidateSha: options.candidateSha, actionId: options.action });
+    const verdict = evaluationVerdict(evaluation, reportPath);
+    writeStepOutput(verdict);
+    // A typed blocker fails the step, and with it the workflow instance.
+    if (verdict.verdict === 'blocked') throw new Error(`evaluation_blocked:${verdict.blocker || 'matrix_evidence_missing'}`);
+    return;
+  }
+  if (operation === 'workflow') { process.stdout.write(`${JSON.stringify(buildUrlProofWorkflow(options).workflow, null, 2)}\n`); return; }
   if (operation === 'start') {
-    const { spec, context } = buildUrlLoopSpec(options);
-    context.candidate_sha = requiredCommit(context.candidate_sha || gitCommit(context.workspace), 'candidate_sha');
-    const observedCommit = gitCommitIfAvailable(context.workspace);
-    if (observedCommit && observedCommit !== context.candidate_sha) throw new Error('candidate_workspace_commit_mismatch');
-    for (const workflow of spec.workflows) workflow.inputs.candidate_sha = context.candidate_sha;
-    writeJson(path.join(context.root, 'loop-context.json'), context);
-    const result = spawnSync(options.homeboyBin || 'homeboy', ['agent-task', 'loop', 'define', JSON.stringify(spec), '--on', '--resume', '--revolution-limit', String(context.max_actions)], { cwd: context.workspace, stdio: 'inherit' });
-    if (result.status !== 0) throw new Error(`loop_admission_failed:${result.status}`);
-    process.stdout.write(`${JSON.stringify({ loop_id: context.loop_id, status_command: `homeboy agent-task loop status ${context.loop_id}`, context_file: path.join(context.root, 'loop-context.json') })}\n`);
+    const { workflow, context, inputs } = buildUrlProofWorkflow(options);
+    const candidateSha = requiredCommit(options.candidateSha || process.env.SSI_CANDIDATE_SHA || gitCommit(context.workspace), 'candidate_sha');
+    if (gitCommitIfAvailable(context.workspace)) verifyCandidateWorkspace(context.workspace, candidateSha);
+    const file = path.join(context.root, 'workflow.json');
+    writeJson(file, workflow);
+    const result = spawnSync(options.homeboyBin || 'homeboy', ['workflow', 'run', file, '--input', `url=${inputs.url}`, '--input', `candidate_sha=${candidateSha}`], { cwd: context.workspace, stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8' });
+    if (result.status !== 0) { process.stdout.write(result.stdout || ''); throw new Error(`workflow_admission_failed:${result.status}`); }
+    const instance = JSON.parse(result.stdout).data?.instance;
+    process.stdout.write(`${JSON.stringify({ instance, loop_id: context.loop_id, workflow_file: file, status_command: `homeboy workflow status ${instance}` })}\n`);
     return;
   }
-  if (operation === 'candidate') {
-    const context = readJson(path.join(path.resolve(options.outputRoot), 'loop-context.json'));
-    const handoffPath = path.join(context.root, 'capture-intake', 'url-loop-handoff.json');
-    const capture = captureArtifact({ ...readJson(handoffPath), handoff_path: handoffPath });
-    const sha = requiredCommit(options.candidateSha, 'candidate_sha');
-    const candidateWorkspace = verifyCandidateWorkspace(options.candidateWorkspace || context.workspace, sha);
-    const eventId = `candidate-${sha}-${capture.provenance.captured_content_sha256.slice(-12)}`;
-    const payload = JSON.stringify({ source_url_sha256: capture.provenance.source_url_sha256, captured_content_sha256: capture.provenance.captured_content_sha256, policy: candidatePolicy({ ...context, workspace: candidateWorkspace }, capture, sha) });
-    const result = spawnSync(options.homeboyBin || 'homeboy', ['agent-task', 'controller', 'events', context.loop_id, '--event-type', 'ssi.candidate.updated', '--event-id', eventId, '--event-key', sha, '--payload', payload], { cwd: context.workspace, stdio: 'inherit' });
-    if (result.status !== 0) throw new Error(`candidate_event_failed:${result.status}`);
-    const resumed = spawnSync(options.homeboyBin || 'homeboy', ['agent-task', 'loop', 'resume', context.loop_id], { cwd: context.workspace, stdio: 'inherit' });
-    if (resumed.status !== 0) throw new Error(`candidate_resume_failed:${resumed.status}`);
-    return;
-  }
-  if (operation === 'spec') { process.stdout.write(`${JSON.stringify(buildUrlLoopSpec(options).spec, null, 2)}\n`); return; }
-  throw new Error('usage: url-loop-controller.mjs start|candidate|spec --url <url> --blocks-engine <path> --wp-codebox-bin <path> [--output-root <path>]');
+  throw new Error('usage: url-loop-controller.mjs start|workflow --url <url> --fix-task-url <url> [--blocks-engine <path>] [--wp-codebox-bin <path>] [--candidate-sha <sha>] [--output-root <path>] [--instance <token>] [--max-iterations 3] [--max-step-runs 12] [--deadline 10h] [--fix-repo <repo>] [--fix-verify <command>]... [--fix-placement local] [--fix-backend <backend>] [--fix-prompt <template>]');
 }
 
 if (process.argv[1] === MODULE_PATH) main().catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });

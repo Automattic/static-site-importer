@@ -375,56 +375,68 @@ status.
 
 ### Durable, bounded evaluation
 
-`tools/url-loop-controller.mjs` composes this capture with Homeboy's generic
-`run_command` WorkJobs. Run it **inside a dependency-hydrated Lab workspace**
-with the installed Homeboy controller and a WP Codebox binary that supports the
-fixture-matrix browser steps:
+`tools/url-loop-controller.mjs` turns one URL into a Homeboy workflow
+(`homeboy/workflow/v1`, see Homeboy's `docs/commands/workflow.md`) and admits it
+with `homeboy workflow run`. Run it **inside a dependency-hydrated Lab workspace**
+with a Homeboy build that has `homeboy workflow` and a WP Codebox binary that
+supports the fixture-matrix browser steps:
 
 ```bash
 node tools/url-loop-controller.mjs start \
   --url https://quinn-fluid-demo.squarespace.com/ \
+  --fix-task-url https://github.com/<owner>/<repo>/issues/<n> \
   --blocks-engine /path/to/blocks-engine \
   --transformer-path /path/to/pinned/php-transformer \
   --wp-codebox-bin /path/to/wp-codebox \
   --candidate-sha <full-40-character-commit> \
   --output-root /path/to/retained/loop \
-  --max-actions 4
-homeboy agent-task loop status ssi-url-e40fb1ae670f7b0acf36
+  --max-iterations 3 --max-step-runs 12 --deadline 10h
+homeboy workflow status <instance printed by start>
 ```
 
-Configure `SSI_BLOCKS_ENGINE_PATH`, `HOMEBOY_WP_CODEBOX_BIN`, and (when the
-synced workspace has no `.git`) `SSI_CANDIDATE_SHA` on the Lab runner to make
-`start --url <url>` the only per-site input.
-For independent proof runs of the same source, `--instance <token>` forks the
-controller identity while retaining the stable `source_id` in its handoff.
+The workflow has three steps:
 
-The first action retains DLA's source capture and normalized SSI fixture. The
-second runs the canonical WordPress/Codebox matrix and records its typed browser
-findings and component inputs. Homeboy owns the durable action history, event and
-revolution budget; SSI owns the evidence/acceptance decision. A subsequent
-candidate SHA can queue **one deduplicated re-evaluation of that same capture**:
+1. **`capture`** retains DLA's source capture and normalized SSI fixture. It runs
+   once per instance (its `when` gate is false once it has succeeded), and every
+   later instance for the same proof root reuses the retained capture.
+2. **`evaluate`** runs the canonical WordPress/Codebox matrix for the candidate
+   and writes `evaluation.json`. Its step output carries the gate's `verdict`:
+   `findings` when the matrix reports repairable failures, `accepted` only for a
+   solved site, otherwise the evaluation status (`needs_evidence`, `needs_review`).
+3. **`fix`** is a Homeboy Cook that the `findings` verdict launches, on the
+   tracker named by `--fix-task-url` (`--fix-repo`, `--fix-verify` (repeatable,
+   default `npm test`), `--fix-placement`, `--fix-backend`, and `--fix-prompt`
+   adjust it).
 
-```bash
-node tools/url-loop-controller.mjs candidate \
-  --output-root /path/to/retained/loop \
-  --candidate-sha <full-40-character-commit> \
-  --candidate-workspace /path/to/clean/candidate-checkout
-```
+The `until` gate re-runs the graph until the verdict is `accepted`. The
+`--max-iterations` and `--max-step-runs` budgets and the `--deadline` stop it
+otherwise, ending the instance `budget_exhausted`. A typed capture or evaluation
+blocker exits non-zero, which fails the step and the instance with the blocker in
+the step log; nothing parks. Homeboy owns the durable step ledger and budgets;
+SSI owns the evidence/acceptance decision.
 
-The controller stops on a typed capture/matrix blocker or its action budget.
+Configure `SSI_BLOCKS_ENGINE_PATH`, `HOMEBOY_WP_CODEBOX_BIN`, `SSI_FIX_TASK_URL`
+and (when the synced workspace has no `.git`) `SSI_CANDIDATE_SHA` on the Lab
+runner to make `start --url <url>` the only per-site input. Steps run with an
+empty environment plus the declared public toolchain names (`PATH`, `HOME`,
+`XDG_*`, `PLAYWRIGHT_*`, npm cache) captured where `start` runs. For independent
+proof runs of the same source, `--instance <token>` forks the proof root while
+retaining the stable `source_id` in its handoff.
+
+**A new candidate SHA** is a new workflow instance over the same definition:
+rerun `start` with `--candidate-sha <sha>` from a clean checkout whose `HEAD` is
+that SHA. It evaluates the same retained capture; the same inputs are a no-op.
 `--candidate-sha` is required when Lab sync has no `.git` metadata; the operator
 can omit it for an ordinary Git checkout. Pin the Blocks Engine candidate with
-`--blocks-engine-sha` and WordPress with `--wordpress-version` when known.
-Candidate events require a clean checkout whose `HEAD` matches the supplied SHA;
-the re-evaluation action then verifies it again before running the matrix. A Lab
+`--blocks-engine-sha` and WordPress with `--wordpress-version` when known. A Lab
 snapshot without Git metadata remains usable for initial diagnostic collection,
 but its candidate revision stays visibly unverified and cannot earn acceptance.
 Matrix quality findings remain actionable, but neither zero fallback blocks nor
 completed browser steps imply a solved site. A solved verdict requires SSI's
 separate fail-closed solved-site promotion receipt and full viewport/editor
-evidence; this first vertical records absent evidence explicitly. `spec` instead
-of `start` prints the generated controller spec for `homeboy agent-task
-controller plan -` without creating controller state.
+evidence; this first vertical records absent evidence explicitly. `workflow`
+instead of `start` prints the generated definition for
+`homeboy workflow validate -` without admitting an instance.
 
 ## Product Handoff Contract
 
