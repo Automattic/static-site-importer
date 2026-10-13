@@ -403,76 +403,98 @@ status.
 
 ### Durable, bounded evaluation
 
-`tools/url-loop-controller.mjs` turns one URL into a Homeboy workflow
-(`homeboy/workflow/v1`, see Homeboy's `docs/commands/workflow.md`) and admits it
-with `homeboy workflow run`. Run it **inside a dependency-hydrated Lab workspace**
-with a Homeboy build that has `homeboy workflow` and a WP Codebox binary that
-supports the fixture-matrix browser steps:
+`tools/url-loop-controller.mjs` turns one URL into a bounded, hands-off repair
+loop (`homeboy/workflow/v1`) across SSI, Blocks Engine and a configured capture
+producer. The operator supplies the URL; the loop opens upstream pull requests
+until the source passes or a budget or typed blocker stops it.
+
+The capture producer is operator configuration: the repository the loop
+composes and repairs for capture, and the commands that build it, capture a URL
+and compare a capture. Pass it as `--capture-producer '<JSON>'` or set
+`SSI_URL_LOOP_CAPTURE_PRODUCER` on the runner. Placeholders are `{checkout}`
+(the composed checkout), `{url}`, `{output}`, `{capture}` (the directory with
+the Blocks Engine `capture-receipt.json`), `{stage}` (`capture` or
+`materialization`) and `{candidate}` (the served WordPress origin). For example,
+with Data Liberation Agent:
+
+```json
+{
+  "repository": "data-liberation-agent",
+  "checkout": "/path/to/data-liberation-agent",
+  "remote": "https://github.com/Automattic/data-liberation-agent.git",
+  "base": "main",
+  "build": [["npm", "ci", "--no-audit", "--no-fund"], ["npm", "run", "build"]],
+  "capture": ["node", "{checkout}/dist/cli.js", "{url}", "--output", "{output}", "--route-limit", "12", "--reference-sample", "all"],
+  "compare": ["node", "{checkout}/dist/cli.js", "compare", "{capture}", "--stage", "{stage}"],
+  "compare_candidate": ["--candidate", "{candidate}"],
+  "verify": ["npm test"]
+}
+```
+
+`compare_report` (default `{capture}/compare/{stage}/report.json`) names the
+report whose `pass` decides each comparison; `task_url` names the producer's
+tracker.
 
 ```bash
 node tools/url-loop-controller.mjs start \
-  --url https://quinn-fluid-demo.squarespace.com/ \
-  --capture-command '["npx","--yes","--package=<package spec>","<bin>","{url}","--output","{output}"]' \
-  --fix-task-url https://github.com/<owner>/<repo>/issues/<n> \
+  --url https://housing-resolutions.com/ \
+  --capture-producer "$(cat capture-producer.json)" \
+  --task-url https://github.com/<owner>/<repo>/issues/<n> \
   --blocks-engine /path/to/blocks-engine \
-  --transformer-path /path/to/pinned/php-transformer \
   --wp-codebox-bin /path/to/wp-codebox \
-  --candidate-sha <full-40-character-commit> \
-  --output-root /path/to/retained/loop \
-  --max-iterations 3 --max-step-runs 12 --deadline 10h
+  --max-iterations 3 --max-step-runs 20 --deadline 10h
 homeboy workflow status <instance printed by start>
 ```
 
-The workflow has three steps:
+Each iteration runs four steps:
 
-1. **`capture`** retains the configured producer's source capture and normalized
-   SSI fixture. It runs
-   once per instance (its `when` gate is false once it has succeeded), and every
-   later instance for the same proof root reuses the retained capture.
-2. **`evaluate`** runs the canonical WordPress/Codebox matrix for the candidate
-   and writes `evaluation.json`. Its step output carries the gate's `verdict`:
-   `findings` when the matrix reports repairable failures, `accepted` only for a
-   solved site, otherwise the evaluation status (`needs_evidence`, `needs_review`).
-3. **`fix`** is a Homeboy Cook that the `findings` verdict launches, on the
-   tracker named by `--fix-task-url`. The evaluation report reaches it as the
-   `evaluation` provider evidence, so the prompt names that id rather than a
-   host path (`--fix-repo`, `--fix-verify` (repeatable, default `npm test`),
-   `--fix-placement`, `--fix-backend`, and `--fix-prompt` adjust it).
+1. **`evaluate`** composes the candidate and measures it:
+   - **Compose.** For each repository it checks out the public base (`main`;
+     `trunk` for Blocks Engine; the configured base for the producer) and merges
+     this instance's repair branches `url-loop/<instance>/<repo>-i<n>` in
+     iteration order, so every iteration measures all earlier repairs. Base and
+     merged SHAs are recorded; a conflict is the typed blocker
+     `candidate_merge_conflict:<repo>:<branch>`.
+   - **Capture.** It builds the composed producer, captures the live URL, finds
+     the capture by its receipt and runs the `capture` comparison.
+   - **Import.** It builds the SSI development package against the composed
+     Blocks Engine (`tools/build-dev-package.mjs`) and imports the capture into
+     a disposable WP Codebox Playground with `recipe-run`: WordPress 7.1,
+     WP-CLI, Jetpack preinstalled for forms, and SSI driven through
+     `import --single-step --state` because PHP.wasm has no subprocesses.
+   - **Compare.** While Codebox serves the imported site, the `materialization`
+     comparison measures WordPress against the capture.
+2. **`fix-ssi`, `fix-blocks-engine`, `fix-capture`** are Homeboy Cooks, each
+   gated on findings routed to its repository. A Cook receives only that
+   repository's evidence file and opens a ready-for-review PR on the iteration's
+   repair branch; nothing merges automatically.
 
-The `until` gate re-runs the graph until the verdict is `accepted`. The
-`--max-iterations` and `--max-step-runs` budgets and the `--deadline` stop it
-otherwise, ending the instance `budget_exhausted`. A typed capture or evaluation
-blocker exits non-zero, which fails the step and the instance with the blocker in
-the step log; nothing parks. Homeboy owns the durable step ledger and budgets;
-SSI owns the evidence/acceptance decision.
+**Verdict.** `accepted` requires a passing capture comparison, a passing
+materialization comparison, `quality_pass`, and zero unsupported fallback, core
+HTML, freeform and invalid blocks. This is the loop stop rule; SSI's fail-closed
+solved-site promotion receipt remains the separate publication step. Failing
+evidence with an owner is `findings`; missing or unroutable evidence is
+`blocked`, which fails the step and the instance.
 
-Configure `SSI_URL_LOOP_CAPTURE_COMMAND` (and `SSI_URL_LOOP_CAPTURE_RECEIPT_SCHEMA`
-when it differs from the default), `SSI_BLOCKS_ENGINE_PATH`, `HOMEBOY_WP_CODEBOX_BIN`,
-`SSI_FIX_TASK_URL` and (when the synced workspace has no `.git`) `SSI_CANDIDATE_SHA`
-on the Lab runner to make `start --url <url>` the only per-site input.
-`--capture-command` and `--capture-receipt-schema` override them per proof. `start`
-resolves the capture configuration once and pins it in the workflow definition, so
-every step and later candidate instance of that proof uses the same command and
-schema; a proof without a capture command is refused before admission. Steps run with an
-empty environment plus the declared public toolchain names (`PATH`, `HOME`,
-`XDG_*`, `PLAYWRIGHT_*`, npm cache) captured where `start` runs. For independent
-proof runs of the same source, `--instance <token>` forks the proof root while
-retaining the stable `source_id` in its handoff.
+**Routing.** Failed capture routes (from the receipt) and capture-comparison
+failures go to the capture producer; finding packets owned by `blocks-engine/*`
+go to Blocks Engine; other finding packets, import failures and
+materialization-comparison failures go to SSI. Each routed repository gets
+`evaluations/<instance>/i<n>/repairs/<repo>.json` with its findings, the
+composed component SHAs, stage reports and import quality.
 
-**A new candidate SHA** is a new workflow instance over the same definition:
-rerun `start` with `--candidate-sha <sha>` from a clean checkout whose `HEAD` is
-that SHA. It evaluates the same retained capture; the same inputs are a no-op.
-`--candidate-sha` is required when Lab sync has no `.git` metadata; the operator
-can omit it for an ordinary Git checkout. Pin the Blocks Engine candidate with
-`--blocks-engine-sha` and WordPress with `--wordpress-version` when known. A Lab
-snapshot without Git metadata remains usable for initial diagnostic collection,
-but its candidate revision stays visibly unverified and cannot earn acceptance.
-Matrix quality findings remain actionable, but neither zero fallback blocks nor
-completed browser steps imply a solved site. A solved verdict requires SSI's
-separate fail-closed solved-site promotion receipt and full viewport/editor
-evidence; this first vertical records absent evidence explicitly. `workflow`
-instead of `start` prints the generated definition for
-`homeboy workflow validate -` without admitting an instance.
+**Options.** `--task-url` (or `SSI_URL_LOOP_TASK_URL`) names the tracker every
+repair Cook works on; it is required unless every repository names its own
+through `--ssi-task-url`, `--blocks-engine-task-url` and the producer's
+`task_url`. `--ssi-verify` and `--blocks-engine-verify`
+(repeatable) override the Cook gates, which default to `npm test` and
+`composer --working-dir=php-transformer test`. `SSI_BLOCKS_ENGINE_PATH` and
+`HOMEBOY_WP_CODEBOX_BIN` configure the Blocks Engine checkout and Codebox CLI on
+a runner. Steps run with an empty environment plus the declared public
+toolchain names (`PATH`, `HOME`, `TMPDIR`, `XDG_*`, `PLAYWRIGHT_*`, npm and
+Composer caches) captured where `start` runs. `--instance <token>` forks an
+independent loop for the same source. `workflow` instead of `start` prints the
+generated definition for `homeboy workflow validate -` without admitting it.
 
 ## Product Handoff Contract
 
