@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { runUrlLoopIntake, runUrlLoopMatrix, validateCapture, validateMatrixEvidence } from './url-loop-intake.mjs';
+import { resolveCaptureConfig, runUrlLoopIntake, runUrlLoopMatrix, validateCapture, validateMatrixEvidence } from './url-loop-intake.mjs';
 import { resolveBlocksEnginePhpTransformerPath } from '../bench/static-site-fixture-matrix.bench.mjs';
 
 export const CAPTURE_ARTIFACT_SCHEMA = 'static-site-importer/url-loop-capture/v1';
@@ -132,8 +132,9 @@ export function buildUrlProofWorkflow(input) {
   const workspace = path.resolve(input.workspace || process.cwd());
   const root = path.resolve(input.outputRoot || path.join(workspace, 'artifacts', 'url-loop', loopId));
   const node = path.resolve(input.nodeExecutable || process.execPath);
-  const runtimeToolchain = { node, npx: path.resolve(input.npxExecutable || path.join(path.dirname(node), 'npx')), env: Object.fromEntries(RUNTIME_ENV.filter((key) => key !== 'PATH' && process.env[key]).map((key) => [key, process.env[key]])) };
-  const context = { source_id: sourceId, loop_id: loopId, root, workspace, blocks_engine: path.resolve(blocksEngine), wp_codebox_bin: path.resolve(wpCodeboxBin), transformer_path: input.transformerPath ? path.resolve(input.transformerPath) : '', runtime_toolchain: runtimeToolchain, blocks_engine_sha: input.blocksEngineSha || null, wordpress_version: input.wordpressVersion || null };
+  const capture = resolveCaptureConfig(input);
+  const runtimeToolchain = { node, env: Object.fromEntries(RUNTIME_ENV.filter((key) => key !== 'PATH' && process.env[key]).map((key) => [key, process.env[key]])) };
+  const context = { source_id: sourceId, loop_id: loopId, root, workspace, blocks_engine: path.resolve(blocksEngine), wp_codebox_bin: path.resolve(wpCodeboxBin), transformer_path: input.transformerPath ? path.resolve(input.transformerPath) : '', capture, runtime_toolchain: runtimeToolchain, blocks_engine_sha: input.blocksEngineSha || null, wordpress_version: input.wordpressVersion || null };
   // The context is part of the pinned definition, so it is digested into the
   // instance identity and can never drift under a running instance.
   const command = (stage, args) => ({ program: node, args: [MODULE_PATH, stage, '--url', '{{inputs.url}}', '--context', JSON.stringify(context), ...args], cwd: workspace });
@@ -170,8 +171,8 @@ function requireContext(context, url) {
   return context;
 }
 
-function captureArtifact(handoff) {
-  if (handoff.status !== 'needs_evaluation' || !handoff.fixture?.fixture_root || !validateCapture(handoff.capture_receipt).valid || handoff.capture_receipt?.source?.url !== handoff.url || !handoff.provenance?.captured_content_sha256) {
+function captureArtifact(handoff, capture) {
+  if (handoff.status !== 'needs_evaluation' || !handoff.fixture?.fixture_root || !validateCapture(handoff.capture_receipt, { schema: capture.receipt_schema }).valid || handoff.capture_receipt?.source?.url !== handoff.url || !handoff.provenance?.captured_content_sha256) {
     throw new Error(`capture_blocked:${JSON.stringify(handoff.failures || [])}`);
   }
   return {
@@ -182,7 +183,7 @@ function captureArtifact(handoff) {
     handoff_path: handoff.handoff_path,
     provenance: handoff.provenance,
     routes: handoff.capture_receipt.summary.routesCaptured,
-    dla: handoff.identities.dla,
+    producer: handoff.identities.capture,
   };
 }
 
@@ -196,8 +197,8 @@ export async function runCapture(context, url, dependencies = {}) {
   const retained = path.join(outputRoot, 'url-loop-handoff.json');
   const handoff = fs.existsSync(retained)
     ? { ...readJson(retained), handoff_path: retained }
-    : await (dependencies.capture || runUrlLoopIntake)({ url: normalized, outputRoot, runtimeToolchain: context.runtime_toolchain });
-  const artifact = captureArtifact(handoff);
+    : await (dependencies.capture || runUrlLoopIntake)({ url: normalized, outputRoot, capture: context.capture, runtimeToolchain: context.runtime_toolchain });
+  const artifact = captureArtifact(handoff, context.capture);
   if (artifact.url !== normalized) throw new Error('capture_url_mismatch');
   return artifact;
 }
@@ -283,7 +284,7 @@ export async function runEvaluation({ context, url, capture, candidateSha: reque
   evaluation.transformer = compiler.transformer;
   if (compiler.composer_lock_sha256) evaluation.composer_lock_sha256 = compiler.composer_lock_sha256;
   if (compiler.evidence) evaluation.transformer_preparation = compiler.evidence;
-  evaluation.versions = { dla: capture.dla, ssi: candidateSha, blocks_engine: context.blocks_engine_sha || null, wordpress: context.wordpress_version || null, browser: summary?.lane_identity?.browser || null };
+  evaluation.versions = { capture: capture.producer, ssi: candidateSha, blocks_engine: context.blocks_engine_sha || null, wordpress: context.wordpress_version || null, browser: summary?.lane_identity?.browser || null };
   if (!observedCommit) evaluation.missing.push('candidate_commit_unverified');
   evaluation.command = evaluated.commands[0];
   writeJson(reportPath, evaluation);
@@ -356,7 +357,7 @@ async function main() {
     process.stdout.write(`${JSON.stringify({ instance, loop_id: context.loop_id, workflow_file: file, status_command: `homeboy workflow status ${instance}` })}\n`);
     return;
   }
-  throw new Error('usage: url-loop-controller.mjs start|workflow --url <url> --fix-task-url <url> [--blocks-engine <path>] [--wp-codebox-bin <path>] [--candidate-sha <sha>] [--output-root <path>] [--instance <token>] [--max-iterations 3] [--max-step-runs 12] [--deadline 10h] [--fix-repo <repo>] [--fix-verify <command>]... [--fix-placement local] [--fix-backend <backend>] [--fix-prompt <template>]');
+  throw new Error('usage: url-loop-controller.mjs start|workflow --url <url> --capture-command <JSON argv> --fix-task-url <url> [--capture-receipt-schema <id>] [--blocks-engine <path>] [--wp-codebox-bin <path>] [--candidate-sha <sha>] [--output-root <path>] [--instance <token>] [--max-iterations 3] [--max-step-runs 12] [--deadline 10h] [--fix-repo <repo>] [--fix-verify <command>]... [--fix-placement local] [--fix-backend <backend>] [--fix-prompt <template>]');
 }
 
 if (process.argv[1] === MODULE_PATH) main().catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });

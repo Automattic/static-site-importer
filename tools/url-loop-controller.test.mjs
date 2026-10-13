@@ -10,17 +10,18 @@ import { CAPTURE_ARTIFACT_SCHEMA, EVALUATION_ARTIFACT_SCHEMA, WORKFLOW_ID, WORKF
 const url = 'https://example.com/';
 const sha = 'a'.repeat(40);
 const taskUrl = 'https://github.com/example/tracker/issues/1';
+const captureCommand = JSON.stringify(['stub-capture', '{url}', '{output}']);
 const provenance = { source_url_sha256: `sha256:${'1'.repeat(64)}`, captured_content_sha256: `sha256:${'2'.repeat(64)}`, capture_receipt_sha256: `sha256:${'3'.repeat(64)}` };
 function build(root, properties = {}) {
   if (!fs.existsSync(path.join(root, 'composer.lock'))) fs.copyFileSync(new URL('../composer.lock', import.meta.url), path.join(root, 'composer.lock'));
-  return buildUrlProofWorkflow({ url, workspace: root, outputRoot: path.join(root, 'output'), blocksEngine: root, wpCodeboxBin: path.join(root, 'codebox'), fixTaskUrl: taskUrl, ...properties });
+  return buildUrlProofWorkflow({ url, workspace: root, outputRoot: path.join(root, 'output'), blocksEngine: root, wpCodeboxBin: path.join(root, 'codebox'), fixTaskUrl: taskUrl, captureCommand, ...properties });
 }
 function capture(root, properties = {}) {
   const handoffPath = path.join(root, 'output', 'capture-intake', 'url-loop-handoff.json');
   const handoff = {
     url, status: 'needs_evaluation', fixture: { id: 'website', fixture_root: path.join(root, 'fixtures') },
     capture_receipt: { schema: 'blocks-engine-capture/capture-receipt/v1', source: { url }, summary: { complete: true, routesDiscovered: 2, routesCaptured: 2, routesFailed: 0, routesSkipped: 0 } },
-    provenance, identities: { dla: { version: 'v0.27.0' } }, failures: [], handoff_path: handoffPath,
+    provenance, identities: { capture: { command: JSON.parse(captureCommand), receipt_schema: 'blocks-engine-capture/capture-receipt/v1' } }, failures: [], handoff_path: handoffPath,
     ...properties,
   };
   fs.mkdirSync(path.dirname(handoffPath), { recursive: true });
@@ -72,7 +73,15 @@ test('one URL yields a bounded homeboy/workflow/v1 proof: capture, evaluation ga
   assert.throws(() => build(root, { maxIterations: 9 }), /max-iterations/);
   assert.throws(() => build(root, { maxStepRuns: 1 }), /max-step-runs/);
   assert.throws(() => build(root, { deadline: 'soon' }), /deadline/);
-  assert.throws(() => buildUrlProofWorkflow({ url, workspace: root, blocksEngine: root, wpCodeboxBin: root }), /fix-task-url/);
+  assert.throws(() => buildUrlProofWorkflow({ url, workspace: root, blocksEngine: root, wpCodeboxBin: root, captureCommand }), /fix-task-url/);
+  assert.deepEqual(context.capture, { command: JSON.parse(captureCommand), receipt_schema: 'blocks-engine-capture/capture-receipt/v1' });
+  const previous = process.env.SSI_URL_LOOP_CAPTURE_COMMAND;
+  try {
+    delete process.env.SSI_URL_LOOP_CAPTURE_COMMAND;
+    assert.throws(() => buildUrlProofWorkflow({ url, workspace: root, blocksEngine: root, wpCodeboxBin: root, fixTaskUrl: taskUrl }), /capture_command_missing/, 'a proof without a capture command is refused before admission');
+  } finally {
+    if (previous !== undefined) process.env.SSI_URL_LOOP_CAPTURE_COMMAND = previous;
+  }
 });
 
 test('steps run with only the declared public toolchain environment', () => {
@@ -90,7 +99,6 @@ test('steps run with only the declared public toolchain environment', () => {
     const retained = contextOf(workflow).runtime_toolchain;
     assert.deepEqual(retained, context.runtime_toolchain);
     assert.equal(retained.node, process.execPath);
-    assert.equal(retained.npx, path.join(path.dirname(process.execPath), 'npx'));
     assert.equal(retained.env.PLAYWRIGHT_BROWSERS_PATH, '/declared/browser-cache');
     assert.equal(retained.env.PLAYWRIGHT_HOST_PLATFORM_OVERRIDE, 'ubuntu24.04-x64');
     assert.equal(Object.hasOwn(retained.env, 'OPENAI_API_KEY'), false);
@@ -100,7 +108,7 @@ test('steps run with only the declared public toolchain environment', () => {
   }
 });
 
-test('complete DLA capture is retained once per proof root and reused by later instances', async () => {
+test('a complete capture is retained once per proof root and reused by later instances', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ssi-workflow-capture-'));
   const { context } = build(root);
   let count = 0;

@@ -344,29 +344,57 @@ The default root is `website` with `entrypoint: "website/index.html"`. Callers c
 
 ## URL Loop Intake
 
-The bounded URL entrypoint retains one fresh Data Liberation Agent capture, then
-passes that exact generated-artifact tree through SSI's existing fixture intake.
-It never interprets fallback counts as solved-site acceptance and does not run a
-matrix unless explicitly requested:
+The bounded URL entrypoint retains one fresh capture from a caller-configured
+capture command, then passes that exact generated-artifact tree through SSI's
+existing fixture intake. It never interprets fallback counts as solved-site
+acceptance and does not run a matrix unless explicitly requested:
 
 ```bash
 node tools/url-loop-intake.mjs https://quinn-fluid-demo.squarespace.com/ \
+  --capture-command '["npx","--yes","--package=<package spec>","<bin>","{url}","--output","{output}"]' \
   --output-root /path/to/retained/quinn-capture \
   --run-matrix --static-site-importer /path/to/static-site-importer \
   --blocks-engine /path/to/blocks-engine
 ```
 
-The entrypoint configures the pinned DLA v0.27.0 asset and invokes
-`npx --yes --package=<asset> data-liberation <url> --output <dir>`. The operator
-supplies only the URL on later runs. The resulting `url-loop-handoff.json` records
+#### Capture configuration
+
+The harness names no capture producer. The caller supplies it:
+
+| Setting | Flag | Environment | Default |
+|---|---|---|---|
+| Capture command: a JSON argv array. `{url}` (the normalized source URL) and `{output}` (the retained capture directory) are substituted in every element and must each appear at least once. | `--capture-command` | `SSI_URL_LOOP_CAPTURE_COMMAND` | none: the run is refused with `capture_command_missing` |
+| Expected receipt schema | `--capture-receipt-schema` | `SSI_URL_LOOP_CAPTURE_RECEIPT_SCHEMA` | `blocks-engine-capture/capture-receipt/v1` |
+
+A flag wins over the environment. A bare `argv[0]` resolves against the bounded
+child `PATH` (the configured Node directory plus the standard system
+directories), and the recorded command is the absolute program that ran. The
+command must write exactly one directory under `{output}` holding
+`capture-receipt.json` and a `website/` tree.
+
+To run with Data Liberation Agent, use **v0.27.0 or later**; earlier releases
+write the retired `data-liberation/capture-receipt/v1` receipt and are blocked
+with `capture_receipt_schema_unknown`. For v0.27.0 (commit
+`2986ca1e386e994696d41a47e94edb8dd3665c43`, asset SHA256
+`2611d686a804f0db20c1306fbfc807d8785a62040e462a555c2f02fb53cfedc3`):
+
+```bash
+export SSI_URL_LOOP_CAPTURE_COMMAND='["npx","--yes","--package=https://github.com/Automattic/data-liberation-agent/releases/download/v0.27.0/data-liberation-0.27.0.tgz","data-liberation","{url}","--output","{output}"]'
+```
+
+Pin an immutable release asset rather than a moving npm tag so repeated runs use
+the same producer bytes. The operator then supplies only the URL on later runs.
+
+The resulting `url-loop-handoff.json` records
 derived SHA256 provenance for the normalized URL, receipt bytes, and retained
 capture content, plus the capture receipt,
-observed component identities, normalized fixture, canonical matrix summary and
-artifact references when requested, stage failures, and replay commands. A capture receipt must be
-`blocks-engine-capture/capture-receipt/v1`, with `source.url` bound to the normalized
+observed component identities (the capture identity is the configured argv, its
+SHA256 and the expected receipt schema), normalized fixture, canonical matrix summary and
+artifact references when requested, stage failures, and replay commands. A capture receipt must
+declare the expected receipt schema, with `source.url` bound to the normalized
 URL and a complete route summary (`routesCaptured === routesDiscovered`, with no
 failed or skipped routes). Ambiguous artifact directories, partial captures,
-missing files, and missing declared release identity are blocked before SSI intake. A complete capture
+missing files, and a missing capture command are blocked before SSI intake. A complete capture
 without a requested matrix is `needs_evaluation`; matrix evidence is accepted only
 when the selected fixture is explicitly `verified` in the canonical runtime
 evidence summary. WordPress/editor evidence remains owned by the existing fixture
@@ -384,6 +412,7 @@ supports the fixture-matrix browser steps:
 ```bash
 node tools/url-loop-controller.mjs start \
   --url https://quinn-fluid-demo.squarespace.com/ \
+  --capture-command '["npx","--yes","--package=<package spec>","<bin>","{url}","--output","{output}"]' \
   --fix-task-url https://github.com/<owner>/<repo>/issues/<n> \
   --blocks-engine /path/to/blocks-engine \
   --transformer-path /path/to/pinned/php-transformer \
@@ -396,7 +425,8 @@ homeboy workflow status <instance printed by start>
 
 The workflow has three steps:
 
-1. **`capture`** retains DLA's source capture and normalized SSI fixture. It runs
+1. **`capture`** retains the configured producer's source capture and normalized
+   SSI fixture. It runs
    once per instance (its `when` gate is false once it has succeeded), and every
    later instance for the same proof root reuses the retained capture.
 2. **`evaluate`** runs the canonical WordPress/Codebox matrix for the candidate
@@ -416,9 +446,14 @@ blocker exits non-zero, which fails the step and the instance with the blocker i
 the step log; nothing parks. Homeboy owns the durable step ledger and budgets;
 SSI owns the evidence/acceptance decision.
 
-Configure `SSI_BLOCKS_ENGINE_PATH`, `HOMEBOY_WP_CODEBOX_BIN`, `SSI_FIX_TASK_URL`
-and (when the synced workspace has no `.git`) `SSI_CANDIDATE_SHA` on the Lab
-runner to make `start --url <url>` the only per-site input. Steps run with an
+Configure `SSI_URL_LOOP_CAPTURE_COMMAND` (and `SSI_URL_LOOP_CAPTURE_RECEIPT_SCHEMA`
+when it differs from the default), `SSI_BLOCKS_ENGINE_PATH`, `HOMEBOY_WP_CODEBOX_BIN`,
+`SSI_FIX_TASK_URL` and (when the synced workspace has no `.git`) `SSI_CANDIDATE_SHA`
+on the Lab runner to make `start --url <url>` the only per-site input.
+`--capture-command` and `--capture-receipt-schema` override them per proof. `start`
+resolves the capture configuration once and pins it in the workflow definition, so
+every step and later candidate instance of that proof uses the same command and
+schema; a proof without a capture command is refused before admission. Steps run with an
 empty environment plus the declared public toolchain names (`PATH`, `HOME`,
 `XDG_*`, `PLAYWRIGHT_*`, npm cache) captured where `start` runs. For independent
 proof runs of the same source, `--instance <token>` forks the proof root while
