@@ -179,7 +179,7 @@ export function buildUrlProofWorkflow(input) {
     placement: input.fixPlacement || 'local',
     ...(input.fixBackend ? { backend: input.fixBackend } : {}),
     'provider-evidence': JSON.stringify({ id: '{{item.repository}}-evaluation', source: '{{item.report_path}}' }),
-    prompt: 'Repair the {{item.repository}} findings for {{inputs.url}} (URL repair loop {{instance}}, iteration {{iteration}}). The provider evidence is the scoped work list with composed candidate SHAs and stage reports. Fix the cause generically in {{item.repository}}; the next iteration measures this branch.',
+    prompt: 'Repair the {{item.repository}} findings for {{inputs.url}} (URL repair loop {{instance}}, iteration {{iteration}}). The provider evidence is the scoped work list with composed candidate SHAs and stage reports. Fix the cause generically in {{item.repository}}; the next iteration measures this branch. Owning component paths: {{item.scope_text}}. When paths are listed, the fix belongs there; changes elsewhere do not address the finding.',
     verify: '{{item.verify}}',
     'draft-pr': false,
   });
@@ -210,6 +210,20 @@ export function routeFindings({ captureRepository, captureFailures = [], capture
   return repairs;
 }
 
+/** Derive repository-relative component scopes from finding owners that exist in the checkout. */
+export function deriveRepairScopes(repository, findings, checkout, isDirectory = (directory) => fs.statSync(directory).isDirectory()) {
+  const scopes = new Set();
+  for (const finding of findings || []) {
+    const owner = typeof finding?.owner === 'string' ? finding.owner : '';
+    const prefix = `${repository}/`;
+    if (!owner.startsWith(prefix)) continue;
+    const component = owner.slice(prefix.length).split('/')[0];
+    if (!component || component === '.' || component === '..' || component.includes('\\')) continue;
+    try { if (isDirectory(path.join(checkout, component))) scopes.add(`${component}/`); } catch { /* absent component is not an in-scope directory */ }
+  }
+  return [...scopes].sort();
+}
+
 /**
  * The loop's stop rule. `accepted` needs passing capture and materialization
  * comparisons, `quality_pass`, and zero fallback/HTML/freeform/invalid blocks.
@@ -238,7 +252,7 @@ export function evaluateLocalEvidence(evidence) {
 export function writeRepairEvidence(directory, repairs, common) {
   for (const [repo, work] of Object.entries(repairs)) {
     const file = path.join(directory, 'repairs', `${repo}.json`);
-    writeJson(file, { schema: REPAIR_EVIDENCE_SCHEMA, repository: repo, ...common, findings: work.findings });
+    writeJson(file, { schema: REPAIR_EVIDENCE_SCHEMA, repository: repo, ...common, scope: work.scope || [], findings: work.findings });
     work.report_path = file;
   }
   return repairs;
@@ -487,6 +501,9 @@ export async function runEvaluation({ context, url, instance, iteration }) {
   }
 
   const decided = blocker ? { verdict: 'blocked', repairs: {}, loss_count: null, blocker: blocker.reason, acceptance: { solved: false, scope: 'loop_stop_condition' } } : evaluateLocalEvidence(evidence);
+  for (const [repo, work] of Object.entries(decided.repairs)) {
+    work.scope = deriveRepairScopes(repo, work.findings, components[repo].path);
+  }
   const componentRecord = Object.fromEntries(Object.entries(components).map(([repo, record]) => [repo, { base: record.base, base_sha: record.base_sha, merged: record.merged, head_sha: record.head_sha }]));
   writeRepairEvidence(directory, decided.repairs, {
     url: normalized,
@@ -508,8 +525,14 @@ export async function runEvaluation({ context, url, instance, iteration }) {
  * templated array as its JSON, so each `foreach` item carries the commands as
  * a single shell program; every command must pass, in order.
  */
-export function verifyProgram(commands) {
-  return [commands].flat().map((command) => `(${command})`).join(' && ');
+export function verifyProgram(commands, scope = [], base = null) {
+  const checks = [commands].flat().map((command) => `(${command})`);
+  if (scope.length) {
+    if (!base) throw new Error('scope verification requires repository base');
+    const alternatives = scope.map((directory) => `(${directory.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`).join('|');
+    checks.unshift(`{ git diff --name-only origin/${base}...HEAD; git status --porcelain | cut -c4-; } | grep -qE '^(${alternatives})'`);
+  }
+  return checks.join(' && ');
 }
 
 /** The evaluate step output the workflow gates and Cook evidence read. */
@@ -525,7 +548,7 @@ export function evaluationVerdict(evaluation, reportPath, { instance, iteration,
     components: Object.fromEntries(Object.entries(evaluation.components || {}).map(([repo, record]) => [repo, { head_sha: record.head_sha, merged: record.merged.map((item) => item.branch) }])),
     // Compact: the findings live in each repository's evidence file.
     repairs: Object.fromEntries(Object.entries(evaluation.repairs || {}).map(([repo, work]) => [repo, { findings: work.findings.length, report_path: work.report_path }])),
-    repair_items: evaluation.verdict === 'findings' ? Object.entries(evaluation.repairs || {}).map(([repo, work]) => ({ repository: repo, report_path: work.report_path, head: repairBranch(instance, repo, iteration), task_url: repositories[repo].task_url, verify: verifyProgram(repositories[repo].verify) })) : [],
+    repair_items: evaluation.verdict === 'findings' ? Object.entries(evaluation.repairs || {}).map(([repo, work]) => ({ repository: repo, report_path: work.report_path, head: repairBranch(instance, repo, iteration), task_url: repositories[repo].task_url, scope: work.scope || [], scope_text: (work.scope || []).join(', '), verify: verifyProgram(repositories[repo].verify, work.scope || [], repositories[repo].base) })) : [],
   };
 }
 

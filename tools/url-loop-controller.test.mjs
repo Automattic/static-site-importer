@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import {
   CAPTURE_PRODUCER_ENV, LoopBlocker, WORKFLOW_ID, WORKFLOW_SCHEMA,
   buildUrlProofWorkflow, captureCommands, codeboxArgs, codeboxRecipe, compareResult, composeRepository, evaluateLocalEvidence,
-  evaluationVerdict, expandTemplate, importRequest, locateCapture, orderRepairBranches, parseArgs, readImportState, repairBranch,
+  deriveRepairScopes, evaluationVerdict, expandTemplate, importRequest, locateCapture, orderRepairBranches, parseArgs, readImportState, repairBranch,
   resolveCaptureProducer, routeFindings, sourceIdentity, verifyProgram, writeRepairEvidence,
 } from './url-loop-controller.mjs';
 
@@ -146,6 +146,15 @@ test('each routing class reaches its owning repository', () => {
   assert.deepEqual(routeFindings({ captureRepository: CAPTURE_REPO, captureCompare: { passed: true }, materializationCompare: { passed: true } }), {});
 });
 
+test('repair scopes come only from existing owner component directories', () => {
+  const dirs = new Set(['php-transformer', 'packages']);
+  assert.deepEqual(deriveRepairScopes('blocks-engine', [
+    { owner: 'blocks-engine/php-transformer' }, { owner: 'blocks-engine/packages/js' },
+    { owner: 'blocks-engine/php-transformer' }, { owner: 'blocks-engine' }, {},
+  ], '/checkout', (directory) => dirs.has(path.basename(directory))), ['packages/', 'php-transformer/']);
+  assert.deepEqual(deriveRepairScopes('blocks-engine', [{ owner: 'blocks-engine/missing' }], '/checkout', () => false), []);
+});
+
 test('the verdict needs complete evidence, passing comparisons and a clean quality result', () => {
   const accepted = evaluateLocalEvidence({ ...clean, capture_failures: [{ url: 'https://example.com/login' }] });
   assert.equal(accepted.verdict, 'accepted');
@@ -169,19 +178,26 @@ test('the verdict needs complete evidence, passing comparisons and a clean quali
 
 test('every routed repository gets a citable evidence file, and the step output stays compact', () => {
   const directory = tmp('ssi-repair-evidence-');
-  const repairs = writeRepairEvidence(directory, routeFindings({ captureRepository: CAPTURE_REPO, captureCompare: { passed: false }, packets: [{ owner: 'blocks-engine/php-transformer' }] }), { url, components: { 'blocks-engine': { head_sha: 'b'.repeat(40) } } });
+  const repairs = routeFindings({ captureRepository: CAPTURE_REPO, captureCompare: { passed: false }, packets: [{ owner: 'blocks-engine/php-transformer' }] });
+  repairs['blocks-engine'].scope = ['php-transformer/'];
+  writeRepairEvidence(directory, repairs, { url, components: { 'blocks-engine': { head_sha: 'b'.repeat(40) } } });
   for (const [repo, work] of Object.entries(repairs)) {
     assert.ok(work.report_path, `${repo} has a report path`);
     const written = JSON.parse(fs.readFileSync(work.report_path, 'utf8'));
     assert.equal(written.repository, repo);
     assert.equal(written.findings.length, work.findings.length);
+    assert.deepEqual(written.scope, work.scope || []);
     assert.equal(written.components['blocks-engine'].head_sha, 'b'.repeat(40));
   }
-  const repositories = { 'blocks-engine': { task_url: taskUrl, verify: ['composer test'] }, [CAPTURE_REPO]: { task_url: taskUrl, verify: ['npm test'] } };
+  repairs[CAPTURE_REPO].scope = [];
+  const repositories = { 'blocks-engine': { task_url: taskUrl, base: 'trunk', verify: ['composer test'] }, [CAPTURE_REPO]: { task_url: taskUrl, base: 'main', verify: ['npm test'] } };
   const output = evaluationVerdict({ verdict: 'findings', repairs, components: { 'blocks-engine': { head_sha: 'b'.repeat(40), merged: [{ branch: 'url-loop/x/blocks-engine-i1', sha: 'c'.repeat(40) }] } }, quality: { quality_pass: false } }, '/e.json', { instance: 'wf-1', iteration: 2, repositories });
   assert.deepEqual(output.repairs['blocks-engine'], { findings: 1, report_path: repairs['blocks-engine'].report_path });
   assert.deepEqual(output.components['blocks-engine'].merged, ['url-loop/x/blocks-engine-i1']);
-  assert.deepEqual(output.repair_items, [CAPTURE_REPO, 'blocks-engine'].map((repository) => ({ repository, report_path: repairs[repository].report_path, head: repairBranch('wf-1', repository, 2), task_url: taskUrl, verify: verifyProgram(repositories[repository].verify) })));
+  assert.deepEqual(output.repair_items, [CAPTURE_REPO, 'blocks-engine'].map((repository) => ({ repository, report_path: repairs[repository].report_path, head: repairBranch('wf-1', repository, 2), task_url: taskUrl, scope: repairs[repository].scope || [], scope_text: (repairs[repository].scope || []).join(', '), verify: verifyProgram(repositories[repository].verify, repairs[repository].scope || [], repositories[repository].base) })));
+  assert.match(output.repair_items[1].verify, /git diff --name-only origin\/trunk\.\.\.HEAD/);
+  assert.match(output.repair_items[1].verify, /git status --porcelain/);
+  assert.doesNotMatch(output.repair_items[0].verify, /git diff/);
   assert.equal(verifyProgram(['npm ci', 'npm test']), '(npm ci) && (npm test)', 'one shell program per item: a templated array would arrive as JSON');
   for (const verdict of ['accepted', 'blocked']) assert.deepEqual(evaluationVerdict({ verdict, repairs }, '/e.json', { instance: 'wf-1', iteration: 1, repositories }).repair_items, []);
 });
