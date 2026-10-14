@@ -2635,9 +2635,8 @@ namespace {
 		'captured-submit-style-line-height-reaches-the-rendered-button-geometry',
 		$submit_style_line_height_css
 	);
-	// An authored submit value that still references an unresolved custom
-	// property (`var(--x, unset)`) is not the button's font: the cascade-resolved
-	// graph fact wins, while a resolved authored value still wins as before.
+	// The cascade-resolved graph is authoritative for every property it
+	// resolved; the per-control capture fills only what the graph omits.
 	$submit_unresolved_form = $submit_control_style_form;
 	$submit_unresolved_form['forms'][0]['controls'][3]['presentation']['style']['typography']['fontFamily'] = 'var(--body-font,unset)';
 	$submit_unresolved_form['forms'][0]['controls'][3]['presentation']['style']['typography']['fontSize']   = '17px';
@@ -2660,8 +2659,9 @@ namespace {
 		empty( $validated_submit_unresolved['errors'] )
 			&& 1 === preg_match( '/> \.wp-block-button__link\{[^}]*font-family:Georgia;/', $submit_unresolved_css )
 			&& ! str_contains( $submit_unresolved_css, 'var(--body-font' )
-			&& 1 === preg_match( '/> \.wp-block-button__link\{[^}]*font-size:17px;/', $submit_unresolved_css ),
-		'unresolved-authored-submit-value-yields-to-the-resolved-graph-fact',
+			&& 1 === preg_match( '/> \.wp-block-button__link\{[^}]*font-size:16px;/', $submit_unresolved_css )
+			&& 1 === preg_match( '/> \.wp-block-button__link\{[^}]*font-weight:600;/', $submit_unresolved_css ),
+		'resolved-graph-submit-facts-win-and-the-capture-fills-the-rest',
 		$submit_unresolved_css
 	);
 	$submit_preflight_form = $submit_control_style_form;
@@ -2680,17 +2680,17 @@ namespace {
 	$validated_submit_preflight = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $submit_preflight_form );
 	$submit_preflight_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_submit_preflight['forms'] ?? array() ) )['forms'][0] ?? array();
 	$submit_preflight_css       = (string) ( $submit_preflight_row['provider_layout_overlay_css']['css'] ?? '' );
+	// A resolved padding side keeps the whole padding family on the graph: the
+	// capture's longhands cannot split the box the cascade resolved.
 	$assert(
 		empty( $validated_submit_preflight['errors'] )
-			&& str_contains( $submit_preflight_css, 'padding-top:1rem' )
-			&& str_contains( $submit_preflight_css, 'padding-right:2rem' )
-			&& str_contains( $submit_preflight_css, 'padding-bottom:1rem' )
-			&& str_contains( $submit_preflight_css, 'padding-left:2rem' )
-			&& str_contains( $submit_preflight_css, 'font-weight:600' )
-			&& ! str_contains( $submit_preflight_css, '> .wp-block-button__link{padding:0' )
-			&& ! str_contains( $submit_preflight_css, 'font-weight:inherit' )
-			&& str_contains( $submit_preflight_css, 'background-color:oklch(0.2689 0.0057 156.83)' ),
-		'authored-submit-style-wins-over-cascade-preflight-padding-and-weight-resets',
+			&& str_contains( $submit_preflight_css, 'padding:0;padding-top:.75rem;' )
+			&& ! str_contains( $submit_preflight_css, 'padding-right:2rem' )
+			&& ! str_contains( $submit_preflight_css, 'padding-top:1rem' )
+			&& str_contains( $submit_preflight_css, 'font-weight:inherit' )
+			&& str_contains( $submit_preflight_css, 'background-color:rgb(0,0,0)' )
+			&& str_contains( $submit_preflight_css, 'border-radius:9999px' ),
+		'resolved-graph-submit-box-wins-over-the-per-control-capture',
 		$submit_preflight_css
 	);
 	foreach ( array( '' => 'inherit', 'font-weight:600;' => '600' ) as $source_weight => $expected_weight ) {
