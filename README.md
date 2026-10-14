@@ -427,13 +427,17 @@ with Data Liberation Agent:
   "capture": ["node", "{checkout}/dist/cli.js", "{url}", "--output", "{output}", "--route-limit", "12", "--reference-sample", "all"],
   "compare": ["node", "{checkout}/dist/cli.js", "compare", "{capture}", "--stage", "{stage}"],
   "compare_candidate": ["--candidate", "{candidate}"],
+  "failure_details": {"file": "{capture}/diagnostics.json", "pointer": "/failures"},
   "verify": ["npm test"]
 }
 ```
 
 `compare_report` (default `{capture}/compare/{stage}/report.json`) names the
-report whose `pass` decides each comparison; `task_url` names the producer's
-tracker.
+report whose `pass` decides each comparison. Its contract is `pass`, `status`,
+and optional `scores[]` entries with `pass` and `failures`; failing entries are
+included in repair evidence. Optional `failure_details` identifies a JSON file
+and pointer to an array of capture failure details, which are included in
+repair evidence when available. `task_url` names the producer's tracker.
 
 ```bash
 node tools/url-loop-controller.mjs start \

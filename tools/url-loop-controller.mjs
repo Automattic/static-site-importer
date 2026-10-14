@@ -46,6 +46,12 @@ export function resolveCaptureProducer(input = {}, env = process.env) {
   }
   if (!SLUG.test(String(producer.repository || '')) || FIXED_REPOSITORIES[producer.repository]) throw new Error('capture_producer_invalid: repository must name the capture repository');
   if (!producer.checkout || !producer.remote || !producer.base) throw new Error('capture_producer_invalid: checkout, remote and base are required');
+  let failureDetails;
+  if (producer.failure_details !== undefined) {
+    const value = producer.failure_details;
+    if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.file !== 'string' || !value.file.includes('{capture}') || typeof value.pointer !== 'string' || !value.pointer.startsWith('/') || value.pointer === '/') throw new Error('capture_producer_invalid: failure_details must contain file using {capture} and a JSON pointer');
+    failureDetails = { file: value.file, pointer: value.pointer };
+  }
   return {
     repository: producer.repository,
     checkout: path.resolve(producer.checkout),
@@ -56,6 +62,7 @@ export function resolveCaptureProducer(input = {}, env = process.env) {
     compare: argvList(producer.compare, 'compare', ['{capture}', '{stage}']),
     compare_candidate: argvList(producer.compare_candidate, 'compare_candidate', ['{candidate}']),
     compare_report: String(producer.compare_report || '{capture}/compare/{stage}/report.json'),
+    ...(failureDetails ? { failure_details: failureDetails } : {}),
     verify: [producer.verify || 'npm test'].flat(),
     ...(producer.task_url ? { task_url: String(producer.task_url) } : {}),
   };
@@ -156,7 +163,7 @@ export function buildUrlProofWorkflow(input) {
       'blocks-engine': fixed('blocks-engine', blocksEngine),
       [repository]: { role: 'capture', path: checkout, remote, base },
     },
-    capture_producer: { repository, ...commands },
+    capture_producer: { repository, ...commands, ...(producer.failure_details ? { failure_details: producer.failure_details } : {}) },
     wp_codebox_bin: path.resolve(wpCodeboxBin),
     wordpress_version: String(input.wordpressVersion || '7.1'),
     import_steps: boundedInteger(input.importSteps, 24, 1, 200, 'import-steps'),
@@ -287,7 +294,18 @@ export function captureCommands(producer, { checkout, url, output, capture, cand
 }
 
 /** Find the single capture under `output` by its Blocks Engine capture receipt. */
-export function locateCapture(output) {
+function jsonPointer(value, pointer) {
+  return pointer.slice(1).split('/').map((part) => part.replace(/~1/g, '/').replace(/~0/g, '~')).reduce((current, key) => current?.[key], value);
+}
+
+function truncateStrings(value) {
+  if (typeof value === 'string') return value.slice(0, 500);
+  if (Array.isArray(value)) return value.map(truncateStrings);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, truncateStrings(item)]));
+  return value;
+}
+
+export function locateCapture(output, failureDetails) {
   const receipts = [output, ...(fs.existsSync(output) ? fs.readdirSync(output, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => path.join(output, entry.name)) : [])]
     .filter((directory) => fs.existsSync(path.join(directory, CAPTURE_RECEIPT_FILE)));
   if (receipts.length !== 1) return null;
@@ -295,7 +313,7 @@ export function locateCapture(output) {
   const website = path.join(receipts[0], receipt.websiteRoot || 'website');
   if (!fs.existsSync(path.join(website, 'index.html'))) return null;
   const summary = receipt.summary || {};
-  const failures = Number(summary.routesFailed || 0) > 0 ? [{ routes_failed: summary.routesFailed, routes_captured: summary.routesCaptured ?? null, receipt_path: path.join(receipts[0], CAPTURE_RECEIPT_FILE) }] : [];
+  const failures = Number(summary.routesFailed || 0) > 0 ? [{ routes_failed: summary.routesFailed, routes_captured: summary.routesCaptured ?? null, receipt_path: path.join(receipts[0], CAPTURE_RECEIPT_FILE), ...(failureDetails ? { routes: (() => { try { const file = expandTemplate(failureDetails.file, { capture: receipts[0] }); const value = fs.existsSync(file) ? jsonPointer(readJson(file), failureDetails.pointer) : null; return Array.isArray(value) ? value.slice(0, 50).map(truncateStrings) : undefined; } catch { return undefined; } })() } : {}) }] : [];
   return { directory: receipts[0], website, failures };
 }
 
@@ -309,11 +327,13 @@ export function readImportState(state) {
   return { success: terminal.success === true, quality, import_failures: importFailures };
 }
 
-/** Compact, citable result from a capture producer compare report (`pass`, `status`). */
+/** Compact, citable result from a capture producer compare report (`pass`, `status`, optional scores). */
 export function compareResult(reportPath) {
   const report = readJsonIfPresent(reportPath);
   if (!report) return null;
-  return { passed: report.pass === true, status: report.status || null, report_path: reportPath, failed: Array.isArray(report.failed) ? report.failed.slice(0, 20) : report.failed ?? null };
+  const scores = Array.isArray(report.scores) ? report.scores.filter((score) => score?.pass === false) : [];
+  const failing = scores.slice(0, 50).map((score) => Object.fromEntries(['route', 'viewport', 'width', 'state', 'failures'].filter((key) => Object.hasOwn(score, key)).map((key) => [key, score[key]])));
+  return { passed: report.pass === true, status: report.status || null, report_path: reportPath, failing_count: scores.length, scores: failing, pending: Array.isArray(report.pending) ? report.pending.slice(0, 50) : report.pending ?? null };
 }
 
 function run(program, args, options = {}) {
@@ -438,7 +458,7 @@ export async function runEvaluation({ context, url, instance, iteration }) {
     const output = path.join(directory, 'capture');
     const [captureProgram, ...captureArgs] = captureCommands(producer, { checkout: captureCheckout, url: normalized, output }).capture;
     run(captureProgram, captureArgs, { cwd: directory, env, log: path.join(directory, 'logs', 'capture.log') });
-    const located = locateCapture(output);
+    const located = locateCapture(output, producer.failure_details);
     if (!located) throw new LoopBlocker('capture_receipt_missing', path.join(directory, 'logs', 'capture.log'));
     evidence.capture_repository = producer.repository;
     evidence.capture_failures = located.failures;
