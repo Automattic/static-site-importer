@@ -14,6 +14,7 @@ use Automattic\BlocksEngine\PhpTransformer\WordPressSitePlan\WordPressSitePlanRe
 use Automattic\BlocksEngine\PhpTransformer\WordPress\Runtime as Blocks_Engine_WordPress_Runtime;
 
 require_once __DIR__ . '/class-static-site-importer-theme-screenshot.php';
+require_once __DIR__ . '/class-static-site-importer-richtext-weight-normalizer.php';
 if ( ! class_exists( 'Static_Site_Importer_Site_Identity' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-site-identity.php';
 }
@@ -203,6 +204,10 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				}
 				unset( $page );
 			}
+			// SSI owns the destination cascade: the resolved projection carries the
+			// producer's rich-text carriers once more than the source expressed
+			// them, so the consumer reweights them before anything persists.
+			$resolved = Static_Site_Importer_Richtext_Weight_Normalizer::normalize( $resolved );
 			$resolved                                   = Static_Site_Importer_Theme_Screenshot::with_write( $resolved, $args );
 			$resolved                                   = self::with_consumer_theme_scaffold( $resolved, $identity, $args );
 			$state['base_resolved']                     = $resolved;
