@@ -1862,6 +1862,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( ! is_array( $candidate ) || ! is_array( $layout_graph ) ) {
 			return array( 'error' => 'steps must be a producer step track accompanied by its layout graph.' );
 		}
+		if ( ! class_exists( \Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Style\FormStepTrackDetector::class ) ) {
+			return array( 'error' => 'steps require the Blocks Engine form step contract.' );
+		}
 		try {
 			\Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Style\FormStepTrackDetector::assertValid( $candidate, $layout_graph );
 		} catch ( InvalidArgumentException $error ) {

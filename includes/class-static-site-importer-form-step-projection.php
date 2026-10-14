@@ -123,6 +123,21 @@ final class Static_Site_Importer_Form_Step_Projection {
 			}
 			$form['form'][ $position ] = $kept;
 		}
+		// Their source boxes now belong to the confirmation and the navigation.
+		if ( is_array( $form['source_context_graph']['nodes'] ?? null ) ) {
+			$owned = array();
+			foreach ( $form['source_context_graph']['nodes'] as $index => $node ) {
+				$selector = is_array( $node ) && is_string( $node['source']['selector'] ?? null ) ? $node['source']['selector'] : '';
+				foreach ( $selectors as $root ) {
+					if ( '' !== $selector && ( $selector === $root || str_starts_with( $selector, $root . ' > ' ) ) ) {
+						$owned[ (string) $node['id'] ] = true;
+						unset( $form['source_context_graph']['nodes'][ $index ] );
+					}
+				}
+			}
+			$form['source_context_graph']['nodes']    = array_values( $form['source_context_graph']['nodes'] );
+			$form['source_context_graph']['variants'] = array_values( array_filter( is_array( $form['source_context_graph']['variants'] ?? null ) ? $form['source_context_graph']['variants'] : array(), static fn ( $variant ): bool => ! is_array( $variant ) || ! isset( $owned[ $variant['node'] ?? '' ] ) ) );
+		}
 		return array(
 			'form'       => $form,
 			'completion' => $claimed['completion'],
@@ -247,7 +262,7 @@ final class Static_Site_Importer_Form_Step_Projection {
 				'attrs'       => $attrs,
 				'innerBlocks' => $blocks,
 				'saved'       => array(
-					'open'  => "\n<div class=\"" . esc_attr( trim( 'wp-block-jetpack-form-step ' . ( $attrs['className'] ?? '' ) ) ) . '">',
+					'open'  => "\n<div class=\"" . htmlspecialchars( trim( 'wp-block-jetpack-form-step ' . ( $attrs['className'] ?? '' ) ), ENT_QUOTES ) . '">',
 					'close' => "</div>\n",
 				),
 			);
