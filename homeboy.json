@@ -249,5 +249,8 @@
         "prefix": "figma-transformer"
       }
     }
-  ]
+  ],
+  "release": {
+    "owner": "ci"
+  }
 }
