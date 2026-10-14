@@ -784,6 +784,35 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 	}
 }
 
+if ( ! function_exists( 'static_site_importer_cli_capture_website_root' ) ) {
+	/**
+	 * Resolve a Blocks Engine capture directory to the website tree its receipt declares.
+	 *
+	 * A capture directory holds the raw capture bundle beside its portable
+	 * `websiteRoot` export; only the export is an importable site. Any other
+	 * directory is returned unchanged.
+	 *
+	 * @return string|WP_Error
+	 */
+	function static_site_importer_cli_capture_website_root( string $directory ) {
+		$receipt_path = $directory . DIRECTORY_SEPARATOR . 'capture-receipt.json';
+		if ( ! is_file( $receipt_path ) || is_link( $receipt_path ) || filesize( $receipt_path ) > 32 * 1024 * 1024 ) {
+			return $directory;
+		}
+		$receipt = json_decode( (string) file_get_contents( $receipt_path ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads a bounded operator-staged capture receipt.
+		if ( ! is_array( $receipt ) || 'blocks-engine-capture/capture-receipt/v1' !== ( $receipt['schema'] ?? null ) ) {
+			return $directory;
+		}
+		$root     = $receipt['websiteRoot'] ?? 'website';
+		$segments = is_string( $root ) ? explode( '/', $root ) : array( '' );
+		$resolved = realpath( $directory . DIRECTORY_SEPARATOR . ( is_string( $root ) ? $root : '' ) );
+		if ( array_intersect( $segments, array( '', '.', '..' ) ) || false === $resolved || ! str_starts_with( $resolved, $directory . DIRECTORY_SEPARATOR ) || ! is_dir( $resolved ) || is_link( $directory . DIRECTORY_SEPARATOR . $root ) ) {
+			return new WP_Error( 'static_site_importer_cli_capture_website_root_invalid', 'The capture receipt must declare websiteRoot as a website directory inside the capture.' );
+		}
+		return $resolved;
+	}
+}
+
 if ( ! function_exists( 'static_site_importer_cli_prepare_request_bundle' ) ) {
 	/** Register the server-owned resolver for a source staged beside the explicit request. */
 	function static_site_importer_cli_prepare_request_bundle( array $input, string $request_path ) {
@@ -799,6 +828,12 @@ if ( ! function_exists( 'static_site_importer_cli_prepare_request_bundle' ) ) {
 		$resolved_path = static_site_importer_cli_request_bundle_path( $request_path, $reference );
 		if ( is_wp_error( $resolved_path ) ) {
 			return $resolved_path;
+		}
+		if ( 'files' === $type && is_dir( $resolved_path ) ) {
+			$resolved_path = static_site_importer_cli_capture_website_root( $resolved_path );
+			if ( is_wp_error( $resolved_path ) ) {
+				return $resolved_path;
+			}
 		}
 		$metadata = isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array();
 		$bundle   = 'files' === $type ? static_site_importer_cli_request_bundle_files( $resolved_path, isset( $metadata['reports'] ) && is_array( $metadata['reports'] ) ? $metadata['reports'] : array() ) : null;

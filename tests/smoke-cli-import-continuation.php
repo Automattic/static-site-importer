@@ -214,6 +214,31 @@ $executable_word_bundle = $admit_bundle( realpath( $bundle_source ) );
 $assert( $left_out( $executable_word_bundle, Static_Site_Importer_Content_Policy::PAGE_DROPPED, 'website/' . $word_path . '.php' ) && in_array( 'website/' . $word_path, array_column( $executable_word_bundle['artifact']['files'], 'path' ), true ), 'request-bundle-drops-word-document-with-executable-suffix-and-keeps-the-document' );
 unlink( $bundle_source . '/' . $word_path . '.php' );
 
+$capture_bundle_dir = sys_get_temp_dir() . '/ssi-capture-request-bundle-' . bin2hex( random_bytes( 6 ) );
+$capture_root       = $capture_bundle_dir . '/capture';
+$capture_request    = $capture_bundle_dir . '/request.json';
+mkdir( $capture_root . '/media', 0777, true );
+mkdir( $capture_root . '/website/media', 0777, true );
+file_put_contents( $capture_root . '/capture-receipt.json', wp_json_encode( array( 'schema' => 'blocks-engine-capture/capture-receipt/v1', 'websiteRoot' => 'website' ) ) );
+file_put_contents( $capture_root . '/media/mark.svg', '<svg/>' );
+file_put_contents( $capture_root . '/website/media/mark.svg', '<svg/>' );
+file_put_contents( $capture_root . '/website/index.html', '<h1>Captured</h1><img src="media/mark.svg">' );
+file_put_contents( $capture_request, wp_json_encode( array( 'operation' => 'plan', 'source' => array( 'type' => 'files', 'ref' => 'request-bundle:capture' ) ) ) );
+$capture_input    = static_site_importer_cli_import_input( array(), array( 'request' => $capture_request ) );
+$resolved_capture = apply_filters( 'static_site_importer_resolve_source_reference', null, 'request-bundle:capture', 'files' );
+$capture_paths    = array_column( $resolved_capture['source']['files'] ?? array(), 'path' );
+sort( $capture_paths );
+$assert( is_array( $capture_input ) && array( 'index.html', 'media/mark.svg' ) === $capture_paths, 'request-bundle-capture-root-imports-its-declared-website-root' );
+$capture_runtime = static_site_importer_source_runtime( is_array( $resolved_capture ) ? $resolved_capture['source'] : array(), $resolved_capture['payload_reader'] ?? null );
+$assert( is_array( $capture_runtime ) && ! is_wp_error( Static_Site_Importer_Portable_Source_Manifest::project( $capture_runtime['artifact'], $resolved_capture['payload_reader'] ) ), 'request-bundle-capture-root-has-no-duplicate-transport-paths' );
+file_put_contents( $capture_root . '/capture-receipt.json', wp_json_encode( array( 'schema' => 'blocks-engine-capture/capture-receipt/v1', 'websiteRoot' => '../outside' ) ) );
+$escaped_capture = static_site_importer_cli_prepare_request_bundle( array( 'source' => array( 'type' => 'files', 'ref' => 'request-bundle:capture' ) ), $capture_request );
+$assert( is_wp_error( $escaped_capture ) && 'static_site_importer_cli_capture_website_root_invalid' === $escaped_capture->get_error_code(), 'request-bundle-capture-root-rejects-escaping-website-root' );
+foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $capture_bundle_dir, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST ) as $item ) {
+	$item->isDir() ? rmdir( $item->getPathname() ) : unlink( $item->getPathname() );
+}
+rmdir( $capture_bundle_dir );
+
 $report_bundle_dir  = sys_get_temp_dir() . '/ssi-report-request-bundle-' . bin2hex( random_bytes( 6 ) );
 $report_source      = $report_bundle_dir . '/report-source';
 $report_request     = $report_bundle_dir . '/request.json';

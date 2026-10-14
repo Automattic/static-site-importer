@@ -179,6 +179,23 @@ class Static_Site_Importer_Portable_Source_Manifest {
 	}
 
 	private static function error( string $code, string $message, array $data = array() ): WP_Error {
+		if ( isset( $data['path'] ) ) {
+			// Public error projection carries a failing file only as a diagnostic source path.
+			$data = array(
+				'diagnostics' => array(
+					array(
+						'type'        => 'validation_error',
+						'severity'    => 'error',
+						'code'        => $code,
+						'reason_code' => $code,
+						'message'     => $message,
+						'source_path' => (string) $data['path'],
+						'stage'       => 'intake',
+						'owner'       => 'static-site-importer',
+					),
+				),
+			);
+		}
 		// ssi-error-class: integrity
 		return new WP_Error( $code, $message, array_merge( array( 'status' => 400 ), $data ) );
 	}
