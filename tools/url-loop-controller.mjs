@@ -163,7 +163,7 @@ export function buildUrlProofWorkflow(input) {
       'blocks-engine': fixed('blocks-engine', blocksEngine),
       [repository]: { role: 'capture', path: checkout, remote, base },
     },
-    capture_producer: { repository, ...commands },
+    capture_producer: { repository, ...commands, ...(producer.failure_details ? { failure_details: producer.failure_details } : {}) },
     wp_codebox_bin: path.resolve(wpCodeboxBin),
     wordpress_version: String(input.wordpressVersion || '7.1'),
     import_steps: boundedInteger(input.importSteps, 24, 1, 200, 'import-steps'),

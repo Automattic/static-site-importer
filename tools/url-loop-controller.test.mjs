@@ -53,6 +53,10 @@ test('one URL yields a bounded three-repository repair loop', () => {
   assert.deepEqual(context.repositories[CAPTURE_REPO], { role: 'capture', path: path.join(root, 'capture-tool'), remote: 'https://example.com/capture-tool.git', base: 'main' });
   assert.equal(context.capture_producer.repository, CAPTURE_REPO);
   assert.deepEqual(context.capture_producer.build, [['npm', 'ci'], ['npm', 'run', 'build']]);
+  assert.equal(Object.hasOwn(context.capture_producer, 'failure_details'), false);
+  const failureDetails = { file: '{capture}/diagnostics.json', pointer: '/failures' };
+  const configuredDetails = build(root, { captureProducer: producer(root, { failure_details: failureDetails }) });
+  assert.deepEqual(configuredDetails.context.capture_producer.failure_details, failureDetails);
 
   const expected = { 'fix-ssi': ['static-site-importer', 'npm test'], 'fix-blocks-engine': ['blocks-engine', 'composer --working-dir=php-transformer test'], 'fix-capture': [CAPTURE_REPO, 'npm test'] };
   for (const [id, [repo, verify]] of Object.entries(expected)) {
