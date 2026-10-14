@@ -220,7 +220,32 @@ $unsafe_summary = $unsafe_report['compact_summary'];
 $assert( false === $unsafe_quality['pass'] && true === $unsafe_quality['fail_import'] && 1 === $unsafe_quality['unsafe_layout_constraint_count'] && in_array( 'unsafe_layout_constraint', $unsafe_quality['failure_reasons'], true ), 'strict-quality-rejects-unsafe-layout-constraint' );
 $assert( true === ( $unsafe_summary['compiler']['available'] ?? false ) && 179 === ( $unsafe_summary['compiler']['block_count'] ?? 0 ) && 1 === ( $unsafe_summary['compiler']['page_count'] ?? 0 ), 'compact-summary-derives-compiler-evidence-from-canonical-plan' );
 $assert( 'unverified' === ( $unsafe_summary['gutenberg_save_validation'] ?? '' ), 'compact-summary-marks-gutenberg-save-validation-unverified' );
-$assert( 'unverified' === ( $unsafe_report['import_validation_result']['quality_gates']['gutenberg_block_validation']['status'] ?? '' ), 'validation-result-does-not-pass-unrun-gutenberg-save-validation' );
+$assert( 'unverified' === ( $unsafe_report['import_validation_result']['quality_gates']['gutenberg_block_validation']['status'] ?? '' ), 'validation-result-keeps-unrun-gutenberg-save-validation-unverified' );
+$assert( null === ( $unsafe_summary['invalid_block_count'] ?? null ) && 0 === ( $unsafe_summary['parser_invalid_block_count'] ?? -1 ), 'unverified-editor-validation-leaves-total-invalid-count-null-and-retains-parser-count' );
+$editor_evidence = array(
+	'schema'            => 'static-site-importer/runtime-editor-validation/v1',
+	'validation_method' => 'wp.blocks.validateBlock',
+	'total_blocks'      => 4,
+	'invalid_blocks'    => 3,
+	'results'           => array(
+		array( 'name' => 'core/video', 'route' => '/', 'block_path' => '1.0', 'is_valid' => false, 'issues' => array( 'Expected attributes %o, instead saw %o.' ) ),
+		array( 'name' => 'ssi-imported-site/authored-button', 'route' => '/actualites', 'block_path' => '1.0.3.1.0', 'is_valid' => false, 'issues' => array( 'Expected attribute `%s` of value `%s`, saw `%s`.' ) ),
+		array( 'name' => 'ssi-imported-site/authored-button', 'route' => '/actualites', 'block_path' => '1.0.4.1.0', 'is_valid' => false, 'issues' => array( 'Expected attribute `%s` of value `%s`, saw `%s`.' ) ),
+		array( 'name' => 'core/paragraph', 'block_path' => '3', 'is_valid' => true, 'issues' => array() ),
+	),
+);
+$editor_gate = Static_Site_Importer_Diagnostic_Projection::gutenberg_block_validation_gate( $editor_evidence );
+$assert( 'failed' === ( $editor_gate['status'] ?? '' ) && 3 === ( $editor_gate['invalid_block_count'] ?? 0 ), 'measured-editor-validation-counts-the-three-real-invalid-blocks' );
+$assert( 'core/video' === ( $editor_gate['findings'][0]['block_name'] ?? '' ) && '/' === ( $editor_gate['findings'][0]['path'] ?? '' ) && '1.0' === ( $editor_gate['findings'][0]['block_path'] ?? '' ) && 'Expected attributes %o, instead saw %o.' === ( $editor_gate['findings'][0]['issue'] ?? '' ), 'measured-editor-validation-retains-video-path-and-issue' );
+$assert( '/actualites' === ( $editor_gate['findings'][1]['path'] ?? '' ) && 'ssi-imported-site/authored-button' === ( $editor_gate['findings'][1]['block_name'] ?? '' ), 'measured-editor-validation-retains-authored-button-route' );
+$incomplete_editor_gate = Static_Site_Importer_Diagnostic_Projection::gutenberg_block_validation_gate( array_merge( $editor_evidence, array( 'total_blocks' => 5 ) ) );
+$assert( 'unverified' === ( $incomplete_editor_gate['status'] ?? '' ) && null === ( $incomplete_editor_gate['invalid_block_count'] ?? null ), 'incomplete-editor-validation-evidence-remains-unverified' );
+$capture_excerpt = file_get_contents( __DIR__ . '/fixtures/soscalvaires-editor-validation/video.html' );
+$assert( is_string( $capture_excerpt ) && str_contains( $capture_excerpt, 'data-autoplay="true"' ) && str_contains( $capture_excerpt, 'playsinline=""' ) && str_contains( $capture_excerpt, '67497230361e910ccb81de3f_vide' ), 'regression-context-is-trimmed-from-the-real-soscalvaires-capture' );
+$unsafe_report['gutenberg_editor_validation'] = $editor_evidence;
+$measured_summary = Static_Site_Importer_Diagnostic_Projection::import_report_summary( $unsafe_report, $unsafe_quality );
+$assert( 3 === ( $measured_summary['invalid_block_count'] ?? 0 ) && 0 === ( $measured_summary['parser_invalid_block_count'] ?? -1 ), 'receipt-combines-editor-invalid-count-and-preserves-parser-count' );
+$assert( (bool) $unsafe_quality['pass'] === ( $measured_summary['quality_pass'] ?? null ), 'editor-validation-evidence-does-not-change-conversion-quality-policy' );
 $assert( 'wp.blocks.validateBlock' === ( $unsafe_report['import_validation_result']['quality_gates']['gutenberg_block_validation']['method'] ?? '' ), 'validation-result-names-the-missing-gutenberg-method' );
 $assert( 'unverified' === ( $unsafe_report['visual_parity_artifacts']['artifacts']['block_validation']['status'] ?? '' ), 'block-validation-artifact-is-unverified-without-validateBlock' );
 $assert( 'not_run' === ( $unsafe_report['visual_parity_artifacts']['artifacts']['block_validation']['validation_method'] ?? '' ), 'block-validation-artifact-does-not-imply-validateBlock' );

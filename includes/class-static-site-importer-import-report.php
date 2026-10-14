@@ -47,6 +47,7 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 		'fallback_reconciliation',
 		'finding_packets',
 		'generated_theme',
+		'gutenberg_editor_validation',
 		'import_run_id',
 		'import_validation_result',
 		'materialization_receipt',

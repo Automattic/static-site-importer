@@ -228,7 +228,7 @@ final class Static_Site_Importer_Diagnostic_Projection {
 					'status' => (string) ( $report['semantic_fidelity']['status'] ?? 'requires_external_render_check' ),
 					'owner'  => (string) ( $report['semantic_fidelity']['gate_owner'] ?? 'benchmark_harness' ),
 				),
-				'gutenberg_block_validation'         => self::gutenberg_block_validation_gate(),
+				'gutenberg_block_validation'         => self::gutenberg_block_validation_gate( $report['gutenberg_editor_validation'] ?? null ),
 			),
 			'quality_budget_admission' => isset( $report['quality_budget_admission'] ) && is_array( $report['quality_budget_admission'] ) ? $report['quality_budget_admission'] : array(),
 			'diagnostic_summary'       => $summary['diagnostic_summary'] ?? array(),
@@ -1370,6 +1370,8 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		$commerce_context       = isset( $report['commerce_context'] ) && is_array( $report['commerce_context'] ) ? $report['commerce_context'] : array();
 		$plugin_materialization = isset( $report['plugin_materialization'] ) && is_array( $report['plugin_materialization'] ) ? $report['plugin_materialization'] : array();
 		$product_seeding        = isset( $report['product_seeding'] ) && is_array( $report['product_seeding'] ) ? $report['product_seeding'] : array();
+		$editor_validation      = self::gutenberg_block_validation_gate( $report['gutenberg_editor_validation'] ?? null );
+		$editor_invalid_count   = is_int( $editor_validation['invalid_block_count'] ?? null ) ? $editor_validation['invalid_block_count'] : 0;
 
 		return array(
 			'schema'                                  => 'static-site-importer/import-metrics/v1',
@@ -1389,7 +1391,8 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'empty_conversion_count'                  => (int) ( $quality['empty_conversion_count'] ?? 0 ),
 			'core_html_block_count'                   => (int) ( $quality['core_html_block_count'] ?? 0 ),
 			'freeform_block_count'                    => (int) ( $quality['freeform_block_count'] ?? 0 ),
-			'invalid_block_count'                     => (int) ( $quality['invalid_block_count'] ?? 0 ),
+			'invalid_block_count'                     => null === ( $editor_validation['invalid_block_count'] ?? null ) ? null : ( (int) ( $quality['invalid_block_count'] ?? 0 ) + $editor_invalid_count ),
+			'parser_invalid_block_count'              => (int) ( $quality['invalid_block_count'] ?? 0 ),
 			'invalid_block_document_count'            => (int) ( $quality['invalid_block_document_count'] ?? 0 ),
 			'gutenberg_save_validation'               => (string) ( $quality['gutenberg_save_validation'] ?? 'unverified' ),
 			'image_missing_source_count'              => (int) ( $quality['image_missing_source_count'] ?? 0 ),
@@ -1424,12 +1427,47 @@ final class Static_Site_Importer_Diagnostic_Projection {
 	 *
 	 * @return array<string,mixed>
 	 */
-	public static function gutenberg_block_validation_gate(): array {
+	public static function gutenberg_block_validation_gate( mixed $evidence = null ): array {
+		$complete_results = is_array( $evidence['results'] ?? null ) && array_reduce(
+			$evidence['results'],
+			static fn( bool $complete, mixed $row ): bool => $complete && is_array( $row ) && is_string( $row['name'] ?? null ) && is_string( $row['block_path'] ?? null ) && is_bool( $row['is_valid'] ?? null ) && is_array( $row['issues'] ?? null ),
+			true
+		);
+		if ( is_array( $evidence ) && 'static-site-importer/runtime-editor-validation/v1' === ( $evidence['schema'] ?? '' ) && 'wp.blocks.validateBlock' === ( $evidence['validation_method'] ?? '' ) && $complete_results && is_numeric( $evidence['total_blocks'] ?? null ) && 0 < (int) $evidence['total_blocks'] && count( $evidence['results'] ) === (int) $evidence['total_blocks'] ) {
+			$invalid = array_values( array_filter( $evidence['results'], static fn( $row ): bool => is_array( $row ) && empty( $row['is_valid'] ) ) );
+			if ( ! is_numeric( $evidence['invalid_blocks'] ?? null ) || count( $invalid ) !== (int) $evidence['invalid_blocks'] ) {
+				return array(
+					'status'              => 'unverified',
+					'owner'               => 'js_runtime',
+					'method'              => 'wp.blocks.validateBlock',
+					'invalid_block_count' => null,
+					'reason'              => 'Gutenberg block validation evidence is incomplete or inconsistent.',
+				);
+			}
+			$findings = array();
+			foreach ( $invalid as $row ) {
+				$findings[] = array(
+					'block_name' => (string) ( $row['name'] ?? 'unknown' ),
+					'path'       => (string) ( $row['route'] ?? $evidence['route'] ?? '' ),
+					'block_path' => (string) ( $row['block_path'] ?? '' ),
+					'issue'      => implode( '; ', array_map( 'strval', is_array( $row['issues'] ?? null ) ? $row['issues'] : array() ) ),
+				);
+			}
+			return array(
+				'status'              => empty( $findings ) ? 'passed' : 'failed',
+				'owner'               => 'js_runtime',
+				'method'              => 'wp.blocks.validateBlock',
+				'invalid_block_count' => count( $findings ),
+				'findings'            => $findings,
+			);
+		}
+
 		return array(
-			'status' => 'unverified',
-			'owner'  => 'js_runtime',
-			'method' => 'wp.blocks.validateBlock',
-			'reason' => self::GUTENBERG_SAVE_VALIDATION_REASON,
+			'status'              => 'unverified',
+			'owner'               => 'js_runtime',
+			'method'              => 'wp.blocks.validateBlock',
+			'invalid_block_count' => null,
+			'reason'              => self::GUTENBERG_SAVE_VALIDATION_REASON,
 		);
 	}
 

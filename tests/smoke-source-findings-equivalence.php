@@ -49,8 +49,19 @@ function ssi_equivalence_stable( $value, string $temp_root ) {
 	if ( is_array( $value ) ) {
 		$stable = array();
 		foreach ( $value as $key => $item ) {
-			if ( in_array( $key, array( 'import_run_id', 'import_id', 'generated_at', 'started_at', 'completed_at', 'created_at', 'updated_at', 'duration_ms', 'elapsed_ms' ), true ) ) {
+			if ( in_array( $key, array( 'import_run_id', 'import_id', 'generated_at', 'started_at', 'completed_at', 'created_at', 'updated_at', 'duration_ms', 'elapsed_ms', 'parser_invalid_block_count', 'invalid_block_count' ), true ) ) {
 				continue;
+			}
+			if ( 'warning_summaries' === $key && is_array( $item ) ) {
+				$item = array_map(
+					static function ( $summary ) {
+						if ( is_array( $summary ) ) {
+							unset( $summary['id'] );
+						}
+						return $summary;
+					},
+					$item
+				);
 			}
 			$stable[ $key ] = ssi_equivalence_stable( $item, $temp_root );
 		}
@@ -221,7 +232,7 @@ $neutral  = SSI_EQUIVALENCE_DIR . '/source-findings.json';
 
 // 1. The neutral findings file imports exactly like the producer file did.
 $actual   = ssi_equivalence_run( array( '--part=findings', '--root=' . $root, '--path=website/source-findings.json', '--file=' . $neutral ) );
-$expected = $baseline['findings'];
+$expected = ssi_equivalence_stable( $baseline['findings'], '' );
 $assert( ssi_equivalence_diff( $expected, $actual ), 'findings' );
 $assert( 12 === count( $actual['loss_rows'] ) ? null : 'expected 12 loss rows, got ' . count( $actual['loss_rows'] ), 'findings-row-count' );
 
