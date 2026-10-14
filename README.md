@@ -510,8 +510,10 @@ through `--ssi-task-url`, `--blocks-engine-task-url` and the producer's
 `composer --working-dir=php-transformer test`. `SSI_BLOCKS_ENGINE_PATH` and
 `HOMEBOY_WP_CODEBOX_BIN` configure the Blocks Engine checkout and Codebox CLI on
 a runner. Steps run with an empty environment plus the declared public
-toolchain names (`PATH`, `HOME`, `TMPDIR`, `XDG_*`, `PLAYWRIGHT_*`, npm and
-Composer caches) captured where `start` runs. `--instance <token>` forks an
+toolchain names (`PATH`, `HOME`, `XDG_*`, `PLAYWRIGHT_*`, npm and Composer
+caches) captured where `start` runs. Evaluation children get a temp directory
+owned by the iteration (`evaluations/<instance>/i<n>/tmp`), never an inherited
+one. `--instance <token>` forks an
 independent loop for the same source. `workflow` instead of `start` prints the
 generated definition for `homeboy workflow validate -` without admitting it.
 

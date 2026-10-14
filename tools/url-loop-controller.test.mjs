@@ -8,7 +8,7 @@ import {
   CAPTURE_PRODUCER_ENV, LoopBlocker, WORKFLOW_ID, WORKFLOW_SCHEMA,
   buildUrlProofWorkflow, captureCommands, codeboxArgs, codeboxRecipe, compareResult, composeRepository, evaluateLocalEvidence,
   deriveRepairScopes, evaluationVerdict, expandTemplate, importRequest, locateCapture, orderRepairBranches, parseArgs, readImportState, repairBranch,
-  resolveCaptureProducer, routeFindings, sourceIdentity, verifyProgram, writeRepairEvidence,
+  evaluationEnv, resolveCaptureProducer, routeFindings, sourceIdentity, verifyProgram, writeRepairEvidence,
 } from './url-loop-controller.mjs';
 
 const url = 'https://example.com/';
@@ -330,4 +330,24 @@ test('Homeboy accepts the generated definition', (context) => {
   const data = JSON.parse(result.stdout).data;
   assert.equal(data.id, WORKFLOW_ID);
   assert.deepEqual(data.steps.map((item) => [item.id, item.kind]), [['evaluate', 'exec'], ['repair', 'cook']]);
+});
+
+test('evaluation children use a temp directory the iteration owns, never a pinned one', () => {
+  const root = tmp('ssi-tmpdir-');
+  const previous = process.env.TMPDIR;
+  try {
+    process.env.TMPDIR = '/tmp/hb-1000/ephemeral-job.t';
+    const { workflow, context } = build(root);
+    assert.equal(workflow.env.public.includes('TMPDIR'), false);
+    assert.equal(Object.hasOwn(context.runtime_toolchain.env, 'TMPDIR'), false);
+  } finally {
+    if (previous === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = previous;
+  }
+  const directory = tmp('ssi-iteration-');
+  const env = evaluationEnv({ TMPDIR: '/gone', TMP: '/gone', PATH: '/bin' }, { HOME: '/h', TMPDIR: '/also-gone' }, directory);
+  const owned = path.join(directory, 'tmp');
+  assert.deepEqual([env.TMPDIR, env.TMP, env.TEMP], [owned, owned, owned]);
+  assert.equal(env.PATH, '/bin');
+  assert.equal(env.HOME, '/h');
+  assert.ok(fs.statSync(owned).isDirectory());
 });
