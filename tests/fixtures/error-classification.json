@@ -241,6 +241,7 @@
     "static_site_importer_cli_import_state_write_failed": { "class": "operational", "owning_layer": "static-site-importer" },
     "static_site_importer_cli_plan_invalid": { "class": "integrity", "owning_layer": "static-site-importer" },
     "static_site_importer_cli_request_bundle_file_limit_exceeded": { "class": "operational", "owning_layer": "static-site-importer" },
+    "static_site_importer_cli_capture_website_root_invalid": { "class": "integrity", "owning_layer": "static-site-importer" },
     "static_site_importer_cli_request_bundle_invalid": { "class": "integrity", "owning_layer": "static-site-importer" },
     "static_site_importer_cli_request_bundle_report_file_too_large": { "class": "operational", "owning_layer": "static-site-importer" },
     "static_site_importer_cli_request_bundle_total_too_large": { "class": "operational", "owning_layer": "static-site-importer" },

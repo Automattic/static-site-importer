@@ -179,7 +179,6 @@ class Static_Site_Importer_Portable_Source_Manifest {
 	}
 
 	private static function error( string $code, string $message, array $data = array() ): WP_Error {
-		// ssi-error-class: integrity
 		if ( isset( $data['path'] ) ) {
 			// Public error projection carries a failing file only as a diagnostic source path.
 			$data = array(
@@ -197,6 +196,7 @@ class Static_Site_Importer_Portable_Source_Manifest {
 				),
 			);
 		}
+		// ssi-error-class: integrity
 		return new WP_Error( $code, $message, array_merge( array( 'status' => 400 ), $data ) );
 	}
 }
