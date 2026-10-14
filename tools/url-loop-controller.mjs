@@ -18,7 +18,7 @@ const LOSS_COUNTS = ['unsupported_fallback_count', 'core_html_block_count', 'fre
 /** Repositories the loop always composes and repairs. */
 export const FIXED_REPOSITORIES = {
   'static-site-importer': { role: 'importer', base: 'main', remote: 'https://github.com/Automattic/static-site-importer.git', verify: ['npm test'] },
-  'blocks-engine': { role: 'compiler', base: 'trunk', remote: 'https://github.com/Automattic/blocks-engine.git', verify: ['composer --working-dir=php-transformer test'] },
+  'blocks-engine': { role: 'compiler', base: 'trunk', remote: 'https://github.com/Automattic/blocks-engine.git', verify: ['php-transformer/tools/reference-runtime/run.sh composer --working-dir=php-transformer test'] },
 };
 export const CAPTURE_PRODUCER_ENV = 'SSI_URL_LOOP_CAPTURE_PRODUCER';
 const CAPTURE_RECEIPT_FILE = 'capture-receipt.json';

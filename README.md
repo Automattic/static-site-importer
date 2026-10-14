@@ -507,7 +507,10 @@ repair Cook works on; it is required unless every repository names its own
 through `--ssi-task-url`, `--blocks-engine-task-url` and the producer's
 `task_url`. `--ssi-verify` and `--blocks-engine-verify`
 (repeatable) override the Cook gates, which default to `npm test` and
-`composer --working-dir=php-transformer test`. `SSI_BLOCKS_ENGINE_PATH` and
+`composer --working-dir=php-transformer test` inside Blocks Engine's reference
+PHP runtime (`php-transformer/tools/reference-runtime/run.sh`, the PHP and
+libxml2 WordPress.com serves from), so a runner's own PHP build cannot change
+the recorded serialized output the gate compares. `SSI_BLOCKS_ENGINE_PATH` and
 `HOMEBOY_WP_CODEBOX_BIN` configure the Blocks Engine checkout and Codebox CLI on
 a runner. Steps run with an empty environment plus the declared public
 toolchain names (`PATH`, `HOME`, `XDG_*`, `PLAYWRIGHT_*`, npm and Composer
