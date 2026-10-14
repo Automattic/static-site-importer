@@ -201,9 +201,9 @@ final class Static_Site_Importer_Form_Field_Markup {
 			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) ) {
 				return $result;
 			}
-			$parent                  = is_string( $node['parent'] ?? null ) ? $node['parent'] : '$root';
-			$children[ $parent ][]   = $node;
-			$parents[ $node['id'] ]  = $parent;
+			$parent                 = is_string( $node['parent'] ?? null ) ? $node['parent'] : '$root';
+			$children[ $parent ][]  = $node;
+			$parents[ $node['id'] ] = $parent;
 		}
 		foreach ( $children as &$siblings ) {
 			usort( $siblings, static fn ( array $left, array $right ): int => $left['order'] <=> $right['order'] );
@@ -214,13 +214,13 @@ final class Static_Site_Importer_Form_Field_Markup {
 			foreach ( $children[ $id ] ?? array() as $child ) {
 				if ( 'control' === ( $child['kind'] ?? null ) && is_int( $child['control'] ?? null ) ) {
 					$found[] = $child['control'];
-				} elseif ( is_string( $child['id'] ?? null ) ) {
+				} elseif ( is_string( $child['id'] ) ) {
 					$found = array_merge( $found, $descendant_controls( $child['id'] ) );
 				}
 			}
 			return $found;
 		};
-		$inputs_by_name = array();
+		$inputs_by_name      = array();
 		foreach ( $controls as $control_index => $control ) {
 			$type = is_array( $control ) ? strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) : '';
 			if ( is_array( $control ) && 'input' === strtolower( trim( (string) ( $control['tag'] ?? '' ) ) ) && in_array( $type, array( 'radio', 'checkbox' ), true ) ) {
@@ -307,14 +307,14 @@ final class Static_Site_Importer_Form_Field_Markup {
 				$group_control['required'] = true;
 			}
 			if ( 0 !== $carried ) {
-				$group_control['choice_style']        = 'button';
+				$group_control['choice_style']      = 'button';
 				$result['presenters'][ $inputs[0] ] = array(
 					'carrier' => (int) $carriers[ $inputs[0] ],
 					'list'    => (string) $group['id'],
 				);
 			}
-			$members                         = array_merge( $inputs, array_values( array_filter( $carriers, 'is_int' ) ) );
-			$result['groups'][ $inputs[0] ]  = $group_control;
+			$members                        = array_merge( $inputs, array_values( array_filter( $carriers, 'is_int' ) ) );
+			$result['groups'][ $inputs[0] ] = $group_control;
 			foreach ( $members as $index ) {
 				if ( $index !== $inputs[0] ) {
 					$result['suppressed_controls'][ $index ] = true;

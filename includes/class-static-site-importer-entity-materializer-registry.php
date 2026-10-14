@@ -1738,10 +1738,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				// A declared step track names layout graph nodes, so it is admitted
 				// only against the graph this row carries.
 				$steps = self::normalize_form_steps( $form['steps'], $row['layout_graph'] ?? null );
-				if ( isset( $steps['error'] ) ) {
+				if ( ! isset( $steps['steps'] ) ) {
 					$errors[] = array(
 						'path'    => $path_prefix . '.steps',
-						'message' => $steps['error'],
+						'message' => $steps['error'] ?? 'steps could not be admitted.',
 					);
 					continue;
 				}

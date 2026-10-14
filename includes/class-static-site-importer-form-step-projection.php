@@ -38,7 +38,7 @@ final class Static_Site_Importer_Form_Step_Projection {
 			return null;
 		}
 		$step_ids = array();
-		foreach ( $steps['steps'] as $position => $step ) {
+		foreach ( array_values( $steps['steps'] ) as $position => $step ) {
 			$step_ids[ (string) $step['wrapper'] ] = $position;
 		}
 		$parents = array();
@@ -52,12 +52,14 @@ final class Static_Site_Importer_Form_Step_Projection {
 			if ( ! is_array( $node ) || 'control' !== ( $node['kind'] ?? null ) || ! is_int( $node['control'] ?? null ) ) {
 				continue;
 			}
-			$step = null;
-			for ( $parent = $node['parent'] ?? null; is_string( $parent ); $parent = $parents[ $parent ] ?? null ) {
+			$step   = null;
+			$parent = $node['parent'] ?? null;
+			while ( is_string( $parent ) ) {
 				if ( isset( $step_ids[ $parent ] ) ) {
 					$step = $step_ids[ $parent ];
 					break;
 				}
+				$parent = $parents[ $parent ] ?? null;
 			}
 			if ( null !== $step ) {
 				$control_steps[ $node['control'] ] = $step;
@@ -204,23 +206,25 @@ final class Static_Site_Importer_Form_Step_Projection {
 			if ( ! is_array( $node ) || isset( $lifted[ $node['id'] ?? '' ] ) ) {
 				continue;
 			}
-			$parent = $node['parent'] ?? null;
-			$depth  = (int) ( $node['depth'] ?? 0 );
-			for ( $ancestor = $parent; is_string( $ancestor ); $ancestor = $parents[ $ancestor ] ?? null ) {
+			$parent   = $node['parent'] ?? null;
+			$depth    = (int) ( $node['depth'] ?? 0 );
+			$ancestor = $parent;
+			while ( is_string( $ancestor ) ) {
 				if ( isset( $lifted[ $ancestor ] ) ) {
 					--$depth;
 				}
+				$ancestor = $parents[ $ancestor ] ?? null;
 			}
 			while ( is_string( $parent ) && isset( $lifted[ $parent ] ) ) {
 				$parent = $parents[ $parent ] ?? null;
 			}
 			$key = $parent ?? '$root';
 			// Nodes arrive in document order, so renumbering keeps sibling order.
-			$node['order'] = $orders[ $key ] ?? 0;
+			$node['order']  = $orders[ $key ] ?? 0;
 			$orders[ $key ] = $node['order'] + 1;
 			$node['depth']  = max( 0, $depth );
 			$node['parent'] = $parent;
-			$kept[] = $node;
+			$kept[]         = $node;
 		}
 		$form['control_topology']['nodes'] = $kept;
 		return $form;
@@ -351,12 +355,14 @@ final class Static_Site_Importer_Form_Step_Projection {
 		// A box sized as a share of its parent takes the nearest definite height.
 		if ( isset( $box['height'] ) && ! preg_match( '/^[0-9.]+px$/D', (string) $box['height'] ) ) {
 			unset( $box['height'] );
-			for ( $parent = $action['parent'] ?? null; is_string( $parent ) && isset( $by_id[ $parent ] ); $parent = $by_id[ $parent ]['parent'] ?? null ) {
+			$parent = $action['parent'] ?? null;
+			while ( is_string( $parent ) && isset( $by_id[ $parent ] ) ) {
 				$height = (string) ( $by_id[ $parent ]['layout']['height'] ?? '' );
 				if ( preg_match( '/^[0-9.]+px$/D', $height ) ) {
 					$box['height'] = $height;
 					break;
 				}
+				$parent = $by_id[ $parent ]['parent'] ?? null;
 			}
 		}
 		$text = array();
@@ -447,9 +453,6 @@ final class Static_Site_Importer_Form_Step_Projection {
 	 */
 	public static function without_source_controls( array $blocks ): array {
 		foreach ( $blocks as $index => $block ) {
-			if ( ! is_array( $block ) ) {
-				continue;
-			}
 			unset( $blocks[ $index ][ self::CONTROL_KEY ] );
 			if ( is_array( $block['innerBlocks'] ?? null ) ) {
 				$blocks[ $index ]['innerBlocks'] = self::without_source_controls( $block['innerBlocks'] );
