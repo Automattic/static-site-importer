@@ -73,6 +73,8 @@ $duplicate_transport = $artifact;
 $duplicate_transport['files'][] = $duplicate_transport['files'][1];
 $duplicate_transport = Static_Site_Importer_Portable_Source_Manifest::project( $duplicate_transport );
 $assert( is_wp_error( $duplicate_transport ) && 'static_site_importer_portable_source_duplicate_transport_path' === $duplicate_transport->get_error_code(), 'duplicate transported paths fail closed' );
+$duplicate_diagnostic = is_wp_error( $duplicate_transport ) ? ( $duplicate_transport->get_error_data()['diagnostics'][0] ?? array() ) : array();
+$assert( 'website/index.html' === ( $duplicate_diagnostic['source_path'] ?? null ) && 'static_site_importer_portable_source_duplicate_transport_path' === ( $duplicate_diagnostic['reason_code'] ?? null ), 'duplicate transported paths name the colliding path as a public diagnostic source path' );
 
 $unmanaged = array( 'entrypoint' => 'index.html', 'files' => array( $file( 'index.html', '<main />' ), $file( 'fixture.json', '{}' ) ) );
 $assert( $unmanaged === Static_Site_Importer_Portable_Source_Manifest::project( $unmanaged ), 'sources without a manifest preserve the complete transport payload' );
