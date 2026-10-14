@@ -516,7 +516,9 @@ a runner. Steps run with an empty environment plus the declared public
 toolchain names (`PATH`, `HOME`, `XDG_*`, `PLAYWRIGHT_*`, npm and Composer
 caches) captured where `start` runs. Evaluation children get a temp directory
 owned by the iteration (`evaluations/<instance>/i<n>/tmp`), never an inherited
-one. `--instance <token>` forks an
+one. `--fix-timeout-minutes` (default 40) is each repair provider's base deadline;
+Homeboy extends a provider still producing output to three times that.
+`--instance <token>` forks an
 independent loop for the same source. `workflow` instead of `start` prints the
 generated definition for `homeboy workflow validate -` without admitting it.
 

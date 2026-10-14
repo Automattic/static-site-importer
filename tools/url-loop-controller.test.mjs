@@ -71,17 +71,20 @@ test('one URL yields a bounded three-repository repair loop', () => {
   assert.equal(fix.cook.verify, '{{item.verify}}');
   assert.deepEqual(JSON.parse(fix.cook['provider-evidence']), { id: '{{item.repository}}-evaluation', source: '{{item.report_path}}' });
   assert.equal(fix.cook['draft-pr'], false);
+  assert.equal(fix.cook['timeout-ms'], 40 * 60 * 1000, 'repair providers get a 40 minute base deadline');
 
   const custom = build(root, { instance: 'proof-r2', maxIterations: '2', maxStepRuns: '8', deadline: '3h', fixBackend: 'opencode', blocksEngineTaskUrl: 'https://github.com/Automattic/blocks-engine/issues/1', captureProducer: producer(root, { verify: ['npm test', 'npm run lint'], task_url: 'https://example.com/capture-tool/issues/9' }) });
   assert.equal(custom.context.loop_id, `${context.loop_id}-proof-r2`);
   assert.deepEqual(custom.workflow.budget, { max_step_runs: 8, deadline: '3h' });
   assert.equal(step(custom.workflow, 'repair').cook.backend, 'opencode');
+  assert.equal(step(build(root, { fixTimeoutMinutes: '90' }).workflow, 'repair').cook['timeout-ms'], 90 * 60 * 1000);
   assert.equal(custom.context.repositories['blocks-engine'].task_url, 'https://github.com/Automattic/blocks-engine/issues/1');
   assert.deepEqual(custom.context.repositories[CAPTURE_REPO].verify, ['npm test', 'npm run lint']);
   assert.equal(custom.context.repositories[CAPTURE_REPO].task_url, 'https://example.com/capture-tool/issues/9');
   assert.throws(() => build(root, { instance: '../invalid' }), /path-safe/);
   assert.throws(() => build(root, { maxIterations: 9 }), /max-iterations/);
   assert.throws(() => build(root, { maxStepRuns: 1 }), /max-step-runs/);
+  assert.throws(() => build(root, { fixTimeoutMinutes: 5 }), /fix-timeout-minutes/);
   assert.throws(() => build(root, { deadline: 'soon' }), /deadline/);
   assert.throws(() => buildUrlProofWorkflow({ url, workspace: root, wpCodeboxBin: root, captureProducer: producer(root), taskUrl }), /must be configured/);
   const previous = process.env.SSI_URL_LOOP_TASK_URL;
