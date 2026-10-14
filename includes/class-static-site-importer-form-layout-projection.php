@@ -503,6 +503,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		self::project_grid_placement( $s );
 		self::project_sibling_rows( $s );
 		self::project_grid_span_rows( $s );
+		self::project_flex_cell_rows( $s );
 		self::transpose_form_boxes( $s );
 		self::finalize_overlay_targets( $s );
 		$build = static function ( string $parent_node ) use ( $s, &$build ): array {
@@ -1797,6 +1798,117 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'target_hash' => hash( 'sha256', $parent ),
 				'field_count' => count( $tiled ),
 			);
+		}
+	}
+
+	/** Project proven flex rows and their single-field cells onto the provider field list. */
+	private static function project_flex_cell_rows( Static_Site_Importer_Form_Topology_State $s ): void {
+		$projected = false;
+		foreach ( $s->children as $parent => $siblings ) {
+			$node   = $s->layout_nodes_by_id[ $parent ] ?? null;
+			$layout = is_array( $node ) && is_array( $node['layout'] ?? null ) ? $node['layout'] : array();
+			if ( ! preg_match( '/^wrapper-[0-9]+$/D', $parent ) || 'flex' !== ( $layout['display'] ?? null ) || 'row' !== ( $layout['direction'] ?? 'row' ) || count( $siblings ) < 2 || ! self::has_unconditional_proven_property( $node, 'display' ) ) {
+				continue;
+			}
+			$parent_layout = array();
+			foreach ( $layout as $property => $value ) {
+				$css_property = Static_Site_Importer_Provider_Layout_Overlay::layout_property_map()[ $property ] ?? null;
+				if ( is_string( $css_property ) && self::has_unconditional_proven_property( $node, $css_property ) ) {
+					$parent_layout[ $property ] = $value;
+				}
+			}
+			$cells = array();
+			foreach ( $siblings as $cell ) {
+				$branch = $s->mapped_branch( $cell );
+				$id     = is_string( $cell['id'] ?? null ) ? $cell['id'] : '';
+				$box    = $s->layout_nodes_by_id[ $id ] ?? null;
+				if ( 'wrapper' !== ( $cell['kind'] ?? null ) || '' === $id || 1 !== count( $branch ) || 'core/button' === ( $s->field_blocks[ $branch[0] ]['name'] ?? '' ) || ! is_array( $box ) ) {
+					$cells = array();
+					break;
+				}
+				$cell_layout = is_array( $box['layout'] ?? null ) ? $box['layout'] : array();
+				foreach ( $cell_layout as $property => $_value ) {
+					$css_property = Static_Site_Importer_Provider_Layout_Overlay::layout_property_map()[ $property ] ?? null;
+					if ( ! is_string( $css_property ) || ! self::has_unconditional_proven_property( $box, $css_property ) ) {
+						$cells = array();
+						break 2;
+					}
+				}
+				$cell_variants = $s->variants_by_node[ $id ] ?? array();
+				foreach ( $cell_variants as $variant ) {
+					$patch  = self::layout_patch( $variant );
+					$proven = ! empty( $patch ) && Static_Site_Importer_Provider_Layout_Overlay::layout_values_are_safe( $patch );
+					foreach ( array_keys( $patch ) as $property ) {
+						$css_property = Static_Site_Importer_Provider_Layout_Overlay::layout_property_map()[ $property ] ?? null;
+						$proven       = $proven && is_string( $css_property ) && self::variant_proven( $variant, $css_property );
+					}
+					if ( ! $proven ) {
+						$cells = array();
+						break 2;
+					}
+				}
+				$cells[] = array(
+					'id'       => $id,
+					'control'  => $branch[0],
+					'layout'   => $cell_layout,
+					'variants' => $cell_variants,
+				);
+			}
+			if ( count( $cells ) !== count( $siblings ) ) {
+				continue;
+			}
+			foreach ( $cells as $cell ) {
+				$target_id = 'field-' . $cell['control'];
+				if ( ! empty( $cell['layout'] ) ) {
+					$s->overlay_node_targets[] = array(
+						'id'     => $target_id,
+						'layout' => $cell['layout'],
+					);
+				}
+				foreach ( $cell['variants'] as $variant ) {
+					$s->responsive_variant_targets[] = array(
+						'node'         => $target_id,
+						'condition'    => $variant['condition'],
+						'layout_patch' => self::layout_patch( $variant ),
+					);
+				}
+				$s->overlay_represented_nodes[] = $cell['id'];
+			}
+			$s->form_classes[] = 'ssi-source-field-list';
+			$field_list_layout              = $parent_layout + array( 'wrap' => 'wrap' );
+			$field_list_layout['display']   = 'flex';
+			$field_list_layout['direction'] = 'row';
+			$s->overlay_node_targets[]      = array(
+				'id'     => 'field-list',
+				'layout' => $field_list_layout,
+			);
+			foreach ( $s->variants_by_node[ $parent ] ?? array() as $variant ) {
+				$patch  = self::layout_patch( $variant );
+				$proven = ! empty( $patch ) && Static_Site_Importer_Provider_Layout_Overlay::layout_values_are_safe( $patch );
+				foreach ( array_keys( $patch ) as $property ) {
+					$css_property = Static_Site_Importer_Provider_Layout_Overlay::layout_property_map()[ $property ] ?? null;
+					$proven       = $proven && is_string( $css_property ) && self::variant_proven( $variant, $css_property );
+				}
+				if ( ! $proven ) {
+					continue;
+				}
+				$s->responsive_variant_targets[] = array(
+					'node'         => 'field-list',
+					'condition'    => $variant['condition'],
+					'layout_patch' => $patch,
+				);
+			}
+			$s->overlay_represented_nodes[] = $parent;
+			$projected = true;
+			$s->operations[] = array(
+				'dimension'   => 'layout',
+				'strategy'    => 'provider_flex_cell_row_transposition',
+				'target_hash' => hash( 'sha256', $parent ),
+				'field_count' => count( $cells ),
+			);
+		}
+		if ( $projected ) {
+			$s->suppressed_layout_properties['form'] = array_values( array_unique( array_merge( $s->suppressed_layout_properties['form'] ?? array(), array( 'display', 'direction', 'wrap' ) ) ) );
 		}
 	}
 
@@ -3491,7 +3603,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * Tailwind CSS v4 emits for its own `md:`/`lg:`/etc. prefixes.
 	 */
 	private static function is_min_width_media_query( string $query ): bool {
-		return 1 === preg_match( '/^\((?:min-width:\s?[0-9]+(?:\.[0-9]+)?(?:px|em|rem)|width\s*>=\s*[0-9]+(?:\.[0-9]+)?(?:px|em|rem))\)$/D', $query );
+		return 1 === preg_match( '/^(?:screen and )?\((?:min-width:\s?[0-9]+(?:\.[0-9]+)?(?:px|em|rem)|width\s*>=\s*[0-9]+(?:\.[0-9]+)?(?:px|em|rem))\)$/D', $query );
 	}
 
 	/**
@@ -3500,10 +3612,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * include the bound, so the stacked state is the strict less-than range.
 	 */
 	private static function inverted_min_width_media_query( string $query ): ?string {
-		if ( 1 === preg_match( '/^\(min-width:\s?([0-9]+(?:\.[0-9]+)?)(px|em|rem)\)$/D', $query, $match ) ) {
+		if ( 1 === preg_match( '/^(?:screen and )?\(min-width:\s?([0-9]+(?:\.[0-9]+)?)(px|em|rem)\)$/D', $query, $match ) ) {
 			return '(width<' . $match[1] . $match[2] . ')';
 		}
-		if ( 1 === preg_match( '/^\(width\s*>=\s*([0-9]+(?:\.[0-9]+)?)(px|em|rem)\)$/D', $query, $match ) ) {
+		if ( 1 === preg_match( '/^(?:screen and )?\(width\s*>=\s*([0-9]+(?:\.[0-9]+)?)(px|em|rem)\)$/D', $query, $match ) ) {
 			return '(width<' . $match[1] . $match[2] . ')';
 		}
 		return null;
