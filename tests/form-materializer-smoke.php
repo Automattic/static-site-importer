@@ -1556,6 +1556,54 @@ namespace {
 		'twelve-column-grid-span-row-materializes-name-fields-side-by-side',
 		wp_json_encode( array( 'validation' => $span_row_validated, 'row' => $span_row_row, 'markup' => $span_row_markup, 'css' => $span_row_css ) )
 	);
+	$flex_cell_html = '<style>.contact-row{display:flex;flex-direction:row;justify-content:space-between;align-items:center;width:100%;max-width:1000px}.contact-cell{width:50%;margin-right:5px;margin-left:5px}'
+		. '@media screen and (max-width:479px){.contact-row{flex-direction:column}.contact-cell{width:100%;margin-left:0;margin-right:0}}'
+		. '@media screen and (min-width:1920px){.contact-row{margin-left:0}}</style>'
+		. '<form><div class="contact-row"><div class="contact-cell"><label>First name</label><input name="first" type="text"></div>'
+		. '<div class="contact-cell"><label>Last name</label><input name="last" type="text"></div></div>'
+		. '<div class="contact-row"><div class="contact-cell"><label>Phone</label><input name="phone" type="tel"></div>'
+		. '<div class="contact-cell"><label>Postal code</label><input name="postal" type="text"></div></div>'
+		. '<button type="submit">Send</button></form>';
+	$flex_cell_form      = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $flex_cell_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$flex_cell_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $flex_cell_form ) ) );
+	// The production entity has additional per-field structure that selects the
+	// flattened projection. Keep this fixture minimal while exercising that path.
+	foreach ( $flex_cell_validated['forms'][0]['layout_graph']['nodes'] as $layout_index => $flex_layout_node ) {
+		if ( in_array( $flex_layout_node['id'] ?? '', array( 'wrapper-0', 'wrapper-3' ), true ) ) {
+			$flex_cell_validated['forms'][0]['layout_graph']['nodes'][ $layout_index ]['layout']['max_width'] = '1000px';
+		}
+	}
+	$flex_cell_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $flex_cell_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$flex_cell_css       = $expand_selector_lists( (string) ( $flex_cell_row['provider_layout_overlay_css']['css'] ?? '' ) );
+	$assert(
+		empty( $flex_cell_validated['errors'] )
+			&& 'mapped' === ( $flex_cell_row['status'] ?? '' )
+			&& true === ( $flex_cell_row['runtime_mapped'] ?? false )
+			&& in_array( 'provider_flex_cell_row_transposition', array_column( $flex_cell_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true )
+			&& ! in_array( 'provider_wrapper_layout_unrepresentable', array_column( $flex_cell_row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' ), true )
+			&& str_contains( $flex_cell_css, 'screen and (max-width:479px)' ),
+		'flex-field-cell-rows-transpose-width-margin-and-phone-column-flow',
+		wp_json_encode( array( 'validation' => $flex_cell_validated, 'row' => $flex_cell_row, 'css' => $flex_cell_css ) )
+	);
+	$real_entity_path = getenv( 'STATIC_SITE_IMPORTER_REAL_FORM_ENTITY' );
+	if ( is_string( $real_entity_path ) && is_readable( $real_entity_path ) ) {
+		$real_entity_data = json_decode( (string) file_get_contents( $real_entity_path ), true );
+		$real_entity_form = is_array( $real_entity_data['entity'] ?? null ) ? $real_entity_data['entity'] : array();
+		$real_entity_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $real_entity_form ) ) );
+		$real_entity_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $real_entity_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+		$real_entity_losses = array_column( $real_entity_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' );
+		$real_entity_css = (string) ( $real_entity_row['provider_layout_overlay_css']['css'] ?? '' );
+		$assert(
+			empty( $real_entity_validation['errors'] )
+				&& 'mapped' === ( $real_entity_row['status'] ?? '' )
+				&& true === ( $real_entity_row['runtime_mapped'] ?? false )
+				&& ! in_array( 'provider_wrapper_layout_unrepresentable', $real_entity_losses, true )
+				&& str_contains( $real_entity_css, 'screen and (max-width:479px)' )
+				&& str_contains( $real_entity_css, 'screen and (min-width:1920px)' ),
+			'retained-2078-declined-entity-materializes-and-retains-both-screen-variants',
+			wp_json_encode( array( 'status' => $real_entity_row['status'] ?? null, 'losses' => $real_entity_losses, 'css' => $real_entity_css ) )
+		);
+	}
 	// A source may author the same grid tracks at every width but add its
 	// gutter only at desktop. The provider must preserve the conditional gap
 	// rather than leaving a visually complete, non-submitting form behind.
