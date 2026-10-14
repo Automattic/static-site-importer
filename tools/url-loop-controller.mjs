@@ -112,7 +112,7 @@ export function orderRepairBranches(refs, instance, repo) {
 // Homeboy starts every workflow step with an empty environment plus the names
 // the definition declares, captured where the workflow is admitted. These are
 // the public toolchain names the evaluation needs; nothing else is inherited.
-const RUNTIME_ENV = ['PATH', 'HOME', 'TMPDIR', 'XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'PLAYWRIGHT_BROWSERS_PATH', 'PLAYWRIGHT_HOST_PLATFORM_OVERRIDE', 'NPM_CONFIG_CACHE', 'npm_config_cache', 'COMPOSER_HOME'];
+const RUNTIME_ENV = ['PATH', 'HOME', 'XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'PLAYWRIGHT_BROWSERS_PATH', 'PLAYWRIGHT_HOST_PLATFORM_OVERRIDE', 'NPM_CONFIG_CACHE', 'npm_config_cache', 'COMPOSER_HOME'];
 
 function boundedInteger(value, fallback, min, max, name) {
   const number = Number(value ?? fallback);
@@ -398,7 +398,19 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * Import the capture into a disposable Codebox WordPress, keep it served until
  * the import is terminal, run `materialize(origin)` against it, then stop it.
  */
-async function importAndMeasure({ context, pluginZip, captureWebsite, url, directory, materialize }) {
+/**
+ * Environment for an iteration's child processes: the declared toolchain plus
+ * a temp directory owned by the iteration. A temp directory captured where the
+ * workflow was generated can be an ephemeral per-job path that no longer
+ * exists by the time the step runs, so it is never inherited.
+ */
+export function evaluationEnv(baseEnv, toolchainEnv, directory) {
+  const tmp = path.join(directory, 'tmp');
+  fs.mkdirSync(tmp, { recursive: true });
+  return { ...baseEnv, ...toolchainEnv, TMPDIR: tmp, TMP: tmp, TEMP: tmp };
+}
+
+async function importAndMeasure({ context, pluginZip, captureWebsite, url, directory, env, materialize }) {
   const stage = path.join(directory, 'import-stage');
   fs.mkdirSync(stage, { recursive: true });
   fs.cpSync(captureWebsite, path.join(stage, 'website'), { recursive: true });
@@ -408,7 +420,7 @@ async function importAndMeasure({ context, pluginZip, captureWebsite, url, direc
   const port = await freePort();
   const timeoutMs = 60 * 60 * 1000;
   const log = fs.openSync(path.join(directory, 'codebox.log'), 'w');
-  const child = spawn(context.wp_codebox_bin, codeboxArgs({ recipe, artifacts: path.join(directory, 'codebox-artifacts'), port, timeoutMs }), { cwd: directory, detached: true, stdio: ['ignore', log, log] });
+  const child = spawn(context.wp_codebox_bin, codeboxArgs({ recipe, artifacts: path.join(directory, 'codebox-artifacts'), port, timeoutMs }), { cwd: directory, env, detached: true, stdio: ['ignore', log, log] });
   let exited = false;
   child.on('exit', () => { exited = true; });
   const stop = () => { if (!exited) { try { process.kill(-child.pid, 'SIGTERM'); } catch { /* already gone */ } } };
@@ -445,7 +457,7 @@ export async function runEvaluation({ context, url, instance, iteration }) {
   if (fs.existsSync(directory)) throw new Error('evaluation_output_not_fresh');
   fs.mkdirSync(path.join(directory, 'logs'), { recursive: true });
   const reportPath = path.join(directory, 'evaluation.json');
-  const env = { ...process.env, ...context.runtime_toolchain?.env };
+  const env = evaluationEnv(process.env, context.runtime_toolchain?.env, directory);
   const components = {};
   const evidence = {};
   let blocker = null;
@@ -481,7 +493,7 @@ export async function runEvaluation({ context, url, instance, iteration }) {
     evidence.capture_compare = compare('capture');
 
     const measured = await importAndMeasure({
-      context, pluginZip, captureWebsite: located.website, url: normalized, directory,
+      context, pluginZip, captureWebsite: located.website, url: normalized, directory, env,
       materialize: (origin) => compare('materialization', origin),
     });
     evidence.quality = measured.imported.quality;
