@@ -468,10 +468,13 @@ Each iteration runs four steps:
      `import --single-step --state` because PHP.wasm has no subprocesses.
    - **Compare.** While Codebox serves the imported site, the `materialization`
      comparison measures WordPress against the capture.
-2. **`fix-ssi`, `fix-blocks-engine`, `fix-capture`** are Homeboy Cooks, each
-   gated on findings routed to its repository. A Cook receives only that
-   repository's evidence file and opens a ready-for-review PR on the iteration's
-   repair branch; nothing merges automatically.
+ 2. **`repair`** is one Homeboy Cook step with `foreach` over the routed repair
+    items. It fans out up to three independent repository repairs; each Cook
+    receives that repository's evidence, tracker, branch and verify commands.
+    The `any` join lets the next evaluation run when at least one repair passes,
+    even if another repository's repair fails. If every repair fails, the join
+    fails the workflow instance. Repairs open ready-for-review PRs; nothing merges
+    automatically.
 
 **Verdict.** `accepted` requires a passing capture comparison, a passing
 materialization comparison, `quality_pass`, and zero unsupported fallback, core
@@ -485,7 +488,19 @@ failures go to the capture producer; finding packets owned by `blocks-engine/*`
 go to Blocks Engine; other finding packets, import failures and
 materialization-comparison failures go to SSI. Each routed repository gets
 `evaluations/<instance>/i<n>/repairs/<repo>.json` with its findings, the
-composed component SHAs, stage reports and import quality.
+composed component SHAs, stage reports, import quality and a sorted `scope`
+array. Scope is derived from finding packet owners of the form
+`<repository>/<component>` when that top-level component directory exists in
+the composed checkout. Bare repository owners and failures without an owner do
+not add scope.
+
+The repair Cook prompt names the owning component paths (`scope_text`) and says
+the fix belongs there: changes elsewhere do not address the finding. For a
+scoped repair, its verify program first requires at least one changed path
+under a scope directory, considering both committed changes against the
+repository's pinned base and uncommitted working-tree changes, before running
+the configured repository tests. Unscoped repairs run only their configured
+tests.
 
 **Options.** `--task-url` (or `SSI_URL_LOOP_TASK_URL`) names the tracker every
 repair Cook works on; it is required unless every repository names its own

@@ -7,8 +7,8 @@ import { spawnSync } from 'node:child_process';
 import {
   CAPTURE_PRODUCER_ENV, LoopBlocker, WORKFLOW_ID, WORKFLOW_SCHEMA,
   buildUrlProofWorkflow, captureCommands, codeboxArgs, codeboxRecipe, compareResult, composeRepository, evaluateLocalEvidence,
-  evaluationVerdict, expandTemplate, importRequest, locateCapture, orderRepairBranches, parseArgs, readImportState, repairBranch,
-  resolveCaptureProducer, routeFindings, sourceIdentity, writeRepairEvidence,
+  deriveRepairScopes, evaluationVerdict, expandTemplate, importRequest, locateCapture, orderRepairBranches, parseArgs, readImportState, repairBranch,
+  resolveCaptureProducer, routeFindings, sourceIdentity, verifyProgram, writeRepairEvidence,
 } from './url-loop-controller.mjs';
 
 const url = 'https://example.com/';
@@ -41,7 +41,7 @@ test('one URL yields a bounded three-repository repair loop', () => {
   assert.equal(context.loop_id, sourceIdentity('https://example.com/#fragment'));
   assert.deepEqual(workflow.budget, { max_step_runs: 20, deadline: '10h' });
   assert.deepEqual(workflow.iterate, { until: { step: 'evaluate', output: '/verdict', equals: 'accepted' }, max_iterations: 3 });
-  assert.deepEqual(workflow.steps.map((item) => item.id), ['evaluate', 'fix-ssi', 'fix-blocks-engine', 'fix-capture']);
+  assert.deepEqual(workflow.steps.map((item) => item.id), ['evaluate', 'repair']);
   const evaluate = step(workflow, 'evaluate').exec;
   assert.equal(evaluate.program, process.execPath);
   assert.equal(argOf(evaluate.args, '--instance'), '{{instance}}');
@@ -50,7 +50,7 @@ test('one URL yields a bounded three-repository repair loop', () => {
   assert.deepEqual(Object.keys(context.repositories), ['static-site-importer', 'blocks-engine', CAPTURE_REPO]);
   assert.equal(context.repositories['static-site-importer'].path, root);
   assert.equal(context.repositories['blocks-engine'].base, 'trunk');
-  assert.deepEqual(context.repositories[CAPTURE_REPO], { role: 'capture', path: path.join(root, 'capture-tool'), remote: 'https://example.com/capture-tool.git', base: 'main' });
+  assert.deepEqual(context.repositories[CAPTURE_REPO], { role: 'capture', path: path.join(root, 'capture-tool'), remote: 'https://example.com/capture-tool.git', base: 'main', task_url: taskUrl, verify: ['npm test'] });
   assert.equal(context.capture_producer.repository, CAPTURE_REPO);
   assert.deepEqual(context.capture_producer.build, [['npm', 'ci'], ['npm', 'run', 'build']]);
   assert.equal(Object.hasOwn(context.capture_producer, 'failure_details'), false);
@@ -58,27 +58,27 @@ test('one URL yields a bounded three-repository repair loop', () => {
   const configuredDetails = build(root, { captureProducer: producer(root, { failure_details: failureDetails }) });
   assert.deepEqual(configuredDetails.context.capture_producer.failure_details, failureDetails);
 
-  const expected = { 'fix-ssi': ['static-site-importer', 'npm test'], 'fix-blocks-engine': ['blocks-engine', 'composer --working-dir=php-transformer test'], 'fix-capture': [CAPTURE_REPO, 'npm test'] };
-  for (const [id, [repo, verify]] of Object.entries(expected)) {
-    const fix = step(workflow, id);
-    assert.deepEqual(fix.needs, ['evaluate']);
-    assert.deepEqual(fix.when, { step: 'evaluate', output: `/repairs/${repo}`, exists: true });
-    assert.equal(fix.cook.repo, repo);
-    assert.equal(fix.cook['task-url'], taskUrl);
-    assert.deepEqual(fix.cook.verify, [verify]);
-    assert.equal(fix.cook['draft-pr'], false);
-    // Cook head and candidate discovery share one branch definition.
-    assert.equal(fix.cook.head, repairBranch('{{instance}}', repo, '{{iteration}}'));
-    assert.deepEqual(JSON.parse(fix.cook['provider-evidence']), { id: `${repo}-evaluation`, source: `{{steps.evaluate.output/repairs/${repo}/report_path}}` });
-  }
+  const fix = step(workflow, 'repair');
+  assert.deepEqual(fix.needs, ['evaluate']);
+  assert.deepEqual(fix.when, { step: 'evaluate', output: '/verdict', equals: 'findings' });
+  assert.equal(fix.foreach, '{{steps.evaluate.output/repair_items}}');
+  assert.equal(fix.max_parallel, 3);
+  assert.equal(fix.join, 'any');
+  assert.equal(fix.retry.max, 1);
+  assert.equal(fix.cook.repo, '{{item.repository}}');
+  assert.equal(fix.cook['task-url'], '{{item.task_url}}');
+  assert.equal(fix.cook.head, '{{item.head}}');
+  assert.equal(fix.cook.verify, '{{item.verify}}');
+  assert.deepEqual(JSON.parse(fix.cook['provider-evidence']), { id: '{{item.repository}}-evaluation', source: '{{item.report_path}}' });
+  assert.equal(fix.cook['draft-pr'], false);
 
   const custom = build(root, { instance: 'proof-r2', maxIterations: '2', maxStepRuns: '8', deadline: '3h', fixBackend: 'opencode', blocksEngineTaskUrl: 'https://github.com/Automattic/blocks-engine/issues/1', captureProducer: producer(root, { verify: ['npm test', 'npm run lint'], task_url: 'https://example.com/capture-tool/issues/9' }) });
   assert.equal(custom.context.loop_id, `${context.loop_id}-proof-r2`);
   assert.deepEqual(custom.workflow.budget, { max_step_runs: 8, deadline: '3h' });
-  assert.equal(step(custom.workflow, 'fix-ssi').cook.backend, 'opencode');
-  assert.equal(step(custom.workflow, 'fix-blocks-engine').cook['task-url'], 'https://github.com/Automattic/blocks-engine/issues/1');
-  assert.deepEqual(step(custom.workflow, 'fix-capture').cook.verify, ['npm test', 'npm run lint']);
-  assert.equal(step(custom.workflow, 'fix-capture').cook['task-url'], 'https://example.com/capture-tool/issues/9');
+  assert.equal(step(custom.workflow, 'repair').cook.backend, 'opencode');
+  assert.equal(custom.context.repositories['blocks-engine'].task_url, 'https://github.com/Automattic/blocks-engine/issues/1');
+  assert.deepEqual(custom.context.repositories[CAPTURE_REPO].verify, ['npm test', 'npm run lint']);
+  assert.equal(custom.context.repositories[CAPTURE_REPO].task_url, 'https://example.com/capture-tool/issues/9');
   assert.throws(() => build(root, { instance: '../invalid' }), /path-safe/);
   assert.throws(() => build(root, { maxIterations: 9 }), /max-iterations/);
   assert.throws(() => build(root, { maxStepRuns: 1 }), /max-step-runs/);
@@ -88,7 +88,7 @@ test('one URL yields a bounded three-repository repair loop', () => {
   try {
     delete process.env.SSI_URL_LOOP_TASK_URL;
     assert.throws(() => build(root, { taskUrl: undefined }), /task-url must name the tracker/, 'there is no default tracker');
-    assert.equal(step(build(root, { taskUrl: undefined, ssiTaskUrl: 'https://example.com/ssi/1', blocksEngineTaskUrl: 'https://example.com/be/1', captureProducer: producer(root, { task_url: 'https://example.com/capture/1' }) }).workflow, 'fix-ssi').cook['task-url'], 'https://example.com/ssi/1', 'per-repository trackers alone suffice');
+    assert.equal(build(root, { taskUrl: undefined, ssiTaskUrl: 'https://example.com/ssi/1', blocksEngineTaskUrl: 'https://example.com/be/1', captureProducer: producer(root, { task_url: 'https://example.com/capture/1' }) }).context.repositories['static-site-importer'].task_url, 'https://example.com/ssi/1', 'per-repository trackers alone suffice');
   } finally {
     if (previous !== undefined) process.env.SSI_URL_LOOP_TASK_URL = previous;
   }
@@ -146,6 +146,15 @@ test('each routing class reaches its owning repository', () => {
   assert.deepEqual(routeFindings({ captureRepository: CAPTURE_REPO, captureCompare: { passed: true }, materializationCompare: { passed: true } }), {});
 });
 
+test('repair scopes come only from existing owner component directories', () => {
+  const dirs = new Set(['php-transformer', 'packages']);
+  assert.deepEqual(deriveRepairScopes('blocks-engine', [
+    { owner: 'blocks-engine/php-transformer' }, { owner: 'blocks-engine/packages/js' },
+    { owner: 'blocks-engine/php-transformer' }, { owner: 'blocks-engine' }, {},
+  ], '/checkout', (directory) => dirs.has(path.basename(directory))), ['packages/', 'php-transformer/']);
+  assert.deepEqual(deriveRepairScopes('blocks-engine', [{ owner: 'blocks-engine/missing' }], '/checkout', () => false), []);
+});
+
 test('the verdict needs complete evidence, passing comparisons and a clean quality result', () => {
   const accepted = evaluateLocalEvidence({ ...clean, capture_failures: [{ url: 'https://example.com/login' }] });
   assert.equal(accepted.verdict, 'accepted');
@@ -169,17 +178,28 @@ test('the verdict needs complete evidence, passing comparisons and a clean quali
 
 test('every routed repository gets a citable evidence file, and the step output stays compact', () => {
   const directory = tmp('ssi-repair-evidence-');
-  const repairs = writeRepairEvidence(directory, routeFindings({ captureRepository: CAPTURE_REPO, captureCompare: { passed: false }, packets: [{ owner: 'blocks-engine/php-transformer' }] }), { url, components: { 'blocks-engine': { head_sha: 'b'.repeat(40) } } });
+  const repairs = routeFindings({ captureRepository: CAPTURE_REPO, captureCompare: { passed: false }, packets: [{ owner: 'blocks-engine/php-transformer' }] });
+  repairs['blocks-engine'].scope = ['php-transformer/'];
+  writeRepairEvidence(directory, repairs, { url, components: { 'blocks-engine': { head_sha: 'b'.repeat(40) } } });
   for (const [repo, work] of Object.entries(repairs)) {
     assert.ok(work.report_path, `${repo} has a report path`);
     const written = JSON.parse(fs.readFileSync(work.report_path, 'utf8'));
     assert.equal(written.repository, repo);
     assert.equal(written.findings.length, work.findings.length);
+    assert.deepEqual(written.scope, work.scope || []);
     assert.equal(written.components['blocks-engine'].head_sha, 'b'.repeat(40));
   }
-  const output = evaluationVerdict({ verdict: 'findings', repairs, components: { 'blocks-engine': { head_sha: 'b'.repeat(40), merged: [{ branch: 'url-loop/x/blocks-engine-i1', sha: 'c'.repeat(40) }] } }, quality: { quality_pass: false } }, '/e.json');
+  repairs[CAPTURE_REPO].scope = [];
+  const repositories = { 'blocks-engine': { task_url: taskUrl, base: 'trunk', verify: ['composer test'] }, [CAPTURE_REPO]: { task_url: taskUrl, base: 'main', verify: ['npm test'] } };
+  const output = evaluationVerdict({ verdict: 'findings', repairs, components: { 'blocks-engine': { head_sha: 'b'.repeat(40), merged: [{ branch: 'url-loop/x/blocks-engine-i1', sha: 'c'.repeat(40) }] } }, quality: { quality_pass: false } }, '/e.json', { instance: 'wf-1', iteration: 2, repositories });
   assert.deepEqual(output.repairs['blocks-engine'], { findings: 1, report_path: repairs['blocks-engine'].report_path });
   assert.deepEqual(output.components['blocks-engine'].merged, ['url-loop/x/blocks-engine-i1']);
+  assert.deepEqual(output.repair_items, [CAPTURE_REPO, 'blocks-engine'].map((repository) => ({ repository, report_path: repairs[repository].report_path, head: repairBranch('wf-1', repository, 2), task_url: taskUrl, scope: repairs[repository].scope || [], scope_text: (repairs[repository].scope || []).join(', '), verify: verifyProgram(repositories[repository].verify, repairs[repository].scope || [], repositories[repository].base) })));
+  assert.match(output.repair_items[1].verify, /git diff --name-only origin\/trunk\.\.\.HEAD/);
+  assert.match(output.repair_items[1].verify, /git status --porcelain/);
+  assert.doesNotMatch(output.repair_items[0].verify, /git diff/);
+  assert.equal(verifyProgram(['npm ci', 'npm test']), '(npm ci) && (npm test)', 'one shell program per item: a templated array would arrive as JSON');
+  for (const verdict of ['accepted', 'blocked']) assert.deepEqual(evaluationVerdict({ verdict, repairs }, '/e.json', { instance: 'wf-1', iteration: 1, repositories }).repair_items, []);
 });
 
 test('repair branches are discovered for one instance and repository in iteration order', () => {
@@ -309,5 +329,5 @@ test('Homeboy accepts the generated definition', (context) => {
   assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
   const data = JSON.parse(result.stdout).data;
   assert.equal(data.id, WORKFLOW_ID);
-  assert.deepEqual(data.steps.map((item) => [item.id, item.kind]), [['evaluate', 'exec'], ['fix-ssi', 'cook'], ['fix-blocks-engine', 'cook'], ['fix-capture', 'cook']]);
+  assert.deepEqual(data.steps.map((item) => [item.id, item.kind]), [['evaluate', 'exec'], ['repair', 'cook']]);
 });
