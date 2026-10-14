@@ -143,6 +143,8 @@ export function buildUrlProofWorkflow(input) {
   };
   const maxIterations = boundedInteger(input.maxIterations, 3, 1, 5, 'max-iterations');
   const maxStepRuns = boundedInteger(input.maxStepRuns, 20, 4, 30, 'max-step-runs');
+  // A repair provider still producing output is extended to 3x this base.
+  const fixTimeoutMinutes = boundedInteger(input.fixTimeoutMinutes, 40, 10, 120, 'fix-timeout-minutes');
   const deadline = String(input.deadline || '10h');
   if (!/^[1-9][0-9]*[smhd]$/.test(deadline)) throw new Error('deadline must be a duration such as 90m or 10h');
   const sourceId = sourceIdentity(url);
@@ -178,6 +180,7 @@ export function buildUrlProofWorkflow(input) {
     head: '{{item.head}}',
     placement: input.fixPlacement || 'local',
     ...(input.fixBackend ? { backend: input.fixBackend } : {}),
+    'timeout-ms': fixTimeoutMinutes * 60 * 1000,
     'provider-evidence': JSON.stringify({ id: '{{item.repository}}-evaluation', source: '{{item.report_path}}' }),
     prompt: 'Repair the {{item.repository}} findings for {{inputs.url}} (URL repair loop {{instance}}, iteration {{iteration}}). The provider evidence is the scoped work list with composed candidate SHAs and stage reports. Fix the cause generically in {{item.repository}}; the next iteration measures this branch. Owning component paths: {{item.scope_text}}. When paths are listed, the fix belongs there; changes elsewhere do not address the finding.',
     verify: '{{item.verify}}',
@@ -591,7 +594,7 @@ function writeStepOutput(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
 }
 
-const USAGE = 'usage: url-loop-controller.mjs start|workflow --url <url> --capture-producer <JSON> --task-url <url> [--blocks-engine <path>] [--wp-codebox-bin <path>] [--output-root <path>] [--instance <token>] [--ssi-task-url <url>] [--blocks-engine-task-url <url>] [--ssi-verify <command>]... [--blocks-engine-verify <command>]... [--fix-placement local] [--fix-backend <backend>] [--wordpress-version 7.1] [--import-steps 24] [--max-iterations 3] [--max-step-runs 20] [--deadline 10h]';
+const USAGE = 'usage: url-loop-controller.mjs start|workflow --url <url> --capture-producer <JSON> --task-url <url> [--blocks-engine <path>] [--wp-codebox-bin <path>] [--output-root <path>] [--instance <token>] [--ssi-task-url <url>] [--blocks-engine-task-url <url>] [--ssi-verify <command>]... [--blocks-engine-verify <command>]... [--fix-placement local] [--fix-backend <backend>] [--fix-timeout-minutes 40] [--wordpress-version 7.1] [--import-steps 24] [--max-iterations 3] [--max-step-runs 20] [--deadline 10h]';
 
 async function main() {
   const [operation, ...argv] = process.argv.slice(2);
