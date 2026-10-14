@@ -4635,12 +4635,12 @@ namespace {
 		. '.pills { display: flex; flex-flow: wrap; gap: 12px; width: 100%; } '
 		. '</style></head><body><main><form class="rsvp" method="post" action="/rsvp"><div class="track">'
 		. '<div class="page one"><section aria-label="Will you attend?"><div role="radiogroup" aria-label="Will you attend?" class="pills">'
-		. '<button type="button" role="radio" aria-checked="false"><input type="radio" name="attending" value="Yes" tabindex="-1" aria-hidden="true"><span>Yes</span></button>'
-		. '<button type="button" role="radio" aria-checked="false"><input type="radio" name="attending" value="No" tabindex="-1" aria-hidden="true"><span>No</span></button>'
+		. '<button type="button" role="radio" aria-checked="false" style="background: rgb(233, 227, 223); border-radius: 999px; height: 40px;"><input type="radio" name="attending" value="Yes" tabindex="-1" aria-hidden="true"><span>Yes</span></button>'
+		. '<button type="button" role="radio" aria-checked="false" style="background: rgb(233, 227, 223); border-radius: 999px; height: 40px;"><input type="radio" name="attending" value="No" tabindex="-1" aria-hidden="true"><span>No</span></button>'
 		. '</div></section><label><p>Full name</p><input type="text" name="name" required></label></div>'
 		. '<div class="page two"><label><p>Message</p><textarea name="message"></textarea></label></div>'
 		. '<div class="page done"><h2>Thank you</h2><p>We cannot wait to celebrate with you.</p></div>'
-		. '</div><div class="nav"><p>Continue</p></div></form></main></body></html>';
+		. '</div><div class="nav"><div class="action" style="background-color: rgb(111, 126, 98); border-radius: 8px; padding: 0px 12px;"><p>Continue</p></div></div></form></main></body></html>';
 	$steps_result = ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'rsvp.html', 'files' => array( 'rsvp.html' => $steps_html ) ) )->toArray();
 	$steps_entity = array();
 	foreach ( $steps_result['source_reports']['wordpress_site_plan']['runtime_declarations'] ?? array() as $declaration ) {
@@ -4657,6 +4657,9 @@ namespace {
 	$step_one = (string) strstr( (string) strstr( $steps_markup, '<!-- wp:jetpack/form-step ' ), '<!-- /wp:jetpack/form-step -->', true );
 	$assert( str_contains( $step_one, 'wp:jetpack/field-radio' ) && str_contains( $step_one, 'wp:jetpack/field-text' ) && ! str_contains( $step_one, 'wp:jetpack/field-textarea' ), 'declared-form-steps-keep-each-field-in-its-source-step', $step_one );
 	$assert( 1 === preg_match( '/wp:jetpack\/field-radio \{[^}]*"options":\["Yes","No"\][^}]*is-style-button/', $steps_markup ) && str_contains( $steps_markup, '"label":"Will you attend?"' ) && ! str_contains( $steps_markup, 'wp:button {"tagName":"button","type":"button"' ), 'aria-radiogroup-pills-become-one-button-style-choice-field', $steps_markup );
+	$steps_overlay = $steps_row['provider_layout_overlay_css'] ?? null;
+	$steps_css     = (string) ( $steps_overlay['css'] ?? '' );
+	$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $steps_overlay ) && 1 === preg_match( '/ \.contact-form-field\{[^}]*background:rgb\(233, 227, 223\)!important[^}]*border-radius:999px!important/', $steps_css ) && str_contains( $steps_css, ' .wp-block-jetpack-options{' ) && 1 === preg_match( '/ \.form-button-next > \.wp-block-button__link, [^{]+ \.form-button-submit > \.wp-block-button__link\{[^}]*background-color:rgb\(111, 126, 98\)!important[^}]*border-radius:8px!important/', $steps_css ), 'step-form-overlay-paints-choice-options-and-step-actions-from-source', $steps_css );
 	$assert( str_contains( $steps_markup, '"confirmationType":"text"' ) && str_contains( $steps_markup, '"customThankyouHeading":"Thank you"' ) && str_contains( $steps_markup, '"customThankyouMessage":"We cannot wait to celebrate with you."' ) && ! str_contains( $steps_markup, '<h2' ), 'completion-panel-becomes-provider-confirmation', $steps_markup );
 
 	if ( empty( $failures ) && in_array( '--emit-topology-markup', $argv ?? array(), true ) ) {
