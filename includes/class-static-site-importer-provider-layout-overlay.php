@@ -678,7 +678,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		// The bare scope is the block wrapper the provider renders at the source form's
 		// own position, so it carries the form box's placement inside the page.
 		// A generated node hook resolves to the control, and its provider `-wrap` copy
-		// resolves to that control's field shell.
+		// resolves to that control's field shell, whose option list and options a
+		// grouped choice field addresses. A multi-step form's step buttons are
+		// addressed by the provider's own next/submit classes.
 		// A provider may render its form element or lay the fields out directly in
 		// its block wrapper. One target therefore carries both spellings, and the
 		// wrapper branch excludes itself whenever that form element is present so
@@ -689,7 +691,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		$element = '[a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*';
 		foreach ( $parts as $part ) {
-			if ( ! preg_match( '/^' . preg_quote( $scope, '/' ) . '(?:\.jetpack-contact-form-container)?(?: > ' . $element . '| \.ssi-source-field-list| (?:input)?\.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label)?|:not\(:has\(> ' . $element . '\)\))?$/D', $part ) ) {
+			if ( ! preg_match( '/^' . preg_quote( $scope, '/' ) . '(?:\.jetpack-contact-form-container)?(?: > ' . $element . '| \.ssi-source-field-list| (?:input)?\.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label| \.wp-block-jetpack-options| \.contact-form-field)?| \.form-button-(?:next|submit) > \.wp-block-button__link|:not\(:has\(> ' . $element . '\)\))?$/D', $part ) ) {
 				return false;
 			}
 		}

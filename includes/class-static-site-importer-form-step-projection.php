@@ -84,7 +84,7 @@ final class Static_Site_Importer_Form_Step_Projection {
 	 *
 	 * @param array<string,mixed> $form Validated form row.
 	 * @param array<string,mixed> $plan Step plan.
-	 * @return array{form:array<string,mixed>,completion:array<int,array<string,mixed>>,navigation:array<int,array<string,mixed>>}
+	 * @return array{form:array<string,mixed>,completion:array<int,array<string,mixed>>,navigation:array<int,array<string,mixed>>,navigation_nodes:array<int,array<string,mixed>>}
 	 */
 	public static function claim_context( array $form, array $plan ): array {
 		$selectors = array();
@@ -124,6 +124,14 @@ final class Static_Site_Importer_Form_Step_Projection {
 			$form['form'][ $position ] = $kept;
 		}
 		// Their source boxes now belong to the confirmation and the navigation.
+		$navigation_nodes = array();
+		foreach ( $nodes as $node ) {
+			$selector = is_array( $node ) && is_string( $node['source']['selector'] ?? null ) ? $node['source']['selector'] : '';
+			$root     = $selectors['navigation'] ?? null;
+			if ( is_string( $root ) && '' !== $selector && ( $selector === $root || str_starts_with( $selector, $root . ' > ' ) ) ) {
+				$navigation_nodes[] = $node;
+			}
+		}
 		if ( is_array( $form['source_context_graph']['nodes'] ?? null ) ) {
 			$owned = array();
 			foreach ( $form['source_context_graph']['nodes'] as $index => $node ) {
@@ -139,9 +147,10 @@ final class Static_Site_Importer_Form_Step_Projection {
 			$form['source_context_graph']['variants'] = array_values( array_filter( is_array( $form['source_context_graph']['variants'] ?? null ) ? $form['source_context_graph']['variants'] : array(), static fn ( $variant ): bool => ! is_array( $variant ) || ! isset( $owned[ $variant['node'] ?? '' ] ) ) );
 		}
 		return array(
-			'form'       => $form,
-			'completion' => $claimed['completion'],
-			'navigation' => $claimed['navigation'],
+			'form'             => $form,
+			'completion'       => $claimed['completion'],
+			'navigation'       => $claimed['navigation'],
+			'navigation_nodes' => $navigation_nodes,
 		);
 	}
 
@@ -307,6 +316,86 @@ final class Static_Site_Importer_Form_Step_Projection {
 					'close' => "</div></div>\n",
 				),
 			),
+		);
+	}
+
+	/**
+	 * The source's own step action is the deepest navigation box that paints a
+	 * background around the navigation copy. Its box and the copy's text facts
+	 * are what the provider's next and submit buttons draw.
+	 *
+	 * @param array<int,array<string,mixed>> $nodes      Claimed navigation layout nodes.
+	 * @param array<int,array<string,mixed>> $navigation Claimed navigation copy.
+	 * @return array<string,string> Presentation styles keyed like the presentation graph.
+	 */
+	public static function action_presentation( array $nodes, array $navigation ): array {
+		$by_id  = array_column( $nodes, null, 'id' );
+		$action = null;
+		foreach ( $nodes as $node ) {
+			$styles = is_array( $node['presentation']['styles'] ?? null ) ? $node['presentation']['styles'] : array();
+			$fill   = strtolower( trim( (string) ( $styles['background_color'] ?? $styles['background'] ?? '' ) ) );
+			if ( '' === $fill || in_array( $fill, array( 'transparent', 'initial', 'none', 'rgba(0, 0, 0, 0)' ), true ) ) {
+				continue;
+			}
+			if ( null === $action || substr_count( (string) $node['source']['selector'], ' > ' ) > substr_count( (string) $action['source']['selector'], ' > ' ) ) {
+				$action = $node;
+			}
+		}
+		if ( null === $action ) {
+			return array();
+		}
+		$box = array_intersect_key(
+			$action['presentation']['styles'],
+			array_flip( array( 'background', 'background_color', 'border', 'border_color', 'border_style', 'border_width', 'border_radius', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'height', 'min_height', 'gap' ) )
+		);
+		// A box sized as a share of its parent takes the nearest definite height.
+		if ( isset( $box['height'] ) && ! preg_match( '/^[0-9.]+px$/D', (string) $box['height'] ) ) {
+			unset( $box['height'] );
+			for ( $parent = $action['parent'] ?? null; is_string( $parent ) && isset( $by_id[ $parent ] ); $parent = $by_id[ $parent ]['parent'] ?? null ) {
+				$height = (string) ( $by_id[ $parent ]['layout']['height'] ?? '' );
+				if ( preg_match( '/^[0-9.]+px$/D', $height ) ) {
+					$box['height'] = $height;
+					break;
+				}
+			}
+		}
+		$text = array();
+		foreach ( $navigation as $item ) {
+			if ( is_array( $item['styles'] ?? null ) ) {
+				$text = array_intersect_key( $item['styles'], array_flip( array( 'color', 'font_family', 'font_size', 'font_style', 'font_weight', 'letter_spacing', 'line_height', 'text_transform' ) ) );
+				break;
+			}
+		}
+		return array_filter( array_merge( $box, $text ), static fn ( $value ): bool => is_string( $value ) && '' !== trim( $value ) );
+	}
+
+	/**
+	 * Destinations for the source step action on the provider's step buttons.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public static function action_descriptor( string $scope ): array {
+		$properties   = array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() );
+		$destinations = array();
+		foreach ( array( 'form-button-next', 'form-button-submit' ) as $button ) {
+			$destinations[] = array(
+				'role'       => 'control',
+				'selector'   => '.' . $scope . ' .' . $button . ' > .wp-block-button__link',
+				'properties' => $properties,
+				'resets'     => array(
+					'min-height'  => '0',
+					'display'     => 'inline-flex',
+					'align-items' => 'center',
+				),
+				'priority'   => 'important',
+			);
+		}
+		return array(
+			'has_presentation'   => true,
+			'control_class'      => '',
+			'label_class'        => '',
+			'phone_destinations' => array(),
+			'destinations'       => $destinations,
 		);
 	}
 

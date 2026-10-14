@@ -513,8 +513,9 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		$step_plan  = isset( $form['steps'] ) ? Static_Site_Importer_Form_Step_Projection::plan( $form, $controls, $suppressed_controls ) : null;
 		$step_claim = array(
-			'completion' => array(),
-			'navigation' => array(),
+			'completion'       => array(),
+			'navigation'       => array(),
+			'navigation_nodes' => array(),
 		);
 		if ( null !== $step_plan ) {
 			$step_claim                  = Static_Site_Importer_Form_Step_Projection::claim_context( $form, $step_plan );
@@ -581,7 +582,14 @@ class Static_Site_Importer_Form_Seeder {
 				);
 			}
 		}
-		$topology['represented_layout_nodes'] = array_merge( $topology['represented_layout_nodes'], $aria_groups['represented_layout_nodes'] );
+		// A button-style group's own row arranges the provider's options, so its
+		// layout reaches the provider option list instead of being dropped.
+		$option_lists = array();
+		foreach ( $aria_groups['presenters'] as $field_index => $presenter ) {
+			$option_lists[]                                         = $presenter['list'];
+			$topology['provider_layout_targets'][ $presenter['list'] ] = Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $field_index ) . '-wrap .wp-block-jetpack-options';
+		}
+		$topology['represented_layout_nodes'] = array_merge( $topology['represented_layout_nodes'], array_values( array_diff( $aria_groups['represented_layout_nodes'], $option_lists ) ) );
 		$form['topology_losses']            = $topology['losses'];
 		$form['represented_semantic_nodes'] = $radio_groups['represented_semantic_nodes'];
 		$provider_graph                     = is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array(
@@ -842,7 +850,15 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			$overlay_graph = $overlay_form['layout_graph'];
 		}
+		$option_presenters = array();
+		foreach ( $aria_groups['presenters'] as $field_index => $presenter ) {
+			$option_presenters[ $presenter['carrier'] ]               = true;
+			$presentation_descriptors[ $presenter['carrier'] ] = Static_Site_Importer_Form_Layout_Projection::choice_option_descriptor( $scope, $field_index );
+		}
 		foreach ( array_keys( $suppressed_controls ) as $control_index ) {
+			if ( isset( $option_presenters[ $control_index ] ) ) {
+				continue;
+			}
 			unset( $overlay_form['presentation_graph']['controls'][ $control_index ] );
 		}
 		foreach ( is_array( $topology['grid_span_submit_controls'] ?? null ) ? $topology['grid_span_submit_controls'] : array() as $span_control ) {
@@ -874,6 +890,17 @@ class Static_Site_Importer_Form_Seeder {
 			if ( isset( $presentation_descriptors[ $row_control ] ) ) {
 				$presentation_descriptors[ $row_control ] = Static_Site_Importer_Form_Layout_Projection::with_submit_row_button_box( $presentation_descriptors[ $row_control ] );
 			}
+		}
+		$action_styles = null === $step_plan ? array() : Static_Site_Importer_Form_Step_Projection::action_presentation( $step_claim['navigation_nodes'], $step_claim['navigation'] );
+		if ( array() !== $action_styles ) {
+			// The source step action has no control of its own; it is presented
+			// as one more indexed presentation row for the provider step buttons.
+			$action_index                                           = count( $controls );
+			$overlay_form['presentation_graph']['controls'][]       = array(
+				'index'   => $action_index,
+				'control' => array( 'styles' => $action_styles ),
+			);
+			$presentation_descriptors[ $action_index ] = Static_Site_Importer_Form_Step_Projection::action_descriptor( $scope );
 		}
 		$target_map             = Static_Site_Importer_Form_Layout_Projection::provider_layout_target_map( $overlay_form, $scope, $presentation_descriptors, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
 		$presentation_graph     = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();

@@ -177,7 +177,10 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 * buttons are the provider's button choice style. Wrappers that hold nothing
 	 * but this group belong to the field and are represented by it.
 	 *
-	 * @return array{groups:array<int,array<string,mixed>>,suppressed_controls:array<int,bool>,represented_semantic_nodes:array<int,string>,represented_layout_nodes:array<int,string>,operations:array<int,array<string,mixed>>}
+	 * `presenters` names, per group field, the carrier whose captured box draws
+	 * every option and the group wrapper whose layout arranges them.
+	 *
+	 * @return array{groups:array<int,array<string,mixed>>,suppressed_controls:array<int,bool>,represented_semantic_nodes:array<int,string>,represented_layout_nodes:array<int,string>,presenters:array<int,array{carrier:int,list:string}>,operations:array<int,array<string,mixed>>}
 	 */
 	public static function aria_choice_groups( array $form, array $controls ): array {
 		$result = array(
@@ -185,6 +188,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 			'suppressed_controls'        => array(),
 			'represented_semantic_nodes' => array(),
 			'represented_layout_nodes'   => array(),
+			'presenters'                 => array(),
 			'operations'                 => array(),
 		);
 		$nodes  = $form['control_topology']['nodes'] ?? null;
@@ -303,7 +307,11 @@ final class Static_Site_Importer_Form_Field_Markup {
 				$group_control['required'] = true;
 			}
 			if ( 0 !== $carried ) {
-				$group_control['choice_style'] = 'button';
+				$group_control['choice_style']        = 'button';
+				$result['presenters'][ $inputs[0] ] = array(
+					'carrier' => (int) $carriers[ $inputs[0] ],
+					'list'    => (string) $group['id'],
+				);
 			}
 			$members                         = array_merge( $inputs, array_values( array_filter( $carriers, 'is_int' ) ) );
 			$result['groups'][ $inputs[0] ]  = $group_control;
