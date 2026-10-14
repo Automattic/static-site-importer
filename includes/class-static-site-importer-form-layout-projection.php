@@ -3295,6 +3295,33 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		);
 	}
 
+	/**
+	 * The source box that draws each option of a button-style choice field paints
+	 * every provider option of that field.
+	 */
+	public static function choice_option_descriptor( string $scope, int $field_index ): array {
+		$field = '.' . $scope . ' .' . self::layout_node_class( $scope, 'control-' . $field_index ) . '-wrap';
+		return array(
+			'has_presentation'   => true,
+			'control_class'      => '',
+			'label_class'        => '',
+			'phone_destinations' => array(),
+			'destinations'       => array(
+				array(
+					'role'       => 'control',
+					'selector'   => $field . ' .contact-form-field',
+					'properties' => array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ),
+					// The provider's outline-button option chrome stands in for the
+					// source box until the authored facts replace it.
+					'resets'     => array(
+						'margin' => '0',
+					),
+					'priority'   => 'important',
+				),
+			),
+		);
+	}
+
 	/** A source implicit choice label owns the complete field, not just its input. */
 	public static function source_choice_label( array $form, int $index ): ?array {
 		if ( 'checkbox' !== ( $form['controls'][ $index ]['type'] ?? '' ) || ! empty( $form['controls'][ $index ]['options'] ) ) {

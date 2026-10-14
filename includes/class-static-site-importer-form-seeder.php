@@ -22,6 +22,7 @@ if ( ! class_exists( 'Static_Site_Importer_Form_Layout_Projection' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-form-layout-projection.php';
 }
 require_once __DIR__ . '/class-static-site-importer-form-mapping-plan.php';
+require_once __DIR__ . '/class-static-site-importer-form-step-projection.php';
 
 /**
  * Turns preserved <form> fallback metadata into working Jetpack Form blocks.
@@ -324,9 +325,13 @@ class Static_Site_Importer_Form_Seeder {
 		$has_topology                  = isset( $form['control_topology'] );
 		$has_source_submit             = false;
 		$textarea_height_omitted_count = (int) ( $form['form']['textarea_height_omitted_count'] ?? 0 );
-		$radio_groups                  = Static_Site_Importer_Form_Field_Markup::labelled_radio_groups( $form, $controls );
-		$suppressed_controls           = $radio_groups['suppressed_controls'];
-		$choice_pairs                  = self::linked_choice_pairs( $controls, $form );
+		$aria_groups                   = Static_Site_Importer_Form_Field_Markup::aria_choice_groups( $form, $controls );
+		$radio_groups                  = self::with_choice_groups( Static_Site_Importer_Form_Field_Markup::labelled_radio_groups( $form, $controls ), $aria_groups );
+		// Source boxes a provider block stands in for: their layout is that
+		// block's own, so the generic topology neither transposes nor reports it.
+		$provider_owned_layout_nodes = $aria_groups['represented_layout_nodes'];
+		$suppressed_controls         = $radio_groups['suppressed_controls'];
+		$choice_pairs                = self::linked_choice_pairs( $controls, $form );
 		foreach ( $choice_pairs as $trigger => $carrier ) {
 			$suppressed_controls[ $carrier ] = true;
 		}
@@ -466,6 +471,10 @@ class Static_Site_Importer_Form_Seeder {
 			$field_source_class                = $has_provider_input ? '' : $source_class;
 			$layout_hook                       = Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $control_index );
 			$field_block['attrs']['className'] = trim( $field_source_class . ' ' . $layout_hook );
+			if ( 'button' === ( $control['choice_style'] ?? null ) ) {
+				// Choices the source draws as buttons are the provider's button style.
+				$field_block['attrs']['className'] .= ' is-style-button';
+			}
 			if ( isset( $choice_pairs[ $control_index ] ) ) {
 				$choice_token = Static_Site_Importer_Provider_Form_Runtime_V1::choice_token( $control['options'] );
 				if ( '' === $choice_token ) {
@@ -495,6 +504,21 @@ class Static_Site_Importer_Form_Seeder {
 			$mapped_types[]                 = $field_block['name'];
 		}
 
+		foreach ( $field_blocks as $control_index => $field_block ) {
+			$field_blocks[ $control_index ][ Static_Site_Importer_Form_Step_Projection::CONTROL_KEY ] = $control_index;
+		}
+		$step_plan  = isset( $form['steps'] ) ? Static_Site_Importer_Form_Step_Projection::plan( $form, $controls, $suppressed_controls ) : null;
+		$step_claim = array(
+			'completion'       => array(),
+			'navigation'       => array(),
+			'navigation_nodes' => array(),
+		);
+		if ( null !== $step_plan ) {
+			$step_claim                  = Static_Site_Importer_Form_Step_Projection::claim_context( $form, $step_plan );
+			$form                        = $step_claim['form'];
+			$provider_owned_layout_nodes = array_merge( $provider_owned_layout_nodes, array( $step_plan['track'] ), $step_plan['steps'] );
+		}
+
 		if ( empty( $field_blocks ) ) {
 			return Static_Site_Importer_Form_Mapping_Plan::skipped( $form, array(
 				'selector'       => $selector,
@@ -508,7 +532,7 @@ class Static_Site_Importer_Form_Seeder {
 			) );
 		}
 
-		$topology = Static_Site_Importer_Form_Layout_Projection::topology_inner_blocks( $form, $field_blocks, $controls, $suppressed_controls );
+		$topology = Static_Site_Importer_Form_Layout_Projection::topology_inner_blocks( Static_Site_Importer_Form_Step_Projection::without_wrappers( Static_Site_Importer_Form_Step_Projection::without_layout( $form, $provider_owned_layout_nodes ), null === $step_plan ? array() : array_merge( array( $step_plan['track'] ), $step_plan['steps'] ) ), $field_blocks, $controls, $suppressed_controls );
 		if ( null === $topology ) {
 			return Static_Site_Importer_Form_Mapping_Plan::skipped( $form, array(
 				'selector'       => $selector,
@@ -522,12 +546,49 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		$inner_blocks                     = $topology['blocks'];
 		$form['provider_native_topology'] = in_array( 'ssi-native-form-topology', $topology['form_classes'], true );
-		if ( ! $has_topology || ! $has_source_submit ) {
-			$inner_blocks[] = Static_Site_Importer_Form_Field_Markup::submit_button_block( $submit_text, Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-submit' ), $submit_presentation );
+		$generated_submit                 = Static_Site_Importer_Form_Field_Markup::submit_button_block( $submit_text, Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-submit' ), $submit_presentation );
+		if ( null !== $step_plan ) {
+			// A multi-step form submits from its step navigation, so a source submit
+			// leaves the step it was drawn in.
+			$source_submits = array_values( array_filter( $inner_blocks, static fn ( array $block ): bool => 'submit' === ( $block['wrapper'] ?? null ) ) );
+			$inner_blocks   = array_values( array_filter( $inner_blocks, static fn ( array $block ): bool => 'submit' !== ( $block['wrapper'] ?? null ) ) );
+			if ( array() !== $source_submits ) {
+				$generated_submit = $source_submits[0];
+			}
+		} elseif ( ! $has_topology || ! $has_source_submit ) {
+			$inner_blocks[] = $generated_submit;
 		}
-		$form['topology_losses']            = $topology['losses'];
-		$form['represented_semantic_nodes'] = $radio_groups['represented_semantic_nodes'];
-		$provider_graph                     = is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array(
+		$step_hooks = array();
+		if ( null !== $step_plan ) {
+			$topology['represented_layout_nodes'][] = $step_plan['track'];
+			$topology['operations'][]               = array(
+				'dimension'   => 'topology',
+				'strategy'    => 'provider_form_step_track',
+				'target_hash' => hash( 'sha256', $step_plan['track'] ),
+				'step_count'  => count( $step_plan['steps'] ),
+			);
+			foreach ( $step_plan['steps'] as $step_index => $step_node ) {
+				// Each panel's own source box is the provider step's box.
+				$step_hooks[ $step_index ]                         = Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, $step_node );
+				$topology['provider_layout_targets'][ $step_node ] = $step_hooks[ $step_index ];
+				$topology['operations'][]                          = array(
+					'dimension'   => 'topology',
+					'strategy'    => 'provider_form_step',
+					'target_hash' => hash( 'sha256', $step_node ),
+				);
+			}
+		}
+		// A button-style group's own row arranges the provider's options, so its
+		// layout reaches the provider option list instead of being dropped.
+		$option_lists = array();
+		foreach ( $aria_groups['presenters'] as $field_index => $presenter ) {
+			$option_lists[] = $presenter['list'];
+			$topology['provider_layout_targets'][ $presenter['list'] ] = Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $field_index ) . '-wrap .wp-block-jetpack-options';
+		}
+		$topology['represented_layout_nodes'] = array_merge( $topology['represented_layout_nodes'], array_values( array_diff( $aria_groups['represented_layout_nodes'], $option_lists ) ) );
+		$form['topology_losses']              = $topology['losses'];
+		$form['represented_semantic_nodes']   = $radio_groups['represented_semantic_nodes'];
+		$provider_graph                       = is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array(
 			'nodes'    => array(),
 			'variants' => array(),
 		);
@@ -582,8 +643,28 @@ class Static_Site_Importer_Form_Seeder {
 		self::append_receipt_entries( $layout['receipt'], 'operations', array_merge( $released['operations'], $radio_groups['operations'], $choice_operations, $topology['operations'], $host['operations'] ) );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $host['losses'] );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $control_attribute_losses );
-		$inner_blocks           = $layout['blocks'];
-		$form_attrs             = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $form, $scope, $topology['form_classes'] );
+		$inner_blocks = $layout['blocks'];
+		$form_attrs   = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $form, $scope, $topology['form_classes'] );
+		if ( null !== $step_plan ) {
+			$step_blocks = Static_Site_Importer_Form_Step_Projection::partition( $inner_blocks, $step_plan );
+			if ( null === $step_blocks ) {
+				// The declared steps cannot hold the provider's fields; the paged track
+				// stays a named topology loss instead of silently flattening.
+				self::append_receipt_entries( $layout['receipt'], 'losses', array(
+					array(
+						'dimension'   => 'topology',
+						'reason_code' => 'provider_form_steps_unrepresentable',
+						'node_hash'   => hash( 'sha256', $step_plan['track'] ),
+					),
+				) );
+				$inner_blocks[] = $generated_submit;
+			} else {
+				$inner_blocks = Static_Site_Importer_Form_Step_Projection::blocks( $step_blocks, $step_hooks, $generated_submit, $step_claim['navigation'] );
+				$form_attrs   = array_merge( $form_attrs, Static_Site_Importer_Form_Step_Projection::confirmation_attributes( $step_claim['completion'] ) );
+			}
+		}
+		$inner_blocks           = Static_Site_Importer_Form_Step_Projection::without_source_controls( $inner_blocks );
+		$field_blocks           = Static_Site_Importer_Form_Step_Projection::without_source_controls( $field_blocks );
 		$box_targets            = $topology['provider_layout_targets'];
 		$overlay_graph          = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( Static_Site_Importer_Form_Layout_Projection::split_form_box( $provider_graph ), is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array(), $box_targets );
 		$overlay_graph['nodes'] = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || 'form-box' === ( $node['id'] ?? '' ) || isset( $box_targets[ (string) ( $node['id'] ?? '' ) ] ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
@@ -765,7 +846,15 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			$overlay_graph = $overlay_form['layout_graph'];
 		}
+		$option_presenters = array();
+		foreach ( $aria_groups['presenters'] as $field_index => $presenter ) {
+			$option_presenters[ $presenter['carrier'] ]        = true;
+			$presentation_descriptors[ $presenter['carrier'] ] = Static_Site_Importer_Form_Layout_Projection::choice_option_descriptor( $scope, $field_index );
+		}
 		foreach ( array_keys( $suppressed_controls ) as $control_index ) {
+			if ( isset( $option_presenters[ $control_index ] ) ) {
+				continue;
+			}
 			unset( $overlay_form['presentation_graph']['controls'][ $control_index ] );
 		}
 		foreach ( is_array( $topology['grid_span_submit_controls'] ?? null ) ? $topology['grid_span_submit_controls'] : array() as $span_control ) {
@@ -797,6 +886,17 @@ class Static_Site_Importer_Form_Seeder {
 			if ( isset( $presentation_descriptors[ $row_control ] ) ) {
 				$presentation_descriptors[ $row_control ] = Static_Site_Importer_Form_Layout_Projection::with_submit_row_button_box( $presentation_descriptors[ $row_control ] );
 			}
+		}
+		$action_styles = null === $step_plan ? array() : Static_Site_Importer_Form_Step_Projection::action_presentation( $step_claim['navigation_nodes'], $step_claim['navigation'] );
+		if ( array() !== $action_styles ) {
+			// The source step action has no control of its own; it is presented
+			// as one more indexed presentation row for the provider step buttons.
+			$action_index                                     = count( $controls );
+			$overlay_form['presentation_graph']['controls'][] = array(
+				'index'   => $action_index,
+				'control' => array( 'styles' => $action_styles ),
+			);
+			$presentation_descriptors[ $action_index ]        = Static_Site_Importer_Form_Step_Projection::action_descriptor( $scope );
 		}
 		$target_map             = Static_Site_Importer_Form_Layout_Projection::provider_layout_target_map( $overlay_form, $scope, $presentation_descriptors, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
 		$presentation_graph     = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
@@ -895,6 +995,21 @@ class Static_Site_Importer_Form_Seeder {
 			$row['form_visual_state_diagnostics'] = $visual_state['diagnostics'];
 		}
 		return Static_Site_Importer_Form_Mapping_Plan::prepared( $form, $field_blocks, $form_block, $host['shell'], $row );
+	}
+
+	/**
+	 * Fold ARIA choice groups into the labelled-fieldset radio groups.
+	 *
+	 * @param array<string,mixed> $groups      Labelled-fieldset radio groups.
+	 * @param array<string,mixed> $aria_groups ARIA choice groups.
+	 * @return array<string,mixed>
+	 */
+	private static function with_choice_groups( array $groups, array $aria_groups ): array {
+		$groups['groups']                    += $aria_groups['groups'];
+		$groups['suppressed_controls']       += $aria_groups['suppressed_controls'];
+		$groups['represented_semantic_nodes'] = array_merge( $groups['represented_semantic_nodes'], $aria_groups['represented_semantic_nodes'] );
+		$groups['operations']                 = array_merge( $groups['operations'], $aria_groups['operations'] );
+		return $groups;
 	}
 
 	/**
