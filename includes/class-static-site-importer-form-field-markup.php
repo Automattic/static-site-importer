@@ -168,6 +168,173 @@ final class Static_Site_Importer_Form_Field_Markup {
 	}
 
 	/**
+	 * Aggregate a choice group the producer names with an ARIA group role and
+	 * accessible name into one provider choice field.
+	 *
+	 * The group's direct children are its native radio or checkbox inputs, each
+	 * optionally carried by the `button[role=radio|checkbox]` that draws it. The
+	 * inputs submit the value, so they become the field's options; the drawing
+	 * buttons are the provider's button choice style. Wrappers that hold nothing
+	 * but this group belong to the field and are represented by it.
+	 *
+	 * @return array{groups:array<int,array<string,mixed>>,suppressed_controls:array<int,bool>,represented_semantic_nodes:array<int,string>,represented_layout_nodes:array<int,string>,operations:array<int,array<string,mixed>>}
+	 */
+	public static function aria_choice_groups( array $form, array $controls ): array {
+		$result = array(
+			'groups'                     => array(),
+			'suppressed_controls'        => array(),
+			'represented_semantic_nodes' => array(),
+			'represented_layout_nodes'   => array(),
+			'operations'                 => array(),
+		);
+		$nodes  = $form['control_topology']['nodes'] ?? null;
+		if ( ! is_array( $nodes ) ) {
+			return $result;
+		}
+		$children = array();
+		$parents  = array();
+		foreach ( $nodes as $node ) {
+			if ( ! is_array( $node ) || ! is_string( $node['id'] ?? null ) ) {
+				return $result;
+			}
+			$parent                  = is_string( $node['parent'] ?? null ) ? $node['parent'] : '$root';
+			$children[ $parent ][]   = $node;
+			$parents[ $node['id'] ]  = $parent;
+		}
+		foreach ( $children as &$siblings ) {
+			usort( $siblings, static fn ( array $left, array $right ): int => $left['order'] <=> $right['order'] );
+		}
+		unset( $siblings );
+		$descendant_controls = static function ( string $id ) use ( &$descendant_controls, $children ): array {
+			$found = array();
+			foreach ( $children[ $id ] ?? array() as $child ) {
+				if ( 'control' === ( $child['kind'] ?? null ) && is_int( $child['control'] ?? null ) ) {
+					$found[] = $child['control'];
+				} elseif ( is_string( $child['id'] ?? null ) ) {
+					$found = array_merge( $found, $descendant_controls( $child['id'] ) );
+				}
+			}
+			return $found;
+		};
+		$inputs_by_name = array();
+		foreach ( $controls as $control_index => $control ) {
+			$type = is_array( $control ) ? strtolower( trim( (string) ( $control['type'] ?? '' ) ) ) : '';
+			if ( is_array( $control ) && 'input' === strtolower( trim( (string) ( $control['tag'] ?? '' ) ) ) && in_array( $type, array( 'radio', 'checkbox' ), true ) ) {
+				$inputs_by_name[ $type . "\n" . trim( (string) ( $control['name'] ?? '' ) ) ][] = $control_index;
+			}
+		}
+
+		foreach ( $nodes as $group ) {
+			if ( 'wrapper' !== ( $group['kind'] ?? null ) || ! in_array( $group['group_role'] ?? null, array( 'radiogroup', 'group' ), true ) || ! is_string( $group['group_label'] ?? null ) ) {
+				continue;
+			}
+			$label = trim( (string) preg_replace( '/\s+/', ' ', $group['group_label'] ) );
+			if ( '' === $label ) {
+				continue;
+			}
+			$inputs      = array();
+			$carriers    = array();
+			$pending     = null;
+			$well_formed = true;
+			foreach ( $children[ $group['id'] ] ?? array() as $child ) {
+				$index   = 'control' === ( $child['kind'] ?? null ) && is_int( $child['control'] ?? null ) ? $child['control'] : null;
+				$control = null === $index ? null : ( $controls[ $index ] ?? null );
+				if ( ! is_array( $control ) ) {
+					$well_formed = false;
+					break;
+				}
+				$tag  = strtolower( trim( (string) ( $control['tag'] ?? '' ) ) );
+				$type = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
+				if ( 'button' === $tag && 'button' === $type && in_array( strtolower( (string) ( $control['role'] ?? '' ) ), array( 'radio', 'checkbox' ), true ) && null === $pending ) {
+					$pending = $index;
+					continue;
+				}
+				if ( 'input' !== $tag || ! in_array( $type, array( 'radio', 'checkbox' ), true ) ) {
+					$well_formed = false;
+					break;
+				}
+				$inputs[]           = $index;
+				$carriers[ $index ] = $pending;
+				$pending            = null;
+			}
+			if ( ! $well_formed || null !== $pending || count( $inputs ) < 2 || count( $inputs ) > 16 ) {
+				continue;
+			}
+			$first     = $controls[ $inputs[0] ];
+			$type      = strtolower( trim( (string) ( $first['type'] ?? '' ) ) );
+			$name      = trim( (string) ( $first['name'] ?? '' ) );
+			$same_name = array_filter( $inputs, static fn ( int $index ): bool => strtolower( trim( (string) ( $controls[ $index ]['type'] ?? '' ) ) ) === $type && trim( (string) ( $controls[ $index ]['name'] ?? '' ) ) === $name );
+			// Every input sharing this name must sit in this group, or one provider
+			// field would split a source value across fields.
+			if ( '' === $name || count( $same_name ) !== count( $inputs ) || count( $inputs_by_name[ $type . "\n" . $name ] ?? array() ) !== count( $inputs ) ) {
+				continue;
+			}
+			$carried  = count( array_filter( $carriers, 'is_int' ) );
+			$options  = array();
+			$required = false;
+			foreach ( $inputs as $index ) {
+				$input   = $controls[ $index ];
+				$carrier = is_int( $carriers[ $index ] ) ? $controls[ $carriers[ $index ] ] : array();
+				$option  = self::control_text( $carrier );
+				if ( '' === $option ) {
+					$option = trim( (string) ( $input['value'] ?? '' ) );
+				}
+				if ( '' === $option ) {
+					$well_formed = false;
+					break;
+				}
+				$options[] = $option;
+				$required  = $required || ! empty( $input['required'] ) || 'true' === strtolower( trim( (string) ( $input['aria-required'] ?? $input['aria_required'] ?? '' ) ) );
+			}
+			if ( ! $well_formed || ( 0 !== $carried && count( $inputs ) !== $carried ) ) {
+				continue;
+			}
+
+			$group_control = array_diff_key( $first, array_flip( array( 'description', 'value', 'readonly', 'checked', 'native_state', 'label_visible' ) ) );
+			$group_control = array_merge(
+				$group_control,
+				array(
+					'text'    => $label,
+					'label'   => $label,
+					'options' => $options,
+				)
+			);
+			if ( $required ) {
+				$group_control['required'] = true;
+			}
+			if ( 0 !== $carried ) {
+				$group_control['choice_style'] = 'button';
+			}
+			$members                         = array_merge( $inputs, array_values( array_filter( $carriers, 'is_int' ) ) );
+			$result['groups'][ $inputs[0] ]  = $group_control;
+			foreach ( $members as $index ) {
+				if ( $index !== $inputs[0] ) {
+					$result['suppressed_controls'][ $index ] = true;
+				}
+			}
+			// The group and every ancestor holding only its controls are the field.
+			$owned = array( $group['id'] );
+			for ( $ancestor = $parents[ $group['id'] ] ?? '$root'; '$root' !== $ancestor; $ancestor = $parents[ $ancestor ] ?? '$root' ) {
+				if ( array() !== array_diff( $descendant_controls( $ancestor ), $members ) ) {
+					break;
+				}
+				$owned[] = $ancestor;
+			}
+			$result['represented_semantic_nodes'] = array_merge( $result['represented_semantic_nodes'], $owned );
+			$result['represented_layout_nodes']   = array_merge( $result['represented_layout_nodes'], $owned, array_map( static fn ( int $index ): string => 'control-' . $index, $members ) );
+			$result['operations'][]               = array(
+				'dimension'     => 'semantic',
+				'strategy'      => 'provider_aria_choice_group_equivalent',
+				'target_hash'   => hash( 'sha256', $group['id'] ),
+				'control_count' => count( $inputs ),
+				'choice_style'  => 0 !== $carried ? 'button' : 'list',
+			);
+		}
+
+		return $result;
+	}
+
+	/**
 	 * Read labelled-fieldset legends from producer topology metadata.
 	 *
 	 * @param array<int,mixed> $nodes
@@ -1014,7 +1181,12 @@ final class Static_Site_Importer_Form_Field_Markup {
 
 		$prefix = '';
 		$suffix = '';
-		if ( 'jetpack/contact-form' === $name ) {
+		if ( is_string( $block['saved']['open'] ?? null ) && is_string( $block['saved']['close'] ?? null ) ) {
+			// A provider block whose save() output is fixed markup around its inner
+			// blocks declares that markup with the block.
+			$prefix = $block['saved']['open'];
+			$suffix = $block['saved']['close'];
+		} elseif ( 'jetpack/contact-form' === $name ) {
 			$classes = 'wp-block-jetpack-contact-form';
 			if ( isset( $attrs['className'] ) && is_scalar( $attrs['className'] ) && '' !== trim( (string) $attrs['className'] ) ) {
 				$classes .= ' ' . trim( (string) $attrs['className'] );

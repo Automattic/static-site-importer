@@ -1734,6 +1734,19 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				}
 				$row['presentation_graph'] = $presentation['graph'];
 			}
+			if ( array_key_exists( 'steps', $form ) ) {
+				// A declared step track names layout graph nodes, so it is admitted
+				// only against the graph this row carries.
+				$steps = self::normalize_form_steps( $form['steps'], $row['layout_graph'] ?? null );
+				if ( isset( $steps['error'] ) ) {
+					$errors[] = array(
+						'path'    => $path_prefix . '.steps',
+						'message' => $steps['error'],
+					);
+					continue;
+				}
+				$row['steps'] = $steps['steps'];
+			}
 			$form_key = self::form_entity_key( $row );
 			if ( isset( $seen_forms[ $form_key ] ) ) {
 				$errors[] = array(
@@ -1837,6 +1850,24 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'diagnostics' => array_slice( $candidate['diagnostics'], 0, 32 ),
 			),
 		);
+	}
+
+	/**
+	 * Admit a producer step track (FormStepTrackDetector::assertValid()) against
+	 * the layout graph whose nodes it names.
+	 *
+	 * @return array{steps?:array<string,mixed>,error?:string}
+	 */
+	private static function normalize_form_steps( mixed $candidate, mixed $layout_graph ): array {
+		if ( ! is_array( $candidate ) || ! is_array( $layout_graph ) ) {
+			return array( 'error' => 'steps must be a producer step track accompanied by its layout graph.' );
+		}
+		try {
+			\Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Style\FormStepTrackDetector::assertValid( $candidate, $layout_graph );
+		} catch ( InvalidArgumentException $error ) {
+			return array( 'error' => 'steps violate the producer contract: ' . $error->getMessage() );
+		}
+		return array( 'steps' => $candidate );
 	}
 
 	/**
