@@ -488,7 +488,19 @@ failures go to the capture producer; finding packets owned by `blocks-engine/*`
 go to Blocks Engine; other finding packets, import failures and
 materialization-comparison failures go to SSI. Each routed repository gets
 `evaluations/<instance>/i<n>/repairs/<repo>.json` with its findings, the
-composed component SHAs, stage reports and import quality.
+composed component SHAs, stage reports, import quality and a sorted `scope`
+array. Scope is derived from finding packet owners of the form
+`<repository>/<component>` when that top-level component directory exists in
+the composed checkout. Bare repository owners and failures without an owner do
+not add scope.
+
+The repair Cook prompt names the owning component paths (`scope_text`) and says
+the fix belongs there: changes elsewhere do not address the finding. For a
+scoped repair, its verify program first requires at least one changed path
+under a scope directory, considering both committed changes against the
+repository's pinned base and uncommitted working-tree changes, before running
+the configured repository tests. Unscoped repairs run only their configured
+tests.
 
 **Options.** `--task-url` (or `SSI_URL_LOOP_TASK_URL`) names the tracker every
 repair Cook works on; it is required unless every repository names its own
