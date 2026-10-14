@@ -1847,7 +1847,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 						break 2;
 					}
 				}
-				$cells[] = array( 'id' => $id, 'control' => $branch[0], 'layout' => $cell_layout, 'variants' => $cell_variants );
+				$cells[] = array(
+					'id'       => $id,
+					'control'  => $branch[0],
+					'layout'   => $cell_layout,
+					'variants' => $cell_variants,
+				);
 			}
 			if ( count( $cells ) !== count( $siblings ) ) {
 				continue;
@@ -1855,18 +1860,28 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			foreach ( $cells as $cell ) {
 				$target_id = 'field-' . $cell['control'];
 				if ( ! empty( $cell['layout'] ) ) {
-					$s->overlay_node_targets[] = array( 'id' => $target_id, 'layout' => $cell['layout'] );
+					$s->overlay_node_targets[] = array(
+						'id'     => $target_id,
+						'layout' => $cell['layout'],
+					);
 				}
 				foreach ( $cell['variants'] as $variant ) {
-					$s->responsive_variant_targets[] = array( 'node' => $target_id, 'condition' => $variant['condition'], 'layout_patch' => self::layout_patch( $variant ) );
+					$s->responsive_variant_targets[] = array(
+						'node'         => $target_id,
+						'condition'    => $variant['condition'],
+						'layout_patch' => self::layout_patch( $variant ),
+					);
 				}
 				$s->overlay_represented_nodes[] = $cell['id'];
 			}
 			$s->form_classes[] = 'ssi-source-field-list';
-			$field_list_layout             = $parent_layout + array( 'wrap' => 'wrap' );
-			$field_list_layout['display']  = 'flex';
+			$field_list_layout              = $parent_layout + array( 'wrap' => 'wrap' );
+			$field_list_layout['display']   = 'flex';
 			$field_list_layout['direction'] = 'row';
-			$s->overlay_node_targets[] = array( 'id' => 'field-list', 'layout' => $field_list_layout );
+			$s->overlay_node_targets[]      = array(
+				'id'     => 'field-list',
+				'layout' => $field_list_layout,
+			);
 			foreach ( $s->variants_by_node[ $parent ] ?? array() as $variant ) {
 				$patch  = self::layout_patch( $variant );
 				$proven = ! empty( $patch ) && Static_Site_Importer_Provider_Layout_Overlay::layout_values_are_safe( $patch );
@@ -1877,11 +1892,20 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				if ( ! $proven ) {
 					continue;
 				}
-				$s->responsive_variant_targets[] = array( 'node' => 'field-list', 'condition' => $variant['condition'], 'layout_patch' => $patch );
+				$s->responsive_variant_targets[] = array(
+					'node'         => 'field-list',
+					'condition'    => $variant['condition'],
+					'layout_patch' => $patch,
+				);
 			}
 			$s->overlay_represented_nodes[] = $parent;
 			$projected = true;
-			$s->operations[] = array( 'dimension' => 'layout', 'strategy' => 'provider_flex_cell_row_transposition', 'target_hash' => hash( 'sha256', $parent ), 'field_count' => count( $cells ) );
+			$s->operations[] = array(
+				'dimension'   => 'layout',
+				'strategy'    => 'provider_flex_cell_row_transposition',
+				'target_hash' => hash( 'sha256', $parent ),
+				'field_count' => count( $cells ),
+			);
 		}
 		if ( $projected ) {
 			$s->suppressed_layout_properties['form'] = array_values( array_unique( array_merge( $s->suppressed_layout_properties['form'] ?? array(), array( 'display', 'direction', 'wrap' ) ) ) );
