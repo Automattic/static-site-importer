@@ -468,10 +468,13 @@ Each iteration runs four steps:
      `import --single-step --state` because PHP.wasm has no subprocesses.
    - **Compare.** While Codebox serves the imported site, the `materialization`
      comparison measures WordPress against the capture.
-2. **`fix-ssi`, `fix-blocks-engine`, `fix-capture`** are Homeboy Cooks, each
-   gated on findings routed to its repository. A Cook receives only that
-   repository's evidence file and opens a ready-for-review PR on the iteration's
-   repair branch; nothing merges automatically.
+ 2. **`repair`** is one Homeboy Cook step with `foreach` over the routed repair
+    items. It fans out up to three independent repository repairs; each Cook
+    receives that repository's evidence, tracker, branch and verify commands.
+    The `any` join lets the next evaluation run when at least one repair passes,
+    even if another repository's repair fails. If every repair fails, the join
+    fails the workflow instance. Repairs open ready-for-review PRs; nothing merges
+    automatically.
 
 **Verdict.** `accepted` requires a passing capture comparison, a passing
 materialization comparison, `quality_pass`, and zero unsupported fallback, core

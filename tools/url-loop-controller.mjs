@@ -17,8 +17,8 @@ const LOSS_COUNTS = ['unsupported_fallback_count', 'core_html_block_count', 'fre
 
 /** Repositories the loop always composes and repairs. */
 export const FIXED_REPOSITORIES = {
-  'static-site-importer': { role: 'importer', step: 'fix-ssi', option: 'ssi', base: 'main', remote: 'https://github.com/Automattic/static-site-importer.git', verify: ['npm test'] },
-  'blocks-engine': { role: 'compiler', step: 'fix-blocks-engine', option: 'blocksEngine', base: 'trunk', remote: 'https://github.com/Automattic/blocks-engine.git', verify: ['composer --working-dir=php-transformer test'] },
+  'static-site-importer': { role: 'importer', base: 'main', remote: 'https://github.com/Automattic/static-site-importer.git', verify: ['npm test'] },
+  'blocks-engine': { role: 'compiler', base: 'trunk', remote: 'https://github.com/Automattic/blocks-engine.git', verify: ['composer --working-dir=php-transformer test'] },
 };
 export const CAPTURE_PRODUCER_ENV = 'SSI_URL_LOOP_CAPTURE_PRODUCER';
 const CAPTURE_RECEIPT_FILE = 'capture-receipt.json';
@@ -150,7 +150,7 @@ export function buildUrlProofWorkflow(input) {
   const loopId = input.instance ? `${sourceId}-${input.instance}` : sourceId;
   const root = path.resolve(input.outputRoot || path.join(workspace, 'artifacts', 'url-loop', loopId));
   const node = path.resolve(input.nodeExecutable || process.execPath);
-  const fixed = (repo, checkout) => ({ role: FIXED_REPOSITORIES[repo].role, path: path.resolve(checkout), remote: FIXED_REPOSITORIES[repo].remote, base: FIXED_REPOSITORIES[repo].base });
+  const fixed = (repo, checkout, tracker, verify) => ({ role: FIXED_REPOSITORIES[repo].role, path: path.resolve(checkout), remote: FIXED_REPOSITORIES[repo].remote, base: FIXED_REPOSITORIES[repo].base, task_url: taskUrl(tracker), verify: [verify || FIXED_REPOSITORIES[repo].verify].flat() });
   const { checkout, remote, base, repository } = producer;
   const commands = { build: producer.build, capture: producer.capture, compare: producer.compare, compare_candidate: producer.compare_candidate, compare_report: producer.compare_report };
   const context = {
@@ -159,9 +159,9 @@ export function buildUrlProofWorkflow(input) {
     root,
     workspace,
     repositories: {
-      'static-site-importer': fixed('static-site-importer', workspace),
-      'blocks-engine': fixed('blocks-engine', blocksEngine),
-      [repository]: { role: 'capture', path: checkout, remote, base },
+      'static-site-importer': fixed('static-site-importer', workspace, input.ssiTaskUrl, input.ssiVerify),
+      'blocks-engine': fixed('blocks-engine', blocksEngine, input.blocksEngineTaskUrl, input.blocksEngineVerify),
+      [repository]: { role: 'capture', path: checkout, remote, base, task_url: taskUrl(producer.task_url), verify: producer.verify },
     },
     capture_producer: { repository, ...commands, ...(producer.failure_details ? { failure_details: producer.failure_details } : {}) },
     wp_codebox_bin: path.resolve(wpCodeboxBin),
@@ -172,21 +172,17 @@ export function buildUrlProofWorkflow(input) {
   // The context is part of the pinned definition, so it is digested into the
   // instance identity and can never drift under a running instance.
   const evaluate = { program: node, args: [MODULE_PATH, 'evaluate', '--url', '{{inputs.url}}', '--instance', '{{instance}}', '--iteration', '{{iteration}}', '--context', JSON.stringify(context)], cwd: workspace };
-  const cook = (repo, tracker, verify) => ({
-    repo,
-    'task-url': taskUrl(tracker),
-    head: repairBranch('{{instance}}', repo, '{{iteration}}'),
+  const cook = () => ({
+    repo: '{{item.repository}}',
+    'task-url': '{{item.task_url}}',
+    head: '{{item.head}}',
     placement: input.fixPlacement || 'local',
     ...(input.fixBackend ? { backend: input.fixBackend } : {}),
-    'provider-evidence': JSON.stringify({ id: `${repo}-evaluation`, source: `{{steps.evaluate.output/repairs/${repo}/report_path}}` }),
-    prompt: `Repair the ${repo} findings for {{inputs.url}} (URL repair loop {{instance}}, iteration {{iteration}}). The ${repo}-evaluation provider evidence is the scoped work list with the composed candidate SHAs and stage reports. Fix the cause generically in ${repo}; the next iteration measures this branch.`,
-    verify,
+    'provider-evidence': JSON.stringify({ id: '{{item.repository}}-evaluation', source: '{{item.report_path}}' }),
+    prompt: 'Repair the {{item.repository}} findings for {{inputs.url}} (URL repair loop {{instance}}, iteration {{iteration}}). The provider evidence is the scoped work list with composed candidate SHAs and stage reports. Fix the cause generically in {{item.repository}}; the next iteration measures this branch.',
+    verify: '{{item.verify}}',
     'draft-pr': false,
   });
-  const repairSteps = [
-    ...Object.entries(FIXED_REPOSITORIES).map(([repo, settings]) => ({ id: settings.step, repo, cook: cook(repo, input[`${settings.option}TaskUrl`], [input[`${settings.option}Verify`] || settings.verify].flat()) })),
-    { id: 'fix-capture', repo: repository, cook: cook(repository, producer.task_url, producer.verify) },
-  ];
   const workflow = {
     schema: WORKFLOW_SCHEMA,
     id: WORKFLOW_ID,
@@ -196,7 +192,7 @@ export function buildUrlProofWorkflow(input) {
     iterate: { until: { step: 'evaluate', output: '/verdict', equals: 'accepted' }, max_iterations: maxIterations },
     steps: [
       { id: 'evaluate', timeout: '90m', exec: evaluate },
-      ...repairSteps.map(({ id, repo, cook: definition }) => ({ id, needs: ['evaluate'], when: { step: 'evaluate', output: `/repairs/${repo}`, exists: true }, retry: { max: 1, on: ['failed'] }, cook: definition })),
+      { id: 'repair', needs: ['evaluate'], when: { step: 'evaluate', output: '/verdict', equals: 'findings' }, foreach: '{{steps.evaluate.output/repair_items}}', max_parallel: 3, join: 'any', retry: { max: 1, on: ['failed'] }, cook: cook() },
     ],
   };
   return { workflow, context, inputs: { url } };
@@ -507,8 +503,17 @@ export async function runEvaluation({ context, url, instance, iteration }) {
   return { evaluation, report_path: reportPath };
 }
 
+/**
+ * One Cook gate from a repository's verify commands. Homeboy substitutes a
+ * templated array as its JSON, so each `foreach` item carries the commands as
+ * a single shell program; every command must pass, in order.
+ */
+export function verifyProgram(commands) {
+  return [commands].flat().map((command) => `(${command})`).join(' && ');
+}
+
 /** The evaluate step output the workflow gates and Cook evidence read. */
-export function evaluationVerdict(evaluation, reportPath) {
+export function evaluationVerdict(evaluation, reportPath, { instance, iteration, repositories } = {}) {
   return {
     verdict: evaluation.verdict,
     report_path: reportPath,
@@ -520,6 +525,7 @@ export function evaluationVerdict(evaluation, reportPath) {
     components: Object.fromEntries(Object.entries(evaluation.components || {}).map(([repo, record]) => [repo, { head_sha: record.head_sha, merged: record.merged.map((item) => item.branch) }])),
     // Compact: the findings live in each repository's evidence file.
     repairs: Object.fromEntries(Object.entries(evaluation.repairs || {}).map(([repo, work]) => [repo, { findings: work.findings.length, report_path: work.report_path }])),
+    repair_items: evaluation.verdict === 'findings' ? Object.entries(evaluation.repairs || {}).map(([repo, work]) => ({ repository: repo, report_path: work.report_path, head: repairBranch(instance, repo, iteration), task_url: repositories[repo].task_url, verify: verifyProgram(repositories[repo].verify) })) : [],
   };
 }
 
@@ -547,7 +553,7 @@ async function main() {
   const options = parseArgs(argv);
   if (operation === 'evaluate') {
     const { evaluation, report_path: reportPath } = await runEvaluation({ context: JSON.parse(options.context), url: options.url, instance: options.instance, iteration: options.iteration });
-    const verdict = evaluationVerdict(evaluation, reportPath);
+    const verdict = evaluationVerdict(evaluation, reportPath, { instance: options.instance, iteration: options.iteration, repositories: JSON.parse(options.context).repositories });
     writeStepOutput(verdict);
     // A typed blocker fails the step, and with it the workflow instance.
     if (verdict.verdict === 'blocked') throw new Error(`evaluation_blocked:${verdict.blocker}`);
