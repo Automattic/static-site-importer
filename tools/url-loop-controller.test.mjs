@@ -8,7 +8,7 @@ import {
   CAPTURE_PRODUCER_ENV, LoopBlocker, WORKFLOW_ID, WORKFLOW_SCHEMA,
   buildUrlProofWorkflow, captureCommands, codeboxArgs, codeboxRecipe, compareResult, composeRepository, evaluateLocalEvidence,
   deriveRepairScopes, evaluationVerdict, expandTemplate, importRequest, locateCapture, orderRepairBranches, parseArgs, readImportState, repairBranch,
-  evaluationEnv, resolveCaptureProducer, routeFindings, sourceIdentity, verifyProgram, writeRepairEvidence,
+  evaluationEnv, resolveCaptureProducer, topLevelDirectoryNames, routeFindings, sourceIdentity, verifyProgram, writeRepairEvidence,
 } from './url-loop-controller.mjs';
 
 const url = 'https://example.com/';
@@ -350,4 +350,17 @@ test('evaluation children use a temp directory the iteration owns, never a pinne
   assert.equal(env.PATH, '/bin');
   assert.equal(env.HOME, '/h');
   assert.ok(fs.statSync(owned).isDirectory());
+});
+
+test('repair scope survives removal of the composed candidate checkout', () => {
+  const checkout = tmp('ssi-candidate-');
+  fs.mkdirSync(path.join(checkout, 'php-transformer'));
+  fs.mkdirSync(path.join(checkout, 'packages'));
+  fs.mkdirSync(path.join(checkout, '.git'));
+  fs.writeFileSync(path.join(checkout, 'README.md'), 'x');
+  const recorded = topLevelDirectoryNames(checkout);
+  assert.deepEqual([...recorded].sort(), ['packages', 'php-transformer']);
+  fs.rmSync(checkout, { recursive: true, force: true });
+  const findings = [{ kind: 'finding_packet', owner: 'blocks-engine/php-transformer' }, { kind: 'finding_packet', owner: 'blocks-engine/absent' }, { kind: 'materialization_compare_failed' }];
+  assert.deepEqual(deriveRepairScopes('blocks-engine', findings, '', (component) => recorded.has(component)), ['php-transformer/']);
 });

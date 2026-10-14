@@ -210,6 +210,11 @@ export function routeFindings({ captureRepository, captureFailures = [], capture
   return repairs;
 }
 
+/** Names of a checkout's top-level directories. */
+export function topLevelDirectoryNames(checkout) {
+  return new Set(fs.readdirSync(checkout, { withFileTypes: true }).filter((entry) => entry.isDirectory() && entry.name !== '.git').map((entry) => entry.name));
+}
+
 /** Derive repository-relative component scopes from finding owners that exist in the checkout. */
 export function deriveRepairScopes(repository, findings, checkout, isDirectory = (directory) => fs.statSync(directory).isDirectory()) {
   const scopes = new Set();
@@ -459,6 +464,7 @@ export async function runEvaluation({ context, url, instance, iteration }) {
   const reportPath = path.join(directory, 'evaluation.json');
   const env = evaluationEnv(process.env, context.runtime_toolchain?.env, directory);
   const components = {};
+  const topLevelDirectories = {};
   const evidence = {};
   let blocker = null;
   try {
@@ -505,16 +511,20 @@ export async function runEvaluation({ context, url, instance, iteration }) {
     if (!(error instanceof LoopBlocker)) throw error;
     blocker = { reason: error.reason, detail: error.detail };
   } finally {
-    // Includes a checkout left behind by a merge conflict.
+    // Includes a checkout left behind by a merge conflict. Record each
+    // candidate's top-level directories first: repair scopes are derived from
+    // them after the checkouts are gone.
     for (const [repo, { path: source }] of Object.entries(context.repositories)) {
       const checkout = path.join(directory, 'candidate', repo);
-      if (fs.existsSync(checkout)) run('git', ['worktree', 'remove', '--force', checkout], { cwd: source });
+      if (!fs.existsSync(checkout)) continue;
+      topLevelDirectories[repo] = topLevelDirectoryNames(checkout);
+      run('git', ['worktree', 'remove', '--force', checkout], { cwd: source });
     }
   }
 
   const decided = blocker ? { verdict: 'blocked', repairs: {}, loss_count: null, blocker: blocker.reason, acceptance: { solved: false, scope: 'loop_stop_condition' } } : evaluateLocalEvidence(evidence);
   for (const [repo, work] of Object.entries(decided.repairs)) {
-    work.scope = deriveRepairScopes(repo, work.findings, components[repo].path);
+    work.scope = deriveRepairScopes(repo, work.findings, '', (component) => topLevelDirectories[repo]?.has(component) === true);
   }
   const componentRecord = Object.fromEntries(Object.entries(components).map(([repo, record]) => [repo, { base: record.base, base_sha: record.base_sha, merged: record.merged, head_sha: record.head_sha }]));
   writeRepairEvidence(directory, decided.repairs, {
