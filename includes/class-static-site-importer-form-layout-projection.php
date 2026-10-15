@@ -1310,7 +1310,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			// A custom-drawn checkbox's box carries the source rules that hide the
 			// provider input and draw its replacement on the sibling label.
 			$choice_box         = self::source_choice_label( $s->form, $control_index );
-			$box_proven         = '' !== $parent && $parent === ( $choice_box['id'] ?? null ) && 'label' !== ( $choice_box['tag'] ?? '' ) && isset( $s->provider_layout_targets[ $parent ] );
+			$box_proven         = '' !== $parent && ( $choice_box['id'] ?? null ) === $parent && 'label' !== ( $choice_box['tag'] ?? '' ) && isset( $s->provider_layout_targets[ $parent ] );
 			$replacement_proven = '' !== $parent
 				&& ( in_array( $parent, $s->represented_layout_nodes, true ) || $box_proven )
 				&& 1 === count( $s->children[ $parent ] ?? array() )
@@ -3424,7 +3424,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		while ( is_string( $parent ) && isset( $nodes[ $parent ] ) ) {
 			if ( 'label' === ( $nodes[ $parent ]['tag'] ?? '' ) ) {
 				$label ??= $nodes[ $parent ];
-			} elseif ( 'div' !== ( $nodes[ $parent ]['tag'] ?? '' ) && $parent !== ( $box['id'] ?? null ) ) {
+			} elseif ( 'div' !== ( $nodes[ $parent ]['tag'] ?? '' ) && ( $box['id'] ?? null ) !== $parent ) {
 				return null;
 			}
 			$parent = $nodes[ $parent ]['parent'] ?? null;
@@ -3451,7 +3451,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		}
 		$box_classes = self::class_tokens( $box );
 		$box_classes = false === $box_classes ? array() : array_filter( $box_classes );
-		if ( empty( $box_classes ) || 1 !== count( array_filter( $nodes, static fn( array $node ): bool => $parent === ( $node['parent'] ?? null ) ) ) ) {
+		if ( empty( $box_classes ) || 1 !== count( array_filter( $nodes, static fn( array $node ): bool => ( $node['parent'] ?? null ) === $parent ) ) ) {
 			return null;
 		}
 		$layout_node = current( array_filter( $form['layout_graph']['nodes'] ?? array(), static fn( $node ): bool => is_array( $node ) && ( $control['id'] ?? null ) === ( $node['id'] ?? null ) ) );
