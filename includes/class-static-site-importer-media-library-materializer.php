@@ -317,15 +317,34 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		if ( ! $tags->next_tag( array( 'tag_name' => 'IMG' ) ) ) {
 			return $block_match[0];
 		}
+		// An authored candidate family describes these exact bytes. The block
+		// carries it in metadata because core/image saves no srcset or sizes.
+		$src       = (string) $tags->get_attribute( 'src' );
+		$selection = $attrs['metadata']['blocksEngineImageSelection'] ?? null;
+		$authored  = is_array( $selection ) && is_string( $selection['srcset'] ?? null ) && '' !== $selection['srcset'] && ( $selection['src'] ?? null ) === $src;
 		// Captured IDs belong to the source site, even when the number happens
 		// to exist here. Only the generated theme asset establishes ownership.
-		$attachment_id = self::attachment_id_for_url( (string) $tags->get_attribute( 'src' ), (string) $tags->get_attribute( 'alt' ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
+		$attachment_id = self::attachment_id_for_url( $src, (string) $tags->get_attribute( 'alt' ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error, $authored );
 		if ( null !== $error ) {
 			return $block_match[0];
 		}
-		$url = $attachment_id > 0 ? wp_get_attachment_url( $attachment_id ) : false;
+		$url = $attachment_id > 0 ? ( $authored ? wp_get_original_image_url( $attachment_id ) : wp_get_attachment_url( $attachment_id ) ) : false;
 		if ( ! is_string( $url ) || '' === $url ) {
 			return $block_match[0];
+		}
+		if ( $authored ) {
+			$srcset = self::rewrite_srcset( $selection['srcset'], $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error );
+			if ( null !== $error ) {
+				return $block_match[0];
+			}
+			// The selection stays keyed to the image it describes, now bound.
+			$attrs['metadata']['blocksEngineImageSelection'] = array_merge(
+				$selection,
+				array(
+					'src'    => $url,
+					'srcset' => $srcset,
+				)
+			);
 		}
 
 		$attrs['id'] = $attachment_id;
