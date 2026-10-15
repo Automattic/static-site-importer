@@ -3248,6 +3248,39 @@ namespace {
 	$unproven_hidden_select_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $unproven_hidden_select ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
 	$assert( 'skipped' === ( $unproven_hidden_select_row['status'] ?? '' ) && in_array( 'provider_native_control_visibility_unrepresentable', array_column( $unproven_hidden_select_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true ), 'source-hidden-native-control-without-replacement-evidence-fails-closed', wp_json_encode( $unproven_hidden_select_row ) );
 
+	// A custom-drawn checkbox: `.custom-check input { display:none }` hides the
+	// native input and the box's sibling label draws its replacement. The box
+	// becomes the provider's choice wrap, so the same source rules hide and
+	// redraw the provider checkbox beside its own label.
+	$custom_checkbox = array(
+		'selector' => 'form.consent',
+		'controls' => array( array( 'tag' => 'input', 'type' => 'email', 'name' => 'email', 'label' => 'Email' ), array( 'tag' => 'input', 'type' => 'checkbox', 'id' => 'consent-updates', 'name' => 'updates', 'value' => '1', 'label' => 'Send me updates' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ),
+		'control_topology' => array( 'schema' => 'generic/form-control-topology/v1', 'max_depth' => 8, 'max_nodes' => 128, 'truncated' => false, 'nodes' => array( array( 'id' => 'control-0', 'kind' => 'control', 'parent' => null, 'order' => 0, 'depth' => 0, 'control' => 0 ), array( 'id' => 'wrapper-0', 'kind' => 'wrapper', 'parent' => null, 'order' => 1, 'depth' => 0, 'tag' => 'div', 'class' => 'consent-row' ), array( 'id' => 'wrapper-1', 'kind' => 'wrapper', 'parent' => 'wrapper-0', 'order' => 0, 'depth' => 1, 'tag' => 'span', 'class' => 'custom-check' ), array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'depth' => 2, 'control' => 1 ), array( 'id' => 'control-2', 'kind' => 'control', 'parent' => null, 'order' => 2, 'depth' => 0, 'control' => 2 ) ) ),
+		'layout_graph' => $v2_layout_graph( array( $layout_node( 'form', array(), 'form' ), array( 'id' => 'control-0', 'kind' => 'control', 'parent' => 'form', 'order' => 0, 'source' => array( 'tag' => 'input', 'classes' => array() ), 'layout' => array(), 'provenance' => array() ), array( 'id' => 'wrapper-0', 'kind' => 'container', 'parent' => 'form', 'order' => 1, 'source' => array( 'tag' => 'div', 'classes' => array( 'consent-row' ) ), 'layout' => array(), 'provenance' => array() ), array( 'id' => 'wrapper-1', 'kind' => 'container', 'parent' => 'wrapper-0', 'order' => 0, 'source' => array( 'tag' => 'span', 'classes' => array( 'custom-check' ) ), 'layout' => array( 'display' => 'block' ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'f', 64 ), 'selector' => '.custom-check', 'condition' => null, 'properties' => array( 'display' ) ) ) ), array( 'id' => 'control-1', 'kind' => 'control', 'parent' => 'wrapper-1', 'order' => 0, 'source' => array( 'tag' => 'input', 'classes' => array() ), 'layout' => array( 'display' => 'none' ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'f', 64 ), 'selector' => '.custom-check input', 'condition' => null, 'properties' => array( 'display' ) ) ) ), array( 'id' => 'control-2', 'kind' => 'control', 'parent' => 'form', 'order' => 2, 'source' => array( 'tag' => 'button', 'classes' => array() ), 'layout' => array(), 'provenance' => array() ) ) ),
+	);
+	$custom_checkbox_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $custom_checkbox ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( 'mapped' === ( $custom_checkbox_row['status'] ?? '' ) && empty( $custom_checkbox_row['form_receipt_unaccepted_losses'] ?? array() ) && in_array( 'provider_native_control_visibility', array_column( $custom_checkbox_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ), 'custom-drawn-checkbox-box-proves-hidden-native-replacement', wp_json_encode( $custom_checkbox_row ) );
+	$custom_checkbox_class = '';
+	foreach ( parse_blocks( (string) ( $custom_checkbox_row['block_markup'] ?? '' ) ) as $custom_checkbox_block ) {
+		foreach ( $custom_checkbox_block['innerBlocks'] ?? array() as $custom_checkbox_field ) {
+			if ( 'jetpack/field-checkbox' === ( $custom_checkbox_field['blockName'] ?? '' ) ) {
+				$custom_checkbox_class = (string) ( $custom_checkbox_field['attrs']['className'] ?? '' );
+			}
+		}
+	}
+	$custom_checkbox_tokens   = array_values( array_filter( explode( ' ', $custom_checkbox_class ) ) );
+	$custom_checkbox_shell    = '<div class="grunion-field-wrap grunion-field-checkbox-wrap ' . implode( '-wrap ', $custom_checkbox_tokens ) . '-wrap"><div class=\'contact-form__checkbox-wrap\'><input id=\'consent-updates\' type=\'checkbox\' name=\'updates\' value=\'Yes\' class=\'checkbox\'/> ' . "\n" . '<label for=\'consent-updates\' class=\'grunion-field-label checkbox\'>Send me updates</label></div></div>';
+	$custom_checkbox_rendered = Static_Site_Importer_Provider_Form_Runtime_V1::project_wrapper_classes( $custom_checkbox_shell );
+	$assert( in_array( 'ssi-source-choice-box--custom-check', $custom_checkbox_tokens, true ) && 1 === preg_match( '/<div class="[^"]*\bcontact-form__checkbox-wrap\b[^"]*\bcustom-check\b[^"]*">\s*<input[^>]*type="checkbox"[^>]*>\s*<label for="consent-updates"/', $custom_checkbox_rendered ), 'custom-drawn-checkbox-box-wraps-provider-input-and-sibling-label', $custom_checkbox_rendered );
+	$unboxed_checkbox = $custom_checkbox;
+	$unboxed_checkbox['layout_graph']['nodes'][4]['provenance'][0]['selector'] = '.consent-row input';
+	$unboxed_checkbox_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $unboxed_checkbox ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( 'skipped' === ( $unboxed_checkbox_row['status'] ?? '' ) && in_array( 'provider_native_control_visibility_unrepresentable', array_column( $unboxed_checkbox_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true ), 'hidden-checkbox-keyed-on-a-non-enclosing-ancestor-fails-closed', wp_json_encode( $unboxed_checkbox_row ) );
+	$unlabelled_checkbox = $custom_checkbox;
+	unset( $unlabelled_checkbox['controls'][1]['label'] );
+	$unlabelled_checkbox_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $unlabelled_checkbox ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert( 'skipped' === ( $unlabelled_checkbox_row['status'] ?? '' ) && in_array( 'provider_native_control_visibility_unrepresentable', array_column( $unlabelled_checkbox_row['form_receipt_unaccepted_losses'] ?? array(), 'reason_code' ), true ), 'hidden-checkbox-without-a-label-to-draw-its-replacement-fails-closed', wp_json_encode( $unlabelled_checkbox_row ) );
+
 	$partial_width_form = $deep_width_form;
 	$partial_width_form['layout_graph']['nodes'][13]['layout']['width'] = '30%';
 	$partial_width_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $partial_width_form ) ) );

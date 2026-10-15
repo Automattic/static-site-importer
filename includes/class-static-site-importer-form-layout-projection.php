@@ -1307,13 +1307,17 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					break;
 				}
 			}
+			// A custom-drawn checkbox's box carries the source rules that hide the
+			// provider input and draw its replacement on the sibling label.
+			$choice_box         = self::source_choice_label( $s->form, $control_index );
+			$box_proven         = '' !== $parent && ( $choice_box['id'] ?? null ) === $parent && 'label' !== ( $choice_box['tag'] ?? '' ) && isset( $s->provider_layout_targets[ $parent ] );
 			$replacement_proven = '' !== $parent
-				&& in_array( $parent, $s->represented_layout_nodes, true )
+				&& ( in_array( $parent, $s->represented_layout_nodes, true ) || $box_proven )
 				&& 1 === count( $s->children[ $parent ] ?? array() )
 				&& 'none' !== ( $s->layout_by_node[ $parent ]['display'] ?? null )
 				&& ! isset( $s->variants_by_node[ $parent ] )
 				&& ! isset( $s->variants_by_node[ $id ] )
-				&& $class_proven;
+				&& ( $class_proven || $box_proven );
 			if ( ! $replacement_proven ) {
 				$s->losses[] = array(
 					'dimension'   => 'topology',
@@ -3414,17 +3418,61 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		}
 		$nodes   = array_column( $form['control_topology']['nodes'] ?? array(), null, 'id' );
 		$control = current( array_filter( $nodes, static fn( array $node ): bool => 'control' === ( $node['kind'] ?? '' ) && ( $node['control'] ?? null ) === $index ) );
+		$box     = is_array( $control ) ? self::source_custom_choice_box( $form, $control, $nodes ) : null;
 		$label   = null;
 		$parent  = $control['parent'] ?? null;
 		while ( is_string( $parent ) && isset( $nodes[ $parent ] ) ) {
 			if ( 'label' === ( $nodes[ $parent ]['tag'] ?? '' ) ) {
 				$label ??= $nodes[ $parent ];
-			} elseif ( 'div' !== ( $nodes[ $parent ]['tag'] ?? '' ) ) {
+			} elseif ( 'div' !== ( $nodes[ $parent ]['tag'] ?? '' ) && ( $box['id'] ?? null ) !== $parent ) {
 				return null;
 			}
 			$parent = $nodes[ $parent ]['parent'] ?? null;
 		}
-		return $label;
+		return $label ?? $box;
+	}
+
+	/**
+	 * The box of a custom-drawn checkbox: `.box input { display:none }` hides the
+	 * native control and the box's sibling label draws its replacement. The
+	 * provider's choice wrap holds the same input-then-label pair, so carrying the
+	 * box class onto it lets the source's own rules hide and redraw the provider
+	 * checkbox. Every display fact must be that unconditional box-keyed rule.
+	 *
+	 * @param array<string,mixed>               $control Control topology node.
+	 * @param array<string,array<string,mixed>> $nodes   Topology nodes by id.
+	 * @return array<string,mixed>|null The box's topology node.
+	 */
+	private static function source_custom_choice_box( array $form, array $control, array $nodes ): ?array {
+		$parent = is_string( $control['parent'] ?? null ) ? $control['parent'] : '';
+		$box    = $nodes[ $parent ] ?? null;
+		if ( ! is_array( $box ) || 'wrapper' !== ( $box['kind'] ?? null ) || ! in_array( $box['tag'] ?? 'div', array( 'div', 'span' ), true ) || '' === trim( (string) ( $form['controls'][ $control['control'] ?? -1 ]['label'] ?? '' ) ) ) {
+			return null;
+		}
+		$box_classes = self::class_tokens( $box );
+		$box_classes = false === $box_classes ? array() : array_filter( $box_classes );
+		if ( empty( $box_classes ) || 1 !== count( array_filter( $nodes, static fn( array $node ): bool => ( $node['parent'] ?? null ) === $parent ) ) ) {
+			return null;
+		}
+		$layout_node = current( array_filter( $form['layout_graph']['nodes'] ?? array(), static fn( $node ): bool => is_array( $node ) && ( $control['id'] ?? null ) === ( $node['id'] ?? null ) ) );
+		if ( ! is_array( $layout_node ) || 'none' !== ( $layout_node['layout']['display'] ?? null ) ) {
+			return null;
+		}
+		$display_facts = 0;
+		foreach ( $layout_node['provenance'] ?? array() as $fact ) {
+			if ( ! is_array( $fact ) || ! in_array( 'display', $fact['properties'] ?? array(), true ) ) {
+				continue;
+			}
+			++$display_facts;
+			$selector = is_string( $fact['selector'] ?? null ) ? trim( $fact['selector'] ) : '';
+			if ( null !== ( $fact['condition'] ?? null ) || ! preg_match( '/^([a-z][a-z0-9-]*)?((?:\.[a-zA-Z_][a-zA-Z0-9_-]*)+)\s*(?:>\s*|\s)input(?:\[type=(["\']?)checkbox\3\])?$/D', $selector, $match ) ) {
+				return null;
+			}
+			if ( ( '' !== $match[1] && ( $box['tag'] ?? 'div' ) !== $match[1] ) || array() !== array_diff( explode( '.', substr( $match[2], 1 ) ), $box_classes ) ) {
+				return null;
+			}
+		}
+		return 0 < $display_facts ? $box : null;
 	}
 
 	/** Same source facts, explicit destinations for Jetpack's editable DOM. */
