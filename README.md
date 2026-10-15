@@ -518,6 +518,11 @@ caches) captured where `start` runs. Evaluation children get a temp directory
 owned by the iteration (`evaluations/<instance>/i<n>/tmp`), never an inherited
 one. `--fix-timeout-minutes` (default 40) is each repair provider's base deadline;
 Homeboy extends a provider still producing output to three times that.
+`--fix-secret-env <NAME>` (repeatable) names an environment variable each repair
+Cook asks Homeboy to hydrate for its provider (the Cook step's `secret-env`),
+resolved from the runner's configured secrets; providers otherwise see a
+filtered environment, so a credential such as a provider header key must be
+named here.
 `--instance <token>` forks an
 independent loop for the same source. `workflow` instead of `start` prints the
 generated definition for `homeboy workflow validate -` without admitting it.
