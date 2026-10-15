@@ -321,7 +321,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		// carries it in metadata because core/image saves no srcset or sizes.
 		$src       = (string) $tags->get_attribute( 'src' );
 		$selection = $attrs['metadata']['blocksEngineImageSelection'] ?? null;
-		$authored  = is_array( $selection ) && is_string( $selection['srcset'] ?? null ) && '' !== $selection['srcset'] && $src === ( $selection['src'] ?? null );
+		$authored  = is_array( $selection ) && is_string( $selection['srcset'] ?? null ) && '' !== $selection['srcset'] && ( $selection['src'] ?? null ) === $src;
 		// Captured IDs belong to the source site, even when the number happens
 		// to exist here. Only the generated theme asset establishes ownership.
 		$attachment_id = self::attachment_id_for_url( $src, (string) $tags->get_attribute( 'alt' ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $error, $authored );
@@ -338,7 +338,13 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				return $block_match[0];
 			}
 			// The selection stays keyed to the image it describes, now bound.
-			$attrs['metadata']['blocksEngineImageSelection'] = array_merge( $selection, array( 'src' => $url, 'srcset' => $srcset ) );
+			$attrs['metadata']['blocksEngineImageSelection'] = array_merge(
+				$selection,
+				array(
+					'src'    => $url,
+					'srcset' => $srcset,
+				)
+			);
 		}
 
 		$attrs['id'] = $attachment_id;
