@@ -479,6 +479,7 @@ namespace {
 				),
 				'visual_groups'      => array(),
 				'control_containers' => array(),
+				'group_captions'     => array(),
 				'variants'           => array(),
 				'diagnostics'        => array(),
 			),
@@ -2290,7 +2291,7 @@ namespace {
 			) ),
 			'presentation_graph' => array(
 				'schema' => 'generic/computed-form-presentation/v2', 'basis' => 'source_css_cascade', 'truncated' => false,
-				'limits' => array( 'controls' => 128, 'rules_per_role' => 96 ), 'controls' => array(), 'visual_groups' => array(), 'control_containers' => array(), 'variants' => array(), 'diagnostics' => array(),
+				'limits' => array( 'controls' => 128, 'rules_per_role' => 96 ), 'controls' => array(), 'visual_groups' => array(), 'control_containers' => array(), 'group_captions' => array(), 'variants' => array(), 'diagnostics' => array(),
 				'visual_parts' => array_map(
 					static fn ( int $index ): array => array( 'id' => 'control-' . $index . '-svg-0', 'index' => $index, 'kind' => 'inline_svg', 'source_selector' => 'form button:nth-of-type(' . ( $index - 3 ) . ') > svg', 'markup' => '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h22v22H1z"/></svg>', 'intrinsic_size' => array( 'width' => 24, 'height' => 24 ), 'source_css' => array( 'state' => 'unknown' ) ),
 					array( 4, 5, 6, 7, 8 )
@@ -2775,6 +2776,7 @@ namespace {
 		'visual_parts' => array(),
 		'visual_groups' => array(),
 		'control_containers' => array( array( 'index' => 0, 'source_selector' => '.field', 'styles' => array( 'background_color' => '#fff' ), 'provenance' => array() ) ),
+		'group_captions' => array(),
 	);
 	$validated_container_padding = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $container_padding_form );
 	$container_padding_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_container_padding['forms'] ?? array() ) )['forms'][0] ?? array();
@@ -2907,7 +2909,7 @@ namespace {
 	}
 	$assert( empty( $validated_whitespace_phone_presentation['errors'] ) && 4 === count( $whitespace_phone_hooks ) && empty( array_filter( $whitespace_phone_hooks, static fn( string $hook ): bool => ! str_contains( $whitespace_phone_markup, $hook ) ) ), 'whitespace-padded-tel-shares-phone-markup-hooks-and-overlay-destinations', wp_json_encode( array( 'markup' => $whitespace_phone_markup, 'hooks' => $whitespace_phone_hooks ) ) );
 	$editor_chrome_graph = array(
-		'schema' => 'generic/computed-form-presentation/v2', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'controls' => 128, 'rules_per_role' => 96 ), 'visual_parts' => array(), 'visual_groups' => array(), 'variants' => array(), 'diagnostics' => array(),
+		'schema' => 'generic/computed-form-presentation/v2', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'controls' => 128, 'rules_per_role' => 96 ), 'visual_parts' => array(), 'visual_groups' => array(), 'group_captions' => array(), 'variants' => array(), 'diagnostics' => array(),
 		'controls' => array( array( 'index' => 0, 'control' => $presentation_role( array( 'border' => '0' ), array( 'border' ), 'input' ) ) ),
 		'control_containers' => array( array( 'index' => 0, 'source_selector' => '.field', 'styles' => array( 'border' => '1px solid rgba(30,75,110,.6)', 'background' => 'rgb(247,249,251)', 'border_radius' => '0' ), 'provenance' => array( array( 'source_path' => 'assets/forms.css', 'source_sha256' => str_repeat( 'a', 64 ), 'selector' => '.field', 'condition' => null, 'properties' => array( 'border', 'background', 'border-radius' ) ) ) ) ),
 	);
