@@ -132,18 +132,19 @@ async function validatePersistedPost(page, options, postId = options.post_id, ex
   const validation = await page.evaluate((content) => {
     const blocks = window.wp.blocks.parse(content);
     const results = [];
-    const visitBlock = (block) => {
+    const visitBlock = (block, path = []) => {
       const type = window.wp.blocks.getBlockType(block.name);
       const validation = type ? window.wp.blocks.validateBlock(block, type) : [false, [`Block type "${block.name}" is not registered.`]];
       const valid = Array.isArray(validation) ? validation[0] : validation.isValid;
-      results.push({ name: block.name, is_valid: Boolean(valid) });
-      for (const child of block.innerBlocks || []) visitBlock(child);
+      const issues = Array.isArray(validation) ? validation[1] : (validation.validationIssues || []);
+      results.push({ name: block.name, block_path: path.join('.'), is_valid: Boolean(valid), issues: Array.isArray(issues) ? issues.map((issue) => String(typeof issue === 'string' ? issue : issue.message || issue.args?.[0] || JSON.stringify(issue)).slice(0, 500)) : [] });
+      for (const [index, child] of (block.innerBlocks || []).entries()) visitBlock(child, [...path, index]);
     };
-    for (const block of blocks) visitBlock(block);
+    for (const [index, block] of blocks.entries()) visitBlock(block, [index]);
     return { schema: 'static-site-importer/runtime-editor-validation/v1', provider: 'playwright', validation_method: 'wp.blocks.validateBlock', content_source: 'rest-post-content-raw', total_blocks: results.length, valid_blocks: results.filter((row) => row.is_valid).length, invalid_blocks: results.filter((row) => !row.is_valid).length, results };
   }, persisted.content);
   if (validation.total_blocks === 0) throw new Error(`Persisted ${options.post_type}/${postId} contains zero blocks.`);
-  return { ...validation, content_sha256: contentHash(persisted.content), link: persisted.link, ...(expectedMarker ? { marker_present: persisted.content.includes(expectedMarker) } : {}), author: persisted.author, editor: persisted.user };
+  return { ...validation, results: validation.results.map((row) => ({ ...row, route: options.route })), route: options.route, post_id: postId, content_sha256: contentHash(persisted.content), link: persisted.link, ...(expectedMarker ? { marker_present: persisted.content.includes(expectedMarker) } : {}), author: persisted.author, editor: persisted.user };
 }
 
 async function openEditor(page, options, postId) {
