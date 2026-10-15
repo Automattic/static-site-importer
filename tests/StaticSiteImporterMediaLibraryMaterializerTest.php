@@ -293,6 +293,40 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 		$this->assertSame( 144, (int) wp_get_attachment_metadata( $ids[0] )['width'], 'the largest captured size is kept' );
 	}
 
+	/**
+	 * An authored candidate family rides in core/image metadata. It binds with
+	 * the image, candidate by candidate, so the render keeps the source choice.
+	 */
+	public function test_authored_image_selection_binds_with_its_image(): void {
+		$uri       = get_theme_root_uri() . '/' . $this->slug();
+		$selection = array(
+			'src'    => $uri . '/media/photo-600.png',
+			'srcset' => $uri . '/media/photo-200.png 200w, ' . $uri . '/media/photo-600.png 600w, https://cdn.example.org/photo-2048.png 2048w',
+			'sizes'  => '(max-width: 992px) 100vw, 33vw',
+		);
+		$attrs     = array( 'metadata' => array( 'blocksEngineImageSelection' => $selection ) );
+		$markup    = '<!-- wp:image ' . serialize_block_attributes( $attrs ) . ' --><figure class="wp-block-image"><img src="' . $selection['src'] . '" alt="Photo"/></figure><!-- /wp:image -->';
+		$state     = $this->state_with_page( $markup );
+		foreach ( array( 200, 600 ) as $width ) {
+			$image = imagecreatetruecolor( $width, $width );
+			imagefilledrectangle( $image, 0, 0, 1, 1, $width );
+			imagepng( $image, $this->theme_dir . '/media/photo-' . $width . '.png' );
+			imagedestroy( $image );
+		}
+
+		$report = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
+
+		$this->assertIsArray( $report );
+		$block = parse_blocks( get_post_field( 'post_content', $state['source_ids']['website/index.html'] ) )[0];
+		$bound = $block['attrs']['metadata']['blocksEngineImageSelection'] ?? array();
+		$small = (int) attachment_url_to_postid( strtok( $bound['srcset'], ' ' ) );
+		$this->assertSame( wp_get_original_image_url( $block['attrs']['id'] ), $bound['src'], 'the selection follows the bound image' );
+		$this->assertStringContainsString( 'src="' . $bound['src'] . '"', $block['innerHTML'] );
+		$this->assertGreaterThan( 0, $small, 'each theme candidate becomes an attachment' );
+		$this->assertSame( wp_get_original_image_url( $small ) . ' 200w, ' . $bound['src'] . ' 600w, https://cdn.example.org/photo-2048.png 2048w', $bound['srcset'], 'descriptors and foreign candidates keep their authored order' );
+		$this->assertSame( $selection['sizes'], $bound['sizes'] );
+	}
+
 	/** An owner's existing site icon is kept. */
 	public function test_existing_site_icon_is_kept(): void {
 		update_option( 'site_icon', 999999 );
