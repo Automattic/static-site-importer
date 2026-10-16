@@ -307,16 +307,21 @@ export function codeboxRecipe({ pluginZip, stage, wordpressVersion, importSteps 
   };
 }
 
+/**
+ * The editor stage: Codebox `wordpress.editor-open` renders the front page and
+ * its editor canvas at one width and records `wp-codebox/editor-presentation-match/v1`
+ * under `summary.editorPresentation.matchedRendering`. Absent evidence is null.
+ */
 export function readEditorPresentation(artifactsRoot) {
   if (!fs.existsSync(artifactsRoot)) return null;
   const runtimes = fs.readdirSync(artifactsRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory() && entry.name.startsWith('runtime-'));
   if (runtimes.length !== 1) return null;
   const runtime = path.join(artifactsRoot, runtimes[0].name);
-  const summary = readJsonIfPresent(path.join(runtime, EDITOR_OPEN_ARTIFACT_PREFIX, 'editor-summary.json'));
-  const match = summary?.editorPresentation?.matchedRendering;
-  if (!match) return null;
-  const screenshot = (value) => value ? path.resolve(runtime, value) : null;
-  return { passed: match.status === 'passed', status: match.status, diagnostic: match.diagnostic, comparison: match.comparison, equivalentCanvasWidths: match.equivalentCanvasWidths, majorGeometryDrift: match.majorGeometryDrift, majorVisualDivergence: match.majorVisualDivergence, unreadableContent: match.unreadableContent, hiddenContent: match.hiddenContent, unresolvedAssetCount: match.unresolvedAssetCount, screenshots: { frontend: screenshot(match.screenshots?.frontend), editor: screenshot(match.screenshots?.editor), diff: screenshot(match.screenshots?.diff) } };
+  const match = readJsonIfPresent(path.join(runtime, EDITOR_OPEN_ARTIFACT_PREFIX, 'editor-summary.json'))?.summary?.editorPresentation?.matchedRendering;
+  if (!match?.status) return null;
+  const screenshot = (value) => (typeof value === 'string' && value ? path.resolve(runtime, value) : null);
+  const { status, diagnostic = null, comparison = null, equivalentCanvasWidths, majorGeometryDrift, majorVisualDivergence, unreadableContent, hiddenContent, unresolvedAssetCount } = match;
+  return { passed: status === 'passed', status, diagnostic, comparison, equivalentCanvasWidths, majorGeometryDrift, majorVisualDivergence, unreadableContent, hiddenContent, unresolvedAssetCount, screenshots: { frontend: screenshot(match.frontendScreenshot), editor: screenshot(match.editorScreenshot), diff: screenshot(match.diffScreenshot) } };
 }
 
 export function codeboxArgs({ recipe, artifacts, port, timeoutMs }) {
