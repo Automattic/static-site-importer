@@ -32,6 +32,30 @@ test( 'overlay compaction preserves frontend and editor cascade across responsiv
 		await browser.close();
 	}
 } );
+test( 'provider form target lands on exactly one box when Jetpack nests the scoped block inside its form', async () => {
+	assert.ok( chromium, 'Playwright is required' );
+	const selector = execFileSync( 'php', [ 'tests/fixtures/provider-form-target-selector.php' ], { encoding: 'utf8' } ).trim();
+	assert.ok( selector.length > 0 );
+	const browser = await chromium.launch();
+	try {
+		const page = await browser.newPage();
+		const scope = 'ssi-form-123456789abc';
+		const markup = {
+			// Jetpack writes the block class on the container and on the block wrapper inside its form.
+			nested: `<div class="jetpack-contact-form-container ${ scope }"><form class="jetpack-contact-form__form"><div class="wp-block-jetpack-contact-form ${ scope }">fields</div></form></div>`,
+			// A later form on the page is laid out directly in the block wrapper.
+			formless: `<div class="wp-block-jetpack-contact-form ${ scope }">fields</div>`,
+		};
+		const padded = {};
+		for ( const [ name, html ] of Object.entries( markup ) ) {
+			await page.setContent( `<style>${ selector }{padding:32px}</style>${ html }` );
+			padded[ name ] = await page.locator( 'div,form' ).evaluateAll( ( nodes ) => nodes.filter( ( node ) => '32px' === getComputedStyle( node ).paddingTop ).map( ( node ) => node.tagName.toLowerCase() ) );
+		}
+		assert.deepEqual( padded, { nested: [ 'form' ], formless: [ 'div' ] } );
+	} finally {
+		await browser.close();
+	}
+} );
 function requireBrowserPrerequisites() {
 	assert.ok( chromium, 'Playwright is required; browser acceptance must not silently skip' );
 	assert.ok( existsSync( chromium.executablePath() ), `Playwright Chromium is missing at ${chromium.executablePath()}` );

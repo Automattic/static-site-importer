@@ -1657,7 +1657,7 @@ namespace {
 	$column_stack_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $column_stack_validated['forms'] ?? array() ) )['forms'][0] ?? array();
 	$column_stack_markup    = (string) ( $column_stack_row['block_markup'] ?? '' );
 	$column_stack_css       = (string) ( $column_stack_row['provider_layout_overlay_css']['css'] ?? '' );
-	$column_stack_form_rule = 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} > form\.jetpack-contact-form__form, \.ssi-form-[a-f0-9]{12}:not\(:has\(> form\.jetpack-contact-form__form\)\)\{([^}]+)\}/', $column_stack_css, $column_stack_form ) ? $column_stack_form[1] : '';
+	$column_stack_form_rule = 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} > form\.jetpack-contact-form__form, \.ssi-form-[a-f0-9]{12}:not\(:has\(> form\.jetpack-contact-form__form\)\):not\(form\.jetpack-contact-form__form \*\)\{([^}]+)\}/', $column_stack_css, $column_stack_form ) ? $column_stack_form[1] : '';
 	$assert(
 		empty( $column_stack_validated['errors'] )
 			&& 'mapped' === ( $column_stack_row['status'] ?? '' )
@@ -4535,7 +4535,7 @@ namespace {
 	$kmr_map = array_column( $kmr[2]['provider_layout_target_map']['targets'] ?? array(), 'selector', 'node' );
 	$kmr_scope = (string) ( $kmr[2]['provider_layout_target_map']['scope'] ?? '' );
 	$assert( $kmr_scope === ( $kmr_map['form-box'] ?? '' ) && str_contains( $kmr_css, $kmr_scope . '{align-self:start;grid-area:4 / 1 / 5 / 2' ) === false && str_contains( $kmr_css, $kmr_scope . '{align-self:start;grid-area:1 / 1 / 2 / 2;justify-self:start}' ), 'source-form-box-placement-lands-on-the-provider-block-wrapper', $kmr_css );
-	preg_match( '/:not\(:has\(> form\.jetpack-contact-form__form\)\)\{([^}]*grid-template-columns:100%[^}]*)\}/', $kmr_css, $kmr_grid_rule );
+	preg_match( '/:not\(:has\(> form\.jetpack-contact-form__form\)\):not\(form\.jetpack-contact-form__form \*\)\{([^}]*grid-template-columns:100%[^}]*)\}/', $kmr_css, $kmr_grid_rule );
 	$kmr_grid_declarations = array_column( \Automattic\BlocksEngine\PhpTransformer\Css\CssRuleAnalyzer::declarations( $kmr_grid_rule[1] ?? '', array( 'display', 'grid-template-columns', 'gap' ) ), 'value', 'name' );
 	$assert( str_contains( $kmr_css, ' > form.jetpack-contact-form__form, ' ) && '100%' === ( $kmr_grid_declarations['grid-template-columns'] ?? '' ) && 'grid' === ( $kmr_grid_declarations['display'] ?? '' ) && '0' === ( $kmr_grid_declarations['gap'] ?? '' ), 'all-controls-source-box-establishes-the-provider-form-container', $kmr_css );
 	$assert( 1 === preg_match( '/\.ssi-node-[a-f0-9]{12}-wrap\{[^}]*grid-area:4 \/ 1 \/ 5 \/ 2[^}]*width:156px(?:;[^}]*)?\}/', $kmr_css ), 'single-field-source-box-keeps-its-own-grid-placement', $kmr_css );
