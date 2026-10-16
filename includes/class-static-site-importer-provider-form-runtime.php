@@ -361,11 +361,14 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		}
 		// Segment direct children in document order: submit children break the
 		// field runs and keep their original position; each contiguous field run
-		// is wrapped once, so no field ever crosses a source submit.
-		$field_runs = array();
-		$run        = array();
-		$has_submit = false;
-		$has_field  = false;
+		// is wrapped once, so no field ever crosses a source submit. Without the
+		// source field-list marker the list classes are the source form's own, so
+		// its submit was an item of that list and stays a member of it.
+		$submit_is_sibling = in_array( 'ssi-source-field-list', $list_classes, true );
+		$field_runs        = array();
+		$run               = array();
+		$has_submit        = false;
+		$has_field         = false;
 		foreach ( iterator_to_array( $field_list->childNodes ) as $child ) {
 			if ( ! $child instanceof \DOMElement ) {
 				$run[] = $child;
@@ -373,6 +376,10 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			}
 			if ( self::is_submit_field_list_child( $child ) ) {
 				$has_submit = true;
+				if ( ! $submit_is_sibling ) {
+					$run[] = $child;
+					continue;
+				}
 				if ( ! empty( $run ) ) {
 					$field_runs[] = $run;
 					$run          = array();
