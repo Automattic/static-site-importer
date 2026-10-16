@@ -5,10 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
-  CAPTURE_PRODUCER_ENV, LoopBlocker, WORKFLOW_ID, WORKFLOW_SCHEMA,
+  CAPTURE_PRODUCER_ENV, EDITOR_OPEN_ARTIFACT_PREFIX, LoopBlocker, WORKFLOW_ID, WORKFLOW_SCHEMA,
   buildUrlProofWorkflow, captureCommands, codeboxArgs, codeboxRecipe, compareResult, composeRepository, evaluateLocalEvidence,
   deriveRepairScopes, evaluationVerdict, expandTemplate, importRequest, locateCapture, orderRepairBranches, parseArgs, readImportState, repairBranch,
-  evaluationEnv, resolveCaptureProducer, topLevelDirectoryNames, routeFindings, sourceIdentity, verifyProgram, writeRepairEvidence,
+  evaluationEnv, readEditorPresentation, resolveCaptureProducer, topLevelDirectoryNames, routeFindings, sourceIdentity, verifyProgram, writeRepairEvidence,
 } from './url-loop-controller.mjs';
 
 const url = 'https://example.com/';
@@ -29,7 +29,7 @@ function build(root, properties = {}) {
 }
 const step = (workflow, id) => workflow.steps.find((item) => item.id === id);
 const argOf = (args, flag) => args[args.indexOf(flag) + 1];
-const clean = { capture_repository: CAPTURE_REPO, capture_compare: { passed: true }, materialization_compare: { passed: true }, quality: { quality_pass: true, unsupported_fallback_count: 0, core_html_block_count: 0, freeform_block_count: 0, invalid_block_count: 0 } };
+const clean = { editor_presentation: { passed: true }, capture_repository: CAPTURE_REPO, capture_compare: { passed: true }, materialization_compare: { passed: true }, quality: { quality_pass: true, unsupported_fallback_count: 0, core_html_block_count: 0, freeform_block_count: 0, invalid_block_count: 0 } };
 
 test('one URL yields a bounded three-repository repair loop', () => {
   const root = tmp('ssi-workflow-');
@@ -149,11 +149,12 @@ test('each routing class reaches its owning repository', () => {
     packets: [{ owner: 'blocks-engine/php-transformer', type: 'core_html_block' }, { owner: 'static-site-importer', type: 'media' }],
     importFailures: [{ code: 'materialization_failed' }],
     materializationCompare: { passed: false, report_path: '/m.json' },
+    editorPresentation: { passed: false, status: 'failed' },
   });
   assert.deepEqual(repairs[CAPTURE_REPO].findings.map((item) => item.kind), ['capture_failure', 'capture_compare_failed']);
   assert.deepEqual(repairs['blocks-engine'].findings.map((item) => item.type), ['core_html_block']);
-  assert.deepEqual(repairs['static-site-importer'].findings.map((item) => item.kind), ['finding_packet', 'import_failure', 'materialization_compare_failed']);
-  assert.deepEqual(routeFindings({ captureRepository: CAPTURE_REPO, captureCompare: { passed: true }, materializationCompare: { passed: true } }), {});
+  assert.deepEqual(repairs['static-site-importer'].findings.map((item) => item.kind), ['finding_packet', 'import_failure', 'materialization_compare_failed', 'editor_presentation_failed']);
+  assert.deepEqual(routeFindings({ captureRepository: CAPTURE_REPO, captureCompare: { passed: true }, materializationCompare: { passed: true }, editorPresentation: { passed: true } }), {});
 });
 
 test('repair scopes come only from existing owner component directories', () => {
@@ -261,6 +262,60 @@ test('the candidate merges this instance\'s repair branches onto the base, and a
   );
 });
 
+// The shape Codebox v0.33.0 `wordpress.editor-open presentation-url=/` writes.
+function writeEditorSummary(root, matchedRendering) {
+  const directory = path.join(root, 'runtime-abc123', EDITOR_OPEN_ARTIFACT_PREFIX);
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(path.join(directory, 'editor-summary.json'), JSON.stringify({ schema: 'wp-codebox/editor-open/v1', summary: { editorPresentation: { matchedRendering } } }));
+  return path.join(root, 'runtime-abc123');
+}
+const presentationMatch = (status, comparison) => ({
+  schema: 'wp-codebox/editor-presentation-match/v1', status, equivalentCanvasWidths: true, majorGeometryDrift: status !== 'passed', majorVisualDivergence: false,
+  unreadableContent: false, hiddenContent: false, unresolvedAssetCount: 0, comparison,
+  frontendScreenshot: `${EDITOR_OPEN_ARTIFACT_PREFIX}/presentation-frontend.png`, editorScreenshot: `${EDITOR_OPEN_ARTIFACT_PREFIX}/presentation-editor.png`, diffScreenshot: `${EDITOR_OPEN_ARTIFACT_PREFIX}/presentation-diff.png`,
+});
+
+test('the editor stage reads Codebox editor-open presentation evidence', () => {
+  const failed = tmp('ssi-editor-failed-');
+  const runtime = writeEditorSummary(failed, presentationMatch('failed', { overlapMismatchRatio: 0.0618, dimensionDeltaRatio: 0.0125 }));
+  const evidence = readEditorPresentation(failed);
+  assert.equal(evidence.passed, false);
+  assert.equal(evidence.status, 'failed');
+  assert.equal(evidence.majorGeometryDrift, true);
+  assert.equal(evidence.comparison.dimensionDeltaRatio, 0.0125);
+  assert.deepEqual(evidence.screenshots, {
+    frontend: path.join(runtime, EDITOR_OPEN_ARTIFACT_PREFIX, 'presentation-frontend.png'),
+    editor: path.join(runtime, EDITOR_OPEN_ARTIFACT_PREFIX, 'presentation-editor.png'),
+    diff: path.join(runtime, EDITOR_OPEN_ARTIFACT_PREFIX, 'presentation-diff.png'),
+  });
+
+  const passed = tmp('ssi-editor-passed-');
+  writeEditorSummary(passed, presentationMatch('passed', { overlapMismatchRatio: 0.01, dimensionDeltaRatio: 0 }));
+  assert.equal(readEditorPresentation(passed).passed, true);
+
+  const unavailable = tmp('ssi-editor-unavailable-');
+  writeEditorSummary(unavailable, { schema: 'wp-codebox/editor-presentation-match/v1', status: 'unavailable', diagnostic: 'presentation-url was not supplied' });
+  assert.deepEqual([readEditorPresentation(unavailable).passed, readEditorPresentation(unavailable).diagnostic], [false, 'presentation-url was not supplied']);
+
+  assert.equal(readEditorPresentation(path.join(tmp('ssi-editor-none-'), 'absent')), null);
+  const noMatch = tmp('ssi-editor-nomatch-');
+  writeEditorSummary(noMatch, undefined);
+  assert.equal(readEditorPresentation(noMatch), null);
+});
+
+test('the verdict requires a passing editor stage and routes its failure to the importer', () => {
+  const { editor_presentation: _omitted, ...withoutEditor } = clean;
+  const missing = evaluateLocalEvidence(withoutEditor);
+  assert.deepEqual([missing.verdict, missing.blocker], ['blocked', 'evaluation_evidence_missing']);
+
+  const failed = evaluateLocalEvidence({ ...clean, editor_presentation: { passed: false, status: 'failed' } });
+  assert.equal(failed.verdict, 'findings');
+  assert.deepEqual(failed.repairs['static-site-importer'].findings.map((item) => item.kind), ['editor_presentation_failed']);
+
+  assert.equal(evaluateLocalEvidence(clean).verdict, 'accepted');
+  assert.equal(evaluationVerdict({ ...evaluateLocalEvidence(clean), ...clean, components: {} }, '/e.json', {}).editor_presentation, true);
+});
+
 test('the Codebox recipe drives SSI in stepped mode on a WordPress with WP-CLI and the form provider', () => {
   const recipe = codeboxRecipe({ pluginZip: '/p/ssi.zip', stage: '/s', wordpressVersion: '7.1', importSteps: 3 });
   assert.equal(recipe.runtime.wp, '7.1');
@@ -268,7 +323,8 @@ test('the Codebox recipe drives SSI in stepped mode on a WordPress with WP-CLI a
   assert.equal(recipe.runtime.blueprint.steps[0].pluginData.slug, 'jetpack');
   assert.deepEqual(recipe.inputs.extra_plugins, [{ source: '/p/ssi.zip', slug: 'static-site-importer', activate: true }]);
   assert.deepEqual(recipe.inputs.mounts, [{ type: 'directory', source: '/s', target: '/url-loop', mode: 'readwrite' }]);
-  assert.equal(recipe.workflow.steps.length, 3);
+  assert.equal(recipe.workflow.steps.length, 4);
+  assert.deepEqual(recipe.workflow.steps.at(-1), { command: 'wordpress.editor-open', args: ['target=front-page', 'post-type=page', 'presentation-url=/', 'wait-timeout=60s', 'capture=screenshot,editor-validity,errors', `artifact-prefix=${EDITOR_OPEN_ARTIFACT_PREFIX}`] });
   assert.match(recipe.workflow.steps[0].args[0], /^command=static-site-importer import --single-step --state=\/url-loop\/state\.json --request=\/url-loop\/request\.json --report=/);
   const args = codeboxArgs({ recipe: '/r.json', artifacts: '/a', port: 9488, timeoutMs: 3600000 });
   assert.equal(argOf(args, '--timeout'), '3600000', 'Codebox timeouts are milliseconds');
