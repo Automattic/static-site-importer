@@ -346,7 +346,16 @@ The default root is `website` with `entrypoint: "website/index.html"`. Callers c
 
 ### Finding reduction
 
-`tools/reduce-finding.mjs` performs bounded, deterministic delta debugging on a standalone HTML page, retaining removals only when a caller predicate still reproduces the failure. Run `node tools/reduce-finding.mjs --input page.html --predicate 'command {candidate}' --output reduced-case`; the command substitutes the candidate temp-file path and must exit 0 for a reproduction. Output includes `reduced.html` and counts/budget details plus a normalized failure signature in `reduction.json`. For a materialization finding, use the reduced HTML in the Blocks Engine visual parity fixture shape emitted by the module; that fixture can then be added to its corpus. This is the reducer primitive only; URL-loop orchestration and the WP Codebox predicate are follow-up work.
+`tools/reduce-finding.mjs` shrinks a standalone page to the smallest version that still shows a finding. It parses HTML with parse5 and CSS with a block-aware parser. It then runs hierarchical delta debugging: ddmin over each level of the element tree, then unwrapping elements, dropping attributes and shortening text, then ddmin over CSS rules (including whole at-rule blocks and rules nested in `@media`/`@layer`) and declarations. It repeats until a round changes nothing or `--max-calls`/`--timeout-ms` runs out.
+
+```sh
+node tools/reduce-finding.mjs --input page.html --output reduced-case \
+  --predicate 'my-check {candidate}'          # exit 0 = still reproduces
+# or check a JSON report the command prints for each candidate:
+#   --report-command 'editability-report {candidate}' --check 'metrics.raw_html_block_count > 0' --stage editability
+```
+
+The output directory holds `source.html` (the reduced page), `reduction.json` (counts, budget use and a failure signature), and `fixture.json`. `fixture.json` is a `blocks-engine/php-transformer/visual-parity-fixture/v1` fixture with 390px and 1440px viewports. Pass `--target-command '<cmd {source}>'` to write the transformer's WordPress render to `target.html`. Without it, the target is a placeholder (`metadata.target_status: "placeholder"`) for the caller to fill in. The signature digests stage, check, blocks and structural features (tags, CSS property names, at-rules, selector features, value functions) and ignores names, text and literal values. Predicates can also be functions: `reportPredicate`, `editabilityPredicate` (Blocks Engine editability report metrics such as `raw_html_block_count` or `max_nesting_depth`) and `visualParityPredicate` (visual parity report `reason_code`). The URL-loop controller does not call the reducer yet.
 
 The bounded URL entrypoint retains one fresh capture from a caller-configured
 capture command, then passes that exact generated-artifact tree through SSI's

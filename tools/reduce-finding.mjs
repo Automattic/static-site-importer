@@ -1,26 +1,439 @@
 #!/usr/bin/env node
+
+/**
+ * Reduces a URL-loop finding to a minimal standalone page.
+ *
+ * The reducer runs hierarchical delta debugging over a page: it removes
+ * element subtrees level by level, unwraps elements, drops attributes,
+ * shortens text, then removes CSS rules (including whole at-rule blocks and
+ * rules nested in them) and declarations. A change is kept only when the
+ * caller's predicate still reproduces the finding. Passes repeat until a
+ * full round changes nothing or the call budget or deadline runs out.
+ */
+
+/**
+ * External dependencies
+ */
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import crypto from 'node:crypto';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const splitTop=(s,d=',')=>{let out=[],start=0,depth=0,q='';for(let i=0;i<s.length;i++){let c=s[i];if(q){if(c===q&&s[i-1]!=='\\')q='';continue}if(c==='"'||c==="'"){q=c;continue}if('([{'.includes(c))depth++;else if(')]}'.includes(c))depth--;else if(c===d&&!depth){out.push(s.slice(start,i));start=i+1}}out.push(s.slice(start));return out};
-function parse(html){const root={tag:'#root',raw:'',children:[],parent:null},stack=[root],re=/<!--[\s\S]*?-->|<![^>]*>|<\/?[a-zA-Z][^>]*>|[^<]+/g;for(const m of html.matchAll(re)){const raw=m[0];if(raw.startsWith('</')){const tag=raw.slice(2).match(/^([\w:-]+)/)?.[1]?.toLowerCase();for(let i=stack.length-1;i>0;i--)if(stack[i].tag===tag){stack.length=i;break}}else if(/^<[a-z]/i.test(raw)){const tag=raw.slice(1).match(/^([\w:-]+)/)[1].toLowerCase(),n={tag,raw,children:[],parent:stack.at(-1)};stack.at(-1).children.push(n);if(!/^(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)$/.test(tag)&&!raw.endsWith('/>'))stack.push(n)}else stack.at(-1).children.push({tag:'#text',raw,parent:stack.at(-1)})}return root}
-function serialize(n){if(n.tag==='#root')return n.children.map(serialize).join('');if(n.tag==='#text')return n.raw;return n.raw+n.children.map(serialize).join('')+(!/^(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)$/.test(n.tag)?`</${n.tag}>`:'')}
-function nodes(n){return [n,...(n.children||[]).flatMap(nodes)]}
-function css(html){return [...html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi)].map(m=>({start:m.index+m[0].indexOf(m[1]),length:m[1].length, rules:[...m[1].matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(x=>({selector:x[1].trim(),body:x[2]}))}))}
-function render(html,bs){for(const b of [...bs].reverse())html=html.slice(0,b.start)+b.rules.map(r=>`${r.selector}{${r.body}}`).join('\n')+html.slice(b.start+b.length);return html}
-function counts(h){const n=nodes(parse(h)),r=[...h.matchAll(/[^{}]+\{([^{}]*)\}/g)];return{elements:n.filter(x=>!x.tag.startsWith('#')).length,rules:r.length,declarations:r.reduce((a,x)=>a+splitTop(x[1],';').filter(y=>y.includes(':')).length,0)}}
-export async function reduceFinding(input,reproduces,options={}){const original=typeof input==='string'?input:fs.readFileSync(input,'utf8');let html=original,calls=0,stopped='fixpoint';const max=options.maxCalls??1000,deadline=options.deadline??Infinity;async function check(h){if(calls>=max||Date.now()>=deadline){stopped='budget';return false}calls++;return await reproduces(h)===true}
- let root=parse(html),body=nodes(root).find(n=>n.tag==='body');if(body)for(const n of [...body.children].filter(x=>!x.tag.startsWith('#'))){const p=n.parent,prev=p.children;p.children=prev.filter(x=>x!==n);const h=serialize(root);if(await check(h))html=h;else p.children=prev;if(stopped==='budget')break;}
- let bs=css(html);for(let b=0;b<bs.length&&stopped==='fixpoint';b++)for(let r=0;r<bs[b].rules.length;){const t=bs.map(x=>({...x,rules:x.rules.slice()}));t[b].rules.splice(r,1);if(await check(render(html,t))){html=render(html,t);bs=css(html)}else r++;if(stopped==='budget')break}
- bs=css(html);for(let b=0;b<bs.length&&stopped==='fixpoint';b++)for(let r=0;r<bs[b].rules.length;r++){let ds=splitTop(bs[b].rules[r].body,';').filter(Boolean);for(let d=0;d<ds.length;){const t=bs.map(x=>({...x,rules:x.rules.map(y=>({...y}))}));t[b].rules[r].body=ds.filter((_,i)=>i!==d).join(';');if(await check(render(html,t))){html=render(html,t);bs=css(html);ds=splitTop(bs[b].rules[r].body,';').filter(Boolean)}else d++;if(stopped==='budget')break}}
- return{html,counts_before:counts(original),counts_after:counts(html),predicate_calls:calls,stopped}}
-const sorted=x=>[...new Set(x)].sort();
-export function failureSignature(html,f={}){const rules=[...html.matchAll(/([^{}]+)\{([^{}]*)\}/g)],props=[],comb=[];for(const[,s,b]of rules){props.push(...splitTop(b,';').map(x=>x.split(':')[0].trim().toLowerCase()).filter(Boolean));if(/\s>\s/.test(s))comb.push('child');if(/\s\+\s/.test(s))comb.push('adjacent');if(/\s~\s/.test(s))comb.push('sibling');if(/\s[^\s>+~]/.test(s))comb.push('descendant')}const fields={schema:'static-site-importer/finding-signature/v1',stage:f.stage==='capture'?'capture':'materialization',code:f.code||f.diagnostic_code||f.check||'unknown',blocks:sorted([...(f.block_names||[]),...(f.recognizer?[f.recognizer]:[])]),features:{css_properties:sorted(props),at_rule_kinds:sorted([...html.matchAll(/@([\w-]+)/g)].map(x=>x[1].toLowerCase())),selector_combinator_kinds:sorted(comb),element_tags:sorted(nodes(parse(html)).map(n=>n.tag).filter(x=>!x.startsWith('#')))}};return{...fields,sha256:crypto.createHash('sha256').update(JSON.stringify(fields)).digest('hex')}}
-export function materializationFixture(html,name='Reduced finding'){return{schema:'blocks-engine/php-transformer/visual-parity-fixture/v1',name,description:'Reduced URL-loop finding',source:{html_path:'reduced.html'},target:{html_path:'reduced.html'},viewports:[{id:'desktop',width:1440,height:900}],thresholds:{max_mismatch_percent:0}}}
-function args(a){const o={};for(let i=0;i<a.length;i++)if(a[i].startsWith('--'))o[a[i].slice(2)]=a[++i];return o}
-async function main(){const o=args(process.argv.slice(2));if(!o.input||!o.predicate||!o.output)throw Error('usage: --input <file> --predicate <command> --output <dir>');const r=await reduceFinding(o.input,h=>{const d=fs.mkdtempSync(path.join(os.tmpdir(),'ssi-reduce-')),f=path.join(d,'candidate.html');try{fs.writeFileSync(f,h);return spawnSync('sh',['-c',o.predicate.replaceAll('{candidate}',f)],{stdio:'ignore'}).status===0}finally{fs.rmSync(d,{recursive:true,force:true})}});fs.mkdirSync(o.output,{recursive:true});fs.writeFileSync(path.join(o.output,'reduced.html'),r.html);fs.writeFileSync(path.join(o.output,'reduction.json'),JSON.stringify({...r,signature:failureSignature(r.html)},null,2)+'\n')}
-if(process.argv[1]===fileURLToPath(import.meta.url))main().catch(e=>{process.stderr.write(e.message+'\n');process.exitCode=1});
+/**
+ * Internal dependencies
+ */
+import { isRuleLike, parseStylesheet, removeStylesheetItems, serializeStylesheet, walkStylesheet } from './reduce-finding/css.mjs';
+import { ddmin } from './reduce-finding/ddmin.mjs';
+import { materializationFixture, SOURCE_HTML_PATH, TARGET_HTML_PATH } from './reduce-finding/fixture.mjs';
+import {
+  attributeTargets,
+  contentElements,
+  editDocument,
+  pageTextNodes,
+  parseDocument,
+  removableNodeLevels,
+  removeAttribute,
+  removeNodes,
+  serializeDocument,
+  setTextContent,
+  setTextValue,
+  styleElements,
+  textContent,
+  unwrapElement,
+  unwrappableElements,
+} from './reduce-finding/html.mjs';
+import { commandReport, parseCheck, reportPredicate, resolvePredicate, runCommand } from './reduce-finding/predicates.mjs';
+import { failureSignature } from './reduce-finding/signature.mjs';
+
+export { failureSignature } from './reduce-finding/signature.mjs';
+export { materializationFixture } from './reduce-finding/fixture.mjs';
+export {
+  commandPredicate,
+  commandReport,
+  compareReportValue,
+  editabilityPredicate,
+  reportPredicate,
+  visualParityPredicate,
+} from './reduce-finding/predicates.mjs';
+
+export const REDUCTION_SCHEMA = 'static-site-importer/finding-reduction/v1';
+export const DEFAULT_MAX_CALLS = 1000;
+export const DEFAULT_MAX_ROUNDS = 8;
+
+const PASSES = [
+  reduceElementLevels,
+  unwrapElements,
+  dropAttributes,
+  shortenText,
+  reduceCssRules,
+  reduceCssDeclarations,
+];
+
+/**
+ * @param {string} input HTML, or a path to an HTML file.
+ * @param {Function|string|string[]} predicate Function of the candidate HTML,
+ *   or a command with a `{candidate}` placeholder that exits 0 to reproduce.
+ * @param {object} [options]
+ * @param {number} [options.maxCalls] Predicate call budget.
+ * @param {number} [options.deadline] Epoch milliseconds after which no call starts.
+ * @param {number} [options.timeoutMs] Relative alternative to `deadline`.
+ * @param {number} [options.maxRounds] Upper bound on fixpoint rounds.
+ * @param {() => number} [options.now] Clock, for tests.
+ */
+export async function reduceFinding(input, predicate, options = {}) {
+  const original = readInput(input);
+  const session = createSession(resolvePredicate(predicate), options);
+  const normalized = normalizePage(original);
+  const result = (status, html, rounds) => ({
+    schema: REDUCTION_SCHEMA,
+    status,
+    stopped: stopReason(session, status, rounds),
+    html,
+    rounds,
+    predicate_calls: session.calls,
+    counts_before: pageCounts(original),
+    counts_after: pageCounts(html),
+  });
+
+  if (!(await session.test(normalized))) {
+    return result(session.stopped ? 'incomplete' : 'not_reproducible', original, 0);
+  }
+
+  let html = normalized;
+  let rounds = 0;
+  while (!session.stopped && rounds < session.maxRounds) {
+    rounds++;
+    const before = html;
+    for (const pass of PASSES) {
+      html = await pass(html, session);
+      if (session.stopped) {
+        break;
+      }
+    }
+    if (html === before) {
+      break;
+    }
+  }
+  return result('reduced', html, rounds);
+}
+
+function stopReason(session, status, rounds) {
+  if (session.stopped) {
+    return session.stopped;
+  }
+  if (status !== 'reduced') {
+    return null;
+  }
+  return rounds >= session.maxRounds ? 'max_rounds' : 'fixpoint';
+}
+
+/** Accepts HTML (anything containing `<`) or a path to an HTML file. */
+function readInput(input) {
+  if (typeof input !== 'string') {
+    throw new Error('reduce_finding_input_invalid: expected HTML or a file path');
+  }
+  return input.includes('<') ? input : fs.readFileSync(input, 'utf8');
+}
+
+/**
+ * Wraps the predicate with a result cache and the call budget. Once the
+ * budget or deadline is spent, every test returns false so passes unwind.
+ */
+function createSession(predicate, options) {
+  const now = options.now || Date.now;
+  const deadline = options.deadline ?? (options.timeoutMs === undefined ? Infinity : now() + options.timeoutMs);
+  const maxCalls = options.maxCalls ?? DEFAULT_MAX_CALLS;
+  const cache = new Map();
+  const session = {
+    calls: 0,
+    stopped: null,
+    maxRounds: options.maxRounds ?? DEFAULT_MAX_ROUNDS,
+    shouldStop: () => session.stopped !== null,
+    async test(html) {
+      if (cache.has(html)) {
+        return cache.get(html);
+      }
+      if (session.stopped) {
+        return false;
+      }
+      if (session.calls >= maxCalls) {
+        session.stopped = 'budget';
+        return false;
+      }
+      if (now() >= deadline) {
+        session.stopped = 'deadline';
+        return false;
+      }
+      session.calls++;
+      const reproduces = await predicate(html);
+      cache.set(html, reproduces);
+      return reproduces;
+    },
+  };
+  return session;
+}
+
+/** Re-serializes the page through parse5 and the CSS serializer. */
+export function normalizePage(html) {
+  return editStylesheets(serializeDocument(parseDocument(html)), () => {});
+}
+
+/**
+ * Parses each `<style>` element, lets `edit` mutate the sheets, and writes
+ * them back.
+ */
+function editStylesheets(html, edit) {
+  return editDocument(html, (document) => {
+    const styles = styleElements(document);
+    const sheets = styles.map((style) => parseStylesheet(textContent(style)));
+    edit(sheets);
+    styles.forEach((style, index) => setTextContent(style, serializeStylesheet(sheets[index])));
+  });
+}
+
+function readStylesheets(html) {
+  return styleElements(parseDocument(html)).map((style) => parseStylesheet(textContent(style)));
+}
+
+/**
+ * Runs ddmin over each level of a tree in turn. `levelsOf(html)` returns the
+ * levels for the current page and `removeAt(html, paths)` returns the page
+ * without the nodes at `paths`.
+ */
+async function reduceLevels(html, session, levelsOf, removeAt) {
+  let current = html;
+  for (let depth = 0; !session.stopped; depth++) {
+    const levels = levelsOf(current);
+    if (depth >= levels.length) {
+      break;
+    }
+    const paths = levels[depth];
+    const without = (kept) => removeAt(current, paths.filter((_, index) => !kept.includes(index)));
+    const kept = await ddmin(paths.map((_, index) => index), (subset) => session.test(without(subset)), session);
+    if (kept.length < paths.length) {
+      current = without(kept);
+    }
+  }
+  return current;
+}
+
+/** Hierarchical delta debugging over element and comment nodes. */
+function reduceElementLevels(html, session) {
+  return reduceLevels(
+    html,
+    session,
+    (current) => removableNodeLevels(parseDocument(current)),
+    (current, paths) => editDocument(current, (document) => removeNodes(document, paths)),
+  );
+}
+
+/** Rules and at-rule blocks, level by level across every `<style>`. */
+function reduceCssRules(html, session) {
+  return reduceLevels(
+    html,
+    session,
+    (current) => {
+      const levels = [];
+      readStylesheets(current).forEach((sheet, sheetIndex) => walkStylesheet(sheet, (item, itemPath, depth) => {
+        if (isRuleLike(item)) {
+          (levels[depth] ||= []).push([sheetIndex, ...itemPath]);
+        }
+      }));
+      return levels.map((level) => level || []);
+    },
+    removeCssItems,
+  );
+}
+
+/** Declarations across every rule as one ddmin set. */
+function reduceCssDeclarations(html, session) {
+  return reduceLevels(
+    html,
+    session,
+    (current) => {
+      const declarations = [];
+      readStylesheets(current).forEach((sheet, sheetIndex) => walkStylesheet(sheet, (item, itemPath) => {
+        if (item.type === 'declaration') {
+          declarations.push([sheetIndex, ...itemPath]);
+        }
+      }));
+      return [declarations];
+    },
+    removeCssItems,
+  );
+}
+
+function removeCssItems(html, paths) {
+  return editStylesheets(html, (sheets) => {
+    sheets.forEach((sheet, sheetIndex) => {
+      const sheetPaths = paths.filter((itemPath) => itemPath[0] === sheetIndex).map((itemPath) => itemPath.slice(1));
+      removeStylesheetItems(sheet, sheetPaths);
+    });
+  });
+}
+
+/**
+ * Tries one edit per target in document order. `targetsOf(html)` lists the
+ * targets for the current page and `candidatesFor(html, target)` yields the
+ * edited pages to try, best first. After an accepted edit the same index is
+ * retried against the new page, since earlier targets are unchanged.
+ */
+async function reduceTargets(html, session, targetsOf, candidatesFor) {
+  let current = html;
+  let index = 0;
+  while (!session.stopped) {
+    const targets = targetsOf(current);
+    if (index >= targets.length) {
+      break;
+    }
+    let accepted = false;
+    for (const candidate of candidatesFor(current, targets[index])) {
+      if (candidate !== current && await session.test(candidate)) {
+        current = candidate;
+        accepted = true;
+        break;
+      }
+    }
+    if (!accepted) {
+      index++;
+    }
+  }
+  return current;
+}
+
+/** Replaces an element with its children. */
+function unwrapElements(html, session) {
+  return reduceTargets(
+    html,
+    session,
+    (current) => unwrappableElements(parseDocument(current)),
+    (current, { path: elementPath }) => [editDocument(current, (document) => unwrapElement(document, elementPath))],
+  );
+}
+
+/** Drops attributes one at a time. */
+function dropAttributes(html, session) {
+  return reduceTargets(
+    html,
+    session,
+    (current) => attributeTargets(parseDocument(current)),
+    (current, { path: elementPath, name }) => [editDocument(current, (document) => removeAttribute(document, elementPath, name))],
+  );
+}
+
+/** Removes a text node, or keeps its first half. */
+function shortenText(html, session) {
+  return reduceTargets(
+    html,
+    session,
+    (current) => pageTextNodes(parseDocument(current)),
+    (current, { node, path: textPath }) => {
+      const values = [''];
+      if (node.value.length > 1) {
+        values.push(node.value.slice(0, Math.ceil(node.value.length / 2)));
+      }
+      return values.map((value) => editDocument(current, (document) => setTextValue(document, textPath, value)));
+    },
+  );
+}
+
+/** Element, CSS rule and declaration counts for a page. */
+export function pageCounts(html) {
+  const document = parseDocument(html);
+  const counts = { elements: contentElements(document).length, css_rules: 0, css_declarations: 0, bytes: Buffer.byteLength(html) };
+  for (const style of styleElements(document)) {
+    walkStylesheet(parseStylesheet(textContent(style)), (item) => {
+      if (item.type === 'declaration') {
+        counts.css_declarations++;
+      } else {
+        counts.css_rules++;
+      }
+    });
+  }
+  return counts;
+}
+
+/**
+ * Reduces `options.input` and writes the case to `options.output`:
+ * `source.html`, `fixture.json`, `reduction.json` and, with a
+ * target command, `target.html`.
+ */
+export async function runCli(options) {
+  if (!options.input || !options.output || (!options.predicate && !options['report-command'])) {
+    throw new Error(usage());
+  }
+  const predicate = options['report-command']
+    ? reportPredicate({ evaluate: commandReport(options['report-command']), check: parseCheck(requireOption(options, 'check')) })
+    : options.predicate;
+  const reduction = await reduceFinding(options.input, predicate, {
+    maxCalls: options['max-calls'] === undefined ? undefined : Number(options['max-calls']),
+    timeoutMs: options['timeout-ms'] === undefined ? undefined : Number(options['timeout-ms']),
+  });
+  if (reduction.status !== 'reduced') {
+    throw new Error(`reduce_finding_${reduction.status}: the predicate does not reproduce on the normalized input`);
+  }
+
+  const signature = failureSignature(reduction.html, {
+    stage: options.stage,
+    check: options['finding-check'] || options.check,
+    block_names: options.blocks ? options.blocks.split(',') : [],
+  });
+  fs.mkdirSync(options.output, { recursive: true });
+  const sourceFile = path.join(options.output, SOURCE_HTML_PATH);
+  fs.writeFileSync(sourceFile, reduction.html);
+  const targetProvided = Boolean(options['target-command']) && writeTarget(options['target-command'], sourceFile, path.join(options.output, TARGET_HTML_PATH));
+  const fixture = materializationFixture({ name: options.name || `reduced-${signature.sha256.slice(0, 12)}`, signature, targetProvided });
+  writeJson(path.join(options.output, 'fixture.json'), fixture);
+  const { html, ...summary } = reduction;
+  writeJson(path.join(options.output, 'reduction.json'), { ...summary, signature });
+  return { ...summary, signature };
+}
+
+function writeTarget(command, sourceFile, targetFile) {
+  const result = runCommand(command, { source: sourceFile }, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  if (result.status !== 0) {
+    throw new Error(`reduce_finding_target_command_failed: exit ${result.status}`);
+  }
+  fs.writeFileSync(targetFile, result.stdout);
+  return true;
+}
+
+function writeJson(file, value) {
+  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function requireOption(options, name) {
+  if (!options[name]) {
+    throw new Error(`reduce_finding_option_missing: --${name}\n${usage()}`);
+  }
+  return options[name];
+}
+
+function usage() {
+  return [
+    'usage: node tools/reduce-finding.mjs --input <page.html> --output <dir>',
+    '  (--predicate \'<command {candidate}>\' | --report-command \'<command {candidate}>\' --check \'<path> <op> <value>\')',
+    '  [--stage capture|materialization|editability|theme] [--finding-check <code>] [--blocks a,b]',
+    '  [--target-command \'<command {source}>\'] [--max-calls N] [--timeout-ms N] [--name <fixture name>]',
+  ].join('\n');
+}
+
+export function parseArgs(argv) {
+  const options = {};
+  for (let index = 0; index < argv.length; index++) {
+    if (!argv[index].startsWith('--')) {
+      throw new Error(`reduce_finding_argument_unexpected: ${argv[index]}`);
+    }
+    options[argv[index].slice(2)] = argv[index + 1];
+    index++;
+  }
+  return options;
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  runCli(parseArgs(process.argv.slice(2)))
+    .then((summary) => process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`))
+    .catch((error) => {
+      process.stderr.write(`${error.message}\n`);
+      process.exitCode = 1;
+    });
+}

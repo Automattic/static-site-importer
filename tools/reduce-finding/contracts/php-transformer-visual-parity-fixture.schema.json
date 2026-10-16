@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Automattic/blocks-engine/docs/contracts/php-transformer-visual-parity-fixture.schema.json",
+  "title": "Blocks Engine PHP Transformer visual parity fixture",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "name", "source", "target", "viewports", "thresholds"],
+  "properties": {
+    "schema": { "const": "blocks-engine/php-transformer/visual-parity-fixture/v1" },
+    "name": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "source": { "$ref": "#/$defs/render_input" },
+    "target": { "$ref": "#/$defs/render_input" },
+    "viewports": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/viewport" }
+    },
+    "capture": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/capture_rule" }
+    },
+    "matchers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/matcher" }
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_mismatch_percent": { "type": "number", "minimum": 0 },
+        "max_style_deltas": { "type": "integer", "minimum": 0 },
+        "min_match_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "severity_gate": { "type": "string", "enum": ["none", "info", "warning", "error", "critical"] }
+      }
+    },
+    "expectations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/expectation" }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "render_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": { "type": "string" },
+        "route": { "type": "string" },
+        "html_path": { "type": "string" },
+        "artifact_path": { "type": "string" },
+        "screenshot_path": { "type": "string" },
+        "renderer": { "type": "string" },
+        "wait_for_selector": { "type": "string" },
+        "environment": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "viewport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "width", "height"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string" },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "device_scale_factor": { "type": "number", "minimum": 0 },
+        "media": { "type": "string" }
+      }
+    },
+    "capture_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "selector"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["generic", "button", "menu", "card", "form"] },
+        "selector": { "type": "string", "minLength": 1 },
+        "label": { "type": "string" },
+        "properties": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "matcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["selector", "text", "role", "accessibility", "bounding_box", "computed_style"] },
+        "source_selector": { "type": "string" },
+        "target_selector": { "type": "string" },
+        "text": { "type": "string" },
+        "role": { "type": "string" },
+        "min_confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "expectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "assert"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "assert": { "type": "string", "enum": ["equals", "less_than_or_equal", "greater_than_or_equal", "contains", "count"] },
+        "value": {},
+        "count": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}
