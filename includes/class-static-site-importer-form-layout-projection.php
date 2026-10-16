@@ -854,10 +854,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 */
 	private static function suppress_parent_class_carried_control_facts( Static_Site_Importer_Form_Topology_State $s, int $control_index, array $chain ): void {
 		$control_id = 'control-' . $control_index;
-		$parent_id  = $s->layout_nodes_by_id[ $control_id ]['parent'] ?? null;
+		$parent_id  = (string) ( $s->layout_nodes_by_id[ $control_id ]['parent'] ?? '' );
 		$parent     = null;
 		foreach ( $chain as $node ) {
-			if ( $parent_id === ( $node['id'] ?? null ) ) {
+			if ( '' !== $parent_id && ( $node['id'] ?? null ) === $parent_id ) {
 				$parent = $node;
 			}
 		}
