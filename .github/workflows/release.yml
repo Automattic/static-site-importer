@@ -143,7 +143,6 @@ jobs:
           curl -fsSL "https://wordpress.org/wordpress-${WORDPRESS_VERSION}.tar.gz" | tar -xz -C "${RUNNER_TEMP}"
           export STATIC_SITE_IMPORTER_WP_ROOT="${RUNNER_TEMP}/wordpress"
           homeboy review test --placement local static-site-importer --path .
-          STATIC_SITE_IMPORTER_WP_ROOT="${RUNNER_TEMP}/wordpress" php tests/form-materializer-smoke.php
 
       - name: Commit refreshed pins
         if: inputs.dry-run != true

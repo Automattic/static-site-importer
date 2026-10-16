@@ -3,6 +3,7 @@
   "tests": {
     "tests/smoke-multilingual-contract.php": { "environment": "standalone-php" },
     "tests/smoke-whole-page-handoff.php": { "environment": "standalone-php" },
+    "tests/form-materializer-smoke.php": { "environment": "standalone-php" },
     "tests/smoke-option-idempotence.php": {
       "environment": "standalone-php"
     },

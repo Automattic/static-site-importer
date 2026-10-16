@@ -88,7 +88,7 @@ namespace {
 	// Install the locked test dependencies if either the parser or compiler is
 	// missing from the supplied runtimes.
 	$repo_root        = dirname( __DIR__ );
-	$wp_root          = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: $repo_root . '/vendor/johnpbloch/wordpress-core';
+	$wp_root          = getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ?: $repo_root . '/vendor/wordpress-core';
 	$transformer_root = getenv( 'STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH' ) ?: $repo_root . '/vendor/automattic/blocks-engine-php-transformer';
 	$transformer_bootstrap = rtrim( $transformer_root, '/\\' ) . '/php-transformer.php';
 	// The producer can be supplied as either its package root or the Blocks
@@ -110,7 +110,7 @@ namespace {
 		require_once $blocks;
 	}
 	if ( ! function_exists( 'serialize_blocks' ) ) {
-		// This test declares the wordpress-runtime environment; a missing
+		// This source-only test needs core's parser and serializer; a missing
 		// dependency here must fail closed rather than silently report success.
 		fwrite( STDERR, "FAIL: WordPress block serialization is unavailable. Run composer install or set STATIC_SITE_IMPORTER_WP_ROOT.\n" );
 		exit( 1 );
