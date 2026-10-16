@@ -1939,6 +1939,7 @@ test('materialization sidecars reject partial, oversized, and semantically inval
     ['wrong-receipt-schema', (sidecar) => JSON.stringify({ ...sidecar, receipt: { ...sidecar.receipt, schema: 'wrong/v1' } })],
     ['wrong-receipt-status', (sidecar) => JSON.stringify({ ...sidecar, receipt: { ...sidecar.receipt, status: 'partial' } })],
     ['raw-string', (sidecar) => JSON.stringify({ ...sidecar, receipt: { ...sidecar.receipt, operation_rows: [{ kind: '<script>\nraw</script>', hash: 'a'.repeat(64) }] } })],
+    ['multiline-design-system-summary', (sidecar) => JSON.stringify({ ...sidecar, receipt: { ...sidecar.receipt, design_system_summary: 'Design system:\npreset_share 1' } })],
   ];
   for (const [name, encode] of invalid) {
     const outputDirectory = mkdtempSync(path.join(tmpdir(), `ssi-sidecar-invalid-${name}-`));
@@ -1953,6 +1954,18 @@ test('materialization sidecars reject partial, oversized, and semantically inval
     const result = collectFixtureMatrixRunResults({ matrix, outputDirectory });
     assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.status, 'malformed', name);
   }
+});
+
+test('materialization sidecars accept the optional one-line design system summary', () => {
+  const outputDirectory = mkdtempSync(path.join(tmpdir(), 'ssi-sidecar-design-system-'));
+  const matrix = createFixtureMatrix({ fixture_root: fixtureRoot, id: 'sidecar-design-system-run' });
+  const directory = path.join(outputDirectory, 'simple-site');
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path.join(directory, 'artifact.json'), JSON.stringify({ fixture: 'simple-site' }));
+  const receipt = { ...boundedSidecarReceipt(), design_system_summary: 'Design system: palette base #ffffff; heading Inter, body Inter; preset_share 0.9632; restyle_coverage 0.875; css ratio 0.42' };
+  writeMaterializationSidecar({ directory, fixtureId: 'simple-site', runId: matrix.id, receipt });
+  const result = collectFixtureMatrixRunResults({ matrix, outputDirectory });
+  assert.equal(result.fixtures[0].matrix_evidence.materialization_sidecar.status, 'verified');
 });
 
 function boundedSidecarReceipt() {

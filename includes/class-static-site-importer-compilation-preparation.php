@@ -172,6 +172,12 @@ final class Static_Site_Importer_Compilation_Preparation {
 			$existing['layout_baseline'] = $source_reports['layout_baseline'];
 			$args['source_reports']      = $existing;
 		}
+		if ( is_array( $source_reports['editability_report']['design_system'] ?? null ) ) {
+			// Only the design-system metrics travel; the plan's theme copy is preferred.
+			$existing                       = isset( $args['source_reports'] ) && is_array( $args['source_reports'] ) ? $args['source_reports'] : array();
+			$existing['editability_report'] = array( 'design_system' => $source_reports['editability_report']['design_system'] );
+			$args['source_reports']         = $existing;
+		}
 		$plan = is_array( $compiled['wordpress_site_plan'] ?? null ) ? $compiled['wordpress_site_plan'] : array();
 		if ( empty( $plan ) ) {
 			$diagnostics = is_array( $compiled['diagnostics'] ?? null ) ? wp_json_encode( $compiled['diagnostics'] ) : '';

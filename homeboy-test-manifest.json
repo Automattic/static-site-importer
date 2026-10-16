@@ -40,6 +40,8 @@
     "tests/smoke-import-diagnostic-contract.php": { "environment": "standalone-php" },
     "tests/smoke-import-report.php": { "environment": "standalone-php" },
     "tests/smoke-import-report-loss-ledger.php": { "environment": "standalone-php" },
+    "tests/smoke-design-system-report-present.php": { "environment": "standalone-php" },
+    "tests/smoke-design-system-report-absent.php": { "environment": "standalone-php" },
     "tests/smoke-missing-author-stylesheet-diagnostics.php": { "environment": "standalone-php" },
     "tests/smoke-captured-interaction-diagnostics.php": { "environment": "standalone-php" },
     "tests/smoke-import-permission-filter.php": { "environment": "standalone-php" },

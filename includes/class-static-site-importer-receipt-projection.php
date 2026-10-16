@@ -197,6 +197,10 @@ class Static_Site_Importer_Receipt_Projection {
 			$report->set_section( 'theme_preview', Static_Site_Importer_Theme_Screenshot::bounded_evidence( $args['theme_screenshot_evidence'] ) );
 		}
 		$report['materialization_receipt'] = self::report_receipt( $receipt );
+		if ( is_array( $receipt['design_system'] ?? null ) && array() !== $receipt['design_system'] ) {
+			// Blocks Engine's design system, unchanged: a reported quality signal, not a gate.
+			$report->set_section( 'design_system', $receipt['design_system'] );
+		}
 		if ( 'completed' === ( $receipt['status'] ?? '' ) && isset( $receipt['completed']['theme_runtime'] ) ) {
 			$runtime = $receipt['completed']['theme_runtime'];
 			$report->set_section( 'theme_runtime', $runtime );
