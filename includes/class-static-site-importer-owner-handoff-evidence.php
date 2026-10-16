@@ -124,9 +124,9 @@ final class Static_Site_Importer_Owner_Handoff_Evidence {
 			$worst      = self::worse( $worst, 'evidence_gap' );
 			$findings[] = self::finding( 'route_content_completeness', 'evidence_gap', '', 'plan_identity', self::OWNERS['route_content_completeness'], 'Bind the report to a canonical plan identity hash and materialization receipt hash.', $plan );
 		}
-		$disposition             = 'hard_failure' === $worst ? 'failed' : ( 'evidence_gap' === $worst ? 'not_proven' : ( 'required_owner_decision' === $worst ? 'owner_decisions_required' : 'passed' ) );
-		$allowed                 = ! in_array( $worst, array( 'hard_failure', 'evidence_gap' ), true );
-		$document                = array(
+		$disposition = 'hard_failure' === $worst ? 'failed' : ( 'evidence_gap' === $worst ? 'not_proven' : ( 'required_owner_decision' === $worst ? 'owner_decisions_required' : 'passed' ) );
+		$allowed     = ! in_array( $worst, array( 'hard_failure', 'evidence_gap' ), true );
+		$document    = array(
 			'schema'                         => self::SCHEMA,
 			'plan_identity'                  => self::valid_plan_identity( $plan ) ? $plan : null,
 			'materialization_receipt_sha256' => self::sha256( $receipt_hash ) ? $receipt_hash : null,

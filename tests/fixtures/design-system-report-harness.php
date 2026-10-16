@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 if ( ! function_exists( 'wp_json_encode' ) ) {
 	function wp_json_encode( $value, int $options = 0 ) {
-		return json_encode( $value, $options );
+		return json_encode( $value, $options ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Stub for the WordPress function in a standalone harness.
 	}
 }
 if ( ! function_exists( 'is_wp_error' ) ) {
@@ -164,7 +164,7 @@ function ssi_design_system_report( array $plan, array $receipt ): Static_Site_Im
 function ssi_design_system_assert(): callable {
 	return static function ( bool $condition, string $message ): void {
 		if ( ! $condition ) {
-			throw new RuntimeException( $message );
+			throw new RuntimeException( $message ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Test assertion message, not output.
 		}
 	};
 }
