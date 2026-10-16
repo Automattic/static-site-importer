@@ -55,7 +55,16 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			$source_path = (string) ( $page['source_path'] ?? '' );
 			$post_id     = (int) ( $state['source_ids'][ $source_path ] ?? 0 );
 			$content     = $post_id > 0 ? get_post_field( 'post_content', $post_id ) : null;
-			if ( ! is_string( $content ) || ( ! self::content_references_media( $content ) && empty( $page['provider_featured_image_target_path'] ) ) ) {
+			// An explicit provider claim wins; otherwise the site plan's
+			// featured-image handoff names the theme asset and its alt text.
+			$featured_image = is_array( $page['metadata']['featured_image'] ?? null ) ? $page['metadata']['featured_image'] : array();
+			$featured_path  = (string) ( $page['provider_featured_image_target_path'] ?? '' );
+			$featured_alt   = '';
+			if ( '' === $featured_path && is_string( $featured_image['target_path'] ?? null ) ) {
+				$featured_path = $featured_image['target_path'];
+				$featured_alt  = is_string( $featured_image['alt'] ?? null ) ? $featured_image['alt'] : '';
+			}
+			if ( ! is_string( $content ) || ( ! self::content_references_media( $content ) && '' === $featured_path ) ) {
 				continue;
 			}
 
@@ -84,9 +93,9 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			if ( $error instanceof WP_Error ) {
 				return $error;
 			}
-			if ( ! empty( $page['provider_featured_image_target_path'] ) ) {
-				$relative = self::theme_relative_asset( $theme_uri . '/' . $page['provider_featured_image_target_path'], $theme_uri, array_merge( self::RASTER_EXTENSIONS, array( 'svg' ) ) );
-				$featured = null === $relative ? 0 : self::ensure_attachment( $theme_dir, $relative, '', $state, $attachments, $by_hash, $error );
+			if ( '' !== $featured_path ) {
+				$relative = self::theme_relative_asset( $theme_uri . '/' . $featured_path, $theme_uri, array_merge( self::RASTER_EXTENSIONS, array( 'svg' ) ) );
+				$featured = null === $relative ? 0 : self::ensure_attachment( $theme_dir, $relative, $featured_alt, $state, $attachments, $by_hash, $error );
 				if ( null !== $error || $featured <= 0 ) {
 					return $error ?? new WP_Error( 'provider_featured_image_unresolved', 'The provider source image could not be materialized.' );
 				}
