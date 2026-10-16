@@ -279,3 +279,50 @@ test( 'v3 source boxes keep wrapper, control and context ownership against the s
 		await browser.close();
 	}
 } );
+
+test( 'editor canvas lays provider fields out on the layered source form grid, not Jetpack inner-blocks flex', async () => {
+	requireBrowserPrerequisites();
+	const raw = execFileSync( 'php', [ 'tests/fixtures/editor-form-grid-fixture.php' ], { encoding: 'utf8', env: process.env } );
+	const seeded = JSON.parse( raw );
+	assert.equal( seeded.status, 'mapped', raw );
+	assert.equal( seeded.fields.length, 3, raw );
+	assert.ok( seeded.headingClassName.includes( 'sm-span-2' ), raw );
+	// Jetpack's editor DOM: the block wrapper carries the source form classes and
+	// className; an inner-blocks flex container parents the field blocks, which
+	// carry their className on the block wrapper itself (no `-wrap` copy).
+	const fields = seeded.fields.map( ( field, index ) => `<div class="wp-block jetpack-field wp-block-jetpack-field-${ field.type } ${ field.className }" data-field="${ index }"><label>Field ${ index }</label>${ 'textarea' === field.type ? '<textarea></textarea>' : '<input>' }</div>` ).join( '' );
+	const browser = await chromium.launch();
+	try {
+		const page = await browser.newPage( { viewport: { width: 1440, height: 900 } } );
+		await page.setContent( `<!doctype html><style>${ seeded.sourceCss }</style><style>
+			body{margin:0}
+			.editor-styles-wrapper{width:min(700px,100vw)}
+			.jetpack-contact-form.is-layout-flex{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+			.jetpack-contact-form>.wp-block{flex:1 1 100%;box-sizing:border-box;margin:0}
+			input,textarea{display:block;width:100%;box-sizing:border-box}
+		</style><style>${ seeded.editorCss }</style><div class="editor-styles-wrapper"><div class="wp-block wp-block-jetpack-contact-form ${ seeded.className }"><div class="jetpack-contact-form block-editor-block-list__layout is-layout-flex"><h3 class="wp-block ${ seeded.headingClassName }">Request</h3>${ fields }</div></div></div>` );
+		for ( const width of [ 390, 1440 ] ) {
+			await page.setViewportSize( { width, height: 900 } );
+			const layout = await page.evaluate( () => {
+				const form = document.querySelector( '.wp-block-jetpack-contact-form' );
+				const style = getComputedStyle( form );
+				const content = form.getBoundingClientRect().width - parseFloat( style.paddingLeft ) - parseFloat( style.paddingRight ) - parseFloat( style.borderLeftWidth ) - parseFloat( style.borderRightWidth );
+				return { content, fields: [ ...document.querySelectorAll( '[data-field]' ) ].map( ( node ) => {
+					const rect = node.getBoundingClientRect();
+					return { top: rect.top, left: rect.left, width: rect.width };
+				} ) };
+			} );
+			const [ name, phone, message ] = layout.fields;
+			if ( width >= 640 ) {
+				assert.equal( name.top, phone.top, `two-column source grid at ${ width }: ${ JSON.stringify( layout ) }` );
+				assert.ok( Math.abs( phone.left - name.left - name.width - 20 ) <= 1, `source column gap at ${ width }: ${ JSON.stringify( layout ) }` );
+				assert.ok( Math.abs( message.width - layout.content ) <= 1, `source span-2 field fills the form at ${ width }: ${ JSON.stringify( layout ) }` );
+			} else {
+				assert.equal( name.left, phone.left, `single-column source grid at ${ width }: ${ JSON.stringify( layout ) }` );
+				assert.ok( Math.abs( phone.top - name.top - ( message.top - phone.top ) ) <= 1, `uniform source row gap at ${ width }: ${ JSON.stringify( layout ) }` );
+			}
+		}
+	} finally {
+		await browser.close();
+	}
+} );

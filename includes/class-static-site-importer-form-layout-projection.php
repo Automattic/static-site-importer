@@ -3570,15 +3570,25 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		return 0 < $display_facts ? $box : null;
 	}
 
-	/** Same source facts, explicit destinations for Jetpack's editable DOM. */
+	/**
+	 * Same source facts, explicit destinations for Jetpack's editable DOM.
+	 *
+	 * In the editor the contact-form block wrapper carries the source form's
+	 * classes, so it is the source form; Jetpack's inner-blocks container has
+	 * no source counterpart and the overlay renders it box-less. Field blocks
+	 * carry their className on the block wrapper itself rather than the
+	 * front-end `-wrap` copy.
+	 */
 	public static function editor_layout_target_map( array $map, string $scope ): array {
 		foreach ( $map['targets'] as &$target ) {
 			if ( 'form' === $target['node'] ) {
-				$target['selector'] = '.' . $scope . ( str_contains( $target['selector'], '.ssi-native-form-topology' ) ? '.ssi-native-form-topology' : '' ) . ' > div.jetpack-contact-form';
+				$target['selector'] = str_contains( $target['selector'], '.ssi-native-form-topology' ) ? '.' . $scope . '.ssi-native-form-topology > div.jetpack-contact-form' : '.' . $scope;
 			} elseif ( 'form-box' === $target['node'] && str_contains( $target['selector'], '.ssi-native-form-topology' ) ) {
 				$target['selector'] = '.' . $scope . '.ssi-native-form-topology';
 			} elseif ( preg_match( '/^field-([0-9]+)$/D', $target['node'], $match ) ) {
 				$target['selector'] = '.' . $scope . ' .' . self::layout_node_class( $scope, 'control-' . $match[1] ) . ' > div.jetpack-field__control';
+			} elseif ( preg_match( '/^(\.' . preg_quote( $scope, '/' ) . ' \.ssi-node-[a-f0-9]{12})-wrap$/D', $target['selector'], $match ) ) {
+				$target['selector'] = $match[1];
 			}
 		}
 		unset( $target );
