@@ -324,6 +324,16 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				$rules[] = $validated_map['scope'] . '.ssi-native-form-topology{padding:0;border:0}';
 			}
 		}
+		if ( $editor && ( $targets['form']['selector'] ?? null ) === $validated_map['scope'] ) {
+			// The editor block wrapper is the source form; Jetpack's inner-blocks
+			// container must not interpose a flex box between it and the fields.
+			$rules[]      = $validated_map['scope'] . ' > div.jetpack-contact-form{display:contents}';
+			$operations[] = array(
+				'dimension'   => 'layout',
+				'strategy'    => 'provider_editor_inner_blocks_passthrough',
+				'target_hash' => hash( 'sha256', $validated_map['scope'] . ' > div.jetpack-contact-form' ),
+			);
+		}
 		if ( $editor ) {
 			foreach ( $rules as $rule ) {
 				$editor_rules[] = preg_replace( '/(^|\{|, )(\.ssi-form-[a-f0-9]{12})/', '$1.editor-styles-wrapper $2', $rule );
