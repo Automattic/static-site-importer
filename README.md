@@ -344,6 +344,10 @@ The default root is `website` with `entrypoint: "website/index.html"`. Callers c
 
 ## URL Loop Intake
 
+### Finding reduction
+
+`tools/reduce-finding.mjs` performs bounded, deterministic delta debugging on a standalone HTML page, retaining removals only when a caller predicate still reproduces the failure. Run `node tools/reduce-finding.mjs --input page.html --predicate 'command {candidate}' --output reduced-case`; the command substitutes the candidate temp-file path and must exit 0 for a reproduction. Output includes `reduced.html` and counts/budget details plus a normalized failure signature in `reduction.json`. For a materialization finding, use the reduced HTML in the Blocks Engine visual parity fixture shape emitted by the module; that fixture can then be added to its corpus. This is the reducer primitive only; URL-loop orchestration and the WP Codebox predicate are follow-up work.
+
 The bounded URL entrypoint retains one fresh capture from a caller-configured
 capture command, then passes that exact generated-artifact tree through SSI's
 existing fixture intake. It never interprets fallback counts as solved-site
