@@ -1340,6 +1340,32 @@ namespace {
 			)
 		)
 	);
+	// A `grid gap-2` field wrapper's gap reaches the control as a transposed
+	// `margin-block-start` whose provenance is the wrapper's own class rule. The
+	// runtime rebuilds that wrapper with its source classes, which already space
+	// the control, so the overlay must not repeat the gap on the control target.
+	$gap_row_css    = '.grid{display:grid}.gap-2{gap:.5rem}.h-11{height:2.75rem}.w-full{width:100%}';
+	$gap_row_html   = '<style>' . $gap_row_css . '</style><form>'
+		. '<div class="grid gap-2"><label for="n" class="text-sm">Name</label><input id="n" class="h-11 w-full" required></div>'
+		. '<div class="grid gap-2"><label for="s" class="text-sm">Service</label><select id="s" class="h-11 w-full"><option>Oil</option><option>Brakes</option></select></div>'
+		. '<button type="submit">Send</button></form>';
+	$gap_row_source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $gap_row_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$gap_row_facts  = array();
+	foreach ( $gap_row_source['layout_graph']['nodes'] ?? array() as $gap_row_node ) {
+		if ( is_array( $gap_row_node ) && str_starts_with( (string) ( $gap_row_node['id'] ?? '' ), 'control-' ) && isset( $gap_row_node['layout']['margin_block_start'] ) ) {
+			$gap_row_facts[] = $gap_row_node['id'];
+		}
+	}
+	$gap_row_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $gap_row_source ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$gap_row_css_out = (string) ( $gap_row_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		array() !== $gap_row_facts
+			&& 'mapped' === ( $gap_row_row['status'] ?? '' )
+			&& str_contains( (string) ( $gap_row_row['block_markup'] ?? '' ), 'ssi-source-wrapper-' )
+			&& ! str_contains( $gap_row_css_out, 'margin-block-start' ),
+		'field-wrapper-gap-is-painted-once-by-the-restored-source-wrapper',
+		wp_json_encode( array( 'facts' => $gap_row_facts, 'status' => $gap_row_row['status'] ?? null, 'css' => $gap_row_css_out ) )
+	);
 	$bare_row_html = '<form class="space-y-5"><h2>Send a message</h2>'
 		. '<div class="grid gap-5 sm:grid-cols-2">'
 		. '<label class="block"><span>Your name</span><input required></label>'
