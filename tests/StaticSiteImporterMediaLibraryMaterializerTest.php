@@ -257,6 +257,29 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Canonical media-text has no mediaUrl/mediaId; core sources the url from the inner img.
+	 */
+	public function test_media_text_without_serialized_media_binds_media_id_from_inner_image(): void {
+		$photo     = get_theme_root_uri() . '/' . $this->slug() . '/media/photo.png';
+		$paragraph = '<!-- wp:paragraph {"className":"keep\u002d\u002dexact"} --><p class="keep--exact">Unrelated</p><!-- /wp:paragraph -->';
+		$markup    = '<!-- wp:media-text {"mediaPosition":"right","mediaType":"image"} --><div class="wp-block-media-text has-media-on-the-right is-stacked-on-mobile"><figure class="wp-block-media-text__media"><img src="' . $photo . '" alt="Item"/></figure><div class="wp-block-media-text__content">' . $paragraph . '</div></div><!-- /wp:media-text -->';
+		$state     = $this->state_with_page( $markup );
+
+		$report = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
+
+		$this->assertIsArray( $report );
+		$content = get_post_field( 'post_content', $state['source_ids']['website/index.html'] );
+		$this->assertStringContainsString( $paragraph, $content, 'nested blocks keep their bytes' );
+		$block = parse_blocks( $content )[0];
+		$id    = (int) ( $block['attrs']['mediaId'] ?? 0 );
+		$this->assertGreaterThan( 0, $id );
+		$this->assertSame( 'image', $block['attrs']['mediaType'] );
+		$this->assertSame( 'right', $block['attrs']['mediaPosition'] );
+		$this->assertStringContainsString( 'wp-image-' . $id . ' size-full', $block['innerHTML'] );
+		$this->assertStringContainsString( wp_get_attachment_url( $id ), $block['innerHTML'] );
+	}
+
+	/**
 	 * One picture served at several sizes by a path-based image service becomes one
 	 * attachment, using the largest captured size. A different picture stays separate.
 	 */
