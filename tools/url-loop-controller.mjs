@@ -11,6 +11,7 @@ export const EVALUATION_ARTIFACT_SCHEMA = 'static-site-importer/url-loop-evaluat
 export const REPAIR_EVIDENCE_SCHEMA = 'static-site-importer/url-loop-repair-evidence/v1';
 export const WORKFLOW_SCHEMA = 'homeboy/workflow/v1';
 export const WORKFLOW_ID = 'ssi-url-proof';
+export const EDITOR_OPEN_ARTIFACT_PREFIX = 'files/browser/editor-open/front-page';
 const MODULE_PATH = fileURLToPath(import.meta.url);
 const STAGE_MOUNT = '/url-loop';
 const LOSS_COUNTS = ['unsupported_fallback_count', 'core_html_block_count', 'freeform_block_count', 'invalid_block_count'];
@@ -209,7 +210,7 @@ export function buildUrlProofWorkflow(input) {
 }
 
 /** Route evidence to exactly the repository that owns the repair. */
-export function routeFindings({ captureRepository, captureFailures = [], captureCompare, packets = [], importFailures = [], materializationCompare } = {}) {
+export function routeFindings({ captureRepository, captureFailures = [], captureCompare, packets = [], importFailures = [], materializationCompare, editorPresentation } = {}) {
   const repairs = {};
   const add = (repo, item) => { (repairs[repo] ||= { findings: [], report_path: null }).findings.push(item); };
   for (const failure of captureFailures) add(captureRepository, { kind: 'capture_failure', ...failure });
@@ -217,6 +218,7 @@ export function routeFindings({ captureRepository, captureFailures = [], capture
   for (const packet of packets) add(String(packet.owner || '').startsWith('blocks-engine/') ? 'blocks-engine' : 'static-site-importer', { kind: 'finding_packet', ...packet });
   for (const failure of importFailures) add('static-site-importer', { kind: 'import_failure', ...failure });
   if (materializationCompare?.passed === false) add('static-site-importer', { kind: 'materialization_compare_failed', ...materializationCompare });
+  if (editorPresentation?.passed === false) add('static-site-importer', { kind: 'editor_presentation_failed', ...editorPresentation });
   return repairs;
 }
 
@@ -240,18 +242,18 @@ export function deriveRepairScopes(repository, findings, checkout, isDirectory =
 }
 
 /**
- * The loop's stop rule. `accepted` needs passing capture and materialization
+ * The loop's stop rule. `accepted` needs passing capture, materialization and editor presentation
  * comparisons, `quality_pass`, and zero fallback/HTML/freeform/invalid blocks.
  * Failing evidence with routed work is `findings`; anything else is `blocked`.
  * This is the loop stop condition only: SSI's solved-site promotion receipt
  * remains a separate publication step.
  */
 export function evaluateLocalEvidence(evidence) {
-  const missing = evidence.capture_compare == null || evidence.materialization_compare == null || evidence.quality == null;
+  const missing = evidence.capture_compare == null || evidence.materialization_compare == null || evidence.quality == null || evidence.editor_presentation == null;
   const quality = evidence.quality || {};
   const lossCount = LOSS_COUNTS.reduce((sum, key) => sum + Number(quality[key] || 0), 0);
-  const failed = evidence.capture_compare?.passed !== true || evidence.materialization_compare?.passed !== true || quality.quality_pass !== true || lossCount !== 0;
-  const routed = routeFindings({ captureRepository: evidence.capture_repository, captureFailures: evidence.capture_failures, captureCompare: evidence.capture_compare, packets: evidence.finding_packets, importFailures: evidence.import_failures, materializationCompare: evidence.materialization_compare });
+  const failed = evidence.capture_compare?.passed !== true || evidence.materialization_compare?.passed !== true || evidence.editor_presentation?.passed !== true || quality.quality_pass !== true || lossCount !== 0;
+  const routed = routeFindings({ captureRepository: evidence.capture_repository, captureFailures: evidence.capture_failures, captureCompare: evidence.capture_compare, packets: evidence.finding_packets, importFailures: evidence.import_failures, materializationCompare: evidence.materialization_compare, editorPresentation: evidence.editor_presentation });
   const verdict = missing ? 'blocked' : !failed ? 'accepted' : Object.keys(routed).length ? 'findings' : 'blocked';
   return {
     verdict,
@@ -301,8 +303,20 @@ export function codeboxRecipe({ pluginZip, stage, wordpressVersion, importSteps 
       extra_plugins: [{ source: pluginZip, slug: 'static-site-importer', activate: true }],
       mounts: [{ type: 'directory', source: stage, target: STAGE_MOUNT, mode: 'readwrite' }],
     },
-    workflow: { steps: Array.from({ length: importSteps }, () => ({ command: 'wordpress.invoke-wp-cli', args: [`command=${command}`, 'mutates=true'] })) },
+    workflow: { steps: [...Array.from({ length: importSteps }, () => ({ command: 'wordpress.invoke-wp-cli', args: [`command=${command}`, 'mutates=true'] })), { command: 'wordpress.editor-open', args: ['target=front-page', 'post-type=page', 'presentation-url=/', 'wait-timeout=60s', 'capture=screenshot,editor-validity,errors', `artifact-prefix=${EDITOR_OPEN_ARTIFACT_PREFIX}`] }] },
   };
+}
+
+export function readEditorPresentation(artifactsRoot) {
+  if (!fs.existsSync(artifactsRoot)) return null;
+  const runtimes = fs.readdirSync(artifactsRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory() && entry.name.startsWith('runtime-'));
+  if (runtimes.length !== 1) return null;
+  const runtime = path.join(artifactsRoot, runtimes[0].name);
+  const summary = readJsonIfPresent(path.join(runtime, EDITOR_OPEN_ARTIFACT_PREFIX, 'editor-summary.json'));
+  const match = summary?.editorPresentation?.matchedRendering;
+  if (!match) return null;
+  const screenshot = (value) => value ? path.resolve(runtime, value) : null;
+  return { passed: match.status === 'passed', status: match.status, diagnostic: match.diagnostic, comparison: match.comparison, equivalentCanvasWidths: match.equivalentCanvasWidths, majorGeometryDrift: match.majorGeometryDrift, majorVisualDivergence: match.majorVisualDivergence, unreadableContent: match.unreadableContent, hiddenContent: match.hiddenContent, unresolvedAssetCount: match.unresolvedAssetCount, screenshots: { frontend: screenshot(match.screenshots?.frontend), editor: screenshot(match.screenshots?.editor), diff: screenshot(match.screenshots?.diff) } };
 }
 
 export function codeboxArgs({ recipe, artifacts, port, timeoutMs }) {
@@ -447,7 +461,7 @@ async function importAndMeasure({ context, pluginZip, captureWebsite, url, direc
       const imported = readImportState(readJsonIfPresent(statePath));
       if (imported) {
         const served = await fetch(origin, { signal: AbortSignal.timeout(10000) }).then((response) => response.status === 200, () => false);
-        if (served) return { imported, state_path: statePath, finding_packets_path: path.join(stage, 'finding-packets.json'), materialization: materialize(origin) };
+        if (served) return { imported, state_path: statePath, finding_packets_path: path.join(stage, 'finding-packets.json'), materialization: materialize(origin), editor_presentation: readEditorPresentation(path.join(directory, 'codebox-artifacts')) };
       }
       if (exited) throw new LoopBlocker(imported ? 'import_preview_unavailable' : 'import_not_terminal', path.join(directory, 'codebox.log'));
       if (Date.now() > deadline) throw new LoopBlocker('import_timed_out', path.join(directory, 'codebox.log'));
@@ -516,6 +530,7 @@ export async function runEvaluation({ context, url, instance, iteration }) {
     evidence.import_failures = measured.imported.import_failures;
     evidence.finding_packets = readJsonIfPresent(measured.finding_packets_path)?.packets || [];
     evidence.materialization_compare = measured.materialization;
+    evidence.editor_presentation = measured.editor_presentation;
     evidence.import_state_path = measured.state_path;
   } catch (error) {
     if (!(error instanceof LoopBlocker)) throw error;
@@ -544,6 +559,7 @@ export async function runEvaluation({ context, url, instance, iteration }) {
     components: componentRecord,
     capture_compare: evidence.capture_compare || null,
     materialization_compare: evidence.materialization_compare || null,
+    editor_presentation: evidence.editor_presentation || null,
     quality: evidence.quality || null,
     import_state_path: evidence.import_state_path || null,
   });
@@ -576,6 +592,7 @@ export function evaluationVerdict(evaluation, reportPath, { instance, iteration,
     loss_count: evaluation.loss_count,
     capture_compare: evaluation.capture_compare?.passed ?? null,
     materialization_compare: evaluation.materialization_compare?.passed ?? null,
+    editor_presentation: evaluation.editor_presentation?.passed ?? null,
     quality_pass: evaluation.quality?.quality_pass ?? null,
     components: Object.fromEntries(Object.entries(evaluation.components || {}).map(([repo, record]) => [repo, { head_sha: record.head_sha, merged: record.merged.map((item) => item.branch) }])),
     // Compact: the findings live in each repository's evidence file.
