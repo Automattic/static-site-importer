@@ -820,7 +820,7 @@ class Static_Site_Importer_Form_Seeder {
 		$overlay_graph  = Static_Site_Importer_Form_Layout_Projection::without_container_box_facts( $overlay_graph, $container_presentation );
 		$overlay        = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map, $presentation_graph, $container_presentation, false, $context_fallbacks );
 		$overlay        = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_provider_errors( $overlay, $scope, $mapped_types );
-		$editor_map     = Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $target_map, $scope );
+		$editor_map     = Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $target_map, $scope, Static_Site_Importer_Form_Layout_Projection::editor_textarea_resets( $controls, $presentation_graph ) );
 		$editor_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $editor_map, $presentation_graph, $container_presentation, true, $context_fallbacks );
 		if ( isset( $editor_overlay['overlay']['editor_css'] ) ) {
 			foreach ( array( 'editor_css', 'editor_sha256', 'editor_bytes', 'context_css', 'context_sha256', 'context_bytes', 'editor_context_css', 'editor_context_sha256', 'editor_context_bytes' ) as $key ) {
