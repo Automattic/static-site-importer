@@ -643,7 +643,11 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		$bound_html = '';
 		$cursor     = 0;
 		$owners     = array();
-		$openers    = array_column( self::block_openers( $rewritten ), null, 'start' );
+		$owner_ids  = array();
+		$openers    = array();
+		foreach ( self::block_openers( $rewritten ) as $block_opener ) {
+			$openers[ $block_opener['start'] ] = $block_opener;
+		}
 		foreach ( $spans as $span ) {
 			$top         = count( $owners ) - 1;
 			$image_class = self::image_class_for_owner( $owners[ $top ] ?? null );
@@ -653,18 +657,21 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			}
 			$bound_html .= $segment['html'];
 			if ( $top >= 0 ) {
-				$owners[ $top ]['ids'] = array_merge( $owners[ $top ]['ids'], $segment['ids'] );
+				$owner_ids[ $top ] = array_merge( $owner_ids[ $top ], $segment['ids'] );
 			}
 			$comment     = substr( $rewritten, $span['start'], $span['end'] - $span['start'] );
 			$bound_html .= $comment;
 			if ( isset( $openers[ $span['start'] ] ) && ! $openers[ $span['start'] ]['self'] ) {
-				$owners[] = $openers[ $span['start'] ] + array(
-					'ids'    => array(),
+				$owners[]    = array(
+					'name'   => $openers[ $span['start'] ]['name'],
+					'json'   => $openers[ $span['start'] ]['json'],
+					'raw'    => $openers[ $span['start'] ]['raw'],
 					'offset' => strlen( $bound_html ) - strlen( $comment ),
 				);
+				$owner_ids[] = array();
 			} elseif ( preg_match( '~^<!--\s+/wp:([a-z0-9/-]+)\s+-->$~', $comment, $closing ) && ( $owners[ count( $owners ) - 1 ]['name'] ?? null ) === $closing[1] ) {
 				$owner  = array_pop( $owners );
-				$unique = array_values( array_unique( array_filter( $owner['ids'] ) ) );
+				$unique = array_values( array_unique( array_filter( array_pop( $owner_ids ) ?? array() ) ) );
 				if ( null !== self::unbound_media_text_size_slug( $owner ) && 1 === count( $unique ) ) {
 					$attrs              = json_decode( $owner['json'], true );
 					$attrs['mediaType'] = 'image';
