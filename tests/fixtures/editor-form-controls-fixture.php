@@ -19,8 +19,8 @@ namespace {
 	}
 	require_once $transformer;
 	// Utility classes live in a cascade layer, as utility-first frameworks emit them.
-	$source_css = '@layer base,utilities;@layer base{*,::before,::after{box-sizing:border-box;border:0 solid}input,select,textarea{font:inherit;color:inherit}}'
-		. '@layer utilities{.grid{display:grid}.gap-2{gap:8px}.gap-5{gap:20px}.w-full{width:100%}.h-11{height:2.75rem}.border{border-width:1px}.border-input{border-color:#3f3f46}.bg-field{background-color:#18181b}.rounded-md{border-radius:.3rem}.px-3{padding-left:12px;padding-right:12px}.py-1{padding-top:4px;padding-bottom:4px}.py-3{padding-top:12px;padding-bottom:12px}.text-base{font-size:16px;line-height:1.5}}';
+	$source_css = '@layer theme,base,utilities;@layer theme{:root{--spacing:.25rem}}@layer base{*,::before,::after{box-sizing:border-box;border:0 solid}input,select,textarea{font:inherit;color:inherit}}'
+		. '@layer utilities{.grid{display:grid}.gap-2{gap:8px}.gap-5{gap:20px}.w-full{width:100%}.h-11{height:2.75rem}.border{border-width:1px}.border-input{border-color:#3f3f46}.bg-field{background-color:#18181b}.rounded-md{border-radius:.3rem}.px-3{padding-inline:calc(var(--spacing) * 3)}.py-1{padding-block:calc(var(--spacing) * 1)}.py-3{padding-block:calc(var(--spacing) * 3)}.text-base{font-size:16px;line-height:1.5}}';
 	$control    = 'w-full border border-input bg-field rounded-md px-3 text-base';
 	$html       = '<style>' . $source_css . '</style><main><form class="grid gap-5">'
 		. '<div class="grid gap-2"><label for="phone">Phone</label><input id="phone" name="phone" type="tel" class="h-11 py-1 ' . $control . '"></div>'

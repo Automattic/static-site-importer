@@ -3805,10 +3805,14 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	/**
 	 * Whether a token is a non-negative length that resolves without a percentage basis.
 	 *
+	 * Utility frameworks carry lengths as `calc()` expressions over their spacing
+	 * scale (a captured `py-3` is `calc(0.75rem)`); those resolve the same way
+	 * when they contain no percentage and no nested declaration syntax.
+	 *
 	 * @param string $token One CSS value token.
 	 */
 	private static function is_block_length( string $token ): bool {
-		return (bool) preg_match( '/^(?:0|(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:px|rem|em|ch|ex|lh|vw|vh|vmin|vmax|svh|dvh|lvh))$/D', $token );
+		return (bool) preg_match( '/^(?:0|(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:px|rem|em|ch|ex|lh|vw|vh|vmin|vmax|svh|dvh|lvh)|calc\([^%;{}()]*(?:\([^%;{}()]*\)[^%;{}()]*)*\))$/D', $token );
 	}
 
 	/**
