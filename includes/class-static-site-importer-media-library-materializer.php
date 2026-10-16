@@ -645,17 +645,33 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		$owners     = array();
 		$openers    = array_column( self::block_openers( $rewritten ), null, 'start' );
 		foreach ( $spans as $span ) {
-			$image_class = self::image_class_for_owner( $owners[ count( $owners ) - 1 ] ?? null );
-			$bound_html .= self::rewrite_markup( substr( $rewritten, $cursor, $span['start'] - $cursor ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error, $image_class )['html'];
+			$top         = count( $owners ) - 1;
+			$image_class = self::image_class_for_owner( $owners[ $top ] ?? null );
+			$segment     = self::rewrite_markup( substr( $rewritten, $cursor, $span['start'] - $cursor ), $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $error, $image_class, self::unbound_media_text_size_slug( $owners[ $top ] ?? null ) );
 			if ( null !== $error ) {
 				return $rewritten;
+			}
+			$bound_html .= $segment['html'];
+			if ( $top >= 0 ) {
+				$owners[ $top ]['ids'] = array_merge( $owners[ $top ]['ids'], $segment['ids'] );
 			}
 			$comment     = substr( $rewritten, $span['start'], $span['end'] - $span['start'] );
 			$bound_html .= $comment;
 			if ( isset( $openers[ $span['start'] ] ) && ! $openers[ $span['start'] ]['self'] ) {
-				$owners[] = $openers[ $span['start'] ];
+				$owners[] = $openers[ $span['start'] ] + array(
+					'ids'    => array(),
+					'offset' => strlen( $bound_html ) - strlen( $comment ),
+				);
 			} elseif ( preg_match( '~^<!--\s+/wp:([a-z0-9/-]+)\s+-->$~', $comment, $closing ) && ( $owners[ count( $owners ) - 1 ]['name'] ?? null ) === $closing[1] ) {
-				array_pop( $owners );
+				$owner  = array_pop( $owners );
+				$unique = array_values( array_unique( array_filter( $owner['ids'] ) ) );
+				if ( null !== self::unbound_media_text_size_slug( $owner ) && 1 === count( $unique ) ) {
+					$attrs              = json_decode( $owner['json'], true );
+					$attrs['mediaType'] = 'image';
+					$attrs['mediaId']   = $unique[0];
+					$opener             = '<!-- wp:' . $owner['name'] . ' ' . serialize_block_attributes( $attrs ) . ' -->';
+					$bound_html         = substr_replace( $bound_html, $opener, $owner['offset'], strlen( $owner['raw'] ) );
+				}
 			}
 			$cursor = $span['end'];
 		}
@@ -663,6 +679,18 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		$bound_html .= $tail['html'];
 
 		return null === $error ? $bound_html : $rewritten;
+	}
+
+	/** Size slug for a media-text owner whose opener has no mediaId yet, else null. */
+	private static function unbound_media_text_size_slug( ?array $owner ): ?string {
+		if ( ! in_array( $owner['name'] ?? '', array( 'media-text', 'core/media-text' ), true ) ) {
+			return null;
+		}
+		$attrs = '' === $owner['json'] ? array() : json_decode( $owner['json'], true );
+		if ( ! is_array( $attrs ) || (int) ( $attrs['mediaId'] ?? 0 ) > 0 ) {
+			return null;
+		}
+		return (string) ( $attrs['mediaSizeSlug'] ?? 'full' );
 	}
 
 	/** The media-text save contract derives both image classes from mediaId. */
@@ -752,7 +780,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
 	 * @return array{html:string,ids:array<int,int>}
 	 */
-	private static function rewrite_markup( string $html, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, ?WP_Error &$error, ?string $image_class = null ): array {
+	private static function rewrite_markup( string $html, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, ?WP_Error &$error, ?string $image_class = null, ?string $unbound_size_slug = null ): array {
 		$ids = array();
 		if ( ! str_contains( $html, '<img' ) && ! str_contains( $html, '<source' ) ) {
 			return array(
@@ -762,11 +790,11 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		}
 		$rewritten = preg_replace_callback(
 			'/<(?:img|source)\b[^>]*>/i',
-			static function ( array $tag ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$bound, &$error, &$ids, $image_class ): string {
+			static function ( array $tag ) use ( $theme_uri, $theme_dir, &$state, &$attachments, &$by_hash, &$report, &$bound, &$error, &$ids, $image_class, $unbound_size_slug ): string {
 				if ( null !== $error ) {
 					return $tag[0];
 				}
-				return self::rewrite_media_tag( $tag[0], $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $ids, $error, $image_class );
+				return self::rewrite_media_tag( $tag[0], $theme_uri, $theme_dir, $state, $attachments, $by_hash, $report, $bound, $ids, $error, $image_class, $unbound_size_slug );
 			},
 			$html
 		);
@@ -784,7 +812,7 @@ final class Static_Site_Importer_Media_Library_Materializer {
 	 * @param array{attachment_count:int,replaceable_media_count:int,bound_block_count:int} $report
 	 * @param array<int,int>                                                                $ids
 	 */
-	private static function rewrite_media_tag( string $tag, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, array &$ids, ?WP_Error &$error, ?string $image_class ): string {
+	private static function rewrite_media_tag( string $tag, string $theme_uri, string $theme_dir, array &$state, array &$attachments, array &$by_hash, array &$report, int &$bound, array &$ids, ?WP_Error &$error, ?string $image_class, ?string $unbound_size_slug = null ): string {
 		$src_id             = 0;
 		$authored_selection = (bool) preg_match( '/\bsrcset="[^"\s]/i', $tag );
 		if ( preg_match( '/\bsrc="([^"]*)"/i', $tag, $src_match ) ) {
@@ -809,6 +837,10 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			if ( $srcset !== $srcset_match[1] ) {
 				$tag = str_replace( 'srcset="' . $srcset_match[1] . '"', 'srcset="' . esc_attr( $srcset ) . '"', $tag );
 			}
+		}
+		if ( '' === $image_class && null !== $unbound_size_slug && $src_id > 0 ) {
+			// Media-text without a serialized mediaId: the opener is given this id once its block closes.
+			$image_class = 'wp-image-' . $src_id . ' size-' . $unbound_size_slug;
 		}
 		if ( '' === $image_class || $src_id <= 0 || ! str_starts_with( strtolower( $tag ), '<img' ) ) {
 			return $tag;
