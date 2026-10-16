@@ -829,14 +829,18 @@ if ( ! function_exists( 'static_site_importer_cli_prepare_request_bundle' ) ) {
 		if ( is_wp_error( $resolved_path ) ) {
 			return $resolved_path;
 		}
-		if ( 'files' === $type && is_dir( $resolved_path ) ) {
+		$metadata = isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array();
+		// A source that declares its capture receipt as a report is already the
+		// staged artifact: the receipt sits beside the website tree, so its
+		// `websiteRoot` describes the original capture, not this directory.
+		$receipt_declared = isset( static_site_importer_cli_request_bundle_declared_reports( isset( $metadata['reports'] ) && is_array( $metadata['reports'] ) ? $metadata['reports'] : array() )['capture-receipt.json'] );
+		if ( 'files' === $type && is_dir( $resolved_path ) && ! $receipt_declared ) {
 			$resolved_path = static_site_importer_cli_capture_website_root( $resolved_path );
 			if ( is_wp_error( $resolved_path ) ) {
 				return $resolved_path;
 			}
 		}
-		$metadata = isset( $source['metadata'] ) && is_array( $source['metadata'] ) ? $source['metadata'] : array();
-		$bundle   = 'files' === $type ? static_site_importer_cli_request_bundle_files( $resolved_path, isset( $metadata['reports'] ) && is_array( $metadata['reports'] ) ? $metadata['reports'] : array() ) : null;
+		$bundle = 'files' === $type ? static_site_importer_cli_request_bundle_files( $resolved_path, isset( $metadata['reports'] ) && is_array( $metadata['reports'] ) ? $metadata['reports'] : array() ) : null;
 		if ( is_wp_error( $bundle ) ) {
 			return $bundle;
 		}
