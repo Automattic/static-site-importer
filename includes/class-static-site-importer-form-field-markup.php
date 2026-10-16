@@ -636,7 +636,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 * Placement a recreated context element keeps as an item of the provider's
 	 * field list, keyed as context styles, from the source graph's layout facts.
 	 */
-	private const CONTEXT_ITEM_FACTS = array(
+	private const CONTEXT_ITEM_FACTS     = array(
 		'column'       => 'grid_column',
 		'row'          => 'grid_row',
 		'area'         => 'grid_area',
@@ -644,7 +644,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 		'align_self'   => 'align_self',
 		'justify_self' => 'justify_self',
 	);
-	private const CONTEXT_BOX_PROPERTIES  = array( 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block_start', 'padding_block_end', 'padding_inline_start', 'padding_inline_end', 'min_height' );
+	private const CONTEXT_BOX_PROPERTIES = array( 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block_start', 'padding_block_end', 'padding_inline_start', 'padding_inline_end', 'min_height' );
 
 	/**
 	 * Join in-form context copy to its v3 source graph element by identity.

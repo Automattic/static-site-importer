@@ -1878,7 +1878,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				}
 				$s->overlay_represented_nodes[] = $cell['id'];
 			}
-			$s->form_classes[] = 'ssi-source-field-list';
+			$s->form_classes[]              = 'ssi-source-field-list';
 			$field_list_layout              = $parent_layout + array( 'wrap' => 'wrap' );
 			$field_list_layout['display']   = 'flex';
 			$field_list_layout['direction'] = 'row';
@@ -1903,8 +1903,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				);
 			}
 			$s->overlay_represented_nodes[] = $parent;
-			$projected = true;
-			$s->operations[] = array(
+			$projected                      = true;
+			$s->operations[]                = array(
 				'dimension'   => 'layout',
 				'strategy'    => 'provider_flex_cell_row_transposition',
 				'target_hash' => hash( 'sha256', $parent ),
