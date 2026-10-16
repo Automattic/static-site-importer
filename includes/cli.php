@@ -840,7 +840,7 @@ if ( ! function_exists( 'static_site_importer_cli_prepare_request_bundle' ) ) {
 				return $resolved_path;
 			}
 		}
-		$bundle   = 'files' === $type ? static_site_importer_cli_request_bundle_files( $resolved_path, isset( $metadata['reports'] ) && is_array( $metadata['reports'] ) ? $metadata['reports'] : array() ) : null;
+		$bundle = 'files' === $type ? static_site_importer_cli_request_bundle_files( $resolved_path, isset( $metadata['reports'] ) && is_array( $metadata['reports'] ) ? $metadata['reports'] : array() ) : null;
 		if ( is_wp_error( $bundle ) ) {
 			return $bundle;
 		}
