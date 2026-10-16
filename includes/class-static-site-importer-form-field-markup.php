@@ -632,7 +632,19 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 * its typography and own box; a recreated wrapper keeps only its box.
 	 */
 	private const CONTEXT_TEXT_PROPERTIES = array( 'color', 'font_family', 'font_size', 'font_style', 'font_weight', 'letter_spacing', 'line_height', 'text_transform', 'text_align' );
-	private const CONTEXT_BOX_PROPERTIES  = array( 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block_start', 'padding_block_end', 'padding_inline_start', 'padding_inline_end', 'min_height' );
+	/**
+	 * Placement a recreated context element keeps as an item of the provider's
+	 * field list, keyed as context styles, from the source graph's layout facts.
+	 */
+	private const CONTEXT_ITEM_FACTS     = array(
+		'column'       => 'grid_column',
+		'row'          => 'grid_row',
+		'area'         => 'grid_area',
+		'order'        => 'order',
+		'align_self'   => 'align_self',
+		'justify_self' => 'justify_self',
+	);
+	private const CONTEXT_BOX_PROPERTIES = array( 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block_start', 'padding_block_end', 'padding_inline_start', 'padding_inline_end', 'min_height' );
 
 	/**
 	 * Join in-form context copy to its v3 source graph element by identity.
@@ -659,6 +671,18 @@ final class Static_Site_Importer_Form_Field_Markup {
 		if ( array() === $nodes ) {
 			return $result;
 		}
+		foreach ( $form['source_context_graph']['variants'] ?? array() as $variant ) {
+			$id = is_array( $variant ) && is_string( $variant['node'] ?? null ) ? $variant['node'] : '';
+			if ( isset( $nodes[ $id ] ) && is_array( $variant['layout_patch'] ?? null ) && is_array( $variant['condition'] ?? null ) ) {
+				$nodes[ $id ]['item_variants'][] = array(
+					'condition' => $variant['condition'],
+					'styles'    => self::context_item_styles( $variant['layout_patch'] ),
+				);
+			}
+		}
+		foreach ( $nodes as $id => $node ) {
+			$nodes[ $id ] = self::with_context_item_placement( $node );
+		}
 		$by_selector = array();
 		foreach ( $nodes as $id => $node ) {
 			$by_selector[ $node['source']['selector'] ] = $id;
@@ -678,7 +702,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 				}
 				$covered[ $id ] = true;
 				$identity       = self::context_node_identity( $nodes[ $id ] );
-				if ( ! self::push_context_fallback( $result['fallbacks'], $identity, $nodes[ $id ], array_merge( self::CONTEXT_TEXT_PROPERTIES, self::CONTEXT_BOX_PROPERTIES ) ) ) {
+				if ( ! self::push_context_fallback( $result['fallbacks'], $identity, $nodes[ $id ], array_merge( self::CONTEXT_TEXT_PROPERTIES, self::CONTEXT_BOX_PROPERTIES, array_values( self::CONTEXT_ITEM_FACTS ) ) ) ) {
 					// Nothing resolved for this copy: its source classes alone carry it.
 					$identity = '';
 				}
@@ -695,7 +719,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 						continue;
 					}
 					$wrapper_identity = self::context_node_identity( $nodes[ $parent ] );
-					self::push_context_fallback( $result['fallbacks'], $wrapper_identity, $nodes[ $parent ], self::CONTEXT_BOX_PROPERTIES );
+					self::push_context_fallback( $result['fallbacks'], $wrapper_identity, $nodes[ $parent ], array_merge( self::CONTEXT_BOX_PROPERTIES, array_values( self::CONTEXT_ITEM_FACTS ) ) );
 					$classes = array_values( array_filter( $nodes[ $parent ]['source']['classes'] ?? array(), static fn( $class_name ): bool => is_string( $class_name ) && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) );
 					array_unshift(
 						$wrappers,
@@ -721,6 +745,36 @@ final class Static_Site_Importer_Form_Field_Markup {
 			}
 		}
 		return $result;
+	}
+
+	/** @return array<string,string> Item placement facts keyed as context styles. */
+	private static function context_item_styles( array $layout ): array {
+		$styles = array();
+		foreach ( self::CONTEXT_ITEM_FACTS as $fact => $style ) {
+			if ( isset( $layout[ $fact ] ) && is_string( $layout[ $fact ] ) && '' !== trim( $layout[ $fact ] ) ) {
+				$styles[ $style ] = $layout[ $fact ];
+			}
+		}
+		return $styles;
+	}
+
+	/**
+	 * Carry a context node's own item placement (a heading spanning the source
+	 * grid, say) with its presentation, so the recreated element keeps its place
+	 * among the provider's field-list items.
+	 */
+	private static function with_context_item_placement( array $node ): array {
+		$base     = self::context_item_styles( is_array( $node['layout'] ?? null ) ? $node['layout'] : array() );
+		$variants = array_values( array_filter( $node['item_variants'] ?? array(), static fn( array $variant ): bool => array() !== $variant['styles'] ) );
+		unset( $node['item_variants'] );
+		if ( array() === $base && array() === $variants ) {
+			return $node;
+		}
+		$presentation             = is_array( $node['presentation'] ?? null ) ? $node['presentation'] : array();
+		$presentation['styles']   = array_merge( is_array( $presentation['styles'] ?? null ) ? $presentation['styles'] : array(), $base );
+		$presentation['variants'] = array_merge( is_array( $presentation['variants'] ?? null ) ? $presentation['variants'] : array(), $variants );
+		$node['presentation']     = $presentation;
+		return $node;
 	}
 
 	private static function context_node_identity( array $node ): string {

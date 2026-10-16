@@ -1878,7 +1878,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				}
 				$s->overlay_represented_nodes[] = $cell['id'];
 			}
-			$s->form_classes[] = 'ssi-source-field-list';
+			$s->form_classes[]              = 'ssi-source-field-list';
 			$field_list_layout              = $parent_layout + array( 'wrap' => 'wrap' );
 			$field_list_layout['display']   = 'flex';
 			$field_list_layout['direction'] = 'row';
@@ -1903,8 +1903,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				);
 			}
 			$s->overlay_represented_nodes[] = $parent;
-			$projected = true;
-			$s->operations[] = array(
+			$projected                      = true;
+			$s->operations[]                = array(
 				'dimension'   => 'layout',
 				'strategy'    => 'provider_flex_cell_row_transposition',
 				'target_hash' => hash( 'sha256', $parent ),
@@ -2640,6 +2640,51 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			);
 		}
 		$graph['nodes']    = $nodes;
+		$graph['variants'] = $variants;
+		return $graph;
+	}
+
+	/**
+	 * Leave the source form's own box to its container presentation.
+	 *
+	 * When the producer records the form's box (`generic/form-container-presentation/v1`),
+	 * the overlay paints it once on the provider container, base and conditional
+	 * facts alike. The layout graph can carry the same box facts on the form node;
+	 * compiled onto the provider form element as well, they apply the source
+	 * padding a second time inside the painted box.
+	 *
+	 * @param array<string,mixed> $graph     Provider layout graph.
+	 * @param array<string,mixed> $container Producer container presentation.
+	 * @return array<string,mixed>
+	 */
+	public static function without_container_box_facts( array $graph, array $container ): array {
+		if ( 'generic/form-container-presentation/v1' !== ( $container['schema'] ?? null ) ) {
+			return $graph;
+		}
+		$declared = is_array( $container['styles'] ?? null ) ? array_keys( $container['styles'] ) : array();
+		foreach ( is_array( $container['variants'] ?? null ) ? $container['variants'] : array() as $variant ) {
+			$declared = array_merge( $declared, is_array( $variant['styles'] ?? null ) ? array_keys( $variant['styles'] ) : array() );
+		}
+		$owned = array_intersect_key( Static_Site_Importer_Provider_Layout_Overlay::box_property_map(), array_flip( $declared ) );
+		if ( array() === $owned ) {
+			return $graph;
+		}
+		foreach ( $graph['nodes'] ?? array() as $index => $node ) {
+			if ( is_array( $node ) && 'form' === ( $node['id'] ?? null ) && is_array( $node['layout'] ?? null ) ) {
+				$graph['nodes'][ $index ]['layout'] = array_diff_key( $node['layout'], $owned );
+			}
+		}
+		$variants = array();
+		foreach ( $graph['variants'] ?? array() as $variant ) {
+			if ( is_array( $variant ) && 'form' === ( $variant['node'] ?? null ) && is_array( $variant['layout_patch'] ?? null ) ) {
+				$variant['layout_patch'] = array_diff_key( $variant['layout_patch'], $owned );
+				if ( array() === $variant['layout_patch'] ) {
+					continue;
+				}
+				$variant['precedence'] = array_diff_key( is_array( $variant['precedence'] ?? null ) ? $variant['precedence'] : array(), array_flip( $owned ) );
+			}
+			$variants[] = $variant;
+		}
 		$graph['variants'] = $variants;
 		return $graph;
 	}

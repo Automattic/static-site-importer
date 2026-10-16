@@ -1178,6 +1178,99 @@ namespace {
 		'provider-runtime-keeps-the-source-rhythm-utility-around-the-fields-and-the-submit',
 		$rhythm_wrap
 	);
+	// A source form that is itself the field grid (`<form class="grid sm:grid-cols-2">`
+	// with its submit as a direct item) carries no source field-list marker: its
+	// submit is an item of that grid, so it stays inside the list and keeps its
+	// column span rather than falling out below the grid at full width.
+	$own_grid_wrap = Static_Site_Importer_Form_Seeder::project_provider_field_list_wrapper(
+		'<div class="jetpack-contact-form-container"><form class="jetpack-contact-form__form"><div class="wp-block-jetpack-contact-form grid gap-5 sm:grid-cols-2 ssi-form-123456789abc"><div class="grunion-field-text-wrap">fields</div><div class="wp-block-button form-button-submit is-submit"><button type="submit">Send</button></div></div></form></div>',
+		array( 'attrs' => array( 'className' => 'grid gap-5 sm:grid-cols-2 ssi-form-123456789abc' ) )
+	);
+	$assert(
+		1 === preg_match( '#<div class="grid gap-5 sm:grid-cols-2"><div class="grunion-field-text-wrap">fields</div><div class="wp-block-button form-button-submit is-submit">#', $own_grid_wrap ),
+		'provider-runtime-keeps-a-source-grid-item-submit-inside-the-field-grid',
+		$own_grid_wrap
+	);
+	// Grid placement a source context element declares (`sm:col-span-2` on the
+	// form heading) is carried with its resolved presentation, conditions intact.
+	$span_boxes = Static_Site_Importer_Form_Field_Markup::context_source_boxes(
+		array(
+			'form'                 => array(
+				'context_before' => array(
+					array(
+						'type'            => 'heading',
+						'level'           => 3,
+						'text'            => 'Request an appointment',
+						'source_selector' => 'form > h3:nth-of-type(1)',
+					),
+				),
+			),
+			'source_context_graph' => array(
+				'nodes'    => array(
+					array(
+						'id'           => 'context-0',
+						'kind'         => 'context',
+						'parent'       => 'form',
+						'layout'       => array(),
+						'presentation' => array( 'styles' => array( 'font_size' => '1.5rem' ) ),
+						'source'       => array( 'selector' => 'form > h3:nth-of-type(1)', 'tag' => 'h3', 'classes' => array( 'sm:col-span-2' ) ),
+					),
+				),
+				'variants' => array(
+					array(
+						'node'         => 'context-0',
+						'condition'    => array( 'type' => 'media', 'query' => '(min-width:40rem)' ),
+						'layout_patch' => array( 'column' => 'span 2/span 2' ),
+					),
+				),
+			),
+		)
+	);
+	$span_fallback = $span_boxes['fallbacks'][0] ?? array();
+	$assert(
+		'1.5rem' === ( $span_fallback['styles']['font_size'] ?? null )
+			&& 'span 2/span 2' === ( $span_fallback['variants'][0]['styles']['grid_column'] ?? null )
+			&& '(min-width:40rem)' === ( $span_fallback['variants'][0]['condition']['query'] ?? null ),
+		'context-heading-keeps-its-source-grid-column-span',
+		wp_json_encode( $span_boxes )
+	);
+	// The container presentation paints the source form's own box once; the
+	// layout graph's copy of those box facts on the form node must not paint it
+	// a second time on the provider form inside that box.
+	$deduped_graph = Static_Site_Importer_Form_Layout_Projection::without_container_box_facts(
+		array(
+			'nodes'    => array(
+				array(
+					'id'     => 'form',
+					'layout' => array( 'display' => 'grid', 'padding' => '1.5rem' ),
+				),
+			),
+			'variants' => array(
+				array(
+					'node'         => 'form',
+					'condition'    => array( 'type' => 'media', 'query' => '(min-width:48rem)' ),
+					'layout_patch' => array( 'padding' => '2rem' ),
+				),
+				array(
+					'node'         => 'form',
+					'condition'    => array( 'type' => 'media', 'query' => '(min-width:40rem)' ),
+					'layout_patch' => array( 'grid_template_columns' => 'repeat(2,minmax(0,1fr))' ),
+				),
+			),
+		),
+		array(
+			'schema'   => 'generic/form-container-presentation/v1',
+			'styles'   => array( 'padding' => '1.5rem' ),
+			'variants' => array( array( 'styles' => array( 'padding' => '2rem' ) ) ),
+		)
+	);
+	$assert(
+		array( 'display' => 'grid' ) === $deduped_graph['nodes'][0]['layout']
+			&& 1 === count( $deduped_graph['variants'] )
+			&& isset( $deduped_graph['variants'][0]['layout_patch']['grid_template_columns'] ),
+		'container-presentation-owns-the-source-form-box-once',
+		wp_json_encode( $deduped_graph )
+	);
 	// In-form heading + a nested `grid sm:grid-cols-2` name/phone row. The heading
 	// is copy inside the form (producer `context_before`), so it is an inner block
 	// of jetpack/contact-form rather than a page-grid sibling. The row maps through
