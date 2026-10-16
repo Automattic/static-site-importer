@@ -178,10 +178,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * @param array<string,mixed>            $layout
 	 * @param array<int,mixed>               $provenance
 	 * @param array<int,string>              $class_tokens
+	 * @param array<string,string>|null      $properties   Fact => CSS property; box facts by default.
 	 * @return array<int,string> Layout fact keys.
 	 */
-	private static function class_carried_box_facts( array $layout, array $provenance, array $class_tokens ): array {
-		$box     = Static_Site_Importer_Provider_Layout_Overlay::box_property_map();
+	private static function class_carried_box_facts( array $layout, array $provenance, array $class_tokens, ?array $properties = null ): array {
+		$box     = $properties ?? Static_Site_Importer_Provider_Layout_Overlay::box_property_map();
 		$carried = array();
 		foreach ( array_intersect_key( $layout, $box ) as $fact => $value ) {
 			$owners = 0;
@@ -838,7 +839,56 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				}
 			}
 			$s->field_blocks[ $control_index ]['attrs']['className'] = trim( (string) preg_replace( '/\s+/', ' ', implode( ' ', array_filter( $class_names ) ) ) );
+			self::suppress_parent_class_carried_control_facts( $s, $control_index, $chain );
 		}
+	}
+
+	/**
+	 * A producer may resolve a parent's spacing onto its child: the gap of a
+	 * `grid gap-2` field wrapper becomes the control's `margin-block-start`, its
+	 * provenance the wrapper's own class rule. The runtime rebuilds that wrapper
+	 * with its source classes, so the enqueued stylesheet already spaces the
+	 * control; compiling the fact onto the control as well doubles the gap.
+	 *
+	 * @param array<int,array<string,mixed>> $chain Source wrappers around the control.
+	 */
+	private static function suppress_parent_class_carried_control_facts( Static_Site_Importer_Form_Topology_State $s, int $control_index, array $chain ): void {
+		$control_id = 'control-' . $control_index;
+		$parent_id  = (string) ( $s->layout_nodes_by_id[ $control_id ]['parent'] ?? '' );
+		$parent     = null;
+		foreach ( $chain as $node ) {
+			if ( '' !== $parent_id && ( $node['id'] ?? null ) === $parent_id ) {
+				$parent = $node;
+			}
+		}
+		$class_tokens = is_array( $parent ) ? self::class_tokens( $parent ) : false;
+		$class_tokens = false === $class_tokens ? array() : array_values( array_filter( $class_tokens ) );
+		if ( array() === $class_tokens ) {
+			return;
+		}
+		$properties = array_intersect_key( Static_Site_Importer_Provider_Layout_Overlay::layout_property_map(), array_flip( array( 'margin_top', 'margin_bottom', 'margin_left', 'margin_right', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end' ) ) );
+		$carried    = self::class_carried_box_facts( $s->layout_by_node[ $control_id ] ?? array(), $s->layout_nodes_by_id[ $control_id ]['provenance'] ?? array(), $class_tokens, $properties );
+		foreach ( $s->variants_by_node[ $control_id ] ?? array() as $variant ) {
+			$patch = self::layout_patch( $variant );
+			foreach ( array_keys( array_intersect_key( $patch, $properties ) ) as $fact ) {
+				$rows = array_map( static fn( $row ): mixed => is_array( $row ) ? array_merge( $row, array( 'condition' => null ) ) : $row, is_array( $variant['provenance'] ?? null ) ? $variant['provenance'] : array() );
+				if ( array( $fact ) === self::class_carried_box_facts( array( $fact => $patch[ $fact ] ), $rows, $class_tokens, $properties ) ) {
+					$s->class_carried_variants[ $control_id ][] = $fact;
+				} else {
+					$carried = array_values( array_diff( $carried, array( $fact ) ) );
+				}
+			}
+		}
+		if ( array() === $carried ) {
+			return;
+		}
+		$s->suppressed_layout_properties[ $control_id ] = array_values( array_unique( array_merge( $s->suppressed_layout_properties[ $control_id ] ?? array(), $carried ) ) );
+		$s->layout_by_node[ $control_id ]               = array_diff_key( $s->layout_by_node[ $control_id ] ?? array(), array_flip( $carried ) );
+		$s->operations[]                                = array(
+			'dimension'   => 'layout',
+			'strategy'    => 'provider_parent_class_carried_control_spacing',
+			'target_hash' => hash( 'sha256', $control_id ),
+		);
 	}
 
 	/** Size the boxes of a multi-box source row as provider field widths. */
