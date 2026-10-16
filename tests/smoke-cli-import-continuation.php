@@ -402,7 +402,11 @@ try {
 	$export_assets      = $export_plan['assets'] ?? array();
 	$assert( 186 === count( $export_plan['pages'] ?? array() ), 'locked-transformer-compiles-every-export-page-through-referenced-request-bundle-path' );
 	$assert( array() === array_filter( $export_diagnostics, static fn( array $diagnostic ): bool => 'file_limit_exceeded' === ( $diagnostic['code'] ?? '' ) ), 'locked-transformer-does-not-truncate-export-export-at-request-bundle-compiler-limit' );
-	$export_pages_with_styles = count( array_filter( $export_plan['pages'] ?? array(), static fn( array $page ): bool => str_contains( (string) ( $page['canonical_block_markup'] ?? '' ), '#123456' ) ) );
+	// The shared stylesheet's colour becomes the theme's contrast token, and
+	// every page binds to that token rather than repeating the literal.
+	$export_palette           = array_column( $export_plan['theme']['design_system']['palette'] ?? array(), 'color', 'slug' );
+	$export_pages_with_styles = count( array_filter( $export_plan['pages'] ?? array(), static fn( array $page ): bool => str_contains( (string) ( $page['canonical_block_markup'] ?? '' ), 'has-contrast-color' ) ) );
+	$assert( '#123456' === ( $export_palette['contrast'] ?? null ), 'locked-transformer-derives-the-shared-linked-stylesheet-colour-as-a-design-token' );
 	$assert( 186 === $export_pages_with_styles, 'locked-transformer-applies-the-shared-linked-stylesheet-to-every-export-document-' . $export_pages_with_styles );
 	$assert( 1 === count( array_filter( $export_assets, static fn( array $asset ): bool => 'website/' . $export_stylesheet_path === ( $asset['source_path'] ?? '' ) ) ), 'locked-transformer-keeps-the-reused-linked-content-addressed-stylesheet-as-one-theme-asset' );
 	$assert( 1 === count( array_filter( $export_assets, static fn( array $asset ): bool => 'inline-style' === ( $asset['source'] ?? '' ) ) ), 'locked-transformer-materializes-the-remaining-inline-stylesheet' );
