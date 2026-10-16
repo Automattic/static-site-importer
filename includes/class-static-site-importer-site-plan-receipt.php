@@ -167,10 +167,51 @@ final class Static_Site_Importer_Site_Plan_Receipt {
 			'theme_materialization'     => $state['theme_materialization'] ?? self::strategy_evidence( $state['args'] ?? array() ),
 		);
 		$receipt['quality_budget_admission']['mechanical_status'] = 'completed' === $status ? 'completed' : $status;
+		// Reported next to the editability decision; absent when Blocks Engine derived none.
+		if ( is_array( $state['design_system'] ?? null ) && array() !== $state['design_system'] ) {
+			$receipt['design_system']         = $state['design_system'];
+			$receipt['design_system_summary'] = self::design_system_summary( $state['design_system'] );
+		}
 		if ( ! empty( $state['args']['defer_materialization_commit'] ) && 'completed' === $status ) {
 			$receipt['transaction'] = (object) array( 'state' => $state );
 		}
 		return $receipt;
+	}
+
+	/**
+	 * One line naming the palette, heading and body fonts, preset share, restyle
+	 * coverage and generated-to-source CSS ratio of a Blocks Engine design system.
+	 *
+	 * @param array<string,mixed> $design_system Blocks Engine `theme.design_system`.
+	 */
+	public static function design_system_summary( array $design_system ): string {
+		$metrics = is_array( $design_system['metrics'] ?? null ) ? $design_system['metrics'] : array();
+		$palette = array();
+		foreach ( is_array( $design_system['palette'] ?? null ) ? $design_system['palette'] : array() as $color ) {
+			if ( is_array( $color ) && is_scalar( $color['slug'] ?? null ) && is_scalar( $color['color'] ?? null ) ) {
+				$palette[] = $color['slug'] . ' ' . $color['color'];
+			}
+		}
+		$fonts = array();
+		foreach ( is_array( $design_system['font_families'] ?? null ) ? $design_system['font_families'] : array() as $family ) {
+			$role = is_array( $family ) ? (string) ( $family['role'] ?? $family['slug'] ?? '' ) : '';
+			if ( in_array( $role, array( 'heading', 'body' ), true ) && ! isset( $fonts[ $role ] ) ) {
+				$fonts[ $role ] = (string) ( $family['name'] ?? $family['font_family'] ?? '' );
+			}
+		}
+		$value = static fn( mixed $metric ): string => is_numeric( $metric ) ? (string) $metric : 'n/a';
+		$parts = array();
+		if ( array() !== $palette ) {
+			$parts[] = 'palette ' . implode( ', ', array_slice( $palette, 0, 8 ) ) . ( count( $palette ) > 8 ? ' (+' . ( count( $palette ) - 8 ) . ')' : '' );
+		}
+		if ( array() !== $fonts ) {
+			// One family serving both roles is reported as `body` only by Blocks Engine.
+			$parts[] = 'heading ' . ( $fonts['heading'] ?? $fonts['body'] ) . ', body ' . ( $fonts['body'] ?? $fonts['heading'] );
+		}
+		$parts[] = 'preset_share ' . $value( $metrics['preset_share'] ?? null );
+		$parts[] = 'restyle_coverage ' . $value( $metrics['restyle_coverage'] ?? null );
+		$parts[] = 'css ratio ' . $value( $metrics['generated_to_source_css_ratio'] ?? null );
+		return 'Design system: ' . implode( '; ', $parts );
 	}
 
 	/** Generate a server-side receipt identity that cannot be inferred from the plan. */

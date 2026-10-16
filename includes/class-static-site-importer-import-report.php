@@ -38,6 +38,7 @@ final class Static_Site_Importer_Import_Report implements ArrayAccess, JsonSeria
 		'theme_runtime',
 		'companion_plugins',
 		'conversion_fragments',
+		'design_system',
 		'diagnostic_count',
 		'diagnostics',
 		'diagnostics_truncated',

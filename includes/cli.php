@@ -2166,7 +2166,7 @@ function static_site_importer_cli_materialization_summary( array $receipt, array
 	}
 	$layout        = isset( $receipt['computed_layout'] ) && is_array( $receipt['computed_layout'] ) ? $receipt['computed_layout'] : array();
 	$plan_identity = is_array( $receipt['plan_identity'] ?? null ) ? $receipt['plan_identity'] : array();
-	return array(
+	$summary       = array(
 		'schema'                 => 'static-site-importer/materialization-receipt/v2',
 		'status'                 => 'completed',
 		'plan_identity'          => $plan_identity,
@@ -2190,6 +2190,11 @@ function static_site_importer_cli_materialization_summary( array $receipt, array
 			'loss_rows'      => count( $diagnostics ) > 25,
 		),
 	);
+	// One line, next to the editability decision; absent without a design system.
+	if ( is_string( $receipt['design_system_summary'] ?? null ) && '' !== $receipt['design_system_summary'] ) {
+		$summary['design_system_summary'] = static_site_importer_cli_sidecar_lineage_value( substr( (string) preg_replace( '/[^\x20-\x7E]/', '?', $receipt['design_system_summary'] ), 0, 500 ) );
+	}
+	return $summary;
 }
 
 function static_site_importer_cli_sidecar_token( $value, int $maximum ): bool {

@@ -29,7 +29,15 @@
     "owner_tasks": { "$ref": "#/$defs/ownerTasks" },
     "disposition": { "enum": ["passed", "failed", "not_proven", "owner_decisions_required"] },
     "accepted_built_allowed": { "type": "boolean" },
-    "report_card": { "type": "string", "minLength": 1 }
+    "report_card": { "type": "string", "minLength": 1 },
+    "design_system": {
+      "type": "object",
+      "required": ["schema", "metrics"],
+      "properties": {
+        "schema": { "type": "string" },
+        "metrics": { "type": "object" }
+      }
+    }
   },
   "$defs": {
     "status": { "enum": ["pass", "hard_failure", "required_owner_decision", "acceptable_conversion", "informational", "evidence_gap"] },

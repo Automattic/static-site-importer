@@ -149,6 +149,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 
 		// Blocks Engine owns the editability policy: honour its decision once.
 		$state['editability_report'] = self::editability_decision( $plan );
+		$state['design_system']      = self::design_system( $plan, is_array( $args['source_reports']['editability_report'] ?? null ) ? $args['source_reports']['editability_report'] : array() );
 		if ( 'failed' === $state['editability_report']['status'] ) {
 			$state['diagnostics'][]  = $state['editability_report']['diagnostic'];
 			$state['failure_reason'] = 'editability_policy_failed';
@@ -432,6 +433,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			'plan_identity'                     => $prepared['plan_identity'],
 			'receipt_instance_id'               => $prepared['receipt_instance_id'],
 			'editability_report'                => $prepared['editability_report'] ?? array(),
+			'design_system'                     => $prepared['design_system'] ?? array(),
 			'base_resolved'                     => $base_resolved,
 			'prepared_resolved_projection_hash' => $prepared['prepared_resolved_projection_hash'],
 			'resolved'                          => $base_resolved,
@@ -1370,6 +1372,27 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			'threshold_failures'      => array_slice( $failures, 0, 10 ),
 		);
 		return $decision;
+	}
+
+	/**
+	 * Read the Blocks Engine design system the plan's theme was derived from.
+	 *
+	 * A reported quality signal, never a gate: the plan's `theme.design_system`
+	 * (token report plus `metrics`) is carried unchanged; when only the
+	 * editability report carries it (`design_system` with `metrics`), that is
+	 * used. An older Blocks Engine produces neither and the section is absent.
+	 *
+	 * @param array<string,mixed> $plan               Canonical plan.
+	 * @param array<string,mixed> $editability_report Blocks Engine editability report, when available.
+	 * @return array<string,mixed>
+	 */
+	public static function design_system( array $plan, array $editability_report = array() ): array {
+		foreach ( array( $plan['theme']['design_system'] ?? null, $editability_report['design_system'] ?? null ) as $design_system ) {
+			if ( is_array( $design_system ) && is_array( $design_system['metrics'] ?? null ) ) {
+				return $design_system;
+			}
+		}
+		return array();
 	}
 
 	/** @param array<string,mixed> $plan */
