@@ -666,11 +666,11 @@ final class Static_Site_Importer_Media_Library_Materializer {
 				$owner  = array_pop( $owners );
 				$unique = array_values( array_unique( array_filter( $owner['ids'] ) ) );
 				if ( null !== self::unbound_media_text_size_slug( $owner ) && 1 === count( $unique ) ) {
-					$attrs                   = json_decode( $owner['json'], true );
-					$attrs['mediaType']      = 'image';
-					$attrs['mediaId']        = $unique[0];
-					$opener                  = '<!-- wp:' . $owner['name'] . ' ' . serialize_block_attributes( $attrs ) . ' -->';
-					$bound_html              = substr_replace( $bound_html, $opener, $owner['offset'], strlen( $owner['raw'] ) );
+					$attrs              = json_decode( $owner['json'], true );
+					$attrs['mediaType'] = 'image';
+					$attrs['mediaId']   = $unique[0];
+					$opener             = '<!-- wp:' . $owner['name'] . ' ' . serialize_block_attributes( $attrs ) . ' -->';
+					$bound_html         = substr_replace( $bound_html, $opener, $owner['offset'], strlen( $owner['raw'] ) );
 				}
 			}
 			$cursor = $span['end'];
