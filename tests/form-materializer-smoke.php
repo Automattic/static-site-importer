@@ -1822,6 +1822,42 @@ namespace {
 		'min-width-scoped-gutter-row-maps-and-stacks-below-its-query',
 		wp_json_encode( $scoped_gutter_row )
 	);
+	// A wrapper hidden by `display:none !important` can never be revealed, so its
+	// control is a runtime trap (a spam honeypot) the provider form omits and the
+	// form still maps. A plainly hidden wrapper is how multi-step pages and
+	// conditional fields hide fields they later reveal, so its field is kept.
+	$force_hidden_seed = static function ( string $trap_style ) use ( $artifact_compiler ): array {
+		$html      = '<form method="post" action="/contact/"><input type="text" name="name" aria-label="Name">'
+			. '<p style="' . $trap_style . '"><label>Comments<textarea name="trap_textarea"></textarea></label></p>'
+			. '<input type="tel" name="phone" aria-label="Phone">'
+			. '<button type="submit">Send</button></form>';
+		$form      = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $html ) ) )->toArray() )['fallbacks'][0] ?? array();
+		$validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $form ) ) );
+		$row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated['forms'] ?? array() ) )['forms'][0] ?? array();
+		return array(
+			'errors' => $validated['errors'] ?? array(),
+			'row'    => $row,
+			'markup' => (string) ( $row['block_markup'] ?? '' ),
+		);
+	};
+	$force_hidden = $force_hidden_seed( 'display:none !important' );
+	$assert(
+		empty( $force_hidden['errors'] )
+			&& 'mapped' === ( $force_hidden['row']['status'] ?? '' )
+			&& ! str_contains( $force_hidden['markup'], 'wp:jetpack/field-textarea' )
+			&& ! str_contains( $force_hidden['markup'], 'Comments' )
+			&& str_contains( $force_hidden['markup'], 'Phone' )
+			&& str_contains( $force_hidden['markup'], 'Name' )
+			&& empty( $force_hidden['row']['computed_layout_receipt']['losses'] ?? array() ),
+		'force-hidden-wrapper-control-is-omitted-and-form-maps',
+		wp_json_encode( $force_hidden )
+	);
+	$plainly_hidden = $force_hidden_seed( 'display:none' );
+	$assert(
+		str_contains( $plainly_hidden['markup'], 'wp:jetpack/field-textarea' ),
+		'plainly-hidden-wrapper-keeps-its-field',
+		wp_json_encode( $plainly_hidden )
+	);
 	$real_entity_path = getenv( 'STATIC_SITE_IMPORTER_REAL_FORM_ENTITY' );
 	if ( is_string( $real_entity_path ) && is_readable( $real_entity_path ) ) {
 		$real_entity_data = json_decode( (string) file_get_contents( $real_entity_path ), true );
