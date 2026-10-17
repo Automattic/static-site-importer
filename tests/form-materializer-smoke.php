@@ -1822,6 +1822,52 @@ namespace {
 		'min-width-scoped-gutter-row-maps-and-stacks-below-its-query',
 		wp_json_encode( $scoped_gutter_row )
 	);
+	// Desktop-first equal-column row: two tracks by default, one below a
+	// max-width query. That is the provider's equal-width row with its stack
+	// scoped to the source query. A narrowing that also changes another
+	// property, an unequal narrowing, or a min-width collapse still declines.
+	$narrowing_row_fields = '<form class="cf" novalidate><div class="row"><label class="field"><span>Name</span><input type="text" name="name" required></label><label class="field"><span>Email</span><input type="email" name="email" required></label></div>'
+		. '<label class="field"><span>Subject</span><input type="text" name="subject" required></label><label class="field"><span>Message</span><textarea name="message" rows="6" required></textarea></label><button type="submit">Send</button></form>';
+	$narrowing_row_seed = static function ( string $css ) use ( $artifact_compiler, $narrowing_row_fields ): array {
+		$form      = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => '<style>' . $css . '</style>' . $narrowing_row_fields ) ) )->toArray() )['fallbacks'][0] ?? array();
+		$validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $form ) ) );
+		$row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated['forms'] ?? array() ) )['forms'][0] ?? array();
+		return array(
+			'errors' => $validated['errors'] ?? array(),
+			'status' => $row['status'] ?? '',
+			'losses' => array_column( $row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' ),
+			'halves' => preg_match_all( '#<!-- wp:jetpack/field-(?:text|email) \{[^}]*"width":50#', (string) ( $row['block_markup'] ?? '' ) ),
+			'css'    => (string) ( $row['provider_layout_overlay_css']['css'] ?? '' ),
+		);
+	};
+	foreach ( array(
+		'fr'     => '.cf{display:grid;gap:1.1rem}.cf .row{display:grid;grid-template-columns:1fr 1fr;gap:1.1rem}@media (max-width:720px){.cf .row{grid-template-columns:1fr}}',
+		'minmax' => '.cf .row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}@media (max-width:600px){.cf .row{grid-template-columns:minmax(0,1fr)}}',
+	) as $narrowing_case => $narrowing_css ) {
+		$narrowing_row = $narrowing_row_seed( $narrowing_css );
+		$query         = 'fr' === $narrowing_case ? '(max-width:720px)' : '(max-width:600px)';
+		$assert(
+			empty( $narrowing_row['errors'] )
+				&& 'mapped' === $narrowing_row['status']
+				&& ! in_array( 'provider_wrapper_layout_unrepresentable', $narrowing_row['losses'], true )
+				&& 2 === $narrowing_row['halves']
+				&& 1 === preg_match( '/@media ' . preg_quote( $query, '/' ) . '\{[^{}]*-wrap\{flex:1 1 100%;width:100%\}/', $narrowing_row['css'] ),
+			'desktop-first-equal-row-maps-and-stacks-at-its-max-width-query-' . $narrowing_case,
+			wp_json_encode( $narrowing_row )
+		);
+	}
+	foreach ( array(
+		'gap'      => '.cf .row{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media (max-width:600px){.cf .row{grid-template-columns:1fr;gap:4px}}',
+		'unequal'  => '.cf .row{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media (max-width:600px){.cf .row{grid-template-columns:1fr 2fr}}',
+		'minwidth' => '.cf .row{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media (min-width:600px){.cf .row{grid-template-columns:1fr}}',
+	) as $declined_case => $declined_css ) {
+		$declined_row = $narrowing_row_seed( $declined_css );
+		$assert(
+			'mapped' !== $declined_row['status'] && in_array( 'provider_wrapper_layout_unrepresentable', $declined_row['losses'], true ),
+			'non-stacking-row-variant-keeps-wrapper-layout-loss-' . $declined_case,
+			wp_json_encode( $declined_row )
+		);
+	}
 	$real_entity_path = getenv( 'STATIC_SITE_IMPORTER_REAL_FORM_ENTITY' );
 	if ( is_string( $real_entity_path ) && is_readable( $real_entity_path ) ) {
 		$real_entity_data = json_decode( (string) file_get_contents( $real_entity_path ), true );
