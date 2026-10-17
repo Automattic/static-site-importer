@@ -2283,7 +2283,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( array() === $facts ) {
 				continue;
 			}
-			$box_only    = array() !== $facts && array() === array_diff( $facts, array_keys( Static_Site_Importer_Provider_Layout_Overlay::box_property_map() ) );
+			$box_only    = array() === array_diff( $facts, array_keys( Static_Site_Importer_Provider_Layout_Overlay::box_property_map() ) );
 			$s->losses[] = array(
 				'dimension'   => $box_only ? 'layout' : 'topology',
 				'reason_code' => $box_only ? 'provider_wrapper_box_unrepresentable' : 'provider_wrapper_layout_unrepresentable',
