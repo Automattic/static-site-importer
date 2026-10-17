@@ -1929,6 +1929,22 @@ namespace {
 		'authored-less-textarea-keeps-the-platform-inline-level-box-participation-even-with-a-captured-height',
 		wp_json_encode( array( 'rows_css' => $authored_rows_css, 'height_css' => $authored_textarea_height_row['provider_layout_overlay_css']['css'] ?? '' ) )
 	);
+	// A textarea whose source field row is a grid container is a grid item, so its
+	// outer display is blockified: the projection restores `block`, not the
+	// block-flow platform default, so no editor row gains a baseline descent.
+	$grid_row_html   = '<style>.row{display:grid;gap:8px}textarea{box-sizing:border-box;padding:12px;font-size:14px;line-height:20px;border:1px solid}</style><form>'
+		. '<div class="row"><label>Message</label><textarea rows="6" required></textarea></div>'
+		. '<button type="submit">Send</button></form>';
+	$grid_row_source = class_exists( $artifact_compiler ) ? ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $grid_row_html ) ) )->toArray() )['fallbacks'][0] ?? array() : array();
+	$grid_row_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $grid_row_source ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$grid_row_css    = (string) ( $grid_row_row['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		'mapped' === ( $grid_row_row['status'] ?? '' )
+			&& 1 === preg_match( '/display:block;height:auto/', $grid_row_css )
+			&& ! str_contains( $grid_row_css, 'display:inline-block' ),
+		'grid-row-textarea-takes-the-blockified-grid-item-display',
+		$grid_row_css
+	);
 	$captured_display_form = $authored_textarea_height_form;
 	$captured_display_form['forms'][0]['presentation_graph'] = array(
 		'schema' => 'generic/computed-form-presentation/v1', 'basis' => 'source_css_cascade', 'truncated' => false, 'limits' => array( 'controls' => 128, 'rules_per_role' => 96 ), 'variants' => array(), 'diagnostics' => array(),

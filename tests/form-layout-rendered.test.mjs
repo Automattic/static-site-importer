@@ -363,9 +363,11 @@ test( 'editor canvas phone, dropdown and rows-sized textarea controls take the f
 		if ( 'select' === field.type ) {
 			return `<div class="wp-block jetpack-field-dropdown__toggle ${ field.inputClassName }" data-control="select"><div class="rich-text">One</div><span class="jetpack-field-dropdown__icon"></span></div>`;
 		}
-		return `<textarea class="wp-block jetpack-field__textarea ${ field.inputClassName }" data-control="textarea"></textarea>`;
+		// Jetpack's textarea field renders its input block inside a block-flow
+		// inner-blocks layout after the label block.
+		return `<div class="jetpack-field__control block-editor-block-list__layout"><textarea class="wp-block jetpack-field__textarea ${ field.inputClassName }" data-control="textarea"></textarea></div>`;
 	};
-	const editorFields = seeded.fields.map( ( field ) => `<div class="wp-block jetpack-field wp-block-jetpack-field-${ field.type } jetpack-field-${ field.type } ${ field.className }"><div class="wp-block wp-block-jetpack-label"><label>${ field.type }</label></div>${ editorControl( field ) }</div>` ).join( '' );
+	const editorFields = seeded.fields.map( ( field ) => `<div class="wp-block jetpack-field wp-block-jetpack-field-${ field.type } jetpack-field-${ field.type } ${ field.className }" data-field="${ field.type }"><div class="wp-block wp-block-jetpack-label ${ field.labelClassName }"><label>${ field.type }</label></div>${ editorControl( field ) }</div>` ).join( '' );
 	const frontendFields = seeded.fields.map( ( field ) => field.frontendHtml ).join( '' );
 	const browser = await chromium.launch();
 	try {
@@ -410,6 +412,13 @@ test( 'editor canvas phone, dropdown and rows-sized textarea controls take the f
 		// and a four-row textarea with 12px block padding and a 1px border.
 		assert.ok( Math.abs( ( await box( pairs.telephone[ 0 ] ) ).height - 44 ) <= 1 );
 		assert.ok( Math.abs( ( await box( pairs.textarea[ 0 ] ) ).height - ( 4 * 24 + 24 + 2 ) ) <= 1 );
+		// The source textarea is a grid item of its `grid gap-2` field row, so its
+		// outer display is blockified and the row carries no baseline descent. The
+		// editor field block, where the textarea sits in block flow, must match the
+		// front-end field shell.
+		const frontendRow = await box( '.frontend .grunion-field-textarea-wrap' );
+		const editorRow = await box( '.editor-styles-wrapper [data-field="textarea"]' );
+		assert.ok( Math.abs( frontendRow.height - editorRow.height ) <= 1, `textarea field row ${ JSON.stringify( { frontendRow, editorRow } ) }` );
 	} finally {
 		await browser.close();
 	}
