@@ -1705,6 +1705,28 @@ namespace {
 		'flex-field-cell-rows-transpose-width-margin-and-phone-column-flow',
 		wp_json_encode( array( 'validation' => $flex_cell_validated, 'row' => $flex_cell_row, 'css' => $flex_cell_css ) )
 	);
+	// A label that wraps its own control and is set to `display: block` stacks
+	// one field in block flow, the provider's own field arrangement. Only its
+	// margin is a box fact the provider does not carry; that is a named box
+	// loss, not a topology decline.
+	$block_label_html = '<style>.contact label{display:block;font-size:16px;margin-bottom:16px}.contact input,.contact textarea{display:block;width:100%}</style>'
+		. '<section class="contact"><form action="https://example.com/submit" method="POST"><label>Your name<input name="name" required></label>'
+		. '<label>Your email<input type="email" name="email" required></label><label>Message<textarea name="message" rows="4"></textarea></label>'
+		. '<button type="submit">Send</button></form></section>';
+	$block_label_form      = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $block_label_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$block_label_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $block_label_form ) ) );
+	$block_label_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $block_label_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$block_label_losses    = array_column( $block_label_row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' );
+	$assert(
+		empty( $block_label_validated['errors'] )
+			&& 'mapped' === ( $block_label_row['status'] ?? '' )
+			&& true === ( $block_label_row['runtime_mapped'] ?? false )
+			&& ! in_array( 'provider_wrapper_layout_unrepresentable', $block_label_losses, true )
+			&& 3 === count( array_keys( $block_label_losses, 'provider_wrapper_box_unrepresentable', true ) )
+			&& str_contains( (string) ( $block_label_row['block_markup'] ?? '' ), 'wp:jetpack/field-email' ),
+		'block-flow-label-wrappers-map-with-named-box-losses',
+		wp_json_encode( array( 'validation' => $block_label_validated, 'row' => $block_label_row ) )
+	);
 	$real_entity_path = getenv( 'STATIC_SITE_IMPORTER_REAL_FORM_ENTITY' );
 	if ( is_string( $real_entity_path ) && is_readable( $real_entity_path ) ) {
 		$real_entity_data = json_decode( (string) file_get_contents( $real_entity_path ), true );
