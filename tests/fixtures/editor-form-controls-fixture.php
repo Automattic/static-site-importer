@@ -33,10 +33,11 @@ namespace {
 	$row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated['forms'] ?? array() ) )['forms'][0] ?? array();
 	$markup    = (string) ( $row['block_markup'] ?? '' );
 	$fields    = array();
-	if ( preg_match_all( '/<!-- wp:jetpack\/field-(telephone|select|textarea) (\{.*?\}) -->.*?<!-- wp:jetpack\/(?:phone-)?input (\{.*?\}) -->/s', $markup, $matches, PREG_SET_ORDER ) ) {
+	if ( preg_match_all( '/<!-- wp:jetpack\/field-(telephone|select|textarea) (\{.*?\}) -->.*?<!-- wp:jetpack\/label (\{.*?\}) -->.*?<!-- wp:jetpack\/(?:phone-)?input (\{.*?\}) -->/s', $markup, $matches, PREG_SET_ORDER ) ) {
 		foreach ( $matches as $match ) {
 			$field_attrs = json_decode( $match[2], true );
-			$input_attrs = json_decode( $match[3], true );
+			$label_attrs = json_decode( $match[3], true );
+			$input_attrs = json_decode( $match[4], true );
 			$type        = $match[1];
 			$field_class = (string) ( $field_attrs['className'] ?? '' );
 			$input_class = (string) ( $input_attrs['className'] ?? '' );
@@ -55,6 +56,7 @@ namespace {
 			$fields[]   = array(
 				'type'           => $type,
 				'className'      => $field_class,
+				'labelClassName' => (string) ( $label_attrs['className'] ?? '' ),
 				'inputClassName' => $input_class,
 				'frontendHtml'   => Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( $field_html ),
 			);

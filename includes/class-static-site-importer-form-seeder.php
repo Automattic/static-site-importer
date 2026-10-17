@@ -1252,6 +1252,38 @@ class Static_Site_Importer_Form_Seeder {
 	}
 
 	/**
+	 * Whether the control's source parent is a grid or flex container, which
+	 * blockifies the control's outer display.
+	 *
+	 * The parent comes from the form's layout graph (`control-<index>` node's
+	 * `parent`); its display is read from `layout.display`, else the resolved
+	 * `presentation.styles.display`. An unknown parent is treated as block flow.
+	 *
+	 * @param array<string,mixed> $form          Provider form manifest row.
+	 * @param int|string          $control_index Control index.
+	 */
+	private static function source_parent_blockifies_control( array $form, int|string $control_index ): bool {
+		$nodes = $form['layout_graph']['nodes'] ?? null;
+		if ( ! is_array( $nodes ) ) {
+			return false;
+		}
+		$nodes_by_id = array();
+		foreach ( $nodes as $node ) {
+			if ( is_array( $node ) && is_string( $node['id'] ?? null ) ) {
+				$nodes_by_id[ $node['id'] ] = $node;
+			}
+		}
+		$parent_id = $nodes_by_id[ 'control-' . $control_index ]['parent'] ?? null;
+		$parent    = is_string( $parent_id ) ? ( $nodes_by_id[ $parent_id ] ?? null ) : null;
+		if ( ! is_array( $parent ) ) {
+			return false;
+		}
+		$display = $parent['layout']['display'] ?? ( $parent['presentation']['styles']['display'] ?? null );
+
+		return is_string( $display ) && in_array( strtolower( trim( $display ) ), array( 'grid', 'inline-grid', 'flex', 'inline-flex' ), true );
+	}
+
+	/**
 	 * Neutralize this provider's fixed textarea height so the authored `rows`
 	 * attribute can size the control, and keep the source platform's inline-level
 	 * box participation for the multi-line control.
@@ -1279,6 +1311,13 @@ class Static_Site_Importer_Form_Seeder {
 	 * is restored so the materialized row keeps the source box; a captured
 	 * `display` is authoritative and this projection does not run.
 	 *
+	 * The platform default is the source's computed display only inside a
+	 * block-flow parent. A textarea whose source parent is a grid or flex
+	 * container is a grid or flex item, so its outer display is blockified to
+	 * `block`; the projection then restores `block`, which keeps the editor,
+	 * where the control sits in block flow, free of the baseline descent the
+	 * source row never had.
+	 *
 	 * @param array<string,mixed> $form Provider form manifest row.
 	 * @param array<int,mixed>    $controls Normalized controls list.
 	 * @return array<string,mixed>
@@ -1300,7 +1339,7 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			$display_projected = false;
 			if ( ! isset( $existing_styles['display'] ) ) {
-				$existing_styles['display'] = 'inline-block';
+				$existing_styles['display'] = self::source_parent_blockifies_control( $form, $control_index ) ? 'block' : 'inline-block';
 				$display_projected          = true;
 			}
 			if ( isset( $existing_styles['height'] ) ) {
