@@ -2280,7 +2280,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			foreach ( $s->variants_by_node[ $node_id ] ?? array() as $variant ) {
 				$facts = array_merge( $facts, self::non_block_flow_facts( self::layout_patch( $variant ) ) );
 			}
-			if ( array() === $facts && array() !== $layout ) {
+			if ( array() === $facts ) {
 				continue;
 			}
 			$box_only    = array() !== $facts && array() === array_diff( $facts, array_keys( Static_Site_Importer_Provider_Layout_Overlay::box_property_map() ) );
