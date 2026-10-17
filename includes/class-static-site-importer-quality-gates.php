@@ -133,7 +133,14 @@ final class Static_Site_Importer_Quality_Gates {
 		$quality['diagnostic_refs'] = self::quality_diagnostic_refs( $report['diagnostics'] ?? array() );
 		$report['quality']          = $quality;
 		self::normalize_source_document_diagnostic_refs( $report );
-		$report['artifact_diagnostics'] = Static_Site_Importer_Artifact_Diagnostics_Adapter::build_for_import_report( $report );
+		$artifact_diagnostics = Static_Site_Importer_Artifact_Diagnostics_Adapter::build_for_import_report( $report );
+		// The report's top-level diagnostics list is canonical. When the artifact
+		// envelope would persist a byte-identical copy, reference it instead.
+		if ( isset( $artifact_diagnostics['diagnostics'] ) && array_values( (array) ( $report['diagnostics'] ?? array() ) ) === $artifact_diagnostics['diagnostics'] ) {
+			unset( $artifact_diagnostics['diagnostics'] );
+			$artifact_diagnostics['diagnostics_ref'] = 'diagnostics';
+		}
+		$report['artifact_diagnostics'] = $artifact_diagnostics;
 
 		return $quality;
 	}
