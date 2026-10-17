@@ -786,6 +786,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			'bottom'              => 'bottom',
 			'left'                => 'left',
 			'width'               => 'width',
+			'max_width'           => 'max-width',
 			'height'              => 'height',
 			'columns'             => 'grid-template-columns',
 			'rows'                => 'grid-template-rows',
