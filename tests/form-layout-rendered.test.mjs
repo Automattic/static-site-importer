@@ -326,3 +326,91 @@ test( 'editor canvas lays provider fields out on the layered source form grid, n
 		await browser.close();
 	}
 } );
+
+test( 'editor canvas phone, dropdown and rows-sized textarea controls take the front-end control box', async () => {
+	requireBrowserPrerequisites();
+	const raw = execFileSync( 'php', [ 'tests/fixtures/editor-form-controls-fixture.php' ], { encoding: 'utf8', env: process.env } );
+	const seeded = JSON.parse( raw );
+	assert.equal( seeded.status, 'mapped', raw );
+	assert.deepEqual( seeded.fields.map( ( field ) => field.type ), [ 'telephone', 'select', 'textarea' ], raw );
+	// Jetpack's own front-end (grunion.css) and editor (blocks/editor.css) rules
+	// that compete with the projection for these control boxes.
+	const providerFrontendCss = `
+		:where(.contact-form input[type=tel],.contact-form textarea){border:1px solid #8c8f94;border-radius:0;box-sizing:border-box;padding:16px;font:inherit;width:100%;background:#fff}
+		:where(.contact-form textarea){display:block;height:200px}
+		.contact-form .grunion-field-wrap input,.contact-form .grunion-field-wrap textarea{margin:0}
+		.contact-form .contact-form__select-wrapper{padding:0;position:relative}
+		.contact-form :where(.contact-form__select-wrapper){background-color:#fff;border:1px solid #8c8f94}
+		.contact-form .contact-form__select-element-wrapper{display:flex}
+		.contact-form :where(.contact-form__select-element-wrapper),.contact-form :where(.contact-form__select-wrapper select){background:inherit!important;border:0!important;border-radius:inherit!important;border-width:0!important}
+		.contact-form .contact-form__select-wrapper select{appearance:none;box-sizing:border-box;padding:16px;width:100%}`;
+	const providerEditorCss = `
+		.jetpack-field.jetpack-field-telephone .jetpack-field__input{background-color:#fff;border-color:#8c8f94;border-width:1px;box-sizing:border-box;display:flex;gap:8px}
+		.jetpack-field.jetpack-field-telephone .jetpack-field__input .jetpack-field__input-element:not(.jetpack-field__input-prefix .jetpack-field__input-element){background-color:#0000;border:0;box-sizing:border-box;color:inherit;flex:1;font:inherit;line-height:inherit;min-height:unset;outline:none;padding:0;resize:none}
+		.jetpack-field .jetpack-field__textarea{display:block;min-height:200px}
+		.jetpack-field .jetpack-field__input,.jetpack-field .jetpack-field__textarea{box-shadow:unset;box-sizing:border-box;margin:0;padding:16px}
+		:where(.jetpack-field .jetpack-field__input,.jetpack-field .jetpack-field__textarea,.jetpack-field .jetpack-field-dropdown__toggle){border:1px solid #8c8f94;border-radius:0;font:inherit}
+		:where(.jetpack-field .jetpack-field-dropdown__toggle){background-color:#fff}
+		.jetpack-field-dropdown__toggle{align-items:center;border-color:#8c8f94;display:flex;font-size:16px;justify-content:space-between;padding:16px}
+		.jetpack-field-dropdown__toggle .rich-text{flex-grow:1}
+		.jetpack-field-dropdown__icon{align-items:center;border:2px solid #0000;box-sizing:border-box;display:flex;height:.8em;width:.8em}`;
+	// Jetpack's editor DOM: each input block's className lands on the control
+	// element itself (the phone wrapper, the dropdown toggle, the textarea).
+	const editorControl = ( field ) => {
+		if ( 'telephone' === field.type ) {
+			return `<div class="wp-block jetpack-field__input jetpack-field__input-phone ${ field.inputClassName }" data-control="telephone"><input type="text" class="jetpack-field__input-element"></div>`;
+		}
+		if ( 'select' === field.type ) {
+			return `<div class="wp-block jetpack-field-dropdown__toggle ${ field.inputClassName }" data-control="select"><div class="rich-text">One</div><span class="jetpack-field-dropdown__icon"></span></div>`;
+		}
+		return `<textarea class="wp-block jetpack-field__textarea ${ field.inputClassName }" data-control="textarea"></textarea>`;
+	};
+	const editorFields = seeded.fields.map( ( field ) => `<div class="wp-block jetpack-field wp-block-jetpack-field-${ field.type } jetpack-field-${ field.type } ${ field.className }"><div class="wp-block wp-block-jetpack-label"><label>${ field.type }</label></div>${ editorControl( field ) }</div>` ).join( '' );
+	const frontendFields = seeded.fields.map( ( field ) => field.frontendHtml ).join( '' );
+	const browser = await chromium.launch();
+	try {
+		const page = await browser.newPage( { viewport: { width: 1024, height: 1200 } } );
+		await page.setContent( `<!doctype html><style>${ seeded.sourceCss }</style><style>
+			body{margin:0;font-family:sans-serif;font-size:16px}
+			.frontend,.editor-styles-wrapper{width:600px}
+			${ providerFrontendCss }${ providerEditorCss }
+		</style><style>${ seeded.css }${ seeded.editorCss }</style>
+		<div class="frontend"><div class="wp-block-jetpack-contact-form ${ seeded.className }"><form class="jetpack-contact-form__form contact-form">${ frontendFields }</form></div></div>
+		<div class="editor-styles-wrapper"><div class="wp-block wp-block-jetpack-contact-form ${ seeded.className }"><div class="jetpack-contact-form block-editor-block-list__layout is-layout-flex">${ editorFields }</div></div></div>` );
+		const box = ( selector ) => page.locator( selector ).evaluate( ( node ) => {
+			const style = getComputedStyle( node );
+			return {
+				height: node.getBoundingClientRect().height,
+				borderTopWidth: parseFloat( style.borderTopWidth ),
+				borderBottomWidth: parseFloat( style.borderBottomWidth ),
+				paddingTop: parseFloat( style.paddingTop ),
+				paddingRight: parseFloat( style.paddingRight ),
+				paddingBottom: parseFloat( style.paddingBottom ),
+				paddingLeft: parseFloat( style.paddingLeft ),
+				background: style.backgroundColor,
+			};
+		} );
+		const pairs = {
+			telephone: [ '.frontend input[type=tel]', '.editor-styles-wrapper [data-control="telephone"]' ],
+			select: [ '.frontend select', '.editor-styles-wrapper [data-control="select"]' ],
+			textarea: [ '.frontend textarea', '.editor-styles-wrapper [data-control="textarea"]' ],
+		};
+		for ( const [ type, [ frontendSelector, editorSelector ] ] of Object.entries( pairs ) ) {
+			const frontend = await box( frontendSelector );
+			const editor = await box( editorSelector );
+			const detail = `${ type }: ${ JSON.stringify( { frontend, editor } ) }`;
+			for ( const key of [ 'height', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft' ] ) {
+				assert.ok( Math.abs( frontend[ key ] - editor[ key ] ) <= 1, `${ key } ${ detail }` );
+			}
+			assert.equal( editor.borderTopWidth, frontend.borderTopWidth, `border-top-width ${ detail }` );
+			assert.equal( editor.borderBottomWidth, frontend.borderBottomWidth, `border-bottom-width ${ detail }` );
+			assert.equal( editor.background, frontend.background, `background ${ detail }` );
+		}
+		// The source sizes the control boxes: a 2.75rem phone field and select,
+		// and a four-row textarea with 12px block padding and a 1px border.
+		assert.ok( Math.abs( ( await box( pairs.telephone[ 0 ] ) ).height - 44 ) <= 1 );
+		assert.ok( Math.abs( ( await box( pairs.textarea[ 0 ] ) ).height - ( 4 * 24 + 24 + 2 ) ) <= 1 );
+	} finally {
+		await browser.close();
+	}
+} );

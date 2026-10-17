@@ -3595,8 +3595,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * no source counterpart and the overlay renders it box-less. Field blocks
 	 * carry their className on the block wrapper itself rather than the
 	 * front-end `-wrap` copy.
+	 *
+	 * @param array<string,mixed>             $map             Validated front-end target map.
+	 * @param string                          $scope           Provider form scope class.
+	 * @param array<int,array<string,string>> $textarea_resets Editor-only textarea box resets keyed by control index.
+	 * @return array<string,mixed>
 	 */
-	public static function editor_layout_target_map( array $map, string $scope ): array {
+	public static function editor_layout_target_map( array $map, string $scope, array $textarea_resets = array() ): array {
 		foreach ( $map['targets'] as &$target ) {
 			if ( 'form' === $target['node'] ) {
 				$target['selector'] = str_contains( $target['selector'], '.ssi-native-form-topology' ) ? '.' . $scope . '.ssi-native-form-topology > div.jetpack-contact-form' : '.' . $scope;
@@ -3610,7 +3615,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		}
 		unset( $target );
 		foreach ( $map['presentation_targets'] as &$target ) {
-			$extra = array();
+			$target['destinations'] = self::editor_control_destinations( $target['destinations'] );
+			$extra                  = array();
 			foreach ( $target['destinations'] as &$destination ) {
 				if ( 'label' === $destination['role'] && ! str_ends_with( $destination['selector'], ' > label' ) ) {
 					$layout_properties                = array_values( array_filter( $destination['properties'], static fn( string $key ): bool => str_starts_with( $key, 'margin' ) || str_starts_with( $key, 'padding' ) || in_array( $key, array( 'width', 'max_width', 'min_width', 'box_sizing' ), true ) ) );
@@ -3638,6 +3644,14 @@ final class Static_Site_Importer_Form_Layout_Projection {
 							'opacity' => 'revert',
 						),
 					);
+					if ( ! empty( $textarea_resets[ $target['index'] ] ) && ! empty( $destination['properties'] ) ) {
+						$extra[] = array(
+							'role'       => 'control',
+							'selector'   => $destination['selector'],
+							'properties' => array(),
+							'resets'     => $textarea_resets[ $target['index'] ],
+						);
+					}
 				}
 				if ( str_ends_with( $destination['selector'], ' > .wp-block-button__link' ) ) {
 					unset( $destination['resets']['font-family'], $destination['resets']['line-height'] );
@@ -3649,6 +3663,173 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		}
 		unset( $target );
 		return $map;
+	}
+
+	/**
+	 * Give each editor control node exactly the source control's chrome.
+	 *
+	 * Jetpack's editor puts an input block's className on one element: the phone
+	 * wrapper or the dropdown toggle. The front-end runtime splits the phone
+	 * composite's shell, carrier, and prefix roles onto separate DOM nodes and
+	 * the select chrome onto its nested `<select>`; the editor has neither. Its
+	 * single node is the control itself, so the structural roles are dropped
+	 * (their `height:100%` would otherwise collapse the primary box) and the
+	 * select's chrome lands on the toggle instead of the wrapper reset.
+	 *
+	 * @param array<int,array<string,mixed>> $destinations One target's destinations.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function editor_control_destinations( array $destinations ): array {
+		$nested_selects = array();
+		foreach ( $destinations as $destination ) {
+			if ( 'control' === $destination['role'] && str_ends_with( $destination['selector'], ' select' ) ) {
+				$nested_selects[ substr( $destination['selector'], 0, -strlen( ' select' ) ) ] = true;
+			}
+		}
+		$editor = array();
+		foreach ( $destinations as $destination ) {
+			if ( 'control' !== $destination['role'] ) {
+				$editor[] = $destination;
+				continue;
+			}
+			if ( preg_match( '/ \.ssi-node-[a-f0-9]{12}-destination-(?:shell|carrier|prefix)$/D', $destination['selector'] ) ) {
+				continue;
+			}
+			if ( str_ends_with( $destination['selector'], ' select' ) ) {
+				$destination['selector'] = substr( $destination['selector'], 0, -strlen( ' select' ) );
+				unset( $destination['resets']['appearance'] );
+			} elseif ( isset( $nested_selects[ $destination['selector'] ] ) && isset( $destination['resets'] ) ) {
+				unset( $destination['resets']['padding'], $destination['resets']['border'], $destination['resets']['background'] );
+			}
+			if ( empty( $destination['resets'] ) ) {
+				unset( $destination['resets'] );
+				if ( empty( $destination['properties'] ) ) {
+					continue;
+				}
+			}
+			$editor[] = $destination;
+		}
+		return $editor;
+	}
+
+	/**
+	 * Size each editor textarea the way its front-end `rows` attribute does.
+	 *
+	 * The runtime rewrites Jetpack's rendered `rows` to the source count, but the
+	 * editor textarea has no rows attribute and Jetpack's editor stylesheet floors
+	 * it at `min-height:200px`. Unless the source declares its own minimum, that
+	 * floor is released; a rows-sized source (`height:auto`) gets the height of N
+	 * line boxes plus its carried block padding and border, which is the box the
+	 * front end's `rows` attribute produces.
+	 *
+	 * @param array<mixed>        $controls           Normalized source controls.
+	 * @param array<string,mixed> $presentation_graph Captured control presentation.
+	 * @return array<int,array<string,string>> Resets keyed by control index.
+	 */
+	public static function editor_textarea_resets( array $controls, array $presentation_graph ): array {
+		$styles_by_index = array();
+		foreach ( is_array( $presentation_graph['controls'] ?? null ) ? $presentation_graph['controls'] : array() as $row ) {
+			if ( is_array( $row ) && is_int( $row['index'] ?? null ) && is_array( $row['control']['styles'] ?? null ) ) {
+				$styles_by_index[ $row['index'] ] = $row['control']['styles'];
+			}
+		}
+		$resets = array();
+		foreach ( $controls as $index => $control ) {
+			$tag = is_array( $control ) && is_string( $control['tag'] ?? null ) ? strtolower( trim( $control['tag'] ) ) : '';
+			if ( ! is_int( $index ) || ! is_array( $control ) || 'textarea' !== $tag || ! isset( $styles_by_index[ $index ] ) ) {
+				continue;
+			}
+			$styles = $styles_by_index[ $index ];
+			$rows   = Static_Site_Importer_Form_Field_Markup::textarea_rows( $control );
+			$reset  = isset( $styles['min_height'] ) ? array() : array( 'min-height' => '0' );
+			$height = null === $rows || 'auto' !== ( $styles['height'] ?? 'auto' ) ? null : self::rows_height( $rows, $styles );
+			if ( null !== $height ) {
+				$reset['height'] = $height;
+			}
+			if ( ! empty( $reset ) ) {
+				$resets[ $index ] = $reset;
+			}
+		}
+		return $resets;
+	}
+
+	/**
+	 * The border-box height of N line boxes under the carried block padding and
+	 * border, or null when any of those edges is not a resolvable length.
+	 *
+	 * @param int                 $rows   Source row count.
+	 * @param array<string,mixed> $styles Captured control styles in cascade order.
+	 */
+	private static function rows_height( int $rows, array $styles ): ?string {
+		$edges = array(
+			'padding_top'    => null,
+			'padding_bottom' => null,
+			'border_top'     => null,
+			'border_bottom'  => null,
+		);
+		$width = static function ( string $token ): ?string {
+			$keywords = array(
+				'thin'   => '1px',
+				'medium' => '3px',
+				'thick'  => '5px',
+			);
+			if ( isset( $keywords[ $token ] ) ) {
+				return $keywords[ $token ];
+			}
+			return self::is_block_length( $token ) ? $token : null;
+		};
+		foreach ( $styles as $key => $value ) {
+			if ( ! is_string( $value ) ) {
+				continue;
+			}
+			$tokens = \Automattic\BlocksEngine\PhpTransformer\Css\CssValueSplitter::splitTopLevelWhitespace( trim( $value ) );
+			$first  = $tokens[0] ?? '';
+			if ( in_array( $key, array( 'padding', 'padding_block' ), true ) ) {
+				$edges['padding_top']    = self::is_block_length( $first ) ? $first : null;
+				$bottom                  = $tokens[ 'padding' === $key ? 2 : 1 ] ?? $first;
+				$edges['padding_bottom'] = self::is_block_length( $bottom ) ? $bottom : null;
+			} elseif ( in_array( $key, array( 'padding_top', 'padding_block_start' ), true ) ) {
+				$edges['padding_top'] = self::is_block_length( $first ) ? $first : null;
+			} elseif ( in_array( $key, array( 'padding_bottom', 'padding_block_end' ), true ) ) {
+				$edges['padding_bottom'] = self::is_block_length( $first ) ? $first : null;
+			} elseif ( 'border' === $key ) {
+				// The shorthand's omitted width is `medium`; a `none` or `hidden` style has none.
+				$border = '3px';
+				foreach ( $tokens as $token ) {
+					$border = $width( $token ) ?? $border;
+				}
+				$edges['border_top']    = in_array( 'none', $tokens, true ) || in_array( 'hidden', $tokens, true ) ? '0' : $border;
+				$edges['border_bottom'] = $edges['border_top'];
+			} elseif ( 'border_width' === $key ) {
+				$edges['border_top']    = $width( $first );
+				$edges['border_bottom'] = $width( $tokens[2] ?? $first );
+			} elseif ( 'border_top_width' === $key ) {
+				$edges['border_top'] = $width( $first );
+			} elseif ( 'border_bottom_width' === $key ) {
+				$edges['border_bottom'] = $width( $first );
+			}
+		}
+		if ( in_array( null, $edges, true ) ) {
+			return null;
+		}
+		$lines = $rows . 'lh';
+		if ( 'content-box' === ( $styles['box_sizing'] ?? null ) ) {
+			return 'calc(' . $lines . ')';
+		}
+		return 'calc(' . $lines . ' + ' . implode( ' + ', $edges ) . ')';
+	}
+
+	/**
+	 * Whether a token is a non-negative length that resolves without a percentage basis.
+	 *
+	 * Utility frameworks carry lengths as `calc()` expressions over their spacing
+	 * scale (a captured `py-3` is `calc(0.75rem)`); those resolve the same way
+	 * when they contain no percentage and no nested declaration syntax.
+	 *
+	 * @param string $token One CSS value token.
+	 */
+	private static function is_block_length( string $token ): bool {
+		return (bool) preg_match( '/^(?:0|(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:px|rem|em|ch|ex|lh|vw|vh|vmin|vmax|svh|dvh|lvh)|calc\([^%;{}()]*(?:\([^%;{}()]*\)[^%;{}()]*)*\))$/D', $token );
 	}
 
 	/**
