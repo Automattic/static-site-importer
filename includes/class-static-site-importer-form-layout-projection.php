@@ -1545,9 +1545,14 @@ final class Static_Site_Importer_Form_Layout_Projection {
 						$proof = array_replace( $proof, array_fill_keys( array_keys( self::layout_patch( $variant ) ), $variant ) );
 					}
 				}
-				$width = is_string( $row['width'] ?? null ) && 1 === preg_match( '/^([0-9]+(?:\.[0-9]+)?)%$/D', trim( $row['width'] ), $match ) ? (float) $match[1] : 0.0;
-				$proven = 0.0 < $width && 'inline-block' === ( $row['display'] ?? null ) && is_string( $row['padding_right'] ?? null );
-				foreach ( array( 'display' => 'display', 'width' => 'width', 'padding_right' => 'padding-right' ) as $fact => $property ) {
+				$proof_properties = array(
+					'display'       => 'display',
+					'width'         => 'width',
+					'padding_right' => 'padding-right',
+				);
+				$width            = is_string( $row['width'] ?? null ) && 1 === preg_match( '/^([0-9]+(?:\.[0-9]+)?)%$/D', trim( $row['width'] ), $match ) ? (float) $match[1] : 0.0;
+				$proven           = 0.0 < $width && 'inline-block' === ( $row['display'] ?? null ) && is_string( $row['padding_right'] ?? null );
+				foreach ( $proof_properties as $fact => $property ) {
 					$source = $proof[ $fact ] ?? null;
 					$proven = $proven && is_array( $source ) && ( $source === $box ? self::has_unconditional_proven_property( $box, $property ) : self::variant_proven( $source, $property ) );
 				}
@@ -1555,7 +1560,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					$cells = array();
 					break;
 				}
-				$cells[] = array(
+				$cells[]         = array(
 					'id'      => $id,
 					'control' => $controls[0],
 					'width'   => $width,
@@ -1619,8 +1624,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					$layout['margin_right'] = $gutters[0];
 				}
 				$s->field_blocks[ $cell['control'] ]['attrs']['width'] = $width;
-				$s->represented_layout_nodes[]                        = $cell['id'];
-				$s->overlay_node_targets[]                            = array(
+				$s->represented_layout_nodes[]                         = $cell['id'];
+				$s->overlay_node_targets[]                             = array(
 					'id'     => 'field-' . $cell['control'],
 					'layout' => $layout,
 				);
