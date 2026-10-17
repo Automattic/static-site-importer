@@ -1727,6 +1727,29 @@ namespace {
 		'block-flow-label-wrappers-map-with-named-box-losses',
 		wp_json_encode( array( 'validation' => $block_label_validated, 'row' => $block_label_row ) )
 	);
+	// A wrapper that groups some but not all fields (a first/last name row) and
+	// declares `width: 100%` without any horizontal margin, padding or border is
+	// still plain block flow: a block box's default content width. It must not
+	// decline the mapping as unrepresentable topology.
+	$group_width_html = '<style>.complex{width:100%}</style>'
+		. '<form method="post" action="/contact/">'
+		. '<div class="complex"><input type="text" name="first" aria-label="First"><input type="text" name="last" aria-label="Last"></div>'
+		. '<div><input type="text" name="title" aria-label="Title"></div>'
+		. '<button type="submit">Submit</button></form>';
+	$group_width_form      = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $group_width_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$group_width_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $group_width_form ) ) );
+	$group_width_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $group_width_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$group_width_losses    = array_column( $group_width_row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' );
+	$assert(
+		empty( $group_width_validated['errors'] )
+			&& 'mapped' === ( $group_width_row['status'] ?? '' )
+			&& true === ( $group_width_row['runtime_mapped'] ?? false )
+			&& ! in_array( 'provider_wrapper_layout_unrepresentable', $group_width_losses, true )
+			&& ! in_array( 'provider_wrapper_box_unrepresentable', $group_width_losses, true )
+			&& 3 === substr_count( (string) ( $group_width_row['block_markup'] ?? '' ), '<!-- wp:jetpack/field-text' ),
+		'full-width-field-group-wrapper-maps-as-block-flow',
+		wp_json_encode( array( 'validation' => $group_width_validated, 'row' => $group_width_row ) )
+	);
 	$real_entity_path = getenv( 'STATIC_SITE_IMPORTER_REAL_FORM_ENTITY' );
 	if ( is_string( $real_entity_path ) && is_readable( $real_entity_path ) ) {
 		$real_entity_data = json_decode( (string) file_get_contents( $real_entity_path ), true );

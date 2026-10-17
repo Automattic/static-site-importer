@@ -2280,7 +2280,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			foreach ( $s->variants_by_node[ $node_id ] ?? array() as $variant ) {
 				$facts = array_merge( $facts, self::non_block_flow_facts( self::layout_patch( $variant ) ) );
 			}
-			if ( array() === $facts && 'block' === ( $layout['display'] ?? null ) ) {
+			if ( array() === $facts && array() !== $layout ) {
 				continue;
 			}
 			$box_only    = array() !== $facts && array() === array_diff( $facts, array_keys( Static_Site_Importer_Provider_Layout_Overlay::box_property_map() ) );
@@ -2293,7 +2293,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	}
 
 	/**
-	 * Layout fact names other than a `display: block` declaration.
+	 * Layout fact names other than plain block flow.
+	 *
+	 * `display: block` is a block box's default flow. `width: 100%` on a
+	 * block-flow box that declares no horizontal margin, padding or border is
+	 * that same box's default content width, so neither adds a fact the
+	 * provider's own stacked field flow cannot express.
 	 *
 	 * @param array<string,mixed> $facts
 	 * @return list<string>
@@ -2302,7 +2307,26 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		if ( 'block' === ( $facts['display'] ?? null ) ) {
 			unset( $facts['display'] );
 		}
+		if ( isset( $facts['width'] ) && ! isset( $facts['display'] ) && is_string( $facts['width'] ) && '100%' === strtolower( trim( $facts['width'] ) ) && ! self::declares_horizontal_box( $facts ) ) {
+			unset( $facts['width'] );
+		}
 		return array_keys( $facts );
+	}
+
+	/**
+	 * Whether layout facts declare a horizontal margin, padding or border that
+	 * would make a declared `width: 100%` differ from block flow's default
+	 * content width.
+	 *
+	 * @param array<string,mixed> $facts
+	 */
+	private static function declares_horizontal_box( array $facts ): bool {
+		foreach ( array_keys( $facts ) as $fact ) {
+			if ( in_array( $fact, array( 'margin_left', 'margin_right', 'margin_inline_start', 'margin_inline_end', 'padding', 'padding_left', 'padding_right', 'padding_inline_start', 'padding_inline_end' ), true ) || str_starts_with( (string) $fact, 'border' ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
