@@ -2275,9 +2275,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			// A wrapper whose only unrepresented facts are its own box (padding,
 			// min-height) still arranges its controls exactly as the provider does;
 			// that is a named box loss, not a topology the provider cannot express.
-			$facts = array_keys( $layout );
+			// `display: block` is that same block flow, so it adds no fact.
+			$facts = self::non_block_flow_facts( $layout );
 			foreach ( $s->variants_by_node[ $node_id ] ?? array() as $variant ) {
-				$facts = array_merge( $facts, array_keys( self::layout_patch( $variant ) ) );
+				$facts = array_merge( $facts, self::non_block_flow_facts( self::layout_patch( $variant ) ) );
+			}
+			if ( array() === $facts && 'block' === ( $layout['display'] ?? null ) ) {
+				continue;
 			}
 			$box_only    = array() !== $facts && array() === array_diff( $facts, array_keys( Static_Site_Importer_Provider_Layout_Overlay::box_property_map() ) );
 			$s->losses[] = array(
@@ -2286,6 +2290,19 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'node_hash'   => hash( 'sha256', $node_id ),
 			);
 		}
+	}
+
+	/**
+	 * Layout fact names other than a `display: block` declaration.
+	 *
+	 * @param array<string,mixed> $facts
+	 * @return list<string>
+	 */
+	private static function non_block_flow_facts( array $facts ): array {
+		if ( 'block' === ( $facts['display'] ?? null ) ) {
+			unset( $facts['display'] );
+		}
+		return array_keys( $facts );
 	}
 
 	/**
