@@ -358,6 +358,11 @@ class Static_Site_Importer_Form_Seeder {
 				$skipped[]                             = 'hidden_bookkeeping';
 				continue;
 			}
+			if ( self::is_force_hidden_control( $form, $control_index ) ) {
+				$suppressed_controls[ $control_index ] = true;
+				$skipped[]                             = 'force_hidden';
+				continue;
+			}
 			$choice_box                                 = null !== Static_Site_Importer_Form_Layout_Projection::source_choice_label( $form, $control_index );
 			$presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $scope, $control_index, $type, $presentation_roles[ $control_index ] ?? array(), isset( $control['label_classes'] ) || isset( $control['label_marker'] ), $choice_box );
 			if ( isset( $suppressed_controls[ $control_index ] ) ) {
@@ -765,8 +770,12 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			$overlay_graph = $overlay_form['layout_graph'];
 		}
-		foreach ( array_keys( $suppressed_controls ) as $control_index ) {
-			unset( $overlay_form['presentation_graph']['controls'][ $control_index ] );
+		// Presentation rows name their control by `index`; the list holds only
+		// controls that carry presentation, so row keys are not control indexes.
+		foreach ( is_array( $overlay_form['presentation_graph']['controls'] ?? null ) ? $overlay_form['presentation_graph']['controls'] : array() as $row_key => $control_row ) {
+			if ( isset( $suppressed_controls[ is_array( $control_row ) && is_int( $control_row['index'] ?? null ) ? $control_row['index'] : $row_key ] ) ) {
+				unset( $overlay_form['presentation_graph']['controls'][ $row_key ] );
+			}
 		}
 		foreach ( is_array( $topology['grid_span_submit_controls'] ?? null ) ? $topology['grid_span_submit_controls'] : array() as $span_control ) {
 			if ( ! is_array( $overlay_form['presentation_graph'] ?? null ) ) {
@@ -1180,6 +1189,51 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			foreach ( $node['provenance'] ?? array() as $fact ) {
 				if ( is_array( $fact ) && null === ( $fact['condition'] ?? null ) && 'inline-style' === ( $fact['source_path'] ?? null ) && in_array( 'display', $fact['properties'] ?? array(), true ) ) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Whether a control can never be seen: it, or a wrapper around it, is
+	 * hidden by a base `display: none !important` with no conditional variant.
+	 *
+	 * `!important` beats every conflicting rule and the `style.display` toggles
+	 * that multi-step pages and conditional fields use to reveal a plainly
+	 * hidden wrapper, so a visitor never reaches the control. Such controls are
+	 * runtime traps (spam honeypots), not fields to carry into the provider form.
+	 * A plainly hidden wrapper keeps its fields.
+	 *
+	 * @param array<string,mixed> $form Provider form manifest row.
+	 */
+	public static function is_force_hidden_control( array $form, int $control_index ): bool {
+		$topology = array();
+		foreach ( $form['control_topology']['nodes'] ?? array() as $node ) {
+			if ( is_array( $node ) && is_string( $node['id'] ?? null ) ) {
+				$topology[ $node['id'] ] = $node;
+			}
+		}
+		$layout = array();
+		foreach ( $form['layout_graph']['nodes'] ?? array() as $node ) {
+			if ( is_array( $node ) && is_string( $node['id'] ?? null ) ) {
+				$layout[ $node['id'] ] = $node;
+			}
+		}
+		$varied = array();
+		foreach ( $form['layout_graph']['variants'] ?? array() as $variant ) {
+			if ( is_array( $variant ) && is_string( $variant['node'] ?? null ) && isset( $variant['layout_patch']['display'] ) ) {
+				$varied[ $variant['node'] ] = true;
+			}
+		}
+		for ( $id = 'control-' . $control_index, $depth = 0; is_string( $id ) && isset( $topology[ $id ] ) && $depth <= 16; $id = $topology[ $id ]['parent'] ?? null, ++$depth ) {
+			$node = $layout[ $id ] ?? null;
+			if ( ! is_array( $node ) || 'none' !== ( $node['layout']['display'] ?? null ) || ! in_array( 'display', $node['important'] ?? array(), true ) || isset( $varied[ $id ] ) ) {
+				continue;
+			}
+			foreach ( $node['provenance'] ?? array() as $fact ) {
+				if ( is_array( $fact ) && null === ( $fact['condition'] ?? null ) && in_array( 'display', $fact['properties'] ?? array(), true ) ) {
 					return true;
 				}
 			}

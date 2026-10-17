@@ -1824,6 +1824,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( is_array( $node['sizing'] ?? null ) ) {
 				$clean['sizing'] = $node['sizing'];
 			}
+			if ( is_array( $node['important'] ?? null ) ) {
+				$clean['important'] = $node['important'];
+			}
 			$nodes[] = $clean;
 		}
 		return array(

@@ -1466,11 +1466,25 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$id               = is_array( $node ) ? ( $node['id'] ?? null ) : null;
 			$layout_node      = is_string( $id ) ? ( $s->layout_nodes_by_id[ $id ] ?? null ) : null;
 			$omitted_controls = is_array( $node ) ? ( $s->collect_controls )( $node ) : array();
-			if ( 'wrapper' !== ( $node['kind'] ?? null ) || ! is_string( $id ) || array( 'display' => 'none' ) !== ( $s->layout_by_node[ $id ] ?? array() ) || isset( $s->variants_by_node[ $id ] ) || ! is_array( $layout_node ) || ! self::has_unconditional_proven_property( $layout_node, 'display' ) || empty( $omitted_controls ) || array_filter( $omitted_controls, static fn( int $index ): bool => self::control_carries_authored_content( strtolower( trim( (string) ( $s->controls[ $index ]['type'] ?? $s->controls[ $index ]['tag'] ?? '' ) ) ) ) ) ) {
+			// A `display:none !important` wrapper is never revealed, so even its
+			// authored controls are runtime traps; the seeder has already omitted
+			// them, which leaves the wrapper without provider controls.
+			$force_hidden = is_array( $layout_node ) && in_array( 'display', $layout_node['important'] ?? array(), true );
+			if ( 'wrapper' !== ( $node['kind'] ?? null ) || ! is_string( $id ) || array( 'display' => 'none' ) !== ( $s->layout_by_node[ $id ] ?? array() ) || isset( $s->variants_by_node[ $id ] ) || ! is_array( $layout_node ) || ! self::has_unconditional_proven_property( $layout_node, 'display' ) || ( ! $force_hidden && ( empty( $omitted_controls ) || array_filter( $omitted_controls, static fn( int $index ): bool => self::control_carries_authored_content( strtolower( trim( (string) ( $s->controls[ $index ]['type'] ?? $s->controls[ $index ]['tag'] ?? '' ) ) ) ) ) ) ) ) {
 				continue;
 			}
-			$s->represented_layout_nodes[]   = $id;
-			$s->represented_topology_nodes[] = $id;
+			// Nothing inside an omitted wrapper renders, so its descendant
+			// wrappers are omitted with it.
+			$omitted = array( $id );
+			for ( $cursor = 0; $cursor < count( $omitted ); ++$cursor ) {
+				foreach ( $s->children[ $omitted[ $cursor ] ] ?? array() as $child ) {
+					if ( 'wrapper' === ( $child['kind'] ?? null ) && is_string( $child['id'] ?? null ) ) {
+						$omitted[] = $child['id'];
+					}
+				}
+			}
+			$s->represented_layout_nodes     = array_merge( $s->represented_layout_nodes, $omitted );
+			$s->represented_topology_nodes   = array_merge( $s->represented_topology_nodes, $omitted );
 			$s->operations[]                 = array(
 				'dimension'     => 'topology',
 				'strategy'      => 'provider_omitted_runtime_controls',
