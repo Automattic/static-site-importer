@@ -1715,7 +1715,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$column_count        = 2;
 				$class_token_columns = true;
 			}
-			$equal_grid     = empty( $parent_variants ) && 'grid' === $display && null !== $column_count;
+			$equal_grid      = empty( $parent_variants ) && 'grid' === $display && null !== $column_count;
 			$narrowing_query = null;
 			// The desktop-first form of the same row: equal columns by default,
 			// collapsed to one track below a proven max-width breakpoint. That is
