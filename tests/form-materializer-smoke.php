@@ -1750,6 +1750,58 @@ namespace {
 		'full-width-field-group-wrapper-maps-as-block-flow',
 		wp_json_encode( array( 'validation' => $group_width_validated, 'row' => $group_width_row ) )
 	);
+	// Equal inline-block columns with a uniform trailing gutter, widened by a
+	// matching `calc(100% + gutter)` row overhang, are an equal-width row: the
+	// provider paints them as half-width fields separated by that gutter. An
+	// overhang that does not match the gutter keeps the topology loss, and a
+	// row widened only at a min-width query stacks below it.
+	$gutter_row_fields = '<form method="post" action="/contact/">'
+		. '<div class="row"><span><input type="text" name="first" aria-label="First"></span><span><input type="text" name="last" aria-label="Last"></span></div>'
+		. '<input type="email" name="email" aria-label="Email"><button type="submit">Send</button></form>';
+	$gutter_row_seed = static function ( string $css ) use ( $artifact_compiler, $gutter_row_fields ): array {
+		$form      = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => '<style>' . $css . '</style>' . $gutter_row_fields ) ) )->toArray() )['fallbacks'][0] ?? array();
+		$validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $form ) ) );
+		$row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated['forms'] ?? array() ) )['forms'][0] ?? array();
+		return array(
+			'errors'     => $validated['errors'] ?? array(),
+			'row'        => $row,
+			'losses'     => array_column( $row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' ),
+			'strategies' => array_column( $row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ),
+			'halves'     => preg_match_all( '#<!-- wp:jetpack/field-text \{[^}]*"width":50#', (string) ( $row['block_markup'] ?? '' ) ),
+			'css'        => (string) ( $row['provider_layout_overlay_css']['css'] ?? '' ),
+		);
+	};
+	$gutter_row = $gutter_row_seed( '.row{width:calc(100% + 16px)}.row span{display:inline-block;box-sizing:border-box;width:50%;padding-right:16px}' );
+	$assert(
+		empty( $gutter_row['errors'] )
+			&& 'mapped' === ( $gutter_row['row']['status'] ?? '' )
+			&& in_array( 'provider_gutter_compensated_row_fields', $gutter_row['strategies'], true )
+			&& ! in_array( 'provider_wrapper_layout_unrepresentable', $gutter_row['losses'], true )
+			&& 2 === $gutter_row['halves']
+			&& str_contains( $gutter_row['css'], 'flex-basis:calc(50% - 8px)' )
+			&& 1 === substr_count( $gutter_row['css'], 'margin-right:16px' ),
+		'gutter-compensated-percentage-row-maps-as-equal-width-fields',
+		wp_json_encode( $gutter_row )
+	);
+	$mismatched_gutter_row = $gutter_row_seed( '.row{width:calc(100% + 30px)}.row span{display:inline-block;box-sizing:border-box;width:50%;padding-right:16px}' );
+	$assert(
+		'mapped' !== ( $mismatched_gutter_row['row']['status'] ?? '' )
+			&& in_array( 'provider_wrapper_layout_unrepresentable', $mismatched_gutter_row['losses'], true )
+			&& ! in_array( 'provider_gutter_compensated_row_fields', $mismatched_gutter_row['strategies'], true ),
+		'mismatched-row-overhang-keeps-wrapper-layout-loss',
+		wp_json_encode( $mismatched_gutter_row )
+	);
+	$scoped_gutter_row = $gutter_row_seed( '.row{width:100%}@media only screen and (min-width:641px){.row{width:calc(100% + 15px)}.row span{display:inline-block;width:50%;padding-right:16px;margin-right:-4px}}@media only screen and (max-width:641px){.row span{display:block;margin-bottom:8px}}' );
+	$assert(
+		empty( $scoped_gutter_row['errors'] )
+			&& 'mapped' === ( $scoped_gutter_row['row']['status'] ?? '' )
+			&& in_array( 'provider_gutter_compensated_row_fields', $scoped_gutter_row['strategies'], true )
+			&& in_array( 'provider_wrapper_box_unrepresentable', $scoped_gutter_row['losses'], true )
+			&& 2 === $scoped_gutter_row['halves']
+			&& 1 === preg_match( '/@media \(width<641px\)\{[^}]*flex:1 1 100%;width:100%;max-width:100%;margin-right:0\}/', $scoped_gutter_row['css'] ),
+		'min-width-scoped-gutter-row-maps-and-stacks-below-its-query',
+		wp_json_encode( $scoped_gutter_row )
+	);
 	$real_entity_path = getenv( 'STATIC_SITE_IMPORTER_REAL_FORM_ENTITY' );
 	if ( is_string( $real_entity_path ) && is_readable( $real_entity_path ) ) {
 		$real_entity_data = json_decode( (string) file_get_contents( $real_entity_path ), true );
