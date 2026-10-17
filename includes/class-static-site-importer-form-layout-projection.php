@@ -1475,17 +1475,20 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 			// Nothing inside an omitted wrapper renders, so its descendant
 			// wrappers are omitted with it.
-			$omitted = array( $id );
-			for ( $cursor = 0; $cursor < count( $omitted ); ++$cursor ) {
-				foreach ( $s->children[ $omitted[ $cursor ] ] ?? array() as $child ) {
+			$omitted = array();
+			$pending = array( $id );
+			while ( array() !== $pending ) {
+				$wrapper   = array_shift( $pending );
+				$omitted[] = $wrapper;
+				foreach ( $s->children[ $wrapper ] ?? array() as $child ) {
 					if ( 'wrapper' === ( $child['kind'] ?? null ) && is_string( $child['id'] ?? null ) ) {
-						$omitted[] = $child['id'];
+						$pending[] = $child['id'];
 					}
 				}
 			}
-			$s->represented_layout_nodes     = array_merge( $s->represented_layout_nodes, $omitted );
-			$s->represented_topology_nodes   = array_merge( $s->represented_topology_nodes, $omitted );
-			$s->operations[]                 = array(
+			$s->represented_layout_nodes   = array_merge( $s->represented_layout_nodes, $omitted );
+			$s->represented_topology_nodes = array_merge( $s->represented_topology_nodes, $omitted );
+			$s->operations[]               = array(
 				'dimension'     => 'topology',
 				'strategy'      => 'provider_omitted_runtime_controls',
 				'target_hash'   => hash( 'sha256', $id ),

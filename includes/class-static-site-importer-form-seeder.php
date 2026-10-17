@@ -1227,16 +1227,20 @@ class Static_Site_Importer_Form_Seeder {
 				$varied[ $variant['node'] ] = true;
 			}
 		}
-		for ( $id = 'control-' . $control_index, $depth = 0; is_string( $id ) && isset( $topology[ $id ] ) && $depth <= 16; $id = $topology[ $id ]['parent'] ?? null, ++$depth ) {
-			$node = $layout[ $id ] ?? null;
-			if ( ! is_array( $node ) || 'none' !== ( $node['layout']['display'] ?? null ) || ! in_array( 'display', $node['important'] ?? array(), true ) || isset( $varied[ $id ] ) ) {
-				continue;
+		$id = 'control-' . $control_index;
+		for ( $depth = 0; $depth <= 16; ++$depth ) {
+			if ( ! is_string( $id ) || ! isset( $topology[ $id ] ) ) {
+				break;
 			}
-			foreach ( $node['provenance'] ?? array() as $fact ) {
-				if ( is_array( $fact ) && null === ( $fact['condition'] ?? null ) && in_array( 'display', $fact['properties'] ?? array(), true ) ) {
-					return true;
+			$node = $layout[ $id ] ?? null;
+			if ( is_array( $node ) && 'none' === ( $node['layout']['display'] ?? null ) && in_array( 'display', $node['important'] ?? array(), true ) && ! isset( $varied[ $id ] ) ) {
+				foreach ( $node['provenance'] ?? array() as $fact ) {
+					if ( is_array( $fact ) && null === ( $fact['condition'] ?? null ) && in_array( 'display', $fact['properties'] ?? array(), true ) ) {
+						return true;
+					}
 				}
 			}
+			$id = $topology[ $id ]['parent'] ?? null;
 		}
 		return false;
 	}
