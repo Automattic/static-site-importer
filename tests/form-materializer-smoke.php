@@ -1750,6 +1750,26 @@ namespace {
 		'full-width-field-group-wrapper-maps-as-block-flow',
 		wp_json_encode( array( 'validation' => $group_width_validated, 'row' => $group_width_row ) )
 	);
+	// The same block-flow wrapper may declare its `width: 100%` only inside a
+	// media query, leaving no base layout at all. That variant adds no fact
+	// either, so the partial wrapper must still map rather than decline.
+	$variant_width_html = '<style>@media (min-width:641px){.body{width:100%}}</style>'
+		. '<form method="post" action="/contact/">'
+		. '<div class="body"><input type="text" name="first" aria-label="First"><input type="email" name="email" aria-label="Email"></div>'
+		. '<button type="submit">Send</button><p><label>Message<textarea name="message"></textarea></label></p></form>';
+	$variant_width_form      = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $variant_width_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$variant_width_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $variant_width_form ) ) );
+	$variant_width_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $variant_width_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$variant_width_losses    = array_column( $variant_width_row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' );
+	$assert(
+		empty( $variant_width_validated['errors'] )
+			&& 'mapped' === ( $variant_width_row['status'] ?? '' )
+			&& true === ( $variant_width_row['runtime_mapped'] ?? false )
+			&& ! in_array( 'provider_wrapper_layout_unrepresentable', $variant_width_losses, true )
+			&& str_contains( (string) ( $variant_width_row['block_markup'] ?? '' ), 'wp:jetpack/field-textarea' ),
+		'media-only-full-width-field-group-wrapper-maps-as-block-flow',
+		wp_json_encode( array( 'validation' => $variant_width_validated, 'row' => $variant_width_row ) )
+	);
 	$real_entity_path = getenv( 'STATIC_SITE_IMPORTER_REAL_FORM_ENTITY' );
 	if ( is_string( $real_entity_path ) && is_readable( $real_entity_path ) ) {
 		$real_entity_data = json_decode( (string) file_get_contents( $real_entity_path ), true );
