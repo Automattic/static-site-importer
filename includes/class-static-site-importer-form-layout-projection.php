@@ -502,6 +502,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		self::project_row_bands( $s );
 		self::restore_semantic_wrappers( $s );
 		self::project_grid_placement( $s );
+		self::project_gutter_compensated_rows( $s );
 		self::project_sibling_rows( $s );
 		self::project_grid_span_rows( $s );
 		self::project_flex_cell_rows( $s );
@@ -1477,6 +1478,206 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'control_count' => count( $omitted_controls ),
 			);
 		}
+	}
+
+	/**
+	 * Project gutter-compensated percentage rows onto equal-width provider fields.
+	 *
+	 * A common legacy row lays out equal `inline-block` columns at `width: N%`
+	 * with a uniform trailing `padding-right: G`, and widens the row itself to
+	 * `width: calc(100% + G)` so the last column's padding overhangs. Visually
+	 * that is a row of equal columns separated by gutter G, which is exactly what
+	 * the provider's equal-width fields paint. The row may be authored at every
+	 * width or only inside one min-width query; below that query the fields stack.
+	 * An overhang that differs from the column gutter by more than one pixel is a
+	 * different layout and keeps its loss. Remaining box facts on the row or its
+	 * columns are reported as named box losses.
+	 */
+	private static function project_gutter_compensated_rows( Static_Site_Importer_Form_Topology_State $s ): void {
+		$box_facts = Static_Site_Importer_Provider_Layout_Overlay::box_property_map();
+		foreach ( $s->children as $parent => $siblings ) {
+			if ( 1 !== preg_match( '/^wrapper-[0-9]+$/D', $parent ) || count( $siblings ) < 2 || in_array( $parent, $s->represented_layout_nodes, true ) ) {
+				continue;
+			}
+			$parent_node = $s->layout_nodes_by_id[ $parent ] ?? null;
+			if ( ! is_array( $parent_node ) ) {
+				continue;
+			}
+			// The row scope is where the source widens the row: its base layout, or
+			// exactly one min-width variant.
+			$scope    = null;
+			$overhang = self::gutter_overhang( $s->layout_by_node[ $parent ] ?? array() );
+			$proven   = null !== $overhang && self::has_unconditional_proven_property( $parent_node, 'width' );
+			if ( null === $overhang ) {
+				foreach ( $s->variants_by_node[ $parent ] ?? array() as $variant ) {
+					$candidate = self::gutter_overhang( self::layout_patch( $variant ) );
+					if ( null === $candidate ) {
+						continue;
+					}
+					$query = $variant['condition']['query'] ?? null;
+					if ( null !== $scope || 'media' !== ( $variant['condition']['kind'] ?? null ) || ! is_string( $query ) || ! self::is_min_width_media_query( $query ) ) {
+						$overhang = null;
+						break;
+					}
+					$scope    = $variant['condition'];
+					$overhang = $candidate;
+					$proven   = self::variant_proven( $variant, 'width' );
+				}
+			}
+			if ( ! $proven || null === $overhang ) {
+				continue;
+			}
+			$consumed = array( $parent => array( ( null === $scope ? 'base' : 'scope' ) => array( 'width' ) ) );
+			$cells    = array();
+			foreach ( $siblings as $sibling ) {
+				$id       = is_string( $sibling['id'] ?? null ) ? $sibling['id'] : '';
+				$box      = $s->layout_nodes_by_id[ $id ] ?? null;
+				$controls = ( $s->collect_controls )( $sibling );
+				if ( 'wrapper' !== ( $sibling['kind'] ?? null ) || ! is_array( $box ) || 1 !== count( $controls ) || ! isset( $s->field_blocks[ $controls[0] ] ) || 'core/button' === ( $s->field_blocks[ $controls[0] ]['name'] ?? '' ) ) {
+					$cells = array();
+					break;
+				}
+				$row   = is_array( $box['layout'] ?? null ) ? $box['layout'] : array();
+				$proof = array_fill_keys( array_keys( $row ), $box );
+				foreach ( $s->variants_by_node[ $id ] ?? array() as $variant ) {
+					if ( null !== $scope && ( $variant['condition'] ?? null ) === $scope ) {
+						$row   = array_replace( $row, self::layout_patch( $variant ) );
+						$proof = array_replace( $proof, array_fill_keys( array_keys( self::layout_patch( $variant ) ), $variant ) );
+					}
+				}
+				$proof_properties = array(
+					'display'       => 'display',
+					'width'         => 'width',
+					'padding_right' => 'padding-right',
+				);
+				$width            = is_string( $row['width'] ?? null ) && 1 === preg_match( '/^([0-9]+(?:\.[0-9]+)?)%$/D', trim( $row['width'] ), $match ) ? (float) $match[1] : 0.0;
+				$proven           = 0.0 < $width && 'inline-block' === ( $row['display'] ?? null ) && is_string( $row['padding_right'] ?? null );
+				foreach ( $proof_properties as $fact => $property ) {
+					$source = $proof[ $fact ] ?? null;
+					$proven = $proven && is_array( $source ) && ( $source === $box ? self::has_unconditional_proven_property( $box, $property ) : self::variant_proven( $source, $property ) );
+				}
+				if ( ! $proven ) {
+					$cells = array();
+					break;
+				}
+				$cells[]         = array(
+					'id'      => $id,
+					'control' => $controls[0],
+					'width'   => $width,
+					'gutter'  => trim( (string) $row['padding_right'] ),
+				);
+				$consumed[ $id ] = array( ( null === $scope ? 'base' : 'scope' ) => array( 'display', 'width', 'padding_right' ) );
+			}
+			if ( count( $cells ) !== count( $siblings ) ) {
+				continue;
+			}
+			$widths  = array_unique( array_map( static fn ( array $cell ): string => (string) $cell['width'], $cells ) );
+			$gutters = array_unique( array_column( $cells, 'gutter' ) );
+			if ( 1 !== count( $widths ) || 1 !== count( $gutters ) || 0.01 < abs( $cells[0]['width'] * count( $cells ) - 100.0 ) || ! self::gutter_matches_overhang( $gutters[0], $overhang ) ) {
+				continue;
+			}
+			// Outside the row scope a column may only return to block flow (the
+			// stacked state the provider paints below the row's query); any other
+			// fact must be a box fact, reported below as a named box loss.
+			$residual = array();
+			foreach ( $consumed as $node_id => $taken ) {
+				$facts = array_diff( array_keys( $s->layout_by_node[ $node_id ] ?? array() ), $taken['base'] ?? array() );
+				foreach ( $s->variants_by_node[ $node_id ] ?? array() as $variant ) {
+					$patch = self::layout_patch( $variant );
+					if ( null !== $scope && ( $variant['condition'] ?? null ) === $scope ) {
+						$patch = array_diff_key( $patch, array_flip( $taken['scope'] ?? array() ) );
+					} elseif ( $node_id !== $parent && 'block' === ( $patch['display'] ?? null ) ) {
+						unset( $patch['display'] );
+					}
+					$facts = array_merge( $facts, array_keys( $patch ) );
+				}
+				// Outside a scoped widening the row's own `width: 100%` is the
+				// stacked block flow the provider paints.
+				if ( $node_id === $parent && null !== $scope && '100%' === ( $s->layout_by_node[ $parent ]['width'] ?? null ) ) {
+					$facts = array_diff( $facts, array( 'width' ) );
+				}
+				$facts = array_values( array_unique( $facts ) );
+				if ( array_diff( $facts, array_keys( $box_facts ) ) ) {
+					continue 2;
+				}
+				if ( ! empty( $facts ) ) {
+					$residual[] = $node_id;
+				}
+			}
+			$width       = self::provider_field_width( 1 / count( $cells ) );
+			$stack_query = null === $scope ? null : self::inverted_min_width_media_query( (string) $scope['query'] );
+			if ( null !== $scope && null === $stack_query ) {
+				continue;
+			}
+			// Each column is an equal share of the row less its part of the
+			// gutters; every column but the last keeps the gutter after it.
+			$track = self::equal_fraction_track_size( count( $cells ), $gutters[0] );
+			$last  = count( $cells ) - 1;
+			foreach ( $cells as $offset => $cell ) {
+				$layout = array(
+					'width'       => $track,
+					'flex_grow'   => '0',
+					'flex_shrink' => '0',
+					'flex_basis'  => $track,
+				);
+				if ( $offset < $last ) {
+					$layout['margin_right'] = $gutters[0];
+				}
+				$s->field_blocks[ $cell['control'] ]['attrs']['width'] = $width;
+				$s->represented_layout_nodes[]                         = $cell['id'];
+				$s->overlay_node_targets[]                             = array(
+					'id'     => 'field-' . $cell['control'],
+					'layout' => $layout,
+				);
+				if ( is_string( $stack_query ) ) {
+					$s->responsive_variant_targets[] = array(
+						'node'         => 'field-' . $cell['control'],
+						'condition'    => array(
+							'kind'  => 'media',
+							'query' => $stack_query,
+						),
+						'layout_patch' => array(
+							'flex'         => '1 1 100%',
+							'width'        => '100%',
+							// The provider caps a half-width field at 50%; the
+							// stacked source column spans the whole row.
+							'max_width'    => '100%',
+							'margin_right' => '0',
+						),
+					);
+				}
+			}
+			$s->represented_layout_nodes[]          = $parent;
+			$s->percentage_width_parents[ $parent ] = true;
+			$s->operations[]                        = array(
+				'dimension'   => 'layout',
+				'strategy'    => 'provider_gutter_compensated_row_fields',
+				'target_hash' => hash( 'sha256', $parent ),
+				'field_count' => count( $cells ),
+				'width'       => $width,
+			);
+			foreach ( $residual as $node_id ) {
+				$s->losses[] = array(
+					'dimension'   => 'layout',
+					'reason_code' => 'provider_wrapper_box_unrepresentable',
+					'node_hash'   => hash( 'sha256', $node_id ),
+				);
+			}
+		}
+	}
+
+	/** The `G` of a `width: calc(100% + G)` row overhang, or null. */
+	private static function gutter_overhang( array $layout ): ?string {
+		$width = is_string( $layout['width'] ?? null ) ? trim( $layout['width'] ) : '';
+		return 1 === preg_match( '/^calc\(\s*100%\s*\+\s*([0-9]+(?:\.[0-9]+)?(?:px|rem|em))\s*\)$/iD', $width, $match ) ? strtolower( $match[1] ) : null;
+	}
+
+	/** Whether a column gutter and a row overhang name the same gutter (pixels within 1px). */
+	private static function gutter_matches_overhang( string $gutter, string $overhang ): bool {
+		if ( 1 !== preg_match( '/^([0-9]+(?:\.[0-9]+)?)(px|rem|em)$/iD', strtolower( $gutter ), $g ) || 1 !== preg_match( '/^([0-9]+(?:\.[0-9]+)?)(px|rem|em)$/D', $overhang, $o ) || $g[2] !== $o[2] ) {
+			return false;
+		}
+		return 'px' === $g[2] ? 1.0 >= abs( (float) $g[1] - (float) $o[1] ) : 0.0001 > abs( (float) $g[1] - (float) $o[1] );
 	}
 
 	/** Project equal-fraction sibling rows onto provider field widths. */
@@ -3978,7 +4179,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * Tailwind CSS v4 emits for its own `md:`/`lg:`/etc. prefixes.
 	 */
 	private static function is_min_width_media_query( string $query ): bool {
-		return 1 === preg_match( '/^(?:screen and )?\((?:min-width:\s?[0-9]+(?:\.[0-9]+)?(?:px|em|rem)|width\s*>=\s*[0-9]+(?:\.[0-9]+)?(?:px|em|rem))\)$/D', $query );
+		return 1 === preg_match( '/^(?:(?:only )?screen and )?\((?:min-width:\s?[0-9]+(?:\.[0-9]+)?(?:px|em|rem)|width\s*>=\s*[0-9]+(?:\.[0-9]+)?(?:px|em|rem))\)$/D', $query );
 	}
 
 	/**
@@ -3987,7 +4188,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * include the bound, so the stacked state is the strict less-than range.
 	 */
 	private static function inverted_min_width_media_query( string $query ): ?string {
-		if ( 1 === preg_match( '/^(?:screen and )?\(min-width:\s?([0-9]+(?:\.[0-9]+)?)(px|em|rem)\)$/D', $query, $match ) ) {
+		if ( 1 === preg_match( '/^(?:(?:only )?screen and )?\(min-width:\s?([0-9]+(?:\.[0-9]+)?)(px|em|rem)\)$/D', $query, $match ) ) {
 			return '(width<' . $match[1] . $match[2] . ')';
 		}
 		if ( 1 === preg_match( '/^(?:screen and )?\(width\s*>=\s*([0-9]+(?:\.[0-9]+)?)(px|em|rem)\)$/D', $query, $match ) ) {
