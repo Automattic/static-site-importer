@@ -3620,15 +3620,15 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'role'       => 'control',
 					'selector'   => '.' . $scope . ( 'checkbox' === $type ? ' input.' : ' .' ) . $control_class . $inner_suffix,
 					'properties' => $properties,
-					// Native fields revert unowned typography to the browser control
-					// default. A submit is painted as wp-element-button, so the same
-					// reset would resolve to UA `normal` and drop document-authored
-					// line-height the source button inherited. Inherit instead; an
-					// explicit source declaration still wins at this destination.
+					// Every native control, the submit `<button>` included, takes its
+					// font family and line-height from the browser control default
+					// unless the source opts in (a reset's `font: inherit`), which
+					// the destination carries after this reset. Reverting releases
+					// the provider and theme button typography to that default.
 					'resets'     => array_merge(
 						array(
-							'font-family' => 'submit' === $type ? 'inherit' : 'revert',
-							'line-height' => 'submit' === $type ? 'inherit' : 'revert',
+							'font-family' => 'revert',
+							'line-height' => 'revert',
 						),
 						'submit' === $type ? array( 'min-height' => '0' ) : array(),
 						'checkbox' === $type ? array(
