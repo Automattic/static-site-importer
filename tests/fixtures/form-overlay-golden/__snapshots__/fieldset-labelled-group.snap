@@ -5,7 +5,7 @@
 mapped
 
 === css ===
-sha256: d8fbc4961c8c62407a68ed7bb581e3903602bfd1f1576d63511528a8977c2508
+sha256: 46afd0bbbfc912554a2a27e6eab4edc14cc96ad95e70111b33d752aac3853dbc
 /* Static Site Importer provider layout overlay: c575e98c7186 */
 .ssi-form-d095fee786e4 .ssi-node-765c1a6a1f05-wrap{flex-grow:0;flex-shrink:1;flex-basis:auto}
 .ssi-form-d095fee786e4 .ssi-source-field-list{flex-direction:column;display:flex;gap:16px}
@@ -22,6 +22,7 @@ sha256: d8fbc4961c8c62407a68ed7bb581e3903602bfd1f1576d63511528a8977c2508
 .ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__field-format{display:none}
 .ssi-form-d095fee786e4 .ssi-field-row > label{margin-block-end:0}
 .ssi-form-d095fee786e4 .grunion-field-wrap .grunion-field::placeholder{color:revert}
+.ssi-form-d095fee786e4 div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
 sha256: 58cf99bd995f41f24b818006eba2408433b4112fc17e0e5be21b4c747c47662b

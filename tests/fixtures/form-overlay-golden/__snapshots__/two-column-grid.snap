@@ -5,7 +5,7 @@
 mapped
 
 === css ===
-sha256: 75aeb7d058a97fa98bdf55c78a000e669833c60730a7942e63b5aedf125aea40
+sha256: d44b52d0a8d9ce8a8d2ac0fe388f905cc1c7ca6be9ad997e4bcde2c732bfbffc
 /* Static Site Importer provider layout overlay: 7ac0079ad8d0 */
 .ssi-form-d095fee786e4 > form.jetpack-contact-form__form, .ssi-form-d095fee786e4:not(:has(> form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *){grid-template-columns:repeat(2,minmax(0,1fr));display:grid}
 .ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5, .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f, .ssi-form-d095fee786e4 .ssi-node-3a3fd4718c31, .ssi-form-d095fee786e4 .ssi-node-97b0fb7d822d{width:100%}
@@ -29,6 +29,7 @@ sha256: 75aeb7d058a97fa98bdf55c78a000e669833c60730a7942e63b5aedf125aea40
 .ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__field-format{display:none}
 .ssi-form-d095fee786e4 .ssi-field-row > label{margin-block-end:0}
 .ssi-form-d095fee786e4 .grunion-field-wrap .grunion-field::placeholder{color:revert}
+.ssi-form-d095fee786e4 div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
 sha256: e9b175ac6be34970077525adea8831dac87ed89bb5593cab9d6bd30a21920719

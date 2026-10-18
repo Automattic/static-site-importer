@@ -5,7 +5,7 @@
 skipped
 
 === css ===
-sha256: 18cee043bfe2240410d229ced869751e177656ddd5f4b11fba0b1e297e0c1c7f
+sha256: 300a1fe173176b599546809663de79f08cebe9038ce34353cc6c8237439debee
 /* Static Site Importer provider layout overlay: 4ab52f054cae */
 .ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5, .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f{width:100%}
 .ssi-form-d095fee786e4 .ssi-source-field-list{margin-bottom:16px;padding:16px}
@@ -20,6 +20,7 @@ sha256: 18cee043bfe2240410d229ced869751e177656ddd5f4b11fba0b1e297e0c1c7f
 .ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__field-format{display:none}
 .ssi-form-d095fee786e4 .ssi-field-row > label{margin-block-end:0}
 .ssi-form-d095fee786e4 .grunion-field-wrap .grunion-field::placeholder{color:revert}
+.ssi-form-d095fee786e4 div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
 sha256: 99fc10fc94bbb99b56a6a1c0f3d084c891c24170f98bb1a5f1c6959da19be72d
