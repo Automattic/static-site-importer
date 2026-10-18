@@ -1,0 +1,15 @@
+<style>
+.grid{display:grid}.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}.gap-6{gap:1.5rem}
+@media (width>=768px){.md\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}
+input,textarea{padding:8px;border:1px solid #888;font-size:14px}
+@media (min-width:1024px){input,textarea{padding:12px;font-size:16px}}
+</style>
+<form class="space-y-6">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div><label>Name</label><input type="text" name="name" required></div>
+<div><label>Phone</label><input type="tel" name="phone" required></div>
+</div>
+<div><label>Email</label><input type="email" name="email" required></div>
+<div><label>Details</label><textarea rows="5" name="details"></textarea></div>
+<button type="submit">Submit</button>
+</form>

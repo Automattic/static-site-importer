@@ -1,0 +1,75 @@
+# Form overlay golden snapshot for tests/fixtures/form-overlay-golden/styled-card-context.html
+# Regenerate: SSI_UPDATE_GOLDEN=1 php tests/smoke-form-overlay-golden.php
+
+=== status ===
+mapped
+
+=== css ===
+sha256: 86f7dea677fde5796745f9561fa0ef10785f6ad66f5ec4faefc62e5cd5b1823e
+/* Static Site Importer provider layout overlay: 4757c3d81bce */
+.ssi-form-c153ced5a93a .ssi-node-a2ec4a1c76ba, .ssi-form-c153ced5a93a .ssi-node-bcc31fe24d52{width:100%}
+.ssi-form-c153ced5a93a.ssi-form-c153ced5a93a .ssi-node-576863a6b026{font-family:revert;line-height:revert;background:#fff;border:1px solid #d4d4d8;border-radius:8px;padding:10px 12px;width:100%}
+.ssi-form-c153ced5a93a.ssi-form-c153ced5a93a .ssi-node-67960c0d6e7b{margin:0;font-weight:inherit;display:block;font-size:14px;margin-bottom:6px}
+.ssi-form-c153ced5a93a.ssi-form-c153ced5a93a .ssi-node-dd55dcc63657{font-family:revert;line-height:revert;background:#fff;border:1px solid #d4d4d8;border-radius:8px;padding:10px 12px;width:100%}
+.ssi-form-c153ced5a93a.ssi-form-c153ced5a93a .ssi-node-7835a4534c7a{margin:0;font-weight:inherit;display:block;font-size:14px;margin-bottom:6px}
+.ssi-form-c153ced5a93a{position:relative;z-index:1;pointer-events:auto}
+.ssi-form-c153ced5a93a.jetpack-contact-form-container{padding:0;margin:0;border:0}
+.ssi-form-c153ced5a93a .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}
+.ssi-form-c153ced5a93a .grunion-field-wrap .contact-form__field-hints{display:contents}
+.ssi-form-c153ced5a93a .grunion-field-wrap .contact-form__field-format{display:none}
+.ssi-form-c153ced5a93a .grunion-field-wrap .ssi-field-row > label{margin-block-end:0}
+.ssi-form-c153ced5a93a .grunion-field-wrap .grunion-field::placeholder{color:revert}
+
+=== editor_css ===
+sha256: 8b7b93b6ff47865a1152cb9dab23639d5d5e846ecbdf0b1207add90b4b3d7fef
+/* Static Site Importer editor control chrome: df8fad279d4c */
+.editor-styles-wrapper .ssi-form-c153ced5a93a .ssi-node-a2ec4a1c76ba, .editor-styles-wrapper .ssi-form-c153ced5a93a .ssi-node-bcc31fe24d52{width:100%}
+.editor-styles-wrapper .ssi-form-c153ced5a93a.ssi-form-c153ced5a93a .ssi-node-576863a6b026{font-family:revert;line-height:revert;background:#fff;border:1px solid #d4d4d8;border-radius:8px;padding:10px 12px;width:100%}
+.editor-styles-wrapper .ssi-form-c153ced5a93a.ssi-form-c153ced5a93a .ssi-node-576863a6b026::placeholder{color:revert;opacity:revert}
+.editor-styles-wrapper .ssi-form-c153ced5a93a.ssi-form-c153ced5a93a .ssi-node-67960c0d6e7b > label{margin:0;font-weight:inherit;padding:0;display:block;font-size:14px}
+.editor-styles-wrapper .ssi-form-c153ced5a93a.ssi-form-c153ced5a93a .ssi-node-67960c0d6e7b{display:block;margin-bottom:6px}
+.editor-styles-wrapper .ssi-form-c153ced5a93a.ssi-form-c153ced5a93a .ssi-node-dd55dcc63657{font-family:revert;line-height:revert;background:#fff;border:1px solid #d4d4d8;border-radius:8px;padding:10px 12px;width:100%}
+.editor-styles-wrapper .ssi-form-c153ced5a93a.ssi-form-c153ced5a93a .ssi-node-dd55dcc63657::placeholder{color:revert;opacity:revert}
+.editor-styles-wrapper .ssi-form-c153ced5a93a.ssi-form-c153ced5a93a .ssi-node-7835a4534c7a > label{margin:0;font-weight:inherit;padding:0;display:block;font-size:14px}
+.editor-styles-wrapper .ssi-form-c153ced5a93a.ssi-form-c153ced5a93a .ssi-node-7835a4534c7a{display:block;margin-bottom:6px}
+.editor-styles-wrapper .ssi-form-c153ced5a93a{position:relative;z-index:1;pointer-events:auto}
+.editor-styles-wrapper .ssi-form-c153ced5a93a.jetpack-contact-form-container{padding:0;margin:0;border:0}
+.editor-styles-wrapper .ssi-form-c153ced5a93a > div.jetpack-contact-form{display:contents}
+
+=== context_css ===
+sha256: ca680c47ec93b96a7a347bbce0e7182a29c61f22f6fc9e3609cfc267c0af74a7
+/* Static Site Importer form context fallback: b4812bcba638 */
+.ssi-form-c153ced5a93a .ssi-context-56dfe14effa4{color:#18181b;font-size:24px;font-weight:700;line-height:32px;margin:0 0 8px}
+.ssi-form-c153ced5a93a .ssi-context-dca9194009d9{color:#52525b;font-size:15px;line-height:24px;margin:0 0 20px}
+.ssi-form-c153ced5a93a .ssi-context-2c3ac4b39602{color:#71717a;font-size:12px;padding-top:8px}
+
+=== editor_context_css ===
+sha256: f74efdab7fbd0dcde08a25a3aab4b91b33701dca4975bdde32cc2063123a609f
+/* Static Site Importer editor form context fallback: b4812bcba638 */
+.ssi-form-c153ced5a93a .ssi-context-56dfe14effa4{color:#18181b;font-size:24px;font-weight:700;line-height:32px;margin:0 0 8px}
+.ssi-form-c153ced5a93a .ssi-context-dca9194009d9{color:#52525b;font-size:15px;line-height:24px;margin:0 0 20px}
+.ssi-form-c153ced5a93a .ssi-context-2c3ac4b39602{color:#71717a;font-size:12px;padding-top:8px}
+
+=== block_markup ===
+<!-- wp:jetpack/contact-form {"className":"ssi-form-c153ced5a93a"} -->
+<div class="wp-block-jetpack-contact-form ssi-form-c153ced5a93a"><!-- wp:core/heading {"className":"card-title ssi-context-56dfe14effa4"} -->
+<h2 class="wp-block-heading card-title ssi-context-56dfe14effa4">Get in touch</h2>
+<!-- /wp:core/heading -->
+<!-- wp:core/paragraph {"className":"card-intro ssi-context-dca9194009d9"} -->
+<p class="wp-block-paragraph card-intro ssi-context-dca9194009d9">Leave your details and we will reply soon.</p>
+<!-- /wp:core/paragraph -->
+<!-- wp:jetpack/field-text {"id":"ssi-form-c153ced5a93a-field-0","shareFieldAttributes":false,"className":"ssi-node-a2ec4a1c76ba ssi-node-20820f3c50a8 ssi-source-wrapper-0--field"} -->
+<div><!-- wp:jetpack/label {"label":"Name","className":"ssi-node-67960c0d6e7b"} --><!-- /wp:jetpack/label -->
+<!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"className":"ssi-node-576863a6b026"} --><!-- /wp:jetpack/input --></div>
+<!-- /wp:jetpack/field-text -->
+<!-- wp:jetpack/field-email {"id":"ssi-form-c153ced5a93a-field-1","shareFieldAttributes":false,"className":"ssi-node-bcc31fe24d52 ssi-node-7c453d6cd6f1 ssi-source-wrapper-0--field"} -->
+<div><!-- wp:jetpack/label {"label":"Email","className":"ssi-node-7835a4534c7a"} --><!-- /wp:jetpack/label -->
+<!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"className":"ssi-node-dd55dcc63657"} --><!-- /wp:jetpack/input --></div>
+<!-- /wp:jetpack/field-email -->
+<!-- wp:core/button {"tagName":"button","type":"submit","lock":{"remove":true},"className":"form-button-submit is-submit   ssi-node-4d0f701c9914","metadata":{"name":"Submit button"}} -->
+<div class="wp-block-button form-button-submit is-submit   ssi-node-4d0f701c9914"><button type="submit" class="wp-block-button__link wp-element-button">Send</button></div>
+<!-- /wp:core/button -->
+<!-- wp:core/paragraph {"className":"card-note ssi-context-2c3ac4b39602"} -->
+<p class="wp-block-paragraph card-note ssi-context-2c3ac4b39602">We never share your address.</p>
+<!-- /wp:core/paragraph --></div>
+<!-- /wp:jetpack/contact-form -->

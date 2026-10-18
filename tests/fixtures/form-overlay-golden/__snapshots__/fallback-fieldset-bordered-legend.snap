@@ -1,0 +1,54 @@
+# Form overlay golden snapshot for tests/fixtures/form-overlay-golden/fallback-fieldset-bordered-legend.html
+# Regenerate: SSI_UPDATE_GOLDEN=1 php tests/smoke-form-overlay-golden.php
+
+=== status ===
+skipped
+
+=== css ===
+sha256: 96beef753370a7c0e2075a8e4b8b5fcf857b5f91cc982ab707dce6ba19a03402
+/* Static Site Importer provider layout overlay: 4ab52f054cae */
+.ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5, .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f{width:100%}
+.ssi-form-d095fee786e4 .ssi-source-field-list{margin-bottom:16px;padding:16px}
+.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624{font-family:revert;line-height:revert;border:1px solid #a1a1aa;padding:8px;width:100%}
+.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-55ca155d2249{margin:0;font-weight:inherit;display:block;margin-bottom:4px}
+.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00{font-family:revert;line-height:revert;border:1px solid #a1a1aa;padding:8px;width:100%}
+.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-e753eef65d32{margin:0;font-weight:inherit;display:block;margin-bottom:4px}
+.ssi-form-d095fee786e4{position:relative;z-index:1;pointer-events:auto}
+.ssi-form-d095fee786e4.jetpack-contact-form-container{padding:0;margin:0;border:0}
+.ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}
+.ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__field-hints{display:contents}
+.ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__field-format{display:none}
+.ssi-form-d095fee786e4 .grunion-field-wrap .ssi-field-row > label{margin-block-end:0}
+.ssi-form-d095fee786e4 .grunion-field-wrap .grunion-field::placeholder{color:revert}
+
+=== editor_css ===
+sha256: 99fc10fc94bbb99b56a6a1c0f3d084c891c24170f98bb1a5f1c6959da19be72d
+/* Static Site Importer editor control chrome: 9cd53aebb290 */
+.editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f{width:100%}
+.editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-source-field-list{margin-bottom:16px;padding:16px}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624{font-family:revert;line-height:revert;border:1px solid #a1a1aa;padding:8px;width:100%}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624::placeholder{color:revert;opacity:revert}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-55ca155d2249 > label{margin:0;font-weight:inherit;padding:0;display:block}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-55ca155d2249{display:block;margin-bottom:4px}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00{font-family:revert;line-height:revert;border:1px solid #a1a1aa;padding:8px;width:100%}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00::placeholder{color:revert;opacity:revert}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-e753eef65d32 > label{margin:0;font-weight:inherit;padding:0;display:block}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-e753eef65d32{display:block;margin-bottom:4px}
+.editor-styles-wrapper .ssi-form-d095fee786e4{position:relative;z-index:1;pointer-events:auto}
+.editor-styles-wrapper .ssi-form-d095fee786e4.jetpack-contact-form-container{padding:0;margin:0;border:0}
+.editor-styles-wrapper .ssi-form-d095fee786e4 > div.jetpack-contact-form{display:contents}
+
+=== block_markup ===
+<!-- wp:jetpack/contact-form {"className":"ssi-source-field-list ssi-form-d095fee786e4"} -->
+<div class="wp-block-jetpack-contact-form ssi-source-field-list ssi-form-d095fee786e4"><!-- wp:jetpack/field-text {"id":"ssi-form-d095fee786e4-field-0","shareFieldAttributes":false,"className":"ssi-node-c0ec220a2ba5 ssi-node-d19260cd5a75 ssi-source-wrapper-1--field"} -->
+<div><!-- wp:jetpack/label {"label":"Name","className":"ssi-node-55ca155d2249"} --><!-- /wp:jetpack/label -->
+<!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"className":"ssi-node-f6f6e97b0624"} --><!-- /wp:jetpack/input --></div>
+<!-- /wp:jetpack/field-text -->
+<!-- wp:jetpack/field-email {"id":"ssi-form-d095fee786e4-field-1","shareFieldAttributes":false,"className":"ssi-node-8f1f8757437f ssi-node-bbd608db426f ssi-source-wrapper-1--field"} -->
+<div><!-- wp:jetpack/label {"label":"Email","className":"ssi-node-e753eef65d32"} --><!-- /wp:jetpack/label -->
+<!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"className":"ssi-node-6c39784ddd00"} --><!-- /wp:jetpack/input --></div>
+<!-- /wp:jetpack/field-email -->
+<!-- wp:core/button {"tagName":"button","type":"submit","lock":{"remove":true},"className":"form-button-submit is-submit   ssi-node-3a3fd4718c31","metadata":{"name":"Submit button"}} -->
+<div class="wp-block-button form-button-submit is-submit   ssi-node-3a3fd4718c31"><button type="submit" class="wp-block-button__link wp-element-button">Send</button></div>
+<!-- /wp:core/button --></div>
+<!-- /wp:jetpack/contact-form -->

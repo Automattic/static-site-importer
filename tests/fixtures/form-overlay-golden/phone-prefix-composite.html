@@ -1,0 +1,10 @@
+<style>
+.field{display:flex;flex-direction:column;gap:6px}
+.phone{display:flex;align-items:center;border:1px solid #94a3b8;border-radius:6px;background:#fff}
+.phone-prefix{display:flex;align-items:center;padding:0 10px;border-right:1px solid #94a3b8;color:#475569}
+.phone input{flex:1 1 auto;border:0;padding:10px 12px;font-size:16px;text-indent:4px}
+</style>
+<form>
+<div class="field"><label for="phone">Phone</label><div class="phone"><span class="phone-prefix">+1</span><input id="phone" name="phone" type="tel"></div></div>
+<button type="submit">Call me</button>
+</form>

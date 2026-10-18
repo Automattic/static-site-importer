@@ -1,0 +1,61 @@
+# Form overlay golden snapshot for tests/fixtures/form-overlay-golden/phone-prefix-composite.html
+# Regenerate: SSI_UPDATE_GOLDEN=1 php tests/smoke-form-overlay-golden.php
+
+=== status ===
+mapped
+
+=== css ===
+sha256: 065e0d04208a7e3f5dfc8d118876579cb00bf1aba58cdd7114f0999d57ae3e90
+/* Static Site Importer provider layout overlay: 1d47250fb165 */
+.ssi-form-d095fee786e4 .ssi-node-9086d8eaec39{flex-direction:column}
+.ssi-form-d095fee786e4 .ssi-node-d19260cd5a75{background:#fff;border:1px solid #94a3b8;border-radius:6px}
+.ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5{flex:1 1 auto}
+.ssi-form-d095fee786e4 .ssi-node-9086d8eaec39{flex-direction:column;display:flex;gap:6px}
+.ssi-form-d095fee786e4 .ssi-node-d19260cd5a75{align-items:center;display:flex;flex-grow:0;flex-shrink:1;flex-basis:auto}
+.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5{background:#fff;border:1px solid #94a3b8;border-radius:6px}
+.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-7998545b5b66-destination-shell{padding:0!important;border:0!important;background:transparent!important;text-indent:0!important;gap:0!important}
+.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-9f1178d7ad6b-destination-primary{font-family:revert!important;line-height:revert!important;border:0!important;flex:1 1 auto!important;font-size:16px!important;padding:10px 12px!important;text-indent:4px!important}
+.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-8d668df98608-destination-carrier{flex:1 1 0!important;min-width:0!important}
+.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-c0a08805a264-destination-prefix{display:flex!important;align-items:center!important;height:100%!important}
+.ssi-form-d095fee786e4{position:relative;z-index:1;pointer-events:auto}
+.ssi-form-d095fee786e4.jetpack-contact-form-container{padding:0;margin:0;border:0}
+.ssi-form-d095fee786e4.ssi-native-form-topology.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form), .ssi-form-d095fee786e4.ssi-native-form-topology.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *){display:contents}
+.ssi-form-d095fee786e4.ssi-native-form-topology form.jetpack-contact-form__form.submission-success{display:none}
+.ssi-form-d095fee786e4 .ssi-native-control-shell-wrap, .ssi-form-d095fee786e4 .wp-block-button.form-button-submit{display:contents}
+.ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}
+.ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__field-hints{display:contents}
+.ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__field-format{display:none}
+.ssi-form-d095fee786e4 .grunion-field-wrap .ssi-field-row > label{margin-block-end:0}
+.ssi-form-d095fee786e4 .grunion-field-wrap .grunion-field::placeholder{color:revert}
+
+=== editor_css ===
+sha256: cd820898c79453115895656443e4ef23fcce912cdc1f684725e07c36b413798c
+/* Static Site Importer editor control chrome: 840d4db434a7 */
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5{background:#fff;border:1px solid #94a3b8;border-radius:6px}
+.editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-9086d8eaec39{flex-direction:column}
+.editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-d19260cd5a75{background:#fff;border:1px solid #94a3b8;border-radius:6px}
+.editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5{flex:1 1 auto}
+.editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-9086d8eaec39{flex-direction:column;display:flex;gap:6px}
+.editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-d19260cd5a75{align-items:center;display:flex;flex-grow:0;flex-shrink:1;flex-basis:auto}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-9f1178d7ad6b-destination-primary{font-family:revert!important;line-height:revert!important;border:0!important;flex:1 1 auto!important;font-size:16px!important;padding:10px 12px!important;text-indent:4px!important}
+.editor-styles-wrapper .ssi-form-d095fee786e4{position:relative;z-index:1;pointer-events:auto}
+.editor-styles-wrapper .ssi-form-d095fee786e4.jetpack-contact-form-container{padding:0;margin:0;border:0}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-native-form-topology.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form), .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-native-form-topology.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *){display:contents}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-native-form-topology form.jetpack-contact-form__form.submission-success{display:none}
+.editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-native-control-shell-wrap, .editor-styles-wrapper .ssi-form-d095fee786e4 .wp-block-button.form-button-submit, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-native-control-shell{display:contents}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-native-form-topology{padding:0;border:0}
+
+=== block_markup ===
+<!-- wp:jetpack/contact-form {"className":"ssi-native-form-topology ssi-form-d095fee786e4"} -->
+<div class="wp-block-jetpack-contact-form ssi-native-form-topology ssi-form-d095fee786e4"><!-- wp:core/group {"className":"field ssi-node-9086d8eaec39","layout":{"type":"flex","orientation":"vertical"}} -->
+<div class="wp-block-group field ssi-node-9086d8eaec39 is-layout-flex"><!-- wp:core/group {"className":"phone ssi-node-d19260cd5a75","layout":{"type":"flex","orientation":"horizontal"}} -->
+<div class="wp-block-group phone ssi-node-d19260cd5a75 is-layout-flex"><!-- wp:jetpack/field-telephone {"id":"ssi-form-d095fee786e4-field-0","showCountrySelector":false,"helpText":"+1","shareFieldAttributes":false,"className":"ssi-node-c0ec220a2ba5 ssi-native-control-shell"} -->
+<div><!-- wp:jetpack/label {"label":"Phone"} --><!-- /wp:jetpack/label -->
+<!-- wp:jetpack/phone-input {"style":{"border":{"style":"solid"}},"className":"ssi-node-7998545b5b66-destination-shell ssi-node-9f1178d7ad6b-destination-primary ssi-node-8d668df98608-destination-carrier ssi-node-c0a08805a264-destination-prefix"} --><!-- /wp:jetpack/phone-input --></div>
+<!-- /wp:jetpack/field-telephone --></div>
+<!-- /wp:core/group --></div>
+<!-- /wp:core/group -->
+<!-- wp:core/button {"tagName":"button","type":"submit","lock":{"remove":true},"className":"form-button-submit is-submit   ssi-node-8f1f8757437f","metadata":{"name":"Submit button"}} -->
+<div class="wp-block-button form-button-submit is-submit   ssi-node-8f1f8757437f"><button type="submit" class="wp-block-button__link wp-element-button">Call me</button></div>
+<!-- /wp:core/button --></div>
+<!-- /wp:jetpack/contact-form -->
