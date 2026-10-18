@@ -5,7 +5,7 @@
 skipped
 
 === css ===
-sha256: 96beef753370a7c0e2075a8e4b8b5fcf857b5f91cc982ab707dce6ba19a03402
+sha256: 18cee043bfe2240410d229ced869751e177656ddd5f4b11fba0b1e297e0c1c7f
 /* Static Site Importer provider layout overlay: 4ab52f054cae */
 .ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5, .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f{width:100%}
 .ssi-form-d095fee786e4 .ssi-source-field-list{margin-bottom:16px;padding:16px}
@@ -18,7 +18,7 @@ sha256: 96beef753370a7c0e2075a8e4b8b5fcf857b5f91cc982ab707dce6ba19a03402
 .ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}
 .ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__field-hints{display:contents}
 .ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__field-format{display:none}
-.ssi-form-d095fee786e4 .grunion-field-wrap .ssi-field-row > label{margin-block-end:0}
+.ssi-form-d095fee786e4 .ssi-field-row > label{margin-block-end:0}
 .ssi-form-d095fee786e4 .grunion-field-wrap .grunion-field::placeholder{color:revert}
 
 === editor_css ===
