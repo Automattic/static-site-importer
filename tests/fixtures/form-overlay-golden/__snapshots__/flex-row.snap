@@ -5,7 +5,7 @@
 mapped
 
 === css ===
-sha256: f990e05107475d3d2abb1710ced75db0111d80aa5e6670f63f3860a346d081f4
+sha256: 9b027fc0e911f91cf30993130583db5d46c9ca843ca02ded524c73d90ff64c62
 /* Static Site Importer provider layout overlay: 8a204f313b7e */
 .ssi-form-d095fee786e4 .ssi-node-9086d8eaec39{flex-direction:row}
 .ssi-form-d095fee786e4.ssi-native-form-topology form.jetpack-contact-form__form, .ssi-form-d095fee786e4.ssi-native-form-topology.wp-block-jetpack-contact-form:not(:has(form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *){flex-direction:column;display:flex;gap:20px;flex-wrap:nowrap}
@@ -29,7 +29,7 @@ sha256: f990e05107475d3d2abb1710ced75db0111d80aa5e6670f63f3860a346d081f4
 .ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}
 .ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__field-hints{display:contents}
 .ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__field-format{display:none}
-.ssi-form-d095fee786e4 .grunion-field-wrap .ssi-field-row > label{margin-block-end:0}
+.ssi-form-d095fee786e4 .ssi-field-row > label{margin-block-end:0}
 .ssi-form-d095fee786e4 .grunion-field-wrap .grunion-field::placeholder{color:revert}
 
 === editor_css ===
