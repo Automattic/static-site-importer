@@ -5,7 +5,7 @@
 mapped
 
 === css ===
-sha256: 6bd47781bc3fbf3526627829fa7e0578657ec19978bb43c5523385c3b48e4ddb
+sha256: c5ed95527fc155acba1008583ba7c2b15a11e8cff97743d2d615d283a5694724
 /* Static Site Importer provider layout overlay: 66e7957d4813 */
 .ssi-form-d095fee786e4 > form.jetpack-contact-form__form, .ssi-form-d095fee786e4:not(:has(> form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *){display:block;gap:0}
 .ssi-form-d095fee786e4 .ssi-node-d19260cd5a75{align-items:center;display:flex;gap:8px}
@@ -37,6 +37,7 @@ sha256: 6bd47781bc3fbf3526627829fa7e0578657ec19978bb43c5523385c3b48e4ddb
 .ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__field-format{display:none}
 .ssi-form-d095fee786e4 .ssi-field-row > label{margin-block-end:0}
 .ssi-form-d095fee786e4 .grunion-field-wrap .grunion-field::placeholder{color:revert}
+.ssi-form-d095fee786e4 div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
 sha256: 5bf4c243d5b6ae466954afeaa9e4223ebb71eca487d11d8f86c70ed4707b124e

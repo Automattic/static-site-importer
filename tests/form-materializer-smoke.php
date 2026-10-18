@@ -3202,6 +3202,33 @@ namespace {
 		'wrapping-label-field-box-margin-is-released-on-the-provider-caption',
 		$wrapping_label_css
 	);
+	// Below 480px Jetpack's `flex-basis: 100%` on every button wrapper would
+	// stretch a content-sized source submit across the form. The provider basis
+	// is released with a reset weaker than the captured submit rule, so an
+	// authored `width: 100%` still fills the row.
+	$submit_basis_css = static function ( string $css ) use ( $artifact_compiler ): array {
+		$compiled  = ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => '<style>' . $css . '</style><form method="post" action="/contact"><label for="n">Name</label><input id="n" name="name" type="text"><button type="submit" class="btn">Send</button></form>' ) ) )->toArray();
+		$validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $compiled['fallbacks'][0] ?? array() ) ) );
+		$row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated['forms'] ?? array() ) )['forms'][0] ?? array();
+		return array( $validated['errors'] ?? array(), (string) ( $row['status'] ?? '' ), (string) ( $row['provider_layout_overlay_css']['css'] ?? '' ) );
+	};
+	list( $content_submit_errors, $content_submit_status, $content_submit_css ) = $submit_basis_css( '.btn{display:inline-flex;padding:10px 20px}' );
+	$assert(
+		empty( $content_submit_errors )
+			&& 'mapped' === $content_submit_status
+			&& 1 === preg_match( '/\n\.ssi-form-[a-f0-9]{12} div\.form-button-submit\{flex-basis:auto\}/', $content_submit_css ),
+		'content-sized-submit-releases-the-provider-mobile-button-basis',
+		$content_submit_css
+	);
+	list( $full_submit_errors, $full_submit_status, $full_submit_css ) = $submit_basis_css( '.btn{width:100%;padding:10px 20px}' );
+	$assert(
+		empty( $full_submit_errors )
+			&& 'mapped' === $full_submit_status
+			&& 1 === preg_match( '/\.(ssi-form-[a-f0-9]{12})\.\1 \.ssi-node-[a-f0-9]{12}\{[^}]*width:100%/', $full_submit_css )
+			&& 1 === preg_match( '/\n\.ssi-form-[a-f0-9]{12} div\.form-button-submit\{flex-basis:auto\}/', $full_submit_css ),
+		'full-width-submit-keeps-its-captured-width-over-the-released-basis',
+		$full_submit_css
+	);
 	$center_source = $compile_form( '@media (min-width: 768px){form{display:flex;flex-direction:column;align-items:center}}' );
 	$center_form   = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $center_source ) ) );
 	$center_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $center_form['forms'] ?? array() ) )['forms'][0] ?? array();
