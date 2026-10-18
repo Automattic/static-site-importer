@@ -1715,7 +1715,27 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$column_count        = 2;
 				$class_token_columns = true;
 			}
-			$equal_grid = empty( $parent_variants ) && 'grid' === $display && null !== $column_count;
+			$equal_grid      = empty( $parent_variants ) && 'grid' === $display && null !== $column_count;
+			$narrowing_query = null;
+			// The desktop-first form of the same row: equal columns by default,
+			// collapsed to one track below a proven max-width breakpoint. That is
+			// the provider's equal-width row with its stack scoped to the source's
+			// own query, so it maps the same way the min-width widening does.
+			if ( ! $equal_grid && 'grid' === $display && null !== $column_count && 1 === count( $parent_variants ) ) {
+				$variant   = $parent_variants[0];
+				$condition = is_array( $variant['condition'] ?? null ) ? $variant['condition'] : null;
+				$patch     = self::layout_patch( $variant );
+				if ( array( 'columns' ) === array_keys( $patch )
+					&& self::is_single_fraction_track( preg_replace( '/\s+/', '', (string) ( $patch['columns'] ?? '' ) ) )
+					&& is_array( $condition ) && 'media' === ( $condition['kind'] ?? null )
+					&& is_string( $condition['query'] ?? null )
+					&& self::is_max_width_media_query( $condition['query'] )
+					&& self::has_source_fact( $variant['provenance'] ?? array(), $condition, array( 'grid-template-columns' ) )
+				) {
+					$equal_grid      = true;
+					$narrowing_query = $condition['query'];
+				}
+			}
 			// A mobile-first source stacks these boxes by default and only bands
 			// them into equal columns at a wider breakpoint (Tailwind's own
 			// `grid-cols-1 md:grid-cols-2` or `grid sm:grid-cols-2` shape). Jetpack
@@ -1782,7 +1802,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				: ( is_string( $layout['column_gap'] ?? null ) && '' !== trim( $layout['column_gap'] ) ? trim( $layout['column_gap'] ) : '1.5rem' );
 			$track       = self::equal_fraction_track_size( $column_count, $gap );
 			$paired      = array_fill_keys( $indexes, true );
-			$stack_query = is_string( $widening_query ) ? self::inverted_min_width_media_query( $widening_query ) : null;
+			$stack_query = is_string( $widening_query ) ? self::inverted_min_width_media_query( $widening_query ) : $narrowing_query;
 			if ( null === $stack_query && $class_token_columns ) {
 				$stack_query = self::equal_width_stack_query_from_cascade_facts( $parent, $s->variants_by_node, $s->layout_nodes_by_id );
 				if ( null === $stack_query ) {
@@ -4180,6 +4200,15 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 */
 	private static function is_min_width_media_query( string $query ): bool {
 		return 1 === preg_match( '/^(?:(?:only )?screen and )?\((?:min-width:\s?[0-9]+(?:\.[0-9]+)?(?:px|em|rem)|width\s*>=\s*[0-9]+(?:\.[0-9]+)?(?:px|em|rem))\)$/D', $query );
+	}
+
+	private static function is_max_width_media_query( string $query ): bool {
+		return 1 === preg_match( '/^(?:(?:only )?screen and )?\((?:max-width:\s?[0-9]+(?:\.[0-9]+)?(?:px|em|rem)|width\s*<=?\s*[0-9]+(?:\.[0-9]+)?(?:px|em|rem))\)$/D', $query );
+	}
+
+	/** One full-width track: `1fr`, `minmax(0,1fr)`, or their one-count repeat. */
+	private static function is_single_fraction_track( string $columns ): bool {
+		return 1 === preg_match( '/^(?:1fr|minmax\(0(?:px)?,1fr\)|repeat\(1,(?:1fr|minmax\(0(?:px)?,1fr\))\))$/D', $columns );
 	}
 
 	/**
