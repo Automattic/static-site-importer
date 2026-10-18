@@ -2895,6 +2895,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			? '.' . $scope . ' .grunion-field-wrap > .ssi-field-row{grid-column:1 / -1}' . "\n"
 			: '';
 		$css                          = rtrim( $overlay['css'] ) . "\n." . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-hints{display:contents}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-format{display:none}' . "\n" . '.' . $scope . ' .ssi-field-row > label{margin-block-end:0}' . "\n" . '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}' . "\n" . $field_row_span;
+		// Below 480px Jetpack sets `flex-basis: 100%` on every button wrapper in
+		// the form, stretching the submit across the row. The source button's
+		// width is already carried on that wrapper (an authored `width: 100%`,
+		// or none for a content-sized button), so the provider basis is
+		// released. The reset is weaker than a captured flex fact on the submit
+		// node, which keeps an authored basis in charge.
+		$css                         .= '.' . $scope . ' div.form-button-submit{flex-basis:auto}' . "\n";
 		$overlay['css']               = $css;
 		$overlay['overlay']['css']    = $css;
 		$overlay['overlay']['sha256'] = hash( 'sha256', $css );
