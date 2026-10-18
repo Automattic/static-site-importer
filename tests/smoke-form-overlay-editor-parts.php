@@ -1,0 +1,234 @@
+<?php
+/**
+ * Every part the front-end form overlay builder emits has an editor realisation.
+ *
+ * `Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map()`
+ * derives the block-editor target map from each target's and destination's
+ * declared `part`, read from `editor_surface_table()`. This smoke enumerates the
+ * builder's branches (every control type crossed with every presentation role
+ * set and label shape, and every layout-target kind) and asserts that:
+ *
+ * - every emitted target and destination declares a part the editor table has;
+ * - every row of the editor table is emitted by some branch (no dead rows);
+ * - an undeclared or missing part fails the editor derivation loudly;
+ * - neither the canonical front-end map nor the editor map carries a part, so
+ *   both pass `Provider_Layout_Overlay::validate_map()`, which rejects a map
+ *   that still carries one.
+ *
+ * Run from the repository root:
+ *   php tests/smoke-form-overlay-editor-parts.php
+ *
+ * @package StaticSiteImporter
+ */
+
+require_once __DIR__ . '/fixtures/form-seeder-cli-stubs.php';
+
+/**
+ * Write text to a standard stream.
+ *
+ * @param string $stream `php://stdout` or `php://stderr`.
+ * @param string $text   Text to write.
+ */
+function ssi_editor_parts_write( string $stream, string $text ): void {
+	$handle = new SplFileObject( $stream, 'w' );
+	$handle->fwrite( $text );
+}
+
+/**
+ * Every presentation destination the descriptor builder emits for each control
+ * type, presentation role set, and label shape.
+ *
+ * @param string $scope Provider form scope class.
+ * @return array<int,array<string,mixed>>
+ */
+function ssi_editor_parts_descriptor_destinations( string $scope ): array {
+	$role_names   = array( 'control', 'label', 'required_marker', 'control_container', 'sibling_stacked_margin' );
+	$role_sets    = 1 << count( $role_names );
+	$destinations = array();
+	$index        = 0;
+	foreach ( array( 'text', 'email', 'textarea', 'select', 'checkbox', 'submit', 'phone', 'tel' ) as $control_type ) {
+		for ( $mask = 1; $mask < $role_sets; ++$mask ) {
+			$roles = array();
+			foreach ( $role_names as $bit => $role_name ) {
+				if ( 0 !== ( $mask & ( 1 << $bit ) ) ) {
+					$roles[ $role_name ] = true;
+				}
+			}
+			foreach ( array( false, true ) as $has_caption ) {
+				foreach ( array( false, true ) as $choice_box ) {
+					foreach ( array( false, true ) as $wrapping_label ) {
+						$descriptor = Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $scope, $index % 128, $control_type, $roles, $has_caption, $choice_box, $wrapping_label );
+						// A submit standing for its source block row moves its box
+						// facts between destinations; both shapes reach the editor.
+						$shapes = 'submit' === $control_type ? array( $descriptor, Static_Site_Importer_Form_Layout_Projection::with_submit_row_button_box( $descriptor ) ) : array( $descriptor );
+						foreach ( $shapes as $shape ) {
+							foreach ( $shape['destinations'] as $destination ) {
+								$destinations[] = $destination;
+							}
+						}
+						++$index;
+					}
+				}
+			}
+		}
+	}
+	return $destinations;
+}
+
+/**
+ * Front-end target maps covering every layout-target kind in both form
+ * topologies, plus the phone country-trigger destination.
+ *
+ * @param string              $scope Provider form scope class.
+ * @param array<string,mixed> $graph Layout graph.
+ * @return array<int,array<string,mixed>>
+ */
+function ssi_editor_parts_target_maps( string $scope, array $graph ): array {
+	$target_maps = array();
+	foreach ( array( false, true ) as $native ) {
+		$target_maps[] = Static_Site_Importer_Form_Layout_Projection::provider_layout_target_map(
+			array(
+				'layout_graph'                => $graph,
+				'provider_native_topology'    => $native,
+				'provider_source_box_submits' => array( 1 ),
+			),
+			$scope,
+			array(
+				0 => Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $scope, 0, 'phone', array( 'control' => true ) ),
+				1 => Static_Site_Importer_Form_Layout_Projection::presentation_descriptor(
+					$scope,
+					1,
+					'select',
+					array(
+						'control' => true,
+						'label'   => true,
+					)
+				),
+			),
+			array(
+				'wrapper-0' => Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'wrapper-0' ) . '-wrap',
+				'wrapper-1' => Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'wrapper-1' ),
+			),
+			array( 0 => 0 ),
+			'ssi-node-0123456789ab-destination-country-trigger'
+		);
+	}
+	return $target_maps;
+}
+
+/**
+ * Whether the editor derivation throws for a map.
+ *
+ * @param array<string,mixed> $target_map Map with a broken part.
+ * @param string              $scope      Provider form scope class.
+ */
+function ssi_editor_parts_derivation_throws( array $target_map, string $scope ): bool {
+	try {
+		Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $target_map, $scope );
+	} catch ( LogicException $exception ) {
+		return str_contains( $exception->getMessage(), 'has no editor surface realisation' );
+	}
+	return false;
+}
+
+$ssi_parts_scope    = 'ssi-form-123456789abc';
+$ssi_parts_table    = Static_Site_Importer_Form_Layout_Projection::editor_surface_table();
+$ssi_parts_failures = array();
+$ssi_parts_checks   = 0;
+$ssi_parts_emitted  = array();
+$ssi_parts_graph    = array(
+	'nodes' => array(
+		array( 'id' => 'form' ),
+		array( 'id' => 'form-box' ),
+		array( 'id' => 'field-list' ),
+		array( 'id' => 'field-0' ),
+		array( 'id' => 'control-0' ),
+		array( 'id' => 'control-1' ),
+		array( 'id' => 'wrapper-0' ),
+		array( 'id' => 'wrapper-1' ),
+	),
+);
+$ssi_parts_maps     = ssi_editor_parts_target_maps( $ssi_parts_scope, $ssi_parts_graph );
+$ssi_parts_entries  = ssi_editor_parts_descriptor_destinations( $ssi_parts_scope );
+foreach ( $ssi_parts_maps as $ssi_parts_map ) {
+	foreach ( $ssi_parts_map['targets'] as $ssi_parts_target ) {
+		$ssi_parts_entries[] = $ssi_parts_target;
+	}
+	foreach ( $ssi_parts_map['presentation_targets'] as $ssi_parts_target ) {
+		foreach ( $ssi_parts_target['destinations'] as $ssi_parts_destination ) {
+			$ssi_parts_entries[] = $ssi_parts_destination;
+		}
+	}
+}
+
+// Every emitted part is declared by the editor surface table.
+foreach ( $ssi_parts_entries as $ssi_parts_entry ) {
+	++$ssi_parts_checks;
+	$ssi_parts_part = $ssi_parts_entry['part'] ?? null;
+	if ( ! is_string( $ssi_parts_part ) ) {
+		$ssi_parts_failures[] = 'an emitted target or destination declares no part: ' . wp_json_encode( $ssi_parts_entry );
+		continue;
+	}
+	if ( ! isset( $ssi_parts_table[ $ssi_parts_part ] ) ) {
+		$ssi_parts_failures[] = 'the editor surface table does not declare emitted part "' . $ssi_parts_part . '"';
+	}
+	$ssi_parts_emitted[ $ssi_parts_part ] = true;
+}
+
+// Every editor surface table row is emitted by some builder branch.
+++$ssi_parts_checks;
+$ssi_parts_dead = array_diff( array_keys( $ssi_parts_table ), array_keys( $ssi_parts_emitted ) );
+if ( array() !== $ssi_parts_dead ) {
+	$ssi_parts_failures[] = 'editor surface table rows never emitted by the builder: ' . implode( ', ', $ssi_parts_dead );
+}
+
+// The canonical and editor maps carry no part ids and validate; a map that
+// still carries part ids is rejected.
+foreach ( $ssi_parts_maps as $ssi_parts_map ) {
+	$ssi_parts_candidates = array(
+		'canonical' => Static_Site_Importer_Form_Layout_Projection::without_parts( $ssi_parts_map ),
+		'editor'    => Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $ssi_parts_map, $ssi_parts_scope, array( 1 => array( 'min-height' => '0' ) ) ),
+	);
+	foreach ( $ssi_parts_candidates as $ssi_parts_kind => $ssi_parts_candidate ) {
+		$ssi_parts_checks += 2;
+		if ( str_contains( (string) wp_json_encode( $ssi_parts_candidate ), '"part"' ) ) {
+			$ssi_parts_failures[] = 'the ' . $ssi_parts_kind . ' map carries part ids';
+		}
+		if ( ! isset( Static_Site_Importer_Provider_Layout_Overlay::validate_map( $ssi_parts_candidate, $ssi_parts_graph )['map'] ) ) {
+			$ssi_parts_failures[] = 'the ' . $ssi_parts_kind . ' map does not validate';
+		}
+	}
+	++$ssi_parts_checks;
+	if ( ! isset( Static_Site_Importer_Provider_Layout_Overlay::validate_map( $ssi_parts_map, $ssi_parts_graph )['error'] ) ) {
+		$ssi_parts_failures[] = 'validate_map() admits a map that still carries part ids';
+	}
+}
+
+// An undeclared or missing part fails the editor derivation loudly.
+$ssi_parts_bad_parts = array(
+	'undeclared' => 'not_a_declared_part',
+	'missing'    => null,
+);
+foreach ( $ssi_parts_bad_parts as $ssi_parts_case => $ssi_parts_bad_part ) {
+	$ssi_parts_bad_destination = $ssi_parts_maps[0];
+	$ssi_parts_bad_target      = $ssi_parts_maps[0];
+	if ( null === $ssi_parts_bad_part ) {
+		unset( $ssi_parts_bad_destination['presentation_targets'][0]['destinations'][0]['part'], $ssi_parts_bad_target['targets'][0]['part'] );
+	} else {
+		$ssi_parts_bad_destination['presentation_targets'][0]['destinations'][0]['part'] = $ssi_parts_bad_part;
+		$ssi_parts_bad_target['targets'][0]['part']                                      = $ssi_parts_bad_part;
+	}
+	$ssi_parts_checks += 2;
+	if ( ! ssi_editor_parts_derivation_throws( $ssi_parts_bad_destination, $ssi_parts_scope ) ) {
+		$ssi_parts_failures[] = 'an ' . $ssi_parts_case . ' destination part does not fail the editor derivation';
+	}
+	if ( ! ssi_editor_parts_derivation_throws( $ssi_parts_bad_target, $ssi_parts_scope ) ) {
+		$ssi_parts_failures[] = 'an ' . $ssi_parts_case . ' target part does not fail the editor derivation';
+	}
+}
+
+if ( array() !== $ssi_parts_failures ) {
+	ssi_editor_parts_write( 'php://stderr', 'FAIL form overlay editor parts: ' . implode( "\n", array_unique( $ssi_parts_failures ) ) . "\n" );
+	exit( 1 );
+}
+ssi_editor_parts_write( 'php://stdout', 'PASS form overlay editor parts: ' . count( $ssi_parts_emitted ) . ' declared parts, ' . $ssi_parts_checks . " checks\n" );

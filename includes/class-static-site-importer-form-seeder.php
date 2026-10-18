@@ -798,7 +798,11 @@ class Static_Site_Importer_Form_Seeder {
 				$presentation_descriptors[ $row_control ] = Static_Site_Importer_Form_Layout_Projection::with_submit_row_button_box( $presentation_descriptors[ $row_control ] );
 			}
 		}
-		$target_map             = Static_Site_Importer_Form_Layout_Projection::provider_layout_target_map( $overlay_form, $scope, $presentation_descriptors, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
+		// The declared part of every target and destination drives the editor
+		// derivation only; the canonical map that is validated, compiled, and
+		// recorded carries none.
+		$part_map               = Static_Site_Importer_Form_Layout_Projection::provider_layout_target_map( $overlay_form, $scope, $presentation_descriptors, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
+		$target_map             = Static_Site_Importer_Form_Layout_Projection::without_parts( $part_map );
 		$presentation_graph     = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
 		$container_presentation = is_array( $form['form']['container_presentation'] ?? null ) ? $form['form']['container_presentation'] : array();
 		$context_fallbacks      = Static_Site_Importer_Form_Field_Markup::context_style_fallbacks( $form );
@@ -820,7 +824,7 @@ class Static_Site_Importer_Form_Seeder {
 		$overlay_graph  = Static_Site_Importer_Form_Layout_Projection::without_container_box_facts( $overlay_graph, $container_presentation );
 		$overlay        = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map, $presentation_graph, $container_presentation, false, $context_fallbacks );
 		$overlay        = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_provider_errors( $overlay, $scope, $mapped_types );
-		$editor_map     = Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $target_map, $scope, Static_Site_Importer_Form_Layout_Projection::editor_textarea_resets( $controls, $presentation_graph ) );
+		$editor_map     = Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $part_map, $scope, Static_Site_Importer_Form_Layout_Projection::editor_textarea_resets( $controls, $presentation_graph ) );
 		$editor_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $editor_map, $presentation_graph, $container_presentation, true, $context_fallbacks );
 		if ( isset( $editor_overlay['overlay']['editor_css'] ) ) {
 			foreach ( array( 'editor_css', 'editor_sha256', 'editor_bytes', 'context_css', 'context_sha256', 'context_bytes', 'editor_context_css', 'editor_context_sha256', 'editor_context_bytes' ) as $key ) {

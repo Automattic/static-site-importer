@@ -268,11 +268,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		$moved        = array( 'display', 'width', 'min_width', 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end' );
 		$destinations = is_array( $descriptor['destinations'] ?? null ) ? $descriptor['destinations'] : array();
 		foreach ( $destinations as $index => $destination ) {
-			$selector = (string) ( $destination['selector'] ?? '' );
 			if ( 'control' !== ( $destination['role'] ?? null ) || ( ! empty( $destination['resets'] ) && array() === ( $destination['properties'] ?? array() ) ) ) {
 				continue;
 			}
-			if ( str_ends_with( $selector, ' > .wp-block-button__link' ) ) {
+			if ( 'submit_link' === ( $destination['part'] ?? null ) ) {
 				$destinations[ $index ]['properties'] = array_values( array_unique( array_merge( $destination['properties'] ?? array(), $moved ) ) );
 			} elseif ( array() !== array_intersect( $moved, $destination['properties'] ?? array() ) ) {
 				$destinations[ $index ]['properties'] = array_values( array_diff( $destination['properties'] ?? array(), $moved ) );
@@ -3344,6 +3343,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	private static function phone_presentation_destinations( string $scope, int $index ): array {
 		return array(
 			array(
+				'part'       => 'phone_shell',
 				'role'       => 'control',
 				'class'      => self::presentation_destination_class( $scope, $index, 'shell' ),
 				'selector'   => '.' . $scope . ' .' . self::presentation_destination_class( $scope, $index, 'shell' ),
@@ -3358,6 +3358,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'priority'   => 'important',
 			),
 			array(
+				'part'       => 'phone_primary',
 				'role'       => 'control',
 				'class'      => self::presentation_destination_class( $scope, $index, 'primary' ),
 				'selector'   => '.' . $scope . ' .' . self::presentation_destination_class( $scope, $index, 'primary' ),
@@ -3369,6 +3370,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'priority'   => 'important',
 			),
 			array(
+				'part'       => 'phone_carrier',
 				'role'       => 'control',
 				'class'      => self::presentation_destination_class( $scope, $index, 'carrier' ),
 				'selector'   => '.' . $scope . ' .' . self::presentation_destination_class( $scope, $index, 'carrier' ),
@@ -3380,6 +3382,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'priority'   => 'important',
 			),
 			array(
+				'part'       => 'phone_prefix',
 				'role'       => 'control',
 				'class'      => self::presentation_destination_class( $scope, $index, 'prefix' ),
 				'selector'   => '.' . $scope . ' .' . self::presentation_destination_class( $scope, $index, 'prefix' ),
@@ -3575,6 +3578,16 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		return ! array_intersect( array( 'width', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis' ), array_keys( $layout ) ) && in_array( $layout['align_self'] ?? 'auto', array( 'auto', 'stretch' ), true );
 	}
 
+	/** The declared part of a non-phone control's own (inner) destination. */
+	private static function control_part( string $type ): string {
+		return match ( $type ) {
+			'submit'   => 'submit_link',
+			'select'   => 'select_control',
+			'checkbox' => 'checkbox_control',
+			default    => 'control',
+		};
+	}
+
 	public static function presentation_descriptor( string $scope, int $index, string $type, array $roles, bool $has_caption = false, bool $choice_box = false, bool $wrapping_label = false ): array {
 		$control_class      = isset( $roles['control'] ) ? self::presentation_node_class( $scope, $index, 'control' ) : '';
 		$label_class        = isset( $roles['label'] ) || isset( $roles['required_marker'] ) ? self::presentation_node_class( $scope, $index, 'label' ) : '';
@@ -3601,6 +3614,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 						);
 					}
 					$wrapper = array(
+						'part'       => 'select' === $type ? 'select_wrapper' : 'submit_wrapper',
 						'role'       => 'control',
 						'selector'   => '.' . $scope . ' .' . $control_class,
 						// A nested native control's wrapper shrink-wraps unless source
@@ -3623,6 +3637,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					$properties     = array_values( array_diff( $properties, $wrapper_properties ) );
 				}
 				$destination = array(
+					'part'       => self::control_part( $type ),
 					'role'       => 'control',
 					'selector'   => '.' . $scope . ( 'checkbox' === $type ? ' input.' : ' .' ) . $control_class . $inner_suffix,
 					'properties' => $properties,
@@ -3661,6 +3676,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					// label shows the button's own colour, not a fallback.
 					$caption        = array( 'color', 'font', 'font_family', 'font_size', 'font_style', 'font_variant', 'font_weight', 'line_height', 'letter_spacing', 'text_transform' );
 					$destinations[] = array(
+						'part'       => 'submit_caption',
 						'role'       => 'control',
 						'selector'   => '.' . $scope . ' .' . $control_class . ' > .wp-block-button__link > span',
 						'properties' => $caption,
@@ -3684,6 +3700,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					// row's `margin-left: 10px` between the email field and its
 					// submit) is the row's own spacing, which nothing else carries.
 					$destinations[] = array(
+						'part'       => 'submit_link_margin_reset',
 						'role'       => 'control',
 						'selector'   => '.' . $scope . ' .' . $control_class . ' > .wp-block-button__link',
 						'properties' => array(),
@@ -3700,6 +3717,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					// rather than `min-height` itself leaves any authored minimum on the
 					// wrapper or the link in charge.
 					$destinations[] = array(
+						'part'       => 'submit_input_height_reset',
 						'role'       => 'control',
 						'selector'   => '.' . $scope . ' .' . $control_class,
 						'properties' => array(),
@@ -3712,6 +3730,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		}
 		if ( isset( $roles['control_container'] ) ) {
 			$destinations[] = array(
+				'part'       => 'control_container',
 				'role'       => 'control_container',
 				// The source chrome owns the provider field wrapper, not its nested input.
 				// The layout hook is placed on that wrapper for every Jetpack field type.
@@ -3722,6 +3741,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		if ( isset( $roles['label'] ) ) {
 			$text_properties = array( 'color', 'font', 'font_family', 'font_size', 'font_style', 'font_variant', 'font_weight', 'letter_spacing', 'line_height', 'text_align', 'text_decoration', 'text_transform' );
 			$destinations[]  = array(
+				'part'       => $choice_box ? 'choice_label' : 'label',
 				'role'       => 'label',
 				'selector'   => '.' . $scope . ' .' . $label_class . ( $choice_box ? ' > label' : '' ),
 				'properties' => $choice_box ? $text_properties : array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ),
@@ -3736,6 +3756,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				// on the provider caption would space the caption from its own
 				// control a second time.
 				$destinations[] = array(
+					'part'       => 'wrapping_label_reset',
 					'role'       => 'label',
 					'selector'   => '.' . $scope . ' .' . $label_class,
 					'properties' => array(),
@@ -3745,6 +3766,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 			if ( $choice_box ) {
 				$destinations[] = array(
+					'part'       => 'choice_label_box',
 					'role'       => 'label',
 					'selector'   => '.' . $scope . ' .' . $label_class,
 					'properties' => array_values( array_diff( array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ), $text_properties ) ),
@@ -3753,6 +3775,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		}
 		if ( isset( $roles['required_marker'] ) ) {
 			$destinations[] = array(
+				'part'       => 'required_marker',
 				'role'       => 'required_marker',
 				'selector'   => '.' . $scope . ' .' . $label_class . ' > .grunion-label-required',
 				'properties' => array_keys( Static_Site_Importer_Provider_Layout_Overlay::presentation_property_keys() ),
@@ -3766,10 +3789,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			// provider wraps each field and spaces the wrappers with the form gap,
 			// so the same margin on the control itself would add a second gap
 			// inside every wrapper. Inline margins are left to the source.
-			$stacked_selector = in_array( $type, array( 'phone', 'tel' ), true )
+			$phone            = in_array( $type, array( 'phone', 'tel' ), true );
+			$stacked_selector = $phone
 				? '.' . $scope . ' .' . self::presentation_destination_class( $scope, $index, 'primary' )
 				: '.' . $scope . ' .' . $control_class . ( 'select' === $type ? ' select' : '' );
 			$destinations[]   = array(
+				'part'       => $phone ? 'phone_sibling_stacked' : ( 'select' === $type ? 'select_sibling_stacked' : 'sibling_stacked' ),
 				'role'       => 'control',
 				'selector'   => $stacked_selector,
 				'properties' => array(),
@@ -3865,128 +3890,256 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	}
 
 	/**
+	 * Where each declared part of the front-end target map lives in Jetpack's
+	 * block-editor DOM.
+	 *
+	 * Every layout target and presentation destination the front-end builder
+	 * emits carries a `part`; this table is the only place that says how that
+	 * part is realised in the editor. A part maps to any of:
+	 *
+	 * - `drop`: the editor has no such node (the phone composite's structural
+	 *   shell, carrier, and prefix roles; their `height:100%` would otherwise
+	 *   collapse the primary box, which is the editor's single control node);
+	 * - `selector`: an editor selector replacing the front-end one, with
+	 *   `{scope}` standing for the scope selector;
+	 * - `retarget`: replace the declared front-end selector suffix `[0]` with
+	 *   the editor suffix `[1]` (Jetpack's editor puts a field block's className
+	 *   on the block wrapper itself rather than the front-end `-wrap` copy, and
+	 *   a dropdown's chrome on its toggle rather than a nested `<select>`);
+	 * - `unset_resets` / `add_resets`: front-end resets the editor DOM does not
+	 *   need, and editor-only resets;
+	 * - `split`: a companion destination at the front-end selector carrying the
+	 *   listed layout properties (the label box), with its own resets;
+	 * - `placeholder`: a companion `::placeholder` reset destination;
+	 * - `textarea_rows`: a companion carrying the control's editor textarea
+	 *   row resets, when it has any and the destination carries properties.
+	 *
+	 * An emitted part missing from this table fails the editor derivation.
+	 *
+	 * @return array<string,array{drop?:bool,selector?:string,retarget?:array{0:string,1:string},unset_resets?:array<int,string>,add_resets?:array<string,string>,split?:array{prefixes:array<int,string>,properties:array<int,string>,resets:array<string,string>},placeholder?:array<string,string>,textarea_rows?:bool}>
+	 */
+	public static function editor_surface_table(): array {
+		$placeholder = array(
+			'color'   => 'revert',
+			'opacity' => 'revert',
+		);
+		$label_box   = array(
+			'split'      => array(
+				'prefixes'   => array( 'margin', 'padding' ),
+				'properties' => array( 'width', 'max_width', 'min_width', 'box_sizing' ),
+				'resets'     => array( 'display' => 'block' ),
+			),
+			'retarget'   => array( '', ' > label' ),
+			'add_resets' => array(
+				'display' => 'block',
+				'margin'  => '0',
+				'padding' => '0',
+			),
+		);
+		$button_font = array(
+			'unset_resets' => array( 'font-family', 'line-height' ),
+			'add_resets'   => array( 'font' => '-webkit-small-control' ),
+		);
+		return array(
+			// Layout targets.
+			'form'                      => array( 'selector' => '{scope}' ),
+			'native_form'               => array( 'selector' => '{scope}.ssi-native-form-topology > div.jetpack-contact-form' ),
+			'form_box'                  => array(),
+			'native_form_box'           => array( 'selector' => '{scope}.ssi-native-form-topology' ),
+			'field_list'                => array(),
+			'field'                     => array( 'retarget' => array( '-wrap', ' > div.jetpack-field__control' ) ),
+			'wrap'                      => array( 'retarget' => array( '-wrap', '' ) ),
+			'box'                       => array(),
+			'submit_link_box'           => array(),
+			// Presentation destinations: the phone composite.
+			'phone_shell'               => array( 'drop' => true ),
+			'phone_primary'             => array(),
+			'phone_carrier'             => array( 'drop' => true ),
+			'phone_prefix'              => array( 'drop' => true ),
+			'phone_sibling_stacked'     => array(),
+			'country_trigger'           => array(),
+			// Native controls.
+			'control'                   => array(
+				'placeholder'   => $placeholder,
+				'textarea_rows' => true,
+			),
+			'checkbox_control'          => array(),
+			'sibling_stacked'           => array(
+				'placeholder'   => $placeholder,
+				'textarea_rows' => true,
+			),
+			'control_container'         => array(),
+			// The dropdown: one editor toggle carries the nested select's chrome.
+			'select_wrapper'            => array(
+				'unset_resets'  => array( 'padding', 'border', 'background' ),
+				'placeholder'   => $placeholder,
+				'textarea_rows' => true,
+			),
+			'select_control'            => array(
+				'retarget'      => array( ' select', '' ),
+				'unset_resets'  => array( 'appearance' ),
+				'placeholder'   => $placeholder,
+				'textarea_rows' => true,
+			),
+			'select_sibling_stacked'    => array(
+				'retarget'      => array( ' select', '' ),
+				'placeholder'   => $placeholder,
+				'textarea_rows' => true,
+			),
+			// The submit button.
+			'submit_wrapper'            => array(
+				'placeholder'   => $placeholder,
+				'textarea_rows' => true,
+			),
+			'submit_link'               => $button_font,
+			'submit_link_margin_reset'  => $button_font,
+			'submit_caption'            => array(),
+			'submit_input_height_reset' => array(
+				'placeholder'   => $placeholder,
+				'textarea_rows' => true,
+			),
+			// Labels.
+			'label'                     => $label_box,
+			'wrapping_label_reset'      => $label_box,
+			'choice_label'              => array(),
+			'choice_label_box'          => $label_box,
+			'required_marker'           => array(),
+		);
+	}
+
+	/**
+	 * The editor realisation declared for one target or destination's part.
+	 *
+	 * @param array<string,mixed> $entry A layout target or presentation destination.
+	 * @return array{drop?:bool,selector?:string,retarget?:array{0:string,1:string},unset_resets?:array<int,string>,add_resets?:array<string,string>,split?:array{prefixes:array<int,string>,properties:array<int,string>,resets:array<string,string>},placeholder?:array<string,string>,textarea_rows?:bool}
+	 * @throws LogicException When the part is missing or the editor table does not declare it.
+	 */
+	public static function editor_surface_part( array $entry ): array {
+		$part  = $entry['part'] ?? null;
+		$table = self::editor_surface_table();
+		if ( ! is_string( $part ) || ! isset( $table[ $part ] ) ) {
+			// ssi-error-class: programmer
+			throw new LogicException( 'A provider form overlay part has no editor surface realisation.' );
+		}
+		return $table[ $part ];
+	}
+
+	/**
+	 * Apply a declared editor selector, or swap a declared front-end suffix.
+	 *
+	 * @param array{selector?:string,retarget?:array{0:string,1:string}} $surface Editor realisation.
+	 * @throws LogicException When the front-end selector lacks the declared suffix.
+	 */
+	private static function editor_selector( string $selector, array $surface, string $scope ): string {
+		if ( isset( $surface['selector'] ) ) {
+			return str_replace( '{scope}', $scope, $surface['selector'] );
+		}
+		if ( ! isset( $surface['retarget'] ) ) {
+			return $selector;
+		}
+		list( $from, $to ) = $surface['retarget'];
+		if ( '' !== $from && ! str_ends_with( $selector, $from ) ) {
+			// ssi-error-class: programmer
+			throw new LogicException( 'A provider form overlay selector does not end with its declared part suffix.' );
+		}
+		return substr( $selector, 0, strlen( $selector ) - strlen( $from ) ) . $to;
+	}
+
+	/**
+	 * The map without its derivation metadata: the canonical map that
+	 * `Provider_Layout_Overlay::validate_map()` and `compile()` accept.
+	 *
+	 * @param array<string,mixed> $map Front-end or editor target map.
+	 * @return array<string,mixed>
+	 */
+	public static function without_parts( array $map ): array {
+		foreach ( is_array( $map['targets'] ?? null ) ? $map['targets'] : array() as $key => $target ) {
+			unset( $map['targets'][ $key ]['part'] );
+		}
+		foreach ( is_array( $map['presentation_targets'] ?? null ) ? $map['presentation_targets'] : array() as $key => $target ) {
+			foreach ( is_array( $target['destinations'] ?? null ) ? $target['destinations'] : array() as $destination_key => $destination ) {
+				unset( $map['presentation_targets'][ $key ]['destinations'][ $destination_key ]['part'] );
+			}
+		}
+		return $map;
+	}
+
+	/**
 	 * Same source facts, explicit destinations for Jetpack's editable DOM.
 	 *
 	 * In the editor the contact-form block wrapper carries the source form's
 	 * classes, so it is the source form; Jetpack's inner-blocks container has
-	 * no source counterpart and the overlay renders it box-less. Field blocks
-	 * carry their className on the block wrapper itself rather than the
-	 * front-end `-wrap` copy.
+	 * no source counterpart and the overlay renders it box-less. Each target
+	 * and destination is realised by its declared part through
+	 * `editor_surface_table()`; the result carries no part ids.
 	 *
-	 * @param array<string,mixed>             $map             Validated front-end target map.
+	 * @param array<string,mixed>             $map             Front-end target map with declared parts.
 	 * @param string                          $scope           Provider form scope class.
 	 * @param array<int,array<string,string>> $textarea_resets Editor-only textarea box resets keyed by control index.
 	 * @return array<string,mixed>
 	 */
 	public static function editor_layout_target_map( array $map, string $scope, array $textarea_resets = array() ): array {
+		$scope_selector = '.' . $scope;
 		foreach ( $map['targets'] as &$target ) {
-			if ( 'form' === $target['node'] ) {
-				$target['selector'] = str_contains( $target['selector'], '.ssi-native-form-topology' ) ? '.' . $scope . '.ssi-native-form-topology > div.jetpack-contact-form' : '.' . $scope;
-			} elseif ( 'form-box' === $target['node'] && str_contains( $target['selector'], '.ssi-native-form-topology' ) ) {
-				$target['selector'] = '.' . $scope . '.ssi-native-form-topology';
-			} elseif ( preg_match( '/^field-([0-9]+)$/D', $target['node'], $match ) ) {
-				$target['selector'] = '.' . $scope . ' .' . self::layout_node_class( $scope, 'control-' . $match[1] ) . ' > div.jetpack-field__control';
-			} elseif ( preg_match( '/^(\.' . preg_quote( $scope, '/' ) . ' \.ssi-node-[a-f0-9]{12})-wrap$/D', $target['selector'], $match ) ) {
-				$target['selector'] = $match[1];
-			}
+			$target['selector'] = self::editor_selector( $target['selector'], self::editor_surface_part( $target ), $scope_selector );
+			unset( $target['part'] );
 		}
 		unset( $target );
 		foreach ( $map['presentation_targets'] as &$target ) {
-			$target['destinations'] = self::editor_control_destinations( $target['destinations'] );
-			$extra                  = array();
-			foreach ( $target['destinations'] as &$destination ) {
-				if ( 'label' === $destination['role'] && ! str_ends_with( $destination['selector'], ' > label' ) ) {
-					$layout_properties                = array_values( array_filter( $destination['properties'], static fn( string $key ): bool => str_starts_with( $key, 'margin' ) || str_starts_with( $key, 'padding' ) || in_array( $key, array( 'width', 'max_width', 'min_width', 'box_sizing' ), true ) ) );
-					$extra[]                          = array(
-						'role'       => 'label',
-						'selector'   => $destination['selector'],
-						'properties' => $layout_properties,
-						'resets'     => array(
-							'display' => 'block',
-						),
-					);
-					$destination['properties']        = array_values( array_diff( $destination['properties'], $layout_properties ) );
-					$destination['selector']         .= ' > label';
-					$destination['resets']['display'] = 'block';
-					$destination['resets']['margin']  = '0';
-					$destination['resets']['padding'] = '0';
+			$editor = array();
+			$extra  = array();
+			foreach ( $target['destinations'] as $destination ) {
+				$surface = self::editor_surface_part( $destination );
+				unset( $destination['part'] );
+				if ( ! empty( $surface['drop'] ) ) {
+					continue;
 				}
-				if ( 'control' === $destination['role'] && preg_match( '/ \.ssi-node-[a-f0-9]{12}$/D', $destination['selector'] ) ) {
-					$extra[] = array(
-						'role'       => 'control',
-						'selector'   => $destination['selector'] . '::placeholder',
-						'properties' => array(),
-						'resets'     => array(
-							'color'   => 'revert',
-							'opacity' => 'revert',
-						),
-					);
-					if ( ! empty( $textarea_resets[ $target['index'] ] ) && ! empty( $destination['properties'] ) ) {
-						$extra[] = array(
-							'role'       => 'control',
-							'selector'   => $destination['selector'],
-							'properties' => array(),
-							'resets'     => $textarea_resets[ $target['index'] ],
-						);
+				foreach ( $surface['unset_resets'] ?? array() as $reset ) {
+					unset( $destination['resets'][ $reset ] );
+				}
+				if ( empty( $destination['resets'] ) ) {
+					unset( $destination['resets'] );
+					if ( empty( $destination['properties'] ) ) {
+						continue;
 					}
 				}
-				if ( str_ends_with( $destination['selector'], ' > .wp-block-button__link' ) ) {
-					unset( $destination['resets']['font-family'], $destination['resets']['line-height'] );
-					$destination['resets']['font'] = '-webkit-small-control';
+				if ( isset( $surface['split'] ) ) {
+					$split                     = $surface['split'];
+					$box_properties            = array_values( array_filter( $destination['properties'], static fn( string $key ): bool => in_array( $key, $split['properties'], true ) || array() !== array_filter( $split['prefixes'], static fn( string $prefix ): bool => str_starts_with( $key, $prefix ) ) ) );
+					$extra[]                   = array(
+						'role'       => $destination['role'],
+						'selector'   => $destination['selector'],
+						'properties' => $box_properties,
+						'resets'     => $split['resets'],
+					);
+					$destination['properties'] = array_values( array_diff( $destination['properties'], $box_properties ) );
 				}
+				$destination['selector'] = self::editor_selector( $destination['selector'], $surface, $scope_selector );
+				foreach ( $surface['add_resets'] ?? array() as $reset => $value ) {
+					$destination['resets'][ $reset ] = $value;
+				}
+				if ( isset( $surface['placeholder'] ) ) {
+					$extra[] = array(
+						'role'       => $destination['role'],
+						'selector'   => $destination['selector'] . '::placeholder',
+						'properties' => array(),
+						'resets'     => $surface['placeholder'],
+					);
+				}
+				if ( ! empty( $surface['textarea_rows'] ) && ! empty( $textarea_resets[ $target['index'] ] ) && ! empty( $destination['properties'] ) ) {
+					$extra[] = array(
+						'role'       => $destination['role'],
+						'selector'   => $destination['selector'],
+						'properties' => array(),
+						'resets'     => $textarea_resets[ $target['index'] ],
+					);
+				}
+				$editor[] = $destination;
 			}
-			unset( $destination );
-			$target['destinations'] = array_merge( $target['destinations'], $extra );
+			$target['destinations'] = array_merge( $editor, $extra );
 		}
 		unset( $target );
 		return $map;
-	}
-
-	/**
-	 * Give each editor control node exactly the source control's chrome.
-	 *
-	 * Jetpack's editor puts an input block's className on one element: the phone
-	 * wrapper or the dropdown toggle. The front-end runtime splits the phone
-	 * composite's shell, carrier, and prefix roles onto separate DOM nodes and
-	 * the select chrome onto its nested `<select>`; the editor has neither. Its
-	 * single node is the control itself, so the structural roles are dropped
-	 * (their `height:100%` would otherwise collapse the primary box) and the
-	 * select's chrome lands on the toggle instead of the wrapper reset.
-	 *
-	 * @param array<int,array<string,mixed>> $destinations One target's destinations.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private static function editor_control_destinations( array $destinations ): array {
-		$nested_selects = array();
-		foreach ( $destinations as $destination ) {
-			if ( 'control' === $destination['role'] && str_ends_with( $destination['selector'], ' select' ) ) {
-				$nested_selects[ substr( $destination['selector'], 0, -strlen( ' select' ) ) ] = true;
-			}
-		}
-		$editor = array();
-		foreach ( $destinations as $destination ) {
-			if ( 'control' !== $destination['role'] ) {
-				$editor[] = $destination;
-				continue;
-			}
-			if ( preg_match( '/ \.ssi-node-[a-f0-9]{12}-destination-(?:shell|carrier|prefix)$/D', $destination['selector'] ) ) {
-				continue;
-			}
-			if ( str_ends_with( $destination['selector'], ' select' ) ) {
-				$destination['selector'] = substr( $destination['selector'], 0, -strlen( ' select' ) );
-				unset( $destination['resets']['appearance'] );
-			} elseif ( isset( $nested_selects[ $destination['selector'] ] ) && isset( $destination['resets'] ) ) {
-				unset( $destination['resets']['padding'], $destination['resets']['border'], $destination['resets']['background'] );
-			}
-			if ( empty( $destination['resets'] ) ) {
-				unset( $destination['resets'] );
-				if ( empty( $destination['properties'] ) ) {
-					continue;
-				}
-			}
-			$editor[] = $destination;
-		}
-		return $editor;
 	}
 
 	/**
@@ -4748,9 +4901,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				// The provider renders its block wrapper at the source form's own position,
 				// so that wrapper is the element carrying the form box's page placement.
 				$selector     = ! empty( $form['provider_native_topology'] ) ? $selector_scope . '.ssi-native-form-topology.jetpack-contact-form-container' : $selector_scope;
+				$part         = ! empty( $form['provider_native_topology'] ) ? 'native_form_box' : 'form_box';
 				$capabilities = array( 'direct_child_layout', 'item_layout', 'responsive_layout' );
 			} elseif ( 'field-list' === $id ) {
 				$selector     = $selector_scope . ' .ssi-source-field-list';
+				$part         = 'field_list';
 				$capabilities = array( 'container_layout', 'responsive_layout' );
 			} elseif ( 'form' === $id ) {
 				// Jetpack renders its own form element for a page's first contact form
@@ -4760,20 +4915,28 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$selector = ! empty( $form['provider_native_topology'] )
 					? $selector_scope . '.ssi-native-form-topology form.jetpack-contact-form__form, ' . $selector_scope . '.ssi-native-form-topology.wp-block-jetpack-contact-form:not(:has(form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *)'
 					: $selector_scope . ' > form.jetpack-contact-form__form, ' . $selector_scope . ':not(:has(> form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *)';
+				$part     = ! empty( $form['provider_native_topology'] ) ? 'native_form' : 'form';
 				// Jetpack's contact-form root includes hidden and error nodes, so it cannot
 				// promise source direct-child relationships. Generated node hooks can.
 				$capabilities = array( 'container_layout', 'responsive_layout' );
 			} elseif ( preg_match( '/^field-([0-9]+)$/D', $id, $matches ) ) {
 				$selector     = $selector_scope . ' .' . self::layout_node_class( $scope, 'control-' . $matches[1] ) . '-wrap';
+				$part         = 'field';
 				$capabilities = array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' );
 			} else {
-				$selector = $selector_scope . ' .' . ( $box_targets[ $id ] ?? self::layout_node_class( $scope, $id ) );
+				$hook = $box_targets[ $id ] ?? self::layout_node_class( $scope, $id );
+				// A topology hook spelled `<node class>-wrap` addresses the front-end
+				// copy of a field block's className on Jetpack's field wrapper.
+				$part     = 1 === preg_match( '/^ssi-node-[a-f0-9]{12}-wrap$/D', $hook ) ? 'wrap' : 'box';
+				$selector = $selector_scope . ' .' . $hook;
 				if ( preg_match( '/^control-([0-9]+)$/D', $id, $control ) && in_array( (int) $control[1], $form['provider_source_box_submits'] ?? array(), true ) ) {
 					$selector .= ' > .wp-block-button__link';
+					$part      = 'submit_link_box';
 				}
 				$capabilities = array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' );
 			}
 			$targets[] = array(
+				'part'         => $part,
 				'node'         => $id,
 				'selector'     => $selector,
 				'capabilities' => $capabilities,
@@ -4791,6 +4954,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( '' !== $descriptor['control_class'] && isset( $phone_popup_targets[ $index ] ) && '' !== $country_trigger_class ) {
 				$target['destinations'] = array_values( array_filter( $target['destinations'], static fn( array $destination ): bool => 'control' !== ( $destination['role'] ?? null ) ) );
 				array_unshift( $target['destinations'], array(
+					'part'       => 'country_trigger',
 					'role'       => 'control',
 					'selector'   => $selector_scope . ' .' . $country_trigger_class,
 					'properties' => array_keys( Static_Site_Importer_Provider_Layout_Overlay::positioned_control_presentation_property_keys() ),

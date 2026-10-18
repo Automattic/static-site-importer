@@ -68,6 +68,8 @@
     "includes/class-static-site-importer-failed-plan-validation.php#throw new RuntimeException('Failed to write failed-plan report artifact.')": { "class": "operational", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-failed-plan-validation.php#throw new RuntimeException('Failed-plan report artifact exceeds its 10 MiB bound.')": { "class": "operational", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-failed-plan-validation.php#throw new RuntimeException('Failed-plan report destination is not ready.')": { "class": "integrity", "owning_layer": "static-site-importer" },
+    "includes/class-static-site-importer-form-layout-projection.php#throw new LogicException('A provider form overlay part has no editor surface realisation.')": { "class": "programmer", "owning_layer": "static-site-importer" },
+    "includes/class-static-site-importer-form-layout-projection.php#throw new LogicException('A provider form overlay selector does not end with its declared part suffix.')": { "class": "programmer", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-generated-runtime-package.php#throw new InvalidArgumentException('generated_runtime_file_collision')": { "class": "integrity", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-import-report.php#throw new InvalidArgumentException('Import report keys must be strings.')": { "class": "programmer", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-import-report.php#throw new InvalidArgumentException(sprintf('Import report has no diagnostic at index %d.',$index))": { "class": "programmer", "owning_layer": "static-site-importer" },
