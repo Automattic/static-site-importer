@@ -3785,7 +3785,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	public static function source_label_wraps_control( array $form, int $index ): bool {
 		$nodes  = array_column( $form['control_topology']['nodes'] ?? array(), null, 'id' );
 		$parent = current( array_filter( $nodes, static fn( array $node ): bool => 'control' === ( $node['kind'] ?? '' ) && ( $node['control'] ?? null ) === $index ) )['parent'] ?? null;
-		for ( $depth = 0; is_string( $parent ) && isset( $nodes[ $parent ] ) && $depth < 16; ++$depth ) {
+		while ( is_string( $parent ) && isset( $nodes[ $parent ] ) ) {
 			if ( 'label' === ( $nodes[ $parent ]['tag'] ?? '' ) ) {
 				return true;
 			}
