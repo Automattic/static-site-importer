@@ -74,3 +74,28 @@ sha256: f74efdab7fbd0dcde08a25a3aab4b91b33701dca4975bdde32cc2063123a609f
 <p class="wp-block-paragraph card-note ssi-context-2c3ac4b39602">We never share your address.</p>
 <!-- /wp:core/paragraph --></div>
 <!-- /wp:jetpack/contact-form -->
+
+=== receipt_operations ===
+total: 17
+{"dimension":"topology","strategy":"provider_field_wrapper_class_projection","target_hash":"653133871f9decae48ebd8b2ff4531b5d6e725f446b0b8e91637ae99c2881db4"}
+{"dimension":"layout","strategy":"provider_source_box_class_carry","target_hash":"653133871f9decae48ebd8b2ff4531b5d6e725f446b0b8e91637ae99c2881db4"}
+{"dimension":"topology","strategy":"provider_field_wrapper_class_projection","target_hash":"360d95f624f68a9e09f524d1a1ef7400e975543af0cb215e529a4a276c659019"}
+{"dimension":"layout","strategy":"provider_source_box_class_carry","target_hash":"360d95f624f68a9e09f524d1a1ef7400e975543af0cb215e529a4a276c659019"}
+{"dimension":"layout","strategy":"provider_source_box_transposition","target_hash":"653133871f9decae48ebd8b2ff4531b5d6e725f446b0b8e91637ae99c2881db4"}
+{"dimension":"layout","strategy":"provider_source_box_transposition","target_hash":"360d95f624f68a9e09f524d1a1ef7400e975543af0cb215e529a4a276c659019"}
+{"dimension":"presentation","strategy":"provider_context_source_presentation","target_hash":"2c17f3b32f4dc3f6f2a520fa933dc347d082fbec4cd947b99d83254cba7dfe99"}
+{"dimension":"presentation","strategy":"provider_context_source_presentation","target_hash":"03d8d506e18811177bd9189251a0158296682b9387dc02ac6146d2b7e801e531"}
+{"dimension":"presentation","strategy":"provider_context_source_presentation","target_hash":"cfc1d3efc3fc7a7ad0245df5409eb0e59a02f97ff2c554e28196998db5953252"}
+{"dimension":"layout","strategy":"provider_selector_transposition","node_hash":"2871e05b455edae0d6440bfe8594a71423732e026f07915e16f66699562b5b9c","target_hash":"b474cd5843beaae7c98266be2f664170ea2fb6816ed45d21694b5d0e957e96e8"}
+{"dimension":"layout","strategy":"provider_selector_transposition","node_hash":"bdfa5365350595d9a5a4ab37bc820730002cda048a89873614714bc6871b08af","target_hash":"9d3516bfbaa1aec330de4c5d042f6d7dc82819a691330c812da17b2b75281c34"}
+{"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"2d9cc1a4456d8f19520b575a7aa9b08c2bc42793c0056fd801f964b65996f0e3","target_hash":"7e8d8f85cb0416288c56967b9d870738b47875a32c2def591465e0712d18bab7"}
+{"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"059f1cd6617df808d4d692bc437bfce78d120082d0e33bee8a6229ed75c34bdf","target_hash":"acd88f14dd4639682ffeae02d8845f2318455d6b07603af7fa334ac96b0be4b7"}
+{"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"ec0b63550a82156626679a672552b1dc0ba0187f35491dfffd36d036b53f8b53","target_hash":"851ae66cccff93a9b8e6f8544313ea155f0cbacabbd5ef6958d74e42651fb107"}
+{"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"2dc4710b118d4a2aa3286de1de7196422b604532f06bc4d77257e31bf263f61d","target_hash":"346f0c97843a393b5da658efabf69dec7491e048275fa221795412dd926e2b79"}
+{"dimension":"interaction","strategy":"provider_interaction_carrier","target_hash":"4af31b8fb5d262abf1660c737acf1f26e2a8753b705d48c27ee000f7bdd1674f"}
+{"dimension":"layout","strategy":"provider_container_box_reset","target_hash":"6cf5220bbbef03e989b7504c6cb030942832cb02fd9fdf9c17ff893b16d90faa"}
+
+=== receipt_losses ===
+total: 2
+{"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"2871e05b455edae0d6440bfe8594a71423732e026f07915e16f66699562b5b9c"}
+{"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"bdfa5365350595d9a5a4ab37bc820730002cda048a89873614714bc6871b08af"}

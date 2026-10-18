@@ -239,7 +239,7 @@ $context_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile(
 	array( 'schema' => 'generic/provider-layout-target-map/v1', 'provider' => 'fixture', 'scope' => '.ssi-form-aaaaaaaaaaaa', 'targets' => array() ),
 	array(),
 	array(),
-	false,
+	Static_Site_Importer_Provider_Layout_Overlay::SURFACE_FRONT_END,
 	Static_Site_Importer_Form_Field_Markup::context_style_fallbacks( $prepared['form'] )
 )['overlay'];
 $assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $context_overlay ), 'computed-context-fallback-overlay-is-admitted' );

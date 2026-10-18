@@ -821,20 +821,12 @@ class Static_Site_Importer_Form_Seeder {
 		// Provider_Layout_Overlay's `generic/form-container-presentation/v1` destination).
 		// It belongs on the rendered page, not only inside editor chrome, so the frontend
 		// compile also receives it.
-		$overlay_graph  = Static_Site_Importer_Form_Layout_Projection::without_container_box_facts( $overlay_graph, $container_presentation );
-		$overlay        = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map, $presentation_graph, $container_presentation, false, $context_fallbacks );
-		$overlay        = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_provider_errors( $overlay, $scope, $mapped_types );
-		$editor_map     = Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $part_map, $scope, Static_Site_Importer_Form_Layout_Projection::editor_textarea_resets( $controls, $presentation_graph ) );
-		$editor_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $editor_map, $presentation_graph, $container_presentation, true, $context_fallbacks );
-		if ( isset( $editor_overlay['overlay']['editor_css'] ) ) {
-			foreach ( array( 'editor_css', 'editor_sha256', 'editor_bytes', 'context_css', 'context_sha256', 'context_bytes', 'editor_context_css', 'editor_context_sha256', 'editor_context_bytes' ) as $key ) {
-				if ( ! array_key_exists( $key, $editor_overlay['overlay'] ) ) {
-					continue;
-				}
-				$overlay['overlay'][ $key ] = $editor_overlay['overlay'][ $key ];
-			}
-		}
-		self::append_receipt_entries( $layout['receipt'], 'losses', $editor_overlay['losses'] );
+		$overlay_graph = Static_Site_Importer_Form_Layout_Projection::without_container_box_facts( $overlay_graph, $container_presentation );
+		$editor_map    = Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $part_map, $scope, Static_Site_Importer_Form_Layout_Projection::editor_textarea_resets( $controls, $presentation_graph ) );
+		// One assembly: each declared surface compiles from its own map, and the
+		// overlay, its operations and its losses come back together.
+		$overlay = Static_Site_Importer_Provider_Layout_Overlay::compile_surfaces( $overlay_graph, $target_map, $editor_map, $presentation_graph, $container_presentation, $context_fallbacks );
+		$overlay = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_provider_errors( $overlay, $scope, $mapped_types );
 		self::append_receipt_entries( $layout['receipt'], 'operations', $overlay['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'operations', $layout_intent['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $overlay['losses'] );

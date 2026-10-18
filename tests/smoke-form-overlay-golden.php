@@ -14,7 +14,9 @@
  * `tests/fixtures/form-overlay-golden/__snapshots__/<fixture>.snap`, one section
  * per part: `status`, then each of the `provider_layout_overlay_css` parts
  * `css`, `editor_css`, `context_css`, `editor_context_css` that the row carries,
- * then the projected `block_markup`. CSS is split one rule per line (nested
+ * then the projected `block_markup`, then the row's `computed_layout_receipt`
+ * `receipt_operations` and `receipt_losses` (the recorded total, then one
+ * compact JSON entry per line, in recorded order). CSS is split one rule per line (nested
  * at-rule bodies indented) so a changed declaration diffs as one line; the first
  * line of every CSS section is the sha256 of the raw compiled string, so the
  * comparison is still byte-exact even though inter-rule whitespace is normalised.
@@ -193,7 +195,32 @@ function ssi_golden_parts( array $row ): array {
 	}
 	$markup                = $row['block_markup'] ?? null;
 	$parts['block_markup'] = is_string( $markup ) ? rtrim( $markup, "\n" ) : '(none)';
+	$receipt               = is_array( $row['computed_layout_receipt'] ?? null ) ? $row['computed_layout_receipt'] : array();
+	foreach ( array( 'operations', 'losses' ) as $key ) {
+		$parts[ 'receipt_' . $key ] = ssi_golden_receipt_lines( $receipt, $key );
+	}
 	return $parts;
+}
+
+/**
+ * Render one receipt list as a snapshot part: its recorded total, then every
+ * retained entry as compact JSON on its own line, in recorded order.
+ *
+ * @param array<string,mixed> $receipt Seeded `computed_layout_receipt`.
+ * @param string              $key     `operations` or `losses`.
+ */
+function ssi_golden_receipt_lines( array $receipt, string $key ): string {
+	$entries = $receipt[ $key ] ?? null;
+	if ( ! is_array( $entries ) ) {
+		return '(none)';
+	}
+	$total = $receipt[ 'operations' === $key ? 'operations_total' : 'losses_total' ] ?? null;
+	$lines = array( is_int( $total ) ? 'total: ' . $total : 'total: (none)' );
+	foreach ( $entries as $entry ) {
+		$json    = wp_json_encode( $entry, JSON_UNESCAPED_SLASHES );
+		$lines[] = is_string( $json ) ? $json : '(unencodable)';
+	}
+	return implode( "\n", $lines );
 }
 
 /**

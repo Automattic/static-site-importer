@@ -37,3 +37,12 @@ sha256: c56cec15d52e02c231b24a7e42c85de788ce3a0ce00578dc0de1d5acd532ff46
 <div class="wp-block-button form-button-submit is-submit   ssi-node-8f1f8757437f"><button type="submit" class="wp-block-button__link wp-element-button">Send</button></div>
 <!-- /wp:core/button --></div>
 <!-- /wp:jetpack/contact-form -->
+
+=== receipt_operations ===
+total: 3
+{"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"2d9cc1a4456d8f19520b575a7aa9b08c2bc42793c0056fd801f964b65996f0e3","target_hash":"544220f6412eb5090939c5b917565916cdb7dcb5005e2b2761ef9e6a5aa439df"}
+{"dimension":"interaction","strategy":"provider_interaction_carrier","target_hash":"cb4dc149e60c2da80270627fce3ec94b6d57bf8360c26f262c5bc215e132dd14"}
+{"dimension":"layout","strategy":"provider_container_box_reset","target_hash":"121125c67552ddad5b21bfada7f5cc905182f9b4a39e0abd48db01736b928dde"}
+
+=== receipt_losses ===
+total: 0
