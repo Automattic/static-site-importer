@@ -4018,6 +4018,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		$part  = $entry['part'] ?? null;
 		$table = self::editor_surface_table();
 		if ( ! is_string( $part ) || ! isset( $table[ $part ] ) ) {
+			// ssi-error-class: programmer
 			throw new LogicException( 'A provider form overlay part has no editor surface realisation.' );
 		}
 		return $table[ $part ];
@@ -4038,6 +4039,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		}
 		list( $from, $to ) = $surface['retarget'];
 		if ( '' !== $from && ! str_ends_with( $selector, $from ) ) {
+			// ssi-error-class: programmer
 			throw new LogicException( 'A provider form overlay selector does not end with its declared part suffix.' );
 		}
 		return substr( $selector, 0, strlen( $selector ) - strlen( $from ) ) . $to;
