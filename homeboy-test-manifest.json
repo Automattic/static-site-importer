@@ -13,6 +13,7 @@
     "tests/provider-adapter-runtime-smoke.php": { "environment": "standalone-php" },
     "tests/provider-field-list-order.php": { "environment": "standalone-php" },
     "tests/smoke-provider-submission-evidence.php": { "environment": "standalone-php" },
+    "tests/smoke-richtext-weight-normalizer.php": { "environment": "standalone-php" },
     "tests/smoke-layout-projection.php": { "environment": "standalone-php" },
     "tests/smoke-ability-error-report-summary.php": { "environment": "standalone-php" },
     "tests/smoke-ability-import-success-diagnostics.php": { "environment": "standalone-php" },
