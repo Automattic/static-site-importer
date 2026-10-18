@@ -2089,7 +2089,7 @@ namespace {
 	$direct_label_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $direct_label_form );
 	$direct_label_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $direct_label_validation['forms'] ?? array() ) );
 	$direct_label_css = $expand_selector_lists( (string) ( $direct_label_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ) );
-	$assert( empty( $direct_label_validation['errors'] ) && 4 === substr_count( $direct_label_css, 'gap:1.2rem' ) && 2 === preg_match_all( '/\.ssi-node-[a-f0-9]{12}-wrap\{display:flex;flex-direction:column;gap:1\.2rem\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)\{display:none\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__field-hints\{display:contents\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__field-format\{display:none\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.ssi-field-row > label\{margin-block-end:0\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.grunion-field::placeholder\{color:revert\}/', $direct_label_css ) && null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $direct_label_seed['forms'][0]['provider_layout_overlay_css'] ?? null ), 'proven direct label/control sibling pairs preserve native placeholder appearance and suppress only inactive provider errors' );
+	$assert( empty( $direct_label_validation['errors'] ) && 4 === substr_count( $direct_label_css, 'gap:1.2rem' ) && 2 === preg_match_all( '/\.ssi-node-[a-f0-9]{12}-wrap\{display:flex;flex-direction:column;gap:1\.2rem\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)\{display:none\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__field-hints\{display:contents\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.contact-form__field-format\{display:none\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.ssi-field-row > label\{margin-block-end:0\}/', $direct_label_css ) && 1 === preg_match_all( '/\.ssi-form-[a-f0-9]{12} \.grunion-field-wrap \.grunion-field::placeholder\{color:revert\}/', $direct_label_css ) && null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $direct_label_seed['forms'][0]['provider_layout_overlay_css'] ?? null ), 'proven direct label/control sibling pairs preserve native placeholder appearance and suppress only inactive provider errors' );
 	$native_row_form = array(
 		'forms' => array( array(
 			'selector' => 'form.subscribe',
@@ -3174,6 +3174,34 @@ namespace {
 	$authored_button_line_height_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $authored_button_line_height_form['forms'] ?? array() ) )['forms'][0] ?? array();
 	$authored_button_line_height_css    = (string) ( $authored_button_line_height_row['provider_layout_overlay_css']['css'] ?? '' );
 	$assert( empty( $authored_button_line_height_form['errors'] ) && 1 === preg_match( '/> \.wp-block-button__link\{[^}]*line-height:16\.8px;/', $authored_button_line_height_css ) && ! str_contains( $authored_button_line_height_css, 'line-height:16.8px;line-height:revert' ), 'artifact-authored-submit-line-height-reaches-the-rendered-button-geometry', $authored_button_line_height_css );
+	// A sibling `for` label's authored margin spaces its caption from the
+	// control. The provider-default label reset is weaker than the captured label
+	// rule, so that margin survives. A label that wraps its control is the field
+	// box the rebuilt row already spaces; its margin is released on the caption.
+	$label_margin_css = static function ( string $html ) use ( $artifact_compiler ): array {
+		$compiled  = ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => $html ) ) )->toArray();
+		$validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $compiled['fallbacks'][0] ?? array() ) ) );
+		$row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated['forms'] ?? array() ) )['forms'][0] ?? array();
+		return array( $validated['errors'] ?? array(), (string) ( $row['status'] ?? '' ), (string) ( $row['provider_layout_overlay_css']['css'] ?? '' ) );
+	};
+	list( $sibling_label_errors, $sibling_label_status, $sibling_label_css ) = $label_margin_css( '<style>.field{margin-bottom:18px}.field label{display:block;font-weight:700;margin-bottom:6px}</style><form method="post" action="/x"><div class="field"><label for="n">Your name</label><input id="n" name="name" type="text"></div><div class="field"><label for="e">Email</label><input id="e" name="email" type="email"></div><button type="submit">Send</button></form>' );
+	$assert(
+		empty( $sibling_label_errors )
+			&& 'mapped' === $sibling_label_status
+			&& 1 === preg_match( '/\.(ssi-form-[a-f0-9]{12})\.\1 \.ssi-node-[a-f0-9]{12}[^{]*\{[^}]*font-weight:700;margin-bottom:6px\}/', $sibling_label_css )
+			&& ! str_contains( $sibling_label_css, 'margin-block:0!important' )
+			&& 1 === preg_match( '/\n\.ssi-form-[a-f0-9]{12} \.ssi-field-row > label\{margin-block-end:0\}/', $sibling_label_css ),
+		'sibling-label-authored-margin-outranks-the-provider-default-label-reset',
+		$sibling_label_css
+	);
+	list( $wrapping_label_errors, $wrapping_label_status, $wrapping_label_css ) = $label_margin_css( '<style>.field{display:flex;flex-direction:column;gap:.35rem;margin-bottom:1.1rem}</style><form method="post" action="/x"><label class="field"><span>Name</span><input name="name" type="text"></label><label class="field"><span>Email</span><input name="email" type="email"></label><button type="submit">Send</button></form>' );
+	$assert(
+		empty( $wrapping_label_errors )
+			&& 'mapped' === $wrapping_label_status
+			&& 2 === preg_match_all( '/\.(ssi-form-[a-f0-9]{12})\.\1 \.ssi-node-[a-f0-9]{12}\{margin-block:0!important\}/', $wrapping_label_css ),
+		'wrapping-label-field-box-margin-is-released-on-the-provider-caption',
+		$wrapping_label_css
+	);
 	$center_source = $compile_form( '@media (min-width: 768px){form{display:flex;flex-direction:column;align-items:center}}' );
 	$center_form   = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $center_source ) ) );
 	$center_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $center_form['forms'] ?? array() ) )['forms'][0] ?? array();

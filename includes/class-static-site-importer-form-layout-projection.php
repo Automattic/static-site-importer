@@ -2894,7 +2894,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		$field_row_span               = 1 === preg_match( '/\.ssi-node-[a-f0-9]{12}-wrap\{[^}]*\bdisplay:grid\b/', $overlay['css'] )
 			? '.' . $scope . ' .grunion-field-wrap > .ssi-field-row{grid-column:1 / -1}' . "\n"
 			: '';
-		$css                          = rtrim( $overlay['css'] ) . "\n." . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-hints{display:contents}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-format{display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .ssi-field-row > label{margin-block-end:0}' . "\n" . '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}' . "\n" . $field_row_span;
+		$css                          = rtrim( $overlay['css'] ) . "\n." . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-hints{display:contents}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-format{display:none}' . "\n" . '.' . $scope . ' .ssi-field-row > label{margin-block-end:0}' . "\n" . '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}' . "\n" . $field_row_span;
 		$overlay['css']               = $css;
 		$overlay['overlay']['css']    = $css;
 		$overlay['overlay']['sha256'] = hash( 'sha256', $css );
@@ -3569,7 +3569,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		return ! array_intersect( array( 'width', 'flex', 'flex_grow', 'flex_shrink', 'flex_basis' ), array_keys( $layout ) ) && in_array( $layout['align_self'] ?? 'auto', array( 'auto', 'stretch' ), true );
 	}
 
-	public static function presentation_descriptor( string $scope, int $index, string $type, array $roles, bool $has_caption = false, bool $choice_box = false ): array {
+	public static function presentation_descriptor( string $scope, int $index, string $type, array $roles, bool $has_caption = false, bool $choice_box = false, bool $wrapping_label = false ): array {
 		$control_class      = isset( $roles['control'] ) ? self::presentation_node_class( $scope, $index, 'control' ) : '';
 		$label_class        = isset( $roles['label'] ) || isset( $roles['required_marker'] ) ? self::presentation_node_class( $scope, $index, 'label' ) : '';
 		$phone_destinations = array();
@@ -3724,6 +3724,19 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'font-weight' => 'inherit',
 				),
 			);
+			if ( $wrapping_label && ! $choice_box ) {
+				// A source label that wraps its control is the whole field box, and
+				// the rebuilt field row already spaces that box. Its block margin
+				// on the provider caption would space the caption from its own
+				// control a second time.
+				$destinations[] = array(
+					'role'       => 'label',
+					'selector'   => '.' . $scope . ' .' . $label_class,
+					'properties' => array(),
+					'resets'     => array( 'margin-block' => '0' ),
+					'priority'   => 'important',
+				);
+			}
 			if ( $choice_box ) {
 				$destinations[] = array(
 					'role'       => 'label',
@@ -3766,6 +3779,19 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			'phone_destinations' => $phone_destinations,
 			'destinations'       => $destinations,
 		);
+	}
+
+	/** Whether the control's source label is an ancestor that wraps it, rather than a `for` sibling. */
+	public static function source_label_wraps_control( array $form, int $index ): bool {
+		$nodes  = array_column( $form['control_topology']['nodes'] ?? array(), null, 'id' );
+		$parent = current( array_filter( $nodes, static fn( array $node ): bool => 'control' === ( $node['kind'] ?? '' ) && ( $node['control'] ?? null ) === $index ) )['parent'] ?? null;
+		for ( $depth = 0; is_string( $parent ) && isset( $nodes[ $parent ] ) && $depth < 16; ++$depth ) {
+			if ( 'label' === ( $nodes[ $parent ]['tag'] ?? '' ) ) {
+				return true;
+			}
+			$parent = $nodes[ $parent ]['parent'] ?? null;
+		}
+		return false;
 	}
 
 	/** A source implicit choice label owns the complete field, not just its input. */
