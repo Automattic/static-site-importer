@@ -36,7 +36,8 @@ jobs:
           php-version: '8.2'
           coverage: none
       - run: composer install --no-interaction --no-progress
-      - run: node --test tests/editor-presentation-browser.test.mjs tests/form-layout-rendered.test.mjs tools/run-existing-runtime-review.test.mjs
+      - run: bash tools/prepare-wordpress-core-fixture.sh
+      - run: node --test tests/editor-presentation-browser.test.mjs tests/form-layout-rendered.test.mjs tests/form-role-box-parity.test.mjs tools/run-existing-runtime-review.test.mjs
 
   homeboy-lint:
     name: Homeboy Lint

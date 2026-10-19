@@ -27,6 +27,7 @@
  */
 
 require_once __DIR__ . '/fixtures/form-seeder-cli-stubs.php';
+require_once __DIR__ . '/fixtures/form-overlay-declared-parts.php';
 
 /**
  * Write text to a standard stream.
@@ -37,88 +38,6 @@ require_once __DIR__ . '/fixtures/form-seeder-cli-stubs.php';
 function ssi_editor_parts_write( string $stream, string $text ): void {
 	$handle = new SplFileObject( $stream, 'w' );
 	$handle->fwrite( $text );
-}
-
-/**
- * Every presentation destination the descriptor builder emits for each control
- * type, presentation role set, and label shape.
- *
- * @param string $scope Provider form scope class.
- * @return array<int,array<string,mixed>>
- */
-function ssi_editor_parts_descriptor_destinations( string $scope ): array {
-	$role_names   = array( 'control', 'label', 'required_marker', 'control_container', 'sibling_stacked_margin' );
-	$role_sets    = 1 << count( $role_names );
-	$destinations = array();
-	$index        = 0;
-	foreach ( array( 'text', 'email', 'textarea', 'select', 'checkbox', 'submit', 'phone', 'tel' ) as $control_type ) {
-		for ( $mask = 1; $mask < $role_sets; ++$mask ) {
-			$roles = array();
-			foreach ( $role_names as $bit => $role_name ) {
-				if ( 0 !== ( $mask & ( 1 << $bit ) ) ) {
-					$roles[ $role_name ] = true;
-				}
-			}
-			foreach ( array( false, true ) as $has_caption ) {
-				foreach ( array( false, true ) as $choice_box ) {
-					foreach ( array( false, true ) as $wrapping_label ) {
-						$descriptor = Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $scope, $index % 128, $control_type, $roles, $has_caption, $choice_box, $wrapping_label );
-						// A submit standing for its source block row moves its box
-						// facts between destinations; both shapes reach the editor.
-						$shapes = 'submit' === $control_type ? array( $descriptor, Static_Site_Importer_Form_Layout_Projection::with_submit_row_button_box( $descriptor ) ) : array( $descriptor );
-						foreach ( $shapes as $shape ) {
-							foreach ( $shape['destinations'] as $destination ) {
-								$destinations[] = $destination;
-							}
-						}
-						++$index;
-					}
-				}
-			}
-		}
-	}
-	return $destinations;
-}
-
-/**
- * Front-end target maps covering every layout-target kind in both form
- * topologies, plus the phone country-trigger destination.
- *
- * @param string              $scope Provider form scope class.
- * @param array<string,mixed> $graph Layout graph.
- * @return array<int,array<string,mixed>>
- */
-function ssi_editor_parts_target_maps( string $scope, array $graph ): array {
-	$target_maps = array();
-	foreach ( array( false, true ) as $native ) {
-		$target_maps[] = Static_Site_Importer_Form_Layout_Projection::provider_layout_target_map(
-			array(
-				'layout_graph'                => $graph,
-				'provider_native_topology'    => $native,
-				'provider_source_box_submits' => array( 1 ),
-			),
-			$scope,
-			array(
-				0 => Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $scope, 0, 'phone', array( 'control' => true ) ),
-				1 => Static_Site_Importer_Form_Layout_Projection::presentation_descriptor(
-					$scope,
-					1,
-					'select',
-					array(
-						'control' => true,
-						'label'   => true,
-					)
-				),
-			),
-			array(
-				'wrapper-0' => Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'wrapper-0' ) . '-wrap',
-				'wrapper-1' => Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'wrapper-1' ),
-			),
-			array( 0 => 0 ),
-			'ssi-node-0123456789ab-destination-country-trigger'
-		);
-	}
-	return $target_maps;
 }
 
 /**
@@ -143,18 +62,7 @@ $ssi_parts_failures = array();
 $ssi_parts_checks   = 0;
 $ssi_parts_emitted  = array();
 $ssi_parts_declared = array();
-$ssi_parts_graph    = array(
-	'nodes' => array(
-		array( 'id' => 'form' ),
-		array( 'id' => 'form-box' ),
-		array( 'id' => 'field-list' ),
-		array( 'id' => 'field-0' ),
-		array( 'id' => 'control-0' ),
-		array( 'id' => 'control-1' ),
-		array( 'id' => 'wrapper-0' ),
-		array( 'id' => 'wrapper-1' ),
-	),
-);
+$ssi_parts_graph    = ssi_editor_parts_graph();
 $ssi_parts_maps     = ssi_editor_parts_target_maps( $ssi_parts_scope, $ssi_parts_graph );
 $ssi_parts_entries  = ssi_editor_parts_descriptor_destinations( $ssi_parts_scope );
 foreach ( $ssi_parts_maps as $ssi_parts_map ) {
