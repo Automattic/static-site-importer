@@ -137,6 +137,10 @@ final class Static_Site_Importer_Public_Error_Projection {
 		$source_path = isset( $diagnostic['source_path'] ) ? (string) $diagnostic['source_path'] : '';
 		$message     = '' !== $source_path ? 'Materialization failed for ' . $source_path : 'Materialization failed (' . self::project_public_token( $code, 128, 'materialization_failed' ) . ')';
 		$reason      = self::project_public_reason( $diagnostic );
+		if ( '' === $reason && '' !== $source_path ) {
+			// Without a readable reason, the diagnostic's own code is the only statement of what failed.
+			$message .= ' (' . self::project_public_token( $diagnostic['code'] ?? null, 128, self::project_public_token( $code, 128, 'materialization_failed' ) ) . ')';
+		}
 		return '' !== $reason ? $message . ': ' . $reason : $message . '.';
 	}
 
@@ -425,8 +429,17 @@ final class Static_Site_Importer_Public_Error_Projection {
 		if ( empty( $row['code'] ) ) {
 			$row['code'] = 'materialization_failed';
 		}
-		$code           = is_string( $row['code'] ) ? $row['code'] : 'materialization_failed';
-		$row['code']    = $code;
+		$code        = is_string( $row['code'] ) ? $row['code'] : 'materialization_failed';
+		$row['code'] = $code;
+		if ( isset( $row['detail'] ) && ! isset( $diagnostic['detail'] ) ) {
+			// A row projected before carries only its generic summary as `message` when it had no
+			// reason; reading that summary back in as the reason would state the failure twice.
+			$without_detail = $row;
+			unset( $without_detail['detail'] );
+			if ( self::project_public_error_message( $code, array( $without_detail ) ) === $row['detail'] ) {
+				unset( $row['detail'] );
+			}
+		}
 		$row['message'] = self::project_public_error_message( $code, array( $row ) );
 		return $row;
 	}
@@ -561,7 +574,9 @@ final class Static_Site_Importer_Public_Error_Projection {
 		}
 		$value = (string) $value;
 		if ( ! preg_match( '//u', $value ) ) {
-			return '';
+			// A message cut inside a multibyte character still states its reason: replace only the
+			// broken bytes with U+FFFD, so the redaction below runs on well-formed UTF-8.
+			$value = htmlspecialchars_decode( htmlspecialchars( $value, ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8' ), ENT_NOQUOTES );
 		}
 		$value = (string) preg_replace( '/[\x00-\x1F\x7F]+/', ' ', $value );
 		$value = (string) preg_replace( '#\b[A-Za-z][A-Za-z0-9+.-]*://\S*#', '[url]', $value );
