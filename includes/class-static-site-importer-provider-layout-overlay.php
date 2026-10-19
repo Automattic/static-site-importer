@@ -9,6 +9,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+/**
+ * Compiles provider form layout and presentation into bounded, scoped overlay CSS.
+ *
+ * @phpstan-type Surface array{prefix:string,css:array{key:string,label:string,rule:string},context:array{key:string,label:string,rule:string},structural_rules:bool,control_container_chrome:bool,native_passthrough:array<string,string>,form_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>,layout_bound:bool}
+ */
 class Static_Site_Importer_Provider_Layout_Overlay {
 	public const MAP_SCHEMA                = 'generic/provider-layout-target-map/v1';
 	public const OVERLAY_SCHEMA            = 'static-site-importer/provider-layout-overlay/v1';
@@ -21,6 +26,99 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	// (`width >= 40rem`) - Tailwind v4 emits every default breakpoint with the
 	// latter. Both spellings resolve to the same condition, so both are admitted.
 	private const MEDIA_FEATURE_QUERY = '(?:screen and )?\((?:(?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)|(?:width|height) ?(?:>=|<=|>|<) ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh))\)';
+
+	public const SURFACE_FRONT_END      = 'front_end';
+	public const SURFACE_EDITOR         = 'editor';
+	private const SURFACE_EDITOR_CHROME = 'editor_chrome';
+
+	/**
+	 * Declared render surfaces of the provider form overlay; `compile()` builds
+	 * one per pass, and `compile_surfaces()` assembles them.
+	 *
+	 * - `prefix`: prepended to every selector the pass builds, so its rules reach
+	 *   only that surface's document (`.editor-styles-wrapper ` is the block
+	 *   editor canvas; the front end is unprefixed).
+	 * - `css` / `context`: the overlay artifact the pass owns for its rules and
+	 *   for its context fallback, the artifact's header label, and the rule
+	 *   grammar `validate_overlay()` admits for it.
+	 * - `structural_rules`: whether the pass emits its transposed layout and
+	 *   presentation rules (`editor_chrome` emits only its chrome).
+	 * - `control_container_chrome`: whether each control container's authored
+	 *   declarations are emitted again, unreset, ahead of the structural rules.
+	 * - `native_passthrough`: scope-suffix rules added on the native topology
+	 *   (the editor's control shell and its form box carry no box of their own).
+	 * - `form_passthrough`: scope-suffix rules, with their recorded operation,
+	 *   added when the form target is the bare scope (Jetpack's editor
+	 *   inner-blocks container must not interpose a flex box).
+	 * - `layout_bound`: whether a layout-only overlay keeps the smaller bound.
+	 */
+	private const SURFACES = array(
+		self::SURFACE_FRONT_END     => array(
+			'prefix'                   => '',
+			'css'                      => array(
+				'key'   => 'css',
+				'label' => 'provider layout overlay',
+				'rule'  => 'compiled',
+			),
+			'context'                  => array(
+				'key'   => 'context_css',
+				'label' => 'form context fallback',
+				'rule'  => 'compiled',
+			),
+			'structural_rules'         => true,
+			'control_container_chrome' => false,
+			'native_passthrough'       => array(),
+			'form_passthrough'         => array(),
+			'layout_bound'             => true,
+		),
+		self::SURFACE_EDITOR        => array(
+			'prefix'                   => '.editor-styles-wrapper ',
+			'css'                      => array(
+				'key'   => 'editor_css',
+				'label' => 'editor control chrome',
+				'rule'  => 'editor',
+			),
+			'context'                  => array(
+				'key'   => 'editor_context_css',
+				'label' => 'editor form context fallback',
+				'rule'  => 'context',
+			),
+			'structural_rules'         => true,
+			'control_container_chrome' => true,
+			'native_passthrough'       => array(
+				' .ssi-native-control-shell' => 'display:contents',
+				'.ssi-native-form-topology'  => 'padding:0;border:0',
+			),
+			'form_passthrough'         => array(
+				array(
+					'suffix'       => ' > div.jetpack-contact-form',
+					'declarations' => 'display:contents',
+					'strategy'     => 'provider_editor_inner_blocks_passthrough',
+				),
+			),
+			'layout_bound'             => false,
+		),
+		// The editor surface reduced to its chrome, compiled from the front-end map
+		// when the editor map yields no overlay.
+		self::SURFACE_EDITOR_CHROME => array(
+			'prefix'                   => '.editor-styles-wrapper ',
+			'css'                      => array(
+				'key'   => 'editor_css',
+				'label' => 'editor control chrome',
+				'rule'  => 'editor',
+			),
+			'context'                  => array(
+				'key'   => 'editor_context_css',
+				'label' => 'editor form context fallback',
+				'rule'  => 'context',
+			),
+			'structural_rules'         => false,
+			'control_container_chrome' => true,
+			'native_passthrough'       => array(),
+			'form_passthrough'         => array(),
+			'layout_bound'             => false,
+		),
+	);
 
 	/** @return array{map?:array<string,mixed>,error?:string} */
 	public static function validate_map( mixed $map, array $graph ): array {
@@ -87,34 +185,42 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		);
 	}
 
-	/** @return array{overlay:array<string,mixed>,css:string,operations:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>} */
-	public static function compile( array $graph, mixed $map, array $presentation_graph = array(), array $container = array(), bool $editor = false, array $context_fallbacks = array() ): array {
+	/**
+	 * Compile one declared surface of the overlay from that surface's own target map.
+	 *
+	 * The pass builds only the requested surface's rules, each addressed through
+	 * the surface prefix where it is built. `overlay` carries the surface's own
+	 * artifacts in the canonical overlay shape; `css` is the front-end stylesheet.
+	 *
+	 * @param array<string,mixed>     $graph              Provider layout graph.
+	 * @param mixed                   $map                The surface's provider layout target map.
+	 * @param array<string,mixed>     $presentation_graph Validated presentation graph.
+	 * @param array<string,mixed>     $container          Form container presentation.
+	 * @param string                  $surface            A declared surface name (see SURFACES).
+	 * @param array<int|string,mixed> $context_fallbacks  Source context style fallbacks.
+	 * @return array{overlay:array<string,mixed>,css:string,operations:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>}
+	 */
+	public static function compile( array $graph, mixed $map, array $presentation_graph = array(), array $container = array(), string $surface = self::SURFACE_FRONT_END, array $context_fallbacks = array() ): array {
+		$declared      = self::surface( $surface );
 		$validated     = self::validate_map( $map, $graph );
 		$validated_map = $validated['map'] ?? null;
 		if ( isset( $validated['error'] ) || ! is_array( $validated_map ) || ! isset( $validated_map['targets'] ) || ! is_array( $validated_map['targets'] ) ) {
-			return array(
-				'overlay'    => array(),
-				'css'        => '',
-				'operations' => array(),
-				'losses'     => array(
-					array(
-						'dimension'   => 'layout',
-						'reason_code' => 'provider_structure_mismatch',
-						'map_error'   => $validated['error'] ?? 'provider layout target map could not be normalized.',
-					),
-				),
-			);
+			return self::failed_compile( $validated['error'] ?? 'provider layout target map could not be normalized.' );
 		}
 		$targets = array();
 		foreach ( $validated_map['targets'] as $target ) {
 			$targets[ $target['node'] ] = $target;
 		}
-		$rules              = array();
-		$editor_rules       = array();
-		$operations         = array();
-		$losses             = array();
-		$context_css        = self::context_fallback_css( $validated_map['scope'], $context_fallbacks, false, $operations, $losses );
-		$editor_context_css = self::context_fallback_css( $validated_map['scope'], $context_fallbacks, true, $operations, $losses );
+		$scope          = $validated_map['scope'];
+		$prefix         = $declared['prefix'];
+		$rules          = array();
+		$chrome         = array();
+		$operations     = array();
+		$context_losses = array();
+		$context_css    = self::context_fallback_css( $scope, $context_fallbacks, $declared['context']['label'], $operations, $context_losses );
+		// Receipt contract: every pass records the context fallback losses once
+		// per context artifact the overlay carries (front end and editor).
+		$losses = array_merge( $context_losses, $context_losses );
 		foreach ( $graph['nodes'] ?? array() as $node ) {
 			$id     = $node['id'] ?? '';
 			$target = $targets[ $id ] ?? null;
@@ -126,7 +232,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			$paint        = array_diff_key( $node['presentation']['styles'], self::layout_property_map() );
 			$declarations = self::presentation_declarations( $paint, 0, 'control_container', $losses, array_keys( self::presentation_property_map() ) );
 			if ( ! empty( $declarations ) ) {
-				$rules[]      = $target['selector'] . '{' . implode( ';', $declarations ) . '}';
+				$rules[]      = self::surface_selector( $prefix, $target['selector'] ) . '{' . implode( ';', $declarations ) . '}';
 				$operations[] = array(
 					'dimension' => 'presentation',
 					'strategy'  => 'provider_source_container_presentation',
@@ -146,7 +252,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			}
 			$declarations = self::declarations( $node['layout'], $target['capabilities'], $id, $losses, self::important_properties( $node['important'] ?? null ) );
 			if ( ! empty( $declarations ) ) {
-				$rules[]      = $target['selector'] . '{' . implode( ';', $declarations ) . '}';
+				$rules[]      = self::surface_selector( $prefix, $target['selector'] ) . '{' . implode( ';', $declarations ) . '}';
 				$operations[] = array(
 					'dimension'   => 'layout',
 					'strategy'    => 'provider_selector_transposition',
@@ -165,7 +271,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				continue; }
 			$declarations = self::declarations( $variant['layout_patch'], $target['capabilities'], $id, $losses, self::important_properties( $variant['important'] ?? null ) );
 			if ( ! empty( $declarations ) ) {
-				$rules[]      = self::conditional_rule( $variant['condition'], $target['selector'] . '{' . implode( ';', $declarations ) . '}' );
+				$rules[]      = self::conditional_rule( $variant['condition'], self::surface_selector( $prefix, $target['selector'] ) . '{' . implode( ';', $declarations ) . '}' );
 				$operations[] = array(
 					'dimension'   => 'layout',
 					'strategy'    => 'provider_selector_transposition',
@@ -182,12 +288,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				$losses[] = self::presentation_loss( 'editor_control_container_unsupported', is_int( $index ) ? $index : 0, 'control_container' );
 				continue;
 			}
-			self::compile_presentation_destinations( $destinations, $control_container['styles'], $index, 'control_container', null, $rules, $operations, $losses );
+			self::compile_presentation_destinations( $destinations, $control_container['styles'], $index, 'control_container', null, $prefix, $rules, $operations, $losses );
 			foreach ( $destinations as $destination ) {
-				$declarations = self::presentation_declarations( $control_container['styles'], $index, 'control_container', $losses, $destination['properties'] );
-				if ( ! empty( $declarations ) ) {
-					$editor_rules[] = '.editor-styles-wrapper ' . self::authoritative_presentation_selector( $destination['selector'] ) . '{' . implode( ';', $declarations ) . '}';
-				}
+				self::control_container_chrome( $declared, $destination, $control_container['styles'], $index, null, $chrome, $losses );
 			}
 		}
 		$base_presented = array();
@@ -205,7 +308,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					$losses[] = self::presentation_loss( 'provider_structure_mismatch', $control['index'], $role );
 					continue;
 				}
-				self::compile_presentation_destinations( $destinations, $control[ $role ]['styles'], $control['index'], $role, null, $rules, $operations, $losses );
+				self::compile_presentation_destinations( $destinations, $control[ $role ]['styles'], $control['index'], $role, null, $prefix, $rules, $operations, $losses );
 				$base_presented[ $control['index'] . "\n" . $role ] = true;
 			}
 		}
@@ -222,7 +325,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			$base_presented[ $index . "\n" . $role ] = true;
 			$destinations                            = array_filter( $presentation_targets[ $index ]['destinations'] ?? array(), static fn( array $destination ): bool => $role === $destination['role'] && ! empty( $destination['resets'] ) );
 			if ( ! empty( $destinations ) ) {
-				self::compile_presentation_destinations( $destinations, array(), $index, $role, null, $rules, $operations, $losses );
+				self::compile_presentation_destinations( $destinations, array(), $index, $role, null, $prefix, $rules, $operations, $losses );
 			}
 		}
 		foreach ( $presentation_graph['variants'] ?? array() as $variant ) {
@@ -248,12 +351,8 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					continue;
 				}
 				foreach ( $destinations as $destination ) {
-					self::compile_presentation_destinations( array( $destination ), $variant['style_patch'], $index, 'control_container', $condition, $rules, $operations, $losses, false );
-					$declarations = self::presentation_declarations( $variant['style_patch'], $index, 'control_container', $losses, $destination['properties'] );
-					if ( ! empty( $declarations ) ) {
-						$editor_rule    = '.editor-styles-wrapper ' . self::authoritative_presentation_selector( $destination['selector'] ) . '{' . implode( ';', $declarations ) . '}';
-						$editor_rules[] = null === $condition ? $editor_rule : self::conditional_rule( $condition, $editor_rule );
-					}
+					self::compile_presentation_destinations( array( $destination ), $variant['style_patch'], $index, 'control_container', $condition, $prefix, $rules, $operations, $losses, false );
+					self::control_container_chrome( $declared, $destination, $variant['style_patch'], $index, $condition, $chrome, $losses );
 				}
 				continue;
 			}
@@ -262,38 +361,38 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				$losses[] = self::presentation_loss( 'responsive_layout_ownership', is_int( $index ) ? $index : 0, is_string( $role ) ? $role : 'control' );
 				continue;
 			}
-			self::compile_presentation_destinations( $destinations, $variant['style_patch'], $index, $role, $condition, $rules, $operations, $losses, false );
+			self::compile_presentation_destinations( $destinations, $variant['style_patch'], $index, $role, $condition, $prefix, $rules, $operations, $losses, false );
 		}
 		if ( 'generic/form-container-presentation/v1' === ( $container['schema'] ?? null ) ) {
 			$destination = array(
 				'role'       => 'control',
-				'selector'   => str_contains( $targets['form']['selector'] ?? '', '.ssi-native-form-topology' ) ? $targets['form']['selector'] : $validated_map['scope'] . '.jetpack-contact-form-container',
+				'selector'   => str_contains( $targets['form']['selector'] ?? '', '.ssi-native-form-topology' ) ? $targets['form']['selector'] : $scope . '.jetpack-contact-form-container',
 				'properties' => array_keys( self::presentation_property_map() ),
 			);
-			self::compile_presentation_destinations( array( $destination ), $container['styles'] ?? array(), 0, 'control', null, $rules, $operations, $losses );
+			self::compile_presentation_destinations( array( $destination ), $container['styles'] ?? array(), 0, 'control', null, $prefix, $rules, $operations, $losses );
 			foreach ( array_slice( $container['variants'] ?? array(), 0, 32 ) as $variant ) {
 				if ( self::safe_condition( $variant['condition'] ?? null ) && is_array( $variant['styles'] ?? null ) ) {
-					self::compile_presentation_destinations( array( $destination ), $variant['styles'], 0, 'control', $variant['condition'], $rules, $operations, $losses );
+					self::compile_presentation_destinations( array( $destination ), $variant['styles'], 0, 'control', $variant['condition'], $prefix, $rules, $operations, $losses );
 				}
 			}
 		}
 		if ( empty( $losses ) ) {
-			$rules[]      = $validated_map['scope'] . '{position:relative;z-index:1;pointer-events:auto}';
+			$rules[]      = self::surface_selector( $prefix, $scope ) . '{position:relative;z-index:1;pointer-events:auto}';
 			$operations[] = array(
 				'dimension'   => 'interaction',
 				'strategy'    => 'provider_interaction_carrier',
-				'target_hash' => hash( 'sha256', $validated_map['scope'] ),
+				'target_hash' => hash( 'sha256', $scope ),
 			);
 		} elseif ( ! empty( $rules ) ) {
 			// Source boxes merged onto the provider form can carry their classes'
 			// `pointer-events: none` (Wix sets it on mesh containers and restores it
 			// only on their own direct children). Without the stacking lift, the
 			// provider form must still receive clicks and typing (#2005).
-			$rules[]      = $validated_map['scope'] . '{pointer-events:auto}';
+			$rules[]      = self::surface_selector( $prefix, $scope ) . '{pointer-events:auto}';
 			$operations[] = array(
 				'dimension'   => 'interaction',
 				'strategy'    => 'provider_pointer_events_carrier',
-				'target_hash' => hash( 'sha256', $validated_map['scope'] ),
+				'target_hash' => hash( 'sha256', $scope ),
 			);
 		}
 		if ( ! empty( $rules ) ) {
@@ -301,67 +400,183 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			// box (grunion.css `:where(.jetpack-contact-form-container)` plus theme
 			// block-child margin). Reset at two classes so it beats those selectors
 			// and still loses to authored `.ssi-form-x.ssi-form-x.jetpack-contact-form-container`.
-			$rules[]      = $validated_map['scope'] . '.jetpack-contact-form-container{padding:0;margin:0;border:0}';
+			$rules[]      = self::surface_selector( $prefix, $scope . '.jetpack-contact-form-container' ) . '{padding:0;margin:0;border:0}';
 			$operations[] = array(
 				'dimension'   => 'layout',
 				'strategy'    => 'provider_container_box_reset',
-				'target_hash' => hash( 'sha256', $validated_map['scope'] . '.jetpack-contact-form-container' ),
+				'target_hash' => hash( 'sha256', $scope . '.jetpack-contact-form-container' ),
 			);
 		}
 		if ( str_contains( $targets['form']['selector'] ?? '', '.ssi-native-form-topology' ) ) {
-			$native_scope = $validated_map['scope'] . '.ssi-native-form-topology';
-			$rules[]      = $native_scope . '.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form){display:contents}';
-			$rules[]      = $native_scope . '.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *){display:contents}';
-			// The provider's success state removes its real form from layout.
-			// Source display facts must not resurrect those submitted controls.
-			$rules[] = $native_scope . ' form.jetpack-contact-form__form.submission-success{display:none}';
-			// Provider field state stays in the DOM, while its synthetic shell has
-			// no box between a source container and the source-owned input.
-			$rules[] = $validated_map['scope'] . ' .ssi-native-control-shell-wrap{display:contents}';
-			$rules[] = $validated_map['scope'] . ' .wp-block-button.form-button-submit{display:contents}';
-			if ( $editor ) {
-				$rules[] = $validated_map['scope'] . ' .ssi-native-control-shell{display:contents}';
-				$rules[] = $validated_map['scope'] . '.ssi-native-form-topology{padding:0;border:0}';
-			}
-		}
-		if ( $editor && ( $targets['form']['selector'] ?? null ) === $validated_map['scope'] ) {
-			// The editor block wrapper is the source form; Jetpack's inner-blocks
-			// container must not interpose a flex box between it and the fields.
-			$rules[]      = $validated_map['scope'] . ' > div.jetpack-contact-form{display:contents}';
-			$operations[] = array(
-				'dimension'   => 'layout',
-				'strategy'    => 'provider_editor_inner_blocks_passthrough',
-				'target_hash' => hash( 'sha256', $validated_map['scope'] . ' > div.jetpack-contact-form' ),
+			$native_scope = $scope . '.ssi-native-form-topology';
+			$native       = array(
+				$native_scope . '.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form)' => 'display:contents',
+				$native_scope . '.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *)' => 'display:contents',
+				// The provider's success state removes its real form from layout.
+				// Source display facts must not resurrect those submitted controls.
+				$native_scope . ' form.jetpack-contact-form__form.submission-success' => 'display:none',
+				// Provider field state stays in the DOM, while its synthetic shell has
+				// no box between a source container and the source-owned input.
+				$scope . ' .ssi-native-control-shell-wrap' => 'display:contents',
+				$scope . ' .wp-block-button.form-button-submit' => 'display:contents',
 			);
-		}
-		if ( $editor ) {
-			foreach ( $rules as $rule ) {
-				$editor_rules[] = preg_replace( '/(^|\{|, )(\.ssi-form-[a-f0-9]{12})/', '$1.editor-styles-wrapper $2', $rule );
+			foreach ( $declared['native_passthrough'] as $suffix => $declarations ) {
+				$native[ $scope . $suffix ] = $declarations;
 			}
-			$rules = array();
+			foreach ( $native as $selector => $declarations ) {
+				$rules[] = self::surface_selector( $prefix, $selector ) . '{' . $declarations . '}';
+			}
 		}
-		$rules             = self::compact_rules( array_values( array_unique( $rules ) ) );
-		$editor_rules      = self::compact_rules( array_values( array_unique( $editor_rules ) ) );
-		$css               = empty( $rules ) ? '' : '/* Static Site Importer provider layout overlay: ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", $rules ) . "\n";
-		$editor_css        = empty( $editor_rules ) ? '' : '/* Static Site Importer editor control chrome: ' . substr( hash( 'sha256', implode( "\n", $editor_rules ) ), 0, 12 ) . " */\n" . implode( "\n", $editor_rules ) . "\n";
-		$max_overlay_bytes = empty( $presentation_graph ) ? self::MAX_LAYOUT_OVERLAY_BYTES : self::MAX_OVERLAY_BYTES;
-		// Editor chrome is admitted against MAX_OVERLAY_BYTES (validate_overlay), so
-		// an oversized one degrades to the same recorded loss instead of a rejection.
-		if ( strlen( $css ) + strlen( $context_css ) > $max_overlay_bytes || strlen( $editor_css ) + strlen( $editor_context_css ) > self::MAX_OVERLAY_BYTES ) {
+		if ( ( $targets['form']['selector'] ?? null ) === $scope ) {
+			foreach ( $declared['form_passthrough'] as $passthrough ) {
+				$rules[]      = self::surface_selector( $prefix, $scope . $passthrough['suffix'] ) . '{' . $passthrough['declarations'] . '}';
+				$operations[] = array(
+					'dimension'   => 'layout',
+					'strategy'    => $passthrough['strategy'],
+					'target_hash' => hash( 'sha256', $scope . $passthrough['suffix'] ),
+				);
+			}
+		}
+		// Chrome precedes the structural rules, so a duplicate keeps its chrome position.
+		$rules = self::compact_rules( array_values( array_unique( $declared['structural_rules'] ? array_merge( $chrome, $rules ) : $chrome ) ) );
+		$css   = empty( $rules ) ? '' : '/* Static Site Importer ' . $declared['css']['label'] . ': ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", $rules ) . "\n";
+		if ( strlen( $css ) + strlen( $context_css ) > ( $declared['layout_bound'] && empty( $presentation_graph ) ? self::MAX_LAYOUT_OVERLAY_BYTES : self::MAX_OVERLAY_BYTES ) ) {
+			return self::failed_compile( 'provider layout overlay exceeds its bounded size.' );
+		}
+		$artifacts = array(
+			$declared['css']['key']     => $css,
+			$declared['context']['key'] => $context_css,
+		);
+		return array(
+			'overlay'    => self::overlay( $artifacts ),
+			'css'        => $artifacts['css'] ?? '',
+			'operations' => $operations,
+			'losses'     => $losses,
+		);
+	}
+
+	/**
+	 * Compile both surfaces of one provider form and assemble the overlay the seeder records.
+	 *
+	 * What each surface contributes:
+	 * - `front_end`, compiled from the front-end map: the overlay's `css` and
+	 *   `context_css`, every receipt operation, and its losses. Those losses also
+	 *   re-record, against the front-end map, the control-container chrome and
+	 *   editor context fallback validation (see `control_container_chrome()` and
+	 *   `compile()`), as the receipt always has.
+	 * - `editor`, compiled from the editor map: the overlay's `editor_css` and
+	 *   `editor_context_css`, and the losses that lead the receipt. Its
+	 *   operations restate the same transpositions on the editor DOM and are not
+	 *   recorded.
+	 * - `editor_chrome`, compiled from the front-end map only when the editor pass
+	 *   yields no overlay: `editor_css` (the control-container chrome alone) and
+	 *   `editor_context_css`. It records nothing; the front-end pass already did.
+	 *
+	 * The front-end surface carries the overlay: when it compiles nothing, or
+	 * fails its map or byte bound, there is no overlay.
+	 *
+	 * @param array<string,mixed>     $graph              Provider layout graph.
+	 * @param mixed                   $front_map          Front-end provider layout target map.
+	 * @param mixed                   $editor_map         Editor provider layout target map.
+	 * @param array<string,mixed>     $presentation_graph Validated presentation graph.
+	 * @param array<string,mixed>     $container          Form container presentation.
+	 * @param array<int|string,mixed> $context_fallbacks  Source context style fallbacks.
+	 * @return array{overlay:array<string,mixed>,css:string,operations:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>}
+	 */
+	public static function compile_surfaces( array $graph, mixed $front_map, mixed $editor_map, array $presentation_graph = array(), array $container = array(), array $context_fallbacks = array() ): array {
+		$front  = self::compile( $graph, $front_map, $presentation_graph, $container, self::SURFACE_FRONT_END, $context_fallbacks );
+		$editor = self::compile( $graph, $editor_map, $presentation_graph, $container, self::SURFACE_EDITOR, $context_fallbacks );
+		$losses = array_merge( $editor['losses'], $front['losses'] );
+		if ( array() === $front['overlay'] ) {
 			return array(
 				'overlay'    => array(),
 				'css'        => '',
-				'operations' => array(),
-				'losses'     => array(
-					array(
-						'dimension'   => 'layout',
-						'reason_code' => 'provider_structure_mismatch',
-						'map_error'   => 'provider layout overlay exceeds its bounded size.',
-					),
-				),
+				'operations' => $front['operations'],
+				'losses'     => $losses,
 			);
 		}
-		$overlay = '' === $css && '' === $editor_css && '' === $context_css && '' === $editor_context_css ? array() : array(
+		$editor_overlay = array() === $editor['overlay'] ? self::compile( $graph, $front_map, $presentation_graph, $container, self::SURFACE_EDITOR_CHROME, $context_fallbacks )['overlay'] : $editor['overlay'];
+		return array(
+			'overlay'    => self::overlay(
+				array(
+					'css'                => $front['css'],
+					'editor_css'         => self::artifact( $editor_overlay, 'editor_css' ),
+					'context_css'        => self::artifact( $front['overlay'], 'context_css' ),
+					'editor_context_css' => self::artifact( $editor_overlay, 'editor_context_css' ),
+				)
+			),
+			'css'        => $front['css'],
+			'operations' => $front['operations'],
+			'losses'     => $losses,
+		);
+	}
+
+	/**
+	 * Look up a declared surface.
+	 *
+	 * @param string $name Surface name.
+	 * @return Surface
+	 * @throws InvalidArgumentException When the surface is not declared.
+	 */
+	private static function surface( string $name ): array {
+		if ( ! isset( self::SURFACES[ $name ] ) ) {
+			// ssi-error-class: programmer
+			throw new InvalidArgumentException( 'Unknown provider layout overlay surface.' );
+		}
+		return self::SURFACES[ $name ];
+	}
+
+	/**
+	 * Address a selector (or a two-part selector list) inside a surface.
+	 *
+	 * @param string $prefix   Surface selector prefix.
+	 * @param string $selector Scoped selector.
+	 */
+	private static function surface_selector( string $prefix, string $selector ): string {
+		if ( '' === $prefix ) {
+			return $selector;
+		}
+		return implode( ', ', array_map( static fn( string $part ): string => 1 === preg_match( '/^\.ssi-form-[a-f0-9]{12}/', $part ) ? $prefix . $part : $part, explode( ', ', $selector ) ) );
+	}
+
+	/**
+	 * Emit one control container's authored declarations, unreset, at its prefixed
+	 * destination on a chrome surface.
+	 *
+	 * Every pass validates these declarations, so each records their losses once
+	 * more (the receipt contract); only a surface that declares chrome emits it.
+	 *
+	 * @param array                    $declared    Declared surface (see SURFACES).
+	 * @param array<string,mixed>      $destination Control-container destination.
+	 * @param array<string,mixed>      $styles      Authored styles.
+	 * @param int                      $index       Control index.
+	 * @param array<string,mixed>|null $condition   Variant condition.
+	 * @param array<int,string>        $chrome      Chrome rules, appended to.
+	 * @param array<mixed>             $losses      Losses, appended to.
+	 * @phpstan-param Surface $declared
+	 */
+	private static function control_container_chrome( array $declared, array $destination, array $styles, int $index, ?array $condition, array &$chrome, array &$losses ): void {
+		$declarations = self::presentation_declarations( $styles, $index, 'control_container', $losses, $destination['properties'] );
+		if ( ! $declared['control_container_chrome'] || empty( $declarations ) ) {
+			return;
+		}
+		$rule     = self::surface_selector( $declared['prefix'], self::authoritative_presentation_selector( $destination['selector'] ) ) . '{' . implode( ';', $declarations ) . '}';
+		$chrome[] = null === $condition ? $rule : self::conditional_rule( $condition, $rule );
+	}
+
+	/**
+	 * Assemble compiled artifacts into the canonical overlay with its integrity fields.
+	 *
+	 * @param array<string,string> $artifacts Artifact key (`css`, `editor_css`, `context_css`, `editor_context_css`) => compiled CSS.
+	 * @return array<string,mixed>
+	 */
+	private static function overlay( array $artifacts ): array {
+		if ( '' === implode( '', $artifacts ) ) {
+			return array();
+		}
+		$css        = $artifacts['css'] ?? '';
+		$editor_css = $artifacts['editor_css'] ?? '';
+		$overlay    = array(
 			'schema'        => self::OVERLAY_SCHEMA,
 			'css'           => $css,
 			'editor_css'    => $editor_css,
@@ -370,21 +585,46 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			'editor_sha256' => hash( 'sha256', $editor_css ),
 			'editor_bytes'  => strlen( $editor_css ),
 		);
-		if ( '' !== $context_css ) {
-			$overlay['context_css']    = $context_css;
-			$overlay['context_sha256'] = hash( 'sha256', $context_css );
-			$overlay['context_bytes']  = strlen( $context_css );
+		foreach ( array( 'context', 'editor_context' ) as $key ) {
+			$value = $artifacts[ $key . '_css' ] ?? '';
+			if ( '' !== $value ) {
+				$overlay[ $key . '_css' ]    = $value;
+				$overlay[ $key . '_sha256' ] = hash( 'sha256', $value );
+				$overlay[ $key . '_bytes' ]  = strlen( $value );
+			}
 		}
-		if ( '' !== $editor_context_css ) {
-			$overlay['editor_context_css']    = $editor_context_css;
-			$overlay['editor_context_sha256'] = hash( 'sha256', $editor_context_css );
-			$overlay['editor_context_bytes']  = strlen( $editor_context_css );
-		}
+		return $overlay;
+	}
+
+	/**
+	 * Read one compiled artifact from an overlay.
+	 *
+	 * @param array<string,mixed> $overlay Overlay.
+	 * @param string              $key     Artifact key.
+	 */
+	private static function artifact( array $overlay, string $key ): string {
+		$value = $overlay[ $key ] ?? '';
+		return is_string( $value ) ? $value : '';
+	}
+
+	/**
+	 * A compile that degrades to one recorded structure loss.
+	 *
+	 * @param string $error Map or bound error.
+	 * @return array{overlay:array<string,mixed>,css:string,operations:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>}
+	 */
+	private static function failed_compile( string $error ): array {
 		return array(
-			'overlay'    => $overlay,
-			'css'        => $css,
-			'operations' => $operations,
-			'losses'     => $losses,
+			'overlay'    => array(),
+			'css'        => '',
+			'operations' => array(),
+			'losses'     => array(
+				array(
+					'dimension'   => 'layout',
+					'reason_code' => 'provider_structure_mismatch',
+					'map_error'   => $error,
+				),
+			),
 		);
 	}
 
@@ -431,7 +671,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * graph owns its element's cascade result, including conditional patches, and
 	 * is addressed by its identity hook inside the form scope.
 	 */
-	private static function context_fallback_css( string $scope, array $fallbacks, bool $editor, array &$operations, array &$losses ): string {
+	private static function context_fallback_css( string $scope, array $fallbacks, string $label, array &$operations, array &$losses ): string {
 		if ( empty( $fallbacks ) ) {
 			return '';
 		}
@@ -478,19 +718,16 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				// overrides its base value exactly as the source cascade does.
 				$conditional[] = self::conditional_rule( $variant['condition'], $selector . '{' . implode( ';', $patch ) . '}' );
 			}
-			if ( ! $editor ) {
-				$operations[] = array(
-					'dimension'   => 'presentation',
-					'strategy'    => $legacy ? 'provider_context_style_fallback' : 'provider_context_source_presentation',
-					'target_hash' => hash( 'sha256', $identity ),
-				);
-			}
+			$operations[] = array(
+				'dimension'   => 'presentation',
+				'strategy'    => $legacy ? 'provider_context_style_fallback' : 'provider_context_source_presentation',
+				'target_hash' => hash( 'sha256', $identity ),
+			);
 		}
 		$rules = array_merge( $rules, $conditional );
 		if ( empty( $rules ) ) {
 			return '';
 		}
-		$label = $editor ? 'editor form context fallback' : 'form context fallback';
 		return '/* Static Site Importer ' . $label . ': ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", array_values( array_unique( $rules ) ) ) . "\n";
 	}
 
@@ -543,23 +780,26 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( '' === $css && '' === $editor_css && '' === $context_css && '' === $editor_context_css ) {
 			return null;
 		}
-		if ( '' !== $css && ! self::safe_compiled_artifact( $css, 'provider layout overlay', false ) ) {
-			return null;
-		}
-		if ( '' !== $editor_css && ! self::safe_compiled_artifact( $editor_css, 'editor control chrome', true ) ) {
-			return null;
-		}
-		if ( '' !== $context_css && ! self::safe_compiled_artifact( $context_css, 'form context fallback', false ) ) {
-			return null;
-		}
-		if ( '' !== $editor_context_css && ! self::safe_compiled_artifact( $editor_context_css, 'editor form context fallback', true ) ) {
-			return null;
+		foreach ( array( self::SURFACE_FRONT_END, self::SURFACE_EDITOR ) as $surface ) {
+			foreach ( array( self::SURFACES[ $surface ]['css'], self::SURFACES[ $surface ]['context'] ) as $artifact ) {
+				$value = self::artifact( $overlay, $artifact['key'] );
+				if ( '' !== $value && ! self::safe_compiled_artifact( $value, $artifact['label'], $artifact['rule'] ) ) {
+					return null;
+				}
+			}
 		}
 		return $overlay;
 	}
 
-	private static function safe_compiled_artifact( string $css, string $kind, bool $editor ): bool {
-		if ( ! preg_match( '/^\/\* Static Site Importer ' . preg_quote( $kind, '/' ) . ': [a-f0-9]{12} \*\/\n/', $css, $header ) ) {
+	/**
+	 * Admit one compiled artifact: its declared header, then every rule in its declared grammar.
+	 *
+	 * @param string $css     Compiled artifact.
+	 * @param string $label   Declared header label.
+	 * @param string $grammar Declared rule grammar: `compiled`, `editor` or `context`.
+	 */
+	private static function safe_compiled_artifact( string $css, string $label, string $grammar ): bool {
+		if ( ! preg_match( '/^\/\* Static Site Importer ' . preg_quote( $label, '/' ) . ': [a-f0-9]{12} \*\/\n/', $css, $header ) ) {
 			return false;
 		}
 		$body = substr( $css, strlen( $header[0] ) );
@@ -567,9 +807,11 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			return false;
 		}
 		foreach ( array_filter( explode( "\n", trim( $body ) ) ) as $rule ) {
-			$safe = 'editor form context fallback' === $kind
-				? self::safe_context_fallback_artifact_rule( $rule )
-				: ( $editor ? self::safe_editor_compiled_rule( $rule ) : self::safe_compiled_rule( $rule ) );
+			$safe = match ( $grammar ) {
+				'context' => self::safe_context_fallback_artifact_rule( $rule ),
+				'editor'  => self::safe_editor_compiled_rule( $rule ),
+				default   => self::safe_compiled_rule( $rule ),
+			};
 			if ( ! $safe ) {
 				return false;
 			}
@@ -1011,7 +1253,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	/** Compile one adapter-owned destination without knowing its provider or markup. */
-	private static function compile_presentation_destinations( array $destinations, array $styles, int $index, string $role, ?array $condition, array &$rules, array &$operations, array &$losses, bool $emit_resets = true ): void {
+	private static function compile_presentation_destinations( array $destinations, array $styles, int $index, string $role, ?array $condition, string $prefix, array &$rules, array &$operations, array &$losses, bool $emit_resets = true ): void {
 		$represented = array();
 		foreach ( $destinations as $destination ) {
 			$represented = array_merge( $represented, $destination['properties'] );
@@ -1044,7 +1286,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			if ( 'important' === ( $destination['priority'] ?? '' ) ) {
 				$declarations = array_map( static fn( string $declaration ): string => $declaration . '!important', $declarations );
 			}
-			$rule         = self::authoritative_presentation_selector( $destination['selector'] ) . '{' . implode( ';', $declarations ) . '}';
+			$rule         = self::surface_selector( $prefix, self::authoritative_presentation_selector( $destination['selector'] ) ) . '{' . implode( ';', $declarations ) . '}';
 			$rules[]      = null === $condition ? $rule : self::conditional_rule( $condition, $rule );
 			$operations[] = self::presentation_operation( $index, $role, $destination['selector'], null !== $condition );
 		}

@@ -84,6 +84,7 @@
     "includes/class-static-site-importer-prepared-plan-application.php#new WP_Error((string)($error['code']??'static_site_importer_companion_plugin_materialization_failed'))": { "class": "propagated", "owning_layer": "blocks-engine" },
     "includes/class-static-site-importer-prepared-plan-application.php#new WP_Error((string)($error['code']??'static_site_importer_materialization_failed'))": { "class": "propagated", "owning_layer": "blocks-engine" },
     "includes/class-static-site-importer-prepared-plan-application.php#new WP_Error((string)($error['code']??'static_site_importer_theme_runtime_preflight_failed'))": { "class": "propagated", "owning_layer": "static-site-importer" },
+    "includes/class-static-site-importer-provider-layout-overlay.php#throw new InvalidArgumentException('Unknown provider layout overlay surface.')": { "class": "programmer", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-redirection-materializer.php#throw new RuntimeException($enabled->get_error_message())": { "class": "propagated", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-redirection-materializer.php#throw new RuntimeException($items->get_error_message())": { "class": "propagated", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-redirection-materializer.php#throw new RuntimeException($result->get_error_message())": { "class": "propagated", "owning_layer": "static-site-importer" },

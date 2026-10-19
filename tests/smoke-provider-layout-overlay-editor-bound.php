@@ -78,7 +78,7 @@ for ( $index = 0; $index < 128; ++$index ) {
 }
 $presentation_graph = array( 'controls' => $controls );
 
-$shared_editor = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph, array(), true );
+$shared_editor = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph, array(), Static_Site_Importer_Provider_Layout_Overlay::SURFACE_EDITOR );
 $assert( empty( $shared_editor['losses'] ) && ! empty( $shared_editor['overlay']['editor_css'] ), 'equivalent adjacent control presentations fit the editor admission bound' );
 $assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $shared_editor['overlay'] ), 'compacted shared editor presentation is admitted' );
 
@@ -92,7 +92,7 @@ $frontend = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map,
 $assert( array() === $frontend['losses'] && strlen( $frontend['css'] ) <= 32768, 'fixture frontend overlay fits its bound (' . strlen( $frontend['css'] ) . ' bytes)' );
 $assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $frontend['overlay'] ), 'fixture frontend overlay is admitted' );
 
-$editor      = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph, array(), true );
+$editor      = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph, array(), Static_Site_Importer_Provider_Layout_Overlay::SURFACE_EDITOR );
 $editor_size = strlen( $editor['overlay']['editor_css'] ?? '' );
 $assert(
 	array() === $editor['overlay'] && '' === $editor['css'] && in_array( 'provider layout overlay exceeds its bounded size.', array_column( $editor['losses'], 'map_error' ), true ),
