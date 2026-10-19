@@ -90,8 +90,6 @@ const TODO = {
 	choice_label_box: 'https://github.com/Automattic/static-site-importer/issues/2172',
 	label: 'https://github.com/Automattic/static-site-importer/issues/2173',
 	required_marker: 'https://github.com/Automattic/static-site-importer/issues/2173',
-	submit_link: 'https://github.com/Automattic/static-site-importer/issues/2174',
-	submit_link_margin_reset: 'https://github.com/Automattic/static-site-importer/issues/2174',
 };
 
 const transformer = process.env.STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH

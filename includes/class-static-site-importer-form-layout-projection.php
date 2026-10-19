@@ -4102,7 +4102,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			// The submit button.
 			'submit_wrapper'            => array( 'placeholder' => $placeholder ),
 			'submit_link'               => $button_font,
-			'submit_link_margin_reset'  => $button_font,
+			'submit_link_margin_reset'  => array(),
 			'submit_caption'            => array(),
 			'submit_input_height_reset' => array( 'placeholder' => $placeholder ),
 			// Labels.

@@ -25,15 +25,15 @@ sha256: b776ebef3fc8dfd784f34c638a53f0680caaf8f073acf606ce7a38dbc87ab235
 .ssi-form-d095fee786e4 div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
-sha256: 9897f6abd9f12eed1ce49ff8d96d10c6821261bc172917f140fde5b20f1c3529
-/* Static Site Importer editor control chrome: 5ceba336bb7e */
+sha256: 5d31c65c44c195e1168f7a86217b4d2e42806ad5203fa89ef8cf4163b8bc4c7c
+/* Static Site Importer editor control chrome: a70cdd8fddbb */
 .editor-styles-wrapper .ssi-form-d095fee786e4{flex-direction:column;display:flex;gap:12px;flex-wrap:nowrap}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f{align-items:center;display:inline-flex;gap:8px;flex-grow:0;flex-shrink:1;flex-basis:auto}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624{font-family:revert;line-height:revert;border:1px solid #ccc;padding:10px}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624::placeholder{color:revert;opacity:revert}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00{display:inline-flex}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00 > .wp-block-button__link{font:-webkit-small-control;min-height:0;align-items:center;background:#1d4ed8;border:0;border-radius:999px;color:#fff;font-weight:600;gap:8px;padding:12px 20px}
-.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00 > .wp-block-button__link{font:-webkit-small-control!important;margin-block:0!important}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00 > .wp-block-button__link{margin-block:0!important}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00{--jetpack--contact-form--input-height:auto}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00::placeholder{color:revert;opacity:revert}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4.jetpack-contact-form-container{display:flex;flex-direction:column;gap:12px}
