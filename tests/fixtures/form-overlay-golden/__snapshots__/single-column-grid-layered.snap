@@ -5,10 +5,10 @@
 mapped
 
 === css ===
-sha256: 02216b0b549cdf1973f994bdc1005821231e28134d99ea2e3bebc221e00214e0
-/* Static Site Importer provider layout overlay: 693ec2a8c4e9 */
+sha256: a67955a17c21b91073a6dcbeae2cdd566847965958a6d808ea445d4d47c7f247
+/* Static Site Importer provider layout overlay: e2aefbaddaf4 */
 .ssi-form-6371992b9ea7 .ssi-node-d7b2a8853f46-wrap, .ssi-form-6371992b9ea7 .ssi-node-5de1b79b7b4b-wrap, .ssi-form-6371992b9ea7 .ssi-node-6176762f78e2-wrap{border:0 solid;box-sizing:border-box}
-.ssi-form-6371992b9ea7 > form.jetpack-contact-form__form, .ssi-form-6371992b9ea7:not(:has(> form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *){gap:calc(0.25rem * 5)}
+.ssi-form-6371992b9ea7 > form.jetpack-contact-form__form:not(:has(.wp-block-jetpack-contact-form)), .ssi-form-6371992b9ea7:not(:has(> form.jetpack-contact-form__form)){gap:calc(0.25rem * 5)}
 .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-af2e4f34f4a3{font-family:revert;line-height:revert;border:0 solid;border-color:#3f3f46;border-radius:.375rem;border-width:1px;box-sizing:border-box;color:inherit;font:inherit;height:2.75rem;padding-block:calc(.25rem * 2);padding-inline:calc(.25rem * 3);width:100%}
 .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-ef40e876d532{margin:0;font-weight:inherit;border:0 solid;box-sizing:border-box;font-size:.875rem;line-height:1.25rem;margin-block-end:calc(0.25rem * 2)}
 .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4c5ea71b76e9{font-family:revert;line-height:revert;border:0 solid;border-color:#3f3f46;border-radius:.375rem;border-width:1px;box-sizing:border-box;color:inherit;font:inherit;height:2.75rem;padding-block:calc(.25rem * 2);padding-inline:calc(.25rem * 3);width:100%}
@@ -88,7 +88,7 @@ total: 25
 {"dimension":"presentation","strategy":"provider_source_container_presentation","node_hash":"653133871f9decae48ebd8b2ff4531b5d6e725f446b0b8e91637ae99c2881db4"}
 {"dimension":"presentation","strategy":"provider_source_container_presentation","node_hash":"360d95f624f68a9e09f524d1a1ef7400e975543af0cb215e529a4a276c659019"}
 {"dimension":"presentation","strategy":"provider_source_container_presentation","node_hash":"254c86276cb9e18ad7f68cdb220afa040285f98323af460c6340b8738743ec43"}
-{"dimension":"layout","strategy":"provider_selector_transposition","node_hash":"07397d633f25a7101990a75864ae03d5a3b9ac07c4ed6accbc52cbfd7d7c13b4","target_hash":"a03599d273a11579d4d94f36bcf9710b96edf329ae0f05bb6a8a96aa5c8fc506"}
+{"dimension":"layout","strategy":"provider_selector_transposition","node_hash":"07397d633f25a7101990a75864ae03d5a3b9ac07c4ed6accbc52cbfd7d7c13b4","target_hash":"971574a10d315a2477b921be7575510405f866fcba5e01932fc12e2214bae72d"}
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"2d9cc1a4456d8f19520b575a7aa9b08c2bc42793c0056fd801f964b65996f0e3","target_hash":"c7d4b35f3ea48a5efe236c2b7bbbeae02fbe02de37bdaaec71502295cf7c85a1"}
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"059f1cd6617df808d4d692bc437bfce78d120082d0e33bee8a6229ed75c34bdf","target_hash":"60d1f94a8c893a54a041d3a52e1e275a044bab6889b54b7d8fdaeb4384f387cb"}
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"ec0b63550a82156626679a672552b1dc0ba0187f35491dfffd36d036b53f8b53","target_hash":"061afc6d2ac27974ed12c6b50c3a6608fbaecd35007d12a299b4b361c708e6b7"}

@@ -5,9 +5,9 @@
 mapped
 
 === css ===
-sha256: d896209d492b22c6828f15d35ffa8d3e63ca0c6a1cb86660b17c4c423a5ef22e
-/* Static Site Importer provider layout overlay: 1631a3e866f1 */
-.ssi-form-d095fee786e4 > form.jetpack-contact-form__form, .ssi-form-d095fee786e4:not(:has(> form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *){flex-direction:column;display:flex;gap:12px;flex-wrap:nowrap}
+sha256: b776ebef3fc8dfd784f34c638a53f0680caaf8f073acf606ce7a38dbc87ab235
+/* Static Site Importer provider layout overlay: 69ad5eaabe22 */
+.ssi-form-d095fee786e4 > form.jetpack-contact-form__form:not(:has(.wp-block-jetpack-contact-form)), .ssi-form-d095fee786e4:not(:has(> form.jetpack-contact-form__form)){flex-direction:column;display:flex;gap:12px;flex-wrap:nowrap}
 .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f{align-items:center;display:inline-flex;gap:8px;flex-grow:0;flex-shrink:1;flex-basis:auto}
 .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624{font-family:revert;line-height:revert;border:1px solid #ccc;padding:10px}
 .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00{display:inline-flex}
@@ -54,7 +54,7 @@ sha256: 9897f6abd9f12eed1ce49ff8d96d10c6821261bc172917f140fde5b20f1c3529
 
 === receipt_operations ===
 total: 10
-{"dimension":"layout","strategy":"provider_selector_transposition","node_hash":"07397d633f25a7101990a75864ae03d5a3b9ac07c4ed6accbc52cbfd7d7c13b4","target_hash":"9f7fa36b4ab4789fb0f34d9828f451e6fdd5d87e19de35522f3004c445d1529f"}
+{"dimension":"layout","strategy":"provider_selector_transposition","node_hash":"07397d633f25a7101990a75864ae03d5a3b9ac07c4ed6accbc52cbfd7d7c13b4","target_hash":"3ff0b82e61dc91012b6b4670972a12087168dcf372963e2f7bd3400e59021a6f"}
 {"dimension":"layout","strategy":"provider_selector_transposition","node_hash":"bdfa5365350595d9a5a4ab37bc820730002cda048a89873614714bc6871b08af","target_hash":"ee6d888d54020f6aacc83396075f58804792d0d979f8a2de22c06cb17812611c"}
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"2d9cc1a4456d8f19520b575a7aa9b08c2bc42793c0056fd801f964b65996f0e3","target_hash":"544220f6412eb5090939c5b917565916cdb7dcb5005e2b2761ef9e6a5aa439df"}
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"ec0b63550a82156626679a672552b1dc0ba0187f35491dfffd36d036b53f8b53","target_hash":"b4fc9430b146bc8f56044f607b27f5d67e27e5b8351e1b6833610030b524173d"}

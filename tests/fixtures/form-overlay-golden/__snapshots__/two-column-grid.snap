@@ -5,9 +5,9 @@
 mapped
 
 === css ===
-sha256: d44b52d0a8d9ce8a8d2ac0fe388f905cc1c7ca6be9ad997e4bcde2c732bfbffc
-/* Static Site Importer provider layout overlay: 7ac0079ad8d0 */
-.ssi-form-d095fee786e4 > form.jetpack-contact-form__form, .ssi-form-d095fee786e4:not(:has(> form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *){grid-template-columns:repeat(2,minmax(0,1fr));display:grid}
+sha256: ebda2fb89dba98b2449a7870df0c6dd347544bc48fa384907431b9583b2cc768
+/* Static Site Importer provider layout overlay: d27589671af3 */
+.ssi-form-d095fee786e4 > form.jetpack-contact-form__form:not(:has(.wp-block-jetpack-contact-form)), .ssi-form-d095fee786e4:not(:has(> form.jetpack-contact-form__form)){grid-template-columns:repeat(2,minmax(0,1fr));display:grid}
 .ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5, .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f, .ssi-form-d095fee786e4 .ssi-node-3a3fd4718c31, .ssi-form-d095fee786e4 .ssi-node-97b0fb7d822d{width:100%}
 .ssi-form-d095fee786e4 .ssi-node-765c1a6a1f05-wrap{grid-column:span 2}
 .ssi-form-d095fee786e4 .ssi-node-8066eba2930b{width:100%}
@@ -103,7 +103,7 @@ total: 30
 {"dimension":"layout","strategy":"provider_source_box_transposition","target_hash":"254c86276cb9e18ad7f68cdb220afa040285f98323af460c6340b8738743ec43"}
 {"dimension":"layout","strategy":"provider_source_box_transposition","target_hash":"a3c4dc20d2e60a529b2bfb2b843922d3a334f18c0b61a0f62c37007510135613"}
 {"dimension":"layout","strategy":"provider_source_box_transposition","target_hash":"7c23abd7ccdea165c8baa2f48f88ac5b3ae375cbe3f3edb00a21eeb849621f6d"}
-{"dimension":"layout","strategy":"provider_selector_transposition","node_hash":"07397d633f25a7101990a75864ae03d5a3b9ac07c4ed6accbc52cbfd7d7c13b4","target_hash":"9f7fa36b4ab4789fb0f34d9828f451e6fdd5d87e19de35522f3004c445d1529f"}
+{"dimension":"layout","strategy":"provider_selector_transposition","node_hash":"07397d633f25a7101990a75864ae03d5a3b9ac07c4ed6accbc52cbfd7d7c13b4","target_hash":"3ff0b82e61dc91012b6b4670972a12087168dcf372963e2f7bd3400e59021a6f"}
 {"dimension":"layout","strategy":"provider_selector_transposition","node_hash":"2871e05b455edae0d6440bfe8594a71423732e026f07915e16f66699562b5b9c","target_hash":"6af85f656507ff6522bdf3053936664f3ce9da440de138f5ef54d3f1f8fa4768"}
 {"dimension":"layout","strategy":"provider_selector_transposition","node_hash":"bdfa5365350595d9a5a4ab37bc820730002cda048a89873614714bc6871b08af","target_hash":"ee6d888d54020f6aacc83396075f58804792d0d979f8a2de22c06cb17812611c"}
 {"dimension":"layout","strategy":"provider_selector_transposition","node_hash":"c852c69b0a7133fe68f6052ba47c4433b6bf68464d4b27c426a3d8b79f67db28","target_hash":"4ba8e58d7c6c92665ccbbe19cb4af14d595eb278a54f0230cb84219b70f71d91"}

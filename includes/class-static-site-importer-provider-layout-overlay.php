@@ -829,7 +829,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		// The provider form target is admitted as both of its rendered spellings,
 		// so a compiled rule may carry that two-part selector list.
-		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?:\.jetpack-contact-form-container)?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-source-field-list| (?:input)?\.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link(?: > span)?| > \.grunion-label-required| > label| select)?| \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap \.contact-form__field-hints| \.grunion-field-wrap \.contact-form__field-format| \.ssi-field-row > label| div\.form-button-submit| \.grunion-field-wrap > \.ssi-field-row| \.grunion-field-wrap \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\)(?::not\(form\.jetpack-contact-form__form \*\))?)?';
+		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?:\.jetpack-contact-form-container)?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*(?::not\(:has\(\.wp-block-jetpack-contact-form\)\))?| \.ssi-source-field-list| (?:input)?\.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link(?: > span)?| > \.grunion-label-required| > label| select)?| \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap \.contact-form__field-hints| \.grunion-field-wrap \.contact-form__field-format| \.ssi-field-row > label| div\.form-button-submit| \.grunion-field-wrap > \.ssi-field-row| \.grunion-field-wrap \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\)(?::not\(form\.jetpack-contact-form__form \*\))?)?';
 		if ( ! preg_match( '/^([^{}]+)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
@@ -905,18 +905,22 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		// own position, so it carries the form box's placement inside the page.
 		// A generated node hook resolves to the control, and its provider `-wrap` copy
 		// resolves to that control's field shell.
-		// A provider may render its form element or lay the fields out directly in
-		// its block wrapper. One target therefore carries both spellings, and the
-		// wrapper branch excludes itself whenever that form element is present, as
-		// its child or its ancestor, so the declarations still land on exactly one
-		// element.
+		// The provider form target addresses the flex container that holds the
+		// fields, which is the form element when the scoped block wrapper wraps
+		// it and the block wrapper itself when the provider's form wraps it (or
+		// renders no form at all). One target therefore carries both spellings:
+		// the form branch excludes itself whenever the block wrapper sits inside
+		// it, and the wrapper branch excludes itself whenever the form is its
+		// child, so the declarations land on exactly one element. The native
+		// topology target keeps its wrapper branch excluding itself inside the
+		// form, so that spelling stays admitted too.
 		$parts = explode( ', ', $selector );
 		if ( count( $parts ) > 2 ) {
 			return false;
 		}
 		$element = '[a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*';
 		foreach ( $parts as $part ) {
-			if ( ! preg_match( '/^' . preg_quote( $scope, '/' ) . '(?:\.jetpack-contact-form-container)?(?: > ' . $element . '| \.ssi-source-field-list| (?:input)?\.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label)?|:not\(:has\(> ' . $element . '\)\)(?::not\(form\.jetpack-contact-form__form \*\))?)?$/D', $part ) ) {
+			if ( ! preg_match( '/^' . preg_quote( $scope, '/' ) . '(?:\.jetpack-contact-form-container)?(?: > ' . $element . '(?::not\(:has\(\.wp-block-jetpack-contact-form\)\))?| \.ssi-source-field-list| (?:input)?\.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label)?|:not\(:has\(> ' . $element . '\)\)(?::not\(form\.jetpack-contact-form__form \*\))?)?$/D', $part ) ) {
 				return false;
 			}
 		}

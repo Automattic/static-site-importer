@@ -1340,6 +1340,47 @@ namespace {
 			)
 		)
 	);
+	// #2159: flattening an equal-width row resets every field's and the submit's
+	// source stacking margin, so the provider form must carry that stacking
+	// margin as its row gap. A gap borrowed from the row (or none at all) left
+	// the field groups collapsed against each other. The column gap stays the
+	// one the field tracks were sized against. The gap lands in one rule whose
+	// two selectors address the provider's flex container in both nestings: the
+	// form when the scoped block wraps it, and the scoped block when Jetpack
+	// 16.3's form wraps it (the form then steps aside).
+	$rhythm_plain_html = static fn( string $grid_css ): string => '<style>.space-y-5>:not([hidden])~:not([hidden]){margin-top:1.25rem}' . $grid_css . '@media (min-width:640px){.sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}label{display:block}input,textarea{display:block;width:100%}</style>'
+		. '<form class="space-y-5"><div class="grid sm:grid-cols-2"><div><label for="n">Name</label><input id="n"></div><div><label for="e">Email</label><input id="e" type="email"></div></div>'
+		. '<div><label for="m">Message</label><textarea id="m"></textarea></div><button type="submit">Send</button></form>';
+	// Tailwind's real stacking rule: a reversible calc margin, a utility-classed
+	// `grid grid-cols-1 sm:grid-cols-2 gap-5` row, and `block mb-1.5` labels
+	// without `for`.
+	$rhythm_tailwind_html = '<style>.space-y-5>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(1.25rem * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(1.25rem * var(--tw-space-y-reverse))}'
+		. '.grid{display:grid}.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}.gap-5{gap:1.25rem}.block{display:block}.mb-1\\.5{margin-bottom:.375rem}.w-full{width:100%}'
+		. '@media (min-width:640px){.sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}</style>'
+		. '<form class="space-y-5"><div class="grid grid-cols-1 sm:grid-cols-2 gap-5"><div><label class="block mb-1.5">Name</label><input class="w-full" name="name"></div><div><label class="block mb-1.5">Email</label><input class="w-full" name="email" type="email"></div></div>'
+		. '<div><label class="block mb-1.5">Message</label><textarea class="w-full" name="message"></textarea></div><button type="submit">Send</button></form>';
+	foreach ( array(
+		'issue-fixture'          => array( $rhythm_plain_html( '.grid{display:grid;gap:1.25rem}' ), '1.25rem', '0\.625rem' ),
+		'row-gap-differs'        => array( $rhythm_plain_html( '.grid{display:grid;gap:1rem}' ), '1rem', '0\.5rem' ),
+		'row-without-gap'        => array( $rhythm_plain_html( '.grid{display:grid}' ), '1.5rem', '0\.75rem' ),
+		'tailwind-calc-stacking' => array( $rhythm_tailwind_html, '1.25rem', '0\.625rem' ),
+	) as $rhythm_case => list( $rhythm_html, $rhythm_column_gap, $rhythm_half_gap ) ) {
+		$rhythm_source   = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $rhythm_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+		$rhythm_row      = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $rhythm_source ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+		$rhythm_raw_css  = (string) ( $rhythm_row['provider_layout_overlay_css']['css'] ?? '' );
+		$rhythm_css      = $expand_selector_lists( $rhythm_raw_css );
+		$rhythm_gap_body = '\{(?:gap:[^;}]+;)?row-gap:1\.25rem;column-gap:' . preg_quote( $rhythm_column_gap, '/' ) . '\}';
+		$assert(
+			'mapped' === ( $rhythm_row['status'] ?? '' )
+				&& in_array( 'provider_equal_width_fields', array_column( $rhythm_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true )
+				&& 1 === preg_match( '/^(\.ssi-form-[a-f0-9]{12}) > form\.jetpack-contact-form__form:not\(:has\(\.wp-block-jetpack-contact-form\)\), \1:not\(:has\(> form\.jetpack-contact-form__form\)\)' . $rhythm_gap_body . '$/m', $rhythm_raw_css )
+				&& 1 === preg_match( '/^\.ssi-form-[a-f0-9]{12}:not\(:has\(> form\.jetpack-contact-form__form\)\)' . $rhythm_gap_body . '$/m', $rhythm_css )
+				&& 2 === preg_match_all( '/\.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - ' . $rhythm_half_gap . '\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - ' . $rhythm_half_gap . '\);margin-block-start:0!important\}/', $rhythm_css )
+				&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $rhythm_row['provider_layout_overlay_css'] ?? null ),
+			'flattened-row-stacking-reset-carries-source-rhythm-as-form-row-gap-' . $rhythm_case,
+			$rhythm_css
+		);
+	}
 	// A `grid gap-2` field wrapper's gap reaches the control as a transposed
 	// `margin-block-start` whose provenance is the wrapper's own class rule. The
 	// runtime rebuilds that wrapper with its source classes, which already space
@@ -1939,7 +1980,7 @@ namespace {
 	$column_stack_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $column_stack_validated['forms'] ?? array() ) )['forms'][0] ?? array();
 	$column_stack_markup    = (string) ( $column_stack_row['block_markup'] ?? '' );
 	$column_stack_css       = (string) ( $column_stack_row['provider_layout_overlay_css']['css'] ?? '' );
-	$column_stack_form_rule = 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} > form\.jetpack-contact-form__form, \.ssi-form-[a-f0-9]{12}:not\(:has\(> form\.jetpack-contact-form__form\)\):not\(form\.jetpack-contact-form__form \*\)\{([^}]+)\}/', $column_stack_css, $column_stack_form ) ? $column_stack_form[1] : '';
+	$column_stack_form_rule = 1 === preg_match( '/\.ssi-form-[a-f0-9]{12} > form\.jetpack-contact-form__form:not\(:has\(\.wp-block-jetpack-contact-form\)\), \.ssi-form-[a-f0-9]{12}:not\(:has\(> form\.jetpack-contact-form__form\)\)\{([^}]+)\}/', $column_stack_css, $column_stack_form ) ? $column_stack_form[1] : '';
 	$assert(
 		empty( $column_stack_validated['errors'] )
 			&& 'mapped' === ( $column_stack_row['status'] ?? '' )
@@ -4897,9 +4938,9 @@ namespace {
 	$kmr_map = array_column( $kmr[2]['provider_layout_target_map']['targets'] ?? array(), 'selector', 'node' );
 	$kmr_scope = (string) ( $kmr[2]['provider_layout_target_map']['scope'] ?? '' );
 	$assert( $kmr_scope === ( $kmr_map['form-box'] ?? '' ) && str_contains( $kmr_css, $kmr_scope . '{align-self:start;grid-area:4 / 1 / 5 / 2' ) === false && str_contains( $kmr_css, $kmr_scope . '{align-self:start;grid-area:1 / 1 / 2 / 2;justify-self:start}' ), 'source-form-box-placement-lands-on-the-provider-block-wrapper', $kmr_css );
-	preg_match( '/:not\(:has\(> form\.jetpack-contact-form__form\)\):not\(form\.jetpack-contact-form__form \*\)\{([^}]*grid-template-columns:100%[^}]*)\}/', $kmr_css, $kmr_grid_rule );
+	preg_match( '/:not\(:has\(> form\.jetpack-contact-form__form\)\)\{([^}]*grid-template-columns:100%[^}]*)\}/', $kmr_css, $kmr_grid_rule );
 	$kmr_grid_declarations = array_column( \Automattic\BlocksEngine\PhpTransformer\Css\CssRuleAnalyzer::declarations( $kmr_grid_rule[1] ?? '', array( 'display', 'grid-template-columns', 'gap' ) ), 'value', 'name' );
-	$assert( str_contains( $kmr_css, ' > form.jetpack-contact-form__form, ' ) && '100%' === ( $kmr_grid_declarations['grid-template-columns'] ?? '' ) && 'grid' === ( $kmr_grid_declarations['display'] ?? '' ) && '0' === ( $kmr_grid_declarations['gap'] ?? '' ), 'all-controls-source-box-establishes-the-provider-form-container', $kmr_css );
+	$assert( str_contains( $kmr_css, ' > form.jetpack-contact-form__form:not(:has(.wp-block-jetpack-contact-form)), ' ) && '100%' === ( $kmr_grid_declarations['grid-template-columns'] ?? '' ) && 'grid' === ( $kmr_grid_declarations['display'] ?? '' ) && '0' === ( $kmr_grid_declarations['gap'] ?? '' ), 'all-controls-source-box-establishes-the-provider-form-container', $kmr_css );
 	$assert( 1 === preg_match( '/\.ssi-node-[a-f0-9]{12}-wrap\{[^}]*grid-area:4 \/ 1 \/ 5 \/ 2[^}]*width:156px(?:;[^}]*)?\}/', $kmr_css ), 'single-field-source-box-keeps-its-own-grid-placement', $kmr_css );
 	$assert( str_contains( $kmr_css, 'display:var(--display)' ) && str_contains( $kmr_css, 'justify-content:var(--label-align)' ), 'source-owned-custom-properties-survive-transposition', $kmr_css );
 	$mixed_row_graph = array(

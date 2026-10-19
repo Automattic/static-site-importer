@@ -41,17 +41,24 @@ test( 'provider form target lands on exactly one box when Jetpack nests the scop
 		const page = await browser.newPage();
 		const scope = 'ssi-form-123456789abc';
 		const markup = {
-			// Jetpack writes the block class on the container and on the block wrapper inside its form.
+			// Jetpack 16.3 writes the block class on the container and on the block
+			// wrapper inside its plain block form; that wrapper is the flex container.
 			nested: `<div class="jetpack-contact-form-container ${ scope }"><form class="jetpack-contact-form__form"><div class="wp-block-jetpack-contact-form ${ scope }">fields</div></form></div>`,
+			// Older output renders the form inside the scoped block wrapper; the form holds the fields.
+			wrapped: `<div class="wp-block-jetpack-contact-form ${ scope }"><form class="jetpack-contact-form__form">fields</form></div>`,
 			// A later form on the page is laid out directly in the block wrapper.
 			formless: `<div class="wp-block-jetpack-contact-form ${ scope }">fields</div>`,
 		};
 		const padded = {};
 		for ( const [ name, html ] of Object.entries( markup ) ) {
 			await page.setContent( `<style>${ selector }{padding:32px}</style>${ html }` );
-			padded[ name ] = await page.locator( 'div,form' ).evaluateAll( ( nodes ) => nodes.filter( ( node ) => '32px' === getComputedStyle( node ).paddingTop ).map( ( node ) => node.tagName.toLowerCase() ) );
+			padded[ name ] = await page.locator( 'div,form' ).evaluateAll( ( nodes ) => nodes.filter( ( node ) => '32px' === getComputedStyle( node ).paddingTop ).map( ( node ) => `${ node.tagName.toLowerCase() }.${ node.classList[0] }` ) );
 		}
-		assert.deepEqual( padded, { nested: [ 'form' ], formless: [ 'div' ] } );
+		assert.deepEqual( padded, {
+			nested: [ 'div.wp-block-jetpack-contact-form' ],
+			wrapped: [ 'form.jetpack-contact-form__form' ],
+			formless: [ 'div.wp-block-jetpack-contact-form' ],
+		}, selector );
 	} finally {
 		await browser.close();
 	}
@@ -419,6 +426,133 @@ test( 'editor canvas phone, dropdown and rows-sized textarea controls take the f
 		const frontendRow = await box( '.frontend .grunion-field-textarea-wrap' );
 		const editorRow = await box( '.editor-styles-wrapper [data-field="textarea"]' );
 		assert.ok( Math.abs( frontendRow.height - editorRow.height ) <= 1, `textarea field row ${ JSON.stringify( { frontendRow, editorRow } ) }` );
+	} finally {
+		await browser.close();
+	}
+} );
+
+test( 'flattened equal-width row keeps the source stacking rhythm between field groups (#2159)', async () => {
+	requireBrowserPrerequisites();
+	const browser = await chromium.launch();
+	try {
+		const page = await browser.newPage();
+		// The issue's reduced fixture, then the same form whose row gap differs
+		// from its stacking margin, so a form gap borrowed from the row is caught.
+		for ( const rowGap of [ '1.25rem', '1rem' ] ) {
+			const raw = execFileSync( 'php', [ 'tests/fixtures/form-stacking-rhythm-fixture.php', rowGap ], { cwd: process.cwd(), encoding: 'utf8', env: process.env } );
+			const seeded = JSON.parse( raw );
+			assert.equal( seeded.status, 'mapped', raw );
+			assert.ok( seeded.strategies.includes( 'provider_equal_width_fields' ), raw );
+			assert.equal( seeded.fields.length, 3, raw );
+			const tag = { text: 'input', email: 'input', textarea: 'textarea' };
+			const fields = seeded.fields.map( ( field ) => `<div class="grunion-field-wrap grunion-field-${ field.type }-wrap ${ field.classes }" data-field="${ field.label }"><label class="grunion-field-label ${ field.labelClasses }">${ field.label }</label><${ tag[ field.type ] } class="grunion-field"></${ tag[ field.type ] }></div>` ).join( '' );
+			await page.setContent( `<!doctype html><style>
+				body{margin:0}
+				.page{width:min(600px,calc(100vw - 24px));margin:12px}
+				input,textarea{box-sizing:border-box;font-size:16px;margin:0}
+				textarea{height:80px}
+				button{font-size:16px;margin:0}
+				/* Jetpack's front-end form: a wrapping flex row with no block gap. */
+				.jetpack-contact-form__form{display:flex;flex-direction:row;flex-wrap:wrap;align-items:flex-start}
+				.jetpack-contact-form__form>*{box-sizing:border-box;flex:0 0 100%}
+				.wp-block-button{display:block;width:100%}
+				${ seeded.sourceCss }
+				${ seeded.css }
+			</style><div class="page"><div class="source">${ seeded.sourceHtml }</div><div class="wp-block-jetpack-contact-form ${ seeded.className }"><form class="jetpack-contact-form__form">${ fields }${ seeded.runtimeHtml }</form></div></div>` );
+			for ( const width of [ 390, 1440 ] ) {
+				await page.setViewportSize( { width, height: 900 } );
+				const measure = await page.evaluate( () => {
+					const box = ( node ) => node.getBoundingClientRect();
+					const groupGaps = ( groups ) => groups.slice( 1 ).map( ( group, index ) => Math.min( ...group.map( ( node ) => box( node ).top ) ) - Math.max( ...groups[ index ].map( ( node ) => box( node ).bottom ) ) );
+					const field = ( label ) => document.querySelector( `.wp-block-jetpack-contact-form [data-field="${ label }"]` );
+					const source = [ ...document.querySelector( '.source form' ).children ].map( ( node ) => [ node ] );
+					const provider = [ [ field( 'Name' ), field( 'Email' ) ], [ field( 'Message' ) ], [ document.querySelector( '.wp-block-jetpack-contact-form .wp-block-button' ) ] ];
+					const row = [ ...document.querySelector( '.source .grid' ).children ];
+					return {
+						source: groupGaps( source ),
+						provider: groupGaps( provider ),
+						rowGap: getComputedStyle( document.querySelector( '.jetpack-contact-form__form' ) ).rowGap,
+						sourceColumnGap: box( row[1] ).left - box( row[0] ).right,
+						providerColumnGap: box( field( 'Email' ) ).left - box( field( 'Name' ) ).right,
+						twoUp: box( field( 'Email' ) ).top === box( field( 'Name' ) ).top,
+					};
+				} );
+				const detail = `row gap ${ rowGap } at ${ width }: ${ JSON.stringify( measure ) }`;
+				assert.equal( measure.rowGap, '20px', detail );
+				assert.deepEqual( measure.source, [ 20, 20 ], detail );
+				assert.equal( measure.provider.length, 2, detail );
+				for ( const gap of measure.provider ) {
+					assert.ok( Math.abs( gap - 20 ) <= 0.5, detail );
+				}
+				if ( width >= 640 ) {
+					assert.ok( measure.twoUp, detail );
+					assert.ok( Math.abs( measure.providerColumnGap - measure.sourceColumnGap ) <= 0.5, `flattened row column gap: ${ detail }` );
+				}
+			}
+		}
+	} finally {
+		await browser.close();
+	}
+} );
+
+test( 'form gap reaches the flex container when Jetpack 16.3 wraps the scoped block in its form (#2159)', async () => {
+	requireBrowserPrerequisites();
+	const browser = await chromium.launch();
+	try {
+		const page = await browser.newPage();
+		// The issue's plain fixture and Tailwind's real reversible-calc stacking shape.
+		for ( const shape of [ 'plain', 'tailwind' ] ) {
+			const raw = execFileSync( 'php', [ 'tests/fixtures/form-stacking-rhythm-fixture.php', '1.25rem', shape ], { cwd: process.cwd(), encoding: 'utf8', env: process.env } );
+			const seeded = JSON.parse( raw );
+			assert.equal( seeded.status, 'mapped', raw );
+			assert.ok( seeded.strategies.includes( 'provider_equal_width_fields' ), raw );
+			assert.equal( seeded.fields.length, 3, raw );
+			const scope = seeded.className.split( /\s+/ ).find( ( token ) => /^ssi-form-[a-f0-9]{12}$/.test( token ) );
+			assert.ok( scope, raw );
+			const tag = { text: 'input', email: 'input', textarea: 'textarea' };
+			const fields = seeded.fields.map( ( field ) => `<div class="grunion-field-wrap grunion-field-${ field.type }-wrap ${ field.classes }" data-field="${ field.label }"><label class="grunion-field-label ${ field.labelClasses }">${ field.label }</label><${ tag[ field.type ] } class="grunion-field"></${ tag[ field.type ] }></div>` ).join( '' );
+			// Jetpack 16.3.1 front end: the container carries the scope, its form is
+			// a plain block box, and the scoped block wrapper inside the form is the
+			// flex container that holds the fields.
+			await page.setContent( `<!doctype html><style>
+				body{margin:0}
+				.page{width:min(600px,calc(100vw - 24px));margin:12px}
+				input,textarea{box-sizing:border-box;font-size:16px;margin:0}
+				textarea{height:80px}
+				button{font-size:16px;margin:0}
+				.jetpack-contact-form__form{display:block}
+				body .is-layout-flex{display:flex}
+				.is-layout-flex{flex-wrap:wrap;align-items:flex-start}
+				.wp-block-jetpack-contact-form>*{box-sizing:border-box;flex:0 0 100%}
+				.wp-block-button{display:block;width:100%}
+				${ seeded.sourceCss }
+				${ seeded.css }
+			</style><div class="page"><div class="source">${ seeded.sourceHtml }</div><div class="jetpack-contact-form-container ${ scope }"><form class="contact-form commentsblock jetpack-contact-form__form has-no-jetpack-form-layout"><input type="hidden" name="jetpack_contact_form_jwt" value=""><div class="wp-block-jetpack-contact-form ${ seeded.className } is-layout-flex">${ fields }${ seeded.runtimeHtml }</div></form></div></div>` );
+			for ( const width of [ 390, 1440 ] ) {
+				await page.setViewportSize( { width, height: 900 } );
+				const measure = await page.evaluate( () => {
+					const box = ( node ) => node.getBoundingClientRect();
+					const groupGaps = ( groups ) => groups.slice( 1 ).map( ( group, index ) => Math.min( ...group.map( ( node ) => box( node ).top ) ) - Math.max( ...groups[ index ].map( ( node ) => box( node ).bottom ) ) );
+					const container = document.querySelector( '.jetpack-contact-form__form > .wp-block-jetpack-contact-form' );
+					const field = ( label ) => container.querySelector( `[data-field="${ label }"]` );
+					return {
+						rowGap: getComputedStyle( container ).rowGap,
+						formRowGap: getComputedStyle( document.querySelector( '.jetpack-contact-form__form' ) ).rowGap,
+						provider: groupGaps( [ [ field( 'Name' ), field( 'Email' ) ], [ field( 'Message' ) ], [ container.querySelector( '.wp-block-button' ) ] ] ),
+						twoUp: box( field( 'Email' ) ).top === box( field( 'Name' ) ).top,
+					};
+				} );
+				const detail = `${ shape } at ${ width }: ${ JSON.stringify( measure ) }\n${ seeded.css }`;
+				assert.equal( measure.rowGap, '20px', detail );
+				// The block form box is not a layout container; nothing lands on it twice.
+				assert.equal( measure.formRowGap, 'normal', detail );
+				assert.equal( measure.provider.length, 2, detail );
+				for ( const gap of measure.provider ) {
+					assert.ok( Math.abs( gap - 20 ) <= 0.5, detail );
+				}
+				assert.equal( measure.twoUp, width >= 640, detail );
+			}
+		}
 	} finally {
 		await browser.close();
 	}
