@@ -2,9 +2,10 @@
 /**
  * Emit a flattened equal-width row inside a sibling-stacked form (#2159).
  *
- * Usage: php tests/fixtures/form-stacking-rhythm-fixture.php [row-gap]
- * The optional argument replaces the source row's own gap so the stacking
- * margin and the row gap can disagree.
+ * Usage: php tests/fixtures/form-stacking-rhythm-fixture.php [row-gap] [tailwind]
+ * The optional row-gap replaces the source row's own gap so the stacking
+ * margin and the row gap can disagree. `tailwind` emits Tailwind's real
+ * reversible-calc stacking rule with utility-classed rows and labels.
  *
  * @package StaticSiteImporter
  */
@@ -20,16 +21,32 @@ namespace {
 		exit( 1 );
 	}
 	require_once $transformer;
-	$row_gap    = isset( $argv[1] ) && 1 === preg_match( '/^[0-9.]+rem$/D', $argv[1] ) ? $argv[1] : '1.25rem';
-	$source_css = '.space-y-5>:not([hidden])~:not([hidden]){margin-top:1.25rem}'
-		. '.grid{display:grid;gap:' . $row_gap . '}'
-		. '@media (min-width:640px){.sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}'
-		. 'label{display:block}input,textarea{display:block;width:100%}';
-	$form_html  = '<form class="space-y-5">'
-		. '<div class="grid sm:grid-cols-2"><div><label for="n">Name</label><input id="n"></div><div><label for="e">Email</label><input id="e" type="email"></div></div>'
-		. '<div><label for="m">Message</label><textarea id="m"></textarea></div>'
-		. '<button type="submit">Send</button>'
-		. '</form>';
+	$row_gap   = isset( $argv[1] ) && 1 === preg_match( '/^[0-9.]+rem$/D', $argv[1] ) ? $argv[1] : '1.25rem';
+	$tailwind  = 'tailwind' === ( $argv[2] ?? '' );
+	if ( $tailwind ) {
+		// Tailwind's real stacking rule shape: a reversible calc margin, a
+		// `grid-cols-1 sm:grid-cols-2 gap-5` row, and `block mb-1.5` labels that
+		// are not associated through `for`.
+		$source_css = '.space-y-5>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(1.25rem * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(1.25rem * var(--tw-space-y-reverse))}'
+			. '.grid{display:grid}.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}.gap-5{gap:' . $row_gap . '}'
+			. '.block{display:block}.mb-1\\.5{margin-bottom:.375rem}.w-full{width:100%}'
+			. '@media (min-width:640px){.sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}';
+		$form_html  = '<form class="space-y-5">'
+			. '<div class="grid grid-cols-1 sm:grid-cols-2 gap-5"><div><label class="block mb-1.5">Name</label><input class="w-full" name="name"></div><div><label class="block mb-1.5">Email</label><input class="w-full" name="email" type="email"></div></div>'
+			. '<div><label class="block mb-1.5">Message</label><textarea class="w-full" name="message"></textarea></div>'
+			. '<button type="submit">Send</button>'
+			. '</form>';
+	} else {
+		$source_css = '.space-y-5>:not([hidden])~:not([hidden]){margin-top:1.25rem}'
+			. '.grid{display:grid;gap:' . $row_gap . '}'
+			. '@media (min-width:640px){.sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}'
+			. 'label{display:block}input,textarea{display:block;width:100%}';
+		$form_html  = '<form class="space-y-5">'
+			. '<div class="grid sm:grid-cols-2"><div><label for="n">Name</label><input id="n"></div><div><label for="e">Email</label><input id="e" type="email"></div></div>'
+			. '<div><label for="m">Message</label><textarea id="m"></textarea></div>'
+			. '<button type="submit">Send</button>'
+			. '</form>';
+	}
 	$html       = '<style>' . $source_css . '</style>' . $form_html;
 	$compiled   = ( new Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $html ) ) )->toArray();
 	$validated  = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $compiled['fallbacks'][0] ?? array() ) ) );

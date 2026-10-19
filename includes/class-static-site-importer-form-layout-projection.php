@@ -1962,10 +1962,16 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		return 1 === count( $values ) ? (string) array_key_first( $values ) : null;
 	}
 
-	/** A plain length from a resolved stacking margin, including the reversible `calc(L * calc(1 - var(--x)))` form. */
+	/**
+	 * A plain length from a resolved stacking margin.
+	 *
+	 * Includes Tailwind's reversible `calc(L * calc(1 - var(--tw-space-y-reverse)))`
+	 * form, both unresolved and with the reverse flag already resolved to `0`
+	 * (the shape the capture reports for `--tw-space-y-reverse:0`).
+	 */
 	private static function stacking_margin_length( string $margin ): ?string {
 		$margin = trim( $margin );
-		if ( 1 === preg_match( '/^calc\(\s*((?:0|[0-9]*\.?[0-9]+)(?:px|rem|em))\s*\*\s*calc\(\s*1\s*-\s*var\(--[a-zA-Z][a-zA-Z0-9_-]{0,79}\)\s*\)\s*\)$/D', $margin, $match ) ) {
+		if ( 1 === preg_match( '/^calc\(\s*((?:0|[0-9]*\.?[0-9]+)(?:px|rem|em))\s*\*\s*calc\(\s*1\s*-\s*(?:var\(--[a-zA-Z][a-zA-Z0-9_-]{0,79}\)|0(?:\.0+)?)\s*\)\s*\)$/D', $margin, $match ) ) {
 			return $match[1];
 		}
 		return self::resolved_gap_length( $margin );
@@ -4897,13 +4903,20 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$part         = 'field_list';
 				$capabilities = array( 'container_layout', 'responsive_layout' );
 			} elseif ( 'form' === $id ) {
-				// Jetpack renders its own form element for a page's first contact form
-				// and lays later ones out directly in the block wrapper. Address both,
-				// so the source container layout reaches the element that actually
-				// positions the fields instead of leaving the runtime default in place.
+				// The source container layout (display, tracks, gap and row gap) must
+				// reach the provider's flex container: the element whose children are
+				// the fields. Jetpack nests it two ways. Older output puts its form
+				// inside the scoped block wrapper, so the form is the container. Jetpack
+				// 16.3 puts the scoped block wrapper inside a plain block form (under a
+				// container that also carries the scope), so the wrapper is the
+				// container; a later form on a page has no form element at all. The
+				// form branch therefore steps aside whenever the block wrapper sits
+				// inside it, and the wrapper branch only steps aside when the form is
+				// its child, so one rule lands on exactly one element in every nesting
+				// (#2105, #2159).
 				$selector = ! empty( $form['provider_native_topology'] )
 					? $selector_scope . '.ssi-native-form-topology form.jetpack-contact-form__form, ' . $selector_scope . '.ssi-native-form-topology.wp-block-jetpack-contact-form:not(:has(form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *)'
-					: $selector_scope . ' > form.jetpack-contact-form__form, ' . $selector_scope . ':not(:has(> form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *)';
+					: $selector_scope . ' > form.jetpack-contact-form__form:not(:has(.wp-block-jetpack-contact-form)), ' . $selector_scope . ':not(:has(> form.jetpack-contact-form__form))';
 				$part     = ! empty( $form['provider_native_topology'] ) ? 'native_form' : 'form';
 				// Jetpack's contact-form root includes hidden and error nodes, so it cannot
 				// promise source direct-child relationships. Generated node hooks can.
