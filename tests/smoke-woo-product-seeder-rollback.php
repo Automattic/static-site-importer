@@ -97,6 +97,13 @@ class WC_Product_Simple {
 function wc_get_product( int $id ): WC_Product_Simple {
 	return new WC_Product_Simple( $id ); }
 
+function get_option( string $name, mixed $default = false ): mixed {
+	return $default; }
+function add_option(): bool {
+	return true; }
+function delete_option(): bool {
+	return true; }
+
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 $assert  = static function ( bool $condition, string $label ): void {
 	if ( ! $condition ) {

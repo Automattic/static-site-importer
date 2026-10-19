@@ -17,6 +17,9 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	/** Post meta key that identifies the manifest source image an attachment materializes, for dedup. */
 	private const SOURCE_IMAGE_META_KEY = '_static_site_importer_source_image';
 
+	/** WooCommerce's store visibility option ("coming soon" mode). */
+	private const COMING_SOON_OPTION = 'woocommerce_coming_soon';
+
 	/**
 	 * Return the WooCommerce simple-product adapter definition.
 	 *
@@ -235,8 +238,45 @@ class Static_Site_Importer_Woo_Product_Seeder {
 				++$report['counts']['error'];
 			}
 		}
+		if ( $report['counts']['created'] + $report['counts']['updated'] > 0 ) {
+			$report['store_visibility'] = self::publish_fresh_store();
+		}
 
 		return $report;
+	}
+
+	/**
+	 * Decide store visibility for a WooCommerce install that has not been configured yet.
+	 *
+	 * A fresh WooCommerce install defers its launch default to the first admin
+	 * request (`woocommerce_newly_installed`), which adds
+	 * `woocommerce_coming_soon=yes` and hides every store route behind a
+	 * placeholder. Seeded products are part of an imported public site, so while
+	 * that default is still pending the store is published with the rest of the
+	 * import. add_option() never overrides a value the site owner already chose,
+	 * and WooCommerce's own deferred add_option() then keeps this decision.
+	 *
+	 * @return array{status:string,coming_soon:string}
+	 */
+	private static function publish_fresh_store(): array {
+		$current = get_option( self::COMING_SOON_OPTION, null );
+		if ( null !== $current ) {
+			return array(
+				'status'      => 'kept',
+				'coming_soon' => (string) $current,
+			);
+		}
+		if ( 'yes' !== get_option( 'woocommerce_newly_installed', null ) ) {
+			return array(
+				'status'      => 'kept',
+				'coming_soon' => 'unset',
+			);
+		}
+		add_option( self::COMING_SOON_OPTION, 'no' );
+		return array(
+			'status'      => 'published',
+			'coming_soon' => 'no',
+		);
 	}
 
 	/** Restore existing product post/meta/category state or delete products created by this receipt. */
@@ -252,6 +292,9 @@ class Static_Site_Importer_Woo_Product_Seeder {
 					'product_id' => $id,
 					'failures'   => $result['failures'],
 				); }
+		}
+		if ( 'published' === ( $report['store_visibility']['status'] ?? '' ) ) {
+			delete_option( self::COMING_SOON_OPTION );
 		}
 		$term_failures       = self::cleanup_terms( $report['rollback']['created_terms'] ?? array() );
 		$attachment_failures = self::cleanup_attachments( $report['rollback']['created_attachments'] ?? array() );
