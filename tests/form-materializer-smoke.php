@@ -3243,6 +3243,37 @@ namespace {
 		'wrapping-label-field-box-margin-is-released-on-the-provider-caption',
 		$wrapping_label_css
 	);
+	// A producer resolves a `grid gap-2` row's gap onto its sibling label as a
+	// margin whose provenance is the row's own class rule. The front-end runtime
+	// rebuilds that row with its source classes, so the stylesheet gap already
+	// spaces the label there; the margin is released on the front end only. The
+	// editor has no rebuilt row and keeps it. A label margin authored on the
+	// label itself is not the row's, so it is never released.
+	$row_gap_label = static function ( string $css ) use ( $artifact_compiler ): array {
+		$html      = '<style>' . $css . '</style><form method="post" action="/x"><div class="grid gap-2"><label for="n">Name</label><input id="n" name="name" type="text"></div><div class="grid gap-2"><label for="e">Email</label><input id="e" name="email" type="email"></div><button type="submit">Send</button></form>';
+		$compiled  = ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'index.html', 'files' => array( 'index.html' => $html ) ) )->toArray();
+		$validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $compiled['fallbacks'][0] ?? array() ) ) );
+		$row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated['forms'] ?? array() ) )['forms'][0] ?? array();
+		return array( $validated['errors'] ?? array(), (string) ( $row['status'] ?? '' ), (string) ( $row['provider_layout_overlay_css']['css'] ?? '' ), (string) ( $row['provider_layout_overlay_css']['editor_css'] ?? '' ) );
+	};
+	list( $row_gap_errors, $row_gap_status, $row_gap_css, $row_gap_editor_css ) = $row_gap_label( '.grid{display:grid}.gap-2{gap:.5rem}' );
+	$assert(
+		empty( $row_gap_errors )
+			&& 'mapped' === $row_gap_status
+			&& 2 === preg_match_all( '/\.(ssi-form-[a-f0-9]{12})\.\1 \.ssi-field-row > \.ssi-node-[a-f0-9]{12}\{margin-block-end:0!important\}/', $row_gap_css )
+			&& 2 === preg_match_all( '/\.ssi-node-[a-f0-9]{12}\{[^}]*margin-block-end:0?\.5rem/', $row_gap_editor_css )
+			&& ! str_contains( $row_gap_editor_css, 'margin-block-end:0!important' ),
+		'row-gap-carried-label-margin-is-released-on-the-front-end-and-kept-in-the-editor',
+		wp_json_encode( array( 'css' => $row_gap_css, 'editor_css' => $row_gap_editor_css ) )
+	);
+	list( $own_margin_errors, $own_margin_status, $own_margin_css ) = $row_gap_label( '.grid{display:grid}.gap-2{gap:.5rem}label{margin-bottom:3px}' );
+	$assert(
+		empty( $own_margin_errors )
+			&& 'mapped' === $own_margin_status
+			&& 0 === preg_match( '/\{margin-(?:block-end|bottom):0!important\}/', $own_margin_css ),
+		'label-margin-authored-on-the-label-is-not-released-as-a-row-gap',
+		$own_margin_css
+	);
 	// Below 480px Jetpack's `flex-basis: 100%` on every button wrapper would
 	// stretch a content-sized source submit across the form. The provider basis
 	// is released with a reset weaker than the captured submit rule, so an

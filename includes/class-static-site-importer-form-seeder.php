@@ -363,7 +363,7 @@ class Static_Site_Importer_Form_Seeder {
 				continue;
 			}
 			$choice_box                                 = null !== Static_Site_Importer_Form_Layout_Projection::source_choice_label( $form, $control_index );
-			$presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $scope, $control_index, $type, $presentation_roles[ $control_index ] ?? array(), isset( $control['label_classes'] ) || isset( $control['label_marker'] ), $choice_box, Static_Site_Importer_Form_Layout_Projection::source_label_wraps_control( $form, $control_index ) );
+			$presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $scope, $control_index, $type, $presentation_roles[ $control_index ] ?? array(), isset( $control['label_classes'] ) || isset( $control['label_marker'] ), $choice_box, Static_Site_Importer_Form_Layout_Projection::source_label_wraps_control( $form, $control_index ), Static_Site_Importer_Form_Layout_Projection::source_label_row_carried_margins( $form, $control_index ) );
 			if ( isset( $suppressed_controls[ $control_index ] ) ) {
 				continue;
 			}
