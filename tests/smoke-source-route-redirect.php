@@ -15,15 +15,18 @@ function get_permalink( int $id ): string {
 	return $GLOBALS['ssi_redirect_permalinks'][ $id ] ?? '';
 }
 function get_posts( array $args ): array {
-	$value = (string) ( $args['meta_value'] ?? '' );
-	$key   = (string) ( $args['meta_key'] ?? '' );
-	$ids   = array();
+	$wanted = array_map( 'strval', (array) ( $args['meta_value'] ?? '' ) );
+	$key    = (string) ( $args['meta_key'] ?? '' );
+	$ids    = array();
 	foreach ( $GLOBALS['ssi_redirect_meta'] as $id => $meta ) {
 		if ( 'publish' !== ( $GLOBALS['ssi_redirect_statuses'][ $id ] ?? 'publish' ) ) {
 			continue;
 		}
+		if ( 'any' !== ( $args['post_type'] ?? 'any' ) && $args['post_type'] !== get_post_type( $id ) ) {
+			continue;
+		}
 		$values = $meta['values'] ?? array( $meta['value'] ?? '' );
-		if ( $key === ( $meta['key'] ?? '' ) && in_array( $value, $values, true ) ) {
+		if ( $key === ( $meta['key'] ?? '' ) && array() !== array_intersect( $wanted, $values ) ) {
 			$ids[] = $id;
 		}
 	}
@@ -48,6 +51,9 @@ function get_post_meta( int $id, string $key, bool $single = false ) {
 }
 function get_option( string $name ) {
 	return 'permalink_structure' === $name ? '/%postname%/' : null;
+}
+function get_page_uri( int $id ): string {
+	return $GLOBALS['ssi_redirect_page_uris'][ $id ] ?? '';
 }
 function user_trailingslashit( string $path ): string {
 	return rtrim( $path, '/' ) . '/';
@@ -204,6 +210,31 @@ $assert( $vars === Static_Site_Importer_Source_Route_Redirect::resolve_request( 
 unset( $GLOBALS['ssi_redirect_meta'][26] );
 $GLOBALS['wp']->request = 'tag/native/page/1';
 $assert( $vars === Static_Site_Importer_Source_Route_Redirect::resolve_request( $vars ), 'Unrelated native archive and pagination paths remain native.' );
+
+// A flat source document materialized as a page at its own slug keeps that
+// URL when a plugin registers a post-type archive at the same path.
+$GLOBALS['ssi_redirect_meta'][30]      = array(
+	'key'   => Static_Site_Importer_Source_Route_Redirect::META_KEY,
+	'value' => 'shop.html',
+);
+$GLOBALS['ssi_redirect_page_uris'][30] = 'shop';
+$_SERVER['REQUEST_METHOD']             = 'GET';
+$GLOBALS['wp']->request                = 'shop';
+$archive                               = array( 'post_type' => 'product' );
+$assert( array( 'pagename' => 'shop' ) === Static_Site_Importer_Source_Route_Redirect::resolve_request( $archive ), 'An imported flat-document page keeps its URL over a post-type archive at the same path, queried as core queries a page.' );
+$GLOBALS['wp']->request = 'shop/page/2';
+$paged                  = array(
+	'post_type' => 'product',
+	'paged'     => 2,
+);
+$assert( $paged === Static_Site_Importer_Source_Route_Redirect::resolve_request( $paged ), 'Archive pagination below the page path stays native.' );
+$GLOBALS['wp']->request                = 'shop';
+$GLOBALS['ssi_redirect_page_uris'][30] = 'store';
+$assert( $archive === Static_Site_Importer_Source_Route_Redirect::resolve_request( $archive ), 'A page moved away from its source slug does not claim the old path.' );
+$GLOBALS['ssi_redirect_page_uris'][30] = 'shop';
+$GLOBALS['ssi_redirect_types'][30]     = 'post';
+$assert( $archive === Static_Site_Importer_Source_Route_Redirect::resolve_request( $archive ), 'Only imported pages claim a flat-document path.' );
+unset( $GLOBALS['ssi_redirect_meta'][30], $GLOBALS['ssi_redirect_types'][30] );
 unset( $GLOBALS['wp'], $_SERVER['REQUEST_METHOD'] );
 
 $assert( ! method_exists( Static_Site_Importer_Source_Route_Redirect::class, 'prepare_overlay' ), 'Source-route redirects must not materialize a theme overlay.' );
