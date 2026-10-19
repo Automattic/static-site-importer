@@ -234,15 +234,19 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		if ( ! is_string( $projected ) ) {
 			return $html;
 		}
-		// Card chrome belongs on the page item once, not also on the field list
-		// Jetpack renders inside that item. Leaving padding/border classes on
-		// both boxes stacked the source card's own height on top of itself.
+		// Every class carried to the page item paints there once. Left on the
+		// field list Jetpack renders inside that item as well, a source box class
+		// (Tailwind `p-6 rounded-lg` or a semantic `.form{padding;background}`)
+		// stacks the source card's own chrome and height on top of itself. The
+		// field list keeps its layout classes, which are never carried, and the
+		// importer's own `ssi-*` scope and markers its rules address.
+		$owned    = array_values( array_filter( $carry, static fn( string $class_name ): bool => ! str_starts_with( $class_name, 'ssi-' ) ) );
 		$stripped = preg_replace_callback(
 			'/<div\b([^>]*\bclass=(["\'])([^"\']*\bwp-block-jetpack-contact-form\b[^"\']*)\2)/i',
-			static function ( array $matches ): string {
+			static function ( array $matches ) use ( $owned ): string {
 				$existing = preg_split( '/\s+/', trim( $matches[3] ) );
 				$existing = false === $existing ? array() : $existing;
-				$kept     = array_values( array_filter( $existing, static fn( string $class_name ): bool => ! self::is_form_box_chrome_class( $class_name ) ) );
+				$kept     = array_values( array_diff( $existing, $owned ) );
 				return '<div' . str_replace( $matches[2] . $matches[3] . $matches[2], $matches[2] . implode( ' ', $kept ) . $matches[2], $matches[1] );
 			},
 			$projected,
@@ -424,11 +428,6 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 			}
 		}
 		return false;
-	}
-
-	/** Padding, border, radius, and fill size the card, not the field list. */
-	private static function is_form_box_chrome_class( string $class_name ): bool {
-		return 1 === preg_match( '/^(?:(?:sm|md|lg|xl|2xl):)?(?:p(?:[xyltrbse])?(?:-|$)|border(?:-|$)|rounded(?:-|$)|bg-)/', $class_name );
 	}
 
 	/** Restore a source plain-root fieldset around provider field content, never the form itself. */

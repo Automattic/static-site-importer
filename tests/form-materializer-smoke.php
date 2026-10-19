@@ -1123,8 +1123,8 @@ namespace {
 	);
 	$assert(
 		str_contains( $host_span_runtime, 'class="jetpack-contact-form-container stack form-host ssi-form-123456789abc"' )
-			&& str_contains( $host_span_runtime, 'wp-block-jetpack-contact-form ssi-form-123456789abc form-host' ),
-		'provider-runtime-hoists-the-form-box-layout-role-onto-the-jetpack-page-grid-item',
+			&& str_contains( $host_span_runtime, 'class="wp-block-jetpack-contact-form ssi-form-123456789abc"' ),
+		'provider-runtime-moves-the-form-box-layout-role-onto-the-jetpack-page-grid-item',
 		$host_span_runtime
 	);
 	$field_list_hoist = Static_Site_Importer_Form_Seeder::project_provider_form_container_placement(
@@ -1133,8 +1133,8 @@ namespace {
 	);
 	$assert(
 		str_contains( $field_list_hoist, 'class="jetpack-contact-form-container panel ssi-form-123456789abc"' )
-			&& str_contains( $field_list_hoist, 'wp-block-jetpack-contact-form panel grid gap-6 sm:grid-cols-2 ssi-form-123456789abc' ),
-		'provider-runtime-keeps-field-list-grid-classes-off-the-page-item',
+			&& str_contains( $field_list_hoist, 'class="wp-block-jetpack-contact-form grid gap-6 sm:grid-cols-2 ssi-form-123456789abc"' ),
+		'provider-runtime-keeps-field-list-grid-classes-off-the-page-item-and-the-hoisted-box-class-off-the-field-list',
 		$field_list_hoist
 	);
 	$field_list_wrap = Static_Site_Importer_Form_Seeder::project_provider_field_list_wrapper(
