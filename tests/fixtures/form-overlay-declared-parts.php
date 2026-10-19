@@ -40,13 +40,16 @@ function ssi_editor_parts_descriptor_destinations( string $scope, ?int $index = 
 			foreach ( array( false, true ) as $has_caption ) {
 				foreach ( array( false, true ) as $choice_box ) {
 					foreach ( array( false, true ) as $wrapping_label ) {
-						$descriptor = Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $scope, $index ?? $counter % 128, $control_type, $roles, $has_caption, $choice_box, $wrapping_label );
-						// A submit standing for its source block row moves its box
-						// facts between destinations; both shapes reach the editor.
-						$shapes = 'submit' === $control_type ? array( $descriptor, Static_Site_Importer_Form_Layout_Projection::with_submit_row_button_box( $descriptor ) ) : array( $descriptor );
-						foreach ( $shapes as $shape ) {
-							foreach ( $shape['destinations'] as $destination ) {
-								$destinations[] = $destination;
+						// A sibling label may also carry its source row's gap as a margin.
+						foreach ( $wrapping_label ? array( array() ) : array( array(), array( 'margin-block-end' ) ) as $row_carried_label_margins ) {
+							$descriptor = Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $scope, $index ?? $counter % 128, $control_type, $roles, $has_caption, $choice_box, $wrapping_label, $row_carried_label_margins );
+							// A submit standing for its source block row moves its box
+							// facts between destinations; both shapes reach the editor.
+							$shapes = 'submit' === $control_type ? array( $descriptor, Static_Site_Importer_Form_Layout_Projection::with_submit_row_button_box( $descriptor ) ) : array( $descriptor );
+							foreach ( $shapes as $shape ) {
+								foreach ( $shape['destinations'] as $destination ) {
+									$destinations[] = $destination;
+								}
 							}
 						}
 						++$counter;

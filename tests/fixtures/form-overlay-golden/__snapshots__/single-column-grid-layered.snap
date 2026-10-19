@@ -5,16 +5,19 @@
 mapped
 
 === css ===
-sha256: a67955a17c21b91073a6dcbeae2cdd566847965958a6d808ea445d4d47c7f247
-/* Static Site Importer provider layout overlay: e2aefbaddaf4 */
+sha256: 6c4b64ce60e4285b88f52cbca0370c095c7c8286f66f23ba35d85ffcabc91f38
+/* Static Site Importer provider layout overlay: 5f2b553f56e3 */
 .ssi-form-6371992b9ea7 .ssi-node-d7b2a8853f46-wrap, .ssi-form-6371992b9ea7 .ssi-node-5de1b79b7b4b-wrap, .ssi-form-6371992b9ea7 .ssi-node-6176762f78e2-wrap{border:0 solid;box-sizing:border-box}
 .ssi-form-6371992b9ea7 > form.jetpack-contact-form__form:not(:has(.wp-block-jetpack-contact-form)), .ssi-form-6371992b9ea7:not(:has(> form.jetpack-contact-form__form)){gap:calc(0.25rem * 5)}
 .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-af2e4f34f4a3{font-family:revert;line-height:revert;border:0 solid;border-color:#3f3f46;border-radius:.375rem;border-width:1px;box-sizing:border-box;color:inherit;font:inherit;height:2.75rem;padding-block:calc(.25rem * 2);padding-inline:calc(.25rem * 3);width:100%}
 .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-ef40e876d532{margin:0;font-weight:inherit;border:0 solid;box-sizing:border-box;font-size:.875rem;line-height:1.25rem;margin-block-end:calc(0.25rem * 2)}
+.ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-field-row > .ssi-node-ef40e876d532{margin-block-end:0!important}
 .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4c5ea71b76e9{font-family:revert;line-height:revert;border:0 solid;border-color:#3f3f46;border-radius:.375rem;border-width:1px;box-sizing:border-box;color:inherit;font:inherit;height:2.75rem;padding-block:calc(.25rem * 2);padding-inline:calc(.25rem * 3);width:100%}
 .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-fea689b85b63{margin:0;font-weight:inherit;border:0 solid;box-sizing:border-box;font-size:.875rem;line-height:1.25rem;margin-block-end:calc(0.25rem * 2)}
+.ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-field-row > .ssi-node-fea689b85b63{margin-block-end:0!important}
 .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-459ce552c88b{font-family:revert;line-height:revert;border:0 solid;border-color:#3f3f46;border-radius:.375rem;border-width:1px;box-sizing:border-box;color:inherit;font:inherit;padding-block:calc(.25rem * 2);padding-inline:calc(.25rem * 3);width:100%;display:block;height:auto}
 .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-0b8705a3025d{margin:0;font-weight:inherit;border:0 solid;box-sizing:border-box;font-size:.875rem;line-height:1.25rem;margin-block-end:calc(0.25rem * 2)}
+.ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-field-row > .ssi-node-0b8705a3025d{margin-block-end:0!important}
 .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c > .wp-block-button__link{font-family:revert;line-height:revert;min-height:0;border:0 solid;box-sizing:border-box;border-style:solid}
 .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c > .wp-block-button__link{margin-block:0!important}
 .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c{--jetpack--contact-form--input-height:auto}
@@ -75,7 +78,7 @@ sha256: 03345f02a84a69933b16cd10c5aa2e6769d0b482648550fe085ee054e85b2a17
 <!-- /wp:jetpack/contact-form -->
 
 === receipt_operations ===
-total: 25
+total: 28
 {"dimension":"topology","strategy":"provider_field_wrapper_class_projection","target_hash":"653133871f9decae48ebd8b2ff4531b5d6e725f446b0b8e91637ae99c2881db4"}
 {"dimension":"layout","strategy":"provider_parent_class_carried_control_spacing","target_hash":"2871e05b455edae0d6440bfe8594a71423732e026f07915e16f66699562b5b9c"}
 {"dimension":"topology","strategy":"provider_field_wrapper_class_projection","target_hash":"360d95f624f68a9e09f524d1a1ef7400e975543af0cb215e529a4a276c659019"}
@@ -91,10 +94,13 @@ total: 25
 {"dimension":"layout","strategy":"provider_selector_transposition","node_hash":"07397d633f25a7101990a75864ae03d5a3b9ac07c4ed6accbc52cbfd7d7c13b4","target_hash":"971574a10d315a2477b921be7575510405f866fcba5e01932fc12e2214bae72d"}
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"2d9cc1a4456d8f19520b575a7aa9b08c2bc42793c0056fd801f964b65996f0e3","target_hash":"c7d4b35f3ea48a5efe236c2b7bbbeae02fbe02de37bdaaec71502295cf7c85a1"}
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"059f1cd6617df808d4d692bc437bfce78d120082d0e33bee8a6229ed75c34bdf","target_hash":"60d1f94a8c893a54a041d3a52e1e275a044bab6889b54b7d8fdaeb4384f387cb"}
+{"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"059f1cd6617df808d4d692bc437bfce78d120082d0e33bee8a6229ed75c34bdf","target_hash":"18967cfc4762c64231e6f9a3e73170e2a55089f19c3b2a34a756c348d8a3a2e9"}
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"ec0b63550a82156626679a672552b1dc0ba0187f35491dfffd36d036b53f8b53","target_hash":"061afc6d2ac27974ed12c6b50c3a6608fbaecd35007d12a299b4b361c708e6b7"}
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"2dc4710b118d4a2aa3286de1de7196422b604532f06bc4d77257e31bf263f61d","target_hash":"2aa9104835a0a7f300d36599e2db4e09b94a007ce7f789fe2ab37fcc082acf74"}
+{"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"2dc4710b118d4a2aa3286de1de7196422b604532f06bc4d77257e31bf263f61d","target_hash":"e574cb6dd1a094b5a94025cb2959d89f518757292c102539958cf0a3aef23963"}
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"d15a303a1c06c726fb12791263c9eb7d972e88b7ebcf00fc2447520d80951ce2","target_hash":"faaa0351482a02f8a3535fc740e6841c8ea1315f93b34f37c4f7a61dba5f9404"}
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"f957285ec1927f9932d6798d4559c1931b415157008079417259a9362956ad79","target_hash":"c5c68522c79fefc6a7f723620a0cfc3b789fb7bda1276c76d8a24d1660778671"}
+{"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"f957285ec1927f9932d6798d4559c1931b415157008079417259a9362956ad79","target_hash":"8288935a4a7da497402e9aa0faaba71986f27269645e2d727d95ed3e42efae54"}
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"7afc743238f6fc1acb8e05e1a680cdf86ee00c9be5ad15583df94e6919515910","target_hash":"7b853ef1d47e0b82ee08a2a325182bfe33c7262d4692a22f5008ec0b099aa37f"}
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"7afc743238f6fc1acb8e05e1a680cdf86ee00c9be5ad15583df94e6919515910","target_hash":"7b853ef1d47e0b82ee08a2a325182bfe33c7262d4692a22f5008ec0b099aa37f"}
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"7afc743238f6fc1acb8e05e1a680cdf86ee00c9be5ad15583df94e6919515910","target_hash":"cfc662b120b4a643c45ec73c4d308b4761c6fe3e9dfa5130fce7149d35174e1a"}

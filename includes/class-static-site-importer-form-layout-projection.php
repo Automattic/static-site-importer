@@ -3698,7 +3698,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		};
 	}
 
-	public static function presentation_descriptor( string $scope, int $index, string $type, array $roles, bool $has_caption = false, bool $choice_box = false, bool $wrapping_label = false ): array {
+	/**
+	 * @param array<int,string> $row_carried_label_margins Label margin properties the rebuilt source row already supplies.
+	 */
+	public static function presentation_descriptor( string $scope, int $index, string $type, array $roles, bool $has_caption = false, bool $choice_box = false, bool $wrapping_label = false, array $row_carried_label_margins = array() ): array {
 		$control_class      = isset( $roles['control'] ) ? self::presentation_node_class( $scope, $index, 'control' ) : '';
 		$label_class        = isset( $roles['label'] ) || isset( $roles['required_marker'] ) ? self::presentation_node_class( $scope, $index, 'label' ) : '';
 		$phone_destinations = array();
@@ -3888,6 +3891,21 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'priority'   => 'important',
 				);
 			}
+			if ( array() !== $row_carried_label_margins && ! $choice_box ) {
+				// The producer resolved the source row's gap onto the label as a
+				// margin. The front-end runtime rebuilds that row with its source
+				// classes, so the stylesheet's gap already spaces the label there.
+				// The reset names the rebuilt row: the editor, which loads this
+				// overlay too, has no such row and keeps the margin.
+				$destinations[] = array(
+					'part'       => 'row_gap_label_reset',
+					'role'       => 'label',
+					'selector'   => '.' . $scope . ' .ssi-field-row > .' . $label_class,
+					'properties' => array(),
+					'resets'     => array_fill_keys( $row_carried_label_margins, '0' ),
+					'priority'   => 'important',
+				);
+			}
 			if ( $choice_box ) {
 				$destinations[] = array(
 					'part'       => 'choice_label_box',
@@ -3958,6 +3976,31 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$parent = $nodes[ $parent ]['parent'] ?? null;
 		}
 		return false;
+	}
+
+	/**
+	 * Label margin properties whose every source rule selects the control's
+	 * parent wrapper by classes it carries: a row gap the producer resolved
+	 * onto the label. A `for` sibling label shares that parent with its control.
+	 *
+	 * @return array<int,string> CSS margin properties.
+	 */
+	public static function source_label_row_carried_margins( array $form, int $index ): array {
+		$nodes   = array_column( $form['control_topology']['nodes'] ?? array(), null, 'id' );
+		$control = current( array_filter( $nodes, static fn( array $node ): bool => 'control' === ( $node['kind'] ?? '' ) && ( $node['control'] ?? null ) === $index ) );
+		$parent  = is_array( $control ) ? ( $nodes[ $control['parent'] ?? '' ] ?? null ) : null;
+		if ( ! is_array( $parent ) || 'wrapper' !== ( $parent['kind'] ?? null ) || 'label' === ( $parent['tag'] ?? '' ) ) {
+			return array();
+		}
+		$tokens = self::class_tokens( $parent );
+		$tokens = false === $tokens ? array() : array_values( array_filter( $tokens ) );
+		$label  = array_column( $form['presentation_graph']['controls'] ?? array(), null, 'index' )[ $index ]['label'] ?? null;
+		if ( array() === $tokens || ! is_array( $label ) ) {
+			return array();
+		}
+		$margins = array_intersect_key( Static_Site_Importer_Provider_Layout_Overlay::layout_property_map(), array_flip( array( 'margin_top', 'margin_bottom', 'margin_left', 'margin_right', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end' ) ) );
+		$facts   = self::class_carried_box_facts( is_array( $label['styles'] ?? null ) ? $label['styles'] : array(), is_array( $label['provenance'] ?? null ) ? $label['provenance'] : array(), $tokens, $margins );
+		return array_values( array_map( static fn( string $fact ): string => $margins[ $fact ], $facts ) );
 	}
 
 	/** A source implicit choice label owns the complete field, not just its input. */
@@ -4108,6 +4151,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			// Labels.
 			'label'                     => $label_box,
 			'wrapping_label_reset'      => $label_box,
+			'row_gap_label_reset'       => array( 'drop' => true ),
 			'choice_label'              => array(),
 			'choice_label_box'          => $label_box,
 			'required_marker'           => array(),
