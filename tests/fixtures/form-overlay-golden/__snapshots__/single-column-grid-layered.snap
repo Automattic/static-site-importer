@@ -29,8 +29,8 @@ sha256: a67955a17c21b91073a6dcbeae2cdd566847965958a6d808ea445d4d47c7f247
 .ssi-form-6371992b9ea7 div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
-sha256: 1185855798ec1622c646c80ba0164b3cf20fc22da6acb5502d1137866ce6298d
-/* Static Site Importer editor control chrome: 0ec99cb1215d */
+sha256: 03345f02a84a69933b16cd10c5aa2e6769d0b482648550fe085ee054e85b2a17
+/* Static Site Importer editor control chrome: fb9f61c37d80 */
 .editor-styles-wrapper .ssi-form-6371992b9ea7 .ssi-node-d7b2a8853f46, .editor-styles-wrapper .ssi-form-6371992b9ea7 .ssi-node-5de1b79b7b4b, .editor-styles-wrapper .ssi-form-6371992b9ea7 .ssi-node-6176762f78e2{border:0 solid;box-sizing:border-box}
 .editor-styles-wrapper .ssi-form-6371992b9ea7{gap:calc(0.25rem * 5)}
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-af2e4f34f4a3{font-family:revert;line-height:revert;border:0 solid;border-color:#3f3f46;border-radius:.375rem;border-width:1px;box-sizing:border-box;color:inherit;font:inherit;height:2.75rem;padding-block:calc(.25rem * 2);padding-inline:calc(.25rem * 3);width:100%}
@@ -47,7 +47,7 @@ sha256: 1185855798ec1622c646c80ba0164b3cf20fc22da6acb5502d1137866ce6298d
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-0b8705a3025d > label{margin:0;font-weight:inherit;display:block;padding:0;border:0 solid;font-size:.875rem;line-height:1.25rem}
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-0b8705a3025d{display:block;box-sizing:border-box;margin-block-end:calc(0.25rem * 2)}
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c > .wp-block-button__link{font:-webkit-small-control;min-height:0;border:0 solid;box-sizing:border-box;border-style:solid}
-.editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c > .wp-block-button__link{font:-webkit-small-control!important;margin-block:0!important}
+.editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c > .wp-block-button__link{margin-block:0!important}
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c{--jetpack--contact-form--input-height:auto}
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c::placeholder{color:revert;opacity:revert}
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7.jetpack-contact-form-container{border:0 solid;box-sizing:border-box;display:grid;gap:calc(.25rem * 5)}
