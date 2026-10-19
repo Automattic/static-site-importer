@@ -40,6 +40,7 @@
     "tests/smoke-form-source-boxes-v3.php": { "environment": "standalone-php" },
     "tests/smoke-form-overlay-golden.php": { "environment": "standalone-php" },
     "tests/smoke-form-overlay-editor-parts.php": { "environment": "standalone-php" },
+    "tests/smoke-form-textarea-rows.php": { "environment": "standalone-php" },
     "tests/smoke-import-diagnostic-contract.php": { "environment": "standalone-php" },
     "tests/smoke-import-report.php": { "environment": "standalone-php" },
     "tests/smoke-import-report-loss-ledger.php": { "environment": "standalone-php" },

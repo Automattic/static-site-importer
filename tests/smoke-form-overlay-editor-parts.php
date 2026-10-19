@@ -187,7 +187,7 @@ if ( array() !== $ssi_parts_dead ) {
 foreach ( $ssi_parts_maps as $ssi_parts_map ) {
 	$ssi_parts_candidates = array(
 		'canonical' => Static_Site_Importer_Form_Layout_Projection::without_parts( $ssi_parts_map ),
-		'editor'    => Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $ssi_parts_map, $ssi_parts_scope, array( 1 => array( 'min-height' => '0' ) ) ),
+		'editor'    => Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $ssi_parts_map, $ssi_parts_scope, array( 1 => Static_Site_Importer_Form_Textarea_Rows::resolve( array( 'tag' => 'textarea' ), array( 'height' => '10rem' ), false ) ) ),
 	);
 	foreach ( $ssi_parts_candidates as $ssi_parts_kind => $ssi_parts_candidate ) {
 		$ssi_parts_checks += 2;

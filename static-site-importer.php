@@ -100,6 +100,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-provider-layout-overlay.php',
 	'class-static-site-importer-woo-product-seeder.php',
 	'class-static-site-importer-jetpack-forms-runtime.php',
+	'class-static-site-importer-form-textarea-rows.php',
 	'class-static-site-importer-form-field-markup.php',
 	'class-static-site-importer-form-topology-state.php',
 	'class-static-site-importer-form-layout-projection.php',
