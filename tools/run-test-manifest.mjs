@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url"
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const manifestPath = resolve(root, "test-manifest.json")
-const homeboyPath = resolve(root, "homeboy-test-manifest.json")
+const homeboyPath = resolve(root, "homeboy.json")
 const args = new Set(process.argv.slice(2))
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"))
 const environments = new Set(["standalone-php", "wordpress-runtime", "node", "browser-wp-codebox", "operator-only"])
@@ -93,10 +93,12 @@ export function validateManifest(candidate = manifest) {
   }
 
   const homeboy = JSON.parse(readFileSync(homeboyPath, "utf8"))
-  const projected = Object.fromEntries(candidate.tests
+  const declaredStandalone = [...(homeboy.extensions?.wordpress?.settings?.standalone_php_test_paths ?? [])].sort()
+  const projected = candidate.tests
     .filter((test) => test.environment === "standalone-php")
-    .map((test) => [test.path, { environment: test.environment }]))
-  if (JSON.stringify(homeboy.tests) !== JSON.stringify(projected)) fail("homeboy-test-manifest.json is not the standalone PHP projection of test-manifest.json")
+    .map((test) => test.path)
+    .sort()
+  if (JSON.stringify(declaredStandalone) !== JSON.stringify(projected)) fail("homeboy.json standalone_php_test_paths is not the standalone PHP projection of test-manifest.json")
 }
 
 function isExecutableTest(path) {
