@@ -1340,6 +1340,32 @@ namespace {
 			)
 		)
 	);
+	// #2159: flattening an equal-width row resets every field's and the submit's
+	// source stacking margin, so the provider form must carry that stacking
+	// margin as its row gap. A gap borrowed from the row (or none at all) left
+	// the field groups collapsed against each other. The column gap stays the
+	// one the field tracks were sized against.
+	foreach ( array(
+		'issue-fixture'   => array( '.grid{display:grid;gap:1.25rem}', '1.25rem', '0\.625rem' ),
+		'row-gap-differs' => array( '.grid{display:grid;gap:1rem}', '1rem', '0\.5rem' ),
+		'row-without-gap' => array( '.grid{display:grid}', '1.5rem', '0\.75rem' ),
+	) as $rhythm_case => list( $rhythm_grid_css, $rhythm_column_gap, $rhythm_half_gap ) ) {
+		$rhythm_html   = '<style>.space-y-5>:not([hidden])~:not([hidden]){margin-top:1.25rem}' . $rhythm_grid_css . '@media (min-width:640px){.sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}label{display:block}input,textarea{display:block;width:100%}</style>'
+			. '<form class="space-y-5"><div class="grid sm:grid-cols-2"><div><label for="n">Name</label><input id="n"></div><div><label for="e">Email</label><input id="e" type="email"></div></div>'
+			. '<div><label for="m">Message</label><textarea id="m"></textarea></div><button type="submit">Send</button></form>';
+		$rhythm_source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $rhythm_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+		$rhythm_row    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $rhythm_source ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+		$rhythm_css    = $expand_selector_lists( (string) ( $rhythm_row['provider_layout_overlay_css']['css'] ?? '' ) );
+		$assert(
+			'mapped' === ( $rhythm_row['status'] ?? '' )
+				&& in_array( 'provider_equal_width_fields', array_column( $rhythm_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true )
+				&& 1 === preg_match( '/^\.ssi-form-[a-f0-9]{12} > form\.jetpack-contact-form__form\{(?:gap:[^;}]+;)?row-gap:1\.25rem;column-gap:' . preg_quote( $rhythm_column_gap, '/' ) . '\}$/m', $rhythm_css )
+				&& 2 === preg_match_all( '/\.ssi-node-[a-f0-9]{12}-wrap\{width:calc\(50% - ' . $rhythm_half_gap . '\);flex-grow:0;flex-shrink:0;flex-basis:calc\(50% - ' . $rhythm_half_gap . '\);margin-block-start:0!important\}/', $rhythm_css )
+				&& null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $rhythm_row['provider_layout_overlay_css'] ?? null ),
+			'flattened-row-stacking-reset-carries-source-rhythm-as-form-row-gap-' . $rhythm_case,
+			$rhythm_css
+		);
+	}
 	// A `grid gap-2` field wrapper's gap reaches the control as a transposed
 	// `margin-block-start` whose provenance is the wrapper's own class rule. The
 	// runtime rebuilds that wrapper with its source classes, which already space

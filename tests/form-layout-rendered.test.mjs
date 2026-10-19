@@ -423,3 +423,67 @@ test( 'editor canvas phone, dropdown and rows-sized textarea controls take the f
 		await browser.close();
 	}
 } );
+
+test( 'flattened equal-width row keeps the source stacking rhythm between field groups (#2159)', async () => {
+	requireBrowserPrerequisites();
+	const browser = await chromium.launch();
+	try {
+		const page = await browser.newPage();
+		// The issue's reduced fixture, then the same form whose row gap differs
+		// from its stacking margin, so a form gap borrowed from the row is caught.
+		for ( const rowGap of [ '1.25rem', '1rem' ] ) {
+			const raw = execFileSync( 'php', [ 'tests/fixtures/form-stacking-rhythm-fixture.php', rowGap ], { cwd: process.cwd(), encoding: 'utf8', env: process.env } );
+			const seeded = JSON.parse( raw );
+			assert.equal( seeded.status, 'mapped', raw );
+			assert.ok( seeded.strategies.includes( 'provider_equal_width_fields' ), raw );
+			assert.equal( seeded.fields.length, 3, raw );
+			const tag = { text: 'input', email: 'input', textarea: 'textarea' };
+			const fields = seeded.fields.map( ( field ) => `<div class="grunion-field-wrap grunion-field-${ field.type }-wrap ${ field.classes }" data-field="${ field.label }"><label class="grunion-field-label ${ field.labelClasses }">${ field.label }</label><${ tag[ field.type ] } class="grunion-field"></${ tag[ field.type ] }></div>` ).join( '' );
+			await page.setContent( `<!doctype html><style>
+				body{margin:0}
+				.page{width:min(600px,calc(100vw - 24px));margin:12px}
+				input,textarea{box-sizing:border-box;font-size:16px;margin:0}
+				textarea{height:80px}
+				button{font-size:16px;margin:0}
+				/* Jetpack's front-end form: a wrapping flex row with no block gap. */
+				.jetpack-contact-form__form{display:flex;flex-direction:row;flex-wrap:wrap;align-items:flex-start}
+				.jetpack-contact-form__form>*{box-sizing:border-box;flex:0 0 100%}
+				.wp-block-button{display:block;width:100%}
+				${ seeded.sourceCss }
+				${ seeded.css }
+			</style><div class="page"><div class="source">${ seeded.sourceHtml }</div><div class="wp-block-jetpack-contact-form ${ seeded.className }"><form class="jetpack-contact-form__form">${ fields }${ seeded.runtimeHtml }</form></div></div>` );
+			for ( const width of [ 390, 1440 ] ) {
+				await page.setViewportSize( { width, height: 900 } );
+				const measure = await page.evaluate( () => {
+					const box = ( node ) => node.getBoundingClientRect();
+					const groupGaps = ( groups ) => groups.slice( 1 ).map( ( group, index ) => Math.min( ...group.map( ( node ) => box( node ).top ) ) - Math.max( ...groups[ index ].map( ( node ) => box( node ).bottom ) ) );
+					const field = ( label ) => document.querySelector( `.wp-block-jetpack-contact-form [data-field="${ label }"]` );
+					const source = [ ...document.querySelector( '.source form' ).children ].map( ( node ) => [ node ] );
+					const provider = [ [ field( 'Name' ), field( 'Email' ) ], [ field( 'Message' ) ], [ document.querySelector( '.wp-block-jetpack-contact-form .wp-block-button' ) ] ];
+					const row = [ ...document.querySelector( '.source .grid' ).children ];
+					return {
+						source: groupGaps( source ),
+						provider: groupGaps( provider ),
+						rowGap: getComputedStyle( document.querySelector( '.jetpack-contact-form__form' ) ).rowGap,
+						sourceColumnGap: box( row[1] ).left - box( row[0] ).right,
+						providerColumnGap: box( field( 'Email' ) ).left - box( field( 'Name' ) ).right,
+						twoUp: box( field( 'Email' ) ).top === box( field( 'Name' ) ).top,
+					};
+				} );
+				const detail = `row gap ${ rowGap } at ${ width }: ${ JSON.stringify( measure ) }`;
+				assert.equal( measure.rowGap, '20px', detail );
+				assert.deepEqual( measure.source, [ 20, 20 ], detail );
+				assert.equal( measure.provider.length, 2, detail );
+				for ( const gap of measure.provider ) {
+					assert.ok( Math.abs( gap - 20 ) <= 0.5, detail );
+				}
+				if ( width >= 640 ) {
+					assert.ok( measure.twoUp, detail );
+					assert.ok( Math.abs( measure.providerColumnGap - measure.sourceColumnGap ) <= 0.5, `flattened row column gap: ${ detail }` );
+				}
+			}
+		}
+	} finally {
+		await browser.close();
+	}
+} );

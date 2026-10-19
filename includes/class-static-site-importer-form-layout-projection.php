@@ -1691,7 +1691,14 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		return 'px' === $g[2] ? 1.0 >= abs( (float) $g[1] - (float) $o[1] ) : 0.0001 > abs( (float) $g[1] - (float) $o[1] );
 	}
 
-	/** Project equal-fraction sibling rows onto provider field widths. */
+	/**
+	 * Project equal-fraction sibling rows onto provider field widths.
+	 *
+	 * Flattening resets every field's and the submit's block-start margin. When
+	 * that replaces source sibling-stacking margins, the form carries the source
+	 * stacking margin as its row gap and the row's column gap as its column gap,
+	 * because the provider form has no block gap of its own (#2159).
+	 */
 	private static function project_sibling_rows( Static_Site_Importer_Form_Topology_State $s ): void {
 		foreach ( $s->children as $parent => $siblings ) {
 			if ( '$root' === $parent || isset( $s->percentage_width_parents[ $parent ] ) || count( $siblings ) < 2 ) {
@@ -1843,7 +1850,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					// only leverage over an unbounded source selector is the cascade
 					// origin, not specificity. Forcing the reset wins regardless of the
 					// source rule's specificity, which is what a value of literal `0` on
-					// this synthetic flattening seam is always for.
+					// this synthetic flattening seam is always for. The vertical rhythm
+					// that margin carried moves to the form's row gap (below).
 					'important' => array( 'margin_block_start' ),
 				);
 				if ( is_string( $stack_query ) ) {
@@ -1876,8 +1884,9 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				// id resolves through; address its own generated node hook instead.
 				// It still sits as a flex item beside the flattened fields in the same
 				// `space-y-*`-classed container, so it needs the identical reset: the
-				// container's own flex `gap` already reproduces the source spacing,
-				// and the carried sibling-margin would otherwise double it.
+				// container's own flex `gap` reproduces the source spacing (see the
+				// row-gap rule below), and the carried sibling-margin would otherwise
+				// double it.
 				$s->overlay_node_targets[] = array(
 					'id'        => ( 'core/button' === ( $field_block['name'] ?? '' ) ? 'control-' : 'field-' ) . $control_index,
 					'layout'    => array(
@@ -1886,7 +1895,80 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'important' => array( 'margin_block_start' ),
 				);
 			}
+			// The resets above only hold if the provider form's own flex gap really
+			// reproduces the source stacking. Jetpack's form is a wrapping flex row
+			// with no block gap of its own, and a gap the producer lifted onto the
+			// form (if any) is the flattened row's column gap, not the source's
+			// vertical rhythm. So whenever source sibling-stacking margins are
+			// replaced, the form carries that stacking margin as its row gap, and the
+			// column gap the field tracks were sized against as its column gap, so
+			// consecutive field groups and the submit keep the source spacing while
+			// the flattened row's two-up math stays exact.
+			$rhythm = self::source_stacking_rhythm( $s, array_keys( $s->field_blocks ) );
+			if ( is_string( $rhythm ) ) {
+				$s->overlay_node_targets[] = array(
+					'id'     => 'form',
+					'layout' => array(
+						'row_gap'    => $rhythm,
+						'column_gap' => $gap,
+					),
+				);
+			}
 		}
+	}
+
+	/**
+	 * The single source sibling-stacking margin the given controls' boxes carry.
+	 *
+	 * Looks at each control's topology node and its wrapper ancestors for an
+	 * unconditional block-start margin authored through a sibling combinator
+	 * (the stacking rule shape, never a class name). Returns null when none is
+	 * found or the boxes disagree, so an ambiguous rhythm is never invented.
+	 *
+	 * @param array<int,int> $control_indexes
+	 */
+	private static function source_stacking_rhythm( Static_Site_Importer_Form_Topology_State $s, array $control_indexes ): ?string {
+		$control_nodes = array();
+		foreach ( $s->nodes as $node ) {
+			if ( is_array( $node ) && 'control' === ( $node['kind'] ?? null ) && is_int( $node['control'] ?? null ) && is_string( $node['id'] ?? null ) ) {
+				$control_nodes[ $node['control'] ] = $node['id'];
+			}
+		}
+		$values = array();
+		foreach ( $control_indexes as $control_index ) {
+			$node_id = $control_nodes[ $control_index ] ?? null;
+			$guard   = 0;
+			while ( is_string( $node_id ) && '$root' !== $node_id && $guard++ < 32 ) {
+				$layout     = $s->layout_by_node[ $node_id ] ?? array();
+				$suppressed = $s->suppressed_layout_properties[ $node_id ] ?? array();
+				if ( self::has_sibling_combinator_margin( $s->layout_nodes_by_id[ $node_id ]['provenance'] ?? array() ) ) {
+					foreach ( array( 'margin_block_start', 'margin_top' ) as $fact ) {
+						if ( in_array( $fact, $suppressed, true ) || ! is_string( $layout[ $fact ] ?? null ) ) {
+							continue;
+						}
+						$length = self::stacking_margin_length( $layout[ $fact ] );
+						if ( null === $length ) {
+							return null;
+						}
+						if ( 1 !== preg_match( '/^0(?:\.0+)?(?:px|rem|em)?$/D', $length ) ) {
+							$values[ $length ] = true;
+						}
+						break;
+					}
+				}
+				$node_id = $s->topology_parents[ $node_id ] ?? null;
+			}
+		}
+		return 1 === count( $values ) ? (string) array_key_first( $values ) : null;
+	}
+
+	/** A plain length from a resolved stacking margin, including the reversible `calc(L * calc(1 - var(--x)))` form. */
+	private static function stacking_margin_length( string $margin ): ?string {
+		$margin = trim( $margin );
+		if ( 1 === preg_match( '/^calc\(\s*((?:0|[0-9]*\.?[0-9]+)(?:px|rem|em))\s*\*\s*calc\(\s*1\s*-\s*var\(--[a-zA-Z][a-zA-Z0-9_-]{0,79}\)\s*\)\s*\)$/D', $margin, $match ) ) {
+			return $match[1];
+		}
+		return self::resolved_gap_length( $margin );
 	}
 
 	/** Project repeat(N, 1fr) grid-span rows onto provider field widths. */
