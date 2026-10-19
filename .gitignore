@@ -4,5 +4,4 @@ build/
 artifacts/
 assets/host-acceptance/
 .homeboy/
-.homeboy-build/
 .phpunit.result.cache
