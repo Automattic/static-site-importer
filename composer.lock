@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "d2ef32be1e27ea0908efffe0e79ef153",
+    "content-hash": "ffe3d20120c3d437633a003f7648e5d8",
     "packages": [
         {
             "name": "automattic/blocks-engine-figma-transformer",
@@ -43,16 +43,16 @@
         },
         {
             "name": "automattic/blocks-engine-php-transformer",
-            "version": "v0.44.35",
+            "version": "v0.44.36",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Automattic/blocks-engine-php-transformer.git",
-                "reference": "977b1dd7b7e2c457fc1d889039ffec41d7cec4a8"
+                "reference": "75fce5489043ceb6b51f808882292e26b3a48962"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Automattic/blocks-engine-php-transformer/zipball/977b1dd7b7e2c457fc1d889039ffec41d7cec4a8",
-                "reference": "977b1dd7b7e2c457fc1d889039ffec41d7cec4a8",
+                "url": "https://api.github.com/repos/Automattic/blocks-engine-php-transformer/zipball/75fce5489043ceb6b51f808882292e26b3a48962",
+                "reference": "75fce5489043ceb6b51f808882292e26b3a48962",
                 "shasum": ""
             },
             "require": {
@@ -95,7 +95,7 @@
                 "issues": "https://github.com/Automattic/blocks-engine/issues",
                 "source": "https://github.com/Automattic/blocks-engine-php-transformer"
             },
-            "time": "2026-10-18T20:05:46+00:00"
+            "time": "2026-10-19T11:48:13+00:00"
         },
         {
             "name": "dflydev/dot-access-data",
@@ -363,16 +363,16 @@
         },
         {
             "name": "league/html-to-markdown",
-            "version": "5.2.0",
+            "version": "5.2.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/thephpleague/html-to-markdown.git",
-                "reference": "c055ef510196411cc02360d8042fa57285d119a9"
+                "reference": "905eb9374feee6cedf9b972fc47c7c26a86bbec1"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/thephpleague/html-to-markdown/zipball/c055ef510196411cc02360d8042fa57285d119a9",
-                "reference": "c055ef510196411cc02360d8042fa57285d119a9",
+                "url": "https://api.github.com/repos/thephpleague/html-to-markdown/zipball/905eb9374feee6cedf9b972fc47c7c26a86bbec1",
+                "reference": "905eb9374feee6cedf9b972fc47c7c26a86bbec1",
                 "shasum": ""
             },
             "require": {
@@ -385,6 +385,7 @@
                 "phpstan/phpstan": "^1.8.8 || ^2.0",
                 "phpunit/phpunit": "^8.5 || ^9.2 || ^10.5 || ^11.0 || ^12.0 || ^13.0",
                 "scrutinizer/ocular": "^1.6",
+                "symfony/process": "^5.4 || ^6.0 || ^7.0 || ^8.0",
                 "unleashedtech/php-coding-standard": "^2.7 || ^3.0",
                 "vimeo/psalm": "^4.22 || ^5.0 || ^6.0"
             },
@@ -428,7 +429,7 @@
             ],
             "support": {
                 "issues": "https://github.com/thephpleague/html-to-markdown/issues",
-                "source": "https://github.com/thephpleague/html-to-markdown/tree/5.2.0"
+                "source": "https://github.com/thephpleague/html-to-markdown/tree/5.2.3"
             },
             "funding": [
                 {
@@ -448,7 +449,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-10-18T18:17:10+00:00"
+            "time": "2026-10-19T04:13:34+00:00"
         },
         {
             "name": "nette/schema",
