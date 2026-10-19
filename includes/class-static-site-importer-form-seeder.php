@@ -15,6 +15,9 @@ require_once __DIR__ . '/class-static-site-importer-provider-form-runtime.php';
 if ( ! class_exists( 'Static_Site_Importer_Jetpack_Forms_Runtime' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-jetpack-forms-runtime.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Form_Textarea_Rows' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-form-textarea-rows.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Form_Field_Markup' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-form-field-markup.php';
 }
@@ -304,7 +307,8 @@ class Static_Site_Importer_Form_Seeder {
 		$form        = Static_Site_Importer_Form_Layout_Projection::normalize_unconditional_layout_variants( $form );
 		$controls    = isset( $form['controls'] ) && is_array( $form['controls'] ) ? $form['controls'] : array();
 		$form        = self::project_submit_style_into_presentation_graph( $form, $controls );
-		$form        = self::project_textarea_row_height_into_presentation_graph( $form, $controls );
+		$textareas   = Static_Site_Importer_Form_Textarea_Rows::resolve_form( $form, $controls );
+		$form        = self::project_textarea_rows_into_presentation_graph( $form, $textareas );
 		$released    = self::release_visually_hidden_native_controls( $form, $controls );
 		$form        = $released['form'];
 		$controls    = $released['controls'];
@@ -822,7 +826,15 @@ class Static_Site_Importer_Form_Seeder {
 		// It belongs on the rendered page, not only inside editor chrome, so the frontend
 		// compile also receives it.
 		$overlay_graph = Static_Site_Importer_Form_Layout_Projection::without_container_box_facts( $overlay_graph, $container_presentation );
-		$editor_map    = Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $part_map, $scope, Static_Site_Importer_Form_Layout_Projection::editor_textarea_resets( $controls, $presentation_graph ) );
+		// The editor sizes a textarea from its resolved policy; a control whose
+		// presentation row the overlay withdrew has no editor box to size.
+		$editor_textareas = array();
+		foreach ( is_array( $presentation_graph['controls'] ?? null ) ? $presentation_graph['controls'] : array() as $row ) {
+			if ( is_array( $row ) && is_int( $row['index'] ?? null ) && is_array( $row['control']['styles'] ?? null ) && isset( $textareas[ $row['index'] ] ) ) {
+				$editor_textareas[ $row['index'] ] = $textareas[ $row['index'] ];
+			}
+		}
+		$editor_map = Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $part_map, $scope, $editor_textareas );
 		// One assembly: each declared surface compiles from its own map, and the
 		// overlay, its operations and its losses come back together.
 		$overlay = Static_Site_Importer_Provider_Layout_Overlay::compile_surfaces( $overlay_graph, $target_map, $editor_map, $presentation_graph, $container_presentation, $context_fallbacks );
@@ -1248,79 +1260,20 @@ class Static_Site_Importer_Form_Seeder {
 	}
 
 	/**
-	 * Whether the control's source parent is a grid or flex container, which
-	 * blockifies the control's outer display.
+	 * Project each textarea's resolved display and provider height release
+	 * into the presentation graph.
 	 *
-	 * The parent comes from the form's layout graph (`control-<index>` node's
-	 * `parent`); its display is read from `layout.display`, else the resolved
-	 * `presentation.styles.display`. An unknown parent is treated as block flow.
+	 * `Static_Site_Importer_Form_Textarea_Rows` owns both decisions; this only
+	 * writes the resolved styles onto the control's presentation row, adding
+	 * the row when the control had none.
 	 *
-	 * @param array<string,mixed> $form          Provider form manifest row.
-	 * @param int|string          $control_index Control index.
-	 */
-	private static function source_parent_blockifies_control( array $form, int|string $control_index ): bool {
-		$nodes = $form['layout_graph']['nodes'] ?? null;
-		if ( ! is_array( $nodes ) ) {
-			return false;
-		}
-		$nodes_by_id = array();
-		foreach ( $nodes as $node ) {
-			if ( is_array( $node ) && is_string( $node['id'] ?? null ) ) {
-				$nodes_by_id[ $node['id'] ] = $node;
-			}
-		}
-		$parent_id = $nodes_by_id[ 'control-' . $control_index ]['parent'] ?? null;
-		$parent    = is_string( $parent_id ) ? ( $nodes_by_id[ $parent_id ] ?? null ) : null;
-		if ( ! is_array( $parent ) ) {
-			return false;
-		}
-		$display = $parent['layout']['display'] ?? ( $parent['presentation']['styles']['display'] ?? null );
-
-		return is_string( $display ) && in_array( strtolower( trim( $display ) ), array( 'grid', 'inline-grid', 'flex', 'inline-flex' ), true );
-	}
-
-	/**
-	 * Neutralize this provider's fixed textarea height so the authored `rows`
-	 * attribute can size the control, and keep the source platform's inline-level
-	 * box participation for the multi-line control.
-	 *
-	 * A source textarea sized by its own `rows` attribute (rather than an
-	 * authored CSS height) carries no CSS declaration a source-CSS-cascade
-	 * compiler could capture. blocks-engine still reports this row count
-	 * (`effectiveRows()`, always populated, defaulting to the browser's own
-	 * unset-`rows` default of 2). Jetpack's renderer hardcodes `rows='20'`
-	 * and paints `:where(.contact-form textarea){height:200px}`, so the
-	 * authored count never reaches the visitor. The row count itself is
-	 * carried onto `jetpack/input` as `ssi-textarea-rows-N` and rewritten
-	 * onto the rendered control at runtime. This projection only overrides
-	 * the provider height with `auto` so the browser sizes N line boxes
-	 * using the padding, border, font-size, and line-height already carried
-	 * onto the same control. A cascade-resolved height or minimum height
-	 * already captured for this control is authoritative and this
-	 * projection does not run.
-	 *
-	 * The HTML platform renders an authored-less textarea inline-level, so its
-	 * field row keeps the control's baseline descent inside the row box. The
-	 * provider paints its textarea block-level, which shrinks every field row
-	 * by that descent and changes the whole form box. When the source cascade
-	 * captured no `display` of its own for the control, the platform default
-	 * is restored so the materialized row keeps the source box; a captured
-	 * `display` is authoritative and this projection does not run.
-	 *
-	 * The platform default is the source's computed display only inside a
-	 * block-flow parent. A textarea whose source parent is a grid or flex
-	 * container is a grid or flex item, so its outer display is blockified to
-	 * `block`; the projection then restores `block`, which keeps the editor,
-	 * where the control sits in block flow, free of the baseline descent the
-	 * source row never had.
-	 *
-	 * @param array<string,mixed> $form Provider form manifest row.
-	 * @param array<int,mixed>    $controls Normalized controls list.
+	 * @param array<string,mixed>                                $form      Provider form manifest row.
+	 * @param array<int,Static_Site_Importer_Form_Textarea_Rows> $textareas Resolved textarea policies keyed by control index.
 	 * @return array<string,mixed>
 	 */
-	private static function project_textarea_row_height_into_presentation_graph( array $form, array $controls ): array {
-		foreach ( $controls as $control_index => $control ) {
-			if ( ! is_array( $control ) || 'textarea' !== strtolower( trim( (string) ( $control['tag'] ?? '' ) ) ) || null === Static_Site_Importer_Form_Field_Markup::textarea_rows( $control ) ) {
+	private static function project_textarea_rows_into_presentation_graph( array $form, array $textareas ): array {
+		foreach ( $textareas as $control_index => $textarea ) {
+			if ( null === $textarea->display && ! $textarea->release_height ) {
 				continue;
 			}
 			$controls_graph  = isset( $form['presentation_graph']['controls'] ) && is_array( $form['presentation_graph']['controls'] ) ? $form['presentation_graph']['controls'] : array();
@@ -1333,36 +1286,13 @@ class Static_Site_Importer_Form_Seeder {
 					break;
 				}
 			}
-			$display_projected = false;
-			if ( ! isset( $existing_styles['display'] ) ) {
-				$existing_styles['display'] = self::source_parent_blockifies_control( $form, $control_index ) ? 'block' : 'inline-block';
-				$display_projected          = true;
-			}
-			if ( isset( $existing_styles['height'] ) ) {
-				if ( $display_projected ) {
-					if ( null !== $row_index ) {
-						$controls_graph[ $row_index ]['control']['styles'] = $existing_styles;
-					} else {
-						$controls_graph[] = array(
-							'index'   => $control_index,
-							'control' => array( 'styles' => $existing_styles ),
-						);
-						$row_index        = count( $controls_graph ) - 1;
-					}
-					$form['presentation_graph']['controls'] = $controls_graph;
-				}
-				continue;
-			}
-			// Jetpack applies a fixed 200px textarea height. A source min-height
-			// constrains the browser-sized rows but does not replace that provider
-			// height, so preserve the min-height and still release the fixed height.
-			$existing_styles['height'] = 'auto';
+			$styles = $textarea->presentation_styles( $existing_styles );
 			if ( null !== $row_index ) {
-				$controls_graph[ $row_index ]['control']['styles'] = $existing_styles;
+				$controls_graph[ $row_index ]['control']['styles'] = $styles;
 			} else {
 				$controls_graph[] = array(
 					'index'   => $control_index,
-					'control' => array( 'styles' => $existing_styles ),
+					'control' => array( 'styles' => $styles ),
 				);
 			}
 			$form['presentation_graph']['controls'] = $controls_graph;
