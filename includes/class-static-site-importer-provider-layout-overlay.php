@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Compiles provider form layout and presentation into bounded, scoped overlay CSS.
  *
- * @phpstan-type Surface array{prefix:string,css:array{key:string,label:string,rule:string},context:array{key:string,label:string,rule:string},structural_rules:bool,control_container_chrome:bool,native_passthrough:array<string,string>,form_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>,layout_bound:bool}
+ * @phpstan-type Surface array{prefix:string,css:array{key:string,label:string,rule:string},context:array{key:string,label:string,rule:string},control_container_chrome:bool,native_passthrough:array<string,string>,form_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>,layout_bound:bool}
  */
 class Static_Site_Importer_Provider_Layout_Overlay {
 	public const MAP_SCHEMA                = 'generic/provider-layout-target-map/v1';
@@ -27,9 +27,8 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	// latter. Both spellings resolve to the same condition, so both are admitted.
 	private const MEDIA_FEATURE_QUERY = '(?:screen and )?\((?:(?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)|(?:width|height) ?(?:>=|<=|>|<) ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh))\)';
 
-	public const SURFACE_FRONT_END      = 'front_end';
-	public const SURFACE_EDITOR         = 'editor';
-	private const SURFACE_EDITOR_CHROME = 'editor_chrome';
+	public const SURFACE_FRONT_END = 'front_end';
+	public const SURFACE_EDITOR    = 'editor';
 
 	/**
 	 * Declared render surfaces of the provider form overlay; `compile()` builds
@@ -41,8 +40,6 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * - `css` / `context`: the overlay artifact the pass owns for its rules and
 	 *   for its context fallback, the artifact's header label, and the rule
 	 *   grammar `validate_overlay()` admits for it.
-	 * - `structural_rules`: whether the pass emits its transposed layout and
-	 *   presentation rules (`editor_chrome` emits only its chrome).
 	 * - `control_container_chrome`: whether each control container's authored
 	 *   declarations are emitted again, unreset, ahead of the structural rules.
 	 * - `native_passthrough`: scope-suffix rules added on the native topology
@@ -53,7 +50,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * - `layout_bound`: whether a layout-only overlay keeps the smaller bound.
 	 */
 	private const SURFACES = array(
-		self::SURFACE_FRONT_END     => array(
+		self::SURFACE_FRONT_END => array(
 			'prefix'                   => '',
 			'css'                      => array(
 				'key'   => 'css',
@@ -65,13 +62,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				'label' => 'form context fallback',
 				'rule'  => 'compiled',
 			),
-			'structural_rules'         => true,
 			'control_container_chrome' => false,
 			'native_passthrough'       => array(),
 			'form_passthrough'         => array(),
 			'layout_bound'             => true,
 		),
-		self::SURFACE_EDITOR        => array(
+		self::SURFACE_EDITOR    => array(
 			'prefix'                   => '.editor-styles-wrapper ',
 			'css'                      => array(
 				'key'   => 'editor_css',
@@ -83,7 +79,6 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				'label' => 'editor form context fallback',
 				'rule'  => 'context',
 			),
-			'structural_rules'         => true,
 			'control_container_chrome' => true,
 			'native_passthrough'       => array(
 				' .ssi-native-control-shell' => 'display:contents',
@@ -96,26 +91,6 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					'strategy'     => 'provider_editor_inner_blocks_passthrough',
 				),
 			),
-			'layout_bound'             => false,
-		),
-		// The editor surface reduced to its chrome, compiled from the front-end map
-		// when the editor map yields no overlay.
-		self::SURFACE_EDITOR_CHROME => array(
-			'prefix'                   => '.editor-styles-wrapper ',
-			'css'                      => array(
-				'key'   => 'editor_css',
-				'label' => 'editor control chrome',
-				'rule'  => 'editor',
-			),
-			'context'                  => array(
-				'key'   => 'editor_context_css',
-				'label' => 'editor form context fallback',
-				'rule'  => 'context',
-			),
-			'structural_rules'         => false,
-			'control_container_chrome' => true,
-			'native_passthrough'       => array(),
-			'form_passthrough'         => array(),
 			'layout_bound'             => false,
 		),
 	);
@@ -438,7 +413,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			}
 		}
 		// Chrome precedes the structural rules, so a duplicate keeps its chrome position.
-		$rules = self::compact_rules( array_values( array_unique( $declared['structural_rules'] ? array_merge( $chrome, $rules ) : $chrome ) ) );
+		$rules = self::compact_rules( array_values( array_unique( array_merge( $chrome, $rules ) ) ) );
 		$css   = empty( $rules ) ? '' : '/* Static Site Importer ' . $declared['css']['label'] . ': ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", $rules ) . "\n";
 		if ( strlen( $css ) + strlen( $context_css ) > ( $declared['layout_bound'] && empty( $presentation_graph ) ? self::MAX_LAYOUT_OVERLAY_BYTES : self::MAX_OVERLAY_BYTES ) ) {
 			return self::failed_compile( 'provider layout overlay exceeds its bounded size.' );
@@ -468,12 +443,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 *   `editor_context_css`, and the losses that lead the receipt. Its
 	 *   operations restate the same transpositions on the editor DOM and are not
 	 *   recorded.
-	 * - `editor_chrome`, compiled from the front-end map only when the editor pass
-	 *   yields no overlay: `editor_css` (the control-container chrome alone) and
-	 *   `editor_context_css`. It records nothing; the front-end pass already did.
 	 *
 	 * The front-end surface carries the overlay: when it compiles nothing, or
-	 * fails its map or byte bound, there is no overlay.
+	 * fails its map or byte bound, there is no overlay. When the editor surface
+	 * compiles nothing, or fails its map or byte bound, the overlay carries no
+	 * `editor_css` or `editor_context_css`, and the editor pass's losses record
+	 * why.
 	 *
 	 * @param array<string,mixed>     $graph              Provider layout graph.
 	 * @param mixed                   $front_map          Front-end provider layout target map.
@@ -495,14 +470,13 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				'losses'     => $losses,
 			);
 		}
-		$editor_overlay = array() === $editor['overlay'] ? self::compile( $graph, $front_map, $presentation_graph, $container, self::SURFACE_EDITOR_CHROME, $context_fallbacks )['overlay'] : $editor['overlay'];
 		return array(
 			'overlay'    => self::overlay(
 				array(
 					'css'                => $front['css'],
-					'editor_css'         => self::artifact( $editor_overlay, 'editor_css' ),
+					'editor_css'         => self::artifact( $editor['overlay'], 'editor_css' ),
 					'context_css'        => self::artifact( $front['overlay'], 'context_css' ),
-					'editor_context_css' => self::artifact( $editor_overlay, 'editor_context_css' ),
+					'editor_context_css' => self::artifact( $editor['overlay'], 'editor_context_css' ),
 				)
 			),
 			'css'        => $front['css'],

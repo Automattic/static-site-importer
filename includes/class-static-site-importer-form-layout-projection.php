@@ -26,6 +26,15 @@ if ( ! class_exists( 'Static_Site_Importer_Form_Textarea_Rows' ) ) {
  * Projects source form topology onto provider layout overlays.
  */
 final class Static_Site_Importer_Form_Layout_Projection {
+	/**
+	 * Editor `::placeholder` resets: Jetpack's editor placeholder styles yield to
+	 * the browser default under the authored control chrome.
+	 */
+	private const EDITOR_PLACEHOLDER_RESETS = array(
+		'color'   => 'revert',
+		'opacity' => 'revert',
+	);
+
 	/** @return array<int,array{control:int,layout:array<string,string>,condition?:array<string,mixed>}> */
 	public static function direct_label_control_gap_targets( array $form ): array {
 		$relations = $form['sibling_relations'] ?? null;
@@ -3338,10 +3347,16 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	}
 
 	/**
-		 * Jetpack owns this composite's rendered roles. Captured input presentation
-		 * belongs to its value input; the additional provider shell is structural.
-		 * Prefix chrome between a reconstructed source flex parent and the trigger
-		 * stretches and centres so the trigger keeps the source inner offset.
+	 * Jetpack owns this composite's rendered roles. Captured input presentation
+	 * belongs to its value input; the additional provider shell is structural.
+	 * Prefix chrome between a reconstructed source flex parent and the trigger
+	 * stretches and centres so the trigger keeps the source inner offset.
+	 *
+	 * Each part declares its own editor realisation (see
+	 * `editor_surface_table()`). The editor renders the composite as one
+	 * control node, the primary box, so the structural shell, carrier, and
+	 * prefix are front-end-only: their `height:100%` would otherwise collapse
+	 * that box.
 	 */
 	private static function phone_presentation_destinations( string $scope, int $index ): array {
 		return array(
@@ -3359,6 +3374,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'gap'         => '0',
 				),
 				'priority'   => 'important',
+				'editor'     => array( 'drop' => true ),
 			),
 			array(
 				'part'       => 'phone_primary',
@@ -3371,6 +3387,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'line-height' => 'revert',
 				),
 				'priority'   => 'important',
+				'editor'     => array(),
 			),
 			array(
 				'part'       => 'phone_carrier',
@@ -3383,6 +3400,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'min-width' => '0',
 				),
 				'priority'   => 'important',
+				'editor'     => array( 'drop' => true ),
 			),
 			array(
 				'part'       => 'phone_prefix',
@@ -3396,6 +3414,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'height'      => '100%',
 				),
 				'priority'   => 'important',
+				'editor'     => array( 'drop' => true ),
 			),
 		);
 	}
@@ -3629,12 +3648,18 @@ final class Static_Site_Importer_Form_Layout_Projection {
 						// Jetpack parks input className on the select wrapper and paints
 						// that wrapper as a second box. Neutralize it so only the inner
 						// control carries the authored padding, border, and background.
+						// The editor's single dropdown toggle is both boxes, so these
+						// resets are front-end-only there.
 						$wrapper['resets']   = array(
 							'padding'    => '0',
 							'border'     => '0',
 							'background' => 'transparent',
 						);
 						$wrapper['priority'] = 'important';
+						$wrapper['editor']   = array(
+							'unset_resets' => array_keys( $wrapper['resets'] ),
+							'placeholder'  => self::EDITOR_PLACEHOLDER_RESETS,
+						);
 					}
 					$destinations[] = $wrapper;
 					$properties     = array_values( array_diff( $properties, $wrapper_properties ) );
@@ -3669,6 +3694,14 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				if ( 'select' === $type ) {
 					// Jetpack forces `border:0!important` on the nested `<select>`.
 					$destination['priority'] = 'important';
+					// The editor's dropdown chrome is its toggle, the select wrapper
+					// itself, which keeps its own chevron: the nested-select suffix
+					// and the `appearance` reset are front-end-only.
+					$destination['editor'] = array(
+						'retarget'     => array( $inner_suffix, '' ),
+						'unset_resets' => array( 'appearance' ),
+						'placeholder'  => self::EDITOR_PLACEHOLDER_RESETS,
+					);
 				}
 				$destinations[] = $destination;
 				if ( 'submit' === $type && $has_caption ) {
@@ -3796,7 +3829,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$stacked_selector = $phone
 				? '.' . $scope . ' .' . self::presentation_destination_class( $scope, $index, 'primary' )
 				: '.' . $scope . ' .' . $control_class . ( 'select' === $type ? ' select' : '' );
-			$destinations[]   = array(
+			$stacked          = array(
 				'part'       => $phone ? 'phone_sibling_stacked' : ( 'select' === $type ? 'select_sibling_stacked' : 'sibling_stacked' ),
 				'role'       => 'control',
 				'selector'   => $stacked_selector,
@@ -3804,6 +3837,17 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'resets'     => array( 'margin-block' => '0' ),
 				'priority'   => 'important',
 			);
+			if ( $phone ) {
+				// The editor's phone control node is the primary box itself.
+				$stacked['editor'] = array();
+			} elseif ( 'select' === $type ) {
+				// The editor's dropdown chrome is its toggle, not a nested select.
+				$stacked['editor'] = array(
+					'retarget'    => array( ' select', '' ),
+					'placeholder' => self::EDITOR_PLACEHOLDER_RESETS,
+				);
+			}
+			$destinations[] = $stacked;
 		}
 
 		return array(
@@ -3897,12 +3941,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * block-editor DOM.
 	 *
 	 * Every layout target and presentation destination the front-end builder
-	 * emits carries a `part`; this table is the only place that says how that
-	 * part is realised in the editor. A part maps to any of:
+	 * emits carries a `part`. A part's editor realisation is declared exactly
+	 * once: either by the destination itself, in its `editor` key, where the
+	 * part is declared (the phone composite in `phone_presentation_destinations()`
+	 * and the dropdown in `presentation_descriptor()`), or by this table. A
+	 * realisation is any of:
 	 *
-	 * - `drop`: the editor has no such node (the phone composite's structural
-	 *   shell, carrier, and prefix roles; their `height:100%` would otherwise
-	 *   collapse the primary box, which is the editor's single control node);
+	 * - `drop`: the editor has no such node;
 	 * - `selector`: an editor selector replacing the front-end one, with
 	 *   `{scope}` standing for the scope selector;
 	 * - `retarget`: replace the declared front-end selector suffix `[0]` with
@@ -3921,15 +3966,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 *   destination addresses a textarea's box (its sibling-stacking reset
 	 *   carries no properties).
 	 *
-	 * An emitted part missing from this table fails the editor derivation.
+	 * An emitted part with neither declaration, or with both, fails the editor
+	 * derivation.
 	 *
 	 * @return array<string,array{drop?:bool,selector?:string,retarget?:array{0:string,1:string},unset_resets?:array<int,string>,add_resets?:array<string,string>,split?:array{prefixes:array<int,string>,properties:array<int,string>,resets:array<string,string>},placeholder?:array<string,string>,textarea_rows?:bool}>
 	 */
 	public static function editor_surface_table(): array {
-		$placeholder = array(
-			'color'   => 'revert',
-			'opacity' => 'revert',
-		);
+		$placeholder = self::EDITOR_PLACEHOLDER_RESETS;
 		$label_box   = array(
 			'split'      => array(
 				'prefixes'   => array( 'margin', 'padding' ),
@@ -3958,12 +4001,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			'wrap'                      => array( 'retarget' => array( '-wrap', '' ) ),
 			'box'                       => array(),
 			'submit_link_box'           => array(),
-			// Presentation destinations: the phone composite.
-			'phone_shell'               => array( 'drop' => true ),
-			'phone_primary'             => array(),
-			'phone_carrier'             => array( 'drop' => true ),
-			'phone_prefix'              => array( 'drop' => true ),
-			'phone_sibling_stacked'     => array(),
+			// Presentation destinations: the phone country trigger.
 			'country_trigger'           => array(),
 			// Native controls.
 			'control'                   => array(
@@ -3973,20 +4011,6 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			'checkbox_control'          => array(),
 			'sibling_stacked'           => array( 'placeholder' => $placeholder ),
 			'control_container'         => array(),
-			// The dropdown: one editor toggle carries the nested select's chrome.
-			'select_wrapper'            => array(
-				'unset_resets' => array( 'padding', 'border', 'background' ),
-				'placeholder'  => $placeholder,
-			),
-			'select_control'            => array(
-				'retarget'     => array( ' select', '' ),
-				'unset_resets' => array( 'appearance' ),
-				'placeholder'  => $placeholder,
-			),
-			'select_sibling_stacked'    => array(
-				'retarget'    => array( ' select', '' ),
-				'placeholder' => $placeholder,
-			),
 			// The submit button.
 			'submit_wrapper'            => array( 'placeholder' => $placeholder ),
 			'submit_link'               => $button_font,
@@ -4003,20 +4027,26 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	}
 
 	/**
-	 * The editor realisation declared for one target or destination's part.
+	 * The editor realisation declared for one target or destination's part:
+	 * the entry's own `editor` declaration, or else the editor table row.
 	 *
 	 * @param array<string,mixed> $entry A layout target or presentation destination.
 	 * @return array{drop?:bool,selector?:string,retarget?:array{0:string,1:string},unset_resets?:array<int,string>,add_resets?:array<string,string>,split?:array{prefixes:array<int,string>,properties:array<int,string>,resets:array<string,string>},placeholder?:array<string,string>,textarea_rows?:bool}
-	 * @throws LogicException When the part is missing or the editor table does not declare it.
+	 * @throws LogicException When the part is missing or declares no realisation, or two.
 	 */
 	public static function editor_surface_part( array $entry ): array {
-		$part  = $entry['part'] ?? null;
-		$table = self::editor_surface_table();
-		if ( ! is_string( $part ) || ! isset( $table[ $part ] ) ) {
+		$part     = $entry['part'] ?? null;
+		$table    = self::editor_surface_table();
+		$declared = $entry['editor'] ?? null;
+		if ( ! is_string( $part ) || ( ! is_array( $declared ) && ! isset( $table[ $part ] ) ) ) {
 			// ssi-error-class: programmer
 			throw new LogicException( 'A provider form overlay part has no editor surface realisation.' );
 		}
-		return $table[ $part ];
+		if ( is_array( $declared ) && isset( $table[ $part ] ) ) {
+			// ssi-error-class: programmer
+			throw new LogicException( 'A provider form overlay part declares its editor surface realisation twice.' );
+		}
+		return is_array( $declared ) ? $declared : $table[ $part ];
 	}
 
 	/**
@@ -4041,7 +4071,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	}
 
 	/**
-	 * The map without its derivation metadata: the canonical map that
+	 * The map without its derivation metadata (each entry's `part` and declared
+	 * `editor` realisation): the canonical map that
 	 * `Provider_Layout_Overlay::validate_map()` and `compile()` accept.
 	 *
 	 * @param array<string,mixed> $map Front-end or editor target map.
@@ -4053,7 +4084,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		}
 		foreach ( is_array( $map['presentation_targets'] ?? null ) ? $map['presentation_targets'] : array() as $key => $target ) {
 			foreach ( is_array( $target['destinations'] ?? null ) ? $target['destinations'] : array() as $destination_key => $destination ) {
-				unset( $map['presentation_targets'][ $key ]['destinations'][ $destination_key ]['part'] );
+				unset( $map['presentation_targets'][ $key ]['destinations'][ $destination_key ]['part'], $map['presentation_targets'][ $key ]['destinations'][ $destination_key ]['editor'] );
 			}
 		}
 		return $map;
@@ -4066,7 +4097,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * classes, so it is the source form; Jetpack's inner-blocks container has
 	 * no source counterpart and the overlay renders it box-less. Each target
 	 * and destination is realised by its declared part through
-	 * `editor_surface_table()`; the result carries no part ids.
+	 * `editor_surface_part()`; the result carries no part ids or realisations.
 	 *
 	 * @param array<string,mixed>                                $map       Front-end target map with declared parts.
 	 * @param string                                             $scope     Provider form scope class.
@@ -4085,7 +4116,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$extra  = array();
 			foreach ( $target['destinations'] as $destination ) {
 				$surface = self::editor_surface_part( $destination );
-				unset( $destination['part'] );
+				unset( $destination['part'], $destination['editor'] );
 				if ( ! empty( $surface['drop'] ) ) {
 					continue;
 				}
