@@ -129,25 +129,35 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 * @param string $capability Capability key.
 	 * @return array<string,mixed>
 	 */
-	public static function adapter_for_capability( string $capability ): array {
-		$adapters = self::adapters();
-		$provider = self::provider_for( $capability );
+	public static function adapter_for_capability( string $capability, string $collection = '' ): array {
+		$adapters   = self::adapters();
+		$provider   = self::provider_for( $capability );
+		$collection = strtolower( $collection );
 
-		$capability_adapters = array();
+		// A provider may own several collections under one capability (a shop's
+		// products and its cart). A named collection resolves to the provider's
+		// adapter for it; a collection no adapter owns resolves to the provider's
+		// default adapter, and one owned only by another provider resolves to none.
+		$claimed = false;
+		$default = array();
 		foreach ( $adapters as $adapter ) {
 			if ( (string) ( $adapter['capability'] ?? '' ) !== $capability ) {
 				continue;
 			}
-
-			$capability_adapters[] = $adapter;
-			if ( (string) ( $adapter['provider'] ?? '' ) === $provider ) {
+			$accepts = '' !== $collection && in_array( $collection, array( (string) ( $adapter['entity_collection'] ?? '' ), (string) ( $adapter['entity_type'] ?? '' ) ), true );
+			$claimed = $claimed || $accepts;
+			if ( (string) ( $adapter['provider'] ?? '' ) !== $provider ) {
+				continue;
+			}
+			if ( '' === $collection || $accepts ) {
 				return $adapter;
 			}
+			$default = empty( $default ) ? $adapter : $default;
 		}
 
 		// A configured provider is an explicit security/transaction boundary.
 		// Never route it to a different adapter implicitly.
-		return array();
+		return $claimed ? array() : $default;
 	}
 
 	/**
@@ -371,7 +381,17 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				continue;
 			}
 			$adapter_key = (string) ( $declaration['adapter_key'] ?? $declaration['payload']['adapter_key'] ?? '' );
-			$adapter     = '' === $adapter_key ? self::adapter_for_capability( $capability ) : self::adapter( $adapter_key );
+			$adapter     = '' === $adapter_key ? self::adapter_for_capability( $capability, 'entity_collection' === $kind ? $name : '' ) : self::adapter( $adapter_key );
+			if ( empty( $adapter ) && ! $required && 'entity_collection' === $kind && '' === $adapter_key && ! empty( self::adapter_for_capability( $capability ) ) ) {
+				// The configured provider serves the capability but not this optional collection.
+				$lifecycle['diagnostics'][] = array(
+					'code'                    => 'unsupported_optional_runtime_declaration',
+					'severity'                => 'warning',
+					'reconciliation_identity' => $key,
+					'message'                 => 'The configured ' . $capability . ' provider has no adapter for optional declaration ' . $name . '.',
+				);
+				continue;
+			}
 			if ( empty( $adapter ) ) {
 				return new WP_Error(
 					'static_site_importer_runtime_provider_unavailable',
@@ -643,7 +663,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( 'entity_collection' === $kind && in_array( $name, array( 'event', 'events' ), true ) ) {
 			return 'events';
 		}
-		if ( 'entity_collection' === $kind && in_array( $name, array( 'product', 'products' ), true ) ) {
+		if ( 'entity_collection' === $kind && in_array( $name, array( 'product', 'products', 'cart', 'carts' ), true ) ) {
 			return 'shop';
 		}
 		if ( 'entity_collection' === $kind && 'external_metrics' === $name ) {
@@ -1294,7 +1314,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		}
 		require_once __DIR__ . '/class-static-site-importer-translatepress-materializer.php';
 		require_once __DIR__ . '/class-static-site-importer-redirection-materializer.php';
-		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_TEC_Event_Seeder', 'Static_Site_Importer_External_Metric_Runtime', 'Static_Site_Importer_TranslatePress_Materializer', 'Static_Site_Importer_Redirection_Materializer' ) as $owner ) {
+		require_once __DIR__ . '/class-static-site-importer-woo-cart-materializer.php';
+		// A capability's first adapter is its default; collection adapters follow it.
+		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Woo_Cart_Materializer', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_TEC_Event_Seeder', 'Static_Site_Importer_External_Metric_Runtime', 'Static_Site_Importer_TranslatePress_Materializer', 'Static_Site_Importer_Redirection_Materializer' ) as $owner ) {
 			// Seeders may be absent or stubbed in standalone harnesses.
 			// @phpstan-ignore-next-line booleanNot.alwaysFalse -- Optional classes are stubbed in standalone coverage harnesses.
 			if ( ! is_callable( array( $owner, 'adapter' ) ) ) {
@@ -1377,6 +1399,51 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 		}
 		return $artifact;
+	}
+
+	/**
+	 * Validate a `generic/carts/v1` manifest: each cart view names its source
+	 * page and selector and carries exactly its canonical `commerce_cart` anchor.
+	 *
+	 * @param mixed $data Decoded manifest.
+	 * @return array{carts:array<int,array<string,mixed>>,errors:array<int,array<string,string>>}
+	 */
+	public static function validate_carts_manifest( mixed $data ): array {
+		$rows   = is_array( $data ) && is_array( $data['carts'] ?? null ) && array_is_list( $data['carts'] ) ? $data['carts'] : null;
+		$errors = array();
+		$carts  = array();
+		if ( null === $rows ) {
+			return array(
+				'carts'  => array(),
+				'errors' => array(
+					array(
+						'path'    => '$.carts',
+						'message' => 'carts must be a list of cart views.',
+					),
+				),
+			);
+		}
+		foreach ( $rows as $index => $row ) {
+			$path     = '$.carts[' . $index . ']';
+			$bindings = is_array( $row ) && is_array( $row['bindings'] ?? null ) && array_is_list( $row['bindings'] ) ? array_map( static fn( mixed $binding ): ?array => self::normalize_block_binding( $binding ), $row['bindings'] ) : array();
+			$valid    = array() !== $bindings && array() === array_filter( $bindings, static fn( ?array $binding ): bool => empty( $binding ) || 'commerce_cart' !== $binding['role'] );
+			if ( ! is_array( $row ) || '' === trim( (string) ( $row['source_path'] ?? '' ) ) || '' === trim( (string) ( $row['selector'] ?? '' ) ) || ! $valid ) {
+				$errors[] = array(
+					'path'    => $path,
+					'message' => 'cart view must carry source_path, selector and canonical commerce_cart generic/block-binding/v1 anchors.',
+				);
+				continue;
+			}
+			$carts[] = array(
+				'source_path' => (string) $row['source_path'],
+				'selector'    => (string) $row['selector'],
+				'bindings'    => $bindings,
+			);
+		}
+		return array(
+			'carts'  => $carts,
+			'errors' => $errors,
+		);
 	}
 
 	/**
@@ -1967,7 +2034,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( null === $binding ) {
 			return array();
 		}
-		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'commerce_collection', 'form' ), true ) ) {
+		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'commerce_collection', 'commerce_cart', 'form' ), true ) ) {
 			return null;
 		}
 		$normalized = array(
