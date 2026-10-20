@@ -587,6 +587,45 @@ namespace {
 		)
 	)['forms'][0]['block_markup'] ?? '';
 	$assert( str_contains( $placeholder_select_markup, '"options":["Ordinary member","Life member","Overseas member"]' ) && str_contains( $placeholder_select_markup, '"placeholder":"Select"' ) && ! str_contains( $placeholder_select_markup, 'Select an option' ), 'seeded-select-emits-source-placeholder-and-source-options-only', $placeholder_select_markup );
+	// --- A leading empty-value prompt option is the field's toggle label even without the producer's prompt markers ---
+	// Reduced from Automattic/static-site-importer#2238: the source select opens
+	// with <option value="">Select a range (optional)</option> and carries neither
+	// disabled nor selected, so the producer flags no placeholder option. Jetpack
+	// renders the input's placeholder as togglelabel — its first <option value=''>
+	// — so the prompt text must travel there and nowhere in the option list.
+	$unflagged_prompt_field = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
+		'select',
+		'select',
+		array(
+			'name'    => 'budget',
+			'label'   => 'Budget Range',
+			'options' => array(
+				array( 'label' => 'Select a range (optional)', 'value' => '' ),
+				array( 'label' => 'Around $1,000', 'value' => 'low' ),
+				array( 'label' => '$2,000+', 'value' => 'high' ),
+			),
+		)
+	);
+	$unflagged_prompt_input = array();
+	foreach ( $unflagged_prompt_field['innerBlocks'] ?? array() as $inner ) {
+		if ( 'jetpack/input' === ( $inner['name'] ?? '' ) ) {
+			$unflagged_prompt_input = $inner;
+			break;
+		}
+	}
+	$assert( array( 'Around $1,000', '$2,000+' ) === ( $unflagged_prompt_field['attrs']['options'] ?? null ) && 'Select a range (optional)' === ( $unflagged_prompt_input['attrs']['placeholder'] ?? null ), 'unflagged-leading-empty-value-select-option-maps-onto-the-provider-toggle-label', wp_json_encode( $unflagged_prompt_field ) );
+	$select_probe_html = '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Select Probe</title>'
+		. '<style>body{font-family:sans-serif;padding:32px}label{display:block;margin-bottom:6px}select,input,textarea{width:100%;padding:8px}</style></head>'
+		. '<body><h2>Request a quote</h2><form><div><label>Your Name *</label><input name="name" required></div><div><label>Email *</label><input type="email" name="email" required></div>'
+		. '<div><label>Budget Range</label><select name="budget"><option value="">Select a range (optional)</option><option value="low">Around $1,000</option><option value="high">$2,000+</option></select></div>'
+		. '<div><label>Message *</label><textarea name="message" required rows="4"></textarea></div><button type="submit">Send</button></form></body></html>';
+	$select_probe_source   = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'select-probe.html', 'files' => array( 'select-probe.html' => $select_probe_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$select_probe_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $select_probe_source ) ) );
+	$select_probe_markup    = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $select_probe_validated['forms'] ?? array() ) )['forms'][0]['block_markup'] ?? '';
+	$assert( empty( $select_probe_validated['errors'] ) && '' !== $select_probe_markup, 'select-probe-fixture-compiles-and-maps', wp_json_encode( array( 'source' => $select_probe_source, 'errors' => $select_probe_validated['errors'] ?? array() ) ) );
+	$assert( str_contains( $select_probe_markup, '"placeholder":"Select a range (optional)"' ) && ! str_contains( $select_probe_markup, '"options":["Select a range (optional)"' ), 'select-probe-prompt-maps-onto-the-provider-toggle-label', $select_probe_markup );
+	$assert( str_contains( $select_probe_markup, '"options":["Around $1,000","$2,000+"]' ) && 1 === substr_count( $select_probe_markup, 'Select a range (optional)' ), 'select-probe-prompt-stays-off-the-provider-option-list', $select_probe_markup );
+	$assert( ! str_contains( $select_probe_markup, 'Select an option' ), 'select-probe-leaves-no-synthetic-provider-prompt', $select_probe_markup );
 	$assert( 1 === preg_match( '/<div class="wp-block-jetpack-contact-form form contact ssi-form-[a-f0-9]{12}">/', $markup ), 'markup-contact-form-wrapper-and-source-classes' );
 	$assert( 1 === preg_match( '/<!-- wp:jetpack\/field-text (?=[^\n]*"required":true)(?=[^\n]*"id":"ssi-form-[a-f0-9]{12}-field-0")(?=[^\n]*"className":"ssi-node-[a-f0-9]{12}")(?=[^\n]*"shareFieldAttributes":false)[^\n]* -->/', $markup ), 'markup-field-wrapper-keeps-provider-layout-class-and-instance-identity' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/label {"label":"Your name","className":"source-label"} /-->' ) && str_contains( $markup, '<!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"className":"source-field"} /-->' ), 'markup-field-canonical-label-and-input-children-carry-source-classes' );
@@ -1011,7 +1050,11 @@ namespace {
 			&& 1 === preg_match( '/<!-- wp:jetpack\/field-telephone \{"required":true[^}]*"width":50\} -->/', $tailwind_grid_markup )
 			&& str_contains( $tailwind_grid_markup, 'wp:jetpack/field-email' )
 			&& str_contains( $tailwind_grid_markup, 'wp:jetpack/field-select' )
-			&& str_contains( $tailwind_grid_markup, '"options":["Select a project type","Kitchen Renovation"]' )
+			// The select's leading <option value="">Select a project type</option> is
+			// the field's toggle label (Automattic/static-site-importer#2238), not a
+			// visitor-selectable option.
+			&& str_contains( $tailwind_grid_markup, '"placeholder":"Select a project type"' )
+			&& str_contains( $tailwind_grid_markup, '"options":["Kitchen Renovation"]' )
 			&& str_contains( $tailwind_grid_markup, 'wp:jetpack/field-textarea' )
 			&& str_contains( $tailwind_grid_markup, '"placeholder":"Tell us about your project..."' )
 			&& str_contains( $tailwind_grid_markup, 'ssi-textarea-rows-5' )

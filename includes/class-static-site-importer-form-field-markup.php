@@ -952,9 +952,9 @@ final class Static_Site_Importer_Form_Field_Markup {
 		$options = isset( $control['options'] ) && is_array( $control['options'] ) ? $control['options'] : array();
 		$labels  = array();
 
-		foreach ( $options as $option ) {
+		foreach ( array_values( $options ) as $position => $option ) {
 			if ( is_array( $option ) ) {
-				if ( $omit_placeholders && ! empty( $option['placeholder'] ) ) {
+				if ( $omit_placeholders && self::is_select_prompt( $option, $position ) ) {
 					continue;
 				}
 				$label = isset( $option['label'] ) && is_scalar( $option['label'] ) ? trim( (string) $option['label'] ) : '';
@@ -974,19 +974,49 @@ final class Static_Site_Importer_Form_Field_Markup {
 	}
 
 	/**
+	 * Return whether a source select option is the field's unselected prompt
+	 * rather than a visitor-selectable answer.
+	 *
+	 * The producer names a prompt with its explicit placeholder flag — an
+	 * empty-value option carrying disabled or selected. Source selects can
+	 * also open with `<option value="">prompt</option>` and neither marker;
+	 * HTML makes that first option the visitor's initial answer and its empty
+	 * value submits no choice, so it carries the same prompt semantic.
+	 *
+	 * @param array<string, mixed> $option   Source option metadata.
+	 * @param int                  $position Zero-based source option position.
+	 * @return bool
+	 */
+	private static function is_select_prompt( array $option, int $position ): bool {
+		if ( ! empty( $option['placeholder'] ) ) {
+			return true;
+		}
+		if ( 0 !== $position ) {
+			return false;
+		}
+		// The producer always emits the value key: an explicit empty value is the
+		// prompt, while a missing value keeps HTML's own value-is-the-label text.
+		$value = isset( $option['value'] ) && is_scalar( $option['value'] ) ? trim( (string) $option['value'] ) : null;
+		$label = isset( $option['label'] ) && is_scalar( $option['label'] ) ? trim( (string) $option['label'] ) : '';
+		return '' === $value && '' !== $label;
+	}
+
+	/**
 	 * Read a select's source-authored placeholder option, mapped onto Jetpack's
 	 * input placeholder / togglelabel rather than kept as a real option.
 	 *
 	 * Jetpack prepends a synthetic "Select an option" unless togglelabel or a
-	 * default is set. The source's empty-value disabled option is that prompt.
+	 * default is set. The source's prompt option is that text: the flagged
+	 * empty-value disabled option, or a leading option whose empty value the
+	 * producer left unflagged.
 	 *
 	 * @param array<string, mixed> $control Source control metadata.
 	 * @return string
 	 */
 	private static function select_placeholder_label( array $control ): string {
 		$options = isset( $control['options'] ) && is_array( $control['options'] ) ? $control['options'] : array();
-		foreach ( $options as $option ) {
-			if ( ! is_array( $option ) || empty( $option['placeholder'] ) ) {
+		foreach ( array_values( $options ) as $position => $option ) {
+			if ( ! is_array( $option ) || ! self::is_select_prompt( $option, $position ) ) {
 				continue;
 			}
 			$label = isset( $option['label'] ) && is_scalar( $option['label'] ) ? trim( (string) $option['label'] ) : '';
