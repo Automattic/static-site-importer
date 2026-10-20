@@ -2630,7 +2630,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		// Flex/grid items are blockified (CSS Display §2.7). Their inline
 		// outer display adds no topology, but flex/grid inner layout still does.
 		if ( in_array( $parent_layout['display'] ?? null, array( 'flex', 'inline-flex', 'grid', 'inline-grid' ), true ) ) {
-			$blockified = array( 'inline' => 'block', 'inline-block' => 'block', 'inline-flex' => 'flex', 'inline-grid' => 'grid' );
+			$blockified = array(
+				'inline'       => 'block',
+				'inline-block' => 'block',
+				'inline-flex'  => 'flex',
+				'inline-grid'  => 'grid',
+			);
 			$display    = $facts['display'] ?? null;
 			if ( isset( $blockified[ $display ] ) ) {
 				$facts['display'] = $blockified[ $display ];
