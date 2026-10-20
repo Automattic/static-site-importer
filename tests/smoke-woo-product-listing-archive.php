@@ -8,6 +8,8 @@
  * the grid lists the archive's products with the imported card, the filters
  * become WooCommerce filter blocks inside one `product-filters` block where
  * the source filters were, and the sort and count become WooCommerce blocks.
+ * A select facet and a price range, which WooCommerce's filters cannot draw,
+ * keep their source block wired to the archive's query parameter.
  * The page holding the listing is written as the theme's `archive-product`
  * template, the grid's source order becomes the catalog's menu order (restored
  * on rollback), and the archive lists every product on one page with the shop
@@ -85,7 +87,21 @@ function wp_update_post( array $post ): int {
 function wc_sanitize_taxonomy_name( string $name ): string {
 	return strtolower( $name ); }
 function wc_attribute_taxonomy_id_by_name( string $name ): int {
-	return 'shade' === $name ? 6 : 0; }
+	return array(
+		'shade' => 6,
+		'tone'  => 7,
+	)[ $name ] ?? 0; }
+$GLOBALS['ssi_listing_scripts'] = array();
+function wp_script_is( string $handle ): bool {
+	return isset( $GLOBALS['ssi_listing_scripts'][ $handle ] ); }
+function wp_register_script(): bool {
+	return true; }
+function wp_add_inline_script( string $handle, string $data ): bool {
+	$GLOBALS['ssi_listing_scripts'][ $handle ] = $data;
+	return true;
+}
+function wp_enqueue_script(): void {}
+define( 'STATIC_SITE_IMPORTER_VERSION', 'test' );
 // The shop archive request.
 $GLOBALS['ssi_listing_theme_file'] = '';
 function get_theme_file_path( string $file ): string {
@@ -96,6 +112,11 @@ function is_product_taxonomy(): bool {
 	return false; }
 function wc_get_page_id( string $name ): int {
 	return 'shop' === $name ? 6 : 0; }
+
+/** A block's saved markup, as rendered without dynamic callbacks. */
+function render_block_stub( array $block ): string {
+	return (string) $block['innerHTML'];
+}
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-form-seeder.php';
@@ -115,13 +136,14 @@ $assert     = static function ( bool $condition, string $label, string $detail =
 $card         = static fn( string $name ): string => '<!-- wp:group {"className":"card","tagName":"article"} --><article class="wp-block-group card"><!-- wp:heading {"level":3} --><h3 class="wp-block-heading">' . $name . '</h3><!-- /wp:heading --></article><!-- /wp:group -->';
 $html         = static fn( string $markup ): string => '<!-- wp:html -->' . $markup . '<!-- /wp:html -->';
 $category     = $html( '<div data-cat-filters><button>All</button></div>' );
-$price        = $html( '<input type="range" data-price-max>' );
-$shade        = $html( '<select data-shade><option>Any</option></select>' );
+$price        = '<!-- wp:custom/authored-input {"type":"range","min":"10","max":"100"} --><input type="range" min="10" max="100" value="100" data-price-max><!-- /wp:custom/authored-input -->';
+$shade        = '<!-- wp:custom/authored-select {"id":"shade"} --><select id="shade" data-shade><option value="any" selected>Any</option><option value="Deep">Deep</option><option value="pale">Pale</option></select><!-- /wp:custom/authored-select -->';
+$tone         = $html( '<div data-tone><button>Warm</button></div>' );
 $swatch       = $html( '<div data-swatch></div>' );
 $count        = '<!-- wp:paragraph {"className":"count"} --><p class="count" data-count>2 items</p><!-- /wp:paragraph -->';
 $sort         = $html( '<select data-sort><option>Featured</option></select>' );
 $grid_raw     = '<!-- wp:group {"className":"grid","metadata":{"attributes":{"data-grid":""}}} --><div class="wp-block-group grid" data-grid>' . $card( 'Zeta Item' ) . $card( 'Alpha Item' ) . '</div><!-- /wp:group -->';
-$sidebar      = '<!-- wp:group {"tagName":"aside","className":"filters"} --><aside class="wp-block-group filters"><!-- wp:heading {"level":3} --><h3 class="wp-block-heading">Filter</h3><!-- /wp:heading -->' . $category . $price . $shade . $swatch . '</aside><!-- /wp:group -->';
+$sidebar      = '<!-- wp:group {"tagName":"aside","className":"filters"} --><aside class="wp-block-group filters"><!-- wp:heading {"level":3} --><h3 class="wp-block-heading">Filter</h3><!-- /wp:heading -->' . $category . $price . $shade . $tone . $swatch . '</aside><!-- /wp:group -->';
 $toolbar      = '<!-- wp:group {"className":"toolbar"} --><div class="wp-block-group toolbar">' . $count . $sort . '</div><!-- /wp:group -->';
 $region       = '<!-- wp:group {"className":"shop-layout"} --><div class="wp-block-group shop-layout">' . $sidebar . '<!-- wp:group {"className":"results"} --><div class="wp-block-group results">' . $toolbar . $grid_raw . '</div><!-- /wp:group --></div><!-- /wp:group -->';
 $listing_page = '<!-- wp:heading --><h1 class="wp-block-heading">Shop</h1><!-- /wp:heading -->' . $region;
@@ -166,11 +188,26 @@ $listing      = array(
 			'role' => 'category',
 		),
 		array(
-			'id'    => 'facet:shade',
+			'id'      => 'facet:shade',
+			'kind'    => 'facet',
+			'role'    => 'attribute',
+			'key'     => 'shade',
+			'shape'   => 'select',
+			'options' => array(
+				array(
+					'value' => 'any',
+					'reset' => true,
+				),
+				array( 'value' => 'Deep' ),
+				array( 'value' => 'pale' ),
+			),
+		),
+		array(
+			'id'    => 'facet:tone',
 			'kind'  => 'facet',
 			'role'  => 'attribute',
-			'key'   => 'shade',
-			'shape' => 'select',
+			'key'   => 'tone',
+			'shape' => 'buttons',
 		),
 		array(
 			'id'   => 'facet:swatch',
@@ -182,6 +219,9 @@ $listing      = array(
 			'id'    => 'range:price',
 			'kind'  => 'range',
 			'field' => 'price',
+			'bound' => 'max',
+			'min'   => 10,
+			'max'   => 100,
 		),
 		array(
 			'id'   => 'sort',
@@ -197,6 +237,7 @@ $listing      = array(
 		$anchor( $category, 'commerce_listing_control', 'facet:category' ),
 		$anchor( $price, 'commerce_listing_control', 'range:price' ),
 		$anchor( $shade, 'commerce_listing_control', 'facet:shade' ),
+		$anchor( $tone, 'commerce_listing_control', 'facet:tone' ),
 		$anchor( $swatch, 'commerce_listing_control', 'facet:swatch' ),
 		$anchor( $count, 'commerce_listing_control', 'result_count' ),
 		$anchor( $sort, 'commerce_listing_control', 'sort' ),
@@ -264,7 +305,7 @@ $assert( 1 === count( $validated['product_listings'] ) && '$.product_listings[0]
 // --- 2. The listing adopts its grid; the grid's own anchor is absorbed.
 $adopted = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( $lifecycle, $plan );
 $owned   = $adopted['entities'][ $list_id ]['manifest']['product_listings'][0] ?? array();
-$assert( ( $owned['grid']['selector'] ?? null ) === $grid['selector'] && array( 'commerce_listing' ) === array_column( $owned['bindings'] ?? array(), 'role' ) && 6 === count( $owned['control_bindings'] ?? array() ), 'listing-adopts-its-grid-and-keeps-only-its-region-anchor', (string) wp_json_encode( array_column( $owned['bindings'] ?? array(), 'role' ) ) );
+$assert( ( $owned['grid']['selector'] ?? null ) === $grid['selector'] && array( 'commerce_listing' ) === array_column( $owned['bindings'] ?? array(), 'role' ) && 7 === count( $owned['control_bindings'] ?? array() ), 'listing-adopts-its-grid-and-keeps-only-its-region-anchor', (string) wp_json_encode( array_column( $owned['bindings'] ?? array(), 'role' ) ) );
 $assert( array() === ( $adopted['entities'][ $grid_id ]['manifest']['product_grids'][0]['bindings'] ?? null ), 'grid-anchor-inside-the-listing-is-absorbed' );
 $elsewhere = $plan;
 $elsewhere['runtime_declarations'][2]['payload']['entities'][0]['grid_selector'] = 'main > ul';
@@ -288,8 +329,34 @@ $assert( 'woocommerce/product-collection' === ( $outer['blockName'] ?? '' ) && t
 $aside        = $outer['innerBlocks'][0]['innerBlocks'][0] ?? array();
 $panel        = $aside['innerBlocks'][0] ?? array();
 $filter_names = array_column( $panel['innerBlocks'] ?? array(), 'blockName' );
-$assert( 'filters' === ( $aside['attrs']['className'] ?? '' ) && 'woocommerce/product-filters' === ( $panel['blockName'] ?? '' ) && array( 'core/heading', 'woocommerce/product-filter-taxonomy', 'woocommerce/product-filter-price', 'woocommerce/product-filter-attribute', 'core/html' ) === $filter_names, 'filters-sit-in-one-product-filters-block-where-the-source-filters-were', (string) wp_json_encode( $filter_names ) );
-$assert( 6 === ( $panel['innerBlocks'][3]['attrs']['attributeId'] ?? 0 ) && 'single' === ( $panel['innerBlocks'][3]['attrs']['selectType'] ?? '' ) && str_contains( (string) ( $panel['innerBlocks'][4]['innerHTML'] ?? '' ), 'data-swatch' ), 'seeded-attribute-facet-maps-and-an-unseeded-one-keeps-its-source-block', (string) wp_json_encode( $panel['innerBlocks'][3]['attrs'] ?? null ) );
+$assert( 'filters' === ( $aside['attrs']['className'] ?? '' ) && 'woocommerce/product-filters' === ( $panel['blockName'] ?? '' ) && array( 'core/heading', 'woocommerce/product-filter-taxonomy', 'custom/authored-input', 'custom/authored-select', 'woocommerce/product-filter-attribute', 'core/html' ) === $filter_names, 'filters-sit-in-one-product-filters-block-where-the-source-filters-were', (string) wp_json_encode( $filter_names ) );
+$assert( 7 === ( $panel['innerBlocks'][4]['attrs']['attributeId'] ?? 0 ) && 'multiple' === ( $panel['innerBlocks'][4]['attrs']['selectType'] ?? '' ) && str_contains( (string) ( $panel['innerBlocks'][5]['innerHTML'] ?? '' ), 'data-swatch' ), 'seeded-button-facet-maps-and-an-unseeded-one-keeps-its-source-block', (string) wp_json_encode( $panel['innerBlocks'][4]['attrs'] ?? null ) );
+// WooCommerce's filters have no dropdown and no one-handle range: those keep
+// their source block, wired to the archive's query parameter.
+$range_wire  = $panel['innerBlocks'][2]['attrs']['metadata'][ Static_Site_Importer_Woo_Product_Listing_Materializer::CONTROL_KEY ] ?? null;
+$select_wire = $panel['innerBlocks'][3]['attrs']['metadata'][ Static_Site_Importer_Woo_Product_Listing_Materializer::CONTROL_KEY ] ?? null;
+$assert(
+	array(
+		'param' => 'max_price',
+		'shape' => 'range',
+		'clear' => '100',
+	) === $range_wire && str_contains( (string) ( $panel['innerBlocks'][2]['innerHTML'] ?? '' ), 'data-price-max' ),
+	'price-range-keeps-its-source-input-wired-to-max-price',
+	(string) wp_json_encode( $range_wire )
+);
+$assert(
+	array(
+		'param'  => 'filter_shade',
+		'shape'  => 'select',
+		'values' => array(
+			'any'  => '',
+			'Deep' => 'Deep',
+			'pale' => 'pale',
+		),
+	) === $select_wire,
+	'select-facet-keeps-its-source-select-wired-to-the-attribute-filter',
+	(string) wp_json_encode( $select_wire )
+);
 $results = $outer['innerBlocks'][0]['innerBlocks'][1] ?? array();
 $assert( array( 'woocommerce/product-results-count', 'woocommerce/catalog-sorting' ) === array_column( $results['innerBlocks'][0]['innerBlocks'] ?? array(), 'blockName' ), 'count-and-sort-become-woocommerce-blocks-in-the-toolbar' );
 $assert( 'grid' === ( $results['innerBlocks'][1]['attrs']['className'] ?? '' ) && str_contains( $markup, '<!-- wp:woocommerce/product-template' ) && ! str_contains( $markup, 'woocommerceHandPickedProducts' ) && ! str_contains( $markup, 'data-grid' ), 'grid-lists-the-archives-products-with-the-card' );
@@ -310,7 +377,18 @@ $assert( 12 === Static_Site_Importer_Woo_Product_Listing_Materializer::archive_p
 $GLOBALS['ssi_listing_theme_file'] = __FILE__;
 $assert( -1 === Static_Site_Importer_Woo_Product_Listing_Materializer::archive_per_page( 12 ) && 6 === Static_Site_Importer_Woo_Product_Listing_Materializer::archive_document_id( 0 ), 'designed-archive-shows-every-product-with-the-shop-page-styles' );
 
-// --- 7. Rollback restores the previous menu order.
+// --- 7. A wired control renders the requested archive state.
+$_GET['filter_shade'] = 'pale,Deep';
+$_GET['max_price']    = '40';
+$select_html          = Static_Site_Importer_Woo_Product_Listing_Materializer::render_control( render_block_stub( $panel['innerBlocks'][3] ), $panel['innerBlocks'][3] );
+$range_html           = Static_Site_Importer_Woo_Product_Listing_Materializer::render_control( render_block_stub( $panel['innerBlocks'][2] ), $panel['innerBlocks'][2] );
+$assert( str_contains( $select_html, 'data-ssi-listing-param="filter_shade"' ) && str_contains( $select_html, '<option value="" >Any</option>' ) && str_contains( $select_html, '<option selected value="pale">Pale</option>' ) && ! str_contains( $select_html, 'value="Deep" selected' ), 'select-shows-the-requested-term-and-clears-at-its-reset-option', $select_html );
+$assert( str_contains( $range_html, 'value="40"' ) && str_contains( $range_html, 'data-ssi-listing-param="max_price"' ) && str_contains( $range_html, 'data-ssi-listing-clear="100"' ), 'range-shows-the-requested-price-bound', $range_html );
+$script = (string) ( $GLOBALS['ssi_listing_scripts']['static-site-importer-listing-controls'] ?? '' );
+$assert( str_contains( $script, "closest('[data-ssi-listing-param]')" ) && str_contains( $script, 'searchParams.delete(param)' ) && str_contains( $script, "searchParams.delete('paged')" ), 'change-loads-the-archive-url-with-the-parameter' );
+$assert( '<p>x</p>' === Static_Site_Importer_Woo_Product_Listing_Materializer::render_control( '<p>x</p>', array( 'attrs' => array() ) ), 'blocks-without-a-wire-are-untouched' );
+
+// --- 8. Rollback restores the previous menu order.
 $rolled = Static_Site_Importer_Entity_Materializer_Registry::rollback( $adapter, $report );
 $assert( 'rolled_back' === ( $rolled['status'] ?? '' ) && array( 0, 7 ) === array( $GLOBALS['ssi_listing_products']['zeta-item'][1], $GLOBALS['ssi_listing_products']['alpha-item'][1] ), 'rollback-restores-the-previous-menu-order', (string) wp_json_encode( $GLOBALS['ssi_listing_products'] ) );
 
