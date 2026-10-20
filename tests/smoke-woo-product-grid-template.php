@@ -232,7 +232,7 @@ $assert( array( 'core/paragraph', 'core/post-title', 'core/paragraph', 'woocomme
 $title = $template['innerBlocks'][1]['attrs'] ?? array();
 $price = $template['innerBlocks'][3]['attrs'] ?? array();
 $assert( 3 === ( $title['level'] ?? 0 ) && 'card-title' === ( $title['className'] ?? '' ) && 'price' === ( $price['className'] ?? '' ), 'live-product-blocks-keep-the-source-classes', (string) wp_json_encode( array( $title, $price ) ) );
-$field = $template['innerBlocks'][0]['attrs']['metadata'][ Static_Site_Importer_Woo_Product_Grid_Materializer::SLOT_KEY ] ?? array();
+$field = $template['innerBlocks'][0]['attrs']['metadata'][ Static_Site_Importer_Product_Grid_Runtime::SLOT_KEY ] ?? array();
 $assert( 'field' === ( $field['role'] ?? '' ) && array( '11', '12' ) === array_map( 'strval', array_keys( $field['values'] ?? array() ) ) && str_contains( (string) ( $field['values'][12] ?? '' ), 'Shady' ), 'field-slot-carries-each-products-own-source-block', (string) wp_json_encode( $field ) );
 
 // --- 4. Render time: the add control joins WooCommerce's add-to-cart.
@@ -257,15 +257,15 @@ function wc_get_product( int $id ): WC_Product {
 	return new WC_Product( $id ); }
 function get_the_ID(): int {
 	return 12; }
-$slot_block = static fn( string $role, array $extra = array() ): array => array( 'attrs' => array( 'metadata' => array( Static_Site_Importer_Woo_Product_Grid_Materializer::SLOT_KEY => array_merge( array( 'role' => $role ), $extra ) ) ) );
-$button     = Static_Site_Importer_Woo_Product_Grid_Materializer::render_slot( '<button class="btn-add" data-add="a">Add to cart</button>', $slot_block( 'add_to_cart' ) );
+$slot_block = static fn( string $role, array $extra = array() ): array => array( 'attrs' => array( 'metadata' => array( Static_Site_Importer_Product_Grid_Runtime::SLOT_KEY => array_merge( array( 'role' => $role ), $extra ) ) ) );
+$button     = Static_Site_Importer_Product_Grid_Runtime::render_slot( '<button class="btn-add" data-add="a">Add to cart</button>', $slot_block( 'add_to_cart' ) );
 $tags       = new WP_HTML_Tag_Processor( $button );
 $tags->next_tag();
 $assert( null === $tags->get_attribute( 'data-add' ) && '12' === $tags->get_attribute( 'data-product_id' ) && true === $tags->has_class( 'add_to_cart_button' ) && true === $tags->has_class( 'ajax_add_to_cart' ) && true === $tags->has_class( 'btn-add' ), 'add-control-becomes-a-woocommerce-ajax-add-to-cart-for-the-current-product', $button );
-$blurb = Static_Site_Importer_Woo_Product_Grid_Materializer::render_slot( '<p class="blurb">Alpha blurb</p>', $slot_block( 'description' ) );
+$blurb = Static_Site_Importer_Product_Grid_Runtime::render_slot( '<p class="blurb">Alpha blurb</p>', $slot_block( 'description' ) );
 $assert( '<p class="blurb">Live blurb</p>' === $blurb, 'description-slot-shows-the-live-product-description', $blurb );
-$assert( '' === Static_Site_Importer_Woo_Product_Grid_Materializer::render_slot( '<p class="chip">Sunny</p>', $slot_block( 'field', array( 'optional' => true, 'values' => array() ) ) ), 'optional-field-without-a-value-stays-empty' );
-$assert( '<p>x</p>' === Static_Site_Importer_Woo_Product_Grid_Materializer::render_slot( '<p>x</p>', array( 'attrs' => array() ) ), 'blocks-outside-a-template-are-untouched' );
+$assert( '' === Static_Site_Importer_Product_Grid_Runtime::render_slot( '<p class="chip">Sunny</p>', $slot_block( 'field', array( 'optional' => true, 'values' => array() ) ) ), 'optional-field-without-a-value-stays-empty' );
+$assert( '<p>x</p>' === Static_Site_Importer_Product_Grid_Runtime::render_slot( '<p>x</p>', array( 'attrs' => array() ) ), 'blocks-outside-a-template-are-untouched' );
 
 // --- 5. A grid whose hook is not an attribute or id selector keeps its cards.
 $class_hook = $plan;
