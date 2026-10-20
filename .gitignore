@@ -3,5 +3,4 @@ vendor/
 build/
 artifacts/
 assets/host-acceptance/
-.homeboy/
 .phpunit.result.cache
