@@ -29,14 +29,13 @@ final class Static_Site_Importer_Product_Grid_Runtime {
 	/** Class on the product collection whose wrappers the layout CSS flattens. */
 	public const LOOP_CLASS = 'ssi-item-template-loop';
 
-	/** Fired once a copy of this runtime registers, so a second copy stands down. */
-	private const REGISTERED_ACTION = 'static_site_importer_product_grid_runtime_registered';
-
 	public static function register(): void {
-		if ( did_action( self::REGISTERED_ACTION ) ) {
+		// Every copy (the importer's own, each generated companion's renamed one)
+		// shares this constant, so only the first copy to register fills slots.
+		if ( defined( 'STATIC_SITE_IMPORTER_PRODUCT_GRID_RUNTIME_REGISTERED' ) ) {
 			return;
 		}
-		do_action( self::REGISTERED_ACTION );
+		define( 'STATIC_SITE_IMPORTER_PRODUCT_GRID_RUNTIME_REGISTERED', true );
 		add_filter( 'render_block', array( self::class, 'render_slot' ), 10, 2 );
 		add_action( 'wp_enqueue_scripts', array( self::class, 'enqueue_layout' ), 20 );
 	}

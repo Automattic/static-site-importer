@@ -179,18 +179,6 @@ if ( ! function_exists( 'add_action' ) ) {
 	}
 }
 
-if ( ! function_exists( 'did_action' ) ) {
-	function did_action( string $hook ): int {
-		return (int) ( $GLOBALS['ssi_companion_did_actions'][ $hook ] ?? 0 );
-	}
-}
-
-if ( ! function_exists( 'do_action' ) ) {
-	function do_action( string $hook, mixed ...$args ): void {
-		$GLOBALS['ssi_companion_did_actions'][ $hook ] = (int) ( $GLOBALS['ssi_companion_did_actions'][ $hook ] ?? 0 ) + 1;
-	}
-}
-
 if ( ! function_exists( 'add_filter' ) ) {
 	function add_filter( string $hook, callable|string|array $callback, int $priority = 10, int $accepted_args = 1 ): void {
 		$GLOBALS['ssi_companion_registered_filters'][ $hook ][] = array( $callback, $priority, $accepted_args );
@@ -1357,8 +1345,6 @@ function plugin_dir_path( string $file ): string { return dirname( $file ) . '/'
 function plugin_dir_url( string $file ): string { return 'https://example.test/plugins/' . basename( dirname( $file ) ) . '/'; }
 function add_action( string $hook, callable|string|array $callback, int $priority = 10, int $accepted_args = 1 ): void { if ( 'init' === $hook ) { call_user_func( $callback ); } }
 function add_filter( string $hook, callable|string $callback, int $priority = 10, int $accepted_args = 1 ): void {}
-function did_action( string $hook ): int { return 0; }
-function do_action( string $hook, mixed ...$args ): void {}
 function register_block_type( string $path, array $args = array() ): WP_Block_Type|false {
 	$metadata = is_file( $path . '/block.json' ) ? json_decode( (string) file_get_contents( $path . '/block.json' ), true ) : array();
 	$name = is_array( $metadata ) ? (string) ( $metadata['name'] ?? '' ) : '';
@@ -1395,8 +1381,6 @@ class WC_Product { public function __construct( private int $id ) {} public func
 class WooCommerce {}
 function add_action( string $hook, callable|string|array $callback, int $priority = 10, int $accepted_args = 1 ): void { $GLOBALS['actions'][ $hook ][] = $callback; }
 function add_filter( string $hook, callable|string|array $callback, int $priority = 10, int $accepted_args = 1 ): void { $GLOBALS['filters'][ $hook ][] = $callback; }
-function did_action( string $hook ): int { return (int) ( $GLOBALS['did'][ $hook ] ?? 0 ); }
-function do_action( string $hook, mixed ...$args ): void { $GLOBALS['did'][ $hook ] = (int) ( $GLOBALS['did'][ $hook ] ?? 0 ) + 1; }
 function get_the_ID(): int { return 7; }
 function wc_get_product( int $id ): WC_Product { return new WC_Product( $id ); }
 function parse_blocks( string $markup ): array { return array( array( 'blockName' => 'core/paragraph', 'markup' => $markup ) ); }
@@ -1455,8 +1439,6 @@ function plugin_dir_path( string $file ): string { return dirname( $file ) . '/'
 function plugin_dir_url( string $file ): string { return 'https://example.test/plugins/' . basename( dirname( $file ) ) . '/'; }
 function add_action( string $hook, callable|string|array $callback, int $priority = 10, int $accepted_args = 1 ): void { if ( 'init' === $hook ) { call_user_func( $callback ); } }
 function add_filter( string $hook, callable|string $callback, int $priority = 10, int $accepted_args = 1 ): void { $GLOBALS['filters'][ $hook ][] = $callback; }
-function did_action( string $hook ): int { return (int) ( $GLOBALS['did'][ $hook ] ?? 0 ); }
-function do_action( string $hook, mixed ...$args ): void { $GLOBALS['did'][ $hook ] = (int) ( $GLOBALS['did'][ $hook ] ?? 0 ) + 1; }
 function register_block_type( string $path, array $args = array() ): WP_Block_Type|false { return new WP_Block_Type( 'test/block' ); }
 function get_option( string $name, mixed $default = false ): mixed { return $default; }
 foreach ( array_slice( $argv, 1, -1 ) as $file ) { require $file; }
