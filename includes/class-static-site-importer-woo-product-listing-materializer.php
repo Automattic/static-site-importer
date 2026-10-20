@@ -303,6 +303,9 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 				'clear' => (string) ( $max ? $control['max'] : $control['min'] ),
 			);
 		}
+		if ( 'sort' === $kind ) {
+			return self::sort_parameter( $control );
+		}
 		$shape = (string) ( $control['shape'] ?? '' );
 		if ( 'facet' !== $kind || ! in_array( $shape, array( 'select', 'buttons', 'radio' ), true ) ) {
 			return null;
@@ -327,6 +330,39 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 			$wired['state_class'] = self::button_state_class( $source );
 		}
 		return array() === $values ? null : $wired;
+	}
+
+	/**
+	 * The source sort select wired to WooCommerce's `orderby`, each option
+	 * mapped to the catalog order it names; null when an option names an order
+	 * WooCommerce cannot run, so the control falls back to `catalog-sorting`.
+	 *
+	 * @return array<string,mixed>|null
+	 */
+	private static function sort_parameter( array $control ): ?array {
+		$orders = array(
+			'default'    => '',
+			'newest'     => 'date',
+			'price_asc'  => 'price',
+			'price_desc' => 'price-desc',
+			'name_asc'   => 'title-asc',
+			'name_desc'  => 'title-desc',
+			'popularity' => 'popularity',
+			'rating'     => 'rating',
+		);
+		$values = array();
+		foreach ( is_array( $control['options'] ?? null ) ? $control['options'] : array() as $option ) {
+			$order = is_array( $option ) && is_string( $option['order'] ?? null ) ? $option['order'] : '';
+			if ( ! array_key_exists( $order, $orders ) ) {
+				return null;
+			}
+			$values[] = $orders[ $order ];
+		}
+		return array() === $values ? null : array(
+			'param'  => 'orderby',
+			'shape'  => 'select',
+			'values' => $values,
+		);
 	}
 
 	/**
