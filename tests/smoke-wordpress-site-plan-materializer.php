@@ -1752,8 +1752,11 @@ $product_grid_artifact = array(
 	),
 );
 $product_grid_plan     = ( new ArtifactCompiler() )->compile( $product_grid_artifact )->toArray()['source_reports']['wordpress_site_plan'];
-$declared_products     = $product_grid_plan['runtime_declarations'] ?? array();
+// Newer transformers also declare the templated grid as an optional `product_grids` collection beside the explicit declarations.
+$declared_grids        = array_values( array_filter( $product_grid_plan['runtime_declarations'] ?? array(), static fn ( $declaration ): bool => 'entity_collection' === ( $declaration['kind'] ?? '' ) && 'product_grids' === ( $declaration['type'] ?? '' ) ) );
+$declared_products     = array_values( array_filter( $product_grid_plan['runtime_declarations'] ?? array(), static fn ( $declaration ): bool => ! ( 'entity_collection' === ( $declaration['kind'] ?? '' ) && 'product_grids' === ( $declaration['type'] ?? '' ) ) ) );
 $assert( 2 === count( $declared_products ) && 'shop' === ( $declared_products[0]['capability'] ?? '' ) && 'products' === ( $declared_products[1]['type'] ?? '' ), 'canonical plans carry explicit typed product declarations without diagnostic mutation' );
+$assert( count( $declared_grids ) <= 1, 'a canonical plan declares at most one optional product grid collection beside the explicit declarations' );
 $assert( true === in_array( 'entity_collection:products', $declared_products[0]['required_for'] ?? array(), true ), 'declared product entities retain the required capability relationship' );
 $assert( array( 'tour-tee', 'signed-cd' ) === array_column( $declared_products[1]['payload']['entities'] ?? array(), 'slug' ), 'canonical declarations retain product rows unchanged' );
 $declared_entities  = $declared_products[1]['payload']['entities'] ?? array();
