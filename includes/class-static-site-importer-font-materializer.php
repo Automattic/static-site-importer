@@ -741,6 +741,12 @@ final class Static_Site_Importer_Font_Materializer {
 			$bootstrap .= "    add_editor_style( 'assets/css/embedded-fonts.css' );\n";
 		}
 		$bootstrap .= "} );\n";
+		// Core's register_post_type( 'page' ) on init overwrites editor supports, so merge after it (priority 20).
+		$bootstrap .= "\nadd_action( 'init', static function (): void {\n";
+		$bootstrap .= "    \$supports = get_all_post_type_supports( 'page' );\n";
+		$bootstrap .= "    \$editor   = isset( \$supports['editor'][0] ) && is_array( \$supports['editor'][0] ) ? \$supports['editor'][0] : array();\n";
+		$bootstrap .= "    add_post_type_support( 'page', 'editor', array_merge( \$editor, array( 'default-mode' => 'template-locked' ) ) );\n";
+		$bootstrap .= "}, 20 );\n";
 		$bootstrap .= "\nadd_action( 'wp_enqueue_scripts', static function (): void {\n";
 		$bootstrap .= "    wp_enqueue_style( 'static-site-importer-theme', get_stylesheet_uri(), array(), wp_get_theme()->get( 'Version' ) );\n";
 		if ( $enqueue_stylesheet ) {

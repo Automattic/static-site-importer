@@ -21,6 +21,7 @@ $old_theme  = get_stylesheet();
 $marker     = '.ssi-editor-style-runtime-proof{color:#123456}';
 $failures   = array();
 $old_styles = $GLOBALS['editor_styles'] ?? null;
+$old_editor = get_all_post_type_supports( 'page' )['editor'] ?? null;
 
 $assert = static function ( bool $condition, string $message ) use ( &$failures ): void {
 	if ( ! $condition ) {
@@ -67,7 +68,10 @@ try {
 	wp_clean_themes_cache();
 
 	global $wp_filter;
-	$before = isset( $wp_filter['after_setup_theme']->callbacks[10] ) ? array_keys( $wp_filter['after_setup_theme']->callbacks[10] ) : array();
+	$before      = isset( $wp_filter['after_setup_theme']->callbacks[10] ) ? array_keys( $wp_filter['after_setup_theme']->callbacks[10] ) : array();
+	$init_before = isset( $wp_filter['init']->callbacks[20] ) ? array_keys( $wp_filter['init']->callbacks[20] ) : array();
+	// Reset to core's register_post_type( 'page' ) editor supports so other site code cannot mask the result.
+	add_post_type_support( 'page', 'editor', array( 'notes' => true ) );
 	require $theme_dir . '/functions.php';
 	$after = $wp_filter['after_setup_theme']->callbacks[10] ?? array();
 	$new   = array_diff_key( $after, array_fill_keys( $before, true ) );
@@ -77,11 +81,27 @@ try {
 		$callback['function']();
 	}
 
+	// init already ran (core registered 'page'), so fire the generated late init callback directly.
+	$init_after = $wp_filter['init']->callbacks[20] ?? array();
+	$init_new   = array_diff_key( $init_after, array_fill_keys( $init_before, true ) );
+	foreach ( $init_new as $callback ) {
+		$callback['function']();
+	}
+	$page_editor = get_all_post_type_supports( 'page' )['editor'] ?? null;
+	$assert( is_array( $page_editor ) && 'template-locked' === ( $page_editor[0]['default-mode'] ?? null ), 'Generated theme did not set page editor default-mode to template-locked.' );
+	$assert( true === ( $page_editor[0]['notes'] ?? null ), 'Generated theme dropped core page editor notes support.' );
+
 	$styles = get_block_editor_theme_styles();
 	$css    = implode( "\n", array_column( $styles, 'css' ) );
 	$assert( str_contains( $css, $marker ), 'WordPress Core did not load assets/css/editor-style.css into block editor theme styles.' );
 } finally {
 	$GLOBALS['editor_styles'] = $old_styles;
+	remove_post_type_support( 'page', 'editor' );
+	if ( is_array( $old_editor ) ) {
+		add_post_type_support( 'page', 'editor', ...$old_editor );
+	} elseif ( null !== $old_editor ) {
+		add_post_type_support( 'page', 'editor' );
+	}
 	switch_theme( $old_theme );
 	wp_clean_themes_cache();
 	if ( is_dir( $theme_dir ) ) {
