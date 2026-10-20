@@ -5,8 +5,8 @@
 mapped
 
 === css ===
-sha256: 6c4b64ce60e4285b88f52cbca0370c095c7c8286f66f23ba35d85ffcabc91f38
-/* Static Site Importer provider layout overlay: 5f2b553f56e3 */
+sha256: 1ae66d438732f703263c418673e563be5155d03a972a30080f7fca0c12bbb483
+/* Static Site Importer provider layout overlay: e7d93cba75d9 */
 .ssi-form-6371992b9ea7 .ssi-node-d7b2a8853f46-wrap, .ssi-form-6371992b9ea7 .ssi-node-5de1b79b7b4b-wrap, .ssi-form-6371992b9ea7 .ssi-node-6176762f78e2-wrap{border:0 solid;box-sizing:border-box}
 .ssi-form-6371992b9ea7 > form.jetpack-contact-form__form:not(:has(.wp-block-jetpack-contact-form)), .ssi-form-6371992b9ea7:not(:has(> form.jetpack-contact-form__form)){gap:calc(0.25rem * 5)}
 .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-af2e4f34f4a3{font-family:revert;line-height:revert;border:0 solid;border-color:#3f3f46;border-radius:.375rem;border-width:1px;box-sizing:border-box;color:inherit;font:inherit;height:2.75rem;padding-block:calc(.25rem * 2);padding-inline:calc(.25rem * 3);width:100%}
@@ -22,6 +22,7 @@ sha256: 6c4b64ce60e4285b88f52cbca0370c095c7c8286f66f23ba35d85ffcabc91f38
 .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c > .wp-block-button__link{margin-block:0!important}
 .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c{--jetpack--contact-form--input-height:auto}
 .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7.jetpack-contact-form-container{border:0 solid;box-sizing:border-box;display:grid;gap:calc(.25rem * 5)}
+.ssi-form-6371992b9ea7.jetpack-contact-form-container > form.jetpack-contact-form__form:has(> .wp-block-jetpack-contact-form):not(.submission-success){display:contents}
 .ssi-form-6371992b9ea7{position:relative;z-index:1;pointer-events:auto}
 .ssi-form-6371992b9ea7.jetpack-contact-form-container{padding:0;margin:0;border:0}
 .ssi-form-6371992b9ea7 .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}
@@ -32,8 +33,8 @@ sha256: 6c4b64ce60e4285b88f52cbca0370c095c7c8286f66f23ba35d85ffcabc91f38
 .ssi-form-6371992b9ea7 div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
-sha256: 03345f02a84a69933b16cd10c5aa2e6769d0b482648550fe085ee054e85b2a17
-/* Static Site Importer editor control chrome: fb9f61c37d80 */
+sha256: 6fff990fb2992f03d38e9c57ec5b893fd294a523e7fd61ee4adea1bcb94e92d1
+/* Static Site Importer editor control chrome: 2e642a3aa87b */
 .editor-styles-wrapper .ssi-form-6371992b9ea7 .ssi-node-d7b2a8853f46, .editor-styles-wrapper .ssi-form-6371992b9ea7 .ssi-node-5de1b79b7b4b, .editor-styles-wrapper .ssi-form-6371992b9ea7 .ssi-node-6176762f78e2{border:0 solid;box-sizing:border-box}
 .editor-styles-wrapper .ssi-form-6371992b9ea7{gap:calc(0.25rem * 5)}
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-af2e4f34f4a3{font-family:revert;line-height:revert;border:0 solid;border-color:#3f3f46;border-radius:.375rem;border-width:1px;box-sizing:border-box;color:inherit;font:inherit;height:2.75rem;padding-block:calc(.25rem * 2);padding-inline:calc(.25rem * 3);width:100%}
@@ -52,7 +53,7 @@ sha256: 03345f02a84a69933b16cd10c5aa2e6769d0b482648550fe085ee054e85b2a17
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c > .wp-block-button__link{font:-webkit-small-control;min-height:0;border:0 solid;box-sizing:border-box;border-style:solid}
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c > .wp-block-button__link{margin-block:0!important}
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c{--jetpack--contact-form--input-height:auto}
-.editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c::placeholder{color:revert;opacity:revert}
+.editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c::placeholder, .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7 .ssi-node-4d34991ddd0c::placeholder{color:revert;opacity:revert}
 .editor-styles-wrapper .ssi-form-6371992b9ea7.ssi-form-6371992b9ea7.jetpack-contact-form-container{border:0 solid;box-sizing:border-box;display:grid;gap:calc(.25rem * 5)}
 .editor-styles-wrapper .ssi-form-6371992b9ea7{position:relative;z-index:1;pointer-events:auto}
 .editor-styles-wrapper .ssi-form-6371992b9ea7.jetpack-contact-form-container{padding:0;margin:0;border:0}
@@ -78,7 +79,7 @@ sha256: 03345f02a84a69933b16cd10c5aa2e6769d0b482648550fe085ee054e85b2a17
 <!-- /wp:jetpack/contact-form -->
 
 === receipt_operations ===
-total: 28
+total: 29
 {"dimension":"topology","strategy":"provider_field_wrapper_class_projection","target_hash":"653133871f9decae48ebd8b2ff4531b5d6e725f446b0b8e91637ae99c2881db4"}
 {"dimension":"layout","strategy":"provider_parent_class_carried_control_spacing","target_hash":"2871e05b455edae0d6440bfe8594a71423732e026f07915e16f66699562b5b9c"}
 {"dimension":"topology","strategy":"provider_field_wrapper_class_projection","target_hash":"360d95f624f68a9e09f524d1a1ef7400e975543af0cb215e529a4a276c659019"}
@@ -105,6 +106,7 @@ total: 28
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"7afc743238f6fc1acb8e05e1a680cdf86ee00c9be5ad15583df94e6919515910","target_hash":"7b853ef1d47e0b82ee08a2a325182bfe33c7262d4692a22f5008ec0b099aa37f"}
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"7afc743238f6fc1acb8e05e1a680cdf86ee00c9be5ad15583df94e6919515910","target_hash":"cfc662b120b4a643c45ec73c4d308b4761c6fe3e9dfa5130fce7149d35174e1a"}
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"2d9cc1a4456d8f19520b575a7aa9b08c2bc42793c0056fd801f964b65996f0e3","target_hash":"5cbfd82285e08c2968629a85d30f352ed581c429ff6ac9066adeb4cb2b90d34f"}
+{"dimension":"layout","strategy":"provider_front_end_form_passthrough","target_hash":"3991ce30471013bc4741126d2df0f9b5b4200b94870ebfc11c7d780f5fdaa544"}
 {"dimension":"interaction","strategy":"provider_interaction_carrier","target_hash":"e8a3ca7146db06e1a5a439c791312820d0d959eeadde6e4682e3e9d26a9617ae"}
 {"dimension":"layout","strategy":"provider_container_box_reset","target_hash":"5cbfd82285e08c2968629a85d30f352ed581c429ff6ac9066adeb4cb2b90d34f"}
 

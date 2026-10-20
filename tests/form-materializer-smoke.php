@@ -1271,6 +1271,40 @@ namespace {
 		'container-presentation-owns-the-source-form-box-once',
 		wp_json_encode( $deduped_graph )
 	);
+	// A container `margin` shorthand owns the form node's margin longhands, the
+	// way the layout graph records the same source declaration.
+	$shorthand_graph = Static_Site_Importer_Form_Layout_Projection::without_container_box_facts(
+		array(
+			'nodes' => array(
+				array(
+					'id'     => 'form',
+					'layout' => array(
+						'display'      => 'flex',
+						'gap'          => '10px',
+						'margin_top'   => '18px',
+						'margin_right' => 'auto',
+						'margin_left'  => 'auto',
+					),
+				),
+			),
+		),
+		array(
+			'schema' => 'generic/form-container-presentation/v1',
+			'styles' => array(
+				'display'   => 'flex',
+				'margin'    => '18px auto 0',
+				'max_width' => '440px',
+			),
+		)
+	);
+	$assert(
+		array(
+			'display' => 'flex',
+			'gap'     => '10px',
+		) === $shorthand_graph['nodes'][0]['layout'],
+		'container-margin-shorthand-owns-the-form-margin-longhands',
+		wp_json_encode( $shorthand_graph )
+	);
 	// In-form heading + a nested `grid sm:grid-cols-2` name/phone row. The heading
 	// is copy inside the form (producer `context_before`), so it is an inner block
 	// of jetpack/contact-form rather than a page-grid sibling. The row maps through
@@ -3198,6 +3232,18 @@ namespace {
 		'provider-container-box-reset-is-lower-priority-than-authored-container-padding',
 		$container_padding_css
 	);
+	// Jetpack's front-end form element sits between the container that paints the
+	// source form's box and the block wrapper that lays out its fields. A source
+	// rule written against the form (`.newsletter form {...}`) also matches it, so
+	// it adds no box of its own, until Jetpack hides it after a submission. The
+	// editor has no such element.
+	$assert(
+		preg_match( '/(?:^|\n)\.ssi-form-[a-f0-9]{12}\.jetpack-contact-form-container > form\.jetpack-contact-form__form:has\(> \.wp-block-jetpack-contact-form\):not\(\.submission-success\)\{display:contents\}/', $container_padding_css )
+			&& ! str_contains( (string) ( $container_padding_row['provider_layout_overlay_css']['editor_css'] ?? '' ), 'jetpack-contact-form__form:has(' )
+			&& ! str_contains( (string) ( $status_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'jetpack-contact-form__form:has(' ),
+		'provider-front-end-form-adds-no-box-under-a-painted-source-form-container',
+		$container_padding_css
+	);
 	// A provider select is a wrapper nest: Jetpack parks input className on
 	// `.contact-form__select-wrapper` and paints that wrapper, then independently
 	// pads the nested `<select>`. The authored box must resolve to one node, the
@@ -3302,7 +3348,7 @@ namespace {
 	$assert(
 		empty( $wrapping_label_errors )
 			&& 'mapped' === $wrapping_label_status
-			&& 2 === preg_match_all( '/\.(ssi-form-[a-f0-9]{12})\.\1 \.ssi-node-[a-f0-9]{12}\{margin-block:0!important\}/', $wrapping_label_css ),
+			&& 1 === preg_match( '/\.(ssi-form-[a-f0-9]{12})\.\1 \.ssi-node-[a-f0-9]{12}, \.\1\.\1 \.ssi-node-[a-f0-9]{12}\{margin-block:0!important\}/', $wrapping_label_css ),
 		'wrapping-label-field-box-margin-is-released-on-the-provider-caption',
 		$wrapping_label_css
 	);
@@ -3621,7 +3667,7 @@ namespace {
 	$fixed_control_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $fixed_control_form );
 	$fixed_control_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $fixed_control_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$fixed_control_css        = (string) ( $fixed_control_row['provider_layout_overlay_css']['css'] ?? '' );
-	$assert( empty( $fixed_control_validation['errors'] ) && str_contains( $fixed_control_css, 'width:611px;flex:0 1 auto' ) && str_contains( $fixed_control_css, 'width:100%' ) && ! str_contains( $fixed_control_css, 'width:100%;flex:0 1 auto' ) && str_contains( $fixed_control_css, 'width:280px;flex-grow:1' ) && ! str_contains( $fixed_control_css, 'width:280px;flex-grow:1;flex:0 1 auto' ), 'fixed-provenance-width-neutralizes-jetpack-flex-without-changing-fluid-or-authored-flex-fields', $fixed_control_css );
+	$assert( empty( $fixed_control_validation['errors'] ) && str_contains( $fixed_control_css, '{width:611px}' ) && 1 === preg_match( '/-wrap\{flex:0 1 auto\}/', $fixed_control_css ) && str_contains( $fixed_control_css, 'width:100%' ) && ! str_contains( $fixed_control_css, 'width:100%;flex:0 1 auto' ) && str_contains( $fixed_control_css, 'width:280px;flex-grow:1' ) && ! str_contains( $fixed_control_css, 'width:280px;flex-grow:1;flex:0 1 auto' ), 'fixed-provenance-width-neutralizes-jetpack-wrapper-flex-without-changing-fluid-or-authored-flex-fields', $fixed_control_css );
 	$responsive_fixed_control_form = $fixed_control_form;
 	$responsive_fixed_control_form['forms'][0]['layout_graph']['nodes'][1]['layout']['width'] = '100%';
 	$responsive_fixed_control_condition = array( 'kind' => 'media', 'query' => '(min-width: 769px)' );
@@ -3629,7 +3675,7 @@ namespace {
 	$responsive_fixed_control_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $responsive_fixed_control_form );
 	$responsive_fixed_control_row        = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $responsive_fixed_control_validation['forms'] ?? array() ) )['forms'][0] ?? array();
 	$responsive_fixed_control_css        = (string) ( $responsive_fixed_control_row['provider_layout_overlay_css']['css'] ?? '' );
-	$assert( empty( $responsive_fixed_control_validation['errors'] ) && str_contains( $responsive_fixed_control_css, '@media (min-width: 769px)' ) && str_contains( $responsive_fixed_control_css, 'width:611px;flex:0 1 auto' ) && ! str_contains( $responsive_fixed_control_css, 'width:100%;flex:0 1 auto' ), 'responsive-fixed-provenance-width-neutralizes-jetpack-flex-without-changing-base-fluid-width', $responsive_fixed_control_css );
+	$assert( empty( $responsive_fixed_control_validation['errors'] ) && str_contains( $responsive_fixed_control_css, '@media (min-width: 769px)' ) && str_contains( $responsive_fixed_control_css, '@media (min-width: 769px){.' ) && 1 === preg_match( '/@media \(min-width: 769px\)\{[^{}]+-wrap\{flex:0 1 auto\}\}/', $responsive_fixed_control_css ) && ! str_contains( $responsive_fixed_control_css, 'width:100%;flex:0 1 auto' ), 'responsive-fixed-provenance-width-neutralizes-jetpack-wrapper-flex-without-changing-base-fluid-width', $responsive_fixed_control_css );
 	$responsive_grid_track_form                                      = $grid_track_form;
 	$responsive_grid_track_condition                                 = array( 'kind' => 'media', 'query' => '(max-width: 48rem)' );
 	$responsive_grid_track_form['layout_graph']['variants'][]        = array( 'node' => 'form', 'condition' => $responsive_grid_track_condition, 'layout_patch' => array( 'columns' => '1fr' ), 'precedence' => array( 'grid-template-columns' => array( 'source_order' => 1, 'specificity' => 1, 'important' => false ) ), 'provenance' => array( array( 'source_path' => 'assets/form.css', 'source_sha256' => str_repeat( 'd', 64 ), 'selector' => '.source-grid', 'condition' => $responsive_grid_track_condition, 'properties' => array( 'grid-template-columns' ) ) ) );
@@ -4346,6 +4392,51 @@ namespace {
 			),
 		'visually-hidden-checkbox-position-styling-does-not-decline-the-whole-form',
 		wp_json_encode( array( 'errors' => $hidden_checkbox_validated['errors'] ?? array(), 'row' => $hidden_checkbox_seed ) )
+	);
+
+	// A label moved off-screen (`position:absolute; left:-9999px`) names its
+	// control for screen readers and is hidden from view. Its offset without
+	// the position would shift a visible caption, so the provider label
+	// carries both.
+	$offscreen_label_html      = '<form><label for="news-email" style="position:absolute;left:-9999px;">Email address</label>'
+		. '<input type="email" id="news-email" name="email" placeholder="you@example.com"><button type="submit">Subscribe</button></form>';
+	$offscreen_label_artifact  = array(
+		'entrypoint' => 'news.html',
+		'files'      => array( 'news.html' => $offscreen_label_html ),
+	);
+	$offscreen_label_source    = class_exists( $artifact_compiler ) ? ( ( new $artifact_compiler() )->compile( $offscreen_label_artifact )->toArray() )['fallbacks'][0] ?? array() : array();
+	$offscreen_label_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $offscreen_label_source ) ) );
+	$offscreen_label_seed      = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $offscreen_label_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$offscreen_label_css       = (string) ( $offscreen_label_seed['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		! class_exists( $artifact_compiler )
+			|| (
+				'mapped' === ( $offscreen_label_seed['status'] ?? '' )
+				&& 1 === preg_match( '/\{[^}]*left:-9999px[^}]*\}/', $offscreen_label_css, $offscreen_label_rule )
+				&& str_contains( $offscreen_label_rule[0], 'position:absolute' )
+			),
+		'offscreen-label-carries-its-position-with-its-offset',
+		$offscreen_label_css
+	);
+	// Jetpack renders a text control inside its own field wrapper, and that
+	// wrapper is the item of the field row. A source `input { flex: 1 }` beside
+	// its button sizes the wrapper, not the input, so the row stays one line.
+	$flex_field_artifact = array(
+		'entrypoint' => 'news.html',
+		'files'      => array( 'news.html' => '<form style="display:flex;gap:10px;"><input type="email" name="email" aria-label="Email" style="flex:1;"><button type="submit">Subscribe</button></form>' ),
+	);
+	$flex_field_source   = class_exists( $artifact_compiler ) ? ( ( new $artifact_compiler() )->compile( $flex_field_artifact )->toArray() )['fallbacks'][0] ?? array() : array();
+	$flex_field_seed     = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $flex_field_source ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$flex_field_css      = (string) ( $flex_field_seed['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		! class_exists( $artifact_compiler )
+			|| (
+				'mapped' === ( $flex_field_seed['status'] ?? '' )
+				&& 1 === preg_match( '/ \.(ssi-node-[a-f0-9]{12})-wrap\{flex:1\}/', $flex_field_css, $flex_field_wrap )
+				&& ! preg_match( '/ \.' . $flex_field_wrap[1] . '\{[^}]*flex:/', $flex_field_css )
+			),
+		'field-control-flex-item-facts-size-its-field-wrapper',
+		$flex_field_css
 	);
 
 	$declared_box_form = static function ( array $styles, array $layout, string $class ) use ( $presentation_role, $v2_layout_graph, $layout_node ): array {

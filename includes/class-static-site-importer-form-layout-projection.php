@@ -2865,7 +2865,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'inline-grid'  => 'grid',
 			);
 			$display    = $facts['display'] ?? null;
-			if ( isset( $blockified[ $display ] ) ) {
+			if ( is_string( $display ) && isset( $blockified[ $display ] ) ) {
 				$facts['display'] = $blockified[ $display ];
 			}
 		}
@@ -3331,7 +3331,20 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		foreach ( is_array( $container['variants'] ?? null ) ? $container['variants'] : array() as $variant ) {
 			$declared = array_merge( $declared, is_array( $variant['styles'] ?? null ) ? array_keys( $variant['styles'] ) : array() );
 		}
-		$owned = array_intersect_key( Static_Site_Importer_Provider_Layout_Overlay::box_property_map(), array_flip( $declared ) );
+		// A declared shorthand (`margin`, `padding`) owns every longhand of its box,
+		// which is how the layout graph records the same facts on the form node.
+		$owned = array_filter(
+			Static_Site_Importer_Provider_Layout_Overlay::box_property_map(),
+			static function ( string $fact ) use ( $declared ): bool {
+				foreach ( $declared as $property ) {
+					if ( $fact === $property || str_starts_with( $fact, $property . '_' ) ) {
+						return true;
+					}
+				}
+				return false;
+			},
+			ARRAY_FILTER_USE_KEY
+		);
 		if ( array() === $owned ) {
 			return $graph;
 		}
@@ -3815,6 +3828,61 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		);
 	}
 
+	/**
+	 * Move a field control's flex-item facts onto its field wrapper.
+	 *
+	 * Jetpack renders a text-like control inside its own field wrapper, so the
+	 * wrapper, not the control, is the item of the provider's field container.
+	 * A source control that is a flex item (`input { flex: 1 }` in a flex form
+	 * row) has its item facts stated on the wrapper's `field-N` node; on the
+	 * control they would size nothing, and the wrapper would keep Jetpack's
+	 * full-row `flex: 1 1 100%`. Every other fact stays on the control.
+	 *
+	 * @param array<string,mixed> $graph    Provider overlay graph.
+	 * @param array<int,int>      $controls Control indexes rendered inside a field wrapper.
+	 * @return array<string,mixed>
+	 */
+	public static function with_field_wrapper_item_layout( array $graph, array $controls ): array {
+		$item_facts = array_flip( array( 'flex', 'flex_grow', 'flex_shrink', 'flex_basis', 'align_self', 'order' ) );
+		$wrapped    = array_fill_keys( array_map( static fn( int $index ): string => 'control-' . $index, $controls ), true );
+		$moved      = array();
+		foreach ( $graph['nodes'] ?? array() as $key => $node ) {
+			$id   = is_array( $node ) ? (string) ( $node['id'] ?? '' ) : '';
+			$item = isset( $wrapped[ $id ] ) && is_array( $node['layout'] ?? null ) ? array_intersect_key( $node['layout'], $item_facts ) : array();
+			if ( empty( $item ) ) {
+				continue;
+			}
+			$graph['nodes'][ $key ]['layout']     = array_diff_key( $node['layout'], $item );
+			$moved[ 'field-' . substr( $id, 8 ) ] = $item;
+		}
+		foreach ( $graph['variants'] ?? array() as $key => $variant ) {
+			$id    = is_array( $variant ) ? (string) ( $variant['node'] ?? '' ) : '';
+			$patch = isset( $wrapped[ $id ] ) && is_array( $variant['layout_patch'] ?? null ) ? array_intersect_key( $variant['layout_patch'], $item_facts ) : array();
+			if ( empty( $patch ) ) {
+				continue;
+			}
+			$graph['variants'][ $key ]['layout_patch'] = array_diff_key( $variant['layout_patch'], $patch );
+			$field_variant                             = $variant;
+			$field_variant['node']                     = 'field-' . substr( $id, 8 );
+			$field_variant['layout_patch']             = $patch;
+			$graph['variants'][]                       = $field_variant;
+			$moved                                    += array( $field_variant['node'] => array() );
+		}
+		foreach ( $moved as $field_id => $item ) {
+			foreach ( $graph['nodes'] as $key => $node ) {
+				if ( is_array( $node ) && ( $node['id'] ?? null ) === $field_id ) {
+					$graph['nodes'][ $key ]['layout'] = array_merge( is_array( $node['layout'] ?? null ) ? $node['layout'] : array(), $item );
+					continue 2;
+				}
+			}
+			$graph['nodes'][] = array(
+				'id'     => $field_id,
+				'layout' => $item,
+			);
+		}
+		return $graph;
+	}
+
 	/** Jetpack fields default to flex:1 1 100%; preserve a source fixed width's default flex behavior. */
 	public static function fixed_width_uses_default_flex( array $node ): bool {
 		$layout = is_array( $node['layout'] ?? null ) ? $node['layout'] : ( self::layout_patch( $node ) );
@@ -4214,6 +4282,32 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		);
 	}
 
+	/**
+	 * Whether the control's source label is taken out of flow and moved
+	 * off-screen (`position:absolute; left:-9999px`), a common way to keep a
+	 * label for screen readers while hiding it from view.
+	 *
+	 * @param array<string,mixed> $form Provider form manifest row.
+	 */
+	public static function source_label_moved_off_screen( array $form, int $index ): bool {
+		foreach ( $form['presentation_graph']['controls'] ?? array() as $row ) {
+			if ( ! is_array( $row ) || ( $row['index'] ?? null ) !== $index || ! is_array( $row['label']['styles'] ?? null ) ) {
+				continue;
+			}
+			$styles = $row['label']['styles'];
+			if ( ! in_array( strtolower( trim( (string) ( $styles['position'] ?? '' ) ) ), array( 'absolute', 'fixed' ), true ) ) {
+				return false;
+			}
+			foreach ( array( 'top', 'right', 'bottom', 'left' ) as $side ) {
+				if ( 1 === preg_match( '/^-([0-9]+(?:\.[0-9]+)?)px$/D', strtolower( trim( (string) ( $styles[ $side ] ?? '' ) ) ), $match ) && (float) $match[1] >= 999.0 ) {
+					return true;
+				}
+			}
+			return false;
+		}
+		return false;
+	}
+
 	/** Whether the control's source label is an ancestor that wraps it, rather than a `for` sibling. */
 	public static function source_label_wraps_control( array $form, int $index ): bool {
 		$nodes  = array_column( $form['control_topology']['nodes'] ?? array(), null, 'id' );
@@ -4332,7 +4426,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 *   `{scope}` standing for the scope selector;
 	 * - `retarget`: replace the declared front-end selector suffix `[0]` with
 	 *   the editor suffix `[1]` (Jetpack's editor puts a field block's className
-	 *   on the block wrapper itself rather than the front-end `-wrap` copy, and
+	 *   on the block element itself rather than the front-end `-wrap` copy, and
 	 *   a dropdown's chrome on its toggle rather than a nested `<select>`);
 	 * - `unset_resets` / `add_resets`: front-end resets the editor DOM does not
 	 *   need, and editor-only resets;
@@ -4377,7 +4471,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			'form_box'                  => array(),
 			'native_form_box'           => array( 'selector' => '{scope}.ssi-native-form-topology' ),
 			'field_list'                => array(),
-			'field'                     => array( 'retarget' => array( '-wrap', ' > div.jetpack-field__control' ) ),
+			// The field block element is the editor's field row: the flex or grid
+			// item of the form, rendered for every field type (a checkbox field
+			// has no `.jetpack-field__control`). The facts that arrange a field's
+			// own label and control reach that control through the editor surface's
+			// declared `field_control` split.
+			'field'                     => array( 'retarget' => array( '-wrap', '' ) ),
 			'wrap'                      => array( 'retarget' => array( '-wrap', '' ) ),
 			'box'                       => array(),
 			'submit_link_box'           => array(),
@@ -4731,7 +4830,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	}
 
 	/** @param array<int,string> $tokens */
-	private static function display_from_class_tokens( array $tokens ): ?string {
+	public static function display_from_class_tokens( array $tokens ): ?string {
 		$map     = array(
 			'grid'        => 'grid',
 			'flex'        => 'flex',
@@ -5256,8 +5355,16 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'priority'   => 'important',
 				) );
 			}
+			$offscreen_label = self::source_label_moved_off_screen( $form, (int) $index );
 			foreach ( $target['destinations'] as &$destination ) {
 				unset( $destination['class'] );
+				// A label the source moves off-screen keeps its accessible name
+				// only while it is out of flow. Its offsets alone would shift a
+				// visible caption, so the label destination carries the position
+				// too.
+				if ( $offscreen_label && 'label' === ( $destination['part'] ?? null ) && ! in_array( 'position', $destination['properties'], true ) ) {
+					$destination['properties'][] = 'position';
+				}
 			}
 			unset( $destination );
 			$presentation_targets[] = $target;

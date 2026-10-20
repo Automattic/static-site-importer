@@ -712,6 +712,15 @@ class Static_Site_Importer_Form_Seeder {
 			$overlay_variant['layout_patch']['flex'] = '0 1 auto';
 		}
 		unset( $overlay_variant );
+		$field_wrapped_controls = array();
+		foreach ( $field_blocks as $control_index => $field_block ) {
+			// Only a control whose source parent is the form itself has a field
+			// wrapper standing where it stood: an item of the field container.
+			if ( 'form' === ( $source_layout_nodes[ 'control-' . $control_index ]['parent'] ?? null ) && str_starts_with( (string) ( $field_block['name'] ?? '' ), 'jetpack/field-' ) && ! isset( $box_targets[ 'control-' . $control_index ] ) && ! in_array( $control_index, $topology['whole_field_controls'] ?? array(), true ) ) {
+				$field_wrapped_controls[] = (int) $control_index;
+			}
+		}
+		$overlay_graph    = Static_Site_Importer_Form_Layout_Projection::with_field_wrapper_item_layout( $overlay_graph, $field_wrapped_controls );
 		$overlay_node_ids = array_fill_keys( array_map( static fn( array $node ): string => (string) $node['id'], $overlay_graph['nodes'] ), true );
 		foreach ( $topology['responsive_variant_targets'] as $variant ) {
 			if ( is_string( $variant['node'] ?? null ) && ! isset( $overlay_node_ids[ $variant['node'] ] ) ) {
