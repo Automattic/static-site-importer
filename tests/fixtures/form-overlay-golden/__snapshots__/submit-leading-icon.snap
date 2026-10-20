@@ -5,9 +5,9 @@
 mapped
 
 === css ===
-sha256: 51dc0d19d1ebb64c5223ba4bcbe5822a1e90f3b63b52500d69ae7756d36976e8
-/* Static Site Importer provider layout overlay: 862da4432656 */
-.ssi-form-d095fee786e4 > form.jetpack-contact-form__form:not(:has(.wp-block-jetpack-contact-form)), .ssi-form-d095fee786e4:not(:has(> form.jetpack-contact-form__form)){flex-direction:column;display:flex;gap:12px;flex-wrap:nowrap}
+sha256: 5cb1b06e85eebb10a072f97848a712374853a47a4bc2f1fc763ff12113a68736
+/* Static Site Importer provider layout overlay: c488a2f0fb2e */
+.ssi-form-d095fee786e4 > form.jetpack-contact-form__form:not(:has(.wp-block-jetpack-contact-form)), .ssi-form-d095fee786e4:not(:has(> form.jetpack-contact-form__form)){flex-direction:column;display:flex;gap:12px;flex-wrap:nowrap;align-items:stretch}
 .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f{align-items:center;display:inline-flex;gap:8px;flex-grow:0;flex-shrink:1;flex-basis:auto}
 .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624{font-family:revert;line-height:revert;border:1px solid #ccc;padding:10px}
 .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00{display:inline-flex}
@@ -26,9 +26,9 @@ sha256: 51dc0d19d1ebb64c5223ba4bcbe5822a1e90f3b63b52500d69ae7756d36976e8
 .ssi-form-d095fee786e4 div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
-sha256: 936d7771d3fdfcf01359d695b50db07c7524887800128d8e7dd205150ee023fb
-/* Static Site Importer editor control chrome: 7c28f0a1fc90 */
-.editor-styles-wrapper .ssi-form-d095fee786e4{flex-direction:column;display:flex;gap:12px;flex-wrap:nowrap}
+sha256: 87e7d7cd91394197e556ab45212c3c3e73d2d33224725b95caf0577f015c7bf9
+/* Static Site Importer editor control chrome: d7cdb6a059ec */
+.editor-styles-wrapper .ssi-form-d095fee786e4{flex-direction:column;display:flex;gap:12px;flex-wrap:nowrap;align-items:stretch}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f{align-items:center;display:inline-flex;gap:8px;flex-grow:0;flex-shrink:1;flex-basis:auto}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624{font-family:revert;line-height:revert;border:1px solid #ccc;padding:10px}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624::placeholder{color:revert;opacity:revert}

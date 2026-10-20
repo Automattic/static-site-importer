@@ -5,10 +5,10 @@
 mapped
 
 === css ===
-sha256: 40c15e3a996695f3541d3b880279169e9e920f5fb9a2ddf2a0f8a510faba3d29
-/* Static Site Importer provider layout overlay: ef33e6384a57 */
+sha256: 3a693cac9af4ea0063e3d4b9357bde90649b1999132c8b700ad7f62e58c19418
+/* Static Site Importer provider layout overlay: 98797be6661c */
 .ssi-form-d095fee786e4 .ssi-node-9086d8eaec39{flex-direction:row}
-.ssi-form-d095fee786e4.ssi-native-form-topology form.jetpack-contact-form__form, .ssi-form-d095fee786e4.ssi-native-form-topology.wp-block-jetpack-contact-form:not(:has(form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *){flex-direction:column;display:flex;gap:20px;flex-wrap:nowrap}
+.ssi-form-d095fee786e4.ssi-native-form-topology form.jetpack-contact-form__form, .ssi-form-d095fee786e4.ssi-native-form-topology.wp-block-jetpack-contact-form:not(:has(form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *){flex-direction:column;display:flex;gap:20px;flex-wrap:nowrap;align-items:stretch}
 .ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5, .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f, .ssi-form-d095fee786e4 .ssi-node-3a3fd4718c31{width:100%}
 .ssi-form-d095fee786e4 .ssi-node-9086d8eaec39{flex-direction:row;display:flex;gap:12px;flex-grow:0;flex-shrink:1;flex-basis:auto}
 .ssi-form-d095fee786e4 .ssi-node-d19260cd5a75, .ssi-form-d095fee786e4 .ssi-node-bbd608db426f{flex:1 1 0}
@@ -30,10 +30,10 @@ sha256: 40c15e3a996695f3541d3b880279169e9e920f5fb9a2ddf2a0f8a510faba3d29
 .ssi-form-d095fee786e4 div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
-sha256: 00bbb0465a21e99daa84c3587c3b1a4ae5447f890323c6be0291be0e1c38c133
-/* Static Site Importer editor control chrome: c657dbff7429 */
+sha256: 5dcaafde43c02f5d3f3ddf835f2dbf0118fdb77472c0daafb241b059305e51cf
+/* Static Site Importer editor control chrome: f09dddafa8d6 */
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-9086d8eaec39{flex-direction:row}
-.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-native-form-topology > div.jetpack-contact-form{flex-direction:column;display:flex;gap:20px;flex-wrap:nowrap}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-native-form-topology > div.jetpack-contact-form{flex-direction:column;display:flex;gap:20px;flex-wrap:nowrap;align-items:stretch}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-3a3fd4718c31{width:100%}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-9086d8eaec39{flex-direction:row;display:flex;gap:12px;flex-grow:0;flex-shrink:1;flex-basis:auto}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-d19260cd5a75, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-bbd608db426f{flex:1 1 0}
