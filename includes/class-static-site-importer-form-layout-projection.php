@@ -2596,9 +2596,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			// min-height) still arranges its controls exactly as the provider does;
 			// that is a named box loss, not a topology the provider cannot express.
 			// `display: block` is that same block flow, so it adds no fact.
-			$facts = self::non_block_flow_facts( $layout );
+			$parent_id     = $s->layout_nodes_by_id[ $node_id ]['parent'] ?? null;
+			$parent_layout = $s->layout_by_node[ $parent_id ] ?? array();
+			$facts         = self::non_block_flow_facts( $layout, $parent_layout );
 			foreach ( $s->variants_by_node[ $node_id ] ?? array() as $variant ) {
-				$facts = array_merge( $facts, self::non_block_flow_facts( self::layout_patch( $variant ) ) );
+				$facts = array_merge( $facts, self::non_block_flow_facts( self::layout_patch( $variant ), $parent_layout ) );
 			}
 			if ( array() === $facts ) {
 				continue;
@@ -2621,9 +2623,19 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * provider's own stacked field flow cannot express.
 	 *
 	 * @param array<string,mixed> $facts
+	 * @param array<string,mixed> $parent_layout Parent wrapper's layout facts.
 	 * @return list<string>
 	 */
-	private static function non_block_flow_facts( array $facts ): array {
+	private static function non_block_flow_facts( array $facts, array $parent_layout = array() ): array {
+		// Flex/grid items are blockified (CSS Display §2.7). Their inline
+		// outer display adds no topology, but flex/grid inner layout still does.
+		if ( in_array( $parent_layout['display'] ?? null, array( 'flex', 'inline-flex', 'grid', 'inline-grid' ), true ) ) {
+			$blockified = array( 'inline' => 'block', 'inline-block' => 'block', 'inline-flex' => 'flex', 'inline-grid' => 'grid' );
+			$display    = $facts['display'] ?? null;
+			if ( isset( $blockified[ $display ] ) ) {
+				$facts['display'] = $blockified[ $display ];
+			}
+		}
 		if ( 'block' === ( $facts['display'] ?? null ) ) {
 			unset( $facts['display'] );
 		}
