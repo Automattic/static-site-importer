@@ -92,13 +92,13 @@ $synthetic['source']['files'] = array(
 		'content' => '<html><head><title>Child</title></head><body><p>Captured child without a captured parent</p></body></html>',
 	),
 );
-$synthetic_checks = static function ( array $result, string $phase ) use ( $assert ): array {
+$synthetic_checks             = static function ( array $result, string $phase ) use ( $assert ): array {
 	$assert( ! empty( $result['success'] ), $phase . ' synthetic parent import must complete: ' . wp_json_encode( $result['error'] ?? array() ) );
 	$parent = get_page_by_path( 'parent', OBJECT, 'page' );
 	$child  = get_page_by_path( 'parent/child', OBJECT, 'page' );
 	$assert( $parent instanceof WP_Post && 'draft' === $parent->post_status, $phase . ': a synthetic parent no source document backs is a draft.' );
 	$assert( $child instanceof WP_Post && 'publish' === $child->post_status && (int) $child->post_parent === (int) $parent->ID, $phase . ': the published child keeps its native draft parent.' );
-	$assert( (int) $child->ID === url_to_postid( home_url( '/parent/child/' ) ) && home_url( '/parent/child/' ) === get_permalink( $child ), $phase . ': /parent/child/ resolves to the published child.' );
+	$assert( url_to_postid( home_url( '/parent/child/' ) ) === (int) $child->ID && home_url( '/parent/child/' ) === get_permalink( $child ), $phase . ': /parent/child/ resolves to the published child.' );
 	$public = new WP_Query( array(
 		'pagename'    => 'parent',
 		'post_status' => 'publish',
@@ -106,7 +106,7 @@ $synthetic_checks = static function ( array $result, string $phase ) use ( $asse
 	$assert( ! in_array( (int) $parent->ID, wp_list_pluck( $public->posts, 'ID' ), true ), $phase . ': /parent/ is not publicly served.' );
 	return array( (int) $parent->ID, (int) $child->ID );
 };
-$synthetic_ids = $synthetic_checks( $import( $synthetic ), 'Import' );
+$synthetic_ids                = $synthetic_checks( $import( $synthetic ), 'Import' );
 $assert( $synthetic_ids === $synthetic_checks( $import( $synthetic ), 'Reimport' ), 'Reimport keeps the same draft parent and published child.' );
 wp_update_post( array(
 	'ID'          => $synthetic_ids[0],

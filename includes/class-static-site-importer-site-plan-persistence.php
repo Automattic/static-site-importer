@@ -187,8 +187,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$state['source_ids'][ $page['source_path'] ]           = $post;
 			if ( 'draft' === ( $page['materialized_post_status'] ?? '' ) ) {
 				$last = array_key_last( $state['applied']['posts'] );
-				$state['applied']['posts'][ $last ]['post_status']              = get_post_status( $post );
-				$state['applied']['posts'][ $last ]['route_ownership']          = isset( $page['alias_target_source_path'] ) ? 'alias_hierarchy_parent' : 'synthetic_hierarchy_parent';
+				$state['applied']['posts'][ $last ]['post_status']     = get_post_status( $post );
+				$state['applied']['posts'][ $last ]['route_ownership'] = isset( $page['alias_target_source_path'] ) ? 'alias_hierarchy_parent' : 'synthetic_hierarchy_parent';
 				if ( isset( $page['alias_target_source_path'] ) ) {
 					$state['applied']['posts'][ $last ]['alias_target_source_path'] = $page['alias_target_source_path'];
 				}
