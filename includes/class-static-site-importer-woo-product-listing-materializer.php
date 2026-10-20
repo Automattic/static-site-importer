@@ -500,8 +500,7 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 				'hide_empty' => true,
 			)
 		);
-		$terms = is_array( $terms ) ? array_values( array_filter( $terms, static fn( mixed $term ): bool => $term instanceof WP_Term ) ) : array();
-		if ( array() === $terms ) {
+		if ( ! is_array( $terms ) || array() === $terms ) {
 			return $unchanged;
 		}
 		$rank = array_flip( $values );
@@ -513,7 +512,7 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 			$live[]   = $term->slug;
 		}
 		$live  = array_merge( $live, array_fill( 0, count( $after ), '' ) );
-		$last  = end( $found[0] );
+		$last  = $found[0][ count( $found[0] ) - 1 ];
 		$start = (int) $found[0][0][1];
 		$end   = (int) $last[1] + strlen( $last[0] );
 		return array( substr( $content, 0, $start ) . implode( '', $before ) . $buttons . implode( '', $after ) . substr( $content, $end ), $live );
