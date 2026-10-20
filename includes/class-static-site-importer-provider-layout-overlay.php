@@ -12,6 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Compiles provider form layout and presentation into bounded, scoped overlay CSS.
  *
+ * @phpstan-type Surface array{prefix:string,css:array{key:string,label:string,rule:string},context:array{key:string,label:string,rule:string},control_container_chrome:bool,native_passthrough:array<string,string>,form_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>,container_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>}
  */
 class Static_Site_Importer_Provider_Layout_Overlay {
 	public const MAP_SCHEMA             = 'generic/provider-layout-target-map/v1';
