@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Compiles provider form layout and presentation into bounded, scoped overlay CSS.
  *
- * @phpstan-type Surface array{prefix:string,css:array{key:string,label:string,rule:string},context:array{key:string,label:string,rule:string},control_container_chrome:bool,native_passthrough:array<string,string>,form_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>}
+ * @phpstan-type Surface array{prefix:string,css:array{key:string,label:string,rule:string},context:array{key:string,label:string,rule:string},control_container_chrome:bool,native_passthrough:array<string,string>,form_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>,container_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>}
  */
 class Static_Site_Importer_Provider_Layout_Overlay {
 	public const MAP_SCHEMA             = 'generic/provider-layout-target-map/v1';
@@ -48,6 +48,11 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * - `form_passthrough`: scope-suffix rules, with their recorded operation,
 	 *   added when the form target is the bare scope (Jetpack's editor
 	 *   inner-blocks container must not interpose a flex box).
+	 * - `container_passthrough`: scope-suffix rules, with their recorded
+	 *   operation, added when the source form's box is painted on the provider's
+	 *   form container (Jetpack's front-end form element sits between that
+	 *   container and the field container, so a source rule that also matches it
+	 *   must not paint the box a second time).
 	 */
 	private const SURFACES = array(
 		self::SURFACE_FRONT_END => array(
@@ -65,6 +70,13 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			'control_container_chrome' => false,
 			'native_passthrough'       => array(),
 			'form_passthrough'         => array(),
+			'container_passthrough'    => array(
+				array(
+					'suffix'       => '.jetpack-contact-form-container > form.jetpack-contact-form__form:has(> .wp-block-jetpack-contact-form):not(.submission-success)',
+					'declarations' => 'display:contents',
+					'strategy'     => 'provider_front_end_form_passthrough',
+				),
+			),
 		),
 		self::SURFACE_EDITOR    => array(
 			'prefix'                   => '.editor-styles-wrapper ',
@@ -90,6 +102,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					'strategy'     => 'provider_editor_inner_blocks_passthrough',
 				),
 			),
+			'container_passthrough'    => array(),
 		),
 	);
 
@@ -352,6 +365,16 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				if ( self::safe_condition( $variant['condition'] ?? null ) && is_array( $variant['styles'] ?? null ) ) {
 					$styles = self::resolve_presentation_cascade( $variant['styles'], $variant['provenance'] ?? array(), $variant['precedence'] ?? array() );
 					self::compile_presentation_destinations( array( $destination ), $styles, 0, 'control', $variant['condition'], $prefix, $rules, $operations, $losses );
+				}
+			}
+			if ( $scope . '.jetpack-contact-form-container' === $destination['selector'] ) {
+				foreach ( $declared['container_passthrough'] as $passthrough ) {
+					$rules[]      = self::surface_selector( $prefix, $scope . $passthrough['suffix'] ) . '{' . $passthrough['declarations'] . '}';
+					$operations[] = array(
+						'dimension'   => 'layout',
+						'strategy'    => $passthrough['strategy'],
+						'target_hash' => hash( 'sha256', $scope . $passthrough['suffix'] ),
+					);
 				}
 			}
 		}
@@ -910,7 +933,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			$scope       = $scope_match[1];
 			$selector    = str_starts_with( $matches[1], $scope . $scope ) ? substr( $matches[1], strlen( $scope ) ) : $matches[1];
 			$native_safe = ( str_contains( $selector, '.ssi-native-form-topology' ) && self::safe_selector( $selector, $scope ) )
-				|| ( in_array( $selector, array( $scope . ' .ssi-native-control-shell', $scope . ' .ssi-native-control-shell-wrap', $scope . ' .wp-block-button.form-button-submit' ), true ) && 'display:contents' === $matches[2] );
+				|| ( in_array( $selector, array( $scope . ' .ssi-native-control-shell', $scope . ' .ssi-native-control-shell-wrap', $scope . ' .wp-block-button.form-button-submit', $scope . self::SURFACES[ self::SURFACE_FRONT_END ]['container_passthrough'][0]['suffix'] ), true ) && 'display:contents' === $matches[2] );
 		}
 		if ( ! preg_match( '/^' . $scope_selector . '$/D', $matches[1] ) && ! $native_safe ) {
 			return false;

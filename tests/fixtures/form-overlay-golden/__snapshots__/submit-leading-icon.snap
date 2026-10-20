@@ -5,8 +5,8 @@
 mapped
 
 === css ===
-sha256: b776ebef3fc8dfd784f34c638a53f0680caaf8f073acf606ce7a38dbc87ab235
-/* Static Site Importer provider layout overlay: 69ad5eaabe22 */
+sha256: 51dc0d19d1ebb64c5223ba4bcbe5822a1e90f3b63b52500d69ae7756d36976e8
+/* Static Site Importer provider layout overlay: 862da4432656 */
 .ssi-form-d095fee786e4 > form.jetpack-contact-form__form:not(:has(.wp-block-jetpack-contact-form)), .ssi-form-d095fee786e4:not(:has(> form.jetpack-contact-form__form)){flex-direction:column;display:flex;gap:12px;flex-wrap:nowrap}
 .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f{align-items:center;display:inline-flex;gap:8px;flex-grow:0;flex-shrink:1;flex-basis:auto}
 .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624{font-family:revert;line-height:revert;border:1px solid #ccc;padding:10px}
@@ -15,6 +15,7 @@ sha256: b776ebef3fc8dfd784f34c638a53f0680caaf8f073acf606ce7a38dbc87ab235
 .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00 > .wp-block-button__link{margin-block:0!important}
 .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00{--jetpack--contact-form--input-height:auto}
 .ssi-form-d095fee786e4.ssi-form-d095fee786e4.jetpack-contact-form-container{display:flex;flex-direction:column;gap:12px}
+.ssi-form-d095fee786e4.jetpack-contact-form-container > form.jetpack-contact-form__form:has(> .wp-block-jetpack-contact-form):not(.submission-success){display:contents}
 .ssi-form-d095fee786e4{position:relative;z-index:1;pointer-events:auto}
 .ssi-form-d095fee786e4.jetpack-contact-form-container{padding:0;margin:0;border:0}
 .ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}
@@ -53,7 +54,7 @@ sha256: 936d7771d3fdfcf01359d695b50db07c7524887800128d8e7dd205150ee023fb
 <!-- /wp:jetpack/contact-form -->
 
 === receipt_operations ===
-total: 10
+total: 11
 {"dimension":"layout","strategy":"provider_selector_transposition","node_hash":"07397d633f25a7101990a75864ae03d5a3b9ac07c4ed6accbc52cbfd7d7c13b4","target_hash":"3ff0b82e61dc91012b6b4670972a12087168dcf372963e2f7bd3400e59021a6f"}
 {"dimension":"layout","strategy":"provider_selector_transposition","node_hash":"bdfa5365350595d9a5a4ab37bc820730002cda048a89873614714bc6871b08af","target_hash":"ee6d888d54020f6aacc83396075f58804792d0d979f8a2de22c06cb17812611c"}
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"2d9cc1a4456d8f19520b575a7aa9b08c2bc42793c0056fd801f964b65996f0e3","target_hash":"544220f6412eb5090939c5b917565916cdb7dcb5005e2b2761ef9e6a5aa439df"}
@@ -62,6 +63,7 @@ total: 10
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"ec0b63550a82156626679a672552b1dc0ba0187f35491dfffd36d036b53f8b53","target_hash":"384c54a8b91365842fdc4a337b61588a1e94a695deb7cb5c7f0ace7d1689acdd"}
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"ec0b63550a82156626679a672552b1dc0ba0187f35491dfffd36d036b53f8b53","target_hash":"b4fc9430b146bc8f56044f607b27f5d67e27e5b8351e1b6833610030b524173d"}
 {"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"2d9cc1a4456d8f19520b575a7aa9b08c2bc42793c0056fd801f964b65996f0e3","target_hash":"121125c67552ddad5b21bfada7f5cc905182f9b4a39e0abd48db01736b928dde"}
+{"dimension":"layout","strategy":"provider_front_end_form_passthrough","target_hash":"5f8e43604414f9d61730132361ba52aa0e372b01ba85c5908cd9a96dde01b6f4"}
 {"dimension":"interaction","strategy":"provider_interaction_carrier","target_hash":"cb4dc149e60c2da80270627fce3ec94b6d57bf8360c26f262c5bc215e132dd14"}
 {"dimension":"layout","strategy":"provider_container_box_reset","target_hash":"121125c67552ddad5b21bfada7f5cc905182f9b4a39e0abd48db01736b928dde"}
 
