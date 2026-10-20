@@ -1694,8 +1694,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( array_diff( $row_facts, array_keys( Static_Site_Importer_Provider_Layout_Overlay::box_property_map() ) ) || ! empty( $s->variants_by_node[ $parent ] ) ) {
 				continue;
 			}
-			$a     = $s->layout_by_node[ $first ] ?? array();
-			$b     = $s->layout_by_node[ $last ] ?? array();
+			$a = $s->layout_by_node[ $first ] ?? array();
+			$b = $s->layout_by_node[ $last ] ?? array();
 			if ( 1 !== preg_match( '/^calc\(\s*50%\s*-\s*([0-9]+(?:\.[0-9]+)?(?:px|rem|em))\s*\)$/D', (string) ( $a['width'] ?? '' ), $match ) || '50%' !== ( $b['width'] ?? null ) || ! self::gutter_matches_overhang( (string) ( $b['margin_left'] ?? '' ), $match[1] ) ) {
 				continue;
 			}
@@ -1726,16 +1726,22 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				if ( array_diff_key( $s->layout_by_node[ $id ] ?? array(), $allowed ) || array_diff_key( $patch, $allowed ) || ( 1 === $offset && ! self::is_initial_box_value( 'margin_left', (string) ( $patch['margin_left'] ?? '0' ) ) ) ) {
 					continue 2;
 				}
-				$query = $condition['query'];
-				$cells[] = array( 'id' => $id, 'control' => $controls[0] );
+				$query   = $condition['query'];
+				$cells[] = array(
+					'id'      => $id,
+					'control' => $controls[0],
+				);
 			}
 			// The authored margin supplies the gutter; a provider/theme column
 			// gap on top of it would force the second half onto another line.
-			$s->overlay_node_targets[] = array( 'id' => 'form', 'layout' => array( 'column_gap' => '0' ) );
-			$track = self::equal_fraction_track_size( 2, $match[1] );
+			$s->overlay_node_targets[] = array(
+				'id'     => 'form',
+				'layout' => array( 'column_gap' => '0' ),
+			);
+			$track                     = self::equal_fraction_track_size( 2, $match[1] );
 			foreach ( $cells as $offset => $cell ) {
 				$s->field_blocks[ $cell['control'] ]['attrs']['width'] = 50;
-				$s->overlay_node_targets[] = array(
+				$s->overlay_node_targets[]                             = array(
 					'id'     => 'field-' . $cell['control'],
 					'layout' => array(
 						'width'        => $track,
@@ -1745,9 +1751,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 						'margin_right' => 0 === $offset ? $match[1] : '0',
 					),
 				);
-				$s->responsive_variant_targets[] = array(
+				$s->responsive_variant_targets[]                       = array(
 					'node'         => 'field-' . $cell['control'],
-					'condition'    => array( 'kind' => 'media', 'query' => $query ),
+					'condition'    => array(
+						'kind'  => 'media',
+						'query' => $query,
+					),
 					'layout_patch' => array(
 						'flex'         => '1 1 100%',
 						'width'        => '100%',
@@ -1760,14 +1769,20 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$inner_hook = self::layout_node_class( self::layout_scope( $s->form ), $cell['id'] . '-inner' );
 				$depth      = (int) $s->topology_nodes_by_id[ $cell['id'] ]['depth'];
 				$s->field_blocks[ $cell['control'] ]['attrs']['className'] .= ' ssi-source-wrapper-' . $depth . '--' . $inner_hook;
-				$s->wrapper_hooks[ $cell['id'] ] = $inner_hook;
-				$s->provider_layout_targets[ $cell['id'] ] = $inner_hook;
+				$s->wrapper_hooks[ $cell['id'] ]                            = $inner_hook;
+				$s->provider_layout_targets[ $cell['id'] ]                  = $inner_hook;
 				// The source cell is rebuilt inside the provider shell. Its old
 				// percentage width and float margin must not size the control again.
-				$s->overlay_node_targets[] = array( 'id' => $cell['id'], 'layout' => array( 'width' => '100%', 'margin_left' => '0' ) );
+				$s->overlay_node_targets[] = array(
+					'id'     => $cell['id'],
+					'layout' => array(
+						'width'       => '100%',
+						'margin_left' => '0',
+					),
+				);
 			}
 			$s->percentage_width_parents[ $parent ] = true;
-			$s->operations[] = array(
+			$s->operations[]                        = array(
 				'dimension'   => 'layout',
 				'strategy'    => 'provider_compensated_percentage_halves',
 				'target_hash' => hash( 'sha256', $parent ),
