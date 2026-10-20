@@ -1768,6 +1768,40 @@ namespace {
 		'block-flow-label-wrappers-map-with-named-box-losses',
 		wp_json_encode( array( 'validation' => $block_label_validated, 'row' => $block_label_row ) )
 	);
+	// CSS Display blockifies a label that is a flex item, but not one in
+	// ordinary block flow. Keep the reduced comment form neutral (#2203).
+	foreach ( array( 'flex', 'block' ) as $label_parent_display ) {
+		$item_label_html = '<!doctype html><html><head><meta charset="utf-8"><title>Comment</title><style>'
+			. 'label{display:inline-block;margin-bottom:.5rem}.agree{display:' . $label_parent_display . ';align-items:center}.box textarea{width:100%}'
+			. '</style></head><body><main><h1>Article</h1><div class="box"><textarea name="comment" rows="5" placeholder="Your comment..."></textarea>'
+			. '<div class="agree"><label for="agree"><input id="agree" type="checkbox" checked> I agree to the <a href="/rules">rules</a></label></div>'
+			. '<input type="submit" value="Add comment"></div></main></body></html>';
+		$item_label_form      = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'comment.html', 'files' => array( 'comment.html' => $item_label_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+		$item_label_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $item_label_form ) ) );
+		$item_label_row       = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $item_label_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+		$item_label_losses    = array_column( $item_label_row['computed_layout_receipt']['losses'] ?? array(), 'reason_code' );
+		if ( 'flex' === $label_parent_display ) {
+			$assert(
+				empty( $item_label_validated['errors'] )
+					&& 'mapped' === ( $item_label_row['status'] ?? '' )
+					&& true === ( $item_label_row['runtime_mapped'] ?? false )
+					&& in_array( 'provider_wrapper_box_unrepresentable', $item_label_losses, true )
+					&& ! in_array( 'provider_wrapper_layout_unrepresentable', $item_label_losses, true )
+					&& str_contains( (string) ( $item_label_row['block_markup'] ?? '' ), 'wp:jetpack/contact-form' ),
+				'flex-item-inline-block-label-maps-with-named-box-loss',
+				wp_json_encode( array( 'validation' => $item_label_validated, 'row' => $item_label_row ) )
+			);
+		} else {
+			$assert(
+				empty( $item_label_validated['errors'] )
+					&& 'mapped' !== ( $item_label_row['status'] ?? '' )
+					&& in_array( 'provider_wrapper_layout_unrepresentable', $item_label_losses, true )
+					&& ! in_array( 'provider_wrapper_box_unrepresentable', $item_label_losses, true ),
+				'block-parent-inline-block-label-retains-topology-loss',
+				wp_json_encode( array( 'validation' => $item_label_validated, 'row' => $item_label_row ) )
+			);
+		}
+	}
 	// A wrapper that groups some but not all fields (a first/last name row) and
 	// declares `width: 100%` without any horizontal margin, padding or border is
 	// still plain block flow: a block box's default content width. It must not
