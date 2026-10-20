@@ -890,7 +890,8 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			$provenance                 = json_decode( (string) get_post_meta( (int) $pattern['id'], '_static_site_importer_provenance', true ), true );
 			$provenance                 = is_array( $provenance ) ? $provenance : array();
-			$provenance['content_hash'] = hash( 'sha256', (string) get_post_field( 'post_content', (int) $pattern['id'] ) );
+			$persisted                  = get_post( (int) $pattern['id'] );
+			$provenance['content_hash'] = hash( 'sha256', $persisted instanceof WP_Post ? $persisted->post_content : '' );
 			if ( ! self::write_post_meta( (int) $pattern['id'], '_static_site_importer_provenance', (string) wp_json_encode( $provenance ) ) ) {
 				return new WP_Error( 'route_link_rewrite_failed', 'Synced pattern provenance could not be updated after route-link resolution.', array( 'source_path' => $pattern['source_path'] ) );
 			}

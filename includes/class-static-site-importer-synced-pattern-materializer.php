@@ -222,7 +222,8 @@ final class Static_Site_Importer_Synced_Pattern_Materializer {
 		);
 		// Absent wp_pattern_sync_status meta is what makes a wp_block synced.
 		delete_post_meta( $id, 'wp_pattern_sync_status' );
-		$persisted  = (string) get_post_field( 'post_content', $id );
+		$post       = get_post( $id );
+		$persisted  = $post instanceof WP_Post ? $post->post_content : '';
 		$provenance = array(
 			'schema'       => 'static-site-importer/synced-pattern-provenance/v1',
 			'identity'     => $identity,

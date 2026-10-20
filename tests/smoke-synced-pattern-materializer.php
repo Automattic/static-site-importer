@@ -53,8 +53,8 @@ function wp_insert_post( array $block_post, bool $wp_error = false ) {
 	$GLOBALS['ssi_pattern_posts'][ $pattern_id ] = $block_post;
 	return $pattern_id;
 }
-function get_post_field( string $field, int $pattern_id ): string {
-	return (string) ( $GLOBALS['ssi_pattern_posts'][ $pattern_id ][ $field ] ?? '' ); }
+function get_post( int $pattern_id ): ?WP_Post {
+	return isset( $GLOBALS['ssi_pattern_posts'][ $pattern_id ] ) ? new WP_Post( $pattern_id ) : null; }
 function get_post_meta( int $pattern_id, string $key, bool $single = true ): string {
 	unset( $single );
 	return (string) ( $GLOBALS['ssi_pattern_meta'][ $pattern_id ][ $key ] ?? '' ); }
