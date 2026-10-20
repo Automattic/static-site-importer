@@ -868,6 +868,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				'status'                           => 'prepared',
 				'reconciliation_identity'          => $binding['reconciliation_identity'],
 				'source_path'                      => $binding['source_path'],
+				'selector'                         => (string) ( $binding['selector'] ?? '' ),
 				'role'                             => $binding['role'] ?? '',
 				'declaration_id'                   => $binding['declaration_id'] ?? '',
 				'fallback_reconciliation_identity' => $binding['fallback_reconciliation_identity'] ?? '',
