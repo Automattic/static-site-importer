@@ -559,6 +559,43 @@ test( 'form gap reaches the flex container when Jetpack 16.3 wraps the scoped bl
 } );
 
 
+test( 'long alternating form maps without gate losses and preserves every field before/after compaction', async () => {
+	requireBrowserPrerequisites();
+	const load = ( ...args ) => JSON.parse( execFileSync( 'php', [ 'tests/fixtures/long-form-overlay.php', ...args ], { encoding: 'utf8' } ) );
+	const compacted = load();
+	assert.equal( compacted.status, 'mapped', JSON.stringify( compacted.row.mapping_decision ) );
+	const original = load( '--uncompacted' );
+	assert.equal( compacted.fields.length, 30 );
+	assert.equal( compacted.overlayValid, true, 'both surfaces pass persisted overlay validation' );
+	assert.equal( compacted.row.mapping_decision.status, 'mapped' );
+	assert.deepEqual( compacted.row.mapping_decision.losses, [], 'receipt quality gate has no unaccepted form losses' );
+	assert.notEqual( compacted.row.reason, 'form_receipt_loss_unaccepted' );
+	assert.ok( compacted.css.length < original.css.length, 'nonadjacent body compaction reduces real form CSS' );
+	assert.equal( compacted.html, original.html );
+	const browser = await chromium.launch();
+	try {
+		const page = await browser.newPage();
+		for ( const width of [ 1440, 390 ] ) {
+			await page.setViewportSize( { width, height: 900 } );
+			for ( const surface of [ 'css', 'editorCss' ] ) {
+				const samples = [];
+				for ( const fixture of [ original, compacted ] ) {
+					await page.setContent( `<style>body{margin:0}input,select,textarea{font-size:16px}${ fixture[ surface ] }</style><div class="${ surface === 'editorCss' ? 'editor-styles-wrapper' : 'frontend' }">${ fixture.html }</div>` );
+					samples.push( await page.locator( '.wp-block-group' ).evaluateAll( nodes => nodes.map( node => {
+						const style = getComputedStyle( node );
+						const rect = node.getBoundingClientRect();
+						return { top: rect.top, left: rect.left, width: rect.width, height: rect.height, display: style.display, gap: style.gap, padding: style.padding, margin: style.margin, border: style.border, fontFamily: style.fontFamily, fontSize: style.fontSize, fontWeight: style.fontWeight, lineHeight: style.lineHeight, letterSpacing: style.letterSpacing, color: style.color };
+					} ) ) );
+				}
+				assert.equal( samples[0].length, 30 );
+				assert.deepEqual( samples[1], samples[0], `${ surface } per-field layout and typography at ${ width }` );
+			}
+		}
+	} finally {
+		await browser.close();
+	}
+} );
+
 test( 'mapped full-width submit keeps its winning background and fills the form row (#2223)', async () => {
 	const fixture = JSON.parse( execFileSync( 'php', [ 'tests/fixtures/form-submit-cascade.php' ], { encoding: 'utf8' } ) );
 	const browser = await chromium.launch();

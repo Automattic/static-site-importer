@@ -3099,7 +3099,20 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		foreach ( is_array( $container['variants'] ?? null ) ? $container['variants'] : array() as $variant ) {
 			$declared = array_merge( $declared, is_array( $variant['styles'] ?? null ) ? array_keys( $variant['styles'] ) : array() );
 		}
-		$owned = array_intersect_key( Static_Site_Importer_Provider_Layout_Overlay::box_property_map(), array_flip( $declared ) );
+		// A declared shorthand (`margin`, `padding`) owns every longhand of its box,
+		// which is how the layout graph records the same facts on the form node.
+		$owned = array_filter(
+			Static_Site_Importer_Provider_Layout_Overlay::box_property_map(),
+			static function ( string $fact ) use ( $declared ): bool {
+				foreach ( $declared as $property ) {
+					if ( $fact === $property || str_starts_with( $fact, $property . '_' ) ) {
+						return true;
+					}
+				}
+				return false;
+			},
+			ARRAY_FILTER_USE_KEY
+		);
 		if ( array() === $owned ) {
 			return $graph;
 		}
@@ -3980,6 +3993,32 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			'phone_destinations' => $phone_destinations,
 			'destinations'       => $destinations,
 		);
+	}
+
+	/**
+	 * Whether the control's source label is taken out of flow and moved
+	 * off-screen (`position:absolute; left:-9999px`), a common way to keep a
+	 * label for screen readers while hiding it from view.
+	 *
+	 * @param array<string,mixed> $form Provider form manifest row.
+	 */
+	public static function source_label_moved_off_screen( array $form, int $index ): bool {
+		foreach ( $form['presentation_graph']['controls'] ?? array() as $row ) {
+			if ( ! is_array( $row ) || ( $row['index'] ?? null ) !== $index || ! is_array( $row['label']['styles'] ?? null ) ) {
+				continue;
+			}
+			$styles = $row['label']['styles'];
+			if ( ! in_array( strtolower( trim( (string) ( $styles['position'] ?? '' ) ) ), array( 'absolute', 'fixed' ), true ) ) {
+				return false;
+			}
+			foreach ( array( 'top', 'right', 'bottom', 'left' ) as $side ) {
+				if ( 1 === preg_match( '/^-([0-9]+(?:\.[0-9]+)?)px$/D', strtolower( trim( (string) ( $styles[ $side ] ?? '' ) ) ), $match ) && (float) $match[1] >= 999.0 ) {
+					return true;
+				}
+			}
+			return false;
+		}
+		return false;
 	}
 
 	/** Whether the control's source label is an ancestor that wraps it, rather than a `for` sibling. */
@@ -5024,8 +5063,16 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'priority'   => 'important',
 				) );
 			}
+			$offscreen_label = self::source_label_moved_off_screen( $form, (int) $index );
 			foreach ( $target['destinations'] as &$destination ) {
 				unset( $destination['class'] );
+				// A label the source moves off-screen keeps its accessible name
+				// only while it is out of flow. Its offsets alone would shift a
+				// visible caption, so the label destination carries the position
+				// too.
+				if ( $offscreen_label && 'label' === ( $destination['part'] ?? null ) && ! in_array( 'position', $destination['properties'], true ) ) {
+					$destination['properties'][] = 'position';
+				}
 			}
 			unset( $destination );
 			$presentation_targets[] = $target;

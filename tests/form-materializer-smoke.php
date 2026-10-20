@@ -1271,6 +1271,40 @@ namespace {
 		'container-presentation-owns-the-source-form-box-once',
 		wp_json_encode( $deduped_graph )
 	);
+	// A container `margin` shorthand owns the form node's margin longhands, the
+	// way the layout graph records the same source declaration.
+	$shorthand_graph = Static_Site_Importer_Form_Layout_Projection::without_container_box_facts(
+		array(
+			'nodes' => array(
+				array(
+					'id'     => 'form',
+					'layout' => array(
+						'display'      => 'flex',
+						'gap'          => '10px',
+						'margin_top'   => '18px',
+						'margin_right' => 'auto',
+						'margin_left'  => 'auto',
+					),
+				),
+			),
+		),
+		array(
+			'schema' => 'generic/form-container-presentation/v1',
+			'styles' => array(
+				'display'   => 'flex',
+				'margin'    => '18px auto 0',
+				'max_width' => '440px',
+			),
+		)
+	);
+	$assert(
+		array(
+			'display' => 'flex',
+			'gap'     => '10px',
+		) === $shorthand_graph['nodes'][0]['layout'],
+		'container-margin-shorthand-owns-the-form-margin-longhands',
+		wp_json_encode( $shorthand_graph )
+	);
 	// In-form heading + a nested `grid sm:grid-cols-2` name/phone row. The heading
 	// is copy inside the form (producer `context_before`), so it is an inner block
 	// of jetpack/contact-form rather than a page-grid sibling. The row maps through
@@ -3273,7 +3307,7 @@ namespace {
 	$assert(
 		empty( $wrapping_label_errors )
 			&& 'mapped' === $wrapping_label_status
-			&& 2 === preg_match_all( '/\.(ssi-form-[a-f0-9]{12})\.\1 \.ssi-node-[a-f0-9]{12}\{margin-block:0!important\}/', $wrapping_label_css ),
+			&& 1 === preg_match( '/\.(ssi-form-[a-f0-9]{12})\.\1 \.ssi-node-[a-f0-9]{12}, \.\1\.\1 \.ssi-node-[a-f0-9]{12}\{margin-block:0!important\}/', $wrapping_label_css ),
 		'wrapping-label-field-box-margin-is-released-on-the-provider-caption',
 		$wrapping_label_css
 	);
@@ -4317,6 +4351,31 @@ namespace {
 			),
 		'visually-hidden-checkbox-position-styling-does-not-decline-the-whole-form',
 		wp_json_encode( array( 'errors' => $hidden_checkbox_validated['errors'] ?? array(), 'row' => $hidden_checkbox_seed ) )
+	);
+
+	// A label moved off-screen (`position:absolute; left:-9999px`) names its
+	// control for screen readers and is hidden from view. Its offset without
+	// the position would shift a visible caption, so the provider label
+	// carries both.
+	$offscreen_label_html      = '<form><label for="news-email" style="position:absolute;left:-9999px;">Email address</label>'
+		. '<input type="email" id="news-email" name="email" placeholder="you@example.com"><button type="submit">Subscribe</button></form>';
+	$offscreen_label_artifact  = array(
+		'entrypoint' => 'news.html',
+		'files'      => array( 'news.html' => $offscreen_label_html ),
+	);
+	$offscreen_label_source    = class_exists( $artifact_compiler ) ? ( ( new $artifact_compiler() )->compile( $offscreen_label_artifact )->toArray() )['fallbacks'][0] ?? array() : array();
+	$offscreen_label_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $offscreen_label_source ) ) );
+	$offscreen_label_seed      = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $offscreen_label_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$offscreen_label_css       = (string) ( $offscreen_label_seed['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		! class_exists( $artifact_compiler )
+			|| (
+				'mapped' === ( $offscreen_label_seed['status'] ?? '' )
+				&& 1 === preg_match( '/\{[^}]*left:-9999px[^}]*\}/', $offscreen_label_css, $offscreen_label_rule )
+				&& str_contains( $offscreen_label_rule[0], 'position:absolute' )
+			),
+		'offscreen-label-carries-its-position-with-its-offset',
+		$offscreen_label_css
 	);
 
 	$declared_box_form = static function ( array $styles, array $layout, string $class ) use ( $presentation_role, $v2_layout_graph, $layout_node ): array {
