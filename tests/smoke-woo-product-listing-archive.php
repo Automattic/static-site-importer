@@ -49,6 +49,10 @@ class WP_Error {
 add_filter( 'sanitize_title', 'sanitize_title_with_dashes', 10, 3 );
 function mbstring_binary_safe_encoding(): void {}
 function reset_mbstring_encoding(): void {}
+function _canonical_charset( string $charset ): string {
+	return $charset; }
+function get_option( string $name, mixed $fallback = false ): mixed {
+	return 'blog_charset' === $name ? 'UTF-8' : $fallback; }
 function is_wp_error( mixed $value ): bool {
 	return $value instanceof WP_Error; }
 function _doing_it_wrong(): void {}
@@ -104,6 +108,13 @@ function wp_add_inline_script( string $handle, string $data ): bool {
 	return true;
 }
 function wp_enqueue_script(): void {}
+// The store's product categories, as WordPress lists them.
+class WP_Term {
+	public function __construct( public string $name, public string $slug ) {}
+}
+$GLOBALS['ssi_listing_terms'] = array();
+function get_terms(): array {
+	return $GLOBALS['ssi_listing_terms']; }
 define( 'STATIC_SITE_IMPORTER_VERSION', 'test' );
 // The shop archive request.
 $GLOBALS['ssi_listing_theme_file'] = '';
@@ -138,7 +149,7 @@ $assert     = static function ( bool $condition, string $label, string $detail =
 // A shop listing: a filter sidebar, then a toolbar and the product grid.
 $card         = static fn( string $name ): string => '<!-- wp:group {"className":"card","tagName":"article"} --><article class="wp-block-group card"><!-- wp:heading {"level":3} --><h3 class="wp-block-heading">' . $name . '</h3><!-- /wp:heading --></article><!-- /wp:group -->';
 $html         = static fn( string $markup ): string => '<!-- wp:html -->' . $markup . '<!-- /wp:html -->';
-$category     = $html( '<div data-cat-filters><button class="chip on" data-cat="all">All</button><button class="chip" data-cat="Succulents &amp; Cacti">Succulents</button><button class="chip" data-cat="Tools">Tools</button></div>' );
+$category     = $html( '<div data-cat-filters><button class="chip on" data-cat="all">All</button><button class="chip" data-cat="Succulents &amp; Cacti">Succulents &amp; Cacti</button><button class="chip" data-cat="Tools">Tools</button></div>' );
 $price        = '<!-- wp:custom/authored-input {"type":"range","min":"10","max":"100"} --><input type="range" min="10" max="100" value="100" data-price-max><!-- /wp:custom/authored-input -->';
 $shade        = '<!-- wp:custom/authored-select {"id":"shade"} --><select id="shade" data-shade><option value="any" selected>Any</option><option value="Deep">Deep</option><option value="pale">Pale</option></select><!-- /wp:custom/authored-select -->';
 $tone         = $html( '<div data-tone><label><input type="radio" name="tone" value="warm">Warm</label><label><input type="radio" name="tone" value="cool" checked>Cool</label></div>' );
@@ -421,11 +432,25 @@ $assert( str_contains( $buttons_html, 'data-ssi-listing-param="categories"' ) &&
 $assert( str_contains( $select_html, 'data-ssi-listing-param="filter_shade"' ) && str_contains( $select_html, '<option value="" >Any</option>' ) && str_contains( $select_html, '<option selected value="pale">Pale</option>' ) && ! str_contains( $select_html, 'value="Deep" selected' ), 'select-shows-the-requested-term-and-clears-at-its-reset-option', $select_html );
 $assert( str_contains( $radio_html, 'data-ssi-listing-param="filter_tone"' ) && str_contains( $radio_html, '<input checked type="radio" name="tone" value="warm">' ) && str_contains( $radio_html, '<input type="radio" name="tone" value="cool" >' ), 'radio-checks-the-requested-term', $radio_html );
 $assert( str_contains( $range_html, 'value="40"' ) && str_contains( $range_html, 'data-ssi-listing-param="max_price"' ) && str_contains( $range_html, 'data-ssi-listing-clear="100"' ), 'range-shows-the-requested-price-bound', $range_html );
+
+// --- 8. Category buttons follow the store's current categories.
+$GLOBALS['ssi_listing_terms'] = array( new WP_Term( 'Tools', 'tools' ), new WP_Term( 'Herbs & Greens', 'herbs-greens' ), new WP_Term( 'Succulents & Cacti', 'succulents-cacti' ) );
+$_GET['categories']           = 'herbs-greens';
+$live_html                    = $render( $filters[1] );
+preg_match_all( '#<button\b[^>]*>(.*?)</button>#', $live_html, $live_buttons );
+$assert( array( 'All', 'Succulents &amp; Cacti', 'Tools', 'Herbs &amp; Greens' ) === $live_buttons[1], 'category-buttons-list-current-categories-in-source-order-then-new-ones', $live_html );
+$assert( str_contains( $live_html, '<button aria-pressed="true" data-ssi-listing-value="herbs-greens" class="chip on" data-cat="Herbs &amp; Greens">Herbs &amp; Greens</button>' ) && str_contains( $live_html, '<button aria-pressed="false" data-ssi-listing-value="tools" class="chip" data-cat="Tools">Tools</button>' ), 'a-new-category-gets-a-copy-of-the-source-button-and-can-be-selected', $live_html );
+$GLOBALS['ssi_listing_terms'] = array( new WP_Term( 'Tools', 'tools' ) );
+$_GET['categories']           = 'tools';
+$emptied_html                 = $render( $filters[1] );
+$assert( ! str_contains( $emptied_html, 'Succulents' ) && 2 === substr_count( $emptied_html, '<button' ), 'a-category-without-products-leaves-the-buttons', $emptied_html );
+$GLOBALS['ssi_listing_terms'] = array();
+
 $script = (string) ( $GLOBALS['ssi_listing_scripts']['static-site-importer-listing-controls'] ?? '' );
 $assert( str_contains( $script, "closest('[data-ssi-listing-param]')" ) && str_contains( $script, "closest('[data-ssi-listing-value]')" ) && str_contains( $script, 'event.preventDefault()' ) && str_contains( $script, 'searchParams.delete(param)' ) && str_contains( $script, "searchParams.delete('paged')" ), 'choosing-an-option-loads-the-archive-url-with-the-parameter' );
 $assert( '<p>x</p>' === Static_Site_Importer_Woo_Product_Listing_Materializer::render_control( '<p>x</p>', array( 'attrs' => array() ) ), 'blocks-without-a-wire-are-untouched' );
 
-// --- 8. Rollback restores the previous menu order.
+// --- 9. Rollback restores the previous menu order.
 $rolled = Static_Site_Importer_Entity_Materializer_Registry::rollback( $adapter, $report );
 $assert( 'rolled_back' === ( $rolled['status'] ?? '' ) && array( 0, 7 ) === array( $GLOBALS['ssi_listing_products']['zeta-item'][1], $GLOBALS['ssi_listing_products']['alpha-item'][1] ), 'rollback-restores-the-previous-menu-order', (string) wp_json_encode( $GLOBALS['ssi_listing_products'] ) );
 

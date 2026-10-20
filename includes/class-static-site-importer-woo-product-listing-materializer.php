@@ -407,8 +407,12 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 		}
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- A public archive filter, read like WooCommerce reads it.
 		$requested = isset( $_GET[ $param ] ) && is_string( $_GET[ $param ] ) ? sanitize_text_field( wp_unslash( $_GET[ $param ] ) ) : '';
-		$tags      = new WP_HTML_Tag_Processor( $content );
 		$shape     = (string) ( $wired['shape'] ?? '' );
+		$values    = is_array( $wired['values'] ?? null ) ? array_map( 'strval', array_values( $wired['values'] ) ) : array();
+		if ( 'buttons' === $shape && 'categories' === $param ) {
+			list( $content, $values ) = self::live_category_buttons( $content, $values, (string) ( $wired['state_class'] ?? '' ) );
+		}
+		$tags = new WP_HTML_Tag_Processor( $content );
 		if ( 'range' === $shape ) {
 			if ( ! $tags->next_tag( array( 'tag_name' => 'input' ) ) ) {
 				return $content;
@@ -427,7 +431,6 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 		}
 		$tags->set_attribute( 'data-ssi-listing-param', $param );
 		$tags->set_attribute( 'data-ssi-listing-clear', '' );
-		$values = is_array( $wired['values'] ?? null ) ? array_map( 'strval', array_values( $wired['values'] ) ) : array();
 		// WooCommerce reads a comma list; a single-choice control shows its first value.
 		$chosen = explode( ',', $requested )[0];
 		if ( ! in_array( $chosen, $values, true ) ) {
@@ -463,6 +466,77 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 		}
 		self::enqueue_control_script();
 		return $tags->get_updated_html();
+	}
+
+	/**
+	 * The category buttons for the store's current categories: the source's
+	 * reset buttons stay, and each category with products gets a copy of the
+	 * source's first category button, in source order and then by name, so a
+	 * category added after the import appears and an emptied one leaves.
+	 *
+	 * @param array<int,string> $values Parameter value of each source button.
+	 * @return array{0:string,1:array<int,string>} The buttons and their values.
+	 */
+	private static function live_category_buttons( string $content, array $values, string $state ): array {
+		$unchanged = array( $content, $values );
+		if ( ! function_exists( 'get_terms' ) || ! preg_match_all( '#<button\b[^>]*>.*?</button>#is', $content, $found, PREG_OFFSET_CAPTURE ) || count( $found[0] ) !== count( $values ) ) {
+			return $unchanged;
+		}
+		$template = null;
+		$before   = array();
+		$after    = array();
+		foreach ( $found[0] as $index => $match ) {
+			if ( '' !== $values[ $index ] ) {
+				$template = $template ?? $match[0];
+			} elseif ( null === $template ) {
+				$before[] = $match[0];
+			} else {
+				$after[] = $match[0];
+			}
+		}
+		$terms = null === $template ? array() : get_terms(
+			array(
+				'taxonomy'   => 'product_cat',
+				'hide_empty' => true,
+			)
+		);
+		$terms = is_array( $terms ) ? array_values( array_filter( $terms, static fn( mixed $term ): bool => $term instanceof WP_Term ) ) : array();
+		if ( array() === $terms ) {
+			return $unchanged;
+		}
+		$rank = array_flip( $values );
+		usort( $terms, static fn( WP_Term $a, WP_Term $b ): int => array( $rank[ $a->slug ] ?? PHP_INT_MAX, $a->name ) <=> array( $rank[ $b->slug ] ?? PHP_INT_MAX, $b->name ) );
+		$buttons = '';
+		$live    = array_fill( 0, count( $before ), '' );
+		foreach ( $terms as $term ) {
+			$buttons .= self::term_button( (string) $template, $term->name, $state );
+			$live[]   = $term->slug;
+		}
+		$live  = array_merge( $live, array_fill( 0, count( $after ), '' ) );
+		$last  = end( $found[0] );
+		$start = (int) $found[0][0][1];
+		$end   = (int) $last[1] + strlen( $last[0] );
+		return array( substr( $content, 0, $start ) . implode( '', $before ) . $buttons . implode( '', $after ) . substr( $content, $end ), $live );
+	}
+
+	/** A copy of the source category button naming one category, unselected. */
+	private static function term_button( string $template, string $name, string $state ): string {
+		$label = trim( html_entity_decode( wp_strip_all_tags( $template ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
+		$tags  = new WP_HTML_Tag_Processor( $template );
+		if ( ! $tags->next_tag() ) {
+			return '';
+		}
+		// A data-* hook carrying the button's label names the new category.
+		foreach ( $tags->get_attribute_names_with_prefix( 'data-' ) ?? array() as $attribute ) {
+			if ( $label === $tags->get_attribute( $attribute ) ) {
+				$tags->set_attribute( $attribute, $name );
+			}
+		}
+		foreach ( '' === trim( $state ) ? array() : explode( ' ', trim( $state ) ) as $class ) {
+			$tags->remove_class( $class );
+		}
+		$html = $tags->get_updated_html();
+		return preg_match( '#^(<button\b(?:[^>"\']|"[^"]*"|\'[^\']*\')*>).*(</button>)$#is', $html, $parts ) ? $parts[1] . esc_html( $name ) . $parts[2] : '';
 	}
 
 	private static function enqueue_control_script(): void {
