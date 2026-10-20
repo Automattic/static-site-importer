@@ -1754,9 +1754,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			foreach ( array_merge( array( null ), array_values( $conditions ) ) as $condition ) {
 				$layouts = array();
 				foreach ( $cells as $cell ) {
-					$id     = $cell['id'];
-					$box    = $s->layout_nodes_by_id[ $id ];
-					$layout = $s->layout_by_node[ $id ];
+					$id  = $cell['id'];
+					$box = $s->layout_nodes_by_id[ $id ];
+					// Class-carried margins still belong in the source row's budget,
+					// even when wrapper planning left them on the replayed layer.
+					$layout = $box['layout'];
 					foreach ( array( 'margin_left', 'margin_right' ) as $fact ) {
 						if ( isset( $layout[ $fact ] ) && ! self::has_unconditional_proven_property( $box, str_replace( '_', '-', $fact ) ) ) {
 							continue 4;
@@ -1822,11 +1824,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 						'node'         => $cell['id'],
 						'condition'    => $condition,
 						'layout_patch' => array(
-							'width'               => '100%',
-							'margin_inline_start' => '0',
-							'margin_right'        => '0',
+							'float'        => 'none',
+							'width'        => '100%',
+							'margin_left'  => '0',
+							'margin_right' => '0',
 						),
-						'important'    => array( 'margin_inline_start' ),
+						'important'    => array( 'float', 'width', 'margin_left' ),
 					);
 				}
 				// Give the restored inner cell its own target, distinct from the
@@ -1838,14 +1841,17 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$s->provider_layout_targets[ $cell['id'] ]                  = $inner_hook;
 				// The source cell is rebuilt inside the provider shell. Its old
 				// percentage width and float margin must not size the control again.
+				// Force these resets even when the source half-class selector has
+				// higher specificity or an authored important mobile width.
 				$s->overlay_node_targets[] = array(
 					'id'        => $cell['id'],
 					'layout'    => array(
-						'width'               => '100%',
-						'margin_inline_start' => '0',
-						'margin_right'        => '0',
+						'float'        => 'none',
+						'width'        => '100%',
+						'margin_left'  => '0',
+						'margin_right' => '0',
 					),
-					'important' => array( 'margin_inline_start' ),
+					'important' => array( 'float', 'width', 'margin_left' ),
 				);
 			}
 			$s->percentage_width_parents[ $parent ] = true;

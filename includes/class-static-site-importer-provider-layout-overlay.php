@@ -986,9 +986,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * mechanism exists for. A source sibling-stacking rule (physical `margin-top`
 	 * or a flow-relative equivalent) is carried onto the provider form unscoped and
 	 * can be authored with unbounded specificity, so a plain reset declaration has
-	 * no reliable way to out-rank it. Only these four flow-relative margin
-	 * properties are ever forced; every other layout fact keeps ordinary cascade
-	 * weight.
+	 * no reliable way to out-rank it. Projected percentage cells also need forced
+	 * width/float resets on their restored inner layer, where authored half-class
+	 * rules must yield to the provider shell's ownership of the row width.
 	 *
 	 * @param mixed $important
 	 * @return array<int,string>
@@ -997,13 +997,14 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( ! is_array( $important ) ) {
 			return array();
 		}
-		return array_values( array_intersect( $important, array( 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end' ) ) );
+		return array_values( array_intersect( $important, array( 'float', 'width', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end' ) ) );
 	}
 
 	/** @return array<string,string> */
 	public static function layout_property_map(): array {
 		return array(
 			'display'             => 'display',
+			'float'               => 'float',
 			'position'            => 'position',
 			'top'                 => 'top',
 			'right'               => 'right',
@@ -1124,6 +1125,10 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		if ( 'flex' === $fact ) {
 			return (bool) preg_match( '/^(?:none|(?:[0-9]+(?:\.[0-9]+)?)(?: [0-9]+(?:\.[0-9]+)?)? (?:auto|0|(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh)))$/D', $value );
+		}
+		// Only the projection's neutralizing float reset is supported.
+		if ( 'float' === $fact ) {
+			return 'none' === $value;
 		}
 		if ( 'position' === $fact ) {
 			return in_array( $value, array( 'relative', 'static' ), true );

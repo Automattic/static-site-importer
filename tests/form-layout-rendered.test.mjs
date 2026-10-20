@@ -577,6 +577,17 @@ test( 'nested floated name row maps and keeps desktop pairing and mobile stackin
 		</style><div class="source">${seeded.sourceHtml}</div><div class="projected ${seeded.className}"><form class="jetpack-contact-form__form">${seeded.fieldHtml}</form></div>` );
 		for ( const width of [ 1440, 900, 390 ] ) {
 			await page.setViewportSize( { width, height: 900 } );
+			const layers = await page.locator( '.projected .ssi-field-row.name-half' ).evaluateAll( nodes => nodes.map( node => {
+				const style = getComputedStyle( node );
+				return { float: style.cssFloat, marginLeft: style.marginLeft, width: node.getBoundingClientRect().width, shellWidth: node.parentElement.getBoundingClientRect().width };
+			} ) );
+			assert.equal( layers.length, 2 );
+			for ( const layer of layers ) {
+				assert.equal( layer.float, 'none', `projected layer at ${width}` );
+				assert.equal( layer.marginLeft, '0px', `projected layer at ${width}` );
+				assert.ok( Math.abs( layer.width - layer.shellWidth ) <= 2, JSON.stringify( layer ) );
+			}
+			assert.equal( await page.locator( '.source .name-half' ).first().evaluate( node => getComputedStyle( node ).cssFloat ), 'left', 'unprojected source cells retain their float' );
 			for ( const selector of [ '.source', '.projected' ] ) {
 				const boxes = await page.locator( `${selector} input` ).evaluateAll( nodes => nodes.slice( 0, 2 ).map( node => {
 					const r = node.getBoundingClientRect();
@@ -586,8 +597,12 @@ test( 'nested floated name row maps and keeps desktop pairing and mobile stackin
 				if ( width !== 390 ) {
 					assert.equal( boxes[0].top, boxes[1].top, `${selector}: ${JSON.stringify(boxes)}` );
 					assert.ok( boxes[1].left > boxes[0].left + boxes[0].width );
-					for ( const box of boxes ) {
-						assert.ok( Math.abs( box.width - 290 ) <= 11, `${selector} at ${width}: ${JSON.stringify( boxes )}` );
+					const formWidth = await page.locator( selector ).evaluate( node => node.getBoundingClientRect().width );
+					for ( const [ index, box ] of boxes.entries() ) {
+						const expected = selector === '.source'
+							? formWidth / 2 - ( width === 1440 && index === 1 ? 0 : 10 )
+							: ( formWidth - ( width === 1440 ? 9 : 20 ) ) / 2;
+						assert.ok( Math.abs( box.width - expected ) <= 2, `control width ${selector} at ${width}: expected ${expected}: ${JSON.stringify( boxes )}` );
 					}
 					assert.ok( Math.abs( boxes[1].left - boxes[0].left - boxes[0].width - ( width === 1440 ? 9 : 20 ) ) <= 1, `authored gutter survives: ${selector} at ${width}: ${JSON.stringify( boxes )}` );
 				} else {
