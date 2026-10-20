@@ -3596,6 +3596,61 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		);
 	}
 
+	/**
+	 * Move a field control's flex-item facts onto its field wrapper.
+	 *
+	 * Jetpack renders a text-like control inside its own field wrapper, so the
+	 * wrapper, not the control, is the item of the provider's field container.
+	 * A source control that is a flex item (`input { flex: 1 }` in a flex form
+	 * row) has its item facts stated on the wrapper's `field-N` node; on the
+	 * control they would size nothing, and the wrapper would keep Jetpack's
+	 * full-row `flex: 1 1 100%`. Every other fact stays on the control.
+	 *
+	 * @param array<string,mixed> $graph    Provider overlay graph.
+	 * @param array<int,int>      $controls Control indexes rendered inside a field wrapper.
+	 * @return array<string,mixed>
+	 */
+	public static function with_field_wrapper_item_layout( array $graph, array $controls ): array {
+		$item_facts = array_flip( array( 'flex', 'flex_grow', 'flex_shrink', 'flex_basis', 'align_self', 'order' ) );
+		$wrapped    = array_fill_keys( array_map( static fn( int $index ): string => 'control-' . $index, $controls ), true );
+		$moved      = array();
+		foreach ( $graph['nodes'] ?? array() as $key => $node ) {
+			$id   = is_array( $node ) ? (string) ( $node['id'] ?? '' ) : '';
+			$item = isset( $wrapped[ $id ] ) && is_array( $node['layout'] ?? null ) ? array_intersect_key( $node['layout'], $item_facts ) : array();
+			if ( empty( $item ) ) {
+				continue;
+			}
+			$graph['nodes'][ $key ]['layout']     = array_diff_key( $node['layout'], $item );
+			$moved[ 'field-' . substr( $id, 8 ) ] = $item;
+		}
+		foreach ( $graph['variants'] ?? array() as $key => $variant ) {
+			$id    = is_array( $variant ) ? (string) ( $variant['node'] ?? '' ) : '';
+			$patch = isset( $wrapped[ $id ] ) && is_array( $variant['layout_patch'] ?? null ) ? array_intersect_key( $variant['layout_patch'], $item_facts ) : array();
+			if ( empty( $patch ) ) {
+				continue;
+			}
+			$graph['variants'][ $key ]['layout_patch'] = array_diff_key( $variant['layout_patch'], $patch );
+			$field_variant                             = $variant;
+			$field_variant['node']                     = 'field-' . substr( $id, 8 );
+			$field_variant['layout_patch']             = $patch;
+			$graph['variants'][]                       = $field_variant;
+			$moved                                    += array( $field_variant['node'] => array() );
+		}
+		foreach ( $moved as $field_id => $item ) {
+			foreach ( $graph['nodes'] as $key => $node ) {
+				if ( is_array( $node ) && ( $node['id'] ?? null ) === $field_id ) {
+					$graph['nodes'][ $key ]['layout'] = array_merge( is_array( $node['layout'] ?? null ) ? $node['layout'] : array(), $item );
+					continue 2;
+				}
+			}
+			$graph['nodes'][] = array(
+				'id'     => $field_id,
+				'layout' => $item,
+			);
+		}
+		return $graph;
+	}
+
 	/** Jetpack fields default to flex:1 1 100%; preserve a source fixed width's default flex behavior. */
 	public static function fixed_width_uses_default_flex( array $node ): bool {
 		$layout = is_array( $node['layout'] ?? null ) ? $node['layout'] : ( self::layout_patch( $node ) );

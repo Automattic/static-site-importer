@@ -1195,7 +1195,8 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			return (bool) preg_match( '/^-?[0-9]+(?:\.[0-9]+)?$/D', $value );
 		}
 		if ( 'flex' === $fact ) {
-			return (bool) preg_match( '/^(?:none|(?:[0-9]+(?:\.[0-9]+)?)(?: [0-9]+(?:\.[0-9]+)?)? (?:auto|0|(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh)))$/D', $value );
+			// `flex: 1` is the one-number form of the same shorthand (`1 1 0%`).
+			return (bool) preg_match( '/^(?:none|(?:[0-9]+(?:\.[0-9]+)?)(?: [0-9]+(?:\.[0-9]+)?)?(?: (?:auto|0|(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh)))?)$/D', $value );
 		}
 		if ( 'position' === $fact ) {
 			return in_array( $value, array( 'relative', 'static' ), true );
