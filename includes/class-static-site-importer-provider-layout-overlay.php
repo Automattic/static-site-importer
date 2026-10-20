@@ -204,7 +204,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			}
 			// A physical native source box owns its own paint as well as layout.
 			// Keep that paint on its validated target instead of the inner input.
-			$paint        = array_diff_key( $node['presentation']['styles'], self::layout_property_map() );
+			$paint        = array_diff_key( self::resolve_presentation_cascade( $node['presentation']['styles'], $node['presentation']['provenance'] ?? array() ), self::layout_property_map() );
 			$declarations = self::presentation_declarations( $paint, 0, 'control_container', $losses, array_keys( self::presentation_property_map() ) );
 			if ( ! empty( $declarations ) ) {
 				$rules[]      = self::surface_selector( $prefix, $target['selector'] ) . '{' . implode( ';', $declarations ) . '}';
@@ -263,7 +263,8 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				$losses[] = self::presentation_loss( 'editor_control_container_unsupported', is_int( $index ) ? $index : 0, 'control_container' );
 				continue;
 			}
-			self::compile_presentation_destinations( $destinations, $control_container['styles'], $index, 'control_container', null, $prefix, $rules, $operations, $losses );
+			$styles = self::resolve_presentation_cascade( $control_container['styles'], $control_container['provenance'] ?? array() );
+			self::compile_presentation_destinations( $destinations, $styles, $index, 'control_container', null, $prefix, $rules, $operations, $losses );
 			foreach ( $destinations as $destination ) {
 				self::control_container_chrome( $declared, $destination, $control_container['styles'], $index, null, $chrome, $losses );
 			}
@@ -283,7 +284,8 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					$losses[] = self::presentation_loss( 'provider_structure_mismatch', $control['index'], $role );
 					continue;
 				}
-				self::compile_presentation_destinations( $destinations, $control[ $role ]['styles'], $control['index'], $role, null, $prefix, $rules, $operations, $losses );
+				$styles = self::resolve_presentation_cascade( $control[ $role ]['styles'], $control[ $role ]['provenance'] ?? array() );
+				self::compile_presentation_destinations( $destinations, $styles, $control['index'], $role, null, $prefix, $rules, $operations, $losses );
 				$base_presented[ $control['index'] . "\n" . $role ] = true;
 			}
 		}
@@ -326,7 +328,8 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					continue;
 				}
 				foreach ( $destinations as $destination ) {
-					self::compile_presentation_destinations( array( $destination ), $variant['style_patch'], $index, 'control_container', $condition, $prefix, $rules, $operations, $losses, false );
+					$styles = self::resolve_presentation_cascade( $variant['style_patch'], $variant['provenance'] ?? array(), $variant['precedence'] ?? array() );
+					self::compile_presentation_destinations( array( $destination ), $styles, $index, 'control_container', $condition, $prefix, $rules, $operations, $losses, false );
 					self::control_container_chrome( $declared, $destination, $variant['style_patch'], $index, $condition, $chrome, $losses );
 				}
 				continue;
@@ -336,7 +339,8 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				$losses[] = self::presentation_loss( 'responsive_layout_ownership', is_int( $index ) ? $index : 0, is_string( $role ) ? $role : 'control' );
 				continue;
 			}
-			self::compile_presentation_destinations( $destinations, $variant['style_patch'], $index, $role, $condition, $prefix, $rules, $operations, $losses, false );
+			$styles = self::resolve_presentation_cascade( $variant['style_patch'], $variant['provenance'] ?? array(), $variant['precedence'] ?? array() );
+			self::compile_presentation_destinations( $destinations, $styles, $index, $role, $condition, $prefix, $rules, $operations, $losses, false );
 		}
 		if ( 'generic/form-container-presentation/v1' === ( $container['schema'] ?? null ) ) {
 			$destination = array(
@@ -344,10 +348,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				'selector'   => str_contains( $targets['form']['selector'] ?? '', '.ssi-native-form-topology' ) ? $targets['form']['selector'] : $scope . '.jetpack-contact-form-container',
 				'properties' => array_keys( self::presentation_property_map() ),
 			);
-			self::compile_presentation_destinations( array( $destination ), $container['styles'] ?? array(), 0, 'control', null, $prefix, $rules, $operations, $losses );
+			$styles      = self::resolve_presentation_cascade( $container['styles'] ?? array(), $container['provenance'] ?? array() );
+			self::compile_presentation_destinations( array( $destination ), $styles, 0, 'control', null, $prefix, $rules, $operations, $losses );
 			foreach ( array_slice( $container['variants'] ?? array(), 0, 32 ) as $variant ) {
 				if ( self::safe_condition( $variant['condition'] ?? null ) && is_array( $variant['styles'] ?? null ) ) {
-					self::compile_presentation_destinations( array( $destination ), $variant['styles'], 0, 'control', $variant['condition'], $prefix, $rules, $operations, $losses );
+					$styles = self::resolve_presentation_cascade( $variant['styles'], $variant['provenance'] ?? array(), $variant['precedence'] ?? array() );
+					self::compile_presentation_destinations( array( $destination ), $styles, 0, 'control', $variant['condition'], $prefix, $rules, $operations, $losses );
 				}
 			}
 		}
@@ -1215,6 +1221,78 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		return array_keys( array_diff_key( self::positioned_control_presentation_property_keys(), self::presentation_property_keys() ) );
 	}
 
+	/**
+	 * Resolve overlapping declarations before the alphabetically keyed capture is
+	 * serialized. Keep a stronger longhand after its shorthand: dropping the
+	 * shorthand would also discard its non-conflicting components.
+	 *
+	 * @param array<string,string>              $styles Captured values.
+	 * @param array<int,array<string,mixed>>    $provenance Source selector ownership.
+	 * @param array<string,array<string,mixed>> $precedence Responsive cascade ranks.
+	 * @return array<string,string>
+	 */
+	private static function resolve_presentation_cascade( array $styles, array $provenance, array $precedence = array() ): array {
+		$ranks = array();
+		foreach ( $provenance as $order => $fact ) {
+			$selector = $fact['selector'] ?? '';
+			$weight   = '[style]' === $selector ? 10000 : 0;
+			if ( class_exists( '\\Automattic\\BlocksEngine\\PhpTransformer\\Css\\CssSelectorMatcher' ) && '[style]' !== $selector ) {
+				$parsed = \Automattic\BlocksEngine\PhpTransformer\Css\CssSelectorMatcher::parse( $selector );
+				$weight = \Automattic\BlocksEngine\PhpTransformer\Css\CssSelectorMatcher::specificity( $parsed );
+			}
+			foreach ( $fact['properties'] ?? array() as $property ) {
+				$ranks[ str_replace( '-', '_', $property ) ] = array( false, $weight, $order );
+			}
+		}
+		foreach ( $precedence as $property => $rank ) {
+			$ranks[ str_replace( '-', '_', $property ) ] = array( $rank['important'], $rank['specificity'], $rank['source_order'] );
+		}
+		$shorthands = array(
+			'background'    => array( 'background_color' ),
+			'border'        => array( 'border_color', 'border_style', 'border_width' ),
+			'border_color'  => array(),
+			'border_style'  => array(),
+			'border_width'  => array(),
+			'border_radius' => array( 'border_top_left_radius', 'border_top_right_radius', 'border_bottom_right_radius', 'border_bottom_left_radius' ),
+			'font'          => array( 'font_family', 'font_size', 'font_style', 'font_variant', 'font_weight', 'line_height' ),
+			'flex'          => array( 'flex_basis', 'flex_grow', 'flex_shrink' ),
+			'inset'         => array( 'top', 'right', 'bottom', 'left' ),
+		);
+		foreach ( array( 'top', 'right', 'bottom', 'left' ) as $side ) {
+			foreach ( array( 'color', 'style', 'width' ) as $component ) {
+				$shorthands['border'][]                 = 'border_' . $side . '_' . $component;
+				$shorthands[ 'border_' . $component ][] = 'border_' . $side . '_' . $component;
+			}
+		}
+		foreach ( array( 'margin', 'padding' ) as $box ) {
+			$shorthands[ $box ] = array_map( static fn( string $side ): string => $box . '_' . $side, array( 'top', 'right', 'bottom', 'left' ) );
+			foreach ( array( 'block', 'inline' ) as $axis ) {
+				$shorthands[ $box . '_' . $axis ] = array( $box . '_' . $axis . '_start', $box . '_' . $axis . '_end' );
+			}
+		}
+		foreach ( $shorthands as $shorthand => $longhands ) {
+			if ( ! isset( $styles[ $shorthand ] ) ) {
+				continue;
+			}
+			foreach ( $longhands as $longhand ) {
+				if ( isset( $styles[ $longhand ], $ranks[ $shorthand ], $ranks[ $longhand ] ) && $ranks[ $shorthand ] > $ranks[ $longhand ] ) {
+					unset( $styles[ $longhand ] );
+				}
+			}
+			// Move only overlapping declarations; unrelated facts retain their
+			// stable producer order and do not churn existing overlay artifacts.
+			$ordered = array();
+			foreach ( $styles as $property => $value ) {
+				if ( in_array( $property, $longhands, true ) && ! isset( $ordered[ $shorthand ] ) ) {
+					$ordered[ $shorthand ] = $styles[ $shorthand ];
+				}
+				$ordered[ $property ] = $value;
+			}
+			$styles = $ordered;
+		}
+		return $styles;
+	}
+
 	private static function presentation_declarations( array $styles, int $index, string $role, array &$losses, array $properties = array(), array $aliases = array() ): array {
 		$map          = self::presentation_property_map();
 		$declarations = array();
@@ -1237,6 +1315,19 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	/** Compile one adapter-owned destination without knowing its provider or markup. */
 	private static function compile_presentation_destinations( array $destinations, array $styles, int $index, string $role, ?array $condition, string $prefix, array &$rules, array &$operations, array &$losses, bool $emit_resets = true ): void {
 		$represented = array();
+		// The provider adds a flex item around the source button. Its percentage
+		// width must resolve against a full row, not a shrink-to-fit label box.
+		if ( isset( $styles['width'] ) && ( '100%' === $styles['width'] || null !== $condition ) ) {
+			$basis = '100%' === $styles['width'] ? '100%' : 'auto';
+			foreach ( $destinations as $destination ) {
+				$suffix = ' > .wp-block-button__link';
+				if ( str_ends_with( $destination['selector'], $suffix ) ) {
+					$wrapper = substr( $destination['selector'], 0, -strlen( $suffix ) );
+					$rule    = self::surface_selector( $prefix, self::authoritative_presentation_selector( $wrapper ) ) . '{flex-basis:' . $basis . '}';
+					$rules[] = null !== $condition ? self::conditional_rule( $condition, $rule ) : $rule;
+				}
+			}
+		}
 		foreach ( $destinations as $destination ) {
 			$represented = array_merge( $represented, $destination['properties'] );
 			$emit_styles = $styles;
