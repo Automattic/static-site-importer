@@ -115,6 +115,10 @@ class WP_Term {
 $GLOBALS['ssi_listing_terms'] = array();
 function get_terms(): array {
 	return $GLOBALS['ssi_listing_terms']; }
+// The main query, as far as the count reads it.
+class WP_Query {
+	public function __construct( public int $found_posts = 0 ) {}
+}
 define( 'STATIC_SITE_IMPORTER_VERSION', 'test' );
 // The shop archive request.
 $GLOBALS['ssi_listing_theme_file'] = '';
@@ -277,8 +281,9 @@ $listing      = array(
 			),
 		),
 		array(
-			'id'   => 'result_count',
-			'kind' => 'result_count',
+			'id'    => 'result_count',
+			'kind'  => 'result_count',
+			'label' => '2 items',
 		),
 	),
 	'bindings'      => array(
@@ -420,7 +425,20 @@ $assert(
 $assert( null === $wire( $filters[5] ) && str_contains( (string) ( $filters[5]['innerHTML'] ?? '' ), 'data-swatch' ), 'unseeded-attribute-facet-keeps-its-source-block-unwired' );
 $results        = $outer['innerBlocks'][0]['innerBlocks'][1] ?? array();
 $toolbar_blocks = $results['innerBlocks'][0]['innerBlocks'] ?? array();
-$assert( 'woocommerce/product-results-count' === ( $toolbar_blocks[0]['blockName'] ?? '' ) && 2 === count( $toolbar_blocks ), 'count-becomes-the-woocommerce-block-in-the-toolbar' );
+$assert( 'core/paragraph' === ( $toolbar_blocks[0]['blockName'] ?? '' ) && 2 === count( $toolbar_blocks ) && array( 'shape' => 'count' ) === $wire( $toolbar_blocks[0] ) && str_contains( (string) ( $toolbar_blocks[0]['innerHTML'] ?? '' ), 'data-count' ), 'count-keeps-its-source-wording-in-the-toolbar', (string) wp_json_encode( array_column( $toolbar_blocks, 'blockName' ) ) );
+$unnumbered = new ReflectionMethod( Static_Site_Importer_Woo_Product_Listing_Materializer::class, 'control_parameter' );
+$assert(
+	null === $unnumbered->invoke(
+		null,
+		array(
+			'kind'  => 'result_count',
+			'label' => 'Results',
+		),
+		''
+	),
+	'a-count-without-a-number-falls-back-to-the-woocommerce-block'
+
+);
 $assert(
 	array(
 		'param'  => 'orderby',
@@ -497,6 +515,11 @@ $_GET['orderby'] = 'price-desc';
 $sort_html       = $render( $toolbar_blocks[1] );
 $assert( str_contains( $untouched_sort, 'data-ssi-listing-param="orderby"' ) && str_contains( $untouched_sort, '<option selected value="">Featured</option>' ), 'unsorted-archive-selects-the-default-order', $untouched_sort );
 $assert( str_contains( $sort_html, '<option selected value="price-desc">Price: high to low</option>' ) && ! str_contains( $sort_html, 'selected value="">Featured' ), 'sort-shows-the-requested-catalog-order', $sort_html );
+$count_without_query = $render( $toolbar_blocks[0] );
+$GLOBALS['wp_query'] = new WP_Query( 14 ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- The archive's main query, set for the render.
+$count_html          = $render( $toolbar_blocks[0] );
+unset( $GLOBALS['wp_query'] );
+$assert( str_contains( $count_without_query, '>2 items<' ) && str_contains( $count_html, '<p class="count" data-count>14 items</p>' ), 'count-shows-the-archive-total-in-the-source-wording', $count_html );
 $script = (string) ( $GLOBALS['ssi_listing_scripts']['static-site-importer-listing-controls'] ?? '' );
 $assert( str_contains( $script, "closest('[data-ssi-listing-param]')" ) && str_contains( $script, "closest('[data-ssi-listing-value]')" ) && str_contains( $script, 'event.preventDefault()' ) && str_contains( $script, 'searchParams.delete(param)' ) && str_contains( $script, "searchParams.delete('paged')" ), 'choosing-an-option-loads-the-archive-url-with-the-parameter' );
 $assert( '<p>x</p>' === Static_Site_Importer_Woo_Product_Listing_Materializer::render_control( '<p>x</p>', array( 'attrs' => array() ) ), 'blocks-without-a-wire-are-untouched' );
