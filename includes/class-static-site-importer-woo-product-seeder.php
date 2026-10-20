@@ -122,7 +122,14 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	 * @param int             $columns     Grid column count.
 	 * @param int             $query_id    Stable per-page query id so multiple grids on one page do not collide.
 	 */
-	private static function product_collection_block_markup( array $product_ids, int $columns, int $query_id ): string {
+	/**
+	 * A hand-picked product collection over `$product_ids`, in that order.
+	 *
+	 * @param string $template_markup Inner `product-template` blocks; WooCommerce's
+	 *                                default card when empty.
+	 * @param string $class_name      Class on the collection wrapper of a template loop.
+	 */
+	public static function product_collection_block_markup( array $product_ids, int $columns, int $query_id, string $template_markup = '', string $class_name = '' ): string {
 		$product_ids = array_values( array_unique( array_filter( array_map( 'intval', $product_ids ), static fn ( int $id ): bool => $id > 0 ) ) );
 		if ( empty( $product_ids ) ) {
 			return '';
@@ -160,6 +167,20 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			'queryContextIncludes' => array( 'collection' ),
 			'align'                => 'wide',
 		);
+		// WooCommerce's default card takes the shared commerce presentation; a
+		// source card template carries its own and names its own class.
+		$classes = 'wp-block-woocommerce-product-collection alignwide ssi-commerce-control';
+		if ( '' !== $template_markup ) {
+			unset( $attrs['align'] );
+			$attrs['className'] = $class_name;
+			$classes            = trim( 'wp-block-woocommerce-product-collection ' . $class_name );
+		}
+		if ( '' === $template_markup ) {
+			$template_markup = '<!-- wp:woocommerce/product-image {"showSaleBadge":false,"isDescendentOfQueryLoop":true} /-->'
+				. '<!-- wp:post-title {"textAlign":"center","level":3,"isLink":true,"fontSize":"medium","__woocommerceNamespace":"woocommerce/product-collection/product-title"} /-->'
+				. '<!-- wp:woocommerce/product-price {"textAlign":"center","isDescendentOfQueryLoop":true,"fontSize":"small"} /-->'
+				. '<!-- wp:woocommerce/product-button {"textAlign":"center","isDescendentOfQueryLoop":true} /-->';
+		}
 
 		$attrs_json = function_exists( 'wp_json_encode' ) ? wp_json_encode( $attrs ) : json_encode( $attrs ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode
 		if ( ! is_string( $attrs_json ) ) {
@@ -167,12 +188,9 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		}
 
 		return '<!-- wp:woocommerce/product-collection ' . $attrs_json . ' -->'
-			. '<div class="wp-block-woocommerce-product-collection alignwide ssi-commerce-control">'
+			. '<div class="' . $classes . '">'
 			. '<!-- wp:woocommerce/product-template -->'
-			. '<!-- wp:woocommerce/product-image {"showSaleBadge":false,"isDescendentOfQueryLoop":true} /-->'
-			. '<!-- wp:post-title {"textAlign":"center","level":3,"isLink":true,"fontSize":"medium","__woocommerceNamespace":"woocommerce/product-collection/product-title"} /-->'
-			. '<!-- wp:woocommerce/product-price {"textAlign":"center","isDescendentOfQueryLoop":true,"fontSize":"small"} /-->'
-			. '<!-- wp:woocommerce/product-button {"textAlign":"center","isDescendentOfQueryLoop":true} /-->'
+			. $template_markup
 			. '<!-- /wp:woocommerce/product-template -->'
 			. '</div>'
 			. '<!-- /wp:woocommerce/product-collection -->';

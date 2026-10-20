@@ -1868,7 +1868,8 @@ $binding_preflight_cases = array(
 foreach ( $binding_preflight_cases as $case_name => $binding_preflight_case ) {
 	$binding_preflight_callbacks = 0;
 	foreach ( $binding_preflight_case['lifecycle']['entities'] as &$binding_preflight_entity ) {
-		$binding_preflight_entity['adapter']['materializer'] = static function () use ( &$binding_preflight_callbacks ): array { ++$binding_preflight_callbacks; return array(); };
+		$binding_preflight_entity['adapter']['materializer']      = static function () use ( &$binding_preflight_callbacks ): array { ++$binding_preflight_callbacks; return array(); };
+		$binding_preflight_entity['adapter']['entity_collection'] = 'products';
 	}
 	unset( $binding_preflight_entity );
 	$case_prepared = array(
