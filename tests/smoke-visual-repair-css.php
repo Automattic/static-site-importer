@@ -42,6 +42,7 @@ $writes = Static_Site_Importer_Stylesheet_Materializer::stylesheet_writes( '/tmp
 $style = (string) ( $writes['/tmp/visual-repair-smoke/style.css'] ?? '' );
 $editor = (string) ( $writes['/tmp/visual-repair-smoke/assets/css/editor-style.css'] ?? '' );
 $assert( str_contains( $editor, '.static-site-importer-empty-visual-group.wp-block-group__placeholder>.components-placeholder{display:none!important}' ), 'provider empty runtime wrappers receive scoped editor-only placeholder suppression' );
+$assert( str_contains( $editor, ':root .is-root-container:where(.wp-site-blocks) > *{margin-block-start:0}' ) && ! str_contains( $style, '.is-root-container' ), 'Editor canvas root restates the frontend zero root block gap; the frontend stylesheet stays untouched.' );
 $assert( str_contains( $style, '.hero-shell { gap: 0; }' ) && str_contains( $style, '.compiled-site-repair { display: block; }' ), 'Frontend visual repair CSS is materialized.' );
 $assert( ! str_contains( $style, '.glow-orb' ), 'Editor repair CSS is excluded from the frontend stylesheet.' );
 $assert( str_contains( $editor, '.glow-orb { opacity: 1; }' ) && str_contains( $editor, '.compiled-site-repair { display: block; }' ), 'Editor visual repair CSS is materialized.' );

@@ -268,8 +268,15 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	private static function editor_style_css( string $css, array $visual_repair_styles = array(), bool $has_provider_layout = false ): string {
 		$repair_css               = self::visual_repair_css_for_target( $visual_repair_styles, 'editor' );
 		$provider_placeholder_css = $has_provider_layout ? ".static-site-importer-empty-visual-group.wp-block-group__placeholder>.components-placeholder{display:none!important}\n" : '';
+		// The generated theme.json sets styles.spacing.blockGap to false. Core's PHP
+		// prints that as an empty root gap, but the editor's global styles fall back
+		// to 0.5em on the same selector, which opens gaps between template parts
+		// and post content in template-locked page editing. Global styles load after
+		// editor styles, so the canvas root container adds the specificity needed to
+		// restate the frontend's effective value.
+		$root_gap_css = ":root .is-root-container:where(.wp-site-blocks) > *{margin-block-start:0}\n";
 
-		return "/*\nStatic Site Importer editor styles.\nGenerated separately from frontend style.css so editor wrapper repairs do not leak to public rendering.\n*/\n\n" . $css . "\n" . $provider_placeholder_css . $repair_css;
+		return "/*\nStatic Site Importer editor styles.\nGenerated separately from frontend style.css so editor wrapper repairs do not leak to public rendering.\n*/\n\n" . $css . "\n" . $root_gap_css . $provider_placeholder_css . $repair_css;
 	}
 
 	/**
