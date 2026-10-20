@@ -659,14 +659,33 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 	/**
 	 * Project a local source tree as metadata-only payload references.
 	 *
+	 * When `$report_root` is given (a capture directory whose website tree is
+	 * `$directory`), declared reports are read from that root at their
+	 * root-relative paths instead of from the website tree.
+	 *
 	 * @param array<mixed> $declared_reports Capture reports the source manifest declares.
 	 */
-	function static_site_importer_cli_request_bundle_files( string $directory, array $declared_reports = array() ) {
+	function static_site_importer_cli_request_bundle_files( string $directory, array $declared_reports = array(), string $report_root = '' ) {
 		if ( ! is_dir( $directory ) ) {
 			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'A files request-bundle reference must resolve to a directory.' );
 		}
-		$limits          = static_site_importer_cli_request_bundle_limits();
-		$reports         = static_site_importer_cli_request_bundle_declared_reports( $declared_reports );
+		$limits  = static_site_importer_cli_request_bundle_limits();
+		$reports = static_site_importer_cli_request_bundle_declared_reports( $declared_reports );
+		$walk    = array( array( $directory, false ) );
+		if ( '' !== $report_root && $report_root !== $directory ) {
+			$walk = array( array( $directory, true ) );
+			foreach ( array_keys( $reports ) as $report_path ) {
+				$candidate = $report_root . DIRECTORY_SEPARATOR . str_replace( '/', DIRECTORY_SEPARATOR, $report_path );
+				if ( ! file_exists( $candidate ) && ! is_link( $candidate ) ) {
+					continue;
+				}
+				$real = realpath( $candidate );
+				if ( is_link( $candidate ) || false === $real || ! is_file( $real ) || ! str_starts_with( $real, $report_root . DIRECTORY_SEPARATOR ) ) {
+					return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', sprintf( 'The capture report %s must be a regular file inside the capture.', $report_path ) );
+				}
+				$walk[] = array( $report_root, $report_path );
+			}
+		}
 		$files           = array();
 		$paths           = array();
 		$total_bytes     = 0;
@@ -674,11 +693,23 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		$report_bytes    = 0;
 		$generated_files = 0;
 		try {
-			$iterator = new RecursiveIteratorIterator(
-				new RecursiveDirectoryIterator( $directory, FilesystemIterator::SKIP_DOTS ),
-				RecursiveIteratorIterator::LEAVES_ONLY
-			);
-			foreach ( $iterator as $item ) {
+			$items = static function () use ( $walk ): Generator {
+				foreach ( $walk as list( $root, $selection ) ) {
+					if ( is_string( $selection ) ) {
+						// One capture report, read from the capture root.
+						yield array( new SplFileInfo( $root . DIRECTORY_SEPARATOR . str_replace( '/', DIRECTORY_SEPARATOR, $selection ) ), $root, false );
+						continue;
+					}
+					$iterator = new RecursiveIteratorIterator(
+						new RecursiveDirectoryIterator( $root, FilesystemIterator::SKIP_DOTS ),
+						RecursiveIteratorIterator::LEAVES_ONLY
+					);
+					foreach ( $iterator as $item ) {
+						yield array( $item, $root, $selection );
+					}
+				}
+			};
+			foreach ( $items() as list( $item, $root, $reports_elsewhere ) ) {
 				if ( $item->isLink() ) {
 					return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'Request-bundle source trees must not contain symlinks.' );
 				}
@@ -686,7 +717,11 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 					continue;
 				}
 				$absolute = $item->getRealPath();
-				$relative = false !== $absolute ? str_replace( DIRECTORY_SEPARATOR, '/', substr( $absolute, strlen( $directory ) + 1 ) ) : '';
+				$relative = false !== $absolute ? str_replace( DIRECTORY_SEPARATOR, '/', substr( $absolute, strlen( $root ) + 1 ) ) : '';
+				// Declared reports come from the capture root, never the website tree.
+				if ( $reports_elsewhere && static_site_importer_cli_request_bundle_is_declared_report( $relative, $reports ) ) {
+					continue;
+				}
 				if ( '' === $relative || ( function_exists( 'static_site_importer_rest_artifact_path' ) && '' === static_site_importer_rest_artifact_path( $relative ) ) ) {
 					continue;
 				}
@@ -813,6 +848,29 @@ if ( ! function_exists( 'static_site_importer_cli_capture_website_root' ) ) {
 	}
 }
 
+if ( ! function_exists( 'static_site_importer_cli_capture_receipt_reports' ) ) {
+	/**
+	 * The capture-root-relative report paths a capture receipt declares.
+	 *
+	 * Returns null when the directory is not a capture or its receipt declares
+	 * no `reports`; otherwise the safe-relative paths, normalized by the same
+	 * rules as a caller's `metadata.reports`.
+	 *
+	 * @return array<int,string>|null
+	 */
+	function static_site_importer_cli_capture_receipt_reports( string $directory ): ?array {
+		$receipt_path = $directory . DIRECTORY_SEPARATOR . 'capture-receipt.json';
+		if ( '' === $directory || ! is_file( $receipt_path ) || is_link( $receipt_path ) || filesize( $receipt_path ) > 32 * 1024 * 1024 ) {
+			return null;
+		}
+		$receipt = json_decode( (string) file_get_contents( $receipt_path ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- CLI reads a bounded operator-staged capture receipt.
+		if ( ! is_array( $receipt ) || 'blocks-engine-capture/capture-receipt/v1' !== ( $receipt['schema'] ?? null ) || ! is_array( $receipt['reports'] ?? null ) ) {
+			return null;
+		}
+		return array_keys( static_site_importer_cli_request_bundle_declared_reports( $receipt['reports'] ) );
+	}
+}
+
 if ( ! function_exists( 'static_site_importer_cli_prepare_request_bundle' ) ) {
 	/** Register the server-owned resolver for a source staged beside the explicit request. */
 	function static_site_importer_cli_prepare_request_bundle( array $input, string $request_path ) {
@@ -834,13 +892,26 @@ if ( ! function_exists( 'static_site_importer_cli_prepare_request_bundle' ) ) {
 		// staged artifact: the receipt sits beside the website tree, so its
 		// `websiteRoot` describes the original capture, not this directory.
 		$receipt_declared = isset( static_site_importer_cli_request_bundle_declared_reports( isset( $metadata['reports'] ) && is_array( $metadata['reports'] ) ? $metadata['reports'] : array() )['capture-receipt.json'] );
+		$report_root      = '';
 		if ( 'files' === $type && is_dir( $resolved_path ) && ! $receipt_declared ) {
+			$capture_root  = (string) realpath( $resolved_path );
 			$resolved_path = static_site_importer_cli_capture_website_root( $resolved_path );
 			if ( is_wp_error( $resolved_path ) ) {
 				return $resolved_path;
 			}
+			// A raw capture directory names its evidence sidecars in the receipt;
+			// a caller-declared `metadata.reports` always wins over it.
+			$capture_reports = ! isset( $metadata['reports'] ) ? static_site_importer_cli_capture_receipt_reports( $capture_root ) : null;
+			if ( null !== $capture_reports ) {
+				$metadata['reports'] = $capture_reports;
+				$report_root         = $capture_root;
+			}
 		}
-		$bundle = 'files' === $type ? static_site_importer_cli_request_bundle_files( $resolved_path, isset( $metadata['reports'] ) && is_array( $metadata['reports'] ) ? $metadata['reports'] : array() ) : null;
+		$bundle = 'files' === $type ? static_site_importer_cli_request_bundle_files( $resolved_path, isset( $metadata['reports'] ) && is_array( $metadata['reports'] ) ? $metadata['reports'] : array(), $report_root ) : null;
+		if ( '' !== $report_root && is_array( $bundle ) ) {
+			// Declare only the reports the capture actually holds.
+			$metadata['reports'] = array_values( array_intersect( $metadata['reports'], array_column( $bundle['files'], 'path' ) ) );
+		}
 		if ( is_wp_error( $bundle ) ) {
 			return $bundle;
 		}
@@ -1023,12 +1094,98 @@ if ( ! function_exists( 'static_site_importer_cli_import_receipt' ) ) {
 			$result = static_site_importer_cli_import_error( 'static_site_importer_cli_nonterminal_receipt', 'A continuation is not a terminal import receipt.' );
 		}
 		$success = ! empty( $result['success'] ) && empty( $result['continuation'] );
+		// The receipt is the one quality verdict: an import whose quality gate
+		// set `fail_import` is failed here even though materialization ran.
+		$quality_failure = $success ? static_site_importer_cli_quality_failure_message( $result ) : null;
+		if ( null !== $quality_failure ) {
+			$success           = false;
+			$result['success'] = false;
+			$result['error']   = array(
+				'code'    => 'static_site_importer_quality_failed',
+				'message' => $quality_failure,
+			);
+		}
 		return array(
 			'schema'   => 'static-site-importer/import-cli-receipt/v1',
 			'status'   => $success ? 'completed' : 'failed',
 			'steps'    => $steps,
 			'response' => $result,
 		);
+	}
+}
+
+if ( ! function_exists( 'static_site_importer_cli_quality_failure_message' ) ) {
+	/**
+	 * Summarize the quality gate that failed an otherwise successful import.
+	 *
+	 * Reads the finalized quality projections the import response carries
+	 * (compact summary, validation result, quality) and returns null unless one
+	 * of them sets `fail_import`.
+	 *
+	 * @param array<string,mixed> $result Terminal import response.
+	 */
+	function static_site_importer_cli_quality_failure_message( array $result ): ?string {
+		$containers = array();
+		foreach ( array( $result, is_array( $result['result'] ?? null ) ? $result['result'] : array() ) as $level ) {
+			foreach ( array( 'import_report_summary', 'import_validation_result', 'quality' ) as $key ) {
+				if ( is_array( $level[ $key ] ?? null ) ) {
+					$containers[] = $level[ $key ];
+				}
+			}
+		}
+		$failed = array_filter( $containers, static fn( array $container ): bool => true === ( $container['fail_import'] ?? null ) );
+		if ( empty( $failed ) ) {
+			return null;
+		}
+		$reason_counts = array(
+			'unsupported_html_fallback'    => 'unsupported_fallback_count',
+			'content_loss_abort'           => 'content_loss_count',
+			'empty_conversion'             => 'empty_conversion_count',
+			'core_html_block'              => 'core_html_block_count',
+			'freeform_block'               => 'freeform_block_count',
+			'invalid_block'                => 'invalid_block_count',
+			'unsafe_inline_svg'            => 'unsafe_svg_count',
+			'image_missing_source'         => 'image_missing_source_count',
+			'svg_materialization_failure'  => 'svg_materialization_failure_count',
+			'svg_sprite_reference_failure' => 'svg_sprite_reference_failure_count',
+			'woocommerce_missing'          => 'commerce_dependency_failures',
+			'companion_plugin_missing'     => 'companion_plugin_dependency_failures',
+			'runtime_dependency_parity'    => 'runtime_dependency_parity_issue_count',
+			'semantic_parity_failure'      => 'semantic_parity_failure_count',
+			'unsafe_layout_constraint'     => 'unsafe_layout_constraint_count',
+			'dropped_artifact_files'       => 'omitted_file_count',
+			'visual_parity_mismatch'       => 'visual_parity_failure_count',
+		);
+		$count_of      = static function ( array $keys ) use ( $containers ): ?int {
+			foreach ( $containers as $container ) {
+				foreach ( $keys as $key ) {
+					$value = $container[ $key ] ?? ( is_array( $container['counts'] ?? null ) ? ( $container['counts'][ $key ] ?? null ) : null );
+					if ( is_numeric( $value ) ) {
+						return (int) $value;
+					}
+				}
+			}
+			return null;
+		};
+
+		$reasons = array();
+		foreach ( $failed as $container ) {
+			foreach ( is_array( $container['failure_reasons'] ?? null ) ? $container['failure_reasons'] : array() as $reason ) {
+				if ( is_string( $reason ) && '' !== $reason ) {
+					$reasons[ $reason ] = true;
+				}
+			}
+		}
+		$parts = array();
+		foreach ( array_keys( $reasons ) as $reason ) {
+			$count   = isset( $reason_counts[ $reason ] ) ? $count_of( array( $reason_counts[ $reason ] ) ) : null;
+			$parts[] = null !== $count && $count > 0 ? sprintf( '%d %s failure%s', $count, $reason, 1 === $count ? '' : 's' ) : $reason;
+		}
+		if ( empty( $parts ) ) {
+			$fallbacks = $count_of( array( 'fallback_blocks', 'unsupported_fallback_count', 'fallback_count' ) );
+			$parts[]   = sprintf( '%d fallback_blocks failure%s', (int) $fallbacks, 1 === (int) $fallbacks ? '' : 's' );
+		}
+		return 'The import failed its quality gate: ' . implode( ', ', $parts ) . '.';
 	}
 }
 

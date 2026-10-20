@@ -380,8 +380,11 @@ $assert( $terminal === $replay && 1 === $GLOBALS['ssi_direct_mutations'], 'termi
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array();
 $clean_receipt = static_site_importer_cli_run_import_host( $input(), 'static_site_importer_cli_import' );
 $clean = $clean_receipt['response'] ?? array();
+// The fixture import fails its quality gate, so the CLI receipt carries the
+// single failed verdict over the same evidence the ability returned.
+$assert( 'failed' === ( $clean_receipt['status'] ?? '' ) && 'static_site_importer_quality_failed' === ( $clean['error']['code'] ?? '' ) && false === ( $clean['success'] ?? null ), 'a fail_import apply must yield a failed CLI receipt with the quality verdict' );
 $canonical = static function ( array $response ): array {
-	unset( $response['import_id'], $response['artifact_run'] );
+	unset( $response['import_id'], $response['artifact_run'], $response['success'], $response['error'] );
 	return $response;
 };
 $clean_work = $clean['artifact_run']['work'] ?? array();
