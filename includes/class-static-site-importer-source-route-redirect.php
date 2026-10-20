@@ -49,8 +49,12 @@ final class Static_Site_Importer_Source_Route_Redirect {
 		if ( '' === $path ) {
 			return $query_vars;
 		}
-		$id = self::find_post_id( $path . '/index.html' );
-		if ( $id <= 0 && self::flat_document_page_id( $path ) > 0 ) {
+		$id   = self::find_post_id( $path . '/index.html' );
+		$flat = $id <= 0 ? self::flat_document_page_id( $path ) : 0;
+		if ( self::is_designed_shop_archive( $id > 0 ? $id : $flat ) ) {
+			return $query_vars;
+		}
+		if ( $flat > 0 ) {
 			// The page's own URI: the query core's page rule builds for this path.
 			return self::singular_query_vars( $query_vars ) + array( 'pagename' => $path );
 		}
@@ -193,6 +197,14 @@ final class Static_Site_Importer_Source_Route_Redirect {
 	 * from any native or custom taxonomy or post type cannot constrain it. The
 	 * request's original query string remains available to the document.
 	 */
+	/**
+	 * The WooCommerce shop page whose listing the theme designs as the product
+	 * archive: WooCommerce serves that archive at the page's URL.
+	 */
+	private static function is_designed_shop_archive( int $id ): bool {
+		return $id > 0 && function_exists( 'wc_get_page_id' ) && (int) wc_get_page_id( 'shop' ) === $id && class_exists( 'Static_Site_Importer_Woo_Product_Listing_Materializer' ) && Static_Site_Importer_Woo_Product_Listing_Materializer::theme_designs_product_archive();
+	}
+
 	private static function singular_query_vars( array $query_vars ): array {
 		return array_intersect_key( $query_vars, array_flip( array( 'feed', 'embed', 'cpage', 'preview', 'preview_id', 'preview_nonce', 'withcomments', 'withoutcomments' ) ) );
 	}

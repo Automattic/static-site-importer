@@ -663,7 +663,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( 'entity_collection' === $kind && in_array( $name, array( 'event', 'events' ), true ) ) {
 			return 'events';
 		}
-		if ( 'entity_collection' === $kind && in_array( $name, array( 'product', 'products', 'cart', 'carts', 'product_grids' ), true ) ) {
+		if ( 'entity_collection' === $kind && in_array( $name, array( 'product', 'products', 'cart', 'carts', 'product_grids', 'product_listings' ), true ) ) {
 			return 'shop';
 		}
 		if ( 'entity_collection' === $kind && 'external_metrics' === $name ) {
@@ -1317,8 +1317,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		require_once __DIR__ . '/class-static-site-importer-redirection-materializer.php';
 		require_once __DIR__ . '/class-static-site-importer-woo-cart-materializer.php';
 		require_once __DIR__ . '/class-static-site-importer-woo-product-grid-materializer.php';
+		require_once __DIR__ . '/class-static-site-importer-woo-product-listing-materializer.php';
 		// A capability's first adapter is its default; collection adapters follow it.
-		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Woo_Cart_Materializer', 'Static_Site_Importer_Woo_Product_Grid_Materializer', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_TEC_Event_Seeder', 'Static_Site_Importer_External_Metric_Runtime', 'Static_Site_Importer_TranslatePress_Materializer', 'Static_Site_Importer_Redirection_Materializer' ) as $owner ) {
+		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Woo_Cart_Materializer', 'Static_Site_Importer_Woo_Product_Grid_Materializer', 'Static_Site_Importer_Woo_Product_Listing_Materializer', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_TEC_Event_Seeder', 'Static_Site_Importer_External_Metric_Runtime', 'Static_Site_Importer_TranslatePress_Materializer', 'Static_Site_Importer_Redirection_Materializer' ) as $owner ) {
 			// Seeders may be absent or stubbed in standalone harnesses.
 			// @phpstan-ignore-next-line booleanNot.alwaysFalse -- Optional classes are stubbed in standalone coverage harnesses.
 			if ( ! is_callable( array( $owner, 'adapter' ) ) ) {
@@ -1502,6 +1503,62 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	}
 
 	/**
+	 * Validate `generic/product-listings/v1` store listings: a listing region,
+	 * the grid it lists, and its filter, sort and count controls, each control
+	 * anchored on its own source block.
+	 *
+	 * @return array{product_listings:array<int,array<string,mixed>>,errors:array<int,array<string,string>>}
+	 */
+	public static function validate_product_listings_manifest( mixed $data ): array {
+		$rows     = is_array( $data ) && is_array( $data['product_listings'] ?? null ) && array_is_list( $data['product_listings'] ) ? $data['product_listings'] : null;
+		$errors   = array();
+		$listings = array();
+		if ( null === $rows ) {
+			return array(
+				'product_listings' => array(),
+				'errors'           => array(
+					array(
+						'path'    => '$.product_listings',
+						'message' => 'product_listings must be a list of product listings.',
+					),
+				),
+			);
+		}
+		foreach ( $rows as $index => $row ) {
+			$controls = is_array( $row ) && is_array( $row['controls'] ?? null ) && array_is_list( $row['controls'] ) ? $row['controls'] : array();
+			$bindings = is_array( $row ) && is_array( $row['bindings'] ?? null ) && array_is_list( $row['bindings'] ) ? array_map( static fn( mixed $binding ): ?array => self::normalize_block_binding( $binding ), $row['bindings'] ) : array();
+			$ids      = array();
+			foreach ( $controls as $control ) {
+				$ids[] = is_array( $control ) && is_string( $control['id'] ?? null ) && is_string( $control['kind'] ?? null ) ? $control['id'] : '';
+			}
+			$regions = 0;
+			$valid   = array() !== $bindings && ! in_array( '', $ids, true ) && count( $ids ) === count( array_unique( $ids ) );
+			foreach ( $valid ? $bindings : array() as $binding ) {
+				$regions += 'commerce_listing' === ( $binding['role'] ?? '' ) ? 1 : 0;
+				$valid    = $valid && ! empty( $binding ) && ( 'commerce_listing' === $binding['role'] || ( 'commerce_listing_control' === $binding['role'] && in_array( $binding['control'] ?? '', $ids, true ) ) );
+			}
+			if ( ! is_array( $row ) || ! $valid || 1 !== $regions || '' === trim( (string) ( $row['source_path'] ?? '' ) ) || '' === trim( (string) ( $row['selector'] ?? '' ) ) || '' === trim( (string) ( $row['grid_selector'] ?? '' ) ) ) {
+				$errors[] = array(
+					'path'    => '$.product_listings[' . $index . ']',
+					'message' => 'product listing must carry source_path, selector, grid_selector, controls with unique ids and kinds, one commerce_listing anchor and commerce_listing_control anchors naming those controls.',
+				);
+				continue;
+			}
+			$listings[] = array(
+				'source_path'   => (string) $row['source_path'],
+				'selector'      => (string) $row['selector'],
+				'grid_selector' => (string) $row['grid_selector'],
+				'controls'      => $controls,
+				'bindings'      => $bindings,
+			);
+		}
+		return array(
+			'product_listings' => $listings,
+			'errors'           => $errors,
+		);
+	}
+
+	/**
 	 * A product grid replaces its whole source region with one provider loop,
 	 * so every other provider binding that claims a range inside that region —
 	 * each card's own controls, or the region itself as a product collection —
@@ -1509,11 +1566,19 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 * grids whose region is not on its page, adopt nothing and keep the
 	 * per-card bindings.
 	 *
+	 * A store listing whose region holds an adopted grid adopts that grid in
+	 * turn: the listing becomes one WooCommerce archive collection around the
+	 * listing region, the grid lists the archive's products, and the listing's
+	 * controls become WooCommerce's filter, sort and count blocks. The listing
+	 * then replaces its whole region, so its control anchors and the grid's
+	 * own anchor are carried inside it. A listing without an adopted grid in
+	 * its region keeps its source controls.
+	 *
 	 * @param array<string,mixed> $lifecycle Lifecycle with resolved manifests.
 	 * @param array<string,mixed> $plan      Resolved site plan.
 	 * @return array<string,mixed>
 	 */
-	public static function with_adopted_product_grids( array $lifecycle, array $plan ): array {
+	public static function with_adopted_product_regions( array $lifecycle, array $plan ): array {
 		$pages = array();
 		foreach ( Static_Site_Importer_Site_Plan_Preparation::runtime_binding_documents( $plan ) as $source_path => $document ) {
 			$pages[ $source_path ] = (string) ( $plan[ $document['group'] ][ $document['index'] ]['resolved_block_markup'] ?? '' );
@@ -1530,30 +1595,55 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			return $found < 0 ? null : array( (string) $binding['source_path'], $found, $found + strlen( $search ) );
 		};
+		$within  = static fn( array $inner, array $outer ): bool => $outer[0] === $inner[0] && $outer[1] <= $inner[1] && $inner[2] <= $outer[2];
 		$adopted = array();
-		$grid_id = '';
+		$grids   = array();
 		foreach ( $lifecycle['entities'] ?? array() as $id => $prepared ) {
 			if ( 'product_grids' !== ( $prepared['adapter']['entity_collection'] ?? '' ) ) {
 				continue;
 			}
-			$grid_id = (string) $id;
-			$grids   = array();
+			$kept = array();
 			foreach ( $prepared['manifest']['product_grids'] ?? array() as $grid ) {
 				$binding = is_array( $grid ) && is_array( $grid['bindings'][0] ?? null ) ? $grid['bindings'][0] : array();
 				$claim   = array() !== $binding && null !== Static_Site_Importer_Woo_Product_Grid_Materializer::retirable_hooks( $binding['superseded_runtime_selectors'] ?? array() ) ? $range( $binding ) : null;
 				if ( null !== $claim ) {
-					$adopted[] = $claim;
-					$grids[]   = $grid;
+					$adopted[] = array( $claim, (string) $id );
+					$grids[]   = array( $claim, $grid );
+					$kept[]    = $grid;
 				}
 			}
-			$lifecycle['entities'][ $id ]['manifest']['product_grids'] = $grids;
+			$lifecycle['entities'][ $id ]['manifest']['product_grids'] = $kept;
+		}
+		foreach ( $lifecycle['entities'] ?? array() as $id => $prepared ) {
+			if ( 'product_listings' !== ( $prepared['adapter']['entity_collection'] ?? '' ) ) {
+				continue;
+			}
+			foreach ( $prepared['manifest']['product_listings'] ?? array() as $index => $listing ) {
+				$region = array_values( array_filter( is_array( $listing['bindings'] ?? null ) ? $listing['bindings'] : array(), static fn( mixed $binding ): bool => is_array( $binding ) && 'commerce_listing' === ( $binding['role'] ?? '' ) ) );
+				$claim  = 1 === count( $region ) ? $range( $region[0] ) : null;
+				$owned  = null;
+				foreach ( null === $claim ? array() : $grids as $grid ) {
+					if ( null === $owned && $within( $grid[0], $claim ) && ( $grid[1]['source_path'] ?? null ) === ( $listing['source_path'] ?? null ) && ( $grid[1]['selector'] ?? null ) === ( $listing['grid_selector'] ?? null ) ) {
+						$owned = $grid[1];
+					}
+				}
+				// The region anchor is the listing's one binding; its controls
+				// are replaced inside that region.
+				$listing['grid']             = $owned;
+				$listing['control_bindings'] = array_values( array_filter( is_array( $listing['bindings'] ?? null ) ? $listing['bindings'] : array(), static fn( mixed $binding ): bool => is_array( $binding ) && 'commerce_listing_control' === ( $binding['role'] ?? '' ) ) );
+				$listing['bindings']         = null === $owned ? array() : $region;
+				if ( null !== $owned ) {
+					$adopted[] = array( $claim, (string) $id );
+				}
+				$lifecycle['entities'][ $id ]['manifest']['product_listings'][ $index ] = $listing;
+			}
 		}
 		if ( empty( $adopted ) ) {
 			return $lifecycle;
 		}
 		foreach ( $lifecycle['entities'] as $id => $prepared ) {
 			$collection = (string) ( $prepared['adapter']['entity_collection'] ?? '' );
-			if ( $grid_id === (string) $id || ! is_array( $prepared['manifest'][ $collection ] ?? null ) ) {
+			if ( ! is_array( $prepared['manifest'][ $collection ] ?? null ) ) {
 				continue;
 			}
 			foreach ( $prepared['manifest'][ $collection ] as $index => $entity ) {
@@ -1563,10 +1653,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				$kept = array_values(
 					array_filter(
 						$entity['bindings'],
-						static function ( mixed $binding ) use ( $range, $adopted ): bool {
+						static function ( mixed $binding ) use ( $range, $adopted, $within, $id ): bool {
 							$claim = is_array( $binding ) ? $range( $binding ) : null;
-							foreach ( null === $claim ? array() : $adopted as $grid ) {
-								if ( $grid[0] === $claim[0] && $grid[1] <= $claim[1] && $claim[2] <= $grid[2] ) {
+							foreach ( null === $claim ? array() : $adopted as $owner ) {
+								// A region's own anchor is the one claim it keeps.
+								if ( $within( $claim, $owner[0] ) && ( (string) $id !== $owner[1] || $claim !== $owner[0] ) ) {
 									return false;
 								}
 							}
@@ -2190,7 +2281,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( null === $binding ) {
 			return array();
 		}
-		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'commerce_collection', 'commerce_product_grid', 'commerce_cart', 'form' ), true ) ) {
+		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'commerce_listing_control', 'commerce_cart', 'form' ), true ) || ( isset( $binding['control'] ) && ( ! is_string( $binding['control'] ) || '' === $binding['control'] ) ) ) {
 			return null;
 		}
 		$normalized = array(
@@ -2200,6 +2291,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'occurrence'          => $binding['occurrence'],
 			'role'                => $binding['role'],
 		);
+		if ( isset( $binding['control'] ) ) {
+			$normalized['control'] = $binding['control'];
+		}
 		if ( isset( $binding['superseded_runtime_selectors'] ) ) {
 			if ( ! is_array( $binding['superseded_runtime_selectors'] ) || array() === $binding['superseded_runtime_selectors'] ) {
 				return null;

@@ -12,7 +12,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * WooCommerce wraps a product loop in its own collection, list and item
  * elements. A loop that repeats an imported card sits inside the source grid
- * element, so those wrappers are flattened and each card is laid out by the
+ * element (or, for a store listing, wraps the listing whose grid element holds
+ * the list), so those wrappers are flattened and each card is laid out by the
  * source grid CSS exactly as its static cards were.
  */
 class Static_Site_Importer_Product_Grid_Presentation extends Static_Site_Importer_Provider_Presentation {
@@ -34,7 +35,9 @@ class Static_Site_Importer_Product_Grid_Presentation extends Static_Site_Importe
 		// list layout (`.wc-block-product-template.is-flex-container`).
 		$loop = '.' . Static_Site_Importer_Woo_Product_Grid_Materializer::LOOP_CLASS;
 		$loop = $loop . $loop;
-		return $loop . ',' . $loop . ' > .wc-block-product-template,' . $loop . ' > .wc-block-product-template > .wc-block-product,' . $loop . ' > .wc-block-components-notices{display:contents;}'
+		// The card list may sit deeper than the loop: a store listing's loop
+		// wraps the whole listing and the list sits in its grid element.
+		return $loop . ',' . $loop . ' .wc-block-product-template,' . $loop . ' .wc-block-product-template > .wc-block-product,' . $loop . ' > .wc-block-components-notices{display:contents;}'
 			// A store notice spans the whole grid row instead of taking a card's cell.
 			. $loop . ' > .wc-block-components-notices > *{grid-column:1/-1;}';
 	}
