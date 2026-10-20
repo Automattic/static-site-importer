@@ -179,6 +179,18 @@ if ( ! function_exists( 'add_action' ) ) {
 	}
 }
 
+if ( ! function_exists( 'did_action' ) ) {
+	function did_action( string $hook ): int {
+		return (int) ( $GLOBALS['ssi_companion_did_actions'][ $hook ] ?? 0 );
+	}
+}
+
+if ( ! function_exists( 'do_action' ) ) {
+	function do_action( string $hook, mixed ...$args ): void {
+		$GLOBALS['ssi_companion_did_actions'][ $hook ] = (int) ( $GLOBALS['ssi_companion_did_actions'][ $hook ] ?? 0 ) + 1;
+	}
+}
+
 if ( ! function_exists( 'add_filter' ) ) {
 	function add_filter( string $hook, callable|string|array $callback, int $priority = 10, int $accepted_args = 1 ): void {
 		$GLOBALS['ssi_companion_registered_filters'][ $hook ][] = array( $callback, $priority, $accepted_args );
@@ -705,6 +717,9 @@ if ( is_array( $descriptor ) ) {
 	$assert( isset( $files['ssi-example-site/includes/internal-link-runtime.php'] ) && str_contains( $files['ssi-example-site/includes/internal-link-runtime.php'], 'final class SSI_EXAMPLE_SITE_Internal_Link_Runtime' ), 'internal-link-runtime-is-emitted-under-companion-namespace' );
 	$assert( 1 !== preg_match( '/Static_Site_Importer_Capture_Evidence::[A-Z]/', $files['ssi-example-site/includes/internal-link-runtime.php'] ?? '' ) && str_contains( $files['ssi-example-site/includes/internal-link-runtime.php'] ?? '', var_export( Static_Site_Importer_Capture_Evidence::MEMBER_LOGIN, true ) ), 'companion-internal-link-runtime-inlines-capture-evidence-names' );
 	$assert( isset( $files['ssi-example-site/includes/source-route-redirect.php'] ) && str_contains( $files['ssi-example-site/includes/source-route-redirect.php'], 'final class SSI_EXAMPLE_SITE_Source_Route_Redirect' ) && ! str_contains( $files['ssi-example-site/includes/source-route-redirect.php'], 'Static_Site_Importer_Source_Route_Redirect' ), 'source-route-redirect-is-emitted-under-companion-namespace' );
+	$grid_runtime = $files['ssi-example-site/includes/product-grid-runtime.php'] ?? '';
+	$assert( str_contains( $grid_runtime, 'final class SSI_EXAMPLE_SITE_Product_Grid_Runtime' ) && ! str_contains( $grid_runtime, 'Static_Site_Importer_' ), 'product-grid-runtime-is-emitted-under-companion-namespace' );
+	$assert( str_contains( $main, "require_once __DIR__ . '/includes/product-grid-runtime.php'" ) && str_contains( $main, 'SSI_EXAMPLE_SITE_Product_Grid_Runtime::register();' ), 'main-file-registers-companion-product-grid-runtime' );
 	$config = json_decode( (string) ( $files['ssi-example-site/companion.json'] ?? '' ), true );
 	$assert( is_array( $config ) && 'Example Site' === ( $config['site_name'] ?? '' ) && array( 'custom-hero' ) === ( $config['block_directories'] ?? null ) && 'ssi-example-site/ssi-example-site.php' === ( $config['plugin_file'] ?? '' ), 'companion-config-contains-imported-runtime-data' );
 	$assert( str_contains( $main, 'companion.json' ) && ! str_contains( $main, "'custom-hero'" ) && ! str_contains( $main, "'ssi-example-site-editor'" ), 'main-file-reads-runtime-data-from-json' );
@@ -1342,6 +1357,8 @@ function plugin_dir_path( string $file ): string { return dirname( $file ) . '/'
 function plugin_dir_url( string $file ): string { return 'https://example.test/plugins/' . basename( dirname( $file ) ) . '/'; }
 function add_action( string $hook, callable|string|array $callback, int $priority = 10, int $accepted_args = 1 ): void { if ( 'init' === $hook ) { call_user_func( $callback ); } }
 function add_filter( string $hook, callable|string $callback, int $priority = 10, int $accepted_args = 1 ): void {}
+function did_action( string $hook ): int { return 0; }
+function do_action( string $hook, mixed ...$args ): void {}
 function register_block_type( string $path, array $args = array() ): WP_Block_Type|false {
 	$metadata = is_file( $path . '/block.json' ) ? json_decode( (string) file_get_contents( $path . '/block.json' ), true ) : array();
 	$name = is_array( $metadata ) ? (string) ( $metadata['name'] ?? '' ) : '';
@@ -1369,6 +1386,64 @@ if ( is_resource( $standalone_process ) ) {
 }
 $assert( 0 === $standalone_status, 'generated-plugin-loads-without-importer-or-compiler', $standalone_output );
 
+// Imported pages keep WooCommerce product loops whose product template is the
+// imported card with marked slots. The companion's own runtime copy must fill
+// those slots and lay the cards out in the source grid once SSI is removed.
+$grid_bootstrap = <<<'PHP'
+define( 'ABSPATH', __DIR__ . '/' );
+class WC_Product { public function __construct( private int $id ) {} public function get_id(): int { return $this->id; } }
+class WooCommerce {}
+function add_action( string $hook, callable|string|array $callback, int $priority = 10, int $accepted_args = 1 ): void { $GLOBALS['actions'][ $hook ][] = $callback; }
+function add_filter( string $hook, callable|string|array $callback, int $priority = 10, int $accepted_args = 1 ): void { $GLOBALS['filters'][ $hook ][] = $callback; }
+function did_action( string $hook ): int { return (int) ( $GLOBALS['did'][ $hook ] ?? 0 ); }
+function do_action( string $hook, mixed ...$args ): void { $GLOBALS['did'][ $hook ] = (int) ( $GLOBALS['did'][ $hook ] ?? 0 ) + 1; }
+function get_the_ID(): int { return 7; }
+function wc_get_product( int $id ): WC_Product { return new WC_Product( $id ); }
+function parse_blocks( string $markup ): array { return array( array( 'blockName' => 'core/paragraph', 'markup' => $markup ) ); }
+function render_block( array $block ): string { return 'rendered:' . $block['markup']; }
+function is_admin(): bool { return false; }
+function wp_style_is( string $handle, string $status = 'enqueued' ): bool { return 'registered' === $status && isset( $GLOBALS['styles'][ $handle ] ); }
+function wp_register_style( string $handle, mixed $src, array $deps = array(), mixed $ver = false ): bool { $GLOBALS['styles'][ $handle ] = ''; return true; }
+function wp_enqueue_style( string $handle ): void {}
+function wp_add_inline_style( string $handle, string $css ): bool { $GLOBALS['styles'][ $handle ] .= $css; return true; }
+require $argv[1];
+require $argv[2];
+SSI_EXAMPLE_SITE_Product_Grid_Runtime::register();
+Static_Site_Importer_Product_Grid_Runtime::register();
+$render = $GLOBALS['filters']['render_block'][0] ?? null;
+$slot   = array( 'attrs' => array( 'metadata' => array( 'staticSiteImporterItemSlot' => array( 'role' => 'field', 'values' => array( '7' => '<p>Seven</p>' ) ) ) ) );
+foreach ( $GLOBALS['actions']['wp_enqueue_scripts'] ?? array() as $enqueue ) { $enqueue(); }
+$css = implode( '', $GLOBALS['styles'] ?? array() );
+echo json_encode( array(
+	'filters' => count( $GLOBALS['filters']['render_block'] ?? array() ),
+	'slot'    => is_callable( $render ) ? $render( '<p>Template</p>', $slot ) : null,
+	'layout'  => str_contains( $css, '.ssi-item-template-loop.ssi-item-template-loop .wc-block-product-template' ) && str_contains( $css, 'display:contents' ),
+) );
+PHP;
+$grid_runtime_file = WP_PLUGIN_DIR . '/ssi-example-site/includes/product-grid-runtime.php';
+$grid_process      = proc_open(
+	// The runtime is loaded twice: a second copy (SSI's own, or a second
+	// companion) must stand down rather than fill each slot again.
+	array( PHP_BINARY, '-r', $grid_bootstrap, $grid_runtime_file, dirname( __DIR__ ) . '/includes/class-static-site-importer-product-grid-runtime.php' ),
+	array(
+		1 => array( 'pipe', 'w' ),
+		2 => array( 'pipe', 'w' ),
+	),
+	$grid_pipes
+);
+$grid_output = '';
+if ( is_resource( $grid_process ) ) {
+	$grid_output = stream_get_contents( $grid_pipes[1] ) . stream_get_contents( $grid_pipes[2] );
+	fclose( $grid_pipes[1] );
+	fclose( $grid_pipes[2] );
+	proc_close( $grid_process );
+}
+$grid_result = json_decode( $grid_output, true );
+$assert( is_file( $grid_runtime_file ), 'install-writes-companion-product-grid-runtime' );
+$assert( 'rendered:<p>Seven</p>' === ( $grid_result['slot'] ?? null ), 'companion-product-grid-runtime-fills-card-slots-without-importer', $grid_output );
+$assert( true === ( $grid_result['layout'] ?? null ), 'companion-product-grid-runtime-lays-cards-out-in-source-grid-without-importer', $grid_output );
+$assert( 1 === ( $grid_result['filters'] ?? null ), 'second-product-grid-runtime-copy-stands-down', $grid_output );
+
 // A current companion owns a versioned copy of the projection runtime. Verify
 // it remains functional after SSI is absent, and that it has no class identity
 // collision with SSI, legacy global copies, or a second companion.
@@ -1380,6 +1455,8 @@ function plugin_dir_path( string $file ): string { return dirname( $file ) . '/'
 function plugin_dir_url( string $file ): string { return 'https://example.test/plugins/' . basename( dirname( $file ) ) . '/'; }
 function add_action( string $hook, callable|string|array $callback, int $priority = 10, int $accepted_args = 1 ): void { if ( 'init' === $hook ) { call_user_func( $callback ); } }
 function add_filter( string $hook, callable|string $callback, int $priority = 10, int $accepted_args = 1 ): void { $GLOBALS['filters'][ $hook ][] = $callback; }
+function did_action( string $hook ): int { return (int) ( $GLOBALS['did'][ $hook ] ?? 0 ); }
+function do_action( string $hook, mixed ...$args ): void { $GLOBALS['did'][ $hook ] = (int) ( $GLOBALS['did'][ $hook ] ?? 0 ) + 1; }
 function register_block_type( string $path, array $args = array() ): WP_Block_Type|false { return new WP_Block_Type( 'test/block' ); }
 function get_option( string $name, mixed $default = false ): mixed { return $default; }
 foreach ( array_slice( $argv, 1, -1 ) as $file ) { require $file; }

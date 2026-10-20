@@ -7,6 +7,8 @@
 
 defined( 'ABSPATH' ) || exit;
 
+require_once __DIR__ . '/class-static-site-importer-product-grid-runtime.php';
+
 /**
  * Replaces each `generic/product-grids/v1` grid with a WooCommerce product
  * loop that repeats the imported card.
@@ -25,17 +27,12 @@ defined( 'ABSPATH' ) || exit;
  * - every other slot renders the current product's own source block.
  *
  * The source grid wrapper stays, minus the attributes its script used to
- * redraw the cards, and WooCommerce's list wrappers use `display: contents`,
- * so the source grid CSS lays out the cards exactly as before. Products are
- * seeded by the product adapter; this adapter writes nothing.
+ * redraw the cards. `Static_Site_Importer_Product_Grid_Runtime` fills the
+ * slots and flattens WooCommerce's list wrappers, so the source grid CSS lays
+ * out the cards exactly as before. Products are seeded by the product
+ * adapter; this adapter writes nothing.
  */
 final class Static_Site_Importer_Woo_Product_Grid_Materializer {
-	/** Block metadata key that marks a template slot the render filter fills. */
-	public const SLOT_KEY = 'staticSiteImporterItemSlot';
-
-	/** Class on the product collection whose wrappers the presentation CSS flattens. */
-	public const LOOP_CLASS = 'ssi-item-template-loop';
-
 	public static function adapter(): array {
 		return array(
 			'id'                       => 'woocommerce_product_grid',
@@ -52,7 +49,6 @@ final class Static_Site_Importer_Woo_Product_Grid_Materializer {
 			'binding_callback'         => array( self::class, 'binding_block_markup' ),
 			'classic_binding_callback' => array( self::class, 'binding_classic_render' ),
 			'report_callback'          => array( self::class, 'new_report' ),
-			'presentation'             => 'Static_Site_Importer_Product_Grid_Presentation',
 			'dependencies'             => array(
 				array(
 					'type'                  => 'wp_org_plugin',
@@ -187,7 +183,7 @@ final class Static_Site_Importer_Woo_Product_Grid_Materializer {
 				max( 1, min( 6, count( $items ) ) ),
 				abs( crc32( (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' ) ) ) % 1000000,
 				$card,
-				self::LOOP_CLASS
+				Static_Site_Importer_Product_Grid_Runtime::LOOP_CLASS
 			)
 		);
 		return null === $loop ? '' : self::grid_around( $entity, $loop );
@@ -277,7 +273,7 @@ final class Static_Site_Importer_Woo_Product_Grid_Materializer {
 				}
 			}
 		}
-		$node['attrs']['metadata'][ self::SLOT_KEY ] = $marker;
+		$node['attrs']['metadata'][ Static_Site_Importer_Product_Grid_Runtime::SLOT_KEY ] = $marker;
 		return true;
 	}
 
@@ -337,57 +333,5 @@ final class Static_Site_Importer_Woo_Product_Grid_Materializer {
 			}
 		}
 		return $block;
-	}
-
-	public static function register(): void {
-		add_filter( 'render_block', array( self::class, 'render_slot' ), 10, 2 );
-	}
-
-	/** Fill one template slot for the product the loop is rendering. */
-	public static function render_slot( string $content, array $block ): string {
-		$slot = $block['attrs']['metadata'][ self::SLOT_KEY ] ?? null;
-		if ( ! is_array( $slot ) ) {
-			return $content;
-		}
-		$product = function_exists( 'wc_get_product' ) ? wc_get_product( get_the_ID() ) : null;
-		if ( ! $product instanceof WC_Product ) {
-			return $content;
-		}
-		$role = (string) ( $slot['role'] ?? '' );
-		if ( 'field' === $role ) {
-			$markup = $slot['values'][ (string) $product->get_id() ] ?? null;
-			if ( ! is_string( $markup ) ) {
-				// A product added after import has no source value: an
-				// optional slot stays empty, a required one keeps the template.
-				return empty( $slot['optional'] ) ? $content : '';
-			}
-			$item = self::single_block( $markup );
-			return null === $item ? '' : render_block( $item );
-		}
-		if ( 'description' === $role ) {
-			$text = trim( wp_strip_all_tags( '' !== $product->get_short_description() ? $product->get_short_description() : $product->get_description() ) );
-			return (string) preg_replace( '/^(\s*<[a-zA-Z][^>]*>).*(<\/[a-zA-Z0-9]+>\s*)$/s', '${1}' . str_replace( array( '\\', '$' ), array( '\\\\', '\\$' ), esc_html( $text ) ) . '${2}', $content );
-		}
-		if ( 'add_to_cart' === $role && $product->is_purchasable() && $product->is_in_stock() && $product->supports( 'ajax_add_to_cart' ) ) {
-			$tags = new WP_HTML_Tag_Processor( $content );
-			while ( $tags->next_tag() ) {
-				if ( ! in_array( $tags->get_tag(), array( 'BUTTON', 'A' ), true ) ) {
-					continue;
-				}
-				// Source data-* hooks drive the source script's own cart.
-				foreach ( (array) $tags->get_attribute_names_with_prefix( 'data-' ) as $name ) {
-					$tags->remove_attribute( $name );
-				}
-				$tags->add_class( 'add_to_cart_button' );
-				$tags->add_class( 'ajax_add_to_cart' );
-				$tags->set_attribute( 'data-product_id', (string) $product->get_id() );
-				$tags->set_attribute( 'data-quantity', '1' );
-				if ( 'A' === $tags->get_tag() ) {
-					$tags->set_attribute( 'href', $product->add_to_cart_url() );
-				}
-				return $tags->get_updated_html();
-			}
-		}
-		return $content;
 	}
 }
