@@ -287,6 +287,7 @@
           "tests/smoke-provider-layout-overlay-media-all.php",
           "tests/smoke-provider-overlay-compaction.php",
           "tests/smoke-provider-presentation.php",
+          "tests/smoke-provider-presentation-cascade.php",
           "tests/smoke-provider-submission-evidence.php",
           "tests/smoke-quality-budget-admission.php",
           "tests/smoke-rest-import.php",

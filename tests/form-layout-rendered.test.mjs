@@ -595,3 +595,26 @@ test( 'long alternating form maps without gate losses and preserves every field 
 		await browser.close();
 	}
 } );
+
+test( 'mapped full-width submit keeps its winning background and fills the form row (#2223)', async () => {
+	const fixture = JSON.parse( execFileSync( 'php', [ 'tests/fixtures/form-submit-cascade.php' ], { encoding: 'utf8' } ) );
+	const browser = await chromium.launch();
+	try {
+		const page = await browser.newPage();
+		for ( const width of [ 1440, 390 ] ) {
+			await page.setViewportSize( { width, height: 900 } );
+			await page.setContent( `<style>form,.imported{width:100%;max-width:580px;box-sizing:border-box}.imported{display:flex;flex-wrap:wrap}.wp-block-button{display:inline-block}.wp-block-button__link{display:inline-block;box-sizing:border-box;width:100%}${fixture.sourceCss}${fixture.css}</style>${fixture.sourceHtml}<div class="imported ${fixture.className}">${fixture.submit}</div>` );
+			const measured = await page.locator( '.imported button' ).evaluate( button => ( {
+				background: getComputedStyle( button ).backgroundColor,
+				width: button.getBoundingClientRect().width,
+				formWidth: button.closest( '.imported' ).getBoundingClientRect().width,
+				sourceWidth: document.querySelector( '.ctx button' ).getBoundingClientRect().width,
+			} ) );
+			assert.equal( measured.background, 'rgb(23, 23, 23)', `background at ${width}` );
+			assert.equal( measured.width, measured.formWidth, `full form width at ${width}` );
+			assert.equal( measured.width, measured.sourceWidth, `source width at ${width}` );
+		}
+	} finally {
+		await browser.close();
+	}
+} );
