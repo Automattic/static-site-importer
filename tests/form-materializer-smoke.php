@@ -4319,6 +4319,31 @@ namespace {
 		wp_json_encode( array( 'errors' => $hidden_checkbox_validated['errors'] ?? array(), 'row' => $hidden_checkbox_seed ) )
 	);
 
+	// A label moved off-screen (`position:absolute; left:-9999px`) names its
+	// control for screen readers and is hidden from view. Its offset without
+	// the position would shift a visible caption, so the provider label
+	// carries both.
+	$offscreen_label_html      = '<form><label for="news-email" style="position:absolute;left:-9999px;">Email address</label>'
+		. '<input type="email" id="news-email" name="email" placeholder="you@example.com"><button type="submit">Subscribe</button></form>';
+	$offscreen_label_artifact  = array(
+		'entrypoint' => 'news.html',
+		'files'      => array( 'news.html' => $offscreen_label_html ),
+	);
+	$offscreen_label_source    = class_exists( $artifact_compiler ) ? ( ( new $artifact_compiler() )->compile( $offscreen_label_artifact )->toArray() )['fallbacks'][0] ?? array() : array();
+	$offscreen_label_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $offscreen_label_source ) ) );
+	$offscreen_label_seed      = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $offscreen_label_validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	$offscreen_label_css       = (string) ( $offscreen_label_seed['provider_layout_overlay_css']['css'] ?? '' );
+	$assert(
+		! class_exists( $artifact_compiler )
+			|| (
+				'mapped' === ( $offscreen_label_seed['status'] ?? '' )
+				&& 1 === preg_match( '/\{[^}]*left:-9999px[^}]*\}/', $offscreen_label_css, $offscreen_label_rule )
+				&& str_contains( $offscreen_label_rule[0], 'position:absolute' )
+			),
+		'offscreen-label-carries-its-position-with-its-offset',
+		$offscreen_label_css
+	);
+
 	$declared_box_form = static function ( array $styles, array $layout, string $class ) use ( $presentation_role, $v2_layout_graph, $layout_node ): array {
 		$properties = array();
 		foreach ( array_keys( $styles ) as $key ) {
