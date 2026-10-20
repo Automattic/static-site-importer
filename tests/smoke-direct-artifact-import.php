@@ -790,6 +790,65 @@ $assert( str_contains( $compose_run_json, 'unresolved_local_browser_reference' )
 $recovered_compose = Static_Site_Importer_Canonical_Import_Service::import( $resume( $compose_failed_id, 'plan' ) );
 $assert( ! empty( $recovered_compose['success'] ) && empty( $recovered_compose['continuation'] ), 'a failed composition must remain resumable from durable receipts' );
 
+// A plan diagnostic whose message is not usable text must still say why the import failed.
+// The failure is projected more than once on its way to the CLI; a projection must not read
+// its own generic "Materialization failed for <path>." line back in as the reason.
+$unreadable_compose = null;
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_compiler'][] = static function ( object $compiler ) use ( &$unreadable_compose ): object {
+	return new class( $compiler, $unreadable_compose ) {
+		public function __construct( private object $compiler, private ?array &$diagnostic ) {}
+
+		public function compose( array $shared, array $receipts, ?object $payload_reader = null ) {
+			$result = $this->compiler->compose( $shared, $receipts, $payload_reader );
+			if ( null === $this->diagnostic ) {
+				return $result;
+			}
+			$reports = $result->sourceReports;
+			unset( $reports['wordpress_site_plan'] );
+			$reports['wordpress_site_plan_diagnostics'] = array( $this->diagnostic );
+			$this->diagnostic                           = null;
+			return new \Automattic\BlocksEngine\PhpTransformer\Contract\TransformerResult( 'failed', $result->components, $result->blockTypes, $reports, $result->blocks, $result->serializedBlocks, $result->documents, $result->assets, $result->diagnostics, $result->fallbacks, $result->provenance, $result->coverage, $result->context, $result->metrics );
+		}
+
+		public function __call( string $method, array $arguments ) {
+			return $this->compiler->{$method}( ...$arguments );
+		}
+	};
+};
+foreach (
+	array(
+		'a message cut inside a multibyte character' => array(
+			'diagnostic' => array(
+				'code'        => 'wordpress_site_plan_invalid_declaration',
+				'severity'    => 'error',
+				'message'     => "Heading text \"Caf\xC3\" cannot be declared.",
+				'source_path' => 'website/interactive/index.html',
+			),
+			'expected'   => "Materialization failed for website/interactive/index.html: Heading text \"Caf\u{FFFD}\" cannot be declared.",
+		),
+		'no message'                                 => array(
+			'diagnostic' => array(
+				'code'        => 'wordpress_site_plan_not_self_contained',
+				'severity'    => 'error',
+				'source_path' => 'website/interactive/index.html',
+			),
+			'expected'   => 'Materialization failed for website/interactive/index.html (wordpress_site_plan_not_self_contained).',
+		),
+	) as $label => $case
+) {
+	$unreadable_compose = $case['diagnostic'];
+	$unreadable_failed  = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+	$unreadable_message = (string) ( $unreadable_failed['error']['message'] ?? '' );
+	$assert( 'static_site_importer_direct_artifact_phase_failed' === ( $unreadable_failed['error']['code'] ?? '' ), 'a composition failing with ' . $label . ' must keep the phase failure code' );
+	$assert( $case['expected'] === $unreadable_message, 'a composition failing with ' . $label . ' must still state its reason once in the CLI-facing message: ' . $unreadable_message );
+	$receipt_message  = (string) ( $unreadable_failed['diagnostics'][0]['message'] ?? '' );
+	$evidence_message = (string) ( $unreadable_failed['error']['data']['artifact_run']['failures'][0]['diagnostics'][0]['message'] ?? '' );
+	$assert( $case['expected'] === $receipt_message && $case['expected'] === $evidence_message, 'every projection of ' . $label . ' must carry the same reason' );
+	$unreadable_id = (string) ( $unreadable_failed['error']['data']['import_id'] ?? '' );
+	$recovered     = Static_Site_Importer_Canonical_Import_Service::import( $resume( $unreadable_id, 'plan' ) );
+	$assert( ! empty( $recovered['success'] ) && empty( $recovered['continuation'] ), 'a composition failing with ' . $label . ' must remain resumable' );
+}
+
 $throw_detailed_compose = true;
 $GLOBALS['ssi_direct_actions']['static_site_importer_direct_artifact_before_phase'][] = static function ( string $phase ) use ( &$throw_detailed_compose ): void {
 	if ( $throw_detailed_compose && 'compose' === $phase ) {
