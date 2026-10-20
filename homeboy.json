@@ -302,6 +302,7 @@
           "tests/smoke-source-normalizer.php",
           "tests/smoke-source-route-redirect.php",
           "tests/smoke-submit-caption-color.php",
+          "tests/smoke-synced-pattern-materializer.php",
           "tests/smoke-tec-event-seeder.php",
           "tests/smoke-unproven-dynamic-client-assets.php",
           "tests/smoke-url-batch-import.php",

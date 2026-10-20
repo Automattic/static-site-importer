@@ -42,7 +42,7 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 				return new WP_Error( 'navigation_reference_invalid' );
 			}
 		}
-		foreach ( array( 'pages', 'template_parts', 'templates' ) as $group ) {
+		foreach ( array( 'pages', 'template_parts', 'templates', 'synced_patterns' ) as $group ) {
 			foreach ( $plan[ $group ] ?? array() as $document ) {
 				$markup = (string) ( $document['materialized_block_markup'] ?? $document['resolved_block_markup'] ?? $document['canonical_block_markup'] ?? '' );
 				if ( str_contains( self::rewrite_references( $markup, $placeholder_ids ), self::TOKEN_PREFIX ) ) {
@@ -107,7 +107,7 @@ final class Static_Site_Importer_Navigation_Entity_Materializer {
 			$state['resolved']['writes'][ $index ]['payload']['data'] = $markup;
 			$state['resolved']['writes'][ $index ]['payload_hash']    = hash( 'sha256', $markup );
 		}
-		foreach ( array( 'pages', 'template_parts', 'templates' ) as $group ) {
+		foreach ( array( 'pages', 'template_parts', 'templates', 'synced_patterns' ) as $group ) {
 			foreach ( $state['resolved'][ $group ] ?? array() as $index => $document ) {
 				foreach ( array( 'resolved_block_markup', 'materialized_block_markup' ) as $field ) {
 					if ( is_string( $document[ $field ] ?? null ) ) {

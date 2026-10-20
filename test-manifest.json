@@ -171,6 +171,7 @@
     { "path": "tests/smoke-google-fonts-request-budget.php", "environment": "standalone-php" },
     { "path": "tests/smoke-website-artifact-import-input.php", "environment": "standalone-php" },
     { "path": "tests/smoke-navigation-entity-materializer.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-synced-pattern-materializer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-wordpress-site-plan-materializer.php", "environment": "standalone-php" },
     { "path": "tests/smoke-woo-product-seeder-rollback.php", "environment": "standalone-php" },
     { "path": "tests/smoke-woo-product-attributes.php", "environment": "standalone-php" },
