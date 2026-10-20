@@ -1238,6 +1238,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return hash( 'sha256', "static-site-importer/product-grid-fallback/v1\n{$source_path}\n{$hash}" );
 	}
 
+	/** The replaced-region kind a provider binding role reconciles as. */
+	public static function fallback_region( string $role ): string {
+		return 'commerce_cart' === $role ? 'cart-view' : 'product-grid';
+	}
+
 	/**
 	 * Derive a provider-replaced region's fallback reconciliation identity and
 	 * source-evidence hash from the canonical source page plus the region's own
@@ -1252,11 +1257,6 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 *
 	 * @return array{0:string,1:string} [identity, fallback_hash], both '' when the page/selector pair is incomplete.
 	 */
-	/** The replaced-region kind a provider binding role reconciles as. */
-	public static function fallback_region( string $role ): string {
-		return 'commerce_cart' === $role ? 'cart-view' : 'product-grid';
-	}
-
 	public static function page_region_fallback_identity( string $region, string $source_path, string $selector ): array {
 		$source_path = trim( $source_path );
 		$selector    = trim( $selector );
