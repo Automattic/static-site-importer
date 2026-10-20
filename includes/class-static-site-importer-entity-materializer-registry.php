@@ -770,8 +770,13 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						continue;
 					}
 					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : ( 'external_metrics' === $key ? (string) ( $entity['id'] ?? '' ) : self::form_entity_key( $entity ) );
-					if ( isset( $resolved_by_key[ $entity_key ]['bindings'] ) && is_array( $resolved_by_key[ $entity_key ]['bindings'] ) ) {
-						$prepared['manifest'][ $key ][ $index ]['bindings'] = $resolved_by_key[ $entity_key ]['bindings'];
+					// The resolver projects destination references into the markup a
+					// provider renders in place of page content: binding anchors, and
+					// a collection's item template card and per-item slot values.
+					foreach ( array( 'bindings', 'item_template', 'items' ) as $resolved_field ) {
+						if ( isset( $resolved_by_key[ $entity_key ][ $resolved_field ] ) && is_array( $resolved_by_key[ $entity_key ][ $resolved_field ] ) ) {
+							$prepared['manifest'][ $key ][ $index ][ $resolved_field ] = $resolved_by_key[ $entity_key ][ $resolved_field ];
+						}
 					}
 				}
 				continue;
@@ -1189,9 +1194,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		// the finding no longer derives (Automattic/blocks-engine#3088). A store
 		// listing that adopted a grid replaces that grid inside its own region (see
 		// with_adopted_product_regions()), so its receipt answers for the grid.
-		$grid_entity                       = 'commerce_product_grid' === $binding['role'] ? $entity : ( 'commerce_listing' === $binding['role'] && is_array( $entity['grid'] ?? null ) ? $entity['grid'] : array() );
+		// A cart binding replaces its whole cart view the same way and joins its
+		// finding by the cart view's own selector.
+		$grid_entity                       = in_array( $binding['role'], array( 'commerce_product_grid', 'commerce_cart' ), true ) ? $entity : ( 'commerce_listing' === $binding['role'] && is_array( $entity['grid'] ?? null ) ? $entity['grid'] : array() );
 		$grid_selector                     = is_string( $grid_entity['selector'] ?? null ) ? trim( (string) $grid_entity['selector'] ) : '';
-		list( $grid_identity, $grid_hash ) = '' === $grid_selector ? array( '', '' ) : self::product_grid_fallback_identity( (string) $binding['source_path'], $grid_selector );
+		list( $grid_identity, $grid_hash ) = '' === $grid_selector ? array( '', '' ) : self::page_region_fallback_identity( self::fallback_region( $binding['role'] ), (string) $binding['source_path'], $grid_selector );
 		return array(
 			'schema'                           => 'static-site-importer/runtime-entity-binding/v1',
 			'source_path'                      => $binding['source_path'],
@@ -1236,26 +1243,33 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return hash( 'sha256', "static-site-importer/product-grid-fallback/v1\n{$source_path}\n{$hash}" );
 	}
 
+	/** The replaced-region kind a provider binding role reconciles as. */
+	public static function fallback_region( string $role ): string {
+		return 'commerce_cart' === $role ? 'cart-view' : 'product-grid';
+	}
+
 	/**
-	 * Derive a product-grid fallback's reconciliation identity and source-evidence
-	 * hash from the canonical source page plus the grid's own source selector —
-	 * the one evidence both the detected `html_product_grid_fallback` finding and
-	 * a completed `commerce_product_grid` binding receipt carry. Since
-	 * Automattic/blocks-engine#3088 a grid finding carries no `readable_blocks`,
-	 * so no preserved-region hash exists on the finding side; the page-scoped
-	 * selector is the matching evidence instead. Both reconciliation sides call
-	 * this one derivation, so the pair can never drift apart.
+	 * Derive a provider-replaced region's fallback reconciliation identity and
+	 * source-evidence hash from the canonical source page plus the region's own
+	 * source selector — the one evidence both the detected finding and a
+	 * completed binding receipt carry. A product grid (`product-grid`) and a
+	 * cart view (`cart-view`) are replaced whole by their provider block, and
+	 * since Automattic/blocks-engine#3088 a grid finding carries no
+	 * `readable_blocks`, so no preserved-region hash exists on the finding side;
+	 * the page-scoped selector is the matching evidence instead. Both
+	 * reconciliation sides call this one derivation, so the pair can never drift
+	 * apart, and the region kind keeps a grid and a cart on one page apart.
 	 *
 	 * @return array{0:string,1:string} [identity, fallback_hash], both '' when the page/selector pair is incomplete.
 	 */
-	public static function product_grid_fallback_identity( string $source_path, string $selector ): array {
+	public static function page_region_fallback_identity( string $region, string $source_path, string $selector ): array {
 		$source_path = trim( $source_path );
 		$selector    = trim( $selector );
 		if ( '' === $source_path || '' === $selector ) {
 			return array( '', '' );
 		}
-		$fallback_hash = hash( 'sha256', "static-site-importer/product-grid-fallback/v2\n{$source_path}\n{$selector}" );
-		$identity      = hash( 'sha256', "static-site-importer/product-grid-fallback-reconciliation/v2\n{$source_path}\n{$selector}\n{$fallback_hash}" );
+		$fallback_hash = hash( 'sha256', "static-site-importer/{$region}-fallback/v2\n{$source_path}\n{$selector}" );
+		$identity      = hash( 'sha256', "static-site-importer/{$region}-fallback-reconciliation/v2\n{$source_path}\n{$selector}\n{$fallback_hash}" );
 		return array( $identity, $fallback_hash );
 	}
 
@@ -1687,7 +1701,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 * controls become WooCommerce's filter, sort and count blocks. The listing
 	 * then replaces its whole region, so its control anchors and the grid's
 	 * own anchor are carried inside it. A listing without an adopted grid in
-	 * its region keeps its source controls.
+	 * its region, or whose only control is a result count, keeps its source
+	 * controls, and its grid keeps its own product collection.
 	 *
 	 * @param array<string,mixed> $lifecycle Lifecycle with resolved manifests.
 	 * @param array<string,mixed> $plan      Resolved site plan.
@@ -1735,8 +1750,13 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			foreach ( $prepared['manifest']['product_listings'] ?? array() as $index => $listing ) {
 				$region = array_values( array_filter( is_array( $listing['bindings'] ?? null ) ? $listing['bindings'] : array(), static fn( mixed $binding ): bool => is_array( $binding ) && 'commerce_listing' === ( $binding['role'] ?? '' ) ) );
-				$claim  = 1 === count( $region ) ? $range( $region[0] ) : null;
-				$owned  = null;
+				// A listing becomes WooCommerce's archive only for a control that
+				// changes what the archive query shows. A result count alone
+				// is already true of the source grid, which keeps its own
+				// product collection.
+				$queried = array_filter( is_array( $listing['controls'] ?? null ) ? $listing['controls'] : array(), static fn( mixed $control ): bool => is_array( $control ) && 'result_count' !== ( $control['kind'] ?? '' ) );
+				$claim   = 1 === count( $region ) && array() !== $queried ? $range( $region[0] ) : null;
+				$owned   = null;
 				foreach ( null === $claim ? array() : $grids as $grid ) {
 					if ( null === $owned && $within( $grid[0], $claim ) && ( $grid[1]['source_path'] ?? null ) === ( $listing['source_path'] ?? null ) && ( $grid[1]['selector'] ?? null ) === ( $listing['grid_selector'] ?? null ) ) {
 						$owned = $grid[1];

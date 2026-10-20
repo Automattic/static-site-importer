@@ -349,7 +349,7 @@ require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-quality-
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-import-report.php';
 
 $grid_diagnostic                            = $diagnostics[0];
-list( $grid_identity, $grid_fallback_hash ) = Static_Site_Importer_Entity_Materializer_Registry::product_grid_fallback_identity( 'website/browse.html', 'ul.products' );
+list( $grid_identity, $grid_fallback_hash ) = Static_Site_Importer_Entity_Materializer_Registry::page_region_fallback_identity( 'product-grid', 'website/browse.html', 'ul.products' );
 $grid_binding_row                           = array(
 	'schema'                           => 'static-site-importer/runtime-entity-binding/v1',
 	'status'                           => 'completed',

@@ -294,6 +294,7 @@
     "static_site_importer_companion_plugin_metadata_asset_missing": { "class": "integrity", "owning_layer": "blocks-engine" },
     "static_site_importer_companion_plugin_mkdir_failed": { "class": "operational", "owning_layer": "blocks-engine" },
     "static_site_importer_companion_plugin_payload_invalid": { "class": "integrity", "owning_layer": "blocks-engine" },
+    "static_site_importer_companion_plugin_product_grid_runtime_missing": { "class": "integrity", "owning_layer": "blocks-engine" },
     "static_site_importer_companion_plugin_provenance_invalid": { "class": "integrity", "owning_layer": "blocks-engine" },
     "static_site_importer_companion_plugin_provider_form_runtime_missing": { "class": "integrity", "owning_layer": "blocks-engine" },
     "static_site_importer_companion_plugin_registration_incomplete": { "class": "operational", "owning_layer": "blocks-engine" },

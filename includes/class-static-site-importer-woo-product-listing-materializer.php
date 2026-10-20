@@ -251,13 +251,13 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 			),
 			'tagName'    => 'div',
 			'collection' => 'woocommerce/product-collection/product-catalog',
-			'className'  => Static_Site_Importer_Woo_Product_Grid_Materializer::LOOP_CLASS,
+			'className'  => Static_Site_Importer_Product_Grid_Runtime::LOOP_CLASS,
 		);
 		$json  = function_exists( 'wp_json_encode' ) ? wp_json_encode( $attrs ) : json_encode( $attrs ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode
 		if ( ! is_string( $json ) ) {
 			return '';
 		}
-		return '<!-- wp:woocommerce/product-collection ' . $json . ' --><div class="wp-block-woocommerce-product-collection ' . Static_Site_Importer_Woo_Product_Grid_Materializer::LOOP_CLASS . '">'
+		return '<!-- wp:woocommerce/product-collection ' . $json . ' --><div class="wp-block-woocommerce-product-collection ' . Static_Site_Importer_Product_Grid_Runtime::LOOP_CLASS . '">'
 			. serialize_block( $listing )
 			. '</div><!-- /wp:woocommerce/product-collection -->';
 	}

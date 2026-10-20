@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Static Site Importer
  * Description: Materialize compiled website artifacts into WordPress block and classic themes.
- * Version: 1.33.50
+ * Version: 1.33.54
  * Author: Chris Huber
  * Requires at least: 7.1
  * Requires PHP: 8.2
@@ -17,7 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 define( 'STATIC_SITE_IMPORTER_PATH', plugin_dir_path( __FILE__ ) );
 define( 'STATIC_SITE_IMPORTER_URL', plugin_dir_url( __FILE__ ) );
-define( 'STATIC_SITE_IMPORTER_VERSION', '1.33.50' );
+define( 'STATIC_SITE_IMPORTER_VERSION', '1.33.54' );
 
 $static_site_importer_autoload = STATIC_SITE_IMPORTER_PATH . 'vendor/autoload.php';
 if ( is_readable( $static_site_importer_autoload ) ) {
@@ -143,7 +143,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-theme-generator.php',
 	'class-static-site-importer-provider-presentation.php',
 	'class-static-site-importer-commerce-presentation.php',
-	'class-static-site-importer-product-grid-presentation.php',
+	'class-static-site-importer-product-grid-runtime.php',
 	'class-static-site-importer-woo-product-grid-materializer.php',
 	'class-static-site-importer-woo-product-listing-materializer.php',
 	'class-static-site-importer-direct-artifact-import.php',
@@ -174,7 +174,7 @@ Static_Site_Importer_Layout_Release::register();
 Static_Site_Importer_Layout_Marker_Filter::register();
 Static_Site_Importer_Route_Document_Metadata::register();
 Static_Site_Importer_Source_Route_Redirect::register();
-Static_Site_Importer_Woo_Product_Grid_Materializer::register();
+Static_Site_Importer_Product_Grid_Runtime::register();
 Static_Site_Importer_Woo_Product_Listing_Materializer::register();
 Static_Site_Importer_Route_Head_Metadata::register();
 
