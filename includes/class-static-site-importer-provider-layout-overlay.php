@@ -12,13 +12,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Compiles provider form layout and presentation into bounded, scoped overlay CSS.
  *
- * @phpstan-type Surface array{prefix:string,css:array{key:string,label:string,rule:string},context:array{key:string,label:string,rule:string},control_container_chrome:bool,native_passthrough:array<string,string>,form_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>,layout_bound:bool}
+ * @phpstan-type Surface array{prefix:string,css:array{key:string,label:string,rule:string},context:array{key:string,label:string,rule:string},control_container_chrome:bool,native_passthrough:array<string,string>,form_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>}
  */
 class Static_Site_Importer_Provider_Layout_Overlay {
-	public const MAP_SCHEMA                = 'generic/provider-layout-target-map/v1';
-	public const OVERLAY_SCHEMA            = 'static-site-importer/provider-layout-overlay/v1';
-	private const MAX_LAYOUT_OVERLAY_BYTES = 16384;
-	private const MAX_OVERLAY_BYTES        = 32768;
+	public const MAP_SCHEMA             = 'generic/provider-layout-target-map/v1';
+	public const OVERLAY_SCHEMA         = 'static-site-importer/provider-layout-overlay/v1';
+	private const BASE_OVERLAY_BYTES    = 16384;
+	private const BYTES_PER_MAPPED_NODE = 1024;
+	private const MAX_OVERLAY_BYTES     = 65536;
 	/** Authored values such as system font stacks exceed a few hundred bytes; bounded like the producer contract. */
 	public const MAX_PRESENTATION_VALUE_BYTES = 1024;
 	// A source stylesheet can author a media feature with the legacy `min-width:`/
@@ -47,7 +48,6 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * - `form_passthrough`: scope-suffix rules, with their recorded operation,
 	 *   added when the form target is the bare scope (Jetpack's editor
 	 *   inner-blocks container must not interpose a flex box).
-	 * - `layout_bound`: whether a layout-only overlay keeps the smaller bound.
 	 */
 	private const SURFACES = array(
 		self::SURFACE_FRONT_END => array(
@@ -65,7 +65,6 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			'control_container_chrome' => false,
 			'native_passthrough'       => array(),
 			'form_passthrough'         => array(),
-			'layout_bound'             => true,
 		),
 		self::SURFACE_EDITOR    => array(
 			'prefix'                   => '.editor-styles-wrapper ',
@@ -91,7 +90,6 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					'strategy'     => 'provider_editor_inner_blocks_passthrough',
 				),
 			),
-			'layout_bound'             => false,
 		),
 	);
 
@@ -412,10 +410,10 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				);
 			}
 		}
-		// Chrome precedes the structural rules, so a duplicate keeps its chrome position.
-		$rules = self::compact_rules( array_values( array_unique( array_merge( $chrome, $rules ) ) ) );
+		// Keep repeated rules until compaction can check intervening cascade barriers.
+		$rules = self::compact_rules( array_merge( $chrome, $rules ) );
 		$css   = empty( $rules ) ? '' : '/* Static Site Importer ' . $declared['css']['label'] . ': ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", $rules ) . "\n";
-		if ( strlen( $css ) + strlen( $context_css ) > ( $declared['layout_bound'] && empty( $presentation_graph ) ? self::MAX_LAYOUT_OVERLAY_BYTES : self::MAX_OVERLAY_BYTES ) ) {
+		if ( strlen( $css ) + strlen( $context_css ) > self::overlay_byte_limit( $css ) ) {
 			return self::failed_compile( 'provider layout overlay exceeds its bounded size.' );
 		}
 		$artifacts = array(
@@ -602,14 +600,45 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		);
 	}
 
-	/** Merge adjacent equivalent rules without changing selector specificity or cascade order. */
+	/**
+	 * Merge equivalent rules only across provably disjoint mapped node selectors.
+	 *
+	 * @param string[] $rules Compiled rules in cascade order.
+	 * @return string[]
+	 */
 	private static function compact_rules( array $rules ): array {
 		$compacted = array();
 		$previous  = null;
+		$parsed    = array();
 		foreach ( $rules as $rule ) {
 			if ( ! preg_match( '/^((?:@(?:media|container) [^{}]+\{)*)([^{}]+)\{([^{}]*)\}(\}*)$/D', $rule, $parts ) || substr_count( $parts[1], '{' ) !== strlen( $parts[4] ) ) {
 				$compacted[] = $rule;
 				$previous    = null;
+				$parsed[]    = null;
+				continue;
+			}
+			// Move this selector left only while every intervening rule is disjoint.
+			// Unknown selectors, shared nodes, shorthands and at-rule interactions
+			// are barriers; no property-independence assumption is needed.
+			$merged = false;
+			for ( $index = count( $parsed ) - 1; $index >= 0; --$index ) {
+				$candidate = $parsed[ $index ];
+				if ( null === $candidate ) {
+					break;
+				}
+				if ( $candidate[1] === $parts[1] && $candidate[3] === $parts[3] && $candidate[4] === $parts[4] && substr_count( $candidate[2] . ', ' . $parts[2], ', ' ) < 128 ) {
+					$candidate[2]       .= ', ' . $parts[2];
+					$parsed[ $index ]    = $candidate;
+					$compacted[ $index ] = $candidate[1] . $candidate[2] . '{' . $candidate[3] . '}' . $candidate[4];
+					$previous            = end( $parsed );
+					$merged              = true;
+					break;
+				}
+				if ( ! self::disjoint_node_selectors( $parts[2], $candidate[2] ) ) {
+					break;
+				}
+			}
+			if ( $merged ) {
 				continue;
 			}
 			if ( null !== $previous && $previous[3] === $parts[3] ) {
@@ -621,14 +650,51 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					$previous = null;
 				}
 				if ( null !== $previous ) {
+					$parsed[ count( $parsed ) - 1 ]       = $previous;
 					$compacted[ count( $compacted ) - 1 ] = $previous[1] . $previous[2] . '{' . $previous[3] . '}' . $previous[4];
 					continue;
 				}
 			}
 			$compacted[] = $rule;
 			$previous    = $parts;
+			$parsed[]    = $parts;
 		}
 		return $compacted;
+	}
+
+	/**
+	 * Only simple, per-node boxes prove that two selector lists cannot compete.
+	 *
+	 * @param string $left  First selector list.
+	 * @param string $right Second selector list.
+	 * @return bool
+	 */
+	private static function disjoint_node_selectors( string $left, string $right ): bool {
+		$nodes = array();
+		foreach ( array( $left, $right ) as $selectors ) {
+			$group = array();
+			foreach ( explode( ', ', $selectors ) as $selector ) {
+				if ( ! preg_match( '/^(?:\.editor-styles-wrapper )?\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? (?:input)?\.(ssi-node-[a-f0-9]{12})(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?$/D', $selector, $match ) ) {
+					return false;
+				}
+				$group[] = $match[1];
+			}
+			$nodes[] = $group;
+		}
+		return ! array_intersect( $nodes[0], $nodes[1] );
+	}
+
+	/**
+	 * Budget follows mapped node hooks, not selector repetitions or supplied metadata.
+	 * The same calculation admits front-end and editor artifacts, including context.
+	 * Base 16 KiB + 1 KiB per unique mapped node, capped at 64 KiB per surface.
+	 *
+	 * @param string $css Compiled surface CSS.
+	 * @return int
+	 */
+	private static function overlay_byte_limit( string $css ): int {
+		preg_match_all( '/\.ssi-node-[a-f0-9]{12}(?![a-f0-9])/', $css, $nodes );
+		return min( self::MAX_OVERLAY_BYTES, self::BASE_OVERLAY_BYTES + count( array_unique( $nodes[0] ) ) * self::BYTES_PER_MAPPED_NODE );
 	}
 
 	/** CSS properties a form context rule may declare, keyed by fact name. */
@@ -748,7 +814,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( '' !== $editor_context_css && ( strlen( $editor_context_css ) !== $overlay['editor_context_bytes'] || $overlay['editor_context_bytes'] > self::MAX_OVERLAY_BYTES || ! preg_match( '/^[a-f0-9]{64}$/D', $overlay['editor_context_sha256'] ) || ! hash_equals( $overlay['editor_context_sha256'], hash( 'sha256', $editor_context_css ) ) ) ) {
 			return null;
 		}
-		if ( strlen( $css ) + strlen( $context_css ) > self::MAX_OVERLAY_BYTES || strlen( $editor_css ) + strlen( $editor_context_css ) > self::MAX_OVERLAY_BYTES ) {
+		if ( strlen( $css ) + strlen( $context_css ) > self::overlay_byte_limit( $css ) || strlen( $editor_css ) + strlen( $editor_context_css ) > self::overlay_byte_limit( $editor_css ) ) {
 			return null;
 		}
 		if ( '' === $css && '' === $editor_css && '' === $context_css && '' === $editor_context_css ) {
