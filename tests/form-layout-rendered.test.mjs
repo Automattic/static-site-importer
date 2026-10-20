@@ -9,6 +9,39 @@ const transformer = process.env.STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH
 	? `${process.env.STATIC_SITE_IMPORTER_BLOCKS_ENGINE_PATH.replace(/\/$/, '')}/php-transformer.php`
 	: 'vendor/automattic/blocks-engine-php-transformer/php-transformer.php';
 
+test( 'visually hidden sub-labels stay accessible without increasing the provider field height', async () => {
+	requireBrowserPrerequisites();
+	const fixture = JSON.parse( execFileSync( 'php', [ 'tests/fixtures/form-hidden-help.php' ], { encoding: 'utf8' } ) );
+	assert.equal( fixture.status, 'mapped' );
+	assert.equal( fixture.fields.length, 2 );
+	const browser = await chromium.launch();
+	try {
+		const page = await browser.newPage();
+		await page.setContent( `<style>${ fixture.css }</style><div class="source">${ fixture.source }</div><form class="name-form imported">${ fixture.fields.join( '' ) }</form>` );
+		for ( const [ index, text ] of [ 'First', 'Last' ].entries() ) {
+			const help = page.locator( '.imported .contact-form__field-help' ).nth( index );
+			assert.equal( await help.textContent(), text );
+			assert.equal( await page.locator( '.imported input' ).nth( index ).getAttribute( 'placeholder' ), `${ text } name` );
+			assert.match( await help.ariaSnapshot(), new RegExp( text ) );
+			assert.equal( await page.locator( '.imported input' ).nth( index ).evaluate( node => node.getAttribute( 'aria-describedby' ) && document.getElementById( node.getAttribute( 'aria-describedby' ) ).textContent ), text );
+			const presentation = await help.evaluate( node => {
+				const style = getComputedStyle( node );
+				const box = node.getBoundingClientRect();
+				return { width: box.width, height: box.height, clip: style.clip, display: style.display, visibility: style.visibility, hidden: Boolean( node.closest( '[aria-hidden="true"], [hidden]' ) ) };
+			} );
+			assert.equal( presentation.hidden, false );
+			assert.notEqual( presentation.display, 'none' );
+			assert.equal( presentation.visibility, 'visible' );
+			assert.ok( ( presentation.width <= 1 && presentation.height <= 1 ) || presentation.clip === 'rect(0px, 0px, 0px, 0px)', JSON.stringify( presentation ) );
+			const sourceHeight = await page.locator( '.source input' ).nth( index ).evaluate( node => node.parentElement.getBoundingClientRect().height );
+			const importedHeight = await help.evaluate( node => node.parentElement.getBoundingClientRect().height );
+			assert.ok( Math.abs( sourceHeight - importedHeight ) <= 1, `source ${ sourceHeight }, imported ${ importedHeight }` );
+		}
+	} finally {
+		await browser.close();
+	}
+} );
+
 test( 'overlay compaction preserves frontend and editor cascade across responsive conditions', async () => {
 	assert.ok( chromium, 'Playwright is required' );
 	const fixture = JSON.parse( execFileSync( 'php', [ 'tests/fixtures/provider-overlay-compaction-rendered.php' ], { encoding: 'utf8' } ) );
