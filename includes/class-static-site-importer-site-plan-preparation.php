@@ -561,10 +561,11 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	public static function preflight_state( array &$state, bool $overwrite, string $import_run_id = '' ): void {
 		if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC !== ( $state['args']['theme_materialization'] ?? null ) ) {
 			require_once __DIR__ . '/class-static-site-importer-navigation-entity-materializer.php';
-			$navigation_error = Static_Site_Importer_Navigation_Entity_Materializer::preflight( $state['resolved'] );
-			if ( $navigation_error ) {
+			require_once __DIR__ . '/class-static-site-importer-synced-pattern-materializer.php';
+			$entity_error = Static_Site_Importer_Navigation_Entity_Materializer::preflight( $state['resolved'] ) ?? Static_Site_Importer_Synced_Pattern_Materializer::preflight( $state['resolved'] );
+			if ( $entity_error ) {
 				// ssi-error-class: propagated
-				throw new InvalidArgumentException( esc_html( (string) $navigation_error->get_error_code() ) );
+				throw new InvalidArgumentException( esc_html( (string) $entity_error->get_error_code() ) );
 			}
 		}
 		$pages_by_route      = array();
@@ -785,15 +786,16 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	}
 
 	/**
-	 * Index the documents a runtime entity binding may target: every page, and
-	 * every template part that shared chrome containing the entity moved into.
+	 * Index the documents a runtime entity binding may target: every page,
+	 * every template part that shared chrome containing the entity moved into,
+	 * and every synced pattern the producer factored repeated content into.
 	 *
 	 * @param array<string,mixed> $plan Resolved plan.
 	 * @return array<string,array{group:string,index:int|string}>
 	 */
 	public static function runtime_binding_documents( array $plan ): array {
 		$documents = array();
-		foreach ( array( 'pages', 'template_parts' ) as $group ) {
+		foreach ( array( 'pages', 'template_parts', 'synced_patterns' ) as $group ) {
 			foreach ( is_array( $plan[ $group ] ?? null ) ? $plan[ $group ] : array() as $index => $document ) {
 				if ( is_array( $document ) && is_string( $document['source_path'] ?? null ) && ! isset( $documents[ $document['source_path'] ] ) ) {
 					$documents[ $document['source_path'] ] = array(
@@ -1132,7 +1134,8 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	 * @return void
 	 */
 	public static function validate_materialized_block_documents( array $plan, array $bindings, array &$diagnostics, array $pending_blocks = array() ): void {
-		foreach ( array_merge( $plan['pages'] ?? array(), array_values( array_filter( $plan['template_parts'] ?? array(), static fn( $part ): bool => is_array( $part ) && isset( $part['materialized_block_markup'] ) ) ) ) as $page ) {
+		$template_parts = array_values( array_filter( $plan['template_parts'] ?? array(), static fn( $part ): bool => is_array( $part ) && isset( $part['materialized_block_markup'] ) ) );
+		foreach ( array_merge( $plan['pages'] ?? array(), $template_parts, array_values( $plan['synced_patterns'] ?? array() ) ) as $page ) {
 			if ( ! is_array( $page ) || ! empty( $page['skip_materialization'] ) ) {
 				continue;
 			}

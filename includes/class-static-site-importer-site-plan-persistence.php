@@ -145,6 +145,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( is_wp_error( $navigation_entities ) ) {
 			return self::failed_receipt_from_error( $state, $navigation_entities );
 		}
+		require_once __DIR__ . '/class-static-site-importer-synced-pattern-materializer.php';
+		$synced_patterns = Static_Site_Importer_Synced_Pattern_Materializer::materialize( $state );
+		if ( is_wp_error( $synced_patterns ) ) {
+			return self::failed_receipt_from_error( $state, $synced_patterns );
+		}
 		foreach ( $state['ordered_pages'] as $page ) {
 			if ( ! empty( $page['skip_materialization'] ) ) {
 				if ( ! empty( $page['retire_archive_page'] ) ) {
@@ -865,6 +870,32 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				}
 			}
 			unset( $resolved_page );
+		}
+		// Synced patterns are page content too; an owner-edited one is left alone.
+		foreach ( $state['applied']['synced_patterns'] ?? array() as $index => $pattern ) {
+			$content = 'preserved_owner_edit' === $pattern['status'] ? null : get_post_field( 'post_content', (int) $pattern['id'] );
+			$rewrite = is_string( $content ) ? self::rewrite_route_references( $content, $routes ) : null;
+			if ( null === $rewrite || $rewrite === $content ) {
+				continue;
+			}
+			$updated = wp_update_post(
+				array(
+					'ID'           => (int) $pattern['id'],
+					'post_content' => wp_slash( $rewrite ),
+				),
+				true
+			);
+			if ( is_wp_error( $updated ) ) {
+				return $updated;
+			}
+			$provenance                 = json_decode( (string) get_post_meta( (int) $pattern['id'], '_static_site_importer_provenance', true ), true );
+			$provenance                 = is_array( $provenance ) ? $provenance : array();
+			$persisted                  = get_post( (int) $pattern['id'] );
+			$provenance['content_hash'] = hash( 'sha256', $persisted instanceof WP_Post ? $persisted->post_content : '' );
+			if ( ! self::write_post_meta( (int) $pattern['id'], '_static_site_importer_provenance', (string) wp_json_encode( $provenance ) ) ) {
+				return new WP_Error( 'route_link_rewrite_failed', 'Synced pattern provenance could not be updated after route-link resolution.', array( 'source_path' => $pattern['source_path'] ) );
+			}
+			$state['applied']['synced_patterns'][ $index ]['content_hash'] = $provenance['content_hash'];
 		}
 
 		return true;

@@ -452,26 +452,27 @@ final class Static_Site_Importer_Quality_Gates {
 	}
 
 	/**
-	 * A provider form owned by a shared template part stands for the same source
-	 * form on every page that renders the part. The producer proved those forms
-	 * equivalent and lists their fallbacks; each becomes a receipt of its own,
-	 * backed by the one part binding.
+	 * A provider form owned by a shared document (a template part, or a synced
+	 * pattern) stands for the same source form everywhere that document renders.
+	 * The producer proved those forms equivalent and lists their fallbacks; each
+	 * becomes a receipt of its own, backed by the one shared binding.
 	 *
-	 * @param array<int,mixed> $receipts Quality resolution receipts.
+	 * @param array<int,mixed>     $receipts      Quality resolution receipts.
+	 * @param array<string,string> $shared_hashes Persisted shared document hashes by key.
 	 * @return array<int,mixed>
 	 */
-	private static function with_template_part_absorbed_receipts( array $receipts ): array {
+	private static function with_shared_document_absorbed_receipts( array $receipts, array $shared_hashes ): array {
 		$expanded = array();
 		foreach ( $receipts as $receipt ) {
 			$expanded[] = $receipt;
-			if ( ! is_array( $receipt ) || '' === (string) ( $receipt['template_part'] ?? '' ) ) {
+			if ( ! is_array( $receipt ) || '' === self::shared_document( $receipt, $shared_hashes ) ) {
 				continue;
 			}
 			foreach ( is_array( $receipt['replaced_fallback_identities'] ?? null ) ? $receipt['replaced_fallback_identities'] : array() as $replaced ) {
 				if ( is_string( $replaced ) && ( $receipt['fallback_reconciliation_identity'] ?? null ) !== $replaced ) {
 					$expanded[] = array(
 						'fallback_reconciliation_identity' => $replaced,
-						'absorbed_by_template_part'        => true,
+						'absorbed_by_shared_document'      => true,
 					) + $receipt;
 				}
 			}
@@ -480,27 +481,55 @@ final class Static_Site_Importer_Quality_Gates {
 	}
 
 	/**
+	 * The shared document a binding receipt persisted into: its template part
+	 * file, or the synced pattern its source path names. Empty for a page.
+	 *
+	 * @param array<string,mixed>  $receipt       Binding receipt.
+	 * @param array<string,string> $shared_hashes Persisted shared document hashes by key.
+	 */
+	private static function shared_document( array $receipt, array $shared_hashes ): string {
+		$part = (string) ( $receipt['template_part'] ?? '' );
+		if ( '' !== $part ) {
+			return $part;
+		}
+		$source = (string) ( $receipt['source_path'] ?? '' );
+		return isset( $shared_hashes[ $source ] ) ? $source : '';
+	}
+
+	/**
+	 * Hash of the content a binding receipt's replacement was persisted in.
+	 *
+	 * @param array<string,mixed>                $receipt       Binding receipt.
+	 * @param string                             $source_path   Source page of the fallback.
+	 * @param Static_Site_Importer_Import_Report $report Import report.
+	 * @param array<string,string>               $shared_hashes Persisted shared document hashes by key.
+	 */
+	private static function persisted_hash( array $receipt, string $source_path, Static_Site_Importer_Import_Report $report, array $shared_hashes ): string {
+		$shared = self::shared_document( $receipt, $shared_hashes );
+		if ( '' !== $shared ) {
+			return $shared_hashes[ $shared ] ?? '';
+		}
+		$page_receipt = $report['materialization_receipt']['completed']['materialized_pages'][ $source_path ] ?? array();
+		return is_array( $page_receipt ) && is_string( $page_receipt['content_hash'] ?? null ) ? $page_receipt['content_hash'] : '';
+	}
+
+	/**
 	 * Whether a completed receipt proves the provider replaced this exact source
 	 * fallback. The replacement must be persisted where the binding put it: the
-	 * page's post content, or the written template part file. A fallback a part
-	 * binding absorbed from another page carries that page's own form hash, so it
-	 * is matched by the producer-declared identity alone.
+	 * page's post content, the written template part file, or the synced pattern
+	 * post. A fallback a shared binding absorbed from another occurrence carries
+	 * that occurrence's own form hash, so it is matched by the producer-declared
+	 * identity alone.
 	 *
-	 * @param array<string,mixed>     $receipt       Candidate receipt.
-	 * @param array<string,string>    $part_hashes   Written file hashes by target path.
+	 * @param array<string,mixed>  $receipt       Candidate receipt.
+	 * @param array<string,string> $shared_hashes Persisted shared document hashes by key.
 	 */
-	private static function receipt_resolves_fallback( array $receipt, string $identity, string $fallback_hash, string $source_path, Static_Site_Importer_Import_Report $report, array $part_hashes ): bool {
-		$part_target = (string) ( $receipt['template_part'] ?? '' );
-		if ( '' !== $part_target ) {
-			$persisted_hash = $part_hashes[ $part_target ] ?? '';
-		} else {
-			$page_receipt   = $report['materialization_receipt']['completed']['materialized_pages'][ $source_path ] ?? array();
-			$persisted_hash = is_array( $page_receipt ) && is_string( $page_receipt['content_hash'] ?? null ) ? $page_receipt['content_hash'] : '';
-		}
+	private static function receipt_resolves_fallback( array $receipt, string $identity, string $fallback_hash, string $source_path, Static_Site_Importer_Import_Report $report, array $shared_hashes ): bool {
+		$persisted_hash = self::persisted_hash( $receipt, $source_path, $report, $shared_hashes );
 		return 'static-site-importer/quality-resolution-receipt/v1' === ( $receipt['schema'] ?? null )
 			&& 'completed' === ( $receipt['status'] ?? null )
 			&& ( $receipt['fallback_reconciliation_identity'] ?? null ) === $identity
-			&& ( ! empty( $receipt['absorbed_by_template_part'] ) || ( $receipt['fallback_hash'] ?? null ) === $fallback_hash )
+			&& ( ! empty( $receipt['absorbed_by_shared_document'] ) || ( $receipt['fallback_hash'] ?? null ) === $fallback_hash )
 			&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['binding_reconciliation_identity'] ?? '' ) )
 			&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['materialized_block_hash'] ?? '' ) )
 			&& ( $receipt['persisted_fragment_hash'] ?? null ) === ( $receipt['materialized_block_hash'] ?? null )
@@ -519,16 +548,10 @@ final class Static_Site_Importer_Quality_Gates {
 	 * still applies: the replacement must be persisted where the binding put it.
 	 *
 	 * @param array<string,mixed>  $receipt       Candidate receipt.
-	 * @param array<string,string> $part_hashes   Written file hashes by target path.
+	 * @param array<string,string> $shared_hashes Persisted shared document hashes by key.
 	 */
-	private static function receipt_resolves_product_grid( array $receipt, string $identity, string $source_path, Static_Site_Importer_Import_Report $report, array $part_hashes ): bool {
-		$part_target = (string) ( $receipt['template_part'] ?? '' );
-		if ( '' !== $part_target ) {
-			$persisted_hash = $part_hashes[ $part_target ] ?? '';
-		} else {
-			$page_receipt   = $report['materialization_receipt']['completed']['materialized_pages'][ $source_path ] ?? array();
-			$persisted_hash = is_array( $page_receipt ) && is_string( $page_receipt['content_hash'] ?? null ) ? $page_receipt['content_hash'] : '';
-		}
+	private static function receipt_resolves_product_grid( array $receipt, string $identity, string $source_path, Static_Site_Importer_Import_Report $report, array $shared_hashes ): bool {
+		$persisted_hash = self::persisted_hash( $receipt, $source_path, $report, $shared_hashes );
 		return 'static-site-importer/quality-resolution-receipt/v1' === ( $receipt['schema'] ?? null )
 			&& 'completed' === ( $receipt['status'] ?? null )
 			&& ( $receipt['fallback_reconciliation_identity'] ?? null ) === $identity
@@ -610,13 +633,18 @@ final class Static_Site_Importer_Quality_Gates {
 				);
 			}
 		}
-		$part_hashes = array();
+		$shared_hashes = array();
 		foreach ( $report['materialization_receipt']['completed']['files'] ?? array() as $file ) {
 			if ( is_array( $file ) && is_string( $file['target_path'] ?? null ) && is_string( $file['hash'] ?? null ) ) {
-				$part_hashes[ $file['target_path'] ] = $file['hash'];
+				$shared_hashes[ $file['target_path'] ] = $file['hash'];
 			}
 		}
-		$receipts                = self::with_template_part_absorbed_receipts( $receipts );
+		foreach ( $report['materialization_receipt']['completed']['synced_patterns'] ?? array() as $pattern ) {
+			if ( is_array( $pattern ) && is_string( $pattern['source_path'] ?? null ) && is_string( $pattern['content_hash'] ?? null ) ) {
+				$shared_hashes[ $pattern['source_path'] ] = $pattern['content_hash'];
+			}
+		}
+		$receipts                = self::with_shared_document_absorbed_receipts( $receipts, $shared_hashes );
 		$receipts_by_fallback    = array();
 		$receipts_by_source_hash = array();
 		foreach ( $receipts as $receipt ) {
@@ -630,7 +658,7 @@ final class Static_Site_Importer_Quality_Gates {
 				continue;
 			}
 			$receipts_by_fallback[ $identity ] = $receipt;
-			if ( ! empty( $receipt['absorbed_by_template_part'] ) ) {
+			if ( ! empty( $receipt['absorbed_by_shared_document'] ) ) {
 				continue;
 			}
 
@@ -669,7 +697,7 @@ final class Static_Site_Importer_Quality_Gates {
 					}
 				}
 			}
-			$resolved_by_provider = self::receipt_resolves_fallback( $receipt, $identity, $fallback_hash, $source_path, $report, $part_hashes );
+			$resolved_by_provider = self::receipt_resolves_fallback( $receipt, $identity, $fallback_hash, $source_path, $report, $shared_hashes );
 
 			$diagnostic['fallback_reconciliation_identity'] = $identity;
 			$diagnostic['fallback_hash']                    = $fallback_hash;
@@ -708,7 +736,7 @@ final class Static_Site_Importer_Quality_Gates {
 			$source_path                      = Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
 			$candidate_receipt                = '' === $identity ? array() : ( $receipts_by_fallback[ $identity ] ?? array() );
 			$receipt                          = is_array( $candidate_receipt ) ? $candidate_receipt : array();
-			$resolved_by_provider             = '' !== $identity && self::receipt_resolves_product_grid( $receipt, $identity, $source_path, $report, $part_hashes );
+			$resolved_by_provider             = '' !== $identity && self::receipt_resolves_product_grid( $receipt, $identity, $source_path, $report, $shared_hashes );
 			if ( $resolved_by_provider ) {
 				$resolved_grid_receipts[ $source_path ][ (string) ( $receipt['selector'] ?? '' ) ] = $receipt;
 			}
