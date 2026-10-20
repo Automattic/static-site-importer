@@ -274,7 +274,17 @@ $kept = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycl
 $kept = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_grids( $kept, $class_hook );
 $assert( array() === $kept['entities'][ $grid_id ]['manifest']['product_grids'] && 2 === count( $kept['entities'][ $prod_id ]['manifest']['products'][0]['bindings'] ), 'class-hooked-grid-adopts-nothing-and-keeps-card-controls' );
 
-// --- 6. The validator requires an item template and one grid anchor.
+// --- 6. A server-rendered grid has no script hook to retire, so it validates
+// and is adopted like a hooked grid: the loop supersedes its in-grid controls.
+$neutral = $plan;
+// The producer omits superseded selectors when no source script owns the grid.
+unset( $neutral['runtime_declarations'][2]['payload']['entities'][0]['bindings'][0]['superseded_runtime_selectors'] );
+$neutral_lifecycle = Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $neutral, array() );
+$assert( ! is_wp_error( $neutral_lifecycle ) && 1 === count( $neutral_lifecycle['entities'][ $grid_id ]['manifest']['product_grids'] ?? array() ), 'scriptless-grid-declaration-validates', is_wp_error( $neutral_lifecycle ) ? $neutral_lifecycle->get_error_message() : '' );
+$neutral_kept = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_grids( $neutral_lifecycle, $neutral );
+$assert( 1 === count( $neutral_kept['entities'][ $grid_id ]['manifest']['product_grids'] ) && 1 === count( $neutral_kept['entities'][ $prod_id ]['manifest']['products'][0]['bindings'] ) && 0 === count( $neutral_kept['entities'][ $prod_id ]['manifest']['products'][1]['bindings'] ), 'scriptless-grid-is-adopted-and-supersedes-in-grid-controls' );
+
+// --- 7. The validator requires an item template and one grid anchor.
 $untemplated = $grid;
 unset( $untemplated['item_template'] );
 $validated = Static_Site_Importer_Entity_Materializer_Registry::validate_product_grids_manifest( array( 'product_grids' => array( $untemplated, $grid ) ) );

@@ -1476,14 +1476,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$bindings = is_array( $row ) && is_array( $row['bindings'] ?? null ) && array_is_list( $row['bindings'] ) ? array_map( static fn( mixed $binding ): ?array => self::normalize_block_binding( $binding ), $row['bindings'] ) : array();
 			$slots    = is_array( $template['slots'] ?? null ) && array_is_list( $template['slots'] ) ? $template['slots'] : array();
 			$items    = is_array( $row ) && is_array( $row['items'] ?? null ) && array_is_list( $row['items'] ) ? $row['items'] : array();
-			$valid    = 1 === count( $bindings ) && ! empty( $bindings[0] ) && 'commerce_product_grid' === $bindings[0]['role'] && ! empty( $bindings[0]['superseded_runtime_selectors'] )
+			$valid    = 1 === count( $bindings ) && ! empty( $bindings[0] ) && 'commerce_product_grid' === $bindings[0]['role']
 				&& 'generic/collection-item-template/v1' === ( $template['schema'] ?? null ) && is_string( $template['block_markup'] ?? null ) && '' !== trim( $template['block_markup'] )
 				&& array() !== $slots && array() === array_filter( $slots, static fn( mixed $slot ): bool => ! is_array( $slot ) || ! is_string( $slot['id'] ?? null ) || ! is_string( $slot['role'] ?? null ) || ! is_array( $slot['path'] ?? null ) || ! array_is_list( $slot['path'] ) || array() !== array_filter( $slot['path'], static fn( mixed $step ): bool => ! is_int( $step ) || $step < 0 ) )
 				&& array() !== $items && array() === array_filter( $items, static fn( mixed $item ): bool => ! is_array( $item ) || ! is_string( $item['product'] ?? null ) || '' === trim( $item['product'] ) || ( isset( $item['slots'] ) && ! is_array( $item['slots'] ) ) );
 			if ( ! is_array( $row ) || '' === trim( (string) ( $row['source_path'] ?? '' ) ) || '' === trim( (string) ( $row['selector'] ?? '' ) ) || ! $valid ) {
 				$errors[] = array(
 					'path'    => $path,
-					'message' => 'product grid must carry source_path, selector, products, a generic/collection-item-template/v1 item template and one canonical commerce_product_grid anchor with superseded runtime selectors.',
+					'message' => 'product grid must carry source_path, selector, products, a generic/collection-item-template/v1 item template and one canonical commerce_product_grid anchor.',
 				);
 				continue;
 			}
