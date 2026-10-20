@@ -958,7 +958,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			return (string) $owned->post_status;
 		}
 		// An earlier import published it; keep that only once the owner edited it.
-		return hash( 'sha256', (string) get_post_field( 'post_content', $owned->ID ) ) === ( $provenance['content_hash'] ?? null ) ? 'draft' : (string) $owned->post_status;
+		return hash( 'sha256', $owned->post_content ) === ( $provenance['content_hash'] ?? null ) ? 'draft' : (string) $owned->post_status;
 	}
 
 	/** Byte offset of the nth occurrence of a search string, or null when it has fewer. */
