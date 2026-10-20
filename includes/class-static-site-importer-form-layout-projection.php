@@ -2637,7 +2637,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'inline-grid'  => 'grid',
 			);
 			$display    = $facts['display'] ?? null;
-			if ( isset( $blockified[ $display ] ) ) {
+			if ( is_string( $display ) && isset( $blockified[ $display ] ) ) {
 				$facts['display'] = $blockified[ $display ];
 			}
 		}
@@ -4194,7 +4194,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 *   `{scope}` standing for the scope selector;
 	 * - `retarget`: replace the declared front-end selector suffix `[0]` with
 	 *   the editor suffix `[1]` (Jetpack's editor puts a field block's className
-	 *   on the block wrapper itself rather than the front-end `-wrap` copy, and
+	 *   on the block element itself rather than the front-end `-wrap` copy, and
 	 *   a dropdown's chrome on its toggle rather than a nested `<select>`);
 	 * - `unset_resets` / `add_resets`: front-end resets the editor DOM does not
 	 *   need, and editor-only resets;
@@ -4239,7 +4239,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			'form_box'                  => array(),
 			'native_form_box'           => array( 'selector' => '{scope}.ssi-native-form-topology' ),
 			'field_list'                => array(),
-			'field'                     => array( 'retarget' => array( '-wrap', ' > div.jetpack-field__control' ) ),
+			// The field block element is the editor's field row: the flex or grid
+			// item of the form, rendered for every field type (a checkbox field
+			// has no `.jetpack-field__control`). The facts that arrange a field's
+			// own label and control reach that control through the editor surface's
+			// declared `field_control` split.
+			'field'                     => array( 'retarget' => array( '-wrap', '' ) ),
 			'wrap'                      => array( 'retarget' => array( '-wrap', '' ) ),
 			'box'                       => array(),
 			'submit_link_box'           => array(),
@@ -4593,7 +4598,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	}
 
 	/** @param array<int,string> $tokens */
-	private static function display_from_class_tokens( array $tokens ): ?string {
+	public static function display_from_class_tokens( array $tokens ): ?string {
 		$map     = array(
 			'grid'        => 'grid',
 			'flex'        => 'flex',

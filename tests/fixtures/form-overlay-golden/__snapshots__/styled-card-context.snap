@@ -20,8 +20,9 @@ sha256: 41968a00b5b6ae86f2a4914f0df3b04a50ee380e9fc98c4af490c452e262f968
 .ssi-form-c153ced5a93a div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
-sha256: 8b7b93b6ff47865a1152cb9dab23639d5d5e846ecbdf0b1207add90b4b3d7fef
-/* Static Site Importer editor control chrome: df8fad279d4c */
+sha256: b614027aba6987c221dcfe987ecab11084e8d071c2f51ae094eb519204eb9ee4
+/* Static Site Importer editor control chrome: 12804e58474a */
+.editor-styles-wrapper .ssi-form-c153ced5a93a{display:flex;flex-wrap:wrap;justify-content:flex-start;align-items:flex-start}
 .editor-styles-wrapper .ssi-form-c153ced5a93a .ssi-node-a2ec4a1c76ba, .editor-styles-wrapper .ssi-form-c153ced5a93a .ssi-node-bcc31fe24d52{width:100%}
 .editor-styles-wrapper .ssi-form-c153ced5a93a.ssi-form-c153ced5a93a .ssi-node-576863a6b026{font-family:revert;line-height:revert;background:#fff;border:1px solid #d4d4d8;border-radius:8px;padding:10px 12px;width:100%}
 .editor-styles-wrapper .ssi-form-c153ced5a93a.ssi-form-c153ced5a93a .ssi-node-576863a6b026::placeholder{color:revert;opacity:revert}

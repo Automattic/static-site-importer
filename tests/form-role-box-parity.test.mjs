@@ -80,7 +80,6 @@ const TODO = {
 	native_form_box: 'https://github.com/Automattic/static-site-importer/issues/2166',
 	native_form: 'https://github.com/Automattic/static-site-importer/issues/2166',
 	field_list: 'https://github.com/Automattic/static-site-importer/issues/2167',
-	field: 'https://github.com/Automattic/static-site-importer/issues/2168',
 	box: 'https://github.com/Automattic/static-site-importer/issues/2169',
 	wrap: 'https://github.com/Automattic/static-site-importer/issues/2169',
 	country_trigger: 'https://github.com/Automattic/static-site-importer/issues/2170',
@@ -194,6 +193,66 @@ test( 'the pair table covers every declared, non-dropped form overlay part', () 
 	for ( const [ part, pair ] of Object.entries( PAIRS ) ) {
 		instanceFor( part, pair );
 	}
+} );
+
+/** In-page: each row element's top (relative to the first) and width. */
+function rowBoxes( locators ) {
+	const root = document.getElementById( 'ssi-role-root' );
+	return locators.map( ( locator ) => {
+		const found = root.querySelectorAll( locator );
+		const rect = found[ 0 ]?.getBoundingClientRect();
+		return { locator, count: found.length, top: rect?.top ?? null, width: rect?.width ?? null };
+	} ).map( ( box, index, boxes ) => ( { ...box, top: null === box.top ? null : box.top - boxes[ 0 ].top } ) );
+}
+
+// A `space-y-*` form whose first row is a two-column grid of fields
+// (`grid sm:grid-cols-2 gap-5`), then a full-width textarea and the submit
+// (#2241). The front end lays the fields out as half-width items of Jetpack's
+// wrapping flex field container; the editor must place each field block at
+// the same top with the same width.
+const TWO_COLUMN_ROWS = [
+	{ front: FIELD( 0 ), editor: '[data-type="jetpack/field-text"]' },
+	{ front: FIELD( 1 ), editor: '[data-type="jetpack/field-email"]' },
+	{ front: FIELD( 2 ), editor: '[data-type="jetpack/field-textarea"]' },
+	{ front: '.wp-block-button', editor: '[data-type="core/button"]' },
+];
+
+test( 'a two-column field row keeps its columns in the editor', async () => {
+	assert.ok( chromium, 'Playwright is required; run `npm install`' );
+	const form = loadFixture().forms.find( ( candidate ) => 'two_column' === candidate.name );
+	assert.ok( form, 'the fixture seeds the two_column source form' );
+	const browser = await chromium.launch();
+	let front;
+	let editor;
+	try {
+		const page = await browser.newPage( { viewport: VIEWPORT } );
+		await page.setContent( frontDocument( form ) );
+		front = await page.evaluate( rowBoxes, TWO_COLUMN_ROWS.map( ( row ) => row.front ) );
+		await page.setContent( editorDocument( form ) );
+		editor = await page.evaluate( rowBoxes, TWO_COLUMN_ROWS.map( ( row ) => row.editor ) );
+	} finally {
+		await browser.close();
+	}
+	if ( process.env.SSI_ROLE_BOX_REPORT ) {
+		console.log( JSON.stringify( { front, editor }, null, '\t' ) );
+	}
+	for ( const boxes of [ front, editor ] ) {
+		for ( const box of boxes ) {
+			assert.equal( box.count, 1, `${ box.locator } names exactly one element` );
+		}
+	}
+	// The front end itself lays the first two fields out side by side.
+	assert.ok( Math.abs( front[ 1 ].top - front[ 0 ].top ) <= TOLERANCE, 'front end: the two-column fields share a row' );
+	assert.ok( front[ 2 ].top > front[ 0 ].top, 'front end: the textarea starts a new row' );
+	const mismatches = [];
+	for ( const [ index, row ] of TWO_COLUMN_ROWS.entries() ) {
+		for ( const metric of [ 'top', 'width' ] ) {
+			if ( Math.abs( front[ index ][ metric ] - editor[ index ][ metric ] ) > TOLERANCE ) {
+				mismatches.push( `${ row.editor } ${ metric }: front ${ front[ index ][ metric ] } vs editor ${ editor[ index ][ metric ] }` );
+			}
+		}
+	}
+	assert.deepEqual( mismatches, [], `editor field rows differ from the front end by more than ${ TOLERANCE }px` );
 } );
 
 test( 'each declared form overlay part draws the same role box on the front end and in the editor', async ( t ) => {

@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Compiles provider form layout and presentation into bounded, scoped overlay CSS.
  *
- * @phpstan-type Surface array{prefix:string,css:array{key:string,label:string,rule:string},context:array{key:string,label:string,rule:string},control_container_chrome:bool,native_passthrough:array<string,string>,form_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>,container_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>}
+ * @phpstan-type Surface array{prefix:string,css:array{key:string,label:string,rule:string},context:array{key:string,label:string,rule:string},control_container_chrome:bool,native_passthrough:array<string,string>,form_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>,form_layout_host:array{declarations:string,strategy:string}|null,field_control:array{suffix:string,properties:array<int,string>}|null,container_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>}
  */
 class Static_Site_Importer_Provider_Layout_Overlay {
 	public const MAP_SCHEMA             = 'generic/provider-layout-target-map/v1';
@@ -48,6 +48,19 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * - `form_passthrough`: scope-suffix rules, with their recorded operation,
 	 *   added when the form target is the bare scope (Jetpack's editor
 	 *   inner-blocks container must not interpose a flex box).
+	 * - `form_layout_host`: the layout the bare form target takes when the
+	 *   projection names no form display and no source form class does (`null`:
+	 *   none). The editor block wrapper hosts the fields once the inner-blocks
+	 *   container is box-less; on the front end the field container gets this
+	 *   layout from the block's WordPress layout (block.json `layout.default`:
+	 *   flex, wrapping, justified left, aligned top). It precedes the compiled
+	 *   layout, so the projected gap and any responsive display still apply.
+	 * - `field_control`: where a field row target's facts that arrange the
+	 *   field's own label and control go (`null`: they stay on the target). The
+	 *   front-end field wrapper is both the form's item and the label/control
+	 *   container; Jetpack's editor nests those as the field block element and
+	 *   its `.jetpack-field__control`. `display:contents` reaches both, so the
+	 *   label and control join the form as they do on the front end.
 	 * - `container_passthrough`: scope-suffix rules, with their recorded
 	 *   operation, added when the source form's box is painted on the provider's
 	 *   form container (Jetpack's front-end form element sits between that
@@ -70,6 +83,8 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			'control_container_chrome' => false,
 			'native_passthrough'       => array(),
 			'form_passthrough'         => array(),
+			'form_layout_host'         => null,
+			'field_control'            => null,
 			'container_passthrough'    => array(
 				array(
 					'suffix'       => '.jetpack-contact-form-container > form.jetpack-contact-form__form:has(> .wp-block-jetpack-contact-form):not(.submission-success)',
@@ -101,6 +116,14 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					'declarations' => 'display:contents',
 					'strategy'     => 'provider_editor_inner_blocks_passthrough',
 				),
+			),
+			'form_layout_host'         => array(
+				'declarations' => 'display:flex;flex-wrap:wrap;justify-content:flex-start;align-items:flex-start',
+				'strategy'     => 'provider_editor_form_layout_host',
+			),
+			'field_control'            => array(
+				'suffix'     => ' > div.jetpack-field__control',
+				'properties' => array( 'display', 'flex-direction', 'flex-wrap', 'gap', 'row-gap', 'column-gap', 'align-items', 'align-content', 'justify-content', 'grid-template-columns', 'grid-template-rows' ),
 			),
 			'container_passthrough'    => array(),
 		),
@@ -206,7 +229,16 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		$context_css    = self::context_fallback_css( $scope, $context_fallbacks, $declared['context']['label'], $operations, $context_losses );
 		// Receipt contract: every pass records the context fallback losses once
 		// per context artifact the overlay carries (front end and editor).
-		$losses = array_merge( $context_losses, $context_losses );
+		$losses           = array_merge( $context_losses, $context_losses );
+		$bare_form_target = ( $targets['form']['selector'] ?? null ) === $scope;
+		if ( $bare_form_target && null !== $declared['form_layout_host'] && self::form_layout_unnamed( $graph ) ) {
+			$rules[]      = self::surface_selector( $prefix, $scope ) . '{' . $declared['form_layout_host']['declarations'] . '}';
+			$operations[] = array(
+				'dimension'   => 'layout',
+				'strategy'    => $declared['form_layout_host']['strategy'],
+				'target_hash' => hash( 'sha256', $scope ),
+			);
+		}
 		foreach ( $graph['nodes'] ?? array() as $node ) {
 			$id     = $node['id'] ?? '';
 			$target = $targets[ $id ] ?? null;
@@ -238,7 +270,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			}
 			$declarations = self::declarations( $node['layout'], $target['capabilities'], $id, $losses, self::important_properties( $node['important'] ?? null ) );
 			if ( ! empty( $declarations ) ) {
-				$rules[]      = self::surface_selector( $prefix, $target['selector'] ) . '{' . implode( ';', $declarations ) . '}';
+				foreach ( self::target_declaration_groups( $declared, $id, $target['selector'], $declarations ) as $selector => $group ) {
+					$rules[] = self::surface_selector( $prefix, $selector ) . '{' . implode( ';', $group ) . '}';
+				}
 				$operations[] = array(
 					'dimension'   => 'layout',
 					'strategy'    => 'provider_selector_transposition',
@@ -257,7 +291,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				continue; }
 			$declarations = self::declarations( $variant['layout_patch'], $target['capabilities'], $id, $losses, self::important_properties( $variant['important'] ?? null ) );
 			if ( ! empty( $declarations ) ) {
-				$rules[]      = self::conditional_rule( $variant['condition'], self::surface_selector( $prefix, $target['selector'] ) . '{' . implode( ';', $declarations ) . '}' );
+				foreach ( self::target_declaration_groups( $declared, $id, $target['selector'], $declarations ) as $selector => $group ) {
+					$rules[] = self::conditional_rule( $variant['condition'], self::surface_selector( $prefix, $selector ) . '{' . implode( ';', $group ) . '}' );
+				}
 				$operations[] = array(
 					'dimension'   => 'layout',
 					'strategy'    => 'provider_selector_transposition',
@@ -429,7 +465,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				$rules[] = self::surface_selector( $prefix, $selector ) . '{' . $declarations . '}';
 			}
 		}
-		if ( ( $targets['form']['selector'] ?? null ) === $scope ) {
+		if ( $bare_form_target ) {
 			foreach ( $declared['form_passthrough'] as $passthrough ) {
 				$rules[]      = self::surface_selector( $prefix, $scope . $passthrough['suffix'] ) . '{' . $passthrough['declarations'] . '}';
 				$operations[] = array(
@@ -538,6 +574,67 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			return $selector;
 		}
 		return implode( ', ', array_map( static fn( string $part ): string => 1 === preg_match( '/^\.ssi-form-[a-f0-9]{12}/', $part ) ? $prefix . $part : $part, explode( ', ', $selector ) ) );
+	}
+
+	/**
+	 * Whether neither the projection nor a source form class names the form's display.
+	 *
+	 * The source form classes travel with the provider form on every surface, so
+	 * a display they carry already reaches the host; otherwise the host takes
+	 * the provider's default form layout.
+	 *
+	 * @param array<string,mixed> $graph Provider layout graph.
+	 */
+	private static function form_layout_unnamed( array $graph ): bool {
+		foreach ( $graph['nodes'] ?? array() as $node ) {
+			if ( ! is_array( $node ) || 'form' !== ( $node['id'] ?? null ) ) {
+				continue;
+			}
+			$classes = is_array( $node['source']['classes'] ?? null ) ? array_filter( $node['source']['classes'], 'is_string' ) : array();
+			return ! isset( $node['layout']['display'] ) && null === Static_Site_Importer_Form_Layout_Projection::display_from_class_tokens( array_values( $classes ) );
+		}
+		return true;
+	}
+
+	/**
+	 * Group one layout target's compiled declarations by the selector that
+	 * realises them on the surface.
+	 *
+	 * A field row target (`field-N`) hands the facts that arrange the field's
+	 * own label and control to the surface's declared `field_control` hook;
+	 * `display:contents` goes to both. Every other target keeps its
+	 * declarations whole.
+	 *
+	 * @param array             $declared     Declared surface (see SURFACES).
+	 * @param string            $node         Layout node id.
+	 * @param string            $selector     Target selector.
+	 * @param array<int,string> $declarations Compiled declarations.
+	 * @return array<string,array<int,string>> Selector => declarations, in cascade order.
+	 * @phpstan-param Surface $declared
+	 */
+	private static function target_declaration_groups( array $declared, string $node, string $selector, array $declarations ): array {
+		$split = $declared['field_control'];
+		if ( null === $split || 1 !== preg_match( '/^field-[0-9]+$/D', $node ) ) {
+			return array( $selector => $declarations );
+		}
+		$item    = array();
+		$control = array();
+		foreach ( $declarations as $declaration ) {
+			if ( 'display:contents' === preg_replace( '/!important$/D', '', $declaration ) ) {
+				$item[]    = $declaration;
+				$control[] = $declaration;
+			} elseif ( in_array( strstr( $declaration, ':', true ), $split['properties'], true ) ) {
+				$control[] = $declaration;
+			} else {
+				$item[] = $declaration;
+			}
+		}
+		return array_filter(
+			array(
+				$selector                    => $item,
+				$selector . $split['suffix'] => $control,
+			)
+		);
 	}
 
 	/**
