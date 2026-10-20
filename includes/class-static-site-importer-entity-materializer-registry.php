@@ -663,7 +663,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( 'entity_collection' === $kind && in_array( $name, array( 'event', 'events' ), true ) ) {
 			return 'events';
 		}
-		if ( 'entity_collection' === $kind && in_array( $name, array( 'product', 'products', 'cart', 'carts', 'product_grids', 'product_listings' ), true ) ) {
+		if ( 'entity_collection' === $kind && in_array( $name, array( 'product', 'products', 'cart', 'carts', 'product_grids', 'product_listings', 'order_lookup', 'order_lookups' ), true ) ) {
 			return 'shop';
 		}
 		if ( 'entity_collection' === $kind && 'external_metrics' === $name ) {
@@ -1178,7 +1178,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 
 	/** Build one canonical block-binding replacement record for one resolved anchor. */
 	private static function block_binding_record( string $declaration_id, array $binding, string $replacement, array $entity, array $adapter ): array {
-		$is_grid = in_array( $binding['role'], array( 'commerce_collection', 'commerce_product_grid' ), true );
+		// An order lookup is a source form fallback the shop provider owns, so its
+		// receipt carries the same form fallback reconciliation identity and hash
+		// a form binding does.
+		$is_grid          = in_array( $binding['role'], array( 'commerce_collection', 'commerce_product_grid' ), true );
+		$is_form_contract = in_array( $binding['role'], array( 'form', 'order_lookup' ), true );
 		// A canonical product-grid binding records the grid's own source selector so
 		// quality reconciliation can join the detected grid finding to this receipt
 		// by the one evidence both sides carry, instead of a preserved-region hash
@@ -1203,7 +1207,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'materialized_block_hash'          => 'form' === $binding['role'] || $is_grid || '' !== $grid_selector ? hash( 'sha256', $replacement ) : '',
 			'provider'                         => $adapter['provider'] ?? '',
 			'superseded_runtime_selectors'     => $binding['superseded_runtime_selectors'] ?? array(),
-			'replaced_fallback_identities'     => 'form' === $binding['role'] ? self::replaced_fallback_identities( $entity ) : array(),
+			'replaced_fallback_identities'     => $is_form_contract ? self::replaced_fallback_identities( $entity ) : array(),
 		);
 	}
 
@@ -1349,10 +1353,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		require_once __DIR__ . '/class-static-site-importer-translatepress-materializer.php';
 		require_once __DIR__ . '/class-static-site-importer-redirection-materializer.php';
 		require_once __DIR__ . '/class-static-site-importer-woo-cart-materializer.php';
+		require_once __DIR__ . '/class-static-site-importer-woo-order-lookup-materializer.php';
 		require_once __DIR__ . '/class-static-site-importer-woo-product-grid-materializer.php';
 		require_once __DIR__ . '/class-static-site-importer-woo-product-listing-materializer.php';
 		// A capability's first adapter is its default; collection adapters follow it.
-		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Woo_Cart_Materializer', 'Static_Site_Importer_Woo_Product_Grid_Materializer', 'Static_Site_Importer_Woo_Product_Listing_Materializer', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_TEC_Event_Seeder', 'Static_Site_Importer_External_Metric_Runtime', 'Static_Site_Importer_TranslatePress_Materializer', 'Static_Site_Importer_Redirection_Materializer' ) as $owner ) {
+		foreach ( array( 'Static_Site_Importer_Woo_Product_Seeder', 'Static_Site_Importer_Woo_Cart_Materializer', 'Static_Site_Importer_Woo_Order_Lookup_Materializer', 'Static_Site_Importer_Woo_Product_Grid_Materializer', 'Static_Site_Importer_Woo_Product_Listing_Materializer', 'Static_Site_Importer_Form_Seeder', 'Static_Site_Importer_TEC_Event_Seeder', 'Static_Site_Importer_External_Metric_Runtime', 'Static_Site_Importer_TranslatePress_Materializer', 'Static_Site_Importer_Redirection_Materializer' ) as $owner ) {
 			// Seeders may be absent or stubbed in standalone harnesses.
 			// @phpstan-ignore-next-line booleanNot.alwaysFalse -- Optional classes are stubbed in standalone coverage harnesses.
 			if ( ! is_callable( array( $owner, 'adapter' ) ) ) {
@@ -1479,6 +1484,83 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return array(
 			'carts'  => $carts,
 			'errors' => $errors,
+		);
+	}
+
+	/**
+	 * Validate a `generic/order-lookups/v1` manifest: each order-lookup form
+	 * names its source page and selector, its order and email fields plus submit
+	 * label, and carries exactly its canonical `order_lookup` anchor. The form
+	 * fallback reconciliation metadata a producer stamps on the entity is kept so
+	 * its completed binding receipt proves which source form fallback it replaced.
+	 *
+	 * @param mixed $data Decoded manifest.
+	 * @return array{order_lookups:array<int,array<string,mixed>>,errors:array<int,array<string,string>>}
+	 */
+	public static function validate_order_lookups_manifest( mixed $data ): array {
+		$rows   = is_array( $data ) && is_array( $data['order_lookups'] ?? null ) && array_is_list( $data['order_lookups'] ) ? $data['order_lookups'] : null;
+		$errors = array();
+		$forms  = array();
+		if ( null === $rows ) {
+			return array(
+				'order_lookups' => array(),
+				'errors'        => array(
+					array(
+						'path'    => '$.order_lookups',
+						'message' => 'order_lookups must be a list of order-lookup forms.',
+					),
+				),
+			);
+		}
+		foreach ( $rows as $index => $row ) {
+			$path     = '$.order_lookups[' . $index . ']';
+			$bindings = is_array( $row ) && is_array( $row['bindings'] ?? null ) && array_is_list( $row['bindings'] ) ? array_map( static fn( mixed $binding ): ?array => self::normalize_block_binding( $binding ), $row['bindings'] ) : array();
+			$fields   = is_array( $row ) && is_array( $row['fields'] ?? null ) ? $row['fields'] : array();
+			$valid    = 1 === count( $bindings ) && ! empty( $bindings[0] ) && 'order_lookup' === $bindings[0]['role'];
+			foreach ( array( 'order', 'email' ) as $field_key ) {
+				$field = is_array( $fields[ $field_key ] ?? null ) ? $fields[ $field_key ] : null;
+				$valid = $valid && null !== $field && is_string( $field['label'] ?? null ) && '' !== trim( $field['label'] ) && ( ! isset( $field['placeholder'] ) || is_string( $field['placeholder'] ) );
+			}
+			$valid = $valid && '' !== trim( (string) ( $row['submit_label'] ?? '' ) );
+			if ( ! is_array( $row ) || '' === trim( (string) ( $row['source_path'] ?? '' ) ) || '' === trim( (string) ( $row['selector'] ?? '' ) ) || ! $valid ) {
+				$errors[] = array(
+					'path'    => $path,
+					'message' => 'order-lookup form must carry source_path, selector, labelled order and email fields, a submit label and one canonical order_lookup generic/block-binding/v1 anchor.',
+				);
+				continue;
+			}
+			$form = array(
+				'source_path'  => (string) $row['source_path'],
+				'selector'     => (string) $row['selector'],
+				'fields'       => array(
+					'order' => array_filter( array_intersect_key( $fields['order'], array_flip( array( 'label', 'placeholder' ) ) ), 'is_string' ),
+					'email' => array_filter( array_intersect_key( $fields['email'], array_flip( array( 'label', 'placeholder' ) ) ), 'is_string' ),
+				),
+				'submit_label' => (string) $row['submit_label'],
+				'bindings'     => $bindings,
+			);
+			// A producer that stamps the replaced form fallback onto the entity keeps
+			// that metadata through validation: the identity names the fallback and
+			// the captured form facts hash it, the way form entities carry them.
+			if ( isset( $row['form'] ) && is_array( $row['form'] ) ) {
+				$form['form'] = $row['form'];
+			}
+			if ( isset( $row['controls'] ) && is_array( $row['controls'] ) ) {
+				$form['controls'] = array_values( array_filter( $row['controls'], 'is_array' ) );
+			}
+			$fallback_identity = $row['fallback_identity'] ?? $row['source_fallback_identity'] ?? $row['fallback_reconciliation_identity'] ?? '';
+			if ( is_string( $fallback_identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fallback_identity ) ) {
+				$form['fallback_identity'] = $fallback_identity;
+			}
+			$replaced = self::replaced_fallback_identities( $row );
+			if ( array() !== $replaced ) {
+				$form['replaced_fallback_identities'] = $replaced;
+			}
+			$forms[] = $form;
+		}
+		return array(
+			'order_lookups' => $forms,
+			'errors'        => $errors,
 		);
 	}
 
@@ -2314,7 +2396,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		if ( null === $binding ) {
 			return array();
 		}
-		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'commerce_listing_control', 'commerce_cart', 'form' ), true ) || ( isset( $binding['control'] ) && ( ! is_string( $binding['control'] ) || '' === $binding['control'] ) ) ) {
+		if ( ! is_array( $binding ) || 'generic/block-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! preg_match( '#^(?!/)(?!.*(?:^|/)\.\.(?:/|$))[^\x00-\x1f]+$#', $binding['source_path'] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || strlen( $binding['search_block_markup'] ) > self::RUNTIME_DECLARATION_PAYLOAD_MAX_BYTES || ! is_string( $binding['role'] ?? null ) || ! in_array( $binding['role'], array( 'commerce_controls', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'commerce_listing_control', 'commerce_cart', 'order_lookup', 'form' ), true ) || ( isset( $binding['control'] ) && ( ! is_string( $binding['control'] ) || '' === $binding['control'] ) ) ) {
 			return null;
 		}
 		$normalized = array(

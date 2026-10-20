@@ -566,7 +566,7 @@ final class Static_Site_Importer_Quality_Gates {
 		if ( empty( $receipts ) ) {
 			$bindings = $report['materialization_receipt']['completed']['runtime_declarations']['entity_bindings'] ?? array();
 			foreach ( $bindings as $binding ) {
-				if ( ! is_array( $binding ) || 'completed' !== ( $binding['status'] ?? null ) || ! in_array( $binding['role'] ?? null, array( 'form', 'commerce_collection', 'commerce_product_grid', 'commerce_listing' ), true ) ) {
+				if ( ! is_array( $binding ) || 'completed' !== ( $binding['status'] ?? null ) || ! in_array( $binding['role'] ?? null, array( 'form', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'order_lookup' ), true ) ) {
 					continue;
 				}
 				if ( in_array( $binding['role'], array( 'commerce_product_grid', 'commerce_listing' ), true ) ) {
@@ -596,6 +596,7 @@ final class Static_Site_Importer_Quality_Gates {
 				$receipts[] = array(
 					'schema'                           => 'static-site-importer/quality-resolution-receipt/v1',
 					'status'                           => 'completed',
+					'role'                             => $binding['role'] ?? '',
 					'fallback_reconciliation_identity' => $binding['fallback_reconciliation_identity'] ?? '',
 					'source_path'                      => $binding['source_path'] ?? '',
 					'fallback_hash'                    => $binding['fallback_hash'] ?? '',
