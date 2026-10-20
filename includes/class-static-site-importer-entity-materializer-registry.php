@@ -2271,18 +2271,20 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			if ( ! is_array( $attribute ) ) {
 				return null;
 			}
-			$row = array();
+			$text = array();
 			foreach ( array( 'key', 'label', 'value', 'value_label' ) as $field ) {
-				$text = $attribute[ $field ] ?? '';
-				if ( ! is_string( $text ) || ( 'value_label' !== $field && '' === trim( $text ) ) ) {
+				$candidate = $attribute[ $field ] ?? '';
+				if ( ! is_string( $candidate ) || ( 'value_label' !== $field && '' === trim( $candidate ) ) ) {
 					return null;
 				}
-				$row[ $field ] = trim( $text );
+				$text[ $field ] = trim( $candidate );
 			}
-			if ( '' === $row['value_label'] ) {
-				$row['value_label'] = $row['value'];
-			}
-			$attributes[] = $row;
+			$attributes[] = array(
+				'key'         => $text['key'],
+				'label'       => $text['label'],
+				'value'       => $text['value'],
+				'value_label' => '' === $text['value_label'] ? $text['value'] : $text['value_label'],
+			);
 		}
 		return $attributes;
 	}

@@ -563,7 +563,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			$failures[] = 'product_terms_restore_failed'; }
 		foreach ( self::attribute_taxonomies() as $taxonomy ) {
 			$restored = wp_set_object_terms( $product_id, array_map( 'intval', (array) ( $before['attribute_terms'][ $taxonomy ] ?? array() ) ), $taxonomy );
-			if ( is_wp_error( $restored ) || false === $restored ) {
+			if ( is_wp_error( $restored ) ) {
 				$failures[] = 'product_attribute_terms_restore_failed';
 				break;
 			}
@@ -680,19 +680,21 @@ class Static_Site_Importer_Woo_Product_Seeder {
 				);
 			}
 			$term_slug = sanitize_title( (string) $row['value'] );
-			$term      = term_exists( $term_slug, $taxonomy );
-			if ( ! is_array( $term ) && ! is_int( $term ) ) {
+			$existing  = term_exists( $term_slug, $taxonomy );
+			if ( is_array( $existing ) ) {
+				$term_id = (int) $existing['term_id'];
+			} else {
 				$term = wp_insert_term( (string) $row['value_label'], $taxonomy, array( 'slug' => $term_slug ) );
 				if ( is_wp_error( $term ) ) {
 					// ssi-error-class: propagated
 					throw new RuntimeException( esc_html( $term->get_error_message() ) );
 				}
+				$term_id            = (int) $term['term_id'];
 				$created['terms'][] = array(
 					'taxonomy' => $taxonomy,
-					'term_id'  => (int) $term['term_id'],
+					'term_id'  => $term_id,
 				);
 			}
-			$term_id = (int) ( is_array( $term ) ? $term['term_id'] : $term );
 			if ( ! isset( $attributes[ $taxonomy ] ) ) {
 				$attributes[ $taxonomy ] = new WC_Product_Attribute();
 				$attributes[ $taxonomy ]->set_id( (int) $id );
