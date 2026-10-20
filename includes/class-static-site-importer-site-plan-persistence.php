@@ -187,9 +187,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$state['source_ids'][ $page['source_path'] ]           = $post;
 			if ( 'draft' === ( $page['materialized_post_status'] ?? '' ) ) {
 				$last = array_key_last( $state['applied']['posts'] );
-				$state['applied']['posts'][ $last ]['post_status']              = get_post_status( $post );
-				$state['applied']['posts'][ $last ]['route_ownership']          = 'alias_hierarchy_parent';
-				$state['applied']['posts'][ $last ]['alias_target_source_path'] = $page['alias_target_source_path'];
+				$state['applied']['posts'][ $last ]['post_status']     = get_post_status( $post );
+				$state['applied']['posts'][ $last ]['route_ownership'] = isset( $page['alias_target_source_path'] ) ? 'alias_hierarchy_parent' : 'synthetic_hierarchy_parent';
+				if ( isset( $page['alias_target_source_path'] ) ) {
+					$state['applied']['posts'][ $last ]['alias_target_source_path'] = $page['alias_target_source_path'];
+				}
 			}
 			if ( ! self::write_post_meta( $post, self::RECONCILIATION_META_KEY, (string) $page['reconciliation_identity'] ) || ! self::write_post_meta( $post, self::PRODUCER_RECONCILIATION_META_KEY, (string) $page['reconciliation_identity'] ) ) {
 				return self::failed_receipt( $state, 'materialization_reconciliation_metadata_write_failed' );
@@ -202,7 +204,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				'reconciliation_identity' => $page['reconciliation_identity'],
 				'content_hash'            => hash( 'sha256', $materialized_markup ),
 			);
-			$document_title      = Static_Site_Importer_Route_Document_Metadata::title_from_page( $page );
+			if ( ! empty( $page['synthetic'] ) && isset( $page['materialized_post_status'] ) ) {
+				// Lets a reimport tell the importer's hierarchy status from the owner's.
+				$provenance['synthetic_parent_status'] = (string) $page['materialized_post_status'];
+			}
+			$document_title = Static_Site_Importer_Route_Document_Metadata::title_from_page( $page );
 			if ( '' !== $document_title ) {
 				$provenance['document_title'] = $document_title;
 			}
