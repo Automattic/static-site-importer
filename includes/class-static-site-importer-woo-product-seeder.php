@@ -238,15 +238,19 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		$report['status'] = 'completed';
 
 		$report['rollback'] = array(
-			'created_terms'       => array(),
-			'created_attachments' => array(),
+			'created_terms'              => array(),
+			'created_attachments'        => array(),
+			'created_product_attributes' => array(
+				'attributes' => array(),
+				'terms'      => array(),
+			),
 		);
 		foreach ( $products as $product ) {
 			$existing = get_page_by_path( sanitize_title( self::string_value( $product, 'slug' ) ), OBJECT, 'product' );
 			$before   = $existing instanceof WP_Post ? self::product_state( (int) $existing->ID ) : null;
 			if ( is_array( $before ) ) {
 				$report['rollback'][ (int) $existing->ID ] = $before; }
-			$row                  = self::seed_product( $product, $report['rollback']['created_terms'], $before, $args, $report['rollback']['created_attachments'] );
+			$row                  = self::seed_product( $product, $report['rollback']['created_terms'], $before, $args, $report['rollback']['created_attachments'], $report['rollback']['created_product_attributes'] );
 			$report['products'][] = $row;
 
 			$status = $row['status'] ?? 'error';
@@ -314,7 +318,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		if ( 'published' === ( $report['store_visibility']['status'] ?? '' ) ) {
 			delete_option( self::COMING_SOON_OPTION );
 		}
-		$term_failures       = self::cleanup_terms( $report['rollback']['created_terms'] ?? array() );
+		$term_failures       = array_merge( self::cleanup_terms( $report['rollback']['created_terms'] ?? array() ), self::cleanup_product_attributes( $report['rollback']['created_product_attributes'] ?? array() ) );
 		$attachment_failures = self::cleanup_attachments( $report['rollback']['created_attachments'] ?? array() );
 		return array(
 			'status'                      => empty( $failures ) && empty( $term_failures ) && empty( $attachment_failures ) ? 'rolled_back' : 'partial',
@@ -381,9 +385,10 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	 * @param array<string, mixed>|null $before           Prior product state for an existing product.
 	 * @param array<string, mixed>  $args                 Import-scoped context (see seed()).
 	 * @param array<int, int>       $created_attachments  Attachment ids created so far this run, by reference.
+	 * @param array<string, array>  $created_attributes   Global attributes and attribute terms created so far this run, by reference.
 	 * @return array<string, mixed>
 	 */
-	private static function seed_product( array $manifest_product, array &$created_terms = array(), ?array $before = null, array $args = array(), array &$created_attachments = array() ): array {
+	private static function seed_product( array $manifest_product, array &$created_terms = array(), ?array $before = null, array $args = array(), array &$created_attachments = array(), array &$created_attributes = array() ): array {
 		$slug = sanitize_title( self::string_value( $manifest_product, 'slug' ) );
 		$name = self::string_value( $manifest_product, 'name' );
 
@@ -411,6 +416,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 
 		$product_id          = 0;
 		$created_term_offset = count( $created_terms );
+		$attribute_offsets   = array( count( $created_attributes['attributes'] ?? array() ), count( $created_attributes['terms'] ?? array() ) );
 		$losses              = array();
 		try {
 			$product->set_name( $name );
@@ -443,6 +449,10 @@ class Static_Site_Importer_Woo_Product_Seeder {
 						'attribute'   => 'image',
 					);
 				}
+			}
+
+			if ( isset( $manifest_product['attributes'] ) && is_array( $manifest_product['attributes'] ) ) {
+				$product->set_attributes( self::product_attributes( $manifest_product['attributes'], $created_attributes, $losses ) );
 			}
 
 			$product_id = (int) $product->save();
@@ -488,7 +498,15 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			);
 			if ( $product_id > 0 ) {
 				$rollback           = self::restore_product( $product_id, $before );
-				$term_failures      = self::cleanup_terms( array_slice( $created_terms, $created_term_offset ) );
+				$term_failures      = array_merge(
+					self::cleanup_terms( array_slice( $created_terms, $created_term_offset ) ),
+					self::cleanup_product_attributes(
+						array(
+							'attributes' => array_slice( $created_attributes['attributes'] ?? array(), $attribute_offsets[0] ),
+							'terms'      => array_slice( $created_attributes['terms'] ?? array(), $attribute_offsets[1] ),
+						)
+					)
+				);
 				$row['id']          = $product_id;
 				$row['compensated'] = empty( $rollback['failures'] ) && empty( $term_failures );
 				$row['rollback']    = array(
@@ -502,11 +520,21 @@ class Static_Site_Importer_Woo_Product_Seeder {
 
 	/** Capture state before an existing product can be changed. */
 	private static function product_state( int $product_id ): array {
+		$attribute_terms = array();
+		foreach ( self::attribute_taxonomies() as $taxonomy ) {
+			$attribute_terms[ $taxonomy ] = wp_get_object_terms( $product_id, $taxonomy, array( 'fields' => 'ids' ) );
+		}
 		return array(
-			'post'  => get_post( $product_id, ARRAY_A ),
-			'meta'  => get_post_meta( $product_id ),
-			'terms' => wp_get_object_terms( $product_id, 'product_cat', array( 'fields' => 'ids' ) ),
+			'post'            => get_post( $product_id, ARRAY_A ),
+			'meta'            => get_post_meta( $product_id ),
+			'terms'           => wp_get_object_terms( $product_id, 'product_cat', array( 'fields' => 'ids' ) ),
+			'attribute_terms' => $attribute_terms,
 		);
+	}
+
+	/** @return array<int,string> Registered global product attribute taxonomies. */
+	private static function attribute_taxonomies(): array {
+		return function_exists( 'wc_get_attribute_taxonomy_names' ) ? array_values( array_filter( (array) wc_get_attribute_taxonomy_names(), 'taxonomy_exists' ) ) : array();
 	}
 
 	/** Restore a product or remove a newly created one, reporting every failed compensation step. */
@@ -523,13 +551,23 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			$failures[] = 'product_restore_failed'; }
 		foreach ( get_post_meta( $product_id ) as $key => $_ ) {
 			delete_post_meta( $product_id, $key ); }
+		// get_post_meta() returns stored values still serialized; add_post_meta()
+		// would serialize them again, turning array meta such as
+		// `_product_attributes` into a string.
 		foreach ( $before['meta'] as $key => $values ) {
 			foreach ( $values as $value ) {
-				add_post_meta( $product_id, $key, $value ); }
+				add_post_meta( $product_id, $key, maybe_unserialize( $value ) ); }
 		}
 		$terms = self::assign_product_categories( $product_id, $before['terms'] );
 		if ( is_wp_error( $terms ) ) {
 			$failures[] = 'product_terms_restore_failed'; }
+		foreach ( self::attribute_taxonomies() as $taxonomy ) {
+			$restored = wp_set_object_terms( $product_id, array_map( 'intval', (array) ( $before['attribute_terms'][ $taxonomy ] ?? array() ) ), $taxonomy );
+			if ( is_wp_error( $restored ) || false === $restored ) {
+				$failures[] = 'product_attribute_terms_restore_failed';
+				break;
+			}
+		}
 		return array( 'failures' => $failures );
 	}
 
@@ -546,6 +584,126 @@ class Static_Site_Importer_Woo_Product_Seeder {
 				$failures[] = $term_id; }
 		}
 		return $failures;
+	}
+
+	/**
+	 * Remove the attribute terms, then the global attributes, this run created,
+	 * keeping any a product still uses.
+	 *
+	 * @param array<string,array> $created `attributes` ids and `terms` { taxonomy, term_id } rows.
+	 * @return array<int,int|string> Terms or attributes that could not be removed.
+	 */
+	private static function cleanup_product_attributes( array $created ): array {
+		$failures = array();
+		foreach ( array_reverse( is_array( $created['terms'] ?? null ) ? $created['terms'] : array() ) as $row ) {
+			$term = get_term( (int) ( $row['term_id'] ?? 0 ), (string) ( $row['taxonomy'] ?? '' ) );
+			if ( ! is_object( $term ) || (int) ( get_object_vars( $term )['count'] ?? 0 ) > 0 ) {
+				continue;
+			}
+			$deleted = wp_delete_term( (int) $row['term_id'], (string) $row['taxonomy'] );
+			if ( is_wp_error( $deleted ) || false === $deleted ) {
+				$failures[] = (int) $row['term_id'];
+			}
+		}
+		foreach ( array_reverse( array_map( 'intval', is_array( $created['attributes'] ?? null ) ? $created['attributes'] : array() ) ) as $attribute_id ) {
+			$attribute = function_exists( 'wc_get_attribute' ) ? wc_get_attribute( $attribute_id ) : null;
+			if ( ! is_object( $attribute ) ) {
+				continue;
+			}
+			$remaining = get_terms(
+				array(
+					'taxonomy'   => (string) $attribute->slug,
+					'hide_empty' => false,
+					'fields'     => 'ids',
+				)
+			);
+			if ( is_array( $remaining ) && array() !== $remaining ) {
+				continue;
+			}
+			if ( true !== wc_delete_attribute( $attribute_id ) ) {
+				$failures[] = 'attribute:' . $attribute_id;
+			}
+		}
+		return $failures;
+	}
+
+	/**
+	 * A product's attribute values as global WooCommerce attributes: each
+	 * attribute key becomes a `pa_<key>` attribute named by its label, and each
+	 * value a term of it named by its shopper-facing label, so WooCommerce's
+	 * attribute filters can list and filter by them. A key WooCommerce cannot
+	 * use as an attribute slug is reported as a loss.
+	 *
+	 * @param array<int,array<string,string>> $rows    Validated attribute rows.
+	 * @param array<string,array>             $created Created attributes and terms, by reference.
+	 * @param array<int,array<string,string>> $losses  Product losses, by reference.
+	 * @return array<string,WC_Product_Attribute>
+	 */
+	private static function product_attributes( array $rows, array &$created, array &$losses ): array {
+		$attributes = array();
+		foreach ( $rows as $row ) {
+			$slug   = wc_sanitize_taxonomy_name( (string) ( $row['key'] ?? '' ) );
+			$id     = '' === $slug ? 0 : (int) wc_attribute_taxonomy_id_by_name( $slug );
+			$create = 0 === $id && '' !== $slug;
+			if ( $create ) {
+				$id = wc_create_attribute(
+					array(
+						'name' => (string) $row['label'],
+						'slug' => $slug,
+					)
+				);
+			}
+			if ( is_wp_error( $id ) || (int) $id <= 0 ) {
+				$losses[] = array(
+					'dimension'   => 'product',
+					'reason_code' => 'unsupported_control_attribute',
+					'attribute'   => 'attributes.' . (string) ( $row['key'] ?? '' ),
+				);
+				continue;
+			}
+			$taxonomy = wc_attribute_taxonomy_name( $slug );
+			if ( $create ) {
+				$created['attributes'][] = (int) $id;
+			}
+			if ( ! taxonomy_exists( $taxonomy ) ) {
+				// WooCommerce registers attribute taxonomies on init; one created
+				// during this request is registered here so its terms can be added.
+				register_taxonomy(
+					$taxonomy,
+					array( 'product' ),
+					array(
+						'hierarchical' => false,
+						'show_ui'      => false,
+						'query_var'    => true,
+						'rewrite'      => false,
+					)
+				);
+			}
+			$term_slug = sanitize_title( (string) $row['value'] );
+			$term      = term_exists( $term_slug, $taxonomy );
+			if ( ! is_array( $term ) && ! is_int( $term ) ) {
+				$term = wp_insert_term( (string) $row['value_label'], $taxonomy, array( 'slug' => $term_slug ) );
+				if ( is_wp_error( $term ) ) {
+					// ssi-error-class: propagated
+					throw new RuntimeException( esc_html( $term->get_error_message() ) );
+				}
+				$created['terms'][] = array(
+					'taxonomy' => $taxonomy,
+					'term_id'  => (int) $term['term_id'],
+				);
+			}
+			$term_id = (int) ( is_array( $term ) ? $term['term_id'] : $term );
+			if ( ! isset( $attributes[ $taxonomy ] ) ) {
+				$attributes[ $taxonomy ] = new WC_Product_Attribute();
+				$attributes[ $taxonomy ]->set_id( (int) $id );
+				$attributes[ $taxonomy ]->set_name( $taxonomy );
+				$attributes[ $taxonomy ]->set_position( count( $attributes ) - 1 );
+				$attributes[ $taxonomy ]->set_visible( true );
+				$attributes[ $taxonomy ]->set_variation( false );
+			}
+			$attributes[ $taxonomy ]->set_options( array_values( array_unique( array_merge( $attributes[ $taxonomy ]->get_options(), array( $term_id ) ) ) ) );
+		}
+		return $attributes;
 	}
 
 	/** Remove attachments created by this run, in reverse creation order. */

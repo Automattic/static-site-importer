@@ -1721,6 +1721,28 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					}
 				}
 			}
+			// A producer's single shopper-facing `category` joins `categories`.
+			if ( isset( $product['category'] ) ) {
+				if ( ! is_string( $product['category'] ) || '' === trim( $product['category'] ) ) {
+					$errors[] = array(
+						'path'    => $path_prefix . '.category',
+						'message' => 'category must be a non-empty string when provided.',
+					);
+				} else {
+					$product['categories'] = array_values( array_unique( array_merge( is_array( $product['categories'] ?? null ) ? $product['categories'] : array(), array( trim( $product['category'] ) ) ) ) );
+				}
+			}
+			if ( isset( $product['attributes'] ) ) {
+				$attributes = self::manifest_product_attributes( $product['attributes'] );
+				if ( null === $attributes ) {
+					$errors[] = array(
+						'path'    => $path_prefix . '.attributes',
+						'message' => 'attributes must be a list of { key, label, value, value_label } objects with non-empty key, label, and value strings when provided.',
+					);
+				} else {
+					$product['attributes'] = $attributes;
+				}
+			}
 			if ( isset( $product['stock_quantity'] ) && ! is_int( $product['stock_quantity'] ) ) {
 				$errors[] = array(
 					'path'    => $path_prefix . '.stock_quantity',
@@ -1733,7 +1755,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'slug'          => $slug,
 				'regular_price' => $regular_price,
 			);
-			foreach ( array( 'sale_price', 'description', 'short_description', 'categories', 'status', 'stock_status', 'stock_quantity', 'source_selectors' ) as $field ) {
+			foreach ( array( 'sale_price', 'description', 'short_description', 'categories', 'attributes', 'status', 'stock_status', 'stock_quantity', 'source_selectors' ) as $field ) {
 				if ( array_key_exists( $field, $product ) ) {
 					$summary[ $field ] = $product[ $field ];
 				}
@@ -2230,6 +2252,39 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		}
 
 		return $normalized;
+	}
+
+	/**
+	 * Normalize a product's attribute values: each names the attribute
+	 * (`key`, `label`) and the product's value of it (`value`, and the
+	 * shopper-facing `value_label`).
+	 *
+	 * @param mixed $value Candidate attribute list.
+	 * @return array<int,array{key:string,label:string,value:string,value_label:string}>|null Null when malformed.
+	 */
+	private static function manifest_product_attributes( mixed $value ): ?array {
+		if ( ! is_array( $value ) || ! array_is_list( $value ) ) {
+			return null;
+		}
+		$attributes = array();
+		foreach ( $value as $attribute ) {
+			if ( ! is_array( $attribute ) ) {
+				return null;
+			}
+			$row = array();
+			foreach ( array( 'key', 'label', 'value', 'value_label' ) as $field ) {
+				$text = $attribute[ $field ] ?? '';
+				if ( ! is_string( $text ) || ( 'value_label' !== $field && '' === trim( $text ) ) ) {
+					return null;
+				}
+				$row[ $field ] = trim( $text );
+			}
+			if ( '' === $row['value_label'] ) {
+				$row['value_label'] = $row['value'];
+			}
+			$attributes[] = $row;
+		}
+		return $attributes;
 	}
 
 	/**

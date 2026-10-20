@@ -138,6 +138,67 @@ namespace {
 		)
 	);
 	$assert( ! empty( $duplicate_products['errors'] ), 'duplicate-product-slugs-reject-provider-result-ambiguity' );
+	// A producer's shopper-facing category and attribute values reach the seeder.
+	$described = Static_Site_Importer_Entity_Materializer_Registry::validate_woo_products_manifest(
+		array(
+			'schema_version' => 1,
+			'products'       => array(
+				array(
+					'name'          => 'Fern',
+					'slug'          => 'fern',
+					'regular_price' => '12.00',
+					'category'      => 'Indoor',
+					'categories'    => array( 'Ferns' ),
+					'attributes'    => array(
+						array(
+							'key'         => 'light_level',
+							'label'       => 'Light level',
+							'value'       => 'low',
+							'value_label' => 'Shade',
+						),
+						array(
+							'key'   => 'humidity',
+							'label' => 'Humidity',
+							'value' => 'high',
+						),
+					),
+				),
+			),
+		)
+	);
+	$assert( empty( $described['errors'] ) && array( 'Ferns', 'Indoor' ) === ( $described['products'][0]['categories'] ?? null ), 'product-category-joins-categories', wp_json_encode( $described ) );
+	$assert(
+		array(
+			array(
+				'key'         => 'light_level',
+				'label'       => 'Light level',
+				'value'       => 'low',
+				'value_label' => 'Shade',
+			),
+			array(
+				'key'         => 'humidity',
+				'label'       => 'Humidity',
+				'value'       => 'high',
+				'value_label' => 'high',
+			),
+		) === ( $described['products'][0]['attributes'] ?? null ),
+		'product-attributes-survive-validation-with-a-value-label',
+		wp_json_encode( $described )
+	);
+	$malformed = Static_Site_Importer_Entity_Materializer_Registry::validate_woo_products_manifest(
+		array(
+			'schema_version' => 1,
+			'products'       => array(
+				array(
+					'name'          => 'Fern',
+					'slug'          => 'fern',
+					'regular_price' => '12.00',
+					'attributes'    => array( array( 'key' => 'light_level' ) ),
+				),
+			),
+		)
+	);
+	$assert( array( '$.products[0].attributes' ) === array_column( $malformed['errors'], 'path' ), 'malformed-product-attributes-are-rejected', wp_json_encode( $malformed['errors'] ) );
 	$duplicate_forms = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest(
 		array(
 			'forms' => array(
