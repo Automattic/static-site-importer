@@ -569,7 +569,7 @@ final class Static_Site_Importer_Quality_Gates {
 				if ( ! is_array( $binding ) || 'completed' !== ( $binding['status'] ?? null ) || ! in_array( $binding['role'] ?? null, array( 'form', 'commerce_collection', 'commerce_product_grid' ), true ) ) {
 					continue;
 				}
-				if ( 'commerce_product_grid' === ( $binding['role'] ?? null ) ) {
+				if ( 'commerce_product_grid' === $binding['role'] ) {
 					// A canonical grid receipt joins its finding page-and-selector-scoped.
 					list( $grid_identity, $grid_hash ) = Static_Site_Importer_Entity_Materializer_Registry::product_grid_fallback_identity( (string) ( $binding['source_path'] ?? '' ), (string) ( $binding['selector'] ?? '' ) );
 					if ( '' === $grid_identity ) {
