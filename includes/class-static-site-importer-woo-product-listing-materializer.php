@@ -446,7 +446,7 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 		$requested = isset( $_GET[ $param ] ) && is_string( $_GET[ $param ] ) ? sanitize_text_field( wp_unslash( $_GET[ $param ] ) ) : '';
 		$tags      = new WP_HTML_Tag_Processor( $content );
 		if ( 'range' === ( $wired['shape'] ?? '' ) ) {
-			if ( ! $tags->next_tag( 'input' ) ) {
+			if ( ! $tags->next_tag( array( 'tag_name' => 'input' ) ) ) {
 				return $content;
 			}
 			$tags->set_attribute( 'data-ssi-listing-param', $param );
@@ -457,7 +457,7 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 			self::enqueue_control_script();
 			return $tags->get_updated_html();
 		}
-		if ( ! $tags->next_tag( 'select' ) ) {
+		if ( ! $tags->next_tag( array( 'tag_name' => 'select' ) ) ) {
 			return $content;
 		}
 		$tags->set_attribute( 'data-ssi-listing-param', $param );
@@ -465,7 +465,7 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 		$values = is_array( $wired['values'] ?? null ) ? $wired['values'] : array();
 		// WooCommerce reads a comma list; a select shows its first value.
 		$chosen = explode( ',', $requested )[0];
-		while ( $tags->next_tag( 'option' ) ) {
+		while ( $tags->next_tag( array( 'tag_name' => 'option' ) ) ) {
 			$value = (string) ( $values[ (string) $tags->get_attribute( 'value' ) ] ?? $tags->get_attribute( 'value' ) );
 			$tags->set_attribute( 'value', $value );
 			if ( $value === $chosen ) {
