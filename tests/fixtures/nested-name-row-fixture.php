@@ -58,6 +58,7 @@ namespace {
 			'className'   => $form_class,
 			'fields'      => $fields,
 			'fieldHtml'   => $field_html,
+			'overlayValid' => null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $row['provider_layout_overlay_css'] ?? null ),
 			'strategies'  => array_column( $row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ),
 		)
 	);

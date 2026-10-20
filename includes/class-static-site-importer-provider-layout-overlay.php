@@ -1035,7 +1035,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( ! preg_match( '/^' . $scope_selector . '$/D', $matches[1] ) && ! $native_safe ) {
 			return false;
 		}
-		$layout_allowed       = array( 'display', 'width', 'height', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'position', 'z-index', 'pointer-events', ...array_values( self::box_property_map() ) );
+		$layout_allowed       = array( 'display', 'float', 'width', 'height', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'position', 'z-index', 'pointer-events', ...array_values( self::box_property_map() ) );
 		$presentation_allowed = array_merge( array_values( self::presentation_property_map() ), array( 'color', 'flex', 'font' ) );
 		foreach ( explode( ';', $matches[2] ) as $declaration ) {
 			$declaration = preg_replace( '/!important$/D', '', $declaration ) ?? $declaration;

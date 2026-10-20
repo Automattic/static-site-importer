@@ -625,6 +625,7 @@ test( 'nested floated name row maps and keeps desktop pairing and mobile stackin
 	assert.equal( seeded.status, 'mapped', JSON.stringify( seeded.row ) );
 	assert.equal( seeded.fields.length, 3 );
 	assert.ok( seeded.strategies.includes( 'provider_compensated_percentage_halves' ) );
+	assert.equal( seeded.overlayValid, true, 'persisted overlay validation admits the projected cell resets' );
 	const browser = await chromium.launch();
 	try {
 		const page = await browser.newPage();
