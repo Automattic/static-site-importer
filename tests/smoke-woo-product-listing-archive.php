@@ -327,6 +327,18 @@ $elsewhere = $plan;
 $elsewhere['runtime_declarations'][2]['payload']['entities'][0]['grid_selector'] = 'main > ul';
 $unowned = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $elsewhere, array() ), $elsewhere );
 $assert( null === ( $unowned['entities'][ $list_id ]['manifest']['product_listings'][0]['grid'] ?? null ) && array() === $unowned['entities'][ $list_id ]['manifest']['product_listings'][0]['bindings'] && 1 === count( $unowned['entities'][ $grid_id ]['manifest']['product_grids'][0]['bindings'] ), 'listing-without-its-grid-keeps-the-source-controls-and-grid' );
+// A listing whose only control is a result count changes nothing the archive
+// query would, so it adopts nothing: the grid keeps its own collection.
+$counted = $plan;
+$counted['runtime_declarations'][2]['payload']['entities'][0]['controls'] = array(
+	array(
+		'id'   => 'result_count',
+		'kind' => 'result_count',
+	),
+);
+$counted['runtime_declarations'][2]['payload']['entities'][0]['bindings'] = array( $anchor( $region, 'commerce_listing' ), $anchor( $count, 'commerce_listing_control', 'result_count' ) );
+$count_only = Static_Site_Importer_Entity_Materializer_Registry::with_adopted_product_regions( Static_Site_Importer_Entity_Materializer_Registry::plan_runtime_lifecycle( $counted, array() ), $counted );
+$assert( null === ( $count_only['entities'][ $list_id ]['manifest']['product_listings'][0]['grid'] ?? null ) && array() === ( $count_only['entities'][ $list_id ]['manifest']['product_listings'][0]['bindings'] ?? null ) && 1 === count( $count_only['entities'][ $grid_id ]['manifest']['product_grids'][0]['bindings'] ?? array() ), 'count-only-listing-leaves-its-grid-its-own-collection', (string) wp_json_encode( $count_only['entities'][ $list_id ]['manifest']['product_listings'][0] ?? array() ) );
 
 // --- 3. Materializing orders the catalog by the grid's source order.
 $report = Static_Site_Importer_Entity_Materializer_Registry::materialize( $adapter, $adopted['entities'][ $list_id ]['manifest'] );

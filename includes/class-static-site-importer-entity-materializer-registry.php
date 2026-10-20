@@ -1687,7 +1687,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	 * controls become WooCommerce's filter, sort and count blocks. The listing
 	 * then replaces its whole region, so its control anchors and the grid's
 	 * own anchor are carried inside it. A listing without an adopted grid in
-	 * its region keeps its source controls.
+	 * its region, or whose only control is a result count, keeps its source
+	 * controls, and its grid keeps its own product collection.
 	 *
 	 * @param array<string,mixed> $lifecycle Lifecycle with resolved manifests.
 	 * @param array<string,mixed> $plan      Resolved site plan.
@@ -1735,8 +1736,13 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			foreach ( $prepared['manifest']['product_listings'] ?? array() as $index => $listing ) {
 				$region = array_values( array_filter( is_array( $listing['bindings'] ?? null ) ? $listing['bindings'] : array(), static fn( mixed $binding ): bool => is_array( $binding ) && 'commerce_listing' === ( $binding['role'] ?? '' ) ) );
-				$claim  = 1 === count( $region ) ? $range( $region[0] ) : null;
-				$owned  = null;
+				// A listing becomes WooCommerce's archive only for a control that
+				// changes what the archive query shows. A result count alone
+				// is already true of the source grid, which keeps its own
+				// product collection.
+				$queried = array_filter( is_array( $listing['controls'] ?? null ) ? $listing['controls'] : array(), static fn( mixed $control ): bool => is_array( $control ) && 'result_count' !== ( $control['kind'] ?? '' ) );
+				$claim   = 1 === count( $region ) && array() !== $queried ? $range( $region[0] ) : null;
+				$owned   = null;
 				foreach ( null === $claim ? array() : $grids as $grid ) {
 					if ( null === $owned && $within( $grid[0], $claim ) && ( $grid[1]['source_path'] ?? null ) === ( $listing['source_path'] ?? null ) && ( $grid[1]['selector'] ?? null ) === ( $listing['grid_selector'] ?? null ) ) {
 						$owned = $grid[1];
