@@ -1,0 +1,16 @@
+<style>
+.field-group{display:block;padding-bottom:18px;position:relative}
+.name-row{display:block;position:relative}
+.name-half{float:left;width:50%}
+.name-first{clear:both;width:calc(50% - 9px)}
+.name-last{margin-left:9px}
+.name-row:after{content:"";display:table;clear:both}
+label{display:block}input{box-sizing:border-box;width:100%}
+@media(max-width:600px){.name-half{float:none;width:100%;margin-left:0}.name-first{margin-bottom:18px}}
+</style>
+<form method="post" action="/contact/">
+<div class="fields">
+<div class="field-group"><label>Name *</label><div class="name-row"><div class="name-half name-first"><input id="first" name="first"><label for="first">First</label></div><div class="name-half name-last"><input id="last" name="last"><label for="last">Last</label></div></div></div>
+<div class="field-group"><label for="email">Email</label><input id="email" name="email" type="email"></div>
+</div><button type="submit">Send</button>
+</form>

@@ -2416,6 +2416,29 @@ $assert( 0 === ( $form_quality_report['quality']['fallback_count'] ?? -1 ) && 1 
 $resolved_form_quality    = Static_Site_Importer_Quality_Gates::finalize_quality_report( $form_quality_report, array( 'fail_on_quality' => true ) );
 $resolved_form_validation = Static_Site_Importer_Diagnostic_Projection::import_validation_result( $form_quality_report, $resolved_form_quality );
 $assert( true === ( $resolved_form_quality['pass'] ?? false ) && false === ( $resolved_form_quality['fail_import'] ?? true ) && array() === ( $resolved_form_quality['failure_reasons'] ?? null ) && 'passed' === ( $resolved_form_validation['status'] ?? '' ), 'receipt-resolved form fallback clears derived quality gates and validation status' );
+// #2216: use the real compiler/seeder result, then persist its replacement
+// through the same runtime binding path the import quality gate consumes.
+$nested_name = json_decode( (string) shell_exec( escapeshellarg( PHP_BINARY ) . ' ' . escapeshellarg( __DIR__ . '/fixtures/nested-name-row-fixture.php' ) ), true );
+$assert( 'mapped' === ( $nested_name['status'] ?? '' ) && empty( $nested_name['row']['form_receipt_unaccepted_losses'] ), 'nested-floated-name-row-maps-without-topology-loss' );
+preg_match_all( '/<!-- wp:([^\s]+)(?:\s|\/|-->)/', $nested_name['markup'], $nested_blocks );
+foreach ( array_unique( $nested_blocks[1] ) as $nested_block ) {
+	WP_Block_Type_Registry::get_instance()->register( str_contains( $nested_block, '/' ) ? $nested_block : 'core/' . $nested_block, array() );
+}
+$nested_name['fallback']['source_path'] = 'index.html';
+$nested_binding = array_replace( $form_binding, array(
+	'replacement_block_markup' => $nested_name['markup'],
+	'fallback_reconciliation_identity' => Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $nested_name['fallback'] ),
+	'fallback_hash' => Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $nested_name['fallback'] ),
+	'materialized_block_hash' => hash( 'sha256', $nested_name['markup'] ),
+) );
+$nested_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $binding_plan, array( 'slug' => 'nested-name-row', 'runtime_entity_bindings' => ! empty( $nested_name['row']['runtime_mapped'] ) ? array( $nested_binding ) : array() ) );
+$nested_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );
+$nested_report->merge_quality( array( 'fallback_count' => 1 ) );
+$nested_report['diagnostics'] = array( $nested_name['fallback'] );
+$nested_report['materialization_receipt'] = $nested_receipt;
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $nested_report );
+$nested_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $nested_report, array( 'fail_on_quality' => true ) );
+$assert( true === ( $nested_quality['pass'] ?? false ) && false === ( $nested_quality['fail_import'] ?? true ) && empty( $nested_quality['failure_reasons'] ), 'nested-floated-name-row-import-passes-quality-gate', wp_json_encode( $nested_quality ) );
 $other_failure_report = Static_Site_Importer_Import_Report::from_array( $form_quality_report->to_array() );
 $other_failure_report->merge_quality( array( 'core_html_block_count' => 1 ) );
 $other_failure_quality    = Static_Site_Importer_Quality_Gates::finalize_quality_report( $other_failure_report, array( 'fail_on_quality' => true ) );

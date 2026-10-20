@@ -557,3 +557,47 @@ test( 'form gap reaches the flex container when Jetpack 16.3 wraps the scoped bl
 		await browser.close();
 	}
 } );
+
+
+test( 'nested floated name row maps and keeps desktop pairing and mobile stacking (#2216)', async () => {
+	requireBrowserPrerequisites();
+	const seeded = JSON.parse( execFileSync( 'php', [ 'tests/fixtures/nested-name-row-fixture.php' ], { encoding: 'utf8' } ) );
+	assert.equal( seeded.status, 'mapped', JSON.stringify( seeded.row ) );
+	assert.equal( seeded.fields.length, 3 );
+	const browser = await chromium.launch();
+	try {
+		const page = await browser.newPage();
+		await page.setContent( `<style>
+			body{margin:0}.source,.projected{width:min(580px,calc(100vw - 24px))}
+			.jetpack-contact-form__form{display:flex;flex-wrap:wrap;gap:1.5rem}
+			.jetpack-contact-form__form>div{box-sizing:border-box;flex:0 0 100%}
+			input{width:100%;box-sizing:border-box}label{display:block}
+			${seeded.sourceCss}${seeded.css}
+		</style><div class="source">${seeded.sourceHtml}</div><div class="projected ${seeded.className}"><form class="jetpack-contact-form__form">${seeded.fieldHtml}</form></div>` );
+		for ( const width of [ 1440, 390 ] ) {
+			await page.setViewportSize( { width, height: 900 } );
+			for ( const selector of [ '.source', '.projected' ] ) {
+				const boxes = await page.locator( `${selector} input` ).evaluateAll( nodes => nodes.slice( 0, 2 ).map( node => {
+					const r = node.getBoundingClientRect();
+					return { top:r.top, left:r.left, width:r.width };
+				} ) );
+				assert.equal( boxes.length, 2 );
+				if ( width === 1440 ) {
+					assert.equal( boxes[0].top, boxes[1].top, `${selector}: ${JSON.stringify(boxes)}` );
+					assert.ok( boxes[1].left > boxes[0].left + boxes[0].width );
+					if ( selector === '.projected' ) {
+						assert.equal( boxes[0].width, boxes[1].width, 'provider halves have equal widths' );
+						assert.ok( Math.abs( boxes[1].left - boxes[0].left - boxes[0].width - 9 ) <= 1, 'source 9px gutter survives' );
+					}
+				} else {
+					assert.ok( boxes[1].top > boxes[0].top, `${selector}: ${JSON.stringify(boxes)}` );
+					assert.equal( boxes[0].left, boxes[1].left );
+					assert.equal( boxes[0].width, 366, 'stacked inputs span the full content width' );
+					assert.equal( boxes[1].width, 366 );
+				}
+			}
+		}
+	} finally {
+		await browser.close();
+	}
+} );

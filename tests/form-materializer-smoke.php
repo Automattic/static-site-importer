@@ -1845,6 +1845,31 @@ namespace {
 		'media-only-full-width-field-group-wrapper-maps-as-block-flow',
 		wp_json_encode( array( 'validation' => $variant_width_validated, 'row' => $variant_width_row ) )
 	);
+	// #2216: a partial block-flow field group contains a second block row
+	// whose floated halves compensate the inter-column margin in their width.
+	$nested_name_html = file_get_contents( __DIR__ . '/fixtures/nested-name-row.html' );
+	$nested_name_seed = static function ( string $html ) use ( $artifact_compiler ): array {
+		$form = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $html ) ) )->toArray() )['fallbacks'][0] ?? array();
+		$validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $form ) ) );
+		return Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated['forms'] ?? array() ) )['forms'][0] ?? array();
+	};
+	$nested_name_row = $nested_name_seed( $nested_name_html );
+	$assert(
+		'mapped' === ( $nested_name_row['status'] ?? '' )
+			&& empty( $nested_name_row['form_receipt_unaccepted_losses'] )
+			&& 2 === preg_match_all( '#<!-- wp:jetpack/field-text \{[^}]*"width":50#', (string) ( $nested_name_row['block_markup'] ?? '' ) )
+			&& in_array( 'provider_compensated_percentage_halves', array_column( $nested_name_row['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ),
+		'nested-floated-name-row-maps-as-responsive-equal-width-fields',
+		wp_json_encode( $nested_name_row )
+	);
+	foreach ( array(
+		'offset' => str_replace( 'padding-bottom:18px;position:relative', 'padding-bottom:18px;position:relative;top:12px', $nested_name_html ),
+		'variant-offset' => str_replace( '@media(max-width:600px){', '@media(max-width:600px){.field-group{top:12px}', $nested_name_html ),
+		'mismatched-gutter' => str_replace( 'margin-left:9px', 'margin-left:30px', $nested_name_html ),
+	) as $case => $html ) {
+		$negative = $nested_name_seed( $html );
+		$assert( ! in_array( 'provider_compensated_percentage_halves', array_column( $negative['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ) || 'mapped' !== ( $negative['status'] ?? '' ), 'nested-name-row-' . $case . '-keeps-unsupported-layout', wp_json_encode( $negative ) );
+	}
 	// Equal inline-block columns with a uniform trailing gutter, widened by a
 	// matching `calc(100% + gutter)` row overhang, are an equal-width row: the
 	// provider paints them as half-width fields separated by that gutter. An

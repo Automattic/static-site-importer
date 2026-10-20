@@ -513,6 +513,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		self::project_row_bands( $s );
 		self::restore_semantic_wrappers( $s );
 		self::project_grid_placement( $s );
+		self::project_compensated_percentage_halves( $s );
 		self::project_gutter_compensated_rows( $s );
 		self::project_sibling_rows( $s );
 		self::project_grid_span_rows( $s );
@@ -1677,6 +1678,103 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		}
 	}
 
+	/**
+	 * A legacy name row subtracts its inter-column margin from the first half.
+	 * Float/clear are not exported by the producer; require the complete,
+	 * provenance-backed percentage budget and matching mobile stack instead.
+	 */
+	private static function project_compensated_percentage_halves( Static_Site_Importer_Form_Topology_State $s ): void {
+		foreach ( $s->children as $parent => $siblings ) {
+			if ( 2 !== count( $siblings ) || isset( $s->percentage_width_parents[ $parent ] ) ) {
+				continue;
+			}
+			$first     = $siblings[0]['id'];
+			$last      = $siblings[1]['id'];
+			$row_facts = self::non_block_flow_facts( $s->layout_by_node[ $parent ] ?? array() );
+			if ( array_diff( $row_facts, array_keys( Static_Site_Importer_Provider_Layout_Overlay::box_property_map() ) ) || ! empty( $s->variants_by_node[ $parent ] ) ) {
+				continue;
+			}
+			$a     = $s->layout_by_node[ $first ] ?? array();
+			$b     = $s->layout_by_node[ $last ] ?? array();
+			if ( 1 !== preg_match( '/^calc\(\s*50%\s*-\s*([0-9]+(?:\.[0-9]+)?(?:px|rem|em))\s*\)$/D', (string) ( $a['width'] ?? '' ), $match ) || '50%' !== ( $b['width'] ?? null ) || ! self::gutter_matches_overhang( (string) ( $b['margin_left'] ?? '' ), $match[1] ) ) {
+				continue;
+			}
+			$cells = array();
+			$query = null;
+			foreach ( $siblings as $offset => $node ) {
+				$id        = $node['id'];
+				$box       = $s->layout_nodes_by_id[ $id ] ?? array();
+				$controls  = ( $s->collect_controls )( $node );
+				$variants  = $s->variants_by_node[ $id ] ?? array();
+				$variant   = $variants[0] ?? array();
+				$patch     = self::layout_patch( $variant );
+				$condition = $variant['condition'] ?? array();
+				if ( 'wrapper' !== ( $node['kind'] ?? null )
+					|| 1 !== count( $controls ) || ! isset( $s->field_blocks[ $controls[0] ] )
+					|| 'core/button' === $s->field_blocks[ $controls[0] ]['name']
+					|| ! self::has_unconditional_proven_property( $box, 'width' )
+					|| ( 1 === $offset && ! self::has_unconditional_proven_property( $box, 'margin-left' ) )
+					|| 1 !== count( $variants ) || '100%' !== ( $patch['width'] ?? null )
+					|| 'media' !== ( $condition['kind'] ?? null )
+					|| ! self::is_max_width_media_query( (string) ( $condition['query'] ?? '' ) )
+					|| ! self::variant_proven( $variant, 'width' )
+					|| ( null !== $query && $query !== $condition['query'] )
+				) {
+					continue 2;
+				}
+				$allowed = Static_Site_Importer_Provider_Layout_Overlay::box_property_map() + array_flip( array( 'width' ) );
+				if ( array_diff_key( $s->layout_by_node[ $id ] ?? array(), $allowed ) || array_diff_key( $patch, $allowed ) || ( 1 === $offset && ! self::is_initial_box_value( 'margin_left', (string) ( $patch['margin_left'] ?? '0' ) ) ) ) {
+					continue 2;
+				}
+				$query = $condition['query'];
+				$cells[] = array( 'id' => $id, 'control' => $controls[0] );
+			}
+			// The authored margin supplies the gutter; a provider/theme column
+			// gap on top of it would force the second half onto another line.
+			$s->overlay_node_targets[] = array( 'id' => 'form', 'layout' => array( 'column_gap' => '0' ) );
+			$track = self::equal_fraction_track_size( 2, $match[1] );
+			foreach ( $cells as $offset => $cell ) {
+				$s->field_blocks[ $cell['control'] ]['attrs']['width'] = 50;
+				$s->overlay_node_targets[] = array(
+					'id'     => 'field-' . $cell['control'],
+					'layout' => array(
+						'width'        => $track,
+						'flex_basis'   => $track,
+						'flex_grow'    => '0',
+						'flex_shrink'  => '0',
+						'margin_right' => 0 === $offset ? $match[1] : '0',
+					),
+				);
+				$s->responsive_variant_targets[] = array(
+					'node'         => 'field-' . $cell['control'],
+					'condition'    => array( 'kind' => 'media', 'query' => $query ),
+					'layout_patch' => array(
+						'flex'         => '1 1 100%',
+						'width'        => '100%',
+						'max_width'    => '100%',
+						'margin_right' => '0',
+					),
+				);
+				// Give the restored inner cell its own target, distinct from the
+				// provider shell whose width now expresses the row relationship.
+				$inner_hook = self::layout_node_class( self::layout_scope( $s->form ), $cell['id'] . '-inner' );
+				$depth      = (int) $s->topology_nodes_by_id[ $cell['id'] ]['depth'];
+				$s->field_blocks[ $cell['control'] ]['attrs']['className'] .= ' ssi-source-wrapper-' . $depth . '--' . $inner_hook;
+				$s->wrapper_hooks[ $cell['id'] ] = $inner_hook;
+				$s->provider_layout_targets[ $cell['id'] ] = $inner_hook;
+				// The source cell is rebuilt inside the provider shell. Its old
+				// percentage width and float margin must not size the control again.
+				$s->overlay_node_targets[] = array( 'id' => $cell['id'], 'layout' => array( 'width' => '100%', 'margin_left' => '0' ) );
+			}
+			$s->percentage_width_parents[ $parent ] = true;
+			$s->operations[] = array(
+				'dimension'   => 'layout',
+				'strategy'    => 'provider_compensated_percentage_halves',
+				'target_hash' => hash( 'sha256', $parent ),
+			);
+		}
+	}
+
 	/** The `G` of a `width: calc(100% + G)` row overhang, or null. */
 	private static function gutter_overhang( array $layout ): ?string {
 		$width = is_string( $layout['width'] ?? null ) ? trim( $layout['width'] ) : '';
@@ -2600,7 +2698,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			$parent_layout = $s->layout_by_node[ $parent_id ] ?? array();
 			$facts         = self::non_block_flow_facts( $layout, $parent_layout );
 			foreach ( $s->variants_by_node[ $node_id ] ?? array() as $variant ) {
-				$facts = array_merge( $facts, self::non_block_flow_facts( self::layout_patch( $variant ), $parent_layout ) );
+				$facts = array_merge( $facts, self::non_block_flow_facts( array_replace( $layout, self::layout_patch( $variant ) ), $parent_layout ) );
 			}
 			if ( array() === $facts ) {
 				continue;
@@ -2646,6 +2744,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		}
 		if ( isset( $facts['width'] ) && ! isset( $facts['display'] ) && is_string( $facts['width'] ) && '100%' === strtolower( trim( $facts['width'] ) ) && ! self::declares_horizontal_box( $facts ) ) {
 			unset( $facts['width'] );
+		}
+		// Relative positioning without offsets does not move a block out of flow.
+		if ( 'relative' === ( $facts['position'] ?? null ) && ! array_intersect( array_keys( $facts ), array( 'top', 'right', 'bottom', 'left', 'z_index' ) ) ) {
+			unset( $facts['position'] );
 		}
 		return array_keys( $facts );
 	}
