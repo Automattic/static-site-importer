@@ -571,7 +571,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		$state['page_ids']   = array();
 		$state['source_ids'] = array();
 		self::mark_taxonomy_archive_pages( $state );
-		self::plan_alias_hierarchy_parents( $state );
+		self::plan_synthetic_hierarchy_parents( $state );
 		foreach ( $state['resolved']['pages'] as &$page ) {
 			if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC !== ( $state['args']['theme_materialization'] ?? null ) && ( ! isset( $page['resolved_block_markup'] ) || ! is_string( $page['resolved_block_markup'] ) || '' === trim( $page['resolved_block_markup'] ) ) ) {
 				// ssi-error-class: representability:page
@@ -893,30 +893,38 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		unset( $report );
 	}
 
-	/** Resolve native hierarchy status from existing typed route and alias intent. */
-	private static function plan_alias_hierarchy_parents( array &$state ): void {
-		$rules = $state['args']['source_route_aliases'] ?? array();
-		if ( empty( $rules ) ) {
-			return;
-		}
-		require_once __DIR__ . '/class-static-site-importer-redirects-manifest.php';
-		require_once __DIR__ . '/class-static-site-importer-redirection-materializer.php';
-		$aliases = Static_Site_Importer_Redirects_Manifest::aliases_for_source_paths( $rules, array_column( $state['resolved']['pages'], 'source_path' ) );
-		$targets = array();
-		foreach ( $aliases as $source => $paths ) {
-			foreach ( $paths as $path ) {
-				$targets[ '/' . ltrim( $path, '/' ) ] = $source;
-			}
-		}
+	/** Resolve native hierarchy status for synthetic parents from typed route and alias intent. */
+	private static function plan_synthetic_hierarchy_parents( array &$state ): void {
 		$synthetic = array();
 		foreach ( $state['plan']['routes'] ?? array() as $route ) {
 			if ( 'synthetic_parent' === ( $route['source_relation'] ?? '' ) ) {
 				$synthetic[ $route['source_path'] ] = true;
 			}
 		}
+		if ( array() === $synthetic ) {
+			return;
+		}
+		$rules   = $state['args']['source_route_aliases'] ?? array();
+		$targets = array();
+		if ( ! empty( $rules ) ) {
+			require_once __DIR__ . '/class-static-site-importer-redirects-manifest.php';
+			require_once __DIR__ . '/class-static-site-importer-redirection-materializer.php';
+			$aliases = Static_Site_Importer_Redirects_Manifest::aliases_for_source_paths( $rules, array_column( $state['resolved']['pages'], 'source_path' ) );
+			foreach ( $aliases as $source => $paths ) {
+				foreach ( $paths as $path ) {
+					$targets[ '/' . ltrim( $path, '/' ) ] = $source;
+				}
+			}
+		}
 		foreach ( $state['resolved']['pages'] as &$page ) {
 			$path = (string) ( $page['route']['path'] ?? '' );
-			if ( empty( $page['synthetic'] ) || ! isset( $synthetic[ $page['source_path'] ], $targets[ $path ] ) || $targets[ $path ] === $page['source_path'] ) {
+			if ( empty( $page['synthetic'] ) || ! isset( $synthetic[ $page['source_path'] ] ) ) {
+				continue;
+			}
+			if ( ! isset( $targets[ $path ] ) || $targets[ $path ] === $page['source_path'] ) {
+				// No source document backs this parent: the source serves nothing at
+				// its URL, so it stays an editable draft unless the owner took it over.
+				$page['materialized_post_status'] = self::synthetic_parent_status( $page, $path );
 				continue;
 			}
 			$occupied = Static_Site_Importer_Redirection_Materializer::published_route_owner( $path );
@@ -931,6 +939,26 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			$page['alias_target_source_path'] = $targets[ $path ];
 		}
 		unset( $page );
+	}
+
+	/** Draft, unless the owner has since published or edited the parent, or owns its route. */
+	private static function synthetic_parent_status( array $page, string $path ): string {
+		$owned = Static_Site_Importer_Site_Plan_Persistence::reconciled_post( (string) $page['reconciliation_identity'] );
+		if ( ! $owned ) {
+			$conflict = '' === trim( $path, '/' ) ? null : get_page_by_path( trim( $path, '/' ), OBJECT, 'page' );
+			return $conflict && 'trash' !== $conflict->post_status ? (string) $conflict->post_status : 'draft';
+		}
+		if ( 'draft' === $owned->post_status ) {
+			return 'draft';
+		}
+		$provenance = json_decode( (string) get_post_meta( $owned->ID, '_static_site_importer_provenance', true ), true );
+		$provenance = is_array( $provenance ) ? $provenance : array();
+		if ( isset( $provenance['synthetic_parent_status'] ) ) {
+			// The importer recorded its own status, so any other one is the owner's.
+			return (string) $owned->post_status;
+		}
+		// An earlier import published it; keep that only once the owner edited it.
+		return hash( 'sha256', (string) get_post_field( 'post_content', $owned->ID ) ) === ( $provenance['content_hash'] ?? null ) ? 'draft' : (string) $owned->post_status;
 	}
 
 	/** Byte offset of the nth occurrence of a search string, or null when it has fewer. */
