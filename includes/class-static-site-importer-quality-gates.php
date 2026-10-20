@@ -762,8 +762,8 @@ final class Static_Site_Importer_Quality_Gates {
 				}
 			}
 			$resolved_by_provider = array() !== $receipt;
-			$identity              = $resolved_by_provider ? (string) ( $receipt['fallback_reconciliation_identity'] ?? '' ) : '';
-			$fallback_hash         = $resolved_by_provider ? (string) ( $receipt['fallback_hash'] ?? '' ) : '';
+			$identity             = $resolved_by_provider ? (string) ( $receipt['fallback_reconciliation_identity'] ?? '' ) : '';
+			$fallback_hash        = $resolved_by_provider ? (string) ( $receipt['fallback_hash'] ?? '' ) : '';
 
 			$diagnostic['fallback_reconciliation_identity'] = $identity;
 			$diagnostic['fallback_hash']                    = $fallback_hash;

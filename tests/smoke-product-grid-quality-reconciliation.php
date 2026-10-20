@@ -43,13 +43,13 @@ $assert     = static function ( bool $condition, string $label, string $detail =
 	}
 };
 
-$grid_selector       = 'ul.products';
-$grid_source_path    = 'shop.html';
-$replacement_markup  = '<!-- wp:woocommerce/product-collection --><div class="wp-block-woocommerce-product-collection">loop</div><!-- /wp:woocommerce/product-collection -->';
-$persisted_content   = '<!-- wp:heading --><h2>Shop</h2><!-- /wp:heading -->' . $replacement_markup;
-$page_hash           = hash( 'sha256', $persisted_content );
-$materialized_hash   = hash( 'sha256', $replacement_markup );
-$binding_identity    = hash( 'sha256', 'commerce-product-grid-binding' );
+$grid_selector      = 'ul.products';
+$grid_source_path   = 'shop.html';
+$replacement_markup = '<!-- wp:woocommerce/product-collection --><div class="wp-block-woocommerce-product-collection">loop</div><!-- /wp:woocommerce/product-collection -->';
+$persisted_content  = '<!-- wp:heading --><h2>Shop</h2><!-- /wp:heading -->' . $replacement_markup;
+$page_hash          = hash( 'sha256', $persisted_content );
+$materialized_hash  = hash( 'sha256', $replacement_markup );
+$binding_identity   = hash( 'sha256', 'commerce-product-grid-binding' );
 // The page-and-selector identity derivation is part of this contract. On the
 // pre-fix codebase the derivation does not exist yet, so the receipt carries no
 // joining identity and every reconciliation assertion below fails.
@@ -59,7 +59,7 @@ list( $grid_identity, $grid_fallback_hash ) = method_exists( 'Static_Site_Import
 
 // A grid finding exactly as Blocks Engine now emits it: page and selector
 // evidence, no readable_blocks region at all.
-$grid_finding = array(
+$grid_finding             = array(
 	'type'               => 'unsupported_html_fallback',
 	'code'               => 'html_product_grid_fallback',
 	'diagnostic_code'    => 'html_product_grid_fallback',
@@ -72,7 +72,7 @@ $grid_finding = array(
 		array( 'name' => 'Signed CD', 'slug' => 'signed-cd', 'regular_price' => '15.00' ),
 	),
 );
-$bound_controls_finding = array(
+$bound_controls_finding   = array(
 	'type'            => 'unsupported_html_fallback',
 	'code'            => 'html_commerce_controls_fallback',
 	'diagnostic_code' => 'html_commerce_controls_fallback',
@@ -95,7 +95,7 @@ $outside_controls_finding = array(
 		array( 'source_selector' => 'form.newsletter > button', 'has_cart_control' => true ),
 	),
 );
-$unbound_grid_finding = array(
+$unbound_grid_finding     = array(
 	'type'               => 'unsupported_html_fallback',
 	'code'               => 'html_product_grid_fallback',
 	'diagnostic_code'    => 'html_product_grid_fallback',
@@ -157,10 +157,10 @@ $assert( 2 === ( $report['quality']['fallback_count'] ?? -1 ), 'grid-quality-fal
 
 // Diagnostics order: grid, controls, controls, grid — the grid loop resolves
 // before the controls loop, so the rows follow that order.
-$bound_grid_row          = $resolutions[0] ?? array();
-$unbound_grid_row        = $resolutions[1] ?? array();
-$bound_controls_row      = $resolutions[2] ?? array();
-$outside_controls_row    = $resolutions[3] ?? array();
+$bound_grid_row       = $resolutions[0] ?? array();
+$unbound_grid_row     = $resolutions[1] ?? array();
+$bound_controls_row   = $resolutions[2] ?? array();
+$outside_controls_row = $resolutions[3] ?? array();
 $assert( 'resolved_by_provider' === ( $bound_grid_row['state'] ?? '' ) && 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $bound_grid_row['fallback_reconciliation_identity'] ?? '' ) ) && 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $bound_grid_row['fallback_hash'] ?? '' ) ), 'grid-quality-resolves-the-selector-scoped-grid-finding', (string) wp_json_encode( $bound_grid_row ) );
 $assert( 'static-site-importer/quality-resolution-receipt/v1' === ( $bound_grid_row['receipt']['schema'] ?? '' ) && 'completed' === ( $bound_grid_row['receipt']['status'] ?? '' ) && $grid_selector === ( $bound_grid_row['receipt']['selector'] ?? '' ) && 'woocommerce' === ( $bound_grid_row['receipt']['provider'] ?? '' ) && ( $bound_grid_row['receipt']['fallback_hash'] ?? '' ) === ( $bound_grid_row['fallback_hash'] ?? '' ), 'grid-quality-resolution-carries-the-completed-grid-receipt', (string) wp_json_encode( $bound_grid_row['receipt'] ?? null ) );
 $assert( 'unresolved' === ( $unbound_grid_row['state'] ?? '' ) && array() === ( $unbound_grid_row['receipt'] ?? array( 'unexpected' ) ) && 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $unbound_grid_row['fallback_reconciliation_identity'] ?? '' ) ), 'grid-quality-leaves-a-grid-without-a-binding-unresolved', (string) wp_json_encode( $unbound_grid_row ) );
@@ -227,8 +227,8 @@ $assert( 2 === ( $tampered_report['quality_resolutions']['unresolved_fallback_co
 // region, so the grid's own binding is dropped and the listing's receipt is the
 // one that must answer for the grid and the cart controls it superseded. The
 // record is built by the registry exactly as materialization builds it.
-$record_method = new ReflectionMethod( Static_Site_Importer_Entity_Materializer_Registry::class, 'block_binding_record' );
-$listing_entity = array(
+$record_method   = new ReflectionMethod( Static_Site_Importer_Entity_Materializer_Registry::class, 'block_binding_record' );
+$listing_entity  = array(
 	'source_path'   => $grid_source_path,
 	'selector'      => 'section.shop',
 	'grid_selector' => $grid_selector,
@@ -243,7 +243,7 @@ $listing_binding = array(
 	'role'                         => 'commerce_listing',
 	'superseded_runtime_selectors' => array(),
 );
-$listing_record = $record_method->invoke( null, 'listings-declaration', $listing_binding, $replacement_markup, $listing_entity, array( 'provider' => 'woocommerce' ) );
+$listing_record  = $record_method->invoke( null, 'listings-declaration', $listing_binding, $replacement_markup, $listing_entity, array( 'provider' => 'woocommerce' ) );
 $assert( $grid_selector === ( $listing_record['selector'] ?? '' ) && $grid_identity === ( $listing_record['fallback_reconciliation_identity'] ?? '' ) && $materialized_hash === ( $listing_record['materialized_block_hash'] ?? '' ), 'listing-record-answers-for-its-adopted-grid', (string) wp_json_encode( $listing_record ) );
 $listing_report = Static_Site_Importer_Import_Report::from_array(
 	array(

@@ -1185,8 +1185,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		// the finding no longer derives (Automattic/blocks-engine#3088). A store
 		// listing that adopted a grid replaces that grid inside its own region (see
 		// with_adopted_product_regions()), so its receipt answers for the grid.
-		$grid_entity                        = 'commerce_product_grid' === $binding['role'] ? $entity : ( 'commerce_listing' === $binding['role'] && is_array( $entity['grid'] ?? null ) ? $entity['grid'] : array() );
-		$grid_selector                      = is_string( $grid_entity['selector'] ?? null ) ? trim( (string) $grid_entity['selector'] ) : '';
+		$grid_entity                       = 'commerce_product_grid' === $binding['role'] ? $entity : ( 'commerce_listing' === $binding['role'] && is_array( $entity['grid'] ?? null ) ? $entity['grid'] : array() );
+		$grid_selector                     = is_string( $grid_entity['selector'] ?? null ) ? trim( (string) $grid_entity['selector'] ) : '';
 		list( $grid_identity, $grid_hash ) = '' === $grid_selector ? array( '', '' ) : self::product_grid_fallback_identity( (string) $binding['source_path'], $grid_selector );
 		return array(
 			'schema'                           => 'static-site-importer/runtime-entity-binding/v1',
