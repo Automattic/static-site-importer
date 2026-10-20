@@ -1182,8 +1182,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		// A canonical product-grid binding records the grid's own source selector so
 		// quality reconciliation can join the detected grid finding to this receipt
 		// by the one evidence both sides carry, instead of a preserved-region hash
-		// the finding no longer derives (Automattic/blocks-engine#3088).
-		$grid_selector = 'commerce_product_grid' === $binding['role'] && is_string( $entity['selector'] ?? null ) ? trim( (string) $entity['selector'] ) : '';
+		// the finding no longer derives (Automattic/blocks-engine#3088). A store
+		// listing that adopted a grid replaces that grid inside its own region (see
+		// with_adopted_product_regions()), so its receipt answers for the grid.
+		$grid_entity                        = 'commerce_product_grid' === $binding['role'] ? $entity : ( 'commerce_listing' === $binding['role'] && is_array( $entity['grid'] ?? null ) ? $entity['grid'] : array() );
+		$grid_selector                      = is_string( $grid_entity['selector'] ?? null ) ? trim( (string) $grid_entity['selector'] ) : '';
 		list( $grid_identity, $grid_hash ) = '' === $grid_selector ? array( '', '' ) : self::product_grid_fallback_identity( (string) $binding['source_path'], $grid_selector );
 		return array(
 			'schema'                           => 'static-site-importer/runtime-entity-binding/v1',
@@ -1195,9 +1198,9 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'declaration_id'                   => $declaration_id,
 			'selector'                         => $grid_selector,
 			'reconciliation_identity'          => hash( 'sha256', "static-site-importer/runtime-entity-binding/v1\n{$declaration_id}\n{$binding['source_path']}\n{$binding['occurrence']}\n" . hash( 'sha256', $binding['search_block_markup'] ) ),
-			'fallback_reconciliation_identity' => 'form' === $binding['role'] ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $entity ) : ( 'commerce_product_grid' === $binding['role'] ? $grid_identity : ( $is_grid ? self::product_grid_fallback_reconciliation_identity( $binding ) : '' ) ),
-			'fallback_hash'                    => 'form' === $binding['role'] ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $entity ) : ( 'commerce_product_grid' === $binding['role'] ? $grid_hash : ( $is_grid ? hash( 'sha256', $binding['search_block_markup'] ) : '' ) ),
-			'materialized_block_hash'          => 'form' === $binding['role'] || $is_grid ? hash( 'sha256', $replacement ) : '',
+			'fallback_reconciliation_identity' => 'form' === $binding['role'] ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $entity ) : ( '' !== $grid_selector ? $grid_identity : ( $is_grid ? self::product_grid_fallback_reconciliation_identity( $binding ) : '' ) ),
+			'fallback_hash'                    => 'form' === $binding['role'] ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $entity ) : ( '' !== $grid_selector ? $grid_hash : ( $is_grid ? hash( 'sha256', $binding['search_block_markup'] ) : '' ) ),
+			'materialized_block_hash'          => 'form' === $binding['role'] || $is_grid || '' !== $grid_selector ? hash( 'sha256', $replacement ) : '',
 			'provider'                         => $adapter['provider'] ?? '',
 			'superseded_runtime_selectors'     => $binding['superseded_runtime_selectors'] ?? array(),
 			'replaced_fallback_identities'     => 'form' === $binding['role'] ? self::replaced_fallback_identities( $entity ) : array(),

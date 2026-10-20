@@ -223,6 +223,60 @@ $tampered_report = Static_Site_Importer_Import_Report::from_array(
 Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $tampered_report );
 $assert( 2 === ( $tampered_report['quality_resolutions']['unresolved_fallback_count'] ?? -1 ) && 0 === ( $tampered_report['quality_resolutions']['resolved_by_provider'] ?? -1 ), 'grid-quality-rejects-a-grid-receipt-whose-page-digest-was-tampered', (string) wp_json_encode( $tampered_report['quality_resolutions'] ?? null ) );
 
+// A store listing that adopted the grid replaces the grid inside its own
+// region, so the grid's own binding is dropped and the listing's receipt is the
+// one that must answer for the grid and the cart controls it superseded. The
+// record is built by the registry exactly as materialization builds it.
+$record_method = new ReflectionMethod( Static_Site_Importer_Entity_Materializer_Registry::class, 'block_binding_record' );
+$listing_entity = array(
+	'source_path'   => $grid_source_path,
+	'selector'      => 'section.shop',
+	'grid_selector' => $grid_selector,
+	'controls'      => array( array( 'id' => 'sort', 'kind' => 'sort' ) ),
+	'grid'          => array( 'source_path' => $grid_source_path, 'selector' => $grid_selector ),
+);
+$listing_binding = array(
+	'schema'                       => 'generic/block-binding/v1',
+	'source_path'                  => $grid_source_path,
+	'search_block_markup'          => '<!-- wp:html --><section class="shop">listing</section><!-- /wp:html -->',
+	'occurrence'                   => 1,
+	'role'                         => 'commerce_listing',
+	'superseded_runtime_selectors' => array(),
+);
+$listing_record = $record_method->invoke( null, 'listings-declaration', $listing_binding, $replacement_markup, $listing_entity, array( 'provider' => 'woocommerce' ) );
+$assert( $grid_selector === ( $listing_record['selector'] ?? '' ) && $grid_identity === ( $listing_record['fallback_reconciliation_identity'] ?? '' ) && $materialized_hash === ( $listing_record['materialized_block_hash'] ?? '' ), 'listing-record-answers-for-its-adopted-grid', (string) wp_json_encode( $listing_record ) );
+$listing_report = Static_Site_Importer_Import_Report::from_array(
+	array(
+		'quality'                 => array( 'fallback_count' => 2 ),
+		'diagnostics'             => array( $grid_finding, $bound_controls_finding ),
+		'materialization_receipt' => array(
+			'completed' => array(
+				'materialized_pages'   => array(
+					$grid_source_path => array( 'content_hash' => $page_hash ),
+				),
+				'runtime_declarations' => array(
+					'entity_bindings' => array(
+						array_merge(
+							$listing_record,
+							array(
+								'status'                    => 'completed',
+								'persisted_fragment_hash'   => $materialized_hash,
+								'materialized_content_hash' => $page_hash,
+							)
+						),
+					),
+				),
+			),
+		),
+	)
+);
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $listing_report );
+$assert( 2 === ( $listing_report['quality_resolutions']['resolved_by_provider'] ?? -1 ) && 0 === ( $listing_report['quality_resolutions']['unresolved_fallback_count'] ?? -1 ), 'listing-receipt-resolves-its-adopted-grid-and-the-grid-controls', (string) wp_json_encode( $listing_report['quality_resolutions'] ?? null ) );
+
+// A listing that adopted no grid answers for no grid finding.
+$gridless_record = $record_method->invoke( null, 'listings-declaration', $listing_binding, $replacement_markup, array_diff_key( $listing_entity, array( 'grid' => true ) ), array( 'provider' => 'woocommerce' ) );
+$assert( '' === ( $gridless_record['selector'] ?? 'unexpected' ) && '' === ( $gridless_record['fallback_reconciliation_identity'] ?? 'unexpected' ), 'listing-without-an-adopted-grid-answers-for-no-grid', (string) wp_json_encode( $gridless_record ) );
+
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
 	exit( 1 );
