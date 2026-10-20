@@ -1476,14 +1476,14 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$bindings = is_array( $row ) && is_array( $row['bindings'] ?? null ) && array_is_list( $row['bindings'] ) ? array_map( static fn( mixed $binding ): ?array => self::normalize_block_binding( $binding ), $row['bindings'] ) : array();
 			$slots    = is_array( $template['slots'] ?? null ) && array_is_list( $template['slots'] ) ? $template['slots'] : array();
 			$items    = is_array( $row ) && is_array( $row['items'] ?? null ) && array_is_list( $row['items'] ) ? $row['items'] : array();
-			$valid    = 1 === count( $bindings ) && ! empty( $bindings[0] ) && 'commerce_product_grid' === $bindings[0]['role'] && ! empty( $bindings[0]['superseded_runtime_selectors'] )
+			$valid    = 1 === count( $bindings ) && ! empty( $bindings[0] ) && 'commerce_product_grid' === $bindings[0]['role']
 				&& 'generic/collection-item-template/v1' === ( $template['schema'] ?? null ) && is_string( $template['block_markup'] ?? null ) && '' !== trim( $template['block_markup'] )
 				&& array() !== $slots && array() === array_filter( $slots, static fn( mixed $slot ): bool => ! is_array( $slot ) || ! is_string( $slot['id'] ?? null ) || ! is_string( $slot['role'] ?? null ) || ! is_array( $slot['path'] ?? null ) || ! array_is_list( $slot['path'] ) || array() !== array_filter( $slot['path'], static fn( mixed $step ): bool => ! is_int( $step ) || $step < 0 ) )
 				&& array() !== $items && array() === array_filter( $items, static fn( mixed $item ): bool => ! is_array( $item ) || ! is_string( $item['product'] ?? null ) || '' === trim( $item['product'] ) || ( isset( $item['slots'] ) && ! is_array( $item['slots'] ) ) );
 			if ( ! is_array( $row ) || '' === trim( (string) ( $row['source_path'] ?? '' ) ) || '' === trim( (string) ( $row['selector'] ?? '' ) ) || ! $valid ) {
 				$errors[] = array(
 					'path'    => $path,
-					'message' => 'product grid must carry source_path, selector, products, a generic/collection-item-template/v1 item template and one canonical commerce_product_grid anchor with superseded runtime selectors.',
+					'message' => 'product grid must carry source_path, selector, products, a generic/collection-item-template/v1 item template and one canonical commerce_product_grid anchor.',
 				);
 				continue;
 			}
@@ -1721,6 +1721,28 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					}
 				}
 			}
+			// A producer's single shopper-facing `category` joins `categories`.
+			if ( isset( $product['category'] ) ) {
+				if ( ! is_string( $product['category'] ) || '' === trim( $product['category'] ) ) {
+					$errors[] = array(
+						'path'    => $path_prefix . '.category',
+						'message' => 'category must be a non-empty string when provided.',
+					);
+				} else {
+					$product['categories'] = array_values( array_unique( array_merge( is_array( $product['categories'] ?? null ) ? $product['categories'] : array(), array( trim( $product['category'] ) ) ) ) );
+				}
+			}
+			if ( isset( $product['attributes'] ) ) {
+				$attributes = self::manifest_product_attributes( $product['attributes'] );
+				if ( null === $attributes ) {
+					$errors[] = array(
+						'path'    => $path_prefix . '.attributes',
+						'message' => 'attributes must be a list of { key, label, value, value_label } objects with non-empty key, label, and value strings when provided.',
+					);
+				} else {
+					$product['attributes'] = $attributes;
+				}
+			}
 			if ( isset( $product['stock_quantity'] ) && ! is_int( $product['stock_quantity'] ) ) {
 				$errors[] = array(
 					'path'    => $path_prefix . '.stock_quantity',
@@ -1733,7 +1755,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'slug'          => $slug,
 				'regular_price' => $regular_price,
 			);
-			foreach ( array( 'sale_price', 'description', 'short_description', 'categories', 'status', 'stock_status', 'stock_quantity', 'source_selectors' ) as $field ) {
+			foreach ( array( 'sale_price', 'description', 'short_description', 'categories', 'attributes', 'status', 'stock_status', 'stock_quantity', 'source_selectors' ) as $field ) {
 				if ( array_key_exists( $field, $product ) ) {
 					$summary[ $field ] = $product[ $field ];
 				}
@@ -2230,6 +2252,41 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		}
 
 		return $normalized;
+	}
+
+	/**
+	 * Normalize a product's attribute values: each names the attribute
+	 * (`key`, `label`) and the product's value of it (`value`, and the
+	 * shopper-facing `value_label`).
+	 *
+	 * @param mixed $value Candidate attribute list.
+	 * @return array<int,array{key:string,label:string,value:string,value_label:string}>|null Null when malformed.
+	 */
+	private static function manifest_product_attributes( mixed $value ): ?array {
+		if ( ! is_array( $value ) || ! array_is_list( $value ) ) {
+			return null;
+		}
+		$attributes = array();
+		foreach ( $value as $attribute ) {
+			if ( ! is_array( $attribute ) ) {
+				return null;
+			}
+			$text = array();
+			foreach ( array( 'key', 'label', 'value', 'value_label' ) as $field ) {
+				$candidate = $attribute[ $field ] ?? '';
+				if ( ! is_string( $candidate ) || ( 'value_label' !== $field && '' === trim( $candidate ) ) ) {
+					return null;
+				}
+				$text[ $field ] = trim( $candidate );
+			}
+			$attributes[] = array(
+				'key'         => $text['key'],
+				'label'       => $text['label'],
+				'value'       => $text['value'],
+				'value_label' => '' === $text['value_label'] ? $text['value'] : $text['value_label'],
+			);
+		}
+		return $attributes;
 	}
 
 	/**

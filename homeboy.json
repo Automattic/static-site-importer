@@ -321,6 +321,7 @@
           "tests/smoke-website-artifact-import-input.php",
           "tests/smoke-whole-page-handoff.php",
           "tests/smoke-woo-product-seeder-rollback.php",
+          "tests/smoke-woo-product-attributes.php",
           "tests/smoke-woo-store-visibility.php",
           "tests/smoke-woo-cart-binding.php",
           "tests/smoke-wordpress-site-plan-materializer.php"

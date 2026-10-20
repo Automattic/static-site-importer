@@ -159,6 +159,7 @@
     "includes/class-static-site-importer-whole-page-handoff.php#throw new InvalidArgumentException('Whole-page source documents must be unambiguous.')": { "class": "integrity", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-woo-product-seeder.php#throw new RuntimeException($assigned->get_error_message())": { "class": "propagated", "owning_layer": "static-site-importer" },
     "includes/class-static-site-importer-woo-product-seeder.php#throw new RuntimeException($category_ids->get_error_message())": { "class": "propagated", "owning_layer": "static-site-importer" },
+    "includes/class-static-site-importer-woo-product-seeder.php#throw new RuntimeException(esc_html($term->get_error_message()))": { "class": "propagated", "owning_layer": "static-site-importer" },
     "includes/cli.php#new WP_Error($read_source?'static_site_importer_cli_request_bundle_file_too_large':'static_site_importer_cli_request_bundle_media_file_too_large')": { "class": "operational", "owning_layer": "static-site-importer" },
     "includes/cli.php#throw new RuntimeException('The request-bundle HTML payload is unavailable.')": { "class": "operational", "owning_layer": "static-site-importer" },
     "includes/cli.php#throw new RuntimeException('The request-bundle payload is unavailable.')": { "class": "operational", "owning_layer": "static-site-importer" },
