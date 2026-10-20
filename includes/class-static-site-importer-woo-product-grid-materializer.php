@@ -179,13 +179,40 @@ final class Static_Site_Importer_Woo_Product_Grid_Materializer {
 
 	/** The grid wrapper, retired from its script, around a product loop of the template card. */
 	public static function grid_block_markup( array $entity ): string {
-		$items    = self::product_ids( $entity );
+		$items = self::product_ids( $entity );
+		$card  = self::card_markup( $entity, $items );
+		$loop  = '' === $card ? null : self::single_block(
+			Static_Site_Importer_Woo_Product_Seeder::product_collection_block_markup(
+				array_keys( $items ),
+				max( 1, min( 6, count( $items ) ) ),
+				abs( crc32( (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' ) ) ) % 1000000,
+				$card,
+				self::LOOP_CLASS
+			)
+		);
+		return null === $loop ? '' : self::grid_around( $entity, $loop );
+	}
+
+	/**
+	 * The grid wrapper, retired from its script, around the template card
+	 * repeated by the product collection it sits in, such as a store
+	 * listing's archive collection.
+	 */
+	public static function inherited_grid_block_markup( array $entity ): string {
+		$card = self::card_markup( $entity, self::product_ids( $entity ) );
+		return '' === $card ? '' : self::grid_around( $entity, self::single_block( '<!-- wp:woocommerce/product-template -->' . $card . '<!-- /wp:woocommerce/product-template -->' ) );
+	}
+
+	/**
+	 * The template card with its slots filled, or '' when no seeded product
+	 * or slot path resolves.
+	 *
+	 * @param array<int,array<string,mixed>> $items Product id => slot values.
+	 */
+	private static function card_markup( array $entity, array $items ): string {
 		$template = is_array( $entity['item_template'] ?? null ) ? $entity['item_template'] : array();
-		$binding  = is_array( $entity['bindings'][0] ?? null ) ? $entity['bindings'][0] : array();
-		$hooks    = self::retirable_hooks( $binding['superseded_runtime_selectors'] ?? array() );
 		$card     = self::single_block( (string) ( $template['block_markup'] ?? '' ) );
-		$grid     = self::single_block( (string) ( $binding['search_block_markup'] ?? '' ) );
-		if ( empty( $items ) || null === $hooks || null === $card || null === $grid ) {
+		if ( empty( $items ) || null === $card ) {
 			return '';
 		}
 		unset( $card['attrs']['metadata']['name'] );
@@ -194,26 +221,22 @@ final class Static_Site_Importer_Woo_Product_Grid_Materializer {
 				return '';
 			}
 		}
-		$loop = self::single_block(
-			Static_Site_Importer_Woo_Product_Seeder::product_collection_block_markup(
-				array_keys( $items ),
-				max( 1, min( 6, count( $items ) ) ),
-				abs( crc32( (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' ) ) ) % 1000000,
-				serialize_block( $card ),
-				self::LOOP_CLASS
-			)
-		);
-		if ( null === $loop ) {
+		return serialize_block( $card );
+	}
+
+	/** The source grid element, minus its script hooks, around one inner block. */
+	private static function grid_around( array $entity, ?array $inner ): string {
+		$binding = is_array( $entity['bindings'][0] ?? null ) ? $entity['bindings'][0] : array();
+		$hooks   = self::retirable_hooks( $binding['superseded_runtime_selectors'] ?? array() );
+		$grid    = self::single_block( (string) ( $binding['search_block_markup'] ?? '' ) );
+		if ( null === $inner || null === $hooks || null === $grid || 1 === count( $grid['innerContent'] ) || ! is_string( $grid['innerContent'][0] ) ) {
 			return '';
 		}
-
 		$grid = self::without_hooks( $grid, $hooks );
 		$open = (string) ( $grid['innerContent'][0] ?? '' );
 		$tail = (string) ( $grid['innerContent'][ count( $grid['innerContent'] ) - 1 ] ?? '' );
-		if ( 1 === count( $grid['innerContent'] ) || ! is_string( $grid['innerContent'][0] ) ) {
-			return '';
-		}
-		$grid['innerBlocks']  = array( $loop );
+
+		$grid['innerBlocks']  = array( $inner );
 		$grid['innerContent'] = array( $open, null, $tail );
 		$grid['innerHTML']    = $open . $tail;
 		return serialize_block( $grid );

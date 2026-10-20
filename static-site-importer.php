@@ -145,6 +145,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-commerce-presentation.php',
 	'class-static-site-importer-product-grid-presentation.php',
 	'class-static-site-importer-woo-product-grid-materializer.php',
+	'class-static-site-importer-woo-product-listing-materializer.php',
 	'class-static-site-importer-direct-artifact-import.php',
 	'class-static-site-importer-compiler-limits.php',
 	'class-static-site-importer-quality-count-keys.php',
@@ -174,6 +175,7 @@ Static_Site_Importer_Layout_Marker_Filter::register();
 Static_Site_Importer_Route_Document_Metadata::register();
 Static_Site_Importer_Source_Route_Redirect::register();
 Static_Site_Importer_Woo_Product_Grid_Materializer::register();
+Static_Site_Importer_Woo_Product_Listing_Materializer::register();
 Static_Site_Importer_Route_Head_Metadata::register();
 
 require_once STATIC_SITE_IMPORTER_PATH . 'includes/abilities.php';

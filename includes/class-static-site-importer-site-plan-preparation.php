@@ -822,8 +822,10 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				return 0 !== $group ? $group : (int) ( $right['occurrence'] ?? 0 ) <=> (int) ( $left['occurrence'] ?? 0 );
 			}
 		);
-		$seen         = array();
-		$part_patches = array();
+		$seen          = array();
+		$part_patches  = array();
+		$page_patches  = array();
+		$archive_pages = array();
 		foreach ( $bindings as $binding ) {
 			$selectors = $binding['superseded_runtime_selectors'] ?? array();
 			if ( ! is_array( $binding ) || 'static-site-importer/runtime-entity-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! isset( $documents[ $binding['source_path'] ] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || ! is_string( $binding['replacement_block_markup'] ?? null ) || '' === trim( $binding['replacement_block_markup'] ) || ! is_string( $binding['reconciliation_identity'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/', $binding['reconciliation_identity'] ) || isset( $seen[ $binding['reconciliation_identity'] ] ) || ! is_array( $selectors ) ) {
@@ -848,12 +850,18 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				// ssi-error-class: representability:block
 				throw new InvalidArgumentException( 'runtime_entity_binding_cardinality_mismatch' );
 			}
+			$patch = array(
+				'offset'      => self::binding_occurrence_offset( $pristine, $binding['search_block_markup'], $binding['occurrence'] ),
+				'search'      => $binding['search_block_markup'],
+				'replacement' => $binding['replacement_block_markup'],
+			);
 			if ( 'template_parts' === $group ) {
-				$part_patches[ $binding['source_path'] ][] = array(
-					'offset'      => self::binding_occurrence_offset( $pristine, $binding['search_block_markup'], $binding['occurrence'] ),
-					'search'      => $binding['search_block_markup'],
-					'replacement' => $binding['replacement_block_markup'],
-				);
+				$part_patches[ $binding['source_path'] ][] = $patch;
+			} else {
+				$page_patches[ $binding['source_path'] ][] = $patch;
+			}
+			if ( 'pages' === $group && 'commerce_listing' === ( $binding['role'] ?? '' ) ) {
+				$archive_pages[ $binding['source_path'] ] = true;
 			}
 			$plan[ $group ][ $index ]['materialized_block_markup'] = substr( $content, 0, $position ) . $binding['replacement_block_markup'] . substr( $content, $position + strlen( $binding['search_block_markup'] ) );
 			$reports[ $binding['reconciliation_identity'] ]        = array(
@@ -873,6 +881,9 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		}
 		foreach ( $part_patches as $source_path => $patches ) {
 			self::apply_template_part_binding_patches( $plan, $documents[ $source_path ]['index'], $patches );
+		}
+		foreach ( array_keys( $archive_pages ) as $source_path ) {
+			self::write_product_archive_template( $plan, $documents[ $source_path ]['index'], $page_patches[ $source_path ] );
 		}
 		foreach ( $reports as &$report ) {
 			$document                            = $documents[ $report['source_path'] ];
@@ -961,8 +972,22 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			// ssi-error-class: representability:block
 			throw new InvalidArgumentException( 'runtime_entity_binding_template_part_write_missing' );
 		}
-		$resolved         = (string) ( $part['resolved_block_markup'] ?? '' );
-		$canonical        = (string) $plan['writes'][ $write ]['payload']['data'];
+		$canonical = self::splice_canonical_markup( (string) ( $part['resolved_block_markup'] ?? '' ), (string) $plan['writes'][ $write ]['payload']['data'], $patches );
+
+		$plan['writes'][ $write ]['payload']['data'] = $canonical;
+		$plan['writes'][ $write ]['payload_hash']    = hash( 'sha256', $canonical );
+	}
+
+	/**
+	 * Apply resolved-markup binding patches to the canonical serialization of
+	 * the same document. Asset tokens live inside attribute values, so both
+	 * serializations have the same blocks in the same order: each binding's
+	 * resolved block maps to the canonical block at the same index, and the
+	 * provider replacement is spliced there, last offset first.
+	 *
+	 * @param array<int,array{offset:int|null,search:string,replacement:string}> $patches Bindings applied to the document.
+	 */
+	private static function splice_canonical_markup( string $resolved, string $canonical, array $patches ): string {
 		$resolved_ranges  = WordPressSitePlan::blockRanges( $resolved );
 		$canonical_ranges = WordPressSitePlan::blockRanges( $canonical );
 		if ( count( $resolved_ranges ) !== count( $canonical_ranges ) ) {
@@ -988,8 +1013,64 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		foreach ( $splices as $splice ) {
 			$canonical = substr( $canonical, 0, $splice['offset'] ) . $splice['replacement'] . substr( $canonical, $splice['offset'] + $splice['length'] );
 		}
-		$plan['writes'][ $write ]['payload']['data'] = $canonical;
-		$plan['writes'][ $write ]['payload_hash']    = hash( 'sha256', $canonical );
+		return $canonical;
+	}
+
+	/**
+	 * Write the page that holds a store listing as the theme's product archive
+	 * template: the page template with the page's own blocks in place of its
+	 * content, so WooCommerce's shop archive renders the imported listing.
+	 * A theme without a page template has no archive design to derive.
+	 *
+	 * @param array<string,mixed>                                                $plan    Resolved plan.
+	 * @param int|string                                                         $index   Page index.
+	 * @param array<int,array{offset:int|null,search:string,replacement:string}> $patches Bindings applied to the page.
+	 */
+	private static function write_product_archive_template( array &$plan, int|string $index, array $patches ): void {
+		$page     = $plan['pages'][ $index ];
+		$template = null;
+		$existing = null;
+		foreach ( $plan['writes'] ?? array() as $write_index => $candidate ) {
+			$target = is_array( $candidate ) ? ( $candidate['target_path'] ?? null ) : null;
+			if ( 'templates/page.html' === $target && 'utf8' === ( $candidate['payload']['encoding'] ?? null ) && is_string( $candidate['payload']['data'] ?? null ) ) {
+				$template = $candidate['payload']['data'];
+			}
+			if ( Static_Site_Importer_Woo_Product_Listing_Materializer::ARCHIVE_TEMPLATE === $target ) {
+				$existing = $write_index;
+			}
+		}
+		if ( null === $template ) {
+			return;
+		}
+		// Theme files keep the canonical asset tokens; a page whose canonical
+		// serialization does not line up keeps its resolved markup.
+		try {
+			$content = self::splice_canonical_markup( (string) ( $page['resolved_block_markup'] ?? '' ), (string) ( $page['canonical_block_markup'] ?? '' ), $patches );
+		} catch ( InvalidArgumentException $mismatch ) {
+			unset( $mismatch );
+			$content = (string) ( $page['materialized_block_markup'] ?? '' );
+		}
+		$count  = 0;
+		$markup = (string) preg_replace_callback( '/<!-- wp:post-content(?:\s+\{.*?\})?\s*\/-->/s', static fn(): string => $content, $template, 1, $count );
+		if ( 1 !== $count || '' === $content ) {
+			return;
+		}
+		$write = array(
+			'kind'                    => 'theme_template',
+			'source_path'             => '',
+			'target_path'             => Static_Site_Importer_Woo_Product_Listing_Materializer::ARCHIVE_TEMPLATE,
+			'payload'                 => array(
+				'encoding' => 'utf8',
+				'data'     => $markup,
+			),
+			'payload_hash'            => hash( 'sha256', $markup ),
+			'reconciliation_identity' => hash( 'sha256', 'theme-template:' . Static_Site_Importer_Woo_Product_Listing_Materializer::ARCHIVE_TEMPLATE ),
+		);
+		if ( null === $existing ) {
+			$plan['writes'][] = $write;
+		} else {
+			$plan['writes'][ $existing ] = $write;
+		}
 	}
 
 	/**
