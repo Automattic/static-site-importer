@@ -21,8 +21,9 @@ sha256: 219a57a3b4bf6fd655e569c0b73d09af2025af3566d71b9420f3985f9e562064
 .ssi-form-d095fee786e4 div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
-sha256: 99fc10fc94bbb99b56a6a1c0f3d084c891c24170f98bb1a5f1c6959da19be72d
-/* Static Site Importer editor control chrome: 9cd53aebb290 */
+sha256: 96ff5fa9b64aa349a26b48fd128b3c9029f9e616dec3574d24b5002c7a8559b4
+/* Static Site Importer editor control chrome: 3a2e3736d71b */
+.editor-styles-wrapper .ssi-form-d095fee786e4{display:flex;flex-wrap:wrap;justify-content:flex-start;align-items:flex-start}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f{width:100%}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-source-field-list{margin-bottom:16px;padding:16px}
 .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624{font-family:revert;line-height:revert;border:1px solid #a1a1aa;padding:8px;width:100%}

@@ -115,6 +115,21 @@ namespace {
 			. '<form><div class="field-list"><fieldset class="name-row"><legend>Name</legend><div class="field"><label for="first">First name</label><input id="first" name="first"></div><div class="field"><label for="last">Last name</label><input id="last" name="last"></div></fieldset><div class="field"><label for="email">Email</label><input id="email" name="email" type="email"></div></div><button type="submit">Send</button></form>',
 		'native_form' => '<style>body{margin:0;font-family:Arial,sans-serif;font-size:16px;line-height:1.5}.page{display:grid;grid-template-columns:1fr 1fr;gap:24px}.form{grid-column:2;display:flex;flex-direction:column;gap:12px;padding:20px;background:#eee}label{display:block;margin-bottom:4px}input{width:100%;padding:8px;border:1px solid #999}.actions{padding-top:8px;display:flex}.actions button{padding:10px 18px;background:#333;color:#fff;border:0}</style>'
 			. '<main class="page"><div>Intro</div><form class="form"><div><label for="e">Email</label><input id="e" name="e" type="email"></div><div class="actions"><button type="submit">Send</button></div></form></main>',
+		'two_column'  => '<style>*,::before,::after{box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:16px;line-height:1.5}'
+			. '.space-y-5>:not([hidden])~:not([hidden]){margin-top:1.25rem}'
+			. '.grid{display:grid}.gap-5{gap:1.25rem}'
+			. '@media (min-width:640px){.sm\\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}'
+			. '.block{display:block}.mb-2{margin-bottom:.5rem}.text-sm{font-size:14px}'
+			. '.w-full{width:100%}.px-4{padding-left:16px;padding-right:16px}.py-3{padding-top:12px;padding-bottom:12px}.border{border:1px solid #d4d4d8}'
+			. '.btn{background-color:#18181b;color:#fff;padding:12px 24px;border:0}</style>'
+			. '<main><form class="space-y-5">'
+			. '<div class="grid sm:grid-cols-2 gap-5">'
+			. '<div><label for="first" class="block mb-2 text-sm">First name</label><input id="first" name="first" type="text" class="w-full px-4 py-3 border"></div>'
+			. '<div><label for="mail" class="block mb-2 text-sm">Email</label><input id="mail" name="mail" type="email" class="w-full px-4 py-3 border"></div>'
+			. '</div>'
+			. '<div><label for="msg" class="block mb-2 text-sm">Message</label><textarea id="msg" name="msg" rows="4" class="w-full px-4 py-3 border"></textarea></div>'
+			. '<button type="submit" class="btn">Send</button>'
+			. '</form></main>',
 		'country'     => '<style>body{font-family:Arial,sans-serif;font-size:16px;line-height:1.5}.sourcegroup{display:flex;align-items:center;gap:8px}.globe{width:24px}.chevron{width:16px}.ph{display:flex;align-items:center;border:1px solid #999;background:#fff}.ph button{position:relative;flex-shrink:0;padding:6px 10px;border:0;background:#fafafa}.ph input{flex:1;border:0;padding:8px}</style>'
 			. '<main><form><div class="ph"><button type="button" aria-haspopup="listbox" aria-label="Phone country selector"><span class="sourcegroup"><svg class="globe" width="24" height="24" viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/></svg><svg class="chevron" width="16" height="16" viewBox="0 0 16 16"><path d="M4 7l4 4 4-4"/></svg></span></button><input type="tel" name="phone"></div><button type="submit">Send</button></form></main>',
 	);
