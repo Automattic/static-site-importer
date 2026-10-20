@@ -669,9 +669,9 @@ if ( ! function_exists( 'static_site_importer_cli_request_bundle_files' ) ) {
 		if ( ! is_dir( $directory ) ) {
 			return new WP_Error( 'static_site_importer_cli_request_bundle_invalid', 'A files request-bundle reference must resolve to a directory.' );
 		}
-		$limits          = static_site_importer_cli_request_bundle_limits();
-		$reports         = static_site_importer_cli_request_bundle_declared_reports( $declared_reports );
-		$walk            = array( array( $directory, false ) );
+		$limits  = static_site_importer_cli_request_bundle_limits();
+		$reports = static_site_importer_cli_request_bundle_declared_reports( $declared_reports );
+		$walk    = array( array( $directory, false ) );
 		if ( '' !== $report_root && $report_root !== $directory ) {
 			$walk = array( array( $directory, true ) );
 			foreach ( array_keys( $reports ) as $report_path ) {
@@ -1167,6 +1167,7 @@ if ( ! function_exists( 'static_site_importer_cli_quality_failure_message' ) ) {
 			}
 			return null;
 		};
+
 		$reasons = array();
 		foreach ( $failed as $container ) {
 			foreach ( is_array( $container['failure_reasons'] ?? null ) ? $container['failure_reasons'] : array() as $reason ) {
