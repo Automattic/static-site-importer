@@ -770,8 +770,13 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						continue;
 					}
 					$entity_key = 'products' === $key ? (string) ( $entity['slug'] ?? '' ) : ( 'external_metrics' === $key ? (string) ( $entity['id'] ?? '' ) : self::form_entity_key( $entity ) );
-					if ( isset( $resolved_by_key[ $entity_key ]['bindings'] ) && is_array( $resolved_by_key[ $entity_key ]['bindings'] ) ) {
-						$prepared['manifest'][ $key ][ $index ]['bindings'] = $resolved_by_key[ $entity_key ]['bindings'];
+					// The resolver projects destination references into the markup a
+					// provider renders in place of page content: binding anchors, and
+					// a collection's item template card and per-item slot values.
+					foreach ( array( 'bindings', 'item_template', 'items' ) as $resolved_field ) {
+						if ( isset( $resolved_by_key[ $entity_key ][ $resolved_field ] ) && is_array( $resolved_by_key[ $entity_key ][ $resolved_field ] ) ) {
+							$prepared['manifest'][ $key ][ $index ][ $resolved_field ] = $resolved_by_key[ $entity_key ][ $resolved_field ];
+						}
 					}
 				}
 				continue;

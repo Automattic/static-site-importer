@@ -1844,6 +1844,48 @@ $assert( $token_anchor === ( $token_lifecycle['entities'][ $token_entity_declara
 $assert( true === $preflight_bindings->invoke( null, $resolved_binding_plan, $resolved_lifecycle, array() ), 'resolved provider binding anchors match the exact page markup consumed by materialization' );
 $assert( $token_lifecycle === $resolve_binding_manifests->invoke( null, $token_lifecycle, array( 'pages' => $resolved_binding_plan['pages'] ) ), 'plans without resolved runtime declarations retain canonical lifecycle behavior' );
 
+// A collection provider renders its item template card and per-item slot
+// values in place of page content, so those take the resolver's destination
+// URLs too. A canonical token left in them renders as a broken image.
+$grid_id         = str_repeat( 'f', 64 );
+$grid_card       = static fn( string $src ): string => '<!-- wp:image --><figure class="wp-block-image"><img src="' . $src . '"></figure><!-- /wp:image -->';
+$grid_entity     = static fn( string $src ): array => array(
+	'source_path'   => 'index.html',
+	'selector'      => '.grid',
+	'bindings'      => array(),
+	'item_template' => array( 'block_markup' => $grid_card( $src ) ),
+	'items'         => array( array( 'slots' => array( 'image' => array( 'markup' => $grid_card( $src ) ) ) ) ),
+);
+$grid_token      = '{{wordpress-site-plan:asset:card}}';
+$grid_url        = 'https://example.test/wp-content/themes/entity-plan/assets/card.png';
+$grid_lifecycle  = array(
+	'entities' => array(
+		$grid_id => array(
+			'adapter'  => array( 'entity_collection' => 'product_grids' ),
+			'manifest' => array( 'product_grids' => array( $grid_entity( $grid_token ) ) ),
+		),
+	),
+);
+$grid_resolved   = $resolve_binding_manifests->invoke(
+	null,
+	$grid_lifecycle,
+	array(
+		'runtime_declarations' => array(
+			array(
+				'kind'                    => 'entity_collection',
+				'type'                    => 'product_grids',
+				'reconciliation_identity' => $grid_id,
+				'payload'                 => array(
+					'schema'   => 'generic/product-grids/v1',
+					'entities' => array( $grid_entity( $grid_url ) ),
+				),
+			),
+		),
+	)
+);
+$grid_projected  = is_array( $grid_resolved ) ? ( $grid_resolved['entities'][ $grid_id ]['manifest']['product_grids'][0] ?? array() ) : array();
+$assert( $grid_card( $grid_url ) === ( $grid_projected['item_template']['block_markup'] ?? '' ) && $grid_card( $grid_url ) === ( $grid_projected['items'][0]['slots']['image']['markup'] ?? '' ), 'resolved collection item template and slot markup replace canonical asset tokens', (string) wp_json_encode( $grid_projected ) );
+
 $binding_preflight_cases = array(
 	'overlap' => array(
 		'code' => 'static_site_importer_runtime_binding_claim_conflict',
