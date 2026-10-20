@@ -67,11 +67,13 @@ class WP_Post {
 	public string $post_name;
 	public string $post_type;
 	public string $post_status;
+	public string $post_content;
 	public function __construct( int $id ) {
-		$this->ID          = $id;
-		$this->post_name   = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_name'] ?? '' );
-		$this->post_type   = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_type'] ?? '' );
-		$this->post_status = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_status'] ?? '' ); }
+		$this->ID           = $id;
+		$this->post_name    = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_name'] ?? '' );
+		$this->post_type    = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_type'] ?? '' );
+		$this->post_status  = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_status'] ?? '' );
+		$this->post_content = stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_content'] ?? '' ) ); }
 }
 function apply_filters( string $hook, $value, ...$args ) {
 	unset( $hook, $args );
