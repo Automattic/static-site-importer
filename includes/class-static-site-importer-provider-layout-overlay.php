@@ -268,7 +268,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				$losses[] = self::loss( 'provider_structure_mismatch', $id );
 				continue;
 			}
-			$declarations = self::declarations( $node['layout'], $target['capabilities'], $id, $losses, self::important_properties( $node['important'] ?? null ) );
+			$declarations = self::declarations( 'form' === $id ? self::with_initial_flex_alignment( $node['layout'] ) : $node['layout'], $target['capabilities'], $id, $losses, self::important_properties( $node['important'] ?? null ) );
 			if ( ! empty( $declarations ) ) {
 				foreach ( self::target_declaration_groups( $declared, $id, $target['selector'], $declarations ) as $selector => $group ) {
 					$rules[] = self::surface_selector( $prefix, $selector ) . '{' . implode( ';', $group ) . '}';
@@ -1145,6 +1145,27 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		return $rule;
 	}
+	/**
+	 * Restate a source form's initial cross-axis alignment on the provider form.
+	 *
+	 * The layout graph omits a fact whose computed value is the CSS initial, so a
+	 * source flex form without `align-items` stretches its items. The provider
+	 * element that receives the form's container layout carries its own
+	 * alignment instead (Jetpack's contact-form block defaults to the flex layout
+	 * `verticalAlignment: top`, which paints `align-items:flex-start`), and that
+	 * provider default is not a declaration on the source box. A responsive patch
+	 * only carries authored changes, so this applies to the base layout alone.
+	 *
+	 * @param array<string,mixed> $layout Base layout facts of one graph node.
+	 * @return array<string,mixed>
+	 */
+	private static function with_initial_flex_alignment( array $layout ): array {
+		if ( in_array( $layout['display'] ?? null, array( 'flex', 'inline-flex' ), true ) && ! array_key_exists( 'align_items', $layout ) ) {
+			$layout['align_items'] = 'stretch';
+		}
+		return $layout;
+	}
+
 	/**
 	 * @param array<int,string> $important Layout fact keys this node's declarations
 	 *                                     must win the cascade for, independent of

@@ -4452,6 +4452,31 @@ namespace {
 		'field-control-flex-item-facts-size-its-field-wrapper',
 		$flex_field_css
 	);
+	// A source flex form without `align-items` stretches its items. Jetpack's
+	// contact-form block defaults its flex layout to `verticalAlignment: top`
+	// (`align-items:flex-start`), so the provider form restates the initial
+	// stretch; an authored alignment stays the source's own.
+	$aligned_form_artifact = array(
+		'entrypoint' => 'news.html',
+		'files'      => array( 'news.html' => '<form style="display:flex;gap:10px;align-items:center;"><input type="email" name="email" aria-label="Email" style="flex:1;"><button type="submit">Subscribe</button></form>' ),
+	);
+	$aligned_form_source   = class_exists( $artifact_compiler ) ? ( ( new $artifact_compiler() )->compile( $aligned_form_artifact )->toArray() )['fallbacks'][0] ?? array() : array();
+	$aligned_form_seed     = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $aligned_form_source ) ) )['forms'] ?? array() ) )['forms'][0] ?? array();
+	$aligned_form_css      = (string) ( $aligned_form_seed['provider_layout_overlay_css']['css'] ?? '' );
+	$form_layout_rule      = static function ( string $css ): string {
+		return 1 === preg_match( '/:not\(:has\(> form\.jetpack-contact-form__form\)\)\{([^}]*)\}/', $css, $rule ) ? $rule[1] : '';
+	};
+	$assert(
+		! class_exists( $artifact_compiler )
+			|| (
+				'mapped' === ( $aligned_form_seed['status'] ?? '' )
+				&& str_contains( $form_layout_rule( $flex_field_css ), 'align-items:stretch' )
+				&& str_contains( $form_layout_rule( $aligned_form_css ), 'align-items:center' )
+				&& ! str_contains( $form_layout_rule( $aligned_form_css ), 'align-items:stretch' )
+			),
+		'provider-form-restates-a-source-flex-forms-initial-stretch-alignment',
+		$flex_field_css . "\n" . $aligned_form_css
+	);
 
 	$declared_box_form = static function ( array $styles, array $layout, string $class ) use ( $presentation_role, $v2_layout_graph, $layout_node ): array {
 		$properties = array();
@@ -4660,7 +4685,7 @@ namespace {
 	$root_graph = $layout_graph( array( $layout_node( 'form', array( 'display' => 'flex', 'direction' => 'row', 'gap' => '1rem' ), 'form' ) ) );
 	$root_map = array( 'schema' => 'generic/provider-layout-target-map/v1', 'provider' => 'jetpack', 'scope' => '.ssi-form-123456789abc', 'targets' => array( array( 'node' => 'form', 'selector' => '.ssi-form-123456789abc > form.jetpack-contact-form__form, .ssi-form-123456789abc:not(:has(> form.jetpack-contact-form__form))', 'capabilities' => array( 'container_layout', 'responsive_layout' ) ) ) );
 	$root_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $root_graph, $root_map );
-	$assert( str_contains( $root_overlay['css'], '.ssi-form-123456789abc > form.jetpack-contact-form__form, .ssi-form-123456789abc:not(:has(> form.jetpack-contact-form__form)){display:flex;flex-direction:row;gap:1rem}' ) && str_contains( $root_overlay['css'], '.ssi-form-123456789abc{position:relative;z-index:1;pointer-events:auto}' ) && 'provider_selector_transposition' === ( $root_overlay['operations'][0]['strategy'] ?? '' ) && 'provider_interaction_carrier' === ( $root_overlay['operations'][1]['strategy'] ?? '' ), 'provider-layout-root-targets-native-jetpack-form-with-an-interaction-carrier' );
+	$assert( str_contains( $root_overlay['css'], '.ssi-form-123456789abc > form.jetpack-contact-form__form, .ssi-form-123456789abc:not(:has(> form.jetpack-contact-form__form)){display:flex;flex-direction:row;gap:1rem;align-items:stretch}' ) && str_contains( $root_overlay['css'], '.ssi-form-123456789abc{position:relative;z-index:1;pointer-events:auto}' ) && 'provider_selector_transposition' === ( $root_overlay['operations'][0]['strategy'] ?? '' ) && 'provider_interaction_carrier' === ( $root_overlay['operations'][1]['strategy'] ?? '' ), 'provider-layout-root-targets-native-jetpack-form-with-an-interaction-carrier' );
 	$calc_graph   = $layout_graph( array( $layout_node( 'form', array( 'display' => 'flex', 'direction' => 'column', 'gap' => 'calc(32 * 1px)' ), 'form' ) ) );
 	$calc_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $calc_graph, $root_map );
 	$assert( str_contains( $calc_overlay['css'], 'gap:calc(32 * 1px)' ) && empty( $calc_overlay['losses'] ), 'authored-arithmetic-row-gap-reaches-the-provider-form-instead-of-the-runtime-default', wp_json_encode( $calc_overlay ) );
