@@ -570,6 +570,43 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	}
 
 	/**
+	 * Move help presentation classes from the field shell to its description.
+	 *
+	 * @param string $html Provider field HTML.
+	 * @return string
+	 */
+	private static function project_help_classes( string $html ): string {
+		$classes = array();
+		$html    = preg_replace_callback(
+			'/\bclass=(["\'])(.*?)\1/s',
+			static function ( array $matches ) use ( &$classes ): string {
+				if ( ! preg_match( '/\bgrunion-field-[A-Za-z0-9_-]+-wrap\b/', $matches[2] ) ) {
+					return $matches[0];
+				}
+				$output = array();
+				$tokens = preg_split( '/\s+/', trim( $matches[2] ) );
+				foreach ( false === $tokens ? array() : $tokens as $class_name ) {
+					if ( preg_match( '/^ssi-source-help--([A-Za-z_][A-Za-z0-9_-]{0,79})-wrap$/D', $class_name, $marker ) ) {
+						$classes[] = $marker[1];
+					} else {
+						$output[] = $class_name;
+					}
+				}
+				return 'class=' . $matches[1] . implode( ' ', $output ) . $matches[1];
+			},
+			$html
+		) ?? $html;
+		if ( array() === $classes ) {
+			return $html;
+		}
+		return preg_replace_callback(
+			'/\bclass=(["\'])([^"\']*\bcontact-form__field-help\b[^"\']*)\1/',
+			static fn ( array $matches ): string => 'class=' . $matches[1] . $matches[2] . ' ' . implode( ' ', array_unique( $classes ) ) . $matches[1],
+			$html
+		) ?? $html;
+	}
+
+	/**
 	 * Rebuild explicitly projected wrapper layers onto a provider field.
 	 *
 	 * The seeder's `ssi-source-wrapper-N--CLASS-wrap` token is a bounded transport
@@ -580,11 +617,15 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	 * Phone composites keep wrapping only the value input. Older depth-qualified
 	 * tokens remain readable because they have already been persisted in imported
 	 * content.
+	 *
+	 * @param string $html Provider field HTML.
+	 * @return string
 	 */
 	public static function project_wrapper_classes( string $html ): string {
 		// A telephone field without the country selector renders as a plain tel
 		// input ($is_plain_tel). It has no shell, carrier, or prefix box for those
 		// hooks to style.
+		$html                      = self::project_help_classes( $html );
 		$wrapper_layers            = array();
 		$field_ancestors           = array();
 		$choice_box                = array();

@@ -469,7 +469,8 @@ class Static_Site_Importer_Form_Seeder {
 			$has_provider_input                = (bool) array_filter( $field_block['innerBlocks'] ?? array(), static fn ( array $block ): bool => in_array( $block['name'] ?? '', array( 'jetpack/input', 'jetpack/phone-input' ), true ) );
 			$field_source_class                = $has_provider_input ? '' : $source_class;
 			$layout_hook                       = Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $control_index );
-			$field_block['attrs']['className'] = trim( $field_source_class . ' ' . $layout_hook );
+			$help_classes                      = isset( $field_block['attrs']['helpText'] ) ? Static_Site_Importer_Form_Field_Markup::help_class_markers( $form, $control ) : '';
+			$field_block['attrs']['className'] = trim( $field_source_class . ' ' . $layout_hook . ' ' . $help_classes );
 			if ( isset( $choice_pairs[ $control_index ] ) ) {
 				$choice_token = Static_Site_Importer_Provider_Form_Runtime_V1::choice_token( $control['options'] );
 				if ( '' === $choice_token ) {

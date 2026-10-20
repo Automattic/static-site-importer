@@ -436,6 +436,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			}
 			$entities = isset( $declaration['payload']['entities'] ) && is_array( $declaration['payload']['entities'] ) ? $declaration['payload']['entities'] : array();
 			if ( 'form' === $capability ) {
+				$entities = self::with_form_source_html( $entities, $plan );
 				$entities = array_map( static fn( $entity ) => is_array( $entity ) ? self::prepare_form_entity( $entity ) : $entity, $entities );
 			}
 			$collection = (string) ( $adapter['entity_collection'] ?? '' );
@@ -672,6 +673,33 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return 'entity_collection' === $kind && in_array( $name, array( 'form', 'forms' ), true ) ? 'form' : '';
 	}
 
+	/**
+	 * Recover source description elements omitted from older form declarations.
+	 *
+	 * @param array $entities Declared form entities.
+	 * @param array $plan     Site plan carrying the matching fallback evidence.
+	 * @return array
+	 */
+	public static function with_form_source_html( array $entities, array $plan ): array {
+		$sources = array();
+		foreach ( $plan['quality']['fallbacks'] ?? array() as $fallback ) {
+			if ( is_array( $fallback ) && 'html_form_fallback' === ( $fallback['diagnostic_code'] ?? $fallback['code'] ?? '' ) && is_string( $fallback['html'] ?? null ) ) {
+				$key             = (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' ) . "\n" . (string) ( $fallback['selector'] ?? '' );
+				$sources[ $key ] = $fallback['html'];
+			}
+		}
+		foreach ( $entities as &$entity ) {
+			if ( is_array( $entity ) ) {
+				$key = (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
+				if ( ! isset( $entity['html'] ) && isset( $sources[ $key ] ) ) {
+					$entity['html'] = $sources[ $key ];
+				}
+			}
+		}
+		unset( $entity );
+		return $entities;
+	}
+
 	/** Copy producer presentation facts onto the form entity without re-parsing source HTML. */
 	public static function prepare_form_entity( array $entity ): array {
 		$normalized         = Static_Site_Importer_Form_Fallback_Contract::normalize_form_metadata( $entity );
@@ -787,6 +815,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			$key      = (string) ( $prepared['adapter']['entity_collection'] ?? '' );
 			$entities = $expanded[ $id ];
 			if ( 'form' === ( $prepared['adapter']['capability'] ?? null ) ) {
+				$entities = self::with_form_source_html( $entities, $resolved );
 				$entities = array_map( static fn( $entity ) => is_array( $entity ) ? self::prepare_form_entity( $entity ) : $entity, $entities );
 			}
 			$manifest = array( $key => $entities );
@@ -2085,12 +2114,17 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				continue;
 			}
 
-			$row               = array(
+			$row = array(
 				'selector'    => isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '',
 				'source_path' => isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '',
 				'form'        => isset( $form['form'] ) && is_array( $form['form'] ) ? $form['form'] : array(),
 				'controls'    => $controls,
 			);
+			// Source HTML is inspected, never rendered, to retain description classes
+			// that older producers omit from control metadata.
+			if ( is_string( $form['html'] ?? null ) ) {
+				$row['html'] = $form['html'];
+			}
 			$fallback_identity = $form['fallback_identity'] ?? $form['source_fallback_identity'] ?? $form['fallback_reconciliation_identity'] ?? '';
 			if ( is_string( $fallback_identity ) && 1 === preg_match( '/^[a-f0-9]{64}$/D', $fallback_identity ) ) {
 				$row['fallback_identity'] = $fallback_identity;

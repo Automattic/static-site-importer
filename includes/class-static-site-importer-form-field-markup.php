@@ -402,6 +402,61 @@ final class Static_Site_Importer_Form_Field_Markup {
 	}
 
 	/**
+	 * Carry the classes of an unambiguous source description to provider help.
+	 *
+	 * Older producers expose description text but not its element's classes.
+	 * Resolve only inside the identified control's nearest source container;
+	 * never borrow presentation from an equal string elsewhere in the form.
+	 *
+	 * @param array<string,mixed> $form    Source form including its HTML.
+	 * @param array<string,mixed> $control Source control metadata.
+	 * @return string Transport classes for the provider field shell.
+	 */
+	public static function help_class_markers( array $form, array $control ): string {
+		$description = self::control_description( $control );
+		if ( '' === $description || ! is_string( $form['html'] ?? null ) || ! class_exists( 'DOMDocument' ) ) {
+			return '';
+		}
+		$document = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$document->loadHTML( '<?xml encoding="UTF-8">' . $form['html'], LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		$candidates = array();
+		foreach ( $document->getElementsByTagName( (string) ( $control['tag'] ?? 'input' ) ) as $element ) {
+			$id   = (string) ( $control['id'] ?? '' );
+			$name = (string) ( $control['name'] ?? '' );
+			if ( ( '' !== $id && $element->getAttribute( 'id' ) === $id ) || ( '' === $id && '' !== $name && $element->getAttribute( 'name' ) === $name ) ) {
+				$candidates[] = $element;
+			}
+		}
+		if ( 1 !== count( $candidates ) || ! $candidates[0]->parentNode instanceof DOMElement ) {
+			return '';
+		}
+		$matches = array();
+		foreach ( $candidates[0]->parentNode->getElementsByTagName( '*' ) as $element ) {
+			if ( $element === $candidates[0] || $element->childElementCount > 0 || in_array( strtolower( $element->tagName ), array( 'input', 'select', 'textarea', 'button' ), true ) ) { // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM API.
+				continue;
+			}
+			$text = trim( (string) preg_replace( '/\s+/u', ' ', $element->textContent ) ); // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM API.
+			if ( $text === $description ) {
+				$matches[] = $element;
+			}
+		}
+		if ( 1 !== count( $matches ) ) {
+			return '';
+		}
+		$markers = array();
+		$classes = preg_split( '/\s+/', trim( $matches[0]->getAttribute( 'class' ) ) );
+		foreach ( false === $classes ? array() : $classes as $class_name ) {
+			if ( preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) {
+				$markers[] = 'ssi-source-help--' . $class_name;
+			}
+		}
+		return implode( ' ', $markers );
+	}
+
+	/**
 	 * Read a control's own source-authored description, distinct from its label.
 	 *
 	 * @param array<string, mixed> $control Source control metadata.
