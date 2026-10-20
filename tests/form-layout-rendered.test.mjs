@@ -564,6 +564,7 @@ test( 'nested floated name row maps and keeps desktop pairing and mobile stackin
 	const seeded = JSON.parse( execFileSync( 'php', [ 'tests/fixtures/nested-name-row-fixture.php' ], { encoding: 'utf8' } ) );
 	assert.equal( seeded.status, 'mapped', JSON.stringify( seeded.row ) );
 	assert.equal( seeded.fields.length, 3 );
+	assert.ok( seeded.strategies.includes( 'provider_compensated_percentage_halves' ) );
 	const browser = await chromium.launch();
 	try {
 		const page = await browser.newPage();
@@ -574,26 +575,27 @@ test( 'nested floated name row maps and keeps desktop pairing and mobile stackin
 			input{width:100%;box-sizing:border-box}label{display:block}
 			${seeded.sourceCss}${seeded.css}
 		</style><div class="source">${seeded.sourceHtml}</div><div class="projected ${seeded.className}"><form class="jetpack-contact-form__form">${seeded.fieldHtml}</form></div>` );
-		for ( const width of [ 1440, 390 ] ) {
+		for ( const width of [ 1440, 900, 390 ] ) {
 			await page.setViewportSize( { width, height: 900 } );
 			for ( const selector of [ '.source', '.projected' ] ) {
 				const boxes = await page.locator( `${selector} input` ).evaluateAll( nodes => nodes.slice( 0, 2 ).map( node => {
 					const r = node.getBoundingClientRect();
-					return { top:r.top, left:r.left, width:r.width };
+					return { top:r.top, left:r.left, width:r.width, bottom:node.parentElement.getBoundingClientRect().bottom, cellTop:node.parentElement.getBoundingClientRect().top };
 				} ) );
 				assert.equal( boxes.length, 2 );
-				if ( width === 1440 ) {
+				if ( width !== 390 ) {
 					assert.equal( boxes[0].top, boxes[1].top, `${selector}: ${JSON.stringify(boxes)}` );
 					assert.ok( boxes[1].left > boxes[0].left + boxes[0].width );
-					if ( selector === '.projected' ) {
-						assert.equal( boxes[0].width, boxes[1].width, 'provider halves have equal widths' );
-						assert.ok( Math.abs( boxes[1].left - boxes[0].left - boxes[0].width - 9 ) <= 1, 'source 9px gutter survives' );
+					for ( const box of boxes ) {
+						assert.ok( Math.abs( box.width - 290 ) <= 11, `${selector} at ${width}: ${JSON.stringify( boxes )}` );
 					}
+					assert.ok( Math.abs( boxes[1].left - boxes[0].left - boxes[0].width - ( width === 1440 ? 9 : 20 ) ) <= 1, `authored gutter survives: ${selector} at ${width}: ${JSON.stringify( boxes )}` );
 				} else {
 					assert.ok( boxes[1].top > boxes[0].top, `${selector}: ${JSON.stringify(boxes)}` );
 					assert.equal( boxes[0].left, boxes[1].left );
 					assert.equal( boxes[0].width, 366, 'stacked inputs span the full content width' );
 					assert.equal( boxes[1].width, 366 );
+					assert.ok( Math.abs( boxes[1].cellTop - boxes[0].bottom - 18 ) <= 1, `authored vertical margin survives: ${selector}: ${JSON.stringify( boxes )}` );
 				}
 			}
 		}

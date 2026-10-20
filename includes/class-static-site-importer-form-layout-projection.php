@@ -112,10 +112,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			return $form;
 		}
 		$box           = Static_Site_Importer_Provider_Layout_Overlay::box_property_map();
-		$strip_initial = static function ( array $layout, array $provenance ) use ( $box ): array {
+		$strip_initial = static function ( array $layout, array $provenance, array $base = array() ) use ( $box ): array {
 			$removed = array();
 			foreach ( $layout as $fact => $value ) {
-				if ( isset( $box[ $fact ] ) && is_string( $value ) && self::is_initial_box_value( $fact, $value ) ) {
+				if ( isset( $box[ $fact ] ) && ! isset( $base[ $fact ] ) && is_string( $value ) && self::is_initial_box_value( $fact, $value ) ) {
 					unset( $layout[ $fact ] );
 					$removed[] = $box[ $fact ];
 				}
@@ -156,7 +156,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 			$nodes[] = $node;
 		}
-		$variants = array();
+		// A conditional zero can reset a nonzero base box, not just restate
+		// the initial value. Keep that fact and its conditional provenance.
+		$base_layouts = array_column( $nodes, 'layout', 'id' );
+		$variants     = array();
 		foreach ( is_array( $graph['variants'] ?? null ) ? $graph['variants'] : array() as $variant ) {
 			if ( is_array( $variant ) && str_starts_with( (string) ( $variant['node'] ?? '' ), 'context-' ) ) {
 				$context['variants'][] = $variant;
@@ -167,7 +170,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					$variant['layout_patch'] = array_diff_key( $variant['layout_patch'], $box );
 					$variant['layout_patch'] = array_diff_key( $variant['layout_patch'], array_flip( array( 'position', 'top', 'right', 'bottom', 'left' ) ) );
 				}
-				[ $variant['layout_patch'], $variant['provenance'] ] = $strip_initial( $variant['layout_patch'], is_array( $variant['provenance'] ?? null ) ? $variant['provenance'] : array() );
+				[ $variant['layout_patch'], $variant['provenance'] ] = $strip_initial( $variant['layout_patch'], is_array( $variant['provenance'] ?? null ) ? $variant['provenance'] : array(), $base_layouts[ $variant['node'] ?? '' ] ?? array() );
 				if ( array() === $variant['layout_patch'] ) {
 					continue;
 				}
@@ -1679,91 +1682,153 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	}
 
 	/**
-	 * A legacy name row subtracts its inter-column margin from the first half.
-	 * Float/clear are not exported by the producer; require the complete,
-	 * provenance-backed percentage budget and matching mobile stack instead.
+	 * Project a proven percentage pair per condition onto equal provider fields.
+	 * Float/clear are not exported by the producer; require a bounded width and
+	 * gutter budget in the base and every supported media condition instead.
+	 *
+	 * @param Static_Site_Importer_Form_Topology_State $s Projection state.
 	 */
 	private static function project_compensated_percentage_halves( Static_Site_Importer_Form_Topology_State $s ): void {
 		foreach ( $s->children as $parent => $siblings ) {
 			if ( 2 !== count( $siblings ) || isset( $s->percentage_width_parents[ $parent ] ) ) {
 				continue;
 			}
-			$first     = $siblings[0]['id'];
-			$last      = $siblings[1]['id'];
 			$row_facts = self::non_block_flow_facts( $s->layout_by_node[ $parent ] ?? array() );
 			if ( array_diff( $row_facts, array_keys( Static_Site_Importer_Provider_Layout_Overlay::box_property_map() ) ) || ! empty( $s->variants_by_node[ $parent ] ) ) {
 				continue;
 			}
-			$a = $s->layout_by_node[ $first ] ?? array();
-			$b = $s->layout_by_node[ $last ] ?? array();
-			if ( 1 !== preg_match( '/^calc\(\s*50%\s*-\s*([0-9]+(?:\.[0-9]+)?(?:px|rem|em))\s*\)$/D', (string) ( $a['width'] ?? '' ), $match ) || '50%' !== ( $b['width'] ?? null ) || ! self::gutter_matches_overhang( (string) ( $b['margin_left'] ?? '' ), $match[1] ) ) {
-				continue;
-			}
-			$cells = array();
-			$query = null;
-			foreach ( $siblings as $offset => $node ) {
-				$id        = $node['id'];
-				$box       = $s->layout_nodes_by_id[ $id ] ?? array();
-				$controls  = ( $s->collect_controls )( $node );
-				$variants  = $s->variants_by_node[ $id ] ?? array();
-				$variant   = $variants[0] ?? array();
-				$patch     = self::layout_patch( $variant );
-				$condition = $variant['condition'] ?? array();
+			$cells      = array();
+			$conditions = array();
+			foreach ( $siblings as $node ) {
+				$id       = $node['id'];
+				$box      = $s->layout_nodes_by_id[ $id ] ?? array();
+				$controls = ( $s->collect_controls )( $node );
+				$variants = $s->variants_by_node[ $id ] ?? array();
 				if ( 'wrapper' !== ( $node['kind'] ?? null )
 					|| 1 !== count( $controls ) || ! isset( $s->field_blocks[ $controls[0] ] )
 					|| 'core/button' === $s->field_blocks[ $controls[0] ]['name']
 					|| ! self::has_unconditional_proven_property( $box, 'width' )
-					|| ( 1 === $offset && ! self::has_unconditional_proven_property( $box, 'margin-left' ) )
-					|| 1 !== count( $variants ) || '100%' !== ( $patch['width'] ?? null )
-					|| 'media' !== ( $condition['kind'] ?? null )
-					|| ! self::is_max_width_media_query( (string) ( $condition['query'] ?? '' ) )
-					|| ! self::variant_proven( $variant, 'width' )
-					|| ( null !== $query && $query !== $condition['query'] )
 				) {
 					continue 2;
 				}
 				$allowed = Static_Site_Importer_Provider_Layout_Overlay::box_property_map() + array_flip( array( 'width' ) );
-				if ( array_diff_key( $s->layout_by_node[ $id ] ?? array(), $allowed ) || array_diff_key( $patch, $allowed ) || ( 1 === $offset && ! self::is_initial_box_value( 'margin_left', (string) ( $patch['margin_left'] ?? '0' ) ) ) ) {
+				if ( array_diff_key( $s->layout_by_node[ $id ] ?? array(), $allowed ) ) {
 					continue 2;
 				}
-				$query   = $condition['query'];
+				foreach ( $variants as $variant ) {
+					$condition = $variant['condition'] ?? array();
+					$patch     = self::layout_patch( $variant );
+					$query     = (string) ( $condition['query'] ?? '' );
+					if ( 'media' !== ( $condition['kind'] ?? null )
+						|| ( ! self::is_min_width_media_query( $query ) && ! self::is_max_width_media_query( $query ) )
+						|| array_diff_key( $patch, $allowed ) ) {
+						continue 3;
+					}
+					foreach ( $patch as $fact => $value ) {
+						if ( ! self::variant_proven( $variant, str_replace( '_', '-', $fact ) ) ) {
+							continue 4;
+						}
+					}
+					$conditions[ $query ] = $condition;
+				}
 				$cells[] = array(
 					'id'      => $id,
 					'control' => $controls[0],
+				);
+			}
+			// Only disjoint queries are independently resolved here. Overlapping
+			// queries require a combined cascade proof, so leave those untouched.
+			$ranges = array();
+			foreach ( $conditions as $query => $condition ) {
+				preg_match( '/\(\s*(min|max)-width\s*:\s*([0-9]+(?:\.[0-9]+)?)px\s*\)/i', $query, $bound );
+				if ( empty( $bound ) || isset( $ranges[ $bound[1] ] ) ) {
+					continue 2;
+				}
+				$ranges[ $bound[1] ] = (float) $bound[2];
+			}
+			if ( isset( $ranges['min'], $ranges['max'] ) && $ranges['min'] <= $ranges['max'] ) {
+				continue;
+			}
+			// Validate every resolved condition before mutating the projection.
+			$rows = array();
+			foreach ( array_merge( array( null ), array_values( $conditions ) ) as $condition ) {
+				$layouts = array();
+				foreach ( $cells as $cell ) {
+					$id     = $cell['id'];
+					$box    = $s->layout_nodes_by_id[ $id ];
+					$layout = $s->layout_by_node[ $id ];
+					foreach ( array( 'margin_left', 'margin_right' ) as $fact ) {
+						if ( isset( $layout[ $fact ] ) && ! self::has_unconditional_proven_property( $box, str_replace( '_', '-', $fact ) ) ) {
+							continue 4;
+						}
+					}
+					foreach ( $s->variants_by_node[ $id ] ?? array() as $variant ) {
+						if ( null !== $condition && ( $variant['condition'] ?? null ) === $condition ) {
+							$layout = array_replace( $layout, self::layout_patch( $variant ) );
+						}
+					}
+					$layouts[] = $layout;
+				}
+				$gutter = self::percentage_pair_gutter( $layouts );
+				if ( null === $gutter ) {
+					continue 2;
+				}
+				$rows[] = array(
+					'condition' => $condition,
+					'gutter'    => $gutter,
+					'stacked'   => '100%' === $layouts[0]['width'] && '100%' === $layouts[1]['width'],
 				);
 			}
 			// The authored margin supplies the gutter; a provider/theme column
 			// gap on top of it would force the second half onto another line.
 			$s->overlay_node_targets[] = array(
 				'id'     => 'form',
-				'layout' => array( 'column_gap' => '0' ),
+				'layout' => array(
+					'column_gap' => '0',
+					'row_gap'    => '0',
+				),
 			);
-			$track                     = self::equal_fraction_track_size( 2, $match[1] );
+
 			foreach ( $cells as $offset => $cell ) {
 				$s->field_blocks[ $cell['control'] ]['attrs']['width'] = 50;
-				$s->overlay_node_targets[]                             = array(
-					'id'     => 'field-' . $cell['control'],
-					'layout' => array(
-						'width'        => $track,
-						'flex_basis'   => $track,
-						'flex_grow'    => '0',
-						'flex_shrink'  => '0',
-						'margin_right' => 0 === $offset ? $match[1] : '0',
-					),
-				);
-				$s->responsive_variant_targets[]                       = array(
-					'node'         => 'field-' . $cell['control'],
-					'condition'    => array(
-						'kind'  => 'media',
-						'query' => $query,
-					),
-					'layout_patch' => array(
-						'flex'         => '1 1 100%',
-						'width'        => '100%',
-						'max_width'    => '100%',
-						'margin_right' => '0',
-					),
-				);
+				foreach ( $rows as $row ) {
+					$track  = $row['stacked'] ? '100%' : self::equal_fraction_track_size( 2, $row['gutter'] );
+					$layout = array(
+						'width'               => $track,
+						'max_width'           => '100%',
+						'flex_basis'          => $track,
+						'flex_grow'           => '0',
+						'flex_shrink'         => '0',
+						'margin_inline_start' => '0',
+						'margin_right'        => 0 === $offset && ! $row['stacked'] ? $row['gutter'] : '0',
+					);
+					if ( null === $row['condition'] ) {
+						$s->overlay_node_targets[] = array(
+							'id'        => 'field-' . $cell['control'],
+							'layout'    => $layout,
+							'important' => array( 'margin_inline_start' ),
+						);
+					} else {
+						$s->responsive_variant_targets[] = array(
+							'node'         => 'field-' . $cell['control'],
+							'condition'    => $row['condition'],
+							'layout_patch' => $layout,
+							'important'    => array( 'margin_inline_start' ),
+						);
+					}
+				}
+				foreach ( $conditions as $condition ) {
+					$s->responsive_variant_targets[] = array(
+						'node'         => $cell['id'],
+						'condition'    => $condition,
+						'layout_patch' => array(
+							'width'               => '100%',
+							'margin_inline_start' => '0',
+							'margin_right'        => '0',
+						),
+						'important'    => array( 'margin_inline_start' ),
+					);
+				}
 				// Give the restored inner cell its own target, distinct from the
 				// provider shell whose width now expresses the row relationship.
 				$inner_hook = self::layout_node_class( self::layout_scope( $s->form ), $cell['id'] . '-inner' );
@@ -1774,11 +1839,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				// The source cell is rebuilt inside the provider shell. Its old
 				// percentage width and float margin must not size the control again.
 				$s->overlay_node_targets[] = array(
-					'id'     => $cell['id'],
-					'layout' => array(
-						'width'       => '100%',
-						'margin_left' => '0',
+					'id'        => $cell['id'],
+					'layout'    => array(
+						'width'               => '100%',
+						'margin_inline_start' => '0',
+						'margin_right'        => '0',
 					),
+					'important' => array( 'margin_inline_start' ),
 				);
 			}
 			$s->percentage_width_parents[ $parent ] = true;
@@ -1788,6 +1855,48 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'target_hash' => hash( 'sha256', $parent ),
 			);
 		}
+	}
+
+	/**
+	 * Prove a two-cell percentage budget; return its pixel gutter or decline.
+	 * Percent totals below 100 are safe at any row width, provided the fixed
+	 * gutter is paid for by the subtractions. Full-width pairs instead stack.
+	 *
+	 * @param array $layouts Resolved sibling cell layouts.
+	 */
+	private static function percentage_pair_gutter( array $layouts ): ?string {
+		$percent = 0.0;
+		$budget  = 0.0;
+		$gutter  = 0.0;
+		foreach ( $layouts as $offset => $layout ) {
+			$width = trim( (string) ( $layout['width'] ?? '' ) );
+			if ( 1 === preg_match( '/^([0-9]+(?:\.[0-9]+)?)%$/D', $width, $match ) ) {
+				$percent += (float) $match[1];
+			} elseif ( 1 === preg_match( '/^calc\(\s*([0-9]+(?:\.[0-9]+)?)%\s*-\s*([0-9]+(?:\.[0-9]+)?)px\s*\)$/D', $width, $match ) ) {
+				$percent += (float) $match[1];
+				$budget  += (float) $match[2];
+			} else {
+				return null;
+			}
+			if ( 0.0 >= (float) $match[1] || 100.0 < (float) $match[1] ) {
+				return null;
+			}
+			foreach ( array( 'margin_left', 'margin_right' ) as $fact ) {
+				$value = trim( (string) ( $layout[ $fact ] ?? '0' ) );
+				if ( '0' !== $value && 1 !== preg_match( '/^([0-9]+(?:\.[0-9]+)?)px$/D', $value ) ) {
+					return null;
+				}
+				if ( ( 'margin_left' === $fact && 1 === $offset ) || ( 'margin_right' === $fact && 0 === $offset ) ) {
+					$gutter += (float) $value;
+				} elseif ( 0.0 !== (float) $value ) {
+					return null;
+				}
+			}
+		}
+		if ( '100%' === $layouts[0]['width'] && '100%' === $layouts[1]['width'] ) {
+			return 0.0 === $gutter ? '0px' : null;
+		}
+		return 100.0 >= $percent && $gutter <= $budget ? $gutter . 'px' : null;
 	}
 
 	/** The `G` of a `width: calc(100% + G)` row overhang, or null. */

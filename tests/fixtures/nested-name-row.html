@@ -1,12 +1,13 @@
 <style>
 .field-group{display:block;padding-bottom:18px;position:relative}
 .name-row{display:block;position:relative}
-.name-half{float:left;width:50%}
-.name-first{clear:both;width:calc(50% - 9px)}
-.name-last{margin-left:9px}
+.name-half{float:left;width:calc(50% - 10px)}
+.name-first{clear:both;margin-left:0!important}
+.name-last{margin-left:20px}
 .name-row:after{content:"";display:table;clear:both}
 label{display:block}input{box-sizing:border-box;width:100%}
-@media(max-width:600px){.name-half{float:none;width:100%;margin-left:0}.name-first{margin-bottom:18px}}
+@media(min-width:1024px){.name-last{width:50%;margin-left:9px!important}}
+@media(max-width:768px){.name-half{width:100%!important;margin-left:0}.name-first{margin-bottom:18px}}
 </style>
 <form method="post" action="/contact/">
 <div class="fields">

@@ -1864,8 +1864,12 @@ namespace {
 	);
 	foreach ( array(
 		'offset' => str_replace( 'padding-bottom:18px;position:relative', 'padding-bottom:18px;position:relative;top:12px', $nested_name_html ),
-		'variant-offset' => str_replace( '@media(max-width:600px){', '@media(max-width:600px){.field-group{top:12px}', $nested_name_html ),
-		'mismatched-gutter' => str_replace( 'margin-left:9px', 'margin-left:30px', $nested_name_html ),
+		'variant-offset' => str_replace( '@media(max-width:768px){', '@media(max-width:768px){.field-group{top:12px}', $nested_name_html ),
+		'overflowing-base' => str_replace( 'margin-left:20px', 'margin-left:30px', $nested_name_html ),
+		'overflowing-desktop' => str_replace( 'margin-left:9px', 'margin-left:30px', $nested_name_html ),
+		'unsupported-width' => str_replace( 'calc(50% - 10px)', '280px', $nested_name_html ),
+		'unsupported-gutter' => str_replace( 'margin-left:20px', 'margin-left:1rem', $nested_name_html ),
+		'overlapping-queries' => str_replace( 'min-width:1024px', 'min-width:700px', $nested_name_html ),
 	) as $case => $html ) {
 		$negative = $nested_name_seed( $html );
 		$assert( ! in_array( 'provider_compensated_percentage_halves', array_column( $negative['computed_layout_receipt']['operations'] ?? array(), 'strategy' ), true ) || 'mapped' !== ( $negative['status'] ?? '' ), 'nested-name-row-' . $case . '-keeps-unsupported-layout', wp_json_encode( $negative ) );
