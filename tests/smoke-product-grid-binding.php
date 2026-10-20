@@ -342,28 +342,38 @@ $preflight_lifecycle_conflict = array(
 $preflight_conflict = Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_runtime_entity_binding_anchors( $preflight_plan, $preflight_lifecycle_conflict, array() );
 $assert( is_wp_error( $preflight_conflict ) && 'static_site_importer_runtime_binding_claim_conflict' === $preflight_conflict->get_error_code(), 'preflight-still-rejects-a-duplicate-claim-for-every-non-grid-role' );
 
-// --- 8. Quality_Gates reconciliation: unresolved_fallback_count reaches 0 --
+// --- 8. Quality_Gates reconciliation: the finding joins its completed
+//        `commerce_product_grid` receipt page-and-selector-scoped ----------
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-quality-gates.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-import-report.php';
 
 $grid_diagnostic = $diagnostics[0];
-$report          = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/browse.html' );
+list( $grid_identity, $grid_fallback_hash ) = Static_Site_Importer_Entity_Materializer_Registry::product_grid_fallback_identity( 'website/browse.html', 'ul.products' );
+$grid_binding_row = array(
+	'schema'                           => 'static-site-importer/runtime-entity-binding/v1',
+	'status'                           => 'completed',
+	'reconciliation_identity'          => hash( 'sha256', 'browse-grid-binding' ),
+	'source_path'                      => 'website/browse.html',
+	'selector'                         => 'ul.products',
+	'role'                             => 'commerce_product_grid',
+	'declaration_id'                   => 'grids-declaration',
+	'fallback_reconciliation_identity' => $grid_identity,
+	'fallback_hash'                    => $grid_fallback_hash,
+	'materialized_block_hash'          => hash( 'sha256', 'provider-loop-replacing-the-grid-region' ),
+	'persisted_fragment_hash'          => hash( 'sha256', 'provider-loop-replacing-the-grid-region' ),
+	'materialized_content_hash'        => hash( 'sha256', 'materialized-page-content-with-the-grid-replacement' ),
+	'provider'                         => 'woocommerce',
+	'superseded_runtime_selectors'     => array( 'ul.products' ),
+	'replaced_fallback_identities'     => array(),
+);
+$report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/browse.html' );
 $report->append_diagnostic( $grid_diagnostic );
 $report->merge_quality( array( 'fallback_count' => 1 ) );
 $report['materialization_receipt'] = array(
 	'completed' => array(
 		'runtime_declarations' => array(
-			'entity_bindings' => array(
-				array_merge(
-					$grid_result,
-					array(
-						'status'                   => 'completed',
-						'persisted_fragment_hash'  => hash( 'sha256', (string) $grid_result['replacement_block_markup'] ),
-						'materialized_content_hash' => hash( 'sha256', 'materialized-page-content-with-the-grid-replacement' ),
-					)
-				),
-			),
+			'entity_bindings' => array( $grid_binding_row ),
 		),
 		'materialized_pages'    => array(
 			'website/browse.html' => array( 'content_hash' => hash( 'sha256', 'materialized-page-content-with-the-grid-replacement' ) ),
@@ -376,6 +386,7 @@ $assert( 1 === ( $resolutions['source_fallback_count'] ?? 0 ), 'quality-reconcil
 $assert( 1 === ( $resolutions['resolved_by_provider'] ?? 0 ), 'quality-reconciliation-resolves-the-grid-fallback-with-a-completed-receipt' );
 $assert( 0 === ( $resolutions['unresolved_fallback_count'] ?? -1 ), 'quality-reconciliation-unresolved-fallback-count-reaches-zero' );
 $assert( 0 === ( $report->quality()['fallback_count'] ?? -1 ), 'quality-reconciliation-decrements-fallback-count-to-zero' );
+$assert( 'ul.products' === ( $resolutions['resolutions'][0]['receipt']['selector'] ?? '' ) && $grid_identity === ( $resolutions['resolutions'][0]['fallback_reconciliation_identity'] ?? '' ), 'quality-reconciliation-grid-receipt-carries-the-grid-selector-and-identity' );
 
 // Negative: no completed receipt at all leaves the grid fallback unresolved.
 $unresolved_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/browse.html' );
@@ -383,17 +394,37 @@ $unresolved_report->append_diagnostic( $grid_diagnostic );
 $unresolved_report->merge_quality( array( 'fallback_count' => 1 ) );
 Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $unresolved_report );
 $unresolved_resolutions = $unresolved_report['quality_resolutions'];
-$assert( 0 === ( $unresolved_resolutions['resolved_by_provider'] ?? -1 ) && 1 === ( $unresolved_resolutions['unresolved_fallback_count'] ?? 0 ), 'quality-reconciliation-leaves-an-unbound-grid-fallback-unresolved' );
+$assert( 0 === ( $unresolved_resolutions['resolved_by_provider'] ?? -1 ) && 1 === ( $unresolved_resolutions['unresolved_fallback_count'] ?? 0 ) && 'unresolved' === ( $unresolved_resolutions['resolutions'][0]['state'] ?? '' ), 'quality-reconciliation-leaves-an-unbound-grid-fallback-unresolved' );
 
-// A finding with no derivable anchor at all (no readable_blocks) never claims
-// a resolution it cannot prove.
-$no_anchor_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/home.html' );
-$no_anchor_report->append_diagnostic( $diagnostics[1] );
-$no_anchor_report->merge_quality( array( 'fallback_count' => 1 ) );
-Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $no_anchor_report );
-$no_anchor_resolutions = $no_anchor_report['quality_resolutions'];
-$assert( array() === ( $no_anchor_resolutions['resolutions'] ?? array( 'unexpected' ) ), 'quality-reconciliation-skips-a-finding-with-no-derivable-anchor' );
-$assert( 1 === ( $no_anchor_report->quality()['fallback_count'] ?? 0 ), 'quality-reconciliation-leaves-fallback-count-unchanged-without-a-derivable-anchor' );
+// A completed binding that cannot name the grid's own source selector cannot
+// prove the page-and-selector join, so the finding stays unresolved.
+$selectorless_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/browse.html' );
+$selectorless_report->append_diagnostic( $grid_diagnostic );
+$selectorless_report->merge_quality( array( 'fallback_count' => 1 ) );
+$selectorless_report['materialization_receipt'] = array(
+	'completed' => array(
+		'runtime_declarations' => array(
+			'entity_bindings' => array( array_merge( $grid_binding_row, array( 'selector' => '' ) ) ),
+		),
+		'materialized_pages'    => array(
+			'website/browse.html' => array( 'content_hash' => hash( 'sha256', 'materialized-page-content-with-the-grid-replacement' ) ),
+		),
+	),
+);
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $selectorless_report );
+$selectorless_resolutions = $selectorless_report['quality_resolutions'];
+$assert( 0 === ( $selectorless_resolutions['resolved_by_provider'] ?? -1 ) && 'unresolved' === ( $selectorless_resolutions['resolutions'][0]['state'] ?? '' ), 'quality-reconciliation-rejects-a-binding-without-the-grid-selector' );
+
+// A finding whose page and selector join no completed binding still reports as
+// an unresolved resolution row rather than vanishing: it stays a counted
+// unresolved fallback.
+$no_binding_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/home.html' );
+$no_binding_report->append_diagnostic( $diagnostics[1] );
+$no_binding_report->merge_quality( array( 'fallback_count' => 1 ) );
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $no_binding_report );
+$no_binding_resolutions = $no_binding_report['quality_resolutions'];
+$assert( 0 === ( $no_binding_resolutions['resolved_by_provider'] ?? -1 ) && 1 === ( $no_binding_resolutions['unresolved_fallback_count'] ?? 0 ) && 1 === count( $no_binding_resolutions['resolutions'] ?? array() ) && 'unresolved' === ( $no_binding_resolutions['resolutions'][0]['state'] ?? '' ), 'quality-reconciliation-reports-an-unjoined-finding-as-unresolved' );
+$assert( 1 === ( $no_binding_report->quality()['fallback_count'] ?? 0 ), 'quality-reconciliation-leaves-fallback-count-unchanged-without-a-binding' );
 
 // --- 9. A product legitimately shared between two distinct grids ----------
 //

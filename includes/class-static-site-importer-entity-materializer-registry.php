@@ -1179,6 +1179,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	/** Build one canonical block-binding replacement record for one resolved anchor. */
 	private static function block_binding_record( string $declaration_id, array $binding, string $replacement, array $entity, array $adapter ): array {
 		$is_grid = in_array( $binding['role'], array( 'commerce_collection', 'commerce_product_grid' ), true );
+		// A canonical product-grid binding records the grid's own source selector so
+		// quality reconciliation can join the detected grid finding to this receipt
+		// by the one evidence both sides carry, instead of a preserved-region hash
+		// the finding no longer derives (Automattic/blocks-engine#3088).
+		$grid_selector = 'commerce_product_grid' === $binding['role'] && is_string( $entity['selector'] ?? null ) ? trim( (string) $entity['selector'] ) : '';
+		list( $grid_identity, $grid_hash ) = '' === $grid_selector ? array( '', '' ) : self::product_grid_fallback_identity( (string) $binding['source_path'], $grid_selector );
 		return array(
 			'schema'                           => 'static-site-importer/runtime-entity-binding/v1',
 			'source_path'                      => $binding['source_path'],
@@ -1187,9 +1193,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 			'occurrence'                       => $binding['occurrence'],
 			'role'                             => $binding['role'],
 			'declaration_id'                   => $declaration_id,
+			'selector'                         => $grid_selector,
 			'reconciliation_identity'          => hash( 'sha256', "static-site-importer/runtime-entity-binding/v1\n{$declaration_id}\n{$binding['source_path']}\n{$binding['occurrence']}\n" . hash( 'sha256', $binding['search_block_markup'] ) ),
-			'fallback_reconciliation_identity' => 'form' === $binding['role'] ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $entity ) : ( $is_grid ? self::product_grid_fallback_reconciliation_identity( $binding ) : '' ),
-			'fallback_hash'                    => 'form' === $binding['role'] ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $entity ) : ( $is_grid ? hash( 'sha256', $binding['search_block_markup'] ) : '' ),
+			'fallback_reconciliation_identity' => 'form' === $binding['role'] ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $entity ) : ( 'commerce_product_grid' === $binding['role'] ? $grid_identity : ( $is_grid ? self::product_grid_fallback_reconciliation_identity( $binding ) : '' ) ),
+			'fallback_hash'                    => 'form' === $binding['role'] ? Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $entity ) : ( 'commerce_product_grid' === $binding['role'] ? $grid_hash : ( $is_grid ? hash( 'sha256', $binding['search_block_markup'] ) : '' ) ),
 			'materialized_block_hash'          => 'form' === $binding['role'] || $is_grid ? hash( 'sha256', $replacement ) : '',
 			'provider'                         => $adapter['provider'] ?? '',
 			'superseded_runtime_selectors'     => $binding['superseded_runtime_selectors'] ?? array(),
@@ -1220,6 +1227,29 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		$source_path = (string) ( $binding['source_path'] ?? '' );
 		$hash        = hash( 'sha256', (string) ( $binding['search_block_markup'] ?? '' ) );
 		return hash( 'sha256', "static-site-importer/product-grid-fallback/v1\n{$source_path}\n{$hash}" );
+	}
+
+	/**
+	 * Derive a product-grid fallback's reconciliation identity and source-evidence
+	 * hash from the canonical source page plus the grid's own source selector —
+	 * the one evidence both the detected `html_product_grid_fallback` finding and
+	 * a completed `commerce_product_grid` binding receipt carry. Since
+	 * Automattic/blocks-engine#3088 a grid finding carries no `readable_blocks`,
+	 * so no preserved-region hash exists on the finding side; the page-scoped
+	 * selector is the matching evidence instead. Both reconciliation sides call
+	 * this one derivation, so the pair can never drift apart.
+	 *
+	 * @return array{0:string,1:string} [identity, fallback_hash], both '' when the page/selector pair is incomplete.
+	 */
+	public static function product_grid_fallback_identity( string $source_path, string $selector ): array {
+		$source_path = trim( $source_path );
+		$selector    = trim( $selector );
+		if ( '' === $source_path || '' === $selector ) {
+			return array( '', '' );
+		}
+		$fallback_hash = hash( 'sha256', "static-site-importer/product-grid-fallback/v2\n{$source_path}\n{$selector}" );
+		$identity      = hash( 'sha256', "static-site-importer/product-grid-fallback-reconciliation/v2\n{$source_path}\n{$selector}\n{$fallback_hash}" );
+		return array( $identity, $fallback_hash );
 	}
 
 	/** Build classic bindings from canonical entity selectors. */
