@@ -4323,9 +4323,13 @@ namespace {
 	// control for screen readers and is hidden from view. Its offset without
 	// the position would shift a visible caption, so the provider label
 	// carries both.
-	$offscreen_label_html = '<form><label for="news-email" style="position:absolute;left:-9999px;">Email address</label>'
+	$offscreen_label_html      = '<form><label for="news-email" style="position:absolute;left:-9999px;">Email address</label>'
 		. '<input type="email" id="news-email" name="email" placeholder="you@example.com"><button type="submit">Subscribe</button></form>';
-	$offscreen_label_source    = class_exists( $artifact_compiler ) ? ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'news.html', 'files' => array( 'news.html' => $offscreen_label_html ) ) )->toArray() )['fallbacks'][0] ?? array() : array();
+	$offscreen_label_artifact  = array(
+		'entrypoint' => 'news.html',
+		'files'      => array( 'news.html' => $offscreen_label_html ),
+	);
+	$offscreen_label_source    = class_exists( $artifact_compiler ) ? ( ( new $artifact_compiler() )->compile( $offscreen_label_artifact )->toArray() )['fallbacks'][0] ?? array() : array();
 	$offscreen_label_validated = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $offscreen_label_source ) ) );
 	$offscreen_label_seed      = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $offscreen_label_validated['forms'] ?? array() ) )['forms'][0] ?? array();
 	$offscreen_label_css       = (string) ( $offscreen_label_seed['provider_layout_overlay_css']['css'] ?? '' );

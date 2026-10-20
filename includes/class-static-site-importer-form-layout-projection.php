@@ -3991,7 +3991,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 */
 	public static function source_label_moved_off_screen( array $form, int $index ): bool {
 		foreach ( $form['presentation_graph']['controls'] ?? array() as $row ) {
-			if ( ! is_array( $row ) || $index !== ( $row['index'] ?? null ) || ! is_array( $row['label']['styles'] ?? null ) ) {
+			if ( ! is_array( $row ) || ( $row['index'] ?? null ) !== $index || ! is_array( $row['label']['styles'] ?? null ) ) {
 				continue;
 			}
 			$styles = $row['label']['styles'];
