@@ -3099,7 +3099,20 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		foreach ( is_array( $container['variants'] ?? null ) ? $container['variants'] : array() as $variant ) {
 			$declared = array_merge( $declared, is_array( $variant['styles'] ?? null ) ? array_keys( $variant['styles'] ) : array() );
 		}
-		$owned = array_intersect_key( Static_Site_Importer_Provider_Layout_Overlay::box_property_map(), array_flip( $declared ) );
+		// A declared shorthand (`margin`, `padding`) owns every longhand of its box,
+		// which is how the layout graph records the same facts on the form node.
+		$owned = array_filter(
+			Static_Site_Importer_Provider_Layout_Overlay::box_property_map(),
+			static function ( string $fact ) use ( $declared ): bool {
+				foreach ( $declared as $property ) {
+					if ( $fact === $property || str_starts_with( $fact, $property . '_' ) ) {
+						return true;
+					}
+				}
+				return false;
+			},
+			ARRAY_FILTER_USE_KEY
+		);
 		if ( array() === $owned ) {
 			return $graph;
 		}

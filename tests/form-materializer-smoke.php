@@ -1271,6 +1271,40 @@ namespace {
 		'container-presentation-owns-the-source-form-box-once',
 		wp_json_encode( $deduped_graph )
 	);
+	// A container `margin` shorthand owns the form node's margin longhands, the
+	// way the layout graph records the same source declaration.
+	$shorthand_graph = Static_Site_Importer_Form_Layout_Projection::without_container_box_facts(
+		array(
+			'nodes' => array(
+				array(
+					'id'     => 'form',
+					'layout' => array(
+						'display'      => 'flex',
+						'gap'          => '10px',
+						'margin_top'   => '18px',
+						'margin_right' => 'auto',
+						'margin_left'  => 'auto',
+					),
+				),
+			),
+		),
+		array(
+			'schema' => 'generic/form-container-presentation/v1',
+			'styles' => array(
+				'display'   => 'flex',
+				'margin'    => '18px auto 0',
+				'max_width' => '440px',
+			),
+		)
+	);
+	$assert(
+		array(
+			'display' => 'flex',
+			'gap'     => '10px',
+		) === $shorthand_graph['nodes'][0]['layout'],
+		'container-margin-shorthand-owns-the-form-margin-longhands',
+		wp_json_encode( $shorthand_graph )
+	);
 	// In-form heading + a nested `grid sm:grid-cols-2` name/phone row. The heading
 	// is copy inside the form (producer `context_before`), so it is an inner block
 	// of jetpack/contact-form rather than a page-grid sibling. The row maps through
