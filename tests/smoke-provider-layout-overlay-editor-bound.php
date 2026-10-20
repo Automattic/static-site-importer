@@ -86,11 +86,16 @@ $assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay
 // Distinct declarations cannot share a selector list and must retain the bound.
 foreach ( $presentation_graph['controls'] as $index => &$control ) {
 	$control['control']['styles']['color'] = sprintf( '#%06x', $index + 1 );
+	$control['control']['styles']['font_family'] = '"' . str_repeat( 'NeutralFont', 22 ) . '"';
 }
 unset( $control );
+foreach ( $map['presentation_targets'] as &$target ) {
+	$target['destinations'][0]['properties'][] = 'font_family';
+}
+unset( $target );
 
 $frontend = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph );
-$assert( array() === $frontend['losses'] && strlen( $frontend['css'] ) <= 32768, 'fixture frontend overlay fits its bound (' . strlen( $frontend['css'] ) . ' bytes)' );
+$assert( array() === $frontend['losses'] && strlen( $frontend['css'] ) <= 65536, 'fixture frontend overlay fits its bound (' . strlen( $frontend['css'] ) . ' bytes)' );
 $assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $frontend['overlay'] ), 'fixture frontend overlay is admitted' );
 
 $editor      = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph, array(), Static_Site_Importer_Provider_Layout_Overlay::SURFACE_EDITOR );

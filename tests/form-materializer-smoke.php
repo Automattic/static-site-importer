@@ -3273,7 +3273,7 @@ namespace {
 	$assert(
 		empty( $wrapping_label_errors )
 			&& 'mapped' === $wrapping_label_status
-			&& 2 === preg_match_all( '/\.(ssi-form-[a-f0-9]{12})\.\1 \.ssi-node-[a-f0-9]{12}\{margin-block:0!important\}/', $wrapping_label_css ),
+			&& 1 === preg_match( '/\.(ssi-form-[a-f0-9]{12})\.\1 \.ssi-node-[a-f0-9]{12}, \.\1\.\1 \.ssi-node-[a-f0-9]{12}\{margin-block:0!important\}/', $wrapping_label_css ),
 		'wrapping-label-field-box-margin-is-released-on-the-provider-caption',
 		$wrapping_label_css
 	);
