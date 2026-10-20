@@ -306,6 +306,10 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 		if ( 'sort' === $kind ) {
 			return self::sort_parameter( $control );
 		}
+		if ( 'result_count' === $kind ) {
+			// The source's own wording, with the archive's total in place of its number.
+			return 1 === preg_match( '/\d/', (string) ( $control['label'] ?? '' ) ) ? array( 'shape' => 'count' ) : null;
+		}
 		$shape = (string) ( $control['shape'] ?? '' );
 		if ( 'facet' !== $kind || ! in_array( $shape, array( 'select', 'buttons', 'radio' ), true ) ) {
 			return null;
@@ -437,6 +441,9 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 	 */
 	public static function render_control( string $content, array $block ): string {
 		$wired = $block['attrs']['metadata'][ self::CONTROL_KEY ] ?? null;
+		if ( is_array( $wired ) && 'count' === ( $wired['shape'] ?? null ) ) {
+			return self::render_count( $content );
+		}
 		$param = is_array( $wired ) && is_string( $wired['param'] ?? null ) ? $wired['param'] : '';
 		if ( '' === $param || ! class_exists( 'WP_HTML_Tag_Processor' ) ) {
 			return $content;
@@ -572,6 +579,19 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 		}
 		$html = $tags->get_updated_html();
 		return preg_match( '#^(<button\b(?:[^>"\']|"[^"]*"|\'[^\']*\')*>).*(</button>)$#is', $html, $parts ) ? $parts[1] . esc_html( $name ) . $parts[2] : '';
+	}
+
+	/**
+	 * The source count text with the number of products the archive found,
+	 * replacing the first number in its text; unchanged outside a query.
+	 */
+	private static function render_count( string $content ): string {
+		$query = $GLOBALS['wp_query'] ?? null;
+		if ( ! $query instanceof WP_Query ) {
+			return $content;
+		}
+		$counted = preg_replace( '/(>[^<\d]*)\d[\d,.]*/', '${1}' . (int) $query->found_posts, $content, 1 );
+		return is_string( $counted ) ? $counted : $content;
 	}
 
 	private static function enqueue_control_script(): void {
