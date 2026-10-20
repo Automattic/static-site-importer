@@ -155,7 +155,7 @@ $shade        = '<!-- wp:custom/authored-select {"id":"shade"} --><select id="sh
 $tone         = $html( '<div data-tone><label><input type="radio" name="tone" value="warm">Warm</label><label><input type="radio" name="tone" value="cool" checked>Cool</label></div>' );
 $swatch       = $html( '<div data-swatch></div>' );
 $count        = '<!-- wp:paragraph {"className":"count"} --><p class="count" data-count>2 items</p><!-- /wp:paragraph -->';
-$sort         = $html( '<select data-sort><option>Featured</option></select>' );
+$sort         = $html( '<select data-sort><option value="featured">Featured</option><option value="new">Newest</option><option value="cheap">Price: low to high</option><option value="dear">Price: high to low</option><option value="az">Name: A to Z</option></select>' );
 $grid_raw     = '<!-- wp:group {"className":"grid","metadata":{"attributes":{"data-grid":""}}} --><div class="wp-block-group grid" data-grid>' . $card( 'Zeta Item' ) . $card( 'Alpha Item' ) . '</div><!-- /wp:group -->';
 $sidebar      = '<!-- wp:group {"tagName":"aside","className":"filters"} --><aside class="wp-block-group filters"><!-- wp:heading {"level":3} --><h3 class="wp-block-heading">Filter</h3><!-- /wp:heading -->' . $category . $price . $shade . $tone . $swatch . '</aside><!-- /wp:group -->';
 $toolbar      = '<!-- wp:group {"className":"toolbar"} --><div class="wp-block-group toolbar">' . $count . $sort . '</div><!-- /wp:group -->';
@@ -251,8 +251,30 @@ $listing      = array(
 			'max'   => 100,
 		),
 		array(
-			'id'   => 'sort',
-			'kind' => 'sort',
+			'id'      => 'sort',
+			'kind'    => 'sort',
+			'options' => array(
+				array(
+					'value' => 'featured',
+					'order' => 'default',
+				),
+				array(
+					'value' => 'new',
+					'order' => 'newest',
+				),
+				array(
+					'value' => 'cheap',
+					'order' => 'price_asc',
+				),
+				array(
+					'value' => 'dear',
+					'order' => 'price_desc',
+				),
+				array(
+					'value' => 'az',
+					'order' => 'name_asc',
+				),
+			),
 		),
 		array(
 			'id'   => 'result_count',
@@ -396,8 +418,32 @@ $assert(
 	(string) wp_json_encode( $wire( $filters[4] ) )
 );
 $assert( null === $wire( $filters[5] ) && str_contains( (string) ( $filters[5]['innerHTML'] ?? '' ), 'data-swatch' ), 'unseeded-attribute-facet-keeps-its-source-block-unwired' );
-$results = $outer['innerBlocks'][0]['innerBlocks'][1] ?? array();
-$assert( array( 'woocommerce/product-results-count', 'woocommerce/catalog-sorting' ) === array_column( $results['innerBlocks'][0]['innerBlocks'] ?? array(), 'blockName' ), 'count-and-sort-become-woocommerce-blocks-in-the-toolbar' );
+$results        = $outer['innerBlocks'][0]['innerBlocks'][1] ?? array();
+$toolbar_blocks = $results['innerBlocks'][0]['innerBlocks'] ?? array();
+$assert( 'woocommerce/product-results-count' === ( $toolbar_blocks[0]['blockName'] ?? '' ) && 2 === count( $toolbar_blocks ), 'count-becomes-the-woocommerce-block-in-the-toolbar' );
+$assert(
+	array(
+		'param'  => 'orderby',
+		'shape'  => 'select',
+		'values' => array( '', 'date', 'price', 'price-desc', 'title-asc' ),
+	) === $wire( $toolbar_blocks[1] ) && str_contains( (string) ( $toolbar_blocks[1]['innerHTML'] ?? '' ), 'data-sort' ),
+	'sort-keeps-its-source-select-wired-to-the-catalog-order',
+	(string) wp_json_encode( $wire( $toolbar_blocks[1] ) )
+);
+$sort_parameter = new ReflectionMethod( Static_Site_Importer_Woo_Product_Listing_Materializer::class, 'sort_parameter' );
+$assert(
+	null === $sort_parameter->invoke(
+		null,
+		array(
+			'kind'    => 'sort',
+			'options' => array(
+				array( 'order' => 'default' ),
+				array( 'order' => 'staff_picks' ),
+			),
+		)
+	),
+	'a-sort-naming-an-order-woocommerce-cannot-run-falls-back-to-catalog-sorting'
+);
 $assert( 'grid' === ( $results['innerBlocks'][1]['attrs']['className'] ?? '' ) && str_contains( $markup, '<!-- wp:woocommerce/product-template' ) && ! str_contains( $markup, 'woocommerceHandPickedProducts' ) && ! str_contains( $markup, 'data-grid' ), 'grid-lists-the-archives-products-with-the-card' );
 $assert( 1 === substr_count( $markup, '<!-- wp:woocommerce/product-collection' ), 'grid-shares-the-archive-collection' );
 
@@ -446,6 +492,11 @@ $emptied_html                 = $render( $filters[1] );
 $assert( ! str_contains( $emptied_html, 'Succulents' ) && 2 === substr_count( $emptied_html, '<button' ), 'a-category-without-products-leaves-the-buttons', $emptied_html );
 $GLOBALS['ssi_listing_terms'] = array();
 
+$untouched_sort  = $render( $toolbar_blocks[1] );
+$_GET['orderby'] = 'price-desc';
+$sort_html       = $render( $toolbar_blocks[1] );
+$assert( str_contains( $untouched_sort, 'data-ssi-listing-param="orderby"' ) && str_contains( $untouched_sort, '<option selected value="">Featured</option>' ), 'unsorted-archive-selects-the-default-order', $untouched_sort );
+$assert( str_contains( $sort_html, '<option selected value="price-desc">Price: high to low</option>' ) && ! str_contains( $sort_html, 'selected value="">Featured' ), 'sort-shows-the-requested-catalog-order', $sort_html );
 $script = (string) ( $GLOBALS['ssi_listing_scripts']['static-site-importer-listing-controls'] ?? '' );
 $assert( str_contains( $script, "closest('[data-ssi-listing-param]')" ) && str_contains( $script, "closest('[data-ssi-listing-value]')" ) && str_contains( $script, 'event.preventDefault()' ) && str_contains( $script, 'searchParams.delete(param)' ) && str_contains( $script, "searchParams.delete('paged')" ), 'choosing-an-option-loads-the-archive-url-with-the-parameter' );
 $assert( '<p>x</p>' === Static_Site_Importer_Woo_Product_Listing_Materializer::render_control( '<p>x</p>', array( 'attrs' => array() ) ), 'blocks-without-a-wire-are-untouched' );
