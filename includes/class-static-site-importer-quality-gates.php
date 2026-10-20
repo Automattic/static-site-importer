@@ -332,6 +332,17 @@ final class Static_Site_Importer_Quality_Gates {
 		return false;
 	}
 
+	/** Identify a cart view finding a shop provider's cart replaces whole. */
+	public static function is_cart_view_fallback_diagnostic( array $diagnostic ): bool {
+		foreach ( array( 'diagnostic_code', 'code', 'reason_code' ) as $key ) {
+			if ( 'html_cart_view_fallback' === (string) ( $diagnostic[ $key ] ?? '' ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
 	/** Identify a commerce add-to-cart/quantity controls fallback finding. */
 	public static function is_commerce_controls_fallback_diagnostic( array $diagnostic ): bool {
 		foreach ( array( 'diagnostic_code', 'code', 'reason_code' ) as $key ) {
@@ -348,7 +359,7 @@ final class Static_Site_Importer_Quality_Gates {
 	 * canonical source page plus the grid's own source selector — the same
 	 * evidence the grid declaration, `entity_lifecycle.product_grids[]` and a
 	 * completed `commerce_product_grid` binding receipt carry (see
-	 * `Static_Site_Importer_Entity_Materializer_Registry::product_grid_fallback_identity()`).
+	 * `Static_Site_Importer_Entity_Materializer_Registry::page_region_fallback_identity()`).
 	 * Since Automattic/blocks-engine#3088 a grid finding carries no
 	 * `readable_blocks`, so the preserved region is not derivable from the
 	 * finding; the page-scoped selector is the matching evidence instead. A
@@ -359,8 +370,9 @@ final class Static_Site_Importer_Quality_Gates {
 	 * @param array<string,mixed> $diagnostic Product-grid fallback diagnostic.
 	 * @return array{0:string,1:string} [identity, fallback_hash], both '' when undeliverable.
 	 */
-	private static function product_grid_fallback_identity( array $diagnostic ): array {
-		return Static_Site_Importer_Entity_Materializer_Registry::product_grid_fallback_identity(
+	private static function page_region_fallback_identity( array $diagnostic ): array {
+		return Static_Site_Importer_Entity_Materializer_Registry::page_region_fallback_identity(
+			self::is_cart_view_fallback_diagnostic( $diagnostic ) ? 'cart-view' : 'product-grid',
 			Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'source_path', 'source' ) ),
 			Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'selector', 'container_selector' ) )
 		);
@@ -589,13 +601,14 @@ final class Static_Site_Importer_Quality_Gates {
 		if ( empty( $receipts ) ) {
 			$bindings = $report['materialization_receipt']['completed']['runtime_declarations']['entity_bindings'] ?? array();
 			foreach ( $bindings as $binding ) {
-				if ( ! is_array( $binding ) || 'completed' !== ( $binding['status'] ?? null ) || ! in_array( $binding['role'] ?? null, array( 'form', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'order_lookup' ), true ) ) {
+				if ( ! is_array( $binding ) || 'completed' !== ( $binding['status'] ?? null ) || ! in_array( $binding['role'] ?? null, array( 'form', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'commerce_cart', 'order_lookup' ), true ) ) {
 					continue;
 				}
-				if ( in_array( $binding['role'], array( 'commerce_product_grid', 'commerce_listing' ), true ) ) {
-					// A canonical grid receipt, or the receipt of the store listing
-					// that adopted the grid, joins its finding page-and-selector-scoped.
-					list( $grid_identity, $grid_hash ) = Static_Site_Importer_Entity_Materializer_Registry::product_grid_fallback_identity( (string) ( $binding['source_path'] ?? '' ), (string) ( $binding['selector'] ?? '' ) );
+				if ( in_array( $binding['role'], array( 'commerce_product_grid', 'commerce_listing', 'commerce_cart' ), true ) ) {
+					// A canonical grid receipt, the receipt of the store listing that
+					// adopted the grid, or a cart receipt joins its finding
+					// page-and-selector-scoped.
+					list( $grid_identity, $grid_hash ) = Static_Site_Importer_Entity_Materializer_Registry::page_region_fallback_identity( Static_Site_Importer_Entity_Materializer_Registry::fallback_region( (string) $binding['role'] ), (string) ( $binding['source_path'] ?? '' ), (string) ( $binding['selector'] ?? '' ) );
 					if ( '' === $grid_identity ) {
 						continue;
 					}
@@ -729,10 +742,10 @@ final class Static_Site_Importer_Quality_Gates {
 		// or unresolved — reports a resolution row, exactly like forms.
 		$resolved_grid_receipts = array();
 		foreach ( $report['diagnostics'] ?? array() as $index => $diagnostic ) {
-			if ( ! is_array( $diagnostic ) || ! self::is_product_grid_fallback_diagnostic( $diagnostic ) ) {
+			if ( ! is_array( $diagnostic ) || ! ( self::is_product_grid_fallback_diagnostic( $diagnostic ) || self::is_cart_view_fallback_diagnostic( $diagnostic ) ) ) {
 				continue;
 			}
-			list( $identity, $fallback_hash ) = self::product_grid_fallback_identity( $diagnostic );
+			list( $identity, $fallback_hash ) = self::page_region_fallback_identity( $diagnostic );
 			$source_path                      = Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
 			$candidate_receipt                = '' === $identity ? array() : ( $receipts_by_fallback[ $identity ] ?? array() );
 			$receipt                          = is_array( $candidate_receipt ) ? $candidate_receipt : array();

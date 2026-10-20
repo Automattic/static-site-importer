@@ -1,7 +1,7 @@
 <?php
 /**
- * Smoke coverage for provider-materialized product-grid and commerce-controls
- * quality reconciliation.
+ * Smoke coverage for provider-materialized product-grid, cart-view and
+ * commerce-controls quality reconciliation.
  *
  * Since Automattic/blocks-engine#3088 a `html_product_grid_fallback` finding
  * carries no `readable_blocks`, so its reconciliation identity is the canonical
@@ -53,8 +53,8 @@ $binding_identity   = hash( 'sha256', 'commerce-product-grid-binding' );
 // The page-and-selector identity derivation is part of this contract. On the
 // pre-fix codebase the derivation does not exist yet, so the receipt carries no
 // joining identity and every reconciliation assertion below fails.
-list( $grid_identity, $grid_fallback_hash ) = method_exists( 'Static_Site_Importer_Entity_Materializer_Registry', 'product_grid_fallback_identity' )
-	? Static_Site_Importer_Entity_Materializer_Registry::product_grid_fallback_identity( $grid_source_path, $grid_selector )
+list( $grid_identity, $grid_fallback_hash ) = method_exists( 'Static_Site_Importer_Entity_Materializer_Registry', 'page_region_fallback_identity' )
+	? Static_Site_Importer_Entity_Materializer_Registry::page_region_fallback_identity( 'product-grid', $grid_source_path, $grid_selector )
 	: array( '', '' );
 
 // A grid finding exactly as Blocks Engine now emits it: page and selector
@@ -276,6 +276,89 @@ $assert( 2 === ( $listing_report['quality_resolutions']['resolved_by_provider'] 
 // A listing that adopted no grid answers for no grid finding.
 $gridless_record = $record_method->invoke( null, 'listings-declaration', $listing_binding, $replacement_markup, array_diff_key( $listing_entity, array( 'grid' => true ) ), array( 'provider' => 'woocommerce' ) );
 $assert( '' === ( $gridless_record['selector'] ?? 'unexpected' ) && '' === ( $gridless_record['fallback_reconciliation_identity'] ?? 'unexpected' ), 'listing-without-an-adopted-grid-answers-for-no-grid', (string) wp_json_encode( $gridless_record ) );
+
+// A cart view the shop provider's cart block replaced whole joins its finding
+// by the cart view's own page and selector, exactly like a grid. The record is
+// built by the registry exactly as materialization builds it.
+$cart_selector  = 'main > section.cart';
+$cart_markup    = '<!-- wp:woocommerce/cart --><div class="wp-block-woocommerce-cart alignwide is-loading"></div><!-- /wp:woocommerce/cart -->';
+$cart_page_hash = hash( 'sha256', '<!-- wp:heading --><h2>Cart</h2><!-- /wp:heading -->' . $cart_markup );
+$cart_finding   = array(
+	'type'            => 'unsupported_html_fallback',
+	'code'            => 'html_cart_view_fallback',
+	'diagnostic_code' => 'html_cart_view_fallback',
+	'source_path'     => 'cart.html',
+	'selector'        => $cart_selector,
+);
+$cart_record    = $record_method->invoke(
+	null,
+	'carts-declaration',
+	array(
+		'schema'                       => 'generic/block-binding/v1',
+		'source_path'                  => 'cart.html',
+		'search_block_markup'          => '<!-- wp:html --><section class="cart">cart</section><!-- /wp:html -->',
+		'occurrence'                   => 1,
+		'role'                         => 'commerce_cart',
+		'superseded_runtime_selectors' => array( '[data-cart-page]' ),
+	),
+	$cart_markup,
+	array(
+		'source_path' => 'cart.html',
+		'selector'    => $cart_selector,
+	),
+	array( 'provider' => 'woocommerce' )
+);
+$cart_receipt   = array_merge(
+	$cart_record,
+	array(
+		'status'                    => 'completed',
+		'persisted_fragment_hash'   => hash( 'sha256', $cart_markup ),
+		'materialized_content_hash' => $cart_page_hash,
+	)
+);
+$assert( ( $cart_record['selector'] ?? '' ) === $cart_selector && 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $cart_record['fallback_reconciliation_identity'] ?? '' ) ) && hash( 'sha256', $cart_markup ) === ( $cart_record['materialized_block_hash'] ?? '' ), 'cart-record-carries-its-cart-view-selector', (string) wp_json_encode( $cart_record ) );
+// A grid finding at the same page and selector is a different region kind and
+// stays unresolved by the cart receipt.
+$cart_grid_finding = array_merge(
+	$grid_finding,
+	array(
+		'source_path'        => 'cart.html',
+		'selector'           => $cart_selector,
+		'container_selector' => $cart_selector,
+	)
+);
+$cart_report       = Static_Site_Importer_Import_Report::from_array(
+	array(
+		'quality'                 => array( 'fallback_count' => 2 ),
+		'diagnostics'             => array( $cart_finding, $cart_grid_finding ),
+		'materialization_receipt' => array(
+			'completed' => array(
+				'materialized_pages'   => array( 'cart.html' => array( 'content_hash' => $cart_page_hash ) ),
+				'runtime_declarations' => array( 'entity_bindings' => array( $cart_receipt ) ),
+			),
+		),
+	)
+);
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $cart_report );
+$cart_rows = $cart_report['quality_resolutions']['resolutions'] ?? array();
+$assert( 1 === ( $cart_report['quality_resolutions']['resolved_by_provider'] ?? -1 ) && 1 === ( $cart_report['quality']['fallback_count'] ?? -1 ), 'cart-receipt-resolves-its-cart-view-finding', (string) wp_json_encode( $cart_report['quality_resolutions'] ?? null ) );
+$assert( 'resolved_by_provider' === ( $cart_rows[0]['state'] ?? '' ) && 'unresolved' === ( $cart_rows[1]['state'] ?? '' ), 'cart-receipt-answers-only-for-the-cart-view', (string) wp_json_encode( $cart_rows ) );
+
+// A cart page whose persisted digest does not match leaves the finding unresolved.
+$tampered_cart = Static_Site_Importer_Import_Report::from_array(
+	array(
+		'quality'                 => array( 'fallback_count' => 1 ),
+		'diagnostics'             => array( $cart_finding ),
+		'materialization_receipt' => array(
+			'completed' => array(
+				'materialized_pages'   => array( 'cart.html' => array( 'content_hash' => hash( 'sha256', 'tampered cart page' ) ) ),
+				'runtime_declarations' => array( 'entity_bindings' => array( $cart_receipt ) ),
+			),
+		),
+	)
+);
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $tampered_cart );
+$assert( 0 === ( $tampered_cart['quality_resolutions']['resolved_by_provider'] ?? -1 ), 'cart-quality-rejects-a-tampered-cart-page', (string) wp_json_encode( $tampered_cart['quality_resolutions'] ?? null ) );
 
 if ( ! empty( $failures ) ) {
 	fwrite( STDERR, implode( "\n", $failures ) . "\n" );
