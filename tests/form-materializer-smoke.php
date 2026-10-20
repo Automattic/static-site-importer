@@ -3203,6 +3203,18 @@ namespace {
 		'provider-container-box-reset-is-lower-priority-than-authored-container-padding',
 		$container_padding_css
 	);
+	// Jetpack's front-end form element sits between the container that paints the
+	// source form's box and the block wrapper that lays out its fields. A source
+	// rule written against the form (`.newsletter form {...}`) also matches it, so
+	// it adds no box of its own, until Jetpack hides it after a submission. The
+	// editor has no such element.
+	$assert(
+		preg_match( '/(?:^|\n)\.ssi-form-[a-f0-9]{12}\.jetpack-contact-form-container > form\.jetpack-contact-form__form:has\(> \.wp-block-jetpack-contact-form\):not\(\.submission-success\)\{display:contents\}/', $container_padding_css )
+			&& ! str_contains( (string) ( $container_padding_row['provider_layout_overlay_css']['editor_css'] ?? '' ), 'jetpack-contact-form__form:has(' )
+			&& ! str_contains( (string) ( $status_seed['forms'][0]['provider_layout_overlay_css']['css'] ?? '' ), 'jetpack-contact-form__form:has(' ),
+		'provider-front-end-form-adds-no-box-under-a-painted-source-form-container',
+		$container_padding_css
+	);
 	// A provider select is a wrapper nest: Jetpack parks input className on
 	// `.contact-form__select-wrapper` and paints that wrapper, then independently
 	// pads the nested `<select>`. The authored box must resolve to one node, the
