@@ -3982,6 +3982,32 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		);
 	}
 
+	/**
+	 * Whether the control's source label is taken out of flow and moved
+	 * off-screen (`position:absolute; left:-9999px`), a common way to keep a
+	 * label for screen readers while hiding it from view.
+	 *
+	 * @param array<string,mixed> $form Provider form manifest row.
+	 */
+	public static function source_label_moved_off_screen( array $form, int $index ): bool {
+		foreach ( $form['presentation_graph']['controls'] ?? array() as $row ) {
+			if ( ! is_array( $row ) || $index !== ( $row['index'] ?? null ) || ! is_array( $row['label']['styles'] ?? null ) ) {
+				continue;
+			}
+			$styles = $row['label']['styles'];
+			if ( ! in_array( strtolower( trim( (string) ( $styles['position'] ?? '' ) ) ), array( 'absolute', 'fixed' ), true ) ) {
+				return false;
+			}
+			foreach ( array( 'top', 'right', 'bottom', 'left' ) as $side ) {
+				if ( 1 === preg_match( '/^-([0-9]+(?:\.[0-9]+)?)px$/D', strtolower( trim( (string) ( $styles[ $side ] ?? '' ) ) ), $match ) && (float) $match[1] >= 999.0 ) {
+					return true;
+				}
+			}
+			return false;
+		}
+		return false;
+	}
+
 	/** Whether the control's source label is an ancestor that wraps it, rather than a `for` sibling. */
 	public static function source_label_wraps_control( array $form, int $index ): bool {
 		$nodes  = array_column( $form['control_topology']['nodes'] ?? array(), null, 'id' );
@@ -5024,8 +5050,16 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					'priority'   => 'important',
 				) );
 			}
+			$offscreen_label = self::source_label_moved_off_screen( $form, (int) $index );
 			foreach ( $target['destinations'] as &$destination ) {
 				unset( $destination['class'] );
+				// A label the source moves off-screen keeps its accessible name
+				// only while it is out of flow. Its offsets alone would shift a
+				// visible caption, so the label destination carries the position
+				// too.
+				if ( $offscreen_label && 'label' === ( $destination['part'] ?? null ) && ! in_array( 'position', $destination['properties'], true ) ) {
+					$destination['properties'][] = 'position';
+				}
 			}
 			unset( $destination );
 			$presentation_targets[] = $target;
