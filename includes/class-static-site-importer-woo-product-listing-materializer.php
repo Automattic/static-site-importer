@@ -18,17 +18,17 @@ defined( 'ABSPATH' ) || exit;
  *
  * - the grid element lists the archive's products with the imported card
  *   (see the product-grid adapter);
- * - a facet of buttons becomes `product-filter-taxonomy` (category) or
- *   `product-filter-attribute` (the seeded attribute), inside one
- *   `product-filters` block placed where the source filters were;
  * - the sort control becomes `catalog-sorting` and the result count
- *   `product-results-count`.
+ *   `product-results-count`;
+ * - a category or seeded-attribute facet (buttons, a select or radios) and a
+ *   price range keep their source block, wired to the archive's own query
+ *   parameter: the server renders the requested state and choosing an option
+ *   loads the archive URL with that parameter. WooCommerce's filter blocks
+ *   draw their own chips, checkboxes and two-handle slider, in term order and
+ *   without the source's "all" option, so the source controls are what keep
+ *   the source design.
  *
- * WooCommerce's filter blocks have no dropdown and no one-handle price range,
- * so a select facet and a price range keep their source block, wired to the
- * archive's own query parameter: the server renders the requested state and
- * a change loads the archive URL with that parameter. Any other control
- * WooCommerce cannot express keeps its source block unchanged. The page
+ * Any other control keeps its source block unchanged. The page
  * keeps the result, and the theme serves it as the `archive-product`
  * template, which WooCommerce renders at the shop page's URL.
  */
@@ -229,7 +229,7 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 		if ( 1 !== count( $blocks ) ) {
 			return '';
 		}
-		$listing = self::with_filters_wrapper( $blocks[0] );
+		$listing = $blocks[0];
 
 		$attrs = array(
 			'queryId'    => abs( crc32( (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' ) ) ) % 1000000,
@@ -268,18 +268,9 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 	 */
 	private static function control_block_markup( array $control, string $source ): string {
 		$kind  = (string) ( $control['kind'] ?? '' );
-		$wired = self::control_parameter( $control );
+		$wired = self::control_parameter( $control, $source );
 		if ( null !== $wired ) {
 			return self::wired_source_markup( $source, $wired );
-		}
-		if ( 'facet' === $kind && 'category' === ( $control['role'] ?? '' ) ) {
-			return '<!-- wp:woocommerce/product-filter-taxonomy {"taxonomy":"product_cat","displayStyle":"woocommerce/product-filter-chips"} --><div class="wp-block-woocommerce-product-filter-taxonomy"><!-- wp:woocommerce/product-filter-chips /--></div><!-- /wp:woocommerce/product-filter-taxonomy -->';
-		}
-		if ( 'facet' === $kind && 'attribute' === ( $control['role'] ?? '' ) ) {
-			$id = self::attribute_id( $control );
-			// A radio group picks one value.
-			$select = 'radio' === ( $control['shape'] ?? '' ) ? 'single' : 'multiple';
-			return $id <= 0 ? '' : '<!-- wp:woocommerce/product-filter-attribute {"attributeId":' . $id . ',"displayStyle":"woocommerce/product-filter-chips","selectType":"' . $select . '"} --><div class="wp-block-woocommerce-product-filter-attribute"><!-- wp:woocommerce/product-filter-chips /--></div><!-- /wp:woocommerce/product-filter-attribute -->';
 		}
 		if ( 'sort' === $kind ) {
 			return '<!-- wp:woocommerce/catalog-sorting /-->';
@@ -296,13 +287,13 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 	}
 
 	/**
-	 * The archive query parameter a select facet or a price range sets: for
-	 * a select, each source option's parameter value (`''` clears it); for a
-	 * range, its bounds, whose outer one clears it.
+	 * The archive query parameter a facet or a price range sets. A facet
+	 * lists each source option's parameter value in source order, `''` for
+	 * its reset option; a range names the bound that clears the parameter.
 	 *
 	 * @return array<string,mixed>|null
 	 */
-	private static function control_parameter( array $control ): ?array {
+	private static function control_parameter( array $control, string $source ): ?array {
 		$kind = (string) ( $control['kind'] ?? '' );
 		if ( 'range' === $kind && 'price' === ( $control['field'] ?? '' ) && is_numeric( $control['min'] ?? null ) && is_numeric( $control['max'] ?? null ) ) {
 			$max = 'min' !== ( $control['bound'] ?? 'max' );
@@ -312,7 +303,8 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 				'clear' => (string) ( $max ? $control['max'] : $control['min'] ),
 			);
 		}
-		if ( 'facet' !== $kind || 'select' !== ( $control['shape'] ?? '' ) ) {
+		$shape = (string) ( $control['shape'] ?? '' );
+		if ( 'facet' !== $kind || ! in_array( $shape, array( 'select', 'buttons', 'radio' ), true ) ) {
 			return null;
 		}
 		$role  = (string) ( $control['role'] ?? '' );
@@ -322,16 +314,61 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 		}
 		$values = array();
 		foreach ( is_array( $control['options'] ?? null ) ? $control['options'] : array() as $option ) {
-			if ( is_array( $option ) && is_scalar( $option['value'] ?? null ) ) {
-				// Seeded categories are slugged from their name, attribute terms keep the value.
-				$values[ (string) $option['value'] ] = ! empty( $option['reset'] ) ? '' : ( 'categories' === $param ? sanitize_title( (string) $option['value'] ) : (string) $option['value'] );
-			}
+			$value = is_array( $option ) && is_scalar( $option['value'] ?? null ) ? (string) $option['value'] : '';
+			// Seeded categories are slugged from their name, attribute terms keep the value.
+			$values[] = ! empty( $option['reset'] ) ? '' : ( 'categories' === $param ? sanitize_title( $value ) : $value );
 		}
-		return array() === $values ? null : array(
+		$wired = array(
 			'param'  => $param,
-			'shape'  => 'select',
+			'shape'  => $shape,
 			'values' => $values,
 		);
+		if ( 'buttons' === $shape ) {
+			$wired['state_class'] = self::button_state_class( $source );
+		}
+		return array() === $values ? null : $wired;
+	}
+
+	/**
+	 * The class only the source's selected button carries, which marks the
+	 * requested option; '' when no single button stands out.
+	 */
+	private static function button_state_class( string $source ): string {
+		if ( ! class_exists( 'WP_HTML_Tag_Processor' ) ) {
+			return '';
+		}
+		$owners = array();
+		$index  = 0;
+		$tags   = new WP_HTML_Tag_Processor( $source );
+		while ( $tags->next_tag() ) {
+			if ( ! self::is_button( $tags ) ) {
+				continue;
+			}
+			$classes = $tags->get_attribute( 'class' );
+			$classes = preg_split( '/\s+/', is_string( $classes ) ? trim( $classes ) : '', -1, PREG_SPLIT_NO_EMPTY );
+			foreach ( array_unique( is_array( $classes ) ? $classes : array() ) as $class ) {
+				$owners[ $class ][] = $index;
+			}
+			++$index;
+		}
+		$unique  = array_filter( $owners, static fn( array $buttons ): bool => 1 === count( $buttons ) );
+		$holders = array_unique( array_merge( array(), ...array_values( $unique ) ) );
+		return $index > 2 && 1 === count( $holders ) ? implode( ' ', array_keys( $unique ) ) : '';
+	}
+
+	/** Whether the processor is on one of a facet's options: an option, a radio or a button. */
+	private static function is_option( WP_HTML_Tag_Processor $tags, string $shape ): bool {
+		if ( 'select' === $shape ) {
+			return 'OPTION' === $tags->get_tag();
+		}
+		if ( 'radio' === $shape ) {
+			return 'INPUT' === $tags->get_tag() && 'radio' === strtolower( (string) $tags->get_attribute( 'type' ) );
+		}
+		return self::is_button( $tags );
+	}
+
+	private static function is_button( WP_HTML_Tag_Processor $tags ): bool {
+		return ! $tags->is_tag_closer() && ( 'BUTTON' === $tags->get_tag() || 'button' === $tags->get_attribute( 'role' ) );
 	}
 
 	/** The source control block, carrying the parameter it sets. */
@@ -342,80 +379,6 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 		}
 		$blocks[0]['attrs']['metadata'][ self::CONTROL_KEY ] = $wired;
 		return serialize_block( $blocks[0] );
-	}
-
-	/**
-	 * Place one `product-filters` block around the children of the deepest
-	 * block that holds every filter, so the filters keep their source place.
-	 */
-	private static function with_filters_wrapper( array $block ): array {
-		$paths = self::filter_paths( $block, array() );
-		if ( empty( $paths ) ) {
-			return $block;
-		}
-		// The deepest block holding every filter: the longest common path of
-		// the filters' parents.
-		$common = array_slice( $paths[0], 0, -1 );
-		foreach ( $paths as $path ) {
-			$parent = array_slice( $path, 0, -1 );
-			$limit  = min( count( $common ), count( $parent ) );
-			$length = 0;
-			while ( $length < $limit && $common[ $length ] === $parent[ $length ] ) {
-				++$length;
-			}
-			$common = array_slice( $common, 0, $length );
-		}
-		return self::wrap_children( $block, $common );
-	}
-
-	/**
-	 * Paths of the filter blocks under a block.
-	 *
-	 * @param array<int,int> $path Path of `$block`.
-	 * @return array<int,array<int,int>>
-	 */
-	private static function filter_paths( array $block, array $path ): array {
-		if ( in_array( $block['blockName'] ?? '', array( 'woocommerce/product-filter-taxonomy', 'woocommerce/product-filter-attribute' ), true ) ) {
-			return array( $path );
-		}
-		$paths = array();
-		foreach ( $block['innerBlocks'] ?? array() as $index => $inner ) {
-			$paths = array_merge( $paths, self::filter_paths( $inner, array_merge( $path, array( (int) $index ) ) ) );
-		}
-		return $paths;
-	}
-
-	/**
-	 * Move the children of the block at `$path` into a `product-filters` block.
-	 *
-	 * @param array<int,int> $path Inner-block indexes.
-	 */
-	private static function wrap_children( array $block, array $path ): array {
-		if ( array() !== $path ) {
-			$index                          = (int) array_shift( $path );
-			$block['innerBlocks'][ $index ] = self::wrap_children( $block['innerBlocks'][ $index ], $path );
-			return $block;
-		}
-		$content = $block['innerContent'];
-		$last    = count( $content ) - 1;
-		$start   = is_string( $content[0] ?? null ) ? 1 : 0;
-		$end     = $last > 0 && is_string( $content[ $last ] ) ? $last : $last + 1;
-		$open    = 1 === $start ? (string) $content[0] : '';
-		$close   = $end === $last ? (string) $content[ $last ] : '';
-		$middle  = array_slice( $content, $start, $end - $start );
-		// On narrow screens WooCommerce would fold the filters into an overlay
-		// the source never had.
-		$filters               = array(
-			'blockName'    => 'woocommerce/product-filters',
-			'attrs'        => array( 'overlayMode' => 'never' ),
-			'innerBlocks'  => $block['innerBlocks'],
-			'innerContent' => array_merge( array( '<div class="wp-block-woocommerce-product-filters">' ), $middle, array( '</div>' ) ),
-		);
-		$filters['innerHTML']  = implode( '', array_filter( $filters['innerContent'], 'is_string' ) );
-		$block['innerBlocks']  = array( $filters );
-		$block['innerContent'] = array( $open, null, $close );
-		$block['innerHTML']    = $open . $close;
-		return $block;
 	}
 
 	/**
@@ -445,7 +408,8 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- A public archive filter, read like WooCommerce reads it.
 		$requested = isset( $_GET[ $param ] ) && is_string( $_GET[ $param ] ) ? sanitize_text_field( wp_unslash( $_GET[ $param ] ) ) : '';
 		$tags      = new WP_HTML_Tag_Processor( $content );
-		if ( 'range' === ( $wired['shape'] ?? '' ) ) {
+		$shape     = (string) ( $wired['shape'] ?? '' );
+		if ( 'range' === $shape ) {
 			if ( ! $tags->next_tag( array( 'tag_name' => 'input' ) ) ) {
 				return $content;
 			}
@@ -457,21 +421,44 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 			self::enqueue_control_script();
 			return $tags->get_updated_html();
 		}
-		if ( ! $tags->next_tag( array( 'tag_name' => 'select' ) ) ) {
+		// The select itself, or the element holding the buttons or radios.
+		if ( ! $tags->next_tag( 'select' === $shape ? array( 'tag_name' => 'select' ) : null ) ) {
 			return $content;
 		}
 		$tags->set_attribute( 'data-ssi-listing-param', $param );
 		$tags->set_attribute( 'data-ssi-listing-clear', '' );
-		$values = is_array( $wired['values'] ?? null ) ? $wired['values'] : array();
-		// WooCommerce reads a comma list; a select shows its first value.
+		$values = is_array( $wired['values'] ?? null ) ? array_map( 'strval', array_values( $wired['values'] ) ) : array();
+		// WooCommerce reads a comma list; a single-choice control shows its first value.
 		$chosen = explode( ',', $requested )[0];
-		while ( $tags->next_tag( array( 'tag_name' => 'option' ) ) ) {
-			$value = (string) ( $values[ (string) $tags->get_attribute( 'value' ) ] ?? $tags->get_attribute( 'value' ) );
-			$tags->set_attribute( 'value', $value );
-			if ( $value === $chosen ) {
-				$tags->set_attribute( 'selected', true );
+		if ( ! in_array( $chosen, $values, true ) ) {
+			// Nothing this control offers is requested: keep the source state.
+			$chosen = null;
+		}
+		$state = trim( (string) ( $wired['state_class'] ?? '' ) );
+		$index = 0;
+		$total = count( $values );
+		while ( $index < $total && $tags->next_tag() ) {
+			if ( ! self::is_option( $tags, $shape ) ) {
+				continue;
+			}
+			$value = $values[ $index++ ];
+			if ( 'buttons' === $shape ) {
+				$tags->set_attribute( 'data-ssi-listing-value', $value );
 			} else {
-				$tags->remove_attribute( 'selected' );
+				$tags->set_attribute( 'value', $value );
+			}
+			if ( null === $chosen ) {
+				continue;
+			}
+			$on = $value === $chosen;
+			if ( 'buttons' !== $shape ) {
+				$attribute = 'select' === $shape ? 'selected' : 'checked';
+				$on ? $tags->set_attribute( $attribute, true ) : $tags->remove_attribute( $attribute );
+				continue;
+			}
+			$tags->set_attribute( 'aria-pressed', $on ? 'true' : 'false' );
+			foreach ( '' === $state ? array() : explode( ' ', $state ) as $class ) {
+				$on ? $tags->add_class( $class ) : $tags->remove_class( $class );
 			}
 		}
 		self::enqueue_control_script();
@@ -490,19 +477,29 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 	/** Load the archive's first page with the control's parameter set, or cleared at its reset value. */
 	public static function control_script(): string {
 		return <<<'JS'
-document.addEventListener('change', function (event) {
-	var control = event.target instanceof Element ? event.target.closest('[data-ssi-listing-param]') : null;
-	if (!control) return;
+function ssiListingLoad(control, value) {
 	var url = new URL(window.location.href);
 	var param = control.getAttribute('data-ssi-listing-param');
 	url.pathname = url.pathname.replace(/\/page\/\d+\/?$/, '/');
 	url.searchParams.delete('paged');
-	if (control.value === control.getAttribute('data-ssi-listing-clear')) {
+	if (value === control.getAttribute('data-ssi-listing-clear')) {
 		url.searchParams.delete(param);
 	} else {
-		url.searchParams.set(param, control.value);
+		url.searchParams.set(param, value);
 	}
 	window.location.assign(url.toString());
+}
+document.addEventListener('change', function (event) {
+	var target = event.target instanceof Element ? event.target : null;
+	var control = target ? target.closest('[data-ssi-listing-param]') : null;
+	if (control) ssiListingLoad(control, target.value);
+});
+document.addEventListener('click', function (event) {
+	var option = event.target instanceof Element ? event.target.closest('[data-ssi-listing-value]') : null;
+	var control = option ? option.closest('[data-ssi-listing-param]') : null;
+	if (!control) return;
+	event.preventDefault();
+	ssiListingLoad(control, option.getAttribute('data-ssi-listing-value'));
 });
 JS;
 	}
