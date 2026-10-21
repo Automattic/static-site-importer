@@ -57,11 +57,11 @@ class Static_Site_Importer_Stylesheet_Materializer {
 			foreach ( $existing_stylesheets as $path => $content ) {
 				$is_editor       = str_ends_with( $path, '/assets/css/editor-style.css' );
 				$context_css     = $is_editor ? $provider_editor_context_css : $provider_context_css;
-				$writes[ $path ] = $context_css . $content . $provider_layout_css . ( $is_editor ? $provider_editor_css : '' );
+				$writes[ $path ] = $context_css . self::preserve_form_placeholders( $content, $provider_layout_overlays ) . $provider_layout_css . ( $is_editor ? $provider_editor_css : '' );
 			}
 			return $writes;
 		}
-		$css = self::rewrite_css_asset_urls( $css, $assets );
+		$css = self::preserve_form_placeholders( self::rewrite_css_asset_urls( $css, $assets ), $provider_layout_overlays );
 
 		return array(
 			$theme_dir . '/style.css'                   => self::style_css( $theme_name, $provider_context_css . $css . $provider_layout_css, $visual_repair_styles, $artifact_provenance ),
@@ -69,7 +69,60 @@ class Static_Site_Importer_Stylesheet_Materializer {
 		);
 	}
 
-	/** Return deterministic, content-addressed provider layout overlays once each. */
+	/**
+	 * Keep authored placeholder rules above provider chrome and fallback resets.
+	 *
+	 * `revert` is still useful for controls without authored placeholder styles,
+	 * but it rolls back the whole author origin, not just Jetpack's `inherit`.
+	 * Add scoped alternatives to the source rules instead of capturing a colour:
+	 * variables, state, conditions and subsequent source edits remain live.
+	 * The scope is attached to the subject so source ancestor selectors still work.
+	 * Five scope classes outrank both frontend and editor placeholder resets.
+	 *
+	 * @param string                         $css Source stylesheet.
+	 * @param array<int,array<string,mixed>> $overlays Provider overlays.
+	 * @return string
+	 */
+	private static function preserve_form_placeholders( string $css, array $overlays ): string {
+		if ( ! str_contains( $css, '::placeholder' ) ) {
+			return $css;
+		}
+		$scopes = array();
+		foreach ( $overlays as $overlay ) {
+			$validated = Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $overlay );
+			if ( null !== $validated && preg_match( '/\.ssi-form-[a-f0-9]{12}/', $validated['css'], $match ) ) {
+				$scopes[] = str_repeat( $match[0], 5 ) . ' *';
+			}
+		}
+		if ( empty( $scopes ) ) {
+			return $css;
+		}
+		$scope = ':is(' . implode( ',', array_unique( $scopes ) ) . ')';
+		return ( new \Automattic\BlocksEngine\PhpTransformer\Css\CssStylesheetTransformer() )->transform(
+			$css,
+			static function ( string $prelude ) use ( $scope ): string {
+				if ( str_contains( $prelude, $scope ) ) {
+					return $prelude;
+				}
+				$selectors = \Automattic\BlocksEngine\PhpTransformer\Css\CssValueSplitter::splitTopLevel( $prelude, array( ',' ) );
+				$projected = array();
+				foreach ( $selectors as $selector ) {
+					if ( preg_match( '/::placeholder\s*$/', $selector ) && ! str_contains( $selector, '.ssi-form-' ) ) {
+						$projected[] = preg_replace( '/::placeholder\s*$/', $scope . '::placeholder', $selector );
+					}
+				}
+				return empty( $projected ) ? $prelude : $prelude . ',' . implode( ',', $projected );
+			}
+		);
+	}
+
+	/**
+	 * Return deterministic, content-addressed provider layout overlays once each.
+	 *
+	 * @param array<int,array<string,mixed>> $overlays Provider overlays.
+	 * @param string                         $field CSS field to collect.
+	 * @return string
+	 */
 	private static function provider_layout_overlay_css( array $overlays, string $field = 'css' ): string {
 		$css = array();
 		foreach ( $overlays as $overlay ) {
@@ -343,6 +396,8 @@ class Static_Site_Importer_Stylesheet_Materializer {
 	}
 
 	/**
+	 * Find class selectors carrying layout geometry.
+	 *
 	 * @param string $css Source CSS.
 	 * @return array<int,string> Class selectors whose rule carries layout geometry.
 	 */
