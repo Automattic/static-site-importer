@@ -34,7 +34,7 @@ final class Static_Site_Importer_Form_Plan_State {
 	public array $presentation_roles;
 	public array $control_presentations;
 	public array $radio_groups;
-	/** @var array<int,true> */
+	/** @var array<int,bool> */
 	public array $suppressed_controls;
 	/** @var array<int,int> Trigger control index => hidden native carrier index. */
 	public array $choice_pairs;
@@ -54,7 +54,7 @@ final class Static_Site_Importer_Form_Plan_State {
 	public bool $has_source_submit         = false;
 
 	// Computed layout, host shell and overlay inputs.
-	/** @var array{blocks:array,receipt:array<string,mixed>} */
+	/** @var array<string,mixed> Computed-layout result: `blocks` and `receipt`. */
 	public array $layout         = array();
 	public array $host           = array();
 	public array $context_before = array();
