@@ -13,6 +13,10 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Compiles provider form layout and presentation into bounded, scoped overlay CSS.
  *
  * @phpstan-type Surface array{prefix:string,css:array{key:string,label:string,rule:string},context:array{key:string,label:string,rule:string},control_container_chrome:bool,native_passthrough:array<string,string>,form_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>,form_layout_host:array{declarations:string,strategy:string}|null,field_control:array{suffix:string,properties:array<int,string>}|null,container_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>}
+ * A compile pass accumulates one surface's declared surface, scope, targets,
+ * presentation targets, rules, chrome, operations, losses and context CSS.
+ *
+ * @phpstan-type Surface_Pass array<string,mixed>
  */
 class Static_Site_Importer_Provider_Layout_Overlay {
 	public const MAP_SCHEMA             = 'generic/provider-layout-target-map/v1';
@@ -229,277 +233,25 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( isset( $validated['error'] ) || ! is_array( $validated_map ) || ! isset( $validated_map['targets'] ) || ! is_array( $validated_map['targets'] ) ) {
 			return self::failed_compile( $validated['error'] ?? 'provider layout target map could not be normalized.' );
 		}
-		$targets = array();
-		foreach ( $validated_map['targets'] as $target ) {
-			$targets[ $target['node'] ] = $target;
-		}
-		$scope          = $validated_map['scope'];
-		$prefix         = $declared['prefix'];
-		$rules          = array();
-		$chrome         = array();
-		$operations     = array();
-		$context_losses = array();
-		$context_css    = self::context_fallback_css( $scope, $context_fallbacks, $declared['context']['label'], $operations, $context_losses );
-		// Receipt contract: every pass records the context fallback losses once
-		// per context artifact the overlay carries (front end and editor).
-		$losses           = array_merge( $context_losses, $context_losses );
-		$bare_form_target = ( $targets['form']['selector'] ?? null ) === $scope;
+		$pass             = self::open_pass( $declared, $validated_map, $context_fallbacks );
+		$bare_form_target = ( $pass['targets']['form']['selector'] ?? null ) === $pass['scope'];
 		if ( $bare_form_target && null !== $declared['form_layout_host'] && self::form_layout_unnamed( $graph ) ) {
-			$rules[]      = self::surface_selector( $prefix, $scope ) . '{' . $declared['form_layout_host']['declarations'] . '}';
-			$operations[] = array(
-				'dimension'   => 'layout',
-				'strategy'    => $declared['form_layout_host']['strategy'],
-				'target_hash' => hash( 'sha256', $scope ),
-			);
+			self::emit_scoped( $pass, '', $declared['form_layout_host']['declarations'], 'layout', $declared['form_layout_host']['strategy'] );
 		}
-		foreach ( $graph['nodes'] ?? array() as $node ) {
-			$id     = $node['id'] ?? '';
-			$target = $targets[ $id ] ?? null;
-			if ( ! is_array( $target ) || ! empty( array_diff( self::LAYOUT_CAPABILITIES, $target['capabilities'] ) ) || empty( $node['presentation']['styles'] ) ) {
-				continue;
-			}
-			// A physical native source box owns its own paint as well as layout.
-			// Keep that paint on its validated target instead of the inner input.
-			$paint        = array_diff_key( self::resolve_presentation_cascade( $node['presentation']['styles'], $node['presentation']['provenance'] ?? array() ), self::layout_property_map() );
-			$declarations = self::presentation_declarations( $paint, 0, 'control_container', $losses, array_keys( self::presentation_property_map() ) );
-			if ( ! empty( $declarations ) ) {
-				$rules[]      = self::surface_selector( $prefix, $target['selector'] ) . '{' . implode( ';', $declarations ) . '}';
-				$operations[] = array(
-					'dimension' => 'presentation',
-					'strategy'  => 'provider_source_container_presentation',
-					'node_hash' => hash( 'sha256', $id ),
-				);
-			}
-		}
-		foreach ( $graph['nodes'] ?? array() as $node ) {
-			if ( ! is_array( $node ) || empty( $node['layout'] ) ) {
-				continue;
-			}
-			$id     = (string) ( $node['id'] ?? '' );
-			$target = $targets[ $id ] ?? null;
-			if ( null === $target ) {
-				$losses[] = self::loss( 'provider_structure_mismatch', $id );
-				continue;
-			}
-			$declarations = self::declarations( 'form' === $id ? self::with_initial_flex_alignment( $node['layout'] ) : $node['layout'], $target['capabilities'], $id, $losses, self::important_properties( $node['important'] ?? null ) );
-			if ( ! empty( $declarations ) ) {
-				foreach ( self::target_declaration_groups( $declared, $id, $target['selector'], $declarations ) as $selector => $group ) {
-					$rules[] = self::surface_selector( $prefix, $selector ) . '{' . implode( ';', $group ) . '}';
-				}
-				$operations[] = array(
-					'dimension'   => 'layout',
-					'strategy'    => 'provider_selector_transposition',
-					'node_hash'   => hash( 'sha256', $id ),
-					'target_hash' => hash( 'sha256', $target['selector'] ),
-				); }
-		}
-		foreach ( $graph['variants'] ?? array() as $variant ) {
-			if ( ! is_array( $variant ) || empty( $variant['layout_patch'] ) ) {
-				continue;
-			}
-			$id     = (string) ( $variant['node'] ?? '' );
-			$target = $targets[ $id ] ?? null;
-			if ( null === $target || ! in_array( 'responsive_layout', $target['capabilities'], true ) || ! self::safe_condition( $variant['condition'] ?? null ) ) {
-				$losses[] = self::loss( 'responsive_layout_ownership', $id );
-				continue; }
-			$declarations = self::declarations( $variant['layout_patch'], $target['capabilities'], $id, $losses, self::important_properties( $variant['important'] ?? null ) );
-			if ( ! empty( $declarations ) ) {
-				foreach ( self::target_declaration_groups( $declared, $id, $target['selector'], $declarations ) as $selector => $group ) {
-					$rules[] = self::conditional_rule( $variant['condition'], self::surface_selector( $prefix, $selector ) . '{' . implode( ';', $group ) . '}' );
-				}
-				$operations[] = array(
-					'dimension'   => 'layout',
-					'strategy'    => 'provider_selector_transposition',
-					'node_hash'   => hash( 'sha256', $id ),
-					'target_hash' => hash( 'sha256', $target['selector'] ),
-					'responsive'  => true,
-				); }
-		}
-		$presentation_targets = array_column( $validated_map['presentation_targets'] ?? array(), null, 'index' );
-		foreach ( $presentation_graph['control_containers'] ?? array() as $control_container ) {
-			$index        = $control_container['index'] ?? null;
-			$destinations = is_int( $index ) ? array_filter( $presentation_targets[ $index ]['destinations'] ?? array(), static fn( array $destination ): bool => 'control_container' === $destination['role'] ) : array();
-			if ( ! is_int( $index ) || empty( $destinations ) || ! is_array( $control_container['styles'] ?? null ) ) {
-				$losses[] = self::presentation_loss( 'editor_control_container_unsupported', is_int( $index ) ? $index : 0, 'control_container' );
-				continue;
-			}
-			$styles = self::resolve_presentation_cascade( $control_container['styles'], $control_container['provenance'] ?? array() );
-			self::compile_presentation_destinations( $destinations, $styles, $index, 'control_container', null, $prefix, $rules, $operations, $losses );
-			foreach ( $destinations as $destination ) {
-				self::control_container_chrome( $declared, $destination, $control_container['styles'], $index, null, $chrome, $losses );
-			}
-		}
-		$base_presented = array();
-		foreach ( $presentation_graph['controls'] ?? array() as $control ) {
-			if ( ! is_array( $control ) || ! is_int( $control['index'] ?? null ) ) {
-				continue;
-			}
-			$target = $presentation_targets[ $control['index'] ] ?? array();
-			foreach ( array( 'control', 'label', 'required_marker' ) as $role ) {
-				if ( ! isset( $control[ $role ]['styles'] ) || ! is_array( $control[ $role ]['styles'] ) ) {
-					continue;
-				}
-				$destinations = array_filter( $target['destinations'] ?? array(), static fn( array $destination ): bool => $role === $destination['role'] );
-				if ( empty( $destinations ) ) {
-					$losses[] = self::presentation_loss( 'provider_structure_mismatch', $control['index'], $role );
-					continue;
-				}
-				$styles = self::resolve_presentation_cascade( $control[ $role ]['styles'], $control[ $role ]['provenance'] ?? array() );
-				self::compile_presentation_destinations( $destinations, $styles, $control['index'], $role, null, $prefix, $rules, $operations, $losses );
-				$base_presented[ $control['index'] . "\n" . $role ] = true;
-			}
-		}
-		// A responsive capture can scope every presentation fact to a media query,
-		// leaving a destination with no unconditional pass. Its provider-default
-		// resets still belong outside every query, ahead of the conditional patches
-		// that may override them, exactly as they would beside a base style set.
-		foreach ( $presentation_graph['variants'] ?? array() as $variant ) {
-			$index = $variant['index'] ?? null;
-			$role  = $variant['role'] ?? null;
-			if ( ! is_int( $index ) || ! in_array( $role, array( 'control', 'label', 'required_marker' ), true ) || isset( $base_presented[ $index . "\n" . $role ] ) ) {
-				continue;
-			}
-			$base_presented[ $index . "\n" . $role ] = true;
-			$destinations                            = array_filter( $presentation_targets[ $index ]['destinations'] ?? array(), static fn( array $destination ): bool => $role === $destination['role'] && ! empty( $destination['resets'] ) );
-			if ( ! empty( $destinations ) ) {
-				self::compile_presentation_destinations( $destinations, array(), $index, $role, null, $prefix, $rules, $operations, $losses );
-			}
-		}
-		foreach ( $presentation_graph['variants'] ?? array() as $variant ) {
-			$index = $variant['index'] ?? null;
-			$role  = $variant['role'] ?? null;
-			// Inline SVG parts are rendered by the companion's field-state projection.
-			// They retain their source precedence in the validated v2 graph but have no
-			// generic provider CSS destination here.
-			if ( in_array( $role, array( 'visual_part', 'visual_group' ), true ) ) {
-				continue;
-			}
-			// A producer can keep a stylesheet's implicit `media="all"` wrapper
-			// (a device-split capture tags each device sheet that way). It holds at
-			// every width, so its patch is unconditional rather than a lost variant.
-			// It is still a patch: the base pass (or the reset pass above) already
-			// released provider defaults, so it must not repeat those resets after
-			// the base rule and undo the authored values there.
-			$condition = self::is_media_all( $variant['condition'] ?? null ) ? null : ( $variant['condition'] ?? null );
-			if ( 'control_container' === $role ) {
-				$destinations = is_int( $index ) ? array_filter( $presentation_targets[ $index ]['destinations'] ?? array(), static fn( array $destination ): bool => 'control_container' === $destination['role'] ) : array();
-				if ( ! is_int( $index ) || empty( $destinations ) || ( null !== $condition && ! self::safe_condition( $condition ) ) || ! is_array( $variant['style_patch'] ?? null ) ) {
-					$losses[] = self::presentation_loss( 'editor_control_container_unsupported', is_int( $index ) ? $index : 0, 'control_container' );
-					continue;
-				}
-				foreach ( $destinations as $destination ) {
-					$styles = self::resolve_presentation_cascade( $variant['style_patch'], $variant['provenance'] ?? array(), $variant['precedence'] ?? array() );
-					self::compile_presentation_destinations( array( $destination ), $styles, $index, 'control_container', $condition, $prefix, $rules, $operations, $losses, false );
-					self::control_container_chrome( $declared, $destination, $variant['style_patch'], $index, $condition, $chrome, $losses );
-				}
-				continue;
-			}
-			$destinations = is_int( $index ) && is_string( $role ) ? array_filter( $presentation_targets[ $index ]['destinations'] ?? array(), static fn( array $destination ): bool => $role === $destination['role'] ) : array();
-			if ( ! is_int( $index ) || ! in_array( $role, array( 'control', 'label', 'required_marker' ), true ) || empty( $destinations ) || ( null !== $condition && ! self::safe_condition( $condition ) ) || ! is_array( $variant['style_patch'] ?? null ) ) {
-				$losses[] = self::presentation_loss( 'responsive_layout_ownership', is_int( $index ) ? $index : 0, is_string( $role ) ? $role : 'control' );
-				continue;
-			}
-			$styles = self::resolve_presentation_cascade( $variant['style_patch'], $variant['provenance'] ?? array(), $variant['precedence'] ?? array() );
-			self::compile_presentation_destinations( $destinations, $styles, $index, $role, $condition, $prefix, $rules, $operations, $losses, false );
-		}
-		if ( 'generic/form-container-presentation/v1' === ( $container['schema'] ?? null ) ) {
-			$destination = array(
-				'role'       => 'control',
-				'selector'   => str_contains( $targets['form']['selector'] ?? '', '.ssi-native-form-topology' ) ? $targets['form']['selector'] : $scope . '.jetpack-contact-form-container',
-				'properties' => array_keys( self::presentation_property_map() ),
-			);
-			$styles      = self::resolve_presentation_cascade( $container['styles'] ?? array(), $container['provenance'] ?? array() );
-			self::compile_presentation_destinations( array( $destination ), $styles, 0, 'control', null, $prefix, $rules, $operations, $losses );
-			foreach ( array_slice( $container['variants'] ?? array(), 0, 32 ) as $variant ) {
-				if ( self::safe_condition( $variant['condition'] ?? null ) && is_array( $variant['styles'] ?? null ) ) {
-					$styles = self::resolve_presentation_cascade( $variant['styles'], $variant['provenance'] ?? array(), $variant['precedence'] ?? array() );
-					self::compile_presentation_destinations( array( $destination ), $styles, 0, 'control', $variant['condition'], $prefix, $rules, $operations, $losses );
-				}
-			}
-			if ( $scope . '.jetpack-contact-form-container' === $destination['selector'] ) {
-				foreach ( $declared['container_passthrough'] as $passthrough ) {
-					$rules[]      = self::surface_selector( $prefix, $scope . $passthrough['suffix'] ) . '{' . $passthrough['declarations'] . '}';
-					$operations[] = array(
-						'dimension'   => 'layout',
-						'strategy'    => $passthrough['strategy'],
-						'target_hash' => hash( 'sha256', $scope . $passthrough['suffix'] ),
-					);
-				}
-			}
-		}
-		if ( empty( $losses ) ) {
-			$rules[]      = self::surface_selector( $prefix, $scope ) . '{position:relative;z-index:1;pointer-events:auto}';
-			$operations[] = array(
-				'dimension'   => 'interaction',
-				'strategy'    => 'provider_interaction_carrier',
-				'target_hash' => hash( 'sha256', $scope ),
-			);
-		} elseif ( ! empty( $rules ) ) {
-			// Source boxes merged onto the provider form can carry their classes'
-			// `pointer-events: none` (Wix sets it on mesh containers and restores it
-			// only on their own direct children). Without the stacking lift, the
-			// provider form must still receive clicks and typing (#2005).
-			$rules[]      = self::surface_selector( $prefix, $scope ) . '{pointer-events:auto}';
-			$operations[] = array(
-				'dimension'   => 'interaction',
-				'strategy'    => 'provider_pointer_events_carrier',
-				'target_hash' => hash( 'sha256', $scope ),
-			);
-		}
-		if ( ! empty( $rules ) ) {
-			// Jetpack paints `.jetpack-contact-form-container` with an unauthored
-			// box (grunion.css `:where(.jetpack-contact-form-container)` plus theme
-			// block-child margin). Reset at two classes so it beats those selectors
-			// and still loses to authored `.ssi-form-x.ssi-form-x.jetpack-contact-form-container`.
-			$rules[]      = self::surface_selector( $prefix, $scope . '.jetpack-contact-form-container' ) . '{padding:0;margin:0;border:0}';
-			$operations[] = array(
-				'dimension'   => 'layout',
-				'strategy'    => 'provider_container_box_reset',
-				'target_hash' => hash( 'sha256', $scope . '.jetpack-contact-form-container' ),
-			);
-		}
-		if ( str_contains( $targets['form']['selector'] ?? '', '.ssi-native-form-topology' ) ) {
-			$native_scope = $scope . '.ssi-native-form-topology';
-			$native       = array(
-				$native_scope . '.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form)' => 'display:contents',
-				$native_scope . '.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *)' => 'display:contents',
-				// The provider's success state removes its real form from layout.
-				// Source display facts must not resurrect those submitted controls.
-				$native_scope . ' form.jetpack-contact-form__form.submission-success' => 'display:none',
-			);
-			foreach ( array_merge( self::NATIVE_PASSTHROUGH, $declared['native_passthrough'] ) as $suffix => $declarations ) {
-				$native[ $scope . $suffix ] = $declarations;
-			}
-			foreach ( $native as $selector => $declarations ) {
-				$rules[] = self::surface_selector( $prefix, $selector ) . '{' . $declarations . '}';
-			}
-		}
+		self::compile_source_container_paint( $pass, $graph );
+		self::compile_node_layouts( $pass, $graph );
+		self::compile_layout_variants( $pass, $graph );
+		self::compile_control_containers( $pass, $presentation_graph );
+		$base_presented = self::compile_controls( $pass, $presentation_graph );
+		self::compile_variant_resets( $pass, $presentation_graph, $base_presented );
+		self::compile_presentation_variants( $pass, $presentation_graph );
+		self::compile_form_container( $pass, $container );
+		self::compile_carriers( $pass );
+		self::compile_native_topology( $pass );
 		if ( $bare_form_target ) {
-			foreach ( $declared['form_passthrough'] as $passthrough ) {
-				$rules[]      = self::surface_selector( $prefix, $scope . $passthrough['suffix'] ) . '{' . $passthrough['declarations'] . '}';
-				$operations[] = array(
-					'dimension'   => 'layout',
-					'strategy'    => $passthrough['strategy'],
-					'target_hash' => hash( 'sha256', $scope . $passthrough['suffix'] ),
-				);
-			}
+			self::emit_passthroughs( $pass, $declared['form_passthrough'] );
 		}
-		// Keep repeated rules until compaction can check intervening cascade barriers.
-		$rules = self::compact_rules( array_merge( $chrome, $rules ) );
-		$css   = empty( $rules ) ? '' : '/* Static Site Importer ' . $declared['css']['label'] . ': ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", $rules ) . "\n";
-		if ( strlen( $css ) + strlen( $context_css ) > self::overlay_byte_limit( $css ) ) {
-			return self::failed_compile( 'provider layout overlay exceeds its bounded size.' );
-		}
-		$artifacts = array(
-			$declared['css']['key']     => $css,
-			$declared['context']['key'] => $context_css,
-		);
-		return array(
-			'overlay'    => self::overlay( $artifacts ),
-			'css'        => $artifacts['css'] ?? '',
-			'operations' => $operations,
-			'losses'     => $losses,
-		);
+		return self::close_pass( $pass );
 	}
 
 	/**
@@ -555,6 +307,463 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			'operations' => $front['operations'],
 			'losses'     => $losses,
 		);
+	}
+
+	/**
+	 * Open one surface's compile pass: its targets, its context fallback, and the
+	 * rule, chrome, operation, and loss lists every phase appends to.
+	 *
+	 * @param array                   $declared          Declared surface (see SURFACES).
+	 * @param array<string,mixed>     $validated_map     Validated target map.
+	 * @param array<int|string,mixed> $context_fallbacks Source context style fallbacks.
+	 * @return Surface_Pass
+	 * @phpstan-param Surface $declared
+	 */
+	private static function open_pass( array $declared, array $validated_map, array $context_fallbacks ): array {
+		$targets = array();
+		foreach ( $validated_map['targets'] as $target ) {
+			$targets[ $target['node'] ] = $target;
+		}
+		$operations     = array();
+		$context_losses = array();
+		$context_css    = self::context_fallback_css( $validated_map['scope'], $context_fallbacks, $declared['context']['label'], $operations, $context_losses );
+		return array(
+			'declared'             => $declared,
+			'scope'                => $validated_map['scope'],
+			'targets'              => $targets,
+			'presentation_targets' => array_column( $validated_map['presentation_targets'] ?? array(), null, 'index' ),
+			'rules'                => array(),
+			'chrome'               => array(),
+			'operations'           => $operations,
+			// Receipt contract: every pass records the context fallback losses once
+			// per context artifact the overlay carries (front end and editor).
+			'losses'               => array_merge( $context_losses, $context_losses ),
+			'context_css'          => $context_css,
+		);
+	}
+
+	/**
+	 * Close a pass: compact its rules, bound its artifacts, and build the result.
+	 *
+	 * @param array $pass Compile pass.
+	 * @return array{overlay:array<string,mixed>,css:string,operations:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>}
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function close_pass( array $pass ): array {
+		$declared = $pass['declared'];
+		// Keep repeated rules until compaction can check intervening cascade barriers.
+		$rules = self::compact_rules( array_merge( $pass['chrome'], $pass['rules'] ) );
+		$css   = empty( $rules ) ? '' : '/* Static Site Importer ' . $declared['css']['label'] . ': ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", $rules ) . "\n";
+		if ( strlen( $css ) + strlen( $pass['context_css'] ) > self::overlay_byte_limit( $css ) ) {
+			return self::failed_compile( 'provider layout overlay exceeds its bounded size.' );
+		}
+		$artifacts = array(
+			$declared['css']['key']     => $css,
+			$declared['context']['key'] => $pass['context_css'],
+		);
+		return array(
+			'overlay'    => self::overlay( $artifacts ),
+			'css'        => $artifacts['css'] ?? '',
+			'operations' => $pass['operations'],
+			'losses'     => $pass['losses'],
+		);
+	}
+
+	/**
+	 * Append one rule for a scoped selector on the pass's surface, inside its
+	 * condition when it has one.
+	 *
+	 * @param array                    $pass         Compile pass.
+	 * @param string                   $selector     Scoped selector.
+	 * @param string                   $declarations Declaration block body.
+	 * @param array<string,mixed>|null $condition    Validated condition.
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function emit( array &$pass, string $selector, string $declarations, ?array $condition = null ): void {
+		$rule            = self::surface_selector( $pass['declared']['prefix'], $selector ) . '{' . $declarations . '}';
+		$pass['rules'][] = null === $condition ? $rule : self::conditional_rule( $condition, $rule );
+	}
+
+	/**
+	 * Emit one rule on the scope (plus a suffix) and record its operation against
+	 * that selector.
+	 *
+	 * @param array  $pass         Compile pass.
+	 * @param string $suffix       Selector suffix after the scope.
+	 * @param string $declarations Declaration block body.
+	 * @param string $dimension    Operation dimension.
+	 * @param string $strategy     Operation strategy.
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function emit_scoped( array &$pass, string $suffix, string $declarations, string $dimension, string $strategy ): void {
+		$selector = $pass['scope'] . $suffix;
+		self::emit( $pass, $selector, $declarations );
+		$pass['operations'][] = array(
+			'dimension'   => $dimension,
+			'strategy'    => $strategy,
+			'target_hash' => hash( 'sha256', $selector ),
+		);
+	}
+
+	/**
+	 * Emit a surface's declared passthrough rules.
+	 *
+	 * @param array                                                               $pass         Compile pass.
+	 * @param array<int,array{suffix:string,declarations:string,strategy:string}> $passthroughs Declared passthroughs.
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function emit_passthroughs( array &$pass, array $passthroughs ): void {
+		foreach ( $passthroughs as $passthrough ) {
+			self::emit_scoped( $pass, $passthrough['suffix'], $passthrough['declarations'], 'layout', $passthrough['strategy'] );
+		}
+	}
+
+	/**
+	 * Emit one layout node's compiled declarations at its target and record the
+	 * transposition.
+	 *
+	 * @param array                    $pass         Compile pass.
+	 * @param string                   $id           Layout node id.
+	 * @param array<string,mixed>      $target       Layout target.
+	 * @param array<int,string>        $declarations Compiled declarations.
+	 * @param array<string,mixed>|null $condition    Validated responsive condition.
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function emit_layout( array &$pass, string $id, array $target, array $declarations, ?array $condition ): void {
+		if ( empty( $declarations ) ) {
+			return;
+		}
+		foreach ( self::target_declaration_groups( $pass['declared'], $id, $target['selector'], $declarations ) as $selector => $group ) {
+			self::emit( $pass, $selector, implode( ';', $group ), $condition );
+		}
+		$operation = array(
+			'dimension'   => 'layout',
+			'strategy'    => 'provider_selector_transposition',
+			'node_hash'   => hash( 'sha256', $id ),
+			'target_hash' => hash( 'sha256', $target['selector'] ),
+		);
+		if ( null !== $condition ) {
+			$operation['responsive'] = true;
+		}
+		$pass['operations'][] = $operation;
+	}
+
+	/**
+	 * The presentation destinations a control index maps for one role.
+	 *
+	 * @param array $pass  Compile pass.
+	 * @param mixed $index Control index (anything but an int maps none).
+	 * @param mixed $role  Destination role.
+	 * @return array<int,array<string,mixed>>
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function destinations_for( array $pass, mixed $index, mixed $role ): array {
+		if ( ! is_int( $index ) ) {
+			return array();
+		}
+		return array_filter( $pass['presentation_targets'][ $index ]['destinations'] ?? array(), static fn( array $destination ): bool => $role === $destination['role'] );
+	}
+
+	/**
+	 * Compile presentation destinations into the pass.
+	 *
+	 * @param array                          $pass         Compile pass.
+	 * @param array<int,array<string,mixed>> $destinations Destinations.
+	 * @param array<string,mixed>            $styles       Resolved styles.
+	 * @param int                            $index        Control index.
+	 * @param string                         $role         Destination role.
+	 * @param array<string,mixed>|null       $condition    Variant condition.
+	 * @param bool                           $emit_resets  Whether base resets are emitted.
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function present( array &$pass, array $destinations, array $styles, int $index, string $role, ?array $condition, bool $emit_resets = true ): void {
+		self::compile_presentation_destinations( $destinations, $styles, $index, $role, $condition, $pass['declared']['prefix'], $pass['rules'], $pass['operations'], $pass['losses'], $emit_resets );
+	}
+
+	/**
+	 * Keep a physical native source box's own paint on its validated target
+	 * instead of the inner input.
+	 *
+	 * @param array               $pass  Compile pass.
+	 * @param array<string,mixed> $graph Provider layout graph.
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function compile_source_container_paint( array &$pass, array $graph ): void {
+		foreach ( $graph['nodes'] ?? array() as $node ) {
+			$id     = $node['id'] ?? '';
+			$target = $pass['targets'][ $id ] ?? null;
+			if ( ! is_array( $target ) || ! empty( array_diff( self::LAYOUT_CAPABILITIES, $target['capabilities'] ) ) || empty( $node['presentation']['styles'] ) ) {
+				continue;
+			}
+			$paint        = array_diff_key( self::resolve_presentation_cascade( $node['presentation']['styles'], $node['presentation']['provenance'] ?? array() ), self::layout_property_map() );
+			$declarations = self::presentation_declarations( $paint, 0, 'control_container', $pass['losses'], array_keys( self::presentation_property_map() ) );
+			if ( ! empty( $declarations ) ) {
+				self::emit( $pass, $target['selector'], implode( ';', $declarations ) );
+				$pass['operations'][] = array(
+					'dimension' => 'presentation',
+					'strategy'  => 'provider_source_container_presentation',
+					'node_hash' => hash( 'sha256', $id ),
+				);
+			}
+		}
+	}
+
+	/**
+	 * Transpose each layout node's base layout onto its target.
+	 *
+	 * @param array               $pass  Compile pass.
+	 * @param array<string,mixed> $graph Provider layout graph.
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function compile_node_layouts( array &$pass, array $graph ): void {
+		foreach ( $graph['nodes'] ?? array() as $node ) {
+			if ( ! is_array( $node ) || empty( $node['layout'] ) ) {
+				continue;
+			}
+			$id     = (string) ( $node['id'] ?? '' );
+			$target = $pass['targets'][ $id ] ?? null;
+			if ( null === $target ) {
+				$pass['losses'][] = self::loss( 'provider_structure_mismatch', $id );
+				continue;
+			}
+			$declarations = self::declarations( 'form' === $id ? self::with_initial_flex_alignment( $node['layout'] ) : $node['layout'], $target['capabilities'], $id, $pass['losses'], self::important_properties( $node['important'] ?? null ) );
+			self::emit_layout( $pass, $id, $target, $declarations, null );
+		}
+	}
+
+	/**
+	 * Transpose each responsive layout patch onto its target inside its condition.
+	 *
+	 * @param array               $pass  Compile pass.
+	 * @param array<string,mixed> $graph Provider layout graph.
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function compile_layout_variants( array &$pass, array $graph ): void {
+		foreach ( $graph['variants'] ?? array() as $variant ) {
+			if ( ! is_array( $variant ) || empty( $variant['layout_patch'] ) ) {
+				continue;
+			}
+			$id     = (string) ( $variant['node'] ?? '' );
+			$target = $pass['targets'][ $id ] ?? null;
+			if ( null === $target || ! in_array( 'responsive_layout', $target['capabilities'], true ) || ! self::safe_condition( $variant['condition'] ?? null ) ) {
+				$pass['losses'][] = self::loss( 'responsive_layout_ownership', $id );
+				continue;
+			}
+			$declarations = self::declarations( $variant['layout_patch'], $target['capabilities'], $id, $pass['losses'], self::important_properties( $variant['important'] ?? null ) );
+			self::emit_layout( $pass, $id, $target, $declarations, $variant['condition'] );
+		}
+	}
+
+	/**
+	 * Present each control container's base styles, with its surface chrome.
+	 *
+	 * @param array               $pass               Compile pass.
+	 * @param array<string,mixed> $presentation_graph Validated presentation graph.
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function compile_control_containers( array &$pass, array $presentation_graph ): void {
+		foreach ( $presentation_graph['control_containers'] ?? array() as $control_container ) {
+			$index        = $control_container['index'] ?? null;
+			$destinations = self::destinations_for( $pass, $index, 'control_container' );
+			if ( ! is_int( $index ) || empty( $destinations ) || ! is_array( $control_container['styles'] ?? null ) ) {
+				$pass['losses'][] = self::presentation_loss( 'editor_control_container_unsupported', is_int( $index ) ? $index : 0, 'control_container' );
+				continue;
+			}
+			$styles = self::resolve_presentation_cascade( $control_container['styles'], $control_container['provenance'] ?? array() );
+			self::present( $pass, $destinations, $styles, $index, 'control_container', null );
+			foreach ( $destinations as $destination ) {
+				self::control_container_chrome( $pass['declared'], $destination, $control_container['styles'], $index, null, $pass['chrome'], $pass['losses'] );
+			}
+		}
+	}
+
+	/**
+	 * Present each control's base control, label, and required-marker styles.
+	 *
+	 * @param array               $pass               Compile pass.
+	 * @param array<string,mixed> $presentation_graph Validated presentation graph.
+	 * @return array<string,true> "index\nrole" keys that received a base pass.
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function compile_controls( array &$pass, array $presentation_graph ): array {
+		$base_presented = array();
+		foreach ( $presentation_graph['controls'] ?? array() as $control ) {
+			if ( ! is_array( $control ) || ! is_int( $control['index'] ?? null ) ) {
+				continue;
+			}
+			foreach ( array( 'control', 'label', 'required_marker' ) as $role ) {
+				if ( ! isset( $control[ $role ]['styles'] ) || ! is_array( $control[ $role ]['styles'] ) ) {
+					continue;
+				}
+				$destinations = self::destinations_for( $pass, $control['index'], $role );
+				if ( empty( $destinations ) ) {
+					$pass['losses'][] = self::presentation_loss( 'provider_structure_mismatch', $control['index'], $role );
+					continue;
+				}
+				$styles = self::resolve_presentation_cascade( $control[ $role ]['styles'], $control[ $role ]['provenance'] ?? array() );
+				self::present( $pass, $destinations, $styles, $control['index'], $role, null );
+				$base_presented[ $control['index'] . "\n" . $role ] = true;
+			}
+		}
+		return $base_presented;
+	}
+
+	/**
+	 * Emit provider-default resets for destinations that only responsive variants style.
+	 *
+	 * A responsive capture can scope every presentation fact to a media query,
+	 * leaving a destination with no unconditional pass. Its provider-default
+	 * resets still belong outside every query, ahead of the conditional patches
+	 * that may override them, exactly as they would beside a base style set.
+	 *
+	 * @param array               $pass               Compile pass.
+	 * @param array<string,mixed> $presentation_graph Validated presentation graph.
+	 * @param array<string,true>  $base_presented     "index\nrole" keys that received a base pass.
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function compile_variant_resets( array &$pass, array $presentation_graph, array $base_presented ): void {
+		foreach ( $presentation_graph['variants'] ?? array() as $variant ) {
+			$index = $variant['index'] ?? null;
+			$role  = $variant['role'] ?? null;
+			if ( ! is_int( $index ) || ! in_array( $role, array( 'control', 'label', 'required_marker' ), true ) || isset( $base_presented[ $index . "\n" . $role ] ) ) {
+				continue;
+			}
+			$base_presented[ $index . "\n" . $role ] = true;
+			$destinations                            = array_filter( self::destinations_for( $pass, $index, $role ), static fn( array $destination ): bool => ! empty( $destination['resets'] ) );
+			if ( ! empty( $destinations ) ) {
+				self::present( $pass, $destinations, array(), $index, $role, null );
+			}
+		}
+	}
+
+	/**
+	 * Present each responsive presentation patch, without repeating base resets.
+	 *
+	 * @param array               $pass               Compile pass.
+	 * @param array<string,mixed> $presentation_graph Validated presentation graph.
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function compile_presentation_variants( array &$pass, array $presentation_graph ): void {
+		foreach ( $presentation_graph['variants'] ?? array() as $variant ) {
+			$index = $variant['index'] ?? null;
+			$role  = $variant['role'] ?? null;
+			// Inline SVG parts are rendered by the companion's field-state projection.
+			// They retain their source precedence in the validated v2 graph but have no
+			// generic provider CSS destination here.
+			if ( in_array( $role, array( 'visual_part', 'visual_group' ), true ) ) {
+				continue;
+			}
+			// A producer can keep a stylesheet's implicit `media="all"` wrapper
+			// (a device-split capture tags each device sheet that way). It holds at
+			// every width, so its patch is unconditional rather than a lost variant.
+			// It is still a patch: the base pass (or the reset pass above) already
+			// released provider defaults, so it must not repeat those resets after
+			// the base rule and undo the authored values there.
+			$condition = self::is_media_all( $variant['condition'] ?? null ) ? null : ( $variant['condition'] ?? null );
+			if ( 'control_container' === $role ) {
+				$destinations = self::destinations_for( $pass, $index, 'control_container' );
+				if ( ! is_int( $index ) || empty( $destinations ) || ( null !== $condition && ! self::safe_condition( $condition ) ) || ! is_array( $variant['style_patch'] ?? null ) ) {
+					$pass['losses'][] = self::presentation_loss( 'editor_control_container_unsupported', is_int( $index ) ? $index : 0, 'control_container' );
+					continue;
+				}
+				foreach ( $destinations as $destination ) {
+					$styles = self::resolve_presentation_cascade( $variant['style_patch'], $variant['provenance'] ?? array(), $variant['precedence'] ?? array() );
+					self::present( $pass, array( $destination ), $styles, $index, 'control_container', $condition, false );
+					self::control_container_chrome( $pass['declared'], $destination, $variant['style_patch'], $index, $condition, $pass['chrome'], $pass['losses'] );
+				}
+				continue;
+			}
+			$destinations = self::destinations_for( $pass, $index, $role );
+			if ( ! is_int( $index ) || ! in_array( $role, array( 'control', 'label', 'required_marker' ), true ) || empty( $destinations ) || ( null !== $condition && ! self::safe_condition( $condition ) ) || ! is_array( $variant['style_patch'] ?? null ) ) {
+				$pass['losses'][] = self::presentation_loss( 'responsive_layout_ownership', is_int( $index ) ? $index : 0, is_string( $role ) ? $role : 'control' );
+				continue;
+			}
+			$styles = self::resolve_presentation_cascade( $variant['style_patch'], $variant['provenance'] ?? array(), $variant['precedence'] ?? array() );
+			self::present( $pass, $destinations, $styles, $index, $role, $condition, false );
+		}
+	}
+
+	/**
+	 * Present the source form container's box on the provider form container.
+	 *
+	 * @param array               $pass      Compile pass.
+	 * @param array<string,mixed> $container Form container presentation.
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function compile_form_container( array &$pass, array $container ): void {
+		if ( 'generic/form-container-presentation/v1' !== ( $container['schema'] ?? null ) ) {
+			return;
+		}
+		$scope       = $pass['scope'];
+		$destination = array(
+			'role'       => 'control',
+			'selector'   => str_contains( $pass['targets']['form']['selector'] ?? '', '.ssi-native-form-topology' ) ? $pass['targets']['form']['selector'] : $scope . '.jetpack-contact-form-container',
+			'properties' => array_keys( self::presentation_property_map() ),
+		);
+		$styles      = self::resolve_presentation_cascade( $container['styles'] ?? array(), $container['provenance'] ?? array() );
+		self::present( $pass, array( $destination ), $styles, 0, 'control', null );
+		foreach ( array_slice( $container['variants'] ?? array(), 0, 32 ) as $variant ) {
+			if ( self::safe_condition( $variant['condition'] ?? null ) && is_array( $variant['styles'] ?? null ) ) {
+				$styles = self::resolve_presentation_cascade( $variant['styles'], $variant['provenance'] ?? array(), $variant['precedence'] ?? array() );
+				self::present( $pass, array( $destination ), $styles, 0, 'control', $variant['condition'] );
+			}
+		}
+		if ( $scope . '.jetpack-contact-form-container' === $destination['selector'] ) {
+			self::emit_passthroughs( $pass, $pass['declared']['container_passthrough'] );
+		}
+	}
+
+	/**
+	 * Lift the provider form for interaction and reset the provider container's
+	 * unauthored box.
+	 *
+	 * @param array $pass Compile pass.
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function compile_carriers( array &$pass ): void {
+		if ( empty( $pass['losses'] ) ) {
+			self::emit_scoped( $pass, '', 'position:relative;z-index:1;pointer-events:auto', 'interaction', 'provider_interaction_carrier' );
+		} elseif ( ! empty( $pass['rules'] ) ) {
+			// Source boxes merged onto the provider form can carry their classes'
+			// `pointer-events: none` (Wix sets it on mesh containers and restores it
+			// only on their own direct children). Without the stacking lift, the
+			// provider form must still receive clicks and typing (#2005).
+			self::emit_scoped( $pass, '', 'pointer-events:auto', 'interaction', 'provider_pointer_events_carrier' );
+		}
+		if ( ! empty( $pass['rules'] ) ) {
+			// Jetpack paints `.jetpack-contact-form-container` with an unauthored
+			// box (grunion.css `:where(.jetpack-contact-form-container)` plus theme
+			// block-child margin). Reset at two classes so it beats those selectors
+			// and still loses to authored `.ssi-form-x.ssi-form-x.jetpack-contact-form-container`.
+			self::emit_scoped( $pass, '.jetpack-contact-form-container', 'padding:0;margin:0;border:0', 'layout', 'provider_container_box_reset' );
+		}
+	}
+
+	/**
+	 * Make the native topology's provider wrappers box-less around the source boxes.
+	 *
+	 * @param array $pass Compile pass.
+	 * @phpstan-param Surface_Pass $pass
+	 */
+	private static function compile_native_topology( array &$pass ): void {
+		if ( ! str_contains( $pass['targets']['form']['selector'] ?? '', '.ssi-native-form-topology' ) ) {
+			return;
+		}
+		$scope        = $pass['scope'];
+		$native_scope = $scope . '.ssi-native-form-topology';
+		$native       = array(
+			$native_scope . '.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form)' => 'display:contents',
+			$native_scope . '.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *)' => 'display:contents',
+			// The provider's success state removes its real form from layout.
+			// Source display facts must not resurrect those submitted controls.
+			$native_scope . ' form.jetpack-contact-form__form.submission-success' => 'display:none',
+		);
+		foreach ( array_merge( self::NATIVE_PASSTHROUGH, $pass['declared']['native_passthrough'] ) as $suffix => $declarations ) {
+			$native[ $scope . $suffix ] = $declarations;
+		}
+		foreach ( $native as $selector => $declarations ) {
+			self::emit( $pass, $selector, $declarations );
+		}
 	}
 
 	/**
