@@ -59,6 +59,22 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	/** A class name the projection may carry into a marker. */
 	private const CLASS_NAME_PATTERN = '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D';
 
+	/** The topology result envelope with nothing projected. */
+	private const EMPTY_TOPOLOGY_RESULT = array(
+		'blocks'                       => array(),
+		'losses'                       => array(),
+		'operations'                   => array(),
+		'represented_layout_nodes'     => array(),
+		'represented_topology_nodes'   => array(),
+		'suppressed_layout_properties' => array(),
+		'overlay_node_targets'         => array(),
+		'responsive_variant_targets'   => array(),
+		'native_visibility_targets'    => array(),
+		'form_classes'                 => array(),
+		'provider_layout_targets'      => array(),
+		'phone_popup_targets'          => array(),
+	);
+
 	/** @return array<int,array{control:int,layout:array<string,string>,condition?:array<string,mixed>}> */
 	public static function direct_label_control_gap_targets( array $form ): array {
 		$relations = $form['sibling_relations'] ?? null;
@@ -443,6 +459,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * provider field widths; other wrapper semantics/layout remain explicit
 	 * receipt losses.
 	 *
+	 * Every result carries the keys of EMPTY_TOPOLOGY_RESULT. Only the staged
+	 * projection adds the optional suppressed_variant_properties,
+	 * submit_block_rows, whole_field_controls and grid_span_submit_controls.
+	 *
 	 * @param array<int,array<string,mixed>> $field_blocks
 	 * @param array<int,array<string,mixed>> $controls
 	 * @return array{blocks:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,operations:array<int,array<string,mixed>>,represented_layout_nodes:array<int,string>,represented_topology_nodes:array<int,string>,suppressed_layout_properties:array<string,array<int,string>>,suppressed_variant_properties?:array<string,array<int,string>>,submit_block_rows?:array<int,int>,whole_field_controls?:array<int,int>,overlay_node_targets:array<int,array<string,mixed>>,responsive_variant_targets:array<int,array<string,mixed>>,native_visibility_targets:array<int,string>,form_classes:array<int,string>,provider_layout_targets:array<string,string>,phone_popup_targets:array<int,int>,grid_span_submit_controls?:array<int,int>}|null
@@ -454,20 +474,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( null !== $derived_topology ) {
 				$s->form['control_topology'] = $derived_topology;
 			} else {
-				return array(
-					'blocks'                       => array_values( $s->field_blocks ),
-					'losses'                       => array(),
-					'operations'                   => array(),
-					'represented_layout_nodes'     => array(),
-					'represented_topology_nodes'   => array(),
-					'suppressed_layout_properties' => array(),
-					'overlay_node_targets'         => array(),
-					'responsive_variant_targets'   => array(),
-					'native_visibility_targets'    => array(),
-					'form_classes'                 => array(),
-					'provider_layout_targets'      => array(),
-					'phone_popup_targets'          => array(),
-				);
+				return array_replace( self::EMPTY_TOPOLOGY_RESULT, array( 'blocks' => array_values( $s->field_blocks ) ) );
 			}
 		}
 		$s->nodes = $s->form['control_topology']['nodes'] ?? null;
@@ -3135,30 +3142,26 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 			return $blocks;
 		};
-		return array(
-			'blocks'                       => $build( '$root' ),
-			'losses'                       => array(),
-			'operations'                   => array_map( static fn( string $id ): array => array(
-				'dimension'   => 'topology',
-				'strategy'    => 'label' === $wrappers[ $id ]['tag'] ? 'native_label_subtree_projection' : 'native_div_subtree_projection',
-				'target_hash' => hash( 'sha256', $id ),
-			), array_keys( $wrappers ) ),
-			'represented_layout_nodes'     => array_keys( $wrappers ),
-			'represented_topology_nodes'   => array_keys( $wrappers ),
-			'suppressed_layout_properties' => array(),
-			'overlay_node_targets'         => array_map( static fn( string $id ): array => array(
-				'id'           => $id,
-				'layout'       => $layouts[ $id ],
-				'presentation' => $layout_nodes[ $id ]['presentation'] ?? array(),
-			), array_keys( $wrappers ) ),
-			'responsive_variant_targets'   => $native_variants,
-			'native_visibility_targets'    => array(),
-			'form_classes'                 => array( 'ssi-native-form-topology' ),
-			'provider_layout_targets'      => $hooks,
-			// Every topology result carries the same shape. This projection owns no
-			// phone popup placement, so it reports an explicit empty set instead of
-			// leaving the key absent for its consumers.
-			'phone_popup_targets'          => array(),
+		return array_replace(
+			self::EMPTY_TOPOLOGY_RESULT,
+			array(
+				'blocks'                     => $build( '$root' ),
+				'operations'                 => array_map( static fn( string $id ): array => array(
+					'dimension'   => 'topology',
+					'strategy'    => 'label' === $wrappers[ $id ]['tag'] ? 'native_label_subtree_projection' : 'native_div_subtree_projection',
+					'target_hash' => hash( 'sha256', $id ),
+				), array_keys( $wrappers ) ),
+				'represented_layout_nodes'   => array_keys( $wrappers ),
+				'represented_topology_nodes' => array_keys( $wrappers ),
+				'overlay_node_targets'       => array_map( static fn( string $id ): array => array(
+					'id'           => $id,
+					'layout'       => $layouts[ $id ],
+					'presentation' => $layout_nodes[ $id ]['presentation'] ?? array(),
+				), array_keys( $wrappers ) ),
+				'responsive_variant_targets' => $native_variants,
+				'form_classes'               => array( 'ssi-native-form-topology' ),
+				'provider_layout_targets'    => $hooks,
+			)
 		);
 	}
 
