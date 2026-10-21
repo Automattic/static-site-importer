@@ -66,7 +66,14 @@ final class Static_Site_Importer_Source_Route_Redirect {
 			return $query_vars;
 		}
 		$query_vars                                       = self::singular_query_vars( $query_vars );
-		$query_vars[ 'page' === $type ? 'page_id' : 'p' ] = $id;
+		if ( 'page' === $type && self::is_shop_page( $id ) && function_exists( 'get_page_uri' ) ) {
+			// WooCommerce treats a `page_id` query for its shop page as a
+			// front-page shop archive whenever a static front page is set
+			// (WC_Query::pre_get_posts). A path keeps the authored page singular.
+			$query_vars['pagename'] = get_page_uri( $id );
+		} else {
+			$query_vars[ 'page' === $type ? 'page_id' : 'p' ] = $id;
+		}
 		if ( 'page' !== $type ) {
 			$query_vars['post_type'] = $type;
 		}
@@ -193,18 +200,23 @@ final class Static_Site_Importer_Source_Route_Redirect {
 	}
 
 	/**
-	 * An owned document is singular. Keep its endpoint state; archive selectors
-	 * from any native or custom taxonomy or post type cannot constrain it. The
-	 * request's original query string remains available to the document.
-	 */
-	/**
 	 * The WooCommerce shop page whose listing the theme designs as the product
 	 * archive: WooCommerce serves that archive at the page's URL.
 	 */
 	private static function is_designed_shop_archive( int $id ): bool {
-		return $id > 0 && function_exists( 'wc_get_page_id' ) && (int) wc_get_page_id( 'shop' ) === $id && class_exists( 'Static_Site_Importer_Woo_Product_Listing_Materializer' ) && Static_Site_Importer_Woo_Product_Listing_Materializer::theme_designs_product_archive();
+		return self::is_shop_page( $id ) && is_readable( get_theme_file_path( 'templates/archive-product.html' ) );
 	}
 
+	/** WooCommerce's configured shop page. */
+	private static function is_shop_page( int $id ): bool {
+		return $id > 0 && function_exists( 'wc_get_page_id' ) && (int) wc_get_page_id( 'shop' ) === $id;
+	}
+
+	/**
+	 * An owned document is singular. Keep its endpoint state; archive selectors
+	 * from any native or custom taxonomy or post type cannot constrain it. The
+	 * request's original query string remains available to the document.
+	 */
 	private static function singular_query_vars( array $query_vars ): array {
 		return array_intersect_key( $query_vars, array_flip( array( 'feed', 'embed', 'cpage', 'preview', 'preview_id', 'preview_nonce', 'withcomments', 'withoutcomments' ) ) );
 	}
