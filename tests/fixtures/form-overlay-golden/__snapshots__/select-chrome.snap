@@ -37,7 +37,7 @@ sha256: e8270ab44405c187a24ead9e917cd6e82852fd42804195a461f1dd3ebf54e1e9
 
 === block_markup ===
 <!-- wp:jetpack/contact-form {"className":"ssi-form-d095fee786e4"} -->
-<div class="wp-block-jetpack-contact-form ssi-form-d095fee786e4"><!-- wp:jetpack/field-select {"id":"ssi-form-d095fee786e4-field-0","options":["Option A","Option B"],"shareFieldAttributes":false,"className":"ssi-node-c0ec220a2ba5 ssi-node-9086d8eaec39 ssi-source-wrapper-0--field"} -->
+<div class="wp-block-jetpack-contact-form ssi-form-d095fee786e4"><!-- wp:jetpack/field-select {"options":["Option A","Option B"],"shareFieldAttributes":false,"className":"ssi-node-c0ec220a2ba5 ssi-node-9086d8eaec39 ssi-source-wrapper-0--field"} -->
 <div><!-- wp:jetpack/label {"label":"Topic","className":"ssi-node-55ca155d2249"} --><!-- /wp:jetpack/label -->
 <!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"className":"ssi-node-f6f6e97b0624","placeholder":"Choose one","type":"dropdown"} --><!-- /wp:jetpack/input --></div>
 <!-- /wp:jetpack/field-select -->

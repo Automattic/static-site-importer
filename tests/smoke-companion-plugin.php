@@ -1236,8 +1236,8 @@ $assert(
 );
 
 $empty_country_state      = array(
-	'schema'        => 'static-site-importer/form-visual-state/v1',
-	'field_id'      => 'ssi-form-123456789abc-field-0',
+	'schema'        => 'static-site-importer/form-visual-state/v2',
+	'field_class'   => 'ssi-node-123456789abc',
 	'trigger_class' => 'ssi-node-123456789abc-destination-country-trigger',
 	'group'         => array(
 		'id'    => 'visual-group-1234567890abcdef',
@@ -1268,7 +1268,10 @@ $visual_main              = is_array( $visual_descriptor ) ? (string) ( $visual_
 $invalid_visual_companion = $visual_companion;
 $invalid_visual_companion['form_visual_states'][0]['parts'][0]['markup'] = '<svg><script>alert(1)</script></svg>';
 $visual_config = is_array( $visual_descriptor ) ? json_decode( (string) ( $visual_descriptor['files']['ssi-visual-state/companion.json'] ?? '' ), true ) : null;
-$assert( is_array( $visual_descriptor ) && str_contains( $visual_main, 'configure_visual_states' ) && is_array( $visual_config ) && 'ssi-form-123456789abc-field-0' === ( $visual_config['form_visual_states'][0]['field_id'] ?? '' ) && ! str_contains( $visual_main, 'base64' ) && is_wp_error( Static_Site_Importer_Companion_Plugin::scaffold( $invalid_visual_companion ) ), 'companion-payload-carries-only-validated-empty-country-visual-state-config' );
+$assert( is_array( $visual_descriptor ) && str_contains( $visual_main, 'configure_visual_states' ) && is_array( $visual_config ) && 'ssi-node-123456789abc' === ( $visual_config['form_visual_states'][0]['field_class'] ?? '' ) && ! str_contains( $visual_main, 'base64' ) && is_wp_error( Static_Site_Importer_Companion_Plugin::scaffold( $invalid_visual_companion ) ), 'companion-payload-carries-only-validated-empty-country-visual-state-config' );
+// The v1 state keyed one fixed rendered field ID, which repeats in every copy of a reused form.
+$retired_visual_state = array( 'schema' => 'static-site-importer/form-visual-state/v1', 'field_id' => 'ssi-form-123456789abc-field-0' ) + array_diff_key( $empty_country_state, array( 'schema' => true, 'field_class' => true ) );
+$assert( ! Static_Site_Importer_Provider_Form_Runtime_V1::valid_visual_state( $retired_visual_state ), 'visual-state-v2-is-keyed-by-field-class-not-rendered-field-id' );
 
 // 2. Install plan resolves the file set + activation intent (pure / no writes).
 if ( is_array( $descriptor ) ) {

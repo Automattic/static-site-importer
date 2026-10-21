@@ -231,10 +231,9 @@ final class Static_Site_Importer_Form_Field_Markup {
 		if ( false === ( $control['required_indicator'] ?? null ) && '' === trim( (string) ( $control['required_text'] ?? '' ) ) ) {
 			$attrs['requiredIndicator'] = false;
 		}
-		$id = isset( $control['id'] ) && is_scalar( $control['id'] ) ? trim( (string) $control['id'] ) : '';
-		if ( '' !== $id ) {
-			$attrs['id'] = $id;
-		}
+		// No field `id` is set: a source ID can repeat across responsive copies,
+		// and a fixed ID would repeat in every rendered copy of a reused form.
+		// Jetpack derives a unique ID per rendered form instance instead.
 		if ( in_array( $lookup, array( 'tel', 'phone' ), true ) ) {
 			$attrs['showCountrySelector'] = 'phone' === $lookup;
 		}

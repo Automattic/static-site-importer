@@ -406,9 +406,6 @@ class Static_Site_Importer_Form_Seeder {
 				$skipped[] = '' !== $type ? $type : $tag;
 				continue;
 			}
-			// Source responsive documents can repeat IDs. Provider state is keyed by
-			// field ID, so its identity must belong to this materialized form instance.
-			$field_block['attrs']['id'] = $scope . '-field-' . $control_index;
 			if ( ! empty( $control_phone_destinations ) ) {
 				foreach ( $field_block['innerBlocks'] as &$inner_block ) {
 					if ( 'jetpack/phone-input' === ( $inner_block['name'] ?? '' ) ) {
