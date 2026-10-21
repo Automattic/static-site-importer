@@ -9,6 +9,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+require_once __DIR__ . '/class-static-site-importer-form-mapping-decision.php';
+
 class Static_Site_Importer_Computed_Layout_Strategy {
 	public const RECEIPT_SCHEMA = 'static-site-importer/computed-layout-receipt/v1';
 
@@ -114,7 +116,7 @@ class Static_Site_Importer_Computed_Layout_Strategy {
 	private static function bound_receipt( array $receipt ): array {
 		$receipt['operations_total'] = count( $receipt['operations'] );
 		$receipt['losses_total']     = count( $receipt['losses'] );
-		$gate_overflow               = array_values( array_filter( array_slice( $receipt['losses'], 32 ), array( self::class, 'receipt_loss_requires_gate' ) ) );
+		$gate_overflow               = array_values( array_filter( array_slice( $receipt['losses'], 32 ), array( Static_Site_Importer_Form_Mapping_Decision::class, 'requires_gate' ) ) );
 		if ( ! empty( $gate_overflow ) ) {
 			$receipt['gate_required_loss_overflow_count'] = count( $gate_overflow );
 			$receipt['gate_required_loss_overflow_hash']  = self::json_hash( $gate_overflow );
@@ -130,13 +132,6 @@ class Static_Site_Importer_Computed_Layout_Strategy {
 	private static function json_hash( mixed $value ): string {
 		$json = wp_json_encode( $value );
 		return is_string( $json ) ? hash( 'sha256', $json ) : '';
-	}
-
-	private static function receipt_loss_requires_gate( array $loss ): bool {
-		return 'unsupported_control_unrepresentable' === ( $loss['reason_code'] ?? '' )
-			|| 'unsupported_control_attribute' === ( $loss['reason_code'] ?? '' )
-			|| in_array( $loss['dimension'] ?? '', array( 'semantic', 'topology' ), true )
-			|| in_array( $loss['reason_code'] ?? '', array( 'provider_structure_mismatch', 'direct_child_relationship_unrepresentable' ), true );
 	}
 
 	private static function flex_loss( array $layout ): ?string {
