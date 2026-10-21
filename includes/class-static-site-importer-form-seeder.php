@@ -434,10 +434,9 @@ class Static_Site_Importer_Form_Seeder {
 			$state->submit_presentation['label_marker'] = trim( (string) $control['label_marker'] );
 		}
 		if ( ! isset( $state->submit_presentation['icon'] ) ) {
-			$leading_icon = self::submit_leading_icon( $state->form, $control_index );
-			if ( ! empty( $leading_icon ) ) {
-				$state->submit_presentation['icon'] = $leading_icon;
-			}
+			$icons                                    = self::submit_icons( $state->form, $control_index );
+			$state->submit_presentation['icon']       = $icons['before'];
+			$state->submit_presentation['icon_after'] = $icons['after'];
 		}
 		if ( $state->has_topology ) {
 			$presentation_class                    = $presentation_descriptor['control_class'];
@@ -985,8 +984,10 @@ class Static_Site_Importer_Form_Seeder {
 	}
 
 	/**
-	 * Resolve a submit control's own captured inline SVGs into the leading icon
-	 * the source button renders inside its control box.
+	 * Resolve a submit control's captured inline SVGs around its label.
+	 *
+	 * Source fallback HTML supplies label-relative order; only admitted visual
+	 * parts supply markup. Declarations without HTML retain leading icons.
 	 *
 	 * The producer captures every drawable inline SVG descendant of a control
 	 * as a bounded visual part (see the presentation graph's `visual_parts`,
@@ -999,9 +1000,9 @@ class Static_Site_Importer_Form_Seeder {
 	 *
 	 * @param array<string,mixed> $form Validated form row.
 	 * @param int                 $control_index Submit control index.
-	 * @return array<int,string> Validated SVG markup strings, source order.
+	 * @return array{before:array<int,string>,after:array<int,string>} Validated parts.
 	 */
-	private static function submit_leading_icon( array $form, int $control_index ): array {
+	private static function submit_icons( array $form, int $control_index ): array {
 		$parts = is_array( $form['presentation_graph']['visual_parts'] ?? null ) ? $form['presentation_graph']['visual_parts'] : array();
 		$owned = array();
 		foreach ( $parts as $part ) {
@@ -1019,7 +1020,75 @@ class Static_Site_Importer_Form_Seeder {
 			$owned[ (int) $ordinal[1] ] = $markup;
 		}
 		ksort( $owned );
-		return array_slice( array_values( $owned ), 0, 4 );
+		$positions = self::submit_icon_positions( $form, $control_index );
+		$icons     = array(
+			'before' => array(),
+			'after'  => array(),
+		);
+		foreach ( array_slice( $owned, 0, 4, true ) as $ordinal => $markup ) {
+			$selector = '';
+			foreach ( $parts as $part ) {
+				if ( ( $part['id'] ?? '' ) === 'control-' . $control_index . '-svg-' . $ordinal ) {
+					$selector = (string) ( $part['source_selector'] ?? '' );
+					break;
+				}
+			}
+			$icons[ $positions[ $selector ] ?? 'before' ][] = $markup;
+		}
+		return $icons;
+	}
+
+	/**
+	 * Recover label-relative order from the matched fallback control, not from
+	 * geometry or site-specific classes. Missing source evidence keeps legacy order.
+	 *
+	 * @param array<string,mixed> $form Source form with fallback HTML.
+	 * @param int                 $control_index Submit control index.
+	 * @return array<string,string> Captured SVG selector to side of label.
+	 */
+	private static function submit_icon_positions( array $form, int $control_index ): array {
+		$html     = $form['html'] ?? null;
+		$selector = $form['controls'][ $control_index ]['selector'] ?? '';
+		if ( ! is_string( $html ) || '' === $selector || ! class_exists( 'DOMDocument' ) ) {
+			return array();
+		}
+		$document = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$document->loadHTML( '<?xml encoding="UTF-8">' . $html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		// Fallback HTML begins at the form; ancestors and the form ordinal in the
+		// full document are intentionally absent. Compare only its descendant path.
+		$relative = static fn ( string $path ): string => (string) preg_replace( '/^.*?form:nth-of-type\([0-9]+\) > /', '', $path );
+		foreach ( $document->getElementsByTagName( 'button' ) as $button ) {
+			$path = \Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Support\SourceDom::elementSelector( $button );
+			if ( $relative( $path ) !== $relative( $selector ) ) {
+				continue;
+			}
+			$positions = array();
+			$has_text  = false;
+			$walk      = static function ( DOMNode $node ) use ( &$walk, &$positions, &$has_text, $form, $selector, $relative ): void {
+				if ( $node instanceof DOMElement && 'svg' === strtolower( $node->nodeName ) ) { // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM API.
+					$path = \Automattic\BlocksEngine\PhpTransformer\HtmlToBlocks\Support\SourceDom::elementSelector( $node );
+					foreach ( $form['presentation_graph']['visual_parts'] ?? array() as $part ) {
+						$source = (string) ( $part['source_selector'] ?? '' );
+						if ( str_starts_with( $source, $selector . ' > ' ) && $relative( $source ) === $relative( $path ) ) {
+							$positions[ $source ] = $has_text ? 'after' : 'before';
+						}
+					}
+					return;
+				}
+				if ( $node instanceof DOMText && '' !== trim( $node->textContent ) ) { // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM API.
+					$has_text = true;
+				}
+				foreach ( $node->childNodes as $child ) { // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM API.
+					$walk( $child );
+				}
+			};
+			$walk( $button );
+			return $positions;
+		}
+		return array();
 	}
 
 	/**
@@ -1234,13 +1303,16 @@ class Static_Site_Importer_Form_Seeder {
 						$proven = array_merge( $proven, $fact['properties'] ?? array() );
 					}
 				}
-				$conditional = array_filter( $form['presentation_graph']['variants'] ?? array(), static function ( array $variant ) use ( $control_index, $part ): bool {
-					if ( ( $variant['index'] ?? null ) !== $control_index || 'control' !== ( $variant['role'] ?? null ) ) {
-						return false;
+				$conditional = array_filter(
+					$form['presentation_graph']['variants'] ?? array(),
+					static function ( array $variant ) use ( $control_index, $part ): bool {
+						if ( ( $variant['index'] ?? null ) !== $control_index || 'control' !== ( $variant['role'] ?? null ) ) {
+							return false;
+						}
+						$styles = array_replace( $part['styles'], $variant['style_patch'] ?? array() );
+						return 'absolute' !== ( $styles['position'] ?? null ) || ! in_array( $styles['transform'] ?? null, array( 'scale(0)', 'scale(0,0)', 'scale(0, 0)' ), true );
 					}
-					$styles = array_replace( $part['styles'], $variant['style_patch'] ?? array() );
-					return 'absolute' !== ( $styles['position'] ?? null ) || ! in_array( $styles['transform'] ?? null, array( 'scale(0)', 'scale(0,0)', 'scale(0, 0)' ), true );
-				} );
+				);
 				if ( empty( $conditional ) && empty( array_diff( array( 'position', 'transform' ), $proven ) ) ) {
 					return true;
 				}

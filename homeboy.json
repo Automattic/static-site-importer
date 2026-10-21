@@ -204,6 +204,7 @@
           "tests/form-fallback-contract-equivalence.php",
           "tests/form-materializer-smoke.php",
           "tests/smoke-form-submit-colors.php",
+          "tests/smoke-form-submit-icon-order.php",
           "tests/provider-adapter-runtime-smoke.php",
           "tests/provider-field-list-order.php",
           "tests/smoke-ability-error-report-summary.php",

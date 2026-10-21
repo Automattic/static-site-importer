@@ -293,11 +293,13 @@ final class Static_Site_Importer_Form_Field_Markup {
 			}
 			$inner_blocks[] = array(
 				'name'  => 'jetpack/option',
-				'attrs' => array_filter( array(
-					'label'        => $label,
-					'isStandalone' => true,
-					'className'    => trim( $control_class . ' ' . $label_class ),
-				) ),
+				'attrs' => array_filter(
+					array(
+						'label'        => $label,
+						'isStandalone' => true,
+						'className'    => trim( $control_class . ' ' . $label_class ),
+					)
+				),
 			);
 		} elseif ( '' !== $label ) {
 			$label_attrs = array( 'label' => $label );
@@ -496,7 +498,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 	 * @param string $text Submit button label.
 	 * @param string $class_name Wrapper class list.
 	 * @param array<string, mixed> $presentation Source submit presentation: text
-	 *   label element classes and marker, captured leading inline icon parts,
+	 *   label element classes and marker, captured leading and trailing inline icon parts,
 	 *   and provider block attrs.
 	 * @return array<string, mixed>
 	 */
@@ -538,11 +540,11 @@ final class Static_Site_Importer_Form_Field_Markup {
 		// travels with the button's projected classes. Only parts that pass the
 		// portable inline-SVG admission are kept, so the serializer reproduces
 		// exactly the bounded markup the producer captured.
-		$icon_parts = isset( $presentation['icon'] ) && is_array( $presentation['icon'] ) ? $presentation['icon'] : array();
-		if ( ! empty( $icon_parts ) ) {
+		foreach ( array( 'icon', 'icon_after' ) as $key ) {
+			$icon_parts = isset( $presentation[ $key ] ) && is_array( $presentation[ $key ] ) ? $presentation[ $key ] : array();
 			$icon_parts = Static_Site_Importer_Provider_Form_Runtime_V1::valid_icon_parts( $icon_parts );
 			if ( ! empty( $icon_parts ) ) {
-				$block['icon'] = array( 'parts' => $icon_parts );
+				$block[ $key ] = array( 'parts' => $icon_parts );
 			}
 		}
 
@@ -1145,7 +1147,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 			$classes = trim( 'wp-block-button ' . (string) ( $attrs['className'] ?? '' ) );
 			$type    = 'submit' === $wrapper ? 'submit' : 'button';
 			$icon    = self::icon_markup( $block['icon'] ?? null );
-			$prefix  = "\n<div class=\"" . self::escape_attribute( $classes ) . '"><button type="' . $type . '" class="wp-block-button__link wp-element-button">' . $icon . self::rich_text_markup( $content, $label ) . "</button></div>\n";
+			$prefix  = "\n<div class=\"" . self::escape_attribute( $classes ) . '"><button type="' . $type . '" class="wp-block-button__link wp-element-button">' . $icon . self::rich_text_markup( $content, $label ) . self::icon_markup( $block['icon_after'] ?? null ) . "</button></div>\n";
 		} elseif ( 'heading' === $wrapper ) {
 			$level   = min( 6, max( 1, (int) ( $attrs['level'] ?? 2 ) ) );
 			$classes = self::saved_element_classes( $attrs, array( 'wp-block-heading', is_scalar( $attrs['className'] ?? null ) ? trim( (string) $attrs['className'] ) : '' ) );
@@ -1195,7 +1197,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 	}
 
 	/**
-	 * Build the saved markup for a source submit's leading inline icon.
+	 * Build the saved markup for a source submit's inline icon.
 	 *
 	 * The icon is authored control content, captured by the producer as
 	 * bounded validated SVG parts. Each part is re-admitted here so only the
