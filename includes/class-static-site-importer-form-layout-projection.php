@@ -898,8 +898,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( count( $members ) < 2 || $total <= 0 ) {
 				continue;
 			}
-			foreach ( $members as $control_index => $width ) {
-				$s->field_blocks[ $control_index ]['attrs']['width'] = self::provider_field_width( $width / $total );
+			$widths = self::band_field_widths( array_map( static fn ( float $width ): float => $width / $total, array_values( $members ) ) );
+			if ( null === $widths ) {
+				continue;
+			}
+			foreach ( array_keys( $members ) as $position => $control_index ) {
+				$s->field_blocks[ $control_index ]['attrs']['width'] = $widths[ $position ];
 				$s->operations[]                                     = array(
 					'dimension'   => 'layout',
 					'strategy'    => 'provider_row_band_field_width',
@@ -3157,6 +3161,49 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	/** @param array<string,mixed> $layout */
 	private static function declared_pixel_width( array $layout ): float {
 		return 1 === preg_match( '/^([0-9]+(?:\.[0-9]+)?)px$/D', trim( (string) ( $layout['width'] ?? '' ) ), $match ) ? (float) $match[1] : 0.0;
+	}
+
+	/**
+	 * Provider field widths for one row band, snapped together.
+	 *
+	 * Snapping each share on its own can overfill the row: a 1:2 band snaps to
+	 * 33 + 75, and at 108% the provider wraps the fields onto separate rows. The
+	 * band is snapped as a whole instead: the closest step combination that still
+	 * fits in one row, preferring the one that fills more of it on a tie. Null
+	 * when no combination fits (more boxes than the narrowest step allows).
+	 *
+	 * @param list<float> $shares Each box's share of the band, summing to 1.
+	 * @return list<int>|null
+	 */
+	private static function band_field_widths( array $shares ): ?array {
+		$steps  = self::WIDTH_STEPS;
+		$radix  = count( $steps );
+		$count  = count( $shares );
+		$combos = $radix ** $count;
+		if ( $count * min( $steps ) > 100 ) {
+			return null;
+		}
+		$best       = null;
+		$best_error = INF;
+		$best_sum   = 0;
+		for ( $code = 0; $code < $combos; $code++ ) {
+			$widths = array();
+			$error  = 0.0;
+			$digits = $code;
+			foreach ( $shares as $share ) {
+				$step     = $steps[ $digits % $radix ];
+				$digits   = intdiv( $digits, $radix );
+				$widths[] = $step;
+				$error   += abs( $share - ( $step / 100 ) );
+			}
+			$sum = array_sum( $widths );
+			if ( $sum <= 100 && ( $error < $best_error - 0.0000001 || ( abs( $error - $best_error ) <= 0.0000001 && $sum > $best_sum ) ) ) {
+				$best       = $widths;
+				$best_error = $error;
+				$best_sum   = $sum;
+			}
+		}
+		return $best;
 	}
 
 	/** The provider states column membership in fixed steps, so snap to the nearest. */
