@@ -4,3 +4,7 @@ build/
 artifacts/
 assets/host-acceptance/
 .phpunit.result.cache
+
+# Patch-tool leftovers
+*.orig
+*.rej
