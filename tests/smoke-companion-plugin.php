@@ -874,6 +874,17 @@ if ( is_array( $layout_descriptor ) ) {
 		$assert( str_contains( $layout_output, $fragment ), 'layout-renderer-preserves-' . $fragment );
 	}
 	$assert( ! str_contains( $layout_output, '<wow-image' ) && str_contains( $layout_output, '<div data-hook="hero"><img' ), 'layout-renderer-neutralizes-custom-elements-without-dropping-safe-wrapper-attributes' );
+	$svg_data_src = 'data:image/svg+xml,%3Csvg%20viewBox%3D%220%200%20133%20100%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20%2F%3E';
+	$attributes   = array( 'content' => '<main class="story"><img src="' . $svg_data_src . '" alt=""><picture><source src="data:image/svg+xml;base64,PHN2Zz4=" type="image/svg+xml"></picture><a href="' . $svg_data_src . '">Link</a><img src="data:text/html,%3Cscript%3Ealert(1)%3C%2Fscript%3E" alt="Html"><video src="data:image/svg+xml,%3Csvg%2F%3E"></video><img src="data:image/png;base64,aGVybw==" alt="Hero"></main>' );
+	ob_start();
+	eval( '?>' . $layout_render );
+	$svg_data_output = (string) ob_get_clean();
+	$assert( str_contains( $svg_data_output, '<img src="' . $svg_data_src . '" alt="">' ), 'layout-renderer-preserves-svg-data-image-src', $svg_data_output );
+	$assert( str_contains( $svg_data_output, 'src="data:image/svg+xml;base64,PHN2Zz4="' ), 'layout-renderer-preserves-svg-data-source-src', $svg_data_output );
+	$assert( str_contains( $svg_data_output, '<img src="data:image/png;base64,aGVybw==" alt="Hero">' ), 'layout-renderer-preserves-raster-data-image-alongside-svg', $svg_data_output );
+	$assert( ! preg_match( '/href\s*=\s*["\']?\s*data:/i', $svg_data_output ), 'layout-renderer-rejects-svg-data-link-href', $svg_data_output );
+	$assert( ! str_contains( $svg_data_output, 'data:text/html' ), 'layout-renderer-rejects-non-image-data-img-src', $svg_data_output );
+	$assert( ! preg_match( '/<video\b[^>]*data:/i', $svg_data_output ), 'layout-renderer-rejects-svg-data-video-src', $svg_data_output );
 	$assert( str_contains( $layout_output, 'position:absolute' ) && str_contains( $layout_output, 'inset:0 auto auto 332px' ) && str_contains( $layout_output, 'width:405px' ) && str_contains( $layout_output, 'height:516.812px' ) && str_contains( $layout_output, 'box-sizing:border-box' ) && str_contains( $layout_output, 'overflow:hidden' ) && str_contains( $layout_output, 'transition:opacity 0.2s' ), 'layout-renderer-preserves-quoted-inline-geometry', $layout_output );
 	$assert( str_contains( $layout_output, 'overflow-x:visible' ) && str_contains( $layout_output, 'overflow-y:clip' ), 'layout-renderer-preserves-axis-specific-overflow', $layout_output );
 	$assert( str_contains( $layout_render, "add_filter( 'safe_style_css', \$safe_style_css )" ) && str_contains( $layout_render, "remove_filter( 'safe_style_css', \$safe_style_css )" ), 'layout-renderer-bounds-inline-layout-css-filter', $layout_render );
