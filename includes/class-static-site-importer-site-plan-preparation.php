@@ -786,16 +786,15 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	}
 
 	/**
-	 * Index the documents a runtime entity binding may target: every page,
-	 * every template part that shared chrome containing the entity moved into,
-	 * and every synced pattern the producer factored repeated content into.
+	 * Index every persisted block document a runtime entity binding may target:
+	 * page/post entities, generated templates, shared parts, and synced patterns.
 	 *
 	 * @param array<string,mixed> $plan Resolved plan.
 	 * @return array<string,array{group:string,index:int|string}>
 	 */
 	public static function runtime_binding_documents( array $plan ): array {
 		$documents = array();
-		foreach ( array( 'pages', 'template_parts', 'synced_patterns' ) as $group ) {
+		foreach ( array( 'pages', 'templates', 'template_parts', 'synced_patterns' ) as $group ) {
 			foreach ( is_array( $plan[ $group ] ?? null ) ? $plan[ $group ] : array() as $index => $document ) {
 				if ( is_array( $document ) && is_string( $document['source_path'] ?? null ) && ! isset( $documents[ $document['source_path'] ] ) ) {
 					$documents[ $document['source_path'] ] = array(
@@ -857,7 +856,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				'search'      => $binding['search_block_markup'],
 				'replacement' => $binding['replacement_block_markup'],
 			);
-			if ( 'template_parts' === $group ) {
+			if ( in_array( $group, array( 'templates', 'template_parts' ), true ) ) {
 				$part_patches[ $binding['source_path'] ][] = $patch;
 			} else {
 				$page_patches[ $binding['source_path'] ][] = $patch;
@@ -883,7 +882,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			);
 		}
 		foreach ( $part_patches as $source_path => $patches ) {
-			self::apply_template_part_binding_patches( $plan, $documents[ $source_path ]['index'], $patches );
+			self::apply_template_part_binding_patches( $plan, $documents[ $source_path ]['index'], $patches, $documents[ $source_path ]['group'] );
 		}
 		foreach ( array_keys( $archive_pages ) as $source_path ) {
 			self::write_product_archive_template( $plan, $documents[ $source_path ]['index'], $page_patches[ $source_path ] );
@@ -891,6 +890,45 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		foreach ( $reports as &$report ) {
 			$document                            = $documents[ $report['source_path'] ];
 			$report['materialized_content_hash'] = hash( 'sha256', (string) ( $plan[ $document['group'] ][ $document['index'] ]['materialized_block_markup'] ?? $plan[ $document['group'] ][ $document['index'] ]['resolved_block_markup'] ) );
+		}
+		unset( $report );
+		self::reconcile_variant_form_bindings( $plan, $documents, $reports );
+	}
+
+	/**
+	 * Reconcile only equivalent forms on routes absorbed by this canonical surface.
+	 * Keep exact source identities on the binding so completion still requires its
+	 * persisted fragment; neither an unrelated route nor a different form qualifies.
+	 *
+	 * @param array<string,mixed> $plan      Resolved plan.
+	 * @param array<string,array> $documents Binding document index.
+	 * @param array<string,array> $reports   Prepared binding reports.
+	 */
+	private static function reconcile_variant_form_bindings( array $plan, array $documents, array &$reports ): void {
+		$fallbacks = $plan['quality']['fallbacks'] ?? array();
+		foreach ( $reports as &$report ) {
+			if ( 'form' !== ( $report['role'] ?? '' ) ) {
+				continue;
+			}
+			$location = $documents[ $report['source_path'] ];
+			$surface  = $plan[ $location['group'] ][ $location['index'] ];
+			$variants = $surface['template_surface']['source_variants'] ?? $surface['source_variants'] ?? $surface['metadata']['source_variants'] ?? array();
+			$paths    = array_column( $variants, 'source_path' );
+			$matches  = array_values( array_filter( $fallbacks, static fn( $fallback ): bool => is_array( $fallback ) && ( $fallback['source_path'] ?? '' ) === $report['source_path'] && Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $fallback ) === $report['fallback_reconciliation_identity'] ) );
+			if ( 1 !== count( $matches ) ) {
+				continue;
+			}
+			$canonical = $matches[0];
+			if ( '' === (string) ( $canonical['selector'] ?? '' ) || Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $canonical ) !== $report['fallback_hash'] ) {
+				continue;
+			}
+			foreach ( $fallbacks as $fallback ) {
+				if ( ! is_array( $fallback ) || ! in_array( $fallback['source_path'] ?? '', $paths, true ) || ( $fallback['source_path'] ?? '' ) === $report['source_path'] || ( $fallback['selector'] ?? null ) !== $canonical['selector'] || Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $fallback ) !== $report['fallback_hash'] ) {
+					continue;
+				}
+				$report['replaced_fallback_identities'][] = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $fallback );
+			}
+			$report['replaced_fallback_identities'] = array_values( array_unique( $report['replaced_fallback_identities'] ) );
 		}
 		unset( $report );
 	}
@@ -979,19 +1017,21 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	}
 
 	/**
-	 * A template part is written from its canonical payload, which keeps asset
+	 * A template or part is written from its canonical payload, which keeps asset
 	 * tokens that the resolved markup has already expanded. Tokens live inside
 	 * attribute values, so both serializations have the same blocks in the same
 	 * order: each binding's resolved block maps to the canonical block at the same
 	 * index, and the provider replacement is spliced there, last offset first.
 	 *
 	 * @param array<string,mixed>                                                $plan    Resolved plan.
-	 * @param int|string                                                         $index   Template part index.
-	 * @param array<int,array{offset:int|null,search:string,replacement:string}> $patches Bindings applied to this part.
+	 * @param int|string                                                         $index   Surface index.
+	 * @param array<int,array{offset:int|null,search:string,replacement:string}> $patches Bindings applied to this surface.
+	 * @param string                                                             $group   Template or template-part collection.
+	 * @throws InvalidArgumentException When the canonical surface write is missing or mismatched.
 	 */
-	private static function apply_template_part_binding_patches( array &$plan, int|string $index, array $patches ): void {
-		$part   = $plan['template_parts'][ $index ];
-		$target = 'parts/' . (string) ( $part['slug'] ?? '' ) . '.html';
+	private static function apply_template_part_binding_patches( array &$plan, int|string $index, array $patches, string $group ): void {
+		$part   = $plan[ $group ][ $index ];
+		$target = ( 'templates' === $group ? 'templates/' : 'parts/' ) . (string) ( $part['slug'] ?? '' ) . '.html';
 		$write  = null;
 		foreach ( $plan['writes'] ?? array() as $write_index => $candidate ) {
 			if ( is_array( $candidate ) && ( $candidate['target_path'] ?? null ) === $target && 'utf8' === ( $candidate['payload']['encoding'] ?? null ) && is_string( $candidate['payload']['data'] ?? null ) ) {
@@ -1134,7 +1174,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	 * @return void
 	 */
 	public static function validate_materialized_block_documents( array $plan, array $bindings, array &$diagnostics, array $pending_blocks = array() ): void {
-		$template_parts = array_values( array_filter( $plan['template_parts'] ?? array(), static fn( $part ): bool => is_array( $part ) && isset( $part['materialized_block_markup'] ) ) );
+		$template_parts = array_values( array_filter( array_merge( $plan['templates'] ?? array(), $plan['template_parts'] ?? array() ), static fn( $part ): bool => is_array( $part ) && isset( $part['materialized_block_markup'] ) ) );
 		foreach ( array_merge( $plan['pages'] ?? array(), $template_parts, array_values( $plan['synced_patterns'] ?? array() ) ) as $page ) {
 			if ( ! is_array( $page ) || ! empty( $page['skip_materialization'] ) ) {
 				continue;

@@ -4591,4 +4591,6 @@ if ( ! is_wp_error( $invalid_compiled ) ) {
 	);
 }
 
+require __DIR__ . '/fixtures/assert-form-template-surfaces.php';
+
 echo "WordPress site plan materializer smoke passed.\n";
