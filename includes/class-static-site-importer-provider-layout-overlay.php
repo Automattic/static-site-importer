@@ -13,7 +13,10 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Compiles provider form layout and presentation into bounded, scoped overlay CSS.
  *
  * @phpstan-type Surface array{prefix:string,css:array{key:string,label:string,rule:string},context:array{key:string,label:string,rule:string},control_container_chrome:bool,native_passthrough:array<string,string>,form_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>,form_layout_host:array{declarations:string,strategy:string}|null,field_control:array{suffix:string,properties:array<int,string>}|null,container_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>}
- * @phpstan-type Pass array{declared:Surface,scope:string,targets:array<string,array<string,mixed>>,presentation_targets:array<int,array<string,mixed>>,rules:array<int,string>,chrome:array<int,string>,operations:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>,context_css:string}
+ * A compile pass accumulates one surface's declared surface, scope, targets,
+ * presentation targets, rules, chrome, operations, losses and context CSS.
+ *
+ * @phpstan-type Surface_Pass array<string,mixed>
  */
 class Static_Site_Importer_Provider_Layout_Overlay {
 	public const MAP_SCHEMA             = 'generic/provider-layout-target-map/v1';
@@ -313,7 +316,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * @param array                   $declared          Declared surface (see SURFACES).
 	 * @param array<string,mixed>     $validated_map     Validated target map.
 	 * @param array<int|string,mixed> $context_fallbacks Source context style fallbacks.
-	 * @return Pass
+	 * @return Surface_Pass
 	 * @phpstan-param Surface $declared
 	 */
 	private static function open_pass( array $declared, array $validated_map, array $context_fallbacks ): array {
@@ -344,7 +347,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 *
 	 * @param array $pass Compile pass.
 	 * @return array{overlay:array<string,mixed>,css:string,operations:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>}
-	 * @phpstan-param Pass $pass
+	 * @phpstan-param Surface_Pass $pass
 	 */
 	private static function close_pass( array $pass ): array {
 		$declared = $pass['declared'];
@@ -374,7 +377,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * @param string                   $selector     Scoped selector.
 	 * @param string                   $declarations Declaration block body.
 	 * @param array<string,mixed>|null $condition    Validated condition.
-	 * @phpstan-param Pass $pass
+	 * @phpstan-param Surface_Pass $pass
 	 */
 	private static function emit( array &$pass, string $selector, string $declarations, ?array $condition = null ): void {
 		$rule            = self::surface_selector( $pass['declared']['prefix'], $selector ) . '{' . $declarations . '}';
@@ -390,7 +393,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * @param string $declarations Declaration block body.
 	 * @param string $dimension    Operation dimension.
 	 * @param string $strategy     Operation strategy.
-	 * @phpstan-param Pass $pass
+	 * @phpstan-param Surface_Pass $pass
 	 */
 	private static function emit_scoped( array &$pass, string $suffix, string $declarations, string $dimension, string $strategy ): void {
 		$selector = $pass['scope'] . $suffix;
@@ -407,7 +410,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 *
 	 * @param array                                                               $pass         Compile pass.
 	 * @param array<int,array{suffix:string,declarations:string,strategy:string}> $passthroughs Declared passthroughs.
-	 * @phpstan-param Pass $pass
+	 * @phpstan-param Surface_Pass $pass
 	 */
 	private static function emit_passthroughs( array &$pass, array $passthroughs ): void {
 		foreach ( $passthroughs as $passthrough ) {
@@ -424,7 +427,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * @param array<string,mixed>      $target       Layout target.
 	 * @param array<int,string>        $declarations Compiled declarations.
 	 * @param array<string,mixed>|null $condition    Validated responsive condition.
-	 * @phpstan-param Pass $pass
+	 * @phpstan-param Surface_Pass $pass
 	 */
 	private static function emit_layout( array &$pass, string $id, array $target, array $declarations, ?array $condition ): void {
 		if ( empty( $declarations ) ) {
@@ -452,7 +455,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * @param mixed $index Control index (anything but an int maps none).
 	 * @param mixed $role  Destination role.
 	 * @return array<int,array<string,mixed>>
-	 * @phpstan-param Pass $pass
+	 * @phpstan-param Surface_Pass $pass
 	 */
 	private static function destinations_for( array $pass, mixed $index, mixed $role ): array {
 		if ( ! is_int( $index ) ) {
@@ -471,7 +474,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * @param string                         $role         Destination role.
 	 * @param array<string,mixed>|null       $condition    Variant condition.
 	 * @param bool                           $emit_resets  Whether base resets are emitted.
-	 * @phpstan-param Pass $pass
+	 * @phpstan-param Surface_Pass $pass
 	 */
 	private static function present( array &$pass, array $destinations, array $styles, int $index, string $role, ?array $condition, bool $emit_resets = true ): void {
 		self::compile_presentation_destinations( $destinations, $styles, $index, $role, $condition, $pass['declared']['prefix'], $pass['rules'], $pass['operations'], $pass['losses'], $emit_resets );
@@ -483,7 +486,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 *
 	 * @param array               $pass  Compile pass.
 	 * @param array<string,mixed> $graph Provider layout graph.
-	 * @phpstan-param Pass $pass
+	 * @phpstan-param Surface_Pass $pass
 	 */
 	private static function compile_source_container_paint( array &$pass, array $graph ): void {
 		foreach ( $graph['nodes'] ?? array() as $node ) {
@@ -510,7 +513,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 *
 	 * @param array               $pass  Compile pass.
 	 * @param array<string,mixed> $graph Provider layout graph.
-	 * @phpstan-param Pass $pass
+	 * @phpstan-param Surface_Pass $pass
 	 */
 	private static function compile_node_layouts( array &$pass, array $graph ): void {
 		foreach ( $graph['nodes'] ?? array() as $node ) {
@@ -533,7 +536,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 *
 	 * @param array               $pass  Compile pass.
 	 * @param array<string,mixed> $graph Provider layout graph.
-	 * @phpstan-param Pass $pass
+	 * @phpstan-param Surface_Pass $pass
 	 */
 	private static function compile_layout_variants( array &$pass, array $graph ): void {
 		foreach ( $graph['variants'] ?? array() as $variant ) {
@@ -556,7 +559,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 *
 	 * @param array               $pass               Compile pass.
 	 * @param array<string,mixed> $presentation_graph Validated presentation graph.
-	 * @phpstan-param Pass $pass
+	 * @phpstan-param Surface_Pass $pass
 	 */
 	private static function compile_control_containers( array &$pass, array $presentation_graph ): void {
 		foreach ( $presentation_graph['control_containers'] ?? array() as $control_container ) {
@@ -580,7 +583,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * @param array               $pass               Compile pass.
 	 * @param array<string,mixed> $presentation_graph Validated presentation graph.
 	 * @return array<string,true> "index\nrole" keys that received a base pass.
-	 * @phpstan-param Pass $pass
+	 * @phpstan-param Surface_Pass $pass
 	 */
 	private static function compile_controls( array &$pass, array $presentation_graph ): array {
 		$base_presented = array();
@@ -616,7 +619,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * @param array               $pass               Compile pass.
 	 * @param array<string,mixed> $presentation_graph Validated presentation graph.
 	 * @param array<string,true>  $base_presented     "index\nrole" keys that received a base pass.
-	 * @phpstan-param Pass $pass
+	 * @phpstan-param Surface_Pass $pass
 	 */
 	private static function compile_variant_resets( array &$pass, array $presentation_graph, array $base_presented ): void {
 		foreach ( $presentation_graph['variants'] ?? array() as $variant ) {
@@ -638,7 +641,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 *
 	 * @param array               $pass               Compile pass.
 	 * @param array<string,mixed> $presentation_graph Validated presentation graph.
-	 * @phpstan-param Pass $pass
+	 * @phpstan-param Surface_Pass $pass
 	 */
 	private static function compile_presentation_variants( array &$pass, array $presentation_graph ): void {
 		foreach ( $presentation_graph['variants'] ?? array() as $variant ) {
@@ -685,7 +688,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 *
 	 * @param array               $pass      Compile pass.
 	 * @param array<string,mixed> $container Form container presentation.
-	 * @phpstan-param Pass $pass
+	 * @phpstan-param Surface_Pass $pass
 	 */
 	private static function compile_form_container( array &$pass, array $container ): void {
 		if ( 'generic/form-container-presentation/v1' !== ( $container['schema'] ?? null ) ) {
@@ -715,7 +718,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * unauthored box.
 	 *
 	 * @param array $pass Compile pass.
-	 * @phpstan-param Pass $pass
+	 * @phpstan-param Surface_Pass $pass
 	 */
 	private static function compile_carriers( array &$pass ): void {
 		if ( empty( $pass['losses'] ) ) {
@@ -740,7 +743,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * Make the native topology's provider wrappers box-less around the source boxes.
 	 *
 	 * @param array $pass Compile pass.
-	 * @phpstan-param Pass $pass
+	 * @phpstan-param Surface_Pass $pass
 	 */
 	private static function compile_native_topology( array &$pass ): void {
 		if ( ! str_contains( $pass['targets']['form']['selector'] ?? '', '.ssi-native-form-topology' ) ) {
