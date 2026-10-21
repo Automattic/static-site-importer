@@ -4868,6 +4868,11 @@ namespace {
 	$gate_losses = array_fill( 0, 33, array( 'dimension' => 'topology', 'reason_code' => 'provider_wrapper_layout_unrepresentable' ) );
 	$gate_overflow_receipt = Static_Site_Importer_Computed_Layout_Strategy::apply( array( 'topology_losses' => $gate_losses ), array() )['receipt'];
 	$assert( 1 === ( $gate_overflow_receipt['gate_required_loss_overflow_count'] ?? 0 ) && 64 === strlen( (string) ( $gate_overflow_receipt['gate_required_loss_overflow_hash'] ?? '' ) ), 'computed-layout-records-gate-required-overflow-before-seeder-appends' );
+	// Computed layout counts gated overflow with the seeder's own receipt policy.
+	$textarea_overflow_losses   = array_fill( 0, 32, array( 'dimension' => 'layout', 'reason_code' => 'provider_wrapper_layout_unrepresentable' ) );
+	$textarea_overflow_losses[] = array( 'dimension' => 'control', 'reason_code' => 'textarea_height_omitted', 'omitted_count' => 1 );
+	$textarea_overflow_receipt  = Static_Site_Importer_Computed_Layout_Strategy::apply( array( 'topology_losses' => $textarea_overflow_losses ), array() )['receipt'];
+	$assert( 1 === ( $textarea_overflow_receipt['gate_required_loss_overflow_count'] ?? 0 ) && Static_Site_Importer_Form_Mapping_Decision::requires_gate( end( $textarea_overflow_losses ) ), 'computed-layout-gates-overflow-with-the-form-mapping-decision-policy', wp_json_encode( $textarea_overflow_receipt ) );
 	$overflow_nodes = array();
 	for ( $receipt_index = 0; $receipt_index < 33; ++$receipt_index ) $overflow_nodes[] = $layout_node( 'wrapper-' . $receipt_index, array( 'display' => 'flex', 'direction' => 'row' ) );
 	$overflow_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.overflow', 'controls' => array( array( 'tag' => 'input', 'type' => 'number', 'label' => 'Guests', 'step' => '0.5' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ), 'layout_graph' => $layout_graph( $overflow_nodes ) ) ) ) );
