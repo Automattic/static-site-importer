@@ -241,24 +241,31 @@ class Static_Site_Importer_Form_Fallback_Contract {
 
 	/** @param mixed $value */
 	private static function context_class( mixed $value ): string {
-		$tokens = array();
-		if ( is_string( $value ) ) {
-			$tokens = preg_split( '/\s+/', trim( $value ) );
-		} elseif ( is_array( $value ) ) {
-			$tokens = $value;
-		}
+		// The producer bounds context class hooks at 64 and reports exhaustion
+		// itself; a smaller consumer bound silently dropped late responsive hooks.
+		return implode( ' ', self::class_tokens( is_string( $value ) ? preg_split( '/\s+/', trim( $value ) ) : $value, 64, false ) );
+	}
+
+	/**
+	 * Valid class tokens from a token list, in source order and deduplicated.
+	 *
+	 * With $unique_before_cap false the first $cap valid tokens are kept and
+	 * repeats count toward the cap; with it true repeats are skipped so the cap
+	 * applies to distinct tokens.
+	 *
+	 * @param mixed $value @return array<int,string>
+	 */
+	private static function class_tokens( mixed $value, int $cap, bool $unique_before_cap ): array {
 		$classes = array();
-		foreach ( false === $tokens ? array() : $tokens as $class_name ) {
-			if ( is_string( $class_name ) && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) {
+		foreach ( is_array( $value ) ? $value : array() as $class_name ) {
+			if ( is_string( $class_name ) && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) && ( ! $unique_before_cap || ! in_array( $class_name, $classes, true ) ) ) {
 				$classes[] = $class_name;
 			}
-			// The producer bounds context class hooks at 64 and reports exhaustion
-			// itself; a smaller consumer bound silently dropped late responsive hooks.
-			if ( 64 <= count( $classes ) ) {
+			if ( $cap <= count( $classes ) ) {
 				break;
 			}
 		}
-		return implode( ' ', array_values( array_unique( $classes ) ) );
+		return array_values( array_unique( $classes ) );
 	}
 
 	/**
@@ -310,45 +317,53 @@ class Static_Site_Importer_Form_Fallback_Contract {
 			// declaration; it is carried so the materializer can leave it out.
 			$hidden = self::context_hidden( $item['hidden'] ?? null );
 			if ( 'heading' === ( $item['type'] ?? '' ) ) {
-				$row = array(
-					'type'  => 'heading',
-					'level' => min( 6, max( 1, (int) ( $item['level'] ?? 2 ) ) ),
-					'text'  => $text,
+				$context[] = self::context_row(
+					array(
+						'type'  => 'heading',
+						'level' => min( 6, max( 1, (int) ( $item['level'] ?? 2 ) ) ),
+						'text'  => $text,
+					),
+					$class,
+					$styles,
+					$selector,
+					$hidden
 				);
-				if ( '' !== $class ) {
-					$row['class'] = $class;
-				}
-				if ( array() !== $styles ) {
-					$row['styles'] = $styles;
-				}
-				if ( '' !== $selector ) {
-					$row['source_selector'] = $selector;
-				}
-				if ( null !== $hidden ) {
-					$row['hidden'] = $hidden;
-				}
-				$context[] = $row;
 			} elseif ( 'paragraph' === ( $item['type'] ?? '' ) ) {
-				$row = array(
-					'type' => 'paragraph',
-					'text' => $text,
+				$context[] = self::context_row(
+					array(
+						'type' => 'paragraph',
+						'text' => $text,
+					),
+					$class,
+					$styles,
+					$selector,
+					$hidden
 				);
-				if ( '' !== $class ) {
-					$row['class'] = $class;
-				}
-				if ( array() !== $styles ) {
-					$row['styles'] = $styles;
-				}
-				if ( '' !== $selector ) {
-					$row['source_selector'] = $selector;
-				}
-				if ( null !== $hidden ) {
-					$row['hidden'] = $hidden;
-				}
-				$context[] = $row;
 			}
 		}
 		return $context;
+	}
+
+	/**
+	 * A context row with its optional facts appended only when present.
+	 *
+	 * @param array<string,mixed> $row @param array<string,string> $styles @param array<string,string>|null $hidden
+	 * @return array<string,mixed>
+	 */
+	private static function context_row( array $row, string $class_name, array $styles, string $selector, ?array $hidden ): array {
+		if ( '' !== $class_name ) {
+			$row['class'] = $class_name;
+		}
+		if ( array() !== $styles ) {
+			$row['styles'] = $styles;
+		}
+		if ( '' !== $selector ) {
+			$row['source_selector'] = $selector;
+		}
+		if ( null !== $hidden ) {
+			$row['hidden'] = $hidden;
+		}
+		return $row;
 	}
 
 	/**
@@ -384,28 +399,13 @@ class Static_Site_Importer_Form_Fallback_Contract {
 		if ( '' === $text ) {
 			return null;
 		}
-		$classes = array();
-		if ( isset( $presentation['classes'] ) && is_array( $presentation['classes'] ) ) {
-			foreach ( $presentation['classes'] as $class_name ) {
-				if ( is_string( $class_name ) && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) {
-					$classes[] = $class_name;
-				}
-			}
-		}
 		$row           = array(
 			'text'    => substr( $text, 0, 200 ),
-			'classes' => array_slice( array_values( array_unique( $classes ) ), 0, 16 ),
+			'classes' => self::class_tokens( $presentation['classes'] ?? null, 16, true ),
 		);
-		$label_classes = array();
-		if ( isset( $presentation['label_classes'] ) && is_array( $presentation['label_classes'] ) ) {
-			foreach ( $presentation['label_classes'] as $class_name ) {
-				if ( is_string( $class_name ) && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) {
-					$label_classes[] = $class_name;
-				}
-			}
-		}
+		$label_classes = self::class_tokens( $presentation['label_classes'] ?? null, 16, true );
 		if ( array() !== $label_classes ) {
-			$row['label_classes'] = array_slice( array_values( array_unique( $label_classes ) ), 0, 16 );
+			$row['label_classes'] = $label_classes;
 		}
 		return $row;
 	}
