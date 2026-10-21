@@ -898,8 +898,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( count( $members ) < 2 || $total <= 0 ) {
 				continue;
 			}
-			foreach ( $members as $control_index => $width ) {
-				$s->field_blocks[ $control_index ]['attrs']['width'] = self::provider_field_width( $width / $total );
+			$widths = self::band_field_widths( array_map( static fn ( float $width ): float => $width / $total, array_values( $members ) ) );
+			if ( null === $widths ) {
+				continue;
+			}
+			foreach ( array_keys( $members ) as $position => $control_index ) {
+				$s->field_blocks[ $control_index ]['attrs']['width'] = $widths[ $position ];
 				$s->operations[]                                     = array(
 					'dimension'   => 'layout',
 					'strategy'    => 'provider_row_band_field_width',
@@ -3155,6 +3159,44 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	/** @param array<string,mixed> $layout */
 	private static function declared_pixel_width( array $layout ): float {
 		return 1 === preg_match( '/^([0-9]+(?:\.[0-9]+)?)px$/D', trim( (string) ( $layout['width'] ?? '' ) ), $match ) ? (float) $match[1] : 0.0;
+	}
+
+	/**
+	 * Provider field widths for one row band, snapped together.
+	 *
+	 * Snapping each share on its own can overfill the row: a 1:2 band snaps to
+	 * 33 + 75, and at 108% the provider wraps the fields onto separate rows. The
+	 * band is snapped as a whole instead: the closest step combination that still
+	 * fits in one row, preferring the one that fills more of it on a tie. Null
+	 * when no combination fits (more boxes than the narrowest step allows).
+	 *
+	 * @param list<float> $shares Each box's share of the band, summing to 1.
+	 * @return list<int>|null
+	 */
+	private static function band_field_widths( array $shares ): ?array {
+		$best = null;
+		$fit  = static function ( array $widths, float $error ) use ( &$fit, &$best, $shares ): void {
+			$sum = array_sum( $widths );
+			if ( $sum > 100 ) {
+				return;
+			}
+			$position = count( $widths );
+			if ( count( $shares ) === $position ) {
+				if ( null === $best || $error < $best['error'] - 0.0000001 || ( abs( $error - $best['error'] ) <= 0.0000001 && $sum > $best['sum'] ) ) {
+					$best = array(
+						'widths' => $widths,
+						'error'  => $error,
+						'sum'    => $sum,
+					);
+				}
+				return;
+			}
+			foreach ( self::WIDTH_STEPS as $step ) {
+				$fit( array_merge( $widths, array( $step ) ), $error + abs( $shares[ $position ] - ( $step / 100 ) ) );
+			}
+		};
+		$fit( array(), 0.0 );
+		return null === $best ? null : $best['widths'];
 	}
 
 	/** The provider states column membership in fixed steps, so snap to the nearest. */
