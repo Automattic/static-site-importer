@@ -317,7 +317,7 @@ $preflight_plan         = array( 'pages' => array( $shared_page ) );
 $preflight_lifecycle_ok = array(
 	'entities' => array(
 		'products-declaration' => array(
-			'adapter'  => array( 'waiver_arg' => '' ),
+			'adapter'  => array( 'waiver_arg' => '', 'entity_collection' => 'products' ),
 			'manifest' => array( 'products' => array( $manifest_entities[0], $manifest_entities[1], $manifest_entities[2] ) ),
 		),
 	),
@@ -329,7 +329,7 @@ $non_collection_binding       = array( 'schema' => 'generic/block-binding/v1', '
 $preflight_lifecycle_conflict = array(
 	'entities' => array(
 		'products-declaration' => array(
-			'adapter'  => array( 'waiver_arg' => '' ),
+			'adapter'  => array( 'waiver_arg' => '', 'entity_collection' => 'products' ),
 			'manifest' => array(
 				'products' => array(
 					array( 'name' => 'A', 'slug' => 'a', 'regular_price' => '1.00', 'bindings' => array( $non_collection_binding ) ),
@@ -466,7 +466,7 @@ $shared_pages               = array(
 $shared_preflight_lifecycle = array(
 	'entities' => array(
 		'products-declaration' => array(
-			'adapter'  => array( 'waiver_arg' => '' ),
+			'adapter'  => array( 'waiver_arg' => '', 'entity_collection' => 'products' ),
 			'manifest' => array( 'products' => $shared_manifest_entities ),
 		),
 	),
@@ -492,7 +492,7 @@ $mixed_pages               = array_merge(
 $mixed_preflight_lifecycle = array(
 	'entities' => array(
 		'products-declaration' => array(
-			'adapter'  => array( 'waiver_arg' => '' ),
+			'adapter'  => array( 'waiver_arg' => '', 'entity_collection' => 'products' ),
 			'manifest' => array( 'products' => $mixed_manifest_entities ),
 		),
 	),
