@@ -1621,10 +1621,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( $paired_indexes === $non_submit_indexes ) {
 				continue;
 			}
+			$source_gaps = self::source_gaps( $layout );
+			if ( null === $source_gaps ) {
+				continue;
+			}
 			$width       = self::provider_field_width( 1 / $column_count );
-			$gap         = is_string( $layout['gap'] ?? null ) && '' !== trim( $layout['gap'] )
-				? trim( $layout['gap'] )
-				: ( is_string( $layout['column_gap'] ?? null ) && '' !== trim( $layout['column_gap'] ) ? trim( $layout['column_gap'] ) : '1.5rem' );
+			$gap         = $source_gaps['column'] ?? '1.5rem';
 			$track       = self::equal_fraction_track_size( $column_count, $gap );
 			$paired      = array_fill_keys( $indexes, true );
 			$stack_query = is_string( $widening_query ) ? self::inverted_min_width_media_query( $widening_query ) : $narrowing_query;
@@ -1820,16 +1822,19 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$gap_variant = $candidate;
 			}
 			$columns = self::equal_track_count( is_string( $layout['columns'] ?? null ) ? $layout['columns'] : '' );
-			if ( ! is_array( $layout_node ) || null === $columns || array_diff( array_keys( $layout ), array( 'display', 'columns', 'width', 'column_gap', 'gap' ) ) || 'grid' !== ( $layout['display'] ?? null ) || ( isset( $layout['width'] ) && '100%' !== $layout['width'] ) || ! self::has_unconditional_proven_property( $layout_node, 'display' ) || ! self::has_unconditional_proven_property( $layout_node, 'grid-template-columns' ) || ( isset( $layout['width'] ) && ! self::has_unconditional_proven_property( $layout_node, 'width' ) ) ) {
+			if ( ! is_array( $layout_node ) || null === $columns || array_diff( array_keys( $layout ), array( 'display', 'columns', 'width', 'row_gap', 'column_gap', 'gap' ) ) || 'grid' !== ( $layout['display'] ?? null ) || ( isset( $layout['width'] ) && '100%' !== $layout['width'] ) || ! self::has_unconditional_proven_property( $layout_node, 'display' ) || ! self::has_unconditional_proven_property( $layout_node, 'grid-template-columns' ) || ( isset( $layout['width'] ) && ! self::has_unconditional_proven_property( $layout_node, 'width' ) ) ) {
 				continue;
 			}
-			if ( isset( $layout['gap'], $layout['column_gap'] ) && trim( (string) $layout['gap'] ) !== trim( (string) $layout['column_gap'] ) ) {
+			// Placement states no row rhythm of its own, so a row gap must match the
+			// column gap the tracks are sized against.
+			$source_gaps = self::source_gaps( $layout );
+			if ( null === $source_gaps || ( null !== $source_gaps['row'] && $source_gaps['row'] !== $source_gaps['column'] ) ) {
 				continue;
 			}
-			if ( ( isset( $layout['column_gap'] ) && ! self::has_unconditional_proven_property( $layout_node, 'column-gap' ) ) || ( isset( $layout['gap'] ) && ! self::has_unconditional_proven_property( $layout_node, 'gap' ) ) ) {
+			if ( ( isset( $layout['row_gap'] ) && ! self::has_unconditional_proven_property( $layout_node, 'row-gap' ) ) || ( isset( $layout['column_gap'] ) && ! self::has_unconditional_proven_property( $layout_node, 'column-gap' ) ) || ( isset( $layout['gap'] ) && ! self::has_unconditional_proven_property( $layout_node, 'gap' ) ) ) {
 				continue;
 			}
-			$source_gap = isset( $layout['column_gap'] ) ? trim( (string) $layout['column_gap'] ) : ( isset( $layout['gap'] ) ? trim( (string) $layout['gap'] ) : null );
+			$source_gap = $source_gaps['column'];
 			$gap        = null === $source_gap ? ( null === $gap_variant ? '1.5rem' : '0px' ) : self::resolved_gap_length( $source_gap );
 			if ( ! is_string( $gap ) ) {
 				continue;
@@ -3038,6 +3043,38 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			return $match[1];
 		}
 		return null;
+	}
+
+	/**
+	 * A box's row and column gaps, read from the `gap` shorthand or its longhands.
+	 *
+	 * `gap` states the row gap and then the column gap, which defaults to the
+	 * row gap. Blocks Engine resolves a shorthand that meets a longhand into the
+	 * longhands that hold, so a shorthand beside a disagreeing longhand is a box
+	 * whose cascade order is unknown (a custom-property shorthand, say). That box
+	 * is null, as is a shorthand of more than two values.
+	 *
+	 * @param array<string,mixed> $layout Source layout facts.
+	 * @return array{row:?string,column:?string}|null
+	 */
+	private static function source_gaps( array $layout ): ?array {
+		$fact  = static fn ( string $key ): ?string => is_string( $layout[ $key ] ?? null ) && '' !== trim( $layout[ $key ] ) ? trim( $layout[ $key ] ) : null;
+		$parts = null === $fact( 'gap' ) ? array() : \Automattic\BlocksEngine\PhpTransformer\Css\CssValueSplitter::splitTopLevelWhitespace( (string) $fact( 'gap' ) );
+		if ( count( $parts ) > 2 ) {
+			return null;
+		}
+		$shorthand = array(
+			'row'    => $parts[0] ?? null,
+			'column' => $parts[1] ?? $parts[0] ?? null,
+		);
+		$gaps      = array(
+			'row'    => $fact( 'row_gap' ) ?? $shorthand['row'],
+			'column' => $fact( 'column_gap' ) ?? $shorthand['column'],
+		);
+		if ( array() !== $parts && $gaps !== $shorthand ) {
+			return null;
+		}
+		return $gaps;
 	}
 
 	/** Jetpack field width, or null when the share is not one of those steps. */
