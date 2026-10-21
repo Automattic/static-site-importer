@@ -3146,7 +3146,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * @internal
 	 */
 	public static function is_equal_fraction_columns( string $columns, int $count ): bool {
-		return $count === self::equal_track_count( $columns );
+		return self::equal_track_count( $columns ) === $count;
 	}
 
 	/** Jetpack subtracts a whole gap from each field; the source share is gap * (count-1)/count. */
