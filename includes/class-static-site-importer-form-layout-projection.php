@@ -3174,29 +3174,34 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * @return list<int>|null
 	 */
 	private static function band_field_widths( array $shares ): ?array {
-		$best = null;
-		$fit  = static function ( array $widths, float $error ) use ( &$fit, &$best, $shares ): void {
+		$steps  = self::WIDTH_STEPS;
+		$radix  = count( $steps );
+		$count  = count( $shares );
+		$combos = $radix ** $count;
+		if ( $count * min( $steps ) > 100 ) {
+			return null;
+		}
+		$best       = null;
+		$best_error = INF;
+		$best_sum   = 0;
+		for ( $code = 0; $code < $combos; $code++ ) {
+			$widths = array();
+			$error  = 0.0;
+			$digits = $code;
+			foreach ( $shares as $share ) {
+				$step     = $steps[ $digits % $radix ];
+				$digits   = intdiv( $digits, $radix );
+				$widths[] = $step;
+				$error   += abs( $share - ( $step / 100 ) );
+			}
 			$sum = array_sum( $widths );
-			if ( $sum > 100 ) {
-				return;
+			if ( $sum <= 100 && ( $error < $best_error - 0.0000001 || ( abs( $error - $best_error ) <= 0.0000001 && $sum > $best_sum ) ) ) {
+				$best       = $widths;
+				$best_error = $error;
+				$best_sum   = $sum;
 			}
-			$position = count( $widths );
-			if ( count( $shares ) === $position ) {
-				if ( null === $best || $error < $best['error'] - 0.0000001 || ( abs( $error - $best['error'] ) <= 0.0000001 && $sum > $best['sum'] ) ) {
-					$best = array(
-						'widths' => $widths,
-						'error'  => $error,
-						'sum'    => $sum,
-					);
-				}
-				return;
-			}
-			foreach ( self::WIDTH_STEPS as $step ) {
-				$fit( array_merge( $widths, array( $step ) ), $error + abs( $shares[ $position ] - ( $step / 100 ) ) );
-			}
-		};
-		$fit( array(), 0.0 );
-		return null === $best ? null : $best['widths'];
+		}
+		return $best;
 	}
 
 	/** The provider states column membership in fixed steps, so snap to the nearest. */
