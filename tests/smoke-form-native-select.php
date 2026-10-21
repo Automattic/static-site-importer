@@ -3,7 +3,8 @@
 // phpcs:ignoreFile -- Standalone CLI regression.
 require_once __DIR__ . '/fixtures/form-seeder-cli-stubs.php';
 require_once __DIR__ . '/fixtures/core-html-api.php';
-require_once dirname( __DIR__ ) . '/vendor/wordpress-core/wp-includes/kses.php';
+// Tag Processor attribute writes need core kses; resolve it from the same core root.
+require_once rtrim( (string) ( getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) ? getenv( 'STATIC_SITE_IMPORTER_WP_ROOT' ) : ( getenv( 'HOMEBOY_WORDPRESS_CORE_ROOT' ) ? getenv( 'HOMEBOY_WORDPRESS_CORE_ROOT' ) : dirname( __DIR__ ) . '/vendor/wordpress-core' ) ), '/\\' ) . '/wp-includes/kses.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-provider-form-runtime.php';
 
 use Automattic\BlocksEngine\PhpTransformer\ArtifactCompiler\ArtifactCompiler;
