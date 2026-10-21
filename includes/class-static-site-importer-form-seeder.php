@@ -867,7 +867,10 @@ class Static_Site_Importer_Form_Seeder {
 		$overlay_graph = Static_Site_Importer_Form_Layout_Projection::without_container_box_facts( $overlay_form['layout_graph'], $container_presentation );
 		// One assembly: each declared surface compiles from its own map, and the
 		// overlay, its operations and its losses come back together.
-		$overlay = Static_Site_Importer_Provider_Layout_Overlay::compile_surfaces( $overlay_graph, $maps['target'], $maps['editor'], $presentation_graph, $container_presentation, $context_fallbacks );
+		// Core's editor does not run the server-side source-class transfer hook.
+		// Keep its captured facts while the front end uses the live source rules.
+		$front_presentation = Static_Site_Importer_Form_Layout_Projection::without_class_carried_submit_colors( $presentation_graph, $state->controls );
+		$overlay = Static_Site_Importer_Provider_Layout_Overlay::compile_surfaces( $overlay_graph, $maps['target'], $maps['editor'], $front_presentation, $container_presentation, $context_fallbacks, $presentation_graph );
 		$overlay = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_provider_errors( $overlay, $state->scope, $state->mapped_types );
 		self::append_receipt_entries( $state->layout['receipt'], 'operations', $overlay['operations'] );
 		self::append_receipt_entries( $state->layout['receipt'], 'operations', $state->layout_intent['operations'] );

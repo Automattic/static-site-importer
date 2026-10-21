@@ -49,6 +49,8 @@
     { "path": "tests/form-layout-rendered.test.mjs", "environment": "operator-only", "reason": "Chromium rendering regression; executed by the Editor Presentation Browser CI job." },
     { "path": "tests/form-role-box-parity.test.mjs", "environment": "operator-only", "reason": "Chromium rendering regression; executed by the Editor Presentation Browser CI job." },
     { "path": "tests/form-materializer-smoke.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-form-submit-colors.php", "environment": "standalone-php" },
+    { "path": "tests/form-submit-colors.test.mjs", "environment": "operator-only", "reason": "Chromium submit colour regression; executed by the Editor Presentation Browser CI job." },
     { "path": "tests/smoke-option-idempotence.php", "environment": "standalone-php" },
     { "path": "tests/smoke-media-rendition-equivalence.php", "environment": "standalone-php" },
     { "path": "tests/smoke-form-mapping-plan.php", "environment": "standalone-php" },

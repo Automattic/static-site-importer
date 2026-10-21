@@ -248,9 +248,10 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * @param array<int,mixed>               $provenance
 	 * @param array<int,string>              $class_tokens
 	 * @param array<string,string>|null      $properties   Fact => CSS property; box facts by default.
+	 * @param bool                          $subject_only Require a standalone class compound, not an ancestor-dependent selector.
 	 * @return array<int,string> Layout fact keys.
 	 */
-	private static function class_carried_box_facts( array $layout, array $provenance, array $class_tokens, ?array $properties = null ): array {
+	private static function class_carried_box_facts( array $layout, array $provenance, array $class_tokens, ?array $properties = null, bool $subject_only = false ): array {
 		$box     = $properties ?? Static_Site_Importer_Provider_Layout_Overlay::box_property_map();
 		$carried = array();
 		foreach ( array_intersect_key( $layout, $box ) as $fact => $value ) {
@@ -261,7 +262,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				}
 				$parts     = preg_split( '/\s*[\s>+~]\s*/', trim( (string) ( $row['selector'] ?? '' ) ) );
 				$rightmost = false === $parts ? '' : (string) end( $parts );
-				if ( null !== ( $row['condition'] ?? null ) || ! preg_match( '/^(?:[a-z][a-z0-9-]*)?((?:\.[A-Za-z_][A-Za-z0-9_-]*)+)$/D', $rightmost, $compound ) || array_diff( explode( '.', ltrim( $compound[1], '.' ) ), $class_tokens ) ) {
+				if ( ( $subject_only && ( count( $parts ?: array() ) !== 1 || ! str_starts_with( $rightmost, '.' ) ) ) || null !== ( $row['condition'] ?? null ) || ! preg_match( '/^(?:[a-z][a-z0-9-]*)?((?:\.[A-Za-z_][A-Za-z0-9_-]*)+)$/D', $rightmost, $compound ) || array_diff( explode( '.', ltrim( $compound[1], '.' ) ), $class_tokens ) ) {
 					$owners = -1;
 					break;
 				}
@@ -272,6 +273,43 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 		}
 		return $carried;
+	}
+
+	/**
+	 * Leave class-owned submit colours with the source stylesheet. Its rules
+	 * already bind palette presets and include interaction states; restating a
+	 * computed literal at overlay specificity would override both.
+	 *
+	 * @param array<string,mixed> $graph    Presentation graph.
+	 * @param array<int,mixed>    $controls Source controls.
+	 * @return array<string,mixed>
+	 */
+	public static function without_class_carried_submit_colors( array $graph, array $controls ): array {
+		foreach ( $graph['controls'] ?? array() as $offset => $row ) {
+			$control = $controls[ $row['index'] ] ?? array();
+			if ( 'submit' !== ( $control['type'] ?? '' ) ) {
+				continue;
+			}
+			$tokens = preg_split( '/\s+/', trim( (string) ( $control['class'] ?? '' ) ) ) ?: array();
+			$part   = $row['control'] ?? array();
+			$facts  = self::class_carried_box_facts(
+				$part['styles'] ?? array(),
+				$part['provenance'] ?? array(),
+				$tokens,
+				array( 'background' => 'background', 'background_color' => 'background-color', 'color' => 'color' ),
+				true
+			);
+			// Never split overlapping shorthand/longhand ownership: a retained
+			// overlay background would still win over the source longhand.
+			$backgrounds = array_intersect( array_keys( $part['styles'] ?? array() ), array( 'background', 'background_color' ) );
+			if ( array_diff( $backgrounds, $facts ) ) {
+				$facts = array_diff( $facts, $backgrounds );
+			}
+			foreach ( $facts as $fact ) {
+				unset( $graph['controls'][ $offset ]['control']['styles'][ $fact ] );
+			}
+		}
+		return $graph;
 	}
 
 	/**
