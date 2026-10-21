@@ -21,7 +21,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	private const BYTES_PER_MAPPED_NODE = 1024;
 	private const MAX_OVERLAY_BYTES     = 65536;
 	/** Authored values such as system font stacks exceed a few hundred bytes; bounded like the producer contract. */
-	public const MAX_PRESENTATION_VALUE_BYTES = 1024;
+	private const MAX_PRESENTATION_VALUE_BYTES = 1024;
 	// A source stylesheet can author a media feature with the legacy `min-width:`/
 	// `max-width:` prefix syntax or the modern comparison range syntax
 	// (`width >= 40rem`) - Tailwind v4 emits every default breakpoint with the

@@ -881,36 +881,6 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		return $output;
 	}
 
-	/**
-	 * Carry an authored textarea row count onto Jetpack's hardcoded `rows='20'`.
-	 *
-	 * Jetpack's textarea field has no rows block attribute and its PHP
-	 * renderer always emits 20. The seeder stores the source count as
-	 * `ssi-textarea-rows-N` on `jetpack/input`; that class lands on the
-	 * rendered control through `inputclasses`. Rewrite the attribute and
-	 * drop the transport class so the browser sizes N line boxes using the
-	 * padding, border, and typography already carried onto the same field.
-	 */
-	public static function project_textarea_rows( string $html ): string {
-		$textarea_rows = null;
-		$projected     = preg_replace_callback(
-			'/\bclass=(["\'])(.*?)\1/s',
-			static function ( array $matches ) use ( &$textarea_rows ): string {
-				$classes = preg_split( '/\s+/', trim( $matches[2] ) );
-				$output  = array();
-				foreach ( false === $classes ? array() : $classes as $class_name ) {
-					if ( preg_match( '/^ssi-textarea-rows-([1-9][0-9]{0,1})$/D', $class_name, $marker ) ) {
-						$textarea_rows = $marker[1];
-						continue;
-					}
-					$output[] = $class_name;
-				}
-				return 'class=' . $matches[1] . implode( ' ', $output ) . $matches[1];
-			},
-			$html
-		);
-		return self::with_textarea_rows( is_string( $projected ) ? $projected : $html, $textarea_rows );
-	}
 
 	/** Apply a captured row count to the first textarea in a provider field. */
 	private static function with_textarea_rows( string $html, ?string $rows ): string {

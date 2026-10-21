@@ -36,7 +36,7 @@ namespace {
 			'sourceCss'   => (string) $fixture['source_css'],
 			'beforeHtml'  => $strip( false === $before ? '' : $before ),
 			'afterHtml'   => $strip( (string) $after ),
-			'submitHtml'  => Static_Site_Importer_Form_Seeder::project_provider_submit_presentation(
+			'submitHtml'  => Static_Site_Importer_Provider_Form_Runtime_V1::project_submit_presentation(
 				'<div class="wp-block-button ' . htmlspecialchars( $submit_class, ENT_QUOTES, 'UTF-8' ) . '"><button type="submit" class="wp-block-button__link">Send</button></div>',
 				array( 'attrs' => array( 'className' => $submit_class ) )
 			),

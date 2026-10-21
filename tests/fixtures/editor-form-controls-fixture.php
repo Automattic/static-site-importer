@@ -58,7 +58,7 @@ namespace {
 				'className'      => $field_class,
 				'labelClassName' => (string) ( $label_attrs['className'] ?? '' ),
 				'inputClassName' => $input_class,
-				'frontendHtml'   => Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes( $field_html ),
+				'frontendHtml'   => Static_Site_Importer_Provider_Form_Runtime_V1::project_wrapper_classes( $field_html ),
 			);
 		}
 	}
