@@ -1,0 +1,13 @@
+<style>
+.field-row{display:grid;grid-template-columns:repeat(12,1fr);width:100%;column-gap:24px}
+.half-start{grid-column:1 / span 6;grid-row:1 / span 1}
+.half-end{grid-column:7 / span 6;grid-row:1 / span 1}
+.full{grid-column:1 / span 12;grid-row:2 / span 1}
+label{display:block}
+input,textarea{width:100%}
+</style>
+<form><div class="field-row">
+<div class="half-start"><label for="first">First name</label><input id="first" name="first" type="text"></div>
+<div class="half-end"><label for="last">Last name</label><input id="last" name="last" type="text"></div>
+<div class="full"><label for="message">Message</label><textarea id="message" name="message"></textarea></div>
+</div><button type="submit">Send</button></form>
