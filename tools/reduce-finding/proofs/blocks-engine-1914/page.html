@@ -1,0 +1,66 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Northwind - ship faster</title><style>
+*,*::before,*::after{box-sizing:border-box}
+:where(html){line-height:1.5;-webkit-text-size-adjust:100%}
+:where(body){margin:0;font-family:system-ui,sans-serif;color:#1d1d1f}
+:where(img){max-width:100%;display:block}
+:where(a){color:inherit}
+:where(ul){padding:0;list-style:none}
+@keyframes logos{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes pulse{0%{opacity:1}50%{opacity:.6}100%{opacity:1}}
+.container{max-width:1200px;margin:0 auto;padding:0 24px}
+.site-header{position:sticky;top:0;background:#fff;border-bottom:1px solid #eee;z-index:10}
+.site-header__inner{display:flex;align-items:center;justify-content:space-between;height:72px}
+.brand{font-weight:800;font-size:22px;text-decoration:none}
+.nav__list{display:flex;gap:24px;margin:0}
+.nav__link{text-decoration:none;font-weight:500}
+.nav__link:hover{color:#6b4eff}
+.hero{padding:96px 0 64px;background:linear-gradient(180deg,#f6f4ff,#fff)}
+.hero__title{font-size:56px;line-height:1.1;margin:0 0 16px}
+.hero__lead{font-size:20px;color:#555;max-width:640px}
+.hero__actions{display:flex;gap:12px;margin-top:32px}
+.btn{display:inline-flex;align-items:center;padding:12px 20px;border-radius:999px;text-decoration:none;font-weight:600}
+.btn--primary{background:#6b4eff;color:#fff}
+.btn--ghost{border:1px solid #ccc}
+.badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#eee;animation:pulse 2s ease-in-out infinite}
+.logos{padding:32px 0;overflow:hidden;border-block:1px solid #eee}
+.logos__label{text-align:center;color:#777;font-size:14px;margin-bottom:16px}
+:where(.logos) .logos__track{animation-duration:12s}
+.logos__track{display:flex;gap:48px;width:max-content;animation:logos 40s linear infinite}
+.logo{font-size:20px;font-weight:700;color:#999}
+.features{padding:80px 0}
+.features__grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.card{background:#fff;border:1px solid #eee;border-radius:16px;padding:24px}
+.feature__icon{width:40px;height:40px;border-radius:10px;background:#efeaff}
+.feature__title{margin:16px 0 8px}
+.feature__text{color:#555}
+.quotes{padding:80px 0;background:#fafafa}
+.quotes__grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.quote__text{margin:0 0 16px;font-size:18px}
+.quote__who{display:flex;align-items:center;gap:12px}
+.avatar{width:40px;height:40px;border-radius:50%;background:#ddd}
+.quote__name{font-weight:600}
+.quote__role{color:#777;font-size:14px}
+.pricing{padding:80px 0}
+.pricing__grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.plan--featured{border-color:#6b4eff;box-shadow:0 10px 30px rgba(107,78,255,.15)}
+.plan__amount{font-size:40px;font-weight:800}
+.plan__item{padding:6px 0;border-bottom:1px dashed #eee}
+.cta{padding:64px 0;background:#1d1d1f;color:#fff;text-align:center}
+.site-footer{padding:64px 0;background:#111;color:#aaa}
+.footer__grid{display:grid;grid-template-columns:repeat(4,1fr);gap:24px}
+.footer__heading{color:#fff}
+.footer__link{text-decoration:none}
+@media (max-width:900px){.features__grid,.quotes__grid,.pricing__grid{grid-template-columns:1fr}.hero__title{font-size:40px}.nav__list{display:none}}
+@media (max-width:600px){.footer__grid{grid-template-columns:1fr 1fr}}
+</style></head><body>
+<header class="site-header"><div class="container site-header__inner"><a class="brand" href="/">Northwind</a><nav class="nav"><ul class="nav__list"><li class="nav__item"><a class="nav__link" href="/product">Product</a></li><li class="nav__item"><a class="nav__link" href="/pricing">Pricing</a></li><li class="nav__item"><a class="nav__link" href="/customers">Customers</a></li><li class="nav__item"><a class="nav__link" href="/docs">Docs</a></li><li class="nav__item"><a class="nav__link" href="/blog">Blog</a></li><li class="nav__item"><a class="nav__link" href="/company">Company</a></li></ul></nav><a class="btn btn--primary" href="/start">Start free</a></div></header>
+<main>
+<section class="hero"><div class="container"><span class="badge">New: v4 is here</span><h1 class="hero__title">Ship faster with less glue code</h1><p class="hero__lead">Northwind connects your build, review and release in one place so teams spend time on product, not plumbing.</p><div class="hero__actions"><a class="btn btn--primary" href="/start">Get started</a><a class="btn btn--ghost" href="/demo">Book a demo</a></div></div></section>
+<section class="logos"><p class="logos__label">Trusted by teams at</p><div class="logos__track"><span class="logo">Acme</span><span class="logo">Globex</span><span class="logo">Initech</span><span class="logo">Umbrella</span><span class="logo">Hooli</span><span class="logo">Stark</span><span class="logo">Wayne</span><span class="logo">Tyrell</span><span class="logo">Acme</span><span class="logo">Globex</span><span class="logo">Initech</span><span class="logo">Umbrella</span><span class="logo">Hooli</span><span class="logo">Stark</span><span class="logo">Wayne</span><span class="logo">Tyrell</span></div></section>
+<section class="features"><div class="container"><h2>Everything you need</h2><div class="features__grid"><article class="feature card"><div class="feature__icon icon-1"></div><h3 class="feature__title">Feature 1</h3><p class="feature__text">Ship faster with tooling number 1, designed for teams that care about quality and speed.</p><a class="btn btn--ghost" href="/f1">Learn more</a></article><article class="feature card"><div class="feature__icon icon-2"></div><h3 class="feature__title">Feature 2</h3><p class="feature__text">Ship faster with tooling number 2, designed for teams that care about quality and speed.</p><a class="btn btn--ghost" href="/f2">Learn more</a></article><article class="feature card"><div class="feature__icon icon-3"></div><h3 class="feature__title">Feature 3</h3><p class="feature__text">Ship faster with tooling number 3, designed for teams that care about quality and speed.</p><a class="btn btn--ghost" href="/f3">Learn more</a></article><article class="feature card"><div class="feature__icon icon-4"></div><h3 class="feature__title">Feature 4</h3><p class="feature__text">Ship faster with tooling number 4, designed for teams that care about quality and speed.</p><a class="btn btn--ghost" href="/f4">Learn more</a></article><article class="feature card"><div class="feature__icon icon-5"></div><h3 class="feature__title">Feature 5</h3><p class="feature__text">Ship faster with tooling number 5, designed for teams that care about quality and speed.</p><a class="btn btn--ghost" href="/f5">Learn more</a></article><article class="feature card"><div class="feature__icon icon-6"></div><h3 class="feature__title">Feature 6</h3><p class="feature__text">Ship faster with tooling number 6, designed for teams that care about quality and speed.</p><a class="btn btn--ghost" href="/f6">Learn more</a></article><article class="feature card"><div class="feature__icon icon-7"></div><h3 class="feature__title">Feature 7</h3><p class="feature__text">Ship faster with tooling number 7, designed for teams that care about quality and speed.</p><a class="btn btn--ghost" href="/f7">Learn more</a></article><article class="feature card"><div class="feature__icon icon-8"></div><h3 class="feature__title">Feature 8</h3><p class="feature__text">Ship faster with tooling number 8, designed for teams that care about quality and speed.</p><a class="btn btn--ghost" href="/f8">Learn more</a></article><article class="feature card"><div class="feature__icon icon-9"></div><h3 class="feature__title">Feature 9</h3><p class="feature__text">Ship faster with tooling number 9, designed for teams that care about quality and speed.</p><a class="btn btn--ghost" href="/f9">Learn more</a></article></div></div></section>
+<section class="quotes"><div class="container"><h2>Loved by engineers</h2><div class="quotes__grid"><figure class="quote card"><blockquote class="quote__text">"This product changed how team 1 works every single day."</blockquote><figcaption class="quote__who"><img class="avatar" alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><span class="quote__name">Customer 1</span><span class="quote__role">CTO, Company 1</span></figcaption></figure><figure class="quote card"><blockquote class="quote__text">"This product changed how team 2 works every single day."</blockquote><figcaption class="quote__who"><img class="avatar" alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><span class="quote__name">Customer 2</span><span class="quote__role">CTO, Company 2</span></figcaption></figure><figure class="quote card"><blockquote class="quote__text">"This product changed how team 3 works every single day."</blockquote><figcaption class="quote__who"><img class="avatar" alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><span class="quote__name">Customer 3</span><span class="quote__role">CTO, Company 3</span></figcaption></figure><figure class="quote card"><blockquote class="quote__text">"This product changed how team 4 works every single day."</blockquote><figcaption class="quote__who"><img class="avatar" alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><span class="quote__name">Customer 4</span><span class="quote__role">CTO, Company 4</span></figcaption></figure><figure class="quote card"><blockquote class="quote__text">"This product changed how team 5 works every single day."</blockquote><figcaption class="quote__who"><img class="avatar" alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><span class="quote__name">Customer 5</span><span class="quote__role">CTO, Company 5</span></figcaption></figure><figure class="quote card"><blockquote class="quote__text">"This product changed how team 6 works every single day."</blockquote><figcaption class="quote__who"><img class="avatar" alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><span class="quote__name">Customer 6</span><span class="quote__role">CTO, Company 6</span></figcaption></figure></div></div></section>
+<section class="pricing"><div class="container"><h2>Simple pricing</h2><div class="pricing__grid"><div class="plan card"><h3 class="plan__name">Plan 1</h3><p class="plan__price"><span class="plan__amount">$19</span>/mo</p><ul class="plan__list"><li class="plan__item">Benefit 1</li><li class="plan__item">Benefit 2</li><li class="plan__item">Benefit 3</li><li class="plan__item">Benefit 4</li><li class="plan__item">Benefit 5</li></ul><a class="btn btn--primary" href="/buy/1">Choose</a></div><div class="plan card plan--featured"><h3 class="plan__name">Plan 2</h3><p class="plan__price"><span class="plan__amount">$38</span>/mo</p><ul class="plan__list"><li class="plan__item">Benefit 1</li><li class="plan__item">Benefit 2</li><li class="plan__item">Benefit 3</li><li class="plan__item">Benefit 4</li><li class="plan__item">Benefit 5</li></ul><a class="btn btn--primary" href="/buy/2">Choose</a></div><div class="plan card"><h3 class="plan__name">Plan 3</h3><p class="plan__price"><span class="plan__amount">$57</span>/mo</p><ul class="plan__list"><li class="plan__item">Benefit 1</li><li class="plan__item">Benefit 2</li><li class="plan__item">Benefit 3</li><li class="plan__item">Benefit 4</li><li class="plan__item">Benefit 5</li></ul><a class="btn btn--primary" href="/buy/3">Choose</a></div></div></div></section>
+<section class="cta"><div class="container"><h2>Ready to ship?</h2><a class="btn btn--primary" href="/start">Start free</a></div></section>
+</main>
+<footer class="site-footer"><div class="container footer__grid"><div class="footer__col"><h4 class="footer__heading">Column 1</h4><ul class="footer__list"><li><a class="footer__link" href="/c1/1">Link 1</a></li><li><a class="footer__link" href="/c1/2">Link 2</a></li><li><a class="footer__link" href="/c1/3">Link 3</a></li><li><a class="footer__link" href="/c1/4">Link 4</a></li><li><a class="footer__link" href="/c1/5">Link 5</a></li></ul></div><div class="footer__col"><h4 class="footer__heading">Column 2</h4><ul class="footer__list"><li><a class="footer__link" href="/c2/1">Link 1</a></li><li><a class="footer__link" href="/c2/2">Link 2</a></li><li><a class="footer__link" href="/c2/3">Link 3</a></li><li><a class="footer__link" href="/c2/4">Link 4</a></li><li><a class="footer__link" href="/c2/5">Link 5</a></li></ul></div><div class="footer__col"><h4 class="footer__heading">Column 3</h4><ul class="footer__list"><li><a class="footer__link" href="/c3/1">Link 1</a></li><li><a class="footer__link" href="/c3/2">Link 2</a></li><li><a class="footer__link" href="/c3/3">Link 3</a></li><li><a class="footer__link" href="/c3/4">Link 4</a></li><li><a class="footer__link" href="/c3/5">Link 5</a></li></ul></div><div class="footer__col"><h4 class="footer__heading">Column 4</h4><ul class="footer__list"><li><a class="footer__link" href="/c4/1">Link 1</a></li><li><a class="footer__link" href="/c4/2">Link 2</a></li><li><a class="footer__link" href="/c4/3">Link 3</a></li><li><a class="footer__link" href="/c4/4">Link 4</a></li><li><a class="footer__link" href="/c4/5">Link 5</a></li></ul></div></div></footer>
+</body></html>
