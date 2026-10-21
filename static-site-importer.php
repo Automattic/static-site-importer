@@ -104,6 +104,7 @@ $static_site_importer_includes = array(
 	'class-static-site-importer-form-field-markup.php',
 	'class-static-site-importer-form-topology-state.php',
 	'class-static-site-importer-form-native-topology.php',
+	'class-static-site-importer-form-grid-placement.php',
 	'class-static-site-importer-form-layout-projection.php',
 	'class-static-site-importer-form-seeder.php',
 	'class-static-site-importer-external-metric-runtime.php',
