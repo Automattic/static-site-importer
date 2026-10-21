@@ -43,6 +43,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * field state stays in the DOM, while its synthetic shell has no box between
 	 * a source container and the source-owned input.
 	 */
+	/** The native topology's submit link, behind its box-less provider wrapper. */
+	private const NATIVE_SUBMIT_LINK = ' :where(.wp-block-button.form-button-submit) > .wp-block-button__link';
+
 	private const NATIVE_PASSTHROUGH = array(
 		' .ssi-native-control-shell-wrap'      => 'display:contents',
 		' .wp-block-button.form-button-submit' => 'display:contents',
@@ -758,6 +761,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			// The provider's success state removes its real form from layout.
 			// Source display facts must not resurrect those submitted controls.
 			$native_scope . ' form.jetpack-contact-form__form.submission-success' => 'display:none',
+			// The passthrough submit wrapper has no box, so its link stands in for the
+			// source button. Jetpack sizes that link `width:100%` of its wrapper, which
+			// now resolves against the source container: give it the source button's
+			// own `width:auto`. Three classes beat Jetpack's two and still lose to an
+			// authored width on the link, which is always emitted at a doubled scope.
+			$native_scope . self::NATIVE_SUBMIT_LINK => 'width:auto',
 		);
 		foreach ( array_merge( self::NATIVE_PASSTHROUGH, $pass['declared']['native_passthrough'] ) as $suffix => $declarations ) {
 			$native[ $scope . $suffix ] = $declarations;
@@ -1312,7 +1321,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		$native_scope = $scope . '.ssi-native-form-topology';
 		if ( str_contains( $selector, '.ssi-native-form-topology' ) ) {
 			$parts   = explode( ', ', $selector );
-			$allowed = array( $native_scope, $native_scope . '.jetpack-contact-form-container', $native_scope . ' form.jetpack-contact-form__form', $native_scope . '.wp-block-jetpack-contact-form:not(:has(form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *)', $native_scope . ' > div.jetpack-contact-form', $native_scope . '.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form)', $native_scope . '.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *)', $native_scope . ' form.jetpack-contact-form__form.submission-success' );
+			$allowed = array( $native_scope, $native_scope . '.jetpack-contact-form-container', $native_scope . ' form.jetpack-contact-form__form', $native_scope . '.wp-block-jetpack-contact-form:not(:has(form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *)', $native_scope . ' > div.jetpack-contact-form', $native_scope . '.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form)', $native_scope . '.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *)', $native_scope . ' form.jetpack-contact-form__form.submission-success', $native_scope . self::NATIVE_SUBMIT_LINK );
 			return count( $parts ) <= 2 && empty( array_diff( $parts, $allowed ) );
 		}
 		$field_control = self::SURFACES[ self::SURFACE_EDITOR ]['field_control']['suffix'];
