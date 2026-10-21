@@ -200,7 +200,7 @@ $ssi_textarea_expect( 'rowless-unpresented-editor-resets', ssi_textarea_rows_res
 
 // Front end: the marker the policy writes is the `rows` the runtime realises.
 $ssi_textarea_marker = Static_Site_Importer_Form_Textarea_Rows::marker_class( array( 'rows' => 6 ) );
-$ssi_textarea_html   = Static_Site_Importer_Provider_Form_Runtime_V1::project_textarea_rows( '<div><textarea class="contact-form__textarea ' . $ssi_textarea_marker . '" rows="20"></textarea></div>' );
+$ssi_textarea_html   = Static_Site_Importer_Provider_Form_Runtime_V1::project_wrapper_classes( '<div><textarea class="contact-form__textarea ' . $ssi_textarea_marker . '" rows="20"></textarea></div>' );
 $ssi_textarea_expect( 'front-end-rows', $ssi_textarea_html, '<div><textarea class="contact-form__textarea" rows="6"></textarea></div>' );
 
 // Editor: the resolved resets reach only parts that can address a textarea.

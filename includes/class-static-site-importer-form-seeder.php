@@ -129,49 +129,6 @@ class Static_Site_Importer_Form_Seeder {
 		Static_Site_Importer_Jetpack_Forms_Runtime::register_runtime_bootstrap();
 	}
 
-	/** Move source submit presentation from Core's wrapper onto its button control. */
-	public static function project_provider_submit_presentation( string $html, array $block = array() ): string {
-		return Static_Site_Importer_Provider_Form_Runtime_V1::project_submit_presentation( $html, $block );
-	}
-
-	/** Restore the source field row onto the provider field shell. */
-	public static function project_provider_wrapper_classes( string $html ): string {
-		return Static_Site_Importer_Provider_Form_Runtime_V1::project_wrapper_classes( $html );
-	}
-
-	/** Carry an authored textarea row count onto Jetpack's hardcoded rows='20'. */
-	public static function project_provider_textarea_rows( string $html ): string {
-		return Static_Site_Importer_Provider_Form_Runtime_V1::project_textarea_rows( $html );
-	}
-
-	/** Restore a proven source root fieldset around Jetpack's rendered field list. */
-	public static function project_provider_plain_root_fieldset( string $html, array $block = array() ): string {
-		return Static_Site_Importer_Provider_Form_Runtime_V1::project_plain_root_fieldset( $html, $block );
-	}
-
-	/** Carry the provider block's layout role onto Jetpack's rendered page-grid item. */
-	public static function project_provider_form_container_placement( string $html, array $block = array() ): string {
-		return Static_Site_Importer_Provider_Form_Runtime_V1::project_form_container_placement( $html, $block );
-	}
-
-	/** Keep a source sibling submit outside the gapped field list. */
-	public static function project_provider_field_list_wrapper( string $html, array $block = array() ): string {
-		return Static_Site_Importer_Provider_Form_Runtime_V1::project_field_list_wrapper( $html, $block );
-	}
-
-	/**
-	 * Load Forms after Jetpack's autoloader is ready and before WordPress init.
-	 *
-	 * Jetpack 16 skips its normal after_setup_theme module loader for disconnected
-	 * sites. Its persisted contact-form module flag therefore needs this adapter
-	 * bootstrap on later frontend requests as well as during import preparation.
-	 */
-	public static function bootstrap_jetpack_forms_runtime(): void {
-		Static_Site_Importer_Jetpack_Forms_Runtime::bootstrap_jetpack_forms_runtime();
-	}
-
-
-
 	/**
 	 * Materialize Jetpack contact forms from a validated forms manifest.
 	 *

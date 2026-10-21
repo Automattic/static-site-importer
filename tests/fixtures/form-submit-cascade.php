@@ -29,7 +29,7 @@ echo wp_json_encode(
 	array(
 		'css'        => $row['provider_layout_overlay_css']['css'],
 		'className'  => json_decode( $form[1], true )['className'],
-		'submit'     => Static_Site_Importer_Form_Seeder::project_provider_submit_presentation( $submit[0], array( 'attrs' => json_decode( $button[1], true ) ) ),
+		'submit'     => Static_Site_Importer_Provider_Form_Runtime_V1::project_submit_presentation( $submit[0], array( 'attrs' => json_decode( $button[1], true ) ) ),
 		'sourceCss'  => $css,
 		'sourceHtml' => $html,
 	)

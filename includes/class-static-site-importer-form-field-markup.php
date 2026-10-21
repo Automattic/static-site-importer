@@ -664,15 +664,6 @@ final class Static_Site_Importer_Form_Field_Markup {
 		return $blocks;
 	}
 
-	/** Serialize in-form context as editable core blocks. */
-	public static function context_block_markup( array $form, string $position ): string {
-		$markup = '';
-		foreach ( self::context_blocks( $form, $position ) as $block ) {
-			$markup .= self::serialize_block( $block );
-		}
-		return $markup;
-	}
-
 	/**
 	 * Presentation properties a recreated context element may carry. Copy keeps
 	 * its typography and own box; a recreated wrapper keeps only its box.
