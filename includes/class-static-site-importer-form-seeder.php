@@ -25,6 +25,7 @@ if ( ! class_exists( 'Static_Site_Importer_Form_Layout_Projection' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-form-layout-projection.php';
 }
 require_once __DIR__ . '/class-static-site-importer-form-mapping-plan.php';
+require_once __DIR__ . '/class-static-site-importer-form-plan-state.php';
 
 /**
  * Turns preserved <form> fallback metadata into working Jetpack Form blocks.
@@ -260,216 +261,268 @@ class Static_Site_Importer_Form_Seeder {
 
 	/** Prepare fields, topology, presentation destinations and the support decision. */
 	private static function plan_form( array $form, bool $available ): Static_Site_Importer_Form_Mapping_Plan {
-		$form        = Static_Site_Importer_Form_Layout_Projection::separate_source_boxes( $form );
-		$form        = Static_Site_Importer_Form_Layout_Projection::normalize_unconditional_layout_variants( $form );
-		$controls    = isset( $form['controls'] ) && is_array( $form['controls'] ) ? $form['controls'] : array();
-		$form        = self::project_submit_style_into_presentation_graph( $form, $controls );
-		$textareas   = Static_Site_Importer_Form_Textarea_Rows::resolve_form( $form, $controls );
-		$form        = self::project_textarea_rows_into_presentation_graph( $form, $textareas );
-		$released    = self::release_visually_hidden_native_controls( $form, $controls );
-		$form        = $released['form'];
-		$controls    = $released['controls'];
-		$selector    = isset( $form['selector'] ) && is_scalar( $form['selector'] ) ? (string) $form['selector'] : '';
-		$source_path = isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '';
+		$state = self::normalized_plan_state( $form );
+		self::group_controls( $state );
+		foreach ( $state->controls as $control_index => $control ) {
+			if ( is_array( $control ) ) {
+				self::map_control( $state, $control_index, $control );
+			}
+		}
 
-		$scope                         = Static_Site_Importer_Form_Layout_Projection::layout_scope( $form );
-		$presentation_roles            = Static_Site_Importer_Form_Layout_Projection::presentation_roles( is_array( $form['presentation_graph'] ?? null ) ? $form['presentation_graph'] : array() );
-		$control_presentations         = array_column( $form['presentation_graph']['controls'] ?? array(), null, 'index' );
-		$presentation_descriptors      = array();
-		$field_blocks                  = array();
-		$mapped_types                  = array();
-		$submit_text                   = 'Submit';
-		$skipped                       = array();
-		$unsupported_capabilities      = array();
-		$control_attribute_losses      = array();
-		$has_topology                  = isset( $form['control_topology'] );
-		$has_source_submit             = false;
-		$textarea_height_omitted_count = (int) ( $form['form']['textarea_height_omitted_count'] ?? 0 );
-		$radio_groups                  = Static_Site_Importer_Form_Field_Markup::labelled_radio_groups( $form, $controls );
-		$suppressed_controls           = $radio_groups['suppressed_controls'];
-		$choice_pairs                  = self::linked_choice_pairs( $controls, $form );
-		foreach ( $choice_pairs as $trigger => $carrier ) {
-			$suppressed_controls[ $carrier ] = true;
+		if ( empty( $state->field_blocks ) ) {
+			return self::skipped_plan( $state->form, $state->selector, $state->source_path, 'no_mappable_form_fields', array( 'skipped_types' => array_values( array_unique( array_filter( $state->skipped ) ) ) ) );
+		}
+		$topology = Static_Site_Importer_Form_Layout_Projection::topology_inner_blocks( $state->form, $state->field_blocks, $state->controls, $state->suppressed_controls );
+		if ( null === $topology ) {
+			return self::skipped_plan( $state->form, $state->selector, $state->source_path, 'unsupported_control_topology' );
+		}
+
+		$inner_blocks   = self::place_topology( $state, $topology );
+		$provider_graph = self::provider_graph( $state->form, $topology );
+		self::apply_computed_layout( $state, $topology, $provider_graph, $inner_blocks );
+		$form_attrs    = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $state->form, $state->scope, $topology['form_classes'] );
+		$overlay_graph = self::seed_overlay_graph( $state, $topology, $provider_graph );
+
+		$state->context_before = Static_Site_Importer_Form_Field_Markup::context_blocks( $state->form, 'context_before' );
+		$state->context_after  = Static_Site_Importer_Form_Field_Markup::context_blocks( $state->form, 'context_after' );
+		$source_layout_nodes   = self::source_layout_nodes( $state->form );
+		$overlay_graph         = self::with_flex_defaults( $state, $topology, $overlay_graph, $source_layout_nodes );
+		$overlay_graph         = self::with_wrapper_and_intent_nodes( $state, $topology, $overlay_graph, $source_layout_nodes );
+		$overlay_form          = self::overlay_form( $state, $topology, $overlay_graph );
+
+		$visual_state = Static_Site_Importer_Form_Layout_Projection::empty_country_visual_state( $state->form, $state->scope, $topology['phone_popup_targets'] );
+		self::box_submit_row_buttons( $state, $topology );
+		$maps    = self::target_maps( $state, $topology, $overlay_form, $visual_state['trigger_class'] ?? '' );
+		$overlay = self::compile_overlay( $state, $overlay_form, $maps );
+
+		return Static_Site_Importer_Form_Mapping_Plan::prepared(
+			$state->form,
+			$state->field_blocks,
+			self::contact_form_block( $state, $form_attrs ),
+			$state->host['shell'],
+			self::mapped_report_row( $state, $available, $maps['target'], $overlay, $visual_state )
+		);
+	}
+
+	/** Normalize the producer form and release the controls the provider will map. */
+	private static function normalized_plan_state( array $form ): Static_Site_Importer_Form_Plan_State {
+		$state                      = new Static_Site_Importer_Form_Plan_State();
+		$form                       = Static_Site_Importer_Form_Layout_Projection::separate_source_boxes( $form );
+		$form                       = Static_Site_Importer_Form_Layout_Projection::normalize_unconditional_layout_variants( $form );
+		$controls                   = isset( $form['controls'] ) && is_array( $form['controls'] ) ? $form['controls'] : array();
+		$form                       = self::project_submit_style_into_presentation_graph( $form, $controls );
+		$state->textareas           = Static_Site_Importer_Form_Textarea_Rows::resolve_form( $form, $controls );
+		$form                       = self::project_textarea_rows_into_presentation_graph( $form, $state->textareas );
+		$released                   = self::release_visually_hidden_native_controls( $form, $controls );
+		$state->form                = $released['form'];
+		$state->controls            = $released['controls'];
+		$state->released_operations = $released['operations'];
+		$state->selector            = isset( $state->form['selector'] ) && is_scalar( $state->form['selector'] ) ? (string) $state->form['selector'] : '';
+		$state->source_path         = isset( $state->form['source_path'] ) && is_scalar( $state->form['source_path'] ) ? (string) $state->form['source_path'] : '';
+		return $state;
+	}
+
+	/** Resolve layout scope, presentation sources, radio groups, linked choices and submit defaults. */
+	private static function group_controls( Static_Site_Importer_Form_Plan_State $state ): void {
+		$form                         = $state->form;
+		$state->scope                 = Static_Site_Importer_Form_Layout_Projection::layout_scope( $form );
+		$state->presentation_roles    = Static_Site_Importer_Form_Layout_Projection::presentation_roles( is_array( $form['presentation_graph'] ?? null ) ? $form['presentation_graph'] : array() );
+		$state->control_presentations = array_column( $form['presentation_graph']['controls'] ?? array(), null, 'index' );
+		$state->has_topology          = isset( $form['control_topology'] );
+		$state->radio_groups          = Static_Site_Importer_Form_Field_Markup::labelled_radio_groups( $form, $state->controls );
+		$state->suppressed_controls   = $state->radio_groups['suppressed_controls'];
+		$state->choice_pairs          = self::linked_choice_pairs( $state->controls, $form );
+		foreach ( $state->choice_pairs as $trigger => $carrier ) {
+			$state->suppressed_controls[ $carrier ] = true;
 		}
 		// Context is editable content, not a reason to decline the provider form.
 		// Keep supported fields in Jetpack and project bounded before/after copy
 		// as editable core blocks within the provider form (see context_blocks).
-		$submit_presentation = isset( $form['form']['submit_presentation'] ) && is_array( $form['form']['submit_presentation'] ) ? $form['form']['submit_presentation'] : array();
-		if ( is_string( $submit_presentation['text'] ?? null ) && '' !== trim( $submit_presentation['text'] ) ) {
-			$submit_text = trim( $submit_presentation['text'] );
+		$state->submit_presentation = isset( $form['form']['submit_presentation'] ) && is_array( $form['form']['submit_presentation'] ) ? $form['form']['submit_presentation'] : array();
+		if ( is_string( $state->submit_presentation['text'] ?? null ) && '' !== trim( $state->submit_presentation['text'] ) ) {
+			$state->submit_text = trim( $state->submit_presentation['text'] );
+		}
+	}
+
+	/** Map one source control into a provider field, submit, native button or reported skip. */
+	private static function map_control( Static_Site_Importer_Form_Plan_State $state, int $control_index, array $control ): void {
+		$form = $state->form;
+		if ( isset( $state->choice_pairs[ $control_index ] ) ) {
+			$carrier         = $state->controls[ $state->choice_pairs[ $control_index ] ];
+			$control         = array_merge( $carrier, array_intersect_key( $control, array_flip( array( 'label', 'label_class', 'required_text', 'required_indicator', 'description' ) ) ) );
+			$control['tag']  = 'select';
+			$control['type'] = 'select';
+			// The source carrier was hidden; its class cannot follow the new
+			// visitor-facing provider input.
+			unset( $control['class'] );
+		}
+		$type = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
+		$tag  = strtolower( trim( (string) ( $control['tag'] ?? '' ) ) );
+		if ( self::is_hidden_bookkeeping_control( $form, $control_index, $control, $tag, $type ) ) {
+			$state->suppressed_controls[ $control_index ] = true;
+			$state->skipped[]                             = 'hidden_bookkeeping';
+			return;
+		}
+		$choice_box                                        = null !== Static_Site_Importer_Form_Layout_Projection::source_choice_label( $form, $control_index );
+		$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $state->scope, $control_index, $type, $state->presentation_roles[ $control_index ] ?? array(), isset( $control['label_classes'] ) || isset( $control['label_marker'] ), $choice_box, Static_Site_Importer_Form_Layout_Projection::source_label_wraps_control( $form, $control_index ), Static_Site_Importer_Form_Layout_Projection::source_label_row_carried_margins( $form, $control_index ) );
+		if ( isset( $state->suppressed_controls[ $control_index ] ) ) {
+			return;
+		}
+		if ( isset( $state->radio_groups['groups'][ $control_index ] ) ) {
+			$control = $state->radio_groups['groups'][ $control_index ];
 		}
 
-		foreach ( $controls as $control_index => $control ) {
-			if ( ! is_array( $control ) ) {
-				continue;
-			}
-			if ( isset( $choice_pairs[ $control_index ] ) ) {
-				$carrier         = $controls[ $choice_pairs[ $control_index ] ];
-				$control         = array_merge( $carrier, array_intersect_key( $control, array_flip( array( 'label', 'label_class', 'required_text', 'required_indicator', 'description' ) ) ) );
-				$control['tag']  = 'select';
-				$control['type'] = 'select';
-				// The source carrier was hidden; its class cannot follow the new
-				// visitor-facing provider input.
-				unset( $control['class'] );
-			}
-			$type = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
-			$tag  = strtolower( trim( (string) ( $control['tag'] ?? '' ) ) );
-			if ( self::is_hidden_bookkeeping_control( $form, $control_index, $control, $tag, $type ) ) {
-				$suppressed_controls[ $control_index ] = true;
-				$skipped[]                             = 'hidden_bookkeeping';
-				continue;
-			}
-			$choice_box                                 = null !== Static_Site_Importer_Form_Layout_Projection::source_choice_label( $form, $control_index );
-			$presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $scope, $control_index, $type, $presentation_roles[ $control_index ] ?? array(), isset( $control['label_classes'] ) || isset( $control['label_marker'] ), $choice_box, Static_Site_Importer_Form_Layout_Projection::source_label_wraps_control( $form, $control_index ), Static_Site_Importer_Form_Layout_Projection::source_label_row_carried_margins( $form, $control_index ) );
-			if ( isset( $suppressed_controls[ $control_index ] ) ) {
-				continue;
-			}
-			if ( isset( $radio_groups['groups'][ $control_index ] ) ) {
-				$control = $radio_groups['groups'][ $control_index ];
-			}
+		$presentation_descriptor = $state->presentation_descriptors[ $control_index ];
+		$is_auxiliary_button     = 'button' === $tag && Static_Site_Importer_Form_Field_Markup::is_provider_auxiliary_button( $state->controls, $control_index );
+		if ( $is_auxiliary_button ) {
+			// The provider owns this control as part of a field rather than as an action.
+			return;
+		}
 
-			$presentation_descriptor = $presentation_descriptors[ $control_index ];
-			$is_auxiliary_button     = 'button' === $tag && Static_Site_Importer_Form_Field_Markup::is_provider_auxiliary_button( $controls, $control_index );
-			if ( $is_auxiliary_button ) {
-				// The provider owns this control as part of a field rather than as an action.
-				continue;
-			}
+		if ( 'submit' === $type ) {
+			self::map_submit_control( $state, $control_index, $control, $presentation_descriptor );
+			return;
+		}
+		if ( 'button' === $tag && 'button' === $type ) {
+			// Mode and filter controls remain native buttons; they are not submits.
+			$state->field_blocks[ $control_index ] = Static_Site_Importer_Form_Field_Markup::button_block(
+				Static_Site_Importer_Form_Field_Markup::control_text( $control ),
+				trim( (string) ( $control['class'] ?? '' ) . ' ' . Static_Site_Importer_Form_Layout_Projection::layout_node_class( $state->scope, 'control-' . $control_index ) . ' ' . $presentation_descriptor['control_class'] )
+			);
+			return;
+		}
 
-			if ( 'submit' === $type ) {
-				$text              = Static_Site_Importer_Form_Field_Markup::control_text( $control );
-				$submit_text       = '' !== $text ? $text : $submit_text;
-				$has_source_submit = true;
-				if ( isset( $control['presentation']['style'] ) && is_array( $control['presentation']['style'] ) ) {
-					$submit_presentation['block_attrs']['style'] = $control['presentation']['style'];
-				}
-				if ( empty( $submit_presentation['classes'] ) && isset( $control['class'] ) && is_scalar( $control['class'] ) ) {
-					$submit_classes                 = preg_split( '/\s+/', trim( (string) $control['class'] ) );
-					$submit_presentation['classes'] = false === $submit_classes ? array() : $submit_classes;
-				}
-				// The compiler reports the label element a source button owns, including
-				// when it declares no classes, because authored rules address it as a
-				// descendant of the button.
-				if ( ! isset( $submit_presentation['label_classes'] ) && isset( $control['label_classes'] ) && is_scalar( $control['label_classes'] ) ) {
-					$label_classes                        = preg_split( '/\s+/', trim( (string) $control['label_classes'] ) );
-					$submit_presentation['label_classes'] = false === $label_classes ? array() : array_values( array_filter( $label_classes ) );
-				}
-				if ( ! isset( $submit_presentation['label_marker'] ) && isset( $control['label_marker'] ) && is_scalar( $control['label_marker'] ) ) {
-					$submit_presentation['label_marker'] = trim( (string) $control['label_marker'] );
-				}
-				if ( ! isset( $submit_presentation['icon'] ) ) {
-					$leading_icon = self::submit_leading_icon( $form, $control_index );
-					if ( ! empty( $leading_icon ) ) {
-						$submit_presentation['icon'] = $leading_icon;
-					}
-				}
-				if ( $has_topology ) {
-					$presentation_class             = $presentation_descriptor['control_class'];
-					$field_blocks[ $control_index ] = Static_Site_Importer_Form_Field_Markup::submit_button_block( $submit_text, trim( Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $control_index ) . ' ' . $presentation_class ), $submit_presentation );
-				}
-				continue;
-			}
-			if ( 'button' === $tag && 'button' === $type ) {
-				// Mode and filter controls remain native buttons; they are not submits.
-				$field_blocks[ $control_index ] = Static_Site_Importer_Form_Field_Markup::button_block(
-					Static_Site_Importer_Form_Field_Markup::control_text( $control ),
-					trim( (string) ( $control['class'] ?? '' ) . ' ' . Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $control_index ) . ' ' . $presentation_descriptor['control_class'] )
-				);
-				continue;
-			}
+		if ( 'file' === $type && 'input' === $tag ) {
+			$label                                 = Static_Site_Importer_Form_Field_Markup::control_text( $control );
+			$state->field_blocks[ $control_index ] = array(
+				'name'    => 'core/paragraph',
+				'attrs'   => array( 'className' => 'ssi-unsupported-file-upload' ),
+				'content' => trim( $label . ' — File upload requires Jetpack connection and a supported plan; unavailable in this import runtime.' ),
+				'wrapper' => 'paragraph',
+			);
+			$state->skipped[]                      = 'file';
+			$state->unsupported_capabilities[]     = array(
+				'capability'    => 'file_upload',
+				'reason_code'   => 'jetpack_upload_endpoint_requires_connected_site_and_supported_plan',
+				'control_index' => $control_index,
+			);
+			return;
+		}
+		self::map_field_control( $state, $control_index, $control, $tag, $type, $presentation_descriptor, $choice_box );
+	}
 
-			$control_phone_destinations = $presentation_descriptor['phone_destinations'];
-			if ( 'file' === $type && 'input' === $tag ) {
-				$label                          = Static_Site_Importer_Form_Field_Markup::control_text( $control );
-				$field_blocks[ $control_index ] = array(
-					'name'    => 'core/paragraph',
-					'attrs'   => array( 'className' => 'ssi-unsupported-file-upload' ),
-					'content' => trim( $label . ' — File upload requires Jetpack connection and a supported plan; unavailable in this import runtime.' ),
-					'wrapper' => 'paragraph',
-				);
-				$skipped[]                      = 'file';
-				$unsupported_capabilities[]     = array(
-					'capability'    => 'file_upload',
-					'reason_code'   => 'jetpack_upload_endpoint_requires_connected_site_and_supported_plan',
+	/** Fold a source submit into the shared submit text and presentation, and place it when topology is projected. */
+	private static function map_submit_control( Static_Site_Importer_Form_Plan_State $state, int $control_index, array $control, array $presentation_descriptor ): void {
+		$text                     = Static_Site_Importer_Form_Field_Markup::control_text( $control );
+		$state->submit_text       = '' !== $text ? $text : $state->submit_text;
+		$state->has_source_submit = true;
+		if ( isset( $control['presentation']['style'] ) && is_array( $control['presentation']['style'] ) ) {
+			$state->submit_presentation['block_attrs']['style'] = $control['presentation']['style'];
+		}
+		if ( empty( $state->submit_presentation['classes'] ) && isset( $control['class'] ) && is_scalar( $control['class'] ) ) {
+			$submit_classes                        = preg_split( '/\s+/', trim( (string) $control['class'] ) );
+			$state->submit_presentation['classes'] = false === $submit_classes ? array() : $submit_classes;
+		}
+		// The compiler reports the label element a source button owns, including
+		// when it declares no classes, because authored rules address it as a
+		// descendant of the button.
+		if ( ! isset( $state->submit_presentation['label_classes'] ) && isset( $control['label_classes'] ) && is_scalar( $control['label_classes'] ) ) {
+			$label_classes                               = preg_split( '/\s+/', trim( (string) $control['label_classes'] ) );
+			$state->submit_presentation['label_classes'] = false === $label_classes ? array() : array_values( array_filter( $label_classes ) );
+		}
+		if ( ! isset( $state->submit_presentation['label_marker'] ) && isset( $control['label_marker'] ) && is_scalar( $control['label_marker'] ) ) {
+			$state->submit_presentation['label_marker'] = trim( (string) $control['label_marker'] );
+		}
+		if ( ! isset( $state->submit_presentation['icon'] ) ) {
+			$leading_icon = self::submit_leading_icon( $state->form, $control_index );
+			if ( ! empty( $leading_icon ) ) {
+				$state->submit_presentation['icon'] = $leading_icon;
+			}
+		}
+		if ( $state->has_topology ) {
+			$presentation_class                    = $presentation_descriptor['control_class'];
+			$state->field_blocks[ $control_index ] = Static_Site_Importer_Form_Field_Markup::submit_button_block( $state->submit_text, trim( Static_Site_Importer_Form_Layout_Projection::layout_node_class( $state->scope, 'control-' . $control_index ) . ' ' . $presentation_class ), $state->submit_presentation );
+		}
+	}
+
+	/** Build a provider field block and carry its source class, layout hook, help and choice tokens. */
+	private static function map_field_control( Static_Site_Importer_Form_Plan_State $state, int $control_index, array $control, string $tag, string $type, array $presentation_descriptor, bool $choice_box ): void {
+		$control_phone_destinations = $presentation_descriptor['phone_destinations'];
+		$field_block                = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
+			$tag,
+			$type,
+			$control,
+			empty( $control_phone_destinations ) ? $presentation_descriptor['control_class'] : '',
+			$choice_box && '' !== $presentation_descriptor['label_class'] ? 'ssi-source-choice-label--' . $presentation_descriptor['label_class'] : $presentation_descriptor['label_class'],
+			$state->control_presentations[ $control_index ]['control']['styles'] ?? array()
+		);
+		if ( null === $field_block ) {
+			$state->skipped[] = '' !== $type ? $type : $tag;
+			return;
+		}
+		if ( ! empty( $control_phone_destinations ) ) {
+			foreach ( $field_block['innerBlocks'] as &$inner_block ) {
+				if ( 'jetpack/phone-input' === ( $inner_block['name'] ?? '' ) ) {
+					$inner_block['attrs']['className'] = trim( (string) ( $inner_block['attrs']['className'] ?? '' ) . ' ' . implode( ' ', array_column( $control_phone_destinations, 'class' ) ) );
+				}
+			}
+			unset( $inner_block );
+		}
+		foreach ( $field_block['losses'] ?? array() as $loss ) {
+			$state->control_attribute_losses[] = $loss + array( 'control_index' => $control_index );
+		}
+		unset( $field_block['losses'] );
+
+		$source_class                      = isset( $control['class'] ) && is_scalar( $control['class'] ) ? trim( (string) $control['class'] ) : '';
+		$has_provider_input                = (bool) array_filter( $field_block['innerBlocks'] ?? array(), static fn ( array $block ): bool => in_array( $block['name'] ?? '', array( 'jetpack/input', 'jetpack/phone-input' ), true ) );
+		$field_source_class                = $has_provider_input ? '' : $source_class;
+		$layout_hook                       = Static_Site_Importer_Form_Layout_Projection::layout_node_class( $state->scope, 'control-' . $control_index );
+		$help_classes                      = isset( $field_block['attrs']['helpText'] ) ? Static_Site_Importer_Form_Field_Markup::help_class_markers( $state->form, $control ) : '';
+		$field_block['attrs']['className'] = trim( $field_source_class . ' ' . $layout_hook . ' ' . $help_classes );
+		if ( isset( $state->choice_pairs[ $control_index ] ) ) {
+			$choice_token = Static_Site_Importer_Provider_Form_Runtime_V1::choice_token( $control['options'] );
+			if ( '' === $choice_token ) {
+				$state->control_attribute_losses[] = array(
+					'dimension'     => 'control',
+					'reason_code'   => 'unsupported_control_attribute',
+					'attribute'     => 'choice_values',
 					'control_index' => $control_index,
 				);
-				continue;
+			} else {
+				$field_block['attrs']['className'] .= ' ' . $choice_token;
 			}
-			$field_block = Static_Site_Importer_Form_Field_Markup::field_block_from_control(
-				$tag,
-				$type,
-				$control,
-				empty( $control_phone_destinations ) ? $presentation_descriptor['control_class'] : '',
-				$choice_box && '' !== $presentation_descriptor['label_class'] ? 'ssi-source-choice-label--' . $presentation_descriptor['label_class'] : $presentation_descriptor['label_class'],
-				$control_presentations[ $control_index ]['control']['styles'] ?? array()
-			);
-			if ( null === $field_block ) {
-				$skipped[] = '' !== $type ? $type : $tag;
-				continue;
-			}
-			if ( ! empty( $control_phone_destinations ) ) {
-				foreach ( $field_block['innerBlocks'] as &$inner_block ) {
-					if ( 'jetpack/phone-input' === ( $inner_block['name'] ?? '' ) ) {
-						$inner_block['attrs']['className'] = trim( (string) ( $inner_block['attrs']['className'] ?? '' ) . ' ' . implode( ' ', array_column( $control_phone_destinations, 'class' ) ) );
-					}
-				}
-				unset( $inner_block );
-			}
-			foreach ( $field_block['losses'] ?? array() as $loss ) {
-				$control_attribute_losses[] = $loss + array( 'control_index' => $control_index );
-			}
-			unset( $field_block['losses'] );
-
-			$source_class                      = isset( $control['class'] ) && is_scalar( $control['class'] ) ? trim( (string) $control['class'] ) : '';
-			$has_provider_input                = (bool) array_filter( $field_block['innerBlocks'] ?? array(), static fn ( array $block ): bool => in_array( $block['name'] ?? '', array( 'jetpack/input', 'jetpack/phone-input' ), true ) );
-			$field_source_class                = $has_provider_input ? '' : $source_class;
-			$layout_hook                       = Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $control_index );
-			$help_classes                      = isset( $field_block['attrs']['helpText'] ) ? Static_Site_Importer_Form_Field_Markup::help_class_markers( $form, $control ) : '';
-			$field_block['attrs']['className'] = trim( $field_source_class . ' ' . $layout_hook . ' ' . $help_classes );
-			if ( isset( $choice_pairs[ $control_index ] ) ) {
-				$choice_token = Static_Site_Importer_Provider_Form_Runtime_V1::choice_token( $control['options'] );
-				if ( '' === $choice_token ) {
-					$control_attribute_losses[] = array(
-						'dimension'     => 'control',
-						'reason_code'   => 'unsupported_control_attribute',
-						'attribute'     => 'choice_values',
-						'control_index' => $control_index,
-					);
-				} else {
-					$field_block['attrs']['className'] .= ' ' . $choice_token;
+		}
+		// Jetpack replaces a date field's class with `jp-contact-form-date`
+		// before deriving wrap classes, so the field-level layout hook never
+		// reaches the shell. Keep that hook on the inner input, which Jetpack
+		// still copies onto the wrap after the replacement.
+		if ( 'jetpack/field-date' === ( $field_block['name'] ?? '' ) ) {
+			foreach ( $field_block['innerBlocks'] as &$inner_block ) {
+				if ( 'jetpack/input' === ( $inner_block['name'] ?? '' ) ) {
+					$inner_block['attrs']['className'] = trim( (string) ( $inner_block['attrs']['className'] ?? '' ) . ' ' . $layout_hook );
 				}
 			}
-			// Jetpack replaces a date field's class with `jp-contact-form-date`
-			// before deriving wrap classes, so the field-level layout hook never
-			// reaches the shell. Keep that hook on the inner input, which Jetpack
-			// still copies onto the wrap after the replacement.
-			if ( 'jetpack/field-date' === ( $field_block['name'] ?? '' ) ) {
-				foreach ( $field_block['innerBlocks'] as &$inner_block ) {
-					if ( 'jetpack/input' === ( $inner_block['name'] ?? '' ) ) {
-						$inner_block['attrs']['className'] = trim( (string) ( $inner_block['attrs']['className'] ?? '' ) . ' ' . $layout_hook );
-					}
-				}
-				unset( $inner_block );
-			}
-			$field_blocks[ $control_index ] = $field_block;
-			$mapped_types[]                 = $field_block['name'];
+			unset( $inner_block );
 		}
+		$state->field_blocks[ $control_index ] = $field_block;
+		$state->mapped_types[]                 = $field_block['name'];
+	}
 
-		if ( empty( $field_blocks ) ) {
-			return self::skipped_plan( $form, $selector, $source_path, 'no_mappable_form_fields', array( 'skipped_types' => array_values( array_unique( array_filter( $skipped ) ) ) ) );
+	/** Record the projected topology on the form and return its blocks, with a generated submit when the source placed none. */
+	private static function place_topology( Static_Site_Importer_Form_Plan_State $state, array $topology ): array {
+		$inner_blocks                            = $topology['blocks'];
+		$state->form['provider_native_topology'] = in_array( 'ssi-native-form-topology', $topology['form_classes'], true );
+		if ( ! $state->has_topology || ! $state->has_source_submit ) {
+			$inner_blocks[] = Static_Site_Importer_Form_Field_Markup::submit_button_block( $state->submit_text, Static_Site_Importer_Form_Layout_Projection::layout_node_class( $state->scope, 'control-submit' ), $state->submit_presentation );
 		}
+		$state->form['topology_losses']            = $topology['losses'];
+		$state->form['represented_semantic_nodes'] = $state->radio_groups['represented_semantic_nodes'];
+		return $inner_blocks;
+	}
 
-		$topology = Static_Site_Importer_Form_Layout_Projection::topology_inner_blocks( $form, $field_blocks, $controls, $suppressed_controls );
-		if ( null === $topology ) {
-			return self::skipped_plan( $form, $selector, $source_path, 'unsupported_control_topology' );
-		}
-		$inner_blocks                     = $topology['blocks'];
-		$form['provider_native_topology'] = in_array( 'ssi-native-form-topology', $topology['form_classes'], true );
-		if ( ! $has_topology || ! $has_source_submit ) {
-			$inner_blocks[] = Static_Site_Importer_Form_Field_Markup::submit_button_block( $submit_text, Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-submit' ), $submit_presentation );
-		}
-		$form['topology_losses']            = $topology['losses'];
-		$form['represented_semantic_nodes'] = $radio_groups['represented_semantic_nodes'];
-		$provider_graph                     = is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array(
+	/** The source layout graph without the nodes, properties and display rules the topology already represents. */
+	private static function provider_graph( array $form, array $topology ): array {
+		$provider_graph = is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array(
 			'nodes'    => array(),
 			'variants' => array(),
 		);
@@ -501,38 +554,47 @@ class Static_Site_Importer_Form_Seeder {
 			}
 		}
 		unset( $provider_node );
-		$layout_form                                        = $form;
+		return $provider_graph;
+	}
+
+	/** Apply the computed layout strategy and record host, grouping and control-attribute receipt entries. */
+	private static function apply_computed_layout( Static_Site_Importer_Form_Plan_State $state, array $topology, array $provider_graph, array $inner_blocks ): void {
+		$layout_form                                        = $state->form;
 		$layout_form['layout_graph']                        = $provider_graph;
 		$layout_form['provider_represented_topology_nodes'] = $topology['represented_topology_nodes'];
-		$layout = Static_Site_Importer_Computed_Layout_Strategy::apply( $layout_form, $inner_blocks );
+		$layout                        = Static_Site_Importer_Computed_Layout_Strategy::apply( $layout_form, $inner_blocks );
+		$textarea_height_omitted_count = (int) ( $state->form['form']['textarea_height_omitted_count'] ?? 0 );
 		if ( 0 < $textarea_height_omitted_count ) {
-			$control_attribute_losses[] = array(
+			$state->control_attribute_losses[] = array(
 				'dimension'     => 'control',
 				'reason_code'   => 'textarea_height_omitted',
 				'omitted_count' => $textarea_height_omitted_count,
 			);
 		}
-		$host              = Static_Site_Importer_Form_Layout_Projection::host_wrapper_projection( $form );
+		$state->host       = Static_Site_Importer_Form_Layout_Projection::host_wrapper_projection( $state->form );
 		$choice_operations = array();
-		foreach ( $choice_pairs as $trigger => $carrier ) {
+		foreach ( $state->choice_pairs as $trigger => $carrier ) {
 			$choice_operations[] = array(
 				'dimension'   => 'control',
 				'strategy'    => 'provider_linked_native_choice',
 				'target_hash' => hash( 'sha256', 'control-' . $trigger . ':control-' . $carrier ),
 			);
 		}
-		self::append_receipt_entries( $layout['receipt'], 'operations', array_merge( $released['operations'], $radio_groups['operations'], $choice_operations, $topology['operations'], $host['operations'] ) );
-		self::append_receipt_entries( $layout['receipt'], 'losses', $host['losses'] );
-		self::append_receipt_entries( $layout['receipt'], 'losses', $control_attribute_losses );
-		$inner_blocks           = $layout['blocks'];
-		$form_attrs             = Static_Site_Importer_Form_Field_Markup::contact_form_attributes( $form, $scope, $topology['form_classes'] );
+		self::append_receipt_entries( $layout['receipt'], 'operations', array_merge( $state->released_operations, $state->radio_groups['operations'], $choice_operations, $topology['operations'], $state->host['operations'] ) );
+		self::append_receipt_entries( $layout['receipt'], 'losses', $state->host['losses'] );
+		self::append_receipt_entries( $layout['receipt'], 'losses', $state->control_attribute_losses );
+		$state->layout = $layout;
+	}
+
+	/** Start the overlay graph from the split provider graph, topology targets and direct label/control gaps. */
+	private static function seed_overlay_graph( Static_Site_Importer_Form_Plan_State $state, array $topology, array $provider_graph ): array {
 		$box_targets            = $topology['provider_layout_targets'];
-		$overlay_graph          = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( Static_Site_Importer_Form_Layout_Projection::split_form_box( $provider_graph ), is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array(), $box_targets );
+		$overlay_graph          = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( Static_Site_Importer_Form_Layout_Projection::split_form_box( $provider_graph ), is_array( $state->form['layout_graph'] ?? null ) ? $state->form['layout_graph'] : array(), $box_targets );
 		$overlay_graph['nodes'] = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || 'form-box' === ( $node['id'] ?? '' ) || isset( $box_targets[ (string) ( $node['id'] ?? '' ) ] ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
 		foreach ( $topology['overlay_node_targets'] as $target ) {
 			self::upsert_overlay_node( $overlay_graph, $target );
 		}
-		foreach ( Static_Site_Importer_Form_Layout_Projection::direct_label_control_gap_targets( $form ) as $target ) {
+		foreach ( Static_Site_Importer_Form_Layout_Projection::direct_label_control_gap_targets( $state->form ) as $target ) {
 			$control_index = $target['control'];
 			$layout_patch  = $target['layout'];
 			// Jetpack renders a label and input as siblings in its field wrapper.
@@ -560,31 +622,39 @@ class Static_Site_Importer_Form_Seeder {
 					'layout' => $layout_patch,
 				)
 			);
-			$layout['receipt']['operations'][] = array(
+			$state->layout['receipt']['operations'][] = array(
 				'dimension'   => 'layout',
 				'strategy'    => 'provider_direct_label_control_gap',
 				'target_hash' => hash( 'sha256', $target_id ),
 			);
 		}
-		// The source container laid out on Jetpack's form element keeps its own
-		// flex direction and wrap, not the provider's wrapping row. Jetpack also
-		// renders in-form copy and the status output as items of that element,
-		// which the source row did not arrange, so the row is stated only when the
-		// element holds nothing but the fields and the submit.
-		$context_before           = Static_Site_Importer_Form_Field_Markup::context_blocks( $form, 'context_before' );
-		$context_after            = Static_Site_Importer_Form_Field_Markup::context_blocks( $form, 'context_after' );
-		$form_holds_only_controls = array() === $context_before
-			&& array() === $context_after
-			&& 'status' !== ( is_array( $form['form']['trailing_status'] ?? null ) ? ( $form['form']['trailing_status']['role'] ?? null ) : null );
-		$form_base_layout         = array();
-		$item_base_layouts        = array();
-		$source_layout_nodes      = array();
+		return $overlay_graph;
+	}
+
+	/** Index the source layout graph's nodes by id. */
+	private static function source_layout_nodes( array $form ): array {
+		$source_layout_nodes = array();
 		foreach ( is_array( $form['layout_graph']['nodes'] ?? null ) ? $form['layout_graph']['nodes'] : array() as $source_layout_node ) {
 			if ( is_array( $source_layout_node ) && is_string( $source_layout_node['id'] ?? null ) ) {
 				$source_layout_nodes[ $source_layout_node['id'] ] = $source_layout_node;
 			}
 		}
-		$is_source_flex_item = static function ( string $node_id ) use ( $source_layout_nodes ): bool {
+		return $source_layout_nodes;
+	}
+
+	/** State flex container and item defaults on the overlay's form, control and wrapper nodes and variants. */
+	private static function with_flex_defaults( Static_Site_Importer_Form_Plan_State $state, array $topology, array $overlay_graph, array $source_layout_nodes ): array {
+		// The source container laid out on Jetpack's form element keeps its own
+		// flex direction and wrap, not the provider's wrapping row. Jetpack also
+		// renders in-form copy and the status output as items of that element,
+		// which the source row did not arrange, so the row is stated only when the
+		// element holds nothing but the fields and the submit.
+		$form_holds_only_controls = array() === $state->context_before
+			&& array() === $state->context_after
+			&& 'status' !== ( is_array( $state->form['form']['trailing_status'] ?? null ) ? ( $state->form['form']['trailing_status']['role'] ?? null ) : null );
+		$form_base_layout         = array();
+		$item_base_layouts        = array();
+		$is_source_flex_item      = static function ( string $node_id ) use ( $source_layout_nodes ): bool {
 			$parent  = $source_layout_nodes[ $node_id ]['parent'] ?? null;
 			$display = is_string( $parent ) ? ( $source_layout_nodes[ $parent ]['layout']['display'] ?? '' ) : '';
 			return in_array( strtolower( trim( is_string( $display ) ? $display : '' ) ), array( 'flex', 'inline-flex' ), true );
@@ -630,11 +700,16 @@ class Static_Site_Importer_Form_Seeder {
 			$overlay_variant['layout_patch']['flex'] = '0 1 auto';
 		}
 		unset( $overlay_variant );
+		return $overlay_graph;
+	}
+
+	/** Add field-wrapper item layout, responsive target nodes and the form's layout intent to the overlay graph. */
+	private static function with_wrapper_and_intent_nodes( Static_Site_Importer_Form_Plan_State $state, array $topology, array $overlay_graph, array $source_layout_nodes ): array {
 		$field_wrapped_controls = array();
-		foreach ( $field_blocks as $control_index => $field_block ) {
+		foreach ( $state->field_blocks as $control_index => $field_block ) {
 			// Only a control whose source parent is the form itself has a field
 			// wrapper standing where it stood: an item of the field container.
-			if ( 'form' === ( $source_layout_nodes[ 'control-' . $control_index ]['parent'] ?? null ) && str_starts_with( (string) ( $field_block['name'] ?? '' ), 'jetpack/field-' ) && ! isset( $box_targets[ 'control-' . $control_index ] ) && ! in_array( $control_index, $topology['whole_field_controls'] ?? array(), true ) ) {
+			if ( 'form' === ( $source_layout_nodes[ 'control-' . $control_index ]['parent'] ?? null ) && str_starts_with( (string) ( $field_block['name'] ?? '' ), 'jetpack/field-' ) && ! isset( $topology['provider_layout_targets'][ 'control-' . $control_index ] ) && ! in_array( $control_index, $topology['whole_field_controls'] ?? array(), true ) ) {
 				$field_wrapped_controls[] = (int) $control_index;
 			}
 		}
@@ -651,14 +726,14 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		$overlay_nodes             = array_fill_keys( array_map( static fn ( array $node ): string => (string) $node['id'], $overlay_graph['nodes'] ), true );
 		$overlay_graph['variants'] = array_values( array_filter( $overlay_graph['variants'], static fn ( $variant ): bool => is_array( $variant ) && isset( $overlay_nodes[ $variant['node'] ?? '' ] ) ) );
-		$layout_intent             = Static_Site_Importer_Form_Layout_Projection::form_layout_intent( $form );
-		foreach ( $layout_intent['nodes'] as $node ) {
+		$state->layout_intent      = Static_Site_Importer_Form_Layout_Projection::form_layout_intent( $state->form );
+		foreach ( $state->layout_intent['nodes'] as $node ) {
 			if ( ! isset( $overlay_nodes[ $node['id'] ] ) ) {
 				$overlay_graph['nodes'][]     = $node;
 				$overlay_nodes[ $node['id'] ] = true;
 			}
 		}
-		foreach ( $layout_intent['variants'] as $variant ) {
+		foreach ( $state->layout_intent['variants'] as $variant ) {
 			$node = $variant['node'];
 			if ( ! isset( $overlay_nodes[ $node ] ) ) {
 				$overlay_graph['nodes'][] = array(
@@ -669,11 +744,20 @@ class Static_Site_Importer_Form_Seeder {
 			}
 			$overlay_graph['variants'][] = $variant;
 		}
+		return $overlay_graph;
+	}
+
+	/**
+	 * The form the overlay compiles from: the finished overlay graph as its
+	 * layout graph, and its presentation graph without suppressed controls or
+	 * the widths a grid-span submit row already carries.
+	 */
+	private static function overlay_form( Static_Site_Importer_Form_Plan_State $state, array $topology, array $overlay_graph ): array {
 		// Box transposition and responsive targets reinstate the source container's
 		// own layout, so the track definition is reconsidered once every box and
 		// variant has been merged.
-		$overlay_graph                = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( $overlay_graph, is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array(), $box_targets );
-		$overlay_form                 = $form;
+		$overlay_graph                = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( $overlay_graph, is_array( $state->form['layout_graph'] ?? null ) ? $state->form['layout_graph'] : array(), $topology['provider_layout_targets'] );
+		$overlay_form                 = $state->form;
 		$overlay_form['layout_graph'] = $overlay_graph;
 		// Grid-span projection already transposes the parent box onto this
 		// layout node. Only native control-owned facts target the inner button.
@@ -694,9 +778,8 @@ class Static_Site_Importer_Form_Seeder {
 					'layout' => array( 'display' => 'contents' ),
 				);
 			}
-			$overlay_graph = $overlay_form['layout_graph'];
 		}
-		foreach ( array_keys( $suppressed_controls ) as $control_index ) {
+		foreach ( array_keys( $state->suppressed_controls ) as $control_index ) {
 			unset( $overlay_form['presentation_graph']['controls'][ $control_index ] );
 		}
 		foreach ( is_array( $topology['grid_span_submit_controls'] ?? null ) ? $topology['grid_span_submit_controls'] : array() as $span_control ) {
@@ -716,29 +799,58 @@ class Static_Site_Importer_Form_Seeder {
 				unset( $overlay_form['presentation_graph']['variants'][ $variant_index ]['style_patch']['width'], $overlay_form['presentation_graph']['variants'][ $variant_index ]['style_patch']['min_width'] );
 			}
 		}
-		$visual_state = Static_Site_Importer_Form_Layout_Projection::empty_country_visual_state( $form, $scope, $topology['phone_popup_targets'] );
-		if ( ! empty( $form['provider_native_topology'] ) ) {
-			foreach ( $controls as $control_index => $control ) {
-				if ( 'core/button' === ( $field_blocks[ $control_index ]['name'] ?? '' ) && isset( $presentation_descriptors[ $control_index ] ) ) {
-					$presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Layout_Projection::with_submit_row_button_box( $presentation_descriptors[ $control_index ] );
+		return $overlay_form;
+	}
+
+	/** Give submit-row buttons the button box in their presentation descriptors. */
+	private static function box_submit_row_buttons( Static_Site_Importer_Form_Plan_State $state, array $topology ): void {
+		if ( ! empty( $state->form['provider_native_topology'] ) ) {
+			foreach ( $state->controls as $control_index => $control ) {
+				if ( 'core/button' === ( $state->field_blocks[ $control_index ]['name'] ?? '' ) && isset( $state->presentation_descriptors[ $control_index ] ) ) {
+					$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Layout_Projection::with_submit_row_button_box( $state->presentation_descriptors[ $control_index ] );
 				}
 			}
 		}
 		foreach ( $topology['submit_block_rows'] ?? array() as $row_control ) {
-			if ( isset( $presentation_descriptors[ $row_control ] ) ) {
-				$presentation_descriptors[ $row_control ] = Static_Site_Importer_Form_Layout_Projection::with_submit_row_button_box( $presentation_descriptors[ $row_control ] );
+			if ( isset( $state->presentation_descriptors[ $row_control ] ) ) {
+				$state->presentation_descriptors[ $row_control ] = Static_Site_Importer_Form_Layout_Projection::with_submit_row_button_box( $state->presentation_descriptors[ $row_control ] );
 			}
 		}
+	}
+
+	/**
+	 * Derive the canonical provider target map and the editor target map.
+	 *
+	 * @return array{target:array<string,mixed>,editor:array<string,mixed>}
+	 */
+	private static function target_maps( Static_Site_Importer_Form_Plan_State $state, array $topology, array $overlay_form, string $trigger_class ): array {
 		// The declared part of every target and destination drives the editor
 		// derivation only; the canonical map that is validated, compiled, and
 		// recorded carries none.
-		$part_map               = Static_Site_Importer_Form_Layout_Projection::provider_layout_target_map( $overlay_form, $scope, $presentation_descriptors, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
-		$target_map             = Static_Site_Importer_Form_Layout_Projection::without_parts( $part_map );
+		$part_map           = Static_Site_Importer_Form_Layout_Projection::provider_layout_target_map( $overlay_form, $state->scope, $state->presentation_descriptors, $topology['provider_layout_targets'], $topology['phone_popup_targets'], $trigger_class );
+		$target_map         = Static_Site_Importer_Form_Layout_Projection::without_parts( $part_map );
+		$presentation_graph = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
+		// The editor sizes a textarea from its resolved policy; a control whose
+		// presentation row the overlay withdrew has no editor box to size.
+		$editor_textareas = array();
+		foreach ( is_array( $presentation_graph['controls'] ?? null ) ? $presentation_graph['controls'] : array() as $row ) {
+			if ( is_array( $row ) && is_int( $row['index'] ?? null ) && is_array( $row['control']['styles'] ?? null ) && isset( $state->textareas[ $row['index'] ] ) ) {
+				$editor_textareas[ $row['index'] ] = $state->textareas[ $row['index'] ];
+			}
+		}
+		return array(
+			'target' => $target_map,
+			'editor' => Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $part_map, $state->scope, $editor_textareas ),
+		);
+	}
+
+	/** Compile every overlay surface and settle the layout receipt with its operations and losses. */
+	private static function compile_overlay( Static_Site_Importer_Form_Plan_State $state, array $overlay_form, array $maps ): array {
 		$presentation_graph     = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
-		$container_presentation = is_array( $form['form']['container_presentation'] ?? null ) ? $form['form']['container_presentation'] : array();
-		$context_fallbacks      = Static_Site_Importer_Form_Field_Markup::context_style_fallbacks( $form );
-		$source_losses          = Static_Site_Importer_Form_Field_Markup::context_source_boxes( $form )['losses'];
-		foreach ( is_array( $form['source_contract_losses'] ?? null ) ? $form['source_contract_losses'] : array() as $diagnostic ) {
+		$container_presentation = is_array( $state->form['form']['container_presentation'] ?? null ) ? $state->form['form']['container_presentation'] : array();
+		$context_fallbacks      = Static_Site_Importer_Form_Field_Markup::context_style_fallbacks( $state->form );
+		$source_losses          = Static_Site_Importer_Form_Field_Markup::context_source_boxes( $state->form )['losses'];
+		foreach ( is_array( $state->form['source_contract_losses'] ?? null ) ? $state->form['source_contract_losses'] : array() as $diagnostic ) {
 			// The producer withheld its exhausted source graph; the form still maps,
 			// but every fact that graph would have carried is reported as missing.
 			$source_losses[] = array(
@@ -752,26 +864,23 @@ class Static_Site_Importer_Form_Seeder {
 		// Provider_Layout_Overlay's `generic/form-container-presentation/v1` destination).
 		// It belongs on the rendered page, not only inside editor chrome, so the frontend
 		// compile also receives it.
-		$overlay_graph = Static_Site_Importer_Form_Layout_Projection::without_container_box_facts( $overlay_graph, $container_presentation );
-		// The editor sizes a textarea from its resolved policy; a control whose
-		// presentation row the overlay withdrew has no editor box to size.
-		$editor_textareas = array();
-		foreach ( is_array( $presentation_graph['controls'] ?? null ) ? $presentation_graph['controls'] : array() as $row ) {
-			if ( is_array( $row ) && is_int( $row['index'] ?? null ) && is_array( $row['control']['styles'] ?? null ) && isset( $textareas[ $row['index'] ] ) ) {
-				$editor_textareas[ $row['index'] ] = $textareas[ $row['index'] ];
-			}
-		}
-		$editor_map = Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $part_map, $scope, $editor_textareas );
+		$overlay_graph = Static_Site_Importer_Form_Layout_Projection::without_container_box_facts( $overlay_form['layout_graph'], $container_presentation );
 		// One assembly: each declared surface compiles from its own map, and the
 		// overlay, its operations and its losses come back together.
-		$overlay = Static_Site_Importer_Provider_Layout_Overlay::compile_surfaces( $overlay_graph, $target_map, $editor_map, $presentation_graph, $container_presentation, $context_fallbacks );
-		$overlay = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_provider_errors( $overlay, $scope, $mapped_types );
-		self::append_receipt_entries( $layout['receipt'], 'operations', $overlay['operations'] );
-		self::append_receipt_entries( $layout['receipt'], 'operations', $layout_intent['operations'] );
-		self::append_receipt_entries( $layout['receipt'], 'losses', $overlay['losses'] );
-		self::append_receipt_entries( $layout['receipt'], 'losses', $source_losses );
-		$layout['receipt']['status'] = 0 < $layout['receipt']['operations_total'] ? 'applied' : ( 0 < $layout['receipt']['losses_total'] ? 'deferred' : 'skipped' );
-		$status                      = $form['form']['trailing_status'] ?? null;
+		$overlay = Static_Site_Importer_Provider_Layout_Overlay::compile_surfaces( $overlay_graph, $maps['target'], $maps['editor'], $presentation_graph, $container_presentation, $context_fallbacks );
+		$overlay = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_provider_errors( $overlay, $state->scope, $state->mapped_types );
+		self::append_receipt_entries( $state->layout['receipt'], 'operations', $overlay['operations'] );
+		self::append_receipt_entries( $state->layout['receipt'], 'operations', $state->layout_intent['operations'] );
+		self::append_receipt_entries( $state->layout['receipt'], 'losses', $overlay['losses'] );
+		self::append_receipt_entries( $state->layout['receipt'], 'losses', $source_losses );
+		$state->layout['receipt']['status'] = 0 < $state->layout['receipt']['operations_total'] ? 'applied' : ( 0 < $state->layout['receipt']['losses_total'] ? 'deferred' : 'skipped' );
+		return $overlay;
+	}
+
+	/** Assemble the provider contact-form block: context copy, laid-out fields and the native status output. */
+	private static function contact_form_block( Static_Site_Importer_Form_Plan_State $state, array $form_attrs ): array {
+		$inner_blocks = $state->layout['blocks'];
+		$status       = $state->form['form']['trailing_status'] ?? null;
 		if ( is_array( $status ) && 'status' === ( $status['role'] ?? null ) ) {
 			// Output provides the native status role without a raw HTML block.
 			$attrs = array(
@@ -794,31 +903,34 @@ class Static_Site_Importer_Form_Seeder {
 				'attrs' => $attrs,
 			);
 		}
-		$inner_blocks = array_merge( $context_before, $inner_blocks, $context_after );
-		$form_block   = array(
+		return array(
 			'name'        => 'jetpack/contact-form',
 			'attrs'       => $form_attrs,
-			'innerBlocks' => $inner_blocks,
+			'innerBlocks' => array_merge( $state->context_before, $inner_blocks, $state->context_after ),
 		);
-		$row          = array(
-			'selector'                    => $selector,
-			'source_path'                 => $source_path,
+	}
+
+	/** The mapped report row: fields, submit, layout receipt, target map, overlay CSS and visual state. */
+	private static function mapped_report_row( Static_Site_Importer_Form_Plan_State $state, bool $available, array $target_map, array $overlay, array $visual_state ): array {
+		$row = array(
+			'selector'                    => $state->selector,
+			'source_path'                 => $state->source_path,
 			'provider'                    => self::PROVIDER_ID,
 			'block_name'                  => 'jetpack/contact-form',
 			'status'                      => 'mapped',
-			'field_count'                 => count( $mapped_types ),
-			'field_blocks'                => $mapped_types,
-			'skipped_types'               => array_values( array_unique( array_filter( $skipped ) ) ),
-			'submit_text'                 => $submit_text,
+			'field_count'                 => count( $state->mapped_types ),
+			'field_blocks'                => $state->mapped_types,
+			'skipped_types'               => array_values( array_unique( array_filter( $state->skipped ) ) ),
+			'submit_text'                 => $state->submit_text,
 			'runtime_mapped'              => true,
 			'runtime_carried'             => $available,
 			'block_markup'                => '',
-			'computed_layout_receipt'     => $layout['receipt'],
+			'computed_layout_receipt'     => $state->layout['receipt'],
 			'provider_layout_target_map'  => $target_map,
 			'provider_layout_overlay_css' => $overlay['overlay'],
 		);
-		if ( ! empty( $unsupported_capabilities ) ) {
-			$row['unsupported_capabilities'] = $unsupported_capabilities;
+		if ( ! empty( $state->unsupported_capabilities ) ) {
+			$row['unsupported_capabilities'] = $state->unsupported_capabilities;
 		}
 		if ( ! empty( $visual_state['state'] ) ) {
 			$row['form_visual_state'] = $visual_state['state'];
@@ -826,7 +938,7 @@ class Static_Site_Importer_Form_Seeder {
 		if ( ! empty( $visual_state['diagnostics'] ) ) {
 			$row['form_visual_state_diagnostics'] = $visual_state['diagnostics'];
 		}
-		return Static_Site_Importer_Form_Mapping_Plan::prepared( $form, $field_blocks, $form_block, $host['shell'], $row );
+		return $row;
 	}
 
 	/** Build the skipped mapping plan for a form the provider cannot represent. */
