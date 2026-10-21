@@ -2745,7 +2745,19 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * Tailwind CSS v4 emits for its own `md:`/`lg:`/etc. prefixes.
 	 */
 	private static function is_min_width_media_query( string $query ): bool {
-		return 1 === preg_match( '/^(?:(?:only )?screen and )?\((?:min-width:\s?[0-9]+(?:\.[0-9]+)?(?:px|em|rem)|width\s*>=\s*[0-9]+(?:\.[0-9]+)?(?:px|em|rem))\)$/D', $query );
+		return null !== self::min_width_breakpoint( $query );
+	}
+
+	/**
+	 * The breakpoint a single-breakpoint widening query starts at, as its length.
+	 * The one grammar both the predicate and the inverter read, so every query
+	 * accepted as a widening also has a stacked range below it.
+	 */
+	private static function min_width_breakpoint( string $query ): ?string {
+		if ( 1 !== preg_match( '/^(?:(?:only )?screen and )?\((?:min-width:\s?|width\s*>=\s*)([0-9]+(?:\.[0-9]+)?(?:px|em|rem))\)$/D', $query, $match ) ) {
+			return null;
+		}
+		return $match[1];
 	}
 
 	/**
@@ -2772,13 +2784,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * include the bound, so the stacked state is the strict less-than range.
 	 */
 	private static function inverted_min_width_media_query( string $query ): ?string {
-		if ( 1 === preg_match( '/^(?:(?:only )?screen and )?\(min-width:\s?([0-9]+(?:\.[0-9]+)?)(px|em|rem)\)$/D', $query, $match ) ) {
-			return '(width<' . $match[1] . $match[2] . ')';
-		}
-		if ( 1 === preg_match( '/^(?:screen and )?\(width\s*>=\s*([0-9]+(?:\.[0-9]+)?)(px|em|rem)\)$/D', $query, $match ) ) {
-			return '(width<' . $match[1] . $match[2] . ')';
-		}
-		return null;
+		$breakpoint = self::min_width_breakpoint( $query );
+		return null === $breakpoint ? null : '(width<' . $breakpoint . ')';
 	}
 
 	/**
