@@ -587,6 +587,42 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	}
 
 	/**
+	 * Suppress provider-only chrome where the imported select owns its arrow.
+	 *
+	 * @param string $html Provider field HTML.
+	 * @return string
+	 */
+	private static function project_select_decoration( string $html ): string {
+		if ( ! str_contains( $html, 'jetpack-field-dropdown__icon' ) || ! class_exists( 'WP_HTML_Tag_Processor' ) ) {
+			return $html;
+		}
+		$tags          = new WP_HTML_Tag_Processor( $html );
+		$depth         = 0;
+		$wrapper_depth = null;
+		while ( $tags->next_tag( array( 'tag_closers' => 'visit' ) ) ) {
+			if ( 'DIV' === $tags->get_tag() ) {
+				if ( $tags->is_tag_closer() ) {
+					if ( $wrapper_depth === $depth ) {
+						$wrapper_depth = null;
+					}
+					--$depth;
+				} else {
+					++$depth;
+					if ( $tags->has_class( 'contact-form__select-wrapper' ) && preg_match( '/(?:^|\\s)ssi-node-[a-f0-9]{12}(?:\\s|$)/', (string) $tags->get_attribute( 'class' ) ) ) {
+						$wrapper_depth = $depth;
+					}
+				}
+			}
+			if ( null !== $wrapper_depth && ! $tags->is_tag_closer() && $tags->has_class( 'jetpack-field-dropdown__icon' ) ) {
+				// The presentation overlay restores the native appearance (or carries
+				// the source's own appearance/background). Neither needs this icon.
+				$tags->set_attribute( 'style', 'display:none!important' );
+			}
+		}
+		return $tags->get_updated_html();
+	}
+
+	/**
 	 * Move help presentation classes from the field shell to its description.
 	 *
 	 * @param string $html Provider field HTML.
@@ -639,6 +675,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 	 * @return string
 	 */
 	public static function project_wrapper_classes( string $html ): string {
+		$html = self::project_select_decoration( $html );
 		// A telephone field without the country selector renders as a plain tel
 		// input ($is_plain_tel). It has no shell, carrier, or prefix box for those
 		// hooks to style.
