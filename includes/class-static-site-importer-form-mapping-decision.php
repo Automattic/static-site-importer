@@ -77,7 +77,7 @@ final class Static_Site_Importer_Form_Mapping_Decision {
 				if ( ! is_array( $target ) || ! is_string( $target['node'] ?? null ) || hash( 'sha256', $target['node'] ) !== $loss['node_hash'] || ! is_array( $target['capabilities'] ?? null ) ) {
 					continue;
 				}
-				if ( array_diff( array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' ), $target['capabilities'] ) === array() ) {
+				if ( array_diff( Static_Site_Importer_Provider_Layout_Overlay::LAYOUT_CAPABILITIES, $target['capabilities'] ) === array() ) {
 					return true;
 				}
 			}

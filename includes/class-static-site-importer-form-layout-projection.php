@@ -5277,7 +5277,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			} elseif ( preg_match( '/^field-([0-9]+)$/D', $id, $matches ) ) {
 				$selector     = $selector_scope . ' .' . self::layout_node_class( $scope, 'control-' . $matches[1] ) . '-wrap';
 				$part         = 'field';
-				$capabilities = array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' );
+				$capabilities = Static_Site_Importer_Provider_Layout_Overlay::LAYOUT_CAPABILITIES;
 			} else {
 				$hook = $box_targets[ $id ] ?? self::layout_node_class( $scope, $id );
 				// A topology hook spelled `<node class>-wrap` addresses the front-end
@@ -5288,7 +5288,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					$selector .= ' > .wp-block-button__link';
 					$part      = 'submit_link_box';
 				}
-				$capabilities = array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' );
+				$capabilities = Static_Site_Importer_Provider_Layout_Overlay::LAYOUT_CAPABILITIES;
 			}
 			$targets[] = array(
 				'part'         => $part,

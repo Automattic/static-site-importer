@@ -31,6 +31,19 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	public const SURFACE_FRONT_END = 'front_end';
 	public const SURFACE_EDITOR    = 'editor';
 
+	/** Capabilities a provider target needs for the overlay to own its full layout. */
+	public const LAYOUT_CAPABILITIES = array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' );
+
+	/**
+	 * Scope-suffix rules every surface adds on the native topology: provider
+	 * field state stays in the DOM, while its synthetic shell has no box between
+	 * a source container and the source-owned input.
+	 */
+	private const NATIVE_PASSTHROUGH = array(
+		' .ssi-native-control-shell-wrap'      => 'display:contents',
+		' .wp-block-button.form-button-submit' => 'display:contents',
+	);
+
 	/**
 	 * Declared render surfaces of the provider form overlay; `compile()` builds
 	 * one per pass, and `compile_surfaces()` assembles them.
@@ -143,7 +156,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		$seen    = array();
 		$targets = array();
 		foreach ( $map['targets'] as $target ) {
-			if ( ! is_array( $target ) || array_diff( array_keys( $target ), array( 'node', 'selector', 'capabilities' ) ) || ! is_string( $target['node'] ?? null ) || ! isset( $nodes[ $target['node'] ] ) || isset( $seen[ $target['node'] ] ) || ! is_string( $target['selector'] ?? null ) || ! self::safe_selector( $target['selector'], $map['scope'] ) || ! is_array( $target['capabilities'] ?? null ) || ! array_is_list( $target['capabilities'] ) || array_diff( $target['capabilities'], array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' ) ) ) {
+			if ( ! is_array( $target ) || array_diff( array_keys( $target ), array( 'node', 'selector', 'capabilities' ) ) || ! is_string( $target['node'] ?? null ) || ! isset( $nodes[ $target['node'] ] ) || isset( $seen[ $target['node'] ] ) || ! is_string( $target['selector'] ?? null ) || ! self::safe_selector( $target['selector'], $map['scope'] ) || ! is_array( $target['capabilities'] ?? null ) || ! array_is_list( $target['capabilities'] ) || array_diff( $target['capabilities'], self::LAYOUT_CAPABILITIES ) ) {
 				return array( 'error' => 'provider layout target map contains an unsafe target.' );
 			}
 			$seen[ $target['node'] ] = true;
@@ -242,7 +255,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		foreach ( $graph['nodes'] ?? array() as $node ) {
 			$id     = $node['id'] ?? '';
 			$target = $targets[ $id ] ?? null;
-			if ( ! is_array( $target ) || ! empty( array_diff( array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' ), $target['capabilities'] ) ) || empty( $node['presentation']['styles'] ) ) {
+			if ( ! is_array( $target ) || ! empty( array_diff( self::LAYOUT_CAPABILITIES, $target['capabilities'] ) ) || empty( $node['presentation']['styles'] ) ) {
 				continue;
 			}
 			// A physical native source box owns its own paint as well as layout.
@@ -453,12 +466,8 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				// The provider's success state removes its real form from layout.
 				// Source display facts must not resurrect those submitted controls.
 				$native_scope . ' form.jetpack-contact-form__form.submission-success' => 'display:none',
-				// Provider field state stays in the DOM, while its synthetic shell has
-				// no box between a source container and the source-owned input.
-				$scope . ' .ssi-native-control-shell-wrap' => 'display:contents',
-				$scope . ' .wp-block-button.form-button-submit' => 'display:contents',
 			);
-			foreach ( $declared['native_passthrough'] as $suffix => $declarations ) {
+			foreach ( array_merge( self::NATIVE_PASSTHROUGH, $declared['native_passthrough'] ) as $suffix => $declarations ) {
 				$native[ $scope . $suffix ] = $declarations;
 			}
 			foreach ( $native as $selector => $declarations ) {
@@ -924,22 +933,27 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( array_keys( $overlay ) !== $expected_keys || self::OVERLAY_SCHEMA !== ( $overlay['schema'] ?? null ) || ! is_string( $overlay['css'] ?? null ) || ( isset( $overlay['editor_css'] ) && ( ! is_string( $overlay['editor_css'] ) || ! is_string( $overlay['editor_sha256'] ?? null ) || ! is_int( $overlay['editor_bytes'] ?? null ) ) ) || ! is_string( $overlay['sha256'] ?? null ) || ! is_int( $overlay['bytes'] ?? null ) ) {
 			return null;
 		}
-		$css = $overlay['css'];
-		if ( strlen( $css ) !== $overlay['bytes'] || $overlay['bytes'] > self::MAX_OVERLAY_BYTES || ! preg_match( '/^[a-f0-9]{64}$/D', $overlay['sha256'] ) || ! hash_equals( $overlay['sha256'], hash( 'sha256', $css ) ) ) {
-			return null;
+		// Integrity of each artifact, in order: `css`, `editor_css`, `context_css`,
+		// `editor_context_css`. The front-end `css` is checked even when empty.
+		foreach ( array( 'css', 'context' ) as $role ) {
+			foreach ( array( self::SURFACE_FRONT_END, self::SURFACE_EDITOR ) as $surface ) {
+				$key   = self::SURFACES[ $surface ][ $role ]['key'];
+				$value = $overlay[ $key ] ?? '';
+				if ( 'css' !== $key && '' === $value ) {
+					continue;
+				}
+				$field  = substr( $key, 0, -strlen( 'css' ) );
+				$sha256 = $overlay[ $field . 'sha256' ];
+				$bytes  = $overlay[ $field . 'bytes' ];
+				if ( strlen( $value ) !== $bytes || $bytes > self::MAX_OVERLAY_BYTES || ! preg_match( '/^[a-f0-9]{64}$/D', $sha256 ) || ! hash_equals( $sha256, hash( 'sha256', $value ) ) ) {
+					return null;
+				}
+			}
 		}
-		$editor_css = $overlay['editor_css'] ?? '';
-		if ( '' !== $editor_css && ( strlen( $editor_css ) !== $overlay['editor_bytes'] || $overlay['editor_bytes'] > self::MAX_OVERLAY_BYTES || ! preg_match( '/^[a-f0-9]{64}$/D', $overlay['editor_sha256'] ) || ! hash_equals( $overlay['editor_sha256'], hash( 'sha256', $editor_css ) ) ) ) {
-			return null;
-		}
+		$css                = $overlay['css'];
+		$editor_css         = $overlay['editor_css'] ?? '';
 		$context_css        = $overlay['context_css'] ?? '';
 		$editor_context_css = $overlay['editor_context_css'] ?? '';
-		if ( '' !== $context_css && ( strlen( $context_css ) !== $overlay['context_bytes'] || $overlay['context_bytes'] > self::MAX_OVERLAY_BYTES || ! preg_match( '/^[a-f0-9]{64}$/D', $overlay['context_sha256'] ) || ! hash_equals( $overlay['context_sha256'], hash( 'sha256', $context_css ) ) ) ) {
-			return null;
-		}
-		if ( '' !== $editor_context_css && ( strlen( $editor_context_css ) !== $overlay['editor_context_bytes'] || $overlay['editor_context_bytes'] > self::MAX_OVERLAY_BYTES || ! preg_match( '/^[a-f0-9]{64}$/D', $overlay['editor_context_sha256'] ) || ! hash_equals( $overlay['editor_context_sha256'], hash( 'sha256', $editor_context_css ) ) ) ) {
-			return null;
-		}
 		if ( strlen( $css ) + strlen( $context_css ) > self::overlay_byte_limit( $css ) || strlen( $editor_css ) + strlen( $editor_context_css ) > self::overlay_byte_limit( $editor_css ) ) {
 			return null;
 		}
@@ -985,18 +999,28 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		return true;
 	}
 
-	private static function safe_context_fallback_artifact_rule( string $rule ): bool {
+	/** The body of an admitted `@media` / `@container` rule, or null when the rule is not one. */
+	private static function unwrap_condition( string $rule ): ?string {
 		if ( preg_match( '/^@(?:media (' . self::MEDIA_FEATURE_QUERY . '(?:,' . self::MEDIA_FEATURE_QUERY . '){0,127})|container (' . self::MEDIA_FEATURE_QUERY . '))\{(.+)\}$/D', $rule, $matches ) ) {
-			return self::safe_context_fallback_artifact_rule( $matches[3] );
+			return $matches[3];
+		}
+		return null;
+	}
+
+	private static function safe_context_fallback_artifact_rule( string $rule ): bool {
+		$body = self::unwrap_condition( $rule );
+		if ( null !== $body ) {
+			return self::safe_context_fallback_artifact_rule( $body );
 		}
 		return self::safe_context_fallback_rule( $rule );
 	}
 
 	private static function safe_editor_compiled_rule( string $rule ): bool {
-		if ( preg_match( '/^@(?:media (' . self::MEDIA_FEATURE_QUERY . '(?:,' . self::MEDIA_FEATURE_QUERY . '){0,127})|container (' . self::MEDIA_FEATURE_QUERY . '))\{(.+)\}$/D', $rule, $matches ) ) {
-			return self::safe_editor_compiled_rule( $matches[3] );
+		$body = self::unwrap_condition( $rule );
+		if ( null !== $body ) {
+			return self::safe_editor_compiled_rule( $body );
 		}
-		$prefix = '.editor-styles-wrapper ';
+		$prefix = self::SURFACES[ self::SURFACE_EDITOR ]['prefix'];
 		if ( ! preg_match( '/^([^{}]+)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
@@ -1009,15 +1033,16 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			$selectors = explode( ', ', $list[1] );
 			return count( $selectors ) <= 128 && ! array_filter( $selectors, static fn( string $selector ): bool => ! self::safe_compiled_rule( $selector . '{' . $list[2] . '}' ) );
 		}
-		$rule = str_replace( ' > div.jetpack-field__control{', '{', $rule );
+		$rule = str_replace( self::SURFACES[ self::SURFACE_EDITOR ]['field_control']['suffix'] . '{', '{', $rule );
 		if ( self::safe_context_fallback_rule( $rule ) ) {
 			return true;
 		}
 		if ( preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? \.ssi-node-[a-f0-9]{12})::placeholder\{color:revert;opacity:revert\}$/D', $rule ) ) {
 			return true;
 		}
-		if ( preg_match( '/^@(?:media (' . self::MEDIA_FEATURE_QUERY . '(?:,' . self::MEDIA_FEATURE_QUERY . '){0,127})|container (' . self::MEDIA_FEATURE_QUERY . '))\{(.+)\}$/D', $rule, $matches ) ) {
-			return self::safe_compiled_rule( $matches[3] );
+		$body = self::unwrap_condition( $rule );
+		if ( null !== $body ) {
+			return self::safe_compiled_rule( $body );
 		}
 		// The provider form target is admitted as both of its rendered spellings,
 		// so a compiled rule may carry that two-part selector list.
@@ -1030,7 +1055,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			$scope       = $scope_match[1];
 			$selector    = str_starts_with( $matches[1], $scope . $scope ) ? substr( $matches[1], strlen( $scope ) ) : $matches[1];
 			$native_safe = ( str_contains( $selector, '.ssi-native-form-topology' ) && self::safe_selector( $selector, $scope ) )
-				|| ( in_array( $selector, array( $scope . ' .ssi-native-control-shell', $scope . ' .ssi-native-control-shell-wrap', $scope . ' .wp-block-button.form-button-submit', $scope . self::SURFACES[ self::SURFACE_FRONT_END ]['container_passthrough'][0]['suffix'] ), true ) && 'display:contents' === $matches[2] );
+				|| ( in_array( substr( $selector, strlen( $scope ) ), array( ' .ssi-native-control-shell', ...array_keys( self::NATIVE_PASSTHROUGH ), self::SURFACES[ self::SURFACE_FRONT_END ]['container_passthrough'][0]['suffix'] ), true ) && 'display:contents' === $matches[2] );
 		}
 		if ( ! preg_match( '/^' . $scope_selector . '$/D', $matches[1] ) && ! $native_safe ) {
 			return false;
@@ -1080,8 +1105,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			$allowed = array( $native_scope, $native_scope . '.jetpack-contact-form-container', $native_scope . ' form.jetpack-contact-form__form', $native_scope . '.wp-block-jetpack-contact-form:not(:has(form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *)', $native_scope . ' > div.jetpack-contact-form', $native_scope . '.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form)', $native_scope . '.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *)', $native_scope . ' form.jetpack-contact-form__form.submission-success' );
 			return count( $parts ) <= 2 && empty( array_diff( $parts, $allowed ) );
 		}
-		if ( str_ends_with( $selector, ' > div.jetpack-field__control' ) ) {
-			return self::safe_selector( substr( $selector, 0, -strlen( ' > div.jetpack-field__control' ) ), $scope );
+		$field_control = self::SURFACES[ self::SURFACE_EDITOR ]['field_control']['suffix'];
+		if ( str_ends_with( $selector, $field_control ) ) {
+			return self::safe_selector( substr( $selector, 0, -strlen( $field_control ) ), $scope );
 		}
 		// A select control's own padding is declared on the `<select>` element,
 		// nested a level deeper than the generated node hook (an intervening
