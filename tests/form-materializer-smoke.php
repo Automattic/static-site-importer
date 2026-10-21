@@ -1289,7 +1289,7 @@ namespace {
 	// The container presentation paints the source form's own box once; the
 	// layout graph's copy of those box facts on the form node must not paint it
 	// a second time on the provider form inside that box.
-	$deduped_graph = Static_Site_Importer_Form_Layout_Projection::without_container_box_facts(
+	$deduped_graph = Static_Site_Importer_Form_Box_Transposition::without_container_box_facts(
 		array(
 			'nodes'    => array(
 				array(
@@ -1325,7 +1325,7 @@ namespace {
 	);
 	// A container `margin` shorthand owns the form node's margin longhands, the
 	// way the layout graph records the same source declaration.
-	$shorthand_graph = Static_Site_Importer_Form_Layout_Projection::without_container_box_facts(
+	$shorthand_graph = Static_Site_Importer_Form_Box_Transposition::without_container_box_facts(
 		array(
 			'nodes' => array(
 				array(

@@ -307,7 +307,7 @@ class Static_Site_Importer_Form_Seeder {
 	/** Normalize the producer form and release the controls the provider will map. */
 	private static function normalized_plan_state( array $form ): Static_Site_Importer_Form_Plan_State {
 		$state                      = new Static_Site_Importer_Form_Plan_State();
-		$form                       = Static_Site_Importer_Form_Layout_Projection::separate_source_boxes( $form );
+		$form                       = Static_Site_Importer_Form_Box_Transposition::separate_source_boxes( $form );
 		$form                       = Static_Site_Importer_Form_Layout_Projection::normalize_unconditional_layout_variants( $form );
 		$controls                   = isset( $form['controls'] ) && is_array( $form['controls'] ) ? $form['controls'] : array();
 		$form                       = self::project_submit_style_into_presentation_graph( $form, $controls );
@@ -589,7 +589,7 @@ class Static_Site_Importer_Form_Seeder {
 	/** Start the overlay graph from the split provider graph, topology targets and direct label/control gaps. */
 	private static function seed_overlay_graph( Static_Site_Importer_Form_Plan_State $state, array $topology, array $provider_graph ): array {
 		$box_targets            = $topology['provider_layout_targets'];
-		$overlay_graph          = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( Static_Site_Importer_Form_Layout_Projection::split_form_box( $provider_graph ), is_array( $state->form['layout_graph'] ?? null ) ? $state->form['layout_graph'] : array(), $box_targets );
+		$overlay_graph          = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( Static_Site_Importer_Form_Box_Transposition::split_form_box( $provider_graph ), is_array( $state->form['layout_graph'] ?? null ) ? $state->form['layout_graph'] : array(), $box_targets );
 		$overlay_graph['nodes'] = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || 'form-box' === ( $node['id'] ?? '' ) || isset( $box_targets[ (string) ( $node['id'] ?? '' ) ] ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
 		foreach ( $topology['overlay_node_targets'] as $target ) {
 			self::upsert_overlay_node( $overlay_graph, $target );
@@ -864,7 +864,7 @@ class Static_Site_Importer_Form_Seeder {
 		// Provider_Layout_Overlay's `generic/form-container-presentation/v1` destination).
 		// It belongs on the rendered page, not only inside editor chrome, so the frontend
 		// compile also receives it.
-		$overlay_graph = Static_Site_Importer_Form_Layout_Projection::without_container_box_facts( $overlay_form['layout_graph'], $container_presentation );
+		$overlay_graph = Static_Site_Importer_Form_Box_Transposition::without_container_box_facts( $overlay_form['layout_graph'], $container_presentation );
 		// One assembly: each declared surface compiles from its own map, and the
 		// overlay, its operations and its losses come back together.
 		$overlay = Static_Site_Importer_Provider_Layout_Overlay::compile_surfaces( $overlay_graph, $maps['target'], $maps['editor'], $presentation_graph, $container_presentation, $context_fallbacks );
