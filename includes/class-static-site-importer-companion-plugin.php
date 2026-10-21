@@ -872,6 +872,15 @@ class Static_Site_Importer_Companion_Plugin {
 			? sprintf( "\treturn get_stylesheet() === (string) ( %s_config()['owner_slug'] ?? '' );", $fn_prefix )
 			: sprintf( "\treturn ! function_exists( 'get_option' ) || (string) ( %s_config()['plugin_file'] ?? '' ) === (string) get_option( 'static_site_importer_active_companion_plugin', '' );", $fn_prefix );
 		$lines[] = '}';
+		if ( 'theme' === $owner ) {
+			// Source-authored chrome already contains its captured commerce controls.
+			// Resolve WooCommerce's opt-out at read time so activation cannot reset it,
+			// and switching away leaves the store's underlying setting untouched.
+			$lines[] = sprintf( 'function %s_source_chrome_block_hooks( $pre ) {', $fn_prefix );
+			$lines[] = sprintf( "\treturn %s_is_current_owner() ? 'no' : \$pre;", $fn_prefix );
+			$lines[] = '}';
+			$lines[] = sprintf( "add_filter( 'pre_option_woocommerce_hooked_blocks_version', '%s_source_chrome_block_hooks' );", $fn_prefix );
+		}
 		$lines[] = "require_once __DIR__ . '/includes/provider-form-runtime-v1.php';";
 		$lines[] = "require_once __DIR__ . '/includes/internal-link-runtime.php';";
 		$lines[] = "require_once __DIR__ . '/includes/source-route-redirect.php';";
