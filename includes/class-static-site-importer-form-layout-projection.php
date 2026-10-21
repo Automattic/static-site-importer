@@ -262,7 +262,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				}
 				$parts     = preg_split( '/\s*[\s>+~]\s*/', trim( (string) ( $row['selector'] ?? '' ) ) );
 				$rightmost = false === $parts ? '' : (string) end( $parts );
-				if ( ( $subject_only && ( count( $parts ?: array() ) !== 1 || ! str_starts_with( $rightmost, '.' ) ) ) || null !== ( $row['condition'] ?? null ) || ! preg_match( '/^(?:[a-z][a-z0-9-]*)?((?:\.[A-Za-z_][A-Za-z0-9_-]*)+)$/D', $rightmost, $compound ) || array_diff( explode( '.', ltrim( $compound[1], '.' ) ), $class_tokens ) ) {
+				if ( ( $subject_only && ( false === $parts || count( $parts ) !== 1 || ! str_starts_with( $rightmost, '.' ) ) ) || null !== ( $row['condition'] ?? null ) || ! preg_match( '/^(?:[a-z][a-z0-9-]*)?((?:\.[A-Za-z_][A-Za-z0-9_-]*)+)$/D', $rightmost, $compound ) || array_diff( explode( '.', ltrim( $compound[1], '.' ) ), $class_tokens ) ) {
 					$owners = -1;
 					break;
 				}
@@ -290,13 +290,18 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			if ( 'submit' !== ( $control['type'] ?? '' ) ) {
 				continue;
 			}
-			$tokens = preg_split( '/\s+/', trim( (string) ( $control['class'] ?? '' ) ) ) ?: array();
+			$tokens = preg_split( '/\s+/', trim( (string) ( $control['class'] ?? '' ) ) );
+			$tokens = false === $tokens ? array() : $tokens;
 			$part   = $row['control'] ?? array();
 			$facts  = self::class_carried_box_facts(
 				$part['styles'] ?? array(),
 				$part['provenance'] ?? array(),
 				$tokens,
-				array( 'background' => 'background', 'background_color' => 'background-color', 'color' => 'color' ),
+				array(
+					'background'       => 'background',
+					'background_color' => 'background-color',
+					'color'            => 'color',
+				),
 				true
 			);
 			// Never split overlapping shorthand/longhand ownership: a retained

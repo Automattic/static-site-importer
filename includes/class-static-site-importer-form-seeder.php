@@ -870,8 +870,8 @@ class Static_Site_Importer_Form_Seeder {
 		// Core's editor does not run the server-side source-class transfer hook.
 		// Keep its captured facts while the front end uses the live source rules.
 		$front_presentation = Static_Site_Importer_Form_Layout_Projection::without_class_carried_submit_colors( $presentation_graph, $state->controls );
-		$overlay = Static_Site_Importer_Provider_Layout_Overlay::compile_surfaces( $overlay_graph, $maps['target'], $maps['editor'], $front_presentation, $container_presentation, $context_fallbacks, $presentation_graph );
-		$overlay = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_provider_errors( $overlay, $state->scope, $state->mapped_types );
+		$overlay            = Static_Site_Importer_Provider_Layout_Overlay::compile_surfaces( $overlay_graph, $maps['target'], $maps['editor'], $front_presentation, $container_presentation, $context_fallbacks, $presentation_graph );
+		$overlay            = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_provider_errors( $overlay, $state->scope, $state->mapped_types );
 		self::append_receipt_entries( $state->layout['receipt'], 'operations', $overlay['operations'] );
 		self::append_receipt_entries( $state->layout['receipt'], 'operations', $state->layout_intent['operations'] );
 		self::append_receipt_entries( $state->layout['receipt'], 'losses', $overlay['losses'] );
