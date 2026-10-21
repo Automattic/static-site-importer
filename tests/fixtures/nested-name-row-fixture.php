@@ -42,7 +42,7 @@ namespace {
 	}
 	$field_html = '';
 	foreach ( $fields as $field ) {
-		$field_html .= Static_Site_Importer_Form_Seeder::project_provider_wrapper_classes(
+		$field_html .= Static_Site_Importer_Provider_Form_Runtime_V1::project_wrapper_classes(
 			'<div class="grunion-field-' . $field['type'] . '-wrap ' . $field['classes'] . '"><label>' . $field['label'] . '</label><input></div>'
 		);
 	}
