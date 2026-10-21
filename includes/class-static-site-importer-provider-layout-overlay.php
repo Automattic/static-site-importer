@@ -1035,7 +1035,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( ! preg_match( '/^' . $scope_selector . '$/D', $matches[1] ) && ! $native_safe ) {
 			return false;
 		}
-		$layout_allowed       = array( 'display', 'width', 'height', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'position', 'z-index', 'pointer-events', ...array_values( self::box_property_map() ) );
+		$layout_allowed       = array( 'display', 'float', 'width', 'height', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'position', 'z-index', 'pointer-events', ...array_values( self::box_property_map() ) );
 		$presentation_allowed = array_merge( array_values( self::presentation_property_map() ), array( 'color', 'flex', 'font' ) );
 		foreach ( explode( ';', $matches[2] ) as $declaration ) {
 			$declaration = preg_replace( '/!important$/D', '', $declaration ) ?? $declaration;
@@ -1199,9 +1199,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * mechanism exists for. A source sibling-stacking rule (physical `margin-top`
 	 * or a flow-relative equivalent) is carried onto the provider form unscoped and
 	 * can be authored with unbounded specificity, so a plain reset declaration has
-	 * no reliable way to out-rank it. Only these four flow-relative margin
-	 * properties are ever forced; every other layout fact keeps ordinary cascade
-	 * weight.
+	 * no reliable way to out-rank it. Projected percentage cells also need forced
+	 * width/float resets on their restored inner layer, where authored half-class
+	 * rules must yield to the provider shell's ownership of the row width.
 	 *
 	 * @param mixed $important
 	 * @return array<int,string>
@@ -1210,13 +1210,14 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( ! is_array( $important ) ) {
 			return array();
 		}
-		return array_values( array_intersect( $important, array( 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end' ) ) );
+		return array_values( array_intersect( $important, array( 'float', 'width', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end' ) ) );
 	}
 
 	/** @return array<string,string> */
 	public static function layout_property_map(): array {
 		return array(
 			'display'             => 'display',
+			'float'               => 'float',
 			'position'            => 'position',
 			'top'                 => 'top',
 			'right'               => 'right',
@@ -1338,6 +1339,10 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( 'flex' === $fact ) {
 			// `flex: 1` is the one-number form of the same shorthand (`1 1 0%`).
 			return (bool) preg_match( '/^(?:none|(?:[0-9]+(?:\.[0-9]+)?)(?: [0-9]+(?:\.[0-9]+)?)?(?: (?:auto|0|(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh)))?)$/D', $value );
+		}
+		// Only the projection's neutralizing float reset is supported.
+		if ( 'float' === $fact ) {
+			return 'none' === $value;
 		}
 		if ( 'position' === $fact ) {
 			return in_array( $value, array( 'relative', 'static' ), true );
