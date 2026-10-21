@@ -2,7 +2,7 @@
 /**
  * Every part the front-end form overlay builder emits has an editor realisation.
  *
- * `Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map()`
+ * `Static_Site_Importer_Form_Presentation_Descriptor::editor_layout_target_map()`
  * derives the block-editor target map from each target's and destination's
  * declared `part`, realised either by the entry's own `editor` declaration
  * (the phone composite and the dropdown) or by `editor_surface_table()`. This
@@ -49,7 +49,7 @@ function ssi_editor_parts_write( string $stream, string $text ): void {
  */
 function ssi_editor_parts_derivation_throws( array $target_map, string $scope, string $reason = 'has no editor surface realisation' ): bool {
 	try {
-		Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $target_map, $scope );
+		Static_Site_Importer_Form_Presentation_Descriptor::editor_layout_target_map( $target_map, $scope );
 	} catch ( LogicException $exception ) {
 		return str_contains( $exception->getMessage(), $reason );
 	}
@@ -57,7 +57,7 @@ function ssi_editor_parts_derivation_throws( array $target_map, string $scope, s
 }
 
 $ssi_parts_scope    = 'ssi-form-123456789abc';
-$ssi_parts_table    = Static_Site_Importer_Form_Layout_Projection::editor_surface_table();
+$ssi_parts_table    = Static_Site_Importer_Form_Presentation_Descriptor::editor_surface_table();
 $ssi_parts_failures = array();
 $ssi_parts_checks   = 0;
 $ssi_parts_emitted  = array();
@@ -125,8 +125,8 @@ if ( array() !== $ssi_parts_dead ) {
 // still carries part ids is rejected.
 foreach ( $ssi_parts_maps as $ssi_parts_map ) {
 	$ssi_parts_candidates = array(
-		'canonical' => Static_Site_Importer_Form_Layout_Projection::without_parts( $ssi_parts_map ),
-		'editor'    => Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $ssi_parts_map, $ssi_parts_scope, array( 1 => Static_Site_Importer_Form_Textarea_Rows::resolve( array( 'tag' => 'textarea' ), array( 'height' => '10rem' ), false ) ) ),
+		'canonical' => Static_Site_Importer_Form_Presentation_Descriptor::without_parts( $ssi_parts_map ),
+		'editor'    => Static_Site_Importer_Form_Presentation_Descriptor::editor_layout_target_map( $ssi_parts_map, $ssi_parts_scope, array( 1 => Static_Site_Importer_Form_Textarea_Rows::resolve( array( 'tag' => 'textarea' ), array( 'height' => '10rem' ), false ) ) ),
 	);
 	foreach ( $ssi_parts_candidates as $ssi_parts_kind => $ssi_parts_candidate ) {
 		$ssi_parts_checks += 2;

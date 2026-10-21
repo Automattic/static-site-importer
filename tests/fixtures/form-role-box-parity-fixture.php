@@ -414,10 +414,10 @@ namespace {
 	 */
 	function ssi_role_box_instances( array $map ): array {
 		$scope           = substr( (string) $map['scope'], 1 );
-		$editor_selector = new ReflectionMethod( Static_Site_Importer_Form_Layout_Projection::class, 'editor_selector' );
+		$editor_selector = new ReflectionMethod( Static_Site_Importer_Form_Presentation_Descriptor::class, 'editor_selector' );
 		$instances = array();
 		$add       = static function ( string $part, array $entry, string $origin, ?array $declared = null ) use ( &$instances, $editor_selector, $scope ): void {
-			$surface   = Static_Site_Importer_Form_Layout_Projection::editor_surface_part( array( 'part' => $part ) + ( isset( $declared['editor'] ) ? array( 'editor' => $declared['editor'] ) : array() ) + $entry );
+			$surface   = Static_Site_Importer_Form_Presentation_Descriptor::editor_surface_part( array( 'part' => $part ) + ( isset( $declared['editor'] ) ? array( 'editor' => $declared['editor'] ) : array() ) + $entry );
 			$selectors = array();
 			if ( empty( $surface['drop'] ) ) {
 				$selectors[] = $editor_selector->invoke( null, $entry['selector'], $surface, '.' . $scope );

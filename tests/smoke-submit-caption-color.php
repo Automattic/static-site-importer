@@ -24,7 +24,7 @@ $assert     = static function ( bool $condition, string $message ) use ( &$asser
 };
 
 $scope      = 'ssi-form-123456789abc';
-$descriptor = Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $scope, 0, 'submit', array( 'control' => true ), true );
+$descriptor = Static_Site_Importer_Form_Presentation_Descriptor::presentation_descriptor( $scope, 0, 'submit', array( 'control' => true ), true );
 $caption    = array_values( array_filter( $descriptor['destinations'], static fn( array $destination ): bool => str_ends_with( $destination['selector'], ' > .wp-block-button__link > span' ) ) );
 $assert( 1 === count( $caption ), 'a captioned submit has one caption destination' );
 $assert( in_array( 'color', $caption[0]['properties'], true ), 'the caption destination carries the captured text colour' );
@@ -37,7 +37,7 @@ $graph              = array(
 		),
 	),
 );
-$map                = Static_Site_Importer_Form_Layout_Projection::without_parts( array(
+$map                = Static_Site_Importer_Form_Presentation_Descriptor::without_parts( array(
 	'schema'               => Static_Site_Importer_Provider_Layout_Overlay::MAP_SCHEMA,
 	'provider'             => 'synthetic',
 	'scope'                => '.' . $scope,
