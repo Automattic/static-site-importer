@@ -119,9 +119,16 @@ final class Static_Site_Importer_Form_Native_Topology {
 			// A physical source box does not need to establish flex/grid. A
 			// nested submit's height and width still have their own owner, and
 			// a class-carrying ancestry box may have no unconditional facts.
-			$box      = ! isset( $layout['display'] ) && ! array_diff( array_keys( $layout ), array_merge( array_keys( Static_Site_Importer_Provider_Layout_Overlay::box_property_map() ), array( 'width', 'height', 'flex', 'flex_basis', 'flex_grow', 'flex_shrink', 'align_self', 'justify_self', 'order' ) ) );
+			// `display: block` is a div's own flow, so it adds nothing a physical
+			// core/group does not already establish; the overlay carries it as is.
+			$box      = 'block' === ( $layout['display'] ?? 'block' ) && ! array_diff( array_keys( array_diff_key( $layout, array( 'display' => true ) ) ), array_merge( array_keys( Static_Site_Importer_Provider_Layout_Overlay::box_property_map() ), array( 'width', 'height', 'flex', 'flex_basis', 'flex_grow', 'flex_shrink', 'align_self', 'justify_self', 'order' ) ) );
 			$contents = array( 'display' => 'contents' ) === $layout;
-			if ( ! $flex && ! $grid && ! $box && ! $contents ) {
+			// A bare grid - no template, no gap, no responsive patch - places each
+			// child in its own row of one implicit column, stretched to the row's
+			// width. That needs no track mapping and no spacing owner: the overlay
+			// carries `display:grid` verbatim on the group standing in for the box.
+			$implicit_grid = array( 'display' => 'grid' ) === $layout && empty( $variants[ $id ] );
+			if ( ! $flex && ! $grid && ! $box && ! $contents && ! $implicit_grid ) {
 				return null;
 			}
 			foreach ( $variants[ $id ] ?? array() as $variant ) {
