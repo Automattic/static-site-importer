@@ -15,6 +15,9 @@ require_once __DIR__ . '/class-static-site-importer-provider-form-runtime.php';
 if ( ! class_exists( 'Static_Site_Importer_Jetpack_Forms_Runtime' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-jetpack-forms-runtime.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Form_Textarea_Rows' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-form-textarea-rows.php';
+}
 if ( ! class_exists( 'Static_Site_Importer_Form_Field_Markup' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-form-field-markup.php';
 }
@@ -125,49 +128,6 @@ class Static_Site_Importer_Form_Seeder {
 	public static function register_runtime_bootstrap(): void {
 		Static_Site_Importer_Jetpack_Forms_Runtime::register_runtime_bootstrap();
 	}
-
-	/** Move source submit presentation from Core's wrapper onto its button control. */
-	public static function project_provider_submit_presentation( string $html, array $block = array() ): string {
-		return Static_Site_Importer_Provider_Form_Runtime_V1::project_submit_presentation( $html, $block );
-	}
-
-	/** Restore the source field row onto the provider field shell. */
-	public static function project_provider_wrapper_classes( string $html ): string {
-		return Static_Site_Importer_Provider_Form_Runtime_V1::project_wrapper_classes( $html );
-	}
-
-	/** Carry an authored textarea row count onto Jetpack's hardcoded rows='20'. */
-	public static function project_provider_textarea_rows( string $html ): string {
-		return Static_Site_Importer_Provider_Form_Runtime_V1::project_textarea_rows( $html );
-	}
-
-	/** Restore a proven source root fieldset around Jetpack's rendered field list. */
-	public static function project_provider_plain_root_fieldset( string $html, array $block = array() ): string {
-		return Static_Site_Importer_Provider_Form_Runtime_V1::project_plain_root_fieldset( $html, $block );
-	}
-
-	/** Carry the provider block's layout role onto Jetpack's rendered page-grid item. */
-	public static function project_provider_form_container_placement( string $html, array $block = array() ): string {
-		return Static_Site_Importer_Provider_Form_Runtime_V1::project_form_container_placement( $html, $block );
-	}
-
-	/** Keep a source sibling submit outside the gapped field list. */
-	public static function project_provider_field_list_wrapper( string $html, array $block = array() ): string {
-		return Static_Site_Importer_Provider_Form_Runtime_V1::project_field_list_wrapper( $html, $block );
-	}
-
-	/**
-	 * Load Forms after Jetpack's autoloader is ready and before WordPress init.
-	 *
-	 * Jetpack 16 skips its normal after_setup_theme module loader for disconnected
-	 * sites. Its persisted contact-form module flag therefore needs this adapter
-	 * bootstrap on later frontend requests as well as during import preparation.
-	 */
-	public static function bootstrap_jetpack_forms_runtime(): void {
-		Static_Site_Importer_Jetpack_Forms_Runtime::bootstrap_jetpack_forms_runtime();
-	}
-
-
 
 	/**
 	 * Materialize Jetpack contact forms from a validated forms manifest.
@@ -304,7 +264,8 @@ class Static_Site_Importer_Form_Seeder {
 		$form        = Static_Site_Importer_Form_Layout_Projection::normalize_unconditional_layout_variants( $form );
 		$controls    = isset( $form['controls'] ) && is_array( $form['controls'] ) ? $form['controls'] : array();
 		$form        = self::project_submit_style_into_presentation_graph( $form, $controls );
-		$form        = self::project_textarea_row_height_into_presentation_graph( $form, $controls );
+		$textareas   = Static_Site_Importer_Form_Textarea_Rows::resolve_form( $form, $controls );
+		$form        = self::project_textarea_rows_into_presentation_graph( $form, $textareas );
 		$released    = self::release_visually_hidden_native_controls( $form, $controls );
 		$form        = $released['form'];
 		$controls    = $released['controls'];
@@ -359,7 +320,7 @@ class Static_Site_Importer_Form_Seeder {
 				continue;
 			}
 			$choice_box                                 = null !== Static_Site_Importer_Form_Layout_Projection::source_choice_label( $form, $control_index );
-			$presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $scope, $control_index, $type, $presentation_roles[ $control_index ] ?? array(), isset( $control['label_classes'] ) || isset( $control['label_marker'] ), $choice_box );
+			$presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $scope, $control_index, $type, $presentation_roles[ $control_index ] ?? array(), isset( $control['label_classes'] ) || isset( $control['label_marker'] ), $choice_box, Static_Site_Importer_Form_Layout_Projection::source_label_wraps_control( $form, $control_index ), Static_Site_Importer_Form_Layout_Projection::source_label_row_carried_margins( $form, $control_index ) );
 			if ( isset( $suppressed_controls[ $control_index ] ) ) {
 				continue;
 			}
@@ -374,7 +335,7 @@ class Static_Site_Importer_Form_Seeder {
 				continue;
 			}
 
-			if ( 'submit' === $type || ( 'button' === $tag && 'submit' === $type ) ) {
+			if ( 'submit' === $type ) {
 				$text              = Static_Site_Importer_Form_Field_Markup::control_text( $control );
 				$submit_text       = '' !== $text ? $text : $submit_text;
 				$has_source_submit = true;
@@ -445,9 +406,6 @@ class Static_Site_Importer_Form_Seeder {
 				$skipped[] = '' !== $type ? $type : $tag;
 				continue;
 			}
-			// Source responsive documents can repeat IDs. Provider state is keyed by
-			// field ID, so its identity must belong to this materialized form instance.
-			$field_block['attrs']['id'] = $scope . '-field-' . $control_index;
 			if ( ! empty( $control_phone_destinations ) ) {
 				foreach ( $field_block['innerBlocks'] as &$inner_block ) {
 					if ( 'jetpack/phone-input' === ( $inner_block['name'] ?? '' ) ) {
@@ -465,7 +423,8 @@ class Static_Site_Importer_Form_Seeder {
 			$has_provider_input                = (bool) array_filter( $field_block['innerBlocks'] ?? array(), static fn ( array $block ): bool => in_array( $block['name'] ?? '', array( 'jetpack/input', 'jetpack/phone-input' ), true ) );
 			$field_source_class                = $has_provider_input ? '' : $source_class;
 			$layout_hook                       = Static_Site_Importer_Form_Layout_Projection::layout_node_class( $scope, 'control-' . $control_index );
-			$field_block['attrs']['className'] = trim( $field_source_class . ' ' . $layout_hook );
+			$help_classes                      = isset( $field_block['attrs']['helpText'] ) ? Static_Site_Importer_Form_Field_Markup::help_class_markers( $form, $control ) : '';
+			$field_block['attrs']['className'] = trim( $field_source_class . ' ' . $layout_hook . ' ' . $help_classes );
 			if ( isset( $choice_pairs[ $control_index ] ) ) {
 				$choice_token = Static_Site_Importer_Provider_Form_Runtime_V1::choice_token( $control['options'] );
 				if ( '' === $choice_token ) {
@@ -496,29 +455,12 @@ class Static_Site_Importer_Form_Seeder {
 		}
 
 		if ( empty( $field_blocks ) ) {
-			return Static_Site_Importer_Form_Mapping_Plan::skipped( $form, array(
-				'selector'       => $selector,
-				'source_path'    => $source_path,
-				'provider'       => self::PROVIDER_ID,
-				'block_name'     => 'jetpack/contact-form',
-				'status'         => 'skipped',
-				'reason'         => 'no_mappable_form_fields',
-				'runtime_mapped' => false,
-				'skipped_types'  => array_values( array_unique( array_filter( $skipped ) ) ),
-			) );
+			return self::skipped_plan( $form, $selector, $source_path, 'no_mappable_form_fields', array( 'skipped_types' => array_values( array_unique( array_filter( $skipped ) ) ) ) );
 		}
 
 		$topology = Static_Site_Importer_Form_Layout_Projection::topology_inner_blocks( $form, $field_blocks, $controls, $suppressed_controls );
 		if ( null === $topology ) {
-			return Static_Site_Importer_Form_Mapping_Plan::skipped( $form, array(
-				'selector'       => $selector,
-				'source_path'    => $source_path,
-				'provider'       => self::PROVIDER_ID,
-				'block_name'     => 'jetpack/contact-form',
-				'status'         => 'skipped',
-				'reason'         => 'unsupported_control_topology',
-				'runtime_mapped' => false,
-			) );
+			return self::skipped_plan( $form, $selector, $source_path, 'unsupported_control_topology' );
 		}
 		$inner_blocks                     = $topology['blocks'];
 		$form['provider_native_topology'] = in_array( 'ssi-native-form-topology', $topology['form_classes'], true );
@@ -588,21 +530,7 @@ class Static_Site_Importer_Form_Seeder {
 		$overlay_graph          = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( Static_Site_Importer_Form_Layout_Projection::split_form_box( $provider_graph ), is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array(), $box_targets );
 		$overlay_graph['nodes'] = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || 'form-box' === ( $node['id'] ?? '' ) || isset( $box_targets[ (string) ( $node['id'] ?? '' ) ] ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
 		foreach ( $topology['overlay_node_targets'] as $target ) {
-			$merged = false;
-			foreach ( $overlay_graph['nodes'] as &$overlay_node ) {
-				if ( is_array( $overlay_node ) && ( $overlay_node['id'] ?? null ) === ( $target['id'] ?? null ) ) {
-					$overlay_node['layout'] = array_merge( is_array( $overlay_node['layout'] ?? null ) ? $overlay_node['layout'] : array(), $target['layout'] );
-					if ( ! empty( $target['important'] ) && is_array( $target['important'] ) ) {
-						$overlay_node['important'] = array_values( array_unique( array_merge( is_array( $overlay_node['important'] ?? null ) ? $overlay_node['important'] : array(), $target['important'] ) ) );
-					}
-					$merged = true;
-					break;
-				}
-			}
-			unset( $overlay_node );
-			if ( ! $merged ) {
-				$overlay_graph['nodes'][] = $target;
-			}
+			self::upsert_overlay_node( $overlay_graph, $target );
 		}
 		foreach ( Static_Site_Importer_Form_Layout_Projection::direct_label_control_gap_targets( $form ) as $target ) {
 			$control_index = $target['control'];
@@ -625,21 +553,13 @@ class Static_Site_Importer_Form_Seeder {
 				);
 				continue;
 			}
-			$merged = false;
-			foreach ( $overlay_graph['nodes'] as &$overlay_node ) {
-				if ( is_array( $overlay_node ) && ( $overlay_node['id'] ?? null ) === $target_id ) {
-					$overlay_node['layout'] = array_merge( $overlay_node['layout'] ?? array(), $layout_patch );
-					$merged                 = true;
-					break;
-				}
-			}
-			unset( $overlay_node );
-			if ( ! $merged ) {
-				$overlay_graph['nodes'][] = array(
+			self::upsert_overlay_node(
+				$overlay_graph,
+				array(
 					'id'     => $target_id,
 					'layout' => $layout_patch,
-				);
-			}
+				)
+			);
 			$layout['receipt']['operations'][] = array(
 				'dimension'   => 'layout',
 				'strategy'    => 'provider_direct_label_control_gap',
@@ -651,8 +571,10 @@ class Static_Site_Importer_Form_Seeder {
 		// renders in-form copy and the status output as items of that element,
 		// which the source row did not arrange, so the row is stated only when the
 		// element holds nothing but the fields and the submit.
-		$form_holds_only_controls = array() === Static_Site_Importer_Form_Field_Markup::context_blocks( $form, 'context_before' )
-			&& array() === Static_Site_Importer_Form_Field_Markup::context_blocks( $form, 'context_after' )
+		$context_before           = Static_Site_Importer_Form_Field_Markup::context_blocks( $form, 'context_before' );
+		$context_after            = Static_Site_Importer_Form_Field_Markup::context_blocks( $form, 'context_after' );
+		$form_holds_only_controls = array() === $context_before
+			&& array() === $context_after
 			&& 'status' !== ( is_array( $form['form']['trailing_status'] ?? null ) ? ( $form['form']['trailing_status']['role'] ?? null ) : null );
 		$form_base_layout         = array();
 		$item_base_layouts        = array();
@@ -708,6 +630,15 @@ class Static_Site_Importer_Form_Seeder {
 			$overlay_variant['layout_patch']['flex'] = '0 1 auto';
 		}
 		unset( $overlay_variant );
+		$field_wrapped_controls = array();
+		foreach ( $field_blocks as $control_index => $field_block ) {
+			// Only a control whose source parent is the form itself has a field
+			// wrapper standing where it stood: an item of the field container.
+			if ( 'form' === ( $source_layout_nodes[ 'control-' . $control_index ]['parent'] ?? null ) && str_starts_with( (string) ( $field_block['name'] ?? '' ), 'jetpack/field-' ) && ! isset( $box_targets[ 'control-' . $control_index ] ) && ! in_array( $control_index, $topology['whole_field_controls'] ?? array(), true ) ) {
+				$field_wrapped_controls[] = (int) $control_index;
+			}
+		}
+		$overlay_graph    = Static_Site_Importer_Form_Layout_Projection::with_field_wrapper_item_layout( $overlay_graph, $field_wrapped_controls );
 		$overlay_node_ids = array_fill_keys( array_map( static fn( array $node ): string => (string) $node['id'], $overlay_graph['nodes'] ), true );
 		foreach ( $topology['responsive_variant_targets'] as $variant ) {
 			if ( is_string( $variant['node'] ?? null ) && ! isset( $overlay_node_ids[ $variant['node'] ] ) ) {
@@ -798,7 +729,11 @@ class Static_Site_Importer_Form_Seeder {
 				$presentation_descriptors[ $row_control ] = Static_Site_Importer_Form_Layout_Projection::with_submit_row_button_box( $presentation_descriptors[ $row_control ] );
 			}
 		}
-		$target_map             = Static_Site_Importer_Form_Layout_Projection::provider_layout_target_map( $overlay_form, $scope, $presentation_descriptors, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
+		// The declared part of every target and destination drives the editor
+		// derivation only; the canonical map that is validated, compiled, and
+		// recorded carries none.
+		$part_map               = Static_Site_Importer_Form_Layout_Projection::provider_layout_target_map( $overlay_form, $scope, $presentation_descriptors, $box_targets, $topology['phone_popup_targets'], $visual_state['trigger_class'] ?? '' );
+		$target_map             = Static_Site_Importer_Form_Layout_Projection::without_parts( $part_map );
 		$presentation_graph     = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
 		$container_presentation = is_array( $form['form']['container_presentation'] ?? null ) ? $form['form']['container_presentation'] : array();
 		$context_fallbacks      = Static_Site_Importer_Form_Field_Markup::context_style_fallbacks( $form );
@@ -817,19 +752,20 @@ class Static_Site_Importer_Form_Seeder {
 		// Provider_Layout_Overlay's `generic/form-container-presentation/v1` destination).
 		// It belongs on the rendered page, not only inside editor chrome, so the frontend
 		// compile also receives it.
-		$overlay        = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $target_map, $presentation_graph, $container_presentation, false, $context_fallbacks );
-		$overlay        = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_provider_errors( $overlay, $scope, $mapped_types );
-		$editor_map     = Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $target_map, $scope );
-		$editor_overlay = Static_Site_Importer_Provider_Layout_Overlay::compile( $overlay_graph, $editor_map, $presentation_graph, $container_presentation, true, $context_fallbacks );
-		if ( isset( $editor_overlay['overlay']['editor_css'] ) ) {
-			foreach ( array( 'editor_css', 'editor_sha256', 'editor_bytes', 'context_css', 'context_sha256', 'context_bytes', 'editor_context_css', 'editor_context_sha256', 'editor_context_bytes' ) as $key ) {
-				if ( ! array_key_exists( $key, $editor_overlay['overlay'] ) ) {
-					continue;
-				}
-				$overlay['overlay'][ $key ] = $editor_overlay['overlay'][ $key ];
+		$overlay_graph = Static_Site_Importer_Form_Layout_Projection::without_container_box_facts( $overlay_graph, $container_presentation );
+		// The editor sizes a textarea from its resolved policy; a control whose
+		// presentation row the overlay withdrew has no editor box to size.
+		$editor_textareas = array();
+		foreach ( is_array( $presentation_graph['controls'] ?? null ) ? $presentation_graph['controls'] : array() as $row ) {
+			if ( is_array( $row ) && is_int( $row['index'] ?? null ) && is_array( $row['control']['styles'] ?? null ) && isset( $textareas[ $row['index'] ] ) ) {
+				$editor_textareas[ $row['index'] ] = $textareas[ $row['index'] ];
 			}
 		}
-		self::append_receipt_entries( $layout['receipt'], 'losses', $editor_overlay['losses'] );
+		$editor_map = Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $part_map, $scope, $editor_textareas );
+		// One assembly: each declared surface compiles from its own map, and the
+		// overlay, its operations and its losses come back together.
+		$overlay = Static_Site_Importer_Provider_Layout_Overlay::compile_surfaces( $overlay_graph, $target_map, $editor_map, $presentation_graph, $container_presentation, $context_fallbacks );
+		$overlay = Static_Site_Importer_Form_Layout_Projection::collapse_inactive_provider_errors( $overlay, $scope, $mapped_types );
 		self::append_receipt_entries( $layout['receipt'], 'operations', $overlay['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'operations', $layout_intent['operations'] );
 		self::append_receipt_entries( $layout['receipt'], 'losses', $overlay['losses'] );
@@ -858,11 +794,7 @@ class Static_Site_Importer_Form_Seeder {
 				'attrs' => $attrs,
 			);
 		}
-		$inner_blocks = array_merge(
-			Static_Site_Importer_Form_Field_Markup::context_blocks( $form, 'context_before' ),
-			$inner_blocks,
-			Static_Site_Importer_Form_Field_Markup::context_blocks( $form, 'context_after' )
-		);
+		$inner_blocks = array_merge( $context_before, $inner_blocks, $context_after );
 		$form_block   = array(
 			'name'        => 'jetpack/contact-form',
 			'attrs'       => $form_attrs,
@@ -895,6 +827,46 @@ class Static_Site_Importer_Form_Seeder {
 			$row['form_visual_state_diagnostics'] = $visual_state['diagnostics'];
 		}
 		return Static_Site_Importer_Form_Mapping_Plan::prepared( $form, $field_blocks, $form_block, $host['shell'], $row );
+	}
+
+	/** Build the skipped mapping plan for a form the provider cannot represent. */
+	private static function skipped_plan( array $form, string $selector, string $source_path, string $reason, array $extra = array() ): Static_Site_Importer_Form_Mapping_Plan {
+		return Static_Site_Importer_Form_Mapping_Plan::skipped(
+			$form,
+			array_merge(
+				array(
+					'selector'       => $selector,
+					'source_path'    => $source_path,
+					'provider'       => self::PROVIDER_ID,
+					'block_name'     => 'jetpack/contact-form',
+					'status'         => 'skipped',
+					'reason'         => $reason,
+					'runtime_mapped' => false,
+				),
+				$extra
+			)
+		);
+	}
+
+	/**
+	 * Merge `$node`'s layout (and any `important` list) into the overlay node
+	 * with the same id, or append `$node` when the graph has none.
+	 *
+	 * @param array<string,mixed> $graph Overlay layout graph.
+	 * @param array<string,mixed> $node  Node with `id`, `layout` and optional `important`.
+	 */
+	private static function upsert_overlay_node( array &$graph, array $node ): void {
+		foreach ( $graph['nodes'] as &$overlay_node ) {
+			if ( is_array( $overlay_node ) && ( $overlay_node['id'] ?? null ) === ( $node['id'] ?? null ) ) {
+				$overlay_node['layout'] = array_merge( is_array( $overlay_node['layout'] ?? null ) ? $overlay_node['layout'] : array(), $node['layout'] );
+				if ( ! empty( $node['important'] ) && is_array( $node['important'] ) ) {
+					$overlay_node['important'] = array_values( array_unique( array_merge( is_array( $overlay_node['important'] ?? null ) ? $overlay_node['important'] : array(), $node['important'] ) ) );
+				}
+				return;
+			}
+		}
+		unset( $overlay_node );
+		$graph['nodes'][] = $node;
 	}
 
 	/**
@@ -1211,8 +1183,7 @@ class Static_Site_Importer_Form_Seeder {
 				continue;
 			}
 			$type = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
-			$tag  = strtolower( trim( (string) ( $control['tag'] ?? '' ) ) );
-			if ( 'submit' !== $type && ! ( 'button' === $tag && 'submit' === $type ) ) {
+			if ( 'submit' !== $type ) {
 				continue;
 			}
 			$style = isset( $control['presentation']['style'] ) && is_array( $control['presentation']['style'] ) ? $control['presentation']['style'] : array();
@@ -1220,117 +1191,70 @@ class Static_Site_Importer_Form_Seeder {
 			if ( empty( $flat ) ) {
 				continue;
 			}
-			$controls_graph = isset( $form['presentation_graph']['controls'] ) && is_array( $form['presentation_graph']['controls'] ) ? $form['presentation_graph']['controls'] : array();
-			$found          = false;
-			foreach ( $controls_graph as &$row ) {
-				if ( ! is_array( $row ) || ( $row['index'] ?? null ) !== $control_index ) {
-					continue;
+			$form = self::with_control_styles(
+				$form,
+				$control_index,
+				static function ( array $existing_styles ) use ( $flat ): array {
+					// The source-cascade graph is authoritative for every property it
+					// resolved. The per-control capture fills only what the graph omits;
+					// a box family the graph resolved (any padding or margin side) stays
+					// whole so a captured longhand cannot split it.
+					$family   = static fn ( string $key ): ?string => preg_match( '/^(padding|margin)(?:_|$)/', $key, $match ) ? $match[1] : null;
+					$resolved = array_filter( array_map( $family, array_keys( $existing_styles ) ) );
+					$fill     = array_filter( $flat, static fn ( string $key ): bool => ! array_key_exists( $key, $existing_styles ) && ! in_array( $family( $key ), $resolved, true ), ARRAY_FILTER_USE_KEY );
+					return array_merge( $existing_styles, $fill );
 				}
-				$found           = true;
-				$existing_styles = isset( $row['control']['styles'] ) && is_array( $row['control']['styles'] ) ? $row['control']['styles'] : array();
-				// The source-cascade graph is authoritative for every property it
-				// resolved. The per-control capture fills only what the graph omits;
-				// a box family the graph resolved (any padding or margin side) stays
-				// whole so a captured longhand cannot split it.
-				$family                   = static fn ( string $key ): ?string => preg_match( '/^(padding|margin)(?:_|$)/', $key, $match ) ? $match[1] : null;
-				$resolved                 = array_filter( array_map( $family, array_keys( $existing_styles ) ) );
-				$fill                     = array_filter( $flat, static fn ( string $key ): bool => ! array_key_exists( $key, $existing_styles ) && ! in_array( $family( $key ), $resolved, true ), ARRAY_FILTER_USE_KEY );
-				$row['control']['styles'] = array_merge( $existing_styles, $fill );
-				break;
-			}
-			unset( $row );
-			if ( ! $found ) {
-				$controls_graph[] = array(
-					'index'   => $control_index,
-					'control' => array( 'styles' => $flat ),
-				);
-			}
-			$form['presentation_graph']['controls'] = $controls_graph;
+			);
 		}
 		return $form;
 	}
 
 	/**
-	 * Neutralize this provider's fixed textarea height so the authored `rows`
-	 * attribute can size the control, and keep the source platform's inline-level
-	 * box participation for the multi-line control.
+	 * Project each textarea's resolved display and provider height release
+	 * into the presentation graph.
 	 *
-	 * A source textarea sized by its own `rows` attribute (rather than an
-	 * authored CSS height) carries no CSS declaration a source-CSS-cascade
-	 * compiler could capture. blocks-engine still reports this row count
-	 * (`effectiveRows()`, always populated, defaulting to the browser's own
-	 * unset-`rows` default of 2). Jetpack's renderer hardcodes `rows='20'`
-	 * and paints `:where(.contact-form textarea){height:200px}`, so the
-	 * authored count never reaches the visitor. The row count itself is
-	 * carried onto `jetpack/input` as `ssi-textarea-rows-N` and rewritten
-	 * onto the rendered control at runtime. This projection only overrides
-	 * the provider height with `auto` so the browser sizes N line boxes
-	 * using the padding, border, font-size, and line-height already carried
-	 * onto the same control. A cascade-resolved height or minimum height
-	 * already captured for this control is authoritative and this
-	 * projection does not run.
+	 * `Static_Site_Importer_Form_Textarea_Rows` owns both decisions; this only
+	 * writes the resolved styles onto the control's presentation row, adding
+	 * the row when the control had none.
 	 *
-	 * The HTML platform renders an authored-less textarea inline-level, so its
-	 * field row keeps the control's baseline descent inside the row box. The
-	 * provider paints its textarea block-level, which shrinks every field row
-	 * by that descent and changes the whole form box. When the source cascade
-	 * captured no `display` of its own for the control, the platform default
-	 * is restored so the materialized row keeps the source box; a captured
-	 * `display` is authoritative and this projection does not run.
-	 *
-	 * @param array<string,mixed> $form Provider form manifest row.
-	 * @param array<int,mixed>    $controls Normalized controls list.
+	 * @param array<string,mixed>                                $form      Provider form manifest row.
+	 * @param array<int,Static_Site_Importer_Form_Textarea_Rows> $textareas Resolved textarea policies keyed by control index.
 	 * @return array<string,mixed>
 	 */
-	private static function project_textarea_row_height_into_presentation_graph( array $form, array $controls ): array {
-		foreach ( $controls as $control_index => $control ) {
-			if ( ! is_array( $control ) || 'textarea' !== strtolower( trim( (string) ( $control['tag'] ?? '' ) ) ) || null === Static_Site_Importer_Form_Field_Markup::textarea_rows( $control ) ) {
+	private static function project_textarea_rows_into_presentation_graph( array $form, array $textareas ): array {
+		foreach ( $textareas as $control_index => $textarea ) {
+			if ( null === $textarea->display && ! $textarea->release_height ) {
 				continue;
 			}
-			$controls_graph  = isset( $form['presentation_graph']['controls'] ) && is_array( $form['presentation_graph']['controls'] ) ? $form['presentation_graph']['controls'] : array();
-			$existing_styles = array();
-			$row_index       = null;
-			foreach ( $controls_graph as $graph_index => $row ) {
-				if ( is_array( $row ) && ( $row['index'] ?? null ) === $control_index ) {
-					$existing_styles = isset( $row['control']['styles'] ) && is_array( $row['control']['styles'] ) ? $row['control']['styles'] : array();
-					$row_index       = $graph_index;
-					break;
-				}
-			}
-			$display_projected = false;
-			if ( ! isset( $existing_styles['display'] ) ) {
-				$existing_styles['display'] = 'inline-block';
-				$display_projected          = true;
-			}
-			if ( isset( $existing_styles['height'] ) ) {
-				if ( $display_projected ) {
-					if ( null !== $row_index ) {
-						$controls_graph[ $row_index ]['control']['styles'] = $existing_styles;
-					} else {
-						$controls_graph[] = array(
-							'index'   => $control_index,
-							'control' => array( 'styles' => $existing_styles ),
-						);
-						$row_index        = count( $controls_graph ) - 1;
-					}
-					$form['presentation_graph']['controls'] = $controls_graph;
-				}
-				continue;
-			}
-			// Jetpack applies a fixed 200px textarea height. A source min-height
-			// constrains the browser-sized rows but does not replace that provider
-			// height, so preserve the min-height and still release the fixed height.
-			$existing_styles['height'] = 'auto';
-			if ( null !== $row_index ) {
-				$controls_graph[ $row_index ]['control']['styles'] = $existing_styles;
-			} else {
-				$controls_graph[] = array(
-					'index'   => $control_index,
-					'control' => array( 'styles' => $existing_styles ),
-				);
-			}
-			$form['presentation_graph']['controls'] = $controls_graph;
+			$form = self::with_control_styles( $form, $control_index, array( $textarea, 'presentation_styles' ) );
 		}
+		return $form;
+	}
+
+	/**
+	 * Replace one control's presentation-graph styles with `$styles( $existing )`,
+	 * adding the control row when the graph has none.
+	 *
+	 * @param array<string,mixed> $form          Provider form manifest row.
+	 * @param int|string          $control_index Control index the row is keyed by.
+	 * @param callable            $styles        Maps the row's existing styles (empty when absent) to its new styles.
+	 * @return array<string,mixed>
+	 */
+	private static function with_control_styles( array $form, int|string $control_index, callable $styles ): array {
+		$controls_graph = isset( $form['presentation_graph']['controls'] ) && is_array( $form['presentation_graph']['controls'] ) ? $form['presentation_graph']['controls'] : array();
+		foreach ( $controls_graph as $graph_index => $row ) {
+			if ( is_array( $row ) && ( $row['index'] ?? null ) === $control_index ) {
+				$existing = isset( $row['control']['styles'] ) && is_array( $row['control']['styles'] ) ? $row['control']['styles'] : array();
+				$controls_graph[ $graph_index ]['control']['styles'] = $styles( $existing );
+				$form['presentation_graph']['controls']              = $controls_graph;
+				return $form;
+			}
+		}
+		$controls_graph[]                       = array(
+			'index'   => $control_index,
+			'control' => array( 'styles' => $styles( array() ) ),
+		);
+		$form['presentation_graph']['controls'] = $controls_graph;
 		return $form;
 	}
 

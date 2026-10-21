@@ -3,6 +3,8 @@ vendor/
 build/
 artifacts/
 assets/host-acceptance/
-.homeboy/
-.homeboy-build/
 .phpunit.result.cache
+
+# Patch-tool leftovers
+*.orig
+*.rej

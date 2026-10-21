@@ -231,6 +231,7 @@ final class Static_Site_Importer_Companion_Inventory {
 		}
 		$lines[] = '- Source-route redirects: a request for an old source route (for example `/page.html`) 301-redirects to the imported page\'s WordPress permalink.';
 		$lines[] = '- Internal-link rewriting: imported internal links keep resolving to the imported pages.';
+		$lines[] = '- Imported product cards: a WooCommerce product loop that repeats an imported card fills that card for each product and keeps the source grid layout.';
 		if ( ! empty( $forms['carried'] ?? false ) ) {
 			$lines[] = '- Imported form field presentation: ' . (int) ( $forms['count'] ?? 0 ) . ' captured form field visual state' . ( 1 === (int) ( $forms['count'] ?? 0 ) ? '' : 's' ) . ' project onto the WordPress (Jetpack Forms) contact-form rendering this ' . $owner . ' registers.';
 		}
@@ -304,6 +305,7 @@ final class Static_Site_Importer_Companion_Inventory {
 		$lines[] = '- unregisters the imported blocks; saved static markup may remain, while dynamic rendering and editor support can be lost;';
 		$lines[] = '- stops the preserved source scripts from loading, breaking the interactive behavior they provide;';
 		$lines[] = '- stops source-route redirects, so old source routes begin to 404;';
+		$lines[] = '- stops filling imported product cards, so product loops repeat one static card outside the source grid layout;';
 		$lines[] = '- stops the imported form field presentation and its WordPress form rendering hooks.';
 		if ( ! empty( $forms['carried'] ?? false ) ) {
 			$lines[] = '';

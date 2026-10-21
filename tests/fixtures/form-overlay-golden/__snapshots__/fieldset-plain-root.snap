@@ -1,0 +1,68 @@
+# Form overlay golden snapshot for tests/fixtures/form-overlay-golden/fieldset-plain-root.html
+# Regenerate: SSI_UPDATE_GOLDEN=1 php tests/smoke-form-overlay-golden.php
+
+=== status ===
+mapped
+
+=== css ===
+sha256: 3f6e6ca54b7cd4797f04d11b5c53231fd21f6a80458cd09ca700041581855599
+/* Static Site Importer provider layout overlay: 0ee095870333 */
+.ssi-form-d095fee786e4 > form.jetpack-contact-form__form:not(:has(.wp-block-jetpack-contact-form)), .ssi-form-d095fee786e4:not(:has(> form.jetpack-contact-form__form)){gap:12px;display:grid}
+.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624, .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00{font-family:revert;line-height:revert;border:1px solid #a1a1aa;padding:8px}
+.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-55ca155d2249, .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-e753eef65d32{margin:0;font-weight:inherit;display:block;margin-bottom:4px}
+.ssi-form-d095fee786e4{position:relative;z-index:1;pointer-events:auto}
+.ssi-form-d095fee786e4.jetpack-contact-form-container{padding:0;margin:0;border:0}
+.ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}
+.ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__field-hints{display:contents}
+.ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__field-format{display:none}
+.ssi-form-d095fee786e4 .ssi-field-row > label{margin-block-end:0}
+.ssi-form-d095fee786e4 .grunion-field-wrap .grunion-field::placeholder{color:revert}
+.ssi-form-d095fee786e4 div.form-button-submit{flex-basis:auto}
+
+=== editor_css ===
+sha256: 5dd7314a3807e15d73ce27797fd2c0f44709a483e04d7a77d0c2582071bfcbcb
+/* Static Site Importer editor control chrome: 68edf1548791 */
+.editor-styles-wrapper .ssi-form-d095fee786e4{gap:12px;display:grid}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624{font-family:revert;line-height:revert;border:1px solid #a1a1aa;padding:8px}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-f6f6e97b0624::placeholder{color:revert;opacity:revert}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-55ca155d2249 > label{margin:0;font-weight:inherit;padding:0;display:block}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-55ca155d2249{display:block;margin-bottom:4px}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00{font-family:revert;line-height:revert;border:1px solid #a1a1aa;padding:8px}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-6c39784ddd00::placeholder{color:revert;opacity:revert}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-e753eef65d32 > label{margin:0;font-weight:inherit;padding:0;display:block}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-e753eef65d32{display:block;margin-bottom:4px}
+.editor-styles-wrapper .ssi-form-d095fee786e4{position:relative;z-index:1;pointer-events:auto}
+.editor-styles-wrapper .ssi-form-d095fee786e4.jetpack-contact-form-container{padding:0;margin:0;border:0}
+.editor-styles-wrapper .ssi-form-d095fee786e4 > div.jetpack-contact-form{display:contents}
+
+=== block_markup ===
+<!-- wp:jetpack/contact-form {"className":"ssi-source-root-fieldset ssi-form-d095fee786e4"} -->
+<div class="wp-block-jetpack-contact-form ssi-source-root-fieldset ssi-form-d095fee786e4"><!-- wp:jetpack/field-text {"shareFieldAttributes":false,"className":"ssi-node-c0ec220a2ba5"} -->
+<div><!-- wp:jetpack/label {"label":"Name","className":"ssi-node-55ca155d2249"} --><!-- /wp:jetpack/label -->
+<!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"className":"ssi-node-f6f6e97b0624"} --><!-- /wp:jetpack/input --></div>
+<!-- /wp:jetpack/field-text -->
+<!-- wp:jetpack/field-email {"shareFieldAttributes":false,"className":"ssi-node-8f1f8757437f"} -->
+<div><!-- wp:jetpack/label {"label":"Email","className":"ssi-node-e753eef65d32"} --><!-- /wp:jetpack/label -->
+<!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"className":"ssi-node-6c39784ddd00"} --><!-- /wp:jetpack/input --></div>
+<!-- /wp:jetpack/field-email -->
+<!-- wp:core/button {"tagName":"button","type":"submit","lock":{"remove":true},"className":"form-button-submit is-submit   ssi-node-3a3fd4718c31","metadata":{"name":"Submit button"}} -->
+<div class="wp-block-button form-button-submit is-submit   ssi-node-3a3fd4718c31"><button type="submit" class="wp-block-button__link wp-element-button">Send</button></div>
+<!-- /wp:core/button --></div>
+<!-- /wp:jetpack/contact-form -->
+
+=== receipt_operations ===
+total: 9
+{"dimension":"topology","strategy":"provider_plain_root_fieldset_projection","target_hash":"653133871f9decae48ebd8b2ff4531b5d6e725f446b0b8e91637ae99c2881db4"}
+{"dimension":"layout","strategy":"provider_form_box_transposition","target_hash":"653133871f9decae48ebd8b2ff4531b5d6e725f446b0b8e91637ae99c2881db4"}
+{"dimension":"layout","strategy":"provider_selector_transposition","node_hash":"07397d633f25a7101990a75864ae03d5a3b9ac07c4ed6accbc52cbfd7d7c13b4","target_hash":"3ff0b82e61dc91012b6b4670972a12087168dcf372963e2f7bd3400e59021a6f"}
+{"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"2d9cc1a4456d8f19520b575a7aa9b08c2bc42793c0056fd801f964b65996f0e3","target_hash":"544220f6412eb5090939c5b917565916cdb7dcb5005e2b2761ef9e6a5aa439df"}
+{"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"059f1cd6617df808d4d692bc437bfce78d120082d0e33bee8a6229ed75c34bdf","target_hash":"695e15df8b95e2716414ae32f9957b83379bff24fc6f986621a33527eeea8ef0"}
+{"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"ec0b63550a82156626679a672552b1dc0ba0187f35491dfffd36d036b53f8b53","target_hash":"b4fc9430b146bc8f56044f607b27f5d67e27e5b8351e1b6833610030b524173d"}
+{"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"2dc4710b118d4a2aa3286de1de7196422b604532f06bc4d77257e31bf263f61d","target_hash":"f82c7e1baf1218cc8850710b08310fbe7dd87ea6733302e777dd4a437d7539d6"}
+{"dimension":"interaction","strategy":"provider_interaction_carrier","target_hash":"cb4dc149e60c2da80270627fce3ec94b6d57bf8360c26f262c5bc215e132dd14"}
+{"dimension":"layout","strategy":"provider_container_box_reset","target_hash":"121125c67552ddad5b21bfada7f5cc905182f9b4a39e0abd48db01736b928dde"}
+
+=== receipt_losses ===
+total: 2
+{"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"07397d633f25a7101990a75864ae03d5a3b9ac07c4ed6accbc52cbfd7d7c13b4"}
+{"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"653133871f9decae48ebd8b2ff4531b5d6e725f446b0b8e91637ae99c2881db4"}

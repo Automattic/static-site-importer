@@ -149,6 +149,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 
 		// Blocks Engine owns the editability policy: honour its decision once.
 		$state['editability_report'] = self::editability_decision( $plan );
+		$state['design_system']      = self::design_system( $plan, is_array( $args['source_reports']['editability_report'] ?? null ) ? $args['source_reports']['editability_report'] : array() );
 		if ( 'failed' === $state['editability_report']['status'] ) {
 			$state['diagnostics'][]  = $state['editability_report']['diagnostic'];
 			$state['failure_reason'] = 'editability_policy_failed';
@@ -432,6 +433,7 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			'plan_identity'                     => $prepared['plan_identity'],
 			'receipt_instance_id'               => $prepared['receipt_instance_id'],
 			'editability_report'                => $prepared['editability_report'] ?? array(),
+			'design_system'                     => $prepared['design_system'] ?? array(),
 			'base_resolved'                     => $base_resolved,
 			'prepared_resolved_projection_hash' => $prepared['prepared_resolved_projection_hash'],
 			'resolved'                          => $base_resolved,
@@ -559,17 +561,18 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	public static function preflight_state( array &$state, bool $overwrite, string $import_run_id = '' ): void {
 		if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC !== ( $state['args']['theme_materialization'] ?? null ) ) {
 			require_once __DIR__ . '/class-static-site-importer-navigation-entity-materializer.php';
-			$navigation_error = Static_Site_Importer_Navigation_Entity_Materializer::preflight( $state['resolved'] );
-			if ( $navigation_error ) {
+			require_once __DIR__ . '/class-static-site-importer-synced-pattern-materializer.php';
+			$entity_error = Static_Site_Importer_Navigation_Entity_Materializer::preflight( $state['resolved'] ) ?? Static_Site_Importer_Synced_Pattern_Materializer::preflight( $state['resolved'] );
+			if ( $entity_error ) {
 				// ssi-error-class: propagated
-				throw new InvalidArgumentException( esc_html( (string) $navigation_error->get_error_code() ) );
+				throw new InvalidArgumentException( esc_html( (string) $entity_error->get_error_code() ) );
 			}
 		}
 		$pages_by_route      = array();
 		$state['page_ids']   = array();
 		$state['source_ids'] = array();
 		self::mark_taxonomy_archive_pages( $state );
-		self::plan_alias_hierarchy_parents( $state );
+		self::plan_synthetic_hierarchy_parents( $state );
 		foreach ( $state['resolved']['pages'] as &$page ) {
 			if ( Static_Site_Importer_Theme_Materialization_Strategy::CLASSIC !== ( $state['args']['theme_materialization'] ?? null ) && ( ! isset( $page['resolved_block_markup'] ) || ! is_string( $page['resolved_block_markup'] ) || '' === trim( $page['resolved_block_markup'] ) ) ) {
 				// ssi-error-class: representability:page
@@ -783,15 +786,15 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	}
 
 	/**
-	 * Index the documents a runtime entity binding may target: every page, and
-	 * every template part that shared chrome containing the entity moved into.
+	 * Index every persisted block document a runtime entity binding may target:
+	 * page/post entities, generated templates, shared parts, and synced patterns.
 	 *
 	 * @param array<string,mixed> $plan Resolved plan.
 	 * @return array<string,array{group:string,index:int|string}>
 	 */
 	public static function runtime_binding_documents( array $plan ): array {
 		$documents = array();
-		foreach ( array( 'pages', 'template_parts' ) as $group ) {
+		foreach ( array( 'pages', 'templates', 'template_parts', 'synced_patterns' ) as $group ) {
 			foreach ( is_array( $plan[ $group ] ?? null ) ? $plan[ $group ] : array() as $index => $document ) {
 				if ( is_array( $document ) && is_string( $document['source_path'] ?? null ) && ! isset( $documents[ $document['source_path'] ] ) ) {
 					$documents[ $document['source_path'] ] = array(
@@ -820,8 +823,10 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				return 0 !== $group ? $group : (int) ( $right['occurrence'] ?? 0 ) <=> (int) ( $left['occurrence'] ?? 0 );
 			}
 		);
-		$seen         = array();
-		$part_patches = array();
+		$seen          = array();
+		$part_patches  = array();
+		$page_patches  = array();
+		$archive_pages = array();
 		foreach ( $bindings as $binding ) {
 			$selectors = $binding['superseded_runtime_selectors'] ?? array();
 			if ( ! is_array( $binding ) || 'static-site-importer/runtime-entity-binding/v1' !== ( $binding['schema'] ?? null ) || ! is_int( $binding['occurrence'] ?? null ) || $binding['occurrence'] < 1 || ! is_string( $binding['source_path'] ?? null ) || ! isset( $documents[ $binding['source_path'] ] ) || ! is_string( $binding['search_block_markup'] ?? null ) || '' === trim( $binding['search_block_markup'] ) || ! is_string( $binding['replacement_block_markup'] ?? null ) || '' === trim( $binding['replacement_block_markup'] ) || ! is_string( $binding['reconciliation_identity'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/', $binding['reconciliation_identity'] ) || isset( $seen[ $binding['reconciliation_identity'] ] ) || ! is_array( $selectors ) ) {
@@ -846,18 +851,25 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 				// ssi-error-class: representability:block
 				throw new InvalidArgumentException( 'runtime_entity_binding_cardinality_mismatch' );
 			}
-			if ( 'template_parts' === $group ) {
-				$part_patches[ $binding['source_path'] ][] = array(
-					'offset'      => self::binding_occurrence_offset( $pristine, $binding['search_block_markup'], $binding['occurrence'] ),
-					'search'      => $binding['search_block_markup'],
-					'replacement' => $binding['replacement_block_markup'],
-				);
+			$patch = array(
+				'offset'      => self::binding_occurrence_offset( $pristine, $binding['search_block_markup'], $binding['occurrence'] ),
+				'search'      => $binding['search_block_markup'],
+				'replacement' => $binding['replacement_block_markup'],
+			);
+			if ( in_array( $group, array( 'templates', 'template_parts' ), true ) ) {
+				$part_patches[ $binding['source_path'] ][] = $patch;
+			} else {
+				$page_patches[ $binding['source_path'] ][] = $patch;
+			}
+			if ( 'pages' === $group && 'commerce_listing' === ( $binding['role'] ?? '' ) ) {
+				$archive_pages[ $binding['source_path'] ] = true;
 			}
 			$plan[ $group ][ $index ]['materialized_block_markup'] = substr( $content, 0, $position ) . $binding['replacement_block_markup'] . substr( $content, $position + strlen( $binding['search_block_markup'] ) );
 			$reports[ $binding['reconciliation_identity'] ]        = array(
 				'status'                           => 'prepared',
 				'reconciliation_identity'          => $binding['reconciliation_identity'],
 				'source_path'                      => $binding['source_path'],
+				'selector'                         => (string) ( $binding['selector'] ?? '' ),
 				'role'                             => $binding['role'] ?? '',
 				'declaration_id'                   => $binding['declaration_id'] ?? '',
 				'fallback_reconciliation_identity' => $binding['fallback_reconciliation_identity'] ?? '',
@@ -870,39 +882,89 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			);
 		}
 		foreach ( $part_patches as $source_path => $patches ) {
-			self::apply_template_part_binding_patches( $plan, $documents[ $source_path ]['index'], $patches );
+			self::apply_template_part_binding_patches( $plan, $documents[ $source_path ]['index'], $patches, $documents[ $source_path ]['group'] );
+		}
+		foreach ( array_keys( $archive_pages ) as $source_path ) {
+			self::write_product_archive_template( $plan, $documents[ $source_path ]['index'], $page_patches[ $source_path ] );
 		}
 		foreach ( $reports as &$report ) {
 			$document                            = $documents[ $report['source_path'] ];
 			$report['materialized_content_hash'] = hash( 'sha256', (string) ( $plan[ $document['group'] ][ $document['index'] ]['materialized_block_markup'] ?? $plan[ $document['group'] ][ $document['index'] ]['resolved_block_markup'] ) );
 		}
 		unset( $report );
+		self::reconcile_variant_form_bindings( $plan, $documents, $reports );
 	}
 
-	/** Resolve native hierarchy status from existing typed route and alias intent. */
-	private static function plan_alias_hierarchy_parents( array &$state ): void {
-		$rules = $state['args']['source_route_aliases'] ?? array();
-		if ( empty( $rules ) ) {
-			return;
-		}
-		require_once __DIR__ . '/class-static-site-importer-redirects-manifest.php';
-		require_once __DIR__ . '/class-static-site-importer-redirection-materializer.php';
-		$aliases = Static_Site_Importer_Redirects_Manifest::aliases_for_source_paths( $rules, array_column( $state['resolved']['pages'], 'source_path' ) );
-		$targets = array();
-		foreach ( $aliases as $source => $paths ) {
-			foreach ( $paths as $path ) {
-				$targets[ '/' . ltrim( $path, '/' ) ] = $source;
+	/**
+	 * Reconcile only equivalent forms on routes absorbed by this canonical surface.
+	 * Keep exact source identities on the binding so completion still requires its
+	 * persisted fragment; neither an unrelated route nor a different form qualifies.
+	 *
+	 * @param array<string,mixed> $plan      Resolved plan.
+	 * @param array<string,array> $documents Binding document index.
+	 * @param array<string,array> $reports   Prepared binding reports.
+	 */
+	private static function reconcile_variant_form_bindings( array $plan, array $documents, array &$reports ): void {
+		$fallbacks = $plan['quality']['fallbacks'] ?? array();
+		foreach ( $reports as &$report ) {
+			if ( 'form' !== ( $report['role'] ?? '' ) ) {
+				continue;
 			}
+			$location = $documents[ $report['source_path'] ];
+			$surface  = $plan[ $location['group'] ][ $location['index'] ];
+			$variants = $surface['template_surface']['source_variants'] ?? $surface['source_variants'] ?? $surface['metadata']['source_variants'] ?? array();
+			$paths    = array_column( $variants, 'source_path' );
+			$matches  = array_values( array_filter( $fallbacks, static fn( $fallback ): bool => is_array( $fallback ) && ( $fallback['source_path'] ?? '' ) === $report['source_path'] && Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $fallback ) === $report['fallback_reconciliation_identity'] ) );
+			if ( 1 !== count( $matches ) ) {
+				continue;
+			}
+			$canonical = $matches[0];
+			if ( '' === (string) ( $canonical['selector'] ?? '' ) || Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $canonical ) !== $report['fallback_hash'] ) {
+				continue;
+			}
+			foreach ( $fallbacks as $fallback ) {
+				if ( ! is_array( $fallback ) || ! in_array( $fallback['source_path'] ?? '', $paths, true ) || ( $fallback['source_path'] ?? '' ) === $report['source_path'] || ( $fallback['selector'] ?? null ) !== $canonical['selector'] || Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $fallback ) !== $report['fallback_hash'] ) {
+					continue;
+				}
+				$report['replaced_fallback_identities'][] = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $fallback );
+			}
+			$report['replaced_fallback_identities'] = array_values( array_unique( $report['replaced_fallback_identities'] ) );
 		}
+		unset( $report );
+	}
+
+	/** Resolve native hierarchy status for synthetic parents from typed route and alias intent. */
+	private static function plan_synthetic_hierarchy_parents( array &$state ): void {
 		$synthetic = array();
 		foreach ( $state['plan']['routes'] ?? array() as $route ) {
 			if ( 'synthetic_parent' === ( $route['source_relation'] ?? '' ) ) {
 				$synthetic[ $route['source_path'] ] = true;
 			}
 		}
+		if ( array() === $synthetic ) {
+			return;
+		}
+		$rules   = $state['args']['source_route_aliases'] ?? array();
+		$targets = array();
+		if ( ! empty( $rules ) ) {
+			require_once __DIR__ . '/class-static-site-importer-redirects-manifest.php';
+			require_once __DIR__ . '/class-static-site-importer-redirection-materializer.php';
+			$aliases = Static_Site_Importer_Redirects_Manifest::aliases_for_source_paths( $rules, array_column( $state['resolved']['pages'], 'source_path' ) );
+			foreach ( $aliases as $source => $paths ) {
+				foreach ( $paths as $path ) {
+					$targets[ '/' . ltrim( $path, '/' ) ] = $source;
+				}
+			}
+		}
 		foreach ( $state['resolved']['pages'] as &$page ) {
 			$path = (string) ( $page['route']['path'] ?? '' );
-			if ( empty( $page['synthetic'] ) || ! isset( $synthetic[ $page['source_path'] ], $targets[ $path ] ) || $targets[ $path ] === $page['source_path'] ) {
+			if ( empty( $page['synthetic'] ) || ! isset( $synthetic[ $page['source_path'] ] ) ) {
+				continue;
+			}
+			if ( ! isset( $targets[ $path ] ) || $targets[ $path ] === $page['source_path'] ) {
+				// No source document backs this parent: the source serves nothing at
+				// its URL, so it stays an editable draft unless the owner took it over.
+				$page['materialized_post_status'] = self::synthetic_parent_status( $page, $path );
 				continue;
 			}
 			$occupied = Static_Site_Importer_Redirection_Materializer::published_route_owner( $path );
@@ -917,6 +979,26 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			$page['alias_target_source_path'] = $targets[ $path ];
 		}
 		unset( $page );
+	}
+
+	/** Draft, unless the owner has since published or edited the parent, or owns its route. */
+	private static function synthetic_parent_status( array $page, string $path ): string {
+		$owned = Static_Site_Importer_Site_Plan_Persistence::reconciled_post( (string) $page['reconciliation_identity'] );
+		if ( ! $owned ) {
+			$conflict = '' === trim( $path, '/' ) ? null : get_page_by_path( trim( $path, '/' ), OBJECT, 'page' );
+			return $conflict && 'trash' !== $conflict->post_status ? (string) $conflict->post_status : 'draft';
+		}
+		if ( 'draft' === $owned->post_status ) {
+			return 'draft';
+		}
+		$provenance = json_decode( (string) get_post_meta( $owned->ID, '_static_site_importer_provenance', true ), true );
+		$provenance = is_array( $provenance ) ? $provenance : array();
+		if ( isset( $provenance['synthetic_parent_status'] ) ) {
+			// The importer recorded its own status, so any other one is the owner's.
+			return (string) $owned->post_status;
+		}
+		// An earlier import published it; keep that only once the owner edited it.
+		return hash( 'sha256', $owned->post_content ) === ( $provenance['content_hash'] ?? null ) ? 'draft' : (string) $owned->post_status;
 	}
 
 	/** Byte offset of the nth occurrence of a search string, or null when it has fewer. */
@@ -935,19 +1017,21 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	}
 
 	/**
-	 * A template part is written from its canonical payload, which keeps asset
+	 * A template or part is written from its canonical payload, which keeps asset
 	 * tokens that the resolved markup has already expanded. Tokens live inside
 	 * attribute values, so both serializations have the same blocks in the same
 	 * order: each binding's resolved block maps to the canonical block at the same
 	 * index, and the provider replacement is spliced there, last offset first.
 	 *
 	 * @param array<string,mixed>                                                $plan    Resolved plan.
-	 * @param int|string                                                         $index   Template part index.
-	 * @param array<int,array{offset:int|null,search:string,replacement:string}> $patches Bindings applied to this part.
+	 * @param int|string                                                         $index   Surface index.
+	 * @param array<int,array{offset:int|null,search:string,replacement:string}> $patches Bindings applied to this surface.
+	 * @param string                                                             $group   Template or template-part collection.
+	 * @throws InvalidArgumentException When the canonical surface write is missing or mismatched.
 	 */
-	private static function apply_template_part_binding_patches( array &$plan, int|string $index, array $patches ): void {
-		$part   = $plan['template_parts'][ $index ];
-		$target = 'parts/' . (string) ( $part['slug'] ?? '' ) . '.html';
+	private static function apply_template_part_binding_patches( array &$plan, int|string $index, array $patches, string $group ): void {
+		$part   = $plan[ $group ][ $index ];
+		$target = ( 'templates' === $group ? 'templates/' : 'parts/' ) . (string) ( $part['slug'] ?? '' ) . '.html';
 		$write  = null;
 		foreach ( $plan['writes'] ?? array() as $write_index => $candidate ) {
 			if ( is_array( $candidate ) && ( $candidate['target_path'] ?? null ) === $target && 'utf8' === ( $candidate['payload']['encoding'] ?? null ) && is_string( $candidate['payload']['data'] ?? null ) ) {
@@ -959,8 +1043,22 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			// ssi-error-class: representability:block
 			throw new InvalidArgumentException( 'runtime_entity_binding_template_part_write_missing' );
 		}
-		$resolved         = (string) ( $part['resolved_block_markup'] ?? '' );
-		$canonical        = (string) $plan['writes'][ $write ]['payload']['data'];
+		$canonical = self::splice_canonical_markup( (string) ( $part['resolved_block_markup'] ?? '' ), (string) $plan['writes'][ $write ]['payload']['data'], $patches );
+
+		$plan['writes'][ $write ]['payload']['data'] = $canonical;
+		$plan['writes'][ $write ]['payload_hash']    = hash( 'sha256', $canonical );
+	}
+
+	/**
+	 * Apply resolved-markup binding patches to the canonical serialization of
+	 * the same document. Asset tokens live inside attribute values, so both
+	 * serializations have the same blocks in the same order: each binding's
+	 * resolved block maps to the canonical block at the same index, and the
+	 * provider replacement is spliced there, last offset first.
+	 *
+	 * @param array<int,array{offset:int|null,search:string,replacement:string}> $patches Bindings applied to the document.
+	 */
+	private static function splice_canonical_markup( string $resolved, string $canonical, array $patches ): string {
 		$resolved_ranges  = WordPressSitePlan::blockRanges( $resolved );
 		$canonical_ranges = WordPressSitePlan::blockRanges( $canonical );
 		if ( count( $resolved_ranges ) !== count( $canonical_ranges ) ) {
@@ -986,8 +1084,64 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 		foreach ( $splices as $splice ) {
 			$canonical = substr( $canonical, 0, $splice['offset'] ) . $splice['replacement'] . substr( $canonical, $splice['offset'] + $splice['length'] );
 		}
-		$plan['writes'][ $write ]['payload']['data'] = $canonical;
-		$plan['writes'][ $write ]['payload_hash']    = hash( 'sha256', $canonical );
+		return $canonical;
+	}
+
+	/**
+	 * Write the page that holds a store listing as the theme's product archive
+	 * template: the page template with the page's own blocks in place of its
+	 * content, so WooCommerce's shop archive renders the imported listing.
+	 * A theme without a page template has no archive design to derive.
+	 *
+	 * @param array<string,mixed>                                                $plan    Resolved plan.
+	 * @param int|string                                                         $index   Page index.
+	 * @param array<int,array{offset:int|null,search:string,replacement:string}> $patches Bindings applied to the page.
+	 */
+	private static function write_product_archive_template( array &$plan, int|string $index, array $patches ): void {
+		$page     = $plan['pages'][ $index ];
+		$template = null;
+		$existing = null;
+		foreach ( $plan['writes'] ?? array() as $write_index => $candidate ) {
+			$target = is_array( $candidate ) ? ( $candidate['target_path'] ?? null ) : null;
+			if ( 'templates/page.html' === $target && 'utf8' === ( $candidate['payload']['encoding'] ?? null ) && is_string( $candidate['payload']['data'] ?? null ) ) {
+				$template = $candidate['payload']['data'];
+			}
+			if ( Static_Site_Importer_Woo_Product_Listing_Materializer::ARCHIVE_TEMPLATE === $target ) {
+				$existing = $write_index;
+			}
+		}
+		if ( null === $template ) {
+			return;
+		}
+		// Theme files keep the canonical asset tokens; a page whose canonical
+		// serialization does not line up keeps its resolved markup.
+		try {
+			$content = self::splice_canonical_markup( (string) ( $page['resolved_block_markup'] ?? '' ), (string) ( $page['canonical_block_markup'] ?? '' ), $patches );
+		} catch ( InvalidArgumentException $mismatch ) {
+			unset( $mismatch );
+			$content = (string) ( $page['materialized_block_markup'] ?? '' );
+		}
+		$count  = 0;
+		$markup = (string) preg_replace_callback( '/<!-- wp:post-content(?:\s+\{.*?\})?\s*\/-->/s', static fn(): string => $content, $template, 1, $count );
+		if ( 1 !== $count || '' === $content ) {
+			return;
+		}
+		$write = array(
+			'kind'                    => 'theme_template',
+			'source_path'             => '',
+			'target_path'             => Static_Site_Importer_Woo_Product_Listing_Materializer::ARCHIVE_TEMPLATE,
+			'payload'                 => array(
+				'encoding' => 'utf8',
+				'data'     => $markup,
+			),
+			'payload_hash'            => hash( 'sha256', $markup ),
+			'reconciliation_identity' => hash( 'sha256', 'theme-template:' . Static_Site_Importer_Woo_Product_Listing_Materializer::ARCHIVE_TEMPLATE ),
+		);
+		if ( null === $existing ) {
+			$plan['writes'][] = $write;
+		} else {
+			$plan['writes'][ $existing ] = $write;
+		}
 	}
 
 	/**
@@ -1020,7 +1174,8 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 	 * @return void
 	 */
 	public static function validate_materialized_block_documents( array $plan, array $bindings, array &$diagnostics, array $pending_blocks = array() ): void {
-		foreach ( array_merge( $plan['pages'] ?? array(), array_values( array_filter( $plan['template_parts'] ?? array(), static fn( $part ): bool => is_array( $part ) && isset( $part['materialized_block_markup'] ) ) ) ) as $page ) {
+		$template_parts = array_values( array_filter( array_merge( $plan['templates'] ?? array(), $plan['template_parts'] ?? array() ), static fn( $part ): bool => is_array( $part ) && isset( $part['materialized_block_markup'] ) ) );
+		foreach ( array_merge( $plan['pages'] ?? array(), $template_parts, array_values( $plan['synced_patterns'] ?? array() ) ) as $page ) {
 			if ( ! is_array( $page ) || ! empty( $page['skip_materialization'] ) ) {
 				continue;
 			}
@@ -1370,6 +1525,27 @@ final class Static_Site_Importer_Site_Plan_Preparation {
 			'threshold_failures'      => array_slice( $failures, 0, 10 ),
 		);
 		return $decision;
+	}
+
+	/**
+	 * Read the Blocks Engine design system the plan's theme was derived from.
+	 *
+	 * A reported quality signal, never a gate: the plan's `theme.design_system`
+	 * (token report plus `metrics`) is carried unchanged; when only the
+	 * editability report carries it (`design_system` with `metrics`), that is
+	 * used. An older Blocks Engine produces neither and the section is absent.
+	 *
+	 * @param array<string,mixed> $plan               Canonical plan.
+	 * @param array<string,mixed> $editability_report Blocks Engine editability report, when available.
+	 * @return array<string,mixed>
+	 */
+	public static function design_system( array $plan, array $editability_report = array() ): array {
+		foreach ( array( $plan['theme']['design_system'] ?? null, $editability_report['design_system'] ?? null ) as $design_system ) {
+			if ( is_array( $design_system ) && is_array( $design_system['metrics'] ?? null ) ) {
+				return $design_system;
+			}
+		}
+		return array();
 	}
 
 	/** @param array<string,mixed> $plan */

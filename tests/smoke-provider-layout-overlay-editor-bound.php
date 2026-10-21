@@ -1,7 +1,8 @@
 <?php
 /**
  * An oversized editor control chrome degrades to a recorded layout loss
- * instead of emitting an overlay that output admission later rejects.
+ * instead of emitting an overlay that output admission later rejects, and the
+ * assembled overlay then keeps its front-end CSS with no editor CSS at all.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -78,25 +79,62 @@ for ( $index = 0; $index < 128; ++$index ) {
 }
 $presentation_graph = array( 'controls' => $controls );
 
-$shared_editor = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph, array(), true );
+$shared_editor = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph, array(), Static_Site_Importer_Provider_Layout_Overlay::SURFACE_EDITOR );
 $assert( empty( $shared_editor['losses'] ) && ! empty( $shared_editor['overlay']['editor_css'] ), 'equivalent adjacent control presentations fit the editor admission bound' );
 $assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $shared_editor['overlay'] ), 'compacted shared editor presentation is admitted' );
 
 // Distinct declarations cannot share a selector list and must retain the bound.
 foreach ( $presentation_graph['controls'] as $index => &$control ) {
 	$control['control']['styles']['color'] = sprintf( '#%06x', $index + 1 );
+	$control['control']['styles']['font_family'] = '"' . str_repeat( 'NeutralFont', 22 ) . '"';
 }
 unset( $control );
+foreach ( $map['presentation_targets'] as &$target ) {
+	$target['destinations'][0]['properties'][] = 'font_family';
+}
+unset( $target );
 
 $frontend = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph );
-$assert( array() === $frontend['losses'] && strlen( $frontend['css'] ) <= 32768, 'fixture frontend overlay fits its bound (' . strlen( $frontend['css'] ) . ' bytes)' );
+$assert( array() === $frontend['losses'] && strlen( $frontend['css'] ) <= 65536, 'fixture frontend overlay fits its bound (' . strlen( $frontend['css'] ) . ' bytes)' );
 $assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $frontend['overlay'] ), 'fixture frontend overlay is admitted' );
 
-$editor      = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph, array(), true );
+$editor      = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph, array(), Static_Site_Importer_Provider_Layout_Overlay::SURFACE_EDITOR );
 $editor_size = strlen( $editor['overlay']['editor_css'] ?? '' );
 $assert(
 	array() === $editor['overlay'] && '' === $editor['css'] && in_array( 'provider layout overlay exceeds its bounded size.', array_column( $editor['losses'], 'map_error' ), true ),
 	'editor chrome over the admission bound compiles to a recorded layout loss, not an overlay (editor_css ' . $editor_size . ' bytes)'
 );
+
+// Assembled surfaces: the editor overlay is over its bound while the front end
+// fits. The front end keeps its overlay, the editor carries no CSS at all (no
+// chrome-only fallback compiled from the front-end map), and the bound loss is
+// recorded. A control container gives a chrome-only pass something to emit.
+$bound_map = $map;
+
+$bound_map['presentation_targets'][0]['destinations'][] = array(
+	'role'       => 'control_container',
+	'selector'   => $scope . ' .ssi-node-ffffffffffff',
+	'properties' => array( 'background_color', 'border_color' ),
+);
+
+$bound_graph = $presentation_graph;
+
+$bound_graph['control_containers'] = array(
+	array(
+		'index'  => 0,
+		'styles' => array(
+			'background_color' => '#fafafa',
+			'border_color'     => '#dddddd',
+		),
+	),
+);
+
+$bound_front    = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $bound_map, $bound_graph );
+$bound_surfaces = Static_Site_Importer_Provider_Layout_Overlay::compile_surfaces( $graph, $bound_map, $bound_map, $bound_graph );
+$bound_css      = $bound_front['css'];
+$assert( '' !== $bound_css && $bound_surfaces['css'] === $bound_css && ( $bound_surfaces['overlay']['css'] ?? null ) === $bound_css, 'an over-bound editor surface keeps the front-end css' );
+$assert( '' === ( $bound_surfaces['overlay']['editor_css'] ?? '' ) && '' === ( $bound_surfaces['overlay']['editor_context_css'] ?? '' ), 'an over-bound editor surface carries no editor css (editor_css ' . strlen( $bound_surfaces['overlay']['editor_css'] ?? '' ) . ' bytes)' );
+$assert( in_array( 'provider layout overlay exceeds its bounded size.', array_column( $bound_surfaces['losses'], 'map_error' ), true ), 'an over-bound editor surface records its bound loss' );
+$assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $bound_surfaces['overlay'] ), 'the front-end-only overlay is admitted' );
 
 echo "provider layout overlay editor bound smoke passed ({$assertions} assertions)\n";

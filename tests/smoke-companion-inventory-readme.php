@@ -156,8 +156,8 @@ $payload = array(
 	),
 	'form_visual_states' => array(
 		array(
-			'schema'        => 'static-site-importer/form-visual-state/v1',
-			'field_id'      => 'ssi-form-123456789abc-field-0',
+			'schema'        => 'static-site-importer/form-visual-state/v2',
+			'field_class'   => 'ssi-node-123456789abc',
 			'trigger_class' => 'ssi-node-123456789abc-destination-country-trigger',
 			'group'         => array( 'id' => 'visual-group-1234567890abcdef', 'class' => 'ssi-fvg-123456789abc' ),
 			'parts'         => array(

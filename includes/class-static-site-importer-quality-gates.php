@@ -27,6 +27,9 @@ if ( ! class_exists( 'Static_Site_Importer_Visual_Parity_Oracle' ) ) {
 if ( ! class_exists( 'Static_Site_Importer_Product_Finding_Materializer' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-product-finding-materializer.php';
 }
+if ( ! class_exists( 'Static_Site_Importer_Entity_Materializer_Registry' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-entity-materializer-registry.php';
+}
 
 /** Computes quality-gate status from normalized import diagnostics. */
 final class Static_Site_Importer_Quality_Gates {
@@ -133,7 +136,14 @@ final class Static_Site_Importer_Quality_Gates {
 		$quality['diagnostic_refs'] = self::quality_diagnostic_refs( $report['diagnostics'] ?? array() );
 		$report['quality']          = $quality;
 		self::normalize_source_document_diagnostic_refs( $report );
-		$report['artifact_diagnostics'] = Static_Site_Importer_Artifact_Diagnostics_Adapter::build_for_import_report( $report );
+		$artifact_diagnostics = Static_Site_Importer_Artifact_Diagnostics_Adapter::build_for_import_report( $report );
+		// The report's top-level diagnostics list is canonical. When the artifact
+		// envelope would persist a byte-identical copy, reference it instead.
+		if ( isset( $artifact_diagnostics['diagnostics'] ) && array_values( (array) ( $report['diagnostics'] ?? array() ) ) === $artifact_diagnostics['diagnostics'] ) {
+			unset( $artifact_diagnostics['diagnostics'] );
+			$artifact_diagnostics['diagnostics_ref'] = 'diagnostics';
+		}
+		$report['artifact_diagnostics'] = $artifact_diagnostics;
 
 		return $quality;
 	}
@@ -322,32 +332,50 @@ final class Static_Site_Importer_Quality_Gates {
 		return false;
 	}
 
+	/** Identify a cart view finding a shop provider's cart replaces whole. */
+	public static function is_cart_view_fallback_diagnostic( array $diagnostic ): bool {
+		foreach ( array( 'diagnostic_code', 'code', 'reason_code' ) as $key ) {
+			if ( 'html_cart_view_fallback' === (string) ( $diagnostic[ $key ] ?? '' ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/** Identify a commerce add-to-cart/quantity controls fallback finding. */
+	public static function is_commerce_controls_fallback_diagnostic( array $diagnostic ): bool {
+		foreach ( array( 'diagnostic_code', 'code', 'reason_code' ) as $key ) {
+			if ( 'html_commerce_controls_fallback' === (string) ( $diagnostic[ $key ] ?? '' ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
 	/**
-	 * Derive a product-grid fallback's deterministic identity/hash pair from its
-	 * own preserved region, the same evidence a resolved `commerce_collection`
-	 * binding's anchor carries (see
-	 * `Static_Site_Importer_Entity_Materializer_Registry::product_grid_fallback_reconciliation_identity()`).
-	 * A finding with no derivable preserved region (the compiler converted the
-	 * grid natively and gave no replaceable anchor at all) has no identity and
-	 * stays permanently unresolved by this reconciliation, rather than claiming
-	 * a resolution proof that does not exist.
+	 * Derive a product-grid fallback's deterministic identity/hash pair from the
+	 * canonical source page plus the grid's own source selector — the same
+	 * evidence the grid declaration, `entity_lifecycle.product_grids[]` and a
+	 * completed `commerce_product_grid` binding receipt carry (see
+	 * `Static_Site_Importer_Entity_Materializer_Registry::page_region_fallback_identity()`).
+	 * Since Automattic/blocks-engine#3088 a grid finding carries no
+	 * `readable_blocks`, so the preserved region is not derivable from the
+	 * finding; the page-scoped selector is the matching evidence instead. A
+	 * finding with neither a source page nor a selector has no identity and can
+	 * never claim a resolution proof, but it still reports as an unresolved
+	 * resolution row like every other fallback.
 	 *
 	 * @param array<string,mixed> $diagnostic Product-grid fallback diagnostic.
 	 * @return array{0:string,1:string} [identity, fallback_hash], both '' when undeliverable.
 	 */
-	private static function product_grid_fallback_identity( array $diagnostic ): array {
-		$readable = isset( $diagnostic['readable_blocks'] ) && is_array( $diagnostic['readable_blocks'] ) ? $diagnostic['readable_blocks'] : array();
-		$region   = Static_Site_Importer_Product_Finding_Materializer::serialize_readable_graft_anchor( $readable );
-		if ( '' === $region ) {
-			return array( '', '' );
-		}
-		$source_path = Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
-		if ( '' === $source_path ) {
-			return array( '', '' );
-		}
-		$hash     = hash( 'sha256', $region );
-		$identity = hash( 'sha256', "static-site-importer/product-grid-fallback/v1\n{$source_path}\n{$hash}" );
-		return array( $identity, $hash );
+	private static function page_region_fallback_identity( array $diagnostic ): array {
+		return Static_Site_Importer_Entity_Materializer_Registry::page_region_fallback_identity(
+			self::is_cart_view_fallback_diagnostic( $diagnostic ) ? 'cart-view' : 'product-grid',
+			Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'source_path', 'source' ) ),
+			Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'selector', 'container_selector' ) )
+		);
 	}
 
 	/**
@@ -436,26 +464,25 @@ final class Static_Site_Importer_Quality_Gates {
 	}
 
 	/**
-	 * A provider form owned by a shared template part stands for the same source
-	 * form on every page that renders the part. The producer proved those forms
-	 * equivalent and lists their fallbacks; each becomes a receipt of its own,
-	 * backed by the one part binding.
+	 * Expand exact replacement identities from shared documents and absorbed
+	 * source variants. Each receives its own receipt backed by the canonical
+	 * surface's binding and persistence proof.
 	 *
 	 * @param array<int,mixed> $receipts Quality resolution receipts.
 	 * @return array<int,mixed>
 	 */
-	private static function with_template_part_absorbed_receipts( array $receipts ): array {
+	private static function with_surface_absorbed_receipts( array $receipts ): array {
 		$expanded = array();
 		foreach ( $receipts as $receipt ) {
 			$expanded[] = $receipt;
-			if ( ! is_array( $receipt ) || '' === (string) ( $receipt['template_part'] ?? '' ) ) {
+			if ( ! is_array( $receipt ) ) {
 				continue;
 			}
 			foreach ( is_array( $receipt['replaced_fallback_identities'] ?? null ) ? $receipt['replaced_fallback_identities'] : array() as $replaced ) {
 				if ( is_string( $replaced ) && ( $receipt['fallback_reconciliation_identity'] ?? null ) !== $replaced ) {
 					$expanded[] = array(
 						'fallback_reconciliation_identity' => $replaced,
-						'absorbed_by_template_part'        => true,
+						'absorbed_by_surface'              => true,
 					) + $receipt;
 				}
 			}
@@ -464,27 +491,81 @@ final class Static_Site_Importer_Quality_Gates {
 	}
 
 	/**
+	 * The file or shared document a binding receipt persisted into: its template
+	 * or part file, or the synced pattern its source path names. Empty for a page.
+	 *
+	 * @param array<string,mixed>  $receipt       Binding receipt.
+	 * @param array<string,string> $shared_hashes Persisted shared document hashes by key.
+	 */
+	private static function shared_document( array $receipt, array $shared_hashes ): string {
+		$part = (string) ( $receipt['template_part'] ?? '' );
+		if ( '' !== $part ) {
+			return $part;
+		}
+		$source = (string) ( $receipt['source_path'] ?? '' );
+		return isset( $shared_hashes[ $source ] ) ? $source : '';
+	}
+
+	/**
+	 * Hash of the content a binding receipt's replacement was persisted in.
+	 *
+	 * @param array<string,mixed>                $receipt       Binding receipt.
+	 * @param string                             $source_path   Source page of the fallback.
+	 * @param Static_Site_Importer_Import_Report $report Import report.
+	 * @param array<string,string>               $shared_hashes Persisted shared document hashes by key.
+	 */
+	private static function persisted_hash( array $receipt, string $source_path, Static_Site_Importer_Import_Report $report, array $shared_hashes ): string {
+		$shared = self::shared_document( $receipt, $shared_hashes );
+		if ( '' !== $shared ) {
+			return $shared_hashes[ $shared ] ?? '';
+		}
+		$owner        = ! empty( $receipt['absorbed_by_surface'] ) ? (string) ( $receipt['source_path'] ?? '' ) : $source_path;
+		$page_receipt = $report['materialization_receipt']['completed']['materialized_pages'][ $owner ] ?? array();
+		return is_array( $page_receipt ) && is_string( $page_receipt['content_hash'] ?? null ) ? $page_receipt['content_hash'] : '';
+	}
+
+	/**
 	 * Whether a completed receipt proves the provider replaced this exact source
 	 * fallback. The replacement must be persisted where the binding put it: the
-	 * page's post content, or the written template part file. A fallback a part
-	 * binding absorbed from another page carries that page's own form hash, so it
-	 * is matched by the producer-declared identity alone.
+	 * canonical page's post content, the written template/part file, or the synced
+	 * pattern post. Absorbed fallbacks match exact identities declared by the
+	 * producer for shared documents or reconciled against source variants.
 	 *
-	 * @param array<string,mixed>     $receipt       Candidate receipt.
-	 * @param array<string,string>    $part_hashes   Written file hashes by target path.
+	 * @param array<string,mixed>  $receipt       Candidate receipt.
+	 * @param array<string,string> $shared_hashes Persisted shared document hashes by key.
 	 */
-	private static function receipt_resolves_fallback( array $receipt, string $identity, string $fallback_hash, string $source_path, Static_Site_Importer_Import_Report $report, array $part_hashes ): bool {
-		$part_target = (string) ( $receipt['template_part'] ?? '' );
-		if ( '' !== $part_target ) {
-			$persisted_hash = $part_hashes[ $part_target ] ?? '';
-		} else {
-			$page_receipt   = $report['materialization_receipt']['completed']['materialized_pages'][ $source_path ] ?? array();
-			$persisted_hash = is_array( $page_receipt ) && is_string( $page_receipt['content_hash'] ?? null ) ? $page_receipt['content_hash'] : '';
-		}
+	private static function receipt_resolves_fallback( array $receipt, string $identity, string $fallback_hash, string $source_path, Static_Site_Importer_Import_Report $report, array $shared_hashes ): bool {
+		$persisted_hash = self::persisted_hash( $receipt, $source_path, $report, $shared_hashes );
 		return 'static-site-importer/quality-resolution-receipt/v1' === ( $receipt['schema'] ?? null )
 			&& 'completed' === ( $receipt['status'] ?? null )
 			&& ( $receipt['fallback_reconciliation_identity'] ?? null ) === $identity
-			&& ( ! empty( $receipt['absorbed_by_template_part'] ) || ( $receipt['fallback_hash'] ?? null ) === $fallback_hash )
+			&& ( ! empty( $receipt['absorbed_by_surface'] ) || ( $receipt['fallback_hash'] ?? null ) === $fallback_hash )
+			&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['binding_reconciliation_identity'] ?? '' ) )
+			&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['materialized_block_hash'] ?? '' ) )
+			&& ( $receipt['persisted_fragment_hash'] ?? null ) === ( $receipt['materialized_block_hash'] ?? null )
+			&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['materialized_content_hash'] ?? '' ) )
+			&& '' !== trim( (string) ( $receipt['provider'] ?? '' ) )
+			&& '' !== $persisted_hash
+			&& ( $receipt['materialized_content_hash'] ?? null ) === $persisted_hash;
+	}
+
+	/**
+	 * Whether a completed receipt proves the provider replaced this exact source
+	 * product grid. Grids join on (source page, grid source selector): the one
+	 * evidence both the finding and the binding receipt carry — a grid finding
+	 * derives no preserved-region hash of its own (Automattic/blocks-engine#3088).
+	 * The identity encodes that pair, and the same persistence proof forms need
+	 * still applies: the replacement must be persisted where the binding put it.
+	 *
+	 * @param array<string,mixed>  $receipt       Candidate receipt.
+	 * @param array<string,string> $shared_hashes Persisted shared document hashes by key.
+	 */
+	private static function receipt_resolves_product_grid( array $receipt, string $identity, string $source_path, Static_Site_Importer_Import_Report $report, array $shared_hashes ): bool {
+		$persisted_hash = self::persisted_hash( $receipt, $source_path, $report, $shared_hashes );
+		return 'static-site-importer/quality-resolution-receipt/v1' === ( $receipt['schema'] ?? null )
+			&& 'completed' === ( $receipt['status'] ?? null )
+			&& ( $receipt['fallback_reconciliation_identity'] ?? null ) === $identity
+			&& '' !== trim( (string) ( $receipt['selector'] ?? '' ) )
 			&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['binding_reconciliation_identity'] ?? '' ) )
 			&& 1 === preg_match( '/^[a-f0-9]{64}$/', (string) ( $receipt['materialized_block_hash'] ?? '' ) )
 			&& ( $receipt['persisted_fragment_hash'] ?? null ) === ( $receipt['materialized_block_hash'] ?? null )
@@ -518,12 +599,38 @@ final class Static_Site_Importer_Quality_Gates {
 		if ( empty( $receipts ) ) {
 			$bindings = $report['materialization_receipt']['completed']['runtime_declarations']['entity_bindings'] ?? array();
 			foreach ( $bindings as $binding ) {
-				if ( ! is_array( $binding ) || 'completed' !== ( $binding['status'] ?? null ) || ! in_array( $binding['role'] ?? null, array( 'form', 'commerce_collection' ), true ) ) {
+				if ( ! is_array( $binding ) || 'completed' !== ( $binding['status'] ?? null ) || ! in_array( $binding['role'] ?? null, array( 'form', 'commerce_collection', 'commerce_product_grid', 'commerce_listing', 'commerce_cart', 'order_lookup' ), true ) ) {
+					continue;
+				}
+				if ( in_array( $binding['role'], array( 'commerce_product_grid', 'commerce_listing', 'commerce_cart' ), true ) ) {
+					// A canonical grid receipt, the receipt of the store listing that
+					// adopted the grid, or a cart receipt joins its finding
+					// page-and-selector-scoped.
+					list( $grid_identity, $grid_hash ) = Static_Site_Importer_Entity_Materializer_Registry::page_region_fallback_identity( Static_Site_Importer_Entity_Materializer_Registry::fallback_region( (string) $binding['role'] ), (string) ( $binding['source_path'] ?? '' ), (string) ( $binding['selector'] ?? '' ) );
+					if ( '' === $grid_identity ) {
+						continue;
+					}
+					$receipts[] = array(
+						'schema'                           => 'static-site-importer/quality-resolution-receipt/v1',
+						'status'                           => 'completed',
+						'fallback_reconciliation_identity' => $grid_identity,
+						'source_path'                      => $binding['source_path'] ?? '',
+						'selector'                         => $binding['selector'] ?? '',
+						'fallback_hash'                    => $grid_hash,
+						'binding_reconciliation_identity'  => $binding['reconciliation_identity'] ?? '',
+						'materialized_block_hash'          => $binding['materialized_block_hash'] ?? '',
+						'persisted_fragment_hash'          => $binding['persisted_fragment_hash'] ?? '',
+						'materialized_content_hash'        => $binding['materialized_content_hash'] ?? '',
+						'provider'                         => $binding['provider'] ?? '',
+						'template_part'                    => $binding['template_part'] ?? '',
+						'replaced_fallback_identities'     => $binding['replaced_fallback_identities'] ?? array(),
+					);
 					continue;
 				}
 				$receipts[] = array(
 					'schema'                           => 'static-site-importer/quality-resolution-receipt/v1',
 					'status'                           => 'completed',
+					'role'                             => $binding['role'],
 					'fallback_reconciliation_identity' => $binding['fallback_reconciliation_identity'] ?? '',
 					'source_path'                      => $binding['source_path'] ?? '',
 					'fallback_hash'                    => $binding['fallback_hash'] ?? '',
@@ -537,13 +644,18 @@ final class Static_Site_Importer_Quality_Gates {
 				);
 			}
 		}
-		$part_hashes = array();
+		$shared_hashes = array();
 		foreach ( $report['materialization_receipt']['completed']['files'] ?? array() as $file ) {
 			if ( is_array( $file ) && is_string( $file['target_path'] ?? null ) && is_string( $file['hash'] ?? null ) ) {
-				$part_hashes[ $file['target_path'] ] = $file['hash'];
+				$shared_hashes[ $file['target_path'] ] = $file['hash'];
 			}
 		}
-		$receipts                = self::with_template_part_absorbed_receipts( $receipts );
+		foreach ( $report['materialization_receipt']['completed']['synced_patterns'] ?? array() as $pattern ) {
+			if ( is_array( $pattern ) && is_string( $pattern['source_path'] ?? null ) && is_string( $pattern['content_hash'] ?? null ) ) {
+				$shared_hashes[ $pattern['source_path'] ] = $pattern['content_hash'];
+			}
+		}
+		$receipts                = self::with_surface_absorbed_receipts( $receipts );
 		$receipts_by_fallback    = array();
 		$receipts_by_source_hash = array();
 		foreach ( $receipts as $receipt ) {
@@ -557,7 +669,7 @@ final class Static_Site_Importer_Quality_Gates {
 				continue;
 			}
 			$receipts_by_fallback[ $identity ] = $receipt;
-			if ( ! empty( $receipt['absorbed_by_template_part'] ) ) {
+			if ( ! empty( $receipt['absorbed_by_surface'] ) ) {
 				continue;
 			}
 
@@ -596,7 +708,7 @@ final class Static_Site_Importer_Quality_Gates {
 					}
 				}
 			}
-			$resolved_by_provider = self::receipt_resolves_fallback( $receipt, $identity, $fallback_hash, $source_path, $report, $part_hashes );
+			$resolved_by_provider = self::receipt_resolves_fallback( $receipt, $identity, $fallback_hash, $source_path, $report, $shared_hashes );
 
 			$diagnostic['fallback_reconciliation_identity'] = $identity;
 			$diagnostic['fallback_hash']                    = $fallback_hash;
@@ -618,23 +730,27 @@ final class Static_Site_Importer_Quality_Gates {
 		}
 
 		// Product-grid fallbacks reconcile against the same completed-receipt
-		// contract as forms above, keyed by the grid's own deterministic
-		// preserved-region identity instead of a producer-supplied form identity
-		// (a product-grid finding carries no separate identity field of its own).
-		// A finding with no derivable preserved region proves nothing and stays
-		// unresolved, exactly like a form identity with no matching receipt.
+		// contract as forms above, joined on the canonical source page plus the
+		// grid's own source selector — the evidence the grid declaration, the
+		// `entity_lifecycle.product_grids[]` row and a completed
+		// `commerce_product_grid` binding receipt all carry. Since
+		// Automattic/blocks-engine#3088 a grid finding carries no
+		// `readable_blocks`, so the finding derives no preserved-region hash; the
+		// selector-scoped identity is the whole match. Every finding — resolved
+		// or unresolved — reports a resolution row, exactly like forms.
+		$resolved_grid_receipts = array();
 		foreach ( $report['diagnostics'] ?? array() as $index => $diagnostic ) {
-			if ( ! is_array( $diagnostic ) || ! self::is_product_grid_fallback_diagnostic( $diagnostic ) ) {
+			if ( ! is_array( $diagnostic ) || ! ( self::is_product_grid_fallback_diagnostic( $diagnostic ) || self::is_cart_view_fallback_diagnostic( $diagnostic ) ) ) {
 				continue;
 			}
-			list( $identity, $fallback_hash ) = self::product_grid_fallback_identity( $diagnostic );
-			if ( '' === $identity ) {
-				continue;
+			list( $identity, $fallback_hash ) = self::page_region_fallback_identity( $diagnostic );
+			$source_path                      = Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
+			$candidate_receipt                = '' === $identity ? array() : ( $receipts_by_fallback[ $identity ] ?? array() );
+			$receipt                          = is_array( $candidate_receipt ) ? $candidate_receipt : array();
+			$resolved_by_provider             = '' !== $identity && self::receipt_resolves_product_grid( $receipt, $identity, $source_path, $report, $shared_hashes );
+			if ( $resolved_by_provider ) {
+				$resolved_grid_receipts[ $source_path ][ (string) ( $receipt['selector'] ?? '' ) ] = $receipt;
 			}
-			$source_path          = Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
-			$candidate_receipt    = $receipts_by_fallback[ $identity ] ?? array();
-			$receipt              = is_array( $candidate_receipt ) ? $candidate_receipt : array();
-			$resolved_by_provider = self::receipt_resolves_fallback( $receipt, $identity, $fallback_hash, $source_path, $report, $part_hashes );
 
 			$diagnostic['fallback_reconciliation_identity'] = $identity;
 			$diagnostic['fallback_hash']                    = $fallback_hash;
@@ -652,6 +768,59 @@ final class Static_Site_Importer_Quality_Gates {
 				'fallback_hash'                    => $fallback_hash,
 				'state'                            => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
 				'receipt'                          => $receipt,
+			);
+		}
+
+		// Commerce add-to-cart/quantity controls a provider-replaced grid
+		// superseded reconcile through their grid: the finding resolves only when
+		// every control it lists sits inside a grid a completed receipt replaced,
+		// and the grid's own receipt then proves the whole finding. Controls on a
+		// page with no materialized grid, or outside every resolved grid, stay
+		// unresolved and still report a resolution row.
+		foreach ( $report['diagnostics'] ?? array() as $index => $diagnostic ) {
+			if ( ! is_array( $diagnostic ) || ! self::is_commerce_controls_fallback_diagnostic( $diagnostic ) ) {
+				continue;
+			}
+			$source_path = Static_Site_Importer_Diagnostic_Projection::first_scalar( $diagnostic, array( 'source_path', 'source' ) );
+			$grids       = $resolved_grid_receipts[ $source_path ] ?? array();
+			$receipt     = array();
+			foreach ( is_array( $diagnostic['controls'] ?? null ) ? $diagnostic['controls'] : array() as $control ) {
+				$control_selector = is_array( $control ) ? Static_Site_Importer_Diagnostic_Projection::first_scalar( $control, array( 'source_selector', 'selector' ) ) : '';
+				$control_receipt  = array();
+				foreach ( $grids as $grid_selector => $grid_receipt ) {
+					if ( '' !== $grid_selector && ( $control_selector === $grid_selector || str_starts_with( $control_selector, $grid_selector . ' > ' ) ) ) {
+						$control_receipt = $grid_receipt;
+						break;
+					}
+				}
+				if ( array() === $control_receipt ) {
+					$receipt = array();
+					break;
+				}
+				if ( array() === $receipt ) {
+					$receipt = $control_receipt;
+				}
+			}
+			$resolved_by_provider = array() !== $receipt;
+			$identity             = $resolved_by_provider ? (string) ( $receipt['fallback_reconciliation_identity'] ?? '' ) : '';
+			$fallback_hash        = $resolved_by_provider ? (string) ( $receipt['fallback_hash'] ?? '' ) : '';
+
+			$diagnostic['fallback_reconciliation_identity'] = $identity;
+			$diagnostic['fallback_hash']                    = $fallback_hash;
+			$diagnostic['fallback_resolution']              = array(
+				'source_state' => 'detected',
+				'state'        => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
+				'receipt'      => $resolved_by_provider ? $receipt : array(),
+			);
+			$report->replace_diagnostic( $index, $diagnostic );
+			if ( $resolved_by_provider ) {
+				++$resolved;
+			}
+			$resolutions[] = array(
+				'fallback_reconciliation_identity' => $identity,
+				'fallback_hash'                    => $fallback_hash,
+				'state'                            => $resolved_by_provider ? 'resolved_by_provider' : 'unresolved',
+				'receipt'                          => $resolved_by_provider ? $receipt : array(),
 			);
 		}
 

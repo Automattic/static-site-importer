@@ -55,7 +55,16 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			$source_path = (string) ( $page['source_path'] ?? '' );
 			$post_id     = (int) ( $state['source_ids'][ $source_path ] ?? 0 );
 			$content     = $post_id > 0 ? get_post_field( 'post_content', $post_id ) : null;
-			if ( ! is_string( $content ) || ( ! self::content_references_media( $content ) && empty( $page['provider_featured_image_target_path'] ) ) ) {
+			// An explicit provider claim wins; otherwise the site plan's
+			// featured-image handoff names the theme asset and its alt text.
+			$featured_image = is_array( $page['metadata']['featured_image'] ?? null ) ? $page['metadata']['featured_image'] : array();
+			$featured_path  = (string) ( $page['provider_featured_image_target_path'] ?? '' );
+			$featured_alt   = '';
+			if ( '' === $featured_path && is_string( $featured_image['target_path'] ?? null ) ) {
+				$featured_path = $featured_image['target_path'];
+				$featured_alt  = is_string( $featured_image['alt'] ?? null ) ? $featured_image['alt'] : '';
+			}
+			if ( ! is_string( $content ) || ( ! self::content_references_media( $content ) && '' === $featured_path ) ) {
 				continue;
 			}
 
@@ -84,9 +93,9 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			if ( $error instanceof WP_Error ) {
 				return $error;
 			}
-			if ( ! empty( $page['provider_featured_image_target_path'] ) ) {
-				$relative = self::theme_relative_asset( $theme_uri . '/' . $page['provider_featured_image_target_path'], $theme_uri, array_merge( self::RASTER_EXTENSIONS, array( 'svg' ) ) );
-				$featured = null === $relative ? 0 : self::ensure_attachment( $theme_dir, $relative, '', $state, $attachments, $by_hash, $error );
+			if ( '' !== $featured_path ) {
+				$relative = self::theme_relative_asset( $theme_uri . '/' . $featured_path, $theme_uri, array_merge( self::RASTER_EXTENSIONS, array( 'svg' ) ) );
+				$featured = null === $relative ? 0 : self::ensure_attachment( $theme_dir, $relative, $featured_alt, $state, $attachments, $by_hash, $error );
 				if ( null !== $error || $featured <= 0 ) {
 					return $error ?? new WP_Error( 'provider_featured_image_unresolved', 'The provider source image could not be materialized.' );
 				}
@@ -643,7 +652,11 @@ final class Static_Site_Importer_Media_Library_Materializer {
 		$bound_html = '';
 		$cursor     = 0;
 		$owners     = array();
-		$openers    = array_column( self::block_openers( $rewritten ), null, 'start' );
+		$owner_ids  = array();
+		$openers    = array();
+		foreach ( self::block_openers( $rewritten ) as $block_opener ) {
+			$openers[ $block_opener['start'] ] = $block_opener;
+		}
 		foreach ( $spans as $span ) {
 			$top         = count( $owners ) - 1;
 			$image_class = self::image_class_for_owner( $owners[ $top ] ?? null );
@@ -653,18 +666,21 @@ final class Static_Site_Importer_Media_Library_Materializer {
 			}
 			$bound_html .= $segment['html'];
 			if ( $top >= 0 ) {
-				$owners[ $top ]['ids'] = array_merge( $owners[ $top ]['ids'], $segment['ids'] );
+				$owner_ids[ $top ] = array_merge( $owner_ids[ $top ], $segment['ids'] );
 			}
 			$comment     = substr( $rewritten, $span['start'], $span['end'] - $span['start'] );
 			$bound_html .= $comment;
 			if ( isset( $openers[ $span['start'] ] ) && ! $openers[ $span['start'] ]['self'] ) {
-				$owners[] = $openers[ $span['start'] ] + array(
-					'ids'    => array(),
+				$owners[]    = array(
+					'name'   => $openers[ $span['start'] ]['name'],
+					'json'   => $openers[ $span['start'] ]['json'],
+					'raw'    => $openers[ $span['start'] ]['raw'],
 					'offset' => strlen( $bound_html ) - strlen( $comment ),
 				);
+				$owner_ids[] = array();
 			} elseif ( preg_match( '~^<!--\s+/wp:([a-z0-9/-]+)\s+-->$~', $comment, $closing ) && ( $owners[ count( $owners ) - 1 ]['name'] ?? null ) === $closing[1] ) {
 				$owner  = array_pop( $owners );
-				$unique = array_values( array_unique( array_filter( $owner['ids'] ) ) );
+				$unique = array_values( array_unique( array_filter( array_pop( $owner_ids ) ?? array() ) ) );
 				if ( null !== self::unbound_media_text_size_slug( $owner ) && 1 === count( $unique ) ) {
 					$attrs              = json_decode( $owner['json'], true );
 					$attrs['mediaType'] = 'image';

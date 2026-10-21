@@ -141,7 +141,7 @@ $readable_blocks = array(
 		'innerContent' => array( '<div class="wp-block-group products">grid markup</div>' ),
 	),
 );
-$diagnostics = array(
+$diagnostics     = array(
 	array(
 		'type'               => 'unsupported_html_fallback',
 		'diagnostic_code'    => 'html_product_grid_fallback',
@@ -170,7 +170,7 @@ $diagnostics = array(
 );
 
 $expected_region = serialize_blocks( $readable_blocks );
-$anchors          = Static_Site_Importer_Product_Finding_Materializer::product_grid_binding_anchors( $diagnostics );
+$anchors         = Static_Site_Importer_Product_Finding_Materializer::product_grid_binding_anchors( $diagnostics );
 $assert( 3 === count( $anchors ), 'grid-anchors-cover-every-product-in-the-anchored-grid' );
 foreach ( array( 'apex-dynamics', 'solaris-ring', 'prism-wave' ) as $slug ) {
 	$assert( isset( $anchors[ $slug ] ), 'grid-anchors-key-by-manifest-slug-' . $slug );
@@ -204,9 +204,9 @@ $plan   = array(
 		),
 	),
 );
-$bridged_plan  = $attach->invoke( null, $plan );
+$bridged_plan     = $attach->invoke( null, $plan );
 $bridged_products = $bridged_plan['runtime_declarations'][1]['payload']['entities'];
-$by_slug           = array();
+$by_slug          = array();
 foreach ( $bridged_products as $product ) {
 	$by_slug[ $product['slug'] ] = $product;
 }
@@ -242,8 +242,8 @@ $assert( 'commerce_collection' === ( $validated['products'][0]['bindings'][0]['r
 
 // --- 6. Entity_Materializer_Registry::block_bindings(): shared-anchor coalescing
 
-$adapter = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
-$grid_binding = array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/browse.html', 'search_block_markup' => $expected_region, 'occurrence' => 1, 'role' => 'commerce_collection' );
+$adapter           = Static_Site_Importer_Entity_Materializer_Registry::product_adapter();
+$grid_binding      = array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/browse.html', 'search_block_markup' => $expected_region, 'occurrence' => 1, 'role' => 'commerce_collection' );
 $manifest_entities = array(
 	array( 'name' => 'Apex Dynamics', 'slug' => 'apex-dynamics', 'regular_price' => '49.99', 'bindings' => array( $grid_binding ) ),
 	array( 'name' => 'Solaris Ring', 'slug' => 'solaris-ring', 'regular_price' => '64.99', 'bindings' => array( $grid_binding ) ),
@@ -260,7 +260,7 @@ $lifecycle = array(
 		),
 	),
 );
-$reports = array(
+$reports   = array(
 	'products-declaration' => array(
 		'products' => array(
 			array( 'slug' => 'apex-dynamics', 'id' => 201, 'status' => 'created' ),
@@ -270,11 +270,11 @@ $reports = array(
 		),
 	),
 );
-$bindings = Static_Site_Importer_Entity_Materializer_Registry::block_bindings( $lifecycle, $reports );
+$bindings  = Static_Site_Importer_Entity_Materializer_Registry::block_bindings( $lifecycle, $reports );
 $assert( ! is_wp_error( $bindings ), 'coalesced-block-bindings-do-not-error', is_wp_error( $bindings ) ? $bindings->get_error_message() : '' );
 $assert( is_array( $bindings ) && 2 === count( $bindings ), 'coalesced-block-bindings-produce-one-grid-binding-and-one-single-binding' );
-$grid_result   = null;
-$solo_result   = null;
+$grid_result = null;
+$solo_result = null;
 foreach ( $bindings as $binding ) {
 	if ( 'website/browse.html' === ( $binding['source_path'] ?? '' ) ) {
 		$grid_result = $binding;
@@ -293,7 +293,7 @@ $assert( null !== $solo_result && '<!-- wp:shortcode -->[add_to_cart id="303" cl
 // exactly like one declined single-product entity already leaves its own
 // anchor untouched today (a declined row is a deliberate provider decision,
 // not a materialization failure).
-$all_declined_reports = array(
+$all_declined_reports  = array(
 	'products-declaration' => array(
 		'products' => array(
 			array( 'slug' => 'apex-dynamics', 'status' => 'skipped', 'reason' => 'woocommerce_inactive' ),
@@ -308,28 +308,28 @@ $assert( ! is_wp_error( $all_declined_bindings ) && 1 === count( $all_declined_b
 
 // --- 7. preflight_runtime_entity_binding_anchors(): shared-claim allowance -
 
-$shared_page = array(
+$shared_page            = array(
 	'source_path'            => 'website/browse.html',
 	'resolved_block_markup'  => $expected_region,
 	'skip_materialization'   => false,
 );
-$preflight_plan = array( 'pages' => array( $shared_page ) );
+$preflight_plan         = array( 'pages' => array( $shared_page ) );
 $preflight_lifecycle_ok = array(
 	'entities' => array(
 		'products-declaration' => array(
-			'adapter'  => array( 'waiver_arg' => '' ),
+			'adapter'  => array( 'waiver_arg' => '', 'entity_collection' => 'products' ),
 			'manifest' => array( 'products' => array( $manifest_entities[0], $manifest_entities[1], $manifest_entities[2] ) ),
 		),
 	),
 );
-$preflight_ok = Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_runtime_entity_binding_anchors( $preflight_plan, $preflight_lifecycle_ok, array() );
+$preflight_ok           = Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_runtime_entity_binding_anchors( $preflight_plan, $preflight_lifecycle_ok, array() );
 $assert( true === $preflight_ok, 'preflight-allows-multiple-products-to-share-one-commerce-collection-claim' );
 
-$non_collection_binding = array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/browse.html', 'search_block_markup' => $expected_region, 'occurrence' => 1, 'role' => 'commerce_controls' );
+$non_collection_binding       = array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/browse.html', 'search_block_markup' => $expected_region, 'occurrence' => 1, 'role' => 'commerce_controls' );
 $preflight_lifecycle_conflict = array(
 	'entities' => array(
 		'products-declaration' => array(
-			'adapter'  => array( 'waiver_arg' => '' ),
+			'adapter'  => array( 'waiver_arg' => '', 'entity_collection' => 'products' ),
 			'manifest' => array(
 				'products' => array(
 					array( 'name' => 'A', 'slug' => 'a', 'regular_price' => '1.00', 'bindings' => array( $non_collection_binding ) ),
@@ -339,31 +339,41 @@ $preflight_lifecycle_conflict = array(
 		),
 	),
 );
-$preflight_conflict = Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_runtime_entity_binding_anchors( $preflight_plan, $preflight_lifecycle_conflict, array() );
+$preflight_conflict           = Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_runtime_entity_binding_anchors( $preflight_plan, $preflight_lifecycle_conflict, array() );
 $assert( is_wp_error( $preflight_conflict ) && 'static_site_importer_runtime_binding_claim_conflict' === $preflight_conflict->get_error_code(), 'preflight-still-rejects-a-duplicate-claim-for-every-non-grid-role' );
 
-// --- 8. Quality_Gates reconciliation: unresolved_fallback_count reaches 0 --
+// --- 8. Quality_Gates reconciliation: the finding joins its completed
+//        `commerce_product_grid` receipt page-and-selector-scoped ----------
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-quality-gates.php';
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-import-report.php';
 
-$grid_diagnostic = $diagnostics[0];
-$report          = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/browse.html' );
+$grid_diagnostic                            = $diagnostics[0];
+list( $grid_identity, $grid_fallback_hash ) = Static_Site_Importer_Entity_Materializer_Registry::page_region_fallback_identity( 'product-grid', 'website/browse.html', 'ul.products' );
+$grid_binding_row                           = array(
+	'schema'                           => 'static-site-importer/runtime-entity-binding/v1',
+	'status'                           => 'completed',
+	'reconciliation_identity'          => hash( 'sha256', 'browse-grid-binding' ),
+	'source_path'                      => 'website/browse.html',
+	'selector'                         => 'ul.products',
+	'role'                             => 'commerce_product_grid',
+	'declaration_id'                   => 'grids-declaration',
+	'fallback_reconciliation_identity' => $grid_identity,
+	'fallback_hash'                    => $grid_fallback_hash,
+	'materialized_block_hash'          => hash( 'sha256', 'provider-loop-replacing-the-grid-region' ),
+	'persisted_fragment_hash'          => hash( 'sha256', 'provider-loop-replacing-the-grid-region' ),
+	'materialized_content_hash'        => hash( 'sha256', 'materialized-page-content-with-the-grid-replacement' ),
+	'provider'                         => 'woocommerce',
+	'superseded_runtime_selectors'     => array( 'ul.products' ),
+	'replaced_fallback_identities'     => array(),
+);
+$report                                     = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/browse.html' );
 $report->append_diagnostic( $grid_diagnostic );
 $report->merge_quality( array( 'fallback_count' => 1 ) );
 $report['materialization_receipt'] = array(
 	'completed' => array(
 		'runtime_declarations' => array(
-			'entity_bindings' => array(
-				array_merge(
-					$grid_result,
-					array(
-						'status'                   => 'completed',
-						'persisted_fragment_hash'  => hash( 'sha256', (string) $grid_result['replacement_block_markup'] ),
-						'materialized_content_hash' => hash( 'sha256', 'materialized-page-content-with-the-grid-replacement' ),
-					)
-				),
-			),
+			'entity_bindings' => array( $grid_binding_row ),
 		),
 		'materialized_pages'    => array(
 			'website/browse.html' => array( 'content_hash' => hash( 'sha256', 'materialized-page-content-with-the-grid-replacement' ) ),
@@ -376,6 +386,7 @@ $assert( 1 === ( $resolutions['source_fallback_count'] ?? 0 ), 'quality-reconcil
 $assert( 1 === ( $resolutions['resolved_by_provider'] ?? 0 ), 'quality-reconciliation-resolves-the-grid-fallback-with-a-completed-receipt' );
 $assert( 0 === ( $resolutions['unresolved_fallback_count'] ?? -1 ), 'quality-reconciliation-unresolved-fallback-count-reaches-zero' );
 $assert( 0 === ( $report->quality()['fallback_count'] ?? -1 ), 'quality-reconciliation-decrements-fallback-count-to-zero' );
+$assert( 'ul.products' === ( $resolutions['resolutions'][0]['receipt']['selector'] ?? '' ) && $grid_identity === ( $resolutions['resolutions'][0]['fallback_reconciliation_identity'] ?? '' ), 'quality-reconciliation-grid-receipt-carries-the-grid-selector-and-identity' );
 
 // Negative: no completed receipt at all leaves the grid fallback unresolved.
 $unresolved_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/browse.html' );
@@ -383,17 +394,37 @@ $unresolved_report->append_diagnostic( $grid_diagnostic );
 $unresolved_report->merge_quality( array( 'fallback_count' => 1 ) );
 Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $unresolved_report );
 $unresolved_resolutions = $unresolved_report['quality_resolutions'];
-$assert( 0 === ( $unresolved_resolutions['resolved_by_provider'] ?? -1 ) && 1 === ( $unresolved_resolutions['unresolved_fallback_count'] ?? 0 ), 'quality-reconciliation-leaves-an-unbound-grid-fallback-unresolved' );
+$assert( 0 === ( $unresolved_resolutions['resolved_by_provider'] ?? -1 ) && 1 === ( $unresolved_resolutions['unresolved_fallback_count'] ?? 0 ) && 'unresolved' === ( $unresolved_resolutions['resolutions'][0]['state'] ?? '' ), 'quality-reconciliation-leaves-an-unbound-grid-fallback-unresolved' );
 
-// A finding with no derivable anchor at all (no readable_blocks) never claims
-// a resolution it cannot prove.
-$no_anchor_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/home.html' );
-$no_anchor_report->append_diagnostic( $diagnostics[1] );
-$no_anchor_report->merge_quality( array( 'fallback_count' => 1 ) );
-Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $no_anchor_report );
-$no_anchor_resolutions = $no_anchor_report['quality_resolutions'];
-$assert( array() === ( $no_anchor_resolutions['resolutions'] ?? array( 'unexpected' ) ), 'quality-reconciliation-skips-a-finding-with-no-derivable-anchor' );
-$assert( 1 === ( $no_anchor_report->quality()['fallback_count'] ?? 0 ), 'quality-reconciliation-leaves-fallback-count-unchanged-without-a-derivable-anchor' );
+// A completed binding that cannot name the grid's own source selector cannot
+// prove the page-and-selector join, so the finding stays unresolved.
+$selectorless_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/browse.html' );
+$selectorless_report->append_diagnostic( $grid_diagnostic );
+$selectorless_report->merge_quality( array( 'fallback_count' => 1 ) );
+$selectorless_report['materialization_receipt'] = array(
+	'completed' => array(
+		'runtime_declarations' => array(
+			'entity_bindings' => array( array_merge( $grid_binding_row, array( 'selector' => '' ) ) ),
+		),
+		'materialized_pages'    => array(
+			'website/browse.html' => array( 'content_hash' => hash( 'sha256', 'materialized-page-content-with-the-grid-replacement' ) ),
+		),
+	),
+);
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $selectorless_report );
+$selectorless_resolutions = $selectorless_report['quality_resolutions'];
+$assert( 0 === ( $selectorless_resolutions['resolved_by_provider'] ?? -1 ) && 'unresolved' === ( $selectorless_resolutions['resolutions'][0]['state'] ?? '' ), 'quality-reconciliation-rejects-a-binding-without-the-grid-selector' );
+
+// A finding whose page and selector join no completed binding still reports as
+// an unresolved resolution row rather than vanishing: it stays a counted
+// unresolved fallback.
+$no_binding_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'website/home.html' );
+$no_binding_report->append_diagnostic( $diagnostics[1] );
+$no_binding_report->merge_quality( array( 'fallback_count' => 1 ) );
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $no_binding_report );
+$no_binding_resolutions = $no_binding_report['quality_resolutions'];
+$assert( 0 === ( $no_binding_resolutions['resolved_by_provider'] ?? -1 ) && 1 === ( $no_binding_resolutions['unresolved_fallback_count'] ?? 0 ) && 1 === count( $no_binding_resolutions['resolutions'] ?? array() ) && 'unresolved' === ( $no_binding_resolutions['resolutions'][0]['state'] ?? '' ), 'quality-reconciliation-reports-an-unjoined-finding-as-unresolved' );
+$assert( 1 === ( $no_binding_report->quality()['fallback_count'] ?? 0 ), 'quality-reconciliation-leaves-fallback-count-unchanged-without-a-binding' );
 
 // --- 9. A product legitimately shared between two distinct grids ----------
 //
@@ -413,7 +444,7 @@ $home_readable_blocks = array(
 		'innerContent' => array( '<div class="wp-block-group featured-products">home grid markup</div>' ),
 	),
 );
-$home_region = serialize_blocks( $home_readable_blocks );
+$home_region          = serialize_blocks( $home_readable_blocks );
 
 $home_binding    = array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/home.html', 'search_block_markup' => $home_region, 'occurrence' => 1, 'role' => 'commerce_collection' );
 $catalog_binding = array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/browse.html', 'search_block_markup' => $expected_region, 'occurrence' => 1, 'role' => 'commerce_collection' );
@@ -428,45 +459,45 @@ $shared_manifest_entities = array(
 	array( 'name' => 'Catalog Exclusive', 'slug' => 'catalog-exclusive', 'regular_price' => '39.99', 'bindings' => array( $catalog_binding ) ),
 );
 
-$shared_pages = array(
+$shared_pages               = array(
 	array( 'source_path' => 'website/home.html', 'resolved_block_markup' => $home_region, 'skip_materialization' => false ),
 	array( 'source_path' => 'website/browse.html', 'resolved_block_markup' => $expected_region, 'skip_materialization' => false ),
 );
 $shared_preflight_lifecycle = array(
 	'entities' => array(
 		'products-declaration' => array(
-			'adapter'  => array( 'waiver_arg' => '' ),
+			'adapter'  => array( 'waiver_arg' => '', 'entity_collection' => 'products' ),
 			'manifest' => array( 'products' => $shared_manifest_entities ),
 		),
 	),
 );
-$shared_preflight = Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_runtime_entity_binding_anchors( array( 'pages' => $shared_pages ), $shared_preflight_lifecycle, array() );
+$shared_preflight           = Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_runtime_entity_binding_anchors( array( 'pages' => $shared_pages ), $shared_preflight_lifecycle, array() );
 $assert( true === $shared_preflight, 'preflight-allows-one-product-to-legitimately-claim-two-distinct-grid-anchors', is_wp_error( $shared_preflight ) ? $shared_preflight->get_error_message() : '' );
 
 // Mixing a legitimate shared-collection claim into the same manifest must not
 // mask a real single-entity conflict elsewhere: two non-collection claims on
 // one occurrence still fail, even alongside otherwise-valid shared claims.
-$duplicate_single_claim = array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/product-a.html', 'search_block_markup' => '<!-- wp:shortcode -->[add_to_cart id="1"]<!-- /wp:shortcode -->', 'occurrence' => 1, 'role' => 'commerce_controls' );
-$mixed_manifest_entities = array_merge(
+$duplicate_single_claim    = array( 'schema' => 'generic/block-binding/v1', 'source_path' => 'website/product-a.html', 'search_block_markup' => '<!-- wp:shortcode -->[add_to_cart id="1"]<!-- /wp:shortcode -->', 'occurrence' => 1, 'role' => 'commerce_controls' );
+$mixed_manifest_entities   = array_merge(
 	$shared_manifest_entities,
 	array(
 		array( 'name' => 'Solo A', 'slug' => 'solo-a', 'regular_price' => '1.00', 'bindings' => array( $duplicate_single_claim ) ),
 		array( 'name' => 'Solo B', 'slug' => 'solo-b', 'regular_price' => '1.00', 'bindings' => array( $duplicate_single_claim ) ),
 	)
 );
-$mixed_pages = array_merge(
+$mixed_pages               = array_merge(
 	$shared_pages,
 	array( array( 'source_path' => 'website/product-a.html', 'resolved_block_markup' => $duplicate_single_claim['search_block_markup'], 'skip_materialization' => false ) )
 );
 $mixed_preflight_lifecycle = array(
 	'entities' => array(
 		'products-declaration' => array(
-			'adapter'  => array( 'waiver_arg' => '' ),
+			'adapter'  => array( 'waiver_arg' => '', 'entity_collection' => 'products' ),
 			'manifest' => array( 'products' => $mixed_manifest_entities ),
 		),
 	),
 );
-$mixed_preflight = Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_runtime_entity_binding_anchors( array( 'pages' => $mixed_pages ), $mixed_preflight_lifecycle, array() );
+$mixed_preflight           = Static_Site_Importer_Runtime_Entity_Binding_Validation::preflight_runtime_entity_binding_anchors( array( 'pages' => $mixed_pages ), $mixed_preflight_lifecycle, array() );
 $assert( is_wp_error( $mixed_preflight ) && 'static_site_importer_runtime_binding_claim_conflict' === $mixed_preflight->get_error_code(), 'preflight-still-rejects-two-single-entity-claims-on-one-occurrence-alongside-legitimate-shared-grid-claims' );
 
 // block_bindings(): the shared entity's seeded id must appear in *both*
@@ -480,7 +511,7 @@ $shared_lifecycle = array(
 		),
 	),
 );
-$shared_reports = array(
+$shared_reports   = array(
 	'products-declaration' => array(
 		'products' => array(
 			array( 'slug' => 'home-exclusive', 'id' => 401, 'status' => 'created' ),
@@ -489,7 +520,7 @@ $shared_reports = array(
 		),
 	),
 );
-$shared_bindings = Static_Site_Importer_Entity_Materializer_Registry::block_bindings( $shared_lifecycle, $shared_reports );
+$shared_bindings  = Static_Site_Importer_Entity_Materializer_Registry::block_bindings( $shared_lifecycle, $shared_reports );
 $assert( ! is_wp_error( $shared_bindings ), 'shared-product-block-bindings-do-not-error', is_wp_error( $shared_bindings ) ? $shared_bindings->get_error_message() : '' );
 $assert( is_array( $shared_bindings ) && 2 === count( $shared_bindings ), 'shared-product-block-bindings-produce-exactly-one-replacement-per-grid' );
 $home_grid_result    = null;

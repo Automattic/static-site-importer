@@ -31,8 +31,14 @@ function get_post_meta( int $id ): array {
 	return $GLOBALS['meta'][ $id ] ?? array(); }
 function delete_post_meta( int $id, string $key ): void {
 	unset( $GLOBALS['meta'][ $id ][ $key ] ); }
+// Like WordPress: values are stored serialized, and an already-serialized
+// string is serialized again.
+function maybe_serialize( mixed $value ): mixed {
+	return is_array( $value ) || is_object( $value ) || ( is_string( $value ) && false !== @unserialize( $value ) ) ? serialize( $value ) : $value; } // phpcs:ignore
+function maybe_unserialize( mixed $value ): mixed {
+	return is_string( $value ) && false !== @unserialize( $value ) ? unserialize( $value ) : $value; } // phpcs:ignore
 function add_post_meta( int $id, string $key, mixed $value ): void {
-	$GLOBALS['meta'][ $id ][ $key ][] = $value; }
+	$GLOBALS['meta'][ $id ][ $key ][] = maybe_serialize( $value ); }
 function wp_get_object_terms( int $id ): array {
 	return $GLOBALS['product_terms'][ $id ] ?? array(); }
 function wp_update_post( array $post, bool $error = false ): int|WP_Error {
@@ -97,6 +103,13 @@ class WC_Product_Simple {
 function wc_get_product( int $id ): WC_Product_Simple {
 	return new WC_Product_Simple( $id ); }
 
+function get_option( string $name, mixed $default = false ): mixed {
+	return $default; }
+function add_option(): bool {
+	return true; }
+function delete_option(): bool {
+	return true; }
+
 require dirname( __DIR__ ) . '/includes/class-static-site-importer-woo-product-seeder.php';
 $assert  = static function ( bool $condition, string $label ): void {
 	if ( ! $condition ) {
@@ -138,13 +151,16 @@ $GLOBALS['products'][7]                         = array(
 	'post_title' => 'Original',
 );
 $GLOBALS['products_by_slug']['updated-failure'] = 7;
-$GLOBALS['meta'][7]                             = array( '_original' => array( 'yes' ) );
+$GLOBALS['meta'][7]                             = array(
+	'_original'           => array( 'yes' ),
+	'_product_attributes' => array( serialize( array( 'pa_light' => array( 'name' => 'pa_light' ) ) ) ), // phpcs:ignore
+);
 $GLOBALS['product_terms'][7]                    = array( 9 );
 $GLOBALS['terms'][9]                            = (object) array( 'count' => 1 );
 $GLOBALS['terms_by_name']['Shared category']    = array( 'term_id' => 9 );
 $GLOBALS['set_terms_failure']                   = 'error';
 $report = Static_Site_Importer_Woo_Product_Seeder::seed( array( 'products' => array( $product( 'updated-failure', array( 'Shared category' ) ) ) ) );
-$assert( ! empty( $report['products'][0]['compensated'] ) && 'Original' === $GLOBALS['products'][7]['post_title'] && array( '_original' => array( 'yes' ) ) === $GLOBALS['meta'][7] && array( 9 ) === $GLOBALS['product_terms'][7], 'updated product failure restores post, meta, and preexisting categories' );
+$assert( ! empty( $report['products'][0]['compensated'] ) && 'Original' === $GLOBALS['products'][7]['post_title'] && array( 'yes' ) === $GLOBALS['meta'][7]['_original'] && array( 'pa_light' => array( 'name' => 'pa_light' ) ) === maybe_unserialize( $GLOBALS['meta'][7]['_product_attributes'][0] ?? '' ) && array( 9 ) === $GLOBALS['product_terms'][7], 'updated product failure restores post, meta (array meta stays an array), and preexisting categories' );
 $assert( isset( $GLOBALS['terms'][9] ), 'preexisting shared category is never cleaned up' );
 
 $reset();

@@ -71,8 +71,9 @@ final class Static_Site_Importer_Runtime_Entity_Binding_Validation {
 			if ( '' !== $waiver_arg && ! empty( $args[ $waiver_arg ] ) ) {
 				continue;
 			}
-			$manifest = isset( $prepared['manifest'] ) && is_array( $prepared['manifest'] ) ? $prepared['manifest'] : array();
-			$entities = isset( $manifest['products'] ) && is_array( $manifest['products'] ) ? $manifest['products'] : ( isset( $manifest['forms'] ) && is_array( $manifest['forms'] ) ? $manifest['forms'] : array() );
+			$manifest   = isset( $prepared['manifest'] ) && is_array( $prepared['manifest'] ) ? $prepared['manifest'] : array();
+			$collection = (string) ( $prepared['adapter']['entity_collection'] ?? '' );
+			$entities   = isset( $manifest[ $collection ] ) && is_array( $manifest[ $collection ] ) ? $manifest[ $collection ] : array();
 			foreach ( $entities as $entity ) {
 				$entity_bindings = is_array( $entity ) && is_array( $entity['bindings'] ?? null ) ? $entity['bindings'] : array();
 				foreach ( $entity_bindings as $binding ) {

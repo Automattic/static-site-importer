@@ -67,11 +67,13 @@ class WP_Post {
 	public string $post_name;
 	public string $post_type;
 	public string $post_status;
+	public string $post_content;
 	public function __construct( int $id ) {
-		$this->ID          = $id;
-		$this->post_name   = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_name'] ?? '' );
-		$this->post_type   = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_type'] ?? '' );
-		$this->post_status = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_status'] ?? '' ); }
+		$this->ID           = $id;
+		$this->post_name    = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_name'] ?? '' );
+		$this->post_type    = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_type'] ?? '' );
+		$this->post_status  = (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_status'] ?? '' );
+		$this->post_content = stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_content'] ?? '' ) ); }
 }
 function apply_filters( string $hook, $value, ...$args ) {
 	unset( $hook, $args );
@@ -280,6 +282,8 @@ function get_permalink( int|WP_Post $post ): string {
 }
 function home_url( string $path = '/' ): string {
 	return 'https://example.test' . $path; }
+function get_post_status( int $id ) {
+	return isset( $GLOBALS['ssi_plan_posts'][ $id ] ) ? (string) ( $GLOBALS['ssi_plan_posts'][ $id ]['post_status'] ?? '' ) : false; }
 function get_post_field( string $field, int $id ): string {
 	return stripslashes( (string) ( $GLOBALS['ssi_plan_posts'][ $id ][ $field ] ?? '' ) ); }
 function sanitize_title( string $value ): string {
@@ -1624,7 +1628,8 @@ $production_result                           = ( new ReflectionMethod( Static_Si
 $GLOBALS['ssi_plan_count_aggregate_encodes'] = false;
 $production_report_json                      = (string) file_get_contents( $production_result['report_path'] ?? '' );
 $production_report                           = json_decode( $production_report_json, true );
-$assert( 0 === $GLOBALS['ssi_plan_json_array_calls'] && is_array( $production_report ) && $large_asset_base64 === ( $production_report['blocks_engine']['wordpress_site_plan']['assets'][ count( $production_report['blocks_engine']['wordpress_site_plan']['assets'] ) - 1 ]['content_base64'] ?? '' ) && ! isset( $production_report['materialization_receipt']['transaction'] ) && isset( $deferred_font_receipt['transaction'] ) && hash( 'sha256', $inter_payload ) === ( $production_report['materialization_receipt']['completed']['font_materialization']['required_faces'][0]['assets'][0]['observed_sha256'] ?? '' ), 'production report assembly streams large base64 assets without aggregate JSON encoding, keeps the live rollback journal out of the persisted report, and preserves canonical report fields and invalid-font digest evidence' );
+$production_report_last_asset                = $production_report['blocks_engine']['wordpress_site_plan']['assets'][ count( $production_report['blocks_engine']['wordpress_site_plan']['assets'] ) - 1 ] ?? array();
+$assert( 0 === $GLOBALS['ssi_plan_json_array_calls'] && is_array( $production_report ) && 'assets/fonts/large-invalid.woff2' === ( $production_report_last_asset['target_path'] ?? '' ) && ! isset( $production_report_last_asset['content_base64'] ) && false === str_contains( $production_report_json, $large_asset_base64 ) && ! isset( $production_report['materialization_receipt']['transaction'] ) && isset( $deferred_font_receipt['transaction'] ) && hash( 'sha256', $inter_payload ) === ( $production_report['materialization_receipt']['completed']['font_materialization']['required_faces'][0]['assets'][0]['observed_sha256'] ?? '' ), 'production report assembly keeps asset payload bytes and the live rollback journal out of the persisted report while preserving target paths and invalid-font digest evidence' );
 $typed_css = (string) file_get_contents( $typed_font_root . '/assets/css/embedded-fonts.css' );
 $assert( str_contains( $typed_css, 'font-weight:100 900' ) && str_contains( $typed_css, 'font-stretch:75% 125%' ) && str_contains( $typed_css, 'unicode-range:U+0000-00FF' ) && ! str_contains( $typed_css, 'fonts.example.test' ), 'producer font faces preserve all declared axes and unicode ranges while rewriting only local sources' );
 $typed_readiness = (string) file_get_contents( $typed_font_root . '/assets/js/font-readiness.js' );
@@ -1751,8 +1756,11 @@ $product_grid_artifact = array(
 	),
 );
 $product_grid_plan     = ( new ArtifactCompiler() )->compile( $product_grid_artifact )->toArray()['source_reports']['wordpress_site_plan'];
-$declared_products     = $product_grid_plan['runtime_declarations'] ?? array();
+// Newer transformers also declare the templated grid as an optional `product_grids` collection beside the explicit declarations.
+$declared_grids        = array_values( array_filter( $product_grid_plan['runtime_declarations'] ?? array(), static fn ( $declaration ): bool => 'entity_collection' === ( $declaration['kind'] ?? '' ) && 'product_grids' === ( $declaration['type'] ?? '' ) ) );
+$declared_products     = array_values( array_filter( $product_grid_plan['runtime_declarations'] ?? array(), static fn ( $declaration ): bool => ! ( 'entity_collection' === ( $declaration['kind'] ?? '' ) && 'product_grids' === ( $declaration['type'] ?? '' ) ) ) );
 $assert( 2 === count( $declared_products ) && 'shop' === ( $declared_products[0]['capability'] ?? '' ) && 'products' === ( $declared_products[1]['type'] ?? '' ), 'canonical plans carry explicit typed product declarations without diagnostic mutation' );
+$assert( count( $declared_grids ) <= 1, 'a canonical plan declares at most one optional product grid collection beside the explicit declarations' );
 $assert( true === in_array( 'entity_collection:products', $declared_products[0]['required_for'] ?? array(), true ), 'declared product entities retain the required capability relationship' );
 $assert( array( 'tour-tee', 'signed-cd' ) === array_column( $declared_products[1]['payload']['entities'] ?? array(), 'slug' ), 'canonical declarations retain product rows unchanged' );
 $declared_entities  = $declared_products[1]['payload']['entities'] ?? array();
@@ -1836,6 +1844,48 @@ $assert( $token_anchor === ( $token_lifecycle['entities'][ $token_entity_declara
 $assert( true === $preflight_bindings->invoke( null, $resolved_binding_plan, $resolved_lifecycle, array() ), 'resolved provider binding anchors match the exact page markup consumed by materialization' );
 $assert( $token_lifecycle === $resolve_binding_manifests->invoke( null, $token_lifecycle, array( 'pages' => $resolved_binding_plan['pages'] ) ), 'plans without resolved runtime declarations retain canonical lifecycle behavior' );
 
+// A collection provider renders its item template card and per-item slot
+// values in place of page content, so those take the resolver's destination
+// URLs too. A canonical token left in them renders as a broken image.
+$grid_id         = str_repeat( 'f', 64 );
+$grid_card       = static fn( string $src ): string => '<!-- wp:image --><figure class="wp-block-image"><img src="' . $src . '"></figure><!-- /wp:image -->';
+$grid_entity     = static fn( string $src ): array => array(
+	'source_path'   => 'index.html',
+	'selector'      => '.grid',
+	'bindings'      => array(),
+	'item_template' => array( 'block_markup' => $grid_card( $src ) ),
+	'items'         => array( array( 'slots' => array( 'image' => array( 'markup' => $grid_card( $src ) ) ) ) ),
+);
+$grid_token      = '{{wordpress-site-plan:asset:card}}';
+$grid_url        = 'https://example.test/wp-content/themes/entity-plan/assets/card.png';
+$grid_lifecycle  = array(
+	'entities' => array(
+		$grid_id => array(
+			'adapter'  => array( 'entity_collection' => 'product_grids' ),
+			'manifest' => array( 'product_grids' => array( $grid_entity( $grid_token ) ) ),
+		),
+	),
+);
+$grid_resolved   = $resolve_binding_manifests->invoke(
+	null,
+	$grid_lifecycle,
+	array(
+		'runtime_declarations' => array(
+			array(
+				'kind'                    => 'entity_collection',
+				'type'                    => 'product_grids',
+				'reconciliation_identity' => $grid_id,
+				'payload'                 => array(
+					'schema'   => 'generic/product-grids/v1',
+					'entities' => array( $grid_entity( $grid_url ) ),
+				),
+			),
+		),
+	)
+);
+$grid_projected  = is_array( $grid_resolved ) ? ( $grid_resolved['entities'][ $grid_id ]['manifest']['product_grids'][0] ?? array() ) : array();
+$assert( $grid_card( $grid_url ) === ( $grid_projected['item_template']['block_markup'] ?? '' ) && $grid_card( $grid_url ) === ( $grid_projected['items'][0]['slots']['image']['markup'] ?? '' ), 'resolved collection item template and slot markup replace canonical asset tokens', (string) wp_json_encode( $grid_projected ) );
+
 $binding_preflight_cases = array(
 	'overlap' => array(
 		'code' => 'static_site_importer_runtime_binding_claim_conflict',
@@ -1867,7 +1917,8 @@ $binding_preflight_cases = array(
 foreach ( $binding_preflight_cases as $case_name => $binding_preflight_case ) {
 	$binding_preflight_callbacks = 0;
 	foreach ( $binding_preflight_case['lifecycle']['entities'] as &$binding_preflight_entity ) {
-		$binding_preflight_entity['adapter']['materializer'] = static function () use ( &$binding_preflight_callbacks ): array { ++$binding_preflight_callbacks; return array(); };
+		$binding_preflight_entity['adapter']['materializer']      = static function () use ( &$binding_preflight_callbacks ): array { ++$binding_preflight_callbacks; return array(); };
+		$binding_preflight_entity['adapter']['entity_collection'] = 'products';
 	}
 	unset( $binding_preflight_entity );
 	$case_prepared = array(
@@ -2407,6 +2458,29 @@ $assert( 0 === ( $form_quality_report['quality']['fallback_count'] ?? -1 ) && 1 
 $resolved_form_quality    = Static_Site_Importer_Quality_Gates::finalize_quality_report( $form_quality_report, array( 'fail_on_quality' => true ) );
 $resolved_form_validation = Static_Site_Importer_Diagnostic_Projection::import_validation_result( $form_quality_report, $resolved_form_quality );
 $assert( true === ( $resolved_form_quality['pass'] ?? false ) && false === ( $resolved_form_quality['fail_import'] ?? true ) && array() === ( $resolved_form_quality['failure_reasons'] ?? null ) && 'passed' === ( $resolved_form_validation['status'] ?? '' ), 'receipt-resolved form fallback clears derived quality gates and validation status' );
+// #2216: use the real compiler/seeder result, then persist its replacement
+// through the same runtime binding path the import quality gate consumes.
+$nested_name = json_decode( (string) shell_exec( escapeshellarg( PHP_BINARY ) . ' ' . escapeshellarg( __DIR__ . '/fixtures/nested-name-row-fixture.php' ) ), true );
+$assert( 'mapped' === ( $nested_name['status'] ?? '' ) && empty( $nested_name['row']['form_receipt_unaccepted_losses'] ), 'nested-floated-name-row-maps-without-topology-loss' );
+preg_match_all( '/<!-- wp:([^\s]+)(?:\s|\/|-->)/', $nested_name['markup'], $nested_blocks );
+foreach ( array_unique( $nested_blocks[1] ) as $nested_block ) {
+	WP_Block_Type_Registry::get_instance()->register( str_contains( $nested_block, '/' ) ? $nested_block : 'core/' . $nested_block, array() );
+}
+$nested_name['fallback']['source_path'] = 'index.html';
+$nested_binding = array_replace( $form_binding, array(
+	'replacement_block_markup' => $nested_name['markup'],
+	'fallback_reconciliation_identity' => Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $nested_name['fallback'] ),
+	'fallback_hash' => Static_Site_Importer_Form_Fallback_Contract::reconciliation_hash( $nested_name['fallback'] ),
+	'materialized_block_hash' => hash( 'sha256', $nested_name['markup'] ),
+) );
+$nested_receipt = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $binding_plan, array( 'slug' => 'nested-name-row', 'runtime_entity_bindings' => ! empty( $nested_name['row']['runtime_mapped'] ) ? array( $nested_binding ) : array() ) );
+$nested_report = Static_Site_Importer_Report_Diagnostics::new_conversion_report( 'index.html' );
+$nested_report->merge_quality( array( 'fallback_count' => 1 ) );
+$nested_report['diagnostics'] = array( $nested_name['fallback'] );
+$nested_report['materialization_receipt'] = $nested_receipt;
+Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $nested_report );
+$nested_quality = Static_Site_Importer_Quality_Gates::finalize_quality_report( $nested_report, array( 'fail_on_quality' => true ) );
+$assert( true === ( $nested_quality['pass'] ?? false ) && false === ( $nested_quality['fail_import'] ?? true ) && empty( $nested_quality['failure_reasons'] ), 'nested-floated-name-row-import-passes-quality-gate', wp_json_encode( $nested_quality ) );
 $other_failure_report = Static_Site_Importer_Import_Report::from_array( $form_quality_report->to_array() );
 $other_failure_report->merge_quality( array( 'core_html_block_count' => 1 ) );
 $other_failure_quality    = Static_Site_Importer_Quality_Gates::finalize_quality_report( $other_failure_report, array( 'fail_on_quality' => true ) );
@@ -3246,6 +3320,45 @@ $assert( 'completed' === $nested_index_receipt['status'] && 3 === count( array_u
 $assert( 'home' === ( $GLOBALS['ssi_plan_posts'][ $home_id ]['post_name'] ?? null ) && 0 === ( $GLOBALS['ssi_plan_posts'][ $home_id ]['post_parent'] ?? null ), 'wrapper entrypoint preserves its root page identity' );
 $assert( 'about' === ( $GLOBALS['ssi_plan_posts'][ $about_id ]['post_name'] ?? null ) && 0 === ( $GLOBALS['ssi_plan_posts'][ $about_id ]['post_parent'] ?? null ), 'nested index page slug matches its top-level canonical route' );
 $assert( 'team' === ( $GLOBALS['ssi_plan_posts'][ $team_id ]['post_name'] ?? null ) && $about_id === ( $GLOBALS['ssi_plan_posts'][ $team_id ]['post_parent'] ?? null ), 'deeper nested index page preserves canonical slug and WordPress parent identity' );
+
+// A synthetic hierarchy parent no source document backs materializes as a
+// draft; reimport keeps it, and never demotes a parent the owner took over.
+$GLOBALS['ssi_plan_posts'] = array();
+$GLOBALS['ssi_plan_meta']  = array();
+$synthetic_parent_source   = 'wordpress-site-plan/routes/parent.html';
+$synthetic_parent_plan     = ( new ArtifactCompiler() )->compile(
+	array(
+		'entrypoint' => 'website/index.html',
+		'files'      => array(
+			'website/index.html'              => '<main><h1>Home</h1></main>',
+			'website/parent/child/index.html' => '<main><h1>Child</h1></main>',
+		),
+	)
+)->toArray()['source_reports']['wordpress_site_plan'];
+$synthetic_parent_receipt  = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $synthetic_parent_plan, array( 'slug' => 'synthetic-parent-plan' ) );
+$synthetic_parent_id       = (int) ( $synthetic_parent_receipt['completed']['pages'][ $synthetic_parent_source ] ?? 0 );
+$synthetic_child_id        = (int) ( $synthetic_parent_receipt['completed']['pages']['website/parent/child/index.html'] ?? 0 );
+$synthetic_parent_rows     = array_values( array_filter( $synthetic_parent_receipt['wordpress'] ?? array(), static fn( $row ) => 'synthetic_hierarchy_parent' === ( $row['route_ownership'] ?? '' ) ) );
+$assert( 'completed' === $synthetic_parent_receipt['status'] && 'draft' === ( $GLOBALS['ssi_plan_posts'][ $synthetic_parent_id ]['post_status'] ?? null ), 'a synthetic parent without a source document materializes as a draft' );
+$assert( 'publish' === ( $GLOBALS['ssi_plan_posts'][ $synthetic_child_id ]['post_status'] ?? null ) && $synthetic_parent_id === ( $GLOBALS['ssi_plan_posts'][ $synthetic_child_id ]['post_parent'] ?? null ), 'the published child keeps the draft synthetic parent as its native parent' );
+$assert( 1 === count( $synthetic_parent_rows ) && 'draft' === $synthetic_parent_rows[0]['post_status'] && ! isset( $synthetic_parent_rows[0]['alias_target_source_path'] ), 'the receipt records the alias-free synthetic hierarchy parent draft' );
+$synthetic_parent_repeat = Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $synthetic_parent_plan, array( 'slug' => 'synthetic-parent-plan' ) );
+$assert( 'completed' === $synthetic_parent_repeat['status'] && $synthetic_parent_id === (int) ( $synthetic_parent_repeat['completed']['pages'][ $synthetic_parent_source ] ?? 0 ) && 'draft' === $GLOBALS['ssi_plan_posts'][ $synthetic_parent_id ]['post_status'] && 'publish' === $GLOBALS['ssi_plan_posts'][ $synthetic_child_id ]['post_status'], 'reimport keeps the synthetic parent a draft and the child published' );
+$GLOBALS['ssi_plan_posts'][ $synthetic_parent_id ]['post_status'] = 'publish';
+Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $synthetic_parent_plan, array( 'slug' => 'synthetic-parent-plan' ) );
+$assert( 'publish' === $GLOBALS['ssi_plan_posts'][ $synthetic_parent_id ]['post_status'], 'reimport never demotes a synthetic parent the owner published' );
+Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $synthetic_parent_plan, array( 'slug' => 'synthetic-parent-plan' ) );
+$assert( 'publish' === $GLOBALS['ssi_plan_posts'][ $synthetic_parent_id ]['post_status'], 'an owner-published synthetic parent stays published across repeated reimports' );
+$synthetic_legacy_provenance = json_decode( (string) $GLOBALS['ssi_plan_meta'][ $synthetic_parent_id ]['_static_site_importer_provenance'], true );
+unset( $synthetic_legacy_provenance['synthetic_parent_status'] );
+$GLOBALS['ssi_plan_meta'][ $synthetic_parent_id ]['_static_site_importer_provenance'] = json_encode( $synthetic_legacy_provenance );
+Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $synthetic_parent_plan, array( 'slug' => 'synthetic-parent-plan' ) );
+$assert( 'draft' === $GLOBALS['ssi_plan_posts'][ $synthetic_parent_id ]['post_status'], 'an unedited parent an earlier import published becomes a draft on reimport' );
+$GLOBALS['ssi_plan_posts'][ $synthetic_parent_id ]['post_status']  = 'publish';
+$GLOBALS['ssi_plan_posts'][ $synthetic_parent_id ]['post_content'] = 'Owner hub content';
+$GLOBALS['ssi_plan_meta'][ $synthetic_parent_id ]['_static_site_importer_provenance'] = json_encode( $synthetic_legacy_provenance );
+Static_Site_Importer_WordPress_Site_Plan_Materializer::materialize( $synthetic_parent_plan, array( 'slug' => 'synthetic-parent-plan' ) );
+$assert( 'publish' === $GLOBALS['ssi_plan_posts'][ $synthetic_parent_id ]['post_status'], 'reimport never demotes a published synthetic parent the owner edited' );
 
 $GLOBALS['ssi_plan_posts'] = array();
 $GLOBALS['ssi_plan_meta']  = array();
@@ -4477,5 +4590,7 @@ if ( ! is_wp_error( $invalid_compiled ) ) {
 		'the import report keeps the invalid preview status for lineage diagnosis'
 	);
 }
+
+require __DIR__ . '/fixtures/assert-form-template-surfaces.php';
 
 echo "WordPress site plan materializer smoke passed.\n";

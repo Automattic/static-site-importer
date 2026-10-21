@@ -232,6 +232,18 @@ $assert( is_array( $capture_input ) && array( 'index.html', 'media/mark.svg' ) =
 $capture_runtime = static_site_importer_source_runtime( is_array( $resolved_capture ) ? $resolved_capture['source'] : array(), $resolved_capture['payload_reader'] ?? null );
 $assert( is_array( $capture_runtime ) && ! is_wp_error( Static_Site_Importer_Portable_Source_Manifest::project( $capture_runtime['artifact'], $resolved_capture['payload_reader'] ) ), 'request-bundle-capture-root-has-no-duplicate-transport-paths' );
 file_put_contents( $capture_root . '/capture-receipt.json', wp_json_encode( array( 'schema' => 'blocks-engine-capture/capture-receipt/v1', 'websiteRoot' => '../outside' ) ) );
+$staged_root    = $capture_bundle_dir . '/staged';
+$staged_request = $capture_bundle_dir . '/staged-request.json';
+mkdir( $staged_root . '/media', 0777, true );
+file_put_contents( $staged_root . '/capture-receipt.json', wp_json_encode( array( 'schema' => 'blocks-engine-capture/capture-receipt/v1', 'websiteRoot' => 'website' ) ) );
+file_put_contents( $staged_root . '/media/mark.svg', '<svg/>' );
+file_put_contents( $staged_root . '/index.html', '<h1>Staged</h1><img src="media/mark.svg">' );
+file_put_contents( $staged_request, wp_json_encode( array( 'operation' => 'plan', 'source' => array( 'type' => 'files', 'ref' => 'request-bundle:staged', 'metadata' => array( 'reports' => array( 'capture-receipt.json' ) ) ) ) ) );
+$staged_input    = static_site_importer_cli_import_input( array(), array( 'request' => $staged_request ) );
+$resolved_staged = apply_filters( 'static_site_importer_resolve_source_reference', null, 'request-bundle:staged', 'files' );
+$staged_paths    = array_column( $resolved_staged['source']['files'] ?? array(), 'path' );
+sort( $staged_paths );
+$assert( is_array( $staged_input ) && array( 'capture-receipt.json', 'index.html', 'media/mark.svg' ) === $staged_paths, 'request-bundle-declared-capture-receipt-keeps-the-staged-artifact-root' );
 $escaped_capture = static_site_importer_cli_prepare_request_bundle( array( 'source' => array( 'type' => 'files', 'ref' => 'request-bundle:capture' ) ), $capture_request );
 $assert( is_wp_error( $escaped_capture ) && 'static_site_importer_cli_capture_website_root_invalid' === $escaped_capture->get_error_code(), 'request-bundle-capture-root-rejects-escaping-website-root' );
 foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $capture_bundle_dir, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::CHILD_FIRST ) as $item ) {
@@ -390,7 +402,11 @@ try {
 	$export_assets      = $export_plan['assets'] ?? array();
 	$assert( 186 === count( $export_plan['pages'] ?? array() ), 'locked-transformer-compiles-every-export-page-through-referenced-request-bundle-path' );
 	$assert( array() === array_filter( $export_diagnostics, static fn( array $diagnostic ): bool => 'file_limit_exceeded' === ( $diagnostic['code'] ?? '' ) ), 'locked-transformer-does-not-truncate-export-export-at-request-bundle-compiler-limit' );
-	$export_pages_with_styles = count( array_filter( $export_plan['pages'] ?? array(), static fn( array $page ): bool => str_contains( (string) ( $page['canonical_block_markup'] ?? '' ), '#123456' ) ) );
+	// The shared stylesheet's colour becomes the theme's contrast token, and
+	// every page binds to that token rather than repeating the literal.
+	$export_palette           = array_column( $export_plan['theme']['design_system']['palette'] ?? array(), 'color', 'slug' );
+	$export_pages_with_styles = count( array_filter( $export_plan['pages'] ?? array(), static fn( array $page ): bool => str_contains( (string) ( $page['canonical_block_markup'] ?? '' ), 'has-contrast-color' ) ) );
+	$assert( '#123456' === ( $export_palette['contrast'] ?? null ), 'locked-transformer-derives-the-shared-linked-stylesheet-colour-as-a-design-token' );
 	$assert( 186 === $export_pages_with_styles, 'locked-transformer-applies-the-shared-linked-stylesheet-to-every-export-document-' . $export_pages_with_styles );
 	$assert( 1 === count( array_filter( $export_assets, static fn( array $asset ): bool => 'website/' . $export_stylesheet_path === ( $asset['source_path'] ?? '' ) ) ), 'locked-transformer-keeps-the-reused-linked-content-addressed-stylesheet-as-one-theme-asset' );
 	$assert( 1 === count( array_filter( $export_assets, static fn( array $asset ): bool => 'inline-style' === ( $asset['source'] ?? '' ) ) ), 'locked-transformer-materializes-the-remaining-inline-stylesheet' );

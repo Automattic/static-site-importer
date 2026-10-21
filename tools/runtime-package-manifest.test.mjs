@@ -37,7 +37,7 @@ test("website artifact import profile is complete and capability scoped", async 
   )
   assert.deepEqual(
     homeboy.scopes?.release?.exclude,
-    ["bench/", "demos/", "homeboy-test-manifest.json", "lib/", "registry/", "rigs/", "test-manifest.json", "tools/"],
+    ["bench/", "demos/", "lib/", "registry/", "rigs/", "test-manifest.json", "tools/"],
     "Homeboy release coverage must exclude tracked development surfaces outside the runtime profile",
   )
   assert.deepEqual(profile.abilities, [
@@ -80,7 +80,7 @@ test("website artifact import profile is complete and capability scoped", async 
   for (const excluded of ["bench/", "blocks/", "build/", "demos/", "docs/", "lib/", "node_modules/", "tests/", "tools/"]) {
     assert.equal(selected.some((path) => path.startsWith(excluded)), false, `profile leaked excluded tree: ${excluded}`)
   }
-  for (const excluded of ["homeboy-test-manifest.json", "test-manifest.json"]) assert.equal(selected.includes(excluded), false, `profile leaked test manifest: ${excluded}`)
+  for (const excluded of ["test-manifest.json"]) assert.equal(selected.includes(excluded), false, `profile leaked test manifest: ${excluded}`)
   assert.equal(selected.includes("build-provenance.json"), false, "release profile must not require development build identity")
 
   const bootstrap = await readFile(join(root, "static-site-importer.php"), "utf8")

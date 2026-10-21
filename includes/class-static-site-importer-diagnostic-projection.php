@@ -1372,8 +1372,9 @@ final class Static_Site_Importer_Diagnostic_Projection {
 		$product_seeding        = isset( $report['product_seeding'] ) && is_array( $report['product_seeding'] ) ? $report['product_seeding'] : array();
 		$editor_validation      = self::gutenberg_block_validation_gate( $report['gutenberg_editor_validation'] ?? null );
 		$editor_invalid_count   = is_int( $editor_validation['invalid_block_count'] ?? null ) ? $editor_validation['invalid_block_count'] : 0;
+		$design_system_summary  = isset( $report['materialization_receipt']['design_system_summary'] ) && is_string( $report['materialization_receipt']['design_system_summary'] ) ? $report['materialization_receipt']['design_system_summary'] : '';
 
-		return array(
+		$summary = array(
 			'schema'                                  => 'static-site-importer/import-metrics/v1',
 			'version'                                 => 1,
 			'report_version'                          => (int) ( $report['version'] ?? 0 ),
@@ -1420,6 +1421,10 @@ final class Static_Site_Importer_Diagnostic_Projection {
 			'error_summaries'                         => self::compact_import_report_diagnostic_summaries_by_severity( $diagnostics, 'error' ),
 			'diagnostics'                             => self::compact_import_report_diagnostics( $diagnostics ),
 		);
+		if ( '' !== $design_system_summary ) {
+			$summary['design_system_summary'] = $design_system_summary;
+		}
+		return $summary;
 	}
 
 	/**

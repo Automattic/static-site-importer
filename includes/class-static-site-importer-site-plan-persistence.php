@@ -145,6 +145,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		if ( is_wp_error( $navigation_entities ) ) {
 			return self::failed_receipt_from_error( $state, $navigation_entities );
 		}
+		require_once __DIR__ . '/class-static-site-importer-synced-pattern-materializer.php';
+		$synced_patterns = Static_Site_Importer_Synced_Pattern_Materializer::materialize( $state );
+		if ( is_wp_error( $synced_patterns ) ) {
+			return self::failed_receipt_from_error( $state, $synced_patterns );
+		}
 		foreach ( $state['ordered_pages'] as $page ) {
 			if ( ! empty( $page['skip_materialization'] ) ) {
 				if ( ! empty( $page['retire_archive_page'] ) ) {
@@ -187,9 +192,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			$state['source_ids'][ $page['source_path'] ]           = $post;
 			if ( 'draft' === ( $page['materialized_post_status'] ?? '' ) ) {
 				$last = array_key_last( $state['applied']['posts'] );
-				$state['applied']['posts'][ $last ]['post_status']              = get_post_status( $post );
-				$state['applied']['posts'][ $last ]['route_ownership']          = 'alias_hierarchy_parent';
-				$state['applied']['posts'][ $last ]['alias_target_source_path'] = $page['alias_target_source_path'];
+				$state['applied']['posts'][ $last ]['post_status']     = get_post_status( $post );
+				$state['applied']['posts'][ $last ]['route_ownership'] = isset( $page['alias_target_source_path'] ) ? 'alias_hierarchy_parent' : 'synthetic_hierarchy_parent';
+				if ( isset( $page['alias_target_source_path'] ) ) {
+					$state['applied']['posts'][ $last ]['alias_target_source_path'] = $page['alias_target_source_path'];
+				}
 			}
 			if ( ! self::write_post_meta( $post, self::RECONCILIATION_META_KEY, (string) $page['reconciliation_identity'] ) || ! self::write_post_meta( $post, self::PRODUCER_RECONCILIATION_META_KEY, (string) $page['reconciliation_identity'] ) ) {
 				return self::failed_receipt( $state, 'materialization_reconciliation_metadata_write_failed' );
@@ -202,7 +209,11 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 				'reconciliation_identity' => $page['reconciliation_identity'],
 				'content_hash'            => hash( 'sha256', $materialized_markup ),
 			);
-			$document_title      = Static_Site_Importer_Route_Document_Metadata::title_from_page( $page );
+			if ( ! empty( $page['synthetic'] ) && isset( $page['materialized_post_status'] ) ) {
+				// Lets a reimport tell the importer's hierarchy status from the owner's.
+				$provenance['synthetic_parent_status'] = (string) $page['materialized_post_status'];
+			}
+			$document_title = Static_Site_Importer_Route_Document_Metadata::title_from_page( $page );
 			if ( '' !== $document_title ) {
 				$provenance['document_title'] = $document_title;
 			}
@@ -860,6 +871,32 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 			}
 			unset( $resolved_page );
 		}
+		// Synced patterns are page content too; an owner-edited one is left alone.
+		foreach ( $state['applied']['synced_patterns'] ?? array() as $index => $pattern ) {
+			$content = 'preserved_owner_edit' === $pattern['status'] ? null : get_post_field( 'post_content', (int) $pattern['id'] );
+			$rewrite = is_string( $content ) ? self::rewrite_route_references( $content, $routes ) : null;
+			if ( null === $rewrite || $rewrite === $content ) {
+				continue;
+			}
+			$updated = wp_update_post(
+				array(
+					'ID'           => (int) $pattern['id'],
+					'post_content' => wp_slash( $rewrite ),
+				),
+				true
+			);
+			if ( is_wp_error( $updated ) ) {
+				return $updated;
+			}
+			$provenance                 = json_decode( (string) get_post_meta( (int) $pattern['id'], '_static_site_importer_provenance', true ), true );
+			$provenance                 = is_array( $provenance ) ? $provenance : array();
+			$persisted                  = get_post( (int) $pattern['id'] );
+			$provenance['content_hash'] = hash( 'sha256', $persisted instanceof WP_Post ? $persisted->post_content : '' );
+			if ( ! self::write_post_meta( (int) $pattern['id'], '_static_site_importer_provenance', (string) wp_json_encode( $provenance ) ) ) {
+				return new WP_Error( 'route_link_rewrite_failed', 'Synced pattern provenance could not be updated after route-link resolution.', array( 'source_path' => $pattern['source_path'] ) );
+			}
+			$state['applied']['synced_patterns'][ $index ]['content_hash'] = $provenance['content_hash'];
+		}
 
 		return true;
 	}
@@ -968,7 +1005,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	}
 
 	/**
-	 * A binding owned by a shared template part completes when the written part
+	 * A binding owned by a template or part completes when the written surface
 	 * file carries the provider fragment, the same proof a page binding gets from
 	 * its persisted post content.
 	 *
@@ -978,10 +1015,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$documents = Static_Site_Importer_Site_Plan_Preparation::runtime_binding_documents( $state['resolved'] );
 		foreach ( $state['applied']['runtime_declarations']['entity_bindings'] as &$binding_report ) {
 			$document = $documents[ (string) ( $binding_report['source_path'] ?? '' ) ] ?? null;
-			if ( ! is_array( $document ) || 'template_parts' !== $document['group'] ) {
+			if ( ! is_array( $document ) || ! in_array( $document['group'], array( 'templates', 'template_parts' ), true ) ) {
 				continue;
 			}
-			$target   = 'parts/' . (string) ( $state['resolved']['template_parts'][ $document['index'] ]['slug'] ?? '' ) . '.html';
+			$target   = ( 'templates' === $document['group'] ? 'templates/' : 'parts/' ) . (string) ( $state['resolved'][ $document['group'] ][ $document['index'] ]['slug'] ?? '' ) . '.html';
 			$path     = $state['theme_dir'] . '/' . $target;
 			$fragment = (string) ( $binding_report['replacement_block_markup'] ?? '' );
 			$content  = is_file( $path ) ? file_get_contents( $path ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the just-written local theme part to prove the binding landed.

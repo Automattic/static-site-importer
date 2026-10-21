@@ -114,6 +114,7 @@ When a generated artifact contains full-document HTML, Static Site Importer rout
 - Rewrites local `.html` links to the imported WordPress page permalinks.
 - Creates deterministic `wp_navigation` posts for supported header/footer navigation and references them from generated template parts.
 - Consumes producer-owned `explicit_refs/v1` navigation references, validates all declarations before writes, and binds IDs before page persistence. Full destinations, submenu structure and authored item presentation stay producer-owned; SSI performs no inline-menu signature matching. Navigation uses explicit post-type reconciliation, participates in rollback, and is exposed in `materialization_receipt.completed.navigation_entities`.
+- Persists each producer-declared `synced_patterns` entity (`explicit_refs/v1`) as one synced `wp_block`, reconciled by identity on reimport, and replaces every `{{wordpress-site-plan:pattern:…}}` `core/block` ref with its post ID. Runtime entity bindings addressed to a pattern's `source_path` apply inside the pattern, an owner-edited pattern is not overwritten, and patterns are reported in `materialization_receipt.completed.synced_patterns`.
 - Keeps imported pages native and editor-visible; page content belongs to WordPress pages while the generated theme owns shared chrome, background decoration, styles, scripts, and template wrappers.
 - Keeps nested shared chrome references at their original positions inside page-owned layout containers. One template part owns the shared content while its occurrences preserve authored containment and order.
 - Optionally activates the generated theme and assigns the imported `index.html` page as the front page when that page exists.
@@ -279,6 +280,10 @@ wp static-site-importer import --request=/absolute/path/to/import-request.json
 ```
 
 The host prints one `static-site-importer/import-cli-receipt/v1` object. Use `--report=/absolute/path/to/import-report.json` for the operator-owned report destination and `--max-steps=<count>` to cap continuation steps. By default the host continues while every step advances the import and stops after 16 consecutive steps without progress. `--single-step` is the internal fresh-runtime seam; host integrations invoke the command without it. `--url=` is a minimal ergonomic source argument.
+
+The receipt is the single quality verdict. When the import's quality gate sets `fail_import` (for example `fail_on_quality` with failure reasons), the receipt is `status: "failed"` and `response.error` is `{ "code": "static_site_importer_quality_failed", "message": … }`, where the message names each failure reason with its count when available (for example `3 unsupported_html_fallback failures`), or the fallback-block count when no reasons are recorded; the import's evidence stays in `response`. A `completed` receipt never carries `fail_import: true`.
+
+A `files` request-bundle source may point at a raw Blocks Engine capture directory (its `capture-receipt.json` has the `blocks-engine-capture/capture-receipt/v1` schema). SSI imports the receipt's `websiteRoot` and, when the request has no `source.metadata.reports`, forwards the receipt's `reports` (capture-root-relative sidecar paths) as the declared reports, read from the capture root and validated with the same safe-relative rules; declared reports the capture does not hold are skipped and symlinked ones are refused. An explicit `source.metadata.reports` always wins, and a receipt without `reports` forwards none.
 
 Use `--theme-materialization=block|classic`; `block` is the default. Use `--operation=plan` or `"operation": "plan"` in the request to emit a plan without writes. Apply a saved response with `--plan=/absolute/path/to/plan-response.json`. A classic plan response includes a versioned, hashed normalized artifact, projection, and complete normalized arguments bundle. Apply verifies every digest and requires the immutable `theme_materialization=classic` strategy before running the full classic lifecycle.
 
@@ -601,7 +606,7 @@ npm run test:validation -- --json
 
 ### Test Inventory
 
-`test-manifest.json` is the canonical repository-wide test inventory. It classifies every executable test as standalone PHP, WordPress runtime, Node, browser/WP Codebox, or operator-only acceptance. Explicit `command` values are arrays of executable and argument strings. `npm test` runs the fast standalone PHP and Node projection; it reports the environment-heavy lanes as skipped. `npm run test:all` is the complete CI/reviewer command and runs configured runtime lanes while reporting operator-only acceptance commands explicitly. `npm run test:inventory` verifies that every executable test is declared once and that `homeboy-test-manifest.json` remains the deterministic standalone-PHP projection used by Homeboy.
+`test-manifest.json` is the canonical repository-wide test inventory. It classifies every executable test as standalone PHP, WordPress runtime, Node, browser/WP Codebox, or operator-only acceptance. Explicit `command` values are arrays of executable and argument strings. `npm test` runs the fast standalone PHP and Node projection; it reports the environment-heavy lanes as skipped. `npm run test:all` is the complete CI/reviewer command and runs configured runtime lanes while reporting operator-only acceptance commands explicitly. `npm run test:inventory` verifies that every executable test is declared once and that `standalone_php_test_paths` in `homeboy.json` remains the deterministic standalone-PHP projection used by Homeboy.
 
 ### PHP Smokes
 

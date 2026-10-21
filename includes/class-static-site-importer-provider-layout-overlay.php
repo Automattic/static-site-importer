@@ -9,18 +9,138 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+/**
+ * Compiles provider form layout and presentation into bounded, scoped overlay CSS.
+ *
+ * @phpstan-type Surface array{prefix:string,css:array{key:string,label:string,rule:string},context:array{key:string,label:string,rule:string},control_container_chrome:bool,native_passthrough:array<string,string>,form_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>,form_layout_host:array{declarations:string,strategy:string}|null,field_control:array{suffix:string,properties:array<int,string>}|null,container_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>}
+ */
 class Static_Site_Importer_Provider_Layout_Overlay {
-	public const MAP_SCHEMA                = 'generic/provider-layout-target-map/v1';
-	public const OVERLAY_SCHEMA            = 'static-site-importer/provider-layout-overlay/v1';
-	private const MAX_LAYOUT_OVERLAY_BYTES = 16384;
-	private const MAX_OVERLAY_BYTES        = 32768;
+	public const MAP_SCHEMA             = 'generic/provider-layout-target-map/v1';
+	public const OVERLAY_SCHEMA         = 'static-site-importer/provider-layout-overlay/v1';
+	private const BASE_OVERLAY_BYTES    = 16384;
+	private const BYTES_PER_MAPPED_NODE = 1024;
+	private const MAX_OVERLAY_BYTES     = 65536;
 	/** Authored values such as system font stacks exceed a few hundred bytes; bounded like the producer contract. */
-	public const MAX_PRESENTATION_VALUE_BYTES = 1024;
+	private const MAX_PRESENTATION_VALUE_BYTES = 1024;
 	// A source stylesheet can author a media feature with the legacy `min-width:`/
 	// `max-width:` prefix syntax or the modern comparison range syntax
 	// (`width >= 40rem`) - Tailwind v4 emits every default breakpoint with the
 	// latter. Both spellings resolve to the same condition, so both are admitted.
 	private const MEDIA_FEATURE_QUERY = '(?:screen and )?\((?:(?:min|max)-(?:width|height): ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh)|(?:width|height) ?(?:>=|<=|>|<) ?[0-9]+(?:\.[0-9]+)?(?:px|em|rem|vw|vh))\)';
+
+	public const SURFACE_FRONT_END = 'front_end';
+	public const SURFACE_EDITOR    = 'editor';
+
+	/** Capabilities a provider target needs for the overlay to own its full layout. */
+	public const LAYOUT_CAPABILITIES = array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' );
+
+	/**
+	 * Scope-suffix rules every surface adds on the native topology: provider
+	 * field state stays in the DOM, while its synthetic shell has no box between
+	 * a source container and the source-owned input.
+	 */
+	private const NATIVE_PASSTHROUGH = array(
+		' .ssi-native-control-shell-wrap'      => 'display:contents',
+		' .wp-block-button.form-button-submit' => 'display:contents',
+	);
+
+	/**
+	 * Declared render surfaces of the provider form overlay; `compile()` builds
+	 * one per pass, and `compile_surfaces()` assembles them.
+	 *
+	 * - `prefix`: prepended to every selector the pass builds, so its rules reach
+	 *   only that surface's document (`.editor-styles-wrapper ` is the block
+	 *   editor canvas; the front end is unprefixed).
+	 * - `css` / `context`: the overlay artifact the pass owns for its rules and
+	 *   for its context fallback, the artifact's header label, and the rule
+	 *   grammar `validate_overlay()` admits for it.
+	 * - `control_container_chrome`: whether each control container's authored
+	 *   declarations are emitted again, unreset, ahead of the structural rules.
+	 * - `native_passthrough`: scope-suffix rules added on the native topology
+	 *   (the editor's control shell and its form box carry no box of their own).
+	 * - `form_passthrough`: scope-suffix rules, with their recorded operation,
+	 *   added when the form target is the bare scope (Jetpack's editor
+	 *   inner-blocks container must not interpose a flex box).
+	 * - `form_layout_host`: the layout the bare form target takes when the
+	 *   projection names no form display and no source form class does (`null`:
+	 *   none). The editor block wrapper hosts the fields once the inner-blocks
+	 *   container is box-less; on the front end the field container gets this
+	 *   layout from the block's WordPress layout (block.json `layout.default`:
+	 *   flex, wrapping, justified left, aligned top). It precedes the compiled
+	 *   layout, so the projected gap and any responsive display still apply.
+	 * - `field_control`: where a field row target's facts that arrange the
+	 *   field's own label and control go (`null`: they stay on the target). The
+	 *   front-end field wrapper is both the form's item and the label/control
+	 *   container; Jetpack's editor nests those as the field block element and
+	 *   its `.jetpack-field__control`. `display:contents` reaches both, so the
+	 *   label and control join the form as they do on the front end.
+	 * - `container_passthrough`: scope-suffix rules, with their recorded
+	 *   operation, added when the source form's box is painted on the provider's
+	 *   form container (Jetpack's front-end form element sits between that
+	 *   container and the field container, so a source rule that also matches it
+	 *   must not paint the box a second time).
+	 */
+	private const SURFACES = array(
+		self::SURFACE_FRONT_END => array(
+			'prefix'                   => '',
+			'css'                      => array(
+				'key'   => 'css',
+				'label' => 'provider layout overlay',
+				'rule'  => 'compiled',
+			),
+			'context'                  => array(
+				'key'   => 'context_css',
+				'label' => 'form context fallback',
+				'rule'  => 'compiled',
+			),
+			'control_container_chrome' => false,
+			'native_passthrough'       => array(),
+			'form_passthrough'         => array(),
+			'form_layout_host'         => null,
+			'field_control'            => null,
+			'container_passthrough'    => array(
+				array(
+					'suffix'       => '.jetpack-contact-form-container > form.jetpack-contact-form__form:has(> .wp-block-jetpack-contact-form):not(.submission-success)',
+					'declarations' => 'display:contents',
+					'strategy'     => 'provider_front_end_form_passthrough',
+				),
+			),
+		),
+		self::SURFACE_EDITOR    => array(
+			'prefix'                   => '.editor-styles-wrapper ',
+			'css'                      => array(
+				'key'   => 'editor_css',
+				'label' => 'editor control chrome',
+				'rule'  => 'editor',
+			),
+			'context'                  => array(
+				'key'   => 'editor_context_css',
+				'label' => 'editor form context fallback',
+				'rule'  => 'context',
+			),
+			'control_container_chrome' => true,
+			'native_passthrough'       => array(
+				' .ssi-native-control-shell' => 'display:contents',
+				'.ssi-native-form-topology'  => 'padding:0;border:0',
+			),
+			'form_passthrough'         => array(
+				array(
+					'suffix'       => ' > div.jetpack-contact-form',
+					'declarations' => 'display:contents',
+					'strategy'     => 'provider_editor_inner_blocks_passthrough',
+				),
+			),
+			'form_layout_host'         => array(
+				'declarations' => 'display:flex;flex-wrap:wrap;justify-content:flex-start;align-items:flex-start',
+				'strategy'     => 'provider_editor_form_layout_host',
+			),
+			'field_control'            => array(
+				'suffix'     => ' > div.jetpack-field__control',
+				'properties' => array( 'display', 'flex-direction', 'flex-wrap', 'gap', 'row-gap', 'column-gap', 'align-items', 'align-content', 'justify-content', 'grid-template-columns', 'grid-template-rows' ),
+			),
+			'container_passthrough'    => array(),
+		),
+	);
 
 	/** @return array{map?:array<string,mixed>,error?:string} */
 	public static function validate_map( mixed $map, array $graph ): array {
@@ -36,7 +156,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		$seen    = array();
 		$targets = array();
 		foreach ( $map['targets'] as $target ) {
-			if ( ! is_array( $target ) || array_diff( array_keys( $target ), array( 'node', 'selector', 'capabilities' ) ) || ! is_string( $target['node'] ?? null ) || ! isset( $nodes[ $target['node'] ] ) || isset( $seen[ $target['node'] ] ) || ! is_string( $target['selector'] ?? null ) || ! self::safe_selector( $target['selector'], $map['scope'] ) || ! is_array( $target['capabilities'] ?? null ) || ! array_is_list( $target['capabilities'] ) || array_diff( $target['capabilities'], array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' ) ) ) {
+			if ( ! is_array( $target ) || array_diff( array_keys( $target ), array( 'node', 'selector', 'capabilities' ) ) || ! is_string( $target['node'] ?? null ) || ! isset( $nodes[ $target['node'] ] ) || isset( $seen[ $target['node'] ] ) || ! is_string( $target['selector'] ?? null ) || ! self::safe_selector( $target['selector'], $map['scope'] ) || ! is_array( $target['capabilities'] ?? null ) || ! array_is_list( $target['capabilities'] ) || array_diff( $target['capabilities'], self::LAYOUT_CAPABILITIES ) ) {
 				return array( 'error' => 'provider layout target map contains an unsafe target.' );
 			}
 			$seen[ $target['node'] ] = true;
@@ -87,46 +207,63 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		);
 	}
 
-	/** @return array{overlay:array<string,mixed>,css:string,operations:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>} */
-	public static function compile( array $graph, mixed $map, array $presentation_graph = array(), array $container = array(), bool $editor = false, array $context_fallbacks = array() ): array {
+	/**
+	 * Compile one declared surface of the overlay from that surface's own target map.
+	 *
+	 * The pass builds only the requested surface's rules, each addressed through
+	 * the surface prefix where it is built. `overlay` carries the surface's own
+	 * artifacts in the canonical overlay shape; `css` is the front-end stylesheet.
+	 *
+	 * @param array<string,mixed>     $graph              Provider layout graph.
+	 * @param mixed                   $map                The surface's provider layout target map.
+	 * @param array<string,mixed>     $presentation_graph Validated presentation graph.
+	 * @param array<string,mixed>     $container          Form container presentation.
+	 * @param string                  $surface            A declared surface name (see SURFACES).
+	 * @param array<int|string,mixed> $context_fallbacks  Source context style fallbacks.
+	 * @return array{overlay:array<string,mixed>,css:string,operations:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>}
+	 */
+	public static function compile( array $graph, mixed $map, array $presentation_graph = array(), array $container = array(), string $surface = self::SURFACE_FRONT_END, array $context_fallbacks = array() ): array {
+		$declared      = self::surface( $surface );
 		$validated     = self::validate_map( $map, $graph );
 		$validated_map = $validated['map'] ?? null;
 		if ( isset( $validated['error'] ) || ! is_array( $validated_map ) || ! isset( $validated_map['targets'] ) || ! is_array( $validated_map['targets'] ) ) {
-			return array(
-				'overlay'    => array(),
-				'css'        => '',
-				'operations' => array(),
-				'losses'     => array(
-					array(
-						'dimension'   => 'layout',
-						'reason_code' => 'provider_structure_mismatch',
-						'map_error'   => $validated['error'] ?? 'provider layout target map could not be normalized.',
-					),
-				),
-			);
+			return self::failed_compile( $validated['error'] ?? 'provider layout target map could not be normalized.' );
 		}
 		$targets = array();
 		foreach ( $validated_map['targets'] as $target ) {
 			$targets[ $target['node'] ] = $target;
 		}
-		$rules              = array();
-		$editor_rules       = array();
-		$operations         = array();
-		$losses             = array();
-		$context_css        = self::context_fallback_css( $validated_map['scope'], $context_fallbacks, false, $operations, $losses );
-		$editor_context_css = self::context_fallback_css( $validated_map['scope'], $context_fallbacks, true, $operations, $losses );
+		$scope          = $validated_map['scope'];
+		$prefix         = $declared['prefix'];
+		$rules          = array();
+		$chrome         = array();
+		$operations     = array();
+		$context_losses = array();
+		$context_css    = self::context_fallback_css( $scope, $context_fallbacks, $declared['context']['label'], $operations, $context_losses );
+		// Receipt contract: every pass records the context fallback losses once
+		// per context artifact the overlay carries (front end and editor).
+		$losses           = array_merge( $context_losses, $context_losses );
+		$bare_form_target = ( $targets['form']['selector'] ?? null ) === $scope;
+		if ( $bare_form_target && null !== $declared['form_layout_host'] && self::form_layout_unnamed( $graph ) ) {
+			$rules[]      = self::surface_selector( $prefix, $scope ) . '{' . $declared['form_layout_host']['declarations'] . '}';
+			$operations[] = array(
+				'dimension'   => 'layout',
+				'strategy'    => $declared['form_layout_host']['strategy'],
+				'target_hash' => hash( 'sha256', $scope ),
+			);
+		}
 		foreach ( $graph['nodes'] ?? array() as $node ) {
 			$id     = $node['id'] ?? '';
 			$target = $targets[ $id ] ?? null;
-			if ( ! is_array( $target ) || ! empty( array_diff( array( 'container_layout', 'direct_child_layout', 'item_layout', 'responsive_layout' ), $target['capabilities'] ) ) || empty( $node['presentation']['styles'] ) ) {
+			if ( ! is_array( $target ) || ! empty( array_diff( self::LAYOUT_CAPABILITIES, $target['capabilities'] ) ) || empty( $node['presentation']['styles'] ) ) {
 				continue;
 			}
 			// A physical native source box owns its own paint as well as layout.
 			// Keep that paint on its validated target instead of the inner input.
-			$paint        = array_diff_key( $node['presentation']['styles'], self::layout_property_map() );
+			$paint        = array_diff_key( self::resolve_presentation_cascade( $node['presentation']['styles'], $node['presentation']['provenance'] ?? array() ), self::layout_property_map() );
 			$declarations = self::presentation_declarations( $paint, 0, 'control_container', $losses, array_keys( self::presentation_property_map() ) );
 			if ( ! empty( $declarations ) ) {
-				$rules[]      = $target['selector'] . '{' . implode( ';', $declarations ) . '}';
+				$rules[]      = self::surface_selector( $prefix, $target['selector'] ) . '{' . implode( ';', $declarations ) . '}';
 				$operations[] = array(
 					'dimension' => 'presentation',
 					'strategy'  => 'provider_source_container_presentation',
@@ -144,9 +281,11 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				$losses[] = self::loss( 'provider_structure_mismatch', $id );
 				continue;
 			}
-			$declarations = self::declarations( $node['layout'], $target['capabilities'], $id, $losses, self::important_properties( $node['important'] ?? null ) );
+			$declarations = self::declarations( 'form' === $id ? self::with_initial_flex_alignment( $node['layout'] ) : $node['layout'], $target['capabilities'], $id, $losses, self::important_properties( $node['important'] ?? null ) );
 			if ( ! empty( $declarations ) ) {
-				$rules[]      = $target['selector'] . '{' . implode( ';', $declarations ) . '}';
+				foreach ( self::target_declaration_groups( $declared, $id, $target['selector'], $declarations ) as $selector => $group ) {
+					$rules[] = self::surface_selector( $prefix, $selector ) . '{' . implode( ';', $group ) . '}';
+				}
 				$operations[] = array(
 					'dimension'   => 'layout',
 					'strategy'    => 'provider_selector_transposition',
@@ -165,7 +304,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				continue; }
 			$declarations = self::declarations( $variant['layout_patch'], $target['capabilities'], $id, $losses, self::important_properties( $variant['important'] ?? null ) );
 			if ( ! empty( $declarations ) ) {
-				$rules[]      = self::conditional_rule( $variant['condition'], $target['selector'] . '{' . implode( ';', $declarations ) . '}' );
+				foreach ( self::target_declaration_groups( $declared, $id, $target['selector'], $declarations ) as $selector => $group ) {
+					$rules[] = self::conditional_rule( $variant['condition'], self::surface_selector( $prefix, $selector ) . '{' . implode( ';', $group ) . '}' );
+				}
 				$operations[] = array(
 					'dimension'   => 'layout',
 					'strategy'    => 'provider_selector_transposition',
@@ -182,12 +323,10 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				$losses[] = self::presentation_loss( 'editor_control_container_unsupported', is_int( $index ) ? $index : 0, 'control_container' );
 				continue;
 			}
-			self::compile_presentation_destinations( $destinations, $control_container['styles'], $index, 'control_container', null, $rules, $operations, $losses );
+			$styles = self::resolve_presentation_cascade( $control_container['styles'], $control_container['provenance'] ?? array() );
+			self::compile_presentation_destinations( $destinations, $styles, $index, 'control_container', null, $prefix, $rules, $operations, $losses );
 			foreach ( $destinations as $destination ) {
-				$declarations = self::presentation_declarations( $control_container['styles'], $index, 'control_container', $losses, $destination['properties'] );
-				if ( ! empty( $declarations ) ) {
-					$editor_rules[] = '.editor-styles-wrapper ' . self::authoritative_presentation_selector( $destination['selector'] ) . '{' . implode( ';', $declarations ) . '}';
-				}
+				self::control_container_chrome( $declared, $destination, $control_container['styles'], $index, null, $chrome, $losses );
 			}
 		}
 		$base_presented = array();
@@ -205,7 +344,8 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					$losses[] = self::presentation_loss( 'provider_structure_mismatch', $control['index'], $role );
 					continue;
 				}
-				self::compile_presentation_destinations( $destinations, $control[ $role ]['styles'], $control['index'], $role, null, $rules, $operations, $losses );
+				$styles = self::resolve_presentation_cascade( $control[ $role ]['styles'], $control[ $role ]['provenance'] ?? array() );
+				self::compile_presentation_destinations( $destinations, $styles, $control['index'], $role, null, $prefix, $rules, $operations, $losses );
 				$base_presented[ $control['index'] . "\n" . $role ] = true;
 			}
 		}
@@ -222,7 +362,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			$base_presented[ $index . "\n" . $role ] = true;
 			$destinations                            = array_filter( $presentation_targets[ $index ]['destinations'] ?? array(), static fn( array $destination ): bool => $role === $destination['role'] && ! empty( $destination['resets'] ) );
 			if ( ! empty( $destinations ) ) {
-				self::compile_presentation_destinations( $destinations, array(), $index, $role, null, $rules, $operations, $losses );
+				self::compile_presentation_destinations( $destinations, array(), $index, $role, null, $prefix, $rules, $operations, $losses );
 			}
 		}
 		foreach ( $presentation_graph['variants'] ?? array() as $variant ) {
@@ -248,12 +388,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					continue;
 				}
 				foreach ( $destinations as $destination ) {
-					self::compile_presentation_destinations( array( $destination ), $variant['style_patch'], $index, 'control_container', $condition, $rules, $operations, $losses, false );
-					$declarations = self::presentation_declarations( $variant['style_patch'], $index, 'control_container', $losses, $destination['properties'] );
-					if ( ! empty( $declarations ) ) {
-						$editor_rule    = '.editor-styles-wrapper ' . self::authoritative_presentation_selector( $destination['selector'] ) . '{' . implode( ';', $declarations ) . '}';
-						$editor_rules[] = null === $condition ? $editor_rule : self::conditional_rule( $condition, $editor_rule );
-					}
+					$styles = self::resolve_presentation_cascade( $variant['style_patch'], $variant['provenance'] ?? array(), $variant['precedence'] ?? array() );
+					self::compile_presentation_destinations( array( $destination ), $styles, $index, 'control_container', $condition, $prefix, $rules, $operations, $losses, false );
+					self::control_container_chrome( $declared, $destination, $variant['style_patch'], $index, $condition, $chrome, $losses );
 				}
 				continue;
 			}
@@ -262,38 +399,51 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				$losses[] = self::presentation_loss( 'responsive_layout_ownership', is_int( $index ) ? $index : 0, is_string( $role ) ? $role : 'control' );
 				continue;
 			}
-			self::compile_presentation_destinations( $destinations, $variant['style_patch'], $index, $role, $condition, $rules, $operations, $losses, false );
+			$styles = self::resolve_presentation_cascade( $variant['style_patch'], $variant['provenance'] ?? array(), $variant['precedence'] ?? array() );
+			self::compile_presentation_destinations( $destinations, $styles, $index, $role, $condition, $prefix, $rules, $operations, $losses, false );
 		}
 		if ( 'generic/form-container-presentation/v1' === ( $container['schema'] ?? null ) ) {
 			$destination = array(
 				'role'       => 'control',
-				'selector'   => str_contains( $targets['form']['selector'] ?? '', '.ssi-native-form-topology' ) ? $targets['form']['selector'] : $validated_map['scope'] . '.jetpack-contact-form-container',
+				'selector'   => str_contains( $targets['form']['selector'] ?? '', '.ssi-native-form-topology' ) ? $targets['form']['selector'] : $scope . '.jetpack-contact-form-container',
 				'properties' => array_keys( self::presentation_property_map() ),
 			);
-			self::compile_presentation_destinations( array( $destination ), $container['styles'] ?? array(), 0, 'control', null, $rules, $operations, $losses );
+			$styles      = self::resolve_presentation_cascade( $container['styles'] ?? array(), $container['provenance'] ?? array() );
+			self::compile_presentation_destinations( array( $destination ), $styles, 0, 'control', null, $prefix, $rules, $operations, $losses );
 			foreach ( array_slice( $container['variants'] ?? array(), 0, 32 ) as $variant ) {
 				if ( self::safe_condition( $variant['condition'] ?? null ) && is_array( $variant['styles'] ?? null ) ) {
-					self::compile_presentation_destinations( array( $destination ), $variant['styles'], 0, 'control', $variant['condition'], $rules, $operations, $losses );
+					$styles = self::resolve_presentation_cascade( $variant['styles'], $variant['provenance'] ?? array(), $variant['precedence'] ?? array() );
+					self::compile_presentation_destinations( array( $destination ), $styles, 0, 'control', $variant['condition'], $prefix, $rules, $operations, $losses );
+				}
+			}
+			if ( $scope . '.jetpack-contact-form-container' === $destination['selector'] ) {
+				foreach ( $declared['container_passthrough'] as $passthrough ) {
+					$rules[]      = self::surface_selector( $prefix, $scope . $passthrough['suffix'] ) . '{' . $passthrough['declarations'] . '}';
+					$operations[] = array(
+						'dimension'   => 'layout',
+						'strategy'    => $passthrough['strategy'],
+						'target_hash' => hash( 'sha256', $scope . $passthrough['suffix'] ),
+					);
 				}
 			}
 		}
 		if ( empty( $losses ) ) {
-			$rules[]      = $validated_map['scope'] . '{position:relative;z-index:1;pointer-events:auto}';
+			$rules[]      = self::surface_selector( $prefix, $scope ) . '{position:relative;z-index:1;pointer-events:auto}';
 			$operations[] = array(
 				'dimension'   => 'interaction',
 				'strategy'    => 'provider_interaction_carrier',
-				'target_hash' => hash( 'sha256', $validated_map['scope'] ),
+				'target_hash' => hash( 'sha256', $scope ),
 			);
 		} elseif ( ! empty( $rules ) ) {
 			// Source boxes merged onto the provider form can carry their classes'
 			// `pointer-events: none` (Wix sets it on mesh containers and restores it
 			// only on their own direct children). Without the stacking lift, the
 			// provider form must still receive clicks and typing (#2005).
-			$rules[]      = $validated_map['scope'] . '{pointer-events:auto}';
+			$rules[]      = self::surface_selector( $prefix, $scope ) . '{pointer-events:auto}';
 			$operations[] = array(
 				'dimension'   => 'interaction',
 				'strategy'    => 'provider_pointer_events_carrier',
-				'target_hash' => hash( 'sha256', $validated_map['scope'] ),
+				'target_hash' => hash( 'sha256', $scope ),
 			);
 		}
 		if ( ! empty( $rules ) ) {
@@ -301,57 +451,239 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			// box (grunion.css `:where(.jetpack-contact-form-container)` plus theme
 			// block-child margin). Reset at two classes so it beats those selectors
 			// and still loses to authored `.ssi-form-x.ssi-form-x.jetpack-contact-form-container`.
-			$rules[]      = $validated_map['scope'] . '.jetpack-contact-form-container{padding:0;margin:0;border:0}';
+			$rules[]      = self::surface_selector( $prefix, $scope . '.jetpack-contact-form-container' ) . '{padding:0;margin:0;border:0}';
 			$operations[] = array(
 				'dimension'   => 'layout',
 				'strategy'    => 'provider_container_box_reset',
-				'target_hash' => hash( 'sha256', $validated_map['scope'] . '.jetpack-contact-form-container' ),
+				'target_hash' => hash( 'sha256', $scope . '.jetpack-contact-form-container' ),
 			);
 		}
 		if ( str_contains( $targets['form']['selector'] ?? '', '.ssi-native-form-topology' ) ) {
-			$native_scope = $validated_map['scope'] . '.ssi-native-form-topology';
-			$rules[]      = $native_scope . '.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form){display:contents}';
-			$rules[]      = $native_scope . '.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *){display:contents}';
-			// The provider's success state removes its real form from layout.
-			// Source display facts must not resurrect those submitted controls.
-			$rules[] = $native_scope . ' form.jetpack-contact-form__form.submission-success{display:none}';
-			// Provider field state stays in the DOM, while its synthetic shell has
-			// no box between a source container and the source-owned input.
-			$rules[] = $validated_map['scope'] . ' .ssi-native-control-shell-wrap{display:contents}';
-			$rules[] = $validated_map['scope'] . ' .wp-block-button.form-button-submit{display:contents}';
-			if ( $editor ) {
-				$rules[] = $validated_map['scope'] . ' .ssi-native-control-shell{display:contents}';
-				$rules[] = $validated_map['scope'] . '.ssi-native-form-topology{padding:0;border:0}';
+			$native_scope = $scope . '.ssi-native-form-topology';
+			$native       = array(
+				$native_scope . '.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form)' => 'display:contents',
+				$native_scope . '.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *)' => 'display:contents',
+				// The provider's success state removes its real form from layout.
+				// Source display facts must not resurrect those submitted controls.
+				$native_scope . ' form.jetpack-contact-form__form.submission-success' => 'display:none',
+			);
+			foreach ( array_merge( self::NATIVE_PASSTHROUGH, $declared['native_passthrough'] ) as $suffix => $declarations ) {
+				$native[ $scope . $suffix ] = $declarations;
+			}
+			foreach ( $native as $selector => $declarations ) {
+				$rules[] = self::surface_selector( $prefix, $selector ) . '{' . $declarations . '}';
 			}
 		}
-		if ( $editor ) {
-			foreach ( $rules as $rule ) {
-				$editor_rules[] = preg_replace( '/(^|\{|, )(\.ssi-form-[a-f0-9]{12})/', '$1.editor-styles-wrapper $2', $rule );
+		if ( $bare_form_target ) {
+			foreach ( $declared['form_passthrough'] as $passthrough ) {
+				$rules[]      = self::surface_selector( $prefix, $scope . $passthrough['suffix'] ) . '{' . $passthrough['declarations'] . '}';
+				$operations[] = array(
+					'dimension'   => 'layout',
+					'strategy'    => $passthrough['strategy'],
+					'target_hash' => hash( 'sha256', $scope . $passthrough['suffix'] ),
+				);
 			}
-			$rules = array();
 		}
-		$rules             = self::compact_rules( array_values( array_unique( $rules ) ) );
-		$editor_rules      = self::compact_rules( array_values( array_unique( $editor_rules ) ) );
-		$css               = empty( $rules ) ? '' : '/* Static Site Importer provider layout overlay: ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", $rules ) . "\n";
-		$editor_css        = empty( $editor_rules ) ? '' : '/* Static Site Importer editor control chrome: ' . substr( hash( 'sha256', implode( "\n", $editor_rules ) ), 0, 12 ) . " */\n" . implode( "\n", $editor_rules ) . "\n";
-		$max_overlay_bytes = empty( $presentation_graph ) ? self::MAX_LAYOUT_OVERLAY_BYTES : self::MAX_OVERLAY_BYTES;
-		// Editor chrome is admitted against MAX_OVERLAY_BYTES (validate_overlay), so
-		// an oversized one degrades to the same recorded loss instead of a rejection.
-		if ( strlen( $css ) + strlen( $context_css ) > $max_overlay_bytes || strlen( $editor_css ) + strlen( $editor_context_css ) > self::MAX_OVERLAY_BYTES ) {
+		// Keep repeated rules until compaction can check intervening cascade barriers.
+		$rules = self::compact_rules( array_merge( $chrome, $rules ) );
+		$css   = empty( $rules ) ? '' : '/* Static Site Importer ' . $declared['css']['label'] . ': ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", $rules ) . "\n";
+		if ( strlen( $css ) + strlen( $context_css ) > self::overlay_byte_limit( $css ) ) {
+			return self::failed_compile( 'provider layout overlay exceeds its bounded size.' );
+		}
+		$artifacts = array(
+			$declared['css']['key']     => $css,
+			$declared['context']['key'] => $context_css,
+		);
+		return array(
+			'overlay'    => self::overlay( $artifacts ),
+			'css'        => $artifacts['css'] ?? '',
+			'operations' => $operations,
+			'losses'     => $losses,
+		);
+	}
+
+	/**
+	 * Compile both surfaces of one provider form and assemble the overlay the seeder records.
+	 *
+	 * What each surface contributes:
+	 * - `front_end`, compiled from the front-end map: the overlay's `css` and
+	 *   `context_css`, every receipt operation, and its losses. Those losses also
+	 *   re-record, against the front-end map, the control-container chrome and
+	 *   editor context fallback validation (see `control_container_chrome()` and
+	 *   `compile()`), as the receipt always has.
+	 * - `editor`, compiled from the editor map: the overlay's `editor_css` and
+	 *   `editor_context_css`, and the losses that lead the receipt. Its
+	 *   operations restate the same transpositions on the editor DOM and are not
+	 *   recorded.
+	 *
+	 * The front-end surface carries the overlay: when it compiles nothing, or
+	 * fails its map or byte bound, there is no overlay. When the editor surface
+	 * compiles nothing, or fails its map or byte bound, the overlay carries no
+	 * `editor_css` or `editor_context_css`, and the editor pass's losses record
+	 * why.
+	 *
+	 * @param array<string,mixed>     $graph              Provider layout graph.
+	 * @param mixed                   $front_map          Front-end provider layout target map.
+	 * @param mixed                   $editor_map         Editor provider layout target map.
+	 * @param array<string,mixed>     $presentation_graph Validated presentation graph.
+	 * @param array<string,mixed>     $container          Form container presentation.
+	 * @param array<int|string,mixed> $context_fallbacks  Source context style fallbacks.
+	 * @return array{overlay:array<string,mixed>,css:string,operations:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>}
+	 */
+	public static function compile_surfaces( array $graph, mixed $front_map, mixed $editor_map, array $presentation_graph = array(), array $container = array(), array $context_fallbacks = array() ): array {
+		$front  = self::compile( $graph, $front_map, $presentation_graph, $container, self::SURFACE_FRONT_END, $context_fallbacks );
+		$editor = self::compile( $graph, $editor_map, $presentation_graph, $container, self::SURFACE_EDITOR, $context_fallbacks );
+		$losses = array_merge( $editor['losses'], $front['losses'] );
+		if ( array() === $front['overlay'] ) {
 			return array(
 				'overlay'    => array(),
 				'css'        => '',
-				'operations' => array(),
-				'losses'     => array(
-					array(
-						'dimension'   => 'layout',
-						'reason_code' => 'provider_structure_mismatch',
-						'map_error'   => 'provider layout overlay exceeds its bounded size.',
-					),
-				),
+				'operations' => $front['operations'],
+				'losses'     => $losses,
 			);
 		}
-		$overlay = '' === $css && '' === $editor_css && '' === $context_css && '' === $editor_context_css ? array() : array(
+		return array(
+			'overlay'    => self::overlay(
+				array(
+					'css'                => $front['css'],
+					'editor_css'         => self::artifact( $editor['overlay'], 'editor_css' ),
+					'context_css'        => self::artifact( $front['overlay'], 'context_css' ),
+					'editor_context_css' => self::artifact( $editor['overlay'], 'editor_context_css' ),
+				)
+			),
+			'css'        => $front['css'],
+			'operations' => $front['operations'],
+			'losses'     => $losses,
+		);
+	}
+
+	/**
+	 * Look up a declared surface.
+	 *
+	 * @param string $name Surface name.
+	 * @return Surface
+	 * @throws InvalidArgumentException When the surface is not declared.
+	 */
+	private static function surface( string $name ): array {
+		if ( ! isset( self::SURFACES[ $name ] ) ) {
+			// ssi-error-class: programmer
+			throw new InvalidArgumentException( 'Unknown provider layout overlay surface.' );
+		}
+		return self::SURFACES[ $name ];
+	}
+
+	/**
+	 * Address a selector (or a two-part selector list) inside a surface.
+	 *
+	 * @param string $prefix   Surface selector prefix.
+	 * @param string $selector Scoped selector.
+	 */
+	private static function surface_selector( string $prefix, string $selector ): string {
+		if ( '' === $prefix ) {
+			return $selector;
+		}
+		return implode( ', ', array_map( static fn( string $part ): string => 1 === preg_match( '/^\.ssi-form-[a-f0-9]{12}/', $part ) ? $prefix . $part : $part, explode( ', ', $selector ) ) );
+	}
+
+	/**
+	 * Whether neither the projection nor a source form class names the form's display.
+	 *
+	 * The source form classes travel with the provider form on every surface, so
+	 * a display they carry already reaches the host; otherwise the host takes
+	 * the provider's default form layout.
+	 *
+	 * @param array<string,mixed> $graph Provider layout graph.
+	 */
+	private static function form_layout_unnamed( array $graph ): bool {
+		foreach ( $graph['nodes'] ?? array() as $node ) {
+			if ( ! is_array( $node ) || 'form' !== ( $node['id'] ?? null ) ) {
+				continue;
+			}
+			$classes = is_array( $node['source']['classes'] ?? null ) ? array_filter( $node['source']['classes'], 'is_string' ) : array();
+			return ! isset( $node['layout']['display'] ) && null === Static_Site_Importer_Form_Layout_Projection::display_from_class_tokens( array_values( $classes ) );
+		}
+		return true;
+	}
+
+	/**
+	 * Group one layout target's compiled declarations by the selector that
+	 * realises them on the surface.
+	 *
+	 * A field row target (`field-N`) hands the facts that arrange the field's
+	 * own label and control to the surface's declared `field_control` hook;
+	 * `display:contents` goes to both. Every other target keeps its
+	 * declarations whole.
+	 *
+	 * @param array             $declared     Declared surface (see SURFACES).
+	 * @param string            $node         Layout node id.
+	 * @param string            $selector     Target selector.
+	 * @param array<int,string> $declarations Compiled declarations.
+	 * @return array<string,array<int,string>> Selector => declarations, in cascade order.
+	 * @phpstan-param Surface $declared
+	 */
+	private static function target_declaration_groups( array $declared, string $node, string $selector, array $declarations ): array {
+		$split = $declared['field_control'];
+		if ( null === $split || 1 !== preg_match( '/^field-[0-9]+$/D', $node ) ) {
+			return array( $selector => $declarations );
+		}
+		$item    = array();
+		$control = array();
+		foreach ( $declarations as $declaration ) {
+			if ( 'display:contents' === preg_replace( '/!important$/D', '', $declaration ) ) {
+				$item[]    = $declaration;
+				$control[] = $declaration;
+			} elseif ( in_array( strstr( $declaration, ':', true ), $split['properties'], true ) ) {
+				$control[] = $declaration;
+			} else {
+				$item[] = $declaration;
+			}
+		}
+		return array_filter(
+			array(
+				$selector                    => $item,
+				$selector . $split['suffix'] => $control,
+			)
+		);
+	}
+
+	/**
+	 * Emit one control container's authored declarations, unreset, at its prefixed
+	 * destination on a chrome surface.
+	 *
+	 * Every pass validates these declarations, so each records their losses once
+	 * more (the receipt contract); only a surface that declares chrome emits it.
+	 *
+	 * @param array                    $declared    Declared surface (see SURFACES).
+	 * @param array<string,mixed>      $destination Control-container destination.
+	 * @param array<string,mixed>      $styles      Authored styles.
+	 * @param int                      $index       Control index.
+	 * @param array<string,mixed>|null $condition   Variant condition.
+	 * @param array<int,string>        $chrome      Chrome rules, appended to.
+	 * @param array<mixed>             $losses      Losses, appended to.
+	 * @phpstan-param Surface $declared
+	 */
+	private static function control_container_chrome( array $declared, array $destination, array $styles, int $index, ?array $condition, array &$chrome, array &$losses ): void {
+		$declarations = self::presentation_declarations( $styles, $index, 'control_container', $losses, $destination['properties'] );
+		if ( ! $declared['control_container_chrome'] || empty( $declarations ) ) {
+			return;
+		}
+		$rule     = self::surface_selector( $declared['prefix'], self::authoritative_presentation_selector( $destination['selector'] ) ) . '{' . implode( ';', $declarations ) . '}';
+		$chrome[] = null === $condition ? $rule : self::conditional_rule( $condition, $rule );
+	}
+
+	/**
+	 * Assemble compiled artifacts into the canonical overlay with its integrity fields.
+	 *
+	 * @param array<string,string> $artifacts Artifact key (`css`, `editor_css`, `context_css`, `editor_context_css`) => compiled CSS.
+	 * @return array<string,mixed>
+	 */
+	private static function overlay( array $artifacts ): array {
+		if ( '' === implode( '', $artifacts ) ) {
+			return array();
+		}
+		$css        = $artifacts['css'] ?? '';
+		$editor_css = $artifacts['editor_css'] ?? '';
+		$overlay    = array(
 			'schema'        => self::OVERLAY_SCHEMA,
 			'css'           => $css,
 			'editor_css'    => $editor_css,
@@ -360,32 +692,88 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			'editor_sha256' => hash( 'sha256', $editor_css ),
 			'editor_bytes'  => strlen( $editor_css ),
 		);
-		if ( '' !== $context_css ) {
-			$overlay['context_css']    = $context_css;
-			$overlay['context_sha256'] = hash( 'sha256', $context_css );
-			$overlay['context_bytes']  = strlen( $context_css );
+		foreach ( array( 'context', 'editor_context' ) as $key ) {
+			$value = $artifacts[ $key . '_css' ] ?? '';
+			if ( '' !== $value ) {
+				$overlay[ $key . '_css' ]    = $value;
+				$overlay[ $key . '_sha256' ] = hash( 'sha256', $value );
+				$overlay[ $key . '_bytes' ]  = strlen( $value );
+			}
 		}
-		if ( '' !== $editor_context_css ) {
-			$overlay['editor_context_css']    = $editor_context_css;
-			$overlay['editor_context_sha256'] = hash( 'sha256', $editor_context_css );
-			$overlay['editor_context_bytes']  = strlen( $editor_context_css );
-		}
+		return $overlay;
+	}
+
+	/**
+	 * Read one compiled artifact from an overlay.
+	 *
+	 * @param array<string,mixed> $overlay Overlay.
+	 * @param string              $key     Artifact key.
+	 */
+	private static function artifact( array $overlay, string $key ): string {
+		$value = $overlay[ $key ] ?? '';
+		return is_string( $value ) ? $value : '';
+	}
+
+	/**
+	 * A compile that degrades to one recorded structure loss.
+	 *
+	 * @param string $error Map or bound error.
+	 * @return array{overlay:array<string,mixed>,css:string,operations:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>}
+	 */
+	private static function failed_compile( string $error ): array {
 		return array(
-			'overlay'    => $overlay,
-			'css'        => $css,
-			'operations' => $operations,
-			'losses'     => $losses,
+			'overlay'    => array(),
+			'css'        => '',
+			'operations' => array(),
+			'losses'     => array(
+				array(
+					'dimension'   => 'layout',
+					'reason_code' => 'provider_structure_mismatch',
+					'map_error'   => $error,
+				),
+			),
 		);
 	}
 
-	/** Merge adjacent equivalent rules without changing selector specificity or cascade order. */
+	/**
+	 * Merge equivalent rules only across provably disjoint mapped node selectors.
+	 *
+	 * @param string[] $rules Compiled rules in cascade order.
+	 * @return string[]
+	 */
 	private static function compact_rules( array $rules ): array {
 		$compacted = array();
 		$previous  = null;
+		$parsed    = array();
 		foreach ( $rules as $rule ) {
 			if ( ! preg_match( '/^((?:@(?:media|container) [^{}]+\{)*)([^{}]+)\{([^{}]*)\}(\}*)$/D', $rule, $parts ) || substr_count( $parts[1], '{' ) !== strlen( $parts[4] ) ) {
 				$compacted[] = $rule;
 				$previous    = null;
+				$parsed[]    = null;
+				continue;
+			}
+			// Move this selector left only while every intervening rule is disjoint.
+			// Unknown selectors, shared nodes, shorthands and at-rule interactions
+			// are barriers; no property-independence assumption is needed.
+			$merged = false;
+			for ( $index = count( $parsed ) - 1; $index >= 0; --$index ) {
+				$candidate = $parsed[ $index ];
+				if ( null === $candidate ) {
+					break;
+				}
+				if ( $candidate[1] === $parts[1] && $candidate[3] === $parts[3] && $candidate[4] === $parts[4] && substr_count( $candidate[2] . ', ' . $parts[2], ', ' ) < 128 ) {
+					$candidate[2]       .= ', ' . $parts[2];
+					$parsed[ $index ]    = $candidate;
+					$compacted[ $index ] = $candidate[1] . $candidate[2] . '{' . $candidate[3] . '}' . $candidate[4];
+					$previous            = end( $parsed );
+					$merged              = true;
+					break;
+				}
+				if ( ! self::disjoint_node_selectors( $parts[2], $candidate[2] ) ) {
+					break;
+				}
+			}
+			if ( $merged ) {
 				continue;
 			}
 			if ( null !== $previous && $previous[3] === $parts[3] ) {
@@ -397,19 +785,56 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 					$previous = null;
 				}
 				if ( null !== $previous ) {
+					$parsed[ count( $parsed ) - 1 ]       = $previous;
 					$compacted[ count( $compacted ) - 1 ] = $previous[1] . $previous[2] . '{' . $previous[3] . '}' . $previous[4];
 					continue;
 				}
 			}
 			$compacted[] = $rule;
 			$previous    = $parts;
+			$parsed[]    = $parts;
 		}
 		return $compacted;
 	}
 
+	/**
+	 * Only simple, per-node boxes prove that two selector lists cannot compete.
+	 *
+	 * @param string $left  First selector list.
+	 * @param string $right Second selector list.
+	 * @return bool
+	 */
+	private static function disjoint_node_selectors( string $left, string $right ): bool {
+		$nodes = array();
+		foreach ( array( $left, $right ) as $selectors ) {
+			$group = array();
+			foreach ( explode( ', ', $selectors ) as $selector ) {
+				if ( ! preg_match( '/^(?:\.editor-styles-wrapper )?\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? (?:input)?\.(ssi-node-[a-f0-9]{12})(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?$/D', $selector, $match ) ) {
+					return false;
+				}
+				$group[] = $match[1];
+			}
+			$nodes[] = $group;
+		}
+		return ! array_intersect( $nodes[0], $nodes[1] );
+	}
+
+	/**
+	 * Budget follows mapped node hooks, not selector repetitions or supplied metadata.
+	 * The same calculation admits front-end and editor artifacts, including context.
+	 * Base 16 KiB + 1 KiB per unique mapped node, capped at 64 KiB per surface.
+	 *
+	 * @param string $css Compiled surface CSS.
+	 * @return int
+	 */
+	private static function overlay_byte_limit( string $css ): int {
+		preg_match_all( '/\.ssi-node-[a-f0-9]{12}(?![a-f0-9])/', $css, $nodes );
+		return min( self::MAX_OVERLAY_BYTES, self::BASE_OVERLAY_BYTES + count( array_unique( $nodes[0] ) ) * self::BYTES_PER_MAPPED_NODE );
+	}
+
 	/** CSS properties a form context rule may declare, keyed by fact name. */
 	private static function context_property_map(): array {
-		$keys = array( 'color', 'font_family', 'font_size', 'font_style', 'font_weight', 'letter_spacing', 'line_height', 'text_transform', 'text_align', 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block_start', 'padding_block_end', 'padding_inline_start', 'padding_inline_end', 'min_height' );
+		$keys = array( 'color', 'font_family', 'font_size', 'font_style', 'font_weight', 'letter_spacing', 'line_height', 'text_transform', 'text_align', 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block_start', 'padding_block_end', 'padding_inline_start', 'padding_inline_end', 'min_height', 'grid_column', 'grid_row', 'grid_area', 'order', 'align_self', 'justify_self' );
 		return array_combine( $keys, array_map( static fn( string $key ): string => str_replace( '_', '-', $key ), $keys ) );
 	}
 
@@ -421,7 +846,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * graph owns its element's cascade result, including conditional patches, and
 	 * is addressed by its identity hook inside the form scope.
 	 */
-	private static function context_fallback_css( string $scope, array $fallbacks, bool $editor, array &$operations, array &$losses ): string {
+	private static function context_fallback_css( string $scope, array $fallbacks, string $label, array &$operations, array &$losses ): string {
 		if ( empty( $fallbacks ) ) {
 			return '';
 		}
@@ -468,19 +893,16 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 				// overrides its base value exactly as the source cascade does.
 				$conditional[] = self::conditional_rule( $variant['condition'], $selector . '{' . implode( ';', $patch ) . '}' );
 			}
-			if ( ! $editor ) {
-				$operations[] = array(
-					'dimension'   => 'presentation',
-					'strategy'    => $legacy ? 'provider_context_style_fallback' : 'provider_context_source_presentation',
-					'target_hash' => hash( 'sha256', $identity ),
-				);
-			}
+			$operations[] = array(
+				'dimension'   => 'presentation',
+				'strategy'    => $legacy ? 'provider_context_style_fallback' : 'provider_context_source_presentation',
+				'target_hash' => hash( 'sha256', $identity ),
+			);
 		}
 		$rules = array_merge( $rules, $conditional );
 		if ( empty( $rules ) ) {
 			return '';
 		}
-		$label = $editor ? 'editor form context fallback' : 'form context fallback';
 		return '/* Static Site Importer ' . $label . ': ' . substr( hash( 'sha256', implode( "\n", $rules ) ), 0, 12 ) . " */\n" . implode( "\n", array_values( array_unique( $rules ) ) ) . "\n";
 	}
 
@@ -511,45 +933,53 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( array_keys( $overlay ) !== $expected_keys || self::OVERLAY_SCHEMA !== ( $overlay['schema'] ?? null ) || ! is_string( $overlay['css'] ?? null ) || ( isset( $overlay['editor_css'] ) && ( ! is_string( $overlay['editor_css'] ) || ! is_string( $overlay['editor_sha256'] ?? null ) || ! is_int( $overlay['editor_bytes'] ?? null ) ) ) || ! is_string( $overlay['sha256'] ?? null ) || ! is_int( $overlay['bytes'] ?? null ) ) {
 			return null;
 		}
-		$css = $overlay['css'];
-		if ( strlen( $css ) !== $overlay['bytes'] || $overlay['bytes'] > self::MAX_OVERLAY_BYTES || ! preg_match( '/^[a-f0-9]{64}$/D', $overlay['sha256'] ) || ! hash_equals( $overlay['sha256'], hash( 'sha256', $css ) ) ) {
-			return null;
+		// Integrity of each artifact, in order: `css`, `editor_css`, `context_css`,
+		// `editor_context_css`. The front-end `css` is checked even when empty.
+		foreach ( array( 'css', 'context' ) as $role ) {
+			foreach ( array( self::SURFACE_FRONT_END, self::SURFACE_EDITOR ) as $surface ) {
+				$key   = self::SURFACES[ $surface ][ $role ]['key'];
+				$value = $overlay[ $key ] ?? '';
+				if ( 'css' !== $key && '' === $value ) {
+					continue;
+				}
+				$field  = substr( $key, 0, -strlen( 'css' ) );
+				$sha256 = $overlay[ $field . 'sha256' ];
+				$bytes  = $overlay[ $field . 'bytes' ];
+				if ( strlen( $value ) !== $bytes || $bytes > self::MAX_OVERLAY_BYTES || ! preg_match( '/^[a-f0-9]{64}$/D', $sha256 ) || ! hash_equals( $sha256, hash( 'sha256', $value ) ) ) {
+					return null;
+				}
+			}
 		}
-		$editor_css = $overlay['editor_css'] ?? '';
-		if ( '' !== $editor_css && ( strlen( $editor_css ) !== $overlay['editor_bytes'] || $overlay['editor_bytes'] > self::MAX_OVERLAY_BYTES || ! preg_match( '/^[a-f0-9]{64}$/D', $overlay['editor_sha256'] ) || ! hash_equals( $overlay['editor_sha256'], hash( 'sha256', $editor_css ) ) ) ) {
-			return null;
-		}
+		$css                = $overlay['css'];
+		$editor_css         = $overlay['editor_css'] ?? '';
 		$context_css        = $overlay['context_css'] ?? '';
 		$editor_context_css = $overlay['editor_context_css'] ?? '';
-		if ( '' !== $context_css && ( strlen( $context_css ) !== $overlay['context_bytes'] || $overlay['context_bytes'] > self::MAX_OVERLAY_BYTES || ! preg_match( '/^[a-f0-9]{64}$/D', $overlay['context_sha256'] ) || ! hash_equals( $overlay['context_sha256'], hash( 'sha256', $context_css ) ) ) ) {
-			return null;
-		}
-		if ( '' !== $editor_context_css && ( strlen( $editor_context_css ) !== $overlay['editor_context_bytes'] || $overlay['editor_context_bytes'] > self::MAX_OVERLAY_BYTES || ! preg_match( '/^[a-f0-9]{64}$/D', $overlay['editor_context_sha256'] ) || ! hash_equals( $overlay['editor_context_sha256'], hash( 'sha256', $editor_context_css ) ) ) ) {
-			return null;
-		}
-		if ( strlen( $css ) + strlen( $context_css ) > self::MAX_OVERLAY_BYTES || strlen( $editor_css ) + strlen( $editor_context_css ) > self::MAX_OVERLAY_BYTES ) {
+		if ( strlen( $css ) + strlen( $context_css ) > self::overlay_byte_limit( $css ) || strlen( $editor_css ) + strlen( $editor_context_css ) > self::overlay_byte_limit( $editor_css ) ) {
 			return null;
 		}
 		if ( '' === $css && '' === $editor_css && '' === $context_css && '' === $editor_context_css ) {
 			return null;
 		}
-		if ( '' !== $css && ! self::safe_compiled_artifact( $css, 'provider layout overlay', false ) ) {
-			return null;
-		}
-		if ( '' !== $editor_css && ! self::safe_compiled_artifact( $editor_css, 'editor control chrome', true ) ) {
-			return null;
-		}
-		if ( '' !== $context_css && ! self::safe_compiled_artifact( $context_css, 'form context fallback', false ) ) {
-			return null;
-		}
-		if ( '' !== $editor_context_css && ! self::safe_compiled_artifact( $editor_context_css, 'editor form context fallback', true ) ) {
-			return null;
+		foreach ( array( self::SURFACE_FRONT_END, self::SURFACE_EDITOR ) as $surface ) {
+			foreach ( array( self::SURFACES[ $surface ]['css'], self::SURFACES[ $surface ]['context'] ) as $artifact ) {
+				$value = self::artifact( $overlay, $artifact['key'] );
+				if ( '' !== $value && ! self::safe_compiled_artifact( $value, $artifact['label'], $artifact['rule'] ) ) {
+					return null;
+				}
+			}
 		}
 		return $overlay;
 	}
 
-	private static function safe_compiled_artifact( string $css, string $kind, bool $editor ): bool {
-		if ( ! preg_match( '/^\/\* Static Site Importer ' . preg_quote( $kind, '/' ) . ': [a-f0-9]{12} \*\/\n/', $css, $header ) ) {
+	/**
+	 * Admit one compiled artifact: its declared header, then every rule in its declared grammar.
+	 *
+	 * @param string $css     Compiled artifact.
+	 * @param string $label   Declared header label.
+	 * @param string $grammar Declared rule grammar: `compiled`, `editor` or `context`.
+	 */
+	private static function safe_compiled_artifact( string $css, string $label, string $grammar ): bool {
+		if ( ! preg_match( '/^\/\* Static Site Importer ' . preg_quote( $label, '/' ) . ': [a-f0-9]{12} \*\/\n/', $css, $header ) ) {
 			return false;
 		}
 		$body = substr( $css, strlen( $header[0] ) );
@@ -557,9 +987,11 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			return false;
 		}
 		foreach ( array_filter( explode( "\n", trim( $body ) ) ) as $rule ) {
-			$safe = 'editor form context fallback' === $kind
-				? self::safe_context_fallback_artifact_rule( $rule )
-				: ( $editor ? self::safe_editor_compiled_rule( $rule ) : self::safe_compiled_rule( $rule ) );
+			$safe = match ( $grammar ) {
+				'context' => self::safe_context_fallback_artifact_rule( $rule ),
+				'editor'  => self::safe_editor_compiled_rule( $rule ),
+				default   => self::safe_compiled_rule( $rule ),
+			};
 			if ( ! $safe ) {
 				return false;
 			}
@@ -567,18 +999,28 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		return true;
 	}
 
-	private static function safe_context_fallback_artifact_rule( string $rule ): bool {
+	/** The body of an admitted `@media` / `@container` rule, or null when the rule is not one. */
+	private static function unwrap_condition( string $rule ): ?string {
 		if ( preg_match( '/^@(?:media (' . self::MEDIA_FEATURE_QUERY . '(?:,' . self::MEDIA_FEATURE_QUERY . '){0,127})|container (' . self::MEDIA_FEATURE_QUERY . '))\{(.+)\}$/D', $rule, $matches ) ) {
-			return self::safe_context_fallback_artifact_rule( $matches[3] );
+			return $matches[3];
+		}
+		return null;
+	}
+
+	private static function safe_context_fallback_artifact_rule( string $rule ): bool {
+		$body = self::unwrap_condition( $rule );
+		if ( null !== $body ) {
+			return self::safe_context_fallback_artifact_rule( $body );
 		}
 		return self::safe_context_fallback_rule( $rule );
 	}
 
 	private static function safe_editor_compiled_rule( string $rule ): bool {
-		if ( preg_match( '/^@(?:media (' . self::MEDIA_FEATURE_QUERY . '(?:,' . self::MEDIA_FEATURE_QUERY . '){0,127})|container (' . self::MEDIA_FEATURE_QUERY . '))\{(.+)\}$/D', $rule, $matches ) ) {
-			return self::safe_editor_compiled_rule( $matches[3] );
+		$body = self::unwrap_condition( $rule );
+		if ( null !== $body ) {
+			return self::safe_editor_compiled_rule( $body );
 		}
-		$prefix = '.editor-styles-wrapper ';
+		$prefix = self::SURFACES[ self::SURFACE_EDITOR ]['prefix'];
 		if ( ! preg_match( '/^([^{}]+)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
@@ -591,19 +1033,20 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			$selectors = explode( ', ', $list[1] );
 			return count( $selectors ) <= 128 && ! array_filter( $selectors, static fn( string $selector ): bool => ! self::safe_compiled_rule( $selector . '{' . $list[2] . '}' ) );
 		}
-		$rule = str_replace( ' > div.jetpack-field__control{', '{', $rule );
+		$rule = str_replace( self::SURFACES[ self::SURFACE_EDITOR ]['field_control']['suffix'] . '{', '{', $rule );
 		if ( self::safe_context_fallback_rule( $rule ) ) {
 			return true;
 		}
 		if ( preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? \.ssi-node-[a-f0-9]{12})::placeholder\{color:revert;opacity:revert\}$/D', $rule ) ) {
 			return true;
 		}
-		if ( preg_match( '/^@(?:media (' . self::MEDIA_FEATURE_QUERY . '(?:,' . self::MEDIA_FEATURE_QUERY . '){0,127})|container (' . self::MEDIA_FEATURE_QUERY . '))\{(.+)\}$/D', $rule, $matches ) ) {
-			return self::safe_compiled_rule( $matches[3] );
+		$body = self::unwrap_condition( $rule );
+		if ( null !== $body ) {
+			return self::safe_compiled_rule( $body );
 		}
 		// The provider form target is admitted as both of its rendered spellings,
 		// so a compiled rule may carry that two-part selector list.
-		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?:\.jetpack-contact-form-container)?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*| \.ssi-source-field-list| (?:input)?\.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link(?: > span)?| > \.grunion-label-required| > label| select)?| \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap \.contact-form__field-hints| \.grunion-field-wrap \.contact-form__field-format| \.grunion-field-wrap \.ssi-field-row > label| \.grunion-field-wrap > \.ssi-field-row| \.grunion-field-wrap \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\)(?::not\(form\.jetpack-contact-form__form \*\))?)?';
+		$scope_selector = '\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})?(?:\.jetpack-contact-form-container)?(?: > [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*(?::not\(:has\(\.wp-block-jetpack-contact-form\)\))?| \.ssi-source-field-list| (?:input)?\.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link(?: > span)?| > \.grunion-label-required| > label| select)?| \.grunion-field-wrap \.contact-form__input-error:not\(\.has-errors\)| \.grunion-field-wrap \.contact-form__field-hints| \.grunion-field-wrap \.contact-form__field-format| \.ssi-field-row > (?:label|\.ssi-node-[a-f0-9]{12})| div\.form-button-submit| \.grunion-field-wrap > \.ssi-field-row| \.grunion-field-wrap \.grunion-field::placeholder|:not\(:has\(> [a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*\)\)(?::not\(form\.jetpack-contact-form__form \*\))?)?';
 		if ( ! preg_match( '/^([^{}]+)\{([^{}]+)\}$/D', $rule, $matches ) ) {
 			return false;
 		}
@@ -612,12 +1055,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			$scope       = $scope_match[1];
 			$selector    = str_starts_with( $matches[1], $scope . $scope ) ? substr( $matches[1], strlen( $scope ) ) : $matches[1];
 			$native_safe = ( str_contains( $selector, '.ssi-native-form-topology' ) && self::safe_selector( $selector, $scope ) )
-				|| ( in_array( $selector, array( $scope . ' .ssi-native-control-shell', $scope . ' .ssi-native-control-shell-wrap', $scope . ' .wp-block-button.form-button-submit' ), true ) && 'display:contents' === $matches[2] );
+				|| ( in_array( substr( $selector, strlen( $scope ) ), array( ' .ssi-native-control-shell', ...array_keys( self::NATIVE_PASSTHROUGH ), self::SURFACES[ self::SURFACE_FRONT_END ]['container_passthrough'][0]['suffix'] ), true ) && 'display:contents' === $matches[2] );
 		}
 		if ( ! preg_match( '/^' . $scope_selector . '$/D', $matches[1] ) && ! $native_safe ) {
 			return false;
 		}
-		$layout_allowed       = array( 'display', 'width', 'height', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'position', 'z-index', 'pointer-events', ...array_values( self::box_property_map() ) );
+		$layout_allowed       = array( 'display', 'float', 'width', 'height', 'grid-template-columns', 'grid-template-rows', 'gap', 'row-gap', 'column-gap', 'flex-direction', 'flex-wrap', 'align-items', 'align-content', 'justify-content', 'align-self', 'justify-self', 'order', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'grid-column', 'grid-row', 'grid-area', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'position', 'z-index', 'pointer-events', ...array_values( self::box_property_map() ) );
 		$presentation_allowed = array_merge( array_values( self::presentation_property_map() ), array( 'color', 'flex', 'font' ) );
 		foreach ( explode( ';', $matches[2] ) as $declaration ) {
 			$declaration = preg_replace( '/!important$/D', '', $declaration ) ?? $declaration;
@@ -662,8 +1105,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			$allowed = array( $native_scope, $native_scope . '.jetpack-contact-form-container', $native_scope . ' form.jetpack-contact-form__form', $native_scope . '.wp-block-jetpack-contact-form:not(:has(form.jetpack-contact-form__form)):not(form.jetpack-contact-form__form *)', $native_scope . ' > div.jetpack-contact-form', $native_scope . '.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form)', $native_scope . '.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *)', $native_scope . ' form.jetpack-contact-form__form.submission-success' );
 			return count( $parts ) <= 2 && empty( array_diff( $parts, $allowed ) );
 		}
-		if ( str_ends_with( $selector, ' > div.jetpack-field__control' ) ) {
-			return self::safe_selector( substr( $selector, 0, -strlen( ' > div.jetpack-field__control' ) ), $scope );
+		$field_control = self::SURFACES[ self::SURFACE_EDITOR ]['field_control']['suffix'];
+		if ( str_ends_with( $selector, $field_control ) ) {
+			return self::safe_selector( substr( $selector, 0, -strlen( $field_control ) ), $scope );
 		}
 		// A select control's own padding is declared on the `<select>` element,
 		// nested a level deeper than the generated node hook (an intervening
@@ -675,22 +1119,30 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( preg_match( '/^' . preg_quote( $scope, '/' ) . ' \.ssi-node-[a-f0-9]{12}::placeholder$/D', $selector ) ) {
 			return true;
 		}
+		// A label node hook inside the field row the front-end runtime rebuilds.
+		if ( preg_match( '/^' . preg_quote( $scope, '/' ) . ' \.ssi-field-row > \.ssi-node-[a-f0-9]{12}$/D', $selector ) ) {
+			return true;
+		}
 		// The bare scope is the block wrapper the provider renders at the source form's
 		// own position, so it carries the form box's placement inside the page.
 		// A generated node hook resolves to the control, and its provider `-wrap` copy
 		// resolves to that control's field shell.
-		// A provider may render its form element or lay the fields out directly in
-		// its block wrapper. One target therefore carries both spellings, and the
-		// wrapper branch excludes itself whenever that form element is present, as
-		// its child or its ancestor, so the declarations still land on exactly one
-		// element.
+		// The provider form target addresses the flex container that holds the
+		// fields, which is the form element when the scoped block wrapper wraps
+		// it and the block wrapper itself when the provider's form wraps it (or
+		// renders no form at all). One target therefore carries both spellings:
+		// the form branch excludes itself whenever the block wrapper sits inside
+		// it, and the wrapper branch excludes itself whenever the form is its
+		// child, so the declarations land on exactly one element. The native
+		// topology target keeps its wrapper branch excluding itself inside the
+		// form, so that spelling stays admitted too.
 		$parts = explode( ', ', $selector );
 		if ( count( $parts ) > 2 ) {
 			return false;
 		}
 		$element = '[a-z][a-z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9_-]{0,79})*';
 		foreach ( $parts as $part ) {
-			if ( ! preg_match( '/^' . preg_quote( $scope, '/' ) . '(?:\.jetpack-contact-form-container)?(?: > ' . $element . '| \.ssi-source-field-list| (?:input)?\.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label)?|:not\(:has\(> ' . $element . '\)\)(?::not\(form\.jetpack-contact-form__form \*\))?)?$/D', $part ) ) {
+			if ( ! preg_match( '/^' . preg_quote( $scope, '/' ) . '(?:\.jetpack-contact-form-container)?(?: > ' . $element . '(?::not\(:has\(\.wp-block-jetpack-contact-form\)\))?| \.ssi-source-field-list| (?:input)?\.ssi-node-[a-f0-9]{12}(?:-(?:wrap|destination-[a-z][a-z0-9-]{0,31}))?(?: > \.wp-block-button__link| > \.grunion-label-required| > label)?|:not\(:has\(> ' . $element . '\)\)(?::not\(form\.jetpack-contact-form__form \*\))?)?$/D', $part ) ) {
 				return false;
 			}
 		}
@@ -719,6 +1171,27 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		}
 		return $rule;
 	}
+	/**
+	 * Restate a source form's initial cross-axis alignment on the provider form.
+	 *
+	 * The layout graph omits a fact whose computed value is the CSS initial, so a
+	 * source flex form without `align-items` stretches its items. The provider
+	 * element that receives the form's container layout carries its own
+	 * alignment instead (Jetpack's contact-form block defaults to the flex layout
+	 * `verticalAlignment: top`, which paints `align-items:flex-start`), and that
+	 * provider default is not a declaration on the source box. A responsive patch
+	 * only carries authored changes, so this applies to the base layout alone.
+	 *
+	 * @param array<string,mixed> $layout Base layout facts of one graph node.
+	 * @return array<string,mixed>
+	 */
+	private static function with_initial_flex_alignment( array $layout ): array {
+		if ( in_array( $layout['display'] ?? null, array( 'flex', 'inline-flex' ), true ) && ! array_key_exists( 'align_items', $layout ) ) {
+			$layout['align_items'] = 'stretch';
+		}
+		return $layout;
+	}
+
 	/**
 	 * @param array<int,string> $important Layout fact keys this node's declarations
 	 *                                     must win the cascade for, independent of
@@ -752,9 +1225,9 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * mechanism exists for. A source sibling-stacking rule (physical `margin-top`
 	 * or a flow-relative equivalent) is carried onto the provider form unscoped and
 	 * can be authored with unbounded specificity, so a plain reset declaration has
-	 * no reliable way to out-rank it. Only these four flow-relative margin
-	 * properties are ever forced; every other layout fact keeps ordinary cascade
-	 * weight.
+	 * no reliable way to out-rank it. Projected percentage cells also need forced
+	 * width/float resets on their restored inner layer, where authored half-class
+	 * rules must yield to the provider shell's ownership of the row width.
 	 *
 	 * @param mixed $important
 	 * @return array<int,string>
@@ -763,19 +1236,21 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( ! is_array( $important ) ) {
 			return array();
 		}
-		return array_values( array_intersect( $important, array( 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end' ) ) );
+		return array_values( array_intersect( $important, array( 'float', 'width', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end' ) ) );
 	}
 
 	/** @return array<string,string> */
 	public static function layout_property_map(): array {
 		return array(
 			'display'             => 'display',
+			'float'               => 'float',
 			'position'            => 'position',
 			'top'                 => 'top',
 			'right'               => 'right',
 			'bottom'              => 'bottom',
 			'left'                => 'left',
 			'width'               => 'width',
+			'max_width'           => 'max-width',
 			'height'              => 'height',
 			'columns'             => 'grid-template-columns',
 			'rows'                => 'grid-template-rows',
@@ -888,7 +1363,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			return (bool) preg_match( '/^-?[0-9]+(?:\.[0-9]+)?$/D', $value );
 		}
 		if ( 'flex' === $fact ) {
-			return (bool) preg_match( '/^(?:none|(?:[0-9]+(?:\.[0-9]+)?)(?: [0-9]+(?:\.[0-9]+)?)? (?:auto|0|(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh)))$/D', $value );
+			// `flex: 1` is the one-number form of the same shorthand (`1 1 0%`).
+			return (bool) preg_match( '/^(?:none|(?:[0-9]+(?:\.[0-9]+)?)(?: [0-9]+(?:\.[0-9]+)?)?(?: (?:auto|0|(?:[0-9]+(?:\.[0-9]+)?)(?:px|rem|em|%|vw|vh)))?)$/D', $value );
+		}
+		// Only the projection's neutralizing float reset is supported.
+		if ( 'float' === $fact ) {
+			return 'none' === $value;
 		}
 		if ( 'position' === $fact ) {
 			return in_array( $value, array( 'relative', 'static' ), true );
@@ -980,6 +1460,78 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		return array_keys( array_diff_key( self::positioned_control_presentation_property_keys(), self::presentation_property_keys() ) );
 	}
 
+	/**
+	 * Resolve overlapping declarations before the alphabetically keyed capture is
+	 * serialized. Keep a stronger longhand after its shorthand: dropping the
+	 * shorthand would also discard its non-conflicting components.
+	 *
+	 * @param array<string,string>              $styles Captured values.
+	 * @param array<int,array<string,mixed>>    $provenance Source selector ownership.
+	 * @param array<string,array<string,mixed>> $precedence Responsive cascade ranks.
+	 * @return array<string,string>
+	 */
+	private static function resolve_presentation_cascade( array $styles, array $provenance, array $precedence = array() ): array {
+		$ranks = array();
+		foreach ( $provenance as $order => $fact ) {
+			$selector = $fact['selector'] ?? '';
+			$weight   = '[style]' === $selector ? 10000 : 0;
+			if ( class_exists( '\\Automattic\\BlocksEngine\\PhpTransformer\\Css\\CssSelectorMatcher' ) && '[style]' !== $selector ) {
+				$parsed = \Automattic\BlocksEngine\PhpTransformer\Css\CssSelectorMatcher::parse( $selector );
+				$weight = \Automattic\BlocksEngine\PhpTransformer\Css\CssSelectorMatcher::specificity( $parsed );
+			}
+			foreach ( $fact['properties'] ?? array() as $property ) {
+				$ranks[ str_replace( '-', '_', $property ) ] = array( false, $weight, $order );
+			}
+		}
+		foreach ( $precedence as $property => $rank ) {
+			$ranks[ str_replace( '-', '_', $property ) ] = array( $rank['important'], $rank['specificity'], $rank['source_order'] );
+		}
+		$shorthands = array(
+			'background'    => array( 'background_color' ),
+			'border'        => array( 'border_color', 'border_style', 'border_width' ),
+			'border_color'  => array(),
+			'border_style'  => array(),
+			'border_width'  => array(),
+			'border_radius' => array( 'border_top_left_radius', 'border_top_right_radius', 'border_bottom_right_radius', 'border_bottom_left_radius' ),
+			'font'          => array( 'font_family', 'font_size', 'font_style', 'font_variant', 'font_weight', 'line_height' ),
+			'flex'          => array( 'flex_basis', 'flex_grow', 'flex_shrink' ),
+			'inset'         => array( 'top', 'right', 'bottom', 'left' ),
+		);
+		foreach ( array( 'top', 'right', 'bottom', 'left' ) as $side ) {
+			foreach ( array( 'color', 'style', 'width' ) as $component ) {
+				$shorthands['border'][]                 = 'border_' . $side . '_' . $component;
+				$shorthands[ 'border_' . $component ][] = 'border_' . $side . '_' . $component;
+			}
+		}
+		foreach ( array( 'margin', 'padding' ) as $box ) {
+			$shorthands[ $box ] = array_map( static fn( string $side ): string => $box . '_' . $side, array( 'top', 'right', 'bottom', 'left' ) );
+			foreach ( array( 'block', 'inline' ) as $axis ) {
+				$shorthands[ $box . '_' . $axis ] = array( $box . '_' . $axis . '_start', $box . '_' . $axis . '_end' );
+			}
+		}
+		foreach ( $shorthands as $shorthand => $longhands ) {
+			if ( ! isset( $styles[ $shorthand ] ) ) {
+				continue;
+			}
+			foreach ( $longhands as $longhand ) {
+				if ( isset( $styles[ $longhand ], $ranks[ $shorthand ], $ranks[ $longhand ] ) && $ranks[ $shorthand ] > $ranks[ $longhand ] ) {
+					unset( $styles[ $longhand ] );
+				}
+			}
+			// Move only overlapping declarations; unrelated facts retain their
+			// stable producer order and do not churn existing overlay artifacts.
+			$ordered = array();
+			foreach ( $styles as $property => $value ) {
+				if ( in_array( $property, $longhands, true ) && ! isset( $ordered[ $shorthand ] ) ) {
+					$ordered[ $shorthand ] = $styles[ $shorthand ];
+				}
+				$ordered[ $property ] = $value;
+			}
+			$styles = $ordered;
+		}
+		return $styles;
+	}
+
 	private static function presentation_declarations( array $styles, int $index, string $role, array &$losses, array $properties = array(), array $aliases = array() ): array {
 		$map          = self::presentation_property_map();
 		$declarations = array();
@@ -1000,8 +1552,21 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	}
 
 	/** Compile one adapter-owned destination without knowing its provider or markup. */
-	private static function compile_presentation_destinations( array $destinations, array $styles, int $index, string $role, ?array $condition, array &$rules, array &$operations, array &$losses, bool $emit_resets = true ): void {
+	private static function compile_presentation_destinations( array $destinations, array $styles, int $index, string $role, ?array $condition, string $prefix, array &$rules, array &$operations, array &$losses, bool $emit_resets = true ): void {
 		$represented = array();
+		// The provider adds a flex item around the source button. Its percentage
+		// width must resolve against a full row, not a shrink-to-fit label box.
+		if ( isset( $styles['width'] ) && ( '100%' === $styles['width'] || null !== $condition ) ) {
+			$basis = '100%' === $styles['width'] ? '100%' : 'auto';
+			foreach ( $destinations as $destination ) {
+				$suffix = ' > .wp-block-button__link';
+				if ( str_ends_with( $destination['selector'], $suffix ) ) {
+					$wrapper = substr( $destination['selector'], 0, -strlen( $suffix ) );
+					$rule    = self::surface_selector( $prefix, self::authoritative_presentation_selector( $wrapper ) ) . '{flex-basis:' . $basis . '}';
+					$rules[] = null !== $condition ? self::conditional_rule( $condition, $rule ) : $rule;
+				}
+			}
+		}
 		foreach ( $destinations as $destination ) {
 			$represented = array_merge( $represented, $destination['properties'] );
 			$emit_styles = $styles;
@@ -1033,7 +1598,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			if ( 'important' === ( $destination['priority'] ?? '' ) ) {
 				$declarations = array_map( static fn( string $declaration ): string => $declaration . '!important', $declarations );
 			}
-			$rule         = self::authoritative_presentation_selector( $destination['selector'] ) . '{' . implode( ';', $declarations ) . '}';
+			$rule         = self::surface_selector( $prefix, self::authoritative_presentation_selector( $destination['selector'] ) ) . '{' . implode( ';', $declarations ) . '}';
 			$rules[]      = null === $condition ? $rule : self::conditional_rule( $condition, $rule );
 			$operations[] = self::presentation_operation( $index, $role, $destination['selector'], null !== $condition );
 		}
@@ -1070,7 +1635,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		) === $resets ) {
 			return true;
 		}
-		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'margin-block', 'line-height', 'gap', 'display', 'align-items', 'height', 'appearance', '--jetpack--contact-form--input-height' ) ) ) {
+		if ( ! is_array( $resets ) || ! self::has_only_keys( $resets, array( 'flex', 'min-width', 'min-height', 'padding', 'border', 'background', 'text-indent', 'font-family', 'font-size', 'font-weight', 'font', 'margin', 'margin-block', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'margin-block-start', 'margin-block-end', 'margin-inline-start', 'margin-inline-end', 'line-height', 'gap', 'display', 'align-items', 'height', 'appearance', '--jetpack--contact-form--input-height' ) ) ) {
 			return false;
 		}
 		foreach ( $resets as $property => $value ) {

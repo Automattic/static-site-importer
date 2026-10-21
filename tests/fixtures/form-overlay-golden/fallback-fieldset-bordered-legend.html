@@ -1,0 +1,20 @@
+<!--
+	Deliberate fallback case: a bordered root fieldset with a legend is a
+	labelled semantic wrapper the provider form cannot represent, so the seeder
+	keeps it as a recorded loss (status "skipped") instead of mapping it.
+-->
+<style>
+fieldset{border:1px solid #d4d4d8;padding:16px;margin:0 0 16px}
+legend{font-weight:600;padding:0 4px}
+.field{margin-bottom:12px}
+label{display:block;margin-bottom:4px}
+input{width:100%;padding:8px;border:1px solid #a1a1aa}
+</style>
+<form>
+<fieldset>
+<legend>Contact details</legend>
+<div class="field"><label for="name">Name</label><input id="name" name="name" type="text"></div>
+<div class="field"><label for="email">Email</label><input id="email" name="email" type="email"></div>
+</fieldset>
+<button type="submit">Send</button>
+</form>

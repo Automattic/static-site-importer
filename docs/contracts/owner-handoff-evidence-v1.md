@@ -27,3 +27,9 @@ incomplete report also blocks publication.
 
 Every non-pass finding includes affected route/component, evidence reference,
 owning repository, and recommended next action.
+
+When Blocks Engine derived a design system for the theme, the PHP producer
+records its `schema` and `metrics` (`preset_share`, `restyle_coverage`, palette
+size, unused font families, generated-to-source CSS ratio, ...) as an optional
+`design_system` field. It is a reported quality signal for run-to-run
+comparison, not a dimension, and never changes the disposition.

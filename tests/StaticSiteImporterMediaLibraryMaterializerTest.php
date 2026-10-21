@@ -49,6 +49,24 @@ class StaticSiteImporterMediaLibraryMaterializerTest extends WP_UnitTestCase {
 		$this->assertSame( array( $ids[0] ), $state['applied']['attachments'] );
 	}
 
+	/** A Blocks Engine featured-image handoff becomes the post thumbnail. */
+	public function test_featured_image_metadata_asset_becomes_post_thumbnail(): void {
+		$state = $this->state_with_page( '<!-- wp:paragraph --><p>Post</p><!-- /wp:paragraph -->' );
+		$page  = $state['source_ids']['website/index.html'];
+		$state['ordered_pages'][0]['metadata']['featured_image'] = array(
+			'target_path' => 'media/photo.png',
+			'alt'         => 'Featured photo',
+		);
+
+		$report = Static_Site_Importer_Media_Library_Materializer::materialize( $state );
+
+		$this->assertIsArray( $report );
+		$thumbnail = (int) get_post_thumbnail_id( $page );
+		$this->assertGreaterThan( 0, $thumbnail );
+		$this->assertSame( 'Featured photo', get_post_meta( $thumbnail, '_wp_attachment_image_alt', true ) );
+		$this->assertSame( array( $thumbnail ), $state['applied']['attachments'] );
+	}
+
 	/** Source attachment numbers never establish destination ownership. */
 	public function test_foreign_image_identity_is_rebound_by_asset_and_reused(): void {
 		$foreign_id = self::factory()->attachment->create( array( 'post_title' => 'Unrelated owner image' ) );

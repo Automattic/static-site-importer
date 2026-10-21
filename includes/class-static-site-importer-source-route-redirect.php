@@ -36,7 +36,7 @@ final class Static_Site_Importer_Source_Route_Redirect {
 		}
 	}
 
-	/** Resolve only a published, unambiguous imported index document. */
+	/** Resolve only a published, unambiguous imported document at its own route. */
 	public static function resolve_request( array $query_vars ): array {
 		if ( ( function_exists( 'is_admin' ) && is_admin() ) || isset( $query_vars['rest_route'] ) || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) || ! in_array( strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) ), array( 'GET', 'HEAD' ), true ) ) {
 			return $query_vars;
@@ -49,7 +49,15 @@ final class Static_Site_Importer_Source_Route_Redirect {
 		if ( '' === $path ) {
 			return $query_vars;
 		}
-		$id = self::find_post_id( $path . '/index.html' );
+		$id   = self::find_post_id( $path . '/index.html' );
+		$flat = $id <= 0 ? self::flat_document_page_id( $path ) : 0;
+		if ( self::is_designed_shop_archive( $id > 0 ? $id : $flat ) ) {
+			return $query_vars;
+		}
+		if ( $flat > 0 ) {
+			// The page's own URI: the query core's page rule builds for this path.
+			return self::singular_query_vars( $query_vars ) + array( 'pagename' => $path );
+		}
 		if ( $id <= 0 || ! function_exists( 'get_post_type' ) ) {
 			return $query_vars;
 		}
@@ -57,10 +65,7 @@ final class Static_Site_Importer_Source_Route_Redirect {
 		if ( ! is_string( $type ) || '' === $type ) {
 			return $query_vars;
 		}
-		// An owned document is singular. Keep its endpoint state; archive
-		// selectors from any native or custom taxonomy cannot constrain it.
-		// The request's original query string remains available to the document.
-		$query_vars                                       = array_intersect_key( $query_vars, array_flip( array( 'feed', 'embed', 'cpage', 'preview', 'preview_id', 'preview_nonce', 'withcomments', 'withoutcomments' ) ) );
+		$query_vars                                       = self::singular_query_vars( $query_vars );
 		$query_vars[ 'page' === $type ? 'page_id' : 'p' ] = $id;
 		if ( 'page' !== $type ) {
 			$query_vars['post_type'] = $type;
@@ -185,6 +190,61 @@ final class Static_Site_Importer_Source_Route_Redirect {
 		}
 
 		return self::normalize_path( $path );
+	}
+
+	/**
+	 * An owned document is singular. Keep its endpoint state; archive selectors
+	 * from any native or custom taxonomy or post type cannot constrain it. The
+	 * request's original query string remains available to the document.
+	 */
+	/**
+	 * The WooCommerce shop page whose listing the theme designs as the product
+	 * archive: WooCommerce serves that archive at the page's URL.
+	 */
+	private static function is_designed_shop_archive( int $id ): bool {
+		return $id > 0 && function_exists( 'wc_get_page_id' ) && (int) wc_get_page_id( 'shop' ) === $id && class_exists( 'Static_Site_Importer_Woo_Product_Listing_Materializer' ) && Static_Site_Importer_Woo_Product_Listing_Materializer::theme_designs_product_archive();
+	}
+
+	private static function singular_query_vars( array $query_vars ): array {
+		return array_intersect_key( $query_vars, array_flip( array( 'feed', 'embed', 'cpage', 'preview', 'preview_id', 'preview_nonce', 'withcomments', 'withoutcomments' ) ) );
+	}
+
+	/**
+	 * Imported page that a flat source document (`shop.html`) materialized at its own slug path.
+	 *
+	 * A plugin can register a rewrite for the same path, such as a post-type
+	 * archive at the page's URI, and WordPress matches it before page rules.
+	 * The imported page still owns the URL it was materialized at.
+	 */
+	private static function flat_document_page_id( string $path ): int {
+		if ( ! function_exists( 'get_posts' ) || ! function_exists( 'get_page_uri' ) ) {
+			return 0;
+		}
+		$sources = array();
+		foreach ( array( '.html', '.htm' ) as $extension ) {
+			$sources[] = $path . $extension;
+			$sources[] = 'website/' . $path . $extension;
+		}
+		$found = get_posts(
+			array(
+				'post_type'              => 'page',
+				'post_status'            => 'publish',
+				'meta_key'               => self::META_KEY,
+				'meta_value'             => $sources,
+				'meta_compare'           => 'IN',
+				'posts_per_page'         => 2,
+				'no_found_rows'          => true,
+				'update_post_meta_cache' => false,
+				'update_post_term_cache' => false,
+				'fields'                 => 'ids',
+			)
+		);
+		if ( 1 !== count( $found ) ) {
+			return 0;
+		}
+		$id = (int) $found[0];
+
+		return get_page_uri( $id ) === $path ? $id : 0;
 	}
 
 	private static function find_post_id( string $path ): int {

@@ -69,6 +69,32 @@ require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-diagnost
 
 class Static_Site_Importer_Theme_Generator {
 	public static function import_website_artifact( array $artifact, array $args = array() ) {
+		if ( ! empty( $GLOBALS['ssi_pending_runtime_regression'] ) ) {
+			$dependencies = Static_Site_Importer_Dependency_Manager::materialize_lifecycle_dependencies(
+				array(
+					'dependencies' => array(
+						'form' => array(
+							'required' => true,
+							'adapter'  => array(
+								'dependencies' => array(
+									array(
+										'type'                  => 'wp_org_plugin',
+										'slug'                  => 'jetpack',
+										'plugin_file'           => 'jetpack/jetpack.php',
+										'availability_callback' => static fn (): bool => 'resume' === ( $args['runtime_lifecycle_phase'] ?? '' ),
+									),
+								),
+							),
+						),
+					),
+				),
+				$args
+			);
+			if ( is_wp_error( $dependencies ) ) {
+				return $dependencies;
+			}
+			$GLOBALS['ssi_pending_dependency_reports'] = $dependencies;
+		}
 		if ( true !== ( $args['_static_site_importer_precompiled_source'] ?? null ) || ! is_array( $args['compiled_artifact_result'] ?? null ) || ! preg_match( '/^[a-f0-9]{64}$/', (string) ( $args['import_run_id'] ?? '' ) ) ) {
 			throw new RuntimeException( 'Materialization must receive the frozen precompiled result and stable run id.' );
 		}
@@ -116,6 +142,28 @@ class Static_Site_Importer_Theme_Generator {
 
 require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-canonical-import-service.php';
 require_once dirname( __DIR__ ) . '/includes/cli.php';
+
+// Each host step runs in another PHP process, just as the default CLI invoker does.
+if ( '--pending-runtime-step' === ( $argv[1] ?? '' ) ) {
+	$test_root = (string) $argv[2];
+	$GLOBALS['ssi_pending_runtime_regression'] = true;
+	class Static_Site_Importer_Plugin_Materializer {
+		public static function ensure_wp_org_plugin( string $slug, string $plugin_file, ?callable $availability_check = null, ?callable $preparation_callback = null ): array {
+			return array(
+				'slug' => $slug,
+				'installed' => true,
+				'active' => true,
+				'status' => $availability_check() ? 'available' : 'activated_pending_fresh_runtime',
+			);
+		}
+	}
+	require_once dirname( __DIR__ ) . '/includes/class-static-site-importer-dependency-manager.php';
+	$request = json_decode( (string) stream_get_contents( STDIN ), true );
+	$result = Static_Site_Importer_Canonical_Import_Service::import( $request );
+	$result['test_dependency_reports'] = $GLOBALS['ssi_pending_dependency_reports'] ?? array();
+	echo wp_json_encode( $result );
+	exit( 0 );
+}
 
 $assert = static function ( bool $condition, string $message ): void {
 	if ( ! $condition ) {
@@ -380,8 +428,11 @@ $assert( $terminal === $replay && 1 === $GLOBALS['ssi_direct_mutations'], 'termi
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array();
 $clean_receipt = static_site_importer_cli_run_import_host( $input(), 'static_site_importer_cli_import' );
 $clean = $clean_receipt['response'] ?? array();
+// The fixture import fails its quality gate, so the CLI receipt carries the
+// single failed verdict over the same evidence the ability returned.
+$assert( 'failed' === ( $clean_receipt['status'] ?? '' ) && 'static_site_importer_quality_failed' === ( $clean['error']['code'] ?? '' ) && false === ( $clean['success'] ?? null ), 'a fail_import apply must yield a failed CLI receipt with the quality verdict' );
 $canonical = static function ( array $response ): array {
-	unset( $response['import_id'], $response['artifact_run'] );
+	unset( $response['import_id'], $response['artifact_run'], $response['success'], $response['error'] );
 	return $response;
 };
 $clean_work = $clean['artifact_run']['work'] ?? array();
@@ -790,6 +841,65 @@ $assert( str_contains( $compose_run_json, 'unresolved_local_browser_reference' )
 $recovered_compose = Static_Site_Importer_Canonical_Import_Service::import( $resume( $compose_failed_id, 'plan' ) );
 $assert( ! empty( $recovered_compose['success'] ) && empty( $recovered_compose['continuation'] ), 'a failed composition must remain resumable from durable receipts' );
 
+// A plan diagnostic whose message is not usable text must still say why the import failed.
+// The failure is projected more than once on its way to the CLI; a projection must not read
+// its own generic "Materialization failed for <path>." line back in as the reason.
+$unreadable_compose = null;
+$GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_compiler'][] = static function ( object $compiler ) use ( &$unreadable_compose ): object {
+	return new class( $compiler, $unreadable_compose ) {
+		public function __construct( private object $compiler, private ?array &$diagnostic ) {}
+
+		public function compose( array $shared, array $receipts, ?object $payload_reader = null ) {
+			$result = $this->compiler->compose( $shared, $receipts, $payload_reader );
+			if ( null === $this->diagnostic ) {
+				return $result;
+			}
+			$reports = $result->sourceReports;
+			unset( $reports['wordpress_site_plan'] );
+			$reports['wordpress_site_plan_diagnostics'] = array( $this->diagnostic );
+			$this->diagnostic                           = null;
+			return new \Automattic\BlocksEngine\PhpTransformer\Contract\TransformerResult( 'failed', $result->components, $result->blockTypes, $reports, $result->blocks, $result->serializedBlocks, $result->documents, $result->assets, $result->diagnostics, $result->fallbacks, $result->provenance, $result->coverage, $result->context, $result->metrics );
+		}
+
+		public function __call( string $method, array $arguments ) {
+			return $this->compiler->{$method}( ...$arguments );
+		}
+	};
+};
+foreach (
+	array(
+		'a message cut inside a multibyte character' => array(
+			'diagnostic' => array(
+				'code'        => 'wordpress_site_plan_invalid_declaration',
+				'severity'    => 'error',
+				'message'     => "Heading text \"Caf\xC3\" cannot be declared.",
+				'source_path' => 'website/interactive/index.html',
+			),
+			'expected'   => "Materialization failed for website/interactive/index.html: Heading text \"Caf\u{FFFD}\" cannot be declared.",
+		),
+		'no message'                                 => array(
+			'diagnostic' => array(
+				'code'        => 'wordpress_site_plan_not_self_contained',
+				'severity'    => 'error',
+				'source_path' => 'website/interactive/index.html',
+			),
+			'expected'   => 'Materialization failed for website/interactive/index.html (wordpress_site_plan_not_self_contained).',
+		),
+	) as $label => $case
+) {
+	$unreadable_compose = $case['diagnostic'];
+	$unreadable_failed  = Static_Site_Importer_Canonical_Import_Service::import( $input( 'plan' ) );
+	$unreadable_message = (string) ( $unreadable_failed['error']['message'] ?? '' );
+	$assert( 'static_site_importer_direct_artifact_phase_failed' === ( $unreadable_failed['error']['code'] ?? '' ), 'a composition failing with ' . $label . ' must keep the phase failure code' );
+	$assert( $case['expected'] === $unreadable_message, 'a composition failing with ' . $label . ' must still state its reason once in the CLI-facing message: ' . $unreadable_message );
+	$receipt_message  = (string) ( $unreadable_failed['diagnostics'][0]['message'] ?? '' );
+	$evidence_message = (string) ( $unreadable_failed['error']['data']['artifact_run']['failures'][0]['diagnostics'][0]['message'] ?? '' );
+	$assert( $case['expected'] === $receipt_message && $case['expected'] === $evidence_message, 'every projection of ' . $label . ' must carry the same reason' );
+	$unreadable_id = (string) ( $unreadable_failed['error']['data']['import_id'] ?? '' );
+	$recovered     = Static_Site_Importer_Canonical_Import_Service::import( $resume( $unreadable_id, 'plan' ) );
+	$assert( ! empty( $recovered['success'] ) && empty( $recovered['continuation'] ), 'a composition failing with ' . $label . ' must remain resumable' );
+}
+
 $throw_detailed_compose = true;
 $GLOBALS['ssi_direct_actions']['static_site_importer_direct_artifact_before_phase'][] = static function ( string $phase ) use ( &$throw_detailed_compose ): void {
 	if ( $throw_detailed_compose && 'compose' === $phase ) {
@@ -1020,6 +1130,47 @@ $batched               = Static_Site_Importer_Canonical_Import_Service::import( 
 $batched_work          = $batched['artifact_run']['work'] ?? array();
 $assert( ! empty( $batched['success'] ) && 3 === ( $batched_work['pages_compiled'] ?? 0 ) && 3 === ( $batched_work['compile_batches'] ?? 0 ) && 'pages_remaining' !== ( $batched['continuation_reason'] ?? '' ), 'a multi-batch policy compiles every pending batch in one invocation, each batch durable on its own' );
 $GLOBALS['ssi_direct_filters']['static_site_importer_direct_artifact_run_policy'] = array();
+
+// A single inline page used to skip preparation and propagate the dependency
+// manager's pending_fresh_runtime WP_Error as a terminal canonical failure.
+$pending_results = array();
+$pending_receipt = static_site_importer_cli_run_import_host(
+	array(
+		'operation' => 'apply',
+		'slug' => 'pending-fresh-runtime',
+		'materialize_dependencies' => true,
+		'source' => array( 'type' => 'html', 'html' => '<main><h1>Comment box</h1></main>' ),
+	),
+	static function ( array $request ) use ( $test_root, &$pending_results ): array {
+		$process = proc_open(
+			array( PHP_BINARY, __FILE__, '--pending-runtime-step', $test_root ),
+			array( 0 => array( 'pipe', 'r' ), 1 => array( 'pipe', 'w' ), 2 => array( 'pipe', 'w' ) ),
+			$pipes
+		);
+		fwrite( $pipes[0], wp_json_encode( $request ) );
+		fclose( $pipes[0] );
+		$output = stream_get_contents( $pipes[1] );
+		$error = stream_get_contents( $pipes[2] );
+		fclose( $pipes[1] );
+		fclose( $pipes[2] );
+		if ( 0 !== proc_close( $process ) ) {
+			throw new RuntimeException( 'Fresh dependency step failed: ' . $error );
+		}
+		$result = json_decode( $output, true );
+		$pending_results[] = $result;
+		return $result;
+	},
+	10
+);
+// The generator deliberately returns failed quality diagnostics in this smoke.
+// Judge this regression on dependency readiness and materialization, not quality.
+$pending_prepared = array_values( array_filter( $pending_results, static fn ( array $result ): bool => 'dependencies_prepared' === ( $result['continuation_reason'] ?? '' ) ) );
+$assert( 1 === count( $pending_prepared ) && ! empty( $pending_prepared[0]['continuation'] ), 'pending dependency must use the existing dependencies_prepared continuation exactly once' );
+$assert( 'activated_pending_fresh_runtime' === ( $pending_prepared[0]['test_dependency_reports']['form']['jetpack']['status'] ?? '' ), 'first request must carry the pending dependency report' );
+$pending_terminal = end( $pending_results );
+$assert( 'available' === ( $pending_terminal['test_dependency_reports']['form']['jetpack']['status'] ?? '' ) && 'completed' === ( $pending_terminal['result']['materialization_receipt_summary']['status'] ?? '' ), 'next fresh request must observe a ready dependency and complete materialization' );
+$pending_prepared_index = array_search( $pending_prepared[0], $pending_results, true );
+$assert( count( $pending_results ) - 2 === $pending_prepared_index && count( $pending_results ) === $pending_receipt['steps'] && empty( $pending_terminal['continuation'] ), 'the CLI host must materialize in the very next fresh request after dependency preparation' );
 
 Static_Site_Importer_Artifact_Run_Workspace::purge_expired_in( $test_root );
 $primitive_workspace->purge();

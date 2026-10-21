@@ -5,12 +5,7 @@ if ( ! $ssi_wp_root ) {
 	$ssi_wp_root = getenv( 'HOMEBOY_WORDPRESS_CORE_ROOT' );
 }
 if ( ! $ssi_wp_root ) {
-	foreach ( array( '/vendor/johnpbloch/wordpress-core', '/vendor/wordpress-core' ) as $ssi_core_candidate ) {
-		$ssi_wp_root = dirname( __DIR__, 2 ) . $ssi_core_candidate;
-		if ( is_readable( $ssi_wp_root . '/wp-includes/html-api/class-wp-html-tag-processor.php' ) ) {
-			break;
-		}
-	}
+	$ssi_wp_root = dirname( __DIR__, 2 ) . '/vendor/wordpress-core';
 }
 $ssi_html_api = rtrim( (string) $ssi_wp_root, '/\\' ) . '/wp-includes/html-api/';
 if ( ! is_readable( $ssi_html_api . 'class-wp-html-tag-processor.php' ) ) {

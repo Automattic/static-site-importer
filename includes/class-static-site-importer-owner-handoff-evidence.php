@@ -124,9 +124,9 @@ final class Static_Site_Importer_Owner_Handoff_Evidence {
 			$worst      = self::worse( $worst, 'evidence_gap' );
 			$findings[] = self::finding( 'route_content_completeness', 'evidence_gap', '', 'plan_identity', self::OWNERS['route_content_completeness'], 'Bind the report to a canonical plan identity hash and materialization receipt hash.', $plan );
 		}
-		$disposition             = 'hard_failure' === $worst ? 'failed' : ( 'evidence_gap' === $worst ? 'not_proven' : ( 'required_owner_decision' === $worst ? 'owner_decisions_required' : 'passed' ) );
-		$allowed                 = ! in_array( $worst, array( 'hard_failure', 'evidence_gap' ), true );
-		$document                = array(
+		$disposition = 'hard_failure' === $worst ? 'failed' : ( 'evidence_gap' === $worst ? 'not_proven' : ( 'required_owner_decision' === $worst ? 'owner_decisions_required' : 'passed' ) );
+		$allowed     = ! in_array( $worst, array( 'hard_failure', 'evidence_gap' ), true );
+		$document    = array(
 			'schema'                         => self::SCHEMA,
 			'plan_identity'                  => self::valid_plan_identity( $plan ) ? $plan : null,
 			'materialization_receipt_sha256' => self::sha256( $receipt_hash ) ? $receipt_hash : null,
@@ -136,6 +136,15 @@ final class Static_Site_Importer_Owner_Handoff_Evidence {
 			'disposition'                    => $disposition,
 			'accepted_built_allowed'         => $allowed,
 		);
+		// Design-system metrics are a reported quality signal, not a dimension:
+		// recorded for run-to-run comparison and absent when none was derived.
+		$design_system = self::object( $input['design_system'] ?? null );
+		if ( is_array( $design_system['metrics'] ?? null ) ) {
+			$document['design_system'] = array(
+				'schema'  => (string) ( $design_system['schema'] ?? '' ),
+				'metrics' => $design_system['metrics'],
+			);
+		}
 		$document['report_card'] = self::render_report_card( $document );
 		return $document;
 	}
@@ -153,6 +162,7 @@ final class Static_Site_Importer_Owner_Handoff_Evidence {
 			array(
 				'plan_identity'           => $data['plan_identity'] ?? $receipt['plan_identity'] ?? null,
 				'materialization_receipt' => $receipt,
+				'design_system'           => $data['design_system'] ?? $receipt['design_system'] ?? null,
 				'dimensions'              => array(
 					'visual_acceptance'               => $data['visual_fidelity'] ?? null,
 					'editability_shared_regions'      => $receipt['editability_report'] ?? null,

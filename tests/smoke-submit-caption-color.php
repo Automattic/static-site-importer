@@ -29,7 +29,7 @@ $caption    = array_values( array_filter( $descriptor['destinations'], static fn
 $assert( 1 === count( $caption ), 'a captioned submit has one caption destination' );
 $assert( in_array( 'color', $caption[0]['properties'], true ), 'the caption destination carries the captured text colour' );
 
-$graph = array(
+$graph              = array(
 	'nodes' => array(
 		array(
 			'id'     => 'form',
@@ -37,7 +37,7 @@ $graph = array(
 		),
 	),
 );
-$map   = array(
+$map                = Static_Site_Importer_Form_Layout_Projection::without_parts( array(
 	'schema'               => Static_Site_Importer_Provider_Layout_Overlay::MAP_SCHEMA,
 	'provider'             => 'synthetic',
 	'scope'                => '.' . $scope,
@@ -54,7 +54,7 @@ $map   = array(
 			'destinations' => $descriptor['destinations'],
 		),
 	),
-);
+) );
 $presentation_graph = array(
 	'controls' => array(
 		array(
@@ -69,8 +69,8 @@ $presentation_graph = array(
 		),
 	),
 );
-$compiled = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph );
-$css      = (string) ( $compiled['css'] ?? '' );
+$compiled           = Static_Site_Importer_Provider_Layout_Overlay::compile( $graph, $map, $presentation_graph );
+$css                = $compiled['css'];
 $assert( 1 === preg_match( '/' . preg_quote( $caption[0]['selector'], '/' ) . '\{[^}]*color:rgb\(255,255,255\)/', $css ), 'the caption span is painted with the button text colour: ' . $css );
 $assert( null !== Static_Site_Importer_Provider_Layout_Overlay::validate_overlay( $compiled['overlay'] ), 'the overlay is admitted' );
 
@@ -87,8 +87,8 @@ $caption_colour = static function ( string $source ): array {
 			'files'      => array( 'index.html' => $source ),
 		)
 	)->toArray();
-	$colours = array();
-	$walk    = static function ( mixed $node ) use ( &$walk, &$colours ): void {
+	$colours  = array();
+	$walk     = static function ( mixed $node ) use ( &$walk, &$colours ): void {
 		if ( ! is_array( $node ) ) {
 			return;
 		}
@@ -104,7 +104,7 @@ $caption_colour = static function ( string $source ): array {
 	$walk( $compiled );
 	return array_values( array_unique( $colours ) );
 };
-$form = static fn( string $css, string $button ): string => '<style>body{color:#111827}' . $css . '</style><main><form action="/contact" method="post"><label for="e">Email</label><input id="e" name="email" type="email">' . $button . '</form></main>';
+$form           = static fn( string $css, string $button ): string => '<style>body{color:#111827}' . $css . '</style><main><form action="/contact" method="post"><label for="e">Email</label><input id="e" name="email" type="email">' . $button . '</form></main>';
 
 $tailwind = $caption_colour( $form( '.bg-indigo-600{background:#4f46e5}.text-white{color:#fff}', '<button type="submit" class="bg-indigo-600"><span class="text-white">Send</span></button>' ) );
 $assert( array( '#fff' ) === $tailwind, 'a caption with its own colour rule keeps it: ' . json_encode( $tailwind ) );

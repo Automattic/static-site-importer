@@ -1,0 +1,83 @@
+# Form overlay golden snapshot for tests/fixtures/form-overlay-golden/phone-prefix-composite.html
+# Regenerate: SSI_UPDATE_GOLDEN=1 php tests/smoke-form-overlay-golden.php
+
+=== status ===
+mapped
+
+=== css ===
+sha256: e7e7e128be326d09ed75e89ec321a406bb26fca5aefe2849b1d7f01b1549d91d
+/* Static Site Importer provider layout overlay: 1d47250fb165 */
+.ssi-form-d095fee786e4 .ssi-node-9086d8eaec39{flex-direction:column}
+.ssi-form-d095fee786e4 .ssi-node-d19260cd5a75{background:#fff;border:1px solid #94a3b8;border-radius:6px}
+.ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5{flex:1 1 auto}
+.ssi-form-d095fee786e4 .ssi-node-9086d8eaec39{flex-direction:column;display:flex;gap:6px}
+.ssi-form-d095fee786e4 .ssi-node-d19260cd5a75{align-items:center;display:flex;flex-grow:0;flex-shrink:1;flex-basis:auto}
+.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5{background:#fff;border:1px solid #94a3b8;border-radius:6px}
+.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-7998545b5b66-destination-shell{padding:0!important;border:0!important;background:transparent!important;text-indent:0!important;gap:0!important}
+.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-9f1178d7ad6b-destination-primary{font-family:revert!important;line-height:revert!important;border:0!important;flex:1 1 auto!important;font-size:16px!important;padding:10px 12px!important;text-indent:4px!important}
+.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-8d668df98608-destination-carrier{flex:1 1 0!important;min-width:0!important}
+.ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-c0a08805a264-destination-prefix{display:flex!important;align-items:center!important;height:100%!important}
+.ssi-form-d095fee786e4{position:relative;z-index:1;pointer-events:auto}
+.ssi-form-d095fee786e4.jetpack-contact-form-container{padding:0;margin:0;border:0}
+.ssi-form-d095fee786e4.ssi-native-form-topology.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form), .ssi-form-d095fee786e4.ssi-native-form-topology.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *){display:contents}
+.ssi-form-d095fee786e4.ssi-native-form-topology form.jetpack-contact-form__form.submission-success{display:none}
+.ssi-form-d095fee786e4 .ssi-native-control-shell-wrap, .ssi-form-d095fee786e4 .wp-block-button.form-button-submit{display:contents}
+.ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}
+.ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__field-hints{display:contents}
+.ssi-form-d095fee786e4 .grunion-field-wrap .contact-form__field-format{display:none}
+.ssi-form-d095fee786e4 .ssi-field-row > label{margin-block-end:0}
+.ssi-form-d095fee786e4 .grunion-field-wrap .grunion-field::placeholder{color:revert}
+.ssi-form-d095fee786e4 div.form-button-submit{flex-basis:auto}
+
+=== editor_css ===
+sha256: d64021e9e40b638498804ddfbc868841695743a6d54ee2e9d67991d730961380
+/* Static Site Importer editor control chrome: 3a88f7029d1c */
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-d19260cd5a75{background:#fff;border:1px solid #94a3b8;border-radius:6px}
+.editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-9086d8eaec39{flex-direction:column}
+.editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5{flex:1 1 auto}
+.editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-9086d8eaec39{flex-direction:column;display:flex;gap:6px}
+.editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-d19260cd5a75{align-items:center;display:flex;flex-grow:0;flex-shrink:1;flex-basis:auto}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5{background:#fff;border:1px solid #94a3b8;border-radius:6px}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-form-d095fee786e4 .ssi-node-9f1178d7ad6b-destination-primary{font-family:revert!important;line-height:revert!important;border:0!important;flex:1 1 auto!important;font-size:16px!important;padding:10px 12px!important;text-indent:4px!important}
+.editor-styles-wrapper .ssi-form-d095fee786e4{position:relative;z-index:1;pointer-events:auto}
+.editor-styles-wrapper .ssi-form-d095fee786e4.jetpack-contact-form-container{padding:0;margin:0;border:0}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-native-form-topology.wp-block-jetpack-contact-form:has(form.jetpack-contact-form__form), .editor-styles-wrapper .ssi-form-d095fee786e4.ssi-native-form-topology.wp-block-jetpack-contact-form:where(form.jetpack-contact-form__form *){display:contents}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-native-form-topology form.jetpack-contact-form__form.submission-success{display:none}
+.editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-native-control-shell-wrap, .editor-styles-wrapper .ssi-form-d095fee786e4 .wp-block-button.form-button-submit, .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-native-control-shell{display:contents}
+.editor-styles-wrapper .ssi-form-d095fee786e4.ssi-native-form-topology{padding:0;border:0}
+
+=== block_markup ===
+<!-- wp:jetpack/contact-form {"className":"ssi-native-form-topology ssi-form-d095fee786e4"} -->
+<div class="wp-block-jetpack-contact-form ssi-native-form-topology ssi-form-d095fee786e4"><!-- wp:core/group {"className":"field ssi-node-9086d8eaec39","layout":{"type":"flex","orientation":"vertical"}} -->
+<div class="wp-block-group field ssi-node-9086d8eaec39 is-layout-flex"><!-- wp:core/group {"className":"phone ssi-node-d19260cd5a75","layout":{"type":"flex","orientation":"horizontal"}} -->
+<div class="wp-block-group phone ssi-node-d19260cd5a75 is-layout-flex"><!-- wp:jetpack/field-telephone {"showCountrySelector":false,"helpText":"+1","shareFieldAttributes":false,"className":"ssi-node-c0ec220a2ba5 ssi-source-help--phone-prefix ssi-native-control-shell"} -->
+<div><!-- wp:jetpack/label {"label":"Phone"} --><!-- /wp:jetpack/label -->
+<!-- wp:jetpack/phone-input {"style":{"border":{"style":"solid"}},"className":"ssi-node-7998545b5b66-destination-shell ssi-node-9f1178d7ad6b-destination-primary ssi-node-8d668df98608-destination-carrier ssi-node-c0a08805a264-destination-prefix"} --><!-- /wp:jetpack/phone-input --></div>
+<!-- /wp:jetpack/field-telephone --></div>
+<!-- /wp:core/group --></div>
+<!-- /wp:core/group -->
+<!-- wp:core/button {"tagName":"button","type":"submit","lock":{"remove":true},"className":"form-button-submit is-submit   ssi-node-8f1f8757437f","metadata":{"name":"Submit button"}} -->
+<div class="wp-block-button form-button-submit is-submit   ssi-node-8f1f8757437f"><button type="submit" class="wp-block-button__link wp-element-button">Call me</button></div>
+<!-- /wp:core/button --></div>
+<!-- /wp:jetpack/contact-form -->
+
+=== receipt_operations ===
+total: 14
+{"dimension":"topology","strategy":"native_div_subtree_projection","target_hash":"653133871f9decae48ebd8b2ff4531b5d6e725f446b0b8e91637ae99c2881db4"}
+{"dimension":"topology","strategy":"native_div_subtree_projection","target_hash":"360d95f624f68a9e09f524d1a1ef7400e975543af0cb215e529a4a276c659019"}
+{"dimension":"presentation","strategy":"provider_source_container_presentation","node_hash":"653133871f9decae48ebd8b2ff4531b5d6e725f446b0b8e91637ae99c2881db4"}
+{"dimension":"presentation","strategy":"provider_source_container_presentation","node_hash":"360d95f624f68a9e09f524d1a1ef7400e975543af0cb215e529a4a276c659019"}
+{"dimension":"layout","strategy":"provider_selector_transposition","node_hash":"2871e05b455edae0d6440bfe8594a71423732e026f07915e16f66699562b5b9c","target_hash":"6af85f656507ff6522bdf3053936664f3ce9da440de138f5ef54d3f1f8fa4768"}
+{"dimension":"layout","strategy":"provider_selector_transposition","node_hash":"653133871f9decae48ebd8b2ff4531b5d6e725f446b0b8e91637ae99c2881db4","target_hash":"cb5973a5faa52bb2307eb11cc426e112bed8e92c245a75172141c27412e1c7e8"}
+{"dimension":"layout","strategy":"provider_selector_transposition","node_hash":"360d95f624f68a9e09f524d1a1ef7400e975543af0cb215e529a4a276c659019","target_hash":"c0b4c286a9aa0c70d2e6b61a4954f5280f9d79bbd2671f18c3057519f4dd0458"}
+{"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"a99c21ffe6e6ee36dcb23b2721e7f453ca31a8111f5d789613686c744cc1acd7","target_hash":"6af85f656507ff6522bdf3053936664f3ce9da440de138f5ef54d3f1f8fa4768"}
+{"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"2d9cc1a4456d8f19520b575a7aa9b08c2bc42793c0056fd801f964b65996f0e3","target_hash":"471b51d74188269f19334e0cc24fba0af56e569372825a01df7e9a47b40b78f8"}
+{"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"2d9cc1a4456d8f19520b575a7aa9b08c2bc42793c0056fd801f964b65996f0e3","target_hash":"7856f6fc338d4e9f46da77d03b94ed04e30b18bf2d2cf0b283fcccb051bb2621"}
+{"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"2d9cc1a4456d8f19520b575a7aa9b08c2bc42793c0056fd801f964b65996f0e3","target_hash":"51e2720c98ee1013ecd1ae6a3ada790782815b18bb3239b78ba270da766a0b32"}
+{"dimension":"presentation","strategy":"provider_presentation_transposition","node_hash":"2d9cc1a4456d8f19520b575a7aa9b08c2bc42793c0056fd801f964b65996f0e3","target_hash":"f6d9c65ec017a56055f0c523fd797d0170755905519515bba3fd602a40f5dd4c"}
+{"dimension":"interaction","strategy":"provider_interaction_carrier","target_hash":"cb4dc149e60c2da80270627fce3ec94b6d57bf8360c26f262c5bc215e132dd14"}
+{"dimension":"layout","strategy":"provider_container_box_reset","target_hash":"121125c67552ddad5b21bfada7f5cc905182f9b4a39e0abd48db01736b928dde"}
+
+=== receipt_losses ===
+total: 1
+{"dimension":"layout","reason_code":"layout_target_unrepresentable","node_hash":"2871e05b455edae0d6440bfe8594a71423732e026f07915e16f66699562b5b9c"}

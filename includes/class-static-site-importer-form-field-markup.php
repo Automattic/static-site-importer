@@ -13,6 +13,10 @@ if ( ! class_exists( 'Static_Site_Importer_Jetpack_Forms_Runtime' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-jetpack-forms-runtime.php';
 }
 
+if ( ! class_exists( 'Static_Site_Importer_Form_Textarea_Rows' ) ) {
+	require_once __DIR__ . '/class-static-site-importer-form-textarea-rows.php';
+}
+
 if ( ! class_exists( 'Static_Site_Importer_Provider_Form_Runtime_V1' ) ) {
 	require_once __DIR__ . '/class-static-site-importer-provider-form-runtime.php';
 }
@@ -227,10 +231,9 @@ final class Static_Site_Importer_Form_Field_Markup {
 		if ( false === ( $control['required_indicator'] ?? null ) && '' === trim( (string) ( $control['required_text'] ?? '' ) ) ) {
 			$attrs['requiredIndicator'] = false;
 		}
-		$id = isset( $control['id'] ) && is_scalar( $control['id'] ) ? trim( (string) $control['id'] ) : '';
-		if ( '' !== $id ) {
-			$attrs['id'] = $id;
-		}
+		// No field `id` is set: a source ID can repeat across responsive copies,
+		// and a fixed ID would repeat in every rendered copy of a reused form.
+		// Jetpack derives a unique ID per rendered form instance instead.
 		if ( in_array( $lookup, array( 'tel', 'phone' ), true ) ) {
 			$attrs['showCountrySelector'] = 'phone' === $lookup;
 		}
@@ -352,9 +355,9 @@ final class Static_Site_Importer_Form_Field_Markup {
 			}
 			if ( 'textarea' === $lookup ) {
 				$input_attrs['type'] = 'textarea';
-				$rows                = self::textarea_rows( $control );
-				if ( null !== $rows ) {
-					$input_attrs['className'] = trim( (string) ( $input_attrs['className'] ?? '' ) . ' ssi-textarea-rows-' . $rows );
+				$rows_marker         = Static_Site_Importer_Form_Textarea_Rows::marker_class( $control );
+				if ( '' !== $rows_marker ) {
+					$input_attrs['className'] = trim( (string) ( $input_attrs['className'] ?? '' ) . ' ' . $rows_marker );
 				}
 				$height = isset( $control['height'] ) && is_scalar( $control['height'] ) ? trim( (string) $control['height'] ) : '';
 				if ( '' !== $height && preg_match( '/^[0-9]{1,4}(?:\.[0-9]+)?(?:px|em|rem|vh|vw|%)$/D', $height ) ) {
@@ -398,16 +401,58 @@ final class Static_Site_Importer_Form_Field_Markup {
 	}
 
 	/**
-	 * Read a textarea's authored row count, defaulting to the HTML unset-rows
-	 * value of 2. Jetpack does not expose a rows block attribute; this value
-	 * is carried as an `ssi-textarea-rows-N` class onto `jetpack/input` and
-	 * projected onto the rendered control at runtime.
+	 * Carry the classes of an unambiguous source description to provider help.
 	 *
-	 * @param array<string, mixed> $control Source control metadata.
+	 * Older producers expose description text but not its element's classes.
+	 * Resolve only inside the identified control's nearest source container;
+	 * never borrow presentation from an equal string elsewhere in the form.
+	 *
+	 * @param array<string,mixed> $form    Source form including its HTML.
+	 * @param array<string,mixed> $control Source control metadata.
+	 * @return string Transport classes for the provider field shell.
 	 */
-	public static function textarea_rows( array $control ): ?int {
-		$rows = isset( $control['rows'] ) && is_scalar( $control['rows'] ) ? (int) $control['rows'] : 2;
-		return ( $rows >= 1 && $rows <= 50 ) ? $rows : null;
+	public static function help_class_markers( array $form, array $control ): string {
+		$description = self::control_description( $control );
+		if ( '' === $description || ! is_string( $form['html'] ?? null ) || ! class_exists( 'DOMDocument' ) ) {
+			return '';
+		}
+		$document = new DOMDocument();
+		$previous = libxml_use_internal_errors( true );
+		$document->loadHTML( '<?xml encoding="UTF-8">' . $form['html'], LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING );
+		libxml_clear_errors();
+		libxml_use_internal_errors( $previous );
+		$candidates = array();
+		foreach ( $document->getElementsByTagName( (string) ( $control['tag'] ?? 'input' ) ) as $element ) {
+			$id   = (string) ( $control['id'] ?? '' );
+			$name = (string) ( $control['name'] ?? '' );
+			if ( ( '' !== $id && $element->getAttribute( 'id' ) === $id ) || ( '' === $id && '' !== $name && $element->getAttribute( 'name' ) === $name ) ) {
+				$candidates[] = $element;
+			}
+		}
+		if ( 1 !== count( $candidates ) || ! $candidates[0]->parentNode instanceof DOMElement ) {
+			return '';
+		}
+		$matches = array();
+		foreach ( $candidates[0]->parentNode->getElementsByTagName( '*' ) as $element ) {
+			if ( $element === $candidates[0] || $element->childElementCount > 0 || in_array( strtolower( $element->tagName ), array( 'input', 'select', 'textarea', 'button' ), true ) ) { // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM API.
+				continue;
+			}
+			$text = trim( (string) preg_replace( '/\s+/u', ' ', $element->textContent ) ); // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOM API.
+			if ( $text === $description ) {
+				$matches[] = $element;
+			}
+		}
+		if ( 1 !== count( $matches ) ) {
+			return '';
+		}
+		$markers = array();
+		$classes = preg_split( '/\s+/', trim( $matches[0]->getAttribute( 'class' ) ) );
+		foreach ( false === $classes ? array() : $classes as $class_name ) {
+			if ( preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) {
+				$markers[] = 'ssi-source-help--' . $class_name;
+			}
+		}
+		return implode( ' ', $markers );
 	}
 
 	/**
@@ -618,21 +663,24 @@ final class Static_Site_Importer_Form_Field_Markup {
 		return $blocks;
 	}
 
-	/** Serialize in-form context as editable core blocks. */
-	public static function context_block_markup( array $form, string $position ): string {
-		$markup = '';
-		foreach ( self::context_blocks( $form, $position ) as $block ) {
-			$markup .= self::serialize_block( $block );
-		}
-		return $markup;
-	}
-
 	/**
 	 * Presentation properties a recreated context element may carry. Copy keeps
 	 * its typography and own box; a recreated wrapper keeps only its box.
 	 */
 	private const CONTEXT_TEXT_PROPERTIES = array( 'color', 'font_family', 'font_size', 'font_style', 'font_weight', 'letter_spacing', 'line_height', 'text_transform', 'text_align' );
-	private const CONTEXT_BOX_PROPERTIES  = array( 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block_start', 'padding_block_end', 'padding_inline_start', 'padding_inline_end', 'min_height' );
+	/**
+	 * Placement a recreated context element keeps as an item of the provider's
+	 * field list, keyed as context styles, from the source graph's layout facts.
+	 */
+	private const CONTEXT_ITEM_FACTS     = array(
+		'column'       => 'grid_column',
+		'row'          => 'grid_row',
+		'area'         => 'grid_area',
+		'order'        => 'order',
+		'align_self'   => 'align_self',
+		'justify_self' => 'justify_self',
+	);
+	private const CONTEXT_BOX_PROPERTIES = array( 'margin', 'margin_top', 'margin_right', 'margin_bottom', 'margin_left', 'margin_block_start', 'margin_block_end', 'margin_inline_start', 'margin_inline_end', 'padding', 'padding_top', 'padding_right', 'padding_bottom', 'padding_left', 'padding_block_start', 'padding_block_end', 'padding_inline_start', 'padding_inline_end', 'min_height' );
 
 	/**
 	 * Join in-form context copy to its v3 source graph element by identity.
@@ -659,6 +707,18 @@ final class Static_Site_Importer_Form_Field_Markup {
 		if ( array() === $nodes ) {
 			return $result;
 		}
+		foreach ( $form['source_context_graph']['variants'] ?? array() as $variant ) {
+			$id = is_array( $variant ) && is_string( $variant['node'] ?? null ) ? $variant['node'] : '';
+			if ( isset( $nodes[ $id ] ) && is_array( $variant['layout_patch'] ?? null ) && is_array( $variant['condition'] ?? null ) ) {
+				$nodes[ $id ]['item_variants'][] = array(
+					'condition' => $variant['condition'],
+					'styles'    => self::context_item_styles( $variant['layout_patch'] ),
+				);
+			}
+		}
+		foreach ( $nodes as $id => $node ) {
+			$nodes[ $id ] = self::with_context_item_placement( $node );
+		}
 		$by_selector = array();
 		foreach ( $nodes as $id => $node ) {
 			$by_selector[ $node['source']['selector'] ] = $id;
@@ -678,7 +738,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 				}
 				$covered[ $id ] = true;
 				$identity       = self::context_node_identity( $nodes[ $id ] );
-				if ( ! self::push_context_fallback( $result['fallbacks'], $identity, $nodes[ $id ], array_merge( self::CONTEXT_TEXT_PROPERTIES, self::CONTEXT_BOX_PROPERTIES ) ) ) {
+				if ( ! self::push_context_fallback( $result['fallbacks'], $identity, $nodes[ $id ], array_merge( self::CONTEXT_TEXT_PROPERTIES, self::CONTEXT_BOX_PROPERTIES, array_values( self::CONTEXT_ITEM_FACTS ) ) ) ) {
 					// Nothing resolved for this copy: its source classes alone carry it.
 					$identity = '';
 				}
@@ -695,7 +755,7 @@ final class Static_Site_Importer_Form_Field_Markup {
 						continue;
 					}
 					$wrapper_identity = self::context_node_identity( $nodes[ $parent ] );
-					self::push_context_fallback( $result['fallbacks'], $wrapper_identity, $nodes[ $parent ], self::CONTEXT_BOX_PROPERTIES );
+					self::push_context_fallback( $result['fallbacks'], $wrapper_identity, $nodes[ $parent ], array_merge( self::CONTEXT_BOX_PROPERTIES, array_values( self::CONTEXT_ITEM_FACTS ) ) );
 					$classes = array_values( array_filter( $nodes[ $parent ]['source']['classes'] ?? array(), static fn( $class_name ): bool => is_string( $class_name ) && 1 === preg_match( '/^[A-Za-z_][A-Za-z0-9_-]{0,79}$/D', $class_name ) ) );
 					array_unshift(
 						$wrappers,
@@ -721,6 +781,36 @@ final class Static_Site_Importer_Form_Field_Markup {
 			}
 		}
 		return $result;
+	}
+
+	/** @return array<string,string> Item placement facts keyed as context styles. */
+	private static function context_item_styles( array $layout ): array {
+		$styles = array();
+		foreach ( self::CONTEXT_ITEM_FACTS as $fact => $style ) {
+			if ( isset( $layout[ $fact ] ) && is_string( $layout[ $fact ] ) && '' !== trim( $layout[ $fact ] ) ) {
+				$styles[ $style ] = $layout[ $fact ];
+			}
+		}
+		return $styles;
+	}
+
+	/**
+	 * Carry a context node's own item placement (a heading spanning the source
+	 * grid, say) with its presentation, so the recreated element keeps its place
+	 * among the provider's field-list items.
+	 */
+	private static function with_context_item_placement( array $node ): array {
+		$base     = self::context_item_styles( is_array( $node['layout'] ?? null ) ? $node['layout'] : array() );
+		$variants = array_values( array_filter( $node['item_variants'] ?? array(), static fn( array $variant ): bool => array() !== $variant['styles'] ) );
+		unset( $node['item_variants'] );
+		if ( array() === $base && array() === $variants ) {
+			return $node;
+		}
+		$presentation             = is_array( $node['presentation'] ?? null ) ? $node['presentation'] : array();
+		$presentation['styles']   = array_merge( is_array( $presentation['styles'] ?? null ) ? $presentation['styles'] : array(), $base );
+		$presentation['variants'] = array_merge( is_array( $presentation['variants'] ?? null ) ? $presentation['variants'] : array(), $variants );
+		$node['presentation']     = $presentation;
+		return $node;
 	}
 
 	private static function context_node_identity( array $node ): string {
@@ -907,9 +997,9 @@ final class Static_Site_Importer_Form_Field_Markup {
 		$options = isset( $control['options'] ) && is_array( $control['options'] ) ? $control['options'] : array();
 		$labels  = array();
 
-		foreach ( $options as $option ) {
+		foreach ( array_values( $options ) as $position => $option ) {
 			if ( is_array( $option ) ) {
-				if ( $omit_placeholders && ! empty( $option['placeholder'] ) ) {
+				if ( $omit_placeholders && self::is_select_prompt( $option, $position ) ) {
 					continue;
 				}
 				$label = isset( $option['label'] ) && is_scalar( $option['label'] ) ? trim( (string) $option['label'] ) : '';
@@ -929,19 +1019,49 @@ final class Static_Site_Importer_Form_Field_Markup {
 	}
 
 	/**
+	 * Return whether a source select option is the field's unselected prompt
+	 * rather than a visitor-selectable answer.
+	 *
+	 * The producer names a prompt with its explicit placeholder flag — an
+	 * empty-value option carrying disabled or selected. Source selects can
+	 * also open with `<option value="">prompt</option>` and neither marker;
+	 * HTML makes that first option the visitor's initial answer and its empty
+	 * value submits no choice, so it carries the same prompt semantic.
+	 *
+	 * @param array<string, mixed> $option   Source option metadata.
+	 * @param int                  $position Zero-based source option position.
+	 * @return bool
+	 */
+	private static function is_select_prompt( array $option, int $position ): bool {
+		if ( ! empty( $option['placeholder'] ) ) {
+			return true;
+		}
+		if ( 0 !== $position ) {
+			return false;
+		}
+		// The producer always emits the value key: an explicit empty value is the
+		// prompt, while a missing value keeps HTML's own value-is-the-label text.
+		$value = isset( $option['value'] ) && is_scalar( $option['value'] ) ? trim( (string) $option['value'] ) : null;
+		$label = isset( $option['label'] ) && is_scalar( $option['label'] ) ? trim( (string) $option['label'] ) : '';
+		return '' === $value && '' !== $label;
+	}
+
+	/**
 	 * Read a select's source-authored placeholder option, mapped onto Jetpack's
 	 * input placeholder / togglelabel rather than kept as a real option.
 	 *
 	 * Jetpack prepends a synthetic "Select an option" unless togglelabel or a
-	 * default is set. The source's empty-value disabled option is that prompt.
+	 * default is set. The source's prompt option is that text: the flagged
+	 * empty-value disabled option, or a leading option whose empty value the
+	 * producer left unflagged.
 	 *
 	 * @param array<string, mixed> $control Source control metadata.
 	 * @return string
 	 */
 	private static function select_placeholder_label( array $control ): string {
 		$options = isset( $control['options'] ) && is_array( $control['options'] ) ? $control['options'] : array();
-		foreach ( $options as $option ) {
-			if ( ! is_array( $option ) || empty( $option['placeholder'] ) ) {
+		foreach ( array_values( $options ) as $position => $option ) {
+			if ( ! is_array( $option ) || ! self::is_select_prompt( $option, $position ) ) {
 				continue;
 			}
 			$label = isset( $option['label'] ) && is_scalar( $option['label'] ) ? trim( (string) $option['label'] ) : '';
