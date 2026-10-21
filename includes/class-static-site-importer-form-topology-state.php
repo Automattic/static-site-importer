@@ -36,7 +36,6 @@ final class Static_Site_Importer_Form_Topology_State {
 	public mixed $mapped_controls          = array();
 	public mixed $percentage_width_parents = array();
 	public mixed $layout_css_properties    = array();
-	public mixed $provider_controls        = array();
 	public mixed $auxiliary_popup_controls = array();
 	public mixed $phone_popup_targets      = array();
 

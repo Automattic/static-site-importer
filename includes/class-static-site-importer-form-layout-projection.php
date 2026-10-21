@@ -450,29 +450,6 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		if ( ! self::index_control_topology( $s ) ) {
 			return null;
 		}
-		$s->losses                       = array();
-		$s->operations                   = array();
-		$s->represented_layout_nodes     = array();
-		$s->represented_topology_nodes   = array();
-		$s->suppressed_layout_properties = array();
-		$s->class_carried_variants       = array();
-		$s->submit_block_rows            = array();
-		$s->overlay_node_targets         = array();
-		$s->responsive_variant_targets   = array();
-		$s->native_visibility_targets    = array();
-		$s->wrapper_hooks                = array();
-		$s->provider_layout_targets      = array();
-		$s->overlay_represented_nodes    = array();
-		$s->layout_by_node               = array();
-		$s->layout_nodes_by_id           = array();
-		$s->variants_by_node             = array();
-		$s->form_classes                 = array();
-		$s->grid_span_active             = false;
-		$s->grid_span_gap                = null;
-		$s->grid_span_gap_variants       = array();
-		$s->grid_span_submit_controls    = array();
-		$s->grid_span_submit_parents     = array();
-		$s->grid_span_container          = 'form';
 		foreach ( array_keys( $s->auxiliary_popup_controls ) as $control_index ) {
 			$s->operations[] = array(
 				'dimension'   => 'topology',
@@ -501,7 +478,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				if ( $include_auxiliary && is_int( $control_index ) && isset( $s->phone_popup_targets[ $control_index ] ) && ! isset( $s->suppressed_controls[ $s->phone_popup_targets[ $control_index ] ] ) ) {
 					return array( $s->phone_popup_targets[ $control_index ] );
 				}
-				return is_int( $control_index ) && ! isset( $s->provider_controls[ $control_index ] ) && ! isset( $s->suppressed_controls[ $control_index ] ) ? array( $control_index ) : array();
+				return is_int( $control_index ) && ! isset( $s->auxiliary_popup_controls[ $control_index ] ) && ! isset( $s->suppressed_controls[ $control_index ] ) ? array( $control_index ) : array();
 			}
 			$controls = array();
 			foreach ( $s->children[ $node['id'] ?? '' ] ?? array() as $child ) {
@@ -530,7 +507,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 						continue;
 					} elseif ( isset( $s->controls[ $control_index ] ) ) {
 						$type = strtolower( trim( (string) ( $s->controls[ $control_index ]['type'] ?? $s->controls[ $control_index ]['tag'] ?? '' ) ) );
-						if ( isset( $s->provider_controls[ $control_index ] ) || ! self::control_carries_authored_content( $type ) ) {
+						if ( isset( $s->auxiliary_popup_controls[ $control_index ] ) || ! self::control_carries_authored_content( $type ) ) {
 							continue;
 						}
 						$s->losses[] = array(
@@ -618,7 +595,6 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$s->control_parents[ $node['control'] ] = $parent;
 			}
 		}
-		$s->provider_controls        = array();
 		$s->auxiliary_popup_controls = array();
 		$s->phone_popup_targets      = array();
 		$shares_phone_group          = static function ( int $popup_control, int $phone_control ) use ( $s ): bool {
@@ -649,7 +625,6 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					if ( $field_index === $control_index || empty( $field['readonly'] ) || '' === $label_id || ! in_array( $label_id, $described, true ) || ( $s->control_parents[ $field_index ] ?? null ) !== ( $s->control_parents[ $control_index ] ?? null ) ) {
 						continue;
 					}
-					$s->provider_controls[ $control_index ]        = true;
 					$s->auxiliary_popup_controls[ $control_index ] = true;
 					break;
 				}
@@ -657,7 +632,6 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 			$previous = $s->controls[ $control_index - 1 ] ?? null;
 			if ( is_array( $previous ) && Static_Site_Importer_Form_Field_Markup::is_provider_auxiliary_button( $s->controls, $control_index - 1 ) && $shares_phone_group( $control_index - 1, $control_index ) ) {
-				$s->provider_controls[ $control_index - 1 ]        = true;
 				$s->phone_popup_targets[ $control_index - 1 ]      = $control_index;
 				$s->auxiliary_popup_controls[ $control_index - 1 ] = true;
 			}
@@ -908,12 +882,6 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		// A source row that holds several boxes is a band of columns. The provider
 		// states that relationship with its own field width, so the boxes sit side
 		// by side there instead of stacking one per row.
-		$s->topology_nodes_by_id = array();
-		foreach ( $s->nodes as $topology_node ) {
-			if ( is_array( $topology_node ) && is_string( $topology_node['id'] ?? null ) ) {
-				$s->topology_nodes_by_id[ $topology_node['id'] ] = $topology_node;
-			}
-		}
 		foreach ( self::source_grid_row_bands( $s->layout_nodes_by_id, $s->variants_by_node ) as $band ) {
 			$members = array();
 			foreach ( $band as $node_id => $width ) {
@@ -990,7 +958,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					break;
 				}
 				$type = strtolower( trim( (string) ( $s->controls[ $control_index ]['type'] ?? $s->controls[ $control_index ]['tag'] ?? '' ) ) );
-				if ( 'radio' === $type || ! in_array( $type, array( '', 'text', 'email', 'tel', 'phone', 'number', 'url' ), true ) ) {
+				if ( ! in_array( $type, array( '', 'text', 'email', 'tel', 'phone', 'number', 'url' ), true ) ) {
 					$unmapped = true;
 					break;
 				}
@@ -1124,12 +1092,6 @@ final class Static_Site_Importer_Form_Layout_Projection {
 
 	/** Project source grid placement, spans and percentage widths onto provider fields. */
 	private static function project_grid_placement( Static_Site_Importer_Form_Topology_State $s ): void {
-		$topology_by_id = array();
-		foreach ( $s->nodes as $node ) {
-			if ( is_array( $node ) && is_string( $node['id'] ?? null ) ) {
-				$topology_by_id[ $node['id'] ] = $node;
-			}
-		}
 		$safe_percentage_variants = static function ( array $variants ): bool {
 			foreach ( $variants as $variant ) {
 				$patch = self::layout_patch( $variant );
@@ -1395,7 +1357,6 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'node_hash' => hash( 'sha256', $id ),
 			);
 		}
-		$s->percentage_width_parents = array();
 		if ( in_array( $s->form['layout_graph']['schema'] ?? null, array( 'generic/computed-layout-graph/v2', 'generic/computed-layout-graph/v3' ), true ) ) {
 			foreach ( $s->children as $parent => $siblings ) {
 				if ( '$root' === $parent || count( $siblings ) < 2 || isset( $s->variants_by_node[ $parent ] ) ) {
@@ -1448,7 +1409,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$cursor       = $parent;
 				$table_proven = true;
 				foreach ( $table_tags as $expected_tag ) {
-					$current            = $topology_by_id[ $cursor ] ?? null;
+					$current            = $s->topology_nodes_by_id[ $cursor ] ?? null;
 					$layout             = $s->layout_by_node[ $cursor ] ?? array();
 					$allows_table_width = 'table' === $expected_tag && array( 'width' ) === array_keys( $layout ) && '100%' === ( $layout['width'] ?? null ) && isset( $s->layout_nodes_by_id[ $cursor ] ) && self::has_unconditional_proven_property( $s->layout_nodes_by_id[ $cursor ], 'width' );
 					if ( ! is_array( $current ) || ( $current['tag'] ?? 'div' ) !== $expected_tag || ( $s->layout_nodes_by_id[ $cursor ]['source']['tag'] ?? '' ) !== $expected_tag || ( 'tr' !== $expected_tag && ! empty( $layout ) && ! $allows_table_width ) ) {
@@ -1461,7 +1422,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					}
 				}
 				foreach ( $branches as $branch ) {
-					if ( 'td' !== ( $topology_by_id[ $branch ]['tag'] ?? 'div' ) || 'td' !== ( $s->layout_nodes_by_id[ $branch ]['source']['tag'] ?? '' ) || array( 'width' ) !== array_keys( $s->layout_by_node[ $branch ] ?? array() ) ) {
+					if ( 'td' !== ( $s->topology_nodes_by_id[ $branch ]['tag'] ?? 'div' ) || 'td' !== ( $s->layout_nodes_by_id[ $branch ]['source']['tag'] ?? '' ) || array( 'width' ) !== array_keys( $s->layout_by_node[ $branch ] ?? array() ) ) {
 						$table_proven = false;
 					}
 				}
