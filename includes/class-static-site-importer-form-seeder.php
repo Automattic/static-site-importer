@@ -335,7 +335,7 @@ class Static_Site_Importer_Form_Seeder {
 				continue;
 			}
 
-			if ( 'submit' === $type || ( 'button' === $tag && 'submit' === $type ) ) {
+			if ( 'submit' === $type ) {
 				$text              = Static_Site_Importer_Form_Field_Markup::control_text( $control );
 				$submit_text       = '' !== $text ? $text : $submit_text;
 				$has_source_submit = true;
@@ -458,29 +458,12 @@ class Static_Site_Importer_Form_Seeder {
 		}
 
 		if ( empty( $field_blocks ) ) {
-			return Static_Site_Importer_Form_Mapping_Plan::skipped( $form, array(
-				'selector'       => $selector,
-				'source_path'    => $source_path,
-				'provider'       => self::PROVIDER_ID,
-				'block_name'     => 'jetpack/contact-form',
-				'status'         => 'skipped',
-				'reason'         => 'no_mappable_form_fields',
-				'runtime_mapped' => false,
-				'skipped_types'  => array_values( array_unique( array_filter( $skipped ) ) ),
-			) );
+			return self::skipped_plan( $form, $selector, $source_path, 'no_mappable_form_fields', array( 'skipped_types' => array_values( array_unique( array_filter( $skipped ) ) ) ) );
 		}
 
 		$topology = Static_Site_Importer_Form_Layout_Projection::topology_inner_blocks( $form, $field_blocks, $controls, $suppressed_controls );
 		if ( null === $topology ) {
-			return Static_Site_Importer_Form_Mapping_Plan::skipped( $form, array(
-				'selector'       => $selector,
-				'source_path'    => $source_path,
-				'provider'       => self::PROVIDER_ID,
-				'block_name'     => 'jetpack/contact-form',
-				'status'         => 'skipped',
-				'reason'         => 'unsupported_control_topology',
-				'runtime_mapped' => false,
-			) );
+			return self::skipped_plan( $form, $selector, $source_path, 'unsupported_control_topology' );
 		}
 		$inner_blocks                     = $topology['blocks'];
 		$form['provider_native_topology'] = in_array( 'ssi-native-form-topology', $topology['form_classes'], true );
@@ -550,21 +533,7 @@ class Static_Site_Importer_Form_Seeder {
 		$overlay_graph          = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( Static_Site_Importer_Form_Layout_Projection::split_form_box( $provider_graph ), is_array( $form['layout_graph'] ?? null ) ? $form['layout_graph'] : array(), $box_targets );
 		$overlay_graph['nodes'] = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || 'form-box' === ( $node['id'] ?? '' ) || isset( $box_targets[ (string) ( $node['id'] ?? '' ) ] ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
 		foreach ( $topology['overlay_node_targets'] as $target ) {
-			$merged = false;
-			foreach ( $overlay_graph['nodes'] as &$overlay_node ) {
-				if ( is_array( $overlay_node ) && ( $overlay_node['id'] ?? null ) === ( $target['id'] ?? null ) ) {
-					$overlay_node['layout'] = array_merge( is_array( $overlay_node['layout'] ?? null ) ? $overlay_node['layout'] : array(), $target['layout'] );
-					if ( ! empty( $target['important'] ) && is_array( $target['important'] ) ) {
-						$overlay_node['important'] = array_values( array_unique( array_merge( is_array( $overlay_node['important'] ?? null ) ? $overlay_node['important'] : array(), $target['important'] ) ) );
-					}
-					$merged = true;
-					break;
-				}
-			}
-			unset( $overlay_node );
-			if ( ! $merged ) {
-				$overlay_graph['nodes'][] = $target;
-			}
+			self::upsert_overlay_node( $overlay_graph, $target );
 		}
 		foreach ( Static_Site_Importer_Form_Layout_Projection::direct_label_control_gap_targets( $form ) as $target ) {
 			$control_index = $target['control'];
@@ -587,21 +556,13 @@ class Static_Site_Importer_Form_Seeder {
 				);
 				continue;
 			}
-			$merged = false;
-			foreach ( $overlay_graph['nodes'] as &$overlay_node ) {
-				if ( is_array( $overlay_node ) && ( $overlay_node['id'] ?? null ) === $target_id ) {
-					$overlay_node['layout'] = array_merge( $overlay_node['layout'] ?? array(), $layout_patch );
-					$merged                 = true;
-					break;
-				}
-			}
-			unset( $overlay_node );
-			if ( ! $merged ) {
-				$overlay_graph['nodes'][] = array(
+			self::upsert_overlay_node(
+				$overlay_graph,
+				array(
 					'id'     => $target_id,
 					'layout' => $layout_patch,
-				);
-			}
+				)
+			);
 			$layout['receipt']['operations'][] = array(
 				'dimension'   => 'layout',
 				'strategy'    => 'provider_direct_label_control_gap',
@@ -613,8 +574,10 @@ class Static_Site_Importer_Form_Seeder {
 		// renders in-form copy and the status output as items of that element,
 		// which the source row did not arrange, so the row is stated only when the
 		// element holds nothing but the fields and the submit.
-		$form_holds_only_controls = array() === Static_Site_Importer_Form_Field_Markup::context_blocks( $form, 'context_before' )
-			&& array() === Static_Site_Importer_Form_Field_Markup::context_blocks( $form, 'context_after' )
+		$context_before           = Static_Site_Importer_Form_Field_Markup::context_blocks( $form, 'context_before' );
+		$context_after            = Static_Site_Importer_Form_Field_Markup::context_blocks( $form, 'context_after' );
+		$form_holds_only_controls = array() === $context_before
+			&& array() === $context_after
 			&& 'status' !== ( is_array( $form['form']['trailing_status'] ?? null ) ? ( $form['form']['trailing_status']['role'] ?? null ) : null );
 		$form_base_layout         = array();
 		$item_base_layouts        = array();
@@ -834,11 +797,7 @@ class Static_Site_Importer_Form_Seeder {
 				'attrs' => $attrs,
 			);
 		}
-		$inner_blocks = array_merge(
-			Static_Site_Importer_Form_Field_Markup::context_blocks( $form, 'context_before' ),
-			$inner_blocks,
-			Static_Site_Importer_Form_Field_Markup::context_blocks( $form, 'context_after' )
-		);
+		$inner_blocks = array_merge( $context_before, $inner_blocks, $context_after );
 		$form_block   = array(
 			'name'        => 'jetpack/contact-form',
 			'attrs'       => $form_attrs,
@@ -871,6 +830,46 @@ class Static_Site_Importer_Form_Seeder {
 			$row['form_visual_state_diagnostics'] = $visual_state['diagnostics'];
 		}
 		return Static_Site_Importer_Form_Mapping_Plan::prepared( $form, $field_blocks, $form_block, $host['shell'], $row );
+	}
+
+	/** Build the skipped mapping plan for a form the provider cannot represent. */
+	private static function skipped_plan( array $form, string $selector, string $source_path, string $reason, array $extra = array() ): Static_Site_Importer_Form_Mapping_Plan {
+		return Static_Site_Importer_Form_Mapping_Plan::skipped(
+			$form,
+			array_merge(
+				array(
+					'selector'       => $selector,
+					'source_path'    => $source_path,
+					'provider'       => self::PROVIDER_ID,
+					'block_name'     => 'jetpack/contact-form',
+					'status'         => 'skipped',
+					'reason'         => $reason,
+					'runtime_mapped' => false,
+				),
+				$extra
+			)
+		);
+	}
+
+	/**
+	 * Merge `$node`'s layout (and any `important` list) into the overlay node
+	 * with the same id, or append `$node` when the graph has none.
+	 *
+	 * @param array<string,mixed> $graph Overlay layout graph.
+	 * @param array<string,mixed> $node  Node with `id`, `layout` and optional `important`.
+	 */
+	private static function upsert_overlay_node( array &$graph, array $node ): void {
+		foreach ( $graph['nodes'] as &$overlay_node ) {
+			if ( is_array( $overlay_node ) && ( $overlay_node['id'] ?? null ) === ( $node['id'] ?? null ) ) {
+				$overlay_node['layout'] = array_merge( is_array( $overlay_node['layout'] ?? null ) ? $overlay_node['layout'] : array(), $node['layout'] );
+				if ( ! empty( $node['important'] ) && is_array( $node['important'] ) ) {
+					$overlay_node['important'] = array_values( array_unique( array_merge( is_array( $overlay_node['important'] ?? null ) ? $overlay_node['important'] : array(), $node['important'] ) ) );
+				}
+				return;
+			}
+		}
+		unset( $overlay_node );
+		$graph['nodes'][] = $node;
 	}
 
 	/**
@@ -1187,8 +1186,7 @@ class Static_Site_Importer_Form_Seeder {
 				continue;
 			}
 			$type = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
-			$tag  = strtolower( trim( (string) ( $control['tag'] ?? '' ) ) );
-			if ( 'submit' !== $type && ! ( 'button' === $tag && 'submit' === $type ) ) {
+			if ( 'submit' !== $type ) {
 				continue;
 			}
 			$style = isset( $control['presentation']['style'] ) && is_array( $control['presentation']['style'] ) ? $control['presentation']['style'] : array();
@@ -1196,32 +1194,20 @@ class Static_Site_Importer_Form_Seeder {
 			if ( empty( $flat ) ) {
 				continue;
 			}
-			$controls_graph = isset( $form['presentation_graph']['controls'] ) && is_array( $form['presentation_graph']['controls'] ) ? $form['presentation_graph']['controls'] : array();
-			$found          = false;
-			foreach ( $controls_graph as &$row ) {
-				if ( ! is_array( $row ) || ( $row['index'] ?? null ) !== $control_index ) {
-					continue;
+			$form = self::with_control_styles(
+				$form,
+				$control_index,
+				static function ( array $existing_styles ) use ( $flat ): array {
+					// The source-cascade graph is authoritative for every property it
+					// resolved. The per-control capture fills only what the graph omits;
+					// a box family the graph resolved (any padding or margin side) stays
+					// whole so a captured longhand cannot split it.
+					$family   = static fn ( string $key ): ?string => preg_match( '/^(padding|margin)(?:_|$)/', $key, $match ) ? $match[1] : null;
+					$resolved = array_filter( array_map( $family, array_keys( $existing_styles ) ) );
+					$fill     = array_filter( $flat, static fn ( string $key ): bool => ! array_key_exists( $key, $existing_styles ) && ! in_array( $family( $key ), $resolved, true ), ARRAY_FILTER_USE_KEY );
+					return array_merge( $existing_styles, $fill );
 				}
-				$found           = true;
-				$existing_styles = isset( $row['control']['styles'] ) && is_array( $row['control']['styles'] ) ? $row['control']['styles'] : array();
-				// The source-cascade graph is authoritative for every property it
-				// resolved. The per-control capture fills only what the graph omits;
-				// a box family the graph resolved (any padding or margin side) stays
-				// whole so a captured longhand cannot split it.
-				$family                   = static fn ( string $key ): ?string => preg_match( '/^(padding|margin)(?:_|$)/', $key, $match ) ? $match[1] : null;
-				$resolved                 = array_filter( array_map( $family, array_keys( $existing_styles ) ) );
-				$fill                     = array_filter( $flat, static fn ( string $key ): bool => ! array_key_exists( $key, $existing_styles ) && ! in_array( $family( $key ), $resolved, true ), ARRAY_FILTER_USE_KEY );
-				$row['control']['styles'] = array_merge( $existing_styles, $fill );
-				break;
-			}
-			unset( $row );
-			if ( ! $found ) {
-				$controls_graph[] = array(
-					'index'   => $control_index,
-					'control' => array( 'styles' => $flat ),
-				);
-			}
-			$form['presentation_graph']['controls'] = $controls_graph;
+			);
 		}
 		return $form;
 	}
@@ -1243,27 +1229,35 @@ class Static_Site_Importer_Form_Seeder {
 			if ( null === $textarea->display && ! $textarea->release_height ) {
 				continue;
 			}
-			$controls_graph  = isset( $form['presentation_graph']['controls'] ) && is_array( $form['presentation_graph']['controls'] ) ? $form['presentation_graph']['controls'] : array();
-			$existing_styles = array();
-			$row_index       = null;
-			foreach ( $controls_graph as $graph_index => $row ) {
-				if ( is_array( $row ) && ( $row['index'] ?? null ) === $control_index ) {
-					$existing_styles = isset( $row['control']['styles'] ) && is_array( $row['control']['styles'] ) ? $row['control']['styles'] : array();
-					$row_index       = $graph_index;
-					break;
-				}
-			}
-			$styles = $textarea->presentation_styles( $existing_styles );
-			if ( null !== $row_index ) {
-				$controls_graph[ $row_index ]['control']['styles'] = $styles;
-			} else {
-				$controls_graph[] = array(
-					'index'   => $control_index,
-					'control' => array( 'styles' => $styles ),
-				);
-			}
-			$form['presentation_graph']['controls'] = $controls_graph;
+			$form = self::with_control_styles( $form, $control_index, array( $textarea, 'presentation_styles' ) );
 		}
+		return $form;
+	}
+
+	/**
+	 * Replace one control's presentation-graph styles with `$styles( $existing )`,
+	 * adding the control row when the graph has none.
+	 *
+	 * @param array<string,mixed> $form          Provider form manifest row.
+	 * @param int|string          $control_index Control index the row is keyed by.
+	 * @param callable            $styles        Maps the row's existing styles (empty when absent) to its new styles.
+	 * @return array<string,mixed>
+	 */
+	private static function with_control_styles( array $form, int|string $control_index, callable $styles ): array {
+		$controls_graph = isset( $form['presentation_graph']['controls'] ) && is_array( $form['presentation_graph']['controls'] ) ? $form['presentation_graph']['controls'] : array();
+		foreach ( $controls_graph as $graph_index => $row ) {
+			if ( is_array( $row ) && ( $row['index'] ?? null ) === $control_index ) {
+				$existing = isset( $row['control']['styles'] ) && is_array( $row['control']['styles'] ) ? $row['control']['styles'] : array();
+				$controls_graph[ $graph_index ]['control']['styles'] = $styles( $existing );
+				$form['presentation_graph']['controls']              = $controls_graph;
+				return $form;
+			}
+		}
+		$controls_graph[]                       = array(
+			'index'   => $control_index,
+			'control' => array( 'styles' => $styles( array() ) ),
+		);
+		$form['presentation_graph']['controls'] = $controls_graph;
 		return $form;
 	}
 
