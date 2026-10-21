@@ -2396,22 +2396,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					break;
 				}
 				$cell_layout = is_array( $box['layout'] ?? null ) ? $box['layout'] : array();
-				foreach ( $cell_layout as $property => $_value ) {
-					$css_property = Static_Site_Importer_Provider_Layout_Overlay::layout_property_map()[ $property ] ?? null;
-					if ( ! is_string( $css_property ) || ! self::has_unconditional_proven_property( $box, $css_property ) ) {
-						$cells = array();
-						break 2;
-					}
+				if ( ! self::layout_facts_proven( $box['provenance'] ?? array(), null, $cell_layout ) ) {
+					$cells = array();
+					break;
 				}
 				$cell_variants = $s->variants_by_node[ $id ] ?? array();
 				foreach ( $cell_variants as $variant ) {
-					$patch  = self::layout_patch( $variant );
-					$proven = ! empty( $patch ) && Static_Site_Importer_Provider_Layout_Overlay::layout_values_are_safe( $patch );
-					foreach ( array_keys( $patch ) as $property ) {
-						$css_property = Static_Site_Importer_Provider_Layout_Overlay::layout_property_map()[ $property ] ?? null;
-						$proven       = $proven && is_string( $css_property ) && self::variant_proven( $variant, $css_property );
-					}
-					if ( ! $proven ) {
+					if ( ! self::variant_patch_proven( $variant ) ) {
 						$cells = array();
 						break 2;
 					}
@@ -2452,19 +2443,13 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				'layout' => $field_list_layout,
 			);
 			foreach ( $s->variants_by_node[ $parent ] ?? array() as $variant ) {
-				$patch  = self::layout_patch( $variant );
-				$proven = ! empty( $patch ) && Static_Site_Importer_Provider_Layout_Overlay::layout_values_are_safe( $patch );
-				foreach ( array_keys( $patch ) as $property ) {
-					$css_property = Static_Site_Importer_Provider_Layout_Overlay::layout_property_map()[ $property ] ?? null;
-					$proven       = $proven && is_string( $css_property ) && self::variant_proven( $variant, $css_property );
-				}
-				if ( ! $proven ) {
+				if ( ! self::variant_patch_proven( $variant ) ) {
 					continue;
 				}
 				$s->responsive_variant_targets[] = array(
 					'node'         => 'field-list',
 					'condition'    => $variant['condition'],
-					'layout_patch' => $patch,
+					'layout_patch' => self::layout_patch( $variant ),
 				);
 			}
 			$s->overlay_represented_nodes[] = $parent;
@@ -2487,20 +2472,6 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		// facts are transposed onto that element's generated hook instead of being
 		// declared unrepresentable. A box whose facts are not fully proven by source
 		// provenance keeps its loss.
-		$s->layout_css_properties = Static_Site_Importer_Provider_Layout_Overlay::layout_property_map();
-		$node_facts_proven        = static function ( string $node_id ) use ( $s ): bool {
-			$layout_node = $s->layout_nodes_by_id[ $node_id ] ?? null;
-			$proven      = is_array( $layout_node );
-			foreach ( array_keys( $s->layout_by_node[ $node_id ] ?? array() ) as $fact ) {
-				$proven = $proven && isset( $s->layout_css_properties[ $fact ] ) && self::has_unconditional_proven_property( $layout_node, $s->layout_css_properties[ $fact ] );
-			}
-			foreach ( $s->variants_by_node[ $node_id ] ?? array() as $variant ) {
-				foreach ( array_keys( self::layout_patch( $variant ) ) as $fact ) {
-					$proven = $proven && isset( $s->layout_css_properties[ $fact ] ) && self::variant_proven( $variant, $s->layout_css_properties[ $fact ] );
-				}
-			}
-			return $proven;
-		};
 		// Native wrapper projection is all-or-nothing and handled by
 		// exact_native_topology() below. The legacy partial-tree projector used
 		// a second serializer contract and could silently flatten parent edges.
@@ -2572,7 +2543,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			foreach ( $s->variants_by_node[ $box_id ] ?? array() as $variant ) {
 				$patches[] = $variant;
 			}
-			if ( ! $node_facts_proven( $box_id ) || array_intersect_key( $base, array_flip( $item_facts ) ) ) {
+			if ( ! self::node_layout_proven( $s, $box_id ) || array_intersect_key( $base, array_flip( $item_facts ) ) ) {
 				continue;
 			}
 			if ( ! isset( $base['display'] ) ) {
@@ -2751,16 +2722,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			);
 		}
 		foreach ( $s->wrapper_hooks as $node_id => $hook ) {
-			$layout_node = $s->layout_nodes_by_id[ $node_id ] ?? null;
-			$proven      = is_array( $layout_node );
-			foreach ( array_keys( $s->layout_by_node[ $node_id ] ?? array() ) as $fact ) {
-				$proven = $proven && isset( $s->layout_css_properties[ $fact ] ) && self::has_unconditional_proven_property( $layout_node, $s->layout_css_properties[ $fact ] );
-			}
-			foreach ( $s->variants_by_node[ $node_id ] ?? array() as $variant ) {
-				foreach ( array_keys( self::layout_patch( $variant ) ) as $fact ) {
-					$proven = $proven && isset( $s->layout_css_properties[ $fact ] ) && self::variant_proven( $variant, $s->layout_css_properties[ $fact ] );
-				}
-			}
+			$proven = self::node_layout_proven( $s, $node_id );
 			// A wrapper already represented by carrying its own source class name
 			// (so the enqueued source stylesheet paints its base fact directly)
 			// still needs its own overlay target when it also carries a responsive
@@ -3048,21 +3010,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			return null;
 		}
 
-		$property_map = Static_Site_Importer_Provider_Layout_Overlay::layout_property_map();
-		$proven       = static function ( array $facts, ?array $condition, array $layout ) use ( $property_map ): bool {
-			foreach ( array_keys( $layout ) as $fact ) {
-				if ( ! isset( $property_map[ $fact ] ) || ! self::has_source_fact( $facts, $condition, array( $property_map[ $fact ] ) ) ) {
-					return false;
-				}
-			}
-			return true;
-		};
 		foreach ( $wrappers as $id => $wrapper ) {
 			$layout_node     = $layout_nodes[ $id ] ?? null;
 			$parent          = is_string( $wrapper['parent'] ?? null ) ? $wrapper['parent'] : '$root';
 			$expected_parent = '$root' === $parent ? 'form' : $parent;
 			$layout          = $layouts[ $id ] ?? null;
-			if ( ! is_array( $layout_node ) || ( $wrapper['tag'] ?? null ) !== ( $layout_node['source']['tag'] ?? null ) || ( $layout_node['parent'] ?? null ) !== $expected_parent || ! is_array( $layout ) || ! Static_Site_Importer_Provider_Layout_Overlay::layout_values_are_safe( $layout ) || ! $proven( $layout_node['provenance'] ?? array(), null, $layout ) ) {
+			if ( ! is_array( $layout_node ) || ( $wrapper['tag'] ?? null ) !== ( $layout_node['source']['tag'] ?? null ) || ( $layout_node['parent'] ?? null ) !== $expected_parent || ! is_array( $layout ) || ! Static_Site_Importer_Provider_Layout_Overlay::layout_values_are_safe( $layout ) || ! self::layout_facts_proven( $layout_node['provenance'] ?? array(), null, $layout ) ) {
 				return null;
 			}
 			$flex = 'flex' === ( $layout['display'] ?? null ) && in_array( $layout['direction'] ?? 'row', array( 'row', 'column' ), true );
@@ -3091,7 +3044,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			}
 			foreach ( $variants[ $id ] ?? array() as $variant ) {
 				$patch = self::layout_patch( $variant );
-				if ( empty( $patch ) || ! is_array( $variant['condition'] ?? null ) || ! Static_Site_Importer_Provider_Layout_Overlay::layout_values_are_safe( $patch ) || ! $proven( $variant['provenance'] ?? array(), $variant['condition'], $patch ) ) {
+				if ( empty( $patch ) || ! is_array( $variant['condition'] ?? null ) || ! Static_Site_Importer_Provider_Layout_Overlay::layout_values_are_safe( $patch ) || ! self::layout_facts_proven( $variant['provenance'] ?? array(), $variant['condition'], $patch ) ) {
 					return null;
 				}
 			}
@@ -4837,6 +4790,41 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	/** Whether a variant's own conditional rule proves one of its properties. */
 	private static function variant_proven( array $variant, string $property ): bool {
 		return self::has_source_fact( $variant['provenance'] ?? array(), $variant['condition'] ?? null, array( $property ) );
+	}
+
+	/**
+	 * Whether source provenance under one condition proves every layout fact.
+	 *
+	 * @param array<string,mixed> $layout
+	 */
+	private static function layout_facts_proven( mixed $provenance, mixed $condition, array $layout ): bool {
+		$property_map = Static_Site_Importer_Provider_Layout_Overlay::layout_property_map();
+		foreach ( array_keys( $layout ) as $fact ) {
+			if ( ! isset( $property_map[ $fact ] ) || ! self::has_source_fact( $provenance, $condition, array( $property_map[ $fact ] ) ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Whether a node's base layout and every variant patch are proven by source. */
+	private static function node_layout_proven( Static_Site_Importer_Form_Topology_State $s, string $node_id ): bool {
+		$layout_node = $s->layout_nodes_by_id[ $node_id ] ?? null;
+		if ( ! is_array( $layout_node ) || ! self::layout_facts_proven( $layout_node['provenance'] ?? array(), null, $s->layout_by_node[ $node_id ] ?? array() ) ) {
+			return false;
+		}
+		foreach ( $s->variants_by_node[ $node_id ] ?? array() as $variant ) {
+			if ( ! self::layout_facts_proven( $variant['provenance'] ?? array(), $variant['condition'] ?? null, self::layout_patch( $variant ) ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Whether a variant carries a non-empty, safe patch its own rule proves. */
+	private static function variant_patch_proven( array $variant ): bool {
+		$patch = self::layout_patch( $variant );
+		return ! empty( $patch ) && Static_Site_Importer_Provider_Layout_Overlay::layout_values_are_safe( $patch ) && self::layout_facts_proven( $variant['provenance'] ?? array(), $variant['condition'] ?? null, $patch );
 	}
 
 	/** @return array<string,mixed> A layout variant's patch, or an empty patch. */
