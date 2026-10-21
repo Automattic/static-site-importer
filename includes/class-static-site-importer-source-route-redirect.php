@@ -65,7 +65,7 @@ final class Static_Site_Importer_Source_Route_Redirect {
 		if ( ! is_string( $type ) || '' === $type ) {
 			return $query_vars;
 		}
-		$query_vars                                       = self::singular_query_vars( $query_vars );
+		$query_vars = self::singular_query_vars( $query_vars );
 		if ( 'page' === $type && self::is_shop_page( $id ) && function_exists( 'get_page_uri' ) ) {
 			// WooCommerce treats a `page_id` query for its shop page as a
 			// front-page shop archive whenever a static front page is set
