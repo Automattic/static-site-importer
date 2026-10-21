@@ -290,7 +290,7 @@ class Static_Site_Importer_Form_Seeder {
 		$overlay_graph         = self::with_wrapper_and_intent_nodes( $state, $topology, $overlay_graph, $source_layout_nodes );
 		$overlay_form          = self::overlay_form( $state, $topology, $overlay_graph );
 
-		$visual_state = Static_Site_Importer_Form_Layout_Projection::empty_country_visual_state( $state->form, $state->scope, $topology['phone_popup_targets'] );
+		$visual_state = Static_Site_Importer_Form_Presentation_Descriptor::empty_country_visual_state( $state->form, $state->scope, $topology['phone_popup_targets'] );
 		self::box_submit_row_buttons( $state, $topology );
 		$maps    = self::target_maps( $state, $topology, $overlay_form, $visual_state['trigger_class'] ?? '' );
 		$overlay = self::compile_overlay( $state, $overlay_form, $maps );
@@ -307,7 +307,7 @@ class Static_Site_Importer_Form_Seeder {
 	/** Normalize the producer form and release the controls the provider will map. */
 	private static function normalized_plan_state( array $form ): Static_Site_Importer_Form_Plan_State {
 		$state                      = new Static_Site_Importer_Form_Plan_State();
-		$form                       = Static_Site_Importer_Form_Layout_Projection::separate_source_boxes( $form );
+		$form                       = Static_Site_Importer_Form_Box_Transposition::separate_source_boxes( $form );
 		$form                       = Static_Site_Importer_Form_Layout_Projection::normalize_unconditional_layout_variants( $form );
 		$controls                   = isset( $form['controls'] ) && is_array( $form['controls'] ) ? $form['controls'] : array();
 		$form                       = self::project_submit_style_into_presentation_graph( $form, $controls );
@@ -326,7 +326,7 @@ class Static_Site_Importer_Form_Seeder {
 	private static function group_controls( Static_Site_Importer_Form_Plan_State $state ): void {
 		$form                         = $state->form;
 		$state->scope                 = Static_Site_Importer_Form_Layout_Projection::layout_scope( $form );
-		$state->presentation_roles    = Static_Site_Importer_Form_Layout_Projection::presentation_roles( is_array( $form['presentation_graph'] ?? null ) ? $form['presentation_graph'] : array() );
+		$state->presentation_roles    = Static_Site_Importer_Form_Presentation_Descriptor::presentation_roles( is_array( $form['presentation_graph'] ?? null ) ? $form['presentation_graph'] : array() );
 		$state->control_presentations = array_column( $form['presentation_graph']['controls'] ?? array(), null, 'index' );
 		$state->has_topology          = isset( $form['control_topology'] );
 		$state->radio_groups          = Static_Site_Importer_Form_Field_Markup::labelled_radio_groups( $form, $state->controls );
@@ -363,8 +363,8 @@ class Static_Site_Importer_Form_Seeder {
 			$state->skipped[]                             = 'hidden_bookkeeping';
 			return;
 		}
-		$choice_box                                        = null !== Static_Site_Importer_Form_Layout_Projection::source_choice_label( $form, $control_index );
-		$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $state->scope, $control_index, $type, $state->presentation_roles[ $control_index ] ?? array(), isset( $control['label_classes'] ) || isset( $control['label_marker'] ), $choice_box, Static_Site_Importer_Form_Layout_Projection::source_label_wraps_control( $form, $control_index ), Static_Site_Importer_Form_Layout_Projection::source_label_row_carried_margins( $form, $control_index ) );
+		$choice_box                                        = null !== Static_Site_Importer_Form_Presentation_Descriptor::source_choice_label( $form, $control_index );
+		$state->presentation_descriptors[ $control_index ] = Static_Site_Importer_Form_Presentation_Descriptor::presentation_descriptor( $state->scope, $control_index, $type, $state->presentation_roles[ $control_index ] ?? array(), isset( $control['label_classes'] ) || isset( $control['label_marker'] ), $choice_box, Static_Site_Importer_Form_Presentation_Descriptor::source_label_wraps_control( $form, $control_index ), Static_Site_Importer_Form_Presentation_Descriptor::source_label_row_carried_margins( $form, $control_index ) );
 		if ( isset( $state->suppressed_controls[ $control_index ] ) ) {
 			return;
 		}
@@ -589,7 +589,7 @@ class Static_Site_Importer_Form_Seeder {
 	/** Start the overlay graph from the split provider graph, topology targets and direct label/control gaps. */
 	private static function seed_overlay_graph( Static_Site_Importer_Form_Plan_State $state, array $topology, array $provider_graph ): array {
 		$box_targets            = $topology['provider_layout_targets'];
-		$overlay_graph          = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( Static_Site_Importer_Form_Layout_Projection::split_form_box( $provider_graph ), is_array( $state->form['layout_graph'] ?? null ) ? $state->form['layout_graph'] : array(), $box_targets );
+		$overlay_graph          = Static_Site_Importer_Form_Layout_Projection::without_shared_source_grid_rows( Static_Site_Importer_Form_Box_Transposition::split_form_box( $provider_graph ), is_array( $state->form['layout_graph'] ?? null ) ? $state->form['layout_graph'] : array(), $box_targets );
 		$overlay_graph['nodes'] = array_values( array_filter( $overlay_graph['nodes'] ?? array(), static fn ( $node ): bool => is_array( $node ) && ( 'form' === ( $node['id'] ?? '' ) || 'form-box' === ( $node['id'] ?? '' ) || isset( $box_targets[ (string) ( $node['id'] ?? '' ) ] ) || preg_match( '/^control-[0-9]+$/D', (string) ( $node['id'] ?? '' ) ) ) ) );
 		foreach ( $topology['overlay_node_targets'] as $target ) {
 			self::upsert_overlay_node( $overlay_graph, $target );
@@ -828,7 +828,7 @@ class Static_Site_Importer_Form_Seeder {
 		// derivation only; the canonical map that is validated, compiled, and
 		// recorded carries none.
 		$part_map           = Static_Site_Importer_Form_Layout_Projection::provider_layout_target_map( $overlay_form, $state->scope, $state->presentation_descriptors, $topology['provider_layout_targets'], $topology['phone_popup_targets'], $trigger_class );
-		$target_map         = Static_Site_Importer_Form_Layout_Projection::without_parts( $part_map );
+		$target_map         = Static_Site_Importer_Form_Presentation_Descriptor::without_parts( $part_map );
 		$presentation_graph = is_array( $overlay_form['presentation_graph'] ?? null ) ? $overlay_form['presentation_graph'] : array();
 		// The editor sizes a textarea from its resolved policy; a control whose
 		// presentation row the overlay withdrew has no editor box to size.
@@ -840,7 +840,7 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		return array(
 			'target' => $target_map,
-			'editor' => Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $part_map, $state->scope, $editor_textareas ),
+			'editor' => Static_Site_Importer_Form_Presentation_Descriptor::editor_layout_target_map( $part_map, $state->scope, $editor_textareas ),
 		);
 	}
 
@@ -864,7 +864,7 @@ class Static_Site_Importer_Form_Seeder {
 		// Provider_Layout_Overlay's `generic/form-container-presentation/v1` destination).
 		// It belongs on the rendered page, not only inside editor chrome, so the frontend
 		// compile also receives it.
-		$overlay_graph = Static_Site_Importer_Form_Layout_Projection::without_container_box_facts( $overlay_form['layout_graph'], $container_presentation );
+		$overlay_graph = Static_Site_Importer_Form_Box_Transposition::without_container_box_facts( $overlay_form['layout_graph'], $container_presentation );
 		// One assembly: each declared surface compiles from its own map, and the
 		// overlay, its operations and its losses come back together.
 		// Core's editor does not run the server-side source-class transfer hook.

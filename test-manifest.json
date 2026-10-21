@@ -180,6 +180,7 @@
     { "path": "tests/smoke-woo-product-seeder-rollback.php", "environment": "standalone-php" },
     { "path": "tests/smoke-woo-product-attributes.php", "environment": "standalone-php" },
     { "path": "tests/smoke-woo-store-visibility.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-woo-authored-shop-page.php", "environment": "wordpress-runtime" },
     { "path": "tests/smoke-woo-cart-binding.php", "environment": "standalone-php" },
     { "path": "tests/smoke-woo-order-lookup-binding.php", "environment": "standalone-php" },
     { "path": "tests/smoke-woo-product-grid-template.php", "environment": "wordpress-runtime" },

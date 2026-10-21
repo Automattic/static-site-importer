@@ -272,7 +272,7 @@ final class Static_Site_Importer_Form_Grid_Placement {
 			}
 			// A custom-drawn checkbox's box carries the source rules that hide the
 			// provider input and draw its replacement on the sibling label.
-			$choice_box         = Static_Site_Importer_Form_Layout_Projection::source_choice_label( $s->form, $control_index );
+			$choice_box         = Static_Site_Importer_Form_Presentation_Descriptor::source_choice_label( $s->form, $control_index );
 			$box_proven         = '' !== $parent && ( $choice_box['id'] ?? null ) === $parent && 'label' !== ( $choice_box['tag'] ?? '' ) && isset( $s->provider_layout_targets[ $parent ] );
 			$replacement_proven = '' !== $parent
 				&& ( in_array( $parent, $s->represented_layout_nodes, true ) || $box_proven )
