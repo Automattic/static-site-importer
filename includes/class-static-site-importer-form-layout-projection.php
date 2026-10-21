@@ -2596,7 +2596,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			// min-height) still arranges its controls exactly as the provider does;
 			// that is a named box loss, not a topology the provider cannot express.
 			// `display: block` is that same block flow, so it adds no fact.
-			$parent_id     = $s->layout_nodes_by_id[ $node_id ]['parent'] ?? null;
+			$parent_id     = $s->layout_nodes_by_id[ $node_id ]['parent'] ?? '';
 			$parent_layout = $s->layout_by_node[ $parent_id ] ?? array();
 			$facts         = self::non_block_flow_facts( $layout, $parent_layout );
 			foreach ( $s->variants_by_node[ $node_id ] ?? array() as $variant ) {
