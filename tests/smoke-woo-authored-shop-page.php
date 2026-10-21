@@ -26,9 +26,8 @@ foreach ( array( 'woocommerce_shop_page_id', 'permalink_structure', 'show_on_fro
 	$options[ $key ] = get_option( $key );
 }
 $page_id = 0;
+$front_id = 0;
 $existing_shop = get_page_by_path( 'shop' );
-$registry = WP_Block_Templates_Registry::get_instance();
-$catalog = $registry->get_registered( 'woocommerce//archive-product' );
 try {
 	$package = Static_Site_Importer_Generated_Runtime_Package::theme( array( 'schema' => Static_Site_Importer_Companion_Plugin::PAYLOAD_SCHEMA, 'site_slug' => $slug, 'site_name' => 'Authored shop', 'blocks' => array() ) );
 	$assert( ! is_wp_error( $package ), 'Could not generate theme runtime.' );
@@ -48,12 +47,11 @@ try {
 	add_theme_support( 'woocommerce' );
 	// WP-CLI does not initialize the frontend template loader.
 	WC_Template_Loader::init();
-	// Exercise the classic catalog fallback too, rather than letting Woo's
-	// plugin-supplied block template mask its template_include override.
-	if ( $catalog ) {
-		$registry->unregister( 'woocommerce//archive-product' );
-	}
-	update_option( 'show_on_front', 'posts' );
+	// Imported sites use a static front page; WooCommerce then reads any
+	// `page_id` query for its shop page as a front-page shop archive.
+	$front_id = wp_insert_post( array( 'post_type' => 'page', 'post_status' => 'publish', 'post_title' => 'Home', 'post_name' => $slug . '-home' ) );
+	update_option( 'show_on_front', 'page' );
+	update_option( 'page_on_front', $front_id );
 	update_option( 'permalink_structure', '/%postname%/' );
 	if ( $existing_shop ) {
 		wp_update_post( array( 'ID' => $existing_shop->ID, 'post_name' => $slug . '-original' ) );
@@ -77,11 +75,10 @@ try {
 		$GLOBALS['wp']->main();
 		$assert( is_page( $page_id ) && is_singular() && ! is_post_type_archive( 'product' ), 'Shop must resolve singularly: ' . $source );
 		$assert( wc_get_page_id( 'shop' ) === $page_id && wc_get_page_permalink( 'shop' ) === get_permalink( $page_id ), 'Shop links must still target the imported page.' );
-		$template = apply_filters( 'template_include', get_page_template() );
-		$assert( ! str_contains( $template, 'archive-product.php' ) && $template === get_page_template(), 'WooCommerce selected its archive renderer instead of the authored page.' );
-		ob_start();
+		// Resolve the block template the way template-loader.php does.
+		$template = apply_filters( 'template_include', locate_block_template( get_page_template(), 'page', array( 'page' ) ) );
+		$assert( ! str_contains( (string) $GLOBALS['_wp_current_template_id'], 'archive-product' ), 'WooCommerce selected its archive template instead of the authored page.' );
 		$html = get_the_block_template_html();
-		$html = ob_get_clean() . $html;
 		$assert( str_contains( $html, 'Authored shop hero and category picker' ), 'Authored page content was not rendered.' );
 	}
 	file_put_contents( $dir . '/templates/archive-product.html', '<!-- wp:paragraph --><p>Designed archive</p><!-- /wp:paragraph -->' );
@@ -92,8 +89,8 @@ try {
 	$assert( is_post_type_archive( 'product' ) && ! is_singular(), 'Designed product archives must retain WooCommerce routing.' );
 	$assert( wc_get_page_permalink( 'shop' ) === get_permalink( $page_id ), 'Designed archive shop links changed.' );
 } finally {
-	if ( $catalog ) {
-		$registry->register( 'woocommerce//archive-product', array( 'title' => $catalog->title, 'description' => $catalog->description, 'content' => $catalog->content ) );
+	if ( ! empty( $front_id ) ) {
+		wp_delete_post( $front_id, true );
 	}
 	if ( $page_id ) {
 		wp_delete_post( $page_id, true );

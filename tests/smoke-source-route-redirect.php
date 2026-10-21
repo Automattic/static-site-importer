@@ -257,7 +257,7 @@ require $copy_file;
 Static_Site_Importer_Source_Route_Redirect::register();
 SSI_TEST_SITE_Source_Route_Redirect::register();
 $assert( 1 === count( $GLOBALS['ssi_redirect_actions'] ), 'SSI and the companion copy must not both register template_redirect.' );
-$assert( array( 'request', 'template_include', 'page_link', 'post_link', 'post_type_link' ) === array_column( $GLOBALS['ssi_redirect_filters'], 0 ), 'Companion and importer copies register request ownership and canonical links only once.' );
+$assert( array( 'request', 'page_link', 'post_link', 'post_type_link' ) === array_column( $GLOBALS['ssi_redirect_filters'], 0 ), 'Companion and importer copies register request ownership and canonical links only once.' );
 $assert( 'template_redirect' === ( $GLOBALS['ssi_redirect_actions'][0][0] ?? '' ) && 9 === ( $GLOBALS['ssi_redirect_actions'][0][2] ?? 0 ), 'The single source-route runtime runs before WordPress canonical redirects.' );
 $assert( array( Static_Site_Importer_Source_Route_Redirect::class, 'redirect' ) === ( $GLOBALS['ssi_redirect_actions'][0][1] ?? null ) || array( SSI_TEST_SITE_Source_Route_Redirect::class, 'redirect' ) === ( $GLOBALS['ssi_redirect_actions'][0][1] ?? null ), 'The registered callback belongs to exactly one runtime class.' );
 
