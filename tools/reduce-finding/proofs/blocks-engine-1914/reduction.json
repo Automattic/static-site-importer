@@ -1,0 +1,49 @@
+{
+  "schema": "static-site-importer/finding-reduction/v1",
+  "status": "reduced",
+  "stopped": "fixpoint",
+  "rounds": 2,
+  "predicate_calls": 344,
+  "counts_before": {
+    "elements": 233,
+    "css_rules": 62,
+    "css_declarations": 134,
+    "bytes": 13091
+  },
+  "counts_after": {
+    "elements": 19,
+    "css_rules": 5,
+    "css_declarations": 4,
+    "bytes": 847
+  },
+  "signature": {
+    "schema": "static-site-importer/finding-signature/v1",
+    "stage": "materialization",
+    "check": "unknown",
+    "blocks": [],
+    "features": {
+      "element_tags": [
+        "div",
+        "section",
+        "span",
+        "style"
+      ],
+      "css_properties": [
+        "animation",
+        "animation-duration",
+        "transform"
+      ],
+      "at_rule_kinds": [
+        "keyframes"
+      ],
+      "selector_features": [
+        ":where",
+        "descendant"
+      ],
+      "value_functions": [
+        "translatex"
+      ]
+    },
+    "sha256": "708eb853aaa2d0a59f0cbb5159cf79daff8a6ac7a9716bac4161b1dd10c70ad0"
+  }
+}
