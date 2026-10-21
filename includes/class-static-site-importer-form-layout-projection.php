@@ -3375,6 +3375,48 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		return trim( (string) ( $layout['row'] ?? '' ) );
 	}
 
+	/**
+	 * Keep a submit's captured height with its padding on the rendered control.
+	 * Only remove duplicate facts: layout-only heights and ancestor box heights
+	 * still have their own layout owner. Responsive facts match by condition.
+	 *
+	 * @param array $graph Provider layout graph before box transposition.
+	 * @param array $form  Source form with its captured presentation graph.
+	 * @return array Layout graph without duplicate submit heights.
+	 */
+	public static function without_presented_submit_heights( array $graph, array $form ): array {
+		$heights  = array();
+		$variants = array();
+		foreach ( $form['presentation_graph']['controls'] ?? array() as $row ) {
+			$index = $row['index'] ?? null;
+			if ( is_int( $index ) && 'submit' === ( $form['controls'][ $index ]['type'] ?? '' ) && isset( $row['control']['styles']['height'] ) ) {
+				$heights[ 'control-' . $index ] = $row['control']['styles']['height'];
+			}
+		}
+		foreach ( $form['presentation_graph']['variants'] ?? array() as $variant ) {
+			$index = $variant['index'] ?? null;
+			if ( is_int( $index ) && 'submit' === ( $form['controls'][ $index ]['type'] ?? '' ) && 'control' === ( $variant['role'] ?? '' ) && isset( $variant['style_patch']['height'] ) ) {
+				$variants[ 'control-' . $index ][ wp_json_encode( $variant['condition'] ) ] = $variant['style_patch']['height'];
+			}
+		}
+		foreach ( $graph['nodes'] ?? array() as $index => $node ) {
+			if ( isset( $heights[ $node['id'] ] ) && ( $node['layout']['height'] ?? null ) === $heights[ $node['id'] ] ) {
+				unset( $graph['nodes'][ $index ]['layout']['height'] );
+			}
+		}
+		foreach ( $graph['variants'] ?? array() as $index => $variant ) {
+			$height = $variants[ $variant['node'] ][ wp_json_encode( $variant['condition'] ) ] ?? null;
+			if ( null !== $height && ( $variant['layout_patch']['height'] ?? null ) === $height ) {
+				unset( $graph['variants'][ $index ]['layout_patch']['height'] );
+				if ( empty( $graph['variants'][ $index ]['layout_patch'] ) ) {
+					unset( $graph['variants'][ $index ] );
+				}
+			}
+		}
+		$graph['variants'] = array_values( $graph['variants'] ?? array() );
+		return $graph;
+	}
+
 	public static function provider_layout_target_map( array $form, string $scope, array $presentation_descriptors, array $box_targets = array(), array $phone_popup_targets = array(), string $country_trigger_class = '' ): array {
 		$selector_scope = '.' . $scope;
 		$targets        = array();

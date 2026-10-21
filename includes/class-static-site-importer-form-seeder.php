@@ -526,6 +526,9 @@ class Static_Site_Importer_Form_Seeder {
 			'nodes'    => array(),
 			'variants' => array(),
 		);
+		// The native submit's height is already captured with its padding in
+		// presentation. Do not also size Core Button's outer layout wrapper.
+		$provider_graph = Static_Site_Importer_Form_Layout_Projection::without_presented_submit_heights( $provider_graph, $form );
 		if ( ! empty( $topology['represented_layout_nodes'] ) ) {
 			$represented                = array_fill_keys( $topology['represented_layout_nodes'], true );
 			$provider_graph['nodes']    = array_values( array_filter( $provider_graph['nodes'] ?? array(), static fn ( $node ): bool => ! is_array( $node ) || ! isset( $represented[ $node['id'] ?? '' ] ) ) );
