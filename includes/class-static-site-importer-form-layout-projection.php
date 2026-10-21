@@ -1498,8 +1498,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					if ( null === $candidate ) {
 						continue;
 					}
-					$query = $variant['condition']['query'] ?? null;
-					if ( null !== $scope || 'media' !== ( $variant['condition']['kind'] ?? null ) || ! is_string( $query ) || ! self::is_min_width_media_query( $query ) ) {
+					if ( null !== $scope || ! self::min_width_query( $variant['condition'] ?? null ) ) {
 						$overhang = null;
 						break;
 					}
@@ -1965,9 +1964,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$widened       = preg_replace( '/\s+/', '', (string) ( $patch['columns'] ?? '' ) );
 				$widened_count = self::equal_fraction_column_count( $widened );
 				if ( array( 'columns' ) === array_keys( $patch )
-					&& is_array( $condition ) && 'media' === ( $condition['kind'] ?? null )
-					&& is_string( $condition['query'] ?? null )
-					&& self::is_min_width_media_query( $condition['query'] )
+					&& self::min_width_query( $condition )
 					&& null !== $widened_count
 				) {
 					if ( self::has_source_fact( $variant['provenance'] ?? array(), $condition, array( 'grid-template-columns' ) ) ) {
@@ -2202,7 +2199,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 						break;
 					}
 				}
-				if ( array( 'column_gap' ) !== array_keys( $patch ) || ! is_array( $condition ) || 'media' !== ( $condition['kind'] ?? null ) || ! self::is_min_width_media_query( (string) ( $condition['query'] ?? '' ) ) || ! $proven || null === self::resolved_gap_length( (string) $patch['column_gap'] ) ) {
+				if ( array( 'column_gap' ) !== array_keys( $patch ) || ! self::min_width_query( $condition ) || ! $proven || null === self::resolved_gap_length( (string) $patch['column_gap'] ) ) {
 					continue;
 				}
 				$gap_variant = $candidate;
@@ -2578,11 +2575,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				// from a single breakpoint up) is a different, already-proven
 				// shape and is unaffected.
 				if ( array( 'columns' ) === array_keys( $patch ) ) {
-					$condition_fact      = is_array( $variant['condition'] ?? null ) ? $variant['condition'] : null;
-					$widens_only_columns = 1 === count( $patches )
-						&& is_array( $condition_fact ) && 'media' === ( $condition_fact['kind'] ?? null )
-						&& is_string( $condition_fact['query'] ?? null )
-						&& self::is_min_width_media_query( $condition_fact['query'] );
+					$widens_only_columns = 1 === count( $patches ) && self::min_width_query( $variant['condition'] ?? null );
 					if ( ! $widens_only_columns ) {
 						$accepted = false;
 						break;
@@ -3029,8 +3022,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$variant   = $variants[ $id ][0];
 				$condition = $variant['condition'] ?? null;
 				$patch     = $variant['layout_patch'] ?? null;
-				$grid      = is_array( $condition ) && 'media' === ( $condition['kind'] ?? null )
-					&& is_string( $condition['query'] ?? null ) && self::is_min_width_media_query( $condition['query'] )
+				$grid      = self::min_width_query( $condition )
 					&& is_array( $patch ) && array( 'columns' ) === array_keys( $patch )
 					&& self::is_equal_fraction_columns( preg_replace( '/\s+/', '', (string) ( $patch['columns'] ?? '' ) ), 2 );
 			}
@@ -4683,6 +4675,11 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		return 1 === preg_match( '/^(?:(?:only )?screen and )?\((?:min-width:\s?[0-9]+(?:\.[0-9]+)?(?:px|em|rem)|width\s*>=\s*[0-9]+(?:\.[0-9]+)?(?:px|em|rem))\)$/D', $query );
 	}
 
+	/** Whether a layout condition is a media query that widens at one breakpoint. */
+	private static function min_width_query( mixed $condition ): bool {
+		return is_array( $condition ) && 'media' === ( $condition['kind'] ?? null ) && is_string( $condition['query'] ?? null ) && self::is_min_width_media_query( $condition['query'] );
+	}
+
 	private static function is_max_width_media_query( string $query ): bool {
 		return 1 === preg_match( '/^(?:(?:only )?screen and )?\((?:max-width:\s?[0-9]+(?:\.[0-9]+)?(?:px|em|rem)|width\s*<=?\s*[0-9]+(?:\.[0-9]+)?(?:px|em|rem))\)$/D', $query );
 	}
@@ -4717,7 +4714,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	private static function equal_width_stack_query_from_cascade_facts( string $parent_id, array $variants_by_node, array $layout_nodes_by_id ): ?string {
 		foreach ( $variants_by_node[ $parent_id ] ?? array() as $variant ) {
 			$condition = is_array( $variant['condition'] ?? null ) ? $variant['condition'] : null;
-			if ( ! is_array( $condition ) || 'media' !== ( $condition['kind'] ?? null ) || ! is_string( $condition['query'] ?? null ) || ! self::is_min_width_media_query( $condition['query'] ) ) {
+			if ( ! self::min_width_query( $condition ) ) {
 				continue;
 			}
 			$inverted = self::inverted_min_width_media_query( $condition['query'] );
@@ -4727,7 +4724,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		}
 		foreach ( ( $layout_nodes_by_id[ $parent_id ]['provenance'] ?? array() ) as $fact ) {
 			$condition = is_array( $fact ) && is_array( $fact['condition'] ?? null ) ? $fact['condition'] : null;
-			if ( ! is_array( $condition ) || 'media' !== ( $condition['kind'] ?? null ) || ! is_string( $condition['query'] ?? null ) || ! self::is_min_width_media_query( $condition['query'] ) || ! in_array( 'grid-template-columns', $fact['properties'] ?? array(), true ) ) {
+			if ( ! self::min_width_query( $condition ) || ! in_array( 'grid-template-columns', $fact['properties'] ?? array(), true ) ) {
 				continue;
 			}
 			$inverted = self::inverted_min_width_media_query( $condition['query'] );
