@@ -212,7 +212,7 @@ foreach ( array( 'textarea', 'select', 'submit' ) as $ssi_textarea_type ) {
 		array( 'layout_graph' => array( 'nodes' => array( array( 'id' => 'form' ), array( 'id' => 'control-1' ) ) ) ),
 		$ssi_textarea_scope,
 		array(
-			1 => Static_Site_Importer_Form_Layout_Projection::presentation_descriptor(
+			1 => Static_Site_Importer_Form_Presentation_Descriptor::presentation_descriptor(
 				$ssi_textarea_scope,
 				1,
 				$ssi_textarea_type,
@@ -223,7 +223,7 @@ foreach ( array( 'textarea', 'select', 'submit' ) as $ssi_textarea_type ) {
 			),
 		)
 	);
-	$ssi_textarea_editor = Static_Site_Importer_Form_Layout_Projection::editor_layout_target_map( $ssi_textarea_map, $ssi_textarea_scope, $ssi_textarea_policy );
+	$ssi_textarea_editor = Static_Site_Importer_Form_Presentation_Descriptor::editor_layout_target_map( $ssi_textarea_map, $ssi_textarea_scope, $ssi_textarea_policy );
 	$ssi_textarea_count  = 0;
 	foreach ( $ssi_textarea_editor['presentation_targets'] as $ssi_textarea_target ) {
 		foreach ( $ssi_textarea_target['destinations'] as $ssi_textarea_destination ) {
@@ -243,7 +243,7 @@ $ssi_textarea_expect(
 		'submit'   => 0,
 	)
 );
-$ssi_textarea_table = Static_Site_Importer_Form_Layout_Projection::editor_surface_table();
+$ssi_textarea_table = Static_Site_Importer_Form_Presentation_Descriptor::editor_surface_table();
 $ssi_textarea_expect( 'editor-textarea-parts', array_keys( array_filter( $ssi_textarea_table, static fn ( array $surface ): bool => ! empty( $surface['textarea_rows'] ) ) ), array( 'control' ) );
 
 if ( array() !== $ssi_textarea_failures ) {

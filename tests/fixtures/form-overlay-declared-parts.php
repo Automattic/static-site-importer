@@ -42,7 +42,7 @@ function ssi_editor_parts_descriptor_destinations( string $scope, ?int $index = 
 					foreach ( array( false, true ) as $wrapping_label ) {
 						// A sibling label may also carry its source row's gap as a margin.
 						foreach ( $wrapping_label ? array( array() ) : array( array(), array( 'margin-block-end' ) ) as $row_carried_label_margins ) {
-							$descriptor = Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $scope, $index ?? $counter % 128, $control_type, $roles, $has_caption, $choice_box, $wrapping_label, $row_carried_label_margins );
+							$descriptor = Static_Site_Importer_Form_Presentation_Descriptor::presentation_descriptor( $scope, $index ?? $counter % 128, $control_type, $roles, $has_caption, $choice_box, $wrapping_label, $row_carried_label_margins );
 							// A submit standing for its source block row moves its box
 							// facts between destinations; both shapes reach the editor.
 							$shapes = 'submit' === $control_type ? array( $descriptor, Static_Site_Importer_Form_Layout_Projection::with_submit_row_button_box( $descriptor ) ) : array( $descriptor );
@@ -80,8 +80,8 @@ function ssi_editor_parts_target_maps( string $scope, array $graph ): array {
 			),
 			$scope,
 			array(
-				0 => Static_Site_Importer_Form_Layout_Projection::presentation_descriptor( $scope, 0, 'phone', array( 'control' => true ) ),
-				1 => Static_Site_Importer_Form_Layout_Projection::presentation_descriptor(
+				0 => Static_Site_Importer_Form_Presentation_Descriptor::presentation_descriptor( $scope, 0, 'phone', array( 'control' => true ) ),
+				1 => Static_Site_Importer_Form_Presentation_Descriptor::presentation_descriptor(
 					$scope,
 					1,
 					'select',
@@ -150,7 +150,7 @@ function ssi_editor_parts_declared( string $scope ): array {
 	$declared = array();
 	foreach ( ssi_editor_parts_entries( $scope ) as $entry ) {
 		if ( is_string( $entry['part'] ?? null ) && ! isset( $declared[ $entry['part'] ] ) ) {
-			$declared[ $entry['part'] ] = Static_Site_Importer_Form_Layout_Projection::editor_surface_part( $entry );
+			$declared[ $entry['part'] ] = Static_Site_Importer_Form_Presentation_Descriptor::editor_surface_part( $entry );
 		}
 	}
 	return $declared;
