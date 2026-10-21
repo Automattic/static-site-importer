@@ -1815,7 +1815,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				}
 				$gap_variant = $candidate;
 			}
-			$columns = self::grid_repeat_column_count( is_string( $layout['columns'] ?? null ) ? $layout['columns'] : '' );
+			$columns = self::equal_track_count( is_string( $layout['columns'] ?? null ) ? $layout['columns'] : '' );
 			if ( ! is_array( $layout_node ) || null === $columns || array_diff( array_keys( $layout ), array( 'display', 'columns', 'width', 'column_gap', 'gap' ) ) || 'grid' !== ( $layout['display'] ?? null ) || ( isset( $layout['width'] ) && '100%' !== $layout['width'] ) || ! self::has_unconditional_proven_property( $layout_node, 'display' ) || ! self::has_unconditional_proven_property( $layout_node, 'grid-template-columns' ) || ( isset( $layout['width'] ) && ! self::has_unconditional_proven_property( $layout_node, 'width' ) ) ) {
 				continue;
 			}
@@ -2754,7 +2754,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 
 	/** One full-width track: `1fr`, `minmax(0,1fr)`, or their one-count repeat. */
 	private static function is_single_fraction_track( string $columns ): bool {
-		return 1 === preg_match( '/^(?:1fr|minmax\(0(?:px)?,1fr\)|repeat\(1,(?:1fr|minmax\(0(?:px)?,1fr\))\))$/D', $columns );
+		return 1 === self::equal_track_count( $columns );
 	}
 
 	/**
@@ -2952,7 +2952,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	public static function grid_column_placement( mixed $columns, mixed $column ): ?array {
 		$columns = preg_replace( '/\s+/', '', is_string( $columns ) ? $columns : '' );
 		$column  = preg_replace( '/\s+/', '', is_string( $column ) ? $column : '' );
-		$count   = self::grid_repeat_column_count( is_string( $columns ) ? $columns : '' );
+		$count   = self::equal_track_count( is_string( $columns ) ? $columns : '' );
 		if ( null === $count || ! is_string( $column ) ) {
 			return null;
 		}
@@ -3000,14 +3000,23 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		return (int) $match[1];
 	}
 
-	/** Track count of repeat(N, 1fr) or repeat(N, minmax(0, 1fr)). */
-	private static function grid_repeat_column_count( string $columns ): ?int {
+	/**
+	 * Count of equal fractional tracks, however the author spelled them.
+	 *
+	 * Every column parser reads tracks through this one grammar, so the same grid
+	 * is recognised by every pass: `repeat(N, T)` or an explicit list of N `T`,
+	 * where `T` is `1fr` or `minmax(0, 1fr)`. Null for any other track list.
+	 */
+	private static function equal_track_count( string $columns ): ?int {
 		$columns = preg_replace( '/\s+/', '', $columns );
-		if ( ! is_string( $columns ) || 1 !== preg_match( '/^repeat\(([1-9][0-9]*),(?:1fr|minmax\(0(?:px)?,1fr\))\)$/D', $columns, $match ) ) {
+		$track   = '(?:1fr|minmax\(0(?:px)?,1fr\))';
+		if ( ! is_string( $columns ) ) {
 			return null;
 		}
-		$count = (int) $match[1];
-		return $count >= 1 ? $count : null;
+		if ( 1 === preg_match( '/^repeat\(([1-9][0-9]*),' . $track . '\)$/D', $columns, $match ) ) {
+			return (int) $match[1];
+		}
+		return 1 === preg_match( '/^(?:' . $track . ')+$/D', $columns ) ? (int) preg_match_all( '/' . $track . '/', $columns ) : null;
 	}
 
 	/**
@@ -3125,12 +3134,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * 50 / 33 / 25. Null when the value is not that shape.
 	 */
 	private static function equal_fraction_column_count( string $columns ): ?int {
-		foreach ( array( 2, 3, 4 ) as $count ) {
-			if ( self::is_equal_fraction_columns( $columns, $count ) ) {
-				return $count;
-			}
-		}
-		return null;
+		$count = self::equal_track_count( $columns );
+		return in_array( $count, array( 2, 3, 4 ), true ) ? $count : null;
 	}
 
 	/**
@@ -3141,10 +3146,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * @internal
 	 */
 	public static function is_equal_fraction_columns( string $columns, int $count ): bool {
-		if ( 'repeat(' . $count . ',1fr)' === $columns || str_repeat( '1fr', $count ) === $columns ) {
-			return true;
-		}
-		return 1 === preg_match( '/^repeat\(' . $count . ',minmax\(0(?:px)?,1fr\)\)$/D', $columns );
+		return self::equal_track_count( $columns ) === $count;
 	}
 
 	/** Jetpack subtracts a whole gap from each field; the source share is gap * (count-1)/count. */
