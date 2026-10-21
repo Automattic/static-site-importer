@@ -30,6 +30,7 @@ final class Static_Site_Importer_Source_Route_Redirect {
 		add_action( 'template_redirect', array( self::class, 'redirect' ), 9 );
 		if ( function_exists( 'add_filter' ) ) {
 			add_filter( 'request', array( self::class, 'resolve_request' ) );
+			add_filter( 'template_include', array( self::class, 'authored_shop_template' ), 100 );
 			add_filter( 'page_link', array( self::class, 'filter_permalink' ), 20, 2 );
 			add_filter( 'post_link', array( self::class, 'filter_permalink' ), 20, 2 );
 			add_filter( 'post_type_link', array( self::class, 'filter_permalink' ), 20, 2 );
@@ -193,18 +194,27 @@ final class Static_Site_Importer_Source_Route_Redirect {
 	}
 
 	/**
-	 * An owned document is singular. Keep its endpoint state; archive selectors
-	 * from any native or custom taxonomy or post type cannot constrain it. The
-	 * request's original query string remains available to the document.
-	 */
-	/**
 	 * The WooCommerce shop page whose listing the theme designs as the product
 	 * archive: WooCommerce serves that archive at the page's URL.
 	 */
 	private static function is_designed_shop_archive( int $id ): bool {
-		return $id > 0 && function_exists( 'wc_get_page_id' ) && (int) wc_get_page_id( 'shop' ) === $id && class_exists( 'Static_Site_Importer_Woo_Product_Listing_Materializer' ) && Static_Site_Importer_Woo_Product_Listing_Materializer::theme_designs_product_archive();
+		return $id > 0 && function_exists( 'wc_get_page_id' ) && (int) wc_get_page_id( 'shop' ) === $id && is_readable( get_theme_file_path( 'templates/archive-product.html' ) );
 	}
 
+	/**
+	 * WooCommerce also selects its catalog renderer for a singular shop page.
+	 * Keep the authored page template without hiding the shop ID from cart links.
+	 * This runtime ships with the theme; the importer need not be installed.
+	 */
+	public static function authored_shop_template( string $template ): string {
+		$id = get_queried_object_id();
+		if ( is_page() && function_exists( 'wc_get_page_id' ) && $id > 0 && (int) wc_get_page_id( 'shop' ) === $id && get_post_meta( $id, self::META_KEY, true ) && ! self::is_designed_shop_archive( $id ) ) {
+			return get_page_template() ?: $template;
+		}
+		return $template;
+	}
+
+	/** Keep endpoint state, but discard archive selectors for owned documents. */
 	private static function singular_query_vars( array $query_vars ): array {
 		return array_intersect_key( $query_vars, array_flip( array( 'feed', 'embed', 'cpage', 'preview', 'preview_id', 'preview_nonce', 'withcomments', 'withoutcomments' ) ) );
 	}

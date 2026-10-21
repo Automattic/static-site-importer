@@ -429,24 +429,7 @@ final class Static_Site_Importer_Woo_Product_Listing_Materializer {
 		return function_exists( 'get_theme_file_path' ) && is_readable( get_theme_file_path( self::ARCHIVE_TEMPLATE ) );
 	}
 
-	/**
-	 * WooCommerce reclassifies its shop page as a product archive even when
-	 * the request resolved to a page. Only let it claim an imported document
-	 * when the theme supplies the archive design; otherwise keep the source
-	 * page (and any independently bound product grid) at its own URL.
-	 *
-	 * Filter the read, not the stored option, so a designed listing can use
-	 * the configured shop page again without mutating the site's settings.
-	 */
-	public static function authored_shop_page_id( mixed $id ): mixed {
-		if ( (int) $id > 0 && function_exists( 'get_post_meta' ) && get_post_meta( (int) $id, Static_Site_Importer_Source_Route_Redirect::META_KEY, true ) && ! self::theme_designs_product_archive() ) {
-			return -1;
-		}
-		return $id;
-	}
-
 	public static function register(): void {
-		add_filter( 'option_woocommerce_shop_page_id', array( self::class, 'authored_shop_page_id' ) );
 		add_filter( 'blocks_engine_document_id', array( self::class, 'archive_document_id' ) );
 		add_filter( 'loop_shop_per_page', array( self::class, 'archive_per_page' ), 20 );
 		add_filter( 'render_block', array( self::class, 'render_control' ), 10, 2 );
