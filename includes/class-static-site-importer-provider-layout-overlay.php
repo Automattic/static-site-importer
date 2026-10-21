@@ -280,11 +280,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 * @param array<string,mixed>     $presentation_graph Validated presentation graph.
 	 * @param array<string,mixed>     $container          Form container presentation.
 	 * @param array<int|string,mixed> $context_fallbacks  Source context style fallbacks.
+	 * @param array<string,mixed>|null $editor_presentation_graph Optional editor facts when source classes are restored only on the front end.
 	 * @return array{overlay:array<string,mixed>,css:string,operations:array<int,array<string,mixed>>,losses:array<int,array<string,mixed>>}
 	 */
-	public static function compile_surfaces( array $graph, mixed $front_map, mixed $editor_map, array $presentation_graph = array(), array $container = array(), array $context_fallbacks = array() ): array {
+	public static function compile_surfaces( array $graph, mixed $front_map, mixed $editor_map, array $presentation_graph = array(), array $container = array(), array $context_fallbacks = array(), ?array $editor_presentation_graph = null ): array {
 		$front  = self::compile( $graph, $front_map, $presentation_graph, $container, self::SURFACE_FRONT_END, $context_fallbacks );
-		$editor = self::compile( $graph, $editor_map, $presentation_graph, $container, self::SURFACE_EDITOR, $context_fallbacks );
+		$editor = self::compile( $graph, $editor_map, $editor_presentation_graph ?? $presentation_graph, $container, self::SURFACE_EDITOR, $context_fallbacks );
 		$losses = array_merge( $editor['losses'], $front['losses'] );
 		if ( array() === $front['overlay'] ) {
 			return array(

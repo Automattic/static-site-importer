@@ -548,7 +548,7 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 				$classes = false === $classes ? array() : $classes;
 				$output  = array();
 				foreach ( $classes as $candidate ) {
-					if ( preg_match( '/^ssi-source-submit--([A-Za-z_][A-Za-z0-9_-]{0,79})$/D', $candidate, $marker ) ) {
+					if ( preg_match( '/^ssi-source-submit--([A-Za-z_][A-Za-z0-9_:-]{0,79})$/D', $candidate, $marker ) ) {
 						if ( 1 === preg_match( '/^m[trblxyse]?-/', $marker[1] ) ) {
 							$output[] = $marker[1];
 							continue;

@@ -37,7 +37,7 @@ jobs:
           coverage: none
       - run: composer install --no-interaction --no-progress
       - run: bash tools/prepare-wordpress-core-fixture.sh
-      - run: node --test tests/editor-presentation-browser.test.mjs tests/form-layout-rendered.test.mjs tests/form-role-box-parity.test.mjs tools/run-existing-runtime-review.test.mjs
+      - run: node --test tests/editor-presentation-browser.test.mjs tests/form-layout-rendered.test.mjs tests/form-role-box-parity.test.mjs tests/form-submit-colors.test.mjs tools/run-existing-runtime-review.test.mjs
 
   homeboy-lint:
     name: Homeboy Lint
