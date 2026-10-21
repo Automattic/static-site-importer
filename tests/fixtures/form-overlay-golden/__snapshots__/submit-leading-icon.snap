@@ -44,7 +44,7 @@ sha256: 87e7d7cd91394197e556ab45212c3c3e73d2d33224725b95caf0577f015c7bf9
 
 === block_markup ===
 <!-- wp:jetpack/contact-form {"className":"ssi-form-d095fee786e4"} -->
-<div class="wp-block-jetpack-contact-form ssi-form-d095fee786e4"><!-- wp:jetpack/field-email {"id":"ssi-form-d095fee786e4-field-0","shareFieldAttributes":false,"className":"ssi-node-c0ec220a2ba5"} -->
+<div class="wp-block-jetpack-contact-form ssi-form-d095fee786e4"><!-- wp:jetpack/field-email {"shareFieldAttributes":false,"className":"ssi-node-c0ec220a2ba5"} -->
 <div><!-- wp:jetpack/label {"label":"Email"} --><!-- /wp:jetpack/label -->
 <!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"className":"ssi-node-f6f6e97b0624"} --><!-- /wp:jetpack/input --></div>
 <!-- /wp:jetpack/field-email -->

@@ -3577,8 +3577,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			return array(
 				'trigger_class' => self::presentation_destination_class( $scope, $auxiliary_index, 'country-trigger' ),
 				'state'         => array(
-					'schema'        => 'static-site-importer/form-visual-state/v1',
-					'field_id'      => $scope . '-field-' . $phone_index,
+					'schema'        => 'static-site-importer/form-visual-state/v2',
+					'field_class'   => self::layout_node_class( $scope, 'control-' . $phone_index ),
 					'trigger_class' => self::presentation_destination_class( $scope, $auxiliary_index, 'country-trigger' ),
 					'group'         => $state_group,
 					'parts'         => $state_parts,

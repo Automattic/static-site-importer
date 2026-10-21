@@ -85,14 +85,14 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		self::$visual_states = array();
 		foreach ( $states as $state ) {
 			if ( self::valid_visual_state( $state ) ) {
-				self::$visual_states[ $state['field_id'] ] = $state;
+				self::$visual_states[ $state['field_class'] ] = $state;
 			}
 		}
 	}
 
 	/** Validate the portable configuration before it is persisted in a companion. */
 	public static function valid_visual_state( mixed $state ): bool {
-		if ( ! is_array( $state ) || array_keys( $state ) !== array( 'schema', 'field_id', 'trigger_class', 'group', 'parts', 'css' ) || 'static-site-importer/form-visual-state/v1' !== ( $state['schema'] ?? null ) || ! is_string( $state['field_id'] ?? null ) || ! preg_match( '/^ssi-form-[a-f0-9]{12}-field-[0-9]{1,3}$/D', $state['field_id'] ) || ! is_string( $state['trigger_class'] ?? null ) || ! preg_match( '/^ssi-node-[a-f0-9]{12}-destination-country-trigger$/D', $state['trigger_class'] ) || ! is_array( $state['group'] ?? null ) || array_keys( $state['group'] ) !== array( 'id', 'class' ) || ! is_string( $state['group']['id'] ?? null ) || ! preg_match( '/^visual-group-[a-f0-9]{16}$/D', $state['group']['id'] ) || ! is_string( $state['group']['class'] ?? null ) || ! preg_match( '/^ssi-fvg-[a-f0-9]{12}$/D', $state['group']['class'] ) || ! is_array( $state['parts'] ?? null ) || ! array_is_list( $state['parts'] ) || count( $state['parts'] ) < 1 || count( $state['parts'] ) > 32 || ! is_string( $state['css'] ?? null ) || strlen( $state['css'] ) > 16384 ) {
+		if ( ! is_array( $state ) || array_keys( $state ) !== array( 'schema', 'field_class', 'trigger_class', 'group', 'parts', 'css' ) || 'static-site-importer/form-visual-state/v2' !== ( $state['schema'] ?? null ) || ! is_string( $state['field_class'] ?? null ) || ! preg_match( '/^ssi-node-[a-f0-9]{12}$/D', $state['field_class'] ) || ! is_string( $state['trigger_class'] ?? null ) || ! preg_match( '/^ssi-node-[a-f0-9]{12}-destination-country-trigger$/D', $state['trigger_class'] ) || ! is_array( $state['group'] ?? null ) || array_keys( $state['group'] ) !== array( 'id', 'class' ) || ! is_string( $state['group']['id'] ?? null ) || ! preg_match( '/^visual-group-[a-f0-9]{16}$/D', $state['group']['id'] ) || ! is_string( $state['group']['class'] ?? null ) || ! preg_match( '/^ssi-fvg-[a-f0-9]{12}$/D', $state['group']['class'] ) || ! is_array( $state['parts'] ?? null ) || ! array_is_list( $state['parts'] ) || count( $state['parts'] ) < 1 || count( $state['parts'] ) > 32 || ! is_string( $state['css'] ?? null ) || strlen( $state['css'] ) > 16384 ) {
 			return false;
 		}
 		$seen = array();
@@ -491,15 +491,32 @@ final class Static_Site_Importer_Provider_Form_Runtime_V1 {
 		return $output;
 	}
 
-	/** Insert the complete captured group into Jetpack's existing trigger and keep a functional default country. */
+	/**
+	 * Insert the complete captured group into Jetpack's existing trigger and keep a functional default country.
+	 *
+	 * The state is keyed by the field's SSI layout class, which every rendered
+	 * copy of a reused form carries, not by the per-instance field ID.
+	 */
 	public static function project_empty_country_visual_state( string $html ): string {
-		if ( empty( self::$visual_states ) || ! preg_match( '/\bid=(?:"|\')((?:ssi-form-[a-f0-9]{12}-field-[0-9]{1,3}))(?:"|\')/', $html, $id ) || ! isset( self::$visual_states[ $id[1] ] ) ) {
+		if ( empty( self::$visual_states ) ) {
+			return $html;
+		}
+		$field_class = null;
+		if ( preg_match_all( '/(?<![A-Za-z0-9_-])(ssi-node-[a-f0-9]{12})(?:-wrap)?(?![A-Za-z0-9_-])/', $html, $tokens ) ) {
+			foreach ( $tokens[1] as $token ) {
+				if ( isset( self::$visual_states[ $token ] ) ) {
+					$field_class = $token;
+					break;
+				}
+			}
+		}
+		if ( null === $field_class ) {
 			return $html;
 		}
 		if ( ! preg_match( '/<button\b(?=[^>]*\bclass=("|\')[^"\']*\bjetpack-combobox-trigger\b[^"\']*\1)[^>]*>/i', $html, $button, PREG_OFFSET_CAPTURE ) || ! preg_match( '/<[^>]*\bclass=("|\')[^"\']*\bjetpack-combobox-trigger-arrow\b[^"\']*\1[^>]*>/i', $html, $arrow, PREG_OFFSET_CAPTURE ) ) {
 			return $html;
 		}
-		$state   = self::$visual_states[ $id[1] ];
+		$state   = self::$visual_states[ $field_class ];
 		$trigger = preg_replace( '/\bclass=("|\')(.*?)\1/is', 'class=$1$2 ' . $state['trigger_class'] . '$1', $button[0][0], 1 );
 		if ( ! is_string( $trigger ) ) {
 			return $html;

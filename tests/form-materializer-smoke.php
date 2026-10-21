@@ -627,7 +627,7 @@ namespace {
 	$assert( str_contains( $select_probe_markup, '"options":["Around $1,000","$2,000+"]' ) && 1 === substr_count( $select_probe_markup, 'Select a range (optional)' ), 'select-probe-prompt-stays-off-the-provider-option-list', $select_probe_markup );
 	$assert( ! str_contains( $select_probe_markup, 'Select an option' ), 'select-probe-leaves-no-synthetic-provider-prompt', $select_probe_markup );
 	$assert( 1 === preg_match( '/<div class="wp-block-jetpack-contact-form form contact ssi-form-[a-f0-9]{12}">/', $markup ), 'markup-contact-form-wrapper-and-source-classes' );
-	$assert( 1 === preg_match( '/<!-- wp:jetpack\/field-text (?=[^\n]*"required":true)(?=[^\n]*"id":"ssi-form-[a-f0-9]{12}-field-0")(?=[^\n]*"className":"ssi-node-[a-f0-9]{12}")(?=[^\n]*"shareFieldAttributes":false)[^\n]* -->/', $markup ), 'markup-field-wrapper-keeps-provider-layout-class-and-instance-identity' );
+	$assert( 1 === preg_match( '/<!-- wp:jetpack\/field-text (?=[^\n]*"required":true)(?![^\n]*"id":)(?=[^\n]*"className":"ssi-node-[a-f0-9]{12}")(?=[^\n]*"shareFieldAttributes":false)[^\n]* -->/', $markup ), 'markup-field-wrapper-keeps-provider-layout-class-and-leaves-field-id-to-provider' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/label {"label":"Your name","className":"source-label"} /-->' ) && str_contains( $markup, '<!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"className":"source-field"} /-->' ), 'markup-field-canonical-label-and-input-children-carry-source-classes' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/field-select {"options":["Sales","Support"]' ) && str_contains( $markup, '<!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"type":"dropdown"} /-->' ), 'markup-select-options-and-dropdown-input' );
 	$assert( str_contains( $markup, '<!-- wp:jetpack/field-radio {"options":["In person","Online"]' ) && str_contains( $markup, '<!-- wp:jetpack/options {"type":"radio"} -->' ), 'markup-radio-options-on-field-and-child-list' );
@@ -789,12 +789,21 @@ namespace {
 		) )
 	);
 	$responsive_rows = $responsive_seed['forms'] ?? array();
-	$responsive_ids = array();
+	$responsive_field_ids = array();
+	$collect_field_ids    = static function ( array $blocks ) use ( &$collect_field_ids, &$responsive_field_ids ): void {
+		foreach ( $blocks as $block ) {
+			if ( str_starts_with( (string) ( $block['blockName'] ?? '' ), 'jetpack/field-' ) && array_key_exists( 'id', $block['attrs'] ?? array() ) ) {
+				$responsive_field_ids[] = $block['attrs']['id'];
+			}
+			$collect_field_ids( $block['innerBlocks'] ?? array() );
+		}
+	};
 	foreach ( $responsive_rows as $responsive_row ) {
-		preg_match( '/"id":"([^"]+)"/', $responsive_row['block_markup'], $field_id );
-		$responsive_ids[] = $field_id[1] ?? '';
+		$collect_field_ids( parse_blocks( $responsive_row['block_markup'] ) );
 	}
-	$assert( 2 === count( array_unique( $responsive_ids ) ) && ! in_array( '', $responsive_ids, true ), 'responsive-form-instances-have-distinct-provider-field-state-identities' );
+	// Jetpack derives a unique field ID per rendered form instance only when the
+	// field carries no author ID, so neither a source ID nor a fixed ID is saved.
+	$assert( 2 === count( $responsive_rows ) && array() === $responsive_field_ids && ! str_contains( implode( '', array_column( $responsive_rows, 'block_markup' ) ), 'repeated-source-id' ), 'responsive-form-instances-leave-field-ids-to-the-provider-per-rendered-instance', wp_json_encode( $responsive_field_ids ) );
 	$marker_form = $responsive_identity_forms['forms'][0];
 	$marker_form['controls'][0]['required'] = true;
 	$marker_form['controls'][0]['label'] = 'Email';
@@ -3556,7 +3565,7 @@ namespace {
 	$visual_state_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validated_visual_state['forms'] ?? array() ) )['forms'][0] ?? array();
 	$visual_state = $visual_state_row['form_visual_state'] ?? array();
 	Static_Site_Importer_Provider_Form_Runtime_V1::configure_visual_states( array( $visual_state ) );
-	$visual_provider_html = Static_Site_Importer_Provider_Form_Runtime_V1::project_empty_country_visual_state( '<div class="jetpack-field__input-phone-wrapper" data-wp-context="{&quot;defaultCountry&quot;:&quot;&quot;}"><button class="jetpack-combobox-trigger"><span class="jetpack-combobox-trigger-arrow"><svg></svg></span><span class="jetpack-combobox-selected" data-wp-text="context.selectedCountry.value"></span></button><input type="hidden" id="' . ( $visual_state['field_id'] ?? '' ) . '"></div>' );
+	$visual_provider_html = Static_Site_Importer_Provider_Form_Runtime_V1::project_empty_country_visual_state( '<div class="grunion-field-wrap grunion-field-telephone-wrap ' . ( $visual_state['field_class'] ?? '' ) . '-wrap"><div class="jetpack-field__input-phone-wrapper" data-wp-context="{&quot;defaultCountry&quot;:&quot;&quot;}"><button class="jetpack-combobox-trigger"><span class="jetpack-combobox-trigger-arrow"><svg></svg></span><span class="jetpack-combobox-selected" data-wp-text="context.selectedCountry.value"></span></button><input type="hidden" id="g5-phone"></div></div>' );
 	$auxiliary_target = $visual_state_row['provider_layout_target_map']['presentation_targets'][0]['destinations'][0] ?? array();
 	$auxiliary_overlay = (string) ( $visual_state_row['provider_layout_overlay_css']['css'] ?? '' );
 	$assert( empty( $validated_visual_state['errors'] ) && 'submit' === ( $validated_visual_state['forms'][0]['controls'][0]['type'] ?? '' ) && true === ( $visual_state_row['runtime_mapped'] ?? false ) && 2 === count( $visual_state['parts'] ?? array() ) && 'visual-group-' === substr( (string) ( $visual_state['group']['id'] ?? '' ), 0, 13 ) && str_contains( $visual_provider_html, '&quot;defaultCountry&quot;:&quot;US&quot;' ) && ! str_contains( $visual_provider_html, 'data-wp-bind--hidden="context.selectedCountry.value"' ) && str_contains( $visual_provider_html, 'data-wp-bind--hidden="!context.selectedCountry.value"' ) && str_contains( $visual_provider_html, '.jetpack-combobox-selected' ) && str_contains( $visual_provider_html, ':not([hidden])' ) && str_contains( $visual_provider_html, 'display:flex!important' ) && str_contains( $visual_provider_html, 'gap:8px!important' ) && str_contains( $visual_provider_html, 'gap:4px!important' ) && str_contains( $visual_provider_html, 'width:24px!important' ) && str_contains( $visual_provider_html, 'width:12px!important' ) && str_contains( $visual_provider_html, '@media (min-width:769px)' ) && str_contains( $visual_provider_html, 'jetpack-combobox-trigger-arrow' ) && str_contains( $visual_provider_html, (string) ( $visual_state['trigger_class'] ?? '' ) ) && str_contains( (string) ( $auxiliary_target['selector'] ?? '' ), '-destination-country-trigger' ) && str_contains( $auxiliary_overlay, 'position:relative!important' ) && str_contains( $auxiliary_overlay, 'flex-shrink:0!important' ) && str_contains( $auxiliary_overlay, 'transform:translateX(0)!important' ) && empty( $visual_state_row['form_receipt_unaccepted_losses'] ?? array() ) && ! str_contains( $visual_provider_html, 'base64' ), 'candidate-producer-submit-coercion-still-materializes-country-selector-with-functional-default', wp_json_encode( array( 'validation' => $validated_visual_state, 'row' => $visual_state_row, 'html' => $visual_provider_html ) ) );

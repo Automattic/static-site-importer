@@ -37,11 +37,11 @@ sha256: 5dd7314a3807e15d73ce27797fd2c0f44709a483e04d7a77d0c2582071bfcbcb
 
 === block_markup ===
 <!-- wp:jetpack/contact-form {"className":"ssi-source-root-fieldset ssi-form-d095fee786e4"} -->
-<div class="wp-block-jetpack-contact-form ssi-source-root-fieldset ssi-form-d095fee786e4"><!-- wp:jetpack/field-text {"id":"ssi-form-d095fee786e4-field-0","shareFieldAttributes":false,"className":"ssi-node-c0ec220a2ba5"} -->
+<div class="wp-block-jetpack-contact-form ssi-source-root-fieldset ssi-form-d095fee786e4"><!-- wp:jetpack/field-text {"shareFieldAttributes":false,"className":"ssi-node-c0ec220a2ba5"} -->
 <div><!-- wp:jetpack/label {"label":"Name","className":"ssi-node-55ca155d2249"} --><!-- /wp:jetpack/label -->
 <!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"className":"ssi-node-f6f6e97b0624"} --><!-- /wp:jetpack/input --></div>
 <!-- /wp:jetpack/field-text -->
-<!-- wp:jetpack/field-email {"id":"ssi-form-d095fee786e4-field-1","shareFieldAttributes":false,"className":"ssi-node-8f1f8757437f"} -->
+<!-- wp:jetpack/field-email {"shareFieldAttributes":false,"className":"ssi-node-8f1f8757437f"} -->
 <div><!-- wp:jetpack/label {"label":"Email","className":"ssi-node-e753eef65d32"} --><!-- /wp:jetpack/label -->
 <!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"className":"ssi-node-6c39784ddd00"} --><!-- /wp:jetpack/input --></div>
 <!-- /wp:jetpack/field-email -->

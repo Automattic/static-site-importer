@@ -200,7 +200,11 @@ namespace {
 	function ssi_role_box_render_field( array $block ): string {
 		$type        = substr( $block['name'], strlen( 'jetpack/field-' ) );
 		$attrs       = $block['attrs'];
+		// Contact_Form_Field::__construct(): without an author ID, Jetpack derives
+		// the field ID from the per-instance form ID. Modelled as the field's
+		// position within its form.
 		$id          = (string) ( $attrs['id'] ?? '' );
+		$id          = '' !== $id ? $id : 'g1-field-' . ( $GLOBALS['ssi_role_box_field_index']++ );
 		$required    = ! empty( $attrs['required'] );
 		$class       = trim( (string) ( $attrs['className'] ?? '' ) );
 		$label       = '';
@@ -362,6 +366,7 @@ namespace {
 	function ssi_role_box_render_form( array $form ): string {
 		$class_name = trim( (string) ( $form['attrs']['className'] ?? '' ) );
 		$body       = '';
+		$GLOBALS['ssi_role_box_field_index'] = 0;
 		foreach ( $form['innerBlocks'] as $inner ) {
 			$body .= ssi_role_box_render_block( $inner );
 		}

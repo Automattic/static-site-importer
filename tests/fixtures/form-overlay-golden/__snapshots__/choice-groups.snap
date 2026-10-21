@@ -67,19 +67,19 @@ sha256: e4381fbb2404067e5200e4aca8b8b8dab9ed45942156c0d7fe0c145f0921b529
 
 === block_markup ===
 <!-- wp:jetpack/contact-form {"className":"ssi-form-d095fee786e4"} -->
-<div class="wp-block-jetpack-contact-form ssi-form-d095fee786e4"><!-- wp:jetpack/field-checkbox {"shareFieldAttributes":false,"id":"ssi-form-d095fee786e4-field-0","className":"ssi-node-c0ec220a2ba5 ssi-source-choice-box--option ssi-source-choice-box--ssi-node-d19260cd5a75"} -->
+<div class="wp-block-jetpack-contact-form ssi-form-d095fee786e4"><!-- wp:jetpack/field-checkbox {"shareFieldAttributes":false,"className":"ssi-node-c0ec220a2ba5 ssi-source-choice-box--option ssi-source-choice-box--ssi-node-d19260cd5a75"} -->
 <div><!-- wp:jetpack/option {"label":"News","isStandalone":true,"className":"ssi-node-f6f6e97b0624 ssi-source-choice-label--ssi-node-55ca155d2249"} --><!-- /wp:jetpack/option --></div>
 <!-- /wp:jetpack/field-checkbox -->
-<!-- wp:jetpack/field-checkbox {"shareFieldAttributes":false,"id":"ssi-form-d095fee786e4-field-1","className":"ssi-node-8f1f8757437f ssi-source-choice-box--option ssi-source-choice-box--ssi-node-bbd608db426f"} -->
+<!-- wp:jetpack/field-checkbox {"shareFieldAttributes":false,"className":"ssi-node-8f1f8757437f ssi-source-choice-box--option ssi-source-choice-box--ssi-node-bbd608db426f"} -->
 <div><!-- wp:jetpack/option {"label":"Events","isStandalone":true,"className":"ssi-node-6c39784ddd00 ssi-source-choice-label--ssi-node-e753eef65d32"} --><!-- /wp:jetpack/option --></div>
 <!-- /wp:jetpack/field-checkbox -->
-<!-- wp:jetpack/field-radio {"shareFieldAttributes":false,"id":"ssi-form-d095fee786e4-field-2","className":"ssi-node-3a3fd4718c31 ssi-node-765c1a6a1f05 ssi-source-wrapper-1--option"} -->
+<!-- wp:jetpack/field-radio {"shareFieldAttributes":false,"className":"ssi-node-3a3fd4718c31 ssi-node-765c1a6a1f05 ssi-source-wrapper-1--option"} -->
 <div><!-- wp:jetpack/label {"label":"Weekly","className":"option ssi-node-758bcd0d5ff1"} --><!-- /wp:jetpack/label --></div>
 <!-- /wp:jetpack/field-radio -->
-<!-- wp:jetpack/field-radio {"shareFieldAttributes":false,"id":"ssi-form-d095fee786e4-field-3","className":"ssi-node-97b0fb7d822d ssi-node-e44b2bfa6e5d ssi-source-wrapper-1--option"} -->
+<!-- wp:jetpack/field-radio {"shareFieldAttributes":false,"className":"ssi-node-97b0fb7d822d ssi-node-e44b2bfa6e5d ssi-source-wrapper-1--option"} -->
 <div><!-- wp:jetpack/label {"label":"Monthly","className":"option ssi-node-eb87e95b85ee"} --><!-- /wp:jetpack/label --></div>
 <!-- /wp:jetpack/field-radio -->
-<!-- wp:jetpack/field-checkbox {"required":true,"requiredIndicator":false,"shareFieldAttributes":false,"id":"ssi-form-d095fee786e4-field-4","className":"ssi-node-8066eba2930b ssi-source-choice-box--option ssi-source-choice-box--ssi-node-11320f0d9563"} -->
+<!-- wp:jetpack/field-checkbox {"required":true,"requiredIndicator":false,"shareFieldAttributes":false,"className":"ssi-node-8066eba2930b ssi-source-choice-box--option ssi-source-choice-box--ssi-node-11320f0d9563"} -->
 <div><!-- wp:jetpack/option {"label":"I agree to the terms","isStandalone":true,"className":"ssi-node-87dba3966929 ssi-source-choice-label--ssi-node-111acf7a2709"} --><!-- /wp:jetpack/option --></div>
 <!-- /wp:jetpack/field-checkbox -->
 <!-- wp:core/button {"tagName":"button","type":"submit","lock":{"remove":true},"className":"form-button-submit is-submit   ssi-node-d1e8ce6fe5f5","metadata":{"name":"Submit button"}} -->

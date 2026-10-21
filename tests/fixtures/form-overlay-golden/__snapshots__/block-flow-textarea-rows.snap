@@ -30,7 +30,7 @@ sha256: c010e1c1bb10cd17f3f63e2f24682df2e9923e1c72d74b60feb10e6de9714ecc
 
 === block_markup ===
 <!-- wp:jetpack/contact-form {"className":"ssi-form-d095fee786e4"} -->
-<div class="wp-block-jetpack-contact-form ssi-form-d095fee786e4"><!-- wp:jetpack/field-textarea {"required":true,"requiredIndicator":false,"shareFieldAttributes":false,"id":"ssi-form-d095fee786e4-field-0","className":"ssi-node-c0ec220a2ba5"} -->
+<div class="wp-block-jetpack-contact-form ssi-form-d095fee786e4"><!-- wp:jetpack/field-textarea {"required":true,"requiredIndicator":false,"shareFieldAttributes":false,"className":"ssi-node-c0ec220a2ba5"} -->
 <div><!-- wp:jetpack/label {"label":"Message","requiredIndicator":false} --><!-- /wp:jetpack/label -->
 <!-- wp:jetpack/input {"style":{"border":{"style":"solid"}},"className":"ssi-node-f6f6e97b0624 ssi-textarea-rows-6","type":"textarea"} --><!-- /wp:jetpack/input --></div>
 <!-- /wp:jetpack/field-textarea -->
