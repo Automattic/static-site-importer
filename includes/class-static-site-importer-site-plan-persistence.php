@@ -1005,7 +1005,7 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 	}
 
 	/**
-	 * A binding owned by a shared template part completes when the written part
+	 * A binding owned by a template or part completes when the written surface
 	 * file carries the provider fragment, the same proof a page binding gets from
 	 * its persisted post content.
 	 *
@@ -1015,10 +1015,10 @@ final class Static_Site_Importer_Site_Plan_Persistence {
 		$documents = Static_Site_Importer_Site_Plan_Preparation::runtime_binding_documents( $state['resolved'] );
 		foreach ( $state['applied']['runtime_declarations']['entity_bindings'] as &$binding_report ) {
 			$document = $documents[ (string) ( $binding_report['source_path'] ?? '' ) ] ?? null;
-			if ( ! is_array( $document ) || 'template_parts' !== $document['group'] ) {
+			if ( ! is_array( $document ) || ! in_array( $document['group'], array( 'templates', 'template_parts' ), true ) ) {
 				continue;
 			}
-			$target   = 'parts/' . (string) ( $state['resolved']['template_parts'][ $document['index'] ]['slug'] ?? '' ) . '.html';
+			$target   = ( 'templates' === $document['group'] ? 'templates/' : 'parts/' ) . (string) ( $state['resolved'][ $document['group'] ][ $document['index'] ]['slug'] ?? '' ) . '.html';
 			$path     = $state['theme_dir'] . '/' . $target;
 			$fragment = (string) ( $binding_report['replacement_block_markup'] ?? '' );
 			$content  = is_file( $path ) ? file_get_contents( $path ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads the just-written local theme part to prove the binding landed.
