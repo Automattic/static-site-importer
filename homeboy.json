@@ -326,6 +326,7 @@
           "tests/smoke-woo-product-seeder-rollback.php",
           "tests/smoke-woo-product-attributes.php",
           "tests/smoke-woo-store-visibility.php",
+          "tests/smoke-woo-authored-shop-page.php",
           "tests/smoke-woo-cart-binding.php",
           "tests/smoke-woo-order-lookup-binding.php",
           "tests/smoke-wordpress-site-plan-materializer.php"
