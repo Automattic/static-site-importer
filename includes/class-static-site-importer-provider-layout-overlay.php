@@ -706,14 +706,12 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( 'generic/form-container-presentation/v1' !== ( $container['schema'] ?? null ) ) {
 			return;
 		}
-		$scope  = $pass['scope'];
-		$native = str_contains( $pass['targets']['form']['selector'] ?? '', '.ssi-native-form-topology' );
-		if ( ! $native && ! $pass['declared']['front_end_form_dom'] ) {
-			return;
-		}
+		$scope       = $pass['scope'];
+		$native      = str_contains( $pass['targets']['form']['selector'] ?? '', '.ssi-native-form-topology' );
+		$box         = $pass['declared']['front_end_form_dom'] ? $scope . '.jetpack-contact-form-container' : $scope;
 		$destination = array(
 			'role'       => 'control',
-			'selector'   => $native ? $pass['targets']['form']['selector'] : $scope . '.jetpack-contact-form-container',
+			'selector'   => $native ? $pass['targets']['form']['selector'] : $box,
 			'properties' => array_keys( self::presentation_property_map() ),
 		);
 		$styles      = self::resolve_presentation_cascade( $container['styles'] ?? array(), $container['provenance'] ?? array() );
