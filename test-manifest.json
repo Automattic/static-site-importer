@@ -109,6 +109,7 @@
     { "path": "tests/smoke-import-report.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-report-loss-ledger.php", "environment": "standalone-php" },
     { "path": "tests/smoke-import-report-size.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-import-report-compact-json.php", "environment": "standalone-php" },
     { "path": "tests/smoke-design-system-report-present.php", "environment": "standalone-php" },
     { "path": "tests/smoke-design-system-report-absent.php", "environment": "standalone-php" },
     { "path": "tests/smoke-missing-author-stylesheet-diagnostics.php", "environment": "standalone-php" },
