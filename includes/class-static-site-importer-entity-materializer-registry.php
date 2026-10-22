@@ -683,21 +683,24 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 	public static function with_form_source_html( array $entities, array $plan ): array {
 		$sources = array();
 		foreach ( $plan['quality']['fallbacks'] ?? array() as $fallback ) {
-			if ( is_array( $fallback ) && 'html_form_fallback' === ( $fallback['diagnostic_code'] ?? $fallback['code'] ?? '' ) && is_string( $fallback['html'] ?? null ) ) {
+			if ( is_array( $fallback ) && 'html_form_fallback' === ( $fallback['diagnostic_code'] ?? $fallback['code'] ?? '' ) ) {
 				$key             = (string) ( $fallback['source_path'] ?? $fallback['source'] ?? '' ) . "\n" . (string) ( $fallback['selector'] ?? '' );
-				$sources[ $key ] = $fallback['html'];
+				$sources[ $key ] = $fallback;
 			}
 		}
 		foreach ( $entities as &$entity ) {
 			if ( is_array( $entity ) ) {
 				$key = (string) ( $entity['source_path'] ?? '' ) . "\n" . (string) ( $entity['selector'] ?? '' );
-				if ( ! isset( $entity['html'] ) && isset( $sources[ $key ] ) ) {
-					$entity['html'] = $sources[ $key ];
+				if ( isset( $sources[ $key ] ) ) {
+					$entity['form_intent'] = Static_Site_Importer_Form_Fallback_Contract::intent( $sources[ $key ] );
+					if ( ! isset( $entity['html'] ) && is_string( $sources[ $key ]['html'] ?? null ) ) {
+						$entity['html'] = $sources[ $key ]['html'];
+					}
 				}
 			}
 		}
 		unset( $entity );
-		return $entities;
+		return array_values( array_filter( $entities, static fn( $entity ): bool => ! is_array( $entity ) || 'form' === Static_Site_Importer_Form_Fallback_Contract::route( $entity ) ) );
 	}
 
 	/** Copy producer presentation facts onto the form entity without re-parsing source HTML. */
@@ -2138,6 +2141,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				continue;
 			}
 
+			if ( 'form' !== Static_Site_Importer_Form_Fallback_Contract::route( $form ) ) {
+				continue; // Non-contact intents retain their commerce or preserved runtime route.
+			}
+
 			$controls = isset( $form['controls'] ) && is_array( $form['controls'] ) ? array_values( array_filter( $form['controls'], 'is_array' ) ) : array();
 			$mappable = array_filter(
 				$controls,
@@ -2161,6 +2168,7 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				'source_path' => isset( $form['source_path'] ) && is_scalar( $form['source_path'] ) ? (string) $form['source_path'] : '',
 				'form'        => isset( $form['form'] ) && is_array( $form['form'] ) ? $form['form'] : array(),
 				'controls'    => $controls,
+				'form_intent' => Static_Site_Importer_Form_Fallback_Contract::intent( $form ),
 			);
 			// Source HTML is inspected, never rendered, to retain description classes
 			// that older producers omit from control metadata.
