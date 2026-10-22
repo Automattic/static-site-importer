@@ -1,0 +1,5 @@
+:root{--hint-color:#9ca3af}
+input,textarea{color:#123456;padding:8px}
+input::placeholder,textarea::placeholder{color:var(--hint-color);opacity:1}
+textarea:focus::placeholder{color:#be123c}
+@media (min-width:800px){input::placeholder{color:#2563eb}}
