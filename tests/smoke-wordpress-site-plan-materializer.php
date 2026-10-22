@@ -1579,7 +1579,7 @@ $json_compatibility_payload = array(
 $json_compatibility_path    = $GLOBALS['ssi_plan_root'] . '/json-compatibility.json';
 $json_compatibility_receipt = array();
 $write_projection->invokeArgs( null, array( $json_compatibility_path, $json_compatibility_payload, &$json_compatibility_receipt ) );
-$assert( (string) wp_json_encode( $json_compatibility_payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) . "\n" === file_get_contents( $json_compatibility_path ), 'streamed public JSON matches historical WordPress encoding for Unicode, quotes, slashes, and control characters' );
+$assert( (string) wp_json_encode( $json_compatibility_payload, JSON_UNESCAPED_SLASHES ) . "\n" === file_get_contents( $json_compatibility_path ), 'streamed public JSON stays compact for Unicode, quotes, slashes, and control characters' );
 $failed_projection_path = $GLOBALS['ssi_plan_root'] . '/failed-projection-destination';
 mkdir( $failed_projection_path, 0777, true );
 $failed_projection_receipt = array( 'transaction' => (object) array( 'state' => array( 'rollback' => array( 'files' => array() ) ) ) );
