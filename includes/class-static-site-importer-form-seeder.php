@@ -9,6 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+require_once __DIR__ . '/class-static-site-importer-form-fallback-contract.php';
 require_once __DIR__ . '/class-static-site-importer-computed-layout-strategy.php';
 require_once __DIR__ . '/class-static-site-importer-provider-layout-overlay.php';
 require_once __DIR__ . '/class-static-site-importer-provider-form-runtime.php';
@@ -243,7 +244,7 @@ class Static_Site_Importer_Form_Seeder {
 		return array_values(
 			array_filter(
 				$forms,
-				static fn ( $form ): bool => is_array( $form )
+				static fn ( $form ): bool => is_array( $form ) && 'form' === Static_Site_Importer_Form_Fallback_Contract::route( $form )
 			)
 		);
 	}
