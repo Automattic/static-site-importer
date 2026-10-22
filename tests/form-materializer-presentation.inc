@@ -359,6 +359,36 @@
 		}
 	}
 	$assert( empty( $validated_all_controls['errors'] ) && 4 === count( $all_controls_hooks ) && empty( array_filter( $all_controls_hooks, static fn( string $hook ): bool => ! str_contains( $all_controls_markup, $hook ) || ! str_contains( $all_controls_css, '.' . $hook ) ) ) && str_contains( $all_controls_css, 'font-family:revert;line-height:revert;border:1px solid #111;padding:7px' ) && 1 === preg_match( '/\.ssi-node-[a-f0-9]{12} select\{font-family:revert!important;line-height:revert!important;appearance:auto!important;border:2px solid #222!important;padding:8px!important\}/', $all_controls_css ) && str_contains( $all_controls_css, 'font-family:revert;line-height:revert;border:3px solid #333;min-height:9rem;display:inline-block' ) && str_contains( $all_controls_css, 'font-family:revert;line-height:revert;min-height:0;background-color:#444;padding:9px 12px' ) && str_contains( $all_controls_css, '@media (max-width:48rem){' ) && str_contains( $all_controls_css, '> .wp-block-button__link{font-family:revert;line-height:revert;min-height:0;background-color:#444;padding:9px 12px}' ) && ! str_contains( $all_controls_css, 'control-shell' ) && ! str_contains( $all_controls_css, 'control-hook' ), 'presentation-overlay-releases-unowned-typography-before-source-properties', wp_json_encode( array( 'markup' => $all_controls_markup, 'css' => $all_controls_css, 'targets' => $all_controls_targets ) ) );
+	$centered_submit_html = '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Centered submit wrapper</title><style>.submit-row{display:flex;justify-content:center;min-height:50px}</style></head><body><main><form><div><input type="checkbox" id="news" name="news"><label for="news">Send me news</label></div><div class="actions"><div class="submit-row"><input type="submit" value="Send"></div></div></form></main></body></html>';
+	$centered_submit_source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $centered_submit_html ) ) )->toArray() )['fallbacks'][0] ?? array();
+	$centered_submit_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $centered_submit_source ) ) );
+	$centered_submit_row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $centered_submit_validation['forms'] ?? array() ) )['forms'][0] ?? array();
+	$assert(
+		empty( $centered_submit_validation['errors'] )
+			&& 'mapped' === ( $centered_submit_row['status'] ?? '' )
+			&& empty( $centered_submit_row['form_receipt_unaccepted_losses'] )
+			&& ! str_contains( wp_json_encode( $centered_submit_row ), 'provider_wrapper_layout_unrepresentable' )
+			&& str_contains( wp_json_encode( $centered_submit_row ), 'provider_wrapper_box_unrepresentable' )
+			&& str_contains( (string) ( $centered_submit_row['provider_layout_overlay_css']['css'] ?? '' ), 'justify-content:center' ),
+		'compiled-single-submit-flex-wrapper-maps-with-centered-button',
+		wp_json_encode( $centered_submit_row )
+	);
+	foreach ( array(
+		'inline-flex' => array( 'display:inline-flex;justify-content:space-around;align-items:center;min-height:50px', true, 'justify-content:center' ),
+		'end' => array( 'display:flex;flex-direction:row;justify-content:end', true, 'justify-content:flex-end' ),
+		'responsive' => array( 'display:flex;justify-content:center;min-height:50px}@media(max-width:600px){.submit-row{justify-content:flex-end', true, '@media (max-width:600px)' ),
+		'column' => array( 'display:flex;flex-direction:column;justify-content:center;min-height:50px', false, '' ),
+		'gap' => array( 'display:flex;justify-content:center;gap:10px;min-height:50px', false, '' ),
+	) as $case => list( $styles, $mapped, $expected_css ) ) {
+		$html = str_replace( 'display:flex;justify-content:center;min-height:50px', $styles, $centered_submit_html );
+		if ( 'responsive' === $case ) {
+			$html = str_replace( '</style>', '}</style>', $html );
+		}
+		$source = ( ( new $artifact_compiler() )->compile( array( 'entrypoint' => 'contact.html', 'files' => array( 'contact.html' => $html ) ) )->toArray() )['fallbacks'][0] ?? array();
+		$validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( array( 'forms' => array( $source ) ) );
+		$row = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => $validation['forms'] ?? array() ) )['forms'][0] ?? array();
+		$assert( empty( $validation['errors'] ) && $mapped === ( 'mapped' === ( $row['status'] ?? '' ) ) && ( ! $mapped || str_contains( $row['provider_layout_overlay_css']['css'] ?? '', $expected_css ) ), 'compiled-submit-flex-wrapper-' . $case, wp_json_encode( $row ) );
+	}
 	$submit_width_form = $presentation_form;
 	$submit_width_form['forms'][0]['presentation_graph']['controls'] = array( array( 'index' => 3, 'control' => $presentation_role( array( 'width' => '100%' ), array( 'width' ), 'button' ) ) );
 	$submit_width_validation = Static_Site_Importer_Entity_Materializer_Registry::validate_forms_manifest( $submit_width_form );

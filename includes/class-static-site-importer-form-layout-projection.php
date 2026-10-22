@@ -283,6 +283,56 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		);
 	}
 
+	/** Project a single-item flex row through the existing submit-row placement. */
+	private static function submit_flex_row( Static_Site_Importer_Form_Topology_State $s, array $chain, string $target ): ?array {
+		$inner = $chain[ count( $chain ) - 1 ];
+		$id    = $inner['id'];
+		$base  = $s->layout_by_node[ $id ] ?? array();
+		$properties = array( 'display', 'direction', 'justify_content', 'align_items' );
+		$nodes = $s->layout_nodes_by_id;
+		$rows  = array();
+		$variants = $s->variants_by_node[ $id ] ?? array();
+		// A different wrapper's conditional flow cannot be collapsed onto this row.
+		foreach ( $chain as $wrapper ) {
+			if ( $wrapper['id'] !== $id && ! empty( $s->variants_by_node[ $wrapper['id'] ] ) ) {
+				return null;
+			}
+		}
+		foreach ( array_merge( array( null ), $variants ) as $variant ) {
+			$layout = null === $variant ? $base : array_replace( $base, self::layout_patch( $variant ) );
+			$provenance = null === $variant ? ( $nodes[ $id ]['provenance'] ?? array() ) : ( $variant['provenance'] ?? array() );
+			if ( ! self::layout_facts_proven( $provenance, $variant['condition'] ?? null, null === $variant ? $base : self::layout_patch( $variant ) ) ) {
+				return null;
+			}
+			$align = array(
+				'flex-start' => 'left', 'start' => 'left', 'left' => 'left',
+				'flex-end' => 'right', 'end' => 'right', 'right' => 'right',
+				'center' => 'center', 'space-between' => 'left',
+				'space-around' => 'center', 'space-evenly' => 'center',
+			)[ $layout['justify_content'] ?? '' ] ?? null;
+			if ( ! in_array( $layout['display'] ?? '', array( 'flex', 'inline-flex' ), true )
+				|| 'row' !== ( $layout['direction'] ?? 'row' ) || null === $align
+				|| array_diff( array_keys( $layout ), array_merge( $properties, array_keys( Static_Site_Importer_Provider_Layout_Overlay::box_property_map() ) ) )
+			) {
+				return null;
+			}
+			$nodes[ $id ]['layout'] = array_diff_key( $layout, array_flip( $properties ) );
+			$nodes[ $id ]['presentation']['styles']['display'] = 'block';
+			$nodes[ $id ]['presentation']['styles']['text_align'] = $align;
+			$row = self::submit_block_row( $chain, $nodes );
+			if ( null === $row ) {
+				return null;
+			}
+			$rows[] = $row;
+		}
+		$s->suppressed_layout_properties[ $id ] = array_values( array_unique( array_merge( $s->suppressed_layout_properties[ $id ] ?? array(), $properties ) ) );
+		$s->class_carried_variants[ $id ] = array_merge( $s->class_carried_variants[ $id ] ?? array(), $properties );
+		foreach ( $variants as $index => $variant ) {
+			$s->responsive_variant_targets[] = array( 'node' => $target, 'condition' => $variant['condition'], 'layout_patch' => $rows[ $index + 1 ] );
+		}
+		return $rows[0];
+	}
+
 	/**
 	 * Once a submit's Core wrapper stands for its source block row, the wrapper
 	 * is that row's box and the inner link is the source button's box. Move the
@@ -715,7 +765,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 
 				$s->record( 'topology', 'provider_field_wrapper_class_projection', $outermost['id'] );
 
-				$row = self::submit_block_row( $chain, $s->layout_nodes_by_id );
+				$row = self::submit_block_row( $chain, $s->layout_nodes_by_id ) ?? self::submit_flex_row( $s, $chain, $outermost['id'] );
 				if ( null !== $row ) {
 					$s->provider_layout_targets[ $outermost['id'] ] = $button_hook;
 					$s->overlay_node_targets[]                      = array(
