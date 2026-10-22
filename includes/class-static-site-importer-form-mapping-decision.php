@@ -43,6 +43,38 @@ final class Static_Site_Importer_Form_Mapping_Decision {
 		);
 	}
 
+	/**
+	 * Append bounded receipt entries without discarding pre-existing overflow totals.
+	 * The one receipt bounder: it keeps 32 entries and, when a gate-required
+	 * loss overflows with none listed, lists it in the last slot so a decline
+	 * names its own reason.
+	 *
+	 * @internal
+	 */
+	public static function append_receipt_entries( array &$receipt, string $key, array $entries ): void {
+		$total_key             = 'operations' === $key ? 'operations_total' : 'losses_total';
+		$count_key             = 'operations' === $key ? 'operation_count' : 'loss_count';
+		$receipt[ $key ]       = isset( $receipt[ $key ] ) && is_array( $receipt[ $key ] ) ? $receipt[ $key ] : array();
+		$receipt[ $total_key ] = isset( $receipt[ $total_key ] ) ? (int) $receipt[ $total_key ] : count( $receipt[ $key ] );
+		foreach ( $entries as $entry ) {
+			if ( ! is_array( $entry ) ) {
+				continue;
+			}
+			++$receipt[ $total_key ];
+			if ( count( $receipt[ $key ] ) < 32 ) {
+				$receipt[ $key ][] = $entry;
+			} elseif ( 'losses' === $key && self::requires_gate( $entry ) ) {
+				$receipt['gate_required_loss_overflow_count'] = (int) ( $receipt['gate_required_loss_overflow_count'] ?? 0 ) + 1;
+				$receipt['gate_required_loss_overflow_hash']  = hash( 'sha256', (string) ( $receipt['gate_required_loss_overflow_hash'] ?? '' ) . wp_json_encode( $entry ) );
+				if ( ! array_filter( $receipt[ $key ], array( self::class, 'requires_gate' ) ) ) {
+					$receipt[ $key ][31] = $entry;
+				}
+			}
+		}
+		$receipt[ $count_key ] = min( 32, $receipt[ $total_key ] );
+		$receipt['truncated']  = ! empty( $receipt['truncated'] ) || (int) ( $receipt['operations_total'] ?? 0 ) > 32 || (int) ( $receipt['losses_total'] ?? 0 ) > 32;
+	}
+
 	/** Keep receipt overflow accounting and the support decision on the same policy. */
 	public static function requires_gate( array $loss ): bool {
 		return 'unsupported_control_unrepresentable' === ( $loss['reason_code'] ?? '' )

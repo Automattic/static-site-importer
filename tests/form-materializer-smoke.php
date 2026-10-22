@@ -4875,6 +4875,15 @@ namespace {
 	$textarea_overflow_losses[] = array( 'dimension' => 'control', 'reason_code' => 'textarea_height_omitted', 'omitted_count' => 1 );
 	$textarea_overflow_receipt  = Static_Site_Importer_Computed_Layout_Strategy::apply( array( 'topology_losses' => $textarea_overflow_losses ), array() )['receipt'];
 	$assert( 1 === ( $textarea_overflow_receipt['gate_required_loss_overflow_count'] ?? 0 ) && Static_Site_Importer_Form_Mapping_Decision::requires_gate( end( $textarea_overflow_losses ) ), 'computed-layout-gates-overflow-with-the-form-mapping-decision-policy', wp_json_encode( $textarea_overflow_receipt ) );
+	// Both receipt paths bound gated overflow identically: the overflowing gated loss takes the last slot.
+	$seeder_overflow_receipt = array();
+	Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries( $seeder_overflow_receipt, 'losses', $textarea_overflow_losses );
+	$bounded_losses = static function ( array $receipt ): array {
+		$facts = array_intersect_key( $receipt, array_flip( array( 'losses', 'losses_total', 'loss_count', 'truncated', 'gate_required_loss_overflow_count', 'gate_required_loss_overflow_hash' ) ) );
+		ksort( $facts );
+		return $facts;
+	};
+	$assert( 32 === count( $textarea_overflow_receipt['losses'] ) && 33 === $textarea_overflow_receipt['losses_total'] && end( $textarea_overflow_losses ) === $textarea_overflow_receipt['losses'][31] && $bounded_losses( $seeder_overflow_receipt ) === $bounded_losses( $textarea_overflow_receipt ), 'receipt-bounders-share-one-gated-overflow-policy', wp_json_encode( array( $textarea_overflow_receipt, $seeder_overflow_receipt ) ) );
 	$overflow_nodes = array();
 	for ( $receipt_index = 0; $receipt_index < 33; ++$receipt_index ) $overflow_nodes[] = $layout_node( 'wrapper-' . $receipt_index, array( 'display' => 'flex', 'direction' => 'row' ) );
 	$overflow_seed = Static_Site_Importer_Form_Seeder::seed( array( 'forms' => array( array( 'selector' => 'form.overflow', 'controls' => array( array( 'tag' => 'input', 'type' => 'number', 'label' => 'Guests', 'step' => '0.5' ), array( 'tag' => 'button', 'type' => 'submit', 'label' => 'Send' ) ), 'layout_graph' => $layout_graph( $overflow_nodes ) ) ) ) );
