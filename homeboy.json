@@ -205,6 +205,7 @@
           "tests/form-materializer-smoke.php",
           "tests/smoke-form-submit-box.php",
           "tests/smoke-form-submit-colors.php",
+          "tests/smoke-form-native-select.php",
           "tests/smoke-form-placeholder-colors.php",
           "tests/provider-adapter-runtime-smoke.php",
           "tests/provider-field-list-order.php",

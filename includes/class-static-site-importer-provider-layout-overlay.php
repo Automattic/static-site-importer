@@ -1259,6 +1259,11 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 		if ( preg_match( '/^(\.ssi-form-[a-f0-9]{12}(?:\.ssi-form-[a-f0-9]{12})? \.ssi-node-[a-f0-9]{12})::placeholder\{color:revert;opacity:revert\}$/D', $rule ) ) {
 			return true;
 		}
+		// Provider dropdown chrome may only be suppressed within a generated
+		// select hook. Do not admit arbitrary declarations on provider icons.
+		if ( preg_match( '/^\.ssi-form-[a-f0-9]{12} \.ssi-node-[a-f0-9]{12} \.jetpack-field-dropdown__icon\{display:none\}$/D', $rule ) ) {
+			return true;
+		}
 		$body = self::unwrap_condition( $rule );
 		if ( null !== $body ) {
 			return self::safe_compiled_rule( $body );

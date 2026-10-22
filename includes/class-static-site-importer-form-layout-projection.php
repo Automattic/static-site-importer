@@ -2210,10 +2210,21 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		// or none for a content-sized button), so the provider basis is
 		// released by a reset weaker than a captured flex fact on the submit
 		// node, which keeps an authored basis in charge.
-		$field_row_span               = 1 === preg_match( '/\.ssi-node-[a-f0-9]{12}-wrap\{[^}]*\bdisplay:grid\b/', $overlay['css'] )
+		$field_row_span = 1 === preg_match( '/\.ssi-node-[a-f0-9]{12}-wrap\{[^}]*\bdisplay:grid\b/', $overlay['css'] )
 			? '.' . $scope . ' .grunion-field-wrap > .ssi-field-row{grid-column:1 / -1}' . "\n"
 			: '';
-		$css                          = rtrim( $overlay['css'] ) . "\n." . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-hints{display:contents}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-format{display:none}' . "\n" . '.' . $scope . ' .ssi-field-row > label{margin-block-end:0}' . "\n" . '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}' . "\n" . '.' . $scope . ' div.form-button-submit{flex-basis:auto}' . "\n" . $field_row_span;
+		$css            = rtrim( $overlay['css'] ) . "\n." . $scope . ' .grunion-field-wrap .contact-form__input-error:not(.has-errors){display:none}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-hints{display:contents}' . "\n" . '.' . $scope . ' .grunion-field-wrap .contact-form__field-format{display:none}' . "\n" . '.' . $scope . ' .ssi-field-row > label{margin-block-end:0}' . "\n" . '.' . $scope . ' .grunion-field-wrap .grunion-field::placeholder{color:revert}' . "\n" . '.' . $scope . ' div.form-button-submit{flex-basis:auto}' . "\n" . $field_row_span;
+		// A restored native select appearance owns its arrow too. Suppress only the
+		// decoration inside that select's presentation hook, never provider-wide.
+		$select_icons = array();
+		if ( in_array( 'jetpack/field-select', $mapped_types, true ) && preg_match_all( '/\.' . preg_quote( $scope, '/' ) . '(?:\.' . preg_quote( $scope, '/' ) . ')? (\.ssi-node-[a-f0-9]{12}) select\{([^}]+)\}/', $overlay['css'], $select_rules, PREG_SET_ORDER ) ) {
+			foreach ( $select_rules as $select_rule ) {
+				if ( preg_match( '/(?:^|;)appearance:auto(?:!important)?(?:;|$)/', $select_rule[2] ) ) {
+					$select_icons[ $select_rule[1] ] = '.' . $scope . ' ' . $select_rule[1] . ' .jetpack-field-dropdown__icon{display:none}' . "\n";
+				}
+			}
+		}
+		$css                         .= implode( '', $select_icons );
 		$overlay['css']               = $css;
 		$overlay['overlay']['css']    = $css;
 		$overlay['overlay']['sha256'] = hash( 'sha256', $css );
