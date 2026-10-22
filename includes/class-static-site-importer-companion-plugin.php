@@ -1621,6 +1621,27 @@ $content     = preg_replace_callback(
 	},
 	$content
 ) ?? '';
+// SVG data URLs are only shielded for <img>/<source> src: browsers render SVG
+// in image context as a static document with scripts and external resources
+// disabled. Links, frames, objects, embeds and media src keep rejecting data:.
+$content = preg_replace_callback(
+	'#<(?:img|source)\b[^>]*>#i',
+	static function ( array $tag ) use ( &$data_images ): string {
+		return preg_replace_callback(
+			'/(?<=\s)src\s*=\s*(["\'])(data:image\/svg\+xml(?:;base64,[a-z0-9+\/=]+|;charset=utf-?8,[^\s"\'<>&\\\\]*|,[^\s"\'<>&\\\\]*))\1/i',
+			static function ( array $match ) use ( &$data_images ): string {
+				if ( strlen( $match[2] ) > 1048576 ) {
+					return $match[0];
+				}
+				$placeholder                 = '/ssi-data-image-' . hash( 'sha256', $match[2] ) . '.invalid';
+				$data_images[ $placeholder ] = $match[2];
+				return 'src=' . $match[1] . $placeholder . $match[1];
+			},
+			$tag[0]
+		) ?? $tag[0];
+	},
+	$content
+) ?? '';
 
 $global = array(
 	'aria-controls' => true, 'aria-current' => true, 'aria-describedby' => true, 'aria-details' => true,
