@@ -419,12 +419,15 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			$status  = 'updated';
 		}
 
-		$variants = $manifest_product['variants'] ?? array();
-		$variable = ! empty( $variants );
-		if ( $variable && ! $product instanceof WC_Product_Variable ) {
-			$product = new WC_Product_Variable( $existing instanceof WP_Post ? $existing->ID : 0 );
-		} elseif ( ! $variable && ! $product instanceof WC_Product_Simple ) {
-			$product = new WC_Product_Simple( $existing instanceof WP_Post ? $existing->ID : 0 );
+		$variants    = $manifest_product['variants'] ?? array();
+		$variable    = ! empty( $variants );
+		$existing_id = $existing instanceof WP_Post ? $existing->ID : 0;
+		if ( $variable ) {
+			if ( ! $product instanceof WC_Product_Variable ) {
+				$product = new WC_Product_Variable( $existing_id );
+			}
+		} elseif ( ! $product instanceof WC_Product_Simple ) {
+			$product = new WC_Product_Simple( $existing_id );
 		}
 
 		$product_id          = 0;
@@ -541,10 +544,10 @@ class Static_Site_Importer_Woo_Product_Seeder {
 							'term_id'  => (int) $term['term_id'],
 						);
 					}
-					$tag_ids[] = is_array( $term ) ? (int) $term['term_id'] : (int) $term;
+					$tag_ids[] = (int) $term['term_id'];
 				}
 				$assigned = wp_set_object_terms( $product_id, $tag_ids, 'product_tag' );
-				if ( is_wp_error( $assigned ) || false === $assigned ) {
+				if ( is_wp_error( $assigned ) ) {
 					// ssi-error-class: operational
 					throw new RuntimeException( 'Product tags could not be assigned.' );
 				}
@@ -633,7 +636,13 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		}
 	}
 
-	/** A duplicate merchant SKU is a field loss, not a failed product. */
+	/**
+	 * A duplicate merchant SKU is a field loss, not a failed product.
+	 *
+	 * @param WC_Product           $product Product or variation receiving the SKU.
+	 * @param array<string, mixed> $row     Manifest product or variant row.
+	 * @param array<int, array>    $losses  Field losses, by reference.
+	 */
 	private static function apply_sku( object $product, array $row, array &$losses ): void {
 		if ( ! array_key_exists( 'sku', $row ) ) {
 			return;
