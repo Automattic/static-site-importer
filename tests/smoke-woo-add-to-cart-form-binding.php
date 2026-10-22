@@ -1,16 +1,52 @@
 <?php
-/** Product-detail form binding regression without WordPress. */
+/**
+ * Product-detail form binding regression without WordPress.
+ *
+ * @package StaticSiteImporter
+ */
+
 define( 'ABSPATH', dirname( __DIR__ ) . '/' );
-function apply_filters( string $hook, mixed $value ): mixed {
+/**
+ * Return the unchanged filter value in this standalone fixture.
+ *
+ * @param string $hook Filter name.
+ * @param mixed  $value Filter value.
+ * @param mixed  ...$args Additional filter arguments.
+ */
+function apply_filters( string $hook, mixed $value, mixed ...$args ): mixed { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- Match the WordPress filter API.
 	return $value; }
+/**
+ * Encode fixture metadata without loading WordPress.
+ *
+ * @param mixed $value Fixture metadata.
+ * @param int   $flags Encoding flags.
+ * @param int   $depth Maximum depth.
+ * @phpstan-param int<1, max> $depth
+ */
+function wp_json_encode( mixed $value, int $flags = 0, int $depth = 512 ): string|false {
+	return json_encode( $value, $flags, $depth ); // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Test-local WordPress stub.
+}
+/** Serialize the fixture's leaf HTML blocks.
+ *
+ * @param array<int,array<string,mixed>> $blocks Fixture blocks.
+ */
+function serialize_blocks( array $blocks ): string {
+	return implode( '', array_column( $blocks, 'innerHTML' ) );
+}
 require_once ABSPATH . 'includes/class-static-site-importer-entity-materializer-registry.php';
 require_once ABSPATH . 'includes/class-static-site-importer-woo-product-seeder.php';
 require_once ABSPATH . 'includes/class-static-site-importer-product-finding-materializer.php';
 require_once ABSPATH . 'includes/class-static-site-importer-import-report.php';
 require_once ABSPATH . 'includes/class-static-site-importer-quality-gates.php';
+/**
+ * Fail this standalone regression with a useful message.
+ *
+ * @param bool   $condition Assertion result.
+ * @param string $message Failure message.
+ */
 function check( bool $condition, string $message ): void {
 	if ( ! $condition ) {
-		fwrite( STDERR, $message . "\n" );
+		fwrite( STDERR, $message . "\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- CLI test failure.
 		exit( 1 );
 	}
 }
@@ -119,7 +155,7 @@ foreach ( array( true, false ) as $seeded ) {
 		$classic = Static_Site_Importer_Woo_Product_Seeder::binding_classic_render( array( 'entity_kind' => 'add_to_cart_form' ), array( 'id' => 42 ) );
 		check( str_contains( $classic['content'], 'show_price="false"' ), 'Classic equivalent' );
 	} else {
-		check( $content === $original, 'Unmatched source unchanged' );
+		check( $original === $content, 'Unmatched source unchanged' );
 	}
 	$report                = Static_Site_Importer_Import_Report::from_array( array() );
 	$report['diagnostics'] = array( $fallback, $contact );
@@ -132,10 +168,104 @@ foreach ( array( true, false ) as $seeded ) {
 	);
 	Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $report );
 	$resolution = $report['fallback_reconciliation']['resolutions'][0];
-	check( $resolution['state'] === ( $seeded ? 'resolved_by_provider' : 'unresolved' ), 'Receipt state' );
+	check( ( $seeded ? 'resolved_by_provider' : 'unresolved' ) === $resolution['state'], 'Receipt state' );
 	check( 'unresolved' === $report['fallback_reconciliation']['resolutions'][1]['state'], 'Contact fallback not reconciled by commerce' );
 	if ( ! $seeded ) {
 		check( 'no_seeded_product_for_page' === $resolution['reason'], 'Explicit unmatched reason' );
+	}
+}
+// Real producer topology: related cards share the page source, but are not its product.
+$page_product                         = $product;
+$page_product['source_path']          = 'products/shirt.html';
+$readable_form                        = '<!-- wp:html --><form action="/cart/add"><input name="quantity" type="number"><button>Add</button></form><!-- /wp:html -->';
+$readable_fallback                    = $fallback;
+$readable_fallback['controls']        = array(
+	array(
+		'type' => 'number',
+		'name' => 'quantity',
+	),
+);
+$readable_fallback['bindings']        = 0;
+$readable_fallback['readable_blocks'] = array(
+	array(
+		'blockName'    => 'core/html',
+		'attrs'        => array(),
+		'innerBlocks'  => array(),
+		'innerHTML'    => $readable_form,
+		'innerContent' => array( $readable_form ),
+	),
+);
+foreach ( array( false, true ) as $ambiguous ) {
+	$products = array( $page_product );
+	$rows     = array(
+		array(
+			'slug'   => 'shirt',
+			'id'     => 42,
+			'status' => 'created',
+		),
+	);
+	foreach ( array( 'hat', 'scarf' ) as $index => $slug ) {
+		$products[] = array(
+			'slug'        => $slug,
+			'source_path' => 'products/shirt.html',
+			'selector'    => '.related .card-' . $slug,
+			'bindings'    => array(
+				array(
+					'source_path'         => 'products/shirt.html',
+					'search_block_markup' => '<p>' . $slug . '</p>',
+					'occurrence'          => 1,
+				),
+			),
+		);
+		$rows[]     = array(
+			'slug'   => $slug,
+			'id'     => 43 + $index,
+			'status' => 'created',
+		);
+	}
+	if ( $ambiguous ) {
+		$products[] = array(
+			'slug'        => 'other-shirt',
+			'source_path' => 'products/shirt.html',
+		);
+		$rows[]     = array(
+			'slug'   => 'other-shirt',
+			'id'     => 45,
+			'status' => 'created',
+		);
+	}
+	$card_lifecycle = $lifecycle;
+	$card_lifecycle['entities']['catalog']['manifest']['products'] = $products;
+	$card_reports = array( 'catalog' => array( 'products' => $rows ) );
+	$bound        = Static_Site_Importer_Entity_Materializer_Registry::with_product_form_bindings( $card_lifecycle, $card_reports, array( $readable_fallback ) );
+	$identity     = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $readable_fallback );
+	check( isset( $bound['entities'][ $identity ] ) === ! $ambiguous, 'Only a unique page-level product binds despite related cards' );
+	$form_bindings = array();
+	$content       = $readable_form;
+	if ( ! $ambiguous ) {
+		$form_bindings = Static_Site_Importer_Entity_Materializer_Registry::block_bindings( array( 'entities' => array( $identity => $bound['entities'][ $identity ] ) ), $card_reports );
+		check( 1 === count( $form_bindings ) && $readable_form === $form_bindings[0]['search_block_markup'] && str_contains( $form_bindings[0]['replacement_block_markup'], '"productId":42' ), 'Readable-only form targets page product' );
+		$content                                       = $form_bindings[0]['replacement_block_markup'];
+		$form_bindings[0]['status']                    = 'completed';
+		$form_bindings[0]['persisted_fragment_hash']   = $form_bindings[0]['materialized_block_hash'];
+		$form_bindings[0]['materialized_content_hash'] = hash( 'sha256', $content );
+	}
+	$report                            = Static_Site_Importer_Import_Report::from_array( array() );
+	$report['diagnostics']             = array( $readable_fallback );
+	$report['materialization_receipt'] = array(
+		'completed' => array(
+			'runtime_declarations' => array(
+				'entities'        => $card_reports,
+				'entity_bindings' => $form_bindings,
+			),
+			'materialized_pages'   => array( 'products/shirt.html' => array( 'content_hash' => hash( 'sha256', $content ) ) ),
+		),
+	);
+	Static_Site_Importer_Quality_Gates::reconcile_provider_materialized_fallbacks( $report );
+	$resolution = $report['fallback_reconciliation']['resolutions'][0];
+	check( ( $ambiguous ? 'unresolved' : 'resolved_by_provider' ) === $resolution['state'], 'Readable-only form receipt state' );
+	if ( $ambiguous ) {
+		check( $readable_form === $content && 'ambiguous_page_product' === $resolution['reason'], 'Ambiguous form preserved with explicit reason' );
 	}
 }
 // A different source page can still match by producer variant identity, never by text.

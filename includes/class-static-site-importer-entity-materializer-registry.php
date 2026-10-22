@@ -1127,8 +1127,10 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					}
 					$candidate = array( $prepared['adapter'], $result );
 					foreach ( array( 'source_page', 'source_path', 'url' ) as $field ) {
-						if ( is_string( $product[ $field ] ?? null ) && '' !== $source && self::product_page_key( $source ) === self::product_page_key( $product[ $field ] ) ) {
-							$matches[0][ (string) $result['id'] ] = $candidate;
+						// Card/grid occurrences share the page source, not its product identity.
+						if ( empty( $product['selector'] ) && empty( $product['bindings'] ) && is_string( $product[ $field ] ?? null ) && '' !== $source && self::product_page_key( $source ) === self::product_page_key( $product[ $field ] ) ) {
+							$matches[0][] = $candidate;
+							break;
 						}
 					}
 					foreach ( $fallback['controls'] ?? array() as $control ) {
@@ -1144,6 +1146,11 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 						}
 					}
 				}
+			}
+			if ( 1 < count( $matches[0] ) ) {
+				$id             = Static_Site_Importer_Form_Fallback_Contract::reconciliation_identity( $fallback );
+				$reports[ $id ] = array( 'product_form_binding_reason' => 'ambiguous_page_product' );
+				continue;
 			}
 			$match = empty( $matches[0] ) ? $matches[1] : $matches[0];
 			if ( 1 !== count( $match ) ) {

@@ -723,6 +723,10 @@ final class Static_Site_Importer_Quality_Gates {
 			}
 			$resolved_by_provider = self::receipt_resolves_fallback( $receipt, $identity, $fallback_hash, $source_path, $report, $shared_hashes );
 			$reason               = ! $resolved_by_provider && 'commerce_add_to_cart' === Static_Site_Importer_Form_Fallback_Contract::intent( $diagnostic ) ? ( empty( $receipt ) ? 'no_seeded_product_for_page' : 'provider_replacement_not_persisted' ) : '';
+			$binding_reason       = $report['materialization_receipt']['completed']['runtime_declarations']['entities'][ $identity ]['product_form_binding_reason'] ?? '';
+			if ( ! $resolved_by_provider && 'commerce_add_to_cart' === Static_Site_Importer_Form_Fallback_Contract::intent( $diagnostic ) && 'ambiguous_page_product' === $binding_reason ) {
+				$reason = $binding_reason;
+			}
 
 			$diagnostic['fallback_reconciliation_identity'] = $identity;
 			$diagnostic['fallback_hash']                    = $fallback_hash;

@@ -76,8 +76,8 @@ class Static_Site_Importer_Form_Fallback_Contract {
 			'method'              => $manifest['form']['method'] ?? '',
 			'controls'            => array_map( static fn ( array $control ): array => array_intersect_key( $control, array_flip( array( 'tag', 'type', 'name', 'id', 'label' ) ) ), $manifest['controls'] ),
 			'submit_text'         => is_array( $submit ) ? ( $submit['text'] ?? '' ) : '',
-			'context_before_hash' => hash( 'sha256', (string) json_encode( $before ) /* phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode */ ),
-			'context_after_hash'  => hash( 'sha256', (string) json_encode( $after ) /* phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode */ ),
+			'context_before_hash' => hash( 'sha256', (string) wp_json_encode( $before ) ),
+			'context_after_hash'  => hash( 'sha256', (string) wp_json_encode( $after ) ),
 		);
 		$stored_heights      = array_slice( $heights, 0, 16, true );
 		$omitted             = isset( $form['textarea_height_omitted_count'] ) && is_int( $form['textarea_height_omitted_count'] )
@@ -89,7 +89,7 @@ class Static_Site_Importer_Form_Fallback_Contract {
 				'schema'                        => 'generic/form-presentation/v1',
 				'selector'                      => $selector,
 				'document_ordinal'              => $occurrence > 0 ? $occurrence : null,
-				'fingerprint'                   => hash( 'sha256', (string) json_encode( $fingerprint ) /* phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode */ ),
+				'fingerprint'                   => hash( 'sha256', (string) wp_json_encode( $fingerprint ) ),
 				'context_before'                => array_slice( $before, 0, 8 ),
 				'context_after'                 => array_slice( $after, 0, 8 ),
 				'unrepresented_context_count'   => max( 0, min( 8, $unrepresented_count ) ),
@@ -167,7 +167,7 @@ class Static_Site_Importer_Form_Fallback_Contract {
 	/** @param array<string,mixed> $fallback */
 	public static function reconciliation_hash( array $fallback ): string {
 		$source = isset( $fallback['form'] ) || isset( $fallback['controls'] )
-			? json_encode( // phpcs:ignore WordPress.WP.AlternativeFunctions.json_encode_json_encode -- Canonical scalar producer metadata; also used before WordPress loads.
+			? wp_json_encode(
 				self::canonical_value(
 					self::normalize_form_metadata( $fallback )
 				)
