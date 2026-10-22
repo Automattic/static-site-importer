@@ -308,9 +308,9 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		foreach ( array_reverse( $report['rollback']['created_variations'] ?? array() ) as $variation_id ) {
 			if ( get_post( (int) $variation_id ) && ! wp_delete_post( (int) $variation_id, true ) ) {
 				$failures[] = array(
-'product_id' => $variation_id,
-'failures' => array( 'variation_delete_failed' )
-);
+					'product_id' => $variation_id,
+					'failures'   => array( 'variation_delete_failed' ),
+				);
 			}
 		}
 		foreach ( array_reverse( $report['products'] ?? array() ) as $row ) {
@@ -389,12 +389,12 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	/**
 	 * Create or update one product.
 	 *
-	 * @param array<string, mixed>  $manifest_product     Validated product manifest row.
-	 * @param array<int, int>       $created_terms        Term ids created so far this run, by reference.
+	 * @param array<string, mixed>      $manifest_product     Validated product manifest row.
+	 * @param array<int, int>           $created_terms        Term ids created so far this run, by reference.
 	 * @param array<string, mixed>|null $before           Prior product state for an existing product.
-	 * @param array<string, mixed>  $args                 Import-scoped context (see seed()).
-	 * @param array<int, int>       $created_attachments  Attachment ids created so far this run, by reference.
-	 * @param array<string, array>  $created_attributes   Global attributes and attribute terms created so far this run, by reference.
+	 * @param array<string, mixed>      $args                 Import-scoped context (see seed()).
+	 * @param array<int, int>           $created_attachments  Attachment ids created so far this run, by reference.
+	 * @param array<string, array>      $created_attributes   Global attributes and attribute terms created so far this run, by reference.
 	 * @return array<string, mixed>
 	 */
 	private static function seed_product( array $manifest_product, array &$created_terms = array(), ?array $before = null, array $args = array(), array &$created_attachments = array(), array &$created_attributes = array(), array &$created_variations = array() ): array {
@@ -475,10 +475,10 @@ class Static_Site_Importer_Woo_Product_Seeder {
 						$gallery_ids[] = $id;
 					} else {
 						$losses[] = array(
-'dimension' => 'product',
-'reason_code' => 'unsupported_control_attribute',
-'attribute' => 'images'
-);
+							'dimension'   => 'product',
+							'reason_code' => 'unsupported_control_attribute',
+							'attribute'   => 'images',
+						);
 					}
 				}
 				$product->set_gallery_image_ids( array_values( array_unique( $gallery_ids ) ) );
@@ -537,9 +537,9 @@ class Static_Site_Importer_Woo_Product_Seeder {
 							throw new RuntimeException( $term->get_error_message() );
 						}
 						$created_attributes['terms'][] = array(
-'taxonomy' => 'product_tag',
-'term_id' => (int) $term['term_id']
-);
+							'taxonomy' => 'product_tag',
+							'term_id'  => (int) $term['term_id'],
+						);
 					}
 					$tag_ids[] = is_array( $term ) ? (int) $term['term_id'] : (int) $term;
 				}
@@ -569,10 +569,10 @@ class Static_Site_Importer_Woo_Product_Seeder {
 						$variation->set_image_id( $id );
 					} else {
 						$losses[] = array(
-'dimension' => 'product',
-'reason_code' => 'unsupported_control_attribute',
-'attribute' => 'variants.image'
-);
+							'dimension'   => 'product',
+							'reason_code' => 'unsupported_control_attribute',
+							'attribute'   => 'variants.image',
+						);
 					}
 				}
 				$id = (int) $variation->save();
@@ -646,11 +646,11 @@ class Static_Site_Importer_Woo_Product_Seeder {
 			}
 			$product->set_sku( '' );
 			$losses[] = array(
-'dimension' => 'product',
-'reason_code' => 'unsupported_control_attribute',
-'attribute' => 'sku',
-'sku' => $row['sku']
-);
+				'dimension'   => 'product',
+				'reason_code' => 'unsupported_control_attribute',
+				'attribute'   => 'sku',
+				'sku'         => $row['sku'],
+			);
 		}
 	}
 
@@ -700,9 +700,9 @@ class Static_Site_Importer_Woo_Product_Seeder {
 		if ( is_wp_error( $terms ) ) {
 			$failures[] = 'product_terms_restore_failed'; }
 		foreach ( array(
-'product_tag' => 'tags',
-'product_type' => 'product_type'
-) as $taxonomy => $key ) {
+			'product_tag'  => 'tags',
+			'product_type' => 'product_type',
+		) as $taxonomy => $key ) {
 			if ( taxonomy_exists( $taxonomy ) && is_wp_error( wp_set_object_terms( $product_id, array_map( 'intval', $before[ $key ] ?? array() ), $taxonomy ) ) ) {
 				$failures[] = 'product_terms_restore_failed';
 			}
@@ -876,11 +876,11 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	 * attachment: an already-materialized attachment for this exact source is
 	 * found and reused before anything new is created.
 	 *
-	 * @param string                $source               Artifact-relative manifest `image` source path.
-	 * @param string                $alt                  Manifest `image_alt` text, if any.
-	 * @param string                $product_name         Product name, used as a title fallback.
-	 * @param array<string, mixed>  $args                 Import-scoped context (see seed()).
-	 * @param array<int, int>       $created_attachments  Attachment ids created so far this run, by reference.
+	 * @param string               $source               Artifact-relative manifest `image` source path.
+	 * @param string               $alt                  Manifest `image_alt` text, if any.
+	 * @param string               $product_name         Product name, used as a title fallback.
+	 * @param array<string, mixed> $args                 Import-scoped context (see seed()).
+	 * @param array<int, int>      $created_attachments  Attachment ids created so far this run, by reference.
 	 * @return int Attachment post id, or 0 when the image could not be resolved.
 	 */
 	private static function resolve_product_image_attachment( string $source, string $alt, string $product_name, array $args, array &$created_attachments ): int {
@@ -1051,7 +1051,7 @@ class Static_Site_Importer_Woo_Product_Seeder {
 	 * Ensure product categories exist and return term IDs.
 	 *
 	 * @param array<int, string> $category_names Category names.
-	 * @param array<int, int> $created_terms Created term IDs, updated by reference.
+	 * @param array<int, int>    $created_terms Created term IDs, updated by reference.
 	 * @return array<int, int>|WP_Error
 	 */
 	private static function ensure_category_ids( array $category_names, array &$created_terms = array() ) {
