@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Request information</title>
+<style>
+form { display:flex; flex-direction:column; gap:16px; max-width:320px; }
+select { appearance:auto; width:100%; height:40px; padding:8px; }
+</style></head>
+<body><form action="/contact" method="post">
+<label for="topic">Topic</label>
+<select id="topic" name="topic"><option value="general">General question</option><option value="support">Support</option></select>
+<button type="submit">Send</button>
+</form></body></html>
