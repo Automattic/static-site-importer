@@ -255,17 +255,8 @@ final class Static_Site_Importer_Form_Grid_Placement {
 				if ( ! is_array( $fact ) || ! in_array( 'display', $fact['properties'] ?? array(), true ) ) {
 					continue;
 				}
-				$selector       = is_string( $fact['selector'] ?? null ) ? $fact['selector'] : '';
-				$matches_source = false;
-				if ( null === ( $fact['condition'] ?? null ) && Static_Site_Importer_Form_Layout_Projection::is_class_only_selector( $selector ) ) {
-					foreach ( $source_classes as $source_class ) {
-						if ( is_string( $source_class ) && '' !== $source_class && preg_match( '/\.' . preg_quote( $source_class, '/' ) . '(?![a-zA-Z0-9_-])/', $selector ) ) {
-							$matches_source = true;
-							break;
-						}
-					}
-				}
-				if ( ! $matches_source ) {
+				$selector = is_string( $fact['selector'] ?? null ) ? $fact['selector'] : '';
+				if ( null !== ( $fact['condition'] ?? null ) || ! Static_Site_Importer_Form_Layout_Projection::class_only_selector_names( $selector, $source_classes ) ) {
 					$class_proven = false;
 					break;
 				}

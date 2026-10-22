@@ -776,23 +776,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				// through the projected classes, so it needs no generated overlay target.
 				$class_tokens = self::class_tokens( $node );
 				$provenance   = $s->layout_nodes_by_id[ $node['id'] ]['provenance'] ?? array();
-				$class_owned  = ! empty( $s->layout_by_node[ $node['id'] ] ?? array() ) && ! empty( $provenance );
-				foreach ( $provenance as $provenance_row ) {
-					$selector      = is_array( $provenance_row ) && is_string( $provenance_row['selector'] ?? null ) ? $provenance_row['selector'] : '';
-					$matches_class = false;
-					if ( self::is_class_only_selector( $selector ) ) {
-						foreach ( $class_tokens as $class_token ) {
-							if ( preg_match( '/\.' . preg_quote( $class_token, '/' ) . '(?![a-zA-Z0-9_-])/', $selector ) ) {
-								$matches_class = true;
-								break;
-							}
-						}
-					}
-					if ( ! $matches_class ) {
-						$class_owned = false;
-						break;
-					}
-				}
+				$class_owned  = ! empty( $s->layout_by_node[ $node['id'] ] ?? array() ) && self::class_owns_rows( $provenance, $class_tokens );
 				if ( $class_owned ) {
 					$s->represented_layout_nodes[] = $node['id'];
 				} elseif ( 0 === $offset && $is_primary_wrapper && array() !== $class_tokens ) {
@@ -800,28 +784,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 					// primary box as its own element carrying its source classes, so a
 					// source rule whose subject is those classes already paints it there;
 					// repeating the box on the provider shell would double it.
-					$class_carried = self::class_carried_box_facts( $s->layout_by_node[ $node['id'] ] ?? array(), $provenance, $class_tokens );
-					foreach ( $s->variants_by_node[ $node['id'] ] ?? array() as $variant ) {
-						$patch = self::layout_patch( $variant );
-						foreach ( array_keys( array_intersect_key( $patch, Static_Site_Importer_Provider_Layout_Overlay::box_property_map() ) ) as $fact ) {
-							// A conditional box patch is carried only when its own rule is too.
-							$rows = array_map( static fn( $row ): mixed => is_array( $row ) ? array_merge( $row, array( 'condition' => null ) ) : $row, is_array( $variant['provenance'] ?? null ) ? $variant['provenance'] : array() );
-							if ( array( $fact ) === self::class_carried_box_facts( array( $fact => $patch[ $fact ] ), $rows, $class_tokens ) ) {
-								$s->class_carried_variants[ $node['id'] ][] = $fact;
-							} else {
-								$class_carried = array_values( array_diff( $class_carried, array( $fact ) ) );
-							}
-						}
-					}
-					if ( array() !== $class_carried ) {
-						$s->suppressed_layout_properties[ $node['id'] ] = array_values( array_unique( array_merge( $s->suppressed_layout_properties[ $node['id'] ] ?? array(), $class_carried ) ) );
-						$s->layout_by_node[ $node['id'] ]               = array_diff_key( $s->layout_by_node[ $node['id'] ] ?? array(), array_flip( $class_carried ) );
-						$s->operations[]                                = array(
-							'dimension'   => 'layout',
-							'strategy'    => 'provider_source_box_class_carry',
-							'target_hash' => hash( 'sha256', $node['id'] ),
-						);
-					}
+					self::carry_class_owned_facts( $s, $node['id'], $provenance, $class_tokens, Static_Site_Importer_Provider_Layout_Overlay::box_property_map(), 'provider_source_box_class_carry' );
 				}
 			}
 			$s->field_blocks[ $control_index ]['attrs']['className'] = trim( (string) preg_replace( '/\s+/', ' ', implode( ' ', array_filter( $class_names ) ) ) );
@@ -852,13 +815,27 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			return;
 		}
 		$properties = array_intersect_key( Static_Site_Importer_Provider_Layout_Overlay::layout_property_map(), array_flip( self::MARGIN_SIDE_FACTS ) );
-		$carried    = self::class_carried_box_facts( $s->layout_by_node[ $control_id ] ?? array(), $s->layout_nodes_by_id[ $control_id ]['provenance'] ?? array(), $class_tokens, $properties );
-		foreach ( $s->variants_by_node[ $control_id ] ?? array() as $variant ) {
+		self::carry_class_owned_facts( $s, $control_id, $s->layout_nodes_by_id[ $control_id ]['provenance'] ?? array(), $class_tokens, $properties, 'provider_parent_class_carried_control_spacing' );
+	}
+
+	/**
+	 * Leave a node's class-owned facts to the source stylesheet. A fact is
+	 * carried when every rule setting it selects the node by classes the
+	 * restored element keeps; a conditional patch only when its own rule is too.
+	 * Carried facts are suppressed from the overlay and recorded once.
+	 *
+	 * @param array<int,mixed>     $provenance   The node's base provenance rows.
+	 * @param array<int,string>    $class_tokens Classes the restored element carries.
+	 * @param array<string,string> $properties   Fact => CSS property eligible for carry.
+	 */
+	private static function carry_class_owned_facts( Static_Site_Importer_Form_Topology_State $s, string $node_id, array $provenance, array $class_tokens, array $properties, string $strategy ): void {
+		$carried = self::class_carried_box_facts( $s->layout_by_node[ $node_id ] ?? array(), $provenance, $class_tokens, $properties );
+		foreach ( $s->variants_by_node[ $node_id ] ?? array() as $variant ) {
 			$patch = self::layout_patch( $variant );
 			foreach ( array_keys( array_intersect_key( $patch, $properties ) ) as $fact ) {
 				$rows = array_map( static fn( $row ): mixed => is_array( $row ) ? array_merge( $row, array( 'condition' => null ) ) : $row, is_array( $variant['provenance'] ?? null ) ? $variant['provenance'] : array() );
 				if ( array( $fact ) === self::class_carried_box_facts( array( $fact => $patch[ $fact ] ), $rows, $class_tokens, $properties ) ) {
-					$s->class_carried_variants[ $control_id ][] = $fact;
+					$s->class_carried_variants[ $node_id ][] = $fact;
 				} else {
 					$carried = array_values( array_diff( $carried, array( $fact ) ) );
 				}
@@ -867,12 +844,12 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		if ( array() === $carried ) {
 			return;
 		}
-		$s->suppressed_layout_properties[ $control_id ] = array_values( array_unique( array_merge( $s->suppressed_layout_properties[ $control_id ] ?? array(), $carried ) ) );
-		$s->layout_by_node[ $control_id ]               = array_diff_key( $s->layout_by_node[ $control_id ] ?? array(), array_flip( $carried ) );
-		$s->operations[]                                = array(
+		$s->suppressed_layout_properties[ $node_id ] = array_values( array_unique( array_merge( $s->suppressed_layout_properties[ $node_id ] ?? array(), $carried ) ) );
+		$s->layout_by_node[ $node_id ]               = array_diff_key( $s->layout_by_node[ $node_id ] ?? array(), array_flip( $carried ) );
+		$s->operations[]                             = array(
 			'dimension'   => 'layout',
-			'strategy'    => 'provider_parent_class_carried_control_spacing',
-			'target_hash' => hash( 'sha256', $control_id ),
+			'strategy'    => $strategy,
+			'target_hash' => hash( 'sha256', $node_id ),
 		);
 	}
 
@@ -1056,14 +1033,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$class_tokens = array();
 			}
 			$facts       = array_merge( $s->layout_nodes_by_id[ $node['id'] ]['provenance'] ?? array(), ...array_map( static fn ( array $variant ): array => is_array( $variant['provenance'] ?? null ) ? $variant['provenance'] : array(), $s->variants_by_node[ $node['id'] ] ?? array() ) );
-			$class_owned = ! empty( $facts );
-			foreach ( $facts as $fact ) {
-				$selector = is_array( $fact ) && is_string( $fact['selector'] ?? null ) ? $fact['selector'] : '';
-				if ( ! self::is_class_only_selector( $selector ) || ! array_filter( $class_tokens, static fn ( string $class_name ): bool => '' !== $class_name && (bool) preg_match( '/\.' . preg_quote( $class_name, '/' ) . '(?![a-zA-Z0-9_-])/', $selector ) ) ) {
-					$class_owned = false;
-					break;
-				}
-			}
+			$class_owned = self::class_owns_rows( $facts, $class_tokens );
 			if ( ! $class_owned && null === self::display_from_class_tokens( $class_tokens ) ) {
 				continue;
 			}
@@ -2985,6 +2955,41 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 */
 	public static function is_class_only_selector( string $selector ): bool {
 		return 1 === preg_match( '/^(?:[a-z][a-z0-9-]*)?(?:\.[a-zA-Z][a-zA-Z0-9_-]*)+$/D', $selector );
+	}
+
+	/**
+	 * A class-only selector naming at least one of an element's classes, so the
+	 * element keeps the rule wherever it keeps those classes.
+	 *
+	 * @param array<int,mixed> $class_tokens
+	 * @internal
+	 */
+	public static function class_only_selector_names( string $selector, array $class_tokens ): bool {
+		if ( ! self::is_class_only_selector( $selector ) ) {
+			return false;
+		}
+		foreach ( $class_tokens as $class_token ) {
+			if ( is_string( $class_token ) && '' !== $class_token && preg_match( '/\.' . preg_quote( $class_token, '/' ) . '(?![a-zA-Z0-9_-])/', $selector ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Whether every provenance row is a class-only selector naming one of the
+	 * element's classes. No rows prove nothing.
+	 *
+	 * @param array<int,mixed> $rows
+	 * @param array<int,mixed> $class_tokens
+	 */
+	private static function class_owns_rows( array $rows, array $class_tokens ): bool {
+		foreach ( $rows as $row ) {
+			if ( ! self::class_only_selector_names( is_array( $row ) && is_string( $row['selector'] ?? null ) ? $row['selector'] : '', $class_tokens ) ) {
+				return false;
+			}
+		}
+		return array() !== $rows;
 	}
 
 	/**
