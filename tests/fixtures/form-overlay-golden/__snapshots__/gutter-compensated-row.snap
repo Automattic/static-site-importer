@@ -19,13 +19,12 @@ sha256: eb1177b7a5614e69cd5e01049421ebed4f5dfd4791454f4d985314c5fb23075b
 .ssi-form-d095fee786e4 div.form-button-submit{flex-basis:auto}
 
 === editor_css ===
-sha256: 2003292e04888db61d6357df89cd806898e0ed76440c467011246c1f4195a089
-/* Static Site Importer editor control chrome: 0e283de86985 */
+sha256: 3d72b9136bfebcf2f42cb4a6cbed96b970cafdb74cee282e6cefddef8e0b2abd
+/* Static Site Importer editor control chrome: d01453adb9fb */
 .editor-styles-wrapper .ssi-form-d095fee786e4{display:flex;flex-wrap:wrap;justify-content:flex-start;align-items:flex-start}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-c0ec220a2ba5{width:calc(50% - 8px);flex-grow:0;flex-shrink:0;flex-basis:calc(50% - 8px);margin-right:16px}
 .editor-styles-wrapper .ssi-form-d095fee786e4 .ssi-node-8f1f8757437f{width:calc(50% - 8px);flex-grow:0;flex-shrink:0;flex-basis:calc(50% - 8px)}
 .editor-styles-wrapper .ssi-form-d095fee786e4{position:relative;z-index:1;pointer-events:auto}
-.editor-styles-wrapper .ssi-form-d095fee786e4.jetpack-contact-form-container{padding:0;margin:0;border:0}
 .editor-styles-wrapper .ssi-form-d095fee786e4 > div.jetpack-contact-form{display:contents}
 
 === block_markup ===
