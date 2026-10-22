@@ -233,8 +233,8 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	}
 
 	/**
-	 * A submit whose source wrappers are plain block boxes between it and the
-	 * form occupies its own row there, placed within that row by the inherited
+	 * A submit whose single-control wrapper chain consists of plain block boxes
+	 * occupies its own row, placed within that row by the inherited
 	 * text alignment. The provider renders the button's Core wrapper as a
 	 * shrink-to-fit item of its flex form, so restore the row and the placement.
 	 *
@@ -243,7 +243,15 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	 * @return array<string,string>|null Layout for the provider button wrapper.
 	 */
 	private static function submit_block_row( array $chain, array $layout_nodes_by_id ): ?array {
+		// Shared ancestors are not in the single-control chain. They must also
+		// be block boxes: a submit inside a shared flex/grid row is not its own row.
 		$outer = $layout_nodes_by_id[ (string) ( $chain[0]['id'] ?? '' ) ] ?? null;
+		for ( $depth = 0; $depth < 16 && is_array( $outer ) && 'form' !== ( $outer['parent'] ?? null ); ++$depth ) {
+			$outer = $layout_nodes_by_id[ (string) ( $outer['parent'] ?? '' ) ] ?? null;
+			if ( is_array( $outer ) ) {
+				array_unshift( $chain, array( 'id' => $outer['id'], 'tag' => $outer['source']['tag'] ?? '' ) );
+			}
+		}
 		if ( ! is_array( $outer ) || 'form' !== ( $outer['parent'] ?? null ) ) {
 			return null;
 		}
