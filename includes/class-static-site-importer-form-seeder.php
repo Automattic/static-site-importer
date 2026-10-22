@@ -433,10 +433,9 @@ class Static_Site_Importer_Form_Seeder {
 		if ( ! isset( $state->submit_presentation['label_marker'] ) && isset( $control['label_marker'] ) && is_scalar( $control['label_marker'] ) ) {
 			$state->submit_presentation['label_marker'] = trim( (string) $control['label_marker'] );
 		}
-		if ( ! isset( $state->submit_presentation['icon'] ) ) {
-			$leading_icon = self::submit_leading_icon( $state->form, $control_index );
-			if ( ! empty( $leading_icon ) ) {
-				$state->submit_presentation['icon'] = $leading_icon;
+		foreach ( self::submit_icons( $state->form, $control_index ) as $key => $parts ) {
+			if ( ! isset( $state->submit_presentation[ $key ] ) && ! empty( $parts ) ) {
+				$state->submit_presentation[ $key ] = $parts;
 			}
 		}
 		if ( $state->has_topology ) {
@@ -988,13 +987,12 @@ class Static_Site_Importer_Form_Seeder {
 	}
 
 	/**
-	 * Resolve a submit control's own captured inline SVGs into the leading icon
-	 * the source button renders inside its control box.
+	 * Split a submit control's captured inline SVGs by the producer's label side.
 	 *
 	 * The producer captures every drawable inline SVG descendant of a control
 	 * as a bounded visual part (see the presentation graph's `visual_parts`,
 	 * the same capture the empty-country visual state consumes). A submit
-	 * button with an authored leading icon therefore arrives with that icon
+	 * button with an authored inline icon therefore arrives with that icon
 	 * attached to its control index, while the provider submit only carries
 	 * the button text — so the icon, and the authored gap beside it, vanish.
 	 * Only parts that pass the portable inline-SVG admission and the same
@@ -1002,9 +1000,9 @@ class Static_Site_Importer_Form_Seeder {
 	 *
 	 * @param array<string,mixed> $form Validated form row.
 	 * @param int                 $control_index Submit control index.
-	 * @return array<int,string> Validated SVG markup strings, source order.
+	 * @return array<string,array<int,string>> Validated SVGs per side, source order.
 	 */
-	private static function submit_leading_icon( array $form, int $control_index ): array {
+	private static function submit_icons( array $form, int $control_index ): array {
 		$parts = is_array( $form['presentation_graph']['visual_parts'] ?? null ) ? $form['presentation_graph']['visual_parts'] : array();
 		$owned = array();
 		foreach ( $parts as $part ) {
@@ -1019,10 +1017,24 @@ class Static_Site_Importer_Form_Seeder {
 			if ( '' === $markup || strlen( $markup ) > 12288 || ! Static_Site_Importer_Provider_Form_Runtime_V1::valid_inline_svg( $markup ) ) {
 				continue;
 			}
-			$owned[ (int) $ordinal[1] ] = $markup;
+			$side = $part['label_side'] ?? null;
+			if ( ! in_array( $side, array( 'before', 'after' ), true ) ) {
+				continue;
+			}
+			$owned[ (int) $ordinal[1] ] = array(
+				'side'   => $side,
+				'markup' => $markup,
+			);
 		}
 		ksort( $owned );
-		return array_slice( array_values( $owned ), 0, 4 );
+		$icons = array(
+			'icon'       => array(),
+			'icon_after' => array(),
+		);
+		foreach ( array_slice( array_values( $owned ), 0, 4 ) as $part ) {
+			$icons[ 'before' === $part['side'] ? 'icon' : 'icon_after' ][] = $part['markup'];
+		}
+		return $icons;
 	}
 
 	/**
