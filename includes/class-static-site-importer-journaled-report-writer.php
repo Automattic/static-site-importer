@@ -42,7 +42,7 @@ class Static_Site_Importer_Journaled_Report_Writer {
 	}
 
 	/**
-	 * Stream JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES without a full payload string.
+	 * Stream compact JSON_UNESCAPED_SLASHES without a full payload string.
 	 *
 	 * @param resource $stream Output stream.
 	 * @param mixed    $value  JSON value.
@@ -95,13 +95,13 @@ class Static_Site_Importer_Journaled_Report_Writer {
 		}
 		$first = true;
 		foreach ( $value as $key => $item ) {
-			if ( ! self::write_all( $stream, $first ? "\n" : ",\n" ) || ! self::write_all( $stream, str_repeat( '    ', $depth + 1 ) ) ) {
+			if ( ! $first && ! self::write_all( $stream, ',' ) ) {
 				return false;
 			}
 			$first = false;
 			if ( ! $is_list ) {
 				$key_json = wp_json_encode( (string) $key, JSON_UNESCAPED_SLASHES );
-				if ( false === $key_json || ! self::write_all( $stream, $key_json . ': ' ) ) {
+				if ( false === $key_json || ! self::write_all( $stream, $key_json . ':' ) ) {
 					return false;
 				}
 			}
@@ -109,7 +109,7 @@ class Static_Site_Importer_Journaled_Report_Writer {
 				return false;
 			}
 		}
-		return self::write_all( $stream, "\n" . str_repeat( '    ', $depth ) . ( $is_list ? ']' : '}' ) );
+		return self::write_all( $stream, $is_list ? ']' : '}' );
 	}
 
 	/**
