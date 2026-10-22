@@ -1920,8 +1920,8 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 					'message' => 'sale_price must be a decimal string such as "15.00" when provided.',
 				);
 			}
-			foreach ( array( 'description', 'short_description', 'status', 'stock_status' ) as $field ) {
-				if ( isset( $product[ $field ] ) && ! is_string( $product[ $field ] ) ) {
+			foreach ( array( 'description', 'short_description', 'status', 'stock_status', 'sku', 'sale_price' ) as $field ) {
+				if ( array_key_exists( $field, $product ) && ! is_string( $product[ $field ] ) ) {
 					$errors[] = array(
 						'path'    => $path_prefix . '.' . $field,
 						'message' => $field . ' must be a string when provided.',
@@ -1955,12 +1955,12 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				// keep `image` a bare source path (e.g. the product-finding bridge).
 				$image['alt'] = trim( $product['image_alt'] );
 			}
-			foreach ( array( 'categories', 'source_selectors' ) as $field ) {
-				if ( ! isset( $product[ $field ] ) ) {
+			foreach ( array( 'categories', 'source_selectors', 'tags' ) as $field ) {
+				if ( ! array_key_exists( $field, $product ) ) {
 					continue;
 				}
 				$values = self::manifest_string_collection( $product[ $field ] );
-				if ( null === $values ) {
+				if ( null === $values || ( 'tags' === $field && ! array_is_list( $values ) ) ) {
 					$errors[] = array(
 						'path'    => $path_prefix . '.' . $field,
 						'message' => $field . ' must be an array of strings when provided.',
@@ -2005,12 +2005,54 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 				);
 			}
 
+			if ( array_key_exists( 'stock_status', $product ) && ! in_array( $product['stock_status'], array( 'instock', 'outofstock' ), true ) ) {
+				$errors[] = array(
+					'path'    => $path_prefix . '.stock_status',
+					'message' => 'stock_status must be instock or outofstock.',
+				);
+			}
+			if ( array_key_exists( 'images', $product ) ) {
+				$images = $product['images'];
+				if ( ! is_array( $images ) || ! array_is_list( $images ) ) {
+					$errors[] = array(
+						'path'    => $path_prefix . '.images',
+						'message' => 'images must be a list of {src, alt} objects.',
+					);
+				} else {
+					foreach ( $images as $entry ) {
+						if ( ! is_array( $entry ) || ! is_string( $entry['src'] ?? null ) || '' === trim( $entry['src'] ) || ! is_string( $entry['alt'] ?? null ) ) {
+							$errors[] = array(
+								'path'    => $path_prefix . '.images',
+								'message' => 'images must contain {src, alt} strings with non-empty src.',
+							);
+						}
+					}
+					if ( ! empty( $images ) && empty( $errors ) ) {
+						$image = $images[0];
+					}
+				}
+			}
+			unset( $product['losses'] );
+			if ( array_key_exists( 'variants', $product ) ) {
+				$variants = self::manifest_product_variants( $product['variants'] );
+				if ( null === $variants ) {
+					unset( $product['variants'] );
+					$product['losses'][] = array(
+						'dimension'   => 'product',
+						'reason_code' => 'unsupported_control_attribute',
+						'attribute'   => 'variants',
+					);
+				} else {
+					$product['variants'] = $variants;
+				}
+			}
+
 			$summary = array(
 				'name'          => $name,
 				'slug'          => $slug,
 				'regular_price' => $regular_price,
 			);
-			foreach ( array( 'sale_price', 'description', 'short_description', 'categories', 'attributes', 'status', 'stock_status', 'stock_quantity', 'source_selectors' ) as $field ) {
+			foreach ( array( 'sale_price', 'description', 'short_description', 'categories', 'attributes', 'status', 'stock_status', 'stock_quantity', 'source_selectors', 'sku', 'images', 'tags', 'variants', 'losses' ) as $field ) {
 				if ( array_key_exists( $field, $product ) ) {
 					$summary[ $field ] = $product[ $field ];
 				}
@@ -2517,10 +2559,46 @@ class Static_Site_Importer_Entity_Materializer_Registry {
 		return $normalized;
 	}
 
+	/** Normalize variants atomically: partial option sets must never be seeded. */
+	private static function manifest_product_variants( mixed $value ): ?array {
+		if ( ! is_array( $value ) || ! array_is_list( $value ) ) {
+			return null;
+		}
+		$seen = array();
+		foreach ( $value as &$variant ) {
+			if ( ! is_array( $variant ) || ! is_string( $variant['regular_price'] ?? null ) || ! self::is_manifest_price( $variant['regular_price'] ) || ! in_array( $variant['stock_status'] ?? null, array( 'instock', 'outofstock' ), true ) ) {
+				return null;
+			}
+			foreach ( array( 'sku', 'image', 'sale_price' ) as $field ) {
+				if ( array_key_exists( $field, $variant ) && ( ! is_string( $variant[ $field ] ) || ( 'sale_price' === $field && ! self::is_manifest_price( $variant[ $field ] ) ) ) ) {
+					return null;
+				}
+			}
+			$attributes = self::manifest_product_attributes( $variant['attributes'] ?? null );
+			if ( empty( $attributes ) ) {
+				return null;
+			}
+			$combination = array();
+			foreach ( $attributes as $attribute ) {
+				$key = $attribute['key'];
+				if ( ! preg_match( '/^[a-z0-9]+(?:[-_][a-z0-9]+)*$/', $key ) || ! preg_match( '/^[a-z0-9]+(?:[-_][a-z0-9]+)*$/', $attribute['value'] ) || isset( $combination[ $key ] ) ) {
+					return null;
+				}
+				$combination[ $key ] = $attribute['value'];
+			}
+			ksort( $combination );
+			$signature = http_build_query( $combination );
+			if ( isset( $seen[ $signature ] ) ) {
+				return null;
+			}
+			$seen[ $signature ]    = true;
+			$variant['attributes'] = $attributes;
+		}
+		return $value;
+	}
+
 	/**
-	 * Normalize a product's attribute values: each names the attribute
-	 * (`key`, `label`) and the product's value of it (`value`, and the
-	 * shopper-facing `value_label`).
+	 * Normalize shopper-facing global attribute values.
 	 *
 	 * @param mixed $value Candidate attribute list.
 	 * @return array<int,array{key:string,label:string,value:string,value_label:string}>|null Null when malformed.

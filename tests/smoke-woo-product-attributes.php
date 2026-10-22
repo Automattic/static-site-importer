@@ -161,6 +161,7 @@ class WC_Product_Simple {
 		foreach ( $this->data['set_attributes'] ?? array() as $taxonomy => $attribute ) {
 			wp_set_object_terms( $id, $attribute->get_options(), $taxonomy );
 		}
+		$GLOBALS['saved_products'][ $id ] = $this;
 		$GLOBALS['saved_attributes'][ $id ] = $this->data['set_attributes'] ?? null;
 		return $id; }
 }
