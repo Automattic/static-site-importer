@@ -52,6 +52,8 @@
     { "path": "tests/smoke-form-submit-box.php", "environment": "standalone-php" },
     { "path": "tests/form-submit-box.test.mjs", "environment": "node" },
     { "path": "tests/smoke-form-submit-colors.php", "environment": "standalone-php" },
+    { "path": "tests/smoke-form-placeholder-colors.php", "environment": "standalone-php" },
+    { "path": "tests/form-placeholder-colors.test.mjs", "environment": "operator-only", "reason": "Chromium placeholder colour regression; executed by the Editor Presentation Browser CI job." },
     { "path": "tests/form-submit-colors.test.mjs", "environment": "operator-only", "reason": "Chromium submit colour regression; executed by the Editor Presentation Browser CI job." },
     { "path": "tests/smoke-option-idempotence.php", "environment": "standalone-php" },
     { "path": "tests/smoke-media-rendition-equivalence.php", "environment": "standalone-php" },

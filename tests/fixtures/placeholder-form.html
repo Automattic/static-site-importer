@@ -1,0 +1,12 @@
+<!doctype html>
+<html><head><style>
+ :root{--hint-color:#9ca3af}
+input,textarea{color:#123456;padding:8px}
+input::placeholder,textarea::placeholder{color:var(--hint-color);opacity:1}
+textarea:focus::placeholder{color:#be123c}
+@media (min-width:800px){input::placeholder{color:#2563eb}}
+</style></head><body>
+<form><label>Name<input name="name" placeholder="Your name"></label>
+<label>Message<textarea name="message" placeholder="Your message"></textarea></label>
+<button type="submit">Send</button></form>
+</body></html>
