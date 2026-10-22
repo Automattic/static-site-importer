@@ -624,7 +624,7 @@ class Static_Site_Importer_Form_Seeder {
 					'layout' => $layout_patch,
 				)
 			);
-			self::append_receipt_entries(
+			Static_Site_Importer_Form_Mapping_Decision::append_receipt_entries(
 				$state->layout['receipt'],
 				'operations',
 				array(
