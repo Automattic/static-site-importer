@@ -480,7 +480,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 		foreach ( $s->children as $parent => $children ) {
 			$s->children[ $parent ] = array_values( array_filter( $children, static fn( array $node ): bool => ! isset( $hidden_nodes[ $node['id'] ] ) ) );
 		}
-		$s->nodes = array_values( array_filter( $s->nodes, static fn( array $node ): bool => ! isset( $hidden_nodes[ $node['id'] ] ) ) );
+		$s->nodes          = array_values( array_filter( $s->nodes, static fn( array $node ): bool => ! isset( $hidden_nodes[ $node['id'] ] ) ) );
 		$exact_native_tree = Static_Site_Importer_Form_Native_Topology::exact_native_topology( $s->nodes, $s->children, $s->field_blocks, $s->suppressed_controls, $s->layout_nodes_by_id, $s->layout_by_node, $s->variants_by_node, self::layout_scope( $s->form ) );
 		if ( null !== $exact_native_tree ) {
 			$exact_native_tree['operations']                 = array_merge( $s->operations, $exact_native_tree['operations'] );
@@ -2844,7 +2844,7 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				continue;
 			}
 			foreach ( $form['layout_graph']['variants'] ?? array() as $variant ) {
-				if ( $id === ( $variant['node'] ?? null ) && isset( $variant['layout_patch']['display'] ) ) {
+				if ( ( $variant['node'] ?? null ) === $id && isset( $variant['layout_patch']['display'] ) ) {
 					continue 2;
 				}
 			}
