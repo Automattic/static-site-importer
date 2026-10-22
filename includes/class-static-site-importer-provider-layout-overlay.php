@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Compiles provider form layout and presentation into bounded, scoped overlay CSS.
  *
- * @phpstan-type Surface array{prefix:string,css:array{key:string,label:string,rule:string},context:array{key:string,label:string,rule:string},control_container_chrome:bool,front_end_form_dom:bool,native_passthrough:array<string,string>,form_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>,form_layout_host:array{declarations:string,strategy:string}|null,field_control:array{suffix:string,properties:array<int,string>}|null,container_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>}
+ * @phpstan-type Surface array{prefix:string,css:array{key:string,label:string,rule:string},context:array{key:string,label:string,rule:string},control_container_chrome:bool,front_end_form_dom:bool,form_box_initials:array<string,string>,native_passthrough:array<string,string>,form_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>,form_layout_host:array{declarations:string,strategy:string}|null,field_control:array{suffix:string,properties:array<int,string>}|null,container_passthrough:array<int,array{suffix:string,declarations:string,strategy:string}>}
  * A compile pass accumulates one surface's declared surface, scope, targets,
  * presentation targets, rules, chrome, operations, losses and context CSS.
  *
@@ -69,6 +69,14 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 	 *   sent. Only the PHP render and `view.ts` produce it; the editor renders
 	 *   the block wrapper and its inner-blocks container instead, so rules that
 	 *   address that DOM match nothing there and are not emitted.
+	 * - `form_box_initials`: CSS initial values the element receiving the source
+	 *   form's box overrides on this surface, restated unless the source
+	 *   declares the property. Jetpack's editor styles set
+	 *   `.wp-block-jetpack-contact-form{box-sizing:border-box}` (blocks
+	 *   contact-form `editor.scss`), so a source box's width and max-width
+	 *   would otherwise swallow its padding and border there; the front-end
+	 *   container keeps the initial `content-box`. The native topology paints
+	 *   the box on its own form target instead, so they do not apply there.
 	 * - `native_passthrough`: scope-suffix rules added on the native topology
 	 *   (the editor's control shell and its form box carry no box of their own).
 	 * - `form_passthrough`: scope-suffix rules, with their recorded operation,
@@ -108,6 +116,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			),
 			'control_container_chrome' => false,
 			'front_end_form_dom'       => true,
+			'form_box_initials'        => array(),
 			'native_passthrough'       => array(),
 			'form_passthrough'         => array(),
 			'form_layout_host'         => null,
@@ -134,6 +143,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			),
 			'control_container_chrome' => true,
 			'front_end_form_dom'       => false,
+			'form_box_initials'        => array( 'box_sizing' => 'content-box' ),
 			'native_passthrough'       => array(
 				' .ssi-native-control-shell' => 'display:contents',
 				'.ssi-native-form-topology'  => 'padding:0;border:0',
@@ -714,7 +724,7 @@ class Static_Site_Importer_Provider_Layout_Overlay {
 			'selector'   => $native ? $pass['targets']['form']['selector'] : $box,
 			'properties' => array_keys( self::presentation_property_map() ),
 		);
-		$styles      = self::resolve_presentation_cascade( $container['styles'] ?? array(), $container['provenance'] ?? array() );
+		$styles      = self::resolve_presentation_cascade( $container['styles'] ?? array(), $container['provenance'] ?? array() ) + ( $native ? array() : $pass['declared']['form_box_initials'] );
 		self::present( $pass, array( $destination ), $styles, 0, 'control', null );
 		foreach ( array_slice( $container['variants'] ?? array(), 0, 32 ) as $variant ) {
 			if ( self::safe_condition( $variant['condition'] ?? null ) && is_array( $variant['styles'] ?? null ) ) {
