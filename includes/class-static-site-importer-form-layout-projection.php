@@ -471,8 +471,21 @@ final class Static_Site_Importer_Form_Layout_Projection {
 				$s->variants_by_node[ $variant['node'] ][] = $variant;
 			}
 		}
+		$hidden_nodes = self::unconditionally_hidden_descendants( $s->form );
+		foreach ( array_keys( $hidden_nodes ) as $node_id ) {
+			$s->represented_layout_nodes[]   = $node_id;
+			$s->represented_topology_nodes[] = $node_id;
+			$s->record( 'topology', 'provider_omitted_hidden_subtree', $node_id );
+		}
+		foreach ( $s->children as $parent => $children ) {
+			$s->children[ $parent ] = array_values( array_filter( $children, static fn( array $node ): bool => ! isset( $hidden_nodes[ $node['id'] ] ) ) );
+		}
+		$s->nodes = array_values( array_filter( $s->nodes, static fn( array $node ): bool => ! isset( $hidden_nodes[ $node['id'] ] ) ) );
 		$exact_native_tree = Static_Site_Importer_Form_Native_Topology::exact_native_topology( $s->nodes, $s->children, $s->field_blocks, $s->suppressed_controls, $s->layout_nodes_by_id, $s->layout_by_node, $s->variants_by_node, self::layout_scope( $s->form ) );
 		if ( null !== $exact_native_tree ) {
+			$exact_native_tree['operations']                 = array_merge( $s->operations, $exact_native_tree['operations'] );
+			$exact_native_tree['represented_layout_nodes']   = array_merge( array_keys( $hidden_nodes ), $exact_native_tree['represented_layout_nodes'] );
+			$exact_native_tree['represented_topology_nodes'] = array_merge( array_keys( $hidden_nodes ), $exact_native_tree['represented_topology_nodes'] );
 			return $exact_native_tree;
 		}
 		$s->collect_controls = static function ( array $node, bool $include_auxiliary = true ) use ( $s ): array {
@@ -2809,7 +2822,57 @@ final class Static_Site_Importer_Form_Layout_Projection {
 	}
 
 	/**
-	 * Whether an unconditional source rule proves a layout node's property.
+	 * Find non-rendering field subtrees using proven ancestor display facts.
+	 *
+	 * The layout graph may omit unstyled descendants, so use control topology
+	 * for ancestry too. Any conditional display patch keeps existing behavior.
+	 * Bookkeeping-only branches retain their existing runtime-control receipt.
+	 *
+	 * @param array<string,mixed> $form Validated source form.
+	 * @return array<string,bool> Hidden subtree node IDs.
+	 * @internal
+	 */
+	public static function unconditionally_hidden_descendants( array $form ): array {
+		$nodes    = array_column( $form['layout_graph']['nodes'] ?? array(), null, 'id' );
+		$hidden   = array();
+		$ancestry = $nodes;
+		foreach ( $form['control_topology']['nodes'] ?? array() as $node ) {
+			$ancestry[ $node['id'] ] = $node;
+		}
+		foreach ( $nodes as $id => $node ) {
+			if ( 'control' === ( $node['kind'] ?? null ) || 'none' !== ( $node['layout']['display'] ?? null ) || ! self::has_unconditional_proven_property( $node, 'display' ) ) {
+				continue;
+			}
+			foreach ( $form['layout_graph']['variants'] ?? array() as $variant ) {
+				if ( $id === ( $variant['node'] ?? null ) && isset( $variant['layout_patch']['display'] ) ) {
+					continue 2;
+				}
+			}
+			$subtree = array();
+			foreach ( $ancestry as $descendant_id => $descendant ) {
+				$cursor = $descendant_id;
+				$seen   = array();
+				while ( isset( $ancestry[ $cursor ] ) && ! isset( $seen[ $cursor ] ) ) {
+					if ( $cursor === $id ) {
+						$subtree[ $descendant_id ] = true;
+						break;
+					}
+					$seen[ $cursor ] = true;
+					$cursor          = $ancestry[ $cursor ]['parent'] ?? '';
+				}
+			}
+			foreach ( $form['controls'] ?? array() as $index => $control ) {
+				if ( isset( $subtree[ 'control-' . $index ] ) && self::control_carries_authored_content( self::control_type( $control ) ) ) {
+					$hidden += $subtree;
+					break;
+				}
+			}
+		}
+		return $hidden;
+	}
+
+	/**
+	 * Whether unconditional source provenance proves a property.
 	 *
 	 * @internal
 	 */
