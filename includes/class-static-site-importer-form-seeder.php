@@ -357,6 +357,12 @@ class Static_Site_Importer_Form_Seeder {
 			// visitor-facing provider input.
 			unset( $control['class'] );
 		}
+		$hidden_nodes = Static_Site_Importer_Form_Layout_Projection::unconditionally_hidden_descendants( $form );
+		if ( isset( $hidden_nodes[ 'control-' . $control_index ] ) ) {
+			$state->suppressed_controls[ $control_index ] = true;
+			$state->skipped[]                             = 'unconditionally_hidden_control';
+			return;
+		}
 		$type = strtolower( trim( (string) ( $control['type'] ?? '' ) ) );
 		$tag  = strtolower( trim( (string) ( $control['tag'] ?? '' ) ) );
 		if ( self::is_hidden_bookkeeping_control( $form, $control_index, $control, $tag, $type ) ) {
@@ -790,6 +796,19 @@ class Static_Site_Importer_Form_Seeder {
 		}
 		foreach ( array_keys( $state->suppressed_controls ) as $control_index ) {
 			unset( $overlay_form['presentation_graph']['controls'][ $control_index ] );
+		}
+		$hidden_nodes = Static_Site_Importer_Form_Layout_Projection::unconditionally_hidden_descendants( $state->form );
+		foreach ( $overlay_form['presentation_graph']['controls'] ?? array() as $index => $row ) {
+			if ( isset( $hidden_nodes[ 'control-' . ( $row['index'] ?? '' ) ] ) ) {
+				unset( $overlay_form['presentation_graph']['controls'][ $index ] );
+			}
+		}
+		$overlay_form['layout_graph']['nodes']    = array_values( array_filter( $overlay_form['layout_graph']['nodes'] ?? array(), static fn( array $node ): bool => ! isset( $hidden_nodes[ $node['id'] ] ) ) );
+		$overlay_form['layout_graph']['variants'] = array_values( array_filter( $overlay_form['layout_graph']['variants'] ?? array(), static fn( array $variant ): bool => ! isset( $hidden_nodes[ $variant['node'] ] ) ) );
+		foreach ( $overlay_form['presentation_graph']['variants'] ?? array() as $index => $variant ) {
+			if ( isset( $hidden_nodes[ 'control-' . ( $variant['index'] ?? '' ) ] ) ) {
+				unset( $overlay_form['presentation_graph']['variants'][ $index ] );
+			}
 		}
 		foreach ( is_array( $topology['grid_span_submit_controls'] ?? null ) ? $topology['grid_span_submit_controls'] : array() as $span_control ) {
 			if ( ! is_array( $overlay_form['presentation_graph'] ?? null ) ) {

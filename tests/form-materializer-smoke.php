@@ -345,7 +345,7 @@ namespace {
 	$root_map = array( 'schema' => 'generic/provider-layout-target-map/v1', 'provider' => 'jetpack', 'scope' => '.ssi-form-123456789abc', 'targets' => array( array( 'node' => 'form', 'selector' => '.ssi-form-123456789abc > form.jetpack-contact-form__form, .ssi-form-123456789abc:not(:has(> form.jetpack-contact-form__form))', 'capabilities' => array( 'container_layout', 'responsive_layout' ) ) ) );
 
 	$suite_argument = array_values( array_filter( $argv ?? array(), static fn( string $argument ): bool => str_starts_with( $argument, '--suite=' ) ) );
-	foreach ( array( 'adapter-and-field-mapping', 'grid-rows', 'row-and-cell-layout', 'textarea-and-wrappers', 'presentation', 'compiled-presentation-and-placement', 'hidden-controls-and-fieldsets', 'provider-runtime-and-overlay', 'receipts-and-source-boxes' ) as $suite ) {
+	foreach ( array( 'hidden-ancestor', 'adapter-and-field-mapping', 'grid-rows', 'row-and-cell-layout', 'textarea-and-wrappers', 'presentation', 'compiled-presentation-and-placement', 'hidden-controls-and-fieldsets', 'provider-runtime-and-overlay', 'receipts-and-source-boxes' ) as $suite ) {
 		if ( empty( $suite_argument ) || '--suite=' . $suite === $suite_argument[0] ) {
 			require __DIR__ . '/form-materializer-' . $suite . '.inc';
 		}
