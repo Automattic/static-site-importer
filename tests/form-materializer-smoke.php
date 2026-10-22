@@ -464,6 +464,7 @@ namespace {
 						'id'              => 'control-1-svg-0',
 						'index'           => 1,
 						'kind'            => 'inline_svg',
+						'label_side'      => 'before',
 						'source_selector' => 'form.contact > button:nth-of-type(1) > svg:nth-of-type(1)',
 						'markup'          => '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-send" aria-hidden="true"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"></path><path d="m21.854 2.147-10.94 10.939"></path></svg>',
 						'source_css'      => array( 'state' => 'unknown' ),
@@ -472,6 +473,7 @@ namespace {
 						'id'              => 'control-0-svg-0',
 						'index'           => 0,
 						'kind'            => 'inline_svg',
+						'label_side'      => 'before',
 						'source_selector' => 'form.contact > div:nth-of-type(1) > svg:nth-of-type(1)',
 						'markup'          => '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5"></circle></svg>',
 						'source_css'      => array( 'state' => 'unknown' ),
@@ -2781,7 +2783,7 @@ namespace {
 				'schema' => 'generic/computed-form-presentation/v2', 'basis' => 'source_css_cascade', 'truncated' => false,
 				'limits' => array( 'controls' => 128, 'rules_per_role' => 96 ), 'controls' => array(), 'visual_groups' => array(), 'control_containers' => array(), 'group_captions' => array(), 'variants' => array(), 'diagnostics' => array(),
 				'visual_parts' => array_map(
-					static fn ( int $index ): array => array( 'id' => 'control-' . $index . '-svg-0', 'index' => $index, 'kind' => 'inline_svg', 'source_selector' => 'form button:nth-of-type(' . ( $index - 3 ) . ') > svg', 'markup' => '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h22v22H1z"/></svg>', 'intrinsic_size' => array( 'width' => 24, 'height' => 24 ), 'source_css' => array( 'state' => 'unknown' ) ),
+					static fn ( int $index ): array => array( 'id' => 'control-' . $index . '-svg-0', 'index' => $index, 'kind' => 'inline_svg', 'label_side' => 'before', 'source_selector' => 'form button:nth-of-type(' . ( $index - 3 ) . ') > svg', 'markup' => '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M1 1h22v22H1z"/></svg>', 'intrinsic_size' => array( 'width' => 24, 'height' => 24 ), 'source_css' => array( 'state' => 'unknown' ) ),
 					array( 4, 5, 6, 7, 8 )
 				),
 			),
