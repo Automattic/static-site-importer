@@ -206,6 +206,7 @@
           "tests/smoke-form-submit-box.php",
           "tests/smoke-form-submit-icon-sides.php",
           "tests/smoke-form-submit-colors.php",
+          "tests/smoke-form-context-spacing.php",
           "tests/smoke-form-native-select.php",
           "tests/smoke-form-placeholder-colors.php",
           "tests/smoke-form-linked-placeholder-colors.php",

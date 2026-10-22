@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Contact spacing</title>
+<style>
+body { margin: 0; font: 16px sans-serif; }
+p { margin: 0; }
+.note { color: #444; }
+label { display: block; }
+.pair { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1rem; }
+.space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 1rem; }
+</style>
+</head>
+<body>
+<form class="space-y-4">
+<div class="pair">
+<div><label for="name">Name</label><input id="name" name="name"></div>
+<div><label for="email">Email</label><input id="email" name="email" type="email"></div>
+</div>
+<div><label for="message">Message</label><textarea id="message" name="message"></textarea></div>
+<button type="submit">Send</button>
+<p class="note">No obligation.</p>
+</form>
+</body>
+</html>

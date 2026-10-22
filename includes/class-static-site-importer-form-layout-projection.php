@@ -1715,6 +1715,22 @@ final class Static_Site_Importer_Form_Layout_Projection {
 			// the flattened row's two-up math stays exact.
 			$rhythm = self::source_stacking_rhythm( $s, array_keys( $s->field_blocks ) );
 			if ( is_string( $rhythm ) ) {
+				// Context blocks are flex items too. Reset only their outer box, not
+				// nested copy whose internal margins were never replaced by this gap.
+				foreach ( array( 'context_before', 'context_after' ) as $position ) {
+					foreach ( Static_Site_Importer_Form_Field_Markup::context_blocks( $s->form, $position ) as $index => $block ) {
+						if ( 1 !== preg_match( '/\bssi-context-[a-f0-9]{12}\b/', (string) ( $block['attrs']['className'] ?? '' ), $match ) ) {
+							continue;
+						}
+						$id                                = $position . '-' . $index;
+						$s->provider_layout_targets[ $id ] = $match[0];
+						$s->overlay_node_targets[]         = array(
+							'id'        => $id,
+							'layout'    => array( 'margin_block_start' => '0' ),
+							'important' => array( 'margin_block_start' ),
+						);
+					}
+				}
 				$s->overlay_node_targets[] = array(
 					'id'     => 'form',
 					'layout' => array(
