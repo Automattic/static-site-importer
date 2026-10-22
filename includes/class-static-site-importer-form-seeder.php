@@ -624,10 +624,16 @@ class Static_Site_Importer_Form_Seeder {
 					'layout' => $layout_patch,
 				)
 			);
-			$state->layout['receipt']['operations'][] = array(
-				'dimension'   => 'layout',
-				'strategy'    => 'provider_direct_label_control_gap',
-				'target_hash' => hash( 'sha256', $target_id ),
+			self::append_receipt_entries(
+				$state->layout['receipt'],
+				'operations',
+				array(
+					array(
+						'dimension'   => 'layout',
+						'strategy'    => 'provider_direct_label_control_gap',
+						'target_hash' => hash( 'sha256', $target_id ),
+					),
+				)
 			);
 		}
 		return $overlay_graph;
