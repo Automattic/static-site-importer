@@ -691,11 +691,11 @@ final class Static_Site_Importer_Quality_Gates {
 			if ( is_array( $diagnostic ) && 'runtime' === Static_Site_Importer_Form_Fallback_Contract::route( $diagnostic ) && in_array( 'html_form_fallback', array( $diagnostic['diagnostic_code'] ?? '', $diagnostic['code'] ?? '', $diagnostic['reason_code'] ?? '' ), true ) ) {
 				// These handlers have no contact-form equivalent. Keep the source
 				// and report the runtime requirement, not a form-provider decline.
-				$diagnostic['recoverability']        = 'recoverable_with_runtime_mapping';
+				$diagnostic['recoverability']         = 'recoverable_with_runtime_mapping';
 				$diagnostic['materialization_target'] = array();
-				$diagnostic['actionability']         = 'map_form_runtime_or_preserve_handler';
+				$diagnostic['actionability']          = 'map_form_runtime_or_preserve_handler';
 				$diagnostic['suggested_repair_class'] = 'preserve_runtime_island';
-				$diagnostic['materialization_hint']  = 'preserve_form_runtime_source_until_controls_can_be_mapped';
+				$diagnostic['materialization_hint']   = 'preserve_form_runtime_source_until_controls_can_be_mapped';
 				$report->replace_diagnostic( $index, $diagnostic );
 			}
 			if ( ! is_array( $diagnostic ) || ! self::is_form_fallback_diagnostic( $diagnostic ) ) {
